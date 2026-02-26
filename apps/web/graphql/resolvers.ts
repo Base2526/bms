@@ -136,6 +136,69 @@ function escapeHtml(s: string) {
     .replaceAll("'", "&#039;");
 }
 
+function normalizeTel(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const hasPlus = s.startsWith("+");
+  const digits = s.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  if (!hasPlus && digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
+  return hasPlus ? `+${digits}` : digits;
+}
+
+function normalizePhone(raw: string) {
+  const s = String(raw || "").trim();
+  const hasPlus = s.startsWith("+");
+  const digits = s.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  if (!hasPlus && digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
+  return hasPlus ? `+${digits}` : digits;
+}
+
+function toIsoOrNull(v: any) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toISOString();
+}
+
+function uuidArrayToStringArray(v: any): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map((x) => String(x));
+  return [];
+}
+
+function arrText(v: any): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map((x) => String(x));
+  return [];
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function shapeScamBankAccount(row: any) {
+  // DB summary มี: bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at
+  return {
+    bank_name: String(row?.bank_name || "UNKNOWN"),
+    account: String(row?.account_norm || row?.account_no || ""),
+    report_count: Number(row?.report_count || 0),
+    last_report_at: row?.last_report_at ? new Date(row.last_report_at).toISOString() : null,
+    risk_level: Number(row?.risk_level || 0),
+    updated_at: row?.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+    is_deleted: false,
+    post_ids: [],
+    ctx: null,
+    tags: [],
+  };
+}
+
+function normalizeBankAccount(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  return s.replace(/[^\d]/g, "");
+}
+
 export const resolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
@@ -1576,44 +1639,42 @@ export const resolvers = {
         items,
       };
     },
-    searchScamPhones: async (
-      _: any,
-      { q, limit }: { q: string; limit: number },
-      ctx : any
-    ) => {
+     // ถ้าคุณมีอยู่แล้วใช้ของเดิมได้ อันนี้เป็นตัวอย่างให้ field ตรงกับ mobile query
+    searchScamPhones: async (_: any, { q, limit }: any, ctx: any) => {
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated) throw new Error("Unauthenticated");
 
-      console.log("[Query] searchScamPhones", { q, limit });
-      // อยาก strict ตรงตัว: ใช้ = หรือ LIKE
-      // ถ้าอยากให้พิมพ์บางส่วนก็เจอ → ใช้ LIKE '%q%'
-      const like = `%${q}%`;
+      const term = normalizePhone(q) || String(q || "").trim();
+      const lim = Math.max(1, Math.min(Number(limit || 30), 50));
 
+      // ✅ เลือกเฉพาะคอลัมน์ที่ "มีจริง" ใน scam_phones_summary
       const { rows } = await query(
         `
         SELECT
-          tel,
-          COUNT(*)               AS report_count,
-          MAX(created_at)        AS last_report_at,
-          MAX(created_at)        AS updated_at,
-          ARRAY_AGG(DISTINCT post_id) AS post_ids
-        FROM post_tel_numbers
-        WHERE tel LIKE $1
-        GROUP BY tel
-        ORDER BY report_count DESC, updated_at DESC
+          phone,
+          report_count,
+          last_report_at,
+          risk_level,
+          updated_at
+        FROM scam_phones_summary
+        WHERE phone ILIKE $1
+        ORDER BY report_count DESC, last_report_at DESC NULLS LAST
         LIMIT $2
         `,
-        [like, limit]
+        [`%${term}%`, lim]
       );
 
-      return rows.map((r:any) => ({
-        phone: r.tel,
-        report_count: Number(r.report_count),
-        last_report_at: r.last_report_at,
-        risk_level: calcRisk(Number(r.report_count)),
-        tags: [],                 // อนาคตค่อย map จาก table/tag อื่น
-        updated_at: r.updated_at, // = MAX(created_at)
-        is_deleted: false,        // ตอนนี้ table ไม่มี field นี้
-        post_ids: r.post_ids,
-        ctx
+      // ✅ เติม fields ที่ schema ต้องการ แต่ DB ไม่มี
+      return rows.map((r: any) => ({
+        phone: r.phone,
+        report_count: Number(r.report_count || 0),
+        last_report_at: r.last_report_at ? new Date(r.last_report_at).toISOString() : null,
+        risk_level: Number(r.risk_level || 0),
+        tags: [],            // <<<<<< สำคัญ
+        is_deleted: false,   // <<<<<< สำคัญ (ถ้าไม่มีใน DB)
+        post_ids: [],        // <<<<<< สำคัญ
+        ctx: null,           // <<<<<< สำคัญ
+        updated_at: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
       }));
     },
     searchBankAccounts: async (
@@ -1628,6 +1689,8 @@ export const resolvers = {
 
       const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
       const qNorm = normalizeAccountNo(term);
+
+      console.log("[Query][qNorm] searchBankAccounts", qNorm);
 
       const mapRow = (r: any) => {
         const masked = maskAccount(r.account_no || r.account_norm);
@@ -2386,7 +2449,13 @@ export const resolvers = {
       },
       ctx: any
     ) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
       // ✅ ให้เก็บ postId ไว้ใช้ emit หลัง commit
@@ -2668,7 +2737,13 @@ export const resolvers = {
       return result;
     },
     deletePost: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id } = requireAuth(ctx);
+      // const { author_id } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deletePost :", author_id, id);
 
       type PostSnap = {
@@ -2759,7 +2834,13 @@ export const resolvers = {
       return result.ok;
     },
     deletePosts: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const { author_id } = requireAuth(ctx);
+      // const { author_id } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deletePosts :", author_id, ids?.length);
 
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -2864,7 +2945,13 @@ export const resolvers = {
       { id }: { id: string },
       ctx: any
     ) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] clonePost :", author_id, id);
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
@@ -3006,7 +3093,13 @@ export const resolvers = {
       { name, isGroup, memberIds }: { name?: string; isGroup: boolean; memberIds: string[] },
       ctx: any
     ) => {
-      const { author_id } = requireAuth(ctx);
+      // const { author_id } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] createChat :", author_id);
 
       const { result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3126,7 +3219,13 @@ export const resolvers = {
       return chat;
     },
     addMember: async (_:any, { chat_id, user_id }:{chat_id:string, user_id:string}, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] addMember :", ctx, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3161,7 +3260,12 @@ export const resolvers = {
       },
       ctx: any
     ) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
 
       console.info("[sendMessage] =", author_id, chat_id, to_user_ids);
 
@@ -3357,7 +3461,13 @@ export const resolvers = {
       return fullMessage;
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] upsertUser :", ctx, author_id);
 
       // 2️⃣ ทำความสะอาดข้อมูล
@@ -3430,7 +3540,13 @@ export const resolvers = {
       return result;
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] uploadAvatar :", author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3460,7 +3576,13 @@ export const resolvers = {
       return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deleteUser:", id, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3480,7 +3602,13 @@ export const resolvers = {
       return result;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deleteUsers :", ctx, author_id);
 
       if (!ids || ids.length === 0) return false;
@@ -3514,7 +3642,13 @@ export const resolvers = {
       return result;
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] updateMyProfile :", author_id, data);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3543,7 +3677,13 @@ export const resolvers = {
       return result;
     },
     renameChat: async (_:any, { chat_id, name }:{chat_id:string, name?:string}, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3564,7 +3704,13 @@ export const resolvers = {
       return result;
     },
     deleteChat: async (_:any, { chat_id }:{chat_id:string}, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         await client.query(`DELETE FROM chats WHERE id = $1`, [chat_id]);
 
@@ -3581,7 +3727,13 @@ export const resolvers = {
       return result;
     },
     markMessageRead: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] markMessageRead :", message_id, "by", author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -3606,7 +3758,13 @@ export const resolvers = {
     },
     markChatReadUpTo: async (_:any, { chat_id, cursor }:{ chat_id:string, cursor:string }, ctx:any) => {
       // 1️⃣ ตรวจสอบสิทธิ์ผู้ใช้
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log('[Mutation] markChatReadUpTo :', author_id, chat_id, cursor);
 
       // 2️⃣ ทำงานใน transaction
@@ -3638,7 +3796,12 @@ export const resolvers = {
       return result;
     },
     deleteMessage: async (_:any, { message_id }:{ message_id:string }, ctx:any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
       console.log("[Mutation] deleteMessage :", ctx, author_id);
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
@@ -3682,7 +3845,13 @@ export const resolvers = {
       return result;
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deleteFile :", { id, author_id });
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
@@ -3706,7 +3875,13 @@ export const resolvers = {
       return result;
     },
     deleteFiles: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       console.log("[Mutation] deleteFiles :", ids, "by", author_id);
 
       if (!ids?.length) return false;
@@ -3743,7 +3918,12 @@ export const resolvers = {
       return result;
     },
     renameFile: async (_: any, { id, name }: { id: string, name: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx); // ✅ ตรวจสิทธิ์ก่อน
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
@@ -3771,7 +3951,14 @@ export const resolvers = {
       return result;
     },
     toggleBookmark: async (_: any, { postId }: { postId: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       const start = Date.now();
 
       console.log("[toggleBookmark] :: ", author_id, postId);
@@ -3854,7 +4041,13 @@ export const resolvers = {
       return true;
     },
     addComment: async (_: any, { post_id, content }: any, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx); 
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx); 
+
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
       
       const user = await getUserById(author_id); // { id, name, avatar, ... }
 
@@ -3920,7 +4113,14 @@ export const resolvers = {
       return gqlComment;
     },
     replyComment: async (_: any, { comment_id, content }: any, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
+
+      const auth =  requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
+
       const user = await getUserById(author_id);
 
       console.log("[replyComment]", author_id, user);
@@ -4030,58 +4230,166 @@ export const resolvers = {
 
       return true;
     },
+    
     reportScamPhone: async (_: any, { input }: any, ctx: any) => {
       const {
         phone,
+        category,
         note,
-        local_blocked,
         client_id,
         device_model,
         os_version,
         app_version,
       } = input;
 
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const normalized = phone;
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
+      const author_id = String(auth.author_id);
 
-      const { revisionId, result }  = await runInTransaction(author_id, async (client, ctx) => {
-        // 1) Insert report -> scam_phone_reports
+      const normalized = normalizeTel(phone);
+      if (!normalized) throw new Error("Invalid phone");
+
+      const cat = String(category || "SCAM");
+
+      const { result } = await runInTransaction(author_id, async (client: any) => {
+        // 1) INSERT -> scam_phone_reports
+        //    (มี phone_normalized เป็น NOT NULL ตาม error ที่คุณเจอ)
         await client.query(
           `
           INSERT INTO scam_phone_reports
-            (phone, note, local_blocked, client_id, device_model, os_version, app_version)
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
+            (user_id, phone, phone_normalized, category, note, client_id, device_model, os_version, app_version)
+          VALUES
+            ($1::uuid, $2, $3, $4, $5, $6::uuid, $7, $8, $9)
           `,
           [
+            author_id,
             normalized,
-            note,
-            local_blocked,
+            normalized,
+            cat,
+            note ?? null,
             client_id,
-            device_model,
-            os_version,
-            app_version,
+            device_model ?? null,
+            os_version ?? null,
+            app_version ?? null,
           ]
         );
 
-        // 2) Insert/update -> scam_phones_summary
+        // 2) UPSERT -> scam_phones_summary (ตัด source_reports ออก)
         const { rows } = await client.query(
           `
           INSERT INTO scam_phones_summary
-            (phone, report_count, last_report_at, source_reports, risk_level, updated_at)
-          VALUES ($1, 1, now(), 1, 10, now())
+            (phone, report_count, last_report_at, risk_level, updated_at)
+          VALUES
+            ($1, 1, now(), 10, now())
           ON CONFLICT (phone)
           DO UPDATE SET
               report_count   = scam_phones_summary.report_count + 1,
-              source_reports = scam_phones_summary.source_reports + 1,
               last_report_at = now(),
               risk_level     = GREATEST(scam_phones_summary.risk_level, 10),
               updated_at     = now()
-          RETURNING *;
+          RETURNING
+            phone,
+            report_count,
+            last_report_at,
+            risk_level,
+            post_ids,
+            is_deleted,
+            updated_at;
           `,
           [normalized]
         );
 
-        return rows[0];
+        const row = rows[0];
+
+        // 3) เติม fields ที่ GraphQL schema/app ต้องการ แต่ DB ไม่มีจริง
+        return {
+          phone: row.phone,
+          report_count: Number(row.report_count || 0),
+          last_report_at: row.last_report_at ? new Date(row.last_report_at).toISOString() : null,
+          risk_level: Number(row.risk_level || 0),
+          updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+          is_deleted: !!row.is_deleted,
+          post_ids: Array.isArray(row.post_ids) ? row.post_ids : [],
+          tags: [],   // ✅ DB ไม่มี tags
+          ctx: null,  // ✅ DB ไม่มี ctx
+        };
+      });
+
+      return result;
+    },
+
+    unblockScamPhone: async (_: any, { input }: any, ctx: any) => {
+      const { phone, client_id, device_model, os_version, app_version } = input;
+
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id)
+        throw new Error("Unauthenticated");
+
+      const author_id = String(auth.author_id);
+
+      const normalized = normalizeTel(phone);
+      if (!normalized) throw new Error("Invalid phone");
+
+      const { result } = await runInTransaction(author_id, async (client: any) => {
+
+        // ✅ (1) log unblock event (ถ้ามี table นี้)
+        await client.query(
+          `
+          INSERT INTO scam_phone_unblocks
+            (user_id, phone, client_id, device_model, os_version, app_version)
+          VALUES
+            ($1::uuid, $2, $3::uuid, $4, $5, $6)
+          `,
+          [
+            author_id,
+            normalized,
+            client_id,
+            device_model ?? null,
+            os_version ?? null,
+            app_version ?? null,
+          ]
+        );
+
+        // ✅ (2) update summary
+        // ❌ เอา ctx ออก
+        const { rows } = await client.query(
+          `
+          INSERT INTO scam_phones_summary
+            (phone, report_count, last_report_at, risk_level, updated_at)
+          VALUES
+            ($1, 0, NULL, 0, now())
+          ON CONFLICT (phone)
+          DO UPDATE SET
+              risk_level = GREATEST(COALESCE(scam_phones_summary.risk_level, 0) - 10, 0),
+              updated_at = now()
+          RETURNING
+            phone,
+            report_count,
+            last_report_at,
+            risk_level,
+            updated_at,
+            COALESCE(is_deleted, false) AS is_deleted,
+            COALESCE(post_ids, ARRAY[]::uuid[]) AS post_ids;
+          `,
+          [normalized]
+        );
+
+        const row = rows?.[0] || {};
+
+        return {
+          phone: String(row.phone || normalized),
+          report_count: Number(row.report_count || 0),
+          last_report_at: toIsoOrNull(row.last_report_at),
+          risk_level: Number(row.risk_level || 0),
+          updated_at:
+            toIsoOrNull(row.updated_at) || new Date().toISOString(),
+
+          // เติม default field ให้ GraphQL
+          tags: [],                 // ถ้าไม่มีใน DB
+          is_deleted: !!row.is_deleted,
+          post_ids: uuidArrayToStringArray(row.post_ids),
+          ctx: null,                // 🔥 ใส่ null แทน (ไม่ต้อง SELECT จาก DB)
+        };
       });
 
       return result;
@@ -4127,7 +4435,13 @@ export const resolvers = {
         app_version,
       } = input;
 
-      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      // const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+
+      const auth =  requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
+      const author_id = String(auth.author_id);
 
       const bankName = String(bank_name || "").trim();
       const accRaw = String(account_no || "").trim();
@@ -4139,7 +4453,7 @@ export const resolvers = {
         });
       }
 
-      const { result } = await runInTransaction(author_id || null, async (client: any) => {
+      const { result } = await runInTransaction(author_id, async (client: any) => {
         // 1) insert report (กันยิงซ้ำด้วย client_id unique)
         try {
           await client.query(
@@ -4204,6 +4518,163 @@ export const resolvers = {
       return result;
     },
 
+    reportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
+      const { bank_name, account, note, client_id, device_model, os_version, app_version } = input;
+
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
+
+      const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
+      const accNorm = normalizeBankAccount(account);
+      if (!accNorm) throw new Error("Invalid account");
+
+      const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
+        // 1) insert report
+        await client.query(
+          `
+          INSERT INTO scam_bank_account_reports
+            (bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, $7, $8)
+          `,
+          [
+            bankNameSafe,
+            String(account || "").trim(),
+            accNorm,
+            note?.trim() ? note.trim() : null,
+            String(client_id),
+            device_model ?? null,
+            os_version ?? null,
+            app_version ?? null,
+          ]
+        );
+
+        // 2) upsert summary (ไม่มี source_reports / tags / ctx ใน DB)
+        const { rows } = await client.query(
+          `
+          INSERT INTO scam_bank_accounts_summary
+            (bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at)
+          VALUES
+            ($1, $2, $3, 1, now(), 10, now())
+          ON CONFLICT (bank_name, account_norm)
+          DO UPDATE SET
+            account_no     = EXCLUDED.account_no,
+            report_count   = COALESCE(scam_bank_accounts_summary.report_count,0) + 1,
+            last_report_at = now(),
+            risk_level     = GREATEST(COALESCE(scam_bank_accounts_summary.risk_level,0), 10),
+            updated_at     = now()
+          RETURNING
+            bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at
+          `,
+          [bankNameSafe, String(account || "").trim(), accNorm]
+        );
+
+        return shapeScamBankAccount(rows[0]);
+      });
+
+      return result;
+    },
+
+    unreportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
+      const { bank_name, account, client_id, device_model, os_version, app_version } = input;
+
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
+
+      const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
+      const accNorm = normalizeBankAccount(account);
+      if (!accNorm) throw new Error("Invalid account");
+
+      const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
+        // 1) ลบ report ล่าสุดของ “เครื่องนี้” (client_id)
+        //    (DB ไม่มี user_id ใน reports → ใช้ client_id เป็นตัวแทน)
+        await client.query(
+          `
+          DELETE FROM scam_bank_account_reports
+          WHERE id IN (
+            SELECT id
+            FROM scam_bank_account_reports
+            WHERE bank_name = $1
+              AND account_norm = $2
+              AND client_id = $3
+            ORDER BY created_at DESC
+            LIMIT 1
+          )
+          `,
+          [bankNameSafe, accNorm, String(client_id)]
+        );
+
+        // 2) rebuild summary จาก reports ที่เหลือ
+        const { rows: aggRows } = await client.query(
+          `
+          SELECT
+            COUNT(*)::int AS cnt,
+            MAX(created_at) AS last_at
+          FROM scam_bank_account_reports
+          WHERE bank_name = $1 AND account_norm = $2
+          `,
+          [bankNameSafe, accNorm]
+        );
+
+        const cnt = Number(aggRows?.[0]?.cnt || 0);
+        const lastAt = aggRows?.[0]?.last_at || null;
+
+        if (cnt <= 0) {
+          // ไม่มีรายงานเหลือ → ลบ summary ทิ้งเลย
+          await client.query(
+            `DELETE FROM scam_bank_accounts_summary WHERE bank_name = $1 AND account_norm = $2`,
+            [bankNameSafe, accNorm]
+          );
+
+          return shapeScamBankAccount({
+            bank_name: bankNameSafe,
+            account_no: String(account || "").trim(),
+            account_norm: accNorm,
+            report_count: 0,
+            last_report_at: null,
+            risk_level: 0,
+            updated_at: new Date().toISOString(),
+          });
+        }
+
+        const nextRisk = Math.min(cnt * 10, 100);
+
+        const { rows: upRows } = await client.query(
+          `
+          UPDATE scam_bank_accounts_summary
+          SET
+            report_count   = $3,
+            last_report_at = $4,
+            risk_level     = $5,
+            updated_at     = now()
+          WHERE bank_name = $1 AND account_norm = $2
+          RETURNING
+            bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at
+          `,
+          [bankNameSafe, accNorm, cnt, lastAt, nextRisk]
+        );
+
+        // ถ้าดันไม่มีแถว (edge) → insert ใหม่
+        const row = upRows?.[0];
+        if (row) return shapeScamBankAccount(row);
+
+        const { rows: insRows } = await client.query(
+          `
+          INSERT INTO scam_bank_accounts_summary
+            (bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, now())
+          RETURNING
+            bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at
+          `,
+          [bankNameSafe, String(account || "").trim(), accNorm, cnt, lastAt, nextRisk]
+        );
+
+        return shapeScamBankAccount(insRows[0]);
+      });
+
+      return result;
+    },
 
     ...phoneResolvers.Mutation
   },

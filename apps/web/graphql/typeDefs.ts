@@ -309,18 +309,6 @@ export const typeDefs = /* GraphQL */ `
     bank_accounts: [SearchBankAccountResult!]!
   }
 
-  type ScamPhone {
-    phone: String!
-    report_count: Int!
-    last_report_at: String
-    risk_level: Int!        # 0-100, คำนวณจาก report_count / weight อื่น ๆ
-    tags: [String!]!
-    updated_at: String!     # iso time, ใช้สำหรับ sync
-    is_deleted: Boolean!
-    post_ids: [ID!]!        # post ที่เกี่ยวข้องกับเบอร์นี้
-    ctx: JSON
-  }
-
   type ScamPhoneSnapshotPage {
     cursor: String
     items: [ScamPhone!]!
@@ -529,15 +517,43 @@ export const typeDefs = /* GraphQL */ `
     language: String
   }
 
+  
+
+  enum ScamPhoneReportCategory {
+    SPAM
+    SCAM
+    SALES
+    HARASS
+    OTHER
+  }
+
+  type ScamPhone {
+    phone: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    tags: [String!]!
+    updated_at: String!
+    is_deleted: Boolean!
+    post_ids: [String!]!
+    ctx: JSON
+  }
+
   input ReportScamPhoneInput {
     phone: String!
     note: String
     local_blocked: Boolean!
-    client_id: String!         # UUID v4
-    device_model: String       # เช่น Pixel 7
-    os_version: String         # Android 14
-    app_version: String        # 1.0.3
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+    category: ScamPhoneReportCategory
   }
+
+
+
+
+
 
   type BasicResponse {
     ok: Boolean!
@@ -560,6 +576,48 @@ export const typeDefs = /* GraphQL */ `
     ok: Boolean!
     message: String
     ticketId: String
+  }
+
+  input ReportScamBankAccountInput {
+    bank_name: String!
+    account: String!
+    note: String
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+  type ScamBankAccount {
+    account: String!
+    bank_name: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    tags: [String!]
+    updated_at: String!
+    is_deleted: Boolean!
+    post_ids: [ID!]
+    ctx: JSON
+  }
+
+   input UnblockScamPhoneInput {
+    phone: String!
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+
+   input UnreportScamBankAccountInput {
+    bank_name: String!
+    account: String!
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+    reason: String
   }
 
   type Mutation {
@@ -617,6 +675,7 @@ export const typeDefs = /* GraphQL */ `
     deleteComment(id: ID!): Boolean!
 
     reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
+    unblockScamPhone(input: UnblockScamPhoneInput!): ScamPhone!
 
     createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
 
@@ -625,5 +684,8 @@ export const typeDefs = /* GraphQL */ `
     unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
 
     reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
+
+    reportScamBankAccount(input: ReportScamBankAccountInput!): ScamBankAccount!
+    unreportScamBankAccount(input: UnreportScamBankAccountInput!): ScamBankAccount!
   }
 `;
