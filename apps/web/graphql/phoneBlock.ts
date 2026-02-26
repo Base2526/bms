@@ -10,6 +10,12 @@ function asUserId(v: unknown): string | null {
   return null;
 }
 
+function toIsoOrNull(v: any) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 // ใช้ดึง status รวม + ของฉัน
 async function getPhoneSafetyStatus(
   userId: string | null,
@@ -78,8 +84,8 @@ export const phoneResolvers = {
       const userId = asUserId(auth.author_id);
       if (!userId) throw new GraphQLError("Unauthorized");
 
-      const safeLimit = Math.min(Math.max(limit, 1), 200);
-      const safeOffset = Math.max(offset, 0);
+      const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
 
       const res = await query(
         `
@@ -87,33 +93,38 @@ export const phoneResolvers = {
           ub.phone,
           ub.phone_normalized,
           ub.created_at AS my_blocked_at,
-          s.blocked_by_count,
-          s.last_blocked_at,
-          s.report_count,
+
+          COALESCE(s.report_count, 0) AS report_count,
           s.last_report_at,
-          s.risk_level,
-          s.updated_at
+          COALESCE(s.risk_level, 0) AS risk_level,
+          COALESCE(s.updated_at, now()) AS updated_at
         FROM user_blocked_phones ub
         LEFT JOIN scam_phones_summary s
-          ON s.phone_normalized = ub.phone_normalized
-        WHERE ub.user_id = $1
+          ON s.phone = ub.phone_normalized
+        WHERE ub.user_id = $1::uuid
         ORDER BY ub.created_at DESC
         LIMIT $2 OFFSET $3
         `,
         [userId, safeLimit, safeOffset]
       );
 
-      return res.rows.map((r: any) => ({
-        phone: r.phone,
-        phone_normalized: r.phone_normalized,
+      return (res.rows || []).map((r: any) => ({
+        phone: String(r.phone || ""),
+        phone_normalized: String(r.phone_normalized || ""),
+
+        // ของฉัน
         my_blocked: true,
-        my_blocked_at: r.my_blocked_at ? new Date(r.my_blocked_at).toISOString() : null,
-        blocked_by_count: Number(r.blocked_by_count || 0),
-        last_blocked_at: r.last_blocked_at ? new Date(r.last_blocked_at).toISOString() : null,
+        my_blocked_at: toIsoOrNull(r.my_blocked_at),
+
+        // community block (ตอนนี้ DB ยังไม่มี -> default)
+        blocked_by_count: 0,
+        last_blocked_at: null,
+
+        // report/community risk
         report_count: Number(r.report_count || 0),
-        last_report_at: r.last_report_at ? new Date(r.last_report_at).toISOString() : null,
+        last_report_at: toIsoOrNull(r.last_report_at),
         risk_level: Number(r.risk_level || 0),
-        updated_at: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+        updated_at: toIsoOrNull(r.updated_at) || new Date().toISOString(),
       }));
     },
   },

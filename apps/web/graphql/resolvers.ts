@@ -167,14 +167,14 @@ function uuidArrayToStringArray(v: any): string[] {
   return [];
 }
 
-function arrText(v: any): string[] {
-  if (!v) return [];
-  if (Array.isArray(v)) return v.map((x) => String(x));
-  return [];
-}
+function toIso(v: any, fallback?: any) {
+  const d1 = v ? new Date(v) : null;
+  if (d1 && !Number.isNaN(d1.getTime())) return d1.toISOString();
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
+  const d2 = fallback ? new Date(fallback) : null;
+  if (d2 && !Number.isNaN(d2.getTime())) return d2.toISOString();
+
+  return new Date().toISOString();
 }
 
 function shapeScamBankAccount(row: any) {
@@ -1535,10 +1535,10 @@ export const resolvers = {
       return { posts, users, phones, bank_accounts };
     },
     scamPhonesSnapshot: async (
-      _: any,
-      { cursor, limit }: { cursor?: string | null; limit: number },
-      ctx: any
-    ) => {
+        _: any,
+        { cursor, limit }: { cursor?: string | null; limit: number },
+        ctx: any
+      ) => {
       console.log("[Query] scamPhonesSnapshot");
 
       const since = cursor || "1970-01-01T00:00:00Z";
@@ -1639,10 +1639,9 @@ export const resolvers = {
         items,
       };
     },
-     // ถ้าคุณมีอยู่แล้วใช้ของเดิมได้ อันนี้เป็นตัวอย่างให้ field ตรงกับ mobile query
     searchScamPhones: async (_: any, { q, limit }: any, ctx: any) => {
-      const auth = requireAuth(ctx);
-      if (!auth.isAuthenticated) throw new Error("Unauthenticated");
+      // const auth = requireAuth(ctx);
+      // if (!auth.isAuthenticated) throw new Error("Unauthenticated");
 
       const term = normalizePhone(q) || String(q || "").trim();
       const lim = Math.max(1, Math.min(Number(limit || 30), 50));
@@ -1784,13 +1783,131 @@ export const resolvers = {
 
       return rows.map(mapRow);
     },
-
-    // ✅ alias: ให้ client เรียก searchScamBankAccounts ได้ (ไปใช้ตัวเดิม)
     searchScamBankAccounts: async (_: any, { q, limit }: { q: string; limit: number }, ctx: any) => {
       return resolvers.Query.searchBankAccounts(_, { q, limit }, ctx);
     },
+    myReportedPhones: async (
+      _: any,
+      { limit, offset }: { limit: number; offset: number },
+      ctx: any
+    ) => {
+      const auth = requireAuth(ctx);
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new GraphQLError("Unauthenticated");
+      }
 
+      const userId = String(auth.author_id);
+      const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
 
+      const { rows } = await query(
+        `
+        SELECT
+          r.phone,
+          r.phone_normalized,
+          r.category,
+          r.note,
+          r.created_at,
+          s.updated_at,
+          COALESCE(s.report_count, 0) AS report_count,
+          COALESCE(s.risk_level, 0) AS risk_level
+        FROM scam_phone_reports r
+        LEFT JOIN scam_phones_summary s
+          ON s.phone = r.phone_normalized
+        WHERE r.user_id = $1::uuid
+        ORDER BY r.created_at DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [userId, safeLimit, safeOffset]
+      );
+
+      return (rows || []).map((row: any) => ({
+        phone: String(row.phone || row.phone_normalized || ""),
+        created_at: toIso(row.created_at),
+        updated_at: toIso(row.updated_at, row.created_at),
+        report_count: Number(row.report_count || 0),
+        risk_level: Number(row.risk_level || 0),
+
+        // ✅ DB ไม่มี tags ใน summary -> ให้ default เป็น []
+        tags: [],
+
+        // ✅ category ใน DB เป็น text -> ให้ normalize เป็น enum ที่ GraphQL รู้จัก
+        category: (() => {
+          const c = String(row.category || "").toUpperCase();
+          if (["SPAM", "SCAM", "SALES", "HARASS", "OTHER"].includes(c)) return c;
+          return "OTHER";
+        })(),
+
+        note: row.note ?? null,
+
+        // ✅ DB ไม่มี post_id ใน reports -> ให้ null
+        post_id: null,
+      }));
+    },
+    myReportedBankAccounts: async (
+        _: any,
+        { limit, offset }: { limit: number; offset: number },
+        ctx: any
+      ) => {
+      const auth = requireAuth(ctx);
+      if (!auth?.isAuthenticated || !auth?.author_id) {
+        throw new GraphQLError("Unauthenticated");
+      }
+
+      const userId = String(auth.author_id);
+      const safeLimit = Math.min(Math.max(Number(limit) || 1, 1), 200);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
+
+      // ✅ IMPORTANT: ตารางคุณชื่อ scam_bank_account_reports + scam_bank_accounts_summary
+      // ✅ IMPORTANT: reports มี account_norm / created_at / note
+      // ✅ IMPORTANT: summary มี report_count / risk_level / updated_at / last_report_at
+      const { rows } = await query(
+        `
+        SELECT
+          r.bank_name,
+          r.account_no,
+          r.account_norm,
+          r.note,
+          r.created_at,
+          s.updated_at AS summary_updated_at,
+          COALESCE(s.report_count, 0) AS report_count,
+          COALESCE(s.risk_level, 0) AS risk_level
+        FROM scam_bank_account_reports r
+        LEFT JOIN scam_bank_accounts_summary s
+          ON s.bank_name = r.bank_name
+         AND s.account_norm = r.account_norm
+        WHERE r.user_id = $1::uuid
+        ORDER BY r.created_at DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [userId, safeLimit, safeOffset]
+      );
+
+      return rows.map((r: any) => {
+        const acc = normalizeBankAccount(r.account_no || r.account_norm || "");
+        const bankName = String(r.bank_name || "UNKNOWN");
+        const createdAt = toIso(r.created_at) || new Date().toISOString();
+        const updatedAt = toIso(r.summary_updated_at) || createdAt;
+
+        return {
+          account: acc,
+          bank_name: bankName,
+          created_at: createdAt,
+          updated_at: updatedAt,
+          report_count: Number(r.report_count || 0),
+          risk_level: Number(r.risk_level || 0),
+
+          // DB ไม่มี tags ใน summary ตามรูป
+          tags: [],
+
+          // DB ไม่มี category/post_id ใน reports ตามรูป
+          category: null,
+          post_id: null,
+
+          note: r.note ?? null,
+        };
+      });
+    },
     ...phoneResolvers.Query
   },
   Mutation: {
@@ -4530,19 +4647,39 @@ export const resolvers = {
 
       const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
         // 1) insert report
+        // await client.query(
+        //   `
+        //   INSERT INTO scam_bank_account_reports
+        //     (bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version)
+        //   VALUES
+        //     ($1, $2, $3, $4, $5, $6, $7, $8)
+        //   `,
+        //   [
+        //     bankNameSafe,
+        //     String(account || "").trim(),
+        //     accNorm,
+        //     note?.trim() ? note.trim() : null,
+        //     String(client_id),
+        //     device_model ?? null,
+        //     os_version ?? null,
+        //     app_version ?? null,
+        //   ]
+        // );
+
         await client.query(
           `
           INSERT INTO scam_bank_account_reports
-            (bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version)
+            (id, user_id, bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version, created_at)
           VALUES
-            ($1, $2, $3, $4, $5, $6, $7, $8)
+            (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, now())
           `,
           [
+            author_id,
             bankNameSafe,
-            String(account || "").trim(),
-            accNorm,
-            note?.trim() ? note.trim() : null,
-            String(client_id),
+            accountNoSafe,
+            accountNormSafe,
+            noteSafe,
+            String(client_id || ""),     // ✅ client_id เป็น text ตามตาราง
             device_model ?? null,
             os_version ?? null,
             app_version ?? null,

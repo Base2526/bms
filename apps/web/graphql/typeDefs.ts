@@ -389,6 +389,32 @@ export const typeDefs = /* GraphQL */ `
     | SearchPhoneReportResult
     | SearchBankAccountResult
 
+
+  type MyReportedPhone {
+    phone: String!
+    created_at: String!
+    updated_at: String!
+    report_count: Int!
+    risk_level: Int!
+    tags: [String!]!
+    category: ScamPhoneReportCategory!
+    note: String
+    post_id: String
+  }
+
+  type MyReportedBankAccount {
+    account: String!
+    bank_name: String!
+    created_at: String!
+    updated_at: String!
+    report_count: Int!
+    risk_level: Int!
+    tags: [String!]!
+    category: ScamPhoneReportCategory
+    note: String
+    post_id: String
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -450,6 +476,10 @@ export const typeDefs = /* GraphQL */ `
 
     # (optional) unified search array (client ใช้ __typename)
     globalSearchUnified(q: String!, limit: Int! = 20): [SearchType!]!
+
+    myReportedPhones(limit: Int!, offset: Int!): [MyReportedPhone!]!
+
+    myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
   }
 
   input TelNumberInput {
@@ -518,7 +548,6 @@ export const typeDefs = /* GraphQL */ `
   }
 
   
-
   enum ScamPhoneReportCategory {
     SPAM
     SCAM
