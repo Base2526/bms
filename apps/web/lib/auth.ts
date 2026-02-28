@@ -24,12 +24,13 @@ function unauthorizedScope(opts: RequireAuthOptions) {
 }
 
 export function requireAuth(ctx: any, opts: RequireAuthOptions = {}) {
+
+  // console.log("[requireAuth] =" ,ctx);
   const scopeRaw = ctx?.scope;
   const scope = (typeof scopeRaw === "string" ? scopeRaw : "")
     .trim()
     .toLowerCase() as Scope | "";
 
-  // ✅ รองรับ android
   const allowed: Scope[] = ["web", "admin", "android"];
 
   if (!scope || !allowed.includes(scope as Scope)) {
