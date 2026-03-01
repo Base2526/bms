@@ -4359,6 +4359,8 @@ export const resolvers = {
         app_version,
       } = input;
 
+      console.log("[reportScamPhone] input:", input);
+
       const auth = requireAuth(ctx);
       if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
       const author_id = String(auth.author_id);
@@ -4638,12 +4640,18 @@ export const resolvers = {
     reportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
       const { bank_name, account, note, client_id, device_model, os_version, app_version } = input;
 
+      console.log("[reportScamBankAccount] input:", input);
+
       const auth = requireAuth(ctx);
       if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
 
       const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
       const accNorm = normalizeBankAccount(account);
       if (!accNorm) throw new Error("Invalid account");
+
+      const accountNoSafe = String(account || "").trim();
+      const accountNormSafe = accNorm;
+      const noteSafe = note?.trim() ? note.trim() : null;
 
       const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
         // 1) insert report
@@ -4672,14 +4680,15 @@ export const resolvers = {
             (id, user_id, bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version, created_at)
           VALUES
             (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, now())
+          ON CONFLICT (client_id) DO NOTHING
           `,
           [
-            author_id,
+            String(auth.author_id),
             bankNameSafe,
             accountNoSafe,
             accountNormSafe,
             noteSafe,
-            String(client_id || ""),     // ✅ client_id เป็น text ตามตาราง
+            String(client_id || ""),
             device_model ?? null,
             os_version ?? null,
             app_version ?? null,
