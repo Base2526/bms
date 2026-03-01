@@ -1,11 +1,12 @@
 'use client';
 
+import React from 'react';
+
 import {
   Card,
   Descriptions,
   Image,
   Divider,
-  Table,
   Typography,
   Button,
   Space,
@@ -15,8 +16,11 @@ import {
   Col,
   Grid,
   Modal,
+  message,
+  theme,
 } from 'antd';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   MessageOutlined,
   DeleteOutlined,
@@ -25,6 +29,10 @@ import {
   FacebookFilled,
   ShareAltOutlined,
   LinkOutlined,
+  PhoneOutlined,
+  BankOutlined,
+  LockOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 
 import type { PostRecord } from './PostForm';
@@ -33,12 +41,27 @@ import BookmarkButton from '@/components/BookmarkButton';
 import { formatDate } from '@/lib/date';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 
+import { TelBlockDialog } from '@/components/jachoei/TelBlockDialog';
+import { BankReportDialog } from '@/components/jachoei/BankReportDialog';
+
+import type { TelBlockDialogValue } from '@/components/jachoei/TelBlockDialog';
+import type { BankReportDialogValue } from '@/components/jachoei/BankReportDialog';
+
+import { useJachoeiLocalState } from '@/app/hooks/useJachoeiLocalState';
+import { useJachoeiMutations } from '@/app/hooks/useJachoeiMutations';
+import {
+  getDontAskAgainForTel,
+  normalizeBank,
+  normalizeTel,
+  setDontAskAgainForTel,
+} from '@/app/lib/jachoeiLocalState';
+
 const { useBreakpoint } = Grid;
 
 type Props = {
   post: PostRecord | null;
   loading?: boolean;
-  onDelete?: (id?: any) => void;
+  onDelete?: (id: string) => void;
   deleting?: boolean;
   title?: string;
 
@@ -55,8 +78,8 @@ type SharePayload = {
   text: string;
 };
 
-function buildSharePayload(post: any, baseUrl: string): SharePayload {
-  const url = `${baseUrl}/post/${post?.id}`;
+function buildSharePayload(post: PostRecord, baseUrl: string): SharePayload {
+  const url = `${baseUrl}/post/${String(post?.id ?? '')}`;
   const title = post?.title ? String(post.title) : 'จ่าเฉย (Jachoei)';
   const detail = post?.detail ? String(post.detail).replace(/\s+/g, ' ').trim() : '';
   const text = detail
@@ -70,7 +93,238 @@ async function copyToClipboard(text: string) {
   await navigator.clipboard.writeText(text);
 }
 
-function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: string; isMobile: boolean }) {
+function maskAccountForDisplay(accountRaw: string): string {
+  const s = String(accountRaw ?? '').trim();
+  if (!s) return '';
+
+  const digits = s.replace(/[^\d]/g, '');
+  if (digits.length <= 6) return s;
+
+  const head = digits.slice(0, 3);
+  const tail = digits.slice(-3);
+  return `${head} •••• ${tail}`;
+}
+
+function TelChipRow({
+  tel,
+  blocked,
+  onAction,
+}: {
+  tel: string;
+  blocked: boolean;
+  onAction: (telRaw: string) => void;
+}) {
+  const { token } = theme.useToken();
+  const telRaw = String(tel ?? '');
+
+  return (
+    <div
+      style={{
+        height: 42,
+        width: '100%',
+        borderRadius: 999,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        padding: '6px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+      }}
+    >
+      <Space size={8} style={{ minWidth: 0, flex: 1 }}>
+        <PhoneOutlined style={{ color: token.colorTextSecondary }} />
+        <Typography.Text
+          ellipsis={{ tooltip: telRaw }}
+          style={{ minWidth: 0, flex: 1, fontSize: 13 }}
+        >
+          {telRaw}
+        </Typography.Text>
+
+        <Tooltip title="Copy">
+          <Button
+            aria-label={`Copy tel ${telRaw}`}
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
+              try {
+                await copyToClipboard(telRaw);
+                message.success('Copied');
+              } catch {
+                message.error('Copy failed');
+              }
+            }}
+          />
+        </Tooltip>
+      </Space>
+
+      <Space size={8} align="center">
+        {blocked ? (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 26,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: `1px solid ${token.colorErrorBorder}`,
+              background: token.colorBgContainer,
+              color: token.colorErrorText,
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <LockOutlined />
+            <span>บล็อกแล้ว</span>
+          </div>
+        ) : null}
+
+        <Button
+          aria-label={blocked ? `Manage tel ${telRaw}` : `Block tel ${telRaw}`}
+          type="text"
+          size="small"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onAction(telRaw);
+          }}
+          style={{
+            paddingInline: 8,
+            height: 28,
+            borderRadius: 999,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+          }}
+        >
+          {blocked ? 'จัดการ' : 'บล็อก'}
+        </Button>
+      </Space>
+    </div>
+  );
+}
+
+function BankChipRow({
+  bankName,
+  account,
+  reported,
+  onAction,
+}: {
+  bankName: string | null | undefined;
+  account: string;
+  reported: boolean;
+  onAction: (bankName: string | null | undefined, accountRaw: string) => void;
+}) {
+  const { token } = theme.useToken();
+  const bankLabel = String(bankName ?? '').trim();
+  const accountRaw = String(account ?? '').trim();
+  const displayAccount = maskAccountForDisplay(accountRaw);
+  const displayText = bankLabel ? `${bankLabel} • ${displayAccount || accountRaw}` : displayAccount || accountRaw;
+
+  return (
+    <div
+      style={{
+        height: 42,
+        width: '100%',
+        borderRadius: 999,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        padding: '6px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+      }}
+    >
+      <Space size={8} style={{ minWidth: 0, flex: 1 }}>
+        <BankOutlined style={{ color: token.colorTextSecondary }} />
+        <Typography.Text
+          ellipsis={{ tooltip: displayText }}
+          style={{ minWidth: 0, flex: 1, fontSize: 13 }}
+        >
+          {displayText || '-'}
+        </Typography.Text>
+
+        <Tooltip title="Copy">
+          <Button
+            aria-label={`Copy bank account ${accountRaw}`}
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
+              try {
+                await copyToClipboard(accountRaw);
+                message.success('Copied');
+              } catch {
+                message.error('Copy failed');
+              }
+            }}
+          />
+        </Tooltip>
+      </Space>
+
+      <Space size={8} align="center">
+        {reported ? (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 26,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: `1px solid ${token.colorSuccessBorder}`,
+              background: token.colorBgContainer,
+              color: token.colorSuccessText,
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <CheckCircleOutlined />
+            <span>รายงานแล้ว</span>
+          </div>
+        ) : null}
+
+        <Button
+          aria-label={reported ? `Undo report bank account ${accountRaw}` : `Report bank account ${accountRaw}`}
+          type="text"
+          size="small"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onAction(bankName ?? null, accountRaw);
+          }}
+          style={{
+            paddingInline: 8,
+            height: 28,
+            borderRadius: 999,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+          }}
+        >
+          {reported ? 'ยกเลิกรายงาน' : 'รายงาน'}
+        </Button>
+      </Space>
+    </div>
+  );
+}
+
+function ShareActionButton({
+  post,
+  baseUrl,
+  isMobile,
+}: {
+  post: PostRecord;
+  baseUrl: string;
+  isMobile: boolean;
+}) {
   const [open, setOpen] = React.useState(false);
 
   const payload = React.useMemo(() => buildSharePayload(post, baseUrl), [post, baseUrl]);
@@ -80,14 +334,15 @@ function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: st
     window.open(fb, '_blank', 'noopener,noreferrer');
   };
 
-  const handleShare = async (e: any) => {
+  const handleShare = async (e: React.MouseEvent<HTMLElement>) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
     try {
-      const nav: any = navigator as any;
+      const nav = navigator as Navigator & {
+        share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+      };
 
-      // ✅ Native share (มือถือ/บาง desktop)
       if (nav?.share) {
         await nav.share({
           title: payload.title,
@@ -97,11 +352,10 @@ function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: st
         return;
       }
 
-      // ✅ Fallback modal
       setOpen(true);
-    } catch (err: any) {
-      // ผู้ใช้กด cancel บาง browser จะ throw AbortError
-      if (String(err?.name || '').toLowerCase().includes('abort')) return;
+    } catch (err: unknown) {
+      const name = err instanceof Error ? (err as Error & { name?: string }).name : undefined;
+      if (String(name || '').toLowerCase().includes('abort')) return;
       setOpen(true);
     }
   };
@@ -140,9 +394,9 @@ function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: st
               onClick={async () => {
                 try {
                   await copyToClipboard(payload.url);
-                  message?.success?.('Copied link'); // safeguard if message is not available
+                  message.success('Copied link');
                 } catch {
-                  // fallback to antd message if available
+                  message.error('Copy failed');
                 }
               }}
             >
@@ -154,7 +408,10 @@ function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: st
               onClick={async () => {
                 try {
                   await copyToClipboard(`${payload.title}\n${payload.url}`);
-                } catch {}
+                  message.success('Copied text');
+                } catch {
+                  message.error('Copy failed');
+                }
               }}
             >
               Copy text
@@ -182,12 +439,23 @@ function ShareActionButton({ post, baseUrl, isMobile }: { post: any; baseUrl: st
   );
 }
 
-/**
- * IMPORTANT:
- * ใช้ message ของ antd ต้อง import message
- */
-import { message } from 'antd';
-import React from 'react';
+type TelDialogState = { open: boolean; tel: string; dontAskStored: boolean };
+type BankDialogState = { open: boolean; bankName: string | null; account: string };
+
+type PostDetails = PostRecord & {
+  id: string | number;
+  transfer_amount?: number | null;
+  transfer_date?: string | null;
+  website?: string | null;
+  province_name?: string | null;
+  province_id?: string | null;
+  fb_published_at?: string | null;
+  fb_status?: string | null;
+  fb_permalink_url?: string | null;
+  fb_social_post_id?: string | null;
+  author?: { id: string | number; name?: string | null } | null;
+  is_bookmarked?: boolean | null;
+};
 
 export default function PostView({
   post,
@@ -198,15 +466,262 @@ export default function PostView({
   onClone,
   cloning,
 }: Props) {
+  // ✅ Hooks MUST be called unconditionally (before any return)
   const { user } = useSessionCtx();
+  const router = useRouter();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
 
-  // ✅ base url สำหรับแชร์ (client-only)
-  const BASE_URL =
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://jachoei.com');
+  const jachoei = useJachoeiLocalState();
+  const jachoeiMut = useJachoeiMutations();
 
+  const requireAuthOrRedirect = React.useCallback((): boolean => {
+    if (user) return true;
+
+    const nextPath =
+      typeof window !== 'undefined'
+        ? `${window.location.pathname}${window.location.search || ''}`
+        : '/';
+
+    router.push(`/login?next=${encodeURIComponent(nextPath)}`);
+    return false;
+  }, [router, user]);
+
+  const [telDialog, setTelDialog] = React.useState<TelDialogState>({
+    open: false,
+    tel: '',
+    dontAskStored: false,
+  });
+  const [bankDialog, setBankDialog] = React.useState<BankDialogState>({
+    open: false,
+    bankName: null,
+    account: '',
+  });
+
+  const BASE_URL = React.useMemo(() => {
+    return (
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : 'https://jachoei.com')
+    );
+  }, []);
+
+  // ✅ Derived safe values (work even when post is null)
+  const p = React.useMemo<PostDetails | null>(() => {
+    if (!post || post.id == null) return null;
+    return { ...post, id: post.id } as PostDetails;
+  }, [post]);
+
+  const postId = React.useMemo(() => (p?.id != null ? String(p.id) : ''), [p]);
+  const authorId = React.useMemo(() => {
+    const id = p?.author?.id;
+    return id != null ? String(id) : null;
+  }, [p]);
+  const userId = React.useMemo(() => {
+    const id = user?.id;
+    return id != null ? String(id) : null;
+  }, [user]);
+
+  const telNumbers = React.useMemo(() => p?.tel_numbers ?? [], [p]);
+  const sellerAccounts = React.useMemo(() => p?.seller_accounts ?? [], [p]);
+
+  const fbStatus = React.useMemo(() => String(p?.fb_status ?? '').toUpperCase(), [p]);
+  const fbPermalinkUrl = React.useMemo(() => String(p?.fb_permalink_url ?? '').trim(), [p]);
+  const isFbPublished = React.useMemo(
+    () => fbStatus === 'PUBLISHED' && !!fbPermalinkUrl,
+    [fbStatus, fbPermalinkUrl]
+  );
+
+  const performTelConfirm = React.useCallback(
+    async (telRaw: string, value: TelBlockDialogValue): Promise<boolean> => {
+      const tel = normalizeTel(telRaw);
+      if (!tel) return false;
+      if (!requireAuthOrRedirect()) return false;
+
+      const prevEntry = jachoei.getBlockedTelEntry(tel);
+      const wasBlocked = jachoei.isBlockedTel(tel);
+
+      const wantReport = !!value.wantReport;
+      const nextCategory = wantReport ? value.category : undefined;
+      const nextNote = wantReport ? value.note : '';
+
+      const optimisticEntry = {
+        wantReport,
+        category: nextCategory,
+        note: nextNote,
+        blockedAt: prevEntry?.blockedAt ?? new Date().toISOString(),
+        ctx: prevEntry?.ctx,
+        tags: prevEntry?.tags,
+      };
+
+      jachoei.setBlockedTelEntry(tel, optimisticEntry);
+
+      try {
+        const payload = await jachoeiMut.reportPhone({
+          phone: tel,
+          category: nextCategory,
+          note: wantReport ? nextNote : null,
+        });
+
+        jachoei.setBlockedTelEntry(tel, {
+          ...optimisticEntry,
+          blockedAt: payload.updated_at ?? optimisticEntry.blockedAt,
+          ctx: payload.ctx ?? optimisticEntry.ctx,
+          tags: payload.tags ?? optimisticEntry.tags,
+        });
+
+        message.success(wasBlocked ? 'Updated report' : 'Blocked');
+        return true;
+      } catch (err: unknown) {
+        if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
+        else jachoei.removeBlockedTelEntry(tel);
+
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        message.error(msg);
+        return false;
+      }
+    },
+    [jachoei, jachoeiMut, requireAuthOrRedirect]
+  );
+
+  const performTelUndo = React.useCallback(
+    async (telRaw: string): Promise<boolean> => {
+      const tel = normalizeTel(telRaw);
+      if (!tel) return false;
+      if (!requireAuthOrRedirect()) return false;
+
+      const prevEntry = jachoei.getBlockedTelEntry(tel);
+      const wasBlocked = jachoei.isBlockedTel(tel);
+
+      jachoei.removeBlockedTelEntry(tel);
+
+      try {
+        await jachoeiMut.unblockPhone({ phone: tel });
+        message.success('Unblocked');
+        return true;
+      } catch (err: unknown) {
+        if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
+        else if (wasBlocked) jachoei.setBlockedTelEntry(tel, {});
+
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        message.error(msg);
+        return false;
+      }
+    },
+    [jachoei, jachoeiMut, requireAuthOrRedirect]
+  );
+
+  const performBankConfirm = React.useCallback(
+    async (bankName: string | null | undefined, accountRaw: string, value: BankReportDialogValue): Promise<boolean> => {
+      const account = normalizeBank(accountRaw);
+      if (!account) return false;
+      if (!requireAuthOrRedirect()) return false;
+
+      const prevEntry = jachoei.getReportedBankEntry(account);
+      const wasReported = jachoei.isReportedBank(account);
+
+      const optimisticEntry = {
+        bank_name: bankName ?? prevEntry?.bank_name ?? null,
+        category: value.category,
+        note: value.note,
+        reportedAt: prevEntry?.reportedAt ?? new Date().toISOString(),
+        ctx: prevEntry?.ctx,
+        tags: prevEntry?.tags,
+      };
+
+      jachoei.setReportedBankEntry(account, optimisticEntry);
+
+      try {
+        const payload = await jachoeiMut.reportBank({
+          account,
+          bankName,
+          category: value.category,
+          note: value.note,
+        });
+
+        jachoei.setReportedBankEntry(account, {
+          ...optimisticEntry,
+          bank_name: payload.bank_name ?? optimisticEntry.bank_name,
+          reportedAt: payload.updated_at ?? optimisticEntry.reportedAt,
+          ctx: payload.ctx ?? optimisticEntry.ctx,
+          tags: payload.tags ?? optimisticEntry.tags,
+        });
+
+        message.success(wasReported ? 'Updated report' : 'Reported');
+        return true;
+      } catch (err: unknown) {
+        if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
+        else jachoei.removeReportedBankEntry(account);
+
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        message.error(msg);
+        return false;
+      }
+    },
+    [jachoei, jachoeiMut, requireAuthOrRedirect]
+  );
+
+  const performBankUndo = React.useCallback(
+    async (bankName: string | null | undefined, accountRaw: string): Promise<boolean> => {
+      const account = normalizeBank(accountRaw);
+      if (!account) return false;
+      if (!requireAuthOrRedirect()) return false;
+
+      const prevEntry = jachoei.getReportedBankEntry(account);
+      const wasReported = jachoei.isReportedBank(account);
+
+      jachoei.removeReportedBankEntry(account);
+
+      try {
+        await jachoeiMut.unreportBank({
+          account,
+          bankName,
+          category: prevEntry?.category,
+          reason: prevEntry?.note ?? null,
+        });
+        message.success('Unreported');
+        return true;
+      } catch (err: unknown) {
+        if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
+        else if (wasReported) jachoei.setReportedBankEntry(account, { bank_name: bankName ?? null });
+
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        message.error(msg);
+        return false;
+      }
+    },
+    [jachoei, jachoeiMut, requireAuthOrRedirect]
+  );
+
+  const openTelBlockFlow = React.useCallback(
+    (telRaw: string) => {
+      const tel = normalizeTel(telRaw);
+      if (!tel) return;
+
+      if (!requireAuthOrRedirect()) return;
+
+      const skipConfirm = getDontAskAgainForTel(tel);
+      const blockedNow = jachoei.isBlockedTel(tel);
+
+      if (skipConfirm && !blockedNow) {
+        setDontAskAgainForTel(tel, true);
+        void performTelConfirm(tel, { wantReport: true, category: 'SCAM', note: '', dontAskAgain: true });
+        return;
+      }
+
+      setTelDialog({ open: true, tel, dontAskStored: skipConfirm });
+    },
+    [jachoei, performTelConfirm, requireAuthOrRedirect]
+  );
+
+  const openBankReportFlow = React.useCallback((bankName: string | null | undefined, accountRaw: string) => {
+    const account = normalizeBank(accountRaw);
+    if (!account) return;
+
+    if (!requireAuthOrRedirect()) return;
+    setBankDialog({ open: true, bankName: bankName ?? null, account });
+  }, [requireAuthOrRedirect]);
+
+  // ✅ Early returns AFTER hooks are defined
   if (!post) {
     return (
       <Card loading={loading} title={title ?? 'Post [x]'}>
@@ -215,13 +730,13 @@ export default function PostView({
     );
   }
 
-  const telNumbers = (post as any).tel_numbers || [];
-  const sellerAccounts = (post as any).seller_accounts || [];
-
-  // ✅ Facebook icon behavior
-  const fbStatus = String((post as any).fb_status ?? '').toUpperCase();
-  const fbPermalinkUrl = String((post as any).fb_permalink_url ?? '').trim();
-  const isFbPublished = fbStatus === 'PUBLISHED' && !!fbPermalinkUrl;
+  if (!p) {
+    return (
+      <Card loading={loading} title={title ?? 'Post [x]'}>
+        Invalid post.
+      </Card>
+    );
+  }
 
   const fbBtn = (
     <Button
@@ -249,23 +764,11 @@ export default function PostView({
       }}
       extra={
         <Space size={isMobile ? 4 : 8} wrap>
-         
-
-          {/* ✅ Facebook icon (click new tab only if PUBLISHED + permalink_url exists) */}
           <Tooltip
-            title={
-              isFbPublished
-                ? 'Open Facebook post'
-                : `Facebook: ${fbStatus || 'NOT PUBLISHED'}`
-            }
+            title={isFbPublished ? 'Open Facebook post' : `Facebook: ${fbStatus || 'NOT PUBLISHED'}`}
           >
             {isFbPublished ? (
-              <a
-                href={fbPermalinkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: 'inline-flex' }}
-              >
+              <a href={fbPermalinkUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex' }}>
                 {fbBtn}
               </a>
             ) : (
@@ -273,52 +776,35 @@ export default function PostView({
             )}
           </Tooltip>
 
-          {user?.id !== (post as any)?.author?.id && (
-            <BookmarkButton
-              postId={String((post as any).id)}
-              defaultBookmarked={(post as any)?.is_bookmarked ?? false}
-            />
+          {userId !== authorId && (
+            <BookmarkButton postId={postId} defaultBookmarked={p.is_bookmarked ?? false} />
           )}
 
-          {user?.id !== (post as any)?.author?.id && (
-            <Link href={`/chat?to=${(post as any)?.author.id}`} prefetch={false}>
-              <Button
-                type="text"
-                size={isMobile ? 'small' : 'middle'}
-                icon={<MessageOutlined />}
-                title="Chat with"
-              />
+          {userId !== authorId && authorId && (
+            <Link href={`/chat?to=${authorId}`} prefetch={false}>
+              <Button type="text" size={isMobile ? 'small' : 'middle'} icon={<MessageOutlined />} title="Chat with" />
             </Link>
           )}
 
-          {user?.id === (post as any)?.author.id && (
+          {userId === authorId && (
             <>
               <Tooltip title="Clone">
                 <Button
                   type="text"
                   size={isMobile ? 'small' : 'middle'}
-                  onClick={() => onClone?.(String((post as any)?.id))}
+                  onClick={() => onClone?.(postId)}
                   loading={cloning}
                   icon={<CopyOutlined />}
                 />
               </Tooltip>
 
               <Tooltip title="Edit">
-                <Link href={`/post/${(post as any)?.id}/edit`} prefetch={false}>
-                  <Button
-                    type="text"
-                    size={isMobile ? 'small' : 'middle'}
-                    icon={<EditOutlined />}
-                  />
+                <Link href={`/post/${postId}/edit`} prefetch={false}>
+                  <Button type="text" size={isMobile ? 'small' : 'middle'} icon={<EditOutlined />} />
                 </Link>
               </Tooltip>
 
-              <Popconfirm
-                title="Confirm delete?"
-                okText="Yes"
-                cancelText="No"
-                onConfirm={() => onDelete?.((post as any)?.id)}
-              >
+              <Popconfirm title="Confirm delete?" okText="Yes" cancelText="No" onConfirm={() => onDelete?.(postId)}>
                 <Tooltip title="Delete">
                   <Button
                     type="text"
@@ -332,14 +818,70 @@ export default function PostView({
             </>
           )}
 
-           {/* ✅ Share (เหมือนหน้าบน) */}
           <ShareActionButton post={post} baseUrl={BASE_URL} isMobile={isMobile} />
         </Space>
       }
     >
-      {/* 🧱 Layout หลัก: ซ้าย = รายละเอียด, ขวา = Comments (stack บน mobile) */}
+      {/* Dialogs */}
+      <TelBlockDialog
+        open={telDialog.open}
+        tel={telDialog.tel}
+        blocked={telDialog.tel ? jachoei.isBlockedTel(normalizeTel(telDialog.tel)) : false}
+        defaultDontAskAgain={telDialog.dontAskStored}
+        initialWantReport={jachoei.getBlockedTelEntry(telDialog.tel)?.wantReport}
+        initialCategory={jachoei.getBlockedTelEntry(telDialog.tel)?.category}
+        initialNote={jachoei.getBlockedTelEntry(telDialog.tel)?.note}
+        confirmLoading={jachoeiMut.loading.reportPhone}
+        undoLoading={jachoeiMut.loading.unblockPhone}
+        onCancel={() => setTelDialog({ open: false, tel: '', dontAskStored: false })}
+        onConfirm={(value) => {
+          const tel = normalizeTel(telDialog.tel);
+          if (!tel) return;
+
+          if (!requireAuthOrRedirect()) return;
+
+          setDontAskAgainForTel(tel, value.dontAskAgain);
+          void performTelConfirm(tel, value).then((ok) => {
+            if (ok) setTelDialog({ open: false, tel: '', dontAskStored: false });
+          });
+        }}
+        onUndo={() => {
+          const tel = normalizeTel(telDialog.tel);
+          if (!tel) return;
+          if (!requireAuthOrRedirect()) return;
+
+          void performTelUndo(tel).then((ok) => {
+            if (ok) setTelDialog({ open: false, tel: '', dontAskStored: false });
+          });
+        }}
+      />
+
+      <BankReportDialog
+        open={bankDialog.open}
+        bankName={bankDialog.bankName}
+        account={bankDialog.account}
+        reported={bankDialog.account ? jachoei.isReportedBank(normalizeBank(bankDialog.account)) : false}
+        initialCategory={jachoei.getReportedBankEntry(bankDialog.account)?.category}
+        initialNote={jachoei.getReportedBankEntry(bankDialog.account)?.note}
+        confirmLoading={jachoeiMut.loading.reportBank}
+        undoLoading={jachoeiMut.loading.unreportBank}
+        onCancel={() => setBankDialog({ open: false, bankName: null, account: '' })}
+        onConfirm={(value) => {
+          if (!requireAuthOrRedirect()) return;
+          void performBankConfirm(bankDialog.bankName, bankDialog.account, value).then((ok) => {
+            if (ok) setBankDialog({ open: false, bankName: null, account: '' });
+          });
+        }}
+        onUndo={() => {
+          if (!requireAuthOrRedirect()) return;
+          void performBankUndo(bankDialog.bankName, bankDialog.account).then((ok) => {
+            if (ok) setBankDialog({ open: false, bankName: null, account: '' });
+          });
+        }}
+      />
+
+      {/* Layout */}
       <Row gutter={isMobile ? 12 : 24} align="top">
-        {/* LEFT: รายละเอียดโพสต์ทั้งหมด */}
         <Col xs={24} md={14}>
           <Descriptions
             column={1}
@@ -355,142 +897,101 @@ export default function PostView({
               padding: isMobile ? '6px 8px' : undefined,
             }}
           >
-            <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">
-              {(post as any).title || '-'}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="รายละเอียดเพิ่มเติม">
-              {(post as any).detail || '-'}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="ชื่อ-นามสกุล คนขาย">
-              {(post as any).first_last_name || '-'}
-            </Descriptions.Item>
-
+            <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">{p.title || '-'}</Descriptions.Item>
+            <Descriptions.Item label="รายละเอียดเพิ่มเติม">{p.detail || '-'}</Descriptions.Item>
+            <Descriptions.Item label="ชื่อ-นามสกุล คนขาย">{p.first_last_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="เลขบัตรประชาชน / พาสปอร์ต">
-              <Typography.Text copyable>
-                {(post as any).id_card}
-              </Typography.Text>
+              {p.id_card ? <Typography.Text copyable>{p.id_card}</Typography.Text> : '-'}
             </Descriptions.Item>
-
             <Descriptions.Item label="ยอดโอน">
-              {(post as any).transfer_amount
-                ? Number((post as any).transfer_amount).toLocaleString('th-TH', {
-                    minimumFractionDigits: 2,
-                  })
+              {p.transfer_amount != null
+                ? Number(p.transfer_amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })
                 : '-'}
             </Descriptions.Item>
+            <Descriptions.Item label="วันโอนเงิน">{p.transfer_date ? formatDate(p.transfer_date) : '-'}</Descriptions.Item>
+            <Descriptions.Item label="เว็บประกาศขายของ">{p.website || '-'}</Descriptions.Item>
+            <Descriptions.Item label="จังหวัดของคนสร้างรายงาน">{p.province_name || p.province_id || '-'}</Descriptions.Item>
 
-            <Descriptions.Item label="วันโอนเงิน">
-              {(post as any).transfer_date ? formatDate((post as any).transfer_date) : '-'}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="เว็บประกาศขายของ">
-              {(post as any).website || '-'}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="จังหวัดของคนสร้างรายงาน">
-              {(post as any).province_name || (post as any).province_id || '-'}
-            </Descriptions.Item>
-
-            {/* ✅ OPTIONAL: แสดงสถานะ Facebook แบบอ่านง่าย */}
             <Descriptions.Item label="Facebook">
               {isFbPublished ? (
                 <Space size={8} wrap>
                   <Typography.Text>Published</Typography.Text>
-                  {(post as any).fb_published_at ? (
-                    <Typography.Text type="secondary">
-                      {formatDate((post as any).fb_published_at)}
-                    </Typography.Text>
+                  {p.fb_published_at ? (
+                    <Typography.Text type="secondary">{formatDate(p.fb_published_at)}</Typography.Text>
                   ) : null}
                   <Typography.Text type="secondary" copyable>
                     {fbPermalinkUrl}
                   </Typography.Text>
                 </Space>
               ) : (
-                <Typography.Text type="secondary">
-                  {fbStatus || 'NOT PUBLISHED'}
-                </Typography.Text>
+                <Typography.Text type="secondary">{fbStatus || 'NOT PUBLISHED'}</Typography.Text>
               )}
             </Descriptions.Item>
           </Descriptions>
 
-          {/* เบอร์โทร/ไอดีไลน์ */}
+          {/* Tel table */}
           {telNumbers.length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
                 เบอร์โทรศัพท์ / ไอดีไลน์
               </Divider>
-              <Table
-                dataSource={telNumbers}
-                pagination={false}
-                rowKey={(r: any) => r.id}
-                size="small"
-                scroll={isMobile ? { x: 320 } : undefined}
-                style={{ fontSize: isMobile ? 12 : 14 }}
-                columns={[
-                  {
-                    title: 'ลำดับ',
-                    width: 60,
-                    render: (_: any, __: any, i: number) => i + 1,
-                  },
-                  {
-                    title: 'เบอร์โทร / ไอดีไลน์',
-                    dataIndex: 'tel',
-                    render: (s: string) => (
-                      <Typography.Text copyable style={{ fontSize: isMobile ? 12 : 14 }}>
-                        {s}
-                      </Typography.Text>
-                    ),
-                  },
-                ]}
-              />
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                {telNumbers.map((t: { id?: string | number | null; tel?: string | null }, i: number) => {
+                  const telRaw = String(t?.tel ?? '').trim();
+                  const telNorm = normalizeTel(telRaw);
+                  const blocked = telNorm ? jachoei.isBlockedTel(telNorm) : false;
+
+                  return (
+                    <TelChipRow
+                      key={String(t?.id ?? telRaw ?? i)}
+                      tel={telRaw}
+                      blocked={blocked}
+                      onAction={(raw) => {
+                        if (!raw) return;
+                        openTelBlockFlow(raw);
+                      }}
+                    />
+                  );
+                })}
+              </Space>
             </>
           )}
 
-          {/* บัญชีคนขาย */}
+          {/* Bank table */}
           {sellerAccounts.length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
                 บัญชีคนขาย
               </Divider>
-              <Table
-                dataSource={sellerAccounts}
-                pagination={false}
-                rowKey={(r: any) => r.id}
-                size="small"
-                scroll={isMobile ? { x: 360 } : undefined}
-                style={{ fontSize: isMobile ? 12 : 14 }}
-                columns={[
-                  {
-                    title: 'ลำดับ',
-                    width: 60,
-                    render: (_: any, __: any, i: number) => i + 1,
-                  },
-                  {
-                    title: 'ชื่อบัญชีคนขาย',
-                    dataIndex: 'bank_name',
-                    render: (s: string) => (
-                      <Typography.Text style={{ fontSize: isMobile ? 12 : 14 }}>
-                        {s}
-                      </Typography.Text>
-                    ),
-                  },
-                  {
-                    title: 'เลขที่บัญชี',
-                    dataIndex: 'seller_account',
-                    render: (s: string) => (
-                      <Typography.Text copyable style={{ fontSize: isMobile ? 12 : 14 }}>
-                        {s}
-                      </Typography.Text>
-                    ),
-                  },
-                ]}
-              />
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                {sellerAccounts.map(
+                  (
+                    row: { seller_account?: string | null; bank_name?: string | null; id?: string | number | null },
+                    i: number
+                  ) => {
+                    const accountRaw = String(row?.seller_account ?? '').trim();
+                    const accountNorm = normalizeBank(accountRaw);
+                    const reported = accountNorm ? jachoei.isReportedBank(accountNorm) : false;
+
+                    return (
+                      <BankChipRow
+                        key={String(row?.id ?? accountRaw ?? row?.bank_name ?? i)}
+                        bankName={row?.bank_name ?? null}
+                        account={accountRaw}
+                        reported={reported}
+                        onAction={(bn, acc) => {
+                          if (!acc) return;
+                          openBankReportFlow(bn ?? null, acc);
+                        }}
+                      />
+                    );
+                  }
+                )}
+              </Space>
             </>
           )}
 
-          {/* รูปภาพแนบ */}
+          {/* Images */}
           {(post.images || []).length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
@@ -507,7 +1008,7 @@ export default function PostView({
                 {(post.images || []).map((img) => (
                   <Image
                     key={String(img.id)}
-                    src={(img as any).url}
+                    src={img.url}
                     width={isMobile ? 110 : 160}
                     height={isMobile ? 110 : 160}
                     style={{ objectFit: 'cover', borderRadius: 4 }}
@@ -518,12 +1019,12 @@ export default function PostView({
           )}
         </Col>
 
-        {/* RIGHT: Comments Section */}
+        {/* Comments */}
         <Col xs={24} md={10} style={{ marginTop: isMobile ? 16 : 0 }}>
           <Divider orientation="left" style={{ margin: isMobile ? '0 0 8px' : '0 0 12px' }}>
             ความคิดเห็น
           </Divider>
-          <CommentsSection postId={String((post as any).id)} currentUserId={user?.id} />
+          <CommentsSection postId={postId} currentUserId={user?.id} />
         </Col>
       </Row>
     </Card>

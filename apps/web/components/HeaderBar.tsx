@@ -13,8 +13,10 @@ import {
   AutoComplete,
   Input,
   Modal,
-  Image
+  Image,
+  theme
 } from "antd";
+import type { InputRef } from "antd";
 import {
   UserOutlined,
   SettingOutlined,
@@ -26,10 +28,11 @@ import {
   SearchOutlined,
   HistoryOutlined,
   CloseCircleFilled,
-  PlusOutlined
+  PlusOutlined,
+  SafetyOutlined
 } from "@ant-design/icons";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
 import { gql, useQuery } from "@apollo/client";
 
@@ -74,8 +77,13 @@ type HeaderBarProps = {
 
 export default function HeaderBar({ initialLang = "th", isMobile = false }: HeaderBarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user: userSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
+  const { token } = theme.useToken();
+
+  const isBlockedActive = pathname.startsWith("/blocked");
+  const [blockedHover, setBlockedHover] = useState<boolean>(false);
 
   // console.log("[HeaderBar] isMobile =", isMobile);
 
@@ -86,11 +94,8 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
   });
   const me = meData?.me;
 
-  const totalUnread = useGlobalChatStore((s: any) =>
-    Object.values(s.unreadByChat || {}).reduce(
-      (sum: number, n: any) => sum + (n || 0),
-      0
-    )
+  const totalUnread = useGlobalChatStore((s) =>
+    Object.values(s.unreadByChat || {}).reduce((sum, n) => sum + (n || 0), 0)
   );
 
   const { data: notifData } = useQuery(Q_UNREAD_NOTIFICATION_COUNT, {
@@ -172,7 +177,7 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
   // ====== Search + History ======
   const [searchValue, setSearchValue] = useState("");
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const searchInputRef = useRef<any>(null);
+  const searchInputRef = useRef<InputRef | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
 
   // load history จาก localStorage
@@ -568,6 +573,7 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
                     }
                   />
                 </Tooltip>
+                
                 {/* Chat */}
                 <Tooltip title={t("header.chat") || "ข้อความ"}>
                   <Button
@@ -602,6 +608,18 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
                         )}
                       </span>
                     }
+                  />
+                </Tooltip>
+
+                {/* Blocked (Jachoei) */}
+                <Tooltip title="Blocked">
+                  <Button
+                    aria-label="Blocked"
+                    type="text"
+                    icon={<SafetyOutlined style={{ fontSize: isMobile ? 18 : 18, color: "#000" }} />}
+                    onClick={() => router.push("/blocked?tab=blocked")}
+                    onMouseEnter={() => setBlockedHover(true)}
+                    onMouseLeave={() => setBlockedHover(false)}
                   />
                 </Tooltip>
 
@@ -655,7 +673,7 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
               <Button
                 type="text"
                 size={isMobile ? "small" : "middle"}
-                onClick={(e: any) => e.preventDefault()}
+                onClick={(e) => e.preventDefault()}
               >
                 <span style={{ fontSize: 18, marginRight: isMobile ? 0 : 6 }}>
                   {flagOf[currentLang]}
