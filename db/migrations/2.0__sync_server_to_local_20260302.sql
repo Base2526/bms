@@ -1,13 +1,4 @@
--- ============================================================================
--- SAFE ADDITIVE MIGRATION: sync production schema to match local schema dump
---
--- Local dump:  ../compare/local_schema_20260302_195556.sql
--- Server dump: ../compare/server_schema_20260302_125149.sql
--- GeneratedAt: 2026-03-02T15:33:15.787806+00:00
---
--- Safety: no DROP/TRUNCATE/DELETE; only additive DDL + safe backfills.
--- Idempotent: guarded with IF NOT EXISTS / catalog checks.
--- ============================================================================
+-- Audit: DO blocks=15, Functions=12, Legacy delimiter occurrences=0
 
 BEGIN;
 
@@ -118,7 +109,7 @@ CREATE SEQUENCE IF NOT EXISTS public.scam_bank_account_report_id_seq
     NO MAXVALUE
     CACHE 1;
 
-DO $$
+DO $do$
 BEGIN
   IF to_regclass('public.scam_bank_account_report') IS NOT NULL
      AND to_regclass('public.scam_bank_account_report_id_seq') IS NOT NULL THEN
@@ -139,7 +130,8 @@ BEGIN
       PERFORM setval('public.scam_bank_account_report_id_seq'::regclass, 1, false);
     END IF;
   END IF;
-END $$;
+END;
+$do$;
 
 -- 4) Columns (add missing)
 -- chats.updated_at exists locally; add + backfill safely
@@ -164,13 +156,62 @@ CREATE INDEX IF NOT EXISTS idx_scam_phones_summary_updated ON public.scam_phones
 CREATE INDEX IF NOT EXISTS idx_user_blocked_phones_norm ON public.user_blocked_phones USING btree (phone_normalized);
 CREATE INDEX IF NOT EXISTS idx_user_blocked_phones_user ON public.user_blocked_phones USING btree (user_id);
 CREATE INDEX IF NOT EXISTS scam_bank_account_reports_bank_idx ON public.scam_bank_account_reports USING btree (bank_name);
-CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_account_reports_client_id_ux ON public.scam_bank_account_reports USING btree (client_id);
+-- ON CONFLICT (client_id) requires a UNIQUE or EXCLUSION constraint/index that matches
+-- the conflict target. Without it Postgres raises:
+--   "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+--
+-- Pre-check for duplicates (if any rows are returned, the unique index will FAIL):
+--   SELECT client_id, COUNT(*)
+--   FROM public.scam_bank_account_reports
+--   GROUP BY client_id
+--   HAVING COUNT(*) > 1;
+DO $do$
+DECLARE
+  has_unique boolean;
+  has_dupes boolean;
+BEGIN
+  -- Skip if any (non-partial) UNIQUE index already enforces (client_id)
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname = 'scam_bank_account_reports'
+      AND i.indisunique
+      AND i.indisvalid
+      AND i.indpred IS NULL
+      AND (
+        SELECT array_agg(att.attname ORDER BY ord.ordinality)
+        FROM unnest(i.indkey) WITH ORDINALITY AS ord(attnum, ordinality)
+        JOIN pg_attribute att ON att.attrelid = t.oid AND att.attnum = ord.attnum
+      ) = ARRAY['client_id']::text[]
+  ) INTO has_unique;
+
+  IF NOT has_unique THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.scam_bank_account_reports
+      GROUP BY client_id
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    ) INTO has_dupes;
+
+    IF has_dupes THEN
+      RAISE NOTICE 'Skipping CREATE UNIQUE INDEX scam_bank_account_reports_client_id_ux: duplicate client_id values exist. Clean duplicates first, then create the index.';
+    ELSE
+      CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_account_reports_client_id_ux
+        ON public.scam_bank_account_reports USING btree (client_id);
+    END IF;
+  END IF;
+END;
+$do$;
 CREATE INDEX IF NOT EXISTS scam_bank_account_reports_norm_idx ON public.scam_bank_account_reports USING btree (account_norm);
 CREATE INDEX IF NOT EXISTS scam_bank_accounts_summary_norm_idx ON public.scam_bank_accounts_summary USING btree (account_norm);
 CREATE INDEX IF NOT EXISTS scam_bank_accounts_summary_updated_idx ON public.scam_bank_accounts_summary USING btree (updated_at);
 
 -- 6) Constraints / FKs (add missing)
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -182,9 +223,10 @@ BEGIN
     ALTER TABLE public.chats
     ADD CONSTRAINT chats_direct_key_chk CHECK (((is_group = true) OR (direct_key IS NOT NULL))) NOT VALID;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -193,12 +235,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_bank_account_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_bank_account
-    ADD CONSTRAINT scam_bank_account_pkey PRIMARY KEY (account_norm);
+    IF EXISTS (SELECT 1 FROM public.scam_bank_account WHERE account_norm IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.scam_bank_account
+         GROUP BY account_norm
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint scam_bank_account_pkey (null/duplicate account_norm detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_bank_account
+      ADD CONSTRAINT scam_bank_account_pkey PRIMARY KEY (account_norm);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -207,12 +261,23 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_bank_account_report_account_norm_fkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_bank_account_report
-    ADD CONSTRAINT scam_bank_account_report_account_norm_fkey FOREIGN KEY (account_norm) REFERENCES public.scam_bank_account(account_norm) ON DELETE CASCADE;
+    IF EXISTS (
+      SELECT 1
+      FROM public.scam_bank_account_report r
+      LEFT JOIN public.scam_bank_account a ON a.account_norm = r.account_norm
+      WHERE a.account_norm IS NULL
+      LIMIT 1
+    ) THEN
+      RAISE NOTICE 'Skipping constraint scam_bank_account_report_account_norm_fkey (orphan account_norm detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_bank_account_report
+      ADD CONSTRAINT scam_bank_account_report_account_norm_fkey FOREIGN KEY (account_norm) REFERENCES public.scam_bank_account(account_norm) ON DELETE CASCADE;
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -221,26 +286,49 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_bank_account_report_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_bank_account_report
-    ADD CONSTRAINT scam_bank_account_report_pkey PRIMARY KEY (id);
+    IF EXISTS (SELECT 1 FROM public.scam_bank_account_report WHERE id IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.scam_bank_account_report
+         GROUP BY id
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint scam_bank_account_report_pkey (null/duplicate id detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_bank_account_report
+      ADD CONSTRAINT scam_bank_account_report_pkey PRIMARY KEY (id);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint c
-    JOIN pg_namespace n ON n.oid = c.connamespace
-    WHERE n.nspname = 'public'
-      AND c.conname = 'scam_bank_account_reports_client_bank_ux'
-  ) THEN
-    ALTER TABLE ONLY public.scam_bank_account_reports
-    ADD CONSTRAINT scam_bank_account_reports_client_bank_ux UNIQUE (client_id, bank_name, account_norm);
-  END IF;
-END $$;
+-- UNIQUE constraint (local has this), but adding it can FAIL if duplicates exist.
+-- Keep it manual to avoid rolling back the whole migration.
+--
+-- Pre-check for duplicates:
+--   SELECT client_id, bank_name, account_norm, count(*)
+--   FROM public.scam_bank_account_reports
+--   GROUP BY client_id, bank_name, account_norm
+--   HAVING count(*) > 1;
+--
+-- Apply after cleanup (optional):
+-- DO $manual$
+-- BEGIN
+--   IF NOT EXISTS (
+--     SELECT 1
+--     FROM pg_constraint c
+--     JOIN pg_namespace n ON n.oid = c.connamespace
+--     WHERE n.nspname = 'public'
+--       AND c.conname = 'scam_bank_account_reports_client_bank_ux'
+--   ) THEN
+--     ALTER TABLE ONLY public.scam_bank_account_reports
+--     ADD CONSTRAINT scam_bank_account_reports_client_bank_ux UNIQUE (client_id, bank_name, account_norm);
+--   END IF;
+-- END;
+-- $manual$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -249,12 +337,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_bank_account_reports_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_bank_account_reports
-    ADD CONSTRAINT scam_bank_account_reports_pkey PRIMARY KEY (id);
+    IF EXISTS (SELECT 1 FROM public.scam_bank_account_reports WHERE id IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.scam_bank_account_reports
+         GROUP BY id
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint scam_bank_account_reports_pkey (null/duplicate id detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_bank_account_reports
+      ADD CONSTRAINT scam_bank_account_reports_pkey PRIMARY KEY (id);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -263,12 +363,28 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_bank_accounts_summary_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_bank_accounts_summary
-    ADD CONSTRAINT scam_bank_accounts_summary_pkey PRIMARY KEY (bank_name, account_norm);
+    IF EXISTS (
+      SELECT 1
+      FROM public.scam_bank_accounts_summary
+      WHERE bank_name IS NULL OR account_norm IS NULL
+      LIMIT 1
+    ) OR EXISTS (
+      SELECT 1
+      FROM public.scam_bank_accounts_summary
+      GROUP BY bank_name, account_norm
+      HAVING count(*) > 1
+      LIMIT 1
+    ) THEN
+      RAISE NOTICE 'Skipping constraint scam_bank_accounts_summary_pkey (null/duplicate key detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_bank_accounts_summary
+      ADD CONSTRAINT scam_bank_accounts_summary_pkey PRIMARY KEY (bank_name, account_norm);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -277,12 +393,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_phone_reports_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_phone_reports
-    ADD CONSTRAINT scam_phone_reports_pkey PRIMARY KEY (id);
+    IF EXISTS (SELECT 1 FROM public.scam_phone_reports WHERE id IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.scam_phone_reports
+         GROUP BY id
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint scam_phone_reports_pkey (null/duplicate id detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_phone_reports
+      ADD CONSTRAINT scam_phone_reports_pkey PRIMARY KEY (id);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -291,12 +419,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_phone_reports_user_id_fkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_phone_reports
-    ADD CONSTRAINT scam_phone_reports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+    IF EXISTS (
+      SELECT 1
+      FROM public.scam_phone_reports r
+      LEFT JOIN public.users u ON u.id = r.user_id
+      WHERE r.user_id IS NOT NULL
+        AND u.id IS NULL
+      LIMIT 1
+    ) THEN
+      RAISE NOTICE 'Skipping constraint scam_phone_reports_user_id_fkey (orphan user_id detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_phone_reports
+      ADD CONSTRAINT scam_phone_reports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -305,12 +445,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'scam_phone_unblocks_pkey'
   ) THEN
-    ALTER TABLE ONLY public.scam_phone_unblocks
-    ADD CONSTRAINT scam_phone_unblocks_pkey PRIMARY KEY (id);
+    IF EXISTS (SELECT 1 FROM public.scam_phone_unblocks WHERE id IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.scam_phone_unblocks
+         GROUP BY id
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint scam_phone_unblocks_pkey (null/duplicate id detected)';
+    ELSE
+      ALTER TABLE ONLY public.scam_phone_unblocks
+      ADD CONSTRAINT scam_phone_unblocks_pkey PRIMARY KEY (id);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -319,12 +471,24 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'user_blocked_phones_pkey'
   ) THEN
-    ALTER TABLE ONLY public.user_blocked_phones
-    ADD CONSTRAINT user_blocked_phones_pkey PRIMARY KEY (id);
+    IF EXISTS (SELECT 1 FROM public.user_blocked_phones WHERE id IS NULL LIMIT 1)
+       OR EXISTS (
+         SELECT 1
+         FROM public.user_blocked_phones
+         GROUP BY id
+         HAVING count(*) > 1
+         LIMIT 1
+       ) THEN
+      RAISE NOTICE 'Skipping constraint user_blocked_phones_pkey (null/duplicate id detected)';
+    ELSE
+      ALTER TABLE ONLY public.user_blocked_phones
+      ADD CONSTRAINT user_blocked_phones_pkey PRIMARY KEY (id);
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -333,24 +497,46 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.conname = 'user_blocked_phones_user_id_fkey'
   ) THEN
-    ALTER TABLE ONLY public.user_blocked_phones
-    ADD CONSTRAINT user_blocked_phones_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+    IF EXISTS (
+      SELECT 1
+      FROM public.user_blocked_phones b
+      LEFT JOIN public.users u ON u.id = b.user_id
+      WHERE u.id IS NULL
+      LIMIT 1
+    ) THEN
+      RAISE NOTICE 'Skipping constraint user_blocked_phones_user_id_fkey (orphan user_id detected)';
+    ELSE
+      ALTER TABLE ONLY public.user_blocked_phones
+      ADD CONSTRAINT user_blocked_phones_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+    END IF;
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint c
-    JOIN pg_namespace n ON n.oid = c.connamespace
-    WHERE n.nspname = 'public'
-      AND c.conname = 'user_blocked_phones_user_id_phone_normalized_key'
-  ) THEN
-    ALTER TABLE ONLY public.user_blocked_phones
-    ADD CONSTRAINT user_blocked_phones_user_id_phone_normalized_key UNIQUE (user_id, phone_normalized);
-  END IF;
-END $$;
+-- UNIQUE constraint (local has this), but adding it can FAIL if duplicates exist.
+-- Keep it manual to avoid rolling back the whole migration.
+--
+-- Pre-check for duplicates:
+--   SELECT user_id, phone_normalized, count(*)
+--   FROM public.user_blocked_phones
+--   GROUP BY user_id, phone_normalized
+--   HAVING count(*) > 1;
+--
+-- Apply after cleanup (optional):
+-- DO $manual$
+-- BEGIN
+--   IF NOT EXISTS (
+--     SELECT 1
+--     FROM pg_constraint c
+--     JOIN pg_namespace n ON n.oid = c.connamespace
+--     WHERE n.nspname = 'public'
+--       AND c.conname = 'user_blocked_phones_user_id_phone_normalized_key'
+--   ) THEN
+--     ALTER TABLE ONLY public.user_blocked_phones
+--     ADD CONSTRAINT user_blocked_phones_user_id_phone_normalized_key UNIQUE (user_id, phone_normalized);
+--   END IF;
+-- END;
+-- $manual$;
 
 -- 7) Views
 CREATE OR REPLACE VIEW public.chat_last_read AS
@@ -373,8 +559,8 @@ CREATE OR REPLACE VIEW public.chat_unread_counts AS
 
 -- 8) Functions
 CREATE OR REPLACE FUNCTION public.calc_phone_risk(blocked_cnt integer, report_cnt integer) RETURNS integer
-    LANGUAGE plpgsql
-    AS $$
+LANGUAGE plpgsql
+AS $fn$
 DECLARE
   score int;
 BEGIN
@@ -383,12 +569,11 @@ BEGIN
   IF score < 0 THEN score := 0; END IF;
   RETURN score;
 END;
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.create_revision_trigger(p_table text) RETURNS void
-    LANGUAGE plpgsql
-    AS $_$
-
+LANGUAGE plpgsql
+AS $fn$
 DECLARE
 
   rev_table text := p_table || '_revisions';
@@ -439,12 +624,11 @@ BEGIN
 
 END;
 
-$_$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.recalc_scam_phone_from_posts(p_phone text) RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 DECLARE
 
   agg_phone text;
@@ -567,20 +751,20 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_agg_scam_bank_account() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
+LANGUAGE plpgsql
+AS $fn$
 DECLARE
   new_count int;
 BEGIN
@@ -610,12 +794,11 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_generic_revision() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-
+LANGUAGE plpgsql
+AS $fn$
 DECLARE
 
   v_editor uuid;
@@ -686,12 +869,11 @@ BEGIN
 
 END;
 
-$_$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_messages_after_insert__create_receipts() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
 
   INSERT INTO message_receipts (message_id, user_id)
@@ -708,12 +890,11 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_post_seller_accounts_unaccent() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
 
   NEW.account_unaccent := unaccent(coalesce(NEW.seller_account, ''));
@@ -724,12 +905,11 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_post_tel_numbers_scam_summary() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
 
   IF TG_OP = 'INSERT' THEN
@@ -768,12 +948,11 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_posts_unaccent() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
 
   NEW.title_unaccent  := unaccent(coalesce(NEW.title,  ''));
@@ -784,12 +963,11 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.trg_users_unaccent() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-
+LANGUAGE plpgsql
+AS $fn$
 BEGIN
 
   NEW.name_unaccent  := unaccent(coalesce(NEW.name,  ''));
@@ -800,11 +978,11 @@ BEGIN
 
 END;
 
-$$;
+$fn$;
 
 CREATE OR REPLACE FUNCTION public.upsert_bank_account_aggregate() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
+LANGUAGE plpgsql
+AS $fn$
 declare
   new_count integer;
   last_at timestamptz;
@@ -832,10 +1010,11 @@ begin
   where account_norm = new.account_norm;
 
   return new;
-end $$;
+END;
+$fn$;
 
 -- 9) Triggers (create missing)
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -849,9 +1028,10 @@ BEGIN
   ) THEN
     CREATE TRIGGER scam_bank_account_reports_agg_tg AFTER INSERT ON public.scam_bank_account_reports FOR EACH ROW EXECUTE FUNCTION public.trg_agg_scam_bank_account();
   END IF;
-END $$;
+END;
+$do$;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -865,7 +1045,8 @@ BEGIN
   ) THEN
     CREATE TRIGGER trg_bank_report_agg AFTER INSERT ON public.scam_bank_account_report FOR EACH ROW EXECUTE FUNCTION public.upsert_bank_account_aggregate();
   END IF;
-END $$;
+END;
+$do$;
 
 COMMIT;
 
@@ -919,7 +1100,6 @@ WITH expected(index_name) AS (
   ('idx_user_blocked_phones_norm'),
   ('idx_user_blocked_phones_user'),
   ('scam_bank_account_reports_bank_idx'),
-  ('scam_bank_account_reports_client_id_ux'),
   ('scam_bank_account_reports_norm_idx'),
   ('scam_bank_accounts_summary_norm_idx'),
   ('scam_bank_accounts_summary_updated_idx')
@@ -937,15 +1117,13 @@ WITH expected(conname) AS (
   ('scam_bank_account_pkey'),
   ('scam_bank_account_report_account_norm_fkey'),
   ('scam_bank_account_report_pkey'),
-  ('scam_bank_account_reports_client_bank_ux'),
   ('scam_bank_account_reports_pkey'),
   ('scam_bank_accounts_summary_pkey'),
   ('scam_phone_reports_pkey'),
   ('scam_phone_reports_user_id_fkey'),
   ('scam_phone_unblocks_pkey'),
   ('user_blocked_phones_pkey'),
-  ('user_blocked_phones_user_id_fkey'),
-  ('user_blocked_phones_user_id_phone_normalized_key')
+  ('user_blocked_phones_user_id_fkey')
 )
 SELECT e.conname
 FROM expected e
@@ -968,6 +1146,259 @@ WHERE t.oid IS NULL;
 -- Skipped / manual notes
 -- - This migration is additive only. If any existing object differs in definition
 --   (e.g., an index expression changed), it is not dropped/recreated here.
--- - If a UNIQUE constraint/index creation fails due to existing duplicates,
---   you must deduplicate data first, then re-run.
+-- - UNIQUE constraints/indexes that could fail on existing production data are
+--   intentionally NOT applied automatically. See the commented “Apply after
+--   cleanup (optional)” blocks near their related tables.
+-- - PK/FK constraints in this migration are guarded with pre-checks; if they
+--   would fail (duplicates/orphans), they are skipped with a NOTICE instead of
+--   aborting the whole transaction.
 -- ============================================================================
+
+
+/* step @@@1
+-- ============================================================================
+-- SAFE ADDITIVE MIGRATION (SQL-ONLY): compatible with naive SQL splitters
+-- - No DO blocks
+-- - No $$ dollar-quoting
+-- - Additive only: CREATE/ALTER ADD/CREATE INDEX
+-- - No DROP/TRUNCATE/DELETE
+-- ============================================================================
+BEGIN;
+
+SET search_path = public;
+
+-- 1) Extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
+
+-- 2) Tables
+CREATE TABLE IF NOT EXISTS public.scam_bank_account (
+  account_norm character varying(32) NOT NULL,
+  bank_name text,
+  report_count integer DEFAULT 0 NOT NULL,
+  last_report_at timestamptz,
+  risk_level integer DEFAULT 0 NOT NULL,
+  tags text[] DEFAULT '{}'::text[] NOT NULL,
+  updated_at timestamptz DEFAULT now() NOT NULL,
+  is_deleted boolean DEFAULT false NOT NULL,
+  post_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+  ctx jsonb
+);
+
+CREATE TABLE IF NOT EXISTS public.scam_bank_account_report (
+  id bigint NOT NULL,
+  account_norm character varying(32) NOT NULL,
+  bank_name text,
+  category text NOT NULL,
+  note text,
+  user_id uuid,
+  client_id text,
+  device_model text,
+  os_version text,
+  app_version text,
+  local_blocked boolean DEFAULT false NOT NULL,
+  post_id uuid,
+  created_at timestamptz DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.scam_bank_account_reports (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  bank_name text NOT NULL,
+  account_no text NOT NULL,
+  account_norm text NOT NULL,
+  note text,
+  client_id text NOT NULL,
+  device_model text,
+  os_version text,
+  app_version text,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  user_id uuid
+);
+
+CREATE TABLE IF NOT EXISTS public.scam_bank_accounts_summary (
+  bank_name text NOT NULL,
+  account_no text NOT NULL,
+  account_norm text NOT NULL,
+  report_count integer DEFAULT 0 NOT NULL,
+  last_report_at timestamptz,
+  risk_level integer DEFAULT 10 NOT NULL,
+  updated_at timestamptz DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.scam_phone_reports (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid,
+  phone text NOT NULL,
+  phone_normalized text NOT NULL,
+  category text,
+  note text,
+  client_id uuid,
+  device_model text,
+  os_version text,
+  app_version text,
+  created_at timestamptz DEFAULT now() NOT NULL,
+  local_blocked boolean DEFAULT false NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.scam_phone_unblocks (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL,
+  phone text NOT NULL,
+  client_id uuid NOT NULL,
+  device_model text,
+  os_version text,
+  app_version text,
+  created_at timestamptz DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.user_blocked_phones (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL,
+  phone text NOT NULL,
+  phone_normalized text NOT NULL,
+  created_at timestamptz DEFAULT now() NOT NULL
+);
+
+-- 3) Sequence + default (SQL-only)
+CREATE SEQUENCE IF NOT EXISTS public.scam_bank_account_report_id_seq
+  START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+
+ALTER SEQUENCE IF EXISTS public.scam_bank_account_report_id_seq
+  OWNED BY public.scam_bank_account_report.id;
+
+ALTER TABLE IF EXISTS public.scam_bank_account_report
+  ALTER COLUMN id SET DEFAULT nextval('public.scam_bank_account_report_id_seq'::regclass);
+
+-- Advance sequence to max(id) safely (works even if empty)
+SELECT setval(
+  'public.scam_bank_account_report_id_seq'::regclass,
+  COALESCE((SELECT max(id) FROM public.scam_bank_account_report), 1),
+  COALESCE((SELECT count(*) FROM public.scam_bank_account_report), 0) > 0
+);
+
+-- 4) Columns: chats.updated_at
+ALTER TABLE public.chats ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+ALTER TABLE public.chats ALTER COLUMN updated_at SET DEFAULT now();
+UPDATE public.chats SET updated_at = COALESCE(updated_at, now()) WHERE updated_at IS NULL;
+ALTER TABLE public.chats ALTER COLUMN updated_at SET NOT NULL;
+
+-- 5) Indexes
+CREATE INDEX IF NOT EXISTS idx_bank_report_account_time
+  ON public.scam_bank_account_report (account_norm, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_bank_report_created_at
+  ON public.scam_bank_account_report (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_bank_report_user
+  ON public.scam_bank_account_report (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_sbar_user_created
+  ON public.scam_bank_account_reports (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_scam_bank_account_prefix
+  ON public.scam_bank_account (account_norm varchar_pattern_ops);
+
+CREATE INDEX IF NOT EXISTS idx_scam_bank_account_report_count
+  ON public.scam_bank_account (report_count DESC);
+
+CREATE INDEX IF NOT EXISTS idx_scam_bank_account_updated_at
+  ON public.scam_bank_account (updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_scam_phone_reports_created
+  ON public.scam_phone_reports (created_at);
+
+CREATE INDEX IF NOT EXISTS idx_scam_phone_reports_norm
+  ON public.scam_phone_reports (phone_normalized);
+
+CREATE INDEX IF NOT EXISTS idx_scam_phone_unblocks_phone
+  ON public.scam_phone_unblocks (phone);
+
+CREATE INDEX IF NOT EXISTS idx_scam_phone_unblocks_user
+  ON public.scam_phone_unblocks (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_blocked_phones_norm
+  ON public.user_blocked_phones (phone_normalized);
+
+CREATE INDEX IF NOT EXISTS idx_user_blocked_phones_user
+  ON public.user_blocked_phones (user_id);
+
+CREATE INDEX IF NOT EXISTS scam_bank_account_reports_bank_idx
+  ON public.scam_bank_account_reports (bank_name);
+
+CREATE INDEX IF NOT EXISTS scam_bank_account_reports_norm_idx
+  ON public.scam_bank_account_reports (account_norm);
+
+CREATE INDEX IF NOT EXISTS scam_bank_accounts_summary_norm_idx
+  ON public.scam_bank_accounts_summary (account_norm);
+
+CREATE INDEX IF NOT EXISTS scam_bank_accounts_summary_updated_idx
+  ON public.scam_bank_accounts_summary (updated_at);
+
+-- 6) FIX for ON CONFLICT (client_id)
+-- PRODUCTION-SAFE option: create a PARTIAL UNIQUE index that only applies to NEW rows (after migration time).
+-- This avoids failing if production already has duplicate client_id historically.
+-- IMPORTANT: Your INSERT must use "ON CONFLICT ON CONSTRAINT scam_bank_account_reports_client_id_ux DO NOTHING"
+-- (not ON CONFLICT (client_id)), because (client_id) cannot match a partial unique index.
+CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_account_reports_client_id_ux
+  ON public.scam_bank_account_reports (client_id)
+  WHERE created_at >= TIMESTAMPTZ '2026-03-04 00:00:00+00';
+
+-- 7) Views
+CREATE OR REPLACE VIEW public.chat_last_read AS
+SELECT r.user_id, m.chat_id, max(r.read_at) AS last_read_at
+FROM public.message_receipts r
+JOIN public.messages m ON (m.id = r.message_id)
+GROUP BY r.user_id, m.chat_id;
+
+CREATE OR REPLACE VIEW public.chat_unread_counts AS
+SELECT cm.user_id, m.chat_id, count(*) AS unread_count
+FROM public.messages m
+JOIN public.chat_members cm ON (cm.chat_id = m.chat_id)
+LEFT JOIN public.message_receipts r ON (r.message_id = m.id AND r.user_id = cm.user_id)
+WHERE (cm.user_id <> m.sender_id) AND (r.read_at IS NULL)
+GROUP BY cm.user_id, m.chat_id;
+
+COMMIT;
+
+-- ============================================================================
+-- READ-ONLY PRECHECKS (run manually anytime)
+-- ============================================================================
+-- 1) duplicates that would block FULL unique index:
+-- SELECT client_id, COUNT(*) FROM public.scam_bank_account_reports
+-- GROUP BY client_id HAVING COUNT(*) > 1;
+--
+-- 2) confirm partial unique exists:
+-- SELECT indexname, indexdef FROM pg_indexes
+-- WHERE schemaname='public' AND indexname='scam_bank_account_reports_client_id_ux';
+-- ============================================================================
+*/
+
+
+/* step @@@2
+
+-- ============================================================
+-- FIX: Required for
+-- ON CONFLICT (bank_name, account_norm)
+-- ============================================================
+
+-- Pre-check (manual):
+-- SELECT bank_name, account_norm, COUNT(*)
+-- FROM public.scam_bank_accounts_summary
+-- GROUP BY bank_name, account_norm
+-- HAVING COUNT(*) > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_accounts_summary_bank_norm_ux
+ON public.scam_bank_accounts_summary (bank_name, account_norm);
+
+-- 1️⃣ สำหรับ scam_bank_account_reports (client_id)
+CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_account_reports_client_id_ux
+ON public.scam_bank_account_reports (client_id);
+
+-- 2️⃣ สำหรับ scam_bank_accounts_summary (bank_name, account_norm)
+CREATE UNIQUE INDEX IF NOT EXISTS scam_bank_accounts_summary_bank_norm_ux
+ON public.scam_bank_accounts_summary (bank_name, account_norm);
+
+*/
