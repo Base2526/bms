@@ -557,8 +557,6 @@ export const resolvers = {
         fb_social_post_id: r.fb_social_post_id ?? null,
       };
     },
-
-
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] myPosts :", ctx, author_id);
@@ -4638,69 +4636,126 @@ export const resolvers = {
     },
 
     reportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
-      const { bank_name, account, note, client_id, device_model, os_version, app_version } = input;
+  const {
+    bank_name,
+    account,
+    note,
+    client_id,
+    device_model,
+    os_version,
+    app_version,
+  } = input;
 
-      console.log("[reportScamBankAccount] input:", input);
+  const auth = requireAuth(ctx);
 
-      const auth = requireAuth(ctx);
-      if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
+  if (!auth.isAuthenticated || !auth.author_id) {
+    throw new Error("Unauthenticated");
+  }
 
-      const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
-      const accNorm = normalizeBankAccount(account);
-      if (!accNorm) throw new Error("Invalid account");
+  const authorIdSafe = String(auth.author_id);
+  const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
+  const accountNoSafe = String(account || "").trim();
+  const accountNormSafe = normalizeBankAccount(account);
+  const noteSafe = note?.trim() ? note.trim() : null;
+  const clientIdSafe = String(client_id || "");
 
-      const accountNoSafe = String(account || "").trim();
-      const accountNormSafe = accNorm;
-      const noteSafe = note?.trim() ? note.trim() : null;
+  if (!accountNormSafe) {
+    throw new Error("Invalid account");
+  }
 
-      const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
+  const { result } = await runInTransaction(authorIdSafe, async (client: any) => {
+    // 1) insert report
+    await client.query(
+      `
+      INSERT INTO scam_bank_account_reports
+        (
+          id,
+          user_id,
+          bank_name,
+          account_no,
+          account_norm,
+          note,
+          client_id,
+          device_model,
+          os_version,
+          app_version,
+          created_at
+        )
+      VALUES
+        (
+          gen_random_uuid(),
+          $1::uuid,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          now()
+        )
+      `,
+      [
+        authorIdSafe,
+        bankNameSafe,
+        accountNoSafe,
+        accountNormSafe,
+        noteSafe,
+        clientIdSafe,
+        device_model ?? null,
+        os_version ?? null,
+        app_version ?? null,
+      ]
+    );
 
-        await client.query(
-          `
-          INSERT INTO scam_bank_account_reports
-            (id, user_id, bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version, created_at)
-          VALUES
-            (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, now())
-          ON CONFLICT (client_id) DO NOTHING
-          `,
-          [
-            String(auth.author_id),
-            bankNameSafe,
-            accountNoSafe,
-            accountNormSafe,
-            noteSafe,
-            String(client_id || ""),
-            device_model ?? null,
-            os_version ?? null,
-            app_version ?? null,
-          ]
-        );
+    // 2) upsert summary
+    const { rows } = await client.query(
+      `
+      INSERT INTO scam_bank_accounts_summary
+        (
+          bank_name,
+          account_no,
+          account_norm,
+          report_count,
+          last_report_at,
+          risk_level,
+          updated_at
+        )
+      VALUES
+        (
+          $1,
+          $2,
+          $3,
+          1,
+          now(),
+          10,
+          now()
+        )
+      ON CONFLICT (bank_name, account_norm)
+      DO UPDATE SET
+        account_no     = EXCLUDED.account_no,
+        report_count   = COALESCE(scam_bank_accounts_summary.report_count, 0) + 1,
+        last_report_at = now(),
+        risk_level     = GREATEST(COALESCE(scam_bank_accounts_summary.risk_level, 0), 10),
+        updated_at     = now()
+      RETURNING
+        bank_name,
+        account_no,
+        account_norm,
+        report_count,
+        last_report_at,
+        risk_level,
+        updated_at
+      `,
+      [bankNameSafe, accountNoSafe, accountNormSafe]
+    );
 
-        // 2) upsert summary (ไม่มี source_reports / tags / ctx ใน DB)
-        const { rows } = await client.query(
-          `
-          INSERT INTO scam_bank_accounts_summary
-            (bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at)
-          VALUES
-            ($1, $2, $3, 1, now(), 10, now())
-          ON CONFLICT (bank_name, account_norm)
-          DO UPDATE SET
-            account_no     = EXCLUDED.account_no,
-            report_count   = COALESCE(scam_bank_accounts_summary.report_count,0) + 1,
-            last_report_at = now(),
-            risk_level     = GREATEST(COALESCE(scam_bank_accounts_summary.risk_level,0), 10),
-            updated_at     = now()
-          RETURNING
-            bank_name, account_no, account_norm, report_count, last_report_at, risk_level, updated_at
-          `,
-          [bankNameSafe, String(account || "").trim(), accNorm]
-        );
+    return shapeScamBankAccount(rows[0]);
+  });
 
-        return shapeScamBankAccount(rows[0]);
-      });
-
-      return result;
-    },
+  return result;
+},
 
     unreportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
       const { bank_name, account, client_id, device_model, os_version, app_version } = input;
