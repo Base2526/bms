@@ -11,6 +11,7 @@ import {
   Popconfirm,
   Tooltip,
 } from "antd";
+import type { TableColumnsType } from "antd";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -27,6 +28,7 @@ const Q_POSTS_PAGED = gql`
         detail 
         status 
         created_at
+        updated_at
         images { id url }
         author { id name avatar }
       }
@@ -37,6 +39,48 @@ const M_DEL = gql`mutation($id:ID!){ deletePost(id:$id) }`;
 const M_DEL_MANY = gql`mutation($ids:[ID!]!){ deletePosts(ids:$ids) }`;
 
 const statusTag = (s:string)=><Tag color={s==='public'?'green':'red'}>{s}</Tag>;
+
+type PostRow = {
+  id: string;
+  title?: string | null;
+  detail?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  images?: any;
+  author?: { id: string; name?: string | null } | null;
+};
+
+const formatDateTime = (
+  value: string | number | null | undefined
+): string => {
+  if (value === null || value === undefined || value === "") return "-";
+
+  let timestamp: number;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "-";
+
+    const parsed = Number(trimmed);
+    if (Number.isNaN(parsed)) return "-";
+    timestamp = parsed;
+  } else {
+    timestamp = value;
+  }
+
+  const digits = String(Math.trunc(timestamp)).length;
+
+  if (digits === 10) {
+    timestamp = timestamp * 1000;
+  }
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("en-US");
+};
 
 function PostsList(){
   const [q, setQ] = useState('');
@@ -100,7 +144,7 @@ function PostsList(){
     }
   };
 
-  const cols = useMemo(()=>[
+  const cols = useMemo<TableColumnsType<PostRow>>(()=>[
     {
       title:'Images',
       dataIndex:'images',
@@ -165,7 +209,19 @@ function PostsList(){
           </>
         </Space>
       )
-    }
+    },
+    {
+      title: 'Created At',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (value) => formatDateTime(value),
+    },
+    {
+      title: 'Updated At',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      render: (value) => formatDateTime(value),
+    },
   ], [deletingId, q, page, pageSize, refetch]); // เปลี่ยนจาก deleting -> deletingId
 
   const rowSelection = {
@@ -201,7 +257,7 @@ function PostsList(){
         rowKey="id"
         loading={loading}
         dataSource={items}
-        columns={cols as any}
+        columns={cols}
         rowSelection={rowSelection}
         pagination={{
           current: page,

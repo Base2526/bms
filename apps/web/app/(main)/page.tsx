@@ -365,9 +365,9 @@ function PostsList() {
 
   const [deletePost, { loading: deleting }] = useMutation(DELETE_POST);
 
-  useEffect(() => {
-    console.log("[data] =", data);
-  }, [data]);
+  // useEffect(() => {
+  //   console.log("[data] =", data);
+  // }, [data]);
 
   const handleDelete = async (id: string) => {
     try {

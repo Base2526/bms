@@ -9,12 +9,12 @@ out/
 
 apps/web/certs
 apps/web/Caddyfile
-apps/web/package-lock.json
-apps/ws/package-lock.json
-apps/ws/src/db/package-lock.json
+# apps/web/package-lock.json
+# apps/ws/package-lock.json
+# apps/ws/src/db/package-lock.json
 
-packages/graphql-core/package-lock.json
-packages/realtime/package-lock.json
+# packages/graphql-core/package-lock.json
+# packages/realtime/package-lock.json
 
 /storage/*
 !/storage/.gitkeep

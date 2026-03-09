@@ -55,7 +55,7 @@ export default function FilesPage(){
 
   const items: FileRow[] = data?.filesPaged?.items ?? [];
   const total = data?.filesPaged?.total ?? 0;
-
+  
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const selectedCount = selectedRowKeys.length;
 
@@ -113,14 +113,15 @@ export default function FilesPage(){
       title: "Preview",
       dataIndex: "thumb",
       key: "thumb",
-      render: (_: any, r: FileRow) =>
-        r.thumb ? (
-          <Image src={r.thumb} alt="" width={64} height={64} style={{ objectFit:'cover', borderRadius:6 }} />
+      render: (_: any, r: FileRow) =>{
+        return r.url ? (
+          <Image src={r.url} alt="" width={64} height={64} style={{ objectFit:'cover', borderRadius:6 }} />
         ) : (
           <div style={{ width:64, height:64, borderRadius:6, background:'#f3f3f3', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <span style={{ color:'#999', fontSize:12 }}>no preview</span>
           </div>
-        ),
+        )
+      },
       width: 90,
     },
     { title:"Name", dataIndex:"original_name", key:"original_name", render:(v: string|null, r:FileRow)=> v || r.filename },
@@ -132,7 +133,7 @@ export default function FilesPage(){
       key:"actions",
       render: (_:any, r:FileRow)=> (
         <Space>
-          <Link href={r.url} target="_blank">Download</Link>
+          <Link href={`${r.url}?mode=download`}>Download</Link>
           <a onClick={()=> renameFile(r)}>Rename</a>
           <Popconfirm title="Delete this file?" onConfirm={()=> delFile(r)}>
             <a>Delete</a>
