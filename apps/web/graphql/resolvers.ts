@@ -4654,25 +4654,6 @@ export const resolvers = {
       const noteSafe = note?.trim() ? note.trim() : null;
 
       const { result } = await runInTransaction(String(auth.author_id), async (client: any) => {
-        // 1) insert report
-        // await client.query(
-        //   `
-        //   INSERT INTO scam_bank_account_reports
-        //     (bank_name, account_no, account_norm, note, client_id, device_model, os_version, app_version)
-        //   VALUES
-        //     ($1, $2, $3, $4, $5, $6, $7, $8)
-        //   `,
-        //   [
-        //     bankNameSafe,
-        //     String(account || "").trim(),
-        //     accNorm,
-        //     note?.trim() ? note.trim() : null,
-        //     String(client_id),
-        //     device_model ?? null,
-        //     os_version ?? null,
-        //     app_version ?? null,
-        //   ]
-        // );
 
         await client.query(
           `
