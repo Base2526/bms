@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Layout, theme, Grid, Space, Typography, Divider, Tag, Tooltip, Button } from "antd";
 import {
@@ -29,9 +29,12 @@ const { useBreakpoint } = Grid;
 const { Text, Title } = Typography;
 
 /* -----------------------------------
- * Shared styles
+ * constants
  * ----------------------------------- */
-const footerLinkStyle: React.CSSProperties = {
+type ConsentValue = "allow" | "reject";
+const CONSENT_KEY = "pdpa_consent_v1";
+
+const FOOTER_LINK_STYLE: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
@@ -45,7 +48,7 @@ const footerLinkStyle: React.CSSProperties = {
   transition: "all 160ms ease",
 };
 
-const mobileFooterLinkStyle: React.CSSProperties = {
+const MOBILE_FOOTER_LINK_STYLE: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
@@ -60,38 +63,68 @@ const mobileFooterLinkStyle: React.CSSProperties = {
   transition: "all 160ms ease",
 };
 
-function hoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.background = "rgba(0,0,0,0.045)";
-  e.currentTarget.style.borderColor = "rgba(0,0,0,0.14)";
-}
-function hoverOut(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.background = "rgba(0,0,0,0.02)";
-  e.currentTarget.style.borderColor = "rgba(0,0,0,0.08)";
-}
+const APP_DOWNLOAD_CARD_DESKTOP: React.CSSProperties = {
+  position: "relative",
+  overflow: "hidden",
+  width: "100%",
+  borderRadius: 24,
+  padding: "24px 24px",
+  background:
+    "radial-gradient(circle at top left, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.92) 18%, rgba(249,250,251,0.96) 40%, rgba(243,244,246,0.98) 100%)",
+  border: "1px solid rgba(0,0,0,0.06)",
+  boxShadow: "0 14px 38px rgba(15,23,42,0.06)",
+};
+
+const APP_DOWNLOAD_CARD_MOBILE: React.CSSProperties = {
+  ...APP_DOWNLOAD_CARD_DESKTOP,
+  borderRadius: 20,
+  padding: "18px 14px",
+};
+
+const APP_BUTTON_BASE_DESKTOP: React.CSSProperties = {
+  position: "relative",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 14,
+  minHeight: 64,
+  padding: "14px 18px",
+  borderRadius: 20,
+  textDecoration: "none",
+  color: "#fff",
+  overflow: "hidden",
+  transition: "all 180ms ease",
+  boxShadow: "0 10px 28px rgba(16,24,40,0.12)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  backdropFilter: "blur(10px)",
+  width: 250,
+};
+
+const APP_BUTTON_BASE_MOBILE: React.CSSProperties = {
+  ...APP_BUTTON_BASE_DESKTOP,
+  width: "100%",
+  padding: "14px 14px",
+};
+
+const ANDROID_BUTTON_BG: React.CSSProperties = {
+  background: "linear-gradient(135deg, #0f172a 0%, #111827 45%, #1f2937 100%)",
+};
+
+const IOS_BUTTON_BG: React.CSSProperties = {
+  background: "linear-gradient(135deg, #111111 0%, #18181b 52%, #27272a 100%)",
+};
+
+const STATIC_LINKS = [
+  { href: "/roadmap", label: "Roadmap", icon: <RocketOutlined /> },
+  { href: "/terms", label: "Terms", icon: <FileTextOutlined /> },
+  { href: "/privacy", label: "Privacy", icon: <SafetyCertificateOutlined /> },
+  { href: "/open-source", label: "Open Source", icon: <CodeOutlined /> },
+  { href: "/license", label: "License", icon: <BookOutlined /> },
+  { href: "/donate", label: "Donate", icon: <HeartOutlined /> },
+] as const;
 
 /* -----------------------------------
- * Premium app button hover
+ * utilities
  * ----------------------------------- */
-function premiumHoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.transform = "translateY(-3px)";
-  e.currentTarget.style.boxShadow = "0 18px 40px rgba(16,24,40,0.16)";
-  e.currentTarget.style.borderColor = "rgba(255,255,255,0.24)";
-  e.currentTarget.style.opacity = "0.98";
-}
-
-function premiumHoverOut(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.transform = "translateY(0)";
-  e.currentTarget.style.boxShadow = "0 10px 28px rgba(16,24,40,0.12)";
-  e.currentTarget.style.borderColor = "rgba(255,255,255,0.14)";
-  e.currentTarget.style.opacity = "1";
-}
-
-/* -----------------------------------
- * PDPA / Cookie Consent
- * ----------------------------------- */
-type ConsentValue = "allow" | "reject";
-const CONSENT_KEY = "pdpa_consent_v1";
-
 function readConsent(): { value: ConsentValue; at: string } | null {
   if (typeof window === "undefined") return null;
   try {
@@ -114,7 +147,34 @@ function writeConsent(value: ConsentValue) {
   }
 }
 
-function PDPAConsentBar({
+function hoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
+  e.currentTarget.style.background = "rgba(0,0,0,0.045)";
+  e.currentTarget.style.borderColor = "rgba(0,0,0,0.14)";
+}
+
+function hoverOut(e: React.MouseEvent<HTMLAnchorElement>) {
+  e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+  e.currentTarget.style.borderColor = "rgba(0,0,0,0.08)";
+}
+
+function premiumHoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
+  e.currentTarget.style.transform = "translateY(-3px)";
+  e.currentTarget.style.boxShadow = "0 18px 40px rgba(16,24,40,0.16)";
+  e.currentTarget.style.borderColor = "rgba(255,255,255,0.24)";
+  e.currentTarget.style.opacity = "0.98";
+}
+
+function premiumHoverOut(e: React.MouseEvent<HTMLAnchorElement>) {
+  e.currentTarget.style.transform = "translateY(0)";
+  e.currentTarget.style.boxShadow = "0 10px 28px rgba(16,24,40,0.12)";
+  e.currentTarget.style.borderColor = "rgba(255,255,255,0.14)";
+  e.currentTarget.style.opacity = "1";
+}
+
+/* -----------------------------------
+ * memoized components
+ * ----------------------------------- */
+const PDPAConsentBar = memo(function PDPAConsentBar({
   isMobile,
   visible,
   onAllow,
@@ -185,14 +245,7 @@ function PDPAConsentBar({
             </div>
           </div>
 
-          <Space
-            size={8}
-            wrap
-            style={{
-              justifyContent: "flex-end",
-              flexShrink: 0,
-            }}
-          >
+          <Space size={8} wrap style={{ justifyContent: "flex-end", flexShrink: 0 }}>
             <Button onClick={onReject} icon={<CloseCircleOutlined />} style={{ borderRadius: 12 }}>
               Reject
             </Button>
@@ -209,60 +262,22 @@ function PDPAConsentBar({
       </div>
     </div>
   );
-}
+});
 
-/* -----------------------------------
- * Premium App Download Section
- * ----------------------------------- */
-function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
-  // เปลี่ยนลิงก์ตรงนี้เป็นลิงก์จริง
+const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
   const androidHref = "/download/android";
   const iosHref = "/download/ios";
 
-  const cardStyle: React.CSSProperties = {
-    position: "relative",
-    overflow: "hidden",
-    width: "100%",
-    borderRadius: isMobile ? 20 : 24,
-    padding: isMobile ? "18px 14px" : "24px 24px",
-    background:
-      "radial-gradient(circle at top left, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.92) 18%, rgba(249,250,251,0.96) 40%, rgba(243,244,246,0.98) 100%)",
-    border: "1px solid rgba(0,0,0,0.06)",
-    boxShadow: "0 14px 38px rgba(15,23,42,0.06)",
-  };
-
-  const buttonBase: React.CSSProperties = {
-    position: "relative",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 14,
-    minHeight: 64,
-    padding: isMobile ? "14px 14px" : "14px 18px",
-    borderRadius: 20,
-    textDecoration: "none",
-    color: "#fff",
-    overflow: "hidden",
-    transition: "all 180ms ease",
-    boxShadow: "0 10px 28px rgba(16,24,40,0.12)",
-    border: "1px solid rgba(255,255,255,0.14)",
-    backdropFilter: "blur(10px)",
-  };
-
-  const darkAndroidStyle: React.CSSProperties = {
-    ...buttonBase,
-    width: isMobile ? "100%" : 250,
-    background: "linear-gradient(135deg, #0f172a 0%, #111827 45%, #1f2937 100%)",
-  };
-
-  const darkIosStyle: React.CSSProperties = {
-    ...buttonBase,
-    width: isMobile ? "100%" : 250,
-    background: "linear-gradient(135deg, #111111 0%, #18181b 52%, #27272a 100%)",
-  };
+  const cardStyle = isMobile ? APP_DOWNLOAD_CARD_MOBILE : APP_DOWNLOAD_CARD_DESKTOP;
+  const androidStyle = isMobile
+    ? { ...APP_BUTTON_BASE_MOBILE, ...ANDROID_BUTTON_BG }
+    : { ...APP_BUTTON_BASE_DESKTOP, ...ANDROID_BUTTON_BG };
+  const iosStyle = isMobile
+    ? { ...APP_BUTTON_BASE_MOBILE, ...IOS_BUTTON_BG }
+    : { ...APP_BUTTON_BASE_DESKTOP, ...IOS_BUTTON_BG };
 
   return (
     <div style={cardStyle}>
-      {/* decorative glow */}
       <div
         aria-hidden="true"
         style={{
@@ -299,14 +314,7 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
           alignItems: isMobile ? "stretch" : "center",
         }}
       >
-        <Space
-          align="start"
-          size={14}
-          style={{
-            flex: 1,
-            width: "100%",
-          }}
-        >
+        <Space align="start" size={14} style={{ flex: 1, width: "100%" }}>
           <div
             style={{
               width: isMobile ? 46 : 56,
@@ -401,7 +409,7 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
         >
           <Link
             href={androidHref}
-            style={darkAndroidStyle}
+            style={androidStyle}
             onMouseEnter={premiumHoverIn}
             onMouseLeave={premiumHoverOut}
             aria-label="Download Android app"
@@ -422,34 +430,9 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
               <AndroidFilled style={{ fontSize: 22, color: "#fff" }} />
             </div>
 
-            <div
-              style={{
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                flex: 1,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  opacity: 0.72,
-                  lineHeight: 1.1,
-                  letterSpacing: 0.2,
-                }}
-              >
-                Get it on
-              </span>
-              <span
-                style={{
-                  marginTop: 3,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  lineHeight: 1.1,
-                  letterSpacing: 0.2,
-                }}
-              >
+            <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>Get it on</span>
+              <span style={{ marginTop: 3, fontSize: 16, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.2 }}>
                 Android App
               </span>
             </div>
@@ -459,7 +442,7 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
 
           <Link
             href={iosHref}
-            style={darkIosStyle}
+            style={iosStyle}
             onMouseEnter={premiumHoverIn}
             onMouseLeave={premiumHoverOut}
             aria-label="Download iOS app"
@@ -480,34 +463,9 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
               <AppleFilled style={{ fontSize: 22, color: "#fff" }} />
             </div>
 
-            <div
-              style={{
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                flex: 1,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  opacity: 0.72,
-                  lineHeight: 1.1,
-                  letterSpacing: 0.2,
-                }}
-              >
-                Download on
-              </span>
-              <span
-                style={{
-                  marginTop: 3,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  lineHeight: 1.1,
-                  letterSpacing: 0.2,
-                }}
-              >
+            <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>Download on</span>
+              <span style={{ marginTop: 3, fontSize: 16, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.2 }}>
                 iPhone / iOS
               </span>
             </div>
@@ -518,12 +476,191 @@ function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
       </Space>
     </div>
   );
-}
+});
+
+const FooterArea = memo(function FooterArea({
+  isMobile,
+  year,
+  brandTitle,
+  supportLabel,
+  consent,
+  onOpenPdpa,
+}: {
+  isMobile: boolean;
+  year: number;
+  brandTitle: string;
+  supportLabel: string;
+  consent: ConsentValue | null;
+  onOpenPdpa: () => void;
+}) {
+  const footerLinks = useMemo(
+    () => [
+      ...STATIC_LINKS.slice(0, 5),
+      { href: "/support", label: supportLabel, icon: <CustomerServiceOutlined /> },
+      STATIC_LINKS[5],
+    ],
+    [supportLabel]
+  );
+
+  return (
+    <Footer
+      style={{
+        background: "#ffffff",
+        padding: isMobile ? "12px 10px" : "22px 16px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1400,
+          margin: "0 auto",
+          borderRadius: 20,
+          border: "1px solid rgba(0,0,0,0.06)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)",
+          padding: isMobile ? "12px 10px" : "18px 18px",
+          boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
+        }}
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%", alignItems: "center" }}>
+          <AppDownloadSection isMobile={isMobile} />
+
+          <Space
+            wrap
+            size={10}
+            style={{
+              width: "100%",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "rgba(0,0,0,0.55)" }}>
+              <Text>
+                © {year} {brandTitle}.
+              </Text>
+            </Text>
+
+            <Space size={8} wrap style={{ justifyContent: "center" }}>
+              <Tag
+                icon={<SafetyCertificateOutlined />}
+                style={{
+                  borderRadius: 999,
+                  padding: "2px 10px",
+                  margin: 0,
+                  background: "rgba(255,255,255,0.84)",
+                  borderColor: "rgba(0,0,0,0.08)",
+                  color: "rgba(0,0,0,0.65)",
+                }}
+              >
+                AS IS / No Warranty
+              </Tag>
+
+              {!isMobile && (
+                <Tag
+                  icon={<CodeOutlined />}
+                  style={{
+                    borderRadius: 999,
+                    padding: "2px 10px",
+                    margin: 0,
+                    background: "rgba(255,255,255,0.84)",
+                    borderColor: "rgba(0,0,0,0.08)",
+                    color: "rgba(0,0,0,0.65)",
+                  }}
+                >
+                  Open-source components
+                </Tag>
+              )}
+            </Space>
+          </Space>
+
+          <Divider style={{ margin: "2px 0", borderColor: "rgba(0,0,0,0.06)" }} />
+
+          {isMobile ? (
+            <Space wrap size={8} style={{ justifyContent: "center", width: "100%" }}>
+              {footerLinks.map((it) => (
+                <Tooltip key={it.href} title={it.label} placement="top">
+                  <Link
+                    href={it.href}
+                    style={MOBILE_FOOTER_LINK_STYLE}
+                    onMouseEnter={hoverIn}
+                    onMouseLeave={hoverOut}
+                    aria-label={it.label}
+                  >
+                    <span style={{ fontSize: 18, lineHeight: 1, display: "inline-flex" }}>{it.icon}</span>
+                  </Link>
+                </Tooltip>
+              ))}
+
+              <Tooltip
+                title={consent ? `PDPA: ${consent.toUpperCase()} (tap to change)` : "PDPA settings"}
+                placement="top"
+              >
+                <button
+                  type="button"
+                  onClick={onOpenPdpa}
+                  style={{
+                    ...MOBILE_FOOTER_LINK_STYLE,
+                    cursor: "pointer",
+                  }}
+                  aria-label="PDPA settings"
+                >
+                  <SettingOutlined style={{ fontSize: 18 }} />
+                </button>
+              </Tooltip>
+            </Space>
+          ) : (
+            <Space wrap size={10} style={{ justifyContent: "center" }}>
+              {footerLinks.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  style={FOOTER_LINK_STYLE}
+                  onMouseEnter={hoverIn}
+                  onMouseLeave={hoverOut}
+                >
+                  {it.icon}
+                  {it.label}
+                </Link>
+              ))}
+
+              <button
+                type="button"
+                onClick={onOpenPdpa}
+                style={{
+                  ...FOOTER_LINK_STYLE,
+                  cursor: "pointer",
+                }}
+                aria-label="PDPA settings"
+              >
+                <SettingOutlined />
+                PDPA
+                {consent ? (
+                  <span style={{ marginLeft: 6, opacity: 0.75, fontSize: 12 }}>({consent.toUpperCase()})</span>
+                ) : null}
+              </button>
+            </Space>
+          )}
+
+          {!isMobile && (
+            <Text style={{ color: "rgba(0,0,0,0.45)", textAlign: "center" }}>
+              Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open
+              Source / License for details.
+            </Text>
+          )}
+        </Space>
+      </div>
+    </Footer>
+  );
+});
 
 /* -----------------------------------
- * Main Layout
+ * main layout
  * ----------------------------------- */
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({
+  children,
+  initialLang,
+}: {
+  children: React.ReactNode;
+  initialLang?: "th" | "en";
+}) {
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -531,7 +668,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
-  const year = new Date().getFullYear();
+  const year = useMemo(() => new Date().getFullYear(), []);
 
   const [consent, setConsent] = useState<ConsentValue | null>(null);
   const [showPdpa, setShowPdpa] = useState(false);
@@ -546,30 +683,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const onAllow = () => {
+  const brandTitle = useMemo(() => String(t("header.title") ?? "จ่าเฉย (JACHOEI)"), [t, initialLang]);
+  const supportLabel = useMemo(() => String(t("footer.support") ?? "Support"), [t, initialLang]);
+
+  const onAllow = useCallback(() => {
     writeConsent("allow");
     setConsent("allow");
     setShowPdpa(false);
-  };
+  }, []);
 
-  const onReject = () => {
+  const onReject = useCallback(() => {
     writeConsent("reject");
     setConsent("reject");
     setShowPdpa(false);
-  };
+  }, []);
 
-  const footerLinks = useMemo(
-    () => [
-      { href: "/roadmap", label: "Roadmap", icon: <RocketOutlined /> },
-      { href: "/terms", label: "Terms", icon: <FileTextOutlined /> },
-      { href: "/privacy", label: "Privacy", icon: <SafetyCertificateOutlined /> },
-      { href: "/open-source", label: "Open Source", icon: <CodeOutlined /> },
-      { href: "/license", label: "License", icon: <BookOutlined /> },
-      { href: "/support", label: (t("footer.support") as string) ?? "Support", icon: <CustomerServiceOutlined /> },
-      { href: "/donate", label: "Donate", icon: <HeartOutlined /> },
-    ],
-    [t]
-  );
+  const onClosePdpa = useCallback(() => {
+    setShowPdpa(false);
+  }, []);
+
+  const onOpenPdpa = useCallback(() => {
+    setShowPdpa(true);
+  }, []);
+
+  const layoutPaddingBottom = showPdpa ? (isMobile ? 120 : 98) : 0;
 
   return (
     <Layout
@@ -578,7 +715,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         background: "#ffffff",
         display: "flex",
         flexDirection: "column",
-        paddingBottom: showPdpa ? (isMobile ? 120 : 98) : 0,
+        paddingBottom: layoutPaddingBottom,
       }}
     >
       <HeaderBar isMobile={isMobile} />
@@ -606,170 +743,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </Content>
 
-      <Footer
-        style={{
-          background: "#ffffff",
-          padding: isMobile ? "12px 10px" : "22px 16px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1400,
-            margin: "0 auto",
-            borderRadius: 20,
-            border: "1px solid rgba(0,0,0,0.06)",
-            background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)",
-            padding: isMobile ? "12px 10px" : "18px 18px",
-            boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
-          }}
-        >
-          <Space direction="vertical" size={16} style={{ width: "100%", alignItems: "center" }}>
-            {/* Premium app download CTA */}
-            <AppDownloadSection isMobile={isMobile} />
-
-            {/* top row */}
-            <Space
-              wrap
-              size={10}
-              style={{
-                width: "100%",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "rgba(0,0,0,0.55)" }}>
-                <Text>
-                  © {year} {String(t("header.title") ?? "จ่าเฉย (JACHOEI)")}.
-                </Text>
-              </Text>
-
-              <Space size={8} wrap style={{ justifyContent: "center" }}>
-                <Tag
-                  icon={<SafetyCertificateOutlined />}
-                  style={{
-                    borderRadius: 999,
-                    padding: "2px 10px",
-                    margin: 0,
-                    background: "rgba(255,255,255,0.84)",
-                    borderColor: "rgba(0,0,0,0.08)",
-                    color: "rgba(0,0,0,0.65)",
-                  }}
-                >
-                  AS IS / No Warranty
-                </Tag>
-
-                {!isMobile && (
-                  <Tag
-                    icon={<CodeOutlined />}
-                    style={{
-                      borderRadius: 999,
-                      padding: "2px 10px",
-                      margin: 0,
-                      background: "rgba(255,255,255,0.84)",
-                      borderColor: "rgba(0,0,0,0.08)",
-                      color: "rgba(0,0,0,0.65)",
-                    }}
-                  >
-                    Open-source components
-                  </Tag>
-                )}
-              </Space>
-            </Space>
-
-            <Divider style={{ margin: "2px 0", borderColor: "rgba(0,0,0,0.06)" }} />
-
-            {/* links row */}
-            {isMobile ? (
-              <Space
-                wrap
-                size={8}
-                style={{
-                  justifyContent: "center",
-                  width: "100%",
-                }}
-              >
-                {footerLinks.map((it) => (
-                  <Tooltip key={it.href} title={it.label} placement="top">
-                    <Link
-                      href={it.href}
-                      style={mobileFooterLinkStyle}
-                      onMouseEnter={hoverIn}
-                      onMouseLeave={hoverOut}
-                      aria-label={it.label}
-                    >
-                      <span style={{ fontSize: 18, lineHeight: 1, display: "inline-flex" }}>{it.icon}</span>
-                    </Link>
-                  </Tooltip>
-                ))}
-
-                <Tooltip
-                  title={consent ? `PDPA: ${consent.toUpperCase()} (tap to change)` : "PDPA settings"}
-                  placement="top"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setShowPdpa(true)}
-                    style={{
-                      ...mobileFooterLinkStyle,
-                      cursor: "pointer",
-                    }}
-                    aria-label="PDPA settings"
-                  >
-                    <SettingOutlined style={{ fontSize: 18 }} />
-                  </button>
-                </Tooltip>
-              </Space>
-            ) : (
-              <Space wrap size={10} style={{ justifyContent: "center" }}>
-                {footerLinks.map((it) => (
-                  <Link
-                    key={it.href}
-                    href={it.href}
-                    style={footerLinkStyle}
-                    onMouseEnter={hoverIn}
-                    onMouseLeave={hoverOut}
-                  >
-                    {it.icon}
-                    {it.label}
-                  </Link>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setShowPdpa(true)}
-                  style={{
-                    ...footerLinkStyle,
-                    cursor: "pointer",
-                  }}
-                  aria-label="PDPA settings"
-                >
-                  <SettingOutlined />
-                  PDPA
-                  {consent ? (
-                    <span style={{ marginLeft: 6, opacity: 0.75, fontSize: 12 }}>
-                      ({consent.toUpperCase()})
-                    </span>
-                  ) : null}
-                </button>
-              </Space>
-            )}
-
-            {!isMobile && (
-              <Text style={{ color: "rgba(0,0,0,0.45)", textAlign: "center" }}>
-                Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open
-                Source / License for details.
-              </Text>
-            )}
-          </Space>
-        </div>
-      </Footer>
+      <FooterArea
+        isMobile={isMobile}
+        year={year}
+        brandTitle={brandTitle}
+        supportLabel={supportLabel}
+        consent={consent}
+        onOpenPdpa={onOpenPdpa}
+      />
 
       <PDPAConsentBar
         isMobile={isMobile}
         visible={showPdpa}
         onAllow={onAllow}
         onReject={onReject}
-        onClose={() => setShowPdpa(false)}
+        onClose={onClosePdpa}
       />
     </Layout>
   );
