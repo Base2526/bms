@@ -469,6 +469,9 @@ export const typeDefs = /* GraphQL */ `
     phoneSafetyStatus(phone: String!): PhoneSafetyStatus!
     myBlockedPhones(limit: Int = 50, offset: Int = 0): [PhoneSafetyStatus!]!
 
+    # compact key sets for client-side status checks (source of truth: backend)
+    myBlockedPhoneKeys: [String!]!
+
     # exact + prefix (ตัวเลขล้วน) + (option) bank_name prefix
     searchBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
 
@@ -479,7 +482,11 @@ export const typeDefs = /* GraphQL */ `
 
     myReportedPhones(limit: Int!, offset: Int!): [MyReportedPhone!]!
 
+    myReportedPhoneKeys: [String!]!
+
     myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
+
+    myReportedBankAccountKeys: [String!]!
   }
 
   input TelNumberInput {
@@ -692,6 +699,10 @@ export const typeDefs = /* GraphQL */ `
     renameFile(id: ID!, name: String!): Boolean!
 
     toggleBookmark(postId: ID!): ToggleBookmarkResult!
+
+    # Explicit operations (avoids ambiguous "toggle" semantics)
+    bookmark(postId: ID!): ToggleBookmarkResult!
+    unbookmark(postId: ID!): ToggleBookmarkResult!
 
     updateMe(data: MeInput!): User!
 

@@ -2,10 +2,12 @@
 
 import * as React from "react";
 
+import { gql, useQuery } from "@apollo/client";
+
+import { useSessionCtx } from "@/lib/session-context";
+
 import {
-  getBlockedTelSet,
   getBlockedTelEntry as getBlockedTelEntryInStorage,
-  getReportedBankSet,
   getReportedBankEntry as getReportedBankEntryInStorage,
   normalizeBank,
   normalizeTel,
@@ -13,9 +15,6 @@ import {
   removeReportedBankEntry as removeReportedBankEntryInStorage,
   setBlockedTelEntry as setBlockedTelEntryInStorage,
   setReportedBankEntry as setReportedBankEntryInStorage,
-  subscribeSync,
-  toggleBlockedTel as toggleBlockedTelInStorage,
-  toggleReportedBank as toggleReportedBankInStorage,
 } from "../lib/jachoeiLocalState";
 
 import type { StoredBlockedTelEntry, StoredReportedBankEntry } from "../lib/jachoeiLocalState";
@@ -25,8 +24,6 @@ export type JachoeiLocalState = {
   reportedBankSet: ReadonlySet<string>;
   isBlockedTel: (tel: string) => boolean;
   isReportedBank: (account: string) => boolean;
-  toggleBlockedTel: (tel: string) => { blocked: boolean };
-  toggleReportedBank: (account: string) => { reported: boolean };
   getBlockedTelEntry: (tel: string) => StoredBlockedTelEntry | null;
   setBlockedTelEntry: (tel: string, entry: StoredBlockedTelEntry) => void;
   removeBlockedTelEntry: (tel: string) => void;
@@ -36,19 +33,129 @@ export type JachoeiLocalState = {
   refresh: () => void;
 };
 
-export function useJachoeiLocalState(): JachoeiLocalState {
-  const [blockedTelSet, setBlockedTelSet] = React.useState<Set<string>>(() => new Set());
-  const [reportedBankSet, setReportedBankSet] = React.useState<Set<string>>(() => new Set());
+const Q_MY_BLOCKED_PHONE_KEYS = gql`
+  query MyBlockedPhoneKeys {
+    myBlockedPhoneKeys
+  }
+`;
 
-  const refresh = React.useCallback(() => {
-    setBlockedTelSet(getBlockedTelSet());
-    setReportedBankSet(getReportedBankSet());
-  }, []);
+const Q_MY_REPORTED_BANK_ACCOUNT_KEYS = gql`
+  query MyReportedBankAccountKeys {
+    myReportedBankAccountKeys
+  }
+`;
+
+
+type MyBlockedPhoneKeysResponse = { myBlockedPhoneKeys: string[] };
+type MyReportedBankAccountKeysResponse = { myReportedBankAccountKeys: string[] };
+
+export function useJachoeiLocalState(): JachoeiLocalState {
+  const { user } = useSessionCtx();
+  const userId = user?.id != null ? String(user.id) : null;
+
+  const [optimisticBlocked, setOptimisticBlocked] = React.useState<Set<string>>(() => new Set());
+  const [optimisticReportedBank, setOptimisticReportedBank] = React.useState<Set<string>>(() => new Set());
+
+  const blockedKeysQ = useQuery<MyBlockedPhoneKeysResponse>(Q_MY_BLOCKED_PHONE_KEYS, {
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+    errorPolicy: "all",
+    skip: !userId,
+  });
+
+  const reportedBankKeysQ = useQuery<MyReportedBankAccountKeysResponse>(Q_MY_REPORTED_BANK_ACCOUNT_KEYS, {
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+    errorPolicy: "all",
+    skip: !userId,
+  });
+
+  const serverBlockedSet = React.useMemo(() => {
+    if (!userId) return new Set<string>();
+    const rows = blockedKeysQ.data?.myBlockedPhoneKeys ?? [];
+    const set = new Set<string>();
+    for (const raw of rows) {
+      const t = normalizeTel(raw);
+      if (t) set.add(t);
+    }
+    return set;
+  }, [blockedKeysQ.data]);
+
+  const serverReportedBankSet = React.useMemo(() => {
+    if (!userId) return new Set<string>();
+    const rows = reportedBankKeysQ.data?.myReportedBankAccountKeys ?? [];
+    const set = new Set<string>();
+    for (const raw of rows) {
+      const a = normalizeBank(raw);
+      if (a) set.add(a);
+    }
+    return set;
+  }, [reportedBankKeysQ.data]);
 
   React.useEffect(() => {
-    refresh();
-    return subscribeSync(() => refresh());
-  }, [refresh]);
+    setOptimisticBlocked((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      for (const t of prev) {
+        if (serverBlockedSet.has(t)) next.delete(t);
+      }
+      return next;
+    });
+  }, [serverBlockedSet]);
+
+  React.useEffect(() => {
+    setOptimisticReportedBank((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      for (const a of prev) {
+        if (serverReportedBankSet.has(a)) next.delete(a);
+      }
+      return next;
+    });
+  }, [serverReportedBankSet]);
+
+  const blockedTelSet = React.useMemo(() => {
+    const next = new Set(serverBlockedSet);
+    for (const t of optimisticBlocked) next.add(t);
+    return next;
+  }, [optimisticBlocked, serverBlockedSet]);
+
+  const reportedBankSet = React.useMemo(() => {
+    const next = new Set(serverReportedBankSet);
+    for (const a of optimisticReportedBank) next.add(a);
+    return next;
+  }, [optimisticReportedBank, serverReportedBankSet]);
+
+  const refresh = React.useCallback(() => {
+    if (!userId) return;
+    void blockedKeysQ.refetch().catch(() => {});
+    void reportedBankKeysQ.refetch().catch(() => {});
+  }, [blockedKeysQ, reportedBankKeysQ, userId]);
+
+  // Realtime invalidation is handled globally in `GlobalChatListener`.
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!userId) return;
+
+    const onFocus = () => refresh();
+    const onVis = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [refresh, userId]);
+
+  React.useEffect(() => {
+    if (userId) return;
+    setOptimisticBlocked(new Set());
+    setOptimisticReportedBank(new Set());
+  }, [userId]);
 
   const isBlockedTel = React.useCallback(
     (tel: string) => {
@@ -66,42 +173,6 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     [reportedBankSet]
   );
 
-  const toggleBlockedTel = React.useCallback(
-    (tel: string) => {
-      const t = normalizeTel(tel);
-      if (!t) return { blocked: false };
-      const res = toggleBlockedTelInStorage(t);
-
-      setBlockedTelSet((prev) => {
-        const next = new Set(prev);
-        if (res.blocked) next.add(t);
-        else next.delete(t);
-        return next;
-      });
-
-      return res;
-    },
-    []
-  );
-
-  const toggleReportedBank = React.useCallback(
-    (account: string) => {
-      const a = normalizeBank(account);
-      if (!a) return { reported: false };
-      const res = toggleReportedBankInStorage(a);
-
-      setReportedBankSet((prev) => {
-        const next = new Set(prev);
-        if (res.reported) next.add(a);
-        else next.delete(a);
-        return next;
-      });
-
-      return res;
-    },
-    []
-  );
-
   const getBlockedTelEntry = React.useCallback((tel: string) => {
     const t = normalizeTel(tel);
     if (!t) return null;
@@ -113,7 +184,9 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     if (!t) return;
 
     setBlockedTelEntryInStorage(t, entry);
-    setBlockedTelSet((prev) => {
+
+    // keep UX snappy (optimistic), but backend remains source of truth
+    setOptimisticBlocked((prev) => {
       const next = new Set(prev);
       next.add(t);
       return next;
@@ -125,7 +198,8 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     if (!t) return;
 
     removeBlockedTelEntryInStorage(t);
-    setBlockedTelSet((prev) => {
+
+    setOptimisticBlocked((prev) => {
       const next = new Set(prev);
       next.delete(t);
       return next;
@@ -143,7 +217,8 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     if (!a) return;
 
     setReportedBankEntryInStorage(a, entry);
-    setReportedBankSet((prev) => {
+
+    setOptimisticReportedBank((prev) => {
       const next = new Set(prev);
       next.add(a);
       return next;
@@ -155,7 +230,8 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     if (!a) return;
 
     removeReportedBankEntryInStorage(a);
-    setReportedBankSet((prev) => {
+
+    setOptimisticReportedBank((prev) => {
       const next = new Set(prev);
       next.delete(a);
       return next;
@@ -167,8 +243,6 @@ export function useJachoeiLocalState(): JachoeiLocalState {
     reportedBankSet,
     isBlockedTel,
     isReportedBank,
-    toggleBlockedTel,
-    toggleReportedBank,
     getBlockedTelEntry,
     setBlockedTelEntry,
     removeBlockedTelEntry,

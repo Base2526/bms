@@ -33,6 +33,12 @@ export default function BookmarkButton({ postId, defaultBookmarked = false }: Bo
     },
   });
 
+  // Sync local UI state with backend truth (props update via cache/subscription)
+  useEffect(() => {
+    if (loading) return;
+    setIsBookmarked(!!defaultBookmarked);
+  }, [defaultBookmarked, loading]);
+
   async function handleToggle(e: React.MouseEvent) {
     e.preventDefault(); // ป้องกัน click ผ่าน <Link> ถ้าอยู่ใน card
     if (loading) return;

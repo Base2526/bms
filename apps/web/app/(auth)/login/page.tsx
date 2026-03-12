@@ -1,4 +1,5 @@
 'use client';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Card,
   Form,
@@ -12,7 +13,14 @@ import {
 import { gql, useMutation } from '@apollo/client';
 import { GoogleLogin } from '@react-oauth/google';
 import FacebookLogin from '@greatsumini/react-facebook-login';
-import { GoogleOutlined, FacebookFilled } from '@ant-design/icons';
+import { GoogleOutlined, FacebookFilled, LeftOutlined } from '@ant-design/icons';
+
+function safeInternalNextPath(nextPath: string | null): string | null {
+  if (!nextPath) return null;
+  if (!nextPath.startsWith('/')) return null;
+  if (nextPath.startsWith('//')) return null;
+  return nextPath;
+}
 
 const LOGIN = gql`
   mutation Login($input: LoginInput!) {
@@ -37,9 +45,22 @@ const LOGIN_SOCIAL = gql`
 `;
 
 export default function Page() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = safeInternalNextPath(searchParams.get('next'));
+
   const [form] = Form.useForm();
   const [login, { loading }] = useMutation(LOGIN);
   const [loginSocial, { loading: loadingSocial }] = useMutation(LOGIN_SOCIAL);
+
+  const onLeaveLogin = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.replace('/');
+  };
 
   const handleLoginSuccess = (res: any) => {
     if (!res?.ok) {
@@ -49,7 +70,7 @@ export default function Page() {
     message.success(`Welcome ${res.user?.name || ''}!`);
     // ในโปรดักชันแนะนำให้เซ็ต httpOnly cookie ที่ backend
     // ที่นี่ใช้ redirect ง่าย ๆ
-    window.location.href = '/';
+    window.location.href = nextPath || '/';
   };
 
   // === Normal username/email + password login ===
@@ -151,7 +172,27 @@ export default function Page() {
   };
 
   return (
-    <Card title="Sign in" style={{ maxWidth: 420, margin: '0 auto' }}>
+    <>
+    <Card
+      title="Sign in"
+      className="auth-card"
+      extra={
+        <Space className="auth-card-actions" size="small">
+          <Button
+            type="text"
+            icon={<LeftOutlined />}
+            onClick={onLeaveLogin}
+            aria-label="Go back"
+          >
+            Back
+          </Button>
+          <Button type="link" href="/" aria-label="Go to home">
+            Home
+          </Button>
+        </Space>
+      }
+      style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}
+    >
       {/* === Form Login ปกติ === */}
       <Form
         form={form}
@@ -285,5 +326,33 @@ export default function Page() {
         <code> localStorage</code>.
       </Typography.Paragraph>
     </Card>
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `
+          .auth-card .ant-card-head {
+            flex-wrap: wrap;
+            row-gap: 8px;
+          }
+
+          .auth-card .ant-card-extra {
+            margin-left: auto;
+          }
+
+          @media (max-width: 480px) {
+            .auth-card .ant-card-extra {
+              width: 100%;
+              margin-left: 0;
+            }
+
+            .auth-card-actions {
+              width: 100%;
+              display: flex;
+              justify-content: space-between;
+            }
+          }
+        `,
+      }}
+    />
+    </>
   );
 }

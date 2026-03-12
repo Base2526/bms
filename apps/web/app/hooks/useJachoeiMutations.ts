@@ -13,6 +13,19 @@ export type ScamPhoneReportCategory = "SPAM" | "SCAM" | "SALES" | "HARASS" | "OT
 
 export type ScamBankReportCategory = "SCAM" | "MONEY_MULE" | "SALES_ADS" | "DISPUTE" | "OTHER";
 
+export type PhoneSafetyStatus = {
+  phone: string;
+  phone_normalized: string;
+  my_blocked: boolean;
+  my_blocked_at?: string | null;
+  blocked_by_count?: number;
+  last_blocked_at?: string | null;
+  report_count?: number;
+  last_report_at?: string | null;
+  risk_level?: number;
+  updated_at?: string;
+};
+
 export type ReportScamPhoneInput = {
   phone: string;
   note?: string | null;
@@ -82,6 +95,58 @@ const UNBLOCK_SCAM_PHONE = gql`
   }
 `;
 
+const BLOCK_PHONE = gql`
+  mutation BlockPhone($input: BlockPhoneInput!) {
+    blockPhone(input: $input) {
+      ok
+      status {
+        phone
+        phone_normalized
+        my_blocked
+        my_blocked_at
+        blocked_by_count
+        last_blocked_at
+        report_count
+        last_report_at
+        risk_level
+        updated_at
+      }
+    }
+  }
+`;
+
+const UNBLOCK_PHONE = gql`
+  mutation UnblockPhone($input: UnblockPhoneInput!) {
+    unblockPhone(input: $input) {
+      ok
+      status {
+        phone
+        phone_normalized
+        my_blocked
+        my_blocked_at
+        blocked_by_count
+        last_blocked_at
+        report_count
+        last_report_at
+        risk_level
+        updated_at
+      }
+    }
+  }
+`;
+
+const Q_MY_BLOCKED_PHONE_KEYS = gql`
+  query MyBlockedPhoneKeys {
+    myBlockedPhoneKeys
+  }
+`;
+
+const Q_MY_REPORTED_BANK_ACCOUNT_KEYS = gql`
+  query MyReportedBankAccountKeys {
+    myReportedBankAccountKeys
+  }
+`;
+
 const M_REPORT_SCAM_BANK_ACCOUNT = gql`
   mutation ReportScamBankAccount($input: ReportScamBankAccountInput!) {
     reportScamBankAccount(input: $input) {
@@ -140,6 +205,20 @@ type UnblockScamPhoneData = {
   };
 };
 
+type BlockPhoneData = {
+  blockPhone: {
+    ok: boolean;
+    status: PhoneSafetyStatus;
+  };
+};
+
+type UnblockPhoneData = {
+  unblockPhone: {
+    ok: boolean;
+    status: PhoneSafetyStatus;
+  };
+};
+
 type ReportScamBankAccountData = {
   reportScamBankAccount: {
     account: string;
@@ -169,12 +248,14 @@ type UnreportScamBankAccountData = {
 };
 
 export type JachoeiMutations = {
+  blockPhone: (args: { phone: string; note?: string | null; postId?: string | null }) => Promise<PhoneSafetyStatus>;
   reportPhone: (args: {
     phone: string;
     category?: ScamPhoneReportCategory;
     note?: string | null;
   }) => Promise<ReportScamPhoneData["reportScamPhone"]>;
-  unblockPhone: (args: { phone: string }) => Promise<UnblockScamPhoneData["unblockScamPhone"]>;
+  unblockPhone: (args: { phone: string }) => Promise<PhoneSafetyStatus>;
+  unblockScamPhone: (args: { phone: string }) => Promise<UnblockScamPhoneData["unblockScamPhone"]>;
   reportBank: (args: {
     account: string;
     bankName: string | null | undefined;
@@ -188,8 +269,10 @@ export type JachoeiMutations = {
     reason?: string | null;
   }) => Promise<UnreportScamBankAccountData["unreportScamBankAccount"]>;
   loading: {
+    blockPhone: boolean;
     reportPhone: boolean;
     unblockPhone: boolean;
+    unblockScamPhone: boolean;
     reportBank: boolean;
     unreportBank: boolean;
     any: boolean;
@@ -197,10 +280,16 @@ export type JachoeiMutations = {
 };
 
 export function useJachoeiMutations(): JachoeiMutations {
+  const [mutBlockPhone, stBlockPhone] = useMutation<BlockPhoneData, { input: { phone: string; note?: string | null; postId?: string | null } }>(
+    BLOCK_PHONE
+  );
+  const [mutUnblockPhone, stUnblockPhone] = useMutation<UnblockPhoneData, { input: { phone: string } }>(
+    UNBLOCK_PHONE
+  );
   const [mutReportPhone, stReportPhone] = useMutation<ReportScamPhoneData, { input: ReportScamPhoneInput }>(
     REPORT_SCAM_PHONE
   );
-  const [mutUnblockPhone, stUnblockPhone] = useMutation<UnblockScamPhoneData, { input: UnblockScamPhoneInput }>(
+  const [mutUnblockScamPhone, stUnblockScamPhone] = useMutation<UnblockScamPhoneData, { input: UnblockScamPhoneInput }>(
     UNBLOCK_SCAM_PHONE
   );
   const [mutReportBank, stReportBank] = useMutation<ReportScamBankAccountData, { input: ReportScamBankAccountInput }>(
@@ -237,7 +326,53 @@ export function useJachoeiMutations(): JachoeiMutations {
     [mutReportPhone]
   );
 
+  const blockPhone = React.useCallback(
+    async ({ phone, note, postId }: { phone: string; note?: string | null; postId?: string | null }) => {
+      const p = normalizeTel(phone);
+      if (!p) throw new Error("Invalid phone");
+
+      const res = await mutBlockPhone({
+        variables: {
+          input: {
+            phone: p,
+            note: note?.trim() ? note.trim() : null,
+            postId: postId ?? null,
+          },
+        },
+        refetchQueries: [{ query: Q_MY_BLOCKED_PHONE_KEYS }],
+        awaitRefetchQueries: true,
+      });
+
+      const payload = res.data?.blockPhone;
+      if (!payload?.ok || !payload.status) throw new Error("Missing blockPhone result");
+      return payload.status;
+    },
+    [mutBlockPhone]
+  );
+
   const unblockPhone = React.useCallback(
+    async ({ phone }: { phone: string }) => {
+      const p = normalizeTel(phone);
+      if (!p) throw new Error("Invalid phone");
+
+      const res = await mutUnblockPhone({
+        variables: {
+          input: {
+            phone: p,
+          },
+        },
+        refetchQueries: [{ query: Q_MY_BLOCKED_PHONE_KEYS }],
+        awaitRefetchQueries: true,
+      });
+
+      const payload = res.data?.unblockPhone;
+      if (!payload?.ok || !payload.status) throw new Error("Missing unblockPhone result");
+      return payload.status;
+    },
+    [mutUnblockPhone]
+  );
+
+  const unblockScamPhone = React.useCallback(
     async ({ phone }: { phone: string }) => {
       const p = normalizeTel(phone);
       if (!p) throw new Error("Invalid phone");
@@ -245,7 +380,7 @@ export function useJachoeiMutations(): JachoeiMutations {
       const clientId = getJachoeiClientId();
       if (!clientId) throw new Error("Missing client_id");
 
-      const res = await mutUnblockPhone({
+      const res = await mutUnblockScamPhone({
         variables: {
           input: {
             phone: p,
@@ -258,7 +393,7 @@ export function useJachoeiMutations(): JachoeiMutations {
       if (!payload) throw new Error("Missing unblockScamPhone result");
       return payload;
     },
-    [mutUnblockPhone]
+    [mutUnblockScamPhone]
   );
 
   const reportBank = React.useCallback(
@@ -295,6 +430,8 @@ export function useJachoeiMutations(): JachoeiMutations {
             note: noteWithCategory,
           },
         },
+        refetchQueries: [{ query: Q_MY_REPORTED_BANK_ACCOUNT_KEYS }],
+        awaitRefetchQueries: true,
       });
 
       const payload = res.data?.reportScamBankAccount;
@@ -338,6 +475,8 @@ export function useJachoeiMutations(): JachoeiMutations {
             reason: reasonWithCategory,
           },
         },
+        refetchQueries: [{ query: Q_MY_REPORTED_BANK_ACCOUNT_KEYS }],
+        awaitRefetchQueries: true,
       });
 
       const payload = res.data?.unreportScamBankAccount;
@@ -350,15 +489,28 @@ export function useJachoeiMutations(): JachoeiMutations {
   const loading = React.useMemo(
     () => {
       const l = {
+        blockPhone: !!stBlockPhone.loading,
         reportPhone: !!stReportPhone.loading,
         unblockPhone: !!stUnblockPhone.loading,
+        unblockScamPhone: !!stUnblockScamPhone.loading,
         reportBank: !!stReportBank.loading,
         unreportBank: !!stUnreportBank.loading,
       };
-      return { ...l, any: l.reportPhone || l.unblockPhone || l.reportBank || l.unreportBank };
+      return {
+        ...l,
+        any:
+          l.blockPhone || l.reportPhone || l.unblockPhone || l.unblockScamPhone || l.reportBank || l.unreportBank,
+      };
     },
-    [stReportPhone.loading, stUnblockPhone.loading, stReportBank.loading, stUnreportBank.loading]
+    [
+      stBlockPhone.loading,
+      stReportPhone.loading,
+      stUnblockPhone.loading,
+      stUnblockScamPhone.loading,
+      stReportBank.loading,
+      stUnreportBank.loading,
+    ]
   );
 
-  return { reportPhone, unblockPhone, reportBank, unreportBank, loading };
+  return { blockPhone, reportPhone, unblockPhone, unblockScamPhone, reportBank, unreportBank, loading };
 }

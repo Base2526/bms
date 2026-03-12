@@ -31,6 +31,7 @@ import {
   PlusOutlined,
   SafetyOutlined,
   GlobalOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -345,6 +346,74 @@ export default function HeaderBar({
     color: "#0f172a",
   };
 
+  const mobileOverflowMenu: MenuProps["items"] = useMemo(() => {
+    const items: MenuProps["items"] = [];
+
+    if (userSession) {
+      items.push(
+        {
+          key: "new-post",
+          label: "New post",
+          icon: <PlusOutlined />,
+          onClick: () => router.push("/post/new"),
+        },
+        {
+          key: "blocked",
+          label: "Blocked",
+          icon: <SafetyOutlined />,
+          onClick: () => router.push("/blocked?tab=blocked"),
+        },
+        { type: "divider" },
+        {
+          key: "help",
+          label: t("header.help") || "Help",
+          icon: <QuestionCircleOutlined />,
+          onClick: () => router.push("/help"),
+        },
+        { type: "divider" }
+      );
+    } else {
+      items.push(
+        {
+          key: "help",
+          label: t("header.help") || "Help",
+          icon: <QuestionCircleOutlined />,
+          onClick: () => router.push("/help"),
+        },
+        { type: "divider" }
+      );
+    }
+
+    items.push(
+      {
+        key: "lang-th",
+        disabled: currentLang === "th",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>{flagOf.th}</span>
+            <span>{labelOf.th}</span>
+          </span>
+        ),
+        icon: <GlobalOutlined />,
+        onClick: () => changeLang("th"),
+      },
+      {
+        key: "lang-en",
+        disabled: currentLang === "en",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>{flagOf.en}</span>
+            <span>{labelOf.en}</span>
+          </span>
+        ),
+        icon: <GlobalOutlined />,
+        onClick: () => changeLang("en"),
+      }
+    );
+
+    return items;
+  }, [changeLang, currentLang, router, t, userSession]);
+
   return (
     <>
       <Header
@@ -507,15 +576,6 @@ export default function HeaderBar({
 
               {userSession && (
                 <>
-                  <Tooltip title={t("header.chat") || "สร้างโพสใหม่"}>
-                    <Button
-                      type="text"
-                      style={iconButtonStyle}
-                      onClick={() => router.push("/post/new")}
-                      icon={<PlusOutlined style={{ fontSize: 18 }} />}
-                    />
-                  </Tooltip>
-
                   <Tooltip title={t("header.chat") || "ข้อความ"}>
                     <Button
                       type="text"
@@ -526,16 +586,6 @@ export default function HeaderBar({
                           <MessageOutlined style={{ fontSize: 18, color: "#0f172a" }} />
                         </Badge>
                       }
-                    />
-                  </Tooltip>
-
-                  <Tooltip title="Blocked">
-                    <Button
-                      aria-label="Blocked"
-                      type="text"
-                      style={iconButtonStyle}
-                      icon={<SafetyOutlined style={{ fontSize: 18 }} />}
-                      onClick={() => router.push("/blocked?tab=blocked")}
                     />
                   </Tooltip>
 
@@ -554,25 +604,44 @@ export default function HeaderBar({
                 </>
               )}
 
-              <Dropdown
-                menu={{ items: languageMenu }}
-                trigger={["click"]}
-                placement="bottomRight"
-                arrow
-                overlayStyle={{ minWidth: 180 }}
-              >
-                <Button
-                  type="text"
-                  className="jachoei-lang-btn"
-                  onClick={(e) => e.preventDefault()}
-                  icon={!isMobileView ? <GlobalOutlined /> : undefined}
+              {!isMobileView ? (
+                <Dropdown
+                  menu={{ items: languageMenu }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                  arrow
+                  overlayStyle={{ minWidth: 180 }}
                 >
-                  <span style={{ fontSize: 18, marginRight: isMobileView ? 0 : 6 }}>
-                    {flagOf[currentLang]}
-                  </span>
-                  {!isMobileView && <span>{labelOf[currentLang]}</span>}
-                </Button>
-              </Dropdown>
+                  <Button
+                    type="text"
+                    className="jachoei-lang-btn"
+                    onClick={(e) => e.preventDefault()}
+                    icon={!isMobileView ? <GlobalOutlined /> : undefined}
+                  >
+                    <span style={{ fontSize: 18, marginRight: isMobileView ? 0 : 6 }}>
+                      {flagOf[currentLang]}
+                    </span>
+                    {!isMobileView && <span>{labelOf[currentLang]}</span>}
+                  </Button>
+                </Dropdown>
+              ) : (
+                <Dropdown
+                  menu={{ items: mobileOverflowMenu }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                  arrow
+                  overlayStyle={{ minWidth: 200 }}
+                >
+                  <Tooltip title="More">
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      icon={<MoreOutlined style={{ fontSize: 18 }} />}
+                      aria-label="More"
+                    />
+                  </Tooltip>
+                </Dropdown>
+              )}
 
               {isDesktopView && (
                 <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
@@ -893,6 +962,12 @@ export default function HeaderBar({
           .jachoei-login-btn {
             height: 36px !important;
             padding-inline: 12px !important;
+          }
+        }
+
+        @media (max-width: 359px) {
+          .jachoei-brand-copy {
+            display: none;
           }
         }
       `}</style>

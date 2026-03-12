@@ -106,11 +106,14 @@ const wsLink =
     ? new GraphQLWsLink(
         createClient({
           url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string, // e.g. "ws://localhost:8081/graphql"
-          // connectionParams: () => {
-          //   // const token = localStorage.getItem("token");
-          //   // return token ? { Authorization: `Bearer ${token}` } : {};
-          // },
-          connectionParams: {},
+          lazy: true,
+          retryAttempts: Infinity,
+          connectionParams: () => ({ "x-scope": "web" }),
+          on: {
+            connected: () => addLog("info", "ws", "[ws] connected", {}),
+            closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { code: ev?.code, reason: ev?.reason }),
+            error: (err: any) => addLog("error", "ws", "[ws] error", { message: err?.message || String(err) }),
+          },
         })
       )
     : null;

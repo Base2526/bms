@@ -1,6 +1,14 @@
 import { pubsub } from "../../realtime/src/pubsub.js";
 
 import { withFilter } from "graphql-subscriptions";
+import { GraphQLError } from "graphql";
+
+import {
+  topicMyBankBlockStatusChanged,
+  topicMyPhoneBlockStatusChanged,
+} from "./blockSync.js";
+
+import { topicMyBookmarkStatusChanged } from "./bookmarkSync.js";
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
@@ -118,6 +126,61 @@ export const coreResolvers = {
           const uId = vars.user_id;
           const msg = payload.incomingMessage;
           return msg.to_user_ids.includes(uId) || msg.sender_id === uId;
+        }
+      ),
+    },
+
+    // ============================
+    // Realtime multi-device sync
+    // Scope: same authenticated user
+    // ============================
+    myPhoneBlockStatusChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          if (!userId) {
+            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
+          }
+          return pubsub.asyncIterator(topicMyPhoneBlockStatusChanged(userId));
+        },
+        (payload: any, _vars: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const pUserId = String(payload?.myPhoneBlockStatusChanged?.user_id || "").trim();
+          return !!userId && !!pUserId && userId === pUserId;
+        }
+      ),
+    },
+
+    myBankBlockStatusChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          if (!userId) {
+            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
+          }
+          return pubsub.asyncIterator(topicMyBankBlockStatusChanged(userId));
+        },
+        (payload: any, _vars: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const pUserId = String(payload?.myBankBlockStatusChanged?.user_id || "").trim();
+          return !!userId && !!pUserId && userId === pUserId;
+        }
+      ),
+    },
+
+    myBookmarkStatusChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          if (!userId) {
+            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
+          }
+          return pubsub.asyncIterator(topicMyBookmarkStatusChanged(userId));
+        },
+        (payload: any, _vars: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const pUserId = String(payload?.myBookmarkStatusChanged?.user_id || "").trim();
+          return !!userId && !!pUserId && userId === pUserId;
         }
       ),
     },

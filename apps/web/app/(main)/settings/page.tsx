@@ -88,7 +88,7 @@ mutation($user_id:ID!, $file:Upload!){
 
 // My Bookmarks
 const Q_MY_BOOKMARKS = gql`
-  query {
+  query MyBookmarks {
     myBookmarks {
       id
       title

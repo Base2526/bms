@@ -11,11 +11,20 @@ export default function Breadcrumbs() {
   const { t } = useI18n();
 
   const items = useMemo(() => {
-    const segments = pathname
+    const segmentsRaw = pathname
       .split("?")[0]
       .split("#")[0]
       .split("/")
       .filter(Boolean);
+
+    const isPostDetailRoute = segmentsRaw[0] === "post" && segmentsRaw.length === 2;
+
+    // Route-specific tweak: for post detail pages `/post/[id]`, skip the middle "Post" crumb.
+    // Keep other routes intact (e.g. `/post`, `/post/new`, `/post/[id]/edit`).
+    const segments =
+      isPostDetailRoute
+        ? segmentsRaw.slice(1)
+        : segmentsRaw;
 
     const first = [
       {
@@ -26,11 +35,16 @@ export default function Breadcrumbs() {
     ];
 
     const rest = segments.map((seg, idx) => {
-      const href = "/" + segments.slice(0, idx + 1).join("/");
-      const label = decodeURIComponent(seg)
-        .replace(/^\[|\]$/g, "")
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const href = isPostDetailRoute
+        ? `/post/${seg}`
+        : "/" + segments.slice(0, idx + 1).join("/");
+
+      const label = isPostDetailRoute
+        ? decodeURIComponent(seg)
+        : decodeURIComponent(seg)
+            .replace(/^\[|\]$/g, "")
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
 
       return {
         href,

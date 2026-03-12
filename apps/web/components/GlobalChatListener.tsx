@@ -1,12 +1,13 @@
 "use client";
 
-import { gql, useQuery, useSubscription } from "@apollo/client";
-import { useEffect } from "react";
+import { gql, useApolloClient, useQuery, useSubscription } from "@apollo/client";
+import { useEffect, useRef } from "react";
 import {
   useGlobalChatStore,
   getGlobalChatState,
 } from "@/store/globalChatStore";
 import { notify } from "@/lib/notify";
+import { normalizeBank, normalizeTel } from "@/app/lib/jachoeiLocalState";
 
 // ===== QUERIES =====
 const Q_ME = gql`
@@ -92,11 +93,64 @@ const SUB_TIME = gql`
   }
 `;
 
+// ===== JACHOEI REALTIME (BLOCK / UNBLOCK) =====
+const Q_MY_BLOCKED_PHONE_KEYS = gql`
+  query MyBlockedPhoneKeys {
+    myBlockedPhoneKeys
+  }
+`;
+
+const Q_MY_REPORTED_BANK_ACCOUNT_KEYS = gql`
+  query MyReportedBankAccountKeys {
+    myReportedBankAccountKeys
+  }
+`;
+
+const SUB_MY_PHONE_BLOCK_STATUS_CHANGED = gql`
+  subscription MyPhoneBlockStatusChanged {
+    myPhoneBlockStatusChanged {
+      user_id
+      action
+      phone
+      phone_normalized
+      blocked
+      updated_at
+    }
+  }
+`;
+
+const SUB_MY_BANK_BLOCK_STATUS_CHANGED = gql`
+  subscription MyBankBlockStatusChanged {
+    myBankBlockStatusChanged {
+      user_id
+      action
+      bank_name
+      account_norm
+      blocked
+      updated_at
+    }
+  }
+`;
+
+const SUB_MY_BOOKMARK_STATUS_CHANGED = gql`
+  subscription MyBookmarkStatusChanged {
+    myBookmarkStatusChanged {
+      user_id
+      action
+      target_type
+      target_id
+      bookmarked
+      updated_at
+    }
+  }
+`;
+
 
 // ====================================
 //     GLOBAL CHAT LISTENER (FINAL)
 // ====================================
 export function GlobalChatListener() {
+  const apolloClient = useApolloClient();
   const { data: meData } = useQuery(Q_ME);
   const meId = meData?.me?.id;
 
@@ -105,7 +159,10 @@ export function GlobalChatListener() {
 
   // ติดตาม Window Focus → Zustand
   useEffect(() => {
-    const onFocus = () => setWindowFocused(true);
+    const onFocus = () => {
+      setWindowFocused(true);
+      scheduleRefetchMyBookmarks(apolloClient);
+    };
     const onBlur = () => setWindowFocused(false);
 
     window.addEventListener("focus", onFocus);
@@ -114,7 +171,50 @@ export function GlobalChatListener() {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, [setWindowFocused]);
+  }, [apolloClient, setWindowFocused]);
+
+  // Debounce refetches to avoid duplicate network storms across rapid events.
+  const refetchBlockedTelTimer = useRef<number | null>(null);
+  const refetchReportedBankTimer = useRef<number | null>(null);
+  const refetchMyBookmarksTimer = useRef<number | null>(null);
+
+  const scheduleRefetchBlockedTel = (client: any) => {
+    if (refetchBlockedTelTimer.current != null) return;
+    refetchBlockedTelTimer.current = window.setTimeout(() => {
+      refetchBlockedTelTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyBlockedPhoneKeys"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  const scheduleRefetchReportedBank = (client: any) => {
+    if (refetchReportedBankTimer.current != null) return;
+    refetchReportedBankTimer.current = window.setTimeout(() => {
+      refetchReportedBankTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyReportedBankAccountKeys"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  const scheduleRefetchMyBookmarks = (client: any) => {
+    if (refetchMyBookmarksTimer.current != null) return;
+    refetchMyBookmarksTimer.current = window.setTimeout(() => {
+      refetchMyBookmarksTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyBookmarks"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (refetchBlockedTelTimer.current != null) window.clearTimeout(refetchBlockedTelTimer.current);
+      if (refetchReportedBankTimer.current != null) window.clearTimeout(refetchReportedBankTimer.current);
+      if (refetchMyBookmarksTimer.current != null) window.clearTimeout(refetchMyBookmarksTimer.current);
+    };
+  }, []);
 
   // ===========================================================
   // A) SUB_INCOMING → unread + update last_message list ซ้าย
@@ -213,6 +313,107 @@ export function GlobalChatListener() {
         }
       }
     },
+  });
+
+  // ===========================================================
+  // D) JACHOEI realtime: block/unblock tel (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_PHONE_BLOCK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_PHONE_BLOCK_STATUS_CHANGED]", data);
+      const p = data.data?.myPhoneBlockStatusChanged;
+      if (!p) return;
+
+      const key = normalizeTel(p.phone_normalized || p.phone || "");
+      if (key) {
+        client.cache.modify({
+          id: "ROOT_QUERY",
+          fields: {
+            myBlockedPhoneKeys(existing: unknown) {
+              const current = Array.isArray(existing) ? (existing as string[]) : [];
+              const set = new Set(
+                current
+                  .map((v) => normalizeTel(v))
+                  .filter(Boolean)
+              );
+              if (p.blocked) set.add(key);
+              else set.delete(key);
+              return Array.from(set).sort();
+            },
+          },
+        });
+      }
+
+      scheduleRefetchBlockedTel(client);
+    },
+    onError: (err) => console.error("[SUB_MY_PHONE_BLOCK_STATUS_CHANGED ERROR]", err),
+  });
+
+  // ===========================================================
+  // E) JACHOEI realtime: block/unblock bank (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_BANK_BLOCK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_BANK_BLOCK_STATUS_CHANGED]", data);
+      const p = data.data?.myBankBlockStatusChanged;
+      if (!p) return;
+
+      const key = normalizeBank(p.account_norm || "");
+      if (key) {
+        client.cache.modify({
+          id: "ROOT_QUERY",
+          fields: {
+            myReportedBankAccountKeys(existing: unknown) {
+              const current = Array.isArray(existing) ? (existing as string[]) : [];
+              const set = new Set(
+                current
+                  .map((v) => normalizeBank(v))
+                  .filter(Boolean)
+              );
+              if (p.blocked) set.add(key);
+              else set.delete(key);
+              return Array.from(set).sort();
+            },
+          },
+        });
+      }
+
+      scheduleRefetchReportedBank(client);
+    },
+    onError: (err) => console.error("[SUB_MY_BANK_BLOCK_STATUS_CHANGED ERROR]", err),
+  });
+
+  // ===========================================================
+  // F) Bookmark realtime: bookmark/unbookmark (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_BOOKMARK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_BOOKMARK_STATUS_CHANGED]", data);
+      const p = data.data?.myBookmarkStatusChanged;
+      if (!p) return;
+
+      const postId = String(p.target_id || "").trim();
+      if (postId) {
+        const cacheId = client.cache.identify({ __typename: "Post", id: postId });
+        if (cacheId) {
+          client.cache.modify({
+            id: cacheId,
+            fields: {
+              is_bookmarked() {
+                return !!p.bookmarked;
+              },
+            },
+          });
+        }
+      }
+
+      // Keep bookmarked list membership correct (esp. unbookmark removes row)
+      scheduleRefetchMyBookmarks(client);
+    },
+    onError: (err) => console.error("[SUB_MY_BOOKMARK_STATUS_CHANGED ERROR]", err),
   });
 
   // ===========================================================
