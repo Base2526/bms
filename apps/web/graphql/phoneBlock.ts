@@ -3,6 +3,27 @@ import { GraphQLError } from "graphql/error";
 import { query, runInTransaction } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { normalizePhone } from "@/lib/phone";
+import { pubsub } from "@/lib/pubsub";
+
+import {
+  topicMyPhoneBlockStatusChanged,
+  type MyPhoneBlockStatusChangedPayload,
+} from "../../../packages/graphql-core/src/blockSync";
+
+function legacyNormalizePhone(raw: string): string {
+  if (!raw) return "";
+  const digits = String(raw).replace(/[^\d]/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("66") && digits.length === 11) return "0" + digits.slice(2);
+  return digits;
+}
+
+function phoneNormVariants(phoneRaw: string): { canonical: string; variants: string[] } {
+  const canonical = normalizePhone(phoneRaw);
+  const legacy = legacyNormalizePhone(phoneRaw);
+  const variants = Array.from(new Set([canonical, legacy].filter(Boolean)));
+  return { canonical, variants };
+}
 
 function asUserId(v: unknown): string | null {
   if (typeof v === "string") return v;
@@ -22,15 +43,42 @@ async function getPhoneSafetyStatus(
   phoneNorm: string,
   phoneRaw?: string
 ) {
+  const { variants } = phoneNormVariants(phoneRaw || phoneNorm);
+
   // summary (community)
-  const sumRes = await query(
-    `SELECT *
-     FROM scam_phones_summary
-     WHERE phone_normalized = $1
-     LIMIT 1`,
-    [phoneNorm]
+  // schema_11032026.sql: scam_phones_summary has PK `phone` and does NOT have `phone_normalized`
+  // Try normalized first; fallback to raw (for legacy/formatting mismatches).
+  let s: any = null;
+  {
+    const sumRes = await query(
+      `SELECT phone, report_count, last_report_at, risk_level, is_deleted, updated_at
+       FROM scam_phones_summary
+       WHERE phone = $1
+       LIMIT 1`,
+      [phoneNorm]
+    );
+    s = sumRes.rows[0] || null;
+  }
+  if (!s && phoneRaw && phoneRaw !== phoneNorm) {
+    const sumRes2 = await query(
+      `SELECT phone, report_count, last_report_at, risk_level, is_deleted, updated_at
+       FROM scam_phones_summary
+       WHERE phone = $1
+       LIMIT 1`,
+      [String(phoneRaw)]
+    );
+    s = sumRes2.rows[0] || null;
+  }
+
+  // community block (derived from user_blocked_phones; no summary columns exist in schema)
+  const blkAgg = await query(
+    `SELECT COUNT(DISTINCT user_id)::int AS c, MAX(created_at) AS last_at
+     FROM user_blocked_phones
+     WHERE phone_normalized = ANY($1::text[])`,
+    [variants]
   );
-  const s = sumRes.rows[0] || null;
+  const blockedByCount = Number(blkAgg.rows?.[0]?.c || 0);
+  const lastBlockedAt = blkAgg.rows?.[0]?.last_at || null;
 
   // my block
   let my: any = null;
@@ -38,14 +86,13 @@ async function getPhoneSafetyStatus(
     const myRes = await query(
       `SELECT created_at
        FROM user_blocked_phones
-       WHERE user_id = $1 AND phone_normalized = $2
+       WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
        LIMIT 1`,
-      [userId, phoneNorm]
+      [userId, variants]
     );
     my = myRes.rows[0] || null;
   }
 
-  const blockedByCount = Number(s?.blocked_by_count || 0);
   const reportCount = Number(s?.report_count || 0);
   const risk = Number(s?.risk_level ?? (blockedByCount * 4 + reportCount * 6));
 
@@ -57,7 +104,7 @@ async function getPhoneSafetyStatus(
     my_blocked_at: my?.created_at ? new Date(my.created_at).toISOString() : null,
 
     blocked_by_count: blockedByCount,
-    last_blocked_at: s?.last_blocked_at ? new Date(s.last_blocked_at).toISOString() : null,
+    last_blocked_at: lastBlockedAt ? new Date(lastBlockedAt).toISOString() : null,
 
     report_count: reportCount,
     last_report_at: s?.last_report_at ? new Date(s.last_report_at).toISOString() : null,
@@ -94,11 +141,20 @@ export const phoneResolvers = {
           ub.phone_normalized,
           ub.created_at AS my_blocked_at,
 
+          -- derived community block stats (schema has no columns for these)
+          COALESCE(b.blocked_by_count, 0) AS blocked_by_count,
+          b.last_blocked_at,
+
           COALESCE(s.report_count, 0) AS report_count,
           s.last_report_at,
           COALESCE(s.risk_level, 0) AS risk_level,
           COALESCE(s.updated_at, now()) AS updated_at
         FROM user_blocked_phones ub
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS blocked_by_count, MAX(created_at) AS last_blocked_at
+          FROM user_blocked_phones ub2
+          WHERE ub2.phone_normalized = ub.phone_normalized
+        ) b ON true
         LEFT JOIN scam_phones_summary s
           ON s.phone = ub.phone_normalized
         WHERE ub.user_id = $1::uuid
@@ -117,8 +173,8 @@ export const phoneResolvers = {
         my_blocked_at: toIsoOrNull(r.my_blocked_at),
 
         // community block (ตอนนี้ DB ยังไม่มี -> default)
-        blocked_by_count: 0,
-        last_blocked_at: null,
+        blocked_by_count: Number(r.blocked_by_count || 0),
+        last_blocked_at: toIsoOrNull(r.last_blocked_at),
 
         // report/community risk
         report_count: Number(r.report_count || 0),
@@ -126,6 +182,27 @@ export const phoneResolvers = {
         risk_level: Number(r.risk_level || 0),
         updated_at: toIsoOrNull(r.updated_at) || new Date().toISOString(),
       }));
+    },
+
+    myBlockedPhoneKeys: async (_: any, _args: any, ctx: any) => {
+      const auth = requireAuth(ctx);
+      const userId = asUserId(auth.author_id);
+      if (!userId) throw new GraphQLError("Unauthorized");
+
+      const res = await query(
+        `
+        SELECT DISTINCT ub.phone_normalized
+        FROM user_blocked_phones ub
+        WHERE ub.user_id = $1::uuid
+        ORDER BY ub.phone_normalized ASC
+        `,
+        [userId]
+      );
+
+      // Normalize output keys to canonical format so clients can rely on one representation.
+      return (res.rows || [])
+        .map((r: any) => normalizePhone(String(r.phone_normalized || "").trim()))
+        .filter(Boolean);
     },
   },
 
@@ -136,10 +213,22 @@ export const phoneResolvers = {
       if (!userId) throw new GraphQLError("Unauthorized");
 
       const phoneRaw = String(input?.phone || "");
-      const phoneNorm = normalizePhone(phoneRaw);
+      const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
       if (!phoneNorm) throw new GraphQLError("Invalid phone");
 
       await runInTransaction(userId, async (client) => {
+        // Avoid creating duplicate semantic blocks when legacy normalization exists.
+        const existed = await client.query(
+          `
+          SELECT 1
+          FROM user_blocked_phones
+          WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
+          LIMIT 1
+          `,
+          [userId, variants]
+        );
+        if (existed.rows?.[0]) return;
+
         await client.query(
           `
           INSERT INTO user_blocked_phones (user_id, phone, phone_normalized)
@@ -148,41 +237,28 @@ export const phoneResolvers = {
           `,
           [userId, phoneRaw, phoneNorm]
         );
-
-        const cntRes = await client.query(
-          `SELECT COUNT(*)::int AS c
-           FROM user_blocked_phones
-           WHERE phone_normalized = $1`,
-          [phoneNorm]
-        );
-        const blockedCnt = Number(cntRes.rows[0]?.c || 0);
-
-        const sumRes = await client.query(
-          `SELECT report_count
-           FROM scam_phones_summary
-           WHERE phone_normalized = $1`,
-          [phoneNorm]
-        );
-        const reportCnt = Number(sumRes.rows[0]?.report_count || 0);
-
-        await client.query(
-          `
-          INSERT INTO scam_phones_summary
-            (phone_normalized, blocked_by_count, last_blocked_at, report_count, risk_level, updated_at)
-          VALUES
-            ($1, $2, now(), $3, calc_phone_risk($2, $3), now())
-          ON CONFLICT (phone_normalized)
-          DO UPDATE SET
-            blocked_by_count = EXCLUDED.blocked_by_count,
-            last_blocked_at  = now(),
-            risk_level       = calc_phone_risk(EXCLUDED.blocked_by_count, scam_phones_summary.report_count),
-            updated_at       = now()
-          `,
-          [phoneNorm, blockedCnt, reportCnt]
-        );
       });
 
       const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
+
+      // Publish AFTER commit only (runInTransaction resolved)
+      try {
+        const payload: MyPhoneBlockStatusChangedPayload = {
+          user_id: userId,
+          action: "BLOCK",
+          phone: phoneRaw,
+          phone_normalized: phoneNorm,
+          blocked: true,
+          updated_at: status?.my_blocked_at || new Date().toISOString(),
+        };
+        await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+          myPhoneBlockStatusChanged: payload,
+        });
+      } catch (e) {
+        // Subscription is best-effort; source of truth is DB.
+        console.warn("[blockPhone] publish myPhoneBlockStatusChanged failed", e);
+      }
+
       return { ok: true, status };
     },
 
@@ -192,44 +268,38 @@ export const phoneResolvers = {
       if (!userId) throw new GraphQLError("Unauthorized");
 
       const phoneRaw = String(input?.phone || "");
-      const phoneNorm = normalizePhone(phoneRaw);
+      const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
       if (!phoneNorm) throw new GraphQLError("Invalid phone");
 
       await runInTransaction(userId, async (client) => {
         await client.query(
           `
           DELETE FROM user_blocked_phones
-          WHERE user_id = $1 AND phone_normalized = $2
+          WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
           `,
-          [userId, phoneNorm]
-        );
-
-        const cntRes = await client.query(
-          `SELECT COUNT(*)::int AS c
-           FROM user_blocked_phones
-           WHERE phone_normalized = $1`,
-          [phoneNorm]
-        );
-        const blockedCnt = Number(cntRes.rows[0]?.c || 0);
-
-        await client.query(
-          `
-          INSERT INTO scam_phones_summary
-            (phone_normalized, blocked_by_count, last_blocked_at, risk_level, updated_at)
-          VALUES
-            ($1, $2, CASE WHEN $2>0 THEN now() ELSE NULL END, calc_phone_risk($2, 0), now())
-          ON CONFLICT (phone_normalized)
-          DO UPDATE SET
-            blocked_by_count = $2,
-            last_blocked_at  = CASE WHEN $2>0 THEN now() ELSE scam_phones_summary.last_blocked_at END,
-            risk_level       = calc_phone_risk($2, scam_phones_summary.report_count),
-            updated_at       = now()
-          `,
-          [phoneNorm, blockedCnt]
+          [userId, variants]
         );
       });
 
       const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
+
+      // Publish AFTER commit only
+      try {
+        const payload: MyPhoneBlockStatusChangedPayload = {
+          user_id: userId,
+          action: "UNBLOCK",
+          phone: phoneRaw,
+          phone_normalized: phoneNorm,
+          blocked: false,
+          updated_at: new Date().toISOString(),
+        };
+        await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+          myPhoneBlockStatusChanged: payload,
+        });
+      } catch (e) {
+        console.warn("[unblockPhone] publish myPhoneBlockStatusChanged failed", e);
+      }
+
       return { ok: true, status };
     },
   },

@@ -11,8 +11,8 @@ import { typeDefs, resolvers } from "./shared.js";
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
-const PORT = 8080; // Number(process.env.WS_PORT || 8080);
-const PATH = "/graphql"; // process.env.WS_PATH || "/graphql";
+const PORT = Number(process.env.WS_PORT || 8080);
+const PATH = process.env.WS_PATH || "/graphql";
 
 // ✅ cookie name ที่เว็บใช้
 const USER_COOKIE = process.env.USER_COOKIE || "USER_COOKIE";

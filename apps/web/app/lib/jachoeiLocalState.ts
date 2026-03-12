@@ -34,9 +34,15 @@ function isBrowser(): boolean {
 export function normalizeTel(input: string): string {
   const s = String(input ?? "").trim();
   if (!s) return "";
-  const hasPlus = s.startsWith("+");
+
   const digits = s.replace(/[^\d]/g, "");
-  return hasPlus ? `+${digits}` : digits;
+  if (!digits) return "";
+
+  // Keep canonicalization aligned with backend `normalizePhone()`.
+  // Thai mobile: 0xxxxxxxxx (10 digits) -> 66xxxxxxxxx
+  if (digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
+
+  return digits;
 }
 
 export function normalizeBank(input: string): string {

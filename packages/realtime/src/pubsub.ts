@@ -12,7 +12,7 @@ export const pubsub = new RedisPubSub({
 });
 
 // --- DEBUG HOOKS ---
-const DBG = true;//process.env.PUBSUB_DEBUG === '1';
+const DBG = process.env.PUBSUB_DEBUG === '1';
 
 if (DBG) {
   const _origPublish = pubsub.publish.bind(pubsub);

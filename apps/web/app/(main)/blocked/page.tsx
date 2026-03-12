@@ -316,20 +316,30 @@ export default function BlockedPage() {
       });
 
       try {
-        const payload = await jachoeiMut.reportPhone({
-          phone: tel,
-          category: nextCategory,
-          note: wantReport ? nextNote : null,
-        });
+        const status = await jachoeiMut.blockPhone({ phone: tel });
+
+        let reportPayload: Awaited<ReturnType<typeof jachoeiMut.reportPhone>> | null = null;
+        if (wantReport) {
+          try {
+            reportPayload = await jachoeiMut.reportPhone({
+              phone: tel,
+              category: nextCategory,
+              note: nextNote,
+            });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Report failed";
+            message.warning(`Blocked, but report failed: ${msg}`);
+          }
+        }
 
         jachoei.setBlockedTelEntry(tel, {
           ...optimisticEntry,
-          blockedAt: payload.updated_at ?? optimisticEntry.blockedAt,
-          ctx: payload.ctx ?? optimisticEntry.ctx,
-          tags: payload.tags ?? optimisticEntry.tags,
+          blockedAt: status.my_blocked_at ?? optimisticEntry.blockedAt,
+          ctx: reportPayload?.ctx ?? optimisticEntry.ctx,
+          tags: reportPayload?.tags ?? optimisticEntry.tags,
         });
 
-        message.success(wasBlocked ? "Updated report" : "Blocked");
+        message.success(wasBlocked ? "Updated" : "Blocked");
         void refetchBlocked?.();
         return true;
       } catch (err: unknown) {
@@ -965,7 +975,7 @@ export default function BlockedPage() {
         initialWantReport={jachoei.getBlockedTelEntry(telDialog.tel)?.wantReport}
         initialCategory={jachoei.getBlockedTelEntry(telDialog.tel)?.category}
         initialNote={jachoei.getBlockedTelEntry(telDialog.tel)?.note}
-        confirmLoading={jachoeiMut.loading.reportPhone}
+        confirmLoading={jachoeiMut.loading.blockPhone || jachoeiMut.loading.reportPhone}
         undoLoading={jachoeiMut.loading.unblockPhone}
         onCancel={() => setTelDialog({ open: false, tel: "", dontAskStored: false })}
         onConfirm={(value) => {
