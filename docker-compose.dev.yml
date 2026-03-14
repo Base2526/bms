@@ -21,6 +21,9 @@ services:
     environment:
       NODE_ENV: development
       COOKIE_SECURE: ${COOKIE_SECURE}
+      DEBUG_LOG: ${DEBUG_LOG}
+      DB_LOG: ${DB_LOG}
+      DB_LOG_LEVELS: ${DB_LOG_LEVELS}
     ports:
       - "3000:3000"
     volumes:

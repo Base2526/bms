@@ -8,6 +8,10 @@ const en = {
     searchClearHistory: "Clear search history",
     searchHintPrefix: "Press",
     searchHintSuffix: "to search quickly",
+    help: "Help",
+    chat: "Chat",
+    notifications: "Notifications",
+    newPost: "New post",
   },
   footer: {
     support: "Support"

@@ -23,9 +23,25 @@ export default function BookmarkButton({ postId, defaultBookmarked = false }: Bo
   const [isBookmarked, setIsBookmarked] = useState(defaultBookmarked);
   const [toggleBookmark, { loading }] = useMutation(M_TOGGLE_BOOKMARK, {
     onCompleted: (res) => {
-      const ok = res?.toggleBookmark?.isBookmarked;
+      const ok = !!res?.toggleBookmark?.isBookmarked;
       setIsBookmarked(ok);
       message.success(ok ? 'Added to bookmarks' : 'Removed from bookmarks');
+    },
+    update: (cache, { data }) => {
+      const ok = data?.toggleBookmark?.isBookmarked;
+      if (typeof ok !== 'boolean') return;
+
+      const cacheId = cache.identify({ __typename: 'Post', id: postId });
+      if (!cacheId) return;
+
+      cache.modify({
+        id: cacheId,
+        fields: {
+          is_bookmarked() {
+            return ok;
+          },
+        },
+      });
     },
     onError: (err) => {
       console.error('Toggle bookmark failed:', err);
@@ -35,12 +51,12 @@ export default function BookmarkButton({ postId, defaultBookmarked = false }: Bo
 
   // Sync local UI state with backend truth (props update via cache/subscription)
   useEffect(() => {
-    if (loading) return;
     setIsBookmarked(!!defaultBookmarked);
-  }, [defaultBookmarked, loading]);
+  }, [defaultBookmarked]);
 
   async function handleToggle(e: React.MouseEvent) {
     e.preventDefault(); // ป้องกัน click ผ่าน <Link> ถ้าอยู่ใน card
+    e.stopPropagation();
     if (loading) return;
     await toggleBookmark({ variables: { postId } });
   }

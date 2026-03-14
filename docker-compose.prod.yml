@@ -45,6 +45,9 @@ services:
         SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
         ADMIN_TOKEN: ${ADMIN_TOKEN}
         JWT_SECRET: ${JWT_SECRET}
+        DEBUG_LOG: ${DEBUG_LOG}
+        DB_LOG: ${DB_LOG}
+        DB_LOG_LEVELS: ${DB_LOG_LEVELS}
     image: myapp-web:latest
     environment:
       NODE_ENV: production
@@ -78,6 +81,11 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN}
 
       JWT_SECRET: ${JWT_SECRET}
+
+
+      DEBUG_LOG: ${DEBUG_LOG}
+      DB_LOG: ${DB_LOG}
+      DB_LOG_LEVELS: ${DB_LOG_LEVELS}
       
     # ports:
     #   - "80:3000"   # 👈 prod ใช้ port 80 ด้านนอก

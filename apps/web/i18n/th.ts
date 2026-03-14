@@ -8,6 +8,10 @@ const th = {
     searchClearHistory: "ล้างประวัติการค้นหา",
     searchHintPrefix: "กด",
     searchHintSuffix: "เพื่อค้นหาอย่างรวดเร็ว",
+    help: "ช่วยเหลือ",
+    chat: "แชท",
+    notifications: "การแจ้งเตือน",
+    newPost: "โพสต์ใหม่",
   },
   footer: {
     support: "ติดต่อฝ่ายสนับสนุน"

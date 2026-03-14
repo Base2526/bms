@@ -5,12 +5,18 @@ export const dynamic = "force-dynamic";
 
 import { writeLogServer } from "@/lib/log/writeLog.server";
 
-// GET /admin/api/logs?q=&level=&category=&page=&pageSize=
+function isDateOnly(v: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+// GET /api/logs?q=&level=&category=&date_start=&date_end=&page=&pageSize=
 export async function GET(req: NextRequest){
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q")||"").trim();
   const level = (searchParams.get("level")||"").trim();
   const category = (searchParams.get("category")||"").trim();
+  const date_start = (searchParams.get("date_start")||"").trim();
+  const date_end = (searchParams.get("date_end")||"").trim();
   const page = Math.max(1, parseInt(searchParams.get("page")||"1",10));
   const pageSize = Math.min(200, Math.max(1, parseInt(searchParams.get("pageSize")||"50",10)));
   const offset = (page-1)*pageSize;
@@ -20,6 +26,18 @@ export async function GET(req: NextRequest){
   if(q){ args.push(`%${q}%`); conds.push("(LOWER(message) LIKE LOWER($"+args.length+") OR LOWER(level) LIKE LOWER($"+args.length+") OR LOWER(category) LIKE LOWER($"+args.length+"))"); }
   if(level){ args.push(level); conds.push("level = $"+args.length); }
   if(category){ args.push(category); conds.push("category = $"+args.length); }
+  if(date_start){
+    args.push(date_start);
+    conds.push(`created_at >= $${args.length}::${isDateOnly(date_start) ? "date" : "timestamptz"}`);
+  }
+  if(date_end){
+    args.push(date_end);
+    if (isDateOnly(date_end)) {
+      conds.push(`created_at < ($${args.length}::date + interval '1 day')`);
+    } else {
+      conds.push(`created_at <= $${args.length}::timestamptz`);
+    }
+  }
 
   const where = conds.length? "WHERE "+conds.join(" AND "): "";
   const listSQL = `SELECT id, level, category, message, meta, created_by, created_at
@@ -57,50 +75,67 @@ export async function POST(req: NextRequest){
 }
 
 
-// DELETE /admin/api/logs  -> purge by filter (careful; requires either level/category/q to be set)
-// export async function DELETE(req: NextRequest){
-//   const { searchParams } = new URL(req.url);
-//   const q = (searchParams.get("q")||"").trim();
-//   const level = (searchParams.get("level")||"").trim();
-//   const category = (searchParams.get("category")||"").trim();
+// DELETE /api/logs?ids=1,2,3  (bulk delete)
+// DELETE /api/logs?q=&level=&category=&date_start=&date_end=  (purge by filter; refuses if no condition)
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const idsParam = (searchParams.get('ids') || '').trim();
 
-//   const conds:string[] = [];
-//   const args:any[] = [];
-//   if(q){ args.push(`%${q}%`); conds.push("(LOWER(message) LIKE LOWER($"+args.length+"))"); }
-//   if(level){ args.push(level); conds.push("level = $"+args.length); }
-//   if(category){ args.push(category); conds.push("category = $"+args.length); }
+  // 1) bulk delete by ids
+  if (idsParam) {
+    const ids = idsParam
+      .split(',')
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => !isNaN(n));
 
-//   if(!conds.length) return NextResponse.json({ error: "Refuse to purge without any condition" }, { status: 400 });
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'No valid ids' }, { status: 400 });
+    }
 
-//   const sql = `DELETE FROM system_logs WHERE `+conds.join(" AND ");
-//   const result = await query(sql, args);
-//   return NextResponse.json({ deleted: result.rowCount||0 });
-// }
+    const { rowCount } = await query(
+      `DELETE FROM system_logs WHERE id = ANY($1::int[])`,
+      [ids]
+    );
 
-// DELETE /api/logs?ids=1,2,3  | หรือใช้ body JSON ก็ได้
-export async function DELETE(req: Request) {
-  const url = new URL(req.url);
-  const idsParam = url.searchParams.get('ids');
-
-  if (!idsParam) {
-    return new Response(JSON.stringify({ error: 'Missing ids' }), { status: 400 });
+    return NextResponse.json({ deleted: rowCount ?? 0 }, { status: 200 });
   }
 
-  const ids = idsParam
-    .split(',')
-    .map(s => parseInt(s.trim(), 10))
-    .filter(n => !isNaN(n));
+  // 2) purge by filter
+  const q = (searchParams.get("q")||"").trim();
+  const level = (searchParams.get("level")||"").trim();
+  const category = (searchParams.get("category")||"").trim();
+  const date_start = (searchParams.get("date_start")||"").trim();
+  const date_end = (searchParams.get("date_end")||"").trim();
 
-  if (ids.length === 0) {
-    return new Response(JSON.stringify({ error: 'No valid ids' }), { status: 400 });
+  const conds: string[] = [];
+  const args: any[] = [];
+
+  if (q) {
+    args.push(`%${q}%`);
+    conds.push("(LOWER(message) LIKE LOWER($"+args.length+") OR LOWER(level) LIKE LOWER($"+args.length+") OR LOWER(category) LIKE LOWER($"+args.length+"))");
+  }
+  if (level) { args.push(level); conds.push("level = $" + args.length); }
+  if (category) { args.push(category); conds.push("category = $" + args.length); }
+  if (date_start) {
+    args.push(date_start);
+    conds.push(`created_at >= $${args.length}::${isDateOnly(date_start) ? "date" : "timestamptz"}`);
+  }
+  if (date_end) {
+    args.push(date_end);
+    if (isDateOnly(date_end)) {
+      conds.push(`created_at < ($${args.length}::date + interval '1 day')`);
+    } else {
+      conds.push(`created_at <= $${args.length}::timestamptz`);
+    }
   }
 
-  const { rowCount } = await query(
-    `DELETE FROM system_logs WHERE id = ANY($1::int[])`,
-    [ids]
-  );
+  if (!conds.length) {
+    return NextResponse.json({ error: "Refuse to purge without any condition" }, { status: 400 });
+  }
 
-  return new Response(JSON.stringify({ deleted: rowCount }), { status: 200 });
+  const sql = `DELETE FROM system_logs WHERE ${conds.join(" AND ")}`;
+  const result = await query(sql, args);
+  return NextResponse.json({ deleted: result.rowCount || 0 });
 }
 
 

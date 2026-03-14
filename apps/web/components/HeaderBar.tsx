@@ -351,12 +351,12 @@ export default function HeaderBar({
 
     if (userSession) {
       items.push(
-        {
-          key: "new-post",
-          label: "New post",
-          icon: <PlusOutlined />,
-          onClick: () => router.push("/post/new"),
-        },
+        // {
+        //   key: "new-post",
+        //   label: "New post",
+        //   icon: <PlusOutlined />,
+        //   onClick: () => router.push("/post/new"),
+        // },
         {
           key: "blocked",
           label: "Blocked",
@@ -576,6 +576,16 @@ export default function HeaderBar({
 
               {userSession && (
                 <>
+                  <Tooltip title={t("header.newPost") || "New post"}>
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      onClick={() => router.push("/post/new")}
+                      icon={<PlusOutlined style={{ fontSize: 18, color: "#0f172a" }} />}
+                      aria-label="New post"
+                    />
+                  </Tooltip>
+
                   <Tooltip title={t("header.chat") || "ข้อความ"}>
                     <Button
                       type="text"

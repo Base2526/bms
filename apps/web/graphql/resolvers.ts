@@ -29,6 +29,8 @@ import { emitPostEvent } from "@events/emit.server";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
 
+import { logAsync } from "@/lib/logger";
+
 import { normalizeAccountNo } from "@/lib/phone";
 import {
   topicMyBankBlockStatusChanged,
@@ -208,7 +210,123 @@ function normalizeBankAccount(raw: string) {
   return s.replace(/[^\d]/g, "");
 }
 
-export const resolvers = {
+function serializeError(err: unknown): { name?: string; message?: string } {
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message };
+  }
+  try {
+    return { message: JSON.stringify(err) };
+  } catch {
+    return { message: String(err) };
+  }
+}
+
+function redactSecrets(value: unknown, depth = 0): unknown {
+  if (depth > 6) return "[MaxDepth]";
+  if (value == null) return value;
+  if (typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value.map((v) => redactSecrets(v, depth + 1));
+  }
+
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (/password|token|secret|authorization|cookie/i.test(k)) {
+      out[k] = "[REDACTED]";
+      continue;
+    }
+    out[k] = redactSecrets(v, depth + 1);
+  }
+  return out;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pickValue(source: unknown, key: string): unknown {
+  if (!isRecord(source)) return undefined;
+  return source[key];
+}
+
+function buildResolverMeta(kind: "Query" | "Mutation", name: string, args: unknown, ctx: unknown) {
+  const ctxRec = isRecord(ctx) ? ctx : undefined;
+  const ctxUser = ctxRec && isRecord(ctxRec.user) ? (ctxRec.user as Record<string, unknown>) : undefined;
+  const user_id = (ctxUser?.id ?? ctxRec?.author_id ?? null) as unknown;
+
+  const argsRec = isRecord(args) ? args : undefined;
+  const input = argsRec && isRecord(argsRec.input) ? (argsRec.input as Record<string, unknown>) : undefined;
+  const source: unknown = input ?? argsRec ?? {};
+
+  const client_id = pickValue(source, "client_id") ?? pickValue(source, "clientId");
+  const phone = pickValue(source, "phone");
+  const bank_name = pickValue(source, "bank_name") ?? pickValue(source, "bankName");
+  const account = pickValue(source, "account") ?? pickValue(source, "account_no") ?? pickValue(source, "account_norm");
+  const postId = pickValue(source, "postId") ?? pickValue(source, "post_id");
+  const id = pickValue(source, "id");
+
+  const meta: Record<string, unknown> = {
+    resolver: `${kind}.${name}`,
+    user_id,
+    client_id,
+    phone,
+    bank_name,
+    account,
+    postId,
+    id,
+  };
+
+  // strip null/undefined to keep logs tidy
+  for (const k of Object.keys(meta)) {
+    if (meta[k] == null || meta[k] === "") delete meta[k];
+  }
+
+  return meta;
+}
+
+function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [name, fn] of Object.entries(map || {})) {
+    if (typeof fn !== "function") {
+      out[name] = fn;
+      continue;
+    }
+
+    out[name] = async (...resolverArgs: unknown[]) => {
+      const args = resolverArgs.length >= 2 ? resolverArgs[1] : undefined;
+      const ctx = resolverArgs.length >= 3 ? resolverArgs[2] : undefined;
+      const start = Date.now();
+      const meta = buildResolverMeta(kind, name, args, ctx);
+
+      void logAsync("info", "graphql", `${kind}.${name} called`, meta);
+      void logAsync("debug", "graphql", `${kind}.${name} args`, {
+        ...meta,
+        args: redactSecrets(args),
+      });
+
+      try {
+        const result = await Promise.resolve((fn as (...a: unknown[]) => unknown)(...resolverArgs));
+        void logAsync("info", "graphql", `${kind}.${name} success`, {
+          ...meta,
+          duration_ms: Date.now() - start,
+        });
+        return result;
+      } catch (err) {
+        void logAsync("error", "graphql", `${kind}.${name} failed`, {
+          ...meta,
+          duration_ms: Date.now() - start,
+          error: serializeError(err),
+        });
+        throw err;
+      }
+    };
+  }
+  return out;
+}
+
+const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Query: {
@@ -1791,7 +1909,16 @@ export const resolvers = {
       return rows.map(mapRow);
     },
     searchScamBankAccounts: async (_: any, { q, limit }: { q: string; limit: number }, ctx: any) => {
-      return resolvers.Query.searchBankAccounts(_, { q, limit }, ctx);
+      const queryMap = resolvers.Query as unknown as Record<string, unknown>;
+      const fn = queryMap.searchBankAccounts as
+        | ((root: unknown, args: { q: string; limit: number }, ctx: unknown) => unknown)
+        | undefined;
+
+      if (!fn) {
+        throw new Error("searchBankAccounts resolver not available");
+      }
+
+      return fn(_, { q, limit }, ctx);
     },
     myReportedPhones: async (
       _: any,
@@ -4902,114 +5029,180 @@ export const resolvers = {
     },
 
     reportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
-  const {
-    bank_name,
-    account,
-    note,
-    client_id,
-    device_model,
-    os_version,
-    app_version,
-  } = input;
+      const {
+        bank_name,
+        account,
+        note,
+        client_id,
+        device_model,
+        os_version,
+        app_version,
+      } = input;
 
-  const auth = requireAuth(ctx);
+      const auth = requireAuth(ctx);
 
-  if (!auth.isAuthenticated || !auth.author_id) {
-    throw new Error("Unauthenticated");
-  }
+      if (!auth.isAuthenticated || !auth.author_id) {
+        throw new Error("Unauthenticated");
+      }
 
-  const authorIdSafe = String(auth.author_id);
-  const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
-  const accountNoSafe = String(account || "").trim();
-  const accountNormSafe = normalizeBankAccount(account);
-  const noteSafe = note?.trim() ? note.trim() : null;
-  const clientIdSafe = String(client_id || "");
+      const authorIdSafe = String(auth.author_id);
+      const bankNameSafe = String(bank_name || "").trim() || "UNKNOWN";
+      const accountNoSafe = String(account || "").trim();
+      const accountNormSafe = normalizeBankAccount(account);
+      const noteSafe = note?.trim() ? note.trim() : null;
+      const clientIdSafe = String(client_id || "");
 
-  if (!accountNormSafe) {
-    throw new Error("Invalid account");
-  }
+      if (!accountNormSafe) {
+        throw new Error("Invalid account");
+      }
 
-  const { result } = await runInTransaction(authorIdSafe, async (client: any) => {
-    if (!clientIdSafe) {
-      throw new GraphQLError("Missing client_id", { extensions: { code: "BAD_USER_INPUT" } });
-    }
-
-    // Multi-device source-of-truth: treat "my blocked bank" as user-scoped.
-    // If this user already reported this bank+account, skip INSERT to avoid duplicates across devices.
-    const { rows: myExistingRows } = await client.query(
-      `
-      SELECT 1
-      FROM scam_bank_account_reports
-      WHERE user_id = $1::uuid AND bank_name = $2 AND account_norm = $3
-      LIMIT 1
-      `,
-      [authorIdSafe, bankNameSafe, accountNormSafe]
-    );
-
-    const alreadyReportedByMe = myExistingRows.length > 0;
-
-    // Detect legacy UNIQUE(client_id) index so we don't accidentally block multi-report after migration.
-    const { rows: legacyIdxRows } = await client.query(
-      `
-      SELECT 1
-      FROM pg_indexes
-      WHERE schemaname = 'public'
-        AND indexname = 'scam_bank_account_reports_client_id_ux'
-      LIMIT 1
-      `
-    );
-    const hasLegacyClientIdUnique = legacyIdxRows.length > 0;
-
-    if (alreadyReportedByMe) {
-      // Keep latest metadata (note/device/app) for observability, but don't create a new report row.
-      await client.query(
-        `
-        UPDATE scam_bank_account_reports
-        SET
-          account_no   = $4,
-          note         = $5,
-          client_id    = $6,
-          device_model = $7,
-          os_version   = $8,
-          app_version  = $9
-        WHERE user_id = $1::uuid AND bank_name = $2 AND account_norm = $3
-        `,
-        [
-          authorIdSafe,
-          bankNameSafe,
-          accountNormSafe,
-          accountNoSafe,
-          noteSafe,
-          clientIdSafe,
-          device_model ?? null,
-          os_version ?? null,
-          app_version ?? null,
-        ]
-      );
-    } else if (hasLegacyClientIdUnique) {
-      const { rows: existingRows } = await client.query(
-        `
-        SELECT bank_name, account_norm
-        FROM scam_bank_account_reports
-        WHERE client_id = $1
-        LIMIT 1
-        `,
-        [clientIdSafe]
-      );
-      const existing = existingRows?.[0];
-      if (existing) {
-        const sameTarget =
-          String(existing.bank_name || "").trim() === bankNameSafe &&
-          String(existing.account_norm || "").trim() === accountNormSafe;
-        if (!sameTarget) {
-          throw new GraphQLError(
-            "This DB still has legacy UNIQUE(client_id) on scam_bank_account_reports, so one device cannot report multiple bank accounts. Apply the migration to drop scam_bank_account_reports_client_id_ux.",
-            { extensions: { code: "FAILED_PRECONDITION" } }
-          );
+      const { result } = await runInTransaction(authorIdSafe, async (client: any) => {
+        if (!clientIdSafe) {
+          throw new GraphQLError("Missing client_id", { extensions: { code: "BAD_USER_INPUT" } });
         }
-        // Idempotent: same target already exists; skip INSERT.
-      } else {
-        try {
+
+        // Multi-device source-of-truth: treat "my blocked bank" as user-scoped.
+        // If this user already reported this bank+account, skip INSERT to avoid duplicates across devices.
+        const { rows: myExistingRows } = await client.query(
+          `
+          SELECT 1
+          FROM scam_bank_account_reports
+          WHERE user_id = $1::uuid AND bank_name = $2 AND account_norm = $3
+          LIMIT 1
+          `,
+          [authorIdSafe, bankNameSafe, accountNormSafe]
+        );
+
+        const alreadyReportedByMe = myExistingRows.length > 0;
+
+        // Detect legacy UNIQUE(client_id) index so we don't accidentally block multi-report after migration.
+        const { rows: legacyIdxRows } = await client.query(
+          `
+          SELECT 1
+          FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND indexname = 'scam_bank_account_reports_client_id_ux'
+          LIMIT 1
+          `
+        );
+        const hasLegacyClientIdUnique = legacyIdxRows.length > 0;
+
+        if (alreadyReportedByMe) {
+          // Keep latest metadata (note/device/app) for observability, but don't create a new report row.
+          await client.query(
+            `
+            UPDATE scam_bank_account_reports
+            SET
+              account_no   = $4,
+              note         = $5,
+              client_id    = $6,
+              device_model = $7,
+              os_version   = $8,
+              app_version  = $9
+            WHERE user_id = $1::uuid AND bank_name = $2 AND account_norm = $3
+            `,
+            [
+              authorIdSafe,
+              bankNameSafe,
+              accountNormSafe,
+              accountNoSafe,
+              noteSafe,
+              clientIdSafe,
+              device_model ?? null,
+              os_version ?? null,
+              app_version ?? null,
+            ]
+          );
+        } else if (hasLegacyClientIdUnique) {
+          const { rows: existingRows } = await client.query(
+            `
+            SELECT bank_name, account_norm
+            FROM scam_bank_account_reports
+            WHERE client_id = $1
+            LIMIT 1
+            `,
+            [clientIdSafe]
+          );
+          const existing = existingRows?.[0];
+          if (existing) {
+            const sameTarget =
+              String(existing.bank_name || "").trim() === bankNameSafe &&
+              String(existing.account_norm || "").trim() === accountNormSafe;
+            if (!sameTarget) {
+              throw new GraphQLError(
+                "This DB still has legacy UNIQUE(client_id) on scam_bank_account_reports, so one device cannot report multiple bank accounts. Apply the migration to drop scam_bank_account_reports_client_id_ux.",
+                { extensions: { code: "FAILED_PRECONDITION" } }
+              );
+            }
+            // Idempotent: same target already exists; skip INSERT.
+          } else {
+            try {
+              await client.query(
+                `
+                INSERT INTO scam_bank_account_reports
+                  (
+                    user_id,
+                    bank_name,
+                    account_no,
+                    account_norm,
+                    note,
+                    client_id,
+                    device_model,
+                    os_version,
+                    app_version,
+                    created_at
+                  )
+                VALUES
+                  (
+                    $1::uuid,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    $9,
+                    now()
+                  )
+                ON CONFLICT (client_id, bank_name, account_norm)
+                DO UPDATE SET
+                  user_id      = EXCLUDED.user_id,
+                  account_no   = EXCLUDED.account_no,
+                  note         = EXCLUDED.note,
+                  device_model = EXCLUDED.device_model,
+                  os_version   = EXCLUDED.os_version,
+                  app_version  = EXCLUDED.app_version
+                `,
+                [
+                  authorIdSafe,
+                  bankNameSafe,
+                  accountNoSafe,
+                  accountNormSafe,
+                  noteSafe,
+                  clientIdSafe,
+                  device_model ?? null,
+                  os_version ?? null,
+                  app_version ?? null,
+                ]
+              );
+            } catch (e: any) {
+              const msg = String(e?.message || "");
+              const isDup =
+                msg.includes("scam_bank_account_reports_client_id_ux") ||
+                msg.includes("duplicate key value violates unique constraint \"scam_bank_account_reports_client_id_ux\"");
+              if (isDup) {
+                // Do not attempt any follow-up queries in this transaction; it's aborted.
+                throw new GraphQLError(
+                  "This DB still has legacy UNIQUE(client_id) on scam_bank_account_reports. Apply the migration to drop scam_bank_account_reports_client_id_ux.",
+                  { extensions: { code: "FAILED_PRECONDITION" } }
+                );
+              }
+              throw e;
+            }
+          }
+        } else {
+          // After migration: allow many reports per client_id; idempotent per composite key.
           await client.query(
             `
             INSERT INTO scam_bank_account_reports
@@ -5059,138 +5252,72 @@ export const resolvers = {
               app_version ?? null,
             ]
           );
-        } catch (e: any) {
-          const msg = String(e?.message || "");
-          const isDup =
-            msg.includes("scam_bank_account_reports_client_id_ux") ||
-            msg.includes("duplicate key value violates unique constraint \"scam_bank_account_reports_client_id_ux\"");
-          if (isDup) {
-            // Do not attempt any follow-up queries in this transaction; it's aborted.
-            throw new GraphQLError(
-              "This DB still has legacy UNIQUE(client_id) on scam_bank_account_reports. Apply the migration to drop scam_bank_account_reports_client_id_ux.",
-              { extensions: { code: "FAILED_PRECONDITION" } }
-            );
-          }
-          throw e;
         }
-      }
-    } else {
-      // After migration: allow many reports per client_id; idempotent per composite key.
-      await client.query(
-        `
-        INSERT INTO scam_bank_account_reports
-          (
-            user_id,
+
+        // Read summary (maintained by trigger scam_bank_account_reports_agg_tg on INSERT)
+        const { rows } = await client.query(
+          `
+          SELECT
             bank_name,
             account_no,
             account_norm,
-            note,
-            client_id,
-            device_model,
-            os_version,
-            app_version,
-            created_at
-          )
-        VALUES
-          (
-            $1::uuid,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            now()
-          )
-        ON CONFLICT (client_id, bank_name, account_norm)
-        DO UPDATE SET
-          user_id      = EXCLUDED.user_id,
-          account_no   = EXCLUDED.account_no,
-          note         = EXCLUDED.note,
-          device_model = EXCLUDED.device_model,
-          os_version   = EXCLUDED.os_version,
-          app_version  = EXCLUDED.app_version
-        `,
-        [
-          authorIdSafe,
-          bankNameSafe,
-          accountNoSafe,
-          accountNormSafe,
-          noteSafe,
-          clientIdSafe,
-          device_model ?? null,
-          os_version ?? null,
-          app_version ?? null,
-        ]
-      );
-    }
+            report_count,
+            last_report_at,
+            risk_level,
+            updated_at
+          FROM scam_bank_accounts_summary
+          WHERE bank_name = $1 AND account_norm = $2
+          LIMIT 1
+          `,
+          [bankNameSafe, accountNormSafe]
+        );
 
-    // Read summary (maintained by trigger scam_bank_account_reports_agg_tg on INSERT)
-    const { rows } = await client.query(
-      `
-      SELECT
-        bank_name,
-        account_no,
-        account_norm,
-        report_count,
-        last_report_at,
-        risk_level,
-        updated_at
-      FROM scam_bank_accounts_summary
-      WHERE bank_name = $1 AND account_norm = $2
-      LIMIT 1
-      `,
-      [bankNameSafe, accountNormSafe]
-    );
+        const s = rows[0];
+        if (!s) {
+          // Fallback (should be rare): compute from reports
+          const { rows: aggRows } = await client.query(
+            `
+            SELECT COUNT(*)::int AS cnt, MAX(created_at) AS last_at
+            FROM scam_bank_account_reports
+            WHERE bank_name = $1 AND account_norm = $2
+            `,
+            [bankNameSafe, accountNormSafe]
+          );
+          const cnt = Number(aggRows?.[0]?.cnt || 0);
+          const lastAt = aggRows?.[0]?.last_at || null;
+          return shapeScamBankAccount({
+            bank_name: bankNameSafe,
+            account_no: accountNoSafe,
+            account_norm: accountNormSafe,
+            report_count: cnt,
+            last_report_at: lastAt,
+            risk_level: cnt > 0 ? 10 : 0,
+            updated_at: new Date().toISOString(),
+          });
+        }
 
-    const s = rows[0];
-    if (!s) {
-      // Fallback (should be rare): compute from reports
-      const { rows: aggRows } = await client.query(
-        `
-        SELECT COUNT(*)::int AS cnt, MAX(created_at) AS last_at
-        FROM scam_bank_account_reports
-        WHERE bank_name = $1 AND account_norm = $2
-        `,
-        [bankNameSafe, accountNormSafe]
-      );
-      const cnt = Number(aggRows?.[0]?.cnt || 0);
-      const lastAt = aggRows?.[0]?.last_at || null;
-      return shapeScamBankAccount({
-        bank_name: bankNameSafe,
-        account_no: accountNoSafe,
-        account_norm: accountNormSafe,
-        report_count: cnt,
-        last_report_at: lastAt,
-        risk_level: cnt > 0 ? 10 : 0,
-        updated_at: new Date().toISOString(),
+        return shapeScamBankAccount(s);
       });
-    }
 
-    return shapeScamBankAccount(s);
-  });
+      // Publish AFTER commit only
+      try {
+        const payload: MyBankBlockStatusChangedPayload = {
+          user_id: authorIdSafe,
+          action: "BLOCK",
+          bank_name: bankNameSafe,
+          account_norm: accountNormSafe,
+          blocked: true,
+          updated_at: new Date().toISOString(),
+        };
+        await pubsub.publish(topicMyBankBlockStatusChanged(authorIdSafe), {
+          myBankBlockStatusChanged: payload,
+        });
+      } catch (e) {
+        console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", e);
+      }
 
-  // Publish AFTER commit only
-  try {
-    const payload: MyBankBlockStatusChangedPayload = {
-      user_id: authorIdSafe,
-      action: "BLOCK",
-      bank_name: bankNameSafe,
-      account_norm: accountNormSafe,
-      blocked: true,
-      updated_at: new Date().toISOString(),
-    };
-    await pubsub.publish(topicMyBankBlockStatusChanged(authorIdSafe), {
-      myBankBlockStatusChanged: payload,
-    });
-  } catch (e) {
-    console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", e);
-  }
-
-  return result;
-},
+      return result;
+    },
 
     unreportScamBankAccount: async (_: any, { input }: any, ctx: any) => {
       const { bank_name, account } = input;
@@ -5307,4 +5434,10 @@ export const resolvers = {
 
     ...phoneResolvers.Mutation
   },
+};
+
+export const resolvers = {
+  ...rawResolvers,
+  Query: wrapResolverMap("Query", rawResolvers.Query as unknown as Record<string, unknown>),
+  Mutation: wrapResolverMap("Mutation", rawResolvers.Mutation as unknown as Record<string, unknown>),
 };

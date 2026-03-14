@@ -1,7 +1,8 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Space, Input, Select, Button, Popconfirm, List, Tag, Divider, message, Checkbox } from 'antd';
+import { Card, Space, Input, Select, Button, Popconfirm, List, Tag, Divider, message, Checkbox, DatePicker } from 'antd';
 import Link from 'next/link';
+import dayjs from 'dayjs';
 
 type LogRow = {
   id: number;
@@ -17,12 +18,20 @@ const ADMIN_API_PREFIX = '/api';
 
 // ========== API helpers ==========
 async function fetchLogs(params: {
-  q?: string; level?: string; category?: string; page: number; pageSize: number;
+  q?: string;
+  level?: string;
+  category?: string;
+  date_start?: string;
+  date_end?: string;
+  page: number;
+  pageSize: number;
 }) {
   const qs = new URLSearchParams();
   if (params.q) qs.set('q', params.q);
   if (params.level) qs.set('level', params.level);
   if (params.category) qs.set('category', params.category);
+  if (params.date_start) qs.set('date_start', params.date_start);
+  if (params.date_end) qs.set('date_end', params.date_end);
   qs.set('page', String(params.page));
   qs.set('pageSize', String(params.pageSize));
   const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { cache: 'no-store' });
@@ -52,11 +61,21 @@ export default function AdminLogsPage() {
   const [q,setQ] = useState('');
   const [level,setLevel] = useState<string|undefined>();
   const [category,setCategory] = useState<string|undefined>();
+  const [categories, setCategories] = useState<string[]>([]);
+  const [dateStart, setDateStart] = useState<string | undefined>();
+  const [dateEnd, setDateEnd] = useState<string | undefined>();
   const [data,setData] = useState<LogRow[]>([]);
   const [total,setTotal] = useState(0);
   const [page,setPage] = useState(1);
   const [pageSize,setPageSize] = useState(50);
   const [loading,setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch(`${ADMIN_API_PREFIX}/admin/log-categories`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load categories'))))
+      .then((arr) => setCategories(Array.isArray(arr) ? arr : []))
+      .catch(() => setCategories([]));
+  }, []);
 
   // ========== NEW: selections ==========
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -81,9 +100,18 @@ export default function AdminLogsPage() {
   }
 
   async function load(){
+    if (dateStart && dateEnd) {
+      const start = dayjs(dateStart);
+      const end = dayjs(dateEnd);
+      if (start.isValid() && end.isValid() && start.isAfter(end, 'day')) {
+        message.warning('Date start must be before or equal to date end');
+        return;
+      }
+    }
+
     setLoading(true);
     try{
-      const res = await fetchLogs({ q, level, category, page, pageSize });
+      const res = await fetchLogs({ q, level, category, date_start: dateStart, date_end: dateEnd, page, pageSize });
       setData(res.items || []); setTotal(res.total || 0);
       // เคลียร์ selections ที่ไม่อยู่ในผลลัพธ์แล้ว (กันค้าง)
       setSelectedIds(prev => prev.filter(id => (res.items || []).some((x:LogRow)=> x.id === id)));
@@ -91,7 +119,7 @@ export default function AdminLogsPage() {
       message.error(e.message||'Load logs failed');
     }finally{ setLoading(false); }
   }
-  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [q, level, category, page, pageSize]);
+  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [q, level, category, dateStart, dateEnd, page, pageSize]);
 
   async function addTest(){
     const res = await fetch(`${ADMIN_API_PREFIX}/logs`, {
@@ -107,6 +135,8 @@ export default function AdminLogsPage() {
     if(level) qs.set('level', level);
     if(category) qs.set('category', category);
     if(q) qs.set('q', q);
+    if(dateStart) qs.set('date_start', dateStart);
+    if(dateEnd) qs.set('date_end', dateEnd);
     const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE' });
     const j = await res.json();
     if(res.ok){ message.success(`Deleted ${j.deleted} logs`); load(); } else { message.error(j.error||'Purge failed'); }
@@ -138,17 +168,41 @@ export default function AdminLogsPage() {
             onChange={(v)=>{ setPage(1); setLevel(v); }}
             options={[ 'debug','info','warn','error' ].map(v=>({ value: v, label: v }))}
           />
-          <Input
+          <Select
             placeholder="Category"
             allowClear
             style={{ width: 200 }}
             value={category}
-            onChange={(e)=> { setPage(1); setCategory(e.target.value||undefined); }}
+            options={categories.map((c) => ({ label: c, value: c }))}
+            onChange={(v) => {
+              setPage(1);
+              setCategory(v || undefined);
+            }}
           />
-          <Button onClick={addTest}>Add test</Button>
-          <Popconfirm title="Delete logs by current filters?" onConfirm={purgeByFilter}>
+          <DatePicker
+            allowClear
+            placeholder="Date start"
+            style={{ width: 160 }}
+            value={dateStart ? dayjs(dateStart) : null}
+            onChange={(v) => {
+              setPage(1);
+              setDateStart(v ? v.format('YYYY-MM-DD') : undefined);
+            }}
+          />
+          <DatePicker
+            allowClear
+            placeholder="Date end"
+            style={{ width: 160 }}
+            value={dateEnd ? dayjs(dateEnd) : null}
+            onChange={(v) => {
+              setPage(1);
+              setDateEnd(v ? v.format('YYYY-MM-DD') : undefined);
+            }}
+          />
+          {/* <Button onClick={addTest}>Add test</Button> */}
+          {/* <Popconfirm title="Delete logs by current filters?" onConfirm={purgeByFilter}>
             <Button danger>Purge by filter</Button>
-          </Popconfirm>
+          </Popconfirm> */}
 
           {/* NEW: select-all (current page) + bulk delete */}
           <Checkbox
