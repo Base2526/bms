@@ -686,7 +686,7 @@ const rawResolvers = {
     },
     myPosts: async (_:any, { search }:{search?:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] myPosts :", ctx, author_id);
+      console.log("[Query] myPosts :", author_id);
 
       if (search) {
         const { rows } = await query(
