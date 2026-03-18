@@ -41,6 +41,8 @@ import {
 import ThumbGrid from "@/components/ThumbGrid";
 import BookmarkButton from "@/components/BookmarkButton";
 import { useSessionCtx } from "@/lib/session-context";
+import { useI18n } from "@/lib/i18nContext";
+import { getTableLabels } from "../../i18n/tableLabels";
 
 import { TelBlockDialog } from "@/components/jachoei/TelBlockDialog";
 import { BankReportDialog } from "@/components/jachoei/BankReportDialog";
@@ -652,6 +654,9 @@ function PostsList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
 
+  const { lang } = useI18n();
+  const tableLabels = useMemo(() => getTableLabels(lang), [lang]);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -914,13 +919,13 @@ function PostsList() {
   // ===== Desktop columns (Table) =====
   const columns: ColumnsType<PostsPagedItem> = [
     {
-      title: "Images",
+      title: tableLabels.images,
       dataIndex: "images",
       width: 190,
       render: (imgs: PostsPagedItem["images"]) => <ThumbGrid images={imgs ?? []} width={170} height={120} />,
     },
     {
-      title: "Title",
+      title: tableLabels.title,
       onCell: () => ({ style: { verticalAlign: "top" } }),
       render: (_: unknown, r) => {
         const ts = String(r.created_at).trim();
@@ -964,7 +969,7 @@ function PostsList() {
       },
     },
     {
-      title: "Detail",
+      title: tableLabels.detail,
       dataIndex: "detail",
       onCell: () => ({ style: { verticalAlign: "top" } }),
       render: (detail: string) => (
@@ -974,7 +979,7 @@ function PostsList() {
       ),
     },
     {
-      title: "Tel",
+      title: tableLabels.tel,
       width: 220,
       dataIndex: "tel_numbers",
       onCell: () => ({ style: { verticalAlign: "top" } }),
@@ -987,7 +992,7 @@ function PostsList() {
       ),
     },
     {
-      title: "Seller Accounts",
+      title: tableLabels.sellerAccounts,
       dataIndex: "seller_accounts",
       onCell: () => ({ style: { verticalAlign: "top" } }),
       render: (list) => (
@@ -995,7 +1000,7 @@ function PostsList() {
       ),
     },
     {
-      title: "Action",
+      title: tableLabels.action,
       fixed: "right" as const,
       width: 230,
       render: (_: unknown, r) => {
