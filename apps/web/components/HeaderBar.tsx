@@ -626,12 +626,16 @@ export default function HeaderBar({
                     type="text"
                     className="jachoei-lang-btn"
                     onClick={(e) => e.preventDefault()}
-                    icon={!isMobileView ? <GlobalOutlined /> : undefined}
                   >
-                    <span style={{ fontSize: 18, marginRight: isMobileView ? 0 : 6 }}>
-                      {flagOf[currentLang]}
+                    <span className="jachoei-lang-content">
+                      <span className="jachoei-lang-globe" aria-hidden="true">
+                        <GlobalOutlined />
+                      </span>
+                      <span className="jachoei-lang-flag" aria-hidden="true">
+                        {flagOf[currentLang]}
+                      </span>
+                      <span className="jachoei-lang-label">{labelOf[currentLang]}</span>
                     </span>
-                    {!isMobileView && <span>{labelOf[currentLang]}</span>}
                   </Button>
                 </Dropdown>
               ) : (
@@ -861,6 +865,42 @@ export default function HeaderBar({
           height: 38px !important;
           padding-inline: 12px !important;
           color: #0f172a !important;
+        }
+
+        .jachoei-lang-content {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          line-height: 1;
+        }
+
+        .jachoei-lang-globe {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+        }
+
+        .jachoei-lang-flag {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          line-height: 1;
+        }
+
+        .jachoei-lang-label {
+          display: inline-flex;
+          align-items: center;
+          line-height: 1;
+        }
+
+        .jachoei-lang-btn .anticon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+          vertical-align: 0;
         }
 
         .jachoei-login-btn {
