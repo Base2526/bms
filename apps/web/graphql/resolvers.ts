@@ -2346,10 +2346,12 @@ const rawResolvers = {
       if (exists.length) throw new Error('Email already registered');
 
       const password_hash = await bcrypt.hash(password, 10);
+      const usernameNorm = String(username || "").trim().toLowerCase();
+      const emailNorm = String(email || "").trim().toLowerCase();
       const { rows: [u] } = await query(
-        `INSERT INTO users(name,email,phone,role,password_hash)
-        VALUES($1,$2,$3,'Subscriber',$4) RETURNING id,email,role`,
-        [username, email, phone, password_hash]
+        `INSERT INTO users(name, username, email, phone, role, password_hash)
+        VALUES($1,$2,$3,$4,'Subscriber',$5) RETURNING id, name, username, email, role`,
+        [usernameNorm, usernameNorm, emailNorm, phone, password_hash]
       );
 
       /* =========================
@@ -2375,7 +2377,7 @@ const rawResolvers = {
 
       const rendered = renderEmailTemplate(tpl, {
         ...baseData(locale),
-        user_name: u.name,
+        user_name: u?.name ?? u?.username ?? emailNorm,
         verify_url,
         expiry_minutes: expiryMinutes,
       });

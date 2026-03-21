@@ -11,6 +11,7 @@ import {
   CodeOutlined,
   CustomerServiceOutlined,
   DownloadOutlined,
+  FacebookFilled,
   FileTextOutlined,
   HeartOutlined,
   MobileOutlined,
@@ -208,7 +209,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
               </div>
 
               <div className="hero-right">
-                <Link href="/download/android" className="store-btn store-btn--android" aria-label="Download Android app">
+                <Link href="https://play.google.com/store/apps/details?id=com.jachoei" className="store-btn store-btn--android" target="_blank" aria-label="Download Android app">
                   <span className="store-btn__icon">
                     <AndroidFilled />
                   </span>
@@ -265,6 +266,21 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
                 <span className="footer-link__label">{it.label}</span>
               </Link>
             ))}
+
+            {/* NEW: Facebook link */}
+            <a
+              href="https://www.facebook.com/jachoei"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-link footer-link--external"
+              aria-label="Facebook"
+              title="Follow us on Facebook"
+            >
+              <span className="footer-link__icon">
+                <FacebookFilled />
+              </span>
+              <span className="footer-link__label">Facebook</span>
+            </a>
 
             <button
               type="button"
@@ -689,6 +705,10 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           border-color: rgba(15,23,42,0.14);
           transform: translateY(-1px);
           box-shadow: 0 8px 18px rgba(15,23,42,0.06);
+        }
+
+        .footer-link--external:hover {
+          color: #1677ff;
         }
 
         .footer-link--button {
