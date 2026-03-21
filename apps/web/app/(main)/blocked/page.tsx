@@ -205,10 +205,17 @@ export default function BlockedPage() {
   const jachoei = useJachoeiLocalState();
   const jachoeiMut = useJachoeiMutations();
 
+  const searchStr = searchParams.toString();
   const nextUrl = React.useMemo(() => {
-    const qs = searchParams.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
-  }, [pathname, searchParams]);
+    return searchStr ? `${pathname}?${searchStr}` : pathname;
+  }, [pathname, searchStr]);
+
+  // Keep redirect target stable to avoid effect loops when searchParams identity changes.
+  const nextUrlRef = React.useRef<string>(nextUrl);
+  React.useEffect(() => {
+    if (nextUrlRef.current) return;
+    nextUrlRef.current = nextUrl;
+  }, [nextUrl]);
 
   const tab = React.useMemo<TabKey>(() => {
     const raw = String(searchParams.get("tab") ?? "blocked").toLowerCase();
@@ -217,21 +224,29 @@ export default function BlockedPage() {
 
   const setTab = React.useCallback(
     (next: TabKey) => {
+      if (next === tab) return;
       const params = new URLSearchParams(searchParams.toString());
       params.set("tab", next);
-      router.replace(`${pathname}?${params.toString()}`);
+      const url = `${pathname}?${params.toString()}`;
+      const currentUrl = searchStr ? `${pathname}?${searchStr}` : pathname;
+      if (url === currentUrl) return;
+      router.replace(url);
     },
-    [pathname, router, searchParams]
+    [pathname, router, searchParams, searchStr, tab]
   );
 
   const requireAuthOrRedirect = React.useCallback((): boolean => {
     if (user) return true;
-    router.push(`/login?next=${encodeURIComponent(nextUrl)}`);
+    const next = nextUrlRef.current || nextUrl;
+    router.replace(`/login?next=${encodeURIComponent(next)}`);
     return false;
   }, [nextUrl, router, user]);
 
   React.useEffect(() => {
-    if (!user) router.push(`/login?next=${encodeURIComponent(nextUrl)}`);
+    if (user) return;
+    const next = nextUrlRef.current || nextUrl;
+    if (typeof window !== "undefined" && window.location.pathname === "/login") return;
+    router.replace(`/login?next=${encodeURIComponent(next)}`);
   }, [nextUrl, router, user]);
 
   const {

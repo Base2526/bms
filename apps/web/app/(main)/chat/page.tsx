@@ -265,7 +265,7 @@ function MessageImageTile({
         position: "relative",
         aspectRatio,
         overflow: "hidden",
-        background: "#f5f5f5",
+        background: "var(--app-surface-2)",
       }}
     >
       {loading && !error && (
@@ -314,7 +314,7 @@ function MessageImageTile({
             alignItems: "center",
             justifyContent: "center",
             fontSize: 12,
-            color: "#999",
+            color: "var(--app-muted)",
           }}
         >
           Failed to load
@@ -367,7 +367,7 @@ function renderMessageImages(m: any, isMine: boolean) {
             maxWidth: 260,
             borderRadius: 18,
             overflow: "hidden",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
+            boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
             lineHeight: 0,
           }}
         >
@@ -393,7 +393,7 @@ function renderMessageImages(m: any, isMine: boolean) {
           maxWidth: options.maxWidth ?? 340,
           borderRadius: 18,
           overflow: "hidden",
-          boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
+          boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
           lineHeight: 0,
         }}
       >
@@ -557,7 +557,7 @@ function renderDeliveryTicks(receipt: any) {
   const isRead = receipt?.isRead;
 
   let ticks = "✓";
-  let color = "#888";
+  let color = "var(--app-muted)";
 
   if (deliveredAt && !isRead) {
     ticks = "✓✓";
@@ -1157,7 +1157,7 @@ function ChatUI() {
               display: "inline-block",
             }}
           >
-            <Avatar size={32} style={{ background: "#1677ff" }}>
+            <Avatar size={32} style={{ background: "var(--app-primary)" }}>
               {initial}
             </Avatar>
             <div
@@ -1167,22 +1167,22 @@ function ChatUI() {
                 right: -2,
                 width: 18,
                 height: 18,
-                background: "#fff",
+                background: "var(--app-surface)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.22)",
               }}
             >
-              <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+              <TeamOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
             </div>
           </div>
 
           <div style={{ lineHeight: 1.2 }}>
             <div style={{ fontWeight: 600 }}>{title}</div>
             {membersText && (
-              <div style={{ fontSize: 12, color: "#999" }}>{membersText}</div>
+              <div style={{ fontSize: 12, color: "var(--app-muted)" }}>{membersText}</div>
             )}
           </div>
         </Space>
@@ -1206,7 +1206,7 @@ function ChatUI() {
               display: "inline-block",
             }}
           >
-            <Avatar size={32} src={avatarSrc} style={{ background: "#1677ff" }}>
+            <Avatar size={32} src={avatarSrc} style={{ background: "var(--app-primary)" }}>
               {!avatarSrc && initial}
             </Avatar>
 
@@ -1217,15 +1217,15 @@ function ChatUI() {
                 right: -2,
                 width: 18,
                 height: 18,
-                background: "#fff",
+                background: "var(--app-surface)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.22)",
               }}
             >
-              <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+              <UserOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
             </div>
           </div>
 
@@ -1303,7 +1303,7 @@ function ChatUI() {
         onClick={() => openChatById(c.id)}
         style={{
           cursor: "pointer",
-          background: sel === c.id ? "rgba(22,119,255,0.08)" : "transparent",
+          background: sel === c.id ? "rgba(var(--app-primary-rgb),0.10)" : "transparent",
           borderRadius: 8,
           marginBottom: 4,
           padding: compact ? "6px 4px" : undefined,
@@ -1335,7 +1335,7 @@ function ChatUI() {
                 <Avatar
                   src={avatarSrc}
                   size={42}
-                  style={{ background: "#1677ff" }}
+                  style={{ background: "var(--app-primary)" }}
                 >
                   {!avatarSrc && initial}
                 </Avatar>
@@ -1357,7 +1357,7 @@ function ChatUI() {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                      boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.26)",
                       zIndex: 10,
                     }}
                   >
@@ -1372,18 +1372,18 @@ function ChatUI() {
                     right: -2,
                     width: 18,
                     height: 18,
-                    background: "#fff",
+                    background: "var(--app-surface)",
                     borderRadius: "50%",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                    boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.22)",
                   }}
                 >
                   {c.is_group ? (
-                    <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                    <TeamOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
                   ) : (
-                    <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                    <UserOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
                   )}
                 </div>
               </div>
@@ -1394,7 +1394,7 @@ function ChatUI() {
                 <span
                   style={{
                     fontSize: 12,
-                    color: "#888",
+                    color: "var(--app-muted)",
                     display: "inline-block",
                     maxWidth: "100%",
                     whiteSpace: "nowrap",
@@ -1418,7 +1418,7 @@ function ChatUI() {
               src={avatarSrc}
               size={40}
               style={{
-                background: sel === c.id ? "#1677ff" : "rgba(0,0,0,0.25)",
+                background: sel === c.id ? "var(--app-primary)" : "rgba(var(--app-text-rgb),0.16)",
               }}
             >
               {!avatarSrc && initial}
@@ -1441,7 +1441,7 @@ function ChatUI() {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  boxShadow: "0 0 4px rgba(0,0,0,0.25)",
+                  boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.26)",
                   zIndex: 10,
                 }}
               >
@@ -1456,18 +1456,18 @@ function ChatUI() {
                 right: -2,
                 width: 18,
                 height: 18,
-                background: "#fff",
+                background: "var(--app-surface)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+                boxShadow: "0 0 4px rgba(var(--app-shadow-rgb),0.22)",
               }}
             >
               {c.is_group ? (
-                <TeamOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                <TeamOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
               ) : (
-                <UserOutlined style={{ fontSize: 11, color: "#1677ff" }} />
+                <UserOutlined style={{ fontSize: 11, color: "var(--app-primary)" }} />
               )}
             </div>
           </div>
@@ -1614,10 +1614,10 @@ function ChatUI() {
                 style={{
                   flex: 1,
                   overflow: "auto",
-                  border: "1px solid #eee",
+                  border: "1px solid var(--app-border)",
                   padding: 12,
                   position: "relative",
-                  background: "#fafafa",
+                  background: "var(--app-bg)",
                 }}
               >
                 {initialLoading ? (
@@ -1738,11 +1738,11 @@ function ChatUI() {
                             >
                               <span
                                 style={{
-                                  background: "rgba(0,0,0,0.05)",
+                                  background: "rgba(var(--app-text-rgb),0.06)",
                                   borderRadius: 999,
                                   padding: "2px 12px",
                                   fontSize: 12,
-                                  color: "#666",
+                                  color: "var(--app-muted)",
                                 }}
                               >
                                 {formatDayLabel(createdAt)}
@@ -1776,7 +1776,7 @@ function ChatUI() {
                                 <Avatar
                                   size={32}
                                   style={{
-                                    background: "#999",
+                                    background: "var(--app-surface-3)",
                                     flexShrink: 0,
                                   }}
                                 >
@@ -1796,7 +1796,7 @@ function ChatUI() {
                                   <div
                                     style={{
                                       fontSize: 12,
-                                      color: "#999",
+                                      color: "var(--app-muted)",
                                       marginBottom: 2,
                                     }}
                                   >
@@ -1812,11 +1812,13 @@ function ChatUI() {
                                         hasText || hasImages ? 6 : 4,
                                       padding: "6px 8px",
                                       borderLeft: `3px solid ${
-                                        isMine ? "#ffffff" : "#1677ff"
+                                        isMine
+                                          ? "rgba(var(--app-text-rgb),0.85)"
+                                          : "var(--app-primary)"
                                       }`,
                                       background: isMine
-                                        ? "rgba(0,0,0,0.20)"
-                                        : "#e6f4ff",
+                                        ? "rgba(var(--app-shadow-rgb),0.28)"
+                                        : "rgba(var(--app-primary-rgb),0.10)",
                                       borderRadius: 8,
                                       maxWidth: "100%",
                                       cursor: "pointer",
@@ -1839,8 +1841,8 @@ function ChatUI() {
                                         fontWeight: 500,
                                         marginBottom: 2,
                                         color: isMine
-                                          ? "#ffffff"
-                                          : "#1677ff",
+                                          ? "rgba(var(--app-text-rgb),0.92)"
+                                          : "var(--app-primary)",
                                       }}
                                     >
                                       {replySenderLabel}
@@ -1851,8 +1853,8 @@ function ChatUI() {
                                         style={{
                                           fontSize: 12,
                                           color: isMine
-                                            ? "#f5f5f5"
-                                            : "#555",
+                                            ? "rgba(var(--app-text-rgb),0.86)"
+                                            : "rgba(var(--app-text-rgb),0.74)",
                                           whiteSpace: "pre-wrap",
                                           wordBreak: "break-word",
                                           overflow: "hidden",
@@ -1889,7 +1891,7 @@ function ChatUI() {
                                                   height: 36,
                                                   borderRadius: 6,
                                                   overflow: "hidden",
-                                                  background: "#ddd",
+                                                  background: "var(--app-surface-3)",
                                                   flexShrink: 0,
                                                 }}
                                               >
@@ -1917,7 +1919,7 @@ function ChatUI() {
                                                       justifyContent:
                                                         "center",
                                                       background:
-                                                        "rgba(0,0,0,0.35)",
+                                                        "rgba(var(--app-shadow-rgb),0.45)",
                                                       color: "#fff",
                                                       fontSize: 11,
                                                       fontWeight: 600,
@@ -1939,11 +1941,11 @@ function ChatUI() {
                                     style={{
                                       padding: "8px 12px",
                                       background: isMine
-                                        ? "#1677ff"
-                                        : "#f5f5f5",
-                                      color: isMine ? "#fff" : "#000",
+                                        ? "var(--app-primary)"
+                                        : "var(--app-surface-2)",
+                                      color: isMine ? "#fff" : "var(--app-text)",
                                       boxShadow:
-                                        "0 2px 6px rgba(0,0,0,0.06)",
+                                        "0 2px 6px rgba(var(--app-shadow-rgb),0.10)",
                                       wordBreak: "break-word",
                                       whiteSpace: "pre-wrap",
                                       ...bubbleRadius,
@@ -1973,13 +1975,13 @@ function ChatUI() {
                                       fontSize: 11,
                                     }}
                                   >
-                                    <span style={{ color: "#999" }}>
+                                    <span style={{ color: "rgba(var(--app-text-rgb),0.56)" }}>
                                       {timeLabel}
                                     </span>
 
                                     {isMine ? (
                                       <>
-                                        <span style={{ color: "#999" }}>
+                                        <span style={{ color: "rgba(var(--app-text-rgb),0.56)" }}>
                                           {m?.myReceipt?.isRead
                                             ? "Read"
                                             : m?.myReceipt?.deliveredAt
@@ -1987,12 +1989,12 @@ function ChatUI() {
                                             : "Sent"}
                                           {renderDeliveryTicks(m?.myReceipt)}
                                         </span>
-                                        <span style={{ color: "#bbb" }}>
+                                        <span style={{ color: "rgba(var(--app-text-rgb),0.50)" }}>
                                           · {m?.readersCount ?? 0} read
                                         </span>
                                       </>
                                     ) : (
-                                      <span style={{ color: "#bbb" }}>
+                                      <span style={{ color: "rgba(var(--app-text-rgb),0.50)" }}>
                                         {m?.readersCount ?? 0} read
                                       </span>
                                     )}
@@ -2129,11 +2131,11 @@ function ChatUI() {
                             display: "flex",
                             alignItems: "center",
                             gap: 6,
-                            background: "#f5f5f5",
+                            background: "var(--app-surface-2)",
                             borderRadius: 18,
                             padding: "6px 10px",
                             fontSize: 12,
-                            color: "#666",
+                            color: "var(--app-muted)",
                           }}
                         >
                           <span>กำลังพิมพ์…</span>
@@ -2145,7 +2147,7 @@ function ChatUI() {
                                 width: 4,
                                 height: 4,
                                 borderRadius: "50%",
-                                background: "#999",
+                                background: "var(--app-muted)",
                                 opacity: 0.8,
                               }}
                             />
@@ -2154,7 +2156,7 @@ function ChatUI() {
                                 width: 4,
                                 height: 4,
                                 borderRadius: "50%",
-                                background: "#999",
+                                background: "var(--app-muted)",
                                 opacity: 0.6,
                               }}
                             />
@@ -2163,7 +2165,7 @@ function ChatUI() {
                                 width: 4,
                                 height: 4,
                                 borderRadius: "50%",
-                                background: "#999",
+                                background: "var(--app-muted)",
                                 opacity: 0.4,
                               }}
                             />
@@ -2185,12 +2187,12 @@ function ChatUI() {
                           bottom: 16,
                           left: "50%",
                           transform: "translateX(-50%)",
-                          background: "#1677ff",
+                          background: "var(--app-primary)",
                           color: "#fff",
                           borderRadius: 999,
                           padding: "4px 12px",
                           boxShadow:
-                            "0 2px 8px rgba(0,0,0,0.2)",
+                            "0 2px 8px rgba(var(--app-shadow-rgb),0.22)",
                           cursor: "pointer",
                           fontSize: 12,
                           display: "flex",
@@ -2246,7 +2248,7 @@ function ChatUI() {
               bottom: 80,
               left: 16,
               zIndex: 1100,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+              boxShadow: "0 4px 12px rgba(var(--app-shadow-rgb),0.26)",
             }}
           />
           <Drawer
@@ -2391,7 +2393,7 @@ function ChatUI() {
                 }}
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLDivElement).style.background =
-                    "#f5f5f5";
+                    "var(--app-surface-2)";
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLDivElement).style.background =
@@ -2400,7 +2402,7 @@ function ChatUI() {
               >
                 <List.Item.Meta
                   avatar={
-                    <Avatar src={avatarSrc} style={{ background: "#1677ff" }}>
+                    <Avatar src={avatarSrc} style={{ background: "var(--app-primary)" }}>
                       {!avatarSrc && initial}
                     </Avatar>
                   }
@@ -2409,7 +2411,7 @@ function ChatUI() {
                       {m.name}{" "}
                       {isMe && (
                         <span
-                          style={{ color: "#999", fontSize: 12 }}
+                          style={{ color: "var(--app-muted)", fontSize: 12 }}
                         >
                           (You)
                         </span>
@@ -2419,7 +2421,7 @@ function ChatUI() {
                   description={
                     m.email ||
                     m.phone || (
-                      <span style={{ color: "#bbb", fontSize: 12 }}>
+                      <span style={{ color: "rgba(var(--app-text-rgb),0.55)", fontSize: 12 }}>
                         Click to view profile
                       </span>
                     )

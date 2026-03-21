@@ -44,8 +44,9 @@ export default function AdminHeader() {
   return (
     <Header
       style={{
-        background: '#fff',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+        background: 'var(--app-surface)',
+        boxShadow: '0 2px 8px rgba(var(--app-shadow-rgb),0.08)',
+        borderBottom: '1px solid var(--app-border)',
         padding: '0 24px',
         display: 'flex',
         alignItems: 'center',
@@ -55,7 +56,7 @@ export default function AdminHeader() {
       }}>
       {/* Left */}
       <Title level={3} style={{ margin: 0 }}>
-        <Link href="/admin" style={{  }}>
+        <Link href="/admin" style={{ color: 'var(--app-text)' }}>
           Admin Dashboard
         </Link>
       </Title>
@@ -67,9 +68,10 @@ export default function AdminHeader() {
               <Button
                 icon={q.icon}
                 style={{
-                  background: '#f5f5f5',
-                  border: 'none',
+                  background: 'var(--app-surface-2)',
+                  border: '1px solid var(--app-border)',
                   boxShadow: 'none',
+                  color: 'var(--app-text)',
                 }}
               >
                 {q.text}

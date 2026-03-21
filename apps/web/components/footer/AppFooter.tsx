@@ -339,8 +339,8 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
       <style>{`
         .footer-root {
           background:
-            radial-gradient(circle at top, rgba(37,99,235,0.035), transparent 30%),
-            #ffffff;
+            radial-gradient(circle at top, rgba(var(--app-primary-rgb),0.06), transparent 30%),
+            var(--app-bg);
           padding: 28px 16px;
         }
 
@@ -352,13 +352,13 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           max-width: 1400px;
           margin: 0 auto;
           border-radius: 28px;
-          border: 1px solid rgba(15, 23, 42, 0.06);
+          border: 1px solid var(--app-border);
           background:
-            linear-gradient(180deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.985) 100%);
+            linear-gradient(180deg, rgba(var(--app-surface-rgb),0.99) 0%, rgba(var(--app-bg-rgb),0.985) 100%);
           padding: 20px;
           box-shadow:
-            0 16px 50px rgba(15,23,42,0.05),
-            inset 0 1px 0 rgba(255,255,255,0.9);
+            0 16px 50px rgba(var(--app-shadow-rgb),0.08),
+            inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
         }
 
         .hero-card {
@@ -368,11 +368,11 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           border-radius: 26px;
           padding: 28px;
           background:
-            linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(246,248,252,0.98) 56%, rgba(241,245,249,0.98) 100%);
-          border: 1px solid rgba(15,23,42,0.06);
+            linear-gradient(135deg, rgba(var(--app-surface-rgb),0.98) 0%, rgba(var(--app-surface-rgb),0.94) 56%, rgba(var(--app-bg-rgb),0.96) 100%);
+          border: 1px solid var(--app-border);
           box-shadow:
-            0 18px 48px rgba(15,23,42,0.06),
-            inset 0 1px 0 rgba(255,255,255,0.95);
+            0 18px 48px rgba(var(--app-shadow-rgb),0.10),
+            inset 0 1px 0 rgba(var(--app-surface-rgb),0.95);
         }
 
         .hero-glow {
@@ -402,10 +402,10 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           position: absolute;
           inset: 0;
           background-image:
-            linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+            linear-gradient(rgba(var(--app-text-rgb),0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(var(--app-text-rgb),0.06) 1px, transparent 1px);
           background-size: 24px 24px;
-          mask-image: linear-gradient(to bottom, rgba(0,0,0,0.14), transparent 70%);
+          mask-image: linear-gradient(to bottom, rgba(var(--app-shadow-rgb),0.14), transparent 70%);
           pointer-events: none;
           opacity: 0.22;
         }
@@ -430,12 +430,12 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           gap: 10px;
           padding: 8px 14px;
           border-radius: 999px;
-          background: rgba(255,255,255,0.76);
-          border: 1px solid rgba(15,23,42,0.08);
-          color: rgba(15,23,42,0.72);
+          background: rgba(var(--app-surface-rgb),0.76);
+          border: 1px solid var(--app-border);
+          color: rgba(var(--app-text-rgb),0.74);
           font-size: 13px;
           font-weight: 600;
-          box-shadow: 0 8px 18px rgba(15,23,42,0.05);
+          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.08);
         }
 
         .hero-badge-icon {
@@ -452,7 +452,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .hero-title {
           margin: 16px 0 0;
-          color: #0f172a;
+          color: var(--app-text);
           line-height: 1.08;
           letter-spacing: -0.6px;
           font-size: 34px;
@@ -461,7 +461,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .hero-desc {
           margin: 12px 0 0;
-          color: rgba(15,23,42,0.68);
+          color: rgba(var(--app-text-rgb),0.72);
           max-width: 700px;
           line-height: 1.68;
           font-size: 15px;
@@ -469,7 +469,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .hero-meta {
           margin-top: 10px;
-          color: rgba(15,23,42,0.5);
+          color: rgba(var(--app-text-rgb),0.56);
           font-size: 13px;
           line-height: 1.6;
         }
@@ -486,12 +486,12 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           align-items: center;
           border-radius: 999px;
           padding: 7px 12px;
-          border: 1px solid rgba(15,23,42,0.07);
-          background: rgba(255,255,255,0.78);
-          color: rgba(15,23,42,0.72);
+          border: 1px solid var(--app-border);
+          background: rgba(var(--app-surface-rgb),0.78);
+          color: rgba(var(--app-text-rgb),0.72);
           font-size: 13px;
           font-weight: 500;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
         }
 
         .hero-right {
@@ -634,7 +634,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         }
 
         .brand-name {
-          color: rgba(15,23,42,0.88);
+          color: rgba(var(--app-text-rgb),0.88);
           font-size: 15px;
           font-weight: 700;
           line-height: 1.2;
@@ -642,7 +642,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .brand-sub {
           margin-top: 4px;
-          color: rgba(15,23,42,0.5);
+          color: rgba(var(--app-text-rgb),0.58);
           font-size: 13px;
           line-height: 1.4;
         }
@@ -660,16 +660,16 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           gap: 8px;
           border-radius: 999px;
           padding: 6px 12px;
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15,23,42,0.08);
-          color: rgba(15,23,42,0.68);
+          background: rgba(var(--app-surface-rgb),0.92);
+          border: 1px solid var(--app-border);
+          color: rgba(var(--app-text-rgb),0.72);
           font-size: 13px;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
         }
 
         .footer-divider {
           height: 1px;
-          background: linear-gradient(90deg, transparent 0%, rgba(15,23,42,0.08) 20%, rgba(15,23,42,0.08) 80%, transparent 100%);
+          background: linear-gradient(90deg, transparent 0%, rgba(var(--app-text-rgb),0.14) 20%, rgba(var(--app-text-rgb),0.14) 80%, transparent 100%);
           margin: 16px 0 14px;
         }
 
@@ -686,9 +686,9 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           gap: 8px;
           padding: 8px 12px;
           border-radius: 999px;
-          border: 1px solid rgba(15,23,42,0.08);
-          background: rgba(255,255,255,0.72);
-          color: rgba(15,23,42,0.74);
+          border: 1px solid var(--app-border);
+          background: rgba(var(--app-surface-rgb),0.72);
+          color: rgba(var(--app-text-rgb),0.78);
           text-decoration: none;
           line-height: 1;
           transition:
@@ -697,18 +697,18 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
             transform 160ms ease,
             box-shadow 160ms ease;
           font-size: 14px;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.86);
+          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.86);
         }
 
         .footer-link:hover {
-          background: rgba(255,255,255,0.98);
-          border-color: rgba(15,23,42,0.14);
+          background: rgba(var(--app-surface-rgb),0.98);
+          border-color: rgba(var(--app-text-rgb),0.22);
           transform: translateY(-1px);
-          box-shadow: 0 8px 18px rgba(15,23,42,0.06);
+          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.10);
         }
 
         .footer-link--external:hover {
-          color: #1677ff;
+          color: var(--app-primary);
         }
 
         .footer-link--button {
@@ -731,7 +731,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .footer-note {
           margin-top: 16px;
-          color: rgba(15,23,42,0.45);
+          color: rgba(var(--app-text-rgb),0.55);
           text-align: center;
           font-size: 13px;
           line-height: 1.7;
@@ -744,21 +744,21 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           bottom: 0;
           z-index: 9999;
           padding: 14px 16px;
-          background: rgba(255,255,255,0.72);
+          background: rgba(var(--app-surface-rgb),0.72);
           backdrop-filter: blur(14px);
-          border-top: 1px solid rgba(15,23,42,0.06);
+          border-top: 1px solid var(--app-border);
         }
 
         .pdpa-card {
           max-width: 1400px;
           margin: 0 auto;
           border-radius: 20px;
-          border: 1px solid rgba(15,23,42,0.08);
-          background: rgba(255,255,255,0.96);
+          border: 1px solid var(--app-border);
+          background: rgba(var(--app-surface-rgb),0.96);
           padding: 15px 16px;
           box-shadow:
-            0 18px 44px rgba(16,24,40,0.10),
-            inset 0 1px 0 rgba(255,255,255,0.9);
+            0 18px 44px rgba(var(--app-shadow-rgb),0.16),
+            inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -772,13 +772,13 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
         .pdpa-title {
           font-weight: 700;
-          color: rgba(15,23,42,0.9);
+          color: rgba(var(--app-text-rgb),0.9);
           font-size: 15px;
         }
 
         .pdpa-desc {
           margin-top: 4px;
-          color: rgba(15,23,42,0.58);
+          color: rgba(var(--app-text-rgb),0.64);
           line-height: 1.6;
           font-size: 14px;
         }
@@ -791,13 +791,13 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         }
 
         .pdpa-inline-link {
-          color: rgba(15,23,42,0.7);
+          color: rgba(var(--app-text-rgb),0.72);
           text-decoration: none;
           font-weight: 500;
         }
 
         .pdpa-inline-link:hover {
-          color: rgba(15,23,42,0.95);
+          color: rgba(var(--app-text-rgb),0.95);
         }
 
         .pdpa-actions {
@@ -817,7 +817,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           padding: 10px 14px;
           cursor: pointer;
           font: inherit;
-          border: 1px solid rgba(15,23,42,0.08);
+          border: 1px solid var(--app-border);
           transition:
             background 160ms ease,
             border-color 160ms ease,
@@ -830,19 +830,19 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         }
 
         .btn-secondary {
-          background: #ffffff;
-          color: rgba(15,23,42,0.82);
+          background: var(--app-surface);
+          color: rgba(var(--app-text-rgb),0.86);
         }
 
         .btn-secondary:hover {
-          background: rgba(15,23,42,0.03);
+          background: rgba(var(--app-text-rgb),0.06);
         }
 
         .btn-primary {
-          background: linear-gradient(135deg, #1677ff 0%, #2563eb 100%);
-          border-color: #1677ff;
+          background: linear-gradient(135deg, rgba(var(--app-primary-rgb),1) 0%, rgba(var(--app-primary-rgb),0.82) 100%);
+          border-color: var(--app-primary);
           color: #ffffff;
-          box-shadow: 0 10px 22px rgba(37,99,235,0.20);
+          box-shadow: 0 10px 22px rgba(var(--app-primary-rgb),0.22);
         }
 
         .btn-primary:hover {

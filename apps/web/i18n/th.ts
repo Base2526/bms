@@ -5,6 +5,17 @@ const th = {
     home: "หน้าแรก",
     and: "และ",
     or_continue_with: "หรือเข้าสู่ระบบด้วย",
+    login: "เข้าสู่ระบบ",
+    logout: "ออกจากระบบ",
+    settings: "ตั้งค่า",
+    cancel: "ยกเลิก",
+    confirm_logout_title: "ยืนยันการออกจากระบบ",
+    confirm_logout_content: "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?",
+    logged_out: "ออกจากระบบแล้ว",
+    logout_failed: "ออกจากระบบไม่สำเร็จ",
+    more: "เพิ่มเติม",
+    search: "ค้นหา",
+    go_home: "ไปหน้าแรก",
   },
   login: {
     title: "เข้าสู่ระบบ",
@@ -93,6 +104,9 @@ const th = {
   header: {
     title: "จ่าเฉย (JACHOEI)",
 
+    subtitle: "Community scam intelligence",
+    blocked: "รายการที่บล็อก",
+
     // 🔍 search-related
     searchPlaceholder: "ค้นหาโพสต์, ผู้ใช้, หมายเลขโทรศัพท์...",
     searchClearHistory: "ล้างประวัติการค้นหา",
@@ -104,7 +118,20 @@ const th = {
     newPost: "โพสต์ใหม่",
   },
   footer: {
-    support: "ติดต่อฝ่ายสนับสนุน"
+    support: "ติดต่อฝ่ายสนับสนุน",
+    as_is: "AS IS / No Warranty",
+    open_source_components: "Open-source components",
+    open_source_disclaimer:
+      "Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open Source / License for details.",
+    pdpa: "PDPA",
+    pdpa_settings: "PDPA settings",
+    tap_to_change: "แตะเพื่อเปลี่ยน",
+    get_it_on: "รับแอปได้ที่",
+    download_on: "ดาวน์โหลดบน",
+    android_app: "Android App",
+    ios_app: "iPhone / iOS",
+    download_android_aria: "ดาวน์โหลดแอป Android",
+    download_ios_aria: "ดาวน์โหลดแอป iOS",
   },
   notificationPage: {
     title: "การแจ้งเตือน",

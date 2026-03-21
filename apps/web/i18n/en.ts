@@ -5,6 +5,17 @@ const en = {
     home: "Home",
     and: "and",
     or_continue_with: "or continue with",
+    login: "Login",
+    logout: "Logout",
+    settings: "Settings",
+    cancel: "Cancel",
+    confirm_logout_title: "Confirm Logout",
+    confirm_logout_content: "Are you sure you want to logout?",
+    logged_out: "Logged out",
+    logout_failed: "Logout failed",
+    more: "More",
+    search: "Search",
+    go_home: "Go to home",
   },
   login: {
     title: "Sign in",
@@ -93,6 +104,9 @@ const en = {
   header: {
     title: "จ่าเฉย (JACHOEI)",
 
+    subtitle: "Community scam intelligence",
+    blocked: "Blocked",
+
     // 🔍 search-related
     searchPlaceholder: "Search posts, users, phone numbers...",
     searchClearHistory: "Clear search history",
@@ -104,7 +118,20 @@ const en = {
     newPost: "New post",
   },
   footer: {
-    support: "Support"
+    support: "Support",
+    as_is: "AS IS / No Warranty",
+    open_source_components: "Open-source components",
+    open_source_disclaimer:
+      "Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open Source / License for details.",
+    pdpa: "PDPA",
+    pdpa_settings: "PDPA settings",
+    tap_to_change: "tap to change",
+    get_it_on: "Get it on",
+    download_on: "Download on",
+    android_app: "Android App",
+    ios_app: "iPhone / iOS",
+    download_android_aria: "Download Android app",
+    download_ios_aria: "Download iOS app",
   },
   notificationPage: {
     title: "Notifications",

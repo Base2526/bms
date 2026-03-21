@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 
 const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
   ssr: false,
-  loading: () => <div style={{ height: 64, background: "#fff" }} />,
+  loading: () => <div style={{ height: 64, background: "var(--app-surface)" }} />,
 });
 
 const Breadcrumbs = dynamic(() => import("@/components/Breadcrumbs"), {
@@ -77,7 +77,7 @@ export default async function MainLayout({
       <main
         style={{
           minHeight: "100vh",
-          background: "#ffffff",
+          background: "var(--app-bg)",
         }}
       >
         <div className="jachoei-main-shell">
@@ -108,7 +108,8 @@ export default async function MainLayout({
 
             .jachoei-main-content {
               min-height: 360px;
-              background: #ffffff;
+              background: var(--app-surface);
+              border: 1px solid var(--app-border);
               border-radius: 16px;
               padding: 16px;
             }
@@ -128,7 +129,7 @@ export default async function MainLayout({
                 min-height: auto;
                 border-radius: 0;
                 padding: 0;
-                box-shadow: 0 0 4px rgba(0,0,0,0.06);
+                box-shadow: 0 0 4px rgba(var(--app-shadow-rgb),0.12);
               }
             }
           `,

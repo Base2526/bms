@@ -8,6 +8,7 @@ import { client } from "@/lib/apollo";
 
 import { I18nProvider } from "@/lib/i18nContext";
 import type { Lang } from "@/i18n";
+import AntdThemeProvider from "@/app/AntdThemeProvider";
 
 const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
   ssr: false,
@@ -36,9 +37,11 @@ export default function ClientProviders({
 
   return (
     <ApolloProvider client={client}>
-      <I18nProvider lang={lang}>
-        {onAuthRoute ? children : <SessionLayer>{children}</SessionLayer>}
-      </I18nProvider>
+      <AntdThemeProvider>
+        <I18nProvider lang={lang}>
+          {onAuthRoute ? children : <SessionLayer>{children}</SessionLayer>}
+        </I18nProvider>
+      </AntdThemeProvider>
     </ApolloProvider>
   );
 }

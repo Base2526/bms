@@ -273,8 +273,8 @@ export default function SendMessageSection({
           marginBottom: 10,
           padding: isMobile ? "5px 8px" : "6px 10px",
           borderRadius: 10,
-          background: "#f0f5ff",
-          borderLeft: "3px solid #1677ff",
+          background: "rgba(var(--app-primary-rgb),0.10)",
+          borderLeft: "3px solid var(--app-primary)",
           fontSize: isMobile ? 11 : 12,
           display: "flex",
           justifyContent: "space-between",
@@ -286,7 +286,7 @@ export default function SendMessageSection({
             style={{
               fontWeight: 600,
               marginBottom: 4,
-              color: "#1677ff",
+              color: "var(--app-primary)",
             }}
           >
             Replying to {senderLabel}
@@ -302,7 +302,7 @@ export default function SendMessageSection({
                 WebkitBoxOrient: "vertical",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
-                color: "#555",
+                color: "rgba(var(--app-text-rgb),0.78)",
               }}
             >
               {replyText}
@@ -342,7 +342,7 @@ export default function SendMessageSection({
                         style={{
                           position: "absolute",
                           inset: 0,
-                          background: "rgba(0,0,0,0.4)",
+                          background: "rgba(var(--app-shadow-rgb),0.55)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -365,7 +365,7 @@ export default function SendMessageSection({
           type="text"
           icon={<CloseOutlined />}
           onClick={() => setReplyTarget(null)}
-          style={{ padding: 0, color: "#666" }}
+          style={{ padding: 0, color: "var(--app-muted)" }}
           size={isMobile ? "small" : "middle"}
         />
       </div>
@@ -378,8 +378,8 @@ export default function SendMessageSection({
       style={{
         width: "100%",
         padding: isMobile ? 8 : 12,
-        background: "#fff",
-        borderTop: "1px solid #eee",
+        background: "var(--app-surface)",
+        borderTop: "1px solid var(--app-border)",
         position: "relative",
       }}
     >
@@ -407,7 +407,7 @@ export default function SendMessageSection({
                   height: isMobile ? 70 : 80,
                   borderRadius: 10,
                   overflow: "hidden",
-                  border: "1px solid #ddd",
+                  border: "1px solid var(--app-border)",
                   flexShrink: 0,
                 }}
               >
@@ -428,7 +428,7 @@ export default function SendMessageSection({
                     position: "absolute",
                     top: 0,
                     right: 0,
-                    background: "rgba(0,0,0,0.5)",
+                    background: "rgba(var(--app-shadow-rgb),0.55)",
                     borderRadius: 0,
                   }}
                   onClick={() => removeImage(img)}
@@ -454,11 +454,11 @@ export default function SendMessageSection({
         style={{
           display: "flex",
           alignItems: "center",
-          background: "#fff",
+          background: "var(--app-surface)",
           borderRadius: 24,
           padding: isMobile ? "4px 8px" : "6px 12px",
-          border: "1px solid #eee",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+          border: "1px solid var(--app-border)",
+          boxShadow: "0 1px 4px rgba(var(--app-shadow-rgb),0.10)",
           gap: isMobile ? 6 : 10,
         }}
       >
@@ -474,7 +474,7 @@ export default function SendMessageSection({
             type="text"
             icon={
               <PictureOutlined
-                style={{ fontSize: isMobile ? 18 : 20, color: "#888" }}
+                style={{ fontSize: isMobile ? 18 : 20, color: "var(--app-muted)" }}
               />
             }
             style={{ border: "none" }}
@@ -487,7 +487,7 @@ export default function SendMessageSection({
           type="text"
           icon={
             <SmileOutlined
-              style={{ fontSize: isMobile ? 18 : 20, color: "#888" }}
+              style={{ fontSize: isMobile ? 18 : 20, color: "var(--app-muted)" }}
             />
           }
           onClick={() => setShowEmoji((s) => !s)}
@@ -513,6 +513,8 @@ export default function SendMessageSection({
             lineHeight: "20px",
             paddingTop: isMobile ? 4 : 8,
             flex: 1,
+            background: "transparent",
+            color: "var(--app-text)",
           }}
         />
 
@@ -529,7 +531,7 @@ export default function SendMessageSection({
             height: isMobile ? 36 : 42,
             fontSize: isMobile ? 16 : 18,
             boxShadow: canSend
-              ? "0 4px 10px rgba(0,0,0,0.15)"
+              ? "0 4px 10px rgba(var(--app-shadow-rgb),0.18)"
               : "none",
             flexShrink: 0,
           }}
@@ -544,11 +546,11 @@ export default function SendMessageSection({
             position: "absolute",
             bottom: isMobile ? 60 : 70,
             left: isMobile ? 8 : 20,
-            background: "#fff",
-            border: "1px solid #eee",
+            background: "rgba(var(--app-surface-rgb),0.98)",
+            border: "1px solid var(--app-border)",
             borderRadius: 12,
             padding: 10,
-            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            boxShadow: "0 4px 14px rgba(var(--app-shadow-rgb),0.18)",
             display: "grid",
             gridTemplateColumns: `repeat(${isMobile ? 6 : 8}, 1fr)`,
             gap: 6,

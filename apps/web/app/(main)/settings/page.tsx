@@ -621,7 +621,7 @@ function PostsPanel() {
           />
           <Button onClick={() => refetch({ q })}>Search</Button>
           <Button type="primary">
-            <a href="/post/new" style={{ color: '#fff' }}>
+            <a href="/post/new" style={{ color: 'inherit' }}>
               + New Post
             </a>
           </Button>
@@ -652,13 +652,13 @@ function PostsPanel() {
                 title={<Link href={`/post/${r.id}`}>{r.title}</Link>}
                 description={
                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                    <div style={{ color: 'rgba(0,0,0,0.65)' }}>
+                    <div style={{ color: 'rgba(var(--app-text-rgb),0.72)' }}>
                       {(r.detail || '').slice(0, 120)}
                       {(r.detail || '').length > 120 ? '…' : ''}
                     </div>
                     <Space wrap>
                       <Tag color={r.status === 'public' ? 'green' : 'red'}>{r.status}</Tag>
-                      <span style={{ color: 'rgba(0,0,0,0.45)' }}>
+                      <span style={{ color: 'rgba(var(--app-text-rgb),0.55)' }}>
                         {new Date(r.created_at).toLocaleString()}
                       </span>
                     </Space>
@@ -1051,10 +1051,19 @@ export default function SettingsPage() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: 'var(--app-bg)' }}>
       {/* Mobile header */}
       {isMobile && (
-        <Header style={{ padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+        <Header
+          style={{
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'var(--app-surface)',
+            borderBottom: '1px solid var(--app-border)',
+          }}
+        >
           <Button icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
           <div style={{ fontWeight: 600 }}>Settings</div>
         </Header>
@@ -1074,7 +1083,7 @@ export default function SettingsPage() {
 
       {/* Desktop sider */}
       {!isMobile && (
-        <Sider width={240} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        <Sider width={240} style={{ background: 'var(--app-surface)', borderRight: '1px solid var(--app-border)' }}>
           <div style={{ padding: 12 }}>
             <Card styles={{ body: { padding: 0 } }}>
               {menuNode}
@@ -1083,8 +1092,8 @@ export default function SettingsPage() {
         </Sider>
       )}
 
-      <Layout style={{ background: '#fff' }}>
-        <Content style={{ padding: contentPadding, background: '#fff' }}>
+      <Layout style={{ background: 'var(--app-bg)' }}>
+        <Content style={{ padding: contentPadding, background: 'var(--app-bg)' }}>
           {/* PROFILE */}
           {active === 'profile' && (
             <PanelWrap title="Profile & Account" maxWidth={cardMaxWidth} loading={meLoading}>

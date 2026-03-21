@@ -71,9 +71,9 @@ export default function Breadcrumbs() {
           gap: 8,
           padding: "8px 12px",
           borderRadius: 999,
-          background: "rgba(255,255,255,0.82)",
-          border: "1px solid rgba(15,23,42,0.06)",
-          boxShadow: "0 8px 20px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.9)",
+          background: "rgba(var(--app-surface-rgb),0.82)",
+          border: "1px solid var(--app-border)",
+          boxShadow: "0 8px 20px rgba(var(--app-shadow-rgb),0.06), inset 0 1px 0 rgba(var(--app-surface-rgb),0.9)",
         }}
       >
         {items.map((item, index) => {
@@ -85,7 +85,7 @@ export default function Breadcrumbs() {
                 <RightOutlined
                   style={{
                     fontSize: 10,
-                    color: "rgba(15,23,42,0.35)",
+                    color: "rgba(var(--app-text-rgb),0.40)",
                   }}
                 />
               )}
@@ -96,13 +96,13 @@ export default function Breadcrumbs() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
-                    color: "#0f172a",
+                    color: "var(--app-text)",
                     fontSize: 13,
                     fontWeight: 600,
                     lineHeight: 1,
                   }}
                 >
-                  {isHome && <HomeOutlined style={{ color: "#64748b" }} />}
+                  {isHome && <HomeOutlined style={{ color: "var(--app-muted)" }} />}
                   <span>{item.label}</span>
                 </span>
               ) : (
@@ -112,7 +112,7 @@ export default function Breadcrumbs() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
-                    color: "rgba(15,23,42,0.56)",
+                    color: "rgba(var(--app-text-rgb),0.60)",
                     textDecoration: "none",
                     fontSize: 13,
                     fontWeight: 500,
@@ -120,7 +120,7 @@ export default function Breadcrumbs() {
                     transition: "color .16s ease",
                   }}
                 >
-                  {isHome && <HomeOutlined style={{ color: "#64748b" }} />}
+                  {isHome && <HomeOutlined style={{ color: "var(--app-muted)" }} />}
                   <span>{item.label}</span>
                 </Link>
               )}

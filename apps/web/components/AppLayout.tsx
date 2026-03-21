@@ -40,9 +40,9 @@ const FOOTER_LINK_STYLE: React.CSSProperties = {
   gap: 8,
   padding: "6px 10px",
   borderRadius: 999,
-  border: "1px solid rgba(0,0,0,0.08)",
-  background: "rgba(0,0,0,0.02)",
-  color: "rgba(0,0,0,0.68)",
+  border: "1px solid var(--app-border)",
+  background: "rgba(var(--app-surface-rgb),0.72)",
+  color: "rgba(var(--app-text-rgb),0.78)",
   textDecoration: "none",
   lineHeight: 1,
   transition: "all 160ms ease",
@@ -55,9 +55,9 @@ const MOBILE_FOOTER_LINK_STYLE: React.CSSProperties = {
   width: 38,
   height: 38,
   borderRadius: 12,
-  border: "1px solid rgba(0,0,0,0.08)",
-  background: "rgba(0,0,0,0.02)",
-  color: "rgba(0,0,0,0.7)",
+  border: "1px solid var(--app-border)",
+  background: "rgba(var(--app-surface-rgb),0.72)",
+  color: "rgba(var(--app-text-rgb),0.8)",
   textDecoration: "none",
   lineHeight: 1,
   transition: "all 160ms ease",
@@ -70,15 +70,33 @@ const APP_DOWNLOAD_CARD_DESKTOP: React.CSSProperties = {
   borderRadius: 24,
   padding: "24px 24px",
   background:
-    "radial-gradient(circle at top left, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.92) 18%, rgba(249,250,251,0.96) 40%, rgba(243,244,246,0.98) 100%)",
-  border: "1px solid rgba(0,0,0,0.06)",
-  boxShadow: "0 14px 38px rgba(15,23,42,0.06)",
+    "radial-gradient(circle at top left, rgba(var(--app-surface-rgb),0.72) 0%, rgba(var(--app-surface-rgb),0.92) 18%, rgba(var(--app-bg-rgb),0.96) 40%, rgba(var(--app-bg-rgb),0.98) 100%)",
+  border: "1px solid var(--app-border)",
+  boxShadow: "0 14px 38px rgba(var(--app-shadow-rgb),0.08)",
 };
 
 const APP_DOWNLOAD_CARD_MOBILE: React.CSSProperties = {
   ...APP_DOWNLOAD_CARD_DESKTOP,
   borderRadius: 20,
   padding: "18px 14px",
+};
+
+type DownloadStrings = {
+  getItOn: string;
+  downloadOn: string;
+  androidApp: string;
+  iosApp: string;
+  downloadAndroidAria: string;
+  downloadIosAria: string;
+};
+
+type FooterStrings = {
+  asIs: string;
+  openSourceComponents: string;
+  openSourceDisclaimer: string;
+  pdpa: string;
+  pdpaSettings: string;
+  tapToChange: string;
 };
 
 const APP_BUTTON_BASE_DESKTOP: React.CSSProperties = {
@@ -148,13 +166,13 @@ function writeConsent(value: ConsentValue) {
 }
 
 function hoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.background = "rgba(0,0,0,0.045)";
-  e.currentTarget.style.borderColor = "rgba(0,0,0,0.14)";
+  e.currentTarget.style.background = "rgba(var(--app-text-rgb),0.06)";
+  e.currentTarget.style.borderColor = "rgba(var(--app-text-rgb),0.18)";
 }
 
 function hoverOut(e: React.MouseEvent<HTMLAnchorElement>) {
-  e.currentTarget.style.background = "rgba(0,0,0,0.02)";
-  e.currentTarget.style.borderColor = "rgba(0,0,0,0.08)";
+  e.currentTarget.style.background = "rgba(var(--app-surface-rgb),0.72)";
+  e.currentTarget.style.borderColor = "var(--app-border)";
 }
 
 function premiumHoverIn(e: React.MouseEvent<HTMLAnchorElement>) {
@@ -198,9 +216,9 @@ const PDPAConsentBar = memo(function PDPAConsentBar({
         bottom: 0,
         zIndex: 9999,
         padding: isMobile ? "10px 10px" : "14px 16px",
-        background: "rgba(255,255,255,0.72)",
+        background: "rgba(var(--app-surface-rgb),0.72)",
         backdropFilter: "blur(12px)",
-        borderTop: "1px solid rgba(0,0,0,0.06)",
+        borderTop: "1px solid var(--app-border)",
       }}
       role="dialog"
       aria-label="PDPA cookie consent"
@@ -210,10 +228,10 @@ const PDPAConsentBar = memo(function PDPAConsentBar({
           maxWidth: 1400,
           margin: "0 auto",
           borderRadius: 18,
-          border: "1px solid rgba(0,0,0,0.08)",
-          background: "rgba(255,255,255,0.96)",
+          border: "1px solid var(--app-border)",
+          background: "rgba(var(--app-surface-rgb),0.96)",
           padding: isMobile ? "12px 12px" : "14px 16px",
-          boxShadow: "0 14px 40px rgba(16,24,40,0.08)",
+          boxShadow: "0 14px 40px rgba(var(--app-shadow-rgb),0.10)",
         }}
       >
         <Space
@@ -226,18 +244,18 @@ const PDPAConsentBar = memo(function PDPAConsentBar({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <Text style={{ fontWeight: 700, color: "rgba(0,0,0,0.88)" }}>PDPA / Cookies</Text>
+            <Text style={{ fontWeight: 700, color: "rgba(var(--app-text-rgb),0.88)" }}>PDPA / Cookies</Text>
             <div style={{ marginTop: 4 }}>
-              <Text style={{ color: "rgba(0,0,0,0.58)" }}>
+              <Text style={{ color: "rgba(var(--app-text-rgb),0.62)" }}>
                 เราใช้คุกกี้ที่จำเป็นเพื่อให้เว็บไซต์ทำงาน และอาจใช้คุกกี้วิเคราะห์เพื่อปรับปรุงประสบการณ์ใช้งาน
                 คุณสามารถเลือก Allow หรือ Reject ได้
               </Text>
               <div style={{ marginTop: 8 }}>
                 <Space size={12} wrap>
-                  <Link href="/privacy" style={{ color: "rgba(0,0,0,0.65)" }}>
+                  <Link href="/privacy" style={{ color: "rgba(var(--app-text-rgb),0.70)" }}>
                     Privacy Policy
                   </Link>
-                  <Link href="/terms" style={{ color: "rgba(0,0,0,0.65)" }}>
+                  <Link href="/terms" style={{ color: "rgba(var(--app-text-rgb),0.70)" }}>
                     Terms
                   </Link>
                 </Space>
@@ -264,7 +282,13 @@ const PDPAConsentBar = memo(function PDPAConsentBar({
   );
 });
 
-const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMobile: boolean }) {
+const AppDownloadSection = memo(function AppDownloadSection({
+  isMobile,
+  strings,
+}: {
+  isMobile: boolean;
+  strings: DownloadStrings;
+}) {
   const androidHref = "/download/android";
   const iosHref = "/download/ios";
 
@@ -336,7 +360,7 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
               level={isMobile ? 5 : 4}
               style={{
                 margin: 0,
-                color: "#101828",
+                color: "var(--app-text)",
                 lineHeight: 1.15,
                 letterSpacing: -0.2,
               }}
@@ -348,7 +372,7 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
               style={{
                 display: "block",
                 marginTop: 6,
-                color: "rgba(0,0,0,0.58)",
+                color: "rgba(var(--app-text-rgb),0.62)",
                 maxWidth: 620,
               }}
             >
@@ -362,9 +386,9 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
                     borderRadius: 999,
                     padding: "4px 10px",
                     margin: 0,
-                    borderColor: "rgba(0,0,0,0.06)",
-                    background: "rgba(255,255,255,0.78)",
-                    color: "rgba(0,0,0,0.68)",
+                    borderColor: "var(--app-border)",
+                    background: "rgba(var(--app-surface-rgb),0.78)",
+                    color: "rgba(var(--app-text-rgb),0.72)",
                   }}
                 >
                   Fast Access
@@ -374,9 +398,9 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
                     borderRadius: 999,
                     padding: "4px 10px",
                     margin: 0,
-                    borderColor: "rgba(0,0,0,0.06)",
-                    background: "rgba(255,255,255,0.78)",
-                    color: "rgba(0,0,0,0.68)",
+                    borderColor: "var(--app-border)",
+                    background: "rgba(var(--app-surface-rgb),0.78)",
+                    color: "rgba(var(--app-text-rgb),0.72)",
                   }}
                 >
                   Better on Mobile
@@ -386,9 +410,9 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
                     borderRadius: 999,
                     padding: "4px 10px",
                     margin: 0,
-                    borderColor: "rgba(0,0,0,0.06)",
-                    background: "rgba(255,255,255,0.78)",
-                    color: "rgba(0,0,0,0.68)",
+                    borderColor: "var(--app-border)",
+                    background: "rgba(var(--app-surface-rgb),0.78)",
+                    color: "rgba(var(--app-text-rgb),0.72)",
                   }}
                 >
                   Responsive Website Support
@@ -412,7 +436,7 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
             style={androidStyle}
             onMouseEnter={premiumHoverIn}
             onMouseLeave={premiumHoverOut}
-            aria-label="Download Android app"
+            aria-label={strings.downloadAndroidAria}
           >
             <div
               style={{
@@ -431,9 +455,9 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
             </div>
 
             <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
-              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>Get it on</span>
+              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>{strings.getItOn}</span>
               <span style={{ marginTop: 3, fontSize: 16, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.2 }}>
-                Android App
+                {strings.androidApp}
               </span>
             </div>
 
@@ -445,7 +469,7 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
             style={iosStyle}
             onMouseEnter={premiumHoverIn}
             onMouseLeave={premiumHoverOut}
-            aria-label="Download iOS app"
+            aria-label={strings.downloadIosAria}
           >
             <div
               style={{
@@ -464,9 +488,9 @@ const AppDownloadSection = memo(function AppDownloadSection({ isMobile }: { isMo
             </div>
 
             <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
-              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>Download on</span>
+              <span style={{ fontSize: 11, opacity: 0.72, lineHeight: 1.1, letterSpacing: 0.2 }}>{strings.downloadOn}</span>
               <span style={{ marginTop: 3, fontSize: 16, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.2 }}>
-                iPhone / iOS
+                {strings.iosApp}
               </span>
             </div>
 
@@ -483,6 +507,8 @@ const FooterArea = memo(function FooterArea({
   year,
   brandTitle,
   supportLabel,
+  footerStrings,
+  downloadStrings,
   consent,
   onOpenPdpa,
 }: {
@@ -490,6 +516,8 @@ const FooterArea = memo(function FooterArea({
   year: number;
   brandTitle: string;
   supportLabel: string;
+  footerStrings: FooterStrings;
+  downloadStrings: DownloadStrings;
   consent: ConsentValue | null;
   onOpenPdpa: () => void;
 }) {
@@ -505,7 +533,7 @@ const FooterArea = memo(function FooterArea({
   return (
     <Footer
       style={{
-        background: "#ffffff",
+        background: "var(--app-bg)",
         padding: isMobile ? "12px 10px" : "22px 16px",
       }}
     >
@@ -514,14 +542,14 @@ const FooterArea = memo(function FooterArea({
           maxWidth: 1400,
           margin: "0 auto",
           borderRadius: 20,
-          border: "1px solid rgba(0,0,0,0.06)",
-          background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)",
+          border: "1px solid var(--app-border)",
+          background: "linear-gradient(180deg, rgba(var(--app-surface-rgb),0.98) 0%, rgba(var(--app-bg-rgb),0.98) 100%)",
           padding: isMobile ? "12px 10px" : "18px 18px",
-          boxShadow: "0 10px 30px rgba(15,23,42,0.04)",
+          boxShadow: "0 10px 30px rgba(var(--app-shadow-rgb),0.06)",
         }}
       >
         <Space direction="vertical" size={16} style={{ width: "100%", alignItems: "center" }}>
-          <AppDownloadSection isMobile={isMobile} />
+          <AppDownloadSection isMobile={isMobile} strings={downloadStrings} />
 
           <Space
             wrap
@@ -532,7 +560,7 @@ const FooterArea = memo(function FooterArea({
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "rgba(0,0,0,0.55)" }}>
+            <Text style={{ color: "rgba(var(--app-text-rgb),0.62)" }}>
               <Text>
                 © {year} {brandTitle}.
               </Text>
@@ -545,12 +573,12 @@ const FooterArea = memo(function FooterArea({
                   borderRadius: 999,
                   padding: "2px 10px",
                   margin: 0,
-                  background: "rgba(255,255,255,0.84)",
-                  borderColor: "rgba(0,0,0,0.08)",
-                  color: "rgba(0,0,0,0.65)",
+                  background: "rgba(var(--app-surface-rgb),0.84)",
+                  borderColor: "var(--app-border)",
+                  color: "rgba(var(--app-text-rgb),0.74)",
                 }}
               >
-                AS IS / No Warranty
+                {footerStrings.asIs}
               </Tag>
 
               {!isMobile && (
@@ -560,18 +588,18 @@ const FooterArea = memo(function FooterArea({
                     borderRadius: 999,
                     padding: "2px 10px",
                     margin: 0,
-                    background: "rgba(255,255,255,0.84)",
-                    borderColor: "rgba(0,0,0,0.08)",
-                    color: "rgba(0,0,0,0.65)",
+                    background: "rgba(var(--app-surface-rgb),0.84)",
+                    borderColor: "var(--app-border)",
+                    color: "rgba(var(--app-text-rgb),0.74)",
                   }}
                 >
-                  Open-source components
+                  {footerStrings.openSourceComponents}
                 </Tag>
               )}
             </Space>
           </Space>
 
-          <Divider style={{ margin: "2px 0", borderColor: "rgba(0,0,0,0.06)" }} />
+          <Divider style={{ margin: "2px 0", borderColor: "var(--app-border)" }} />
 
           {isMobile ? (
             <Space wrap size={8} style={{ justifyContent: "center", width: "100%" }}>
@@ -590,7 +618,11 @@ const FooterArea = memo(function FooterArea({
               ))}
 
               <Tooltip
-                title={consent ? `PDPA: ${consent.toUpperCase()} (tap to change)` : "PDPA settings"}
+                title={
+                  consent
+                    ? `${footerStrings.pdpa}: ${consent.toUpperCase()} (${footerStrings.tapToChange})`
+                    : footerStrings.pdpaSettings
+                }
                 placement="top"
               >
                 <button
@@ -600,7 +632,7 @@ const FooterArea = memo(function FooterArea({
                     ...MOBILE_FOOTER_LINK_STYLE,
                     cursor: "pointer",
                   }}
-                  aria-label="PDPA settings"
+                  aria-label={footerStrings.pdpaSettings}
                 >
                   <SettingOutlined style={{ fontSize: 18 }} />
                 </button>
@@ -628,10 +660,10 @@ const FooterArea = memo(function FooterArea({
                   ...FOOTER_LINK_STYLE,
                   cursor: "pointer",
                 }}
-                aria-label="PDPA settings"
+                aria-label={footerStrings.pdpaSettings}
               >
                 <SettingOutlined />
-                PDPA
+                {footerStrings.pdpa}
                 {consent ? (
                   <span style={{ marginLeft: 6, opacity: 0.75, fontSize: 12 }}>({consent.toUpperCase()})</span>
                 ) : null}
@@ -640,9 +672,8 @@ const FooterArea = memo(function FooterArea({
           )}
 
           {!isMobile && (
-            <Text style={{ color: "rgba(0,0,0,0.45)", textAlign: "center" }}>
-              Some components of this website are open-source. Software is provided “AS IS” without warranties. See Open
-              Source / License for details.
+            <Text style={{ color: "rgba(var(--app-text-rgb),0.55)", textAlign: "center" }}>
+              {footerStrings.openSourceDisclaimer}
             </Text>
           )}
         </Space>
@@ -686,6 +717,30 @@ export default function AppLayout({
   const brandTitle = useMemo(() => String(t("header.title") ?? "จ่าเฉย (JACHOEI)"), [t, initialLang]);
   const supportLabel = useMemo(() => String(t("footer.support") ?? "Support"), [t, initialLang]);
 
+  const downloadStrings: DownloadStrings = useMemo(
+    () => ({
+      getItOn: String(t("footer.get_it_on")),
+      downloadOn: String(t("footer.download_on")),
+      androidApp: String(t("footer.android_app")),
+      iosApp: String(t("footer.ios_app")),
+      downloadAndroidAria: String(t("footer.download_android_aria")),
+      downloadIosAria: String(t("footer.download_ios_aria")),
+    }),
+    [t]
+  );
+
+  const footerStrings: FooterStrings = useMemo(
+    () => ({
+      asIs: String(t("footer.as_is")),
+      openSourceComponents: String(t("footer.open_source_components")),
+      openSourceDisclaimer: String(t("footer.open_source_disclaimer")),
+      pdpa: String(t("footer.pdpa")),
+      pdpaSettings: String(t("footer.pdpa_settings")),
+      tapToChange: String(t("footer.tap_to_change")),
+    }),
+    [t]
+  );
+
   const onAllow = useCallback(() => {
     writeConsent("allow");
     setConsent("allow");
@@ -712,7 +767,7 @@ export default function AppLayout({
     <Layout
       style={{
         minHeight: "100vh",
-        background: "#ffffff",
+        background: "var(--app-bg)",
         display: "flex",
         flexDirection: "column",
         paddingBottom: layoutPaddingBottom,
@@ -733,10 +788,11 @@ export default function AppLayout({
         <div
           style={{
             padding: isMobile ? 0 : 16,
-            background: colorBgContainer,
+            background: "var(--app-surface)",
             borderRadius: borderRadiusLG,
             minHeight: isMobile ? "auto" : 360,
-            boxShadow: isMobile ? "0 0 4px rgba(0,0,0,0.06)" : "none",
+            border: isMobile ? undefined : "1px solid var(--app-border)",
+            boxShadow: isMobile ? "0 0 4px rgba(var(--app-shadow-rgb),0.10)" : "none",
           }}
         >
           {children}
@@ -748,6 +804,8 @@ export default function AppLayout({
         year={year}
         brandTitle={brandTitle}
         supportLabel={supportLabel}
+        footerStrings={footerStrings}
+        downloadStrings={downloadStrings}
         consent={consent}
         onOpenPdpa={onOpenPdpa}
       />

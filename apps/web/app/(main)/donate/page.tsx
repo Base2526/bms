@@ -128,9 +128,9 @@ export default function DonatePage() {
               width: 240,
               height: 240,
               // borderRadius: 16,
-              border: "1px solid rgba(0,0,0,0.08)",
+              border: "1px solid var(--app-border)",
               overflow: "hidden",
-              background: "white",
+              background: "var(--app-surface)",
             }}
           >
             <Image

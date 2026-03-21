@@ -313,7 +313,7 @@ export default function SupportPage() {
   };
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "24px 14px" }}>
+    <div className="support-page" style={{ maxWidth: 980, margin: "0 auto", padding: "24px 14px" }}>
       <Row gutter={[16, 16]}>
         <Col xs={24} md={16}>
           <Card style={{ borderRadius: 14 }}>
@@ -369,6 +369,7 @@ export default function SupportPage() {
                     rules={[{ required: true, message: content.form.validation.topicRequired }]}
                   >
                     <Select
+                      popupClassName="support-select-dropdown"
                       options={[
                         ...content.form.topics,
                       ]}
@@ -429,6 +430,87 @@ export default function SupportPage() {
           </Card>
         </Col>
       </Row>
+
+      <style jsx>{`
+        /* Keep the fix scoped to this page.
+           Goal: in dark mode, Select matches Input/TextArea surfaces (no overly-black mismatch). */
+
+        .support-page {
+          --support-control-bg: transparent;
+          --support-control-border: var(--app-border);
+          --support-control-hover-border: rgba(var(--app-primary-rgb), 0.35);
+          --support-control-focus-border: rgba(var(--app-primary-rgb), 0.55);
+        }
+
+        html.dark .support-page {
+          /* Slightly lifted slate surface (aligned with the rest of the app’s dark input styling). */
+          --support-control-bg: rgba(var(--app-text-rgb), 0.06);
+          --support-control-border: rgba(148, 163, 184, 0.22);
+        }
+
+        html.dark .support-page :global(.ant-input),
+        html.dark .support-page :global(.ant-input-affix-wrapper),
+        html.dark .support-page :global(.ant-input-password),
+        html.dark .support-page :global(.ant-select-selector),
+        html.dark .support-page :global(.ant-select-single:not(.ant-select-customize-input) .ant-select-selector) {
+          background: var(--support-control-bg) !important;
+          border-color: var(--support-control-border) !important;
+          color: var(--app-text) !important;
+          box-shadow: none !important;
+        }
+
+        html.dark .support-page :global(.ant-input::placeholder),
+        html.dark .support-page :global(textarea.ant-input::placeholder) {
+          color: var(--app-muted) !important;
+        }
+
+        html.dark .support-page :global(.ant-select-selection-item) {
+          color: var(--app-text) !important;
+        }
+
+        html.dark .support-page :global(.ant-select-selection-placeholder) {
+          color: var(--app-muted) !important;
+        }
+
+        html.dark .support-page :global(.ant-select-arrow) {
+          color: rgba(var(--app-text-rgb), 0.74) !important;
+        }
+
+        /* Hover state: keep surface, slightly brighten border. */
+        html.dark .support-page :global(.ant-input:hover),
+        html.dark .support-page :global(.ant-input-affix-wrapper:hover),
+        html.dark .support-page :global(.ant-select:hover .ant-select-selector) {
+          border-color: var(--support-control-hover-border) !important;
+        }
+
+        /* Focus/open state: border-only focus, no glow/ring. */
+        html.dark .support-page :global(.ant-input:focus),
+        html.dark .support-page :global(.ant-input-focused),
+        html.dark .support-page :global(.ant-input-affix-wrapper:focus-within),
+        html.dark .support-page :global(.ant-select-focused .ant-select-selector),
+        html.dark .support-page :global(.ant-select-open .ant-select-selector) {
+          border-color: var(--support-control-focus-border) !important;
+          box-shadow: none !important;
+        }
+
+        /* Dropdown panel: use popupClassName so portal content is themed consistently. */
+        html.dark :global(.support-select-dropdown.ant-select-dropdown) {
+          background: var(--app-surface);
+          border: 1px solid var(--app-border);
+        }
+
+        html.dark :global(.support-select-dropdown .ant-select-item) {
+          color: var(--app-text);
+        }
+
+        html.dark :global(.support-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled)) {
+          background: rgba(var(--app-text-rgb), 0.06);
+        }
+
+        html.dark :global(.support-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled)) {
+          background: rgba(var(--app-primary-rgb), 0.18);
+        }
+      `}</style>
     </div>
   );
 }
