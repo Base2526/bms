@@ -1,10 +1,242 @@
+/* =============================
+   Theme (light/dark/system)
+   - applied via html.dark + data-theme
+   - keep lightweight to avoid layout shift
+============================= */
+
+:root {
+  --app-bg: #f8fafc;
+  --app-surface: #ffffff;
+  --app-surface-2: #f1f5f9;
+  --app-surface-3: #e2e8f0;
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+  --app-border: rgba(15, 23, 42, 0.12);
+
+  --app-primary: #1677ff;
+  --app-primary-rgb: 22, 119, 255;
+
+  --app-shadow-rgb: 15, 23, 42;
+  --app-overlay: rgba(15, 23, 42, 0.28);
+
+  /* Typography roles */
+  --text: var(--app-text);
+  --text-secondary: rgba(var(--app-text-rgb), 0.74);
+  --text-muted: var(--app-muted);
+  --text-soft: rgba(var(--app-text-rgb), 0.52);
+  --text-disabled: rgba(var(--app-text-rgb), 0.42);
+  --text-inverse: #ffffff;
+
+  --text-link: var(--app-primary);
+  --text-link-hover: rgba(var(--app-primary-rgb), 0.86);
+
+  --text-success: #059669;
+  --text-danger: #dc2626;
+  --text-warning: #d97706;
+
+  --app-bg-rgb: 248, 250, 252;
+  --app-surface-rgb: 255, 255, 255;
+  --app-surface-2-rgb: 241, 245, 249;
+  --app-surface-3-rgb: 226, 232, 240;
+  --app-text-rgb: 15, 23, 42;
+}
+
+html.dark {
+  --app-bg: #0f172a;
+  --app-surface: #111827;
+  --app-surface-2: #0b1220;
+  --app-surface-3: #0a0f1a;
+  --app-text: #f8fafc;
+  --app-muted: #94a3b8;
+  --app-border: rgba(148, 163, 184, 0.24);
+
+  --app-primary: #1677ff;
+  --app-primary-rgb: 22, 119, 255;
+
+  --app-shadow-rgb: 0, 0, 0;
+  --app-overlay: rgba(15, 23, 42, 0.72);
+
+  /* Typography roles */
+  --text: var(--app-text);
+  --text-secondary: rgba(var(--app-text-rgb), 0.80);
+  --text-muted: var(--app-muted);
+  --text-soft: rgba(var(--app-text-rgb), 0.62);
+  --text-disabled: rgba(var(--app-text-rgb), 0.45);
+  --text-inverse: #0f172a;
+
+  --text-link: #60a5fa;
+  --text-link-hover: #93c5fd;
+
+  --text-success: #34d399;
+  --text-danger: #f87171;
+  --text-warning: #fbbf24;
+
+  --app-bg-rgb: 15, 23, 42;
+  --app-surface-rgb: 17, 24, 39;
+  --app-surface-2-rgb: 11, 18, 32;
+  --app-surface-3-rgb: 10, 15, 26;
+  --app-text-rgb: 248, 250, 252;
+}
+
+html,
+body {
+  background: var(--app-bg);
+  color: var(--text);
+}
+
+/* Global typography helpers (optional utilities) */
+.text-primary { color: var(--text) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-muted { color: var(--text-muted) !important; }
+.text-soft { color: var(--text-soft) !important; }
+.text-disabled { color: var(--text-disabled) !important; }
+.text-link { color: var(--text-link) !important; }
+.text-link:hover { color: var(--text-link-hover) !important; }
+.text-success { color: var(--text-success) !important; }
+.text-danger { color: var(--text-danger) !important; }
+.text-warning { color: var(--text-warning) !important; }
+
+/* Default link color (keep buttons/pills using `color: inherit`) */
+a {
+  color: var(--text-link);
+}
+a:hover {
+  color: var(--text-link-hover);
+}
+.ant-btn a {
+  color: inherit;
+}
+
+/* AntD: minimal surface/text harmonization */
+html.dark .ant-card,
+html.dark .ant-modal-content,
+html.dark .ant-dropdown-menu,
+html.dark .ant-popover-inner,
+html.dark .ant-drawer-content {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+}
+
+html.dark .ant-card-head,
+html.dark .ant-modal-header,
+html.dark .ant-drawer-header {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+}
+
+html.dark .ant-card-head-title,
+html.dark .ant-form-item-label > label {
+  color: var(--text);
+}
+
+html.dark .ant-typography.ant-typography-secondary {
+  color: var(--text-muted);
+}
+
+html.dark .ant-typography.ant-typography-success {
+  color: var(--text-success);
+}
+
+html.dark .ant-typography.ant-typography-warning {
+  color: var(--text-warning);
+}
+
+html.dark .ant-typography.ant-typography-danger {
+  color: var(--text-danger);
+}
+
+html.dark .ant-input,
+html.dark .ant-input-affix-wrapper,
+html.dark .ant-select-selector {
+  background: rgba(var(--app-text-rgb), 0.06);
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+html.dark .ant-input::placeholder {
+  color: var(--app-muted);
+}
+
+html.dark .ant-table,
+html.dark .ant-table-container,
+html.dark .ant-table-content,
+html.dark .ant-table-wrapper .ant-spin-container {
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+html.dark .ant-table-thead > tr > th {
+  background: rgba(var(--app-surface-2-rgb), 0.9);
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text);
+}
+
+html.dark .ant-table-tbody > tr > td {
+  border-bottom: 1px solid rgba(var(--app-text-rgb), 0.10);
+  color: var(--app-text);
+}
+
+html.dark .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: rgba(var(--app-text-rgb), 0.06);
+}
+
+html.dark .ant-table-cell-fix-left,
+html.dark .ant-table-cell-fix-right {
+  background: var(--app-surface);
+}
+
+html.dark .ant-pagination .ant-pagination-item,
+html.dark .ant-pagination .ant-pagination-prev,
+html.dark .ant-pagination .ant-pagination-next {
+  background: rgba(var(--app-text-rgb), 0.04);
+  border-color: var(--app-border);
+}
+
+html.dark .ant-pagination .ant-pagination-item a {
+  color: var(--app-text);
+}
+
+html.dark .ant-pagination .ant-pagination-item-active {
+  border-color: rgba(var(--app-primary-rgb), 0.55);
+}
+
+html.dark .ant-pagination .ant-pagination-item-active a {
+  color: var(--app-text);
+}
+
+html.dark .ant-select-dropdown,
+html.dark .ant-dropdown-menu {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+}
+
+html.dark .ant-select-item,
+html.dark .ant-dropdown-menu-item,
+html.dark .ant-dropdown-menu-submenu-title {
+  color: var(--app-text);
+}
+
+html.dark .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+html.dark .ant-dropdown-menu-item:hover {
+  background: rgba(var(--app-text-rgb), 0.06);
+}
+
+html.dark .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: rgba(var(--app-primary-rgb), 0.18);
+}
+
+html.dark .ant-modal-mask,
+html.dark .ant-drawer-mask {
+  background: var(--app-overlay);
+}
+
 /* กล่องรูปใน chat */
 .chat-image-tile {
   position: relative;
   border-radius: 16px;
   overflow: hidden;
-  background: #eee;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  background: var(--app-surface-2);
+  box-shadow: 0 2px 8px rgba(var(--app-shadow-rgb), 0.16);
   line-height: 0;
   font-size: 0;
 }
@@ -29,7 +261,7 @@
 .chat-image-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.65));
+  background: linear-gradient(180deg, rgba(var(--app-shadow-rgb), 0.08), rgba(var(--app-shadow-rgb), 0.72));
   display: flex;
   align-items: center;
   justify-content: center;

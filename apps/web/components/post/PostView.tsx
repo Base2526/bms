@@ -471,6 +471,7 @@ export default function PostView({
   const router = useRouter();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const { token } = theme.useToken();
 
   const jachoei = useJachoeiLocalState();
   const jachoeiMut = useJachoeiMutations();
@@ -901,10 +902,12 @@ export default function PostView({
               width: isMobile ? 130 : 200,
               fontSize: isMobile ? 12 : 14,
               padding: isMobile ? '6px 8px' : undefined,
+              color: token.colorTextSecondary,
             }}
             contentStyle={{
               fontSize: isMobile ? 13 : 14,
               padding: isMobile ? '6px 8px' : undefined,
+              color: token.colorText,
             }}
           >
             <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">{p.title || '-'}</Descriptions.Item>

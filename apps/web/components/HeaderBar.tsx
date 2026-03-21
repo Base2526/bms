@@ -40,6 +40,7 @@ import { gql, useQuery } from "@apollo/client";
 import { useSession } from "@/lib/useSession";
 import { useGlobalChatStore } from "@/store/globalChatStore";
 import { useI18n } from "@/lib/i18nContext";
+import ThemeToggle from "@/components/ThemeToggle";
 import type { Lang } from "@/i18n";
 
 const { Header } = Layout;
@@ -192,23 +193,23 @@ export default function HeaderBar({
   async function onLogout() {
     const res = await fetch("/api/auth/logout", { method: "POST" });
     if (res.ok) {
-      message.success("Logged out");
+      message.success(t("common.logged_out"));
       try {
         refreshSession();
       } catch {}
       router.replace("/");
       setTimeout(() => window.location.reload(), 100);
     } else {
-      message.error("Logout failed");
+      message.error(t("common.logout_failed"));
     }
   }
 
   function showConfirmLogout() {
     Modal.confirm({
-      title: "Confirm Logout",
-      content: "Are you sure you want to logout?",
-      okText: "Logout",
-      cancelText: "Cancel",
+      title: t("common.confirm_logout_title"),
+      content: t("common.confirm_logout_content"),
+      okText: t("common.logout"),
+      cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
       centered: true,
       onOk: onLogout,
@@ -268,11 +269,11 @@ export default function HeaderBar({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            color: "rgba(15,23,42,0.78)",
+            color: "rgba(var(--app-text-rgb),0.78)",
           }}
         >
           <span>
-            <HistoryOutlined style={{ marginRight: 8, color: "#94a3b8" }} />
+            <HistoryOutlined style={{ marginRight: 8, color: "var(--text-muted)" }} />
             {h}
           </span>
         </div>
@@ -289,7 +290,7 @@ export default function HeaderBar({
                   style={{
                     textAlign: "right",
                     fontSize: 12,
-                    color: "#94a3b8",
+                    color: "var(--text-muted)",
                     fontWeight: 500,
                   }}
                 >
@@ -325,13 +326,13 @@ export default function HeaderBar({
   const profileMenu: MenuProps["items"] = [
     {
       key: "settings",
-      label: <Link href="/settings">Settings</Link>,
+      label: <Link href="/settings">{t("common.settings")}</Link>,
       icon: <SettingOutlined />,
     },
     { type: "divider" },
     {
       key: "logout",
-      label: <span onClick={showConfirmLogout}>Logout</span>,
+      label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
       icon: <ReloadOutlined />,
     },
   ];
@@ -343,7 +344,7 @@ export default function HeaderBar({
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#0f172a",
+    color: "var(--app-text)",
   };
 
   const mobileOverflowMenu: MenuProps["items"] = useMemo(() => {
@@ -418,12 +419,12 @@ export default function HeaderBar({
     <>
       <Header
         style={{
-          background: "rgba(255,255,255,0.88)",
+          background: "rgba(var(--app-surface-rgb),0.88)",
           backdropFilter: "blur(14px)",
           WebkitBackdropFilter: "blur(14px)",
           padding: 0,
           height: isMobileView ? 58 : 72,
-          borderBottom: "1px solid rgba(15,23,42,0.06)",
+          borderBottom: "1px solid var(--app-border)",
           position: "sticky",
           top: 0,
           zIndex: 1000,
@@ -433,7 +434,7 @@ export default function HeaderBar({
       >
         <div className="jachoei-header-shell">
           <div className="jachoei-header-left">
-            <Link href="/" aria-label="Go to home" className="jachoei-brand-link">
+            <Link href="/" aria-label={t("common.go_home")} className="jachoei-brand-link">
               <span className="jachoei-brand-icon">
                 <img
                   src="/icons/icon.svg"
@@ -457,7 +458,7 @@ export default function HeaderBar({
                 <Text className="jachoei-brand-title">{t("header.title")}</Text>
                 {isDesktopView && (
                   <Text className="jachoei-brand-subtitle">
-                    Community scam intelligence
+                    {t("header.subtitle")}
                   </Text>
                 )}
               </div>
@@ -481,7 +482,7 @@ export default function HeaderBar({
                     prefix={
                       <SearchOutlined
                         style={{
-                          color: searchFocused ? "#2563eb" : "#94a3b8",
+                          color: searchFocused ? "var(--app-primary)" : "var(--app-muted)",
                           transition: "color .18s ease",
                         }}
                       />
@@ -494,7 +495,7 @@ export default function HeaderBar({
                             alignItems: "center",
                             gap: 6,
                             fontSize: 11,
-                            color: "#94a3b8",
+                            color: "var(--app-muted)",
                           }}
                         >
                           {searchValue && (
@@ -507,7 +508,7 @@ export default function HeaderBar({
                               style={{
                                 fontSize: 14,
                                 cursor: "pointer",
-                                color: "#94a3b8",
+                                color: "var(--app-muted)",
                               }}
                             />
                           )}
@@ -534,7 +535,7 @@ export default function HeaderBar({
                           style={{
                             fontSize: 14,
                             cursor: "pointer",
-                            color: "#94a3b8",
+                            color: "var(--app-muted)",
                           }}
                         />
                       ) : null
@@ -543,13 +544,15 @@ export default function HeaderBar({
                       width: "100%",
                       borderRadius: 999,
                       paddingInline: isTabletView ? 12 : 16,
-                      background: searchFocused ? "#ffffff" : "rgba(248,250,252,0.92)",
+                      background: searchFocused
+                        ? "rgba(var(--app-surface-rgb),1)"
+                        : "rgba(var(--app-bg-rgb),0.92)",
                       border: searchFocused
-                        ? "1px solid rgba(37,99,235,0.34)"
-                        : "1px solid rgba(15,23,42,0.06)",
+                        ? "1px solid rgba(var(--app-primary-rgb),0.34)"
+                        : "1px solid var(--app-border)",
                       boxShadow: searchFocused
-                        ? "0 0 0 3px rgba(37,99,235,0.08), 0 10px 24px rgba(15,23,42,0.08)"
-                        : "0 4px 16px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.75)",
+                        ? "0 0 0 3px rgba(var(--app-primary-rgb),0.10), 0 10px 24px rgba(var(--app-shadow-rgb),0.10)"
+                        : "0 4px 16px rgba(var(--app-shadow-rgb),0.04), inset 0 1px 0 rgba(var(--app-surface-rgb),0.75)",
                       transition: "all .18s ease",
                     }}
                     onPressEnter={() => handleSearchSubmit()}
@@ -581,7 +584,7 @@ export default function HeaderBar({
                       type="text"
                       style={iconButtonStyle}
                       onClick={() => router.push("/post/new")}
-                      icon={<PlusOutlined style={{ fontSize: 18, color: "#0f172a" }} />}
+                      icon={<PlusOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />}
                       aria-label="New post"
                     />
                   </Tooltip>
@@ -593,7 +596,7 @@ export default function HeaderBar({
                       onClick={() => router.push("/chat")}
                       icon={
                         <Badge count={totalUnread > 99 ? "99+" : totalUnread} size="small" offset={[-2, 2]}>
-                          <MessageOutlined style={{ fontSize: 18, color: "#0f172a" }} />
+                          <MessageOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />
                         </Badge>
                       }
                     />
@@ -606,13 +609,15 @@ export default function HeaderBar({
                       onClick={() => router.push("/notification")}
                       icon={
                         <Badge count={notifUnreadCount > 99 ? "99+" : notifUnreadCount} size="small" offset={[-2, 2]}>
-                          <BellOutlined style={{ fontSize: 18, color: "#0f172a" }} />
+                          <BellOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />
                         </Badge>
                       }
                     />
                   </Tooltip>
                 </>
               )}
+
+              <ThemeToggle />
 
               {!isMobileView ? (
                 <Dropdown
@@ -646,12 +651,12 @@ export default function HeaderBar({
                   arrow
                   overlayStyle={{ minWidth: 200 }}
                 >
-                  <Tooltip title="More">
+                  <Tooltip title={t("common.more")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}
                       icon={<MoreOutlined style={{ fontSize: 18 }} />}
-                      aria-label="More"
+                      aria-label={t("common.more")}
                     />
                   </Tooltip>
                 </Dropdown>
@@ -682,7 +687,7 @@ export default function HeaderBar({
                       background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
                       cursor: "pointer",
                       boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
-                      border: "2px solid rgba(255,255,255,0.9)",
+                      border: "2px solid rgba(var(--app-surface-rgb),0.9)",
                     }}
                     icon={<UserOutlined />}
                   />
@@ -694,7 +699,7 @@ export default function HeaderBar({
                   onClick={() => router.push("/login")}
                   className="jachoei-login-btn"
                 >
-                  {!isMobileView && "Login"}
+                  {!isMobileView && t("common.login")}
                 </Button>
               )}
             </Space>
@@ -708,17 +713,17 @@ export default function HeaderBar({
             className="jachoei-mobile-search-card"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label="Search"
+            aria-label={t("common.search")}
           >
             <div className="jachoei-mobile-search-top">
-              <Text style={{ fontWeight: 700, color: "#0f172a" }}>
+              <Text style={{ fontWeight: 700, color: "var(--app-text)" }}>
                 {t("header.searchPlaceholder")}
               </Text>
 
               <Button
                 type="text"
                 onClick={() => setMobileSearchOpen(false)}
-                icon={<CloseCircleFilled style={{ color: "#94a3b8" }} />}
+                icon={<CloseCircleFilled style={{ color: "var(--app-muted)" }} />}
               />
             </div>
 
@@ -733,7 +738,7 @@ export default function HeaderBar({
                 ref={mobileSearchInputRef}
                 size="large"
                 placeholder={t("header.searchPlaceholder")}
-                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                prefix={<SearchOutlined style={{ color: "var(--app-muted)" }} />}
                 suffix={
                   searchValue ? (
                     <CloseCircleFilled
@@ -745,15 +750,15 @@ export default function HeaderBar({
                       style={{
                         fontSize: 14,
                         cursor: "pointer",
-                        color: "#94a3b8",
+                        color: "var(--app-muted)",
                       }}
                     />
                   ) : null
                 }
                 style={{
                   borderRadius: 16,
-                  background: "#fff",
-                  border: "1px solid rgba(15,23,42,0.08)",
+                  background: "var(--app-surface)",
+                  border: "1px solid var(--app-border)",
                   boxShadow: "0 6px 18px rgba(15,23,42,0.06)",
                 }}
                 onPressEnter={() => handleSearchSubmit()}
@@ -812,7 +817,7 @@ export default function HeaderBar({
         }
 
         .jachoei-brand-title {
-          color: #0f172a !important;
+          color: var(--app-text) !important;
           font-size: 20px;
           font-weight: 800;
           letter-spacing: -0.3px;
@@ -824,7 +829,7 @@ export default function HeaderBar({
         }
 
         .jachoei-brand-subtitle {
-          color: rgba(15,23,42,0.48) !important;
+          color: rgba(var(--app-text-rgb),0.52) !important;
           font-size: 12px;
           line-height: 1.2;
           margin-top: 3px;
@@ -848,9 +853,9 @@ export default function HeaderBar({
         .jachoei-kbd {
           padding: 2px 7px;
           border-radius: 8px;
-          background: #f8fafc;
-          border: 1px solid rgba(15,23,42,0.08);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+          background: rgba(var(--app-surface-rgb),0.86);
+          border: 1px solid var(--app-border);
+          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
         }
 
         .jachoei-header-right {
@@ -864,7 +869,7 @@ export default function HeaderBar({
           border-radius: 14px !important;
           height: 38px !important;
           padding-inline: 12px !important;
-          color: #0f172a !important;
+          color: var(--app-text) !important;
         }
 
         .jachoei-lang-content {
@@ -907,15 +912,15 @@ export default function HeaderBar({
           border-radius: 999px !important;
           padding-inline: 16px !important;
           height: 40px !important;
-          border: 1px solid rgba(15,23,42,0.08) !important;
-          box-shadow: 0 8px 18px rgba(15,23,42,0.05) !important;
+          border: 1px solid var(--app-border) !important;
+          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
         }
 
         .jachoei-mobile-search-backdrop {
           position: fixed;
           inset: 0;
           z-index: 1200;
-          background: rgba(15,23,42,0.28);
+          background: var(--app-overlay);
           backdrop-filter: blur(4px);
           display: flex;
           align-items: flex-start;
@@ -926,11 +931,22 @@ export default function HeaderBar({
         .jachoei-mobile-search-card {
           width: 100%;
           max-width: 640px;
-          background: rgba(255,255,255,0.98);
-          border: 1px solid rgba(15,23,42,0.08);
+          background: rgba(var(--app-surface-rgb),0.98);
+          border: 1px solid var(--app-border);
           border-radius: 20px;
           padding: 12px;
-          box-shadow: 0 20px 50px rgba(15,23,42,0.18);
+          box-shadow: 0 20px 50px rgba(var(--app-shadow-rgb),0.18);
+        }
+
+        html.dark .jachoei-kbd {
+          background: rgba(var(--app-text-rgb),0.06);
+          border-color: var(--app-border);
+          box-shadow: none;
+          color: var(--app-text);
+        }
+
+        html.dark .jachoei-login-btn {
+          border-color: var(--app-border) !important;
         }
 
         .jachoei-mobile-search-top {

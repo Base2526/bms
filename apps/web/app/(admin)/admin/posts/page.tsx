@@ -249,7 +249,7 @@ function PostsList(){
         </Button>
 
         <Button type="primary">
-          <Link href="/admin/post/new" style={{color:'#fff'}}>+ New Post</Link>
+          <Link href="/admin/post/new" style={{ color: 'inherit' }}>+ New Post</Link>
         </Button>
       </Space>
 

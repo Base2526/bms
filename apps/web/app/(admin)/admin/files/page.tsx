@@ -117,8 +117,8 @@ export default function FilesPage(){
         return r.url ? (
           <Image src={r.url} alt="" width={64} height={64} style={{ objectFit:'cover', borderRadius:6 }} />
         ) : (
-          <div style={{ width:64, height:64, borderRadius:6, background:'#f3f3f3', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ color:'#999', fontSize:12 }}>no preview</span>
+          <div style={{ width:64, height:64, borderRadius:6, background:'var(--app-surface-2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ color:'var(--app-muted)', fontSize:12 }}>no preview</span>
           </div>
         )
       },

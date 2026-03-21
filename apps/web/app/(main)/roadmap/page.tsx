@@ -433,7 +433,7 @@ export default function RoadmapRedBoxContent() {
         bordered={false}
         style={{
           borderRadius: 14,
-          boxShadow: "0 1px 10px rgba(0,0,0,0.06)",
+          boxShadow: "0 1px 10px rgba(var(--app-shadow-rgb),0.12)",
           overflow: "hidden",
           height: "100%",
         }}

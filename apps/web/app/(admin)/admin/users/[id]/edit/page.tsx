@@ -93,14 +93,14 @@ function FormEdit({ id }: { id: string }) {
       >
         <Form.Item label="Avatar">
           <Space direction="vertical">
-            <div style={{ width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', background: '#f5f5f5' }}>
+            <div style={{ width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', background: 'var(--app-surface-2)' }}>
               {currentAvatar ? (
                 <Image src={currentAvatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <div style={{
                   width: '100%', height: '100%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#aaa'
+                  color: 'var(--app-muted)'
                 }}>No Avatar</div>
               )}
             </div>

@@ -243,7 +243,7 @@ export default function AdminLogsPage() {
             <List.Item
               key={item.id}
               style={{
-                borderBottom: '1px solid #f0f0f0',
+                borderBottom: '1px solid var(--app-border)',
                 padding: '12px 0',
               }}
             >
@@ -255,20 +255,20 @@ export default function AdminLogsPage() {
                   style={{ marginRight: 8 }}
                 />
                 {levelTag(item.level)}
-                <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--app-muted)' }}>
                   {new Date(item.created_at).toLocaleString()}
                 </span>
               </div>
 
               {/* title / message */}
-              <div style={{ fontWeight: 600, color: '#000' }}>
+              <div style={{ fontWeight: 600, color: 'var(--app-text)' }}>
                 <Link href={`/admin/logs/${item.id}/view`}>
                   {item.message || '(no message)'}
                 </Link>
               </div>
 
               {/* category */}
-              <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
+              <div style={{ marginTop: 4, fontSize: 13, color: 'rgba(var(--app-text-rgb),0.72)' }}>
                 <Tag color="geekblue">{item.category}</Tag>
               </div>
 
@@ -276,15 +276,15 @@ export default function AdminLogsPage() {
               {item.meta && Object.keys(item.meta).length > 0 && (
                 <div
                   style={{
-                    background: '#fafafa',
-                    border: '1px solid #eee',
+                    background: 'var(--app-surface-2)',
+                    border: '1px solid var(--app-border)',
                     borderRadius: 6,
                     padding: '8px 12px',
                     marginTop: 8,
                     fontFamily: 'monospace',
                     fontSize: 12,
                     whiteSpace: 'pre-wrap',
-                    color: '#444',
+                    color: 'rgba(var(--app-text-rgb),0.78)',
                   }}
                 >
                   {JSON.stringify(item.meta, null, 2)}

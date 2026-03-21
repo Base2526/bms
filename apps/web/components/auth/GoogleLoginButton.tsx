@@ -4,6 +4,8 @@ import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "antd";
 import { GoogleLogin, GoogleOAuthProvider, type CredentialResponse } from "@react-oauth/google";
 
+import { useTheme } from "@/lib/useTheme";
+
 type Props = {
   disabled?: boolean;
   onSuccess: (credentialResponse: CredentialResponse) => void;
@@ -11,6 +13,7 @@ type Props = {
 };
 
 function GoogleLoginButtonInner({ disabled, onSuccess, onError }: Props) {
+  const { resolvedTheme } = useTheme();
   const ref = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState<number | null>(null);
 
@@ -38,8 +41,15 @@ function GoogleLoginButtonInner({ disabled, onSuccess, onError }: Props) {
       justifyContent: "center",
       opacity: disabled ? 0.65 : 1,
       pointerEvents: disabled ? ("none" as const) : ("auto" as const),
+      borderRadius: 12,
+      overflow: "hidden" as const,
     }),
     [disabled]
+  );
+
+  const googleButtonTheme = useMemo(
+    () => (resolvedTheme === "dark" ? "filled_black" : "outline"),
+    [resolvedTheme]
   );
 
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -49,6 +59,7 @@ function GoogleLoginButtonInner({ disabled, onSuccess, onError }: Props) {
       {width ? (
         <GoogleOAuthProvider clientId={clientId}>
           <GoogleLogin
+            key={googleButtonTheme}
             onSuccess={onSuccess}
             onError={onError}
             useOneTap={false}
@@ -57,7 +68,7 @@ function GoogleLoginButtonInner({ disabled, onSuccess, onError }: Props) {
             text="continue_with"
             shape="rectangular"
             logo_alignment="left"
-            theme="outline"
+            theme={googleButtonTheme}
           />
         </GoogleOAuthProvider>
       ) : (

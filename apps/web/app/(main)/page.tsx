@@ -322,7 +322,7 @@ const TelList = ({
             </Space>
           }
         >
-          <span style={{ fontSize: 12, color: "#999" }}>+{hidden.length} more</span>
+          <span style={{ fontSize: 12, color: "var(--app-muted)" }}>+{hidden.length} more</span>
         </Tooltip>
       )}
     </>
@@ -459,7 +459,7 @@ const BankList = ({
       {renderList(visible)}
       {hidden.length > 0 && (
         <Tooltip placement="bottom" title={renderList(hidden)}>
-          <span style={{ fontSize: 12, color: "#999" }}>+{hidden.length} more</span>
+          <span style={{ fontSize: 12, color: "var(--app-muted)" }}>+{hidden.length} more</span>
         </Tooltip>
       )}
     </>

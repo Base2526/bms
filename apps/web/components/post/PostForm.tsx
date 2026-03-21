@@ -631,7 +631,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         </Form.Item>
 
         {/* Tel Numbers */}
-        <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
+        <div style={{ borderColor: 'var(--app-border)', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {telNumbers.map((number, index) => (
             number.mode !== TelNumberMode.Deleted && (
               <div
@@ -640,7 +640,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                   marginBottom: 20,
                   padding: '10px',
                   marginTop: '10px',
-                  border: "1px solid #d9d9d9",
+                  border: "1px solid var(--app-border)",
                   borderRadius: 6
                 }}
               >
@@ -670,7 +670,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         </div>
 
         {/* Seller Accounts */}
-        <div style={{ borderColor: '#d9d9d9', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
+        <div style={{ borderColor: 'var(--app-border)', padding: '10px', borderStyle: 'dashed', marginTop: '10px', marginBottom: '10px' }}>
           {sellerAccounts.map((account, index) => (
             account.mode !== SellerAccountMode.Deleted && (
               <div
@@ -679,7 +679,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                   marginBottom: 20,
                   padding: '10px',
                   marginTop: '10px',
-                  border: "1px solid #d9d9d9",
+                  border: "1px solid var(--app-border)",
                   borderRadius: 6
                 }}
               >
@@ -764,7 +764,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         {/* ✅ Auto publish */}
         <div style={{
           padding: 12,
-          border: "1px solid #d9d9d9",
+          border: "1px solid var(--app-border)",
           borderRadius: 8,
           marginBottom: 12
         }}>
