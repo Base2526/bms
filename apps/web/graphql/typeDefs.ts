@@ -437,6 +437,7 @@ export const typeDefs = /* GraphQL */ `
     me: User
 
     unreadCount(chatId: ID!): Int!
+    myUnreadChatCount: Int!
     whoRead(messageId: ID!): [User!]!
 
 
@@ -487,6 +488,14 @@ export const typeDefs = /* GraphQL */ `
     myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
 
     myReportedBankAccountKeys: [String!]!
+  }
+
+  input RegisterPushTokenInput {
+    platform: String! # 'android'
+    fcmToken: String!
+    deviceId: String
+    appVersion: String
+    locale: String
   }
 
   input TelNumberInput {
@@ -688,6 +697,9 @@ export const typeDefs = /* GraphQL */ `
 
     markMessageRead(message_id: ID!): Boolean!
     markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
+
+    registerPushToken(input: RegisterPushTokenInput!): Boolean!
+    unregisterPushToken(fcmToken: String!): Boolean!
 
     deleteMessage(message_id: ID!): Boolean!
 

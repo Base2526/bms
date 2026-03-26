@@ -26,6 +26,12 @@ import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplate
 import { sendEmail } from "@/lib/mailer";
 
 import { emitPostEvent } from "@events/emit.server";
+import {
+  deactivateDevicePushToken,
+  listActiveFcmTokens,
+  upsertDevicePushToken,
+} from "@/lib/push/deviceTokens";
+import { sendFcmChatPush } from "@/lib/push/fcm";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
 
@@ -1199,6 +1205,18 @@ const rawResolvers = {
         [author_id, chatId]
       );
       return Number(rows2[0]?.unread_count || 0);
+    },
+    myUnreadChatCount: async (_: any, __: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      const { rows } = await query(
+        `
+        SELECT COALESCE(SUM(unread_count), 0)::BIGINT AS c
+        FROM chat_unread_counts
+        WHERE user_id = $1
+        `,
+        [author_id]
+      );
+      return Number(rows[0]?.c || 0);
     },
     whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -3753,9 +3771,109 @@ const rawResolvers = {
         targetUserIds,
       });
 
+      // ===== Step 4: push notification (Android FCM) =====
+      // Do not block the mutation on push failures.
+      void (async () => {
+        try {
+          const projectId = process.env.FCM_PROJECT_ID;
+          const clientEmail = process.env.FCM_CLIENT_EMAIL;
+          const privateKey = process.env.FCM_PRIVATE_KEY;
+
+          if (!projectId || !clientEmail || !privateKey) {
+            if (isDev) console.warn("[FCM] missing env, skip push");
+            return;
+          }
+
+          // recipients are cleanTo (sender removed)
+          for (const recipientUserId of cleanTo) {
+            // If sender somehow appears, skip
+            if (String(recipientUserId) === String(author_id)) continue;
+
+            // total unread for this user (badge)
+            const { rows } = await query(
+              `SELECT COALESCE(SUM(unread_count), 0)::BIGINT AS c FROM chat_unread_counts WHERE user_id=$1`,
+              [recipientUserId]
+            ).catch(() => ({ rows: [] as any[] }));
+            const unreadTotal = Number(rows[0]?.c || 0);
+
+            const tokens = await listActiveFcmTokens(recipientUserId);
+            if (!tokens.length) continue;
+
+            const senderName = String(fullMessage?.sender?.name || "").trim() || "New message";
+            const preview = String(fullMessage?.text || "").trim() || "ส่งรูปภาพมา";
+            const deepLink = `jachoei://chat/${fullMessage.chat_id}`;
+            const webUrl = `${process.env.NEXT_PUBLIC_WEB_URL || process.env.NEXT_PUBLIC_WEB_BASE || "https://jachoei.com"}/chat/${fullMessage.chat_id}`;
+            const timestamp = String(fullMessage?.created_at || new Date().toISOString());
+
+            for (const token of tokens) {
+              const resp = await sendFcmChatPush(
+                {
+                  projectId,
+                  clientEmail,
+                  privateKey,
+                },
+                {
+                  token,
+                  notification: { title: senderName, body: preview },
+                  data: {
+                    type: "chat_message",
+                    conversationId: String(fullMessage.chat_id),
+                    messageId: String(fullMessage.id),
+                    senderId: String(author_id),
+                    senderName,
+                    preview,
+                    unreadCount: unreadTotal,
+                    deepLink,
+                    webUrl,
+                    timestamp,
+                  },
+                  android: {
+                    channelId: "chat_messages",
+                    collapseKey: `chat_${fullMessage.chat_id}`,
+                    tag: String(fullMessage.chat_id),
+                  },
+                }
+              );
+
+              if (!resp.ok) {
+                // Invalid / unregistered token -> deactivate
+                const errCode = (resp as any)?.body?.error?.status;
+                const msg = (resp as any)?.body?.error?.message;
+                const isInvalid =
+                  errCode === "NOT_FOUND" ||
+                  /UNREGISTERED|registration token is not a valid FCM registration token/i.test(String(msg || ""));
+                if (isInvalid) {
+                  await deactivateDevicePushToken(recipientUserId, token).catch(() => {});
+                }
+              }
+            }
+          }
+        } catch (e) {
+          if (isDev) console.warn("[FCM] push send failed", e);
+        }
+      })();
+
       console.info("[sendMessage][fullMessage] :", fullMessage);
 
       return fullMessage;
+    },
+    registerPushToken: async (_: any, { input }: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      const platform = String(input?.platform || "").trim().toLowerCase();
+      if (platform !== "android") throw new Error("Only android is supported");
+
+      return upsertDevicePushToken(String(author_id), {
+        platform: "android",
+        fcmToken: String(input?.fcmToken || ""),
+        deviceId: input?.deviceId ?? null,
+        appVersion: input?.appVersion ?? null,
+        locale: input?.locale ?? null,
+      });
+    },
+
+    unregisterPushToken: async (_: any, { fcmToken }: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      return deactivateDevicePushToken(String(author_id), String(fcmToken || ""));
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
