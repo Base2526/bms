@@ -13,6 +13,7 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     username: String!
     language: String!
+    notifications_enabled: Boolean!
   }
 
   type UserConnection {
@@ -36,6 +37,11 @@ export const typeDefs = /* GraphQL */ `
     deliveredAt: String!
     readAt: String
     isRead: Boolean!
+  }
+
+  type ChatMemberSettings {
+    is_muted: Boolean!
+    notifications_enabled: Boolean!
   }
 
   type Message {
@@ -432,6 +438,7 @@ export const typeDefs = /* GraphQL */ `
 
 
     myChats: [Chat!]!
+    myChatSettings(chat_id: ID!): ChatMemberSettings!
     messages(chat_id: ID!, limit: Int, offset: Int, includeDeleted: Boolean): [Message!]!
 
     me: User
@@ -561,6 +568,7 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     username: String
     language: String
+    notifications_enabled: Boolean
   }
 
   
@@ -688,12 +696,17 @@ export const typeDefs = /* GraphQL */ `
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
-    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID): Message!
+    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID, client_message_id: String): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 
     renameChat(chat_id: ID!, name: String): Boolean!
     deleteChat(chat_id: ID!): Boolean!
+    updateMyChatSettings(
+      chat_id: ID!
+      is_muted: Boolean
+      notifications_enabled: Boolean
+    ): ChatMemberSettings!
 
     markMessageRead(message_id: ID!): Boolean!
     markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!

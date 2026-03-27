@@ -11,6 +11,7 @@ import {
   Upload,
   Avatar,
   Select,
+  Switch,
   message,
   Space,
   Divider,
@@ -111,6 +112,7 @@ const Q_ME = gql`
       phone
       username
       language
+      notifications_enabled
       role
       avatar
       created_at
@@ -127,6 +129,7 @@ const M_UPDATE_ME = gql`
       phone
       username
       language
+      notifications_enabled
       avatar
     }
   }
@@ -971,6 +974,7 @@ export default function SettingsPage() {
 
   const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
   const [updateMe, { loading: updatingMe }] = useMutation(M_UPDATE_ME);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   const { user } = useSessionCtx();
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
@@ -984,6 +988,7 @@ export default function SettingsPage() {
       name: me.name ?? '',
       phone: me.phone ?? '',
       language: me.language ?? 'en',
+      notifications_enabled: me.notifications_enabled !== false,
       email: me.email ?? '',
       username: me.username ?? '',
     });
@@ -1035,6 +1040,7 @@ export default function SettingsPage() {
         name: values.name?.trim() || '',
         phone: values.phone?.trim() || '',
         language: values.language || 'en',
+        notifications_enabled: values.notifications_enabled !== false,
         username: values.username?.trim() || '',
       };
 
@@ -1047,6 +1053,26 @@ export default function SettingsPage() {
       }
     } catch (err: any) {
       message.error(err?.message || 'Save error');
+    }
+  }
+
+  async function onToggleNotifications(checked: boolean) {
+    const previous = me?.notifications_enabled !== false;
+    formProfile.setFieldValue('notifications_enabled', checked);
+    setSavingNotifications(true);
+    try {
+      const res = await updateMe({ variables: { data: { notifications_enabled: checked } } });
+      if (res?.data?.updateMe?.id) {
+        message.success('Notification preference updated');
+        refetchMe();
+      } else {
+        throw new Error('Update failed');
+      }
+    } catch (err: any) {
+      formProfile.setFieldValue('notifications_enabled', previous);
+      message.error(err?.message || 'Failed to update notification preference');
+    } finally {
+      setSavingNotifications(false);
     }
   }
 
@@ -1148,6 +1174,21 @@ export default function SettingsPage() {
                           { value: 'en', label: 'English' },
                           { value: 'th', label: 'ไทย' },
                         ]}
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="notifications_enabled"
+                      label="Notifications"
+                      valuePropName="checked"
+                      extra="Receive push notifications for your account"
+                    >
+                      <Switch
+                        onChange={onToggleNotifications}
+                        disabled={savingNotifications || updatingMe}
+                        loading={savingNotifications}
                       />
                     </Form.Item>
                   </Col>
