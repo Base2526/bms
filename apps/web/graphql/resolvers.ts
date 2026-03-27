@@ -26,6 +26,12 @@ import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplate
 import { sendEmail } from "@/lib/mailer";
 
 import { emitPostEvent } from "@events/emit.server";
+import {
+  deactivateDevicePushToken,
+  listActiveFcmTokens,
+  upsertDevicePushToken,
+} from "@/lib/push/deviceTokens";
+import { sendFcmChatPush } from "@/lib/push/fcm";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
 
@@ -834,6 +840,30 @@ const rawResolvers = {
       // console.log("[Query] myChats :", out);
       return out;
     },
+    myChatSettings: async (_: any, { chat_id }: { chat_id: string }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+
+      const { rows } = await query(
+        `
+        SELECT
+          COALESCE(is_muted, false) AS is_muted,
+          COALESCE(notifications_enabled, true) AS notifications_enabled
+        FROM chat_members
+        WHERE chat_id = $1 AND user_id = $2
+        LIMIT 1
+        `,
+        [chat_id, author_id]
+      );
+
+      if (!rows[0]) {
+        throw new Error("Chat membership not found");
+      }
+
+      return {
+        is_muted: !!rows[0].is_muted,
+        notifications_enabled: !!rows[0].notifications_enabled,
+      };
+    },
     myBookmarks: async (_: any, { limit = 20, offset = 0 }: any, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] myBookmarks :",  author_id);
@@ -1199,6 +1229,18 @@ const rawResolvers = {
         [author_id, chatId]
       );
       return Number(rows2[0]?.unread_count || 0);
+    },
+    myUnreadChatCount: async (_: any, __: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      const { rows } = await query(
+        `
+        SELECT COALESCE(SUM(unread_count), 0)::BIGINT AS c
+        FROM chat_unread_counts
+        WHERE user_id = $1
+        `,
+        [author_id]
+      );
+      return Number(rows[0]?.c || 0);
     },
     whoRead: async (_:any, { messageId }:{messageId:string}, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -2500,18 +2542,19 @@ const rawResolvers = {
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const { name, phone, username, language } = data;
+      const { name, phone, username, language, notifications_enabled } = data;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, language );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, notifications_enabled );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
           phone = COALESCE($2, phone),
           language = COALESCE($3, language),
+          notifications_enabled = COALESCE($4, notifications_enabled),
           updated_at = NOW()
-        WHERE id = $4
-        RETURNING id, name, email, phone, username, language, avatar`,
-        [name, phone, language, author_id]
+        WHERE id = $5
+        RETURNING id, name, email, phone, username, language, avatar, notifications_enabled`,
+        [name, phone, language, notifications_enabled, author_id]
       );
       return rows[0];
     },
@@ -3547,13 +3590,15 @@ const rawResolvers = {
         text,
         to_user_ids,
         images,
-        reply_to_id
+        reply_to_id,
+        client_message_id
       }: {
         chat_id: string;
         text: string;
         to_user_ids: string[];
         images?: Promise<any>[]; // Upload scalar list
         reply_to_id?: string | null;
+        client_message_id?: string | null;
       },
       ctx: any
     ) => {
@@ -3563,8 +3608,184 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
+      const normalizedClientMessageId =
+        String(client_message_id ?? "").trim() || null;
+
+      if (normalizedClientMessageId && normalizedClientMessageId.length > 128) {
+        throw new Error("client_message_id is too long");
+      }
+
+      type SendMessagePayload = {
+        id: any;
+        chat_id: any;
+        sender: any;
+        text: any;
+        created_at: string;
+        to_user_ids: string[];
+        images: Array<{
+          id: any;
+          url: any;
+          file_id: any;
+          mime: any;
+          width: any;
+          height: any;
+        }>;
+        myReceipt: {
+          deliveredAt: string;
+          readAt: string | null;
+          isRead: boolean;
+        };
+        readers: any[];
+        readersCount: number;
+        is_deleted: boolean;
+        deleted_at: string | null;
+        reply_to_id: any;
+        reply_to: any;
+      };
+
+      const hydrateMessageById = async (
+        messageId: string
+      ): Promise<SendMessagePayload | null> => {
+        const baseQ = await query(
+          `
+          SELECT
+            m.*,
+            (m.deleted_at IS NOT NULL) AS is_deleted,
+            row_to_json(u.*) AS sender_json,
+            (
+              SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
+              FROM message_images mi
+              WHERE mi.message_id = m.id
+            ) AS images_json,
+            (
+              SELECT json_build_object(
+                'delivered_at', r.delivered_at,
+                'read_at',      r.read_at,
+                'is_read',      (r.read_at IS NOT NULL)
+              )
+              FROM message_receipts r
+              WHERE r.message_id = m.id AND r.user_id = $2
+              LIMIT 1
+            ) AS my_receipt_json,
+            (
+              SELECT COALESCE(json_agg(row_to_json(ru.*) ORDER BY r2.read_at ASC), '[]'::json)
+              FROM message_receipts r2
+              JOIN users ru ON ru.id = r2.user_id
+              WHERE r2.message_id = m.id AND r2.read_at IS NOT NULL
+            ) AS readers_json,
+            (
+              SELECT COUNT(*)::INT
+              FROM message_receipts r3
+              WHERE r3.message_id = m.id AND r3.read_at IS NOT NULL
+            ) AS readers_count
+          FROM messages m
+          LEFT JOIN users u ON u.id = m.sender_id
+          WHERE m.id = $1
+          LIMIT 1
+          `,
+          [messageId, author_id]
+        );
+
+        const r = baseQ.rows[0];
+        if (!r) return null;
+
+        let replyTo: any = null;
+        if (r.reply_to_id) {
+          const replyQ = await query(
+            `
+            SELECT
+              m.id,
+              m.text,
+              row_to_json(u.*) AS sender_json,
+              (
+                SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
+                FROM message_images mi
+                WHERE mi.message_id = m.id
+              ) AS images_json
+            FROM messages m
+            LEFT JOIN users u ON u.id = m.sender_id
+            WHERE m.id = $1
+            LIMIT 1
+            `,
+            [r.reply_to_id]
+          );
+          const rp = replyQ.rows[0];
+          if (rp) {
+            replyTo = {
+              id: rp.id,
+              text: rp.text,
+              sender: rp.sender_json,
+              images: Array.isArray(rp.images_json)
+                ? rp.images_json.map((i: any) => ({
+                    id: i.id,
+                    url: i.url,
+                    file_id: i.file_id ?? null,
+                    mime: i.mime ?? null,
+                    width: i.width ?? null,
+                    height: i.height ?? null,
+                  }))
+                : [],
+            };
+          }
+        }
+
+        const createdISO = new Date(r.created_at).toISOString();
+        const mr = r.my_receipt_json || null;
+
+        return {
+          id: r.id,
+          chat_id: r.chat_id,
+          sender: r.sender_json,
+          text: r.is_deleted ? "" : r.text || "",
+          created_at: createdISO,
+          to_user_ids: [] as string[],
+          images: Array.isArray(r.images_json)
+            ? r.images_json.map((img: any) => ({
+                id: img.id,
+                url: img.url,
+                file_id: img.file_id ?? null,
+                mime: img.mime ?? null,
+                width: img.width ?? null,
+                height: img.height ?? null,
+              }))
+            : [],
+          myReceipt: {
+            deliveredAt: mr?.delivered_at
+              ? new Date(mr.delivered_at).toISOString()
+              : createdISO,
+            readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
+            isRead: !!mr?.is_read,
+          },
+          readers: Array.isArray(r.readers_json) ? r.readers_json : [],
+          readersCount: Number(r.readers_count) || 0,
+          is_deleted: !!r.is_deleted,
+          deleted_at: r.deleted_at ? new Date(r.deleted_at).toISOString() : null,
+          reply_to_id: r.reply_to_id || null,
+          reply_to: replyTo,
+        };
+      };
 
       console.info("[sendMessage] =", author_id, chat_id, to_user_ids);
+
+      if (normalizedClientMessageId) {
+        const existingRes = await query(
+          `
+          SELECT id
+          FROM messages
+          WHERE chat_id = $1
+            AND sender_id = $2
+            AND client_message_id = $3
+          LIMIT 1
+          `,
+          [chat_id, author_id, normalizedClientMessageId]
+        );
+
+        const existingId = existingRes.rows[0]?.id;
+        if (existingId) {
+          const existingMessage = await hydrateMessageById(String(existingId));
+          if (existingMessage) return existingMessage;
+        }
+      }
 
       // กรอง to_user_ids ให้ไม่ซ้ำ + ไม่รวมตัวเอง
       const cleanTo = Array.from(
@@ -3602,17 +3823,44 @@ const rawResolvers = {
       }
 
       // ===== Step 2: Use transaction for DB operations =====
-      const { revisionId, result: fullMessage } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction<{
+        inserted: boolean;
+        existingId: string | null;
+        fullMessage: SendMessagePayload | null;
+      }>(author_id, async (client, ctx) => {
         // 1) Insert message (เพิ่ม reply_to_id เข้าไป)
         const msgRes = await client.query(
           `
-          INSERT INTO messages (chat_id, sender_id, text, reply_to_id)
-          VALUES ($1,$2,$3,$4)
+          INSERT INTO messages (chat_id, sender_id, text, reply_to_id, client_message_id)
+          VALUES ($1,$2,$3,$4,$5)
+          ON CONFLICT (chat_id, sender_id, client_message_id) DO NOTHING
           RETURNING *
           `,
-          [chat_id, author_id, text, reply_to_id || null]
+          [chat_id, author_id, text, reply_to_id || null, normalizedClientMessageId]
         );
         const msg = msgRes.rows[0];
+
+        if (!msg) {
+          const existingRes = await client.query(
+            `
+            SELECT id
+            FROM messages
+            WHERE chat_id = $1
+              AND sender_id = $2
+              AND client_message_id = $3
+            ORDER BY created_at DESC
+            LIMIT 1
+            `,
+            [chat_id, author_id, normalizedClientMessageId]
+          );
+
+          const existingId = existingRes.rows[0]?.id;
+          if (!existingId) {
+            throw new Error("Cannot resolve duplicated message");
+          }
+
+          return { inserted: false, existingId: String(existingId), fullMessage: null };
+        }
 
         // 2) Insert message_images
         if (uploadedFiles.length > 0) {
@@ -3723,24 +3971,44 @@ const rawResolvers = {
         };
 
         return {
-          id: msg.id,
-          chat_id: msg.chat_id,
-          sender: senderQ.rows[0],
-          text: msg.text || "",
-          created_at: createdISO,
-          to_user_ids: cleanTo,
+          inserted: true,
+          existingId: null,
+          fullMessage: {
+            id: msg.id,
+            chat_id: msg.chat_id,
+            sender: senderQ.rows[0],
+            text: msg.text || "",
+            created_at: createdISO,
+            to_user_ids: cleanTo,
 
-          images: imagesSafe,            // ✅ ไม่เป็น null แน่นอน
+            images: imagesSafe,            // ✅ ไม่เป็น null แน่นอน
 
-          myReceipt,
-          readers: readersQ.rows,
-          readersCount: Number(cntQ.rows[0]?.c || 0),
-          is_deleted: false,
-          deleted_at: null,
+            myReceipt,
+            readers: readersQ.rows,
+            readersCount: Number(cntQ.rows[0]?.c || 0),
+            is_deleted: false,
+            deleted_at: null,
 
-          reply_to_id: msg.reply_to_id,  // ✅ payload มี reply_to_id
+            reply_to_id: msg.reply_to_id,  // ✅ payload มี reply_to_id
+            reply_to: null,
+          },
         };
       });
+
+      let fullMessage = result.fullMessage ?? null;
+      const wasInserted = !!result.inserted;
+
+      if (!fullMessage && result.existingId) {
+        fullMessage = await hydrateMessageById(result.existingId);
+      }
+
+      if (!fullMessage) {
+        throw new Error("Cannot load message payload");
+      }
+
+      if (!wasInserted) {
+        return fullMessage;
+      }
 
       // ===== Step 3: publish realtime =====
       await pubsub.publish(topicChat(fullMessage.chat_id), {
@@ -3753,9 +4021,131 @@ const rawResolvers = {
         targetUserIds,
       });
 
+      // ===== Step 4: push notification (Android FCM) =====
+      // Do not block the mutation on push failures.
+      void (async () => {
+        try {
+          const projectId = process.env.FCM_PROJECT_ID;
+          const clientEmail = process.env.FCM_CLIENT_EMAIL;
+          const privateKey = process.env.FCM_PRIVATE_KEY;
+
+          if (!projectId || !clientEmail || !privateKey) {
+            if (isDev) console.warn("[FCM] missing env, skip push");
+            return;
+          }
+
+          // recipients are cleanTo (sender removed), filtered by per-chat notification setting
+          const pushEnabledRows = cleanTo.length
+            ? (
+                await query(
+                  `
+                  SELECT cm.user_id
+                  FROM chat_members cm
+                  JOIN users u ON u.id = cm.user_id
+                  WHERE cm.chat_id = $1
+                    AND cm.user_id = ANY($2::uuid[])
+                    AND COALESCE(cm.notifications_enabled, true) = true
+                    AND COALESCE(u.notifications_enabled, true) = true
+                  `,
+                  [chat_id, cleanTo]
+                ).catch(() => ({ rows: [] as any[] }))
+              ).rows
+            : [];
+
+          const pushEnabledRecipients = new Set(
+            pushEnabledRows.map((r: any) => String(r.user_id))
+          );
+
+          for (const recipientUserId of cleanTo) {
+            // If sender somehow appears, skip
+            if (String(recipientUserId) === String(author_id)) continue;
+            if (!pushEnabledRecipients.has(String(recipientUserId))) continue;
+
+            // total unread for this user (badge)
+            const { rows } = await query(
+              `SELECT COALESCE(SUM(unread_count), 0)::BIGINT AS c FROM chat_unread_counts WHERE user_id=$1`,
+              [recipientUserId]
+            ).catch(() => ({ rows: [] as any[] }));
+            const unreadTotal = Number(rows[0]?.c || 0);
+
+            const tokens = await listActiveFcmTokens(recipientUserId);
+            if (!tokens.length) continue;
+
+            const senderName = String(fullMessage?.sender?.name || "").trim() || "New message";
+            const preview = String(fullMessage?.text || "").trim() || "ส่งรูปภาพมา";
+            const deepLink = `jachoei://chat/${fullMessage.chat_id}`;
+            const webUrl = `${process.env.NEXT_PUBLIC_WEB_URL || process.env.NEXT_PUBLIC_WEB_BASE || "https://jachoei.com"}/chat/${fullMessage.chat_id}`;
+            const timestamp = String(fullMessage?.created_at || new Date().toISOString());
+
+            for (const token of tokens) {
+              const resp = await sendFcmChatPush(
+                {
+                  projectId,
+                  clientEmail,
+                  privateKey,
+                },
+                {
+                  token,
+                  notification: { title: senderName, body: preview },
+                  data: {
+                    type: "chat_message",
+                    conversationId: String(fullMessage.chat_id),
+                    messageId: String(fullMessage.id),
+                    senderId: String(author_id),
+                    senderName,
+                    preview,
+                    unreadCount: unreadTotal,
+                    deepLink,
+                    webUrl,
+                    timestamp,
+                  },
+                  android: {
+                    channelId: "chat_messages",
+                    collapseKey: `chat_${fullMessage.chat_id}`,
+                    tag: String(fullMessage.chat_id),
+                  },
+                }
+              );
+
+              if (!resp.ok) {
+                // Invalid / unregistered token -> deactivate
+                const errCode = (resp as any)?.body?.error?.status;
+                const msg = (resp as any)?.body?.error?.message;
+                const isInvalid =
+                  errCode === "NOT_FOUND" ||
+                  /UNREGISTERED|registration token is not a valid FCM registration token/i.test(String(msg || ""));
+                if (isInvalid) {
+                  await deactivateDevicePushToken(recipientUserId, token).catch(() => {});
+                }
+              }
+            }
+          }
+        } catch (e) {
+          if (isDev) console.warn("[FCM] push send failed", e);
+        }
+      })();
+
       console.info("[sendMessage][fullMessage] :", fullMessage);
 
       return fullMessage;
+    },
+    registerPushToken: async (_: any, { input }: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      const platform = String(input?.platform || "").trim().toLowerCase();
+      if (platform !== "android") throw new Error("Only android is supported");
+
+      return upsertDevicePushToken(String(author_id), {
+        platform: "android",
+        fcmToken: String(input?.fcmToken || ""),
+        deviceId: input?.deviceId ?? null,
+        appVersion: input?.appVersion ?? null,
+        locale: input?.locale ?? null,
+      });
+    },
+
+    unregisterPushToken: async (_: any, { fcmToken }: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      return deactivateDevicePushToken(String(author_id), String(fcmToken || ""));
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -4020,6 +4410,58 @@ const rawResolvers = {
 
         return true;
       });
+
+      return result;
+    },
+    updateMyChatSettings: async (
+      _: any,
+      {
+        chat_id,
+        is_muted,
+        notifications_enabled,
+      }: {
+        chat_id: string;
+        is_muted?: boolean | null;
+        notifications_enabled?: boolean | null;
+      },
+      ctx: any
+    ) => {
+      const { author_id } = requireAuth(ctx);
+
+      const { revisionId, result } = await runInTransaction(
+        String(author_id),
+        async (client, txCtx) => {
+          const { rows } = await client.query(
+            `
+            UPDATE chat_members
+            SET
+              is_muted = COALESCE($3::boolean, is_muted),
+              notifications_enabled = COALESCE($4::boolean, notifications_enabled)
+            WHERE chat_id = $1 AND user_id = $2
+            RETURNING
+              COALESCE(is_muted, false) AS is_muted,
+              COALESCE(notifications_enabled, true) AS notifications_enabled
+            `,
+            [chat_id, author_id, is_muted ?? null, notifications_enabled ?? null]
+          );
+
+          if (!rows[0]) {
+            throw new Error("Chat membership not found");
+          }
+
+          await addLog("info", "chat-settings", "User updated chat settings", {
+            userId: String(author_id),
+            chatId: chat_id,
+            is_muted: rows[0].is_muted,
+            notifications_enabled: rows[0].notifications_enabled,
+          });
+
+          return {
+            is_muted: !!rows[0].is_muted,
+            notifications_enabled: !!rows[0].notifications_enabled,
+          };
+        }
+      );
 
       return result;
     },
