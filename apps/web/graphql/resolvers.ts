@@ -332,6 +332,117 @@ function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown
   return out;
 }
 
+function encodeMessageCursor(createdAt: any, id: any) {
+  const payload = {
+    created_at: toIso(createdAt),
+    id: String(id),
+  };
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeMessageCursor(cursor?: string | null): { created_at: string; id: string } | null {
+  if (!cursor) return null;
+
+  try {
+    const decoded = Buffer.from(String(cursor), "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded) as { created_at?: string; id?: string };
+    const created_at = String(parsed?.created_at || "").trim();
+    const id = String(parsed?.id || "").trim();
+    if (!created_at || !id) return null;
+    return { created_at, id };
+  } catch {
+    return null;
+  }
+}
+
+async function hydrateMessagesWithReplies(rows: any[]) {
+  const replyIds = rows
+    .map((r: any) => r.reply_to_id)
+    .filter((x: any) => !!x);
+
+  const replyMap: Record<string, any> = {};
+
+  if (replyIds.length > 0) {
+    const replyQuery = await query(
+      `
+      SELECT
+        m.*,
+        row_to_json(u.*) AS sender_json,
+        (
+          SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
+          FROM message_images mi
+          WHERE mi.message_id = m.id
+        ) AS images_json
+      FROM messages m
+      LEFT JOIN users u ON u.id = m.sender_id
+      WHERE m.id = ANY($1::uuid[])
+      `,
+      [replyIds]
+    );
+
+    replyQuery.rows.forEach((m: any) => {
+      replyMap[m.id] = {
+        id: m.id,
+        text: m.text,
+        sender: m.sender_json,
+        images: Array.isArray(m.images_json)
+          ? m.images_json.map((i: any) => ({
+              id: i.id,
+              url: i.url,
+              file_id: i.file_id ?? null,
+              mime: i.mime ?? null,
+              width: i.width ?? null,
+              height: i.height ?? null,
+            }))
+          : [],
+      };
+    });
+  }
+
+  return rows.map((r: any) => {
+    const createdISO = new Date(r.created_at).toISOString();
+    const mr = r.my_receipt_json || null;
+
+    return {
+      id: r.id,
+      chat_id: r.chat_id,
+      created_at: createdISO,
+      sender: r.sender_json,
+
+      images: Array.isArray(r.images_json)
+        ? r.images_json.map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            file_id: img.file_id,
+            mime: img.mime || null,
+            width: img.width || null,
+            height: img.height || null,
+          }))
+        : [],
+
+      text: r.is_deleted ? "" : r.text,
+      to_user_ids: r.to_user_ids || [],
+
+      myReceipt: {
+        deliveredAt: mr?.delivered_at
+          ? new Date(mr.delivered_at).toISOString()
+          : createdISO,
+        readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
+        isRead: !!mr?.is_read,
+      },
+
+      readers: Array.isArray(r.readers_json) ? r.readers_json : [],
+      readersCount: Number(r.readers_count) || 0,
+
+      is_deleted: r.is_deleted ?? false,
+      deleted_at: r.deleted_at ? new Date(r.deleted_at).toISOString() : null,
+
+      reply_to_id: r.reply_to_id || null,
+      reply_to: r.reply_to_id ? replyMap[r.reply_to_id] : null,
+    };
+  });
+}
+
 const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
@@ -914,11 +1025,13 @@ const rawResolvers = {
     ) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
 
-      console.log("[Query] messages :", author_id, limit, offset);
+      const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
+
+      console.log("[Query] messages :", author_id, safeLimit, safeOffset);
 
       const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
 
-      // ===== MAIN MESSAGE FETCH =====
       const { rows } = await query(
         `
         SELECT
@@ -959,102 +1072,108 @@ const rawResolvers = {
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
         WHERE m.chat_id = $1 ${filter}
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT $3 OFFSET $4
         `,
-        [chat_id, author_id, limit, offset]
+        [chat_id, author_id, safeLimit, safeOffset]
       );
 
-      // ===== FETCH all reply_to messages =====
-      const replyIds = rows
-        .map((r: any) => r.reply_to_id)
-        .filter((x: any) => !!x);
-
-      let replyMap: Record<string, any> = {};
-
-      if (replyIds.length > 0) {
-        const replyQuery = await query(
-          `
-          SELECT
-            m.*,
-            row_to_json(u.*) AS sender_json,
-            (
-              SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
-              FROM message_images mi
-              WHERE mi.message_id = m.id
-            ) AS images_json
-          FROM messages m
-          LEFT JOIN users u ON u.id = m.sender_id
-          WHERE m.id = ANY($1::uuid[])
-          `,
-          [replyIds]
-        );
-
-        replyQuery.rows.forEach((m: any) => {
-          replyMap[m.id] = {
-            id: m.id,
-            text: m.text,
-            sender: m.sender_json,
-            images: Array.isArray(m.images_json)
-              ? m.images_json.map((i: any) => ({
-                  id: i.id,
-                  url: i.url,
-                  file_id: i.file_id ?? null,
-                  mime: i.mime ?? null,
-                  width: i.width ?? null,
-                  height: i.height ?? null,
-                }))
-              : [],
-          };
-        });
-      }
-
-      // ===== PACK FINAL RESULTS =====
-      const results = rows.map((r: any) => {
-        const createdISO = new Date(r.created_at).toISOString();
-        const mr = r.my_receipt_json || null;
-
-        return {
-          id: r.id,
-          chat_id: r.chat_id,
-          created_at: createdISO,
-          sender: r.sender_json,
-
-          images: Array.isArray(r.images_json)
-            ? r.images_json.map((img: any) => ({
-                id: img.id,
-                url: img.url,
-                file_id: img.file_id,
-                mime: img.mime || null,
-                width: img.width || null,
-                height: img.height || null,
-              }))
-            : [],
-
-          text: r.is_deleted ? "" : r.text,
-          to_user_ids: r.to_user_ids || [],
-
-          myReceipt: {
-            deliveredAt: mr?.delivered_at
-              ? new Date(mr.delivered_at).toISOString()
-              : createdISO,
-            readAt: mr?.read_at ? new Date(mr.read_at).toISOString() : null,
-            isRead: !!mr?.is_read,
-          },
-
-          readers: Array.isArray(r.readers_json) ? r.readers_json : [],
-          readersCount: Number(r.readers_count) || 0,
-
-          is_deleted: r.is_deleted ?? false,
-          deleted_at: r.deleted_at ? new Date(r.deleted_at).toISOString() : null,
-
-          reply_to_id: r.reply_to_id || null,
-          reply_to: r.reply_to_id ? replyMap[r.reply_to_id] : null,
-        };
-      });
+      const results = await hydrateMessagesWithReplies(rows);
 
       console.log("[Query] messages", chat_id, results.length);
       return results;
+    },
+    messagesConnection: async (
+      _: any,
+      {
+        chat_id,
+        limit = 30,
+        cursor,
+        includeDeleted = false,
+      }: {
+        chat_id: string;
+        limit?: number;
+        cursor?: string | null;
+        includeDeleted?: boolean;
+      },
+      ctx: any
+    ) => {
+      const { author_id } = requireAuth(ctx);
+      const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
+
+      const decoded = decodeMessageCursor(cursor);
+      if (cursor && !decoded) {
+        throw new GraphQLError("Invalid cursor", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      const filter = includeDeleted ? "" : "AND m.deleted_at IS NULL";
+      const cursorSql = decoded
+        ? `AND (m.created_at, m.id) < ($4::timestamptz, $5::uuid)`
+        : "";
+
+      const params = decoded
+        ? [chat_id, author_id, safeLimit + 1, decoded.created_at, decoded.id]
+        : [chat_id, author_id, safeLimit + 1];
+
+      const { rows } = await query(
+        `
+        SELECT
+          m.*,
+          (m.deleted_at IS NOT NULL) AS is_deleted,
+          row_to_json(u.*) AS sender_json,
+
+          (
+            SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
+            FROM message_images mi
+            WHERE mi.message_id = m.id
+          ) AS images_json,
+
+          (
+            SELECT json_build_object(
+              'delivered_at', r.delivered_at,
+              'read_at',      r.read_at,
+              'is_read',      (r.read_at IS NOT NULL)
+            )
+            FROM message_receipts r
+            WHERE r.message_id = m.id AND r.user_id = $2
+            LIMIT 1
+          ) AS my_receipt_json,
+
+          (
+            SELECT COALESCE(json_agg(row_to_json(ru.*) ORDER BY r2.read_at ASC), '[]'::json)
+            FROM message_receipts r2
+            JOIN users ru ON ru.id = r2.user_id
+            WHERE r2.message_id = m.id AND r2.read_at IS NOT NULL
+          ) AS readers_json,
+
+          (
+            SELECT COUNT(*)::INT
+            FROM message_receipts r3
+            WHERE r3.message_id = m.id AND r3.read_at IS NOT NULL
+          ) AS readers_count
+
+        FROM messages m
+        LEFT JOIN users u ON u.id = m.sender_id
+        WHERE m.chat_id = $1 ${filter}
+        ${cursorSql}
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT $3
+        `,
+        params
+      );
+
+      const hasMore = rows.length > safeLimit;
+      const pageRows = hasMore ? rows.slice(0, safeLimit) : rows;
+      const items = await hydrateMessagesWithReplies(pageRows);
+      const last = pageRows[pageRows.length - 1];
+
+      return {
+        items,
+        hasMore,
+        nextCursor: hasMore && last ? encodeMessageCursor(last.created_at, last.id) : null,
+      };
     },
     users: async (
       _: any,
