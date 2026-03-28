@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import fs from "fs";
 import path from "path";
+import { Readable } from "stream";
 import { STORAGE_DIR } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -222,17 +223,56 @@ export async function GET(
         ? "inline"
         : "attachment";
 
-    const fileBuffer = await fs.promises.readFile(fullPath);
+    const stat = await fs.promises.stat(fullPath);
+    const size = stat.size;
+    const range = req.headers.get("range");
 
-    return new NextResponse(fileBuffer, {
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": mime,
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Disposition":
+        `${dispositionType}; filename="${downloadName}"; ` +
+        `filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+      "Accept-Ranges": "bytes",
+    };
+
+    if (range && /^bytes=\d*-\d*$/i.test(range)) {
+      const [startStr, endStr] = range.replace(/bytes=/i, "").split("-");
+      const start = startStr ? Math.max(0, parseInt(startStr, 10)) : 0;
+      const end = endStr ? Math.min(size - 1, parseInt(endStr, 10)) : size - 1;
+
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: {
+            ...baseHeaders,
+            "Content-Range": `bytes */${size}`,
+          },
+        });
+      }
+
+      const chunkSize = end - start + 1;
+      const nodeStream = fs.createReadStream(fullPath, { start, end });
+      const webStream = Readable.toWeb(nodeStream) as any;
+
+      return new NextResponse(webStream, {
+        status: 206,
+        headers: {
+          ...baseHeaders,
+          "Content-Length": String(chunkSize),
+          "Content-Range": `bytes ${start}-${end}/${size}`,
+        },
+      });
+    }
+
+    const nodeStream = fs.createReadStream(fullPath);
+    const webStream = Readable.toWeb(nodeStream) as any;
+
+    return new NextResponse(webStream, {
       status: 200,
       headers: {
-        "Content-Type": mime,
-        "Content-Length": String(fileBuffer.length),
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Content-Disposition":
-          `${dispositionType}; filename="${downloadName}"; ` +
-          `filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+        ...baseHeaders,
+        "Content-Length": String(size),
       },
     });
   } catch (error) {

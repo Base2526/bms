@@ -41,6 +41,13 @@ const Q_CHATS = gql`
           file_id
           mime
         }
+
+        audio {
+          file_id
+          url
+          mime
+          duration_sec
+        }
       }
     }
   }
@@ -65,9 +72,63 @@ const SUB_INCOMING = gql`
         file_id
         mime
       }
+
+      audio {
+        file_id
+        url
+        mime
+        duration_sec
+      }
     }
   }
 `;
+
+function normalizeIncomingMessage(m: any) {
+  if (!m) return null;
+
+  const senderIdRaw = m?.sender?.id;
+  const senderId =
+    typeof senderIdRaw === "string" || typeof senderIdRaw === "number"
+      ? String(senderIdRaw)
+      : "";
+
+  const images = Array.isArray(m.images) ? m.images : [];
+
+  const audio = m.audio
+    ? {
+        __typename: "MessageAudio",
+        file_id: m.audio.file_id,
+        url: m.audio.url,
+        mime: m.audio.mime ?? null,
+        duration_sec:
+          typeof m.audio.duration_sec === "number" ? m.audio.duration_sec : null,
+      }
+    : null;
+
+  return {
+    __typename: "Message",
+    id: m.id,
+    chat_id: m.chat_id,
+    text: typeof m.text === "string" ? m.text : "",
+    created_at: m.created_at,
+    sender: senderId
+      ? {
+          __typename: "User",
+          id: senderId,
+          name: m?.sender?.name ?? "—",
+          avatar: m?.sender?.avatar ?? null,
+        }
+      : m.sender,
+    images: images.map((img: any) => ({
+      __typename: "MessageImage",
+      id: img.id,
+      url: img.url,
+      file_id: img.file_id ?? null,
+      mime: img.mime ?? null,
+    })),
+    audio,
+  };
+}
 
 const SUB_USER_MESSAGE = gql`
   subscription ($user_id: ID!) {
@@ -223,7 +284,8 @@ export function GlobalChatListener() {
     skip: !meId,
     variables: { user_id: meId },
     onData: ({ data, client }) => {
-      const m = data.data?.incomingMessage;
+      const m0 = data.data?.incomingMessage;
+      const m = normalizeIncomingMessage(m0);
       if (!m) return;
 
       const state = getGlobalChatState();
@@ -238,8 +300,14 @@ export function GlobalChatListener() {
         if (typeof window !== "undefined" && "Notification" in window) {
           if (Notification.permission === "granted") {
             try {
+              const hasImages = Array.isArray(m.images) && m.images.length > 0;
+              const hasAudio = !!m.audio;
+              const body =
+                (m.text || "").trim() ||
+                (hasAudio ? "ส่งข้อความเสียงมา" : hasImages ? "ส่งรูปภาพมา" : "ส่งข้อความมา");
+
               new Notification(m.sender?.name || "New message", {
-                body: m.text || "ส่งรูปภาพมา",
+                body,
               });
             } catch (e) {
               console.error("Notification error:", e);
@@ -253,21 +321,24 @@ export function GlobalChatListener() {
         if (!old) return old;
 
         return {
-          myChats: old.myChats.map((chat) =>
-            chat.id !== m.chat_id
-              ? chat
-              : {
-                  ...chat,
-                  last_message: {
-                    id: m.id,
-                    text: m.text,
-                    created_at: m.created_at,
-                    sender: m.sender,
-                    images: m.images ?? [],
-                  },
-                  last_message_at: m.created_at,
-                }
-          ),
+          ...old,
+          myChats: old.myChats.map((chat) => {
+            if (chat.id !== m.chat_id) return chat;
+
+            return {
+              ...chat,
+              last_message: {
+                __typename: "Message",
+                id: m.id,
+                text: m.text,
+                created_at: m.created_at,
+                sender: m.sender,
+                images: m.images ?? [],
+                audio: m.audio ?? null,
+              },
+              last_message_at: m.created_at,
+            };
+          }),
         };
       });
     },

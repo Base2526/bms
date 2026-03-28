@@ -21,6 +21,7 @@ import {
   SendOutlined,
   SmileOutlined,
   PictureOutlined,
+  AudioOutlined,
   DeleteOutlined,
   CloseOutlined,
 } from "@ant-design/icons";
@@ -55,6 +56,8 @@ export default function SendMessageSection({
       text: string;
       to_user_ids: string[];
       images?: File[];
+      audio?: File | null;
+      audio_duration_sec?: number | null;
       reply_to_id?: string | null;
     };
   }) => Promise<any>;
@@ -67,6 +70,16 @@ export default function SendMessageSection({
 
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordMs, setRecordMs] = useState(0);
+  const [voiceFile, setVoiceFile] = useState<File | null>(null);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
+  const [voiceDurationSec, setVoiceDurationSec] = useState<number | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const recordTimerRef = useRef<number | null>(null);
   const textAreaRef = useRef<any>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
@@ -91,8 +104,10 @@ export default function SendMessageSection({
     !!me?.id &&
     !!sel &&
     !!chat &&
-    (trimmed || uploadedImages.length > 0) &&
+    (trimmed || uploadedImages.length > 0 || !!voiceFile) &&
     toUserIds.length > 0;
+
+  const disabled = !me?.id || !chat || !sel;
 
   // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
@@ -109,6 +124,8 @@ export default function SendMessageSection({
           text: trimmed,
           to_user_ids: toUserIds,
           images: uploadedImages,
+          audio: voiceFile,
+          audio_duration_sec: voiceDurationSec,
           reply_to_id: replyTarget?.id ?? null,
         },
         optimisticResponse: {
@@ -146,12 +163,26 @@ export default function SendMessageSection({
               file_id: null,
               mime: file.type,
             })),
+
+            audio: voiceFile
+              ? {
+                  __typename: "MessageAudio",
+                  file_id: `temp-audio-${nowIso}`,
+                  url: voicePreviewUrl || "",
+                  mime: voiceFile.type || null,
+                  duration_sec: voiceDurationSec,
+                }
+              : null,
           },
         },
       } as any);
 
       setText("");
       setUploadedImages([]);
+      if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
+      setVoiceFile(null);
+      setVoicePreviewUrl(null);
+      setVoiceDurationSec(null);
       setReplyTarget(null);
     } catch (e) {
       console.error("[send] error:", e);
@@ -168,7 +199,158 @@ export default function SendMessageSection({
     setReplyTarget,
     me?.id,
     me?.name,
+    voiceFile,
+    voicePreviewUrl,
+    voiceDurationSec,
   ]);
+
+  const cleanupRecording = useCallback(() => {
+    if (recordTimerRef.current) {
+      window.clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+
+    const stream = recordStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+    }
+
+    recordStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    chunksRef.current = [];
+    setIsRecording(false);
+    setRecordMs(0);
+  }, []);
+
+  const discardVoice = useCallback(() => {
+    if (isRecording) {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {}
+      cleanupRecording();
+    }
+    if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
+    setVoiceFile(null);
+    setVoicePreviewUrl(null);
+    setVoiceDurationSec(null);
+  }, [cleanupRecording, isRecording, voicePreviewUrl]);
+
+  const toggleRecord = useCallback(async () => {
+    if (disabled) return;
+
+    // stop
+    if (isRecording) {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        cleanupRecording();
+      }
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    if (!navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      message.error("Recording not supported in this browser.");
+      return;
+    }
+
+    // start
+    try {
+      discardVoice();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordStreamRef.current = stream;
+
+      const pickRecorderMime = () => {
+        const candidates = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+          "audio/ogg",
+          "audio/mp4",
+        ];
+        for (const c of candidates) {
+          try {
+            if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) {
+              return c;
+            }
+          } catch {}
+        }
+        return "";
+      };
+
+      const preferredMime = pickRecorderMime();
+      const mr = preferredMime
+        ? new MediaRecorder(stream, { mimeType: preferredMime })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+      chunksRef.current = [];
+
+      mr.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+
+      mr.onstop = async () => {
+        try {
+          const blob = new Blob(chunksRef.current, {
+            type: mr.mimeType || "audio/webm",
+          });
+          const effectiveMime = String(preferredMime || blob.type || mr.mimeType || "")
+            .split(";")[0]
+            .trim()
+            .toLowerCase();
+
+          const ext =
+            effectiveMime === "audio/ogg"
+              ? ".ogg"
+              : effectiveMime === "audio/mp4"
+              ? ".m4a"
+              : ".webm";
+
+          const filename = `voice-${Date.now()}${ext}`;
+          const file = new File([blob], filename, {
+            type: effectiveMime || blob.type || "audio/webm",
+          });
+
+          const url = URL.createObjectURL(blob);
+          setVoiceFile(file);
+          setVoicePreviewUrl(url);
+
+          // Duration is best-effort.
+          const audioEl = document.createElement("audio");
+          audioEl.preload = "metadata";
+          audioEl.src = url;
+          await new Promise<void>((resolve) => {
+            audioEl.onloadedmetadata = () => resolve();
+            audioEl.onerror = () => resolve();
+          });
+
+          const d = Number(audioEl.duration);
+          if (Number.isFinite(d) && d > 0) setVoiceDurationSec(Math.round(d));
+          else setVoiceDurationSec(null);
+        } finally {
+          cleanupRecording();
+        }
+      };
+
+      mr.start();
+      setIsRecording(true);
+      setRecordMs(0);
+      recordTimerRef.current = window.setInterval(() => {
+        setRecordMs((ms) => ms + 250);
+      }, 250);
+    } catch (e) {
+      console.error("[voice] record start failed", e);
+      cleanupRecording();
+      message.error("Unable to start recording.");
+    }
+  }, [cleanupRecording, disabled, discardVoice, isRecording]);
+
+  useEffect(() => {
+    return () => {
+      cleanupRecording();
+      if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
+    };
+  }, [cleanupRecording, voicePreviewUrl]);
 
   // Enter to send
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -245,8 +427,6 @@ export default function SendMessageSection({
   const removeImage = (file: File) => {
     setUploadedImages((prev) => prev.filter((f) => f !== file));
   };
-
-  const disabled = !me?.id || !chat || !sel;
 
   // =========== RENDER REPLY PREVIEW ==========
   const renderReplyPreview = () => {
@@ -449,6 +629,61 @@ export default function SendMessageSection({
         </>
       )}
 
+      {/* ===== VOICE PREVIEW ===== */}
+      {!!voicePreviewUrl && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: 10,
+            borderRadius: 12,
+            background: "rgba(var(--app-text-rgb),0.06)",
+            border: "1px solid rgba(var(--app-text-rgb),0.08)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 6,
+            }}
+          >
+            <Text type="secondary">Voice message</Text>
+            <Button
+              type="text"
+              size={isMobile ? "small" : "middle"}
+              icon={<CloseOutlined />}
+              onClick={discardVoice}
+              style={{ padding: 0, color: "var(--app-muted)" }}
+            />
+          </div>
+
+          <audio
+            controls
+            preload="metadata"
+            src={voicePreviewUrl}
+            style={{ width: "100%" }}
+          />
+
+          {typeof voiceDurationSec === "number" ? (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 12,
+                color: "var(--app-muted)",
+              }}
+            >
+              Duration: {Math.floor(voiceDurationSec / 60)
+                .toString()
+                .padStart(2, "0")}:{Math.floor(voiceDurationSec % 60)
+                .toString()
+                .padStart(2, "0")}
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* ===== INPUT BAR ===== */}
       <div
         style={{
@@ -496,6 +731,24 @@ export default function SendMessageSection({
           size={isMobile ? "small" : "middle"}
         />
 
+        {/* Voice record */}
+        <Button
+          type="text"
+          icon={
+            <AudioOutlined
+              style={{
+                fontSize: isMobile ? 18 : 20,
+                color: isRecording ? "var(--text-danger)" : "var(--app-muted)",
+              }}
+            />
+          }
+          onClick={() => void toggleRecord()}
+          disabled={disabled}
+          style={{ border: "none" }}
+          size={isMobile ? "small" : "middle"}
+          title={isRecording ? "Stop recording" : "Record voice"}
+        />
+
         {/* Text Area */}
         <Input.TextArea
           ref={textAreaRef}
@@ -523,7 +776,7 @@ export default function SendMessageSection({
           type="primary"
           shape="circle"
           icon={<SendOutlined />}
-          disabled={!canSend}
+          disabled={!canSend || isRecording}
           onClick={handleSend}
           size={isMobile ? "middle" : "large"}
           style={{
@@ -537,6 +790,12 @@ export default function SendMessageSection({
           }}
         />
       </div>
+
+      {isRecording && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--app-muted)" }}>
+          Recording… {Math.floor(recordMs / 1000)}s
+        </div>
+      )}
 
       {/* ===== EMOJI PICKER ===== */}
       {showEmoji && !disabled && (

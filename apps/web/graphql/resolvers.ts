@@ -403,6 +403,17 @@ async function hydrateMessagesWithReplies(rows: any[]) {
     const createdISO = new Date(r.created_at).toISOString();
     const mr = r.my_receipt_json || null;
 
+    const audioFileId = r.audio_file_id ?? null;
+    const audio = audioFileId
+      ? {
+          file_id: audioFileId,
+          url: buildFileUrlById(Number(audioFileId)),
+          mime: r.audio_mime ?? null,
+          duration_sec:
+            typeof r.audio_duration_sec === "number" ? r.audio_duration_sec : null,
+        }
+      : null;
+
     return {
       id: r.id,
       chat_id: r.chat_id,
@@ -419,6 +430,8 @@ async function hydrateMessagesWithReplies(rows: any[]) {
             height: img.height || null,
           }))
         : [],
+
+      audio,
 
       text: r.is_deleted ? "" : r.text,
       to_user_ids: r.to_user_ids || [],
@@ -860,6 +873,9 @@ const rawResolvers = {
               'text', lm.text,
               'created_at', lm.created_at,
               'sender_id', lm.sender_id,
+              'audio_file_id', lm.audio_file_id,
+              'audio_mime', lm.audio_mime,
+              'audio_duration_sec', lm.audio_duration_sec,
               'images',
               (
                 SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
@@ -917,6 +933,18 @@ const rawResolvers = {
             text: lm.text || "",
             created_at: lastMessageAt,
             sender_id: lm.sender_id,
+
+            audio: lm.audio_file_id
+              ? {
+                  file_id: lm.audio_file_id,
+                  url: buildFileUrlById(Number(lm.audio_file_id)),
+                  mime: lm.audio_mime ?? null,
+                  duration_sec:
+                    typeof lm.audio_duration_sec === "number"
+                      ? lm.audio_duration_sec
+                      : null,
+                }
+              : null,
 
             images: rawImages.map((img: any) => ({
               id: img.id,
@@ -3709,6 +3737,8 @@ const rawResolvers = {
         text,
         to_user_ids,
         images,
+        audio,
+        audio_duration_sec,
         reply_to_id,
         client_message_id
       }: {
@@ -3716,6 +3746,8 @@ const rawResolvers = {
         text: string;
         to_user_ids: string[];
         images?: Promise<any>[]; // Upload scalar list
+        audio?: Promise<any> | null; // Upload scalar
+        audio_duration_sec?: number | null;
         reply_to_id?: string | null;
         client_message_id?: string | null;
       },
@@ -3749,6 +3781,12 @@ const rawResolvers = {
           width: any;
           height: any;
         }>;
+        audio: {
+          file_id: any;
+          url: any;
+          mime: any;
+          duration_sec: any;
+        } | null;
         myReceipt: {
           deliveredAt: string;
           readAt: string | null;
@@ -3851,6 +3889,19 @@ const rawResolvers = {
         const createdISO = new Date(r.created_at).toISOString();
         const mr = r.my_receipt_json || null;
 
+        const audioFileId = r.audio_file_id ?? null;
+        const audioPayload = audioFileId
+          ? {
+              file_id: audioFileId,
+              url: buildFileUrlById(Number(audioFileId)),
+              mime: r.audio_mime ?? null,
+              duration_sec:
+                typeof r.audio_duration_sec === "number"
+                  ? r.audio_duration_sec
+                  : null,
+            }
+          : null;
+
         return {
           id: r.id,
           chat_id: r.chat_id,
@@ -3868,6 +3919,8 @@ const rawResolvers = {
                 height: img.height ?? null,
               }))
             : [],
+
+          audio: audioPayload,
           myReceipt: {
             deliveredAt: mr?.delivered_at
               ? new Date(mr.delivered_at).toISOString()
@@ -3923,12 +3976,22 @@ const rawResolvers = {
         filename: string;
       }[] = [];
 
+      let uploadedAudio:
+        | {
+            id: number;
+            relpath: string;
+            mimetype: string | null;
+            filename: string;
+          }
+        | null = null;
+
       if (images && images.length > 0) {
         uploadedFiles = await Promise.all(
           images.map(async (imgPromise) => {
             const upload = await imgPromise; // Upload object (Upload scalar)
 
-            const renameTo = `chat_${chat_id}_${Date.now()}_${upload.fileName}`;
+            const uploadName = upload?.filename || upload?.fileName || "image";
+            const renameTo = `chat_${chat_id}_${Date.now()}_${uploadName}`;
             const fileRow = await persistUploadStream(upload, renameTo);
 
             return {
@@ -3941,6 +4004,77 @@ const rawResolvers = {
         );
       }
 
+      if (audio) {
+        const upload = await audio;
+        const rawMime = String(upload?.mimetype || upload?.mimeType || "");
+        const rawName = String(upload?.filename || upload?.fileName || "");
+
+        const cleanMime = (m: string) => (m || "").split(";")[0].trim().toLowerCase();
+        const ext = path.extname(rawName).toLowerCase();
+
+        const guessAudioMimeFromExt = (e: string) => {
+          if (e === ".webm") return "audio/webm";
+          if (e === ".ogg" || e === ".oga") return "audio/ogg";
+          if (e === ".mp3") return "audio/mpeg";
+          if (e === ".wav") return "audio/wav";
+          if (e === ".m4a" || e === ".mp4") return "audio/mp4";
+          if (e === ".aac") return "audio/aac";
+          return "";
+        };
+
+        const normalizeRecordedAudioMime = (m: string) => {
+          const base = cleanMime(m);
+          if (!base) return "";
+          if (base === "video/webm") return "audio/webm";
+          if (base === "video/mp4") return "audio/mp4";
+          if (base === "audio/x-m4a") return "audio/mp4";
+          return base;
+        };
+
+        const base = cleanMime(rawMime);
+        const normalized = normalizeRecordedAudioMime(rawMime) || guessAudioMimeFromExt(ext);
+
+        // Strict but browser-compatible:
+        // - Accept audio/*
+        // - Accept common MediaRecorder containers sometimes labeled as video/*
+        // - Accept octet-stream only when filename looks like audio
+        const isAllowedAudio = normalized.startsWith("audio/");
+        const isOctetStream = base === "application/octet-stream";
+
+        if (base) {
+          if (isOctetStream) {
+            if (!isAllowedAudio) throw new Error("Invalid audio mimetype");
+          } else if (!isAllowedAudio) {
+            throw new Error("Invalid audio mimetype");
+          }
+        } else {
+          // No mimetype given: only accept if we can infer from filename.
+          if (!isAllowedAudio) throw new Error("Invalid audio mimetype");
+        }
+
+        // Ensure persisted upload has a normalized audio mimetype for correct serving/playback.
+        if (isAllowedAudio) {
+          (upload as any).mimetype = normalized;
+        }
+
+        const uploadName = upload?.filename || upload?.fileName || "voice";
+        const renameTo = `voice_${chat_id}_${Date.now()}_${uploadName}`;
+        const fileRow = await persistUploadStream(upload, renameTo);
+        uploadedAudio = {
+          id: fileRow.id,
+          relpath: fileRow.relpath,
+          mimetype: fileRow.mimetype,
+          filename: fileRow.filename,
+        };
+      }
+
+      const normalizedDurationSecRaw =
+        typeof audio_duration_sec === "number" ? audio_duration_sec : null;
+      const normalizedDurationSec =
+        normalizedDurationSecRaw && Number.isFinite(normalizedDurationSecRaw)
+          ? Math.max(1, Math.min(60 * 15, Math.round(normalizedDurationSecRaw)))
+          : null;
+
       // ===== Step 2: Use transaction for DB operations =====
       const { revisionId, result } = await runInTransaction<{
         inserted: boolean;
@@ -3950,12 +4084,30 @@ const rawResolvers = {
         // 1) Insert message (เพิ่ม reply_to_id เข้าไป)
         const msgRes = await client.query(
           `
-          INSERT INTO messages (chat_id, sender_id, text, reply_to_id, client_message_id)
-          VALUES ($1,$2,$3,$4,$5)
+          INSERT INTO messages (
+            chat_id,
+            sender_id,
+            text,
+            reply_to_id,
+            client_message_id,
+            audio_file_id,
+            audio_mime,
+            audio_duration_sec
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
           ON CONFLICT (chat_id, sender_id, client_message_id) DO NOTHING
           RETURNING *
           `,
-          [chat_id, author_id, text, reply_to_id || null, normalizedClientMessageId]
+          [
+            chat_id,
+            author_id,
+            text,
+            reply_to_id || null,
+            normalizedClientMessageId,
+            uploadedAudio?.id ?? null,
+            uploadedAudio?.mimetype ?? null,
+            normalizedDurationSec,
+          ]
         );
         const msg = msgRes.rows[0];
 
@@ -4045,14 +4197,69 @@ const rawResolvers = {
             }))
           : [];
 
-        // 6) Hydrate sender + readers + receipt data
-        const senderQ = await client.query(`SELECT * FROM users WHERE id=$1`, [
-          author_id,
-        ]);
+        const audioSafe = msg.audio_file_id
+          ? {
+              file_id: msg.audio_file_id,
+              url: buildFileUrlById(Number(msg.audio_file_id)),
+              mime: msg.audio_mime ?? null,
+              duration_sec:
+                typeof msg.audio_duration_sec === "number"
+                  ? msg.audio_duration_sec
+                  : null,
+            }
+          : null;
+
+        // 5.5) Hydrate reply_to (match Query.messages shape for realtime payload)
+        let replyTo: any = null;
+        if (msg.reply_to_id) {
+          const replyQ = await client.query(
+            `
+            SELECT
+              m.id,
+              m.text,
+              row_to_json(u.*) AS sender_json,
+              (
+                SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
+                FROM message_images mi
+                WHERE mi.message_id = m.id
+              ) AS images_json
+            FROM messages m
+            LEFT JOIN users u ON u.id = m.sender_id
+            WHERE m.id = $1
+            LIMIT 1
+            `,
+            [msg.reply_to_id]
+          );
+
+          const rp = replyQ.rows[0];
+          if (rp) {
+            replyTo = {
+              id: rp.id,
+              text: rp.text,
+              sender: rp.sender_json ?? null,
+              images: Array.isArray(rp.images_json)
+                ? rp.images_json.map((i: any) => ({
+                    id: i.id,
+                    url: i.url,
+                    file_id: i.file_id ?? null,
+                    mime: i.mime ?? null,
+                    width: i.width ?? null,
+                    height: i.height ?? null,
+                  }))
+                : [],
+            };
+          }
+        }
+
+        // 6) Hydrate sender + readers + receipt data (match Query.messages JSON shape)
+        const senderQ = await client.query(
+          `SELECT row_to_json(u.*) AS sender_json FROM users u WHERE id=$1 LIMIT 1`,
+          [author_id]
+        );
 
         const readersQ = await client.query(
           `
-          SELECT u.*
+          SELECT row_to_json(u.*) AS user_json
           FROM message_receipts r
           JOIN users u ON u.id=r.user_id
           WHERE r.message_id=$1 AND r.read_at IS NOT NULL
@@ -4095,21 +4302,23 @@ const rawResolvers = {
           fullMessage: {
             id: msg.id,
             chat_id: msg.chat_id,
-            sender: senderQ.rows[0],
+            sender: senderQ.rows[0]?.sender_json ?? null,
             text: msg.text || "",
             created_at: createdISO,
             to_user_ids: cleanTo,
 
             images: imagesSafe,            // ✅ ไม่เป็น null แน่นอน
 
+            audio: audioSafe,
+
             myReceipt,
-            readers: readersQ.rows,
+            readers: readersQ.rows.map((r: any) => r.user_json).filter(Boolean),
             readersCount: Number(cntQ.rows[0]?.c || 0),
             is_deleted: false,
             deleted_at: null,
 
-            reply_to_id: msg.reply_to_id,  // ✅ payload มี reply_to_id
-            reply_to: null,
+            reply_to_id: msg.reply_to_id ?? null,  // ✅ payload มี reply_to_id
+            reply_to: replyTo,
           },
         };
       });
@@ -4191,7 +4400,10 @@ const rawResolvers = {
             if (!tokens.length) continue;
 
             const senderName = String(fullMessage?.sender?.name || "").trim() || "New message";
-            const preview = String(fullMessage?.text || "").trim() || "ส่งรูปภาพมา";
+            const previewText = String(fullMessage?.text || "").trim();
+            const hasImages = Array.isArray((fullMessage as any)?.images) && (fullMessage as any).images.length > 0;
+            const hasAudio = !!(fullMessage as any)?.audio;
+            const preview = previewText || (hasAudio ? "🎤 Voice message" : hasImages ? "ส่งรูปภาพมา" : "ส่งข้อความมา");
             const deepLink = `jachoei://chat/${fullMessage.chat_id}`;
             const webUrl = `${process.env.NEXT_PUBLIC_WEB_URL || process.env.NEXT_PUBLIC_WEB_BASE || "https://jachoei.com"}/chat/${fullMessage.chat_id}`;
             const timestamp = String(fullMessage?.created_at || new Date().toISOString());

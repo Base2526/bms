@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useQuery, useMutation, useApolloClient } from "@apollo/client";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   List,
   Card,
@@ -59,6 +59,7 @@ const MESSAGE_FIELDS = gql`
       sender {
         id
         name
+        avatar
       }
     }
 
@@ -66,6 +67,7 @@ const MESSAGE_FIELDS = gql`
     sender {
       id
       name
+      avatar
     }
 
     myReceipt {
@@ -79,6 +81,13 @@ const MESSAGE_FIELDS = gql`
       url
       mime
       file_id
+    }
+
+    audio {
+      file_id
+      url
+      mime
+      duration_sec
     }
 
     readers {
@@ -138,6 +147,13 @@ const Q_CHATS = gql`
           file_id
           mime
         }
+
+        audio {
+          file_id
+          url
+          mime
+          duration_sec
+        }
       }
     }
   }
@@ -185,6 +201,8 @@ const MUT_SEND = gql`
     $text: String!
     $to_user_ids: [ID!]!
     $images: [Upload!]
+    $audio: Upload
+    $audio_duration_sec: Int
     $reply_to_id: ID
   ) {
     sendMessage(
@@ -192,6 +210,8 @@ const MUT_SEND = gql`
       text: $text
       to_user_ids: $to_user_ids
       images: $images
+      audio: $audio
+      audio_duration_sec: $audio_duration_sec
       reply_to_id: $reply_to_id
     ) {
       ...MessageFields
@@ -199,6 +219,78 @@ const MUT_SEND = gql`
   }
   ${MESSAGE_FIELDS}
 `;
+
+function getAudioSrc(audio: any) {
+  if (!audio) return "";
+  const fileId = audio?.file_id;
+  const fileIdStr =
+    typeof fileId === "number" || typeof fileId === "string"
+      ? String(fileId)
+      : "";
+  const isNumericId = !!fileIdStr && /^\d+$/.test(fileIdStr);
+
+  // Prefer server-backed file ids; fall back to url for optimistic/temp ids.
+  if (isNumericId) return `/api/files/${fileIdStr}`;
+  return audio?.url || "";
+}
+
+function fmtDur(sec?: number | null) {
+  const s = typeof sec === "number" && Number.isFinite(sec) ? Math.max(0, sec) : 0;
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(Math.floor(s % 60)).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function hydrateMessageSenderFromMembers(
+  msg: any,
+  membersById: Map<string, any>
+) {
+  if (!msg) return msg;
+
+  const senderIdRaw = msg?.sender?.id;
+  const senderId =
+    typeof senderIdRaw === "string" || typeof senderIdRaw === "number"
+      ? String(senderIdRaw)
+      : "";
+  const member = senderId ? membersById.get(senderId) : null;
+
+  const nextSender = senderId
+    ? {
+        __typename: "User",
+        id: senderId,
+        name: msg?.sender?.name ?? member?.name ?? "—",
+        avatar: msg?.sender?.avatar ?? member?.avatar ?? null,
+      }
+    : msg?.sender;
+
+  const reply = msg?.reply_to;
+  const replySenderIdRaw = reply?.sender?.id;
+  const replySenderId =
+    typeof replySenderIdRaw === "string" || typeof replySenderIdRaw === "number"
+      ? String(replySenderIdRaw)
+      : "";
+  const replyMember = replySenderId ? membersById.get(replySenderId) : null;
+
+  const nextReplySender = replySenderId
+    ? {
+        __typename: "User",
+        id: replySenderId,
+        name: reply?.sender?.name ?? replyMember?.name ?? "—",
+        avatar: reply?.sender?.avatar ?? replyMember?.avatar ?? null,
+      }
+    : reply?.sender;
+
+  return {
+    ...msg,
+    sender: nextSender,
+    reply_to: reply
+      ? {
+          ...reply,
+          sender: nextReplySender,
+        }
+      : reply,
+  };
+}
 
 const MUT_CREATE = gql`
   mutation ($name: String, $isGroup: Boolean!, $memberIds: [ID!]!) {
@@ -358,21 +450,14 @@ function renderMessageImages(m: any, isMine: boolean) {
       <div
         style={{
           marginTop: m.text?.trim() ? 8 : 2,
-          display: "flex",
-          justifyContent: isMine ? "flex-end" : "flex-start",
+          maxWidth: 260,
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
+          lineHeight: 0,
         }}
       >
-        <div
-          style={{
-            maxWidth: 260,
-            borderRadius: 18,
-            overflow: "hidden",
-            boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
-            lineHeight: 0,
-          }}
-        >
-          <MessageImageTile src={getSrc(img)} aspectRatio="4 / 3" />
-        </div>
+        <MessageImageTile src={getSrc(img)} aspectRatio="4 / 3" />
       </div>
     );
   }
@@ -384,21 +469,14 @@ function renderMessageImages(m: any, isMine: boolean) {
     <div
       style={{
         marginTop: m.text?.trim() ? 8 : 2,
-        display: "flex",
-        justifyContent: isMine ? "flex-end" : "flex-start",
+        maxWidth: options.maxWidth ?? 340,
+        borderRadius: 18,
+        overflow: "hidden",
+        boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
+        lineHeight: 0,
       }}
     >
-      <div
-        style={{
-          maxWidth: options.maxWidth ?? 340,
-          borderRadius: 18,
-          overflow: "hidden",
-          boxShadow: "0 2px 10px rgba(var(--app-shadow-rgb),0.22)",
-          lineHeight: 0,
-        }}
-      >
-        {content}
-      </div>
+      {content}
     </div>
   );
 
@@ -609,20 +687,28 @@ function ChatUI() {
   const toParam = searchParams.get("to");
   const { data: me } = useQuery(Q_ME);
 
+  const membersByIdRef = useRef<Map<string, any>>(new Map());
+
   const [send] = useMutation(MUT_SEND, {
     update(cache, { data }) {
       const newMsg = data?.sendMessage;
       if (!newMsg) return;
 
+      const normalizedNewMsg = hydrateMessageSenderFromMembers(
+        newMsg,
+        membersByIdRef.current
+      );
+
       // ⬇️ สำคัญ: อย่าทับ reply_to ที่ server ส่งมา
       cache.updateQuery<{ messages: any[] }>({
         query: Q_MSGS,
-        variables: { chat_id: newMsg.chat_id },
+        // Must match the query instance variables to update visible list.
+        variables: { chat_id: normalizedNewMsg.chat_id, limit: PAGE_SIZE, offset: 0 },
       }, (old) => {
         if (!old) {
-          return { messages: [newMsg] };
+          return { messages: [normalizedNewMsg] };
         }
-        const exists = old.messages.some((m) => m.id === newMsg.id);
+        const exists = old.messages.some((m) => m.id === normalizedNewMsg.id);
         if (exists) return old;
 
         return {
@@ -630,14 +716,14 @@ function ChatUI() {
           messages: [
             ...old.messages,
             {
-              ...newMsg,
-              reply_to_id: newMsg.reply_to_id ?? null,
-              reply_to: newMsg.reply_to ?? null,
-              myReceipt: newMsg.myReceipt ?? null,
-              readers: newMsg.readers ?? [],
-              readersCount: newMsg.readersCount ?? 0,
-              deleted_at: newMsg.deleted_at ?? null,
-              is_deleted: newMsg.is_deleted ?? false,
+              ...normalizedNewMsg,
+              reply_to_id: normalizedNewMsg.reply_to_id ?? null,
+              reply_to: normalizedNewMsg.reply_to ?? null,
+              myReceipt: normalizedNewMsg.myReceipt ?? null,
+              readers: normalizedNewMsg.readers ?? [],
+              readersCount: normalizedNewMsg.readersCount ?? 0,
+              deleted_at: normalizedNewMsg.deleted_at ?? null,
+              is_deleted: normalizedNewMsg.is_deleted ?? false,
             },
           ],
         };
@@ -648,18 +734,19 @@ function ChatUI() {
         return {
           ...old,
           myChats: old.myChats.map((chat) => {
-            if (chat.id !== newMsg.chat_id) return chat;
+            if (chat.id !== normalizedNewMsg.chat_id) return chat;
 
             return {
               ...chat,
               last_message: {
-                id: newMsg.id,
-                text: newMsg.text,
-                created_at: newMsg.created_at,
-                sender: newMsg.sender,
-                images: newMsg.images ?? [],
+                id: normalizedNewMsg.id,
+                text: normalizedNewMsg.text,
+                created_at: normalizedNewMsg.created_at,
+                sender: normalizedNewMsg.sender,
+                images: normalizedNewMsg.images ?? [],
+                audio: normalizedNewMsg.audio ?? null,
               },
-              last_message_at: newMsg.created_at,
+              last_message_at: normalizedNewMsg.created_at,
             };
           }),
         };
@@ -684,11 +771,81 @@ function ChatUI() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const loadingOlderRef = useRef(false);
   const lastOlderOffsetRef = useRef(-1);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const lastMsgCountRef = useRef(0);
+
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [playingAudioPaused, setPlayingAudioPaused] = useState(true);
+  const [playingAudioTime, setPlayingAudioTime] = useState(0);
+  const [playingAudioDur, setPlayingAudioDur] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      try {
+        activeAudioRef.current?.pause();
+      } catch {}
+      activeAudioRef.current = null;
+      audioElsRef.current.clear();
+    };
+  }, []);
+
+  const toggleAudioPlayback = useCallback(
+    async (id: string) => {
+      const el = audioElsRef.current.get(id);
+      if (!el) return;
+
+      // Toggle current
+      if (playingAudioId === id) {
+        if (el.paused) {
+          try {
+            await el.play();
+          } catch {}
+        } else {
+          try {
+            el.pause();
+          } catch {}
+        }
+        return;
+      }
+
+      // Switch to new
+      const prev = activeAudioRef.current;
+      if (prev && prev !== el) {
+        try {
+          prev.pause();
+        } catch {}
+      }
+
+      activeAudioRef.current = el;
+      setPlayingAudioId(id);
+      setPlayingAudioPaused(false);
+      setPlayingAudioTime(0);
+      setPlayingAudioDur(Number.isFinite(el.duration) ? el.duration : 0);
+
+      try {
+        await el.play();
+      } catch {
+        setPlayingAudioPaused(true);
+      }
+    },
+    [playingAudioId]
+  );
+
+  const seekAudio = useCallback((id: string, ratio: number) => {
+    const el = audioElsRef.current.get(id);
+    if (!el) return;
+    const r = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+    const dur = Number.isFinite(el.duration) ? el.duration : 0;
+    if (dur <= 0) return;
+    try {
+      el.currentTime = dur * r;
+    } catch {}
+  }, []);
 
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -751,10 +908,53 @@ function ChatUI() {
         const m = subscriptionData.data?.messageAdded;
         if (!m) return prev;
 
-        const exists = prev.messages?.some((x: any) => x.id === m.id);
+        const normalized = hydrateMessageSenderFromMembers(
+          m,
+          membersByIdRef.current
+        );
+
+        const exists = prev.messages?.some((x: any) => x.id === normalized.id);
         if (exists) {
-          console.log("⚠ skip duplicate messageFromSub:", m.id);
-          return prev;
+          // Still update chat list + merge fields to allow later payloads to hydrate audio/images.
+          client.cache.updateQuery<{ myChats: any[] }>({
+            query: Q_CHATS,
+          }, (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              myChats: old.myChats.map((chat) => {
+                if (chat.id !== normalized.chat_id) return chat;
+                return {
+                  ...chat,
+                  last_message: {
+                    id: normalized.id,
+                    text: normalized.text,
+                    created_at: normalized.created_at,
+                    sender: normalized.sender,
+                    images: normalized.images ?? [],
+                    audio: normalized.audio ?? null,
+                  },
+                  last_message_at: normalized.created_at,
+                };
+              }),
+            };
+          });
+
+          return {
+            ...prev,
+            messages: (prev.messages || []).map((x: any) => {
+              if (x.id !== normalized.id) return x;
+              return {
+                ...x,
+                ...normalized,
+                images:
+                  Array.isArray(normalized.images) && normalized.images.length
+                    ? normalized.images
+                    : x.images,
+                audio: normalized.audio ?? x.audio,
+              };
+            }),
+          };
         }
 
         client.cache.updateQuery<{ myChats: any[] }>({
@@ -765,18 +965,19 @@ function ChatUI() {
           return {
             ...old,
             myChats: old.myChats.map((chat) => {
-              if (chat.id !== m.chat_id) return chat;
+              if (chat.id !== normalized.chat_id) return chat;
 
               return {
                 ...chat,
                 last_message: {
-                  id: m.id,
-                  text: m.text,
-                  created_at: m.created_at,
-                  sender: m.sender,
-                  images: m.images ?? [],
+                  id: normalized.id,
+                  text: normalized.text,
+                  created_at: normalized.created_at,
+                  sender: normalized.sender,
+                  images: normalized.images ?? [],
+                  audio: normalized.audio ?? null,
                 },
-                last_message_at: m.created_at,
+                last_message_at: normalized.created_at,
               };
             }),
           };
@@ -784,7 +985,7 @@ function ChatUI() {
 
         return {
           ...prev,
-          messages: [...(prev.messages || []), m],
+          messages: [...(prev.messages || []), normalized],
         };
       },
     });
@@ -1017,6 +1218,20 @@ function ChatUI() {
     () => chats?.myChats?.find((i: any) => i.id === sel),
     [chats, sel]
   );
+
+  useEffect(() => {
+    const map = new Map<string, any>();
+    const members = (chat as any)?.members;
+    if (Array.isArray(members)) {
+      for (const mem of members) {
+        const id = mem?.id;
+        if (typeof id === "string" || typeof id === "number") {
+          map.set(String(id), mem);
+        }
+      }
+    }
+    membersByIdRef.current = map;
+  }, [chat]);
 
   const rawMsgs = msgs?.messages || [];
   const messagesList = useMemo(
@@ -1307,6 +1522,7 @@ function ChatUI() {
 
     const last = c.last_message;
     const images = Array.isArray(last?.images) ? last.images : [];
+    const hasAudio = !!(last?.audio && (last.audio.file_id || last.audio.url));
 
     let lastText = "";
 
@@ -1314,8 +1530,9 @@ function ChatUI() {
       const t = last.text.trim();
       lastText = t.length > 60 ? t.slice(0, 57) + "…" : t;
     } else if (images.length > 0) {
-      lastText =
-        images.length === 1 ? "📷 Photo" : `📷 ${images.length} photos`;
+      lastText = images.length === 1 ? "📷 Photo" : `📷 ${images.length} photos`;
+    } else if (hasAudio) {
+      lastText = "🎤 Voice message";
     }
 
     const fallbackDesc = c.is_group
@@ -1718,9 +1935,22 @@ function ChatUI() {
                           5 * 60 * 1000;
 
                       const isGroupTop = !prevSameSender;
+                      const senderIdStr =
+                        typeof m?.sender?.id === "string" ||
+                        typeof m?.sender?.id === "number"
+                          ? String(m.sender.id)
+                          : "";
+                      const senderMember = senderIdStr
+                        ? membersByIdRef.current.get(senderIdStr)
+                        : null;
+
                       const senderName = isMine
                         ? meName || "Me"
-                        : m.sender?.name || "—";
+                        : m.sender?.name || senderMember?.name || "—";
+
+                      const senderAvatar =
+                        (!isMine && (m.sender?.avatar || senderMember?.avatar)) ||
+                        null;
 
                       const baseRadius = 18;
                       const bubbleRadius = {
@@ -1745,6 +1975,8 @@ function ChatUI() {
                         m.text.trim().length > 0;
                       const hasImages =
                         Array.isArray(m.images) && m.images.length > 0;
+                      const audioSrc = getAudioSrc(m.audio);
+                      const hasAudio = !!audioSrc;
 
                       const timeLabel = createdAt.toLocaleTimeString([], {
                         hour: "2-digit",
@@ -1815,24 +2047,28 @@ function ChatUI() {
                                 maxWidth: "70%",
                               }}
                             >
-                              {!isMine && isGroupTop && (
-                                <Avatar
-                                  size={32}
-                                  style={{
-                                    background: "var(--app-surface-3)",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {getInitial(senderName)}
-                                </Avatar>
-                              )}
+                              {!isMine &&
+                                (isGroupTop ? (
+                                  <Avatar
+                                    size={32}
+                                    src={senderAvatar || undefined}
+                                    style={{
+                                      background: "var(--app-surface-3)",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {getInitial(senderName)}
+                                  </Avatar>
+                                ) : (
+                                  <div style={{ width: 32, height: 32, flexShrink: 0 }} />
+                                ))}
 
                               <div
                                 style={{
-                                  display: "flex",
+                                  display: "inline-flex",
                                   flexDirection: "column",
                                   alignItems: isMine ? "flex-end" : "flex-start",
-                                  flex: 1,
+                                  maxWidth: "100%",
                                 }}
                               >
                                 {!isMine && isGroupTop && (
@@ -2001,13 +2237,225 @@ function ChatUI() {
                                 {hasImages &&
                                   renderMessageImages(m, !!isMine)}
 
+                                {hasAudio && (
+                                  <div
+                                    style={{
+                                      padding: "10px 12px",
+                                      background: isMine
+                                        ? "linear-gradient(180deg, rgba(var(--app-primary-rgb),1) 0%, rgba(var(--app-primary-rgb),0.92) 100%)"
+                                        : "var(--app-surface-2)",
+                                      color: isMine
+                                        ? "rgba(255,255,255,0.95)"
+                                        : "var(--app-text)",
+                                      ...bubbleRadius,
+                                      maxWidth: "100%",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        gap: 10,
+                                        minWidth: isMobile ? 200 : 220,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => void toggleAudioPlayback(String(m.id))}
+                                        style={{
+                                          width: 34,
+                                          height: 34,
+                                          borderRadius: 17,
+                                          backgroundColor: "#FFFFFF",
+                                          border: "none",
+                                          boxShadow:
+                                            "0 1px 2px rgba(var(--app-shadow-rgb),0.18), inset 0 0 0 1px rgba(var(--app-shadow-rgb),0.12)",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          cursor: "pointer",
+                                          flexShrink: 0,
+                                        }}
+                                        aria-label={
+                                          playingAudioId === String(m.id) && !playingAudioPaused
+                                            ? "Pause audio"
+                                            : "Play audio"
+                                        }
+                                      >
+                                        {playingAudioId === String(m.id) && !playingAudioPaused ? (
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              gap: 4,
+                                              alignItems: "center",
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                width: 4,
+                                                height: 14,
+                                                borderRadius: 2,
+                                                background: "#000000",
+                                              }}
+                                            />
+                                            <div
+                                              style={{
+                                                width: 4,
+                                                height: 14,
+                                                borderRadius: 2,
+                                                background: "#000000",
+                                              }}
+                                            />
+                                          </div>
+                                        ) : (
+                                          <div
+                                            style={{
+                                              width: 0,
+                                              height: 0,
+                                              borderTop: "7px solid transparent",
+                                              borderBottom: "7px solid transparent",
+                                              borderLeft: "11px solid #000000",
+                                              marginLeft: 2,
+                                            }}
+                                          />
+                                        )}
+                                      </button>
+
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div
+                                          style={{
+                                            fontSize: 12,
+                                            fontWeight: 800,
+                                            lineHeight: "16px",
+                                            color: isMine
+                                              ? "rgba(255,255,255,0.92)"
+                                              : "rgba(var(--app-text-rgb),0.86)",
+                                          }}
+                                        >
+                                          {(() => {
+                                            if (playingAudioId === String(m.id)) {
+                                              const d = playingAudioDur ||
+                                                (typeof m?.audio?.duration_sec === "number"
+                                                  ? m.audio.duration_sec
+                                                  : 0);
+                                              return fmtDur(d);
+                                            }
+                                            if (typeof m?.audio?.duration_sec === "number") {
+                                              return fmtDur(m.audio.duration_sec);
+                                            }
+                                            return "00:00";
+                                          })()}
+                                        </div>
+
+                                        <div
+                                          role="progressbar"
+                                          aria-valuemin={0}
+                                          aria-valuemax={1}
+                                          aria-valuenow={
+                                            playingAudioId === String(m.id) && (playingAudioDur || 0) > 0
+                                              ? Math.max(0, Math.min(1, playingAudioTime / playingAudioDur))
+                                              : 0
+                                          }
+                                          onClick={(e) => {
+                                            const id = String(m.id);
+                                            const el = audioElsRef.current.get(id);
+                                            if (!el) return;
+                                            const dur = Number.isFinite(el.duration) ? el.duration : 0;
+                                            if (dur <= 0) return;
+                                            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                                            const ratio = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;
+                                            seekAudio(id, ratio);
+                                          }}
+                                          style={{
+                                            marginTop: 6,
+                                            height: 4,
+                                            borderRadius: 999,
+                                            background: isMine
+                                              ? "rgba(255,255,255,0.30)"
+                                              : "rgba(var(--app-text-rgb),0.18)",
+                                            overflow: "hidden",
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              height: "100%",
+                                              width: (() => {
+                                                if (playingAudioId !== String(m.id)) return "0%";
+                                                const dur = playingAudioDur || 0;
+                                                if (!(dur > 0)) return "0%";
+                                                const p = Math.max(0, Math.min(1, playingAudioTime / dur));
+                                                return `${Math.round(p * 100)}%`;
+                                              })(),
+                                              background: isMine
+                                                ? "rgba(255,255,255,0.88)"
+                                                : "rgba(var(--app-text-rgb),0.55)",
+                                              borderRadius: 999,
+                                              transition:
+                                                playingAudioId === String(m.id)
+                                                  ? "width 80ms linear"
+                                                  : undefined,
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Hidden audio element (drives playback + time updates) */}
+                                    <audio
+                                      preload="metadata"
+                                      src={audioSrc}
+                                      ref={(el) => {
+                                        const id = String(m.id);
+                                        if (el) audioElsRef.current.set(id, el);
+                                        else audioElsRef.current.delete(id);
+                                      }}
+                                      onLoadedMetadata={(e) => {
+                                        if (playingAudioId !== String(m.id)) return;
+                                        const d = Number(e.currentTarget.duration);
+                                        setPlayingAudioDur(Number.isFinite(d) ? d : 0);
+                                      }}
+                                      onTimeUpdate={(e) => {
+                                        if (playingAudioId !== String(m.id)) return;
+                                        const t = Number(e.currentTarget.currentTime);
+                                        setPlayingAudioTime(Number.isFinite(t) ? t : 0);
+                                      }}
+                                      onPlay={(e) => {
+                                        const id = String(m.id);
+                                        const el = e.currentTarget;
+                                        const prev = activeAudioRef.current;
+                                        if (prev && prev !== el) {
+                                          try {
+                                            prev.pause();
+                                          } catch {}
+                                        }
+                                        activeAudioRef.current = el;
+                                        setPlayingAudioId(id);
+                                        setPlayingAudioPaused(false);
+
+                                        const d = Number(el.duration);
+                                        setPlayingAudioDur(Number.isFinite(d) ? d : 0);
+                                      }}
+                                      onPause={() => {
+                                        if (playingAudioId !== String(m.id)) return;
+                                        setPlayingAudioPaused(true);
+                                      }}
+                                      onEnded={() => {
+                                        if (playingAudioId !== String(m.id)) return;
+                                        setPlayingAudioPaused(true);
+                                        setPlayingAudioTime(0);
+                                      }}
+                                      style={{ display: "none" }}
+                                    />
+                                  </div>
+                                )}
+
                                 <div
                                   style={{
                                     marginTop: 4,
-                                    display: "flex",
-                                    justifyContent: isMine
-                                      ? "flex-end"
-                                      : "flex-start",
+                                    alignSelf: isMine ? "flex-end" : "flex-start",
+                                    maxWidth: "100%",
                                   }}
                                 >
                                   <div
@@ -2016,6 +2464,7 @@ function ChatUI() {
                                       alignItems: "center",
                                       gap: 8,
                                       fontSize: 11,
+                                      flexWrap: "wrap",
                                     }}
                                   >
                                     <span style={{ color: "rgba(var(--app-text-rgb),0.56)" }}>
