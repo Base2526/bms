@@ -579,7 +579,7 @@ function renderDeliveryTicks(receipt: any) {
   );
 }
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 30;
 
 function ChatUI() {
   const router = useRouter();
@@ -683,6 +683,9 @@ function ChatUI() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingOlderRef = useRef(false);
+  const lastOlderOffsetRef = useRef(-1);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const lastMsgCountRef = useRef(0);
@@ -813,6 +816,8 @@ function ChatUI() {
     setCurrentChat(id);
     clearUnread(id);
     lastMsgCountRef.current = 0;
+    loadingOlderRef.current = false;
+    lastOlderOffsetRef.current = -1;
     setReplyTarget(null);
     setMsgHasMore(true);
     await refetchMsgs({ chat_id: id, limit: PAGE_SIZE, offset: 0 });
@@ -1034,11 +1039,17 @@ function ChatUI() {
 
   const loadOlder = async () => {
     if (!sel || msgLoadingMore || !msgHasMore) return;
+    if (loadingOlderRef.current) return;
 
     const el = messagesContainerRef.current;
     const prevScrollHeight = el?.scrollHeight ?? 0;
+    const prevIds = new Set((msgs?.messages || []).map((m: any) => m.id));
     const currentCount = msgs?.messages?.length ?? 0;
+    if (currentCount <= 0) return;
+    if (lastOlderOffsetRef.current === currentCount) return;
 
+    loadingOlderRef.current = true;
+    lastOlderOffsetRef.current = currentCount;
     setMsgLoadingMore(true);
 
     try {
@@ -1053,15 +1064,22 @@ function ChatUI() {
           const older = fetchMoreResult.messages || [];
           if (!older.length) return prev;
 
+          const seen = new Set((prev.messages || []).map((m: any) => m.id));
+          const olderUnique = older.filter((m: any) => !seen.has(m.id));
+          if (!olderUnique.length) return prev;
+
           return {
             ...prev,
-            messages: [...prev.messages, ...older],
+            messages: [...prev.messages, ...olderUnique],
           };
         },
       });
 
       const loaded = res?.data?.messages ?? [];
+      const newlyMerged = loaded.filter((m: any) => !prevIds.has(m.id));
       if (loaded.length < PAGE_SIZE) {
+        setMsgHasMore(false);
+      } else if (!newlyMerged.length) {
         setMsgHasMore(false);
       }
 
@@ -1072,8 +1090,10 @@ function ChatUI() {
       });
     } catch (e) {
       console.error("[loadOlder] error", e);
+      lastOlderOffsetRef.current = -1;
     } finally {
       setMsgLoadingMore(false);
+      loadingOlderRef.current = false;
     }
   };
 
@@ -1089,9 +1109,30 @@ function ChatUI() {
 
     const topThreshold = 80;
     if (el.scrollTop <= topThreshold && msgHasMore && !msgLoadingMore) {
-      loadOlder();
+      void loadOlder();
     }
   };
+
+  useEffect(() => {
+    const root = messagesContainerRef.current;
+    const target = topSentinelRef.current;
+    if (!sel || !root || !target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        void loadOlder();
+      },
+      {
+        root,
+        rootMargin: "100px 0px 0px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [sel, msgHasMore, msgLoadingMore, msgs?.messages?.length]);
 
   // auto-scroll
   useEffect(() => {
@@ -1648,6 +1689,8 @@ function ChatUI() {
                   </div>
                 ) : (
                   <>
+                    <div ref={topSentinelRef} style={{ height: 1 }} />
+
                     {msgLoadingMore && (
                       <div style={{ textAlign: "center", padding: 8 }}>
                         <Spin size="small" /> Loading older messages...
@@ -2117,6 +2160,19 @@ function ChatUI() {
                         </div>
                       );
                     })}
+
+                    {!msgHasMore && messagesList.length > 0 && (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "8px 0 10px",
+                          fontSize: 12,
+                          color: "var(--app-muted)",
+                        }}
+                      >
+                        No older messages
+                      </div>
+                    )}
 
                     {isTyping && (
                       <div

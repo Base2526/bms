@@ -74,6 +74,12 @@ export const typeDefs = /* GraphQL */ `
     height: Int
   }
 
+  type MessageConnection {
+    items: [Message!]!
+    nextCursor: String
+    hasMore: Boolean!
+  }
+
   input UserInput {
     name: String!
     avatar: String
@@ -440,6 +446,7 @@ export const typeDefs = /* GraphQL */ `
     myChats: [Chat!]!
     myChatSettings(chat_id: ID!): ChatMemberSettings!
     messages(chat_id: ID!, limit: Int, offset: Int, includeDeleted: Boolean): [Message!]!
+    messagesConnection(chat_id: ID!, limit: Int = 30, cursor: String, includeDeleted: Boolean): MessageConnection!
 
     me: User
 
