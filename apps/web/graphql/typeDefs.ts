@@ -54,6 +54,8 @@ export const typeDefs = /* GraphQL */ `
 
     images: [MessageImage!]! 
 
+    audio: MessageAudio
+
     is_deleted: Boolean!
     deleted_at: String
 
@@ -63,6 +65,13 @@ export const typeDefs = /* GraphQL */ `
 
     reply_to_id: ID
     reply_to: Message
+  }
+
+  type MessageAudio {
+    file_id: ID!
+    url: String!
+    mime: String
+    duration_sec: Int
   }
 
   type MessageImage {
@@ -703,7 +712,16 @@ export const typeDefs = /* GraphQL */ `
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
-    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID, client_message_id: String): Message!
+    sendMessage(
+      chat_id: ID!
+      text: String!
+      to_user_ids: [ID!]!
+      images: [Upload!]
+      audio: Upload
+      audio_duration_sec: Int
+      reply_to_id: ID
+      client_message_id: String
+    ): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 
