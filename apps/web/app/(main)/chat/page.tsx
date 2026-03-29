@@ -44,12 +44,26 @@ const MESSAGE_FIELDS = gql`
   fragment MessageFields on Message {
     id
     chat_id
+    type
     text
+    location {
+      latitude
+      longitude
+      placeName
+      googleMapsUrl
+    }
     reply_to_id
 
     reply_to {
       id
+      type
       text
+      location {
+        latitude
+        longitude
+        placeName
+        googleMapsUrl
+      }
       images {
         id
         url
@@ -134,8 +148,15 @@ const Q_CHATS = gql`
       last_message_at
       last_message {
         id
+        type
         text
         created_at
+        location {
+          latitude
+          longitude
+          placeName
+          googleMapsUrl
+        }
         sender {
           id
           name
@@ -203,6 +224,7 @@ const MUT_SEND = gql`
     $images: [Upload!]
     $audio: Upload
     $audio_duration_sec: Int
+    $location: MessageLocationInput
     $reply_to_id: ID
   ) {
     sendMessage(
@@ -212,6 +234,7 @@ const MUT_SEND = gql`
       images: $images
       audio: $audio
       audio_duration_sec: $audio_duration_sec
+      location: $location
       reply_to_id: $reply_to_id
     ) {
       ...MessageFields
@@ -740,8 +763,10 @@ function ChatUI() {
               ...chat,
               last_message: {
                 id: normalizedNewMsg.id,
+                type: normalizedNewMsg.type,
                 text: normalizedNewMsg.text,
                 created_at: normalizedNewMsg.created_at,
+                location: normalizedNewMsg.location ?? null,
                 sender: normalizedNewMsg.sender,
                 images: normalizedNewMsg.images ?? [],
                 audio: normalizedNewMsg.audio ?? null,
@@ -928,8 +953,10 @@ function ChatUI() {
                   ...chat,
                   last_message: {
                     id: normalized.id,
+                    type: normalized.type,
                     text: normalized.text,
                     created_at: normalized.created_at,
+                    location: normalized.location ?? null,
                     sender: normalized.sender,
                     images: normalized.images ?? [],
                     audio: normalized.audio ?? null,
@@ -971,8 +998,10 @@ function ChatUI() {
                 ...chat,
                 last_message: {
                   id: normalized.id,
+                  type: normalized.type,
                   text: normalized.text,
                   created_at: normalized.created_at,
+                  location: normalized.location ?? null,
                   sender: normalized.sender,
                   images: normalized.images ?? [],
                   audio: normalized.audio ?? null,
@@ -1523,6 +1552,12 @@ function ChatUI() {
     const last = c.last_message;
     const images = Array.isArray(last?.images) ? last.images : [];
     const hasAudio = !!(last?.audio && (last.audio.file_id || last.audio.url));
+    const hasLocation = !!(
+      last?.type === "LOCATION" ||
+      (last?.location &&
+        Number.isFinite(Number(last.location.latitude)) &&
+        Number.isFinite(Number(last.location.longitude)))
+    );
 
     let lastText = "";
 
@@ -1531,6 +1566,8 @@ function ChatUI() {
       lastText = t.length > 60 ? t.slice(0, 57) + "…" : t;
     } else if (images.length > 0) {
       lastText = images.length === 1 ? "📷 Photo" : `📷 ${images.length} photos`;
+    } else if (hasLocation) {
+      lastText = "📍 Location";
     } else if (hasAudio) {
       lastText = "🎤 Voice message";
     }
@@ -1978,6 +2015,21 @@ function ChatUI() {
                       const audioSrc = getAudioSrc(m.audio);
                       const hasAudio = !!audioSrc;
 
+                      const loc = m?.location;
+                      const locLat = Number(loc?.latitude);
+                      const locLng = Number(loc?.longitude);
+                      const hasLocation = !!(
+                        m?.type === "LOCATION" ||
+                        (Number.isFinite(locLat) && Number.isFinite(locLng))
+                      );
+                      const locPlaceName = String(loc?.placeName ?? "").trim();
+                      const locUrlRaw = String(loc?.googleMapsUrl ?? "").trim();
+                      const locUrl = /^https?:\/\//i.test(locUrlRaw)
+                        ? locUrlRaw
+                        : Number.isFinite(locLat) && Number.isFinite(locLng)
+                        ? `https://maps.google.com/?q=${locLat},${locLng}`
+                        : "";
+
                       const timeLabel = createdAt.toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -1987,6 +2039,16 @@ function ChatUI() {
                       const hasReply = !!reply;
                       const replyText =
                         typeof reply?.text === "string" ? reply.text : "";
+
+                      const replyLoc = reply?.location;
+                      const replyLocLat = Number(replyLoc?.latitude);
+                      const replyLocLng = Number(replyLoc?.longitude);
+                      const replyLocName = String(replyLoc?.placeName ?? "").trim();
+                      const replyLocLabel =
+                        replyLocName ||
+                        (Number.isFinite(replyLocLat) && Number.isFinite(replyLocLng)
+                          ? `📍 ${replyLocLat.toFixed(5)}, ${replyLocLng.toFixed(5)}`
+                          : "");
                       const replyImages: any[] = Array.isArray(reply?.images)
                         ? reply.images
                         : [];
@@ -2127,7 +2189,7 @@ function ChatUI() {
                                       {replySenderLabel}
                                     </div>
 
-                                    {replyText && (
+                                    {(replyText || replyLocLabel) && (
                                       <div
                                         style={{
                                           fontSize: 12,
@@ -2142,7 +2204,7 @@ function ChatUI() {
                                           WebkitBoxOrient: "vertical",
                                         }}
                                       >
-                                        {replyText}
+                                        {replyText || replyLocLabel}
                                       </div>
                                     )}
 
@@ -2232,6 +2294,65 @@ function ChatUI() {
                                   >
                                     {m.text}
                                   </div>
+                                )}
+
+                                {hasLocation && locUrl && (
+                                  <a
+                                    href={locUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ textDecoration: "none", color: "inherit", maxWidth: "100%" }}
+                                  >
+                                    <div
+                                      style={{
+                                        padding: "10px 12px",
+                                        background: isMine
+                                          ? "linear-gradient(180deg, rgba(var(--app-primary-rgb),1) 0%, rgba(var(--app-primary-rgb),0.92) 100%)"
+                                          : "var(--app-surface-2)",
+                                        color: isMine ? "rgba(255,255,255,0.95)" : "var(--app-text)",
+                                        boxShadow:
+                                          "0 2px 6px rgba(var(--app-shadow-rgb),0.10)",
+                                        ...bubbleRadius,
+                                        maxWidth: "100%",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center" }}>
+                                        <span>📍</span>
+                                        <span
+                                          style={{
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                          }}
+                                        >
+                                          {locPlaceName || "Location"}
+                                        </span>
+                                      </div>
+                                      {Number.isFinite(locLat) && Number.isFinite(locLng) ? (
+                                        <div
+                                          style={{
+                                            marginTop: 4,
+                                            fontSize: 12,
+                                            opacity: isMine ? 0.9 : 0.75,
+                                          }}
+                                        >
+                                          {locLat.toFixed(5)}, {locLng.toFixed(5)}
+                                        </div>
+                                      ) : null}
+                                      <div
+                                        style={{
+                                          marginTop: 6,
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          textDecoration: "underline",
+                                          opacity: isMine ? 0.95 : 0.85,
+                                        }}
+                                      >
+                                        Open in Google Maps
+                                      </div>
+                                    </div>
+                                  </a>
                                 )}
 
                                 {hasImages &&

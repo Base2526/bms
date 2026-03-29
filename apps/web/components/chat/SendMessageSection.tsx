@@ -13,6 +13,9 @@ import {
   Button,
   Upload,
   Image,
+  Modal,
+  List,
+  Spin,
   Typography,
   message,
   Grid,
@@ -22,6 +25,8 @@ import {
   SmileOutlined,
   PictureOutlined,
   AudioOutlined,
+  EnvironmentOutlined,
+  AimOutlined,
   DeleteOutlined,
   CloseOutlined,
 } from "@ant-design/icons";
@@ -35,6 +40,34 @@ const MAX_IMAGES = 4;
 type Member = { id: string; name?: string };
 type Chat = { id: string; members?: Member[] };
 type Me = { id: string; name?: string } | null;
+
+type MessageLocationInput = {
+  latitude: number;
+  longitude: number;
+  placeName?: string | null;
+  googleMapsUrl?: string | null;
+};
+
+type PlaceSearchResult = {
+  placeName: string;
+  latitude: number;
+  longitude: number;
+};
+
+const DEFAULT_MAP_CENTER = { latitude: 13.7563, longitude: 100.5018, zoom: 14 }; // Bangkok
+
+declare global {
+  interface Window {
+    L?: any;
+  }
+}
+
+function buildGoogleMapsUrl(latitude: number, longitude: number) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "";
+  return `https://maps.google.com/?q=${lat},${lng}`;
+}
 
 export default function SendMessageSection({
   chats,
@@ -58,6 +91,7 @@ export default function SendMessageSection({
       images?: File[];
       audio?: File | null;
       audio_duration_sec?: number | null;
+      location?: MessageLocationInput | null;
       reply_to_id?: string | null;
     };
   }) => Promise<any>;
@@ -75,6 +109,27 @@ export default function SendMessageSection({
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
   const [voiceDurationSec, setVoiceDurationSec] = useState<number | null>(null);
+
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationResults, setLocationResults] = useState<PlaceSearchResult[]>([]);
+  const [showLocationResults, setShowLocationResults] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [pickedLat, setPickedLat] = useState<number>(DEFAULT_MAP_CENTER.latitude);
+  const [pickedLng, setPickedLng] = useState<number>(DEFAULT_MAP_CENTER.longitude);
+  const [pickedPlaceName, setPickedPlaceName] = useState<string>("");
+  const [reverseBusy, setReverseBusy] = useState(false);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationGeoBusy, setLocationGeoBusy] = useState(false);
+  const [locationErr, setLocationErr] = useState<string>("");
+  const locationReqIdRef = useRef(0);
+  const reverseReqIdRef = useRef(0);
+  const suppressNextSearchRef = useRef(false);
+
+  const leafletLoadRef = useRef<Promise<any> | null>(null);
+  const mapDivRef = useRef<HTMLDivElement | null>(null);
+  const leafletMapRef = useRef<any | null>(null);
+  const programmaticMoveRef = useRef(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordStreamRef = useRef<MediaStream | null>(null);
@@ -109,6 +164,423 @@ export default function SendMessageSection({
 
   const disabled = !me?.id || !chat || !sel;
 
+  const ensureLeafletLoaded = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    if (window.L) return window.L;
+
+    if (!leafletLoadRef.current) {
+      leafletLoadRef.current = new Promise((resolve, reject) => {
+        try {
+          const existingCss = document.querySelector('link[data-leaflet="1"]');
+          if (!existingCss) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+            link.setAttribute("data-leaflet", "1");
+            document.head.appendChild(link);
+          }
+
+          const existing = document.querySelector('script[data-leaflet="1"]');
+          if (existing) {
+            const done = () => {
+              if (window.L) resolve(window.L);
+              else reject(new Error("Leaflet failed to load"));
+            };
+            if ((existing as any).dataset.loaded === "1") done();
+            else {
+              existing.addEventListener("load", done);
+              existing.addEventListener("error", () => reject(new Error("Leaflet failed")));
+            }
+            return;
+          }
+
+          const script = document.createElement("script");
+          script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+          script.async = true;
+          script.defer = true;
+          script.setAttribute("data-leaflet", "1");
+          script.onload = () => {
+            (script as any).dataset.loaded = "1";
+            if (window.L) resolve(window.L);
+            else reject(new Error("Leaflet failed to load"));
+          };
+          script.onerror = () => reject(new Error("Leaflet failed to load"));
+          document.body.appendChild(script);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    return leafletLoadRef.current;
+  }, []);
+
+  const cleanupLeafletMap = useCallback(() => {
+    try {
+      leafletMapRef.current?.off?.();
+      leafletMapRef.current?.remove?.();
+    } catch {
+      // ignore
+    }
+    leafletMapRef.current = null;
+    setMapReady(false);
+  }, []);
+
+  const closeLocationModal = useCallback(() => {
+    setLocationOpen(false);
+    setLocationQuery("");
+    setLocationResults([]);
+    setShowLocationResults(false);
+    setLocationErr("");
+    setPickedLat(DEFAULT_MAP_CENTER.latitude);
+    setPickedLng(DEFAULT_MAP_CENTER.longitude);
+    setPickedPlaceName("");
+  }, []);
+
+  const openLocationModal = useCallback(() => {
+    if (disabled) return;
+    setShowEmoji(false);
+    setLocationOpen(true);
+    setLocationQuery("");
+    setLocationResults([]);
+    setShowLocationResults(true);
+    setLocationErr("");
+    setPickedLat(DEFAULT_MAP_CENTER.latitude);
+    setPickedLng(DEFAULT_MAP_CENTER.longitude);
+    setPickedPlaceName("");
+  }, [disabled]);
+
+  const setMapView = useCallback((latitude: number, longitude: number, zoom?: number) => {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setPickedLat(lat);
+    setPickedLng(lng);
+
+    const map = leafletMapRef.current;
+    if (map && typeof map.setView === "function") {
+      try {
+        programmaticMoveRef.current = true;
+        const z = typeof zoom === "number" && Number.isFinite(zoom) ? zoom : map.getZoom?.();
+        map.setView([lat, lng], z, { animate: true });
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!locationOpen) return;
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        const L = await ensureLeafletLoaded();
+        if (cancelled) return;
+        if (!L) return;
+        const el = mapDivRef.current;
+        if (!el) return;
+
+        // Re-init if needed.
+        if (leafletMapRef.current) {
+          setMapReady(true);
+          return;
+        }
+
+        const map = L.map(el, {
+          zoomControl: true,
+          attributionControl: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          dragging: true,
+          touchZoom: true,
+        }).setView([pickedLat, pickedLng], DEFAULT_MAP_CENTER.zoom);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "© OpenStreetMap contributors",
+        }).addTo(map);
+
+        const onMove = () => {
+          try {
+            const c = map.getCenter();
+            const lat = Number(c?.lat);
+            const lng = Number(c?.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            setPickedLat(lat);
+            setPickedLng(lng);
+            if (programmaticMoveRef.current) {
+              programmaticMoveRef.current = false;
+            } else {
+              setPickedPlaceName("");
+            }
+            setLocationErr("");
+          } catch {
+            // ignore
+          }
+        };
+
+        map.on("moveend", onMove);
+        map.on("zoomend", onMove);
+
+        leafletMapRef.current = map;
+        setMapReady(true);
+
+        // Force correct sizing when opening inside modal.
+        setTimeout(() => {
+          try {
+            map.invalidateSize();
+          } catch {
+            // ignore
+          }
+        }, 80);
+      } catch {
+        if (!cancelled) setLocationErr("Map failed to load");
+      }
+    };
+
+    init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureLeafletLoaded, locationOpen, pickedLat, pickedLng]);
+
+  useEffect(() => {
+    if (!locationOpen) return;
+    if (suppressNextSearchRef.current) {
+      suppressNextSearchRef.current = false;
+      return;
+    }
+    const q = locationQuery.trim();
+    if (q.length < 3) {
+      setLocationResults([]);
+      setLocationErr("");
+      return;
+    }
+
+    const reqId = (locationReqIdRef.current += 1);
+    let cancelled = false;
+
+    const tick = window.setTimeout(async () => {
+      try {
+        setLocationErr("");
+        const resp = await fetch("/api/geocode/search?q=" + encodeURIComponent(q));
+        const json = (await resp.json()) as any;
+        const resultsRaw = Array.isArray(json?.results) ? json.results : [];
+
+        const mapped: PlaceSearchResult[] = resultsRaw
+          .map((r: any) => {
+            const placeName = String(r?.placeName ?? "").trim();
+            const latitude = Number(r?.latitude);
+            const longitude = Number(r?.longitude);
+            if (!placeName) return null;
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+            return { placeName, latitude, longitude } satisfies PlaceSearchResult;
+          })
+          .filter((v: any): v is PlaceSearchResult => !!v);
+
+        if (!cancelled && reqId === locationReqIdRef.current) {
+          setLocationResults(mapped);
+        }
+      } catch {
+        if (!cancelled && reqId === locationReqIdRef.current) {
+          setLocationErr("Search failed");
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(tick);
+    };
+  }, [locationOpen, locationQuery]);
+
+  useEffect(() => {
+    if (!locationOpen) return;
+    const lat = Number(pickedLat);
+    const lng = Number(pickedLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const reqId = (reverseReqIdRef.current += 1);
+    setReverseBusy(true);
+
+    let cancelled = false;
+    const tick = window.setTimeout(async () => {
+      try {
+        const resp = await fetch(
+          "/api/geocode/reverse?lat=" +
+            encodeURIComponent(String(lat)) +
+            "&lng=" +
+            encodeURIComponent(String(lng))
+        );
+        const json = (await resp.json()) as any;
+        const placeName = String(json?.placeName ?? "").trim();
+        if (!cancelled && reqId === reverseReqIdRef.current) {
+          setPickedPlaceName(placeName);
+          setReverseBusy(false);
+        }
+      } catch {
+        if (!cancelled && reqId === reverseReqIdRef.current) {
+          setReverseBusy(false);
+        }
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(tick);
+    };
+  }, [locationOpen, pickedLat, pickedLng]);
+
+  const useCurrentLocation = useCallback(async () => {
+    if (locationGeoBusy || disabled) return;
+    if (typeof window === "undefined") return;
+    if (!navigator?.geolocation) {
+      message.error("Geolocation is not supported in this browser.");
+      return;
+    }
+
+    setLocationGeoBusy(true);
+    setLocationErr("");
+
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 0,
+        });
+      });
+
+      const latitude = Number(pos?.coords?.latitude);
+      const longitude = Number(pos?.coords?.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        message.error("Current location unavailable.");
+        return;
+      }
+
+      let placeName = "";
+      try {
+        const resp = await fetch(
+          "/api/geocode/reverse?lat=" +
+            encodeURIComponent(String(latitude)) +
+            "&lng=" +
+            encodeURIComponent(String(longitude))
+        );
+        const json = (await resp.json()) as any;
+        placeName = String(json?.placeName ?? "").trim();
+      } catch {
+        // ignore
+      }
+
+      const selected: PlaceSearchResult = {
+        placeName: placeName || "Current location",
+        latitude,
+        longitude,
+      };
+      setPickedPlaceName(selected.placeName);
+      suppressNextSearchRef.current = true;
+      setLocationQuery(placeName || "");
+      setShowLocationResults(false);
+      setLocationResults([]);
+      setMapView(latitude, longitude, 16);
+    } catch (e: any) {
+      const code = Number(e?.code);
+      if (code === 1) message.error("Location permission denied.");
+      else message.error("Unable to get current location.");
+    } finally {
+      setLocationGeoBusy(false);
+    }
+  }, [disabled, locationGeoBusy, setMapView]);
+
+  const sendPickedLocation = useCallback(async () => {
+    if (!sel || disabled) return;
+    if (locationBusy) return;
+
+    const latitude = Number(pickedLat);
+    const longitude = Number(pickedLng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      message.error("Invalid location.");
+      return;
+    }
+
+    const placeName = String(pickedPlaceName ?? "").trim() || null;
+    const googleMapsUrl = buildGoogleMapsUrl(latitude, longitude);
+
+    const nowIso = new Date().toISOString();
+    const tempId = "temp-loc-" + nowIso;
+
+    setLocationBusy(true);
+    try {
+      await send({
+        variables: {
+          chat_id: sel,
+          text: "",
+          to_user_ids: toUserIds,
+          images: [],
+          audio: null,
+          audio_duration_sec: null,
+          location: {
+            latitude,
+            longitude,
+            placeName,
+            googleMapsUrl,
+          },
+          reply_to_id: replyTarget?.id ?? null,
+        },
+        optimisticResponse: {
+          sendMessage: {
+            __typename: "Message",
+            id: tempId,
+            chat_id: sel,
+            text: "",
+            type: "LOCATION",
+            location: {
+              __typename: "MessageLocation",
+              latitude,
+              longitude,
+              placeName,
+              googleMapsUrl,
+            },
+            created_at: nowIso,
+            reply_to_id: replyTarget?.id ?? null,
+            reply_to: null,
+
+            sender: {
+              __typename: "User",
+              id: me?.id,
+              name: me?.name || "Me",
+              avatar: null,
+            },
+
+            myReceipt: {
+              __typename: "MessageReceipt",
+              deliveredAt: nowIso,
+              isRead: true,
+              readAt: nowIso,
+            },
+            readers: [],
+            readersCount: 0,
+            deleted_at: null,
+            is_deleted: false,
+            images: [],
+            audio: null,
+          },
+        },
+      } as any);
+
+      closeLocationModal();
+      setReplyTarget(null);
+    } catch (e) {
+      console.error("[send location] error:", e);
+      message.error("Send failed.");
+    } finally {
+      setLocationBusy(false);
+    }
+  }, [closeLocationModal, disabled, locationBusy, me?.id, me?.name, pickedLat, pickedLng, pickedPlaceName, replyTarget?.id, sel, send, setReplyTarget, toUserIds]);
+
   // ============= SEND MESSAGE ============
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -133,7 +605,9 @@ export default function SendMessageSection({
             __typename: "Message",
             id: tempId,
             chat_id: sel!,
+            type: voiceFile ? "AUDIO" : uploadedImages.length && !trimmed ? "IMAGE" : "TEXT",
             text: trimmed,
+            location: null,
             created_at: nowIso,
             reply_to_id: replyTarget?.id ?? null,
             reply_to: null,
@@ -438,6 +912,16 @@ export default function SendMessageSection({
     const replyText: string =
       typeof replyTarget?.text === "string" ? replyTarget.text : "";
 
+    const replyLoc = replyTarget?.location;
+    const replyLocLat = Number(replyLoc?.latitude);
+    const replyLocLng = Number(replyLoc?.longitude);
+    const replyLocName = String(replyLoc?.placeName ?? "").trim();
+    const replyLocLabel =
+      replyLocName ||
+      (Number.isFinite(replyLocLat) && Number.isFinite(replyLocLng)
+        ? `📍 ${replyLocLat.toFixed(5)}, ${replyLocLng.toFixed(5)}`
+        : "");
+
     const replyImages: any[] = Array.isArray(replyTarget?.images)
       ? replyTarget.images
       : [];
@@ -472,7 +956,7 @@ export default function SendMessageSection({
             Replying to {senderLabel}
           </div>
 
-          {replyText && (
+          {(replyText || replyLocLabel) && (
             <div
               style={{
                 marginBottom: hasImages ? 4 : 0,
@@ -485,7 +969,7 @@ export default function SendMessageSection({
                 color: "rgba(var(--app-text-rgb),0.78)",
               }}
             >
-              {replyText}
+              {replyText || replyLocLabel}
             </div>
           )}
 
@@ -749,6 +1233,21 @@ export default function SendMessageSection({
           title={isRecording ? "Stop recording" : "Record voice"}
         />
 
+        {/* Share location */}
+        <Button
+          type="text"
+          icon={
+            <EnvironmentOutlined
+              style={{ fontSize: isMobile ? 18 : 20, color: "var(--app-muted)" }}
+            />
+          }
+          onClick={openLocationModal}
+          disabled={disabled || isRecording}
+          style={{ border: "none" }}
+          size={isMobile ? "small" : "middle"}
+          title="Share location"
+        />
+
         {/* Text Area */}
         <Input.TextArea
           ref={textAreaRef}
@@ -834,6 +1333,197 @@ export default function SendMessageSection({
           ))}
         </div>
       )}
+
+      {/* ===== LOCATION PICKER (Phase 1) ===== */}
+      <Modal
+        open={locationOpen}
+        onCancel={closeLocationModal}
+        afterClose={cleanupLeafletMap}
+        title="Share location"
+        footer={null}
+        width={isMobile ? "100%" : 560}
+        style={isMobile ? { top: 0, paddingBottom: 0 } : undefined}
+        bodyStyle={
+          isMobile
+            ? { height: "calc(100vh - 110px)", overflow: "hidden" }
+            : { height: 560, overflow: "hidden" }
+        }
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            height: "100%",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <Input
+              value={locationQuery}
+              onChange={(e) => setLocationQuery(e.target.value)}
+              placeholder="Search a place"
+              allowClear
+              autoFocus
+              onFocus={() => setShowLocationResults(true)}
+            />
+            <Button
+              icon={<AimOutlined />}
+              onClick={() => void useCurrentLocation()}
+              disabled={locationGeoBusy}
+            >
+              {locationGeoBusy ? "Locating…" : "Use current"}
+            </Button>
+          </div>
+
+          {locationErr ? (
+            <div style={{ color: "var(--text-danger)", fontSize: 12 }}>{locationErr}</div>
+          ) : null}
+
+          {showLocationResults && locationQuery.trim().length >= 3 ? (
+            <div
+              style={{
+                maxHeight: 220,
+                overflow: "auto",
+                border: "1px solid var(--app-border)",
+                borderRadius: 12,
+              }}
+            >
+              {!locationResults.length && !locationErr ? (
+                <div style={{ padding: 10, fontSize: 12, color: "var(--app-muted)" }}>No results</div>
+              ) : null}
+
+              <List
+                size="small"
+                dataSource={locationResults}
+                renderItem={(r) => (
+                  <List.Item
+                    style={{ cursor: "pointer", paddingLeft: 10, paddingRight: 10 }}
+                    onClick={() => {
+                      setShowLocationResults(false);
+                      setLocationResults([]);
+                      suppressNextSearchRef.current = true;
+                      setLocationQuery(r.placeName);
+                      setPickedPlaceName(r.placeName);
+                      setMapView(r.latitude, r.longitude, 16);
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {r.placeName}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--app-muted)" }}>
+                        {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)}
+                      </div>
+                    </div>
+                  </List.Item>
+                )}
+              />
+            </div>
+          ) : locationQuery.trim().length < 3 ? (
+            <div style={{ fontSize: 12, color: "var(--app-muted)", flexShrink: 0 }}>
+              Type at least 3 characters to search.
+            </div>
+          ) : null}
+
+          <div style={{ position: "relative", flex: 1, minHeight: isMobile ? 260 : 320 }}>
+            <div
+              ref={mapDivRef}
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid var(--app-border)",
+                background: "rgba(var(--app-text-rgb),0.04)",
+                touchAction: "none",
+              }}
+              onMouseDown={() => setShowLocationResults(false)}
+              onTouchStart={() => setShowLocationResults(false)}
+            />
+
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -100%)",
+                pointerEvents: "none",
+                fontSize: 32,
+                lineHeight: 1,
+                filter: "drop-shadow(0 6px 10px rgba(var(--app-shadow-rgb),0.20))",
+              }}
+            >
+              📍
+            </div>
+
+            {!mapReady ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(var(--app-surface-rgb),0.80)",
+                  borderRadius: 12,
+                }}
+              >
+                <Spin />
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              padding: 10,
+              borderRadius: 12,
+              border: "1px solid var(--app-border)",
+              background: "rgba(var(--app-text-rgb),0.04)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {pickedPlaceName || (reverseBusy ? "Looking up place…" : "Dropped pin")}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--app-muted)" }}>
+                  {Number(pickedLat).toFixed(5)}, {Number(pickedLng).toFixed(5)}
+                </div>
+                <a
+                  href={buildGoogleMapsUrl(pickedLat, pickedLng)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12 }}
+                >
+                  Open in Google Maps
+                </a>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Button onClick={closeLocationModal}>Cancel</Button>
+                <Button type="primary" onClick={() => void sendPickedLocation()} disabled={locationBusy || !mapReady}>
+                  {locationBusy ? <Spin size="small" /> : "Share"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </Modal>
     </div>
   );
 }

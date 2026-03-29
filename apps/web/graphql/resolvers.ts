@@ -381,9 +381,33 @@ async function hydrateMessagesWithReplies(rows: any[]) {
     );
 
     replyQuery.rows.forEach((m: any) => {
+      const audioFileId = m.audio_file_id ?? null;
+      const audio = audioFileId
+        ? {
+            file_id: audioFileId,
+            url: buildFileUrlById(Number(audioFileId)),
+            mime: m.audio_mime ?? null,
+            duration_sec:
+              typeof m.audio_duration_sec === "number" ? m.audio_duration_sec : null,
+          }
+        : null;
+
+      const inferredType =
+        String(m.message_type || "").trim() ||
+        (m.location_json
+          ? "LOCATION"
+          : audioFileId
+          ? "AUDIO"
+          : m.text
+          ? "TEXT"
+          : "TEXT");
+
       replyMap[m.id] = {
         id: m.id,
+        type: inferredType,
         text: m.text,
+        location: m.location_json ?? null,
+        audio,
         sender: m.sender_json,
         images: Array.isArray(m.images_json)
           ? m.images_json.map((i: any) => ({
@@ -414,11 +438,18 @@ async function hydrateMessagesWithReplies(rows: any[]) {
         }
       : null;
 
+    const inferredType =
+      String(r.message_type || "").trim() ||
+      (r.location_json ? "LOCATION" : audioFileId ? "AUDIO" : "TEXT");
+
     return {
       id: r.id,
       chat_id: r.chat_id,
       created_at: createdISO,
       sender: r.sender_json,
+
+      type: inferredType,
+      location: r.location_json ?? null,
 
       images: Array.isArray(r.images_json)
         ? r.images_json.map((img: any) => ({
@@ -459,6 +490,26 @@ async function hydrateMessagesWithReplies(rows: any[]) {
 const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
+  Message: {
+    type: (parent: any) => {
+      const direct = String(parent?.type ?? parent?.message_type ?? "").trim();
+      if (direct) return direct;
+
+      const hasLocation = !!(parent?.location ?? parent?.location_json);
+      if (hasLocation) return "LOCATION";
+
+      const hasAudio = !!(parent?.audio ?? parent?.audio_file_id);
+      if (hasAudio) return "AUDIO";
+
+      const text = String(parent?.text ?? "").trim();
+      if (text) return "TEXT";
+
+      return "TEXT";
+    },
+    location: (parent: any) => {
+      return parent?.location ?? parent?.location_json ?? null;
+    },
+  },
   Query: {
     _health: async() =>{
       await emitPostEvent("post.created", {
@@ -3739,6 +3790,7 @@ const rawResolvers = {
         images,
         audio,
         audio_duration_sec,
+        location,
         reply_to_id,
         client_message_id
       }: {
@@ -3748,6 +3800,12 @@ const rawResolvers = {
         images?: Promise<any>[]; // Upload scalar list
         audio?: Promise<any> | null; // Upload scalar
         audio_duration_sec?: number | null;
+        location?: {
+          latitude: number;
+          longitude: number;
+          placeName?: string | null;
+          googleMapsUrl?: string | null;
+        } | null;
         reply_to_id?: string | null;
         client_message_id?: string | null;
       },
@@ -3770,7 +3828,9 @@ const rawResolvers = {
         id: any;
         chat_id: any;
         sender: any;
+        type: string;
         text: any;
+        location: any;
         created_at: string;
         to_user_ids: string[];
         images: Array<{
@@ -3799,6 +3859,30 @@ const rawResolvers = {
         reply_to_id: any;
         reply_to: any;
       };
+
+      const normalizeLocation = (input: any) => {
+        if (!input) return null;
+        const latitude = Number(input?.latitude);
+        const longitude = Number(input?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+        if (latitude < -90 || latitude > 90) return null;
+        if (longitude < -180 || longitude > 180) return null;
+
+        const placeName = String(input?.placeName ?? "").trim() || null;
+        const rawUrl = String(input?.googleMapsUrl ?? "").trim();
+        const googleMapsUrl = /^https?:\/\//i.test(rawUrl)
+          ? rawUrl
+          : `https://maps.google.com/?q=${latitude},${longitude}`;
+
+        return {
+          latitude,
+          longitude,
+          placeName,
+          googleMapsUrl,
+        };
+      };
+
+      const normalizedLocation = normalizeLocation(location);
 
       const hydrateMessageById = async (
         messageId: string
@@ -3851,8 +3935,7 @@ const rawResolvers = {
           const replyQ = await query(
             `
             SELECT
-              m.id,
-              m.text,
+              m.*,
               row_to_json(u.*) AS sender_json,
               (
                 SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
@@ -3868,9 +3951,35 @@ const rawResolvers = {
           );
           const rp = replyQ.rows[0];
           if (rp) {
+            const replyAudioFileId = rp.audio_file_id ?? null;
+            const replyAudio = replyAudioFileId
+              ? {
+                  file_id: replyAudioFileId,
+                  url: buildFileUrlById(Number(replyAudioFileId)),
+                  mime: rp.audio_mime ?? null,
+                  duration_sec:
+                    typeof rp.audio_duration_sec === "number"
+                      ? rp.audio_duration_sec
+                      : null,
+                }
+              : null;
+
+            const replyType =
+              String(rp.message_type || "").trim() ||
+              (rp.location_json
+                ? "LOCATION"
+                : replyAudioFileId
+                ? "AUDIO"
+                : rp.text
+                ? "TEXT"
+                : "TEXT");
+
             replyTo = {
               id: rp.id,
+              type: replyType,
               text: rp.text,
+              location: rp.location_json ?? null,
+              audio: replyAudio,
               sender: rp.sender_json,
               images: Array.isArray(rp.images_json)
                 ? rp.images_json.map((i: any) => ({
@@ -3902,11 +4011,17 @@ const rawResolvers = {
             }
           : null;
 
+        const inferredType =
+          String(r.message_type || "").trim() ||
+          (r.location_json ? "LOCATION" : audioFileId ? "AUDIO" : "TEXT");
+
         return {
           id: r.id,
           chat_id: r.chat_id,
           sender: r.sender_json,
+          type: inferredType,
           text: r.is_deleted ? "" : r.text || "",
+          location: r.location_json ?? null,
           created_at: createdISO,
           to_user_ids: [] as string[],
           images: Array.isArray(r.images_json)
@@ -4075,6 +4190,14 @@ const rawResolvers = {
           ? Math.max(1, Math.min(60 * 15, Math.round(normalizedDurationSecRaw)))
           : null;
 
+      const messageType = normalizedLocation
+        ? "LOCATION"
+        : uploadedAudio
+        ? "AUDIO"
+        : uploadedFiles.length
+        ? "IMAGE"
+        : "TEXT";
+
       // ===== Step 2: Use transaction for DB operations =====
       const { revisionId, result } = await runInTransaction<{
         inserted: boolean;
@@ -4092,9 +4215,11 @@ const rawResolvers = {
             client_message_id,
             audio_file_id,
             audio_mime,
-            audio_duration_sec
+            audio_duration_sec,
+            message_type,
+            location_json
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
           ON CONFLICT (chat_id, sender_id, client_message_id) DO NOTHING
           RETURNING *
           `,
@@ -4107,6 +4232,8 @@ const rawResolvers = {
             uploadedAudio?.id ?? null,
             uploadedAudio?.mimetype ?? null,
             normalizedDurationSec,
+            messageType,
+            normalizedLocation,
           ]
         );
         const msg = msgRes.rows[0];
@@ -4215,8 +4342,7 @@ const rawResolvers = {
           const replyQ = await client.query(
             `
             SELECT
-              m.id,
-              m.text,
+              m.*,
               row_to_json(u.*) AS sender_json,
               (
                 SELECT COALESCE(json_agg(row_to_json(mi.*)), '[]'::json)
@@ -4233,9 +4359,35 @@ const rawResolvers = {
 
           const rp = replyQ.rows[0];
           if (rp) {
+            const replyAudioFileId = rp.audio_file_id ?? null;
+            const replyAudio = replyAudioFileId
+              ? {
+                  file_id: replyAudioFileId,
+                  url: buildFileUrlById(Number(replyAudioFileId)),
+                  mime: rp.audio_mime ?? null,
+                  duration_sec:
+                    typeof rp.audio_duration_sec === "number"
+                      ? rp.audio_duration_sec
+                      : null,
+                }
+              : null;
+
+            const replyType =
+              String(rp.message_type || "").trim() ||
+              (rp.location_json
+                ? "LOCATION"
+                : replyAudioFileId
+                ? "AUDIO"
+                : rp.text
+                ? "TEXT"
+                : "TEXT");
+
             replyTo = {
               id: rp.id,
+              type: replyType,
               text: rp.text,
+              location: rp.location_json ?? null,
+              audio: replyAudio,
               sender: rp.sender_json ?? null,
               images: Array.isArray(rp.images_json)
                 ? rp.images_json.map((i: any) => ({
@@ -4303,7 +4455,9 @@ const rawResolvers = {
             id: msg.id,
             chat_id: msg.chat_id,
             sender: senderQ.rows[0]?.sender_json ?? null,
+            type: String(msg.message_type || "").trim() || messageType,
             text: msg.text || "",
+            location: msg.location_json ?? normalizedLocation,
             created_at: createdISO,
             to_user_ids: cleanTo,
 

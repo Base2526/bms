@@ -39,6 +39,20 @@ export const typeDefs = /* GraphQL */ `
     isRead: Boolean!
   }
 
+  type MessageLocation {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String!
+  }
+
+  input MessageLocationInput {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String
+  }
+
   type ChatMemberSettings {
     is_muted: Boolean!
     notifications_enabled: Boolean!
@@ -48,7 +62,9 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     chat_id: ID!
     sender: User
+    type: String!
     text: String!
+    location: MessageLocation
     created_at: String!
     to_user_ids: [ID!]!
 
@@ -719,6 +735,7 @@ export const typeDefs = /* GraphQL */ `
       images: [Upload!]
       audio: Upload
       audio_duration_sec: Int
+      location: MessageLocationInput
       reply_to_id: ID
       client_message_id: String
     ): Message!
