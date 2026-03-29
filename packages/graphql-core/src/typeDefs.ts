@@ -66,11 +66,20 @@ export const coreTypeDefs = /* GraphQL */ `
     isRead: Boolean!
   }
 
+  type MessageLocation {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String!
+  }
+
   type Message {
     id: ID!
     chat_id: ID!
     sender: User
+    type: String!
     text: String!
+    location: MessageLocation
     created_at: String!
     to_user_ids: [ID!]!
 
