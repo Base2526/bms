@@ -393,6 +393,25 @@ export const typeDefs = /* GraphQL */ `
     status: PhoneSafetyStatus!
   }
 
+  type CallHistoryLog {
+    id: ID!
+    normalized_number: String!
+    type: String!
+    source: String!
+    action: String!
+    matched_by: String
+    created_at: String!
+  }
+
+  input LogCallInput {
+    normalized_number: String!
+    type: String!
+    source: String!
+    action: String!
+    matched_by: String
+    created_at: String
+  }
+
   # =========================
   # Bank account (Search + Report)
   # =========================
@@ -511,6 +530,11 @@ export const typeDefs = /* GraphQL */ `
 
     # compact key sets for client-side status checks (source of truth: backend)
     myBlockedPhoneKeys: [String!]!
+
+    # Spec-required (additive) call-block APIs
+    getUserBlockedNumbers: [String!]!
+    getSpamNumbers(minRisk: Int = 60, limit: Int = 200): [ScamPhone!]!
+    getCallLogs(limit: Int = 100, offset: Int = 0): [CallHistoryLog!]!
 
     # exact + prefix (ตัวเลขล้วน) + (option) bank_name prefix
     searchBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
@@ -789,6 +813,12 @@ export const typeDefs = /* GraphQL */ `
 
     blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
     unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
+
+    # Spec-required (additive) call-block APIs
+    blockNumber(phoneNumber: String!): Boolean!
+    unblockNumber(phoneNumber: String!): Boolean!
+    reportSpam(phoneNumber: String!): Boolean!
+    ingestCallLogs(logs: [LogCallInput!]!): Boolean!
 
     reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
 

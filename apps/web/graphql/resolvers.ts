@@ -156,20 +156,20 @@ function escapeHtml(s: string) {
 function normalizeTel(raw: string) {
   const s = String(raw || "").trim();
   if (!s) return "";
-  const hasPlus = s.startsWith("+");
   const digits = s.replace(/[^\d]/g, "");
   if (!digits) return "";
-  if (!hasPlus && digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
-  return hasPlus ? `+${digits}` : digits;
+  if (digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
+  // Canonical: digits only (no leading '+')
+  return digits;
 }
 
 function normalizePhone(raw: string) {
   const s = String(raw || "").trim();
-  const hasPlus = s.startsWith("+");
   const digits = s.replace(/[^\d]/g, "");
   if (!digits) return "";
-  if (!hasPlus && digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
-  return hasPlus ? `+${digits}` : digits;
+  if (digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
+  // Canonical: digits only (no leading '+')
+  return digits;
 }
 
 function toIsoOrNull(v: any) {

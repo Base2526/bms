@@ -25,6 +25,77 @@ function phoneNormVariants(phoneRaw: string): { canonical: string; variants: str
   return { canonical, variants };
 }
 
+function isValidLogType(v: any): v is "call" | "sms" {
+  return v === "call" || v === "sms";
+}
+
+function isValidLogSource(v: any): v is "self" | "community" | "unknown" {
+  return v === "self" || v === "community" || v === "unknown";
+}
+
+function isValidLogAction(v: any): v is "blocked_call" | "spam_warning" | "allowed" {
+  return v === "blocked_call" || v === "spam_warning" || v === "allowed";
+}
+
+async function insertCallHistoryLogDedup(
+  client: any,
+  args: {
+    userId: string;
+    normalizedNumber: string;
+    type: "call" | "sms";
+    source: "self" | "community" | "unknown";
+    action: "blocked_call" | "spam_warning" | "allowed";
+    matchedBy?: string | null;
+    createdAt?: string | null;
+    dedupWindowSec?: number;
+  }
+) {
+  const dedupWindowSec = Math.max(5, Math.min(Number(args.dedupWindowSec ?? 25), 120));
+
+  // Best-effort dedup: ignore the same event within a short window.
+  const existed = await client.query(
+    `
+    SELECT 1
+    FROM call_history_logs
+    WHERE user_id = $1::uuid
+      AND normalized_number = $2
+      AND type = $3
+      AND source = $4
+      AND action = $5
+      AND created_at > now() - ($6 || ' seconds')::interval
+    LIMIT 1
+    `,
+    [
+      args.userId,
+      args.normalizedNumber,
+      args.type,
+      args.source,
+      args.action,
+      String(dedupWindowSec),
+    ]
+  );
+
+  if (existed.rows?.[0]) return;
+
+  await client.query(
+    `
+    INSERT INTO call_history_logs
+      (user_id, normalized_number, type, source, action, matched_by, created_at)
+    VALUES
+      ($1::uuid, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, now()))
+    `,
+    [
+      args.userId,
+      args.normalizedNumber,
+      args.type,
+      args.source,
+      args.action,
+      args.matchedBy ?? null,
+      args.createdAt ?? null,
+    ]
+  );
+}
+
 function asUserId(v: unknown): string | null {
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
@@ -112,6 +183,121 @@ async function getPhoneSafetyStatus(
     risk_level: Math.max(0, Math.min(100, risk)),
     updated_at: s?.updated_at ? new Date(s.updated_at).toISOString() : new Date().toISOString(),
   };
+}
+
+async function blockPhoneResolver(_parent: any, { input }: any, ctx: any) {
+  const auth = requireAuth(ctx);
+  const userId = asUserId(auth.author_id);
+  if (!userId) throw new GraphQLError("Unauthorized");
+
+  const phoneRaw = String(input?.phone || "");
+  const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
+  if (!phoneNorm) throw new GraphQLError("Invalid phone");
+
+  await runInTransaction(userId, async (client) => {
+    // Avoid creating duplicate semantic blocks when legacy normalization exists.
+    const existed = await client.query(
+      `
+      SELECT 1
+      FROM user_blocked_phones
+      WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
+      LIMIT 1
+      `,
+      [userId, variants]
+    );
+    if (existed.rows?.[0]) return;
+
+    await client.query(
+      `
+      INSERT INTO user_blocked_phones (user_id, phone, phone_normalized)
+      VALUES ($1,$2,$3)
+      ON CONFLICT (user_id, phone_normalized) DO NOTHING
+      `,
+      [userId, phoneRaw, phoneNorm]
+    );
+
+    // Spec-required table (write-through, additive)
+    await client.query(
+      `
+      INSERT INTO user_blocked_numbers (user_id, normalized_number)
+      VALUES ($1::uuid, $2)
+      ON CONFLICT (user_id, normalized_number) DO NOTHING
+      `,
+      [userId, phoneNorm]
+    );
+  });
+
+  const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
+
+  // Publish AFTER commit only (runInTransaction resolved)
+  try {
+    const payload: MyPhoneBlockStatusChangedPayload = {
+      user_id: userId,
+      action: "BLOCK",
+      phone: phoneRaw,
+      phone_normalized: phoneNorm,
+      blocked: true,
+      updated_at: status?.my_blocked_at || new Date().toISOString(),
+    };
+    await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+      myPhoneBlockStatusChanged: payload,
+    });
+  } catch (e) {
+    // Subscription is best-effort; source of truth is DB.
+    console.warn("[blockPhone] publish myPhoneBlockStatusChanged failed", e);
+  }
+
+  return { ok: true, status };
+}
+
+async function unblockPhoneResolver(_parent: any, { input }: any, ctx: any) {
+  const auth = requireAuth(ctx);
+  const userId = asUserId(auth.author_id);
+  if (!userId) throw new GraphQLError("Unauthorized");
+
+  const phoneRaw = String(input?.phone || "");
+  const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
+  if (!phoneNorm) throw new GraphQLError("Invalid phone");
+
+  await runInTransaction(userId, async (client) => {
+    await client.query(
+      `
+      DELETE FROM user_blocked_phones
+      WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
+      `,
+      [userId, variants]
+    );
+
+    // Spec-required table (write-through, additive)
+    await client.query(
+      `
+      DELETE FROM user_blocked_numbers
+      WHERE user_id = $1::uuid AND normalized_number = ANY($2::text[])
+      `,
+      [userId, variants]
+    );
+  });
+
+  const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
+
+  // Publish AFTER commit only
+  try {
+    const payload: MyPhoneBlockStatusChangedPayload = {
+      user_id: userId,
+      action: "UNBLOCK",
+      phone: phoneRaw,
+      phone_normalized: phoneNorm,
+      blocked: false,
+      updated_at: new Date().toISOString(),
+    };
+    await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
+      myPhoneBlockStatusChanged: payload,
+    });
+  } catch (e) {
+    console.warn("[unblockPhone] publish myPhoneBlockStatusChanged failed", e);
+  }
+
+  return { ok: true, status };
 }
 
 export const phoneResolvers = {
@@ -204,103 +390,193 @@ export const phoneResolvers = {
         .map((r: any) => normalizePhone(String(r.phone_normalized || "").trim()))
         .filter(Boolean);
     },
+
+    // =========================
+    // Spec-required (additive)
+    // =========================
+    getUserBlockedNumbers: async (_: any, _args: any, ctx: any) => {
+      const auth = requireAuth(ctx);
+      const userId = asUserId(auth.author_id);
+      if (!userId) throw new GraphQLError("Unauthorized");
+
+      const res = await query(
+        `
+        SELECT normalized_number
+        FROM user_blocked_numbers
+        WHERE user_id = $1::uuid
+        ORDER BY created_at DESC
+        `,
+        [userId]
+      );
+
+      return (res.rows || [])
+        .map((r: any) => normalizePhone(String(r.normalized_number || "").trim()))
+        .filter(Boolean);
+    },
+
+    getSpamNumbers: async (_: any, { minRisk = 60, limit = 200 }: any, _ctx: any) => {
+      const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 1000);
+      const safeMinRisk = Math.min(Math.max(Number(minRisk) || 60, 0), 100);
+
+      const res = await query(
+        `
+        SELECT phone, report_count, last_report_at, risk_level, post_ids, is_deleted, updated_at
+        FROM scam_phones_summary
+        WHERE COALESCE(is_deleted, false) = false
+          AND COALESCE(risk_level, 0) >= $1
+        ORDER BY risk_level DESC, report_count DESC, updated_at DESC
+        LIMIT $2
+        `,
+        [safeMinRisk, safeLimit]
+      );
+
+      return (res.rows || []).map((r: any) => ({
+        phone: String(r.phone || ""),
+        report_count: Number(r.report_count || 0),
+        last_report_at: toIsoOrNull(r.last_report_at),
+        risk_level: Number(r.risk_level || 0),
+        tags: [],
+        updated_at: toIsoOrNull(r.updated_at) || new Date().toISOString(),
+        is_deleted: !!r.is_deleted,
+        post_ids: Array.isArray(r.post_ids) ? r.post_ids : [],
+        ctx: null,
+      }));
+    },
+
+    getCallLogs: async (_: any, { limit = 100, offset = 0 }: any, ctx: any) => {
+      const auth = requireAuth(ctx);
+      const userId = asUserId(auth.author_id);
+      if (!userId) throw new GraphQLError("Unauthorized");
+
+      const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+      const safeOffset = Math.max(Number(offset) || 0, 0);
+
+      const res = await query(
+        `
+        SELECT id, normalized_number, type, source, action, matched_by, created_at
+        FROM call_history_logs
+        WHERE user_id = $1::uuid
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [userId, safeLimit, safeOffset]
+      );
+
+      return (res.rows || []).map((r: any) => ({
+        id: String(r.id),
+        normalized_number: String(r.normalized_number || ""),
+        type: String(r.type || ""),
+        source: String(r.source || ""),
+        action: String(r.action || ""),
+        matched_by: r.matched_by != null ? String(r.matched_by) : null,
+        created_at: toIsoOrNull(r.created_at) || new Date().toISOString(),
+      }));
+    },
   },
 
   Mutation: {
-    blockPhone: async (_: any, { input }: any, ctx: any) => {
-      const auth = requireAuth(ctx);
-      const userId = asUserId(auth.author_id);
-      if (!userId) throw new GraphQLError("Unauthorized");
+    blockPhone: blockPhoneResolver,
 
-      const phoneRaw = String(input?.phone || "");
-      const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
-      if (!phoneNorm) throw new GraphQLError("Invalid phone");
+    unblockPhone: unblockPhoneResolver,
 
-      await runInTransaction(userId, async (client) => {
-        // Avoid creating duplicate semantic blocks when legacy normalization exists.
-        const existed = await client.query(
-          `
-          SELECT 1
-          FROM user_blocked_phones
-          WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
-          LIMIT 1
-          `,
-          [userId, variants]
-        );
-        if (existed.rows?.[0]) return;
-
-        await client.query(
-          `
-          INSERT INTO user_blocked_phones (user_id, phone, phone_normalized)
-          VALUES ($1,$2,$3)
-          ON CONFLICT (user_id, phone_normalized) DO NOTHING
-          `,
-          [userId, phoneRaw, phoneNorm]
-        );
-      });
-
-      const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
-
-      // Publish AFTER commit only (runInTransaction resolved)
-      try {
-        const payload: MyPhoneBlockStatusChangedPayload = {
-          user_id: userId,
-          action: "BLOCK",
-          phone: phoneRaw,
-          phone_normalized: phoneNorm,
-          blocked: true,
-          updated_at: status?.my_blocked_at || new Date().toISOString(),
-        };
-        await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
-          myPhoneBlockStatusChanged: payload,
-        });
-      } catch (e) {
-        // Subscription is best-effort; source of truth is DB.
-        console.warn("[blockPhone] publish myPhoneBlockStatusChanged failed", e);
-      }
-
-      return { ok: true, status };
+    // =========================
+    // Spec-required (additive)
+    // =========================
+    blockNumber: async (_: any, { phoneNumber }: any, ctx: any) => {
+      await blockPhoneResolver(_, { input: { phone: String(phoneNumber || ""), note: null, postId: null } }, ctx);
+      return true;
     },
 
-    unblockPhone: async (_: any, { input }: any, ctx: any) => {
+    unblockNumber: async (_: any, { phoneNumber }: any, ctx: any) => {
+      await unblockPhoneResolver(_, { input: { phone: String(phoneNumber || "") } }, ctx);
+      return true;
+    },
+
+    reportSpam: async (_: any, { phoneNumber }: any, ctx: any) => {
       const auth = requireAuth(ctx);
       const userId = asUserId(auth.author_id);
       if (!userId) throw new GraphQLError("Unauthorized");
 
-      const phoneRaw = String(input?.phone || "");
-      const { canonical: phoneNorm, variants } = phoneNormVariants(phoneRaw);
+      const phoneRaw = String(phoneNumber || "");
+      const phoneNorm = normalizePhone(phoneRaw);
       if (!phoneNorm) throw new GraphQLError("Invalid phone");
 
       await runInTransaction(userId, async (client) => {
+        // Spec-required table
         await client.query(
           `
-          DELETE FROM user_blocked_phones
-          WHERE user_id = $1 AND phone_normalized = ANY($2::text[])
+          INSERT INTO community_spam_reports (normalized_number, user_id)
+          VALUES ($1, $2::uuid)
           `,
-          [userId, variants]
+          [phoneNorm, userId]
+        );
+
+        // Keep existing tables powering scam sync/search
+        await client.query(
+          `
+          INSERT INTO scam_phone_reports
+            (user_id, phone, phone_normalized, category, note, client_id, device_model, os_version, app_version, local_blocked)
+          VALUES
+            ($1::uuid, $2, $3, $4, NULL, NULL, NULL, NULL, NULL, false)
+          `,
+          [userId, phoneRaw || phoneNorm, phoneNorm, "SPAM"]
+        );
+
+        await client.query(
+          `
+          INSERT INTO scam_phones_summary
+            (phone, report_count, last_report_at, risk_level, updated_at)
+          VALUES
+            ($1, 1, now(), 10, now())
+          ON CONFLICT (phone)
+          DO UPDATE SET
+            report_count   = scam_phones_summary.report_count + 1,
+            last_report_at = now(),
+            risk_level     = GREATEST(COALESCE(scam_phones_summary.risk_level, 0), 10),
+            updated_at     = now()
+          `,
+          [phoneNorm]
         );
       });
 
-      const status = await getPhoneSafetyStatus(userId, phoneNorm, phoneRaw);
+      return true;
+    },
 
-      // Publish AFTER commit only
-      try {
-        const payload: MyPhoneBlockStatusChangedPayload = {
-          user_id: userId,
-          action: "UNBLOCK",
-          phone: phoneRaw,
-          phone_normalized: phoneNorm,
-          blocked: false,
-          updated_at: new Date().toISOString(),
-        };
-        await pubsub.publish(topicMyPhoneBlockStatusChanged(userId), {
-          myPhoneBlockStatusChanged: payload,
-        });
-      } catch (e) {
-        console.warn("[unblockPhone] publish myPhoneBlockStatusChanged failed", e);
-      }
+    ingestCallLogs: async (_: any, { logs }: any, ctx: any) => {
+      const auth = requireAuth(ctx);
+      const userId = asUserId(auth.author_id);
+      if (!userId) throw new GraphQLError("Unauthorized");
 
-      return { ok: true, status };
+      const list = Array.isArray(logs) ? logs : [];
+      if (!list.length) return true;
+
+      await runInTransaction(userId, async (client) => {
+        for (const it of list) {
+          const phoneNorm = normalizePhone(String(it?.normalized_number || ""));
+          if (!phoneNorm) continue;
+
+          const type = String(it?.type || "");
+          const source = String(it?.source || "");
+          const action = String(it?.action || "");
+          if (!isValidLogType(type) || !isValidLogSource(source) || !isValidLogAction(action)) continue;
+
+          const createdAt = it?.created_at ? String(it.created_at) : null;
+          const matchedBy = it?.matched_by ? String(it.matched_by) : null;
+
+          await insertCallHistoryLogDedup(client, {
+            userId,
+            normalizedNumber: phoneNorm,
+            type,
+            source,
+            action,
+            matchedBy,
+            createdAt,
+            dedupWindowSec: 25,
+          });
+        }
+      });
+
+      return true;
     },
   },
 };
