@@ -1,5 +1,6 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ReloadOutlined } from '@ant-design/icons';
 import { Card, Space, Input, Select, Button, Popconfirm, List, Tag, Divider, message, Checkbox, DatePicker } from 'antd';
 import Link from 'next/link';
 import dayjs from 'dayjs';
@@ -21,6 +22,13 @@ async function fetchLogs(params: {
   q?: string;
   level?: string;
   category?: string;
+  user_id?: string;
+  action?: string;
+  status?: string;
+  correlation_id?: string;
+  session_id?: string;
+  platform?: string;
+  app_version?: string;
   date_start?: string;
   date_end?: string;
   page: number;
@@ -30,6 +38,13 @@ async function fetchLogs(params: {
   if (params.q) qs.set('q', params.q);
   if (params.level) qs.set('level', params.level);
   if (params.category) qs.set('category', params.category);
+  if (params.user_id) qs.set('user_id', params.user_id);
+  if (params.action) qs.set('action', params.action);
+  if (params.status) qs.set('status', params.status);
+  if (params.correlation_id) qs.set('correlation_id', params.correlation_id);
+  if (params.session_id) qs.set('session_id', params.session_id);
+  if (params.platform) qs.set('platform', params.platform);
+  if (params.app_version) qs.set('app_version', params.app_version);
   if (params.date_start) qs.set('date_start', params.date_start);
   if (params.date_end) qs.set('date_end', params.date_end);
   qs.set('page', String(params.page));
@@ -61,6 +76,13 @@ export default function AdminLogsPage() {
   const [q,setQ] = useState('');
   const [level,setLevel] = useState<string|undefined>();
   const [category,setCategory] = useState<string|undefined>();
+  const [userId, setUserId] = useState('');
+  const [action, setAction] = useState('');
+  const [status, setStatus] = useState<string|undefined>();
+  const [correlationId, setCorrelationId] = useState('');
+  const [sessionId, setSessionId] = useState('');
+  const [platform, setPlatform] = useState<string|undefined>();
+  const [appVersion, setAppVersion] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
   const [dateStart, setDateStart] = useState<string | undefined>();
   const [dateEnd, setDateEnd] = useState<string | undefined>();
@@ -69,6 +91,8 @@ export default function AdminLogsPage() {
   const [page,setPage] = useState(1);
   const [pageSize,setPageSize] = useState(50);
   const [loading,setLoading] = useState(false);
+
+  const reloadLockRef = useRef(false);
 
   useEffect(() => {
     fetch(`${ADMIN_API_PREFIX}/admin/log-categories`, { cache: 'no-store' })
@@ -111,7 +135,22 @@ export default function AdminLogsPage() {
 
     setLoading(true);
     try{
-      const res = await fetchLogs({ q, level, category, date_start: dateStart, date_end: dateEnd, page, pageSize });
+      const res = await fetchLogs({
+        q,
+        level,
+        category,
+        user_id: userId.trim() || undefined,
+        action: action.trim() || undefined,
+        status,
+        correlation_id: correlationId.trim() || undefined,
+        session_id: sessionId.trim() || undefined,
+        platform,
+        app_version: appVersion.trim() || undefined,
+        date_start: dateStart,
+        date_end: dateEnd,
+        page,
+        pageSize,
+      });
       setData(res.items || []); setTotal(res.total || 0);
       // เคลียร์ selections ที่ไม่อยู่ในผลลัพธ์แล้ว (กันค้าง)
       setSelectedIds(prev => prev.filter(id => (res.items || []).some((x:LogRow)=> x.id === id)));
@@ -119,7 +158,17 @@ export default function AdminLogsPage() {
       message.error(e.message||'Load logs failed');
     }finally{ setLoading(false); }
   }
-  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [q, level, category, dateStart, dateEnd, page, pageSize]);
+  useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [q, level, category, userId, action, status, correlationId, sessionId, platform, appVersion, dateStart, dateEnd, page, pageSize]);
+
+  async function reload() {
+    if (loading || reloadLockRef.current) return;
+    reloadLockRef.current = true;
+    try {
+      await load();
+    } finally {
+      reloadLockRef.current = false;
+    }
+  }
 
   async function addTest(){
     const res = await fetch(`${ADMIN_API_PREFIX}/logs`, {
@@ -160,6 +209,34 @@ export default function AdminLogsPage() {
       extra={
         <Space wrap>
           <Input.Search placeholder="Search text" onSearch={(val)=>{ setPage(1); setQ(val); }} allowClear enterButton />
+          <Input
+            placeholder="User ID"
+            style={{ width: 120 }}
+            value={userId}
+            onChange={(e) => {
+              setPage(1);
+              setUserId(e.target.value);
+            }}
+            allowClear
+          />
+          <Input
+            placeholder="Action"
+            style={{ width: 180 }}
+            value={action}
+            onChange={(e) => {
+              setPage(1);
+              setAction(e.target.value);
+            }}
+            allowClear
+          />
+          <Select
+            allowClear
+            placeholder="Status"
+            style={{ width: 140 }}
+            value={status}
+            onChange={(v)=>{ setPage(1); setStatus(v); }}
+            options={[ 'start','success','error' ].map(v=>({ value: v, label: v }))}
+          />
           <Select
             allowClear
             placeholder="Level"
@@ -167,6 +244,24 @@ export default function AdminLogsPage() {
             value={level}
             onChange={(v)=>{ setPage(1); setLevel(v); }}
             options={[ 'debug','info','warn','error' ].map(v=>({ value: v, label: v }))}
+          />
+          <Select
+            allowClear
+            placeholder="Platform"
+            style={{ width: 140 }}
+            value={platform}
+            onChange={(v)=>{ setPage(1); setPlatform(v); }}
+            options={[ 'android','ios','web' ].map(v=>({ value: v, label: v }))}
+          />
+          <Input
+            placeholder="App version"
+            style={{ width: 140 }}
+            value={appVersion}
+            onChange={(e) => {
+              setPage(1);
+              setAppVersion(e.target.value);
+            }}
+            allowClear
           />
           <Select
             placeholder="Category"
@@ -178,6 +273,26 @@ export default function AdminLogsPage() {
               setPage(1);
               setCategory(v || undefined);
             }}
+          />
+          <Input
+            placeholder="Correlation ID"
+            style={{ width: 180 }}
+            value={correlationId}
+            onChange={(e) => {
+              setPage(1);
+              setCorrelationId(e.target.value);
+            }}
+            allowClear
+          />
+          <Input
+            placeholder="Session ID"
+            style={{ width: 180 }}
+            value={sessionId}
+            onChange={(e) => {
+              setPage(1);
+              setSessionId(e.target.value);
+            }}
+            allowClear
           />
           <DatePicker
             allowClear
@@ -199,6 +314,10 @@ export default function AdminLogsPage() {
               setDateEnd(v ? v.format('YYYY-MM-DD') : undefined);
             }}
           />
+
+          <Button icon={<ReloadOutlined />} onClick={reload} loading={loading} disabled={loading}>
+            Reload
+          </Button>
           {/* <Button onClick={addTest}>Add test</Button> */}
           {/* <Popconfirm title="Delete logs by current filters?" onConfirm={purgeByFilter}>
             <Button danger>Purge by filter</Button>

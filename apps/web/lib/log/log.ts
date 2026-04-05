@@ -1,10 +1,27 @@
-// /apps/web/lib/log.ts
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-export interface LogMeta {
-  [key: string]: any;
-}
+// /apps/web/lib/log/log.ts
+// Client-safe logging helper: sends logs to /api/logs.
+// IMPORTANT: Do not import server-only modules from here.
 
-import { writeLogServer } from "./writeLog.server";
+export type { LogLevel, LogMeta } from "./types";
+import type { LogLevel, LogMeta } from "./types";
+
+function getApiBaseUrl() {
+  // On the browser we can use relative URL.
+  if (typeof window !== "undefined") return process.env.NEXT_PUBLIC_BASE_URL || "";
+
+  // On the server, Node's fetch requires an absolute URL.
+  const raw =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.BASE_URL ||
+    process.env.VERCEL_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    "";
+
+  if (raw) return raw.startsWith("http") ? raw : `https://${raw}`;
+
+  const port = process.env.PORT || "3000";
+  return `http://localhost:${port}`;
+}
 
 /**
  * ✅ Global helper สำหรับส่ง log ไป backend /api/logs
@@ -22,15 +39,9 @@ export async function addLog(
   try {
     const body = JSON.stringify({ level, category, message, meta });
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+    const baseUrl = getApiBaseUrl();
 
-    if (typeof window === "undefined") {
-      await writeLogServer(level, category, message, meta);
-      return true;
-    }
-
-
-    // ใช้ fetch แบบ relative จะทำงานทั้งบน client และ server (Next.js)
+    // Client: relative works. Server: baseUrl ensures absolute URL.
     const res = await fetch(`${baseUrl}/api/logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
