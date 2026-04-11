@@ -12,7 +12,7 @@ import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
-import { addLog } from '@/lib/log/log';
+import { addLog } from "@/lib/log/log.server";
 import { v4 as uuidv4 } from 'uuid';
 
 import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
@@ -34,6 +34,7 @@ import {
 import { sendFcmChatPush } from "@/lib/push/fcm";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
+import { contactSpamResolvers } from "@/graphql/contactSpam";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2326,7 +2327,8 @@ const rawResolvers = {
         .map((r: any) => normalizeBankAccount(r.account_norm || ""))
         .filter(Boolean);
     },
-    ...phoneResolvers.Query
+    ...phoneResolvers.Query,
+    ...contactSpamResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -6361,7 +6363,8 @@ const rawResolvers = {
       return result;
     },
 
-    ...phoneResolvers.Mutation
+    ...phoneResolvers.Mutation,
+    ...contactSpamResolvers.Mutation
   },
 };
 

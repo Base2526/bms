@@ -41,6 +41,25 @@ export const coreTypeDefs = /* GraphQL */ `
     bookmarked: Boolean!
     updated_at: String!
   }
+
+  type MyContactSpamMarkChangedPayload {
+    user_id: ID!
+    action: String!
+    phone_normalized: String!
+    contact_name: String
+    source: String
+    active: Boolean!
+    updated_at: String!
+  }
+
+  type MyContactSpamSettingsChangedPayload {
+    user_id: ID!
+    mode: String!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
+    updated_at: String!
+  }
   type User {
     id: ID!
     name: String!
@@ -149,5 +168,7 @@ export const coreTypeDefs = /* GraphQL */ `
     myBankBlockStatusChanged: MyBankBlockStatusChangedPayload!
 
     myBookmarkStatusChanged: MyBookmarkStatusChangedPayload!
+    myContactSpamMarkChanged: MyContactSpamMarkChangedPayload!
+    myContactSpamSettingsChanged: MyContactSpamSettingsChangedPayload!
   }
 `;

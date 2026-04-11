@@ -9,6 +9,10 @@ import {
 } from "./blockSync.js";
 
 import { topicMyBookmarkStatusChanged } from "./bookmarkSync.js";
+import {
+  topicMyContactSpamMarkChanged,
+  topicMyContactSpamSettingsChanged,
+} from "./contactSpamSync.js";
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
@@ -180,6 +184,40 @@ export const coreResolvers = {
         (payload: any, _vars: any, ctx: any) => {
           const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
           const pUserId = String(payload?.myBookmarkStatusChanged?.user_id || "").trim();
+          return !!userId && !!pUserId && userId === pUserId;
+        }
+      ),
+    },
+
+    myContactSpamMarkChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          if (!userId) {
+            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
+          }
+          return pubsub.asyncIterator(topicMyContactSpamMarkChanged(userId));
+        },
+        (payload: any, _vars: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const pUserId = String(payload?.myContactSpamMarkChanged?.user_id || "").trim();
+          return !!userId && !!pUserId && userId === pUserId;
+        }
+      ),
+    },
+
+    myContactSpamSettingsChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          if (!userId) {
+            throw new GraphQLError("UNAUTHENTICATED", { extensions: { code: "UNAUTHENTICATED" } });
+          }
+          return pubsub.asyncIterator(topicMyContactSpamSettingsChanged(userId));
+        },
+        (payload: any, _vars: any, ctx: any) => {
+          const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
+          const pUserId = String(payload?.myContactSpamSettingsChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
         }
       ),
