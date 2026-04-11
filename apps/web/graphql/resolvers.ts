@@ -34,6 +34,7 @@ import {
 import { sendFcmChatPush } from "@/lib/push/fcm";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
+import { contactSpamResolvers } from "@/graphql/contactSpam";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2326,7 +2327,8 @@ const rawResolvers = {
         .map((r: any) => normalizeBankAccount(r.account_norm || ""))
         .filter(Boolean);
     },
-    ...phoneResolvers.Query
+    ...phoneResolvers.Query,
+    ...contactSpamResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -6361,7 +6363,8 @@ const rawResolvers = {
       return result;
     },
 
-    ...phoneResolvers.Mutation
+    ...phoneResolvers.Mutation,
+    ...contactSpamResolvers.Mutation
   },
 };
 

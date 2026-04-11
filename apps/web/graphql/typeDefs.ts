@@ -551,6 +551,9 @@ export const typeDefs = /* GraphQL */ `
     myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
 
     myReportedBankAccountKeys: [String!]!
+
+    myContactSpamProtectionSettings: ContactSpamProtectionSettings!
+    myContactSpamMarkedPhoneKeys: [String!]!
   }
 
   input RegisterPushTokenInput {
@@ -625,6 +628,44 @@ export const typeDefs = /* GraphQL */ `
     username: String
     language: String
     notifications_enabled: Boolean
+  }
+
+  enum ContactSpamProtectionMode {
+    OFF
+    PROMPT
+    AUTO
+  }
+
+  enum ContactSpamMarkSource {
+    MANUAL
+    SUGGESTED
+    AUTO
+  }
+
+  type ContactSpamProtectionSettings {
+    user_id: ID!
+    mode: ContactSpamProtectionMode!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
+    updated_at: String!
+  }
+
+  type ContactSpamMark {
+    user_id: ID!
+    action: String!
+    phone_normalized: String!
+    contact_name: String
+    source: ContactSpamMarkSource
+    active: Boolean!
+    updated_at: String!
+  }
+
+  input ContactSpamProtectionSettingsInput {
+    mode: ContactSpamProtectionMode!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
   }
 
   
@@ -824,5 +865,9 @@ export const typeDefs = /* GraphQL */ `
 
     reportScamBankAccount(input: ReportScamBankAccountInput!): ScamBankAccount!
     unreportScamBankAccount(input: UnreportScamBankAccountInput!): ScamBankAccount!
+
+    updateMyContactSpamProtectionSettings(input: ContactSpamProtectionSettingsInput!): ContactSpamProtectionSettings!
+    markContactSpamPhone(phone: String!, contact_name: String, source: ContactSpamMarkSource): ContactSpamMark!
+    unmarkContactSpamPhone(phone: String!): ContactSpamMark!
   }
 `;
