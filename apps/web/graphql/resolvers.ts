@@ -217,6 +217,117 @@ function normalizeBankAccount(raw: string) {
   return s.replace(/[^\d]/g, "");
 }
 
+type RelatedPostsSort = "LATEST" | "HIGHEST_RISK" | "MOST_REPORTED";
+
+function normalizeRelatedPostsSort(value: any): RelatedPostsSort {
+  const next = String(value || "LATEST").toUpperCase();
+  if (next === "HIGHEST_RISK" || next === "MOST_REPORTED") return next;
+  return "LATEST";
+}
+
+function buildRelatedPostsOrder(sort: RelatedPostsSort) {
+  if (sort === "HIGHEST_RISK") {
+    return "metrics.max_risk DESC, metrics.total_reports DESC, p.created_at DESC";
+  }
+  if (sort === "MOST_REPORTED") {
+    return "metrics.total_reports DESC, metrics.max_risk DESC, p.created_at DESC";
+  }
+  return "p.created_at DESC";
+}
+
+async function getBankPostMeta(bankCode: string, accountNo: string) {
+  const bankName = String(bankCode || "").trim() || "UNKNOWN";
+  const accountNorm = normalizeBankAccount(accountNo);
+  if (!accountNorm) {
+    return { post_ids: [] as string[], post_count: 0, latest_post_id: null as string | null };
+  }
+
+  const res = await query(
+    `
+    SELECT linked.post_id::text AS post_id
+    FROM (
+      SELECT sa.post_id, MAX(p.created_at) AS created_at
+      FROM post_seller_accounts sa
+      JOIN posts p ON p.id = sa.post_id
+      WHERE sa.bank_name = $1
+        AND regexp_replace(COALESCE(sa.seller_account, ''), '[^0-9]', '', 'g') = $2
+        AND p.status = 'public'
+      GROUP BY sa.post_id
+    ) linked
+    ORDER BY linked.created_at DESC
+    `,
+    [bankName, accountNorm]
+  );
+
+  const postIds = (res.rows || []).map((row: any) => String(row.post_id)).filter(Boolean);
+  return {
+    post_ids: postIds,
+    post_count: postIds.length,
+    latest_post_id: postIds[0] ?? null,
+  };
+}
+
+async function listRelatedPostIdsByBank(bankCode: string, accountNo: string, sortValue: any) {
+  const bankName = String(bankCode || "").trim() || "UNKNOWN";
+  const accountNorm = normalizeBankAccount(accountNo);
+  if (!accountNorm) return [];
+
+  const sort = normalizeRelatedPostsSort(sortValue);
+  const orderBy = buildRelatedPostsOrder(sort);
+  const res = await query(
+    `
+    SELECT p.id::text AS id
+    FROM posts p
+    JOIN post_seller_accounts matched_bank
+      ON matched_bank.post_id = p.id
+     AND matched_bank.bank_name = $1
+     AND regexp_replace(COALESCE(matched_bank.seller_account, ''), '[^0-9]', '', 'g') = $2
+    LEFT JOIN LATERAL (
+      SELECT
+        GREATEST(
+          COALESCE((
+            SELECT MAX(sp.risk_level)
+            FROM post_tel_numbers t2
+            JOIN scam_phones_summary sp ON sp.phone = t2.tel
+            WHERE t2.post_id = p.id
+          ), 0),
+          COALESCE((
+            SELECT MAX(sb.risk_level)
+            FROM post_seller_accounts sa2
+            JOIN scam_bank_accounts_summary sb
+              ON sb.bank_name = sa2.bank_name
+             AND sb.account_norm = regexp_replace(COALESCE(sa2.seller_account, ''), '[^0-9]', '', 'g')
+            WHERE sa2.post_id = p.id
+          ), 0)
+        )::int AS max_risk,
+        (
+          COALESCE((
+            SELECT SUM(sp.report_count)
+            FROM post_tel_numbers t2
+            JOIN scam_phones_summary sp ON sp.phone = t2.tel
+            WHERE t2.post_id = p.id
+          ), 0)
+          +
+          COALESCE((
+            SELECT SUM(sb.report_count)
+            FROM post_seller_accounts sa2
+            JOIN scam_bank_accounts_summary sb
+              ON sb.bank_name = sa2.bank_name
+             AND sb.account_norm = regexp_replace(COALESCE(sa2.seller_account, ''), '[^0-9]', '', 'g')
+            WHERE sa2.post_id = p.id
+          ), 0)
+        )::int AS total_reports
+    ) metrics ON true
+    WHERE p.status = 'public'
+    GROUP BY p.id, p.created_at, metrics.max_risk, metrics.total_reports
+    ORDER BY ${orderBy}
+    `,
+    [bankName, accountNorm]
+  );
+
+  return (res.rows || []).map((row: any) => String(row.id)).filter(Boolean);
+}
+
 function serializeError(err: unknown): { name?: string; message?: string } {
   if (err instanceof Error) {
     return { name: err.name, message: err.message };
@@ -2057,8 +2168,9 @@ const rawResolvers = {
 
       console.log("[Query][qNorm] searchBankAccounts", qNorm);
 
-      const mapRow = (r: any) => {
+      const mapRow = async (r: any) => {
         const masked = maskAccount(r.account_no || r.account_norm);
+        const postMeta = await getBankPostMeta(r.bank_name, r.account_norm);
 
         const lastReportISO = r.last_report_at
           ? new Date(r.last_report_at).toISOString()
@@ -2079,7 +2191,7 @@ const rawResolvers = {
           last_report_at: lastReportISO,
 
           // ✅ client fields
-          account: masked,
+          account: String(r.account_norm || r.account_no || ""),
           risk_level:
             r.risk_level != null
               ? Number(r.risk_level)
@@ -2089,7 +2201,9 @@ const rawResolvers = {
 
           // ✅ ไม่มีคอลัมน์ใน DB ก็คืน default ไปเลย
           is_deleted: false,
-          post_ids: [],
+          post_ids: postMeta.post_ids,
+          post_count: postMeta.post_count,
+          latest_post_id: postMeta.latest_post_id,
           ctx: null,
         };
       };
@@ -2121,7 +2235,7 @@ const rawResolvers = {
           [qNorm, safeLimit]
         );
 
-        return rows.map(mapRow);
+        return Promise.all(rows.map(mapRow));
       }
 
       // -------------------------
@@ -2147,7 +2261,78 @@ const rawResolvers = {
         [likePrefix, safeLimit]
       );
 
-      return rows.map(mapRow);
+      return Promise.all(rows.map(mapRow));
+    },
+    bankDetail: async (_: any, { bankCode, accountNo }: { bankCode: string; accountNo: string }, ctx: any) => {
+      const auth = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      const userId = auth.isAuthenticated && auth.author_id ? String(auth.author_id) : null;
+      const bankName = String(bankCode || "").trim() || "UNKNOWN";
+      const accountNorm = normalizeBankAccount(accountNo);
+      if (!accountNorm) {
+        throw new GraphQLError("Invalid account");
+      }
+
+      const postMeta = await getBankPostMeta(bankName, accountNorm);
+      const { rows } = await query(
+        `
+        SELECT
+          bank_name,
+          account_no,
+          account_norm,
+          report_count,
+          last_report_at,
+          risk_level,
+          updated_at
+        FROM scam_bank_accounts_summary
+        WHERE bank_name = $1 AND account_norm = $2
+        LIMIT 1
+        `,
+        [bankName, accountNorm]
+      );
+
+      const summary = rows[0] || {
+        bank_name: bankName,
+        account_no: accountNorm,
+        account_norm: accountNorm,
+        report_count: 0,
+        last_report_at: null,
+        risk_level: 0,
+        updated_at: new Date().toISOString(),
+      };
+
+      let isReported = false;
+      if (userId) {
+        const reportRes = await query(
+          `
+          SELECT 1
+          FROM scam_bank_account_reports
+          WHERE user_id = $1::uuid
+            AND bank_name = $2
+            AND account_norm = $3
+          LIMIT 1
+          `,
+          [userId, bankName, accountNorm]
+        );
+        isReported = reportRes.rows.length > 0;
+      }
+
+      return {
+        bank_code: bankName,
+        bank_name: String(summary.bank_name || bankName),
+        account: accountNorm,
+        report_count: Number(summary.report_count || 0),
+        last_report_at: summary.last_report_at ? toIso(summary.last_report_at) : null,
+        risk_level: Number(summary.risk_level || 0),
+        updated_at: toIso(summary.updated_at),
+        post_count: postMeta.post_count,
+        latest_post_id: postMeta.latest_post_id,
+        post_ids: postMeta.post_ids,
+        is_reported: isReported,
+        tags: [],
+      };
+    },
+    relatedPostsByBank: async (_: any, { bankCode, accountNo, sort }: { bankCode: string; accountNo: string; sort?: RelatedPostsSort }, _ctx: any) => {
+      return listRelatedPostIdsByBank(bankCode, accountNo, sort);
     },
     searchScamBankAccounts: async (_: any, { q, limit }: { q: string; limit: number }, ctx: any) => {
       const queryMap = resolvers.Query as unknown as Record<string, unknown>;

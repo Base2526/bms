@@ -335,6 +335,8 @@ export const typeDefs = /* GraphQL */ `
     updated_at: String
     is_deleted: Boolean!
     post_ids: [ID!]!
+    post_count: Int!
+    latest_post_id: ID
     ctx: JSON
   }
 
@@ -376,6 +378,77 @@ export const typeDefs = /* GraphQL */ `
 
     risk_level: Int!
     updated_at: String!
+  }
+
+  enum PhoneCenterFilter {
+    ALL
+    BLOCKED
+    REPORTS
+    HISTORY
+  }
+
+  enum RelatedPostsSort {
+    LATEST
+    HIGHEST_RISK
+    MOST_REPORTED
+  }
+
+  type PhoneCenterItem {
+    phone: String!
+    phone_normalized: String!
+    my_blocked: Boolean!
+    my_blocked_at: String
+    my_reported: Boolean!
+    my_reported_at: String
+    in_history: Boolean!
+    last_history_at: String
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    filters: [String!]!
+  }
+
+  type PhoneEntityDetail {
+    phone: String!
+    phone_normalized: String!
+    my_blocked: Boolean!
+    my_blocked_at: String
+    my_reported: Boolean!
+    my_reported_at: String
+    in_history: Boolean!
+    last_history_at: String
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    filters: [String!]!
+  }
+
+  type BankEntityDetail {
+    bank_code: String!
+    bank_name: String!
+    account: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    is_reported: Boolean!
+    tags: [String!]!
+  }
+
+  type PhoneCenterActionPayload {
+    ok: Boolean!
+    item: PhoneCenterItem!
   }
 
   input BlockPhoneInput {
@@ -526,6 +599,10 @@ export const typeDefs = /* GraphQL */ `
 
 
     phoneSafetyStatus(phone: String!): PhoneSafetyStatus!
+    getPhoneInfo(phone: String!): ScamPhone!
+    phoneCenterSearch(q: String, filter: PhoneCenterFilter = ALL, limit: Int = 50, offset: Int = 0): [PhoneCenterItem!]!
+    phoneDetail(phone: String!): PhoneEntityDetail!
+    relatedPostsByPhone(phone: String!, sort: RelatedPostsSort = LATEST): [ID!]!
     myBlockedPhones(limit: Int = 50, offset: Int = 0): [PhoneSafetyStatus!]!
 
     # compact key sets for client-side status checks (source of truth: backend)
@@ -538,6 +615,8 @@ export const typeDefs = /* GraphQL */ `
 
     # exact + prefix (ตัวเลขล้วน) + (option) bank_name prefix
     searchBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
+    bankDetail(bankCode: String!, accountNo: String!): BankEntityDetail!
+    relatedPostsByBank(bankCode: String!, accountNo: String!, sort: RelatedPostsSort = LATEST): [ID!]!
 
     searchScamBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
 
@@ -854,10 +933,12 @@ export const typeDefs = /* GraphQL */ `
 
     blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
     unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
+    reportPhone(phone: String!, category: ScamPhoneReportCategory, note: String): PhoneCenterActionPayload!
 
     # Spec-required (additive) call-block APIs
-    blockNumber(phoneNumber: String!): Boolean!
-    unblockNumber(phoneNumber: String!): Boolean!
+    blockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+    unblockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+    reportNumber(phoneNumber: String!, category: ScamPhoneReportCategory, note: String): PhoneCenterActionPayload!
     reportSpam(phoneNumber: String!): Boolean!
     ingestCallLogs(logs: [LogCallInput!]!): Boolean!
 
