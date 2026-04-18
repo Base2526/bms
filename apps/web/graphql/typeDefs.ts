@@ -807,6 +807,25 @@ export const typeDefs = /* GraphQL */ `
     ticketId: String
   }
 
+  input UploadDiagnosticsInput {
+    userId: ID
+    platform: String!
+    appVersion: String
+    buildNumber: String
+    packageName: String
+    deviceModel: String
+    osVersion: String
+    exportedAt: String!
+    diagnosticsJson: String!
+    callCheckLogsJson: String
+  }
+
+  type UploadDiagnosticsPayload {
+    success: Boolean!
+    message: String
+    uploadId: ID
+  }
+
   input ReportScamBankAccountInput {
     bank_name: String!
     account: String!
@@ -941,6 +960,8 @@ export const typeDefs = /* GraphQL */ `
     reportNumber(phoneNumber: String!, category: ScamPhoneReportCategory, note: String): PhoneCenterActionPayload!
     reportSpam(phoneNumber: String!): Boolean!
     ingestCallLogs(logs: [LogCallInput!]!): Boolean!
+
+    uploadDiagnostics(input: UploadDiagnosticsInput!): UploadDiagnosticsPayload!
 
     reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
 
