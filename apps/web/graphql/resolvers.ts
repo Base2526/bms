@@ -5953,6 +5953,92 @@ const rawResolvers = {
       return { ok: true, message: "Received. We will reply soon.", ticketId };
     },
 
+    uploadDiagnostics: async (_: any, { input }: any, ctx: any) => {
+      const auth = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      const actorId = auth?.author_id ? String(auth.author_id) : null;
+
+      const payload = input || {};
+      const exportedAt = String(payload.exportedAt || "").trim();
+      const platform = String(payload.platform || "").trim();
+      const diagnosticsJson = String(payload.diagnosticsJson || "").trim();
+
+      if (!platform) {
+        throw new GraphQLError("platform is required", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      if (!exportedAt) {
+        throw new GraphQLError("exportedAt is required", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      if (!diagnosticsJson) {
+        throw new GraphQLError("diagnosticsJson is required", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      const uploadId = randomUUID();
+      const diagnosticsLength = diagnosticsJson.length;
+      const callLogsLength = String(payload.callCheckLogsJson || "").length;
+
+      // Minimal payload safety to avoid oversized log rows or accidental crashes.
+      const safeMeta = {
+        uploadId,
+        userId: payload.userId ? String(payload.userId) : actorId,
+        actorId,
+        platform,
+        appVersion: String(payload.appVersion || ""),
+        buildNumber: String(payload.buildNumber || ""),
+        packageName: String(payload.packageName || ""),
+        deviceModel: String(payload.deviceModel || ""),
+        osVersion: String(payload.osVersion || ""),
+        exportedAt,
+        diagnosticsSize: diagnosticsLength,
+        callCheckLogsSize: callLogsLength,
+      };
+
+      try {
+        // Debug helpers for on-device issue tracing without exposing auth secrets.
+        console.info("[uploadDiagnostics] mutation reached", {
+          uploadId,
+          inputKeys: Object.keys(payload || {}),
+          platform,
+          packageName: safeMeta.packageName,
+        });
+
+        await addLog("info", "diagnostics-upload", "Mobile diagnostics uploaded", {
+          ...safeMeta,
+          diagnosticsPreview: diagnosticsJson.slice(0, 4000),
+          callCheckLogsPreview: String(payload.callCheckLogsJson || "").slice(0, 4000),
+        });
+
+        return {
+          success: true,
+          message: "Diagnostics uploaded",
+          uploadId,
+        };
+      } catch (err: any) {
+        console.error("[uploadDiagnostics] failed", {
+          uploadId,
+          message: err?.message || "unknown",
+        });
+
+        await addLog("error", "diagnostics-upload", "Mobile diagnostics upload failed", {
+          ...safeMeta,
+          error: err?.message || "unknown",
+        });
+
+        return {
+          success: false,
+          message: "Failed to store diagnostics",
+          uploadId,
+        };
+      }
+    },
+
     reportBankAccount: async (_: any, { input }: any, ctx: any) => {
       const {
         bank_name,
