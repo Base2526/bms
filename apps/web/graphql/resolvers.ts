@@ -602,6 +602,40 @@ async function hydrateMessagesWithReplies(rows: any[]) {
 const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
+  Role: {
+    user_count: async (parent: any) => {
+      const roleId = parent?.id;
+      if (!roleId) return 0;
+      
+      try {
+        const { rows } = await query(
+          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1`,
+          [roleId]
+        );
+        return rows[0]?.count || 0;
+      } catch (err) {
+        console.error('[Role.user_count] Error counting users:', err);
+        return 0;
+      }
+    },
+  },
+  User: {
+    roleDetails: async (parent: any) => {
+      const roleId = parent?.role_id;
+      if (!roleId) return null;
+      
+      try {
+        const { rows } = await query(
+          `SELECT id, name, description, is_active, created_at, updated_at FROM roles WHERE id = $1 LIMIT 1`,
+          [roleId]
+        );
+        return rows[0] || null;
+      } catch (err) {
+        console.error('[User.roleDetails] Error fetching role:', err);
+        return null;
+      }
+    },
+  },
   Message: {
     type: (parent: any) => {
       const direct = String(parent?.type ?? parent?.message_type ?? "").trim();
@@ -1132,6 +1166,7 @@ const rawResolvers = {
           id: c.id,
           name: c.name,
           is_group: c.is_group,
+          is_undeletable: c.is_undeletable ?? false,
           created_at: new Date(c.created_at).toISOString(),
           created_by: c.creator_json,
           members: mem.rows,
@@ -1365,6 +1400,40 @@ const rawResolvers = {
         hasMore,
         nextCursor: hasMore && last ? encodeMessageCursor(last.created_at, last.id) : null,
       };
+    },
+    roles: async (_: any, __: any, ctx: any) => {
+      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      console.log('[Query] roles:', author_id);
+
+      try {
+        const { rows } = await query(
+          `SELECT id, name, description, is_active, created_at, updated_at 
+           FROM roles 
+           ORDER BY name ASC`
+        );
+        return rows;
+      } catch (err) {
+        console.error('[Query.roles] Error fetching roles:', err);
+        return [];
+      }
+    },
+    role: async (_: any, { id }: { id: string }, ctx: any) => {
+      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
+      console.log('[Query] role:', author_id, id);
+
+      try {
+        const { rows } = await query(
+          `SELECT id, name, description, is_active, created_at, updated_at 
+           FROM roles 
+           WHERE id = $1 
+           LIMIT 1`,
+          [id]
+        );
+        return rows[0] || null;
+      } catch (err) {
+        console.error('[Query.role] Error fetching role:', err);
+        return null;
+      }
     },
     users: async (
       _: any,
@@ -2590,18 +2659,22 @@ const rawResolvers = {
       };
     },
     loginUser: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
-      console.log("[loginUser] @1 ", input)
       const { email, username, password } = input || {};
       if (!password || (!email && !username)) {
         throw new Error("Email/Username and password are required");
       }
 
-      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const emailNorm = email ? String(email).trim().toLowerCase() : null;
+      const usernameNorm = username ? String(username).trim().toLowerCase() : null;
+
+      const { rows } = emailNorm
+        ? await query("SELECT * FROM users WHERE email=$1", [emailNorm])
+        : await query("SELECT * FROM users WHERE username=$1", [usernameNorm]);
       const user = rows[0];
 
-      console.log("[loginUser] @2 ", user, JWT_SECRET, process.env.COOKIE_SECURE);
       if (!user) throw new Error("Invalid credentials");
-      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) throw new Error("Invalid credentials");
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -2820,6 +2893,40 @@ const rawResolvers = {
 
       const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
       cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: useSecureCookie && !isDev, path: '/' });
+
+      /* =========================
+        CREATE ADMIN CHAT
+        สร้าง chat กับ admin อัตโนมัติ — ลบไม่ได้
+      ========================= */
+      try {
+        const { rows: [admin] } = await query(
+          `SELECT id FROM users WHERE role = 'Administrator' ORDER BY created_at ASC LIMIT 1`
+        );
+        if (admin) {
+          const [a, b] = [u.id, admin.id].sort();
+          const directKey = `${a}:${b}`;
+          await query(
+            `INSERT INTO chats (name, is_group, created_by, direct_key, is_undeletable)
+             VALUES (NULL, false, $1, $2, true)
+             ON CONFLICT (direct_key) DO NOTHING`,
+            [admin.id, directKey]
+          );
+          const { rows: [chat] } = await query(
+            `SELECT id FROM chats WHERE direct_key = $1`, [directKey]
+          );
+          if (chat) {
+            await query(
+              `INSERT INTO chat_members (chat_id, user_id)
+               VALUES ($1, $2), ($1, $3)
+               ON CONFLICT DO NOTHING`,
+              [chat.id, u.id, admin.id]
+            );
+          }
+        }
+      } catch (e) {
+        // ไม่ throw — การสมัครสำเร็จแม้สร้าง chat ไม่ได้
+        console.error('[registerUser] failed to create admin chat', e);
+      }
 
       return true;
     },
@@ -4834,8 +4941,26 @@ const rawResolvers = {
       const avatar = data.avatar ?? null;
       const phone = data.phone ?? null;
       const email = data.email ? String(data.email).trim().toLowerCase() : null;
-      const role = (data.role ?? 'Subscriber').trim();
       const passwordHash = data.passwordHash ?? null;
+
+      // ✅ NEW: Handle role_id (preferred) or fallback to role text
+      let roleId = data.role_id || null;
+      const roleText = data.role ? String(data.role).trim() : null;
+
+      // If role_id not provided but role text is, try to find role_id by name
+      if (!roleId && roleText) {
+        try {
+          const { rows } = await query(
+            `SELECT id FROM roles WHERE name = $1 LIMIT 1`,
+            [roleText]
+          );
+          if (rows[0]) {
+            roleId = rows[0].id;
+          }
+        } catch (err) {
+          console.error('[upsertUser] Error looking up role by name:', err);
+        }
+      }
 
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
@@ -4843,18 +4968,46 @@ const rawResolvers = {
 
         if (id) {
           // 🧩 UPDATE: อัปเดต password_hash เฉพาะเมื่อส่งมา
+          // Prefer role_id, but keep role for backward compatibility (triggers will sync)
+          const updateFields: string[] = [];
+          const updateValues: any[] = [];
+          let paramIndex = 1;
+
+          updateFields.push(`name = $${paramIndex}`);
+          updateValues.push(name);
+          paramIndex++;
+
+          updateFields.push(`avatar = $${paramIndex}`);
+          updateValues.push(avatar);
+          paramIndex++;
+
+          updateFields.push(`phone = $${paramIndex}`);
+          updateValues.push(phone);
+          paramIndex++;
+
+          // ✅ Use role_id if available
+          if (roleId) {
+            updateFields.push(`role_id = $${paramIndex}`);
+            updateValues.push(roleId);
+            paramIndex++;
+          } else if (roleText) {
+            // Fallback to role text (triggers will sync role_id)
+            updateFields.push(`role = $${paramIndex}`);
+            updateValues.push(roleText);
+            paramIndex++;
+          }
+
+          if (passwordHash) {
+            updateFields.push(`password_hash = $${paramIndex}`);
+            updateValues.push(passwordHash);
+            paramIndex++;
+          }
+
+          updateValues.push(id); // WHERE id = $n
+
           const { rows } = await client.query(
-            `
-            UPDATE users
-               SET name = $1,
-                   avatar = $2,
-                   phone = $3,
-                   role = $4,
-                   password_hash = COALESCE($5::text, password_hash)
-             WHERE id = $6
-             RETURNING *;
-            `,
-            [name, avatar, phone, role, passwordHash, id]
+            `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+            updateValues
           );
 
           resultUser = rows[0] || null;
@@ -4864,31 +5017,38 @@ const rawResolvers = {
               "info",
               "user-update",
               "User profile updated",
-              { userId: resultUser.id, editorId: author_id }
+              { userId: resultUser.id, editorId: author_id, roleId }
             );
           }
         } else {
           // 🧩 INSERT: ต้องมี email
           if (!email) throw new GraphQLError("email is required");
 
-          const { rows } = await client.query(
-            `
-            INSERT INTO users (name, avatar, phone, email, role, password_hash)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING *;
-            `,
-            [name, avatar, phone, email, role, passwordHash]
-          );
-
-          resultUser = rows[0] || null;
+          // Use role_id if available, otherwise use role text
+          if (roleId) {
+            const { rows } = await client.query(
+              `INSERT INTO users (name, avatar, phone, email, role_id, password_hash)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+              [name, avatar, phone, email, roleId, passwordHash]
+            );
+            resultUser = rows[0] || null;
+          } else {
+            // Fallback to role text (triggers will sync role_id)
+            const role = roleText || 'Subscriber';
+            const { rows } = await client.query(
+              `INSERT INTO users (name, avatar, phone, email, role, password_hash)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+              [name, avatar, phone, email, role, passwordHash]
+            );
+            resultUser = rows[0] || null;
+          }
 
           if (resultUser) {
-            // 📘 ตัวอย่าง: log ว่า user ถูกสร้างใหม่ (หรือ login สำเร็จ)
             await addLog(
               "info",
               "upsert-user", 
               "Upsert User",
-              { userId: resultUser.id }
+              { userId: resultUser.id, roleId }
             );
           }
         }
@@ -5071,6 +5231,13 @@ const rawResolvers = {
       const author_id = String(auth.author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+        const { rows: [chat] } = await client.query(
+          `SELECT is_undeletable FROM chats WHERE id = $1`, [chat_id]
+        );
+        if (chat?.is_undeletable) {
+          throw new Error("ไม่สามารถลบ chat นี้ได้");
+        }
+
         await client.query(`DELETE FROM chats WHERE id = $1`, [chat_id]);
 
         await addLog(
@@ -6632,6 +6799,212 @@ const rawResolvers = {
       }
 
       return result;
+    },
+
+    // ================================
+    // Role Management Mutations
+    // ================================
+    createRole: async (_: any, { input }: { input: any }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      console.log('[Mutation] createRole:', author_id, input);
+
+      const { name, description, is_active } = input;
+
+      // Validate name
+      const trimmedName = String(name || '').trim();
+      if (!trimmedName) {
+        throw new Error('Role name is required and cannot be empty');
+      }
+
+      if (trimmedName.length < 2 || trimmedName.length > 50) {
+        throw new Error('Role name must be between 2 and 50 characters');
+      }
+
+      try {
+        // Check for duplicate name
+        const { rows: existing } = await query(
+          `SELECT id FROM roles WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+          [trimmedName]
+        );
+
+        if (existing.length > 0) {
+          throw new Error(`Role with name "${trimmedName}" already exists`);
+        }
+
+        // Insert new role
+        const { rows } = await query(
+          `INSERT INTO roles (name, description, is_active, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())
+           RETURNING id, name, description, is_active, created_at, updated_at`,
+          [trimmedName, description || null, is_active !== false]
+        );
+
+        console.log('[Mutation] createRole success:', rows[0]);
+        return rows[0];
+      } catch (err: any) {
+        console.error('[Mutation] createRole error:', err);
+        throw new Error(err.message || 'Failed to create role');
+      }
+    },
+
+    updateRole: async (_: any, { id, input }: { id: string; input: any }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      console.log('[Mutation] updateRole:', author_id, id, input);
+
+      const { name, description, is_active } = input;
+
+      try {
+        // Check if role exists
+        const { rows: existingRole } = await query(
+          `SELECT id, name FROM roles WHERE id = $1 LIMIT 1`,
+          [id]
+        );
+
+        if (existingRole.length === 0) {
+          throw new Error('Role not found');
+        }
+
+        // Build dynamic update
+        const updates: string[] = [];
+        const params: any[] = [];
+        let paramIndex = 1;
+
+        if (name !== undefined) {
+          const trimmedName = String(name || '').trim();
+          if (!trimmedName) {
+            throw new Error('Role name cannot be empty');
+          }
+
+          if (trimmedName.length < 2 || trimmedName.length > 50) {
+            throw new Error('Role name must be between 2 and 50 characters');
+          }
+
+          // Check for duplicate name (excluding current role)
+          const { rows: duplicate } = await query(
+            `SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND id != $2 LIMIT 1`,
+            [trimmedName, id]
+          );
+
+          if (duplicate.length > 0) {
+            throw new Error(`Role with name "${trimmedName}" already exists`);
+          }
+
+          updates.push(`name = $${paramIndex++}`);
+          params.push(trimmedName);
+        }
+
+        if (description !== undefined) {
+          updates.push(`description = $${paramIndex++}`);
+          params.push(description || null);
+        }
+
+        if (is_active !== undefined) {
+          updates.push(`is_active = $${paramIndex++}`);
+          params.push(!!is_active);
+        }
+
+        if (updates.length === 0) {
+          // No updates, return current role
+          const { rows } = await query(
+            `SELECT id, name, description, is_active, created_at, updated_at FROM roles WHERE id = $1`,
+            [id]
+          );
+          return rows[0];
+        }
+
+        // Add updated_at
+        updates.push(`updated_at = now()`);
+
+        // Add id parameter
+        params.push(id);
+
+        const { rows } = await query(
+          `UPDATE roles 
+           SET ${updates.join(', ')}
+           WHERE id = $${paramIndex}
+           RETURNING id, name, description, is_active, created_at, updated_at`,
+          params
+        );
+
+        console.log('[Mutation] updateRole success:', rows[0]);
+        return rows[0];
+      } catch (err: any) {
+        console.error('[Mutation] updateRole error:', err);
+        throw new Error(err.message || 'Failed to update role');
+      }
+    },
+
+    deleteRole: async (_: any, { id }: { id: string }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      console.log('[Mutation] deleteRole:', author_id, id);
+
+      try {
+        // Check if role exists
+        const { rows: existingRole } = await query(
+          `SELECT id, name FROM roles WHERE id = $1 LIMIT 1`,
+          [id]
+        );
+
+        if (existingRole.length === 0) {
+          throw new Error('Role not found');
+        }
+
+        // Check if any users are using this role
+        const { rows: usersWithRole } = await query(
+          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1`,
+          [id]
+        );
+
+        const userCount = usersWithRole[0]?.count || 0;
+
+        if (userCount > 0) {
+          throw new Error(
+            `Cannot delete role "${existingRole[0].name}" because ${userCount} user(s) are assigned to it. ` +
+            `Please reassign these users to another role or deactivate the role instead.`
+          );
+        }
+
+        // Safe to delete (no users are using this role)
+        await query(`DELETE FROM roles WHERE id = $1`, [id]);
+
+        console.log('[Mutation] deleteRole success:', id);
+        return true;
+      } catch (err: any) {
+        console.error('[Mutation] deleteRole error:', err);
+        throw new Error(err.message || 'Failed to delete role');
+      }
+    },
+
+    setRoleActive: async (_: any, { id, is_active }: { id: string; is_active: boolean }, ctx: any) => {
+      const { author_id } = requireAuth(ctx);
+      console.log('[Mutation] setRoleActive:', author_id, id, is_active);
+
+      try {
+        // Check if role exists
+        const { rows: existingRole } = await query(
+          `SELECT id FROM roles WHERE id = $1 LIMIT 1`,
+          [id]
+        );
+
+        if (existingRole.length === 0) {
+          throw new Error('Role not found');
+        }
+
+        // Update is_active status
+        const { rows } = await query(
+          `UPDATE roles 
+           SET is_active = $1, updated_at = now()
+           WHERE id = $2
+           RETURNING id, name, description, is_active, created_at, updated_at`,
+          [!!is_active, id]
+        );
+
+        console.log('[Mutation] setRoleActive success:', rows[0]);
+        return rows[0];
+      } catch (err: any) {
+        console.error('[Mutation] setRoleActive error:', err);
+        throw new Error(err.message || 'Failed to set role active status');
+      }
     },
 
     ...phoneResolvers.Mutation,

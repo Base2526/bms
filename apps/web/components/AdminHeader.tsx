@@ -24,6 +24,7 @@ export default function AdminHeader() {
     { text: 'Social Queue', icon: <DatabaseOutlined />, href: '/admin/queue', badge: 0 },
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
+    { text: 'Roles', icon: <SnippetsOutlined />, href: '/admin/roles', badge: 0 },
     { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
   ];
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()

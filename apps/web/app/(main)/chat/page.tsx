@@ -133,6 +133,7 @@ const Q_CHATS = gql`
       id
       name
       is_group
+      is_undeletable
       created_at
       created_by {
         id
@@ -1524,6 +1525,10 @@ function ChatUI() {
     const list = chats?.myChats || [];
 
     return [...list].sort((a: any, b: any) => {
+      // admin chat (is_undeletable) อยู่อันดับแรกเสมอ
+      if (a.is_undeletable && !b.is_undeletable) return -1;
+      if (!a.is_undeletable && b.is_undeletable) return 1;
+
       const aTime = a.last_message_at
         ? new Date(a.last_message_at).getTime()
         : 0;
@@ -1605,7 +1610,7 @@ function ChatUI() {
           justifyContent: compact ? "center" : "flex-start",
         }}
         actions={
-          compact
+          compact || c.is_undeletable
             ? undefined
             : [
                 <Dropdown key="more" menu={menuFor(c)} trigger={["click"]}>

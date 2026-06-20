@@ -1,12 +1,51 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Form, Input, Select, Button, Space, Upload, message, Image } from "antd";
+import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
+// TypeScript Types
+type Role = {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+};
+
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  avatar?: string | null;
+  role?: string | null; // Legacy field (backward compatibility)
+  role_id?: string | null; // New normalized field
+};
+
+// Fetch user details including role_id
 const Q = gql`
   query($id:ID!){
-    user(id:$id){ id name email phone avatar role }
+    user(id:$id){ 
+      id 
+      name 
+      email 
+      phone 
+      avatar 
+      role 
+      role_id
+    }
+  }
+`;
+
+// Fetch all active roles
+const Q_ROLES = gql`
+  query {
+    roles {
+      id
+      name
+      description
+      is_active
+    }
   }
 `;
 
@@ -33,14 +72,72 @@ async function sha256Hex(input: string) {
 function FormEdit({ id }: { id: string }) {
   const [form] = Form.useForm();
   const { data, refetch } = useQuery(Q, { variables: { id } });
+  
+  // Fetch available roles
+  const { data: rolesData, loading: rolesLoading, error: rolesError } = useQuery(Q_ROLES);
+  
   const [save, { loading }] = useMutation(M_UPSERT, {
     onCompleted: () => message.success('Saved'),
   });
   const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  if (!data?.user) return <div>Loading...</div>;
-  const u = data.user;
+  // Get roles and user data
+  const roles: Role[] = rolesData?.roles || [];
+  const u: User | undefined = data?.user;
+
+  // Determine initial role_id with fallback for backward compatibility
+  const getInitialRoleId = (): string => {
+    if (!u) return '';
+    
+    // Prefer role_id if available
+    if (u.role_id) return u.role_id;
+    
+    // Fallback: match by role name for backward compatibility
+    if (u.role && roles.length > 0) {
+      const matchedRole = roles.find(r => r.name === u.role);
+      if (matchedRole) return matchedRole.id;
+    }
+    
+    // Default to first role or empty
+    return roles[0]?.id || '';
+  };
+
+  // Update form when user data or roles change
+  useEffect(() => {
+    if (u && roles.length > 0) {
+      form.setFieldsValue({
+        name: u.name ?? '',
+        email: u.email ?? '',
+        phone: u.phone ?? '',
+        role_id: getInitialRoleId(),
+      });
+    }
+  }, [u, roles, form]);
+
+  // Loading states
+  if (!u) return <div>Loading user...</div>;
+  if (rolesLoading) return <div>Loading roles...</div>;
+  if (rolesError) {
+    return (
+      <Alert
+        type="error"
+        message="Error loading roles"
+        description={rolesError.message}
+        showIcon
+      />
+    );
+  }
+  if (roles.length === 0) {
+    return (
+      <Alert
+        type="warning"
+        message="No roles available"
+        description="Please create roles in the system before editing users."
+        showIcon
+      />
+    );
+  }
 
   const currentAvatar = avatarUrl || u.avatar || null;
 
@@ -66,17 +163,17 @@ function FormEdit({ id }: { id: string }) {
         form={form}
         layout="vertical"
         initialValues={{
-          name:   u.name   ?? '',
-          email:  u.email  ?? '',
-          phone:  u.phone  ?? '',
-          role:   u.role   ?? 'Subscriber',
+          name: u.name ?? '',
+          email: u.email ?? '',
+          phone: u.phone ?? '',
+          role_id: getInitialRoleId(),
         }}
-        onFinish={async (v) => {
+        onFinish={async (v: any) => {
           const dataToSend: any = {
             name: v.name,
             phone: v.phone || null,
-            avatar: currentAvatar, // ✅ ใช้ค่าปัจจุบันจาก upload
-            role: v.role,
+            avatar: currentAvatar,
+            role_id: v.role_id, // ✅ Use role_id instead of role text
           };
 
           const pwd: string = (v.password || '').trim();
@@ -86,6 +183,12 @@ function FormEdit({ id }: { id: string }) {
             if (pwd.length < 8) { message.error('Password must be at least 8 characters'); return; }
             if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
             dataToSend.passwordHash = await sha256Hex(pwd);
+          }
+
+          // Validate role_id
+          if (!dataToSend.role_id) {
+            message.error('Please select a role');
+            return;
           }
 
           await save({ variables: { id, data: dataToSend } });
@@ -120,12 +223,22 @@ function FormEdit({ id }: { id: string }) {
         <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}><Input disabled /></Form.Item>
         <Form.Item name="phone" label="Phone"><Input /></Form.Item>
 
-        <Form.Item name="role" label="Role" rules={[{ required: true }]}>
-          <Select options={[
-            { value: 'Subscriber', label: 'Subscriber' },
-            { value: 'Author', label: 'Author' },
-            { value: 'Administrator', label: 'Administrator' },
-          ]} />
+        <Form.Item 
+          name="role_id" 
+          label="Role" 
+          rules={[{ required: true, message: 'Please select a role' }]}
+          tooltip="Select user role from available roles"
+        >
+          <Select 
+            placeholder="Select a role"
+            options={roles.map(role => ({
+              value: role.id,
+              label: role.name,
+              title: role.description || role.name,
+            }))}
+            showSearch
+            optionFilterProp="label"
+          />
         </Form.Item>
 
         <Form.Item
