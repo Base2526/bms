@@ -3,13 +3,25 @@ export const typeDefs = /* GraphQL */ `
   scalar Upload
   enum PostStatus { public unpublic }
 
+  type Role {
+    id: ID!
+    name: String!
+    description: String
+    is_active: Boolean!
+    created_at: String!
+    updated_at: String!
+    user_count: Int!
+  }
+
   type User {
     id: ID!
     name: String!
     avatar: String
     phone: String
     email: String
-    role: String!
+    role: String! # Legacy text field (backward compatibility)
+    role_id: ID # New normalized field
+    roleDetails: Role # Related role object
     created_at: String!
     username: String!
     language: String!
@@ -25,6 +37,7 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     name: String
     is_group: Boolean!
+    is_undeletable: Boolean!
     created_by: User
     created_at: String!
     members: [User!]!
@@ -110,8 +123,21 @@ export const typeDefs = /* GraphQL */ `
     avatar: String
     phone: String
     email: String
-    role: String!
+    role: String # Legacy field (optional, backward compatibility)
+    role_id: ID # New field - use this for new code
     passwordHash: String
+  }
+
+  input CreateRoleInput {
+    name: String!
+    description: String
+    is_active: Boolean
+  }
+
+  input UpdateRoleInput {
+    name: String
+    description: String
+    is_active: Boolean
   }
 
   type LoginResult {
@@ -554,6 +580,8 @@ export const typeDefs = /* GraphQL */ `
 
     getOrCreateDm(user_id: ID!): Chat!
 
+    roles: [Role!]!
+    role(id: ID!): Role
     users(search: String, limit: Int = 10, offset: Int = 0): UserConnection!
     user(id: ID!): User
 
@@ -971,5 +999,11 @@ export const typeDefs = /* GraphQL */ `
     updateMyContactSpamProtectionSettings(input: ContactSpamProtectionSettingsInput!): ContactSpamProtectionSettings!
     markContactSpamPhone(phone: String!, contact_name: String, source: ContactSpamMarkSource): ContactSpamMark!
     unmarkContactSpamPhone(phone: String!): ContactSpamMark!
+
+    # Role Management
+    createRole(input: CreateRoleInput!): Role!
+    updateRole(id: ID!, input: UpdateRoleInput!): Role!
+    deleteRole(id: ID!): Boolean!
+    setRoleActive(id: ID!, is_active: Boolean!): Role!
   }
 `;

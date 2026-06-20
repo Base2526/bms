@@ -90,13 +90,32 @@ WHERE id = 1;
 -- ===========================================================
 --  SEED USER
 -- ===========================================================
-INSERT INTO users (name, role, email, phone, password_hash)
+-- INSERT INTO users (name, role, email, phone, password_hash)
+-- VALUES (
+--   'admin',
+--   'administrator',
+--   'admin@local.com',
+--   '098-000-0000',
+--   crypt('changeme', gen_salt('bf'))
+-- )
+
+INSERT INTO users (
+    name,
+    role_id,
+    email,
+    phone,
+    password_hash
+)
 VALUES (
-  'admin',
-  'administrator',
-  'admin@local.com',
-  '098-000-0000',
-  crypt('changeme', gen_salt('bf'))
+    'admin',
+    (
+        SELECT id
+        FROM roles
+        WHERE name = 'Administrator'
+    ),
+    'admin@local.com',
+    '098-000-0000',
+    crypt('changeme', gen_salt('bf'))
 )
 ON CONFLICT DO NOTHING;
 
