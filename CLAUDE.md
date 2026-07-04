@@ -1,400 +1,639 @@
-## Project Overview
+# AI Business Management System (AI-BMS)
 
-Jachoei is a community-driven caller ID, scam detection, and phone intelligence platform.
+## Overview
 
-The system allows users to:
+AI-BMS is an AI-first Business Management System designed to automate business operations from customer conversations to order fulfillment.
 
-* Search phone numbers
-* Search bank accounts
-* Report scam numbers
-* Report scam bank accounts
-* View related posts and reports
-* Block numbers locally
-* Detect incoming scam calls
-* Manage caller identification
-* View risk scores and report counts
-* Participate in a community-driven anti-scam network
+Unlike traditional ERP or CRM systems, AI-BMS treats customer conversations as the starting point of every business workflow.
 
-The project consists of:
+Supported channels:
 
-### Mobile App
-
-Location:
-
-```text
-app-jachoei/MyApp
-```
-
-Stack:
-
-* React Native
-* TypeScript
-* Apollo Client
-* React Navigation
-* Android-first
-* iOS supported
-
-### Backend
-
-Location:
-
-```text
-next-apollo-pg-ws
-```
-
-Stack:
-
-* Next.js
-* Apollo Server
-* GraphQL
-* PostgreSQL
-* WebSocket subscriptions
-* Redis (optional)
+- LINE Official Account
+- TikTok Shop / TikTok Chat
+- Facebook Messenger
+- Instagram
+- Website Live Chat
+- Future:
+  - WhatsApp
+  - Email
+  - Voice AI
 
 ---
 
-# Architecture
+# Vision
 
-## Mobile
+Every customer conversation should become an executable business workflow.
+
+Instead of:
+
+Customer
+→ Human
+→ Excel
+→ ERP
+
+AI-BMS should automate:
+
+Customer
+→ AI
+→ CRM
+→ Order
+→ Inventory
+→ Payment
+→ Shipping
+→ Dashboard
+
+---
+
+# Core Philosophy
+
+AI should NEVER access the database directly.
+
+AI is only responsible for:
+
+- Understanding user intent
+- Selecting the correct business tool
+- Summarizing data
+- Explaining results
+
+Business logic always belongs to backend services.
+
+Database access is ONLY allowed through approved service functions.
+
+---
+
+# High Level Architecture
+
+Customer
+
+↓
+
+Channel Integration
+
+↓
+
+Omnichannel Inbox
+
+↓
+
+AI Orchestrator
+
+↓
+
+Business Functions
+
+↓
+
+Database
+
+↓
+
+Response Generator
+
+↓
+
+Customer
+
+---
+
+# System Modules
+
+## 1. Channel Integration
+
+Responsible for receiving messages/events from:
+
+- LINE Messaging API
+- TikTok APIs
+- Facebook Graph API
+- Instagram API
+- Website Chat
+
+Convert every platform into one internal message format.
+
+Example:
+
+{
+  channel
+  customerId
+  conversationId
+  message
+  timestamp
+}
+
+---
+
+## 2. Omnichannel Inbox
+
+Unified inbox for all channels.
+
+Features:
+
+- Chat history
+- Assign staff
+- Internal notes
+- Tags
+- Customer timeline
+- Attachments
+- Search
+
+---
+
+## 3. AI Orchestrator
+
+The AI layer.
 
 Responsibilities:
 
-* Caller ID UI
-* Scam detection UI
-* Search phone numbers
-* Search bank accounts
-* Community reporting
-* Authentication
-* Notification handling
+- Intent detection
+- Entity extraction
+- Tool selection
+- Context understanding
+- Response generation
 
-The mobile app should remain thin.
+AI must NOT contain business logic.
 
-Business logic belongs in GraphQL services whenever possible.
+Example:
 
----
+Customer:
 
-## Backend
+Nike XL available?
 
-Responsibilities:
+↓
 
-* GraphQL API
-* Authentication
-* Reporting system
-* Risk calculation
-* Search indexing
-* Aggregation
-* Moderation
-* Analytics
+Intent
 
-Backend is the source of truth.
+check_stock
 
----
+↓
 
-# Core Domain Objects
+Entity
 
-## Phone Number
-
-Fields:
-
-```typescript
 {
-  id: string;
-  phone: string;
-  normalizedPhone: string;
-  reportCount: number;
-  riskScore: number;
-  postCount: number;
+    product: Nike
+    size: XL
 }
-```
 
-Rules:
+↓
 
-* Store normalized version
-* Support:
+Tool
 
-  * 08xxxxxxxx
-  * 668xxxxxxxx
-  * +668xxxxxxxx
-* Search must work across formats
+checkStock()
 
 ---
 
-## Bank Account
+## 4. CRM
 
-Fields:
+Stores customer information.
 
-```typescript
-{
-  id: string;
-  bankCode: string;
-  accountNumber: string;
-  reportCount: number;
-  riskScore: number;
-}
-```
+Customer profile includes:
 
----
+- Name
+- Phone
+- Email
+- LINE User ID
+- TikTok User ID
+- Facebook ID
+- Shipping addresses
+- Purchase history
+- Lifetime value
+- Tags
+- Notes
 
-## Report
-
-Fields:
-
-```typescript
-{
-  id: string;
-  category:
-    | "SCAM_CALL"
-    | "SCAM_SMS"
-    | "SCAM_ACCOUNT"
-    | "MULE_ACCOUNT";
-}
-```
+Multiple channels may belong to one customer.
 
 ---
 
-## Post
+## 5. Product Management
 
-A post may contain:
+Responsible for:
 
-* Phone numbers
-* Bank accounts
-* Images
-* Evidence
-* User reports
-
-Posts are the primary content entity.
-
-Phone numbers and bank accounts should aggregate related posts.
-
----
-
-# Search Rules
-
-## Phone Search
-
-Searching:
-
-```text
-0812345678
-66812345678
-+66812345678
-```
-
-must return the same entity.
-
-Always normalize before querying.
+- Products
+- Variants
+- SKU
+- Barcode
+- Images
+- Pricing
+- Categories
+- Brands
 
 ---
 
-## Bank Search
+## 6. Inventory Management System (IMS)
 
-Search by:
+Handles stock.
 
-* Account Number
-* Bank
-* Account + Bank
+Features:
 
----
+- Current Stock
+- Reserved Stock
+- Available Stock
+- Stock In
+- Stock Out
+- Transfer
+- Adjustment
+- Stock Movement
 
-# Risk Score
+Every stock change MUST create a Stock Movement record.
 
-Risk score is community-driven.
-
-Factors:
-
-* Report count
-* Unique reporters
-* Report recency
-* Moderator actions
-* Related post count
-
-Never hardcode risk values in frontend.
-
-Frontend displays values from GraphQL.
+Never update stock without logging movement.
 
 ---
 
-# UI Rules
+## 7. Order Management System (OMS)
 
-## Mobile
+Responsible for customer orders.
 
-Design goals:
+Statuses:
 
-* Fast
-* Clean
-* Dark theme first
-* Android optimized
-* Large touch targets
+Draft
 
-Avoid:
+Pending Payment
 
-* Complex nested navigation
-* Heavy business logic in screens
-* Duplicate API calls
+Paid
 
----
+Packing
 
-## Header
+Shipped
 
-Must remain responsive.
+Completed
 
-Support:
+Cancelled
 
-* Small Android devices
-* Tablets
-* Landscape mode
-
-Title must truncate before icons.
-
-Icons must never overflow.
+Refunded
 
 ---
 
-## Floating Action Button
+## 8. Purchase Management
 
-Use one centralized FAB component.
+Supplier purchase orders.
 
-Do not create per-screen positioning.
+Features:
 
-All screens should share:
-
-* Same size
-* Same right offset
-* Same bottom offset
-* Same safe area logic
-
----
-
-# GraphQL Guidelines
-
-## Queries
-
-Prefer:
-
-```graphql
-query GetPhone($phone: String!) {
-  phone(phone: $phone) {
-    id
-    phone
-    riskScore
-  }
-}
-```
-
-Avoid overfetching.
+- Create PO
+- Receive Items
+- Partial Receive
+- Cancel PO
+- Supplier History
 
 ---
 
-## Health Check
+## 9. Payment
 
-Required query:
+Supports:
 
-```graphql
-query Health {
-  health
-}
-```
+- Bank Transfer
+- QR Payment
+- Credit Card
+- TikTok Payment
+- Cash
 
-Response:
+Future:
 
-```json
-{
-  "data": {
-    "health": "ok"
-  }
-}
-```
+AI Slip Verification
 
-Used by mobile app startup checks.
+OCR
 
 ---
 
-# Android Caller ID
+## 10. Shipping
 
-Future roadmap includes:
+Supports:
 
-* Call screening
-* Scam detection
-* Local spam marking
-* Contact integration
+- Flash
+- Kerry
+- DHL
+- Australia Post
+- NZ Post
 
-Never automatically modify user contacts.
+Features:
 
-Always require user consent.
+Tracking Number
 
----
+Packing
 
-# Database Rules
+Label Printing
 
-PostgreSQL is the source of truth.
-
-Avoid:
-
-* Business logic in SQL triggers
-* Duplicated calculations
-
-Prefer:
-
-* Service layer
-* GraphQL resolvers
-* Shared utility functions
+Shipping Status
 
 ---
 
-# Code Style
+## 11. Reports
 
-TypeScript:
+Dashboard
 
-* strict mode
-* avoid any
-* prefer explicit interfaces
+Sales
 
-React:
+Inventory
 
-* functional components only
-* hooks only
-* no class components
+Customer
 
-GraphQL:
+Supplier
 
-* schema-first
-* typed resolvers
+Financial
 
----
+AI Usage
 
-# When Modifying Code
-
-Always:
-
-1. Inspect existing implementation first
-2. Reuse current architecture
-3. Preserve backward compatibility
-4. Minimize risk
-5. Modify real code directly
-6. Explain changed files
-7. Explain testing steps
-
-Do not:
-
-* Rewrite entire modules unnecessarily
-* Introduce duplicate components
-* Create alternative business rules
-* Break existing APIs
+Staff Performance
 
 ---
 
-# Important Principle
+# AI Rules
 
-Jachoei is a trust and safety platform.
+AI must NEVER write SQL.
 
-Accuracy is more important than visual effects.
+Incorrect:
 
-False scam reports are worse than missing cosmetic features.
+AI
 
-Prioritize:
+↓
 
-1. Correctness
-2. Stability
-3. Performance
-4. UX
-5. Visual polish
+SELECT * FROM products
+
+Correct:
+
+AI
+
+↓
+
+checkStock()
+
+↓
+
+Backend
+
+↓
+
+SQL
+
+---
+
+# Tool Calling
+
+AI interacts ONLY through approved tools.
+
+Examples:
+
+checkStock()
+
+searchProduct()
+
+getProduct()
+
+createDraftOrder()
+
+confirmOrder()
+
+cancelOrder()
+
+reserveStock()
+
+releaseStock()
+
+getOrderStatus()
+
+getCustomer()
+
+searchCustomer()
+
+createCustomer()
+
+getSalesSummary()
+
+getLowStockProducts()
+
+getDashboard()
+
+---
+
+# AI Flow
+
+Customer
+
+↓
+
+Message
+
+↓
+
+Intent Detection
+
+↓
+
+Entity Extraction
+
+↓
+
+Select Tool
+
+↓
+
+Backend Service
+
+↓
+
+Database
+
+↓
+
+Return Result
+
+↓
+
+Generate Human Response
+
+---
+
+# Example
+
+Customer:
+
+Do you have Nike XL?
+
+AI
+
+↓
+
+Intent
+
+check_stock
+
+↓
+
+Tool
+
+checkStock()
+
+↓
+
+Backend
+
+↓
+
+Stock = 5
+
+↓
+
+AI
+
+↓
+
+We currently have 5 pairs available.
+
+---
+
+# Business Rules
+
+AI must never:
+
+Delete database records
+
+Update prices
+
+Adjust inventory
+
+Refund orders
+
+Delete customers
+
+Without explicit approval.
+
+Sensitive actions require:
+
+Human Confirmation
+
+or
+
+Role Permission
+
+---
+
+# Folder Structure
+
+/apps
+
+/api
+
+/services
+
+/ai
+
+/channels
+
+/modules
+
+inventory
+
+orders
+
+crm
+
+payment
+
+shipping
+
+reports
+
+/shared
+
+/database
+
+---
+
+# Coding Rules
+
+Business Logic
+
+↓
+
+Services
+
+Database
+
+↓
+
+Repositories
+
+AI
+
+↓
+
+Never contains SQL
+
+Frontend
+
+↓
+
+Never contains business logic
+
+---
+
+# Future Roadmap
+
+Phase 1
+
+Inventory
+
+Products
+
+Orders
+
+CRM
+
+Phase 2
+
+LINE Integration
+
+TikTok Integration
+
+Payments
+
+Shipping
+
+Phase 3
+
+AI Tool Calling
+
+AI Agent
+
+OCR
+
+Phase 4
+
+Voice AI
+
+Forecasting
+
+Demand Prediction
+
+Business Intelligence
+
+---
+
+# Design Principle
+
+Everything starts from a conversation.
+
+Conversation
+
+↓
+
+Intent
+
+↓
+
+Business Function
+
+↓
+
+Business Data
+
+↓
+
+Business Action
+
+↓
+
+Customer Response
+
+AI-BMS is NOT an AI Chatbot.
+
+AI-BMS is an AI Business Operating System.
