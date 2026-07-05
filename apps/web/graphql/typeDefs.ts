@@ -682,6 +682,9 @@ export const typeDefs = /* GraphQL */ `
     bmsMyTenant: BmsTenantInfo!
     bmsChannels: [BmsChannelConfig!]!
 
+    # ===== BMS billing (admin) =====
+    bmsBilling: BmsBilling!
+
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
@@ -826,6 +829,19 @@ export const typeDefs = /* GraphQL */ `
     is_super: Boolean!
     permissions: [String!]!
   }
+
+  # ===== BMS SaaS: plans / billing / signup =====
+  type BmsPlan {
+    code: String!  name: String!  price_monthly: Float!
+    max_products: Int!  max_channels: Int!  max_orders_month: Int!
+  }
+  type BmsUsage { products: Int!  channels: Int!  orders_month: Int! }
+  type BmsBilling {
+    plan: BmsPlan!
+    usage: BmsUsage!
+    plans: [BmsPlan!]!
+  }
+  type BmsSignupResult { status: String!  tenantId: ID  slug: String }
 
   # ===== BMS channels / settings =====
   type BmsTenantInfo { id: ID!  name: String!  slug: String! }
@@ -1207,5 +1223,9 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
+
+    # ===== BMS SaaS: signup (public) + billing (admin) =====
+    bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
+    bmsChangePlan(planCode: String!): Boolean!
   }
 `;

@@ -14,7 +14,8 @@ import {
   TeamOutlined,
   DashboardOutlined,
   SafetyOutlined,
-  ApiOutlined
+  ApiOutlined,
+  CreditCardOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -38,6 +39,7 @@ export default function AdminHeader() {
     { text: 'Customers', icon: <TeamOutlined />, href: '/admin/customers', badge: 0 },
     { text: 'Playground', icon: <ExperimentOutlined />, href: '/admin/playground', badge: 0 },
     { text: 'Settings', icon: <ApiOutlined />, href: '/admin/settings', badge: 0 },
+    { text: 'Billing', icon: <CreditCardOutlined />, href: '/admin/billing', badge: 0 },
     { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
   ];
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()

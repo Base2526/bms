@@ -5,6 +5,7 @@
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { beginTenantTx } from "./tenant";
+import { enforceProductQuota } from "./plans";
 
 export type ProductRowFull = {
   sku: string;
@@ -62,6 +63,10 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   const active = input.active ?? true;
   const barcode = input.barcode?.trim() || null;
+
+  // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
+  const existing = await query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
+  if (existing.rowCount === 0) await enforceProductQuota(tenantId);
 
   const res = await query<ProductRowFull>(
     `INSERT INTO bms_products (tenant_id, sku, name, price, keywords, active, barcode)
