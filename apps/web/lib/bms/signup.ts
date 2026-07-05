@@ -56,6 +56,15 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
     const roleRes = await client.query<{ id: string }>(`SELECT id FROM roles WHERE name = 'Manager'`);
     const roleId = roleRes.rows[0]?.id ?? null;
 
+    // seed สิทธิ์ role ของร้านใหม่ (คัดลอก template จาก default tenant)
+    await client.query(
+      `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
+       SELECT $1, role_id, permission FROM bms_role_permissions
+        WHERE tenant_id = '11111111-1111-1111-1111-111111111111'
+       ON CONFLICT DO NOTHING`,
+      [tenantId]
+    );
+
     const hash = await bcrypt.hash(password, 10);
     await client.query(
       `INSERT INTO users (name, username, email, role, role_id, tenant_id, password_hash)

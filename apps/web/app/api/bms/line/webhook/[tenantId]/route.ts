@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
+import { rateLimit } from "@/lib/bms/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,12 @@ async function pushLineReply(token: string, replyToken: string, text: string) {
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
+
+  // rate limit ต่อร้าน (กัน abuse / flood)
+  const rl = rateLimit(`line:${tenantId}`, 120, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { "retry-after": String(rl.retryAfter) } });
+  }
 
   const cfg = await getChannel(tenantId, "line");
   if (!cfg || !cfg.active) {

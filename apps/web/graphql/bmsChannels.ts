@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listChannelsMasked, upsertChannel } from "@/lib/bms/channels";
+import { audit } from "@/lib/bms/audit";
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -36,11 +37,13 @@ export const bmsChannelsResolvers = {
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      return upsertChannel(getTenantId(ctx), args.channel, {
+      const ok = await upsertChannel(getTenantId(ctx), args.channel, {
         accessToken: args.accessToken,
         channelSecret: args.channelSecret,
         active: args.active,
       });
+      await audit(ctx, "channel.upsert", args.channel, { active: args.active });
+      return ok;
     },
   },
 };

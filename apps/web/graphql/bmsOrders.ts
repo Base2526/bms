@@ -16,6 +16,7 @@ import {
 } from "@/lib/bms/orders";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
+import { audit } from "@/lib/bms/audit";
 
 const ORDER_STATUSES = [
   "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED",
@@ -61,27 +62,39 @@ export const bmsOrdersResolvers = {
   Mutation: {
     async bmsPayOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      return payOrder(getTenantId(ctx), args.id);
+      const ok = await payOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.pay", args.id);
+      return ok;
     },
     async bmsPackOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      return packOrder(getTenantId(ctx), args.id);
+      const ok = await packOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.pack", args.id);
+      return ok;
     },
     async bmsShipOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      return shipOrder(getTenantId(ctx), args.id);
+      const ok = await shipOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.ship", args.id);
+      return ok;
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      return completeOrder(getTenantId(ctx), args.id);
+      const ok = await completeOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.complete", args.id);
+      return ok;
     },
     async bmsCancelOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.cancel");
-      return cancelOrder(getTenantId(ctx), args.id);
+      const ok = await cancelOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.cancel", args.id);
+      return ok;
     },
     async bmsReturnOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.return");
-      return returnOrder(getTenantId(ctx), args.id);
+      const ok = await returnOrder(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "order.return", args.id);
+      return ok;
     },
   },
 

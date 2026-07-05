@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
+import { rateLimit } from "@/lib/bms/rateLimit";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -19,6 +20,11 @@ type TikTokMessage = { user_id?: string; content?: { text?: string } };
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
+
+  const rl = rateLimit(`tiktok:${tenantId}`, 120, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { "retry-after": String(rl.retryAfter) } });
+  }
 
   const cfg = await getChannel(tenantId, "tiktok");
   if (!cfg || !cfg.active) {

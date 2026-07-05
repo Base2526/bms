@@ -21,6 +21,7 @@ import {
   SettingOutlined,
   AppstoreOutlined,
   BookOutlined,
+  PartitionOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/useSession';
@@ -52,6 +53,7 @@ export default function AdminHeader() {
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     link('/admin/manual', 'คู่มือ', <BookOutlined />),
+    link('/admin/architecture', 'Architecture', <PartitionOutlined />),
     {
       key: 'g-bms',
       icon: <ShopOutlined />,
@@ -80,6 +82,7 @@ export default function AdminHeader() {
         link('/admin/users', 'Users', <UserOutlined />, 3),
         link('/admin/roles', 'Roles', <SnippetsOutlined />),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
+        link('/admin/audit', 'Audit log', <BookOutlined />),
       ],
     },
     {

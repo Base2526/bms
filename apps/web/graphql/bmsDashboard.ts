@@ -10,6 +10,7 @@ import {
   listRolesWithPermissions,
   setRolePermissions,
 } from "@/lib/bms/permissions";
+import { audit, listAudit } from "@/lib/bms/audit";
 
 // จัดการ RBAC ได้เฉพาะ Administrator (super)
 function requireSuper(ctx: any) {
@@ -36,7 +37,11 @@ export const bmsDashboardResolvers = {
     },
     async bmsRolePermissions(_p: unknown, _a: unknown, ctx: any) {
       requireSuper(ctx);
-      return listRolesWithPermissions();
+      return listRolesWithPermissions(getTenantId(ctx));
+    },
+    async bmsAuditLog(_p: unknown, args: { limit?: number }, ctx: any) {
+      requireSuper(ctx);
+      return listAudit(getTenantId(ctx), args.limit ?? 100);
     },
   },
   Mutation: {
@@ -47,7 +52,9 @@ export const bmsDashboardResolvers = {
     ) {
       requireSuper(ctx);
       try {
-        return await setRolePermissions(args.roleId, args.permissions);
+        const ok = await setRolePermissions(getTenantId(ctx), args.roleId, args.permissions);
+        if (ok) await audit(ctx, "rbac.set", args.roleId, { count: args.permissions.length });
+        return ok;
       } catch (err: any) {
         throw err instanceof GraphQLError
           ? err

@@ -8,6 +8,7 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { getTenantId } from "./tenant";
 
 export const BMS_PERMISSIONS = [
   "product.view",
@@ -43,12 +44,13 @@ export async function loadPermissions(ctx: any): Promise<Set<string>> {
   if (roleName === SUPER_ROLE) {
     perms = new Set(BMS_PERMISSIONS); // super: ทุกสิทธิ์
   } else {
+    // per-tenant: สิทธิ์ของ role แยกตามร้าน
     const res = await query<{ permission: string }>(
       `SELECT rp.permission
          FROM bms_role_permissions rp
          JOIN roles r ON r.id = rp.role_id
-        WHERE r.name = $1`,
-      [roleName]
+        WHERE r.name = $1 AND rp.tenant_id = $2`,
+      [roleName, getTenantId(ctx)]
     );
     perms = new Set(res.rows.map((r) => r.permission));
   }
@@ -72,18 +74,18 @@ export async function myPermissions(ctx: any): Promise<string[]> {
   return [...perms];
 }
 
-// ---- matrix editor (จัดการสิทธิ์ต่อ role) ----
-export async function listRolesWithPermissions() {
+// ---- matrix editor (จัดการสิทธิ์ต่อ role, per-tenant) ----
+export async function listRolesWithPermissions(tenantId: string) {
   const res = await query<{ id: string; name: string; is_super: boolean; permissions: string[] }>(
     `SELECT r.id, r.name,
             (r.name = $1) AS is_super,
             COALESCE(array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL), '{}') AS permissions
        FROM roles r
-       LEFT JOIN bms_role_permissions rp ON rp.role_id = r.id
+       LEFT JOIN bms_role_permissions rp ON rp.role_id = r.id AND rp.tenant_id = $2
       WHERE r.is_active
       GROUP BY r.id, r.name
       ORDER BY r.name`,
-    [SUPER_ROLE]
+    [SUPER_ROLE, tenantId]
   );
   // super role: แสดงว่าได้ทุกสิทธิ์
   return res.rows.map((r) => ({
@@ -94,8 +96,8 @@ export async function listRolesWithPermissions() {
   }));
 }
 
-/** แทนที่สิทธิ์ทั้งชุดของ role (ยกเว้น Administrator ที่เป็น super) */
-export async function setRolePermissions(roleId: string, permissions: string[]): Promise<boolean> {
+/** แทนที่สิทธิ์ทั้งชุดของ role เฉพาะร้านนี้ (ยกเว้น Administrator ที่เป็น super) */
+export async function setRolePermissions(tenantId: string, roleId: string, permissions: string[]): Promise<boolean> {
   const role = await query<{ name: string }>(`SELECT name FROM roles WHERE id = $1`, [roleId]);
   if (role.rowCount === 0) throw new GraphQLError("ไม่พบ role");
   if (role.rows[0].name === SUPER_ROLE) {
@@ -103,15 +105,14 @@ export async function setRolePermissions(roleId: string, permissions: string[]):
       extensions: { code: "BAD_USER_INPUT" },
     });
   }
-  // เก็บเฉพาะ permission ที่ถูกต้องตาม catalog
   const valid = permissions.filter((p) => (BMS_PERMISSIONS as readonly string[]).includes(p));
 
-  await query(`DELETE FROM bms_role_permissions WHERE role_id = $1`, [roleId]);
+  await query(`DELETE FROM bms_role_permissions WHERE tenant_id = $1 AND role_id = $2`, [tenantId, roleId]);
   if (valid.length > 0) {
-    const values = valid.map((_, i) => `($1, $${i + 2})`).join(", ");
+    const values = valid.map((_, i) => `($1, $2, $${i + 3})`).join(", ");
     await query(
-      `INSERT INTO bms_role_permissions (role_id, permission) VALUES ${values}`,
-      [roleId, ...valid]
+      `INSERT INTO bms_role_permissions (tenant_id, role_id, permission) VALUES ${values}`,
+      [tenantId, roleId, ...valid]
     );
   }
   return true;

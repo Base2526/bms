@@ -689,6 +689,7 @@ export const typeDefs = /* GraphQL */ `
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
     bmsRolePermissions: [BmsRolePermissions!]!
+    bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
   }
 
   # ===== BMS orders =====
@@ -820,6 +821,16 @@ export const typeDefs = /* GraphQL */ `
     topProducts: [BmsTopProduct!]!
     topCustomers: [BmsTopCustomer!]!
     salesDaily: [BmsDailySales!]!
+  }
+
+  # ===== BMS audit log =====
+  type BmsAuditEntry {
+    id: ID!
+    actor: String
+    action: String!
+    target: String
+    meta: JSON
+    created_at: String!
   }
 
   # ===== BMS RBAC =====

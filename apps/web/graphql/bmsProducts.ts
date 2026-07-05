@@ -18,6 +18,7 @@ import {
 import { listMovements } from "@/lib/bms/movements";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
+import { audit } from "@/lib/bms/audit";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -66,7 +67,9 @@ export const bmsProductsResolvers = {
     async bmsUpsertProduct(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "product.edit");
       try {
-        return await upsertProduct(getTenantId(ctx), args.input);
+        const p = await upsertProduct(getTenantId(ctx), args.input);
+        await audit(ctx, "product.upsert", args.input?.sku, { name: args.input?.name });
+        return p;
       } catch (err) {
         toGqlError(err);
       }
@@ -77,7 +80,9 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "product.delete");
-      return setProductActive(getTenantId(ctx), args.sku, args.active);
+      const ok = await setProductActive(getTenantId(ctx), args.sku, args.active);
+      if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
+      return ok;
     },
     async bmsAdjustStock(
       _p: unknown,
@@ -94,6 +99,7 @@ export const bmsProductsResolvers = {
           args.note ?? null,
           `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`
         );
+        await audit(ctx, "stock.adjust", args.sku, { size: args.size, delta: args.delta });
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);

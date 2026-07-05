@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
 import { signupShop } from "@/lib/bms/signup";
+import { audit } from "@/lib/bms/audit";
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -32,7 +33,9 @@ export const bmsSaasResolvers = {
     async bmsChangePlan(_p: unknown, args: { planCode: string }, ctx: any) {
       requireTenantAdmin(ctx);
       try {
-        return await changePlan(getTenantId(ctx), args.planCode);
+        const ok = await changePlan(getTenantId(ctx), args.planCode);
+        if (ok) await audit(ctx, "plan.change", args.planCode);
+        return ok;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }
