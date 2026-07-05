@@ -670,6 +670,10 @@ export const typeDefs = /* GraphQL */ `
     bmsProducts: [BmsProduct!]!
     bmsLowStock: [BmsLowStockItem!]!
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
+
+    # ===== BMS CRM (admin) =====
+    bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
+    bmsCustomer(id: ID!): BmsCustomer
   }
 
   # ===== BMS orders =====
@@ -748,6 +752,41 @@ export const typeDefs = /* GraphQL */ `
     note: String
     actor: String
     created_at: String!
+  }
+
+  # ===== BMS CRM =====
+  type BmsCustomerAddress {
+    id: ID!
+    label: String
+    address: String!
+    is_default: Boolean!
+  }
+
+  type BmsCustomerIdentity {
+    channel: String!
+    external_ref: String!
+  }
+
+  type BmsCustomer {
+    id: ID!
+    name: String!
+    phone: String
+    note: String
+    tags: [String!]!
+    total_spent: Float!
+    order_count: Int!
+    created_at: String!
+    addresses: [BmsCustomerAddress!]!
+    identities: [BmsCustomerIdentity!]!
+    orders: [BmsOrder!]!
+  }
+
+  input BmsCustomerInput {
+    id: ID
+    name: String!
+    phone: String
+    note: String
+    tags: [String!]
   }
 
   input RegisterPushTokenInput {
@@ -1106,5 +1145,11 @@ export const typeDefs = /* GraphQL */ `
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
     bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
     bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
+
+    # ===== BMS CRM (admin) =====
+    bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
+    bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
+    bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean): BmsCustomerAddress!
+    bmsDeleteCustomer(id: ID!): Boolean!
   }
 `;

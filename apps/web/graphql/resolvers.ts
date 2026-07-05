@@ -37,6 +37,7 @@ import { phoneResolvers } from "@/graphql/phoneBlock";
 import { contactSpamResolvers } from "@/graphql/contactSpam";
 import { bmsOrdersResolvers } from "@/graphql/bmsOrders";
 import { bmsProductsResolvers } from "@/graphql/bmsProducts";
+import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2586,7 +2587,8 @@ const rawResolvers = {
     ...phoneResolvers.Query,
     ...contactSpamResolvers.Query,
     ...bmsOrdersResolvers.Query,
-    ...bmsProductsResolvers.Query
+    ...bmsProductsResolvers.Query,
+    ...bmsCustomersResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -7014,11 +7016,13 @@ const rawResolvers = {
     ...phoneResolvers.Mutation,
     ...contactSpamResolvers.Mutation,
     ...bmsOrdersResolvers.Mutation,
-    ...bmsProductsResolvers.Mutation
+    ...bmsProductsResolvers.Mutation,
+    ...bmsCustomersResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
   BmsProduct: bmsProductsResolvers.BmsProduct,
+  BmsCustomer: bmsCustomersResolvers.BmsCustomer,
 };
 
 export const resolvers = {

@@ -9,17 +9,29 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
+import { runPipeline, type Channel } from "@/lib/bms/pipeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "test"];
+
 export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as { message?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    message?: unknown;
+    channel?: unknown;
+    customerRef?: unknown;
+  };
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
-  const result = await runPipeline(message, "test");
+  const channel = CHANNELS.includes(body.channel as Channel)
+    ? (body.channel as Channel)
+    : "test";
+  const customerRef =
+    typeof body.customerRef === "string" ? body.customerRef.trim() || null : null;
+
+  const result = await runPipeline(message, channel, customerRef);
   return NextResponse.json(result);
 }

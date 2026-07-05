@@ -12,6 +12,7 @@
 import { getClient, query } from "@/lib/db";
 import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
+import { resolveOrCreateCustomer } from "./customers";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -117,12 +118,19 @@ export async function createOrder(
       });
     }
 
+    // CRM: หา/สร้างลูกค้าจาก (channel, customerRef) ในทรานแซกชันเดียวกัน
+    const customerId = await resolveOrCreateCustomer(
+      client,
+      input.channel,
+      input.customerRef ?? null
+    );
+
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (channel, customer_ref, status, total_amount)
-       VALUES ($1, $2, 'PENDING', $3)
+      `INSERT INTO bms_orders (channel, customer_ref, customer_id, status, total_amount)
+       VALUES ($1, $2, $3, 'PENDING', $4)
        RETURNING id`,
-      [input.channel, input.customerRef ?? null, total]
+      [input.channel, input.customerRef ?? null, customerId, total]
     );
     const orderId = ord.rows[0].id;
 

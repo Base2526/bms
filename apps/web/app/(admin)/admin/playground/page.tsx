@@ -1,0 +1,210 @@
+'use client';
+import { gql, useQuery } from "@apollo/client";
+import {
+  Card, Input, Button, Space, Tag, Select, Segmented, Typography, Divider, Empty, Alert, message,
+} from "antd";
+import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+
+const { Text } = Typography;
+
+// สต็อกสด (ไว้ดูเปลี่ยนแปลงหลังสั่ง)
+const Q_PRODUCTS = gql`
+  query { bmsProducts { sku name variants { size available reserved_stock } } }
+`;
+
+type Bubble = {
+  from: "customer" | "bot";
+  text: string;
+  trace?: any;
+};
+
+const EXAMPLES = [
+  "Nike XL มีไหม",
+  "Nike มีไซซ์อะไรบ้าง",
+  "สั่ง Nike XL 2 ชิ้น",
+  "สั่ง Nike XL 1 ชิ้น กับ Adidas M 1 ชิ้น",
+  "สั่ง Nike XL 999 ชิ้น",
+];
+
+const INTENT_COLOR: Record<string, string> = {
+  CHECK_STOCK: "blue",
+  CONFIRM_ORDER: "green",
+  GREETING: "purple",
+  UNKNOWN: "default",
+};
+
+export default function Page() {
+  const [channel, setChannel] = useState("line");
+  const [customerRef, setCustomerRef] = useState("Ucustomer_001");
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [chat, setChat] = useState<Bubble[]>([]);
+  const [lastOrderId, setLastOrderId] = useState<string | null>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const { data: stockData, refetch: refetchStock } = useQuery(Q_PRODUCTS, {
+    fetchPolicy: "cache-and-network",
+  });
+
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+  }, [chat]);
+
+  const send = async (msg?: string) => {
+    const message_ = (msg ?? text).trim();
+    if (!message_) return;
+    setSending(true);
+    setChat((c) => [...c, { from: "customer", text: message_ }]);
+    setText("");
+    try {
+      const res = await fetch("/api/bms/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: message_, channel, customerRef }),
+      });
+      const data = await res.json();
+      setChat((c) => [...c, { from: "bot", text: data.reply || "(ไม่มีคำตอบ)", trace: data }]);
+      if (data?.order?.status === "CREATED") {
+        setLastOrderId(data.order.orderId);
+        message.success(`สร้างออร์เดอร์ ${data.order.orderId.slice(0, 8)} แล้ว`);
+      }
+      refetchStock();
+    } catch (e: any) {
+      message.error(e?.message || "ส่งไม่สำเร็จ");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const products = stockData?.bmsProducts || [];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
+          <h2 style={{ margin: 0 }}>BMS Playground</h2>
+          <Space>
+            <Link href="/admin/orders"><Button icon={<ShoppingCartOutlined />}>ไปหน้า Orders</Button></Link>
+          </Space>
+        </Space>
+      </div>
+
+      <Alert
+        type="info" showIcon closable style={{ marginBottom: 16 }}
+        message="จำลองลูกค้าแชตเข้ามา → เห็น NLU/สต็อก/ออร์เดอร์ที่เกิดจริง แล้วสต็อกด้านขวาจะอัปเดต — ไปกด จ่าย/แพ็ค/ส่ง ต่อได้ที่หน้า Orders"
+      />
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+        {/* ---- Chat simulator ---- */}
+        <Card title="💬 จำลองแชตลูกค้า" style={{ flex: "1 1 480px", minWidth: 360 }}
+          extra={
+            <Space>
+              <Segmented size="small" value={channel} onChange={(v) => setChannel(v as string)}
+                options={["line", "tiktok", "facebook", "test"]} />
+            </Space>
+          }
+        >
+          <Space style={{ marginBottom: 8 }}>
+            <Text type="secondary">customerRef:</Text>
+            <Input size="small" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} style={{ width: 180 }} />
+          </Space>
+
+          <div
+            ref={logRef}
+            style={{ height: 340, overflowY: "auto", background: "var(--app-surface, #0000000a)", borderRadius: 8, padding: 12, marginBottom: 12 }}
+          >
+            {chat.length === 0 && <Empty description="ยังไม่มีข้อความ ลองพิมพ์หรือกดตัวอย่างด้านล่าง" />}
+            {chat.map((b, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: b.from === "customer" ? "flex-end" : "flex-start", marginBottom: 8 }}>
+                <div style={{ maxWidth: "80%" }}>
+                  <div style={{
+                    background: b.from === "customer" ? "#1677ff" : "#f0f0f0",
+                    color: b.from === "customer" ? "#fff" : "#000",
+                    padding: "8px 12px", borderRadius: 12, whiteSpace: "pre-wrap",
+                  }}>
+                    {b.text}
+                  </div>
+                  {b.trace && <TraceLine trace={b.trace} />}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Space.Compact style={{ width: "100%" }}>
+            <Input
+              placeholder='เช่น "สั่ง Nike XL 2 ชิ้น"'
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPressEnter={() => send()}
+              disabled={sending}
+            />
+            <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>ส่ง</Button>
+          </Space.Compact>
+
+          <div style={{ marginTop: 10 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>ตัวอย่าง:</Text>
+            <div style={{ marginTop: 6 }}>
+              <Space wrap>
+                {EXAMPLES.map((ex) => (
+                  <Tag key={ex} color="blue" style={{ cursor: "pointer" }} onClick={() => send(ex)}>{ex}</Tag>
+                ))}
+              </Space>
+            </div>
+          </div>
+
+          {lastOrderId && (
+            <Alert
+              style={{ marginTop: 12 }} type="success" showIcon
+              message={<>สร้างออร์เดอร์ล่าสุด: <Text code>{lastOrderId.slice(0, 8)}</Text> — <Link href="/admin/orders">จัดการที่หน้า Orders →</Link></>}
+            />
+          )}
+        </Card>
+
+        {/* ---- Live stock ---- */}
+        <Card title="📦 สต็อกสด (available / reserved)" style={{ flex: "1 1 320px", minWidth: 280 }}
+          extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => refetchStock()}>Refresh</Button>}
+        >
+          {products.length === 0 && <Empty />}
+          {products.map((p: any) => (
+            <div key={p.sku} style={{ marginBottom: 12 }}>
+              <Text strong>{p.name}</Text> <Text type="secondary" code>{p.sku}</Text>
+              <div style={{ marginTop: 6 }}>
+                <Space wrap size={4}>
+                  {p.variants.map((v: any) => (
+                    <Tag key={v.size} color={v.available > 0 ? "green" : "default"}>
+                      {v.size}: {v.available}{v.reserved_stock > 0 ? ` (จอง ${v.reserved_stock})` : ""}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+              <Divider style={{ margin: "10px 0" }} />
+            </div>
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// แสดง trace ย่อใต้บับเบิลบอท
+function TraceLine({ trace }: { trace: any }) {
+  const intent = trace?.understanding?.intent;
+  const order = trace?.order;
+  const data = trace?.data;
+  return (
+    <div style={{ marginTop: 4, fontSize: 12 }}>
+      <Space wrap size={4}>
+        {intent && <Tag color={INTENT_COLOR[intent] || "default"}>{intent}</Tag>}
+        {trace?.tool && trace.tool !== "none" && <Tag>tool: {trace.tool}</Tag>}
+        {data?.status && data.status !== "NOT_FOUND" && <Tag color="cyan">stock: {data.status}</Tag>}
+        {order?.status && (
+          <Tag color={order.status === "CREATED" ? "green" : "red"}>
+            order: {order.status}{order.total ? ` · ${order.total.toLocaleString()}฿` : ""}
+          </Tag>
+        )}
+      </Space>
+    </div>
+  );
+}
