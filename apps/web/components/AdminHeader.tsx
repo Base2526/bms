@@ -20,6 +20,7 @@ import {
   ShopOutlined,
   SettingOutlined,
   AppstoreOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/useSession';
@@ -50,6 +51,7 @@ export default function AdminHeader() {
   // จัดกลุ่มเมนูเป็นหมวด → dropdown
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
+    link('/admin/manual', 'คู่มือ', <BookOutlined />),
     {
       key: 'g-bms',
       icon: <ShopOutlined />,
