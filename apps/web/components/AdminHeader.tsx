@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { Space, Button, Badge, Typography, Layout, message } from 'antd';
+import { Button, Badge, Typography, Layout, Menu, message } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   UserOutlined,
   FileTextOutlined,
@@ -15,45 +16,96 @@ import {
   DashboardOutlined,
   SafetyOutlined,
   ApiOutlined,
-  CreditCardOutlined
+  CreditCardOutlined,
+  ShopOutlined,
+  SettingOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
-import { useRouter } from 'next/navigation';
-import { useSession } from '@/lib/useSession'
+import { usePathname } from 'next/navigation';
+import { useSession } from '@/lib/useSession';
 
 const { Title } = Typography;
 const { Header } = Layout;
 
-export default function AdminHeader() {
-  const quick = [
-    { text: 'Dashboard', icon: <DashboardOutlined />, href: '/admin/dashboard', badge: 0 },
-    { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
-    { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
-    { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
-    { text: 'Social Queue', icon: <DatabaseOutlined />, href: '/admin/queue', badge: 0 },
-    { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
-    { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
-    { text: 'Roles', icon: <SnippetsOutlined />, href: '/admin/roles', badge: 0 },
-    { text: 'Permissions', icon: <SafetyOutlined />, href: '/admin/permissions', badge: 0 },
-    { text: 'Products', icon: <ShoppingCartOutlined />, href: '/admin/products', badge: 0 },
-    { text: 'Orders', icon: <ShoppingCartOutlined />, href: '/admin/orders', badge: 0 },
-    { text: 'Customers', icon: <TeamOutlined />, href: '/admin/customers', badge: 0 },
-    { text: 'Playground', icon: <ExperimentOutlined />, href: '/admin/playground', badge: 0 },
-    { text: 'Settings', icon: <ApiOutlined />, href: '/admin/settings', badge: 0 },
-    { text: 'Billing', icon: <CreditCardOutlined />, href: '/admin/billing', badge: 0 },
-    { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
-  ];
-  const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
-  async function onLogout() {
-    const res = await fetch("/api/auth/logout-admin", { method: "POST" });
+// label ที่มี badge (ถ้า count>0)
+const withBadge = (text: string, count = 0) =>
+  count > 0 ? (
+    <span>
+      {text} <Badge count={count} overflowCount={99} size="small" />
+    </span>
+  ) : (
+    text
+  );
 
-    console.log("[onLogout-Admin] res :", res.ok);
+const link = (href: string, text: string, icon: React.ReactNode, badge = 0) => ({
+  key: href,
+  icon,
+  label: <Link href={href}>{withBadge(text, badge)}</Link>,
+});
+
+export default function AdminHeader() {
+  const pathname = usePathname();
+  const { refreshSession } = useSession();
+
+  // จัดกลุ่มเมนูเป็นหมวด → dropdown
+  const items: MenuProps['items'] = [
+    link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
+    {
+      key: 'g-bms',
+      icon: <ShopOutlined />,
+      label: 'ร้านค้า',
+      children: [
+        link('/admin/products', 'Products', <ShoppingCartOutlined />),
+        link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        link('/admin/customers', 'Customers', <TeamOutlined />),
+        link('/admin/playground', 'Playground', <ExperimentOutlined />),
+      ],
+    },
+    {
+      key: 'g-saas',
+      icon: <ApiOutlined />,
+      label: 'SaaS',
+      children: [
+        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />),
+        link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
+      ],
+    },
+    {
+      key: 'g-access',
+      icon: <SafetyOutlined />,
+      label: 'ผู้ใช้/สิทธิ์',
+      children: [
+        link('/admin/users', 'Users', <UserOutlined />, 3),
+        link('/admin/roles', 'Roles', <SnippetsOutlined />),
+        link('/admin/permissions', 'Permissions', <SafetyOutlined />),
+      ],
+    },
+    {
+      key: 'g-system',
+      icon: <AppstoreOutlined />,
+      label: 'ระบบ',
+      children: [
+        link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
+        link('/admin/files', 'Files', <FileImageOutlined />, 5),
+        link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
+        link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
+        link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />),
+        link('/admin/env', 'ENV', <EnvironmentOutlined />),
+      ],
+    },
+  ];
+
+  // ไฮไลต์เมนูที่ตรง path ปัจจุบัน
+  const selectedKeys = [pathname];
+
+  async function onLogout() {
+    const res = await fetch('/api/auth/logout-admin', { method: 'POST' });
     refreshSession();
     if (res.ok) {
-      message.success("Logged out");
-      refreshSession(); // รีโหลดสถานะ session
-      window.location.href = "/admin/login";
+      message.success('Logged out');
+      window.location.href = '/admin/login';
     } else {
-      message.error("Logout failed");
+      message.error('Logout failed');
     }
   }
 
@@ -63,48 +115,42 @@ export default function AdminHeader() {
         background: 'var(--app-surface)',
         boxShadow: '0 2px 8px rgba(var(--app-shadow-rgb),0.08)',
         borderBottom: '1px solid var(--app-border)',
-        padding: '0 24px',
+        padding: '0 20px',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 12,
-      }}>
-      {/* Left */}
-      <Title level={3} style={{ margin: 0 }}>
+        gap: 16,
+        height: 56,
+        lineHeight: '56px',
+      }}
+    >
+      <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap', flex: '0 0 auto' }}>
         <Link href="/admin" style={{ color: 'var(--app-text)' }}>
-          Admin Dashboard
+          <ShopOutlined /> AI-BMS
         </Link>
       </Title>
-      {/* Center */}
-      <Space size="middle" wrap>
-        {quick.map((q) => (
-          <Badge key={q.text} count={q.badge} overflowCount={99} offset={[4, -2]}>
-            <Link href={q.href}>
-              <Button
-                icon={q.icon}
-                style={{
-                  background: 'var(--app-surface-2)',
-                  border: '1px solid var(--app-border)',
-                  boxShadow: 'none',
-                  color: 'var(--app-text)',
-                }}
-              >
-                {q.text}
-              </Button>
-            </Link>
-          </Badge>
-        ))}
-        {/* Right */}
-        <Button
-          icon={<LogoutOutlined />}
-          onClick={onLogout}
-          danger
-          type="primary"
-          style={{ minWidth: 100 }}>
-          Logout
-        </Button>
-      </Space>
+
+      {/* เมนูจัดกลุ่ม — overflow อัตโนมัติเมื่อจอแคบ */}
+      <Menu
+        mode="horizontal"
+        items={items}
+        selectedKeys={selectedKeys}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'transparent',
+          borderBottom: 'none',
+        }}
+      />
+
+      <Button
+        icon={<LogoutOutlined />}
+        onClick={onLogout}
+        danger
+        type="primary"
+        style={{ flex: '0 0 auto' }}
+      >
+        Logout
+      </Button>
     </Header>
   );
 }
