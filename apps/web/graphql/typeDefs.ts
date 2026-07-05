@@ -661,6 +661,93 @@ export const typeDefs = /* GraphQL */ `
 
     myContactSpamProtectionSettings: ContactSpamProtectionSettings!
     myContactSpamMarkedPhoneKeys: [String!]!
+
+    # ===== BMS orders (admin) =====
+    bmsOrders(status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
+    bmsOrder(id: ID!): BmsOrder
+
+    # ===== BMS products & inventory (admin) =====
+    bmsProducts: [BmsProduct!]!
+    bmsLowStock: [BmsLowStockItem!]!
+    bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
+  }
+
+  # ===== BMS orders =====
+  enum BmsOrderStatus {
+    PENDING
+    PAID
+    PACKING
+    SHIPPED
+    COMPLETED
+    CANCELLED
+    RETURNED
+  }
+
+  type BmsOrderItem {
+    product_sku: String!
+    size: String!
+    qty: Int!
+    unit_price: Float!
+  }
+
+  type BmsOrder {
+    id: ID!
+    channel: String!
+    customer_ref: String
+    status: BmsOrderStatus!
+    total_amount: Float!
+    created_at: String!
+    updated_at: String!
+    items: [BmsOrderItem!]!
+  }
+
+  # ===== BMS products & inventory =====
+  type BmsVariant {
+    size: String!
+    current_stock: Int!
+    reserved_stock: Int!
+    available: Int!
+    reorder_point: Int!
+    low: Boolean!
+  }
+
+  type BmsProduct {
+    sku: String!
+    name: String!
+    active: Boolean!
+    price: Float!
+    keywords: [String!]!
+    barcode: String
+    variants: [BmsVariant!]!
+  }
+
+  input BmsProductInput {
+    sku: String!
+    name: String!
+    price: Float!
+    keywords: [String!]
+    active: Boolean
+    barcode: String
+  }
+
+  type BmsLowStockItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    reorder_point: Int!
+  }
+
+  type BmsStockMovement {
+    id: ID!
+    product_sku: String!
+    size: String!
+    type: String!
+    qty: Int!
+    ref_order_id: String
+    note: String
+    actor: String
+    created_at: String!
   }
 
   input RegisterPushTokenInput {
@@ -1005,5 +1092,19 @@ export const typeDefs = /* GraphQL */ `
     updateRole(id: ID!, input: UpdateRoleInput!): Role!
     deleteRole(id: ID!): Boolean!
     setRoleActive(id: ID!, is_active: Boolean!): Role!
+
+    # ===== BMS orders (admin) — OMS state machine =====
+    bmsPayOrder(id: ID!): Boolean!        # PENDING → PAID
+    bmsPackOrder(id: ID!): Boolean!       # PAID → PACKING
+    bmsShipOrder(id: ID!): Boolean!       # PACKING → SHIPPED (ตัดสต็อก)
+    bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
+    bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
+    bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
+
+    # ===== BMS products & inventory (admin) =====
+    bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
+    bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
+    bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
+    bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
   }
 `;

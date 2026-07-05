@@ -35,6 +35,8 @@ import { sendFcmChatPush } from "@/lib/push/fcm";
 
 import { phoneResolvers } from "@/graphql/phoneBlock";
 import { contactSpamResolvers } from "@/graphql/contactSpam";
+import { bmsOrdersResolvers } from "@/graphql/bmsOrders";
+import { bmsProductsResolvers } from "@/graphql/bmsProducts";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2582,7 +2584,9 @@ const rawResolvers = {
         .filter(Boolean);
     },
     ...phoneResolvers.Query,
-    ...contactSpamResolvers.Query
+    ...contactSpamResolvers.Query,
+    ...bmsOrdersResolvers.Query,
+    ...bmsProductsResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -7008,8 +7012,13 @@ const rawResolvers = {
     },
 
     ...phoneResolvers.Mutation,
-    ...contactSpamResolvers.Mutation
+    ...contactSpamResolvers.Mutation,
+    ...bmsOrdersResolvers.Mutation,
+    ...bmsProductsResolvers.Mutation
   },
+  BmsOrder: bmsOrdersResolvers.BmsOrder,
+  BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
+  BmsProduct: bmsProductsResolvers.BmsProduct,
 };
 
 export const resolvers = {
