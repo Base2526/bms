@@ -2,6 +2,7 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { getDashboard } from "@/lib/bms/dashboard";
+import { getTenantId } from "@/lib/bms/tenant";
 import {
   requirePermission,
   myPermissions,
@@ -24,7 +25,7 @@ export const bmsDashboardResolvers = {
   Query: {
     async bmsDashboard(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "report.view");
-      return getDashboard();
+      return getDashboard(getTenantId(ctx));
     },
     // สิทธิ์ของ admin ปัจจุบัน (สำหรับ UI ซ่อน/แสดงปุ่ม)
     async myBmsPermissions(_p: unknown, _a: unknown, ctx: any) {

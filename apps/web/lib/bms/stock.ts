@@ -38,19 +38,20 @@ export function findSize(text: string): string | null {
 
 export type ProductRow = { sku: string; name: string; price: string };
 
-/** หาสินค้าจาก keyword: message มี keyword ตัวใดตัวหนึ่งเป็น substring */
-export async function resolveProduct(text: string): Promise<ProductRow | null> {
+/** หาสินค้าจาก keyword: message มี keyword ตัวใดตัวหนึ่งเป็น substring (ในร้านนั้น) */
+export async function resolveProduct(tenantId: string, text: string): Promise<ProductRow | null> {
   const res = await query<ProductRow>(
     `SELECT sku, name, price
        FROM bms_products
-      WHERE active
+      WHERE tenant_id = $2
+        AND active
         AND EXISTS (
           SELECT 1 FROM unnest(keywords) AS k
            WHERE $1 ILIKE '%' || k || '%'
         )
       ORDER BY char_length(name) DESC
       LIMIT 1`,
-    [text]
+    [text, tenantId]
   );
   return res.rows[0] ?? null;
 }
@@ -60,10 +61,11 @@ export async function resolveProduct(text: string): Promise<ProductRow | null> {
  * เช่น productText="Nike XL มีไหม", size="XL" → { status:"IN_STOCK", available:5 }
  */
 export async function checkStock(
+  tenantId: string,
   productText: string,
   size: string | null
 ): Promise<StockResult> {
-  const product = await resolveProduct(productText);
+  const product = await resolveProduct(tenantId, productText);
   if (!product) return { status: "NOT_FOUND", query: productText };
 
   const price = Number(product.price);
@@ -72,9 +74,9 @@ export async function checkStock(
     const res = await query<{ size: string; available: number }>(
       `SELECT size, (current_stock - reserved_stock) AS available
          FROM bms_inventory
-        WHERE product_sku = $1
+        WHERE tenant_id = $2 AND product_sku = $1
         ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size)`,
-      [product.sku]
+      [product.sku, tenantId]
     );
     return {
       status: "SIZE_UNKNOWN",
@@ -88,8 +90,8 @@ export async function checkStock(
   const res = await query<{ available: number }>(
     `SELECT (current_stock - reserved_stock) AS available
        FROM bms_inventory
-      WHERE product_sku = $1 AND size = $2`,
-    [product.sku, size]
+      WHERE tenant_id = $3 AND product_sku = $1 AND size = $2`,
+    [product.sku, size, tenantId]
   );
   const available = Number(res.rows[0]?.available ?? 0);
   if (available <= 0) {

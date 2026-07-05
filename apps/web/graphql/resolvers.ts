@@ -2834,7 +2834,7 @@ const rawResolvers = {
       // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
+        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
         JWT_SECRET,
         { expiresIn: "1d" }
       );

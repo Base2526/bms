@@ -15,6 +15,7 @@ import {
   deleteCustomer,
 } from "@/lib/bms/customers";
 import { requirePermission } from "@/lib/bms/permissions";
+import { getTenantId } from "@/lib/bms/tenant";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -30,11 +31,11 @@ export const bmsCustomersResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "customer.view");
-      return listCustomers(args.search ?? "", args.limit ?? 50, args.offset ?? 0);
+      return listCustomers(getTenantId(ctx), args.search ?? "", args.limit ?? 50, args.offset ?? 0);
     },
     async bmsCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.view");
-      return getCustomer(args.id);
+      return getCustomer(getTenantId(ctx), args.id);
     },
   },
 
@@ -42,14 +43,14 @@ export const bmsCustomersResolvers = {
     async bmsUpsertCustomer(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await upsertCustomer(args.input);
+        return await upsertCustomer(getTenantId(ctx), args.input);
       } catch (err) {
         toGqlError(err);
       }
     },
     async bmsSetCustomerTags(_p: unknown, args: { id: string; tags: string[] }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
-      return setCustomerTags(args.id, args.tags);
+      return setCustomerTags(getTenantId(ctx), args.id, args.tags);
     },
     async bmsAddCustomerAddress(
       _p: unknown,
@@ -58,14 +59,14 @@ export const bmsCustomersResolvers = {
     ) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await addCustomerAddress(args.id, args.label ?? null, args.address, !!args.isDefault);
+        return await addCustomerAddress(getTenantId(ctx), args.id, args.label ?? null, args.address, !!args.isDefault);
       } catch (err) {
         toGqlError(err);
       }
     },
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
-      return deleteCustomer(args.id);
+      return deleteCustomer(getTenantId(ctx), args.id);
     },
   },
 
@@ -73,8 +74,8 @@ export const bmsCustomersResolvers = {
     total_spent: (p: any) => Number(p.total_spent ?? 0),
     order_count: (p: any) => Number(p.order_count ?? 0),
     tags: (p: any) => p.tags ?? [],
-    addresses: (p: any) => customerAddresses(p.id),
-    identities: (p: any) => customerIdentities(p.id),
-    orders: (p: any) => customerOrders(p.id),
+    addresses: (p: any) => customerAddresses(p.tenant_id, p.id),
+    identities: (p: any) => customerIdentities(p.tenant_id, p.id),
+    orders: (p: any) => customerOrders(p.tenant_id, p.id),
   },
 };

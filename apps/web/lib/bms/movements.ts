@@ -1,8 +1,5 @@
 // =============================================================
-// BMS Stock movements — ledger บันทึกการเคลื่อนไหวสต็อกทุก event
-// -------------------------------------------------------------
-// recordMovement() รับ client ของทรานแซกชันที่กำลังขยับสต็อกอยู่
-// เพื่อให้ ledger กับสต็อกจริง commit/rollback พร้อมกันเสมอ (atomic)
+// BMS Stock movements — ledger (tenant-scoped)
 // =============================================================
 
 import type { PoolClient } from "pg";
@@ -32,6 +29,7 @@ export type MovementRow = {
 export async function recordMovement(
   client: PoolClient,
   m: {
+    tenantId: string;
     sku: string;
     size: string;
     type: MovementType;
@@ -43,15 +41,14 @@ export async function recordMovement(
 ): Promise<void> {
   await client.query(
     `INSERT INTO bms_stock_movements
-       (product_sku, size, type, qty, ref_order_id, note, actor)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
+       (tenant_id, product_sku, size, type, qty, ref_order_id, note, actor)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [m.tenantId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
   );
 }
 
 /**
- * บันทึก movements ของทุกรายการใน order (RESERVE/RELEASE/FULFILL) แบบ bulk
- * ดึง sku/size/qty จาก bms_order_items ของ order ที่ระบุ
+ * bulk movements ของทุกรายการใน order — ดึง tenant_id/sku/size/qty จาก order_items เอง
  */
 export async function recordOrderMovements(
   client: PoolClient,
@@ -61,16 +58,17 @@ export async function recordOrderMovements(
 ): Promise<void> {
   if (orderIds.length === 0) return;
   await client.query(
-    `INSERT INTO bms_stock_movements (product_sku, size, type, qty, ref_order_id, actor)
-     SELECT product_sku, size, $2, qty, order_id, $3
+    `INSERT INTO bms_stock_movements (tenant_id, product_sku, size, type, qty, ref_order_id, actor)
+     SELECT tenant_id, product_sku, size, $2, qty, order_id, $3
        FROM bms_order_items
       WHERE order_id = ANY($1::uuid[])`,
     [orderIds, type, actor]
   );
 }
 
-/** อ่านประวัติ (ล่าสุดก่อน) ต่อสินค้า (option: เจาะไซซ์) */
+/** อ่านประวัติ (ล่าสุดก่อน) ต่อสินค้าในร้าน */
 export async function listMovements(
+  tenantId: string,
   sku: string,
   size: string | null,
   limit = 50
@@ -79,11 +77,11 @@ export async function listMovements(
   const res = await query<MovementRow>(
     `SELECT id, product_sku, size, type, qty, ref_order_id, note, actor, created_at
        FROM bms_stock_movements
-      WHERE product_sku = $1
-        AND ($2::text IS NULL OR size = $2)
+      WHERE tenant_id = $1 AND product_sku = $2
+        AND ($3::text IS NULL OR size = $3)
       ORDER BY created_at DESC, id DESC
-      LIMIT $3`,
-    [sku, size, lim]
+      LIMIT $4`,
+    [tenantId, sku, size, lim]
   );
   return res.rows;
 }

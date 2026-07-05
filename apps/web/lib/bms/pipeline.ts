@@ -50,6 +50,7 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult): st
 export async function runPipeline(
   message: string,
   channel: Channel,
+  tenantId: string,
   customerRef?: string | null
 ): Promise<PipelineResult> {
   // 2-3) Detect intent + extract entities
@@ -68,7 +69,7 @@ export async function runPipeline(
 
     // resolve ทีละรายการ: ถ้ารายการใดไม่ครบ → ถามกลับ (ไม่สร้าง order)
     for (const it of parsed) {
-      const product = await resolveProduct(it.productText);
+      const product = await resolveProduct(tenantId, it.productText);
       if (!product) {
         reply = `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ลองพิมพ์ เช่น "สั่ง Nike XL 2 ชิ้น" ค่ะ 😊`;
         break;
@@ -88,7 +89,7 @@ export async function runPipeline(
     let order: CreateOrderResult | undefined;
     if (!reply) {
       // ทุกรายการครบ → สร้าง order เดียว (createOrder เช็คสต็อก atomic อีกชั้น)
-      order = await createOrder({ channel, customerRef, items: orderItems });
+      order = await createOrder({ tenantId, channel, customerRef, items: orderItems });
       reply = orderReply(names, order);
     }
 
@@ -108,7 +109,7 @@ export async function runPipeline(
   let data: StockResult;
   if (intent === "CHECK_STOCK") {
     tool = "checkStock";
-    data = await checkStock(entities.productText ?? message, entities.size);
+    data = await checkStock(tenantId, entities.productText ?? message, entities.size);
   } else {
     data = { status: "NOT_FOUND", query: message };
   }

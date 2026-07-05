@@ -4,6 +4,7 @@ export interface JWTPayload {
   id: number;
   email: string;
   role: string;
+  tenant_id?: string;
   exp?: number;
   iat?: number;
 }

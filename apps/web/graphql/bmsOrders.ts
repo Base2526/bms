@@ -15,6 +15,7 @@ import {
   returnOrder,
 } from "@/lib/bms/orders";
 import { requirePermission } from "@/lib/bms/permissions";
+import { getTenantId } from "@/lib/bms/tenant";
 
 const ORDER_STATUSES = [
   "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED",
@@ -29,6 +30,7 @@ export const bmsOrdersResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "order.view");
+      const tid = getTenantId(ctx);
       const limit = Math.min(Math.max(Number(args.limit ?? 50), 1), 200);
       const offset = Math.max(Number(args.offset ?? 0), 0);
       const status =
@@ -37,10 +39,10 @@ export const bmsOrdersResolvers = {
       const res = await query(
         `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
            FROM bms_orders
-          WHERE ($1::text IS NULL OR status = $1)
+          WHERE tenant_id = $4 AND ($1::text IS NULL OR status = $1)
           ORDER BY created_at DESC
           LIMIT $2 OFFSET $3`,
-        [status, limit, offset]
+        [status, limit, offset, tid]
       );
       return res.rows;
     },
@@ -49,8 +51,8 @@ export const bmsOrdersResolvers = {
       await requirePermission(ctx, "order.view");
       const res = await query(
         `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
-           FROM bms_orders WHERE id = $1`,
-        [args.id]
+           FROM bms_orders WHERE tenant_id = $2 AND id = $1`,
+        [args.id, getTenantId(ctx)]
       );
       return res.rows[0] ?? null;
     },
@@ -59,27 +61,27 @@ export const bmsOrdersResolvers = {
   Mutation: {
     async bmsPayOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      return payOrder(args.id);
+      return payOrder(getTenantId(ctx), args.id);
     },
     async bmsPackOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      return packOrder(args.id);
+      return packOrder(getTenantId(ctx), args.id);
     },
     async bmsShipOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
-      return shipOrder(args.id);
+      return shipOrder(getTenantId(ctx), args.id);
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
-      return completeOrder(args.id);
+      return completeOrder(getTenantId(ctx), args.id);
     },
     async bmsCancelOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.cancel");
-      return cancelOrder(args.id);
+      return cancelOrder(getTenantId(ctx), args.id);
     },
     async bmsReturnOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.return");
-      return returnOrder(args.id);
+      return returnOrder(getTenantId(ctx), args.id);
     },
   },
 
