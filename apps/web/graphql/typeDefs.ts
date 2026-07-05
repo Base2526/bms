@@ -678,6 +678,10 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
 
+    # ===== BMS settings / channels (admin) =====
+    bmsMyTenant: BmsTenantInfo!
+    bmsChannels: [BmsChannelConfig!]!
+
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
@@ -821,6 +825,18 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     is_super: Boolean!
     permissions: [String!]!
+  }
+
+  # ===== BMS channels / settings =====
+  type BmsTenantInfo { id: ID!  name: String!  slug: String! }
+
+  type BmsChannelConfig {
+    channel: String!
+    active: Boolean!
+    has_token: Boolean!
+    has_secret: Boolean!
+    access_token_masked: String
+    channel_secret_masked: String
   }
 
   input RegisterPushTokenInput {
@@ -1188,5 +1204,8 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
+
+    # ===== BMS settings / channels (admin) =====
+    bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
   }
 `;

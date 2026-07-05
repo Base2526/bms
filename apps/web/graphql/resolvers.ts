@@ -39,6 +39,7 @@ import { bmsOrdersResolvers } from "@/graphql/bmsOrders";
 import { bmsProductsResolvers } from "@/graphql/bmsProducts";
 import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
+import { bmsChannelsResolvers } from "@/graphql/bmsChannels";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2590,7 +2591,8 @@ const rawResolvers = {
     ...bmsOrdersResolvers.Query,
     ...bmsProductsResolvers.Query,
     ...bmsCustomersResolvers.Query,
-    ...bmsDashboardResolvers.Query
+    ...bmsDashboardResolvers.Query,
+    ...bmsChannelsResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -7020,7 +7022,8 @@ const rawResolvers = {
     ...bmsOrdersResolvers.Mutation,
     ...bmsProductsResolvers.Mutation,
     ...bmsCustomersResolvers.Mutation,
-    ...bmsDashboardResolvers.Mutation
+    ...bmsDashboardResolvers.Mutation,
+    ...bmsChannelsResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,

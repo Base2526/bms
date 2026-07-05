@@ -13,7 +13,8 @@ import {
   ExperimentOutlined,
   TeamOutlined,
   DashboardOutlined,
-  SafetyOutlined
+  SafetyOutlined,
+  ApiOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -36,6 +37,7 @@ export default function AdminHeader() {
     { text: 'Orders', icon: <ShoppingCartOutlined />, href: '/admin/orders', badge: 0 },
     { text: 'Customers', icon: <TeamOutlined />, href: '/admin/customers', badge: 0 },
     { text: 'Playground', icon: <ExperimentOutlined />, href: '/admin/playground', badge: 0 },
+    { text: 'Settings', icon: <ApiOutlined />, href: '/admin/settings', badge: 0 },
     { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
   ];
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
