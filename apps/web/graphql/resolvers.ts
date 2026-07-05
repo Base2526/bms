@@ -38,6 +38,7 @@ import { contactSpamResolvers } from "@/graphql/contactSpam";
 import { bmsOrdersResolvers } from "@/graphql/bmsOrders";
 import { bmsProductsResolvers } from "@/graphql/bmsProducts";
 import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
+import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2588,7 +2589,8 @@ const rawResolvers = {
     ...contactSpamResolvers.Query,
     ...bmsOrdersResolvers.Query,
     ...bmsProductsResolvers.Query,
-    ...bmsCustomersResolvers.Query
+    ...bmsCustomersResolvers.Query,
+    ...bmsDashboardResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {

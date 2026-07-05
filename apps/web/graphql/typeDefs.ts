@@ -674,6 +674,9 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS CRM (admin) =====
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
     bmsCustomer(id: ID!): BmsCustomer
+
+    # ===== BMS Dashboard (admin) =====
+    bmsDashboard: BmsDashboard!
   }
 
   # ===== BMS orders =====
@@ -787,6 +790,24 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     note: String
     tags: [String!]
+  }
+
+  # ===== BMS Dashboard =====
+  type BmsStatusCount { status: String!  count: Int! }
+  type BmsTopProduct  { sku: String!  name: String!  qty: Int!  revenue: Float! }
+  type BmsTopCustomer { id: ID!  name: String!  tags: [String!]!  spent: Float!  orders: Int! }
+  type BmsDailySales  { day: String!  revenue: Float!  orders: Int! }
+
+  type BmsDashboard {
+    revenueTotal: Float!
+    revenueToday: Float!
+    orderCount: Int!
+    lowStockCount: Int!
+    customerCount: Int!
+    ordersByStatus: [BmsStatusCount!]!
+    topProducts: [BmsTopProduct!]!
+    topCustomers: [BmsTopCustomer!]!
+    salesDaily: [BmsDailySales!]!
   }
 
   input RegisterPushTokenInput {

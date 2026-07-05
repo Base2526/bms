@@ -11,7 +11,8 @@ import {
   EnvironmentOutlined,
   ShoppingCartOutlined,
   ExperimentOutlined,
-  TeamOutlined
+  TeamOutlined,
+  DashboardOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -21,6 +22,7 @@ const { Header } = Layout;
 
 export default function AdminHeader() {
   const quick = [
+    { text: 'Dashboard', icon: <DashboardOutlined />, href: '/admin/dashboard', badge: 0 },
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
     { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
