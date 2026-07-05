@@ -24,6 +24,7 @@ import {
   WarningOutlined,
   HistoryOutlined,
 } from "@ant-design/icons";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 // ---- Types --------------------------------------------------
 type Variant = {
@@ -117,6 +118,7 @@ function ProductsManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
+  const { can } = useBmsPermissions();
   const { data, loading, error, refetch } = useQuery(Q_PRODUCTS, {
     fetchPolicy: "cache-and-network",
   });
@@ -202,18 +204,19 @@ function ProductsManagement() {
       {
         title: "Active", dataIndex: "active", key: "active", width: 80,
         render: (active: boolean, p: Product) => (
-          <Switch size="small" checked={active}
+          <Switch size="small" checked={active} disabled={!can("product.delete")}
             onChange={(c) => setActive({ variables: { sku: p.sku, active: c } })} />
         ),
       },
       {
         title: "", key: "actions", width: 80,
-        render: (_: any, p: Product) => (
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(p)}>Edit</Button>
-        ),
+        render: (_: any, p: Product) =>
+          can("product.edit")
+            ? <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(p)}>Edit</Button>
+            : <span style={{ color: "#ccc" }}>—</span>,
       },
     ],
-    []
+    [can]
   );
 
   if (error) {
@@ -227,7 +230,7 @@ function ProductsManagement() {
           <h2 style={{ margin: 0 }}>Products & Inventory</h2>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>Refresh</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มสินค้า</Button>
+            {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มสินค้า</Button>}
           </Space>
         </Space>
       </div>
@@ -260,7 +263,7 @@ function ProductsManagement() {
         loading={loading}
         dataSource={products}
         columns={columns}
-        expandable={{ expandedRowRender: (p: Product) => <ProductDetail product={p} onChanged={refreshAll} /> }}
+        expandable={{ expandedRowRender: (p: Product) => <ProductDetail product={p} onChanged={refreshAll} canAdjust={can("stock.adjust")} /> }}
         pagination={false}
       />
 
@@ -297,7 +300,7 @@ function ProductsManagement() {
 }
 
 // ---- Expanded row: inventory editor + movement history ------
-function ProductDetail({ product, onChanged }: { product: Product; onChanged: () => void }) {
+function ProductDetail({ product, onChanged, canAdjust }: { product: Product; onChanged: () => void; canAdjust: boolean }) {
   const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
   const [adjustStock] = useMutation(M_ADJUST, {
     onCompleted: () => { message.success("ปรับสต็อกแล้ว"); onChanged(); refetchMoves(); },
@@ -330,6 +333,7 @@ function ProductDetail({ product, onChanged }: { product: Product; onChanged: ()
         <Space size={4}>
           <InputNumber
             size="small" min={0} defaultValue={r.reorder_point} style={{ width: 64 }}
+            disabled={!canAdjust}
             onBlur={(e) => {
               const rp = Number((e.target as HTMLInputElement).value);
               if (rp !== r.reorder_point)
@@ -342,13 +346,13 @@ function ProductDetail({ product, onChanged }: { product: Product; onChanged: ()
     },
     {
       title: "ปรับสต็อก", key: "adjust", width: 200,
-      render: (_: any, v: Variant) => (
+      render: (_: any, v: Variant) => canAdjust ? (
         <Space>
           <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: 10 } })}>+10</Button>
           <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: 1 } })}>+1</Button>
           <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: -1 } })}>−1</Button>
         </Space>
-      ),
+      ) : <span style={{ color: "#ccc" }}>ไม่มีสิทธิ์</span>,
     },
   ];
 
@@ -370,7 +374,7 @@ function ProductDetail({ product, onChanged }: { product: Product; onChanged: ()
   return (
     <div>
       <Table rowKey="size" dataSource={product.variants} columns={variantCols} pagination={false} size="small" />
-      <Space style={{ marginTop: 12 }}>
+      <Space style={{ marginTop: 12, display: canAdjust ? "inline-flex" : "none" }}>
         <span>เพิ่มไซซ์ใหม่:</span>
         <Select placeholder="size" style={{ width: 90 }} value={newSize} onChange={setNewSize}
           options={SIZE_OPTS.map((s) => ({ value: s, label: s }))} />

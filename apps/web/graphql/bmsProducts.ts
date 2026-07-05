@@ -6,7 +6,6 @@
 // =============================================================
 
 import { GraphQLError } from "graphql/error";
-import { requireAuth } from "@/lib/auth";
 import {
   listProducts,
   listVariants,
@@ -17,16 +16,7 @@ import {
   listLowStock,
 } from "@/lib/bms/products";
 import { listMovements } from "@/lib/bms/movements";
-
-function requireAdmin(ctx: any) {
-  const auth = requireAuth(ctx);
-  if (auth.scope !== "admin") {
-    throw new GraphQLError("Admin only", {
-      extensions: { code: "FORBIDDEN", http: { status: 403 } },
-    });
-  }
-  return auth;
-}
+import { requirePermission } from "@/lib/bms/permissions";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -54,11 +44,11 @@ const shapeVariant = (r: {
 export const bmsProductsResolvers = {
   Query: {
     async bmsProducts(_p: unknown, _a: unknown, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "product.view");
       return listProducts();
     },
     async bmsLowStock(_p: unknown, _a: unknown, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "product.view");
       return listLowStock();
     },
     async bmsStockMovements(
@@ -66,14 +56,14 @@ export const bmsProductsResolvers = {
       args: { sku: string; size?: string | null; limit?: number },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "product.view");
       return listMovements(args.sku, args.size ?? null, args.limit ?? 50);
     },
   },
 
   Mutation: {
     async bmsUpsertProduct(_p: unknown, args: { input: any }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "product.edit");
       try {
         return await upsertProduct(args.input);
       } catch (err) {
@@ -85,7 +75,7 @@ export const bmsProductsResolvers = {
       args: { sku: string; active: boolean },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "product.delete");
       return setProductActive(args.sku, args.active);
     },
     async bmsAdjustStock(
@@ -93,14 +83,14 @@ export const bmsProductsResolvers = {
       args: { sku: string; size: string; delta: number; note?: string },
       ctx: any
     ) {
-      const auth = requireAdmin(ctx);
+      await requirePermission(ctx, "stock.adjust");
       try {
         const row = await adjustStock(
           args.sku,
           args.size,
           args.delta,
           args.note ?? null,
-          `admin:${auth.author_id ?? "?"}`
+          `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`
         );
         return shapeVariant(row);
       } catch (err) {
@@ -112,7 +102,7 @@ export const bmsProductsResolvers = {
       args: { sku: string; size: string; reorderPoint: number },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "stock.adjust");
       try {
         const row = await setReorderPoint(args.sku, args.size, args.reorderPoint);
         return shapeVariant(row);

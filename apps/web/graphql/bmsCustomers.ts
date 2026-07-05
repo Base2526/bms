@@ -3,7 +3,6 @@
 // =============================================================
 
 import { GraphQLError } from "graphql/error";
-import { requireAuth } from "@/lib/auth";
 import {
   listCustomers,
   getCustomer,
@@ -15,16 +14,8 @@ import {
   addCustomerAddress,
   deleteCustomer,
 } from "@/lib/bms/customers";
+import { requirePermission } from "@/lib/bms/permissions";
 
-function requireAdmin(ctx: any) {
-  const auth = requireAuth(ctx);
-  if (auth.scope !== "admin") {
-    throw new GraphQLError("Admin only", {
-      extensions: { code: "FORBIDDEN", http: { status: 403 } },
-    });
-  }
-  return auth;
-}
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
     extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
@@ -38,18 +29,18 @@ export const bmsCustomersResolvers = {
       args: { search?: string; limit?: number; offset?: number },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.view");
       return listCustomers(args.search ?? "", args.limit ?? 50, args.offset ?? 0);
     },
     async bmsCustomer(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.view");
       return getCustomer(args.id);
     },
   },
 
   Mutation: {
     async bmsUpsertCustomer(_p: unknown, args: { input: any }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.edit");
       try {
         return await upsertCustomer(args.input);
       } catch (err) {
@@ -57,7 +48,7 @@ export const bmsCustomersResolvers = {
       }
     },
     async bmsSetCustomerTags(_p: unknown, args: { id: string; tags: string[] }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.edit");
       return setCustomerTags(args.id, args.tags);
     },
     async bmsAddCustomerAddress(
@@ -65,7 +56,7 @@ export const bmsCustomersResolvers = {
       args: { id: string; label?: string; address: string; isDefault?: boolean },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.edit");
       try {
         return await addCustomerAddress(args.id, args.label ?? null, args.address, !!args.isDefault);
       } catch (err) {
@@ -73,7 +64,7 @@ export const bmsCustomersResolvers = {
       }
     },
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "customer.edit");
       return deleteCustomer(args.id);
     },
   },

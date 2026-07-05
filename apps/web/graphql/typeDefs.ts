@@ -677,6 +677,11 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
+
+    # ===== BMS RBAC (admin) =====
+    myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
+    bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
+    bmsRolePermissions: [BmsRolePermissions!]!
   }
 
   # ===== BMS orders =====
@@ -808,6 +813,14 @@ export const typeDefs = /* GraphQL */ `
     topProducts: [BmsTopProduct!]!
     topCustomers: [BmsTopCustomer!]!
     salesDaily: [BmsDailySales!]!
+  }
+
+  # ===== BMS RBAC =====
+  type BmsRolePermissions {
+    id: ID!
+    name: String!
+    is_super: Boolean!
+    permissions: [String!]!
   }
 
   input RegisterPushTokenInput {
@@ -1172,5 +1185,8 @@ export const typeDefs = /* GraphQL */ `
     bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
     bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean): BmsCustomerAddress!
     bmsDeleteCustomer(id: ID!): Boolean!
+
+    # ===== BMS RBAC (admin) =====
+    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
   }
 `;

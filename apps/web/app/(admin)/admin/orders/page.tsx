@@ -21,6 +21,7 @@ import {
   CloseCircleOutlined,
   RollbackOutlined,
 } from "@ant-design/icons";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 // ---- Types --------------------------------------------------
 type OrderStatus =
@@ -79,6 +80,7 @@ const CHANNEL_COLOR: Record<string, string> = {
 const FILTERS = ["ALL", "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED"] as const;
 
 function OrdersManagement() {
+  const { can } = useBmsPermissions();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
 
   const { data, loading, error, refetch } = useQuery(Q_ORDERS, {
@@ -109,34 +111,40 @@ function OrdersManagement() {
 
   const actionsFor = (r: Order) => {
     const v = { variables: { id: r.id } };
+    const btns: any[] = [];
+    const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>จ่ายเงิน</Button>;
+    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>แพ็ค</Button>;
+    const shipBtn = (
+      <Popconfirm key="ship" title="จัดส่งออร์เดอร์นี้?" description="จะตัดสต็อกจริง" okText="จัดส่ง" cancelText="ยกเลิก" disabled={busy} onConfirm={() => ship(v)}>
+        <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>จัดส่ง</Button>
+      </Popconfirm>
+    );
+    const doneBtn = <Button key="done" type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy} onClick={() => complete(v)}>สำเร็จ</Button>;
+    const cancelBtn = <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />;
+    const returnBtn = <ReturnBtn key="r" onOk={() => ret(v)} disabled={busy} />;
+
     switch (r.status) {
       case "PENDING":
-        return [
-          <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>จ่ายเงิน</Button>,
-          <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />,
-        ];
+        if (can("order.pay")) btns.push(payBtn);
+        if (can("order.cancel")) btns.push(cancelBtn);
+        break;
       case "PAID":
-        return [
-          <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>แพ็ค</Button>,
-          <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />,
-        ];
+        if (can("order.ship")) btns.push(packBtn);
+        if (can("order.cancel")) btns.push(cancelBtn);
+        break;
       case "PACKING":
-        return [
-          <Popconfirm key="ship" title="จัดส่งออร์เดอร์นี้?" description="จะตัดสต็อกจริง" okText="จัดส่ง" cancelText="ยกเลิก" disabled={busy} onConfirm={() => ship(v)}>
-            <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>จัดส่ง</Button>
-          </Popconfirm>,
-          <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />,
-        ];
+        if (can("order.ship")) btns.push(shipBtn);
+        if (can("order.cancel")) btns.push(cancelBtn);
+        break;
       case "SHIPPED":
-        return [
-          <Button key="done" type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy} onClick={() => complete(v)}>สำเร็จ</Button>,
-          <ReturnBtn key="r" onOk={() => ret(v)} disabled={busy} />,
-        ];
+        if (can("order.pay")) btns.push(doneBtn);
+        if (can("order.return")) btns.push(returnBtn);
+        break;
       case "COMPLETED":
-        return [<ReturnBtn key="r" onOk={() => ret(v)} disabled={busy} />];
-      default:
-        return [<span key="none" style={{ color: "#999" }}>—</span>];
+        if (can("order.return")) btns.push(returnBtn);
+        break;
     }
+    return btns.length ? btns : [<span key="none" style={{ color: "#999" }}>—</span>];
   };
 
   const columns = useMemo(
@@ -158,7 +166,7 @@ function OrdersManagement() {
       { title: "Actions", key: "actions", width: 220,
         render: (_: any, r: Order) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [busy]
+    [busy, can]
   );
 
   const itemColumns = [

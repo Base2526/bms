@@ -7019,7 +7019,8 @@ const rawResolvers = {
     ...contactSpamResolvers.Mutation,
     ...bmsOrdersResolvers.Mutation,
     ...bmsProductsResolvers.Mutation,
-    ...bmsCustomersResolvers.Mutation
+    ...bmsCustomersResolvers.Mutation,
+    ...bmsDashboardResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,

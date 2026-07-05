@@ -12,7 +12,8 @@ import {
   ShoppingCartOutlined,
   ExperimentOutlined,
   TeamOutlined,
-  DashboardOutlined
+  DashboardOutlined,
+  SafetyOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -30,6 +31,7 @@ export default function AdminHeader() {
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
     { text: 'Roles', icon: <SnippetsOutlined />, href: '/admin/roles', badge: 0 },
+    { text: 'Permissions', icon: <SafetyOutlined />, href: '/admin/permissions', badge: 0 },
     { text: 'Products', icon: <ShoppingCartOutlined />, href: '/admin/products', badge: 0 },
     { text: 'Orders', icon: <ShoppingCartOutlined />, href: '/admin/orders', badge: 0 },
     { text: 'Customers', icon: <TeamOutlined />, href: '/admin/customers', badge: 0 },

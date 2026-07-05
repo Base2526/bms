@@ -5,8 +5,6 @@
 // ใช้ service เดียวกับ REST/chat (lib/bms/orders) เพื่อไม่ให้ตรรกะซ้ำ
 // =============================================================
 
-import { GraphQLError } from "graphql/error";
-import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import {
   payOrder,
@@ -16,20 +14,12 @@ import {
   cancelOrder,
   returnOrder,
 } from "@/lib/bms/orders";
+import { requirePermission } from "@/lib/bms/permissions";
 
-const ORDER_STATUSES = ["RESERVED", "CONFIRMED", "FULFILLED", "CANCELLED"] as const;
+const ORDER_STATUSES = [
+  "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED",
+] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
-
-/** จำกัดเฉพาะ admin — orders เป็นข้อมูลหลังบ้าน */
-function requireAdmin(ctx: any) {
-  const auth = requireAuth(ctx);
-  if (auth.scope !== "admin") {
-    throw new GraphQLError("Admin only", {
-      extensions: { code: "FORBIDDEN", http: { status: 403 } },
-    });
-  }
-  return auth;
-}
 
 export const bmsOrdersResolvers = {
   Query: {
@@ -38,7 +28,7 @@ export const bmsOrdersResolvers = {
       args: { status?: OrderStatus; limit?: number; offset?: number },
       ctx: any
     ) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.view");
       const limit = Math.min(Math.max(Number(args.limit ?? 50), 1), 200);
       const offset = Math.max(Number(args.offset ?? 0), 0);
       const status =
@@ -56,7 +46,7 @@ export const bmsOrdersResolvers = {
     },
 
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.view");
       const res = await query(
         `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
            FROM bms_orders WHERE id = $1`,
@@ -68,27 +58,27 @@ export const bmsOrdersResolvers = {
 
   Mutation: {
     async bmsPayOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.pay");
       return payOrder(args.id);
     },
     async bmsPackOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.ship");
       return packOrder(args.id);
     },
     async bmsShipOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.ship");
       return shipOrder(args.id);
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.pay");
       return completeOrder(args.id);
     },
     async bmsCancelOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.cancel");
       return cancelOrder(args.id);
     },
     async bmsReturnOrder(_p: unknown, args: { id: string }, ctx: any) {
-      requireAdmin(ctx);
+      await requirePermission(ctx, "order.return");
       return returnOrder(args.id);
     },
   },
