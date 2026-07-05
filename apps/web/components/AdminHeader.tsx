@@ -8,7 +8,12 @@ import {
   DatabaseOutlined,
   LogoutOutlined,
   SnippetsOutlined,
-  EnvironmentOutlined
+  EnvironmentOutlined,
+  ShoppingCartOutlined,
+  ExperimentOutlined,
+  TeamOutlined,
+  DashboardOutlined,
+  SafetyOutlined
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/useSession'
@@ -18,6 +23,7 @@ const { Header } = Layout;
 
 export default function AdminHeader() {
   const quick = [
+    { text: 'Dashboard', icon: <DashboardOutlined />, href: '/admin/dashboard', badge: 0 },
     { text: 'Posts', icon: <FileTextOutlined />, href: '/admin/posts', badge: 2 },
     { text: 'Users', icon: <UserOutlined />, href: '/admin/users', badge: 3 },
     { text: 'Files', icon: <FileImageOutlined />, href: '/admin/files', badge: 5 },
@@ -25,6 +31,11 @@ export default function AdminHeader() {
     { text: 'Logs', icon: <DatabaseOutlined />, href: '/admin/logs', badge: 1 },
     { text: 'Fake', icon: <SnippetsOutlined />, href: '/admin/dev/fake', badge: 0 },
     { text: 'Roles', icon: <SnippetsOutlined />, href: '/admin/roles', badge: 0 },
+    { text: 'Permissions', icon: <SafetyOutlined />, href: '/admin/permissions', badge: 0 },
+    { text: 'Products', icon: <ShoppingCartOutlined />, href: '/admin/products', badge: 0 },
+    { text: 'Orders', icon: <ShoppingCartOutlined />, href: '/admin/orders', badge: 0 },
+    { text: 'Customers', icon: <TeamOutlined />, href: '/admin/customers', badge: 0 },
+    { text: 'Playground', icon: <ExperimentOutlined />, href: '/admin/playground', badge: 0 },
     { text: 'ENV', icon: <EnvironmentOutlined />, href: '/admin/env', badge: 0 },
   ];
   const { admin:adminSession, isAuthenticated, loading, refreshSession } = useSession()
