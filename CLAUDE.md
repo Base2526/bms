@@ -39,6 +39,10 @@ Supported channels:
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` |
+| Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
+
+**Ops automation:** ทุกวัน GitHub Actions อ่าน error จาก `system_logs` → Claude วิเคราะห์+เสนอแพตช์
+→ เปิด **draft PR** (คนรีวิว) → แจ้ง **LINE** (Messaging API push) · log ถูก redact ก่อนส่งออก
 
 **Roadmap ที่เหลือ:** TikTok send API · carrier API จริง (label PDF/auto-tracking) ·
 AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI

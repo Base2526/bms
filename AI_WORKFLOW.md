@@ -69,3 +69,28 @@ Reply Customer         ← ส่งกลับช่องทาง + บั�
 - AI **ห้ามเดา/แต่งตัวเลขสต็อก-ราคา** — ข้อเท็จจริงมาจาก backend เสมอ AI แค่เรียบเรียง
 - การกระทำอ่อนไหว (ยืนยันเงิน/คืนเงิน/ยกเลิก/ปรับสต็อก) ต้องมี **คนยืนยัน + สิทธิ์ (RBAC)**
   เช่น `verifyPaymentSlip()` เป็นแค่คำแนะนำ — คนต้องกด confirm เอง
+
+---
+
+## AI Workflow #2 — Daily Log Triage (ops, ไม่ใช่ลูกค้า)
+
+workflow AI แยกอีกตัวสำหรับดูแลระบบ (GitHub Actions รายวัน) —
+Implemented: [`.github/workflows/daily-log-triage.yml`](.github/workflows/daily-log-triage.yml) + [`scripts/bms-log-triage/`](scripts/bms-log-triage/)
+
+```
+Cron (รายวัน)
+    │
+    ▼
+Collect + Redact       ← ดึง error 24 ชม.จาก system_logs · ปิดบัง email/phone/token/PII
+    │
+    ▼
+Claude Analyze/Patch   ← หา root cause ใน apps/web → แก้เฉพาะที่มั่นใจ (minimal) → npx tsc
+    │
+    ▼
+Open Draft PR          ← base main · คนรีวิว/merge เอง (ห้าม auto-merge)
+    │
+    ▼
+Notify LINE            ← push ลิงก์ PR (Messaging API; LINE Notify ปิดแล้ว)
+```
+
+หลักการเดียวกับ pipeline ลูกค้า: **AI เสนอ ไม่ตัดสินใจเอง** — คนยืนยันก่อนเข้า production เสมอ

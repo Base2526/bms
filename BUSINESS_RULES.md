@@ -323,6 +323,11 @@ After
 
 Reason
 
+> **Implemented — Observability + Daily AI Log Triage:** log แบบ structured เก็บใน `system_logs` ·
+> GitHub Actions รายวันอ่าน error → Claude เสนอแพตช์ → **draft PR** (คนรีวิว ไม่ auto-merge) → แจ้ง LINE ·
+> log ถูก **redact** (email/phone/token/PII) ก่อนส่งออก external · AI ห้ามแตะ migration/secret/config
+> (`.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/`)
+
 ---
 
 # Permissions
@@ -381,6 +386,9 @@ Purchase Order Received
 Inventory Adjustment
 
 All notifications should be logged.
+
+> **Implemented:** LINE ops alert เมื่อ Daily Log Triage เปิด draft PR (Messaging API push) ·
+> business notifications อื่น (low stock / new order / payment / shipment) = roadmap
 
 ---
 

@@ -82,7 +82,8 @@ export default function Page() {
     { key: "a-rbac", href: "#a-rbac", title: "5. RBAC model" },
     { key: "a-billing", href: "#a-billing", title: "6. Billing & Quota" },
     { key: "a-mig", href: "#a-mig", title: "7. Migrations" },
-    { key: "a-prod", href: "#a-prod", title: "8. Production checklist" },
+    { key: "a-obs", href: "#a-obs", title: "8. Observability & Log Triage" },
+    { key: "a-prod", href: "#a-prod", title: "9. Production checklist" },
   ];
 
   return (
@@ -203,8 +204,29 @@ export default function Page() {
             <Paragraph style={{ marginTop: 8 }} type="secondary">apply ตามลำดับ · 4.0 เป็น idempotent (รันซ้ำได้)</Paragraph>
           </Sec>
 
+          <Sec id="a-obs">
+            <Title level={4}>8. Observability & Daily Log Triage</Title>
+            <Paragraph>
+              log แบบ structured เก็บใน <Text code>system_logs</Text> (level/category/message/error_message/stack/status/route_name/created_at)
+              เขียนผ่าน <Text code>lib/logger.ts</Text> — ใช้เป็นแหล่งให้ระบบ triage อัตโนมัติ
+            </Paragraph>
+            <Steps direction="vertical" size="small" current={-1} items={[
+              { title: "Cron รายวัน (GitHub Actions)", description: <><Text code>.github/workflows/daily-log-triage.yml</Text> — 22:00 UTC (~09:00 AEST) หรือกด Run เอง</> },
+              { title: "ดึง + redact log", description: <><Text code>scripts/bms-log-triage/collect-error-logs.mjs</Text> — error 24 ชม.ล่าสุด, จัดกลุ่ม/dedupe, ปิดบัง email/phone/token/api-key/enc/hex/ip → <Text code>bms-log-report.md</Text></> },
+              { title: "Claude วิเคราะห์ + เสนอแพตช์", description: "อ่าน report → หา root cause ใน apps/web → แก้เฉพาะที่มั่นใจ (minimal) → npx tsc เช็ค" },
+              { title: "เปิด draft PR", description: "branch bot/log-triage-<วันที่> → base main → คนรีวิว/merge เอง" },
+              { title: "แจ้งเตือน LINE", description: <>push ผ่าน LINE Messaging API (<Text code>scripts/bms-log-triage/notify-line.mjs</Text>) พร้อมลิงก์ PR — LINE Notify ปิดบริการแล้ว จึงใช้ push ของ OA ทีม ops (ไม่ตั้ง secret = ข้าม)</> },
+            ]} />
+            <Alert type="warning" showIcon style={{ marginTop: 8 }}
+              message="Guardrails: draft PR เสมอ (ไม่ auto-merge/deploy) · redact ก่อนส่งออก (data residency AU/UK) · AI ห้ามแตะ migration/secret/config · secrets: BMS_LOG_DATABASE_URL (READ-ONLY), ANTHROPIC_API_KEY + (ทางเลือก) LINE_OPS_TOKEN, LINE_OPS_TO"
+            />
+            <Paragraph style={{ marginTop: 8 }} type="secondary">
+              ไม่อยากส่ง log ออก cloud → ใช้ self-hosted runner ในวงเน็ตเวิร์ก (แก้ <Text code>runs-on</Text>) · ดู <Text code>scripts/bms-log-triage/README.md</Text>
+            </Paragraph>
+          </Sec>
+
           <Sec id="a-prod">
-            <Title level={4}>8. Production checklist</Title>
+            <Title level={4}>9. Production checklist</Title>
             <Alert type="error" showIcon message="ต้องทำก่อนขายจริง" description={
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 <li>เปิด <Text code>bcrypt.compare</Text> ใน loginAdmin (ตอนนี้ dev ไม่ตรวจรหัสผ่าน)</li>

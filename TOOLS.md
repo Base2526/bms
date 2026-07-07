@@ -707,3 +707,14 @@ BusinessAnalytics()
 FraudDetection()
 
 DemandPrediction()
+
+---
+
+# Ops / AI Automation (นอก tenant tools)
+
+✅ **Daily Log Triage** — GitHub Actions รายวัน: อ่าน error จาก `system_logs` →
+Claude วิเคราะห์ + เสนอแพตช์ → เปิด **draft PR** (คนรีวิว ไม่ auto-merge) → แจ้ง **LINE**
+
+- ไฟล์: `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/{collect-error-logs,notify-line}.mjs`
+- Guardrails: redact secret/PII ก่อนส่งออก · draft PR เท่านั้น · AI ห้ามแตะ migration/secret/config
+- LINE = Messaging API push (LINE Notify ปิดบริการแล้ว มี.ค. 2025)

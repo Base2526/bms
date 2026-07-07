@@ -162,6 +162,8 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 ├── packages/                    # Shared libs: graphql-core, realtime, social-queue
 ├── db/                          # SQL: init, migrations/, triggers, helpers
 ├── storage/                     # Uploaded files / assets
+├── scripts/bms-log-triage/      # Daily AI log triage (collector + LINE notify)
+├── .github/workflows/           # daily-log-triage.yml (cron → AI → draft PR → LINE)
 ├── docker-compose.yml           # Base stack
 ├── docker-compose.dev.yml       # Development override
 ├── docker-compose.prod.yml      # Production override
@@ -232,6 +234,23 @@ Caddy terminates TLS and reverse-proxies **web** and **ws**.
 > ⚠️ **Production safety:** back up the database before running migrations,
 > prefer read-only `SELECT`/`SHOW` checks before schema changes, and roll out
 > the smallest change first. Never restart production services casually.
+
+---
+
+### 🤖 Automation — Daily AI Log Triage
+
+A daily GitHub Actions workflow reads errors from `system_logs`, has Claude
+diagnose + propose a minimal fix, opens a **draft PR** (human reviews — never
+auto-merged), then notifies the team on **LINE** with the PR link.
+
+```
+cron (daily) → collect + redact logs → Claude analyze/patch → draft PR → LINE alert 🔔
+```
+
+- Files: [`.github/workflows/daily-log-triage.yml`](./.github/workflows/daily-log-triage.yml) · [`scripts/bms-log-triage/`](./scripts/bms-log-triage/)
+- Secrets: `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO` (optional)
+- Guardrails: logs redacted (email/phone/token/PII) before leaving; draft PR only; AI won't touch migrations/secrets/config
+- LINE alerts use **Messaging API push** (LINE Notify was discontinued Mar 2025)
 
 ---
 
@@ -402,6 +421,22 @@ Caddy จะจัดการ TLS และ reverse-proxy ไปยัง **web
 > ⚠️ **ความปลอดภัย production:** สำรอง DB ก่อนรัน migration, ตรวจด้วย
 > `SELECT`/`SHOW` (read-only) ก่อนแก้ schema, ปล่อยการเปลี่ยนแปลงเล็กที่สุดก่อน
 > และห้าม restart service บน production แบบไม่จำเป็น
+
+---
+
+### 🤖 ระบบอัตโนมัติ — Daily AI Log Triage
+
+GitHub Actions รันทุกวัน: ดึง error จาก `system_logs` → ให้ Claude วิเคราะห์ + เสนอแพตช์
+→ เปิด **draft PR** (คนรีวิว ไม่ merge เอง) → แจ้งเตือนทีมผ่าน **LINE** พร้อมลิงก์ PR
+
+```
+cron รายวัน → ดึง+redact log → Claude แก้ → draft PR → แจ้ง LINE 🔔
+```
+
+- ไฟล์: [`.github/workflows/daily-log-triage.yml`](./.github/workflows/daily-log-triage.yml) · [`scripts/bms-log-triage/`](./scripts/bms-log-triage/)
+- Secrets: `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO` (ทางเลือก)
+- Guardrails: redact log (email/phone/token/PII) ก่อนส่งออก · draft PR เท่านั้น · AI ไม่แตะ migration/secret/config
+- LINE ใช้ **Messaging API push** (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
 
 ---
 

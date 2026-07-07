@@ -262,6 +262,10 @@ export default function Page() {
             <Paragraph style={{ marginTop: 8 }} type="secondary">
               GraphQL (admin) ที่ <Text code>/api/graphql</Text>: bmsProducts, bmsOrders, bmsPurchaseOrders, bmsPayments, bmsShipments, bmsConversations, bmsCustomers, bmsDashboard, bmsSalesSummary, bmsChannels, bmsBilling, bmsSignup ฯลฯ
             </Paragraph>
+            <Alert style={{ marginTop: 12 }} type="info" showIcon
+              message="ระบบตรวจ error อัตโนมัติรายวัน + แจ้งเตือน LINE"
+              description={<>ทุกวันมี GitHub Actions ดึง error จาก <Text code>system_logs</Text> ให้ AI วิเคราะห์แล้วเปิด draft PR เสนอการแก้ให้ทีมรีวิว (ไม่ merge เอง) แล้ว<b>แจ้งเตือนทีมผ่าน LINE</b>พร้อมลิงก์ PR — รายละเอียดที่หน้า Architecture §8 และ <Text code>scripts/bms-log-triage/</Text></>}
+            />
           </Sec>
         </Col>
 

@@ -21,6 +21,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **GraphQL** → `apps/web/graphql/bms*.ts` (wire เข้า `graphql/resolvers.ts` + SDL ใน `graphql/typeDefs.ts`)
 - **Admin UI** → `apps/web/app/(admin)/admin/*/page.tsx` + เมนู `components/AdminHeader.tsx`
 - **migrations** → `db/migrations/*.sql` (idempotent, apply ตามเลข)
+- **ops automation** → `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
+  (cron → อ่าน `system_logs` → Claude แก้ → draft PR → แจ้ง LINE) · secrets:
+  `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO`
 
 ## การเพิ่มโมดูลใหม่ (checklist)
 
