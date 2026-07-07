@@ -1,5 +1,5 @@
 import sgMail from "@sendgrid/mail";
-import { addLog } from '@/lib/log/log';
+import { addLog } from "@/lib/log/log.server";
 
 let initialized = false;
 

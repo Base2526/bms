@@ -1,5 +1,65 @@
 export const coreTypeDefs = /* GraphQL */ `
   scalar JSON
+
+  enum BlockAction {
+    BLOCK
+    UNBLOCK
+  }
+
+  enum BookmarkAction {
+    BOOKMARK
+    UNBOOKMARK
+  }
+
+  enum BookmarkTargetType {
+    POST
+  }
+
+  type MyPhoneBlockStatusChangedPayload {
+    user_id: ID!
+    action: BlockAction!
+    phone: String!
+    phone_normalized: String!
+    blocked: Boolean!
+    updated_at: String!
+  }
+
+  type MyBankBlockStatusChangedPayload {
+    user_id: ID!
+    action: BlockAction!
+    bank_name: String!
+    account_norm: String!
+    blocked: Boolean!
+    updated_at: String!
+  }
+
+  type MyBookmarkStatusChangedPayload {
+    user_id: ID!
+    action: BookmarkAction!
+    target_type: BookmarkTargetType!
+    target_id: ID!
+    bookmarked: Boolean!
+    updated_at: String!
+  }
+
+  type MyContactSpamMarkChangedPayload {
+    user_id: ID!
+    action: String!
+    phone_normalized: String!
+    contact_name: String
+    source: String
+    active: Boolean!
+    updated_at: String!
+  }
+
+  type MyContactSpamSettingsChangedPayload {
+    user_id: ID!
+    mode: String!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
+    updated_at: String!
+  }
   type User {
     id: ID!
     name: String!
@@ -25,11 +85,20 @@ export const coreTypeDefs = /* GraphQL */ `
     isRead: Boolean!
   }
 
+  type MessageLocation {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String!
+  }
+
   type Message {
     id: ID!
     chat_id: ID!
     sender: User
+    type: String!
     text: String!
+    location: MessageLocation
     created_at: String!
     to_user_ids: [ID!]!
 
@@ -93,5 +162,13 @@ export const coreTypeDefs = /* GraphQL */ `
 
 
     incomingMessage(user_id: ID!): Message!
+
+    # ✅ realtime multi-device sync (same-user)
+    myPhoneBlockStatusChanged: MyPhoneBlockStatusChangedPayload!
+    myBankBlockStatusChanged: MyBankBlockStatusChangedPayload!
+
+    myBookmarkStatusChanged: MyBookmarkStatusChangedPayload!
+    myContactSpamMarkChanged: MyContactSpamMarkChangedPayload!
+    myContactSpamSettingsChanged: MyContactSpamSettingsChangedPayload!
   }
 `;

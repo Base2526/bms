@@ -11,6 +11,7 @@ import {
   Upload,
   Avatar,
   Select,
+  Switch,
   message,
   Space,
   Divider,
@@ -88,7 +89,7 @@ mutation($user_id:ID!, $file:Upload!){
 
 // My Bookmarks
 const Q_MY_BOOKMARKS = gql`
-  query {
+  query MyBookmarks {
     myBookmarks {
       id
       title
@@ -111,6 +112,7 @@ const Q_ME = gql`
       phone
       username
       language
+      notifications_enabled
       role
       avatar
       created_at
@@ -127,6 +129,7 @@ const M_UPDATE_ME = gql`
       phone
       username
       language
+      notifications_enabled
       avatar
     }
   }
@@ -621,7 +624,7 @@ function PostsPanel() {
           />
           <Button onClick={() => refetch({ q })}>Search</Button>
           <Button type="primary">
-            <a href="/post/new" style={{ color: '#fff' }}>
+            <a href="/post/new" style={{ color: 'inherit' }}>
               + New Post
             </a>
           </Button>
@@ -652,13 +655,13 @@ function PostsPanel() {
                 title={<Link href={`/post/${r.id}`}>{r.title}</Link>}
                 description={
                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                    <div style={{ color: 'rgba(0,0,0,0.65)' }}>
+                    <div style={{ color: 'rgba(var(--app-text-rgb),0.72)' }}>
                       {(r.detail || '').slice(0, 120)}
                       {(r.detail || '').length > 120 ? '…' : ''}
                     </div>
                     <Space wrap>
                       <Tag color={r.status === 'public' ? 'green' : 'red'}>{r.status}</Tag>
-                      <span style={{ color: 'rgba(0,0,0,0.45)' }}>
+                      <span style={{ color: 'rgba(var(--app-text-rgb),0.55)' }}>
                         {new Date(r.created_at).toLocaleString()}
                       </span>
                     </Space>
@@ -971,6 +974,7 @@ export default function SettingsPage() {
 
   const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
   const [updateMe, { loading: updatingMe }] = useMutation(M_UPDATE_ME);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   const { user } = useSessionCtx();
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
@@ -984,6 +988,7 @@ export default function SettingsPage() {
       name: me.name ?? '',
       phone: me.phone ?? '',
       language: me.language ?? 'en',
+      notifications_enabled: me.notifications_enabled !== false,
       email: me.email ?? '',
       username: me.username ?? '',
     });
@@ -1035,6 +1040,7 @@ export default function SettingsPage() {
         name: values.name?.trim() || '',
         phone: values.phone?.trim() || '',
         language: values.language || 'en',
+        notifications_enabled: values.notifications_enabled !== false,
         username: values.username?.trim() || '',
       };
 
@@ -1050,11 +1056,40 @@ export default function SettingsPage() {
     }
   }
 
+  async function onToggleNotifications(checked: boolean) {
+    const previous = me?.notifications_enabled !== false;
+    formProfile.setFieldValue('notifications_enabled', checked);
+    setSavingNotifications(true);
+    try {
+      const res = await updateMe({ variables: { data: { notifications_enabled: checked } } });
+      if (res?.data?.updateMe?.id) {
+        message.success('Notification preference updated');
+        refetchMe();
+      } else {
+        throw new Error('Update failed');
+      }
+    } catch (err: any) {
+      formProfile.setFieldValue('notifications_enabled', previous);
+      message.error(err?.message || 'Failed to update notification preference');
+    } finally {
+      setSavingNotifications(false);
+    }
+  }
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: 'var(--app-bg)' }}>
       {/* Mobile header */}
       {isMobile && (
-        <Header style={{ padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+        <Header
+          style={{
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'var(--app-surface)',
+            borderBottom: '1px solid var(--app-border)',
+          }}
+        >
           <Button icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
           <div style={{ fontWeight: 600 }}>Settings</div>
         </Header>
@@ -1074,7 +1109,7 @@ export default function SettingsPage() {
 
       {/* Desktop sider */}
       {!isMobile && (
-        <Sider width={240} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        <Sider width={240} style={{ background: 'var(--app-surface)', borderRight: '1px solid var(--app-border)' }}>
           <div style={{ padding: 12 }}>
             <Card styles={{ body: { padding: 0 } }}>
               {menuNode}
@@ -1083,8 +1118,8 @@ export default function SettingsPage() {
         </Sider>
       )}
 
-      <Layout style={{ background: '#fff' }}>
-        <Content style={{ padding: contentPadding, background: '#fff' }}>
+      <Layout style={{ background: 'var(--app-bg)' }}>
+        <Content style={{ padding: contentPadding, background: 'var(--app-bg)' }}>
           {/* PROFILE */}
           {active === 'profile' && (
             <PanelWrap title="Profile & Account" maxWidth={cardMaxWidth} loading={meLoading}>
@@ -1139,6 +1174,21 @@ export default function SettingsPage() {
                           { value: 'en', label: 'English' },
                           { value: 'th', label: 'ไทย' },
                         ]}
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="notifications_enabled"
+                      label="Notifications"
+                      valuePropName="checked"
+                      extra="Receive push notifications for your account"
+                    >
+                      <Switch
+                        onChange={onToggleNotifications}
+                        disabled={savingNotifications || updatingMe}
+                        loading={savingNotifications}
                       />
                     </Form.Item>
                   </Col>

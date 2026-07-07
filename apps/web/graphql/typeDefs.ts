@@ -3,16 +3,29 @@ export const typeDefs = /* GraphQL */ `
   scalar Upload
   enum PostStatus { public unpublic }
 
+  type Role {
+    id: ID!
+    name: String!
+    description: String
+    is_active: Boolean!
+    created_at: String!
+    updated_at: String!
+    user_count: Int!
+  }
+
   type User {
     id: ID!
     name: String!
     avatar: String
     phone: String
     email: String
-    role: String!
+    role: String! # Legacy text field (backward compatibility)
+    role_id: ID # New normalized field
+    roleDetails: Role # Related role object
     created_at: String!
     username: String!
     language: String!
+    notifications_enabled: Boolean!
   }
 
   type UserConnection {
@@ -24,6 +37,7 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     name: String
     is_group: Boolean!
+    is_undeletable: Boolean!
     created_by: User
     created_at: String!
     members: [User!]!
@@ -38,15 +52,38 @@ export const typeDefs = /* GraphQL */ `
     isRead: Boolean!
   }
 
+  type MessageLocation {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String!
+  }
+
+  input MessageLocationInput {
+    latitude: Float!
+    longitude: Float!
+    placeName: String
+    googleMapsUrl: String
+  }
+
+  type ChatMemberSettings {
+    is_muted: Boolean!
+    notifications_enabled: Boolean!
+  }
+
   type Message {
     id: ID!
     chat_id: ID!
     sender: User
+    type: String!
     text: String!
+    location: MessageLocation
     created_at: String!
     to_user_ids: [ID!]!
 
     images: [MessageImage!]! 
+
+    audio: MessageAudio
 
     is_deleted: Boolean!
     deleted_at: String
@@ -59,6 +96,13 @@ export const typeDefs = /* GraphQL */ `
     reply_to: Message
   }
 
+  type MessageAudio {
+    file_id: ID!
+    url: String!
+    mime: String
+    duration_sec: Int
+  }
+
   type MessageImage {
     id: ID!
     file_id: ID!    # ← ใช้ bind กับ files.id
@@ -68,13 +112,32 @@ export const typeDefs = /* GraphQL */ `
     height: Int
   }
 
+  type MessageConnection {
+    items: [Message!]!
+    nextCursor: String
+    hasMore: Boolean!
+  }
+
   input UserInput {
     name: String!
     avatar: String
     phone: String
     email: String
-    role: String!
+    role: String # Legacy field (optional, backward compatibility)
+    role_id: ID # New field - use this for new code
     passwordHash: String
+  }
+
+  input CreateRoleInput {
+    name: String!
+    description: String
+    is_active: Boolean
+  }
+
+  input UpdateRoleInput {
+    name: String
+    description: String
+    is_active: Boolean
   }
 
   type LoginResult {
@@ -283,30 +346,32 @@ export const typeDefs = /* GraphQL */ `
 
   type SearchBankAccountResult {
     id: ID!
-    entity_id: ID!        # เอาไว้ /bank/[id] หรือ /account/[id]
-    ids: [ID!]! 
+    entity_id: ID!
+    ids: [ID!]!
+
     bank_name: String!
     account_no_masked: String!
     report_count: Int!
     last_report_at: String
+
+    # ✅ client fields
+    account: String
+    risk_level: Int
+    tags: [String!]!
+    updated_at: String
+    is_deleted: Boolean!
+    post_ids: [ID!]!
+    post_count: Int!
+    latest_post_id: ID
+    ctx: JSON
   }
+
 
   type GlobalSearchResult {
     posts: [SearchPostResult!]!
     users: [SearchUserResult!]!
     phones: [SearchPhoneReportResult!]!
     bank_accounts: [SearchBankAccountResult!]!
-  }
-
-  type ScamPhone {
-    phone: String!
-    report_count: Int!
-    last_report_at: String
-    risk_level: Int!        # 0-100, คำนวณจาก report_count / weight อื่น ๆ
-    tags: [String!]!
-    updated_at: String!     # iso time, ใช้สำหรับ sync
-    is_deleted: Boolean!
-    post_ids: [ID!]!        # post ที่เกี่ยวข้องกับเบอร์นี้
   }
 
   type ScamPhoneSnapshotPage {
@@ -319,6 +384,192 @@ export const typeDefs = /* GraphQL */ `
     items: [ScamPhone!]!
   }
 
+  # =========================
+  # Types
+  # =========================
+  type PhoneSafetyStatus {
+    phone: String!
+    phone_normalized: String!
+
+    # ของฉัน
+    my_blocked: Boolean!
+    my_blocked_at: String
+
+    # community (ไม่บอกว่าใคร)
+    blocked_by_count: Int!
+    last_blocked_at: String
+
+    report_count: Int!
+    last_report_at: String
+
+    risk_level: Int!
+    updated_at: String!
+  }
+
+  enum PhoneCenterFilter {
+    ALL
+    BLOCKED
+    REPORTS
+    HISTORY
+  }
+
+  enum RelatedPostsSort {
+    LATEST
+    HIGHEST_RISK
+    MOST_REPORTED
+  }
+
+  type PhoneCenterItem {
+    phone: String!
+    phone_normalized: String!
+    my_blocked: Boolean!
+    my_blocked_at: String
+    my_reported: Boolean!
+    my_reported_at: String
+    in_history: Boolean!
+    last_history_at: String
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    filters: [String!]!
+  }
+
+  type PhoneEntityDetail {
+    phone: String!
+    phone_normalized: String!
+    my_blocked: Boolean!
+    my_blocked_at: String
+    my_reported: Boolean!
+    my_reported_at: String
+    in_history: Boolean!
+    last_history_at: String
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    filters: [String!]!
+  }
+
+  type BankEntityDetail {
+    bank_code: String!
+    bank_name: String!
+    account: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+    post_count: Int!
+    latest_post_id: ID
+    post_ids: [ID!]!
+    is_reported: Boolean!
+    tags: [String!]!
+  }
+
+  type PhoneCenterActionPayload {
+    ok: Boolean!
+    item: PhoneCenterItem!
+  }
+
+  input BlockPhoneInput {
+    phone: String!
+    note: String
+    postId: ID
+  }
+
+  input UnblockPhoneInput {
+    phone: String!
+  }
+
+  type BlockPhonePayload {
+    ok: Boolean!
+    status: PhoneSafetyStatus!
+  }
+
+  type CallHistoryLog {
+    id: ID!
+    normalized_number: String!
+    type: String!
+    source: String!
+    action: String!
+    matched_by: String
+    created_at: String!
+  }
+
+  input LogCallInput {
+    normalized_number: String!
+    type: String!
+    source: String!
+    action: String!
+    matched_by: String
+    created_at: String
+  }
+
+  # =========================
+  # Bank account (Search + Report)
+  # =========================
+
+  type ScamBankAccount {
+    bank_name: String!
+    account_no_masked: String!
+    account_norm: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    updated_at: String!
+  }
+
+  input ReportBankAccountInput {
+    bank_name: String!
+    account_no: String!
+    note: String
+    client_id: String!         # UUID v4
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+  # =========================
+  # ✅ Union for client (ใช้ __typename)
+  # =========================
+  union SearchType =
+      SearchPostResult
+    | SearchUserResult
+    | SearchPhoneReportResult
+    | SearchBankAccountResult
+
+
+  type MyReportedPhone {
+    phone: String!
+    created_at: String!
+    updated_at: String!
+    report_count: Int!
+    risk_level: Int!
+    tags: [String!]!
+    category: ScamPhoneReportCategory!
+    note: String
+    post_id: String
+  }
+
+  type MyReportedBankAccount {
+    account: String!
+    bank_name: String!
+    created_at: String!
+    updated_at: String!
+    report_count: Int!
+    risk_level: Int!
+    tags: [String!]!
+    category: ScamPhoneReportCategory
+    note: String
+    post_id: String
+  }
+
   type Query {
     _health: String!
     meRole: String!
@@ -329,6 +580,8 @@ export const typeDefs = /* GraphQL */ `
 
     getOrCreateDm(user_id: ID!): Chat!
 
+    roles: [Role!]!
+    role(id: ID!): Role
     users(search: String, limit: Int = 10, offset: Int = 0): UserConnection!
     user(id: ID!): User
 
@@ -336,11 +589,14 @@ export const typeDefs = /* GraphQL */ `
 
 
     myChats: [Chat!]!
+    myChatSettings(chat_id: ID!): ChatMemberSettings!
     messages(chat_id: ID!, limit: Int, offset: Int, includeDeleted: Boolean): [Message!]!
+    messagesConnection(chat_id: ID!, limit: Int = 30, cursor: String, includeDeleted: Boolean): MessageConnection!
 
     me: User
 
     unreadCount(chatId: ID!): Int!
+    myUnreadChatCount: Int!
     whoRead(messageId: ID!): [User!]!
 
 
@@ -368,6 +624,536 @@ export const typeDefs = /* GraphQL */ `
     scamPhonesDelta(sinceVersion: String!, cursor: String, limit: Int! = 1000): ScamPhoneDeltaPage!
     # ใช้ manual search (เหมือน globalSearch แต่เฉพาะเบอร์)
     searchScamPhones(q: String!, limit: Int! = 20): [ScamPhone!]!
+
+
+    phoneSafetyStatus(phone: String!): PhoneSafetyStatus!
+    getPhoneInfo(phone: String!): ScamPhone!
+    phoneCenterSearch(q: String, filter: PhoneCenterFilter = ALL, limit: Int = 50, offset: Int = 0): [PhoneCenterItem!]!
+    phoneDetail(phone: String!): PhoneEntityDetail!
+    relatedPostsByPhone(phone: String!, sort: RelatedPostsSort = LATEST): [ID!]!
+    myBlockedPhones(limit: Int = 50, offset: Int = 0): [PhoneSafetyStatus!]!
+
+    # compact key sets for client-side status checks (source of truth: backend)
+    myBlockedPhoneKeys: [String!]!
+
+    # Spec-required (additive) call-block APIs
+    getUserBlockedNumbers: [String!]!
+    getSpamNumbers(minRisk: Int = 60, limit: Int = 200): [ScamPhone!]!
+    getCallLogs(limit: Int = 100, offset: Int = 0): [CallHistoryLog!]!
+
+    # exact + prefix (ตัวเลขล้วน) + (option) bank_name prefix
+    searchBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
+    bankDetail(bankCode: String!, accountNo: String!): BankEntityDetail!
+    relatedPostsByBank(bankCode: String!, accountNo: String!, sort: RelatedPostsSort = LATEST): [ID!]!
+
+    searchScamBankAccounts(q: String!, limit: Int! = 20): [SearchBankAccountResult!]!
+
+    # (optional) unified search array (client ใช้ __typename)
+    globalSearchUnified(q: String!, limit: Int! = 20): [SearchType!]!
+
+    myReportedPhones(limit: Int!, offset: Int!): [MyReportedPhone!]!
+
+    myReportedPhoneKeys: [String!]!
+
+    myReportedBankAccounts(limit: Int!, offset: Int!): [MyReportedBankAccount!]!
+
+    myReportedBankAccountKeys: [String!]!
+
+    myContactSpamProtectionSettings: ContactSpamProtectionSettings!
+    myContactSpamMarkedPhoneKeys: [String!]!
+
+    # ===== BMS orders (admin) =====
+    bmsOrders(status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
+    bmsOrder(id: ID!): BmsOrder
+
+    # ===== BMS products & inventory (admin) =====
+    bmsProducts: [BmsProduct!]!
+    bmsLowStock: [BmsLowStockItem!]!
+    bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
+
+    # ===== BMS Purchase (admin) =====
+    bmsPurchaseOrders(limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
+    bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
+    bmsSuppliers: [BmsSupplier!]!
+
+    # ===== BMS Payment (admin) =====
+    bmsPayments(orderId: ID, status: BmsPaymentStatus, limit: Int = 50, offset: Int = 0): [BmsPayment!]!
+    bmsPayment(id: ID!): BmsPayment
+
+    # ===== BMS Shipping (admin) =====
+    bmsShipments(orderId: ID, status: BmsShipmentStatus, limit: Int = 50, offset: Int = 0): [BmsShipment!]!
+    bmsShipment(id: ID!): BmsShipment
+    bmsShipmentLabel(id: ID!): BmsShipmentLabel
+
+    # ===== BMS Inbox (admin) =====
+    bmsConversations(status: BmsConvStatus, assignedTo: String, tag: String, search: String, limit: Int = 50, offset: Int = 0): [BmsConversation!]!
+    bmsConversation(id: ID!): BmsConversation
+    bmsConversationTimeline(id: ID!): [BmsTimelineEntry!]!
+
+    # ===== BMS Reports (admin) =====
+    bmsSalesSummary(from: String, to: String): BmsSalesSummary!
+    bmsInventorySummary: BmsInventorySummary!
+    bmsTopSellingProducts(from: String, to: String, limit: Int = 10): [BmsTopProduct!]!
+
+    # ===== BMS CRM (admin) =====
+    bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
+    bmsCustomer(id: ID!): BmsCustomer
+
+    # ===== BMS Dashboard (admin) =====
+    bmsDashboard: BmsDashboard!
+
+    # ===== BMS settings / channels (admin) =====
+    bmsMyTenant: BmsTenantInfo!
+    bmsChannels: [BmsChannelConfig!]!
+
+    # ===== BMS billing (admin) =====
+    bmsBilling: BmsBilling!
+
+    # ===== BMS profile (admin ที่ล็อกอินอยู่) =====
+    bmsMe: BmsMe!
+
+    # ===== BMS platform admin (ข้ามร้าน) =====
+    bmsIsPlatformAdmin: Boolean!          # ใช้ gate เมนู/หน้า
+    bmsTenants: [BmsTenantRow!]!          # รายการทุกร้าน (platform admin เท่านั้น)
+    bmsActingTenant: BmsActingTenant      # ร้านที่กำลัง drill-down อยู่ (null = ไม่ได้เข้าดู)
+
+    # ===== BMS RBAC (admin) =====
+    myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
+    bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
+    bmsRolePermissions: [BmsRolePermissions!]!
+    bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  }
+
+  # ===== BMS orders =====
+  enum BmsOrderStatus {
+    PENDING
+    PAID
+    PACKING
+    SHIPPED
+    COMPLETED
+    CANCELLED
+    RETURNED
+  }
+
+  type BmsOrderItem {
+    product_sku: String!
+    size: String!
+    qty: Int!
+    unit_price: Float!
+  }
+
+  type BmsOrder {
+    id: ID!
+    channel: String!
+    customer_ref: String
+    status: BmsOrderStatus!
+    total_amount: Float!
+    created_at: String!
+    updated_at: String!
+    items: [BmsOrderItem!]!
+  }
+
+  # ===== BMS purchase (PO) =====
+  enum BmsPurchaseStatus {
+    OPEN
+    PARTIAL
+    RECEIVED
+    CANCELLED
+  }
+
+  type BmsSupplier {
+    id: ID!
+    name: String!
+    phone: String
+    email: String
+    note: String
+  }
+
+  type BmsPurchaseItem {
+    sku: String!
+    size: String!
+    qtyOrdered: Int!
+    qtyReceived: Int!
+    unitCost: Float!
+  }
+
+  type BmsPurchaseOrder {
+    id: ID!
+    status: BmsPurchaseStatus!
+    total: Float!
+    note: String
+    supplier: BmsSupplier
+    qtyOrdered: Int!
+    qtyReceived: Int!
+    createdAt: String!
+    updatedAt: String!
+    items: [BmsPurchaseItem!]!
+  }
+
+  input BmsPurchaseItemInput {
+    sku: String!
+    size: String!
+    qty: Int!
+    unitCost: Float
+  }
+
+  input BmsReceiveItemInput {
+    sku: String!
+    size: String!
+    qty: Int!
+  }
+
+  # ผลลัพธ์ mutation แบบรวม (status: CREATED/RECEIVED/PARTIAL/NOT_FOUND/…)
+  type BmsPurchaseResult {
+    status: String!
+    poId: ID
+    message: String
+  }
+
+  # ===== BMS payment =====
+  enum BmsPaymentMethod {
+    BANK_TRANSFER
+    QR
+    CARD
+    TIKTOK
+    CASH
+  }
+
+  enum BmsPaymentStatus {
+    PENDING
+    CONFIRMED
+    REJECTED
+    REFUNDED
+  }
+
+  type BmsPayment {
+    id: ID!
+    orderId: ID!
+    method: BmsPaymentMethod!
+    amount: Float!
+    status: BmsPaymentStatus!
+    slipUrl: String
+    slipRef: String
+    verifyResult: String    # JSON string ของผลตรวจสลิป (OCR/AI)
+    note: String
+    verifiedBy: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  # ผลตรวจสลิปด้วย OCR/AI (แนะนำเท่านั้น — ไม่เปลี่ยนสถานะ)
+  type BmsSlipVerification {
+    method: String!         # ai | heuristic
+    expectedAmount: Float!
+    amountMatch: Boolean!
+    verified: Boolean!
+    reason: String!
+    checkedAt: String!
+  }
+
+  type BmsPaymentResult {
+    status: String!
+    paymentId: ID
+    message: String
+  }
+
+  # ===== BMS shipping =====
+  enum BmsCarrier {
+    FLASH
+    KERRY
+    DHL
+    AUSPOST
+    NZPOST
+    OTHER
+  }
+
+  enum BmsShipmentStatus {
+    PENDING
+    SHIPPED
+    IN_TRANSIT
+    DELIVERED
+    RETURNED
+    CANCELLED
+  }
+
+  type BmsShipment {
+    id: ID!
+    orderId: ID!
+    carrier: BmsCarrier!
+    trackingNo: String
+    status: BmsShipmentStatus!
+    labelUrl: String
+    note: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsLabelItem { sku: String!  size: String!  qty: Int! }
+  type BmsLabelShipTo { name: String  phone: String  address: String }
+  type BmsShipmentLabel {
+    shipmentId: ID!
+    orderId: ID!
+    carrier: String!
+    trackingNo: String
+    shipTo: BmsLabelShipTo!
+    items: [BmsLabelItem!]!
+    createdAt: String!
+  }
+
+  type BmsShipmentResult {
+    status: String!
+    shipmentId: ID
+    message: String
+  }
+
+  # ===== BMS inbox =====
+  enum BmsConvStatus {
+    OPEN
+    PENDING
+    CLOSED
+  }
+
+  type BmsMessage {
+    id: ID!
+    direction: String!      # IN | OUT
+    body: String!
+    sender: String          # customer | ai | staff:<email>
+    createdAt: String!
+  }
+
+  type BmsConversationNote {
+    id: ID!
+    author: String
+    body: String!
+    createdAt: String!
+  }
+
+  type BmsConversation {
+    id: ID!
+    channel: String!
+    customerRef: String
+    customerId: ID
+    customerName: String
+    status: BmsConvStatus!
+    assignedTo: String
+    tags: [String!]!
+    unread: Int!
+    lastMessage: String
+    lastMessageAt: String
+    createdAt: String!
+    updatedAt: String!
+    messages: [BmsMessage!]!
+    notes: [BmsConversationNote!]!
+  }
+
+  type BmsTimelineEntry {
+    type: String!           # MESSAGE_IN | MESSAGE_OUT | NOTE | ORDER
+    at: String!
+    text: String!
+    ref: String
+  }
+
+  type BmsSendResult {
+    status: String!
+    delivered: Boolean!
+    message: String
+  }
+
+  # ===== BMS products & inventory =====
+  type BmsVariant {
+    size: String!
+    current_stock: Int!
+    reserved_stock: Int!
+    available: Int!
+    reorder_point: Int!
+    low: Boolean!
+  }
+
+  type BmsProduct {
+    sku: String!
+    name: String!
+    active: Boolean!
+    price: Float!
+    keywords: [String!]!
+    barcode: String
+    variants: [BmsVariant!]!
+  }
+
+  input BmsProductInput {
+    sku: String!
+    name: String!
+    price: Float!
+    keywords: [String!]
+    active: Boolean
+    barcode: String
+  }
+
+  type BmsLowStockItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    reorder_point: Int!
+  }
+
+  type BmsStockMovement {
+    id: ID!
+    product_sku: String!
+    size: String!
+    type: String!
+    qty: Int!
+    ref_order_id: String
+    note: String
+    actor: String
+    created_at: String!
+  }
+
+  # ===== BMS CRM =====
+  type BmsCustomerAddress {
+    id: ID!
+    label: String
+    address: String!
+    is_default: Boolean!
+  }
+
+  type BmsCustomerIdentity {
+    channel: String!
+    external_ref: String!
+  }
+
+  type BmsCustomer {
+    id: ID!
+    name: String!
+    phone: String
+    note: String
+    tags: [String!]!
+    total_spent: Float!
+    order_count: Int!
+    created_at: String!
+    addresses: [BmsCustomerAddress!]!
+    identities: [BmsCustomerIdentity!]!
+    orders: [BmsOrder!]!
+  }
+
+  input BmsCustomerInput {
+    id: ID
+    name: String!
+    phone: String
+    note: String
+    tags: [String!]
+  }
+
+  # ===== BMS Dashboard =====
+  type BmsStatusCount { status: String!  count: Int! }
+  type BmsTopProduct  { sku: String!  name: String!  qty: Int!  revenue: Float! }
+  type BmsTopCustomer { id: ID!  name: String!  tags: [String!]!  spent: Float!  orders: Int! }
+  type BmsDailySales  { day: String!  revenue: Float!  orders: Int! }
+
+  # ===== BMS reports (แยกส่วนจาก dashboard) =====
+  type BmsChannelSales { channel: String!  revenue: Float!  orders: Int! }
+
+  type BmsSalesSummary {
+    from: String!
+    to: String!
+    revenue: Float!
+    orderCount: Int!
+    avgOrderValue: Float!
+    byDay: [BmsDailySales!]!
+    byStatus: [BmsStatusCount!]!
+    byChannel: [BmsChannelSales!]!
+  }
+
+  type BmsInventorySummary {
+    skuCount: Int!
+    variantCount: Int!
+    totalUnits: Int!
+    reservedUnits: Int!
+    availableUnits: Int!
+    stockValue: Float!
+    lowStockCount: Int!
+    outOfStockCount: Int!
+  }
+
+  type BmsDashboard {
+    revenueTotal: Float!
+    revenueToday: Float!
+    orderCount: Int!
+    lowStockCount: Int!
+    customerCount: Int!
+    ordersByStatus: [BmsStatusCount!]!
+    topProducts: [BmsTopProduct!]!
+    topCustomers: [BmsTopCustomer!]!
+    salesDaily: [BmsDailySales!]!
+  }
+
+  # ===== BMS audit log =====
+  type BmsAuditEntry {
+    id: ID!
+    actor: String
+    action: String!
+    target: String
+    meta: JSON
+    created_at: String!
+  }
+
+  # ===== BMS RBAC =====
+  type BmsRolePermissions {
+    id: ID!
+    name: String!
+    is_super: Boolean!
+    permissions: [String!]!
+  }
+
+  # ===== BMS SaaS: plans / billing / signup =====
+  type BmsPlan {
+    code: String!  name: String!  price_monthly: Float!
+    max_products: Int!  max_channels: Int!  max_orders_month: Int!
+  }
+  type BmsUsage { products: Int!  channels: Int!  orders_month: Int! }
+  type BmsBilling {
+    plan: BmsPlan!
+    usage: BmsUsage!
+    plans: [BmsPlan!]!
+  }
+  type BmsSignupResult { status: String!  tenantId: ID  slug: String }
+
+  # ===== BMS current-user profile (admin ที่ล็อกอินอยู่) =====
+  type BmsMeTenant { id: ID!  name: String!  slug: String!  plan: String! }
+  type BmsMe {
+    id: ID!  name: String  username: String  email: String  phone: String  avatar: String
+    role: String!  language: String
+    is_platform_admin: Boolean!
+    created_at: String
+    tenant: BmsMeTenant
+    permissions: [String!]!
+  }
+
+  # ===== BMS platform admin (เจ้าของแพลตฟอร์ม — ข้ามร้าน) =====
+  type BmsTenantRow {
+    id: ID!  name: String!  slug: String!  plan: String!  active: Boolean!
+    created_at: String!
+    users: Int!  products: Int!  orders: Int!  revenue: Float!
+  }
+  type BmsActingTenant { id: ID!  name: String!  slug: String! }
+
+  # ===== BMS channels / settings =====
+  type BmsTenantInfo { id: ID!  name: String!  slug: String! }
+
+  type BmsChannelConfig {
+    channel: String!
+    active: Boolean!
+    has_token: Boolean!
+    has_secret: Boolean!
+    access_token_masked: String
+    channel_secret_masked: String
+  }
+
+  input RegisterPushTokenInput {
+    platform: String! # 'android'
+    fcmToken: String!
+    deviceId: String
+    appVersion: String
+    locale: String
   }
 
   input TelNumberInput {
@@ -433,17 +1219,83 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     username: String
     language: String
+    notifications_enabled: Boolean
+  }
+
+  enum ContactSpamProtectionMode {
+    OFF
+    PROMPT
+    AUTO
+  }
+
+  enum ContactSpamMarkSource {
+    MANUAL
+    SUGGESTED
+    AUTO
+  }
+
+  type ContactSpamProtectionSettings {
+    user_id: ID!
+    mode: ContactSpamProtectionMode!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
+    updated_at: String!
+  }
+
+  type ContactSpamMark {
+    user_id: ID!
+    action: String!
+    phone_normalized: String!
+    contact_name: String
+    source: ContactSpamMarkSource
+    active: Boolean!
+    updated_at: String!
+  }
+
+  input ContactSpamProtectionSettingsInput {
+    mode: ContactSpamProtectionMode!
+    risk_threshold: Int!
+    sync_enabled: Boolean!
+    auto_mark_enabled: Boolean!
+  }
+
+  
+  enum ScamPhoneReportCategory {
+    SPAM
+    SCAM
+    SALES
+    HARASS
+    OTHER
+  }
+
+  type ScamPhone {
+    phone: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    tags: [String!]!
+    updated_at: String!
+    is_deleted: Boolean!
+    post_ids: [String!]!
+    ctx: JSON
   }
 
   input ReportScamPhoneInput {
     phone: String!
     note: String
     local_blocked: Boolean!
-    client_id: String!         # UUID v4
-    device_model: String       # เช่น Pixel 7
-    os_version: String         # Android 14
-    app_version: String        # 1.0.3
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+    category: ScamPhoneReportCategory
   }
+
+
+
+
+
 
   type BasicResponse {
     ok: Boolean!
@@ -466,6 +1318,67 @@ export const typeDefs = /* GraphQL */ `
     ok: Boolean!
     message: String
     ticketId: String
+  }
+
+  input UploadDiagnosticsInput {
+    userId: ID
+    platform: String!
+    appVersion: String
+    buildNumber: String
+    packageName: String
+    deviceModel: String
+    osVersion: String
+    exportedAt: String!
+    diagnosticsJson: String!
+    callCheckLogsJson: String
+  }
+
+  type UploadDiagnosticsPayload {
+    success: Boolean!
+    message: String
+    uploadId: ID
+  }
+
+  input ReportScamBankAccountInput {
+    bank_name: String!
+    account: String!
+    note: String
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+  type ScamBankAccount {
+    account: String!
+    bank_name: String!
+    report_count: Int!
+    last_report_at: String
+    risk_level: Int!
+    tags: [String!]
+    updated_at: String!
+    is_deleted: Boolean!
+    post_ids: [ID!]
+    ctx: JSON
+  }
+
+   input UnblockScamPhoneInput {
+    phone: String!
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+  }
+
+
+   input UnreportScamBankAccountInput {
+    bank_name: String!
+    account: String!
+    client_id: String!
+    device_model: String
+    os_version: String
+    app_version: String
+    reason: String
   }
 
   type Mutation {
@@ -491,15 +1404,33 @@ export const typeDefs = /* GraphQL */ `
 
     createChat(name: String, isGroup: Boolean!, memberIds: [ID!]!): Chat!
     addMember(chat_id: ID!, user_id: ID!): Boolean!
-    sendMessage(chat_id: ID!, text: String!, to_user_ids: [ID!]!, images: [Upload!], reply_to_id: ID): Message!
+    sendMessage(
+      chat_id: ID!
+      text: String!
+      to_user_ids: [ID!]!
+      images: [Upload!]
+      audio: Upload
+      audio_duration_sec: Int
+      location: MessageLocationInput
+      reply_to_id: ID
+      client_message_id: String
+    ): Message!
 
     updateMyProfile(data: MyProfileInput!): User!
 
     renameChat(chat_id: ID!, name: String): Boolean!
     deleteChat(chat_id: ID!): Boolean!
+    updateMyChatSettings(
+      chat_id: ID!
+      is_muted: Boolean
+      notifications_enabled: Boolean
+    ): ChatMemberSettings!
 
     markMessageRead(message_id: ID!): Boolean!
     markChatReadUpTo(chat_id: ID!, cursor: String!): Boolean!
+
+    registerPushToken(input: RegisterPushTokenInput!): Boolean!
+    unregisterPushToken(fcmToken: String!): Boolean!
 
     deleteMessage(message_id: ID!): Boolean!
 
@@ -512,6 +1443,10 @@ export const typeDefs = /* GraphQL */ `
 
     toggleBookmark(postId: ID!): ToggleBookmarkResult!
 
+    # Explicit operations (avoids ambiguous "toggle" semantics)
+    bookmark(postId: ID!): ToggleBookmarkResult!
+    unbookmark(postId: ID!): ToggleBookmarkResult!
+
     updateMe(data: MeInput!): User!
 
     markNotificationRead(id: ID!): Boolean!
@@ -523,7 +1458,99 @@ export const typeDefs = /* GraphQL */ `
     deleteComment(id: ID!): Boolean!
 
     reportScamPhone(input: ReportScamPhoneInput!): ScamPhone!
+    unblockScamPhone(input: UnblockScamPhoneInput!): ScamPhone!
 
     createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
+
+
+    blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
+    unblockPhone(input: UnblockPhoneInput!): BlockPhonePayload!
+    reportPhone(phone: String!, category: ScamPhoneReportCategory, note: String): PhoneCenterActionPayload!
+
+    # Spec-required (additive) call-block APIs
+    blockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+    unblockNumber(phoneNumber: String!): PhoneCenterActionPayload!
+    reportNumber(phoneNumber: String!, category: ScamPhoneReportCategory, note: String): PhoneCenterActionPayload!
+    reportSpam(phoneNumber: String!): Boolean!
+    ingestCallLogs(logs: [LogCallInput!]!): Boolean!
+
+    uploadDiagnostics(input: UploadDiagnosticsInput!): UploadDiagnosticsPayload!
+
+    reportBankAccount(input: ReportBankAccountInput!): ScamBankAccount!
+
+    reportScamBankAccount(input: ReportScamBankAccountInput!): ScamBankAccount!
+    unreportScamBankAccount(input: UnreportScamBankAccountInput!): ScamBankAccount!
+
+    updateMyContactSpamProtectionSettings(input: ContactSpamProtectionSettingsInput!): ContactSpamProtectionSettings!
+    markContactSpamPhone(phone: String!, contact_name: String, source: ContactSpamMarkSource): ContactSpamMark!
+    unmarkContactSpamPhone(phone: String!): ContactSpamMark!
+
+    # Role Management
+    createRole(input: CreateRoleInput!): Role!
+    updateRole(id: ID!, input: UpdateRoleInput!): Role!
+    deleteRole(id: ID!): Boolean!
+    setRoleActive(id: ID!, is_active: Boolean!): Role!
+
+    # ===== BMS orders (admin) — OMS state machine =====
+    bmsPayOrder(id: ID!): Boolean!        # PENDING → PAID
+    bmsPackOrder(id: ID!): Boolean!       # PAID → PACKING
+    bmsShipOrder(id: ID!): Boolean!       # PACKING → SHIPPED (ตัดสต็อก)
+    bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
+    bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
+    bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
+
+    # ===== BMS products & inventory (admin) =====
+    bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
+    bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
+    bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
+    bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
+
+    # ===== BMS purchase (admin) — PO lifecycle =====
+    bmsCreatePurchaseOrder(supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
+    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
+    bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
+
+    # ===== BMS payment (admin) =====
+    bmsSubmitPayment(orderId: ID!, method: BmsPaymentMethod!, amount: Float, slipUrl: String, slipRef: String, note: String): BmsPaymentResult!
+    bmsConfirmPayment(id: ID!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
+    bmsRejectPayment(id: ID!, note: String): Boolean!
+    bmsRefundPayment(id: ID!): Boolean!             # CONFIRMED → REFUNDED (manager)
+    bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification   # OCR/AI แนะนำ (ไม่เปลี่ยนสถานะ)
+
+    # ===== BMS shipping (admin) =====
+    bmsCreateShipment(orderId: ID!, carrier: BmsCarrier!, trackingNo: String, note: String): BmsShipmentResult!  # PACKING → SHIPPED (ตัดสต็อก)
+    bmsUpdateTracking(id: ID!, trackingNo: String, carrier: BmsCarrier): Boolean!
+    bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!   # DELIVERED → order COMPLETED
+    bmsCancelShipment(id: ID!): Boolean!
+
+    # ===== BMS inbox (admin) =====
+    bmsSendMessage(id: ID!, body: String!): BmsSendResult!            # ตอบเอง (persist + ยิงกลับช่องทาง)
+    bmsAssignConversation(id: ID!, assignedTo: String): Boolean!
+    bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
+    bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
+    bmsMarkConversationRead(id: ID!): Boolean!
+    bmsAddConversationNote(id: ID!, body: String!): BmsConversationNote
+
+    # ===== BMS CRM (admin) =====
+    bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
+    bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
+    bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean): BmsCustomerAddress!
+    bmsDeleteCustomer(id: ID!): Boolean!
+
+    # ===== BMS RBAC (admin) =====
+    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
+
+    # ===== BMS settings / channels (admin) =====
+    bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
+
+    # ===== BMS SaaS: signup (public) + billing (admin) =====
+    bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
+    bmsChangePlan(planCode: String!): Boolean!
+
+    # ===== BMS platform admin (ข้ามร้าน) =====
+    bmsSetTenantActive(tenantId: ID!, active: Boolean!): Boolean!
+    bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
+    bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
+    bmsExitTenant: Boolean!                   # ออกจากมุมร้าน
   }
 `;

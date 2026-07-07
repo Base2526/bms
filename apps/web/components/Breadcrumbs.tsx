@@ -1,32 +1,133 @@
 "use client";
 
-import { Breadcrumb } from "antd";
+import React, { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React from "react";
+import { HomeOutlined, RightOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
 
 export default function Breadcrumbs() {
   const pathname = usePathname() || "/";
-  // ตัด query/hash แล้ว split เป็น segment
-  const segments = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
+  const { t } = useI18n();
 
-  // สร้าง items เป็น [{title, href?}]
-  const items = [
-    { title: <Link href="/">Home</Link> },
-    ...segments.map((seg, idx) => {
-      const href = "/" + segments.slice(0, idx + 1).join("/");
-      // ทำให้สวยขึ้นนิดหน่อย (เช่น [id] => id, เปลี่ยน - เป็น space, ตัวแรกใหญ่)
-      const label = decodeURIComponent(seg)
-        .replace(/^\[|\]$/g, "")
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+  const items = useMemo(() => {
+    const segmentsRaw = pathname
+      .split("?")[0]
+      .split("#")[0]
+      .split("/")
+      .filter(Boolean);
 
-      const isLast = idx === segments.length - 1;
+    const isPostDetailRoute = segmentsRaw[0] === "post" && segmentsRaw.length === 2;
+
+    // Route-specific tweak: for post detail pages `/post/[id]`, skip the middle "Post" crumb.
+    // Keep other routes intact (e.g. `/post`, `/post/new`, `/post/[id]/edit`).
+    const segments =
+      isPostDetailRoute
+        ? segmentsRaw.slice(1)
+        : segmentsRaw;
+
+    const first = [
+      {
+        href: "/",
+        label: t("breadcrumbs.home"),
+        isLast: segments.length === 0,
+      },
+    ];
+
+    const rest = segments.map((seg, idx) => {
+      const href = isPostDetailRoute
+        ? `/post/${seg}`
+        : "/" + segments.slice(0, idx + 1).join("/");
+
+      const label = isPostDetailRoute
+        ? decodeURIComponent(seg)
+        : decodeURIComponent(seg)
+            .replace(/^\[|\]$/g, "")
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+
       return {
-        title: isLast ? <span>{label}</span> : <Link href={href}>{label}</Link>,
+        href,
+        label,
+        isLast: idx === segments.length - 1,
       };
-    }),
-  ];
+    });
 
-  return <Breadcrumb items={items} style={{ marginBottom: 16 }} />;
+    return [...first, ...rest];
+  }, [pathname, t]);
+
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      style={{
+        marginBottom: 16,
+      }}
+    >
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+          padding: "8px 12px",
+          borderRadius: 999,
+          background: "rgba(var(--app-surface-rgb),0.82)",
+          border: "1px solid var(--app-border)",
+          boxShadow: "0 8px 20px rgba(var(--app-shadow-rgb),0.06), inset 0 1px 0 rgba(var(--app-surface-rgb),0.9)",
+        }}
+      >
+        {items.map((item, index) => {
+          const isHome = index === 0;
+
+          return (
+            <React.Fragment key={`${item.href}-${index}`}>
+              {index > 0 && (
+                <RightOutlined
+                  style={{
+                    fontSize: 10,
+                    color: "rgba(var(--app-text-rgb),0.40)",
+                  }}
+                />
+              )}
+
+              {item.isLast ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: "var(--app-text)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                  }}
+                >
+                  {isHome && <HomeOutlined style={{ color: "var(--app-muted)" }} />}
+                  <span>{item.label}</span>
+                </span>
+              ) : (
+                <Link
+                  href={item.href}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: "rgba(var(--app-text-rgb),0.60)",
+                    textDecoration: "none",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    lineHeight: 1,
+                    transition: "color .16s ease",
+                  }}
+                >
+                  {isHome && <HomeOutlined style={{ color: "var(--app-muted)" }} />}
+                  <span>{item.label}</span>
+                </Link>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </nav>
+  );
 }

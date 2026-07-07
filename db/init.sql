@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS chats (
 CREATE TABLE IF NOT EXISTS chat_members (
   chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  is_muted BOOLEAN NOT NULL DEFAULT FALSE,
+  notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   PRIMARY KEY (chat_id, user_id)
 );
 
@@ -88,13 +90,32 @@ WHERE id = 1;
 -- ===========================================================
 --  SEED USER
 -- ===========================================================
-INSERT INTO users (name, role, email, phone, password_hash)
+-- INSERT INTO users (name, role, email, phone, password_hash)
+-- VALUES (
+--   'admin',
+--   'administrator',
+--   'admin@local.com',
+--   '098-000-0000',
+--   crypt('changeme', gen_salt('bf'))
+-- )
+
+INSERT INTO users (
+    name,
+    role_id,
+    email,
+    phone,
+    password_hash
+)
 VALUES (
-  'admin',
-  'administrator',
-  'admin@local.com',
-  '098-000-0000',
-  crypt('changeme', gen_salt('bf'))
+    'admin',
+    (
+        SELECT id
+        FROM roles
+        WHERE name = 'Administrator'
+    ),
+    'admin@local.com',
+    '098-000-0000',
+    crypt('changeme', gen_salt('bf'))
 )
 ON CONFLICT DO NOTHING;
 

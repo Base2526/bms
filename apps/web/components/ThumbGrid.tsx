@@ -17,7 +17,7 @@ export default function ThumbGrid({
   radius?: number;
   gap?: number;
 }) {
-  if (!images?.length) return <div style={{ color: '#999' }}>—</div>;
+  if (!images?.length) return <div style={{ color: 'var(--app-muted)' }}>—</div>;
 
   // --- Preview control: ให้คลิก thumbnail แล้วเปิด index ที่ถูกต้อง และวนได้ครบ ---
   const [visible, setVisible] = useState(false);
@@ -38,7 +38,7 @@ export default function ThumbGrid({
     borderRadius: radius,
     overflow: 'hidden',
     position: 'relative',
-    background: '#f5f5f5',
+    background: 'var(--app-surface-2)',
   };
   const imgBase: React.CSSProperties = {
     width: '100%',
@@ -295,7 +295,7 @@ const render5 = () => (
           position: 'absolute',
           right: 5,
           bottom: 5,
-          background: 'rgba(0,0,0,0.55)',
+          background: 'rgba(var(--app-shadow-rgb),0.55)',
           color: '#fff',
           fontSize: 12,
           padding: '2px 6px',

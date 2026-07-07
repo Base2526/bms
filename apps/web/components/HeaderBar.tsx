@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Layout,
   Button,
@@ -13,8 +13,10 @@ import {
   AutoComplete,
   Input,
   Modal,
-  Image
+  Badge,
 } from "antd";
+import type { InputRef } from "antd";
+import type { MenuProps } from "antd";
 import {
   UserOutlined,
   SettingOutlined,
@@ -26,16 +28,19 @@ import {
   SearchOutlined,
   HistoryOutlined,
   CloseCircleFilled,
-  PlusOutlined
+  PlusOutlined,
+  SafetyOutlined,
+  GlobalOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { MenuProps } from "antd";
 import { gql, useQuery } from "@apollo/client";
 
 import { useSession } from "@/lib/useSession";
 import { useGlobalChatStore } from "@/store/globalChatStore";
 import { useI18n } from "@/lib/i18nContext";
+import ThemeToggle from "@/components/ThemeToggle";
 import type { Lang } from "@/i18n";
 
 const { Header } = Layout;
@@ -44,7 +49,6 @@ const { Text } = Typography;
 const labelOf: Record<Lang, string> = { th: "ไทย", en: "English" };
 const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
 
-// ===== GraphQL =====
 const Q_ME = gql`
   query {
     me {
@@ -69,28 +73,38 @@ const Q_UNREAD_NOTIFICATION_COUNT = gql`
 
 type HeaderBarProps = {
   initialLang?: Lang;
-  isMobile?: boolean; // 👈 รับจาก AppLayout
+  isMobile?: boolean;
 };
 
-export default function HeaderBar({ initialLang = "th", isMobile = false }: HeaderBarProps) {
+type ViewMode = "mobile" | "tablet" | "desktop";
+
+function getViewMode(width: number): ViewMode {
+  if (width < 768) return "mobile";
+  if (width < 1180) return "tablet";
+  return "desktop";
+}
+
+export default function HeaderBar({
+  initialLang = "th",
+  isMobile = false,
+}: HeaderBarProps) {
   const router = useRouter();
   const { user: userSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
 
-  // console.log("[HeaderBar] isMobile =", isMobile);
+  const [viewMode, setViewMode] = useState<ViewMode>(isMobile ? "mobile" : "desktop");
+  const isMobileView = viewMode === "mobile";
+  const isTabletView = viewMode === "tablet";
+  const isDesktopView = viewMode === "desktop";
 
-  // ===== User / unread =====
   const { data: meData } = useQuery(Q_ME, {
     skip: !userSession,
     fetchPolicy: "cache-first",
   });
   const me = meData?.me;
 
-  const totalUnread = useGlobalChatStore((s: any) =>
-    Object.values(s.unreadByChat || {}).reduce(
-      (sum: number, n: any) => sum + (n || 0),
-      0
-    )
+  const totalUnread = useGlobalChatStore((s) =>
+    Object.values(s.unreadByChat || {}).reduce((sum, n) => sum + (n || 0), 0)
   );
 
   const { data: notifData } = useQuery(Q_UNREAD_NOTIFICATION_COUNT, {
@@ -99,12 +113,74 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
   });
   const notifUnreadCount = notifData?.myUnreadNotificationCount ?? 0;
 
-  // ===== Language =====
   const [currentLang, setCurrentLang] = useState<Lang>(lang ?? initialLang);
+  const [searchValue, setSearchValue] = useState("");
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
+  const searchInputRef = useRef<InputRef | null>(null);
+  const mobileSearchInputRef = useRef<InputRef | null>(null);
+
+  useEffect(() => {
+    const updateMode = () => {
+      setViewMode(getViewMode(window.innerWidth));
+    };
+
+    updateMode();
+    window.addEventListener("resize", updateMode);
+    return () => window.removeEventListener("resize", updateMode);
+  }, []);
 
   useEffect(() => {
     setCurrentLang(lang);
   }, [lang]);
+
+  useEffect(() => {
+    const m = document.cookie.match(/(?:^|; )lang=([^;]+)/);
+    const c = (m ? decodeURIComponent(m[1]) : null) as Lang | null;
+    if (c && c !== currentLang) setCurrentLang(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("globalSearchHistory");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setSearchHistory(parsed.filter((x) => typeof x === "string"));
+        }
+      }
+    } catch (e) {
+      console.warn("[Search] load history error", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktopView) return;
+
+    const handler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toLowerCase().includes("mac");
+      const metaPressed = isMac ? e.metaKey : e.ctrlKey;
+      if (metaPressed && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus?.();
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isDesktopView]);
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    const id = window.setTimeout(() => {
+      mobileSearchInputRef.current?.focus?.();
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [mobileSearchOpen]);
 
   const changeLang = (nextLang: Lang) => {
     if (nextLang === currentLang) return;
@@ -114,27 +190,119 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
     router.refresh();
   };
 
-  // sync cookie หลัง mount
-  useEffect(() => {
-    const m = document.cookie.match(/(?:^|; )lang=([^;]+)/);
-    const c = (m ? decodeURIComponent(m[1]) : null) as Lang | null;
-    if (c && c !== currentLang) setCurrentLang(c);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function onLogout() {
     const res = await fetch("/api/auth/logout", { method: "POST" });
     if (res.ok) {
-      message.success("Logged out");
+      message.success(t("common.logged_out"));
       try {
         refreshSession();
       } catch {}
       router.replace("/");
       setTimeout(() => window.location.reload(), 100);
     } else {
-      message.error("Logout failed");
+      message.error(t("common.logout_failed"));
     }
   }
+
+  function showConfirmLogout() {
+    Modal.confirm({
+      title: t("common.confirm_logout_title"),
+      content: t("common.confirm_logout_content"),
+      okText: t("common.logout"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: onLogout,
+    });
+  }
+
+  const saveHistory = (list: string[]) => {
+    setSearchHistory(list);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("globalSearchHistory", JSON.stringify(list));
+    }
+  };
+
+  const addToHistory = (term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    const next = [trimmed, ...searchHistory.filter((x) => x !== trimmed)].slice(0, 10);
+    saveHistory(next);
+  };
+
+  const clearHistory = () => {
+    saveHistory([]);
+    setSearchValue("");
+  };
+
+  const handleSearchSubmit = (raw?: string) => {
+    const q = (raw ?? searchValue).trim();
+    if (!q) return;
+
+    addToHistory(q);
+    setSearchValue(q);
+    setMobileSearchOpen(false);
+    router.push(`/search?q=${encodeURIComponent(q)}`, { scroll: false });
+  };
+
+  const handleSearchSelect = (value: string) => {
+    if (value === "__clear__") {
+      clearHistory();
+      return;
+    }
+    setSearchValue(value);
+    handleSearchSubmit(value);
+  };
+
+  const clearSearchInput = () => {
+    setSearchValue("");
+    searchInputRef.current?.focus?.();
+    mobileSearchInputRef.current?.focus?.();
+  };
+
+  const searchOptions = useMemo(() => {
+    const historyOptions = searchHistory.map((h) => ({
+      value: h,
+      label: (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            color: "rgba(var(--app-text-rgb),0.78)",
+          }}
+        >
+          <span>
+            <HistoryOutlined style={{ marginRight: 8, color: "var(--text-muted)" }} />
+            {h}
+          </span>
+        </div>
+      ),
+    }));
+
+    const clearOption =
+      searchHistory.length > 0
+        ? [
+            {
+              value: "__clear__",
+              label: (
+                <div
+                  style={{
+                    textAlign: "right",
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {t("header.searchClearHistory")}
+                </div>
+              ),
+            },
+          ]
+        : [];
+
+    return [...historyOptions, ...clearOption];
+  }, [searchHistory, t]);
 
   const languageMenu: MenuProps["items"] = (["th", "en"] as Lang[]).map((lng) => ({
     key: lng,
@@ -158,330 +326,206 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
   const profileMenu: MenuProps["items"] = [
     {
       key: "settings",
-      label: <Link href="/settings">Settings</Link>,
+      label: <Link href="/settings">{t("common.settings")}</Link>,
       icon: <SettingOutlined />,
     },
     { type: "divider" },
     {
       key: "logout",
-      label: <span onClick={showConfirmLogout}>Logout</span>,
+      label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
       icon: <ReloadOutlined />,
     },
   ];
 
-  // ====== Search + History ======
-  const [searchValue, setSearchValue] = useState("");
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const searchInputRef = useRef<any>(null);
-  const [searchFocused, setSearchFocused] = useState(false);
+  const iconButtonStyle: React.CSSProperties = {
+    borderRadius: 14,
+    width: isMobileView ? 34 : 38,
+    height: isMobileView ? 34 : 38,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--app-text)",
+  };
 
-  // load history จาก localStorage
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem("globalSearchHistory");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setSearchHistory(parsed.filter((x) => typeof x === "string"));
-        }
-      }
-    } catch (e) {
-      console.warn("[Search] load history error", e);
+  const mobileOverflowMenu: MenuProps["items"] = useMemo(() => {
+    const items: MenuProps["items"] = [];
+
+    if (userSession) {
+      items.push(
+        // {
+        //   key: "new-post",
+        //   label: "New post",
+        //   icon: <PlusOutlined />,
+        //   onClick: () => router.push("/post/new"),
+        // },
+        {
+          key: "blocked",
+          label: "Blocked",
+          icon: <SafetyOutlined />,
+          onClick: () => router.push("/blocked?tab=blocked"),
+        },
+        { type: "divider" },
+        {
+          key: "help",
+          label: t("header.help") || "Help",
+          icon: <QuestionCircleOutlined />,
+          onClick: () => router.push("/help"),
+        },
+        { type: "divider" }
+      );
+    } else {
+      items.push(
+        {
+          key: "help",
+          label: t("header.help") || "Help",
+          icon: <QuestionCircleOutlined />,
+          onClick: () => router.push("/help"),
+        },
+        { type: "divider" }
+      );
     }
-  }, []);
 
-  function showConfirmLogout() {
-    Modal.confirm({
-      title: "Confirm Logout",
-      content: "Are you sure you want to logout?",
-      okText: "Logout",
-      cancelText: "Cancel",
-      okButtonProps: { danger: true },
-      centered: true,
-      onOk: onLogout,
-    });
-  }
-
-  const saveHistory = (list: string[]) => {
-    setSearchHistory(list);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("globalSearchHistory", JSON.stringify(list));
-    }
-  };
-
-  const addToHistory = (term: string) => {
-    const tVal = term.trim();
-    if (!tVal) return;
-    const next = [tVal, ...searchHistory.filter((x) => x !== tVal)].slice(0, 10);
-    saveHistory(next);
-  };
-
-  const clearHistory = () => {
-    saveHistory([]);
-    setSearchValue("");
-  };
-
-  const handleSearchSubmit = (raw?: string) => {
-    const q = (raw ?? searchValue).trim();
-    if (!q) return;
-
-    addToHistory(q);
-    setSearchValue(q);
-
-    router.push(`/search?q=${encodeURIComponent(q)}`, { scroll: false });
-  };
-
-  const handleSearchSelect = (value: string) => {
-    if (value === "__clear__") {
-      clearHistory();
-      return;
-    }
-    setSearchValue(value);
-    handleSearchSubmit(value);
-  };
-
-  const clearSearchInput = () => {
-    setSearchValue("");
-    searchInputRef.current?.focus?.();
-  };
-
-  const searchOptions = useMemo(() => {
-    const historyOptions = searchHistory.map((h) => ({
-      value: h,
-      label: (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>
-            <HistoryOutlined style={{ marginRight: 8, color: "#999" }} />
-            {h}
+    items.push(
+      {
+        key: "lang-th",
+        disabled: currentLang === "th",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>{flagOf.th}</span>
+            <span>{labelOf.th}</span>
           </span>
-        </div>
-      ),
-    }));
-
-    const clearOption =
-      searchHistory.length > 0
-        ? [
-            {
-              value: "__clear__",
-              label: (
-                <div
-                  style={{
-                    textAlign: "right",
-                    fontSize: 12,
-                    color: "#999",
-                  }}
-                >
-                  {t("header.searchClearHistory")}
-                </div>
-              ),
-            },
-          ]
-        : [];
-
-    return [...historyOptions, ...clearOption];
-  }, [searchHistory, t]);
-
-  // Ctrl+K / Cmd+K → focus search (desktop only)
-  useEffect(() => {
-    if (isMobile) return; // มือถือไม่ต้องสนใจ shortcut
-    const handler = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toLowerCase().includes("mac");
-      const metaPressed = isMac ? e.metaKey : e.ctrlKey;
-      if (metaPressed && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchInputRef.current?.focus?.();
+        ),
+        icon: <GlobalOutlined />,
+        onClick: () => changeLang("th"),
+      },
+      {
+        key: "lang-en",
+        disabled: currentLang === "en",
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>{flagOf.en}</span>
+            <span>{labelOf.en}</span>
+          </span>
+        ),
+        icon: <GlobalOutlined />,
+        onClick: () => changeLang("en"),
       }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isMobile]);
+    );
+
+    return items;
+  }, [changeLang, currentLang, router, t, userSession]);
 
   return (
-    <Header
-      style={{
-        background: "#fff",
-        padding: isMobile ? "0 8px" : "0 16px",
-        height: isMobile ? 52 : 64,
-        borderBottom: "1px solid #f0f0f0",
-        position: "sticky",
-        top: 0,
-        zIndex: 1000,
-      }}
-    >
-      {/* ชั้นใน: flex row */}
-      <div
+    <>
+      <Header
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: isMobile ? 8 : 16,
-          height: "100%",
+          background: "rgba(var(--app-surface-rgb),0.88)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+          padding: 0,
+          height: isMobileView ? 58 : 72,
+          borderBottom: "1px solid var(--app-border)",
+          position: "sticky",
+          top: 0,
+          zIndex: 1000,
+          lineHeight: 1,
+          boxShadow: "0 8px 30px rgba(15,23,42,0.04)",
         }}
       >
-        {/* ซ้าย: Logo / Title */}
-        <div style={{ flexShrink: 0 }}>
-          <Link
-            href="/"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              textDecoration: "none",
-            }}
-          >
-            {isMobile ? (
-              // ================================
-              // 📱 MOBILE → แสดงเป็น Icon
-              // ================================
-              <Avatar size={35} shape="circle" alt="WHOSSCAM">
+        <div className="jachoei-header-shell">
+          <div className="jachoei-header-left">
+            <Link href="/" aria-label={t("common.go_home")} className="jachoei-brand-link">
+              <span className="jachoei-brand-icon">
                 <img
                   src="/icons/icon.svg"
-                  width={35}
-                  height={35}
-                  alt="WHOSSCAM"
+                  width={46}
+                  height={46}
+                  alt="จ่าเฉย (JACHOEI)"
                   style={{
                     display: "block",
                     width: "100%",
                     height: "100%",
-                    // borderRadius: "50%",
                     objectFit: "cover",
-                    transform: "scale(1.25)",
+                    transform: "scale(1.22)",
                     transformOrigin: "center",
                   }}
                   loading="eager"
                   decoding="async"
                 />
-              </Avatar>
+              </span>
 
-            ) : (
-              // ================================
-              // 🖥 DESKTOP → แสดงชื่อ Title
-              // ================================
-              <Link
-      href="/"
-      aria-label="Go to home"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "6px 8px",
-        textDecoration: "none",
-        lineHeight: 1,
-      }}
-    >
-      {/* ICON */}
-      <Avatar size={50} shape="circle" alt="WHOSSCAM">
-        <img
-          src="/icons/icon.svg"
-          width={50}
-          height={50}
-          alt="WHOSSCAM"
-          style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            // borderRadius: "50%",
-            objectFit: "cover",
-            transform: "scale(1.25)",
-            transformOrigin: "center",
-          }}
-          loading="eager"
-          decoding="async"
-        />
-      </Avatar>
+              <div className="jachoei-brand-copy">
+                <Text className="jachoei-brand-title">{t("header.title")}</Text>
+                {isDesktopView && (
+                  <Text className="jachoei-brand-subtitle">
+                    {t("header.subtitle")}
+                  </Text>
+                )}
+              </div>
+            </Link>
+          </div>
 
-      {/* TITLE */}
-      <Text
-        style={{
-          color: "#000",
-          fontSize: 22,
-          fontWeight: 700,
-          letterSpacing: 1,
-          whiteSpace: "nowrap",
-          lineHeight: 1,
-          margin: 0,
-        }}
-      >
-        {t("header.title")}
-      </Text>
-    </Link>
-            
-            )}
-          </Link>
-        </div>
-
-        {/* กลาง: Search */}
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: isMobile ? 360 : 650,
-              minWidth: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            <AutoComplete
-              value={searchValue}
-              onChange={setSearchValue}
-              onSelect={handleSearchSelect}
-              options={searchOptions}
-              popupMatchSelectWidth={true}
-            >
-              <Input
-                ref={searchInputRef}
-                size={isMobile ? "small" : "middle"}
-                placeholder={t("header.searchPlaceholder")}
-                prefix={
-                  <SearchOutlined
-                    style={{
-                      color: searchFocused ? "#1677ff" : "#999",
-                      transition: "color .18s ease",
-                    }}
-                  />
-                }
-                suffix={
-                  isMobile ? (
-                    // มือถือ: แสดงแค่ปุ่มเคลียร์ถ้ามี text
-                    searchValue && (
-                      <CloseCircleFilled
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          clearSearchInput();
-                        }}
+          {!isMobileView && (
+            <div className="jachoei-header-center">
+              <div className="jachoei-search-wrap">
+                <AutoComplete
+                  value={searchValue}
+                  onChange={setSearchValue}
+                  onSelect={handleSearchSelect}
+                  options={searchOptions}
+                  popupMatchSelectWidth
+                >
+                  <Input
+                    ref={searchInputRef}
+                    size={isTabletView ? "middle" : "large"}
+                    placeholder={t("header.searchPlaceholder")}
+                    prefix={
+                      <SearchOutlined
                         style={{
-                          fontSize: 14,
-                          cursor: "pointer",
-                          color: "#bfbfbf",
+                          color: searchFocused ? "var(--app-primary)" : "var(--app-muted)",
+                          transition: "color .18s ease",
                         }}
                       />
-                    )
-                  ) : (
-                    // Desktop: ปุ่มเคลียร์ + Ctrl+K hint
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 11,
-                        color: "#999",
-                      }}
-                    >
-                      {searchValue && (
+                    }
+                    suffix={
+                      isDesktopView ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 11,
+                            color: "var(--app-muted)",
+                          }}
+                        >
+                          {searchValue && (
+                            <CloseCircleFilled
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                clearSearchInput();
+                              }}
+                              style={{
+                                fontSize: 14,
+                                cursor: "pointer",
+                                color: "var(--app-muted)",
+                              }}
+                            />
+                          )}
+
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <span className="jachoei-kbd">Ctrl</span>
+                            <span style={{ opacity: 0.7 }}>+</span>
+                            <span className="jachoei-kbd">K</span>
+                          </span>
+                        </span>
+                      ) : searchValue ? (
                         <CloseCircleFilled
                           onClick={(e) => {
                             e.stopPropagation();
@@ -491,219 +535,508 @@ export default function HeaderBar({ initialLang = "th", isMobile = false }: Head
                           style={{
                             fontSize: 14,
                             cursor: "pointer",
-                            color: "#bfbfbf",
+                            color: "var(--app-muted)",
                           }}
                         />
-                      )}
+                      ) : null
+                    }
+                    style={{
+                      width: "100%",
+                      borderRadius: 999,
+                      paddingInline: isTabletView ? 12 : 16,
+                      background: searchFocused
+                        ? "rgba(var(--app-surface-rgb),1)"
+                        : "rgba(var(--app-bg-rgb),0.92)",
+                      border: searchFocused
+                        ? "1px solid rgba(var(--app-primary-rgb),0.34)"
+                        : "1px solid var(--app-border)",
+                      boxShadow: searchFocused
+                        ? "0 0 0 3px rgba(var(--app-primary-rgb),0.10), 0 10px 24px rgba(var(--app-shadow-rgb),0.10)"
+                        : "0 4px 16px rgba(var(--app-shadow-rgb),0.04), inset 0 1px 0 rgba(var(--app-surface-rgb),0.75)",
+                      transition: "all .18s ease",
+                    }}
+                    onPressEnter={() => handleSearchSubmit()}
+                    onFocus={() => setSearchFocused(true)}
+                    onBlur={() => setSearchFocused(false)}
+                  />
+                </AutoComplete>
+              </div>
+            </div>
+          )}
 
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <span
-                          style={{
-                            padding: "1px 6px",
-                            borderRadius: 6,
-                            background: "#f0f0f0",
-                            border: "1px solid #e1e1e1",
-                            boxShadow: "0 1px 0 rgba(255,255,255,0.6)",
-                          }}
-                        >
-                          Ctrl
-                        </span>
-                        <span style={{ opacity: 0.7 }}>+</span>
-                        <span
-                          style={{
-                            padding: "1px 6px",
-                            borderRadius: 6,
-                            background: "#f0f0f0",
-                            border: "1px solid #e1e1e1",
-                            boxShadow: "0 1px 0 rgba(255,255,255,0.6)",
-                          }}
-                        >
-                          K
-                        </span>
+          <div className="jachoei-header-right">
+            <Space size={isMobileView ? 4 : 6} align="center">
+              {isMobileView && (
+                <Tooltip title={t("header.searchPlaceholder")}>
+                  <Button
+                    type="text"
+                    style={iconButtonStyle}
+                    onClick={() => setMobileSearchOpen(true)}
+                    icon={<SearchOutlined style={{ fontSize: 18 }} />}
+                  />
+                </Tooltip>
+              )}
+
+              {userSession && (
+                <>
+                  <Tooltip title={t("header.newPost") || "New post"}>
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      onClick={() => router.push("/post/new")}
+                      icon={<PlusOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />}
+                      aria-label="New post"
+                    />
+                  </Tooltip>
+
+                  <Tooltip title={t("header.chat") || "ข้อความ"}>
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      onClick={() => router.push("/chat")}
+                      icon={
+                        <Badge count={totalUnread > 99 ? "99+" : totalUnread} size="small" offset={[-2, 2]}>
+                          <MessageOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />
+                        </Badge>
+                      }
+                    />
+                  </Tooltip>
+
+                  <Tooltip title={t("header.notifications") || "แจ้งเตือน"}>
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      onClick={() => router.push("/notification")}
+                      icon={
+                        <Badge count={notifUnreadCount > 99 ? "99+" : notifUnreadCount} size="small" offset={[-2, 2]}>
+                          <BellOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />
+                        </Badge>
+                      }
+                    />
+                  </Tooltip>
+                </>
+              )}
+
+              <ThemeToggle />
+
+              {!isMobileView ? (
+                <Dropdown
+                  menu={{ items: languageMenu }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                  arrow
+                  overlayStyle={{ minWidth: 180 }}
+                >
+                  <Button
+                    type="text"
+                    className="jachoei-lang-btn"
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <span className="jachoei-lang-content">
+                      <span className="jachoei-lang-globe" aria-hidden="true">
+                        <GlobalOutlined />
                       </span>
+                      <span className="jachoei-lang-flag" aria-hidden="true">
+                        {flagOf[currentLang]}
+                      </span>
+                      <span className="jachoei-lang-label">{labelOf[currentLang]}</span>
                     </span>
-                  )
+                  </Button>
+                </Dropdown>
+              ) : (
+                <Dropdown
+                  menu={{ items: mobileOverflowMenu }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                  arrow
+                  overlayStyle={{ minWidth: 200 }}
+                >
+                  <Tooltip title={t("common.more")}>
+                    <Button
+                      type="text"
+                      style={iconButtonStyle}
+                      icon={<MoreOutlined style={{ fontSize: 18 }} />}
+                      aria-label={t("common.more")}
+                    />
+                  </Tooltip>
+                </Dropdown>
+              )}
+
+              {isDesktopView && (
+                <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
+                  <Button
+                    type="text"
+                    style={iconButtonStyle}
+                    onClick={() => router.push("/help")}
+                    icon={<QuestionCircleOutlined style={{ fontSize: 18 }} />}
+                  />
+                </Tooltip>
+              )}
+
+              {userSession ? (
+                <Dropdown
+                  menu={{ items: profileMenu }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                  arrow
+                >
+                  <Avatar
+                    size={isMobileView ? 34 : 38}
+                    src={me?.avatar}
+                    style={{
+                      background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
+                      cursor: "pointer",
+                      boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
+                      border: "2px solid rgba(var(--app-surface-rgb),0.9)",
+                    }}
+                    icon={<UserOutlined />}
+                  />
+                </Dropdown>
+              ) : (
+                <Button
+                  icon={<LoginOutlined />}
+                  size={isMobileView ? "middle" : "large"}
+                  onClick={() => router.push("/login")}
+                  className="jachoei-login-btn"
+                >
+                  {!isMobileView && t("common.login")}
+                </Button>
+              )}
+            </Space>
+          </div>
+        </div>
+      </Header>
+
+      {isMobileView && mobileSearchOpen && (
+        <div className="jachoei-mobile-search-backdrop" onClick={() => setMobileSearchOpen(false)}>
+          <div
+            className="jachoei-mobile-search-card"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={t("common.search")}
+          >
+            <div className="jachoei-mobile-search-top">
+              <Text style={{ fontWeight: 700, color: "var(--app-text)" }}>
+                {t("header.searchPlaceholder")}
+              </Text>
+
+              <Button
+                type="text"
+                onClick={() => setMobileSearchOpen(false)}
+                icon={<CloseCircleFilled style={{ color: "var(--app-muted)" }} />}
+              />
+            </div>
+
+            <AutoComplete
+              value={searchValue}
+              onChange={setSearchValue}
+              onSelect={handleSearchSelect}
+              options={searchOptions}
+              popupMatchSelectWidth
+            >
+              <Input
+                ref={mobileSearchInputRef}
+                size="large"
+                placeholder={t("header.searchPlaceholder")}
+                prefix={<SearchOutlined style={{ color: "var(--app-muted)" }} />}
+                suffix={
+                  searchValue ? (
+                    <CloseCircleFilled
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        clearSearchInput();
+                      }}
+                      style={{
+                        fontSize: 14,
+                        cursor: "pointer",
+                        color: "var(--app-muted)",
+                      }}
+                    />
+                  ) : null
                 }
                 style={{
-                  width: "100%",
-                  borderRadius: 999,
-                  paddingInline: isMobile ? 10 : 16,
-                  background: searchFocused ? "#ffffff" : "#f5f5f5",
-                  border: searchFocused
-                    ? "1px solid rgba(22,119,255,0.35)"
-                    : "1px solid transparent",
-                  boxShadow: searchFocused
-                    ? "0 0 0 1px rgba(22,119,255,0.18), 0 6px 18px rgba(15,23,42,0.08)"
-                    : "0 2px 6px rgba(15,23,42,0.04)",
-                  transition: "all .18s ease",
+                  borderRadius: 16,
+                  background: "var(--app-surface)",
+                  border: "1px solid var(--app-border)",
+                  boxShadow: "0 6px 18px rgba(15,23,42,0.06)",
                 }}
                 onPressEnter={() => handleSearchSubmit()}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
               />
             </AutoComplete>
           </div>
         </div>
+      )}
 
-        {/* ขวา: ปุ่มต่าง ๆ */}
-        <div style={{ flexShrink: 0 }}>
-          <Space size={isMobile ? 4 : 8} align="center">
-            {userSession && (
-              <>
-                <Tooltip title={t("header.chat") || "สร้างโพสใหม่"}>
-                  <Button
-                    type="text"
-                    size={isMobile ? "small" : "middle"}
-                    onClick={() => router.push("/post/new")}
-                    icon={
-                      <span style={{ position: "relative", display: "inline-block" }}>
-                        <PlusOutlined style={{ fontSize: isMobile ? 18 : 18, color: "#000" }} />
-                      </span>
-                    }
-                  />
-                </Tooltip>
-                {/* Chat */}
-                <Tooltip title={t("header.chat") || "ข้อความ"}>
-                  <Button
-                    type="text"
-                    size={isMobile ? "small" : "middle"}
-                    onClick={() => router.push("/chat")}
-                    icon={
-                      <span style={{ position: "relative", display: "inline-block" }}>
-                        <MessageOutlined style={{ fontSize: isMobile ? 18 : 18, color: "#000" }} />
-                        {totalUnread > 0 && (
-                          <span
-                            style={{
-                              position: "absolute",
-                              top: 10,
-                              right: -10,
-                              minWidth: 18,
-                              height: 18,
-                              padding: "0 5px",
-                              background: "#ff4d4f",
-                              borderRadius: 999,
-                              color: "#fff",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              boxShadow: "0 0 4px rgba(0, 0, 0, 0.3)",
-                            }}
-                          >
-                            {totalUnread > 99 ? "99+" : totalUnread}
-                          </span>
-                        )}
-                      </span>
-                    }
-                  />
-                </Tooltip>
+      <style>{`
+        .jachoei-header-shell {
+          max-width: 1400px;
+          margin: 0 auto;
+          height: 100%;
+          display: grid;
+          grid-template-columns: minmax(240px, 360px) minmax(500px, 1fr) auto;
+          align-items: center;
+          gap: 18px;
+          padding: 0 18px;
+        }
 
-                {/* Notifications */}
-                <Tooltip title={t("header.notifications") || "แจ้งเตือน"}>
-                  <Button
-                    type="text"
-                    size={isMobile ? "small" : "middle"}
-                    onClick={() => router.push("/notification")}
-                    icon={
-                      <span style={{ position: "relative", display: "inline-block" }}>
-                        <BellOutlined style={{ fontSize: isMobile ? 18 : 18, color: "#000" }} />
-                        {notifUnreadCount > 0 && (
-                          <span
-                            style={{
-                              position: "absolute",
-                              top: 10,
-                              right: -10,
-                              minWidth: 18,
-                              height: 18,
-                              padding: "0 5px",
-                              background: "#ff4d4f",
-                              borderRadius: 999,
-                              color: "#fff",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              boxShadow: "0 0 4px rgba(0, 0, 0, 0.3)",
-                            }}
-                          >
-                            {notifUnreadCount > 99 ? "99+" : notifUnreadCount}
-                          </span>
-                        )}
-                      </span>
-                    }
-                  />
-                </Tooltip>
-              </>
-            )}
+        .jachoei-header-left {
+          min-width: 0;
+          overflow: hidden;
+        }
 
-            {/* Language */}
-            <Dropdown
-              menu={{ items: languageMenu }}
-              trigger={["click"]}
-              placement="bottomRight"
-              arrow
-              overlayStyle={{ minWidth: 180 }}
-            >
-              <Button
-                type="text"
-                size={isMobile ? "small" : "middle"}
-                onClick={(e: any) => e.preventDefault()}
-              >
-                <span style={{ fontSize: 18, marginRight: isMobile ? 0 : 6 }}>
-                  {flagOf[currentLang]}
-                </span>
-                {!isMobile && <span>{labelOf[currentLang]}</span>}
-              </Button>
-            </Dropdown>
+        .jachoei-brand-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          text-decoration: none;
+          padding: 6px 4px;
+          border-radius: 18px;
+          min-width: 0;
+          max-width: 100%;
+        }
 
-            {/* Help */}
-            {!isMobile && (
-              <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
-                <Button
-                  type="text"
-                  onClick={() => router.push("/help")}
-                  icon={<QuestionCircleOutlined style={{ fontSize: 18, color: "#000" }} />}
-                />
-              </Tooltip>
-            )}
+        .jachoei-brand-icon {
+          width: 46px;
+          height: 46px;
+          border-radius: 16px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+          // box-shadow: 0 10px 24px rgba(15,23,42,0.14);
+          flex-shrink: 0;
+        }
 
-            {/* User Avatar / Login */}
-            {userSession ? (
-              <Dropdown
-                menu={{ items: profileMenu }}
-                trigger={["click"]}
-                placement="bottomRight"
-                arrow
-              >
-                <Avatar
-                  size={isMobile ? 32 : 36}
-                  src={me?.avatar}
-                  style={{ background: "#666", cursor: "pointer" }}
-                  icon={<UserOutlined />}
-                />
-              </Dropdown>
-            ) : (
-              <Space>
-                <Button
-                  icon={<LoginOutlined />}
-                  size={isMobile ? "small" : "middle"}
-                  onClick={() => router.push("/login")}
-                >
-                  {!isMobile && "Login"}
-                </Button>
-              </Space>
-            )}
-          </Space>
-        </div>
-      </div>
-    </Header>
+        .jachoei-brand-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .jachoei-brand-title {
+          color: var(--app-text) !important;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: -0.3px;
+          line-height: 1.1;
+          margin: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .jachoei-brand-subtitle {
+          color: rgba(var(--app-text-rgb),0.52) !important;
+          font-size: 12px;
+          line-height: 1.2;
+          margin-top: 3px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .jachoei-header-center {
+          min-width: 0;
+          display: flex;
+          justify-content: center;
+        }
+
+        .jachoei-search-wrap {
+          width: 100%;
+          max-width: 100%;
+          min-width: 420px;
+        }
+
+        .jachoei-kbd {
+          padding: 2px 7px;
+          border-radius: 8px;
+          background: rgba(var(--app-surface-rgb),0.86);
+          border: 1px solid var(--app-border);
+          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
+        }
+
+        .jachoei-header-right {
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+        }
+
+        .jachoei-lang-btn {
+          border-radius: 14px !important;
+          height: 38px !important;
+          padding-inline: 12px !important;
+          color: var(--app-text) !important;
+        }
+
+        .jachoei-lang-content {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          line-height: 1;
+        }
+
+        .jachoei-lang-globe {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+        }
+
+        .jachoei-lang-flag {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          line-height: 1;
+        }
+
+        .jachoei-lang-label {
+          display: inline-flex;
+          align-items: center;
+          line-height: 1;
+        }
+
+        .jachoei-lang-btn .anticon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+          vertical-align: 0;
+        }
+
+        .jachoei-login-btn {
+          border-radius: 999px !important;
+          padding-inline: 16px !important;
+          height: 40px !important;
+          border: 1px solid var(--app-border) !important;
+          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
+        }
+
+        .jachoei-mobile-search-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 1200;
+          background: var(--app-overlay);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding: 72px 10px 10px;
+        }
+
+        .jachoei-mobile-search-card {
+          width: 100%;
+          max-width: 640px;
+          background: rgba(var(--app-surface-rgb),0.98);
+          border: 1px solid var(--app-border);
+          border-radius: 20px;
+          padding: 12px;
+          box-shadow: 0 20px 50px rgba(var(--app-shadow-rgb),0.18);
+        }
+
+        html.dark .jachoei-kbd {
+          background: rgba(var(--app-text-rgb),0.06);
+          border-color: var(--app-border);
+          box-shadow: none;
+          color: var(--app-text);
+        }
+
+        html.dark .jachoei-login-btn {
+          border-color: var(--app-border) !important;
+        }
+
+        .jachoei-mobile-search-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 10px;
+        }
+
+        @media (max-width: 1399px) {
+          .jachoei-header-shell {
+            grid-template-columns: minmax(220px, 320px) minmax(420px, 1fr) auto;
+            gap: 16px;
+            padding: 0 16px;
+          }
+
+          .jachoei-search-wrap {
+            min-width: 360px;
+          }
+        }
+
+        @media (max-width: 1179px) {
+          .jachoei-header-shell {
+            grid-template-columns: minmax(180px, 260px) minmax(260px, 1fr) auto;
+            gap: 12px;
+            padding: 0 12px;
+          }
+
+          .jachoei-brand-title {
+            font-size: 17px;
+          }
+
+          .jachoei-search-wrap {
+            min-width: 240px;
+          }
+
+          .jachoei-lang-btn {
+            padding-inline: 10px !important;
+          }
+        }
+
+        @media (max-width: 767px) {
+          .jachoei-header-shell {
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            padding: 0 10px;
+          }
+
+          .jachoei-header-left {
+            min-width: 0;
+          }
+
+          .jachoei-brand-link {
+            gap: 8px;
+            width: 100%;
+            min-width: 0;
+          }
+
+          .jachoei-brand-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 14px;
+          }
+
+          .jachoei-brand-copy {
+            min-width: 0;
+            max-width: 100%;
+          }
+
+          .jachoei-brand-title {
+            font-size: 14px;
+          }
+
+          .jachoei-lang-btn {
+            height: 34px !important;
+            padding-inline: 8px !important;
+          }
+
+          .jachoei-login-btn {
+            height: 36px !important;
+            padding-inline: 12px !important;
+          }
+        }
+
+        @media (max-width: 359px) {
+          .jachoei-brand-copy {
+            display: none;
+          }
+        }
+      `}</style>
+    </>
   );
 }

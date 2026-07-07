@@ -3,8 +3,8 @@ import { postBus, type PostEventPayload } from "./postBus";
 import type { SocialJob } from "@social/types";
 
 const g = globalThis as any;
-if (!g.__whosscam_post_listeners__)
-  g.__whosscam_post_listeners__ = { started: false, starting: false, bus: null as any };
+if (!g.__jachoei_post_listeners__)
+  g.__jachoei_post_listeners__ = { started: false, starting: false, bus: null as any };
 
 function absolutizeUrl(u: string | null | undefined) {
   const s = String(u ?? "").trim();
@@ -56,15 +56,15 @@ function mapTelNumbers(e: PostEventPayload) {
 export async function registerPostEventListeners() {
   console.error(
     "[events] registerPostEventListeners() called. started =",
-    g.__whosscam_post_listeners__.started,
+    g.__jachoei_post_listeners__.started,
     "sameBus=",
-    g.__whosscam_post_listeners__.bus === postBus
+    g.__jachoei_post_listeners__.bus === postBus
   );
 
-  if (g.__whosscam_post_listeners__.started && g.__whosscam_post_listeners__.bus === postBus) return;
-  if (g.__whosscam_post_listeners__.starting) return;
+  if (g.__jachoei_post_listeners__.started && g.__jachoei_post_listeners__.bus === postBus) return;
+  if (g.__jachoei_post_listeners__.starting) return;
 
-  g.__whosscam_post_listeners__.starting = true;
+  g.__jachoei_post_listeners__.starting = true;
 
   try {
     const { createRedis, enqueueSocialJob, ensureRedis, QUEUE_KEY } = await import("@social/queue.server");
@@ -169,8 +169,8 @@ export async function registerPostEventListeners() {
     postBus.on("post.updated", onEvent("post.updated", "update"));
     postBus.on("post.deleted", onEvent("post.deleted", "delete"));
 
-    g.__whosscam_post_listeners__.bus = postBus;
-    g.__whosscam_post_listeners__.started = true;
+    g.__jachoei_post_listeners__.bus = postBus;
+    g.__jachoei_post_listeners__.started = true;
 
     console.error(
       "[events] post listeners registered OK. counts =",
@@ -180,9 +180,9 @@ export async function registerPostEventListeners() {
     );
   } catch (err: any) {
     console.error("[events] register FAILED", err?.message ?? err);
-    g.__whosscam_post_listeners__.started = false;
-    g.__whosscam_post_listeners__.bus = null;
+    g.__jachoei_post_listeners__.started = false;
+    g.__jachoei_post_listeners__.bus = null;
   } finally {
-    g.__whosscam_post_listeners__.starting = false;
+    g.__jachoei_post_listeners__.starting = false;
   }
 }

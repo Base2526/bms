@@ -94,8 +94,8 @@ export type PostEventPayload = {
 const g = globalThis as any;
 
 export const postBus: EventEmitter =
-  g.__whosscam_postBus__ ??
-  (g.__whosscam_postBus__ = new EventEmitter());
+  g.__jachoei_postBus__ ??
+  (g.__jachoei_postBus__ = new EventEmitter());
 
 // กัน memory leak ตอนมี worker หลายตัว subscribe
 postBus.setMaxListeners(50);

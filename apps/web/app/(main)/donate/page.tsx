@@ -1,23 +1,82 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React from "react";
 // import Image from "next/image";
 import { Card, Typography, Space, Button, Divider, message, Image } from "antd";
 import { CopyOutlined, LinkOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
+import { resolveBilingual } from "@/lib/static-page-i18n";
 
 const { Title, Paragraph, Text, Link } = Typography;
+
+type DonateContent = {
+  title: string;
+  intro: string;
+  cardTitle: string;
+  qrTitle: string;
+  qrAlt: string;
+  qrHint: string;
+  paymentTitle: string;
+  openPaymentLink: string;
+  copyLink: string;
+  noteLabel: string;
+  noteText: string;
+  disclaimer: string;
+  toastCopied: string;
+  toastCopyFailed: string;
+};
+
+const DONATE: { en: DonateContent; th: DonateContent } = {
+  en: {
+    title: "Donate",
+    intro:
+      "If you’d like to support the development of this project, you can donate via Binance (QR / payment link).",
+    cardTitle: "Donate",
+    qrTitle: "Scan QR (Binance)",
+    qrAlt: "Binance donation QR code",
+    qrHint: "Scan with the Binance app and verify recipient details and amount before confirming.",
+    paymentTitle: "Payment link",
+    openPaymentLink: "Open payment link",
+    copyLink: "Copy link",
+    noteLabel: "Note:",
+    noteText: "Thank you for supporting this project.",
+    disclaimer:
+      "This page only provides direct transfer information for Binance. This website does not process payments and cannot recover transactions sent to the wrong destination.",
+    toastCopied: "Copied!",
+    toastCopyFailed: "Copy failed",
+  },
+  th: {
+    title: "สนับสนุน",
+    intro:
+      "หากคุณอยากสนับสนุนการพัฒนาโปรเจกต์ สามารถโดเนทผ่าน Binance ได้ (QR / Payment Link)",
+    cardTitle: "สนับสนุน",
+    qrTitle: "สแกน QR (Binance)",
+    qrAlt: "คิวอาร์โค้ดสำหรับโดเนทผ่าน Binance",
+    qrHint: "สแกนด้วยแอป Binance แล้วตรวจสอบชื่อผู้รับ/จำนวนเงินก่อนยืนยันทุกครั้ง",
+    paymentTitle: "ลิงก์ชำระเงิน",
+    openPaymentLink: "เปิดลิงก์ชำระเงิน",
+    copyLink: "คัดลอกลิงก์",
+    noteLabel: "หมายเหตุ:",
+    noteText: "ขอบคุณที่สนับสนุนโปรเจกต์นี้",
+    disclaimer:
+      "หน้านี้เป็นเพียงข้อมูลสำหรับการโอนโดยตรงกับ Binance เท่านั้น เว็บไซต์นี้ไม่ประมวลผลการชำระเงิน และไม่สามารถช่วยกู้คืนธุรกรรมที่โอนผิดได้",
+    toastCopied: "คัดลอกแล้ว",
+    toastCopyFailed: "คัดลอกไม่สำเร็จ",
+  },
+};
 
 export default function DonatePage() {
   // ✅ ใส่ลิงก์/ข้อมูลจริงของคุณตรงนี้
   const paymentLink = "https://s.binance.com/czv6Ztzg"; // TODO
-  const noteText = "Thank you for supporting this project ❤️";
+  const { lang } = useI18n();
+  const content = resolveBilingual(DONATE, lang);
 
   const handleCopy = async (value: string) => {
     try {
       // ✅ Modern clipboard (ต้องเป็น HTTPS หรือ localhost)
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(value);
-        message.success("Copied!");
+        message.success(content.toastCopied);
         return;
       }
 
@@ -37,20 +96,21 @@ export default function DonatePage() {
       const ok = document.execCommand("copy");
       document.body.removeChild(textarea);
 
-      if (ok) message.success("Copied!");
-      else message.error("Copy failed");
+      if (ok) message.success(content.toastCopied);
+      else message.error(content.toastCopyFailed);
     } catch (err) {
-      message.error("Copy failed");
+      message.error(content.toastCopyFailed);
     }
   };
 
   return (
+    <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
       <Title level={2} style={{ marginBottom: 0 }}>
-        Donate
+        {content.title}
       </Title>
       <Paragraph style={{ marginTop: 0 }}>
-        หากคุณอยากสนับสนุนการพัฒนาโปรเจกต์ สามารถโดเนทผ่าน Binance ได้ (QR / Payment Link)
+        {content.intro}
       </Paragraph>
 
       <Card style={{ borderRadius: 16 }}>
@@ -60,7 +120,7 @@ export default function DonatePage() {
           style={{ width: "100%", alignItems: "center" }}
         >
           <Title level={4} style={{ margin: 0 }}>
-            Scan QR (Binance)
+            {content.qrTitle}
           </Title>
 
           <div
@@ -68,14 +128,14 @@ export default function DonatePage() {
               width: 240,
               height: 240,
               // borderRadius: 16,
-              border: "1px solid rgba(0,0,0,0.08)",
+              border: "1px solid var(--app-border)",
               overflow: "hidden",
-              background: "white",
+              background: "var(--app-surface)",
             }}
           >
             <Image
               src="/icons/binance-qr.png"
-              alt="Binance Donate QR"
+              alt={content.qrAlt}
               width={240}
               height={240}
               // priority
@@ -83,27 +143,27 @@ export default function DonatePage() {
           </div>
 
           <Text type="secondary">
-            สแกนด้วยแอป Binance แล้วตรวจสอบชื่อผู้รับ/จำนวนเงินก่อนยืนยันทุกครั้ง
+            {content.qrHint}
           </Text>
 
           <Divider style={{ margin: "6px 0" }} />
 
           <Title level={5} style={{ margin: 0 }}>
-            Payment link
+            {content.paymentTitle}
           </Title>
 
           <Space wrap style={{ justifyContent: "center" }}>
             <Link href={paymentLink} target="_blank" rel="noopener noreferrer">
-              <LinkOutlined /> Open payment link
+              <LinkOutlined /> {content.openPaymentLink}
             </Link>
 
             <Button icon={<CopyOutlined />} onClick={() => handleCopy(paymentLink)}>
-              Copy link
+              {content.copyLink}
             </Button>
           </Space>
 
           <Paragraph style={{ marginBottom: 0, textAlign: "center" }}>
-            <Text strong>Note:</Text> {noteText}
+            <Text strong>{content.noteLabel}</Text> {content.noteText}
           </Paragraph>
 
           <Divider style={{ margin: "6px 0" }} />
@@ -111,12 +171,12 @@ export default function DonatePage() {
           <Space align="start">
             <SafetyCertificateOutlined style={{ marginTop: 2 }} />
             <Text type="secondary">
-              หน้านี้เป็นเพียงข้อมูลสำหรับการโอนโดยตรงกับ Binance เท่านั้น เว็บไซต์นี้ไม่ประมวลผลการชำระเงิน
-              และไม่สามารถช่วยกู้คืนธุรกรรมที่โอนผิดได้
+              {content.disclaimer}
             </Text>
           </Space>
         </Space>
       </Card>
     </Space>
+    </div>
   );
 }

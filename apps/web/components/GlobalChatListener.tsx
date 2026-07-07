@@ -1,12 +1,13 @@
 "use client";
 
-import { gql, useQuery, useSubscription } from "@apollo/client";
-import { useEffect } from "react";
+import { gql, useApolloClient, useQuery, useSubscription } from "@apollo/client";
+import { useEffect, useRef } from "react";
 import {
   useGlobalChatStore,
   getGlobalChatState,
 } from "@/store/globalChatStore";
 import { notify } from "@/lib/notify";
+import { normalizeBank, normalizeTel } from "@/app/lib/jachoeiLocalState";
 
 // ===== QUERIES =====
 const Q_ME = gql`
@@ -40,6 +41,13 @@ const Q_CHATS = gql`
           file_id
           mime
         }
+
+        audio {
+          file_id
+          url
+          mime
+          duration_sec
+        }
       }
     }
   }
@@ -64,9 +72,63 @@ const SUB_INCOMING = gql`
         file_id
         mime
       }
+
+      audio {
+        file_id
+        url
+        mime
+        duration_sec
+      }
     }
   }
 `;
+
+function normalizeIncomingMessage(m: any) {
+  if (!m) return null;
+
+  const senderIdRaw = m?.sender?.id;
+  const senderId =
+    typeof senderIdRaw === "string" || typeof senderIdRaw === "number"
+      ? String(senderIdRaw)
+      : "";
+
+  const images = Array.isArray(m.images) ? m.images : [];
+
+  const audio = m.audio
+    ? {
+        __typename: "MessageAudio",
+        file_id: m.audio.file_id,
+        url: m.audio.url,
+        mime: m.audio.mime ?? null,
+        duration_sec:
+          typeof m.audio.duration_sec === "number" ? m.audio.duration_sec : null,
+      }
+    : null;
+
+  return {
+    __typename: "Message",
+    id: m.id,
+    chat_id: m.chat_id,
+    text: typeof m.text === "string" ? m.text : "",
+    created_at: m.created_at,
+    sender: senderId
+      ? {
+          __typename: "User",
+          id: senderId,
+          name: m?.sender?.name ?? "—",
+          avatar: m?.sender?.avatar ?? null,
+        }
+      : m.sender,
+    images: images.map((img: any) => ({
+      __typename: "MessageImage",
+      id: img.id,
+      url: img.url,
+      file_id: img.file_id ?? null,
+      mime: img.mime ?? null,
+    })),
+    audio,
+  };
+}
 
 const SUB_USER_MESSAGE = gql`
   subscription ($user_id: ID!) {
@@ -92,11 +154,64 @@ const SUB_TIME = gql`
   }
 `;
 
+// ===== JACHOEI REALTIME (BLOCK / UNBLOCK) =====
+const Q_MY_BLOCKED_PHONE_KEYS = gql`
+  query MyBlockedPhoneKeys {
+    myBlockedPhoneKeys
+  }
+`;
+
+const Q_MY_REPORTED_BANK_ACCOUNT_KEYS = gql`
+  query MyReportedBankAccountKeys {
+    myReportedBankAccountKeys
+  }
+`;
+
+const SUB_MY_PHONE_BLOCK_STATUS_CHANGED = gql`
+  subscription MyPhoneBlockStatusChanged {
+    myPhoneBlockStatusChanged {
+      user_id
+      action
+      phone
+      phone_normalized
+      blocked
+      updated_at
+    }
+  }
+`;
+
+const SUB_MY_BANK_BLOCK_STATUS_CHANGED = gql`
+  subscription MyBankBlockStatusChanged {
+    myBankBlockStatusChanged {
+      user_id
+      action
+      bank_name
+      account_norm
+      blocked
+      updated_at
+    }
+  }
+`;
+
+const SUB_MY_BOOKMARK_STATUS_CHANGED = gql`
+  subscription MyBookmarkStatusChanged {
+    myBookmarkStatusChanged {
+      user_id
+      action
+      target_type
+      target_id
+      bookmarked
+      updated_at
+    }
+  }
+`;
+
 
 // ====================================
 //     GLOBAL CHAT LISTENER (FINAL)
 // ====================================
 export function GlobalChatListener() {
+  const apolloClient = useApolloClient();
   const { data: meData } = useQuery(Q_ME);
   const meId = meData?.me?.id;
 
@@ -105,7 +220,10 @@ export function GlobalChatListener() {
 
   // ติดตาม Window Focus → Zustand
   useEffect(() => {
-    const onFocus = () => setWindowFocused(true);
+    const onFocus = () => {
+      setWindowFocused(true);
+      scheduleRefetchMyBookmarks(apolloClient);
+    };
     const onBlur = () => setWindowFocused(false);
 
     window.addEventListener("focus", onFocus);
@@ -114,7 +232,50 @@ export function GlobalChatListener() {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, [setWindowFocused]);
+  }, [apolloClient, setWindowFocused]);
+
+  // Debounce refetches to avoid duplicate network storms across rapid events.
+  const refetchBlockedTelTimer = useRef<number | null>(null);
+  const refetchReportedBankTimer = useRef<number | null>(null);
+  const refetchMyBookmarksTimer = useRef<number | null>(null);
+
+  const scheduleRefetchBlockedTel = (client: any) => {
+    if (refetchBlockedTelTimer.current != null) return;
+    refetchBlockedTelTimer.current = window.setTimeout(() => {
+      refetchBlockedTelTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyBlockedPhoneKeys"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  const scheduleRefetchReportedBank = (client: any) => {
+    if (refetchReportedBankTimer.current != null) return;
+    refetchReportedBankTimer.current = window.setTimeout(() => {
+      refetchReportedBankTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyReportedBankAccountKeys"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  const scheduleRefetchMyBookmarks = (client: any) => {
+    if (refetchMyBookmarksTimer.current != null) return;
+    refetchMyBookmarksTimer.current = window.setTimeout(() => {
+      refetchMyBookmarksTimer.current = null;
+      void client
+        .refetchQueries({ include: ["MyBookmarks"] })
+        .catch(() => {});
+    }, 200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (refetchBlockedTelTimer.current != null) window.clearTimeout(refetchBlockedTelTimer.current);
+      if (refetchReportedBankTimer.current != null) window.clearTimeout(refetchReportedBankTimer.current);
+      if (refetchMyBookmarksTimer.current != null) window.clearTimeout(refetchMyBookmarksTimer.current);
+    };
+  }, []);
 
   // ===========================================================
   // A) SUB_INCOMING → unread + update last_message list ซ้าย
@@ -123,7 +284,8 @@ export function GlobalChatListener() {
     skip: !meId,
     variables: { user_id: meId },
     onData: ({ data, client }) => {
-      const m = data.data?.incomingMessage;
+      const m0 = data.data?.incomingMessage;
+      const m = normalizeIncomingMessage(m0);
       if (!m) return;
 
       const state = getGlobalChatState();
@@ -138,8 +300,14 @@ export function GlobalChatListener() {
         if (typeof window !== "undefined" && "Notification" in window) {
           if (Notification.permission === "granted") {
             try {
+              const hasImages = Array.isArray(m.images) && m.images.length > 0;
+              const hasAudio = !!m.audio;
+              const body =
+                (m.text || "").trim() ||
+                (hasAudio ? "ส่งข้อความเสียงมา" : hasImages ? "ส่งรูปภาพมา" : "ส่งข้อความมา");
+
               new Notification(m.sender?.name || "New message", {
-                body: m.text || "ส่งรูปภาพมา",
+                body,
               });
             } catch (e) {
               console.error("Notification error:", e);
@@ -153,21 +321,24 @@ export function GlobalChatListener() {
         if (!old) return old;
 
         return {
-          myChats: old.myChats.map((chat) =>
-            chat.id !== m.chat_id
-              ? chat
-              : {
-                  ...chat,
-                  last_message: {
-                    id: m.id,
-                    text: m.text,
-                    created_at: m.created_at,
-                    sender: m.sender,
-                    images: m.images ?? [],
-                  },
-                  last_message_at: m.created_at,
-                }
-          ),
+          ...old,
+          myChats: old.myChats.map((chat) => {
+            if (chat.id !== m.chat_id) return chat;
+
+            return {
+              ...chat,
+              last_message: {
+                __typename: "Message",
+                id: m.id,
+                text: m.text,
+                created_at: m.created_at,
+                sender: m.sender,
+                images: m.images ?? [],
+                audio: m.audio ?? null,
+              },
+              last_message_at: m.created_at,
+            };
+          }),
         };
       });
     },
@@ -213,6 +384,107 @@ export function GlobalChatListener() {
         }
       }
     },
+  });
+
+  // ===========================================================
+  // D) JACHOEI realtime: block/unblock tel (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_PHONE_BLOCK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_PHONE_BLOCK_STATUS_CHANGED]", data);
+      const p = data.data?.myPhoneBlockStatusChanged;
+      if (!p) return;
+
+      const key = normalizeTel(p.phone_normalized || p.phone || "");
+      if (key) {
+        client.cache.modify({
+          id: "ROOT_QUERY",
+          fields: {
+            myBlockedPhoneKeys(existing: unknown) {
+              const current = Array.isArray(existing) ? (existing as string[]) : [];
+              const set = new Set(
+                current
+                  .map((v) => normalizeTel(v))
+                  .filter(Boolean)
+              );
+              if (p.blocked) set.add(key);
+              else set.delete(key);
+              return Array.from(set).sort();
+            },
+          },
+        });
+      }
+
+      scheduleRefetchBlockedTel(client);
+    },
+    onError: (err) => console.error("[SUB_MY_PHONE_BLOCK_STATUS_CHANGED ERROR]", err),
+  });
+
+  // ===========================================================
+  // E) JACHOEI realtime: block/unblock bank (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_BANK_BLOCK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_BANK_BLOCK_STATUS_CHANGED]", data);
+      const p = data.data?.myBankBlockStatusChanged;
+      if (!p) return;
+
+      const key = normalizeBank(p.account_norm || "");
+      if (key) {
+        client.cache.modify({
+          id: "ROOT_QUERY",
+          fields: {
+            myReportedBankAccountKeys(existing: unknown) {
+              const current = Array.isArray(existing) ? (existing as string[]) : [];
+              const set = new Set(
+                current
+                  .map((v) => normalizeBank(v))
+                  .filter(Boolean)
+              );
+              if (p.blocked) set.add(key);
+              else set.delete(key);
+              return Array.from(set).sort();
+            },
+          },
+        });
+      }
+
+      scheduleRefetchReportedBank(client);
+    },
+    onError: (err) => console.error("[SUB_MY_BANK_BLOCK_STATUS_CHANGED ERROR]", err),
+  });
+
+  // ===========================================================
+  // F) Bookmark realtime: bookmark/unbookmark (same user)
+  // ===========================================================
+  useSubscription(SUB_MY_BOOKMARK_STATUS_CHANGED, {
+    skip: !meId,
+    onData: ({ data, client }) => {
+      console.log("[SUB_MY_BOOKMARK_STATUS_CHANGED]", data);
+      const p = data.data?.myBookmarkStatusChanged;
+      if (!p) return;
+
+      const postId = String(p.target_id || "").trim();
+      if (postId) {
+        const cacheId = client.cache.identify({ __typename: "Post", id: postId });
+        if (cacheId) {
+          client.cache.modify({
+            id: cacheId,
+            fields: {
+              is_bookmarked() {
+                return !!p.bookmarked;
+              },
+            },
+          });
+        }
+      }
+
+      // Keep bookmarked list membership correct (esp. unbookmark removes row)
+      scheduleRefetchMyBookmarks(client);
+    },
+    onError: (err) => console.error("[SUB_MY_BOOKMARK_STATUS_CHANGED ERROR]", err),
   });
 
   // ===========================================================

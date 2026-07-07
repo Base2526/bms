@@ -22,6 +22,9 @@ export const config = {
 };
 
 export function middleware(req: NextRequest) {
+
+  // console.log("[middleware] =", req);
+
   // console.log("[middleware]", req);
   const { pathname, search } = req.nextUrl;
   if (!pathname.startsWith("/admin")){

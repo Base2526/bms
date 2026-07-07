@@ -3,9 +3,10 @@ import type { NextRequest } from "next/server";
 import { requireAdminOrInternal } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { nanoid } from "nanoid";
-import sharp from "sharp";
 import { persistWebFile } from "@/lib/storage";
 import dayjs from "dayjs";
+
+export const runtime = "nodejs";
 
 // ดึง type return ของ persistWebFile มาใช้
 type StoredFileRow = Awaited<ReturnType<typeof persistWebFile>>;
@@ -18,6 +19,8 @@ async function createRandomImageBuffer(
   h = 500,
   fmt: "png" | "jpeg" = "png"
 ): Promise<Buffer> {
+  const { default: sharp } = await import("sharp");
+
   const bg = randomHexColor();
   const image = sharp({
     create: {

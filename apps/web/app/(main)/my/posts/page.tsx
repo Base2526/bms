@@ -33,7 +33,7 @@ function MyPostsList(){
     <Space style={{marginBottom:16}}>
       <Input placeholder="Search title/phone" value={q} onChange={e=>setQ(e.target.value)} />
       <Button onClick={()=>refetch({ q })}>Search</Button>
-      <Button type="primary"><a href="/post/new" style={{color:'#fff'}}>+ New Post</a></Button>
+      <Button type="primary"><a href="/post/new" style={{ color: 'inherit' }}>+ New Post</a></Button>
     </Space>
     <Table rowKey="id" dataSource={data?.myPosts||[]} columns={cols as any} />
   </>);

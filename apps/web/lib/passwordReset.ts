@@ -25,8 +25,8 @@ import { sendEmail } from "@/lib/mailer";
 
 function baseData(locale: string) {
   return {
-    app_name: process.env.APP_NAME ?? "WhosScam",
-    support_url: process.env.SUPPORT_URL ?? "https://whosscam.com/support",
+    app_name: process.env.APP_NAME ?? "จ่าเฉย (JACHOEI)",
+    support_url: process.env.SUPPORT_URL ?? "https://jachoei.com/support",
     year: new Date().getFullYear(),
     locale,
   };

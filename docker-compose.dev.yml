@@ -21,6 +21,16 @@ services:
     environment:
       NODE_ENV: development
       COOKIE_SECURE: ${COOKIE_SECURE}
+      DEBUG_LOG: ${DEBUG_LOG}
+      DB_LOG: ${DB_LOG}
+      DB_LOG_LEVELS: ${DB_LOG_LEVELS}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID}
+      FCM_CLIENT_EMAIL: ${FCM_CLIENT_EMAIL}
+      FCM_PRIVATE_KEY: ${FCM_PRIVATE_KEY}
+      # BMS
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      BMS_AI_MODEL: ${BMS_AI_MODEL}
+      BMS_CRON_SECRET: ${BMS_CRON_SECRET}
     ports:
       - "3000:3000"
     volumes:

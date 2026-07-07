@@ -1,8 +1,5 @@
+// apps/web/app/api/graphql/route.ts
 export const runtime = "nodejs";
-
-import { registerPostEventListeners } from "@events/register.server";
-await registerPostEventListeners();
-
 
 import { ApolloServer } from "@apollo/server";
 import { makeExecutableSchema } from "@graphql-tools/schema";
@@ -14,19 +11,19 @@ import {
   mergedResolvers as resolvers,
 } from "@/graphql";
 
-import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
+import {
+  verifyAdminSession,
+  verifyUserSession,
+  verifyUserFromRequest,
+  verifyAdminFromRequest,
+} from "@/lib/auth/server";
+import { cookies } from "next/headers";
+import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 
 // 👇 จาก graphql-upload-nextjs
-import {
-  GraphQLUpload,
-  uploadProcess,
-  type File as UploadFile,
-} from "graphql-upload-nextjs";
+import { uploadProcess } from "graphql-upload-nextjs";
 
-const schema = makeExecutableSchema({
-  typeDefs,
-  resolvers,
-});
+const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 const server = new ApolloServer({
   schema,
@@ -34,17 +31,87 @@ const server = new ApolloServer({
   csrfPrevention: false,
 });
 
-// แยกฟังก์ชันสร้าง context ไว้ใช้ซ้ำ (ทั้งปกติและ multipart)
+function getClientIp(req: NextRequest) {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return (
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("true-client-ip") ||
+    "unknown"
+  );
+}
+
+function isAndroidRequest(req: NextRequest) {
+  const ua = (req.headers.get("user-agent") || "").toLowerCase();
+  return ua.includes("android") || ua.includes("okhttp");
+}
+
+function logIncoming(req: NextRequest, extra?: Record<string, any>) {
+  const ip = getClientIp(req);
+  const ua = req.headers.get("user-agent") || "";
+  const scope = req.headers.get("x-scope") || "";
+  const ct = req.headers.get("content-type") || "";
+  const ref = req.headers.get("referer") || "";
+  const android = isAndroidRequest(req);
+
+  console.log(
+    `[GraphQL IN] ${new Date().toISOString()} ${req.method} ${req.nextUrl.pathname}` +
+      ` ip=${ip}` +
+      ` android=${android}` +
+      ` scope=${scope || "-"}` +
+      ` ct=${ct || "-"}` +
+      ` ref=${ref ? ref.slice(0, 120) : "-"}`
+  );
+
+  if (android) console.log("[Android UA]", ua);
+  if (extra) console.log("[GraphQL IN extra]", extra);
+}
+
+// ✅ createContext: รองรับ web/admin(cookie) + android(bearer)
 async function createContext(request: NextRequest) {
-  let scope = request.headers.get("x-scope") || "";
+  let scope = (request.headers.get("x-scope") || "").trim().toLowerCase();
+
+  // fallback จาก referer
   if (!scope) {
     const ref = request.headers.get("referer") || "";
     if (ref.includes("/admin")) scope = "admin";
   }
   if (!scope) scope = "web";
 
-  const admin = verifyAdminSession();
-  const user = verifyUserSession();
+  let admin: any = null;
+  let user: any = null;
+
+  if (scope === "android") {
+    // ✅ RN ใช้ Bearer token
+    user = verifyUserFromRequest(request);
+    admin = null;
+  } else if (scope === "admin") {
+    // ✅ admin panel ใช้ cookie
+    admin = verifyAdminSession();
+
+    // (optional) ถ้าอนาคต admin app ใช้ Bearer ก็เปิดบรรทัดนี้:
+    // if (!admin) admin = verifyAdminFromRequest(request);
+
+    // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
+    // เชื่อ token ได้เพราะเซ็นแล้ว + ผูกกับ admin.id (มินต์โดย bmsEnterTenant ที่ตรวจ platform admin แล้ว)
+    if (admin) {
+      const act = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
+      if (act?.actTenantId && String(act.by) === String(admin.id)) {
+        admin = { ...admin, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId } as any;
+      }
+    }
+
+    user = null;
+  } else {
+    // ✅ web ใช้ cookie
+    user = verifyUserSession();
+    admin = null;
+
+    // (optional) ถ้าอยากให้ web รองรับ Bearer ด้วย:
+    // if (!user) user = verifyUserFromRequest(request);
+  }
+
   return { scope, admin, user, req: request };
 }
 
@@ -52,21 +119,16 @@ const handler = startServerAndCreateNextHandler<NextRequest>(server, {
   context: createContext,
 });
 
-// ตัวกลาง: เช็คว่าเป็น multipart/form-data ไหม
 const requestHandler = async (request: NextRequest) => {
   const contentType = request.headers.get("content-type") || "";
+  logIncoming(request, { multipart: contentType.includes("multipart/form-data") });
 
   if (contentType.includes("multipart/form-data")) {
-    // ใช้ uploadProcess จาก graphql-upload-nextjs
     const context = await createContext(request);
     return uploadProcess(request, context, server as any);
   }
 
-  // ปกติ: ให้ Apollo/Next handler จัดการ JSON request ตามเดิม
   return handler(request);
 };
 
-// export const runtime = "nodejs";
-
-// export ออกเป็น method ต่างๆ
 export { requestHandler as POST, requestHandler as GET, requestHandler as OPTIONS };

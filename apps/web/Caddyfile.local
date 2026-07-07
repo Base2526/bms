@@ -1,0 +1,55 @@
+# production
+# whosscam.com {
+#  tls whosscam.io@gmail.com
+#  reverse_proxy /graphql* ws:8080
+#  reverse_proxy web:3000
+#}
+
+# whosscam.com {
+#   tls whosscam.io@gmail.com
+
+#   # ✅ บีบอัด response ช่วยได้มาก โดยเฉพาะ _next/static
+#   encode zstd gzip
+
+#   # ✅ cache static assets ของ Next.js
+#   @nextStatic path /_next/static/*
+#   header @nextStatic Cache-Control "public, max-age=31536000, immutable"
+
+#   # (ถ้าคุณเสิร์ฟรูปจาก /public หรือไฟล์คงที่อื่น)
+#   @publicStatic path /favicon.ico /robots.txt /sitemap.xml /images/* /static/*
+#   header @publicStatic Cache-Control "public, max-age=86400"
+
+#   # ✅ WebSocket GraphQL (subscriptions)
+#   @ws {
+#     path /graphql
+#     header Connection *Upgrade*
+#     header Upgrade websocket
+#   }
+#   reverse_proxy @ws ws:8080
+
+#   # ✅ GraphQL แบบ HTTP (ถ้าคุณมี endpoint นี้ที่ web)
+#   @gql_http path /graphql*
+#   reverse_proxy @gql_http web:3000
+
+#   # ที่เหลือไป Next.js web
+#   reverse_proxy web:3000
+# }
+
+# www.whosscam.com {
+#   tls whosscam.io@gmail.com
+#   redir https://whosscam.com{uri} 308
+# }
+
+
+#localhost
+# whosscam.com {
+#    tls /certs/whosscam.com.pem /certs/whosscam.com-key.pem
+#    reverse_proxy /graphql* ws:8080
+#    reverse_proxy web:3000
+# }
+
+jachoei.com {
+   tls /certs/jachoei.com.pem /certs/jachoei.com-key.pem
+   reverse_proxy /graphql* ws:8080
+   reverse_proxy web:3000
+}

@@ -1,30 +1,43 @@
 // app/(main)/layout.tsx
-import HeaderBar from '@/components/HeaderBar';
-import { cookies } from 'next/headers';
+import { cookies } from "next/headers";
 import type { Metadata } from "next";
-import AppLayout from "@/components/AppLayout";
+import dynamic from "next/dynamic";
 
-const SITE_NAME = "Whosscam";
-const SITE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://whosscam.com";
+const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
+  ssr: false,
+  loading: () => <div style={{ height: 64, background: "var(--app-surface)" }} />,
+});
+
+const Breadcrumbs = dynamic(() => import("@/components/Breadcrumbs"), {
+  ssr: false,
+  loading: () => null,
+});
+
+const AppFooter = dynamic(() => import("@/components/footer/AppFooter"), {
+  ssr: false,
+  loading: () => <div style={{ height: 220 }} />,
+});
+
+const SITE_NAME = "จ่าเฉย (JACHOEI)";
+const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
+  const cookieStore = await cookies();
+  const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
 
   const seo = {
     th: {
-      title: "Whosscam — ตรวจสอบการโกงออนไลน์",
-      desc:
-        "ฐานข้อมูลการโกงออนไลน์ ตรวจสอบเบอร์โทร บัญชีธนาคาร ลิงก์ และชื่อเพจ จากรายงานผู้ใช้งานจริง",
+      title: "จ่าเฉย (Jachoei) — ตรวจสอบการโกงออนไลน์",
+      desc: "ฐานข้อมูลการโกงออนไลน์ ตรวจสอบเบอร์โทร บัญชีธนาคาร ลิงก์ และชื่อเพจ จากรายงานผู้ใช้งานจริง",
     },
     en: {
-      title: "Whosscam — Online Scam Database",
-      desc:
-        "Search and report online scams. Check phone numbers, bank accounts, links, and pages from community reports.",
+      title: "จ่าเฉย (Jachoei) — Online Scam Database",
+      desc: "Search and report online scams. Check phone numbers, bank accounts, links, and pages from community reports.",
     },
   }[lang];
 
   return {
-    metadataBase: new URL(SITE_URL), // ⭐ ทำให้ OG image เป็น absolute
+    metadataBase: new URL(SITE_URL),
     title: {
       default: seo.title,
       template: `%s | ${SITE_NAME}`,
@@ -33,7 +46,7 @@ export async function generateMetadata(): Promise<Metadata> {
     alternates: { canonical: SITE_URL },
     openGraph: {
       type: "website",
-      siteName: SITE_NAME,          // ⭐ Whosscam
+      siteName: SITE_NAME,
       title: seo.title,
       description: seo.desc,
       url: SITE_URL,
@@ -49,12 +62,79 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function MainLayout({ children }: { children: React.ReactNode }) {
-  const langCookie = cookies().get('lang')?.value ?? 'th'; // 'th' | 'en'
+export default async function MainLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const cookieStore = await cookies();
+  const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
+
   return (
-      <>
-        {/* <HeaderBar initialLang={langCookie as 'th'|'en'}/> */}
-        <AppLayout>{children}</AppLayout>
-      </>
+    <>
+      <HeaderBar isMobile={false} />
+
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "var(--app-bg)",
+        }}
+      >
+        <div className="jachoei-main-shell">
+          <div className="jachoei-breadcrumb-wrap">
+            <Breadcrumbs />
+          </div>
+
+          <div className="jachoei-main-content">{children}</div>
+        </div>
+      </main>
+
+      <AppFooter lang={lang} />
+
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .jachoei-main-shell {
+              width: 100%;
+              max-width: 1400px;
+              margin: 16px auto 0;
+              padding: 0 16px;
+            }
+
+            .jachoei-breadcrumb-wrap {
+              display: block;
+              margin-bottom: 12px;
+            }
+
+            .jachoei-main-content {
+              min-height: 360px;
+              background: var(--app-surface);
+              border: 1px solid var(--app-border);
+              border-radius: 16px;
+              padding: 16px;
+            }
+
+            @media (max-width: 767px) {
+              .jachoei-main-shell {
+                max-width: 100%;
+                margin: 0 auto;
+                padding: 0;
+              }
+
+              .jachoei-breadcrumb-wrap {
+                display: none;
+              }
+
+              .jachoei-main-content {
+                min-height: auto;
+                border-radius: 0;
+                padding: 0;
+                box-shadow: 0 0 4px rgba(var(--app-shadow-rgb),0.12);
+              }
+            }
+          `,
+        }}
+      />
+    </>
   );
 }

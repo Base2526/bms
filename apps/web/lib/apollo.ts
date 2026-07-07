@@ -2,14 +2,14 @@
 import {
   ApolloClient,
   InMemoryCache,
+  ApolloLink,
+  Observable,
   HttpLink,
   split,
   from
 } from "@apollo/client";
 
 import { setContext } from "@apollo/client/link/context";
-import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
-import { createClient } from "graphql-ws";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
 import { createUploadLink } from 'apollo-upload-client';
@@ -88,46 +88,99 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
       }
     }
   }
-  // HTTP network error เช่น 401/403 (กรณีคุณเซ็ตสถานะ)
+  // HTTP network error
   // @ts-ignore
   const status = networkError?.statusCode || networkError?.response?.status;
-  if (status === 401 || status === 403) {
-
+  // 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับออก
+  // 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ (เช่น requirePermission) → อย่า logout แค่แสดง error
+  if (status === 401) {
     addLog('error', 'graphql', status, {});
     backendLogout();
+  } else if (status === 403) {
+    addLog('warn', 'graphql', '403 forbidden (no permission) — not logging out', {});
   }
 });
 
 // ----------------------------
-// WebSocket link (สำหรับ Subscription)
+// Lazy WebSocket link (สำหรับ Subscription)
+// - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
-const wsLink =
-  typeof window !== "undefined"
-    ? new GraphQLWsLink(
-        createClient({
-          url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string, // e.g. "ws://localhost:8081/graphql"
-          // connectionParams: () => {
-          //   // const token = localStorage.getItem("token");
-          //   // return token ? { Authorization: `Bearer ${token}` } : {};
-          // },
-          connectionParams: {},
-        })
-      )
-    : null;
+let wsLink: ApolloLink | null = null;
+let wsLinkLoading: Promise<ApolloLink> | null = null;
+
+async function loadWsLink(): Promise<ApolloLink> {
+  if (wsLink) return wsLink;
+  if (wsLinkLoading) return wsLinkLoading;
+
+  wsLinkLoading = (async () => {
+    const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
+      import("@apollo/client/link/subscriptions"),
+      import("graphql-ws"),
+    ]);
+
+    const link = new GraphQLWsLink(
+      createClient({
+        url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
+        lazy: true,
+        retryAttempts: Infinity,
+        connectionParams: () => ({ "x-scope": "web" }),
+        on: {
+          connected: () => addLog("info", "ws", "[ws] connected", {}),
+          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { code: ev?.code, reason: ev?.reason }),
+          error: (err: any) => addLog("error", "ws", "[ws] error", { message: err?.message || String(err) }),
+        },
+      })
+    );
+
+    wsLink = link;
+    return link;
+  })();
+
+  return wsLinkLoading;
+}
+
+const lazyWsLink = new ApolloLink((operation) => {
+  if (typeof window === "undefined") return null;
+
+  return new Observable((observer) => {
+    let sub: any;
+    loadWsLink()
+      .then((link) => {
+        const obs = link.request(operation);
+        if (!obs) {
+          observer.error(new Error("WS link unavailable"));
+          return;
+        }
+        sub = obs.subscribe({
+          next: (v) => observer.next(v),
+          error: (e) => observer.error(e),
+          complete: () => observer.complete(),
+        });
+      })
+      .catch((e) => observer.error(e));
+
+    return () => {
+      try {
+        sub?.unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  });
+});
 
 // ----------------------------
 // Split link (แยก path สำหรับ WS / HTTP)
 // ----------------------------
-const link = wsLink
-  ? split(
-      ({ query }) => {
-        const def = getMainDefinition(query);
-        return def.kind === "OperationDefinition" && def.operation === "subscription";
-      },
-      wsLink,
-      from([errorLink, authLink, httpLink]) // ⬅️ ใส่ errorLink หน้า auth/http
-    )
-  : from([errorLink, authLink, httpLink]);
+const link = split(
+  ({ query }) => {
+    if (typeof window === "undefined") return false;
+    const def = getMainDefinition(query);
+    return def.kind === "OperationDefinition" && def.operation === "subscription";
+  },
+  lazyWsLink,
+  from([errorLink, authLink, httpLink]) // ⬅️ ใส่ errorLink หน้า auth/http
+);
 
 // ----------------------------
 // Apollo Client

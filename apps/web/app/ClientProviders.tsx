@@ -1,39 +1,28 @@
 "use client";
 
 import React from "react";
+import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "@/lib/apollo";
 
 import { I18nProvider } from "@/lib/i18nContext";
 import type { Lang } from "@/i18n";
+import AntdThemeProvider from "@/app/AntdThemeProvider";
 
-import { SessionProvider } from "@/lib/session-context";
-import { GoogleOAuthProvider } from "@react-oauth/google";
-import { GlobalChatListener } from "@/components/GlobalChatListener";
+const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
+  ssr: false,
+});
 
-import { useSessionCtx } from "@/lib/session-context";
-
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-
-// Component ใช้ useEffect ได้ที่นี่
-function GlobalWiresWrapper() {
-  const { user, admin } = useSessionCtx();
-  const meId = user?.id || admin?.id;
-
-  React.useEffect(() => {
-    const frontendLogout = () => (window.location.href = "/login");
-    const backendLogout = () => (window.location.href = "/admin/login");
-
-    window.addEventListener("frontend-logout", frontendLogout);
-    window.addEventListener("backend-logout", backendLogout);
-
-    return () => {
-      window.removeEventListener("frontend-logout", frontendLogout);
-      window.removeEventListener("backend-logout", backendLogout);
-    };
-  }, []);
-
-  return meId ? <GlobalChatListener /> : null;
+function isAuthPath(pathname: string) {
+  return (
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/forgot" ||
+    pathname === "/reset" ||
+    pathname === "/verify-email" ||
+    pathname.startsWith("/admin/login")
+  );
 }
 
 export default function ClientProviders({
@@ -43,16 +32,16 @@ export default function ClientProviders({
   lang: Lang;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname() || "";
+  const onAuthRoute = isAuthPath(pathname);
+
   return (
     <ApolloProvider client={client}>
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        <SessionProvider>
-          <I18nProvider lang={lang}>
-            <GlobalWiresWrapper />
-            {children}
-          </I18nProvider>
-        </SessionProvider>
-      </GoogleOAuthProvider>
+      <AntdThemeProvider>
+        <I18nProvider lang={lang}>
+          {onAuthRoute ? children : <SessionLayer>{children}</SessionLayer>}
+        </I18nProvider>
+      </AntdThemeProvider>
     </ApolloProvider>
   );
 }
