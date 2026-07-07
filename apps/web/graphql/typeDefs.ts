@@ -678,10 +678,18 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
 
+    # ===== BMS settings / channels (admin) =====
+    bmsMyTenant: BmsTenantInfo!
+    bmsChannels: [BmsChannelConfig!]!
+
+    # ===== BMS billing (admin) =====
+    bmsBilling: BmsBilling!
+
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
     bmsRolePermissions: [BmsRolePermissions!]!
+    bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
   }
 
   # ===== BMS orders =====
@@ -815,12 +823,47 @@ export const typeDefs = /* GraphQL */ `
     salesDaily: [BmsDailySales!]!
   }
 
+  # ===== BMS audit log =====
+  type BmsAuditEntry {
+    id: ID!
+    actor: String
+    action: String!
+    target: String
+    meta: JSON
+    created_at: String!
+  }
+
   # ===== BMS RBAC =====
   type BmsRolePermissions {
     id: ID!
     name: String!
     is_super: Boolean!
     permissions: [String!]!
+  }
+
+  # ===== BMS SaaS: plans / billing / signup =====
+  type BmsPlan {
+    code: String!  name: String!  price_monthly: Float!
+    max_products: Int!  max_channels: Int!  max_orders_month: Int!
+  }
+  type BmsUsage { products: Int!  channels: Int!  orders_month: Int! }
+  type BmsBilling {
+    plan: BmsPlan!
+    usage: BmsUsage!
+    plans: [BmsPlan!]!
+  }
+  type BmsSignupResult { status: String!  tenantId: ID  slug: String }
+
+  # ===== BMS channels / settings =====
+  type BmsTenantInfo { id: ID!  name: String!  slug: String! }
+
+  type BmsChannelConfig {
+    channel: String!
+    active: Boolean!
+    has_token: Boolean!
+    has_secret: Boolean!
+    access_token_masked: String
+    channel_secret_masked: String
   }
 
   input RegisterPushTokenInput {
@@ -1188,5 +1231,12 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
+
+    # ===== BMS settings / channels (admin) =====
+    bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
+
+    # ===== BMS SaaS: signup (public) + billing (admin) =====
+    bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
+    bmsChangePlan(planCode: String!): Boolean!
   }
 `;

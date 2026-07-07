@@ -17,6 +17,8 @@ import {
 } from "@/lib/bms/products";
 import { listMovements } from "@/lib/bms/movements";
 import { requirePermission } from "@/lib/bms/permissions";
+import { getTenantId } from "@/lib/bms/tenant";
+import { audit } from "@/lib/bms/audit";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -45,11 +47,11 @@ export const bmsProductsResolvers = {
   Query: {
     async bmsProducts(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
-      return listProducts();
+      return listProducts(getTenantId(ctx));
     },
     async bmsLowStock(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
-      return listLowStock();
+      return listLowStock(getTenantId(ctx));
     },
     async bmsStockMovements(
       _p: unknown,
@@ -57,7 +59,7 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "product.view");
-      return listMovements(args.sku, args.size ?? null, args.limit ?? 50);
+      return listMovements(getTenantId(ctx), args.sku, args.size ?? null, args.limit ?? 50);
     },
   },
 
@@ -65,7 +67,9 @@ export const bmsProductsResolvers = {
     async bmsUpsertProduct(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "product.edit");
       try {
-        return await upsertProduct(args.input);
+        const p = await upsertProduct(getTenantId(ctx), args.input);
+        await audit(ctx, "product.upsert", args.input?.sku, { name: args.input?.name });
+        return p;
       } catch (err) {
         toGqlError(err);
       }
@@ -76,7 +80,9 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "product.delete");
-      return setProductActive(args.sku, args.active);
+      const ok = await setProductActive(getTenantId(ctx), args.sku, args.active);
+      if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
+      return ok;
     },
     async bmsAdjustStock(
       _p: unknown,
@@ -86,12 +92,14 @@ export const bmsProductsResolvers = {
       await requirePermission(ctx, "stock.adjust");
       try {
         const row = await adjustStock(
+          getTenantId(ctx),
           args.sku,
           args.size,
           args.delta,
           args.note ?? null,
           `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`
         );
+        await audit(ctx, "stock.adjust", args.sku, { size: args.size, delta: args.delta });
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);
@@ -104,7 +112,7 @@ export const bmsProductsResolvers = {
     ) {
       await requirePermission(ctx, "stock.adjust");
       try {
-        const row = await setReorderPoint(args.sku, args.size, args.reorderPoint);
+        const row = await setReorderPoint(getTenantId(ctx), args.sku, args.size, args.reorderPoint);
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);
@@ -115,8 +123,8 @@ export const bmsProductsResolvers = {
   BmsProduct: {
     price: (p: any) => Number(p.price),
     keywords: (p: any) => p.keywords ?? [],
-    async variants(parent: { sku: string }) {
-      const rows = await listVariants(parent.sku);
+    async variants(parent: { sku: string; tenant_id: string }) {
+      const rows = await listVariants(parent.tenant_id, parent.sku);
       return rows.map(shapeVariant);
     },
   },

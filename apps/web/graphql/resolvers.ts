@@ -39,6 +39,8 @@ import { bmsOrdersResolvers } from "@/graphql/bmsOrders";
 import { bmsProductsResolvers } from "@/graphql/bmsProducts";
 import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
+import { bmsChannelsResolvers } from "@/graphql/bmsChannels";
+import { bmsSaasResolvers } from "@/graphql/bmsSaas";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2590,7 +2592,9 @@ const rawResolvers = {
     ...bmsOrdersResolvers.Query,
     ...bmsProductsResolvers.Query,
     ...bmsCustomersResolvers.Query,
-    ...bmsDashboardResolvers.Query
+    ...bmsDashboardResolvers.Query,
+    ...bmsChannelsResolvers.Query,
+    ...bmsSaasResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -2834,7 +2838,7 @@ const rawResolvers = {
       // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
+        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
         JWT_SECRET,
         { expiresIn: "1d" }
       );
@@ -7020,7 +7024,9 @@ const rawResolvers = {
     ...bmsOrdersResolvers.Mutation,
     ...bmsProductsResolvers.Mutation,
     ...bmsCustomersResolvers.Mutation,
-    ...bmsDashboardResolvers.Mutation
+    ...bmsDashboardResolvers.Mutation,
+    ...bmsChannelsResolvers.Mutation,
+    ...bmsSaasResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,

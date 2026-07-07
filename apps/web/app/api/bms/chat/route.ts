@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline, type Channel } from "@/lib/bms/pipeline";
+import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     message?: unknown;
     channel?: unknown;
     customerRef?: unknown;
+    tenantId?: unknown;
   };
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
@@ -31,7 +33,9 @@ export async function POST(req: NextRequest) {
     : "test";
   const customerRef =
     typeof body.customerRef === "string" ? body.customerRef.trim() || null : null;
+  const tenantId =
+    typeof body.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID;
 
-  const result = await runPipeline(message, channel, customerRef);
+  const result = await runPipeline(message, channel, tenantId, customerRef);
   return NextResponse.json(result);
 }

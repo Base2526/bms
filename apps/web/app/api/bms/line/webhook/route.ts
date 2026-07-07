@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
+import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     const text = ev.message.text?.trim() ?? "";
     if (!text) continue;
 
-    const result = await runPipeline(text, "line", ev.source?.userId ?? null);
+    const result = await runPipeline(text, "line", DEFAULT_TENANT_ID, ev.source?.userId ?? null);
     // TODO(prod): await pushLineReply(ev.replyToken, result.reply)
     replies.push({ replyToken: ev.replyToken, reply: result.reply });
   }

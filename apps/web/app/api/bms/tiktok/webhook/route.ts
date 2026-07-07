@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
+import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     const text = m.content?.text?.trim() ?? "";
     if (!text) continue;
 
-    const result = await runPipeline(text, "tiktok", m.user_id ?? null);
+    const result = await runPipeline(text, "tiktok", DEFAULT_TENANT_ID, m.user_id ?? null);
     // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API
     replies.push({ userId: m.user_id, reply: result.reply });
   }

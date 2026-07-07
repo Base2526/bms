@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createOrder, type OrderItemInput } from "@/lib/bms/orders";
 import type { Channel } from "@/lib/bms/pipeline";
+import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "items is required" }, { status: 400 });
   }
 
-  const result = await createOrder({ channel, customerRef, items });
+  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items });
 
   const httpStatus =
     result.status === "CREATED"

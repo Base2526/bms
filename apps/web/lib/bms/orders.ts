@@ -13,10 +13,12 @@ import { getClient, query } from "@/lib/db";
 import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
+import { beginTenantTx } from "./tenant";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
 export type CreateOrderInput = {
+  tenantId: string;
   channel: Channel;
   customerRef?: string | null;
   items: OrderItemInput[];
@@ -54,6 +56,7 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
 export async function createOrder(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
+  const tenantId = input.tenantId;
   const items = mergeItems(input.items).filter(
     (it) => it.sku && it.size && Number.isInteger(it.qty) && it.qty > 0
   );
@@ -61,7 +64,7 @@ export async function createOrder(
 
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
 
     const lines: CreatedLine[] = [];
     let total = 0;
@@ -71,18 +74,18 @@ export async function createOrder(
       const upd = await client.query<{ available_after: number }>(
         `UPDATE bms_inventory
             SET reserved_stock = reserved_stock + $3, updated_at = now()
-          WHERE product_sku = $1 AND size = $2
+          WHERE tenant_id = $4 AND product_sku = $1 AND size = $2
             AND (current_stock - reserved_stock) >= $3
           RETURNING (current_stock - reserved_stock) AS available_after`,
-        [it.sku, it.size, it.qty]
+        [it.sku, it.size, it.qty, tenantId]
       );
 
       if (upd.rowCount === 0) {
         // แยกสาเหตุ: ไม่พบ row หรือ ของไม่พอ
         const cur = await client.query<{ available: number }>(
           `SELECT (current_stock - reserved_stock) AS available
-             FROM bms_inventory WHERE product_sku = $1 AND size = $2`,
-          [it.sku, it.size]
+             FROM bms_inventory WHERE tenant_id = $3 AND product_sku = $1 AND size = $2`,
+          [it.sku, it.size, tenantId]
         );
         await client.query("ROLLBACK");
         if (cur.rowCount === 0) {
@@ -99,8 +102,8 @@ export async function createOrder(
 
       // ดึงราคา (สินค้าต้อง active)
       const prod = await client.query<{ price: string }>(
-        `SELECT price FROM bms_products WHERE sku = $1 AND active`,
-        [it.sku]
+        `SELECT price FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
+        [it.sku, tenantId]
       );
       if (prod.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -118,27 +121,28 @@ export async function createOrder(
       });
     }
 
-    // CRM: หา/สร้างลูกค้าจาก (channel, customerRef) ในทรานแซกชันเดียวกัน
+    // CRM: หา/สร้างลูกค้าจาก (tenant, channel, customerRef) ในทรานแซกชันเดียวกัน
     const customerId = await resolveOrCreateCustomer(
       client,
+      tenantId,
       input.channel,
       input.customerRef ?? null
     );
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (channel, customer_ref, customer_id, status, total_amount)
-       VALUES ($1, $2, $3, 'PENDING', $4)
+      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount)
+       VALUES ($1, $2, $3, $4, 'PENDING', $5)
        RETURNING id`,
-      [input.channel, input.customerRef ?? null, customerId, total]
+      [tenantId, input.channel, input.customerRef ?? null, customerId, total]
     );
     const orderId = ord.rows[0].id;
 
     for (const ln of lines) {
       await client.query(
-        `INSERT INTO bms_order_items (order_id, product_sku, size, qty, unit_price)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [orderId, ln.sku, ln.size, ln.qty, ln.unitPrice]
+        `INSERT INTO bms_order_items (tenant_id, order_id, product_sku, size, qty, unit_price)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [tenantId, orderId, ln.sku, ln.size, ln.qty, ln.unitPrice]
       );
     }
 
@@ -162,50 +166,46 @@ export async function createOrder(
   }
 }
 
-// ---- transition แบบไม่ขยับสต็อก (pay / pack / complete) -----
+// ---- transition แบบไม่ขยับสต็อก (pay / pack / complete) — tenant-scoped -----
 async function transition(
+  tenantId: string,
   orderId: string,
   from: string[],
   to: string
 ): Promise<boolean> {
   const res = await query(
-    `UPDATE bms_orders SET status = $3, updated_at = now()
-      WHERE id = $1 AND status = ANY($2)`,
-    [orderId, from, to]
+    `UPDATE bms_orders SET status = $4, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = ANY($3)`,
+    [tenantId, orderId, from, to]
   );
   return (res.rowCount ?? 0) > 0;
 }
 
-/** จ่ายเงินแล้ว: PENDING → PAID (ยังไม่ขยับสต็อก, สต็อกถูก reserve อยู่) */
-export const payOrder = (orderId: string) => transition(orderId, ["PENDING"], "PAID");
-
+/** จ่ายเงินแล้ว: PENDING → PAID */
+export const payOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["PENDING"], "PAID");
 /** แพ็คของ: PAID → PACKING */
-export const packOrder = (orderId: string) => transition(orderId, ["PAID"], "PACKING");
-
+export const packOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["PAID"], "PACKING");
 /** ปิดงาน: SHIPPED → COMPLETED */
-export const completeOrder = (orderId: string) =>
-  transition(orderId, ["SHIPPED"], "COMPLETED");
+export const completeOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["SHIPPED"], "COMPLETED");
 
 /**
- * จัดส่งจริง: PACKING → SHIPPED → ตัด current_stock และ reserved_stock พร้อมกัน (atomic)
- * constraint ปลอดภัย: reserved >= qty และ current >= reserved → ตัดแล้วไม่ติดลบ
+ * จัดส่งจริง: PACKING → SHIPPED → ตัด current+reserved (atomic, tenant-scoped)
  */
-export async function shipOrder(orderId: string): Promise<boolean> {
+export async function shipOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
 
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'SHIPPED', updated_at = now()
-        WHERE id = $1 AND status = 'PACKING'`,
-      [orderId]
+        WHERE tenant_id = $2 AND id = $1 AND status = 'PACKING'`,
+      [orderId, tenantId]
     );
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
       return false;
     }
 
-    // ของออกจากคลังจริง: ตัด current และ reserved พร้อมกัน
     await client.query(
       `UPDATE bms_inventory inv
           SET current_stock  = current_stock  - oi.qty,
@@ -213,6 +213,7 @@ export async function shipOrder(orderId: string): Promise<boolean> {
               updated_at = now()
          FROM bms_order_items oi
         WHERE oi.order_id = $1
+          AND inv.tenant_id = oi.tenant_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -223,28 +224,23 @@ export async function shipOrder(orderId: string): Promise<boolean> {
     await client.query("COMMIT");
     return true;
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
+    try { await client.query("ROLLBACK"); } catch {}
     throw err;
   } finally {
     client.release();
   }
 }
 
-/**
- * คืนสินค้า: (SHIPPED/COMPLETED) → RETURNED → คืนสต็อกเข้าคลัง (current += qty)
- * reserved ไม่ยุ่ง (ถูกปลดไปตั้งแต่ ship แล้ว)
- */
-export async function returnOrder(orderId: string): Promise<boolean> {
+/** คืนสินค้า: (SHIPPED/COMPLETED) → RETURNED → คืนสต็อก (current += qty) */
+export async function returnOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
 
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'RETURNED', updated_at = now()
-        WHERE id = $1 AND status IN ('SHIPPED','COMPLETED')`,
-      [orderId]
+        WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')`,
+      [orderId, tenantId]
     );
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -256,6 +252,7 @@ export async function returnOrder(orderId: string): Promise<boolean> {
           SET current_stock = current_stock + oi.qty, updated_at = now()
          FROM bms_order_items oi
         WHERE oi.order_id = $1
+          AND inv.tenant_id = oi.tenant_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -266,9 +263,7 @@ export async function returnOrder(orderId: string): Promise<boolean> {
     await client.query("COMMIT");
     return true;
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
+    try { await client.query("ROLLBACK"); } catch {}
     throw err;
   } finally {
     client.release();
@@ -276,18 +271,18 @@ export async function returnOrder(orderId: string): Promise<boolean> {
 }
 
 /**
- * ยกเลิก order → คืน reserved_stock (atomic)
- * ทำได้เฉพาะก่อนจัดส่ง (PENDING/PAID/PACKING) — ส่งแล้วต้องใช้ returnOrder
+ * ยกเลิก order → คืน reserved_stock (atomic, tenant-scoped)
+ * ทำได้เฉพาะก่อนจัดส่ง (PENDING/PAID/PACKING)
  */
-export async function cancelOrder(orderId: string): Promise<boolean> {
+export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
 
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()
-        WHERE id = $1 AND status IN ('PENDING','PAID','PACKING')`,
-      [orderId]
+        WHERE tenant_id = $2 AND id = $1 AND status IN ('PENDING','PAID','PACKING')`,
+      [orderId, tenantId]
     );
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -300,6 +295,7 @@ export async function cancelOrder(orderId: string): Promise<boolean> {
           SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
          FROM bms_order_items oi
         WHERE oi.order_id = $1
+          AND inv.tenant_id = oi.tenant_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -352,6 +348,7 @@ export async function releaseExpiredOrders(
           SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
          FROM bms_order_items oi
         WHERE oi.order_id = ANY($1::uuid[])
+          AND inv.tenant_id = oi.tenant_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [ids]
