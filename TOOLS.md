@@ -718,3 +718,6 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 - ไฟล์: `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/{collect-error-logs,notify-line}.mjs`
 - Guardrails: redact secret/PII ก่อนส่งออก · draft PR เท่านั้น · AI ห้ามแตะ migration/secret/config
 - LINE = Messaging API push (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
+
+✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
+(products/customers/orders+pay+ship/conversations/purchase) · ปิดใน production · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว

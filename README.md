@@ -254,6 +254,24 @@ cron (daily) → collect + redact logs → Claude analyze/patch → draft PR →
 
 ---
 
+### 🧪 Testing — Fake Data Seeder (dev only)
+
+`/admin/dev/fake` (+ `/api/dev/fake/*`) bulk-generates test data so every screen
+has content — up to 2000 rows/run, disabled in production, admin-only.
+
+| Generator | Fills |
+| --- | --- |
+| Products / Customers | Products, Customers |
+| Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
+| Conversations (+ messages) | Inbox |
+| Purchase (suppliers + PO) | Purchase |
+
+- Recommended order: **Products → Customers → Orders → Conversations → Purchase**
+- All fake rows are tagged (`FAKE-` SKU / `FAKE-` customer_ref / `fake` tag) → one **Cleanup** removes everything (FK-safe)
+- Orders/PO don't move stock (analytics fill); use the Playground for real reserve/ship flows
+
+---
+
 ## 🇹🇭 ภาษาไทย
 
 ### 📌 ภาพรวม
@@ -437,6 +455,24 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 - Secrets: `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO` (ทางเลือก)
 - Guardrails: redact log (email/phone/token/PII) ก่อนส่งออก · draft PR เท่านั้น · AI ไม่แตะ migration/secret/config
 - LINE ใช้ **Messaging API push** (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
+
+---
+
+### 🧪 การทดสอบ — Fake Data Seeder (dev เท่านั้น)
+
+`/admin/dev/fake` (+ `/api/dev/fake/*`) สร้างข้อมูลทดสอบทีละมากๆ ให้ทุกหน้ามีข้อมูล —
+สูงสุด 2000 แถว/ครั้ง, ปิดใน production, เฉพาะ admin
+
+| Generator | เติมหน้า |
+| --- | --- |
+| Products / Customers | Products, Customers |
+| Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
+| Conversations (+ messages) | Inbox |
+| Purchase (suppliers + PO) | Purchase |
+
+- ลำดับแนะนำ: **Products → Customers → Orders → Conversations → Purchase**
+- ข้อมูล fake มี marker (`FAKE-` SKU / `FAKE-` customer_ref / tag `fake`) → กด **Cleanup** ครั้งเดียวลบหมด (ปลอดภัยตาม FK)
+- Orders/PO ไม่ขยับสต็อก (เติม analytics) — ถ้าจะเทสต์ reserve/ship จริงให้ใช้ Playground
 
 ---
 

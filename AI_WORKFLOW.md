@@ -94,3 +94,11 @@ Notify LINE            ← push ลิงก์ PR (Messaging API; LINE Notify �
 ```
 
 หลักการเดียวกับ pipeline ลูกค้า: **AI เสนอ ไม่ตัดสินใจเอง** — คนยืนยันก่อนเข้า production เสมอ
+
+---
+
+## ทดสอบ pipeline / หน้าจอ
+
+- **Playground** (`/api/bms/chat`, channel=test) — ยิงข้อความจำลองดู trace เต็ม (intent/tool/reply) โดยไม่ log inbox
+- **Fake Data Seeder** (`/admin/dev/fake`) — สร้าง products/customers/orders/conversations/purchase ทีละมากๆ
+  เพื่อเติม Dashboard/Reports/Inbox/Payment/Shipping/Purchase (dev only, marker `FAKE-`, cleanup ได้)

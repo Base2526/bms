@@ -392,6 +392,14 @@ All notifications should be logged.
 
 ---
 
+# Dev / Test Data
+
+ข้อมูลทดสอบสร้างผ่าน `/admin/dev/fake` (dev only, ปิดใน production) — mark ด้วย
+`FAKE-` (SKU / customer_ref) หรือ tag `fake` เพื่อแยกออกจากข้อมูลจริงและ cleanup ได้
+**ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น)
+
+---
+
 # Reports
 
 Reports are read-only.

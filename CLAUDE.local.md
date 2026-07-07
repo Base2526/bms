@@ -24,6 +24,13 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **ops automation** → `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
   (cron → อ่าน `system_logs` → Claude แก้ → draft PR → แจ้ง LINE) · secrets:
   `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO`
+- **fake data (dev)** → `/admin/dev/fake` + `app/api/dev/fake/*` (posts/users/bms-products/
+  bms-customers/bms-orders/bms-conversations/bms-purchase + cleanup) · ปิดใน production
+
+## เติมข้อมูลทดสอบเร็ว ๆ
+
+ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
+แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)
 
 ## การเพิ่มโมดูลใหม่ (checklist)
 
