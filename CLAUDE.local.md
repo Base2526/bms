@@ -20,7 +20,11 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **REST** → `apps/web/app/api/bms/*` (Phase 1 ใช้ `DEFAULT_TENANT_ID`)
 - **GraphQL** → `apps/web/graphql/bms*.ts` (wire เข้า `graphql/resolvers.ts` + SDL ใน `graphql/typeDefs.ts`)
 - **Admin UI** → `apps/web/app/(admin)/admin/*/page.tsx` + เมนู `components/AdminHeader.tsx`
-- **migrations** → `db/migrations/*.sql` (idempotent, apply ตามเลข)
+  (หน้าแรก `/admin` → redirect เข้า `/admin/dashboard`)
+- **RBAC/tenant** → `lib/bms/{permissions,tenant,platform}.ts` · gate: `requirePermission()` (per-tenant) ·
+  `requireUserAdmin()`/`requirePlatformOnly()` (จัดการ user/role ใน `resolvers.ts`) ·
+  platform admin = `users.is_platform_admin` · drill-down = cookie `BMS_ACT_TENANT` (signed, ผูก admin.id) override tenant ใน `app/api/graphql/route.ts`
+- **migrations** → `db/migrations/*.sql` (idempotent, apply ตามเลข) — ล่าสุด `5.6` (platform admin) · `5.7` (เติมสิทธิ์ operational ให้ Manager/Sales/Warehouse)
 - **ops automation** → `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
   (cron → อ่าน `system_logs` → Claude แก้ → draft PR → แจ้ง LINE) · secrets:
   `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO`
@@ -31,14 +35,17 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
 แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)
+**seed ลง tenant ของ user ที่ล็อกอิน** (ร้านค้าเทสเองแล้วเห็นในร้านตัวเอง) · cleanup ก็ scope ตามร้าน · platform admin อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
 
 ## การเพิ่มโมดูลใหม่ (checklist)
 
 1. migration `db/migrations/N.N__bms_<mod>.sql` — tenant_id + RLS policy (copy 4.2) + GRANT bms_app (copy 4.3)
 2. service `lib/bms/<mod>.ts` — write ใช้ `getClient()` + `beginTenantTx()`; read ใช้ `query()` + `WHERE tenant_id`
 3. GraphQL `graphql/bms<Mod>.ts` + wire resolvers + typeDefs; enforce `requirePermission()` + `audit()`
-4. เพิ่ม permission ใน `lib/bms/permissions.ts` (`BMS_PERMISSIONS`)
-5. REST routes (ถ้าต้องการ) + Admin page + เมนู + เอกสาร (TOOLS.md/README.md)
+4. เพิ่ม permission ใน `lib/bms/permissions.ts` (`BMS_PERMISSIONS`) — **และ seed สิทธิ์ให้ role Manager/Sales/Warehouse ทุก tenant** (migration แบบ `5.7`) ไม่งั้นร้านจะโดน 403
+5. REST routes (ถ้าต้องการ) + Admin page + เมนู (gate ด้วย `useBmsPermissions`) + เอกสาร (TOOLS.md/README.md)
+
+> ⚠️ 403 = ไม่มีสิทธิ์ (ไม่ใช่ session หมด) → `apollo.ts` errorLink **ไม่ logout** เมื่อ 403 (logout เฉพาะ 401). ถ้าเพิ่ม permission ใหม่แล้วลืม seed ให้ role → หน้าโดน 403 แต่จะไม่เตะออก
 
 ## สถานะปัจจุบัน
 
@@ -49,6 +56,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 
 - เปิดตรวจรหัสผ่านใน loginAdmin (dev ยังไม่ตรวจ)
 - ตั้ง env `BMS_SECRET_KEY` (hex 64) — ไม่งั้นใช้ dev key เข้ารหัส token
+- ตั้ง `JWT_SECRET` ให้แน่น — ใช้เซ็นทั้ง session token + cookie drill-down `BMS_ACT_TENANT`
 - ให้ app ต่อ DB ด้วย role non-superuser เพื่อให้ RLS มีผลกับ read
+- apply migration `5.6` (platform admin) + `5.7` (operational perms) · seed platform admin ชุดแรก = Administrator ของร้าน default
 - ย้าย rate-limit webhook ไป Redis (ตอนนี้ in-memory ต่อ instance)
 - `META_GRAPH_VERSION` (default v21.0) สำหรับ FB/IG send

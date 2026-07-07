@@ -17,6 +17,8 @@ import {
   verifyUserFromRequest,
   verifyAdminFromRequest,
 } from "@/lib/auth/server";
+import { cookies } from "next/headers";
+import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
@@ -90,6 +92,15 @@ async function createContext(request: NextRequest) {
 
     // (optional) ถ้าอนาคต admin app ใช้ Bearer ก็เปิดบรรทัดนี้:
     // if (!admin) admin = verifyAdminFromRequest(request);
+
+    // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
+    // เชื่อ token ได้เพราะเซ็นแล้ว + ผูกกับ admin.id (มินต์โดย bmsEnterTenant ที่ตรวจ platform admin แล้ว)
+    if (admin) {
+      const act = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
+      if (act?.actTenantId && String(act.by) === String(admin.id)) {
+        admin = { ...admin, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId } as any;
+      }
+    }
 
     user = null;
   } else {

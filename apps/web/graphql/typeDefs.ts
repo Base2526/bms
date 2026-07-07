@@ -709,6 +709,14 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
 
+    # ===== BMS profile (admin ที่ล็อกอินอยู่) =====
+    bmsMe: BmsMe!
+
+    # ===== BMS platform admin (ข้ามร้าน) =====
+    bmsIsPlatformAdmin: Boolean!          # ใช้ gate เมนู/หน้า
+    bmsTenants: [BmsTenantRow!]!          # รายการทุกร้าน (platform admin เท่านั้น)
+    bmsActingTenant: BmsActingTenant      # ร้านที่กำลัง drill-down อยู่ (null = ไม่ได้เข้าดู)
+
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
@@ -1108,6 +1116,25 @@ export const typeDefs = /* GraphQL */ `
     plans: [BmsPlan!]!
   }
   type BmsSignupResult { status: String!  tenantId: ID  slug: String }
+
+  # ===== BMS current-user profile (admin ที่ล็อกอินอยู่) =====
+  type BmsMeTenant { id: ID!  name: String!  slug: String!  plan: String! }
+  type BmsMe {
+    id: ID!  name: String  username: String  email: String  phone: String  avatar: String
+    role: String!  language: String
+    is_platform_admin: Boolean!
+    created_at: String
+    tenant: BmsMeTenant
+    permissions: [String!]!
+  }
+
+  # ===== BMS platform admin (เจ้าของแพลตฟอร์ม — ข้ามร้าน) =====
+  type BmsTenantRow {
+    id: ID!  name: String!  slug: String!  plan: String!  active: Boolean!
+    created_at: String!
+    users: Int!  products: Int!  orders: Int!  revenue: Float!
+  }
+  type BmsActingTenant { id: ID!  name: String!  slug: String! }
 
   # ===== BMS channels / settings =====
   type BmsTenantInfo { id: ID!  name: String!  slug: String! }
@@ -1519,5 +1546,11 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
     bmsChangePlan(planCode: String!): Boolean!
+
+    # ===== BMS platform admin (ข้ามร้าน) =====
+    bmsSetTenantActive(tenantId: ID!, active: Boolean!): Boolean!
+    bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
+    bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
+    bmsExitTenant: Boolean!                   # ออกจากมุมร้าน
   }
 `;

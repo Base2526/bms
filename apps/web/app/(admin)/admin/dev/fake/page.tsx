@@ -1,6 +1,9 @@
 'use client';
 import React, { useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert } from 'antd';
+import { gql, useQuery } from '@apollo/client';
+
+const Q_ME = gql`query { bmsMe { tenant { name slug } } }`;
 
 type CreatedRow = any;
 
@@ -19,6 +22,8 @@ export default function DevFakePage() {
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<CreatedRow[]>([]);
+  const { data: meData } = useQuery(Q_ME, { fetchPolicy: 'cache-and-network' });
+  const tenant = meData?.bmsMe?.tenant;
 
   async function doFake() {
     setLoading(true);
@@ -72,10 +77,17 @@ export default function DevFakePage() {
       </Space>}
     >
       <Alert
+        type="info" showIcon style={{ marginBottom: 12 }}
+        message={<Space wrap>กำลังสร้าง/ลบข้อมูลในร้าน:
+          {tenant ? <Tag color="blue">{tenant.name} <span style={{ opacity: 0.7 }}>/{tenant.slug}</span></Tag> : <Tag>กำลังโหลด…</Tag>}
+        </Space>}
+        description="ข้อมูล fake ทั้งหมดลง 'ร้านของคุณ' (ตาม user ที่ล็อกอิน) → เห็นใน list/Dashboard ของร้านตัวเองทันที · Cleanup ลบเฉพาะ fake ของร้านนี้"
+      />
+      <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
         message="ใช้เฉพาะ dev/test เท่านั้น (ปิดใน production) · ต้องเป็น admin/internal caller"
         description={<>ลำดับแนะนำ: <b>Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
-          ลง <b>tenant default</b> · <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
+          <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
           <b>Conversations</b> + messages → เติม Inbox · marker: <code>FAKE-</code> / tag <code>fake</code> ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
       />

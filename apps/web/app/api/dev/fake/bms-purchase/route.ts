@@ -44,7 +44,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const count = Math.min(Math.max(Number(body?.count) || 20, 1), 2000);
-  const tenantId = typeof body?.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID;
+  // seed ลงร้านของผู้ล็อกอิน (ร้านค้าเทสได้เอง เห็นใน list ตัวเอง) — fallback: body.tenantId → default
+  const tenantId = guard.actor?.tenant_id
+    || (typeof body?.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID);
 
   // pool ของ variant (เลือก FAKE- ก่อน)
   const variants = (await query(

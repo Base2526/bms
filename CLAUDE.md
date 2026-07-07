@@ -38,15 +38,22 @@ Supported channels:
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` |
-| Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` |
+| Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` (operational perms) |
+| SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` (สร้าง tenant + owner role Manager) |
+| Platform Admin (ข้ามร้าน) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` (`users.is_platform_admin`) — list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan |
+| Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · cookie `BMS_ACT_TENANT` (signed) → override tenant ใน context · banner ใน `AdminLayoutClient` |
+| Current-user Profile | ✅ | `bmsMe` · `/admin/profile` + chip ผู้ล็อกอินบน `AdminHeader` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
-| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` (products/customers/orders/conversations/purchase) |
+| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — seed ลง **tenant ของผู้ล็อกอิน** · cleanup scope ตามร้าน |
 
 **Ops automation:** ทุกวัน GitHub Actions อ่าน error จาก `system_logs` → Claude วิเคราะห์+เสนอแพตช์
 → เปิด **draft PR** (คนรีวิว) → แจ้ง **LINE** (Messaging API push) · log ถูก redact ก่อนส่งออก
 
+**RBAC model (2 ชั้น):** *platform admin* (`is_platform_admin`) ดูแลทั้งแพลตฟอร์ม (ทุกร้าน/plan/role) · *tenant Administrator/Manager/staff* จัดการเฉพาะร้านตัวเอง (ทุก resolver scope ด้วย `getTenantId(ctx)` + `requirePermission()`). platform admin ดูข้อมูลร้านผ่าน **drill-down** เท่านั้น (ไม่ยำข้ามร้าน). Users list/CRUD + role CRUD ถูก gate: Users = Administrator/platform (scope ตามร้าน) · Role CRUD = platform เท่านั้น.
+
 **Roadmap ที่เหลือ:** TikTok send API · carrier API จริง (label PDF/auto-tracking) ·
-AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI
+AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·
+ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ (ตอนนี้เฉพาะ Administrator/platform)
 
 > รายละเอียด tool + permission ต่อโมดูล: ดู [TOOLS.md](TOOLS.md) ·
 > flow AI: [AI_WORKFLOW.md](AI_WORKFLOW.md) · กฎธุรกิจ + enum จริง: [BUSINESS_RULES.md](BUSINESS_RULES.md)

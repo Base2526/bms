@@ -721,3 +721,34 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 
 ✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
 (products/customers/orders+pay+ship/conversations/purchase) · ปิดใน production · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
+· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้) · cleanup scope เฉพาะร้านตัวเอง
+
+---
+
+# SaaS / Platform Admin (ข้ามร้าน — ไม่ใช่ AI tool)
+
+เครื่องมือระดับแพลตฟอร์ม ใช้โดย **platform admin** (`users.is_platform_admin = true`) เท่านั้น —
+ต่างจาก tenant tools ด้านบนที่ scope ต่อร้าน. gate ด้วย `requirePlatformAdmin()` (`lib/bms/platform.ts`).
+
+## bmsSignup() — public
+สมัครใช้งานเอง → สร้าง tenant (plan free) + owner (role Manager). ไม่ต้อง auth. (`lib/bms/signup.ts`)
+
+## bmsTenants() / bmsIsPlatformAdmin()
+list ทุกร้าน + สถิติ (users/products/orders/revenue). `bmsIsPlatformAdmin` ใช้ gate เมนู/หน้า UI.
+Permission: platform admin
+
+## bmsSetTenantActive() / bmsSetTenantPlan()
+เปิด/ปิดร้าน (ระงับใช้งาน) · เปลี่ยน plan ให้ร้าน. audit ทุกครั้ง.
+Permission: platform admin
+
+## bmsEnterTenant() / bmsExitTenant() — drill-down
+"เข้าดูมุมร้าน": ออก signed cookie `BMS_ACT_TENANT` (ผูก admin.id, อายุ 12h) → context override `tenant_id`
+→ ทุกหน้า operational scope ไปร้านนั้นอัตโนมัติ. `bmsActingTenant` = ร้านที่กำลังเข้าดู (โชว์ banner).
+Permission: platform admin · audit: `tenant.impersonate.enter/exit`
+
+## bmsMe() — profile ผู้ล็อกอิน
+คืนโปรไฟล์เต็มของ admin ปัจจุบัน (ชื่อ/อีเมล/role/ภาษา/ร้านที่สังกัด+plan/สิทธิ์/is_platform_admin) อ่านสดจาก DB.
+Permission: admin ที่ล็อกอิน
+
+> **Users/Roles management** (ใน `resolvers.ts`): `users`/`upsertUser`/`deleteUser(s)` gate ด้วย `requireUserAdmin()`
+> (platform = ทุกร้าน · Administrator = ร้านตัวเอง) · `createRole`/`updateRole`/`deleteRole` = `requirePlatformOnly()`

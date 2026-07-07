@@ -88,13 +88,16 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
       }
     }
   }
-  // HTTP network error เช่น 401/403 (กรณีคุณเซ็ตสถานะ)
+  // HTTP network error
   // @ts-ignore
   const status = networkError?.statusCode || networkError?.response?.status;
-  if (status === 401 || status === 403) {
-
+  // 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับออก
+  // 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ (เช่น requirePermission) → อย่า logout แค่แสดง error
+  if (status === 401) {
     addLog('error', 'graphql', status, {});
     backendLogout();
+  } else if (status === 403) {
+    addLog('warn', 'graphql', '403 forbidden (no permission) — not logging out', {});
   }
 });
 

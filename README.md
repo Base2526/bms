@@ -185,6 +185,11 @@ AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
   **Website Live Chat** endpoint (`/api/bms/web/webhook/{tenantId}`)
 - Per-tenant channel credentials — replies go out with **that shop's** token
 - Per-tenant roles / permissions, rate-limited webhooks, and audit logging
+- Every operational query/mutation is tenant-scoped (`getTenantId(ctx)` + RLS) — a shop only ever sees its own data
+- **Platform admin** (`users.is_platform_admin`) manages the whole platform at `/admin/tenants`
+  (list all shops, toggle active, change plan). To inspect a shop's data it **drills in**
+  (`bmsEnterTenant` → signed context switch + banner) rather than viewing all tenants at once
+- Auth vs authorization: **401** (not logged in) forces logout; **403** (no permission) just shows an error
 
 ---
 
@@ -390,6 +395,11 @@ AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** —
   แบบ public (`/api/bms/web/webhook/{tenantId}`)
 - credential ของช่องทางแยกต่อร้าน — ตอบกลับด้วย **token ของร้านนั้น**
 - roles / permissions แยกต่อร้าน, rate-limit webhook และ audit log
+- ทุก query/mutation เชิงปฏิบัติการ scope ต่อร้าน (`getTenantId(ctx)` + RLS) — ร้านเห็นเฉพาะข้อมูลตัวเอง
+- **platform admin** (`users.is_platform_admin`) จัดการทั้งแพลตฟอร์มที่ `/admin/tenants`
+  (list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan) · อยากดูข้อมูลในร้านให้ **drill-down**
+  (`bmsEnterTenant` → สลับ context แบบ signed + banner) แทนการดูข้ามร้านปนกัน
+- 401 (ไม่ได้ล็อกอิน) = บังคับ logout · 403 (ไม่มีสิทธิ์) = แสดง error เฉย ๆ ไม่เตะออก
 
 ---
 

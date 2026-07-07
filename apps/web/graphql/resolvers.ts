@@ -46,8 +46,39 @@ import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
 import { bmsShippingResolvers } from "@/graphql/bmsShipping";
 import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
+import { getTenantId } from "@/lib/bms/tenant";
+import { isPlatformAdmin } from "@/lib/bms/platform";
 
 import { logAsync } from "@/lib/logger";
+
+// =============================================================
+// Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
+// platform admin เห็น/แก้ได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง · role อื่นถูกปฏิเสธ
+// =============================================================
+async function requireUserAdmin(ctx: any): Promise<{ platform: boolean; tenantId: string }> {
+  const auth = requireAuth(ctx);
+  if (auth.scope !== "admin") {
+    throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
+  }
+  const platform = await isPlatformAdmin(ctx);
+  const isSuper = ctx?.admin?.role === "Administrator";
+  if (!platform && !isSuper) {
+    throw new GraphQLError("เฉพาะผู้ดูแลร้าน (Administrator) หรือแอดมินแพลตฟอร์มเท่านั้น", {
+      extensions: { code: "FORBIDDEN", http: { status: 403 } },
+    });
+  }
+  return { platform, tenantId: getTenantId(ctx) };
+}
+
+/** gate เฉพาะ platform admin (เช่น จัดการ role กลางทั้งระบบ) */
+async function requirePlatformOnly(ctx: any): Promise<void> {
+  const auth = requireAuth(ctx);
+  if (auth.scope !== "admin" || !(await isPlatformAdmin(ctx))) {
+    throw new GraphQLError("เฉพาะแอดมินแพลตฟอร์มเท่านั้น", {
+      extensions: { code: "FORBIDDEN", http: { status: 403 } },
+    });
+  }
+}
 
 import { normalizeAccountNo } from "@/lib/phone";
 import {
@@ -1451,19 +1482,33 @@ const rawResolvers = {
       { search, limit = 10, offset = 0 }: { search?: string; limit?: number; offset?: number },
       ctx: any
     ) => {
-      const { author_id } = requireAuth(ctx);
-      console.log("[Query] users :", author_id, { search, limit, offset });
+      const auth = requireAuth(ctx);
+      console.log("[Query] users :", auth.author_id, { search, limit, offset });
 
       // กัน limit โหด ๆ
       const safeLimit = Math.min(Math.max(limit || 10, 1), 100);
       const safeOffset = Math.max(offset || 0, 0);
 
-      const where = search
-        ? `WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1`
-        : ``;
-
+      const conds: string[] = [];
       const params: any[] = [];
-      if (search) params.push(`%${search}%`);
+
+      if (search) {
+        params.push(`%${search}%`);
+        const p = `$${params.length}`;
+        conds.push(`(name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p})`);
+      }
+
+      // scope=admin → หน้าจัดการผู้ใช้ BMS: บังคับสิทธิ์ + กรองตามร้าน
+      //   (scope=web/android = ค้นหาคนในแอป social → คงเดิม ไม่กรอง)
+      if (auth.scope === "admin") {
+        const { platform, tenantId } = await requireUserAdmin(ctx);
+        if (!platform) {
+          params.push(tenantId);
+          conds.push(`tenant_id = $${params.length}`);
+        }
+      }
+
+      const where = conds.length ? `WHERE ${conds.join(" AND ")}` : ``;
 
       // total
       const totalRes = await query<{ total: string }>(
@@ -1473,9 +1518,6 @@ const rawResolvers = {
       const total = Number(totalRes.rows[0]?.total || 0);
 
       // items
-      const itemsParams = [...params, safeLimit, safeOffset];
-      const limitIdx = itemsParams.length - 1;     // not used directly
-      // ใช้ตำแหน่งจริง: (params+1)=limit, (params+2)=offset
       const limitPos = params.length + 1;
       const offsetPos = params.length + 2;
 
@@ -1487,7 +1529,7 @@ const rawResolvers = {
         ORDER BY created_at DESC
         LIMIT $${limitPos} OFFSET $${offsetPos}
         `,
-        itemsParams
+        [...params, safeLimit, safeOffset]
       );
 
       return { items: itemsRes.rows, total };
@@ -4949,12 +4991,9 @@ const rawResolvers = {
       return deactivateDevicePushToken(String(author_id), String(fcmToken || ""));
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const auth =  requireAuth(ctx);
-      if (!auth.isAuthenticated || !auth.author_id) {
-        throw new Error("Unauthenticated");
-      }
-      const author_id = String(auth.author_id);
+      // gate: platform admin จัดการได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
+      const { platform, tenantId } = await requireUserAdmin(ctx);
+      const author_id = String(requireAuth(ctx).author_id);
 
       console.log("[Mutation] upsertUser :", ctx, author_id);
 
@@ -5026,9 +5065,15 @@ const rawResolvers = {
           }
 
           updateValues.push(id); // WHERE id = $n
+          let whereClause = `id = $${paramIndex}`;
+          // non-platform แก้ได้เฉพาะ user ในร้านตัวเอง (กันแก้ข้ามร้าน)
+          if (!platform) {
+            updateValues.push(tenantId);
+            whereClause += ` AND tenant_id = $${paramIndex + 1}`;
+          }
 
           const { rows } = await client.query(
-            `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+            `UPDATE users SET ${updateFields.join(', ')} WHERE ${whereClause} RETURNING *`,
             updateValues
           );
 
@@ -5046,21 +5091,24 @@ const rawResolvers = {
           // 🧩 INSERT: ต้องมี email
           if (!email) throw new GraphQLError("email is required");
 
+          // user ใหม่สังกัดร้านของผู้สร้าง (platform admin ระบุ tenant อื่นได้)
+          const newTenantId = platform && data.tenant_id ? String(data.tenant_id) : tenantId;
+
           // Use role_id if available, otherwise use role text
           if (roleId) {
             const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role_id, password_hash)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-              [name, avatar, phone, email, roleId, passwordHash]
+              `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+              [name, avatar, phone, email, roleId, passwordHash, newTenantId]
             );
             resultUser = rows[0] || null;
           } else {
             // Fallback to role text (triggers will sync role_id)
             const role = roleText || 'Subscriber';
             const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role, password_hash)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-              [name, avatar, phone, email, role, passwordHash]
+              `INSERT INTO users (name, avatar, phone, email, role, password_hash, tenant_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+              [name, avatar, phone, email, role, passwordHash, newTenantId]
             );
             resultUser = rows[0] || null;
           }
@@ -5117,17 +5165,16 @@ const rawResolvers = {
       return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
-      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const auth =  requireAuth(ctx);
-      if (!auth.isAuthenticated || !auth.author_id) {
-        throw new Error("Unauthenticated");
-      }
-      const author_id = String(auth.author_id);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
+      const { platform, tenantId } = await requireUserAdmin(ctx);
+      const author_id = String(requireAuth(ctx).author_id);
 
-      console.log("[Mutation] deleteUser:", id, author_id);
+      console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        const res = await client.query(`DELETE FROM users WHERE id=$1`, [id]);
+        const res = platform
+          ? await client.query(`DELETE FROM users WHERE id=$1`, [id])
+          : await client.query(`DELETE FROM users WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
         const ok = res.rowCount === 1;
 
         if (ok) {
@@ -5143,14 +5190,11 @@ const rawResolvers = {
       return result;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const auth =  requireAuth(ctx);
-      if (!auth.isAuthenticated || !auth.author_id) {
-        throw new Error("Unauthenticated");
-      }
-      const author_id = String(auth.author_id);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
+      const { platform, tenantId } = await requireUserAdmin(ctx);
+      const author_id = String(requireAuth(ctx).author_id);
 
-      console.log("[Mutation] deleteUsers :", ctx, author_id);
+      console.log("[Mutation] deleteUsers :", author_id, { platform });
 
       if (!ids || ids.length === 0) return false;
 
@@ -5161,10 +5205,9 @@ const rawResolvers = {
       if (uuidIds.length === 0) return false;
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        const res = await client.query(
-          `DELETE FROM users WHERE id = ANY($1::uuid[])`,
-          [uuidIds]
-        );
+        const res = platform
+          ? await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [uuidIds])
+          : await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND tenant_id=$2`, [uuidIds, tenantId]);
 
         const affected = res.rowCount ?? 0; // กัน null ที่นี่
 
@@ -6827,6 +6870,7 @@ const rawResolvers = {
     // Role Management Mutations
     // ================================
     createRole: async (_: any, { input }: { input: any }, ctx: any) => {
+      await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
       console.log('[Mutation] createRole:', author_id, input);
 
@@ -6870,6 +6914,7 @@ const rawResolvers = {
     },
 
     updateRole: async (_: any, { id, input }: { id: string; input: any }, ctx: any) => {
+      await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
       console.log('[Mutation] updateRole:', author_id, id, input);
 
@@ -6957,6 +7002,7 @@ const rawResolvers = {
     },
 
     deleteRole: async (_: any, { id }: { id: string }, ctx: any) => {
+      await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
       console.log('[Mutation] deleteRole:', author_id, id);
 

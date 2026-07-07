@@ -338,6 +338,14 @@ Reason
 > `inbox.view/reply/manage` · `customer.view/edit` · `report.view`
 > `Administrator` = super (bypass) · แต่ละร้านปรับสิทธิ์ role ของตัวเองได้ (เมนู Permissions) ·
 > UI ซ่อนปุ่มตามสิทธิ์ + resolver `requirePermission()` ปฏิเสธ 403 ถ้าไม่มีสิทธิ์
+>
+> **RBAC 2 ชั้น:** *platform admin* (`users.is_platform_admin`) = ดูแลทั้งแพลตฟอร์ม (list/จัดการทุกร้าน, plan, role กลาง) ·
+> *tenant role* (Administrator/Manager/Sales/Warehouse) = จัดการเฉพาะร้านตัวเอง.
+> จัดการ **User** = Administrator/platform (scope ตามร้าน) · จัดการ **Role กลาง** = platform เท่านั้น.
+> platform admin ดูข้อมูล operational ของร้าน (ลูกค้า/ออเดอร์) ผ่าน **drill-down** เท่านั้น — ไม่เห็นข้ามร้านปนกัน (privacy).
+>
+> **401 vs 403:** 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับ logout · 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ → แสดง error, **ไม่ logout**.
+> role ใหม่/permission ใหม่ต้อง seed ให้ Manager/Sales/Warehouse ทุก tenant (เช่น migration `5.7`) ไม่งั้นร้านโดน 403
 
 Admin
 
@@ -396,7 +404,8 @@ All notifications should be logged.
 
 ข้อมูลทดสอบสร้างผ่าน `/admin/dev/fake` (dev only, ปิดใน production) — mark ด้วย
 `FAKE-` (SKU / customer_ref) หรือ tag `fake` เพื่อแยกออกจากข้อมูลจริงและ cleanup ได้
-**ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น)
+**ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น) ·
+seed/cleanup **scope ต่อ tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง เห็นในร้านตัวเอง — ไม่ปนข้ามร้าน)
 
 ---
 
