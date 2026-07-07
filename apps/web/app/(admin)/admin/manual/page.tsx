@@ -1,5 +1,5 @@
 'use client';
-import { Anchor, Card, Col, Row, Table, Tag, Typography, Alert, Divider, Steps } from "antd";
+import { Anchor, Card, Col, Row, Table, Tag, Typography, Alert, Steps } from "antd";
 import Link from "next/link";
 
 const { Title, Paragraph, Text } = Typography;
@@ -7,10 +7,10 @@ const { Title, Paragraph, Text } = Typography;
 // ---------- ตารางอ้างอิง ----------
 const orderFlow = [
   { k: 1, status: "PENDING", th: "รอชำระเงิน", action: "สร้าง order (สั่งซื้อ)", stock: "reserved += qty (จองสต็อก)" },
-  { k: 2, status: "PAID", th: "จ่ายแล้ว", action: "จ่ายเงิน", stock: "— (ยังจองไว้)" },
+  { k: 2, status: "PAID", th: "จ่ายแล้ว", action: "จ่ายเงิน / ยืนยัน payment", stock: "— (ยังจองไว้)" },
   { k: 3, status: "PACKING", th: "กำลังแพ็ค", action: "แพ็ค", stock: "—" },
-  { k: 4, status: "SHIPPED", th: "จัดส่งแล้ว", action: "จัดส่ง", stock: "current −= qty, reserved −= qty (ตัดจริง)" },
-  { k: 5, status: "COMPLETED", th: "สำเร็จ", action: "ปิดงาน", stock: "—" },
+  { k: 4, status: "SHIPPED", th: "จัดส่งแล้ว", action: "จัดส่ง / สร้าง shipment", stock: "current −= qty, reserved −= qty (ตัดจริง)" },
+  { k: 5, status: "COMPLETED", th: "สำเร็จ", action: "ปิดงาน / shipment = DELIVERED", stock: "—" },
   { k: 6, status: "CANCELLED", th: "ยกเลิก", action: "ยกเลิก (ก่อนส่ง)", stock: "reserved −= qty (คืนจอง)" },
   { k: 7, status: "RETURNED", th: "คืนสินค้า", action: "คืน (หลังส่ง)", stock: "current += qty (คืนเข้าคลัง)" },
 ];
@@ -19,25 +19,32 @@ const statusColor: Record<string, string> = {
 };
 
 const perms = [
-  { role: "Administrator", desc: "super — ทุกสิทธิ์ + จัดการ RBAC", perms: "ทั้งหมด" },
+  { role: "Administrator", desc: "super — ทุกสิทธิ์ + จัดการ RBAC", perms: "ทั้งหมด (26 สิทธิ์)" },
   { role: "Manager", desc: "ผู้จัดการร้าน (เจ้าของร้านที่สมัครใหม่)", perms: "ทั้งหมด ยกเว้นแก้ RBAC ระบบ" },
-  { role: "Sales", desc: "ฝ่ายขาย", perms: "order.* , customer.* , product.view , report.view (แก้/ลบสินค้าไม่ได้, จัดส่งไม่ได้)" },
-  { role: "Warehouse", desc: "คลังสินค้า", perms: "product.view , stock.adjust , order.view , order.ship (ดูรายงานการเงินไม่ได้)" },
+  { role: "Sales", desc: "ฝ่ายขาย / แอดมินแชท", perms: "order.* , customer.* , inbox.* , payment.submit , product.view , report.view" },
+  { role: "Warehouse", desc: "คลัง / จัดส่ง", perms: "product.view , stock.adjust , order.view/ship , purchase.* , shipping.*" },
+  { role: "Finance", desc: "การเงิน (ตัวอย่าง role เพิ่มเอง)", perms: "payment.* , report.view , order.view" },
 ];
 
 const endpoints = [
   { m: "POST", path: "/api/bms/chat", desc: "ทดสอบ pipeline (message, channel, customerRef, tenantId)" },
-  { m: "POST", path: "/api/bms/line/webhook/{tenantId}", desc: "LINE webhook ต่อร้าน (verify X-Line-Signature)" },
-  { m: "POST", path: "/api/bms/tiktok/webhook/{tenantId}", desc: "TikTok webhook ต่อร้าน" },
+  { m: "POST", path: "/api/bms/{line|tiktok|facebook|instagram}/webhook/{tenantId}", desc: "webhook ต่อร้าน (verify signature)" },
+  { m: "POST", path: "/api/bms/web/webhook/{tenantId}", desc: "Website Live Chat (public widget, ตอบใน response)" },
   { m: "POST", path: "/api/bms/order", desc: "สร้าง order (items[])" },
   { m: "POST", path: "/api/bms/order/{id}/pay|pack|ship|complete|cancel|return", desc: "เปลี่ยนสถานะ order" },
+  { m: "POST", path: "/api/bms/purchase  ·  /{id}/receive|cancel", desc: "ใบสั่งซื้อ (PO) + รับของ" },
+  { m: "POST", path: "/api/bms/payment  ·  /{id}/confirm|reject|refund|verify", desc: "การชำระเงิน + ตรวจสลิป" },
+  { m: "POST", path: "/api/bms/shipment  ·  /{id}/tracking|status  ·  GET /label", desc: "จัดส่ง + tracking + label" },
+  { m: "GET/POST", path: "/api/bms/inbox  ·  /{id}/reply", desc: "อินบ็อกซ์รวม + ตอบเอง" },
+  { m: "GET", path: "/api/bms/reports/{sales|inventory|top-products}", desc: "รายงานตามช่วงวันที่" },
   { m: "POST", path: "/api/bms/orders/release-expired?minutes=N", desc: "cron ยกเลิก order PENDING ค้าง" },
 ];
 
 const movements = [
-  { t: "STOCK_IN / STOCK_OUT", when: "แอดมินปรับสต็อก (+/−)" },
+  { t: "STOCK_IN", when: "แอดมินปรับสต็อก (+) หรือรับของจาก PO (receive)" },
+  { t: "STOCK_OUT", when: "แอดมินปรับสต็อก (−)" },
   { t: "RESERVE", when: "สร้าง order (จอง)" },
-  { t: "SHIP", when: "จัดส่ง (ตัดของออก)" },
+  { t: "SHIP", when: "จัดส่ง / สร้าง shipment (ตัดของออก)" },
   { t: "RETURN", when: "คืนสินค้า (คืนของเข้า)" },
   { t: "RELEASE", when: "ยกเลิก/auto-release (คืนจอง)" },
 ];
@@ -51,22 +58,26 @@ export default function Page() {
     { key: "overview", href: "#overview", title: "1. ภาพรวมระบบ" },
     { key: "getstart", href: "#getstart", title: "2. เริ่มต้นใช้งาน" },
     { key: "playground", href: "#playground", title: "3. Playground (ทดสอบแชต)" },
-    { key: "products", href: "#products", title: "4. Products & Inventory (IMS)" },
-    { key: "orders", href: "#orders", title: "5. Orders (OMS)" },
-    { key: "customers", href: "#customers", title: "6. Customers (CRM)" },
-    { key: "dashboard", href: "#dashboard", title: "7. Dashboard" },
-    { key: "permissions", href: "#permissions", title: "8. Users / Roles / Permissions" },
-    { key: "settings", href: "#settings", title: "9. Settings (เชื่อม LINE/TikTok)" },
-    { key: "billing", href: "#billing", title: "10. Billing & แพ็กเกจ" },
-    { key: "saas", href: "#saas", title: "11. SaaS multi-tenant" },
-    { key: "api", href: "#api", title: "12. API / Webhook reference" },
+    { key: "inbox", href: "#inbox", title: "4. Inbox (Omnichannel)" },
+    { key: "products", href: "#products", title: "5. Products & Inventory (IMS)" },
+    { key: "orders", href: "#orders", title: "6. Orders (OMS)" },
+    { key: "purchase", href: "#purchase", title: "7. Purchase (PO)" },
+    { key: "payment", href: "#payment", title: "8. Payment" },
+    { key: "shipping", href: "#shipping", title: "9. Shipping" },
+    { key: "customers", href: "#customers", title: "10. Customers (CRM)" },
+    { key: "reports", href: "#reports", title: "11. Dashboard & Reports" },
+    { key: "permissions", href: "#permissions", title: "12. Users / Roles / Permissions" },
+    { key: "settings", href: "#settings", title: "13. Settings (เชื่อมช่องทาง)" },
+    { key: "billing", href: "#billing", title: "14. Billing & แพ็กเกจ" },
+    { key: "saas", href: "#saas", title: "15. SaaS multi-tenant" },
+    { key: "api", href: "#api", title: "16. API / Webhook reference" },
   ];
 
   return (
     <div>
       <Title level={2}>📖 คู่มือการใช้งาน AI-BMS</Title>
       <Paragraph type="secondary">
-        ระบบจัดการร้านค้าอัตโนมัติผ่านแชต (LINE/TikTok) — ขายของ, จัดการสต็อก, ออเดอร์, ลูกค้า, สิทธิ์ผู้ใช้ และเปิดให้หลายร้านใช้งานแบบ SaaS
+        ระบบจัดการร้านค้าอัตโนมัติผ่านแชตหลายช่องทาง (LINE / TikTok / Facebook / Instagram / เว็บ) — ปิดครบวงจรตั้งแต่ลูกค้าทัก → ขาย → จัดซื้อ → ชำระเงิน → จัดส่ง → รายงาน แบบ SaaS หลายร้าน
       </Paragraph>
 
       <Row gutter={24}>
@@ -74,48 +85,64 @@ export default function Page() {
           <Sec id="overview">
             <Title level={4}>1. ภาพรวมระบบ</Title>
             <Paragraph>AI-BMS เปลี่ยน "บทสนทนาลูกค้า" ให้กลายเป็น workflow ธุรกิจอัตโนมัติ:</Paragraph>
-            <Alert type="info" showIcon message="ลูกค้าทัก → AI เข้าใจ (NLU) → เช็คสต็อก → สร้างออเดอร์ → จัดการสต็อก/ลูกค้า → รายงาน" style={{ marginBottom: 12 }} />
-            <Paragraph>โมดูลหลัก: <Tag>IMS สินค้า/สต็อก</Tag><Tag>OMS ออเดอร์</Tag><Tag>CRM ลูกค้า</Tag><Tag>Dashboard</Tag><Tag>RBAC สิทธิ์</Tag><Tag>Channels LINE/TikTok</Tag><Tag>Billing</Tag></Paragraph>
+            <Alert type="info" showIcon message="ลูกค้าทัก → AI เข้าใจ (NLU) → เช็คสต็อก → สร้างออเดอร์ → ชำระเงิน → จัดส่ง → รายงาน · ทุกแชทถูกเก็บใน Inbox" style={{ marginBottom: 12 }} />
+            <Paragraph>
+              โมดูล: <Tag>Inbox รวมแชท</Tag><Tag>IMS สินค้า/สต็อก</Tag><Tag>OMS ออเดอร์</Tag><Tag>Purchase จัดซื้อ</Tag><Tag>Payment</Tag><Tag>Shipping</Tag><Tag>CRM ลูกค้า</Tag><Tag>Reports</Tag><Tag>RBAC สิทธิ์</Tag><Tag>Channels LINE/TikTok/FB/IG/Web</Tag><Tag>Billing</Tag>
+            </Paragraph>
           </Sec>
 
           <Sec id="getstart">
             <Title level={4}>2. เริ่มต้นใช้งาน (แนะนำตามลำดับ)</Title>
             <Steps direction="vertical" size="small" current={-1} items={[
-              { title: "เพิ่มสินค้า", description: <>ไปที่ <Link href="/admin/products">Products</Link> → เพิ่มสินค้า + ตั้งราคา + keywords (คำที่ลูกค้าพิมพ์แล้ว match) + สต็อกแต่ละไซซ์</> },
+              { title: "เพิ่มสินค้า", description: <>ไปที่ <Link href="/admin/products">Products</Link> → เพิ่มสินค้า + ราคา + keywords + สต็อกแต่ละไซซ์ (หรือรับเข้าผ่าน <Link href="/admin/purchase">Purchase</Link>)</> },
               { title: "ทดสอบการขาย", description: <>ไปที่ <Link href="/admin/playground">Playground</Link> พิมพ์ "สั่ง Nike XL 2 ชิ้น" ดู order + สต็อกเปลี่ยนสด</> },
-              { title: "จัดการออเดอร์", description: <>ไปที่ <Link href="/admin/orders">Orders</Link> เดินสถานะ จ่าย→แพ็ค→ส่ง→สำเร็จ</> },
-              { title: "เชื่อมช่องทางจริง", description: <>ไปที่ <Link href="/admin/settings">Settings</Link> วาง token LINE/TikTok + เอา Webhook URL ไปตั้งใน console</> },
+              { title: "เดินครบวงจร", description: <><Link href="/admin/orders">Orders</Link> → <Link href="/admin/payment">Payment</Link> (ยืนยันสลิป) → <Link href="/admin/shipment">Shipping</Link> (ออกเลขพัสดุ) → ปิดงาน</> },
+              { title: "เชื่อมช่องทางจริง", description: <>ไปที่ <Link href="/admin/settings">Settings</Link> วาง token + เอา Webhook URL ไปตั้งใน console ของแต่ละแพลตฟอร์ม แล้วดูแชตเข้าที่ <Link href="/admin/inbox">Inbox</Link></> },
             ]} />
           </Sec>
 
           <Sec id="playground">
             <Title level={4}>3. Playground — ทดสอบแชต</Title>
-            <Paragraph>จำลองลูกค้าทักเข้ามาโดยไม่ต้องต่อ LINE จริง ใช้ดูภาพการทำงานทั้ง flow</Paragraph>
+            <Paragraph>จำลองลูกค้าทักเข้ามาโดยไม่ต้องต่อช่องทางจริง ใช้ดูภาพการทำงานทั้ง flow</Paragraph>
             <ul>
-              <li>เลือกช่องทาง (line/tiktok/...) + ใส่ customerRef (จำลอง user id)</li>
-              <li>พิมพ์ข้อความ เช่น <Text code>Nike XL มีไหม</Text> (เช็คสต็อก) หรือ <Text code>สั่ง Nike XL 2 ชิ้น</Text> (สร้างออเดอร์)</li>
+              <li>เลือกช่องทาง + ใส่ customerRef (จำลอง user id)</li>
+              <li>พิมพ์ เช่น <Text code>Nike XL มีไหม</Text> (เช็คสต็อก) หรือ <Text code>สั่ง Nike XL 2 ชิ้น</Text> (สร้างออเดอร์)</li>
               <li>สั่งหลายรายการต่อข้อความ: <Text code>สั่ง Nike XL 1 ชิ้น กับ Adidas M 1 ชิ้น</Text></li>
               <li>เห็น trace: intent, สต็อก, order ที่เกิด + สต็อกด้านขวาอัปเดตทันที</li>
             </ul>
+            <Alert type="info" showIcon message="Playground (channel=test) ไม่ถูกบันทึกลง Inbox — ใช้ทดสอบล้วน ๆ" />
+          </Sec>
+
+          <Sec id="inbox">
+            <Title level={4}>4. Inbox — กล่องข้อความรวมทุกช่องทาง (Omnichannel)</Title>
+            <Paragraph>เมนู <Link href="/admin/inbox">Inbox</Link> — ทุกข้อความจาก LINE/TikTok/FB/IG/เว็บ (พร้อมคำตอบ AI) ถูกบันทึกอัตโนมัติมารวมที่นี่</Paragraph>
+            <ul>
+              <li><b>ซ้าย:</b> รายการบทสนทนา — filter สถานะ (OPEN/PENDING/CLOSED), ค้นหา, ตัวเลขข้อความที่ยังไม่อ่าน</li>
+              <li><b>แชท:</b> ดูประวัติเข้า-ออก · แอดมินพิมพ์ตอบเองได้ (LINE ส่งจริงผ่าน push, FB/IG ผ่าน Graph API)</li>
+              <li><b>จัดการ:</b> มอบหมาย staff (assign), เปลี่ยนสถานะ, ใส่แท็ก</li>
+              <li><b>โน้ตภายใน:</b> บันทึกให้ทีมเห็น (ลูกค้าไม่เห็น)</li>
+              <li><b>Timeline:</b> รวม ข้อความ + โน้ต + ออเดอร์ของลูกค้า เรียงตามเวลา</li>
+            </ul>
+            <Alert type="info" showIcon message="Website Live Chat: ฝังวิดเจ็ตให้ POST ไปที่ /api/bms/web/webhook/{tenantId} (มี CORS) — ระบบตอบกลับใน response ทันที" />
           </Sec>
 
           <Sec id="products">
-            <Title level={4}>4. Products & Inventory (IMS)</Title>
+            <Title level={4}>5. Products & Inventory (IMS)</Title>
             <Paragraph>จัดการสินค้า + สต็อก (เมนู <Link href="/admin/products">Products</Link>)</Paragraph>
             <ul>
               <li><b>เพิ่ม/แก้สินค้า:</b> SKU, Barcode, ราคา, Keywords, เปิด/ปิดขาย</li>
-              <li><b>สต็อกต่อไซซ์:</b> กางแถว → ปรับ +10/+1/−1 (บันทึกประวัติทุกครั้ง), เพิ่มไซซ์ใหม่</li>
-              <li><b>Available = Current − Reserved</b> (reserved = ของที่ถูกจองในออเดอร์ที่ยังไม่ส่ง — แก้มือไม่ได้)</li>
-              <li><b>จุดแจ้งเตือนของใกล้หมด (reorder point):</b> ตั้งต่อไซซ์ → banner เตือนเมื่อ available ≤ จุดเตือน</li>
-              <li><b>ประวัติการเคลื่อนไหว:</b> ทุกการขยับสต็อกถูกบันทึกใน ledger</li>
+              <li><b>สต็อกต่อไซซ์:</b> ปรับ +10/+1/−1 (บันทึกประวัติทุกครั้ง), เพิ่มไซซ์ใหม่</li>
+              <li><b>Available = Current − Reserved</b> (reserved = ของที่จองในออเดอร์ที่ยังไม่ส่ง — แก้มือไม่ได้)</li>
+              <li><b>reorder point:</b> ตั้งต่อไซซ์ → เตือนเมื่อ available ≤ จุดเตือน</li>
+              <li><b>ของเข้าคลัง:</b> รับผ่าน <Link href="/admin/purchase">Purchase (PO)</Link> → บันทึก STOCK_IN อัตโนมัติ</li>
             </ul>
             <Table size="small" pagination={false} rowKey="t" dataSource={movements}
-              columns={[{ title: "ประเภท", dataIndex: "t", render: (t) => <Tag>{t}</Tag> }, { title: "เกิดเมื่อ", dataIndex: "when" }]} />
+              columns={[{ title: "ประเภท movement", dataIndex: "t", render: (t) => <Tag>{t}</Tag> }, { title: "เกิดเมื่อ", dataIndex: "when" }]} />
           </Sec>
 
           <Sec id="orders">
-            <Title level={4}>5. Orders (OMS) — สถานะออเดอร์</Title>
-            <Paragraph>เมนู <Link href="/admin/orders">Orders</Link> — ปุ่ม action จะปรับตามสถานะและสิทธิ์</Paragraph>
+            <Title level={4}>6. Orders (OMS) — สถานะออเดอร์</Title>
+            <Paragraph>เมนู <Link href="/admin/orders">Orders</Link> — ปุ่ม action ปรับตามสถานะและสิทธิ์</Paragraph>
             <Table size="small" pagination={false} rowKey="k" dataSource={orderFlow}
               columns={[
                 { title: "สถานะ", dataIndex: "status", render: (s) => <Tag color={statusColor[s]}>{s}</Tag> },
@@ -124,56 +151,92 @@ export default function Page() {
                 { title: "ผลต่อสต็อก", dataIndex: "stock" },
               ]} />
             <Alert style={{ marginTop: 12 }} type="success" showIcon
-              message="ทุกการเปลี่ยนสถานะเป็น atomic — กัน oversell และตัดสต็อกซ้ำ" />
+              message="ทุกการเปลี่ยนสถานะเป็น atomic — กัน oversell และตัดสต็อกซ้ำ · จ่ายเงินทำผ่าน Payment, จัดส่งทำผ่าน Shipping ก็ได้ (เดินสถานะ order ให้เอง)" />
           </Sec>
 
-          <Sec id="customers">
-            <Title level={4}>6. Customers (CRM)</Title>
-            <Paragraph>เมนู <Link href="/admin/customers">Customers</Link></Paragraph>
+          <Sec id="purchase">
+            <Title level={4}>7. Purchase (PO) — ใบสั่งซื้อ/รับของ</Title>
+            <Paragraph>เมนู <Link href="/admin/purchase">Purchase</Link> — สั่งซื้อจาก supplier แล้วรับของเข้าสต็อก</Paragraph>
             <ul>
-              <li>ลูกค้าถูก<b>สร้างอัตโนมัติ</b>เมื่อมีออเดอร์เข้ามา (ผูกจาก channel + user id)</li>
-              <li>เก็บ ชื่อ, เบอร์, ที่อยู่ (หลายที่อยู่), Tags (VIP/ลูกค้าใหม่/ประจำ)</li>
-              <li><b>ยอดซื้อสะสม</b> = ผลรวมออเดอร์ที่จ่ายแล้ว · กางแถวดูประวัติการซื้อ</li>
-              <li>1 ลูกค้าเชื่อมได้หลายช่องทาง (LINE + TikTok = คนเดียวกัน)</li>
+              <li><b>สร้าง PO:</b> เลือก supplier (พิมพ์ชื่อสร้างใหม่ได้), รายการสินค้า + จำนวน + ทุน/หน่วย — สถานะเริ่ม <Tag color="orange">OPEN</Tag> (ยังไม่ขยับสต็อก)</li>
+              <li><b>รับของ (บางส่วน/ครบ):</b> ใส่จำนวนที่รับจริง → สต็อกเข้า (STOCK_IN) → สถานะเป็น <Tag color="blue">PARTIAL</Tag> หรือ <Tag color="green">RECEIVED</Tag></li>
+              <li><b>ยกเลิก:</b> ได้เฉพาะก่อนรับครบ — ของที่รับไปแล้วไม่ถูกดึงออก (ตามหลักบัญชีสินค้า)</li>
             </ul>
           </Sec>
 
-          <Sec id="dashboard">
-            <Title level={4}>7. Dashboard</Title>
-            <Paragraph>เมนู <Link href="/admin/dashboard">Dashboard</Link> — ยอดขายรวม/วันนี้, ออเดอร์แยกสถานะ, กราฟ 7 วัน, สินค้าขายดี, ลูกค้ายอดสูง, แจ้งเตือนของใกล้หมด (รายได้นับเฉพาะออเดอร์ที่จ่ายแล้ว)</Paragraph>
+          <Sec id="payment">
+            <Title level={4}>8. Payment — การชำระเงิน</Title>
+            <Paragraph>เมนู <Link href="/admin/payment">Payment</Link> — วิธีจ่าย: โอน / QR / บัตร / TikTok Pay / เงินสด</Paragraph>
+            <ul>
+              <li><b>บันทึกการชำระ:</b> เลือกออเดอร์ (PENDING) + วิธี + ยอด + สลิป/เลขอ้างอิง — สถานะ <Tag color="orange">PENDING</Tag></li>
+              <li><b>ตรวจสลิป (AI):</b> ถ้าแนบรูปสลิป + ตั้ง <Text code>ANTHROPIC_API_KEY</Text> → AI อ่านยอดเทียบกับที่ต้องจ่าย (แนะนำเท่านั้น <b>ไม่ยืนยันเอง</b>)</li>
+              <li><b>ยืนยัน:</b> <Tag color="green">CONFIRMED</Tag> + ออเดอร์เป็น PAID อัตโนมัติ · <b>ปฏิเสธ:</b> REJECTED · <b>คืนเงิน:</b> REFUNDED (สิทธิ์ manager)</li>
+            </ul>
+            <Alert type="warning" showIcon message="ตามกฎธุรกิจ: AI ห้ามยืนยันการรับเงินเอง — คนต้องกดยืนยันเสมอ" />
+          </Sec>
+
+          <Sec id="shipping">
+            <Title level={4}>9. Shipping — จัดส่ง</Title>
+            <Paragraph>เมนู <Link href="/admin/shipment">Shipping</Link> — ขนส่ง: Flash / Kerry / DHL / Australia Post / NZ Post</Paragraph>
+            <ul>
+              <li><b>สร้างการจัดส่ง:</b> เลือกออเดอร์ (PACKING) + ขนส่ง + เลขพัสดุ → ตัดสต็อกจริง + ออเดอร์เป็น SHIPPED</li>
+              <li><b>เดินสถานะ:</b> SHIPPED → กำลังส่ง (IN_TRANSIT) → ถึงแล้ว (DELIVERED) → ปิดออเดอร์เป็น COMPLETED อัตโนมัติ</li>
+              <li><b>แก้ tracking / พิมพ์ label:</b> label รวมผู้รับ + ที่อยู่ + รายการ (ยังไม่ต่อ API ขนส่งจริง — พิมพ์/คัดลอกเอง)</li>
+            </ul>
+          </Sec>
+
+          <Sec id="customers">
+            <Title level={4}>10. Customers (CRM)</Title>
+            <Paragraph>เมนู <Link href="/admin/customers">Customers</Link></Paragraph>
+            <ul>
+              <li>ลูกค้าถูก<b>สร้างอัตโนมัติ</b>เมื่อมีออเดอร์ (ผูกจาก channel + user id)</li>
+              <li>เก็บ ชื่อ, เบอร์, ที่อยู่ (หลายที่อยู่), Tags · <b>ยอดซื้อสะสม</b> = ผลรวมออเดอร์ที่จ่ายแล้ว</li>
+              <li>1 ลูกค้าเชื่อมได้หลายช่องทาง (LINE + TikTok + FB = คนเดียวกัน)</li>
+            </ul>
+          </Sec>
+
+          <Sec id="reports">
+            <Title level={4}>11. Dashboard & Reports</Title>
+            <ul>
+              <li><b><Link href="/admin/dashboard">Dashboard</Link>:</b> ภาพรวมวันนี้ — ยอดขายรวม/วันนี้, ออเดอร์แยกสถานะ, กราฟ 7 วัน, สินค้าขายดี, ลูกค้ายอดสูง</li>
+              <li><b><Link href="/admin/reports">Reports</Link>:</b> เลือกช่วงวันที่ (RangePicker) → ยอดขายรายวัน/ตามสถานะ/ตามช่องทาง, สินค้าขายดี, สรุปสต็อก (มูลค่า/ใกล้หมด/หมด)</li>
+              <li>รายได้ทุกที่นับเฉพาะออเดอร์ที่จ่ายแล้ว (PAID ขึ้นไป)</li>
+            </ul>
           </Sec>
 
           <Sec id="permissions">
-            <Title level={4}>8. Users / Roles / Permissions (RBAC)</Title>
+            <Title level={4}>12. Users / Roles / Permissions (RBAC)</Title>
             <Paragraph>กำหนดว่าใครทำอะไรได้ — เมนู <Link href="/admin/permissions">Permissions</Link> (เฉพาะ Administrator แก้ได้)</Paragraph>
             <Table size="small" pagination={false} rowKey="role" dataSource={perms}
               columns={[
                 { title: "Role", dataIndex: "role", render: (r) => <Tag color="blue">{r}</Tag> },
                 { title: "หน้าที่", dataIndex: "desc" },
-                { title: "สิทธิ์", dataIndex: "perms" },
+                { title: "สิทธิ์ (ตัวอย่าง)", dataIndex: "perms" },
               ]} />
-            <Paragraph style={{ marginTop: 8 }}>ปุ่มในแต่ละหน้าจะซ่อน/disable ตามสิทธิ์ และ API จะปฏิเสธ (403) ถ้าไม่มีสิทธิ์</Paragraph>
+            <Paragraph style={{ marginTop: 8 }}>
+              สิทธิ์เป็นแบบ <Text code>resource.action</Text> 26 ตัว: product.* · stock.adjust · order.* · purchase.* · payment.* · shipping.* · inbox.* · customer.* · report.view · ปุ่มในแต่ละหน้าจะซ่อน/disable ตามสิทธิ์ และ API ปฏิเสธ (403) ถ้าไม่มีสิทธิ์
+            </Paragraph>
           </Sec>
 
           <Sec id="settings">
-            <Title level={4}>9. Settings — เชื่อม LINE / TikTok</Title>
-            <Paragraph>เมนู <Link href="/admin/settings">Settings</Link></Paragraph>
+            <Title level={4}>13. Settings — เชื่อมช่องทาง</Title>
+            <Paragraph>เมนู <Link href="/admin/settings">Settings</Link> — LINE / TikTok / Facebook Messenger / Instagram DM / Website Live Chat</Paragraph>
             <Steps direction="vertical" size="small" current={-1} items={[
-              { title: "คัดลอก Webhook URL", description: <Text code>{`{origin}/api/bms/line/webhook/{tenantId}`}</Text> },
-              { title: "ตั้งใน LINE Developers Console", description: "Messaging API → Webhook URL → วาง URL ข้างบน + เปิด Use webhook" },
-              { title: "วาง Access Token + Channel Secret", description: "ในหน้า Settings แล้วกดบันทึก (เก็บแบบเข้ารหัส AES-256-GCM)" },
-              { title: "เสร็จ!", description: "ลูกค้าทักเข้า OA → verify signature → AI ตอบด้วย token ของร้าน" },
+              { title: "คัดลอก Webhook URL", description: <Text code>{`{origin}/api/bms/{channel}/webhook/{tenantId}`}</Text> },
+              { title: "ตั้งใน console ของแพลตฟอร์ม", description: "LINE Developers / TikTok / Meta App → วาง Webhook URL + เปิด webhook" },
+              { title: "วาง Access Token + Secret", description: "LINE=channel token+secret · FB/IG=Page token + App Secret (ใช้เป็น verify token+signature) · เก็บเข้ารหัส AES-256-GCM" },
+              { title: "เสร็จ!", description: "ลูกค้าทัก → verify signature → AI ตอบด้วย token ของร้าน → โผล่ใน Inbox" },
             ]} />
-            <Alert type="warning" showIcon message="ทุก webhook ตรวจ signature — request ที่ signature ไม่ตรงจะถูกปฏิเสธ (401)" />
+            <Alert type="warning" showIcon message="ทุก webhook ตรวจ signature — request ที่ signature ไม่ตรงถูกปฏิเสธ (401) · Website chat เป็น public (rate-limit + CORS)" />
           </Sec>
 
           <Sec id="billing">
-            <Title level={4}>10. Billing & แพ็กเกจ</Title>
-            <Paragraph>เมนู <Link href="/admin/billing">Billing</Link> — Free / Pro / Business (จำกัดจำนวนสินค้า/ช่องทาง/ออเดอร์ต่อเดือน) ดู usage + อัปเกรดได้ (โหมดสาธิต ยังไม่ตัดเงินจริง) · quota สินค้าถูกบังคับใช้ตอนสร้างสินค้าใหม่</Paragraph>
+            <Title level={4}>14. Billing & แพ็กเกจ</Title>
+            <Paragraph>เมนู <Link href="/admin/billing">Billing</Link> — Free / Pro / Business (จำกัดสินค้า/ช่องทาง/ออเดอร์ต่อเดือน) ดู usage + อัปเกรดได้ (โหมดสาธิต ยังไม่ตัดเงินจริง) · quota สินค้าบังคับตอนสร้างสินค้าใหม่</Paragraph>
           </Sec>
 
           <Sec id="saas">
-            <Title level={4}>11. SaaS multi-tenant</Title>
+            <Title level={4}>15. SaaS multi-tenant</Title>
             <ul>
               <li>เปิดร้านใหม่เองที่ <Link href="/shop-signup">/shop-signup</Link> → สร้างร้าน + เจ้าของ (role Manager) อัตโนมัติ</li>
               <li>ข้อมูลแยกกันสมบูรณ์ต่อร้าน (tenant_id ทุกตาราง + Row-Level Security ชั้น 2)</li>
@@ -189,16 +252,20 @@ export default function Page() {
           </Sec>
 
           <Sec id="api">
-            <Title level={4}>12. API / Webhook reference</Title>
+            <Title level={4}>16. API / Webhook reference</Title>
             <Table size="small" pagination={false} rowKey="path" dataSource={endpoints}
               columns={[
-                { title: "Method", dataIndex: "m", width: 80, render: (m) => <Tag color="purple">{m}</Tag> },
+                { title: "Method", dataIndex: "m", width: 90, render: (m) => <Tag color="purple">{m}</Tag> },
                 { title: "Endpoint", dataIndex: "path", render: (p) => <Text code>{p}</Text> },
                 { title: "หน้าที่", dataIndex: "desc" },
               ]} />
             <Paragraph style={{ marginTop: 8 }} type="secondary">
-              GraphQL (admin): bmsProducts, bmsOrders, bmsCustomers, bmsDashboard, bmsChannels, bmsBilling, bmsSignup ฯลฯ ที่ <Text code>/api/graphql</Text>
+              GraphQL (admin) ที่ <Text code>/api/graphql</Text>: bmsProducts, bmsOrders, bmsPurchaseOrders, bmsPayments, bmsShipments, bmsConversations, bmsCustomers, bmsDashboard, bmsSalesSummary, bmsChannels, bmsBilling, bmsSignup ฯลฯ
             </Paragraph>
+            <Alert style={{ marginTop: 12 }} type="info" showIcon
+              message="ระบบตรวจ error อัตโนมัติรายวัน + แจ้งเตือน LINE"
+              description={<>ทุกวันมี GitHub Actions ดึง error จาก <Text code>system_logs</Text> ให้ AI วิเคราะห์แล้วเปิด draft PR เสนอการแก้ให้ทีมรีวิว (ไม่ merge เอง) แล้ว<b>แจ้งเตือนทีมผ่าน LINE</b>พร้อมลิงก์ PR — รายละเอียดที่หน้า Architecture §8 และ <Text code>scripts/bms-log-triage/</Text></>}
+            />
           </Sec>
         </Col>
 

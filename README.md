@@ -91,17 +91,17 @@ Receive → Detect Intent → Extract Entities → Select Tool
 
 | Module | Responsibility |
 | --- | --- |
-| **Channel Integration** | Normalize every platform into one internal message format |
-| **Omnichannel Inbox** | Unified inbox: history, assignment, notes, tags, timeline |
+| **Channel Integration** ✅ | Per-tenant webhooks for LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — all normalized into one pipeline (signature-verified) |
+| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) |
 | **AI Orchestrator** | Intent detection, entity extraction, tool selection |
 | **CRM** | Customer profiles across channels, purchase history, LTV |
 | **Product Management** | Products, variants, SKU, barcode, pricing, categories |
 | **Inventory (IMS)** | Current / reserved / available stock — every change logs a movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
-| **Purchase** | Supplier POs, receive / partial receive, supplier history |
-| **Payment** | Bank transfer, QR, card, TikTok Pay, cash (AI slip verification on roadmap) |
-| **Shipping** | Flash, Kerry, DHL, Australia Post, NZ Post — tracking & labels |
-| **Reports** | Sales, inventory, customer, supplier, financial, AI usage dashboards |
+| **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
+| **Payment** ✅ | Bank transfer, QR, card, TikTok Pay, cash — payment records + confirm/reject/refund + AI slip verification (`verifyPaymentSlip`, advisory only) |
+| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — shipments, tracking, status flow, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Reports** ✅ | Dashboard + date-range **sales summary** (by day/status/channel), **inventory summary** (stock value, low/out-of-stock), **top sellers** — `/admin/reports` |
 
 > ⚠️ **Every stock change must create a Stock Movement record.** Never update
 > stock without logging the movement.
@@ -146,7 +146,15 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 │   │   │           ├── chat/                    # AI conversation pipeline
 │   │   │           ├── line/webhook/[tenantId]/ # per-tenant LINE webhook
 │   │   │           ├── tiktok/webhook/[tenantId]/
+│   │   │           ├── facebook/webhook/[tenantId]/   # Messenger (Graph send)
+│   │   │           ├── instagram/webhook/[tenantId]/  # IG DM (Messenger Platform)
+│   │   │           ├── web/webhook/[tenantId]/        # Website Live Chat (public widget)
 │   │   │           ├── order/[id]/{pay,pack,ship,complete,cancel,return}/
+│   │   │           ├── purchase/[id]/{receive,cancel}/ # supplier PO lifecycle
+│   │   │           ├── payment/[id]/{confirm,reject,refund,verify}/ # payments + AI slip verify
+│   │   │           ├── shipment/[id]/{tracking,status,label}/ # carrier, tracking, label
+│   │   │           ├── inbox/[id]/reply/        # omnichannel inbox (list + staff reply)
+│   │   │           ├── reports/{sales,inventory,top-products}/ # report tools
 │   │   │           ├── reserve/                 # stock reservation
 │   │   │           └── orders/release-expired/  # release expired reservations
 │   │   └── lib/bms/             # Services / tools (single source of truth)
@@ -154,6 +162,8 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 ├── packages/                    # Shared libs: graphql-core, realtime, social-queue
 ├── db/                          # SQL: init, migrations/, triggers, helpers
 ├── storage/                     # Uploaded files / assets
+├── scripts/bms-log-triage/      # Daily AI log triage (collector + LINE notify)
+├── .github/workflows/           # daily-log-triage.yml (cron → AI → draft PR → LINE)
 ├── docker-compose.yml           # Base stack
 ├── docker-compose.dev.yml       # Development override
 ├── docker-compose.prod.yml      # Production override
@@ -170,10 +180,16 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
 
 - Self-serve signup that auto-creates a tenant + plan/billing
-- Per-tenant webhooks: `/api/bms/line/webhook/{tenantId}` &
-  `/api/bms/tiktok/webhook/{tenantId}` with signature verification
+- Per-tenant webhooks for LINE, TikTok, **Facebook Messenger, Instagram DM**
+  (`/api/bms/{channel}/webhook/{tenantId}`, signature-verified) + a public
+  **Website Live Chat** endpoint (`/api/bms/web/webhook/{tenantId}`)
 - Per-tenant channel credentials — replies go out with **that shop's** token
 - Per-tenant roles / permissions, rate-limited webhooks, and audit logging
+- Every operational query/mutation is tenant-scoped (`getTenantId(ctx)` + RLS) — a shop only ever sees its own data
+- **Platform admin** (`users.is_platform_admin`) manages the whole platform at `/admin/tenants`
+  (list all shops, toggle active, change plan). To inspect a shop's data it **drills in**
+  (`bmsEnterTenant` → signed context switch + banner) rather than viewing all tenants at once
+- Auth vs authorization: **401** (not logged in) forces logout; **403** (no permission) just shows an error
 
 ---
 
@@ -223,6 +239,41 @@ Caddy terminates TLS and reverse-proxies **web** and **ws**.
 > ⚠️ **Production safety:** back up the database before running migrations,
 > prefer read-only `SELECT`/`SHOW` checks before schema changes, and roll out
 > the smallest change first. Never restart production services casually.
+
+---
+
+### 🤖 Automation — Daily AI Log Triage
+
+A daily GitHub Actions workflow reads errors from `system_logs`, has Claude
+diagnose + propose a minimal fix, opens a **draft PR** (human reviews — never
+auto-merged), then notifies the team on **LINE** with the PR link.
+
+```
+cron (daily) → collect + redact logs → Claude analyze/patch → draft PR → LINE alert 🔔
+```
+
+- Files: [`.github/workflows/daily-log-triage.yml`](./.github/workflows/daily-log-triage.yml) · [`scripts/bms-log-triage/`](./scripts/bms-log-triage/)
+- Secrets: `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO` (optional)
+- Guardrails: logs redacted (email/phone/token/PII) before leaving; draft PR only; AI won't touch migrations/secrets/config
+- LINE alerts use **Messaging API push** (LINE Notify was discontinued Mar 2025)
+
+---
+
+### 🧪 Testing — Fake Data Seeder (dev only)
+
+`/admin/dev/fake` (+ `/api/dev/fake/*`) bulk-generates test data so every screen
+has content — up to 2000 rows/run, disabled in production, admin-only.
+
+| Generator | Fills |
+| --- | --- |
+| Products / Customers | Products, Customers |
+| Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
+| Conversations (+ messages) | Inbox |
+| Purchase (suppliers + PO) | Purchase |
+
+- Recommended order: **Products → Customers → Orders → Conversations → Purchase**
+- All fake rows are tagged (`FAKE-` SKU / `FAKE-` customer_ref / `fake` tag) → one **Cleanup** removes everything (FK-safe)
+- Orders/PO don't move stock (analytics fill); use the Playground for real reserve/ship flows
 
 ---
 
@@ -298,17 +349,17 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 
 | โมดูล | หน้าที่ |
 | --- | --- |
-| **Channel Integration** | แปลงทุกแพลตฟอร์มให้เป็นรูปแบบข้อความภายในแบบเดียว |
-| **Omnichannel Inbox** | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ต, แท็ก, timeline |
+| **Channel Integration** ✅ | Webhook แยกต่อร้าน: LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — รวมเข้า pipeline เดียว (ตรวจ signature) |
+| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) |
 | **AI Orchestrator** | ตรวจ intent, ดึง entity, เลือก tool |
 | **CRM** | โปรไฟล์ลูกค้าข้ามช่องทาง, ประวัติซื้อ, มูลค่าตลอดชีพ |
 | **Product Management** | สินค้า, variant, SKU, barcode, ราคา, หมวดหมู่ |
 | **Inventory (IMS)** | สต็อก คงเหลือ / จอง / พร้อมขาย — ทุกการเปลี่ยนแปลงต้องบันทึก movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
-| **Purchase** | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ |
-| **Payment** | โอน, QR, บัตร, TikTok Pay, เงินสด (ตรวจสลิปด้วย AI อยู่ใน roadmap) |
-| **Shipping** | Flash, Kerry, DHL, Australia Post, NZ Post — tracking & label |
-| **Reports** | Dashboard ยอดขาย, สต็อก, ลูกค้า, ซัพพลายเออร์, การเงิน, การใช้ AI |
+| **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |
+| **Payment** ✅ | โอน, QR, บัตร, TikTok Pay, เงินสด — บันทึกการชำระ + ยืนยัน/ปฏิเสธ/คืนเงิน + ตรวจสลิปด้วย AI (`verifyPaymentSlip` แนะนำเท่านั้น) |
+| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — จัดส่ง, tracking, สถานะ, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Reports** ✅ | Dashboard + รายงานยอดขายตามช่วงวันที่ (รายวัน/สถานะ/ช่องทาง), สรุปสต็อก (มูลค่า, ใกล้หมด/หมด), สินค้าขายดี — `/admin/reports` |
 
 > ⚠️ **ทุกการเปลี่ยนสต็อกต้องสร้าง Stock Movement** ห้ามอัปเดตสต็อกโดยไม่บันทึก
 
@@ -339,10 +390,16 @@ API routes ใน [`apps/web/app/api/bms/`](./apps/web/app/api/bms/)
 AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
 
 - สมัครเองแล้วสร้าง tenant + แพ็กเกจ/บิลลิ่งอัตโนมัติ
-- Webhook แยกต่อร้าน: `/api/bms/line/webhook/{tenantId}` และ
-  `/api/bms/tiktok/webhook/{tenantId}` พร้อมตรวจ signature
+- Webhook แยกต่อร้าน: LINE, TikTok, **Facebook Messenger, Instagram DM**
+  (`/api/bms/{channel}/webhook/{tenantId}` ตรวจ signature) + **Website Live Chat**
+  แบบ public (`/api/bms/web/webhook/{tenantId}`)
 - credential ของช่องทางแยกต่อร้าน — ตอบกลับด้วย **token ของร้านนั้น**
 - roles / permissions แยกต่อร้าน, rate-limit webhook และ audit log
+- ทุก query/mutation เชิงปฏิบัติการ scope ต่อร้าน (`getTenantId(ctx)` + RLS) — ร้านเห็นเฉพาะข้อมูลตัวเอง
+- **platform admin** (`users.is_platform_admin`) จัดการทั้งแพลตฟอร์มที่ `/admin/tenants`
+  (list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan) · อยากดูข้อมูลในร้านให้ **drill-down**
+  (`bmsEnterTenant` → สลับ context แบบ signed + banner) แทนการดูข้ามร้านปนกัน
+- 401 (ไม่ได้ล็อกอิน) = บังคับ logout · 403 (ไม่มีสิทธิ์) = แสดง error เฉย ๆ ไม่เตะออก
 
 ---
 
@@ -392,6 +449,40 @@ Caddy จะจัดการ TLS และ reverse-proxy ไปยัง **web
 > ⚠️ **ความปลอดภัย production:** สำรอง DB ก่อนรัน migration, ตรวจด้วย
 > `SELECT`/`SHOW` (read-only) ก่อนแก้ schema, ปล่อยการเปลี่ยนแปลงเล็กที่สุดก่อน
 > และห้าม restart service บน production แบบไม่จำเป็น
+
+---
+
+### 🤖 ระบบอัตโนมัติ — Daily AI Log Triage
+
+GitHub Actions รันทุกวัน: ดึง error จาก `system_logs` → ให้ Claude วิเคราะห์ + เสนอแพตช์
+→ เปิด **draft PR** (คนรีวิว ไม่ merge เอง) → แจ้งเตือนทีมผ่าน **LINE** พร้อมลิงก์ PR
+
+```
+cron รายวัน → ดึง+redact log → Claude แก้ → draft PR → แจ้ง LINE 🔔
+```
+
+- ไฟล์: [`.github/workflows/daily-log-triage.yml`](./.github/workflows/daily-log-triage.yml) · [`scripts/bms-log-triage/`](./scripts/bms-log-triage/)
+- Secrets: `BMS_LOG_DATABASE_URL` (read-only), `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO` (ทางเลือก)
+- Guardrails: redact log (email/phone/token/PII) ก่อนส่งออก · draft PR เท่านั้น · AI ไม่แตะ migration/secret/config
+- LINE ใช้ **Messaging API push** (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
+
+---
+
+### 🧪 การทดสอบ — Fake Data Seeder (dev เท่านั้น)
+
+`/admin/dev/fake` (+ `/api/dev/fake/*`) สร้างข้อมูลทดสอบทีละมากๆ ให้ทุกหน้ามีข้อมูล —
+สูงสุด 2000 แถว/ครั้ง, ปิดใน production, เฉพาะ admin
+
+| Generator | เติมหน้า |
+| --- | --- |
+| Products / Customers | Products, Customers |
+| Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
+| Conversations (+ messages) | Inbox |
+| Purchase (suppliers + PO) | Purchase |
+
+- ลำดับแนะนำ: **Products → Customers → Orders → Conversations → Purchase**
+- ข้อมูล fake มี marker (`FAKE-` SKU / `FAKE-` customer_ref / tag `fake`) → กด **Cleanup** ครั้งเดียวลบหมด (ปลอดภัยตาม FK)
+- Orders/PO ไม่ขยับสต็อก (เติม analytics) — ถ้าจะเทสต์ reserve/ship จริงให้ใช้ Playground
 
 ---
 

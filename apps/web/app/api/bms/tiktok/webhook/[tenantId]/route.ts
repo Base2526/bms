@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
+import { logConversation } from "@/lib/bms/inbox";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -48,7 +49,12 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   for (const m of messages) {
     const text = m.content?.text?.trim() ?? "";
     if (!text) continue;
-    const result = await runPipeline(text, "tiktok", tenantId, m.user_id ?? null);
+    const userId = m.user_id ?? null;
+    const result = await runPipeline(text, "tiktok", tenantId, userId);
+
+    // บันทึกลง inbox (เข้า+ออก) — best-effort
+    await logConversation(tenantId, "tiktok", userId, text, result.reply);
+
     // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API ด้วย cfg.access_token
     replies.push({ userId: m.user_id, reply: result.reply });
   }

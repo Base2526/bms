@@ -54,3 +54,17 @@ export function verifyLineSignature(channelSecret: string, rawBody: string, sign
     return false;
   }
 }
+
+/**
+ * verify Meta (Facebook/Instagram) signature: header "sha256=<hex HMAC-SHA256(appSecret, rawBody)>"
+ * ใช้กับ X-Hub-Signature-256
+ */
+export function verifyMetaSignature(appSecret: string, rawBody: string, signatureHeader: string | null): boolean {
+  if (!signatureHeader) return false;
+  const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
+  } catch {
+    return false;
+  }
+}

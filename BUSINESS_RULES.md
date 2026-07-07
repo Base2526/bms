@@ -10,6 +10,12 @@ Business logic belongs here.
 
 Never duplicate business logic inside AI prompts.
 
+> **Implementation status (2026-07):** โมดูลเชิงปฏิบัติการทั้งหมดสร้างเสร็จแล้ว —
+> Products/IMS, Orders (OMS), Purchase (PO), Payment, Shipping, CRM, Omnichannel Inbox,
+> Reports, Channels (LINE/TikTok/Facebook/Instagram/Web), Multi-tenant + RLS + RBAC + Billing.
+> business logic อยู่ใน `apps/web/lib/bms/*` (ที่เดียว ใช้ร่วม REST + GraphQL) — ดู mapping ใน TOOLS.md
+> ค่า enum จริงในโค้ดระบุไว้ในแต่ละหัวข้อด้านล่างด้วย (บางชื่อกระชับกว่าในสเปกเดิม)
+
 ---
 
 # Customer
@@ -91,25 +97,30 @@ Always use Inventory Service.
 
 Movement Types
 
-STOCK_IN
+> **Implemented (`bms_stock_movements.type`):** `STOCK_IN` · `STOCK_OUT` · `RESERVE` · `RELEASE` · `SHIP` · `RETURN`
+> (TRANSFER / ADJUSTMENT / DAMAGED = roadmap; ADJUSTMENT ปัจจุบันบันทึกเป็น STOCK_IN/STOCK_OUT)
 
-STOCK_OUT
+STOCK_IN — ปรับสต็อกเพิ่ม หรือรับของจาก Purchase Order (receive)
 
-RESERVE
+STOCK_OUT — ปรับสต็อกลด
 
-RELEASE
+RESERVE — สร้าง order (จองสต็อก)
 
-TRANSFER
+RELEASE — ยกเลิก order / auto-release (คืนจอง)
 
-ADJUSTMENT
+SHIP — จัดส่ง (ตัดของออกถาวร: current − qty, reserved − qty)
 
-RETURN
-
-DAMAGED
+RETURN — คืนสินค้า (คืนของเข้าคลัง)
 
 ---
 
 # Orders
+
+> **Implemented (`bms_orders.status`):** `PENDING` → `PAID` → `PACKING` → `SHIPPED` → `COMPLETED`
+> · `CANCELLED` (คืน reserved ก่อนส่ง) · `RETURNED` (คืนสต็อกหลังส่ง)
+> ระบบสร้าง order ที่ PENDING พร้อม reserve เลย (ไม่มีสถานะ Draft แยก) ·
+> การคืนเงินจัดการที่ Payment (`REFUNDED`) คู่กับ order `RETURNED`
+> ทุก transition เป็น **atomic** (กัน oversell / ตัดสต็อกซ้ำ)
 
 Order lifecycle
 
@@ -197,6 +208,11 @@ AI may verify payment slip.
 
 Only backend confirms payment.
 
+> **Implemented (`bms_payments`):** method = `BANK_TRANSFER` / `QR` / `CARD` / `TIKTOK` / `CASH` ·
+> status = `PENDING` → `CONFIRMED` (→ order PAID, atomic) · `REJECTED` · `REFUNDED` (สิทธิ์ manager)
+> `verifyPaymentSlip()` = Claude vision อ่านสลิปเทียบยอด → **แนะนำเท่านั้น ไม่เปลี่ยนสถานะ**
+> (คนต้องกด confirm) · permissions: `payment.submit/confirm/refund/view`
+
 ---
 
 # Shipping
@@ -217,25 +233,34 @@ NZ Post
 
 Order cannot be Completed before Shipped.
 
+> **Implemented (`bms_shipments`):** carrier = `FLASH` / `KERRY` / `DHL` / `AUSPOST` / `NZPOST` / `OTHER` ·
+> status = `PENDING` → `SHIPPED` → `IN_TRANSIT` → `DELIVERED` (└→ `RETURNED` / `CANCELLED`) ·
+> `createShipment` จาก order PACKING → ตัดสต็อก + order SHIPPED · `DELIVERED` → order COMPLETED ·
+> label เป็นข้อมูล (ยังไม่ต่อ carrier API) · permissions: `shipping.create/update/view`
+
 ---
 
 # Purchase Orders
 
 Status
 
-Draft
+> **Implemented (`bms_purchase_orders.status`):** `OPEN` → `PARTIAL` → `RECEIVED` (└→ `CANCELLED`)
 
-Ordered
+Draft → OPEN
 
-Partially Received
+Ordered → OPEN
 
-Received
+Partially Received → PARTIAL
 
-Cancelled
+Received → RECEIVED
 
-Receiving goods automatically increases inventory.
+Cancelled → CANCELLED
 
-Cancelled PO cannot receive products.
+Receiving goods automatically increases inventory (STOCK_IN movement).
+
+Cancelled PO cannot receive products. Cancel ได้เฉพาะก่อนรับครบ — ของที่รับไปแล้วไม่ถูกดึงออก.
+
+permissions: `purchase.edit/receive/cancel/view`
 
 ---
 
@@ -246,6 +271,11 @@ Every conversation belongs to one customer.
 Conversation must never be deleted.
 
 Internal notes are not visible to customers.
+
+> **Implemented — Omnichannel Inbox (`bms_conversations` / `bms_messages` / `bms_conversation_notes`):**
+> ทุกข้อความจากทุกช่องทาง (+ คำตอบ AI) ถูกบันทึกอัตโนมัติ (`logConversation`) · 1 บทสนทนา =
+> (tenant, channel, customer_ref) · assign staff · status OPEN/PENDING/CLOSED · tags · โน้ตภายใน ·
+> timeline (message + note + order) · staff ตอบเองได้ (`sendStaffMessage`) · permissions: `inbox.view/reply/manage`
 
 ---
 
@@ -293,9 +323,29 @@ After
 
 Reason
 
+> **Implemented — Observability + Daily AI Log Triage:** log แบบ structured เก็บใน `system_logs` ·
+> GitHub Actions รายวันอ่าน error → Claude เสนอแพตช์ → **draft PR** (คนรีวิว ไม่ auto-merge) → แจ้ง LINE ·
+> log ถูก **redact** (email/phone/token/PII) ก่อนส่งออก external · AI ห้ามแตะ migration/secret/config
+> (`.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/`)
+
 ---
 
 # Permissions
+
+> **Implemented — per-tenant RBAC (`bms_role_permissions`, PK = tenant_id+role_id+permission):**
+> 26 สิทธิ์แบบ `resource.action` — `product.view/edit/delete` · `stock.adjust` · `order.view/pay/ship/cancel/return` ·
+> `purchase.view/edit/receive/cancel` · `payment.view/submit/confirm/refund` · `shipping.view/create/update` ·
+> `inbox.view/reply/manage` · `customer.view/edit` · `report.view`
+> `Administrator` = super (bypass) · แต่ละร้านปรับสิทธิ์ role ของตัวเองได้ (เมนู Permissions) ·
+> UI ซ่อนปุ่มตามสิทธิ์ + resolver `requirePermission()` ปฏิเสธ 403 ถ้าไม่มีสิทธิ์
+>
+> **RBAC 2 ชั้น:** *platform admin* (`users.is_platform_admin`) = ดูแลทั้งแพลตฟอร์ม (list/จัดการทุกร้าน, plan, role กลาง) ·
+> *tenant role* (Administrator/Manager/Sales/Warehouse) = จัดการเฉพาะร้านตัวเอง.
+> จัดการ **User** = Administrator/platform (scope ตามร้าน) · จัดการ **Role กลาง** = platform เท่านั้น.
+> platform admin ดูข้อมูล operational ของร้าน (ลูกค้า/ออเดอร์) ผ่าน **drill-down** เท่านั้น — ไม่เห็นข้ามร้านปนกัน (privacy).
+>
+> **401 vs 403:** 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับ logout · 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ → แสดง error, **ไม่ logout**.
+> role ใหม่/permission ใหม่ต้อง seed ให้ Manager/Sales/Warehouse ทุก tenant (เช่น migration `5.7`) ไม่งั้นร้านโดน 403
 
 Admin
 
@@ -345,6 +395,18 @@ Inventory Adjustment
 
 All notifications should be logged.
 
+> **Implemented:** LINE ops alert เมื่อ Daily Log Triage เปิด draft PR (Messaging API push) ·
+> business notifications อื่น (low stock / new order / payment / shipment) = roadmap
+
+---
+
+# Dev / Test Data
+
+ข้อมูลทดสอบสร้างผ่าน `/admin/dev/fake` (dev only, ปิดใน production) — mark ด้วย
+`FAKE-` (SKU / customer_ref) หรือ tag `fake` เพื่อแยกออกจากข้อมูลจริงและ cleanup ได้
+**ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น) ·
+seed/cleanup **scope ต่อ tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง เห็นในร้านตัวเอง — ไม่ปนข้ามร้าน)
+
 ---
 
 # Reports
@@ -354,6 +416,10 @@ Reports are read-only.
 Reports never modify business data.
 
 Reports must always use transactional data.
+
+> **Implemented (`lib/bms/dashboard.ts` + `lib/bms/reports.ts`):** Dashboard (ภาพรวมวันนี้) ·
+> `getSalesSummary(from,to)` (รายวัน/สถานะ/ช่องทาง) · `getInventorySummary` (มูลค่า/ใกล้หมด/หมด) ·
+> `getTopSellingProducts` · รายได้นับเฉพาะ PAID ขึ้นไป · permission `report.view`
 
 ---
 

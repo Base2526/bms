@@ -20,6 +20,14 @@ const tables = [
   { t: "bms_customers", pk: "id (uuid)", cols: "tenant_id, name, phone, tags[], deleted_at", note: "ลูกค้า (soft delete)" },
   { t: "bms_customer_identities", pk: "id", cols: "tenant_id, customer_id, channel, external_ref", note: "map ช่องทาง→ลูกค้า · uniq(tenant,channel,ref)" },
   { t: "bms_customer_addresses", pk: "id", cols: "tenant_id, customer_id, label, address, is_default", note: "หลายที่อยู่/คน" },
+  { t: "bms_suppliers", pk: "id (uuid)", cols: "tenant_id, name, phone, email · uniq(tenant,name)", note: "ผู้ขาย (Purchase)" },
+  { t: "bms_purchase_orders", pk: "id (uuid)", cols: "tenant_id, supplier_id, status, total_amount", note: "PO · OPEN→PARTIAL→RECEIVED" },
+  { t: "bms_purchase_order_items", pk: "id", cols: "tenant_id, po_id, product_sku, size, qty_ordered, qty_received, unit_cost", note: "รายการ PO · FK→products" },
+  { t: "bms_payments", pk: "id (uuid)", cols: "tenant_id, order_id, method, amount, status, slip_url, verify_result(jsonb)", note: "การชำระ · FK→orders" },
+  { t: "bms_shipments", pk: "id (uuid)", cols: "tenant_id, order_id, carrier, tracking_no, status, label_url", note: "จัดส่ง · FK→orders" },
+  { t: "bms_conversations", pk: "id (uuid)", cols: "tenant_id, channel, customer_ref, customer_id, status, assigned_to, tags[], unread", note: "Inbox · uniq(tenant,channel,ref)" },
+  { t: "bms_messages", pk: "id", cols: "tenant_id, conversation_id, direction(IN/OUT), body, sender", note: "ข้อความ · FK→conversations" },
+  { t: "bms_conversation_notes", pk: "id", cols: "tenant_id, conversation_id, author, body", note: "โน้ตภายใน · FK→conversations" },
 ];
 
 const rels = [
@@ -27,7 +35,11 @@ const rels = [
   { p: "bms_products (tenant_id, sku)", c: "bms_inventory / bms_order_items / bms_stock_movements", k: "(tenant_id, product_sku)" },
   { p: "bms_inventory", c: "bms_order_items", k: "(tenant_id, product_sku, size)" },
   { p: "bms_orders", c: "bms_order_items", k: "order_id" },
-  { p: "bms_customers", c: "bms_orders / identities / addresses", k: "customer_id" },
+  { p: "bms_customers", c: "bms_orders / identities / addresses / conversations", k: "customer_id" },
+  { p: "bms_orders", c: "bms_payments / bms_shipments", k: "order_id" },
+  { p: "bms_suppliers", c: "bms_purchase_orders", k: "supplier_id" },
+  { p: "bms_purchase_orders", c: "bms_purchase_order_items", k: "po_id" },
+  { p: "bms_conversations", c: "bms_messages / bms_conversation_notes", k: "conversation_id" },
   { p: "bms_plans (code)", c: "bms_tenants.plan", k: "plan code" },
 ];
 
@@ -44,7 +56,8 @@ const migrations = [
   "3.5 OMS states", "3.6 CRM", "3.7 RBAC",
   "4.0 multi-tenant (tenant_id + re-key)", "4.1 users.tenant_id",
   "4.2 RLS policies", "4.3 RLS role (bms_app)", "5.0 plans",
-  "5.1 per-tenant RBAC + audit log",
+  "5.1 per-tenant RBAC + audit log", "5.2 purchase (suppliers/PO)",
+  "5.3 payments", "5.4 shipments", "5.5 inbox (conversations/messages/notes)",
 ];
 
 function Sec({ id, children }: { id: string; children: React.ReactNode }) {
@@ -69,7 +82,8 @@ export default function Page() {
     { key: "a-rbac", href: "#a-rbac", title: "5. RBAC model" },
     { key: "a-billing", href: "#a-billing", title: "6. Billing & Quota" },
     { key: "a-mig", href: "#a-mig", title: "7. Migrations" },
-    { key: "a-prod", href: "#a-prod", title: "8. Production checklist" },
+    { key: "a-obs", href: "#a-obs", title: "8. Observability & Log Triage" },
+    { key: "a-prod", href: "#a-prod", title: "9. Production checklist" },
   ];
 
   return (
@@ -86,10 +100,14 @@ export default function Page() {
             </Paragraph>
             <Paragraph>เลเยอร์:</Paragraph>
             <ul>
-              <li><b>Channel/Webhook</b> (route ต่อ tenant) → <b>Pipeline/NLU</b> (lib/bms/pipeline) → <b>Domain services</b> (products/orders/customers/plans) → <b>Postgres</b></li>
+              <li><b>Channel/Webhook</b> (route ต่อ tenant: LINE/TikTok/FB/IG/Web) → <b>Pipeline/NLU</b> (lib/bms/pipeline) → <b>Domain services</b> → <b>Postgres</b> · ทุกแชทถูก log ลง Inbox</li>
+              <li><b>Domain services</b> (lib/bms/*): products, orders, purchase, payments, shipping, inbox, customers, reports, plans — ที่เดียวใช้ร่วมทั้ง REST + GraphQL (ไม่ซ้ำตรรกะ)</li>
               <li><b>Admin UI</b> (antd + Apollo) → <b>GraphQL resolvers</b> (graphql/bms*) → domain services เดียวกัน</li>
               <li>ทุก service รับ <Text code>tenantId</Text> + scope query · write-tx เพิ่ม RLS (role bms_app)</li>
             </ul>
+            <Alert type="info" showIcon style={{ marginTop: 8 }}
+              message="order lifecycle ครบวงจร: order → payment (confirm) → shipping (create → delivered) โดยแต่ละ service เดินสถานะ order ให้เอง (atomic) และบันทึก stock movement ทุกครั้งที่สต็อกขยับ" />
+
           </Sec>
 
           <Sec id="a-data">
@@ -117,6 +135,9 @@ export default function Page() {
                 <line x1={670} y1={144} x2={670} y2={200} stroke="#bbb" />
               </svg>
             </div>
+            <Paragraph type="secondary" style={{ fontSize: 12, marginTop: -8 }}>
+              แผนภาพแสดง<b>ตารางแกน</b> (tenant + สินค้า/ออเดอร์/ลูกค้า) · โมดูลเชิงปฏิบัติการ (purchase / payment / shipping / inbox) ผูกกับ orders/customers ตามตารางด้านล่าง
+            </Paragraph>
             <Table size="small" pagination={false} rowKey="t" dataSource={tables}
               columns={[
                 { title: "Table", dataIndex: "t", render: (t) => <Text code>{t}</Text> },
@@ -139,7 +160,9 @@ export default function Page() {
             <Alert style={{ marginTop: 8 }} type="warning" showIcon
               message="Failure paths: signature ไม่ตรง → 401 · channel ยังไม่เชื่อม → 200 skipped (กัน LINE retry) · order oversell → rollback"
             />
-            <Paragraph style={{ marginTop: 8 }} type="secondary">TikTok: โครงเดียวกัน (verify HMAC hex header) — <Text code>/api/bms/tiktok/webhook/{`{tenantId}`}</Text></Paragraph>
+            <Paragraph style={{ marginTop: 8 }} type="secondary">
+              ช่องทางอื่นใช้โครงเดียวกัน: <b>TikTok</b> (HMAC hex header) · <b>Facebook/Instagram</b> (GET verify hub.challenge + POST verify X-Hub-Signature-256, ตอบผ่าน Graph Send API) · <b>Website Live Chat</b> (public + CORS, ตอบใน HTTP response ทันที). ทุกช่องทางเรียก <Text code>runPipeline</Text> + <Text code>logConversation</Text> เดียวกัน → เข้า Inbox อัตโนมัติ · reply ออกจริงผ่าน <Text code>deliverToChannel()</Text> (LINE push / FB-IG Graph; TikTok ยัง persist-only)
+            </Paragraph>
           </Sec>
 
           <Sec id="a-security">
@@ -158,9 +181,10 @@ export default function Page() {
           <Sec id="a-rbac">
             <Title level={4}>5. RBAC model</Title>
             <Paragraph>
-              Permission แบบ <Text code>resource.action</Text> (12 ตัว: product.*/stock.adjust/order.*/customer.*/report.view)
+              Permission แบบ <Text code>resource.action</Text> (26 ตัว: product.* · stock.adjust · order.* · purchase.* · payment.* · shipping.* · inbox.* · customer.* · report.view)
               → เก็บใน <Text code>bms_role_permissions</Text> <b>per-tenant</b> (PK = tenant_id+role_id+permission)
               · <b>Administrator</b> = super (bypass) · โหลดสิทธิ์ cache ต่อ request · signup คัดลอก template ให้ร้านใหม่
+              · เพิ่ม/แก้ permission ในโค้ดที่ <Text code>BMS_PERMISSIONS</Text> (lib/bms/permissions.ts) แล้วโผล่ในเมนู Permissions อัตโนมัติ
             </Paragraph>
             <Alert type="success" showIcon message="Per-tenant RBAC: แต่ละร้านปรับสิทธิ์ role ของตัวเองได้อิสระ ไม่กระทบร้านอื่น (เมนู Permissions)" />
           </Sec>
@@ -180,8 +204,29 @@ export default function Page() {
             <Paragraph style={{ marginTop: 8 }} type="secondary">apply ตามลำดับ · 4.0 เป็น idempotent (รันซ้ำได้)</Paragraph>
           </Sec>
 
+          <Sec id="a-obs">
+            <Title level={4}>8. Observability & Daily Log Triage</Title>
+            <Paragraph>
+              log แบบ structured เก็บใน <Text code>system_logs</Text> (level/category/message/error_message/stack/status/route_name/created_at)
+              เขียนผ่าน <Text code>lib/logger.ts</Text> — ใช้เป็นแหล่งให้ระบบ triage อัตโนมัติ
+            </Paragraph>
+            <Steps direction="vertical" size="small" current={-1} items={[
+              { title: "Cron รายวัน (GitHub Actions)", description: <><Text code>.github/workflows/daily-log-triage.yml</Text> — 22:00 UTC (~09:00 AEST) หรือกด Run เอง</> },
+              { title: "ดึง + redact log", description: <><Text code>scripts/bms-log-triage/collect-error-logs.mjs</Text> — error 24 ชม.ล่าสุด, จัดกลุ่ม/dedupe, ปิดบัง email/phone/token/api-key/enc/hex/ip → <Text code>bms-log-report.md</Text></> },
+              { title: "Claude วิเคราะห์ + เสนอแพตช์", description: "อ่าน report → หา root cause ใน apps/web → แก้เฉพาะที่มั่นใจ (minimal) → npx tsc เช็ค" },
+              { title: "เปิด draft PR", description: "branch bot/log-triage-<วันที่> → base main → คนรีวิว/merge เอง" },
+              { title: "แจ้งเตือน LINE", description: <>push ผ่าน LINE Messaging API (<Text code>scripts/bms-log-triage/notify-line.mjs</Text>) พร้อมลิงก์ PR — LINE Notify ปิดบริการแล้ว จึงใช้ push ของ OA ทีม ops (ไม่ตั้ง secret = ข้าม)</> },
+            ]} />
+            <Alert type="warning" showIcon style={{ marginTop: 8 }}
+              message="Guardrails: draft PR เสมอ (ไม่ auto-merge/deploy) · redact ก่อนส่งออก (data residency AU/UK) · AI ห้ามแตะ migration/secret/config · secrets: BMS_LOG_DATABASE_URL (READ-ONLY), ANTHROPIC_API_KEY + (ทางเลือก) LINE_OPS_TOKEN, LINE_OPS_TO"
+            />
+            <Paragraph style={{ marginTop: 8 }} type="secondary">
+              ไม่อยากส่ง log ออก cloud → ใช้ self-hosted runner ในวงเน็ตเวิร์ก (แก้ <Text code>runs-on</Text>) · ดู <Text code>scripts/bms-log-triage/README.md</Text>
+            </Paragraph>
+          </Sec>
+
           <Sec id="a-prod">
-            <Title level={4}>8. Production checklist</Title>
+            <Title level={4}>9. Production checklist</Title>
             <Alert type="error" showIcon message="ต้องทำก่อนขายจริง" description={
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 <li>เปิด <Text code>bcrypt.compare</Text> ใน loginAdmin (ตอนนี้ dev ไม่ตรวจรหัสผ่าน)</li>

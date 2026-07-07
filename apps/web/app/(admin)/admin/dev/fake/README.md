@@ -4,6 +4,27 @@
 
 ---
 
+## ✅ BMS Fake Data (สร้างจำนวนมากเพื่อทดสอบ)
+
+เพิ่ม generator สำหรับ **BMS products / customers** (สูงสุด 2000/ครั้ง, insert คิวรี่เดียวด้วย `generate_series`):
+
+| Kind | Endpoint | สร้างอะไร | เติมหน้าจอ | marker |
+|---|---|---|---|---|
+| `bms-products` | `POST /api/dev/fake/bms-products` | products + inventory S/M/L/XL | Products | SKU `FAKE-` + keyword `fake` |
+| `bms-customers` | `POST /api/dev/fake/bms-customers` | customers (ชื่อ/เบอร์/tag สุ่ม) | Customers | tag `fake` |
+| `bms-orders` | `POST /api/dev/fake/bms-orders` | orders (backdate 30 วัน, หลายสถานะ/ช่องทาง) + items + payment + shipment | Dashboard, Reports, CRM, Payment, Shipping | customer_ref `FAKE-` |
+| `bms-conversations` | `POST /api/dev/fake/bms-conversations` | conversations + messages (บทสนทนาสำเร็จรูป) | Inbox | customer_ref `FAKE-` + tag `fake` |
+| `bms-purchase` | `POST /api/dev/fake/bms-purchase` | suppliers + PO + items (หลายสถานะ OPEN/PARTIAL/RECEIVED/CANCELLED) | Purchase | PO note `FAKE%` + supplier `FAKE %` |
+
+**ลำดับแนะนำ:** Products → Customers → Orders → Conversations → Purchase (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่)
+
+- ลงที่ **tenant default** (ส่ง `{ tenantId }` ใน body เพื่อระบุร้านอื่นได้) · สูงสุด 2000/ครั้ง
+- **Orders ไม่ขยับสต็อก** (ใช้เติม analytics) — ถ้าจะเทสต์ flow จ่าย/ส่งจริง ให้สั่งผ่าน Playground · สถานะเน้น revenue (COMPLETED/PAID/SHIPPED + CANCELLED/RETURNED)
+- **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามตัวที่ยังมี order อ้างถึง
+- BMS tables ไม่มีคอลัมน์ `fake_test` จึงใช้ marker `FAKE-` / tag `fake` แทน (ไม่ต้องแก้ schema)
+
+---
+
 ## แนวคิดความปลอดภัย (สำคัญ)
 
 1. **ห้ามเปิดหน้า/endpoint นี้ใน production** — ตรวจ `NODE_ENV !== 'production'` หรือ require `INTERNAL_SECRET` / `x-internal` signature / admin cookie ก่อนอนุญาต

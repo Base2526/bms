@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Button, Badge, Typography, Layout, Menu, message } from 'antd';
+import { Button, Badge, Typography, Layout, Menu, message, Avatar, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
@@ -22,9 +22,17 @@ import {
   AppstoreOutlined,
   BookOutlined,
   PartitionOutlined,
+  ImportOutlined,
+  DollarOutlined,
+  CarOutlined,
+  MessageOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/useSession';
+import { gql, useQuery } from '@apollo/client';
+
+const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 
 const { Title } = Typography;
 const { Header } = Layout;
@@ -47,11 +55,16 @@ const link = (href: string, text: string, icon: React.ReactNode, badge = 0) => (
 
 export default function AdminHeader() {
   const pathname = usePathname();
-  const { refreshSession } = useSession();
+  const { admin, refreshSession } = useSession();
+  const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-and-network' });
+  const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
+  const isAdministrator = admin?.role === 'Administrator';
+  const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
 
   // จัดกลุ่มเมนูเป็นหมวด → dropdown
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
+    link('/admin/reports', 'Reports', <BarChartOutlined />),
     link('/admin/manual', 'คู่มือ', <BookOutlined />),
     link('/admin/architecture', 'Architecture', <PartitionOutlined />),
     {
@@ -59,8 +72,12 @@ export default function AdminHeader() {
       icon: <ShopOutlined />,
       label: 'ร้านค้า',
       children: [
+        link('/admin/inbox', 'Inbox', <MessageOutlined />),
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
+        link('/admin/payment', 'Payment', <DollarOutlined />),
+        link('/admin/shipment', 'Shipping', <CarOutlined />),
         link('/admin/customers', 'Customers', <TeamOutlined />),
         link('/admin/playground', 'Playground', <ExperimentOutlined />),
       ],
@@ -72,19 +89,21 @@ export default function AdminHeader() {
       children: [
         link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
+        ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
       ],
     },
-    {
+    ...(canManageAccess ? [{
       key: 'g-access',
       icon: <SafetyOutlined />,
       label: 'ผู้ใช้/สิทธิ์',
       children: [
         link('/admin/users', 'Users', <UserOutlined />, 3),
-        link('/admin/roles', 'Roles', <SnippetsOutlined />),
+        // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
+        ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
         link('/admin/audit', 'Audit log', <BookOutlined />),
       ],
-    },
+    }] : []),
     {
       key: 'g-system',
       icon: <AppstoreOutlined />,
@@ -146,6 +165,35 @@ export default function AdminHeader() {
           borderBottom: 'none',
         }}
       />
+
+      {admin && (
+        <Tooltip title="ดูโปรไฟล์ของฉัน">
+          <Link
+            href="/admin/profile"
+            style={{
+              flex: '0 0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 10px',
+              height: 36,
+              borderRadius: 18,
+              border: '1px solid var(--app-border)',
+              color: 'var(--app-text)',
+              maxWidth: 220,
+              overflow: 'hidden',
+            }}
+          >
+            <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
+            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {admin.name || admin.username || admin.email}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--app-text-secondary, #888)' }}>{admin.role}</span>
+            </span>
+          </Link>
+        </Tooltip>
+      )}
 
       <Button
         icon={<LogoutOutlined />}

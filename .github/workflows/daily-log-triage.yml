@@ -1,0 +1,92 @@
+name: Daily Log Triage (AI → draft PR)
+
+# ทุกวัน: อ่าน error จาก system_logs → ให้ Claude วิเคราะห์ + เสนอแพตช์ → เปิด draft PR ให้คนรีวิว
+# ตั้งค่าที่ต้องมี (Settings → Secrets and variables → Actions):
+#   secrets.BMS_LOG_DATABASE_URL  — connection string (แนะนำ user READ-ONLY, เปิด network ให้ runner เข้าถึง)
+#   secrets.ANTHROPIC_API_KEY     — API key ของ Claude
+# หมายเหตุ production-safety: เปิดเป็น "draft PR" เสมอ — ห้าม auto-merge/deploy
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # 22:00 UTC ทุกวัน (~09:00 AEST) — ปรับได้
+  workflow_dispatch:        # กดรันเองเพื่อทดสอบ
+
+# กันหลายรอบชนกัน
+concurrency:
+  group: bms-log-triage
+  cancel-in-progress: false
+
+permissions:
+  contents: write          # สร้าง branch/commit
+  pull-requests: write     # เปิด PR
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Collect & redact error logs
+        id: collect
+        env:
+          BMS_LOG_DATABASE_URL: ${{ secrets.BMS_LOG_DATABASE_URL }}
+          LOG_WINDOW_HOURS: "24"
+          LOG_MAX_GROUPS: "30"
+        run: |
+          npm i pg@8 --no-save
+          node scripts/bms-log-triage/collect-error-logs.mjs
+          echo "---- report preview ----"
+          head -40 bms-log-report.md || true
+
+      - name: Analyze & propose fixes (Claude) + open draft PR
+        if: steps.collect.outputs.has_errors == 'true'
+        uses: anthropics/claude-code-action@v1   # pin เวอร์ชันตามที่ทีมใช้ได้
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # จำกัดเครื่องมือให้ปลอดภัย: อ่าน/แก้โค้ด + typecheck + git/gh เท่านั้น
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(gh:*),Bash(npx tsc:*),Bash(npm:*)"
+          prompt: |
+            คุณเป็นวิศวกรที่ช่วย triage error รายวันของโปรเจกต์ AI-BMS (Next.js + GraphQL + Postgres)
+
+            อ่านไฟล์ `bms-log-report.md` (สรุป error 24 ชม.ล่าสุด จาก system_logs, redact แล้ว)
+
+            งาน:
+            1. วิเคราะห์แต่ละกลุ่ม error หา root cause ในโค้ด (`apps/web/**`)
+            2. แก้เฉพาะที่ "มั่นใจสูงว่าเป็นบั๊กจริงและ fix ได้ตรงจุด" — เปลี่ยนให้น้อยที่สุด (minimal patch)
+            3. ห้ามแตะ: migration, secret/env, config โครงสร้าง, หรือโค้ดที่ไม่เกี่ยวกับ error
+            4. ถ้าแก้โค้ด ให้รัน `cd apps/web && npx tsc --noEmit` เท่าที่ทำได้ เพื่อกันพัง
+            5. เปิด **draft PR** เข้า base `main`:
+               - branch: `bot/log-triage-<วันที่>`
+               - title: `chore(bms): daily log triage — proposed fixes`
+               - body: สรุปแต่ละ error → root cause → สิ่งที่แก้ → ความเสี่ยง + แนบ bms-log-report.md
+               - ปิดท้าย: "🤖 AI-generated — ต้องรีวิวก่อน merge (ห้าม auto-merge)"
+            6. ถ้า "ไม่มี error ที่ fix ได้อย่างมั่นใจ" → อย่าดันโค้ดมั่ว ให้เปิด draft PR
+               ที่มีแค่รายงาน+บทวิเคราะห์ (ไม่มีการแก้โค้ด) เพื่อให้ทีมตัดสินใจ
+
+            หลักการ (สำคัญ): correctness > ปริมาณ · เปลี่ยนน้อย · อธิบายเหตุผลชัด · ห้าม deploy/merge เอง
+
+      - name: Find opened PR
+        id: pr
+        if: steps.collect.outputs.has_errors == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh pr list --state open --search "daily log triage in:title" --sort created-desc --limit 1 --json url --jq '.[0].url' 2>/dev/null || true)
+          [ -z "$url" ] && url="${{ github.server_url }}/${{ github.repository }}/pulls"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Notify LINE
+        if: steps.collect.outputs.has_errors == 'true'
+        env:
+          LINE_OPS_TOKEN: ${{ secrets.LINE_OPS_TOKEN }}
+          LINE_OPS_TO: ${{ secrets.LINE_OPS_TO }}
+          LINE_MESSAGE: |
+            🔧 BMS Log Triage
+            พบ error ${{ steps.collect.outputs.groups }} กลุ่ม (24 ชม.)
+            เปิด draft PR ให้รีวิวแล้ว 👉 ${{ steps.pr.outputs.url }}
+        run: node scripts/bms-log-triage/notify-line.mjs
