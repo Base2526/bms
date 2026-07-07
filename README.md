@@ -91,17 +91,17 @@ Receive → Detect Intent → Extract Entities → Select Tool
 
 | Module | Responsibility |
 | --- | --- |
-| **Channel Integration** | Normalize every platform into one internal message format |
-| **Omnichannel Inbox** | Unified inbox: history, assignment, notes, tags, timeline |
+| **Channel Integration** ✅ | Per-tenant webhooks for LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — all normalized into one pipeline (signature-verified) |
+| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) |
 | **AI Orchestrator** | Intent detection, entity extraction, tool selection |
 | **CRM** | Customer profiles across channels, purchase history, LTV |
 | **Product Management** | Products, variants, SKU, barcode, pricing, categories |
 | **Inventory (IMS)** | Current / reserved / available stock — every change logs a movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
-| **Purchase** | Supplier POs, receive / partial receive, supplier history |
-| **Payment** | Bank transfer, QR, card, TikTok Pay, cash (AI slip verification on roadmap) |
-| **Shipping** | Flash, Kerry, DHL, Australia Post, NZ Post — tracking & labels |
-| **Reports** | Sales, inventory, customer, supplier, financial, AI usage dashboards |
+| **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
+| **Payment** ✅ | Bank transfer, QR, card, TikTok Pay, cash — payment records + confirm/reject/refund + AI slip verification (`verifyPaymentSlip`, advisory only) |
+| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — shipments, tracking, status flow, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Reports** ✅ | Dashboard + date-range **sales summary** (by day/status/channel), **inventory summary** (stock value, low/out-of-stock), **top sellers** — `/admin/reports` |
 
 > ⚠️ **Every stock change must create a Stock Movement record.** Never update
 > stock without logging the movement.
@@ -146,7 +146,15 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 │   │   │           ├── chat/                    # AI conversation pipeline
 │   │   │           ├── line/webhook/[tenantId]/ # per-tenant LINE webhook
 │   │   │           ├── tiktok/webhook/[tenantId]/
+│   │   │           ├── facebook/webhook/[tenantId]/   # Messenger (Graph send)
+│   │   │           ├── instagram/webhook/[tenantId]/  # IG DM (Messenger Platform)
+│   │   │           ├── web/webhook/[tenantId]/        # Website Live Chat (public widget)
 │   │   │           ├── order/[id]/{pay,pack,ship,complete,cancel,return}/
+│   │   │           ├── purchase/[id]/{receive,cancel}/ # supplier PO lifecycle
+│   │   │           ├── payment/[id]/{confirm,reject,refund,verify}/ # payments + AI slip verify
+│   │   │           ├── shipment/[id]/{tracking,status,label}/ # carrier, tracking, label
+│   │   │           ├── inbox/[id]/reply/        # omnichannel inbox (list + staff reply)
+│   │   │           ├── reports/{sales,inventory,top-products}/ # report tools
 │   │   │           ├── reserve/                 # stock reservation
 │   │   │           └── orders/release-expired/  # release expired reservations
 │   │   └── lib/bms/             # Services / tools (single source of truth)
@@ -170,8 +178,9 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
 
 - Self-serve signup that auto-creates a tenant + plan/billing
-- Per-tenant webhooks: `/api/bms/line/webhook/{tenantId}` &
-  `/api/bms/tiktok/webhook/{tenantId}` with signature verification
+- Per-tenant webhooks for LINE, TikTok, **Facebook Messenger, Instagram DM**
+  (`/api/bms/{channel}/webhook/{tenantId}`, signature-verified) + a public
+  **Website Live Chat** endpoint (`/api/bms/web/webhook/{tenantId}`)
 - Per-tenant channel credentials — replies go out with **that shop's** token
 - Per-tenant roles / permissions, rate-limited webhooks, and audit logging
 
@@ -298,17 +307,17 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 
 | โมดูล | หน้าที่ |
 | --- | --- |
-| **Channel Integration** | แปลงทุกแพลตฟอร์มให้เป็นรูปแบบข้อความภายในแบบเดียว |
-| **Omnichannel Inbox** | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ต, แท็ก, timeline |
+| **Channel Integration** ✅ | Webhook แยกต่อร้าน: LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — รวมเข้า pipeline เดียว (ตรวจ signature) |
+| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) |
 | **AI Orchestrator** | ตรวจ intent, ดึง entity, เลือก tool |
 | **CRM** | โปรไฟล์ลูกค้าข้ามช่องทาง, ประวัติซื้อ, มูลค่าตลอดชีพ |
 | **Product Management** | สินค้า, variant, SKU, barcode, ราคา, หมวดหมู่ |
 | **Inventory (IMS)** | สต็อก คงเหลือ / จอง / พร้อมขาย — ทุกการเปลี่ยนแปลงต้องบันทึก movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
-| **Purchase** | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ |
-| **Payment** | โอน, QR, บัตร, TikTok Pay, เงินสด (ตรวจสลิปด้วย AI อยู่ใน roadmap) |
-| **Shipping** | Flash, Kerry, DHL, Australia Post, NZ Post — tracking & label |
-| **Reports** | Dashboard ยอดขาย, สต็อก, ลูกค้า, ซัพพลายเออร์, การเงิน, การใช้ AI |
+| **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |
+| **Payment** ✅ | โอน, QR, บัตร, TikTok Pay, เงินสด — บันทึกการชำระ + ยืนยัน/ปฏิเสธ/คืนเงิน + ตรวจสลิปด้วย AI (`verifyPaymentSlip` แนะนำเท่านั้น) |
+| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — จัดส่ง, tracking, สถานะ, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Reports** ✅ | Dashboard + รายงานยอดขายตามช่วงวันที่ (รายวัน/สถานะ/ช่องทาง), สรุปสต็อก (มูลค่า, ใกล้หมด/หมด), สินค้าขายดี — `/admin/reports` |
 
 > ⚠️ **ทุกการเปลี่ยนสต็อกต้องสร้าง Stock Movement** ห้ามอัปเดตสต็อกโดยไม่บันทึก
 
@@ -339,8 +348,9 @@ API routes ใน [`apps/web/app/api/bms/`](./apps/web/app/api/bms/)
 AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
 
 - สมัครเองแล้วสร้าง tenant + แพ็กเกจ/บิลลิ่งอัตโนมัติ
-- Webhook แยกต่อร้าน: `/api/bms/line/webhook/{tenantId}` และ
-  `/api/bms/tiktok/webhook/{tenantId}` พร้อมตรวจ signature
+- Webhook แยกต่อร้าน: LINE, TikTok, **Facebook Messenger, Instagram DM**
+  (`/api/bms/{channel}/webhook/{tenantId}` ตรวจ signature) + **Website Live Chat**
+  แบบ public (`/api/bms/web/webhook/{tenantId}`)
 - credential ของช่องทางแยกต่อร้าน — ตอบกลับด้วย **token ของร้านนั้น**
 - roles / permissions แยกต่อร้าน, rate-limit webhook และ audit log
 

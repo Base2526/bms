@@ -23,6 +23,12 @@ const CHANNELS = [
     hint: "เอา Channel access token + Channel secret จาก LINE Developers Console → Messaging API" },
   { key: "tiktok", label: "TikTok", color: "magenta",
     hint: "เอา Access token + Secret จาก TikTok for Business" },
+  { key: "facebook", label: "Facebook Messenger", color: "blue",
+    hint: "Access token = Page Access Token · Channel Secret = App Secret (ใช้ทั้ง verify token ตอนตั้ง webhook และ verify signature)" },
+  { key: "instagram", label: "Instagram DM", color: "purple",
+    hint: "IG DM ผ่าน Messenger Platform · Access token = Page Access Token (ผูก IG) · Channel Secret = App Secret" },
+  { key: "web", label: "Website Live Chat", color: "geekblue",
+    hint: "ฝังวิดเจ็ตหน้าเว็บให้ POST ไปที่ URL ด้านล่าง (ไม่ต้องใช้ token) — เปิด/ปิดด้วยสวิตช์" },
 ];
 
 export default function Page() {
@@ -48,7 +54,7 @@ export default function Page() {
       {tenant && (
         <Alert type="info" showIcon style={{ marginBottom: 16 }}
           message={<>ร้าน: <b>{tenant.name}</b> <Text code>{tenant.slug}</Text> · tenant id: <Text code>{tenant.id}</Text></>}
-          description="เชื่อม LINE/TikTok ของร้านคุณ แล้วเอา Webhook URL ด้านล่างไปตั้งใน console ของแต่ละแพลตฟอร์ม"
+          description="เชื่อม LINE / TikTok / Facebook / Instagram ของร้านคุณ แล้วเอา Webhook URL ด้านล่างไปตั้งใน console ของแต่ละแพลตฟอร์ม · Website Live Chat ให้ฝังวิดเจ็ตชี้มาที่ URL"
         />
       )}
 

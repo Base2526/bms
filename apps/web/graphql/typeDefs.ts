@@ -671,6 +671,30 @@ export const typeDefs = /* GraphQL */ `
     bmsLowStock: [BmsLowStockItem!]!
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
 
+    # ===== BMS Purchase (admin) =====
+    bmsPurchaseOrders(limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
+    bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
+    bmsSuppliers: [BmsSupplier!]!
+
+    # ===== BMS Payment (admin) =====
+    bmsPayments(orderId: ID, status: BmsPaymentStatus, limit: Int = 50, offset: Int = 0): [BmsPayment!]!
+    bmsPayment(id: ID!): BmsPayment
+
+    # ===== BMS Shipping (admin) =====
+    bmsShipments(orderId: ID, status: BmsShipmentStatus, limit: Int = 50, offset: Int = 0): [BmsShipment!]!
+    bmsShipment(id: ID!): BmsShipment
+    bmsShipmentLabel(id: ID!): BmsShipmentLabel
+
+    # ===== BMS Inbox (admin) =====
+    bmsConversations(status: BmsConvStatus, assignedTo: String, tag: String, search: String, limit: Int = 50, offset: Int = 0): [BmsConversation!]!
+    bmsConversation(id: ID!): BmsConversation
+    bmsConversationTimeline(id: ID!): [BmsTimelineEntry!]!
+
+    # ===== BMS Reports (admin) =====
+    bmsSalesSummary(from: String, to: String): BmsSalesSummary!
+    bmsInventorySummary: BmsInventorySummary!
+    bmsTopSellingProducts(from: String, to: String, limit: Int = 10): [BmsTopProduct!]!
+
     # ===== BMS CRM (admin) =====
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
     bmsCustomer(id: ID!): BmsCustomer
@@ -719,6 +743,212 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     updated_at: String!
     items: [BmsOrderItem!]!
+  }
+
+  # ===== BMS purchase (PO) =====
+  enum BmsPurchaseStatus {
+    OPEN
+    PARTIAL
+    RECEIVED
+    CANCELLED
+  }
+
+  type BmsSupplier {
+    id: ID!
+    name: String!
+    phone: String
+    email: String
+    note: String
+  }
+
+  type BmsPurchaseItem {
+    sku: String!
+    size: String!
+    qtyOrdered: Int!
+    qtyReceived: Int!
+    unitCost: Float!
+  }
+
+  type BmsPurchaseOrder {
+    id: ID!
+    status: BmsPurchaseStatus!
+    total: Float!
+    note: String
+    supplier: BmsSupplier
+    qtyOrdered: Int!
+    qtyReceived: Int!
+    createdAt: String!
+    updatedAt: String!
+    items: [BmsPurchaseItem!]!
+  }
+
+  input BmsPurchaseItemInput {
+    sku: String!
+    size: String!
+    qty: Int!
+    unitCost: Float
+  }
+
+  input BmsReceiveItemInput {
+    sku: String!
+    size: String!
+    qty: Int!
+  }
+
+  # ผลลัพธ์ mutation แบบรวม (status: CREATED/RECEIVED/PARTIAL/NOT_FOUND/…)
+  type BmsPurchaseResult {
+    status: String!
+    poId: ID
+    message: String
+  }
+
+  # ===== BMS payment =====
+  enum BmsPaymentMethod {
+    BANK_TRANSFER
+    QR
+    CARD
+    TIKTOK
+    CASH
+  }
+
+  enum BmsPaymentStatus {
+    PENDING
+    CONFIRMED
+    REJECTED
+    REFUNDED
+  }
+
+  type BmsPayment {
+    id: ID!
+    orderId: ID!
+    method: BmsPaymentMethod!
+    amount: Float!
+    status: BmsPaymentStatus!
+    slipUrl: String
+    slipRef: String
+    verifyResult: String    # JSON string ของผลตรวจสลิป (OCR/AI)
+    note: String
+    verifiedBy: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  # ผลตรวจสลิปด้วย OCR/AI (แนะนำเท่านั้น — ไม่เปลี่ยนสถานะ)
+  type BmsSlipVerification {
+    method: String!         # ai | heuristic
+    expectedAmount: Float!
+    amountMatch: Boolean!
+    verified: Boolean!
+    reason: String!
+    checkedAt: String!
+  }
+
+  type BmsPaymentResult {
+    status: String!
+    paymentId: ID
+    message: String
+  }
+
+  # ===== BMS shipping =====
+  enum BmsCarrier {
+    FLASH
+    KERRY
+    DHL
+    AUSPOST
+    NZPOST
+    OTHER
+  }
+
+  enum BmsShipmentStatus {
+    PENDING
+    SHIPPED
+    IN_TRANSIT
+    DELIVERED
+    RETURNED
+    CANCELLED
+  }
+
+  type BmsShipment {
+    id: ID!
+    orderId: ID!
+    carrier: BmsCarrier!
+    trackingNo: String
+    status: BmsShipmentStatus!
+    labelUrl: String
+    note: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsLabelItem { sku: String!  size: String!  qty: Int! }
+  type BmsLabelShipTo { name: String  phone: String  address: String }
+  type BmsShipmentLabel {
+    shipmentId: ID!
+    orderId: ID!
+    carrier: String!
+    trackingNo: String
+    shipTo: BmsLabelShipTo!
+    items: [BmsLabelItem!]!
+    createdAt: String!
+  }
+
+  type BmsShipmentResult {
+    status: String!
+    shipmentId: ID
+    message: String
+  }
+
+  # ===== BMS inbox =====
+  enum BmsConvStatus {
+    OPEN
+    PENDING
+    CLOSED
+  }
+
+  type BmsMessage {
+    id: ID!
+    direction: String!      # IN | OUT
+    body: String!
+    sender: String          # customer | ai | staff:<email>
+    createdAt: String!
+  }
+
+  type BmsConversationNote {
+    id: ID!
+    author: String
+    body: String!
+    createdAt: String!
+  }
+
+  type BmsConversation {
+    id: ID!
+    channel: String!
+    customerRef: String
+    customerId: ID
+    customerName: String
+    status: BmsConvStatus!
+    assignedTo: String
+    tags: [String!]!
+    unread: Int!
+    lastMessage: String
+    lastMessageAt: String
+    createdAt: String!
+    updatedAt: String!
+    messages: [BmsMessage!]!
+    notes: [BmsConversationNote!]!
+  }
+
+  type BmsTimelineEntry {
+    type: String!           # MESSAGE_IN | MESSAGE_OUT | NOTE | ORDER
+    at: String!
+    text: String!
+    ref: String
+  }
+
+  type BmsSendResult {
+    status: String!
+    delivered: Boolean!
+    message: String
   }
 
   # ===== BMS products & inventory =====
@@ -810,6 +1040,31 @@ export const typeDefs = /* GraphQL */ `
   type BmsTopProduct  { sku: String!  name: String!  qty: Int!  revenue: Float! }
   type BmsTopCustomer { id: ID!  name: String!  tags: [String!]!  spent: Float!  orders: Int! }
   type BmsDailySales  { day: String!  revenue: Float!  orders: Int! }
+
+  # ===== BMS reports (แยกส่วนจาก dashboard) =====
+  type BmsChannelSales { channel: String!  revenue: Float!  orders: Int! }
+
+  type BmsSalesSummary {
+    from: String!
+    to: String!
+    revenue: Float!
+    orderCount: Int!
+    avgOrderValue: Float!
+    byDay: [BmsDailySales!]!
+    byStatus: [BmsStatusCount!]!
+    byChannel: [BmsChannelSales!]!
+  }
+
+  type BmsInventorySummary {
+    skuCount: Int!
+    variantCount: Int!
+    totalUnits: Int!
+    reservedUnits: Int!
+    availableUnits: Int!
+    stockValue: Float!
+    lowStockCount: Int!
+    outOfStockCount: Int!
+  }
 
   type BmsDashboard {
     revenueTotal: Float!
@@ -1222,6 +1477,32 @@ export const typeDefs = /* GraphQL */ `
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
     bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
     bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
+
+    # ===== BMS purchase (admin) — PO lifecycle =====
+    bmsCreatePurchaseOrder(supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
+    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
+    bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
+
+    # ===== BMS payment (admin) =====
+    bmsSubmitPayment(orderId: ID!, method: BmsPaymentMethod!, amount: Float, slipUrl: String, slipRef: String, note: String): BmsPaymentResult!
+    bmsConfirmPayment(id: ID!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
+    bmsRejectPayment(id: ID!, note: String): Boolean!
+    bmsRefundPayment(id: ID!): Boolean!             # CONFIRMED → REFUNDED (manager)
+    bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification   # OCR/AI แนะนำ (ไม่เปลี่ยนสถานะ)
+
+    # ===== BMS shipping (admin) =====
+    bmsCreateShipment(orderId: ID!, carrier: BmsCarrier!, trackingNo: String, note: String): BmsShipmentResult!  # PACKING → SHIPPED (ตัดสต็อก)
+    bmsUpdateTracking(id: ID!, trackingNo: String, carrier: BmsCarrier): Boolean!
+    bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!   # DELIVERED → order COMPLETED
+    bmsCancelShipment(id: ID!): Boolean!
+
+    # ===== BMS inbox (admin) =====
+    bmsSendMessage(id: ID!, body: String!): BmsSendResult!            # ตอบเอง (persist + ยิงกลับช่องทาง)
+    bmsAssignConversation(id: ID!, assignedTo: String): Boolean!
+    bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
+    bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
+    bmsMarkConversationRead(id: ID!): Boolean!
+    bmsAddConversationNote(id: ID!, body: String!): BmsConversationNote
 
     # ===== BMS CRM (admin) =====
     bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!

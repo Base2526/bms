@@ -12,6 +12,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
+import { logConversation } from "@/lib/bms/inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +64,11 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const text = ev.message.text?.trim() ?? "";
     if (!text) continue;
 
-    const result = await runPipeline(text, "line", tenantId, ev.source?.userId ?? null);
+    const userId = ev.source?.userId ?? null;
+    const result = await runPipeline(text, "line", tenantId, userId);
+
+    // บันทึกลง inbox (เข้า+ออก) — best-effort
+    await logConversation(tenantId, "line", userId, text, result.reply);
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
     if (cfg.access_token && ev.replyToken) {

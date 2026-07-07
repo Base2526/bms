@@ -1,25 +1,71 @@
+# AI_WORKFLOW.md — AI Pipeline (AI-BMS)
+
+ทุกช่องทางไหลเข้า pipeline เดียวกัน (channel-agnostic)
+Implemented: [`apps/web/lib/bms/pipeline.ts`](apps/web/lib/bms/pipeline.ts)
+
+```
 Customer
     │
     ▼
-Receive Message
+Receive Message        ← webhook ต่อร้าน (LINE / TikTok / Facebook / Instagram / Web)
     │
     ▼
-Detect Intent
+Detect Intent          ← understand()  [lib/bms/nlu.ts]  (rule-based NLU)
     │
     ▼
-Extract Entities
+Extract Entities       ← product / size / qty / หลายรายการต่อข้อความ
     │
     ▼
-Select Tool
+Select Tool            ← ตาม intent
     │
     ▼
-Call Backend API
+Call Backend Service   ← checkStock() / createOrder()  (RLS-scoped, atomic)
     │
     ▼
-Receive Data
+Receive Data           ← ข้อเท็จจริงสต็อก/ราคา/ผลออเดอร์ จาก DB
     │
     ▼
-Generate Response
-    │
+Generate Response      ← generateResponse()  [lib/bms/ai.ts]
+    │                     • มี ANTHROPIC_API_KEY → Claude เรียบเรียง (ยัดข้อเท็จจริงเข้า prompt)
+    │                     • ไม่มี key → template ภาษาไทย (deterministic)
     ▼
-Reply Customer
+Reply Customer         ← ส่งกลับช่องทาง + บันทึกลง Inbox (logConversation)
+```
+
+---
+
+## Intents (nlu.ts)
+
+| Intent | ตัวอย่างข้อความ | Tool | ผลลัพธ์ |
+| --- | --- | --- | --- |
+| `CHECK_STOCK` | "Nike XL มีไหม" | `checkStock()` | เช็คสต็อก/ราคา แล้วตอบ |
+| `CONFIRM_ORDER` | "สั่ง Nike XL 2 ชิ้น" | `createOrder()` | สร้าง order + reserve สต็อก (atomic) — ถามกลับถ้าข้อมูลไม่ครบ |
+| `GREETING` | "สวัสดี" | — | ทักทาย + ชวนแจ้งรุ่น/ไซซ์ |
+| อื่น ๆ | — | — | ตอบด้วย generateResponse (fallback) |
+
+`CONFIRM_ORDER` รองรับหลายรายการต่อข้อความ เช่น "สั่ง Nike XL 1 ชิ้น กับ Adidas M 1 ชิ้น"
+ถ้ารายการใดไม่ครบ (ไม่มีไซซ์/จำนวน/ไม่พบสินค้า) → ถามกลับ ไม่สร้าง order
+
+---
+
+## Channels → pipeline
+
+| Channel | Webhook | Verify | ตอบกลับ (deliverToChannel) |
+| --- | --- | --- | --- |
+| LINE | `/api/bms/line/webhook/{tenantId}` | X-Line-Signature | reply API / push |
+| TikTok | `/api/bms/tiktok/webhook/{tenantId}` | HMAC hex header | (ยังไม่ผูก send API) |
+| Facebook | `/api/bms/facebook/webhook/{tenantId}` | X-Hub-Signature-256 | Graph Send API |
+| Instagram | `/api/bms/instagram/webhook/{tenantId}` | X-Hub-Signature-256 | Graph Send API |
+| Website | `/api/bms/web/webhook/{tenantId}` | public (rate-limit + CORS) | ตอบใน HTTP response |
+| Playground | `/api/bms/chat` (channel=test) | — | คืน trace เต็ม (ไม่ log inbox) |
+
+ทุกช่องทาง (ยกเว้น test) เรียก `logConversation()` → ข้อความเข้า+คำตอบ AI ถูกบันทึกใน **Omnichannel Inbox** อัตโนมัติ
+
+---
+
+## กฎเหล็ก (ดู BUSINESS_RULES.md)
+
+- AI **ไม่แตะ DB โดยตรง / ไม่เขียน SQL** — เรียกผ่าน service ที่อนุมัติเท่านั้น
+- AI **ห้ามเดา/แต่งตัวเลขสต็อก-ราคา** — ข้อเท็จจริงมาจาก backend เสมอ AI แค่เรียบเรียง
+- การกระทำอ่อนไหว (ยืนยันเงิน/คืนเงิน/ยกเลิก/ปรับสต็อก) ต้องมี **คนยืนยัน + สิทธิ์ (RBAC)**
+  เช่น `verifyPaymentSlip()` เป็นแค่คำแนะนำ — คนต้องกด confirm เอง

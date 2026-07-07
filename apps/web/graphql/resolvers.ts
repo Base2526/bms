@@ -41,6 +41,11 @@ import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
 import { bmsChannelsResolvers } from "@/graphql/bmsChannels";
 import { bmsSaasResolvers } from "@/graphql/bmsSaas";
+import { bmsPurchaseResolvers } from "@/graphql/bmsPurchase";
+import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
+import { bmsShippingResolvers } from "@/graphql/bmsShipping";
+import { bmsInboxResolvers } from "@/graphql/bmsInbox";
+import { bmsReportsResolvers } from "@/graphql/bmsReports";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2594,7 +2599,12 @@ const rawResolvers = {
     ...bmsCustomersResolvers.Query,
     ...bmsDashboardResolvers.Query,
     ...bmsChannelsResolvers.Query,
-    ...bmsSaasResolvers.Query
+    ...bmsSaasResolvers.Query,
+    ...bmsPurchaseResolvers.Query,
+    ...bmsPaymentsResolvers.Query,
+    ...bmsShippingResolvers.Query,
+    ...bmsInboxResolvers.Query,
+    ...bmsReportsResolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -7026,12 +7036,21 @@ const rawResolvers = {
     ...bmsCustomersResolvers.Mutation,
     ...bmsDashboardResolvers.Mutation,
     ...bmsChannelsResolvers.Mutation,
-    ...bmsSaasResolvers.Mutation
+    ...bmsSaasResolvers.Mutation,
+    ...bmsPurchaseResolvers.Mutation,
+    ...bmsPaymentsResolvers.Mutation,
+    ...bmsShippingResolvers.Mutation,
+    ...bmsInboxResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
   BmsProduct: bmsProductsResolvers.BmsProduct,
   BmsCustomer: bmsCustomersResolvers.BmsCustomer,
+  BmsPurchaseOrder: bmsPurchaseResolvers.BmsPurchaseOrder,
+  BmsPayment: bmsPaymentsResolvers.BmsPayment,
+  BmsShipment: bmsShippingResolvers.BmsShipment,
+  BmsConversation: bmsInboxResolvers.BmsConversation,
+  BmsConversationNote: bmsInboxResolvers.BmsConversationNote,
 };
 
 export const resolvers = {

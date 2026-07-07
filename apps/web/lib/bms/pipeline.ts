@@ -13,7 +13,7 @@ import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
 import { generateResponse } from "./ai";
 
-export type Channel = "line" | "tiktok" | "facebook" | "test";
+export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "test";
 
 export type PipelineResult = {
   channel: Channel;

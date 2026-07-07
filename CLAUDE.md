@@ -8,15 +8,43 @@ Unlike traditional ERP or CRM systems, AI-BMS treats customer conversations as t
 
 Supported channels:
 
-- LINE Official Account
-- TikTok Shop / TikTok Chat
-- Facebook Messenger
-- Instagram
-- Website Live Chat
+- LINE Official Account ✅ (webhook + reply/push)
+- TikTok Shop / TikTok Chat ✅ (webhook; send API = roadmap)
+- Facebook Messenger ✅ (webhook + Graph Send)
+- Instagram ✅ (DM via Messenger Platform)
+- Website Live Chat ✅ (public widget endpoint)
 - Future:
   - WhatsApp
   - Email
   - Voice AI
+
+---
+
+# Build Status (2026-07)
+
+โมดูลเชิงปฏิบัติการตามสเปกนี้ **สร้างครบแล้ว** — order lifecycle ปิดครบวงจร
+(order → payment → shipping → delivered/completed) + omnichannel capture ทุกช่องทางหลัก
+
+| Module | สถานะ | ที่อยู่ (service · migration) |
+| --- | --- | --- |
+| Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
+| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` |
+| AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` (rule-based NLU + Claude) |
+| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` |
+| Product Management | ✅ | `lib/bms/products.ts` · `3.2` |
+| Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
+| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` |
+| Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
+| Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
+| Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
+| Reports | ✅ | `lib/bms/{dashboard,reports}.ts` |
+| Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` |
+
+**Roadmap ที่เหลือ:** TikTok send API · carrier API จริง (label PDF/auto-tracking) ·
+AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI
+
+> รายละเอียด tool + permission ต่อโมดูล: ดู [TOOLS.md](TOOLS.md) ·
+> flow AI: [AI_WORKFLOW.md](AI_WORKFLOW.md) · กฎธุรกิจ + enum จริง: [BUSINESS_RULES.md](BUSINESS_RULES.md)
 
 ---
 

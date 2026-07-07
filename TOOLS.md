@@ -285,47 +285,207 @@ Input
 
 # Purchase Orders
 
+✅ Implemented — service `lib/bms/purchase.ts`, migration `5.2__bms_purchase.sql`,
+REST `/api/bms/purchase*`, GraphQL `bmsPurchase*`, admin UI `/admin/purchase`.
+
+flow:  OPEN → PARTIAL → RECEIVED  (└→ CANCELLED)
+สต็อกเข้าเฉพาะตอน receive เท่านั้น + บันทึก STOCK_IN movement ทุกครั้ง
+
 ## createPurchaseOrder()
+
+Input
+
+{
+    supplierId?,        // หรือ supplierName (จะ resolve/สร้าง supplier ให้)
+    supplierName?,
+    note?,
+    items[] {           // sku ต้องมีในร้าน
+        sku,
+        size,
+        qty,            // > 0
+        unitCost?       // ทุน/หน่วย (snapshot)
+    }
+}
+
+Output
+
+Purchase Order (status = OPEN, ยังไม่ขยับสต็อก)
+
+Permission: purchase.edit
+
+---
 
 ## receivePurchaseOrder()
 
+รับของเข้าสต็อก (บางส่วน/ครบ) → current_stock += qty + STOCK_IN movement
+คำนวณสถานะ PO ใหม่เป็น PARTIAL / RECEIVED
+
+Input
+
+{
+    poId,
+    items[] {
+        sku,
+        size,
+        qty             // ห้ามเกิน (qty_ordered - qty_received)
+    }
+}
+
+Output
+
+{
+    status,             // PARTIAL | RECEIVED
+    items[]             // ยอด qty_received ล่าสุดต่อรายการ
+}
+
+Permission: purchase.receive
+
+---
+
 ## cancelPurchaseOrder()
+
+ยกเลิก PO (เฉพาะ OPEN/PARTIAL) → CANCELLED
+ของที่รับเข้าสต็อกไปแล้วจะไม่ถูกดึงออก (ตามหลักบัญชีสินค้า)
+
+Input
+
+{
+    poId
+}
+
+Permission: purchase.cancel
+
+---
+
+## getPurchaseOrder() / listPurchaseOrders() / listSuppliers()
+
+อ่านใบสั่งซื้อ + ประวัติ supplier (Supplier History)
+
+Permission: purchase.view
 
 ---
 
 # Payment
 
+✅ Implemented — service `lib/bms/payments.ts`, migration `5.3__bms_payments.sql`,
+REST `/api/bms/payment*`, GraphQL `bmsPayment*`, admin UI `/admin/payment`.
+
+flow ต่อ 1 payment:  PENDING → CONFIRMED (└→ REJECTED) · CONFIRMED → REFUNDED
+methods: BANK_TRANSFER / QR / CARD / TIKTOK / CASH
+
+## submitPayment()
+
+บันทึกการชำระ (status PENDING) — ยังไม่เปลี่ยนสถานะออร์เดอร์
+
+Input
+
+{
+    orderId,
+    method,             // BANK_TRANSFER | QR | CARD | TIKTOK | CASH
+    amount?,            // เว้นว่าง = ยอดรวมของ order
+    slipUrl?,           // /api/files/<id> (รูปสลิป)
+    slipRef?,           // เลขอ้างอิง/txn
+    note?
+}
+
+Permission: payment.submit
+
+---
+
 ## verifyPaymentSlip()
 
-OCR
+OCR / AI Validation → **แนะนำเท่านั้น** (ไม่เปลี่ยนสถานะ ตาม BUSINESS_RULES: AI ห้ามยืนยันเงินเอง)
 
-AI Validation
+- ไม่มี ANTHROPIC_API_KEY หรือไม่มีรูปสลิป → heuristic (ให้ตรวจเอง)
+- มี key + slipUrl เป็นรูป → Claude vision สกัด amount/date/ref แล้วเทียบยอด
 
-Backend Confirmation
+Input
+
+{
+    paymentId
+}
+
+Output
+
+{
+    method,             // ai | heuristic
+    expectedAmount,
+    amountMatch,
+    verified,           // AI มั่นใจว่ายอดตรง (ยังต้องกดยืนยันเอง)
+    reason
+}
+
+Permission: payment.confirm
 
 ---
 
 ## confirmPayment()
 
-Backend only.
+Backend only. PENDING → CONFIRMED + order PENDING → PAID (atomic)
+
+Input
+
+{
+    paymentId
+}
+
+Permission: payment.confirm
+
+---
+
+## rejectPayment()
+
+PENDING → REJECTED
+
+Permission: payment.confirm
 
 ---
 
 ## refundPayment()
 
-Manager approval required.
+CONFIRMED → REFUNDED. Manager approval required.
+
+Input
+
+{
+    paymentId
+}
+
+Permission: payment.refund
 
 ---
 
 # Shipping
 
+✅ Implemented — service `lib/bms/shipping.ts`, migration `5.4__bms_shipments.sql`,
+REST `/api/bms/shipment*`, GraphQL `bmsShipment*`, admin UI `/admin/shipment`.
+
+carriers: FLASH / KERRY / DHL / AUSPOST / NZPOST / OTHER
+flow: PENDING → SHIPPED → IN_TRANSIT → DELIVERED (└→ RETURNED / CANCELLED)
+
 ## createShipment()
+
+ผูก carrier/tracking + ship จริง: order PACKING → SHIPPED + ตัดสต็อก + SHIP movement (atomic)
+ถ้า order = SHIPPED อยู่แล้ว จะแค่แนบ shipment (ไม่ตัดสต็อกซ้ำ)
 
 Input
 
 {
-    orderId
+    orderId,
+    carrier,            // FLASH | KERRY | DHL | AUSPOST | NZPOST | OTHER
+    trackingNo?,
+    note?
 }
+
+Output
+
+{
+    status,             // CREATED
+    shipmentId,
+    orderShipped        // true = ตัดสต็อก/ship ในครั้งนี้
+}
+
+Permission: shipping.create
 
 ---
 
@@ -334,39 +494,151 @@ Input
 Input
 
 {
-    trackingNo
+    shipmentId,
+    trackingNo?,
+    carrier?
 }
+
+Permission: shipping.update
+
+---
+
+## setShipmentStatus()
+
+เปลี่ยนสถานะ shipment — DELIVERED → order SHIPPED → COMPLETED (best-effort)
+
+Input
+
+{
+    shipmentId,
+    status              // PENDING | SHIPPED | IN_TRANSIT | DELIVERED | RETURNED | CANCELLED
+}
+
+Permission: shipping.update
+
+---
+
+## getShipmentLabel()
+
+ข้อมูลสำหรับพิมพ์ใบปะหน้า (order + ผู้รับ + ที่อยู่ + รายการ)
+ยังไม่ผูก carrier API จริง — สำหรับพิมพ์/คัดลอกด้วยตนเอง
+
+Input
+
+{
+    shipmentId
+}
+
+Permission: shipping.view
+
+---
+
+# Omnichannel Inbox
+
+✅ Implemented — service `lib/bms/inbox.ts`, migration `5.5__bms_inbox.sql`,
+REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI `/admin/inbox`.
+
+ทุกข้อความจาก webhook (LINE/TikTok) + คำตอบ AI ถูกบันทึกอัตโนมัติผ่าน
+`logConversation()` (hook ใน webhook) — 1 บทสนทนา = (tenant, channel, customer_ref)
+
+## sendStaffMessage()
+
+แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push; อื่น ๆ persist อย่างเดียว)
+
+Input
+
+{
+    conversationId,
+    body
+}
+
+Permission: inbox.reply
+
+---
+
+## assignConversation() / setConversationStatus() / setConversationTags()
+
+มอบหมาย staff · สถานะ OPEN/PENDING/CLOSED · แท็ก
+
+Permission: inbox.manage
+
+---
+
+## addNote() / getTimeline()
+
+โน้ตภายใน (ลูกค้าไม่เห็น) · timeline รวม message + note + order เรียงตามเวลา
+
+Permission: inbox.manage (note) / inbox.view (timeline)
 
 ---
 
 # Reports
 
+✅ Implemented — dashboard: `lib/bms/dashboard.ts`; report tools แยกส่วน:
+`lib/bms/reports.ts`, REST `/api/bms/reports/*`, GraphQL `bmsSalesSummary` /
+`bmsInventorySummary` / `bmsTopSellingProducts`, admin UI `/admin/reports`.
+ทุก tool ต้องมีสิทธิ์ `report.view`
+
 ## getDashboard()
 
-Today's overview.
+Today's overview (revenue, low stock, orders by status, top products/customers, 7-day sales).
 
 ---
 
 ## getSalesSummary()
 
+ยอดขายตามช่วงวันที่ (default = 30 วันล่าสุด) — revenue นับเฉพาะ PAID ขึ้นไป
+
 Input
 
 {
-    from,
+    from,               // YYYY-MM-DD (เว้นได้)
     to
+}
+
+Output
+
+{
+    from, to,
+    revenue, orderCount, avgOrderValue,
+    byDay[]     { day, revenue, orders },
+    byStatus[]  { status, count },
+    byChannel[] { channel, revenue, orders }
 }
 
 ---
 
 ## getInventorySummary()
 
+Output
+
+{
+    skuCount, variantCount,
+    totalUnits, reservedUnits, availableUnits,
+    stockValue,             // Σ current_stock × price
+    lowStockCount, outOfStockCount
+}
+
 ---
 
 ## getLowStockProducts()
 
+มีอยู่แล้วใน `lib/bms/products.ts` (`listLowStock`) + GraphQL `bmsLowStock`
+
 ---
 
 ## getTopSellingProducts()
+
+Input
+
+{
+    from, to,               // YYYY-MM-DD (เว้นได้)
+    limit                   // default 10
+}
+
+Output
+
+[ { sku, name, qty, revenue } ]
 
 ---
 

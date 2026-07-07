@@ -22,6 +22,11 @@ import {
   AppstoreOutlined,
   BookOutlined,
   PartitionOutlined,
+  ImportOutlined,
+  DollarOutlined,
+  CarOutlined,
+  MessageOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/useSession';
@@ -52,6 +57,7 @@ export default function AdminHeader() {
   // จัดกลุ่มเมนูเป็นหมวด → dropdown
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
+    link('/admin/reports', 'Reports', <BarChartOutlined />),
     link('/admin/manual', 'คู่มือ', <BookOutlined />),
     link('/admin/architecture', 'Architecture', <PartitionOutlined />),
     {
@@ -59,8 +65,12 @@ export default function AdminHeader() {
       icon: <ShopOutlined />,
       label: 'ร้านค้า',
       children: [
+        link('/admin/inbox', 'Inbox', <MessageOutlined />),
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
+        link('/admin/payment', 'Payment', <DollarOutlined />),
+        link('/admin/shipment', 'Shipping', <CarOutlined />),
         link('/admin/customers', 'Customers', <TeamOutlined />),
         link('/admin/playground', 'Playground', <ExperimentOutlined />),
       ],
