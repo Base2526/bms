@@ -8,9 +8,9 @@ const { Text } = Typography;
 const Q = gql`
   query {
     bmsBilling {
-      plan { code name price_monthly max_products max_channels max_orders_month }
-      usage { products channels orders_month }
-      plans { code name price_monthly max_products max_channels max_orders_month }
+      plan { code name price_monthly max_products max_channels max_orders_month max_users }
+      usage { products channels orders_month users }
+      plans { code name price_monthly max_products max_channels max_orders_month max_users }
     }
   }
 `;
@@ -45,17 +45,21 @@ export default function Page() {
       {cur && usage && (
         <Card style={{ marginBottom: 16 }} title={<>แพ็กเกจปัจจุบัน: <Tag color="blue">{cur.name}</Tag>{cur.price_monthly > 0 ? `${cur.price_monthly.toLocaleString()} ฿/เดือน` : "ฟรี"}</>}>
           <Row gutter={16}>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={6}>
               <Text type="secondary">สินค้า</Text>
               <Progress percent={pct(usage.products, cur.max_products)} format={() => `${usage.products}/${lim(cur.max_products)}`} status={cur.max_products>=0 && usage.products>=cur.max_products ? "exception":"active"} />
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={6}>
               <Text type="secondary">ช่องทางที่เชื่อม</Text>
               <Progress percent={pct(usage.channels, cur.max_channels)} format={() => `${usage.channels}/${lim(cur.max_channels)}`} />
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={6}>
               <Text type="secondary">ออเดอร์เดือนนี้</Text>
               <Progress percent={pct(usage.orders_month, cur.max_orders_month)} format={() => `${usage.orders_month}/${lim(cur.max_orders_month)}`} />
+            </Col>
+            <Col xs={24} md={6}>
+              <Text type="secondary">Staff</Text>
+              <Progress percent={pct(usage.users, cur.max_users)} format={() => `${usage.users}/${lim(cur.max_users)}`} status={cur.max_users>=0 && usage.users>=cur.max_users ? "exception":"active"} />
             </Col>
           </Row>
         </Card>
@@ -81,6 +85,7 @@ export default function Page() {
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> สินค้า {lim(p.max_products)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> ช่องทาง {lim(p.max_channels)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> ออเดอร์/เดือน {lim(p.max_orders_month)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users)}</div>
                 </Space>
                 <Button type={isCurrent ? "default" : "primary"} block disabled={isCurrent || changing}
                   onClick={() => changePlan({ variables: { planCode: p.code } })}>

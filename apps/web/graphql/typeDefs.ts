@@ -1122,9 +1122,9 @@ export const typeDefs = /* GraphQL */ `
   # ===== BMS SaaS: plans / billing / signup =====
   type BmsPlan {
     code: String!  name: String!  price_monthly: Float!
-    max_products: Int!  max_channels: Int!  max_orders_month: Int!
+    max_products: Int!  max_channels: Int!  max_orders_month: Int!  max_users: Int!
   }
-  type BmsUsage { products: Int!  channels: Int!  orders_month: Int! }
+  type BmsUsage { products: Int!  channels: Int!  orders_month: Int!  users: Int! }
   type BmsBilling {
     plan: BmsPlan!
     usage: BmsUsage!

@@ -764,4 +764,9 @@ Permission: platform admin · audit: `tenant.impersonate.enter/exit`
 Permission: admin ที่ล็อกอิน
 
 > **Users/Roles management** (ใน `resolvers.ts`): `users`/`upsertUser`/`deleteUser(s)` gate ด้วย `requireUserAdmin()`
-> (platform = ทุกร้าน · Administrator = ร้านตัวเอง) · `createRole`/`updateRole`/`deleteRole` = `requirePlatformOnly()`
+> (platform = ทุกร้าน · Administrator = ร้านตัวเอง) · `createRole`/`updateRole`/`deleteRole` = `requirePlatformOnly()` ·
+> role dropdown ในหน้า UI ต้อง query `roles` จาก DB เสมอ (ห้าม hardcode ชื่อ role)
+
+## Quota staff ต่อแพ็กเกจ (`enforceUserQuota()`)
+เช็คก่อนสร้าง user ใหม่ (`upsertUser` ตอน INSERT) — เกิน `bms_plans.max_users` ของร้านนั้น → throw พร้อมข้อความแนะนำอัปเกรด
+free=3 · pro=10 · business=ไม่จำกัด (`-1`). **platform admin ไม่ถูกจำกัด**. ดู `lib/bms/plans.ts` (`enforceProductQuota` ทำงานแบบเดียวกันฝั่งสินค้า)

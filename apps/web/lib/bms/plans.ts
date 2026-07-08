@@ -6,7 +6,7 @@ import { query } from "@/lib/db";
 
 export type Plan = {
   code: string; name: string; price_monthly: number;
-  max_products: number; max_channels: number; max_orders_month: number; sort: number;
+  max_products: number; max_channels: number; max_orders_month: number; max_users: number; sort: number;
 };
 
 export async function listPlans(): Promise<Plan[]> {
@@ -18,7 +18,7 @@ function shapePlan(r: any): Plan {
   return {
     code: r.code, name: r.name, price_monthly: Number(r.price_monthly),
     max_products: r.max_products, max_channels: r.max_channels,
-    max_orders_month: r.max_orders_month, sort: r.sort,
+    max_orders_month: r.max_orders_month, max_users: r.max_users, sort: r.sort,
   };
 }
 
@@ -39,7 +39,8 @@ export async function getUsage(tenantId: string) {
        (SELECT COUNT(*) FROM bms_products WHERE tenant_id = $1)::int AS products,
        (SELECT COUNT(*) FROM bms_tenant_channels WHERE tenant_id = $1 AND active)::int AS channels,
        (SELECT COUNT(*) FROM bms_orders WHERE tenant_id = $1
-          AND created_at >= date_trunc('month', now()))::int AS orders_month`,
+          AND created_at >= date_trunc('month', now()))::int AS orders_month,
+       (SELECT COUNT(*) FROM users WHERE tenant_id = $1)::int AS users`,
     [tenantId]
   );
   return res.rows[0];
@@ -55,6 +56,19 @@ export async function enforceProductQuota(tenantId: string): Promise<void> {
   );
   if ((res.rows[0]?.c ?? 0) >= plan.max_products) {
     throw new Error(`เกินโควตาแพ็กเกจ ${plan.name} (สินค้าสูงสุด ${plan.max_products}) — อัปเกรดแพ็กเกจเพื่อเพิ่ม`);
+  }
+}
+
+/** เช็คก่อนสร้าง/ย้าย staff เข้าร้าน — เกิน quota → throw */
+export async function enforceUserQuota(tenantId: string): Promise<void> {
+  const plan = await getTenantPlan(tenantId);
+  if (plan.max_users < 0) return; // unlimited
+  const res = await query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM users WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if ((res.rows[0]?.c ?? 0) >= plan.max_users) {
+    throw new Error(`เกินโควตาแพ็กเกจ ${plan.name} (staff สูงสุด ${plan.max_users} คน) — อัปเกรดแพ็กเกจเพื่อเพิ่ม`);
   }
 }
 

@@ -274,8 +274,13 @@ Internal notes are not visible to customers.
 
 > **Implemented — Omnichannel Inbox (`bms_conversations` / `bms_messages` / `bms_conversation_notes`):**
 > ทุกข้อความจากทุกช่องทาง (+ คำตอบ AI) ถูกบันทึกอัตโนมัติ (`logConversation`) · 1 บทสนทนา =
-> (tenant, channel, customer_ref) · assign staff · status OPEN/PENDING/CLOSED · tags · โน้ตภายใน ·
-> timeline (message + note + order) · staff ตอบเองได้ (`sendStaffMessage`) · permissions: `inbox.view/reply/manage`
+> (tenant, channel, customer_ref) · assign staff · status OPEN/PENDING/CLOSED · tags · โน้ตภายใน (`inbox.manage` เท่านั้นที่เพิ่มได้) ·
+> timeline (message + note + order) · staff ตอบเองได้ (`sendStaffMessage`) · แนบรูป/ไฟล์ (`meta.attachment`) ·
+> permissions: `inbox.view/reply/manage`
+>
+> **สถานะข้อความ (outbound, Phase 1):** `SENDING` (optimistic ฝั่ง client) → `SENT` / `FAILED` (เก็บใน `meta.status`) ·
+> **capability-gated ตามช่องทาง** — LINE/FB/IG push ได้จริง → fail ได้จริง + ปุ่ม "ส่งใหม่" (`bmsRetryMessage`) ·
+> web/TikTok ไม่ push (แค่บันทึก) → ไม่มีสถานะ fail หลอก, โชว์ "บันทึกแล้ว" แทน · **ไม่ทำ read receipt บนช่องที่รายงานไม่ได้จริง** (LINE/TikTok)
 
 ---
 
@@ -339,6 +344,10 @@ Reason
 > `Administrator` = super (bypass) · แต่ละร้านปรับสิทธิ์ role ของตัวเองได้ (เมนู Permissions) ·
 > UI ซ่อนปุ่มตามสิทธิ์ + resolver `requirePermission()` ปฏิเสธ 403 ถ้าไม่มีสิทธิ์
 >
+> ⚠️ **หน้า Permissions แก้สิทธิ์ตาม "ร้านที่แอดมินยืนอยู่ตอนนั้น"** — platform admin ที่ไม่ได้ drill-down
+> เข้าร้านเป้าหมายก่อน จะแก้สิทธิ์ผิดร้าน (มักไปลงร้าน default) ทั้งที่ backend/cache ทำงานถูกต้อง —
+> ต้อง `/admin/tenants` → "เข้าดู" ร้านเป้าหมายก่อน (เห็น banner เหลืองยืนยัน) แล้วค่อยแก้ Permissions
+>
 > **RBAC 2 ชั้น:** *platform admin* (`users.is_platform_admin`) = ดูแลทั้งแพลตฟอร์ม (list/จัดการทุกร้าน, plan, role กลาง) ·
 > *tenant role* (Administrator/Manager/Sales/Warehouse) = จัดการเฉพาะร้านตัวเอง.
 > จัดการ **User** = Administrator/platform (scope ตามร้าน) · จัดการ **Role กลาง** = platform เท่านั้น.
@@ -347,6 +356,10 @@ Reason
 >
 > **401 vs 403:** 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับ logout · 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ → แสดง error, **ไม่ logout**.
 > role ใหม่/permission ใหม่ต้อง seed ให้ Manager/Sales/Warehouse ทุก tenant (เช่น migration `5.7`) ไม่งั้นร้านโดน 403
+>
+> **Quota staff ต่อแพ็กเกจ (`bms_plans.max_users`):** free = 3 คน · pro = 10 คน · business = ไม่จำกัด ·
+> บังคับใช้ตอนสร้าง user ใหม่ (`enforceUserQuota()`) — เกินโควตา throw error พร้อมข้อความแนะนำอัปเกรด ·
+> **platform admin ไม่ถูกจำกัด** (เพิ่ม staff ให้ร้านไหนก็ได้ไม่ติด quota)
 
 Admin
 
