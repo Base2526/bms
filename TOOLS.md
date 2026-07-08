@@ -543,16 +543,25 @@ REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI 
 
 ## sendStaffMessage()
 
-แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push; อื่น ๆ persist อย่างเดียว)
+แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push / Meta send; อื่น ๆ persist อย่างเดียว)
 
 Input
 
 {
     conversationId,
-    body
+    body,        # optional ถ้ามี attachment
+    attachment   # optional { url, name, mimeType }
 }
 
+**แนบรูป/ไฟล์:** อัปโหลดผ่าน REST `POST /api/bms/inbox/upload` (multipart, ≤10MB) → คืน `{url,name,mimeType}`
+→ ส่งเข้า `bmsSendMessage(attachment)`. เก็บใน `bms_messages.meta.attachment` (ไม่ต้อง migration) ·
+รูป → LINE image / Meta image attachment · ไฟล์อื่น → แนบเป็นลิงก์ท้ายข้อความ · push ต้องมี `NEXT_PUBLIC_BASE_URL` (https)
+
 Permission: inbox.reply
+
+**สถานะข้อความ (Phase 1):** OUT message เก็บ `meta.status` = `SENT` / `FAILED` (SENDING เป็น optimistic ฝั่ง client) ·
+push channel (LINE/FB/IG) → `delivered?SENT:FAILED` · web/tiktok → `SENT` (บันทึกแล้ว, ไม่ push) ·
+`bmsRetryMessage(id)` ส่งซ้ำจาก FAILED · UI **capability-gated** (`canReportDelivery`): LINE โชว์แค่ "ส่งแล้ว", web/tiktok "บันทึกแล้ว", ไม่มี tick อ่าน · delivered/read = Phase 2 (webhook FB/IG/web)
 
 ---
 
@@ -720,8 +729,12 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 - LINE = Messaging API push (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
 
 ✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
-(products/customers/orders+pay+ship/conversations/purchase) · ปิดใน production · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
-· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้) · cleanup scope เฉพาะร้านตัวเอง
+(products/customers/orders+pay+ship/conversations/purchase) · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
+· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้ · เมนูโชว์ให้คนมีสิทธิ์ `product.edit`) · cleanup scope เฉพาะร้านตัวเอง
+· ปิดใน production default · เปิดเครื่อง demo ด้วย env `BMS_ALLOW_FAKE_SEED=1` (`lib/dev-guards.ts` → `fakeSeedDisabled()`) · posts/users fixture ยังปิด production
+
+✅ **Platform-only admin pages** — ENV/Logs/Posts/Files/Social Queue/Architecture gate ที่ `layout.tsx`
+ด้วย `requirePlatformAdminPage()` (`lib/auth/platform-page.ts`) — non-platform เข้าตรงผ่าน URL ก็ถูก redirect
 
 ---
 
@@ -751,4 +764,9 @@ Permission: platform admin · audit: `tenant.impersonate.enter/exit`
 Permission: admin ที่ล็อกอิน
 
 > **Users/Roles management** (ใน `resolvers.ts`): `users`/`upsertUser`/`deleteUser(s)` gate ด้วย `requireUserAdmin()`
-> (platform = ทุกร้าน · Administrator = ร้านตัวเอง) · `createRole`/`updateRole`/`deleteRole` = `requirePlatformOnly()`
+> (platform = ทุกร้าน · Administrator = ร้านตัวเอง) · `createRole`/`updateRole`/`deleteRole` = `requirePlatformOnly()` ·
+> role dropdown ในหน้า UI ต้อง query `roles` จาก DB เสมอ (ห้าม hardcode ชื่อ role)
+
+## Quota staff ต่อแพ็กเกจ (`enforceUserQuota()`)
+เช็คก่อนสร้าง user ใหม่ (`upsertUser` ตอน INSERT) — เกิน `bms_plans.max_users` ของร้านนั้น → throw พร้อมข้อความแนะนำอัปเกรด
+free=3 · pro=10 · business=ไม่จำกัด (`-1`). **platform admin ไม่ถูกจำกัด**. ดู `lib/bms/plans.ts` (`enforceProductQuota` ทำงานแบบเดียวกันฝั่งสินค้า)

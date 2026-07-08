@@ -2,10 +2,15 @@
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
-  Typography, Avatar, Select, Tabs, Empty, Divider,
+  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip,
 } from "antd";
-import { useState, useEffect } from "react";
-import { ReloadOutlined, SendOutlined, UserOutlined } from "@ant-design/icons";
+import { useState, useEffect, useRef } from "react";
+import {
+  ReloadOutlined, SendOutlined, UserOutlined,
+  SmileOutlined, PictureOutlined, PaperClipOutlined,
+} from "@ant-design/icons";
+
+const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 // ---- Types --------------------------------------------------
@@ -15,7 +20,11 @@ type Conversation = {
   status: ConvStatus; assignedTo: string | null; tags: string[]; unread: number;
   lastMessage: string | null; lastMessageAt: string | null;
 };
-type Msg = { id: string; direction: "IN" | "OUT"; body: string; sender: string | null; createdAt: string };
+type Attachment = { url: string; name: string | null; mimeType: string | null; isImage: boolean };
+type Msg = {
+  id: string; direction: "IN" | "OUT"; body: string; sender: string | null; createdAt: string;
+  attachment?: Attachment | null; status?: string | null; canReportDelivery?: boolean;
+};
 type Note = { id: string; author: string | null; body: string; createdAt: string };
 
 // ---- GraphQL ------------------------------------------------
@@ -30,13 +39,14 @@ const Q_CONV = gql`
   query ($id: ID!) {
     bmsConversation(id: $id) {
       id channel customerRef customerName status assignedTo tags unread
-      messages { id direction body sender createdAt }
+      messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
       notes { id author body createdAt }
     }
   }
 `;
 const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref } }`;
-const M_SEND = gql`mutation ($id: ID!, $body: String!) { bmsSendMessage(id: $id, body: $body) { status delivered message } }`;
+const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered message } }`;
+const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered message } }`;
 const M_ASSIGN = gql`mutation ($id: ID!, $assignedTo: String) { bmsAssignConversation(id: $id, assignedTo: $assignedTo) }`;
 const M_STATUS = gql`mutation ($id: ID!, $status: BmsConvStatus!) { bmsSetConversationStatus(id: $id, status: $status) }`;
 const M_TAGS = gql`mutation ($id: ID!, $tags: [String!]!) { bmsSetConversationTags(id: $id, tags: $tags) }`;
@@ -46,6 +56,14 @@ const M_NOTE = gql`mutation ($id: ID!, $body: String!) { bmsAddConversationNote(
 const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", test: "default" };
 const STATUS_COLOR: Record<ConvStatus, string> = { OPEN: "green", PENDING: "orange", CLOSED: "default" };
 const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
+
+// preview ในลิสต์: ถ้าข้อความล่าสุดเป็น attachment (marker จาก sendStaffMessage) → โชว์ไอคอน
+function previewNode(last?: string | null) {
+  if (!last) return "—";
+  if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> รูปภาพ</>;
+  if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || "ไฟล์แนบ"}</>;
+  return last;
+}
 
 function Inbox() {
   const { can } = useBmsPermissions();
@@ -92,7 +110,12 @@ function Inbox() {
               renderItem={(c) => (
                 <List.Item
                   onClick={() => setActiveId(c.id)}
-                  style={{ cursor: "pointer", padding: 8, borderRadius: 6, background: activeId === c.id ? "var(--app-hover, #f0f7ff)" : undefined }}
+                  style={{
+                    cursor: "pointer", padding: 8, borderRadius: 6,
+                    // ธีมมืด: ไฮไลต์ด้วยน้ำเงินโปร่ง (ตัวอักษรตามธีม อ่านออก) + ขีดซ้าย
+                    background: activeId === c.id ? "rgba(22,119,255,0.16)" : undefined,
+                    borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
+                  }}
                 >
                   <List.Item.Meta
                     avatar={<Badge count={c.unread}><Avatar icon={<UserOutlined />} /></Badge>}
@@ -102,7 +125,7 @@ function Inbox() {
                         <span>{c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}</span>
                       </Space>
                     }
-                    description={<Typography.Text ellipsis style={{ maxWidth: 240 }} type="secondary">{c.lastMessage || "—"}</Typography.Text>}
+                    description={<Typography.Text ellipsis style={{ maxWidth: 240 }} type="secondary">{previewNode(c.lastMessage)}</Typography.Text>}
                   />
                 </List.Item>
               )}
@@ -137,6 +160,13 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
       else onErr({ message: r?.message });
     }, onError: onErr,
   });
+  const [retry, { loading: retrying }] = useMutation(M_RETRY, {
+    onCompleted: (d: any) => {
+      const r = d?.bmsRetryMessage;
+      if (r?.status === "SENT") { (r.delivered ? message.success : message.warning)(r.message); onChanged(); }
+      else onErr({ message: r?.message });
+    }, onError: onErr,
+  });
   const [assign] = useMutation(M_ASSIGN, { onCompleted: onChanged, onError: onErr });
   const [setStatus] = useMutation(M_STATUS, { onCompleted: onChanged, onError: onErr });
   const [saveTags] = useMutation(M_TAGS, { onCompleted: () => { message.success("บันทึกแท็กแล้ว"); onChanged(); }, onError: onErr });
@@ -166,30 +196,147 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     </Space>
   );
 
+  const [uploading, setUploading] = useState(false);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sendWith = (attachment: Attachment | null) => {
+    const body = reply.trim();
+    if (!body && !attachment) return;
+    send({
+      variables: {
+        id: conv.id,
+        body: body || null,
+        attachment: attachment ? { url: attachment.url, name: attachment.name, mimeType: attachment.mimeType } : null,
+      },
+    });
+  };
+  const submitReply = () => { if (!sending) sendWith(null); };
+
+  const uploadAndSend = async (file: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/bms/inbox/upload", { method: "POST", body: fd, credentials: "include" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || "อัปโหลดไม่สำเร็จ");
+      sendWith({ url: j.url, name: j.name, mimeType: j.mimeType, isImage: /^image\//i.test(j.mimeType || "") });
+    } catch (e: any) {
+      message.error(e?.message || "อัปโหลดไม่สำเร็จ");
+    } finally {
+      setUploading(false);
+    }
+  };
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) uploadAndSend(f);
+    e.target.value = ""; // reset ให้เลือกไฟล์เดิมซ้ำได้
+  };
+
+  // Phase 1 status: OUT เท่านั้น · FAILED → ปุ่มส่งใหม่ · SENT → capability-gated
+  const statusNode = (m: Msg) => {
+    if (m.direction !== "OUT" || !m.status) return null;
+    if (m.status === "FAILED") return (
+      <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ ส่งไม่สำเร็จ</span>{" "}
+        <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}
+          loading={retrying} onClick={() => retry({ variables: { id: m.id } })}>ส่งใหม่</Button>
+      </>
+    );
+    return m.canReportDelivery
+      ? <>{" · "}<span style={{ color: "#52c41a" }}>✓ ส่งแล้ว</span></>
+      : <Tooltip title="ช่องนี้ไม่รายงานสถานะการส่งถึง/อ่าน"><span>{" · ✓ บันทึกแล้ว"}</span></Tooltip>;
+  };
+
+  const emojiPicker = (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 30px)", gap: 2 }}>
+      {EMOJIS.map((e) => (
+        <span key={e} onClick={() => setReply((r) => r + e)}
+          style={{ cursor: "pointer", fontSize: 20, textAlign: "center", lineHeight: "30px", borderRadius: 4, userSelect: "none" }}>
+          {e}
+        </span>
+      ))}
+    </div>
+  );
+
   const chatTab = (
-    <div>
-      <div style={{ maxHeight: 340, overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-        {(conv.messages || []).map((m: Msg) => (
-          <div key={m.id} style={{ alignSelf: m.direction === "IN" ? "flex-start" : "flex-end", maxWidth: "75%" }}>
-            <div style={{
-              background: m.direction === "IN" ? "#f5f5f5" : (m.sender?.startsWith("staff") ? "#e6f4ff" : "#f6ffed"),
-              padding: "6px 10px", borderRadius: 8,
-            }}>
-              {m.body}
+    <div style={{ display: "flex", flexDirection: "column", height: 460 }}>
+      {/* ข้อความ — เต็มพื้นที่ด้านบน scroll ได้ */}
+      <div style={{ flex: 1, overflowY: "auto", padding: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+        {(conv.messages || []).map((m: Msg) => {
+          const isIn = m.direction === "IN";
+          const isStaff = m.sender?.startsWith("staff");
+          // ธีมมืด: customer = พื้นเทาโปร่ง (ตัวอักษรตามธีม) · staff = น้ำเงิน · AI = เขียว (ตัวอักษรขาว)
+          const bubble = isIn
+            ? { background: "rgba(148,163,184,0.20)", color: "var(--app-text, inherit)" }
+            : isStaff
+              ? { background: "#1677ff", color: "#fff" }
+              : { background: "#15803d", color: "#fff" };
+          return (
+            <div key={m.id} style={{ alignSelf: isIn ? "flex-start" : "flex-end", maxWidth: "75%", display: "flex", flexDirection: "column", alignItems: isIn ? "flex-start" : "flex-end" }}>
+              <div style={{
+                ...bubble,
+                padding: "8px 12px", borderRadius: 10,
+                whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5,
+              }}>
+                {m.body && <div>{m.body}</div>}
+                {m.attachment && (m.attachment.isImage ? (
+                  <a href={m.attachment.url} target="_blank" rel="noreferrer">
+                    <img src={m.attachment.url} alt={m.attachment.name || "image"}
+                      style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.body ? 6 : 0, display: "block" }} />
+                  </a>
+                ) : (
+                  <a href={m.attachment.url} target="_blank" rel="noreferrer"
+                    style={{ color: "inherit", textDecoration: "underline", marginTop: m.body ? 6 : 0, display: "inline-block" }}>
+                    📎 {m.attachment.name || "ไฟล์แนบ"}
+                  </a>
+                ))}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>
+                {m.sender} · {new Date(m.createdAt).toLocaleString()}{statusNode(m)}
+              </Typography.Text>
             </div>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              {m.sender} · {new Date(m.createdAt).toLocaleString()}
-            </Typography.Text>
+          );
+        })}
+        {(conv.messages || []).length === 0 && !sending && !uploading && <Empty description="ยังไม่มีข้อความ" />}
+        {/* optimistic: กำลังส่ง/อัปโหลด */}
+        {(sending || uploading) && (
+          <div style={{ alignSelf: "flex-end", maxWidth: "75%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: 0.6 }}>
+            <div style={{ background: "#1677ff", color: "#fff", padding: "8px 12px", borderRadius: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {uploading ? "กำลังอัปโหลดไฟล์…" : (reply || "…")}
+            </div>
+            <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>⏳ กำลังส่ง…</Typography.Text>
           </div>
-        ))}
-        {(conv.messages || []).length === 0 && <Empty description="ยังไม่มีข้อความ" />}
+        )}
       </div>
+
+      {/* กล่องพิมพ์ — ปักล่างสุด + toolbar */}
       {can("inbox.reply") && (
-        <Space.Compact style={{ width: "100%", marginTop: 12 }}>
-          <Input.TextArea rows={2} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="พิมพ์ตอบลูกค้า (LINE จะส่งจริงผ่าน push)" />
-          <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!reply.trim()}
-            onClick={() => send({ variables: { id: conv.id, body: reply } })}>ส่ง</Button>
-        </Space.Compact>
+        <div style={{ borderTop: "1px solid var(--app-border, #303030)", paddingTop: 10, marginTop: 8 }}>
+          <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
+          <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
+          <Space size={2} style={{ marginBottom: 6 }}>
+            <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
+              <Button type="text" size="small" icon={<SmileOutlined />} />
+            </Popover>
+            <Tooltip title="แนบรูป (ส่งเข้าแชท)">
+              <Button type="text" size="small" icon={<PictureOutlined />} loading={uploading} onClick={() => imgInputRef.current?.click()} />
+            </Tooltip>
+            <Tooltip title="แนบไฟล์ (สูงสุด 10MB)">
+              <Button type="text" size="small" icon={<PaperClipOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()} />
+            </Tooltip>
+          </Space>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <Input.TextArea
+              rows={2} value={reply} onChange={(e) => setReply(e.target.value)}
+              placeholder="พิมพ์ตอบลูกค้า (Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่)"
+              style={{ flex: 1, resize: "none" }}
+              onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
+            />
+            <Button type="primary" size="large" icon={<SendOutlined />} loading={sending} disabled={!reply.trim()}
+              style={{ height: "auto", minWidth: 88 }} onClick={submitReply}>ส่ง</Button>
+          </div>
+        </div>
       )}
     </div>
   );

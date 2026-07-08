@@ -85,7 +85,7 @@ export default function DevFakePage() {
       />
       <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
-        message="ใช้เฉพาะ dev/test เท่านั้น (ปิดใน production) · ต้องเป็น admin/internal caller"
+        message="ใช้เฉพาะ dev/test (production ปิด default — เปิดด้วย env BMS_ALLOW_FAKE_SEED=1 บนเครื่อง demo) · Posts/Users เป็น fixture platform ยังปิดใน production"
         description={<>ลำดับแนะนำ: <b>Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
           <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
           <b>Conversations</b> + messages → เติม Inbox · marker: <code>FAKE-</code> / tag <code>fake</code> ·

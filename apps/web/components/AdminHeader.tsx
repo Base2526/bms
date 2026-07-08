@@ -31,6 +31,7 @@ import {
 import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/useSession';
 import { gql, useQuery } from '@apollo/client';
+import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 
@@ -60,13 +61,19 @@ export default function AdminHeader() {
   const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
+  const { can } = useBmsPermissions();
+  // Fake data (dev): ให้ร้านค้าเทสในมุมตัวเองได้ (seed ลง tenant ตัวเอง) → ผูกกับสิทธิ์แก้สินค้า
+  const canSeedFake = isPlatformAdmin || can('product.edit');
+  // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
+  const showSystemGroup = isPlatformAdmin || canSeedFake;
 
   // จัดกลุ่มเมนูเป็นหมวด → dropdown
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     link('/admin/reports', 'Reports', <BarChartOutlined />),
     link('/admin/manual', 'คู่มือ', <BookOutlined />),
-    link('/admin/architecture', 'Architecture', <PartitionOutlined />),
+    // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
+    ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
     {
       key: 'g-bms',
       icon: <ShopOutlined />,
@@ -104,19 +111,23 @@ export default function AdminHeader() {
         link('/admin/audit', 'Audit log', <BookOutlined />),
       ],
     }] : []),
-    {
+    ...(showSystemGroup ? [{
       key: 'g-system',
       icon: <AppstoreOutlined />,
       label: 'ระบบ',
       children: [
-        link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
-        link('/admin/files', 'Files', <FileImageOutlined />, 5),
-        link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
-        link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
-        link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />),
-        link('/admin/env', 'ENV', <EnvironmentOutlined />),
+        // ระดับแพลตฟอร์ม → platform admin เท่านั้น
+        ...(isPlatformAdmin ? [
+          link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
+          link('/admin/files', 'Files', <FileImageOutlined />, 5),
+          link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
+          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
+          link('/admin/env', 'ENV', <EnvironmentOutlined />),
+        ] : []),
+        // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้
+        ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />)] : []),
       ],
-    },
+    }] : []),
   ];
 
   // ไฮไลต์เมนูที่ตรง path ปัจจุบัน

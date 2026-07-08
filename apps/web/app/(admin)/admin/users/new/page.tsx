@@ -1,12 +1,18 @@
 'use client';
-import { ApolloClient, InMemoryCache, HttpLink, ApolloProvider, gql, useMutation } from "@apollo/client";
-import { Card, Form, Input, Select, Button, message } from "antd";
+import { gql, useMutation, useQuery } from "@apollo/client";
+import { Card, Form, Input, Select, Button, message, Alert } from "antd";
 import React from "react";
 
 const M_UPSERT = gql`
 mutation($data:UserInput!){
   upsertUser(data:$data){ id }
 }
+`;
+
+// role ต้องดึงจาก DB จริง (ไม่ hardcode) — มี Administrator/Manager/Sales/Warehouse/Subscriber ฯลฯ
+// ตรงกับที่หน้า Edit User ใช้อยู่แล้ว (เดิมหน้านี้ hardcode ค้างจาก project เก่า ทำให้ role ไม่ครบ)
+const Q_ROLES = gql`
+query { roles { id name } }
 `;
 
 async function sha256Hex(input: string) {
@@ -20,6 +26,9 @@ function FormNew(){
   const watchName = Form.useWatch('name', form);   // 👈 debug helper
   const watchEmail = Form.useWatch('email', form); // 👈 debug helper
 
+  const { data: rolesData, loading: rolesLoading, error: rolesError } = useQuery(Q_ROLES);
+  const roles: { id: string; name: string }[] = rolesData?.roles || [];
+
   const [save,{loading}] = useMutation(M_UPSERT,{
     onCompleted:()=>{ message.success('Created'); window.location.href='/admin/users'; }
   });
@@ -31,13 +40,13 @@ function FormNew(){
     if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
     const passwordHash = await sha256Hex(pwd);
 
-    await save({ variables:{ 
+    await save({ variables:{
       data: {
         name: v.name,
         email: v.email,
         phone: v.phone || null,
         avatar: v.avatar || null,
-        role: v.role,
+        role_id: v.role_id,
         passwordHash
       }
     }});
@@ -70,13 +79,12 @@ function FormNew(){
         <Form.Item name="phone" label="Phone"><Input /></Form.Item>
         <Form.Item name="avatar" label="Avatar URL"><Input /></Form.Item>
 
-        <Form.Item name="role" label="Role" initialValue="Subscriber" rules={[{ required: true }]}>
+        {rolesError && <Alert type="error" showIcon message="โหลดรายชื่อ role ไม่ได้" description={rolesError.message} style={{ marginBottom: 16 }} />}
+        <Form.Item name="role_id" label="Role" rules={[{ required: true, message: 'กรุณาเลือก Role' }]}>
           <Select
-            options={[
-              {value:'Subscriber', label:'Subscriber'},
-              {value:'Author', label:'Author'},
-              {value:'Administrator', label:'Administrator'},
-            ]}
+            loading={rolesLoading}
+            placeholder="เลือก Role"
+            options={roles.map((r) => ({ value: r.id, label: r.name }))}
           />
         </Form.Item>
 

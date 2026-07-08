@@ -53,6 +53,13 @@ function Sec({ id, children }: { id: string; children: React.ReactNode }) {
   return <div id={id} style={{ scrollMarginTop: 80, marginBottom: 32 }}>{children}</div>;
 }
 
+const codeBlock: React.CSSProperties = {
+  background: "var(--app-surface-2, rgba(127,127,127,0.12))",
+  border: "1px solid var(--app-border, rgba(127,127,127,0.25))",
+  borderRadius: 6, padding: 12, margin: "8px 0 16px",
+  fontSize: 12, lineHeight: 1.6, overflowX: "auto", whiteSpace: "pre",
+};
+
 export default function Page() {
   const anchorItems = [
     { key: "overview", href: "#overview", title: "1. ภาพรวมระบบ" },
@@ -71,6 +78,7 @@ export default function Page() {
     { key: "billing", href: "#billing", title: "14. Billing & แพ็กเกจ" },
     { key: "saas", href: "#saas", title: "15. SaaS multi-tenant" },
     { key: "api", href: "#api", title: "16. API / Webhook reference" },
+    { key: "testai", href: "#testai", title: "17. ทดสอบ AI (Postman/webhook)" },
   ];
 
   return (
@@ -266,6 +274,54 @@ export default function Page() {
               message="ระบบตรวจ error อัตโนมัติรายวัน + แจ้งเตือน LINE"
               description={<>ทุกวันมี GitHub Actions ดึง error จาก <Text code>system_logs</Text> ให้ AI วิเคราะห์แล้วเปิด draft PR เสนอการแก้ให้ทีมรีวิว (ไม่ merge เอง) แล้ว<b>แจ้งเตือนทีมผ่าน LINE</b>พร้อมลิงก์ PR — รายละเอียดที่หน้า Architecture §8 และ <Text code>scripts/bms-log-triage/</Text></>}
             />
+          </Sec>
+
+          <Sec id="testai">
+            <Title level={4}>17. ทดสอบ AI ด้วย Postman / webhook</Title>
+            <Paragraph>
+              อยากรู้ว่า AI ตอบลูกค้าได้ดีแค่ไหน — ยิงข้อความเข้าไปตรง ๆ ได้เลยโดยไม่ต้องต่อ LINE/FB จริง.
+              ทั้ง 2 endpoint เป็น <b>public</b> (ไม่ต้อง login/signature) เหมาะกับ Postman/curl.
+            </Paragraph>
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message={<>ใช้ <Text code>tenantId</Text> ของร้านคุณ (แทน <Text code>{`{tenantId}`}</Text> ด้านล่าง)</>}
+              description={<>ดู tenant id ของร้านตัวเองได้ที่ <Link href="/admin/profile">โปรไฟล์ของฉัน</Link> · base URL: dev = <Text code>http://localhost:3000</Text>, ใช้งานจริง = โดเมนร้านคุณ</>} />
+
+            <Title level={5}>A) Playground — ดูคำตอบ + เหตุผล (แนะนำเวลาประเมินคุณภาพ)</Title>
+            <Paragraph type="secondary">คืน trace เต็ม (intent / entity / tool ที่เลือก / reply) · ไม่บันทึกลง Inbox</Paragraph>
+            <pre style={codeBlock}>{`POST {origin}/api/bms/chat
+Content-Type: application/json
+
+{
+  "message": "มีเสื้อ Nike ไซซ์ XL ไหม ราคาเท่าไหร่",
+  "channel": "web",
+  "tenantId": "{tenantId}",
+  "customerRef": "postman-01"
+}`}</pre>
+
+            <Title level={5}>B) Web Live Chat webhook — เหมือนลูกค้าจริง (ขึ้นใน Inbox)</Title>
+            <Paragraph type="secondary">คืน <Text code>{`{ reply, sessionId }`}</Text> และบันทึกลง <Link href="/admin/inbox">Inbox</Link> ของร้าน · ยิงซ้ำ sessionId เดิม = คุยต่อเนื่อง (rate limit 120/นาที/ร้าน)</Paragraph>
+            <pre style={codeBlock}>{`POST {origin}/api/bms/web/webhook/{tenantId}
+Content-Type: application/json
+
+{
+  "message": "สวัสดีครับ มีเสื้อ Nike ไซซ์ XL ไหม",
+  "sessionId": "postman-001"
+}`}</pre>
+
+            <Title level={5}>ตัวอย่างข้อความตาม intent</Title>
+            <ul>
+              <li><Text code>สวัสดีครับ</Text> → ทักทาย (GREETING)</li>
+              <li><Text code>Nike XL มีไหม</Text> / <Text code>มีไซซ์ M ไหม</Text> → เช็คสต็อก+ราคา (CHECK_STOCK)</li>
+              <li><Text code>เสื้อ Nike ราคาเท่าไหร่</Text> → ค้นสินค้า+ราคา</li>
+              <li><Text code>สั่ง Nike 2 ตัว</Text> → สร้าง draft order (CONFIRM_ORDER)</li>
+            </ul>
+
+            <Alert type="warning" showIcon style={{ marginTop: 8 }}
+              message="เตรียมก่อนเทส ไม่งั้น AI จะตอบว่า “ไม่พบสินค้า”"
+              description={<ul style={{ margin: 0, paddingLeft: 18 }}>
+                <li>ร้านต้องมีสินค้าก่อน — เพิ่มเองที่ <Link href="/admin/products">Products</Link> หรือ seed เร็ว ๆ ที่ <Link href="/admin/dev/fake">Fake data</Link> (ตั้งชื่อให้มีคำที่จะถาม เช่น “Nike” จะเทสตรงกว่า)</li>
+                <li>ต้องตั้ง env <Text code>ANTHROPIC_API_KEY</Text> — ไม่งั้นคำตอบเป็น rule-based/fallback (ไม่ใช่คำตอบจาก Claude จริง)</li>
+              </ul>} />
           </Sec>
         </Col>
 

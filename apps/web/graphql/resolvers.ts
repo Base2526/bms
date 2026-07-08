@@ -48,6 +48,7 @@ import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
+import { enforceUserQuota } from "@/lib/bms/plans";
 
 import { logAsync } from "@/lib/logger";
 
@@ -5093,6 +5094,8 @@ const rawResolvers = {
 
           // user ใหม่สังกัดร้านของผู้สร้าง (platform admin ระบุ tenant อื่นได้)
           const newTenantId = platform && data.tenant_id ? String(data.tenant_id) : tenantId;
+          // เกิน quota staff ของแพ็กเกจร้าน → ปฏิเสธ (platform admin ไม่ถูกจำกัด)
+          if (!platform) await enforceUserQuota(newTenantId);
 
           // Use role_id if available, otherwise use role text
           if (roleId) {

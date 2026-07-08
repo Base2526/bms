@@ -72,7 +72,9 @@ export async function listTenants(): Promise<TenantRow[]> {
     slug: r.slug,
     plan: r.plan,
     active: r.active,
-    created_at: r.created_at,
+    // pg คืน created_at เป็น Date object — ต้องแปลงเป็น ISO string เอง
+    // (GraphQLString.serialize บน Date จะเรียก .valueOf() ได้ epoch number แล้วแปลงเป็น string ตัวเลข ไม่ใช่วันที่)
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     users: r.users ?? 0,
     products: r.products ?? 0,
     orders: r.orders ?? 0,

@@ -16,6 +16,31 @@ import { getChannel } from "./channels";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
+export type Attachment = { url: string; name?: string | null; mimeType?: string | null };
+
+export function isImageMime(mime?: string | null): boolean {
+  return !!mime && /^image\//i.test(mime);
+}
+
+// ช่องที่ push ออกได้จริง (มี API ส่ง) → FAILED มีความหมาย
+// web/tiktok/test = ไม่ push (widget poll / ยังไม่มี API) → ถือว่า SENT เมื่อ persist สำเร็จ
+export function channelSupportsPush(channel: string): boolean {
+  return channel === "line" || channel === "facebook" || channel === "instagram";
+}
+
+/** สถานะ outbound (Phase 1): push channel → delivered?SENT:FAILED · อื่น → SENT (บันทึกแล้ว) */
+export function outboundStatus(channel: string, delivered: boolean): "SENT" | "FAILED" {
+  if (!channelSupportsPush(channel)) return "SENT";
+  return delivered ? "SENT" : "FAILED";
+}
+
+/** แปลง url ให้เป็น absolute https (สำหรับ push ออกช่องทางภายนอก เช่น LINE/Meta) */
+function absoluteUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  return base ? `${base}${url.startsWith("/") ? "" : "/"}${url}` : url;
+}
+
 // ---- hook: บันทึกบทสนทนา (เรียกจาก pipeline หลังได้ reply) ---------
 /**
  * บันทึกข้อความเข้า (ลูกค้า) + ออก (AI) ลง inbox
@@ -107,7 +132,7 @@ export async function getConversation(tenantId: string, id: string) {
 export async function listMessages(tenantId: string, conversationId: string, limit = 200) {
   const lim = Math.min(Math.max(limit, 1), 500);
   const res = await query(
-    `SELECT id, direction, body, sender, created_at
+    `SELECT id, direction, body, sender, meta, created_at
        FROM bms_messages
       WHERE tenant_id = $1 AND conversation_id = $2
       ORDER BY created_at, id
@@ -186,17 +211,27 @@ const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
  *   • web               → ไม่ต้อง push (ตอบผ่าน HTTP response ของ widget)
  *   • tiktok            → ยังไม่ผูก send API — persist อย่างเดียว
  */
-export async function deliverToChannel(tenantId: string, channel: string, to: string | null, text: string): Promise<boolean> {
+export async function deliverToChannel(
+  tenantId: string, channel: string, to: string | null, text: string, attachment?: Attachment | null
+): Promise<boolean> {
   if (!to) return false;
+  const img = attachment && isImageMime(attachment.mimeType) ? absoluteUrl(attachment.url) : null;
+  // ไฟล์ที่ไม่ใช่รูป → แนบเป็นลิงก์ท้ายข้อความ (channel ส่วนใหญ่ไม่มี generic file message)
+  const fileLink = attachment && !img ? absoluteUrl(attachment.url) : null;
+  const outText = [text, fileLink].filter(Boolean).join(fileLink ? "\n" : "");
 
   if (channel === "line") {
     const cfg = await getChannel(tenantId, "line");
     if (!cfg?.active || !cfg.access_token) return false;
+    const messages: any[] = [];
+    if (outText) messages.push({ type: "text", text: outText });
+    if (img) messages.push({ type: "image", originalContentUrl: img, previewImageUrl: img });
+    if (messages.length === 0) return false;
     try {
       const resp = await fetch("https://api.line.me/v2/bot/message/push", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
-        body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+        body: JSON.stringify({ to, messages }),
       });
       return resp.ok;
     } catch (e) {
@@ -208,16 +243,16 @@ export async function deliverToChannel(tenantId: string, channel: string, to: st
   if (channel === "facebook" || channel === "instagram") {
     const cfg = await getChannel(tenantId, channel);
     if (!cfg?.active || !cfg.access_token) return false;
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/me/messages?access_token=${encodeURIComponent(cfg.access_token)}`;
+    const send = (msg: any) => fetch(url, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),
+    });
     try {
-      const resp = await fetch(
-        `https://graph.facebook.com/${META_GRAPH_VERSION}/me/messages?access_token=${encodeURIComponent(cfg.access_token)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: { text } }),
-        }
-      );
-      return resp.ok;
+      let ok = true;
+      if (outText) ok = (await send({ text: outText })).ok && ok;
+      if (img) ok = (await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } })).ok && ok;
+      return ok;
     } catch (e) {
       console.error(`[BMS] ${channel} send failed:`, e);
       return false;
@@ -232,10 +267,12 @@ export async function sendStaffMessage(
   tenantId: string,
   conversationId: string,
   body: string,
-  staff: string | null
+  staff: string | null,
+  attachment?: Attachment | null
 ): Promise<SendResult> {
-  const text = body.trim();
-  if (!text) return { status: "EMPTY" };
+  const text = (body || "").trim();
+  const att = attachment?.url ? attachment : null;
+  if (!text && !att) return { status: "EMPTY" };
 
   const conv = await query<{ channel: string; customer_ref: string | null }>(
     `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
@@ -243,19 +280,53 @@ export async function sendStaffMessage(
   );
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
 
-  const delivered = await deliverToChannel(tenantId, conv.rows[0].channel, conv.rows[0].customer_ref, text);
+  const channel = conv.rows[0].channel;
+  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text, att);
+  const status = outboundStatus(channel, delivered);
 
+  // body NOT NULL — เก็บข้อความ (อาจว่างถ้าเป็น attachment ล้วน)
   await query(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, $4, $5)`,
-    [tenantId, conversationId, text, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered })]
+    [tenantId, conversationId, text, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att })]
   );
+  // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
+  const preview = text || (att ? (isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim()) : "");
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId, text.slice(0, 500)]
+    [tenantId, conversationId, preview.slice(0, 500)]
   );
 
+  return { status: "SENT", delivered };
+}
+
+/** ส่งข้อความเดิมซ้ำ (retry จากสถานะ FAILED) — ยิงช่องทางใหม่ + อัปเดต meta.status ในแถวเดิม */
+export async function retryMessage(tenantId: string, messageId: string): Promise<SendResult> {
+  const m = await query<{ conversation_id: string; body: string; meta: any }>(
+    `SELECT conversation_id, body, meta FROM bms_messages
+      WHERE tenant_id = $1 AND id = $2 AND direction = 'OUT'`,
+    [tenantId, messageId]
+  );
+  if (m.rowCount === 0) return { status: "NOT_FOUND" };
+  const row = m.rows[0];
+
+  const conv = await query<{ channel: string; customer_ref: string | null }>(
+    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, row.conversation_id]
+  );
+  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
+
+  const att: Attachment | null = row.meta?.attachment ?? null;
+  const channel = conv.rows[0].channel;
+  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, row.body || "", att);
+  const status = outboundStatus(channel, delivered);
+
+  // merge เข้า meta เดิม (คง attachment ไว้)
+  await query(
+    `UPDATE bms_messages SET meta = meta || $3::jsonb WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, messageId, JSON.stringify({ delivered, status })]
+  );
   return { status: "SENT", delivered };
 }
 

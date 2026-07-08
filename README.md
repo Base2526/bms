@@ -92,7 +92,7 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | Module | Responsibility |
 | --- | --- |
 | **Channel Integration** ✅ | Per-tenant webhooks for LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — all normalized into one pipeline (signature-verified) |
-| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) |
+| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) with image/file attachments; message status (sent/failed + retry, capability-gated per channel) |
 | **AI Orchestrator** | Intent detection, entity extraction, tool selection |
 | **CRM** | Customer profiles across channels, purchase history, LTV |
 | **Product Management** | Products, variants, SKU, barcode, pricing, categories |
@@ -190,6 +190,8 @@ AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
   (list all shops, toggle active, change plan). To inspect a shop's data it **drills in**
   (`bmsEnterTenant` → signed context switch + banner) rather than viewing all tenants at once
 - Auth vs authorization: **401** (not logged in) forces logout; **403** (no permission) just shows an error
+- Staff seats are capped per plan (`bms_plans.max_users`): free = 3, pro = 10, business = unlimited — enforced
+  on user creation; platform admin is exempt
 
 ---
 
@@ -262,7 +264,9 @@ cron (daily) → collect + redact logs → Claude analyze/patch → draft PR →
 ### 🧪 Testing — Fake Data Seeder (dev only)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) bulk-generates test data so every screen
-has content — up to 2000 rows/run, disabled in production, admin-only.
+has content — up to 2000 rows/run. Seeds into the **logged-in user's tenant**
+(a shop can self-test; cleanup is scoped to that shop too). Disabled in production
+by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 | Generator | Fills |
 | --- | --- |
@@ -350,7 +354,7 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | โมดูล | หน้าที่ |
 | --- | --- |
 | **Channel Integration** ✅ | Webhook แยกต่อร้าน: LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — รวมเข้า pipeline เดียว (ตรวจ signature) |
-| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) |
+| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) แนบรูป/ไฟล์ได้, มีสถานะข้อความ (ส่งแล้ว/ล้มเหลว+ส่งใหม่ ตามความสามารถของแต่ละช่องทาง) |
 | **AI Orchestrator** | ตรวจ intent, ดึง entity, เลือก tool |
 | **CRM** | โปรไฟล์ลูกค้าข้ามช่องทาง, ประวัติซื้อ, มูลค่าตลอดชีพ |
 | **Product Management** | สินค้า, variant, SKU, barcode, ราคา, หมวดหมู่ |
@@ -400,6 +404,7 @@ AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** —
   (list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan) · อยากดูข้อมูลในร้านให้ **drill-down**
   (`bmsEnterTenant` → สลับ context แบบ signed + banner) แทนการดูข้ามร้านปนกัน
 - 401 (ไม่ได้ล็อกอิน) = บังคับ logout · 403 (ไม่มีสิทธิ์) = แสดง error เฉย ๆ ไม่เตะออก
+- จำกัดจำนวน staff ต่อแพ็กเกจ (`bms_plans.max_users`): free=3, pro=10, business=ไม่จำกัด — บังคับตอนสร้าง user ใหม่ (platform admin ไม่ถูกจำกัด)
 
 ---
 
@@ -471,7 +476,8 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 ### 🧪 การทดสอบ — Fake Data Seeder (dev เท่านั้น)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) สร้างข้อมูลทดสอบทีละมากๆ ให้ทุกหน้ามีข้อมูล —
-สูงสุด 2000 แถว/ครั้ง, ปิดใน production, เฉพาะ admin
+สูงสุด 2000 แถว/ครั้ง · seed ลง **tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง · cleanup scope ตามร้าน) ·
+ปิดใน production default — ตั้ง `BMS_ALLOW_FAKE_SEED=1` เพื่อเปิดบนเครื่อง demo
 
 | Generator | เติมหน้า |
 | --- | --- |

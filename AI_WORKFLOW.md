@@ -101,7 +101,7 @@ Notify LINE            ← push ลิงก์ PR (Messaging API; LINE Notify �
 
 - **Playground** (`/api/bms/chat`, channel=test) — ยิงข้อความจำลองดู trace เต็ม (intent/tool/reply) โดยไม่ log inbox
 - **Fake Data Seeder** (`/admin/dev/fake`) — สร้าง products/customers/orders/conversations/purchase ทีละมากๆ
-  เพื่อเติม Dashboard/Reports/Inbox/Payment/Shipping/Purchase (dev only, marker `FAKE-`, cleanup ได้)
+  เพื่อเติม Dashboard/Reports/Inbox/Payment/Shipping/Purchase (marker `FAKE-`, cleanup ได้ · ปิด production default, เปิดด้วย `BMS_ALLOW_FAKE_SEED=1`)
   · **seed ลง tenant ของผู้ล็อกอิน** — platform admin ต้อง drill-down เข้าร้าน (`bmsEnterTenant`) ก่อน จึงจะเห็น pipeline/ข้อมูลของร้านนั้น
 
 > ทุก tool ใน pipeline วิ่งผ่าน service ที่ scope ด้วย `getTenantId(ctx)` — context ของ webhook มาจาก `{tenantId}` ใน URL,
