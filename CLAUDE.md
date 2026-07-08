@@ -28,7 +28,7 @@ Supported channels:
 | Module | สถานะ | ที่อยู่ (service · migration) |
 | --- | --- | --- |
 | Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
-| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` |
+| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · แนบรูป/ไฟล์ (`/api/bms/inbox/upload` → `meta.attachment`) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` (rule-based NLU + Claude) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` |

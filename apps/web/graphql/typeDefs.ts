@@ -913,12 +913,27 @@ export const typeDefs = /* GraphQL */ `
     CLOSED
   }
 
+  type BmsMessageAttachment {
+    url: String!
+    name: String
+    mimeType: String
+    isImage: Boolean!
+  }
+  input BmsAttachmentInput {
+    url: String!
+    name: String
+    mimeType: String
+  }
+
   type BmsMessage {
     id: ID!
     direction: String!      # IN | OUT
     body: String!
     sender: String          # customer | ai | staff:<email>
     createdAt: String!
+    attachment: BmsMessageAttachment
+    status: String          # (OUT only) SENT | FAILED · null = ไม่มีสถานะ
+    canReportDelivery: Boolean!   # ช่องนี้ push/รายงานผลได้ไหม (LINE/FB/IG=true · web/tiktok=false)
   }
 
   type BmsConversationNote {
@@ -1524,7 +1539,8 @@ export const typeDefs = /* GraphQL */ `
     bmsCancelShipment(id: ID!): Boolean!
 
     # ===== BMS inbox (admin) =====
-    bmsSendMessage(id: ID!, body: String!): BmsSendResult!            # ตอบเอง (persist + ยิงกลับช่องทาง)
+    bmsSendMessage(id: ID!, body: String, attachment: BmsAttachmentInput): BmsSendResult!   # ตอบเอง (persist + ยิงกลับช่องทาง) · body หรือ attachment อย่างน้อยหนึ่ง
+    bmsRetryMessage(id: ID!): BmsSendResult!                                                # ส่งข้อความเดิมซ้ำ (จากสถานะ FAILED)
     bmsAssignConversation(id: ID!, assignedTo: String): Boolean!
     bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!

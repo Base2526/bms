@@ -9,8 +9,9 @@
 import {
   listConversations, getConversation, listMessages,
   assignConversation, setConversationStatus, setConversationTags, markRead,
-  addNote, listNotes, sendStaffMessage, getTimeline,
-  type ConvStatus,
+  addNote, listNotes, sendStaffMessage, retryMessage, getTimeline,
+  isImageMime, channelSupportsPush, outboundStatus,
+  type ConvStatus, type Attachment,
 } from "@/lib/bms/inbox";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -46,9 +47,9 @@ export const bmsInboxResolvers = {
   },
 
   Mutation: {
-    async bmsSendMessage(_p: unknown, args: { id: string; body: string }, ctx: any) {
+    async bmsSendMessage(_p: unknown, args: { id: string; body?: string; attachment?: Attachment }, ctx: any) {
       await requirePermission(ctx, "inbox.reply");
-      const res = await sendStaffMessage(getTenantId(ctx), args.id, args.body, actorOf(ctx));
+      const res = await sendStaffMessage(getTenantId(ctx), args.id, args.body ?? "", actorOf(ctx), args.attachment ?? null);
       if (res.status === "SENT") {
         await audit(ctx, "inbox.reply", args.id, { delivered: res.delivered });
         return {
@@ -59,6 +60,19 @@ export const bmsInboxResolvers = {
       }
       const msg: Record<string, string> = { NOT_FOUND: "ไม่พบบทสนทนา", EMPTY: "ข้อความว่าง" };
       return { status: res.status, delivered: false, message: msg[res.status] ?? "ส่งไม่ได้" };
+    },
+
+    async bmsRetryMessage(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "inbox.reply");
+      const res = await retryMessage(getTenantId(ctx), args.id);
+      if (res.status === "SENT") {
+        await audit(ctx, "inbox.retry", args.id, { delivered: res.delivered });
+        return {
+          status: "SENT", delivered: res.delivered,
+          message: res.delivered ? "ส่งซ้ำสำเร็จ" : "ยังส่งไม่สำเร็จ (ลองใหม่อีกครั้ง)",
+        };
+      }
+      return { status: res.status, delivered: false, message: res.status === "NOT_FOUND" ? "ไม่พบข้อความ" : "ส่งซ้ำไม่ได้" };
     },
 
     async bmsAssignConversation(_p: unknown, args: { id: string; assignedTo?: string }, ctx: any) {
@@ -107,10 +121,23 @@ export const bmsInboxResolvers = {
     updatedAt: (p: any) => toISO(p.updated_at),
     async messages(p: any, _a: unknown, ctx: any) {
       const rows = await listMessages(getTenantId(ctx), p.id);
-      return rows.map((m: any) => ({
-        id: String(m.id), direction: m.direction, body: m.body,
-        sender: m.sender ?? null, createdAt: toISO(m.created_at),
-      }));
+      const channel = p.channel;
+      return rows.map((m: any) => {
+        const att = m.meta?.attachment;
+        // status เฉพาะ OUT · msg เก่า (ไม่มี meta.status) → derive จาก delivered
+        const status = m.direction === "OUT"
+          ? (m.meta?.status ?? (typeof m.meta?.delivered === "boolean" ? outboundStatus(channel, m.meta.delivered) : null))
+          : null;
+        return {
+          id: String(m.id), direction: m.direction, body: m.body,
+          sender: m.sender ?? null, createdAt: toISO(m.created_at),
+          attachment: att?.url
+            ? { url: att.url, name: att.name ?? null, mimeType: att.mimeType ?? null, isImage: isImageMime(att.mimeType) }
+            : null,
+          status,
+          canReportDelivery: channelSupportsPush(channel),
+        };
+      });
     },
     async notes(p: any, _a: unknown, ctx: any) {
       const rows = await listNotes(getTenantId(ctx), p.id);

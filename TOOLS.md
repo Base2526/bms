@@ -543,16 +543,25 @@ REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI 
 
 ## sendStaffMessage()
 
-แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push; อื่น ๆ persist อย่างเดียว)
+แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push / Meta send; อื่น ๆ persist อย่างเดียว)
 
 Input
 
 {
     conversationId,
-    body
+    body,        # optional ถ้ามี attachment
+    attachment   # optional { url, name, mimeType }
 }
 
+**แนบรูป/ไฟล์:** อัปโหลดผ่าน REST `POST /api/bms/inbox/upload` (multipart, ≤10MB) → คืน `{url,name,mimeType}`
+→ ส่งเข้า `bmsSendMessage(attachment)`. เก็บใน `bms_messages.meta.attachment` (ไม่ต้อง migration) ·
+รูป → LINE image / Meta image attachment · ไฟล์อื่น → แนบเป็นลิงก์ท้ายข้อความ · push ต้องมี `NEXT_PUBLIC_BASE_URL` (https)
+
 Permission: inbox.reply
+
+**สถานะข้อความ (Phase 1):** OUT message เก็บ `meta.status` = `SENT` / `FAILED` (SENDING เป็น optimistic ฝั่ง client) ·
+push channel (LINE/FB/IG) → `delivered?SENT:FAILED` · web/tiktok → `SENT` (บันทึกแล้ว, ไม่ push) ·
+`bmsRetryMessage(id)` ส่งซ้ำจาก FAILED · UI **capability-gated** (`canReportDelivery`): LINE โชว์แค่ "ส่งแล้ว", web/tiktok "บันทึกแล้ว", ไม่มี tick อ่าน · delivered/read = Phase 2 (webhook FB/IG/web)
 
 ---
 
