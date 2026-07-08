@@ -343,6 +343,7 @@ Reason
 > *tenant role* (Administrator/Manager/Sales/Warehouse) = จัดการเฉพาะร้านตัวเอง.
 > จัดการ **User** = Administrator/platform (scope ตามร้าน) · จัดการ **Role กลาง** = platform เท่านั้น.
 > platform admin ดูข้อมูล operational ของร้าน (ลูกค้า/ออเดอร์) ผ่าน **drill-down** เท่านั้น — ไม่เห็นข้ามร้านปนกัน (privacy).
+> หน้าระดับแพลตฟอร์ม (Architecture · ระบบ: ENV/Logs/Posts/Files/Queue) = **platform admin เท่านั้น** — gate server-side ที่ `layout.tsx` (`requirePlatformAdminPage()`) ไม่ใช่แค่ซ่อนเมนู.
 >
 > **401 vs 403:** 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับ logout · 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ → แสดง error, **ไม่ logout**.
 > role ใหม่/permission ใหม่ต้อง seed ให้ Manager/Sales/Warehouse ทุก tenant (เช่น migration `5.7`) ไม่งั้นร้านโดน 403
@@ -402,10 +403,11 @@ All notifications should be logged.
 
 # Dev / Test Data
 
-ข้อมูลทดสอบสร้างผ่าน `/admin/dev/fake` (dev only, ปิดใน production) — mark ด้วย
+ข้อมูลทดสอบสร้างผ่าน `/admin/dev/fake` — mark ด้วย
 `FAKE-` (SKU / customer_ref) หรือ tag `fake` เพื่อแยกออกจากข้อมูลจริงและ cleanup ได้
 **ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น) ·
-seed/cleanup **scope ต่อ tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง เห็นในร้านตัวเอง — ไม่ปนข้ามร้าน)
+seed/cleanup **scope ต่อ tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง เห็นในร้านตัวเอง — ไม่ปนข้ามร้าน) ·
+ปิดใน production default (เปิดเครื่อง demo ด้วย `BMS_ALLOW_FAKE_SEED=1`)
 
 ---
 

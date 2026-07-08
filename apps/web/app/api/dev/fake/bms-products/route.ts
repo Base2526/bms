@@ -3,7 +3,7 @@
 // mark ด้วย SKU prefix 'FAKE-' + keyword 'fake' เพื่อ cleanup ได้
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminOrInternal } from "@/lib/dev-guards";
+import { requireAdminOrInternal, fakeSeedDisabled } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV === "production") return NextResponse.json({ error: "Disabled in production" }, { status: 403 });
+  if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
 
   const guard = requireAdminOrInternal(req);
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

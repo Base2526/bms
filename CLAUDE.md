@@ -49,7 +49,7 @@ Supported channels:
 **Ops automation:** ทุกวัน GitHub Actions อ่าน error จาก `system_logs` → Claude วิเคราะห์+เสนอแพตช์
 → เปิด **draft PR** (คนรีวิว) → แจ้ง **LINE** (Messaging API push) · log ถูก redact ก่อนส่งออก
 
-**RBAC model (2 ชั้น):** *platform admin* (`is_platform_admin`) ดูแลทั้งแพลตฟอร์ม (ทุกร้าน/plan/role) · *tenant Administrator/Manager/staff* จัดการเฉพาะร้านตัวเอง (ทุก resolver scope ด้วย `getTenantId(ctx)` + `requirePermission()`). platform admin ดูข้อมูลร้านผ่าน **drill-down** เท่านั้น (ไม่ยำข้ามร้าน). Users list/CRUD + role CRUD ถูก gate: Users = Administrator/platform (scope ตามร้าน) · Role CRUD = platform เท่านั้น.
+**RBAC model (2 ชั้น):** *platform admin* (`is_platform_admin`) ดูแลทั้งแพลตฟอร์ม (ทุกร้าน/plan/role) · *tenant Administrator/Manager/staff* จัดการเฉพาะร้านตัวเอง (ทุก resolver scope ด้วย `getTenantId(ctx)` + `requirePermission()`). platform admin ดูข้อมูลร้านผ่าน **drill-down** เท่านั้น (ไม่ยำข้ามร้าน). Users list/CRUD + role CRUD ถูก gate: Users = Administrator/platform (scope ตามร้าน) · Role CRUD = platform เท่านั้น. หน้าระดับแพลตฟอร์ม (Architecture · ระบบ: ENV/Logs/Posts/Files/Queue) gate ด้วย `layout.tsx` → `requirePlatformAdminPage()` (server-side). Fake data เปิดให้ shop operator (สิทธิ์ `product.edit`) เทส seed มุมร้านตัวเองได้.
 
 **Roadmap ที่เหลือ:** TikTok send API · carrier API จริง (label PDF/auto-tracking) ·
 AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·

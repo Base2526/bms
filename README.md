@@ -262,7 +262,9 @@ cron (daily) → collect + redact logs → Claude analyze/patch → draft PR →
 ### 🧪 Testing — Fake Data Seeder (dev only)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) bulk-generates test data so every screen
-has content — up to 2000 rows/run, disabled in production, admin-only.
+has content — up to 2000 rows/run. Seeds into the **logged-in user's tenant**
+(a shop can self-test; cleanup is scoped to that shop too). Disabled in production
+by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 | Generator | Fills |
 | --- | --- |
@@ -471,7 +473,8 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 ### 🧪 การทดสอบ — Fake Data Seeder (dev เท่านั้น)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) สร้างข้อมูลทดสอบทีละมากๆ ให้ทุกหน้ามีข้อมูล —
-สูงสุด 2000 แถว/ครั้ง, ปิดใน production, เฉพาะ admin
+สูงสุด 2000 แถว/ครั้ง · seed ลง **tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง · cleanup scope ตามร้าน) ·
+ปิดใน production default — ตั้ง `BMS_ALLOW_FAKE_SEED=1` เพื่อเปิดบนเครื่อง demo
 
 | Generator | เติมหน้า |
 | --- | --- |

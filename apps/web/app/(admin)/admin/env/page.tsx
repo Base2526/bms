@@ -3,6 +3,7 @@ import "server-only";
 import EnvTableClient from "./EnvTableClient";
 
 export type EnvRow = { key: string; value: string; masked: boolean };
+// gate: อยู่ใน env/layout.tsx (requirePlatformAdminPage)
 
 function maskValue(v: string) {
   if (!v) return "";

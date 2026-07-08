@@ -61,3 +61,5 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - apply migration `5.6` (platform admin) + `5.7` (operational perms) · seed platform admin ชุดแรก = Administrator ของร้าน default
 - ย้าย rate-limit webhook ไป Redis (ตอนนี้ in-memory ต่อ instance)
 - `META_GRAPH_VERSION` (default v21.0) สำหรับ FB/IG send
+- fake seeder ปิดใน production · เปิดเฉพาะเครื่อง demo ด้วย `BMS_ALLOW_FAKE_SEED=1` (ร้านเทส seed มุมตัวเองได้)
+- หน้าระดับแพลตฟอร์ม (ENV/Logs/Posts/Files/Queue/Architecture) gate ด้วย `layout.tsx` → `requirePlatformAdminPage()` (server-side, กัน shop user เข้าตรงผ่าน URL)

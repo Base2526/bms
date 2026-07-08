@@ -720,8 +720,12 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 - LINE = Messaging API push (LINE Notify ปิดบริการแล้ว มี.ค. 2025)
 
 ✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
-(products/customers/orders+pay+ship/conversations/purchase) · ปิดใน production · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
-· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้) · cleanup scope เฉพาะร้านตัวเอง
+(products/customers/orders+pay+ship/conversations/purchase) · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
+· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้ · เมนูโชว์ให้คนมีสิทธิ์ `product.edit`) · cleanup scope เฉพาะร้านตัวเอง
+· ปิดใน production default · เปิดเครื่อง demo ด้วย env `BMS_ALLOW_FAKE_SEED=1` (`lib/dev-guards.ts` → `fakeSeedDisabled()`) · posts/users fixture ยังปิด production
+
+✅ **Platform-only admin pages** — ENV/Logs/Posts/Files/Social Queue/Architecture gate ที่ `layout.tsx`
+ด้วย `requirePlatformAdminPage()` (`lib/auth/platform-page.ts`) — non-platform เข้าตรงผ่าน URL ก็ถูก redirect
 
 ---
 
