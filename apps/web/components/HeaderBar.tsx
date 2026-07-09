@@ -46,6 +46,10 @@ import type { Lang } from "@/i18n";
 const { Header } = Layout;
 const { Text } = Typography;
 
+// ปิดไว้ก่อน — ค้นหา/ศูนย์ช่วยเหลือยังเป็นของ project เดิม (ไม่เกี่ยว AI-BMS) เปิดใหม่เมื่อมีของจริงให้ผูก
+const SHOW_HEADER_SEARCH = false;
+const SHOW_HEADER_HELP = false;
+
 const labelOf: Record<Lang, string> = { th: "ไทย", en: "English" };
 const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
 
@@ -364,16 +368,20 @@ export default function HeaderBar({
           icon: <SafetyOutlined />,
           onClick: () => router.push("/blocked?tab=blocked"),
         },
-        { type: "divider" },
-        {
-          key: "help",
-          label: t("header.help") || "Help",
-          icon: <QuestionCircleOutlined />,
-          onClick: () => router.push("/help"),
-        },
         { type: "divider" }
       );
-    } else {
+      if (SHOW_HEADER_HELP) {
+        items.push(
+          {
+            key: "help",
+            label: t("header.help") || "Help",
+            icon: <QuestionCircleOutlined />,
+            onClick: () => router.push("/help"),
+          },
+          { type: "divider" }
+        );
+      }
+    } else if (SHOW_HEADER_HELP) {
       items.push(
         {
           key: "help",
@@ -440,7 +448,7 @@ export default function HeaderBar({
                   src="/icons/icon.svg"
                   width={46}
                   height={46}
-                  alt="จ่าเฉย (JACHOEI)"
+                  alt="AI-BMS"
                   style={{
                     display: "block",
                     width: "100%",
@@ -465,7 +473,7 @@ export default function HeaderBar({
             </Link>
           </div>
 
-          {!isMobileView && (
+          {!isMobileView && SHOW_HEADER_SEARCH && (
             <div className="jachoei-header-center">
               <div className="jachoei-search-wrap">
                 <AutoComplete
@@ -566,7 +574,7 @@ export default function HeaderBar({
 
           <div className="jachoei-header-right">
             <Space size={isMobileView ? 4 : 6} align="center">
-              {isMobileView && (
+              {isMobileView && SHOW_HEADER_SEARCH && (
                 <Tooltip title={t("header.searchPlaceholder")}>
                   <Button
                     type="text"
@@ -662,7 +670,7 @@ export default function HeaderBar({
                 </Dropdown>
               )}
 
-              {isDesktopView && (
+              {isDesktopView && SHOW_HEADER_HELP && (
                 <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
                   <Button
                     type="text"
@@ -696,7 +704,7 @@ export default function HeaderBar({
                 <Button
                   icon={<LoginOutlined />}
                   size={isMobileView ? "middle" : "large"}
-                  onClick={() => router.push("/login")}
+                  onClick={() => router.push("/admin/login")}
                   className="jachoei-login-btn"
                 >
                   {!isMobileView && t("common.login")}
@@ -707,7 +715,7 @@ export default function HeaderBar({
         </div>
       </Header>
 
-      {isMobileView && mobileSearchOpen && (
+      {isMobileView && SHOW_HEADER_SEARCH && mobileSearchOpen && (
         <div className="jachoei-mobile-search-backdrop" onClick={() => setMobileSearchOpen(false)}>
           <div
             className="jachoei-mobile-search-card"
