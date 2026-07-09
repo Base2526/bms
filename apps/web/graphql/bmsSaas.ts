@@ -20,6 +20,10 @@ function requireTenantAdmin(ctx: any) {
 
 export const bmsSaasResolvers = {
   Query: {
+    // public — ไม่ต้อง auth (โชว์ราคาแพ็กเกจที่หน้าแรก/landing page)
+    async bmsPublicPlans() {
+      return listPlans();
+    },
     async bmsBilling(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
       const tid = getTenantId(ctx);

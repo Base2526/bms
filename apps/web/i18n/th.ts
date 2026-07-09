@@ -102,9 +102,9 @@ const th = {
     failed: "ยืนยันอีเมลไม่สำเร็จ",
   },
   header: {
-    title: "จ่าเฉย (JACHOEI)",
+    title: "AI-BMS",
 
-    subtitle: "Community scam intelligence",
+    subtitle: "จัดการร้านค้าด้วย AI",
     blocked: "รายการที่บล็อก",
 
     // 🔍 search-related

@@ -102,9 +102,9 @@ const en = {
     failed: "Email verification failed",
   },
   header: {
-    title: "จ่าเฉย (JACHOEI)",
+    title: "AI-BMS",
 
-    subtitle: "Community scam intelligence",
+    subtitle: "AI-powered business management",
     blocked: "Blocked",
 
     // 🔍 search-related

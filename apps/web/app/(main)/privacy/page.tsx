@@ -18,288 +18,231 @@ type PrivacyContent = {
 const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
   en: {
     title: "Privacy Policy",
-    intro: (appName) => `Privacy policy for ${appName}.`,
+    intro: (appName) =>
+      `This Privacy Policy explains how ${appName} ("we", "the Platform") collects, uses, and protects information when you use our business management software — whether as a shop owner running a store on the Platform ("Shop Owner") or as a customer chatting with a shop that uses the Platform ("End Customer").`,
     sections: [
       {
         title: "1. Information We Collect",
         body: (
           <>
             <Paragraph>
-              We collect information needed to provide scam detection and blocking features.
+              <strong>From Shop Owners (account holders):</strong>
             </Paragraph>
             <ul>
+              <li>Account information: name, email, phone number, password (stored as a salted hash, never in plain text).</li>
+              <li>Shop information: shop name, staff accounts, roles/permissions, subscription plan.</li>
               <li>
-                <strong>Information you provide:</strong> such as your name, email, and phone number (if you choose to
-                create an account or contact support).
+                Channel credentials you connect: access tokens for LINE Official Account, Facebook Page,
+                Instagram, and TikTok — used only to send/receive messages on your behalf.
               </li>
-              <li>
-                <strong>Technical information:</strong> device and app usage information used for reliability, fraud
-                prevention, and security.
-              </li>
-              <li>
-                <strong>SMS and Call Log data (only with your consent):</strong> SMS message content and metadata (e.g.,
-                sender/receiver, date/time), call log details (e.g., phone number, call type, date/time), and related
-                information needed to detect and block scam calls and scam SMS.
-              </li>
+              <li>Business data you enter: products, prices, inventory, orders, suppliers, and purchase records.</li>
+            </ul>
+            <Paragraph>
+              <strong>From End Customers (people chatting with a shop):</strong>
+            </Paragraph>
+            <ul>
+              <li>Information shared in conversation: name, phone number, shipping address, and messages sent to the shop.</li>
+              <li>Channel identifiers (e.g., LINE user ID, Facebook PSID) needed to route replies back to the correct person.</li>
+              <li>Payment slip images you upload, used to verify a payment (processed by AI, see Section 4).</li>
             </ul>
             <Paragraph type="secondary" style={{ marginTop: 8 }}>
-              We do not store your personal SMS message content or call log details on our servers.
+              <strong>Important:</strong> for End Customers, the Shop Owner you are chatting with is the data
+              controller of your information under applicable law (e.g., Thailand's PDPA). We process this data
+              on the Shop Owner's behalf and instructions — see Section 3.
             </Paragraph>
           </>
         ),
       },
       {
-        title: "2. Use of Information",
+        title: "2. How We Use Information",
         body: (
           <ul>
-            <li>
-              <strong>Scam detection and blocking:</strong> identify suspected scam calls and scam SMS.
-            </li>
-            <li>
-              <strong>App operations:</strong> provide core features, fix bugs, and improve performance.
-            </li>
-            <li>
-              <strong>Security:</strong> prevent abuse and protect users and systems.
-            </li>
-            <li>
-              <strong>Support:</strong> respond to your requests and communicate important updates.
-            </li>
+            <li><strong>Operate the service:</strong> run the inbox, product/order/inventory management, and reporting features you use.</li>
+            <li><strong>AI-assisted replies:</strong> when a Shop Owner enables AI auto-reply, customer messages are sent to our AI provider (currently Anthropic/Claude) to generate a suggested or automatic response, and to look up product/stock information.</li>
+            <li><strong>Payment verification:</strong> uploaded payment slips are analyzed by AI to help confirm amount and reference — this assists the Shop Owner but does not replace their own verification.</li>
+            <li><strong>Security and abuse prevention:</strong> detect suspicious activity, enforce rate limits, and keep an audit log of admin actions within each shop.</li>
+            <li><strong>Support and communication:</strong> respond to support requests and send service-related notices.</li>
+            <li><strong>Improve the Platform:</strong> understand usage patterns and fix issues (using technical/aggregate data, not message content, wherever possible).</li>
           </ul>
         ),
       },
       {
-        title: "3. Data Security",
+        title: "3. Multi-Tenant Data Isolation",
         body: (
           <ul>
-            <li>We use reasonable safeguards to protect your information.</li>
-            <li>No method of storage or transmission is 100% secure.</li>
+            <li>Each shop's data is logically isolated by tenant and enforced at the database level (row-level security) — one shop cannot query another shop's products, orders, customers, or conversations.</li>
+            <li>Platform administrators do not browse shop data directly; inspecting a shop's data requires an explicit, logged "enter tenant" action, and every such action is recorded in an audit trail.</li>
+            <li>Shop staff access is controlled by role-based permissions configured by the Shop Owner/Administrator of that shop.</li>
           </ul>
         ),
       },
       {
-        title: "4. Third-party Services",
+        title: "4. Third-Party Services We Use",
         body: (
           <ul>
-            <li>
-              Our website or app may connect to third-party services (for example, hosting, analytics, or login
-              providers).
-            </li>
-            <li>Please review the privacy policies of those third parties when applicable.</li>
+            <li><strong>Messaging channels:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — to send and receive messages on behalf of a shop.</li>
+            <li><strong>AI provider:</strong> Anthropic (Claude) — to generate AI replies and analyze payment slip images, when a Shop Owner enables these features.</li>
+            <li><strong>Infrastructure:</strong> our hosting and database providers, used to run and store the Platform's data securely.</li>
+            <li>We do not sell personal data to third parties, and we do not use conversation content for advertising.</li>
           </ul>
         ),
       },
       {
-        title: "5. SMS and Call Log Permissions",
+        title: "5. Data Retention & Deletion",
         body: (
-          <>
-            <Paragraph>
-              Jachoei requests access to SMS and Call Log permissions only to detect and help block scam phone numbers and
-              scam SMS messages. The app is <strong>not</strong> a default SMS or phone handler.
-            </Paragraph>
-
-            <Paragraph>
-              <strong>Permissions we request and why</strong>
-            </Paragraph>
-            <ul>
-              <li>
-                <strong>READ_SMS:</strong> read SMS messages to detect scam patterns and warn you.
-              </li>
-              <li>
-                <strong>RECEIVE_SMS:</strong> detect incoming SMS to provide real-time scam detection and blocking where
-                supported.
-              </li>
-              <li>
-                <strong>SEND_SMS:</strong> send SMS only when you take an explicit action (for example, sending a report or
-                message you choose).
-              </li>
-              <li>
-                <strong>WRITE_SMS:</strong> update SMS messages on your device only for features you enable (for example,
-                organizing or marking messages related to scam blocking). This data stays on your device.
-              </li>
-              <li>
-                <strong>READ_CALL_LOG:</strong> read call history to detect scam calling patterns and support call-blocking
-                features.
-              </li>
-            </ul>
-
-            <Paragraph>
-              <strong>How we use this data</strong>
-            </Paragraph>
-            <ul>
-              <li>
-                <strong>Only for scam detection and blocking:</strong> we do not use SMS or call log data for any other
-                purpose.
-              </li>
-              <li>
-                <strong>Local processing preferred:</strong> SMS and call log data is processed on your device.
-              </li>
-              <li>
-                <strong>No server storage of message content:</strong> we do not store your personal SMS message content or
-                call log details on our servers.
-              </li>
-              <li>
-                <strong>No third-party sharing:</strong> we do not share SMS or call log data with third parties.
-              </li>
-              <li>
-                <strong>No ads:</strong> SMS and call log data is not used for advertising or ad targeting.
-              </li>
-            </ul>
-
-            <Paragraph>
-              <strong>User consent and control</strong>
-            </Paragraph>
-            <ul>
-              <li>
-                We access SMS and call log data only after you grant the required permissions.
-              </li>
-              <li>
-                You can deny or revoke these permissions at any time in your device settings.
-              </li>
-              <li>
-                If you revoke permissions, scam detection and blocking features that rely on SMS or call logs may not work.
-              </li>
-            </ul>
-          </>
+          <ul>
+            <li>We retain shop and customer data for as long as the shop's account is active, or as needed to comply with legal, tax, or accounting obligations.</li>
+            <li>Customer records are soft-deleted (marked inactive, not immediately erased) so that order history and accounting records remain consistent; hard deletion can be requested via Support.</li>
+            <li>Shop Owners can request export or deletion of their shop's data by contacting Support.</li>
+            <li>End Customers who want their data removed should first contact the shop they interacted with; if unresolved, contact us via Support and we will assist.</li>
+          </ul>
+        ),
+      },
+      {
+        title: "6. Data Security",
+        body: (
+          <ul>
+            <li>Passwords are hashed; channel access tokens and other secrets are stored encrypted at rest.</li>
+            <li>Access to production data is restricted to authorized personnel and logged.</li>
+            <li>No method of storage or transmission is 100% secure — we apply reasonable, industry-standard safeguards but cannot guarantee absolute security.</li>
+          </ul>
+        ),
+      },
+      {
+        title: "7. Your Rights",
+        body: (
+          <ul>
+            <li>Depending on your jurisdiction and role (Shop Owner or End Customer), you may have rights to access, correct, export, or delete your personal data, and to object to certain processing.</li>
+            <li>To exercise these rights, contact us via the Support page. We will respond within a reasonable timeframe and may need to verify your identity or your relationship to the relevant shop first.</li>
+          </ul>
+        ),
+      },
+      {
+        title: "8. Changes to This Policy",
+        body: (
+          <Paragraph>
+            We may update this Privacy Policy as the Platform evolves. Material changes will be reflected by
+            updating the date below; continued use of the Platform after changes take effect constitutes
+            acceptance of the revised policy.
+          </Paragraph>
         ),
       },
     ],
     footerNote:
-      "By using this website or app, you consent to the collection and use of information in accordance with this Privacy Policy.",
+      "By using this Platform, you acknowledge that you have read and understood this Privacy Policy. If you have questions, please contact us via the Support page.",
   },
   th: {
     title: "นโยบายความเป็นส่วนตัว",
-    intro: (appName) => `นโยบายความเป็นส่วนตัวของ ${appName}`,
+    intro: (appName) =>
+      `นโยบายความเป็นส่วนตัวนี้อธิบายวิธีที่ ${appName} ("เรา", "แพลตฟอร์ม") เก็บ ใช้ และปกป้องข้อมูล เมื่อคุณใช้งานระบบจัดการธุรกิจของเรา — ไม่ว่าคุณจะเป็นเจ้าของร้านที่เปิดร้านบนแพลตฟอร์ม ("เจ้าของร้าน") หรือลูกค้าที่แชทกับร้านที่ใช้แพลตฟอร์มนี้ ("ลูกค้าปลายทาง")`,
     sections: [
       {
         title: "1. ข้อมูลที่เราเก็บรวบรวม",
         body: (
           <>
             <Paragraph>
-              เราเก็บข้อมูลเท่าที่จำเป็นเพื่อให้บริการตรวจจับและช่วยบล็อกสาย/ข้อความหลอกลวง
+              <strong>จากเจ้าของร้าน (ผู้ถือบัญชี):</strong>
             </Paragraph>
             <ul>
+              <li>ข้อมูลบัญชี: ชื่อ อีเมล เบอร์โทร รหัสผ่าน (จัดเก็บแบบ hash ที่ผสม salt ไม่เก็บเป็นข้อความปกติ)</li>
+              <li>ข้อมูลร้านค้า: ชื่อร้าน บัญชีพนักงาน สิทธิ์การใช้งาน แพ็กเกจที่สมัคร</li>
               <li>
-                <strong>ข้อมูลที่คุณให้:</strong> เช่น ชื่อ อีเมล และหมายเลขโทรศัพท์ (หากคุณเลือกสมัครบัญชีหรือติดต่อฝ่ายช่วยเหลือ)
+                Token ของช่องทางที่คุณเชื่อมต่อ: LINE Official Account, Facebook Page, Instagram, TikTok —
+                ใช้เพื่อส่ง/รับข้อความในนามร้านคุณเท่านั้น
               </li>
-              <li>
-                <strong>ข้อมูลทางเทคนิค:</strong> ข้อมูลอุปกรณ์และการใช้งานแอป เพื่อความเสถียร การป้องกันการใช้งานที่ไม่เหมาะสม และความปลอดภัย
-              </li>
-              <li>
-                <strong>ข้อมูล SMS และบันทึกการโทร (เมื่อได้รับความยินยอมเท่านั้น):</strong> เนื้อความ SMS และข้อมูลประกอบ (เช่น ผู้ส่ง/ผู้รับ วันเวลา),
-                รายการบันทึกการโทร (เช่น หมายเลขโทรเข้า/ออก ประเภทสาย วันเวลา) เพื่อช่วยตรวจจับและบล็อกสาย/ข้อความหลอกลวง
-              </li>
+              <li>ข้อมูลธุรกิจที่คุณกรอกเข้าระบบ: สินค้า ราคา สต็อก ออเดอร์ ผู้จัดจำหน่าย และรายการจัดซื้อ</li>
+            </ul>
+            <Paragraph>
+              <strong>จากลูกค้าปลายทาง (ผู้ที่แชทกับร้าน):</strong>
+            </Paragraph>
+            <ul>
+              <li>ข้อมูลที่แชร์ในบทสนทนา: ชื่อ เบอร์โทร ที่อยู่จัดส่ง และข้อความที่ส่งถึงร้าน</li>
+              <li>รหัสประจำตัวของช่องทาง (เช่น LINE user ID, Facebook PSID) ที่จำเป็นสำหรับส่งคำตอบกลับให้ถูกคน</li>
+              <li>รูปสลิปการโอนเงินที่คุณอัปโหลด เพื่อยืนยันการชำระเงิน (ประมวลผลด้วย AI ดูข้อ 4)</li>
             </ul>
             <Paragraph type="secondary" style={{ marginTop: 8 }}>
-              เราไม่จัดเก็บเนื้อความ SMS ส่วนบุคคลหรือรายละเอียดบันทึกการโทรของคุณไว้บนเซิร์ฟเวอร์ของเรา
+              <strong>สำคัญ:</strong> สำหรับลูกค้าปลายทาง เจ้าของร้านที่คุณแชทด้วยคือผู้ควบคุมข้อมูล (data controller)
+              ของคุณตามกฎหมายที่เกี่ยวข้อง (เช่น PDPA) เราประมวลผลข้อมูลนี้ในนามและตามคำสั่งของเจ้าของร้าน — ดูข้อ 3
             </Paragraph>
           </>
         ),
       },
       {
-        title: "2. การใช้ข้อมูล",
+        title: "2. เราใช้ข้อมูลอย่างไร",
         body: (
           <ul>
-            <li>
-              <strong>ตรวจจับและช่วยบล็อกการหลอกลวง:</strong> ระบุสาย/ข้อความที่น่าสงสัยว่าเป็นมิจฉาชีพ
-            </li>
-            <li>
-              <strong>การให้บริการและปรับปรุงแอป:</strong> พัฒนาประสิทธิภาพ ความเสถียร และแก้ไขข้อผิดพลาด
-            </li>
-            <li>
-              <strong>ความปลอดภัย:</strong> ป้องกันการใช้งานที่ไม่เหมาะสมและรักษาความปลอดภัยของระบบ
-            </li>
-            <li>
-              <strong>การสนับสนุนผู้ใช้:</strong> ตอบคำถามและแจ้งข้อมูลสำคัญเกี่ยวกับบริการ
-            </li>
+            <li><strong>ให้บริการระบบ:</strong> รัน Inbox, จัดการสินค้า/ออเดอร์/สต็อก และรายงานที่คุณใช้งาน</li>
+            <li><strong>AI ตอบลูกค้า:</strong> เมื่อเจ้าของร้านเปิดใช้ AI ตอบอัตโนมัติ ข้อความลูกค้าจะถูกส่งไปยังผู้ให้บริการ AI ของเรา (ปัจจุบันคือ Anthropic/Claude) เพื่อสร้างคำตอบและค้นข้อมูลสินค้า/สต็อก</li>
+            <li><strong>ตรวจสอบการชำระเงิน:</strong> สลิปที่อัปโหลดจะถูกวิเคราะห์ด้วย AI เพื่อช่วยยืนยันจำนวนเงินและเลขอ้างอิง — เป็นตัวช่วยเจ้าของร้าน ไม่ได้แทนที่การตรวจสอบของเจ้าของร้านเอง</li>
+            <li><strong>ความปลอดภัยและป้องกันการใช้งานผิด:</strong> ตรวจจับความผิดปกติ จำกัดอัตราการเรียกใช้ และบันทึก audit log การกระทำของแอดมินในแต่ละร้าน</li>
+            <li><strong>สนับสนุนและติดต่อสื่อสาร:</strong> ตอบคำขอ support และแจ้งข่าวสารที่เกี่ยวกับบริการ</li>
+            <li><strong>พัฒนาแพลตฟอร์ม:</strong> ทำความเข้าใจรูปแบบการใช้งานและแก้ไขปัญหา (ใช้ข้อมูลทางเทคนิค/สรุปรวม ไม่ใช่เนื้อหาข้อความ เท่าที่ทำได้)</li>
           </ul>
         ),
       },
       {
-        title: "3. ความปลอดภัยของข้อมูล",
+        title: "3. การแยกข้อมูลระหว่างร้าน (Multi-Tenant Isolation)",
         body: (
           <ul>
-            <li>เราใช้มาตรการด้านความปลอดภัยที่เหมาะสมเพื่อปกป้องข้อมูลของผู้ใช้งาน</li>
-            <li>อย่างไรก็ตาม ไม่มีวิธีการจัดเก็บหรือส่งข้อมูลใดปลอดภัย 100%</li>
+            <li>ข้อมูลของแต่ละร้านถูกแยกกันตาม tenant และบังคับใช้ที่ระดับฐานข้อมูล (Row-Level Security) — ร้านหนึ่งไม่สามารถ query ข้อมูลสินค้า ออเดอร์ ลูกค้า หรือบทสนทนาของร้านอื่นได้</li>
+            <li>แอดมินของแพลตฟอร์มไม่ได้เข้าดูข้อมูลร้านโดยตรง — การดูข้อมูลร้านต้องผ่านขั้นตอน "เข้าดูร้าน" ที่ชัดเจนและถูกบันทึกไว้ในทุกครั้ง</li>
+            <li>สิทธิ์การเข้าถึงของพนักงานร้านถูกควบคุมด้วยระบบสิทธิ์ (RBAC) ที่เจ้าของร้าน/แอดมินของร้านนั้นกำหนดเอง</li>
           </ul>
         ),
       },
       {
-        title: "4. บริการของบุคคลที่สาม",
+        title: "4. บริการของบุคคลที่สามที่เราใช้",
         body: (
           <ul>
-            <li>
-              เว็บไซต์หรือแอปอาจเชื่อมต่อกับบริการของบุคคลที่สาม (เช่น โฮสติ้ง การวิเคราะห์การใช้งาน หรือผู้ให้บริการล็อกอิน)
-            </li>
-            <li>บริการเหล่านั้นมีนโยบายความเป็นส่วนตัวของตนเอง กรุณาตรวจสอบนโยบายที่เกี่ยวข้องเมื่อมีการใช้งาน</li>
+            <li><strong>ช่องทางส่งข้อความ:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — เพื่อส่ง/รับข้อความในนามร้าน</li>
+            <li><strong>ผู้ให้บริการ AI:</strong> Anthropic (Claude) — สำหรับสร้างคำตอบ AI และวิเคราะห์สลิปการโอนเงิน เมื่อเจ้าของร้านเปิดใช้ฟีเจอร์เหล่านี้</li>
+            <li><strong>โครงสร้างพื้นฐาน:</strong> ผู้ให้บริการ hosting และฐานข้อมูลที่เราใช้รันและจัดเก็บข้อมูลของแพลตฟอร์มอย่างปลอดภัย</li>
+            <li>เราไม่ขายข้อมูลส่วนบุคคลให้บุคคลที่สาม และไม่ใช้เนื้อหาบทสนทนาเพื่อการโฆษณา</li>
           </ul>
         ),
       },
       {
-        title: "5. สิทธิ์การเข้าถึง SMS และบันทึกการโทร",
+        title: "5. การเก็บและการลบข้อมูล",
         body: (
-          <>
-            <Paragraph>
-              Jachoei ขอสิทธิ์การเข้าถึง SMS และบันทึกการโทรเฉพาะเพื่อการตรวจจับและช่วยบล็อกหมายเลขโทรศัพท์และข้อความ SMS หลอกลวงเท่านั้น
-              โดยแอป <strong>ไม่ใช่</strong> แอปเริ่มต้นสำหรับ SMS หรือการโทร
-            </Paragraph>
-
-            <Paragraph>
-              <strong>สิทธิ์ที่ขอและเหตุผล</strong>
-            </Paragraph>
-            <ul>
-              <li>
-                <strong>READ_SMS:</strong> อ่าน SMS เพื่อวิเคราะห์รูปแบบการหลอกลวงและแจ้งเตือนผู้ใช้
-              </li>
-              <li>
-                <strong>RECEIVE_SMS:</strong> ตรวจจับ SMS ที่เข้ามาเพื่อการแจ้งเตือน/บล็อกแบบเรียลไทม์ (เท่าที่ระบบรองรับ)
-              </li>
-              <li>
-                <strong>SEND_SMS:</strong> ส่ง SMS เฉพาะเมื่อคุณกดสั่งงานด้วยตนเอง (เช่น ส่งรายงานหรือข้อความที่คุณเลือก)
-              </li>
-              <li>
-                <strong>WRITE_SMS:</strong> อัปเดต/จัดการข้อความบนอุปกรณ์เฉพาะสำหรับฟีเจอร์ที่คุณเปิดใช้ (เช่น การจัดหมวดหมู่หรือทำเครื่องหมายข้อความที่เกี่ยวข้องกับการบล็อก)
-                โดยข้อมูลจะอยู่บนอุปกรณ์ของคุณ
-              </li>
-              <li>
-                <strong>READ_CALL_LOG:</strong> อ่านบันทึกการโทรเพื่อช่วยตรวจจับรูปแบบการโทรหลอกลวงและสนับสนุนฟีเจอร์การบล็อกสาย
-              </li>
-            </ul>
-
-            <Paragraph>
-              <strong>การใช้ข้อมูล</strong>
-            </Paragraph>
-            <ul>
-              <li>
-                <strong>ใช้เพื่อการตรวจจับและช่วยบล็อกเท่านั้น:</strong> เราไม่ใช้ข้อมูล SMS หรือบันทึกการโทรเพื่อวัตถุประสงค์อื่น
-              </li>
-              <li>
-                <strong>เน้นประมวลผลบนเครื่อง:</strong> ข้อมูล SMS และบันทึกการโทรจะถูกประมวลผลบนอุปกรณ์ของคุณเป็นหลัก
-              </li>
-              <li>
-                <strong>ไม่จัดเก็บเนื้อความบนเซิร์ฟเวอร์:</strong> เราไม่จัดเก็บเนื้อความ SMS ส่วนบุคคลหรือรายละเอียดบันทึกการโทรของคุณไว้บนเซิร์ฟเวอร์ของเรา
-              </li>
-              <li>
-                <strong>ไม่แชร์กับบุคคลที่สาม:</strong> เราไม่แบ่งปันข้อมูล SMS หรือบันทึกการโทรกับบุคคลที่สาม
-              </li>
-              <li>
-                <strong>ไม่ใช้เพื่อโฆษณา:</strong> ข้อมูล SMS และบันทึกการโทรจะไม่ถูกใช้เพื่อการโฆษณาหรือการกำหนดเป้าหมายโฆษณา
-              </li>
-            </ul>
-
-            <Paragraph>
-              <strong>ความยินยอมและการควบคุมของผู้ใช้</strong>
-            </Paragraph>
-            <ul>
-              <li>แอปจะเข้าถึงข้อมูล SMS และบันทึกการโทรหลังจากคุณอนุญาตสิทธิ์ที่จำเป็นเท่านั้น</li>
-              <li>คุณสามารถปฏิเสธหรือยกเลิกสิทธิ์ได้ตลอดเวลาในการตั้งค่าอุปกรณ์</li>
-              <li>หากยกเลิกสิทธิ์ ฟีเจอร์การตรวจจับ/บล็อกที่ต้องใช้ SMS หรือบันทึกการโทรอาจทำงานได้ไม่ครบถ้วน</li>
-            </ul>
-          </>
+          <ul>
+            <li>เราเก็บข้อมูลร้านและลูกค้าไว้ตราบใดที่บัญชีร้านยังใช้งานอยู่ หรือตามที่กฎหมาย/ภาษี/บัญชีกำหนด</li>
+            <li>ข้อมูลลูกค้าใช้การลบแบบ soft-delete (ทำเครื่องหมายไม่ใช้งาน ไม่ลบทิ้งทันที) เพื่อให้ประวัติออเดอร์และบัญชียังถูกต้อง — ขอลบแบบถาวรได้ผ่านหน้า Support</li>
+            <li>เจ้าของร้านขอส่งออกหรือลบข้อมูลร้านของตัวเองได้ผ่านหน้า Support</li>
+            <li>ลูกค้าปลายทางที่ต้องการให้ลบข้อมูล ควรติดต่อร้านที่คุยด้วยก่อน หากไม่สำเร็จให้ติดต่อเราผ่าน Support เพื่อขอความช่วยเหลือ</li>
+          </ul>
+        ),
+      },
+      {
+        title: "6. ความปลอดภัยของข้อมูล",
+        body: (
+          <ul>
+            <li>รหัสผ่านถูก hash ไว้ · token ของช่องทางและข้อมูลลับอื่น ๆ ถูกเข้ารหัสก่อนจัดเก็บ</li>
+            <li>การเข้าถึงข้อมูลจริงจำกัดเฉพาะบุคคลที่ได้รับอนุญาตและถูกบันทึกไว้</li>
+            <li>ไม่มีวิธีการจัดเก็บหรือส่งข้อมูลใดปลอดภัย 100% — เราใช้มาตรการป้องกันตามมาตรฐานอุตสาหกรรมที่เหมาะสม แต่ไม่สามารถรับประกันความปลอดภัยแบบสมบูรณ์ได้</li>
+          </ul>
+        ),
+      },
+      {
+        title: "7. สิทธิ์ของคุณ",
+        body: (
+          <ul>
+            <li>ขึ้นอยู่กับเขตอำนาจศาลและบทบาทของคุณ (เจ้าของร้านหรือลูกค้าปลายทาง) คุณอาจมีสิทธิ์เข้าถึง แก้ไข ส่งออก หรือลบข้อมูลส่วนบุคคลของคุณ และคัดค้านการประมวลผลบางประเภท</li>
+            <li>ติดต่อเราผ่านหน้า Support เพื่อใช้สิทธิ์เหล่านี้ — เราจะตอบกลับภายในระยะเวลาที่เหมาะสม และอาจต้องยืนยันตัวตนหรือความเกี่ยวข้องกับร้านนั้นก่อน</li>
+          </ul>
+        ),
+      },
+      {
+        title: "8. การเปลี่ยนแปลงนโยบาย",
+        body: (
+          <Paragraph>
+            เราอาจปรับปรุงนโยบายนี้ตามการพัฒนาของแพลตฟอร์ม การเปลี่ยนแปลงที่สำคัญจะสะท้อนผ่านวันที่อัปเดตด้านล่าง
+            การใช้งานแพลตฟอร์มต่อไปหลังการเปลี่ยนแปลงมีผล ถือว่าคุณยอมรับนโยบายฉบับปรับปรุงแล้ว
+          </Paragraph>
         ),
       },
     ],
     footerNote:
-      "การใช้งานเว็บไซต์หรือแอปนี้ถือว่าคุณยินยอมให้มีการเก็บรวบรวมและใช้ข้อมูลตามนโยบายความเป็นส่วนตัวฉบับนี้",
+      "การใช้งานแพลตฟอร์มนี้ถือว่าคุณได้อ่านและเข้าใจนโยบายความเป็นส่วนตัวฉบับนี้แล้ว หากมีข้อสงสัยกรุณาติดต่อเราผ่านหน้า Support",
   },
 };
 

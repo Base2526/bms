@@ -710,6 +710,9 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
 
+    # ===== BMS public plans (หน้าแรก/landing — ไม่ต้อง auth) =====
+    bmsPublicPlans: [BmsPlan!]!
+
     # ===== BMS profile (admin ที่ล็อกอินอยู่) =====
     bmsMe: BmsMe!
 

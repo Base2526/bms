@@ -3,19 +3,12 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AndroidFilled,
-  AppleFilled,
   BookOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CodeOutlined,
   CustomerServiceOutlined,
-  DownloadOutlined,
-  FacebookFilled,
   FileTextOutlined,
-  HeartOutlined,
-  MobileOutlined,
-  RocketOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
@@ -55,7 +48,7 @@ function writeConsent(value: ConsentValue) {
 
 const COPY = {
   th: {
-    brand: "จ่าเฉย (JACHOEI)",
+    brand: "AI-BMS",
     support: "Support",
     roadmap: "Roadmap",
     terms: "Terms",
@@ -63,7 +56,7 @@ const COPY = {
     openSource: "Open Source",
     license: "License",
     donate: "Donate",
-    appTitle: "ดาวน์โหลดแอป JACHOEI",
+    appTitle: "ดาวน์โหลดแอป AI-BMS",
     appDesc:
       "ใช้งานสะดวกกว่าเดิมบนมือถือ แจ้งเตือนเร็ว เข้าถึงฟีเจอร์สำคัญได้ง่าย พร้อมประสบการณ์ที่ลื่นไหลยิ่งขึ้นทั้ง Android และ iPhone",
     androidLabelTop: "Get it on",
@@ -90,7 +83,7 @@ const COPY = {
     trustDesc: "ตรวจสอบข้อมูล เตือนภัย และติดตามเคสได้สะดวกยิ่งขึ้นบนแอป",
   },
   en: {
-    brand: "JACHOEI",
+    brand: "AI-BMS",
     support: "Support",
     roadmap: "Roadmap",
     terms: "Terms",
@@ -98,7 +91,7 @@ const COPY = {
     openSource: "Open Source",
     license: "License",
     donate: "Donate",
-    appTitle: "Download JACHOEI App",
+    appTitle: "Download AI-BMS App",
     appDesc:
       "A smoother mobile experience with faster access to key features, alerts, and community reports on both Android and iPhone.",
     androidLabelTop: "Get it on",
@@ -166,13 +159,11 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
   const footerLinks = useMemo(
     () => [
-      { href: "/roadmap", label: t.roadmap, icon: <RocketOutlined /> },
       { href: "/terms", label: t.terms, icon: <FileTextOutlined /> },
       { href: "/privacy", label: t.privacy, icon: <SafetyCertificateOutlined /> },
       { href: "/open-source", label: t.openSource, icon: <CodeOutlined /> },
       { href: "/license", label: t.license, icon: <BookOutlined /> },
       { href: "/support", label: t.support, icon: <CustomerServiceOutlined /> },
-      { href: "/donate", label: t.donate, icon: <HeartOutlined /> },
     ],
     [t]
   );
@@ -181,66 +172,15 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
     <>
       <footer className={`footer-root ${showPdpa ? "footer-root--with-pdpa" : ""}`}>
         <div className="footer-shell">
-          <section className="hero-card">
-            <div className="hero-glow hero-glow-right" />
-            <div className="hero-glow hero-glow-left" />
-            <div className="hero-noise" />
-
-            <div className="hero-content">
-              <div className="hero-left">
-                <div className="hero-badge">
-                  <span className="hero-badge-icon">
-                    <MobileOutlined />
-                  </span>
-                  <span>{t.trustTitle}</span>
-                </div>
-
-                <h3 className="hero-title">{t.appTitle}</h3>
-                <p className="hero-desc">{t.appDesc}</p>
-
-                <div className="hero-meta">{t.trustDesc}</div>
-
-                <div className="feature-tags">
-                  <span>{t.fastAccess}</span>
-                  <span>{t.betterMobile}</span>
-                  <span>{t.responsiveSupport}</span>
-                  <span>{t.communityDriven}</span>
-                </div>
-              </div>
-
-              <div className="hero-right">
-                <Link href="https://play.google.com/store/apps/details?id=com.jachoei" className="store-btn store-btn--android" target="_blank" aria-label="Download Android app">
-                  <span className="store-btn__icon">
-                    <AndroidFilled />
-                  </span>
-                  <span className="store-btn__text">
-                    <small>{t.androidLabelTop}</small>
-                    <strong>{t.androidLabelBottom}</strong>
-                  </span>
-                  <DownloadOutlined className="store-btn__download" />
-                </Link>
-
-                <Link href="/download/ios" className="store-btn store-btn--ios" aria-label="Download iOS app">
-                  <span className="store-btn__icon">
-                    <AppleFilled />
-                  </span>
-                  <span className="store-btn__text">
-                    <small>{t.iosLabelTop}</small>
-                    <strong>{t.iosLabelBottom}</strong>
-                  </span>
-                  <DownloadOutlined className="store-btn__download" />
-                </Link>
-              </div>
-            </div>
-          </section>
+          {/* ดาวน์โหลดแอป — ปิดไว้ก่อน ยังไม่มีแอปมือถือ AI-BMS */}
 
           <div className="footer-main">
             <div className="footer-brand-block">
               <div className="brand-line">
-                <span className="brand-mark">J</span>
+                <span className="brand-mark">A</span>
                 <div className="brand-copy">
                   <div className="brand-name">{t.brand}</div>
-                  <div className="brand-sub">© {year} · Community scam intelligence</div>
+                  <div className="brand-sub">© {year} · AI Business Management System</div>
                 </div>
               </div>
             </div>
@@ -267,20 +207,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
               </Link>
             ))}
 
-            {/* NEW: Facebook link */}
-            <a
-              href="https://www.facebook.com/jachoei"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="footer-link footer-link--external"
-              aria-label="Facebook"
-              title="Follow us on Facebook"
-            >
-              <span className="footer-link__icon">
-                <FacebookFilled />
-              </span>
-              <span className="footer-link__label">Facebook</span>
-            </a>
+            {/* Facebook — ปิดไว้ก่อน ยังไม่มีเพจ AI-BMS จริง */}
 
             <button
               type="button"
