@@ -1,13 +1,12 @@
 'use client';
 import Link from 'next/link';
-import { Button, Badge, Typography, Layout, Menu, message, Avatar, Tooltip } from 'antd';
+import { Layout, Menu, Badge, Avatar, Button, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
   FileTextOutlined,
   FileImageOutlined,
   DatabaseOutlined,
-  LogoutOutlined,
   SnippetsOutlined,
   EnvironmentOutlined,
   ShoppingCartOutlined,
@@ -27,16 +26,20 @@ import {
   CarOutlined,
   MessageOutlined,
   BarChartOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
-import { useSession } from '@/lib/useSession';
 import { gql, useQuery } from '@apollo/client';
 import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
+import { useSession } from '@/lib/useSession';
+import { useEffect, useState } from 'react';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
+const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
 
-const { Title } = Typography;
-const { Header } = Layout;
+const { Sider } = Layout;
 
 // label ที่มี badge (ถ้า count>0)
 const withBadge = (text: string, count = 0) =>
@@ -54,11 +57,11 @@ const link = (href: string, text: string, icon: React.ReactNode, badge = 0) => (
   label: <Link href={href}>{withBadge(text, badge)}</Link>,
 });
 
-export default function AdminHeader() {
+export default function AdminSidebar() {
   const pathname = usePathname();
-  const { admin, refreshSession } = useSession();
   const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-and-network' });
   const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
+  const { admin, refreshSession } = useSession();
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
   const { can } = useBmsPermissions();
@@ -67,7 +70,28 @@ export default function AdminHeader() {
   // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
   const showSystemGroup = isPlatformAdmin || canSeedFake;
 
-  // จัดกลุ่มเมนูเป็นหมวด → dropdown
+  // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage)
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1');
+  }, []);
+  const onCollapse = (value: boolean) => {
+    setCollapsed(value);
+    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, value ? '1' : '0');
+  };
+
+  async function onLogout() {
+    const res = await fetch('/api/auth/logout-admin', { method: 'POST' });
+    refreshSession();
+    if (res.ok) {
+      message.success('Logged out');
+      window.location.href = '/admin/login';
+    } else {
+      message.error('Logout failed');
+    }
+  }
+
+  // จัดกลุ่มเมนูเป็นหมวด → submenu แบบ inline
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     link('/admin/reports', 'Reports', <BarChartOutlined />),
@@ -130,91 +154,99 @@ export default function AdminHeader() {
     }] : []),
   ];
 
-  // ไฮไลต์เมนูที่ตรง path ปัจจุบัน
+  // ไฮไลต์เมนูที่ตรง path ปัจจุบัน + เปิด submenu ของกลุ่มที่ path อยู่ (เฉพาะตอนขยาย)
   const selectedKeys = [pathname];
-
-  async function onLogout() {
-    const res = await fetch('/api/auth/logout-admin', { method: 'POST' });
-    refreshSession();
-    if (res.ok) {
-      message.success('Logged out');
-      window.location.href = '/admin/login';
-    } else {
-      message.error('Logout failed');
-    }
-  }
+  const openGroupKey = ['g-bms', 'g-saas', 'g-access', 'g-system'].find((g) =>
+    (items.find((i: any) => i?.key === g) as any)?.children?.some((c: any) => c.key === pathname)
+  );
 
   return (
-    <Header
+    <Sider
+      collapsed={collapsed}
+      collapsedWidth={64}
+      width={220}
       style={{
         background: 'var(--app-surface)',
-        boxShadow: '0 2px 8px rgba(var(--app-shadow-rgb),0.08)',
-        borderBottom: '1px solid var(--app-border)',
-        padding: '0 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 16,
-        height: 56,
-        lineHeight: '56px',
+        borderRight: '1px solid var(--app-border)',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        overflow: 'hidden',
       }}
     >
-      <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap', flex: '0 0 auto' }}>
-        <Link href="/admin" style={{ color: 'var(--app-text)' }}>
-          <ShopOutlined /> AI-BMS
-        </Link>
-      </Title>
-
-      {/* เมนูจัดกลุ่ม — overflow อัตโนมัติเมื่อจอแคบ */}
-      <Menu
-        mode="horizontal"
-        items={items}
-        selectedKeys={selectedKeys}
+      {/* wrapper flex ของตัวเอง — .ant-layout-sider-children ที่ antd แทรกให้ไม่ใช่ flex container
+          ถ้าไม่มี div นี้ flex:1 ของเมนูด้านล่างจะไม่มีผล โปรไฟล์/logout จะไม่ติดล่างสุด */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* โลโก้ + ปุ่มย่อ/ขยาย (อยู่บนสุด) */}
+      <div
         style={{
-          flex: 1,
-          minWidth: 0,
-          background: 'transparent',
-          borderBottom: 'none',
+          display: 'flex', alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8, padding: collapsed ? '14px 0' : '14px 16px', flexShrink: 0,
         }}
-      />
+      >
+        {!collapsed && (
+          <Link href="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <ShopOutlined />
+            <span>AI-BMS</span>
+          </Link>
+        )}
+        <div
+          role="button"
+          aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
+          onClick={() => onCollapse(!collapsed)}
+          style={{
+            cursor: 'pointer', width: 28, height: 28, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid var(--app-border)', borderRadius: 6, color: 'var(--app-text)',
+          }}
+        >
+          {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        </div>
+      </div>
 
+      {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <Menu
+          mode="inline"
+          items={items}
+          selectedKeys={selectedKeys}
+          defaultOpenKeys={openGroupKey ? [openGroupKey] : []}
+          style={{ background: 'transparent', borderRight: 'none' }}
+        />
+      </div>
+
+      {/* โปรไฟล์ + Logout (ปักล่างสุด) */}
       {admin && (
-        <Tooltip title="ดูโปรไฟล์ของฉัน">
+        <div style={{ borderTop: '1px solid var(--app-border)', padding: 10, flexShrink: 0 }}>
           <Link
             href="/admin/profile"
             style={{
-              flex: '0 0 auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '0 10px',
-              height: 36,
-              borderRadius: 18,
-              border: '1px solid var(--app-border)',
-              color: 'var(--app-text)',
-              maxWidth: 220,
-              overflow: 'hidden',
+              display: 'flex', alignItems: 'center', gap: 8,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: '4px', marginBottom: 8, borderRadius: 8, color: 'var(--app-text)',
             }}
           >
             <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
-            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {admin.name || admin.username || admin.email}
+            {!collapsed && (
+              <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {admin.name || admin.username || admin.email}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--app-text-secondary, #888)' }}>{admin.role}</span>
               </span>
-              <span style={{ fontSize: 11, color: 'var(--app-text-secondary, #888)' }}>{admin.role}</span>
-            </span>
+            )}
           </Link>
-        </Tooltip>
+          <Button
+            danger type="primary" icon={<LogoutOutlined />} onClick={onLogout}
+            block={!collapsed}
+            style={collapsed ? { width: 32, height: 32, padding: 0, minWidth: 0 } : {}}
+          >
+            {!collapsed && 'Logout'}
+          </Button>
+        </div>
       )}
-
-      <Button
-        icon={<LogoutOutlined />}
-        onClick={onLogout}
-        danger
-        type="primary"
-        style={{ flex: '0 0 auto' }}
-      >
-        Logout
-      </Button>
-    </Header>
+      </div>
+    </Sider>
   );
 }

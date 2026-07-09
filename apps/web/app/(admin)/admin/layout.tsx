@@ -13,11 +13,5 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <>
-      <main style={{ padding: 24 }}>
-         <AdminLayoutClient>{children}</AdminLayoutClient>
-      </main>
-    </>
-  );
+  return <AdminLayoutClient>{children}</AdminLayoutClient>;
 }
