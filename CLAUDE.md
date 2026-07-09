@@ -30,8 +30,8 @@ Supported channels:
 | Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · แนบรูป/ไฟล์ (`/api/bms/inbox/upload` → `meta.attachment`) · สถานะข้อความ SENT/FAILED + retry (capability-gated ตามช่องทาง) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` (rule-based NLU + Claude) |
-| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` |
-| Product Management | ✅ | `lib/bms/products.ts` · `3.2` |
+| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` (แก้ไข/ตั้งค่าเริ่มต้น/ลบที่อยู่ได้) |
+| Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` (image/description/cost_price/category/brand) · upload รูป `/api/bms/products/upload` · ค้นหา+paging server-side · หมวดหมู่เป็น list จัดการได้ (`lib/bms/productCategories.ts` · `6.0`) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
@@ -44,7 +44,7 @@ Supported channels:
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · cookie `BMS_ACT_TENANT` (signed) → override tenant ใน context · banner ใน `AdminLayoutClient` |
 | Current-user Profile | ✅ | `bmsMe` · `/admin/profile` + chip ผู้ล็อกอินบน `AdminHeader` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
-| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — seed ลง **tenant ของผู้ล็อกอิน** · cleanup scope ตามร้าน |
+| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — seed ลง **tenant ของผู้ล็อกอิน** · cleanup scope ตามร้าน · "BMS Staff (users)" ผูก tenant + role Sales/Warehouse (ก่อนหน้าไม่ผูก tenant เลยไม่โผล่ที่ `/admin/users`) · ถอด "Posts" ออกจาก dropdown (fixture project เก่า) |
 
 **Ops automation:** ทุกวัน GitHub Actions อ่าน error จาก `system_logs` → Claude วิเคราะห์+เสนอแพตช์
 → เปิด **draft PR** (คนรีวิว) → แจ้ง **LINE** (Messaging API push) · log ถูก redact ก่อนส่งออก

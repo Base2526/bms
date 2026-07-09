@@ -165,6 +165,48 @@ export async function addCustomerAddress(
   return res.rows[0];
 }
 
+export async function updateCustomerAddress(
+  tenantId: string, addressId: string, label: string | null, address: string
+) {
+  const addr = address.trim();
+  if (!addr) throw new Error("ที่อยู่ห้ามว่าง");
+  const res = await query(
+    `UPDATE bms_customer_addresses SET label=$3, address=$4
+      WHERE tenant_id=$1 AND id=$2
+      RETURNING id, label, address, is_default`,
+    [tenantId, addressId, label?.trim() || null, addr]
+  );
+  if (res.rowCount === 0) throw new Error("ไม่พบที่อยู่");
+  return res.rows[0];
+}
+
+/** ตั้งที่อยู่นี้เป็นค่าเริ่มต้น — เคลียร์ default เดิมของลูกค้าคนนี้ก่อน (ทำใน tx เดียวกันผ่าน query เดียวต่อกัน) */
+export async function setDefaultCustomerAddress(tenantId: string, addressId: string) {
+  const target = await query<{ customer_id: string }>(
+    `SELECT customer_id FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, addressId]
+  );
+  if (target.rowCount === 0) throw new Error("ไม่พบที่อยู่");
+  const customerId = target.rows[0].customer_id;
+
+  await query(`UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`, [tenantId, customerId]);
+  const res = await query(
+    `UPDATE bms_customer_addresses SET is_default=true
+      WHERE tenant_id=$1 AND id=$2
+      RETURNING id, label, address, is_default`,
+    [tenantId, addressId]
+  );
+  return res.rows[0];
+}
+
+export async function deleteCustomerAddress(tenantId: string, addressId: string) {
+  const res = await query(
+    `DELETE FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, addressId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 export async function deleteCustomer(tenantId: string, id: string) {
   const res = await query(
     `UPDATE bms_customers SET deleted_at=now(), updated_at=now()

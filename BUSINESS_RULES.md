@@ -49,6 +49,10 @@ Customer must never be deleted.
 
 Use Soft Delete only.
 
+> **Implemented — Address management (`bms_customer_addresses`):** เพิ่ม/**แก้ไข**/**ตั้งเป็นค่าเริ่มต้น**/**ลบ**
+> ได้ต่อรายการจากหน้า Customers (กางแถว) · ตั้งค่าเริ่มต้นใหม่จะยกเลิกค่าเริ่มต้นเดิมของลูกค้าคนนั้นอัตโนมัติ
+> (permission: `customer.edit`) · ลบที่อยู่ไม่กระทบลูกค้า/ออเดอร์ (address เป็น record แยก ไม่ผูก FK จากออเดอร์)
+
 ---
 
 # Product
@@ -62,6 +66,11 @@ Inactive products cannot be sold.
 Product price cannot be negative.
 
 Product stock cannot be negative unless AllowNegativeStock is enabled.
+
+> **Implemented — Product detail (`bms_products`, migration `5.9`):** `image_url` (upload ผ่าน
+> `/api/bms/products/upload`, ≤10MB, image/* เท่านั้น) · `description` · `cost_price` (ต้นทุน — ใช้คำนวณกำไร
+> `price − cost_price` ในหน้า Products, ยังไม่รวมใน Reports) · `category` / `brand` (ข้อความอิสระ ไม่ใช่ FK,
+> autocomplete จากค่าที่เคยใช้ในร้าน). ทุก field เป็น optional ยกเว้น sku/name/price เดิม
 
 ---
 
@@ -421,6 +430,11 @@ All notifications should be logged.
 **ไม่ถือเป็นข้อมูลธุรกิจจริง** · fake orders/PO ไม่ขยับสต็อก (ใช้เติม analytics เท่านั้น) ·
 seed/cleanup **scope ต่อ tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง เห็นในร้านตัวเอง — ไม่ปนข้ามร้าน) ·
 ปิดใน production default (เปิดเครื่อง demo ด้วย `BMS_ALLOW_FAKE_SEED=1`)
+
+ตัวเลือกใน dropdown: Products/Customers/Orders/Conversations/Purchase/**Staff (users)** —
+"Posts" (fixture project เก่า ไม่เกี่ยว BMS) ถูกถอดออกแล้ว. Fake staff ได้ role **Sales/Warehouse**
+สุ่ม (ไม่สุ่ม Administrator/Manager กันกระทบสิทธิ์จัดการร้านจริง) · ผูก tenant + hash รหัสผ่านด้วย
+bcrypt เหมือน signup จริง
 
 ---
 

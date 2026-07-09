@@ -15,6 +15,7 @@ import {
   setReorderPoint,
   listLowStock,
 } from "@/lib/bms/products";
+import { listCategories, createCategory, renameCategory, deleteCategory } from "@/lib/bms/productCategories";
 import { listMovements } from "@/lib/bms/movements";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -45,9 +46,20 @@ const shapeVariant = (r: {
 
 export const bmsProductsResolvers = {
   Query: {
-    async bmsProducts(_p: unknown, _a: unknown, ctx: any) {
+    async bmsProducts(
+      _p: unknown,
+      args: { search?: string; category?: string; limit?: number; offset?: number },
+      ctx: any
+    ) {
       await requirePermission(ctx, "product.view");
-      return listProducts(getTenantId(ctx));
+      return listProducts(getTenantId(ctx), {
+        search: args.search, category: args.category,
+        limit: args.limit, offset: args.offset,
+      });
+    },
+    async bmsProductCategories(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return listCategories(getTenantId(ctx));
     },
     async bmsLowStock(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
@@ -82,6 +94,32 @@ export const bmsProductsResolvers = {
       await requirePermission(ctx, "product.delete");
       const ok = await setProductActive(getTenantId(ctx), args.sku, args.active);
       if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
+      return ok;
+    },
+    async bmsCreateProductCategory(_p: unknown, args: { name: string }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      try {
+        const c = await createCategory(getTenantId(ctx), args.name);
+        await audit(ctx, "product.category.create", c.id, { name: c.name });
+        return c;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsRenameProductCategory(_p: unknown, args: { id: string; name: string }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      try {
+        const c = await renameCategory(getTenantId(ctx), args.id, args.name);
+        await audit(ctx, "product.category.rename", c.id, { name: c.name });
+        return c;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsDeleteProductCategory(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const ok = await deleteCategory(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "product.category.delete", args.id);
       return ok;
     },
     async bmsAdjustStock(
@@ -123,6 +161,11 @@ export const bmsProductsResolvers = {
   BmsProduct: {
     price: (p: any) => Number(p.price),
     keywords: (p: any) => p.keywords ?? [],
+    imageUrl: (p: any) => p.image_url ?? null,
+    description: (p: any) => p.description ?? null,
+    costPrice: (p: any) => (p.cost_price != null ? Number(p.cost_price) : null),
+    category: (p: any) => p.category ?? null,
+    brand: (p: any) => p.brand ?? null,
     async variants(parent: { sku: string; tenant_id: string }) {
       const rows = await listVariants(parent.tenant_id, parent.sku);
       return rows.map(shapeVariant);

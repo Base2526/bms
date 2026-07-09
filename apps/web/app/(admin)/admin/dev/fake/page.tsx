@@ -8,8 +8,7 @@ const Q_ME = gql`query { bmsMe { tenant { name slug } } }`;
 type CreatedRow = any;
 
 const KINDS = [
-  { label: 'Posts', value: 'posts' },
-  { label: 'Users', value: 'users' },
+  { label: 'BMS Staff (users)', value: 'users' },
   { label: 'BMS Products', value: 'bms-products' },
   { label: 'BMS Customers', value: 'bms-customers' },
   { label: 'BMS Orders (+pay/ship)', value: 'bms-orders' },
@@ -18,7 +17,7 @@ const KINDS = [
 ];
 
 export default function DevFakePage() {
-  const [kind, setKind] = useState<'posts' | 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase'>('bms-products');
+  const [kind, setKind] = useState<'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase'>('bms-products');
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<CreatedRow[]>([]);
@@ -85,8 +84,8 @@ export default function DevFakePage() {
       />
       <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
-        message="ใช้เฉพาะ dev/test (production ปิด default — เปิดด้วย env BMS_ALLOW_FAKE_SEED=1 บนเครื่อง demo) · Posts/Users เป็น fixture platform ยังปิดใน production"
-        description={<>ลำดับแนะนำ: <b>Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
+        message="ใช้เฉพาะ dev/test (production ปิด default — เปิดด้วย env BMS_ALLOW_FAKE_SEED=1 บนเครื่อง demo)"
+        description={<>ลำดับแนะนำ: <b>Staff → Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
           <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
           <b>Conversations</b> + messages → เติม Inbox · marker: <code>FAKE-</code> / tag <code>fake</code> ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}

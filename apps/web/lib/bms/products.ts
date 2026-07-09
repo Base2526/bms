@@ -14,6 +14,11 @@ export type ProductRowFull = {
   price: string;
   keywords: string[];
   barcode: string | null;
+  image_url: string | null;
+  description: string | null;
+  cost_price: string | null;
+  category: string | null;
+  brand: string | null;
 };
 
 export type VariantRow = {
@@ -23,14 +28,53 @@ export type VariantRow = {
   reorder_point: number;
 };
 
-export async function listProducts(tenantId: string): Promise<ProductRowFull[]> {
-  const res = await query<ProductRowFull>(
-    `SELECT tenant_id, sku, name, active, price, keywords, barcode
-       FROM bms_products WHERE tenant_id = $1
-      ORDER BY name`,
-    [tenantId]
+export type ListProductsOpts = {
+  search?: string;
+  category?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export async function listProducts(
+  tenantId: string, opts: ListProductsOpts = {}
+): Promise<{ items: ProductRowFull[]; total: number }> {
+  const s = (opts.search ?? "").trim();
+  const category = opts.category?.trim() || null;
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const offset = Math.max(opts.offset ?? 0, 0);
+
+  const conds = ["tenant_id = $1"];
+  const params: any[] = [tenantId];
+
+  if (s) {
+    params.push(`%${s}%`);
+    const p = `$${params.length}`;
+    conds.push(`(name ILIKE ${p} OR sku ILIKE ${p} OR barcode ILIKE ${p})`);
+  }
+  if (category) {
+    params.push(category);
+    conds.push(`category = $${params.length}`);
+  }
+  const where = conds.join(" AND ");
+
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM bms_products WHERE ${where}`,
+    params
   );
-  return res.rows;
+  const total = Number(totalRes.rows[0]?.total || 0);
+
+  const limitPos = params.length + 1;
+  const offsetPos = params.length + 2;
+  const itemsRes = await query<ProductRowFull>(
+    `SELECT tenant_id, sku, name, active, price, keywords, barcode,
+            image_url, description, cost_price, category, brand
+       FROM bms_products WHERE ${where}
+      ORDER BY name
+      LIMIT $${limitPos} OFFSET $${offsetPos}`,
+    [...params, limit, offset]
+  );
+
+  return { items: itemsRes.rows, total };
 }
 
 export async function listVariants(tenantId: string, sku: string): Promise<VariantRow[]> {
@@ -51,6 +95,11 @@ export type UpsertProductInput = {
   keywords?: string[];
   active?: boolean;
   barcode?: string | null;
+  image_url?: string | null;
+  description?: string | null;
+  cost_price?: number | null;
+  category?: string | null;
+  brand?: string | null;
 };
 
 export async function upsertProduct(tenantId: string, input: UpsertProductInput): Promise<ProductRowFull> {
@@ -63,19 +112,32 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   const active = input.active ?? true;
   const barcode = input.barcode?.trim() || null;
+  const imageUrl = input.image_url?.trim() || null;
+  const description = input.description?.trim() || null;
+  const category = input.category?.trim() || null;
+  const brand = input.brand?.trim() || null;
+
+  let costPrice: number | null = null;
+  if (input.cost_price != null && input.cost_price !== ("" as any)) {
+    costPrice = Number(input.cost_price);
+    if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("ต้นทุนไม่ถูกต้อง");
+  }
 
   // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
   const existing = await query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
   if (existing.rowCount === 0) await enforceProductQuota(tenantId);
 
   const res = await query<ProductRowFull>(
-    `INSERT INTO bms_products (tenant_id, sku, name, price, keywords, active, barcode)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO bms_products
+       (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (tenant_id, sku) DO UPDATE
        SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
-           active = EXCLUDED.active, barcode = EXCLUDED.barcode, updated_at = now()
-     RETURNING sku, name, active, price, keywords, barcode`,
-    [tenantId, sku, name, price, keywords, active, barcode]
+           active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
+           description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
+           category = EXCLUDED.category, brand = EXCLUDED.brand, updated_at = now()
+     RETURNING sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand`,
+    [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand]
   );
   return res.rows[0];
 }

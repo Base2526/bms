@@ -667,7 +667,8 @@ export const typeDefs = /* GraphQL */ `
     bmsOrder(id: ID!): BmsOrder
 
     # ===== BMS products & inventory (admin) =====
-    bmsProducts: [BmsProduct!]!
+    bmsProducts(search: String, category: String, limit: Int, offset: Int): BmsProductConnection!
+    bmsProductCategories: [BmsProductCategory!]!
     bmsLowStock: [BmsLowStockItem!]!
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
 
@@ -991,7 +992,17 @@ export const typeDefs = /* GraphQL */ `
     price: Float!
     keywords: [String!]!
     barcode: String
+    imageUrl: String
+    description: String
+    costPrice: Float
+    category: String
+    brand: String
     variants: [BmsVariant!]!
+  }
+
+  type BmsProductConnection {
+    items: [BmsProduct!]!
+    total: Int!
   }
 
   input BmsProductInput {
@@ -1001,6 +1012,16 @@ export const typeDefs = /* GraphQL */ `
     keywords: [String!]
     active: Boolean
     barcode: String
+    image_url: String
+    description: String
+    cost_price: Float
+    category: String
+    brand: String
+  }
+
+  type BmsProductCategory {
+    id: ID!
+    name: String!
   }
 
   type BmsLowStockItem {
@@ -1517,6 +1538,9 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
+    bmsCreateProductCategory(name: String!): BmsProductCategory!
+    bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
+    bmsDeleteProductCategory(id: ID!): Boolean!
     bmsAdjustStock(sku: String!, size: String!, delta: Int!, note: String): BmsVariant!
     bmsSetReorderPoint(sku: String!, size: String!, reorderPoint: Int!): BmsVariant!
 
@@ -1551,6 +1575,9 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
     bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
     bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean): BmsCustomerAddress!
+    bmsUpdateCustomerAddress(addressId: ID!, label: String, address: String!): BmsCustomerAddress!
+    bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
+    bmsDeleteCustomerAddress(addressId: ID!): Boolean!
     bmsDeleteCustomer(id: ID!): Boolean!
 
     # ===== BMS RBAC (admin) =====

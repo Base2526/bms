@@ -12,6 +12,9 @@ import {
   upsertCustomer,
   setCustomerTags,
   addCustomerAddress,
+  updateCustomerAddress,
+  setDefaultCustomerAddress,
+  deleteCustomerAddress,
   deleteCustomer,
 } from "@/lib/bms/customers";
 import { requirePermission } from "@/lib/bms/permissions";
@@ -63,6 +66,30 @@ export const bmsCustomersResolvers = {
       } catch (err) {
         toGqlError(err);
       }
+    },
+    async bmsUpdateCustomerAddress(
+      _p: unknown,
+      args: { addressId: string; label?: string; address: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address);
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsSetDefaultCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        return await setDefaultCustomerAddress(getTenantId(ctx), args.addressId);
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsDeleteCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      return deleteCustomerAddress(getTenantId(ctx), args.addressId);
     },
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");

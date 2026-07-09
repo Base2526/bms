@@ -11,20 +11,31 @@ import {
   InputNumber,
   Switch,
   Select,
+  AutoComplete,
   message,
   Alert,
   Typography,
   Tooltip,
+  Upload,
+  Image,
+  Avatar,
+  List,
+  Popconfirm,
 } from "antd";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   PlusOutlined,
   EditOutlined,
   ReloadOutlined,
   WarningOutlined,
   HistoryOutlined,
+  UploadOutlined,
+  PictureOutlined,
+  DeleteOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import debounce from "lodash/debounce";
 
 // ---- Types --------------------------------------------------
 type Variant = {
@@ -42,6 +53,11 @@ type Product = {
   price: number;
   keywords: string[];
   barcode: string | null;
+  imageUrl: string | null;
+  description: string | null;
+  costPrice: number | null;
+  category: string | null;
+  brand: string | null;
   variants: Variant[];
 };
 type Movement = {
@@ -57,25 +73,34 @@ type Movement = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_PRODUCTS = gql`
-  query BmsProducts {
-    bmsProducts {
-      sku
-      name
-      active
-      price
-      keywords
-      barcode
-      variants {
-        size
-        current_stock
-        reserved_stock
-        available
-        reorder_point
-        low
+  query BmsProducts($search: String, $category: String, $limit: Int, $offset: Int) {
+    bmsProducts(search: $search, category: $category, limit: $limit, offset: $offset) {
+      total
+      items {
+        sku
+        name
+        active
+        price
+        keywords
+        barcode
+        imageUrl
+        description
+        costPrice
+        category
+        brand
+        variants {
+          size
+          current_stock
+          reserved_stock
+          available
+          reorder_point
+          low
+        }
       }
     }
   }
 `;
+const Q_CATEGORIES = gql`query { bmsProductCategories { id name } }`;
 const Q_LOW = gql`query { bmsLowStock { sku name size available reorder_point } }`;
 const Q_MOVEMENTS = gql`
   query ($sku: String!) {
@@ -104,6 +129,9 @@ const M_REORDER = gql`
     bmsSetReorderPoint(sku: $sku, size: $size, reorderPoint: $rp) { size low }
   }
 `;
+const M_CREATE_CATEGORY = gql`mutation ($name: String!) { bmsCreateProductCategory(name: $name) { id name } }`;
+const M_RENAME_CATEGORY = gql`mutation ($id: ID!, $name: String!) { bmsRenameProductCategory(id: $id, name: $name) { id name } }`;
+const M_DELETE_CATEGORY = gql`mutation ($id: ID!) { bmsDeleteProductCategory(id: $id) }`;
 
 const MOVE_COLOR: Record<string, string> = {
   STOCK_IN: "green",
@@ -117,11 +145,24 @@ function ProductsManagement() {
   const [form] = Form.useForm();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+
+  // ค้นหา + paging ฝั่ง server (สินค้าอาจมีหลักพันแถวจาก fake seeder)
+  const [searchInput, setSearchInput] = useState("");   // ค่าในกล่องพิมพ์ (แสดงผลทันที)
+  const [search, setSearch] = useState("");             // ค่าที่ debounce แล้ว → ใช้ query จริง
+  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  const debouncedSetSearch = useMemo(() => debounce((v: string) => { setSearch(v); setPage(1); }, 400), []);
+  const onSearchChange = (v: string) => { setSearchInput(v); debouncedSetSearch(v); };
 
   const { can } = useBmsPermissions();
   const { data, loading, error, refetch } = useQuery(Q_PRODUCTS, {
+    variables: { search: search || null, category: categoryFilter || null, limit: pageSize, offset: (page - 1) * pageSize },
     fetchPolicy: "cache-and-network",
   });
+  const { data: catData, refetch: refetchCategories } = useQuery(Q_CATEGORIES, { fetchPolicy: "cache-and-network" });
   const { data: lowData, refetch: refetchLow } = useQuery(Q_LOW, {
     fetchPolicy: "cache-and-network",
   });
@@ -147,23 +188,56 @@ function ProductsManagement() {
     onError: onErr,
   });
 
-  const products: Product[] = data?.bmsProducts || [];
+  const products: Product[] = data?.bmsProducts?.items || [];
+  const total: number = data?.bmsProducts?.total || 0;
+  const categories: { id: string; name: string }[] = catData?.bmsProductCategories || [];
   const lowCount: number = lowData?.bmsLowStock?.length || 0;
+
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  // ยี่ห้อ: พิมพ์อิสระได้ (autocomplete จากค่าที่เคยใช้) — หมวดหมู่ใช้ list กลางที่จัดการแล้ว (bmsProductCategories)
+  const brandOptions = useMemo(
+    () => Array.from(new Set(products.map((p) => p.brand).filter(Boolean))) as string[],
+    [products]
+  );
 
   const openCreate = () => {
     setEditing(null);
+    setImageUrl(null);
     form.resetFields();
     form.setFieldsValue({ active: true, keywords: [] });
     setModalOpen(true);
   };
   const openEdit = (p: Product) => {
     setEditing(p);
+    setImageUrl(p.imageUrl || null);
     form.setFieldsValue({
       sku: p.sku, name: p.name, price: p.price,
       keywords: p.keywords, active: p.active, barcode: p.barcode || "",
+      description: p.description || "", costPrice: p.costPrice ?? undefined,
+      category: p.category || "", brand: p.brand || "",
     });
     setModalOpen(true);
   };
+
+  const uploadImage = async (file: File) => {
+    setUploadingImage(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/bms/products/upload", { method: "POST", body: fd, credentials: "include" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || "อัปโหลดรูปไม่สำเร็จ");
+      setImageUrl(j.url);
+      message.success("อัปโหลดรูปแล้ว");
+    } catch (e: any) {
+      message.error(e?.message || "อัปโหลดรูปไม่สำเร็จ");
+    } finally {
+      setUploadingImage(false);
+    }
+    return false; // กัน antd Upload อัปโหลดซ้ำเอง
+  };
+
   const submit = async () => {
     const v = await form.validateFields();
     await upsertProduct({
@@ -172,6 +246,11 @@ function ProductsManagement() {
           sku: v.sku.trim(), name: v.name.trim(), price: Number(v.price),
           keywords: v.keywords || [], active: v.active,
           barcode: v.barcode?.trim() || null,
+          image_url: imageUrl || null,
+          description: v.description?.trim() || null,
+          cost_price: v.costPrice != null && v.costPrice !== "" ? Number(v.costPrice) : null,
+          category: v.category?.trim() || null,
+          brand: v.brand?.trim() || null,
         },
       },
     });
@@ -179,13 +258,44 @@ function ProductsManagement() {
 
   const columns = useMemo(
     () => [
+      {
+        title: "", key: "image", width: 56,
+        render: (_: any, p: Product) =>
+          p.imageUrl
+            ? <Image src={p.imageUrl} alt={p.name} width={40} height={40} style={{ objectFit: "cover", borderRadius: 6 }} />
+            : <Avatar shape="square" size={40} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />,
+      },
       { title: "SKU", dataIndex: "sku", key: "sku", width: 120,
         render: (s: string) => <Typography.Text code>{s}</Typography.Text> },
       { title: "Barcode", dataIndex: "barcode", key: "barcode", width: 130,
         render: (b: string | null) => b || <span style={{ color: "#999" }}>—</span> },
-      { title: "Name", dataIndex: "name", key: "name" },
-      { title: "Price", dataIndex: "price", key: "price", width: 100, align: "right" as const,
-        render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+      {
+        title: "Name", dataIndex: "name", key: "name",
+        render: (name: string, p: Product) => (
+          <Space direction="vertical" size={0}>
+            <span>{name}</span>
+            {(p.category || p.brand) && (
+              <Space size={4}>
+                {p.brand && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{p.brand}</Tag>}
+                {p.category && <Tag style={{ marginInlineEnd: 0 }}>{p.category}</Tag>}
+              </Space>
+            )}
+          </Space>
+        ),
+      },
+      {
+        title: "Price", dataIndex: "price", key: "price", width: 110, align: "right" as const,
+        render: (v: number, p: Product) => (
+          <Space direction="vertical" size={0} align="end">
+            <span>{Number(v).toLocaleString()} ฿</span>
+            {p.costPrice != null && (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                กำไร {(Number(v) - p.costPrice).toLocaleString()} ฿
+              </Typography.Text>
+            )}
+          </Space>
+        ),
+      },
       {
         title: "Stock", key: "stock", width: 170,
         render: (_: any, p: Product) => {
@@ -235,6 +345,23 @@ function ProductsManagement() {
         </Space>
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <Space wrap>
+          <Input.Search
+            allowClear placeholder="ค้นหาชื่อ / SKU / barcode" style={{ width: 280 }}
+            value={searchInput} onChange={(e) => onSearchChange(e.target.value)}
+          />
+          <Select
+            allowClear placeholder="ทุกหมวดหมู่" style={{ width: 180 }}
+            value={categoryFilter} onChange={(v) => { setCategoryFilter(v); setPage(1); }}
+            options={categories.map((c) => ({ value: c.name, label: c.name }))}
+          />
+          {can("product.edit") && (
+            <Button icon={<TagsOutlined />} onClick={() => setCategoryModalOpen(true)}>จัดการหมวดหมู่</Button>
+          )}
+        </Space>
+      </div>
+
       {lowCount > 0 && (
         <Alert
           type="warning" showIcon icon={<WarningOutlined />}
@@ -264,17 +391,35 @@ function ProductsManagement() {
         dataSource={products}
         columns={columns}
         expandable={{ expandedRowRender: (p: Product) => <ProductDetail product={p} onChanged={refreshAll} canAdjust={can("stock.adjust")} /> }}
-        pagination={false}
+        pagination={{
+          current: page, pageSize, total,
+          showSizeChanger: true, showTotal: (t) => `ทั้งหมด ${t} รายการ`,
+          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+        }}
       />
 
       <Modal
         title={editing ? `แก้ไขสินค้า: ${editing.sku}` : "เพิ่มสินค้า"}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); form.resetFields(); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); setImageUrl(null); form.resetFields(); }}
         onOk={submit} confirmLoading={saving}
         okText={editing ? "บันทึก" : "สร้าง"} width={560}
       >
         <Form form={form} layout="vertical" autoComplete="off">
+          <Form.Item label="รูปสินค้า">
+            <Space align="start">
+              {imageUrl
+                ? <Image src={imageUrl} alt="preview" width={72} height={72} style={{ objectFit: "cover", borderRadius: 8 }} />
+                : <Avatar shape="square" size={72} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />}
+              <Upload accept="image/*" showUploadList={false} beforeUpload={uploadImage}>
+                <Button icon={<UploadOutlined />} loading={uploadingImage}>
+                  {imageUrl ? "เปลี่ยนรูป" : "อัปโหลดรูป"}
+                </Button>
+              </Upload>
+              {imageUrl && <Button type="text" danger onClick={() => setImageUrl(null)}>ลบรูป</Button>}
+            </Space>
+          </Form.Item>
+
           <Form.Item label="SKU" name="sku" rules={[{ required: true, message: "ระบุ SKU" }]}>
             <Input placeholder="เช่น NIKE-AIR" disabled={!!editing} />
           </Form.Item>
@@ -284,9 +429,35 @@ function ProductsManagement() {
           <Form.Item label="ชื่อสินค้า" name="name" rules={[{ required: true, message: "ระบุชื่อ" }]}>
             <Input placeholder="เช่น Nike Air" />
           </Form.Item>
-          <Form.Item label="ราคา (บาท)" name="price" rules={[{ required: true, message: "ระบุราคา" }]}>
-            <InputNumber min={0} style={{ width: "100%" }} />
+          <Form.Item label="รายละเอียดสินค้า" name="description">
+            <Input.TextArea rows={3} placeholder="เช่น รองเท้าวิ่ง Nike Air รุ่นล่าสุด เบา ระบายอากาศดี" />
           </Form.Item>
+
+          <Space.Compact block>
+            <Form.Item label="ราคาขาย (บาท)" name="price" rules={[{ required: true, message: "ระบุราคา" }]} style={{ flex: 1, marginInlineEnd: 8 }}>
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item label="ต้นทุน (บาท, ไม่บังคับ)" name="costPrice" style={{ flex: 1 }}>
+              <InputNumber min={0} style={{ width: "100%" }} placeholder="ใช้คำนวณกำไร" />
+            </Form.Item>
+          </Space.Compact>
+
+          <Space.Compact block>
+            <Form.Item
+              label={<span>หมวดหมู่ <a onClick={() => setCategoryModalOpen(true)} style={{ fontSize: 12 }}>(จัดการ)</a></span>}
+              name="category" style={{ flex: 1, marginInlineEnd: 8 }}
+            >
+              <Select
+                allowClear showSearch placeholder="เลือกหมวดหมู่"
+                options={categories.map((c) => ({ value: c.name, label: c.name }))}
+                notFoundContent="ยังไม่มีหมวดหมู่ — กด (จัดการ) เพื่อเพิ่ม"
+              />
+            </Form.Item>
+            <Form.Item label="ยี่ห้อ" name="brand" style={{ flex: 1 }}>
+              <AutoComplete options={brandOptions.map((b) => ({ value: b }))} placeholder="เช่น Nike" filterOption />
+            </Form.Item>
+          </Space.Compact>
+
           <Form.Item label="Keywords (คำที่ลูกค้าพิมพ์แล้ว match สินค้านี้)" name="keywords">
             <Select mode="tags" tokenSeparators={[",", " "]} placeholder="nike, ไนกี้, air" />
           </Form.Item>
@@ -295,7 +466,83 @@ function ProductsManagement() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <CategoryManagerModal
+        open={categoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        categories={categories}
+        onChanged={refetchCategories}
+      />
     </div>
+  );
+}
+
+// ---- Modal: จัดการรายการหมวดหมู่ (เพิ่ม/แก้ชื่อ/ลบ) ------------
+function CategoryManagerModal({
+  open, onClose, categories, onChanged,
+}: { open: boolean; onClose: () => void; categories: { id: string; name: string }[]; onChanged: () => void }) {
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+
+  const [createCategory, { loading: creating }] = useMutation(M_CREATE_CATEGORY, {
+    onCompleted: () => { setNewName(""); onChanged(); },
+    onError: onErr,
+  });
+  const [renameCategoryMut, { loading: renaming }] = useMutation(M_RENAME_CATEGORY, {
+    onCompleted: () => { setEditingId(null); onChanged(); },
+    onError: onErr,
+  });
+  const [deleteCategoryMut] = useMutation(M_DELETE_CATEGORY, {
+    onCompleted: () => { message.success("ลบหมวดหมู่แล้ว"); onChanged(); },
+    onError: onErr,
+  });
+
+  return (
+    <Modal title="จัดการหมวดหมู่สินค้า" open={open} onCancel={onClose} footer={null} width={420}>
+      <Space.Compact block style={{ marginBottom: 16 }}>
+        <Input
+          placeholder="ชื่อหมวดหมู่ใหม่ เช่น รองเท้า" value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onPressEnter={() => newName.trim() && createCategory({ variables: { name: newName.trim() } })}
+        />
+        <Button type="primary" icon={<PlusOutlined />} loading={creating} disabled={!newName.trim()}
+          onClick={() => createCategory({ variables: { name: newName.trim() } })}>เพิ่ม</Button>
+      </Space.Compact>
+
+      <List
+        size="small"
+        dataSource={categories}
+        locale={{ emptyText: "ยังไม่มีหมวดหมู่" }}
+        renderItem={(c) => (
+          <List.Item
+            actions={
+              editingId === c.id
+                ? [
+                    <Button key="save" size="small" type="link" loading={renaming} disabled={!editingName.trim()}
+                      onClick={() => renameCategoryMut({ variables: { id: c.id, name: editingName.trim() } })}>บันทึก</Button>,
+                    <Button key="cancel" size="small" type="link" onClick={() => setEditingId(null)}>ยกเลิก</Button>,
+                  ]
+                : [
+                    <Button key="edit" size="small" type="link" icon={<EditOutlined />}
+                      onClick={() => { setEditingId(c.id); setEditingName(c.name); }} />,
+                    <Popconfirm key="del" title={`ลบหมวดหมู่ "${c.name}"?`} okText="ลบ" okButtonProps={{ danger: true }}
+                      onConfirm={() => deleteCategoryMut({ variables: { id: c.id } })}
+                    >
+                      <Button size="small" type="link" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>,
+                  ]
+            }
+          >
+            {editingId === c.id
+              ? <Input size="small" value={editingName} onChange={(e) => setEditingName(e.target.value)}
+                  onPressEnter={() => renameCategoryMut({ variables: { id: c.id, name: editingName.trim() } })} />
+              : c.name}
+          </List.Item>
+        )}
+      />
+    </Modal>
   );
 }
 

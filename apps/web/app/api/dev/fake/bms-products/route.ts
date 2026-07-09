@@ -22,17 +22,27 @@ export async function POST(req: NextRequest) {
   const tenantId = guard.actor?.tenant_id
     || (typeof body?.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID);
 
-  // np: N products · inv: N × 4 sizes (data-modifying CTE รันครบเสมอแม้ไม่ถูก select)
+  // gen: สุ่ม sku/price/category/brand ก่อน เพื่อให้ cost_price + image_url อ้าง sku/price เดียวกันได้
+  // np: N products (แนบรูป placeholder จาก picsum ตาม sku เป็น seed — deterministic, ไม่ต้องดาวน์โหลดไฟล์จริง)
+  // inv: N × 4 sizes (data-modifying CTE รันครบเสมอแม้ไม่ถูก select)
   const sql = `
-    WITH np AS (
-      INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords)
-      SELECT $1,
-             'FAKE-' || substr(md5(random()::text || g::text || clock_timestamp()::text), 1, 12),
-             'Fake Product ' || g,
-             true,
-             (100 + floor(random() * 4900))::numeric(12,2),
-             ARRAY['fake','test']
-        FROM generate_series(1, $2) g
+    WITH gen AS (
+      SELECT
+        'FAKE-' || substr(md5(random()::text || g::text || clock_timestamp()::text), 1, 12) AS sku,
+        g,
+        (100 + floor(random() * 4900))::numeric(12,2) AS price,
+        (ARRAY['เสื้อผ้า','รองเท้า','เครื่องประดับ','กระเป๋า','อุปกรณ์กีฬา'])[1 + floor(random() * 5)::int] AS category,
+        (ARRAY['Nike','Adidas','Uniqlo','Zara','No Brand'])[1 + floor(random() * 5)::int] AS brand
+      FROM generate_series(1, $2) g
+    ),
+    np AS (
+      INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand)
+      SELECT $1, sku, 'Fake Product ' || g, true, price, ARRAY['fake','test'],
+             'https://picsum.photos/seed/' || sku || '/400/400',
+             'สินค้าทดสอบสำหรับ demo/QA (สร้างโดยระบบอัตโนมัติ) — Fake Product ' || g,
+             (price * (0.4 + random() * 0.3))::numeric(12,2),
+             category, brand
+        FROM gen
       RETURNING sku, name, price
     ),
     inv AS (
