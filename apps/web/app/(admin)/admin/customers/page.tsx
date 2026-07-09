@@ -33,6 +33,13 @@ const M_ADDR = gql`
     bmsAddCustomerAddress(id: $id, label: $label, address: $address, isDefault: $isDefault) { id }
   }
 `;
+const M_UPDATE_ADDR = gql`
+  mutation ($addressId: ID!, $label: String, $address: String!) {
+    bmsUpdateCustomerAddress(addressId: $addressId, label: $label, address: $address) { id }
+  }
+`;
+const M_SET_DEFAULT_ADDR = gql`mutation ($addressId: ID!) { bmsSetDefaultCustomerAddress(addressId: $addressId) { id } }`;
+const M_DELETE_ADDR = gql`mutation ($addressId: ID!) { bmsDeleteCustomerAddress(addressId: $addressId) }`;
 const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteCustomer(id: $id) }`;
 
 const TAG_COLOR: Record<string, string> = {
@@ -53,6 +60,7 @@ function CustomersManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [addrFor, setAddrFor] = useState<Customer | null>(null);
+  const [editingAddr, setEditingAddr] = useState<Address | null>(null); // มีค่า = โหมดแก้ไขที่อยู่เดิม (ไม่ใช่เพิ่มใหม่)
 
   const { data, loading, error, refetch } = useQuery(Q_CUSTOMERS, {
     variables: { search: search || null },
@@ -66,6 +74,18 @@ function CustomersManagement() {
   });
   const [addAddr, { loading: savingAddr }] = useMutation(M_ADDR, {
     onCompleted: () => { message.success("เพิ่มที่อยู่แล้ว"); setAddrFor(null); addrForm.resetFields(); refetch(); },
+    onError: onErr,
+  });
+  const [updateAddr, { loading: updatingAddr }] = useMutation(M_UPDATE_ADDR, {
+    onCompleted: () => { message.success("บันทึกที่อยู่แล้ว"); setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); refetch(); },
+    onError: onErr,
+  });
+  const [setDefaultAddr] = useMutation(M_SET_DEFAULT_ADDR, {
+    onCompleted: () => { message.success("ตั้งเป็นค่าเริ่มต้นแล้ว"); refetch(); },
+    onError: onErr,
+  });
+  const [deleteAddr] = useMutation(M_DELETE_ADDR, {
+    onCompleted: () => { message.success("ลบที่อยู่แล้ว"); refetch(); },
     onError: onErr,
   });
   const [del] = useMutation(M_DELETE, {
@@ -85,9 +105,20 @@ function CustomersManagement() {
     const v = await form.validateFields();
     await upsert({ variables: { input: { id: editing?.id, name: v.name.trim(), phone: v.phone?.trim() || null, note: v.note?.trim() || null, tags: v.tags || [] } } });
   };
+  const openAddAddress = (c: Customer) => { setAddrFor(c); setEditingAddr(null); addrForm.resetFields(); };
+  const openEditAddress = (c: Customer, a: Address) => {
+    setAddrFor(c);
+    setEditingAddr(a);
+    addrForm.setFieldsValue({ label: a.label || "", address: a.address });
+  };
+  const closeAddrModal = () => { setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); };
   const submitAddr = async () => {
     const v = await addrForm.validateFields();
-    await addAddr({ variables: { id: addrFor!.id, label: v.label?.trim() || null, address: v.address.trim(), isDefault: !!v.isDefault } });
+    if (editingAddr) {
+      await updateAddr({ variables: { addressId: editingAddr.id, label: v.label?.trim() || null, address: v.address.trim() } });
+    } else {
+      await addAddr({ variables: { id: addrFor!.id, label: v.label?.trim() || null, address: v.address.trim(), isDefault: !!v.isDefault } });
+    }
   };
 
   const columns = useMemo(() => [
@@ -116,7 +147,7 @@ function CustomersManagement() {
       render: (_: any, c: Customer) => (
         <Space size="small">
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>แก้ไข</Button>
-          <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => { setAddrFor(c); addrForm.resetFields(); }}>ที่อยู่</Button>
+          <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>ที่อยู่</Button>
           <Popconfirm title="ลบลูกค้า (soft delete)?" okText="ลบ" okButtonProps={{ danger: true }} cancelText="ไม่" onConfirm={() => del({ variables: { id: c.id } })}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -145,7 +176,17 @@ function CustomersManagement() {
 
       <Table
         rowKey="id" loading={loading} dataSource={customers} columns={columns}
-        expandable={{ expandedRowRender: (c: Customer) => <CustomerDetail c={c} /> }}
+        expandable={{
+          expandedRowRender: (c: Customer) => (
+            <CustomerDetail
+              c={c}
+              onAddAddress={() => openAddAddress(c)}
+              onEditAddress={(a) => openEditAddress(c, a)}
+              onSetDefaultAddress={(a) => setDefaultAddr({ variables: { addressId: a.id } })}
+              onDeleteAddress={(a) => deleteAddr({ variables: { addressId: a.id } })}
+            />
+          ),
+        }}
         pagination={{ pageSize: 20, showTotal: (t) => `Total ${t} customer(s)` }}
       />
 
@@ -165,25 +206,39 @@ function CustomersManagement() {
         </Form>
       </Modal>
 
-      {/* modal เพิ่มที่อยู่ */}
-      <Modal title={`เพิ่มที่อยู่: ${addrFor?.name || ""}`} open={!!addrFor}
-        onCancel={() => { setAddrFor(null); addrForm.resetFields(); }}
-        onOk={submitAddr} confirmLoading={savingAddr} okText="เพิ่ม" width={480}>
+      {/* modal เพิ่ม/แก้ไขที่อยู่ */}
+      <Modal
+        title={`${editingAddr ? "แก้ไขที่อยู่" : "เพิ่มที่อยู่"}: ${addrFor?.name || ""}`}
+        open={!!addrFor}
+        onCancel={closeAddrModal}
+        onOk={submitAddr} confirmLoading={savingAddr || updatingAddr}
+        okText={editingAddr ? "บันทึก" : "เพิ่ม"} width={480}
+      >
         <Form form={addrForm} layout="vertical">
           <Form.Item label="ป้าย (บ้าน/ที่ทำงาน)" name="label"><Input placeholder="บ้าน" /></Form.Item>
           <Form.Item label="ที่อยู่" name="address" rules={[{ required: true, message: "ระบุที่อยู่" }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="isDefault" valuePropName="checked" label="ตั้งเป็นค่าเริ่มต้น">
-            <Select options={[{ value: false, label: "ไม่" }, { value: true, label: "ใช่" }]} defaultValue={false} />
-          </Form.Item>
+          {!editingAddr && (
+            <Form.Item name="isDefault" valuePropName="checked" label="ตั้งเป็นค่าเริ่มต้น">
+              <Select options={[{ value: false, label: "ไม่" }, { value: true, label: "ใช่" }]} defaultValue={false} />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>
   );
 }
 
-function CustomerDetail({ c }: { c: Customer }) {
+function CustomerDetail({
+  c, onAddAddress, onEditAddress, onSetDefaultAddress, onDeleteAddress,
+}: {
+  c: Customer;
+  onAddAddress: () => void;
+  onEditAddress: (a: Address) => void;
+  onSetDefaultAddress: (a: Address) => void;
+  onDeleteAddress: (a: Address) => void;
+}) {
   const orderCols = [
     { title: "Order", dataIndex: "id", key: "id", width: 100, render: (id: string) => <Text code>{id.slice(0, 8)}</Text> },
     { title: "Channel", dataIndex: "channel", key: "ch", width: 90 },
@@ -193,15 +248,30 @@ function CustomerDetail({ c }: { c: Customer }) {
   ];
   return (
     <div>
-      <Text strong><EnvironmentOutlined /> ที่อยู่</Text>
+      <Space style={{ width: "100%", justifyContent: "space-between" }}>
+        <Text strong><EnvironmentOutlined /> ที่อยู่</Text>
+        <Button size="small" type="link" icon={<PlusOutlined />} onClick={onAddAddress}>เพิ่มที่อยู่</Button>
+      </Space>
       <div style={{ marginTop: 6, marginBottom: 12 }}>
         {c.addresses?.length ? (
-          <Space direction="vertical">
+          <Space direction="vertical" style={{ width: "100%" }}>
             {c.addresses.map((a) => (
-              <div key={a.id}>
-                {a.is_default && <Tag color="green">ค่าเริ่มต้น</Tag>}
-                {a.label && <Text strong>[{a.label}] </Text>}
-                <Text>{a.address}</Text>
+              <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8, width: "100%" }}>
+                <div>
+                  {a.is_default && <Tag color="green">ค่าเริ่มต้น</Tag>}
+                  {a.label && <Text strong>[{a.label}] </Text>}
+                  <Text>{a.address}</Text>
+                </div>
+                <Space size={4} style={{ flexShrink: 0 }}>
+                  <Button size="small" type="link" icon={<EditOutlined />} onClick={() => onEditAddress(a)} />
+                  {!a.is_default && (
+                    <Button size="small" type="link" onClick={() => onSetDefaultAddress(a)}>ตั้งเป็นค่าเริ่มต้น</Button>
+                  )}
+                  <Popconfirm title="ลบที่อยู่นี้?" okText="ลบ" okButtonProps={{ danger: true }} cancelText="ไม่"
+                    onConfirm={() => onDeleteAddress(a)}>
+                    <Button size="small" type="link" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
               </div>
             ))}
           </Space>
