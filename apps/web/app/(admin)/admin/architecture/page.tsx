@@ -17,9 +17,10 @@ const tables = [
   { t: "bms_orders", pk: "id (uuid)", cols: "tenant_id, channel, customer_id, customer_ref, status, total_amount", note: "ออเดอร์ · FK→customers" },
   { t: "bms_order_items", pk: "id", cols: "tenant_id, order_id, product_sku, size, qty, unit_price", note: "FK→orders, →products, →inventory" },
   { t: "bms_stock_movements", pk: "id", cols: "tenant_id, product_sku, size, type, qty, ref_order_id, actor", note: "ledger การเคลื่อนไหวสต็อก" },
-  { t: "bms_customers", pk: "id (uuid)", cols: "tenant_id, name, phone, tags[], deleted_at", note: "ลูกค้า (soft delete)" },
+  { t: "bms_customers", pk: "id (uuid)", cols: "tenant_id, name, phone, email, preferred_language, timezone, tags[], deleted_at", note: "ลูกค้า (soft delete) · email/language/timezone เพิ่มใน 6.2" },
   { t: "bms_customer_identities", pk: "id", cols: "tenant_id, customer_id, channel, external_ref", note: "map ช่องทาง→ลูกค้า · uniq(tenant,channel,ref)" },
-  { t: "bms_customer_addresses", pk: "id", cols: "tenant_id, customer_id, label, address, is_default", note: "หลายที่อยู่/คน" },
+  { t: "bms_customer_addresses", pk: "id", cols: "tenant_id, customer_id, label, address, address_type, is_default", note: "หลายที่อยู่/คน · address_type=shipping/billing (6.2)" },
+  { t: "bms_customer_ai_summary", pk: "customer_id", cols: "tenant_id, customer_id, summary(jsonb), facts_hash, generated_at", note: "แคชสรุป AI Insights ต่อลูกค้า (6.2) — regenerate เฉพาะ facts_hash เปลี่ยน" },
   { t: "bms_suppliers", pk: "id (uuid)", cols: "tenant_id, name, phone, email · uniq(tenant,name)", note: "ผู้ขาย (Purchase)" },
   { t: "bms_purchase_orders", pk: "id (uuid)", cols: "tenant_id, supplier_id, status, total_amount", note: "PO · OPEN→PARTIAL→RECEIVED" },
   { t: "bms_purchase_order_items", pk: "id", cols: "tenant_id, po_id, product_sku, size, qty_ordered, qty_received, unit_cost", note: "รายการ PO · FK→products" },
@@ -41,6 +42,7 @@ const rels = [
   { p: "bms_purchase_orders", c: "bms_purchase_order_items", k: "po_id" },
   { p: "bms_conversations", c: "bms_messages / bms_conversation_notes", k: "conversation_id" },
   { p: "bms_plans (code)", c: "bms_tenants.plan", k: "plan code" },
+  { p: "bms_customers", c: "bms_customer_ai_summary", k: "customer_id (PK ตรง, ไม่ FK tenant ซ้ำ)" },
 ];
 
 const webhookSteps = [
@@ -58,7 +60,12 @@ const migrations = [
   "4.2 RLS policies", "4.3 RLS role (bms_app)", "5.0 plans",
   "5.1 per-tenant RBAC + audit log", "5.2 purchase (suppliers/PO)",
   "5.3 payments", "5.4 shipments", "5.5 inbox (conversations/messages/notes)",
+  "5.6 platform admin", "5.7 operational perms", "5.8 max_users quota",
+  "5.9 product detail (image/cost/category/brand)", "6.0 product categories",
+  "6.1 inbox assignment (helpers)", "6.2 customer 360 (email/timezone/address_type + AI summary cache)",
 ];
+// วางแผนไว้ (ยังไม่ implement — ดู CLAUDE.local.md § SaaS redesign):
+// 6.3 channel oauth (Lazada) · 6.4 channel sync state/product map
 
 function Sec({ id, children }: { id: string; children: React.ReactNode }) {
   return <div id={id} style={{ scrollMarginTop: 80, marginBottom: 32 }}>{children}</div>;
@@ -84,6 +91,7 @@ export default function Page() {
     { key: "a-mig", href: "#a-mig", title: "7. Migrations" },
     { key: "a-obs", href: "#a-obs", title: "8. Observability & Log Triage" },
     { key: "a-prod", href: "#a-prod", title: "9. Production checklist" },
+    { key: "a-c360", href: "#a-c360", title: "10. Customer 360 & SaaS roadmap" },
   ];
 
   return (
@@ -236,6 +244,24 @@ export default function Page() {
                 <li>ย้าย rate-limit ไป Redis (ตอนนี้ in-memory ต่อ instance) · เพิ่ม audit ให้ครบทุก mutation</li>
               </ul>
             } />
+          </Sec>
+
+          <Sec id="a-c360">
+            <Title level={4}>10. Customer 360 & SaaS roadmap</Title>
+            <Paragraph>
+              Inbox (<Text code>/admin/inbox</Text>) เป็น <b>3 คอลัมน์จริง</b>: รายการแชท · แชท · <b>Customer 360 panel</b> (<Text code>Customer360Panel.tsx</Text>).
+              เลือกแชท → resolve <Text code>customerId</Text> (nullable — บางแชทยังไม่ผูกลูกค้า) → eager query <Text code>bmsCustomer360</Text> (7 ส่วนแรก, เบา)
+              + lazy query <Text code>bmsCustomerTimeline</Text>/<Text code>bmsCustomerInsights</Text> (โหลดตอนกาง section เท่านั้น) — service ทั้งหมดอยู่ที่ <Text code>lib/bms/customer360.ts</Text>, gate ด้วยสิทธิ์ <Text code>customer.view</Text> เดิม (ไม่มีสิทธิ์ใหม่)
+            </Paragraph>
+            <ul>
+              <li><b>AI Insights:</b> Claude สรุปจาก "facts bundle" ที่ backend คำนวณแล้วเท่านั้น (จำนวนออเดอร์/มูลค่า/สินค้ายอดนิยม ฯลฯ) — ห้ามเดา/แต่งตัวเลขหรือคำแนะนำที่ไม่มีข้อมูลรองรับ (แพทเทิร์นเดียวกับ <Text code>verifyPaymentSlip()</Text>) แคชผลใน <Text code>bms_customer_ai_summary</Text> ด้วย hash ของ facts กัน re-generate ทุกครั้งที่เปิดแชท</li>
+              <li><b>"ตะกร้าปัจจุบัน":</b> สคีมาไม่มีสถานะ DRAFT แยก — คือ order <Text code>PENDING</Text> ล่าสุดที่ยังไม่มี payment ผูกอยู่</li>
+              <li><b>Quick Actions ที่ยัง disable:</b> Generate Invoice / Send Payment Link / Support Ticket — subsystem จริงยังไม่มีในระบบ (ตัดสินใจไว้แล้วว่าไม่ build รอบนี้) ไม่ใช่บั๊ก</li>
+            </ul>
+            <Alert type="info" showIcon style={{ marginTop: 8 }}
+              message="SaaS roadmap ถัดไป (ออกแบบแล้ว ยังไม่ implement): Lazada channel + OAuth connection + Channel Sync Service (ดึง product/order/payment/shipment เข้า DB เป็นระยะ แทน webhook สด) + Unified Customer Timeline ข้ามช่องทาง"
+              description={<>รายละเอียดเต็ม: <Text code>BUSINESS_RULES.md</Text> § Channels &amp; Commerce Sync · <Text code>CLAUDE.md</Text> § SaaS Architecture · phase build order + ไฟล์ที่วางแผนไว้ใน <Text code>CLAUDE.local.md</Text> (migration ที่วางแผนไว้เลื่อนเป็น 6.3/6.4 เพราะ 6.2 ถูกใช้โดย Customer 360 ไปแล้ว)</>}
+            />
           </Sec>
         </Col>
 

@@ -211,7 +211,7 @@ export type ShipmentLabel = {
 
 export async function getShipmentLabel(tenantId: string, shipmentId: string): Promise<ShipmentLabel | null> {
   const head = await query<{
-    id: string; order_id: string; carrier: string; tracking_no: string | null; created_at: string;
+    id: string; order_id: string; carrier: string; tracking_no: string | null; created_at: any;
     name: string | null; phone: string | null; address: string | null;
   }>(
     `SELECT s.id, s.order_id, s.carrier, s.tracking_no, s.created_at,

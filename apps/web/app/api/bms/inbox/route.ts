@@ -1,5 +1,5 @@
 // GET /api/bms/inbox — list conversations   [Phase 1: default tenant]
-//   ?status=OPEN&assignedTo=&tag=&search=&limit=&offset=
+//   ?status=OPEN&assignedTo=<staff user id>&tag=&search=&limit=&offset=
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { listConversations } from "@/lib/bms/inbox";

@@ -46,9 +46,11 @@ import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
 import { bmsShippingResolvers } from "@/graphql/bmsShipping";
 import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
+import { bmsCustomer360Resolvers } from "@/graphql/bmsCustomer360";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
+import { reassignStaffConversations } from "@/lib/bms/inbox";
 
 import { logAsync } from "@/lib/logger";
 
@@ -2647,7 +2649,8 @@ const rawResolvers = {
     ...bmsPaymentsResolvers.Query,
     ...bmsShippingResolvers.Query,
     ...bmsInboxResolvers.Query,
-    ...bmsReportsResolvers.Query
+    ...bmsReportsResolvers.Query,
+    ...bmsCustomer360Resolvers.Query
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -5174,6 +5177,12 @@ const rawResolvers = {
 
       console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
+      // แชท OPEN/PENDING ที่ยัง assign อยู่กับ user นี้ต้องโอนก่อนเสมอ (ห้ามเหลือแชทไม่มี staff)
+      const target = await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1`, [id]);
+      if (target.rows[0]?.tenant_id) {
+        await reassignStaffConversations(target.rows[0].tenant_id, id);
+      }
+
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const res = platform
           ? await client.query(`DELETE FROM users WHERE id=$1`, [id])
@@ -5206,6 +5215,14 @@ const rawResolvers = {
       const uuidIds = ids.filter((i) => uuidPattern.test(i));
 
       if (uuidIds.length === 0) return false;
+
+      // เหมือน deleteUser — โอนแชทค้างของแต่ละคนก่อนลบเสมอ
+      const targets = await query<{ id: string; tenant_id: string }>(
+        `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]
+      );
+      for (const t of targets.rows) {
+        if (t.tenant_id) await reassignStaffConversations(t.tenant_id, t.id);
+      }
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const res = platform
@@ -7100,6 +7117,7 @@ const rawResolvers = {
   BmsShipment: bmsShippingResolvers.BmsShipment,
   BmsConversation: bmsInboxResolvers.BmsConversation,
   BmsConversationNote: bmsInboxResolvers.BmsConversationNote,
+  BmsAuditEntry: bmsDashboardResolvers.BmsAuditEntry,
 };
 
 export const resolvers = {

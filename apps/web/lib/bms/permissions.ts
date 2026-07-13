@@ -34,6 +34,7 @@ export const BMS_PERMISSIONS = [
   "inbox.view",
   "inbox.reply",
   "inbox.manage",
+  "inbox.assign",
   "customer.view",
   "customer.edit",
   "report.view",

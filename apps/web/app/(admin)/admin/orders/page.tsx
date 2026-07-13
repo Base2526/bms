@@ -10,7 +10,14 @@ import {
   Alert,
   Popconfirm,
   Typography,
+  Steps,
+  Timeline,
+  Avatar,
+  Tooltip,
+  Spin,
+  Empty,
 } from "antd";
+import Link from "next/link";
 import { useState, useMemo } from "react";
 import {
   ReloadOutlined,
@@ -54,6 +61,18 @@ const M_SHIP = gql`mutation ($id: ID!) { bmsShipOrder(id: $id) }`;
 const M_COMPLETE = gql`mutation ($id: ID!) { bmsCompleteOrder(id: $id) }`;
 const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelOrder(id: $id) }`;
 const M_RETURN = gql`mutation ($id: ID!) { bmsReturnOrder(id: $id) }`;
+const STAFF_F = `id name avatar email`;
+const Q_JOURNEY = gql`
+  query ($orderId: ID!) {
+    bmsOrderJourney(orderId: $orderId) {
+      orderId channel status conversationId
+      assignedStaff { ${STAFF_F} }
+      helpers { ${STAFF_F} }
+      steps { status at actorName reached branch }
+      events { kind at text actorName }
+    }
+  }
+`;
 
 const STATUS_COLOR: Record<OrderStatus, string> = {
   PENDING: "orange",
@@ -202,7 +221,13 @@ function OrdersManagement() {
         rowKey="id" loading={loading} dataSource={orders} columns={columns}
         expandable={{
           expandedRowRender: (r: Order) => (
-            <Table rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <OrderJourney orderId={r.id} />
+              <div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
+                <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" />
+              </div>
+            </div>
           ),
         }}
         pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} order(s)` }}
@@ -223,6 +248,86 @@ function ReturnBtn({ onOk, disabled }: { onOk: () => void; disabled: boolean }) 
     <Popconfirm title="รับคืนสินค้า?" description="จะคืนสต็อกเข้าคลัง" okText="รับคืน" cancelText="ไม่" disabled={disabled} onConfirm={onOk}>
       <Button type="link" size="small" icon={<RollbackOutlined />} disabled={disabled}>คืนสินค้า</Button>
     </Popconfirm>
+  );
+}
+
+// ---- Order journey (ต้นทางแชท + stepper + timeline) ----
+type StaffRef = { id: string; name: string | null; avatar: string | null; email: string | null };
+type JStep = { status: string; at: string | null; actorName: string | null; reached: boolean; branch: boolean };
+type JEvent = { kind: string; at: string; text: string; actorName: string | null };
+
+const CHANNEL_COLOR_O: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue" };
+const fmtDT = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+
+function StaffChip({ s, size = 22 }: { s: StaffRef; size?: number }) {
+  return (
+    <Tooltip title={s.name || s.email || s.id}>
+      <Avatar size={size} src={s.avatar || undefined} style={{ fontSize: size <= 22 ? 10 : 12, backgroundColor: "#1677ff" }}>
+        {(s.name || "?").slice(0, 1).toUpperCase()}
+      </Avatar>
+    </Tooltip>
+  );
+}
+
+function OrderJourney({ orderId }: { orderId: string }) {
+  const { data, loading } = useQuery(Q_JOURNEY, { variables: { orderId }, fetchPolicy: "cache-and-network" });
+  const j = data?.bmsOrderJourney;
+  if (loading && !j) return <div style={{ padding: 16, textAlign: "center" }}><Spin size="small" /></div>;
+  if (!j) return <Empty description="ไม่มีข้อมูลเส้นทาง" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+
+  const steps: JStep[] = j.steps || [];
+  const events: JEvent[] = j.events || [];
+  const helpers: StaffRef[] = j.helpers || [];
+
+  const stepItems = steps.map((s) => ({
+    title: <span style={{ fontSize: 12 }}>{s.status}</span>,
+    description: (
+      <span style={{ fontSize: 11, lineHeight: 1.3, display: "inline-block" }}>
+        {fmtDT(s.at)}{s.actorName ? <><br />{s.actorName}</> : null}
+      </span>
+    ),
+    status: s.branch ? ("error" as const) : s.reached ? ("finish" as const) : ("wait" as const),
+  }));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* จุดเริ่มต้น */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "center", padding: "10px 12px", background: "var(--app-surface-2, rgba(148,163,184,0.08))", borderRadius: 8 }}>
+        <Space size={6}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>ต้นทาง:</Typography.Text>
+          <Tag color={CHANNEL_COLOR_O[j.channel] || "default"}>{j.channel}</Tag>
+          {j.conversationId
+            ? <Link href={`/admin/inbox?c=${j.conversationId}`} style={{ fontSize: 12 }}>เปิดดูแชท →</Link>
+            : <Typography.Text type="secondary" style={{ fontSize: 12 }}>ไม่มีแชทต้นทาง</Typography.Text>}
+        </Space>
+        {(j.assignedStaff || helpers.length > 0) && (
+          <Space size={6}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>ผู้ดูแล:</Typography.Text>
+            {j.assignedStaff && <StaffChip s={j.assignedStaff} />}
+            {helpers.map((h) => <StaffChip key={h.id} s={h} size={18} />)}
+          </Space>
+        )}
+      </div>
+
+      {/* stepper หลัก */}
+      <Steps size="small" labelPlacement="vertical" items={stepItems} style={{ marginTop: 4 }} />
+
+      {/* timeline ละเอียด */}
+      <div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>ไทม์ไลน์ละเอียด</Typography.Text>
+        <Timeline style={{ marginTop: 10 }} items={events.map((e) => ({
+          children: (
+            <span style={{ fontSize: 12 }}>
+              {e.text}
+              <span style={{ color: "var(--app-muted, #888)" }}>
+                {" · "}{fmtDT(e.at)}{e.actorName ? ` · ${e.actorName}` : ""}
+              </span>
+            </span>
+          ),
+        }))} />
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Badge, Avatar, Button, message } from 'antd';
+import { Layout, Menu, Avatar, Button, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
@@ -37,24 +37,52 @@ import { useSession } from '@/lib/useSession';
 import { useEffect, useState } from 'react';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
+const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
 
 const { Sider } = Layout;
 
-// label ที่มี badge (ถ้า count>0)
-const withBadge = (text: string, count = 0) =>
-  count > 0 ? (
-    <span>
-      {text} <Badge count={count} overflowCount={99} size="small" />
-    </span>
-  ) : (
-    text
-  );
+const badgeText = (n: number) => (n > 99 ? '99+' : String(n));
 
-const link = (href: string, text: string, icon: React.ReactNode, badge = 0) => ({
+// pill ชิดขวาในแถว — ใช้ตอนขยาย (มีที่ว่างพอ ไม่ทับ label)
+const PILL_STYLE: React.CSSProperties = {
+  minWidth: 20, height: 20, padding: '0 7px', borderRadius: 10,
+  background: '#e5484d', color: '#fff', fontSize: 11, fontWeight: 600,
+  lineHeight: '20px', textAlign: 'center', flexShrink: 0,
+};
+
+// badge เกาะมุมบนขวาของไอคอน — ใช้เฉพาะตอนย่อ (label ถูกซ่อน เหลือแต่ไอคอน)
+// วางให้อยู่ในกรอบ .ant-menu-item (กว้าง 55px) ไม่งั้นโดน overflow:hidden ของ li ตัด
+// className + !important กัน antd บังคับ opacity:0 กับ child ตัวที่ 2 ในสล็อตไอคอนตอนย่อ
+const iconWithBadge = (icon: React.ReactNode, count: number) => (
+  <span style={{ position: 'relative', display: 'inline-flex' }}>
+    {icon}
+    <span className="bms-sider-badge" style={{
+      position: 'absolute', top: 1, right: -7,
+      minWidth: 15, height: 15, padding: '0 3px', borderRadius: 8,
+      background: '#e5484d', color: '#fff', fontSize: 9, fontWeight: 600,
+      lineHeight: '15px', textAlign: 'center', boxShadow: '0 0 0 1.5px var(--app-surface)',
+    }}>
+      {badgeText(count)}
+    </span>
+  </span>
+);
+
+// collapsed = true → badge เกาะไอคอน (เห็นตอนย่อ) · false → pill ชิดขวาในแถว (ตอนขยาย ไม่ทับ label)
+const link = (href: string, text: string, icon: React.ReactNode, badge = 0, collapsed = false) => ({
   key: href,
-  icon,
-  label: <Link href={href}>{withBadge(text, badge)}</Link>,
+  icon: collapsed && badge > 0 ? iconWithBadge(icon, badge) : icon,
+  // flex+pill เฉพาะตอนขยาย+มี badge (Inbox) เท่านั้น — item อื่น/ลูกเมนูใน popup ใช้ Link ธรรมดา
+  // ไม่งั้น span flex:1 overflow:hidden จะยุบเหลือ 0 ใน popup flyout ตอนย่อ → text หาย
+  label:
+    !collapsed && badge > 0 ? (
+      <Link href={href} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
+        <span style={PILL_STYLE}>{badgeText(badge)}</span>
+      </Link>
+    ) : (
+      <Link href={href}>{text}</Link>
+    ),
 });
 
 export default function AdminSidebar() {
@@ -69,6 +97,14 @@ export default function AdminSidebar() {
   const canSeedFake = isPlatformAdmin || can('product.edit');
   // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
   const showSystemGroup = isPlatformAdmin || canSeedFake;
+
+  // แชทเข้าคือจุดเริ่ม workflow ทั้งหมด (ตาม CLAUDE.md) — badge unread ต้อง poll เอง
+  // เพราะ sidebar ติดอยู่ทุกหน้า ไม่ใช่แค่หน้า Inbox
+  const canViewInbox = can('inbox.view');
+  const { data: unreadData } = useQuery(Q_INBOX_UNREAD, {
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+  });
+  const inboxUnread: number = unreadData?.bmsInboxUnreadCount ?? 0;
 
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage)
   const [collapsed, setCollapsed] = useState(false);
@@ -92,10 +128,12 @@ export default function AdminSidebar() {
   }
 
   // จัดกลุ่มเมนูเป็นหมวด → submenu แบบ inline
+  // Inbox = จุดเริ่ม workflow ทั้งหมด (ลูกค้าทักเข้ามา) → ดึงออกมาเป็น top-level แยกจาก
+  // กลุ่ม "ร้านค้า" เดิม (เคยฝังลึก 2 คลิกกว่าจะถึง) พร้อม badge unread ให้เห็นทันที
+  // Reports/คู่มือ ใช้ไม่บ่อยเท่า Inbox → Reports ย้ายลงมาไว้หลังกลุ่มร้านค้า, คู่มือย้ายไปแถบล่างสุด
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
-    link('/admin/reports', 'Reports', <BarChartOutlined />),
-    link('/admin/manual', 'คู่มือ', <BookOutlined />),
+    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed)] : []),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
     ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
     {
@@ -103,7 +141,6 @@ export default function AdminSidebar() {
       icon: <ShopOutlined />,
       label: 'ร้านค้า',
       children: [
-        link('/admin/inbox', 'Inbox', <MessageOutlined />),
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
@@ -113,6 +150,7 @@ export default function AdminSidebar() {
         link('/admin/playground', 'Playground', <ExperimentOutlined />),
       ],
     },
+    link('/admin/reports', 'Reports', <BarChartOutlined />),
     {
       key: 'g-saas',
       icon: <ApiOutlined />,
@@ -128,7 +166,7 @@ export default function AdminSidebar() {
       icon: <SafetyOutlined />,
       label: 'ผู้ใช้/สิทธิ์',
       children: [
-        link('/admin/users', 'Users', <UserOutlined />, 3),
+        link('/admin/users', 'Users', <UserOutlined />, 3, collapsed),
         // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
         ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
@@ -205,8 +243,8 @@ export default function AdminSidebar() {
         </div>
       </div>
 
-      {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+      {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ (overflowX ต้อง visible ไม่งั้น badge ที่ล้นขอบไอคอนโดนตัด) */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'visible' }}>
         <Menu
           mode="inline"
           items={items}
@@ -216,9 +254,25 @@ export default function AdminSidebar() {
         />
       </div>
 
-      {/* โปรไฟล์ + Logout (ปักล่างสุด) */}
+      {/* คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — คู่มือใช้ไม่บ่อย เลยลดความสำคัญมาไว้แถบนี้แทน top-level */}
+      <div style={{ borderTop: '1px solid var(--app-border)', padding: '10px 10px 0', flexShrink: 0 }}>
+        <Tooltip title={collapsed ? 'คู่มือ' : ''} placement="right">
+          <Link
+            href="/admin/manual"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: '4px 8px', marginBottom: 6, borderRadius: 8,
+              color: 'var(--app-text-secondary, #888)', fontSize: 13,
+            }}
+          >
+            <BookOutlined />
+            {!collapsed && <span>คู่มือ</span>}
+          </Link>
+        </Tooltip>
+      </div>
       {admin && (
-        <div style={{ borderTop: '1px solid var(--app-border)', padding: 10, flexShrink: 0 }}>
+        <div style={{ padding: '0 10px 10px', flexShrink: 0 }}>
           <Link
             href="/admin/profile"
             style={{

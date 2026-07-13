@@ -14,6 +14,8 @@ import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { beginTenantTx } from "./tenant";
+import { listConversationHelpers, listSystemEvents } from "./inbox";
+import { listShipments } from "./shipping";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -372,4 +374,141 @@ export async function releaseExpiredOrders(
   } finally {
     client.release();
   }
+}
+
+// =============================================================
+// Order Journey — เส้นทางออเดอร์ (ต้นทางแชท + stepper + timeline ละเอียด)
+// -------------------------------------------------------------
+// ไม่มีตาราง log ใหม่: ใช้ bms_audit_log เดิม (order.pay/pack/ship/complete/
+// cancel/return) + order.created_at + conversation ต้นทาง (join 1:1 ด้วย
+// tenant+channel+customer_ref) + bms_shipments · resolve ชื่อ actor จาก email
+// =============================================================
+
+type OrderStep = { status: string; at: string | null; actorName: string | null; reached: boolean; branch: boolean };
+type OrderEvent = { kind: string; at: string; text: string; actorName: string | null };
+type StaffRefRow = { id: string; name: string | null; avatar: string | null; email: string | null } | null;
+
+export type OrderJourney = {
+  orderId: string; channel: string; status: string;
+  conversationId: string | null;
+  assignedStaff: StaffRefRow;
+  helpers: NonNullable<StaffRefRow>[];
+  steps: OrderStep[];
+  events: OrderEvent[];
+};
+
+const MAIN_FLOW = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
+const ACTION_TO_STATUS: Record<string, string> = {
+  "order.pay": "PAID", "order.pack": "PACKING", "order.ship": "SHIPPED", "order.complete": "COMPLETED",
+  "order.cancel": "CANCELLED", "order.return": "RETURNED",
+};
+const STEP_LABEL: Record<string, string> = {
+  PENDING: "สร้างออเดอร์ (รอชำระ)", PAID: "ชำระเงินแล้ว", PACKING: "แพ็คสินค้า",
+  SHIPPED: "จัดส่งแล้ว", COMPLETED: "ปิดออเดอร์", CANCELLED: "ยกเลิก", RETURNED: "รับคืนสินค้า",
+};
+
+const jIso = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
+
+export async function getOrderJourney(tenantId: string, orderId: string): Promise<OrderJourney | null> {
+  const o = await query<{ channel: string; customer_ref: string | null; status: string; created_at: any; updated_at: any }>(
+    `SELECT channel, customer_ref, status, created_at, updated_at
+       FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, orderId]
+  );
+  if (o.rowCount === 0) return null;
+  const ord = o.rows[0];
+
+  // audit เกี่ยวกับ order นี้ (target = orderId) — resolve ชื่อ actor จาก email
+  const auditRows = (await query<{ actor: string | null; action: string; created_at: any }>(
+    `SELECT actor, action, created_at FROM bms_audit_log
+      WHERE tenant_id = $1 AND target = $2 AND action LIKE 'order.%'
+      ORDER BY created_at, id`,
+    [tenantId, orderId]
+  )).rows;
+
+  const emails = new Set<string>();
+  auditRows.forEach((r) => { if (r.actor && !r.actor.startsWith("system:") && r.actor.includes("@")) emails.add(r.actor); });
+  const nameByEmail = new Map<string, string>();
+  if (emails.size) {
+    const u = await query<{ email: string; name: string | null }>(
+      `SELECT email, name FROM users WHERE email = ANY($1::text[])`, [[...emails]]
+    );
+    u.rows.forEach((x) => nameByEmail.set(x.email, x.name || x.email));
+  }
+  const actorName = (a: string | null) => (!a ? null : a.startsWith("system:") ? "ระบบ" : (nameByEmail.get(a) ?? a));
+
+  // audit ล่าสุดต่อ status (กันกดซ้ำ)
+  const lastByStatus = new Map<string, { at: string; actorName: string | null }>();
+  for (const r of auditRows) {
+    const st = ACTION_TO_STATUS[r.action];
+    if (st) lastByStatus.set(st, { at: jIso(r.created_at)!, actorName: actorName(r.actor) });
+  }
+
+  // ---- steps (เส้นหลัก + กิ่ง cancel/return) ----
+  const steps: OrderStep[] = MAIN_FLOW.map((st) => {
+    if (st === "PENDING") return { status: st, at: jIso(ord.created_at), actorName: "ระบบ", reached: true, branch: false };
+    const hit = lastByStatus.get(st);
+    // COMPLETED อาจมาจาก auto (จัดส่งถึง) ที่ไม่ได้ audit → fallback updated_at
+    if (!hit && st === "COMPLETED" && ord.status === "COMPLETED") {
+      return { status: st, at: jIso(ord.updated_at), actorName: "ระบบ", reached: true, branch: false };
+    }
+    return { status: st, at: hit?.at ?? null, actorName: hit?.actorName ?? null, reached: !!hit, branch: false };
+  });
+  for (const b of ["CANCELLED", "RETURNED"]) {
+    const hit = lastByStatus.get(b);
+    if (hit) steps.push({ status: b, at: hit.at, actorName: hit.actorName, reached: true, branch: true });
+  }
+
+  // ---- source conversation (join 1:1) + staff + helpers ----
+  let conversationId: string | null = null;
+  let assignedStaff: StaffRefRow = null;
+  let helpers: NonNullable<StaffRefRow>[] = [];
+  let convStart: string | null = null;
+  const sysEvents: { kind: string; at: string; actorName: string; targetName: string | null }[] = [];
+  if (ord.customer_ref) {
+    const conv = (await query<{ id: string; created_at: any; assigned_to_user_id: string | null; an: string | null; av: string | null; ae: string | null }>(
+      `SELECT c.id, c.created_at, c.assigned_to_user_id,
+              u.name AS an, u.avatar AS av, u.email AS ae
+         FROM bms_conversations c
+         LEFT JOIN users u ON u.id = c.assigned_to_user_id
+        WHERE c.tenant_id = $1 AND c.channel = $2 AND c.customer_ref = $3
+        LIMIT 1`,
+      [tenantId, ord.channel, ord.customer_ref]
+    )).rows[0];
+    if (conv) {
+      conversationId = conv.id;
+      convStart = jIso(conv.created_at);
+      if (conv.assigned_to_user_id) assignedStaff = { id: conv.assigned_to_user_id, name: conv.an, avatar: conv.av, email: conv.ae };
+      const hs = await listConversationHelpers(tenantId, conv.id);
+      helpers = hs.map((h: any) => ({ id: h.id, name: h.name ?? null, avatar: h.avatar ?? null, email: h.email ?? null }));
+      const se = await listSystemEvents(tenantId, conv.id);
+      se.filter((e) => e.kind === "assign" || e.kind === "helper_add" || e.kind === "helper_remove")
+        .forEach((e) => sysEvents.push({ kind: e.kind, at: e.at, actorName: e.actorName, targetName: e.targetName }));
+    }
+  }
+
+  // ---- shipment (tracking) ----
+  const shipRows = await listShipments(tenantId, { orderId });
+
+  // ---- รวม timeline ละเอียด ----
+  const events: OrderEvent[] = [];
+  if (convStart) events.push({ kind: "chat_start", at: convStart, text: `ลูกค้าทักผ่าน ${ord.channel} · เริ่มบทสนทนา`, actorName: null });
+  events.push({ kind: "order_status", at: jIso(ord.created_at)!, text: "สร้างออเดอร์ → PENDING", actorName: "ระบบ" });
+  for (const e of sysEvents) {
+    const text = e.kind === "assign" ? `มอบหมายแชทให้ ${e.targetName}`
+      : e.kind === "helper_add" ? `เพิ่ม ${e.targetName} เป็นผู้ช่วยตอบ`
+      : `ถอด ${e.targetName} ออกจากผู้ช่วยตอบ`;
+    events.push({ kind: e.kind, at: e.at, text, actorName: e.actorName });
+  }
+  for (const r of auditRows) {
+    const st = ACTION_TO_STATUS[r.action];
+    if (st) events.push({ kind: "order_status", at: jIso(r.created_at)!, text: `${STEP_LABEL[st]} → ${st}`, actorName: actorName(r.actor) });
+  }
+  for (const s of shipRows as any[]) {
+    const track = s.tracking_no ? ` · เลขพัสดุ ${s.tracking_no}` : "";
+    events.push({ kind: "shipment", at: jIso(s.created_at)!, text: `สร้างพัสดุ ${s.carrier}${track}`, actorName: null });
+  }
+  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  return { orderId, channel: ord.channel, status: ord.status, conversationId, assignedStaff, helpers, steps, events };
 }
