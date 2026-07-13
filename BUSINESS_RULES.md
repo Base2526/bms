@@ -15,6 +15,11 @@ Never duplicate business logic inside AI prompts.
 > Reports, Channels (LINE/TikTok/Facebook/Instagram/Web), Multi-tenant + RLS + RBAC + Billing.
 > business logic อยู่ใน `apps/web/lib/bms/*` (ที่เดียว ใช้ร่วม REST + GraphQL) — ดู mapping ใน TOOLS.md
 > ค่า enum จริงในโค้ดระบุไว้ในแต่ละหัวข้อด้านล่างด้วย (บางชื่อกระชับกว่าในสเปกเดิม)
+>
+> **SaaS redesign (2026-07, ออกแบบแล้ว ยังไม่ implement):** เพิ่ม Lazada + OAuth channel connection +
+> Channel Sync Service + Unified Customer Timeline — "Workspace" = คำที่ใช้ใน UI/เอกสารเท่านั้น
+> schema/โค้ดยังใช้ `tenant_id`/`tenant` เหมือนเดิมไม่เปลี่ยน — ดูสเปกเต็มที่หัวข้อ "Channels & Commerce Sync"
+> ด้านล่าง + [CLAUDE.md](CLAUDE.md) § SaaS Architecture + [CLAUDE.local.md](CLAUDE.local.md) (phase build order)
 
 ---
 
@@ -40,8 +45,9 @@ Customer matching priority:
 2. LINE User ID
 3. TikTok User ID
 4. Facebook ID
-5. Email
-6. Phone Number
+5. Lazada Buyer ID
+6. Email
+7. Phone Number
 
 One customer can have multiple shipping addresses.
 
@@ -290,6 +296,47 @@ Internal notes are not visible to customers.
 > **สถานะข้อความ (outbound, Phase 1):** `SENDING` (optimistic ฝั่ง client) → `SENT` / `FAILED` (เก็บใน `meta.status`) ·
 > **capability-gated ตามช่องทาง** — LINE/FB/IG push ได้จริง → fail ได้จริง + ปุ่ม "ส่งใหม่" (`bmsRetryMessage`) ·
 > web/TikTok ไม่ push (แค่บันทึก) → ไม่มีสถานะ fail หลอก, โชว์ "บันทึกแล้ว" แทน · **ไม่ทำ read receipt บนช่องที่รายงานไม่ได้จริง** (LINE/TikTok)
+
+> **Planned — Unified Customer Timeline (cross-channel):** หนึ่งลูกค้าอาจมีหลาย conversation ต่างช่องทาง
+> (LINE + TikTok + Lazada + Web ฯลฯ) ผูกกันด้วย `customer_id` เดียว (ดู "Customer matching priority" ด้านบน) ·
+> หน้า timeline ระดับลูกค้า (ไม่ใช่ระดับ conversation เดียวแบบ `getTimeline` ปัจจุบัน) รวมทุก conversation ทุกช่องทาง
+> + order/payment/shipment ทุกใบของลูกค้าคนนั้น + สรุปโดย AI ไว้หน้าเดียว — **ไม่ต้องเพิ่มตารางใหม่**
+> (`bms_customer_identities` ผูกหลาย (channel, external_ref) เข้า customer เดียวอยู่แล้ว), เป็นแค่ query/หน้าใหม่
+> (`getCustomerTimeline()` ดู TOOLS.md)
+
+---
+
+# Channels & Commerce Sync
+
+> **Implemented — Channel connection (`bms_tenant_channels`):** ต่อ/ถอดช่องทางได้เองต่อร้านที่ `/admin/settings`
+> (ไม่ต้องรอ dev) · credential เข้ารหัส AES-256-GCM ที่ฝั่ง DB (`lib/bms/crypto.ts`) ไม่เก็บเป็น plaintext ·
+> ตอนนี้เป็นแบบ **manual paste** (พิมพ์ access token/secret เอง) สำหรับ LINE/TikTok/Facebook/Instagram/Web
+
+> **Planned — OAuth connection (`auth_type`):** ช่องทางที่รองรับ OAuth (เริ่มที่ Lazada) ต่อผ่านปุ่ม "เชื่อมต่อ"
+> แทนการพิมพ์ token เอง — flow: authorize → callback → แลก code เป็น access/refresh token → เก็บเข้า
+> `bms_tenant_channels` แบบเข้ารหัสเหมือนเดิม (`auth_type = 'oauth2'`) · refresh token ต่ออายุอัตโนมัติก่อนหมดอายุ
+> (`expires_at`) ไม่ต้องให้ user เชื่อมต่อใหม่เอง
+
+> **Planned — Lazada:** ช่องทางใหม่ ต่างจาก LINE/Meta ตรงที่ **ไม่มี live chat webhook สำหรับข้อมูลร้านค้า**
+> (product/order/payment/shipment) — ต้องดึงข้อมูลผ่าน Sync Service (ด้านล่าง) แทนการรอ webhook แบบ LINE/FB/IG ·
+> ใช้ authorization-code OAuth ของ Lazada Open Platform · เขียนลงตารางเดิม (`bms_products`, `bms_orders`,
+> `bms_payments`, `bms_shipments`) ผ่าน mapping ใหม่ (`bms_channel_product_map` ผูก external item id ↔ sku,
+> `bms_orders.external_order_id` กันออเดอร์ซ้ำเวลาดึงซ้ำ)
+
+> **Planned — Channel Sync Service:** งานพื้นหลังที่ดึงข้อมูล **products / customers / orders / order items /
+> payment status / shipment status / tracking number / refunds / returns** จากแพลตฟอร์มที่ไม่มี webhook ครบ
+> (Lazada ก่อน) เข้ามาไว้ใน DB เป็นระยะ (นาทีระดับ ไม่ใช่ครั้งเดียวต่อวัน) · **AI/ลูกค้าไม่เรียก external API สดระหว่างแชทเด็ดขาด**
+> — ทุกอย่างต้อง sync เข้า DB ก่อนแล้ว AI ค่อยอ่านจาก DB ผ่าน tool เดิม (`searchProducts`/`getOrderStatus` ฯลฯ)
+> เหมือนข้อมูลช่องทางอื่น: Platform → Sync Service → Local DB → CRM/AI (ไม่มี "Platform → AI" ตรงๆ) ·
+> idempotency: ทุกแถวที่ sync เข้ามาต้องมี external id กันเขียนซ้ำ (ดู `bms_channel_sync_state` /
+> `bms_channel_product_map` ใน CLAUDE.local.md)
+
+> **Rule — Event-driven CRM/Inventory update:** เมื่อ order/payment/shipment เปลี่ยนสถานะ (ไม่ว่าจากลูกค้า, staff,
+> หรือ Sync Service) การอัปเดต CRM (สร้าง/ผูก customer) และ Inventory (stock movement) ต้องเป็น **เรียกฟังก์ชัน
+> ตรงๆ ใน transaction เดียวกัน** (เช่น `confirmPayment()`/`setShipmentStatus()`/`createDraftOrder()` ที่ทำ cascade
+> ให้อยู่แล้ว) — **ห้ามทำเป็น pub/sub event bus แยก** เพราะ order/payment/shipment ต้อง atomic กัน oversell/ตัดสต็อกซ้ำ
+> (ดู "Orders" ด้านบน) และ event bus แบบ fire-and-forget ไม่รับประกัน atomicity แบบนี้ · `bms_audit_log` ยังเป็นแค่
+> ประวัติ (write-only, ให้ `getOrderJourney`/`listSystemEvents` อ่านย้อนกลับ) ไม่ใช่ตัวกระตุ้น side effect
 
 ---
 

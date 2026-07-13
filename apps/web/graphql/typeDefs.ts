@@ -665,6 +665,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS orders (admin) =====
     bmsOrders(status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
     bmsOrder(id: ID!): BmsOrder
+    bmsOrderJourney(orderId: ID!): BmsOrderJourney
 
     # ===== BMS products & inventory (admin) =====
     bmsProducts(search: String, category: String, limit: Int, offset: Int): BmsProductConnection!
@@ -687,9 +688,12 @@ export const typeDefs = /* GraphQL */ `
     bmsShipmentLabel(id: ID!): BmsShipmentLabel
 
     # ===== BMS Inbox (admin) =====
-    bmsConversations(status: BmsConvStatus, assignedTo: String, tag: String, search: String, limit: Int = 50, offset: Int = 0): [BmsConversation!]!
+    # assignedTo = user id ของ staff — กรอง conversation ที่เป็น staff หลัก "หรือ" คนช่วยตอบของคนนั้น (ใช้ทำ filter "ของฉัน")
+    bmsConversations(status: BmsConvStatus, assignedTo: ID, tag: String, search: String, limit: Int = 50, offset: Int = 0): [BmsConversation!]!
     bmsConversation(id: ID!): BmsConversation
     bmsConversationTimeline(id: ID!): [BmsTimelineEntry!]!
+    bmsAssignableStaff: [BmsStaffRef!]!
+    bmsInboxUnreadCount: Int!   # แชท OPEN/PENDING ที่ยังไม่อ่านรวม (Sales เห็นแค่ของตัวเอง) — ใช้ทำ badge บนเมนู sidebar
 
     # ===== BMS Reports (admin) =====
     bmsSalesSummary(from: String, to: String): BmsSalesSummary!
@@ -699,6 +703,13 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS CRM (admin) =====
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
     bmsCustomer(id: ID!): BmsCustomer
+
+    # ===== BMS Customer 360 (Inbox right panel) =====
+    # bmsCustomer360 = eager read (summary/contact/stats/recentOrders/products/draftOrder/notes)
+    # bmsCustomerTimeline/bmsCustomerInsights = lazy — fetch only when their panel section is expanded
+    bmsCustomer360(customerId: ID!): BmsCustomer360
+    bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
+    bmsCustomerInsights(customerId: ID!): BmsCustomerInsights
 
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
@@ -755,6 +766,31 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     updated_at: String!
     items: [BmsOrderItem!]!
+  }
+
+  # ===== BMS order journey (เส้นทางออเดอร์: ต้นทางแชท + stepper + timeline) =====
+  type BmsOrderStep {
+    status: String!         # PENDING/PAID/PACKING/SHIPPED/COMPLETED หรือ CANCELLED/RETURNED (branch)
+    at: String              # null = ยังไม่ถึงขั้นนี้
+    actorName: String       # ใครทำ ("ระบบ" ถ้า auto)
+    reached: Boolean!
+    branch: Boolean!        # true = กิ่งยกเลิก/คืน (ไม่ใช่เส้นหลัก)
+  }
+  type BmsOrderEvent {
+    kind: String!           # chat_start | order_status | assign | helper_add | helper_remove | shipment
+    at: String!
+    text: String!
+    actorName: String
+  }
+  type BmsOrderJourney {
+    orderId: ID!
+    channel: String!
+    status: BmsOrderStatus!
+    conversationId: ID       # แชทต้นทาง (null = ไม่มี/สร้างเอง)
+    assignedStaff: BmsStaffRef
+    helpers: [BmsStaffRef!]!
+    steps: [BmsOrderStep!]!
+    events: [BmsOrderEvent!]!
   }
 
   # ===== BMS purchase (PO) =====
@@ -947,6 +983,28 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  # staff ที่เลือกได้ใน dropdown มอบหมาย/เพิ่มคนช่วยตอบ (Sales/Manager/Administrator)
+  type BmsStaffRef {
+    id: ID!
+    name: String
+    email: String
+    avatar: String
+    role: String
+    isAvailable: Boolean
+    openCount: Int
+  }
+
+  # system event ที่แทรกในสายแชท (มอบหมาย/ช่วยตอบ/เปลี่ยนสถานะ) — resolve ชื่อคนแล้ว
+  type BmsSystemEvent {
+    id: ID!
+    kind: String!           # assign | helper_add | helper_remove | status
+    at: String!
+    actorName: String!      # ใครเป็นคนทำ ("ระบบ" ถ้า auto)
+    targetName: String      # ผู้ถูกมอบหมาย/ช่วยตอบ
+    statusValue: String     # สถานะใหม่ (kind=status)
+    auto: Boolean!
+  }
+
   type BmsConversation {
     id: ID!
     channel: String!
@@ -954,7 +1012,8 @@ export const typeDefs = /* GraphQL */ `
     customerId: ID
     customerName: String
     status: BmsConvStatus!
-    assignedTo: String
+    assignedStaff: BmsStaffRef
+    helpers: [BmsStaffRef!]!
     tags: [String!]!
     unread: Int!
     lastMessage: String
@@ -962,6 +1021,7 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
     updatedAt: String!
     messages: [BmsMessage!]!
+    systemEvents: [BmsSystemEvent!]!
     notes: [BmsConversationNote!]!
   }
 
@@ -1082,6 +1142,131 @@ export const typeDefs = /* GraphQL */ `
     tags: [String!]
   }
 
+  # ===== BMS Customer 360 (Inbox right panel — ดู lib/bms/customer360.ts) =====
+  type BmsCustomerProfile360 {
+    id: ID!
+    name: String!
+    phone: String
+    email: String
+    note: String
+    tags: [String!]!
+    createdAt: String
+    preferredLanguage: String
+    timezone: String
+    orderCount: Int!
+    totalSpent: Float!
+    isNewCustomer: Boolean!
+    isReturningCustomer: Boolean!
+  }
+
+  type BmsCustomerIdentity360 {
+    channel: String!
+    externalRef: String!
+  }
+
+  type BmsCustomerAddress360 {
+    id: ID!
+    label: String
+    address: String!
+    isDefault: Boolean!
+    addressType: String!   # shipping | billing
+  }
+
+  type BmsCustomerStats {
+    lifetimeValue: Float!
+    totalOrders: Int!
+    avgOrderValue: Float!
+    completedOrders: Int!
+    cancelledOrders: Int!
+    refundCount: Int!
+    lastOrderDate: String
+    lastConversationAt: String
+    avgResponseTimeSeconds: Int
+  }
+
+  type BmsCustomerOrderItem360 {
+    sku: String!
+    size: String!
+    qty: Int!
+    unitPrice: Float!
+  }
+
+  type BmsCustomerRecentOrder {
+    id: ID!
+    channel: String!
+    status: BmsOrderStatus!
+    createdAt: String
+    totalAmount: Float!
+    items: [BmsCustomerOrderItem360!]!
+    paymentStatus: BmsPaymentStatus
+    paymentMethod: String
+    shipmentStatus: BmsShipmentStatus
+    carrier: String
+    trackingNo: String
+  }
+
+  type BmsCustomerProductStat {
+    sku: String!
+    name: String!
+    category: String
+    qty: Int!
+    revenue: Float!
+    lastPurchasedAt: String
+    orderCount: Int!
+  }
+
+  type BmsCustomerFavoriteCategory {
+    category: String!
+    qty: Int!
+  }
+
+  type BmsCustomerProducts {
+    topPurchased: [BmsCustomerProductStat!]!
+    recentlyPurchased: [BmsCustomerProductStat!]!
+    frequentlyPurchased: [BmsCustomerProductStat!]!
+    favoriteCategories: [BmsCustomerFavoriteCategory!]!
+  }
+
+  type BmsCustomerDraftOrder {
+    id: ID!
+    channel: String!
+    createdAt: String
+    totalAmount: Float!
+    items: [BmsCustomerOrderItem360!]!
+  }
+
+  type BmsCustomerNote360 {
+    id: ID!
+    conversationId: ID!
+    author: String
+    body: String!
+    createdAt: String
+  }
+
+  type BmsCustomer360 {
+    customer: BmsCustomerProfile360
+    identities: [BmsCustomerIdentity360!]!
+    addresses: [BmsCustomerAddress360!]!
+    stats: BmsCustomerStats!
+    recentOrders: [BmsCustomerRecentOrder!]!
+    products: BmsCustomerProducts!
+    draftOrder: BmsCustomerDraftOrder
+    notes: [BmsCustomerNote360!]!
+  }
+
+  type BmsCustomerTimelineEntry {
+    type: String!   # CUSTOMER_REGISTERED | FIRST_PURCHASE | ORDER | SHIPMENT | REFUND | NOTE | AI_SUMMARY
+    at: String!
+    text: String!
+    ref: String
+  }
+
+  type BmsCustomerInsights {
+    summary: String!    # AI (หรือ template ถ้าไม่มี ANTHROPIC_API_KEY) — สรุปจากข้อมูลจริงเท่านั้น ห้ามเดา
+    generatedAt: String
+    cached: Boolean!
+  }
+
   # ===== BMS Dashboard =====
   type BmsStatusCount { status: String!  count: Int! }
   type BmsTopProduct  { sku: String!  name: String!  qty: Int!  revenue: Float! }
@@ -1162,6 +1347,7 @@ export const typeDefs = /* GraphQL */ `
     id: ID!  name: String  username: String  email: String  phone: String  avatar: String
     role: String!  language: String
     is_platform_admin: Boolean!
+    is_available: Boolean!
     created_at: String
     tenant: BmsMeTenant
     permissions: [String!]!
@@ -1568,7 +1754,10 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS inbox (admin) =====
     bmsSendMessage(id: ID!, body: String, attachment: BmsAttachmentInput): BmsSendResult!   # ตอบเอง (persist + ยิงกลับช่องทาง) · body หรือ attachment อย่างน้อยหนึ่ง
     bmsRetryMessage(id: ID!): BmsSendResult!                                                # ส่งข้อความเดิมซ้ำ (จากสถานะ FAILED)
-    bmsAssignConversation(id: ID!, assignedTo: String): Boolean!
+    bmsAssignConversation(id: ID!, userId: ID!): Boolean!            # เปลี่ยน staff หลัก (โอนแชท) — ต้องมี user เสมอ
+    bmsAddConversationHelper(id: ID!, userId: ID!): Boolean!         # เพิ่มคนช่วยตอบ (ไม่กระทบ staff หลัก)
+    bmsRemoveConversationHelper(id: ID!, userId: ID!): Boolean!
+    bmsSetMyAvailability(available: Boolean!): Boolean!              # ปิด/เปิดรับแชทใหม่ (ไม่กระทบแชทที่ถืออยู่แล้ว)
     bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
     bmsMarkConversationRead(id: ID!): Boolean!

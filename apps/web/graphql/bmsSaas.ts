@@ -39,7 +39,7 @@ export const bmsSaasResolvers = {
       }
       const u = await query<any>(
         `SELECT id, name, username, email, phone, avatar, role, language,
-                tenant_id, is_platform_admin, created_at
+                tenant_id, is_platform_admin, is_available, created_at
            FROM users WHERE id = $1`,
         [auth.author_id]
       );
@@ -66,6 +66,7 @@ export const bmsSaasResolvers = {
         role: user.role,
         language: user.language,
         is_platform_admin: user.is_platform_admin === true,
+        is_available: user.is_available !== false,
         // pg คืน Date object — ต้องแปลงเป็น ISO string เอง (ไม่งั้น GraphQLString.serialize จะได้ epoch number ผิดรูปแบบ)
         created_at: user.created_at instanceof Date ? user.created_at.toISOString() : (user.created_at ?? null),
         tenant,

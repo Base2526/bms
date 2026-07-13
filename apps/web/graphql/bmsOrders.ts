@@ -13,6 +13,7 @@ import {
   completeOrder,
   cancelOrder,
   returnOrder,
+  getOrderJourney,
 } from "@/lib/bms/orders";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -56,6 +57,11 @@ export const bmsOrdersResolvers = {
         [args.id, getTenantId(ctx)]
       );
       return res.rows[0] ?? null;
+    },
+
+    async bmsOrderJourney(_p: unknown, args: { orderId: string }, ctx: any) {
+      await requirePermission(ctx, "order.view");
+      return getOrderJourney(getTenantId(ctx), args.orderId);
     },
   },
 

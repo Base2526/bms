@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 import { requireAdminOrInternal, fakeSeedDisabled } from "@/lib/dev-guards";
 import { getClient, query } from "@/lib/db";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { listAutoAssignPool } from "@/lib/bms/inbox";
 import { v4 as uuid } from "uuid";
 
 export const runtime = "nodejs";
@@ -69,6 +70,11 @@ export async function POST(req: NextRequest) {
     [tenantId]
   )).rows;
 
+  // ทุก conversation ต้องมี staff หลักเสมอ (เหมือน logConversation ของจริง) — ที่นี่ insert
+  // เป็น bulk ตรงๆ ไม่ผ่าน logConversation() เลยต้องมอบหมายเองแบบ round-robin ในพูล
+  // เดียวกับ auto-assign จริง (Sales ว่างก่อน → Manager → Administrator)
+  const staffPool = await listAutoAssignPool(tenantId);
+
   const convs: any[][] = [];
   const msgs: any[][] = [];
 
@@ -82,8 +88,9 @@ export async function POST(req: NextRequest) {
     const last = script[script.length - 1].body;
     const lastAt = new Date(base).toISOString();
     const unread = status === "CLOSED" ? 0 : R(4);
+    const assignedToUserId = staffPool.length ? staffPool[i % staffPool.length] : null;
 
-    convs.push([tenantId, id, channel, "FAKE-" + short(), customerId, status, ["fake"], unread, last.slice(0, 500), lastAt]);
+    convs.push([tenantId, id, channel, "FAKE-" + short(), customerId, status, ["fake"], unread, last.slice(0, 500), lastAt, assignedToUserId]);
     script.forEach((m, mi) => {
       const at = new Date(base - (script.length - mi) * 60000).toISOString();
       msgs.push([tenantId, id, m.dir, m.body, m.dir === "IN" ? "customer" : "ai", at]);
@@ -94,7 +101,7 @@ export async function POST(req: NextRequest) {
   try {
     await client.query("BEGIN");
     await bulkInsert(client, "bms_conversations",
-      ["tenant_id", "id", "channel", "customer_ref", "customer_id", "status", "tags", "unread", "last_message", "last_message_at"], convs);
+      ["tenant_id", "id", "channel", "customer_ref", "customer_id", "status", "tags", "unread", "last_message", "last_message_at", "assigned_to_user_id"], convs);
     await bulkInsert(client, "bms_messages",
       ["tenant_id", "conversation_id", "direction", "body", "sender", "created_at"], msgs);
     await client.query("COMMIT");

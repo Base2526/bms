@@ -257,6 +257,36 @@ html.dark .ant-drawer-mask {
   vertical-align: bottom; /* กัน baseline gap */
 }
 
+/* Inbox: ให้ Tabs ยืดเต็มพื้นที่ที่เหลือแทน scroll ทั้งก้อน (antd ครอบ content ด้วย div ที่ไม่ใช่ flex เอง) */
+.bms-inbox-tabs-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.bms-inbox-tabs-fill > .ant-tabs-nav {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.bms-inbox-tabs-fill > .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+}
+.bms-inbox-tabs-fill > .ant-tabs-content-holder > .ant-tabs-content {
+  height: 100%;
+}
+.bms-inbox-tabs-fill .ant-tabs-tabpane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar: antd บังคับ opacity:0 กับ child ตัวที่ 2+ ในสล็อตไอคอนเมนูตอน sidebar ย่อ
+   (คิดว่าเป็น title ที่ต้องซ่อน) — badge unread ของเราดันโดนเหมารวมไปด้วย ต้อง !important ทับ */
+.ant-menu-item-icon .bms-sider-badge {
+  opacity: 1 !important;
+}
+
 /* overlay เวลา +more รูป */
 .chat-image-overlay {
   position: absolute;

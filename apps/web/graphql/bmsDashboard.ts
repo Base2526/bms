@@ -62,4 +62,11 @@ export const bmsDashboardResolvers = {
       }
     },
   },
+
+  // pg คืน created_at เป็น Date object — ต้องแปลงเป็น ISO string เอง (ไม่งั้น
+  // GraphQLString.serialize เรียก .valueOf() ได้ epoch number ผิดรูปแบบ → frontend
+  // new Date(...) ได้ Invalid Date, pattern เดียวกับ bmsInbox.ts/bmsOrders.ts)
+  BmsAuditEntry: {
+    created_at: (p: any) => (p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at)),
+  },
 };

@@ -581,6 +581,62 @@ Permission: inbox.manage (note) / inbox.view (timeline)
 
 ---
 
+## getCustomerTimeline() — 🚧 Planned
+
+ต่างจาก `getTimeline()` ด้านบน (scope = 1 conversation) — ตัวนี้ scope = **1 ลูกค้า ทุกช่องทาง**:
+ทุก conversation (LINE/TikTok/Facebook/Instagram/Web/Lazada) + order/payment/shipment ทุกใบ + สรุปโดย AI
+ของลูกค้าคนนั้นคนเดียว เรียงเวลาเดียวกันหน้าเดียว (ดู BUSINESS_RULES.md § CRM)
+
+Input
+
+{
+    customerId
+}
+
+Output
+
+{
+    customer,
+    conversations[]   // ทุกช่องทาง พร้อม channel label
+    orders[]          // พร้อม payment/shipment status
+    aiSummary?
+}
+
+Permission: customer.view
+
+---
+
+# Channel Sync — 🚧 Planned
+
+Sync Service ดึงข้อมูลร้านค้า (product/order/payment/shipment) จากแพลตฟอร์มที่ไม่มี webhook ครบ
+(เริ่มที่ Lazada) เข้า DB เป็นระยะ แล้ว AI ยังคงอ่านผ่าน tool เดิม (`searchProducts()`/`getOrderStatus()` ฯลฯ)
+เหมือนช่องทางอื่นทุกประการ — **ไม่มี tool "external" แยกสำหรับ AI**, sync โปร่งใสต่อ AI (ดู BUSINESS_RULES.md
+§ Channels & Commerce Sync)
+
+## getChannelSyncStatus() — 🚧 Planned
+
+สำหรับ staff ถามสถานะการเชื่อมต่อ/sync ("ร้าน Lazada sync ล่าสุดเมื่อไหร่ มี error ไหม") — **staff-facing
+เท่านั้น ไม่ใช่ tool ที่ตอบลูกค้า**
+
+Input
+
+{
+    channel   // เช่น "lazada"
+}
+
+Output
+
+{
+    channel,
+    resourceType,   // product | order | payment | shipment
+    lastSyncedAt,
+    lastError?
+}
+
+Permission: sync.view
+
+---
+
 # Reports
 
 ✅ Implemented — dashboard: `lib/bms/dashboard.ts`; report tools แยกส่วน:
