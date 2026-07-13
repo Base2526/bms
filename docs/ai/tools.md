@@ -1,4 +1,6 @@
-# TOOLS.md
+# AI Tool Catalog
+
+> Entry point: [CLAUDE.md](../../CLAUDE.md) · AI pipeline: [workflow.md](workflow.md) · Prompts/guardrails: [prompts.md](prompts.md)
 
 This file defines every tool available to AI.
 

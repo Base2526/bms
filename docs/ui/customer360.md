@@ -1,0 +1,58 @@
+# Customer 360 (Inbox "ลูกค้า" tab + CRM merge/reorder)
+
+> Entry point: [CLAUDE.md](../../CLAUDE.md) · Business rules: [../business/crm.md](../business/crm.md) · [../business/order.md](../business/order.md)
+
+Goal: when a staff member opens a chat, they should immediately see who this customer is and what
+they've bought — no tab-switching to a separate CRM page.
+
+## The "ลูกค้า" tab (`/admin/inbox`)
+
+`ConversationPane` in [`inbox/page.tsx`](../../apps/web/app/(admin)/admin/inbox/page.tsx) auto-loads
+`bmsCustomer(conv.customerId)` the instant a conversation is opened (a `useEffect` keyed on
+`conv.customerId` — no button click needed, unlike the older "Timeline" tab which still requires a
+manual load). It shows:
+
+- Lifetime spend (`total_spent`) and order count (`order_count`)
+- Customer tags and internal note
+- Full order history (`orders[]`) with channel, status, amount, date
+
+No new backend was needed — it reuses the existing `bmsCustomer` GraphQL query and
+`getCustomer()`/`customerOrders()` (`lib/bms/customers.ts`). Gated by permission `customer.view`;
+without it, the tab shows an empty state rather than an error.
+
+**Known limitation:** since customer identity only matches on `(tenant, channel, external_ref)`
+(see [../business/crm.md](../business/crm.md)), a customer who messages via two different channels
+shows up as two separate records with two separate (incomplete) purchase histories — until merged.
+
+## Merging duplicate customers
+
+`mergeCustomers(tenantId, keepId, mergeId)` — [`lib/bms/customers.ts`](../../apps/web/lib/bms/customers.ts)
+— consolidates a duplicate record into the one being kept:
+
+- Moves `bms_customer_identities`, `bms_orders`, `bms_customer_addresses`, and `bms_conversations`
+  from `mergeId` to `keepId` (safe with no conflicts, since an identity can only ever belong to one
+  customer per tenant+channel+ref).
+- Unions tags; fills in `phone`/`note` on `keepId` if missing, from `mergeId`.
+- Soft-deletes `mergeId` (`deleted_at`) — **not reversible**.
+- All in a single transaction (`beginTenantTx`).
+
+UI: `/admin/customers` → **"ผสาน"** button per row → search for the duplicate → confirm.
+GraphQL: `bmsMergeCustomers(keepId, mergeId)`, permission `customer.edit`, audited as
+`customer.merge`.
+
+## Reorder ("ซื้อซ้ำ")
+
+A "ซื้อซ้ำ" button appears both in the customer tab's order list (Inbox) and in the order-history
+table on `/admin/customers`. It calls `reorderFromOrder(tenantId, orderId)`
+([`lib/bms/orders.ts`](../../apps/web/lib/bms/orders.ts)), which reads the old order's
+channel/customer_ref/items and re-runs the normal `createOrder()` path — so pricing and stock
+availability reflect **today**, not the historical order. See
+[../business/order.md](../business/order.md) for the full lifecycle detail. Permission:
+`order.create` (new — seeded to Manager/Sales via migration `6.1`).
+
+## What's still missing
+
+- No automatic cross-channel dedup (merge is manual-only today).
+- Fake-data seeders don't create `bms_customer_identities` rows, so testing the merge flow with
+  seeded data alone won't show anything to merge — seed real conversations too, or create
+  identities by hand.

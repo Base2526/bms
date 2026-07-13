@@ -1,0 +1,123 @@
+# System Architecture
+
+> Entry point: [CLAUDE.md](../../CLAUDE.md) · Business rules: [../business/](../business/) · AI: [../ai/](../ai/)
+
+## Vision
+
+Every customer conversation should become an executable business workflow.
+
+```
+Traditional:  Customer → Human → Excel → ERP
+AI-BMS:       Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
+```
+
+AI-BMS is **not** a chatbot — it is an AI Business Operating System. AI orchestrates; it never
+becomes the source of truth (the database is).
+
+## Core philosophy
+
+AI never accesses the database directly and never writes SQL. AI only:
+
+- Understands user intent
+- Selects the correct business tool
+- Summarizes data
+- Explains results
+
+Business logic lives in backend services (`apps/web/lib/bms/*.ts`). Database access is only
+allowed through those approved service functions. See [../ai/prompts.md](../ai/prompts.md) for
+the concrete guardrails enforced in the actual Claude prompt.
+
+## High-level flow
+
+```
+Customer → Channel Integration → Omnichannel Inbox → AI Orchestrator
+         → Business Functions → Database → Response Generator → Customer
+```
+
+## System modules
+
+| # | Module | Responsibility |
+| - | --- | --- |
+| 1 | Channel Integration | Normalize LINE/TikTok/Facebook/Instagram/Web/Shopee/Lazada into one internal message format |
+| 2 | Omnichannel Inbox | Unified chat history, assignment, notes, tags, customer 360 view, attachments, search |
+| 3 | AI Orchestrator | Intent detection → entity extraction → tool selection → response generation |
+| 4 | CRM | Customer profile across channels, addresses, purchase history, merge |
+| 5 | Product Management | Products, variants, SKU, pricing, categories, brands |
+| 6 | Inventory (IMS) | Current/reserved/available stock, movements |
+| 7 | Orders (OMS) | Order lifecycle, reorder |
+| 8 | Purchase | Supplier purchase orders, receiving |
+| 9 | Payment | Bank transfer/QR/card/cash/TikTok, AI slip verification (advisory only) |
+| 10 | Shipping | Carrier tracking, packing, labels |
+| 11 | Reports | Dashboard, sales, inventory, customer, financial |
+
+Full per-domain rules: [../business/order.md](../business/order.md) ·
+[../business/inventory.md](../business/inventory.md) · [../business/payment.md](../business/payment.md) ·
+[../business/crm.md](../business/crm.md)
+
+## Build status (2026-07)
+
+Operational modules per this spec are **fully built** — order lifecycle closes end-to-end
+(order → payment → shipping → delivered/completed) with omnichannel capture on every major channel.
+
+| Module | Status | Location (service · migration) |
+| --- | --- | --- |
+| Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
+| Channel Integration — Shopee/Lazada | 🧪 beta | `app/api/bms/{shopee,lazada}/webhook` — see [../integrations/lazada.md](../integrations/lazada.md) |
+| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
+| AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
+| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
+| Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` |
+| Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
+| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · reorder — see [../business/order.md](../business/order.md) |
+| Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
+| Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
+| Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
+| Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
+| Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
+| SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
+| Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
+| Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
+| Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
+| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
+
+**Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
+AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·
+letting shop owners (Manager role) manage their own staff (currently Administrator/platform only) ·
+Shopee/Lazada signature verification against real Open Platform docs.
+
+## RBAC model (two tiers)
+
+- **Platform admin** (`users.is_platform_admin`) — manages the whole platform (every shop / plan /
+  role). Views shop-level data only via **drill-down** (impersonation), never mixed across tenants.
+- **Tenant role** (Administrator / Manager / Sales / Warehouse) — manages only their own shop.
+  Every resolver scopes with `getTenantId(ctx)` + `requirePermission()`.
+
+Users list/CRUD is gated to Administrator/platform (scoped by shop). Role CRUD is platform-only.
+Platform-level pages (Architecture, ENV/Logs/Posts/Files/Queue) are gated server-side in
+`layout.tsx` via `requirePlatformAdminPage()` — not just a hidden menu item.
+
+401 vs 403: 401 = not logged in / bad token → forced logout. 403 = logged in but lacking
+permission → shows an error, does **not** log out (`apollo.ts` errorLink only logs out on 401).
+
+## Folder structure
+
+```
+apps/
+  web/
+    app/api/bms/*        REST endpoints + per-channel webhooks
+    app/(admin)/admin/*  Admin UI (Next.js app router)
+    graphql/*            GraphQL SDL + resolvers (bms* modules)
+    lib/bms/*            Business logic — the ONLY place with SQL
+db/
+  migrations/*.sql        Idempotent, applied in numeric order
+docs/                      This documentation tree
+```
+
+## Coding rules
+
+```
+Business Logic → Services (lib/bms/*)
+Database       → accessed only through those services
+AI             → never contains SQL, never touches the DB directly
+Frontend       → never contains business logic
+```

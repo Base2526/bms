@@ -1,7 +1,7 @@
 # CLAUDE.local.md — โน้ตเฉพาะเครื่อง (ไม่ใช่สเปกกลาง)
 
-ไฟล์นี้ไว้จดบริบทการทำงานในเครื่อง/ทีม — สเปกจริงอยู่ที่ [CLAUDE.md](CLAUDE.md),
-[BUSINESS_RULES.md](BUSINESS_RULES.md), [TOOLS.md](TOOLS.md), [AI_WORKFLOW.md](AI_WORKFLOW.md)
+ไฟล์นี้ไว้จดบริบทการทำงานในเครื่อง/ทีม — สเปกจริงอยู่ที่ [CLAUDE.md](CLAUDE.md) (entry point) →
+[docs/](docs/) (architecture / business / ai / integrations / ui)
 
 ## รันในเครื่อง (dev)
 
@@ -37,17 +37,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **fake data (dev)** → `/admin/dev/fake` + `app/api/dev/fake/*` (users/bms-products/
   bms-customers/bms-orders/bms-conversations/bms-purchase + cleanup) · ปิดใน production ·
   **ทุก seeder ใหม่ต้องผูก `tenant_id = guard.actor?.tenant_id` เอง** (ไม่มี default ให้) ไม่งั้นแถวที่สร้างจะไม่โผล่ในหน้า admin ที่กรองตาม tenant (เคยพลาดที่ `fake/users/route.ts` — เป็นไฟล์ project เก่าที่ไม่ผูก tenant เลย)
-- **Inbox → ดึงประวัติซื้อของลูกค้ามาโชว์ตอนเปิดแชท** → แท็บ "ลูกค้า" ใน `inbox/page.tsx` (`ConversationPane`) ยิง `bmsCustomer(id)` อัตโนมัติ (`useEffect` ผูกกับ `conv.customerId`, ไม่ต้องกดปุ่ม) ใช้ resolver/service เดิมทั้งหมด (`getCustomer`/`customerOrders` ใน `lib/bms/customers.ts`) ไม่มี backend ใหม่ — โชว์ยอดซื้อสะสม/จำนวนออร์เดอร์/แท็ก-โน้ตลูกค้า/รายการออร์เดอร์ · gate ด้วย permission `customer.view` (ถ้าไม่มีสิทธิ์ → Empty state ไม่ error) · มีแท็บ "Timeline" เดิมอยู่แล้วที่รวม message+note+order เป็น feed เดียวแต่ต้องกดโหลดเอง (`Q_TIMELINE`/`getTimeline`) — แท็บ "ลูกค้า" ให้สรุปยอด/ประวัติแบบเห็นทันทีแทน ไม่ได้แทนที่ Timeline
-- **ปุ่ม "ซื้อซ้ำ" ในแท็บลูกค้า** → `reorderFromOrder(tenantId, orderId)` (`lib/bms/orders.ts`) อ่าน channel/customer_ref + รายการสินค้า (sku/size/qty) จากออร์เดอร์เก่า แล้วยิง `createOrder()` เดิมทั้งหมด (จองสต็อก + ตัดราคาปัจจุบันใหม่ ไม่ใช่ราคาย้อนหลัง) — **ระบบนี้ไม่มีสถานะ DRAFT แยก** ออร์เดอร์เริ่มที่ PENDING พร้อมจองสต็อกทันทีเหมือน `createOrder` ปกติทุกที่ (อย่าเข้าใจผิดว่าเป็น draft ที่ยังไม่จองสต็อก) · เพิ่ม permission ใหม่ `order.create` (เดิมไม่มี เพราะ order ถูกสร้างจาก AI/REST เท่านั้นไม่เคยผ่าน permission gate) → seed ให้ Manager/Sales ที่ migration `6.1` · GraphQL `bmsReorderFromOrder(id)` คืน `{status, orderId, total, message}` (status: CREATED/INSUFFICIENT/NOT_FOUND/EMPTY/SOURCE_NOT_FOUND)
-- **Shopee/Lazada เป็น channel ใหม่ (beta/scaffold เท่านั้น)** → ต่อครบตาม checklist "เพิ่มโมดูลใหม่" ฝั่ง config/type/UI: `Channel` union ใน `lib/bms/pipeline.ts` + `lib/bms/channels.ts`, `ALLOWED` array ใน `graphql/bmsChannels.ts`, entry ใน `settings/page.tsx` CHANNELS, `CHANNEL_COLOR` map ใน inbox/orders/reports page — ส่วนนี้ใช้งานได้จริงทันที (เก็บ token/secret เข้ารหัสเหมือนช่องทางอื่น)
-  **แต่** `app/api/bms/{shopee,lazada}/webhook/[tenantId]/route.ts` เป็น **scaffold ที่ยังไม่ยืนยันกับเอกสาร API จริง**:
-  - signature verify ใช้ HMAC-SHA256 บน `channel_secret` ต่อร้าน (pattern เดียวกับ TikTok) — แต่ Shopee/Lazada Open Platform จริงใช้ OAuth + partner_key/app_secret แบบเรียงพารามิเตอร์เฉพาะ **ไม่ใช่แบบนี้ตรง ๆ** ต้องแก้ก่อนใช้ production
-  - `parseShopeeMessages()`/`parseLazadaMessages()` เดา field name (`content.text`, `from_id`/`buyer_id`) ไม่ได้ตรวจกับ payload จริง
-  - ไม่มี send API (ตอบกลับลูกค้าไม่ได้) เหมือน TikTok
-  - `channelSupportsPush()` (`lib/bms/inbox.ts`) **ไม่ได้เติม** shopee/lazada เข้าไป — ข้อความ OUT จะถือว่า SENT ทันที (บันทึกอย่างเดียว ไม่ push จริง) ตรงตาม design ปัจจุบัน
-  ก่อนใช้จริงต้องหาเอกสาร Shopee Open Platform / Lazada Open Platform มา verify ทั้ง 2 ไฟล์ใหม่
-  **แก้ตามหลัง (gap ที่เจอตอน review):** endpoint debug `/api/bms/order` และ `/api/bms/chat` มี `CHANNELS` allowlist แยกของตัวเอง เคยลืมเติม shopee/lazada ทำให้ curl ทดสอบ 2 channel ใหม่ไม่ได้ (แก้แล้ว) · fake seeder (`bms-orders`/`bms-conversations`) และ Playground channel selector ก็มี `CHANNELS`/`options` แยกเหมือนกัน เคยไม่ครบเช่นกัน (แก้แล้ว) — **บทเรียน: ทุกครั้งที่เพิ่ม channel ใหม่ ต้องเช็ค `grep -rn '"line".*"tiktok"' apps/web` ด้วย เพราะมี array enumerate channel กระจายอยู่หลายจุด ไม่ได้ derive จาก `Channel` type เดียวกันทั้งหมด**
-- **customer identity ยังไม่ auto-dedupe ข้ามช่องทาง แต่ผสานมือได้แล้ว** → `resolveOrCreateCustomer` (`lib/bms/customers.ts`) จับคู่ลูกค้าด้วย `(tenant_id, channel, external_ref)` เท่านั้น ไม่มี dedupe อัตโนมัติด้วยเบอร์โทร/อีเมล ลูกค้าคนเดียวทักมาทาง LINE แล้วทาง FB เลยยังกลายเป็นคนละ `customer_id` โดย default — แก้ด้วยมือได้ที่ `/admin/customers` ปุ่ม **"ผสาน"** → เลือก record ซ้ำที่จะยุบรวม → `mergeCustomers(tenantId, keepId, mergeId)` ย้าย identities/orders/addresses/conversations ทั้งหมดมาที่ `keepId` แล้ว soft-delete `mergeId` ในทรานแซกชันเดียว (ปลอดภัยเพราะ identity unique ต่อ tenant+channel+ref อยู่แล้ว ไม่มีทางชนกันตอนย้าย) · GraphQL: `bmsMergeCustomers(keepId, mergeId)` · permission `customer.edit` · บันทึก `audit()` เป็น `customer.merge`
+- **Inbox customer tab / merge / reorder** (แท็บ "ลูกค้า", `mergeCustomers()`, `reorderFromOrder()`) → รายละเอียดเต็มอยู่ที่ [docs/ui/customer360.md](docs/ui/customer360.md) และ [docs/business/order.md](docs/business/order.md)
+- **Shopee/Lazada (beta/scaffold)** → รายละเอียดเต็ม (signature ยังไม่ยืนยัน, channel array กระจายหลายจุด, checklist ก่อน production) อยู่ที่ [docs/integrations/lazada.md](docs/integrations/lazada.md) — **บทเรียนสำคัญที่ยังต้องจำ:** เพิ่ม channel ใหม่ทีไร ต้อง `grep -rn '"line".*"tiktok"' apps/web` ด้วย เพราะมี array enumerate channel กระจายหลายจุด ไม่ได้ derive จาก `Channel` type เดียวกันทั้งหมด (เคยพลาดที่ debug endpoint + fake seeder + playground มาแล้ว)
 
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
@@ -61,7 +52,7 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 2. service `lib/bms/<mod>.ts` — write ใช้ `getClient()` + `beginTenantTx()`; read ใช้ `query()` + `WHERE tenant_id`
 3. GraphQL `graphql/bms<Mod>.ts` + wire resolvers + typeDefs; enforce `requirePermission()` + `audit()`
 4. เพิ่ม permission ใน `lib/bms/permissions.ts` (`BMS_PERMISSIONS`) — **และ seed สิทธิ์ให้ role Manager/Sales/Warehouse ทุก tenant** (migration แบบ `5.7`) ไม่งั้นร้านจะโดน 403
-5. REST routes (ถ้าต้องการ) + Admin page + เมนู (gate ด้วย `useBmsPermissions`) + เอกสาร (TOOLS.md/README.md)
+5. REST routes (ถ้าต้องการ) + Admin page + เมนู (gate ด้วย `useBmsPermissions`) + เอกสาร (`docs/ai/tools.md`/README.md)
 
 > ⚠️ 403 = ไม่มีสิทธิ์ (ไม่ใช่ session หมด) → `apollo.ts` errorLink **ไม่ logout** เมื่อ 403 (logout เฉพาะ 401). ถ้าเพิ่ม permission ใหม่แล้วลืม seed ให้ role → หน้าโดน 403 แต่จะไม่เตะออก
 
