@@ -31,8 +31,7 @@ Facebook Messenger, Instagram, Website Live Chat.
 _Roadmap:_ WhatsApp, Email, Voice AI.
 
 > 📖 The product vision, modules, and rules live in
-> [`CLAUDE.md`](./CLAUDE.md), [`AI_WORKFLOW.md`](./AI_WORKFLOW.md),
-> [`BUSINESS_RULES.md`](./BUSINESS_RULES.md), and [`TOOLS.md`](./TOOLS.md).
+> [`CLAUDE.md`](./CLAUDE.md) (entry point) → [`docs/`](./docs/) (architecture / business / ai / integrations / ui).
 
 ---
 
@@ -167,10 +166,8 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 ├── docker-compose.yml           # Base stack
 ├── docker-compose.dev.yml       # Development override
 ├── docker-compose.prod.yml      # Production override
-├── CLAUDE.md                    # Product vision & architecture
-├── AI_WORKFLOW.md               # AI pipeline spec
-├── BUSINESS_RULES.md            # Business rules & guardrails
-└── TOOLS.md                     # Approved AI tool catalog
+├── CLAUDE.md                    # Entry point — product vision & doc map
+└── docs/                        # architecture / business / ai / integrations / ui
 ```
 
 ---
@@ -299,9 +296,8 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 **ช่องทางที่รองรับ:** LINE OA, TikTok Shop / TikTok Chat, Facebook Messenger,
 Instagram, Live Chat หน้าเว็บ — _อนาคต:_ WhatsApp, Email, Voice AI
 
-> 📖 วิสัยทัศน์ โมดูล และกฎต่าง ๆ อยู่ใน [`CLAUDE.md`](./CLAUDE.md),
-> [`AI_WORKFLOW.md`](./AI_WORKFLOW.md), [`BUSINESS_RULES.md`](./BUSINESS_RULES.md)
-> และ [`TOOLS.md`](./TOOLS.md)
+> 📖 วิสัยทัศน์ โมดูล และกฎต่าง ๆ อยู่ใน [`CLAUDE.md`](./CLAUDE.md) (entry point) →
+> [`docs/`](./docs/) (architecture / business / ai / integrations / ui)
 
 ---
 

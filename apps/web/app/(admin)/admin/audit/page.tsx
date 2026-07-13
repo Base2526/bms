@@ -13,10 +13,12 @@ const Q = gql`
 const ACTION_COLOR: Record<string, string> = {
   "order.pay": "blue", "order.pack": "cyan", "order.ship": "geekblue",
   "order.complete": "green", "order.cancel": "default", "order.return": "red",
+  "order.reorder": "lime",
   "product.upsert": "orange", "product.active": "gold", "stock.adjust": "volcano",
   "channel.upsert": "purple", "plan.change": "magenta", "rbac.set": "red",
   "inbox.assign": "blue", "inbox.helper_add": "cyan", "inbox.helper_remove": "default",
   "inbox.status": "geekblue", "inbox.tags": "purple", "inbox.reply": "green", "inbox.note": "default",
+  "customer.merge": "gold",
 };
 
 // ชื่ออ่านง่ายของแต่ละ action — ไม่มีในนี้ = โชว์ raw key เดิม (กันตกหล่นตอนมี action ใหม่)

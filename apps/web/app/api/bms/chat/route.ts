@@ -15,7 +15,7 @@ import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "test"];
+const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {

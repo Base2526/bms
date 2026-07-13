@@ -24,7 +24,7 @@ const sample = <T,>(a: T[], k: number): T[] => {
 };
 
 const DAYS = 30;
-const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web"];
+const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
 // revenue-heavy (ไม่ใส่ PENDING/PACKING เพราะไม่ได้ reserve สต็อก)
 const STATUS_POOL = ["COMPLETED", "COMPLETED", "COMPLETED", "PAID", "PAID", "SHIPPED", "SHIPPED", "CANCELLED", "RETURNED"];
 const METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"];

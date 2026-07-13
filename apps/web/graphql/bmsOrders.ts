@@ -14,6 +14,7 @@ import {
   cancelOrder,
   returnOrder,
   getOrderJourney,
+  reorderFromOrder,
 } from "@/lib/bms/orders";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -101,6 +102,21 @@ export const bmsOrdersResolvers = {
       const ok = await returnOrder(getTenantId(ctx), args.id);
       if (ok) await audit(ctx, "order.return", args.id);
       return ok;
+    },
+    async bmsReorderFromOrder(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "order.create");
+      const r = await reorderFromOrder(getTenantId(ctx), args.id);
+      if (r.status === "CREATED") {
+        await audit(ctx, "order.reorder", r.orderId, { sourceOrderId: args.id });
+        return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์ใหม่แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
+      }
+      const messages: Record<string, string> = {
+        SOURCE_NOT_FOUND: "ไม่พบออร์เดอร์ต้นทาง",
+        EMPTY: "ออร์เดอร์ต้นทางไม่มีรายการสินค้า",
+        NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
+        INSUFFICIENT: ("sku" in r) ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
+      };
+      return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ซ้ำไม่สำเร็จ" };
     },
   },
 

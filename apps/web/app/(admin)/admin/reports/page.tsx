@@ -28,7 +28,8 @@ const STATUS_COLOR: Record<string, string> = {
   COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
 };
 const CHANNEL_COLOR: Record<string, string> = {
-  line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", test: "default",
+  line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue",
+  shopee: "orange", lazada: "purple", test: "default",
 };
 const baht = (v: number) => `${Number(v).toLocaleString()} ฿`;
 

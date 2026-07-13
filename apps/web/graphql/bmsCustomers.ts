@@ -16,9 +16,11 @@ import {
   setDefaultCustomerAddress,
   deleteCustomerAddress,
   deleteCustomer,
+  mergeCustomers,
 } from "@/lib/bms/customers";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
+import { audit } from "@/lib/bms/audit";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -94,6 +96,16 @@ export const bmsCustomersResolvers = {
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       return deleteCustomer(getTenantId(ctx), args.id);
+    },
+    async bmsMergeCustomers(_p: unknown, args: { keepId: string; mergeId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        const ok = await mergeCustomers(getTenantId(ctx), args.keepId, args.mergeId);
+        await audit(ctx, "customer.merge", args.keepId, { mergedId: args.mergeId });
+        return ok;
+      } catch (err) {
+        toGqlError(err);
+      }
     },
   },
 

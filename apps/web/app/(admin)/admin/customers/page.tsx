@@ -1,10 +1,10 @@
 'use client';
-import { gql, useQuery, useMutation } from "@apollo/client";
+import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Alert, Typography, Divider, Empty, Popconfirm,
 } from "antd";
 import { useState, useMemo } from "react";
-import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
 
@@ -41,6 +41,8 @@ const M_UPDATE_ADDR = gql`
 const M_SET_DEFAULT_ADDR = gql`mutation ($addressId: ID!) { bmsSetDefaultCustomerAddress(addressId: $addressId) { id } }`;
 const M_DELETE_ADDR = gql`mutation ($addressId: ID!) { bmsDeleteCustomerAddress(addressId: $addressId) }`;
 const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteCustomer(id: $id) }`;
+const M_MERGE = gql`mutation ($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`;
+const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
 const TAG_COLOR: Record<string, string> = {
   VIP: "gold",
@@ -61,12 +63,30 @@ function CustomersManagement() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [addrFor, setAddrFor] = useState<Customer | null>(null);
   const [editingAddr, setEditingAddr] = useState<Address | null>(null); // มีค่า = โหมดแก้ไขที่อยู่เดิม (ไม่ใช่เพิ่มใหม่)
+  const [mergeFor, setMergeFor] = useState<Customer | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const { data, loading, error, refetch } = useQuery(Q_CUSTOMERS, {
     variables: { search: search || null },
     fetchPolicy: "cache-and-network",
   });
   const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+
+  const [searchDupes, { data: dupeData, loading: dupeLoading }] = useLazyQuery(Q_CUSTOMERS, { fetchPolicy: "network-only" });
+  const [merge, { loading: merging }] = useMutation(M_MERGE, {
+    onCompleted: () => { message.success("ผสานลูกค้าแล้ว"); closeMergeModal(); refetch(); },
+    onError: onErr,
+  });
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorder] = useMutation(M_REORDER, {
+    onCompleted: (d: any) => {
+      const r = d?.bmsReorderFromOrder;
+      setReorderingId(null);
+      if (r?.status === "CREATED") { message.success(r.message); refetch(); }
+      else message.error(r?.message || "ซื้อซ้ำไม่สำเร็จ");
+    },
+    onError: (e) => { setReorderingId(null); onErr(e); },
+  });
 
   const [upsert, { loading: saving }] = useMutation(M_UPSERT, {
     onCompleted: () => { message.success("บันทึกลูกค้าแล้ว"); setModalOpen(false); setEditing(null); form.resetFields(); refetch(); },
@@ -112,6 +132,12 @@ function CustomersManagement() {
     addrForm.setFieldsValue({ label: a.label || "", address: a.address });
   };
   const closeAddrModal = () => { setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); };
+  const openMerge = (c: Customer) => { setMergeFor(c); setMergeTargetId(null); searchDupes({ variables: { search: c.phone || c.name } }); };
+  const closeMergeModal = () => { setMergeFor(null); setMergeTargetId(null); };
+  const submitMerge = () => {
+    if (!mergeFor || !mergeTargetId) return;
+    merge({ variables: { keepId: mergeFor.id, mergeId: mergeTargetId } });
+  };
   const submitAddr = async () => {
     const v = await addrForm.validateFields();
     if (editingAddr) {
@@ -148,6 +174,7 @@ function CustomersManagement() {
         <Space size="small">
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>แก้ไข</Button>
           <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>ที่อยู่</Button>
+          <Button type="link" size="small" icon={<MergeCellsOutlined />} onClick={() => openMerge(c)}>ผสาน</Button>
           <Popconfirm title="ลบลูกค้า (soft delete)?" okText="ลบ" okButtonProps={{ danger: true }} cancelText="ไม่" onConfirm={() => del({ variables: { id: c.id } })}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -184,6 +211,8 @@ function CustomersManagement() {
               onEditAddress={(a) => openEditAddress(c, a)}
               onSetDefaultAddress={(a) => setDefaultAddr({ variables: { addressId: a.id } })}
               onDeleteAddress={(a) => deleteAddr({ variables: { addressId: a.id } })}
+              reorderingId={reorderingId}
+              onReorder={(orderId) => { setReorderingId(orderId); reorder({ variables: { id: orderId } }); }}
             />
           ),
         }}
@@ -226,18 +255,52 @@ function CustomersManagement() {
           )}
         </Form>
       </Modal>
+
+      {/* modal ผสานลูกค้าซ้ำ */}
+      <Modal
+        title={`ผสานลูกค้าซ้ำเข้ากับ: ${mergeFor?.name || ""}`}
+        open={!!mergeFor}
+        onCancel={closeMergeModal}
+        onOk={submitMerge}
+        confirmLoading={merging}
+        okText="ผสาน" okButtonProps={{ disabled: !mergeTargetId }}
+        width={520}
+      >
+        <Alert
+          type="warning" showIcon style={{ marginBottom: 12 }}
+          message="ใช้เมื่อลูกค้าคนเดียวกันทักมาคนละช่องทางแล้วกลายเป็นคนละ record"
+          description={`ประวัติการซื้อ/ที่อยู่/ช่องทาง/แชท ของลูกค้าที่เลือกด้านล่างจะย้ายมารวมกับ "${mergeFor?.name}" แล้วลูกค้าคนนั้นจะถูกลบ (soft delete) — ทำแล้วย้อนกลับเองไม่ได้`}
+        />
+        <Select
+          showSearch style={{ width: "100%" }}
+          placeholder="ค้นหาชื่อ/เบอร์ลูกค้าที่จะผสานเข้ามา (ลูกค้าซ้ำ)"
+          filterOption={false}
+          loading={dupeLoading}
+          value={mergeTargetId}
+          onSearch={(v) => searchDupes({ variables: { search: v } })}
+          onChange={(v) => setMergeTargetId(v)}
+          options={(dupeData?.bmsCustomers || [])
+            .filter((c: Customer) => c.id !== mergeFor?.id)
+            .map((c: Customer) => ({
+              value: c.id,
+              label: `${c.name}${c.phone ? ` · ${c.phone}` : ""} · ${c.order_count} ออเดอร์ · ${Number(c.total_spent).toLocaleString()} ฿`,
+            }))}
+        />
+      </Modal>
     </div>
   );
 }
 
 function CustomerDetail({
-  c, onAddAddress, onEditAddress, onSetDefaultAddress, onDeleteAddress,
+  c, onAddAddress, onEditAddress, onSetDefaultAddress, onDeleteAddress, reorderingId, onReorder,
 }: {
   c: Customer;
   onAddAddress: () => void;
   onEditAddress: (a: Address) => void;
   onSetDefaultAddress: (a: Address) => void;
   onDeleteAddress: (a: Address) => void;
+  reorderingId: string | null;
+  onReorder: (orderId: string) => void;
 }) {
   const orderCols = [
     { title: "Order", dataIndex: "id", key: "id", width: 100, render: (id: string) => <Text code>{id.slice(0, 8)}</Text> },
@@ -245,6 +308,9 @@ function CustomerDetail({
     { title: "Status", dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
     { title: "ยอด", dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
     { title: "วันที่", dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString() },
+    { title: "", key: "actions", width: 90, render: (_: any, o: Order) => (
+      <Button type="link" size="small" loading={reorderingId === o.id} onClick={() => onReorder(o.id)}>ซื้อซ้ำ</Button>
+    ) },
   ];
   return (
     <div>

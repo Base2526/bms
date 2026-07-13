@@ -16,7 +16,7 @@ const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
 const short = () => Math.random().toString(36).slice(2, 10);
 
-const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web"];
+const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
 const STATUS_POOL = ["OPEN", "OPEN", "PENDING", "CLOSED"];
 
 // บทสนทนาสำเร็จรูป (IN = ลูกค้า, OUT = AI)

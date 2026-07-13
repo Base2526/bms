@@ -6,7 +6,7 @@
 import { query } from "@/lib/db";
 import { encryptSecret, decryptSecret, maskSecret } from "./crypto";
 
-export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web";
+export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada";
 
 export type ChannelConfig = {
   channel: string;

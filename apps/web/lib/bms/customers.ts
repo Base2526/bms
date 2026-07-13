@@ -3,7 +3,8 @@
 // =============================================================
 
 import type { PoolClient } from "pg";
-import { query } from "@/lib/db";
+import { query, getClient } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
@@ -103,6 +104,78 @@ export async function customerIdentities(tenantId: string, customerId: string) {
     [tenantId, customerId]
   );
   return res.rows;
+}
+
+/**
+ * ผสานลูกค้าซ้ำ (คนเดียวกันทักมาคนละช่องทาง เลยถูกสร้างเป็นคนละ record)
+ * ย้าย identities/orders/addresses/conversations จาก mergeId ไป keepId แล้ว soft-delete mergeId
+ * ปลอดภัยเพราะ (tenant_id, channel, external_ref) เป็น UNIQUE — identity หนึ่งอยู่กับลูกค้าได้ทีละคนเท่านั้น จึงไม่มีชนกันตอนย้าย
+ */
+export async function mergeCustomers(tenantId: string, keepId: string, mergeId: string) {
+  if (keepId === mergeId) throw new Error("เลือกลูกค้าที่จะผสานให้ต่างจากลูกค้าหลัก");
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+
+    const rows = await client.query<{ id: string; name: string; phone: string | null; note: string | null; tags: string[] }>(
+      `SELECT id, name, phone, note, tags FROM bms_customers
+        WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+        FOR UPDATE`,
+      [tenantId, [keepId, mergeId]]
+    );
+    const keep = rows.rows.find((r) => r.id === keepId);
+    const merge = rows.rows.find((r) => r.id === mergeId);
+    if (!keep || !merge) {
+      await client.query("ROLLBACK");
+      throw new Error("ไม่พบลูกค้าที่จะผสาน");
+    }
+
+    await client.query(
+      `UPDATE bms_customer_identities SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_orders SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_customer_addresses SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_conversations SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+
+    const mergedTags = Array.from(new Set([...(keep.tags || []), ...(merge.tags || [])]));
+    await client.query(
+      `UPDATE bms_customers SET
+         phone = COALESCE(phone, $2),
+         note = COALESCE(note, $3),
+         tags = $4,
+         updated_at = now()
+       WHERE tenant_id = $1 AND id = $5`,
+      [tenantId, merge.phone, merge.note, mergedTags, keepId]
+    );
+    await client.query(
+      `UPDATE bms_customers SET deleted_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, mergeId]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export type UpsertCustomerInput = {

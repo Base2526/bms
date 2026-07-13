@@ -16,6 +16,7 @@ export const BMS_PERMISSIONS = [
   "product.delete",
   "stock.adjust",
   "order.view",
+  "order.create",
   "order.pay",
   "order.ship",
   "order.cancel",

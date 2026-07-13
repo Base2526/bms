@@ -93,7 +93,8 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   RETURNED: "คืนสินค้า",
 };
 const CHANNEL_COLOR: Record<string, string> = {
-  line: "green", tiktok: "magenta", facebook: "blue", test: "default",
+  line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue",
+  shopee: "orange", lazada: "purple", test: "default",
 };
 
 const FILTERS = ["ALL", "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED"] as const;
