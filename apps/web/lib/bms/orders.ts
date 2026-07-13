@@ -166,6 +166,34 @@ export async function createOrder(
   }
 }
 
+export type ReorderResult = CreateOrderResult | { status: "SOURCE_NOT_FOUND" };
+
+/**
+ * "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการสินค้าของออร์เดอร์เก่า (channel/customer เดิม)
+ * ราคาตัดตามราคาปัจจุบันของสินค้า (snapshot ใหม่) ไม่ใช่ราคาย้อนหลัง · ใช้ createOrder() เดิมทั้งหมด
+ * (ระบบนี้ไม่มีสถานะ DRAFT แยก — ออร์เดอร์เริ่มที่ PENDING พร้อมจองสต็อกทันทีเหมือน createOrder ปกติ)
+ */
+export async function reorderFromOrder(tenantId: string, orderId: string): Promise<ReorderResult> {
+  const src = await query<{ channel: Channel; customer_ref: string | null }>(
+    `SELECT channel, customer_ref FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, orderId]
+  );
+  if (src.rowCount === 0) return { status: "SOURCE_NOT_FOUND" };
+
+  const itemsRes = await query<{ product_sku: string; size: string; qty: number }>(
+    `SELECT product_sku, size, qty FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, orderId]
+  );
+  if (itemsRes.rowCount === 0) return { status: "EMPTY" };
+
+  return createOrder({
+    tenantId,
+    channel: src.rows[0].channel,
+    customerRef: src.rows[0].customer_ref,
+    items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
+  });
+}
+
 // ---- transition แบบไม่ขยับสต็อก (pay / pack / complete) — tenant-scoped -----
 async function transition(
   tenantId: string,

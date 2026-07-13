@@ -12,8 +12,10 @@ const Q = gql`
 const ACTION_COLOR: Record<string, string> = {
   "order.pay": "blue", "order.pack": "cyan", "order.ship": "geekblue",
   "order.complete": "green", "order.cancel": "default", "order.return": "red",
+  "order.reorder": "lime",
   "product.upsert": "orange", "product.active": "gold", "stock.adjust": "volcano",
   "channel.upsert": "purple", "plan.change": "magenta", "rbac.set": "red",
+  "customer.merge": "gold",
 };
 
 export default function Page() {

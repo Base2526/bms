@@ -541,6 +541,13 @@ REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI 
 ทุกข้อความจาก webhook (LINE/TikTok) + คำตอบ AI ถูกบันทึกอัตโนมัติผ่าน
 `logConversation()` (hook ใน webhook) — 1 บทสนทนา = (tenant, channel, customer_ref)
 
+**Shopee/Lazada 🧪 beta:** `app/api/bms/{shopee,lazada}/webhook/[tenantId]/route.ts` มีโครงรับ webhook
+แบบเดียวกับ TikTok (rate limit + HMAC verify + parse → pipeline → `logConversation()`) และต่อ config/UI
+(settings, `Channel` type, `CHANNEL_COLOR`) ครบเหมือน channel อื่นแล้ว — **แต่** signature verify scheme
+กับชื่อ field ใน payload (`parseShopeeMessages()`/`parseLazadaMessages()`) เป็น placeholder ที่ยังไม่ตรวจกับ
+เอกสาร Shopee/Lazada Open Platform จริง (ดู `TODO(prod)` ในไฟล์) ต้องแก้ก่อนใช้ production · ยังไม่มี send API
+(ตอบกลับลูกค้าไม่ได้ เหมือน TikTok) · ไม่อยู่ใน `channelSupportsPush()` จึงถือว่า SENT ทันทีเมื่อบันทึกสำเร็จ
+
 ## sendStaffMessage()
 
 แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push / Meta send; อื่น ๆ persist อย่างเดียว)
@@ -578,6 +585,72 @@ Permission: inbox.manage
 โน้ตภายใน (ลูกค้าไม่เห็น) · timeline รวม message + note + order เรียงตามเวลา
 
 Permission: inbox.manage (note) / inbox.view (timeline)
+
+---
+
+## แท็บ "ลูกค้า" — purchase history ตอนเปิดแชท
+
+เปิดบทสนทนา → auto-load `bmsCustomer(conv.customerId)` (ไม่ต้องกดปุ่ม เหมือน Timeline) →
+โชว์ยอดซื้อสะสม (`total_spent`) · จำนวนออร์เดอร์ (`order_count`) · แท็ก/โน้ตลูกค้า ·
+รายการออร์เดอร์ (`orders[]`) ให้ sale เห็นทันทีว่าลูกค้าคนนี้เคยซื้ออะไรบ้างโดยไม่ต้องสลับไปหน้า CRM
+
+ไม่มี resolver/service ใหม่ — ใช้ `bmsCustomer` query (`graphql/bmsCustomers.ts`) +
+`getCustomer()`/`customerOrders()` (`lib/bms/customers.ts`) ที่มีอยู่แล้ว
+
+Permission: customer.view (ถ้าไม่มีสิทธิ์ → โชว์ empty state ไม่ error)
+
+**ข้อจำกัด:** `resolveOrCreateCustomer` จับคู่ลูกค้าด้วย `(tenant, channel, external_ref)` เท่านั้น
+ยังไม่ auto-dedupe ข้ามช่องทางด้วยเบอร์โทร/อีเมล — ลูกค้าคนเดียวทักหลายช่องทางจะเห็นประวัติซื้อไม่ครบ
+จนกว่า staff จะกดผสาน record ด้วยตัวเอง (ดู `mergeCustomers()` ด้านล่าง)
+
+---
+
+## mergeCustomers() — ผสานลูกค้าซ้ำข้ามช่องทาง
+
+ลูกค้าคนเดียวกันทักมาคนละช่องทาง (เช่น LINE แล้วก็ FB) จะถูก `resolveOrCreateCustomer`
+สร้างเป็นคนละ `bms_customers` record เพราะจับคู่ตาม `(tenant_id, channel, external_ref)` เท่านั้น —
+`mergeCustomers(tenantId, keepId, mergeId)` ใช้ยุบ record ซ้ำเข้าด้วยกันด้วยมือ:
+
+- ย้าย `bms_customer_identities` / `bms_orders` / `bms_customer_addresses` / `bms_conversations`
+  ทั้งหมดจาก `mergeId` ไป `keepId` (ปลอดภัย ไม่ชนกัน เพราะ identity unique ต่อ tenant+channel+ref อยู่แล้ว)
+- รวม tags (union), เติม phone/note ที่ `keepId` ไม่มีจาก `mergeId`
+- soft-delete `mergeId` (`deleted_at`) — **ทำแล้วย้อนกลับเองไม่ได้**
+- ทั้งหมดอยู่ในทรานแซกชันเดียว (`beginTenantTx`)
+
+UI: `/admin/customers` → ปุ่ม **"ผสาน"** ต่อแถว → ค้นหา record ซ้ำ → เลือก → ยืนยัน
+
+Input
+
+{
+    keepId,   # ลูกค้าหลักที่จะเก็บไว้
+    mergeId   # ลูกค้าซ้ำที่จะยุบเข้ามาแล้วลบ
+}
+
+Permission: customer.edit · บันทึก audit action `customer.merge`
+
+---
+
+## reorderFromOrder() — "ซื้อซ้ำ" จากประวัติการซื้อ
+
+ให้ sale กดสั่งซื้อซ้ำจากออร์เดอร์เก่าของลูกค้าได้ทันทีจากแท็บ "ลูกค้า" ในหน้าแชท
+(หรือแถวประวัติซื้อใน `/admin/customers`) โดยไม่ต้องพิมพ์รายการสินค้าใหม่เอง:
+
+- อ่าน channel/customer_ref + รายการสินค้า (sku, size, qty) จากออร์เดอร์ต้นทาง
+- เรียก `createOrder()` เดิมทั้งชุด (จองสต็อกแบบ atomic + ตัดราคาปัจจุบันของสินค้าใหม่ — **ไม่ใช่ราคาย้อนหลัง**)
+- **ไม่มีสถานะ "Draft" แยก** — ออร์เดอร์ใหม่เริ่มที่ `PENDING` พร้อมจองสต็อกทันที เหมือนออร์เดอร์ปกติทุกใบ
+
+Input
+
+{
+    id   # orderId ของออร์เดอร์เก่าที่จะสั่งซ้ำ
+}
+
+Output: `{ status, orderId, total, message }` — `status` หนึ่งใน
+`CREATED` / `INSUFFICIENT` (สต็อกไม่พอ) / `NOT_FOUND` (สินค้าถูกลบ/ปิด active ไปแล้ว) /
+`EMPTY` (ออร์เดอร์ต้นทางไม่มีรายการ) / `SOURCE_NOT_FOUND`
+
+Permission: **order.create** (permission ใหม่ — เดิม order ถูกสร้างจาก AI/REST เท่านั้นไม่เคยผ่าน
+permission gate มาก่อน · seed ให้ Manager/Sales ที่ migration `6.1__bms_order_create_perm.sql`)
 
 ---
 

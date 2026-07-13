@@ -102,7 +102,7 @@ export default function Page() {
           extra={
             <Space>
               <Segmented size="small" value={channel} onChange={(v) => setChannel(v as string)}
-                options={["line", "tiktok", "facebook", "test"]} />
+                options={["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"]} />
             </Space>
           }
         >

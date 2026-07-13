@@ -13,7 +13,7 @@ function requireTenantAdmin(ctx: any) {
   }
 }
 
-const ALLOWED = ["line", "tiktok", "facebook", "instagram", "web"];
+const ALLOWED = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
 
 export const bmsChannelsResolvers = {
   Query: {

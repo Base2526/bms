@@ -2,7 +2,7 @@
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
-  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip,
+  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Statistic,
 } from "antd";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -38,13 +38,21 @@ const Q_LIST = gql`
 const Q_CONV = gql`
   query ($id: ID!) {
     bmsConversation(id: $id) {
-      id channel customerRef customerName status assignedTo tags unread
+      id channel customerRef customerId customerName status assignedTo tags unread
       messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
       notes { id author body createdAt }
     }
   }
 `;
 const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref } }`;
+const Q_CUSTOMER = gql`
+  query ($id: ID!) {
+    bmsCustomer(id: $id) {
+      id name phone note tags total_spent order_count
+      orders { id channel status total_amount created_at }
+    }
+  }
+`;
 const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered message } }`;
 const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered message } }`;
 const M_ASSIGN = gql`mutation ($id: ID!, $assignedTo: String) { bmsAssignConversation(id: $id, assignedTo: $assignedTo) }`;
@@ -52,8 +60,9 @@ const M_STATUS = gql`mutation ($id: ID!, $status: BmsConvStatus!) { bmsSetConver
 const M_TAGS = gql`mutation ($id: ID!, $tags: [String!]!) { bmsSetConversationTags(id: $id, tags: $tags) }`;
 const M_READ = gql`mutation ($id: ID!) { bmsMarkConversationRead(id: $id) }`;
 const M_NOTE = gql`mutation ($id: ID!, $body: String!) { bmsAddConversationNote(id: $id, body: $body) { id author body createdAt } }`;
+const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
-const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", test: "default" };
+const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", shopee: "orange", lazada: "purple", test: "default" };
 const STATUS_COLOR: Record<ConvStatus, string> = { OPEN: "green", PENDING: "orange", CLOSED: "default" };
 const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
 
@@ -174,6 +183,23 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     onCompleted: () => { message.success("เพิ่มโน้ตแล้ว"); setNote(""); onChanged(); }, onError: onErr,
   });
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
+  const [loadCustomer, { data: custData, loading: custLoading, refetch: refetchCustomer }] = useLazyQuery(Q_CUSTOMER, { fetchPolicy: "cache-and-network" });
+  const canViewCustomer = can("customer.view");
+  const canReorder = can("order.create");
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorder] = useMutation(M_REORDER, {
+    onCompleted: (d: any) => {
+      const r = d?.bmsReorderFromOrder;
+      setReorderingId(null);
+      if (r?.status === "CREATED") { message.success(r.message); refetchCustomer(); }
+      else message.error(r?.message || "ซื้อซ้ำไม่สำเร็จ");
+    },
+    onError: (e) => { setReorderingId(null); onErr(e); },
+  });
+
+  useEffect(() => {
+    if (canViewCustomer && conv.customerId) loadCustomer({ variables: { id: conv.customerId } });
+  }, [conv.customerId, canViewCustomer]); // eslint-disable-line
 
   const canManage = can("inbox.manage");
 
@@ -358,6 +384,61 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     </div>
   );
 
+  const customerTab = (
+    <div>
+      {!canViewCustomer && <Empty description="ไม่มีสิทธิ์ดูข้อมูลลูกค้า" />}
+      {canViewCustomer && !conv.customerId && <Empty description="บทสนทนานี้ยังไม่ผูกกับลูกค้าในระบบ" />}
+      {canViewCustomer && conv.customerId && custLoading && !custData && <Typography.Text type="secondary">กำลังโหลด…</Typography.Text>}
+      {canViewCustomer && custData?.bmsCustomer && (
+        <div>
+          <Space size="large" wrap style={{ marginBottom: 12 }}>
+            <Statistic title="ยอดซื้อสะสม" value={custData.bmsCustomer.total_spent} suffix="฿" precision={0} />
+            <Statistic title="จำนวนออร์เดอร์" value={custData.bmsCustomer.order_count} />
+          </Space>
+          {(custData.bmsCustomer.tags || []).length > 0 && (
+            <Space wrap style={{ marginBottom: 8 }}>
+              {custData.bmsCustomer.tags.map((t: string) => <Tag key={t} color="gold">{t}</Tag>)}
+            </Space>
+          )}
+          {custData.bmsCustomer.note && (
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12.5, marginBottom: 12 }}>
+              📝 {custData.bmsCustomer.note}
+            </Typography.Paragraph>
+          )}
+          <Divider style={{ margin: "8px 0" }} />
+          <Typography.Text strong style={{ fontSize: 12.5 }}>ประวัติการซื้อ</Typography.Text>
+          <List
+            size="small"
+            dataSource={custData.bmsCustomer.orders || []}
+            locale={{ emptyText: "ยังไม่เคยสั่งซื้อ" }}
+            renderItem={(o: any) => (
+              <List.Item
+                actions={canReorder ? [
+                  <Button
+                    key="reorder" type="link" size="small"
+                    loading={reorderingId === o.id}
+                    onClick={() => { setReorderingId(o.id); reorder({ variables: { id: o.id } }); }}
+                  >ซื้อซ้ำ</Button>,
+                ] : undefined}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space size={4}>
+                      <Tag color={CHANNEL_COLOR[o.channel] || "default"}>{o.channel}</Tag>
+                      <Tag>{o.status}</Tag>
+                      <span>{Number(o.total_amount).toLocaleString()} ฿</span>
+                    </Space>
+                  }
+                  description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(o.created_at).toLocaleString()}</Typography.Text>}
+                />
+              </List.Item>
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   const timelineTab = (
     <div>
       {(!tlData) && <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>โหลด timeline</Button>}
@@ -389,6 +470,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
       <Tabs
         items={[
           { key: "chat", label: "แชท", children: chatTab },
+          { key: "customer", label: "ลูกค้า", children: customerTab },
           { key: "notes", label: "โน้ต", children: notesTab },
           { key: "timeline", label: "Timeline", children: timelineTab },
         ]}

@@ -757,6 +757,13 @@ export const typeDefs = /* GraphQL */ `
     items: [BmsOrderItem!]!
   }
 
+  type BmsReorderResult {
+    status: String!             # CREATED / INSUFFICIENT / NOT_FOUND / EMPTY / SOURCE_NOT_FOUND
+    orderId: ID
+    total: Float
+    message: String!
+  }
+
   # ===== BMS purchase (PO) =====
   enum BmsPurchaseStatus {
     OPEN
@@ -1537,6 +1544,7 @@ export const typeDefs = /* GraphQL */ `
     bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
     bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
     bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
+    bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
@@ -1582,6 +1590,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
     bmsDeleteCustomerAddress(addressId: ID!): Boolean!
     bmsDeleteCustomer(id: ID!): Boolean!
+    bmsMergeCustomers(keepId: ID!, mergeId: ID!): Boolean!
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!

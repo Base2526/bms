@@ -13,6 +13,8 @@ Supported channels:
 - Facebook Messenger ✅ (webhook + Graph Send)
 - Instagram ✅ (DM via Messenger Platform)
 - Website Live Chat ✅ (public widget endpoint)
+- Shopee 🧪 (beta — webhook scaffold รับข้อความได้ แต่ signature scheme + payload mapping ยังไม่ยืนยันกับเอกสาร Shopee Open Platform จริง; send API = roadmap)
+- Lazada 🧪 (beta — webhook scaffold รับข้อความได้ แต่ signature scheme + payload mapping ยังไม่ยืนยันกับเอกสาร Lazada Open Platform จริง; send API = roadmap)
 - Future:
   - WhatsApp
   - Email
@@ -28,12 +30,13 @@ Supported channels:
 | Module | สถานะ | ที่อยู่ (service · migration) |
 | --- | --- | --- |
 | Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
-| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · แนบรูป/ไฟล์ (`/api/bms/inbox/upload` → `meta.attachment`) · สถานะข้อความ SENT/FAILED + retry (capability-gated ตามช่องทาง) |
+| Channel Integration — Shopee/Lazada | 🧪 beta | `app/api/bms/{shopee,lazada}/webhook` — config/UI/type ต่อครบเหมือน channel อื่น แต่ signature verify + payload parsing เป็น **placeholder ที่ยังไม่ยืนยันกับเอกสาร API จริง** (ดู TODO(prod) ในไฟล์) · ยังไม่มี send API (ตอบกลับอัตโนมัติไม่ได้) |
+| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · แนบรูป/ไฟล์ (`/api/bms/inbox/upload` → `meta.attachment`) · สถานะข้อความ SENT/FAILED + retry (capability-gated ตามช่องทาง) · แท็บ **"ลูกค้า"** ในหน้าแชท auto-load ประวัติซื้อ/ยอดสะสม/แท็ก-โน้ตของลูกค้าเมื่อเปิดบทสนทนา (`bmsCustomer(id)` ผ่าน `conv.customerId`, gate ด้วย `customer.view`) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` (rule-based NLU + Claude) |
-| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` (แก้ไข/ตั้งค่าเริ่มต้น/ลบที่อยู่ได้) |
+| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` (แก้ไข/ตั้งค่าเริ่มต้น/ลบที่อยู่ได้) · ผสานลูกค้าซ้ำข้ามช่องทาง (`mergeCustomers` — ปุ่ม "ผสาน" ที่ `/admin/customers`) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` (image/description/cost_price/category/brand) · upload รูป `/api/bms/products/upload` · ค้นหา+paging server-side · หมวดหมู่เป็น list จัดการได้ (`lib/bms/productCategories.ts` · `6.0`) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
-| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` |
+| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · "ซื้อซ้ำ" จากประวัติซื้อ (`reorderFromOrder` — ปุ่มใน inbox/customers, permission ใหม่ `order.create` seed ที่ `6.1`) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
