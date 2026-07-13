@@ -42,7 +42,7 @@ Supported channels:
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` (สร้าง tenant + owner role Manager) |
 | Platform Admin (ข้ามร้าน) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` (`users.is_platform_admin`) — list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · cookie `BMS_ACT_TENANT` (signed) → override tenant ใน context · banner ใน `AdminLayoutClient` |
-| Current-user Profile | ✅ | `bmsMe` · `/admin/profile` + chip ผู้ล็อกอินบน `AdminHeader` |
+| Current-user Profile | ✅ | `bmsMe` · `/admin/profile` + chip ผู้ล็อกอิน/Logout ปักล่างสุดของ `AdminSidebar` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
 | Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — seed ลง **tenant ของผู้ล็อกอิน** · cleanup scope ตามร้าน · "BMS Staff (users)" ผูก tenant + role Sales/Warehouse (ก่อนหน้าไม่ผูก tenant เลยไม่โผล่ที่ `/admin/users`) · ถอด "Posts" ออกจาก dropdown (fixture project เก่า) |
 
