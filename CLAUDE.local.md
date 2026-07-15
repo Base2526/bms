@@ -36,8 +36,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **migrations** → `db/migrations/*.sql` (idempotent, apply ตามเลข) — ล่าสุด `5.6` (platform admin) · `5.7` (เติมสิทธิ์ operational ให้ Manager/Sales/Warehouse) · `5.8` (`bms_plans.max_users` — quota staff/plan: free=3, pro=10, business=ไม่จำกัด) · `5.9` (`bms_products`: image_url/description/cost_price/category/brand) · `6.0` (`bms_product_categories` — list หมวดหมู่ที่จัดการได้ + backfill จาก category เดิม) ·
   `6.1__bms_inbox_assignment.sql` (`bms_conversations.assigned_to_user_id` FK จริง แทน `assigned_to` TEXT เดิม (ยังอยู่ในตารางแต่เลิกใช้แล้ว) + `bms_conversation_helpers` (คนช่วยตอบ) + `users.is_available` + permission ใหม่ `inbox.assign`) ·
   `6.2__bms_customer_360.sql` (ดู § Customer 360 ด้านล่าง) ·
-  `6.1__bms_order_create_perm.sql` (seed permission ใหม่ `order.create` ให้ Manager/Sales — ใช้กับปุ่ม "ซื้อซ้ำ")
-  **⚠️ เลขชนกัน:** สองไมเกรชันนี้ (`inbox_assignment` จากสาย backend และ `order_create_perm` จากสาย channels) ต่างมาจากคนละ branch แล้วตั้งเลข `6.1` ซ้ำกัน — ต้อง renumber ตัวใดตัวหนึ่งก่อน apply จริง (แนะนำเลื่อน `order_create_perm` ไปเป็น `6.3`) ห้ามปล่อยให้มีไฟล์ `6.1` สองไฟล์ในโฟลเดอร์เดียวกัน
+  `6.3__bms_order_create_perm.sql` (seed permission ใหม่ `order.create` ให้ Manager/Sales — ใช้กับปุ่ม "ซื้อซ้ำ" —
+  **renumber แล้วจาก `6.1` เดิม** ที่เคยชนกับ `6.1__bms_inbox_assignment.sql` เพราะมาจากคนละ branch ตั้งเลขซ้ำกัน) ·
+  `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **order journey** → `getOrderJourney` (`lib/bms/orders.ts`) → `bmsOrderJourney(orderId)` — แถวขยายในหน้า Orders โชว์ ต้นทางแชท + stepper (PENDING→PAID→PACKING→SHIPPED→COMPLETED + กิ่ง CANCELLED/RETURNED) + timeline ละเอียด · **ไม่มี migration** — order↔conversation join 1:1 ด้วย `(tenant_id, channel, customer_ref)` (conversation dedupe ด้วย UNIQUE เดิม) · reuse `bms_audit_log` (order.pay/pack/ship/complete/cancel/return, target=orderId) + `listSystemEvents`/`listConversationHelpers` (event แชท) + `listShipments` (เลขพัสดุ) · COMPLETED แบบ auto (จัดส่งถึง) ไม่ได้ audit → fallback `updated_at` · ลิงก์ "เปิดดูแชท" ไป `/admin/inbox?c=<id>` (inbox อ่าน param `c` เปิดแชทนั้น)
@@ -120,6 +121,54 @@ children ของ panel ที่ยังไม่เคย active — **น�
 - **แท็บ "ลูกค้า" + merge + reorder** (`mergeCustomers()`, `reorderFromOrder()`) → รายละเอียดเต็มอยู่ที่ [docs/ui/customer360.md](docs/ui/customer360.md) และ [docs/business/order.md](docs/business/order.md) — คนละอย่างกับ Customer 360 panel ด้านบน (ดู note ในไฟล์นั้น)
 - **Shopee/Lazada (beta/scaffold)** → รายละเอียดเต็ม (signature ยังไม่ยืนยัน, channel array กระจายหลายจุด, checklist ก่อน production) อยู่ที่ [docs/integrations/lazada.md](docs/integrations/lazada.md) — **บทเรียนสำคัญที่ยังต้องจำ:** เพิ่ม channel ใหม่ทีไร ต้อง `grep -rn '"line".*"tiktok"' apps/web` ด้วย เพราะมี array enumerate channel กระจายหลายจุด ไม่ได้ derive จาก `Channel` type เดียวกันทั้งหมด (เคยพลาดที่ debug endpoint + fake seeder + playground มาแล้ว)
 
+## Channel Health (สถานะเชื่อมต่อจริงต่อช่องทาง)
+
+**เสร็จแล้ว (2026-07)** — แยก "สุขภาพจริง" ของแต่ละช่องทางออกจาก `active` (สวิตช์ admin กดเปิด/ปิดเอง) เดิมที่มีแค่
+เขียว/เทา ไม่บอกว่า token หมดอายุ/webhook fail/rate limit/ไม่มี event เข้าจริงหรือเปล่า:
+
+- **Schema** → migration `6.4__bms_channel_health.sql` เติมคอลัมน์ `status`/`status_detail`/`last_error_at`/
+  `last_inbound_event_at`/`last_outbound_success_at`/`last_checked_at` ลง `bms_tenant_channels` เดิม (ไม่สร้างตารางคู่ขนาน)
+  + ตารางใหม่ `bms_channel_health_log` (ประวัติเปลี่ยนสถานะ, เขียนเฉพาะตอน status เปลี่ยนจริง กัน spam)
+  · **แก้เลข migration ชนกันไปด้วย**: `6.1__bms_order_create_perm.sql` เดิม renumber เป็น `6.3` (ชนกับ
+  `6.1__bms_inbox_assignment.sql` จากคนละ branch — ดูหมายเหตุเดิมด้านบน)
+- **Service** → `lib/bms/channelHealth.ts` — entrypoint เดียวคือ `setChannelStatus()` (log เฉพาะตอนเปลี่ยน) +
+  helper เฉพาะทาง `recordInboundEvent()`/`recordWebhookVerifyFailed()`/`recordOutboundSuccess()`/
+  `recordOutboundError(httpStatus)` (map 401/403→`token_expired`, 429→`rate_limited`, อื่นๆ→`send_failed`) +
+  `detectStaleChannels()` (cron หา channel active+connected ที่ไม่มี event เข้าเกิน `NO_EVENTS_THRESHOLD_DAYS`
+  = 3 วัน → ตั้ง `no_events`, ไม่ downgrade error status อื่นทับ)
+- **Wire เข้าจุดจริงแล้ว** (ไม่ใช่แค่ service เฉยๆ):
+  - webhook LINE/Facebook/Instagram/TikTok/Shopee/Lazada ทุกตัว → signature verify fail เรียก
+    `recordWebhookVerifyFailed()`, มี event เข้าจริงเรียก `recordInboundEvent()` (Website Live Chat **ไม่ wire**
+    เพราะไม่มี signature/ไม่มี async send ให้ fail แบบเดียวกัน)
+  - `deliverToChannel()` (`lib/bms/inbox.ts`, ใช้โดย LINE/Facebook/Instagram) + `pushLineReply()`
+    (`line/webhook/[tenantId]/route.ts`, reply-token path ของ pipeline) → capture HTTP status จริงจาก
+    fetch แล้วเรียก `recordOutboundSuccess()`/`recordOutboundError()` (TikTok/Shopee/Lazada ยังไม่มี send API
+    จริง เลยไม่มีจุด wire ฝั่ง outbound)
+  - cron endpoint `POST /api/bms/channels/check-health` (header `x-cron-secret` = `BMS_CRON_SECRET`
+    เหมือน `/api/bms/orders/release-expired`) เรียก `detectStaleChannels()` — **ยังไม่ได้ตั้ง cron schedule จริง**
+    (ต้องเพิ่มเอง เช่น GitHub Actions cron รายวัน เหมือน `daily-log-triage.yml`)
+- **GraphQL** → `bmsChannelHealth`/`bmsChannelHealthCount` ใน `graphql/bmsChannels.ts` (ต่อยอดไฟล์เดิม ไม่สร้างใหม่)
+  gate ด้วย `requireTenantAdmin()` เดียวกับ `bmsChannels`/`bmsUpsertChannel` — **ไม่มี permission ใหม่** (ตั้งใจ
+  ไม่ seed migration สิทธิ์เพิ่ม เพราะ domain เดียวกับ channel config เดิมที่ไม่เคย gate ด้วย `BMS_PERMISSIONS`)
+- **UI**:
+  - `/admin/settings` — badge สถานะต่อการ์ดช่องทาง (ลำดับความสำคัญ: ยังไม่ตั้งค่า > ปิดใช้งานเอง > สุขภาพจริง —
+    เช็ค `has_token`/`active` ก่อนเสมอ ไม่ใช้ `health.status` ตรงๆ เพราะ default DB คือ `'connected'` แม้ยังไม่เคยตั้งค่า)
+    + Alert แจ้ง action ตาม status + เวลา event เข้า/ส่งสำเร็จล่าสุด
+  - Sidebar (`AdminSidebar.tsx`) — badge แดงที่เมนู "Settings (เชื่อมช่องทาง)" poll `bmsChannelHealthCount` ทุก 15s
+    แบบเดียวกับ `bmsInboxUnreadCount` (ส่ง `collapsed` เสมอ กัน bug เดิมที่เจอกับเมนู Users)
+  - Dashboard (`/admin/dashboard`) — Alert แดงเมื่อมีช่องทาง active ที่ status ≠ `connected` พร้อม deep-link ไป Settings
+    (pattern เดียวกับ alert สินค้าใกล้หมดที่มีอยู่แล้ว)
+  - ปุ่ม **"ทดสอบ"** ในหน้า Settings (เฉพาะ LINE/Facebook/Instagram ที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง
+    — `GET /v2/bot/info` ของ LINE, `GET /me` ของ Graph API) → `testChannelConnection()` (`channelHealth.ts`) +
+    `bmsTestChannel` mutation แสดงเฉพาะตอน badge เป็น "เชื่อมต่อสำเร็จ" เท่านั้น (ตามตารางสถานะเดิม) — กดแล้วอัปเดต
+    `status` จริงไปในตัวผ่าน `recordOutboundSuccess()`/`recordOutboundError()` เดิม (ไม่ใช่แค่ mock ผลลัพธ์)
+    · TikTok/Shopee/Lazada/Web ไม่มีปุ่มนี้ (ไม่มี API แบบนี้ให้เรียก — ดู `docs/integrations/lazada.md`)
+  - `recordOutboundError()` แนบ header `Retry-After` ของ platform เข้า `status_detail` ด้วยถ้ามี (ผ่าน
+    `formatOutboundErrorDetail()`) — เดิมมีแค่ status code/body เฉยๆ ไม่ตรงกับตารางสถานะต้นฉบับที่ต้องการเห็นค่านี้
+- **ยังไม่ทำ (ต้องตัดสินใจ scope ก่อน)**: proactive notification นอกหน้าเว็บ (เช่น LINE แจ้งเจ้าของร้านทันทีที่ channel fail
+  โดยไม่ต้องเปิดแอพ) — ต้องมี LINE user id ของ admin ผูกไว้ก่อน (ยังไม่มี field นี้ในระบบ, คนละเรื่องกับ LINE OA ของร้านที่ใช้
+  รับแชทลูกค้า) เป็น feature ใหม่ที่ยังไม่ได้ตัดสินใจร่วมกับ user
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
@@ -141,16 +190,20 @@ children ของ panel ที่ยังไม่เคย active — **น�
 แผน Phase A–D เดิม (OAuth + background sync worker + `ChannelAdapter` refactor + migration `6.3`/`6.4`) **ไม่ได้ implement
 ตามแผนนี้** — ของจริงไปทาง webhook scaffold แบบเดียวกับ TikTok แทน (ดู note ใน § Customer 360 ด้านบน และ
 [docs/integrations/lazada.md](docs/integrations/lazada.md)) ถ้าจะกลับไปทำ OAuth+Sync จริงในอนาคต ต้องรีวิว/เขียนแผนใหม่
-ไม่ใช่หยิบ Phase A–D เดิมมาทำต่อ (เลขไมเกรชัน `6.2`/`6.3` ที่แผนเดิมจะใช้ก็ถูก customer_360/order_create_perm ใช้ไปแล้ว)
+ไม่ใช่หยิบ Phase A–D เดิมมาทำต่อ (เลขไมเกรชัน `6.2`/`6.3`/`6.4` ที่แผนเดิมจะใช้ ตอนนี้ถูก customer_360/order_create_perm
+(renumber จาก `6.1` เดิม)/channel_health ใช้ไปแล้วจริง — ดู § Channel Health ด้านบน)
 
 ## สถานะปัจจุบัน
 
 โมดูลเชิงปฏิบัติการครบแล้ว (ดูตาราง Build Status ใน CLAUDE.md) + **Customer 360 panel ใน Inbox เสร็จแล้ว** (ดูหัวข้อด้านบน)
-+ **แท็บ "ลูกค้า"/merge/reorder เสร็จแล้ว** + **Shopee/Lazada beta scaffold เสร็จแล้ว** (ดู [docs/integrations/lazada.md](docs/integrations/lazada.md)).
++ **แท็บ "ลูกค้า"/merge/reorder เสร็จแล้ว** + **Shopee/Lazada beta scaffold เสร็จแล้ว** (ดู [docs/integrations/lazada.md](docs/integrations/lazada.md))
++ **Channel Health status เสร็จแล้ว** (ดูหัวข้อ § Channel Health ด้านบน — schema/service/webhook wiring/GraphQL/UI ครบ
+เฉพาะ proactive external notification ที่ยังไม่ทำ).
 **เหลือ:** TikTok send API · carrier API จริง · AI tool-calling/OCR/forecasting (Phase 3–4) · WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items (ดู "Pending improvements" ในหัวข้อ Customer 360)
-· แก้เลขไมเกรชัน `6.1` ที่ชนกัน (ดู § โครงโค้ด BMS ด้านบน) ก่อน apply
+· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` (endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
+· proactive external notification สำหรับ Channel Health (ต้องออกแบบ LINE user id ผูก admin ก่อน — ดู § Channel Health)
 
 ## ก่อน production (สำคัญ)
 

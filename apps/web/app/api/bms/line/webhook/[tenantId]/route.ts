@@ -13,6 +13,7 @@ import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
+import { recordInboundEvent, recordWebhookVerifyFailed, recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "@/lib/bms/channelHealth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,12 +25,22 @@ type LineEvent = {
   message?: { type: string; text?: string };
 };
 
-async function pushLineReply(token: string, replyToken: string, text: string) {
-  await fetch("https://api.line.me/v2/bot/message/reply", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
-  }).catch((e) => console.error("[BMS] LINE push failed:", e));
+async function pushLineReply(tenantId: string, token: string, replyToken: string, text: string) {
+  try {
+    const resp = await fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
+    });
+    if (resp.ok) {
+      await recordOutboundSuccess(tenantId, "line");
+    } else {
+      const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
+      await recordOutboundError(tenantId, "line", resp.status, detail);
+    }
+  } catch (e) {
+    console.error("[BMS] LINE push failed:", e);
+  }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
@@ -52,7 +63,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const raw = await req.text();
   if (cfg.channel_secret) {
     const ok = verifyLineSignature(cfg.channel_secret, raw, req.headers.get("x-line-signature"));
-    if (!ok) return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+    if (!ok) {
+      await recordWebhookVerifyFailed(tenantId, "line");
+      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+    }
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })() as { events?: LineEvent[] };
@@ -72,10 +86,12 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
     if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(cfg.access_token, ev.replyToken, result.reply);
+      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply);
     }
     replies.push({ replyToken: ev.replyToken, reply: result.reply });
   }
+
+  if (replies.length > 0) await recordInboundEvent(tenantId, "line");
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }

@@ -4,7 +4,14 @@ import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listChannelsMasked, upsertChannel } from "@/lib/bms/channels";
+import { listChannelHealth, countUnhealthyChannels, testChannelConnection } from "@/lib/bms/channelHealth";
 import { audit } from "@/lib/bms/audit";
+
+/** pg คืน timestamp เป็น Date object — ต้อง toISOString() ก่อนคืนใน field ที่เป็น String (ดู CLAUDE.local.md) */
+function toISO(v: unknown): string | null {
+  if (!v) return null;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -26,6 +33,21 @@ export const bmsChannelsResolvers = {
       requireTenantAdmin(ctx);
       return listChannelsMasked(getTenantId(ctx));
     },
+    async bmsChannelHealth(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      const rows = await listChannelHealth(getTenantId(ctx));
+      return rows.map((r) => ({
+        ...r,
+        last_error_at: toISO(r.last_error_at),
+        last_inbound_event_at: toISO(r.last_inbound_event_at),
+        last_outbound_success_at: toISO(r.last_outbound_success_at),
+        last_checked_at: toISO(r.last_checked_at),
+      }));
+    },
+    async bmsChannelHealthCount(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return countUnhealthyChannels(getTenantId(ctx));
+    },
   },
   Mutation: {
     async bmsUpsertChannel(
@@ -44,6 +66,15 @@ export const bmsChannelsResolvers = {
       });
       await audit(ctx, "channel.upsert", args.channel, { active: args.active });
       return ok;
+    },
+    async bmsTestChannel(_p: unknown, args: { channel: string }, ctx: any) {
+      requireTenantAdmin(ctx);
+      if (!ALLOWED.includes(args.channel)) {
+        throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const result = await testChannelConnection(getTenantId(ctx), args.channel);
+      await audit(ctx, "channel.test", args.channel, { ok: result.ok });
+      return result;
     },
   },
 };

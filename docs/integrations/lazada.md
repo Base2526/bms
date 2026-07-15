@@ -31,6 +31,16 @@ so this doc covers both.
   `channelSupportsPush()` (`lib/bms/inbox.ts`), so outbound messages are marked `SENT` immediately
   on persist with no delivery confirmation possible.
 
+## Channel Health status caveat
+
+Both webhook routes now report into the shared Channel Health system
+([`lib/bms/channelHealth.ts`](../../apps/web/lib/bms/channelHealth.ts)) — a `webhook_failed` badge on
+Shopee/Lazada in `/admin/settings` most likely means the **placeholder HMAC scheme rejected a real
+platform payload** (see above — real signature scheme is unverified), not necessarily that the shop
+owner typed the wrong secret. Don't treat that badge as a config error the way you would for
+LINE/Facebook/Instagram until the signature verification is rewritten against real docs. Neither
+channel reports `send_failed` (no send API exists yet to fail).
+
 ## Before using in production
 
 1. Get the real Lazada Open Platform / Shopee Open Platform webhook + signature documentation.

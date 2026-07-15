@@ -14,6 +14,7 @@ import { verifyMetaSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, deliverToChannel } from "@/lib/bms/inbox";
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
+import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const raw = await req.text();
   if (cfg.channel_secret) {
     const ok = verifyMetaSignature(cfg.channel_secret, raw, req.headers.get("x-hub-signature-256"));
-    if (!ok) return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+    if (!ok) {
+      await recordWebhookVerifyFailed(tenantId, CHANNEL);
+      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+    }
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
@@ -51,6 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     await logConversation(tenantId, CHANNEL, ev.senderId, ev.text, result.reply);
     await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
   }
+  if (events.length > 0) await recordInboundEvent(tenantId, CHANNEL);
 
   // Meta ต้องการ 200 เร็ว ๆ ไม่งั้น retry
   return NextResponse.json({ ok: true, tenantId, handled: events.length });
