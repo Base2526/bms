@@ -11,6 +11,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
+import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const sig = req.headers.get("x-tiktok-signature") || req.headers.get("x-signature");
     const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
     if (!sig || sig !== mac) {
+      await recordWebhookVerifyFailed(tenantId, "tiktok");
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     }
   }
@@ -58,6 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API ด้วย cfg.access_token
     replies.push({ userId: m.user_id, reply: result.reply });
   }
+  if (replies.length > 0) await recordInboundEvent(tenantId, "tiktok");
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }

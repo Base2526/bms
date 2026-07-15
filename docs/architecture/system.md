@@ -63,6 +63,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | --- | --- | --- |
 | Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
 | Channel Integration — Shopee/Lazada | 🧪 beta | `app/api/bms/{shopee,lazada}/webhook` — see [../integrations/lazada.md](../integrations/lazada.md) |
+| Channel Health Status | ✅ | `lib/bms/channelHealth.ts` · `6.4__bms_channel_health.sql` · badges on `/admin/settings` + sidebar/dashboard alerts + `POST /api/bms/channels/check-health` cron |
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
@@ -83,7 +84,9 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 **Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
 AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·
 letting shop owners (Manager role) manage their own staff (currently Administrator/platform only) ·
-Shopee/Lazada signature verification against real Open Platform docs.
+Shopee/Lazada signature verification against real Open Platform docs ·
+proactive external notification for Channel Health (e.g. LINE alert to the shop owner) — needs an
+admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel.
 
 ## RBAC model (two tiers)
 

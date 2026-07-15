@@ -38,6 +38,7 @@ import { useEffect, useState } from 'react';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
+const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
 const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
 
 const { Sider } = Layout;
@@ -106,6 +107,13 @@ export default function AdminSidebar() {
   });
   const inboxUnread: number = unreadData?.bmsInboxUnreadCount ?? 0;
 
+  // ช่องทาง active แต่ status ไม่ปกติ (token หมดอายุ/webhook fail/rate limit/no events) —
+  // poll เอง 15s แบบเดียวกับ inboxUnread เพื่อให้เห็น badge แม้ไม่ได้อยู่หน้า Settings
+  const { data: healthData } = useQuery(Q_CHANNEL_HEALTH_COUNT, {
+    fetchPolicy: 'cache-and-network', pollInterval: 15000,
+  });
+  const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
+
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage)
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
@@ -156,7 +164,7 @@ export default function AdminSidebar() {
       icon: <ApiOutlined />,
       label: 'SaaS',
       children: [
-        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />),
+        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />, channelHealthCount, collapsed),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
         ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
       ],

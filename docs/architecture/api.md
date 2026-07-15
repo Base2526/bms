@@ -25,6 +25,18 @@ One route per channel, all shaped `POST /api/bms/{channel}/webhook/[tenantId]`:
 
 Details per channel: [../integrations/](../integrations/).
 
+## REST — cron endpoints
+
+Protected by header `x-cron-secret` matching env `BMS_CRON_SECRET` (skipped if unset — fine for
+dev, must be set in production). Neither has a schedule wired up yet; both expect an external cron
+(GitHub Actions, system crontab, etc.) to `POST` them on an interval.
+
+- `POST /api/bms/orders/release-expired?minutes=30` — cancels `RESERVED` orders older than N
+  minutes, releasing their stock reservation. `lib/bms/orders.ts` `releaseExpiredOrders()`.
+- `POST /api/bms/channels/check-health` — flags channels with no inbound webhook event in
+  `NO_EVENTS_THRESHOLD_DAYS` (3) days as `no_events`. `lib/bms/channelHealth.ts` `detectStaleChannels()`.
+  Doesn't need to run more than daily — the threshold is in days, not minutes.
+
 ## REST — debug / test endpoints
 
 - `POST /api/bms/chat` — run the AI pipeline on a message and return the full trace (intent,
@@ -50,18 +62,21 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsOrders.ts` | order lifecycle transitions, reorder |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
 | `bmsInbox.ts` | conversations, messages, notes, timeline |
-| `bmsChannels.ts` | per-tenant channel credentials (settings page) |
+| `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) |
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, labels |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 
-All resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
+Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
 `getTenantId(ctx)` → call the matching `lib/bms/*.ts` function → optionally `audit(ctx, ...)`.
 The permission catalog lives in `lib/bms/permissions.ts` (`BMS_PERMISSIONS`) and is read
 dynamically by the `/admin/permissions` UI — adding a permission there does not require touching
-any frontend permission list.
+any frontend permission list. `bmsChannels.ts` is a deliberate exception: it gates with a plain
+`requireTenantAdmin(ctx)` (any admin role in the tenant) instead of a `BMS_PERMISSIONS` entry — no
+permission was ever added for channel config, so Channel Health reuses the same gate rather than
+introducing one just for itself.
 
 ## Auth scopes
 

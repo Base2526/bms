@@ -20,15 +20,31 @@ const Q_DASH = gql`
   }
 `;
 
+const Q_CHANNEL_HEALTH = gql`query { bmsChannelHealth { channel active status } }`;
+
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue",
   COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
 };
 const TAG_COLOR: Record<string, string> = { VIP: "gold", "ลูกค้าใหม่": "blue", "ลูกค้าประจำ": "green" };
 
+const CHANNEL_LABEL: Record<string, string> = {
+  line: "LINE Official Account", tiktok: "TikTok", facebook: "Facebook Messenger",
+  instagram: "Instagram DM", web: "Website Live Chat", shopee: "Shopee (beta)", lazada: "Lazada (beta)",
+};
+const HEALTH_TEXT: Record<string, string> = {
+  token_expired: "Token หมดอายุ/ถูก revoke",
+  webhook_failed: "Webhook verify ไม่ผ่าน",
+  rate_limited: "โดน Rate Limit",
+  no_events: "ไม่มีข้อความเข้านานผิดปกติ",
+  send_failed: "รับข้อความได้ แต่ตอบกลับไม่ได้",
+};
+
 export default function Page() {
   const { data, loading, error, refetch } = useQuery(Q_DASH, { fetchPolicy: "cache-and-network" });
   const d = data?.bmsDashboard;
+  const { data: healthData } = useQuery(Q_CHANNEL_HEALTH, { fetchPolicy: "cache-and-network", pollInterval: 30000 });
+  const unhealthyChannels = (healthData?.bmsChannelHealth || []).filter((h: any) => h.active && h.status !== "connected");
 
   if (error) return <Alert type="error" message="โหลด dashboard ไม่ได้" description={error.message} showIcon />;
 
@@ -62,6 +78,26 @@ export default function Page() {
       {d?.lowStockCount > 0 && (
         <Alert style={{ marginTop: 16 }} type="warning" showIcon icon={<WarningOutlined />}
           message={<>สินค้าใกล้หมด/หมด <b>{d.lowStockCount}</b> รายการ — <Link href="/admin/products">ดูที่หน้า Products →</Link></>} />
+      )}
+
+      {unhealthyChannels.length > 0 && (
+        <Alert
+          style={{ marginTop: 16 }}
+          type="error"
+          showIcon
+          icon={<WarningOutlined />}
+          message={<>ช่องทางเชื่อมต่อผิดปกติ <b>{unhealthyChannels.length}</b> ช่องทาง</>}
+          description={
+            <Space direction="vertical" size={2}>
+              {unhealthyChannels.map((h: any) => (
+                <div key={h.channel}>
+                  <Tag color="red">{CHANNEL_LABEL[h.channel] || h.channel}</Tag> {HEALTH_TEXT[h.status] || h.status}
+                </div>
+              ))}
+              <Link href="/admin/settings">ไปที่ Settings — เชื่อมช่องทาง →</Link>
+            </Space>
+          }
+        />
       )}
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>

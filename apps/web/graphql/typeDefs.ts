@@ -717,6 +717,8 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsMyTenant: BmsTenantInfo!
     bmsChannels: [BmsChannelConfig!]!
+    bmsChannelHealth: [BmsChannelHealth!]!
+    bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
 
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
@@ -1380,6 +1382,19 @@ export const typeDefs = /* GraphQL */ `
     channel_secret_masked: String
   }
 
+  type BmsChannelHealth {
+    channel: String!
+    active: Boolean!
+    status: String!            # connected / token_expired / webhook_failed / rate_limited / no_events / send_failed
+    status_detail: String
+    last_error_at: String
+    last_inbound_event_at: String
+    last_outbound_success_at: String
+    last_checked_at: String
+  }
+
+  type BmsTestChannelResult { ok: Boolean!  message: String! }
+
   input RegisterPushTokenInput {
     platform: String! # 'android'
     fcmToken: String!
@@ -1786,6 +1801,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
+    bmsTestChannel(channel: String!): BmsTestChannelResult!
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!

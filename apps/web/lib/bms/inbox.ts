@@ -13,6 +13,7 @@
 
 import { query } from "@/lib/db";
 import { getChannel } from "./channels";
+import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -472,6 +473,12 @@ export async function deliverToChannel(
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
         body: JSON.stringify({ to, messages }),
       });
+      if (resp.ok) {
+        await recordOutboundSuccess(tenantId, "line");
+      } else {
+        const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
+        await recordOutboundError(tenantId, "line", resp.status, detail);
+      }
       return resp.ok;
     } catch (e) {
       console.error("[BMS] LINE push failed:", e);
@@ -489,8 +496,23 @@ export async function deliverToChannel(
     });
     try {
       let ok = true;
-      if (outText) ok = (await send({ text: outText })).ok && ok;
-      if (img) ok = (await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } })).ok && ok;
+      let lastFailed: Response | null = null;
+      if (outText) {
+        const resp = await send({ text: outText });
+        if (!resp.ok) lastFailed = resp;
+        ok = resp.ok && ok;
+      }
+      if (img) {
+        const resp = await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } });
+        if (!resp.ok) lastFailed = resp;
+        ok = resp.ok && ok;
+      }
+      if (lastFailed) {
+        const detail = formatOutboundErrorDetail(lastFailed, await lastFailed.text().catch(() => ""));
+        await recordOutboundError(tenantId, channel, lastFailed.status, detail);
+      } else {
+        await recordOutboundSuccess(tenantId, channel);
+      }
       return ok;
     } catch (e) {
       console.error(`[BMS] ${channel} send failed:`, e);

@@ -244,14 +244,36 @@ export default function Page() {
 
           <Sec id="settings">
             <Title level={4}>13. Settings — เชื่อมช่องทาง</Title>
-            <Paragraph>เมนู <Link href="/admin/settings">Settings</Link> — LINE / TikTok / Facebook Messenger / Instagram DM / Website Live Chat</Paragraph>
+            <Paragraph>เมนู <Link href="/admin/settings">Settings</Link> — LINE / TikTok / Facebook Messenger / Instagram DM / Website Live Chat / Shopee (beta) / Lazada (beta)</Paragraph>
             <Steps direction="vertical" size="small" current={-1} items={[
               { title: "คัดลอก Webhook URL", description: <Text code>{`{origin}/api/bms/{channel}/webhook/{tenantId}`}</Text> },
               { title: "ตั้งใน console ของแพลตฟอร์ม", description: "LINE Developers / TikTok / Meta App → วาง Webhook URL + เปิด webhook" },
               { title: "วาง Access Token + Secret", description: "LINE=channel token+secret · FB/IG=Page token + App Secret (ใช้เป็น verify token+signature) · เก็บเข้ารหัส AES-256-GCM" },
               { title: "เสร็จ!", description: "ลูกค้าทัก → verify signature → AI ตอบด้วย token ของร้าน → โผล่ใน Inbox" },
             ]} />
-            <Alert type="warning" showIcon message="ทุก webhook ตรวจ signature — request ที่ signature ไม่ตรงถูกปฏิเสธ (401) · Website chat เป็น public (rate-limit + CORS)" />
+            <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="ทุก webhook ตรวจ signature — request ที่ signature ไม่ตรงถูกปฏิเสธ (401) · Website chat เป็น public (rate-limit + CORS) · Shopee/Lazada เป็น beta — เชื่อม webhook ได้แต่ตอบกลับอัตโนมัติยังไม่ได้" />
+
+            <Title level={5}>สถานะเชื่อมต่อ (Channel Health)</Title>
+            <Paragraph>แต่ละการ์ดช่องทางมี badge บอกสุขภาพจริง แยกจากสวิตช์เปิด/ปิด — เห็นได้ 3 จุด: การ์ดใน Settings, badge สีแดงที่เมนู Settings บน sidebar, และ alert ที่ Dashboard</Paragraph>
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="status"
+              dataSource={[
+                { status: "ยังไม่ตั้งค่า", color: "default", desc: "ยังไม่กรอก token/secret" },
+                { status: "เชื่อมต่อสำเร็จ", color: "green", desc: "webhook verify + ping ปกติ — มีปุ่ม \"ทดสอบ\" ให้กด (เฉพาะ LINE/FB/IG)" },
+                { status: "Token หมดอายุ/ถูก revoke", color: "red", desc: "เรียก Send API แล้วโดน 401/403" },
+                { status: "Webhook verify ไม่ผ่าน", color: "red", desc: "signature ไม่ตรง — เช็ค Channel Secret" },
+                { status: "โดน Rate Limit", color: "gold", desc: "แพลตฟอร์มตอบ 429 — แสดง retry-after ถ้ามี" },
+                { status: "ไม่มีข้อความเข้านานผิดปกติ", color: "gold", desc: "ไม่มี event เกิน 3 วัน — เช็ค Webhook URL ฝั่ง console" },
+                { status: "รับข้อความได้ แต่ตอบกลับไม่ได้", color: "red", desc: "inbound โอเค แต่ Send API ล้มเหลว" },
+                { status: "ปิดใช้งานเอง", color: "default", desc: "admin กดปิดสวิตช์" },
+              ]}
+              columns={[
+                { title: "สถานะ", dataIndex: "status", render: (t: string, r: any) => <Tag color={r.color}>{t}</Tag> },
+                { title: "ความหมาย / วิธีแก้", dataIndex: "desc" },
+              ]}
+            />
           </Sec>
 
           <Sec id="billing">

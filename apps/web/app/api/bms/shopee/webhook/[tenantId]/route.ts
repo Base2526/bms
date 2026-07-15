@@ -17,6 +17,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
+import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const sig = req.headers.get("x-shopee-signature") || req.headers.get("authorization");
     const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
     if (!sig || sig !== mac) {
+      await recordWebhookVerifyFailed(tenantId, "shopee");
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     }
   }
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     // TODO(prod): ยิงกลับผ่าน Shopee Chat API ด้วย cfg.access_token (ยังไม่ implement)
     replies.push({ userId, reply: result.reply });
   }
+  if (replies.length > 0) await recordInboundEvent(tenantId, "shopee");
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }
