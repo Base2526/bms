@@ -32,6 +32,9 @@ import {
   SafetyOutlined,
   GlobalOutlined,
   MoreOutlined,
+  ApiOutlined,
+  RocketOutlined,
+  ShopOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -93,8 +96,10 @@ export default function HeaderBar({
   isMobile = false,
 }: HeaderBarProps) {
   const router = useRouter();
-  const { user: userSession, refreshSession } = useSession();
+  const { user: userSession, admin: adminSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
+  const isAdminSession = Boolean(adminSession);
+  const hasSession = Boolean(userSession || adminSession);
 
   const [viewMode, setViewMode] = useState<ViewMode>(isMobile ? "mobile" : "desktop");
   const isMobileView = viewMode === "mobile";
@@ -195,7 +200,7 @@ export default function HeaderBar({
   };
 
   async function onLogout() {
-    const res = await fetch("/api/auth/logout", { method: "POST" });
+    const res = await fetch(isAdminSession ? "/api/auth/logout-admin" : "/api/auth/logout", { method: "POST" });
     if (res.ok) {
       message.success(t("common.logged_out"));
       try {
@@ -327,19 +332,43 @@ export default function HeaderBar({
     onClick: () => changeLang(lng),
   }));
 
-  const profileMenu: MenuProps["items"] = [
-    {
-      key: "settings",
-      label: <Link href="/settings">{t("common.settings")}</Link>,
-      icon: <SettingOutlined />,
-    },
-    { type: "divider" },
-    {
-      key: "logout",
-      label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
-      icon: <ReloadOutlined />,
-    },
-  ];
+  const profileMenu: MenuProps["items"] = isAdminSession
+    ? [
+        {
+          key: "dashboard",
+          label: <Link href="/admin/dashboard">{t("header.dashboard")}</Link>,
+          icon: <ShopOutlined />,
+        },
+        {
+          key: "inbox",
+          label: <Link href="/admin/inbox">{t("header.inbox")}</Link>,
+          icon: <MessageOutlined />,
+        },
+        {
+          key: "settings",
+          label: <Link href="/admin/settings">{t("common.settings")}</Link>,
+          icon: <SettingOutlined />,
+        },
+        { type: "divider" },
+        {
+          key: "logout",
+          label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
+          icon: <ReloadOutlined />,
+        },
+      ]
+    : [
+        {
+          key: "settings",
+          label: <Link href="/settings">{t("common.settings")}</Link>,
+          icon: <SettingOutlined />,
+        },
+        { type: "divider" },
+        {
+          key: "logout",
+          label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
+          icon: <ReloadOutlined />,
+        },
+      ];
 
   const iconButtonStyle: React.CSSProperties = {
     borderRadius: 14,
@@ -354,7 +383,29 @@ export default function HeaderBar({
   const mobileOverflowMenu: MenuProps["items"] = useMemo(() => {
     const items: MenuProps["items"] = [];
 
-    if (userSession) {
+    if (isAdminSession) {
+      items.push(
+        {
+          key: "dashboard",
+          label: t("header.dashboard"),
+          icon: <ShopOutlined />,
+          onClick: () => router.push("/admin/dashboard"),
+        },
+        {
+          key: "inbox",
+          label: t("header.inbox"),
+          icon: <MessageOutlined />,
+          onClick: () => router.push("/admin/inbox"),
+        },
+        {
+          key: "settings",
+          label: t("common.settings"),
+          icon: <SettingOutlined />,
+          onClick: () => router.push("/admin/settings"),
+        },
+        { type: "divider" }
+      );
+    } else if (userSession) {
       items.push(
         // {
         //   key: "new-post",
@@ -364,7 +415,7 @@ export default function HeaderBar({
         // },
         {
           key: "blocked",
-          label: "Blocked",
+          label: t("header.blocked"),
           icon: <SafetyOutlined />,
           onClick: () => router.push("/blocked?tab=blocked"),
         },
@@ -381,8 +432,36 @@ export default function HeaderBar({
           { type: "divider" }
         );
       }
-    } else if (SHOW_HEADER_HELP) {
+    } else {
       items.push(
+        {
+          key: "workflow",
+          label: t("header.workflow"),
+          icon: <ApiOutlined />,
+          onClick: () => router.push("/#workflow"),
+        },
+        {
+          key: "security",
+          label: t("header.security"),
+          icon: <SafetyOutlined />,
+          onClick: () => router.push("/#security"),
+        },
+        {
+          key: "pricing",
+          label: t("header.pricing"),
+          icon: <ShopOutlined />,
+          onClick: () => router.push("/#pricing"),
+        },
+        {
+          key: "signup",
+          label: t("header.startFree"),
+          icon: <RocketOutlined />,
+          onClick: () => router.push("/shop-signup"),
+        },
+        { type: "divider" }
+      );
+
+      if (SHOW_HEADER_HELP) items.push(
         {
           key: "help",
           label: t("header.help") || "Help",
@@ -421,7 +500,7 @@ export default function HeaderBar({
     );
 
     return items;
-  }, [changeLang, currentLang, router, t, userSession]);
+  }, [changeLang, currentLang, isAdminSession, router, t, userSession]);
 
   return (
     <>
@@ -572,6 +651,14 @@ export default function HeaderBar({
             </div>
           )}
 
+          {!isMobileView && !hasSession && !SHOW_HEADER_SEARCH && (
+            <nav className="jachoei-product-nav" aria-label={t("header.productNavigation")}>
+              <Link href="/#workflow">{t("header.workflow")}</Link>
+              <Link href="/#security">{t("header.security")}</Link>
+              <Link href="/#pricing">{t("header.pricing")}</Link>
+            </nav>
+          )}
+
           <div className="jachoei-header-right">
             <Space size={isMobileView ? 4 : 6} align="center">
               {isMobileView && SHOW_HEADER_SEARCH && (
@@ -593,11 +680,11 @@ export default function HeaderBar({
                       style={iconButtonStyle}
                       onClick={() => router.push("/post/new")}
                       icon={<PlusOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />}
-                      aria-label="New post"
+                      aria-label={t("header.newPost")}
                     />
                   </Tooltip>
 
-                  <Tooltip title={t("header.chat") || "ข้อความ"}>
+                  <Tooltip title={t("header.chat")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}
@@ -610,7 +697,7 @@ export default function HeaderBar({
                     />
                   </Tooltip>
 
-                  <Tooltip title={t("header.notifications") || "แจ้งเตือน"}>
+                  <Tooltip title={t("header.notifications")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}
@@ -671,7 +758,7 @@ export default function HeaderBar({
               )}
 
               {isDesktopView && SHOW_HEADER_HELP && (
-                <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
+                <Tooltip title={t("header.help")}>
                   <Button
                     type="text"
                     style={iconButtonStyle}
@@ -681,34 +768,60 @@ export default function HeaderBar({
                 </Tooltip>
               )}
 
-              {userSession ? (
-                <Dropdown
-                  menu={{ items: profileMenu }}
-                  trigger={["click"]}
-                  placement="bottomRight"
-                  arrow
-                >
-                  <Avatar
-                    size={isMobileView ? 34 : 38}
-                    src={me?.avatar}
-                    style={{
-                      background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
-                      cursor: "pointer",
-                      boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
-                      border: "2px solid rgba(var(--app-surface-rgb),0.9)",
-                    }}
-                    icon={<UserOutlined />}
-                  />
-                </Dropdown>
+              {hasSession ? (
+                <>
+                  {isAdminSession && isDesktopView && (
+                    <Button
+                      type="primary"
+                      icon={<ShopOutlined />}
+                      size="large"
+                      onClick={() => router.push("/admin/dashboard")}
+                      className="jachoei-signup-btn"
+                    >
+                      {t("header.dashboard")}
+                    </Button>
+                  )}
+                  <Dropdown
+                    menu={{ items: profileMenu }}
+                    trigger={["click"]}
+                    placement="bottomRight"
+                    arrow
+                  >
+                    <Avatar
+                      size={isMobileView ? 34 : 38}
+                      src={isAdminSession ? undefined : me?.avatar}
+                      style={{
+                        background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
+                        cursor: "pointer",
+                        boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
+                        border: "2px solid rgba(var(--app-surface-rgb),0.9)",
+                      }}
+                      icon={<UserOutlined />}
+                    />
+                  </Dropdown>
+                </>
               ) : (
-                <Button
-                  icon={<LoginOutlined />}
-                  size={isMobileView ? "middle" : "large"}
-                  onClick={() => router.push("/admin/login")}
-                  className="jachoei-login-btn"
-                >
-                  {!isMobileView && t("common.login")}
-                </Button>
+                <>
+                  {isDesktopView && (
+                    <Button
+                      type="primary"
+                      icon={<RocketOutlined />}
+                      size="large"
+                      onClick={() => router.push("/shop-signup")}
+                      className="jachoei-signup-btn"
+                    >
+                      {t("header.startFree")}
+                    </Button>
+                  )}
+                  <Button
+                    icon={<LoginOutlined />}
+                    size={isMobileView ? "middle" : "large"}
+                    onClick={() => router.push("/admin/login")}
+                    className="jachoei-login-btn"
+                  >
+                    {!isMobileView && t("common.login")}
+                  </Button>
+                </>
               )}
             </Space>
           </div>
@@ -852,6 +965,27 @@ export default function HeaderBar({
           justify-content: center;
         }
 
+        .jachoei-product-nav {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 26px;
+        }
+
+        .jachoei-product-nav a {
+          color: rgba(var(--app-text-rgb),0.66);
+          font-size: 14px;
+          font-weight: 600;
+          text-decoration: none;
+          transition: color .18s ease;
+          white-space: nowrap;
+        }
+
+        .jachoei-product-nav a:hover {
+          color: var(--app-primary);
+        }
+
         .jachoei-search-wrap {
           width: 100%;
           max-width: 100%;
@@ -867,6 +1001,7 @@ export default function HeaderBar({
         }
 
         .jachoei-header-right {
+          grid-column: 3;
           flex-shrink: 0;
           display: flex;
           align-items: center;
@@ -922,6 +1057,13 @@ export default function HeaderBar({
           height: 40px !important;
           border: 1px solid var(--app-border) !important;
           box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
+        }
+
+        .jachoei-signup-btn {
+          border-radius: 999px !important;
+          padding-inline: 16px !important;
+          height: 40px !important;
+          box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),0.18) !important;
         }
 
         .jachoei-mobile-search-backdrop {
@@ -994,6 +1136,16 @@ export default function HeaderBar({
           .jachoei-lang-btn {
             padding-inline: 10px !important;
           }
+
+          .jachoei-product-nav {
+            gap: 16px;
+          }
+        }
+
+        @media (max-width: 939px) {
+          .jachoei-product-nav {
+            display: none;
+          }
         }
 
         @media (max-width: 767px) {
@@ -1005,6 +1157,10 @@ export default function HeaderBar({
 
           .jachoei-header-left {
             min-width: 0;
+          }
+
+          .jachoei-header-right {
+            grid-column: 2;
           }
 
           .jachoei-brand-link {

@@ -1,7 +1,8 @@
 'use client';
-import { gql, useQuery } from "@apollo/client";
-import { Card, Descriptions, Avatar, Tag, Space, Alert, Button, Row, Col, Empty } from "antd";
-import { UserOutlined, ReloadOutlined, CrownOutlined, ShopOutlined, SafetyOutlined } from "@ant-design/icons";
+import { gql, useQuery, useMutation } from "@apollo/client";
+import { Card, Descriptions, Avatar, Tag, Space, Alert, Button, Row, Col, Empty, Upload, Form, Input, Select, message } from "antd";
+import { UserOutlined, ReloadOutlined, CrownOutlined, ShopOutlined, SafetyOutlined, UploadOutlined, SaveOutlined } from "@ant-design/icons";
+import { useEffect, useState } from "react";
 
 const Q = gql`
   query {
@@ -14,15 +15,92 @@ const Q = gql`
   }
 `;
 
+const M_UPLOAD_AVATAR = gql`
+  mutation($user_id: ID!, $file: Upload!) {
+    uploadAvatar(user_id: $user_id, file: $file)
+  }
+`;
+
+const M_UPDATE_ME = gql`
+  mutation($data: MeInput!) {
+    updateMe(data: $data) {
+      id
+      name
+      email
+      phone
+      username
+      language
+      avatar
+    }
+  }
+`;
+
 const fmtDate = (v?: string | null) =>
   v ? new Date(v).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-";
 
 export default function Page() {
+  const [form] = Form.useForm();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
+  const [uploadAvatar, { loading: uploadingAvatar }] = useMutation(M_UPLOAD_AVATAR);
+  const [updateMe, { loading: saving }] = useMutation(M_UPDATE_ME);
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
 
   if (error) return <Alert type="error" showIcon message="โหลดโปรไฟล์ไม่ได้" description={error.message} />;
 
   const me = data?.bmsMe;
+
+  useEffect(() => {
+    if (!me) return;
+    form.setFieldsValue({
+      name: me.name || "",
+      phone: me.phone || "",
+      language: me.language || "th",
+      email: me.email || "",
+      username: me.username || "",
+    });
+    setAvatarUrl(me.avatar || "");
+  }, [form, me]);
+
+  async function handleUpload(file: File) {
+    if (!me?.id) return false;
+    try {
+      const { data } = await uploadAvatar({ variables: { user_id: me.id, file } });
+      const url = data?.uploadAvatar;
+      if (url) {
+        setAvatarUrl(url);
+        message.success("อัปโหลดรูปโปรไฟล์แล้ว");
+        refetch();
+      } else {
+        message.error("อัปโหลดรูปไม่สำเร็จ");
+      }
+    } catch (err: any) {
+      message.error(err?.message || "อัปโหลดรูปไม่สำเร็จ");
+    }
+    return false;
+  }
+
+  async function onSave(values: any) {
+    try {
+      const res = await updateMe({
+        variables: {
+          data: {
+            name: values.name?.trim() || "",
+            phone: values.phone?.trim() || "",
+            language: values.language || "th",
+          },
+        },
+      });
+
+      if (res?.data?.updateMe?.id) {
+        message.success("บันทึกโปรไฟล์แล้ว");
+        refetch();
+      } else {
+        message.error("บันทึกไม่สำเร็จ");
+      }
+    } catch (err: any) {
+      message.error(err?.message || "บันทึกไม่สำเร็จ");
+    }
+  }
 
   return (
     <div>
@@ -39,7 +117,12 @@ export default function Page() {
           <Col xs={24} md={8}>
             <Card>
               <Space direction="vertical" align="center" style={{ width: "100%" }} size={12}>
-                <Avatar size={88} src={me.avatar || undefined} icon={<UserOutlined />} />
+                <Avatar size={88} src={avatarUrl || undefined} icon={<UserOutlined />} />
+                <Upload accept="image/*" showUploadList={false} beforeUpload={handleUpload}>
+                  <Button icon={<UploadOutlined />} loading={uploadingAvatar}>
+                    เปลี่ยนรูปโปรไฟล์
+                  </Button>
+                </Upload>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontSize: 18, fontWeight: 600 }}>{me.name || me.username || me.email}</div>
                   <div style={{ color: "var(--app-text-secondary, #888)" }}>{me.email}</div>
@@ -57,18 +140,63 @@ export default function Page() {
           {/* รายละเอียด */}
           <Col xs={24} md={16}>
             <Card title="ข้อมูลบัญชี" style={{ marginBottom: 16 }}>
-              <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
-                <Descriptions.Item label="ชื่อ">{me.name || "-"}</Descriptions.Item>
-                <Descriptions.Item label="Username">{me.username || "-"}</Descriptions.Item>
-                <Descriptions.Item label="อีเมล">{me.email || "-"}</Descriptions.Item>
-                <Descriptions.Item label="เบอร์โทร">{me.phone || "-"}</Descriptions.Item>
-                <Descriptions.Item label="Role">{me.role}</Descriptions.Item>
-                <Descriptions.Item label="ภาษา">{me.language || "-"}</Descriptions.Item>
-                <Descriptions.Item label="สมาชิกตั้งแต่" span={2}>{fmtDate(me.created_at)}</Descriptions.Item>
-                <Descriptions.Item label="User ID" span={2}>
-                  <span style={{ fontFamily: "monospace", fontSize: 12 }}>{me.id}</span>
-                </Descriptions.Item>
-              </Descriptions>
+              <Form form={form} layout="vertical" onFinish={onSave}>
+                <Row gutter={12}>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="name" label="ชื่อ" rules={[{ required: true, message: "ระบุชื่อ" }]}>
+                      <Input placeholder="ชื่อที่ใช้แสดง" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="phone" label="เบอร์โทร">
+                      <Input placeholder="เบอร์โทร" />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item name="username" label="Username">
+                      <Input disabled />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="email" label="อีเมล">
+                      <Input disabled />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item name="language" label="ภาษา">
+                      <Select
+                        options={[
+                          { value: "th", label: "ไทย" },
+                          { value: "en", label: "English" },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Role">
+                      <Input value={me.role} disabled />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
+                  <Descriptions.Item label="สมาชิกตั้งแต่" span={2}>{fmtDate(me.created_at)}</Descriptions.Item>
+                  <Descriptions.Item label="User ID" span={2}>
+                    <span style={{ fontFamily: "monospace", fontSize: 12 }}>{me.id}</span>
+                  </Descriptions.Item>
+                </Descriptions>
+
+                <Space>
+                  <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>
+                    บันทึกข้อมูล
+                  </Button>
+                  <Button onClick={() => form.resetFields()} disabled={saving || loading}>
+                    รีเซ็ต
+                  </Button>
+                </Space>
+              </Form>
             </Card>
 
             <Card title={<><ShopOutlined /> ร้านที่สังกัด</>} style={{ marginBottom: 16 }}>

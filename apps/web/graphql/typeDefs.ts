@@ -663,7 +663,7 @@ export const typeDefs = /* GraphQL */ `
     myContactSpamMarkedPhoneKeys: [String!]!
 
     # ===== BMS orders (admin) =====
-    bmsOrders(status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
+    bmsOrders(search: String, status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
     bmsOrder(id: ID!): BmsOrder
     bmsOrderJourney(orderId: ID!): BmsOrderJourney
 
@@ -674,16 +674,16 @@ export const typeDefs = /* GraphQL */ `
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
 
     # ===== BMS Purchase (admin) =====
-    bmsPurchaseOrders(limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
+    bmsPurchaseOrders(search: String, limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
     bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
     bmsSuppliers: [BmsSupplier!]!
 
     # ===== BMS Payment (admin) =====
-    bmsPayments(orderId: ID, status: BmsPaymentStatus, limit: Int = 50, offset: Int = 0): [BmsPayment!]!
+    bmsPayments(search: String, orderId: ID, status: BmsPaymentStatus, limit: Int = 50, offset: Int = 0): [BmsPayment!]!
     bmsPayment(id: ID!): BmsPayment
 
     # ===== BMS Shipping (admin) =====
-    bmsShipments(orderId: ID, status: BmsShipmentStatus, limit: Int = 50, offset: Int = 0): [BmsShipment!]!
+    bmsShipments(search: String, orderId: ID, status: BmsShipmentStatus, limit: Int = 50, offset: Int = 0): [BmsShipment!]!
     bmsShipment(id: ID!): BmsShipment
     bmsShipmentLabel(id: ID!): BmsShipmentLabel
 
@@ -1065,6 +1065,7 @@ export const typeDefs = /* GraphQL */ `
     keywords: [String!]!
     barcode: String
     imageUrl: String
+    images: [Image!]!
     description: String
     costPrice: Float
     category: String
@@ -1085,6 +1086,7 @@ export const typeDefs = /* GraphQL */ `
     active: Boolean
     barcode: String
     image_url: String
+    image_urls: [String!]
     description: String
     cost_price: Float
     category: String

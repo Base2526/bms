@@ -69,10 +69,18 @@ const iconWithBadge = (icon: React.ReactNode, count: number) => (
   </span>
 );
 
-// collapsed = true → badge เกาะไอคอน (เห็นตอนย่อ) · false → pill ชิดขวาในแถว (ตอนขยาย ไม่ทับ label)
-const link = (href: string, text: string, icon: React.ReactNode, badge = 0, collapsed = false) => ({
+// collapsed = true → badge เกาะไอคอน (เห็นตอนย่อ) เฉพาะเมนูหลักที่จำเป็นจริง
+// เมนูย่อยใน popup ของ antd ถ้าใส่ badge ไว้ในสล็อต icon จะทำให้ label หายบางรายการ
+const link = (
+  href: string,
+  text: string,
+  icon: React.ReactNode,
+  badge = 0,
+  collapsed = false,
+  showCollapsedBadge = false,
+) => ({
   key: href,
-  icon: collapsed && badge > 0 ? iconWithBadge(icon, badge) : icon,
+  icon: collapsed && showCollapsedBadge && badge > 0 ? iconWithBadge(icon, badge) : icon,
   // flex+pill เฉพาะตอนขยาย+มี badge (Inbox) เท่านั้น — item อื่น/ลูกเมนูใน popup ใช้ Link ธรรมดา
   // ไม่งั้น span flex:1 overflow:hidden จะยุบเหลือ 0 ใน popup flyout ตอนย่อ → text หาย
   label:
@@ -141,7 +149,7 @@ export default function AdminSidebar() {
   // Reports/คู่มือ ใช้ไม่บ่อยเท่า Inbox → Reports ย้ายลงมาไว้หลังกลุ่มร้านค้า, คู่มือย้ายไปแถบล่างสุด
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
-    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed)] : []),
+    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed, true)] : []),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
     ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
     {

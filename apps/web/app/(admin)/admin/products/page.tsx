@@ -54,6 +54,7 @@ type Product = {
   keywords: string[];
   barcode: string | null;
   imageUrl: string | null;
+  images: Array<{ id: string | number; url: string }>;
   description: string | null;
   costPrice: number | null;
   category: string | null;
@@ -84,6 +85,7 @@ const Q_PRODUCTS = gql`
         keywords
         barcode
         imageUrl
+        images { id url }
         description
         costPrice
         category
@@ -193,7 +195,7 @@ function ProductsManagement() {
   const categories: { id: string; name: string }[] = catData?.bmsProductCategories || [];
   const lowCount: number = lowData?.bmsLowStock?.length || 0;
 
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   // ยี่ห้อ: พิมพ์อิสระได้ (autocomplete จากค่าที่เคยใช้) — หมวดหมู่ใช้ list กลางที่จัดการแล้ว (bmsProductCategories)
   const brandOptions = useMemo(
@@ -203,14 +205,20 @@ function ProductsManagement() {
 
   const openCreate = () => {
     setEditing(null);
-    setImageUrl(null);
+    setImageUrls([]);
     form.resetFields();
     form.setFieldsValue({ active: true, keywords: [] });
     setModalOpen(true);
   };
   const openEdit = (p: Product) => {
     setEditing(p);
-    setImageUrl(p.imageUrl || null);
+    setImageUrls(
+      Array.isArray(p.images) && p.images.length > 0
+        ? p.images.map((img) => img.url)
+        : p.imageUrl
+          ? [p.imageUrl]
+          : []
+    );
     form.setFieldsValue({
       sku: p.sku, name: p.name, price: p.price,
       keywords: p.keywords, active: p.active, barcode: p.barcode || "",
@@ -228,7 +236,7 @@ function ProductsManagement() {
       const res = await fetch("/api/bms/products/upload", { method: "POST", body: fd, credentials: "include" });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || "อัปโหลดรูปไม่สำเร็จ");
-      setImageUrl(j.url);
+      setImageUrls((prev) => (prev.includes(j.url) ? prev : [...prev, j.url]));
       message.success("อัปโหลดรูปแล้ว");
     } catch (e: any) {
       message.error(e?.message || "อัปโหลดรูปไม่สำเร็จ");
@@ -246,7 +254,8 @@ function ProductsManagement() {
           sku: v.sku.trim(), name: v.name.trim(), price: Number(v.price),
           keywords: v.keywords || [], active: v.active,
           barcode: v.barcode?.trim() || null,
-          image_url: imageUrl || null,
+          image_url: imageUrls[0] || null,
+          image_urls: imageUrls,
           description: v.description?.trim() || null,
           cost_price: v.costPrice != null && v.costPrice !== "" ? Number(v.costPrice) : null,
           category: v.category?.trim() || null,
@@ -262,7 +271,30 @@ function ProductsManagement() {
         title: "", key: "image", width: 56,
         render: (_: any, p: Product) =>
           p.imageUrl
-            ? <Image src={p.imageUrl} alt={p.name} width={40} height={40} style={{ objectFit: "cover", borderRadius: 6 }} />
+            ? (
+              <div style={{ position: "relative", width: 40, height: 40 }}>
+                <Image src={p.imageUrl} alt={p.name} width={40} height={40} style={{ objectFit: "cover", borderRadius: 6 }} />
+                {(p.images?.length || 0) > 1 && (
+                  <span style={{
+                    position: "absolute",
+                    right: -6,
+                    bottom: -6,
+                    minWidth: 18,
+                    height: 18,
+                    padding: "0 4px",
+                    borderRadius: 999,
+                    background: "#1677ff",
+                    color: "#fff",
+                    fontSize: 10,
+                    lineHeight: "18px",
+                    textAlign: "center",
+                    boxShadow: "0 0 0 2px #fff",
+                  }}>
+                    +{p.images.length - 1}
+                  </span>
+                )}
+              </div>
+            )
             : <Avatar shape="square" size={40} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />,
       },
       { title: "SKU", dataIndex: "sku", key: "sku", width: 120,
@@ -401,22 +433,59 @@ function ProductsManagement() {
       <Modal
         title={editing ? `แก้ไขสินค้า: ${editing.sku}` : "เพิ่มสินค้า"}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); setImageUrl(null); form.resetFields(); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); setImageUrls([]); form.resetFields(); }}
         onOk={submit} confirmLoading={saving}
         okText={editing ? "บันทึก" : "สร้าง"} width={560}
       >
         <Form form={form} layout="vertical" autoComplete="off">
-          <Form.Item label="รูปสินค้า">
-            <Space align="start">
-              {imageUrl
-                ? <Image src={imageUrl} alt="preview" width={72} height={72} style={{ objectFit: "cover", borderRadius: 8 }} />
-                : <Avatar shape="square" size={72} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />}
-              <Upload accept="image/*" showUploadList={false} beforeUpload={uploadImage}>
+          <Form.Item label="รูปสินค้า" extra="รูปแรกจะถูกใช้เป็นรูปหลักของสินค้า">
+            <Space align="start" wrap>
+              {imageUrls.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxWidth: 320 }}>
+                  {imageUrls.map((url, index) => (
+                    <div key={`${url}-${index}`} style={{ position: "relative" }}>
+                      <Image
+                        src={url}
+                        alt={`preview-${index + 1}`}
+                        width={72}
+                        height={72}
+                        style={{ objectFit: "cover", borderRadius: 8 }}
+                      />
+                      {index === 0 && (
+                        <Tag color="blue" style={{ position: "absolute", left: 4, top: 4, margin: 0 }}>
+                          Cover
+                        </Tag>
+                      )}
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={() => setImageUrls((prev) => prev.filter((_, imageIndex) => imageIndex !== index))}
+                        style={{
+                          position: "absolute",
+                          right: 2,
+                          top: 2,
+                          background: "rgba(255,255,255,0.92)",
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Avatar shape="square" size={72} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />
+              )}
+              <Upload accept="image/*" multiple showUploadList={false} beforeUpload={uploadImage}>
                 <Button icon={<UploadOutlined />} loading={uploadingImage}>
-                  {imageUrl ? "เปลี่ยนรูป" : "อัปโหลดรูป"}
+                  {imageUrls.length > 0 ? "เพิ่มรูป" : "อัปโหลดรูป"}
                 </Button>
               </Upload>
-              {imageUrl && <Button type="text" danger onClick={() => setImageUrl(null)}>ลบรูป</Button>}
+              {imageUrls.length > 0 && (
+                <Button type="text" danger onClick={() => setImageUrls([])}>
+                  ลบรูปทั้งหมด
+                </Button>
+              )}
             </Space>
           </Form.Item>
 

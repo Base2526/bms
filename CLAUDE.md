@@ -32,6 +32,7 @@ for the full philosophy and module breakdown.
 | [docs/integrations/lazada.md](docs/integrations/lazada.md) | Lazada + Shopee beta scaffold — what's real vs. placeholder |
 | [docs/ui/customer360.md](docs/ui/customer360.md) | Inbox "ลูกค้า" purchase-history tab, cross-channel merge, reorder |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
+| [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
 | [CLAUDE.local.md](CLAUDE.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
 
 ## Current status (2026-07)
@@ -51,6 +52,21 @@ orders/products/cart/notes (eager) plus a lazy cross-channel timeline and AI-gen
 This is a different, richer view than the "ลูกค้า" purchase-history tab documented in
 [docs/ui/customer360.md](docs/ui/customer360.md); both coexist.
 
+**Recent frontend/admin additions (2026-07)** — ✅ implemented:
+
+- **Public landing + signup refresh**: `/` is now an interactive bilingual infographic with
+  session-aware CTAs (logged-in admins are sent toward `/admin/dashboard`, logged-out users toward
+  `/shop-signup`). `/shop-signup` was rebuilt with auth-safe provider boundaries and pure CSS Module
+  selectors to avoid the blank/500 page failure mode.
+- **Product gallery**: products support multiple images through migration
+  `6.5__bms_product_images.sql`; `image_url` remains the cover image for backward compatibility and
+  `images[]` is the ordered gallery used by the Products page.
+- **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
+  name/phone/language via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
+  search arguments with debounced live search, while Customers keeps its existing search by
+  name/phone.
+
 **Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
 AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI · Shopee/Lazada
 signature verification against real Open Platform docs · letting shop owners (Manager role)
@@ -66,3 +82,25 @@ manage their own staff.
 
 Full rules and enum values actually enforced in code: [docs/business/](docs/business/).
 
+## Frontend conventions
+
+- Public product pages live in `apps/web/app/(main)/`; public login, verification, and shop
+  creation pages live in `apps/web/app/(auth)/`.
+- Keep every public auth route, including `/shop-signup`, synchronized with `isAuthPath()` in
+  `apps/web/app/ClientProviders.tsx` so it does not initialize session/chat wires unnecessarily.
+- CSS Modules use pure selectors: every selector in `*.module.css` must include a local class or
+  ID. Global-only selectors such as `:global(.parent:has(...))` fail the Next.js build. Use a local
+  class in the selector (`:global(.parent):has(.localClass)`) or place the rule in `app/globals.css`.
+- The landing page uses the shared `I18nProvider` and the `lang` cookie for Thai/English content.
+  Thai-only typography adjustments must be scoped through `html[lang="th"]` so English layout is
+  unchanged.
+- Public CTAs should react to session state. When a valid admin session already exists, prefer
+  taking the user back into operations (`/admin/dashboard`) instead of showing redundant
+  "start free" / "log in" entry points.
+- Search-heavy admin pages should use GraphQL args and backend filtering, not just in-memory table
+  filtering. This is now the expected pattern for Orders / Purchase / Payment / Shipping.
+- Verify the exact public route in a browser after changing its page, layout, provider boundary,
+  or CSS Module; a TypeScript check alone does not catch CSS selector compilation errors.
+- `docker-compose.dev.yml` isolates `/app/apps/web/.next` and `/app/apps/web/node_modules` in Docker
+  volumes. Keep this isolation: host macOS and container Linux must not write the same Next.js
+  manifests or native dependencies.

@@ -2,14 +2,19 @@
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
-  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic,
+  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
 } from "antd";
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   ReloadOutlined, SendOutlined, UserOutlined,
   SmileOutlined, PictureOutlined, PaperClipOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined, CloseOutlined,
   UserSwitchOutlined, UsergroupAddOutlined, UsergroupDeleteOutlined, CheckCircleOutlined,
+  FireOutlined, ClockCircleOutlined, ShoppingCartOutlined, CreditCardOutlined,
+  TruckOutlined, ThunderboltOutlined, TagsOutlined,
+  LeftOutlined, RightOutlined, DownloadOutlined,
+  EyeOutlined, EyeInvisibleOutlined,
 } from "@ant-design/icons";
 
 const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
@@ -124,6 +129,8 @@ const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta"
 const STATUS_COLOR: Record<ConvStatus, string> = { OPEN: "green", PENDING: "orange", CLOSED: "default" };
 const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
 const LIST_COLLAPSE_KEY = "bms_inbox_list_collapsed";
+const CHAT_HEADER_MODE_KEY = "bms_inbox_chat_header_mode";
+const AI_SUGGESTION_VISIBILITY_KEY = "bms_inbox_ai_suggestion_visibility";
 
 // preview ในลิสต์: ถ้าข้อความล่าสุดเป็น attachment (marker จาก sendStaffMessage) → โชว์ไอคอน
 function previewNode(last?: string | null) {
@@ -131,6 +138,37 @@ function previewNode(last?: string | null) {
   if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> รูปภาพ</>;
   if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || "ไฟล์แนบ"}</>;
   return last;
+}
+
+function convPriority(c: Conversation) {
+  const text = `${c.lastMessage || ""} ${(c.tags || []).join(" ")}`.toLowerCase();
+  if (c.unread > 0) return { label: "ต้องตอบ", color: "red", icon: <FireOutlined /> };
+  if (/สลิป|โอน|paid|payment|ชำระ/.test(text)) return { label: "มีสลิป", color: "blue", icon: <CreditCardOutlined /> };
+  if (/ส่ง|พัสดุ|tracking|จัดส่ง/.test(text) || c.status === "PENDING") return { label: "รอจัดส่ง", color: "purple", icon: <TruckOutlined /> };
+  if (/ราคา|ไซซ์|size|มีไหม|stock|สต็อก/.test(text)) return { label: "ขายต่อ", color: "green", icon: <ShoppingCartOutlined /> };
+  return { label: "ปกติ", color: "default", icon: <ClockCircleOutlined /> };
+}
+
+function suggestedReply(conv: any) {
+  const text = String(conv?.messages?.[conv.messages.length - 1]?.body || conv?.lastMessage || "").toLowerCase();
+  if (/สลิป|โอน|ชำระ|payment|paid/.test(text)) {
+    return "ได้รับสลิปแล้วค่ะ เดี๋ยวตรวจสอบยอดให้ หากเรียบร้อยจะออกเลขพัสดุให้ทันทีนะคะ 🙏";
+  }
+  if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text)) {
+    return "กำลังตรวจสอบสถานะจัดส่งให้นะคะ ถ้ามีเลขพัสดุแล้วจะแจ้งให้ทันทีค่ะ";
+  }
+  if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) {
+    return "เดี๋ยวเช็กสต็อกและราคาให้ค่ะ ลูกค้าต้องการรุ่น/ไซซ์ไหนบ้างคะ";
+  }
+  return "รับทราบค่ะ เดี๋ยวแอดมินตรวจสอบข้อมูลให้และแจ้งกลับโดยเร็วที่สุดนะคะ";
+}
+
+function nextAction(conv: any) {
+  const text = String(conv?.messages?.[conv.messages.length - 1]?.body || "").toLowerCase();
+  if (/สลิป|โอน|ชำระ|payment|paid/.test(text)) return { label: "ขั้นต่อไป", value: "ยืนยันสลิป", icon: <CreditCardOutlined />, color: "#1677ff" };
+  if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text) || conv?.status === "PENDING") return { label: "ขั้นต่อไป", value: "ออกเลขพัสดุ", icon: <TruckOutlined />, color: "#722ed1" };
+  if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) return { label: "ขั้นต่อไป", value: "เช็กสต็อก", icon: <ShoppingCartOutlined />, color: "#389e0d" };
+  return { label: "ขั้นต่อไป", value: "ตอบลูกค้า", icon: <SendOutlined />, color: "#d48806" };
 }
 
 function Inbox() {
@@ -177,6 +215,8 @@ function Inbox() {
     skip: (mineOnly || restrictedToOwn) && !me?.id, // กันยิงก่อนรู้ id ตัวเอง (จะได้ทั้งหมดโดยไม่ตั้งใจ)
   });
   const conversations: Conversation[] = data?.bmsConversations || [];
+  const needReplyCount = conversations.filter((c) => c.unread > 0).length;
+  const pendingCount = conversations.filter((c) => c.status === "PENDING").length;
 
   const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
   const conv = convData?.bmsConversation;
@@ -190,10 +230,15 @@ function Inbox() {
   }, [activeId]); // eslint-disable-line
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
       <div style={{ marginBottom: 10, flexShrink: 0 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Inbox (Omnichannel)</h2>
+          <Space direction="vertical" size={0}>
+            <h2 style={{ margin: 0 }}>BMS Inbox (Omnichannel)</h2>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              ตอบลูกค้า · เช็กสต็อก · ยืนยันสลิป · ส่งต่อจัดส่ง ในหน้าจอเดียว
+            </Typography.Text>
+          </Space>
           <Space>
             {me && (
               <Tooltip title="ปิดไว้ = จะไม่ถูก auto-assign แชทใหม่เข้ามาให้ (แชทที่ถืออยู่แล้วไม่กระทบ)">
@@ -209,10 +254,18 @@ function Inbox() {
         </Space>
       </div>
 
-      <div style={{ display: "flex", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "stretch", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}>
         {/* ---- left: conversation list ---- */}
-        <div style={{ width: listCollapsed ? 72 : 300, flexShrink: 0, minHeight: 0, border: "1px solid var(--app-border, #eee)", borderRadius: 8, padding: listCollapsed ? "10px 6px" : 10, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: listCollapsed ? "center" : "flex-end", marginBottom: 6 }}>
+        <div style={{ width: listCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: 14, padding: listCollapsed ? "10px 6px" : 12, display: "flex", flexDirection: "column", background: "var(--app-card, transparent)", overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: listCollapsed ? "center" : "space-between", alignItems: "center", marginBottom: 8 }}>
+            {!listCollapsed && (
+              <Space direction="vertical" size={0}>
+                <Typography.Text strong>คิวแชท</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {needReplyCount} ต้องตอบ · {pendingCount} รอจัดส่ง
+                </Typography.Text>
+              </Space>
+            )}
             <Tooltip title={listCollapsed ? "ขยาย list" : "ย่อ list"}>
               <Button type="text" size="small"
                 icon={listCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
@@ -221,9 +274,9 @@ function Inbox() {
           </div>
           {!listCollapsed && (
             <>
-              <Segmented block size="small" options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} style={{ marginBottom: 6 }} />
-              <Input.Search size="small" placeholder="ค้นหาชื่อ/ข้อความ/ref" allowClear onSearch={setSearch} style={{ marginBottom: 6 }} />
-              <Space size={6} style={{ marginBottom: 6 }}>
+              <Segmented block size="small" options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} style={{ marginBottom: 8 }} />
+              <Input.Search size="middle" placeholder="ค้นหาชื่อ/ข้อความ/ref" allowClear onSearch={setSearch} style={{ marginBottom: 8 }} />
+              <Space size={6} style={{ marginBottom: 8 }}>
                 {restrictedToOwn ? (
                   <Tooltip title="role Sales เห็นเฉพาะแชทของตัวเองเสมอ">
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>แสดงเฉพาะแชทของฉัน (บังคับ)</Typography.Text>
@@ -238,7 +291,17 @@ function Inbox() {
             </>
           )}
           {/* paddingRight กันไม่ให้ scrollbar ทับ badge ตอนย่อ (คอลัมน์แคบ) */}
-          <div style={{ overflowY: "auto", flex: 1, minHeight: 0, paddingRight: listCollapsed ? 8 : 0 }}>
+          {!listCollapsed && (
+            <Space wrap size={6} style={{ marginBottom: 8 }}>
+              <Tag color="red" icon={<FireOutlined />}>ด่วนก่อน</Tag>
+              <Tag color="blue" icon={<CreditCardOutlined />}>มีสลิป</Tag>
+              <Tag color="green" icon={<ShoppingCartOutlined />}>ถามสินค้า</Tag>
+            </Space>
+          )}
+          <div
+            className="bms-inbox-conversation-scroll"
+            style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0, minWidth: 0, paddingRight: listCollapsed ? 8 : 0 }}
+          >
             <List
               loading={loading} dataSource={conversations}
               locale={{ emptyText: listCollapsed ? null : <Empty description="ไม่มีบทสนทนา" /> }}
@@ -246,12 +309,13 @@ function Inbox() {
                 <List.Item
                   onClick={() => setActiveId(c.id)}
                   style={{
-                    cursor: "pointer", padding: listCollapsed ? "6px 0" : 6, borderRadius: 6,
+                    cursor: "pointer", padding: listCollapsed ? "6px 0" : "14px 12px", borderRadius: 18, marginBottom: 10,
                     display: listCollapsed ? "flex" : undefined,
                     justifyContent: listCollapsed ? "center" : undefined,
-                    // ธีมมืด: ไฮไลต์ด้วยน้ำเงินโปร่ง (ตัวอักษรตามธีม อ่านออก) + ขีดซ้าย
-                    background: activeId === c.id ? "rgba(22,119,255,0.16)" : undefined,
+                    background: activeId === c.id ? "rgba(22,119,255,0.18)" : "#fff",
                     borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
+                    border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : "1px solid rgba(15,23,42,0.06)",
+                    boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : "0 2px 10px rgba(15,23,42,0.04)",
                   }}
                 >
                   {listCollapsed ? (
@@ -259,25 +323,44 @@ function Inbox() {
                       <Badge count={c.unread} size="small"><Avatar size={28} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
-                    <List.Item.Meta
-                      avatar={<Badge count={c.unread} size="small"><Avatar size={28} icon={<UserOutlined />} /></Badge>}
-                      title={
-                        <Space size={4} style={{ width: "100%", justifyContent: "space-between" }}>
-                          <Space size={4}>
-                            <Tag color={CHANNEL_COLOR[c.channel] || "default"}>{c.channel}</Tag>
-                            <span>{c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}</span>
-                          </Space>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, width: "100%", minWidth: 0 }}>
+                      <Badge count={c.unread} size="small">
+                        <Avatar size={40} icon={<UserOutlined />} />
+                      </Badge>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <Space size={6} wrap style={{ width: "100%", rowGap: 6 }}>
+                              <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 500 }}>{c.channel}</Tag>
+                              <Typography.Text strong ellipsis style={{ minWidth: 0, maxWidth: "100%", fontSize: 13 }}>
+                                {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
+                              </Typography.Text>
+                            </Space>
+                          </div>
                           {c.assignedStaff && (
                             <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
-                              <Avatar size={16} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 9, backgroundColor: "#1677ff" }}>
+                              <Avatar size={24} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 10, backgroundColor: "#1677ff", flexShrink: 0 }}>
                                 {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
                               </Avatar>
                             </Tooltip>
                           )}
+                        </div>
+
+                        <Space size={6} wrap>
+                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 500 }}>
+                            {convPriority(c).label}
+                          </Tag>
                         </Space>
-                      }
-                      description={<Typography.Text ellipsis style={{ maxWidth: 220, fontSize: 12 }} type="secondary">{previewNode(c.lastMessage)}</Typography.Text>}
-                    />
+
+                        <Typography.Text ellipsis style={{ width: "100%", fontSize: 12, lineHeight: 1.45 }} type="secondary">
+                          {previewNode(c.lastMessage)}
+                        </Typography.Text>
+
+                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                          {c.lastMessageAt ? `${dayLabel(c.lastMessageAt)} · ${timeLabel(c.lastMessageAt)}` : "ยังไม่มีเวลา"}
+                        </Typography.Text>
+                      </div>
+                    </div>
                   )}
                 </List.Item>
               )}
@@ -286,7 +369,7 @@ function Inbox() {
         </div>
 
         {/* ---- middle: active conversation ---- */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 8, padding: 12 }}>
+        <div style={{ flex: "1 1 0", minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 14, padding: 14, background: "var(--app-card, transparent)" }}>
           {!conv ? (
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
@@ -306,6 +389,9 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<string[]>(conv.tags || []);
+  const [headerMode, setHeaderMode] = useState<"chat" | "details">("chat");
+  const [showAiSuggestion, setShowAiSuggestion] = useState(true);
+  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่ได้");
 
   const [send, { loading: sending }] = useMutation(M_SEND, {
@@ -351,9 +437,48 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     if (canViewCustomer && conv.customerId) loadCustomer({ variables: { id: conv.customerId } });
   }, [conv.customerId, canViewCustomer]); // eslint-disable-line
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(CHAT_HEADER_MODE_KEY);
+    setHeaderMode(saved === "details" ? "details" : "chat");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(AI_SUGGESTION_VISIBILITY_KEY);
+    setShowAiSuggestion(saved !== "hidden");
+  }, []);
+
+  const toggleHeaderMode = () => {
+    setHeaderMode((prev) => {
+      const next = prev === "chat" ? "details" : "chat";
+      if (typeof window !== "undefined") window.localStorage.setItem(CHAT_HEADER_MODE_KEY, next);
+      return next;
+    });
+  };
+
+  const toggleAiSuggestion = () => {
+    setShowAiSuggestion((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(AI_SUGGESTION_VISIBILITY_KEY, next ? "shown" : "hidden");
+      }
+      return next;
+    });
+  };
+
   const canManage = can("inbox.manage");
   const canAssign = can("inbox.assign");
   const canHelp = can("inbox.reply");
+  const action = nextAction(conv);
+  const aiReply = suggestedReply(conv);
+  const aiIntent = action.value === "เช็กสต็อก"
+    ? "ถามสินค้า"
+    : action.value === "ยืนยันสลิป"
+      ? "แจ้งชำระเงิน"
+      : action.value === "ออกเลขพัสดุ"
+        ? "ถามจัดส่ง"
+        : "ต้องตอบลูกค้า";
 
   // กัน primary โผล่เป็น helper ด้วย (เผื่อข้อมูลเก่าก่อน backend cleanup) — คนละบทบาทกัน ห้ามซ้ำ
   const helpers: StaffRef[] = (conv.helpers || []).filter((h: StaffRef) => h.id !== conv.assignedStaff?.id);
@@ -361,68 +486,108 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const helperCandidates = staffList.filter((s) => s.id !== conv.assignedStaff?.id && !helperIds.has(s.id));
 
   const header = (
-    <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
-      <Space direction="vertical" size={0}>
-        <Space>
-          <Tag color={CHANNEL_COLOR[conv.channel] || "default"}>{conv.channel}</Tag>
-          <b>{conv.customerName || conv.customerRef || "ลูกค้า"}</b>
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <Space direction="vertical" size={1} style={{ minWidth: 0, flex: 1 }}>
+          <Space wrap>
+            <Tag color={CHANNEL_COLOR[conv.channel] || "default"}>{conv.channel}</Tag>
+            <Typography.Text strong style={{ fontSize: 16 }}>{conv.customerName || conv.customerRef || "ลูกค้า"}</Typography.Text>
+            <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"}>{conv.status}</Tag>
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{conv.customerRef || conv.id}</Typography.Text>
         </Space>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{conv.customerRef}</Typography.Text>
-      </Space>
-      <Space direction="vertical" size={4} align="end">
-        <Space wrap>
-          <Select size="small" value={conv.status} style={{ width: 120 }} disabled={!canManage}
-            onChange={(v) => setStatus({ variables: { id: conv.id, status: v } })}
-            options={["OPEN", "PENDING", "CLOSED"].map((s) => ({ value: s, label: s }))} />
+        <Space size={8} wrap style={{ justifyContent: "flex-end" }}>
+          <Button
+            size="small"
+            type={headerMode === "chat" ? "primary" : "default"}
+            icon={headerMode === "chat" ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={toggleHeaderMode}
+          >
+            {headerMode === "chat" ? "Work Details" : "Chat Focus"}
+          </Button>
+          <Select size="small" value={conv.status} style={{ width: 110 }} disabled={!canManage}
+              onChange={(v) => setStatus({ variables: { id: conv.id, status: v } })}
+              options={["OPEN", "PENDING", "CLOSED"].map((s) => ({ value: s, label: s }))} />
           <Select
-            size="small" style={{ minWidth: 170 }} disabled={!canAssign} loading={assigning}
+            size="small" style={{ minWidth: 180 }} disabled={!canAssign} loading={assigning}
             value={conv.assignedStaff?.id ?? undefined}
             placeholder="ยังไม่มี staff หลัก"
             onChange={(userId) => assign({ variables: { id: conv.id, userId } })}
             options={staffList.map((s) => ({ value: s.id, label: staffLabel(s) }))}
           />
         </Space>
-        <Space size={4} align="center">
-          <Typography.Text type="secondary" style={{ fontSize: 11 }}>ผู้ช่วยตอบ:</Typography.Text>
-          {helpers.map((h) => (
-            <Tooltip key={h.id} title={h.name || h.email || h.id}>
-              <span style={{ position: "relative", display: "inline-flex" }}>
-                <Avatar size={20} src={h.avatar || undefined} style={{ fontSize: 10 }}>
-                  {(h.name || "?").slice(0, 1).toUpperCase()}
-                </Avatar>
-                {canHelp && (
-                  <CloseOutlined
-                    onClick={() => removeHelper({ variables: { id: conv.id, userId: h.id } })}
-                    style={{ position: "absolute", top: -4, right: -4, fontSize: 9, background: "#ff4d4f", color: "#fff", borderRadius: "50%", padding: 2, cursor: "pointer" }}
-                  />
-                )}
-              </span>
-            </Tooltip>
-          ))}
-          {canHelp && (
-            helperCandidates.length > 0 ? (
-              <Popover
-                trigger="click"
-                placement="bottomRight"
-                content={
-                  <Select
-                    size="small" style={{ width: 200 }} placeholder="เพิ่มคนช่วยตอบ"
-                    options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s) }))}
-                    onSelect={(userId: string) => addHelper({ variables: { id: conv.id, userId } })}
-                  />
-                }
-              >
-                <Button type="dashed" size="small" shape="circle" icon={<PlusOutlined style={{ fontSize: 10 }} />} />
-              </Popover>
-            ) : (
-              <Tooltip title="ยังไม่มี staff คนอื่นในร้านให้เพิ่มเป็นผู้ช่วยตอบ (ไปเพิ่ม staff ที่ /admin/users ก่อน)">
-                <Button type="dashed" size="small" shape="circle" disabled icon={<PlusOutlined style={{ fontSize: 10 }} />} />
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
+          AI: {aiIntent}
+        </Tag>
+        <Tag color={action.color === "#389e0d" ? "green" : action.color === "#1677ff" ? "blue" : action.color === "#722ed1" ? "purple" : "orange"} icon={action.icon} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
+          {action.label}: {action.value}
+        </Tag>
+        {headerMode === "details" && (
+          <Tag color={conv.customerId ? "green" : "default"} icon={<ShoppingCartOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
+            {conv.customerId ? "ผูก CRM แล้ว" : "ยังไม่ผูก CRM"}
+          </Tag>
+        )}
+        {headerMode === "details" && (tags || []).length > 0 && (
+          <Tag color="gold" icon={<TagsOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
+            {tags.length} แท็ก
+          </Tag>
+        )}
+      </div>
+
+      {headerMode === "details" && (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Space size={6} wrap>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>ผู้ช่วยตอบ:</Typography.Text>
+            {helpers.length === 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>ยังไม่มี</Typography.Text>}
+            {helpers.map((h) => (
+              <Tooltip key={h.id} title={h.name || h.email || h.id}>
+                <span style={{ position: "relative", display: "inline-flex" }}>
+                  <Avatar size={18} src={h.avatar || undefined} style={{ fontSize: 9 }}>
+                    {(h.name || "?").slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  {canHelp && (
+                    <CloseOutlined
+                      onClick={() => removeHelper({ variables: { id: conv.id, userId: h.id } })}
+                      style={{ position: "absolute", top: -4, right: -4, fontSize: 8, background: "#ff4d4f", color: "#fff", borderRadius: "50%", padding: 2, cursor: "pointer" }}
+                    />
+                  )}
+                </span>
               </Tooltip>
-            )
+            ))}
+            {canHelp && (
+              helperCandidates.length > 0 ? (
+                <Popover
+                  trigger="click"
+                  placement="bottomRight"
+                  content={
+                    <Select
+                      size="small" style={{ width: 220 }} placeholder="เพิ่มคนช่วยตอบ"
+                      options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s) }))}
+                      onSelect={(userId: string) => addHelper({ variables: { id: conv.id, userId } })}
+                    />
+                  }
+                >
+                  <Button type="dashed" size="small" shape="circle" icon={<PlusOutlined style={{ fontSize: 10 }} />} />
+                </Popover>
+              ) : (
+                <Tooltip title="ยังไม่มี staff คนอื่นในร้านให้เพิ่มเป็นผู้ช่วยตอบ (ไปเพิ่ม staff ที่ /admin/users ก่อน)">
+                  <Button type="dashed" size="small" shape="circle" disabled icon={<PlusOutlined style={{ fontSize: 10 }} />} />
+                </Tooltip>
+              )
+            )}
+          </Space>
+          {canManage && (
+            <Space size={6} wrap>
+              <Select mode="tags" size="small" style={{ minWidth: 180 }} value={tags} onChange={setTags} placeholder="แท็ก" />
+              <Button size="small" onClick={() => saveTags({ variables: { id: conv.id, tags } })}>บันทึกแท็ก</Button>
+            </Space>
           )}
-        </Space>
-      </Space>
-    </Space>
+        </div>
+      )}
+    </div>
   );
 
   const [uploading, setUploading] = useState(false);
@@ -494,6 +659,16 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     | { t: "msg"; at: string; msg: Msg }
     | { t: "event"; at: string; ev: SystemEvent };
   const msgs: Msg[] = conv.messages || [];
+  const chatImages = msgs
+    .filter((m) => m.attachment?.isImage && m.attachment?.url)
+    .map((m) => ({
+      id: m.id,
+      url: m.attachment!.url,
+      name: m.attachment?.name || "image",
+      sender: m.sender,
+      createdAt: m.createdAt,
+      body: m.body,
+    }));
   const events: SystemEvent[] = conv.systemEvents || [];
   // marker เริ่มสนทนายึดเวลาที่เก่าที่สุดระหว่าง created_at กับข้อความแรก (กัน seed ที่ created_at = now())
   const earliest = msgs.reduce((min, m) => (min && m.createdAt > min ? min : m.createdAt), conv.createdAt || "");
@@ -502,6 +677,24 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     ...msgs.map((m) => ({ t: "msg", at: m.createdAt, msg: m } as FeedItem)),
     ...events.map((ev) => ({ t: "event", at: ev.at, ev } as FeedItem)),
   ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  const movePreview = (delta: number) => {
+    if (!chatImages.length) return;
+    setImagePreviewIndex((prev) => {
+      const current = prev ?? 0;
+      return (current + delta + chatImages.length) % chatImages.length;
+    });
+  };
+
+  useEffect(() => {
+    if (imagePreviewIndex == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") { e.preventDefault(); movePreview(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); movePreview(-1); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [imagePreviewIndex, chatImages.length]);
 
   const centerRow = (key: string, node: React.ReactNode) => (
     <div key={key} style={{ alignSelf: "center", maxWidth: "88%", textAlign: "center" }}>
@@ -526,10 +719,17 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
         }}>
           {m.body && <div>{m.body}</div>}
           {m.attachment && (m.attachment.isImage ? (
-            <a href={m.attachment.url} target="_blank" rel="noreferrer">
+            <button
+              type="button"
+              onClick={() => {
+                const idx = chatImages.findIndex((img) => img.id === m.id);
+                setImagePreviewIndex(idx >= 0 ? idx : 0);
+              }}
+              style={{ border: 0, background: "transparent", padding: 0, marginTop: m.body ? 6 : 0, cursor: "zoom-in" }}
+            >
               <img src={m.attachment.url} alt={m.attachment.name || "image"}
-                style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.body ? 6 : 0, display: "block" }} />
-            </a>
+                style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, display: "block" }} />
+            </button>
           ) : (
             <a href={m.attachment.url} target="_blank" rel="noreferrer"
               style={{ color: "inherit", textDecoration: "underline", marginTop: m.body ? 6 : 0, display: "inline-block" }}>
@@ -579,6 +779,45 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
         )}
       </div>
 
+      {can("inbox.reply") && (
+        <div style={{ display: "grid", gap: 8, marginTop: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
+              {showAiSuggestion ? "AI แนะนำคำตอบ" : "AI ถูกซ่อนอยู่"}
+            </Tag>
+            <Tooltip title={showAiSuggestion ? "ซ่อน AI suggestion" : "แสดง AI suggestion"}>
+              <Button
+                size="small"
+                shape="circle"
+                icon={showAiSuggestion ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                onClick={toggleAiSuggestion}
+              />
+            </Tooltip>
+          </div>
+
+          {showAiSuggestion && (
+            <div style={{
+              border: "1px dashed rgba(22,119,255,0.45)",
+              background: "rgba(22,119,255,0.08)",
+              borderRadius: 16,
+              padding: 12,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <Space direction="vertical" size={4} style={{ flex: 1, minWidth: 240 }}>
+                  <Typography.Text strong style={{ fontSize: 13 }}>คำตอบแนะนำแบบย่อ</Typography.Text>
+                  <Typography.Text style={{ fontSize: 13 }}>{aiReply}</Typography.Text>
+                </Space>
+                <Space wrap>
+                  <Button size="small" type="primary" onClick={() => setReply(aiReply)}>ใส่ในช่องพิมพ์</Button>
+                  <Button size="small" onClick={() => setReply("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ")}>ขอตรวจสอบ</Button>
+                  <Button size="small" onClick={() => setReply("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏")}>ขอบคุณ</Button>
+                </Space>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* กล่องพิมพ์ — ปักล่างสุด + toolbar */}
       {can("inbox.reply") && (
         <div style={{ borderTop: "1px solid var(--app-border, #303030)", paddingTop: 8, marginTop: 6, flexShrink: 0 }}>
@@ -586,13 +825,16 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
           <Space size={2} style={{ marginBottom: 6 }}>
             <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
-              <Button type="text" size="small" icon={<SmileOutlined />} />
+              <Button type="text" size="small" icon={<SmileOutlined />}>อีโมจิ</Button>
             </Popover>
             <Tooltip title="แนบรูป (ส่งเข้าแชท)">
-              <Button type="text" size="small" icon={<PictureOutlined />} loading={uploading} onClick={() => imgInputRef.current?.click()} />
+              <Button type="text" size="small" icon={<PictureOutlined />} loading={uploading} onClick={() => imgInputRef.current?.click()}>รูป</Button>
             </Tooltip>
             <Tooltip title="แนบไฟล์ (สูงสุด 10MB)">
-              <Button type="text" size="small" icon={<PaperClipOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()} />
+              <Button type="text" size="small" icon={<PaperClipOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>ไฟล์</Button>
+            </Tooltip>
+            <Tooltip title="เปิดหน้าสินค้าเพื่อคัดลอก/ส่งรายละเอียดให้ลูกค้า">
+              <Link href="/admin/products"><Button type="text" size="small" icon={<ShoppingCartOutlined />}>สินค้า</Button></Link>
             </Tooltip>
           </Space>
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
@@ -700,16 +942,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {header}
-      {canManage && (
-        <>
-          <Divider style={{ margin: "8px 0" }} />
-          <Space wrap>
-            <Select mode="tags" size="small" style={{ minWidth: 240 }} value={tags} onChange={setTags} placeholder="แท็ก" />
-            <Button size="small" onClick={() => saveTags({ variables: { id: conv.id, tags } })}>บันทึกแท็ก</Button>
-          </Space>
-        </>
-      )}
-      <Divider style={{ margin: "8px 0" }} />
+      <Divider style={{ margin: "6px 0 8px" }} />
       <Tabs
         size="small"
         className="bms-inbox-tabs-fill"
@@ -720,6 +953,139 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
           { key: "timeline", label: "Timeline", children: timelineTab },
         ]}
       />
+      <Modal
+        open={imagePreviewIndex != null}
+        onCancel={() => setImagePreviewIndex(null)}
+        footer={null}
+        width="min(92vw, 1080px)"
+        centered
+        styles={{
+          content: {
+            padding: 16,
+            borderRadius: 28,
+            overflow: "hidden",
+            background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+          },
+          body: { padding: 0 },
+        }}
+      >
+        {imagePreviewIndex != null && chatImages[imagePreviewIndex] && (
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <Space direction="vertical" size={2}>
+                <Typography.Text strong style={{ fontSize: 28, lineHeight: 1 }}>
+                  รูป {imagePreviewIndex + 1} / {chatImages.length}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
+                </Typography.Text>
+              </Space>
+              <Space wrap>
+                <Button icon={<DownloadOutlined />} href={chatImages[imagePreviewIndex].url} target="_blank">
+                  เปิดไฟล์
+                </Button>
+                <Button type="primary" onClick={() => setImagePreviewIndex(null)}>ปิด</Button>
+              </Space>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) 56px", gap: 14, alignItems: "center" }}>
+              <Button
+                shape="circle"
+                icon={<LeftOutlined />}
+                onClick={() => movePreview(-1)}
+                style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(15,23,42,0.12)" }}
+              />
+
+              <div style={{
+                border: "1px solid rgba(15,23,42,0.08)",
+                borderRadius: 24,
+                padding: 18,
+                background: "linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%)",
+                display: "grid",
+                gap: 14,
+              }}>
+                <div style={{
+                  position: "relative",
+                  borderRadius: 20,
+                  overflow: "hidden",
+                  background: "#eaf1fb",
+                  minHeight: "58vh",
+                  display: "grid",
+                  placeItems: "center",
+                }}>
+                  <img
+                    src={chatImages[imagePreviewIndex].url}
+                    alt={chatImages[imagePreviewIndex].name}
+                    style={{ width: "100%", maxHeight: "58vh", objectFit: "contain", display: "block" }}
+                  />
+                  <div style={{
+                    position: "absolute",
+                    left: 14,
+                    right: 14,
+                    bottom: 14,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-end",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}>
+                    <div style={{
+                      backdropFilter: "blur(14px)",
+                      background: "rgba(255,255,255,0.72)",
+                      border: "1px solid rgba(255,255,255,0.85)",
+                      borderRadius: 16,
+                      padding: "10px 12px",
+                      boxShadow: "0 10px 28px rgba(15,23,42,0.16)",
+                    }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>ผู้ส่ง</Typography.Text>
+                      <Typography.Text strong>{chatImages[imagePreviewIndex].sender}</Typography.Text>
+                    </div>
+                    <div style={{
+                      backdropFilter: "blur(14px)",
+                      background: "rgba(255,255,255,0.72)",
+                      border: "1px solid rgba(255,255,255,0.85)",
+                      borderRadius: 16,
+                      padding: "10px 12px",
+                      boxShadow: "0 10px 28px rgba(15,23,42,0.16)",
+                    }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>เวลา</Typography.Text>
+                      <Typography.Text strong>{timeLabel(chatImages[imagePreviewIndex].createdAt)}</Typography.Text>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{
+                    flex: 1,
+                    minWidth: 220,
+                    padding: "12px 14px",
+                    borderRadius: 16,
+                    background: "rgba(22,119,255,0.08)",
+                    border: "1px solid rgba(22,119,255,0.12)",
+                  }}>
+                    <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>คำอธิบาย</Typography.Text>
+                    <Typography.Text>
+                      {chatImages[imagePreviewIndex].body || "รูปนี้ไม่มีข้อความประกอบในแชท"}
+                    </Typography.Text>
+                  </div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    ใช้ลูกศรซ้าย-ขวา เพื่อดูรูปก่อนหน้าและถัดไป
+                  </Typography.Text>
+                </div>
+              </div>
+
+              <Button
+                shape="circle"
+                icon={<RightOutlined />}
+                type="primary"
+                onClick={() => movePreview(1)}
+                style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(22,119,255,0.22)" }}
+              />
+            </div>
+
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

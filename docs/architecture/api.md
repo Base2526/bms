@@ -45,6 +45,9 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
   arrays being duplicated in several places).
+- `POST /api/bms/products/upload` — product image upload endpoint used by `/admin/products`
+  before saving the product form. It stores files first, then the product save mutation decides
+  which uploaded image becomes `image_url` (cover) and which remain in the gallery.
 
 ## REST — order/payment/purchase/shipment transition routes
 
@@ -85,3 +88,23 @@ GraphQL endpoint (`app/api/graphql/route.ts`): `admin` (cookie session, the BMS 
 `web`, and `android` (Bearer token — pre-existing infra for a consumer-facing mobile app from the
 base template, distinct from the BMS admin/staff RBAC model). See
 [system.md](system.md) for how tenant/RBAC context is derived once authenticated.
+
+## Operational list search
+
+The admin UI now relies on server-backed search for the main operational tables:
+
+- `bmsOrders(search, status, limit, offset)`
+- `bmsPurchaseOrders(search, limit, offset)`
+- `bmsPayments(search, orderId, status, limit, offset)`
+- `bmsShipments(search, orderId, status, limit, offset)`
+- `bmsCustomers(search, limit, offset)` (existing)
+
+UI callers debounce the input, then re-run the GraphQL query. Search is intentionally implemented
+at the resolver/service layer rather than as a client-only table filter so results remain correct
+when the dataset is larger than the currently loaded page.
+
+## Public/self-service GraphQL surfaces
+
+- `bmsPublicPlans` powers the public landing page pricing cards.
+- `bmsSignup` powers `/shop-signup`.
+- `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.

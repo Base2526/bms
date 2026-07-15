@@ -1,26 +1,38 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { gql, useQuery } from "@apollo/client";
-import { Row, Col, Card, Button, Typography, Space, Tag, Skeleton, Alert } from "antd";
+import { Alert, Button, Card, Col, Row, Skeleton, Space, Tag, Typography } from "antd";
 import Link from "next/link";
 import {
-  RocketOutlined,
-  MessageOutlined,
-  ShoppingCartOutlined,
-  InboxOutlined,
-  RobotOutlined,
-  ShopOutlined,
-  CheckCircleFilled,
+  ApiOutlined,
   ArrowRightOutlined,
-  TikTokFilled,
+  AuditOutlined,
+  BarChartOutlined,
+  CheckCircleFilled,
+  CheckOutlined,
+  ContactsOutlined,
+  CreditCardOutlined,
+  DatabaseOutlined,
   FacebookFilled,
-  InstagramFilled,
   GlobalOutlined,
-  SafetyOutlined,
+  InboxOutlined,
+  InstagramFilled,
   LockOutlined,
-  TeamOutlined,
+  MessageOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  RobotOutlined,
+  RocketOutlined,
+  SafetyOutlined,
+  ShopOutlined,
+  ShoppingCartOutlined,
+  TikTokFilled,
+  UserOutlined,
 } from "@ant-design/icons";
 import { useSessionCtx } from "@/lib/session-context";
+import { useI18n } from "@/lib/i18nContext";
+import styles from "./page.module.css";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -39,85 +51,173 @@ const Q_PLANS = gql`
 `;
 
 const CHANNELS = [
-  { label: "LINE", color: "#06C755", icon: <MessageOutlined /> },
-  { label: "TikTok", color: "#000000", icon: <TikTokFilled /> },
-  { label: "Facebook", color: "#1877F2", icon: <FacebookFilled /> },
-  { label: "Instagram", color: "#C13584", icon: <InstagramFilled /> },
-  { label: "Website", color: "#1677ff", icon: <GlobalOutlined /> },
+  { label: "LINE", className: styles.channelLine, icon: <MessageOutlined /> },
+  { label: "TikTok", className: styles.channelTikTok, icon: <TikTokFilled /> },
+  { label: "Facebook", className: styles.channelFacebook, icon: <FacebookFilled /> },
+  { label: "Instagram", className: styles.channelInstagram, icon: <InstagramFilled /> },
+  { label: "Website", className: styles.channelWebsite, icon: <GlobalOutlined /> },
 ];
 
-const TRUST_POINTS = [
+type Translate = (key: string) => string;
+
+function buildFlowSteps(t: Translate) {
+  return [
   {
-    icon: <SafetyOutlined />,
-    title: "แยกข้อมูลแต่ละร้านเด็ดขาด",
-    desc: "บังคับแยกข้อมูลระดับฐานข้อมูล (Row-Level Security) ร้านหนึ่งไม่สามารถเห็นข้อมูลสินค้า ออเดอร์ หรือลูกค้าของอีกร้านได้ แม้แต่ตอนแก้บั๊ก",
+    key: "message",
+    label: "Message",
+    short: t("landing.flow.message.short"),
+    kicker: t("landing.flow.message.kicker"),
+    title: t("landing.flow.message.title"),
+    description: t("landing.flow.message.description"),
+    path: [t("landing.flow.message.path1"), t("landing.flow.message.path2"), t("landing.flow.message.path3")],
+    source: t("landing.flow.message.source"),
+    status: t("landing.flow.message.status"),
+    icon: <MessageOutlined />,
+  },
+  {
+    key: "intent",
+    label: "AI Intent",
+    short: t("landing.flow.intent.short"),
+    kicker: t("landing.flow.intent.kicker"),
+    title: t("landing.flow.intent.title"),
+    description: t("landing.flow.intent.description"),
+    path: [t("landing.flow.intent.path1"), t("landing.flow.intent.path2"), t("landing.flow.intent.path3")],
+    source: t("landing.flow.intent.source"),
+    status: t("landing.flow.intent.status"),
+    icon: <RobotOutlined />,
+  },
+  {
+    key: "crm",
+    label: "CRM",
+    short: t("landing.flow.crm.short"),
+    kicker: t("landing.flow.crm.kicker"),
+    title: t("landing.flow.crm.title"),
+    description: t("landing.flow.crm.description"),
+    path: [t("landing.flow.crm.path1"), t("landing.flow.crm.path2"), t("landing.flow.crm.path3")],
+    source: t("landing.flow.crm.source"),
+    status: t("landing.flow.crm.status"),
+    icon: <ContactsOutlined />,
+  },
+  {
+    key: "order",
+    label: "Order",
+    short: t("landing.flow.order.short"),
+    kicker: t("landing.flow.order.kicker"),
+    title: t("landing.flow.order.title"),
+    description: t("landing.flow.order.description"),
+    path: [t("landing.flow.order.path1"), t("landing.flow.order.path2"), t("landing.flow.order.path3")],
+    source: t("landing.flow.order.source"),
+    status: t("landing.flow.order.status"),
+    icon: <ShoppingCartOutlined />,
+  },
+  {
+    key: "inventory",
+    label: "Inventory",
+    short: t("landing.flow.inventory.short"),
+    kicker: t("landing.flow.inventory.kicker"),
+    title: t("landing.flow.inventory.title"),
+    description: t("landing.flow.inventory.description"),
+    path: [t("landing.flow.inventory.path1"), t("landing.flow.inventory.path2"), t("landing.flow.inventory.path3")],
+    source: t("landing.flow.inventory.source"),
+    status: t("landing.flow.inventory.status"),
+    icon: <DatabaseOutlined />,
+  },
+  {
+    key: "payment",
+    label: "Payment",
+    short: t("landing.flow.payment.short"),
+    kicker: t("landing.flow.payment.kicker"),
+    title: t("landing.flow.payment.title"),
+    description: t("landing.flow.payment.description"),
+    path: [t("landing.flow.payment.path1"), t("landing.flow.payment.path2"), t("landing.flow.payment.path3")],
+    source: t("landing.flow.payment.source"),
+    status: t("landing.flow.payment.status"),
+    icon: <CreditCardOutlined />,
+  },
+  {
+    key: "shipping",
+    label: "Shipping",
+    short: t("landing.flow.shipping.short"),
+    kicker: t("landing.flow.shipping.kicker"),
+    title: t("landing.flow.shipping.title"),
+    description: t("landing.flow.shipping.description"),
+    path: [t("landing.flow.shipping.path1"), t("landing.flow.shipping.path2"), t("landing.flow.shipping.path3")],
+    source: t("landing.flow.shipping.source"),
+    status: t("landing.flow.shipping.status"),
+    icon: <InboxOutlined />,
+  },
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    short: t("landing.flow.dashboard.short"),
+    kicker: t("landing.flow.dashboard.kicker"),
+    title: t("landing.flow.dashboard.title"),
+    description: t("landing.flow.dashboard.description"),
+    path: [t("landing.flow.dashboard.path1"), t("landing.flow.dashboard.path2"), t("landing.flow.dashboard.path3")],
+    source: t("landing.flow.dashboard.source"),
+    status: t("landing.flow.dashboard.status"),
+    icon: <BarChartOutlined />,
+  },
+  ];
+}
+
+function buildSafetyPoints(t: Translate) {
+  return [
+  {
+    icon: <DatabaseOutlined />,
+    title: t("landing.safety.tenant.title"),
+    description: t("landing.safety.tenant.description"),
   },
   {
     icon: <LockOutlined />,
-    title: "Token ช่องทางถูกเข้ารหัส",
-    desc: "รหัสผ่านถูก hash ส่วน token เชื่อมต่อ LINE/Facebook/Instagram/TikTok ของร้านถูกเข้ารหัสก่อนจัดเก็บเสมอ",
+    title: t("landing.safety.rbac.title"),
+    description: t("landing.safety.rbac.description"),
   },
   {
-    icon: <TeamOutlined />,
-    title: "กำหนดสิทธิ์พนักงานได้ละเอียด",
-    desc: "แบ่งบทบาท Manager/Sales/Warehouse พร้อม audit log บันทึกทุกการกระทำสำคัญของแอดมิน ตรวจสอบย้อนหลังได้",
+    icon: <UserOutlined />,
+    title: t("landing.safety.human.title"),
+    description: t("landing.safety.human.description"),
   },
-];
+  ];
+}
 
-const FEATURES = [
-  {
-    icon: <MessageOutlined />,
-    title: "Omnichannel Inbox",
-    desc: "รวมแชทจาก LINE, TikTok, Facebook, Instagram และ Website ไว้ที่เดียว ตอบลูกค้าไม่พลาดแม้แอดมินไม่ว่าง",
-  },
-  {
-    icon: <RobotOutlined />,
-    title: "AI ตอบลูกค้าอัตโนมัติ",
-    desc: "เช็คสต็อก บอกราคา สร้างออเดอร์ให้ลูกค้าได้ทันทีจากการแชท ไม่ต้องรอแอดมินตอบทีละคน",
-  },
-  {
-    icon: <ShoppingCartOutlined />,
-    title: "จัดการสินค้า/ออเดอร์ครบวงจร",
-    desc: "สต็อกเรียลไทม์ ออเดอร์ครบวงจรตั้งแต่สั่งซื้อจนจัดส่ง พร้อมระบบแจ้งเตือนสินค้าใกล้หมด",
-  },
-  {
-    icon: <InboxOutlined />,
-    title: "จัดซื้อ + การเงิน + จัดส่ง",
-    desc: "ออกใบสั่งซื้อ รับสินค้าเข้าคลัง ตรวจสลิปด้วย AI และติดตามสถานะจัดส่งในระบบเดียว",
-  },
-];
+const lim = (value: number, t: Translate) => (value < 0 ? t("landing.unlimited") : value.toLocaleString());
 
-const lim = (v: number) => (v < 0 ? "ไม่จำกัด" : v.toLocaleString());
-
-function PlanCard({ plan, highlight }: { plan: any; highlight?: boolean }) {
+function PlanCard({
+  plan,
+  highlight,
+  t,
+  ctaHref,
+  ctaLabel,
+}: {
+  plan: any;
+  highlight?: boolean;
+  t: Translate;
+  ctaHref: string;
+  ctaLabel: string;
+}) {
   return (
-    <Card
-      style={{
-        height: "100%",
-        borderColor: highlight ? "#1677ff" : undefined,
-        borderWidth: highlight ? 2 : 1,
-        position: "relative",
-      }}
-    >
-      {highlight && (
-        <Tag color="blue" style={{ position: "absolute", top: -12, left: 20 }}>แนะนำ</Tag>
-      )}
-      <Title level={4} style={{ marginTop: highlight ? 8 : 0 }}>{plan.name}</Title>
-      <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>
+    <Card className={`${styles.planCard} ${highlight ? styles.planCardHighlight : ""}`}>
+      {highlight && <Tag color="blue" className={styles.planBadge}>{t("landing.recommended")}</Tag>}
+      <Title level={4} className={styles.planName}>{plan.name}</Title>
+      <div className={styles.planPrice}>
         {plan.price_monthly > 0 ? (
-          <>{Number(plan.price_monthly).toLocaleString()} <Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>฿ / เดือน</Text></>
+          <>
+            {Number(plan.price_monthly).toLocaleString()}
+            <Text type="secondary" className={styles.planUnit}>{t("landing.perMonth")}</Text>
+          </>
         ) : (
-          "ฟรี"
+          t("landing.free")
         )}
       </div>
-      <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 20 }}>
-        <div><CheckCircleFilled style={{ color: "#52c41a", marginInlineEnd: 8 }} />สินค้าได้สูงสุด {lim(plan.max_products)}</div>
-        <div><CheckCircleFilled style={{ color: "#52c41a", marginInlineEnd: 8 }} />เชื่อมช่องทางได้ {lim(plan.max_channels)}</div>
-        <div><CheckCircleFilled style={{ color: "#52c41a", marginInlineEnd: 8 }} />ออเดอร์/เดือน {lim(plan.max_orders_month)}</div>
-        <div><CheckCircleFilled style={{ color: "#52c41a", marginInlineEnd: 8 }} />ทีมงานได้สูงสุด {lim(plan.max_users)} คน</div>
+      <Space direction="vertical" size={9} className={styles.planFeatures}>
+        <span><CheckCircleFilled />{t("landing.productLimit")} {lim(plan.max_products, t)}</span>
+        <span><CheckCircleFilled />{t("landing.channelLimit")} {lim(plan.max_channels, t)}</span>
+        <span><CheckCircleFilled />{t("landing.orderLimit")} {lim(plan.max_orders_month, t)}</span>
+        <span><CheckCircleFilled />{t("landing.teamLimit")} {lim(plan.max_users, t)} {t("landing.people")}</span>
       </Space>
-      <Link href="/shop-signup">
-        <Button type={highlight ? "primary" : "default"} block size="large">เริ่มใช้งาน</Button>
+      <Link href={ctaHref}>
+        <Button type={highlight ? "primary" : "default"} block size="large">{ctaLabel}</Button>
       </Link>
     </Card>
   );
@@ -125,131 +225,267 @@ function PlanCard({ plan, highlight }: { plan: any; highlight?: boolean }) {
 
 export default function HomePage() {
   const { admin, loading: sessionLoading } = useSessionCtx();
+  const { t } = useI18n();
   const { data, loading, error } = useQuery(Q_PLANS, { fetchPolicy: "cache-and-network" });
   const plans: any[] = data?.bmsPublicPlans || [];
+  const flowSteps = useMemo(() => buildFlowSteps(t), [t]);
+  const safetyPoints = useMemo(() => buildSafetyPoints(t), [t]);
+  const [activeStep, setActiveStep] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [running, setRunning] = useState(false);
+
+  const currentStep = flowSteps[activeStep];
+  const isFinished = activeStep === flowSteps.length - 1 && completedSteps.has(activeStep);
+  const isApprovalStep = activeStep === 5 && !running;
 
   const primaryCta = !sessionLoading && admin
-    ? { href: "/admin/dashboard", label: "ไปที่ Dashboard ร้านของฉัน" }
-    : { href: "/shop-signup", label: "สมัครใช้งานฟรี" };
+    ? { href: "/admin/dashboard", label: t("landing.goToDashboard") }
+    : { href: "/shop-signup", label: t("landing.startFree") };
+  const planCta = !sessionLoading && admin
+    ? { href: "/admin/dashboard", label: t("landing.manageStore") }
+    : { href: "/shop-signup", label: t("landing.startUsing") };
+
+  const flowStatus = useMemo(() => {
+    if (isFinished) return t("landing.journeyCompleted");
+    if (isApprovalStep) return t("landing.waitingApproval");
+    if (running) return `${t("landing.running")} · ${currentStep.title}`;
+    return `${t("landing.viewing")} · ${currentStep.title}`;
+  }, [currentStep.title, isApprovalStep, isFinished, running, t]);
+
+  useEffect(() => {
+    if (!running) return;
+
+    if (activeStep === 5) {
+      setRunning(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (activeStep >= flowSteps.length - 1) {
+        setCompletedSteps(new Set(flowSteps.map((_, index) => index)));
+        setRunning(false);
+        return;
+      }
+
+      setCompletedSteps((previous) => new Set(previous).add(activeStep));
+      setActiveStep((previous) => previous + 1);
+    }, 950);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStep, flowSteps, running]);
+
+  const selectStep = (index: number) => {
+    setRunning(false);
+    setCompletedSteps(new Set());
+    setActiveStep(index);
+  };
+
+  const toggleSimulation = () => {
+    if (running) {
+      setRunning(false);
+      return;
+    }
+
+    if (isFinished || activeStep === 5) {
+      setCompletedSteps(new Set());
+      setActiveStep(0);
+    }
+
+    setRunning(true);
+  };
+
+  const continueAfterApproval = () => {
+    setCompletedSteps((previous) => new Set(previous).add(5));
+    setActiveStep(6);
+    setRunning(true);
+  };
 
   return (
-    <div>
-      {/* ---- Hero ---- */}
-      <div
-        style={{
-          textAlign: "center",
-          padding: "56px 16px 48px",
-          borderRadius: 12,
-          background: "linear-gradient(135deg, rgba(22,119,255,0.12), rgba(82,196,26,0.08))",
-          marginBottom: 40,
-        }}
-      >
-        <Tag color="blue" icon={<ShopOutlined />} style={{ marginBottom: 16 }}>AI Business Management System</Tag>
-        <Title level={1} style={{ fontSize: "clamp(28px, 5vw, 44px)", marginBottom: 12 }}>
-          ให้ AI ดูแลลูกค้าคุณ<br />ตั้งแต่แชทแรกจนของถึงมือ
-        </Title>
-        <Paragraph style={{ fontSize: 18, maxWidth: 640, margin: "0 auto 28px" }} type="secondary">
-          AI-BMS รวมแชทจากทุกช่องทาง ให้ AI ตอบลูกค้า เช็คสต็อก สร้างออเดอร์ ตัดสต็อก และติดตามจัดส่ง
-          — ระบบเดียวจบตั้งแต่บทสนทนาแรกจนถึงพัสดุถึงบ้านลูกค้า
-        </Paragraph>
-        <Space size={12} wrap>
-          <Link href={primaryCta.href}>
-            <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
-          </Link>
-          <Link href="#pricing">
-            <Button size="large" icon={<ArrowRightOutlined />}>ดูแพ็กเกจราคา</Button>
-          </Link>
-        </Space>
-
-        <div style={{ marginTop: 36 }}>
-          <Text type="secondary" style={{ display: "block", marginBottom: 14, fontSize: 13 }}>
-            เชื่อมต่อและตอบลูกค้าได้จากทุกช่องทาง
-          </Text>
-          <Space size={28} wrap style={{ justifyContent: "center", display: "flex" }}>
-            {CHANNELS.map((c) => (
-              <Space key={c.label} size={6} align="center">
-                <span style={{ color: c.color, fontSize: 20, display: "inline-flex" }}>{c.icon}</span>
-                <Text strong>{c.label}</Text>
-              </Space>
+    <div className={styles.page}>
+      <section className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <Tag color="blue" icon={<ShopOutlined />} className={styles.heroTag}>{t("landing.badge")}</Tag>
+          <Title className={styles.heroTitle}>
+            {t("landing.heroTitle")}<br />
+            <span>{t("landing.heroAccent")}</span>
+          </Title>
+          <Paragraph className={styles.heroDescription}>
+            {t("landing.heroDescription")}
+          </Paragraph>
+          <Space size={12} wrap>
+            <Link href={primaryCta.href}>
+              <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
+            </Link>
+            <Button size="large" icon={<PlayCircleOutlined />} href="#workflow">{t("landing.viewWorkflow")}</Button>
+          </Space>
+          <div className={styles.channels} aria-label={t("landing.supportedChannels")}>
+            {CHANNELS.map((channel) => (
+              <span key={channel.label} className={`${styles.channel} ${channel.className}`}>
+                {channel.icon}{channel.label}
+              </span>
             ))}
+          </div>
+        </div>
+
+        <div className={styles.heroVisual} aria-label={t("landing.storyAria")}>
+          <div className={styles.storyHeader}>
+            <span><ApiOutlined /> {t("landing.storyTitle")}</span>
+            <Tag color="success">{t("landing.liveWorkflow")}</Tag>
+          </div>
+          <div className={styles.customerBubble}>
+            <MessageOutlined />
+            <span><strong>{t("landing.sampleMessage")}</strong><small>{t("landing.newMessage")}</small></span>
+          </div>
+          <div className={styles.storyFlow}>
+            <span><RobotOutlined /><small>{t("landing.understand")}</small></span>
+            <ArrowRightOutlined />
+            <span><DatabaseOutlined /><small>{t("landing.checkStock")}</small></span>
+            <ArrowRightOutlined />
+            <span><ShoppingCartOutlined /><small>{t("landing.createOrder")}</small></span>
+            <ArrowRightOutlined />
+            <span><InboxOutlined /><small>{t("landing.shipping")}</small></span>
+          </div>
+          <div className={styles.systemBubble}>
+            <SafetyOutlined />
+            <span><strong>{t("landing.factsTitle")}</strong><small>{t("landing.factsDescription")}</small></span>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.workflowSection} id="workflow">
+        <div className={styles.sectionHeading}>
+          <div>
+            <Text className={styles.eyebrow}>{t("landing.workflowEyebrow")}</Text>
+            <Title level={2}>{t("landing.workflowTitle")}</Title>
+            <Paragraph>{t("landing.workflowDescription")}</Paragraph>
+          </div>
+          <Space wrap>
+            <span className={styles.flowStatus}><i />{flowStatus}</span>
+            <Button
+              type="primary"
+              icon={running ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={toggleSimulation}
+            >
+              {running
+                ? t("landing.pause")
+                : isFinished
+                  ? t("landing.replay")
+                  : isApprovalStep
+                    ? t("landing.restart")
+                    : t("landing.startSimulation")}
+            </Button>
           </Space>
         </div>
-      </div>
 
-      {/* ---- Features ---- */}
-      <div style={{ marginBottom: 48 }}>
-        <Title level={2} style={{ textAlign: "center", marginBottom: 8 }}>ทำอะไรได้บ้าง</Title>
-        <Paragraph style={{ textAlign: "center", marginBottom: 32 }} type="secondary">
-          ครบทุกโมดูลที่ร้านค้าออนไลน์ต้องใช้ ในระบบเดียว
-        </Paragraph>
-        <Row gutter={[24, 24]}>
-          {FEATURES.map((f) => (
-            <Col xs={24} sm={12} lg={6} key={f.title}>
-              <Card style={{ height: "100%" }}>
-                <div style={{ fontSize: 28, color: "#1677ff", marginBottom: 12 }}>{f.icon}</div>
-                <Title level={5}>{f.title}</Title>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>{f.desc}</Paragraph>
-              </Card>
-            </Col>
+        <div className={styles.stepGrid} role="group" aria-label={t("landing.selectStepAria")}>
+          {flowSteps.map((step, index) => {
+            const active = index === activeStep;
+            const complete = completedSteps.has(index);
+            return (
+              <button
+                type="button"
+                key={step.key}
+                className={`${styles.stepButton} ${active ? styles.stepButtonActive : ""}`}
+                aria-pressed={active}
+                onClick={() => selectStep(index)}
+              >
+                <span className={styles.stepTop}>
+                  <span className={styles.stepIcon}>{step.icon}</span>
+                  <span className={`${styles.stepCheck} ${complete ? styles.stepCheckVisible : ""}`}><CheckOutlined /></span>
+                </span>
+                <span className={styles.stepNumber}>STEP {index + 1}</span>
+                <strong>{step.label}</strong>
+                <small>{step.short}</small>
+              </button>
+            );
+          })}
+        </div>
+
+        <Card className={styles.detailCard}>
+          <div className={styles.detailHeader}>
+            <div>
+              <Text className={styles.eyebrow}>{currentStep.kicker}</Text>
+              <Title level={4}>{currentStep.title}</Title>
+              <Paragraph>{currentStep.description}</Paragraph>
+            </div>
+            <Tag color={activeStep === 5 ? "gold" : "blue"}>{currentStep.status}</Tag>
+          </div>
+          <div className={styles.path} aria-label={t("landing.dataPathAria")}>
+            {currentStep.path.map((item, index) => (
+              <span key={item} className={styles.pathGroup}>
+                <span className={styles.pathChip}>{item}</span>
+                {index < currentStep.path.length - 1 && <ArrowRightOutlined />}
+              </span>
+            ))}
+          </div>
+          {activeStep === 5 && (
+            <div className={styles.approvalGate}>
+              <span><UserOutlined /><span><strong>{t("landing.humanConfirmation")}</strong><small>{t("landing.approvalDescription")}</small></span></span>
+              <Button type="primary" icon={<CheckOutlined />} onClick={continueAfterApproval}>{t("landing.continueSimulation")}</Button>
+            </div>
+          )}
+          <div className={styles.detailFooter}>
+            <span><DatabaseOutlined /> {t("landing.source")}: {currentStep.source}</span>
+            <span>{activeStep + 1} / {flowSteps.length}</span>
+          </div>
+        </Card>
+      </section>
+
+      <section className={styles.safetySection} id="security">
+        <div className={styles.sectionHeadingSimple}>
+          <Text className={styles.eyebrow}>{t("landing.safetyEyebrow")}</Text>
+          <Title level={2}>{t("landing.safetyTitle")}</Title>
+        </div>
+        <div className={styles.safetyGrid}>
+          {safetyPoints.map((point) => (
+            <div key={point.title} className={styles.safetyItem}>
+              <span className={styles.safetyIcon}>{point.icon}</span>
+              <span><strong>{point.title}</strong><small>{point.description}</small></span>
+            </div>
           ))}
-        </Row>
-      </div>
+        </div>
+        <div className={styles.auditLine}><AuditOutlined /> {t("landing.auditLog")}</div>
+      </section>
 
-      {/* ---- Security & Trust ---- */}
-      <div style={{ marginBottom: 48 }}>
-        <Title level={2} style={{ textAlign: "center", marginBottom: 8 }}>ออกแบบมาให้ปลอดภัย</Title>
-        <Paragraph style={{ textAlign: "center", marginBottom: 32 }} type="secondary">
-          ข้อมูลร้านค้าและลูกค้าของคุณเป็นเรื่องสำคัญ เราออกแบบระบบให้ปลอดภัยตั้งแต่สถาปัตยกรรม
-        </Paragraph>
-        <Row gutter={[24, 24]}>
-          {TRUST_POINTS.map((p) => (
-            <Col xs={24} md={8} key={p.title}>
-              <Card style={{ height: "100%", textAlign: "center" }}>
-                <div style={{ fontSize: 32, color: "#1677ff", marginBottom: 12 }}>{p.icon}</div>
-                <Title level={5}>{p.title}</Title>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>{p.desc}</Paragraph>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      </div>
+      <section className={styles.pricingSection} id="pricing">
+        <div className={styles.sectionHeadingSimple}>
+          <Text className={styles.eyebrow}>{t("landing.pricingEyebrow")}</Text>
+          <Title level={2}>{t("landing.pricingTitle")}</Title>
+          <Paragraph>{t("landing.pricingDescription")}</Paragraph>
+        </div>
 
-      {/* ---- Pricing ---- */}
-      <div id="pricing" style={{ marginBottom: 32 }}>
-        <Title level={2} style={{ textAlign: "center", marginBottom: 8 }}>แพ็กเกจราคา</Title>
-        <Paragraph style={{ textAlign: "center", marginBottom: 32 }} type="secondary">
-          เริ่มต้นฟรี อัปเกรดเมื่อร้านโตขึ้น ไม่มีสัญญาผูกมัด · ไม่ต้องใช้บัตรเครดิต
-        </Paragraph>
-
-        {error && (
-          <Alert type="error" showIcon message="โหลดแพ็กเกจไม่ได้" description={error.message} style={{ marginBottom: 16 }} />
-        )}
+        {error && <Alert type="error" showIcon message={t("landing.pricingLoadError")} description={error.message} />}
 
         {loading && !plans.length ? (
-          <Row gutter={[24, 24]}>
-            {[1, 2, 3].map((i) => (
-              <Col xs={24} md={8} key={i}><Card><Skeleton active paragraph={{ rows: 5 }} /></Card></Col>
-            ))}
+          <Row gutter={[20, 20]}>
+            {[1, 2, 3].map((item) => <Col xs={24} md={8} key={item}><Card><Skeleton active paragraph={{ rows: 5 }} /></Card></Col>)}
           </Row>
         ) : (
-          <Row gutter={[24, 24]}>
-            {plans.map((p) => (
-              <Col xs={24} md={8} key={p.code}>
-                <PlanCard plan={p} highlight={p.code === "pro"} />
+          <Row gutter={[20, 20]}>
+            {plans.map((plan) => (
+              <Col xs={24} md={8} key={plan.code}>
+                <PlanCard
+                  plan={plan}
+                  highlight={plan.code === "pro"}
+                  t={t}
+                  ctaHref={planCta.href}
+                  ctaLabel={planCta.label}
+                />
               </Col>
             ))}
           </Row>
         )}
-      </div>
+      </section>
 
-      {/* ---- Final CTA ---- */}
-      <div style={{ textAlign: "center", padding: "40px 16px", borderRadius: 12, background: "var(--app-hover, rgba(22,119,255,0.06))" }}>
-        <Title level={3}>พร้อมเปิดร้านกับ AI-BMS แล้วหรือยัง?</Title>
-        <Paragraph type="secondary" style={{ marginBottom: 20 }}>สมัครฟรี ใช้งานได้ทันที ไม่ต้องใช้บัตรเครดิต</Paragraph>
+      <section className={styles.finalCta}>
+        <div>
+          <Title level={3}>{t("landing.finalTitle")}</Title>
+          <Paragraph>{t("landing.finalDescription")}</Paragraph>
+        </div>
         <Link href={primaryCta.href}>
           <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
         </Link>
-      </div>
+      </section>
     </div>
   );
 }

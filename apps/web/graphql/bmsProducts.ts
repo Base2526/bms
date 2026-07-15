@@ -9,6 +9,7 @@ import { GraphQLError } from "graphql/error";
 import {
   listProducts,
   listVariants,
+  listProductImages,
   upsertProduct,
   setProductActive,
   adjustStock,
@@ -162,6 +163,22 @@ export const bmsProductsResolvers = {
     price: (p: any) => Number(p.price),
     keywords: (p: any) => p.keywords ?? [],
     imageUrl: (p: any) => p.image_url ?? null,
+    async images(parent: { tenant_id?: string; sku: string; image_url?: string | null }) {
+      const tenantId = parent.tenant_id;
+      const gallery = tenantId ? await listProductImages(tenantId, parent.sku) : [];
+      const coverUrl = typeof parent.image_url === "string" ? parent.image_url : null;
+
+      if (!coverUrl) return gallery;
+      if (gallery.some((img) => img.url === coverUrl)) return gallery;
+
+      const fileIdMatch = coverUrl.match(/\/api\/files\/(\d+)(?:$|[/?#])/);
+      const coverId = fileIdMatch ? Number(fileIdMatch[1]) : `cover:${parent.sku}`;
+
+      return [
+        { id: coverId, url: coverUrl },
+        ...gallery,
+      ];
+    },
     description: (p: any) => p.description ?? null,
     costPrice: (p: any) => (p.cost_price != null ? Number(p.cost_price) : null),
     category: (p: any) => p.category ?? null,

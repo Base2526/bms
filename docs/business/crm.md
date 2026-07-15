@@ -36,3 +36,10 @@ don't push at all yet, so they're just marked `SENT` once persisted (no fake fai
 receipts are not implemented on channels that can't genuinely report them (LINE, TikTok).
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
+
+## Self profile
+
+Separate from CRM customer records, staff/admin users now have a self-service profile page at
+`/admin/profile` backed by `bmsMe`, `updateMe`, and `uploadAvatar`. This is for the logged-in
+operator's own account metadata (name, phone, language, avatar) and does not change customer
+records or tenant-wide user-role assignments.

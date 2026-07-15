@@ -1,0 +1,84 @@
+:global(.bms-auth-main):has(.page) {
+  background: #ffffff;
+  padding: 0 !important;
+  place-items: stretch !important;
+}
+
+.page {
+  background: #ffffff;
+  color: #0f172a;
+  display: grid;
+  min-height: 100vh;
+  padding: 48px 24px;
+  place-items: center;
+  width: 100%;
+}
+
+.formPanel,
+.successPanel {
+  margin: 0 auto;
+  max-width: 480px;
+  width: 100%;
+}
+
+.successPanel {
+  max-width: 560px;
+}
+
+.card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.09);
+}
+
+.page :global(.ant-card-head),
+.page :global(.ant-card-body) {
+  background: #ffffff !important;
+}
+
+.page :global(.ant-card-head) {
+  border-color: #e2e8f0 !important;
+}
+
+.page :global(.ant-card-head-title),
+.page :global(.ant-form-item-label > label),
+.page :global(.ant-result-title),
+.page :global(.ant-result-subtitle) {
+  color: #0f172a !important;
+}
+
+.page :global(.ant-typography-secondary) {
+  color: #64748b !important;
+}
+
+.page :global(.ant-input),
+.page :global(.ant-input-affix-wrapper) {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.page :global(.ant-input::placeholder),
+.page :global(.ant-input-affix-wrapper input::placeholder) {
+  color: #94a3b8 !important;
+}
+
+.page :global(.ant-input-password-icon) {
+  color: #64748b !important;
+}
+
+.loginAlert {
+  margin-top: 16px;
+}
+
+@media (max-width: 600px) {
+  .page {
+    align-items: start;
+    padding: 24px 16px;
+  }
+
+  .card {
+    box-shadow: none;
+  }
+}

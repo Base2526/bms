@@ -15,7 +15,7 @@ import {
   InputNumber,
   Select,
 } from "antd";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ReloadOutlined,
   PlusOutlined,
@@ -44,8 +44,8 @@ type PO = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_POS = gql`
-  query BmsPurchaseOrders($limit: Int, $offset: Int) {
-    bmsPurchaseOrders(limit: $limit, offset: $offset) {
+  query BmsPurchaseOrders($search: String, $limit: Int, $offset: Int) {
+    bmsPurchaseOrders(search: $search, limit: $limit, offset: $offset) {
       id status total note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
       items { sku size qtyOrdered qtyReceived unitCost }
@@ -78,9 +78,16 @@ function PurchaseManagement() {
   const { can } = useBmsPermissions();
   const [createOpen, setCreateOpen] = useState(false);
   const [receivePO, setReceivePO] = useState<PO | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data, loading, error, refetch } = useQuery(Q_POS, {
-    variables: { limit: 100, offset: 0 },
+    variables: { search: search || null, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
   });
   const { data: prodData } = useQuery(Q_PRODUCTS, { fetchPolicy: "cache-and-network" });
@@ -157,6 +164,13 @@ function PurchaseManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>BMS Purchase (PO)</h2>
           <Space wrap>
+            <Input.Search
+              placeholder="ค้นหา PO / supplier / SKU"
+              allowClear
+              style={{ width: 260 }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
             {can("purchase.edit") && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>สร้างใบสั่งซื้อ</Button>
             )}

@@ -49,6 +49,7 @@ Customer → Channel Integration → Omnichannel Inbox → AI Orchestrator
 | 9 | Payment | Bank transfer/QR/card/cash/TikTok, AI slip verification (advisory only) |
 | 10 | Shipping | Carrier tracking, packing, labels |
 | 11 | Reports | Dashboard, sales, inventory, customer, financial |
+| 12 | Public Marketing & Onboarding | Landing infographic, pricing, self-serve signup, session-aware CTA routing |
 
 Full per-domain rules: [../business/order.md](../business/order.md) ·
 [../business/inventory.md](../business/inventory.md) · [../business/payment.md](../business/payment.md) ·
@@ -67,7 +68,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
-| Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` |
+| Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · reorder — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
@@ -76,6 +77,8 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
+| Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
+| Self Profile & Avatar | ✅ | `/admin/profile` · `bmsMe` / `updateMe` / `uploadAvatar` |
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
@@ -115,6 +118,17 @@ db/
   migrations/*.sql        Idempotent, applied in numeric order
 docs/                      This documentation tree
 ```
+
+## Current UI notes
+
+- `/` is a bilingual marketing surface, not just a static hero. It includes an interactive
+  infographic of the message → order → payment → shipping → dashboard flow and must remain
+  aligned with the actual implemented workflow.
+- `/shop-signup` is a public auth-safe route. It must stay in the auth-route allowlist so it
+  doesn't initialize admin session/chat providers unnecessarily.
+- `/admin/orders`, `/admin/purchase`, `/admin/payment`, and `/admin/shipment` now use backend
+  search args with debounced live search. This is the expected pattern for large operational lists.
+- `/admin/profile` is the self-service account surface for avatar/name/phone/language updates.
 
 ## Coding rules
 

@@ -27,13 +27,13 @@ export const bmsPurchaseResolvers = {
   Query: {
     async bmsPurchaseOrders(
       _p: unknown,
-      args: { limit?: number; offset?: number },
+      args: { search?: string; limit?: number; offset?: number },
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.view");
       const limit = Math.min(Math.max(Number(args.limit ?? 50), 1), 200);
       const offset = Math.max(Number(args.offset ?? 0), 0);
-      return listPurchaseOrders(getTenantId(ctx), limit, offset);
+      return listPurchaseOrders(getTenantId(ctx), args.search ?? "", limit, offset);
     },
 
     async bmsPurchaseOrder(_p: unknown, args: { id: string }, ctx: any) {

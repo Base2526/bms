@@ -6,8 +6,10 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { beginTenantTx } from "./tenant";
 import { enforceProductQuota } from "./plans";
+import { buildFileUrlById } from "@/lib/storage";
 
 export type ProductRowFull = {
+  tenant_id?: string;
   sku: string;
   name: string;
   active: boolean;
@@ -19,6 +21,11 @@ export type ProductRowFull = {
   cost_price: string | null;
   category: string | null;
   brand: string | null;
+};
+
+export type ProductImage = {
+  id: number | string;
+  url: string;
 };
 
 export type VariantRow = {
@@ -100,7 +107,50 @@ export type UpsertProductInput = {
   cost_price?: number | null;
   category?: string | null;
   brand?: string | null;
+  image_urls?: string[] | null;
 };
+
+function normalizeImageUrls(input: UpsertProductInput): string[] {
+  const raw = Array.isArray(input.image_urls)
+    ? input.image_urls
+    : input.image_url
+      ? [input.image_url]
+      : [];
+
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  for (const item of raw) {
+    const url = typeof item === "string" ? item.trim() : "";
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+
+  return urls;
+}
+
+function extractFileIdFromUrl(url: string): number | null {
+  const match = url.match(/\/api\/files\/(\d+)(?:$|[/?#])/);
+  if (!match) return null;
+  const fileId = Number(match[1]);
+  return Number.isInteger(fileId) && fileId > 0 ? fileId : null;
+}
+
+export async function listProductImages(tenantId: string, sku: string): Promise<ProductImage[]> {
+  const res = await query<{ file_id: number }>(
+    `SELECT file_id
+       FROM bms_product_images
+      WHERE tenant_id = $1 AND product_sku = $2
+      ORDER BY sort_order, id`,
+    [tenantId, sku]
+  );
+
+  return res.rows.map((row) => ({
+    id: row.file_id,
+    url: buildFileUrlById(row.file_id),
+  }));
+}
 
 export async function upsertProduct(tenantId: string, input: UpsertProductInput): Promise<ProductRowFull> {
   const sku = input.sku.trim();
@@ -112,7 +162,8 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   const active = input.active ?? true;
   const barcode = input.barcode?.trim() || null;
-  const imageUrl = input.image_url?.trim() || null;
+  const imageUrls = normalizeImageUrls(input);
+  const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
   const description = input.description?.trim() || null;
   const category = input.category?.trim() || null;
   const brand = input.brand?.trim() || null;
@@ -127,19 +178,57 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
   const existing = await query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
   if (existing.rowCount === 0) await enforceProductQuota(tenantId);
 
-  const res = await query<ProductRowFull>(
-    `INSERT INTO bms_products
-       (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     ON CONFLICT (tenant_id, sku) DO UPDATE
-       SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
-           active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
-           description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
-           category = EXCLUDED.category, brand = EXCLUDED.brand, updated_at = now()
-     RETURNING sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand`,
-    [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand]
-  );
-  return res.rows[0];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+
+    const res = await client.query<ProductRowFull>(
+      `INSERT INTO bms_products
+         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (tenant_id, sku) DO UPDATE
+         SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
+             active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
+             description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
+             category = EXCLUDED.category, brand = EXCLUDED.brand, updated_at = now()
+       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand`,
+      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand]
+    );
+
+    await client.query(
+      `DELETE FROM bms_product_images WHERE tenant_id = $1 AND product_sku = $2`,
+      [tenantId, sku]
+    );
+
+    const imageRows = imageUrls
+      .map((url, index) => ({ fileId: extractFileIdFromUrl(url), sortOrder: index }))
+      .filter((row): row is { fileId: number; sortOrder: number } => row.fileId != null);
+
+    if (imageRows.length > 0) {
+      const values = imageRows.map((_, index) => {
+        const base = index * 2;
+        return `($1, $2, $${base + 3}, $${base + 4})`;
+      }).join(", ");
+
+      await client.query(
+        `INSERT INTO bms_product_images (tenant_id, product_sku, file_id, sort_order)
+         VALUES ${values}
+         ON CONFLICT (tenant_id, product_sku, file_id)
+         DO UPDATE SET sort_order = EXCLUDED.sort_order`,
+        [tenantId, sku, ...imageRows.flatMap((row) => [row.fileId, row.sortOrder])]
+      );
+    }
+
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function setProductActive(tenantId: string, sku: string, active: boolean): Promise<boolean> {

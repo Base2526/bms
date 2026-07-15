@@ -36,6 +36,10 @@ plain `STOCK_IN`/`STOCK_OUT`.
   `/api/bms/products/upload`, ≤10MB, images only), `description`, `cost_price` (used to compute
   `price − cost_price` margin in the Products page — not yet rolled into Reports), free-text
   `category`/`brand` with autocomplete from prior values used in the shop.
+- **Implemented product gallery** (`bms_product_images`, migration `6.5`): one product can now
+  store multiple uploaded images in display order. `image_url` still acts as the primary cover
+  image for backward compatibility; the current Products UI sends both `image_url` and
+  `image_urls[]`.
 - Categories are a managed list (`bms_product_categories`, migration `6.0`) that the shop can edit
   from a dropdown; renaming a category syncs to products referencing the old name in one
   transaction. Deleting a category does not delete products, only removes it from the dropdown.

@@ -4,7 +4,7 @@ import {
   Table, Button, Space, Tag, Segmented, message, Alert, Popconfirm,
   Typography, Modal, Form, Input, InputNumber, Select,
 } from "antd";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ReloadOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined,
   RollbackOutlined, ScanOutlined,
@@ -22,8 +22,8 @@ type Payment = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_PAYMENTS = gql`
-  query BmsPayments($status: BmsPaymentStatus, $limit: Int) {
-    bmsPayments(status: $status, limit: $limit) {
+  query BmsPayments($search: String, $status: BmsPaymentStatus, $limit: Int) {
+    bmsPayments(search: $search, status: $status, limit: $limit) {
       id orderId method amount status slipUrl slipRef verifyResult note verifiedBy createdAt updatedAt
     }
   }
@@ -63,9 +63,16 @@ function PaymentManagement() {
   const { can } = useBmsPermissions();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data, loading, error, refetch } = useQuery(Q_PAYMENTS, {
-    variables: { status: filter === "ALL" ? null : filter, limit: 200 },
+    variables: { search: search || null, status: filter === "ALL" ? null : filter, limit: 200 },
     fetchPolicy: "cache-and-network",
   });
 
@@ -169,6 +176,13 @@ function PaymentManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>BMS Payment</h2>
           <Space wrap>
+            <Input.Search
+              placeholder="ค้นหา payment / order / slip ref"
+              allowClear
+              style={{ width: 260 }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
             <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
             {can("payment.submit") && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setSubmitOpen(true)}>บันทึกการชำระ</Button>

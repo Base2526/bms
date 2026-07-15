@@ -15,7 +15,7 @@ Customer -> AI -> CRM -> Order -> Inventory -> Payment -> Shipping -> Dashboard
 It is not a general-purpose chatbot. The database and backend services are the source of truth;
 AI interprets intent, selects approved tools, and explains verified results.
 
-Read [AI_GUIDELINES.md](AI_GUIDELINES.md) before changing prompts, AI orchestration, AI tools,
+Read [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) before changing prompts, AI orchestration, AI tools,
 payment-slip analysis, or any AI-generated customer response.
 
 ## Architecture boundaries
@@ -36,6 +36,9 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/app/api/bms/` | REST endpoints, webhooks, cron, and test routes |
 | `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI |
 | `apps/web/app/(admin)/admin/` | Admin UI |
+| `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
+| `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
+| `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
 | `apps/ws/` | WebSocket gateway |
 | `packages/` | Shared GraphQL, realtime, and queue packages |
 | `db/migrations/` | Ordered, idempotent database migrations |
@@ -73,6 +76,35 @@ changing behavior. Update the affected documentation in the same change.
 Do not modify unrelated user changes, secrets, local environment files, generated artifacts, or
 database dumps. Never commit `.env*`, access tokens, customer data, or credentials.
 
+## Frontend and CSS Modules
+
+- Keep public authentication routes synchronized with `isAuthPath()` in
+  `apps/web/app/ClientProviders.tsx`. Public signup/login pages must not load the global session,
+  chat, or notification wires unless they explicitly need them.
+- Public marketing/auth surfaces are bilingual (`th`/`en`) and session-aware. If an admin session
+  already exists, public CTAs should prefer "go to dashboard / manage store" over "sign up / log in"
+  rather than presenting redundant entry points.
+- A selector in `*.module.css` must contain at least one local class or ID. A selector made only
+  from `:global(...)` fails Next.js compilation and can turn the route into a blank/500 page.
+- When a CSS Module needs to target a global ancestor, combine it with a local class, for example
+  `:global(.bms-auth-main):has(.page)`, or move a truly global rule to `app/globals.css`.
+- Scope language-specific typography with the document language, such as
+  `:global(html[lang="th"]) .heroTitle`; do not change English metrics to compensate for Thai
+  stacked vowels and tone marks.
+- After changing a route, layout, provider boundary, or CSS Module, open the exact route in the
+  browser and verify that it compiles, renders, and remains usable at desktop and mobile widths.
+- Large admin list pages must prefer server-backed search/filter arguments over client-only table
+  filtering. Current patterns on Orders / Purchase / Payment / Shipping use debounced query-driven
+  search so results stay correct even when the dataset exceeds the current page of rows.
+- Product media is now a gallery, not just a single image. Preserve backward compatibility by
+  keeping `bms_products.image_url` as the cover image while the full ordered gallery lives in
+  `bms_product_images` and GraphQL `BmsProduct.images`.
+- Profile editing should reuse the existing `bmsMe`, `updateMe`, and `uploadAvatar` flows rather
+  than introducing parallel account-profile endpoints.
+- The Docker development stack owns its own `apps/web/.next` and `apps/web/node_modules` volumes.
+  Do not remove those volume mounts or share the same Next.js output directory between host and
+  container dev servers; mixed manifests cause App Router `clientModules` failures across routes.
+
 ## Database and migration rules
 
 - Add a new numbered migration; never rewrite a migration that may already have been applied.
@@ -85,6 +117,8 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Preserve append-only audit/history semantics where applicable.
 - Document new tables, states, constraints, and migration dependencies in
   `docs/architecture/database.md` and the relevant business document.
+- If a change affects operator-facing workflows, update the in-app manual at
+  `apps/web/app/(admin)/admin/manual/page.tsx` in the same change as the code/docs update.
 
 ## Authentication, tenancy, and RBAC
 

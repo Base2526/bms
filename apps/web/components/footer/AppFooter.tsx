@@ -3,14 +3,20 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  ApiOutlined,
+  BarChartOutlined,
   BookOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CodeOutlined,
   CustomerServiceOutlined,
   FileTextOutlined,
+  LockOutlined,
+  QuestionCircleOutlined,
+  RocketOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  ShopOutlined,
 } from "@ant-design/icons";
 
 type ConsentValue = "allow" | "reject";
@@ -34,88 +40,72 @@ function readConsent(): { value: ConsentValue; at: string } | null {
 function writeConsent(value: ConsentValue) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(
-      CONSENT_KEY,
-      JSON.stringify({
-        value,
-        at: new Date().toISOString(),
-      })
-    );
+    window.localStorage.setItem(CONSENT_KEY, JSON.stringify({ value, at: new Date().toISOString() }));
   } catch {
-      // ignore
+    // Local storage may be unavailable in privacy mode. Consent remains session-only.
   }
 }
 
 const COPY = {
   th: {
-    brand: "AI-BMS",
-    support: "Support",
+    description: "ระบบบริหารธุรกิจที่เปลี่ยนทุกบทสนทนาของลูกค้าให้เป็น Workflow ที่ตรวจสอบได้",
+    start: "เริ่มใช้ฟรี",
+    product: "ผลิตภัณฑ์",
+    workflow: "การทำงานของ AI-BMS",
+    security: "ความปลอดภัย",
+    pricing: "แพ็กเกจราคา",
+    dashboard: "Dashboard ร้านค้า",
+    resources: "เรียนรู้และช่วยเหลือ",
+    help: "ศูนย์ช่วยเหลือ",
     roadmap: "Roadmap",
-    terms: "Terms",
-    privacy: "Privacy",
+    support: "ติดต่อทีมงาน",
+    faq: "คำถามที่พบบ่อย",
+    legal: "กฎหมายและข้อมูล",
+    terms: "ข้อกำหนดการใช้งาน",
+    privacy: "นโยบายความเป็นส่วนตัว",
     openSource: "Open Source",
     license: "License",
-    donate: "Donate",
-    appTitle: "ดาวน์โหลดแอป AI-BMS",
-    appDesc:
-      "ใช้งานสะดวกกว่าเดิมบนมือถือ แจ้งเตือนเร็ว เข้าถึงฟีเจอร์สำคัญได้ง่าย พร้อมประสบการณ์ที่ลื่นไหลยิ่งขึ้นทั้ง Android และ iPhone",
-    androidLabelTop: "Get it on",
-    androidLabelBottom: "Android App",
-    iosLabelTop: "Download on",
-    iosLabelBottom: "iPhone / iOS",
-    fastAccess: "Fast Access",
-    betterMobile: "Better on Mobile",
-    responsiveSupport: "Responsive Website Support",
-    communityDriven: "Community-driven Reports",
-    asIs: "AS IS / No Warranty",
-    openSourceComponents: "Open-source components",
-    footerNote:
-      "Some components of this website are open-source. Software is provided “AS IS” without warranties. Please see Open Source / License for details.",
-    pdpa: "PDPA",
+    footerLine: "AI Business Management System",
+    pdpa: "ตั้งค่า PDPA",
     pdpaTitle: "PDPA / Cookies",
-    pdpaDesc:
-      "เราใช้คุกกี้ที่จำเป็นเพื่อให้เว็บไซต์ทำงาน และอาจใช้คุกกี้วิเคราะห์เพื่อปรับปรุงประสบการณ์การใช้งาน คุณสามารถเลือก Allow หรือ Reject ได้",
-    allow: "Allow",
-    reject: "Reject",
-    close: "Close",
-    pdpaSettings: "PDPA settings",
-    trustTitle: "Trusted by community reports",
-    trustDesc: "ตรวจสอบข้อมูล เตือนภัย และติดตามเคสได้สะดวกยิ่งขึ้นบนแอป",
+    pdpaDesc: "เราใช้คุกกี้ที่จำเป็นเพื่อให้เว็บไซต์ทำงาน และอาจใช้คุกกี้วิเคราะห์เพื่อปรับปรุงประสบการณ์ใช้งาน คุณสามารถเลือกอนุญาตหรือปฏิเสธได้",
+    allow: "อนุญาต",
+    reject: "ปฏิเสธ",
+    close: "ปิด",
+    homeAria: "หน้าแรก AI-BMS",
+    pdpaDialogAria: "การตั้งค่าคุกกี้ PDPA",
+    allowedState: "อนุญาตแล้ว",
+    rejectedState: "ปฏิเสธแล้ว",
   },
   en: {
-    brand: "AI-BMS",
-    support: "Support",
+    description: "A business operating system that turns every customer conversation into an auditable workflow.",
+    start: "Start free",
+    product: "Product",
+    workflow: "How AI-BMS works",
+    security: "Security",
+    pricing: "Pricing",
+    dashboard: "Store dashboard",
+    resources: "Learn and support",
+    help: "Help center",
     roadmap: "Roadmap",
-    terms: "Terms",
-    privacy: "Privacy",
+    support: "Contact support",
+    faq: "FAQ",
+    legal: "Legal and data",
+    terms: "Terms of service",
+    privacy: "Privacy policy",
     openSource: "Open Source",
     license: "License",
-    donate: "Donate",
-    appTitle: "Download AI-BMS App",
-    appDesc:
-      "A smoother mobile experience with faster access to key features, alerts, and community reports on both Android and iPhone.",
-    androidLabelTop: "Get it on",
-    androidLabelBottom: "Android App",
-    iosLabelTop: "Download on",
-    iosLabelBottom: "iPhone / iOS",
-    fastAccess: "Fast Access",
-    betterMobile: "Better on Mobile",
-    responsiveSupport: "Responsive Website Support",
-    communityDriven: "Community-driven Reports",
-    asIs: "AS IS / No Warranty",
-    openSourceComponents: "Open-source components",
-    footerNote:
-      "Some components of this website are open-source. Software is provided “AS IS” without warranties. Please see Open Source / License for details.",
-    pdpa: "PDPA",
+    footerLine: "AI Business Management System",
+    pdpa: "PDPA settings",
     pdpaTitle: "PDPA / Cookies",
-    pdpaDesc:
-      "We use necessary cookies to keep the website working and may use analytics cookies to improve the experience. You can choose Allow or Reject.",
+    pdpaDesc: "We use necessary cookies to keep the website working and may use analytics cookies to improve your experience. You can allow or reject them.",
     allow: "Allow",
     reject: "Reject",
     close: "Close",
-    pdpaSettings: "PDPA settings",
-    trustTitle: "Trusted by community reports",
-    trustDesc: "Check reports, stay alert, and access scam information more easily in the app.",
+    homeAria: "AI-BMS home",
+    pdpaDialogAria: "PDPA cookie settings",
+    allowedState: "Allowed",
+    rejectedState: "Rejected",
   },
 } as const;
 
@@ -123,14 +113,13 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
   const locale = lang === "en" ? "en" : "th";
   const t = COPY[locale];
   const year = useMemo(() => new Date().getFullYear(), []);
-
   const [consent, setConsent] = useState<ConsentValue | null>(null);
   const [showPdpa, setShowPdpa] = useState(false);
 
   useEffect(() => {
-    const c = readConsent();
-    if (c?.value) {
-      setConsent(c.value);
+    const current = readConsent();
+    if (current?.value) {
+      setConsent(current.value);
       setShowPdpa(false);
     } else {
       setShowPdpa(true);
@@ -149,768 +138,255 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
     setShowPdpa(false);
   }, []);
 
-  const onClose = useCallback(() => {
-    setShowPdpa(false);
-  }, []);
+  const productLinks = [
+    { href: "/#workflow", label: t.workflow, icon: <ApiOutlined /> },
+    { href: "/#security", label: t.security, icon: <LockOutlined /> },
+    { href: "/#pricing", label: t.pricing, icon: <ShopOutlined /> },
+    { href: "/admin/dashboard", label: t.dashboard, icon: <BarChartOutlined /> },
+  ];
 
-  const onOpenPdpa = useCallback(() => {
-    setShowPdpa(true);
-  }, []);
+  const resourceLinks = [
+    { href: "/help", label: t.help, icon: <QuestionCircleOutlined /> },
+    { href: "/roadmap", label: t.roadmap, icon: <ApiOutlined /> },
+    { href: "/support", label: t.support, icon: <CustomerServiceOutlined /> },
+    { href: "/help", label: t.faq, icon: <BookOutlined /> },
+  ];
 
-  const footerLinks = useMemo(
-    () => [
-      { href: "/terms", label: t.terms, icon: <FileTextOutlined /> },
-      { href: "/privacy", label: t.privacy, icon: <SafetyCertificateOutlined /> },
-      { href: "/open-source", label: t.openSource, icon: <CodeOutlined /> },
-      { href: "/license", label: t.license, icon: <BookOutlined /> },
-      { href: "/support", label: t.support, icon: <CustomerServiceOutlined /> },
-    ],
-    [t]
-  );
+  const legalLinks = [
+    { href: "/terms", label: t.terms, icon: <FileTextOutlined /> },
+    { href: "/privacy", label: t.privacy, icon: <SafetyCertificateOutlined /> },
+    { href: "/open-source", label: t.openSource, icon: <CodeOutlined /> },
+    { href: "/license", label: t.license, icon: <BookOutlined /> },
+  ];
 
   return (
     <>
-      <footer className={`footer-root ${showPdpa ? "footer-root--with-pdpa" : ""}`}>
-        <div className="footer-shell">
-          {/* ดาวน์โหลดแอป — ปิดไว้ก่อน ยังไม่มีแอปมือถือ AI-BMS */}
-
-          <div className="footer-main">
-            <div className="footer-brand-block">
-              <div className="brand-line">
-                <span className="brand-mark">A</span>
-                <div className="brand-copy">
-                  <div className="brand-name">{t.brand}</div>
-                  <div className="brand-sub">© {year} · AI Business Management System</div>
-                </div>
-              </div>
+      <footer className={`bms-footer ${showPdpa ? "bms-footer--with-pdpa" : ""}`}>
+        <div className="bms-footer-shell">
+          <div className="bms-footer-grid">
+            <div className="bms-footer-brand">
+              <Link href="/" className="bms-footer-brand-line" aria-label={t.homeAria}>
+                <span className="bms-footer-logo">
+                  <img src="/icons/icon.svg" alt="" width={48} height={48} />
+                </span>
+                <span><strong>AI-BMS</strong><small>{t.footerLine}</small></span>
+              </Link>
+              <p>{t.description}</p>
+              <Link href="/shop-signup" className="bms-footer-cta"><RocketOutlined />{t.start}</Link>
             </div>
 
-            <div className="footer-badges">
-              <span className="pill">
-                <SafetyCertificateOutlined />
-                {t.asIs}
-              </span>
-              <span className="pill desktop-only">
-                <CodeOutlined />
-                {t.openSourceComponents}
-              </span>
-            </div>
+            <FooterColumn title={t.product} links={productLinks} />
+            <FooterColumn title={t.resources} links={resourceLinks} />
+            <FooterColumn title={t.legal} links={legalLinks} />
           </div>
 
-          <div className="footer-divider" />
-
-          <nav className="footer-links" aria-label="Footer navigation">
-            {footerLinks.map((it) => (
-              <Link key={it.href} href={it.href} className="footer-link" aria-label={it.label}>
-                <span className="footer-link__icon">{it.icon}</span>
-                <span className="footer-link__label">{it.label}</span>
-              </Link>
-            ))}
-
-            {/* Facebook — ปิดไว้ก่อน ยังไม่มีเพจ AI-BMS จริง */}
-
-            <button
-              type="button"
-              className="footer-link footer-link--button"
-              onClick={onOpenPdpa}
-              aria-label={t.pdpaSettings}
-            >
-              <span className="footer-link__icon">
-                <SettingOutlined />
-              </span>
-              <span className="footer-link__label">{t.pdpa}</span>
-              {consent ? <em>({consent.toUpperCase()})</em> : null}
+          <div className="bms-footer-bottom">
+            <span>© {year} AI-BMS · {t.footerLine}</span>
+            <button type="button" onClick={() => setShowPdpa(true)} aria-label={t.pdpa}>
+              <SettingOutlined />{t.pdpa}{consent ? <em>({consent === "allow" ? t.allowedState : t.rejectedState})</em> : null}
             </button>
-          </nav>
-
-          <div className="footer-note desktop-only">{t.footerNote}</div>
+          </div>
         </div>
       </footer>
 
       {showPdpa && (
-        <div className="pdpa-bar" role="dialog" aria-label="PDPA cookie consent">
-          <div className="pdpa-card">
-            <div className="pdpa-copy">
-              <div className="pdpa-title">{t.pdpaTitle}</div>
-              <div className="pdpa-desc">{t.pdpaDesc}</div>
-
-              <div className="pdpa-links">
-                <Link href="/privacy" className="pdpa-inline-link">
-                  {t.privacy}
-                </Link>
-                <Link href="/terms" className="pdpa-inline-link">
-                  {t.terms}
-                </Link>
-              </div>
+        <div className="bms-pdpa-bar" role="dialog" aria-label={t.pdpaDialogAria}>
+          <div className="bms-pdpa-card">
+            <div className="bms-pdpa-copy">
+              <strong>{t.pdpaTitle}</strong>
+              <span>{t.pdpaDesc}</span>
+              <span className="bms-pdpa-links"><Link href="/privacy">{t.privacy}</Link><Link href="/terms">{t.terms}</Link></span>
             </div>
-
-            <div className="pdpa-actions">
-              <button type="button" className="btn btn-secondary" onClick={onReject}>
-                <CloseCircleOutlined />
-                <span>{t.reject}</span>
-              </button>
-
-              <button type="button" className="btn btn-primary" onClick={onAllow}>
-                <CheckCircleOutlined />
-                <span>{t.allow}</span>
-              </button>
-
-              <button type="button" className="btn btn-secondary desktop-only-inline" onClick={onClose}>
-                <span>{t.close}</span>
-              </button>
+            <div className="bms-pdpa-actions">
+              <button type="button" className="bms-pdpa-secondary" onClick={onReject}><CloseCircleOutlined />{t.reject}</button>
+              <button type="button" className="bms-pdpa-primary" onClick={onAllow}><CheckCircleOutlined />{t.allow}</button>
+              <button type="button" className="bms-pdpa-close" onClick={() => setShowPdpa(false)}>{t.close}</button>
             </div>
           </div>
         </div>
       )}
 
       <style>{`
-        .footer-root {
-          background:
-            radial-gradient(circle at top, rgba(var(--app-primary-rgb),0.06), transparent 30%),
-            var(--app-bg);
-          padding: 28px 16px;
+        .bms-footer {
+          background: var(--app-bg);
+          padding: 26px 16px 30px;
         }
 
-        .footer-root--with-pdpa {
-          padding-bottom: 110px;
-        }
+        .bms-footer--with-pdpa { padding-bottom: 120px; }
 
-        .footer-shell {
+        .bms-footer-shell {
           max-width: 1400px;
           margin: 0 auto;
-          border-radius: 28px;
-          border: 1px solid var(--app-border);
-          background:
-            linear-gradient(180deg, rgba(var(--app-surface-rgb),0.99) 0%, rgba(var(--app-bg-rgb),0.985) 100%);
-          padding: 20px;
-          box-shadow:
-            0 16px 50px rgba(var(--app-shadow-rgb),0.08),
-            inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
+          border-top: 1px solid var(--app-border);
+          padding: 34px 6px 0;
         }
 
-        .hero-card {
-          position: relative;
-          overflow: hidden;
-          width: 100%;
-          border-radius: 26px;
-          padding: 28px;
-          background:
-            linear-gradient(135deg, rgba(var(--app-surface-rgb),0.98) 0%, rgba(var(--app-surface-rgb),0.94) 56%, rgba(var(--app-bg-rgb),0.96) 100%);
-          border: 1px solid var(--app-border);
-          box-shadow:
-            0 18px 48px rgba(var(--app-shadow-rgb),0.10),
-            inset 0 1px 0 rgba(var(--app-surface-rgb),0.95);
+        .bms-footer-grid {
+          display: grid;
+          grid-template-columns: minmax(260px, 1.45fr) repeat(3, minmax(150px, .8fr));
+          gap: 42px;
         }
 
-        .hero-glow {
-          position: absolute;
-          border-radius: 999px;
-          pointer-events: none;
-          filter: blur(2px);
-        }
+        .bms-footer-brand { display: grid; gap: 15px; align-content: start; }
+        .bms-footer-brand p { margin: 0; max-width: 390px; color: var(--app-muted); line-height: 1.7; }
 
-        .hero-glow-right {
-          top: -90px;
-          right: -30px;
-          width: 240px;
-          height: 240px;
-          background: radial-gradient(circle, rgba(59,130,246,0.16) 0%, rgba(59,130,246,0.05) 42%, transparent 74%);
-        }
-
-        .hero-glow-left {
-          bottom: -80px;
-          left: -20px;
-          width: 210px;
-          height: 210px;
-          background: radial-gradient(circle, rgba(16,185,129,0.14) 0%, rgba(16,185,129,0.04) 42%, transparent 72%);
-        }
-
-        .hero-noise {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(var(--app-text-rgb),0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(var(--app-text-rgb),0.06) 1px, transparent 1px);
-          background-size: 24px 24px;
-          mask-image: linear-gradient(to bottom, rgba(var(--app-shadow-rgb),0.14), transparent 70%);
-          pointer-events: none;
-          opacity: 0.22;
-        }
-
-        .hero-content {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 24px;
-        }
-
-        .hero-left {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .hero-badge {
+        .bms-footer-brand-line {
           display: inline-flex;
           align-items: center;
-          gap: 10px;
-          padding: 8px 14px;
-          border-radius: 999px;
-          background: rgba(var(--app-surface-rgb),0.76);
-          border: 1px solid var(--app-border);
-          color: rgba(var(--app-text-rgb),0.74);
-          font-size: 13px;
-          font-weight: 600;
-          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.08);
-        }
-
-        .hero-badge-icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 999px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #111827 0%, #334155 100%);
-          color: #ffffff;
-          font-size: 14px;
-        }
-
-        .hero-title {
-          margin: 16px 0 0;
-          color: var(--app-text);
-          line-height: 1.08;
-          letter-spacing: -0.6px;
-          font-size: 34px;
-          font-weight: 800;
-        }
-
-        .hero-desc {
-          margin: 12px 0 0;
-          color: rgba(var(--app-text-rgb),0.72);
-          max-width: 700px;
-          line-height: 1.68;
-          font-size: 15px;
-        }
-
-        .hero-meta {
-          margin-top: 10px;
-          color: rgba(var(--app-text-rgb),0.56);
-          font-size: 13px;
-          line-height: 1.6;
-        }
-
-        .feature-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .feature-tags span {
-          display: inline-flex;
-          align-items: center;
-          border-radius: 999px;
-          padding: 7px 12px;
-          border: 1px solid var(--app-border);
-          background: rgba(var(--app-surface-rgb),0.78);
-          color: rgba(var(--app-text-rgb),0.72);
-          font-size: 13px;
-          font-weight: 500;
-          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
-        }
-
-        .hero-right {
-          display: flex;
-          flex-direction: column;
           gap: 12px;
-          flex-shrink: 0;
-        }
-
-        .store-btn {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          gap: 14px;
-          min-height: 68px;
-          width: 270px;
-          padding: 15px 18px;
-          border-radius: 22px;
+          color: var(--app-text);
           text-decoration: none;
-          color: #ffffff;
+          justify-self: start;
+        }
+
+        .bms-footer-logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 16px;
+          display: inline-flex;
           overflow: hidden;
-          transition:
-            transform 180ms ease,
-            box-shadow 180ms ease,
-            opacity 180ms ease,
-            border-color 180ms ease;
-          box-shadow:
-            0 12px 32px rgba(16,24,40,0.14),
-            inset 0 1px 0 rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.14);
-          backdrop-filter: blur(10px);
+          background: rgba(var(--app-primary-rgb),.1);
         }
 
-        .store-btn::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.10) 32%, transparent 60%);
-          transform: translateX(-120%);
-          transition: transform 500ms ease;
-          pointer-events: none;
-        }
+        .bms-footer-logo img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.18); }
+        .bms-footer-brand-line > span:last-child { display: grid; gap: 3px; }
+        .bms-footer-brand-line strong { font-size: 18px; }
+        .bms-footer-brand-line small { color: var(--app-muted); }
 
-        .store-btn:hover {
-          transform: translateY(-3px);
-          box-shadow:
-            0 20px 42px rgba(16,24,40,0.18),
-            inset 0 1px 0 rgba(255,255,255,0.12);
-          opacity: 0.99;
-        }
-
-        .store-btn:hover::after {
-          transform: translateX(120%);
-        }
-
-        .store-btn--android {
-          background: linear-gradient(135deg, #0f172a 0%, #111827 46%, #1e293b 100%);
-        }
-
-        .store-btn--ios {
-          background: linear-gradient(135deg, #101010 0%, #18181b 55%, #27272a 100%);
-        }
-
-        .store-btn__icon {
-          width: 42px;
-          height: 42px;
-          border-radius: 15px;
-          background: rgba(255,255,255,0.10);
+        .bms-footer-cta {
           display: inline-flex;
           align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
-          font-size: 22px;
+          gap: 8px;
+          justify-self: start;
+          border-radius: 999px;
+          padding: 9px 15px;
+          background: var(--app-primary);
+          color: #fff;
+          text-decoration: none;
+          font-weight: 600;
+          box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),.18);
         }
 
-        .store-btn__text {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          flex: 1;
-          line-height: 1.12;
+        .bms-footer-column { display: grid; align-content: start; gap: 11px; }
+        .bms-footer-column h2 { margin: 0 0 4px; color: var(--app-text); font-size: 14px; }
+
+        .bms-footer-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--app-muted);
+          text-decoration: none;
+          transition: color .16s ease;
         }
 
-        .store-btn__text small {
-          font-size: 11px;
-          opacity: 0.72;
-          letter-spacing: 0.2px;
-        }
+        .bms-footer-link:hover { color: var(--app-primary); }
 
-        .store-btn__text strong {
-          margin-top: 4px;
-          font-size: 16px;
-          font-weight: 700;
-          letter-spacing: 0.2px;
-        }
-
-        .store-btn__download {
-          font-size: 18px;
-          opacity: 0.92;
-        }
-
-        .footer-main {
+        .bms-footer-bottom {
+          margin-top: 30px;
+          padding-top: 18px;
+          border-top: 1px solid var(--app-border);
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 16px;
-          width: 100%;
-          margin-top: 18px;
-        }
-
-        .footer-brand-block {
-          min-width: 0;
-        }
-
-        .brand-line {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand-mark {
-          width: 42px;
-          height: 42px;
-          border-radius: 14px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #111827 0%, #334155 100%);
-          color: #ffffff;
-          font-weight: 800;
-          font-size: 18px;
-          box-shadow: 0 10px 24px rgba(15,23,42,0.14);
-          flex-shrink: 0;
-        }
-
-        .brand-copy {
-          min-width: 0;
-        }
-
-        .brand-name {
-          color: rgba(var(--app-text-rgb),0.88);
-          font-size: 15px;
-          font-weight: 700;
-          line-height: 1.2;
-        }
-
-        .brand-sub {
-          margin-top: 4px;
-          color: rgba(var(--app-text-rgb),0.58);
-          font-size: 13px;
-          line-height: 1.4;
-        }
-
-        .footer-badges {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          justify-content: center;
-        }
-
-        .pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          border-radius: 999px;
-          padding: 6px 12px;
-          background: rgba(var(--app-surface-rgb),0.92);
-          border: 1px solid var(--app-border);
-          color: rgba(var(--app-text-rgb),0.72);
-          font-size: 13px;
-          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
-        }
-
-        .footer-divider {
-          height: 1px;
-          background: linear-gradient(90deg, transparent 0%, rgba(var(--app-text-rgb),0.14) 20%, rgba(var(--app-text-rgb),0.14) 80%, transparent 100%);
-          margin: 16px 0 14px;
-        }
-
-        .footer-links {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          gap: 10px;
-        }
-
-        .footer-link {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--app-border);
-          background: rgba(var(--app-surface-rgb),0.72);
-          color: rgba(var(--app-text-rgb),0.78);
-          text-decoration: none;
-          line-height: 1;
-          transition:
-            background 160ms ease,
-            border-color 160ms ease,
-            transform 160ms ease,
-            box-shadow 160ms ease;
-          font-size: 14px;
-          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.86);
-        }
-
-        .footer-link:hover {
-          background: rgba(var(--app-surface-rgb),0.98);
-          border-color: rgba(var(--app-text-rgb),0.22);
-          transform: translateY(-1px);
-          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.10);
-        }
-
-        .footer-link--external:hover {
-          color: var(--app-primary);
-        }
-
-        .footer-link--button {
-          cursor: pointer;
-          font: inherit;
-        }
-
-        .footer-link__icon,
-        .footer-link__label {
-          display: inline-flex;
-          align-items: center;
-        }
-
-        .footer-link--button em {
-          margin-left: 6px;
-          opacity: 0.75;
+          color: var(--app-muted);
           font-size: 12px;
-          font-style: normal;
         }
 
-        .footer-note {
-          margin-top: 16px;
-          color: rgba(var(--app-text-rgb),0.55);
-          text-align: center;
-          font-size: 13px;
-          line-height: 1.7;
+        .bms-footer-bottom button {
+          appearance: none;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 6px;
         }
 
-        .pdpa-bar {
+        .bms-footer-bottom button:hover { color: var(--app-primary); }
+        .bms-footer-bottom em { font-style: normal; opacity: .7; }
+
+        .bms-pdpa-bar {
           position: fixed;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          z-index: 9999;
-          padding: 14px 16px;
-          background: rgba(var(--app-surface-rgb),0.72);
+          inset: auto 0 0;
+          z-index: 1500;
+          padding: 12px;
+          background: rgba(var(--app-bg-rgb),.78);
           backdrop-filter: blur(14px);
-          border-top: 1px solid var(--app-border);
         }
 
-        .pdpa-card {
-          max-width: 1400px;
+        .bms-pdpa-card {
+          max-width: 1120px;
           margin: 0 auto;
-          border-radius: 20px;
           border: 1px solid var(--app-border);
-          background: rgba(var(--app-surface-rgb),0.96);
-          padding: 15px 16px;
-          box-shadow:
-            0 18px 44px rgba(var(--app-shadow-rgb),0.16),
-            inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
+          border-radius: 18px;
+          background: rgba(var(--app-surface-rgb),.98);
+          box-shadow: 0 18px 50px rgba(var(--app-shadow-rgb),.16);
+          padding: 14px 16px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 14px;
+          gap: 20px;
         }
 
-        .pdpa-copy {
-          min-width: 0;
-          flex: 1;
-        }
+        .bms-pdpa-copy { display: grid; gap: 4px; color: var(--app-text); }
+        .bms-pdpa-copy > span { color: var(--app-muted); line-height: 1.5; }
+        .bms-pdpa-links { display: flex; gap: 12px; font-size: 12px; }
+        .bms-pdpa-links a { color: var(--app-primary); }
+        .bms-pdpa-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
-        .pdpa-title {
-          font-weight: 700;
-          color: rgba(var(--app-text-rgb),0.9);
-          font-size: 15px;
-        }
-
-        .pdpa-desc {
-          margin-top: 4px;
-          color: rgba(var(--app-text-rgb),0.64);
-          line-height: 1.6;
-          font-size: 14px;
-        }
-
-        .pdpa-links {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          margin-top: 8px;
-        }
-
-        .pdpa-inline-link {
-          color: rgba(var(--app-text-rgb),0.72);
-          text-decoration: none;
-          font-weight: 500;
-        }
-
-        .pdpa-inline-link:hover {
-          color: rgba(var(--app-text-rgb),0.95);
-        }
-
-        .pdpa-actions {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 8px;
-          flex-shrink: 0;
-        }
-
-        .btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          border-radius: 12px;
-          padding: 10px 14px;
+        .bms-pdpa-actions button {
+          border-radius: 999px;
+          padding: 8px 13px;
           cursor: pointer;
-          font: inherit;
-          border: 1px solid var(--app-border);
-          transition:
-            background 160ms ease,
-            border-color 160ms ease,
-            opacity 160ms ease,
-            transform 160ms ease;
-        }
-
-        .btn:hover {
-          transform: translateY(-1px);
-        }
-
-        .btn-secondary {
-          background: var(--app-surface);
-          color: rgba(var(--app-text-rgb),0.86);
-        }
-
-        .btn-secondary:hover {
-          background: rgba(var(--app-text-rgb),0.06);
-        }
-
-        .btn-primary {
-          background: linear-gradient(135deg, rgba(var(--app-primary-rgb),1) 0%, rgba(var(--app-primary-rgb),0.82) 100%);
-          border-color: var(--app-primary);
-          color: #ffffff;
-          box-shadow: 0 10px 22px rgba(var(--app-primary-rgb),0.22);
-        }
-
-        .btn-primary:hover {
-          opacity: 0.96;
-        }
-
-        .desktop-only-inline,
-        .desktop-only {
           display: inline-flex;
+          align-items: center;
+          gap: 6px;
         }
 
-        @media (max-width: 991px) {
-          .hero-content {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .hero-right {
-            width: 100%;
-          }
-
-          .store-btn {
-            width: 100%;
-          }
-
-          .footer-main {
-            flex-direction: column;
-            align-items: flex-start;
-          }
+        .bms-pdpa-secondary, .bms-pdpa-close {
+          border: 1px solid var(--app-border);
+          background: var(--app-surface);
+          color: var(--app-text);
         }
 
-        @media (max-width: 767px) {
-          .footer-root {
-            padding: 12px 10px;
-          }
+        .bms-pdpa-primary { border: 1px solid var(--app-primary); background: var(--app-primary); color: #fff; }
 
-          .footer-root--with-pdpa {
-            padding-bottom: 128px;
-          }
+        @media (max-width: 980px) {
+          .bms-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
 
-          .footer-shell {
-            padding: 12px;
-            border-radius: 22px;
-          }
-
-          .hero-card {
-            border-radius: 22px;
-            padding: 18px 14px;
-          }
-
-          .hero-badge {
-            padding: 7px 11px;
-            font-size: 12px;
-          }
-
-          .hero-title {
-            margin-top: 14px;
-            font-size: 24px;
-            line-height: 1.14;
-          }
-
-          .hero-desc {
-            font-size: 14px;
-          }
-
-          .hero-meta {
-            font-size: 12px;
-          }
-
-          .feature-tags {
-            display: none;
-          }
-
-          .hero-right {
-            gap: 10px;
-          }
-
-          .store-btn {
-            min-height: 62px;
-            padding: 14px;
-            border-radius: 18px;
-          }
-
-          .store-btn__text strong {
-            font-size: 15px;
-          }
-
-          .brand-mark {
-            width: 38px;
-            height: 38px;
-            border-radius: 12px;
-            font-size: 16px;
-          }
-
-          .brand-name {
-            font-size: 14px;
-          }
-
-          .brand-sub {
-            font-size: 12px;
-          }
-
-          .footer-links {
-            gap: 8px;
-          }
-
-          .footer-link {
-            justify-content: center;
-            padding: 8px 10px;
-          }
-
-          .footer-link__label {
-            display: none;
-          }
-
-          .footer-link--button em {
-            display: none;
-          }
-
-          .desktop-only,
-          .desktop-only-inline {
-            display: none;
-          }
-
-          .pdpa-bar {
-            padding: 10px;
-          }
-
-          .pdpa-card {
-            flex-direction: column;
-            align-items: stretch;
-            padding: 12px;
-            border-radius: 18px;
-          }
-
-          .pdpa-actions {
-            justify-content: flex-end;
-          }
+        @media (max-width: 640px) {
+          .bms-footer { padding-inline: 18px; }
+          .bms-footer--with-pdpa { padding-bottom: 210px; }
+          .bms-footer-grid { grid-template-columns: 1fr; gap: 28px; }
+          .bms-footer-bottom, .bms-pdpa-card { align-items: flex-start; flex-direction: column; }
+          .bms-pdpa-actions { width: 100%; flex-wrap: wrap; }
+          .bms-pdpa-actions button { justify-content: center; flex: 1; }
         }
       `}</style>
     </>
+  );
+}
+
+function FooterColumn({
+  title,
+  links,
+}: {
+  title: string;
+  links: Array<{ href: string; label: string; icon: React.ReactNode }>;
+}) {
+  return (
+    <nav className="bms-footer-column" aria-label={title}>
+      <h2>{title}</h2>
+      {links.map((link) => (
+        <Link key={`${link.href}-${link.label}`} href={link.href} className="bms-footer-link">
+          {link.icon}<span>{link.label}</span>
+        </Link>
+      ))}
+    </nav>
   );
 }
 

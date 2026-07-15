@@ -29,23 +29,31 @@ export const bmsOrdersResolvers = {
   Query: {
     async bmsOrders(
       _p: unknown,
-      args: { status?: OrderStatus; limit?: number; offset?: number },
+      args: { search?: string; status?: OrderStatus; limit?: number; offset?: number },
       ctx: any
     ) {
       await requirePermission(ctx, "order.view");
       const tid = getTenantId(ctx);
       const limit = Math.min(Math.max(Number(args.limit ?? 50), 1), 200);
       const offset = Math.max(Number(args.offset ?? 0), 0);
+      const search = args.search?.trim() || null;
       const status =
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
 
       const res = await query(
         `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
            FROM bms_orders
-          WHERE tenant_id = $4 AND ($1::text IS NULL OR status = $1)
+          WHERE tenant_id = $4
+            AND ($1::text IS NULL OR status = $1)
+            AND (
+              $5::text IS NULL
+              OR id::text ILIKE '%' || $5 || '%'
+              OR channel ILIKE '%' || $5 || '%'
+              OR COALESCE(customer_ref, '') ILIKE '%' || $5 || '%'
+            )
           ORDER BY created_at DESC
           LIMIT $2 OFFSET $3`,
-        [status, limit, offset, tid]
+        [status, limit, offset, tid, search]
       );
       return res.rows;
     },
