@@ -279,8 +279,9 @@ export async function cancelPurchaseOrder(tenantId: string, poId: string): Promi
 }
 
 // ---- read ----------------------------------------------------
-export async function listPurchaseOrders(tenantId: string, limit = 50, offset = 0) {
+export async function listPurchaseOrders(tenantId: string, search = "", limit = 50, offset = 0) {
   const lim = Math.min(Math.max(limit, 1), 200);
+  const q = search.trim();
   const res = await query(
     `SELECT po.id, po.status, po.total_amount, po.note, po.created_at, po.updated_at,
             s.id AS supplier_id, s.name AS supplier_name,
@@ -290,10 +291,26 @@ export async function listPurchaseOrders(tenantId: string, limit = 50, offset = 
        LEFT JOIN bms_suppliers s ON s.id = po.supplier_id
        LEFT JOIN bms_purchase_order_items i ON i.po_id = po.id
       WHERE po.tenant_id = $1
+        AND (
+          $4 = ''
+          OR po.id::text ILIKE '%' || $4 || '%'
+          OR COALESCE(s.name, '') ILIKE '%' || $4 || '%'
+          OR COALESCE(po.note, '') ILIKE '%' || $4 || '%'
+          OR EXISTS (
+            SELECT 1
+              FROM bms_purchase_order_items ii
+             WHERE ii.tenant_id = po.tenant_id
+               AND ii.po_id = po.id
+               AND (
+                 ii.product_sku ILIKE '%' || $4 || '%'
+                 OR ii.size ILIKE '%' || $4 || '%'
+               )
+          )
+        )
       GROUP BY po.id, s.id, s.name
       ORDER BY po.created_at DESC
       LIMIT $2 OFFSET $3`,
-    [tenantId, lim, offset]
+    [tenantId, lim, offset, q]
   );
   return res.rows.map((r: any) => ({
     id: r.id,

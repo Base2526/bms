@@ -21,8 +21,8 @@ type Shipment = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_SHIPMENTS = gql`
-  query BmsShipments($status: BmsShipmentStatus, $limit: Int) {
-    bmsShipments(status: $status, limit: $limit) {
+  query BmsShipments($search: String, $status: BmsShipmentStatus, $limit: Int) {
+    bmsShipments(search: $search, status: $status, limit: $limit) {
       id orderId carrier trackingNo status note createdAt updatedAt
     }
   }
@@ -73,9 +73,16 @@ function ShipmentManagement() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editShip, setEditShip] = useState<Shipment | null>(null);
   const [labelId, setLabelId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data, loading, error, refetch } = useQuery(Q_SHIPMENTS, {
-    variables: { status: filter === "ALL" ? null : filter, limit: 200 },
+    variables: { search: search || null, status: filter === "ALL" ? null : filter, limit: 200 },
     fetchPolicy: "cache-and-network",
   });
 
@@ -145,6 +152,13 @@ function ShipmentManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>BMS Shipping</h2>
           <Space wrap>
+            <Input.Search
+              placeholder="ค้นหา shipment / order / tracking"
+              allowClear
+              style={{ width: 260 }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
             <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
             {can("shipping.create") && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>สร้างการจัดส่ง</Button>

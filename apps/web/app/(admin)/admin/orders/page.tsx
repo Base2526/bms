@@ -16,9 +16,10 @@ import {
   Tooltip,
   Spin,
   Empty,
+  Input,
 } from "antd";
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ReloadOutlined,
   DollarOutlined,
@@ -48,8 +49,8 @@ type Order = {
 
 // ---- GraphQL ------------------------------------------------
 const Q_ORDERS = gql`
-  query BmsOrders($status: BmsOrderStatus, $limit: Int, $offset: Int) {
-    bmsOrders(status: $status, limit: $limit, offset: $offset) {
+  query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
+    bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
       id channel customer_ref status total_amount created_at updated_at
       items { product_sku size qty unit_price }
     }
@@ -102,9 +103,16 @@ const FILTERS = ["ALL", "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "C
 function OrdersManagement() {
   const { can } = useBmsPermissions();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data, loading, error, refetch } = useQuery(Q_ORDERS, {
-    variables: { status: filter === "ALL" ? null : filter, limit: 100, offset: 0 },
+    variables: { search: search || null, status: filter === "ALL" ? null : filter, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
   });
 
@@ -207,6 +215,13 @@ function OrdersManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>BMS Orders (OMS)</h2>
           <Space wrap>
+            <Input.Search
+              placeholder="ค้นหา order / customer / channel"
+              allowClear
+              style={{ width: 260 }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
             <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
           </Space>

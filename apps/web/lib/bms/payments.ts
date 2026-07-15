@@ -174,19 +174,29 @@ export async function getPayment(tenantId: string, id: string) {
 
 export async function listPayments(
   tenantId: string,
-  opts: { orderId?: string | null; status?: string | null; limit?: number; offset?: number } = {}
+  opts: { search?: string | null; orderId?: string | null; status?: string | null; limit?: number; offset?: number } = {}
 ) {
   const limit = Math.min(Math.max(Number(opts.limit ?? 50), 1), 200);
   const offset = Math.max(Number(opts.offset ?? 0), 0);
+  const search = opts.search?.trim() || null;
   const res = await query(
     `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by, created_at, updated_at
        FROM bms_payments
       WHERE tenant_id = $1
         AND ($2::uuid IS NULL OR order_id = $2)
         AND ($3::text IS NULL OR status = $3)
+        AND (
+          $6::text IS NULL
+          OR id::text ILIKE '%' || $6 || '%'
+          OR order_id::text ILIKE '%' || $6 || '%'
+          OR method ILIKE '%' || $6 || '%'
+          OR COALESCE(slip_ref, '') ILIKE '%' || $6 || '%'
+          OR COALESCE(verified_by, '') ILIKE '%' || $6 || '%'
+          OR COALESCE(note, '') ILIKE '%' || $6 || '%'
+        )
       ORDER BY created_at DESC
       LIMIT $4 OFFSET $5`,
-    [tenantId, opts.orderId ?? null, opts.status ?? null, limit, offset]
+    [tenantId, opts.orderId ?? null, opts.status ?? null, limit, offset, search]
   );
   return res.rows;
 }

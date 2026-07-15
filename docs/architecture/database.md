@@ -16,7 +16,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0` |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0`, `6.5` |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
@@ -56,6 +56,14 @@ transitions (written only when status actually changes), separate from `bms_audi
 are automated events from external platforms, not admin actions. Written exclusively through
 `setChannelStatus()` in `lib/bms/channelHealth.ts` — see [../integrations/lazada.md](../integrations/lazada.md)
 for a caveat on what a `webhook_failed` badge means for the Shopee/Lazada beta scaffold specifically.
+
+**`bms_product_images` (`6.5__bms_product_images.sql`)** — ordered gallery rows
+`(tenant_id, product_sku, file_id, sort_order)` pointing at the shared `files` table. The older
+`bms_products.image_url` column remains in place as the canonical cover image for backward
+compatibility with existing UI/API consumers. In the current implementation, product save replaces
+the gallery rows for that SKU inside the same tenant-scoped transaction, then repopulates them in
+the submitted order. The table has its own RLS policy and explicit `bms_app` grants; forgetting
+those breaks product save even if the table itself exists.
 
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a

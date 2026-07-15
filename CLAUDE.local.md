@@ -14,6 +14,28 @@ cd apps/web && npm install && npm run dev      # http://localhost:3000
 cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก่อน merge ทุกครั้ง
 ```
 
+### Frontend gotcha: CSS Modules ทำ route เป็นหน้าขาวได้
+
+- ถ้า `*.module.css` ใช้ selector ที่เป็น `:global(...)` ทั้งหมด Next.js จะฟ้องว่า selector
+  `is not pure` และ route ตอบ `500` แม้ไฟล์ `page.tsx` ไม่มี TypeScript error
+- ถ้าต้องแตะ parent ที่เป็น global ให้มี local class อยู่ใน selector ด้วย เช่น
+  `:global(.bms-auth-main):has(.page)` (`.page` มาจาก CSS Module) หรือย้าย rule global จริงไป
+  `app/globals.css`
+- เคยเกิดกับ `/shop-signup`: selector เดิม
+  `:global(.bms-auth-main:has([data-shop-signup-page]))` ทำให้หน้า compile ไม่ผ่านและดูเหมือนหน้าขาว
+- หลังแก้ page/layout/CSS Module ให้เปิด URL นั้นตรง ๆ ใน browser เสมอ อย่าตรวจเฉพาะ `tsc`
+
+### Docker/host ห้ามใช้ `.next` และ `node_modules` ชุดเดียวกัน
+
+- `docker-compose.dev.yml` ต้อง mount `web_next_cache` ที่ `/app/apps/web/.next` และ
+  `web_node_modules` ที่ `/app/apps/web/node_modules` แยกจาก bind mount ของ source code
+- ถ้า Docker Next dev กับ host Next dev เขียน `.next` ชุดเดียวกัน manifest ของ App Router จะปนกัน
+  และทุก route อาจพังด้วย `Cannot read properties of undefined (reading 'clientModules')`
+- `node_modules` ก็ห้ามแชร์ระหว่าง Linux container กับ macOS เพราะ native package เช่น `esbuild`
+  จะเป็นคนละ platform
+- วิธี recovery: หยุดเฉพาะ `web`, ล้าง build cache `.next`, แล้ว recreate `web` container; ไม่ต้องลบ
+  PostgreSQL volume หรือข้อมูลธุรกิจ
+
 ## โครงโค้ด BMS (จำง่าย)
 
 - **business logic** → `apps/web/lib/bms/*.ts` (ที่เดียว ใช้ร่วม REST + GraphQL)
@@ -38,11 +60,23 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `6.2__bms_customer_360.sql` (ดู § Customer 360 ด้านล่าง) ·
   `6.3__bms_order_create_perm.sql` (seed permission ใหม่ `order.create` ให้ Manager/Sales — ใช้กับปุ่ม "ซื้อซ้ำ" —
   **renumber แล้วจาก `6.1` เดิม** ที่เคยชนกับ `6.1__bms_inbox_assignment.sql` เพราะมาจากคนละ branch ตั้งเลขซ้ำกัน) ·
-  `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง)
+  `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง) ·
+  `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **order journey** → `getOrderJourney` (`lib/bms/orders.ts`) → `bmsOrderJourney(orderId)` — แถวขยายในหน้า Orders โชว์ ต้นทางแชท + stepper (PENDING→PAID→PACKING→SHIPPED→COMPLETED + กิ่ง CANCELLED/RETURNED) + timeline ละเอียด · **ไม่มี migration** — order↔conversation join 1:1 ด้วย `(tenant_id, channel, customer_ref)` (conversation dedupe ด้วย UNIQUE เดิม) · reuse `bms_audit_log` (order.pay/pack/ship/complete/cancel/return, target=orderId) + `listSystemEvents`/`listConversationHelpers` (event แชท) + `listShipments` (เลขพัสดุ) · COMPLETED แบบ auto (จัดส่งถึง) ไม่ได้ audit → fallback `updated_at` · ลิงก์ "เปิดดูแชท" ไป `/admin/inbox?c=<id>` (inbox อ่าน param `c` เปิดแชทนั้น)
 - **product category** → `category` บน `bms_products` ยังเป็น TEXT อิสระ (ไม่ใช่ FK กัน data เดิมพัง) · `bms_product_categories` คือ "list ที่ร้านจัดการ" ให้เลือกจาก dropdown เท่านั้น — เปลี่ยนชื่อ category จะ sync ไปสินค้าที่อ้างชื่อเดิมด้วย (`renameCategory` ทำใน tx เดียว), ลบ category ไม่ลบสินค้า (แค่หายจาก dropdown)
+- **product gallery (หลายรูป)** → service `lib/bms/products.ts` รองรับ `image_urls[]` + table `bms_product_images`
+  (migration `6.5`) · GraphQL `BmsProduct.images` resolve gallery เต็ม, ส่วน `imageUrl` ยังเป็นรูปหลัก/cover เพื่อไม่พัง
+  code เก่า · หน้า `/admin/products` อัปโหลดได้หลายรูป, เรียงตามลำดับที่เพิ่ม, ลบออกจาก draft ได้ก่อนบันทึก
+- **admin profile** → `/admin/profile` ใช้ `bmsMe` + `updateMe` + `uploadAvatar` ให้ผู้ใช้แก้ชื่อ/เบอร์/ภาษา/รูปโปรไฟล์
+  ตัวเองได้โดยไม่ต้องเข้าหน้า users ระดับแอดมินระบบ
+- **search หน้า operations** → `/admin/orders`, `/admin/purchase`, `/admin/payment`, `/admin/shipment`
+  รองรับ search ฝั่ง backend แล้ว (`typeDefs` + resolver/service) และหน้า UI ใช้ live search แบบ debounce ~300ms;
+  อย่า revert กลับไปเป็น filter ฝั่ง table อย่างเดียว เพราะจะค้นหาไม่ครบเมื่อมีข้อมูลมากกว่า page ปัจจุบัน
+- **public landing / signup refresh** → `/` เป็น interactive infographic 2 ภาษา (ใช้ i18n key จริง ไม่ hardcode copy ลง page ตรง ๆ)
+  และ CTA เปลี่ยนตาม session (`/admin/dashboard` ถ้าล็อกอินแล้ว, `/shop-signup` ถ้ายังไม่ล็อกอิน) · `/shop-signup`
+  ต้องอยู่ใน `isAuthPath()` เสมอ ไม่งั้นจะเผลอโหลด session/chat wires แล้ว layout สับสน
 - **quota** → `lib/bms/plans.ts` (`enforceProductQuota`/`enforceUserQuota`) — เรียกก่อน INSERT เท่านั้น (ไม่ gate platform admin) · แพ็กเกจใหม่ที่มี limit ต้องเพิ่ม `enforce*Quota()` เอง ไม่มีมิดเดิลแวร์กลาง
 - **role dropdown** → ต้อง query `roles` จาก DB เสมอ (`app/(admin)/admin/users/[id]/edit/page.tsx` ทำถูก) **ห้าม hardcode** ชื่อ role ในหน้า UI (เคยพลาดที่ `users/new/page.tsx` มี role ค้างจาก project เก่า ทำให้ Manager/Sales/Warehouse หายไปจาก dropdown)
 - **แก้ Permissions ต้อง drill-down ก่อน** → หน้า `/admin/permissions` แก้สิทธิ์ตาม `getTenantId(ctx)` = ร้านที่แอดมินยืนอยู่ตอนนั้น platform admin ที่ไม่ได้ `/admin/tenants` → "เข้าดู" ร้านเป้าหมายก่อน จะแก้สิทธิ์ผิดร้านโดยไม่มี error ใดเตือน (เช็ค banner เหลืองว่าอยู่ร้านไหนก่อนกดบันทึกเสมอ)
@@ -174,6 +208,13 @@ children ของ panel ที่ยังไม่เคย active — **น�
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
 แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)
 **seed ลง tenant ของ user ที่ล็อกอิน** (ร้านค้าเทสเองแล้วเห็นในร้านตัวเอง) · cleanup ก็ scope ตามร้าน · platform admin อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
+
+## หมายเหตุการเช็ก type/dependency บนเครื่องนี้
+
+- `apps/web` ใช้ dependency ชุดที่มีอยู่ใน repo/container อยู่แล้ว; การรัน `pnpm` บนเครื่องที่เดิมลงด้วย npm
+  อาจย้าย package ไป `node_modules/.ignored` และทำให้ type checker ฟ้องว่าโมดูลหายทั้งโปรเจ็กต์ได้
+- ถ้าจะเช็ก TypeScript ในเครื่องนี้ ให้ระวังไม่ให้ตัวเช็กพยายาม install dependency ใหม่โดยไม่จำเป็น
+- ถ้ามี `.pnpm-store/` โผล่ใน repo จากการเช็กพลาด มันเป็นเศษ local artifact ไม่ใช่ source-of-truth ของระบบ
 
 ## การเพิ่มโมดูลใหม่ (checklist)
 

@@ -30,11 +30,12 @@ export const bmsShippingResolvers = {
   Query: {
     async bmsShipments(
       _p: unknown,
-      args: { orderId?: string; status?: string; limit?: number; offset?: number },
+      args: { search?: string; orderId?: string; status?: string; limit?: number; offset?: number },
       ctx: any
     ) {
       await requirePermission(ctx, "shipping.view");
       return listShipments(getTenantId(ctx), {
+        search: args.search ?? null,
         orderId: args.orderId ?? null,
         status: args.status ?? null,
         limit: args.limit ?? 50,

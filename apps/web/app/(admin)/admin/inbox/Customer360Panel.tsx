@@ -358,7 +358,7 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
 
   return (
     <div style={{
-      width: 340, flexShrink: 0, minHeight: 0, overflowY: "auto",
+      width: 320, maxWidth: "32vw", flexShrink: 0, minHeight: 0, minWidth: 280, overflowY: "auto", overflowX: "hidden",
       border: "1px solid var(--app-border, #eee)", borderRadius: 8, padding: 10,
       position: "sticky", top: 0, height: "100%",
     }}>

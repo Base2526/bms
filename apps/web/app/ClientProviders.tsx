@@ -21,6 +21,7 @@ function isAuthPath(pathname: string) {
     pathname === "/forgot" ||
     pathname === "/reset" ||
     pathname === "/verify-email" ||
+    pathname === "/shop-signup" ||
     pathname.startsWith("/admin/login")
   );
 }

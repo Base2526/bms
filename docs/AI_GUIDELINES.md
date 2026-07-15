@@ -48,6 +48,11 @@ The database is the source of truth. Business decisions are enforced by backend 
   partial order unless the product specification explicitly supports drafts.
 - Customer replies should be polite, concise, and appropriate to the channel and tenant language.
   Style must never weaken accuracy or safety.
+- Marketing/demo/infographic copy shown on public pages or internal manuals must describe only
+  implemented behavior. Do not let AI-generated copy claim auto-payment confirmation, unsupported
+  carrier APIs, or other roadmap-only capabilities as if they were live.
+- When content is bilingual, Thai and English variants must stay semantically aligned. Do not make
+  one language promise a stronger feature set than the other.
 
 ## Tool design and execution
 
@@ -107,6 +112,8 @@ template.
 - Build from an explicit facts bundle fetched for the current tenant and customer.
 - Separate observation from recommendation and label uncertainty.
 - Do not infer sensitive traits or present unsupported predictions as facts.
+- If insights are cached, the cache key must derive from the underlying facts bundle so stale AI
+  prose is replaced when the real customer/order/payment data changes.
 
 ### Payment slips and OCR
 

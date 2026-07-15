@@ -42,8 +42,8 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <AdminSidebar />
-      <Layout>
-        <Content style={{ padding: 24 }}>
+      <Layout style={{ minWidth: 0 }}>
+        <Content style={{ padding: 24, minWidth: 0, overflowX: "hidden" }}>
           <ImpersonationBanner />
           {children}
         </Content>

@@ -1,376 +1,644 @@
 'use client';
-import { Anchor, Card, Col, Row, Table, Tag, Typography, Alert, Steps } from "antd";
+
+import { useMemo, useState } from "react";
+import {
+  Alert,
+  Anchor,
+  Button,
+  Card,
+  Col,
+  Divider,
+  List,
+  Row,
+  Space,
+  Steps,
+  Tag,
+  Typography,
+} from "antd";
 import Link from "next/link";
+import {
+  ApiOutlined,
+  CreditCardOutlined,
+  CustomerServiceOutlined,
+  DashboardOutlined,
+  DatabaseOutlined,
+  FileSearchOutlined,
+  InboxOutlined,
+  RocketOutlined,
+  ShopOutlined,
+  ShoppingCartOutlined,
+  TruckOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 
 const { Title, Paragraph, Text } = Typography;
 
-// ---------- ตารางอ้างอิง ----------
-const orderFlow = [
-  { k: 1, status: "PENDING", th: "รอชำระเงิน", action: "สร้าง order (สั่งซื้อ)", stock: "reserved += qty (จองสต็อก)" },
-  { k: 2, status: "PAID", th: "จ่ายแล้ว", action: "จ่ายเงิน / ยืนยัน payment", stock: "— (ยังจองไว้)" },
-  { k: 3, status: "PACKING", th: "กำลังแพ็ค", action: "แพ็ค", stock: "—" },
-  { k: 4, status: "SHIPPED", th: "จัดส่งแล้ว", action: "จัดส่ง / สร้าง shipment", stock: "current −= qty, reserved −= qty (ตัดจริง)" },
-  { k: 5, status: "COMPLETED", th: "สำเร็จ", action: "ปิดงาน / shipment = DELIVERED", stock: "—" },
-  { k: 6, status: "CANCELLED", th: "ยกเลิก", action: "ยกเลิก (ก่อนส่ง)", stock: "reserved −= qty (คืนจอง)" },
-  { k: 7, status: "RETURNED", th: "คืนสินค้า", action: "คืน (หลังส่ง)", stock: "current += qty (คืนเข้าคลัง)" },
-];
-const statusColor: Record<string, string> = {
-  PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue", COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
+type PersonaKey = "owner" | "staff" | "ops";
+type FlowKey = "products" | "orders" | "payment" | "shipping";
+
+const personaCards: Record<
+  PersonaKey,
+  {
+    title: string;
+    subtitle: string;
+    items: string[];
+    ctaLabel: string;
+    ctaHref: string;
+  }
+> = {
+  owner: {
+    title: "เจ้าของร้านควรเริ่มจากอะไร",
+    subtitle: "เหมาะกับวันแรกที่เริ่มเปิดระบบหรือเซ็ตร้านใหม่",
+    items: [
+      "เพิ่มสินค้า + รูปสินค้า + ราคา + stock ต่อไซซ์",
+      "ลองจำลองออเดอร์ผ่าน Playground ให้เห็น flow จริง",
+      "เชื่อมช่องทางขายจริงที่หน้า Settings",
+      "เปิด Dashboard ดูภาพรวมร้านและแจ้งเตือน",
+    ],
+    ctaLabel: "เริ่มที่ Products",
+    ctaHref: "/admin/products",
+  },
+  staff: {
+    title: "พนักงานหน้าร้านใช้อะไรบ่อยสุด",
+    subtitle: "เหมาะกับคนตอบแชท รับออเดอร์ และตามงานประจำวัน",
+    items: [
+      "เปิด Inbox ดูแชทใหม่และลูกค้าที่ต้องตอบก่อน",
+      "ใช้ Customer 360 เพื่อดูประวัติลูกค้าแบบไม่สลับหน้า",
+      "เช็ก Orders / Payment / Shipping ต่อเนื่องเป็นชุดเดียว",
+      "ใช้ช่องค้นหาบนแต่ละหน้าเพื่อหา order / payment / tracking เร็วขึ้น",
+    ],
+    ctaLabel: "ไปที่ Inbox",
+    ctaHref: "/admin/inbox",
+  },
+  ops: {
+    title: "แอดมินระบบควรดูอะไรบ้าง",
+    subtitle: "เหมาะกับคนดูสิทธิ์ผู้ใช้ เชื่อมช่องทาง และดูแล tenant",
+    items: [
+      "ตั้งค่า Roles / Permissions ให้ตรงหน้าที่",
+      "เช็ก Channel Health และ webhook status",
+      "ดู Billing, package, usage และ tenant setting",
+      "ใช้คู่มือ API / webhook เมื่อต้อง debug หรือเชื่อมระบบเพิ่ม",
+    ],
+    ctaLabel: "ไปที่ Settings",
+    ctaHref: "/admin/settings",
+  },
 };
 
-const perms = [
-  { role: "Administrator", desc: "super — ทุกสิทธิ์ + จัดการ RBAC", perms: "ทั้งหมด (26 สิทธิ์)" },
-  { role: "Manager", desc: "ผู้จัดการร้าน (เจ้าของร้านที่สมัครใหม่)", perms: "ทั้งหมด ยกเว้นแก้ RBAC ระบบ" },
-  { role: "Sales", desc: "ฝ่ายขาย / แอดมินแชท", perms: "order.* , customer.* , inbox.* , payment.submit , product.view , report.view" },
-  { role: "Warehouse", desc: "คลัง / จัดส่ง", perms: "product.view , stock.adjust , order.view/ship , purchase.* , shipping.*" },
-  { role: "Finance", desc: "การเงิน (ตัวอย่าง role เพิ่มเอง)", perms: "payment.* , report.view , order.view" },
+const flowCards: Record<
+  FlowKey,
+  {
+    title: string;
+    path: string;
+    summary: string;
+    checks: string[];
+    tags: string[];
+  }
+> = {
+  products: {
+    title: "1) เตรียมสินค้าให้พร้อมขาย",
+    path: "Products → เพิ่มสินค้า → รูปหลายรูป → ราคา → stock ต่อไซซ์",
+    summary: "เริ่มจากการเพิ่มสินค้าให้ครบก่อน โดยรูปแรกเป็น cover และรูปถัดไปเป็น gallery ของสินค้า",
+    checks: [
+      "กรอก SKU / Barcode / ราคา ให้ครบ",
+      "อัปโหลดรูปสินค้าได้หลายรูป",
+      "ตั้ง stock และ reorder point ต่อไซซ์",
+      "ถ้ายังไม่มีของเข้า ใช้ Purchase รับเข้าคลังภายหลังได้",
+    ],
+    tags: ["Products", "Gallery", "Stock", "Category"],
+  },
+  orders: {
+    title: "2) รับแชทและสร้างออเดอร์",
+    path: "Inbox → Customer 360 → Orders",
+    summary: "เมื่อมีแชทเข้า ให้ดูข้อมูลลูกค้าและสถานะงานต่อจาก Inbox ได้เลย แล้วค่อยตามต่อที่ Orders",
+    checks: [
+      "ดูแชทใหม่จาก Inbox ก่อน",
+      "ใช้ Customer 360 ดูประวัติและข้อมูลลูกค้า",
+      "เปิด Orders เพื่อตามสถานะ PENDING / PAID / PACKING",
+      "ค้นหา order / customer / channel ได้จากช่องค้นหาด้านบน",
+    ],
+    tags: ["Inbox", "Orders", "Customer 360", "Search"],
+  },
+  payment: {
+    title: "3) ยืนยันการชำระเงิน",
+    path: "Payment → ตรวจสลิป → Confirm / Reject / Refund",
+    summary: "หน้า Payment คือจุดที่ตามสถานะเงินทั้งหมด โดย AI ช่วยตรวจสลิปได้ แต่คนยังต้องกดยืนยันเอง",
+    checks: [
+      "ค้นหา payment id / order id / slip ref ได้",
+      "ตรวจสลิปด้วย AI เป็นคำแนะนำเท่านั้น",
+      "Confirm แล้วออเดอร์จะเป็น PAID",
+      "Refund ใช้เมื่อรายการอยู่ในสถานะที่คืนเงินได้เท่านั้น",
+    ],
+    tags: ["Payment", "Slip", "Confirm", "Refund"],
+  },
+  shipping: {
+    title: "4) จัดส่งและปิดงาน",
+    path: "Shipping → Tracking → DELIVERED → Dashboard",
+    summary: "เมื่อแพ็คของแล้ว ให้สร้าง shipment ใส่เลขพัสดุ และเดินสถานะจนปิดงานครบ",
+    checks: [
+      "สร้าง shipment จาก order ที่พร้อมส่ง",
+      "บันทึก carrier และ tracking number",
+      "ค้นหา shipment / order / tracking ได้จากช่องค้นหา",
+      "DELIVERED จะช่วยปิด flow งานให้ครบ",
+    ],
+    tags: ["Shipping", "Tracking", "Carrier", "Dashboard"],
+  },
+};
+
+const menuCards = [
+  {
+    key: "inbox",
+    icon: <InboxOutlined />,
+    title: "Inbox",
+    desc: "รับแชท, ดู Customer 360, assign staff, ตามงานต่อจากแชท",
+    bullets: ["เริ่มงานจากแชทใหม่", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
+    href: "/admin/inbox",
+  },
+  {
+    key: "products",
+    icon: <DatabaseOutlined />,
+    title: "Products & Purchase",
+    desc: "เพิ่มสินค้า, รูปหลายรูป, stock, reorder point, รับของเข้าคลัง",
+    bullets: ["รูปแรกเป็น cover", "รับของผ่าน Purchase", "กรองหมวดหมู่และค้นหา SKU ได้"],
+    href: "/admin/products",
+  },
+  {
+    key: "ops",
+    icon: <ShoppingCartOutlined />,
+    title: "Orders / Payment / Shipping",
+    desc: "3 หน้านี้ควรถูกใช้ต่อเนื่องกันเป็น flow เดียว",
+    bullets: ["มี search บนทุกหน้า", "ตามสถานะงานได้ชัด", "เหมาะกับงานปฏิบัติการรายวัน"],
+    href: "/admin/orders",
+  },
+  {
+    key: "crm",
+    icon: <UserOutlined />,
+    title: "Customers / CRM",
+    desc: "ดูข้อมูลลูกค้า, ที่อยู่, ประวัติซื้อ, merge และค้นหาชื่อ/เบอร์",
+    bullets: ["ที่อยู่หลายรายการ", "ค้นหาเร็วจากชื่อ/เบอร์", "ใช้คู่กับ Customer 360"],
+    href: "/admin/customers",
+  },
 ];
 
-const endpoints = [
-  { m: "POST", path: "/api/bms/chat", desc: "ทดสอบ pipeline (message, channel, customerRef, tenantId)" },
-  { m: "POST", path: "/api/bms/{line|tiktok|facebook|instagram}/webhook/{tenantId}", desc: "webhook ต่อร้าน (verify signature)" },
-  { m: "POST", path: "/api/bms/web/webhook/{tenantId}", desc: "Website Live Chat (public widget, ตอบใน response)" },
-  { m: "POST", path: "/api/bms/order", desc: "สร้าง order (items[])" },
-  { m: "POST", path: "/api/bms/order/{id}/pay|pack|ship|complete|cancel|return", desc: "เปลี่ยนสถานะ order" },
-  { m: "POST", path: "/api/bms/purchase  ·  /{id}/receive|cancel", desc: "ใบสั่งซื้อ (PO) + รับของ" },
-  { m: "POST", path: "/api/bms/payment  ·  /{id}/confirm|reject|refund|verify", desc: "การชำระเงิน + ตรวจสลิป" },
-  { m: "POST", path: "/api/bms/shipment  ·  /{id}/tracking|status  ·  GET /label", desc: "จัดส่ง + tracking + label" },
-  { m: "GET/POST", path: "/api/bms/inbox  ·  /{id}/reply", desc: "อินบ็อกซ์รวม + ตอบเอง" },
-  { m: "GET", path: "/api/bms/reports/{sales|inventory|top-products}", desc: "รายงานตามช่วงวันที่" },
-  { m: "POST", path: "/api/bms/orders/release-expired?minutes=N", desc: "cron ยกเลิก order PENDING ค้าง" },
+const helpRows = [
+  {
+    title: "เพิ่มสินค้าแล้ว แต่ยังขายไม่ได้",
+    answer: "เช็กว่าตั้งราคา, เปิด active, และมี stock ในไซซ์ที่ต้องขายแล้วหรือยัง",
+  },
+  {
+    title: "ค้นหา order / payment / shipment ไม่เจอ",
+    answer: "ใช้ช่องค้นหาบนหน้า Orders / Payment / Shipping ได้โดยตรง ระบบค้นหาแบบพิมพ์แล้วทำงานเอง",
+  },
+  {
+    title: "ลูกค้าทักมา แต่ไม่รู้ต้องเปิดหน้าไหนต่อ",
+    answer: "เริ่มจาก Inbox แล้วดู Customer 360 ก่อน จากนั้นค่อยตามงานต่อที่ Orders / Payment / Shipping",
+  },
+  {
+    title: "อยากเชื่อม LINE / Facebook / Website",
+    answer: "ไปที่ Settings แล้วทำตาม webhook/token guide ของแต่ละช่องทาง",
+  },
 ];
 
-const movements = [
-  { t: "STOCK_IN", when: "แอดมินปรับสต็อก (+) หรือรับของจาก PO (receive)" },
-  { t: "STOCK_OUT", when: "แอดมินปรับสต็อก (−)" },
-  { t: "RESERVE", when: "สร้าง order (จอง)" },
-  { t: "SHIP", when: "จัดส่ง / สร้าง shipment (ตัดของออก)" },
-  { t: "RETURN", when: "คืนสินค้า (คืนของเข้า)" },
-  { t: "RELEASE", when: "ยกเลิก/auto-release (คืนจอง)" },
-];
-
-function Sec({ id, children }: { id: string; children: React.ReactNode }) {
-  return <div id={id} style={{ scrollMarginTop: 80, marginBottom: 32 }}>{children}</div>;
+function Section({
+  id,
+  title,
+  subtitle,
+  children,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} style={{ scrollMarginTop: 88 }}>
+      <Card style={{ borderRadius: 18 }}>
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <Title level={3} style={{ margin: 0 }}>
+            {title}
+          </Title>
+          {subtitle ? (
+            <Paragraph type="secondary" style={{ margin: 0 }}>
+              {subtitle}
+            </Paragraph>
+          ) : null}
+          <Divider style={{ margin: "8px 0 0" }} />
+          <div style={{ paddingTop: 8 }}>{children}</div>
+        </Space>
+      </Card>
+    </section>
+  );
 }
 
-const codeBlock: React.CSSProperties = {
-  background: "var(--app-surface-2, rgba(127,127,127,0.12))",
-  border: "1px solid var(--app-border, rgba(127,127,127,0.25))",
-  borderRadius: 6, padding: 12, margin: "8px 0 16px",
-  fontSize: 12, lineHeight: 1.6, overflowX: "auto", whiteSpace: "pre",
-};
-
 export default function Page() {
-  const anchorItems = [
-    { key: "overview", href: "#overview", title: "1. ภาพรวมระบบ" },
-    { key: "getstart", href: "#getstart", title: "2. เริ่มต้นใช้งาน" },
-    { key: "playground", href: "#playground", title: "3. Playground (ทดสอบแชต)" },
-    { key: "inbox", href: "#inbox", title: "4. Inbox (Omnichannel)" },
-    { key: "products", href: "#products", title: "5. Products & Inventory (IMS)" },
-    { key: "orders", href: "#orders", title: "6. Orders (OMS)" },
-    { key: "purchase", href: "#purchase", title: "7. Purchase (PO)" },
-    { key: "payment", href: "#payment", title: "8. Payment" },
-    { key: "shipping", href: "#shipping", title: "9. Shipping" },
-    { key: "customers", href: "#customers", title: "10. Customers (CRM)" },
-    { key: "reports", href: "#reports", title: "11. Dashboard & Reports" },
-    { key: "permissions", href: "#permissions", title: "12. Users / Roles / Permissions" },
-    { key: "settings", href: "#settings", title: "13. Settings (เชื่อมช่องทาง)" },
-    { key: "billing", href: "#billing", title: "14. Billing & แพ็กเกจ" },
-    { key: "saas", href: "#saas", title: "15. SaaS multi-tenant" },
-    { key: "api", href: "#api", title: "16. API / Webhook reference" },
-    { key: "testai", href: "#testai", title: "17. ทดสอบ AI (Postman/webhook)" },
-  ];
+  const [persona, setPersona] = useState<PersonaKey>("owner");
+  const [flow, setFlow] = useState<FlowKey>("products");
+
+  const activePersona = personaCards[persona];
+  const activeFlow = flowCards[flow];
+
+  const anchorItems = useMemo(
+    () => [
+      { key: "hero", href: "#hero", title: "เริ่มต้นเร็ว" },
+      { key: "quickstart", href: "#quickstart", title: "Quick start ตามบทบาท" },
+      { key: "workflow", href: "#workflow", title: "Flow งานทั้งระบบ" },
+      { key: "menus", href: "#menus", title: "คู่มือตามเมนู" },
+      { key: "faq", href: "#faq", title: "คำถามที่เจอบ่อย" },
+      { key: "links", href: "#links", title: "ลิงก์ไปหน้าที่ใช้บ่อย" },
+    ],
+    []
+  );
 
   return (
     <div>
-      <Title level={2}>📖 คู่มือการใช้งาน AI-BMS</Title>
-      <Paragraph type="secondary">
-        ระบบจัดการร้านค้าอัตโนมัติผ่านแชตหลายช่องทาง (LINE / TikTok / Facebook / Instagram / เว็บ) — ปิดครบวงจรตั้งแต่ลูกค้าทัก → ขาย → จัดซื้อ → ชำระเงิน → จัดส่ง → รายงาน แบบ SaaS หลายร้าน
-      </Paragraph>
-
-      <Row gutter={24}>
-        <Col xs={24} md={17}>
-          <Sec id="overview">
-            <Title level={4}>1. ภาพรวมระบบ</Title>
-            <Paragraph>AI-BMS เปลี่ยน "บทสนทนาลูกค้า" ให้กลายเป็น workflow ธุรกิจอัตโนมัติ:</Paragraph>
-            <Alert type="info" showIcon message="ลูกค้าทัก → AI เข้าใจ (NLU) → เช็คสต็อก → สร้างออเดอร์ → ชำระเงิน → จัดส่ง → รายงาน · ทุกแชทถูกเก็บใน Inbox" style={{ marginBottom: 12 }} />
-            <Paragraph>
-              โมดูล: <Tag>Inbox รวมแชท</Tag><Tag>IMS สินค้า/สต็อก</Tag><Tag>OMS ออเดอร์</Tag><Tag>Purchase จัดซื้อ</Tag><Tag>Payment</Tag><Tag>Shipping</Tag><Tag>CRM ลูกค้า</Tag><Tag>Reports</Tag><Tag>RBAC สิทธิ์</Tag><Tag>Channels LINE/TikTok/FB/IG/Web</Tag><Tag>Billing</Tag>
+      <div id="hero" style={{ marginBottom: 20 }}>
+        <Card
+          style={{
+            borderRadius: 24,
+            background:
+              "linear-gradient(135deg, rgba(24,144,255,0.08) 0%, rgba(82,196,26,0.08) 100%)",
+          }}
+        >
+          <Space direction="vertical" size={14} style={{ width: "100%" }}>
+            <Tag color="blue" style={{ width: "fit-content", paddingInline: 12, borderRadius: 999 }}>
+              คู่มือใหม่แบบใช้งานจริง
+            </Tag>
+            <Title style={{ margin: 0 }}>📘 คู่มือการใช้งาน AI-BMS</Title>
+            <Paragraph type="secondary" style={{ margin: 0, fontSize: 18 }}>
+              ปรับจากเอกสารยาวแบบเดิม ให้เป็นคู่มือที่เริ่มงานได้เร็ว หาเมนูง่าย และสอนทีมใหม่ได้ง่ายกว่าเดิม
             </Paragraph>
-          </Sec>
 
-          <Sec id="getstart">
-            <Title level={4}>2. เริ่มต้นใช้งาน (แนะนำตามลำดับ)</Title>
-            <Steps direction="vertical" size="small" current={-1} items={[
-              { title: "เพิ่มสินค้า", description: <>ไปที่ <Link href="/admin/products">Products</Link> → เพิ่มสินค้า + ราคา + keywords + สต็อกแต่ละไซซ์ (หรือรับเข้าผ่าน <Link href="/admin/purchase">Purchase</Link>)</> },
-              { title: "ทดสอบการขาย", description: <>ไปที่ <Link href="/admin/playground">Playground</Link> พิมพ์ "สั่ง Nike XL 2 ชิ้น" ดู order + สต็อกเปลี่ยนสด</> },
-              { title: "เดินครบวงจร", description: <><Link href="/admin/orders">Orders</Link> → <Link href="/admin/payment">Payment</Link> (ยืนยันสลิป) → <Link href="/admin/shipment">Shipping</Link> (ออกเลขพัสดุ) → ปิดงาน</> },
-              { title: "เชื่อมช่องทางจริง", description: <>ไปที่ <Link href="/admin/settings">Settings</Link> วาง token + เอา Webhook URL ไปตั้งใน console ของแต่ละแพลตฟอร์ม แล้วดูแชตเข้าที่ <Link href="/admin/inbox">Inbox</Link></> },
-            ]} />
-          </Sec>
-
-          <Sec id="playground">
-            <Title level={4}>3. Playground — ทดสอบแชต</Title>
-            <Paragraph>จำลองลูกค้าทักเข้ามาโดยไม่ต้องต่อช่องทางจริง ใช้ดูภาพการทำงานทั้ง flow</Paragraph>
-            <ul>
-              <li>เลือกช่องทาง + ใส่ customerRef (จำลอง user id)</li>
-              <li>พิมพ์ เช่น <Text code>Nike XL มีไหม</Text> (เช็คสต็อก) หรือ <Text code>สั่ง Nike XL 2 ชิ้น</Text> (สร้างออเดอร์)</li>
-              <li>สั่งหลายรายการต่อข้อความ: <Text code>สั่ง Nike XL 1 ชิ้น กับ Adidas M 1 ชิ้น</Text></li>
-              <li>เห็น trace: intent, สต็อก, order ที่เกิด + สต็อกด้านขวาอัปเดตทันที</li>
-            </ul>
-            <Alert type="info" showIcon message="Playground (channel=test) ไม่ถูกบันทึกลง Inbox — ใช้ทดสอบล้วน ๆ" />
-          </Sec>
-
-          <Sec id="inbox">
-            <Title level={4}>4. Inbox — กล่องข้อความรวมทุกช่องทาง (Omnichannel)</Title>
-            <Paragraph>เมนู <Link href="/admin/inbox">Inbox</Link> — ทุกข้อความจาก LINE/TikTok/FB/IG/เว็บ (พร้อมคำตอบ AI) ถูกบันทึกอัตโนมัติมารวมที่นี่ หน้าจอเป็น <b>3 คอลัมน์</b>: รายการแชท · แชท · Customer 360</Paragraph>
-            <ul>
-              <li><b>ซ้าย (รายการแชท):</b> filter สถานะ (OPEN/PENDING/CLOSED), ค้นหา, ตัวเลขข้อความที่ยังไม่อ่าน</li>
-              <li><b>กลาง (แชท):</b> ดูประวัติเข้า-ออก · แอดมินพิมพ์ตอบเองได้ (LINE ส่งจริงผ่าน push, FB/IG ผ่าน Graph API) · แท็บ โน้ต/Timeline ของแชทนี้แชทเดียว</li>
-              <li><b>จัดการ:</b> มอบหมาย staff (assign), เปลี่ยนสถานะ, ใส่แท็ก</li>
-              <li><b>ขวา (Customer 360):</b> เลือกแชทแล้วโหลดข้อมูลลูกค้าอัตโนมัติ — ดูหัวข้อ 4.1 ด้านล่าง</li>
-            </ul>
-            <Alert type="info" showIcon message="Website Live Chat: ฝังวิดเจ็ตให้ POST ไปที่ /api/bms/web/webhook/{tenantId} (มี CORS) — ระบบตอบกลับใน response ทันที" />
-
-            <Title level={5} style={{ marginTop: 16 }}>4.1 Customer 360 — แผงข้อมูลลูกค้าครบวงจร</Title>
-            <Paragraph>แผงขวาไม่ใช่แค่ประวัติออเดอร์ — รวมทุกอย่างที่ต้องรู้เกี่ยวกับลูกค้าคนนั้นไว้ที่เดียว แบ่งเป็น 10 ส่วน แบบพับ/กางได้ (Collapse):</Paragraph>
-            <ul>
-              <li><b>สรุปลูกค้า:</b> ชื่อ, รหัส, แท็ก (VIP/Fraud Risk), ลูกค้าใหม่/ลูกค้าประจำ (คำนวณสด), ช่องทาง/ผู้รับผิดชอบ/สถานะแชทปัจจุบัน</li>
-              <li><b>ข้อมูลติดต่อ:</b> เบอร์/อีเมล, ที่อยู่จัดส่ง/ออกใบเสร็จ, บัญชีที่เชื่อมต่อทุกช่องทาง (LINE/TikTok/FB/IG/เว็บ)</li>
-              <li><b>สถิติลูกค้า:</b> มูลค่าตลอดอายุ, จำนวนออเดอร์ (สำเร็จ/ยกเลิก/คืนเงิน), มูลค่าเฉลี่ย, เวลาตอบกลับเฉลี่ย</li>
-              <li><b>ออเดอร์ล่าสุด (ทุกช่องทาง):</b> สถานะออเดอร์/ชำระเงิน/จัดส่ง + เลขพัสดุ ในใบเดียว ไม่ต้องสลับหน้า</li>
-              <li><b>สินค้าที่ซื้อ:</b> ซื้อมากที่สุด/ล่าสุด/บ่อยที่สุด + หมวดหมู่โปรด</li>
-              <li><b>ตะกร้าปัจจุบัน:</b> ออเดอร์ที่ยังไม่ชำระเงินล่าสุดของลูกค้า (ถ้ามี)</li>
-              <li><b>โน้ตภายใน:</b> รวมโน้ตจากทุกแชทของลูกค้าคนนี้ (ลูกค้าไม่เห็น)</li>
-              <li><b>Timeline:</b> ลงทะเบียน → ซื้อครั้งแรก → ทุกออเดอร์/จัดส่ง/คืนเงิน/โน้ต เรียงเวลาเดียวกัน — โหลดตอนกางส่วนนี้ครั้งแรกเท่านั้น (ไม่ถ่วงตอนสลับแชท)</li>
-              <li><b>AI Insights:</b> สรุปพฤติกรรมลูกค้าเป็น bullet — <b>สรุปจากตัวเลขจริงในระบบเท่านั้น ห้ามเดา/แต่งข้อมูล</b> แคชผลไว้ ไม่เรียก AI ซ้ำถ้าข้อมูลยังไม่เปลี่ยน</li>
-              <li><b>Quick Actions:</b> ปุ่มลัด (ตรวจสต็อก, คืนเงิน, เปิดหน้าลูกค้า ฯลฯ) — ปุ่มที่ระบบยังไม่รองรับ (ออกใบแจ้งหนี้, ส่งลิงก์ชำระเงิน, Support Ticket) จะ disable ไว้ก่อน ไม่ใช่ลืมทำ</li>
-            </ul>
-            <Alert type="warning" showIcon message="ถ้าแชทยังไม่ผูกกับลูกค้าในระบบ (ยังไม่เคยมีออเดอร์/ยังไม่ resolve customer) แผงนี้จะโชว์ว่า “แชทนี้ยังไม่ผูกกับลูกค้าในระบบ CRM” แทน" />
-          </Sec>
-
-          <Sec id="products">
-            <Title level={4}>5. Products & Inventory (IMS)</Title>
-            <Paragraph>จัดการสินค้า + สต็อก (เมนู <Link href="/admin/products">Products</Link>)</Paragraph>
-            <ul>
-              <li><b>เพิ่ม/แก้สินค้า:</b> SKU, Barcode, ราคา, Keywords, เปิด/ปิดขาย</li>
-              <li><b>สต็อกต่อไซซ์:</b> ปรับ +10/+1/−1 (บันทึกประวัติทุกครั้ง), เพิ่มไซซ์ใหม่</li>
-              <li><b>Available = Current − Reserved</b> (reserved = ของที่จองในออเดอร์ที่ยังไม่ส่ง — แก้มือไม่ได้)</li>
-              <li><b>reorder point:</b> ตั้งต่อไซซ์ → เตือนเมื่อ available ≤ จุดเตือน</li>
-              <li><b>ของเข้าคลัง:</b> รับผ่าน <Link href="/admin/purchase">Purchase (PO)</Link> → บันทึก STOCK_IN อัตโนมัติ</li>
-            </ul>
-            <Table size="small" pagination={false} rowKey="t" dataSource={movements}
-              columns={[{ title: "ประเภท movement", dataIndex: "t", render: (t) => <Tag>{t}</Tag> }, { title: "เกิดเมื่อ", dataIndex: "when" }]} />
-          </Sec>
-
-          <Sec id="orders">
-            <Title level={4}>6. Orders (OMS) — สถานะออเดอร์</Title>
-            <Paragraph>เมนู <Link href="/admin/orders">Orders</Link> — ปุ่ม action ปรับตามสถานะและสิทธิ์</Paragraph>
-            <Table size="small" pagination={false} rowKey="k" dataSource={orderFlow}
-              columns={[
-                { title: "สถานะ", dataIndex: "status", render: (s) => <Tag color={statusColor[s]}>{s}</Tag> },
-                { title: "ความหมาย", dataIndex: "th" },
-                { title: "ปุ่ม/action", dataIndex: "action" },
-                { title: "ผลต่อสต็อก", dataIndex: "stock" },
-              ]} />
-            <Alert style={{ marginTop: 12 }} type="success" showIcon
-              message="ทุกการเปลี่ยนสถานะเป็น atomic — กัน oversell และตัดสต็อกซ้ำ · จ่ายเงินทำผ่าน Payment, จัดส่งทำผ่าน Shipping ก็ได้ (เดินสถานะ order ให้เอง)" />
-          </Sec>
-
-          <Sec id="purchase">
-            <Title level={4}>7. Purchase (PO) — ใบสั่งซื้อ/รับของ</Title>
-            <Paragraph>เมนู <Link href="/admin/purchase">Purchase</Link> — สั่งซื้อจาก supplier แล้วรับของเข้าสต็อก</Paragraph>
-            <ul>
-              <li><b>สร้าง PO:</b> เลือก supplier (พิมพ์ชื่อสร้างใหม่ได้), รายการสินค้า + จำนวน + ทุน/หน่วย — สถานะเริ่ม <Tag color="orange">OPEN</Tag> (ยังไม่ขยับสต็อก)</li>
-              <li><b>รับของ (บางส่วน/ครบ):</b> ใส่จำนวนที่รับจริง → สต็อกเข้า (STOCK_IN) → สถานะเป็น <Tag color="blue">PARTIAL</Tag> หรือ <Tag color="green">RECEIVED</Tag></li>
-              <li><b>ยกเลิก:</b> ได้เฉพาะก่อนรับครบ — ของที่รับไปแล้วไม่ถูกดึงออก (ตามหลักบัญชีสินค้า)</li>
-            </ul>
-          </Sec>
-
-          <Sec id="payment">
-            <Title level={4}>8. Payment — การชำระเงิน</Title>
-            <Paragraph>เมนู <Link href="/admin/payment">Payment</Link> — วิธีจ่าย: โอน / QR / บัตร / TikTok Pay / เงินสด</Paragraph>
-            <ul>
-              <li><b>บันทึกการชำระ:</b> เลือกออเดอร์ (PENDING) + วิธี + ยอด + สลิป/เลขอ้างอิง — สถานะ <Tag color="orange">PENDING</Tag></li>
-              <li><b>ตรวจสลิป (AI):</b> ถ้าแนบรูปสลิป + ตั้ง <Text code>ANTHROPIC_API_KEY</Text> → AI อ่านยอดเทียบกับที่ต้องจ่าย (แนะนำเท่านั้น <b>ไม่ยืนยันเอง</b>)</li>
-              <li><b>ยืนยัน:</b> <Tag color="green">CONFIRMED</Tag> + ออเดอร์เป็น PAID อัตโนมัติ · <b>ปฏิเสธ:</b> REJECTED · <b>คืนเงิน:</b> REFUNDED (สิทธิ์ manager)</li>
-            </ul>
-            <Alert type="warning" showIcon message="ตามกฎธุรกิจ: AI ห้ามยืนยันการรับเงินเอง — คนต้องกดยืนยันเสมอ" />
-          </Sec>
-
-          <Sec id="shipping">
-            <Title level={4}>9. Shipping — จัดส่ง</Title>
-            <Paragraph>เมนู <Link href="/admin/shipment">Shipping</Link> — ขนส่ง: Flash / Kerry / DHL / Australia Post / NZ Post</Paragraph>
-            <ul>
-              <li><b>สร้างการจัดส่ง:</b> เลือกออเดอร์ (PACKING) + ขนส่ง + เลขพัสดุ → ตัดสต็อกจริง + ออเดอร์เป็น SHIPPED</li>
-              <li><b>เดินสถานะ:</b> SHIPPED → กำลังส่ง (IN_TRANSIT) → ถึงแล้ว (DELIVERED) → ปิดออเดอร์เป็น COMPLETED อัตโนมัติ</li>
-              <li><b>แก้ tracking / พิมพ์ label:</b> label รวมผู้รับ + ที่อยู่ + รายการ (ยังไม่ต่อ API ขนส่งจริง — พิมพ์/คัดลอกเอง)</li>
-            </ul>
-          </Sec>
-
-          <Sec id="customers">
-            <Title level={4}>10. Customers (CRM)</Title>
-            <Paragraph>เมนู <Link href="/admin/customers">Customers</Link></Paragraph>
-            <ul>
-              <li>ลูกค้าถูก<b>สร้างอัตโนมัติ</b>เมื่อมีออเดอร์ (ผูกจาก channel + user id)</li>
-              <li>เก็บ ชื่อ, เบอร์, ที่อยู่ (หลายที่อยู่), Tags · <b>ยอดซื้อสะสม</b> = ผลรวมออเดอร์ที่จ่ายแล้ว</li>
-              <li>1 ลูกค้าเชื่อมได้หลายช่องทาง (LINE + TikTok + FB = คนเดียวกัน)</li>
-              <li>ที่อยู่: กางแถวลูกค้า → <b>แก้ไข / ตั้งเป็นค่าเริ่มต้น / ลบ</b> ได้ต่อรายการ (ตั้งค่าเริ่มต้นใหม่จะยกเลิกค่าเริ่มต้นเดิมอัตโนมัติ)</li>
-            </ul>
-          </Sec>
-
-          <Sec id="reports">
-            <Title level={4}>11. Dashboard & Reports</Title>
-            <ul>
-              <li><b><Link href="/admin/dashboard">Dashboard</Link>:</b> ภาพรวมวันนี้ — ยอดขายรวม/วันนี้, ออเดอร์แยกสถานะ, กราฟ 7 วัน, สินค้าขายดี, ลูกค้ายอดสูง</li>
-              <li><b><Link href="/admin/reports">Reports</Link>:</b> เลือกช่วงวันที่ (RangePicker) → ยอดขายรายวัน/ตามสถานะ/ตามช่องทาง, สินค้าขายดี, สรุปสต็อก (มูลค่า/ใกล้หมด/หมด)</li>
-              <li>รายได้ทุกที่นับเฉพาะออเดอร์ที่จ่ายแล้ว (PAID ขึ้นไป)</li>
-            </ul>
-          </Sec>
-
-          <Sec id="permissions">
-            <Title level={4}>12. Users / Roles / Permissions (RBAC)</Title>
-            <Paragraph>กำหนดว่าใครทำอะไรได้ — เมนู <Link href="/admin/permissions">Permissions</Link> (เฉพาะ Administrator แก้ได้)</Paragraph>
-            <Table size="small" pagination={false} rowKey="role" dataSource={perms}
-              columns={[
-                { title: "Role", dataIndex: "role", render: (r) => <Tag color="blue">{r}</Tag> },
-                { title: "หน้าที่", dataIndex: "desc" },
-                { title: "สิทธิ์ (ตัวอย่าง)", dataIndex: "perms" },
-              ]} />
-            <Paragraph style={{ marginTop: 8 }}>
-              สิทธิ์เป็นแบบ <Text code>resource.action</Text> 26 ตัว: product.* · stock.adjust · order.* · purchase.* · payment.* · shipping.* · inbox.* · customer.* · report.view · ปุ่มในแต่ละหน้าจะซ่อน/disable ตามสิทธิ์ และ API ปฏิเสธ (403) ถ้าไม่มีสิทธิ์
-            </Paragraph>
-          </Sec>
-
-          <Sec id="settings">
-            <Title level={4}>13. Settings — เชื่อมช่องทาง</Title>
-            <Paragraph>เมนู <Link href="/admin/settings">Settings</Link> — LINE / TikTok / Facebook Messenger / Instagram DM / Website Live Chat / Shopee (beta) / Lazada (beta)</Paragraph>
-            <Steps direction="vertical" size="small" current={-1} items={[
-              { title: "คัดลอก Webhook URL", description: <Text code>{`{origin}/api/bms/{channel}/webhook/{tenantId}`}</Text> },
-              { title: "ตั้งใน console ของแพลตฟอร์ม", description: "LINE Developers / TikTok / Meta App → วาง Webhook URL + เปิด webhook" },
-              { title: "วาง Access Token + Secret", description: "LINE=channel token+secret · FB/IG=Page token + App Secret (ใช้เป็น verify token+signature) · เก็บเข้ารหัส AES-256-GCM" },
-              { title: "เสร็จ!", description: "ลูกค้าทัก → verify signature → AI ตอบด้วย token ของร้าน → โผล่ใน Inbox" },
-            ]} />
-            <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="ทุก webhook ตรวจ signature — request ที่ signature ไม่ตรงถูกปฏิเสธ (401) · Website chat เป็น public (rate-limit + CORS) · Shopee/Lazada เป็น beta — เชื่อม webhook ได้แต่ตอบกลับอัตโนมัติยังไม่ได้" />
-
-            <Title level={5}>สถานะเชื่อมต่อ (Channel Health)</Title>
-            <Paragraph>แต่ละการ์ดช่องทางมี badge บอกสุขภาพจริง แยกจากสวิตช์เปิด/ปิด — เห็นได้ 3 จุด: การ์ดใน Settings, badge สีแดงที่เมนู Settings บน sidebar, และ alert ที่ Dashboard</Paragraph>
-            <Table
-              size="small"
-              pagination={false}
-              rowKey="status"
-              dataSource={[
-                { status: "ยังไม่ตั้งค่า", color: "default", desc: "ยังไม่กรอก token/secret" },
-                { status: "เชื่อมต่อสำเร็จ", color: "green", desc: "webhook verify + ping ปกติ — มีปุ่ม \"ทดสอบ\" ให้กด (เฉพาะ LINE/FB/IG)" },
-                { status: "Token หมดอายุ/ถูก revoke", color: "red", desc: "เรียก Send API แล้วโดน 401/403" },
-                { status: "Webhook verify ไม่ผ่าน", color: "red", desc: "signature ไม่ตรง — เช็ค Channel Secret" },
-                { status: "โดน Rate Limit", color: "gold", desc: "แพลตฟอร์มตอบ 429 — แสดง retry-after ถ้ามี" },
-                { status: "ไม่มีข้อความเข้านานผิดปกติ", color: "gold", desc: "ไม่มี event เกิน 3 วัน — เช็ค Webhook URL ฝั่ง console" },
-                { status: "รับข้อความได้ แต่ตอบกลับไม่ได้", color: "red", desc: "inbound โอเค แต่ Send API ล้มเหลว" },
-                { status: "ปิดใช้งานเอง", color: "default", desc: "admin กดปิดสวิตช์" },
-              ]}
-              columns={[
-                { title: "สถานะ", dataIndex: "status", render: (t: string, r: any) => <Tag color={r.color}>{t}</Tag> },
-                { title: "ความหมาย / วิธีแก้", dataIndex: "desc" },
-              ]}
+            <Alert
+              type="info"
+              showIcon
+              message="ลูกค้าทัก → Inbox → Orders → Payment → Shipping → Dashboard"
+              description="อ่านคู่มือตาม flow งานจริง ไม่ต้องไล่อ่านทุกหัวข้อจากบนลงล่างก่อน"
+              style={{ borderRadius: 16 }}
             />
-          </Sec>
 
-          <Sec id="billing">
-            <Title level={4}>14. Billing & แพ็กเกจ</Title>
-            <Paragraph>เมนู <Link href="/admin/billing">Billing</Link> — Free / Pro / Business (จำกัดสินค้า/ช่องทาง/ออเดอร์ต่อเดือน) ดู usage + อัปเกรดได้ (โหมดสาธิต ยังไม่ตัดเงินจริง) · quota สินค้าบังคับตอนสร้างสินค้าใหม่</Paragraph>
-          </Sec>
+            <Space wrap>
+              <Button type="primary" size="large" href="#quickstart">
+                เริ่มงานใน 3 นาที
+              </Button>
+              <Button size="large" href="#workflow">
+                ดู flow ทั้งระบบ
+              </Button>
+              <Button size="large" href="#menus">
+                ดูคู่มือตามเมนู
+              </Button>
+            </Space>
 
-          <Sec id="saas">
-            <Title level={4}>15. SaaS multi-tenant</Title>
-            <ul>
-              <li>เปิดร้านใหม่เองที่ <Link href="/shop-signup">/shop-signup</Link> → สร้างร้าน + เจ้าของ (role Manager) อัตโนมัติ</li>
-              <li>ข้อมูลแยกกันสมบูรณ์ต่อร้าน (tenant_id ทุกตาราง + Row-Level Security ชั้น 2)</li>
-              <li>SKU ซ้ำข้ามร้านได้ (แต่ละร้านมีแคตตาล็อกของตัวเอง)</li>
-            </ul>
-            <Alert type="error" showIcon style={{ marginTop: 8 }}
-              message="ก่อนใช้งานจริง (production)"
-              description={<ul style={{ margin: 0, paddingLeft: 18 }}>
-                <li>เปิดการตรวจรหัสผ่านใน loginAdmin (ตอนนี้ dev ยังไม่ตรวจ)</li>
-                <li>ตั้ง env <Text code>BMS_SECRET_KEY</Text> (สำหรับเข้ารหัส token)</li>
-                <li>ให้ app เชื่อม DB ด้วย role ที่ไม่ใช่ superuser เพื่อให้ RLS มีผลกับ read ด้วย</li>
-              </ul>} />
-          </Sec>
+            <Space wrap>
+              <Tag>Inbox</Tag>
+              <Tag>Products</Tag>
+              <Tag>Orders</Tag>
+              <Tag>Purchase</Tag>
+              <Tag>Payment</Tag>
+              <Tag>Shipping</Tag>
+              <Tag>Customers</Tag>
+              <Tag>Reports</Tag>
+            </Space>
+          </Space>
+        </Card>
+      </div>
 
-          <Sec id="api">
-            <Title level={4}>16. API / Webhook reference</Title>
-            <Table size="small" pagination={false} rowKey="path" dataSource={endpoints}
-              columns={[
-                { title: "Method", dataIndex: "m", width: 90, render: (m) => <Tag color="purple">{m}</Tag> },
-                { title: "Endpoint", dataIndex: "path", render: (p) => <Text code>{p}</Text> },
-                { title: "หน้าที่", dataIndex: "desc" },
-              ]} />
-            <Paragraph style={{ marginTop: 8 }} type="secondary">
-              GraphQL (admin) ที่ <Text code>/api/graphql</Text>: bmsProducts, bmsOrders, bmsPurchaseOrders, bmsPayments, bmsShipments, bmsConversations, bmsCustomers, bmsDashboard, bmsSalesSummary, bmsChannels, bmsBilling, bmsSignup ฯลฯ
-            </Paragraph>
-            <Alert style={{ marginTop: 12 }} type="info" showIcon
-              message="ระบบตรวจ error อัตโนมัติรายวัน + แจ้งเตือน LINE"
-              description={<>ทุกวันมี GitHub Actions ดึง error จาก <Text code>system_logs</Text> ให้ AI วิเคราะห์แล้วเปิด draft PR เสนอการแก้ให้ทีมรีวิว (ไม่ merge เอง) แล้ว<b>แจ้งเตือนทีมผ่าน LINE</b>พร้อมลิงก์ PR — รายละเอียดที่หน้า Architecture §8 และ <Text code>scripts/bms-log-triage/</Text></>}
-            />
-          </Sec>
+      <Row gutter={[20, 20]} align="top">
+        <Col xs={24} lg={17}>
+          <Space direction="vertical" size={18} style={{ width: "100%" }}>
+            <Section
+              id="quickstart"
+              title="⚡ Quick start ตามบทบาท"
+              subtitle="เลือกจากสิ่งที่คุณกำลังทำอยู่ เพื่อให้คู่มือพาไปหน้าที่ถูกต้องเร็วที่สุด"
+            >
+              <Space wrap style={{ marginBottom: 16 }}>
+                <Button type={persona === "owner" ? "primary" : "default"} onClick={() => setPersona("owner")}>
+                  เจ้าของร้าน
+                </Button>
+                <Button type={persona === "staff" ? "primary" : "default"} onClick={() => setPersona("staff")}>
+                  พนักงานหน้าร้าน
+                </Button>
+                <Button type={persona === "ops" ? "primary" : "default"} onClick={() => setPersona("ops")}>
+                  แอดมินระบบ
+                </Button>
+              </Space>
 
-          <Sec id="testai">
-            <Title level={4}>17. ทดสอบ AI ด้วย Postman / webhook</Title>
-            <Paragraph>
-              อยากรู้ว่า AI ตอบลูกค้าได้ดีแค่ไหน — ยิงข้อความเข้าไปตรง ๆ ได้เลยโดยไม่ต้องต่อ LINE/FB จริง.
-              ทั้ง 2 endpoint เป็น <b>public</b> (ไม่ต้อง login/signature) เหมาะกับ Postman/curl.
-            </Paragraph>
-            <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              message={<>ใช้ <Text code>tenantId</Text> ของร้านคุณ (แทน <Text code>{`{tenantId}`}</Text> ด้านล่าง)</>}
-              description={<>ดู tenant id ของร้านตัวเองได้ที่ <Link href="/admin/profile">โปรไฟล์ของฉัน</Link> · base URL: dev = <Text code>http://localhost:3000</Text>, ใช้งานจริง = โดเมนร้านคุณ</>} />
+              <Card style={{ borderRadius: 16, background: "#fafcff" }}>
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <div>
+                    <Title level={4} style={{ margin: 0 }}>
+                      {activePersona.title}
+                    </Title>
+                    <Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+                      {activePersona.subtitle}
+                    </Paragraph>
+                  </div>
 
-            <Title level={5}>A) Playground — ดูคำตอบ + เหตุผล (แนะนำเวลาประเมินคุณภาพ)</Title>
-            <Paragraph type="secondary">คืน trace เต็ม (intent / entity / tool ที่เลือก / reply) · ไม่บันทึกลง Inbox</Paragraph>
-            <pre style={codeBlock}>{`POST {origin}/api/bms/chat
-Content-Type: application/json
+                  <List
+                    size="small"
+                    dataSource={activePersona.items}
+                    renderItem={(item, index) => (
+                      <List.Item style={{ paddingInline: 0 }}>
+                        <Space align="start">
+                          <Tag color="blue" style={{ marginTop: 2 }}>{index + 1}</Tag>
+                          <span>{item}</span>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
 
-{
-  "message": "มีเสื้อ Nike ไซซ์ XL ไหม ราคาเท่าไหร่",
-  "channel": "web",
-  "tenantId": "{tenantId}",
-  "customerRef": "postman-01"
-}`}</pre>
+                  <div>
+                    <Link href={activePersona.ctaHref}>
+                      <Button type="primary" icon={<RocketOutlined />}>
+                        {activePersona.ctaLabel}
+                      </Button>
+                    </Link>
+                  </div>
+                </Space>
+              </Card>
+            </Section>
 
-            <Title level={5}>B) Web Live Chat webhook — เหมือนลูกค้าจริง (ขึ้นใน Inbox)</Title>
-            <Paragraph type="secondary">คืน <Text code>{`{ reply, sessionId }`}</Text> และบันทึกลง <Link href="/admin/inbox">Inbox</Link> ของร้าน · ยิงซ้ำ sessionId เดิม = คุยต่อเนื่อง (rate limit 120/นาที/ร้าน)</Paragraph>
-            <pre style={codeBlock}>{`POST {origin}/api/bms/web/webhook/{tenantId}
-Content-Type: application/json
+            <Section
+              id="workflow"
+              title="🧭 Flow งานทั้งระบบ"
+              subtitle="ถ้าคุณยังไม่แน่ใจว่าควรทำอะไรก่อน-หลัง ให้กดดูทีละ step จาก flow นี้"
+            >
+              <Row gutter={[14, 14]}>
+                <Col xs={24}>
+                  <Space wrap>
+                    <Button
+                      type={flow === "products" ? "primary" : "default"}
+                      icon={<DatabaseOutlined />}
+                      onClick={() => setFlow("products")}
+                    >
+                      เพิ่มสินค้า
+                    </Button>
+                    <Button
+                      type={flow === "orders" ? "primary" : "default"}
+                      icon={<ShoppingCartOutlined />}
+                      onClick={() => setFlow("orders")}
+                    >
+                      รับออเดอร์
+                    </Button>
+                    <Button
+                      type={flow === "payment" ? "primary" : "default"}
+                      icon={<CreditCardOutlined />}
+                      onClick={() => setFlow("payment")}
+                    >
+                      ยืนยันเงิน
+                    </Button>
+                    <Button
+                      type={flow === "shipping" ? "primary" : "default"}
+                      icon={<TruckOutlined />}
+                      onClick={() => setFlow("shipping")}
+                    >
+                      จัดส่งและปิดงาน
+                    </Button>
+                  </Space>
+                </Col>
 
-{
-  "message": "สวัสดีครับ มีเสื้อ Nike ไซซ์ XL ไหม",
-  "sessionId": "postman-001"
-}`}</pre>
+                <Col xs={24}>
+                  <Card style={{ borderRadius: 16 }}>
+                    <Space direction="vertical" size={14} style={{ width: "100%" }}>
+                      <div>
+                        <Title level={4} style={{ margin: 0 }}>
+                          {activeFlow.title}
+                        </Title>
+                        <Paragraph type="secondary" style={{ margin: "6px 0 0" }}>
+                          {activeFlow.path}
+                        </Paragraph>
+                      </div>
 
-            <Title level={5}>ตัวอย่างข้อความตาม intent</Title>
-            <ul>
-              <li><Text code>สวัสดีครับ</Text> → ทักทาย (GREETING)</li>
-              <li><Text code>Nike XL มีไหม</Text> / <Text code>มีไซซ์ M ไหม</Text> → เช็คสต็อก+ราคา (CHECK_STOCK)</li>
-              <li><Text code>เสื้อ Nike ราคาเท่าไหร่</Text> → ค้นสินค้า+ราคา</li>
-              <li><Text code>สั่ง Nike 2 ตัว</Text> → สร้าง draft order (CONFIRM_ORDER)</li>
-            </ul>
+                      <Alert type="success" showIcon message={activeFlow.summary} style={{ borderRadius: 14 }} />
 
-            <Alert type="warning" showIcon style={{ marginTop: 8 }}
-              message="เตรียมก่อนเทส ไม่งั้น AI จะตอบว่า “ไม่พบสินค้า”"
-              description={<ul style={{ margin: 0, paddingLeft: 18 }}>
-                <li>ร้านต้องมีสินค้าก่อน — เพิ่มเองที่ <Link href="/admin/products">Products</Link> หรือ seed เร็ว ๆ ที่ <Link href="/admin/dev/fake">Fake data</Link> (ตั้งชื่อให้มีคำที่จะถาม เช่น “Nike” จะเทสตรงกว่า)</li>
-                <li>ต้องตั้ง env <Text code>ANTHROPIC_API_KEY</Text> — ไม่งั้นคำตอบเป็น rule-based/fallback (ไม่ใช่คำตอบจาก Claude จริง)</li>
-              </ul>} />
-          </Sec>
+                      <Space wrap>
+                        {activeFlow.tags.map((tag) => (
+                          <Tag key={tag} color="blue">
+                            {tag}
+                          </Tag>
+                        ))}
+                      </Space>
+
+                      <List
+                        size="small"
+                        bordered
+                        style={{ borderRadius: 14 }}
+                        dataSource={activeFlow.checks}
+                        renderItem={(item) => <List.Item>{item}</List.Item>}
+                      />
+                    </Space>
+                  </Card>
+                </Col>
+              </Row>
+            </Section>
+
+            <Section
+              id="menus"
+              title="🧩 คู่มือตามเมนู"
+              subtitle="แยกเป็นการ์ดสั้น ๆ เพื่อให้คนสแกนแล้วรู้ทันทีว่าเมนูนี้เอาไว้ทำอะไร"
+            >
+              <Row gutter={[14, 14]}>
+                {menuCards.map((item) => (
+                  <Col xs={24} md={12} key={item.key}>
+                    <Card style={{ borderRadius: 16, height: "100%" }}>
+                      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                        <Space>
+                          <Tag color="blue" icon={item.icon}>
+                            {item.title}
+                          </Tag>
+                        </Space>
+                        <Paragraph style={{ margin: 0 }}>{item.desc}</Paragraph>
+                        <List
+                          size="small"
+                          dataSource={item.bullets}
+                          renderItem={(bullet) => (
+                            <List.Item style={{ paddingInline: 0 }}>
+                              <Text type="secondary">• {bullet}</Text>
+                            </List.Item>
+                          )}
+                        />
+                        <div>
+                          <Link href={item.href}>
+                            <Button>เปิดหน้า {item.title}</Button>
+                          </Link>
+                        </div>
+                      </Space>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
+
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 16, borderRadius: 14 }}
+                message="คำแนะนำการจัดกลุ่ม"
+                description="Orders / Payment / Shipping ควรอยู่ใกล้กันในคู่มือ เพราะผู้ใช้ทำงานต่อเนื่องเป็น flow เดียวกัน ส่วน Products ควรอยู่คู่กับ Purchase เพราะเกี่ยวกับการมีของพร้อมขาย"
+              />
+            </Section>
+
+            <Section
+              id="faq"
+              title="❓ คำถามที่เจอบ่อย"
+              subtitle="วางแบบถาม-ตอบสั้น ๆ เพื่อช่วยลดเวลาที่ต้องไล่อ่านเอกสารยาว"
+            >
+              <List
+                itemLayout="vertical"
+                dataSource={helpRows}
+                renderItem={(row) => (
+                  <List.Item style={{ paddingInline: 0 }}>
+                    <Card style={{ borderRadius: 14 }}>
+                      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                        <Text strong>{row.title}</Text>
+                        <Text type="secondary">{row.answer}</Text>
+                      </Space>
+                    </Card>
+                  </List.Item>
+                )}
+              />
+            </Section>
+
+            <Section
+              id="links"
+              title="🔗 ลิงก์ไปหน้าที่ใช้บ่อย"
+              subtitle="ให้ผู้ใช้ข้ามไปทำงานจริงได้ทันที ไม่ต้องอ่านจบทั้งหน้า"
+            >
+              <Steps
+                direction="vertical"
+                current={-1}
+                items={[
+                  {
+                    title: "เริ่มตอบลูกค้า",
+                    description: (
+                      <>
+                        เปิด <Link href="/admin/inbox">Inbox</Link> เพื่อดูแชทใหม่และ Customer 360
+                      </>
+                    ),
+                  },
+                  {
+                    title: "เพิ่มสินค้า / แก้รูปสินค้า",
+                    description: (
+                      <>
+                        เปิด <Link href="/admin/products">Products</Link> แล้วเพิ่มสินค้า รูปหลายรูป ราคา และ stock
+                      </>
+                    ),
+                  },
+                  {
+                    title: "รับของเข้าคลัง",
+                    description: (
+                      <>
+                        เปิด <Link href="/admin/purchase">Purchase</Link> เพื่อสร้าง PO และรับของ
+                      </>
+                    ),
+                  },
+                  {
+                    title: "ตาม order / payment / shipment",
+                    description: (
+                      <>
+                        ใช้ <Link href="/admin/orders">Orders</Link>, <Link href="/admin/payment">Payment</Link>,{" "}
+                        <Link href="/admin/shipment">Shipping</Link> เป็น flow เดียวกัน
+                      </>
+                    ),
+                  },
+                  {
+                    title: "เชื่อมช่องทางจริง",
+                    description: (
+                      <>
+                        ไปที่ <Link href="/admin/settings">Settings</Link> เพื่อวาง token และตั้ง webhook
+                      </>
+                    ),
+                  },
+                  {
+                    title: "ดูภาพรวมร้าน",
+                    description: (
+                      <>
+                        เปิด <Link href="/admin/dashboard">Dashboard</Link> หรือ <Link href="/admin/reports">Reports</Link>
+                      </>
+                    ),
+                  },
+                ]}
+              />
+
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginTop: 12, borderRadius: 14 }}
+                message="แนวคิดของคู่มือใหม่นี้"
+                description="เปิดมาแล้วควรตอบได้ทันทีว่า “ฉันควรเริ่มจากตรงไหน”, “เมนูนี้ใช้ทำอะไร”, และ “ถ้าติดปัญหาควรดูตรงไหนต่อ”"
+              />
+            </Section>
+          </Space>
         </Col>
 
-        <Col xs={0} md={7}>
+        <Col xs={24} lg={7}>
           <div style={{ position: "sticky", top: 16 }}>
-            <Card size="small" title="สารบัญ">
+            <Card title="สารบัญ" style={{ borderRadius: 18, marginBottom: 16 }}>
               <Anchor affix={false} items={anchorItems} />
+            </Card>
+
+            <Card title="ทางลัดแนะนำ" style={{ borderRadius: 18, marginBottom: 16 }}>
+              <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                <Link href="/admin/inbox">
+                  <Button block icon={<InboxOutlined />}>
+                    ไปที่ Inbox
+                  </Button>
+                </Link>
+                <Link href="/admin/products">
+                  <Button block icon={<DatabaseOutlined />}>
+                    ไปที่ Products
+                  </Button>
+                </Link>
+                <Link href="/admin/orders">
+                  <Button block icon={<ShoppingCartOutlined />}>
+                    ไปที่ Orders
+                  </Button>
+                </Link>
+                <Link href="/admin/settings">
+                  <Button block icon={<CustomerServiceOutlined />}>
+                    ไปที่ Settings
+                  </Button>
+                </Link>
+              </Space>
+            </Card>
+
+            <Card title="คู่มือที่ควรมีต่อ" style={{ borderRadius: 18 }}>
+              <List
+                size="small"
+                dataSource={[
+                  "search คู่มือจริงด้านบน",
+                  "FAQ แยกตามเมนู",
+                  "วิดีโอ/ภาพสั้นอธิบาย flow",
+                  "ปุ่มเปิดหน้าจริงจากทุก section",
+                  "คู่มือย่อสำหรับ onboarding พนักงานใหม่",
+                ]}
+                renderItem={(item) => (
+                  <List.Item style={{ paddingInline: 0 }}>
+                    <Text type="secondary">• {item}</Text>
+                  </List.Item>
+                )}
+              />
             </Card>
           </div>
         </Col>
       </Row>
+
+      <Divider />
+
+      <Card style={{ borderRadius: 18 }}>
+        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          <Title level={4} style={{ margin: 0 }}>
+            หมายเหตุ
+          </Title>
+          <Paragraph type="secondary" style={{ margin: 0 }}>
+            หน้านี้ถูกปรับให้เป็น “คู่มือใช้งานง่าย” ก่อน โดยเน้นการเริ่มงานไวและการมอง flow งานจริง ถ้าคุณชอบทิศทางนี้
+            รอบถัดไปเราค่อยแตกลงรายละเอียดรายเมนูและเพิ่ม FAQ / search คู่มือจริงต่อได้
+          </Paragraph>
+          <Space wrap>
+            <Tag icon={<ShopOutlined />}>เหมาะกับร้านใหม่</Tag>
+            <Tag icon={<DashboardOutlined />}>เหมาะกับ onboarding ทีม</Tag>
+            <Tag icon={<FileSearchOutlined />}>เหมาะกับงานปฏิบัติการรายวัน</Tag>
+            <Tag icon={<ApiOutlined />}>ต่อยอดเป็นคู่มือ API ได้</Tag>
+          </Space>
+        </Space>
+      </Card>
     </div>
   );
 }

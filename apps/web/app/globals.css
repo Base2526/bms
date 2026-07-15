@@ -281,6 +281,24 @@ html.dark .ant-drawer-mask {
   flex-direction: column;
 }
 
+/* Inbox conversation list: Ant List/Meta มี min-width ภายใน ทำให้บาง tag ดันเกิด scrollbar แนวนอน */
+.bms-inbox-conversation-scroll .ant-list,
+.bms-inbox-conversation-scroll .ant-spin-nested-loading,
+.bms-inbox-conversation-scroll .ant-spin-container,
+.bms-inbox-conversation-scroll .ant-list-items,
+.bms-inbox-conversation-scroll .ant-list-item,
+.bms-inbox-conversation-scroll .ant-list-item-meta,
+.bms-inbox-conversation-scroll .ant-list-item-meta-content,
+.bms-inbox-conversation-scroll .ant-list-item-meta-title,
+.bms-inbox-conversation-scroll .ant-list-item-meta-description {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bms-inbox-conversation-scroll .ant-list-item-meta {
+  overflow: hidden;
+}
+
 /* Sidebar: antd บังคับ opacity:0 กับ child ตัวที่ 2+ ในสล็อตไอคอนเมนูตอน sidebar ย่อ
    (คิดว่าเป็น title ที่ต้องซ่อน) — badge unread ของเราดันโดนเหมารวมไปด้วย ต้อง !important ทับ */
 .ant-menu-item-icon .bms-sider-badge {
