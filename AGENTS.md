@@ -1,68 +1,138 @@
-# AI Business Management System (AI-BMS)
+# AGENTS.md
 
-AI-BMS is an AI-first Business Management System that automates business operations from
-customer conversations to order fulfillment. Unlike traditional ERP/CRM, it treats every customer
-conversation as the starting point of a business workflow:
+This file defines how coding agents should work in the AI-BMS repository. It applies to the
+entire repository unless a more specific `AGENTS.md` exists in a subdirectory.
 
+## Product context
+
+AI-BMS is an AI-first business operating system that turns customer conversations into business
+workflows:
+
+```text
+Customer -> AI -> CRM -> Order -> Inventory -> Payment -> Shipping -> Dashboard
 ```
-Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
-```
 
-AI-BMS is **not** a chatbot — it is an AI Business Operating System. AI never touches the database
-directly; it only calls approved backend tools. Business logic always lives in
-`apps/web/lib/bms/*.ts` (shared by REST and GraphQL) — see [docs/architecture/system.md](docs/architecture/system.md)
-for the full philosophy and module breakdown.
+It is not a general-purpose chatbot. The database and backend services are the source of truth;
+AI interprets intent, selects approved tools, and explains verified results.
 
-## Documentation map
+Read [AI_GUIDELINES.md](AI_GUIDELINES.md) before changing prompts, AI orchestration, AI tools,
+payment-slip analysis, or any AI-generated customer response.
 
-| Doc | Covers |
+## Architecture boundaries
+
+- Put business logic and database access in `apps/web/lib/bms/*.ts`.
+- REST routes in `apps/web/app/api/bms/*` and GraphQL resolvers in `apps/web/graphql/*` must remain
+  thin adapters that authenticate, authorize, validate, call a service, and format the result.
+- Frontend components must not implement authoritative business rules or access the database.
+- AI code must never query the database or generate SQL. It may use only approved backend tools.
+- Every tenant-owned operation must be scoped by tenant and protected by RLS.
+- Sensitive mutations require both RBAC permission and explicit human confirmation.
+
+## Repository map
+
+| Path | Responsibility |
 | --- | --- |
-| [docs/architecture/system.md](docs/architecture/system.md) | Vision, modules, build status, RBAC model, folder structure |
-| [docs/architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
-| [docs/architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes |
-| [docs/business/order.md](docs/business/order.md) | Order lifecycle, reorder, shipping |
-| [docs/business/inventory.md](docs/business/inventory.md) | Stock rules, movement types, purchase orders |
-| [docs/business/payment.md](docs/business/payment.md) | Payment methods, lifecycle, AI slip verification |
-| [docs/business/crm.md](docs/business/crm.md) | Customer identity, addresses, omnichannel inbox rules |
-| [docs/ai/workflow.md](docs/ai/workflow.md) | The AI pipeline (intent → tool → backend → reply) |
-| [docs/ai/tools.md](docs/ai/tools.md) | Every tool AI is allowed to call |
-| [docs/ai/prompts.md](docs/ai/prompts.md) | The actual Codex system prompt + guardrails |
-| [docs/integrations/line.md](docs/integrations/line.md) | LINE webhook/reply |
-| [docs/integrations/tiktok.md](docs/integrations/tiktok.md) | TikTok webhook (send API = roadmap) |
-| [docs/integrations/lazada.md](docs/integrations/lazada.md) | Lazada + Shopee beta scaffold — what's real vs. placeholder |
-| [docs/ui/customer360.md](docs/ui/customer360.md) | Inbox "ลูกค้า" purchase-history tab, cross-channel merge, reorder |
-| [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
-| [Codex.local.md](Codex.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
+| `apps/web/lib/bms/` | Shared business services and the only BMS application layer allowed to run SQL |
+| `apps/web/app/api/bms/` | REST endpoints, webhooks, cron, and test routes |
+| `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI |
+| `apps/web/app/(admin)/admin/` | Admin UI |
+| `apps/ws/` | WebSocket gateway |
+| `packages/` | Shared GraphQL, realtime, and queue packages |
+| `db/migrations/` | Ordered, idempotent database migrations |
+| `docs/` | Architecture, business rules, integrations, AI, and UI documentation |
+| `scripts/bms-log-triage/` | Daily redacted-log analysis and draft-PR workflow |
 
-## Current status (2026-07)
+## Source-of-truth documentation
 
-Every module is **fully built** except Shopee/Lazada (🧪 beta scaffold — see
-[docs/integrations/lazada.md](docs/integrations/lazada.md)) and the roadmap items below. Full
-build-status table: [docs/architecture/system.md](docs/architecture/system.md#build-status-2026-07).
+Consult the relevant document before changing a domain:
 
-**Customer 360 (Inbox right panel)** — ✅ implemented, not yet folded into the docs/ tree above
-(built on a parallel branch to the docs restructure — see [Codex.local.md](Codex.local.md) §
-Customer 360 for full detail pending a proper `docs/ui/` page): `lib/bms/customer360.ts` ·
-migration `6.2__bms_customer_360.sql` · GraphQL `bmsCustomer360`/`bmsCustomerTimeline`/
-`bmsCustomerInsights` · UI `Customer360Panel.tsx`. Inbox (`/admin/inbox`) is a real 3-column
-layout — conversation list · message thread · this panel — showing summary/contact/stats/recent
-orders/products/cart/notes (eager) plus a lazy cross-channel timeline and AI-generated insights
-(computed from a real facts bundle only, never invented — same discipline as `verifyPaymentSlip()`).
-This is a different, richer view than the "ลูกค้า" purchase-history tab documented in
-[docs/ui/customer360.md](docs/ui/customer360.md); both coexist.
+- [System architecture](docs/architecture/system.md)
+- [Database, tenant scoping, and RLS](docs/architecture/database.md)
+- [REST, GraphQL, and auth](docs/architecture/api.md)
+- [Orders](docs/business/order.md), [inventory](docs/business/inventory.md),
+  [payments](docs/business/payment.md), and [CRM](docs/business/crm.md)
+- [AI workflow](docs/ai/workflow.md), [approved tools](docs/ai/tools.md), and
+  [prompts](docs/ai/prompts.md)
+- Channel-specific behavior in `docs/integrations/`
+- Machine-local commands and known development issues in `CLAUDE.local.md`
 
-**Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
-AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI · Shopee/Lazada
-signature verification against real Open Platform docs · letting shop owners (Manager role)
-manage their own staff.
+When documentation and code disagree, inspect migrations and the service implementation before
+changing behavior. Update the affected documentation in the same change.
 
-## AI rules (non-negotiable)
+## Working method
 
-- AI **never** writes SQL or touches the database directly — only approved tools in
-  [docs/ai/tools.md](docs/ai/tools.md).
-- AI **never** fabricates stock/price/order numbers — facts always come from the backend.
-- Sensitive actions (delete, refund, cancel, change price, adjust inventory) require **human
-  confirmation + RBAC permission**.
+1. Inspect the service, API adapters, UI caller, schema/migration, and relevant docs before editing.
+2. Make the smallest coherent change that preserves existing public behavior unless the task
+   explicitly changes that behavior.
+3. Reuse existing services, permission helpers, transaction helpers, and UI patterns.
+4. Validate at the boundary: treat webhook payloads, API inputs, model output, and JSON fields as
+   untrusted data.
+5. Verify the narrowest affected surface first, then run the broader available build/type checks.
+6. Report what changed, what was verified, and any remaining risk or unverified dependency.
 
-Full rules and enum values actually enforced in code: [docs/business/](docs/business/).
+Do not modify unrelated user changes, secrets, local environment files, generated artifacts, or
+database dumps. Never commit `.env*`, access tokens, customer data, or credentials.
 
+## Database and migration rules
+
+- Add a new numbered migration; never rewrite a migration that may already have been applied.
+- Migrations must be safe to re-run and follow the guarded/idempotent style already in
+  `db/migrations/`.
+- Every new tenant-owned `bms_*` table needs `tenant_id`, RLS policy, and the correct `bms_app`
+  grants. Follow migrations `4.2__bms_rls.sql` and `4.3__bms_rls_role.sql`.
+- Use `beginTenantTx()` for tenant writes and keep multi-step stock/order/payment changes atomic.
+- Use parameterized queries. Never interpolate user input into SQL.
+- Preserve append-only audit/history semantics where applicable.
+- Document new tables, states, constraints, and migration dependencies in
+  `docs/architecture/database.md` and the relevant business document.
+
+## Authentication, tenancy, and RBAC
+
+- Resolve tenant context with the established helpers; do not accept an arbitrary tenant ID from
+  an authenticated client as authority.
+- GraphQL mutations normally follow: permission check -> tenant resolution -> service call ->
+  audit.
+- Add new permissions to `BMS_PERMISSIONS` in `apps/web/lib/bms/permissions.ts`; do not maintain a
+  separate frontend permission catalog.
+- Platform-admin access and tenant-role access are separate. Cross-tenant data must only be viewed
+  through the established drill-down/impersonation flow.
+- Return `401` for missing or invalid authentication and `403` for an authenticated user without
+  permission. Do not turn a permission failure into a logout.
+- Hiding a menu item is not authorization; enforce access on the server.
+
+## API and integration rules
+
+- REST and GraphQL must call the same service functions so business behavior cannot diverge.
+- Verify webhook signatures before processing events. Keep the Shopee/Lazada implementation
+  explicitly marked beta until verified against official platform documentation.
+- Make webhook handlers idempotent where platforms can retry delivery.
+- Do not log raw tokens, secrets, payment details, or unnecessary customer PII.
+- Preserve channel-health semantics: `active` is an admin switch; `status` describes observed
+  connection health.
+- If adding a channel, update every duplicated channel type/allowlist and the integration docs.
+
+## Testing and verification
+
+There is no repository-wide test script. Use checks proportional to the change:
+
+```bash
+cd apps/web && npx tsc --noEmit
+cd apps/web && npm run build
+cd apps/ws && npm run build
+cd packages/graphql-core && npm run build
+cd packages/realtime && npm run build
+```
+
+- Do not claim a check passed unless it was run successfully.
+- For schema changes, validate migration ordering, idempotency, RLS, grants, and tenant isolation.
+- For API changes, test authentication, permission denial, invalid input, and the success path.
+- For order/inventory/payment changes, test state transitions, transaction rollback, duplicate
+  requests, and stock invariants.
+- For AI changes, test verified facts, missing facts, malformed model output, provider failure, and
+  deterministic fallback behavior.
+
+## Definition of done
+
+A change is complete when architecture boundaries remain intact, tenant/RBAC rules are enforced,
+sensitive actions remain human-controlled, relevant checks pass, and documentation reflects the
+implemented behavior.
