@@ -925,7 +925,7 @@ export default function HeaderBar({
           align-items: center;
           justify-content: center;
           overflow: hidden;
-          background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+          // background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
           // box-shadow: 0 10px 24px rgba(15,23,42,0.14);
           flex-shrink: 0;
         }
