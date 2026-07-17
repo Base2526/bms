@@ -359,11 +359,17 @@ export default function HeaderBar({
 
   const profileMenu: MenuProps["items"] = isAdminSession
     ? [
-        {
-          key: "dashboard",
-          label: <Link href="/admin/dashboard">{t("header.dashboard")}</Link>,
-          icon: <ShopOutlined />,
-        },
+        // ปุ่ม Dashboard แยกออกมาโชว์บน header เองแล้วตอน isDesktopView (jachoei-signup-btn ด้านล่าง)
+        // เก็บไว้ในนี้เฉพาะ tablet/mobile ที่ไม่มีปุ่มแยกให้กด
+        ...(!isDesktopView
+          ? [
+              {
+                key: "dashboard",
+                label: <Link href="/admin/dashboard">{t("header.dashboard")}</Link>,
+                icon: <ShopOutlined />,
+              },
+            ]
+          : []),
         {
           key: "settings",
           label: <Link href="/admin/settings">{t("common.settings")}</Link>,
