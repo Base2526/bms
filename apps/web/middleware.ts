@@ -28,11 +28,12 @@ export function middleware(req: NextRequest) {
   // console.log("[middleware]", req);
   const { pathname, search } = req.nextUrl;
   if (!pathname.startsWith("/admin")){
-    const token = req.cookies.get(USER_COOKIE)?.value;
+    const userToken = req.cookies.get(USER_COOKIE)?.value;
+    const adminToken = req.cookies.get(ADMIN_COOKIE)?.value;
     const { pathname } = req.nextUrl;
 
-    // ถ้าไม่มี token และ path นี้อยู่ในกลุ่มที่ต้องล็อกอิน → redirect ไป /login
-    if (!token && PROTECTED_PREFIXES.some(p => pathname.startsWith(p))) {
+    // ถ้าไม่มีทั้ง user/admin token และ path นี้อยู่ในกลุ่มที่ต้องล็อกอิน → redirect ไป /login
+    if (!userToken && !adminToken && PROTECTED_PREFIXES.some(p => pathname.startsWith(p))) {
       const loginUrl = new URL('/login', req.url);
       // เก็บปลายทางเดิมรวม query string ไว้
       const next = pathname + (search || '');

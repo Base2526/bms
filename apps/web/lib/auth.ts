@@ -60,9 +60,15 @@ export function requireAuth(ctx: any, opts: RequireAuthOptions = {}) {
     return { scope, author_id, isAuthenticated: true };
   }
 
-  // ===== web + android (user session) =====
+  // ===== web + android =====
+  // web อนุญาตให้ fallback ไปใช้ admin session ได้
+  // เพื่อให้หน้า public/session-aware ใช้ session เดียวกับหลังบ้านได้
   if (scope === "web" || scope === "android") {
     author_id = ctx?.user?.id ?? null;
+
+    if (!author_id && scope === "web") {
+      author_id = ctx?.admin?.id ?? null;
+    }
 
     const isSoft =
       opts.optional ||

@@ -78,6 +78,18 @@ const Q_UNREAD_NOTIFICATION_COUNT = gql`
   }
 `;
 
+const Q_MY_BMS_PERMISSIONS = gql`
+  query HeaderMyBmsPermissions {
+    myBmsPermissions
+  }
+`;
+
+const Q_INBOX_UNREAD_COUNT = gql`
+  query HeaderInboxUnreadCount {
+    bmsInboxUnreadCount
+  }
+`;
+
 type HeaderBarProps = {
   initialLang?: Lang;
   isMobile?: boolean;
@@ -121,6 +133,19 @@ export default function HeaderBar({
     fetchPolicy: "cache-and-network",
   });
   const notifUnreadCount = notifData?.myUnreadNotificationCount ?? 0;
+
+  const { data: bmsPermsData } = useQuery(Q_MY_BMS_PERMISSIONS, {
+    skip: !isAdminSession,
+    fetchPolicy: "cache-and-network",
+  });
+  const canViewInbox = isAdminSession && (bmsPermsData?.myBmsPermissions ?? []).includes("inbox.view");
+
+  const { data: inboxUnreadData } = useQuery(Q_INBOX_UNREAD_COUNT, {
+    skip: !canViewInbox,
+    fetchPolicy: "cache-and-network",
+    pollInterval: 15000,
+  });
+  const inboxUnreadCount = inboxUnreadData?.bmsInboxUnreadCount ?? 0;
 
   const [currentLang, setCurrentLang] = useState<Lang>(lang ?? initialLang);
   const [searchValue, setSearchValue] = useState("");
@@ -340,11 +365,6 @@ export default function HeaderBar({
           icon: <ShopOutlined />,
         },
         {
-          key: "inbox",
-          label: <Link href="/admin/inbox">{t("header.inbox")}</Link>,
-          icon: <MessageOutlined />,
-        },
-        {
           key: "settings",
           label: <Link href="/admin/settings">{t("common.settings")}</Link>,
           icon: <SettingOutlined />,
@@ -391,12 +411,19 @@ export default function HeaderBar({
           icon: <ShopOutlined />,
           onClick: () => router.push("/admin/dashboard"),
         },
-        {
-          key: "inbox",
-          label: t("header.inbox"),
-          icon: <MessageOutlined />,
-          onClick: () => router.push("/admin/inbox"),
-        },
+        ...(canViewInbox
+          ? [
+              {
+                key: "inbox",
+                label:
+                  inboxUnreadCount > 0
+                    ? `${t("header.inbox")} (${inboxUnreadCount > 99 ? "99+" : inboxUnreadCount})`
+                    : t("header.inbox"),
+                icon: <MessageOutlined />,
+                onClick: () => router.push("/admin/inbox"),
+              } as NonNullable<MenuProps["items"]>[number],
+            ]
+          : []),
         {
           key: "settings",
           label: t("common.settings"),
@@ -500,7 +527,7 @@ export default function HeaderBar({
     );
 
     return items;
-  }, [changeLang, currentLang, isAdminSession, router, t, userSession]);
+  }, [canViewInbox, changeLang, currentLang, inboxUnreadCount, isAdminSession, router, t, userSession]);
 
   return (
     <>
@@ -771,15 +798,34 @@ export default function HeaderBar({
               {hasSession ? (
                 <>
                   {isAdminSession && isDesktopView && (
-                    <Button
-                      type="primary"
-                      icon={<ShopOutlined />}
-                      size="large"
-                      onClick={() => router.push("/admin/dashboard")}
-                      className="jachoei-signup-btn"
-                    >
-                      {t("header.dashboard")}
-                    </Button>
+                    <div className="jachoei-admin-quick-actions">
+                      {canViewInbox && (
+                        <Button
+                          type="default"
+                          icon={<MessageOutlined />}
+                          size="large"
+                          onClick={() => router.push("/admin/inbox")}
+                          className="jachoei-admin-inbox-btn"
+                        >
+                          <span>{t("header.inbox")}</span>
+                          {inboxUnreadCount > 0 && (
+                            <span className="jachoei-admin-inbox-badge">
+                              {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
+                            </span>
+                          )}
+                        </Button>
+                      )}
+
+                      <Button
+                        type="primary"
+                        icon={<ShopOutlined />}
+                        size="large"
+                        onClick={() => router.push("/admin/dashboard")}
+                        className="jachoei-signup-btn"
+                      >
+                        {t("header.dashboard")}
+                      </Button>
+                    </div>
                   )}
                   <Dropdown
                     menu={{ items: profileMenu }}
@@ -1059,11 +1105,53 @@ export default function HeaderBar({
           box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
         }
 
+        .jachoei-admin-quick-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          margin-right: 2px;
+        }
+
         .jachoei-signup-btn {
           border-radius: 999px !important;
           padding-inline: 16px !important;
           height: 40px !important;
           box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),0.18) !important;
+        }
+
+        .jachoei-admin-inbox-btn {
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 8px !important;
+          border-radius: 999px !important;
+          height: 40px !important;
+          padding-inline: 14px !important;
+          background: rgba(var(--app-primary-rgb),0.12) !important;
+          border: 1px solid rgba(var(--app-primary-rgb),0.22) !important;
+          color: var(--app-primary) !important;
+          font-weight: 700 !important;
+          box-shadow: 0 8px 18px rgba(var(--app-primary-rgb),0.10) !important;
+        }
+
+        .jachoei-admin-inbox-btn:hover {
+          background: rgba(var(--app-primary-rgb),0.18) !important;
+          color: var(--app-primary) !important;
+          border-color: rgba(var(--app-primary-rgb),0.32) !important;
+        }
+
+        .jachoei-admin-inbox-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          border-radius: 999px;
+          background: #e5484d;
+          color: #fff;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1;
         }
 
         .jachoei-mobile-search-backdrop {
@@ -1139,6 +1227,10 @@ export default function HeaderBar({
 
           .jachoei-product-nav {
             gap: 16px;
+          }
+
+          .jachoei-admin-quick-actions {
+            gap: 8px;
           }
         }
 

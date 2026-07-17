@@ -102,9 +102,9 @@ const en = {
     failed: "Email verification failed",
   },
   header: {
-    title: "AI-BMS",
+    title: "BMS",
 
-    subtitle: "AI-powered business management",
+    subtitle: "Business management system",
     blocked: "Blocked",
 
     // 🔍 search-related
@@ -122,7 +122,7 @@ const en = {
     startFree: "Start free",
     dashboard: "My store dashboard",
     inbox: "Customer inbox",
-    productNavigation: "AI-BMS product navigation",
+    productNavigation: "BMS product navigation",
   },
   landing: {
     badge: "AI Business Operating System",

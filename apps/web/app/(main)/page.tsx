@@ -333,21 +333,40 @@ export default function HomePage() {
             <Tag color="success">{t("landing.liveWorkflow")}</Tag>
           </div>
           <div className={styles.customerBubble}>
-            <MessageOutlined />
-            <span><strong>{t("landing.sampleMessage")}</strong><small>{t("landing.newMessage")}</small></span>
+            <div className={styles.bubbleIcon}>
+              <MessageOutlined />
+            </div>
+            <span>
+              <strong>{t("landing.sampleMessage")}</strong>
+              <small>{t("landing.newMessage")}</small>
+            </span>
           </div>
           <div className={styles.storyFlow}>
-            <span><RobotOutlined /><small>{t("landing.understand")}</small></span>
-            <ArrowRightOutlined />
-            <span><DatabaseOutlined /><small>{t("landing.checkStock")}</small></span>
-            <ArrowRightOutlined />
-            <span><ShoppingCartOutlined /><small>{t("landing.createOrder")}</small></span>
-            <ArrowRightOutlined />
-            <span><InboxOutlined /><small>{t("landing.shipping")}</small></span>
+            <span>
+              <RobotOutlined />
+              <strong>{t("landing.understand")}</strong>
+            </span>
+            <span>
+              <DatabaseOutlined />
+              <strong>{t("landing.checkStock")}</strong>
+            </span>
+            <span>
+              <ShoppingCartOutlined />
+              <strong>{t("landing.createOrder")}</strong>
+            </span>
+            <span>
+              <InboxOutlined />
+              <strong>{t("landing.shipping")}</strong>
+            </span>
           </div>
           <div className={styles.systemBubble}>
-            <SafetyOutlined />
-            <span><strong>{t("landing.factsTitle")}</strong><small>{t("landing.factsDescription")}</small></span>
+            <div className={styles.bubbleIcon}>
+              <SafetyOutlined />
+            </div>
+            <span>
+              <strong>{t("landing.factsTitle")}</strong>
+              <small>{t("landing.factsDescription")}</small>
+            </span>
           </div>
         </div>
       </section>

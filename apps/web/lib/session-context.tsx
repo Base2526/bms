@@ -14,7 +14,8 @@ type SessionValue = {
 const Ctx = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const { user, admin, isAuthenticated, loading, refreshSession } = useSession();
+  const { user: rawUser, admin, isAuthenticated, loading, refreshSession } = useSession();
+  const user = rawUser ?? admin ?? null;
   const value = useMemo(
     () => ({ user, admin, isAuthenticated, loading, refreshSession }),
     [user, admin, isAuthenticated, loading, refreshSession]

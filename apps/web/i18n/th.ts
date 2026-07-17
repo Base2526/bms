@@ -102,7 +102,7 @@ const th = {
     failed: "ยืนยันอีเมลไม่สำเร็จ",
   },
   header: {
-    title: "AI-BMS",
+    title: "BMS",
 
     subtitle: "จัดการร้านค้าด้วย AI",
     blocked: "รายการที่บล็อก",
@@ -122,7 +122,7 @@ const th = {
     startFree: "เริ่มใช้ฟรี",
     dashboard: "Dashboard ร้านของฉัน",
     inbox: "Inbox ลูกค้า",
-    productNavigation: "เมนูผลิตภัณฑ์ AI-BMS",
+    productNavigation: "เมนูผลิตภัณฑ์ BMS",
   },
   landing: {
     badge: "AI Business Operating System",
