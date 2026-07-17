@@ -49,7 +49,10 @@ export async function loadPermissions(ctx: any): Promise<Set<string>> {
   if (ctx.__bmsPerms) return ctx.__bmsPerms;
 
   const auth = requireAuth(ctx);
-  if (auth.scope !== "admin") {
+  const hasAdminIdentity = Boolean(ctx?.admin?.id);
+  const canUseAdminPermissions = auth.scope === "admin" || (auth.scope === "web" && hasAdminIdentity);
+
+  if (!canUseAdminPermissions) {
     throw new GraphQLError("Admin only", {
       extensions: { code: "FORBIDDEN", http: { status: 403 } },
     });

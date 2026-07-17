@@ -89,6 +89,11 @@ GraphQL endpoint (`app/api/graphql/route.ts`): `admin` (cookie session, the BMS 
 base template, distinct from the BMS admin/staff RBAC model). See
 [system.md](system.md) for how tenant/RBAC context is derived once authenticated.
 
+Public web pages are intentionally session-aware: when a browser already has an admin cookie, the
+`web` scope may reuse that existing admin identity instead of forcing a separate `/login` session.
+This keeps landing/self-service surfaces aligned with the active admin session while preserving the
+explicit `admin` scope for `/admin/*` routes and RBAC-gated admin operations.
+
 ## Operational list search
 
 The admin UI now relies on server-backed search for the main operational tables:

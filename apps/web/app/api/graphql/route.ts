@@ -106,7 +106,7 @@ async function createContext(request: NextRequest) {
   } else {
     // ✅ web ใช้ cookie
     user = verifyUserSession();
-    admin = null;
+    admin = verifyAdminSession();
 
     // (optional) ถ้าอยากให้ web รองรับ Bearer ด้วย:
     // if (!user) user = verifyUserFromRequest(request);

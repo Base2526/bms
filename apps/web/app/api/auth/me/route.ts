@@ -10,7 +10,7 @@ export async function GET() {
   const admin  = verifyAdminSession();
 
   return NextResponse.json({
-    isAuthenticated: user,
+    isAuthenticated: Boolean(user || admin),
     user,
     admin
   }, { headers: { 'Cache-Control': 'no-store' }});

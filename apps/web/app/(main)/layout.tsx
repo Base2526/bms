@@ -18,7 +18,7 @@ const AppFooter = dynamic(() => import("@/components/footer/AppFooter"), {
   loading: () => <div style={{ height: 220 }} />,
 });
 
-const SITE_NAME = "AI-BMS";
+const SITE_NAME = "BMS";
 const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -27,11 +27,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const seo = {
     th: {
-      title: "AI-BMS — ระบบจัดการธุรกิจที่มี AI ตอบลูกค้าให้อัตโนมัติ",
+      title: "BMS — ระบบจัดการธุรกิจที่มี AI ตอบลูกค้าให้อัตโนมัติ",
       desc: "รวมแชทจาก LINE, TikTok, Facebook, Instagram และ Website ไว้ที่เดียว ให้ AI ตอบลูกค้า เช็คสต็อก สร้างออเดอร์ ครบวงจรตั้งแต่แชทแรกจนของถึงมือ",
     },
     en: {
-      title: "AI-BMS — AI-Powered Business Management System",
+      title: "BMS — Business management system",
       desc: "Unify chats from LINE, TikTok, Facebook, Instagram and your website — let AI handle stock checks, orders, and fulfillment end to end.",
     },
   }[lang];
