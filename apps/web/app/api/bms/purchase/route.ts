@@ -21,9 +21,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+  const search = url.searchParams.get("search") ?? "";
   const limit = Number(url.searchParams.get("limit")) || 50;
   const offset = Number(url.searchParams.get("offset")) || 0;
-  const rows = await listPurchaseOrders(DEFAULT_TENANT_ID, limit, offset);
+  const rows = await listPurchaseOrders(DEFAULT_TENANT_ID, search, limit, offset);
   return NextResponse.json({ purchaseOrders: rows });
 }
 

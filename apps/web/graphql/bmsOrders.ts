@@ -122,7 +122,7 @@ export const bmsOrdersResolvers = {
         SOURCE_NOT_FOUND: "ไม่พบออร์เดอร์ต้นทาง",
         EMPTY: "ออร์เดอร์ต้นทางไม่มีรายการสินค้า",
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
-        INSUFFICIENT: ("sku" in r) ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
+        INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
       };
       return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ซ้ำไม่สำเร็จ" };
     },
