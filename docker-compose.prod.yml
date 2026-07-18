@@ -115,19 +115,6 @@ services:
         aliases:
           - web_b
 
-  # ปิดไว้: Caddy ของ project A (next-apollo-pg-ws, jachoei.com) เป็นคนถือ 80/443 ตัวเดียวบน VM นี้
-  # และ reverse_proxy เข้า web_b/ws_b ผ่าน network bms_shared แทน (ดู apps/web/Caddyfile ของ next-apollo-pg-ws)
-  # caddy:
-  #   image: caddy:2-alpine
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - ./apps/web/certs:/certs:ro
-  #     - caddy_data:/data
-  #     - caddy_config:/config
-
   social-worker:
     image: myapp-web:latest
     working_dir: /app/apps/web
