@@ -41,6 +41,14 @@ owner typed the wrong secret. Don't treat that badge as a config error the way y
 LINE/Facebook/Instagram until the signature verification is rewritten against real docs. Neither
 channel reports `send_failed` (no send API exists yet to fail).
 
+## Diagnostics
+
+`/admin/inbox/realtime-diagnostics` supports `shopee` and `lazada` rows so admins can test the
+shared Inbox realtime path. `Emit` validates only the internal PubSub/WebSocket signal. `Create
+Msg` creates diagnostic Inbox rows for the selected channel, but it does not validate Shopee/Lazada
+payload parsing, signature verification, OAuth behavior, or chat send APIs. The beta caveats above
+still apply.
+
 ## Before using in production
 
 1. Get the real Lazada Open Platform / Shopee Open Platform webhook + signature documentation.

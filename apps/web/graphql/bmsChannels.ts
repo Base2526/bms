@@ -2,10 +2,13 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { pubsub } from "@/lib/pubsub";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listChannelsMasked, upsertChannel } from "@/lib/bms/channels";
 import { listChannelHealth, countUnhealthyChannels, testChannelConnection } from "@/lib/bms/channelHealth";
 import { audit } from "@/lib/bms/audit";
+import { isPlatformAdmin } from "@/lib/bms/platform";
+import { topicBmsInboxChanged, type BmsInboxChangedPayload } from "../../../packages/graphql-core/src/bmsInboxSync";
 
 /** pg คืน timestamp เป็น Date object — ต้อง toISOString() ก่อนคืนใน field ที่เป็น String (ดู CLAUDE.local.md) */
 function toISO(v: unknown): string | null {
@@ -18,6 +21,17 @@ function requireTenantAdmin(ctx: any) {
   if (auth.scope !== "admin") {
     throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
   }
+}
+
+async function requireRealtimeDiagnosticsAdmin(ctx: any) {
+  const auth = requireAuth(ctx);
+  if (auth.scope !== "admin") {
+    throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
+  }
+  if (ctx?.admin?.role === "Administrator" || await isPlatformAdmin(ctx)) return;
+  throw new GraphQLError("เฉพาะ Administrator เท่านั้น", {
+    extensions: { code: "FORBIDDEN", http: { status: 403 } },
+  });
 }
 
 const ALLOWED = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
@@ -75,6 +89,40 @@ export const bmsChannelsResolvers = {
       const result = await testChannelConnection(getTenantId(ctx), args.channel);
       await audit(ctx, "channel.test", args.channel, { ok: result.ok });
       return result;
+    },
+    async bmsEmitInboxDiagnosticEvent(_p: unknown, args: { channel: string; probeId: string }, ctx: any) {
+      await requireRealtimeDiagnosticsAdmin(ctx);
+      if (!ALLOWED.includes(args.channel)) {
+        throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const probeId = String(args.probeId || "").trim();
+      if (!/^[A-Za-z0-9:_-]{8,160}$/.test(probeId)) {
+        throw new GraphQLError("probeId ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+
+      const tenantId = getTenantId(ctx);
+      const occurredAt = new Date().toISOString();
+      const event: BmsInboxChangedPayload = {
+        tenantId,
+        conversationId: `diag:${args.channel}:${probeId}`,
+        kind: "CONVERSATION_CHANGED",
+        occurredAt,
+      };
+
+      await pubsub.publish(topicBmsInboxChanged(tenantId), { bmsInboxChanged: event });
+      await audit(ctx, "inbox.diagnostic_event", args.channel, {
+        conversationId: event.conversationId,
+        occurredAt,
+      });
+
+      return {
+        ok: true,
+        message: "ส่ง diagnostic realtime event แล้ว",
+        channel: args.channel,
+        conversationId: event.conversationId,
+        kind: event.kind,
+        occurredAt,
+      };
     },
   },
 };

@@ -24,3 +24,10 @@ they're persisted (no delivery confirmation possible), the same pattern used for
 
 This is the reference pattern the Shopee and Lazada webhook scaffolds were modeled on — see
 [lazada.md](lazada.md) for what's still unverified there.
+
+## Diagnostics
+
+`/admin/inbox/realtime-diagnostics` can create a TikTok diagnostic Inbox message with `Create Msg`
+so operators can confirm the Inbox realtime path. This does not prove TikTok platform delivery and
+does not add a TikTok send API; TikTok remains inbound-only until the real Business Messaging send
+integration is implemented.

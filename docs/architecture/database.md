@@ -7,6 +7,12 @@ All BMS tables are tenant-scoped (`tenant_id UUID`) and enforced by Postgres Row
 `beginTenantTx()` (`lib/bms/tenant.ts`), which drops the connection to role `bms_app` and sets
 `bms.tenant_id` so RLS applies even if a `WHERE tenant_id = ...` clause is ever missed.
 
+Plain `pg_dump` backups made with `--no-owner` / `--no-privileges` do not include PostgreSQL
+cluster roles or object grants. After restoring one, apply migrations through
+`6.6__bms_rls_role_restore_hardening.sql`; it idempotently provisions `bms_app`, restores the
+current BMS grants, and ensures the older tenant-owned channel/RBAC/audit tables have RLS enabled.
+If the runtime database login is not named `app`, grant it membership in `bms_app` explicitly.
+
 Migrations are plain numbered SQL files under `db/migrations/`, applied in order, and written to
 be idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded `ALTER`s).
 BMS-specific migrations start at `3.2`; anything before that belongs to the base platform template
@@ -32,7 +38,11 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 `UNIQUE (tenant_id, channel, external_ref)` constraint (added in `4.0`, originally per-channel-only
 in `3.6`). This is *the* matching key for "who is this customer" — there is no automatic dedup by
 phone/email across channels (see [../ui/customer360.md](../ui/customer360.md) for the manual merge
-feature that fixes this per-customer).
+feature that fixes this per-customer). Since `6.7`, the table also stores cached channel profile
+metadata (`display_name`, `picture_url`, `status_message`, `language`, `profile_synced_at`,
+`profile_error_at`, `profile_error`) for display-only use. LINE OA sync writes these fields after
+webhook processing; Inbox uses them as fallback when no authoritative CRM customer name/avatar is
+available.
 
 **`bms_orders` / `bms_order_items`** — orders start directly at `PENDING` with stock already
 reserved; there is no separate `DRAFT` status in the implementation despite earlier planning docs
@@ -71,6 +81,10 @@ DB-level enum. Administrator role bypasses this table entirely (hardcoded super-
 
 **`bms_audit_log`** — append-only, written via `audit(ctx, action, target, meta)`
 (`lib/bms/audit.ts`); failures to write are swallowed (never blocks the mutation that triggered it).
+Realtime diagnostics write `inbox.diagnostic_event` for `Emit` and `inbox.diagnostic_message` for
+`Create Msg`. The latter also creates ordinary tenant-scoped `bms_conversations`/`bms_messages`
+rows using `customer_ref = diagnostic:{channel}:{adminId}`, `sender = diagnostic`, and
+`meta.diagnostic = true`; no separate diagnostic tables or migrations are required.
 
 ## Adding a table for a new module
 

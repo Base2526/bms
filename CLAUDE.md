@@ -31,6 +31,7 @@ for the full philosophy and module breakdown.
 | [docs/integrations/tiktok.md](docs/integrations/tiktok.md) | TikTok webhook (send API = roadmap) |
 | [docs/integrations/lazada.md](docs/integrations/lazada.md) | Lazada + Shopee beta scaffold — what's real vs. placeholder |
 | [docs/ui/customer360.md](docs/ui/customer360.md) | Inbox "ลูกค้า" purchase-history tab, cross-channel merge, reorder |
+| [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
 | [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
 | [CLAUDE.local.md](CLAUDE.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
@@ -66,6 +67,13 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.
+- **Inbox realtime diagnostics**: `/admin/inbox/realtime-diagnostics` is Administrator/platform-admin
+  only. `Emit` verifies Redis/WebSocket delivery without writing DB rows; `Create Msg` creates a
+  diagnostic Inbox message for the current tenant without sending anything to external platforms.
+- **LINE profile display cache**: LINE webhooks now best-effort sync `displayName`/`pictureUrl`
+  into `bms_customer_identities` after the critical Inbox write/reply path. Inbox may display the
+  cached profile as fallback, but staff-maintained CRM fields stay authoritative.
+  See [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md).
 
 **Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
 AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI · Shopee/Lazada

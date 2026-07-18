@@ -20,6 +20,16 @@ No new backend was needed — it reuses the existing `bmsCustomer` GraphQL query
 `getCustomer()`/`customerOrders()` (`lib/bms/customers.ts`). Gated by permission `customer.view`;
 without it, the tab shows an empty state rather than an error.
 
+The Inbox list/header may show cached channel profile metadata before staff opens Customer 360. For
+LINE OA, the webhook syncs `display_name` and `picture_url` into `bms_customer_identities`; GraphQL
+exposes these as `customerName` fallback and `customerAvatar`. The Customer 360 tab still uses the
+linked `bms_customers` record as the authoritative CRM profile.
+
+Diagnostic conversations created from
+[`/admin/inbox/realtime-diagnostics`](inbox-diagnostics.md) use `customer_ref =
+diagnostic:{channel}:{adminId}` and may not have a linked `customerId`. They are for verifying
+Inbox realtime behavior, not for testing Customer 360 merge/history logic.
+
 **Known limitation:** since customer identity only matches on `(tenant, channel, external_ref)`
 (see [../business/crm.md](../business/crm.md)), a customer who messages via two different channels
 shows up as two separate records with two separate (incomplete) purchase histories — until merged.

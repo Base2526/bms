@@ -66,6 +66,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Channel Integration — Shopee/Lazada | 🧪 beta | `app/api/bms/{shopee,lazada}/webhook` — see [../integrations/lazada.md](../integrations/lazada.md) |
 | Channel Health Status | ✅ | `lib/bms/channelHealth.ts` · `6.4__bms_channel_health.sql` · badges on `/admin/settings` + sidebar/dashboard alerts + `POST /api/bms/channels/check-health` cron |
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
+| Inbox Realtime Diagnostics | ✅ | `/admin/inbox/realtime-diagnostics` · see [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
@@ -129,6 +130,9 @@ docs/                      This documentation tree
 - `/admin/orders`, `/admin/purchase`, `/admin/payment`, and `/admin/shipment` now use backend
   search args with debounced live search. This is the expected pattern for large operational lists.
 - `/admin/profile` is the self-service account surface for avatar/name/phone/language updates.
+- `/admin/inbox/realtime-diagnostics` is an Administrator/platform-admin tool. `Emit` proves the
+  Redis/WebSocket invalidation path; `Create Msg` creates a diagnostic Inbox message for the
+  current tenant without contacting external platforms.
 
 ## Coding rules
 

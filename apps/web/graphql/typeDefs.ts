@@ -694,6 +694,7 @@ export const typeDefs = /* GraphQL */ `
     bmsConversationTimeline(id: ID!): [BmsTimelineEntry!]!
     bmsAssignableStaff: [BmsStaffRef!]!
     bmsInboxUnreadCount: Int!   # แชท OPEN/PENDING ที่ยังไม่อ่านรวม (Sales เห็นแค่ของตัวเอง) — ใช้ทำ badge บนเมนู sidebar
+    bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
 
     # ===== BMS Reports (admin) =====
     bmsSalesSummary(from: String, to: String): BmsSalesSummary!
@@ -1020,6 +1021,7 @@ export const typeDefs = /* GraphQL */ `
     customerRef: String
     customerId: ID
     customerName: String
+    customerAvatar: String
     status: BmsConvStatus!
     assignedStaff: BmsStaffRef
     helpers: [BmsStaffRef!]!
@@ -1045,6 +1047,21 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     delivered: Boolean!
     message: String
+  }
+  type BmsInboxDiagnosticMessageResult {
+    ok: Boolean!
+    message: String!
+    channel: String!
+    conversationId: ID!
+    messageId: ID!
+    customerRef: String!
+    occurredAt: String!
+  }
+  type BmsInboxDiagnosticLatest {
+    channel: String!
+    conversationId: ID!
+    customerRef: String!
+    lastInboundAt: String!
   }
 
   # ===== BMS products & inventory =====
@@ -1396,6 +1413,14 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsTestChannelResult { ok: Boolean!  message: String! }
+  type BmsInboxDiagnosticEventResult {
+    ok: Boolean!
+    message: String!
+    channel: String!
+    conversationId: ID!
+    kind: String!
+    occurredAt: String!
+  }
 
   input RegisterPushTokenInput {
     platform: String! # 'android'
@@ -1787,6 +1812,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
     bmsMarkConversationRead(id: ID!): Boolean!
     bmsAddConversationNote(id: ID!, body: String!): BmsConversationNote
+    bmsCreateInboxDiagnosticMessage(channel: String!, body: String): BmsInboxDiagnosticMessageResult!
 
     # ===== BMS CRM (admin) =====
     bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
@@ -1804,6 +1830,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
+    bmsEmitInboxDiagnosticEvent(channel: String!, probeId: ID!): BmsInboxDiagnosticEventResult!
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!

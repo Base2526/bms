@@ -105,14 +105,15 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Lazy WebSocket link (สำหรับ Subscription)
 // - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
-let wsLink: ApolloLink | null = null;
-let wsLinkLoading: Promise<ApolloLink> | null = null;
+type WsScope = "web" | "admin";
+const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
+const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
 
-async function loadWsLink(): Promise<ApolloLink> {
-  if (wsLink) return wsLink;
-  if (wsLinkLoading) return wsLinkLoading;
+async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
+  if (wsLinks[scope]) return wsLinks[scope]!;
+  if (wsLinkLoading[scope]) return wsLinkLoading[scope]!;
 
-  wsLinkLoading = (async () => {
+  wsLinkLoading[scope] = (async () => {
     const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
       import("@apollo/client/link/subscriptions"),
       import("graphql-ws"),
@@ -123,20 +124,20 @@ async function loadWsLink(): Promise<ApolloLink> {
         url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
         lazy: true,
         retryAttempts: Infinity,
-        connectionParams: () => ({ "x-scope": "web" }),
+        connectionParams: () => ({ "x-scope": scope }),
         on: {
-          connected: () => addLog("info", "ws", "[ws] connected", {}),
-          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { code: ev?.code, reason: ev?.reason }),
-          error: (err: any) => addLog("error", "ws", "[ws] error", { message: err?.message || String(err) }),
+          connected: () => addLog("info", "ws", "[ws] connected", { scope }),
+          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason }),
+          error: (err: any) => addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) }),
         },
       })
     );
 
-    wsLink = link;
+    wsLinks[scope] = link;
     return link;
   })();
 
-  return wsLinkLoading;
+  return wsLinkLoading[scope]!;
 }
 
 const lazyWsLink = new ApolloLink((operation) => {
@@ -144,7 +145,8 @@ const lazyWsLink = new ApolloLink((operation) => {
 
   return new Observable((observer) => {
     let sub: any;
-    loadWsLink()
+    const scope: WsScope = window.location.pathname.startsWith("/admin") ? "admin" : "web";
+    loadWsLink(scope)
       .then((link) => {
         const obs = link.request(operation);
         if (!obs) {

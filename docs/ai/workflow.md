@@ -53,6 +53,10 @@ Per-channel webhook/verification/reply details now live in [../integrations/](..
 Every channel except `test` calls `logConversation()`, so incoming messages + the AI's reply are
 automatically recorded in the Omnichannel Inbox.
 
+For LINE OA, webhook handling also best-effort syncs the user's LINE display profile after the
+Inbox write/reply path. This profile cache is UI metadata only; it is not available to the AI as an
+authoritative customer fact unless a backend tool explicitly returns it.
+
 ## Hard rules (see [../business/](../business/) and [prompts.md](prompts.md))
 
 - AI **never touches the DB directly and never writes SQL** — only calls approved services.
@@ -91,6 +95,10 @@ confirms before anything reaches production.
 
 - **Playground** (`/api/bms/chat`, channel=`test`) — send a simulated message and see the full
   trace (intent/tool/reply) without logging to inbox.
+- **Realtime Diagnostics** (`/admin/inbox/realtime-diagnostics`) — Administrator/platform-admin
+  only. `Emit` tests PubSub/WebSocket delivery without DB writes; `Create Msg` creates a diagnostic
+  Inbox message for the current tenant without calling the AI pipeline or sending to any external
+  channel.
 - **Fake Data Seeder** (`/admin/dev/fake`) — bulk-generates products/customers/orders/conversations/
   purchase orders to populate Dashboard/Reports/Inbox/Payment/Shipping/Purchase (marker `FAKE-`,
   cleanable; off in production by default, enabled on demo machines via `BMS_ALLOW_FAKE_SEED=1`).

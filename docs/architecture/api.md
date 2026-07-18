@@ -49,6 +49,15 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
   before saving the product form. It stores files first, then the product save mutation decides
   which uploaded image becomes `image_url` (cover) and which remain in the gallery.
 
+## Admin diagnostics
+
+- `/admin/inbox/realtime-diagnostics` is Administrator/platform-admin only. `Emit` publishes a
+  tenant-scoped `bmsInboxChanged` invalidation event without writing DB rows; success is measured
+  by the Realtime Probe receiving the event and showing latency, not by a new Inbox row. `Create
+  Msg` creates a diagnostic inbox conversation/message for the current tenant and publishes the
+  same realtime event, without sending anything to LINE/Meta/TikTok/Shopee/Lazada. See
+  [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md).
+
 ## REST — order/payment/purchase/shipment transition routes
 
 Thin per-action routes (`order/[id]/pay`, `/pack`, `/ship`, `/complete`, `/cancel`, `/return`;
@@ -64,8 +73,8 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsProducts.ts` | products, categories, stock adjustments |
 | `bmsOrders.ts` | order lifecycle transitions, reorder |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
-| `bmsInbox.ts` | conversations, messages, notes, timeline |
-| `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) |
+| `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
+| `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, labels |
@@ -80,6 +89,30 @@ any frontend permission list. `bmsChannels.ts` is a deliberate exception: it gat
 `requireTenantAdmin(ctx)` (any admin role in the tenant) instead of a `BMS_PERMISSIONS` entry — no
 permission was ever added for channel config, so Channel Health reuses the same gate rather than
 introducing one just for itself.
+
+### Inbox realtime
+
+The admin Inbox subscribes to `bmsInboxChanged` over the WebSocket gateway. Webhook processing
+publishes a small tenant-scoped invalidation event after the conversation and its messages are
+committed. The event contains only the conversation ID, change kind, and timestamp; the UI then
+refetches through the normal `bmsConversations` / `bmsConversation` queries so existing RBAC and
+tenant scoping remain authoritative. The first event refreshes immediately; sustained bursts are
+coalesced to at most two list queries per second with a guaranteed trailing refresh. The existing
+20-second conversation-list poll remains a recovery path for a missed socket event.
+
+LINE profile sync is a second, non-critical invalidation source. After the Inbox write/reply path,
+the LINE webhook best-effort fetches the user's LINE display profile, stores it on
+`bms_customer_identities`, then publishes `CONVERSATION_CHANGED` for any affected conversation so
+open Inbox screens can replace the raw LINE userId with cached display name/avatar. This sync must
+remain cache-backed and short-timeout; GraphQL read resolvers and React list rendering must never
+call external profile APIs.
+
+Diagnostics use the same subscription path. `Emit` intentionally uses a `diag:{channel}:{probeId}`
+conversation ID that does not exist in `bms_conversations`; it validates PubSub/WebSocket delivery
+only. `Create Msg` writes a real diagnostic conversation/message first, then publishes
+`MESSAGES_CHANGED`, so the normal Inbox list should update immediately. The diagnostics matrix
+keeps `IN real`/`OUT real` from Channel Health separate from `IN diag`, which is read from the
+latest diagnostic message rows.
 
 ## Auth scopes
 

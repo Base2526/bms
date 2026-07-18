@@ -12,13 +12,14 @@ import {
   addNote, listNotes, sendStaffMessage, retryMessage, getTimeline,
   listAssignableStaff, addConversationHelper, removeConversationHelper,
   listConversationHelpers, setUserAvailability, listSystemEvents, countUnreadConversations,
-  isImageMime, channelSupportsPush, outboundStatus,
+  isImageMime, channelSupportsPush, outboundStatus, createDiagnosticInboxMessage, listDiagnosticInboxLatest,
   type ConvStatus, type Attachment,
 } from "@/lib/bms/inbox";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/bms/platform";
 import { GraphQLError } from "graphql/error";
 
 const staffRef = (r: any) => r && ({
@@ -30,6 +31,18 @@ const toISO = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? nul
 const actorOf = (ctx: any) => ctx?.admin?.email || ctx?.admin?.id || "admin";
 // Sales เห็นเฉพาะแชทของตัวเอง (หลัก/ช่วยตอบ) — role อื่น (Administrator/Manager/Warehouse) เห็นทั้งร้าน
 const isRestrictedToOwn = (ctx: any) => ctx?.admin?.role === "Sales";
+const DIAGNOSTIC_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
+
+async function requireDiagnosticsAdmin(ctx: any) {
+  const auth = requireAuth(ctx);
+  if (auth.scope !== "admin") {
+    throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
+  }
+  if (ctx?.admin?.role === "Administrator" || await isPlatformAdmin(ctx)) return auth;
+  throw new GraphQLError("เฉพาะ Administrator เท่านั้น", {
+    extensions: { code: "FORBIDDEN", http: { status: 403 } },
+  });
+}
 
 export const bmsInboxResolvers = {
   Query: {
@@ -78,6 +91,11 @@ export const bmsInboxResolvers = {
       const assignedTo = isRestrictedToOwn(ctx) ? String(ctx.admin.id) : null;
       return countUnreadConversations(getTenantId(ctx), assignedTo);
     },
+
+    async bmsInboxDiagnosticLatest(_p: unknown, _a: unknown, ctx: any) {
+      await requireDiagnosticsAdmin(ctx);
+      return listDiagnosticInboxLatest(getTenantId(ctx));
+    },
   },
 
   Mutation: {
@@ -107,6 +125,35 @@ export const bmsInboxResolvers = {
         };
       }
       return { status: res.status, delivered: false, message: res.status === "NOT_FOUND" ? "ไม่พบข้อความ" : "ส่งซ้ำไม่ได้" };
+    },
+
+    async bmsCreateInboxDiagnosticMessage(_p: unknown, args: { channel: string; body?: string | null }, ctx: any) {
+      const auth = await requireDiagnosticsAdmin(ctx);
+      if (!DIAGNOSTIC_CHANNELS.includes(args.channel)) {
+        throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const body = (args.body || "").trim();
+      if (body.length > 1000) {
+        throw new GraphQLError("ข้อความทดสอบยาวเกินไป", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+
+      const result = await createDiagnosticInboxMessage(
+        getTenantId(ctx),
+        args.channel,
+        String(auth.author_id),
+        body || null
+      );
+      await audit(ctx, "inbox.diagnostic_message", result.conversationId, {
+        channel: args.channel,
+        messageId: result.messageId,
+        customerRef: result.customerRef,
+      });
+
+      return {
+        ok: true,
+        message: "สร้างข้อความทดสอบใน Inbox แล้ว",
+        ...result,
+      };
     },
 
     async bmsAssignConversation(_p: unknown, args: { id: string; userId: string }, ctx: any) {
@@ -173,6 +220,7 @@ export const bmsInboxResolvers = {
     customerRef: (p: any) => p.customer_ref ?? null,
     customerId: (p: any) => p.customer_id ?? null,
     customerName: (p: any) => p.customer_name ?? null,
+    customerAvatar: (p: any) => p.customer_avatar ?? null,
     assignedStaff: (p: any) => (p.assigned_to_user_id
       ? { id: p.assigned_to_user_id, name: p.assigned_name ?? null, avatar: p.assigned_avatar ?? null, email: p.assigned_email ?? null }
       : null),

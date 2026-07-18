@@ -13,6 +13,22 @@ import {
   topicMyContactSpamMarkChanged,
   topicMyContactSpamSettingsChanged,
 } from "./contactSpamSync.js";
+import {
+  topicBmsInboxChanged,
+  type BmsInboxChangedPayload,
+} from "./bmsInboxSync.js";
+
+const DEFAULT_BMS_TENANT_ID = "11111111-1111-1111-1111-111111111111";
+
+function requireBmsTenantId(ctx: any): string {
+  const userId = String(ctx?.user?.id ?? ctx?.user?.sub ?? "").trim();
+  if (ctx?.scope !== "admin" || !userId) {
+    throw new GraphQLError("UNAUTHENTICATED", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+  return String(ctx?.user?.tenant_id || DEFAULT_BMS_TENANT_ID);
+}
 
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
@@ -219,6 +235,19 @@ export const coreResolvers = {
           const userId = String(ctx?.user?.id ?? ctx?.user?.author_id ?? ctx?.user?.user_id ?? "").trim();
           const pUserId = String(payload?.myContactSpamSettingsChanged?.user_id || "").trim();
           return !!userId && !!pUserId && userId === pUserId;
+        }
+      ),
+    },
+
+    bmsInboxChanged: {
+      subscribe: withFilter(
+        (_: any, _args: any, ctx: any) => {
+          const tenantId = requireBmsTenantId(ctx);
+          return pubsub.asyncIterator(topicBmsInboxChanged(tenantId));
+        },
+        (payload: { bmsInboxChanged?: BmsInboxChangedPayload }, _vars: any, ctx: any) => {
+          const tenantId = requireBmsTenantId(ctx);
+          return payload?.bmsInboxChanged?.tenantId === tenantId;
         }
       ),
     },

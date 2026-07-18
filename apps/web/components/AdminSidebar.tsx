@@ -173,6 +173,7 @@ export default function AdminSidebar() {
       label: 'SaaS',
       children: [
         link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />, channelHealthCount, collapsed),
+        ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <ExperimentOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
         ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
       ],

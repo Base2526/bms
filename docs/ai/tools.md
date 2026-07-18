@@ -550,6 +550,11 @@ REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI 
 เอกสาร Shopee/Lazada Open Platform จริง (ดู `TODO(prod)` ในไฟล์) ต้องแก้ก่อนใช้ production · ยังไม่มี send API
 (ตอบกลับลูกค้าไม่ได้ เหมือน TikTok) · ไม่อยู่ใน `channelSupportsPush()` จึงถือว่า SENT ทันทีเมื่อบันทึกสำเร็จ
 
+**Realtime Diagnostics:** `/admin/inbox/realtime-diagnostics` เป็นเครื่องมือ Administrator/platform-admin
+สำหรับแยกทดสอบสองชั้น: `Emit` publish `bmsInboxChanged` อย่างเดียว (ไม่เขียน DB จึงไม่เห็นแชทใหม่) และ
+`Create Msg` เรียก `bmsCreateInboxDiagnosticMessage(channel)` เพื่อสร้างข้อความ diagnostic ใน Inbox จริง
+โดยไม่เรียก AI pipeline และไม่ส่งข้อความออก platform ใด ๆ
+
 ## sendStaffMessage()
 
 แอดมินตอบเอง → persist ข้อความ + ยิงกลับช่องทางจริง (LINE push / Meta send; อื่น ๆ persist อย่างเดียว)

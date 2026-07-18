@@ -1,10 +1,10 @@
 'use client';
-import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
+import { gql, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
   Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
 } from "antd";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ReloadOutlined, SendOutlined, UserOutlined,
@@ -25,7 +25,7 @@ import Customer360Panel from "./Customer360Panel";
 type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 type StaffRef = { id: string; name: string | null; email: string | null; avatar: string | null; role?: string | null; isAvailable?: boolean | null; openCount?: number | null };
 type Conversation = {
-  id: string; channel: string; customerRef: string | null; customerName: string | null;
+  id: string; channel: string; customerRef: string | null; customerName: string | null; customerAvatar: string | null;
   status: ConvStatus; assignedStaff: StaffRef | null; tags: string[]; unread: number;
   lastMessage: string | null; lastMessageAt: string | null;
 };
@@ -45,7 +45,7 @@ const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
 const Q_LIST = gql`
   query ($status: BmsConvStatus, $search: String, $assignedTo: ID) {
     bmsConversations(status: $status, search: $search, assignedTo: $assignedTo, limit: 100) {
-      id channel customerRef customerName status tags unread lastMessage lastMessageAt
+      id channel customerRef customerName customerAvatar status tags unread lastMessage lastMessageAt
       assignedStaff { id name avatar }
     }
   }
@@ -53,13 +53,18 @@ const Q_LIST = gql`
 const Q_CONV = gql`
   query ($id: ID!) {
     bmsConversation(id: $id) {
-      id channel customerRef customerId customerName status tags unread createdAt
+      id channel customerRef customerId customerName customerAvatar status tags unread lastMessageAt createdAt
       assignedStaff { ${STAFF_FIELDS} }
       helpers { ${STAFF_FIELDS} }
       messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
       systemEvents { id kind at actorName targetName statusValue auto }
       notes { id author body createdAt }
     }
+  }
+`;
+const S_INBOX_CHANGED = gql`
+  subscription {
+    bmsInboxChanged { conversationId kind occurredAt }
   }
 `;
 const Q_STAFF = gql`query { bmsAssignableStaff { ${STAFF_FIELDS} } }`;
@@ -221,6 +226,63 @@ function Inbox() {
   const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
   const conv = convData?.bmsConversation;
   const [markRead] = useMutation(M_READ);
+  const { data: inboxChangedData } = useSubscription(S_INBOX_CHANGED, {
+    skip: !can("inbox.view"),
+  });
+  const listRefreshState = useRef<{ timer: ReturnType<typeof setTimeout> | null; pending: boolean }>({
+    timer: null,
+    pending: false,
+  });
+  const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+
+  // Refresh the first event immediately, then cap sustained bursts at two list
+  // queries per second while guaranteeing one trailing refresh is not lost.
+  const triggerListRefresh = useCallback(() => {
+    const state = listRefreshState.current;
+    if (state.timer) {
+      state.pending = true;
+      return;
+    }
+    const run = () => {
+      void refetch();
+      state.timer = setTimeout(() => {
+        if (state.pending) {
+          state.pending = false;
+          run();
+        } else {
+          state.timer = null;
+        }
+      }, 500);
+    };
+    run();
+  }, [refetch]);
+
+  // The event contains no customer data; authoritative rows are fetched
+  // through RBAC-scoped queries.
+  useEffect(() => {
+    const event = inboxChangedData?.bmsInboxChanged;
+    if (!event?.conversationId) return;
+
+    triggerListRefresh();
+
+    if (event.conversationId === activeId && !convRefreshTimer.current) {
+      convRefreshTimer.current = setTimeout(() => {
+        convRefreshTimer.current = null;
+        if (activeIdRef.current === event.conversationId) {
+          void refetchConv({ id: event.conversationId });
+        }
+      }, 150);
+    }
+  }, [inboxChangedData, activeId, refetchConv, triggerListRefresh]);
+
+  useEffect(() => () => {
+    if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
+    listRefreshState.current.timer = null;
+    listRefreshState.current.pending = false;
+    if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
+  }, []);
 
   useEffect(() => {
     if (activeId) {
@@ -228,6 +290,21 @@ function Inbox() {
       markRead({ variables: { id: activeId } }).then(() => refetch());
     }
   }, [activeId]); // eslint-disable-line
+
+  // If the socket misses an event, the existing 20s list poll detects a newer
+  // message and refreshes only the active pane instead of polling every pane.
+  const activeListMessageAt = conversations.find((c) => c.id === activeId)?.lastMessageAt;
+  useEffect(() => {
+    if (!activeId || !activeListMessageAt || !conv?.lastMessageAt) return;
+    if (activeListMessageAt !== conv.lastMessageAt && !convRefreshTimer.current) {
+      convRefreshTimer.current = setTimeout(() => {
+        convRefreshTimer.current = null;
+        if (activeIdRef.current === activeId) {
+          void refetchConv({ id: activeId });
+        }
+      }, 150);
+    }
+  }, [activeId, activeListMessageAt, conv?.lastMessageAt, refetchConv]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
@@ -320,12 +397,12 @@ function Inbox() {
                 >
                   {listCollapsed ? (
                     <Tooltip placement="right" title={`${c.channel} · ${c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}`}>
-                      <Badge count={c.unread} size="small"><Avatar size={28} icon={<UserOutlined />} /></Badge>
+                      <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12, width: "100%", minWidth: 0 }}>
                       <Badge count={c.unread} size="small">
-                        <Avatar size={40} icon={<UserOutlined />} />
+                        <Avatar size={40} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
                       </Badge>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
                         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
@@ -490,6 +567,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Space direction="vertical" size={1} style={{ minWidth: 0, flex: 1 }}>
           <Space wrap>
+            <Avatar size={32} src={conv.customerAvatar || undefined} icon={<UserOutlined />} />
             <Tag color={CHANNEL_COLOR[conv.channel] || "default"}>{conv.channel}</Tag>
             <Typography.Text strong style={{ fontSize: 16 }}>{conv.customerName || conv.customerRef || "ลูกค้า"}</Typography.Text>
             <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"}>{conv.status}</Tag>

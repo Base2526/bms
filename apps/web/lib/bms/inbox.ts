@@ -12,10 +12,47 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import { pubsub } from "@/lib/pubsub";
+import {
+  topicBmsInboxChanged,
+  type BmsInboxChangedPayload,
+} from "../../../../packages/graphql-core/src/bmsInboxSync";
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
+
+let lastInboxRealtimeErrorAt = 0;
+
+function publishInboxChanged(
+  tenantId: string,
+  conversationId: string,
+  kind: BmsInboxChangedPayload["kind"]
+): void {
+  const event: BmsInboxChangedPayload = {
+    tenantId,
+    conversationId,
+    kind,
+    occurredAt: new Date().toISOString(),
+  };
+  // Do not make a channel webhook wait on Redis. Realtime is a delivery
+  // optimization, never the source of truth; polling recovers a missed event.
+  void pubsub.publish(topicBmsInboxChanged(tenantId), { bmsInboxChanged: event }).catch((error) => {
+    const now = Date.now();
+    if (now - lastInboxRealtimeErrorAt >= 60_000) {
+      lastInboxRealtimeErrorAt = now;
+      console.error("[BMS] inbox realtime publish failed:", error);
+    }
+  });
+}
+
+export function notifyInboxConversationChanged(
+  tenantId: string,
+  conversationId: string,
+  kind: BmsInboxChangedPayload["kind"] = "CONVERSATION_CHANGED"
+): void {
+  publishInboxChanged(tenantId, conversationId, kind);
+}
 
 export type Attachment = { url: string; name?: string | null; mimeType?: string | null };
 
@@ -92,9 +129,104 @@ export async function logConversation(
     if (conv.rows[0].inserted) {
       await autoAssignConversation(tenantId, convId);
     }
+    publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED");
   } catch (e) {
     console.error("[BMS] logConversation failed:", e);
   }
+}
+
+export type DiagnosticInboxMessageResult = {
+  conversationId: string;
+  messageId: string;
+  channel: string;
+  customerRef: string;
+  occurredAt: string;
+};
+
+export type DiagnosticInboxLatest = {
+  channel: string;
+  conversationId: string;
+  customerRef: string;
+  lastInboundAt: string;
+};
+
+/**
+ * สร้างข้อความทดสอบใน Inbox จริง โดยไม่เรียก pipeline และไม่ push ออกแพลตฟอร์ม.
+ * ใช้กับหน้า Realtime Diagnostics เพื่อทดสอบ DB write → realtime → Inbox UI end-to-end.
+ */
+export async function createDiagnosticInboxMessage(
+  tenantId: string,
+  channel: string,
+  actorId: string,
+  body?: string | null
+): Promise<DiagnosticInboxMessageResult> {
+  const customerRef = `diagnostic:${channel}:${actorId}`;
+  const messageBody = (body || "").trim() || `[DIAGNOSTIC] ข้อความทดสอบจาก ${channel} ${new Date().toLocaleString("th-TH")}`;
+
+  const conv = await query<{ id: string; inserted: boolean }>(
+    `INSERT INTO bms_conversations
+       (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at)
+     VALUES ($1, $2, $3, NULL, 'OPEN', 1, $4, now())
+     ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
+       SET unread = bms_conversations.unread + 1,
+           last_message = EXCLUDED.last_message,
+           last_message_at = now(),
+           status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
+           updated_at = now()
+     RETURNING id, (xmax = 0) AS inserted`,
+    [tenantId, channel, customerRef, messageBody.slice(0, 500)]
+  );
+
+  const conversationId = conv.rows[0].id;
+  const msg = await query<{ id: string; created_at: Date | string }>(
+    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+     VALUES ($1, $2, 'IN', $3, 'diagnostic', $4)
+     RETURNING id, created_at`,
+    [tenantId, conversationId, messageBody, JSON.stringify({ diagnostic: true, channel, actorId })]
+  );
+
+  if (conv.rows[0].inserted) {
+    await autoAssignConversation(tenantId, conversationId);
+  }
+
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+
+  const occurredAt = msg.rows[0].created_at instanceof Date
+    ? msg.rows[0].created_at.toISOString()
+    : String(msg.rows[0].created_at);
+
+  return {
+    conversationId,
+    messageId: msg.rows[0].id,
+    channel,
+    customerRef,
+    occurredAt,
+  };
+}
+
+export async function listDiagnosticInboxLatest(tenantId: string): Promise<DiagnosticInboxLatest[]> {
+  const res = await query<{ channel: string; conversation_id: string; customer_ref: string; created_at: Date | string }>(
+    `SELECT DISTINCT ON (c.channel)
+            c.channel,
+            c.id AS conversation_id,
+            c.customer_ref,
+            m.created_at
+       FROM bms_conversations c
+       JOIN bms_messages m ON m.tenant_id = c.tenant_id AND m.conversation_id = c.id
+      WHERE c.tenant_id = $1
+        AND c.customer_ref LIKE 'diagnostic:%'
+        AND m.direction = 'IN'
+        AND m.sender = 'diagnostic'
+        AND COALESCE((m.meta->>'diagnostic')::boolean, false) = true
+      ORDER BY c.channel, m.created_at DESC, m.id DESC`,
+    [tenantId]
+  );
+  return res.rows.map((r) => ({
+    channel: r.channel,
+    conversationId: r.conversation_id,
+    customerRef: r.customer_ref,
+    lastInboundAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
 }
 
 /** เลือก staff หลักให้แชทใหม่: Sales ที่ว่าง ถือแชท OPEN/PENDING น้อยสุดก่อน
@@ -189,16 +321,19 @@ export async function listConversations(
     `SELECT c.id, c.channel, c.customer_ref, c.customer_id, c.status,
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar,
             c.tags, c.unread, c.last_message, c.last_message_at, c.created_at, c.updated_at,
-            cu.name AS customer_name
+            COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name,
+            ci.picture_url AS customer_avatar
        FROM bms_conversations c
        LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
        LEFT JOIN users au ON au.id = c.assigned_to_user_id
       WHERE c.tenant_id = $1
         AND ($2::text IS NULL OR c.status = $2)
         AND ($3::uuid IS NULL OR c.assigned_to_user_id = $3
              OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = $3))
         AND ($4::text IS NULL OR $4 = ANY(c.tags))
-        AND ($5::text IS NULL OR c.last_message ILIKE '%'||$5||'%' OR cu.name ILIKE '%'||$5||'%' OR c.customer_ref ILIKE '%'||$5||'%')
+        AND ($5::text IS NULL OR c.last_message ILIKE '%'||$5||'%' OR cu.name ILIKE '%'||$5||'%' OR ci.display_name ILIKE '%'||$5||'%' OR c.customer_ref ILIKE '%'||$5||'%')
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
       LIMIT $6 OFFSET $7`,
     [tenantId, opts.status ?? null, opts.assignedTo ?? null, opts.tag ?? null, opts.search ?? null, limit, offset]
@@ -226,9 +361,12 @@ export async function getConversation(tenantId: string, id: string) {
     `SELECT c.id, c.channel, c.customer_ref, c.customer_id, c.status,
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar, au.email AS assigned_email,
             c.tags, c.unread, c.last_message, c.last_message_at, c.created_at, c.updated_at,
-            cu.name AS customer_name
+            COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name,
+            ci.picture_url AS customer_avatar
        FROM bms_conversations c
        LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
        LEFT JOIN users au ON au.id = c.assigned_to_user_id
       WHERE c.tenant_id = $1 AND c.id = $2`,
     [tenantId, id]

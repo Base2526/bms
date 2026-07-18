@@ -60,6 +60,12 @@ export const coreTypeDefs = /* GraphQL */ `
     auto_mark_enabled: Boolean!
     updated_at: String!
   }
+
+  type BmsInboxChangedPayload {
+    conversationId: ID!
+    kind: String!
+    occurredAt: String!
+  }
   type User {
     id: ID!
     name: String!
@@ -170,5 +176,9 @@ export const coreTypeDefs = /* GraphQL */ `
     myBookmarkStatusChanged: MyBookmarkStatusChangedPayload!
     myContactSpamMarkChanged: MyContactSpamMarkChangedPayload!
     myContactSpamSettingsChanged: MyContactSpamSettingsChangedPayload!
+
+    # Small tenant-scoped invalidation event. Conversation data remains behind
+    # the normal BMS queries so their RBAC and tenant rules stay authoritative.
+    bmsInboxChanged: BmsInboxChangedPayload!
   }
 `;
