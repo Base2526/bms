@@ -12,7 +12,8 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation } from "@/lib/bms/inbox";
+import { logConversation, notifyInboxConversationChanged } from "@/lib/bms/inbox";
+import { syncLineUserProfile } from "@/lib/bms/lineProfile";
 import { recordInboundEvent, recordWebhookVerifyFailed, recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "@/lib/bms/channelHealth";
 
 export const runtime = "nodejs";
@@ -87,6 +88,24 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
     if (cfg.access_token && ev.replyToken) {
       await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply);
+    }
+
+    // Best-effort LINE profile cache. This is intentionally after the
+    // Inbox write/reply path: profile sync must never block the sale-critical
+    // message from appearing in Inbox.
+    if (userId && cfg.access_token) {
+      const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
+      if (profileSync.ok) {
+        for (const conversationId of profileSync.conversationIds) {
+          notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
+        }
+      } else if (!profileSync.skipped) {
+        console.warn("[BMS] LINE profile sync skipped/failed:", {
+          tenantId,
+          status: profileSync.status,
+          error: profileSync.error,
+        });
+      }
     }
     replies.push({ replyToken: ev.replyToken, reply: result.reply });
   }

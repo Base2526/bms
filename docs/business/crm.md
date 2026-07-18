@@ -12,6 +12,13 @@ cross-channel dedup** by phone or email: the same person messaging via two diffe
 becomes two separate customer records until staff manually merges them
 (`mergeCustomers()` — see [../ui/customer360.md](../ui/customer360.md)).
 
+Channel identities may also cache platform display metadata. LINE OA currently syncs
+`display_name`, `picture_url`, `status_message`, `language`, `profile_synced_at`, and any sync
+error fields on `bms_customer_identities`. This metadata is a display fallback for Inbox only:
+staff-maintained `bms_customers` data remains authoritative and must not be overwritten by a
+background platform sync. GraphQL/UI reads must use the cache; they must not call external profile
+APIs during list rendering.
+
 A customer can have multiple shipping addresses (add/edit/set-default/delete from the Customers
 page; deleting an address never affects the customer or their orders). Customers are **never hard
 deleted** — only soft-deleted (`deleted_at`).
@@ -34,6 +41,13 @@ history, lifetime spend, tags, and notes the moment a conversation is opened —
 actually push and actually fail (`SENT`/`FAILED` + a "ส่งใหม่" retry button); Web/TikTok/Shopee/Lazada
 don't push at all yet, so they're just marked `SENT` once persisted (no fake failure state). Read
 receipts are not implemented on channels that can't genuinely report them (LINE, TikTok).
+
+**Diagnostics:** `/admin/inbox/realtime-diagnostics` is not a customer channel. `Emit` proves only
+that realtime invalidation reaches the browser; it does not create a conversation. `Create Msg`
+creates a tenant-scoped diagnostic conversation/message with `customer_ref =
+diagnostic:{channel}:{adminId}` and `sender = diagnostic` so staff can verify that the Inbox list
+updates immediately. It does not call the AI pipeline and does not send anything to external
+platforms.
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
 

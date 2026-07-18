@@ -18,6 +18,7 @@ const PATH = process.env.WS_PATH || "/graphql";
 const USER_COOKIE = process.env.USER_COOKIE || "USER_COOKIE";
 // ถ้ามี admin cookie ก็เพิ่มได้
 const ADMIN_COOKIE = process.env.ADMIN_COOKIE || "ADMIN_COOKIE";
+const ACT_TENANT_COOKIE = process.env.ACT_TENANT_COOKIE || "BMS_ACT_TENANT";
 
 const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret";
 
@@ -68,6 +69,21 @@ function getTokenFromCookies(ctx: any, cookieName: string) {
   const cookieHeader = req?.headers?.cookie || "";
   const cookies = parseCookie(String(cookieHeader || ""));
   return String(cookies?.[cookieName] || "").trim();
+}
+
+function applyActingTenant(ctx: any, user: any) {
+  if (!user || getScope(ctx) !== "admin") return user;
+  const token = getTokenFromCookies(ctx, ACT_TENANT_COOKIE);
+  if (!token) return user;
+  try {
+    const act = jwt.verify(token, JWT_SECRET) as { actTenantId?: string; by?: string | number };
+    if (act?.actTenantId && String(act.by) === String(user.id ?? user.sub)) {
+      return { ...user, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId };
+    }
+  } catch {
+    // Ignore an invalid/expired acting-tenant cookie, matching HTTP behavior.
+  }
+  return user;
 }
 
 function unauthError(reason: string) {
@@ -134,6 +150,7 @@ useServer(
       let user: any = null;
       try {
         user = jwt.verify(token, JWT_SECRET);
+        user = applyActingTenant(ctx, user);
       } catch (err) {
         console.error("[WS] invalid token", err);
         return unauthError("invalid_or_expired_token");

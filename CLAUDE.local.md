@@ -47,6 +47,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   (`bmsInboxUnreadCount`, poll 15s ที่ sidebar เอง เพราะติดทุกหน้า ไม่ใช่แค่หน้า Inbox — Sales เห็นแค่ของตัวเอง
   ตาม scope เดียวกับ `bmsConversations`) · Reports ย้ายลงมาหลังกลุ่มร้านค้า · คู่มือย้ายไปแถบล่างสุดคู่โปรไฟล์
   (ใช้ไม่บ่อย ไม่ควรแย่งที่ top-level)
+  · `/admin/inbox/realtime-diagnostics` อยู่ในกลุ่ม SaaS และเปิดให้เฉพาะ Administrator/platform admin: `Emit`
+  ทดสอบ Redis/WebSocket signal อย่างเดียว (ไม่เขียน DB, ไม่ควรเห็นแชทใหม่), `Create Msg` สร้างข้อความ diagnostic
+  ใน Inbox จริง (`diagnostic:{channel}:{adminId}`) โดยไม่เรียก AI pipeline และไม่ส่งออก platform
   · **เมนูที่มี badge (`link(..., badge, collapsed)`) ต้องส่ง `collapsed` มาด้วยเสมอ** — ถ้าลืม (ค่า default
   เป็น `false`) label จะ render เป็น flex+pill layout เสมอ ซึ่งพอ sidebar ย่อจริงแล้วเปิดเป็น submenu flyout
   popup, span ข้อความจะยุบเหลือ 0 (overflow:hidden) → hover ไม่เห็นตัวหนังสือเลย (เจอที่เมนู Users เพราะลืมส่ง
@@ -64,6 +67,11 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
+- **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
+  เท่านั้น: เขียน `bms_conversations`/`bms_messages` sender=`diagnostic`, meta `{ diagnostic: true }`, publish
+  `bmsInboxChanged`, audit `inbox.diagnostic_message`; ห้าม reuse สำหรับ webhook จริง/AI pipeline และห้ามเรียก
+  `deliverToChannel()`. ปุ่ม `Emit` อยู่ที่ `bmsChannels.ts` (`bmsEmitInboxDiagnosticEvent`) และ audit
+  `inbox.diagnostic_event`; ถ้าเห็น latency ใน Realtime Probe แปลว่า signal สำเร็จ แม้ Inbox ไม่มีแชทใหม่
 - **order journey** → `getOrderJourney` (`lib/bms/orders.ts`) → `bmsOrderJourney(orderId)` — แถวขยายในหน้า Orders โชว์ ต้นทางแชท + stepper (PENDING→PAID→PACKING→SHIPPED→COMPLETED + กิ่ง CANCELLED/RETURNED) + timeline ละเอียด · **ไม่มี migration** — order↔conversation join 1:1 ด้วย `(tenant_id, channel, customer_ref)` (conversation dedupe ด้วย UNIQUE เดิม) · reuse `bms_audit_log` (order.pay/pack/ship/complete/cancel/return, target=orderId) + `listSystemEvents`/`listConversationHelpers` (event แชท) + `listShipments` (เลขพัสดุ) · COMPLETED แบบ auto (จัดส่งถึง) ไม่ได้ audit → fallback `updated_at` · ลิงก์ "เปิดดูแชท" ไป `/admin/inbox?c=<id>` (inbox อ่าน param `c` เปิดแชทนั้น)
 - **product category** → `category` บน `bms_products` ยังเป็น TEXT อิสระ (ไม่ใช่ FK กัน data เดิมพัง) · `bms_product_categories` คือ "list ที่ร้านจัดการ" ให้เลือกจาก dropdown เท่านั้น — เปลี่ยนชื่อ category จะ sync ไปสินค้าที่อ้างชื่อเดิมด้วย (`renameCategory` ทำใน tx เดียว), ลบ category ไม่ลบสินค้า (แค่หายจาก dropdown)
 - **product gallery (หลายรูป)** → service `lib/bms/products.ts` รองรับ `image_urls[]` + table `bms_product_images`
@@ -71,6 +79,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   code เก่า · หน้า `/admin/products` อัปโหลดได้หลายรูป, เรียงตามลำดับที่เพิ่ม, ลบออกจาก draft ได้ก่อนบันทึก
 - **admin profile** → `/admin/profile` ใช้ `bmsMe` + `updateMe` + `uploadAvatar` ให้ผู้ใช้แก้ชื่อ/เบอร์/ภาษา/รูปโปรไฟล์
   ตัวเองได้โดยไม่ต้องเข้าหน้า users ระดับแอดมินระบบ
+- **LINE profile cache** → LINE webhook sync ชื่อ/รูปจาก Messaging API หลัง `logConversation()` + reply path แล้วเก็บที่
+  `bms_customer_identities` (`display_name`, `picture_url`, `profile_synced_at`) เท่านั้น; อย่า fetch profile จากหน้า list/GraphQL read resolver
 - **search หน้า operations** → `/admin/orders`, `/admin/purchase`, `/admin/payment`, `/admin/shipment`
   รองรับ search ฝั่ง backend แล้ว (`typeDefs` + resolver/service) และหน้า UI ใช้ live search แบบ debounce ~300ms;
   อย่า revert กลับไปเป็น filter ฝั่ง table อย่างเดียว เพราะจะค้นหาไม่ครบเมื่อมีข้อมูลมากกว่า page ปัจจุบัน
@@ -192,6 +202,9 @@ children ของ panel ที่ยังไม่เคย active — **น�
     แบบเดียวกับ `bmsInboxUnreadCount` (ส่ง `collapsed` เสมอ กัน bug เดิมที่เจอกับเมนู Users)
   - Dashboard (`/admin/dashboard`) — Alert แดงเมื่อมีช่องทาง active ที่ status ≠ `connected` พร้อม deep-link ไป Settings
     (pattern เดียวกับ alert สินค้าใกล้หมดที่มีอยู่แล้ว)
+  - Realtime Diagnostics (`/admin/inbox/realtime-diagnostics`) — matrix ทุก channel + `Emit`/`Create Msg`
+    สำหรับแยกทดสอบ realtime signal กับ DB→Inbox end-to-end; gate ซ้ำทั้ง layout server-side
+    (`requireTenantAdministratorPage`) และ GraphQL resolver (Administrator/platform admin)
   - ปุ่ม **"ทดสอบ"** ในหน้า Settings (เฉพาะ LINE/Facebook/Instagram ที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง
     — `GET /v2/bot/info` ของ LINE, `GET /me` ของ Graph API) → `testChannelConnection()` (`channelHealth.ts`) +
     `bmsTestChannel` mutation แสดงเฉพาะตอน badge เป็น "เชื่อมต่อสำเร็จ" เท่านั้น (ตามตารางสถานะเดิม) — กดแล้วอัปเดต
@@ -240,6 +253,8 @@ children ของ panel ที่ยังไม่เคย active — **น�
 + **แท็บ "ลูกค้า"/merge/reorder เสร็จแล้ว** + **Shopee/Lazada beta scaffold เสร็จแล้ว** (ดู [docs/integrations/lazada.md](docs/integrations/lazada.md))
 + **Channel Health status เสร็จแล้ว** (ดูหัวข้อ § Channel Health ด้านบน — schema/service/webhook wiring/GraphQL/UI ครบ
 เฉพาะ proactive external notification ที่ยังไม่ทำ).
++ **Realtime Diagnostics เสร็จแล้ว** (`/admin/inbox/realtime-diagnostics`) — `Emit` ทดสอบ PubSub/WS signal,
+`Create Msg` สร้างข้อความ diagnostic ให้เห็นใน Inbox จริงโดยไม่ส่งออก platform.
 **เหลือ:** TikTok send API · carrier API จริง · AI tool-calling/OCR/forecasting (Phase 3–4) · WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items (ดู "Pending improvements" ในหัวข้อ Customer 360)

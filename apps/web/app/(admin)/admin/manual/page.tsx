@@ -194,7 +194,11 @@ const helpRows = [
   },
   {
     title: "อยากเชื่อม LINE / Facebook / Website",
-    answer: "ไปที่ Settings แล้วทำตาม webhook/token guide ของแต่ละช่องทาง",
+    answer: "ไปที่ Settings แล้วทำตาม webhook/token guide ของแต่ละช่องทาง; LINE OA จะดึงชื่อ/รูปโปรไฟล์แบบ cache หลังข้อความเข้า ถ้ามีสิทธิ์และลูกค้ายังไม่บล็อก OA",
+  },
+  {
+    title: "อยากทดสอบว่าแชทเข้า Inbox ทันทีไหม",
+    answer: "เปิด Realtime Diagnostics: กด Emit เพื่อเช็กสัญญาณ realtime อย่างเดียว หรือกด Create Msg เพื่อสร้างข้อความทดสอบให้เห็นใน Inbox จริง",
   },
 ];
 
@@ -542,7 +546,8 @@ export default function Page() {
                     title: "เชื่อมช่องทางจริง",
                     description: (
                       <>
-                        ไปที่ <Link href="/admin/settings">Settings</Link> เพื่อวาง token และตั้ง webhook
+                        ไปที่ <Link href="/admin/settings">Settings</Link> เพื่อวาง token และตั้ง webhook · ถ้าต้องทดสอบ Inbox realtime ให้เปิด{" "}
+                        <Link href="/admin/inbox/realtime-diagnostics">Realtime Diagnostics</Link> แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
                       </>
                     ),
                   },
@@ -594,6 +599,11 @@ export default function Page() {
                 <Link href="/admin/settings">
                   <Button block icon={<CustomerServiceOutlined />}>
                     ไปที่ Settings
+                  </Button>
+                </Link>
+                <Link href="/admin/inbox/realtime-diagnostics">
+                  <Button block icon={<ApiOutlined />}>
+                    ทดสอบ Realtime Inbox
                   </Button>
                 </Link>
               </Space>

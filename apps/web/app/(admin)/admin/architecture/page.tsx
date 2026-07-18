@@ -18,7 +18,7 @@ const tables = [
   { t: "bms_order_items", pk: "id", cols: "tenant_id, order_id, product_sku, size, qty, unit_price", note: "FK→orders, →products, →inventory" },
   { t: "bms_stock_movements", pk: "id", cols: "tenant_id, product_sku, size, type, qty, ref_order_id, actor", note: "ledger การเคลื่อนไหวสต็อก" },
   { t: "bms_customers", pk: "id (uuid)", cols: "tenant_id, name, phone, email, preferred_language, timezone, tags[], deleted_at", note: "ลูกค้า (soft delete) · email/language/timezone เพิ่มใน 6.2" },
-  { t: "bms_customer_identities", pk: "id", cols: "tenant_id, customer_id, channel, external_ref", note: "map ช่องทาง→ลูกค้า · uniq(tenant,channel,ref)" },
+  { t: "bms_customer_identities", pk: "id", cols: "tenant_id, customer_id, channel, external_ref, display_name, picture_url", note: "map ช่องทาง→ลูกค้า + cache profile ช่องทาง · uniq(tenant,channel,ref)" },
   { t: "bms_customer_addresses", pk: "id", cols: "tenant_id, customer_id, label, address, address_type, is_default", note: "หลายที่อยู่/คน · address_type=shipping/billing (6.2)" },
   { t: "bms_customer_ai_summary", pk: "customer_id", cols: "tenant_id, customer_id, summary(jsonb), facts_hash, generated_at", note: "แคชสรุป AI Insights ต่อลูกค้า (6.2) — regenerate เฉพาะ facts_hash เปลี่ยน" },
   { t: "bms_suppliers", pk: "id (uuid)", cols: "tenant_id, name, phone, email · uniq(tenant,name)", note: "ผู้ขาย (Purchase)" },
@@ -171,6 +171,10 @@ export default function Page() {
             <Paragraph style={{ marginTop: 8 }} type="secondary">
               ช่องทางอื่นใช้โครงเดียวกัน: <b>TikTok</b> (HMAC hex header) · <b>Facebook/Instagram</b> (GET verify hub.challenge + POST verify X-Hub-Signature-256, ตอบผ่าน Graph Send API) · <b>Website Live Chat</b> (public + CORS, ตอบใน HTTP response ทันที). ทุกช่องทางเรียก <Text code>runPipeline</Text> + <Text code>logConversation</Text> เดียวกัน → เข้า Inbox อัตโนมัติ · reply ออกจริงผ่าน <Text code>deliverToChannel()</Text> (LINE push / FB-IG Graph; TikTok ยัง persist-only)
             </Paragraph>
+            <Paragraph type="secondary">
+              <Text code>/admin/inbox/realtime-diagnostics</Text> ใช้แยกทดสอบสองชั้น: <Text code>Emit</Text> ตรวจ Redis/WebSocket signal
+              โดยไม่เขียน DB และ <Text code>Create Msg</Text> สร้างข้อความ diagnostic ใน Inbox จริงโดยไม่ยิงออกแพลตฟอร์ม.
+            </Paragraph>
           </Sec>
 
           <Sec id="a-security">
@@ -259,8 +263,8 @@ export default function Page() {
               <li><b>Quick Actions ที่ยัง disable:</b> Generate Invoice / Send Payment Link / Support Ticket — subsystem จริงยังไม่มีในระบบ (ตัดสินใจไว้แล้วว่าไม่ build รอบนี้) ไม่ใช่บั๊ก</li>
             </ul>
             <Alert type="info" showIcon style={{ marginTop: 8 }}
-              message="SaaS roadmap ถัดไป (ออกแบบแล้ว ยังไม่ implement): Lazada channel + OAuth connection + Channel Sync Service (ดึง product/order/payment/shipment เข้า DB เป็นระยะ แทน webhook สด) + Unified Customer Timeline ข้ามช่องทาง"
-              description={<>รายละเอียดเต็ม: <Text code>BUSINESS_RULES.md</Text> § Channels &amp; Commerce Sync · <Text code>CLAUDE.md</Text> § SaaS Architecture · phase build order + ไฟล์ที่วางแผนไว้ใน <Text code>CLAUDE.local.md</Text> (migration ที่วางแผนไว้เลื่อนเป็น 6.3/6.4 เพราะ 6.2 ถูกใช้โดย Customer 360 ไปแล้ว)</>}
+              message="Shopee/Lazada ปัจจุบันเป็น webhook beta scaffold ไม่ใช่ OAuth sync worker"
+              description={<>รายละเอียดเต็ม: <Text code>docs/integrations/lazada.md</Text> และ <Text code>CLAUDE.local.md</Text> § SaaS redesign — แผน OAuth/Channel Sync เดิมถูก supersede แล้ว ต้องออกแบบใหม่ก่อนหยิบกลับมาทำ</>}
             />
           </Sec>
         </Col>

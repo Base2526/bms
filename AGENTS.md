@@ -119,6 +119,9 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   `docs/architecture/database.md` and the relevant business document.
 - If a change affects operator-facing workflows, update the in-app manual at
   `apps/web/app/(admin)/admin/manual/page.tsx` in the same change as the code/docs update.
+- Inbox diagnostics are intentionally split: `Emit` only publishes a tenant-scoped realtime
+  invalidation event and must not create rows or contact external platforms; `Create Msg` creates
+  diagnostic Inbox rows but must still avoid the AI pipeline and any external channel send.
 
 ## Authentication, tenancy, and RBAC
 
@@ -143,6 +146,12 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Do not log raw tokens, secrets, payment details, or unnecessary customer PII.
 - Preserve channel-health semantics: `active` is an admin switch; `status` describes observed
   connection health.
+- External channel profile data (for example LINE display name/avatar) is cached on
+  `bms_customer_identities` for display fallback only. Do not call profile APIs from list renders or
+  GraphQL read resolvers, and do not overwrite staff-maintained CRM customer fields from a
+  background profile sync.
+- Realtime diagnostic routes/mutations must be Administrator/platform-admin only, tenant-scoped,
+  audited, and safe to run in production without messaging real customers.
 - If adding a channel, update every duplicated channel type/allowlist and the integration docs.
 
 ## Testing and verification
