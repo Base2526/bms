@@ -70,7 +70,7 @@ services:
   # ถือ 80/443 อยู่แล้ว รัน caddy ซ้ำจะชน port (ดู docker-compose.prod.yml/CLAUDE.local.md)
   caddy:
     image: caddy:2-alpine
-    # profiles: ["with-caddy"]
+    profiles: ["with-caddy"]
     depends_on:
       - web
       - ws
