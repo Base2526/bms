@@ -107,8 +107,7 @@ services:
       - redis
       - ws
     volumes:
-      - ./storage:/app/storage
-      # - /mnt/volume_sgp1_01/storage:/app/storage
+      - ${STORAGE_HOST_DIR:-./storage}:/app/storage
     networks:
       default: {}
       bms_shared:
@@ -136,7 +135,7 @@ services:
       SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
     volumes:
       # - ./:/app
-      - ./storage:/app/storage
+      - ${STORAGE_HOST_DIR:-./storage}:/app/storage
     depends_on:
       - web
       - postgres
