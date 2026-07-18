@@ -18,6 +18,11 @@ services:
     depends_on:
       - postgres
       - redis
+    networks:
+      default: {}
+      bms_shared:
+        aliases:
+          - ws_b
 
   web:
     build:
@@ -104,17 +109,24 @@ services:
     volumes:
       - ./storage:/app/storage
       # - /mnt/volume_sgp1_01/storage:/app/storage
+    networks:
+      default: {}
+      bms_shared:
+        aliases:
+          - web_b
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./apps/web/certs:/certs:ro
-      - caddy_data:/data
-      - caddy_config:/config
+  # ปิดไว้: Caddy ของ project A (next-apollo-pg-ws, jachoei.com) เป็นคนถือ 80/443 ตัวเดียวบน VM นี้
+  # และ reverse_proxy เข้า web_b/ws_b ผ่าน network bms_shared แทน (ดู apps/web/Caddyfile ของ next-apollo-pg-ws)
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - ./apps/web/certs:/certs:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
 
   social-worker:
     image: myapp-web:latest
@@ -143,3 +155,8 @@ services:
       - postgres
       - redis
     restart: unless-stopped
+
+networks:
+  bms_shared:
+    external: true
+    name: bms_shared
