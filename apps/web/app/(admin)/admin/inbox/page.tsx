@@ -1,10 +1,10 @@
 'use client';
-import { gql, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
+import { gql, useApolloClient, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
   Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
 } from "antd";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ReloadOutlined, SendOutlined, UserOutlined,
@@ -137,6 +137,24 @@ const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
 const LIST_COLLAPSE_KEY = "bms_inbox_list_collapsed";
 const CHAT_HEADER_MODE_KEY = "bms_inbox_chat_header_mode";
 const AI_SUGGESTION_VISIBILITY_KEY = "bms_inbox_ai_suggestion_visibility";
+const CHAT_BOTTOM_THRESHOLD_PX = 120;
+const MOBILE_QUERY = "(max-width: 767px)";
+const TABLET_QUERY = "(min-width: 768px) and (max-width: 1180px)";
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}
 
 // preview ในลิสต์: ถ้าข้อความล่าสุดเป็น attachment (marker จาก sendStaffMessage) → โชว์ไอคอน
 function previewNode(last?: string | null) {
@@ -186,7 +204,10 @@ function nextAction(conv: any) {
 }
 
 function Inbox() {
+  const apollo = useApolloClient();
   const { can } = useBmsPermissions();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const isTablet = useMediaQuery(TABLET_QUERY);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("OPEN");
   const [search, setSearch] = useState("");
   // deep-link จากหน้า Orders: /admin/inbox?c=<conversationId> → เปิดแชทนั้นทันที
@@ -199,6 +220,10 @@ function Inbox() {
     const c = new URLSearchParams(window.location.search).get("c");
     if (c) setActiveId(c);
   }, []);
+  const [mobilePane, setMobilePane] = useState<"list" | "chat">(() => {
+    if (typeof window === "undefined") return "list";
+    return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";
+  });
   const [mineOnly, setMineOnly] = useState(false);
 
   const { data: meData } = useQuery(Q_ME, { fetchPolicy: "cache-and-network" });
@@ -231,6 +256,9 @@ function Inbox() {
   const conversations: Conversation[] = data?.bmsConversations || [];
   const needReplyCount = conversations.filter((c) => c.unread > 0).length;
   const pendingCount = conversations.filter((c) => c.status === "PENDING").length;
+  const effectiveListCollapsed = !isMobile && (listCollapsed || isTablet);
+  const showListPane = !isMobile || mobilePane === "list";
+  const showConversationPane = !isMobile || mobilePane === "chat";
 
   const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
   const conv = convData?.bmsConversation;
@@ -243,8 +271,47 @@ function Inbox() {
     pending: false,
   });
   const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readStateRef = useRef(new Map<string, { running: boolean; pending: boolean }>());
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+
+  const clearUnreadInCache = useCallback((conversationId: string) => {
+    const list = apollo.cache.readQuery<any>({
+      query: Q_LIST,
+      variables: {
+        status: filter === "ALL" ? null : filter,
+        search: search || null,
+        assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null,
+      },
+    });
+    if (list?.bmsConversations) {
+      apollo.cache.writeQuery({
+        query: Q_LIST,
+        variables: {
+          status: filter === "ALL" ? null : filter,
+          search: search || null,
+          assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null,
+        },
+        data: {
+          bmsConversations: list.bmsConversations.map((c: Conversation) =>
+            c.id === conversationId ? { ...c, unread: 0 } : c
+          ),
+        },
+      });
+    }
+
+    const detail = apollo.cache.readQuery<any>({
+      query: Q_CONV,
+      variables: { id: conversationId },
+    });
+    if (detail?.bmsConversation) {
+      apollo.cache.writeQuery({
+        query: Q_CONV,
+        variables: { id: conversationId },
+        data: { bmsConversation: { ...detail.bmsConversation, unread: 0 } },
+      });
+    }
+  }, [apollo, filter, search, mineOnly, restrictedToOwn, me?.id]);
 
   // Refresh the first event immediately, then cap sustained bursts at two list
   // queries per second while guaranteeing one trailing refresh is not lost.
@@ -268,15 +335,54 @@ function Inbox() {
     run();
   }, [refetch]);
 
+  const markActiveConversationRead = useCallback(async (conversationId: string) => {
+    clearUnreadInCache(conversationId);
+
+    const current = readStateRef.current.get(conversationId);
+    if (current?.running) {
+      current.pending = true;
+      return;
+    }
+
+    const state = { running: true, pending: false };
+    readStateRef.current.set(conversationId, state);
+    try {
+      do {
+        state.pending = false;
+        await markRead({
+          variables: { id: conversationId },
+          optimisticResponse: { bmsMarkConversationRead: true },
+          update: () => clearUnreadInCache(conversationId),
+        });
+        clearUnreadInCache(conversationId);
+        // Refresh only after the DB is marked read. Refreshing before this point
+        // can restore the stale unread value and leave the badge visible.
+        await refetch();
+      } while (state.pending);
+    } catch (error) {
+      console.warn("[BMS Inbox] mark active conversation read failed", error);
+    } finally {
+      readStateRef.current.delete(conversationId);
+    }
+  }, [clearUnreadInCache, markRead, refetch]);
+
   // The event contains no customer data; authoritative rows are fetched
   // through RBAC-scoped queries.
   useEffect(() => {
     const event = inboxChangedData?.bmsInboxChanged;
     if (!event?.conversationId) return;
 
-    triggerListRefresh();
+    const isActiveEvent = event.conversationId === activeIdRef.current;
+    const isActiveMessageEvent = isActiveEvent && event.kind === "MESSAGES_CHANGED";
+    if (isActiveMessageEvent) {
+      // The operator is already looking at this thread: clear its badge now,
+      // then persist read state before the authoritative list refresh.
+      void markActiveConversationRead(event.conversationId);
+    } else {
+      triggerListRefresh();
+    }
 
-    if (event.conversationId === activeId && !convRefreshTimer.current) {
+    if (isActiveEvent && !convRefreshTimer.current) {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === event.conversationId) {
@@ -284,7 +390,7 @@ function Inbox() {
         }
       }, 150);
     }
-  }, [inboxChangedData, activeId, refetchConv, triggerListRefresh]);
+  }, [inboxChangedData, refetchConv, triggerListRefresh, markActiveConversationRead]);
 
   useEffect(() => () => {
     if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
@@ -296,16 +402,31 @@ function Inbox() {
   useEffect(() => {
     if (activeId) {
       loadConv({ variables: { id: activeId } });
-      markRead({ variables: { id: activeId } }).then(() => refetch());
+      void markActiveConversationRead(activeId);
     }
   }, [activeId]); // eslint-disable-line
 
   // If the socket misses an event, the existing 20s list poll detects a newer
   // message and refreshes only the active pane instead of polling every pane.
-  const activeListMessageAt = conversations.find((c) => c.id === activeId)?.lastMessageAt;
+  const activeListConversation = conversations.find((c) => c.id === activeId);
+  const activeListMessageAt = activeListConversation?.lastMessageAt;
+  const activeListUnread = activeListConversation?.unread ?? 0;
+
+  // Apollo normalizes the list and detail query to the same Conversation
+  // entity. Consequently lastMessageAt can change on both queries at once and
+  // is not sufficient to detect every missed socket event. The active card's
+  // unread value is the authoritative UI trigger: whenever it rises above zero,
+  // clear and persist it without waiting for another click or scroll action.
+  useEffect(() => {
+    if (activeId && activeListUnread > 0) {
+      void markActiveConversationRead(activeId);
+    }
+  }, [activeId, activeListUnread, markActiveConversationRead]);
+
   useEffect(() => {
     if (!activeId || !activeListMessageAt || !conv?.lastMessageAt) return;
     if (activeListMessageAt !== conv.lastMessageAt && !convRefreshTimer.current) {
+      void markActiveConversationRead(activeId);
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === activeId) {
@@ -313,19 +434,34 @@ function Inbox() {
         }
       }, 150);
     }
-  }, [activeId, activeListMessageAt, conv?.lastMessageAt, refetchConv]);
+  }, [activeId, activeListMessageAt, conv?.lastMessageAt, refetchConv, markActiveConversationRead]);
+
+  // Final guard: whenever a newly fetched message is actually rendered in the
+  // selected thread, its unread state must be cleared without another click.
+  const renderedLatestMessageId = conv?.messages?.[conv.messages.length - 1]?.id ?? null;
+  useEffect(() => {
+    if (activeId && conv?.id === activeId && conv.unread > 0 && renderedLatestMessageId) {
+      void markActiveConversationRead(activeId);
+    }
+  }, [activeId, conv?.id, conv?.unread, renderedLatestMessageId, markActiveConversationRead]);
+
+  const openConversation = (conversationId: string) => {
+    setActiveId(conversationId);
+    if (isMobile) setMobilePane("chat");
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
-      <div style={{ marginBottom: 10, flexShrink: 0 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
+    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100dvh - 48px)" : "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
+      {(!isMobile || mobilePane === "list") && (
+      <div style={{ marginBottom: isMobile ? 8 : 10, flexShrink: 0 }}>
+        <Space style={{ width: "100%", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center" }} wrap>
           <Space direction="vertical" size={0}>
-            <h2 style={{ margin: 0 }}>BMS Inbox (Omnichannel)</h2>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : undefined, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               ตอบลูกค้า · เช็กสต็อก · ยืนยันสลิป · ส่งต่อจัดส่ง ในหน้าจอเดียว
             </Typography.Text>
           </Space>
-          <Space>
+          <Space wrap size={isMobile ? 8 : undefined}>
             {me && (
               <Tooltip title="ปิดไว้ = จะไม่ถูก auto-assign แชทใหม่เข้ามาให้ (แชทที่ถืออยู่แล้วไม่กระทบ)">
                 <Space size={6}>
@@ -339,12 +475,14 @@ function Inbox() {
           </Space>
         </Space>
       </div>
+      )}
 
-      <div style={{ display: "flex", gap: 12, alignItems: "stretch", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", gap: isMobile ? 0 : 12, alignItems: "stretch", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}>
         {/* ---- left: conversation list ---- */}
-        <div style={{ width: listCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: 14, padding: listCollapsed ? "10px 6px" : 12, display: "flex", flexDirection: "column", background: "var(--app-card, transparent)", overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: listCollapsed ? "center" : "space-between", alignItems: "center", marginBottom: 8 }}>
-            {!listCollapsed && (
+        {showListPane && (
+        <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : isMobile ? 10 : 12, display: "flex", flexDirection: "column", background: "var(--app-card, transparent)", overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: effectiveListCollapsed ? "center" : "space-between", alignItems: "center", marginBottom: 8 }}>
+            {!effectiveListCollapsed && (
               <Space direction="vertical" size={0}>
                 <Typography.Text strong>คิวแชท</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -352,13 +490,15 @@ function Inbox() {
                 </Typography.Text>
               </Space>
             )}
-            <Tooltip title={listCollapsed ? "ขยาย list" : "ย่อ list"}>
+            {!isMobile && (
+            <Tooltip title={effectiveListCollapsed ? "ขยาย list" : "ย่อ list"}>
               <Button type="text" size="small"
-                icon={listCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                icon={effectiveListCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={toggleListCollapsed} />
             </Tooltip>
+            )}
           </div>
-          {!listCollapsed && (
+          {!effectiveListCollapsed && (
             <>
               <Segmented block size="small" options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} style={{ marginBottom: 8 }} />
               <Input.Search size="middle" placeholder="ค้นหาชื่อ/ข้อความ/ref" allowClear onSearch={setSearch} style={{ marginBottom: 8 }} />
@@ -377,7 +517,7 @@ function Inbox() {
             </>
           )}
           {/* paddingRight กันไม่ให้ scrollbar ทับ badge ตอนย่อ (คอลัมน์แคบ) */}
-          {!listCollapsed && (
+          {!effectiveListCollapsed && (
             <Space wrap size={6} style={{ marginBottom: 8 }}>
               <Tag color="red" icon={<FireOutlined />}>ด่วนก่อน</Tag>
               <Tag color="blue" icon={<CreditCardOutlined />}>มีสลิป</Tag>
@@ -386,25 +526,25 @@ function Inbox() {
           )}
           <div
             className="bms-inbox-conversation-scroll"
-            style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0, minWidth: 0, paddingRight: listCollapsed ? 8 : 0 }}
+            style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0, minWidth: 0, paddingRight: effectiveListCollapsed ? 8 : 0 }}
           >
             <List
               loading={loading} dataSource={conversations}
-              locale={{ emptyText: listCollapsed ? null : <Empty description="ไม่มีบทสนทนา" /> }}
+              locale={{ emptyText: effectiveListCollapsed ? null : <Empty description="ไม่มีบทสนทนา" /> }}
               renderItem={(c) => (
                 <List.Item
-                  onClick={() => setActiveId(c.id)}
+                  onClick={() => openConversation(c.id)}
                   style={{
-                    cursor: "pointer", padding: listCollapsed ? "6px 0" : "10px 12px", borderRadius: 16, marginBottom: 8,
-                    display: listCollapsed ? "flex" : undefined,
-                    justifyContent: listCollapsed ? "center" : undefined,
+                    cursor: "pointer", padding: effectiveListCollapsed ? "6px 0" : isMobile ? "8px 10px" : "10px 12px", borderRadius: isMobile ? 12 : 16, marginBottom: 8,
+                    display: effectiveListCollapsed ? "flex" : undefined,
+                    justifyContent: effectiveListCollapsed ? "center" : undefined,
                     background: activeId === c.id ? "rgba(22,119,255,0.18)" : "#fff",
                     borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
                     border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : "1px solid rgba(15,23,42,0.06)",
                     boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : "0 2px 10px rgba(15,23,42,0.04)",
                   }}
                 >
-                  {listCollapsed ? (
+                  {effectiveListCollapsed ? (
                     <Tooltip placement="right" title={`${c.channel} · ${c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}`}>
                       <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
@@ -453,39 +593,83 @@ function Inbox() {
             />
           </div>
         </div>
+        )}
 
         {/* ---- middle: active conversation ---- */}
-        <div style={{ flex: "1 1 0", minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 14, padding: 14, background: "var(--app-card, transparent)" }}>
+        {showConversationPane && (
+        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: isMobile ? 8 : 14, background: "var(--app-card, transparent)" }}>
           {!conv ? (
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
-            <ConversationPane key={conv.id} conv={conv} can={can}
+            <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
               onChanged={() => { refetchConv(); refetch(); }} />
           )}
         </div>
+        )}
 
         {/* ---- right: Customer 360 panel ---- */}
-        {conv && <Customer360Panel conv={conv} can={can} />}
+        {conv && !isMobile && !isTablet && <Customer360Panel conv={conv} can={can} />}
       </div>
     </div>
   );
 }
 
-function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string) => boolean; onChanged: () => void }) {
+function ConversationPane({ conv, can, onChanged, isMobile = false, onBack }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void }) {
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<string[]>(conv.tags || []);
   const [headerMode, setHeaderMode] = useState<"chat" | "details">("chat");
   const [showAiSuggestion, setShowAiSuggestion] = useState(true);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
+  const isChatPinnedRef = useRef(true);
+  const lastRenderedMessageIdRef = useRef<string | null>(null);
+  const forceBottomRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่ได้");
+
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    if (scrollFrameRef.current != null) cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const el = chatScrollRef.current;
+      if (!el) return;
+      programmaticScrollRef.current = true;
+      isChatPinnedRef.current = true;
+      setNewMessageCount(0);
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+      programmaticScrollTimerRef.current = setTimeout(() => {
+        programmaticScrollRef.current = false;
+        programmaticScrollTimerRef.current = null;
+      }, behavior === "smooth" ? 400 : 0);
+    });
+  }, []);
+
+  const onChatScroll = useCallback(() => {
+    if (programmaticScrollRef.current) return;
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const pinned = distanceFromBottom <= CHAT_BOTTOM_THRESHOLD_PX;
+    isChatPinnedRef.current = pinned;
+    if (pinned) setNewMessageCount(0);
+  }, []);
 
   const [send, { loading: sending }] = useMutation(M_SEND, {
     onCompleted: (d: any) => {
       const r = d?.bmsSendMessage;
       if (r?.status === "SENT") { message.success(r.message); setReply(""); onChanged(); }
       else onErr({ message: r?.message });
-    }, onError: onErr,
+    },
+    onError: (e) => {
+      forceBottomRef.current = false;
+      onErr(e);
+    },
   });
   const [retry, { loading: retrying }] = useMutation(M_RETRY, {
     onCompleted: (d: any) => {
@@ -571,48 +755,59 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const helperIds = new Set(helpers.map((h) => h.id));
   const helperCandidates = staffList.filter((s) => s.id !== conv.assignedStaff?.id && !helperIds.has(s.id));
 
+  const headerControls = (
+    <Space size={8} wrap style={{ justifyContent: isMobile ? "flex-start" : "flex-end", width: isMobile ? "100%" : undefined }}>
+      <Button
+        size="small"
+        type={headerMode === "chat" ? "primary" : "default"}
+        icon={headerMode === "chat" ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        onClick={toggleHeaderMode}
+      >
+        {headerMode === "chat" ? (isMobile ? "Details" : "Work Details") : "Chat Focus"}
+      </Button>
+      <Select size="small" value={conv.status} style={{ width: isMobile ? 98 : 110 }} disabled={!canManage}
+          onChange={(v) => setStatus({ variables: { id: conv.id, status: v } })}
+          options={["OPEN", "PENDING", "CLOSED"].map((s) => ({ value: s, label: s }))} />
+      <Select
+        size="small" style={{ minWidth: isMobile ? 170 : 180, flex: isMobile ? "1 1 170px" : undefined }} disabled={!canAssign} loading={assigning}
+        value={conv.assignedStaff?.id ?? undefined}
+        placeholder="ยังไม่มี staff หลัก"
+        onChange={(userId) => assign({ variables: { id: conv.id, userId } })}
+        options={staffList.map((s) => ({ value: s.id, label: staffLabel(s) }))}
+      />
+    </Space>
+  );
+
   const header = (
-    <div style={{ display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+    <div style={{ display: "grid", gap: isMobile ? 6 : 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: isMobile ? 8 : 12, alignItems: "flex-start", flexWrap: isMobile ? "nowrap" : "wrap" }}>
         <Space direction="vertical" size={1} style={{ minWidth: 0, flex: 1 }}>
-          <Space wrap>
-            <Avatar size={32} src={conv.customerAvatar || undefined} icon={<UserOutlined />} />
-            <Tag color={CHANNEL_COLOR[conv.channel] || "default"}>{conv.channel}</Tag>
-            <Typography.Text strong style={{ fontSize: 16 }}>{conv.customerName || conv.customerRef || "ลูกค้า"}</Typography.Text>
-            <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"}>{conv.status}</Tag>
-          </Space>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, width: "100%" }}>
+            {isMobile && (
+              <Button type="text" size="small" icon={<LeftOutlined />} onClick={onBack} style={{ flexShrink: 0 }} />
+            )}
+            <Avatar size={isMobile ? 30 : 32} src={conv.customerAvatar || undefined} icon={<UserOutlined />} style={{ flexShrink: 0 }} />
+            <Tag color={CHANNEL_COLOR[conv.channel] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0 }}>{conv.channel}</Tag>
+            <Typography.Text strong ellipsis style={{ fontSize: isMobile ? 15 : 16, minWidth: 0, flex: 1 }}>
+              {conv.customerName || conv.customerRef || "ลูกค้า"}
+            </Typography.Text>
+            <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0 }}>{conv.status}</Tag>
+          </div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>{conv.customerRef || conv.id}</Typography.Text>
           {sourceLabel(conv) && (
-            <Space size={6} wrap>
+            <Space size={6} wrap={!isMobile} style={{ minWidth: 0 }}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>ทักจาก:</Typography.Text>
               <Avatar size={18} src={conv.sourceAvatar || undefined} style={{ fontSize: 9 }}>
                 {(conv.sourceDisplayName || conv.channel || "?").slice(0, 1).toUpperCase()}
               </Avatar>
-              <Typography.Text style={{ fontSize: 12 }}>{sourceLabel(conv)}</Typography.Text>
+              <Typography.Text ellipsis style={{ fontSize: 12, minWidth: 0, maxWidth: isMobile ? "calc(100vw - 118px)" : undefined }}>{sourceLabel(conv)}</Typography.Text>
             </Space>
           )}
         </Space>
-        <Space size={8} wrap style={{ justifyContent: "flex-end" }}>
-          <Button
-            size="small"
-            type={headerMode === "chat" ? "primary" : "default"}
-            icon={headerMode === "chat" ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={toggleHeaderMode}
-          >
-            {headerMode === "chat" ? "Work Details" : "Chat Focus"}
-          </Button>
-          <Select size="small" value={conv.status} style={{ width: 110 }} disabled={!canManage}
-              onChange={(v) => setStatus({ variables: { id: conv.id, status: v } })}
-              options={["OPEN", "PENDING", "CLOSED"].map((s) => ({ value: s, label: s }))} />
-          <Select
-            size="small" style={{ minWidth: 180 }} disabled={!canAssign} loading={assigning}
-            value={conv.assignedStaff?.id ?? undefined}
-            placeholder="ยังไม่มี staff หลัก"
-            onChange={(userId) => assign({ variables: { id: conv.id, userId } })}
-            options={staffList.map((s) => ({ value: s.id, label: staffLabel(s) }))}
-          />
-        </Space>
+        {!isMobile && headerControls}
       </div>
+
+      {isMobile && headerControls}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
@@ -693,6 +888,8 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const sendWith = (attachment: Attachment | null) => {
     const body = reply.trim();
     if (!body && !attachment) return;
+    forceBottomRef.current = true;
+    scrollChatToBottom("auto");
     send({
       variables: {
         id: conv.id,
@@ -704,6 +901,8 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const submitReply = () => { if (!sending) sendWith(null); };
 
   const uploadAndSend = async (file: File) => {
+    forceBottomRef.current = true;
+    scrollChatToBottom("auto");
     setUploading(true);
     try {
       const fd = new FormData();
@@ -713,6 +912,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
       if (!res.ok) throw new Error(j?.error || "อัปโหลดไม่สำเร็จ");
       sendWith({ url: j.url, name: j.name, mimeType: j.mimeType, isImage: /^image\//i.test(j.mimeType || "") });
     } catch (e: any) {
+      forceBottomRef.current = false;
       message.error(e?.message || "อัปโหลดไม่สำเร็จ");
     } finally {
       setUploading(false);
@@ -755,6 +955,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     | { t: "msg"; at: string; msg: Msg }
     | { t: "event"; at: string; ev: SystemEvent };
   const msgs: Msg[] = conv.messages || [];
+  const latestMessageId = msgs[msgs.length - 1]?.id ?? null;
   const chatImages = msgs
     .filter((m) => m.attachment?.isImage && m.attachment?.url)
     .map((m) => ({
@@ -773,6 +974,57 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
     ...msgs.map((m) => ({ t: "msg", at: m.createdAt, msg: m } as FeedItem)),
     ...events.map((ev) => ({ t: "event", at: ev.at, ev } as FeedItem)),
   ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  // เปิดแชทครั้งแรกให้เห็นข้อความล่าสุดทันที ส่วนข้อความชุดถัดไปจะตามลงล่าง
+  // เฉพาะเมื่อผู้ใช้ยังอยู่ใกล้ล่าง หากกำลังอ่านย้อนหลังให้รักษาตำแหน่งไว้
+  // และใช้ปุ่ม "ข้อความใหม่" แทนการแย่ง scrollbar.
+  useLayoutEffect(() => {
+    const previousId = lastRenderedMessageIdRef.current;
+    if (!previousId) {
+      lastRenderedMessageIdRef.current = latestMessageId;
+      scrollChatToBottom("auto");
+      return;
+    }
+    if (!latestMessageId || latestMessageId === previousId) return;
+
+    const previousIndex = msgs.findIndex((m) => m.id === previousId);
+    const appended = previousIndex >= 0 ? msgs.slice(previousIndex + 1) : [msgs[msgs.length - 1]];
+    const newInboundCount = appended.filter((m) => m?.direction === "IN").length;
+    lastRenderedMessageIdRef.current = latestMessageId;
+
+    if (forceBottomRef.current || isChatPinnedRef.current) {
+      const behavior: ScrollBehavior = forceBottomRef.current ? "auto" : "smooth";
+      forceBottomRef.current = false;
+      scrollChatToBottom(behavior);
+    } else if (newInboundCount > 0) {
+      setNewMessageCount((count) => count + newInboundCount);
+    }
+  }, [latestMessageId, msgs.length, scrollChatToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // optimistic bubble ของข้อความที่ staff ส่งเองต้องอยู่ใน viewport ทันที
+  // แม้ข้อความจริงยังรอ mutation/refetch อยู่.
+  useLayoutEffect(() => {
+    if ((sending || uploading) && forceBottomRef.current) {
+      scrollChatToBottom("auto");
+    }
+  }, [sending, uploading, scrollChatToBottom]);
+
+  // รูป/ไฟล์และฟอนต์สามารถเปลี่ยนความสูงภายหลัง render ได้ หากผู้ใช้ปักอยู่
+  // ด้านล่างให้รักษาตำแหน่งล่าง แต่ห้ามแตะ scroll เมื่อกำลังอ่านย้อนหลัง.
+  useEffect(() => {
+    const feedEl = chatFeedRef.current;
+    if (!feedEl || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (isChatPinnedRef.current) scrollChatToBottom("auto");
+    });
+    observer.observe(feedEl);
+    return () => observer.disconnect();
+  }, [scrollChatToBottom]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current != null) cancelAnimationFrame(scrollFrameRef.current);
+    if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+  }, []);
 
   const movePreview = (delta: number) => {
     if (!chatImages.length) return;
@@ -807,7 +1059,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
         ? { background: "#1677ff", color: "#fff" }
         : { background: "#15803d", color: "#fff" };
     return (
-      <div key={`m-${m.id}`} style={{ alignSelf: isIn ? "flex-start" : "flex-end", maxWidth: "75%", display: "flex", flexDirection: "column", alignItems: isIn ? "flex-start" : "flex-end" }}>
+      <div key={`m-${m.id}`} style={{ alignSelf: isIn ? "flex-start" : "flex-end", maxWidth: isMobile ? "86%" : "75%", display: "flex", flexDirection: "column", alignItems: isIn ? "flex-start" : "flex-end" }}>
         <div style={{
           ...bubble,
           padding: "6px 10px", borderRadius: 10,
@@ -824,7 +1076,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
               style={{ border: 0, background: "transparent", padding: 0, marginTop: m.body ? 6 : 0, cursor: "zoom-in" }}
             >
               <img src={m.attachment.url} alt={m.attachment.name || "image"}
-                style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, display: "block" }} />
+                style={{ maxWidth: isMobile ? "min(220px, 68vw)" : 220, maxHeight: isMobile ? 180 : 220, borderRadius: 8, display: "block" }} />
             </button>
           ) : (
             <a href={m.attachment.url} target="_blank" rel="noreferrer"
@@ -862,16 +1114,43 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   const chatTab = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* ข้อความ — เต็มพื้นที่ด้านบน scroll ได้ */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 6, display: "flex", flexDirection: "column", gap: 8 }}>
-        {feedNodes}
-        {/* optimistic: กำลังส่ง/อัปโหลด */}
-        {(sending || uploading) && (
-          <div style={{ alignSelf: "flex-end", maxWidth: "75%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: 0.6 }}>
-            <div style={{ background: "#1677ff", color: "#fff", padding: "8px 12px", borderRadius: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {uploading ? "กำลังอัปโหลดไฟล์…" : (reply || "…")}
-            </div>
-            <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>⏳ กำลังส่ง…</Typography.Text>
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        <div
+          ref={chatScrollRef}
+          onScroll={onChatScroll}
+          style={{ height: "100%", overflowY: "auto", padding: isMobile ? 4 : 6 }}
+        >
+          <div ref={chatFeedRef} style={{ minHeight: "100%", display: "flex", flexDirection: "column", gap: isMobile ? 7 : 8 }}>
+            {feedNodes}
+            {/* optimistic: กำลังส่ง/อัปโหลด */}
+            {(sending || uploading) && (
+              <div style={{ alignSelf: "flex-end", maxWidth: isMobile ? "86%" : "75%", display: "flex", flexDirection: "column", alignItems: "flex-end", opacity: 0.6 }}>
+                <div style={{ background: "#1677ff", color: "#fff", padding: "8px 12px", borderRadius: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {uploading ? "กำลังอัปโหลดไฟล์…" : (reply || "…")}
+                </div>
+                <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>⏳ กำลังส่ง…</Typography.Text>
+              </div>
+            )}
           </div>
+        </div>
+        {newMessageCount > 0 && (
+          <Button
+            type="primary"
+            size="small"
+            icon={<ThunderboltOutlined />}
+            onClick={() => scrollChatToBottom("smooth")}
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: 12,
+              transform: "translateX(-50%)",
+              borderRadius: 999,
+              boxShadow: "0 8px 24px rgba(22,119,255,0.28)",
+              zIndex: 2,
+            }}
+          >
+            ข้อความใหม่ {newMessageCount} ↓
+          </Button>
         )}
       </div>
 
@@ -895,11 +1174,11 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
             <div style={{
               border: "1px dashed rgba(22,119,255,0.45)",
               background: "rgba(22,119,255,0.08)",
-              borderRadius: 16,
-              padding: 12,
+              borderRadius: isMobile ? 12 : 16,
+              padding: isMobile ? 10 : 12,
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <Space direction="vertical" size={4} style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: isMobile ? 8 : 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <Space direction="vertical" size={4} style={{ flex: 1, minWidth: isMobile ? 0 : 240 }}>
                   <Typography.Text strong style={{ fontSize: 13 }}>คำตอบแนะนำแบบย่อ</Typography.Text>
                   <Typography.Text style={{ fontSize: 13 }}>{aiReply}</Typography.Text>
                 </Space>
@@ -919,7 +1198,7 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
         <div style={{ borderTop: "1px solid var(--app-border, #303030)", paddingTop: 8, marginTop: 6, flexShrink: 0 }}>
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
-          <Space size={2} style={{ marginBottom: 6 }}>
+          <Space size={2} wrap style={{ marginBottom: 6 }}>
             <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
               <Button type="text" size="small" icon={<SmileOutlined />}>อีโมจิ</Button>
             </Popover>
@@ -935,13 +1214,13 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
           </Space>
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <Input.TextArea
-              rows={2} value={reply} onChange={(e) => setReply(e.target.value)}
+              rows={isMobile ? 1 : 2} value={reply} onChange={(e) => setReply(e.target.value)}
               placeholder="พิมพ์ตอบลูกค้า (Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่)"
               style={{ flex: 1, resize: "none" }}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
             <Button type="primary" size="large" icon={<SendOutlined />} loading={sending} disabled={!reply.trim()}
-              style={{ height: "auto", minWidth: 88 }} onClick={submitReply}>ส่ง</Button>
+              style={{ height: "auto", minWidth: isMobile ? 58 : 88 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
           </div>
         </div>
       )}
@@ -1038,10 +1317,11 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {header}
-      <Divider style={{ margin: "6px 0 8px" }} />
+      <Divider style={{ margin: isMobile ? "4px 0 6px" : "6px 0 8px" }} />
       <Tabs
         size="small"
         className="bms-inbox-tabs-fill"
+        tabBarGutter={isMobile ? 18 : undefined}
         items={[
           { key: "chat", label: "แชท", children: chatTab },
           { key: "customer", label: "ลูกค้า", children: customerTab },

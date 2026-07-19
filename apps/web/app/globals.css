@@ -299,6 +299,20 @@ html.dark .ant-drawer-mask {
   overflow: hidden;
 }
 
+@media (max-width: 767px) {
+  .bms-inbox-tabs-fill > .ant-tabs-nav {
+    margin-bottom: 6px;
+  }
+
+  .bms-inbox-tabs-fill .ant-tabs-tab {
+    padding: 8px 0;
+  }
+
+  .bms-inbox-conversation-scroll .ant-list-item {
+    min-height: 88px;
+  }
+}
+
 /* Sidebar: antd บังคับ opacity:0 กับ child ตัวที่ 2+ ในสล็อตไอคอนเมนูตอน sidebar ย่อ
    (คิดว่าเป็น title ที่ต้องซ่อน) — badge unread ของเราดันโดนเหมารวมไปด้วย ต้อง !important ทับ */
 .ant-menu-item-icon .bms-sider-badge {

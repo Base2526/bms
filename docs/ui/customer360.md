@@ -30,6 +30,15 @@ bot info from `bms_tenant_channels.extra` is exposed as `sourceDisplayName`, `so
 `sourceAvatar`, so operators can see `ทักจาก: LINE OA “...”` directly in the Inbox header and a
 compact `ร้าน: ...` line on the conversation list.
 
+Responsive layout keeps the same data path but changes the visible panes:
+
+- Desktop keeps the sales desk layout: navigation rail, conversation list, active chat, and the
+  right-hand Customer 360 panel when there is enough width.
+- Tablet collapses the conversation list to an avatar rail and hides the right-hand Customer 360
+  panel; the same customer data remains available through the `ลูกค้า` tab inside the chat.
+- Mobile uses a two-screen flow: conversation list first, then a full-screen chat with a back
+  button. This avoids squeezing the message composer and chat history into a narrow split view.
+
 Diagnostic conversations created from
 [`/admin/inbox/realtime-diagnostics`](inbox-diagnostics.md) use `customer_ref =
 diagnostic:{channel}:{adminId}` and may not have a linked `customerId`. They are for verifying
