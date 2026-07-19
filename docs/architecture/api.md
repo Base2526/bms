@@ -100,6 +100,21 @@ tenant scoping remain authoritative. The first event refreshes immediately; sust
 coalesced to at most two list queries per second with a guaranteed trailing refresh. The existing
 20-second conversation-list poll remains a recovery path for a missed socket event.
 
+When `MESSAGES_CHANGED` targets the conversation currently open in Inbox, the browser clears that
+conversation's unread state optimistically and persists `bmsMarkConversationRead` before it
+refetches the authoritative list. This ordering prevents an older `unread` value from restoring the
+card badge. A rendered-message guard and the 20-second list poll cover delayed or missed socket
+events. Because Apollo normalizes list/detail conversation objects, the active list item's
+`unread > 0` state is also observed directly rather than relying only on timestamp differences.
+An operator therefore does not need to click the already-open conversation again.
+
+The active chat pane treats a position within 120 pixels of the bottom as pinned. New messages keep
+a pinned pane at the bottom, while a pane scrolled into older history preserves its position and
+shows a local `ข้อความใหม่ N` jump control. Staff-originated sends always return to the bottom.
+Deferred content resizing (for example an image finishing loading) follows the same pinned-state
+rule, preventing attachments from either hiding the newest message or pulling an operator away
+from older history.
+
 LINE profile sync is a second, non-critical invalidation source. After the Inbox write/reply path,
 the LINE webhook best-effort fetches the user's LINE display profile, stores it on
 `bms_customer_identities`, then publishes `CONVERSATION_CHANGED` for any affected conversation so
