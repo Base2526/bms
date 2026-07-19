@@ -107,6 +107,11 @@ open Inbox screens can replace the raw LINE userId with cached display name/avat
 remain cache-backed and short-timeout; GraphQL read resolvers and React list rendering must never
 call external profile APIs.
 
+The same LINE webhook path best-effort syncs the receiving LINE OA/bot info into
+`bms_tenant_channels.extra`. Inbox GraphQL exposes this cached channel source as
+`sourceDisplayName`, `sourceHandle`, and `sourceAvatar`, allowing operators to see which OA/shop the
+customer messaged without extra API calls during page rendering.
+
 Diagnostics use the same subscription path. `Emit` intentionally uses a `diag:{channel}:{probeId}`
 conversation ID that does not exist in `bms_conversations`; it validates PubSub/WebSocket delivery
 only. `Create Msg` writes a real diagnostic conversation/message first, then publishes

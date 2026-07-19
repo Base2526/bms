@@ -322,11 +322,16 @@ export async function listConversations(
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar,
             c.tags, c.unread, c.last_message, c.last_message_at, c.created_at, c.updated_at,
             COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name,
-            ci.picture_url AS customer_avatar
+            ci.picture_url AS customer_avatar,
+            tc.extra->>'botDisplayName' AS source_display_name,
+            tc.extra->>'botBasicId' AS source_handle,
+            tc.extra->>'botPictureUrl' AS source_avatar
        FROM bms_conversations c
        LEFT JOIN bms_customers cu ON cu.id = c.customer_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
+       LEFT JOIN bms_tenant_channels tc
+         ON tc.tenant_id = c.tenant_id AND tc.channel = c.channel
        LEFT JOIN users au ON au.id = c.assigned_to_user_id
       WHERE c.tenant_id = $1
         AND ($2::text IS NULL OR c.status = $2)
@@ -362,11 +367,16 @@ export async function getConversation(tenantId: string, id: string) {
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar, au.email AS assigned_email,
             c.tags, c.unread, c.last_message, c.last_message_at, c.created_at, c.updated_at,
             COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name,
-            ci.picture_url AS customer_avatar
+            ci.picture_url AS customer_avatar,
+            tc.extra->>'botDisplayName' AS source_display_name,
+            tc.extra->>'botBasicId' AS source_handle,
+            tc.extra->>'botPictureUrl' AS source_avatar
        FROM bms_conversations c
        LEFT JOIN bms_customers cu ON cu.id = c.customer_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
+       LEFT JOIN bms_tenant_channels tc
+         ON tc.tenant_id = c.tenant_id AND tc.channel = c.channel
        LEFT JOIN users au ON au.id = c.assigned_to_user_id
       WHERE c.tenant_id = $1 AND c.id = $2`,
     [tenantId, id]

@@ -53,7 +53,10 @@ mentioning one. `bms_order_items` snapshots `unit_price` at order time (not a li
 (no CHECK constraint / enum), storing `access_token` and `channel_secret` **encrypted** (AES-256-GCM
 via `lib/bms/crypto.ts`), plus an `extra JSONB` column and `active BOOLEAN`. Because `channel` is
 unconstrained text, adding a new channel (e.g. Shopee/Lazada) needs no migration — only application
-code needs to know the new value (see [../integrations/](../integrations/)).
+code needs to know the new value (see [../integrations/](../integrations/)). LINE OA bot/source
+display metadata is cached in `extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`,
+`botChatMode`, `botInfoSyncedAt`) so Inbox can show which OA/shop received a message without
+calling LINE APIs during reads.
 
 **Channel Health (`6.4__bms_channel_health.sql`)** — `bms_tenant_channels` also carries `status`
 (CHECK-constrained enum: `connected`/`token_expired`/`webhook_failed`/`rate_limited`/`no_events`/

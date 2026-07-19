@@ -221,6 +221,9 @@ export const bmsInboxResolvers = {
     customerId: (p: any) => p.customer_id ?? null,
     customerName: (p: any) => p.customer_name ?? null,
     customerAvatar: (p: any) => p.customer_avatar ?? null,
+    sourceDisplayName: (p: any) => p.source_display_name ?? null,
+    sourceHandle: (p: any) => p.source_handle ?? null,
+    sourceAvatar: (p: any) => p.source_avatar ?? null,
     assignedStaff: (p: any) => (p.assigned_to_user_id
       ? { id: p.assigned_to_user_id, name: p.assigned_name ?? null, avatar: p.assigned_avatar ?? null, email: p.assigned_email ?? null }
       : null),

@@ -29,6 +29,12 @@ staff-maintained CRM fields. The sync is TTL-gated and short-timeout, so a LINE 
 blocked user, missing consent/friendship, or rate limit never prevents the message from appearing
 in Inbox.
 
+The same post-write path also syncs LINE OA/bot metadata via `GET /v2/bot/info` and caches it on
+`bms_tenant_channels.extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`, `botChatMode`,
+`botInfoSyncedAt`). Inbox uses this cache to show which LINE OA/shop received the message, for
+example `ทักจาก: LINE OA “Jachoei Shoes” @jachoei`. This is also cache-backed; do not call LINE bot
+info APIs from Inbox rendering.
+
 After the inbox write succeeds, `logConversation()` publishes a tenant-scoped
 `bmsInboxChanged` event. Operators with the Inbox open refetch the changed list and, when selected,
 the active conversation immediately. The payload does not contain message text or customer data;
@@ -52,6 +58,13 @@ staff-maintained bms_customers.name
 
 Avatar display uses cached `picture_url` when available. Do not call LINE profile APIs from list
 rendering or GraphQL read resolvers; all UI reads must use the cached identity profile.
+
+Source/shop display uses the cached bot info from `bms_tenant_channels.extra`:
+
+```text
+customer: LINE profile display_name / picture_url
+source:   LINE OA botDisplayName / botBasicId / botPictureUrl
+```
 
 ## Diagnostics
 

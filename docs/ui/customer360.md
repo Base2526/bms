@@ -25,6 +25,11 @@ LINE OA, the webhook syncs `display_name` and `picture_url` into `bms_customer_i
 exposes these as `customerName` fallback and `customerAvatar`. The Customer 360 tab still uses the
 linked `bms_customers` record as the authoritative CRM profile.
 
+The same header also shows the receiving shop/channel source when available. For LINE OA, cached
+bot info from `bms_tenant_channels.extra` is exposed as `sourceDisplayName`, `sourceHandle`, and
+`sourceAvatar`, so operators can see `ทักจาก: LINE OA “...”` directly in the Inbox header and a
+compact `ร้าน: ...` line on the conversation list.
+
 Diagnostic conversations created from
 [`/admin/inbox/realtime-diagnostics`](inbox-diagnostics.md) use `customer_ref =
 diagnostic:{channel}:{adminId}` and may not have a linked `customerId`. They are for verifying
