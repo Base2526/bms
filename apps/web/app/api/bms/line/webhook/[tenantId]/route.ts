@@ -13,7 +13,7 @@ import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, notifyInboxConversationChanged } from "@/lib/bms/inbox";
-import { syncLineUserProfile } from "@/lib/bms/lineProfile";
+import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
 import { recordInboundEvent, recordWebhookVerifyFailed, recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "@/lib/bms/channelHealth";
 
 export const runtime = "nodejs";
@@ -104,6 +104,14 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
           tenantId,
           status: profileSync.status,
           error: profileSync.error,
+        });
+      }
+      const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
+      if (!botInfoSync.ok && !botInfoSync.skipped) {
+        console.warn("[BMS] LINE bot info sync skipped/failed:", {
+          tenantId,
+          status: botInfoSync.status,
+          error: botInfoSync.error,
         });
       }
     }

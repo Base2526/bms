@@ -1022,6 +1022,9 @@ export const typeDefs = /* GraphQL */ `
     customerId: ID
     customerName: String
     customerAvatar: String
+    sourceDisplayName: String
+    sourceHandle: String
+    sourceAvatar: String
     status: BmsConvStatus!
     assignedStaff: BmsStaffRef
     helpers: [BmsStaffRef!]!

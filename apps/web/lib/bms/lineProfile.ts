@@ -28,6 +28,7 @@ type LineProfile = {
 
 const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 900;
+const BOT_INFO_TTL_MS = 24 * 60 * 60 * 1000;
 
 function cleanText(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
@@ -54,6 +55,26 @@ async function fetchLineProfile(accessToken: string, userId: string): Promise<{ 
       return { ok: false, status: resp.status, detail: text.slice(0, 300) || resp.statusText };
     }
     return { ok: true, profile: JSON.parse(text || "{}") as LineProfile };
+  } catch (error: any) {
+    return { ok: false, status: 0, detail: error?.name === "AbortError" ? "timeout" : String(error?.message || error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchLineBotInfo(accessToken: string): Promise<{ ok: true; info: any } | { ok: false; status: number; detail: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const resp = await fetch("https://api.line.me/v2/bot/info", {
+      headers: { authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    });
+    const text = await resp.text().catch(() => "");
+    if (!resp.ok) {
+      return { ok: false, status: resp.status, detail: text.slice(0, 300) || resp.statusText };
+    }
+    return { ok: true, info: JSON.parse(text || "{}") };
   } catch (error: any) {
     return { ok: false, status: 0, detail: error?.name === "AbortError" ? "timeout" : String(error?.message || error) };
   } finally {
@@ -181,4 +202,58 @@ export async function syncLineUserProfile(
 
   const conversationIds = await upsertLineProfile(tenantId, userId, fetched.profile);
   return { ok: true, conversationIds };
+}
+
+export async function syncLineBotInfo(
+  tenantId: string,
+  accessToken: string | null
+): Promise<{ ok: boolean; skipped?: "missing-token" | "fresh"; status?: number; error?: string }> {
+  if (!accessToken) return { ok: false, skipped: "missing-token" };
+
+  const current = await query<{ extra: any }>(
+    `SELECT extra FROM bms_tenant_channels WHERE tenant_id = $1 AND channel = 'line' LIMIT 1`,
+    [tenantId]
+  );
+  const extra = current.rows[0]?.extra ?? {};
+  if (extra?.botInfoSyncedAt && shouldSkipFreshWithTtl(extra.botInfoSyncedAt, BOT_INFO_TTL_MS)) {
+    return { ok: true, skipped: "fresh" };
+  }
+
+  const fetched = await fetchLineBotInfo(accessToken);
+  if (!fetched.ok) {
+    await query(
+      `UPDATE bms_tenant_channels
+          SET extra = COALESCE(extra, '{}'::jsonb) || $3::jsonb,
+              updated_at = now()
+        WHERE tenant_id = $1 AND channel = $2`,
+      [tenantId, "line", JSON.stringify({
+        botInfoErrorAt: new Date().toISOString(),
+        botInfoError: fetched.detail.slice(0, 300),
+      })]
+    ).catch(() => null);
+    return { ok: false, status: fetched.status, error: fetched.detail };
+  }
+
+  const info = fetched.info || {};
+  await query(
+    `UPDATE bms_tenant_channels
+        SET extra = COALESCE(extra, '{}'::jsonb) || $3::jsonb,
+            updated_at = now()
+      WHERE tenant_id = $1 AND channel = $2`,
+    [tenantId, "line", JSON.stringify({
+      botDisplayName: cleanText(info.displayName, 255),
+      botBasicId: cleanText(info.basicId, 255),
+      botPictureUrl: cleanText(info.pictureUrl, 1000),
+      botChatMode: cleanText(info.chatMode, 64),
+      botInfoSyncedAt: new Date().toISOString(),
+      botInfoErrorAt: null,
+      botInfoError: null,
+    })]
+  );
+  return { ok: true };
+}
+
+function shouldSkipFreshWithTtl(value: unknown, ttlMs: number): boolean {
+  const syncedAt = value instanceof Date ? value.getTime() : value ? new Date(String(value)).getTime() : 0;
+  return Number.isFinite(syncedAt) && syncedAt > 0 && Date.now() - syncedAt < ttlMs;
 }

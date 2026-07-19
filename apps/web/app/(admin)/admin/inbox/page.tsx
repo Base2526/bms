@@ -26,6 +26,7 @@ type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 type StaffRef = { id: string; name: string | null; email: string | null; avatar: string | null; role?: string | null; isAvailable?: boolean | null; openCount?: number | null };
 type Conversation = {
   id: string; channel: string; customerRef: string | null; customerName: string | null; customerAvatar: string | null;
+  sourceDisplayName: string | null; sourceHandle: string | null; sourceAvatar: string | null;
   status: ConvStatus; assignedStaff: StaffRef | null; tags: string[]; unread: number;
   lastMessage: string | null; lastMessageAt: string | null;
 };
@@ -45,7 +46,7 @@ const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
 const Q_LIST = gql`
   query ($status: BmsConvStatus, $search: String, $assignedTo: ID) {
     bmsConversations(status: $status, search: $search, assignedTo: $assignedTo, limit: 100) {
-      id channel customerRef customerName customerAvatar status tags unread lastMessage lastMessageAt
+      id channel customerRef customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessage lastMessageAt
       assignedStaff { id name avatar }
     }
   }
@@ -53,7 +54,7 @@ const Q_LIST = gql`
 const Q_CONV = gql`
   query ($id: ID!) {
     bmsConversation(id: $id) {
-      id channel customerRef customerId customerName customerAvatar status tags unread lastMessageAt createdAt
+      id channel customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
       assignedStaff { ${STAFF_FIELDS} }
       helpers { ${STAFF_FIELDS} }
       messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
@@ -143,6 +144,14 @@ function previewNode(last?: string | null) {
   if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> รูปภาพ</>;
   if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || "ไฟล์แนบ"}</>;
   return last;
+}
+
+function sourceLabel(c: { channel?: string | null; sourceDisplayName?: string | null; sourceHandle?: string | null }) {
+  if (!c.sourceDisplayName && !c.sourceHandle) return null;
+  const name = c.sourceDisplayName || c.sourceHandle || "";
+  const handle = c.sourceHandle && c.sourceHandle !== name ? ` ${c.sourceHandle}` : "";
+  const prefix = c.channel === "line" ? "LINE OA" : c.channel || "ช่องทาง";
+  return `${prefix} “${name}”${handle}`;
 }
 
 function convPriority(c: Conversation) {
@@ -386,7 +395,7 @@ function Inbox() {
                 <List.Item
                   onClick={() => setActiveId(c.id)}
                   style={{
-                    cursor: "pointer", padding: listCollapsed ? "6px 0" : "14px 12px", borderRadius: 18, marginBottom: 10,
+                    cursor: "pointer", padding: listCollapsed ? "6px 0" : "10px 12px", borderRadius: 16, marginBottom: 8,
                     display: listCollapsed ? "flex" : undefined,
                     justifyContent: listCollapsed ? "center" : undefined,
                     background: activeId === c.id ? "rgba(22,119,255,0.18)" : "#fff",
@@ -400,42 +409,42 @@ function Inbox() {
                       <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, width: "100%", minWidth: 0 }}>
-                      <Badge count={c.unread} size="small">
-                        <Avatar size={40} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
+                    <div style={{ display: "grid", gridTemplateColumns: "38px minmax(0, 1fr)", columnGap: 10, width: "100%", minWidth: 0, alignItems: "start" }}>
+                      <Badge count={c.unread} size="small" offset={[-2, 2]}>
+                        <Avatar size={36} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
                       </Badge>
-                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <Space size={6} wrap style={{ width: "100%", rowGap: 6 }}>
-                              <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 500 }}>{c.channel}</Tag>
-                              <Typography.Text strong ellipsis style={{ minWidth: 0, maxWidth: "100%", fontSize: 13 }}>
-                                {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
-                              </Typography.Text>
-                            </Space>
-                          </div>
+                      <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 500, paddingInline: 7, lineHeight: "20px" }}>{c.channel}</Tag>
+                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 13 }}>
+                            {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
+                          </Typography.Text>
                           {c.assignedStaff && (
                             <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
-                              <Avatar size={24} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 10, backgroundColor: "#1677ff", flexShrink: 0 }}>
+                              <Avatar size={22} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 10, backgroundColor: "#1677ff", flexShrink: 0 }}>
                                 {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
                               </Avatar>
                             </Tooltip>
                           )}
                         </div>
 
-                        <Space size={6} wrap>
-                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 500 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11, lineHeight: 1.25 }}>
+                            {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
+                          </Typography.Text>
+                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 500, fontSize: 11, lineHeight: "20px", paddingInline: 7 }}>
                             {convPriority(c).label}
                           </Tag>
-                        </Space>
+                        </div>
 
-                        <Typography.Text ellipsis style={{ width: "100%", fontSize: 12, lineHeight: 1.45 }} type="secondary">
-                          {previewNode(c.lastMessage)}
-                        </Typography.Text>
-
-                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                          {c.lastMessageAt ? `${dayLabel(c.lastMessageAt)} · ${timeLabel(c.lastMessageAt)}` : "ยังไม่มีเวลา"}
-                        </Typography.Text>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                          <Typography.Text ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12, lineHeight: 1.35 }} type="secondary">
+                            {previewNode(c.lastMessage)}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                            {c.lastMessageAt ? `${dayLabel(c.lastMessageAt)} · ${timeLabel(c.lastMessageAt)}` : "ยังไม่มีเวลา"}
+                          </Typography.Text>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -573,6 +582,15 @@ function ConversationPane({ conv, can, onChanged }: { conv: any; can: (p: string
             <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"}>{conv.status}</Tag>
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>{conv.customerRef || conv.id}</Typography.Text>
+          {sourceLabel(conv) && (
+            <Space size={6} wrap>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>ทักจาก:</Typography.Text>
+              <Avatar size={18} src={conv.sourceAvatar || undefined} style={{ fontSize: 9 }}>
+                {(conv.sourceDisplayName || conv.channel || "?").slice(0, 1).toUpperCase()}
+              </Avatar>
+              <Typography.Text style={{ fontSize: 12 }}>{sourceLabel(conv)}</Typography.Text>
+            </Space>
+          )}
         </Space>
         <Space size={8} wrap style={{ justifyContent: "flex-end" }}>
           <Button
