@@ -189,7 +189,7 @@ function CustomersManagement() {
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>Customers (CRM)</h2>
-          <Space>
+          <Space wrap>
             <Input.Search placeholder="ค้นหา ชื่อ/เบอร์" allowClear style={{ width: 220 }}
               onSearch={(v) => setSearch(v)} onChange={(e) => !e.target.value && setSearch("")} />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
@@ -203,6 +203,7 @@ function CustomersManagement() {
 
       <Table
         rowKey="id" loading={loading} dataSource={customers} columns={columns}
+        scroll={{ x: "max-content" }}
         expandable={{
           expandedRowRender: (c: Customer) => (
             <CustomerDetail
@@ -346,7 +347,7 @@ function CustomerDetail({
       <Divider style={{ margin: "8px 0" }} />
       <Text strong>🧾 ประวัติการซื้อ ({c.orders?.length || 0})</Text>
       <Table style={{ marginTop: 8 }} rowKey="id" dataSource={c.orders || []} columns={orderCols}
-        size="small" pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: "ยังไม่มีประวัติ" }} />
+        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: "ยังไม่มีประวัติ" }} />
     </div>
   );
 }

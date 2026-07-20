@@ -45,8 +45,6 @@ export default function Page() {
   const [updateMe, { loading: saving }] = useMutation(M_UPDATE_ME);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
 
-  if (error) return <Alert type="error" showIcon message="โหลดโปรไฟล์ไม่ได้" description={error.message} />;
-
   const me = data?.bmsMe;
 
   useEffect(() => {
@@ -60,6 +58,8 @@ export default function Page() {
     });
     setAvatarUrl(me.avatar || "");
   }, [form, me]);
+
+  if (error) return <Alert type="error" showIcon message="โหลดโปรไฟล์ไม่ได้" description={error.message} />;
 
   async function handleUpload(file: File) {
     if (!me?.id) return false;
