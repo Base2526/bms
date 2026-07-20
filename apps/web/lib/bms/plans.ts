@@ -6,7 +6,8 @@ import { query } from "@/lib/db";
 
 export type Plan = {
   code: string; name: string; price_monthly: number;
-  max_products: number; max_channels: number; max_orders_month: number; max_users: number; sort: number;
+  max_products: number; max_channels: number; max_orders_month: number; max_users: number;
+  max_ai_messages_month: number; sort: number;
 };
 
 export async function listPlans(): Promise<Plan[]> {
@@ -18,7 +19,8 @@ function shapePlan(r: any): Plan {
   return {
     code: r.code, name: r.name, price_monthly: Number(r.price_monthly),
     max_products: r.max_products, max_channels: r.max_channels,
-    max_orders_month: r.max_orders_month, max_users: r.max_users, sort: r.sort,
+    max_orders_month: r.max_orders_month, max_users: r.max_users,
+    max_ai_messages_month: r.max_ai_messages_month, sort: r.sort,
   };
 }
 

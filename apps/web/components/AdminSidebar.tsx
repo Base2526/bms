@@ -29,6 +29,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -39,6 +40,12 @@ import { useEffect, useState } from 'react';
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
+const Q_AI_USAGE = gql`
+  query {
+    bmsAiConfig { has_key }
+    bmsAiUsage { count limit remaining unlimited }
+  }
+`;
 const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
 
 const { Sider } = Layout;
@@ -121,6 +128,33 @@ export default function AdminSidebar() {
     fetchPolicy: 'cache-and-network', pollInterval: 15000,
   });
   const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
+
+  // โควตา AI (shared key ฟรี) — poll ห่างกว่า inbox/channel เพราะเปลี่ยนไม่บ่อย (นับเป็นเดือน ไม่ใช่วินาที)
+  const { data: aiData } = useQuery(Q_AI_USAGE, {
+    fetchPolicy: 'cache-and-network', pollInterval: 60000,
+  });
+  const aiHasKey: boolean = aiData?.bmsAiConfig?.has_key ?? false;
+  const aiUsage = aiData?.bmsAiUsage;
+  const aiOverLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.remaining === 0;
+  const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
+  const aiShouldShow = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0;
+  const aiNeedsManualAttention = aiOverLimit && inboxUnread > 0;
+  const aiTone = aiOverLimit ? '#e5484d' : aiNearLimit ? '#d48806' : '#1677ff';
+  const aiBg = aiOverLimit ? 'rgba(229,72,77,0.1)' : aiNearLimit ? 'rgba(212,136,6,0.1)' : 'rgba(22,119,255,0.1)';
+  const aiTooltip = aiOverLimit
+    ? aiNeedsManualAttention
+      ? `AI หมดโควตาแล้ว และมีลูกค้ารออ่าน ${inboxUnread} เคส — กดเพื่อใส่ AI Key หรืออัปเกรด`
+      : 'AI หมดโควตาฟรีเดือนนี้แล้ว — กดเพื่อใส่ AI Key ของร้านเองหรืออัปเกรด'
+    : aiNearLimit
+      ? `AI ใกล้หมดโควตา เหลือ ${aiUsage?.remaining}/${aiUsage?.limit} ครั้งเดือนนี้ — เตรียมใส่ AI Key หรืออัปเกรด`
+      : `AI ตอบลูกค้าอัตโนมัติ ใช้ไปแล้ว ${aiUsage?.count}/${aiUsage?.limit} ครั้งเดือนนี้`;
+  const aiStripText = aiOverLimit
+    ? aiNeedsManualAttention
+      ? `AI หมด · ลูกค้ารอ ${inboxUnread}`
+      : 'AI หมดโควตาฟรี'
+    : aiNearLimit
+      ? `AI เหลือ ${aiUsage?.remaining}/${aiUsage?.limit} ครั้ง`
+      : `AI ใช้ไป ${aiUsage?.count}/${aiUsage?.limit} ครั้ง`;
 
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage) — ผสมกับจอแคบ (breakpoint="lg" ของ Sider ด้านล่าง)
   // ต้องคำนวณทั้งสองเงื่อนไขในเอฟเฟกต์เดียวกัน ไม่งั้นเอฟเฟกต์ breakpoint ของ Sider (child)
@@ -283,6 +317,41 @@ export default function AdminSidebar() {
           style={{ background: 'transparent', borderRight: 'none' }}
         />
       </div>
+
+      {/* โควตา AI shared key ฟรี — โชว์ตลอดเมื่อใช้ Shared Key และยกระดับสีเมื่อใกล้/เกินโควตา
+          ปักไว้เหนือคู่มือ/โปรไฟล์ เหมือน balance strip ของ Claude Console */}
+      {aiShouldShow && (
+        <div style={{ padding: collapsed ? '0 10px' : '0 10px 8px', flexShrink: 0 }}>
+          <Tooltip
+            title={aiTooltip}
+            placement="right"
+          >
+            <Link
+              href="/admin/settings"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: collapsed ? '6px 0' : '6px 8px', borderRadius: 8,
+                background: aiBg,
+                color: aiTone,
+              }}
+            >
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <RobotOutlined />
+                <span style={{
+                  position: 'absolute', top: -2, right: -3, width: 7, height: 7, borderRadius: '50%',
+                  background: aiTone, boxShadow: '0 0 0 1.5px var(--app-surface)',
+                }} />
+              </span>
+              {!collapsed && (
+                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {aiStripText}
+                </span>
+              )}
+            </Link>
+          </Tooltip>
+        </div>
+      )}
 
       {/* คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — คู่มือใช้ไม่บ่อย เลยลดความสำคัญมาไว้แถบนี้แทน top-level */}
       <div style={{ borderTop: '1px solid var(--app-border)', padding: '10px 10px 0', flexShrink: 0 }}>

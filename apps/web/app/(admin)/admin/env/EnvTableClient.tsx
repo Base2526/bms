@@ -2,10 +2,13 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Button, Card, Descriptions, Input, Space, Table, Tag, Typography, message } from "antd";
-import { CopyOutlined, KeyOutlined, SearchOutlined } from "@ant-design/icons";
+import { gql, useMutation } from "@apollo/client";
+import { Alert, Button, Card, Descriptions, Input, Space, Table, Tag, Typography, message } from "antd";
+import { CopyOutlined, KeyOutlined, PlayCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { EnvRow } from "./page";
+
+const M_TEST_PLATFORM_AI_KEY = gql`mutation { bmsTestPlatformAiKey { ok message } }`;
 
 const { Text } = Typography;
 
@@ -20,6 +23,11 @@ type Meta = {
 
 export default function EnvTableClient({ env, meta }: { env: EnvRow[]; meta: Meta }) {
   const [q, setQ] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testPlatformAiKey, { loading: testingAiKey }] = useMutation(M_TEST_PLATFORM_AI_KEY, {
+    onCompleted: (d) => setTestResult(d?.bmsTestPlatformAiKey ?? null),
+    onError: (e) => setTestResult({ ok: false, message: e?.message || "ทดสอบไม่สำเร็จ" }),
+  });
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -120,6 +128,37 @@ export default function EnvTableClient({ env, meta }: { env: EnvRow[]; meta: Met
           <div style={{ marginTop: 12, opacity: 0.75 }}>
             * ค่า secret จะถูก mask อัตโนมัติ (Copy Value จะได้ค่า mask ไม่ใช่ค่าจริง)
           </div>
+        </Card>
+
+        <Card
+          title={
+            <Space>
+              <KeyOutlined />
+              Shared AI Key (ANTHROPIC_API_KEY)
+            </Space>
+          }
+          bordered
+        >
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+              key กลางที่ใช้ตอบลูกค้าอัตโนมัติให้ทุกร้านที่ยังไม่ได้ตั้ง key ของตัวเอง (BYOK) —
+              ทดสอบด้วย <Text code>GET /v1/models</Text> ไม่เสียเงิน (ไม่ใช่ inference)
+            </Typography.Paragraph>
+            <Button
+              icon={<PlayCircleOutlined />}
+              loading={testingAiKey}
+              onClick={() => { setTestResult(null); testPlatformAiKey(); }}
+            >
+              ทดสอบ Shared AI Key
+            </Button>
+            {testResult && (
+              <Alert
+                type={testResult.ok ? "success" : "error"}
+                showIcon
+                message={testResult.message}
+              />
+            )}
+          </Space>
         </Card>
 
         <Card

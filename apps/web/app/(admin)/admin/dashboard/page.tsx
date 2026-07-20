@@ -30,6 +30,7 @@ const Q_DASH = gql`
 `;
 
 const Q_CHANNEL_HEALTH = gql`query { bmsChannelHealth { channel active status } }`;
+const Q_AI = gql`query { bmsAiConfig { has_key } bmsAiUsage { count limit remaining unlimited planName } }`;
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange",
@@ -144,6 +145,11 @@ export default function Page() {
   const d = data?.bmsDashboard;
   const { data: healthData } = useQuery(Q_CHANNEL_HEALTH, { fetchPolicy: "cache-and-network", pollInterval: 30000 });
   const unhealthyChannels = (healthData?.bmsChannelHealth || []).filter((h: any) => h.active && h.status !== "connected");
+  const { data: aiData } = useQuery(Q_AI, { fetchPolicy: "cache-and-network" });
+  const aiUsage = aiData?.bmsAiUsage;
+  const aiHasKey = aiData?.bmsAiConfig?.has_key;
+  const aiOverLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.remaining === 0;
+  const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
 
   if (error) return <Alert type="error" message="โหลด dashboard ไม่ได้" description={error.message} showIcon />;
 
@@ -268,6 +274,26 @@ export default function Page() {
           </Card>
         </Col>
       </Row>
+
+      {(aiOverLimit || aiNearLimit) && (
+        <Alert
+          style={{ marginTop: 16, borderRadius: 8 }}
+          type={aiOverLimit ? "error" : "warning"}
+          showIcon
+          icon={<WarningOutlined />}
+          message={
+            aiOverLimit
+              ? <>AI ตอบลูกค้าอัตโนมัติ เกินโควตาฟรีเดือนนี้แล้ว <Tag>แพ็กเกจ {aiUsage.planName}</Tag></>
+              : <>AI ตอบลูกค้าอัตโนมัติ ใกล้เต็มโควตาฟรี <Tag>แพ็กเกจ {aiUsage.planName}</Tag> — เหลือ <b>{aiUsage.remaining}</b>/{aiUsage.limit} ครั้ง</>
+          }
+          description={
+            <>
+              {aiOverLimit && "ตอนนี้ระบบตอบด้วยข้อความ template แทน AI จนกว่าจะขึ้นเดือนใหม่ "}
+              <Link href="/admin/settings">ใส่ AI Key ของร้านเองเพื่อไม่จำกัด</Link>
+            </>
+          }
+        />
+      )}
 
       {d?.lowStockCount > 0 && (
         <Alert

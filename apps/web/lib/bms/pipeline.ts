@@ -118,7 +118,7 @@ export async function runPipeline(
   if (intent === "GREETING") {
     reply = "สวัสดีค่ะ 😊 สนใจสินค้ารุ่นไหน แจ้งชื่อรุ่น + ไซซ์ได้เลยนะคะ";
   } else {
-    reply = await generateResponse(message, data);
+    reply = await generateResponse(tenantId, message, data);
   }
 
   return { channel, incoming: message, understanding, tool, data, reply };

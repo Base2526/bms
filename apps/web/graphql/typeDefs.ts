@@ -720,6 +720,8 @@ export const typeDefs = /* GraphQL */ `
     bmsChannels: [BmsChannelConfig!]!
     bmsChannelHealth: [BmsChannelHealth!]!
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
+    bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
+    bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
 
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
@@ -1363,6 +1365,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsPlan {
     code: String!  name: String!  price_monthly: Float!
     max_products: Int!  max_channels: Int!  max_orders_month: Int!  max_users: Int!
+    max_ai_messages_month: Int!
   }
   type BmsUsage { products: Int!  channels: Int!  orders_month: Int!  users: Int! }
   type BmsBilling {
@@ -1416,6 +1419,19 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsTestChannelResult { ok: Boolean!  message: String! }
+
+  # ===== BMS AI config (BYOK ต่อร้าน + shared-key quota) =====
+  type BmsAiConfig {
+    has_key: Boolean!
+    api_key_masked: String
+    model: String
+  }
+  type BmsAiUsage {
+    count: Int!  limit: Int!  remaining: Int!  unlimited: Boolean!
+    planCode: String!  planName: String!
+  }
+  type BmsTestAiKeyResult { ok: Boolean!  message: String! }
+
   type BmsInboxDiagnosticEventResult {
     ok: Boolean!
     message: String!
@@ -1833,6 +1849,10 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
+    bmsSetAiKey(apiKey: String, model: String): Boolean!
+    bmsRemoveAiKey: Boolean!
+    bmsTestAiKey: BmsTestAiKeyResult!
+    bmsTestPlatformAiKey: BmsTestAiKeyResult!
     bmsEmitInboxDiagnosticEvent(channel: String!, probeId: ID!): BmsInboxDiagnosticEventResult!
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====

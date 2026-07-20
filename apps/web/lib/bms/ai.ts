@@ -1,14 +1,18 @@
 // =============================================================
 // BMS AI — Generate Response  (AI_WORKFLOW ขั้น 7)
 // -------------------------------------------------------------
-//   • ไม่มี ANTHROPIC_API_KEY  → template ภาษาไทย (mock, deterministic)
-//   • มี ANTHROPIC_API_KEY     → Claude โดย "ยัดข้อเท็จจริงสต็อก" เข้า prompt
+//   ลำดับ: 1) ร้านมี API key ตัวเอง (BYOK) → ใช้เลย ไม่ติด quota กลาง
+//          2) ไม่มี key ตัวเอง แต่มี ANTHROPIC_API_KEY กลาง → เช็ค quota
+//             รายเดือนของแพ็กเกจก่อน (bms_plans.max_ai_messages_month)
+//          3) ไม่มี key เลย หรือเกิน quota → template ภาษาไทย (mock)
 //
 // กฎ (ตาม BUSINESS_RULES): ห้ามให้ AI เดา/แต่งตัวเลขสต็อก-ราคาเอง
 // สต็อกมาจาก Backend API (checkStock) เสมอ AI แค่เรียบเรียงคำพูด
 // =============================================================
 
 import type { StockResult } from "./stock";
+import { getTenantAiConfig, DEFAULT_AI_MODEL } from "./aiConfig";
+import { tryConsumeAiQuota } from "./aiUsage";
 
 function template(res: StockResult): string {
   switch (res.status) {
@@ -42,13 +46,12 @@ function facts(res: StockResult): string {
   }
 }
 
-async function claude(message: string, res: StockResult): Promise<string> {
-  const model = process.env.BMS_AI_MODEL || "claude-haiku-4-5-20251001";
+async function claude(apiKey: string, model: string, message: string, res: StockResult): Promise<string> {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
@@ -74,14 +77,39 @@ async function claude(message: string, res: StockResult): Promise<string> {
 }
 
 export async function generateResponse(
+  tenantId: string,
   message: string,
   res: StockResult
 ): Promise<string> {
-  if (!process.env.ANTHROPIC_API_KEY) return template(res);
-  try {
-    return await claude(message, res);
-  } catch (err) {
-    console.error("[BMS] Claude failed, fallback to template:", err);
-    return template(res);
+  // 1) ร้านตั้ง API key ของตัวเอง (BYOK) — ใช้ก่อนเสมอ ไม่ติด quota กลาง
+  const own = await getTenantAiConfig(tenantId);
+  if (own?.apiKey) {
+    try {
+      return await claude(own.apiKey, own.model || DEFAULT_AI_MODEL, message, res);
+    } catch (err) {
+      console.error("[BMS] Claude (tenant key) failed, fallback to template:", err);
+      return template(res);
+    }
   }
+
+  // 2) shared key ของแพลตฟอร์ม — ต้องเช็ค quota รายเดือนก่อนเรียกจริง
+  if (process.env.ANTHROPIC_API_KEY) {
+    const withinQuota = await tryConsumeAiQuota(tenantId);
+    if (withinQuota) {
+      try {
+        return await claude(
+          process.env.ANTHROPIC_API_KEY,
+          process.env.BMS_AI_MODEL || DEFAULT_AI_MODEL,
+          message,
+          res
+        );
+      } catch (err) {
+        console.error("[BMS] Claude (shared key) failed, fallback to template:", err);
+        return template(res);
+      }
+    }
+  }
+
+  // 3) ไม่มี key เลย หรือเกิน quota — template
+  return template(res);
 }
