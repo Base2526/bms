@@ -108,6 +108,7 @@ export default function Page() {
       />
       <Table
         rowKey="id" loading={loading} dataSource={filtered}
+        scroll={{ x: "max-content" }}
         columns={[
           { title: "เวลา", dataIndex: "created_at", width: 190, render: (d: string) => fmtDT(d) },
           { title: "ผู้ทำ", dataIndex: "actor", width: 200,

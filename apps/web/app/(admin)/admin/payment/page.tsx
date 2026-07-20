@@ -198,6 +198,7 @@ function PaymentManagement() {
       />
 
       <Table rowKey="id" loading={loading} dataSource={payments} columns={columns}
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} payment(s)` }}
       />
 

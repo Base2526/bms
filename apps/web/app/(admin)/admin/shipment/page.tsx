@@ -174,6 +174,7 @@ function ShipmentManagement() {
       />
 
       <Table rowKey="id" loading={loading} dataSource={shipments} columns={columns}
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} shipment(s)` }}
       />
 

@@ -235,13 +235,14 @@ function OrdersManagement() {
 
       <Table
         rowKey="id" loading={loading} dataSource={orders} columns={columns}
+        scroll={{ x: "max-content" }}
         expandable={{
           expandedRowRender: (r: Order) => (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <OrderJourney orderId={r.id} />
               <div>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
-                <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" />
+                <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
               </div>
             </div>
           ),

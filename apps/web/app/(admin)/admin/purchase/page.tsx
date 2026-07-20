@@ -186,9 +186,10 @@ function PurchaseManagement() {
 
       <Table
         rowKey="id" loading={loading} dataSource={pos} columns={columns}
+        scroll={{ x: "max-content" }}
         expandable={{
           expandedRowRender: (r: PO) => (
-            <Table rowKey={(it) => `${it.sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" />
+            <Table rowKey={(it) => `${it.sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
           ),
         }}
         pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} PO(s)` }}

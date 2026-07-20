@@ -422,6 +422,7 @@ function ProductsManagement() {
         loading={loading}
         dataSource={products}
         columns={columns}
+        scroll={{ x: "max-content" }}
         expandable={{ expandedRowRender: (p: Product) => <ProductDetail product={p} onChanged={refreshAll} canAdjust={can("stock.adjust")} /> }}
         pagination={{
           current: page, pageSize, total,
@@ -689,7 +690,7 @@ function ProductDetail({ product, onChanged, canAdjust }: { product: Product; on
 
   return (
     <div>
-      <Table rowKey="size" dataSource={product.variants} columns={variantCols} pagination={false} size="small" />
+      <Table rowKey="size" dataSource={product.variants} columns={variantCols} pagination={false} size="small" scroll={{ x: "max-content" }} />
       <Space style={{ marginTop: 12, display: canAdjust ? "inline-flex" : "none" }}>
         <span>เพิ่มไซซ์ใหม่:</span>
         <Select placeholder="size" style={{ width: 90 }} value={newSize} onChange={setNewSize}
@@ -708,6 +709,7 @@ function ProductDetail({ product, onChanged, canAdjust }: { product: Product; on
         <Table
           style={{ marginTop: 8 }}
           rowKey="id" dataSource={moves} columns={moveCols} size="small"
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: "ยังไม่มีประวัติ" }}
         />

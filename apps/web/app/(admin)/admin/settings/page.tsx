@@ -104,7 +104,7 @@ export default function Page() {
         />
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
         <Card size="small" title="4 ขั้นตอน (ทำเหมือนกันทุกช่องทาง)">
           <Steps
             size="small"
@@ -128,6 +128,7 @@ export default function Page() {
             pagination={false}
             rowKey="key"
             dataSource={CHANNELS}
+            scroll={{ x: "max-content" }}
             columns={[
               { title: "ช่องทาง", dataIndex: "label", render: (_: string, r: any) => <Tag color={r.color}>{r.label}</Tag> },
               { title: "ไปเอา Token/Secret จาก", dataIndex: "needs" },
@@ -138,13 +139,13 @@ export default function Page() {
         </Card>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 16, marginBottom: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "start" }}>
         {CHANNELS.map((ch) => (
           <ChannelCard key={ch.key} ch={ch} cfg={cfgOf(ch.key)} health={healthOf(ch.key)} tenantId={tenant?.id} origin={origin} onSaved={refetch} />
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
         <Alert type="info" showIcon message="ความปลอดภัย"
           description="Token/Secret เข้ารหัส AES-256-GCM ก่อนเก็บ · ทุก Webhook ตรวจ signature ก่อนรับข้อความเสมอ" />
         <Alert type="warning" showIcon message="ข้อควรระวัง"

@@ -159,6 +159,7 @@ function UsersList(){
         dataSource={items}
         columns={columns as any}
         rowSelection={rowSelection}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: page,
           pageSize,

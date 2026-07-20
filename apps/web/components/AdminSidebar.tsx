@@ -122,12 +122,23 @@ export default function AdminSidebar() {
   });
   const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
 
-  // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage)
+  // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage) — ผสมกับจอแคบ (breakpoint="lg" ของ Sider ด้านล่าง)
+  // ต้องคำนวณทั้งสองเงื่อนไขในเอฟเฟกต์เดียวกัน ไม่งั้นเอฟเฟกต์ breakpoint ของ Sider (child)
+  // กับเอฟเฟกต์นี้ (parent) จะแย่งกันเซ็ต state ตอน mount แล้วค่าจอแคบโดนทับกลับเป็นขยาย
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
-    setCollapsed(window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1');
+    const stored = window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1';
+    const narrow = typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 991.98px)').matches;
+    setCollapsed(stored || narrow);
   }, []);
-  const onCollapse = (value: boolean) => {
+  // type = 'responsive' มาจาก breakpoint (จอแคบ) ไม่ persist ทับค่าที่ผู้ใช้ตั้งไว้ตอนจอกว้าง
+  // ตอนกลับมาจอกว้าง ให้คืนค่าตาม preference เดิมใน localStorage แทนที่จะบังคับขยายเสมอ
+  const onCollapse = (value: boolean, type?: 'clickTrigger' | 'responsive') => {
+    if (type === 'responsive') {
+      setCollapsed(value ? true : window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1');
+      return;
+    }
     setCollapsed(value);
     window.localStorage.setItem(COLLAPSE_STORAGE_KEY, value ? '1' : '0');
   };
@@ -220,6 +231,8 @@ export default function AdminSidebar() {
       collapsed={collapsed}
       collapsedWidth={64}
       width={220}
+      breakpoint="lg"
+      onCollapse={onCollapse}
       style={{
         background: 'var(--app-surface)',
         borderRight: '1px solid var(--app-border)',
