@@ -80,21 +80,31 @@ export default function AdminLoginPage(){
   };
 
   return (
-      <Card title="Admin Login" style={{width:420, margin: '0 auto', marginTop: 50 }}>
-        <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item name="identifier" label="Username or Email" rules={[{required:true}]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Form.Item name="password" label="Password" rules={[{required:true}]}>
-            <Input.Password />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={loading}>
-            Sign in
-          </Button>
-        </Form>
-        <Typography.Paragraph type="secondary" style={{marginTop:8,fontSize:12}}>
-          Admin only area — you’ll need Administrator role.
-        </Typography.Paragraph>
-      </Card>
+      <div style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: 16,
+        paddingTop: 'clamp(24px, 12vh, 140px)',
+        boxSizing: 'border-box',
+      }}>
+        <Card title="Admin Login" style={{width: '100%', maxWidth: 420}}>
+          <Form layout="vertical" onFinish={onFinish}>
+            <Form.Item name="identifier" label="Username or Email" rules={[{required:true}]}>
+              <Input autoFocus />
+            </Form.Item>
+            <Form.Item name="password" label="Password" rules={[{required:true}]}>
+              <Input.Password />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" block loading={loading}>
+              Sign in
+            </Button>
+          </Form>
+          <Typography.Paragraph type="secondary" style={{marginTop:8,fontSize:12}}>
+            Admin only area — you’ll need Administrator role.
+          </Typography.Paragraph>
+        </Card>
+      </div>
   );
 }

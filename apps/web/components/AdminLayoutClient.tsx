@@ -37,7 +37,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const pathname = usePathname();
   const hideHeader = pathname === "/admin/login";
 
-  if (hideHeader) return <main style={{ padding: 24 }}>{children}</main>;
+  if (hideHeader) return <main>{children}</main>;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
