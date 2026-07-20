@@ -15,6 +15,7 @@
 | `bms-orders` | `POST /api/dev/fake/bms-orders` | orders (backdate 30 วัน, หลายสถานะ/ช่องทาง) + items + payment + shipment | Dashboard, Reports, CRM, Payment, Shipping | customer_ref `FAKE-` |
 | `bms-conversations` | `POST /api/dev/fake/bms-conversations` | conversations + messages (บทสนทนาสำเร็จรูป) | Inbox | customer_ref `FAKE-` + tag `fake` |
 | `bms-purchase` | `POST /api/dev/fake/bms-purchase` | suppliers + PO + items (หลายสถานะ OPEN/PARTIAL/RECEIVED/CANCELLED) | Purchase | PO note `FAKE%` + supplier `FAKE %` |
+| `bms-ai-usage` | `POST /api/dev/fake/bms-ai-usage` | เพิ่มตัวนับ AI shared-key quota ของเดือนนี้ | Settings | แก้ `bms_ai_usage_monthly` โดยตรง |
 
 **ลำดับแนะนำ:** Products → Customers → Orders → Conversations → Purchase (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่)
 
