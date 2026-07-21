@@ -93,6 +93,10 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
   velocity, always tagged with uncertainty), **AI-native helpers** (`detect_language`, `classify_intent`,
   `summarize_conversation`, `recommend_products`), and **propose-only outbound**
   (`send_customer_message` → `bmsSendMessage`, LINE/Meta only). See [docs/ai/tools.md](docs/ai/tools.md).
+- **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
+  The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
+  versions for products, orders, payments, and shipments. Product/inventory writes pass the logged-in
+  admin id into `beginTenantTx()`, so new revision rows show the editor label instead of `system`.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
@@ -108,6 +112,8 @@ Shopee/Lazada signature verification against real Open Platform docs · letting 
   confirmation + RBAC permission**.
 - Every AI tool attempt is audited without raw arguments/PII; successful writes and confirmed
   proposals retain their normal domain audit entries as well.
+- High-impact BMS records use revision history for before/after snapshots; audit log remains the
+  source for who/when/action events.
 
 Full rules and enum values actually enforced in code: [docs/business/](docs/business/).
 

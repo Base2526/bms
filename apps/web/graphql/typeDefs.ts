@@ -743,6 +743,9 @@ export const typeDefs = /* GraphQL */ `
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
     bmsRolePermissions: [BmsRolePermissions!]!
     bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+    bmsRevisionHistory(kind: BmsRevisionKind!, entityId: ID!, limit: Int = 50): [BmsRevisionEntry!]!
+    bmsRevisionDetail(kind: BmsRevisionKind!, revisionId: ID!): BmsRevisionEntry
+    bmsRevisionCompare(kind: BmsRevisionKind!, fromRevisionId: ID!, toRevisionId: ID!): BmsRevisionComparison
   }
 
   # ===== BMS orders =====
@@ -1352,6 +1355,42 @@ export const typeDefs = /* GraphQL */ `
     target: String
     meta: JSON
     created_at: String!
+  }
+
+  enum BmsRevisionKind {
+    products
+    orders
+    payments
+    shipments
+  }
+
+  type BmsRevisionEntry {
+    id: ID!
+    tenant_id: ID!
+    editor_id: ID
+    editorLabel: String
+    revision_id: ID
+    kind: BmsRevisionKind!
+    kindLabel: String!
+    entityId: ID!
+    snapshot: JSON!
+    created_at: String!
+  }
+
+  type BmsRevisionDiff {
+    path: String!
+    before: JSON
+    after: JSON
+  }
+
+  type BmsRevisionComparison {
+    kind: BmsRevisionKind!
+    kindLabel: String!
+    fromRevisionId: ID!
+    toRevisionId: ID!
+    fromSnapshot: JSON!
+    toSnapshot: JSON!
+    diff: [BmsRevisionDiff!]!
   }
 
   # ===== BMS RBAC =====

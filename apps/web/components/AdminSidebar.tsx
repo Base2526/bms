@@ -30,6 +30,7 @@ import {
   MenuUnfoldOutlined,
   LogoutOutlined,
   RobotOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -206,6 +207,7 @@ export default function AdminSidebar() {
       children: [
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        link('/admin/revisions', 'Revision History', <HistoryOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
         link('/admin/payment', 'Payment', <DollarOutlined />),
         link('/admin/shipment', 'Shipping', <CarOutlined />),

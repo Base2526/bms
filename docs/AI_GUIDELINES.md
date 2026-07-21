@@ -35,6 +35,10 @@ The database is the source of truth. Business decisions are enforced by backend 
 8. **Keep an audit trail.** Every AI tool attempt (read, write, denied, failed, or proposed), every
    AI-initiated write, and every human approval must be attributable and logged using the
    established audit mechanism. Tool-attempt audit metadata must not contain raw arguments or PII.
+   Use revision history only for business records that need exact before/after snapshots; use
+   append-only audit logs for permission, approval, and execution events.
+   When an AI-assisted or admin-confirmed write updates a revision-enabled business record, the
+   backend transaction should pass the authenticated actor into `beginTenantTx(..., { editorId })`.
 
 ## Facts and response generation
 

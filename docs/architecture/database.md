@@ -100,6 +100,146 @@ policies, shop-owned receiving accounts, and flat/free-threshold delivery estima
 RLS and explicit `bms_app` grants; writes run through `beginTenantTx()`. Carrier quotes are not stored
 or implied—the current estimate is only the shop-configured flat-rate policy.
 
+## Revision checklist
+
+Use revision tables only for records where a before/after snapshot materially improves auditability,
+rollback confidence, or dispute handling. For everything else, prefer append-only history tables or
+`bms_audit_log`.
+
+### Should have revision history
+
+These entities are likely to benefit from `_revisions` tables or an equivalent snapshot history:
+
+- `bms_orders`
+- `bms_order_items`
+- `bms_payments`
+- `bms_shipments`
+- `bms_products`
+- `bms_inventory`
+- `bms_customers`
+- `bms_customer_addresses`
+- `bms_customer_identities`
+- `bms_suppliers`
+- `bms_purchase_orders`
+- `bms_purchase_order_items`
+- `bms_store_profile`
+- `bms_tenant_channels`
+- `bms_tenant_ai_config`
+
+### Should not have revision history
+
+These tables are better served by immutable rows, append-only logs, or reference-style updates:
+
+- `bms_plans`
+- `bms_role_permissions`
+- `bms_tenants`
+- `bms_product_categories`
+- `bms_ai_usage_monthly`
+- `bms_channel_health_log`
+- `bms_customer_ai_summary`
+- `bms_audit_log`
+
+### Case-by-case
+
+Decide per workflow rather than forcing a blanket rule:
+
+- `bms_conversations` — use revision only if state fields such as assignment/status/tags need
+  exact before/after snapshots; otherwise audit/event history is usually enough.
+- `bms_messages` — usually append-only; do not add revision unless message edit history becomes a
+  product requirement.
+- `bms_conversation_notes` — revision is optional if staff edits to notes must be recoverable.
+- `bms_stock_movements` — usually the movement rows themselves are the history; revision is only
+  needed if you add mutable metadata that must be snapshotted.
+
+### Rule of thumb
+
+- If the row changes money, stock, customer master data, shipping/order state, or AI-visible store
+  settings, revision is usually worth it.
+- If the row is reference data, usage data, an append-only log, or a derived summary, revision is
+  usually wasteful.
+- If reviewers only need "who did what and when", `bms_audit_log` is the right tool.
+
+### Suggested rollout priority
+
+If revision history is added gradually, this is the order I would use:
+
+| Priority | Tables | Why first |
+| --- | --- | --- |
+| 1 | `bms_orders`, `bms_payments`, `bms_shipments` | Highest dispute risk; customers and staff need exact historical state |
+| 2 | `bms_products`, `bms_inventory`, `bms_stock_movements` | Stock and pricing mistakes are expensive and hard to reconstruct |
+| 3 | `bms_customers`, `bms_customer_addresses`, `bms_customer_identities` | CRM merges and edits need a recoverable before/after trail |
+| 4 | `bms_purchase_orders`, `bms_purchase_order_items`, `bms_suppliers` | Procurement history matters, but usually after sales-critical flows |
+| 5 | `bms_store_profile`, `bms_tenant_channels`, `bms_tenant_ai_config` | Config changes affect behavior, but can often be audited before revisionized |
+
+### Quick review checklist
+
+Before adding a revision table, ask:
+
+- Can a human dispute this record later?
+- Would a rollback need the exact previous row state?
+- Is the table frequently edited instead of appended to?
+- Would an audit log alone be enough?
+- Does the record affect money, stock, or customer trust?
+
+If the answer is "yes" to the first, second, or fifth question, revision is usually justified.
+
+### Migration plan
+
+The repo carries a generic revision pattern (`create_revision_trigger()` /
+`trg_generic_revision()`). Migration `7.0__bms_revision_helpers.sql` standardizes it for BMS by
+creating tenant-scoped `<table>_revisions` tables, enabling RLS, granting `bms_app`, and recording
+`app.editor_id` / `app.revision_id` from the current transaction. `beginTenantTx()` accepts
+`{ editorId }` for attributable tenant writes. That means rollout can be incremental instead of a
+database rewrite.
+
+Recommended plan:
+
+1. Confirm the target tables for revision and freeze the initial scope.
+2. Add one numbered migration that creates or reuses the generic revision helpers if the current
+   database does not already have them.
+3. Add revision tables for the first rollout batch only:
+   - `bms_orders`
+   - `bms_payments`
+   - `bms_shipments`
+   - `bms_products`
+   - `bms_inventory`
+4. Backfill only if the business truly needs historical snapshots from before the migration date.
+   For most tables, starting from the migration timestamp is enough.
+5. Add second-batch revision tables in a later migration:
+   - `bms_customers`
+   - `bms_customer_addresses`
+   - `bms_customer_identities`
+   - `bms_purchase_orders`
+   - `bms_purchase_order_items`
+   - `bms_suppliers`
+6. Add config-facing revision tables only after the operational tables are stable:
+   - `bms_store_profile`
+   - `bms_tenant_channels`
+   - `bms_tenant_ai_config`
+7. Leave append-only logs and reference tables as-is; do not force them into revision just to be
+   consistent.
+8. Verify:
+   - the revision trigger fires only on update,
+   - the revision row stores the correct editor/revision id,
+   - RLS and grants still apply to the new tables,
+   - reads and writes to the parent tables remain backward compatible.
+
+Implemented migration shape:
+
+- `7.0__bms_revision_helpers.sql` creates/replaces the helper functions.
+- `7.1`–`7.3` are broad batch wrappers for core/purchase/config revision tables.
+- `7.4`–`7.14` are narrower per-domain wrappers for teams that prefer applying one area at a time.
+- Minimal snapshot columns: `id`, `tenant_id`, `editor_id`, `revision_id`, `snapshot`, `created_at`.
+- Revision rows store the row state before `UPDATE`; they do not backfill changes made before the
+  trigger existed.
+- The admin UI at `/admin/revisions` supports list/detail/compare for products, orders, payments,
+  and shipments through GraphQL.
+- No business logic in the migration beyond table/trigger setup.
+- One follow-up validation step per batch using the existing integration or SQL smoke checks.
+
+If a future table needs revision, prefer another small wrapper that calls `create_revision_trigger()`
+instead of duplicating trigger DDL.
+
 ## Adding a table for a new module
 
 Copy the RLS policy from `4.2` and the `bms_app` grant from `4.3` for any new `bms_*` table — see
