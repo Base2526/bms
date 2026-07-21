@@ -29,6 +29,8 @@ function pickEnv(obj: NodeJS.ProcessEnv): EnvRow[] {
     "X_",
     "GOOGLE_",
     "LINE_",
+    "ANTHROPIC_",
+    "BMS_AI_MODEL",
   ];
 
   const out: EnvRow[] = [];

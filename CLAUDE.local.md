@@ -55,6 +55,7 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   popup, span ข้อความจะยุบเหลือ 0 (overflow:hidden) → hover ไม่เห็นตัวหนังสือเลย (เจอที่เมนู Users เพราะลืมส่ง
   `collapsed` ตอนเพิ่ม badge=3 — ดู `AdminSidebar.tsx`, เทียบกับเมนู Inbox ที่ส่งถูก)
   · เลย์เอาต์รวม `components/AdminLayoutClient.tsx` (หน้าแรก `/admin` → redirect เข้า `/admin/dashboard`)
+  · โควตา AI shared key มี indicator ปักเหนือคู่มือ/โปรไฟล์เหมือนกัน (poll 60s, ไม่ใช่ badge บนเมนู) — ดู § AI Free Tier + BYOK
 - **RBAC/tenant** → `lib/bms/{permissions,tenant,platform}.ts` · gate: `requirePermission()` (per-tenant) ·
   `requireUserAdmin()`/`requirePlatformOnly()` (จัดการ user/role ใน `resolvers.ts`) ·
   platform admin = `users.is_platform_admin` · drill-down = cookie `BMS_ACT_TENANT` (signed, ผูก admin.id) override tenant ใน `app/api/graphql/route.ts`
@@ -64,7 +65,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `6.3__bms_order_create_perm.sql` (seed permission ใหม่ `order.create` ให้ Manager/Sales — ใช้กับปุ่ม "ซื้อซ้ำ" —
   **renumber แล้วจาก `6.1` เดิม** ที่เคยชนกับ `6.1__bms_inbox_assignment.sql` เพราะมาจากคนละ branch ตั้งเลขซ้ำกัน) ·
   `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง) ·
-  `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility)
+  `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility) ·
+  `6.8__bms_ai_config.sql` (`bms_plans.max_ai_messages_month` + BYOK ต่อร้าน — ดู § AI Free Tier + BYOK ด้านล่าง)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
@@ -216,6 +218,40 @@ children ของ panel ที่ยังไม่เคย active — **น�
   โดยไม่ต้องเปิดแอพ) — ต้องมี LINE user id ของ admin ผูกไว้ก่อน (ยังไม่มี field นี้ในระบบ, คนละเรื่องกับ LINE OA ของร้านที่ใช้
   รับแชทลูกค้า) เป็น feature ใหม่ที่ยังไม่ได้ตัดสินใจร่วมกับ user
 
+## AI Free Tier + BYOK (2026-07)
+
+**เสร็จแล้ว** — เดิม AI ใช้ `ANTHROPIC_API_KEY` เดียวจาก env ทั้งแพลตฟอร์ม ไม่มี quota, ไม่มีทางให้ร้านใช้ key
+ตัวเอง ตอนนี้แยกเป็น shared key (ฟรี มี quota รายเดือนตามแพ็กเกจ) + BYOK (ร้านใส่ key ตัวเอง ไม่จำกัด):
+
+- **Schema** → migration `6.8__bms_ai_config.sql`: เพิ่ม `bms_plans.max_ai_messages_month`
+  (free=400, pro=4000, business=-1 ไม่จำกัด — ตาม convention `-1` เดิมของ `bms_plans`) + ตารางใหม่
+  `bms_tenant_ai_config` (เก็บ `api_key_encrypted` เข้ารหัสแบบเดียวกับ `channel_secret` เดิม + `model`
+  override) + `bms_ai_usage_monthly` (นับครั้งต่อ `(tenant_id, year_month)` — **ไม่มี cron reset**
+  เดือนใหม่ = แถวใหม่ที่ count เริ่มจาก 0 เอง)
+- **Service** → `lib/bms/aiConfig.ts` (get/set/remove key ของร้าน, `testAiKey()`/`testTenantAiKey()`/
+  `testPlatformAiKey()` เรียก `GET /v1/models/{id}` — ไม่เสียเงิน ไม่ใช่ inference) +
+  `lib/bms/aiUsage.ts` (`getAiUsage()`, `tryConsumeAiQuota()` — atomic `UPDATE ... WHERE count < limit`
+  ใน query เดียว กัน race condition โดยไม่ต้อง lock เอง)
+- **`generateResponse()`** (`lib/bms/ai.ts`) รับ `tenantId` เพิ่ม ลำดับ: key ของร้าน (ไม่ติด quota) →
+  shared key (เช็ค quota ก่อนเรียกทุกครั้ง) → template — เกิน quota ไม่ error แค่ fallback เป็น template
+  เหมือน pattern เดิมตอนไม่มี key เลย
+- **GraphQL** → `bmsAiConfig`/`bmsAiUsage` (query) + `bmsSetAiKey`/`bmsRemoveAiKey`/`bmsTestAiKey`
+  (`graphql/bmsAiConfig.ts`) gate ด้วย `requireTenantAdmin()` เดียวกับ `bmsChannels` — **ไม่ได้เพิ่ม
+  permission ใหม่ใน `BMS_PERMISSIONS`** เหตุผลเดียวกับ Channel Health (เป็น config ของร้าน ไม่ใช่ operational
+  action) จึงไม่ต้อง seed สิทธิ์ให้ role ไหนเพิ่ม · `bmsTestPlatformAiKey` แยกต่างหาก gate ด้วย
+  `requirePlatformAdmin()` (ทดสอบ shared key ระดับแพลตฟอร์ม)
+- **UI** — การ์ด "AI (Claude)" ใน `/admin/settings` (คู่กับการ์ด channel เดิม: ใส่/ทดสอบ/ลบ key, แสดง usage
+  banner ตอนยังใช้ shared key) · Dashboard alert ตอน usage ใกล้/เกิน quota (`/admin/dashboard`, ลิงก์ไป
+  Settings) · ปุ่ม "ทดสอบ Shared AI Key" ในหน้า platform admin `/admin/env` (เพิ่ม prefix `ANTHROPIC_`/
+  `BMS_AI_MODEL` เข้า allowlist ของหน้านั้นด้วย)
+  · **Sidebar indicator** (`AdminSidebar.tsx`, poll 60s แบบเดียวกับ `bmsChannelHealthCount` แต่ห่างกว่าเพราะ
+  โควตานับเป็นเดือนไม่ใช่วินาที) — ปักเหนือคู่มือ/โปรไฟล์ คล้าย balance strip ของ Claude Console: โชว์ทันทีที่
+  เริ่มมี usage (`count > 0`, ไม่ใช่แค่ตอนใกล้/เกิน quota) เป็น pill ไอคอน `RobotOutlined` + จุดสีบอกระดับ
+  (ฟ้า=ใช้งานปกติ, เหลือง=ใกล้เกิน ≤20% ของ limit, แดง=เกินแล้ว) กด link ไป `/admin/settings` — ซ่อนถ้า
+  ร้านตั้ง key ตัวเอง (`has_key`) หรือ plan ไม่จำกัด (`unlimited`) เพราะไม่มี quota ให้เตือน
+- **ยังไม่ทำ**: ไม่มีการแจ้งเตือนเชิงรุก (เช่น LINE แจ้งร้านตอน quota ใกล้หมด) — ตอนนี้เห็นได้แค่ตอนเปิดแอพ
+  (Sidebar/Dashboard/Settings) เท่านั้น
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
@@ -255,6 +291,8 @@ children ของ panel ที่ยังไม่เคย active — **น�
 เฉพาะ proactive external notification ที่ยังไม่ทำ).
 + **Realtime Diagnostics เสร็จแล้ว** (`/admin/inbox/realtime-diagnostics`) — `Emit` ทดสอบ PubSub/WS signal,
 `Create Msg` สร้างข้อความ diagnostic ให้เห็นใน Inbox จริงโดยไม่ส่งออก platform.
++ **AI Free Tier + BYOK เสร็จแล้ว** (ดูหัวข้อ § AI Free Tier + BYOK ด้านบน — schema/service/GraphQL/UI ครบ
+เฉพาะ proactive notification ตอน quota ใกล้หมดที่ยังไม่ทำ).
 **เหลือ:** TikTok send API · carrier API จริง · AI tool-calling/OCR/forecasting (Phase 3–4) · WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items (ดู "Pending improvements" ในหัวข้อ Customer 360)

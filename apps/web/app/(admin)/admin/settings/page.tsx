@@ -2,7 +2,7 @@
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table } from "antd";
 import { useState, useEffect } from "react";
-import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
 
 const { Text, Paragraph } = Typography;
 
@@ -14,6 +14,8 @@ const Q = gql`
       channel active status status_detail
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
     }
+    bmsAiConfig { has_key api_key_masked model }
+    bmsAiUsage { count limit remaining unlimited planCode planName }
   }
 `;
 const M = gql`
@@ -26,6 +28,13 @@ const M_TEST = gql`
     bmsTestChannel(channel: $channel) { ok message }
   }
 `;
+const M_SET_AI_KEY = gql`
+  mutation ($apiKey: String, $model: String) {
+    bmsSetAiKey(apiKey: $apiKey, model: $model)
+  }
+`;
+const M_REMOVE_AI_KEY = gql`mutation { bmsRemoveAiKey }`;
+const M_TEST_AI_KEY = gql`mutation { bmsTestAiKey { ok message } }`;
 
 // เฉพาะช่องทางที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง (ดู channelHealth.ts)
 const TESTABLE_CHANNELS = new Set(["line", "facebook", "instagram"]);
@@ -143,6 +152,7 @@ export default function Page() {
         {CHANNELS.map((ch) => (
           <ChannelCard key={ch.key} ch={ch} cfg={cfgOf(ch.key)} health={healthOf(ch.key)} tenantId={tenant?.id} origin={origin} onSaved={refetch} />
         ))}
+        <AiCard aiConfig={data?.bmsAiConfig} aiUsage={data?.bmsAiUsage} onSaved={refetch} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
@@ -256,6 +266,90 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, onSaved }: any) {
           </Text>
         </div>
       )}
+    </Card>
+  );
+}
+
+function AiCard({ aiConfig, aiUsage, onSaved }: any) {
+  const [form] = Form.useForm();
+  const [setAiKey, { loading: saving }] = useMutation(M_SET_AI_KEY, {
+    onCompleted: () => { message.success("บันทึก AI Key แล้ว"); form.setFieldsValue({ apiKey: "" }); onSaved(); },
+    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+  });
+  const [removeAiKey, { loading: removing }] = useMutation(M_REMOVE_AI_KEY, {
+    onCompleted: () => { message.success("ลบ AI Key แล้ว — กลับไปใช้ Shared Key ของแพลตฟอร์ม"); onSaved(); },
+    onError: (e) => message.error(e?.message || "ลบไม่สำเร็จ"),
+  });
+  const [testAiKey, { loading: testing }] = useMutation(M_TEST_AI_KEY, {
+    onCompleted: (d) => {
+      const r = d?.bmsTestAiKey;
+      if (r?.ok) message.success(r.message); else message.error(r?.message || "ทดสอบไม่สำเร็จ");
+    },
+    onError: (e) => message.error(e?.message || "ทดสอบไม่สำเร็จ"),
+  });
+
+  const submit = async () => {
+    const v = await form.validateFields();
+    await setAiKey({ variables: { apiKey: v.apiKey || null, model: v.model || null } });
+  };
+
+  const hasKey = !!aiConfig?.has_key;
+  const usage = aiUsage;
+  const nearLimit = !hasKey && usage && !usage.unlimited && usage.limit > 0 && usage.remaining <= usage.limit * 0.2;
+  const overLimit = !hasKey && usage && !usage.unlimited && usage.remaining === 0;
+
+  return (
+    <Card
+      title={
+        <Space wrap>
+          <Tag color="cyan"><RobotOutlined /> AI (Claude)</Tag>
+          {hasKey ? <Tag color="green">ใช้ Key ของร้าน</Tag> : <Tag color="default">ใช้ Shared Key ฟรี</Tag>}
+        </Space>
+      }
+      extra={hasKey && (
+        <Space>
+          <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testAiKey()}>ทดสอบ</Button>
+          <Button size="small" danger icon={<DeleteOutlined />} loading={removing} onClick={() => removeAiKey()}>ลบ</Button>
+        </Space>
+      )}
+    >
+      <Paragraph type="secondary" style={{ marginTop: -4 }}>
+        ใช้ตอบลูกค้าอัตโนมัติ (เช่น เช็คสต็อก) ด้วย Claude — ถ้าไม่ใส่ Key ของร้าน ระบบใช้ Shared Key ของแพลตฟอร์มให้ฟรี (มีโควตารายเดือน)
+      </Paragraph>
+
+      {!hasKey && usage && (
+        <Alert
+          type={overLimit ? "error" : nearLimit ? "warning" : "info"}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={
+            <>
+              <Tag>แพ็กเกจ {usage.planName}</Tag>
+              {usage.unlimited ? "ใช้งานได้ไม่จำกัด" : `ใช้ไปแล้ว ${usage.count}/${usage.limit} ครั้งเดือนนี้`}
+            </>
+          }
+          description={
+            overLimit
+              ? "เกินโควตาแล้ว — ระบบจะตอบด้วยข้อความ template แทน AI จนกว่าจะขึ้นเดือนใหม่ หรือใส่ AI Key ของร้านเองด้านล่าง"
+              : undefined
+          }
+        />
+      )}
+
+      <Form form={form} layout="vertical" initialValues={{ model: aiConfig?.model || "" }}>
+        <Form.Item label={`API Key ${hasKey ? `(ปัจจุบัน: ${aiConfig.api_key_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="apiKey">
+          <Input.Password placeholder={hasKey ? "•••• (ไม่เปลี่ยน)" : "sk-ant-..."} autoComplete="off" />
+        </Form.Item>
+        <Form.Item label="Model (เว้นว่าง = ค่าเริ่มต้น claude-haiku-4-5)" name="model">
+          <Input placeholder="claude-haiku-4-5-20251001" />
+        </Form.Item>
+        <Button type="primary" loading={saving} onClick={submit}>บันทึก AI Key</Button>
+      </Form>
+
+      <Divider style={{ margin: "16px 0 0" }} />
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        API Key เข้ารหัส (AES-256-GCM) ก่อนเก็บเหมือนกับ token ของช่องทางอื่น
+      </Text>
     </Card>
   );
 }

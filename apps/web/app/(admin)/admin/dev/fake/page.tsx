@@ -14,10 +14,13 @@ const KINDS = [
   { label: 'BMS Orders (+pay/ship)', value: 'bms-orders' },
   { label: 'BMS Conversations', value: 'bms-conversations' },
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
+  { label: 'BMS AI Usage', value: 'bms-ai-usage' },
 ];
 
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase' | 'bms-ai-usage';
+
 export default function DevFakePage() {
-  const [kind, setKind] = useState<'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase'>('bms-products');
+  const [kind, setKind] = useState<FakeKind>('bms-products');
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<CreatedRow[]>([]);
@@ -69,7 +72,16 @@ export default function DevFakePage() {
     <Card
       title="Dev: Fake Data Generator"
       extra={<Space wrap>
-        <Select value={kind} onChange={(v) => setKind(v as any)} options={KINDS} style={{ width: 160 }} />
+        <Select
+          value={kind}
+          onChange={(v) => {
+            const next = v as FakeKind;
+            setKind(next);
+            if (next === 'bms-ai-usage') setCount(3);
+          }}
+          options={KINDS}
+          style={{ width: 180 }}
+        />
         <InputNumber min={1} max={2000} value={count} onChange={(v) => setCount(v || 1)} />
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
         <Button danger onClick={cleanup} disabled={loading}>Cleanup</Button>
@@ -88,6 +100,7 @@ export default function DevFakePage() {
         description={<>ลำดับแนะนำ: <b>Staff → Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
           <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
           <b>Conversations</b> + messages → เติม Inbox · marker: <code>FAKE-</code> / tag <code>fake</code> ·
+          <b>AI Usage</b> เพิ่มตัวนับ quota เดือนนี้จริงใน <code>bms_ai_usage_monthly</code> เพื่อทดสอบหน้า Settings ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
       />
       <Divider style={{ margin: '8px 0 16px' }} />
