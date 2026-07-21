@@ -195,6 +195,8 @@ export default function AdminSidebar() {
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed, true)] : []),
+    // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
+    link('/admin/assistant', 'ผู้ช่วย AI', <RobotOutlined />),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
     ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
     {

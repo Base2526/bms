@@ -5,6 +5,19 @@
 Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
+Since the **AI tool-calling** work (2026-07) there are now **two AI surfaces**, both driven by the same
+Claude tool-use runtime ([`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts)) over a
+shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)):
+
+- **Customer surface** — the webhook/playground pipeline below. Claude may call only customer-safe
+  tools (`customerTools()`): read product/stock/own-order-status + `create_order`/`submit_payment`/
+  `reorder`. No sensitive (A3) tool is ever exposed here.
+- **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
+  UI `/admin/assistant`). Claude gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
+  writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
+  a human confirms in the UI, which then fires the existing permission-gated mutation
+  (`bmsRefundPayment`, `bmsAdjustStock`, …). AI never executes an A3 action itself.
+
 ```
 Customer
     │
@@ -12,30 +25,30 @@ Customer
 Receive Message        ← per-tenant webhook (LINE / TikTok / Facebook / Instagram / Web / Shopee / Lazada)
     │
     ▼
-Detect Intent          ← understand()  [lib/bms/nlu.ts]  (rule-based NLU)
+AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.ts]  (PRIMARY when AI creds exist)
+    │                     Claude selects+calls tools itself (search_products / check_stock /
+    │                     get_order_status / create_order / submit_payment / reorder), grounded on
+    │                     real backend results; every business number traces to a tool result.
+    │                     usedAi:true (even on mid-loop error) → return AI reply, never fall through
+    │                     (write-safety: no double create_order).
     │
-    ▼
-Extract Entities       ← product / size / qty / multiple items per message
-    │
-    ▼
-Select Tool            ← by intent
-    │
-    ▼
-Call Backend Service   ← checkStock() / createOrder()  (RLS-scoped, atomic)
-    │
-    ▼
-Receive Data           ← real stock/price/order facts from the DB
-    │
-    ▼
-Generate Response      ← generateResponse(tenantId, message, res)  [lib/bms/ai.ts]
-    │                     • tenant has its own API key (BYOK)     → Claude, no shared-key quota
-    │                     • no own key, shared ANTHROPIC_API_KEY  → Claude, gated by bms_plans.max_ai_messages_month
-    │                     •   (checked via tryConsumeAiQuota() [lib/bms/aiUsage.ts], resets naturally
-    │                     •    each calendar month — no cron needed, see § AI free-tier quota below)
-    │                     • no key at all, or quota exceeded      → deterministic Thai-language template
+    ├─ usedAi:false (no key / quota exceeded) ──▶ deterministic rule-based fallback:
+    │        Detect Intent (understand() [nlu.ts]) → checkStock()/createOrder() → generateResponse()
+    │        → Thai-language template. This is the customer-critical deterministic path.
     ▼
 Reply Customer         ← sent back on-channel + logged to Inbox (logConversation)
 ```
+
+Credential resolution (both surfaces) is `resolveAiCredentials(tenantId)` [lib/bms/ai.ts]: BYOK key →
+shared `ANTHROPIC_API_KEY` (consuming one `tryConsumeAiQuota()` unit per incoming customer message or
+staff-assistant turn) → null. It is called once before the loop, so 1–5 Claude round-trips still count
+as one quota unit. BYOK calls do not consume the platform quota.
+
+Before each execution, `runtime.ts` independently re-checks the tool surface and staff permission
+with `requirePermission()` even though the catalog was already filtered. It also rejects unknown
+input fields and records a redacted `ai.tool_call` audit row for every success, failure, denial, and
+proposal. A2 writes additionally retain their domain audit row; a confirmed A3 action is audited by
+the existing GraphQL mutation that the human explicitly clicked.
 
 ## Intents (`nlu.ts`)
 
@@ -135,8 +148,9 @@ confirms before anything reaches production.
 
 ## Testing the pipeline
 
-- **Playground** (`/api/bms/chat`, channel=`test`) — send a simulated message and see the full
-  trace (intent/tool/reply) without logging to inbox.
+- **Playground** (`/api/bms/chat`, channel=`test`) — requires a signed admin session, derives the
+  tenant from that session/drill-down context, and returns the full trace (intent/tool/reply)
+  without logging to inbox.
 - **Realtime Diagnostics** (`/admin/inbox/realtime-diagnostics`) — Administrator/platform-admin
   only. `Emit` tests PubSub/WebSocket delivery without DB writes; `Create Msg` creates a diagnostic
   Inbox message for the current tenant without calling the AI pipeline or sending to any external

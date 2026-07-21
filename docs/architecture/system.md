@@ -68,6 +68,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
 | Inbox Realtime Diagnostics | ✅ | `/admin/inbox/realtime-diagnostics` · see [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
+| AI Tool-Calling (customer + staff assistant) | ✅ | `lib/bms/tools/{types,runtime,catalog}.ts` · `graphql/bmsAssistant.ts` · `/admin/assistant` — see [../ai/workflow.md](../ai/workflow.md) and [../ai/tools.md](../ai/tools.md) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
@@ -86,7 +87,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
 
 **Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
-AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·
+AI OCR / forecasting (beyond payment-slip verify) · WhatsApp / Email / Voice AI ·
 letting shop owners (Manager role) manage their own staff (currently Administrator/platform only) ·
 Shopee/Lazada signature verification against real Open Platform docs ·
 proactive external notification for Channel Health (e.g. LINE alert to the shop owner) — needs an

@@ -27,15 +27,20 @@ payment-slip analysis, or any AI-generated customer response.
 - AI code must never query the database or generate SQL. It may use only approved backend tools.
 - Every tenant-owned operation must be scoped by tenant and protected by RLS.
 - Sensitive mutations require both RBAC permission and explicit human confirmation.
+- A backend service in `lib/bms/*.ts` is not automatically an AI tool — it must be wrapped as one in
+  `apps/web/lib/bms/tools/catalog.ts` (arg validation, server-derived tenant, permission, audit)
+  before a model can call it. See "AI tool-calling" below.
 
 ## Repository map
 
 | Path | Responsibility |
 | --- | --- |
 | `apps/web/lib/bms/` | Shared business services and the only BMS application layer allowed to run SQL |
+| `apps/web/lib/bms/tools/` | AI tool catalog + Claude tool-calling runtime (`types.ts`/`runtime.ts`/`catalog.ts`) shared by the customer pipeline and the staff assistant |
 | `apps/web/app/api/bms/` | REST endpoints, webhooks, cron, and test routes |
-| `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI |
+| `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI (`bmsAssistant.ts` = staff AI assistant) |
 | `apps/web/app/(admin)/admin/` | Admin UI |
+| `apps/web/app/(admin)/admin/assistant/` | Staff AI assistant chat UI (proposal cards for sensitive actions) |
 | `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
@@ -61,6 +66,46 @@ Consult the relevant document before changing a domain:
 
 When documentation and code disagree, inspect migrations and the service implementation before
 changing behavior. Update the affected documentation in the same change.
+
+## AI tool-calling (two surfaces)
+
+Since 2026-07, Claude drives two separate tool-calling surfaces over the same runtime
+(`apps/web/lib/bms/tools/runtime.ts`) and catalog (`apps/web/lib/bms/tools/catalog.ts`):
+
+- **Customer** (`lib/bms/pipeline.ts`, reached from every channel webhook + the chat playground) —
+  only customer-safe tools (`customerTools()`): read product/stock/own-order-status, plus
+  `create_order`/`submit_payment`/`reorder`. No sensitive tool is ever exposed here. AI-first; falls
+  back to the old deterministic rule-based path only when the tenant has no AI credentials or has
+  exhausted its shared-key quota — never mid-loop, to avoid duplicate writes.
+- **Staff** (`graphql/bmsAssistant.ts`, UI `/admin/assistant`) — `staffTools(perms)` filtered by the
+  calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
+  before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,
+  cancel order/PO/shipment, adjust stock, merge customers,
+  confirm/reject payment) are **propose-only** — the tool returns a proposal object instead of
+  executing, and the UI's Confirm button fires the pre-existing permission-gated GraphQL mutation
+  (e.g. `bmsRefundPayment`). The model never executes a sensitive action itself.
+
+Every tool attempt is centrally audited as `ai.tool_call` (success/error/denied/proposal) without raw
+arguments or prompt content. Successful A2 writes also keep their domain audit action, and confirmed
+A3 actions are audited by the existing mutation. Shared-key quota is consumed once before a loop,
+not once per Claude round-trip.
+
+The catalog also covers store profile (`lib/bms/storeProfile.ts`, migration `6.9__bms_store_profile.sql`
+— `get_store_info`/`get_payment_info`/`get_shipping_estimate`), documents (`lib/bms/documents.ts` —
+`generate_invoice`/`generate_quotation`), heuristic forecasting (`lib/bms/forecast.ts` —
+`forecast_demand`/`predict_stockout`/`suggest_purchase_order`, every result tagged with its
+`method`/`disclaimer` per the forecasting rules in AI_GUIDELINES), AI-native helpers
+(`detect_language`/`classify_intent`/`summarize_conversation`/`recommend_products`), and propose-only
+outbound (`send_customer_message` → `bmsSendMessage`, LINE/Meta only — TikTok send and email have no
+real API yet, so they are intentionally not implemented rather than stubbed).
+
+Adding a new AI tool: wrap the existing `lib/bms/*.ts` function in `tools/catalog.ts` (validate
+model-supplied args, derive `tenantId` from `ExecCtx`, add a domain `audit()` for writes, and assign
+the surface + staff permission. If it is refund/cancel/delete/adjust-inventory/merge-like, mark it
+`sensitive: true` and return a proposal instead of executing),
+then update [docs/ai/tools.md](docs/ai/tools.md). Never let a tool description promise a capability the
+backend does not implement. See § "AI tool-calling — example usage" in
+[CLAUDE.local.md](CLAUDE.local.md) for runnable `curl`/GraphQL examples against both surfaces.
 
 ## Working method
 

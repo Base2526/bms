@@ -76,40 +76,53 @@ async function claude(apiKey: string, model: string, message: string, res: Stock
   return text;
 }
 
-export async function generateResponse(
-  tenantId: string,
-  message: string,
-  res: StockResult
-): Promise<string> {
+export type AiCredentials = {
+  apiKey: string;
+  model: string;
+  /** byok = key ของร้าน (ไม่ติด quota) · shared = key กลาง (นับ quota ไปแล้ว 1 หน่วย) */
+  source: "byok" | "shared";
+};
+
+/**
+ * เลือก credentials สำหรับเรียก Claude ตามลำดับ: BYOK → shared(+consume quota) → null
+ * เรียก "ครั้งเดียวต่อ 1 ข้อความลูกค้า" — shared key จะกิน quota 1 หน่วยตรงนี้ ไม่ใช่ต่อ tool-loop รอบ
+ * reuse ได้ทั้ง generateResponse (fallback เดิม) และ tool-calling runtime (lib/bms/tools/runtime.ts)
+ */
+export async function resolveAiCredentials(tenantId: string): Promise<AiCredentials | null> {
   // 1) ร้านตั้ง API key ของตัวเอง (BYOK) — ใช้ก่อนเสมอ ไม่ติด quota กลาง
   const own = await getTenantAiConfig(tenantId);
   if (own?.apiKey) {
-    try {
-      return await claude(own.apiKey, own.model || DEFAULT_AI_MODEL, message, res);
-    } catch (err) {
-      console.error("[BMS] Claude (tenant key) failed, fallback to template:", err);
-      return template(res);
-    }
+    return { apiKey: own.apiKey, model: own.model || DEFAULT_AI_MODEL, source: "byok" };
   }
 
   // 2) shared key ของแพลตฟอร์ม — ต้องเช็ค quota รายเดือนก่อนเรียกจริง
   if (process.env.ANTHROPIC_API_KEY) {
     const withinQuota = await tryConsumeAiQuota(tenantId);
     if (withinQuota) {
-      try {
-        return await claude(
-          process.env.ANTHROPIC_API_KEY,
-          process.env.BMS_AI_MODEL || DEFAULT_AI_MODEL,
-          message,
-          res
-        );
-      } catch (err) {
-        console.error("[BMS] Claude (shared key) failed, fallback to template:", err);
-        return template(res);
-      }
+      return {
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        model: process.env.BMS_AI_MODEL || DEFAULT_AI_MODEL,
+        source: "shared",
+      };
     }
   }
 
-  // 3) ไม่มี key เลย หรือเกิน quota — template
-  return template(res);
+  // 3) ไม่มี key เลย หรือเกิน quota
+  return null;
+}
+
+export async function generateResponse(
+  tenantId: string,
+  message: string,
+  res: StockResult
+): Promise<string> {
+  const creds = await resolveAiCredentials(tenantId);
+  if (!creds) return template(res); // ไม่มี key เลย หรือเกิน quota — deterministic template
+
+  try {
+    return await claude(creds.apiKey, creds.model, message, res);
+  } catch (err) {
+    console.error(`[BMS] Claude (${creds.source} key) failed, fallback to template:`, err);
+    return template(res);
+  }
 }

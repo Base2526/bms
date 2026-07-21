@@ -31,6 +31,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
+| Store profile / AI facts | `bms_store_profile` | `6.9` |
 
 ## Notable schema details
 
@@ -84,10 +85,20 @@ DB-level enum. Administrator role bypasses this table entirely (hardcoded super-
 
 **`bms_audit_log`** — append-only, written via `audit(ctx, action, target, meta)`
 (`lib/bms/audit.ts`); failures to write are swallowed (never blocks the mutation that triggered it).
+The AI runtime writes `ai.tool_call` for every tool success, failure, denial, or proposal. Its meta
+contains only surface/outcome/permission/sensitivity/channel—not raw args, prompts, or customer PII.
+Successful AI writes also retain their normal domain action, while confirmed sensitive proposals
+are audited by the existing GraphQL mutation.
 Realtime diagnostics write `inbox.diagnostic_event` for `Emit` and `inbox.diagnostic_message` for
 `Create Msg`. The latter also creates ordinary tenant-scoped `bms_conversations`/`bms_messages`
 rows using `customer_ref = diagnostic:{channel}:{adminId}`, `sender = diagnostic`, and
 `meta.diagnostic = true`; no separate diagnostic tables or migrations are required.
+
+**`bms_store_profile` (`6.9__bms_store_profile.sql`)** — one row per tenant (`tenant_id` PK), holding
+the store facts AI may disclose to customers: name/about/address/phone/hours, shipping and return
+policies, shop-owned receiving accounts, and flat/free-threshold delivery estimates. It has forced
+RLS and explicit `bms_app` grants; writes run through `beginTenantTx()`. Carrier quotes are not stored
+or implied—the current estimate is only the shop-configured flat-rate policy.
 
 ## Adding a table for a new module
 

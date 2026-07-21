@@ -170,6 +170,52 @@ export async function createOrder(
 
 export type ReorderResult = CreateOrderResult | { status: "SOURCE_NOT_FOUND" };
 
+export type CustomerOrderStatus = {
+  orderId: string;
+  displayOrderId: string;
+  status: string;
+  total: number;
+  date: string;
+};
+
+/** Customer-safe order lookup scoped to the identity established by the channel adapter. */
+export async function listCustomerOrderStatuses(
+  tenantId: string,
+  channel: Channel,
+  customerRef: string,
+  limit = 10
+): Promise<CustomerOrderStatus[]> {
+  const boundedLimit = Math.min(Math.max(limit, 1), 20);
+  const res = await query<{ id: string; status: string; total_amount: string; created_at: Date | string }>(
+    `SELECT id, status, total_amount, created_at
+       FROM bms_orders
+      WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
+      ORDER BY created_at DESC LIMIT $4`,
+    [tenantId, channel, customerRef, boundedLimit]
+  );
+  return res.rows.map((row) => ({
+    orderId: String(row.id),
+    displayOrderId: String(row.id).slice(0, 8),
+    status: row.status,
+    total: Number(row.total_amount),
+    date: new Date(row.created_at).toISOString(),
+  }));
+}
+
+export async function customerOwnsOrder(
+  tenantId: string,
+  channel: Channel,
+  customerRef: string,
+  orderId: string
+): Promise<boolean> {
+  const res = await query(
+    `SELECT 1 FROM bms_orders
+      WHERE tenant_id = $1 AND id::text = $2 AND channel = $3 AND customer_ref = $4 LIMIT 1`,
+    [tenantId, orderId, channel, customerRef]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 /**
  * "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการสินค้าของออร์เดอร์เก่า (channel/customer เดิม)
  * ราคาตัดตามราคาปัจจุบันของสินค้า (snapshot ใหม่) ไม่ใช่ราคาย้อนหลัง · ใช้ createOrder() เดิมทั้งหมด

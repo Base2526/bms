@@ -32,8 +32,9 @@ The database is the source of truth. Business decisions are enforced by backend 
    clarification, retry, handoff, or deterministic fallback—not a guess.
 7. **Preserve tenant isolation.** Prompts, retrieval, tool calls, logs, caches, and responses must
    never mix data between tenants.
-8. **Keep an audit trail.** AI-initiated writes and human approvals must be attributable and logged
-   using the established audit mechanism.
+8. **Keep an audit trail.** Every AI tool attempt (read, write, denied, failed, or proposed), every
+   AI-initiated write, and every human approval must be attributable and logged using the
+   established audit mechanism. Tool-attempt audit metadata must not contain raw arguments or PII.
 
 ## Facts and response generation
 
@@ -66,7 +67,8 @@ Every AI tool must have:
 - bounded output that excludes secrets and unnecessary PII;
 - explicit error results the model can explain without inventing details;
 - idempotency or a deduplication strategy for retried writes; and
-- audit metadata for state-changing operations.
+- centralized `ai.tool_call` audit metadata for every attempt, plus the domain audit action for
+  state-changing operations.
 
 Tool descriptions must not promise capabilities the backend does not implement. Adding a tool
 requires updating [docs/ai/tools.md](docs/ai/tools.md), relevant prompts/workflows, permission and

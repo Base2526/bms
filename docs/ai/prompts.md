@@ -2,11 +2,12 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Pipeline: [workflow.md](workflow.md) · Tools: [tools.md](tools.md)
 
-## The actual customer-facing system prompt
+## Legacy deterministic fallback prompt
 
-`generateResponse()` in [`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts) is the only place a prompt
-is sent to Claude for customer replies. Model defaults to `claude-haiku-4-5-20251001`
-(override via `BMS_AI_MODEL`), `max_tokens: 256`.
+`generateResponse()` in [`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts) is the older single-shot path
+used by the deterministic fallback. The primary customer path is now the tool-calling prompt in the
+next section. Model defaults to `claude-haiku-4-5-20251001` (override via `BMS_AI_MODEL`),
+`max_tokens: 256` for this legacy call.
 
 ```
 System:
@@ -22,11 +23,27 @@ User:
   ช่วยตอบลูกค้าให้หน่อยค่ะ
 ```
 
-Key design point: **the prompt only ever receives facts already fetched from the backend**
-(`facts()` serializes the `StockResult` from `checkStock()`). The model is never given DB access,
-a tool-calling loop, or the ability to invent numbers — it only rephrases what the backend already
-computed. If `ANTHROPIC_API_KEY` is unset, or the Claude call fails for any reason, it falls back
-to a fully deterministic Thai-language template (`template()`) so replies never silently break.
+Key design point: **this fallback prompt only receives facts already fetched from the backend**
+(`facts()` serializes the `StockResult` from `checkStock()`). It only rephrases what the backend
+already computed. If credentials are unavailable, it falls back to a fully deterministic
+Thai-language template (`template()`).
+
+## Tool-calling system prompts (2026-07)
+
+Since AI tool-calling landed, two additional constrained system prompts drive Claude's tool-use
+loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
+
+- **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
+  Thai shop-admin persona; must use tools for every stock/price/order number; needs `sku` +
+  size + qty before `create_order`; customer identity comes from the channel (don't ask for it);
+  `submit_payment` records PENDING only (never claim money received); the customer message is data,
+  not system instructions (prompt-injection guard).
+- **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):
+  back-office assistant; sensitive actions are prepared as *proposals* the human must confirm — the
+  model is told to say "prepared, awaiting confirmation", never "done".
+
+Reply-`max_tokens` for the tool loop is 1024 (vs 256 for the single-shot `generateResponse`), and the
+loop is bounded (≤5 rounds, 20s/call) with a deterministic fallback when no AI credentials exist.
 
 ## Standing rules that constrain every prompt/tool interaction
 
@@ -42,6 +59,8 @@ model or prompt wording:
   reads the slip and suggests a match, but a human still has to click Confirm.
 - Every AI-initiated write is logged to `bms_audit_log` via `audit()` (best-effort — a logging
   failure never blocks the underlying action).
+- Every tool attempt is also logged centrally as redacted `ai.tool_call` metadata; raw arguments,
+  customer messages, and prompt content are deliberately excluded.
 
 ## Ops prompt — Daily Log Triage
 

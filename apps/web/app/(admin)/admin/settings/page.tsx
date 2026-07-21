@@ -3,6 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table } from "antd";
 import { useState, useEffect } from "react";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
+import StoreProfileCard from "./StoreProfileCard";
 
 const { Text, Paragraph } = Typography;
 
@@ -112,6 +113,9 @@ export default function Page() {
           description="เชื่อม LINE / TikTok / Facebook / Instagram ของร้านคุณ แล้วเอา Webhook URL ด้านล่างไปตั้งใน console ของแต่ละแพลตฟอร์ม · Website Live Chat ให้ฝังวิดเจ็ตชี้มาที่ URL · Shopee/Lazada เป็น beta — เชื่อม webhook ได้แต่ยังไม่ตอบกลับอัตโนมัติ"
         />
       )}
+
+      <StoreProfileCard />
+
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
         <Card size="small" title="4 ขั้นตอน (ทำเหมือนกันทุกช่องทาง)">
