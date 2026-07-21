@@ -48,6 +48,8 @@ import { bmsShippingResolvers } from "@/graphql/bmsShipping";
 import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
 import { bmsCustomer360Resolvers } from "@/graphql/bmsCustomer360";
+import { bmsAssistantResolvers } from "@/graphql/bmsAssistant";
+import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
@@ -2646,6 +2648,7 @@ const rawResolvers = {
     ...bmsDashboardResolvers.Query,
     ...bmsChannelsResolvers.Query,
     ...bmsAiConfigResolvers.Query,
+    ...bmsStoreProfileResolvers.Query,
     ...bmsSaasResolvers.Query,
     ...bmsPurchaseResolvers.Query,
     ...bmsPaymentsResolvers.Query,
@@ -7109,7 +7112,9 @@ const rawResolvers = {
     ...bmsPurchaseResolvers.Mutation,
     ...bmsPaymentsResolvers.Mutation,
     ...bmsShippingResolvers.Mutation,
-    ...bmsInboxResolvers.Mutation
+    ...bmsInboxResolvers.Mutation,
+    ...bmsAssistantResolvers.Mutation,
+    ...bmsStoreProfileResolvers.Mutation
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,

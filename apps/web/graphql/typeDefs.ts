@@ -722,6 +722,7 @@ export const typeDefs = /* GraphQL */ `
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
+    bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
 
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
@@ -1674,6 +1675,74 @@ export const typeDefs = /* GraphQL */ `
     reason: String
   }
 
+  # ===== BMS store profile (ข้อมูลร้าน + ค่าส่ง) =====
+  type BmsPaymentAccount {
+    type: String!
+    bankName: String
+    accountName: String
+    accountNo: String
+    promptpayId: String
+    note: String
+  }
+  input BmsPaymentAccountInput {
+    type: String!
+    bankName: String
+    accountName: String
+    accountNo: String
+    promptpayId: String
+    note: String
+  }
+  type BmsStoreProfile {
+    storeName: String
+    about: String
+    address: String
+    phone: String
+    businessHours: String
+    shippingPolicy: String
+    returnPolicy: String
+    paymentAccounts: [BmsPaymentAccount!]!
+    shippingFlatRate: Float
+    shippingFreeThreshold: Float
+    shippingEstDaysMin: Int
+    shippingEstDaysMax: Int
+  }
+  input BmsStoreProfileInput {
+    storeName: String
+    about: String
+    address: String
+    phone: String
+    businessHours: String
+    shippingPolicy: String
+    returnPolicy: String
+    paymentAccounts: [BmsPaymentAccountInput!]
+    shippingFlatRate: Float
+    shippingFreeThreshold: Float
+    shippingEstDaysMin: Int
+    shippingEstDaysMax: Int
+  }
+
+  # ===== BMS AI Assistant (staff) =====
+  input BmsAssistantTurn {
+    role: String!
+    text: String!
+  }
+  type BmsAssistantProposal {
+    tool: String!
+    mutation: String!
+    args: JSON!
+    summary: String!
+  }
+  type BmsAssistantTrace {
+    tool: String!
+    ok: Boolean!
+    summary: String!
+  }
+  type BmsAssistantResult {
+    reply: String!
+    proposals: [BmsAssistantProposal!]!
+    trace: [BmsAssistantTrace!]!
+  }
+
   type Mutation {
     # login
     login(input: LoginInput!): LoginResult!
@@ -1842,6 +1911,10 @@ export const typeDefs = /* GraphQL */ `
     bmsDeleteCustomerAddress(addressId: ID!): Boolean!
     bmsDeleteCustomer(id: ID!): Boolean!
     bmsMergeCustomers(keepId: ID!, mergeId: ID!): Boolean!
+
+    # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
+    bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
+    bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!

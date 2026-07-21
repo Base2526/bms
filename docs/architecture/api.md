@@ -40,7 +40,12 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
 ## REST — debug / test endpoints
 
 - `POST /api/bms/chat` — run the AI pipeline on a message and return the full trace (intent,
-  tool, reply) without logging to inbox. Used by the Playground admin page.
+  tool, reply) without logging to inbox. Used by the Playground admin page; it requires the signed
+  admin cookie and derives tenant from the session (including signed platform-admin drill-down),
+  never from request JSON. Since AI tool-calling
+  landed, `tool` is `"ai:tool-calling"` and the response includes a `trace[]` of which tools Claude
+  actually called whenever the tenant has AI credentials; it only falls back to the old
+  intent/tool/checkStock shape when there's no AI key or the shared quota is exhausted.
 - `POST /api/bms/order` — create an order directly via curl, bypassing chat. Both endpoints
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
@@ -80,6 +85,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsShipping.ts` | shipments, tracking, labels |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
+| `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
 `getTenantId(ctx)` → call the matching `lib/bms/*.ts` function → optionally `audit(ctx, ...)`.

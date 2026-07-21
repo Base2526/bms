@@ -1,9 +1,9 @@
 // =============================================================
-// BMS NLU — Detect Intent + Extract Entities  (AI_WORKFLOW ขั้น 2-3)
+// BMS NLU — deterministic fallback parser
 // -------------------------------------------------------------
-// ช่วง mock: ใช้ rule-based ง่าย ๆ ก่อน
-// เมื่อพร้อมค่อยสลับเป็น Claude tool-use / classifier
-// โดย signature เดิม (understand) ไม่เปลี่ยน
+// ทางหลักอยู่ที่ pipeline.ts → tools/runtime.ts: Claude เลือกและเรียก approved tools
+// ไฟล์นี้จงใจคง rule-based understand() ไว้เฉพาะกรณีไม่มี AI credentials/โควตาหมด
+// และเป็น deterministic helper ของ classify_intent เท่านั้น ไม่ใช่ NLU ทางหลักแล้ว
 // =============================================================
 
 import { findSize } from "./stock";

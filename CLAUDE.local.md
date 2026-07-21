@@ -66,7 +66,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   **renumber แล้วจาก `6.1` เดิม** ที่เคยชนกับ `6.1__bms_inbox_assignment.sql` เพราะมาจากคนละ branch ตั้งเลขซ้ำกัน) ·
   `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง) ·
   `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility) ·
-  `6.8__bms_ai_config.sql` (`bms_plans.max_ai_messages_month` + BYOK ต่อร้าน — ดู § AI Free Tier + BYOK ด้านล่าง)
+  `6.8__bms_ai_config.sql` (`bms_plans.max_ai_messages_month` + BYOK ต่อร้าน — ดู § AI Free Tier + BYOK ด้านล่าง) ·
+  `6.9__bms_store_profile.sql` (ข้อมูลร้าน + ค่าส่ง 1 แถว/ร้าน — ป้อน AI ตอบลูกค้า, ดู § ทูลชุด 2 ใน AI tool-calling)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
@@ -252,6 +253,103 @@ children ของ panel ที่ยังไม่เคย active — **น�
 - **ยังไม่ทำ**: ไม่มีการแจ้งเตือนเชิงรุก (เช่น LINE แจ้งร้านตอน quota ใกล้หมด) — ตอนนี้เห็นได้แค่ตอนเปิดแอพ
   (Sidebar/Dashboard/Settings) เท่านั้น
 
+## AI tool-calling (2026-07) — ต่อ backend เข้ากับ AI จริง
+
+**เสร็จแล้ว** — เดิม AI conversation เรียกได้แค่ `checkStock()`/`createOrder()` ผ่าน NLU keyword (`nlu.ts`)
+ตอนนี้เป็น **Claude tool-use จริง** ผ่าน runtime กลาง + tool catalog ที่ห่อ service เดิมทุกตัว (ไม่ทำ logic ซ้ำ):
+
+- **โครง** → `lib/bms/tools/{types,runtime,catalog}.ts`
+  - `types.ts` — `BmsTool` + `ExecCtx` (`{tenantId, surface, actor, channel?, customerRef?, ctx?}`) + arg validator (`reqString`/`reqInt`/`enumVal`/`reqItems` — model args = untrusted)
+  - `runtime.ts` — `runToolLoop()` วน tool_use→execute→tool_result (bounded MAX_ROUNDS=5 + timeout 20s) · **catch error เอง คืน `usedAi:true` เสมอเมื่อมี creds** (กัน caller ไป rule-based สร้างออร์เดอร์ซ้ำหลัง create_order รันไปแล้ว) · gate surface + `requirePermission()` ซ้ำก่อน execute · reject field แปลก · audit ทุก attempt เป็น `ai.tool_call` โดยไม่เก็บ raw args · A3 คืน proposal ป้อนกลับว่า "รอมนุษย์ยืนยัน"
+  - `catalog.ts` — ทูล A1(read)/A2(write+audit)/A3(propose-only) + `customerTools()`/`staffTools(perms)` · ชื่อ tool เป็น snake_case
+- **credential** → `resolveAiCredentials(tenantId)` แยกออกจาก `generateResponse` ใน `ai.ts` (BYOK→shared+`tryConsumeAiQuota`→null) เรียก **ครั้งเดียวต่อข้อความ** (tool-loop หลายรอบ = 1 quota)
+- **2 surface**:
+  - **customer** = `pipeline.ts` (`runPipeline`) — AI-first ด้วย `customerTools()`; **rule-based เดิมเป็น fallback เฉพาะตอน `usedAi:false`** (ไม่มี key/เกิน quota) เท่านั้น · read/write ของ order scope ด้วย `(channel, customer_ref)` ของแชทนั้น (กันเดา orderId คนอื่น) · **ไม่มี A3/A2-staff ใน registry ฝั่งนี้เลย**
+  - **staff** = `graphql/bmsAssistant.ts` (Mutation `bmsAssistant(message, history)`) + UI `/admin/assistant` (เมนู top-level "ผู้ช่วย AI" ใน `AdminSidebar.tsx`) · gate `loadPermissions(ctx)` → `staffTools(perms)` (ทูลที่ role ไม่มีสิทธิ์ **ไม่ถูกเสนอให้ AI**) และ runtime เช็กสิทธิ์ซ้ำอีกครั้งก่อน execute · A3 → proposal, ปุ่ม Confirm ยิง **mutation เดิม** (`bmsRefundPayment`/`bmsAdjustStock`/… — map ในหน้า page.tsx) ไม่มี execution path ใหม่
+- **ไม่มี migration** (ใช้ตาราง/สิทธิ์/mutation เดิม, proposal ephemeral)
+- **RBAC ฝั่ง customer**: ไม่ใช่ per-permission — ปลอดภัยเพราะ registry เปิดเฉพาะทูลที่ลูกค้าทำเองได้ + tenant มาจาก server
+- **⚠️ ยังต้องจูน**: ตอนใช้ shared key model = haiku-4-5 มัก conservative เรื่องปิดการขาย (บางทีใส่ไซซ์ลงใน keyword ของ search_products, หรือถามย้ำก่อน create_order) — ของเดิม rule-based ปิดออร์เดอร์ deterministic ได้เลย. ทางเลือกถ้าเจอ regression: (ก) จูน `CUSTOMER_SYSTEM` prompt ใน `pipeline.ts` เพิ่ม (ข) ใช้ model แรงกว่าผ่าน BYOK (ค) กลับมาใส่ deterministic CONFIRM_ORDER fast-path ก่อน AI loop (ต้องระวัง double-create — ให้ mutually exclusive กับ AI path)
+- verify: playground `POST /api/bms/chat {channel:"test"}` ดู `tool:"ai:tool-calling"` + `trace[]` · staff ต้อง login เปิด `/admin/assistant`
+
+### ทูลชุด 2 (B1–B3, 2026-07) — store/docs/forecast/AI-native/outbound
+
+เพิ่มทูลเข้า `catalog.ts` อีกชุด (ยังห่อ service เดิม ไม่มี logic ซ้ำ):
+- **store profile (B1)** → `lib/bms/storeProfile.ts` + **migration `6.9__bms_store_profile.sql`** (1 แถว/ร้าน,
+  ตารางใหม่แรกของงาน AI นี้) · tools `get_store_info`/`get_payment_info`/`get_shipping_estimate`
+  (customer+staff, read) · GraphQL `bmsStoreProfile`/`bmsUpsertStoreProfile` (`graphql/bmsStoreProfile.ts`,
+  gate `requireTenantAdmin` — ไม่มี permission ใหม่) · UI การ์ด `StoreProfileCard.tsx` ใน `/admin/settings`
+  · `payment_accounts` = บัญชี "ของร้านเอง" ตั้งใจให้ลูกค้าเห็น (ไม่ใช่ PII บุคคลที่สาม) · `estimateShipping()`
+  = flat rate + ส่งฟรีเมื่อยอด ≥ threshold (ยังไม่ผูก carrier API จริง)
+- **documents (B2)** → `lib/bms/documents.ts` · `generate_invoice(orderId)` (จาก order จริง, ราคา snapshot),
+  `generate_quotation(items[])` (ตีราคาปัจจุบัน + ค่าส่งประเมิน) — ephemeral ไม่ persist, staff `order.view`
+- **forecast (B3)** → `lib/bms/forecast.ts` · `forecast_demand`/`predict_stockout`/`suggest_purchase_order`
+  — **heuristic (moving-average velocity) เท่านั้น** นับจาก order ที่ชำระแล้ว (PAID+) ทุกผลลัพธ์แนบ
+  `method:"heuristic"` + `disclaimer` (ตาม AI_GUIDELINES: forecast ต้องบอก uncertainty + ให้คนรีวิว), staff `report.view`
+- **AI-native (B3)** → `detect_language`/`classify_intent` (deterministic ไม่เรียก Claude ซ้ำ),
+  `summarize_conversation`/`recommend_products` (data provider ให้ผู้ช่วยสรุป/แนะนำต่อ)
+- **outbound (25, propose-only)** → `send_customer_message(conversationId, body)` = proposal → Confirm ยิง
+  `bmsSendMessage` เดิม (push จริงเฉพาะ LINE/FB/IG) · **TikTok send/email ยังไม่ทำ (ไม่มี API จริง)**
+- verify แล้ว: apply `6.9` เข้า docker postgres (db=`bms` user=`app`), seed store profile ให้ default tenant,
+  ถาม playground "ร้านเปิดกี่โมง/โอนบัญชีไหน/ค่าส่งเท่าไหร่ซื้อ 1200 ส่งฟรีไหม" → tool `get_store_info`/
+  `get_payment_info`/`get_shipping_estimate` ตอบจากข้อมูลจริง + คำนวณส่งฟรีถูก
+
+### AI tool-calling — ตัวอย่างวิธีใช้งาน
+
+**1) ฝั่งลูกค้า (admin playground, ต้อง login, ไม่ log เข้า inbox จริง):**
+
+```bash
+# login ก่อนและเก็บ signed admin cookie (เปลี่ยนค่า placeholder เป็นบัญชี dev ของคุณ)
+curl -s -c /tmp/bms-cookies.txt -X POST http://localhost:3000/api/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"admin@example.com","password":"YOUR_DEV_PASSWORD"}'
+
+# ถามสต็อก/ราคา — AI เรียก search_products/check_stock เอง ตอบจากข้อมูลจริง
+curl -s -b /tmp/bms-cookies.txt -X POST http://localhost:3000/api/bms/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"Nike XL ราคาเท่าไหร่ เหลือกี่ชิ้น","channel":"test"}'
+
+# ดู trace ว่าเรียกทูลไหนบ้าง (field "trace" มีเฉพาะตอน tool:"ai:tool-calling")
+# {"tool":"ai:tool-calling","trace":[{"tool":"search_products","ok":true,...},{"tool":"check_stock","ok":true,...}],"reply":"..."}
+
+# สั่งซื้อจริง (จองสต็อก atomic ผ่าน create_order) — ใส่ customerRef คงที่เพื่อให้ get_order_status/reorder เห็นออร์เดอร์เดิม
+curl -s -b /tmp/bms-cookies.txt -X POST http://localhost:3000/api/bms/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"สั่ง Nike Air ไซซ์ XL 1 ชิ้น ยืนยันสั่งเลย","channel":"test","customerRef":"Utest_001"}'
+
+# ถามสถานะออร์เดอร์ของตัวเอง (scope ด้วย channel+customerRef เดียวกัน กันเดา orderId คนอื่น)
+curl -s -b /tmp/bms-cookies.txt -X POST http://localhost:3000/api/bms/chat \
+  -H 'content-type: application/json' \
+  -d '{"message":"ออร์เดอร์ล่าสุดของฉันถึงไหนแล้ว","channel":"test","customerRef":"Utest_001"}'
+```
+
+ถ้าไม่มี `ANTHROPIC_API_KEY`/BYOK หรือ shared quota หมด → `tool` จะไม่ใช่ `"ai:tool-calling"` (กลับไป
+path rule-based เดิม `checkStock`/`createOrder`, ไม่มี field `trace`) — ใช้เทียบพฤติกรรม fallback ได้
+
+**2) ฝั่งแอดมิน (`/admin/assistant`, ต้อง login + มีสิทธิ์ตาม role):**
+
+พิมพ์ในช่องแชท เช่น:
+- อ่านอย่างเดียว (ไม่ต้องยืนยัน): `"ยอดขาย 7 วันล่าสุดเป็นยังไง"`, `"สินค้าอะไรใกล้หมดบ้าง"`,
+  `"ลูกค้าเบอร์ 08x... เคยซื้ออะไรบ้าง"`
+- เขียวไม่ sensitive (execute ทันที + audit): `"สร้างใบสั่งซื้อจาก supplier ก. สินค้า sku NIKE-001 ไซซ์ XL 10 ชิ้น"`
+- sensitive (ได้แค่ **คำขอ** ต้องกด "ยืนยัน" ในการ์ดที่ขึ้นมา): `"คืนเงินการชำระ #payment-id"`,
+  `"ปรับสต็อก NIKE-001 ไซซ์ XL ลบ 2 ชิ้น เพราะของเสีย"`, `"ยกเลิกออร์เดอร์ #order-id"`
+
+ทดสอบผ่าน GraphQL ตรง ๆ (ต้องมี session cookie ของแอดมินที่ login แล้ว):
+
+```graphql
+mutation {
+  bmsAssistant(message: "ยอดขายเดือนนี้เท่าไหร่") {
+    reply
+    trace { tool ok summary }
+    proposals { tool mutation args summary }
+  }
+}
+```
+
+`proposals[]` จะว่างเปล่าถ้าไม่มีการเรียกทูล sensitive · role ที่ไม่มีสิทธิ์ของทูลนั้น (เช่น Sales ไม่มี
+`payment.refund`) จะไม่เห็นทูลนั้นถูกเสนอให้ AI เลยตั้งแต่ต้น (กรองที่ `staffTools(perms)`) และถึงมี
+provider output ผิดปกติก็จะถูก runtime ปฏิเสธซ้ำก่อน execute
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
@@ -293,7 +391,11 @@ children ของ panel ที่ยังไม่เคย active — **น�
 `Create Msg` สร้างข้อความ diagnostic ให้เห็นใน Inbox จริงโดยไม่ส่งออก platform.
 + **AI Free Tier + BYOK เสร็จแล้ว** (ดูหัวข้อ § AI Free Tier + BYOK ด้านบน — schema/service/GraphQL/UI ครบ
 เฉพาะ proactive notification ตอน quota ใกล้หมดที่ยังไม่ทำ).
-**เหลือ:** TikTok send API · carrier API จริง · AI tool-calling/OCR/forecasting (Phase 3–4) · WhatsApp/Email/Voice AI ·
++ **AI tool-calling เสร็จแล้ว** (ดูหัวข้อ § AI tool-calling ด้านบน — customer surface (pipeline) +
+staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose-only ยิง mutation เดิม; ยังต้องจูน
+prompt/model เรื่อง conversion บน shared key model ตามที่บันทึกไว้).
+**เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
+WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items (ดู "Pending improvements" ในหัวข้อ Customer 360)
 · ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` (endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)

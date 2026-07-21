@@ -2,9 +2,75 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · AI pipeline: [workflow.md](workflow.md) · Prompts/guardrails: [prompts.md](prompts.md)
 
-This file defines every tool available to AI.
+The **authoritative AI registry** is the snake_case matrix below and
+[`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts). Later camelCase sections also
+document backend/service capabilities; a service listed there is not exposed to AI unless it is in
+the authoritative registry. AI MUST call only registered tools.
 
-AI MUST only call tools defined here.
+## Wiring status (2026-07 — AI tool-calling)
+
+These tools are now actually reachable by Claude via a tool-use runtime, not just documented.
+Registry + surface/RBAC filtering: [`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)
+(`customerTools()` / `staffTools(perms)`); loop: [`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts).
+Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_order`, `refund_payment`).
+
+- **Customer surface** (webhook pipeline + playground): read product/stock + `get_order_status`
+  (own orders only), `create_order`, `submit_payment`, `reorder`, plus store/shipping reads
+  (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `recommend_products`,
+  `detect_language`). Never any sensitive/A3 tool.
+- **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
+  documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
+  **propose-only** — the tool returns a proposal, a human clicks Confirm, and the UI fires the
+  existing permission-gated mutation (`bmsConfirmPayment`, `bmsRefundPayment`, `bmsCancelOrder`,
+  `bmsAdjustStock`, `bmsMergeCustomers`, `bmsSendMessage`, …). AI never executes A3 itself.
+
+Each tool wraps an existing `lib/bms/*.ts` service (no duplicated business logic), validates
+model-supplied args, and derives `tenantId` from the server. `staffTools(perms)` removes tools the
+role cannot use before schemas reach Claude; `runtime.ts` then enforces surface +
+`requirePermission()` again immediately before execution. Unknown input fields are rejected.
+Every attempt writes a redacted `ai.tool_call` entry to `bms_audit_log`; successful writes also keep
+their existing domain audit action (`order.create`, `payment.submit`, etc.). Raw tool args and prompt
+content are not copied into the centralized audit entry.
+Customer read/write of orders is scoped to the conversation's own `(channel, customer_ref)`.
+
+## Authoritative runtime registry and gates
+
+`—` means no staff RBAC permission is needed because the data is customer-safe/public or the tool
+is a local deterministic helper. “Customer” is an explicit surface allowlist, not a staff role.
+
+| Tools | Class | Customer | Staff permission | Execution |
+| --- | --- | --- | --- | --- |
+| `search_products`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
+| `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
+| `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
+| `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard` | A1 | no | `report.view` | read |
+| `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read |
+| `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
+| `list_payments` | A1 | no | `payment.view` | read |
+| `list_purchase_orders`, `get_purchase_order`, `list_suppliers` | A1 | no | `purchase.view` | read |
+| `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data |
+| `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | heuristic/read |
+| `summarize_conversation` | A1 | no | `inbox.view` | read |
+| `classify_intent` | helper | no | — | deterministic |
+| `create_order`, `reorder` | A2 | yes | `order.create` | execute + domain audit |
+| `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
+| `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
+| `update_tracking`, `set_shipment_status` | A2 | no | `shipping.update` | execute + domain audit |
+| `create_purchase_order` | A2 | no | `purchase.edit` | execute + domain audit |
+| `receive_purchase_order` | A2 | no | `purchase.receive` | execute + domain audit |
+| `upsert_customer`, `set_customer_tags` | A2 | no | `customer.edit` | execute + domain audit |
+| `assign_conversation` | A2 | no | `inbox.assign` | execute + domain audit |
+| `set_conversation_status`, `set_conversation_tags`, `add_note` | A2 | no | `inbox.manage` | execute + domain audit |
+| `verify_payment_slip` | advisory | no | `payment.confirm` | read/advisory only |
+| `confirm_payment`, `reject_payment` | A3 | no | `payment.confirm` | proposal only |
+| `refund_payment` | A3 | no | `payment.refund` | proposal only |
+| `cancel_order` | A3 | no | `order.cancel` | proposal only |
+| `return_order` | A3 | no | `order.return` | proposal only |
+| `adjust_stock` | A3 | no | `stock.adjust` | proposal only |
+| `merge_customers` | A3 | no | `customer.edit` | proposal only |
+| `cancel_purchase_order` | A3 | no | `purchase.cancel` | proposal only |
+| `cancel_shipment` | A3 | no | `shipping.update` | proposal only |
+| `send_customer_message` | A3 | no | `inbox.reply` | proposal only |
 
 ---
 
@@ -773,35 +839,46 @@ Confidence
 
 ---
 
-# Future Tools
+# Store / Documents / Forecast / AI-native (2026-07 batch 2)
 
-forecastDemand()
+ทูลชุดที่สองที่ต่อเข้า AI tool-calling แล้ว (ดู catalog สำหรับชื่อ snake_case จริง):
 
-predictStockOut()
+## Store profile (read — customer + staff)
 
-suggestPurchaseOrder()
+- `get_store_info` — ชื่อร้าน/ที่อยู่/เบอร์/เวลาเปิด-ปิด/นโยบายจัดส่ง-คืน · `lib/bms/storeProfile.ts`
+- `get_payment_info` — บัญชีรับเงินของร้าน (ธนาคาร/พร้อมเพย์) — บัญชีของร้านเอง ตั้งใจให้ลูกค้าเห็น
+- `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)
 
-generateInvoice()
+ข้อมูลมาจาก migration `6.9__bms_store_profile.sql` (1 แถวต่อร้าน) กรอกที่ `/admin/settings` (การ์ด
+"ข้อมูลร้าน") ผ่าน `bmsStoreProfile`/`bmsUpsertStoreProfile` (gate `requireTenantAdmin`, ไม่มี permission ใหม่)
 
-generateQuotation()
+## Documents (staff) — `lib/bms/documents.ts`
 
-sendLINEMessage()
+- `generate_invoice(orderId)` — ใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (ราคา snapshot)
+- `generate_quotation(items[])` — ใบเสนอราคา (ตีราคาปัจจุบัน + ค่าส่งประเมิน ยังไม่ผูกออร์เดอร์)
 
-sendTikTokMessage()
+## Forecast (staff, `report.view`) — `lib/bms/forecast.ts` · **heuristic เท่านั้น ต้องบอก uncertainty**
 
-sendEmail()
+- `forecast_demand(windowDays?, horizonDays?)` — คาดการณ์ยอดต่อ sku จากค่าเฉลี่ยยอดขายย้อนหลัง
+- `predict_stockout(windowDays?)` — ประเมินวันที่จะหมดสต็อกต่อไซซ์ จาก velocity
+- `suggest_purchase_order(windowDays?, coverageDays?)` — เสนอจำนวนสั่งซื้อให้พอขาย N วัน
 
-voiceCall()
+## AI-native (data providers — deterministic)
 
-OCRInvoice()
+- `detect_language(text)` — th/en/other (heuristic) · `classify_intent(text)` — nlu.understand()
+- `summarize_conversation(conversationId)` — ดึงข้อความล่าสุดให้ผู้ช่วยสรุป (staff, `inbox.view`)
+- `recommend_products(keyword?)` — ค้นตามคำ หรือคืนสินค้าขายดี (customer + staff)
 
-AIForecast()
+## Proactive outbound (staff, propose-only)
 
-BusinessAnalytics()
+- `send_customer_message(conversationId, body)` — ส่งข้อความหาลูกค้า **propose-only** → Confirm ยิง
+  `bmsSendMessage` เดิม · push จริงเฉพาะช่องที่รองรับ (LINE/Facebook/Instagram) — **TikTok send / email
+  ยังไม่มี API จริง จึงยังไม่ทำ** (ตาม roadmap)
 
-FraudDetection()
+# Future Tools (ยังไม่ทำ)
 
-DemandPrediction()
+sendTikTokMessage() · sendEmail() · voiceCall() · OCRInvoice() (นอกเหนือ payment-slip verify) ·
+BusinessAnalytics() · FraudDetection()
 
 ---
 

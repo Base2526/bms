@@ -74,11 +74,30 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
   into `bms_customer_identities` after the critical Inbox write/reply path. Inbox may display the
   cached profile as fallback, but staff-maintained CRM fields stay authoritative.
   See [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md).
+- **AI tool-calling (customer + staff assistant)**: Claude now calls real backend tools instead of
+  keyword-matching NLU. Customer-facing pipeline (`lib/bms/pipeline.ts`) tries AI tool-calling first
+  (falls back to the old deterministic rule-based path only when no AI credentials/quota exist).
+  Staff get a separate `/admin/assistant` page (`bmsAssistant` mutation) with the full read/write
+  tool catalog, filtered by their own RBAC and re-checked at execution time; every tool attempt is
+  recorded as redacted `ai.tool_call` audit metadata. Sensitive actions (refund, cancel, adjust stock, merge
+  customers, …) are **propose-only** — the AI prepares a request, a human clicks Confirm, and that
+  fires the same permission-gated mutation the admin UI already used. See
+  [docs/ai/workflow.md](docs/ai/workflow.md) and [docs/ai/tools.md](docs/ai/tools.md) for the full
+  design, and § AI tool-calling in [CLAUDE.local.md](CLAUDE.local.md) for gotchas/example usage.
+- **AI tool catalog — batch 2 (store / documents / forecast / AI-native / outbound)**: the catalog now
+  also covers **store profile** (migration `6.9__bms_store_profile.sql` — hours/address/policies/receiving
+  accounts/shipping config, edited at `/admin/settings`; tools `get_store_info`/`get_payment_info`/
+  `get_shipping_estimate` let AI answer the shop-info questions customers ask most), **documents**
+  (`generate_invoice`/`generate_quotation`, `lib/bms/documents.ts`), **forecasting**
+  (`forecast_demand`/`predict_stockout`/`suggest_purchase_order`, `lib/bms/forecast.ts` — heuristic
+  velocity, always tagged with uncertainty), **AI-native helpers** (`detect_language`, `classify_intent`,
+  `summarize_conversation`, `recommend_products`), and **propose-only outbound**
+  (`send_customer_message` → `bmsSendMessage`, LINE/Meta only). See [docs/ai/tools.md](docs/ai/tools.md).
 
-**Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
-AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI · Shopee/Lazada
-signature verification against real Open Platform docs · letting shop owners (Manager role)
-manage their own staff.
+**Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
+AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
+Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
+(Manager role) manage their own staff.
 
 ## AI rules (non-negotiable)
 
@@ -87,6 +106,8 @@ manage their own staff.
 - AI **never** fabricates stock/price/order numbers — facts always come from the backend.
 - Sensitive actions (delete, refund, cancel, change price, adjust inventory) require **human
   confirmation + RBAC permission**.
+- Every AI tool attempt is audited without raw arguments/PII; successful writes and confirmed
+  proposals retain their normal domain audit entries as well.
 
 Full rules and enum values actually enforced in code: [docs/business/](docs/business/).
 

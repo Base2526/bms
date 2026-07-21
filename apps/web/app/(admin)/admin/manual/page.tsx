@@ -24,6 +24,7 @@ import {
   DatabaseOutlined,
   FileSearchOutlined,
   InboxOutlined,
+  RobotOutlined,
   RocketOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
@@ -177,6 +178,21 @@ const menuCards = [
     bullets: ["ที่อยู่หลายรายการ", "ค้นหาเร็วจากชื่อ/เบอร์", "ใช้คู่กับ Customer 360"],
     href: "/admin/customers",
   },
+  {
+    key: "assistant",
+    icon: <RobotOutlined />,
+    title: "ผู้ช่วย AI",
+    desc: "ถาม/สั่งงานหลังบ้านด้วยภาษาพูด — AI ดึงข้อมูลจริงและทำงานได้ตามสิทธิ์ของบัญชีคุณ",
+    bullets: [
+      "ถามรายงาน/สต็อก/ออร์เดอร์ลูกค้า ได้คำตอบจากข้อมูลจริงทันที",
+      "ขอ ใบเสนอราคา/ใบแจ้งหนี้ · ให้ช่วย คาดการณ์ของใกล้หมด/เสนอจำนวนสั่งซื้อ (ประมาณการ ต้องรีวิวก่อนใช้จริง)",
+      "งานที่กระทบเงิน/สต็อก/ลบข้อมูล (คืนเงิน, ปรับสต็อก, ยกเลิกออร์เดอร์, ผสานลูกค้า, ส่งข้อความหาลูกค้า) AI จะเตรียม “คำขอ” ให้เท่านั้น",
+      "ต้องกดปุ่ม ยืนยัน เองเสมอ ก่อนระบบจะทำจริง — เหมือนกดปุ่มเดิมในหน้า Payment/Orders",
+      "เห็นเฉพาะทูลที่ตรงกับสิทธิ์ (role) ของบัญชีคุณเท่านั้น",
+      "ทุกครั้งที่ AI เรียกทูล ระบบบันทึก audit ไว้โดยไม่เก็บข้อความหรือข้อมูลส่วนตัวในรายการ audit กลาง",
+    ],
+    href: "/admin/assistant",
+  },
 ];
 
 const helpRows = [
@@ -199,6 +215,11 @@ const helpRows = [
   {
     title: "อยากทดสอบว่าแชทเข้า Inbox ทันทีไหม",
     answer: "เปิด Realtime Diagnostics: กด Emit เพื่อเช็กสัญญาณ realtime อย่างเดียว หรือกด Create Msg เพื่อสร้างข้อความทดสอบให้เห็นใน Inbox จริง",
+  },
+  {
+    title: "ใช้ ผู้ช่วย AI สั่งคืนเงิน/ปรับสต็อก/ยกเลิกออร์เดอร์แล้วทำไมยังไม่เกิดผล",
+    answer:
+      "ปกติแล้วครับ — งานกลุ่มนี้ AI จะเตรียม “คำขอ” เป็นการ์ดในแชทเท่านั้น ต้องกดปุ่ม ยืนยัน บนการ์ดนั้นก่อนระบบถึงจะทำจริง (เหมือนกดยืนยันในหน้า Payment/Orders ปกติ) ถ้าไม่เห็นปุ่มยืนยันหรือกดแล้วไม่ผ่าน ให้เช็กว่าบัญชีมีสิทธิ์ (permission) ของงานนั้นหรือไม่",
   },
 ];
 
@@ -300,6 +321,7 @@ export default function Page() {
               <Tag>Shipping</Tag>
               <Tag>Customers</Tag>
               <Tag>Reports</Tag>
+              <Tag>ผู้ช่วย AI</Tag>
             </Space>
           </Space>
         </Card>
@@ -552,10 +574,29 @@ export default function Page() {
                     ),
                   },
                   {
+                    title: "กรอกข้อมูลร้าน (ให้ AI ตอบลูกค้าได้)",
+                    description: (
+                      <>
+                        ในการ์ด <b>ข้อมูลร้าน</b> ที่ <Link href="/admin/settings">Settings</Link> กรอกเวลาเปิด-ปิด, ที่อยู่,
+                        บัญชีรับเงิน (ธนาคาร/พร้อมเพย์) และค่าส่ง — AI จะใช้ตอบคำถามลูกค้า เช่น “ร้านเปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่”
+                        จากข้อมูลจริง ไม่เดา
+                      </>
+                    ),
+                  },
+                  {
                     title: "ดูภาพรวมร้าน",
                     description: (
                       <>
                         เปิด <Link href="/admin/dashboard">Dashboard</Link> หรือ <Link href="/admin/reports">Reports</Link>
+                      </>
+                    ),
+                  },
+                  {
+                    title: "ถาม/สั่งงานด้วย AI",
+                    description: (
+                      <>
+                        เปิด <Link href="/admin/assistant">ผู้ช่วย AI</Link> เพื่อถามรายงาน/สต็อก/ออร์เดอร์ด้วยภาษาพูด
+                        — งานที่กระทบเงิน/สต็อกจะต้องกดยืนยันเองก่อนเสมอ
                       </>
                     ),
                   },
@@ -594,6 +635,11 @@ export default function Page() {
                 <Link href="/admin/orders">
                   <Button block icon={<ShoppingCartOutlined />}>
                     ไปที่ Orders
+                  </Button>
+                </Link>
+                <Link href="/admin/assistant">
+                  <Button block icon={<RobotOutlined />}>
+                    ไปที่ ผู้ช่วย AI
                   </Button>
                 </Link>
                 <Link href="/admin/settings">
