@@ -67,7 +67,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `6.4__bms_channel_health.sql` (สถานะเชื่อมต่อจริงต่อช่องทาง — ดู § Channel Health ด้านล่าง) ·
   `6.5__bms_product_images.sql` (gallery หลายรูปต่อสินค้า — `image_url` เดิมยังเป็น cover image เพื่อ backward compatibility) ·
   `6.8__bms_ai_config.sql` (`bms_plans.max_ai_messages_month` + BYOK ต่อร้าน — ดู § AI Free Tier + BYOK ด้านล่าง) ·
-  `6.9__bms_store_profile.sql` (ข้อมูลร้าน + ค่าส่ง 1 แถว/ร้าน — ป้อน AI ตอบลูกค้า, ดู § ทูลชุด 2 ใน AI tool-calling)
+  `6.9__bms_store_profile.sql` (ข้อมูลร้าน + ค่าส่ง 1 แถว/ร้าน — ป้อน AI ตอบลูกค้า, ดู § ทูลชุด 2 ใน AI tool-calling) ·
+  `7.0__bms_revision_helpers.sql` + `7.1`–`7.14` (revision snapshots สำหรับ records สำคัญ — helper
+  สร้าง `<table>_revisions`, trigger, RLS, grants; หน้า `/admin/revisions` ใช้ list/detail/compare)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
@@ -252,6 +254,23 @@ children ของ panel ที่ยังไม่เคย active — **น�
   ร้านตั้ง key ตัวเอง (`has_key`) หรือ plan ไม่จำกัด (`unlimited`) เพราะไม่มี quota ให้เตือน
 - **ยังไม่ทำ**: ไม่มีการแจ้งเตือนเชิงรุก (เช่น LINE แจ้งร้านตอน quota ใกล้หมด) — ตอนนี้เห็นได้แค่ตอนเปิดแอพ
   (Sidebar/Dashboard/Settings) เท่านั้น
+
+## Revision History (2026-07)
+
+**เสร็จแล้ว** — `/admin/revisions` เป็นหน้าอ่านประวัติ snapshot แบบ list/detail/compare สำหรับ
+`products`, `orders`, `payments`, `shipments`:
+
+- รัน `7.0__bms_revision_helpers.sql` ก่อนเสมอ แล้วค่อยรันไฟล์ revision ราย batch/รายตารางที่ต้องการ
+  (`7.1`–`7.14`) — helper จะสร้าง `<table>_revisions`, trigger, RLS policy, และ grant ให้ `bms_app`
+- revision เก็บ snapshot ของแถว **ก่อน UPDATE** เท่านั้น; แถวเก่าก่อนเปิด trigger จะไม่มี revision ย้อนหลัง
+- `beginTenantTx(client, tenantId, { editorId })` จะ set `bms.tenant_id`, `app.editor_id`, และ
+  `app.revision_id`; ถ้าไม่ส่ง `editorId` หน้า Revision History จะแสดง editor เป็น `system`
+- ตอนนี้ product/inventory mutations ส่ง `auth.author_id` แล้ว จึงเห็น email/name ของ admin login ในคอลัมน์
+  Editor ผ่าน GraphQL `bmsRevisionHistory`/`bmsRevisionDetail`
+- Search ในหน้า Revision History ไม่ต้อง exact id เสมอ: products ค้น `sku/name/barcode`; orders/payments/
+  shipments ค้น id/status/reference/tracking ตาม kind
+- Compare 2 version คือ compare snapshot กับ snapshot; ถ้าต้องการ compare revision ล่าสุดกับ row ปัจจุบัน
+  ต้องเพิ่ม API อีกตัวภายหลัง
 
 ## AI tool-calling (2026-07) — ต่อ backend เข้ากับ AI จริง
 

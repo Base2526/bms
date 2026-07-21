@@ -41,6 +41,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI (`bmsAssistant.ts` = staff AI assistant) |
 | `apps/web/app/(admin)/admin/` | Admin UI |
 | `apps/web/app/(admin)/admin/assistant/` | Staff AI assistant chat UI (proposal cards for sensitive actions) |
+| `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, and shipments |
 | `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
@@ -158,6 +159,9 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Every new tenant-owned `bms_*` table needs `tenant_id`, RLS policy, and the correct `bms_app`
   grants. Follow migrations `4.2__bms_rls.sql` and `4.3__bms_rls_role.sql`.
 - Use `beginTenantTx()` for tenant writes and keep multi-step stock/order/payment changes atomic.
+- When a tenant write should be attributable in revision history, pass the logged-in admin/user id to
+  `beginTenantTx(client, tenantId, { editorId })`; the revision trigger reads `app.editor_id` and
+  `app.revision_id` from the transaction.
 - Use parameterized queries. Never interpolate user input into SQL.
 - Preserve append-only audit/history semantics where applicable.
 - Document new tables, states, constraints, and migration dependencies in

@@ -83,6 +83,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, labels |
+| `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, and shipments |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
@@ -95,6 +96,20 @@ any frontend permission list. `bmsChannels.ts` is a deliberate exception: it gat
 `requireTenantAdmin(ctx)` (any admin role in the tenant) instead of a `BMS_PERMISSIONS` entry — no
 permission was ever added for channel config, so Channel Health reuses the same gate rather than
 introducing one just for itself.
+
+### Revision history GraphQL
+
+`bmsRevisions.ts` exposes the read-only revision browser used by `/admin/revisions`:
+
+- `bmsRevisionHistory(kind, entityId, limit)` lists recent snapshots. `entityId` is a search string,
+  not only an exact ID: products search `sku/name/barcode`; orders/payments/shipments search their
+  id/status/reference fields.
+- `bmsRevisionDetail(kind, revisionId)` returns one snapshot and its editor label.
+- `bmsRevisionCompare(kind, fromRevisionId, toRevisionId)` returns field-level JSON diffs between
+  two snapshots.
+
+Each query gates through the matching read permission (`product.view`, `order.view`, `payment.view`,
+or `shipping.view`) and tenant id from the authenticated admin context.
 
 ### Inbox realtime
 

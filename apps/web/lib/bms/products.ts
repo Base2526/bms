@@ -152,7 +152,11 @@ export async function listProductImages(tenantId: string, sku: string): Promise<
   }));
 }
 
-export async function upsertProduct(tenantId: string, input: UpsertProductInput): Promise<ProductRowFull> {
+export async function upsertProduct(
+  tenantId: string,
+  input: UpsertProductInput,
+  editorId?: string | number | null
+): Promise<ProductRowFull> {
   const sku = input.sku.trim();
   const name = input.name.trim();
   const price = Number(input.price);
@@ -180,7 +184,7 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId });
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products
@@ -231,26 +235,52 @@ export async function upsertProduct(tenantId: string, input: UpsertProductInput)
   }
 }
 
-export async function setProductActive(tenantId: string, sku: string, active: boolean): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_products SET active = $3, updated_at = now() WHERE tenant_id = $1 AND sku = $2`,
-    [tenantId, sku, active]
-  );
-  return (res.rowCount ?? 0) > 0;
+export async function setProductActive(
+  tenantId: string,
+  sku: string,
+  active: boolean,
+  editorId?: string | number | null
+): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId });
+    const res = await client.query(
+      `UPDATE bms_products SET active = $3, updated_at = now() WHERE tenant_id = $1 AND sku = $2`,
+      [tenantId, sku, active]
+    );
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function setReorderPoint(
-  tenantId: string, sku: string, size: string, reorderPoint: number
+  tenantId: string, sku: string, size: string, reorderPoint: number,
+  editorId?: string | number | null
 ): Promise<VariantRow> {
   const rp = Math.max(0, Math.floor(Number(reorderPoint) || 0));
-  const res = await query<VariantRow>(
-    `UPDATE bms_inventory SET reorder_point = $4, updated_at = now()
-      WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
-      RETURNING size, current_stock, reserved_stock, reorder_point`,
-    [tenantId, sku, size.trim().toUpperCase(), rp]
-  );
-  if (res.rowCount === 0) throw new Error("ไม่พบไซซ์นี้");
-  return res.rows[0];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId });
+    const res = await client.query<VariantRow>(
+      `UPDATE bms_inventory SET reorder_point = $4, updated_at = now()
+        WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
+        RETURNING size, current_stock, reserved_stock, reorder_point`,
+      [tenantId, sku, size.trim().toUpperCase(), rp]
+    );
+    if (res.rowCount === 0) throw new Error("ไม่พบไซซ์นี้");
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listLowStock(tenantId: string): Promise<
@@ -276,14 +306,14 @@ export async function listLowStock(tenantId: string): Promise<
  */
 export async function adjustStock(
   tenantId: string, sku: string, size: string, delta: number,
-  note?: string | null, actor?: string | null
+  note?: string | null, actor?: string | null, editorId?: string | number | null
 ): Promise<VariantRow> {
   if (!Number.isInteger(delta) || delta === 0) throw new Error("delta ต้องเป็นจำนวนเต็มที่ไม่ใช่ 0");
   const sizeUp = size.trim().toUpperCase();
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId });
 
     const prod = await client.query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
     if (prod.rowCount === 0) {

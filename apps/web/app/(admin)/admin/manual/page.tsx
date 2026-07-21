@@ -23,6 +23,7 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
+  HistoryOutlined,
   InboxOutlined,
   RobotOutlined,
   RocketOutlined,
@@ -171,6 +172,14 @@ const menuCards = [
     href: "/admin/orders",
   },
   {
+    key: "revisions",
+    icon: <HistoryOutlined />,
+    title: "Revision History",
+    desc: "ดู snapshot ก่อนแก้ไข, เปิด detail, และ compare 2 version สำหรับ records สำคัญ",
+    bullets: ["รองรับ Products / Orders / Payment / Shipping", "ค้นหาด้วย SKU, ID, status, reference หรือ tracking", "Editor แสดง user login สำหรับ revision ใหม่หลังระบบส่ง editor context แล้ว"],
+    href: "/admin/revisions",
+  },
+  {
     key: "crm",
     icon: <UserOutlined />,
     title: "Customers / CRM",
@@ -220,6 +229,10 @@ const helpRows = [
     title: "ใช้ ผู้ช่วย AI สั่งคืนเงิน/ปรับสต็อก/ยกเลิกออร์เดอร์แล้วทำไมยังไม่เกิดผล",
     answer:
       "ปกติแล้วครับ — งานกลุ่มนี้ AI จะเตรียม “คำขอ” เป็นการ์ดในแชทเท่านั้น ต้องกดปุ่ม ยืนยัน บนการ์ดนั้นก่อนระบบถึงจะทำจริง (เหมือนกดยืนยันในหน้า Payment/Orders ปกติ) ถ้าไม่เห็นปุ่มยืนยันหรือกดแล้วไม่ผ่าน ให้เช็กว่าบัญชีมีสิทธิ์ (permission) ของงานนั้นหรือไม่",
+  },
+  {
+    title: "อยากดูว่าใครแก้สินค้า/ออเดอร์ และเปลี่ยนอะไรบ้าง",
+    answer: "เปิด Revision History แล้วเลือกชนิดข้อมูล จากนั้นค้นหา SKU หรือ record id ได้เลย เลือก 2 แถวแล้วกด Compare เพื่อดู field ที่เปลี่ยน",
   },
 ];
 

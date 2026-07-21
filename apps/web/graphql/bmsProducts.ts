@@ -21,6 +21,7 @@ import { listMovements } from "@/lib/bms/movements";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { requireAuth } from "@/lib/auth";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -79,8 +80,9 @@ export const bmsProductsResolvers = {
   Mutation: {
     async bmsUpsertProduct(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
       try {
-        const p = await upsertProduct(getTenantId(ctx), args.input);
+        const p = await upsertProduct(getTenantId(ctx), args.input, auth.author_id);
         await audit(ctx, "product.upsert", args.input?.sku, { name: args.input?.name });
         return p;
       } catch (err) {
@@ -93,7 +95,8 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "product.delete");
-      const ok = await setProductActive(getTenantId(ctx), args.sku, args.active);
+      const auth = requireAuth(ctx);
+      const ok = await setProductActive(getTenantId(ctx), args.sku, args.active, auth.author_id);
       if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
       return ok;
     },
@@ -129,6 +132,7 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "stock.adjust");
+      const auth = requireAuth(ctx);
       try {
         const row = await adjustStock(
           getTenantId(ctx),
@@ -136,7 +140,8 @@ export const bmsProductsResolvers = {
           args.size,
           args.delta,
           args.note ?? null,
-          `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`
+          `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
+          auth.author_id
         );
         await audit(ctx, "stock.adjust", args.sku, { size: args.size, delta: args.delta });
         return shapeVariant(row);
@@ -150,8 +155,9 @@ export const bmsProductsResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "stock.adjust");
+      const auth = requireAuth(ctx);
       try {
-        const row = await setReorderPoint(getTenantId(ctx), args.sku, args.size, args.reorderPoint);
+        const row = await setReorderPoint(getTenantId(ctx), args.sku, args.size, args.reorderPoint, auth.author_id);
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);
