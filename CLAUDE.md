@@ -77,7 +77,9 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   page available in a new tab. The composer stages one image/file attachment with the text draft;
   the product picker can stage product text alone or product text plus its cover image. The internal
   Products link opens in a new tab for staff, while the public product link is included in the
-  editable customer draft.
+  editable customer draft. Saved messages render as four compact types: sender-colored text bubbles,
+  light image cards, file cards, and public-product cards with cover/price/stock/`ดูสินค้า`; the
+  cross-channel `body + one attachment` contract remains unchanged.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.

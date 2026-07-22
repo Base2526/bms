@@ -156,7 +156,9 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Inbox replies currently support a text body plus one attachment. Keep image/file/product sharing
   in the composer draft so staff can review before sending, and do not send `/admin/*` links to
   customers. Product links sent to customers must use the active-only public route
-  `/shop/[tenantSlug]/products/[sku]`.
+  `/shop/[tenantSlug]/products/[sku]`. The staff conversation may present saved text/image/file/
+  public-product messages as different cards, but this presentation must not fork the underlying
+  cross-channel `body + one attachment` payload contract.
 - Customer 360 Quick Actions must reuse `createOrder()` for staff-created orders so price snapshots,
   CRM identity resolution, stock reservation, and rollback behavior stay identical to customer/AI
   orders. `bmsGenerateInvoice` is read-only and ephemeral; it must continue to use order-item price

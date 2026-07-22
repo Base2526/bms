@@ -64,6 +64,20 @@ is never inserted into a customer message. Customer links use
 `/shop/[tenantSlug]/products/[sku]`, which returns only active products from active shops and exposes
 sale-safe fields. See [public-products.md](public-products.md).
 
+## Message presentation
+
+The Inbox keeps the cross-channel payload unchanged (`body` plus at most one attachment), but renders
+each saved message according to its content:
+
+- plain text uses the compact sender-colored bubble;
+- images use a light preview card with caption, zoom, and download actions;
+- non-image files use a compact type/name/download card;
+- a body containing the customer-safe public-product URL uses a product card with cover, name, SKU,
+  price, stock summary, and **ดูสินค้า** instead of exposing the raw URL in the staff conversation.
+
+This is a presentation-only enhancement. Customers still receive channel-compatible text/link and
+the optional single cover attachment, so LINE/Meta/Web/TikTok behavior does not diverge.
+
 `BmsOrder.hasShippingAddress` is also exposed on the Orders admin list. LINE/Facebook/Instagram/
 Web/TikTok Chat orders cannot move from `PACKING` to `SHIPPED` until the linked CRM customer has an
 address with `address_type = 'shipping'`; both direct order shipping and shipment creation enforce

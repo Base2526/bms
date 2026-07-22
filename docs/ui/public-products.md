@@ -40,6 +40,11 @@ Sending every gallery image automatically is intentionally avoided. Channel medi
 multiple sends make the conversation noisy, and the current cross-channel message contract supports
 one attachment. The customer can inspect all images on the public page.
 
+In the staff Inbox, a saved message containing this public URL is rendered as a compact product card.
+The URL remains in the persisted body and actual channel payload, but the staff UI replaces the raw
+URL with a **ดูสินค้า** action and shows the cover, name, SKU, price, and stock summary. This keeps old
+messages compatible and does not add product-specific fields to channel adapters.
+
 ## Stable URL warning
 
 `bms_tenants.slug` is now a public routing handle. The Settings UI keeps it read-only. The mutation

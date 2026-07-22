@@ -15,11 +15,13 @@ import {
   TruckOutlined, ThunderboltOutlined, TagsOutlined, SearchOutlined,
   LeftOutlined, RightOutlined, DownloadOutlined,
   EyeOutlined, EyeInvisibleOutlined, UpOutlined, DownOutlined,
+  FileOutlined, FilePdfOutlined,
 } from "@ant-design/icons";
 
 const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import Customer360Panel from "./Customer360Panel";
+import messageStyles from "./message.module.css";
 
 // ---- Types --------------------------------------------------
 type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
@@ -38,6 +40,7 @@ type Msg = {
 };
 type Note = { id: string; author: string | null; body: string; createdAt: string };
 type ProductPickerItem = { sku: string; name: string; active: boolean; price: number; imageUrl?: string | null; variants?: { size: string; available: number }[] };
+type ProductShare = { name: string; sku: string; price: string | null; stock: string | null; url: string; caption: string | null };
 type SystemEvent = {
   id: string; kind: "assign" | "helper_add" | "helper_remove" | "status";
   at: string; actorName: string; targetName: string | null; statusValue: string | null; auto: boolean;
@@ -212,6 +215,40 @@ function applyGenderParticle(text: string, gender?: string | null): string {
     .replace(/นะคะ/g, "นะครับ")
     .replace(/ค่ะ/g, "ครับ")
     .replace(/คะ/g, "ครับ");
+}
+
+function parseProductShare(body: string): ProductShare | null {
+  const lines = String(body || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const urlIndex = lines.findIndex((line) => /https?:\/\/[^\s]+\/shop\/[^/\s]+\/products\/[^\s]+/i.test(line));
+  if (urlIndex < 0) return null;
+
+  const url = lines[urlIndex].match(/https?:\/\/[^\s]+\/shop\/[^/\s]+\/products\/[^\s]+/i)?.[0];
+  if (!url) return null;
+  const detailIndex = [...lines.keys()].reverse().find((index) => index < urlIndex && /\([^()]+\)/.test(lines[index]));
+  if (detailIndex == null) return null;
+
+  const parts = lines[detailIndex].split(/\s+·\s+/);
+  const identity = parts[0].match(/^(.+)\s+\(([^()]+)\)$/);
+  if (!identity) return null;
+  const rawStock = parts.slice(2).join(" · ") || null;
+  const stock = rawStock
+    ? rawStock.replace(/คงเหลือ\s*(\d+)/, "เหลือ $1 ชิ้น").replace(/ชิ้น\s*ชิ้น/g, "ชิ้น")
+    : null;
+
+  return {
+    name: identity[1].trim(),
+    sku: identity[2].trim(),
+    price: parts[1]?.trim() || null,
+    stock,
+    url,
+    caption: lines.slice(0, detailIndex).join("\n") || null,
+  };
+}
+
+function fileKind(attachment: Attachment) {
+  const extension = attachment.name?.split(".").pop()?.toUpperCase();
+  if (attachment.mimeType?.toLowerCase().includes("pdf") || extension === "PDF") return { label: "PDF", pdf: true };
+  return { label: extension || attachment.mimeType?.split("/").pop()?.toUpperCase() || "FILE", pdf: false };
 }
 
 function suggestedReply(conv: any, gender?: string | null) {
@@ -1142,7 +1179,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const insertProductIntoChat = (product: ProductPickerItem, includeImage: boolean) => {
     const firstAvailable = (product.variants || []).find((variant) => variant.available > 0) || product.variants?.[0];
     const stockText = firstAvailable
-      ? `ไซซ์ ${firstAvailable.size} คงเหลือ ${firstAvailable.available}`
+      ? `ไซซ์ ${firstAvailable.size} · เหลือ ${firstAvailable.available} ชิ้น`
       : "เช็กไซซ์และสต็อกได้";
     const priceText = Number.isFinite(Number(product.price))
       ? `${Number(product.price).toLocaleString("th-TH")} บาท`
@@ -1167,40 +1204,76 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const renderMsg = (m: Msg) => {
     const isIn = m.direction === "IN";
     const isStaff = m.sender?.startsWith("staff");
-    // ธีมมืด: customer = พื้นเทาโปร่ง (ตัวอักษรตามธีม) · staff = น้ำเงิน · AI = เขียว (ตัวอักษรขาว)
-    const bubble = isIn
-      ? { background: "rgba(148,163,184,0.20)", color: "var(--app-text, inherit)" }
-      : isStaff
-        ? { background: "#1677ff", color: "#fff" }
-        : { background: "#15803d", color: "#fff" };
-    return (
-      <div key={`m-${m.id}`} style={{ alignSelf: isIn ? "flex-start" : "flex-end", maxWidth: isMobile ? "86%" : "75%", display: "flex", flexDirection: "column", alignItems: isIn ? "flex-start" : "flex-end" }}>
-        <div style={{
-          ...bubble,
-          padding: "6px 10px", borderRadius: 10,
-          whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5,
-        }}>
-          {m.body && <div>{m.body}</div>}
-          {m.attachment && (m.attachment.isImage ? (
-            <button
-              type="button"
-              onClick={() => {
-                const idx = chatImages.findIndex((img) => img.id === m.id);
-                setImagePreviewIndex(idx >= 0 ? idx : 0);
-              }}
-              style={{ border: 0, background: "transparent", padding: 0, marginTop: m.body ? 6 : 0, cursor: "zoom-in" }}
-            >
-              <img src={m.attachment.url} alt={m.attachment.name || "image"}
-                style={{ maxWidth: isMobile ? "min(220px, 68vw)" : 220, maxHeight: isMobile ? 180 : 220, borderRadius: 8, display: "block" }} />
+    const product = parseProductShare(m.body);
+    const rowClass = `${messageStyles.messageRow} ${isIn ? messageStyles.incomingRow : messageStyles.outgoingRow}`;
+    const cardClass = `${messageStyles.card} ${isIn ? messageStyles.incomingCard : messageStyles.outgoingCard}`;
+    const openImage = () => {
+      const idx = chatImages.findIndex((image) => image.id === m.id);
+      setImagePreviewIndex(idx >= 0 ? idx : 0);
+    };
+
+    let content: React.ReactNode;
+    if (product) {
+      content = (
+        <div className={`${cardClass} ${messageStyles.productCard}`} data-message-kind="product">
+          {m.attachment?.isImage ? (
+            <button type="button" className={messageStyles.productImageButton} onClick={openImage} aria-label={`ดูรูป ${product.name}`}>
+              <img src={m.attachment.url} alt={m.attachment.name || product.name} />
             </button>
           ) : (
-            <a href={m.attachment.url} target="_blank" rel="noreferrer"
-              style={{ color: "inherit", textDecoration: "underline", marginTop: m.body ? 6 : 0, display: "inline-block" }}>
-              📎 {m.attachment.name || "ไฟล์แนบ"}
-            </a>
-          ))}
+            <div className={messageStyles.productPlaceholder} aria-hidden="true"><ShoppingCartOutlined /></div>
+          )}
+          <div className={messageStyles.productInfo}>
+            <div className={messageStyles.productType}><ShoppingCartOutlined /> สินค้า</div>
+            <div className={messageStyles.productName}>{product.name}</div>
+            <div className={messageStyles.productSku}>SKU: {product.sku}</div>
+            {product.price && <div className={messageStyles.productPrice}>{product.price}</div>}
+            {product.stock && <div className={messageStyles.stockPill}>{product.stock}</div>}
+            <a className={messageStyles.productLink} href={product.url} target="_blank" rel="noreferrer">ดูสินค้า <RightOutlined /></a>
+          </div>
+          {product.caption && <div className={messageStyles.productCaption}>{product.caption}</div>}
         </div>
-        <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>
+      );
+    } else if (m.attachment?.isImage) {
+      content = (
+        <div className={`${cardClass} ${messageStyles.mediaCard}`} data-message-kind="image">
+          <button type="button" className={messageStyles.imageButton} onClick={openImage} aria-label={`ดูรูป ${m.attachment.name || "รูปภาพ"}`}>
+            <img src={m.attachment.url} alt={m.attachment.name || "image"} />
+          </button>
+          <div className={messageStyles.mediaFooter}>
+            <div className={messageStyles.mediaCaption}>{m.body || m.attachment.name || "รูปภาพ"}</div>
+            <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label="ดาวน์โหลดรูป">
+              <DownloadOutlined />
+            </a>
+          </div>
+        </div>
+      );
+    } else if (m.attachment) {
+      const kind = fileKind(m.attachment);
+      content = (
+        <div className={`${cardClass} ${messageStyles.fileCard}`} data-message-kind="file">
+          <div className={`${messageStyles.fileIcon} ${kind.pdf ? messageStyles.pdfIcon : ""}`} aria-hidden="true">
+            {kind.pdf ? <FilePdfOutlined /> : <FileOutlined />}
+          </div>
+          <div className={messageStyles.fileInfo}>
+            <div className={messageStyles.fileName}>{m.attachment.name || "ไฟล์แนบ"}</div>
+            <div className={messageStyles.fileMeta}>{kind.label}</div>
+            {m.body && <div className={messageStyles.fileCaption}>{m.body}</div>}
+          </div>
+          <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label={`ดาวน์โหลด ${m.attachment.name || "ไฟล์แนบ"}`}>
+            <DownloadOutlined />
+          </a>
+        </div>
+      );
+    } else {
+      const textClass = isIn ? messageStyles.incomingText : isStaff ? messageStyles.staffText : messageStyles.aiText;
+      content = <div className={`${messageStyles.textBubble} ${textClass}`} data-message-kind="text">{m.body}</div>;
+    }
+
+    return (
+      <div key={`m-${m.id}`} className={rowClass} style={{ maxWidth: isMobile ? "94%" : "78%" }}>
+        {content}
+        <Typography.Text type="secondary" className={messageStyles.meta}>
           {m.sender} · {timeLabel(m.createdAt)}{statusNode(m)}
         </Typography.Text>
       </div>
