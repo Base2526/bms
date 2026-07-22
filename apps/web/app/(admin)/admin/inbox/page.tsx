@@ -14,7 +14,7 @@ import {
   FireOutlined, ClockCircleOutlined, ShoppingCartOutlined, CreditCardOutlined,
   TruckOutlined, ThunderboltOutlined, TagsOutlined,
   LeftOutlined, RightOutlined, DownloadOutlined,
-  EyeOutlined, EyeInvisibleOutlined,
+  EyeOutlined, EyeInvisibleOutlined, UpOutlined, DownOutlined,
 } from "@ant-design/icons";
 
 const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
@@ -630,6 +630,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<string[]>(conv.tags || []);
   const [headerMode, setHeaderMode] = useState<"chat" | "details">("chat");
+  const [showHelperTags, setShowHelperTags] = useState(false);
   const [showAiSuggestion, setShowAiSuggestion] = useState(true);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const [newMessageCount, setNewMessageCount] = useState(0);
@@ -802,7 +803,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             <Typography.Text strong ellipsis style={{ fontSize: isMobile ? 15 : 16, minWidth: 0, flex: 1 }}>
               {conv.customerName || conv.customerRef || "ลูกค้า"}
             </Typography.Text>
-            <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0 }}>{conv.status}</Tag>
+            {isMobile && (
+              <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0 }}>{conv.status}</Tag>
+            )}
           </div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>{conv.customerRef || conv.id}</Typography.Text>
           {sourceLabel(conv) && (
@@ -832,14 +835,18 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             {conv.customerId ? "ผูก CRM แล้ว" : "ยังไม่ผูก CRM"}
           </Tag>
         )}
-        {headerMode === "details" && (tags || []).length > 0 && (
-          <Tag color="gold" icon={<TagsOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
-            {tags.length} แท็ก
+        {headerMode === "details" && (
+          <Tag
+            color="gold" icon={<TagsOutlined />}
+            style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999, cursor: "pointer" }}
+            onClick={() => setShowHelperTags((v) => !v)}
+          >
+            {tags.length > 0 ? `${tags.length} แท็ก · ` : ""}ผู้ช่วยตอบ {helpers.length || "ยังไม่มี"} {showHelperTags ? <UpOutlined /> : <DownOutlined />}
           </Tag>
         )}
       </div>
 
-      {headerMode === "details" && (
+      {headerMode === "details" && showHelperTags && (
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Space size={6} wrap>
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>ผู้ช่วยตอบ:</Typography.Text>

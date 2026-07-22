@@ -151,6 +151,14 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Product media is now a gallery, not just a single image. Preserve backward compatibility by
   keeping `bms_products.image_url` as the cover image while the full ordered gallery lives in
   `bms_product_images` and GraphQL `BmsProduct.images`.
+- Customer 360 Quick Actions must reuse `createOrder()` for staff-created orders so price snapshots,
+  CRM identity resolution, stock reservation, and rollback behavior stay identical to customer/AI
+  orders. `bmsGenerateInvoice` is read-only and ephemeral; it must continue to use order-item price
+  snapshots and must not create a parallel invoice source of truth.
+- Shipping-address eligibility is a backend invariant, not only a disabled UI button. Both
+  `shipOrder()` and `createShipment()` must reject `PACKING` orders without a CRM shipping address
+  for LINE/Facebook/Instagram/Web/TikTok Chat. Only Lazada/Shopee are exempt because fulfillment
+  addresses remain in Seller Center; TikTok in this codebase is chat commerce, not TikTok Shop.
 - Profile editing should reuse the existing `bmsMe`, `updateMe`, and `uploadAvatar` flows rather
   than introducing parallel account-profile endpoints.
 - Thai polite particles in staff-facing text: an admin's own particle (ครับ vs ค่ะ) comes from

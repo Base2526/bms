@@ -15,7 +15,10 @@ import {
   returnOrder,
   getOrderJourney,
   reorderFromOrder,
+  createOrder,
 } from "@/lib/bms/orders";
+import { MARKETPLACE_CHANNELS } from "@/lib/bms/shipping";
+import { generateInvoice } from "@/lib/bms/documents";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
@@ -24,6 +27,8 @@ const ORDER_STATUSES = [
   "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED",
 ] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+const VALID_ORDER_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
 
 export const bmsOrdersResolvers = {
   Query: {
@@ -41,7 +46,7 @@ export const bmsOrdersResolvers = {
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
 
       const res = await query(
-        `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
            FROM bms_orders
           WHERE tenant_id = $4
             AND ($1::text IS NULL OR status = $1)
@@ -61,7 +66,7 @@ export const bmsOrdersResolvers = {
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
       const res = await query(
-        `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
            FROM bms_orders WHERE tenant_id = $2 AND id = $1`,
         [args.id, getTenantId(ctx)]
       );
@@ -71,6 +76,11 @@ export const bmsOrdersResolvers = {
     async bmsOrderJourney(_p: unknown, args: { orderId: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
       return getOrderJourney(getTenantId(ctx), args.orderId);
+    },
+
+    async bmsGenerateInvoice(_p: unknown, args: { orderId: string }, ctx: any) {
+      await requirePermission(ctx, "order.view");
+      return generateInvoice(getTenantId(ctx), args.orderId);
     },
   },
 
@@ -113,7 +123,7 @@ export const bmsOrdersResolvers = {
     },
     async bmsReorderFromOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.create");
-      const r = await reorderFromOrder(getTenantId(ctx), args.id);
+      const r = await reorderFromOrder(getTenantId(ctx), args.id, ctx?.admin?.id ?? null);
       if (r.status === "CREATED") {
         await audit(ctx, "order.reorder", r.orderId, { sourceOrderId: args.id });
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์ใหม่แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
@@ -125,6 +135,33 @@ export const bmsOrdersResolvers = {
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
       };
       return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ซ้ำไม่สำเร็จ" };
+    },
+    async bmsCreateOrder(
+      _p: unknown,
+      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[] },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "order.create");
+      const channel = (VALID_ORDER_CHANNELS as readonly string[]).includes(args.channel ?? "")
+        ? (args.channel as (typeof VALID_ORDER_CHANNELS)[number])
+        : "web";
+      const r = await createOrder({
+        tenantId: getTenantId(ctx),
+        channel,
+        customerRef: args.customerRef ?? null,
+        items: args.items ?? [],
+        editorId: ctx?.admin?.id ?? null,
+      });
+      if (r.status === "CREATED") {
+        await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total });
+        return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
+      }
+      const messages: Record<string, string> = {
+        EMPTY: "ไม่มีรายการสินค้า",
+        NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
+        INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
+      };
+      return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ไม่สำเร็จ" };
     },
   },
 
@@ -138,6 +175,17 @@ export const bmsOrdersResolvers = {
         [parent.id]
       );
       return res.rows;
+    },
+    // มาร์เก็ตเพลส (lazada/shopee/tiktok) = ที่อยู่อยู่ฝั่งแพลตฟอร์ม ไม่ต้องเช็ก — ช่องทางอื่นต้องมีที่อยู่จัดส่งก่อนถึงจัดส่งได้
+    async hasShippingAddress(parent: { channel: string; customer_id: string | null }, _args: unknown, ctx: any) {
+      if (MARKETPLACE_CHANNELS.has(parent.channel)) return true;
+      if (!parent.customer_id) return false;
+      const res = await query(
+        `SELECT 1 FROM bms_customer_addresses
+          WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping' LIMIT 1`,
+        [getTenantId(ctx), parent.customer_id]
+      );
+      return (res.rowCount ?? 0) > 0;
     },
     // normalize ให้ตรง schema (String! สำหรับ timestamps, Float สำหรับ numeric)
     total_amount: (p: any) => Number(p.total_amount),

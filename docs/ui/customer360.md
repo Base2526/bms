@@ -1,9 +1,43 @@
-# Customer 360 (Inbox "ลูกค้า" tab + CRM merge/reorder)
+# Customer 360 (Inbox right panel + customer tab + CRM merge/reorder)
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Business rules: [../business/crm.md](../business/crm.md) · [../business/order.md](../business/order.md)
 
 Goal: when a staff member opens a chat, they should immediately see who this customer is and what
 they've bought — no tab-switching to a separate CRM page.
+
+## Right-hand Customer 360 panel (`/admin/inbox`)
+
+On desktop, `Customer360Panel.tsx` is the third Inbox column. It loads
+`bmsCustomer360(customerId)` with `customer.view` and shows the linked CRM profile, channel
+identities, addresses, customer statistics, current cart (the latest unpaid `PENDING` order),
+recent cross-channel orders, purchased products, and internal notes. Summary, cart, recent orders,
+and Quick Actions are expanded by default. The whole panel can be collapsed and remembers that
+preference in `localStorage`.
+
+The expensive sections stay lazy:
+
+- `bmsCustomerTimeline(customerId)` merges conversation, order, shipment, refund, and note events
+  only when Timeline is opened.
+- `bmsCustomerInsights(customerId)` generates a summary from a verified facts bundle and caches it
+  by facts hash; it must not invent customer facts.
+
+Quick Actions reuse existing services and permissions:
+
+- **สร้างออเดอร์** requires `order.create`, loads active products/available variants, and calls
+  `bmsCreateOrder`. The service resolves the active conversation identity, snapshots current prices,
+  reserves stock atomically, and creates the order directly as `PENDING`. A successful create
+  refetches Customer 360.
+- **ออกใบแจ้งหนี้** requires `order.view` and calls `bmsGenerateInvoice` for a selected recent order.
+  It uses the stored order-item prices and the current store profile for preview/printing. The
+  document is ephemeral and is not an invoice record or payment confirmation.
+- Stock, refundable payments, and the full customer record continue to link to their authoritative
+  admin pages. Staff assignment remains in the conversation header.
+
+`BmsOrder.hasShippingAddress` is also exposed on the Orders admin list. LINE/Facebook/Instagram/
+Web/TikTok Chat orders cannot move from `PACKING` to `SHIPPED` until the linked CRM customer has an
+address with `address_type = 'shipping'`; both direct order shipping and shipment creation enforce
+this in backend services. Lazada/Shopee are exempt because their fulfillment address is held in
+Seller Center. The disabled Orders button and Customers link are guidance, not the security boundary.
 
 ## The "ลูกค้า" tab (`/admin/inbox`)
 
@@ -72,11 +106,12 @@ table on `/admin/customers`. It calls `reorderFromOrder(tenantId, orderId)`
 channel/customer_ref/items and re-runs the normal `createOrder()` path — so pricing and stock
 availability reflect **today**, not the historical order. See
 [../business/order.md](../business/order.md) for the full lifecycle detail. Permission:
-`order.create` (new — seeded to Manager/Sales via migration `6.1`).
+`order.create` (seeded to Manager/Sales via migration `6.3__bms_order_create_perm.sql`).
 
 ## What's still missing
 
 - No automatic cross-channel dedup (merge is manual-only today).
+- No marketplace deep links from recent orders, payment-link generation, or support-ticket system.
 - Fake-data seeders don't create `bms_customer_identities` rows, so testing the merge flow with
   seeded data alone won't show anything to merge — seed real conversations too, or create
   identities by hand.

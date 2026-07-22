@@ -666,6 +666,7 @@ export const typeDefs = /* GraphQL */ `
     bmsOrders(search: String, status: BmsOrderStatus, limit: Int = 50, offset: Int = 0): [BmsOrder!]!
     bmsOrder(id: ID!): BmsOrder
     bmsOrderJourney(orderId: ID!): BmsOrderJourney
+    bmsGenerateInvoice(orderId: ID!): BmsBusinessDoc   # ใบแจ้งหนี้จากออร์เดอร์จริง (คำนวณสด ไม่ persist)
 
     # ===== BMS products & inventory (admin) =====
     bmsProducts(search: String, category: String, limit: Int, offset: Int): BmsProductConnection!
@@ -775,6 +776,7 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     updated_at: String!
     items: [BmsOrderItem!]!
+    hasShippingAddress: Boolean!   # false = ช่องทางที่ร้านต้องเก็บที่อยู่เอง แต่ลูกค้ายังไม่มีที่อยู่จัดส่ง — จัดส่งไม่ได้
   }
 
   # ===== BMS order journey (เส้นทางออเดอร์: ต้นทางแชท + stepper + timeline) =====
@@ -807,6 +809,42 @@ export const typeDefs = /* GraphQL */ `
     orderId: ID
     total: Float
     message: String!
+  }
+
+  input BmsOrderItemInput {
+    sku: String!
+    size: String!
+    qty: Int!
+  }
+
+  # ===== BMS documents (invoice/quotation) — คำนวณสด ไม่ persist =====
+  type BmsDocLine {
+    sku: String!
+    name: String!
+    size: String!
+    qty: Int!
+    unitPrice: Float!
+    amount: Float!
+  }
+  type BmsStoreSummary {
+    name: String
+    address: String
+    phone: String
+    taxId: String
+  }
+  type BmsBusinessDoc {
+    type: String!            # INVOICE / QUOTATION
+    number: String!
+    date: String!
+    store: BmsStoreSummary!
+    customerRef: String
+    channel: String
+    lines: [BmsDocLine!]!
+    subtotal: Float!
+    shippingFee: Float
+    total: Float!
+    paymentStatus: String
+    note: String!
   }
 
   # ===== BMS purchase (PO) =====
@@ -1913,6 +1951,7 @@ export const typeDefs = /* GraphQL */ `
     bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
     bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
     bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
+    bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!

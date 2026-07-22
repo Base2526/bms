@@ -44,7 +44,7 @@ Customer → Channel Integration → Omnichannel Inbox → AI Orchestrator
 | 4 | CRM | Customer profile across channels, addresses, purchase history, merge |
 | 5 | Product Management | Products, variants, SKU, pricing, categories, brands |
 | 6 | Inventory (IMS) | Current/reserved/available stock, movements |
-| 7 | Orders (OMS) | Order lifecycle, reorder |
+| 7 | Orders (OMS) | Order lifecycle, staff create/reorder, invoice preview, fulfillment address guard |
 | 8 | Purchase | Supplier purchase orders, receiving |
 | 9 | Payment | Bank transfer/QR/card/cash/TikTok, AI slip verification (advisory only) |
 | 10 | Shipping | Carrier tracking, packing, labels |
@@ -72,7 +72,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
-| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · reorder — see [../business/order.md](../business/order.md) |
+| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |

@@ -536,6 +536,10 @@ flow: PENDING → SHIPPED → IN_TRANSIT → DELIVERED (└→ RETURNED / CANCEL
 ผูก carrier/tracking + ship จริง: order PACKING → SHIPPED + ตัดสต็อก + SHIP movement (atomic)
 ถ้า order = SHIPPED อยู่แล้ว จะแค่แนบ shipment (ไม่ตัดสต็อกซ้ำ)
 
+ก่อนส่งออเดอร์ของ LINE/Facebook/Instagram/Web/TikTok Chat ต้องมี CRM shipping address;
+Lazada/Shopee exempt เพราะที่อยู่อยู่ Seller Center ถ้าไม่ครบ service คืน
+`MISSING_SHIPPING_ADDRESS` โดยไม่เปลี่ยน order/stock
+
 Input
 
 {
@@ -679,8 +683,9 @@ Permission: customer.view (ถ้าไม่มีสิทธิ์ → โช
 > คนละอย่างกับ **Customer 360 panel** (คอลัมน์ขวาสุดของ `/admin/inbox`, `Customer360Panel.tsx` →
 > `bmsCustomer360()`/`bmsCustomerTimeline()`/`bmsCustomerInsights()` ใน `lib/bms/customer360.ts`,
 > migration `6.2__bms_customer_360.sql`) ซึ่งเป็น view ที่ละเอียดกว่า (summary/contact/stats/recent
-> orders ทุกช่องทาง/products/cart/notes + timeline รวม + AI insights) — ทั้งสองใช้งานคู่กันได้ ไม่ได้แทนกัน
-> ยังไม่มีเอกสารแยกสำหรับ Customer 360 panel ใน `docs/ui/` ตอนนี้ (ตาม TODO ท้ายไฟล์นี้)
+> orders ทุกช่องทาง/products/cart/notes + timeline รวม + AI insights) และมี Quick Actions สำหรับ
+> staff สร้างออเดอร์/preview ใบแจ้งหนี้ตาม permission — ทั้งสองใช้งานคู่กันได้ ไม่ได้แทนกัน ดู
+> [`docs/ui/customer360.md`](../ui/customer360.md)
 
 ---
 
@@ -729,7 +734,7 @@ Output: `{ status, orderId, total, message }` — `status` หนึ่งใน
 `EMPTY` (ออร์เดอร์ต้นทางไม่มีรายการ) / `SOURCE_NOT_FOUND`
 
 Permission: **order.create** (permission ใหม่ — เดิม order ถูกสร้างจาก AI/REST เท่านั้นไม่เคยผ่าน
-permission gate มาก่อน · seed ให้ Manager/Sales ที่ migration `6.1__bms_order_create_perm.sql`)
+permission gate มาก่อน · seed ให้ Manager/Sales ที่ migration `6.3__bms_order_create_perm.sql`)
 
 ---
 
@@ -854,7 +859,7 @@ Confidence
 
 ## Documents (staff) — `lib/bms/documents.ts`
 
-- `generate_invoice(orderId)` — ใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (ราคา snapshot)
+- `generate_invoice(orderId)` — ใบแจ้งหนี้จากออร์เดอร์จริง (ราคา snapshot, ผลลัพธ์ชั่วคราวไม่ persist)
 - `generate_quotation(items[])` — ใบเสนอราคา (ตีราคาปัจจุบัน + ค่าส่งประเมิน ยังไม่ผูกออร์เดอร์)
 
 ## Forecast (staff, `report.view`) — `lib/bms/forecast.ts` · **heuristic เท่านั้น ต้องบอก uncertainty**

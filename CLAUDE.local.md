@@ -6,8 +6,11 @@
 ## รันในเครื่อง (dev)
 
 ```bash
-# ทั้ง stack ผ่าน docker (postgres + redis + web + ws + caddy + pgadmin)
+# dev stack ผ่าน docker (postgres + redis + web + ws + pgadmin; Caddy ปิดไว้โดย default)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# เปิด Caddy เฉพาะเครื่องที่ไม่มี reverse proxy ตัวอื่นจับ 80/443 อยู่
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile with-caddy up --build
 
 # หรือรัน web อย่างเดียว (ต่อ postgres/redis ใน docker)
 cd apps/web && npm install && npm run dev      # http://localhost:3000
@@ -120,7 +123,7 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 เอกสารสเปกเดิมจะพูดถึง "3-column layout" ก็ตาม เพิ่มคอลัมน์ที่ 3 จริงตอนนี้ (`Customer360Panel.tsx`) แสดงเมื่อ
 เลือกแชท (`conv.customerId` — field ที่มีอยู่แล้วใน schema แต่หน้านี้ไม่เคย select มาก่อน ต้องเพิ่มใน `Q_CONV`)
 
-**New APIs** (อ่านอย่างเดียว ไม่มี mutation, gate ด้วย permission `customer.view` เดิม — ไม่ได้เพิ่ม permission ใหม่):
+**Customer 360 read APIs** (gate ด้วย permission `customer.view` เดิม):
 - `bmsCustomer360(customerId)` — eager, โหลดทันทีตอนเลือกแชท (summary/contact/connected accounts/stats/
   recent orders ทุกช่องทาง/products purchased/current cart/notes) → `getCustomer360()` ใน `lib/bms/customer360.ts`
 - `bmsCustomerTimeline(customerId)` — lazy, โหลดตอนกาง Collapse panel "Timeline" ครั้งแรกเท่านั้น (หนักสุด
@@ -131,6 +134,13 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - resolver ทั้งหมดอยู่ที่ `graphql/bmsCustomer360.ts` (ตาม pattern `bmsOrderJourney` ใน `bmsOrders.ts` — resolver
   บาง แค่ requirePermission + เรียก service), wire เข้า `resolvers.ts` (`bmsCustomer360Resolvers.Query`)
 
+**Quick Actions APIs** (อยู่ใน `graphql/bmsOrders.ts` และ reuse service กลาง):
+- `bmsCreateOrder(channel, customerRef, items)` — permission `order.create`; สร้างออเดอร์ `PENDING`, resolve CRM
+  identity และจองสต็อกแบบ atomic ผ่าน `createOrder()` เดียวกับ customer pipeline/AI; ราคาคือราคาปัจจุบันและ
+  revision context ใช้ admin id ของผู้กด
+- `bmsGenerateInvoice(orderId)` — permission `order.view`; เรียก `generateInvoice()` จาก `lib/bms/documents.ts`,
+  ใช้ราคา snapshot ใน order items, สร้างผลลัพธ์ชั่วคราวเพื่อ preview/print เท่านั้น ไม่ persist เอกสารใหม่
+
 **Schema เพิ่ม (migration `6.2__bms_customer_360.sql`):** `bms_customers.email/preferred_language/timezone`
 (ของเดิมไม่มี email เลย ทั้งที่ BUSINESS_RULES ใช้ email เป็น matching criterion) · `bms_customer_addresses.address_type`
 (shipping/billing, default `'shipping'` ให้แถวเก่าไม่พัง) · ตารางใหม่ `bms_customer_ai_summary` (cache ผล AI ต่อ
@@ -140,20 +150,26 @@ copy จาก `6.1` (per-table style ไม่ใช่ loop แบบ `4.2`)
 **Component structure:** `Customer360Panel.tsx` เดียว export default, แตกเป็น sub-component ในไฟล์เดียวกันต่อ
 1 section (`SummarySection`/`ContactSection`/`StatsSection`/`RecentOrdersSection`/`ProductsSection`/`CartSection`/
 `NotesSection`/`TimelineSection`/`InsightsSection`/`QuickActionsSection`) ประกอบเป็น Ant `Collapse` (`items` prop,
-ไม่ใช้ `Collapse.Panel` แบบเก่า) — Section 1–7 (`defaultActiveKey`) ได้ data จาก query เดียว (`bmsCustomer360`,
-`fetchPolicy: cache-and-network`) ที่โหลดพร้อมกันเสมอ, Timeline/AI Insights (Section 8–9) เป็น `useLazyQuery`
+ไม่ใช้ `Collapse.Panel` แบบเก่า) — Section summary/cart/orders/actions ถูกกางเริ่มต้น; ข้อมูลพื้นฐานทุก section
+ได้จาก query เดียว (`bmsCustomer360`, `fetchPolicy: cache-and-network`) ที่โหลดพร้อมกันเสมอ ส่วน
+Timeline/AI Insights เป็น `useLazyQuery`
 ของตัวเอง — ยิงจริงเฉพาะครั้งแรกที่ Collapse panel นั้นถูกกางขึ้นมา (อาศัย behavior เดิมของ antd Collapse ที่ไม่ mount
 children ของ panel ที่ยังไม่เคย active — **นี่คือกลไก lazy-load หลักของ feature นี้ ไม่ใช่ debounce/cache เพิ่มเติม**)
 ย่อ/ขยายทั้ง panel ได้ (ไอคอนมุมขวาบน, จำสถานะ `localStorage` คีย์ `bms_inbox_customer360_collapsed`
-— แพทเทิร์นเดียวกับ `listCollapsed` ของคอลัมน์ซ้าย)
+— แพทเทิร์นเดียวกับ `listCollapsed` ของคอลัมน์ซ้าย) · `CreateOrderModal` โหลดสินค้าตอนเปิดและ refetch
+Customer 360 หลังสร้างสำเร็จ · `InvoiceModal` โหลดเอกสารของออเดอร์ที่เลือกแบบ `network-only` และพิมพ์ผ่าน browser
 
 **การตีความ "Current Shopping Cart":** สคีมาไม่มีสถานะ DRAFT แยก (`orders.ts`/`CLAUDE.local.md` เดิมยืนยันแล้ว) —
 "ตะกร้า" = order `PENDING` ล่าสุดของลูกค้าที่ยังไม่มี payment ผูกอยู่เลย (`NOT EXISTS ... bms_payments`)
 
-**Quick Actions ที่เป็นปุ่ม disabled ("coming soon") เพราะ subsystem จริงยังไม่มีในโค้ดเลย:** สร้างออเดอร์จากแอดมิน
-(ตอนนี้สร้างผ่านแชทลูกค้าเท่านั้น), Generate Invoice, Send Payment Link, Support Ticket — **ตัดสินใจร่วมกับ user
-ไว้แล้วว่าไม่ build subsystem ใหม่รอบนี้** ห้ามเข้าใจผิดว่าเป็นบั๊ก/ลืมทำ ปุ่ม "มอบหมาย staff" ก็ disabled เช่นกัน
-(ชี้ไปที่ตัวเลือก staff หลักที่หัวแชทด้านบนแทน — ไม่ duplicate logic assign ที่มีอยู่แล้วใน `ConversationPane`)
+**Quick Actions ปัจจุบัน:** สร้างออเดอร์ (`order.create`) · ตรวจสต็อก · คืนเงินเมื่อมี payment ที่ยืนยันแล้ว ·
+ออกใบแจ้งหนี้ (`order.view`, ต้องมีออเดอร์) · เปิดหน้าลูกค้า ปุ่ม roadmap เดิมสำหรับ payment link/support ticket
+และปุ่ม assign ซ้ำถูกนำออก; การ assign staff ยังใช้ control ที่หัวแชทเดิม
+
+**Fulfillment address guard:** `shipOrder()` และ `createShipment()` ตรวจซ้ำใน backend ก่อนเปลี่ยน `PACKING →
+SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้องมี `bms_customer_addresses.address_type =
+'shipping'`. Lazada/Shopee เท่านั้นที่ exempt เพราะ address อยู่ Seller Center. `BmsOrder.hasShippingAddress`
+ใช้ให้หน้า Orders disable ปุ่มและลิงก์ไป Customers แต่ UI ไม่ใช่ authorization/gate หลัก
 
 **Pending improvements (ยังไม่ทำ):**
 - Lazada/Shopee ยังไม่โผล่ใน recent orders ของ panel นี้จริง — ไม่ใช่เพราะรอ ChannelAdapter refactor (แผนนั้นเลิกทำแล้ว
@@ -165,8 +181,7 @@ children ของ panel ที่ยังไม่เคย active — **น�
 - ยังไม่มี unit/integration test สำหรับ `lib/bms/customer360.ts` (โปรเจกต์นี้ยังไม่มี test suite ที่ใช้งานอยู่โดยรวม)
 - avg response time query สมมติ 1 แถว "IN แล้ว OUT ถัดไปในแชทเดียวกัน" เป็น 1 การตอบ — ยังไม่หัก เวลาที่แชทปิด/เปิดใหม่
   ข้ามวันออก (edge case ที่อาจทำให้ตัวเลขเพี้ยนถ้าลูกค้าทิ้งแชทค้างไว้ข้ามคืนแล้วมาต่อ)
-- ยังไม่มีเอกสารใน `docs/ui/` สำหรับ panel นี้เลย (`docs/ui/customer360.md` คุมแค่แท็บ "ลูกค้า"/merge/reorder ด้านล่าง) —
-  ควรเพิ่มหน้าแยกหรือรวมเข้าไฟล์เดิม
+- เอกสารรวม right panel + แท็บลูกค้า + merge/reorder อยู่ที่ `docs/ui/customer360.md`
 
 ## Inbox customer tab / merge / reorder / Shopee/Lazada (beta/scaffold)
 
@@ -462,7 +477,7 @@ prompt/model เรื่อง conversion บน shared key model ตามท�
 **เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
-ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items (ดู "Pending improvements" ในหัวข้อ Customer 360)
+ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
 · ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` (endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
 · proactive external notification สำหรับ Channel Health (ต้องออกแบบ LINE user id ผูก admin ก่อน — ดู § Channel Health)
 

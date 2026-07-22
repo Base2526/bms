@@ -80,6 +80,7 @@ export const bmsShippingResolvers = {
       const msg: Record<string, string> = {
         ORDER_NOT_FOUND: "ไม่พบออร์เดอร์",
         BAD_CARRIER: "ขนส่งไม่ถูกต้อง",
+        MISSING_SHIPPING_ADDRESS: "ลูกค้ายังไม่มีที่อยู่จัดส่งในระบบ",
         INVALID_STATE: "สถานะออร์เดอร์ไม่อนุญาตให้จัดส่ง (ต้องเป็น PACKING/SHIPPED)",
       };
       return { status: res.status, shipmentId: null, message: msg[res.status] ?? "ทำรายการไม่ได้" };

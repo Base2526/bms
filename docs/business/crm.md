@@ -20,8 +20,11 @@ background platform sync. GraphQL/UI reads must use the cache; they must not cal
 APIs during list rendering.
 
 A customer can have multiple shipping addresses (add/edit/set-default/delete from the Customers
-page; deleting an address never affects the customer or their orders). Customers are **never hard
-deleted** — only soft-deleted (`deleted_at`).
+page; deleting an address never affects the customer or their orders). For LINE/Facebook/Instagram/
+Web/TikTok Chat orders, at least one address with `address_type = 'shipping'` is required before an
+order can move from `PACKING` to `SHIPPED`; `shipOrder()` and `createShipment()` both enforce this.
+Lazada/Shopee are exempt because the shipping address stays in Seller Center. Customers are **never
+hard deleted** — only soft-deleted (`deleted_at`).
 
 ## Omnichannel Inbox
 
@@ -36,6 +39,11 @@ One conversation = `(tenant, channel, customer_ref)`. Staff can assign conversat
 messages + notes + orders. Since this session, a dedicated "ลูกค้า" tab also surfaces purchase
 history, lifetime spend, tags, and notes the moment a conversation is opened — see
 [../ui/customer360.md](../ui/customer360.md).
+
+The desktop right-hand Customer 360 panel also provides permission-gated Quick Actions: staff can
+create a `PENDING` order for the active identity through the shared order service and can preview/
+print an ephemeral invoice from an existing order. These actions do not move CRM or order business
+rules into the frontend.
 
 **Outbound message status (Phase 1):** capability-gated per channel. LINE/Facebook/Instagram can
 actually push and actually fail (`SENT`/`FAILED` + a "ส่งใหม่" retry button); Web/TikTok/Shopee/Lazada

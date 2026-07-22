@@ -453,7 +453,13 @@ const createOrderTool: BmsTool = {
         ? ec.channel ?? "web"
         : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel) ?? "web";
     const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
-    const r = await createOrder({ tenantId: ec.tenantId, channel, customerRef, items });
+    const r = await createOrder({
+      tenantId: ec.tenantId,
+      channel,
+      customerRef,
+      items,
+      editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
+    });
     if (r.status === "CREATED") {
       await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });
     }
@@ -514,7 +520,11 @@ const reorderTool: BmsTool = {
     if (ec.surface === "customer" && !(await customerOwnsOrder(ec, orderId))) {
       return { ok: false, error: "ไม่พบออร์เดอร์นี้ในบัญชีของคุณ" };
     }
-    const r = await reorderFromOrder(ec.tenantId, orderId);
+    const r = await reorderFromOrder(
+      ec.tenantId,
+      orderId,
+      ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null
+    );
     if ((r as any).status === "CREATED") {
       await auditWrite(ec, "order.create", (r as any).orderId, { reorderFrom: orderId });
     }

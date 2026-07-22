@@ -15,7 +15,7 @@ import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { beginTenantTx } from "./tenant";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
-import { listShipments } from "./shipping";
+import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -24,6 +24,7 @@ export type CreateOrderInput = {
   channel: Channel;
   customerRef?: string | null;
   items: OrderItemInput[];
+  editorId?: string | number | null;
 };
 
 export type CreatedLine = {
@@ -66,7 +67,7 @@ export async function createOrder(
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId: input.editorId });
 
     const lines: CreatedLine[] = [];
     let total = 0;
@@ -221,7 +222,11 @@ export async function customerOwnsOrder(
  * ราคาตัดตามราคาปัจจุบันของสินค้า (snapshot ใหม่) ไม่ใช่ราคาย้อนหลัง · ใช้ createOrder() เดิมทั้งหมด
  * (ระบบนี้ไม่มีสถานะ DRAFT แยก — ออร์เดอร์เริ่มที่ PENDING พร้อมจองสต็อกทันทีเหมือน createOrder ปกติ)
  */
-export async function reorderFromOrder(tenantId: string, orderId: string): Promise<ReorderResult> {
+export async function reorderFromOrder(
+  tenantId: string,
+  orderId: string,
+  editorId?: string | number | null
+): Promise<ReorderResult> {
   const src = await query<{ channel: Channel; customer_ref: string | null }>(
     `SELECT channel, customer_ref FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
     [tenantId, orderId]
@@ -239,6 +244,7 @@ export async function reorderFromOrder(tenantId: string, orderId: string): Promi
     channel: src.rows[0].channel,
     customerRef: src.rows[0].customer_ref,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
+    editorId,
   });
 }
 
@@ -271,6 +277,31 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
+
+    const info = await client.query<{ channel: string; customer_id: string | null }>(
+      `SELECT channel, customer_id FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING'`,
+      [tenantId, orderId]
+    );
+    if (info.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    // ช่องทางที่ร้านต้องเก็บที่อยู่เอง (ไม่ใช่มาร์เก็ตเพลส) ต้องมีที่อยู่จัดส่งของลูกค้าก่อนถึงจัดส่งได้จริง
+    const { channel, customer_id } = info.rows[0];
+    if (!MARKETPLACE_CHANNELS.has(channel)) {
+      const addr = customer_id
+        ? await client.query(
+            `SELECT 1 FROM bms_customer_addresses
+              WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping' LIMIT 1`,
+            [tenantId, customer_id]
+          )
+        : null;
+      if (!addr || addr.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+    }
 
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'SHIPPED', updated_at = now()
@@ -473,6 +504,7 @@ export type OrderJourney = {
 
 const MAIN_FLOW = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
 const ACTION_TO_STATUS: Record<string, string> = {
+  "order.create": "PENDING", "order.reorder": "PENDING",
   "order.pay": "PAID", "order.pack": "PACKING", "order.ship": "SHIPPED", "order.complete": "COMPLETED",
   "order.cancel": "CANCELLED", "order.return": "RETURNED",
 };
@@ -520,8 +552,8 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
 
   // ---- steps (เส้นหลัก + กิ่ง cancel/return) ----
   const steps: OrderStep[] = MAIN_FLOW.map((st) => {
-    if (st === "PENDING") return { status: st, at: jIso(ord.created_at), actorName: "ระบบ", reached: true, branch: false };
     const hit = lastByStatus.get(st);
+    if (st === "PENDING") return { status: st, at: jIso(ord.created_at), actorName: hit?.actorName ?? "ระบบ", reached: true, branch: false };
     // COMPLETED อาจมาจาก auto (จัดส่งถึง) ที่ไม่ได้ audit → fallback updated_at
     if (!hit && st === "COMPLETED" && ord.status === "COMPLETED") {
       return { status: st, at: jIso(ord.updated_at), actorName: "ระบบ", reached: true, branch: false };
@@ -567,7 +599,7 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   // ---- รวม timeline ละเอียด ----
   const events: OrderEvent[] = [];
   if (convStart) events.push({ kind: "chat_start", at: convStart, text: `ลูกค้าทักผ่าน ${ord.channel} · เริ่มบทสนทนา`, actorName: null });
-  events.push({ kind: "order_status", at: jIso(ord.created_at)!, text: "สร้างออเดอร์ → PENDING", actorName: "ระบบ" });
+  events.push({ kind: "order_status", at: jIso(ord.created_at)!, text: "สร้างออเดอร์ → PENDING", actorName: lastByStatus.get("PENDING")?.actorName ?? "ระบบ" });
   for (const e of sysEvents) {
     const text = e.kind === "assign" ? `มอบหมายแชทให้ ${e.targetName}`
       : e.kind === "helper_add" ? `เพิ่ม ${e.targetName} เป็นผู้ช่วยตอบ`
@@ -575,6 +607,7 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
     events.push({ kind: e.kind, at: e.at, text, actorName: e.actorName });
   }
   for (const r of auditRows) {
+    if (r.action === "order.create" || r.action === "order.reorder") continue; // แทนด้วย event "สร้างออเดอร์ → PENDING" ด้านบนแล้ว (กันซ้ำ)
     const st = ACTION_TO_STATUS[r.action];
     if (st) events.push({ kind: "order_status", at: jIso(r.created_at)!, text: `${STEP_LABEL[st]} → ${st}`, actorName: actorName(r.actor) });
   }

@@ -15,6 +15,10 @@ import { getClient, query } from "@/lib/db";
 import { recordOrderMovements } from "./movements";
 import { beginTenantTx } from "./tenant";
 
+// Lazada/Shopee keep the shipping address in Seller Center. All other implemented channels,
+// including TikTok Chat, require a shipping address stored in BMS before fulfillment can ship.
+export const MARKETPLACE_CHANNELS = new Set(["lazada", "shopee"]);
+
 export const CARRIERS = ["FLASH", "KERRY", "DHL", "AUSPOST", "NZPOST", "OTHER"] as const;
 export type Carrier = (typeof CARRIERS)[number];
 
@@ -36,6 +40,7 @@ export type CreateShipmentResult =
   | { status: "CREATED"; shipmentId: string; orderShipped: boolean }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_CARRIER" }
+  | { status: "MISSING_SHIPPING_ADDRESS" }
   | { status: "INVALID_STATE"; current: string };
 
 // ---- create --------------------------------------------------
@@ -47,8 +52,11 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ status: string }>(
-      `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    const ord = await client.query<{ status: string; channel: string; customer_id: string | null }>(
+      `SELECT status, channel, customer_id
+         FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2
+        FOR UPDATE`,
       [tenantId, input.orderId]
     );
     if (ord.rowCount === 0) {
@@ -59,6 +67,22 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     if (cur !== "PACKING" && cur !== "SHIPPED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_STATE", current: cur };
+    }
+
+    if (cur === "PACKING" && !MARKETPLACE_CHANNELS.has(ord.rows[0].channel)) {
+      const customerId = ord.rows[0].customer_id;
+      const address = customerId
+        ? await client.query(
+            `SELECT 1 FROM bms_customer_addresses
+              WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
+              LIMIT 1`,
+            [tenantId, customerId]
+          )
+        : null;
+      if (!address || address.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return { status: "MISSING_SHIPPING_ADDRESS" };
+      }
     }
 
     let orderShipped = false;
@@ -227,6 +251,7 @@ export async function getShipmentLabel(tenantId: string, shipmentId: string): Pr
             c.name, c.phone,
             (SELECT a.address FROM bms_customer_addresses a
               WHERE a.tenant_id = s.tenant_id AND a.customer_id = o.customer_id
+                AND a.address_type = 'shipping'
               ORDER BY a.is_default DESC, a.id LIMIT 1) AS address
        FROM bms_shipments s
        JOIN bms_orders o ON o.id = s.order_id

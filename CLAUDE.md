@@ -42,16 +42,15 @@ Every module is **fully built** except Shopee/Lazada (🧪 beta scaffold — see
 [docs/integrations/lazada.md](docs/integrations/lazada.md)) and the roadmap items below. Full
 build-status table: [docs/architecture/system.md](docs/architecture/system.md#build-status-2026-07).
 
-**Customer 360 (Inbox right panel)** — ✅ implemented, not yet folded into the docs/ tree above
-(built on a parallel branch to the docs restructure — see [CLAUDE.local.md](CLAUDE.local.md) §
-Customer 360 for full detail pending a proper `docs/ui/` page): `lib/bms/customer360.ts` ·
-migration `6.2__bms_customer_360.sql` · GraphQL `bmsCustomer360`/`bmsCustomerTimeline`/
+**Customer 360 (Inbox right panel)** — ✅ implemented and documented in
+[docs/ui/customer360.md](docs/ui/customer360.md): `lib/bms/customer360.ts` · migration
+`6.2__bms_customer_360.sql` · GraphQL `bmsCustomer360`/`bmsCustomerTimeline`/
 `bmsCustomerInsights` · UI `Customer360Panel.tsx`. Inbox (`/admin/inbox`) is a real 3-column
-layout — conversation list · message thread · this panel — showing summary/contact/stats/recent
-orders/products/cart/notes (eager) plus a lazy cross-channel timeline and AI-generated insights
-(computed from a real facts bundle only, never invented — same discipline as `verifyPaymentSlip()`).
-This is a different, richer view than the "ลูกค้า" purchase-history tab documented in
-[docs/ui/customer360.md](docs/ui/customer360.md); both coexist.
+layout — conversation list · message thread · customer panel — showing summary/contact/stats/recent
+orders/products/cart/notes (eager) plus a lazy cross-channel timeline and fact-grounded AI insights.
+Staff with `order.create` can create a `PENDING` order for the active customer directly from Quick
+Actions; stock is reserved atomically at current prices. Staff with `order.view` can render and print
+an ephemeral invoice from an existing order (snapshot prices; no document row is persisted).
 
 **Recent frontend/admin additions (2026-07)** — ✅ implemented:
 
@@ -71,6 +70,10 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.
+- **Fulfillment address guard**: LINE/Facebook/Instagram/Web/TikTok Chat orders must have a CRM
+  shipping address before either `shipOrder()` or `createShipment()` can move them from `PACKING`
+  to `SHIPPED`. Lazada/Shopee are exempt because their address remains in Seller Center. The Orders
+  page exposes `hasShippingAddress` and links operators to Customers when the address is missing.
 - **Inbox realtime diagnostics**: `/admin/inbox/realtime-diagnostics` is Administrator/platform-admin
   only. `Emit` verifies Redis/WebSocket delivery without writing DB rows; `Create Msg` creates a
   diagnostic Inbox message for the current tenant without sending anything to external platforms.

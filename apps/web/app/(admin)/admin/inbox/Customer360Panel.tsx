@@ -6,14 +6,15 @@
 // (Section 8–9, หนักกว่า) โหลดแบบ lazy ตอนกาง panel เท่านั้น
 // backend: lib/bms/customer360.ts · graphql/bmsCustomer360.ts
 // =============================================================
-import { gql, useQuery, useLazyQuery } from "@apollo/client";
+import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   Collapse, Skeleton, Empty, Tag, Typography, Avatar, Space, Table,
-  Descriptions, Button, Tooltip, List, Divider,
+  Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message,
 } from "antd";
 import { useEffect, useState } from "react";
 import {
   UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ShoppingOutlined,
+  PlusOutlined, MinusCircleOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 
@@ -54,9 +55,30 @@ const Q_TIMELINE = gql`
 const Q_INSIGHTS = gql`
   query ($customerId: ID!) { bmsCustomerInsights(customerId: $customerId) { summary generatedAt cached } }
 `;
+const Q_PRODUCTS_FOR_ORDER = gql`
+  query { bmsProducts(limit: 200) { items { sku name variants { size available } } } }
+`;
+const M_CREATE_ORDER = gql`
+  mutation ($channel: String, $customerRef: String, $items: [BmsOrderItemInput!]!) {
+    bmsCreateOrder(channel: $channel, customerRef: $customerRef, items: $items) { status orderId total message }
+  }
+`;
+const Q_INVOICE = gql`
+  query ($orderId: ID!) {
+    bmsGenerateInvoice(orderId: $orderId) {
+      type number date customerRef channel subtotal shippingFee total paymentStatus note
+      store { name address phone taxId }
+      lines { sku name size qty unitPrice amount }
+    }
+  }
+`;
 
 const CHANNEL_COLOR: Record<string, string> = {
   line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", lazada: "gold", test: "default",
+};
+const STATUS_COLOR: Record<string, string> = {
+  PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue",
+  COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
 };
 const PANEL_COLLAPSE_KEY = "bms_inbox_customer360_collapsed";
 const money = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
@@ -177,7 +199,7 @@ function RecentOrdersSection({ orders }: { orders: any[] }) {
           <Space size={4} wrap style={{ marginBottom: 2 }}>
             <Tag color={CHANNEL_COLOR[o.channel] || "default"}>{o.channel}</Tag>
             <Text strong style={{ fontSize: 12 }}>#{String(o.id).slice(0, 8)}</Text>
-            <Tag>{o.status}</Tag>
+            <Tag color={STATUS_COLOR[o.status] || "default"}>{o.status}</Tag>
             {o.paymentStatus && <Tag color="blue">ชำระ: {o.paymentStatus}</Tag>}
             {o.shipmentStatus && <Tag color="purple">จัดส่ง: {o.shipmentStatus}</Tag>}
           </Space>
@@ -307,27 +329,190 @@ function InsightsSection({ customerId }: { customerId: string }) {
   );
 }
 
+// ---- Create Order modal (staff manually creates an order for this customer) ----
+type ProductOpt = { sku: string; name: string; variants: { size: string; available: number }[] };
+
+function CreateOrderModal({
+  open, conv, onClose, onDone,
+}: { open: boolean; conv: any; onClose: () => void; onDone: () => void }) {
+  const [form] = Form.useForm();
+  const { data: prodData, loading: prodLoading } = useQuery(Q_PRODUCTS_FOR_ORDER, {
+    skip: !open, fetchPolicy: "cache-and-network",
+  });
+  const products: ProductOpt[] = prodData?.bmsProducts?.items || [];
+
+  const [create, { loading }] = useMutation(M_CREATE_ORDER, {
+    onCompleted: (d: any) => {
+      const res = d?.bmsCreateOrder;
+      if (res?.status === "CREATED") { message.success(res.message || "สร้างออร์เดอร์แล้ว"); form.resetFields(); onDone(); }
+      else message.error(res?.message || "สร้างออร์เดอร์ไม่สำเร็จ");
+    },
+    onError: (e: any) => message.error(e?.message || "สร้างออร์เดอร์ไม่สำเร็จ"),
+  });
+
+  const submit = async () => {
+    const v = await form.validateFields();
+    const items = (v.items || []).map((it: any) => ({ sku: it.sku, size: it.size, qty: Number(it.qty) }));
+    create({ variables: { channel: conv?.channel || "web", customerRef: conv?.customerRef || null, items } });
+  };
+
+  return (
+    <Modal
+      title="สร้างออเดอร์ให้ลูกค้า" open={open} onCancel={onClose} onOk={submit}
+      confirmLoading={loading} okText="สร้างออเดอร์" cancelText="ยกเลิก" width={640} destroyOnClose
+    >
+      <Alert
+        type="info" showIcon style={{ marginBottom: 16 }}
+        message={`ออเดอร์จะผูกกับลูกค้าคนนี้ผ่านช่องทาง ${conv?.channel || "web"} · ราคาตัดตามราคาปัจจุบันของสินค้า · จองสต็อกทันที (สถานะเริ่มต้น PENDING)`}
+      />
+      <Form form={form} layout="vertical" initialValues={{ items: [{ qty: 1 }] }}>
+        <Form.List name="items">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...rest }) => (
+                <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
+                  <Form.Item
+                    {...rest} name={[name, "sku"]} rules={[{ required: true, message: "เลือกสินค้า" }]}
+                  >
+                    <Select
+                      showSearch style={{ width: 220 }} placeholder="สินค้า" loading={prodLoading}
+                      options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
+                      filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
+                      onChange={() => form.setFieldValue(["items", name, "size"], undefined)}
+                    />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(prev, cur) => prev.items?.[name]?.sku !== cur.items?.[name]?.sku}>
+                    {() => {
+                      const sku = form.getFieldValue(["items", name, "sku"]);
+                      const prod = products.find((p) => p.sku === sku);
+                      return (
+                        <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: "เลือกไซซ์" }]} style={{ marginBottom: 0 }}>
+                          <Select
+                            style={{ width: 170 }} placeholder="ไซซ์" disabled={!prod}
+                            options={(prod?.variants || []).map((v) => ({
+                              value: v.size, label: `${v.size} (เหลือ ${v.available})`, disabled: v.available <= 0,
+                            }))}
+                          />
+                        </Form.Item>
+                      );
+                    }}
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: "จำนวน" }]}>
+                    <InputNumber placeholder="จำนวน" min={1} style={{ width: 90 }} />
+                  </Form.Item>
+                  {fields.length > 1 && <MinusCircleOutlined onClick={() => remove(name)} />}
+                </Space>
+              ))}
+              <Button type="dashed" onClick={() => add({ qty: 1 })} icon={<PlusOutlined />} block>เพิ่มรายการ</Button>
+            </>
+          )}
+        </Form.List>
+      </Form>
+    </Modal>
+  );
+}
+
+// ---- Invoice modal (ใบแจ้งหนี้จากออร์เดอร์จริง — คำนวณสด ไม่ persist) ----
+function InvoiceModal({
+  open, orders, onClose,
+}: { open: boolean; orders: any[]; onClose: () => void }) {
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [load, { data, loading }] = useLazyQuery(Q_INVOICE, { fetchPolicy: "network-only" });
+
+  useEffect(() => {
+    if (!open) { setOrderId(null); return; }
+    const first = orders?.[0]?.id ?? null;
+    setOrderId(first);
+    if (first) load({ variables: { orderId: first } });
+  }, [open]); // eslint-disable-line
+
+  const pick = (id: string) => { setOrderId(id); load({ variables: { orderId: id } }); };
+  const doc = data?.bmsGenerateInvoice;
+
+  return (
+    <Modal
+      title="ใบแจ้งหนี้" open={open} onCancel={onClose} width={640} destroyOnClose
+      footer={[
+        <Button key="close" onClick={onClose}>ปิด</Button>,
+        <Button key="print" type="primary" disabled={!doc} onClick={() => window.print()}>พิมพ์</Button>,
+      ]}
+    >
+      <Select
+        style={{ width: "100%", marginBottom: 16 }}
+        placeholder="เลือกออร์เดอร์" value={orderId ?? undefined}
+        options={(orders || []).map((o: any) => ({
+          value: o.id, label: `#${String(o.id).slice(0, 8)} · ${o.channel} · ${money(o.totalAmount)}`,
+        }))}
+        onChange={pick}
+      />
+      {loading ? <SectionLoading /> : !doc ? (
+        <Empty description="เลือกออร์เดอร์เพื่อออกใบแจ้งหนี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+            <div>
+              <Text strong style={{ fontSize: 16 }}>{doc.store.name || "—"}</Text><br />
+              <Text type="secondary" style={{ fontSize: 12 }}>{doc.store.address || ""}</Text><br />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {doc.store.phone ? `โทร ${doc.store.phone}` : ""}{doc.store.taxId ? ` · เลขผู้เสียภาษี ${doc.store.taxId}` : ""}
+              </Text>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <Text strong>ใบแจ้งหนี้ #{doc.number}</Text><br />
+              <Text type="secondary" style={{ fontSize: 12 }}>{dateOnly(doc.date)}</Text>
+            </div>
+          </div>
+          <Descriptions size="small" column={2} colon={false} style={{ marginBottom: 12 }}>
+            <Descriptions.Item label="ลูกค้า">{doc.customerRef || "—"}</Descriptions.Item>
+            <Descriptions.Item label="ช่องทาง">{doc.channel || "—"}</Descriptions.Item>
+            {doc.paymentStatus && <Descriptions.Item label="สถานะออร์เดอร์">{doc.paymentStatus}</Descriptions.Item>}
+          </Descriptions>
+          <Table
+            size="small" pagination={false} rowKey={(r: any) => `${r.sku}-${r.size}`}
+            dataSource={doc.lines}
+            columns={[
+              { title: "สินค้า", dataIndex: "name" },
+              { title: "ไซซ์", dataIndex: "size", width: 60 },
+              { title: "จำนวน", dataIndex: "qty", width: 70, align: "right" as const },
+              { title: "ราคา/หน่วย", dataIndex: "unitPrice", width: 100, align: "right" as const, render: money },
+              { title: "รวม", dataIndex: "amount", width: 100, align: "right" as const, render: money },
+            ]}
+          />
+          <div style={{ marginTop: 12, textAlign: "right" }}>
+            <div><Text type="secondary">ยอดสินค้า: </Text><Text>{money(doc.subtotal)}</Text></div>
+            {doc.shippingFee != null && <div><Text type="secondary">ค่าส่ง: </Text><Text>{money(doc.shippingFee)}</Text></div>}
+            <div><Text strong style={{ fontSize: 15 }}>รวมทั้งหมด: {money(doc.total)}</Text></div>
+          </div>
+          <Divider style={{ margin: "12px 0" }} />
+          <Text type="secondary" style={{ fontSize: 11 }}>{doc.note}</Text>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ---- Section 10 — Quick Actions ------------------------------------
-function QuickActionsSection({ can, conv, orders }: { can: (p: string) => boolean; conv: any; orders: any[] }) {
+function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { can: (p: string) => boolean; conv: any; orders: any[]; onCreateOrder: () => void; onInvoice: () => void }) {
   const hasRefundable = orders?.some((o) => o.paymentStatus === "CONFIRMED");
   return (
     <Space direction="vertical" size={6} style={{ width: "100%" }}>
-      <Tooltip title="ยังไม่มีระบบสร้างออเดอร์จากหน้าแอดมิน (สร้างผ่านแชทลูกค้าเท่านั้นตอนนี้)">
-        <Button block disabled>สร้างออเดอร์</Button>
-      </Tooltip>
+      {can("order.create") ? (
+        <Button block onClick={onCreateOrder}>สร้างออเดอร์</Button>
+      ) : (
+        <Tooltip title="ไม่มีสิทธิ์ order.create"><Button block disabled>สร้างออเดอร์</Button></Tooltip>
+      )}
       <Link href="/admin/products"><Button block>ตรวจสอบสต็อก</Button></Link>
       {can("payment.refund") ? (
         <Link href="/admin/payment"><Button block disabled={!hasRefundable}>คืนเงิน</Button></Link>
       ) : (
         <Tooltip title="ไม่มีสิทธิ์ payment.refund"><Button block disabled>คืนเงิน</Button></Tooltip>
       )}
-      <Tooltip title="ยังไม่รองรับ (roadmap)"><Button block disabled>ออกใบแจ้งหนี้</Button></Tooltip>
-      <Tooltip title="ยังไม่รองรับ (roadmap)"><Button block disabled>ส่งลิงก์ชำระเงิน</Button></Tooltip>
+      {can("order.view") ? (
+        <Button block disabled={!orders?.length} onClick={onInvoice}>ออกใบแจ้งหนี้</Button>
+      ) : (
+        <Tooltip title="ไม่มีสิทธิ์ order.view"><Button block disabled>ออกใบแจ้งหนี้</Button></Tooltip>
+      )}
       <Link href="/admin/customers"><Button block>เปิดหน้าลูกค้า</Button></Link>
-      <Tooltip title="เลือก staff หลักได้ที่หัวแชทด้านบน">
-        <Button block disabled>มอบหมาย staff</Button>
-      </Tooltip>
-      <Tooltip title="ยังไม่มีระบบ Support Ticket (roadmap)"><Button block disabled>สร้าง Ticket</Button></Tooltip>
     </Space>
   );
 }
@@ -339,12 +524,14 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
   useEffect(() => { setCollapsed(window.localStorage.getItem(PANEL_COLLAPSE_KEY) === "1"); }, []);
   const toggle = () => setCollapsed((v) => { const n = !v; window.localStorage.setItem(PANEL_COLLAPSE_KEY, n ? "1" : "0"); return n; });
 
-  const { data, loading } = useQuery(Q_CUSTOMER_360, {
+  const { data, loading, refetch } = useQuery(Q_CUSTOMER_360, {
     variables: { customerId },
     skip: !customerId,
     fetchPolicy: "cache-and-network",
   });
   const c360 = data?.bmsCustomer360;
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
 
   if (collapsed) {
     return (
@@ -376,21 +563,30 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
       ) : (
         <Collapse
           size="small"
-          defaultActiveKey={["summary", "contact", "stats", "orders"]}
+          defaultActiveKey={["summary", "cart", "orders", "actions"]}
           items={[
             { key: "summary", label: "สรุปลูกค้า", children: <SummarySection c={c360?.customer} conv={conv} /> },
+            { key: "cart", label: "ตะกร้าปัจจุบัน", children: <CartSection draftOrder={c360?.draftOrder} /> },
+            { key: "orders", label: "ออเดอร์ล่าสุด (ทุกช่องทาง)", children: <RecentOrdersSection orders={c360?.recentOrders || []} /> },
+            { key: "actions", label: "Quick Actions", children: <QuickActionsSection can={can} conv={conv} orders={c360?.recentOrders || []} onCreateOrder={() => setCreateOrderOpen(true)} onInvoice={() => setInvoiceOpen(true)} /> },
             { key: "contact", label: "ข้อมูลติดต่อ", children: <ContactSection c={c360?.customer} identities={c360?.identities || []} addresses={c360?.addresses || []} /> },
             { key: "stats", label: "สถิติลูกค้า", children: <StatsSection s={c360?.stats} /> },
-            { key: "orders", label: "ออเดอร์ล่าสุด (ทุกช่องทาง)", children: <RecentOrdersSection orders={c360?.recentOrders || []} /> },
             { key: "products", label: "สินค้าที่ซื้อ", children: <ProductsSection products={c360?.products} /> },
-            { key: "cart", label: "ตะกร้าปัจจุบัน", children: <CartSection draftOrder={c360?.draftOrder} /> },
             { key: "notes", label: "โน้ตภายใน (เฉพาะ staff)", children: <NotesSection notes={c360?.notes || []} /> },
             { key: "timeline", label: "Timeline", children: customerId ? <TimelineSection customerId={customerId} /> : null },
             { key: "insights", label: "AI Insights", children: customerId ? <InsightsSection customerId={customerId} /> : null },
-            { key: "actions", label: "Quick Actions", children: <QuickActionsSection can={can} conv={conv} orders={c360?.recentOrders || []} /> },
           ]}
         />
       )}
+      <CreateOrderModal
+        open={createOrderOpen} conv={conv}
+        onClose={() => setCreateOrderOpen(false)}
+        onDone={() => { setCreateOrderOpen(false); refetch(); }}
+      />
+      <InvoiceModal
+        open={invoiceOpen} orders={c360?.recentOrders || []}
+        onClose={() => setInvoiceOpen(false)}
+      />
     </div>
   );
 }

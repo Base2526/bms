@@ -28,6 +28,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   RollbackOutlined,
+  EnvironmentOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
@@ -45,13 +46,14 @@ type Order = {
   created_at: string;
   updated_at: string;
   items: OrderItem[];
+  hasShippingAddress: boolean;
 };
 
 // ---- GraphQL ------------------------------------------------
 const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
-      id channel customer_ref status total_amount created_at updated_at
+      id channel customer_ref status total_amount created_at updated_at hasShippingAddress
       items { product_sku size qty unit_price }
     }
   }
@@ -142,10 +144,17 @@ function OrdersManagement() {
     const btns: any[] = [];
     const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>จ่ายเงิน</Button>;
     const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>แพ็ค</Button>;
-    const shipBtn = (
+    const shipBtn = r.hasShippingAddress ? (
       <Popconfirm key="ship" title="จัดส่งออร์เดอร์นี้?" description="จะตัดสต็อกจริง" okText="จัดส่ง" cancelText="ยกเลิก" disabled={busy} onConfirm={() => ship(v)}>
         <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>จัดส่ง</Button>
       </Popconfirm>
+    ) : (
+      <Space key="ship" size={4}>
+        <Tooltip title="ลูกค้ายังไม่มีที่อยู่จัดส่งในระบบ — เพิ่มที่อยู่ก่อนจึงจัดส่งได้">
+          <Button type="link" size="small" icon={<CarOutlined />} disabled>จัดส่ง</Button>
+        </Tooltip>
+        <Link href="/admin/customers"><Button type="link" size="small" icon={<EnvironmentOutlined />}>เพิ่มที่อยู่</Button></Link>
+      </Space>
     );
     const doneBtn = <Button key="done" type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy} onClick={() => complete(v)}>สำเร็จ</Button>;
     const cancelBtn = <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />;

@@ -76,7 +76,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | File | Covers |
 | --- | --- |
 | `bmsProducts.ts` | products, categories, stock adjustments |
-| `bmsOrders.ts` | order lifecycle transitions, reorder |
+| `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
 | `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
@@ -96,6 +96,18 @@ any frontend permission list. `bmsChannels.ts` is a deliberate exception: it gat
 `requireTenantAdmin(ctx)` (any admin role in the tenant) instead of a `BMS_PERMISSIONS` entry — no
 permission was ever added for channel config, so Channel Health reuses the same gate rather than
 introducing one just for itself.
+
+### Orders and Customer 360 Quick Actions
+
+- `bmsCreateOrder(channel, customerRef, items)` requires `order.create`, derives the tenant and
+  editor from the authenticated admin context, and delegates to `createOrder()` for atomic stock
+  reservation and order creation.
+- `bmsGenerateInvoice(orderId)` requires `order.view` and delegates to `generateInvoice()`. The
+  result is computed from tenant-scoped order snapshots and is not persisted.
+- `BmsOrder.hasShippingAddress` is a tenant-scoped eligibility field used by the Orders UI. It is
+  not the only gate: `shipOrder()` and `createShipment()` independently enforce the same rule before
+  moving non-marketplace orders from `PACKING` to `SHIPPED`. Lazada/Shopee are the only marketplace
+  exemptions; TikTok is treated as TikTok Chat.
 
 ### Revision history GraphQL
 

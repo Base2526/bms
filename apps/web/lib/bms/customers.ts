@@ -81,7 +81,7 @@ export async function getCustomer(tenantId: string, id: string) {
 
 export async function customerOrders(tenantId: string, customerId: string) {
   const res = await query(
-    `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
+    `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
        FROM bms_orders WHERE tenant_id = $1 AND customer_id = $2 ORDER BY created_at DESC`,
     [tenantId, customerId]
   );
