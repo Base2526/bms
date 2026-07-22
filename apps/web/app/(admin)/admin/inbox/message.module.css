@@ -54,38 +54,10 @@
 
 .outgoingCard {
   border-right: 4px solid #1677ff;
-  border-bottom-right-radius: 7px;
 }
 
 .incomingCard {
   border-left: 4px solid #94a3b8;
-  border-bottom-left-radius: 7px;
-}
-
-.outgoingCard::after,
-.incomingCard::after {
-  position: absolute;
-  bottom: 11px;
-  width: 10px;
-  height: 14px;
-  content: "";
-  background: var(--app-surface, #fff);
-}
-
-.outgoingCard::after {
-  right: -10px;
-  border-right: 3px solid #1677ff;
-  border-bottom: 3px solid #1677ff;
-  border-bottom-right-radius: 9px;
-  clip-path: polygon(0 0, 100% 46%, 100% 100%, 0 100%);
-}
-
-.incomingCard::after {
-  left: -10px;
-  border-bottom: 3px solid #94a3b8;
-  border-left: 3px solid #94a3b8;
-  border-bottom-left-radius: 9px;
-  clip-path: polygon(0 46%, 100% 0, 100% 100%, 0 100%);
 }
 
 .mediaCard {
