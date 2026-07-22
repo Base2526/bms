@@ -3109,19 +3109,22 @@ const rawResolvers = {
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const { name, phone, username, language, notifications_enabled } = data;
+      const { name, phone, username, language, gender, notifications_enabled } = data;
+      // gender รับเฉพาะ 'male'/'female'/null (ไม่งั้นไม่แตะค่าเดิม)
+      const genderVal = gender === "male" || gender === "female" ? gender : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, gender, notifications_enabled );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
           phone = COALESCE($2, phone),
           language = COALESCE($3, language),
-          notifications_enabled = COALESCE($4, notifications_enabled),
+          gender = COALESCE($4, gender),
+          notifications_enabled = COALESCE($5, notifications_enabled),
           updated_at = NOW()
-        WHERE id = $5
-        RETURNING id, name, email, phone, username, language, avatar, notifications_enabled`,
-        [name, phone, language, notifications_enabled, author_id]
+        WHERE id = $6
+        RETURNING id, name, email, phone, username, language, gender, avatar, notifications_enabled`,
+        [name, phone, language, genderVal, notifications_enabled, author_id]
       );
       return rows[0];
     },

@@ -69,7 +69,7 @@ const S_INBOX_CHANGED = gql`
   }
 `;
 const Q_STAFF = gql`query { bmsAssignableStaff { ${STAFF_FIELDS} } }`;
-const Q_ME = gql`query { bmsMe { id role is_available } }`;
+const Q_ME = gql`query { bmsMe { id role is_available gender } }`;
 const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref } }`;
 const Q_CUSTOMER = gql`
   query ($id: ID!) {
@@ -181,18 +181,29 @@ function convPriority(c: Conversation) {
   return { label: "ปกติ", color: "default", icon: <ClockCircleOutlined /> };
 }
 
-function suggestedReply(conv: any) {
+// เปลี่ยนคำลงท้ายตามเพศแอดมิน: male → "ครับ", female/ไม่ระบุ → คงเดิม (ค่ะ)
+// ลำดับ replace สำคัญ: "นะคะ" ก่อน "ค่ะ" ก่อน "คะ" (กันแทนซ้อน) — ใช้กับ template ของระบบเท่านั้น
+function applyGenderParticle(text: string, gender?: string | null): string {
+  if (gender !== "male") return text;
+  return text
+    .replace(/นะคะ/g, "นะครับ")
+    .replace(/ค่ะ/g, "ครับ")
+    .replace(/คะ/g, "ครับ");
+}
+
+function suggestedReply(conv: any, gender?: string | null) {
   const text = String(conv?.messages?.[conv.messages.length - 1]?.body || conv?.lastMessage || "").toLowerCase();
+  let base: string;
   if (/สลิป|โอน|ชำระ|payment|paid/.test(text)) {
-    return "ได้รับสลิปแล้วค่ะ เดี๋ยวตรวจสอบยอดให้ หากเรียบร้อยจะออกเลขพัสดุให้ทันทีนะคะ 🙏";
+    base = "ได้รับสลิปแล้วค่ะ เดี๋ยวตรวจสอบยอดให้ หากเรียบร้อยจะออกเลขพัสดุให้ทันทีนะคะ 🙏";
+  } else if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text)) {
+    base = "กำลังตรวจสอบสถานะจัดส่งให้นะคะ ถ้ามีเลขพัสดุแล้วจะแจ้งให้ทันทีค่ะ";
+  } else if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) {
+    base = "เดี๋ยวเช็กสต็อกและราคาให้ค่ะ ลูกค้าต้องการรุ่น/ไซซ์ไหนบ้างคะ";
+  } else {
+    base = "รับทราบค่ะ เดี๋ยวแอดมินตรวจสอบข้อมูลให้และแจ้งกลับโดยเร็วที่สุดนะคะ";
   }
-  if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text)) {
-    return "กำลังตรวจสอบสถานะจัดส่งให้นะคะ ถ้ามีเลขพัสดุแล้วจะแจ้งให้ทันทีค่ะ";
-  }
-  if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) {
-    return "เดี๋ยวเช็กสต็อกและราคาให้ค่ะ ลูกค้าต้องการรุ่น/ไซซ์ไหนบ้างคะ";
-  }
-  return "รับทราบค่ะ เดี๋ยวแอดมินตรวจสอบข้อมูลให้และแจ้งกลับโดยเร็วที่สุดนะคะ";
+  return applyGenderParticle(base, gender);
 }
 
 function nextAction(conv: any) {
@@ -602,7 +613,7 @@ function Inbox() {
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
             <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
-              onChanged={() => { refetchConv(); refetch(); }} />
+              gender={me?.gender} onChanged={() => { refetchConv(); refetch(); }} />
           )}
         </div>
         )}
@@ -614,7 +625,7 @@ function Inbox() {
   );
 }
 
-function ConversationPane({ conv, can, onChanged, isMobile = false, onBack }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void }) {
+function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null }) {
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<string[]>(conv.tags || []);
@@ -741,7 +752,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack }: { 
   const canAssign = can("inbox.assign");
   const canHelp = can("inbox.reply");
   const action = nextAction(conv);
-  const aiReply = suggestedReply(conv);
+  const aiReply = suggestedReply(conv, gender);
   const aiIntent = action.value === "เช็กสต็อก"
     ? "ถามสินค้า"
     : action.value === "ยืนยันสลิป"
@@ -1184,8 +1195,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack }: { 
                 </Space>
                 <Space wrap>
                   <Button size="small" type="primary" onClick={() => setReply(aiReply)}>ใส่ในช่องพิมพ์</Button>
-                  <Button size="small" onClick={() => setReply("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ")}>ขอตรวจสอบ</Button>
-                  <Button size="small" onClick={() => setReply("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏")}>ขอบคุณ</Button>
+                  <Button size="small" onClick={() => setReply(applyGenderParticle("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ", gender))}>ขอตรวจสอบ</Button>
+                  <Button size="small" onClick={() => setReply(applyGenderParticle("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏", gender))}>ขอบคุณ</Button>
                 </Space>
               </div>
             </div>

@@ -69,7 +69,10 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `6.8__bms_ai_config.sql` (`bms_plans.max_ai_messages_month` + BYOK ต่อร้าน — ดู § AI Free Tier + BYOK ด้านล่าง) ·
   `6.9__bms_store_profile.sql` (ข้อมูลร้าน + ค่าส่ง 1 แถว/ร้าน — ป้อน AI ตอบลูกค้า, ดู § ทูลชุด 2 ใน AI tool-calling) ·
   `7.0__bms_revision_helpers.sql` + `7.1`–`7.14` (revision snapshots สำหรับ records สำคัญ — helper
-  สร้าง `<table>_revisions`, trigger, RLS, grants; หน้า `/admin/revisions` ใช้ list/detail/compare)
+  สร้าง `<table>_revisions`, trigger, RLS, grants; หน้า `/admin/revisions` ใช้ list/detail/compare) ·
+  `7.15__bms_users_gender.sql` (`users.gender` — คำลงท้าย ครับ/ค่ะ ใน AI แนะนำคำตอบ; ดู § Gender particle) ·
+  `7.16__drop_legacy_revision_triggers.sql` (ลบ trigger revision ระบบเก่าที่ชนกับ BMS revision — ดู § Revision trigger collision) ·
+  `7.17__bms_store_profile_extend.sql` (เพิ่ม contact/branding/locale ใน store profile — ดู § ทูลชุด 2)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
@@ -294,11 +297,21 @@ children ของ panel ที่ยังไม่เคย active — **น�
 
 เพิ่มทูลเข้า `catalog.ts` อีกชุด (ยังห่อ service เดิม ไม่มี logic ซ้ำ):
 - **store profile (B1)** → `lib/bms/storeProfile.ts` + **migration `6.9__bms_store_profile.sql`** (1 แถว/ร้าน,
-  ตารางใหม่แรกของงาน AI นี้) · tools `get_store_info`/`get_payment_info`/`get_shipping_estimate`
+  ตารางใหม่แรกของงาน AI นี้) **+ `7.17__bms_store_profile_extend.sql`** (เพิ่ม contact_email/logo_url/tax_id/
+  timezone/country/currency/website) · tools `get_store_info`/`get_payment_info`/`get_shipping_estimate`
   (customer+staff, read) · GraphQL `bmsStoreProfile`/`bmsUpsertStoreProfile` (`graphql/bmsStoreProfile.ts`,
   gate `requireTenantAdmin` — ไม่มี permission ใหม่) · UI การ์ด `StoreProfileCard.tsx` ใน `/admin/settings`
   · `payment_accounts` = บัญชี "ของร้านเอง" ตั้งใจให้ลูกค้าเห็น (ไม่ใช่ PII บุคคลที่สาม) · `estimateShipping()`
   = flat rate + ส่งฟรีเมื่อยอด ≥ threshold (ยังไม่ผูก carrier API จริง)
+  · **ชื่อร้าน = `bms_tenants.name` ชื่อเดียวทั้งระบบ** (คอลัมน์ `store_name` เดิม **เลิกใช้** — โค้ด/AI/เอกสาร
+  ใช้ `getTenantName(tenantId)` [`platform.ts`] แทน) · **Administrator แก้ชื่อร้านเองได้** ผ่าน
+  `bmsUpdateMyTenant(name, slug)` (`bmsStoreProfile.ts` → `updateTenantIdentity()` ใน `platform.ts`,
+  validate slug format+unique, audit `tenant.identity_update`) · การ์ด StoreProfileCard save = ยิง 2 mutation
+  (`bmsUpdateMyTenant` + `bmsUpsertStoreProfile`) · **slug ปิดไม่ให้แก้ใน UI** (Input disabled + card ส่ง
+  `slug:null`) เพราะยังไม่มี route/webhook ใดใช้ slug จริง (เป็น handle สำรอง เผื่ออนาคต เช่น storefront `/shop/{slug}`) —
+  mutation ยังรับ slug ได้ · plan/active ยังเป็น platform-admin เท่านั้น
+  · **revision**: `bms_tenants` ไม่มี revision trigger (rename ปลอดภัย); `bms_store_profile` มี trigger
+  (snapshot jsonb) เพิ่มคอลัมน์ใหม่ได้เลย + upsert ส่ง `editorId` แล้ว (editor ไม่เป็น system)
 - **documents (B2)** → `lib/bms/documents.ts` · `generate_invoice(orderId)` (จาก order จริง, ราคา snapshot),
   `generate_quotation(items[])` (ตีราคาปัจจุบัน + ค่าส่งประเมิน) — ephemeral ไม่ persist, staff `order.view`
 - **forecast (B3)** → `lib/bms/forecast.ts` · `forecast_demand`/`predict_stockout`/`suggest_purchase_order`
@@ -368,6 +381,39 @@ mutation {
 `proposals[]` จะว่างเปล่าถ้าไม่มีการเรียกทูล sensitive · role ที่ไม่มีสิทธิ์ของทูลนั้น (เช่น Sales ไม่มี
 `payment.refund`) จะไม่เห็นทูลนั้นถูกเสนอให้ AI เลยตั้งแต่ต้น (กรองที่ `staffTools(perms)`) และถึงมี
 provider output ผิดปกติก็จะถูก runtime ปฏิเสธซ้ำก่อน execute
+
+## Revision trigger collision — แก้ users/posts อัปเดตไม่ได้ (2026-07)
+
+**เจอ + แก้แล้ว** — บันทึกโปรไฟล์ `/admin/profile` (และแก้ post/comment) พังด้วย
+`column "tenant_id" of relation "users_revisions" does not exist`:
+
+- **สาเหตุราก**: `7.0__bms_revision_helpers.sql` ทำ `CREATE OR REPLACE FUNCTION trg_generic_revision()`
+  **ทับฟังก์ชันชื่อเดียวกันของ revision ระบบเก่า** · ฟังก์ชันใหม่ INSERT `(id, tenant_id, editor_id,
+  revision_id, snapshot, ...)` แต่ตาราง `*_revisions` ระบบเก่า (`users`/`posts`/`comments`/
+  `post_seller_accounts`/`post_tel_numbers`) มีสคีมาคนละแบบ (`<table>_id, editor_id, snapshot` — ไม่มี tenant_id)
+  → trigger `*_rev_trg` บนตารางเหล่านั้น error ทุกครั้งที่ UPDATE
+- **แก้**: `7.16__drop_legacy_revision_triggers.sql` drop trigger legacy 5 ตัวทิ้ง (ตอนนี้มีแต่ทำให้พัง
+  ไม่ได้ revision ได้จริงตั้งแต่ 7.0) · **ไม่แตะ** trigger ของ bms_* (revision จริงยังทำงานครบ 15 ตัว)
+- **สำคัญ (อย่าเผลอกลับไปเปิด)**: ห้าม revision ตาราง `users` — เพราะ `to_jsonb(OLD)` จะ snapshot
+  **password_hash** ลง `*_revisions` = ช่องโหว่ · ถ้าจะทำ revision ตาราง legacy จริงต้องออกแบบใหม่แยก
+- **บทเรียน**: `trg_generic_revision` เป็นชื่อฟังก์ชัน global — ระวังชนกับของเดิม; เพิ่มตาราง revision ใหม่
+  ต้องเช็ก `pg_trigger` ว่าไม่ไปผูก trigger เข้ากับตาราง `_revisions` ที่สคีมาไม่ตรง
+
+## Gender particle — คำลงท้าย ครับ/ค่ะ ใน "AI แนะนำคำตอบ" (2026-07)
+
+**เสร็จแล้ว** — เดิม suggested-reply ในหน้า Inbox ฮาร์ดโค้ด "ค่ะ/นะคะ" เสมอ ตอนนี้ผูกกับเพศแอดมิน:
+
+- **field ใหม่**: `users.gender` (migration `7.15__bms_users_gender.sql`) ค่า `'male'`/`'female'`/`NULL`
+  (ไม่ระบุ) · **ไม่มี CHECK** — validate ที่ `updateMe` (รับเฉพาะ male/female ไม่งั้น null)
+- **plumbing**: `bmsMe.gender` + `MeInput.gender` (`typeDefs.ts`) · `bmsMe` resolver (`bmsSaas.ts` SELECT+return) ·
+  `updateMe` resolver (`resolvers.ts` UPDATE+RETURNING) · หน้า `/admin/profile` (Select ครับ/ค่ะ/ไม่ระบุ)
+- **ฟีเจอร์จริง**: `app/(admin)/admin/inbox/page.tsx` — `applyGenderParticle(text, gender)` แปลง
+  `นะคะ→นะครับ`, `ค่ะ→ครับ`, `คะ→ครับ` (**ลำดับ replace สำคัญ**: นะคะ ก่อน ค่ะ ก่อน คะ) เฉพาะ
+  `gender==="male"` · `female`/null คงเดิม (ค่ะ) · ใช้กับ template ของระบบเท่านั้น (ไม่ใช่ input ลูกค้า)
+  · `Inbox()` มี `me` จาก `Q_ME` (เพิ่ม `gender`) แล้วส่ง prop `gender` → `ConversationPane` (คนละ component) →
+  `suggestedReply(conv, gender)` (4 ข้อความ) + ปุ่ม quick reply "ขอตรวจสอบ"/"ขอบคุณ" (2 ข้อความ)
+- **สำคัญ**: นี่คือข้อความที่ "แอดมินส่งในนามตัวเอง" เท่านั้น — **AI ตอบลูกค้าในนามร้าน** (`pipeline.ts`/`ai.ts`,
+  30 จุดที่ใช้ ค่ะ) เป็น brand voice ของร้าน **ไม่ได้ผูกเพศ** และตั้งใจไม่แตะ (คนละเรื่อง)
 
 ## เติมข้อมูลทดสอบเร็ว ๆ
 

@@ -8,9 +8,10 @@
 
 import { query } from "@/lib/db";
 import { getStoreProfile, estimateShipping } from "./storeProfile";
+import { getTenantName } from "./platform";
 
 export type DocLine = { sku: string; name: string; size: string; qty: number; unitPrice: number; amount: number };
-export type StoreSummary = { name: string | null; address: string | null; phone: string | null };
+export type StoreSummary = { name: string | null; address: string | null; phone: string | null; taxId: string | null };
 
 export type BusinessDoc = {
   type: "INVOICE" | "QUOTATION";
@@ -29,7 +30,9 @@ export type BusinessDoc = {
 
 async function storeSummary(tenantId: string): Promise<StoreSummary> {
   const p = await getStoreProfile(tenantId);
-  return { name: p.storeName, address: p.address, phone: p.phone };
+  // ชื่อร้าน = bms_tenants.name (ชื่อเดียวทั้งระบบ)
+  const name = await getTenantName(tenantId);
+  return { name, address: p.address, phone: p.phone, taxId: p.taxId };
 }
 
 /** ใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (ใช้ราคา snapshot ณ ตอนสั่ง) */

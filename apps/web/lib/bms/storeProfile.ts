@@ -1,9 +1,10 @@
 // =============================================================
-// BMS store profile — ข้อมูลร้าน (hours/address/policy/บัญชีรับเงิน/ค่าส่ง)
+// BMS store profile — ข้อมูลร้าน (contact/branding/locale/policy/บัญชีรับเงิน/ค่าส่ง)
 // -------------------------------------------------------------
-// 1 แถวต่อร้าน (migration 6.9) · read ด้วย query()+WHERE tenant_id,
-// write ด้วย INSERT ... ON CONFLICT (แพทเทิร์นเดียวกับ setTenantAiKey)
+// 1 แถวต่อร้าน (migration 6.9 + 7.17) · read ด้วย query()+WHERE tenant_id,
+// write ด้วย INSERT ... ON CONFLICT ผ่าน beginTenantTx (revision-safe)
 // tool: get_store_info / get_payment_info / get_shipping_estimate ดึงไปตอบลูกค้า
+// ชื่อร้าน = bms_tenants.name (ไม่ใช่ field ในนี้แล้ว — ดู migration 7.17)
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
@@ -19,10 +20,16 @@ export type PaymentAccount = {
 };
 
 export type StoreProfile = {
-  storeName: string | null;
   about: string | null;
   address: string | null;
   phone: string | null;
+  contactEmail: string | null;
+  website: string | null;
+  logoUrl: string | null;
+  taxId: string | null;
+  timezone: string | null;
+  country: string | null;   // TH / AU / UK
+  currency: string | null;  // THB / AUD / GBP
   businessHours: string | null;
   shippingPolicy: string | null;
   returnPolicy: string | null;
@@ -34,7 +41,8 @@ export type StoreProfile = {
 };
 
 const EMPTY: StoreProfile = {
-  storeName: null, about: null, address: null, phone: null,
+  about: null, address: null, phone: null, contactEmail: null, website: null,
+  logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
   paymentAccounts: [],
   shippingFlatRate: null, shippingFreeThreshold: null,
@@ -45,7 +53,8 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 
 export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const res = await query<any>(
-    `SELECT store_name, about, address, phone, business_hours, shipping_policy, return_policy,
+    `SELECT about, address, phone, contact_email, website, logo_url, tax_id,
+            timezone, country, currency, business_hours, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
             shipping_est_days_min, shipping_est_days_max
        FROM bms_store_profile WHERE tenant_id = $1`,
@@ -54,10 +63,16 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const r = res.rows[0];
   if (!r) return { ...EMPTY };
   return {
-    storeName: r.store_name ?? null,
     about: r.about ?? null,
     address: r.address ?? null,
     phone: r.phone ?? null,
+    contactEmail: r.contact_email ?? null,
+    website: r.website ?? null,
+    logoUrl: r.logo_url ?? null,
+    taxId: r.tax_id ?? null,
+    timezone: r.timezone ?? null,
+    country: r.country ?? null,
+    currency: r.currency ?? null,
     businessHours: r.business_hours ?? null,
     shippingPolicy: r.shipping_policy ?? null,
     returnPolicy: r.return_policy ?? null,
@@ -71,28 +86,38 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
 
 export type StoreProfileInput = Partial<StoreProfile>;
 
-export async function upsertStoreProfile(tenantId: string, input: StoreProfileInput): Promise<StoreProfile> {
+export async function upsertStoreProfile(
+  tenantId: string,
+  input: StoreProfileInput,
+  editorId?: string | null
+): Promise<StoreProfile> {
   const cur = await getStoreProfile(tenantId);
   const merged: StoreProfile = { ...cur, ...input };
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     await client.query(
       `INSERT INTO bms_store_profile (
-        tenant_id, store_name, about, address, phone, business_hours, shipping_policy, return_policy,
+        tenant_id, about, address, phone, contact_email, website, logo_url, tax_id,
+        timezone, country, currency, business_hours, shipping_policy, return_policy,
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,$19)
      ON CONFLICT (tenant_id) DO UPDATE SET
-        store_name = EXCLUDED.store_name, about = EXCLUDED.about, address = EXCLUDED.address,
-        phone = EXCLUDED.phone, business_hours = EXCLUDED.business_hours,
-        shipping_policy = EXCLUDED.shipping_policy, return_policy = EXCLUDED.return_policy,
-        payment_accounts = EXCLUDED.payment_accounts, shipping_flat_rate = EXCLUDED.shipping_flat_rate,
+        about = EXCLUDED.about, address = EXCLUDED.address, phone = EXCLUDED.phone,
+        contact_email = EXCLUDED.contact_email, website = EXCLUDED.website,
+        logo_url = EXCLUDED.logo_url, tax_id = EXCLUDED.tax_id, timezone = EXCLUDED.timezone,
+        country = EXCLUDED.country, currency = EXCLUDED.currency,
+        business_hours = EXCLUDED.business_hours, shipping_policy = EXCLUDED.shipping_policy,
+        return_policy = EXCLUDED.return_policy, payment_accounts = EXCLUDED.payment_accounts,
+        shipping_flat_rate = EXCLUDED.shipping_flat_rate,
         shipping_free_threshold = EXCLUDED.shipping_free_threshold,
         shipping_est_days_min = EXCLUDED.shipping_est_days_min,
         shipping_est_days_max = EXCLUDED.shipping_est_days_max, updated_at = now()`,
       [
-        tenantId, merged.storeName, merged.about, merged.address, merged.phone, merged.businessHours,
-        merged.shippingPolicy, merged.returnPolicy, JSON.stringify(merged.paymentAccounts ?? []),
+        tenantId, merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
+        merged.logoUrl, merged.taxId, merged.timezone, merged.country, merged.currency,
+        merged.businessHours, merged.shippingPolicy, merged.returnPolicy,
+        JSON.stringify(merged.paymentAccounts ?? []),
         merged.shippingFlatRate, merged.shippingFreeThreshold, merged.shippingEstDaysMin, merged.shippingEstDaysMax,
       ]
     );
@@ -109,7 +134,7 @@ export async function upsertStoreProfile(tenantId: string, input: StoreProfileIn
 export type ShippingEstimate = {
   configured: boolean;
   fee: number | null;
-  currency: "THB";
+  currency: string;
   freeThreshold: number | null;
   freeShippingApplied: boolean;
   estDaysMin: number | null;
@@ -133,7 +158,7 @@ export async function estimateShipping(tenantId: string, subtotal?: number | nul
   return {
     configured,
     fee: fee ?? null,
-    currency: "THB",
+    currency: p.currency || "THB",
     freeThreshold: threshold,
     freeShippingApplied: free,
     estDaysMin: p.shippingEstDaysMin,

@@ -1419,7 +1419,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsMeTenant { id: ID!  name: String!  slug: String!  plan: String! }
   type BmsMe {
     id: ID!  name: String  username: String  email: String  phone: String  avatar: String
-    role: String!  language: String
+    role: String!  language: String  gender: String   # 'male' | 'female' | null (ไม่ระบุ)
     is_platform_admin: Boolean!
     is_available: Boolean!
     created_at: String
@@ -1552,6 +1552,7 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     username: String
     language: String
+    gender: String
     notifications_enabled: Boolean
   }
 
@@ -1732,10 +1733,16 @@ export const typeDefs = /* GraphQL */ `
     note: String
   }
   type BmsStoreProfile {
-    storeName: String
     about: String
     address: String
     phone: String
+    contactEmail: String
+    website: String
+    logoUrl: String
+    taxId: String
+    timezone: String
+    country: String
+    currency: String
     businessHours: String
     shippingPolicy: String
     returnPolicy: String
@@ -1746,10 +1753,16 @@ export const typeDefs = /* GraphQL */ `
     shippingEstDaysMax: Int
   }
   input BmsStoreProfileInput {
-    storeName: String
     about: String
     address: String
     phone: String
+    contactEmail: String
+    website: String
+    logoUrl: String
+    taxId: String
+    timezone: String
+    country: String
+    currency: String
     businessHours: String
     shippingPolicy: String
     returnPolicy: String
@@ -1954,6 +1967,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
+    bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!

@@ -87,3 +87,49 @@ export async function setTenantActive(tenantId: string, active: boolean): Promis
   const res = await query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
   return (res.rowCount ?? 0) > 0;
 }
+
+/** ชื่อร้าน (bms_tenants.name) จาก tenantId — ใช้เป็นชื่อร้านชื่อเดียวทั้งระบบ (AI/เอกสาร) */
+export async function getTenantName(tenantId: string): Promise<string | null> {
+  const r = await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [tenantId]);
+  return r.rows[0]?.name ?? null;
+}
+
+/** normalize slug: ตัวเล็ก, อนุญาต a-z 0-9 และ '-' (อื่น ๆ → '-'), ตัด '-' ซ้ำ/หัวท้าย */
+function normalizeSlug(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * แก้ชื่อร้าน (bms_tenants.name) + slug — ให้ Administrator ของร้านแก้เองได้
+ * slug: validate รูปแบบ + unique (ยกเว้นตัวเอง) · bms_tenants ไม่มี revision trigger จึงแก้ได้ตรง ๆ
+ */
+export async function updateTenantIdentity(
+  tenantId: string,
+  patch: { name?: string | null; slug?: string | null }
+): Promise<{ id: string; name: string; slug: string }> {
+  const name = typeof patch.name === "string" && patch.name.trim() ? patch.name.trim() : null;
+
+  let slug: string | null = null;
+  if (typeof patch.slug === "string" && patch.slug.trim()) {
+    slug = normalizeSlug(patch.slug);
+    if (!slug) throw new Error("slug ไม่ถูกต้อง (ใช้ได้เฉพาะ a-z, 0-9, -)");
+    const dup = await query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
+    if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
+  }
+
+  const res = await query<{ id: string; name: string; slug: string }>(
+    `UPDATE bms_tenants
+        SET name = COALESCE($2, name),
+            slug = COALESCE($3, slug)
+      WHERE id = $1
+      RETURNING id, name, slug`,
+    [tenantId, name, slug]
+  );
+  if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
+  return res.rows[0];
+}

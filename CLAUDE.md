@@ -63,7 +63,11 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
   `6.5__bms_product_images.sql`; `image_url` remains the cover image for backward compatibility and
   `images[]` is the ordered gallery used by the Products page.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
-  name/phone/language via `bmsMe`, `uploadAvatar`, and `updateMe`.
+  name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Gender-aware Inbox suggested replies**: admins set their gender in `/admin/profile`
+  (migration `7.15__bms_users_gender.sql` → `users.gender`, exposed on `bmsMe.gender`); the Inbox
+  "AI แนะนำคำตอบ" templates then end with ครับ for male admins and ค่ะ for female/unset (via
+  `applyGenderParticle()`). Customer-facing AI brand voice stays ค่ะ and is unaffected.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.
@@ -85,9 +89,15 @@ This is a different, richer view than the "ลูกค้า" purchase-history 
   [docs/ai/workflow.md](docs/ai/workflow.md) and [docs/ai/tools.md](docs/ai/tools.md) for the full
   design, and § AI tool-calling in [CLAUDE.local.md](CLAUDE.local.md) for gotchas/example usage.
 - **AI tool catalog — batch 2 (store / documents / forecast / AI-native / outbound)**: the catalog now
-  also covers **store profile** (migration `6.9__bms_store_profile.sql` — hours/address/policies/receiving
-  accounts/shipping config, edited at `/admin/settings`; tools `get_store_info`/`get_payment_info`/
-  `get_shipping_estimate` let AI answer the shop-info questions customers ask most), **documents**
+  also covers **store profile** (migrations `6.9`/`7.17__bms_store_profile*` — hours/address/policies/
+  receiving accounts/shipping config, plus contact email/website/logo/tax id/timezone/country/currency,
+  edited at `/admin/settings`; tools `get_store_info`/`get_payment_info`/`get_shipping_estimate` let AI
+  answer the shop-info questions customers ask most). **Shop name is a single source** — `bms_tenants.name`
+  (the store-profile `store_name` column is deprecated); a shop **Administrator can now rename their own
+  tenant name + slug** via `bmsUpdateMyTenant` (self-service, gated `requireTenantAdmin`; plan/active
+  remain platform-admin only; **slug is read-only in the UI** — the `bmsUpdateMyTenant` mutation still
+  accepts it but the Settings card sends only the name, since no route/webhook uses slug yet, it's a
+  reserved handle). Also **documents**
   (`generate_invoice`/`generate_quotation`, `lib/bms/documents.ts`), **forecasting**
   (`forecast_demand`/`predict_stockout`/`suggest_purchase_order`, `lib/bms/forecast.ts` — heuristic
   velocity, always tagged with uncertainty), **AI-native helpers** (`detect_language`, `classify_intent`,
