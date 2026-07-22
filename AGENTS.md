@@ -151,6 +151,9 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 - Product media is now a gallery, not just a single image. Preserve backward compatibility by
   keeping `bms_products.image_url` as the cover image while the full ordered gallery lives in
   `bms_product_images` and GraphQL `BmsProduct.images`.
+- Inbox replies currently support a text body plus one attachment. Keep image/file/product sharing
+  in the composer draft so staff can review before sending, and do not send `/admin/*` links to
+  customers. Only include a product link when the system has an explicit customer-safe public URL.
 - Customer 360 Quick Actions must reuse `createOrder()` for staff-created orders so price snapshots,
   CRM identity resolution, stock reservation, and rollback behavior stay identical to customer/AI
   orders. `bmsGenerateInvoice` is read-only and ephemeral; it must continue to use order-item price

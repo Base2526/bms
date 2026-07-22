@@ -67,6 +67,11 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   (migration `7.15__bms_users_gender.sql` → `users.gender`, exposed on `bmsMe.gender`); the Inbox
   "AI แนะนำคำตอบ" templates then end with ครับ for male admins and ค่ะ for female/unset (via
   `applyGenderParticle()`). Customer-facing AI brand voice stays ค่ะ and is unaffected.
+- **Compact Inbox workspace**: the conversation queue and active-chat header use compact controls
+  to preserve message space. Recent orders open in an in-context preview first, with the full Orders
+  page available in a new tab. The composer stages one image/file attachment with the text draft;
+  the product picker can stage product text alone or product text plus its cover image. The internal
+  Products link opens in a new tab for staff and is never inserted into a customer message.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.

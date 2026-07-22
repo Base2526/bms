@@ -33,6 +33,33 @@ Quick Actions reuse existing services and permissions:
 - Stock, refundable payments, and the full customer record continue to link to their authoritative
   admin pages. Staff assignment remains in the conversation header.
 
+Recent-order links preserve the operator's place in the conversation. **เปิดออเดอร์** opens a
+right-side preview drawer inside Inbox; **เปิดหน้า Orders เต็มจอ** opens `/admin/orders` in a new tab
+for deeper work. Closing the drawer returns to the same chat and draft.
+
+## Compact chat workspace and product sharing
+
+The queue filters and active-chat header intentionally use smaller typography and tighter spacing
+so the message history and composer get most of the available height. The channel tag follows the
+customer name; the old Chat Focus control is not part of this layout.
+
+The composer keeps the existing cross-channel message contract: a text body and at most one
+attachment. Selecting **รูป** or **ไฟล์** uploads it into the draft, shows a removable preview, and
+waits for the staff member to press Send. The two buttons have independent loading indicators, but
+choosing another attachment replaces the current draft attachment because the backend supports one.
+
+The **สินค้า** picker lists products and their cover image, SKU, current price, and available
+variants. Inactive products remain visible for search clarity but are labelled **ปิดขาย** and cannot
+be inserted. Staff can choose:
+
+- **แทรกข้อความ** — stage product name, SKU, price, and a stock summary as editable text.
+- **ข้อความ + รูป** — stage the same text plus the product cover image as the one attachment.
+- **เปิดหน้า Products เต็มจอ** — open the internal product admin page in a new tab.
+
+Nothing is sent until staff reviews the draft and presses Send. The internal `/admin/products` URL
+is never inserted into a customer message. AI-BMS does not currently expose a customer-safe public
+product URL; add links later only when such a URL exists explicitly rather than leaking an admin URL.
+
 `BmsOrder.hasShippingAddress` is also exposed on the Orders admin list. LINE/Facebook/Instagram/
 Web/TikTok Chat orders cannot move from `PACKING` to `SHIPPED` until the linked CRM customer has an
 address with `address_type = 'shipping'`; both direct order shipping and shipment creation enforce

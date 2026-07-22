@@ -9,7 +9,7 @@
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   Collapse, Skeleton, Empty, Tag, Typography, Avatar, Space, Table,
-  Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message,
+  Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message, Drawer,
 } from "antd";
 import { useEffect, useState } from "react";
 import {
@@ -189,13 +189,24 @@ function StatsSection({ s }: { s: any }) {
 }
 
 // ---- Section 4 — Recent Orders (all channels) --------------------
-function RecentOrdersSection({ orders }: { orders: any[] }) {
+function RecentOrdersSection({
+  orders, selectedOrderId, onOpenPreview,
+}: { orders: any[]; selectedOrderId: string | null; onOpenPreview: (orderId: string) => void }) {
   if (!orders?.length) return <Empty description="ยังไม่มีออเดอร์" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <List
       size="small" dataSource={orders}
       renderItem={(o: any) => (
-        <List.Item style={{ display: "block" }}>
+        <List.Item
+          style={{
+            display: "block",
+            padding: 10,
+            marginBottom: 8,
+            borderRadius: 12,
+            border: selectedOrderId === o.id ? "1px solid rgba(22,119,255,0.35)" : "1px solid rgba(15,23,42,0.08)",
+            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "#fff",
+          }}
+        >
           <Space size={4} wrap style={{ marginBottom: 2 }}>
             <Tag color={CHANNEL_COLOR[o.channel] || "default"}>{o.channel}</Tag>
             <Text strong style={{ fontSize: 12 }}>#{String(o.id).slice(0, 8)}</Text>
@@ -211,7 +222,9 @@ function RecentOrdersSection({ orders }: { orders: any[] }) {
             {(o.items || []).map((it: any) => `${it.sku}×${it.qty}`).join(", ")}
           </div>
           <Space size={8} style={{ marginTop: 4 }}>
-            <Link href={`/admin/orders?highlight=${o.id}`}><Button size="small">เปิดออเดอร์</Button></Link>
+            <Button size="small" type={selectedOrderId === o.id ? "primary" : "default"} onClick={() => onOpenPreview(o.id)}>
+              เปิดออเดอร์
+            </Button>
             {o.channel !== "web" && o.channel !== "test" && (
               <Tooltip title="เปิดหน้าออเดอร์ในช่องทางต้นทาง (ยังไม่รองรับทุกช่องทาง)">
                 <Button size="small" disabled>เปิด Marketplace</Button>
@@ -221,6 +234,81 @@ function RecentOrdersSection({ orders }: { orders: any[] }) {
         </List.Item>
       )}
     />
+  );
+}
+
+function OrderPreviewDrawer({
+  open, order, onClose,
+}: { open: boolean; order: any | null; onClose: () => void }) {
+  return (
+    <Drawer
+      title={
+        <Space size={8} wrap>
+          <Text strong>ดูออเดอร์แบบในแชท</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>(ไม่ออกจากหน้าแชท)</Text>
+        </Space>
+      }
+      placement="right"
+      width={380}
+      open={open}
+      onClose={onClose}
+      destroyOnClose
+      extra={
+        order ? (
+          <Link href={`/admin/orders?highlight=${order.id}`} target="_blank" rel="noreferrer">
+            <Button size="small" type="primary">เปิดหน้า Orders เต็มจอ</Button>
+          </Link>
+        ) : null
+      }
+    >
+      {!order ? (
+        <Empty description="เลือกออเดอร์เพื่อดูรายละเอียด" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : (
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Space size={6} wrap>
+            <Tag color={CHANNEL_COLOR[order.channel] || "default"}>{order.channel}</Tag>
+            <Text strong style={{ fontSize: 18 }}>#{String(order.id).slice(0, 8)}</Text>
+            <Tag color={STATUS_COLOR[order.status] || "default"}>{order.status}</Tag>
+          </Space>
+
+          <Descriptions size="small" column={1} colon={false}>
+            <Descriptions.Item label="วันที่">{dateTime(order.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label="ยอดรวม">{money(order.totalAmount)}</Descriptions.Item>
+            <Descriptions.Item label="การชำระเงิน">{order.paymentStatus || "—"}{order.paymentMethod ? ` · ${order.paymentMethod}` : ""}</Descriptions.Item>
+            <Descriptions.Item label="การจัดส่ง">
+              {order.shipmentStatus || "—"}{order.carrier ? ` · ${order.carrier}` : ""}{order.trackingNo ? ` · ${order.trackingNo}` : ""}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <div>
+            <Text strong style={{ fontSize: 12 }}>สินค้า</Text>
+            <List
+              size="small"
+              dataSource={order.items || []}
+              locale={{ emptyText: "ไม่มีสินค้า" }}
+              renderItem={(it: any) => (
+                <List.Item>
+                  <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div>
+                      <Text style={{ fontSize: 12 }}>{it.sku}</Text>
+                      <div><Text type="secondary" style={{ fontSize: 11 }}>ไซซ์ {it.size || "—"} · จำนวน {it.qty}</Text></div>
+                    </div>
+                    <Text style={{ fontSize: 12 }}>{money((Number(it.unitPrice) || 0) * (Number(it.qty) || 0))}</Text>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </div>
+
+          <Alert
+            type="info"
+            showIcon
+            message="ดูแบบเร็วจากหน้า Inbox"
+            description="ถ้าต้องแก้ไขลึกหรือทำงานต่อในหน้า Orders ให้ใช้ปุ่ม เปิดหน้า Orders เต็มจอ ซึ่งจะเปิดแท็บใหม่และไม่ทำให้หลุดจากแชทนี้"
+          />
+        </Space>
+      )}
+    </Drawer>
   );
 }
 
@@ -532,6 +620,13 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
   const c360 = data?.bmsCustomer360;
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
+  const recentOrders = c360?.recentOrders || [];
+  const previewOrder = recentOrders.find((o: any) => o.id === previewOrderId) || null;
+
+  useEffect(() => {
+    setPreviewOrderId(null);
+  }, [customerId]);
 
   if (collapsed) {
     return (
@@ -567,8 +662,12 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
           items={[
             { key: "summary", label: "สรุปลูกค้า", children: <SummarySection c={c360?.customer} conv={conv} /> },
             { key: "cart", label: "ตะกร้าปัจจุบัน", children: <CartSection draftOrder={c360?.draftOrder} /> },
-            { key: "orders", label: "ออเดอร์ล่าสุด (ทุกช่องทาง)", children: <RecentOrdersSection orders={c360?.recentOrders || []} /> },
-            { key: "actions", label: "Quick Actions", children: <QuickActionsSection can={can} conv={conv} orders={c360?.recentOrders || []} onCreateOrder={() => setCreateOrderOpen(true)} onInvoice={() => setInvoiceOpen(true)} /> },
+            {
+              key: "orders",
+              label: "ออเดอร์ล่าสุด (ทุกช่องทาง)",
+              children: <RecentOrdersSection orders={recentOrders} selectedOrderId={previewOrderId} onOpenPreview={setPreviewOrderId} />,
+            },
+            { key: "actions", label: "Quick Actions", children: <QuickActionsSection can={can} conv={conv} orders={recentOrders} onCreateOrder={() => setCreateOrderOpen(true)} onInvoice={() => setInvoiceOpen(true)} /> },
             { key: "contact", label: "ข้อมูลติดต่อ", children: <ContactSection c={c360?.customer} identities={c360?.identities || []} addresses={c360?.addresses || []} /> },
             { key: "stats", label: "สถิติลูกค้า", children: <StatsSection s={c360?.stats} /> },
             { key: "products", label: "สินค้าที่ซื้อ", children: <ProductsSection products={c360?.products} /> },
@@ -584,8 +683,13 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
         onDone={() => { setCreateOrderOpen(false); refetch(); }}
       />
       <InvoiceModal
-        open={invoiceOpen} orders={c360?.recentOrders || []}
+        open={invoiceOpen} orders={recentOrders}
         onClose={() => setInvoiceOpen(false)}
+      />
+      <OrderPreviewDrawer
+        open={!!previewOrderId}
+        order={previewOrder}
+        onClose={() => setPreviewOrderId(null)}
       />
     </div>
   );
