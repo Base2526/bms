@@ -38,7 +38,7 @@ export const bmsSaasResolvers = {
         throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
       }
       const u = await query<any>(
-        `SELECT id, name, username, email, phone, avatar, role, language,
+        `SELECT id, name, username, email, phone, avatar, role, language, gender,
                 tenant_id, is_platform_admin, is_available, created_at
            FROM users WHERE id = $1`,
         [auth.author_id]
@@ -65,6 +65,7 @@ export const bmsSaasResolvers = {
         avatar: user.avatar,
         role: user.role,
         language: user.language,
+        gender: user.gender ?? null,
         is_platform_admin: user.is_platform_admin === true,
         is_available: user.is_available !== false,
         // pg คืน Date object — ต้องแปลงเป็น ISO string เอง (ไม่งั้น GraphQLString.serialize จะได้ epoch number ผิดรูปแบบ)

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 const Q = gql`
   query {
     bmsMe {
-      id name username email phone avatar role language
+      id name username email phone avatar role language gender
       is_platform_admin created_at
       tenant { id name slug plan }
       permissions
@@ -53,6 +53,7 @@ export default function Page() {
       name: me.name || "",
       phone: me.phone || "",
       language: me.language || "th",
+      gender: me.gender || undefined,
       email: me.email || "",
       username: me.username || "",
     });
@@ -87,6 +88,7 @@ export default function Page() {
             name: values.name?.trim() || "",
             phone: values.phone?.trim() || "",
             language: values.language || "th",
+            gender: values.gender || null,
           },
         },
       });
@@ -170,6 +172,18 @@ export default function Page() {
                         options={[
                           { value: "th", label: "ไทย" },
                           { value: "en", label: "English" },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="gender" label="คำลงท้าย (ใช้กับ AI แนะนำคำตอบ)">
+                      <Select
+                        allowClear
+                        placeholder="ไม่ระบุ (ใช้ ค่ะ)"
+                        options={[
+                          { value: "female", label: "ผู้หญิง — ค่ะ" },
+                          { value: "male", label: "ผู้ชาย — ครับ" },
                         ]}
                       />
                     </Form.Item>

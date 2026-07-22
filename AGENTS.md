@@ -91,8 +91,14 @@ arguments or prompt content. Successful A2 writes also keep their domain audit a
 A3 actions are audited by the existing mutation. Shared-key quota is consumed once before a loop,
 not once per Claude round-trip.
 
-The catalog also covers store profile (`lib/bms/storeProfile.ts`, migration `6.9__bms_store_profile.sql`
-— `get_store_info`/`get_payment_info`/`get_shipping_estimate`), documents (`lib/bms/documents.ts` —
+The catalog also covers store profile (`lib/bms/storeProfile.ts`, migrations `6.9`/`7.17__bms_store_profile*`
+— `get_store_info`/`get_payment_info`/`get_shipping_estimate`; contact/branding/locale fields). Shop name
+is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` column is deprecated — do
+not reintroduce it), and a shop Administrator renames their own tenant name through
+`bmsUpdateMyTenant` (`updateTenantIdentity()` in `platform.ts`, slug validated + unique); `bms_tenants`
+has no revision trigger so the rename is safe, while plan/active stay platform-admin only. Slug is
+read-only in the Settings UI (no route/webhook uses it yet — a reserved handle; the mutation still
+accepts it for future use). Also documents (`lib/bms/documents.ts` —
 `generate_invoice`/`generate_quotation`), heuristic forecasting (`lib/bms/forecast.ts` —
 `forecast_demand`/`predict_stockout`/`suggest_purchase_order`, every result tagged with its
 `method`/`disclaimer` per the forecasting rules in AI_GUIDELINES), AI-native helpers
@@ -147,6 +153,11 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   `bms_product_images` and GraphQL `BmsProduct.images`.
 - Profile editing should reuse the existing `bmsMe`, `updateMe`, and `uploadAvatar` flows rather
   than introducing parallel account-profile endpoints.
+- Thai polite particles in staff-facing text: an admin's own particle (ครับ vs ค่ะ) comes from
+  `users.gender` (`'male'` → ครับ, `'female'`/null → ค่ะ), carried through `bmsMe.gender`. The Inbox
+  "AI แนะนำคำตอบ" templates convert via `applyGenderParticle()` in the inbox page. This is only for
+  text the admin sends as themselves — the customer-facing AI brand voice (`lib/bms/pipeline.ts`,
+  `ai.ts`) stays ค่ะ and is not tied to any one admin's gender.
 - The Docker development stack owns its own `apps/web/.next` and `apps/web/node_modules` volumes.
   Do not remove those volume mounts or share the same Next.js output directory between host and
   container dev servers; mixed manifests cause App Router `clientModules` failures across routes.

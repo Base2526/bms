@@ -52,6 +52,7 @@ import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { getStoreProfile, estimateShipping } from "../storeProfile";
+import { getTenantName } from "../platform";
 import { generateInvoice, generateQuotation } from "../documents";
 import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
 import { understand } from "../nlu";
@@ -979,10 +980,15 @@ const getStoreInfoTool: BmsTool = {
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
     const p = await getStoreProfile(ec.tenantId);
+    // ชื่อร้าน = bms_tenants.name (ชื่อเดียวทั้งระบบ ไม่ใช้ store_name แล้ว)
+    const storeName = await getTenantName(ec.tenantId);
     return {
       ok: true,
       data: {
-        storeName: p.storeName, about: p.about, address: p.address, phone: p.phone,
+        storeName,
+        about: p.about, address: p.address, phone: p.phone,
+        contactEmail: p.contactEmail, website: p.website,
+        country: p.country, timezone: p.timezone,
         businessHours: p.businessHours, shippingPolicy: p.shippingPolicy, returnPolicy: p.returnPolicy,
       },
     };
