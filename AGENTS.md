@@ -63,6 +63,7 @@ Consult the relevant document before changing a domain:
 - [AI workflow](docs/ai/workflow.md), [approved tools](docs/ai/tools.md), and
   [prompts](docs/ai/prompts.md)
 - Channel-specific behavior in `docs/integrations/`
+- Public product sharing in `docs/ui/public-products.md`
 - Machine-local commands and known development issues in `CLAUDE.local.md`
 
 When documentation and code disagree, inspect migrations and the service implementation before
@@ -97,8 +98,9 @@ is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` c
 not reintroduce it), and a shop Administrator renames their own tenant name through
 `bmsUpdateMyTenant` (`updateTenantIdentity()` in `platform.ts`, slug validated + unique); `bms_tenants`
 has no revision trigger so the rename is safe, while plan/active stay platform-admin only. Slug is
-read-only in the Settings UI (no route/webhook uses it yet — a reserved handle; the mutation still
-accepts it for future use). Also documents (`lib/bms/documents.ts` —
+read-only in the Settings UI and is now the stable public-shop handle used by
+`/shop/[tenantSlug]/products/[sku]`; the mutation still accepts it for controlled future changes.
+Also documents (`lib/bms/documents.ts` —
 `generate_invoice`/`generate_quotation`), heuristic forecasting (`lib/bms/forecast.ts` —
 `forecast_demand`/`predict_stockout`/`suggest_purchase_order`, every result tagged with its
 `method`/`disclaimer` per the forecasting rules in AI_GUIDELINES), AI-native helpers
@@ -153,7 +155,8 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   `bms_product_images` and GraphQL `BmsProduct.images`.
 - Inbox replies currently support a text body plus one attachment. Keep image/file/product sharing
   in the composer draft so staff can review before sending, and do not send `/admin/*` links to
-  customers. Only include a product link when the system has an explicit customer-safe public URL.
+  customers. Product links sent to customers must use the active-only public route
+  `/shop/[tenantSlug]/products/[sku]`.
 - Customer 360 Quick Actions must reuse `createOrder()` for staff-created orders so price snapshots,
   CRM identity resolution, stock reservation, and rollback behavior stay identical to customer/AI
   orders. `bmsGenerateInvoice` is read-only and ephemeral; it must continue to use order-item price

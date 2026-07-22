@@ -28,6 +28,28 @@ export type ProductImage = {
   url: string;
 };
 
+export type PublicProduct = {
+  shop: {
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    website: string | null;
+    phone: string | null;
+    currency: string;
+  };
+  product: {
+    sku: string;
+    name: string;
+    price: number;
+    description: string | null;
+    category: string | null;
+    brand: string | null;
+    images: string[];
+    variants: Array<{ size: string; available: number }>;
+    updatedAt: string | null;
+  };
+};
+
 export type VariantRow = {
   size: string;
   current_stock: number;
@@ -150,6 +172,70 @@ export async function listProductImages(tenantId: string, sku: string): Promise<
     id: row.file_id,
     url: buildFileUrlById(row.file_id),
   }));
+}
+
+/**
+ * Public, read-only product lookup by tenant slug.
+ * Exposes sale-safe fields only and never returns inactive tenants/products,
+ * cost price, reserved stock, or admin URLs.
+ */
+export async function getPublicProduct(tenantSlug: string, sku: string): Promise<PublicProduct | null> {
+  const slug = tenantSlug.trim().toLowerCase();
+  const productSku = sku.trim();
+  if (!slug || !productSku || slug.length > 120 || productSku.length > 200) return null;
+
+  const res = await query<any>(
+    `SELECT p.tenant_id, p.sku, p.name, p.price, p.image_url, p.description,
+            p.category, p.brand, p.updated_at,
+            t.name AS tenant_name, t.slug AS tenant_slug,
+            sp.logo_url, sp.website, sp.phone, sp.currency
+       FROM bms_products p
+       JOIN bms_tenants t ON t.id = p.tenant_id
+       LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
+      WHERE t.slug = $1
+        AND t.active = TRUE
+        AND p.sku = $2
+        AND p.active = TRUE
+      LIMIT 1`,
+    [slug, productSku]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+
+  const [gallery, variants] = await Promise.all([
+    listProductImages(row.tenant_id, row.sku),
+    listVariants(row.tenant_id, row.sku),
+  ]);
+  const images = Array.from(new Set([
+    row.image_url,
+    ...gallery.map((image) => image.url),
+  ].filter((url): url is string => typeof url === "string" && url.trim().length > 0)));
+  const currency = String(row.currency || "THB").trim().toUpperCase();
+
+  return {
+    shop: {
+      name: row.tenant_name,
+      slug: row.tenant_slug,
+      logoUrl: row.logo_url ?? null,
+      website: row.website ?? null,
+      phone: row.phone ?? null,
+      currency: /^[A-Z]{3}$/.test(currency) ? currency : "THB",
+    },
+    product: {
+      sku: row.sku,
+      name: row.name,
+      price: Number(row.price),
+      description: row.description ?? null,
+      category: row.category ?? null,
+      brand: row.brand ?? null,
+      images,
+      variants: variants.map((variant) => ({
+        size: variant.size,
+        available: Math.max(0, variant.current_stock - variant.reserved_stock),
+      })),
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
+    },
+  };
 }
 
 export async function upsertProduct(

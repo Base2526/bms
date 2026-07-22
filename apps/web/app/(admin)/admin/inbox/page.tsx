@@ -71,7 +71,7 @@ const S_INBOX_CHANGED = gql`
   }
 `;
 const Q_STAFF = gql`query { bmsAssignableStaff { ${STAFF_FIELDS} } }`;
-const Q_ME = gql`query { bmsMe { id role is_available gender } }`;
+const Q_ME = gql`query { bmsMe { id role is_available gender tenant { slug } } bmsActingTenant { slug } }`;
 const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref } }`;
 const Q_CUSTOMER = gql`
   query ($id: ID!) {
@@ -263,6 +263,7 @@ function Inbox() {
 
   const { data: meData } = useQuery(Q_ME, { fetchPolicy: "cache-and-network" });
   const me = meData?.bmsMe;
+  const tenantSlug = meData?.bmsActingTenant?.slug || me?.tenant?.slug || null;
   // Sales เห็นเฉพาะแชทของตัวเองเสมอ (บังคับที่ backend อยู่แล้ว — ฝั่งนี้แค่ปรับ UI ให้ตรงกัน)
   const restrictedToOwn = me?.role === "Sales";
   const [setAvailability, { loading: settingAvail }] = useMutation(M_AVAILABILITY, {
@@ -696,7 +697,7 @@ function Inbox() {
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
             <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
-              gender={me?.gender} onChanged={() => { refetchConv(); refetch(); }} />
+              gender={me?.gender} tenantSlug={tenantSlug} onChanged={() => { refetchConv(); refetch(); }} />
           )}
         </div>
         )}
@@ -708,7 +709,7 @@ function Inbox() {
   );
 }
 
-function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null }) {
+function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null }) {
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [tags, setTags] = useState<string[]>(conv.tags || []);
@@ -1146,9 +1147,16 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     const priceText = Number.isFinite(Number(product.price))
       ? `${Number(product.price).toLocaleString("th-TH")} บาท`
       : null;
+    const publicPath = tenantSlug
+      ? `/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(product.sku)}`
+      : null;
+    const publicUrl = publicPath && typeof window !== "undefined"
+      ? new URL(publicPath, window.location.origin).toString()
+      : publicPath;
     setReply((prev) => {
       const prefix = prev.trim() ? `${prev.trim()}\n` : "";
-      return `${prefix}${product.name} (${product.sku})${priceText ? ` · ${priceText}` : ""} · ${stockText}`;
+      const details = `${product.name} (${product.sku})${priceText ? ` · ${priceText}` : ""} · ${stockText}`;
+      return `${prefix}${details}${publicUrl ? `\nดูรายละเอียดสินค้า: ${publicUrl}` : ""}`;
     });
     setDraftAttachment(includeImage && product.imageUrl
       ? { url: product.imageUrl, name: `${product.name} (${product.sku})`, mimeType: "image/*", isImage: true }
@@ -1354,10 +1362,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                           </Space>
                         </div>
                         <Space direction="vertical" size={6} style={{ alignItems: "flex-end" }}>
-                          <Button type="primary" size="small" disabled={!item.active} onClick={() => insertProductIntoChat(item, false)}>แทรกข้อความ</Button>
-                          <Button size="small" disabled={!item.active || !item.imageUrl} onClick={() => insertProductIntoChat(item, true)}>
-                            ข้อความ + รูป
+                          <Button type="primary" size="small" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)}>ข้อความ + ลิงก์</Button>
+                          <Button size="small" disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)}>
+                            ข้อความ + รูป + ลิงก์
                           </Button>
+                          {tenantSlug && (
+                            <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
+                              <Button size="small" type="link" style={{ paddingInline: 0 }}>ดูหน้า Public ↗</Button>
+                            </Link>
+                          )}
                           <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
                             <Button size="small" type="link" style={{ paddingInline: 0 }}>เปิดหน้า Products เต็มจอ ↗</Button>
                           </Link>

@@ -52,13 +52,17 @@ The **สินค้า** picker lists products and their cover image, SKU, cur
 variants. Inactive products remain visible for search clarity but are labelled **ปิดขาย** and cannot
 be inserted. Staff can choose:
 
-- **แทรกข้อความ** — stage product name, SKU, price, and a stock summary as editable text.
-- **ข้อความ + รูป** — stage the same text plus the product cover image as the one attachment.
+- **ข้อความ + ลิงก์** — stage product name, SKU, price, a stock summary, and its customer-safe
+  public URL as editable text.
+- **ข้อความ + รูป + ลิงก์** — stage the same text and URL plus the product cover image as the one
+  attachment. The remaining gallery images stay on the public page instead of flooding the chat.
+- **ดูหน้า Public** — preview the same no-login page the customer will receive.
 - **เปิดหน้า Products เต็มจอ** — open the internal product admin page in a new tab.
 
 Nothing is sent until staff reviews the draft and presses Send. The internal `/admin/products` URL
-is never inserted into a customer message. AI-BMS does not currently expose a customer-safe public
-product URL; add links later only when such a URL exists explicitly rather than leaking an admin URL.
+is never inserted into a customer message. Customer links use
+`/shop/[tenantSlug]/products/[sku]`, which returns only active products from active shops and exposes
+sale-safe fields. See [public-products.md](public-products.md).
 
 `BmsOrder.hasShippingAddress` is also exposed on the Orders admin list. LINE/Facebook/Instagram/
 Web/TikTok Chat orders cannot move from `PACKING` to `SHIPPED` until the linked CRM customer has an

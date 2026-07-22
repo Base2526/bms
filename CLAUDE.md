@@ -31,6 +31,7 @@ for the full philosophy and module breakdown.
 | [docs/integrations/tiktok.md](docs/integrations/tiktok.md) | TikTok webhook (send API = roadmap) |
 | [docs/integrations/lazada.md](docs/integrations/lazada.md) | Lazada + Shopee beta scaffold — what's real vs. placeholder |
 | [docs/ui/customer360.md](docs/ui/customer360.md) | Inbox "ลูกค้า" purchase-history tab, cross-channel merge, reorder |
+| [docs/ui/public-products.md](docs/ui/public-products.md) | Public product detail/gallery URLs shared from Inbox |
 | [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
 | [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
@@ -61,6 +62,10 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
 - **Product gallery**: products support multiple images through migration
   `6.5__bms_product_images.sql`; `image_url` remains the cover image for backward compatibility and
   `images[]` is the ordered gallery used by the Products page.
+- **Public product pages**: `/shop/[tenantSlug]/products/[sku]` exposes active products from active
+  shops without login, including the gallery, price, description, and available stock by size. Inbox
+  product sharing stages this customer-safe URL in the editable draft and optionally attaches only
+  the cover image; `/admin/products` remains staff-only.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
   name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
 - **Gender-aware Inbox suggested replies**: admins set their gender in `/admin/profile`
@@ -71,7 +76,8 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   to preserve message space. Recent orders open in an in-context preview first, with the full Orders
   page available in a new tab. The composer stages one image/file attachment with the text draft;
   the product picker can stage product text alone or product text plus its cover image. The internal
-  Products link opens in a new tab for staff and is never inserted into a customer message.
+  Products link opens in a new tab for staff, while the public product link is included in the
+  editable customer draft.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.
@@ -103,9 +109,9 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   answer the shop-info questions customers ask most). **Shop name is a single source** — `bms_tenants.name`
   (the store-profile `store_name` column is deprecated); a shop **Administrator can now rename their own
   tenant name + slug** via `bmsUpdateMyTenant` (self-service, gated `requireTenantAdmin`; plan/active
-  remain platform-admin only; **slug is read-only in the UI** — the `bmsUpdateMyTenant` mutation still
-  accepts it but the Settings card sends only the name, since no route/webhook uses slug yet, it's a
-  reserved handle). Also **documents**
+  remain platform-admin only; **slug is read-only in the UI** — it is now the stable handle in public
+  product URLs, while the `bmsUpdateMyTenant` mutation remains available for controlled changes and
+  the Settings card sends only the name). Also **documents**
   (`generate_invoice`/`generate_quotation`, `lib/bms/documents.ts`), **forecasting**
   (`forecast_demand`/`predict_stockout`/`suggest_purchase_order`, `lib/bms/forecast.ts` — heuristic
   velocity, always tagged with uncertainty), **AI-native helpers** (`detect_language`, `classify_intent`,

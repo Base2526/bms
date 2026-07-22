@@ -128,6 +128,9 @@ docs/                      This documentation tree
   aligned with the actual implemented workflow.
 - `/shop-signup` is a public auth-safe route. It must stay in the auth-route allowlist so it
   doesn't initialize admin session/chat providers unnecessarily.
+- `/shop/[tenantSlug]/products/[sku]` is the no-login product detail/gallery shared from Inbox. It
+  resolves active shops/products through `lib/bms/products.ts`, exposes sale-safe fields only, and
+  treats the tenant slug as a stable public routing handle.
 - `/admin/orders`, `/admin/purchase`, `/admin/payment`, and `/admin/shipment` now use backend
   search args with debounced live search. This is the expected pattern for large operational lists.
 - `/admin/profile` is the self-service account surface for avatar/name/phone/language updates.
