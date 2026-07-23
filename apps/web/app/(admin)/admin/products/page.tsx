@@ -22,7 +22,7 @@ import {
   List,
   Popconfirm,
 } from "antd";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   PlusOutlined,
   EditOutlined,
@@ -143,11 +143,41 @@ const MOVE_COLOR: Record<string, string> = {
   FULFILL: "purple",
 };
 
+const LOW_STOCK_EXPANDED_KEY = "bms_products_lowstock_expanded";
+const MOBILE_QUERY = "(max-width: 767px)";
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}
+
 function ProductsManagement() {
+  const isMobile = useMediaQuery(MOBILE_QUERY);
   const [form] = Form.useForm();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [lowExpanded, setLowExpanded] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(LOW_STOCK_EXPANDED_KEY) === "1";
+  });
+  const toggleLowExpanded = () => {
+    setLowExpanded((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") window.localStorage.setItem(LOW_STOCK_EXPANDED_KEY, next ? "1" : "0");
+      return next;
+    });
+  };
 
   // ค้นหา + paging ฝั่ง server (สินค้าอาจมีหลักพันแถวจาก fake seeder)
   const [searchInput, setSearchInput] = useState("");   // ค่าในกล่องพิมพ์ (แสดงผลทันที)
@@ -193,7 +223,10 @@ function ProductsManagement() {
   const products: Product[] = data?.bmsProducts?.items || [];
   const total: number = data?.bmsProducts?.total || 0;
   const categories: { id: string; name: string }[] = catData?.bmsProductCategories || [];
-  const lowCount: number = lowData?.bmsLowStock?.length || 0;
+  const lowItems: any[] = lowData?.bmsLowStock || [];
+  const lowCount: number = lowItems.length;
+  const outOfStockItems = lowItems.filter((x) => x.available <= 0);
+  const lowStockItems = lowItems.filter((x) => x.available > 0).sort((a, b) => a.available - b.available);
 
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -395,20 +428,75 @@ function ProductsManagement() {
       </div>
 
       {lowCount > 0 && (
-        <Alert
-          type="warning" showIcon icon={<WarningOutlined />}
-          message={`มีสินค้าใกล้หมด/หมด ${lowCount} รายการ`}
-          description={
-            <Space wrap>
-              {(lowData?.bmsLowStock || []).map((x: any) => (
-                <Tag color="warning" key={`${x.sku}-${x.size}`}>
-                  {x.name} {x.size}: เหลือ {x.available} (จุดเตือน {x.reorder_point})
-                </Tag>
-              ))}
+        <div style={{ marginBottom: 16, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, overflow: "hidden" }}>
+          <button
+            type="button"
+            onClick={toggleLowExpanded}
+            aria-expanded={lowExpanded}
+            style={{
+              width: "100%", display: "flex", flexDirection: isMobile ? "column" : "row",
+              alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between",
+              gap: 8, padding: isMobile ? "10px 12px" : "12px 14px", border: 0, background: "transparent",
+              cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit",
+            }}
+          >
+            <Space wrap size={8} style={{ minWidth: 0 }}>
+              <span style={{ display: "inline-block", transition: "transform .15s ease", transform: lowExpanded ? "rotate(90deg)" : "none" }}>▸</span>
+              <WarningOutlined style={{ color: "#ad6800" }} />
+              <Typography.Text strong style={{ color: "#ad6800", fontSize: isMobile ? 13 : 14 }}>
+                มีสินค้าใกล้หมด/หมด {lowCount} รายการ
+              </Typography.Text>
+              {outOfStockItems.length > 0 && <Tag color="error" style={{ marginInlineEnd: 0 }}>หมด {outOfStockItems.length}</Tag>}
+              {lowStockItems.length > 0 && <Tag color="warning" style={{ marginInlineEnd: 0 }}>ใกล้หมด {lowStockItems.length}</Tag>}
             </Space>
-          }
-          style={{ marginBottom: 16 }}
-        />
+            {!isMobile && (
+              <Typography.Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                คลิกเพื่อ{lowExpanded ? "ย่อ" : "ขยาย"}
+              </Typography.Text>
+            )}
+          </button>
+
+          {lowExpanded && (
+            <div style={{ padding: `0 ${isMobile ? 12 : 14}px ${isMobile ? 12 : 14}px`, display: "grid", gap: 10 }}>
+              {outOfStockItems.length > 0 && (
+                <div style={{ border: "1px solid #ffa39e", background: "#fff1f0", borderRadius: 8, padding: isMobile ? "8px 10px" : "10px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+                    <Typography.Text strong style={{ color: "#cf1322", fontSize: isMobile ? 12 : 12.5 }}>⛔ หมดสต็อก</Typography.Text>
+                    <Typography.Text style={{ color: "#cf1322", fontSize: 11 }}>{outOfStockItems.length} รายการ</Typography.Text>
+                  </div>
+                  <Space wrap size={6}>
+                    {outOfStockItems.map((x: any) => (
+                      <Tag
+                        color="error" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
+                        onClick={() => onSearchChange(x.sku)}
+                      >
+                        {x.name} {x.size}: เหลือ {x.available} (จุดเตือน {x.reorder_point})
+                      </Tag>
+                    ))}
+                  </Space>
+                </div>
+              )}
+              {lowStockItems.length > 0 && (
+                <div style={{ border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: isMobile ? "8px 10px" : "10px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+                    <Typography.Text strong style={{ color: "#ad6800", fontSize: isMobile ? 12 : 12.5 }}>⚠️ ใกล้หมด</Typography.Text>
+                    <Typography.Text style={{ color: "#ad6800", fontSize: 11 }}>{lowStockItems.length} รายการ</Typography.Text>
+                  </div>
+                  <Space wrap size={6}>
+                    {lowStockItems.map((x: any) => (
+                      <Tag
+                        color="warning" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
+                        onClick={() => onSearchChange(x.sku)}
+                      >
+                        {x.name} {x.size}: เหลือ {x.available} (จุดเตือน {x.reorder_point})
+                      </Tag>
+                    ))}
+                  </Space>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <Alert
