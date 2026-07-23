@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import { BreadcrumbsProvider } from "@/components/breadcrumbs-context";
 
 const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
   ssr: false,
@@ -80,13 +81,15 @@ export default async function MainLayout({
           background: "var(--app-bg)",
         }}
       >
-        <div className="jachoei-main-shell">
-          <div className="jachoei-breadcrumb-wrap">
-            <Breadcrumbs />
-          </div>
+        <BreadcrumbsProvider>
+          <div className="jachoei-main-shell">
+            <div className="jachoei-breadcrumb-wrap">
+              <Breadcrumbs />
+            </div>
 
-          <div className="jachoei-main-content">{children}</div>
-        </div>
+            <div className="jachoei-main-content">{children}</div>
+          </div>
+        </BreadcrumbsProvider>
       </main>
 
       <AppFooter lang={lang} />

@@ -5,12 +5,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HomeOutlined, RightOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import { useBreadcrumbsOverride, type BreadcrumbItem } from "./breadcrumbs-context";
+
+const PUBLIC_PRODUCT_PATH_RE = /^\/shop\/[^/]+\/products\/[^/]+$/;
 
 export default function Breadcrumbs() {
   const pathname = usePathname() || "/";
   const { t } = useI18n();
+  const override = useBreadcrumbsOverride();
 
-  const items = useMemo(() => {
+  const items = useMemo<BreadcrumbItem[] | null>(() => {
+    if (override.pathname === pathname && override.items?.length) {
+      return override.items.map((item, idx) => ({
+        ...item,
+        isLast: item.isLast ?? idx === override.items!.length - 1,
+        isClickable: item.isClickable ?? Boolean(item.href),
+      }));
+    }
+
+    if (PUBLIC_PRODUCT_PATH_RE.test(pathname)) return null;
+
     const segmentsRaw = pathname
       .split("?")[0]
       .split("#")[0]
@@ -19,8 +33,6 @@ export default function Breadcrumbs() {
 
     const isPostDetailRoute = segmentsRaw[0] === "post" && segmentsRaw.length === 2;
 
-    // Route-specific tweak: for post detail pages `/post/[id]`, skip the middle "Post" crumb.
-    // Keep other routes intact (e.g. `/post`, `/post/new`, `/post/[id]/edit`).
     const segments =
       isPostDetailRoute
         ? segmentsRaw.slice(1)
@@ -31,6 +43,7 @@ export default function Breadcrumbs() {
         href: "/",
         label: t("breadcrumbs.home"),
         isLast: segments.length === 0,
+        isClickable: true,
       },
     ];
 
@@ -50,11 +63,14 @@ export default function Breadcrumbs() {
         href,
         label,
         isLast: idx === segments.length - 1,
+        isClickable: true,
       };
     });
 
     return [...first, ...rest];
-  }, [pathname, t]);
+  }, [override.items, override.pathname, pathname, t]);
+
+  if (!items?.length) return null;
 
   return (
     <nav
@@ -90,7 +106,7 @@ export default function Breadcrumbs() {
                 />
               )}
 
-              {item.isLast ? (
+              {item.isLast || item.isClickable === false || !item.href ? (
                 <span
                   style={{
                     display: "inline-flex",
