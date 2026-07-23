@@ -1391,7 +1391,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             open={productPickerOpen}
             onCancel={() => setProductPickerOpen(false)}
             footer={null}
-            width={700}
+            width={isMobile ? "100%" : 700}
+            style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
           >
             <div style={{ display: "grid", gap: 12 }}>
               <Input.Search
@@ -1408,15 +1409,24 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                   dataSource={productItems}
                   renderItem={(item) => (
                     <List.Item style={{ alignItems: "flex-start" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "52px minmax(0,1fr) auto", gap: 12, width: "100%", alignItems: "center" }}>
-                        <div style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "rgba(15,23,42,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: isMobile ? "52px minmax(0,1fr)" : "52px minmax(0,1fr) auto",
+                          gridTemplateAreas: isMobile ? '"thumb info" "actions actions"' : undefined,
+                          gap: isMobile ? 10 : 12,
+                          width: "100%",
+                          alignItems: isMobile ? "start" : "center",
+                        }}
+                      >
+                        <div style={{ gridArea: isMobile ? "thumb" : undefined, width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "rgba(15,23,42,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           {item.imageUrl ? (
                             <img src={item.imageUrl} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
                             <ShoppingCartOutlined style={{ color: "rgba(15,23,42,0.35)" }} />
                           )}
                         </div>
-                        <div style={{ minWidth: 0 }}>
+                        <div style={{ gridArea: isMobile ? "info" : undefined, minWidth: 0 }}>
                           <Space size={6} wrap>
                             <Typography.Text strong style={{ fontSize: 14 }}>{item.name}</Typography.Text>
                             {!item.active && <Tag style={{ marginInlineEnd: 0 }}>ปิดขาย</Tag>}
@@ -1434,20 +1444,39 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                             ))}
                           </Space>
                         </div>
-                        <Space direction="vertical" size={6} style={{ alignItems: "flex-end" }}>
-                          <Button type="primary" size="small" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)}>ข้อความ + ลิงก์</Button>
-                          <Button size="small" disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)}>
-                            ข้อความ + รูป + ลิงก์
-                          </Button>
-                          {tenantSlug && (
-                            <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
-                              <Button size="small" type="link" style={{ paddingInline: 0 }}>ดูหน้า Public ↗</Button>
+                        {isMobile ? (
+                          <div style={{ gridArea: "actions", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+                            <Button type="primary" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)} style={{ gridColumn: "1 / -1" }}>
+                              ข้อความ + ลิงก์
+                            </Button>
+                            <Button disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)} style={{ gridColumn: "1 / -1" }}>
+                              ข้อความ + รูป + ลิงก์
+                            </Button>
+                            {tenantSlug && (
+                              <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+                                <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>ดูหน้า Public ↗</Button>
+                              </Link>
+                            )}
+                            <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+                              <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>Products เต็มจอ ↗</Button>
                             </Link>
-                          )}
-                          <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
-                            <Button size="small" type="link" style={{ paddingInline: 0 }}>เปิดหน้า Products เต็มจอ ↗</Button>
-                          </Link>
-                        </Space>
+                          </div>
+                        ) : (
+                          <Space direction="vertical" size={6} style={{ alignItems: "flex-end" }}>
+                            <Button type="primary" size="small" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)}>ข้อความ + ลิงก์</Button>
+                            <Button size="small" disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)}>
+                              ข้อความ + รูป + ลิงก์
+                            </Button>
+                            {tenantSlug && (
+                              <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
+                                <Button size="small" type="link" style={{ paddingInline: 0 }}>ดูหน้า Public ↗</Button>
+                              </Link>
+                            )}
+                            <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
+                              <Button size="small" type="link" style={{ paddingInline: 0 }}>เปิดหน้า Products เต็มจอ ↗</Button>
+                            </Link>
+                          </Space>
+                        )}
                       </div>
                     </List.Item>
                   )}
@@ -1606,12 +1635,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         open={imagePreviewIndex != null}
         onCancel={() => setImagePreviewIndex(null)}
         footer={null}
-        width="min(92vw, 1080px)"
-        centered
+        width={isMobile ? "100%" : "min(92vw, 1080px)"}
+        style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
+        centered={!isMobile}
         styles={{
           content: {
-            padding: 16,
-            borderRadius: 28,
+            padding: isMobile ? 10 : 16,
+            borderRadius: isMobile ? 0 : 28,
             overflow: "hidden",
             background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
           },
@@ -1619,54 +1649,74 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         }}
       >
         {imagePreviewIndex != null && chatImages[imagePreviewIndex] && (
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ display: "grid", gap: isMobile ? 10 : 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
               <Space direction="vertical" size={2}>
-                <Typography.Text strong style={{ fontSize: 28, lineHeight: 1 }}>
+                <Typography.Text strong style={{ fontSize: isMobile ? 15 : 28, lineHeight: 1 }}>
                   รูป {imagePreviewIndex + 1} / {chatImages.length}
                 </Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
                 </Typography.Text>
               </Space>
-              <Space wrap>
-                <Button icon={<DownloadOutlined />} href={chatImages[imagePreviewIndex].url} target="_blank">
+              <Space wrap size={isMobile ? 6 : 8}>
+                <Button size={isMobile ? "small" : "middle"} icon={<DownloadOutlined />} href={chatImages[imagePreviewIndex].url} target="_blank">
                   เปิดไฟล์
                 </Button>
-                <Button type="primary" onClick={() => setImagePreviewIndex(null)}>ปิด</Button>
+                <Button size={isMobile ? "small" : "middle"} type="primary" onClick={() => setImagePreviewIndex(null)}>ปิด</Button>
               </Space>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) 56px", gap: 14, alignItems: "center" }}>
-              <Button
-                shape="circle"
-                icon={<LeftOutlined />}
-                onClick={() => movePreview(-1)}
-                style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(15,23,42,0.12)" }}
-              />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "56px minmax(0, 1fr) 56px", gap: 14, alignItems: "center" }}>
+              {!isMobile && (
+                <Button
+                  shape="circle"
+                  icon={<LeftOutlined />}
+                  onClick={() => movePreview(-1)}
+                  style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(15,23,42,0.12)" }}
+                />
+              )}
 
               <div style={{
                 border: "1px solid rgba(15,23,42,0.08)",
-                borderRadius: 24,
-                padding: 18,
+                borderRadius: isMobile ? 16 : 24,
+                padding: isMobile ? 10 : 18,
                 background: "linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%)",
                 display: "grid",
-                gap: 14,
+                gap: isMobile ? 10 : 14,
               }}>
                 <div style={{
                   position: "relative",
-                  borderRadius: 20,
+                  borderRadius: isMobile ? 12 : 20,
                   overflow: "hidden",
                   background: "#eaf1fb",
-                  minHeight: "58vh",
+                  minHeight: isMobile ? "42vh" : "58vh",
                   display: "grid",
                   placeItems: "center",
                 }}>
                   <img
                     src={chatImages[imagePreviewIndex].url}
                     alt={chatImages[imagePreviewIndex].name}
-                    style={{ width: "100%", maxHeight: "58vh", objectFit: "contain", display: "block" }}
+                    style={{ width: "100%", maxHeight: isMobile ? "42vh" : "58vh", objectFit: "contain", display: "block" }}
                   />
+                  {isMobile && (
+                    <>
+                      <Button
+                        shape="circle"
+                        size="small"
+                        icon={<LeftOutlined />}
+                        onClick={() => movePreview(-1)}
+                        style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(15,23,42,0.5)", color: "#fff", border: "none", boxShadow: "0 6px 16px rgba(15,23,42,0.2)" }}
+                      />
+                      <Button
+                        shape="circle"
+                        size="small"
+                        icon={<RightOutlined />}
+                        onClick={() => movePreview(1)}
+                        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(15,23,42,0.5)", color: "#fff", border: "none", boxShadow: "0 6px 16px rgba(15,23,42,0.2)" }}
+                      />
+                    </>
+                  )}
                   <div style={{
                     position: "absolute",
                     left: 14,
@@ -1703,10 +1753,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                   </div>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", gap: 10, alignItems: isMobile ? "stretch" : "flex-start", flexWrap: "wrap" }}>
                   <div style={{
                     flex: 1,
-                    minWidth: 220,
+                    minWidth: isMobile ? 0 : 220,
                     padding: "12px 14px",
                     borderRadius: 16,
                     background: "rgba(22,119,255,0.08)",
@@ -1723,13 +1773,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                 </div>
               </div>
 
-              <Button
-                shape="circle"
-                icon={<RightOutlined />}
-                type="primary"
-                onClick={() => movePreview(1)}
-                style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(22,119,255,0.22)" }}
-              />
+              {!isMobile && (
+                <Button
+                  shape="circle"
+                  icon={<RightOutlined />}
+                  type="primary"
+                  onClick={() => movePreview(1)}
+                  style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(22,119,255,0.22)" }}
+                />
+              )}
             </div>
 
           </div>

@@ -362,9 +362,11 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           .bms-footer { padding-inline: 18px; }
           .bms-footer--with-pdpa { padding-bottom: 210px; }
           .bms-footer-grid { grid-template-columns: 1fr; gap: 28px; }
+          .bms-footer-cta { width: 100%; justify-content: center; }
           .bms-footer-bottom, .bms-pdpa-card { align-items: flex-start; flex-direction: column; }
           .bms-pdpa-actions { width: 100%; flex-wrap: wrap; }
           .bms-pdpa-actions button { justify-content: center; flex: 1; }
+          .bms-pdpa-primary { order: -1; flex: 1 1 100%; }
         }
       `}</style>
     </>
