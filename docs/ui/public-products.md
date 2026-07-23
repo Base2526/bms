@@ -8,9 +8,10 @@ The no-login customer URL is:
 /shop/{tenantSlug}/products/{sku}
 ```
 
-`getPublicProduct(tenantSlug, sku)` in `apps/web/lib/bms/products.ts` is the single read service for
-this route. It uses parameterized values and returns a result only when both `bms_tenants.active`
-and `bms_products.active` are true. Unknown, inactive, and overlong identifiers all resolve as a
+`getPublicProduct(tenantSlug, sku)` in `apps/web/lib/bms/products.ts` is the primary read service for
+this route, and `listPublicRelatedProducts()` provides same-tenant suggestions for the “สินค้าที่เกี่ยวข้อง”
+strip. Both use parameterized values and return results only when both `bms_tenants.active` and
+`bms_products.active` are true. Unknown, inactive, and overlong identifiers all resolve as a
 normal 404.
 
 ## Public fields
@@ -20,10 +21,23 @@ The page may show shop name/slug/logo/contact website/phone and these sale-safe 
 - name, SKU, selling price, description, brand, and category;
 - ordered product gallery with `image_url` retained as the cover fallback;
 - available quantity per size, calculated as `current_stock - reserved_stock`.
+- related active products from the same shop, limited to sale-safe summary fields only
+  (name/SKU/price/cover/category/brand/available count).
 
 It must not expose cost price, barcode, reserved-stock quantity, tenant IDs, file-system paths,
 admin URLs, or inactive products. The page is dynamically rendered so stock reflects the time the
 customer opens it. Product metadata includes canonical/Open Graph/Twitter fields and Product JSON-LD.
+
+## Public-page UX
+
+The public product page is intentionally a lightweight conversion page, not a full storefront cart:
+
+- keep the product image/gallery dominant on desktop;
+- show the current price, stock-by-size cards, and a compact summary block near the top;
+- allow **คัดลอกลิงก์** directly on the page for easy forwarding;
+- allow **สั่งซื้อผ่านแชท / Order via chat** only as a hint/anchor back to the note explaining that
+  the customer must continue in the original conversation;
+- show related products from the same tenant without exposing any admin-only links or controls.
 
 ## Inbox sharing
 

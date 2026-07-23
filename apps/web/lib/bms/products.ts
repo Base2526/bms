@@ -50,6 +50,16 @@ export type PublicProduct = {
   };
 };
 
+export type PublicProductCard = {
+  sku: string;
+  name: string;
+  price: number;
+  imageUrl: string | null;
+  category: string | null;
+  brand: string | null;
+  available: number;
+};
+
 export type VariantRow = {
   size: string;
   current_stock: number;
@@ -236,6 +246,77 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
     },
   };
+}
+
+export async function listPublicRelatedProducts(
+  tenantSlug: string,
+  currentSku: string,
+  opts: { category?: string | null; brand?: string | null; limit?: number } = {}
+): Promise<PublicProductCard[]> {
+  const slug = tenantSlug.trim().toLowerCase();
+  const sku = currentSku.trim();
+  const limit = Math.min(Math.max(opts.limit ?? 3, 1), 8);
+  if (!slug || !sku || slug.length > 120 || sku.length > 200) return [];
+
+  const runQuery = async (filters: { category?: string | null; brand?: string | null }) => {
+    const conds = [
+      "t.slug = $1",
+      "t.active = TRUE",
+      "p.active = TRUE",
+      "p.sku <> $2",
+    ];
+    const params: any[] = [slug, sku];
+
+    if (filters.category?.trim()) {
+      params.push(filters.category.trim());
+      conds.push(`p.category = $${params.length}`);
+    }
+    if (filters.brand?.trim()) {
+      params.push(filters.brand.trim());
+      conds.push(`p.brand = $${params.length}`);
+    }
+
+    const limitPos = params.length + 1;
+    const where = conds.join(" AND ");
+    return query<{
+      tenant_id: string;
+      sku: string;
+      name: string;
+      price: string;
+      image_url: string | null;
+      category: string | null;
+      brand: string | null;
+      available: string;
+    }>(
+      `SELECT p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand,
+              COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+         FROM bms_products p
+         JOIN bms_tenants t ON t.id = p.tenant_id
+         LEFT JOIN bms_inventory i
+           ON i.tenant_id = p.tenant_id
+          AND i.product_sku = p.sku
+        WHERE ${where}
+        GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand
+        ORDER BY COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0) DESC, p.name
+        LIMIT $${limitPos}`,
+      [...params, limit]
+    );
+  };
+
+  const res = await runQuery({ category: opts.category, brand: opts.brand });
+  const picked = res.rows.length > 0 || (!opts.category && !opts.brand)
+    ? res.rows
+    : (await runQuery({})).rows;
+
+  return picked.map((row) => ({
+      sku: row.sku,
+      name: row.name,
+      price: Number(row.price),
+      imageUrl: row.image_url ?? null,
+      category: row.category ?? null,
+    brand: row.brand ?? null,
+    available: Math.max(0, Number(row.available) || 0),
+  }));
 }
 
 export async function upsertProduct(

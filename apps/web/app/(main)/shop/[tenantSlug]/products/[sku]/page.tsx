@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { getPublicProduct } from "@/lib/bms/products";
+import { getPublicProduct, listPublicRelatedProducts } from "@/lib/bms/products";
 import PublicProductView from "./PublicProductView";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +42,12 @@ export default async function PublicProductPage({ params }: PageProps) {
   const result = await loadProduct(params.tenantSlug, params.sku);
   if (!result) notFound();
 
+  const related = await listPublicRelatedProducts(result.shop.slug, result.product.sku, {
+    category: result.product.category,
+    brand: result.product.brand,
+    limit: 3,
+  });
+
   const cookieStore = await cookies();
   const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
   const available = result.product.variants.some((variant) => variant.available > 0);
@@ -67,7 +73,7 @@ export default async function PublicProductPage({ params }: PageProps) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
-      <PublicProductView data={result} lang={lang} />
+      <PublicProductView data={result} related={related} lang={lang} />
     </>
   );
 }
