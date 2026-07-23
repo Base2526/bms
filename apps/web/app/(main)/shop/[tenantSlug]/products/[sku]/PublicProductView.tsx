@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PublicProduct, PublicProductCard } from "@/lib/bms/products";
+import { useBreadcrumbsOverride } from "@/components/breadcrumbs-context";
 import styles from "./page.module.css";
 
 function safeWebsite(value: string | null): string | null {
@@ -53,11 +54,17 @@ export default function PublicProductView({
 }) {
   const { shop, product } = data;
   const [selectedImage, setSelectedImage] = useState(0);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [actionState, setActionState] = useState<"idle" | "copied" | "shared" | "copyError" | "shareError">("idle");
+  const { clearOverride, setOverride } = useBreadcrumbsOverride();
   const website = useMemo(() => safeWebsite(shop.website), [shop.website]);
   const phoneHref = shop.phone ? `tel:${shop.phone.replace(/[^+\d]/g, "")}` : null;
   const totalAvailable = product.variants.reduce((sum, variant) => sum + variant.available, 0);
   const updatedLabel = formatUpdatedAt(product.updatedAt, lang);
+  const pathname = `/shop/${encodeURIComponent(shop.slug)}/products/${encodeURIComponent(product.sku)}`;
+  const flashActionState = (next: "copied" | "shared" | "copyError" | "shareError") => {
+    setActionState(next);
+    window.setTimeout(() => setActionState("idle"), 2200);
+  };
   const copy = lang === "en"
     ? {
         sku: "SKU",
@@ -67,11 +74,10 @@ export default function PublicProductView({
         units: "left",
         details: "Product details",
         updated: "Stock shown when this page was loaded",
-        orderAction: "Order via chat",
         copyLink: "Copy link",
+        shareLink: "Share with a friend",
         website: "Visit store website",
         call: "Call store",
-        ask: "To place an order, please return to the chat where you received this link.",
         noImage: "No product image",
         manyImages: "More photos",
         latestStock: "Latest stock update",
@@ -80,12 +86,14 @@ export default function PublicProductView({
         category: "Category",
         brand: "Brand",
         related: "Related products",
-        orderHint: "Use the chat where you received this link to confirm the exact size and quantity you want.",
         availableNow: "Ready to ship",
         openProduct: "View product",
         copied: "Link copied",
+        shared: "Share sheet opened",
         copyFailed: "Copy failed",
+        shareFailed: "Share failed",
         imageLabel: "View image",
+        shareText: "Take a look at this product",
       }
     : {
         sku: "SKU",
@@ -95,11 +103,10 @@ export default function PublicProductView({
         units: "ชิ้น",
         details: "รายละเอียดสินค้า",
         updated: "ข้อมูลสต็อก ณ เวลาที่เปิดหน้านี้",
-        orderAction: "สั่งซื้อผ่านแชท",
         copyLink: "คัดลอกลิงก์",
+        shareLink: "แชร์ให้เพื่อน",
         website: "เยี่ยมชมเว็บไซต์ร้าน",
         call: "โทรหาร้าน",
-        ask: "หากต้องการสั่งซื้อ กรุณากลับไปยังแชทที่ได้รับลิงก์นี้",
         noImage: "ยังไม่มีรูปสินค้า",
         manyImages: "มีหลายรูป",
         latestStock: "อัปเดตสต็อกล่าสุด",
@@ -108,20 +115,38 @@ export default function PublicProductView({
         category: "หมวดหมู่",
         brand: "แบรนด์",
         related: "สินค้าที่เกี่ยวข้อง",
-        orderHint: "ใช้แชทเดิมที่ได้รับลิงก์นี้เพื่อยืนยันไซซ์ จำนวน และปิดการขายต่อได้ทันที",
         availableNow: "พร้อมส่ง",
         openProduct: "ดูสินค้า",
         copied: "คัดลอกลิงก์แล้ว",
+        shared: "เปิดหน้าต่างแชร์แล้ว",
         copyFailed: "คัดลอกลิงก์ไม่สำเร็จ",
+        shareFailed: "แชร์ไม่สำเร็จ",
         imageLabel: "ดูรูป",
+        shareText: "ลองดูสินค้านี้",
       };
 
-  const handleCopyLink = async () => {
+  useEffect(() => {
+    const shopPath = `/shop/${encodeURIComponent(shop.slug)}`;
+    const productsPath = `${shopPath}/products`;
+    setOverride(pathname, [
+      { href: "/", isClickable: true, label: lang === "en" ? "Home" : "หน้าแรก" },
+      { href: "/shop", isClickable: true, label: "Shop" },
+      { href: shopPath, isClickable: true, label: shop.name },
+      { href: productsPath, isClickable: true, label: "Products" },
+      { isClickable: false, isLast: true, label: product.name },
+    ]);
+
+    return () => {
+      clearOverride(pathname);
+    };
+  }, [clearOverride, lang, pathname, product.name, setOverride, shop.name, shop.slug]);
+
+  const copyCurrentLink = async () => {
     const value = window.location.href;
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(value);
-        setCopyState("copied");
+        flashActionState("copied");
       } else {
         const textarea = document.createElement("textarea");
         textarea.value = value;
@@ -135,12 +160,30 @@ export default function PublicProductView({
         textarea.setSelectionRange(0, textarea.value.length);
         const ok = document.execCommand("copy");
         document.body.removeChild(textarea);
-        setCopyState(ok ? "copied" : "error");
+        flashActionState(ok ? "copied" : "copyError");
       }
     } catch {
-      setCopyState("error");
+      flashActionState("copyError");
     }
-    window.setTimeout(() => setCopyState("idle"), 2200);
+  };
+
+  const handleShareLink = async () => {
+    const share = (navigator as Navigator & { share?: (data?: ShareData) => Promise<void> }).share;
+    if (typeof share !== "function") {
+      await copyCurrentLink();
+      return;
+    }
+    try {
+      await share.call(navigator, {
+        title: product.name,
+        text: `${copy.shareText} — ${product.name}`,
+        url: window.location.href,
+      });
+      flashActionState("shared");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      flashActionState("shareError");
+    }
   };
 
   return (
@@ -205,14 +248,24 @@ export default function PublicProductView({
           <div className={styles.price}>{formatPrice(product.price, shop.currency, lang)}</div>
 
           <div className={styles.actionRow}>
-            <a className={styles.primaryAction} href="#order-note">{copy.orderAction}</a>
-            <button type="button" className={styles.secondaryAction} onClick={handleCopyLink}>
+            <button type="button" className={styles.secondaryAction} onClick={copyCurrentLink}>
               {copy.copyLink}
+            </button>
+            <button type="button" className={styles.secondaryAction} onClick={handleShareLink}>
+              {copy.shareLink}
             </button>
           </div>
 
           <div className={styles.copyStatus} aria-live="polite">
-            {copyState === "copied" ? copy.copied : copyState === "error" ? copy.copyFailed : "\u00a0"}
+            {actionState === "copied"
+              ? copy.copied
+              : actionState === "shared"
+                ? copy.shared
+                : actionState === "copyError"
+                  ? copy.copyFailed
+                  : actionState === "shareError"
+                    ? copy.shareFailed
+                  : "\u00a0"}
           </div>
 
           <div className={styles.trustStrip}>
@@ -279,11 +332,6 @@ export default function PublicProductView({
           <div className={styles.shopActionRow}>
             {website && <a className={styles.linkPill} href={website} target="_blank" rel="noreferrer">{copy.website} ↗</a>}
             {phoneHref && <a className={styles.linkPill} href={phoneHref}>{copy.call}</a>}
-          </div>
-
-          <div className={styles.orderNote} id="order-note">
-            <strong>{copy.ask}</strong>
-            <span>{copy.orderHint}</span>
           </div>
           <p className={styles.updated}>{copy.updated}</p>
         </section>

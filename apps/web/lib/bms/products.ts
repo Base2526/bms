@@ -55,9 +55,32 @@ export type PublicProductCard = {
   name: string;
   price: number;
   imageUrl: string | null;
+  images: string[];
   category: string | null;
   brand: string | null;
   available: number;
+};
+
+export type PublicShopCard = {
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  website: string | null;
+  phone: string | null;
+  currency: string;
+  productCount: number;
+  updatedAt: string | null;
+};
+
+export type PublicShop = {
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  website: string | null;
+  phone: string | null;
+  currency: string;
+  productCount: number;
+  updatedAt: string | null;
 };
 
 export type VariantRow = {
@@ -308,15 +331,199 @@ export async function listPublicRelatedProducts(
     ? res.rows
     : (await runQuery({})).rows;
 
-  return picked.map((row) => ({
+  return mapPublicProductCards(picked);
+}
+
+function normalizeCurrency(value: unknown) {
+  const currency = String(value || "THB").trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(currency) ? currency : "THB";
+}
+
+export async function listPublicShops(limit = 24): Promise<PublicShopCard[]> {
+  const safeLimit = Math.min(Math.max(limit, 1), 60);
+  const res = await query<{
+    slug: string;
+    name: string;
+    logo_url: string | null;
+    website: string | null;
+    phone: string | null;
+    currency: string | null;
+    product_count: string;
+    updated_at: Date | string | null;
+  }>(
+    `SELECT t.slug,
+            t.name,
+            sp.logo_url,
+            sp.website,
+            sp.phone,
+            sp.currency,
+            COUNT(p.sku)::text AS product_count,
+            MAX(p.updated_at) AS updated_at
+       FROM bms_tenants t
+       JOIN bms_products p
+         ON p.tenant_id = t.id
+        AND p.active = TRUE
+       LEFT JOIN bms_store_profile sp
+         ON sp.tenant_id = t.id
+      WHERE t.active = TRUE
+      GROUP BY t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency
+      ORDER BY MAX(p.updated_at) DESC NULLS LAST, t.name
+      LIMIT $1`,
+    [safeLimit]
+  );
+
+  return res.rows.map((row) => ({
+    slug: row.slug,
+    name: row.name,
+    logoUrl: row.logo_url ?? null,
+    website: row.website ?? null,
+    phone: row.phone ?? null,
+    currency: normalizeCurrency(row.currency),
+    productCount: Math.max(0, Number(row.product_count) || 0),
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
+  }));
+}
+
+export async function getPublicShop(tenantSlug: string): Promise<PublicShop | null> {
+  const slug = tenantSlug.trim().toLowerCase();
+  if (!slug || slug.length > 120) return null;
+
+  const res = await query<{
+    slug: string;
+    name: string;
+    logo_url: string | null;
+    website: string | null;
+    phone: string | null;
+    currency: string | null;
+    product_count: string;
+    updated_at: Date | string | null;
+  }>(
+    `SELECT t.slug,
+            t.name,
+            sp.logo_url,
+            sp.website,
+            sp.phone,
+            sp.currency,
+            COUNT(p.sku)::text AS product_count,
+            MAX(p.updated_at) AS updated_at
+       FROM bms_tenants t
+       LEFT JOIN bms_store_profile sp
+         ON sp.tenant_id = t.id
+       LEFT JOIN bms_products p
+         ON p.tenant_id = t.id
+        AND p.active = TRUE
+      WHERE t.slug = $1
+        AND t.active = TRUE
+      GROUP BY t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency
+      LIMIT 1`,
+    [slug]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+
+  return {
+    slug: row.slug,
+    name: row.name,
+    logoUrl: row.logo_url ?? null,
+    website: row.website ?? null,
+    phone: row.phone ?? null,
+    currency: normalizeCurrency(row.currency),
+    productCount: Math.max(0, Number(row.product_count) || 0),
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
+  };
+}
+
+export async function listPublicProducts(
+  tenantSlug: string,
+  opts: { limit?: number } = {}
+): Promise<PublicProductCard[]> {
+  const slug = tenantSlug.trim().toLowerCase();
+  const limit = Math.min(Math.max(opts.limit ?? 48, 1), 120);
+  if (!slug || slug.length > 120) return [];
+
+  const res = await query<{
+    tenant_id: string;
+    sku: string;
+    name: string;
+    price: string;
+    image_url: string | null;
+    category: string | null;
+    brand: string | null;
+    available: string;
+  }>(
+    `SELECT p.tenant_id,
+            p.sku,
+            p.name,
+            p.price,
+            p.image_url,
+            p.category,
+            p.brand,
+            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+       FROM bms_products p
+       JOIN bms_tenants t
+         ON t.id = p.tenant_id
+       LEFT JOIN bms_inventory i
+         ON i.tenant_id = p.tenant_id
+        AND i.product_sku = p.sku
+      WHERE t.slug = $1
+        AND t.active = TRUE
+        AND p.active = TRUE
+      GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand, p.updated_at
+      ORDER BY p.updated_at DESC NULLS LAST, p.name
+      LIMIT $2`,
+    [slug, limit]
+  );
+
+  return mapPublicProductCards(res.rows);
+}
+
+async function mapPublicProductCards(rows: Array<{
+  tenant_id: string;
+  sku: string;
+  name: string;
+  price: string;
+  image_url: string | null;
+  category: string | null;
+  brand: string | null;
+  available: string;
+}>): Promise<PublicProductCard[]> {
+  if (rows.length === 0) return [];
+
+  const tenantId = rows[0]!.tenant_id;
+  const skus = rows.map((row) => row.sku);
+  const galleryRes = await query<{ product_sku: string; file_id: number }>(
+    `SELECT product_sku, file_id
+       FROM bms_product_images
+      WHERE tenant_id = $1
+        AND product_sku = ANY($2::text[])
+      ORDER BY product_sku, sort_order, id`,
+    [tenantId, skus]
+  );
+
+  const galleryMap = new Map<string, string[]>();
+  for (const row of galleryRes.rows) {
+    const existing = galleryMap.get(row.product_sku) || [];
+    existing.push(buildFileUrlById(row.file_id));
+    galleryMap.set(row.product_sku, existing);
+  }
+
+  return rows.map((row) => {
+    const images = Array.from(new Set([
+      row.image_url,
+      ...(galleryMap.get(row.sku) || []),
+    ].filter((url): url is string => typeof url === "string" && url.trim().length > 0)));
+
+    return {
       sku: row.sku,
       name: row.name,
       price: Number(row.price),
-      imageUrl: row.image_url ?? null,
+      imageUrl: images[0] ?? null,
+      images,
       category: row.category ?? null,
-    brand: row.brand ?? null,
-    available: Math.max(0, Number(row.available) || 0),
-  }));
+      brand: row.brand ?? null,
+      available: Math.max(0, Number(row.available) || 0),
+    };
+  });
 }
 
 export async function upsertProduct(

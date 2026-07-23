@@ -408,6 +408,9 @@ function ProductsManagement() {
             {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มสินค้า</Button>}
           </Space>
         </Space>
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 6 }}>
+          กดกางแต่ละแถวเพื่อดู stock ต่อไซซ์ ปรับสต็อกเร็ว และเช็กประวัติการเคลื่อนไหว
+        </Typography.Text>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -499,19 +502,25 @@ function ProductsManagement() {
         </div>
       )}
 
-      <Alert
-        type="info"
-        message="กางแถวเพื่อปรับสต็อก/จุดแจ้งเตือน + ดูประวัติการเคลื่อนไหว — reserved คุมโดยระบบผ่าน order, available = current − reserved"
-        showIcon closable style={{ marginBottom: 16 }}
-      />
-
       <Table
         rowKey="sku"
         loading={loading}
         dataSource={products}
         columns={columns}
         scroll={{ x: "max-content" }}
-        expandable={{ expandedRowRender: (p: Product) => <ProductDetail product={p} onChanged={refreshAll} canAdjust={can("stock.adjust")} /> }}
+        expandable={{
+          expandedRowRender: (p: Product) => (
+            <ProductDetail
+              product={p}
+              onChanged={refreshAll}
+              canAdjust={can("stock.adjust")}
+              canEdit={can("product.edit")}
+              canToggleActive={can("product.delete")}
+              onEdit={() => openEdit(p)}
+              onToggleActive={(active) => setActive({ variables: { sku: p.sku, active } })}
+            />
+          ),
+        }}
         pagination={{
           current: page, pageSize, total,
           showSizeChanger: true, showTotal: (t) => `ทั้งหมด ${t} รายการ`,
@@ -705,12 +714,25 @@ function CategoryManagerModal({
 }
 
 // ---- Expanded row: inventory editor + movement history ------
-function ProductDetail({ product, onChanged, canAdjust }: { product: Product; onChanged: () => void; canAdjust: boolean }) {
+function ProductDetail({
+  product,
+  onChanged,
+  canAdjust,
+  canEdit,
+  canToggleActive,
+  onEdit,
+  onToggleActive,
+}: {
+  product: Product;
+  onChanged: () => void;
+  canAdjust: boolean;
+  canEdit: boolean;
+  canToggleActive: boolean;
+  onEdit: () => void;
+  onToggleActive: (next: boolean) => void;
+}) {
   const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
-  const [adjustStock] = useMutation(M_ADJUST, {
-    onCompleted: () => { message.success("ปรับสต็อกแล้ว"); onChanged(); refetchMoves(); },
-    onError: onErr,
-  });
+  const [adjustStockMut, { loading: adjustingStock }] = useMutation(M_ADJUST, { onError: onErr });
   const [setReorder] = useMutation(M_REORDER, {
     onCompleted: () => { message.success("ตั้งจุดแจ้งเตือนแล้ว"); onChanged(); },
     onError: onErr,
@@ -722,40 +744,136 @@ function ProductDetail({ product, onChanged, canAdjust }: { product: Product; on
 
   const [newSize, setNewSize] = useState<string | undefined>();
   const [newQty, setNewQty] = useState<number>(1);
+  const [manualVariant, setManualVariant] = useState<Variant | null>(null);
+  const [manualDelta, setManualDelta] = useState<number>(1);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [bulkDraft, setBulkDraft] = useState<Record<string, number>>({});
+
+  const totalAvailable = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.available, 0),
+    [product.variants]
+  );
+  const totalReserved = useMemo(
+    () => product.variants.reduce((sum, variant) => sum + variant.reserved_stock, 0),
+    [product.variants]
+  );
+  const lowCount = useMemo(
+    () => product.variants.filter((variant) => variant.low).length,
+    [product.variants]
+  );
+  const moves: Movement[] = movesData?.bmsStockMovements || [];
+  const visibleMoves = historyExpanded ? moves : moves.slice(0, 4);
+
+  const runAdjust = useCallback(async (size: string, delta: number, successText = "ปรับสต็อกแล้ว") => {
+    if (!delta) return;
+    await adjustStockMut({ variables: { sku: product.sku, size, delta } });
+    message.success(successText);
+    onChanged();
+    refetchMoves();
+  }, [adjustStockMut, onChanged, product.sku, refetchMoves]);
+
+  const openBulkAdjust = () => {
+    setBulkDraft(
+      Object.fromEntries(product.variants.map((variant) => [variant.size, 0]))
+    );
+    setBulkOpen(true);
+  };
 
   const variantCols = [
-    { title: "Size", dataIndex: "size", key: "size", width: 70 },
-    { title: "Current", dataIndex: "current_stock", key: "cur", width: 80, align: "right" as const },
-    { title: "Reserved", dataIndex: "reserved_stock", key: "res", width: 90, align: "right" as const,
-      render: (v: number) => <Tag color={v > 0 ? "orange" : "default"}>{v}</Tag> },
-    { title: "Available", dataIndex: "available", key: "avail", width: 90, align: "right" as const,
-      render: (v: number, r: Variant) => (
-        <strong style={{ color: r.low ? "#d46b08" : v > 0 ? "#389e0d" : "#999" }}>{v}</strong>
-      ) },
     {
-      title: "จุดเตือน", key: "reorder", width: 130,
-      render: (_: any, r: Variant) => (
-        <Space size={4}>
-          <InputNumber
-            size="small" min={0} defaultValue={r.reorder_point} style={{ width: 64 }}
-            disabled={!canAdjust}
-            onBlur={(e) => {
-              const rp = Number((e.target as HTMLInputElement).value);
-              if (rp !== r.reorder_point)
-                setReorder({ variables: { sku: product.sku, size: r.size, rp } });
-            }}
-          />
-          {r.low && <Tag color="warning" icon={<WarningOutlined />}>ใกล้หมด</Tag>}
-        </Space>
+      title: "Size",
+      dataIndex: "size",
+      key: "size",
+      width: 100,
+      render: (size: string) => (
+        <Typography.Text strong style={{ fontSize: 16 }}>
+          {size}
+        </Typography.Text>
       ),
     },
     {
-      title: "ปรับสต็อก", key: "adjust", width: 200,
+      title: "พร้อมขาย",
+      dataIndex: "available",
+      key: "avail",
+      width: 170,
+      align: "right" as const,
+      render: (v: number, r: Variant) => (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+          <span
+            style={{
+              fontSize: 22,
+              lineHeight: 1,
+              fontWeight: 700,
+              color: r.low ? "#d46b08" : v > 0 ? "#389e0d" : "#999",
+            }}
+          >
+            {v}
+          </span>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            คงคลังจริง {r.current_stock}
+          </Typography.Text>
+        </div>
+      ),
+    },
+    {
+      title: "จอง",
+      dataIndex: "reserved_stock",
+      key: "res",
+      width: 120,
+      align: "right" as const,
+      render: (v: number) => (
+        <Typography.Text style={{ color: v > 0 ? "#ad6800" : "#8c8c8c", fontWeight: 500 }}>
+          {v}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: "จุดเตือน", key: "reorder", width: 130,
+      render: (_: any, r: Variant) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <InputNumber
+            size="small"
+            min={0}
+            defaultValue={r.reorder_point}
+            style={{ width: 72 }}
+            disabled={!canAdjust}
+            onBlur={(e) => {
+              const rp = Number((e.target as HTMLInputElement).value);
+              if (rp !== r.reorder_point) {
+                setReorder({ variables: { sku: product.sku, size: r.size, rp } });
+              }
+            }}
+          />
+          {r.low && <Tag color="warning" icon={<WarningOutlined />} style={{ width: "fit-content", margin: 0 }}>ใกล้หมด</Tag>}
+        </div>
+      ),
+    },
+    {
+      title: "ปรับสต็อกเร็ว", key: "adjust", width: 320,
       render: (_: any, v: Variant) => canAdjust ? (
-        <Space>
-          <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: 10 } })}>+10</Button>
-          <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: 1 } })}>+1</Button>
-          <Button size="small" onClick={() => adjustStock({ variables: { sku: product.sku, size: v.size, delta: -1 } })}>−1</Button>
+        <Space wrap size={8}>
+          {[-1, 1, 5, 10].map((delta) => (
+            <Button
+              key={`${v.size}-${delta}`}
+              size="small"
+              style={{ minWidth: 52 }}
+              loading={adjustingStock}
+              onClick={() => runAdjust(v.size, delta)}
+            >
+              {delta > 0 ? `+${delta}` : `${delta}`}
+            </Button>
+          ))}
+          <Button
+            size="small"
+            onClick={() => {
+              setManualVariant(v);
+              setManualDelta(1);
+            }}
+          >
+            ระบุเอง
+          </Button>
         </Space>
       ) : <span style={{ color: "#ccc" }}>ไม่มีสิทธิ์</span>,
     },
@@ -774,34 +892,273 @@ function ProductDetail({ product, onChanged, canAdjust }: { product: Product; on
   ];
 
   const SIZE_OPTS = ["S", "M", "L", "XL", "XXL"].filter((s) => !product.variants.some((v) => v.size === s));
-  const moves: Movement[] = movesData?.bmsStockMovements || [];
 
   return (
-    <div>
-      <Table rowKey="size" dataSource={product.variants} columns={variantCols} pagination={false} size="small" scroll={{ x: "max-content" }} />
-      <Space style={{ marginTop: 12, display: canAdjust ? "inline-flex" : "none" }}>
-        <span>เพิ่มไซซ์ใหม่:</span>
-        <Select placeholder="size" style={{ width: 90 }} value={newSize} onChange={setNewSize}
-          options={SIZE_OPTS.map((s) => ({ value: s, label: s }))} />
-        <InputNumber min={1} value={newQty} onChange={(v) => setNewQty(Number(v) || 1)} />
-        <Button type="primary" size="small" disabled={!newSize}
-          onClick={() => {
-            if (!newSize) return;
-            adjustStock({ variables: { sku: product.sku, size: newSize, delta: newQty } });
-            setNewSize(undefined); setNewQty(1);
-          }}>เพิ่ม</Button>
-      </Space>
+    <div style={{ display: "grid", gap: 16, padding: 8 }}>
+      <div
+        style={{
+          border: "1px solid #f0f0f0",
+          borderRadius: 16,
+          padding: 16,
+          background: "#fff",
+          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 16, minWidth: 280, flex: 1 }}>
+            {product.imageUrl
+              ? <Image src={product.imageUrl} alt={product.name} width={84} height={84} style={{ objectFit: "cover", borderRadius: 12 }} />
+              : <Avatar shape="square" size={84} icon={<PictureOutlined />} style={{ opacity: 0.4 }} />}
+            <div style={{ minWidth: 220, display: "grid", gap: 8 }}>
+              <div>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {product.name}
+                </Typography.Title>
+                <Typography.Text type="secondary">รหัสสินค้า: {product.sku}</Typography.Text>
+              </div>
+              <Space wrap size={6}>
+                {product.brand && <Tag color="blue" style={{ margin: 0 }}>{product.brand}</Tag>}
+                {product.category && <Tag style={{ margin: 0 }}>{product.category}</Tag>}
+                {lowCount > 0 && <Tag color="warning" icon={<WarningOutlined />} style={{ margin: 0 }}>ใกล้หมด {lowCount} ไซซ์</Tag>}
+              </Space>
+            </div>
+          </div>
 
-      <div style={{ marginTop: 20 }}>
-        <Typography.Text strong><HistoryOutlined /> ประวัติการเคลื่อนไหว (30 ล่าสุด)</Typography.Text>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch", justifyContent: "flex-end", flex: 1 }}>
+            <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fafafa" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>ราคา</Typography.Text>
+              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{Number(product.price).toLocaleString()} ฿</div>
+              {product.costPrice != null && (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  ต้นทุน {Number(product.costPrice).toLocaleString()} ฿
+                </Typography.Text>
+              )}
+            </div>
+
+            <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #d9f7be", borderRadius: 12, background: "#f6ffed" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>สต็อกรวม</Typography.Text>
+              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, color: totalAvailable > 0 ? "#389e0d" : "#8c8c8c" }}>
+                {totalAvailable}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                จองอยู่ {totalReserved}
+              </Typography.Text>
+            </div>
+
+            <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>สถานะ</Typography.Text>
+              <Space direction="vertical" size={8}>
+                <Switch checked={product.active} disabled={!canToggleActive} onChange={onToggleActive} />
+                <Typography.Text style={{ fontSize: 12 }}>{product.active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Typography.Text>
+              </Space>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <Button icon={<EditOutlined />} type="primary" ghost disabled={!canEdit} onClick={onEdit}>
+                แก้ไขสินค้า
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #f0f0f0",
+          borderRadius: 16,
+          background: "#fff",
+          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: 16,
+            borderBottom: "1px solid #f5f5f5",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <Typography.Text strong style={{ fontSize: 18 }}>สต็อกสินค้า (แยกตามไซซ์)</Typography.Text>
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                เน้นดูพร้อมขายก่อน แล้วค่อยปรับสต็อกเร็วจากแถวเดียว
+              </Typography.Text>
+            </div>
+          </div>
+
+          <Space wrap size={8} style={{ display: canAdjust ? "inline-flex" : "none" }}>
+            <Select
+              placeholder="size"
+              style={{ width: 96 }}
+              value={newSize}
+              onChange={setNewSize}
+              options={SIZE_OPTS.map((s) => ({ value: s, label: s }))}
+            />
+            <InputNumber min={1} value={newQty} onChange={(v) => setNewQty(Number(v) || 1)} />
+            <Button
+              icon={<PlusOutlined />}
+              disabled={!newSize}
+              onClick={async () => {
+                if (!newSize) return;
+                await runAdjust(newSize, newQty, "เพิ่มไซซ์ใหม่แล้ว");
+                setNewSize(undefined);
+                setNewQty(1);
+              }}
+            >
+              เพิ่มไซซ์ใหม่
+            </Button>
+            <Button type="primary" ghost onClick={openBulkAdjust}>
+              ปรับสต็อกหลายรายการ
+            </Button>
+          </Space>
+        </div>
+
         <Table
-          style={{ marginTop: 8 }}
-          rowKey="id" dataSource={moves} columns={moveCols} size="small"
+          rowKey="size"
+          dataSource={product.variants}
+          columns={variantCols}
+          pagination={false}
+          size="middle"
           scroll={{ x: "max-content" }}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
+        />
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #f0f0f0",
+          borderRadius: 16,
+          background: "#fff",
+          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: 16,
+            borderBottom: "1px solid #f5f5f5",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <Typography.Text strong style={{ fontSize: 18 }}>
+            <HistoryOutlined /> ประวัติการเคลื่อนไหว
+          </Typography.Text>
+          {moves.length > 4 && (
+            <Button type="link" onClick={() => setHistoryExpanded((prev) => !prev)}>
+              {historyExpanded ? "ย่อรายการ" : "ดูทั้งหมด"}
+            </Button>
+          )}
+        </div>
+
+        <Table
+          rowKey="id"
+          dataSource={visibleMoves}
+          columns={moveCols}
+          size="small"
+          scroll={{ x: "max-content" }}
+          pagination={false}
           locale={{ emptyText: "ยังไม่มีประวัติ" }}
         />
       </div>
+
+      <Modal
+        title={manualVariant ? `ระบุจำนวนเอง · ไซซ์ ${manualVariant.size}` : "ระบุจำนวนเอง"}
+        open={!!manualVariant}
+        onCancel={() => setManualVariant(null)}
+        onOk={async () => {
+          if (!manualVariant || !manualDelta) return;
+          await runAdjust(manualVariant.size, manualDelta);
+          setManualVariant(null);
+          setManualDelta(1);
+        }}
+        okText="ยืนยัน"
+        cancelText="ยกเลิก"
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            ใส่จำนวนบวกเพื่อเพิ่มสต็อก หรือจำนวนลบเพื่อลดสต็อก
+          </Typography.Text>
+          <InputNumber
+            value={manualDelta}
+            onChange={(value) => setManualDelta(Number(value) || 0)}
+            style={{ width: "100%" }}
+            step={1}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="ปรับสต็อกหลายรายการ"
+        open={bulkOpen}
+        onCancel={() => setBulkOpen(false)}
+        confirmLoading={bulkApplying}
+        okText="ยืนยันการปรับ"
+        cancelText="ยกเลิก"
+        onOk={async () => {
+          const entries = Object.entries(bulkDraft).filter(([, delta]) => Number(delta) !== 0);
+          if (!entries.length) {
+            message.info("ยังไม่มีรายการที่ต้องปรับ");
+            return;
+          }
+          setBulkApplying(true);
+          try {
+            for (const [size, delta] of entries) {
+              await adjustStockMut({ variables: { sku: product.sku, size, delta: Number(delta) } });
+            }
+            message.success(`ปรับสต็อก ${entries.length} ไซซ์แล้ว`);
+            setBulkOpen(false);
+            onChanged();
+            refetchMoves();
+          } catch (error: any) {
+            onErr(error);
+          } finally {
+            setBulkApplying(false);
+          }
+        }}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            ใส่จำนวนที่ต้องการเพิ่ม/ลดต่อไซซ์ โดย 0 หมายถึงไม่เปลี่ยน
+          </Typography.Text>
+          {product.variants.map((variant) => (
+            <div
+              key={variant.size}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "72px 1fr 140px",
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              <Typography.Text strong>{variant.size}</Typography.Text>
+              <Typography.Text type="secondary">
+                พร้อมขาย {variant.available} · จอง {variant.reserved_stock}
+              </Typography.Text>
+              <InputNumber
+                value={bulkDraft[variant.size] ?? 0}
+                onChange={(value) => setBulkDraft((prev) => ({ ...prev, [variant.size]: Number(value) || 0 }))}
+                style={{ width: "100%" }}
+              />
+            </div>
+          ))}
+        </Space>
+      </Modal>
     </div>
   );
 }

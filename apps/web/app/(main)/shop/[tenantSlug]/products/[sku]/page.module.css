@@ -296,29 +296,23 @@
 }
 
 .actionRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
 }
 
-.primaryAction,
 .secondaryAction {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
   justify-content: center;
   padding: 0 16px;
+  flex: 1 1 200px;
   border-radius: 12px;
   font-size: 14px;
   font-weight: 800;
   text-decoration: none;
-}
-
-.primaryAction {
-  color: #fff;
-  background: linear-gradient(135deg, #1677ff, #295dff);
-  box-shadow: 0 12px 24px rgba(22, 119, 255, 0.2);
 }
 
 .secondaryAction {
@@ -500,27 +494,6 @@
   font-weight: 700;
 }
 
-.orderNote {
-  display: grid;
-  gap: 4px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border: 1px solid #dbeafe;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff, #eff6ff);
-}
-
-.orderNote strong {
-  color: #334155;
-  font-size: 13px;
-}
-
-.orderNote span {
-  color: #64748b;
-  font-size: 11px;
-  line-height: 1.55;
-}
-
 .updated {
   margin: 8px 0 0;
   font-size: 10.5px;
@@ -559,10 +532,6 @@
   .trustItem + .trustItem {
     border-top: 1px solid var(--app-border, #e5e7eb);
     border-left: 0;
-  }
-
-  .actionRow {
-    grid-template-columns: 1fr;
   }
 
   .thumbnailButton {

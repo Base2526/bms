@@ -83,5 +83,8 @@ export async function listMovements(
       LIMIT $4`,
     [tenantId, sku, size, lim]
   );
-  return res.rows;
+  return res.rows.map((r) => ({
+    ...r,
+    created_at: (r.created_at as unknown) instanceof Date ? (r.created_at as unknown as Date).toISOString() : String(r.created_at),
+  }));
 }

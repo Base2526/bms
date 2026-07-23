@@ -8,11 +8,22 @@ The no-login customer URL is:
 /shop/{tenantSlug}/products/{sku}
 ```
 
+The public shop hierarchy now also includes:
+
+```text
+/shop
+/shop/{tenantSlug}
+/shop/{tenantSlug}/products
+```
+
 `getPublicProduct(tenantSlug, sku)` in `apps/web/lib/bms/products.ts` is the primary read service for
-this route, and `listPublicRelatedProducts()` provides same-tenant suggestions for the “สินค้าที่เกี่ยวข้อง”
-strip. Both use parameterized values and return results only when both `bms_tenants.active` and
-`bms_products.active` are true. Unknown, inactive, and overlong identifiers all resolve as a
-normal 404.
+the product-detail route, and `listPublicRelatedProducts()` provides same-tenant suggestions for the
+“สินค้าที่เกี่ยวข้อง” strip. Public shop directory/shop/products routes use the same service layer's
+`listPublicShops()`, `getPublicShop()`, and `listPublicProducts()` helpers. All use parameterized
+values and return results only when `bms_tenants.active` is true; product listings/details also
+require `bms_products.active = TRUE`. Unknown, inactive, and overlong identifiers all resolve as a
+normal 404 (except an active shop with zero active products, which may still render an empty public
+shop page without exposing inactive products).
 
 ## Public fields
 
@@ -33,10 +44,17 @@ customer opens it. Product metadata includes canonical/Open Graph/Twitter fields
 The public product page is intentionally a lightweight conversion page, not a full storefront cart:
 
 - keep the product image/gallery dominant on desktop;
+- keep `/shop`, `/shop/{tenantSlug}`, and `/shop/{tenantSlug}/products` limited to sale-safe,
+  browse-only summaries that lead into the detail page;
+- the `/shop` directory may use local, client-side search plus lightweight sort/filter groupings
+  (for example all / latest / most products / A-Z) as long as it stays sale-safe and does not imply
+  any hidden ranking or private metrics;
+- when a listed product has multiple gallery images, cards may show one main image plus compact
+  floating thumbnail selectors that swap the visible preview without leaving the list page;
 - show the current price, stock-by-size cards, and a compact summary block near the top;
-- allow **คัดลอกลิงก์** directly on the page for easy forwarding;
-- allow **สั่งซื้อผ่านแชท / Order via chat** only as a hint/anchor back to the note explaining that
-  the customer must continue in the original conversation;
+- allow **คัดลอกลิงก์** and lightweight **share** actions directly on the page for easy forwarding;
+- avoid a primary purchase CTA that implies checkout or chat-resume behavior the page does not yet
+  implement;
 - show related products from the same tenant without exposing any admin-only links or controls.
 
 ## Inbox sharing
