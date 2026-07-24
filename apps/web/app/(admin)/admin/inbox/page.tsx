@@ -20,6 +20,7 @@ import {
 
 const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useGlobalInboxStore } from "@/store/globalInboxStore";
 import Customer360Panel from "./Customer360Panel";
 import messageStyles from "./message.module.css";
 
@@ -291,6 +292,12 @@ function Inbox() {
     const c = new URLSearchParams(window.location.search).get("c");
     if (c) setActiveId(c);
   }, []);
+  // แจ้ง GlobalInboxNotifier ว่ากำลังเปิดแชทไหนอยู่ (กันแจ้ง notification ซ้ำกับแชทที่เห็นอยู่ตรงหน้า)
+  const setActiveConversationGlobal = useGlobalInboxStore((s) => s.setActiveConversation);
+  useEffect(() => {
+    setActiveConversationGlobal(activeId);
+    return () => setActiveConversationGlobal(null);
+  }, [activeId, setActiveConversationGlobal]);
   const [mobilePane, setMobilePane] = useState<"list" | "chat">(() => {
     if (typeof window === "undefined") return "list";
     return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";

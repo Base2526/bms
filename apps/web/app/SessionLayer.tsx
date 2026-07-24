@@ -4,6 +4,7 @@ import React from "react";
 
 import { SessionProvider, useSessionCtx } from "@/lib/session-context";
 import { GlobalChatListener } from "@/components/GlobalChatListener";
+import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
 
 // Keep these global wires out of the auth routes.
 function GlobalWiresWrapper() {
@@ -23,7 +24,12 @@ function GlobalWiresWrapper() {
     };
   }, []);
 
-  return meId ? <GlobalChatListener /> : null;
+  return (
+    <>
+      {meId ? <GlobalChatListener /> : null}
+      {admin?.id ? <GlobalInboxNotifier /> : null}
+    </>
+  );
 }
 
 export default function SessionLayer({ children }: { children: React.ReactNode }) {

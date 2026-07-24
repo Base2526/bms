@@ -155,7 +155,8 @@ export async function receivePurchaseOrder(
   tenantId: string,
   poId: string,
   received: ReceiveInput[],
-  actor: string | null = "admin"
+  actor: string | null = "admin",
+  editorId?: string | number | null
 ): Promise<ReceivePOResult> {
   const lines = mergeItems(
     received
@@ -166,7 +167,7 @@ export async function receivePurchaseOrder(
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId });
 
     // ล็อก PO — ต้องอยู่สถานะที่รับได้
     const po = await client.query<{ status: string }>(
@@ -269,13 +270,28 @@ export async function receivePurchaseOrder(
  * ยกเลิก PO (เฉพาะ OPEN/PARTIAL) → CANCELLED
  * ของที่ "รับเข้าสต็อกไปแล้ว" จะไม่ถูกดึงออก (ตามหลักบัญชีสินค้า)
  */
-export async function cancelPurchaseOrder(tenantId: string, poId: string): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_purchase_orders SET status = 'CANCELLED', updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','PARTIAL')`,
-    [tenantId, poId]
-  );
-  return (res.rowCount ?? 0) > 0;
+export async function cancelPurchaseOrder(
+  tenantId: string,
+  poId: string,
+  editorId?: string | number | null
+): Promise<boolean> {
+  // ใช้ tenant tx เพื่อให้ revision trigger เห็น app.editor_id (ไม่งั้น editor จะเป็น system)
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId });
+    const res = await client.query(
+      `UPDATE bms_purchase_orders SET status = 'CANCELLED', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','PARTIAL')`,
+      [tenantId, poId]
+    );
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- read ----------------------------------------------------

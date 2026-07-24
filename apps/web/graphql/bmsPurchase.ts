@@ -20,6 +20,7 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { requireAuth } from "@/lib/auth";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : String(d));
 
@@ -83,10 +84,13 @@ export const bmsPurchaseResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.receive");
+      const auth = requireAuth(ctx);
       const result = await receivePurchaseOrder(
         getTenantId(ctx),
         args.id,
-        Array.isArray(args.items) ? args.items : []
+        Array.isArray(args.items) ? args.items : [],
+        `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
+        auth.author_id
       );
 
       if (result.status === "RECEIVED" || result.status === "PARTIAL") {
@@ -109,7 +113,8 @@ export const bmsPurchaseResolvers = {
 
     async bmsCancelPurchaseOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "purchase.cancel");
-      const ok = await cancelPurchaseOrder(getTenantId(ctx), args.id);
+      const auth = requireAuth(ctx);
+      const ok = await cancelPurchaseOrder(getTenantId(ctx), args.id, auth.author_id);
       if (ok) await audit(ctx, "purchase.cancel", args.id);
       return ok;
     },

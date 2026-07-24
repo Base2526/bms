@@ -8,6 +8,12 @@ import { query } from "@/lib/db";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
+const PACKING_OVERDUE_HOURS = 24;
+const SLIP_PENDING_HOURS = 2;
+const CHAT_WAITING_MINUTES = 30;
+const RESERVATION_EXPIRE_MINUTES = 30;       // matches release-expired-orders default (?minutes=30)
+const RESERVATION_WARN_MINUTES = 20;          // warn window: 20–30 min old, not yet auto-released
+
 export async function getDashboard(tenantId: string) {
   const [summary, byStatus, low, custCount, topProducts, topCustomers, daily] =
     await Promise.all([
@@ -79,5 +85,43 @@ export async function getDashboard(tenantId: string) {
       revenue: Number(r.revenue),
       orders: r.orders,
     })),
+  };
+}
+
+/** นับงานค้างที่ต้องรีบจัดการวันนี้ — แยกจาก getDashboard() เพราะเป็นคนละหมวด (alert ไม่ใช่ analytics) */
+export async function getOperationalAlerts(tenantId: string) {
+  const [packing, slips, reservations, chats] = await Promise.all([
+    query(
+      `SELECT COUNT(*)::int AS c FROM bms_orders
+        WHERE tenant_id = $1 AND status = 'PACKING'
+          AND updated_at < now() - make_interval(hours => $2)`,
+      [tenantId, PACKING_OVERDUE_HOURS]
+    ),
+    query(
+      `SELECT COUNT(*)::int AS c FROM bms_payments
+        WHERE tenant_id = $1 AND status = 'PENDING'
+          AND created_at < now() - make_interval(hours => $2)`,
+      [tenantId, SLIP_PENDING_HOURS]
+    ),
+    query(
+      `SELECT COUNT(*)::int AS c FROM bms_orders
+        WHERE tenant_id = $1 AND status = 'PENDING'
+          AND created_at < now() - make_interval(mins => $2)
+          AND created_at >= now() - make_interval(mins => $3)`,
+      [tenantId, RESERVATION_WARN_MINUTES, RESERVATION_EXPIRE_MINUTES]
+    ),
+    query(
+      `SELECT COUNT(*)::int AS c FROM bms_conversations
+        WHERE tenant_id = $1 AND status <> 'CLOSED' AND unread > 0
+          AND last_message_at < now() - make_interval(mins => $2)`,
+      [tenantId, CHAT_WAITING_MINUTES]
+    ),
+  ]);
+
+  return {
+    packingOverdueCount: packing.rows[0].c,
+    slipPendingCount: slips.rows[0].c,
+    reservationExpiringCount: reservations.rows[0].c,
+    chatWaitingCount: chats.rows[0].c,
   };
 }

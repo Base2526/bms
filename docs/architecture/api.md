@@ -75,7 +75,7 @@ read/write REST equivalents of their GraphQL counterparts.
 
 | File | Covers |
 | --- | --- |
-| `bmsProducts.ts` | products, categories, stock adjustments |
+| `bmsProducts.ts` | products, categories, stock adjustments, bulk CSV/XLSX product import (`bmsImportProducts`) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
@@ -83,7 +83,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, labels |
-| `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, and shipments |
+| `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
@@ -109,19 +109,39 @@ introducing one just for itself.
   moving non-marketplace orders from `PACKING` to `SHIPPED`. Lazada/Shopee are the only marketplace
   exemptions; TikTok is treated as TikTok Chat.
 
+### Bulk product import (preview + commit over one mutation)
+
+`bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean = false): BmsProductImportResult!`
+requires `product.edit` (same permission as `bmsUpsertProduct`) and establishes this codebase's first
+bulk-operation-with-structured-per-row-result pattern: a single mutation toggled by a `commit` flag
+rather than a separate preview query, so preview and commit share one validation path
+(`lib/bms/productImport.ts` `runImport()` → `validateProductFields()`) and can never drift apart.
+`commit: false` (default) validates only; `commit: true` writes by looping the existing
+`upsertProduct()` per row. Row count is capped at `PRODUCT_IMPORT_MAX_ROWS` (500), enforced in the
+resolver even though the client also checks it before calling the mutation at all. See
+[../business/inventory.md](../business/inventory.md) for the full field mapping, quota, and
+duplicate-SKU rules. If a future feature needs a similar "review before you commit" bulk mutation,
+follow this same shape rather than inventing a separate preview-only query/REST endpoint.
+
 ### Revision history GraphQL
 
 `bmsRevisions.ts` exposes the read-only revision browser used by `/admin/revisions`:
 
-- `bmsRevisionHistory(kind, entityId, limit)` lists recent snapshots. `entityId` is a search string,
-  not only an exact ID: products search `sku/name/barcode`; orders/payments/shipments search their
-  id/status/reference fields.
+- `bmsRevisionHistory(kind, entityId, limit)` lists recent snapshots. `kind` is one of `products`,
+  `orders`, `payments`, `shipments`, `purchase` (PO header), or `purchaseItems` (PO line items).
+  `entityId` is a search string, not only an exact ID: products search `sku/name/barcode`;
+  orders/payments/shipments search their id/status/reference fields; `purchase` searches
+  `id/status/note`; `purchaseItems` searches `po_id/product_sku/size` (line-item history is grouped
+  by its parent PO id, since the line-item's own id is an internal bigserial).
 - `bmsRevisionDetail(kind, revisionId)` returns one snapshot and its editor label.
 - `bmsRevisionCompare(kind, fromRevisionId, toRevisionId)` returns field-level JSON diffs between
   two snapshots.
 
 Each query gates through the matching read permission (`product.view`, `order.view`, `payment.view`,
-or `shipping.view`) and tenant id from the authenticated admin context.
+`shipping.view`, or `purchase.view`) and tenant id from the authenticated admin context. The purchase
+snapshots are populated by the revision trigger on every `receivePurchaseOrder()`/
+`cancelPurchaseOrder()` write; both now thread the acting admin id into `beginTenantTx()` so the
+Editor column shows who received/cancelled rather than `system`.
 
 ### Inbox realtime
 
@@ -179,6 +199,19 @@ Public web pages are intentionally session-aware: when a browser already has an 
 `web` scope may reuse that existing admin identity instead of forcing a separate `/login` session.
 This keeps landing/self-service surfaces aligned with the active admin session while preserving the
 explicit `admin` scope for `/admin/*` routes and RBAC-gated admin operations.
+
+**Admin session lifetime (2026-07):** `loginAdmin` (`graphql/resolvers.ts`) signs the JWT and sets
+`ADMIN_COOKIE`'s `maxAge` from the same `sessionMaxAgeSec` value, so the two can't drift apart —
+Administrator (full RBAC permissions) gets a 1-day session; Manager/Sales/Warehouse get 7 days.
+There is no server-side session table, so a token cannot be revoked before it expires except by
+rotating `JWT_SECRET` (which logs everyone out at once) — keep that in mind before lengthening
+either duration. Expiry itself is enforced only when the *next* request is made: `verifyTokenString()`
+(`lib/auth/token.ts`) swallows `jwt.verify()`'s `TokenExpiredError` and returns `null`, `requireAuth()`
+(`lib/auth.ts`) then throws `UNAUTHENTICATED`/`reason: "backend_admin"`, and the Apollo `errorLink`
+(`lib/apollo.ts`) catches that to clear the cookie and redirect to `/admin/login`. There is no
+client-side timer — an idle tab with no polling keeps showing stale UI until it makes a request, but
+in practice the admin sidebar's own polling (unread count/channel health every 15s, AI usage every
+60s) triggers the redirect within about a minute of real expiry.
 
 ## Operational list search
 

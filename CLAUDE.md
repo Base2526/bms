@@ -68,6 +68,14 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the cover image; `/admin/products` remains staff-only.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
   name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Bulk product import (CSV/XLSX)**: `/admin/products` "นำเข้า" button opens `ImportModal.tsx`,
+  which parses the file client-side (`xlsx`) and drives a preview-then-commit flow over one
+  mutation, `bmsImportProducts(items, commit)` — `commit:false` validates only, `commit:true` writes
+  by looping the existing single-item `upsertProduct()`. No images in the file (added afterward via
+  the normal edit form); duplicate SKUs in-file and quota-exceeding imports are rejected as a whole
+  rather than partially applied. See
+  [docs/business/inventory.md](docs/business/inventory.md#bulk-product-import-csvxlsx) and
+  [docs/architecture/api.md](docs/architecture/api.md) for the full rules.
 - **Gender-aware Inbox suggested replies**: admins set their gender in `/admin/profile`
   (migration `7.15__bms_users_gender.sql` → `users.gender`, exposed on `bmsMe.gender`); the Inbox
   "AI แนะนำคำตอบ" templates then end with ครับ for male admins and ค่ะ for female/unset (via
@@ -121,8 +129,10 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   (`send_customer_message` → `bmsSendMessage`, LINE/Meta only). See [docs/ai/tools.md](docs/ai/tools.md).
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
-  versions for products, orders, payments, and shipments. Product/inventory writes pass the logged-in
-  admin id into `beginTenantTx()`, so new revision rows show the editor label instead of `system`.
+  versions for products, orders, payments, shipments, and purchase orders (header + line items,
+  kinds `purchase`/`purchaseItems`). Product/inventory writes — and now purchase receive/cancel —
+  pass the logged-in admin id into `beginTenantTx()`, so new revision rows show the editor label
+  instead of `system`.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·

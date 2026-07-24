@@ -94,7 +94,7 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) with image/file attachments; message status (sent/failed + retry, capability-gated per channel) |
 | **AI Orchestrator** | Intent detection, entity extraction, tool selection |
 | **CRM** | Customer profiles across channels, purchase history, LTV |
-| **Product Management** | Products, variants, SKU, barcode, pricing (+cost price), image, description, category, brand |
+| **Product Management** | Products, variants, SKU, barcode, pricing (+cost price), image, description, category, brand — plus **bulk CSV/XLSX import** with preview/validation on `/admin/products` |
 | **Inventory (IMS)** | Current / reserved / available stock — every change logs a movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
@@ -355,7 +355,7 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) แนบรูป/ไฟล์ได้, มีสถานะข้อความ (ส่งแล้ว/ล้มเหลว+ส่งใหม่ ตามความสามารถของแต่ละช่องทาง) |
 | **AI Orchestrator** | ตรวจ intent, ดึง entity, เลือก tool |
 | **CRM** | โปรไฟล์ลูกค้าข้ามช่องทาง, ประวัติซื้อ, มูลค่าตลอดชีพ |
-| **Product Management** | สินค้า, variant, SKU, barcode, ราคา (+ต้นทุน), รูปภาพ, รายละเอียด, หมวดหมู่, ยี่ห้อ |
+| **Product Management** | สินค้า, variant, SKU, barcode, ราคา (+ต้นทุน), รูปภาพ, รายละเอียด, หมวดหมู่, ยี่ห้อ — พร้อม **นำเข้าจาก CSV/XLSX** แบบ preview/ตรวจสอบก่อนบันทึกที่ `/admin/products` |
 | **Inventory (IMS)** | สต็อก คงเหลือ / จอง / พร้อมขาย — ทุกการเปลี่ยนแปลงต้องบันทึก movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |

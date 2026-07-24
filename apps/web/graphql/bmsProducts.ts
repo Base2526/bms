@@ -16,6 +16,8 @@ import {
   setReorderPoint,
   listLowStock,
 } from "@/lib/bms/products";
+import { runImport } from "@/lib/bms/productImport";
+import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
 import { listCategories, createCategory, renameCategory, deleteCategory } from "@/lib/bms/productCategories";
 import { listMovements } from "@/lib/bms/movements";
 import { requirePermission } from "@/lib/bms/permissions";
@@ -85,6 +87,33 @@ export const bmsProductsResolvers = {
         const p = await upsertProduct(getTenantId(ctx), args.input, auth.author_id);
         await audit(ctx, "product.upsert", args.input?.sku, { name: args.input?.name });
         return p;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsImportProducts(
+      _p: unknown,
+      args: { items: any[]; commit?: boolean },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
+      if ((args.items?.length ?? 0) > PRODUCT_IMPORT_MAX_ROWS) {
+        throw new GraphQLError(`นำเข้าได้สูงสุดครั้งละ ${PRODUCT_IMPORT_MAX_ROWS} รายการ`, {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      try {
+        const commit = !!args.commit;
+        const result = await runImport(getTenantId(ctx), args.items, { commit, editorId: auth.author_id });
+        if (commit) {
+          await audit(ctx, "product.import", null, {
+            createCount: result.createCount,
+            updateCount: result.updateCount,
+            errorCount: result.errorCount,
+          });
+        }
+        return result;
       } catch (err) {
         toGqlError(err);
       }

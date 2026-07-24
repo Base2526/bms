@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { requireAuth } from "@/lib/auth";
 
-type RevisionKind = "products" | "orders" | "payments" | "shipments";
+type RevisionKind = "products" | "orders" | "payments" | "shipments" | "purchase" | "purchaseItems";
 
 const REVISION_CONFIG: Record<RevisionKind, {
   table: string;
@@ -35,6 +35,20 @@ const REVISION_CONFIG: Record<RevisionKind, {
     parentIdField: "id",
     searchFields: ["id", "order_id", "carrier", "tracking_no", "status"],
     permission: "shipping.view",
+  },
+  // Purchase (ซื้อ): PO header + line items — trigger บันทึกทุกครั้งที่รับของ/ยกเลิก (7.2/7.9/7.10)
+  purchase: {
+    table: "bms_purchase_orders_revisions",
+    parentIdField: "id",
+    searchFields: ["id", "status", "note"],
+    permission: "purchase.view",
+  },
+  // line item ใช้ po_id เป็น entity (จัดกลุ่มตาม PO) เพราะ item id เป็น bigserial ที่ผู้ใช้ไม่ได้อ้างตรงๆ
+  purchaseItems: {
+    table: "bms_purchase_order_items_revisions",
+    parentIdField: "po_id",
+    searchFields: ["po_id", "product_sku", "size"],
+    permission: "purchase.view",
   },
 };
 
@@ -73,6 +87,8 @@ function titleCase(kind: RevisionKind) {
     orders: "Orders",
     payments: "Payments",
     shipments: "Shipments",
+    purchase: "Purchase Orders",
+    purchaseItems: "Purchase Order Items",
   }[kind];
 }
 

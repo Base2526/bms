@@ -2,6 +2,7 @@
 // BMS SaaS — plans, usage, quota
 // =============================================================
 
+import type { PoolClient, QueryResultRow } from "pg";
 import { query } from "@/lib/db";
 
 export type Plan = {
@@ -9,6 +10,11 @@ export type Plan = {
   max_products: number; max_channels: number; max_orders_month: number; max_users: number;
   max_ai_messages_month: number; sort: number;
 };
+
+// เรียกผ่าน client เดียวกับ transaction ที่เปิดอยู่ (ถ้ามี) ไม่งั้น fallback ไป pool query() เดิม
+function run<T extends QueryResultRow = QueryResultRow>(client: PoolClient | undefined, sql: string, params: any[] = []) {
+  return client ? client.query<T>(sql, params) : query<T>(sql, params);
+}
 
 export async function listPlans(): Promise<Plan[]> {
   const res = await query<Plan>(`SELECT * FROM bms_plans ORDER BY sort`);
@@ -24,14 +30,15 @@ function shapePlan(r: any): Plan {
   };
 }
 
-export async function getTenantPlan(tenantId: string): Promise<Plan> {
-  const res = await query<any>(
+export async function getTenantPlan(tenantId: string, client?: PoolClient): Promise<Plan> {
+  const res = await run<any>(
+    client,
     `SELECT p.* FROM bms_tenants t JOIN bms_plans p ON p.code = t.plan WHERE t.id = $1`,
     [tenantId]
   );
   if (res.rows[0]) return shapePlan(res.rows[0]);
   // fallback = free
-  const free = await query<any>(`SELECT * FROM bms_plans WHERE code='free'`);
+  const free = await run<any>(client, `SELECT * FROM bms_plans WHERE code='free'`);
   return shapePlan(free.rows[0]);
 }
 
@@ -48,11 +55,14 @@ export async function getUsage(tenantId: string) {
   return res.rows[0];
 }
 
-/** เช็คก่อนสร้างสินค้าใหม่ — เกิน quota → throw */
-export async function enforceProductQuota(tenantId: string): Promise<void> {
-  const plan = await getTenantPlan(tenantId);
+/** เช็คก่อนสร้างสินค้าใหม่ — เกิน quota → throw
+ *  ส่ง client เข้ามาเมื่อเรียกจากใน transaction ที่ล็อกแถว bms_tenants ไว้แล้ว (กัน race
+ *  ตอนสร้างสินค้าใหม่พร้อมกันหลาย request — ดู upsertProduct()) */
+export async function enforceProductQuota(tenantId: string, client?: PoolClient): Promise<void> {
+  const plan = await getTenantPlan(tenantId, client);
   if (plan.max_products < 0) return; // unlimited
-  const res = await query<{ c: number }>(
+  const res = await run<{ c: number }>(
+    client,
     `SELECT COUNT(*)::int AS c FROM bms_products WHERE tenant_id = $1`,
     [tenantId]
   );

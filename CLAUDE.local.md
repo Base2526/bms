@@ -277,7 +277,7 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
 ## Revision History (2026-07)
 
 **เสร็จแล้ว** — `/admin/revisions` เป็นหน้าอ่านประวัติ snapshot แบบ list/detail/compare สำหรับ
-`products`, `orders`, `payments`, `shipments`:
+`products`, `orders`, `payments`, `shipments`, `purchase` (หัว PO), `purchaseItems` (รายการใน PO):
 
 - รัน `7.0__bms_revision_helpers.sql` ก่อนเสมอ แล้วค่อยรันไฟล์ revision ราย batch/รายตารางที่ต้องการ
   (`7.1`–`7.14`) — helper จะสร้าง `<table>_revisions`, trigger, RLS policy, และ grant ให้ `bms_app`
@@ -286,10 +286,27 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
   `app.revision_id`; ถ้าไม่ส่ง `editorId` หน้า Revision History จะแสดง editor เป็น `system`
 - ตอนนี้ product/inventory mutations ส่ง `auth.author_id` แล้ว จึงเห็น email/name ของ admin login ในคอลัมน์
   Editor ผ่าน GraphQL `bmsRevisionHistory`/`bmsRevisionDetail`
+- **Purchase (ซื้อ) — เพิ่ม kind ให้ดูได้แล้ว (2026-07)**: trigger ของ `bms_purchase_orders`/
+  `bms_purchase_order_items` มีมาตั้งแต่ `7.2`/`7.9`/`7.10` (บันทึกจริงทุกครั้งที่ `receivePurchaseOrder()`/
+  `cancelPurchaseOrder()` ทำ UPDATE) แต่เดิม `bmsRevisions.ts` **ไม่มี kind** ให้เลือก → ข้อมูลถูกเก็บแต่
+  admin เปิดดูไม่ได้เลย. แก้แล้วโดยเพิ่ม `purchase`/`purchaseItems` เข้า `REVISION_CONFIG` (`bmsRevisions.ts`)
+  + enum `BmsRevisionKind` (`typeDefs.ts`) + dropdown `KIND_OPTIONS` (หน้า `/admin/revisions`) + เพิ่ม
+  `purchase.view` เข้า guard สิทธิ์ของหน้า. `purchaseItems` ใช้ **`po_id` เป็น entity** (จัดกลุ่มตาม PO)
+  เพราะ item id เป็น bigserial ที่ผู้ใช้ไม่ได้อ้างตรง ๆ
+- **editor attribution ของ purchase** เดิมเป็น `system` เพราะ `receivePurchaseOrder()` เรียก
+  `beginTenantTx(client, tenantId)` ไม่ส่ง editorId และ `cancelPurchaseOrder()` ใช้ `query()` ธรรมดา
+  (ไม่ผ่าน tenant tx เลย trigger เลยไม่เห็น `app.editor_id`). แก้แล้ว: ทั้งสองฟังก์ชันรับ `editorId` param
+  เพิ่ม, `cancelPurchaseOrder()` เปลี่ยนมาใช้ `getClient()` + `beginTenantTx()`, และ resolver
+  (`bmsPurchase.ts`) ส่ง `requireAuth(ctx).author_id` เข้าไป — ตอนนี้เห็นชื่อคนรับของ/ยกเลิก PO จริง
+  · REST route ของ purchase (ถ้ามี) ไม่ได้ส่ง editorId แต่ param เป็น optional จึงไม่พัง (แค่ path นั้นจะได้
+  editor เป็น system เหมือนเดิม — path หลักคือ GraphQL admin UI)
 - Search ในหน้า Revision History ไม่ต้อง exact id เสมอ: products ค้น `sku/name/barcode`; orders/payments/
-  shipments ค้น id/status/reference/tracking ตาม kind
+  shipments ค้น id/status/reference/tracking ตาม kind; purchase ค้น `id/status/note`; purchaseItems ค้น
+  `po_id/product_sku/size`
 - Compare 2 version คือ compare snapshot กับ snapshot; ถ้าต้องการ compare revision ล่าสุดกับ row ปัจจุบัน
   ต้องเพิ่ม API อีกตัวภายหลัง
+- **suppliers ตั้งใจไม่เพิ่ม kind**: trigger `bms_suppliers` มี (`7.8`) แต่ยังไม่มี code path ไหน UPDATE
+  supplier เลย → ถ้าเพิ่ม kind จะเป็นตัวเลือกที่ไม่มีข้อมูล (dead option) รอจนมีหน้าจอแก้ supplier จริงก่อน
 
 ## AI tool-calling (2026-07) — ต่อ backend เข้ากับ AI จริง
 
@@ -415,6 +432,34 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 - **บทเรียน**: `trg_generic_revision` เป็นชื่อฟังก์ชัน global — ระวังชนกับของเดิม; เพิ่มตาราง revision ใหม่
   ต้องเช็ก `pg_trigger` ว่าไม่ไปผูก trigger เข้ากับตาราง `_revisions` ที่สคีมาไม่ตรง
 
+## Admin session (JWT/cookie) expiry — แก้ mismatch แล้ว (2026-07)
+
+**แก้แล้ว** — `loginAdmin` (`graphql/resolvers.ts`, mutation จริงที่ `/admin/login` เรียก — **ไม่ใช่**
+`app/api/login/route.ts` ซึ่งเป็น REST route เก่าที่ไม่มีหน้าไหนเรียกแล้ว, และ **ไม่ใช่** `lib/auth/jwt.ts`
+ซึ่งเป็นโค้ด dead ที่ import ไว้แต่คอมเมนต์ทิ้ง — สองไฟล์นี้เคยทำให้เข้าใจผิดว่า JWT อายุ 30 วันชนกับ cookie
+7 วัน ทั้งที่ไม่มีผลจริงเลย) เดิม sign JWT ด้วย `expiresIn: "1d"` แต่ `cookies().set(ADMIN_COOKIE, ...)`
+**ไม่ได้ใส่ `maxAge`** เลย → cookie กลายเป็น session cookie (อยู่จนกว่าจะปิดเบราว์เซอร์) คนละ clock กับ JWT
+ที่หมดอายุจริงใน 1 วันตาม `exp` ฝั่ง server:
+
+- **แก้**: ผูก `sessionMaxAgeSec` ตัวเดียวเข้าทั้ง `jwt.sign({expiresIn})` และ `cookies().set({maxAge})` กัน
+  สองค่านี้เพี้ยนจากกันอีก · **แยกตาม role ณ ตอนออก token** (มี `user.role` อยู่แล้วตอน sign) — Administrator
+  (สิทธิ์ RBAC เต็ม) = 1 วัน, Manager/Sales/Warehouse = 7 วัน (`loginAdmin` เป็น mutation เดียวที่ใช้ล็อกอิน
+  ทุก role ของฝั่ง admin ไม่ได้แยก endpoint ตาม role)
+- **ข้อจำกัดที่ตั้งใจไม่แก้ตอนนี้**: ระบบนี้ไม่มี session table ใน DB (JWT stateless ล้วน) — **revoke session
+  ก่อนหมดอายุไม่ได้เลย** แม้เปลี่ยนรหัสผ่าน token เดิมก็ยังใช้ได้จนกว่าจะหมดอายุตาม `exp`; ทางเดียวที่ revoke
+  ได้คือหมุน `JWT_SECRET` ซึ่งเตะทุกคนออกพร้อมกันทั้งระบบ — เป็นเหตุผลที่ตั้งใจให้อายุสั้น ไม่ใช่ตั้งยาวๆ เพื่อ
+  ความสะดวก
+- **auto-logout เป็นแบบ reactive ไม่ใช่ proactive**: `verifyTokenString()` (`lib/auth/token.ts`) กลืน
+  `TokenExpiredError` จาก `jwt.verify()` แล้วคืน `null` เฉยๆ → `requireAuth()` (`lib/auth.ts`) throw
+  `UNAUTHENTICATED`/`reason:"backend_admin"` → `errorLink` ใน `lib/apollo.ts` เช็ค `reason.startsWith("backend")`
+  แล้วเรียก `backendLogout()` (ล้าง cookie + redirect `/admin/login`) — **เกิดเฉพาะตอนมี request ออกไปจริง**
+  ไม่มี client-side timer บังคับออกทันทีที่ token หมดอายุ ถ้าแท็บ idle ไม่มี request เลยจะยังไม่ถูกเตะจนกว่าจะมี
+  action หรือ poll ถัดไป — แต่ในทางปฏิบัติ sidebar poll เดิมอยู่แล้ว (unread count/channel health ทุก 15s, AI
+  usage ทุก 60s) ทำให้แท็บที่เปิดค้างไว้โดน redirect ภายใน ~1 นาทีหลังหมดอายุจริง
+- **บทเรียน**: โปรเจกต์นี้มี auth/login code เก่าที่ยังไม่ลบทิ้งหลายชุด (`app/api/login/route.ts`,
+  `lib/auth/jwt.ts`, comment ทิ้งใน `resolvers.ts`) ก่อนจะแก้ auth/session ใดๆ ต้อง grep หา endpoint/mutation
+  ที่หน้า UI จริงเรียกก่อนเสมอ (เช็คที่ `page.tsx` ของหน้า login) ไม่งั้นแก้ผิดไฟล์ที่ไม่มีผลอะไรเลย
+
 ## Gender particle — คำลงท้าย ครับ/ค่ะ ใน "AI แนะนำคำตอบ" (2026-07)
 
 **เสร็จแล้ว** — เดิม suggested-reply ในหน้า Inbox ฮาร์ดโค้ด "ค่ะ/นะคะ" เสมอ ตอนนี้ผูกกับเพศแอดมิน:
@@ -430,6 +475,53 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
   `suggestedReply(conv, gender)` (4 ข้อความ) + ปุ่ม quick reply "ขอตรวจสอบ"/"ขอบคุณ" (2 ข้อความ)
 - **สำคัญ**: นี่คือข้อความที่ "แอดมินส่งในนามตัวเอง" เท่านั้น — **AI ตอบลูกค้าในนามร้าน** (`pipeline.ts`/`ai.ts`,
   30 จุดที่ใช้ ค่ะ) เป็น brand voice ของร้าน **ไม่ได้ผูกเพศ** และตั้งใจไม่แตะ (คนละเรื่อง)
+
+## Bulk product import — CSV/XLSX (2026-07)
+
+**เสร็จแล้ว** — `/admin/products` เพิ่มปุ่ม "นำเข้า" เปิด `ImportModal.tsx` (ไฟล์ใหม่ในโฟลเดอร์เดียวกับ
+`page.tsx`) สำหรับ import สินค้าจาก CSV/XLSX แบบ preview ก่อน commit จริง:
+
+- **parse ฝั่ง browser ทั้งหมด** ด้วย lib `xlsx` (SheetJS, `^0.18.5` — เวอร์ชันล่าสุดที่ยังอยู่บน npm
+  registry ปกติ, เวอร์ชันใหม่กว่านี้ SheetJS แจกผ่าน CDN ของตัวเองแทน) — parse `.csv`/`.xlsx` ด้วย API
+  เดียวกัน ไม่ต้องมี REST upload route ใหม่ (ข้อมูลส่งเป็น JSON rows ผ่าน GraphQL ตรงๆ ไม่เก็บไฟล์)
+- **1 mutation, 2 โหมดด้วย flag `commit`** (ไม่ใช่ query แยกสำหรับ preview) —
+  `bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean = false): BmsProductImportResult!`
+  (`graphql/typeDefs.ts` + resolver ใน `graphql/bmsProducts.ts`) · `commit:false` (preview, ค่า default)
+  validate อย่างเดียวไม่เขียน DB, `commit:true` เขียนจริง — ใช้ validate เส้นทางเดียวกันทั้ง 2 โหมดกัน
+  preview กับ commit ผลไม่ตรงกัน (ดู bullet ถัดไป) — **ตั้งใจไม่ทำ preview เป็น query แยก** เพราะ codebase
+  นี้ไม่เคยมี pattern bulk-op ที่คืนผลลัพธ์รายแถวมาก่อนเลย ถือเป็น pattern แรกที่วางไว้ ถ้าจะทำ bulk
+  import/preview อื่นในอนาคต ให้ใช้ shape เดียวกันนี้ (flag บน mutation เดียว) แทนที่จะคิด query-simulate-
+  mutation ใหม่
+- **service** → `lib/bms/productImport.ts` (`runImport()`) + `lib/bms/productImport.constants.ts`
+  (`PRODUCT_IMPORT_MAX_ROWS = 500` แยกไฟล์เพราะไม่แตะ `@/lib/db` — client component import ตรงได้)
+  · ไม่ทำ logic การเขียนสินค้าซ้ำ — เขียนจริงด้วย `upsertProduct()` เดิมทีละแถว (`lib/bms/products.ts`)
+  · `validateProductFields()` แยกออกมาจาก `upsertProduct()` (ของเดิม ไม่ใช่ copy) ให้ preview/commit
+  เรียกใช้ตัวเดียวกัน
+- **กติกาที่ต้องจำ**:
+  - **ไม่ import รูปภาพ** — เทมเพลตไม่มีคอลัมน์รูป ถ้าไฟล์มีคอลัมน์แปลกมาก็แค่เมิน ไม่ error ทั้งไฟล์
+  - **SKU ซ้ำในไฟล์เดียวกัน** → แถวแรกชนะ แถวหลังๆ ที่ SKU ซ้ำถูก flag เป็น `ERROR` ("SKU ซ้ำกับแถวที่ N")
+    ไม่ silently skip และไม่ silently overwrite
+  - **โควตาเป็น all-or-nothing ทั้ง batch** ไม่ใช่ "เอา N แถวแรกที่พอดีโควตา" — ถ้า
+    `currentCount + newSkuCount > max_products` บล็อกทั้ง commit (`quotaExceeded:true` + ข้อความสรุป)
+    · preview เช็คแบบ point-in-time เท่านั้น (advisory) — commit ยังเรียก `upsertProduct()` จริงซึ่งเช็ค
+    `enforceProductQuota()` ซ้ำเสมอ ถ้ามีการแข่งกันสร้างสินค้าระหว่าง preview กับกด "ยืนยัน Import" แถวที่
+    เกินจะ error ที่ commit แม้ preview ตอนนั้นจะผ่านก็ตาม
+  - **จำกัด 500 แถว/ครั้ง** (`PRODUCT_IMPORT_MAX_ROWS`) เช็คทั้งฝั่ง client (ก่อนเรียก mutation เลย) และ
+    ฝั่ง resolver (กันเรียก GraphQL ตรงๆ ข้าม UI) + client เช็คขนาดไฟล์ไม่เกิน 5MB ก่อน parse ด้วย (กัน
+    browser jank จากไฟล์ใหญ่ก่อนจะรู้ว่าแถวเกินหรือไม่)
+  - **ไม่มี permission ใหม่** — ใช้ `product.edit` เดิม (ตัวเดียวกับ `bmsUpsertProduct`)
+  - **revision**: generate `revisionId` เดียวต่อการ import 1 ครั้ง ส่งเข้า `upsertProduct()` ทุกแถวตอน
+    commit (ตาราง revision จะ group แถว UPDATE ที่มาจาก batch เดียวกันได้) — แต่ trigger revision fire
+    เฉพาะ `UPDATE` ไม่ใช่ `INSERT` (ยืนยันจาก `7.0__bms_revision_helpers.sql`) ดังนั้น import ที่เป็น SKU
+    ใหม่ล้วนจะไม่มี revision row เกิดขึ้นเลย (ไม่ใช่บั๊ก)
+  - **audit** 1 ครั้งต่อการ commit (`product.import`, มี count ใน meta) ไม่ log ทีละแถว — ไม่ audit ตอน
+    preview (`commit:false`)
+- **เทมเพลต**: หัวคอลัมน์ภาษาไทย (SKU / บาร์โค้ด / ชื่อสินค้า / รายละเอียด / ราคาขาย / ต้นทุน / หมวดหมู่ /
+  ยี่ห้อ / คีย์เวิร์ด / เปิดขาย) match ด้วยข้อความ trim+lowercase ไม่ match ตำแหน่งคอลัมน์ — SKU/ชื่อสินค้า/
+  ราคาขายจำเป็น ถ้าไม่เจอคอลัมน์จำเป็นแม้แต่ตัวเดียว reject ทั้งไฟล์ทันที (บอกให้โหลดเทมเพลตใหม่)
+- ยังไม่ทดสอบ end-to-end จริงในเบราว์เซอร์ (docker ไม่ได้รันตอนพัฒนา feature นี้) — `npx tsc --noEmit`
+  ผ่านสะอาดแล้วเท่านั้น ก่อนใช้งานจริงควรทดสอบผ่าน `/admin/products` เต็ม flow (โหลดเทมเพลต → กรอก →
+  อัปโหลด → preview → ยืนยัน) อย่างน้อย 1 รอบ
 
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
@@ -475,6 +567,9 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 + **AI tool-calling เสร็จแล้ว** (ดูหัวข้อ § AI tool-calling ด้านบน — customer surface (pipeline) +
 staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose-only ยิง mutation เดิม; ยังต้องจูน
 prompt/model เรื่อง conversion บน shared key model ตามที่บันทึกไว้).
++ **Bulk product import (CSV/XLSX) เสร็จแล้ว** (ดูหัวข้อ § Bulk product import ด้านบน — `/admin/products`
+ปุ่ม "นำเข้า", 1 mutation `bmsImportProducts` flag `commit` สำหรับ preview→commit, ห่อ `upsertProduct()` เดิม;
+ยังไม่ได้ทดสอบ end-to-end ในเบราว์เซอร์จริง).
 **เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
