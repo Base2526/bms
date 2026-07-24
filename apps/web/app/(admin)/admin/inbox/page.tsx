@@ -39,7 +39,7 @@ type Msg = {
   id: string; direction: "IN" | "OUT"; body: string; sender: string | null; createdAt: string;
   attachment?: Attachment | null; status?: string | null; canReportDelivery?: boolean;
 };
-type Note = { id: string; author: string | null; body: string; createdAt: string };
+type Note = { id: string; author: string | null; body: string; createdAt: string; mentionedUserIds?: string[] };
 type ProductPickerItem = { sku: string; name: string; active: boolean; price: number; imageUrl?: string | null; variants?: { size: string; available: number }[] };
 type ProductShare = { name: string; sku: string; price: string | null; stock: string | null; url: string; caption: string | null };
 type SystemEvent = {
@@ -65,7 +65,7 @@ const Q_CONV = gql`
       helpers { ${STAFF_FIELDS} }
       messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
       systemEvents { id kind at actorName targetName statusValue auto }
-      notes { id author body createdAt }
+      notes { id author body createdAt mentionedUserIds }
     }
   }
 `;
@@ -108,7 +108,7 @@ const M_AVAILABILITY = gql`mutation ($available: Boolean!) { bmsSetMyAvailabilit
 const M_STATUS = gql`mutation ($id: ID!, $status: BmsConvStatus!) { bmsSetConversationStatus(id: $id, status: $status) }`;
 const M_TAGS = gql`mutation ($id: ID!, $tags: [String!]!) { bmsSetConversationTags(id: $id, tags: $tags) }`;
 const M_READ = gql`mutation ($id: ID!) { bmsMarkConversationRead(id: $id) }`;
-const M_NOTE = gql`mutation ($id: ID!, $body: String!) { bmsAddConversationNote(id: $id, body: $body) { id author body createdAt } }`;
+const M_NOTE = gql`mutation ($id: ID!, $body: String!, $mentionedUserIds: [ID!]) { bmsAddConversationNote(id: $id, body: $body, mentionedUserIds: $mentionedUserIds) { id author body createdAt mentionedUserIds } }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
 function staffLabel(s: StaffRef) {
@@ -756,6 +756,8 @@ function Inbox() {
 function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null }) {
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
+  const [noteMentionQuery, setNoteMentionQuery] = useState<string | null>(null);
+  const [noteMentions, setNoteMentions] = useState<{ id: string; name: string }[]>([]);
   const [tags, setTags] = useState<string[]>(conv.tags || []);
   const [showHelperTags, setShowHelperTags] = useState(false);
   const [showAiSuggestion, setShowAiSuggestion] = useState(true);
@@ -832,7 +834,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [setStatus] = useMutation(M_STATUS, { onCompleted: onChanged, onError: onErr });
   const [saveTags] = useMutation(M_TAGS, { onCompleted: () => { message.success("บันทึกแท็กแล้ว"); onChanged(); }, onError: onErr });
   const [addNote, { loading: noting }] = useMutation(M_NOTE, {
-    onCompleted: () => { message.success("เพิ่มโน้ตแล้ว"); setNote(""); onChanged(); }, onError: onErr,
+    onCompleted: () => { message.success("เพิ่มโน้ตแล้ว"); setNote(""); setNoteMentions([]); setNoteMentionQuery(null); onChanged(); }, onError: onErr,
   });
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   const { data: staffData } = useQuery(Q_STAFF, { fetchPolicy: "cache-and-network" });
@@ -1536,18 +1538,65 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     </div>
   );
 
+  // "@" ท้ายข้อความ (ก่อนหน้าเป็นช่องว่าง/ต้นบรรทัด) = กำลังพิมพ์ mention — ไม่ parse
+  // ทั้งข้อความตอน submit, แค่ใช้ตรงนี้ช่วยกรอง dropdown เฉยๆ (แหล่งความจริงคือ noteMentions)
+  const noteMentionCandidates = noteMentionQuery === null ? [] : staffList.filter((s) =>
+    (s.name || s.email || "").toLowerCase().includes(noteMentionQuery.toLowerCase())
+  );
+  const onNoteChange = (value: string) => {
+    setNote(value);
+    const m = value.match(/(?:^|\s)@([^\s@]*)$/);
+    setNoteMentionQuery(m ? m[1] : null);
+  };
+  const pickNoteMention = (s: StaffRef) => {
+    const label = s.name || s.email || "staff";
+    const cut = noteMentionQuery === null ? note.length : note.length - (noteMentionQuery.length + 1);
+    setNote(note.slice(0, cut) + "@" + label + " ");
+    setNoteMentionQuery(null);
+    setNoteMentions((prev) => (prev.some((p) => p.id === s.id) ? prev : [...prev, { id: s.id, name: label }]));
+  };
+  const submitNote = () => {
+    // ตัด mention ที่ถูกลบ "@ชื่อ" ออกจากข้อความไปแล้วก่อน submit ออก — กันแจ้งเตือนคนที่ถูกลบชื่อทิ้ง
+    const mentionedUserIds = noteMentions.filter((m) => note.includes("@" + m.name)).map((m) => m.id);
+    addNote({ variables: { id: conv.id, body: note, mentionedUserIds } });
+  };
+  const renderNoteBody = (body: string) => {
+    if (!staffList.length) return body;
+    const names = staffList.map((s) => s.name || s.email).filter(Boolean) as string[];
+    if (!names.length) return body;
+    const re = new RegExp(`(@(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}))`, "g");
+    // split() ด้วย regex ที่มี capturing group จะคืน [text, match, text, match, ...] —
+    // index คี่ = ส่วนที่ match เสมอ ใช้เช็คแทน re.test() (regex /g ตัวเดียวกัน .test() ซ้ำ
+    // จะเลื่อน lastIndex ทำให้ผลสลับถูกๆ ผิดๆ)
+    return body.split(re).map((part, i) =>
+      i % 2 === 1 ? <Typography.Text key={i} strong style={{ color: "#1677ff" }}>{part}</Typography.Text> : part
+    );
+  };
+
   const notesTab = (
     <div style={{ height: "100%", overflowY: "auto" }}>
       {canManage && (
-        <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="โน้ตภายใน (ลูกค้าไม่เห็น)" />
-          <Button loading={noting} disabled={!note.trim()} onClick={() => addNote({ variables: { id: conv.id, body: note } })}>เพิ่ม</Button>
-        </Space.Compact>
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <Space.Compact style={{ width: "100%" }}>
+            <Input value={note} onChange={(e) => onNoteChange(e.target.value)} placeholder="โน้ตภายใน (ลูกค้าไม่เห็น) — พิมพ์ @ เพื่อกล่าวถึงเพื่อนร่วมทีม" />
+            <Button loading={noting} disabled={!note.trim()} onClick={submitNote}>เพิ่ม</Button>
+          </Space.Compact>
+          {noteMentionQuery !== null && noteMentionCandidates.length > 0 && (
+            <List size="small" bordered
+              style={{ position: "absolute", top: "100%", left: 0, right: 84, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
+              dataSource={noteMentionCandidates}
+              renderItem={(s) => (
+                <List.Item style={{ cursor: "pointer", padding: "4px 8px" }} onClick={() => pickNoteMention(s)}>
+                  {staffLabel(s)}
+                </List.Item>
+              )} />
+          )}
+        </div>
       )}
       <List size="small" dataSource={conv.notes || []} locale={{ emptyText: "ยังไม่มีโน้ต" }}
         renderItem={(n: Note) => (
           <List.Item>
-            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {new Date(n.createdAt).toLocaleString()}</Typography.Text>} description={n.body} />
+            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {new Date(n.createdAt).toLocaleString()}</Typography.Text>} description={renderNoteBody(n.body)} />
           </List.Item>
         )} />
     </div>

@@ -31,6 +31,7 @@ import {
   LogoutOutlined,
   RobotOutlined,
   HistoryOutlined,
+  NotificationOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -40,6 +41,7 @@ import { useEffect, useState } from 'react';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
+const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
@@ -123,6 +125,12 @@ export default function AdminSidebar() {
   });
   const inboxUnread: number = unreadData?.bmsInboxUnreadCount ?? 0;
 
+  // @mention ที่ยังไม่อ่านของฉัน — badge แยกจาก inboxUnread (คนละความหมาย: ข้อความลูกค้า vs ถูกกล่าวถึง)
+  const { data: mentionsData } = useQuery(Q_MENTIONS_UNREAD, {
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+  });
+  const mentionsUnread: number = mentionsData?.bmsMyMentionsUnreadCount ?? 0;
+
   // ช่องทาง active แต่ status ไม่ปกติ (token หมดอายุ/webhook fail/rate limit/no events) —
   // poll เอง 15s แบบเดียวกับ inboxUnread เพื่อให้เห็น badge แม้ไม่ได้อยู่หน้า Settings
   const { data: healthData } = useQuery(Q_CHANNEL_HEALTH_COUNT, {
@@ -196,6 +204,7 @@ export default function AdminSidebar() {
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/inbox/mentions', 'เมนชันของฉัน', <NotificationOutlined />, mentionsUnread, collapsed, true)] : []),
     // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
     link('/admin/assistant', 'ผู้ช่วย AI', <RobotOutlined />),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น

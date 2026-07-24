@@ -13,6 +13,7 @@ import {
   listAssignableStaff, addConversationHelper, removeConversationHelper,
   listConversationHelpers, setUserAvailability, listSystemEvents, countUnreadConversations,
   isImageMime, channelSupportsPush, outboundStatus, createDiagnosticInboxMessage, listDiagnosticInboxLatest,
+  countUnreadMentions, listMyMentions, markMentionRead, markAllMentionsRead,
   type ConvStatus, type Attachment,
 } from "@/lib/bms/inbox";
 import { requirePermission } from "@/lib/bms/permissions";
@@ -95,6 +96,23 @@ export const bmsInboxResolvers = {
     async bmsInboxDiagnosticLatest(_p: unknown, _a: unknown, ctx: any) {
       await requireDiagnosticsAdmin(ctx);
       return listDiagnosticInboxLatest(getTenantId(ctx));
+    },
+
+    async bmsMyMentionsUnreadCount(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "inbox.view");
+      return countUnreadMentions(getTenantId(ctx), String(ctx.admin.id));
+    },
+
+    async bmsMyMentions(_p: unknown, args: { unreadOnly?: boolean; limit?: number }, ctx: any) {
+      await requirePermission(ctx, "inbox.view");
+      const rows = await listMyMentions(getTenantId(ctx), String(ctx.admin.id), {
+        unreadOnly: args.unreadOnly ?? false, limit: args.limit ?? undefined,
+      });
+      return rows.map((r: any) => ({
+        id: String(r.id), conversationId: r.conversation_id, channel: r.channel,
+        customerName: r.customer_name ?? null, author: r.author ?? null, body: r.body,
+        createdAt: toISO(r.created_at), readAt: toISO(r.read_at),
+      }));
     },
   },
 
@@ -207,11 +225,22 @@ export const bmsInboxResolvers = {
       return markRead(getTenantId(ctx), args.id);
     },
 
-    async bmsAddConversationNote(_p: unknown, args: { id: string; body: string }, ctx: any) {
+    async bmsAddConversationNote(_p: unknown, args: { id: string; body: string; mentionedUserIds?: string[] }, ctx: any) {
       await requirePermission(ctx, "inbox.manage");
-      const note = await addNote(getTenantId(ctx), args.id, actorOf(ctx), args.body);
-      if (note) await audit(ctx, "inbox.note", args.id);
+      const note = await addNote(getTenantId(ctx), args.id, actorOf(ctx), args.body, args.mentionedUserIds);
+      if (note) await audit(ctx, "inbox.note", args.id, { mentionedCount: note.mentionedUserIds?.length ?? 0 });
       return note;
+    },
+
+    async bmsMarkMentionRead(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "inbox.view");
+      return markMentionRead(getTenantId(ctx), String(ctx.admin.id), args.id);
+    },
+
+    async bmsMarkAllMentionsRead(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "inbox.view");
+      await markAllMentionsRead(getTenantId(ctx), String(ctx.admin.id));
+      return true;
     },
   },
 
@@ -262,11 +291,13 @@ export const bmsInboxResolvers = {
       const rows = await listNotes(getTenantId(ctx), p.id);
       return rows.map((n: any) => ({
         id: String(n.id), author: n.author ?? null, body: n.body, createdAt: toISO(n.created_at),
+        mentionedUserIds: (n.mentioned_user_ids || []).map(String),
       }));
     },
   },
 
   BmsConversationNote: {
     createdAt: (p: any) => toISO(p.createdAt ?? p.created_at),
+    mentionedUserIds: (p: any) => (p.mentionedUserIds || []).map(String),
   },
 };

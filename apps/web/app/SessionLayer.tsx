@@ -5,6 +5,7 @@ import React from "react";
 import { SessionProvider, useSessionCtx } from "@/lib/session-context";
 import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
+import { GlobalMentionNotifier } from "@/components/GlobalMentionNotifier";
 
 // Keep these global wires out of the auth routes.
 function GlobalWiresWrapper() {
@@ -28,6 +29,7 @@ function GlobalWiresWrapper() {
     <>
       {meId ? <GlobalChatListener /> : null}
       {admin?.id ? <GlobalInboxNotifier /> : null}
+      {admin?.id ? <GlobalMentionNotifier /> : null}
     </>
   );
 }
