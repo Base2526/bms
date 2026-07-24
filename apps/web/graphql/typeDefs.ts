@@ -1432,6 +1432,20 @@ export const typeDefs = /* GraphQL */ `
     topProducts: [BmsTopProduct!]!
     topCustomers: [BmsTopCustomer!]!
     salesDaily: [BmsDailySales!]!
+    couponSummary: BmsCouponSummary   # null ถ้า role ไม่มี coupon.view (เช่น Sales) — ดู field resolver
+  }
+
+  # ส่วนลดที่แจกไปเดือนนี้ (ตัดที่ต้นเดือนปัจจุบัน) — permission coupon.view เท่านั้น
+  # (margin-sensitive เหมือนหน้า /admin/coupons เอง ไม่ใช่ทุกคนที่มี report.view จะเห็นได้)
+  type BmsTopCoupon {
+    code: String!
+    redemptions: Int!
+    discount: Float!
+  }
+  type BmsCouponSummary {
+    discountThisMonth: Float!
+    redemptionsThisMonth: Int!
+    topCoupons: [BmsTopCoupon!]!
   }
 
   type BmsOperationalAlerts {
