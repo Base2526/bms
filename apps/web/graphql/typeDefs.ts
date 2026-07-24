@@ -727,6 +727,8 @@ export const typeDefs = /* GraphQL */ `
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
+    bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
+    bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
 
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
@@ -808,7 +810,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsReorderResult {
-    status: String!             # CREATED / INSUFFICIENT / NOT_FOUND / EMPTY / SOURCE_NOT_FOUND
+    status: String!             # CREATED / INSUFFICIENT / NOT_FOUND / EMPTY / SOURCE_NOT_FOUND / COUPON_INVALID
     orderId: ID
     total: Float
     message: String!
@@ -844,6 +846,8 @@ export const typeDefs = /* GraphQL */ `
     channel: String
     lines: [BmsDocLine!]!
     subtotal: Float!
+    discount: Float!
+    couponCode: String
     shippingFee: Float
     total: Float!
     paymentStatus: String
@@ -1843,6 +1847,8 @@ export const typeDefs = /* GraphQL */ `
     shippingFreeThreshold: Float
     shippingEstDaysMin: Int
     shippingEstDaysMax: Int
+    emailThemeColor: String   # #RRGGBB — สีแบรนด์ในอีเมลแจ้งสถานะออร์เดอร์ (7.20)
+    emailFooterText: String   # ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (ไม่บังคับ)
   }
   input BmsStoreProfileInput {
     about: String
@@ -1863,6 +1869,49 @@ export const typeDefs = /* GraphQL */ `
     shippingFreeThreshold: Float
     shippingEstDaysMin: Int
     shippingEstDaysMax: Int
+    emailThemeColor: String
+    emailFooterText: String
+  }
+
+  # ===== BMS Coupons (โค้ดส่วนลด) =====
+  type BmsCoupon {
+    id: ID!
+    code: String!
+    type: String!               # PERCENT | FIXED
+    value: Float!
+    minOrderAmount: Float
+    maxRedemptions: Int
+    redemptionsCount: Int!
+    perCustomerLimit: Int
+    startsAt: String
+    expiresAt: String
+    active: Boolean!
+    note: String
+    createdAt: String!
+    updatedAt: String!
+  }
+  # แถวประวัติการใช้โค้ด — ไม่มีตาราง redemption แยก, derive จาก bms_orders.coupon_code ตรงๆ
+  type BmsCouponRedemption {
+    orderId: ID!
+    customerName: String
+    channel: String!
+    status: String!
+    discountAmount: Float!
+    totalAmount: Float!
+    createdAt: String!
+  }
+  input BmsCouponInput {
+    id: ID
+    code: String!
+    type: String!
+    value: Float!
+    minOrderAmount: Float
+    maxRedemptions: Int
+    perCustomerLimit: Int
+    startsAt: String
+    expiresAt: String
+    active: Boolean
+    note: String
   }
 
   # ===== BMS AI Assistant (staff) =====
@@ -2005,7 +2054,7 @@ export const typeDefs = /* GraphQL */ `
     bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
     bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
     bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
-    bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
+    bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!, couponCode: String): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
@@ -2064,6 +2113,8 @@ export const typeDefs = /* GraphQL */ `
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
+    bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
+    bmsDeleteCoupon(id: ID!): Boolean!
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!

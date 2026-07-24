@@ -24,9 +24,13 @@ export const bmsStoreProfileResolvers = {
   Mutation: {
     async bmsUpsertStoreProfile(_p: unknown, args: { input: StoreProfileInput }, ctx: any) {
       requireTenantAdmin(ctx);
-      const result = await upsertStoreProfile(getTenantId(ctx), args.input ?? {}, ctx?.admin?.id ?? null);
-      await audit(ctx, "store.profile_update", null, {});
-      return result;
+      try {
+        const result = await upsertStoreProfile(getTenantId(ctx), args.input ?? {}, ctx?.admin?.id ?? null);
+        await audit(ctx, "store.profile_update", null, {});
+        return result;
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "บันทึกข้อมูลร้านไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
     },
     // แก้ชื่อร้าน (tenant name) + slug — Administrator ของร้านแก้เองได้
     async bmsUpdateMyTenant(_p: unknown, args: { name?: string; slug?: string }, ctx: any) {

@@ -32,6 +32,11 @@ Every attempt writes a redacted `ai.tool_call` entry to `bms_audit_log`; success
 their existing domain audit action (`order.create`, `payment.submit`, etc.). Raw tool args and prompt
 content are not copied into the centralized audit entry.
 Customer read/write of orders is scoped to the conversation's own `(channel, customer_ref)`.
+`create_order` (both surfaces) also accepts an optional `couponCode` — Claude can pass through a
+discount code a customer mentions in free text with no NLU changes needed, since tool-calling already
+extracts it as a structured argument; validation happens server-side in `createOrder()` (see
+[../business/order.md](../business/order.md#coupons-discount-codes)) and an invalid/exhausted code
+rolls back the whole order with a `COUPON_INVALID` result the AI relays back to the customer.
 
 ## Authoritative runtime registry and gates
 

@@ -9,7 +9,7 @@
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   Collapse, Skeleton, Empty, Tag, Typography, Avatar, Space, Table,
-  Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message, Drawer,
+  Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message, Drawer, Input,
 } from "antd";
 import { useEffect, useState } from "react";
 import {
@@ -59,14 +59,14 @@ const Q_PRODUCTS_FOR_ORDER = gql`
   query { bmsProducts(limit: 200) { items { sku name variants { size available } } } }
 `;
 const M_CREATE_ORDER = gql`
-  mutation ($channel: String, $customerRef: String, $items: [BmsOrderItemInput!]!) {
-    bmsCreateOrder(channel: $channel, customerRef: $customerRef, items: $items) { status orderId total message }
+  mutation ($channel: String, $customerRef: String, $items: [BmsOrderItemInput!]!, $couponCode: String) {
+    bmsCreateOrder(channel: $channel, customerRef: $customerRef, items: $items, couponCode: $couponCode) { status orderId total message }
   }
 `;
 const Q_INVOICE = gql`
   query ($orderId: ID!) {
     bmsGenerateInvoice(orderId: $orderId) {
-      type number date customerRef channel subtotal shippingFee total paymentStatus note
+      type number date customerRef channel subtotal discount couponCode shippingFee total paymentStatus note
       store { name address phone taxId }
       lines { sku name size qty unitPrice amount }
     }
@@ -441,7 +441,12 @@ function CreateOrderModal({
   const submit = async () => {
     const v = await form.validateFields();
     const items = (v.items || []).map((it: any) => ({ sku: it.sku, size: it.size, qty: Number(it.qty) }));
-    create({ variables: { channel: conv?.channel || "web", customerRef: conv?.customerRef || null, items } });
+    create({
+      variables: {
+        channel: conv?.channel || "web", customerRef: conv?.customerRef || null, items,
+        couponCode: v.couponCode?.trim() || null,
+      },
+    });
   };
 
   return (
@@ -495,6 +500,9 @@ function CreateOrderModal({
             </>
           )}
         </Form.List>
+        <Form.Item name="couponCode" label="โค้ดส่วนลด (ไม่บังคับ)" style={{ marginTop: 16, marginBottom: 0 }}>
+          <Input placeholder="เช่น SAVE10" style={{ width: 220 }} />
+        </Form.Item>
       </Form>
     </Modal>
   );
@@ -568,6 +576,9 @@ function InvoiceModal({
           />
           <div style={{ marginTop: 12, textAlign: "right" }}>
             <div><Text type="secondary">ยอดสินค้า: </Text><Text>{money(doc.subtotal)}</Text></div>
+            {doc.discount > 0 && (
+              <div><Text type="secondary">ส่วนลด{doc.couponCode ? ` (${doc.couponCode})` : ""}: </Text><Text type="danger">-{money(doc.discount)}</Text></div>
+            )}
             {doc.shippingFee != null && <div><Text type="secondary">ค่าส่ง: </Text><Text>{money(doc.shippingFee)}</Text></div>}
             <div><Text strong style={{ fontSize: 15 }}>รวมทั้งหมด: {money(doc.total)}</Text></div>
           </div>

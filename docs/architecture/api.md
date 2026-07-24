@@ -83,6 +83,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, labels |
+| `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
@@ -108,6 +109,18 @@ introducing one just for itself.
   not the only gate: `shipOrder()` and `createShipment()` independently enforce the same rule before
   moving non-marketplace orders from `PACKING` to `SHIPPED`. Lazada/Shopee are the only marketplace
   exemptions; TikTok is treated as TikTok Chat.
+
+### Coupons
+
+`bmsUpsertCoupon`/`bmsDeleteCoupon` require `coupon.manage`; `bmsCoupons`/`bmsCouponRedemptions`
+require the lighter `coupon.view` — both seeded only to Manager and Administrator (pricing/margin
+impact), not Sales/Warehouse. Redemption is not a resolver-level concern: it happens inside
+`createOrder()` (`lib/bms/orders.ts`) itself via `applyCouponInTx()`, in the same DB transaction as
+stock reservation, so every caller of `createOrder()` — `bmsCreateOrder`, the customer/AI pipeline,
+the `create_order` AI tool, the REST order endpoint, — gets validated, atomic coupon redemption for
+free. See [../business/order.md](../business/order.md#coupons-discount-codes) for the full
+validation order and the `COUPON_INVALID` result status. `bmsCouponRedemptions(couponId)` has no
+backing table of its own; it reads `bms_orders` directly by `coupon_code`.
 
 ### Bulk product import (preview + commit over one mutation)
 

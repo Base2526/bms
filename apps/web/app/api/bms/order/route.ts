@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
     channel?: unknown;
     customerRef?: unknown;
     items?: unknown;
+    couponCode?: unknown;
   };
 
   const channel = CHANNELS.includes(body.channel as Channel)
@@ -41,7 +42,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "items is required" }, { status: 400 });
   }
 
-  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items });
+  const couponCode = typeof body.couponCode === "string" ? body.couponCode : null;
+  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items, couponCode });
 
   const httpStatus =
     result.status === "CREATED"
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
       ? 404
       : result.status === "EMPTY"
       ? 400
-      : 409; // INSUFFICIENT
+      : 409; // INSUFFICIENT / COUPON_INVALID
 
   return NextResponse.json(result, { status: httpStatus });
 }

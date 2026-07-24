@@ -503,6 +503,101 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 - ผู้ใช้เห็นได้แค่ mention ของตัวเอง (`ctx.admin.id` เท่านั้น ไม่มี arg ให้เลือกดูของคนอื่น) — ไม่มี
   ความเสี่ยง IDOR ในทูลนี้
 
+## Order status notification emails (2026-07)
+
+**เสร็จแล้ว (โค้ด + `tsc` ผ่าน — ยังไม่ได้ทดสอบ end-to-end จริงเพราะเครื่องนี้ไม่มี `.env`/docker/
+SendGrid key ตอนพัฒนา)** — เดิม `sendEmail()` ใช้แค่ตอน verify สมัครสมาชิก ไม่มีในโดเมน order เลย
+ลูกค้าที่ไม่ได้แชททาง LINE/FB/IG จะไม่รู้เลยว่าออร์เดอร์ไปถึงไหนแล้ว:
+
+- **จุดที่แก้ไม่ใช่ตรง resolver แต่เป็น service layer ตรงๆ** (`lib/bms/orders.ts`/`payments.ts`/
+  `shipping.ts`) — เดิมตั้งใจจะ hook ที่ resolver เหมือน `audit()` แต่เจอว่า order เปลี่ยนสถานะได้จาก
+  **หลายทางที่ไม่ผ่าน resolver เดียวกัน**: `confirmPayment()` เขียน SQL ตรงเปลี่ยน order เป็น `PAID`
+  เอง (ไม่เรียก `payOrder()`), และ `createShipment()`/`setShipmentStatus()` ใน `shipping.ts` ก็เปลี่ยน
+  order เป็น `SHIPPED`/`COMPLETED` เองอีกทาง (ไม่เรียก `shipOrder()`/`completeOrder()`) — ถ้า hook แค่
+  ที่ `graphql/bmsOrders.ts` (6 mutation) จะพลาดเคสที่พบบ่อยที่สุดจริงๆคือ "ยืนยันสลิปแล้ว PAID" กับ
+  "สร้าง shipment แล้ว SHIPPED" ไปเลย — เคยลองทำแบบ hook ที่ resolver/REST ก่อน (13 call site) แล้ว
+  ต้อง revert ทั้งหมดพอเจอจุดนี้ (ดู commit นี้ — ไม่มี "ของค้าง" จาก draft แรกทิ้งไว้ในโค้ดจริง)
+  · ข้อดีของการ hook ใน service layer: ครอบคลุมทุกทาง (GraphQL/REST/AI tool catalog) โดย caller
+  ใหม่ในอนาคตก็ได้ฟรีอัตโนมัติ ไม่ต้องจำไปเพิ่มทุกจุด
+- **`notifyOrderStatusEmail()`** (`lib/bms/orderNotify.ts`) เป็น best-effort เต็มรูปแบบ — catch ทุก
+  error เอง ไม่ throw ออกไปเด็ดขาด (อีเมล/SendGrid ล้มต้องไม่ทำให้ order transition ที่ commit ไปแล้ว
+  ดูเหมือนพัง) เรียกแบบ fire-and-forget (`void notifyOrderStatusEmail(...)`) หลัง `COMMIT` เสมอ ไม่ใช่
+  ก่อน · ไม่มีอีเมล (`bms_customers.email IS NULL`) = ข้ามเงียบๆ เป็นเคสปกติมาก (ลูกค้าส่วนใหญ่มาจาก
+  LINE/chat ไม่เคยให้อีเมลเลย) ไม่ใช่ error
+- **`setShipmentStatus()` ต้องเช็ค rowCount ของ UPDATE ภายในเอง** — เดิม comment บอกว่า "DELIVERED →
+  COMPLETED แบบ best-effort" แต่โค้ดไม่เคยเช็คว่า UPDATE นั้น match แถวจริงไหม (เผื่อ order ไม่ใช่
+  `SHIPPED` แล้วตอนนั้น) เพิ่ม `orderCompleted` ตัวแปรจาก `rowCount` เพื่อรู้ว่าควรส่งอีเมล completed
+  จริงไหม ไม่ใช่ยิงทุกครั้งที่เรียก `setShipmentStatus(..., "DELIVERED")`
+- **schema** ใช้ตาราง `email_templates` เดิม (1.21) ไม่สร้างตารางใหม่ — key ใหม่ 6 ตัว
+  (`order.paid`/`packing`/`shipped`/`completed`/`cancelled`/`returned`) seed ทั้ง locale `th`/`en`
+  ด้วย migration `7.19` (fallback ของ `getLatestEmailTemplate()` จะไป `en` เสมอถ้า locale ที่ขอไม่มี
+  ไม่ใช่ tenant default — seed สอง locale กันพลาดกรณี `customer.preferred_language === "en"`)
+- **ไม่มี tenant_id ในตาราง `email_templates`** (global ทั้งระบบ) — personalize ต่อร้านด้วยตัวแปร
+  `{{store_name}}`/`{{store_logo_url}}` ที่ query จาก `getStoreProfile()`/`getTenantName()` ตอน render
+  เท่านั้น ไม่ได้แยก template ต่อร้าน
+
+**ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — email branding ต่อร้าน (สีธีม + ข้อความท้ายอีเมล):**
+ตัดสินใจแล้วว่า**ไม่ทำ** UI ให้แก้ HTML template เต็มรูปต่อร้าน (ต้องรื้อ `email_templates` ให้มี
+`tenant_id` + สร้างหน้า editor ที่ validate/preview/test-send ปลอดภัย — ไม่คุ้มกับ scale ปัจจุบัน) เลือก
+เพิ่มแค่ 2 field ที่ template ดึงไปใช้แทน:
+- **schema** → migration `7.20` เพิ่ม `bms_store_profile.email_theme_color`/`email_footer_text` (ไม่ใช่
+  ตารางใหม่) + **แก้ html_tpl/text_tpl ของ 12 แถวจาก 7.19 แบบ full-replace ต่อแถว** (ไม่ใช้
+  `regexp_replace`/`replace` แบบ patch เนื้อหาเดิม) เพื่อให้ idempotent ตรงไปตรงมา — เคยลอง
+  `regexp_replace` มาก่อนแล้วเปลี่ยนใจกลางทาง เพราะ `replace()` ตัวที่สองจะ insert ซ้ำถ้ารัน migration
+  ซ้ำ (ไม่มี guard `NOT LIKE`) ส่วน full-replace รันซ้ำได้ผลเดิมเสมอโดยไม่ต้องเช็คอะไรเพิ่ม
+- **validate hex color ที่ service layer** (`upsertStoreProfile()` ใน `storeProfile.ts`, ไม่ใช่แค่
+  resolver) — `throw new Error(...)` ถ้าไม่ตรง `^#[0-9a-fA-F]{6}$` ตาม convention เดิมของไฟล์นี้
+  (`platform.ts` validate slug ก็ throw plain Error แบบเดียวกัน) · `bmsUpsertStoreProfile` resolver
+  (`bmsStoreProfile.ts`) ห่อ try/catch แปลงเป็น `GraphQLError` code `BAD_USER_INPUT` ให้ client เห็น
+  ข้อความจริง (pattern เดียวกับ `bmsUpdateMyTenant`) · Mustache auto-escape เป็นชั้นป้องกัน XSS ที่สอง
+  (escape `"`/`'` กัน breakout จาก `style="color:{{theme_color}}"`)
+- **`orderNotify.ts`** ส่ง `theme_color: profile.emailThemeColor || DEFAULT_EMAIL_THEME_COLOR` (export
+  จาก `storeProfile.ts`, ค่าเดียวกับ default ที่ UI ใช้ตอนยังไม่ตั้งค่า) + `email_footer_text` (ไม่ตั้ง
+  = ไม่มี paragraph นั้นเลยเพราะเป็น Mustache section `{{#email_footer_text}}`)
+- **UI** → การ์ด "อีเมลแจ้งสถานะออร์เดอร์" ใน `StoreProfileCard.tsx` ใช้ `<Input type="color">` (HTML5
+  native) ไม่ใช่ antd `ColorPicker` — เหตุผล: `ColorPicker` คืนค่าเป็น `Color` object ไม่ใช่ string ตรงๆ
+  ต้องเขียน wrapper แปลงใน `onChange`/`getValueFromEvent` เพิ่ม ในขณะที่ native color input คืน hex
+  string ตรงกับที่ backend ต้องการเลย ง่ายกว่าและพอสำหรับ use case นี้
+
+## Coupons — โค้ดส่วนลด (2026-07)
+
+**เสร็จแล้ว (โค้ด + `tsc` ผ่าน — ยังไม่ได้ทดสอบ end-to-end จริงเพราะเครื่องนี้ไม่มี `.env`/docker
+ตอนพัฒนา)** — สร้างระบบโค้ดส่วนลด (`bms_coupons`, migration `7.21`) ผูกเข้ากับ `createOrder()`
+(`lib/bms/orders.ts`) ซึ่งเป็นจุดเดียวที่ order ทุกเส้นทาง (customer/AI pipeline, `bmsCreateOrder`
+admin, AI tool catalog, REST `POST /api/bms/order`, `reorderFromOrder`) ใช้ร่วมกันอยู่แล้ว — ต่างจาก
+feature "order status email" ก่อนหน้านี้ที่ order เปลี่ยน**สถานะ**ได้จากหลายจุดที่ไม่ผ่านฟังก์ชันเดียวกัน
+แต่ order ถูก**สร้าง**จากจุดเดียวเท่านั้น (`createOrder()`) จึง hook ที่นี่จุดเดียวพอ ไม่ต้องกระจายเหมือนตอนนั้น:
+
+- **ใช้โค้ดในทรานแซกชันเดียวกับการจองสต็อก** — `applyCouponInTx()` (`lib/bms/coupons.ts`) รับ
+  `PoolClient` ของ `createOrder()` เข้ามาตรงๆ (pattern เดียวกับ `recordOrderMovements(client, ...)`)
+  ล็อกแถว coupon ด้วย `FOR UPDATE` ก่อนเพิ่ม `redemptions_count` กัน race condition ตอนมีคนใช้โค้ด
+  เดียวกันพร้อมกันเกิน `max_redemptions` — โค้ดใช้ไม่ได้ = `ROLLBACK` ทั้งออร์เดอร์ (คืนสต็อกที่จองไว้
+  ด้วย) เหมือน `INSUFFICIENT` ของสต็อกเดิม ไม่ใช่ error แยกที่ปล่อยให้ order สร้างต่อแบบไม่มีส่วนลด
+- **permission ใหม่ `coupon.view`/`coupon.manage`** — seed ให้ Manager + Administrator เท่านั้น
+  (ไม่ให้ Sales/Warehouse เพราะกระทบราคา/margin ตรง) — Administrator เป็น super ในโค้ดอยู่แล้วไม่ต้อง
+  seed (ตาม pattern `order.create`/`inbox.assign` เดิม)
+- **AI tool `create_order` รับ `couponCode` ได้ฟรีโดยไม่ต้องแก้ NLU** — เพราะ customer surface ใช้
+  Claude tool-calling จริงอยู่แล้ว (ไม่ใช่ regex/keyword NLU) การเพิ่ม `couponCode` ใน `inputSchema`
+  พอแล้ว Claude จะดึงโค้ดจากข้อความลูกค้ามาใส่ arg เองได้เลย — ต่างจาก `pipeline.ts`'s deterministic
+  rule-based fallback (ใช้ตอนไม่มี AI credential/เกิน quota เท่านั้น) ที่**ไม่ได้ผูก coupon เพิ่ม**
+  เพราะ NLU เดิม (`nlu.ts`) เป็น regex/entity-extraction ธรรมดา ไม่มี slot สำหรับ coupon — เป็น known
+  gap เฉพาะ fallback path (rare case)
+- **snapshot ผลลัพธ์ลง order เสมอ** (`discount_amount`/`coupon_code` บน `bms_orders`) แบบเดียวกับ
+  `unit_price` ของ `bms_order_items` — เพื่อให้ยอดเงินย้อนหลังถูกต้องแม้ coupon จะถูกลบ/แก้ค่าไปแล้ว ·
+  `generateInvoice()`/`generateQuotation()` (`lib/bms/documents.ts`) ก็โชว์ discount/couponCode ต่อ
+- **ตั้งใจไม่ทำ**: คืน `redemptions_count` ตอน order ถูก cancel/return (อนุรักษ์ไว้กัน
+  create-cancel-recreate วนใช้โค้ดเกิน limit — ดูรายละเอียดใน
+  [docs/business/order.md](docs/business/order.md#coupons-discount-codes)), จำกัดโค้ดต่อสินค้า/
+  หมวดหมู่, carry coupon ผ่าน `reorderFromOrder()` ("ซื้อซ้ำ"), เงื่อนไข eligibility ก่อนใช้โค้ด (เช่น
+  ลูกค้าใหม่เท่านั้น/ผูกกับลูกค้าคนเดียว) — ยังเป็นแค่ shared string ใครมีโค้ดใช้ได้หมด (โอนกันได้โดย
+  ไม่ตั้งใจ เพราะไม่มี field ผูกกับลูกค้าคนเดียว)
+
+**ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — log การใช้งานโค้ด**: คอลัมน์ "ใช้ไปแล้ว" ในตาราง
+`/admin/coupons` กดได้ เปิด modal โชว์ประวัติราย order (`bmsCouponRedemptions(couponId)` →
+`listCouponRedemptions()` ใน `lib/bms/coupons.ts`) — ยืนยันการตัดสินใจเดิมว่าไม่ต้องมีตาราง
+redemption log แยก: query ตรงจาก `bms_orders.coupon_code` ก็พอ (join แบบเดียวกับ
+`COALESCE(NULLIF(cu.name, ...), ci.display_name)` ที่ใช้หา customer name ใน `inbox.ts` อยู่แล้ว)
+
 ## Gender particle — คำลงท้าย ครับ/ค่ะ ใน "AI แนะนำคำตอบ" (2026-07)
 
 **เสร็จแล้ว** — เดิม suggested-reply ในหน้า Inbox ฮาร์ดโค้ด "ค่ะ/นะคะ" เสมอ ตอนนี้ผูกกับเพศแอดมิน:

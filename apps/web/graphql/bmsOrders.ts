@@ -138,7 +138,7 @@ export const bmsOrdersResolvers = {
     },
     async bmsCreateOrder(
       _p: unknown,
-      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[] },
+      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[]; couponCode?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "order.create");
@@ -151,15 +151,18 @@ export const bmsOrdersResolvers = {
         customerRef: args.customerRef ?? null,
         items: args.items ?? [],
         editorId: ctx?.admin?.id ?? null,
+        couponCode: args.couponCode ?? null,
       });
       if (r.status === "CREATED") {
-        await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total });
-        return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
+        await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total, discount: r.discount, couponCode: r.couponCode });
+        const discountNote = r.discount > 0 ? ` (ใช้โค้ดส่วนลด ${r.couponCode} -${r.discount.toLocaleString()} ฿)` : "";
+        return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์แล้ว ยอดรวม ${r.total.toLocaleString()} ฿${discountNote}` };
       }
       const messages: Record<string, string> = {
         EMPTY: "ไม่มีรายการสินค้า",
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
+        COUPON_INVALID: r.status === "COUPON_INVALID" ? r.reason : "โค้ดส่วนลดใช้ไม่ได้",
       };
       return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ไม่สำเร็จ" };
     },

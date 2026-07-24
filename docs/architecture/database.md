@@ -23,7 +23,8 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Module | Tables | Key migration |
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0`, `6.5` |
-| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5` |
+| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns) |
+| Coupons | `bms_coupons` | `7.21` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
@@ -49,6 +50,18 @@ available.
 reserved; there is no separate `DRAFT` status in the implementation despite earlier planning docs
 mentioning one. `bms_order_items` snapshots `unit_price` at order time (not a live join to
 `bms_products.price`), so historical order totals don't change if a product's price changes later.
+Since `7.21`, `bms_orders.total_amount` is the **post-discount** amount actually owed;
+`discount_amount`/`coupon_code` are snapshotted at order creation the same way item prices are, so
+totals stay correct even if the coupon is later edited or deleted.
+
+**`bms_coupons` (`7.21`)** — one row per discount code, `UNIQUE (tenant_id, code)`. `type` is
+`PERCENT` (capped at 100 by a `CHECK`) or `FIXED`. Redemption is applied inside the same transaction
+as `createOrder()` (`applyCouponInTx()`, `lib/bms/coupons.ts`) — the coupon row is locked with
+`FOR UPDATE` and `redemptions_count` incremented atomically, so concurrent checkouts can't both
+"win" the last redemption of a limited coupon. `redemptions_count` is **not** decremented when an
+order using it is later cancelled/returned — deliberately conservative, to prevent a
+create-then-cancel loop from re-using a code past its `max_redemptions`. Per-customer limits are
+checked by counting matching `bms_orders` rows directly; there is no separate redemption-log table.
 
 **`bms_tenant_channels`** — one row per `(tenant_id, channel)`, `channel` is a free-text column
 (no CHECK constraint / enum), storing `access_token` and `channel_secret` **encrypted** (AES-256-GCM
