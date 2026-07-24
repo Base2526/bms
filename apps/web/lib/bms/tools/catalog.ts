@@ -443,6 +443,7 @@ const createOrderTool: BmsTool = {
       },
       channel: { type: "string", description: "ช่องทาง (แอดมินเท่านั้น, default web)" },
       customerRef: { type: "string", description: "อ้างอิงลูกค้า (แอดมินเท่านั้น)" },
+      couponCode: { type: "string", description: "โค้ดส่วนลด (ถ้าลูกค้าระบุมา)" },
     },
     required: ["items"],
   },
@@ -459,6 +460,7 @@ const createOrderTool: BmsTool = {
       customerRef,
       items,
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
+      couponCode: optString(args, "couponCode") ?? null,
     });
     if (r.status === "CREATED") {
       await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });

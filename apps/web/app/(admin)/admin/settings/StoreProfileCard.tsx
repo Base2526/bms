@@ -14,6 +14,7 @@ const Q = gql`
       businessHours shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
+      emailThemeColor emailFooterText
     }
   }
 `;
@@ -33,7 +34,10 @@ const PROFILE_KEYS = [
   "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
   "timezone", "country", "currency", "businessHours", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
+  "emailThemeColor", "emailFooterText",
 ] as const;
+
+const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
 
 function SectionTitle({ children, note }: { children: React.ReactNode; note?: string }) {
   return (
@@ -65,6 +69,7 @@ export default function StoreProfileCard() {
         paymentAccounts: (p?.paymentAccounts || []).map((a: any) => ({ ...a })),
         shippingFlatRate: p?.shippingFlatRate, shippingFreeThreshold: p?.shippingFreeThreshold,
         shippingEstDaysMin: p?.shippingEstDaysMin, shippingEstDaysMax: p?.shippingEstDaysMax,
+        emailThemeColor: p?.emailThemeColor || DEFAULT_EMAIL_THEME_COLOR, emailFooterText: p?.emailFooterText,
       });
     }
   }, [data, form]);
@@ -162,6 +167,20 @@ export default function StoreProfileCard() {
             <Col xs={12} md={6}><Form.Item name="shippingFreeThreshold" label="ส่งฟรีเมื่อยอด ≥ (บาท)"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
             <Col xs={12} md={6}><Form.Item name="shippingEstDaysMin" label="ส่งถึงขั้นต่ำ (วัน)"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
             <Col xs={12} md={6}><Form.Item name="shippingEstDaysMax" label="ส่งถึงสูงสุด (วัน)"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+          </Row>
+
+          <SectionTitle note="ให้ลูกค้าจำได้ง่ายว่าอีเมลมาจากร้านคุณ">อีเมลแจ้งสถานะออร์เดอร์</SectionTitle>
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="emailThemeColor" label="สีธีมหลัก" tooltip="ใช้กับแถบหัวอีเมล + ชื่อร้าน">
+                <Input type="color" style={{ width: 64, height: 32, padding: 2, cursor: "pointer" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={16}>
+              <Form.Item name="emailFooterText" label="ข้อความท้ายอีเมล (ไม่บังคับ)">
+                <Input placeholder="เช่น ติดตามเราได้ที่ Facebook: /myshop" maxLength={300} />
+              </Form.Item>
+            </Col>
           </Row>
 
           <SectionTitle note="ลูกค้าจะเห็นเมื่อถามวิธีชำระเงิน">บัญชีรับเงิน</SectionTitle>

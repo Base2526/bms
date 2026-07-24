@@ -16,6 +16,8 @@ import { resolveOrCreateCustomer } from "./customers";
 import { beginTenantTx } from "./tenant";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
+import { notifyOrderStatusEmail } from "./orderNotify";
+import { applyCouponInTx } from "./coupons";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -25,6 +27,7 @@ export type CreateOrderInput = {
   customerRef?: string | null;
   items: OrderItemInput[];
   editorId?: string | number | null;
+  couponCode?: string | null;
 };
 
 export type CreatedLine = {
@@ -36,9 +39,10 @@ export type CreatedLine = {
 };
 
 export type CreateOrderResult =
-  | { status: "CREATED"; orderId: string; total: number; items: CreatedLine[] }
+  | { status: "CREATED"; orderId: string; total: number; subtotal: number; discount: number; couponCode: string | null; items: CreatedLine[] }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
+  | { status: "COUPON_INVALID"; reason: string }
   | { status: "EMPTY" };
 
 /** รวมรายการซ้ำ (sku+size เดียวกัน) แล้วบวก qty */
@@ -132,12 +136,27 @@ export async function createOrder(
       input.customerRef ?? null
     );
 
+    // โค้ดส่วนลด (ถ้ามี) — ตรวจ + เพิ่ม redemptions_count แบบ atomic ในทรานแซกชันเดียวกัน
+    // ก่อน insert order เสมอ เพื่อให้ ROLLBACK คืนสต็อกที่จองไว้ด้วยถ้าโค้ดใช้ไม่ได้
+    let discount = 0;
+    let appliedCouponCode: string | null = null;
+    if (input.couponCode) {
+      const couponResult = await applyCouponInTx(client, tenantId, input.couponCode, customerId, total);
+      if (!couponResult.ok) {
+        await client.query("ROLLBACK");
+        return { status: "COUPON_INVALID", reason: couponResult.reason };
+      }
+      discount = couponResult.discount;
+      appliedCouponCode = couponResult.code;
+    }
+    const finalTotal = Math.max(0, total - discount);
+
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount)
-       VALUES ($1, $2, $3, $4, 'PENDING', $5)
+      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code)
+       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7)
        RETURNING id`,
-      [tenantId, input.channel, input.customerRef ?? null, customerId, total]
+      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode]
     );
     const orderId = ord.rows[0].id;
 
@@ -158,7 +177,7 @@ export async function createOrder(
     );
 
     await client.query("COMMIT");
-    return { status: "CREATED", orderId, total, items: lines };
+    return { status: "CREATED", orderId, total: finalTotal, subtotal: total, discount, couponCode: appliedCouponCode, items: lines };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -264,11 +283,23 @@ async function transition(
 }
 
 /** จ่ายเงินแล้ว: PENDING → PAID */
-export const payOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["PENDING"], "PAID");
+export async function payOrder(tenantId: string, orderId: string): Promise<boolean> {
+  const ok = await transition(tenantId, orderId, ["PENDING"], "PAID");
+  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "paid");
+  return ok;
+}
 /** แพ็คของ: PAID → PACKING */
-export const packOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["PAID"], "PACKING");
+export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
+  const ok = await transition(tenantId, orderId, ["PAID"], "PACKING");
+  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "packing");
+  return ok;
+}
 /** ปิดงาน: SHIPPED → COMPLETED */
-export const completeOrder = (tenantId: string, orderId: string) => transition(tenantId, orderId, ["SHIPPED"], "COMPLETED");
+export async function completeOrder(tenantId: string, orderId: string): Promise<boolean> {
+  const ok = await transition(tenantId, orderId, ["SHIPPED"], "COMPLETED");
+  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "completed");
+  return ok;
+}
 
 /**
  * จัดส่งจริง: PACKING → SHIPPED → ตัด current+reserved (atomic, tenant-scoped)
@@ -329,6 +360,7 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
     await recordOrderMovements(client, [orderId], "SHIP", "system");
 
     await client.query("COMMIT");
+    void notifyOrderStatusEmail(tenantId, orderId, "shipped");
     return true;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -368,6 +400,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     await recordOrderMovements(client, [orderId], "RETURN", "system");
 
     await client.query("COMMIT");
+    void notifyOrderStatusEmail(tenantId, orderId, "returned");
     return true;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -411,6 +444,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await recordOrderMovements(client, [orderId], "RELEASE", "system");
 
     await client.query("COMMIT");
+    void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
     return true;
   } catch (err) {
     try {

@@ -16,6 +16,7 @@ import { readFile } from "fs/promises";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { STORAGE_DIR } from "@/lib/storage";
+import { notifyOrderStatusEmail } from "./orderNotify";
 
 export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -122,7 +123,9 @@ export async function confirmPayment(
     );
 
     await client.query("COMMIT");
-    return { status: "CONFIRMED", paymentId, orderPaid: (ord.rowCount ?? 0) > 0 };
+    const orderPaid = (ord.rowCount ?? 0) > 0;
+    if (orderPaid) void notifyOrderStatusEmail(tenantId, pay.rows[0].order_id, "paid");
+    return { status: "CONFIRMED", paymentId, orderPaid };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;

@@ -38,6 +38,8 @@ export type StoreProfile = {
   shippingFreeThreshold: number | null;
   shippingEstDaysMin: number | null;
   shippingEstDaysMax: number | null;
+  emailThemeColor: string | null;  // #RRGGBB — validated at the resolver before it reaches here
+  emailFooterText: string | null;  // ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (7.19/7.20)
 };
 
 const EMPTY: StoreProfile = {
@@ -47,7 +49,10 @@ const EMPTY: StoreProfile = {
   paymentAccounts: [],
   shippingFlatRate: null, shippingFreeThreshold: null,
   shippingEstDaysMin: null, shippingEstDaysMax: null,
+  emailThemeColor: null, emailFooterText: null,
 };
+
+export const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -56,7 +61,7 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
     `SELECT about, address, phone, contact_email, website, logo_url, tax_id,
             timezone, country, currency, business_hours, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
-            shipping_est_days_min, shipping_est_days_max
+            shipping_est_days_min, shipping_est_days_max, email_theme_color, email_footer_text
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -81,10 +86,14 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
     shippingFreeThreshold: num(r.shipping_free_threshold),
     shippingEstDaysMin: r.shipping_est_days_min ?? null,
     shippingEstDaysMax: r.shipping_est_days_max ?? null,
+    emailThemeColor: r.email_theme_color ?? null,
+    emailFooterText: r.email_footer_text ?? null,
   };
 }
 
 export type StoreProfileInput = Partial<StoreProfile>;
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 export async function upsertStoreProfile(
   tenantId: string,
@@ -93,6 +102,18 @@ export async function upsertStoreProfile(
 ): Promise<StoreProfile> {
   const cur = await getStoreProfile(tenantId);
   const merged: StoreProfile = { ...cur, ...input };
+
+  if (merged.emailThemeColor != null) {
+    const color = merged.emailThemeColor.trim();
+    if (color && !HEX_COLOR_RE.test(color)) {
+      throw new Error("สีธีมอีเมลต้องเป็นรหัสสี hex แบบ #RRGGBB (เช่น #1677ff)");
+    }
+    merged.emailThemeColor = color || null;
+  }
+  if (merged.emailFooterText != null) {
+    merged.emailFooterText = merged.emailFooterText.trim().slice(0, 300) || null;
+  }
+
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
@@ -100,8 +121,9 @@ export async function upsertStoreProfile(
       `INSERT INTO bms_store_profile (
         tenant_id, about, address, phone, contact_email, website, logo_url, tax_id,
         timezone, country, currency, business_hours, shipping_policy, return_policy,
-        payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,$19)
+        payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
+        email_theme_color, email_footer_text
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,$19,$20,$21)
      ON CONFLICT (tenant_id) DO UPDATE SET
         about = EXCLUDED.about, address = EXCLUDED.address, phone = EXCLUDED.phone,
         contact_email = EXCLUDED.contact_email, website = EXCLUDED.website,
@@ -112,13 +134,16 @@ export async function upsertStoreProfile(
         shipping_flat_rate = EXCLUDED.shipping_flat_rate,
         shipping_free_threshold = EXCLUDED.shipping_free_threshold,
         shipping_est_days_min = EXCLUDED.shipping_est_days_min,
-        shipping_est_days_max = EXCLUDED.shipping_est_days_max, updated_at = now()`,
+        shipping_est_days_max = EXCLUDED.shipping_est_days_max,
+        email_theme_color = EXCLUDED.email_theme_color,
+        email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
         tenantId, merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
         merged.logoUrl, merged.taxId, merged.timezone, merged.country, merged.currency,
         merged.businessHours, merged.shippingPolicy, merged.returnPolicy,
         JSON.stringify(merged.paymentAccounts ?? []),
         merged.shippingFlatRate, merged.shippingFreeThreshold, merged.shippingEstDaysMin, merged.shippingEstDaysMax,
+        merged.emailThemeColor, merged.emailFooterText,
       ]
     );
     await client.query("COMMIT");

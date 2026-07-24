@@ -22,6 +22,8 @@ export type BusinessDoc = {
   channel: string | null;
   lines: DocLine[];
   subtotal: number;
+  discount: number;
+  couponCode: string | null;
   shippingFee: number | null;
   total: number;
   paymentStatus?: string | null;
@@ -38,7 +40,7 @@ async function storeSummary(tenantId: string): Promise<StoreSummary> {
 /** ใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (ใช้ราคา snapshot ณ ตอนสั่ง) */
 export async function generateInvoice(tenantId: string, orderId: string): Promise<BusinessDoc | null> {
   const ord = await query<any>(
-    `SELECT id, channel, customer_ref, status, total_amount, created_at
+    `SELECT id, channel, customer_ref, status, total_amount, discount_amount, coupon_code, created_at
        FROM bms_orders WHERE tenant_id = $1 AND id::text = $2`,
     [tenantId, orderId]
   );
@@ -70,6 +72,8 @@ export async function generateInvoice(tenantId: string, orderId: string): Promis
     channel: o.channel ?? null,
     lines,
     subtotal,
+    discount: Number(o.discount_amount ?? 0),
+    couponCode: o.coupon_code ?? null,
     shippingFee: null, // ระบบยังไม่เก็บค่าส่งแยกต่อออร์เดอร์
     total: Number(o.total_amount),
     paymentStatus: o.status,
@@ -107,6 +111,8 @@ export async function generateQuotation(
     channel: null,
     lines,
     subtotal,
+    discount: 0,
+    couponCode: null,
     shippingFee,
     total,
     note: "ใบเสนอราคา (ยังไม่ผูกออร์เดอร์/ยังไม่จองสต็อก) ราคาปัจจุบัน อาจเปลี่ยนได้",

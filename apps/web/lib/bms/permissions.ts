@@ -39,6 +39,8 @@ export const BMS_PERMISSIONS = [
   "customer.view",
   "customer.edit",
   "report.view",
+  "coupon.view",
+  "coupon.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

@@ -14,6 +14,7 @@
 import { getClient, query } from "@/lib/db";
 import { recordOrderMovements } from "./movements";
 import { beginTenantTx } from "./tenant";
+import { notifyOrderStatusEmail } from "./orderNotify";
 
 // Lazada/Shopee keep the shipping address in Seller Center. All other implemented channels,
 // including TikTok Chat, require a shipping address stored in BMS before fulfillment can ship.
@@ -117,6 +118,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     );
 
     await client.query("COMMIT");
+    if (orderShipped) void notifyOrderStatusEmail(tenantId, input.orderId, "shipped");
     return { status: "CREATED", shipmentId: ins.rows[0].id, orderShipped };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -170,15 +172,18 @@ export async function setShipmentStatus(
     }
 
     // จัดส่งถึงแล้ว → ปิดออร์เดอร์ (SHIPPED → COMPLETED) แบบ best-effort
+    let orderCompleted = false;
     if (status === "DELIVERED") {
-      await client.query(
+      const ord = await client.query(
         `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status = 'SHIPPED'`,
         [tenantId, ship.rows[0].order_id]
       );
+      orderCompleted = (ord.rowCount ?? 0) > 0;
     }
 
     await client.query("COMMIT");
+    if (orderCompleted) void notifyOrderStatusEmail(tenantId, ship.rows[0].order_id, "completed");
     return true;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}

@@ -32,6 +32,7 @@ import {
   RobotOutlined,
   HistoryOutlined,
   NotificationOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -216,6 +217,7 @@ export default function AdminSidebar() {
       children: [
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
         link('/admin/revisions', 'Revision History', <HistoryOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
         link('/admin/payment', 'Payment', <DollarOutlined />),
