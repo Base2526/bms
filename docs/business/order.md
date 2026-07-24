@@ -101,6 +101,15 @@ opens a per-order breakdown (customer, channel, order status, discount, net tota
 redemption table was needed — the query reads `bms_orders` directly by `coupon_code`, the same
 source used for the per-customer limit check.
 
+**Dashboard summary** — `bmsDashboard.couponSummary` (`/admin/dashboard`) shows total discount given
+and total redemptions for the current calendar month, plus the top 5 codes by redemption count, all
+derived from the same `bms_orders.coupon_code`/`discount_amount` columns (no new query surface beyond
+what usage history already reads). The field is **masked to `null`** for roles without `coupon.view`
+(e.g. Sales, who has `report.view` and can see the rest of the dashboard) via a field resolver in
+`bmsDashboard.ts` rather than a schema-level permission — this keeps `bmsDashboard` itself usable by
+every `report.view` role while still hiding margin-sensitive numbers from roles that can't open
+`/admin/coupons` directly.
+
 ## Reorder ("ซื้อซ้ำ")
 
 Staff can recreate a past order in one click from the customer tab in Inbox or from

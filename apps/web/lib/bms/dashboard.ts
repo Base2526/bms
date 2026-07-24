@@ -15,7 +15,7 @@ const RESERVATION_EXPIRE_MINUTES = 30;       // matches release-expired-orders d
 const RESERVATION_WARN_MINUTES = 20;          // warn window: 20–30 min old, not yet auto-released
 
 export async function getDashboard(tenantId: string) {
-  const [summary, byStatus, low, custCount, topProducts, topCustomers, daily] =
+  const [summary, byStatus, low, custCount, topProducts, topCustomers, daily, couponMonth, topCoupons] =
     await Promise.all([
       query(
         `SELECT
@@ -64,9 +64,28 @@ export async function getDashboard(tenantId: string) {
           GROUP BY day ORDER BY day`,
         [PAID, tenantId]
       ),
+      // ส่วนลดที่แจกไปเดือนนี้ — ไม่กรองตาม status (เหมือน bms_coupons.redemptions_count เดิมที่ไม่
+      // ลดตอน cancel/return ก็ตาม เพื่อให้เลขตรงกับ "ใช้ไปแล้ว" ที่โชว์ใน /admin/coupons)
+      query(
+        `SELECT COALESCE(SUM(discount_amount), 0) AS discount_total, COUNT(*)::int AS redemption_count
+           FROM bms_orders
+          WHERE tenant_id = $1 AND coupon_code IS NOT NULL
+            AND created_at >= date_trunc('month', current_date)`,
+        [tenantId]
+      ),
+      query(
+        `SELECT coupon_code AS code, COUNT(*)::int AS redemptions, COALESCE(SUM(discount_amount), 0) AS discount
+           FROM bms_orders
+          WHERE tenant_id = $1 AND coupon_code IS NOT NULL
+            AND created_at >= date_trunc('month', current_date)
+          GROUP BY coupon_code
+          ORDER BY redemptions DESC LIMIT 5`,
+        [tenantId]
+      ),
     ]);
 
   const s = summary.rows[0];
+  const cm = couponMonth.rows[0];
   return {
     revenueTotal: Number(s.revenue_total),
     revenueToday: Number(s.revenue_today),
@@ -85,6 +104,13 @@ export async function getDashboard(tenantId: string) {
       revenue: Number(r.revenue),
       orders: r.orders,
     })),
+    couponSummary: {
+      discountThisMonth: Number(cm.discount_total),
+      redemptionsThisMonth: cm.redemption_count,
+      topCoupons: topCoupons.rows.map((r: any) => ({
+        code: r.code, redemptions: r.redemptions, discount: Number(r.discount),
+      })),
+    },
   };
 }
 

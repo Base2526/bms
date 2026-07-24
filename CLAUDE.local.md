@@ -591,12 +591,32 @@ feature "order status email" ก่อนหน้านี้ที่ order �
   หมวดหมู่, carry coupon ผ่าน `reorderFromOrder()` ("ซื้อซ้ำ"), เงื่อนไข eligibility ก่อนใช้โค้ด (เช่น
   ลูกค้าใหม่เท่านั้น/ผูกกับลูกค้าคนเดียว) — ยังเป็นแค่ shared string ใครมีโค้ดใช้ได้หมด (โอนกันได้โดย
   ไม่ตั้งใจ เพราะไม่มี field ผูกกับลูกค้าคนเดียว)
+- **พิจารณาแล้วว่ายังไม่คุ้ม**: gen โค้ด unique หลายใบพร้อมกัน (แคมเปญ "แจกคนละโค้ด ใช้ได้ครั้งเดียว"
+  เช่น ส่งอีเมลลูกค้า 100 คนคนละโค้ด) — เหตุผลที่ไม่ทำตอนนี้ไม่ใช่แค่ยังไม่มี demand แต่เพราะ**ประโยชน์
+  ครึ่งเดียวถ้าไม่มีของอีกชิ้นด้วย**: ระบบยังไม่มีช่องทาง broadcast/ส่งข้อความหาลูกค้าจำนวนมาก (gap ที่
+  เจอตอนสแกน feature รอบก่อน) ถ้า gen โค้ดได้ 100 ใบแต่ยังต้อง copy ไปส่งเองทีละคน ก็ไม่ต่างจากสร้างที
+  ละแถวมากนัก — ควรทำคู่กับ broadcast feature พร้อมกัน ไม่ใช่ทำแยกก่อน
 
 **ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — log การใช้งานโค้ด**: คอลัมน์ "ใช้ไปแล้ว" ในตาราง
 `/admin/coupons` กดได้ เปิด modal โชว์ประวัติราย order (`bmsCouponRedemptions(couponId)` →
 `listCouponRedemptions()` ใน `lib/bms/coupons.ts`) — ยืนยันการตัดสินใจเดิมว่าไม่ต้องมีตาราง
 redemption log แยก: query ตรงจาก `bms_orders.coupon_code` ก็พอ (join แบบเดียวกับ
 `COALESCE(NULLIF(cu.name, ...), ci.display_name)` ที่ใช้หา customer name ใน `inbox.ts` อยู่แล้ว)
+
+**ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — สรุปโค้ดส่วนลดใน Dashboard**: `/admin/dashboard` มีการ์ด
+"โค้ดส่วนลด (เดือนนี้)" โชว์ยอดส่วนลดรวม + จำนวนครั้งที่ใช้ + top 5 โค้ด (`getDashboard()` เพิ่ม
+`couponSummary` ใน `lib/bms/dashboard.ts`, query 2 อันเพิ่มจาก `bms_orders` กรอง
+`created_at >= date_trunc('month', current_date)`) — **ไม่กรองตาม order status** (นับ CANCELLED/
+RETURNED ด้วย) เพื่อให้เลขตรงกับ "ใช้ไปแล้ว" ที่โชว์อยู่แล้วในหน้า `/admin/coupons` (ตัวเลขเดียวกัน
+ต้องตรงกันทุกที่ที่โชว์ ไม่งั้นสับสน):
+- **mask เป็น `null` ที่ field resolver ไม่ใช่ที่ query gate** — `bmsDashboard` ทั้ง query gate ด้วย
+  `report.view` เดิม (Sales มีสิทธิ์นี้ด้วย) แต่ `coupon.view` seed ให้แค่ Manager/Administrator
+  (margin-sensitive) ถ้า gate ทั้ง query จะทำให้ Sales เห็น dashboard ไม่ได้เลยทั้งหน้า ทั้งที่ควรเห็น
+  ส่วนอื่นได้ปกติ — แก้โดยเปลี่ยน schema `couponSummary` เป็น nullable แล้วเพิ่ม field resolver
+  `BmsDashboard.couponSummary` ใน `bmsDashboard.ts` เช็ค `loadPermissions(ctx).has("coupon.view")`
+  เอง คืน `null` เฉยๆถ้าไม่มีสิทธิ์ (ไม่ throw) — field เดียวถูกซ่อน ส่วนที่เหลือของ dashboard ยังใช้ได้
+- **ฝั่ง UI เช็คแค่ `d?.couponSummary` เป็น null ไหมพอ** ไม่ต้องเรียก `useBmsPermissions` เพิ่มในหน้า
+  dashboard เพราะ server มาสก์ให้แล้ว — การ์ดหายไปเองสำหรับ role ที่ไม่มีสิทธิ์โดยไม่ต้องเขียน gate ซ้ำ
 
 ## Gender particle — คำลงท้าย ครับ/ค่ะ ใน "AI แนะนำคำตอบ" (2026-07)
 

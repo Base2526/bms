@@ -25,6 +25,7 @@ const Q_DASH = gql`
       topProducts { sku name qty revenue }
       topCustomers { id name tags spent orders }
       salesDaily { day revenue orders }
+      couponSummary { discountThisMonth redemptionsThisMonth topCoupons { code redemptions discount } }
     }
   }
 `;
@@ -446,6 +447,42 @@ export default function Page() {
           </Card>
         </Col>
       </Row>
+
+      {d?.couponSummary && (
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24}>
+            <Card
+              title="โค้ดส่วนลด (เดือนนี้)"
+              loading={loading}
+              style={{ borderRadius: 8 }}
+              extra={<Link href="/admin/coupons"><Button size="small">จัดการโค้ด</Button></Link>}
+            >
+              <Space size="large" wrap style={{ marginBottom: 12 }}>
+                <Space direction="vertical" size={0}>
+                  <Text type="secondary">ส่วนลดที่แจกไปแล้ว</Text>
+                  <Text strong style={{ fontSize: 18 }}>{baht(d.couponSummary.discountThisMonth)}</Text>
+                </Space>
+                <Space direction="vertical" size={0}>
+                  <Text type="secondary">จำนวนครั้งที่ใช้โค้ด</Text>
+                  <Text strong style={{ fontSize: 18 }}>{Number(d.couponSummary.redemptionsThisMonth).toLocaleString()}</Text>
+                </Space>
+              </Space>
+              <Table
+                rowKey="code"
+                size="small"
+                pagination={false}
+                dataSource={d.couponSummary.topCoupons || []}
+                locale={{ emptyText: "ยังไม่มีการใช้โค้ดส่วนลดเดือนนี้" }}
+                columns={[
+                  { title: "โค้ด", dataIndex: "code", key: "code" },
+                  { title: "ใช้ไปแล้ว", dataIndex: "redemptions", key: "redemptions", width: 100, align: "right" },
+                  { title: "ส่วนลดรวม", dataIndex: "discount", key: "discount", width: 130, align: "right", render: (v: number) => baht(v) },
+                ]}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
     </div>
   );
 }

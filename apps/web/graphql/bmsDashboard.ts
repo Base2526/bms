@@ -5,6 +5,7 @@ import { getDashboard, getOperationalAlerts } from "@/lib/bms/dashboard";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
   requirePermission,
+  loadPermissions,
   myPermissions,
   BMS_PERMISSIONS,
   listRolesWithPermissions,
@@ -64,6 +65,16 @@ export const bmsDashboardResolvers = {
           ? err
           : new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }
+    },
+  },
+
+  // couponSummary มาจาก getDashboard() เสมอ แต่โชว์ได้เฉพาะ role ที่มี coupon.view (เช่น Sales มี
+  // report.view แต่ไม่มี coupon.view — margin-sensitive เหมือนหน้า /admin/coupons เอง) mask เป็น
+  // null ที่นี่แทนที่จะ throw กัน bmsDashboard ทั้ง query พังสำหรับ role ที่ไม่ควรเห็นแค่ field เดียว
+  BmsDashboard: {
+    async couponSummary(parent: any, _a: unknown, ctx: any) {
+      const perms = await loadPermissions(ctx);
+      return perms.has("coupon.view") ? parent.couponSummary : null;
     },
   },
 
