@@ -696,6 +696,8 @@ export const typeDefs = /* GraphQL */ `
     bmsAssignableStaff: [BmsStaffRef!]!
     bmsInboxUnreadCount: Int!   # แชท OPEN/PENDING ที่ยังไม่อ่านรวม (Sales เห็นแค่ของตัวเอง) — ใช้ทำ badge บนเมนู sidebar
     bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
+    bmsMyMentionsUnreadCount: Int!          # @mention ที่ยังไม่อ่านของฉัน — ใช้ทำ badge บนเมนู sidebar
+    bmsMyMentions(unreadOnly: Boolean, limit: Int): [BmsMention!]!
 
     # ===== BMS Reports (admin) =====
     bmsSalesSummary(from: String, to: String): BmsSalesSummary!
@@ -1036,6 +1038,19 @@ export const typeDefs = /* GraphQL */ `
     author: String
     body: String!
     createdAt: String!
+    mentionedUserIds: [ID!]!
+  }
+
+  # แถวใน "เมนชันของฉัน" — โน้ตที่มีคน @mention เรา, สำหรับ badge + หน้ารวมของตัวเอง
+  type BmsMention {
+    id: ID!
+    conversationId: ID!
+    channel: String!
+    customerName: String
+    author: String
+    body: String!
+    createdAt: String!
+    readAt: String
   }
 
   # staff ที่เลือกได้ใน dropdown มอบหมาย/เพิ่มคนช่วยตอบ (Sales/Manager/Administrator)
@@ -2030,7 +2045,9 @@ export const typeDefs = /* GraphQL */ `
     bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
     bmsMarkConversationRead(id: ID!): Boolean!
-    bmsAddConversationNote(id: ID!, body: String!): BmsConversationNote
+    bmsAddConversationNote(id: ID!, body: String!, mentionedUserIds: [ID!]): BmsConversationNote
+    bmsMarkMentionRead(id: ID!): Boolean!
+    bmsMarkAllMentionsRead: Boolean!
     bmsCreateInboxDiagnosticMessage(channel: String!, body: String): BmsInboxDiagnosticMessageResult!
 
     # ===== BMS CRM (admin) =====

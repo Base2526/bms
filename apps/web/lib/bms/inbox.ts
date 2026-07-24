@@ -19,6 +19,7 @@ import {
 } from "../../../../packages/graphql-core/src/bmsInboxSync";
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
+import { createNotification } from "@/lib/notifications/service";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -566,7 +567,15 @@ export async function markRead(tenantId: string, id: string): Promise<boolean> {
 }
 
 // ---- notes (internal) ----------------------------------------
-export async function addNote(tenantId: string, id: string, author: string | null, body: string) {
+// mentionedUserIds มาจาก @picker ฝั่ง client ตรงๆ (ไม่ regex-parse body) — กัน
+// ปัญหาชื่อซ้ำ/สะกดผิด; "@ชื่อ" ใน body เป็นแค่ข้อความ display เฉยๆ
+export async function addNote(
+  tenantId: string,
+  id: string,
+  author: string | null,
+  body: string,
+  mentionedUserIds?: string[] | null
+) {
   const text = body.trim();
   if (!text) return null;
   const res = await query(
@@ -575,16 +584,123 @@ export async function addNote(tenantId: string, id: string, author: string | nul
      RETURNING id, author, body, created_at`,
     [tenantId, id, author, text]
   );
-  return res.rows[0];
+  const note = res.rows[0];
+  note.mentionedUserIds = note && mentionedUserIds?.length
+    ? await notifyMentionedStaff(tenantId, id, note as { id: string | number; body: string }, mentionedUserIds, author)
+    : [];
+  return note;
+}
+
+// รับ mentionedUserIds ตรงจากไคลเอนต์ (ไม่เชื่อว่าเป็นของจริง) — เช็คซ้ำว่าอยู่
+// tenant เดียวกัน + role ที่ mention ได้ (เหมือน listAssignableStaff) ก่อนเสมอ
+async function notifyMentionedStaff(
+  tenantId: string,
+  conversationId: string,
+  note: { id: string | number; body: string },
+  mentionedUserIds: string[],
+  authorLabel: string | null
+): Promise<string[]> {
+  const validRes = await query(
+    `SELECT u.id FROM users u
+       JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1 AND u.id = ANY($2::uuid[])
+        AND r.name IN ('Sales','Manager','Administrator')`,
+    [tenantId, mentionedUserIds]
+  );
+  const validIds: string[] = validRes.rows.map((r: any) => r.id);
+  if (!validIds.length) return [];
+
+  for (const userId of validIds) {
+    await query(
+      `INSERT INTO bms_conversation_note_mentions (tenant_id, note_id, conversation_id, mentioned_user_id)
+       VALUES ($1, $2, $3, $4)`,
+      [tenantId, note.id, conversationId, userId]
+    );
+    // best-effort — การแจ้งเตือนล้มเหลวไม่ควรทำให้บันทึกโน้ตล้ม (เหมือน publishInboxChanged)
+    try {
+      await createNotification({
+        user_id: userId,
+        type: "bms_mention",
+        title: `${authorLabel || "เพื่อนร่วมทีม"} กล่าวถึงคุณในแชท`,
+        message: note.body.slice(0, 200),
+        entity_type: "bms_conversation_note_mention",
+        entity_id: conversationId, // conversation_id เป็น UUID ตรงกับคอลัมน์ entity_id — note.id เป็น bigint ใส่ตรงไม่ได้
+        data: { tenantId, conversationId, noteId: note.id },
+      });
+    } catch (error) {
+      console.error("[BMS] mention notification failed:", error);
+    }
+  }
+  return validIds;
 }
 
 export async function listNotes(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, author, body, created_at FROM bms_conversation_notes
-      WHERE tenant_id = $1 AND conversation_id = $2 ORDER BY created_at DESC, id DESC`,
+    `SELECT n.id, n.author, n.body, n.created_at,
+            COALESCE(
+              (SELECT array_agg(m.mentioned_user_id) FROM bms_conversation_note_mentions m WHERE m.note_id = n.id),
+              '{}'
+            ) AS mentioned_user_ids
+       FROM bms_conversation_notes n
+      WHERE n.tenant_id = $1 AND n.conversation_id = $2
+      ORDER BY n.created_at DESC, n.id DESC`,
     [tenantId, id]
   );
   return res.rows;
+}
+
+// ---- @mention ของฉัน (badge + หน้า "เมนชันของฉัน") ------------
+export async function countUnreadMentions(tenantId: string, userId: string): Promise<number> {
+  const res = await query<{ total: string }>(
+    `SELECT COUNT(*) AS total FROM bms_conversation_note_mentions
+      WHERE tenant_id = $1 AND mentioned_user_id = $2 AND read_at IS NULL`,
+    [tenantId, userId]
+  );
+  return Number(res.rows[0]?.total ?? 0);
+}
+
+export async function listMyMentions(
+  tenantId: string,
+  userId: string,
+  opts: { unreadOnly?: boolean; limit?: number } = {}
+) {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const res = await query(
+    `SELECT m.id, m.conversation_id, m.read_at, m.created_at,
+            n.author, n.body,
+            c.channel,
+            COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name
+       FROM bms_conversation_note_mentions m
+       JOIN bms_conversation_notes n ON n.id = m.note_id
+       JOIN bms_conversations c ON c.id = m.conversation_id
+       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
+      WHERE m.tenant_id = $1 AND m.mentioned_user_id = $2
+        AND ($3::boolean IS FALSE OR m.read_at IS NULL)
+      ORDER BY m.created_at DESC, m.id DESC
+      LIMIT $4`,
+    [tenantId, userId, opts.unreadOnly ?? false, limit]
+  );
+  return res.rows;
+}
+
+export async function markMentionRead(tenantId: string, userId: string, mentionId: string): Promise<boolean> {
+  const res = await query(
+    `UPDATE bms_conversation_note_mentions SET read_at = now()
+      WHERE id = $1 AND tenant_id = $2 AND mentioned_user_id = $3 AND read_at IS NULL`,
+    [mentionId, tenantId, userId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function markAllMentionsRead(tenantId: string, userId: string): Promise<number> {
+  const res = await query(
+    `UPDATE bms_conversation_note_mentions SET read_at = now()
+      WHERE tenant_id = $1 AND mentioned_user_id = $2 AND read_at IS NULL`,
+    [tenantId, userId]
+  );
+  return res.rowCount ?? 0;
 }
 
 // ---- staff reply (persist + ยิงกลับช่องทาง) ------------------

@@ -40,6 +40,22 @@ messages + notes + orders. Since this session, a dedicated "ลูกค้า" 
 history, lifetime spend, tags, and notes the moment a conversation is opened — see
 [../ui/customer360.md](../ui/customer360.md).
 
+**@mention in internal notes (2026-07):** typing `@name` while writing a note opens a picker over
+`bmsAssignableStaff` (Sales/Manager/Administrator only, same list used for assign/helper); selecting
+a name inserts `@Name` into the note body for display and separately records the mentioned user's id
+— the mutation (`bmsAddConversationNote(id, body, mentionedUserIds)`) never parses `@name` out of
+free text, so a duplicate/misspelled name can't misfire. Each valid mention is both logged in
+`bms_conversation_note_mentions` (tenant/note/conversation/user, with a `read_at` column reserved for
+a future "my mentions" view) and pushed through the existing generic `notifications` table/
+`notificationCreated` subscription — no new realtime channel. `GlobalMentionNotifier` (mounted
+alongside `GlobalInboxNotifier`) turns that into a browser notification deep-linking to
+`/admin/inbox?c=<id>`. Gated by the existing `inbox.manage` permission (creating a mention) and
+`inbox.view` (reading your own); no new permission was added. A sidebar badge next to a dedicated
+"เมนชันของฉัน" page (`/admin/inbox/mentions`, `bmsMyMentionsUnreadCount`/`bmsMyMentions`) lists a
+user's own mentions, filterable by unread, with mark-read/mark-all-read actions
+(`bmsMarkMentionRead`/`bmsMarkAllMentionsRead`) that use the `read_at` column reserved when the
+mentions table was first created.
+
 The desktop right-hand Customer 360 panel also provides permission-gated Quick Actions: staff can
 create a `PENDING` order for the active identity through the shared order service and can preview/
 print an ephemeral invoice from an existing order. These actions do not move CRM or order business

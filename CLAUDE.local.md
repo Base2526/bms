@@ -460,6 +460,49 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
   `lib/auth/jwt.ts`, comment ทิ้งใน `resolvers.ts`) ก่อนจะแก้ auth/session ใดๆ ต้อง grep หา endpoint/mutation
   ที่หน้า UI จริงเรียกก่อนเสมอ (เช็คที่ `page.tsx` ของหน้า login) ไม่งั้นแก้ผิดไฟล์ที่ไม่มีผลอะไรเลย
 
+## @mention ใน "โน้ตภายใน" ของ Inbox (2026-07)
+
+**เสร็จแล้ว (โค้ด + `tsc` ผ่าน — ยังไม่ได้ทดสอบ end-to-end ในเบราว์เซอร์จริง เพราะเครื่องนี้ไม่มี
+`.env`/docker stack รันอยู่ตอนพัฒนา)** — พิมพ์ `@` ในโน้ตภายในของแชท (`notesTab`,
+`app/(admin)/admin/inbox/page.tsx`) จะเด้ง dropdown รายชื่อ staff ให้เลือก (ใช้ query
+`bmsAssignableStaff` เดิมที่ assign dropdown ใช้อยู่แล้ว):
+
+- **mention เป็น explicit picker ไม่ regex-parse ข้อความ** — mutation
+  `bmsAddConversationNote(id, body, mentionedUserIds)` รับ id ของคนที่ถูก mention แยกจาก `body`
+  ตรงๆ (client เก็บ `{id, name}` คู่กันตอนเลือกจาก dropdown แล้ว filter ก่อน submit ว่า `@ชื่อ` ยังอยู่
+  ใน body จริงไหม กันกรณีลบข้อความทิ้งก่อนกดส่ง) — กันปัญหาชื่อซ้ำ/สะกดผิดที่ parse จากข้อความเอง
+- **schema ใหม่** `7.18__bms_conversation_note_mentions.sql` — ตารางแยกจาก `bms_conversation_notes`
+  เดิม (ไม่เติมคอลัมน์ลง note) เก็บ `note_id`/`conversation_id`/`mentioned_user_id`/`read_at`
+  (`read_at` ยังไม่ใช้จริง เตรียมไว้สำหรับ "mention ของฉัน"/unread badge ในอนาคต)
+- **server เช็คซ้ำเสมอ** — `notifyMentionedStaff()` (`lib/bms/inbox.ts`) กรอง `mentionedUserIds` ที่
+  client ส่งมาให้เหลือแค่ user ใน tenant เดียวกัน + role Sales/Manager/Administrator ก่อน insert เสมอ
+  (เหมือน `listAssignableStaff`) ไม่เชื่อค่าที่ client ส่งมาตรงๆ
+- **ไม่สร้าง pubsub/notification ระบบใหม่** — reuse ตาราง `notifications` + `createNotification()`
+  เดิม (`lib/notifications/service.ts`, เดิมใช้แค่ฝั่ง community chat/post) กับ subscription
+  `notificationCreated` เดิม (`packages/graphql-core/src/resolvers.ts`, filter `user_id` ตรงกับ
+  `ctx.user.id` ที่ WS ถอดจาก JWT — ใช้ได้กับ admin scope เลยเพราะ `apps/ws/src/ws.ts` set `ctx.user`
+  เดียวกันทุก scope ไม่ได้แยก field) — เพิ่ม `GlobalMentionNotifier.tsx` (คู่กับ `GlobalInboxNotifier`
+  เดิม) mount ใน `SessionLayer.tsx` เพื่อ filter `entity_type === "bms_conversation_note_mention"`
+  แล้วเด้ง browser notification deep-link ไป `/admin/inbox?c=<id>`
+- **`entity_id` ของตาราง `notifications` เป็น UUID** — ใช้ `conversationId` (UUID) เป็น `entity_id`
+  ไม่ใช่ note id (note id เป็น bigint จาก `bms_conversation_notes`, ใส่ตรงไม่ได้) — เก็บ `noteId` ไว้ใน
+  `data` JSONB แทน
+- **ไม่มี permission ใหม่** — ยังใช้ `inbox.manage` เดิมสำหรับสร้างโน้ต/mention (อ่าน mention ของ
+  ตัวเองใช้ `inbox.view` เดิม เพราะเป็นข้อมูลของตัวเองอยู่แล้ว ไม่ต้องสิทธิ์เพิ่ม)
+
+**ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07)** — badge unread + หน้า "เมนชันของฉัน":
+- **Badge** — เมนู sidebar ใหม่ `/admin/inbox/mentions` (`AdminSidebar.tsx`) วางถัดจาก Inbox, poll
+  `bmsMyMentionsUnreadCount` ทุก 15s แบบเดียวกับ `bmsInboxUnreadCount` แต่เป็นคนละ badge/คนละความหมาย
+  (ข้อความลูกค้ายังไม่อ่าน vs ถูกกล่าวถึง) — นับจาก `bms_conversation_note_mentions.read_at IS NULL`
+- **หน้ารวม** `/admin/inbox/mentions/page.tsx` — list มาจาก query `bmsMyMentions(unreadOnly, limit)`
+  (join note+conversation+customer แสดงชื่อลูกค้า/ช่องทาง/ข้อความ), toggle "ยังไม่อ่าน/ทั้งหมด", ปุ่ม
+  "อ่านทั้งหมดแล้ว" (`bmsMarkAllMentionsRead`) — คลิกแต่ละแถวจะ mark read (`bmsMarkMentionRead`) แล้ว
+  พาไป `/admin/inbox?c=<id>` เลย
+- **`read_at` ที่เตรียมไว้ตอนทำ mention v1 ถูกใช้จริงแล้ว** ไม่ต้อง migration เพิ่ม — เป็นเหตุผลที่ตอน
+  ออกแบบ schema แยกตารางแทนที่จะเติมคอลัมน์ลง note โดยตรง
+- ผู้ใช้เห็นได้แค่ mention ของตัวเอง (`ctx.admin.id` เท่านั้น ไม่มี arg ให้เลือกดูของคนอื่น) — ไม่มี
+  ความเสี่ยง IDOR ในทูลนี้
+
 ## Gender particle — คำลงท้าย ครับ/ค่ะ ใน "AI แนะนำคำตอบ" (2026-07)
 
 **เสร็จแล้ว** — เดิม suggested-reply ในหน้า Inbox ฮาร์ดโค้ด "ค่ะ/นะคะ" เสมอ ตอนนี้ผูกกับเพศแอดมิน:
