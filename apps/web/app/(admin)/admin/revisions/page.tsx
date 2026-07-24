@@ -10,6 +10,8 @@ const KIND_OPTIONS = [
   { value: "orders", label: "Orders" },
   { value: "payments", label: "Payments" },
   { value: "shipments", label: "Shipments" },
+  { value: "purchase", label: "Purchase Orders" },
+  { value: "purchaseItems", label: "Purchase Order Items" },
 ];
 
 const Q_HISTORY = gql`
@@ -52,7 +54,7 @@ function summarizeSnapshot(snapshot: any) {
 
 export default function Page() {
   const { can } = useBmsPermissions();
-  const [kind, setKind] = useState<"products" | "orders" | "payments" | "shipments">("products");
+  const [kind, setKind] = useState<"products" | "orders" | "payments" | "shipments" | "purchase" | "purchaseItems">("products");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<any | null>(null);
@@ -96,7 +98,7 @@ export default function Page() {
     { title: "Action", width: 110, render: (_: any, row: any) => <Button size="small" icon={<FileTextOutlined />} onClick={() => openDetail(row)}>Detail</Button> },
   ], [kind]);
 
-  if (!can("product.view") && !can("order.view") && !can("payment.view") && !can("shipping.view")) {
+  if (!can("product.view") && !can("order.view") && !can("payment.view") && !can("shipping.view") && !can("purchase.view")) {
     return <Alert type="error" message="ไม่มีสิทธิ์ดู revision" showIcon />;
   }
 
@@ -109,9 +111,14 @@ export default function Page() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>Revision History</h2>
           <Space wrap>
-            <Select value={kind} options={KIND_OPTIONS} onChange={(v) => { setKind(v); setSelectedIds([]); setDetail(null); }} style={{ width: 160 }} />
+            <Select value={kind} options={KIND_OPTIONS} onChange={(v) => { setKind(v); setSelectedIds([]); setDetail(null); setSearchInput(""); setSearch(""); }} style={{ width: 200 }} />
             <Input
-              placeholder={kind === "products" ? "ค้นหา SKU / ชื่อ / barcode" : "ค้นหา ID / status / reference"}
+              placeholder={
+                kind === "products" ? "ค้นหา SKU / ชื่อ / barcode"
+                : kind === "purchaseItems" ? "ค้นหา PO id / SKU / ไซซ์"
+                : kind === "purchase" ? "ค้นหา PO id / status"
+                : "ค้นหา ID / status / reference"
+              }
               style={{ width: 260 }}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}

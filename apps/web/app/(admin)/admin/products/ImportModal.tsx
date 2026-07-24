@@ -1,0 +1,317 @@
+'use client';
+import { useState } from "react";
+import { gql, useMutation } from "@apollo/client";
+import {
+  Modal,
+  Upload,
+  Button,
+  Table,
+  Tag,
+  Alert,
+  Space,
+  Typography,
+  message,
+} from "antd";
+import { InboxOutlined, DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import * as XLSX from "xlsx";
+import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB — กันไฟล์ใหญ่ทำ browser jank ก่อนแม้แต่จะ parse
+
+type DraftRow = {
+  rowNumber: number;
+  sku: string;
+  name: string;
+  price: number;
+  barcode: string | null;
+  description: string | null;
+  cost_price: number | null;
+  category: string | null;
+  brand: string | null;
+  keywords: string[];
+  active: boolean;
+};
+
+type RowResult = {
+  rowNumber: number;
+  sku: string | null;
+  action: "CREATE" | "UPDATE" | "ERROR";
+  error: string | null;
+};
+
+type ImportResult = {
+  rows: RowResult[];
+  quotaExceeded: boolean;
+  quotaMessage: string | null;
+  createCount: number;
+  updateCount: number;
+  errorCount: number;
+};
+
+// header ในเทมเพลต (ไทย) -> field ภายในที่ตรงกับ UpsertProductInput เดิม
+const HEADER_MAP: Record<string, keyof DraftRow> = {
+  "sku": "sku",
+  "บาร์โค้ด": "barcode",
+  "ชื่อสินค้า": "name",
+  "รายละเอียด": "description",
+  "ราคาขาย": "price",
+  "ต้นทุน": "cost_price",
+  "หมวดหมู่": "category",
+  "ยี่ห้อ": "brand",
+  "คีย์เวิร์ด": "keywords",
+  "เปิดขาย": "active",
+};
+const REQUIRED_FIELDS: (keyof DraftRow)[] = ["sku", "name", "price"];
+const TEMPLATE_HEADERS = ["SKU", "บาร์โค้ด", "ชื่อสินค้า", "รายละเอียด", "ราคาขาย", "ต้นทุน", "หมวดหมู่", "ยี่ห้อ", "คีย์เวิร์ด", "เปิดขาย"];
+const TEMPLATE_EXAMPLE = ["NIKE-001", "8850123456789", "Nike Air Max", "รองเท้าวิ่ง", "2990", "1800", "รองเท้า", "Nike", "วิ่ง|กีฬา", "TRUE"];
+
+function normalizeHeader(h: unknown): string {
+  return String(h ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+const TRUE_WORDS = ["true", "1", "yes", "y", "ใช่"];
+const FALSE_WORDS = ["false", "0", "no", "n", "ไม่ใช่", "ปิด"];
+
+function parseWorkbook(buf: ArrayBuffer): DraftRow[] {
+  const wb = XLSX.read(buf, { type: "array" });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) throw new Error("ไม่พบชีตข้อมูลในไฟล์");
+  const sheet = wb.Sheets[sheetName];
+  const aoa: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+  if (aoa.length === 0) throw new Error("ไฟล์ว่างเปล่า");
+
+  const headerRow = (aoa[0] || []).map(normalizeHeader);
+  const colIndex: Partial<Record<keyof DraftRow, number>> = {};
+  for (const [thHeader, field] of Object.entries(HEADER_MAP)) {
+    const idx = headerRow.indexOf(thHeader.toLowerCase());
+    if (idx >= 0) colIndex[field] = idx;
+  }
+  const missing = REQUIRED_FIELDS.filter((f) => colIndex[f] === undefined);
+  if (missing.length > 0) {
+    throw new Error("รูปแบบเทมเพลตไม่ตรง (ไม่พบคอลัมน์ที่จำเป็น: SKU / ชื่อสินค้า / ราคาขาย) — ดาวน์โหลดเทมเพลตใหม่แล้วกรอกตามหัวคอลัมน์เดิม");
+  }
+
+  const dataRows = aoa.slice(1).filter((r) => (r || []).some((c) => String(c ?? "").trim() !== ""));
+
+  return dataRows.map((r, i) => {
+    const get = (field: keyof DraftRow): string => {
+      const idx = colIndex[field];
+      return idx === undefined ? "" : String(r[idx] ?? "").trim();
+    };
+    const activeRaw = get("active").toLowerCase();
+    const active = activeRaw === "" ? true : !FALSE_WORDS.includes(activeRaw) || TRUE_WORDS.includes(activeRaw);
+    const keywordsRaw = get("keywords");
+    const keywords = keywordsRaw
+      ? keywordsRaw.split(keywordsRaw.includes("|") ? "|" : ",").map((k) => k.trim().toLowerCase()).filter(Boolean)
+      : [];
+    const costRaw = get("cost_price");
+
+    return {
+      rowNumber: i + 2, // +1 header row, +1 เพื่อให้นับแบบ 1-based ตรงกับที่เห็นใน Excel
+      sku: get("sku"),
+      name: get("name"),
+      price: Number(get("price")),
+      barcode: get("barcode") || null,
+      description: get("description") || null,
+      cost_price: costRaw ? Number(costRaw) : null,
+      category: get("category") || null,
+      brand: get("brand") || null,
+      keywords,
+      active,
+    };
+  });
+}
+
+function downloadTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, TEMPLATE_EXAMPLE]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Products");
+  XLSX.writeFile(wb, "bms_product_import_template.xlsx");
+}
+
+const M_IMPORT = gql`
+  mutation ($items: [BmsProductImportRowInput!]!, $commit: Boolean) {
+    bmsImportProducts(items: $items, commit: $commit) {
+      rows { rowNumber sku action error }
+      quotaExceeded
+      quotaMessage
+      createCount
+      updateCount
+      errorCount
+    }
+  }
+`;
+
+const ACTION_TAG: Record<RowResult["action"], { color: string; label: string }> = {
+  CREATE: { color: "green", label: "สร้างใหม่" },
+  UPDATE: { color: "blue", label: "อัปเดต" },
+  ERROR: { color: "red", label: "ข้าม" },
+};
+
+export default function ImportModal({ open, onClose, onImported }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [rows, setRows] = useState<DraftRow[]>([]);
+  const [stage, setStage] = useState<"upload" | "preview" | "result">("upload");
+  const [preview, setPreview] = useState<ImportResult | null>(null);
+  const [finalResult, setFinalResult] = useState<ImportResult | null>(null);
+
+  const [runImport, { loading: previewing }] = useMutation(M_IMPORT);
+  const [committing, setCommitting] = useState(false);
+
+  const reset = () => {
+    setRows([]);
+    setStage("upload");
+    setPreview(null);
+    setFinalResult(null);
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  const handleFile = async (file: File) => {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      message.error("ไฟล์ใหญ่เกินไป (จำกัด 5MB)");
+      return false;
+    }
+    try {
+      const buf = await file.arrayBuffer();
+      const parsed = parseWorkbook(buf);
+      if (parsed.length === 0) {
+        message.error("ไม่พบแถวข้อมูลในไฟล์");
+        return false;
+      }
+      if (parsed.length > PRODUCT_IMPORT_MAX_ROWS) {
+        message.error(`ไฟล์มี ${parsed.length} แถว เกินจำกัด ${PRODUCT_IMPORT_MAX_ROWS} แถวต่อครั้ง กรุณาแบ่งไฟล์`);
+        return false;
+      }
+      setRows(parsed);
+      const res = await runImport({ variables: { items: parsed, commit: false } });
+      setPreview(res.data.bmsImportProducts);
+      setStage("preview");
+    } catch (e: any) {
+      message.error(e?.message || "อ่านไฟล์ไม่สำเร็จ — ตรวจรูปแบบเทมเพลตอีกครั้ง");
+    }
+    return false; // กัน antd Upload อัปโหลดไฟล์เอง
+  };
+
+  const handleConfirm = async () => {
+    setCommitting(true);
+    try {
+      const res = await runImport({ variables: { items: rows, commit: true } });
+      const result: ImportResult = res.data.bmsImportProducts;
+      setFinalResult(result);
+      setStage("result");
+      if (result.createCount + result.updateCount > 0) {
+        message.success(`นำเข้าสำเร็จ: สร้างใหม่ ${result.createCount} / อัปเดต ${result.updateCount} รายการ`);
+        onImported();
+      } else {
+        message.warning("ไม่มีรายการใดถูกนำเข้า");
+      }
+    } catch (e: any) {
+      message.error(e?.message || "นำเข้าไม่สำเร็จ");
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const resultColumns = [
+    { title: "แถว", dataIndex: "rowNumber", key: "rowNumber", width: 70 },
+    { title: "SKU", dataIndex: "sku", key: "sku", width: 140,
+      render: (s: string | null) => s || <span style={{ color: "#999" }}>—</span> },
+    {
+      title: "สถานะ", dataIndex: "action", key: "action", width: 110,
+      render: (a: RowResult["action"]) => <Tag color={ACTION_TAG[a].color}>{ACTION_TAG[a].label}</Tag>,
+    },
+    {
+      title: "หมายเหตุ", dataIndex: "error", key: "error",
+      render: (e: string | null) => e || <span style={{ color: "#999" }}>—</span>,
+    },
+  ];
+
+  const current = stage === "result" ? finalResult : preview;
+
+  return (
+    <Modal
+      title="นำเข้าสินค้าจาก CSV/XLSX"
+      open={open}
+      onCancel={handleClose}
+      width={720}
+      footer={
+        stage === "preview"
+          ? [
+              <Button key="back" onClick={reset}>เลือกไฟล์ใหม่</Button>,
+              <Button
+                key="confirm" type="primary" loading={committing}
+                disabled={!preview || preview.quotaExceeded || preview.createCount + preview.updateCount === 0}
+                onClick={handleConfirm}
+              >
+                ยืนยัน Import
+              </Button>,
+            ]
+          : stage === "result"
+            ? [<Button key="close" type="primary" onClick={handleClose}>เสร็จสิ้น</Button>]
+            : [<Button key="close" onClick={handleClose}>ปิด</Button>]
+      }
+    >
+      {stage === "upload" && (
+        <div>
+          <Alert
+            type="info" showIcon style={{ marginBottom: 16 }}
+            message="ไม่นำเข้ารูปภาพ"
+            description={`ระบบจะไม่นำเข้ารูปสินค้าจากไฟล์ (เพิ่มรูปทีหลังในหน้าแก้ไขสินค้า) — จำกัดสูงสุด ${PRODUCT_IMPORT_MAX_ROWS} แถวต่อครั้ง, ขนาดไฟล์ไม่เกิน 5MB`}
+          />
+          <Button icon={<DownloadOutlined />} onClick={downloadTemplate} style={{ marginBottom: 16 }}>
+            ดาวน์โหลดเทมเพลต
+          </Button>
+          <Upload.Dragger
+            accept=".csv,.xlsx,.xls"
+            multiple={false}
+            showUploadList={false}
+            beforeUpload={handleFile}
+            disabled={previewing}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">คลิกหรือลากไฟล์ CSV/XLSX มาวางที่นี่</p>
+            <p className="ant-upload-hint">ใช้หัวคอลัมน์ตามเทมเพลต จะช่วยให้ระบบ map field ได้ถูกต้อง</p>
+          </Upload.Dragger>
+          {previewing && <Typography.Text type="secondary">กำลังตรวจสอบไฟล์...</Typography.Text>}
+        </div>
+      )}
+
+      {(stage === "preview" || stage === "result") && current && (
+        <div>
+          <Space direction="vertical" style={{ width: "100%" }} size={12}>
+            <Space wrap>
+              <Tag color="green">จะสร้างใหม่ {current.createCount}</Tag>
+              <Tag color="blue">จะอัปเดต {current.updateCount}</Tag>
+              <Tag color="red">ข้าม (error) {current.errorCount}</Tag>
+            </Space>
+            {current.quotaExceeded && (
+              <Alert type="error" showIcon message="เกินโควตาแพ็กเกจ" description={current.quotaMessage} />
+            )}
+            {stage === "result" && (
+              <Alert
+                type={current.errorCount > 0 ? "warning" : "success"}
+                showIcon
+                message={stage === "result" ? "นำเข้าเสร็จสิ้น" : "ตัวอย่างก่อนนำเข้า"}
+              />
+            )}
+            <Table
+              size="small"
+              rowKey="rowNumber"
+              columns={resultColumns}
+              dataSource={current.rows}
+              pagination={{ pageSize: 10 }}
+              scroll={{ y: 320 }}
+            />
+          </Space>
+        </div>
+      )}
+    </Modal>
+  );
+}

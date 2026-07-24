@@ -41,7 +41,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/graphql/` | GraphQL schema and resolvers used by the admin UI (`bmsAssistant.ts` = staff AI assistant) |
 | `apps/web/app/(admin)/admin/` | Admin UI |
 | `apps/web/app/(admin)/admin/assistant/` | Staff AI assistant chat UI (proposal cards for sensitive actions) |
-| `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, and shipments |
+| `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
@@ -163,6 +163,12 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   CRM identity resolution, stock reservation, and rollback behavior stay identical to customer/AI
   orders. `bmsGenerateInvoice` is read-only and ephemeral; it must continue to use order-item price
   snapshots and must not create a parallel invoice source of truth.
+- Bulk product import (`bmsImportProducts`, `lib/bms/productImport.ts`) must reuse the single-item
+  `upsertProduct()` for the actual write and the shared `validateProductFields()` for validation, so
+  quota, revision, and audit behavior stay identical to the manual product form. Preview
+  (`commit:false`) and commit (`commit:true`) are the same mutation toggled by a flag — do not split
+  preview into a separate query, and do not let the client's preview result be trusted as
+  authoritative (the commit path re-validates server-side). Images are intentionally never imported.
 - Shipping-address eligibility is a backend invariant, not only a disabled UI button. Both
   `shipOrder()` and `createShipment()` must reject `PACKING` orders without a CRM shipping address
   for LINE/Facebook/Instagram/Web/TikTok Chat. Only Lazada/Shopee are exempt because fulfillment

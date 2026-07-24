@@ -1,7 +1,7 @@
 // GraphQL resolver — BMS dashboard + RBAC management (admin)
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { getDashboard } from "@/lib/bms/dashboard";
+import { getDashboard, getOperationalAlerts } from "@/lib/bms/dashboard";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
   requirePermission,
@@ -27,6 +27,10 @@ export const bmsDashboardResolvers = {
     async bmsDashboard(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "report.view");
       return getDashboard(getTenantId(ctx));
+    },
+    async bmsOperationalAlerts(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return getOperationalAlerts(getTenantId(ctx));
     },
     // สิทธิ์ของ admin ปัจจุบัน (สำหรับ UI ซ่อน/แสดงปุ่ม)
     async myBmsPermissions(_p: unknown, _a: unknown, ctx: any) {

@@ -33,9 +33,11 @@ import {
   PictureOutlined,
   DeleteOutlined,
   TagsOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import debounce from "lodash/debounce";
+import ImportModal from "./ImportModal";
 
 // ---- Types --------------------------------------------------
 type Variant = {
@@ -167,6 +169,7 @@ function ProductsManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [lowExpanded, setLowExpanded] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(LOW_STOCK_EXPANDED_KEY) === "1";
@@ -405,6 +408,7 @@ function ProductsManagement() {
           <h2 style={{ margin: 0 }}>Products & Inventory</h2>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>Refresh</Button>
+            {can("product.edit") && <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>นำเข้า</Button>}
             {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มสินค้า</Button>}
           </Space>
         </Space>
@@ -639,6 +643,12 @@ function ProductsManagement() {
         onClose={() => setCategoryModalOpen(false)}
         categories={categories}
         onChanged={refetchCategories}
+      />
+
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImported={refreshAll}
       />
     </div>
   );

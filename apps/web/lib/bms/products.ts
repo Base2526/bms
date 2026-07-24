@@ -526,11 +526,24 @@ async function mapPublicProductCards(rows: Array<{
   });
 }
 
-export async function upsertProduct(
-  tenantId: string,
-  input: UpsertProductInput,
-  editorId?: string | number | null
-): Promise<ProductRowFull> {
+export type NormalizedProductFields = {
+  sku: string;
+  name: string;
+  price: number;
+  keywords: string[];
+  active: boolean;
+  barcode: string | null;
+  description: string | null;
+  category: string | null;
+  brand: string | null;
+  costPrice: number | null;
+};
+
+/**
+ * แยก validate/normalize field ล้วนๆ ออกจาก upsertProduct (ไม่แตะ DB) เพื่อให้ bulk import
+ * ใช้ validate ตัวเดียวกันทั้ง preview (dry-run) และ commit ไม่ให้ 2 เส้นทาง drift กัน
+ */
+export function validateProductFields(input: UpsertProductInput): NormalizedProductFields {
   const sku = input.sku.trim();
   const name = input.name.trim();
   const price = Number(input.price);
@@ -540,8 +553,6 @@ export async function upsertProduct(
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   const active = input.active ?? true;
   const barcode = input.barcode?.trim() || null;
-  const imageUrls = normalizeImageUrls(input);
-  const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
   const description = input.description?.trim() || null;
   const category = input.category?.trim() || null;
   const brand = input.brand?.trim() || null;
@@ -552,13 +563,31 @@ export async function upsertProduct(
     if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("ต้นทุนไม่ถูกต้อง");
   }
 
-  // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
-  const existing = await query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
-  if (existing.rowCount === 0) await enforceProductQuota(tenantId);
+  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice };
+}
+
+export async function upsertProduct(
+  tenantId: string,
+  input: UpsertProductInput,
+  editorId?: string | number | null,
+  revisionId?: string | null
+): Promise<ProductRowFull> {
+  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice } =
+    validateProductFields(input);
+  const imageUrls = normalizeImageUrls(input);
+  const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId, { editorId });
+    await beginTenantTx(client, tenantId, { editorId, revisionId });
+
+    // ล็อกแถว tenant ก่อนเช็ค quota กันสอง request สร้างสินค้าใหม่พร้อมกันแล้วเกินแพ็กเกจ
+    // (เดิมเช็ค quota แยก connection นอก transaction — race ได้ถ้าสร้างพร้อมกันตอนใกล้เต็มโควตา)
+    await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+
+    // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
+    const existing = await client.query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
+    if (existing.rowCount === 0) await enforceProductQuota(tenantId, client);
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products

@@ -715,6 +715,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
+    bmsOperationalAlerts: BmsOperationalAlerts!
 
     # ===== BMS settings / channels (admin) =====
     bmsMyTenant: BmsTenantInfo!
@@ -1157,6 +1158,35 @@ export const typeDefs = /* GraphQL */ `
     brand: String
   }
 
+  # ===== BMS product bulk import (CSV/XLSX) =====
+  input BmsProductImportRowInput {
+    rowNumber: Int!
+    sku: String!
+    name: String!
+    price: Float!
+    keywords: [String!]
+    active: Boolean
+    barcode: String
+    description: String
+    cost_price: Float
+    category: String
+    brand: String
+  }
+  type BmsProductImportRowResult {
+    rowNumber: Int!
+    sku: String
+    action: String!   # CREATE | UPDATE | ERROR
+    error: String
+  }
+  type BmsProductImportResult {
+    rows: [BmsProductImportRowResult!]!
+    quotaExceeded: Boolean!
+    quotaMessage: String
+    createCount: Int!
+    updateCount: Int!
+    errorCount: Int!
+  }
+
   type BmsProductCategory {
     id: ID!
     name: String!
@@ -1385,6 +1415,13 @@ export const typeDefs = /* GraphQL */ `
     salesDaily: [BmsDailySales!]!
   }
 
+  type BmsOperationalAlerts {
+    packingOverdueCount: Int!
+    slipPendingCount: Int!
+    reservationExpiringCount: Int!
+    chatWaitingCount: Int!
+  }
+
   # ===== BMS audit log =====
   type BmsAuditEntry {
     id: ID!
@@ -1400,6 +1437,8 @@ export const typeDefs = /* GraphQL */ `
     orders
     payments
     shipments
+    purchase
+    purchaseItems
   }
 
   type BmsRevisionEntry {
@@ -1955,6 +1994,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
+    bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean = false): BmsProductImportResult!
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
     bmsCreateProductCategory(name: String!): BmsProductCategory!
     bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!

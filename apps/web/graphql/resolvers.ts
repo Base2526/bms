@@ -2900,13 +2900,24 @@ const rawResolvers = {
       if (!user) throw new Error("Invalid credentials");
       // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
 
+      // Administrator = full RBAC permissions → short-lived session; other staff roles get a longer one.
+      // Keep this in sync with the cookie maxAge below — a JWT that outlives its cookie (or vice versa)
+      // makes the two clocks disagree about when the session actually ends.
+      const sessionMaxAgeSec = user.role === "Administrator" ? 60 * 60 * 24 : 60 * 60 * 24 * 7;
+
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
         JWT_SECRET,
-        { expiresIn: "1d" }
+        { expiresIn: sessionMaxAgeSec }
       );
 
-      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      cookies().set(ADMIN_COOKIE, token, {
+        httpOnly: true,
+        secure: useSecureCookie && !isDev,
+        sameSite: "lax",
+        path: "/",
+        maxAge: sessionMaxAgeSec,
+      });
       return {
         ok: true,
         message: "Login success",

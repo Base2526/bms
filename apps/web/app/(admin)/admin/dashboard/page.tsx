@@ -31,6 +31,9 @@ const Q_DASH = gql`
 
 const Q_CHANNEL_HEALTH = gql`query { bmsChannelHealth { channel active status } }`;
 const Q_AI = gql`query { bmsAiConfig { has_key } bmsAiUsage { count limit remaining unlimited planName } }`;
+const Q_ALERTS = gql`
+  query { bmsOperationalAlerts { packingOverdueCount slipPendingCount reservationExpiringCount chatWaitingCount } }
+`;
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange",
@@ -150,6 +153,8 @@ export default function Page() {
   const aiHasKey = aiData?.bmsAiConfig?.has_key;
   const aiOverLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.remaining === 0;
   const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
+  const { data: alertsData } = useQuery(Q_ALERTS, { fetchPolicy: "cache-and-network", pollInterval: 60000 });
+  const alerts = alertsData?.bmsOperationalAlerts;
 
   if (error) return <Alert type="error" message="โหลด dashboard ไม่ได้" description={error.message} showIcon />;
 
@@ -303,6 +308,50 @@ export default function Page() {
           icon={<WarningOutlined />}
           message={<>สินค้าใกล้หมด/หมด <b>{d.lowStockCount}</b> รายการ</>}
           description={<Link href="/admin/products">เปิดหน้า Products เพื่อตรวจสต็อก</Link>}
+        />
+      )}
+
+      {alerts?.packingOverdueCount > 0 && (
+        <Alert
+          style={{ marginTop: 16, borderRadius: 8 }}
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          message={<>ออเดอร์ค้างแพ็คนานเกิน 24 ชม. <b>{alerts.packingOverdueCount}</b> ออเดอร์</>}
+          description={<Link href="/admin/orders?status=PACKING">เปิดหน้า Orders เพื่อจัดการ</Link>}
+        />
+      )}
+
+      {alerts?.slipPendingCount > 0 && (
+        <Alert
+          style={{ marginTop: 16, borderRadius: 8 }}
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          message={<>สลิปโอนรอตรวจนานเกิน 2 ชม. <b>{alerts.slipPendingCount}</b> รายการ</>}
+          description={<Link href="/admin/payment?status=PENDING">เปิดหน้า Payment เพื่อตรวจสลิป</Link>}
+        />
+      )}
+
+      {alerts?.reservationExpiringCount > 0 && (
+        <Alert
+          style={{ marginTop: 16, borderRadius: 8 }}
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          message={<>การจองสต็อกใกล้หมดอายุ <b>{alerts.reservationExpiringCount}</b> ออเดอร์</>}
+          description={<Link href="/admin/orders?status=PENDING">เปิดหน้า Orders เพื่อติดตามลูกค้า</Link>}
+        />
+      )}
+
+      {alerts?.chatWaitingCount > 0 && (
+        <Alert
+          style={{ marginTop: 16, borderRadius: 8 }}
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          message={<>แชทลูกค้ารอตอบนานเกิน 30 นาที <b>{alerts.chatWaitingCount}</b> แชท</>}
+          description={<Link href="/admin/inbox">เปิดหน้า Inbox เพื่อตอบลูกค้า</Link>}
         />
       )}
 
