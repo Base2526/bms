@@ -275,11 +275,7 @@ function parseProductShare(body: string): ProductShare | null {
 }
 
 const couponCodeFromText = (body: string): string | null => {
-  const text = String(body || "");
-  const shared = parseCouponShare(text);
-  if (shared?.code) return shared.code;
-  const explicit = text.match(/(?:ใช้|use|apply)\s+([A-Z0-9][A-Z0-9_-]{2,31})/i);
-  return explicit?.[1]?.toUpperCase() ?? null;
+  return parseCouponShare(body)?.code ?? null;
 };
 
 function latestCouponCodeFromMessages(messages: Msg[] = []): string | null {
@@ -294,12 +290,8 @@ function parseCouponShare(body: string): CouponShare | null {
   const lines = String(body || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const text = lines.join("\n");
   if (!/🎟|คูปอง|coupon/i.test(text)) return null;
-  const codeLine = lines.find((line) => /^โค้ด\s+[A-Z0-9][A-Z0-9_-]{2,31}$/i.test(line));
-  const code =
-    codeLine?.replace(/^โค้ด\s+/i, "").trim().toUpperCase()
-    ?? text.match(/(?:คูปอง|coupon|โค้ด)\s+([A-Z0-9][A-Z0-9_-]{2,31})/i)?.[1]?.toUpperCase()
-    ?? text.match(/\[\s*ใช้\s+([A-Z0-9][A-Z0-9_-]{2,31})\s*\]/i)?.[1]?.toUpperCase()
-    ?? null;
+  const codeLine = lines.find((line) => /^(?:โค้ด|CODE)\s+.+/i.test(line));
+  const code = codeLine?.replace(/^(?:โค้ด|CODE)\s+/i, "").trim().toUpperCase() ?? null;
   if (!code) return null;
   const discount =
     lines.find((line) => /^ส่วนลด\s+/i.test(line))?.replace(/^ส่วนลด\s+/i, "").trim()
@@ -1271,7 +1263,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
     setReply((prev) => {
       const prefix = prev.trim() ? `${prev.trim()}\n` : "";
-      return `${prefix}🎟 คูปองส่วนลด\nโค้ด ${coupon.code}\nส่วนลด ${couponDiscountText(coupon)}\nขั้นต่ำ ${minOrder}\nใช้ได้ถึง ${couponExpiresText(coupon.expiresAt)}\nสิทธิ์ ${usageLeft}\n\nถ้าต้องการใช้คูปองนี้ พิมพ์ “ใช้ ${coupon.code}” ได้เลยค่ะ`;
+      return `${prefix}🎟 คูปองส่วนลด\nโค้ด ${coupon.code}\nส่วนลด ${couponDiscountText(coupon)}\nขั้นต่ำ ${minOrder}\nใช้ได้ถึง ${couponExpiresText(coupon.expiresAt)}\nสิทธิ์ ${usageLeft}\n\nระบบจะแนบลิงก์กดใช้คูปองตอนส่งจริงค่ะ`;
     });
     setDraftAttachment(null);
     setCouponPickerOpen(false);
@@ -1329,7 +1321,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               {coupon.usage && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{coupon.usage}</Tag>}
             </Space>
             <div className={messageStyles.productCaption} style={{ margin: "8px 0 0" }}>
-              ลูกค้าพิมพ์ “ใช้ {coupon.code}” เพื่อใช้คูปองนี้ได้
+              ระบบแนบลิงก์กดใช้คูปองให้ลูกค้าแล้ว
             </div>
           </div>
         </div>

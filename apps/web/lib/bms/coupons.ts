@@ -9,6 +9,7 @@
 // เกิน max_redemptions — ดู applyCouponInTx() ที่รับ PoolClient ของทรานแซกชันเดิม
 // =============================================================
 
+import { createHmac, timingSafeEqual } from "crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
@@ -385,10 +386,82 @@ export async function checkCouponForCustomer(
 
 export function couponCodeFromShareText(body: string): string | null {
   const text = String(body || "");
-  const explicit = text.match(/(?:^|\n)\s*โค้ด\s+([A-Z0-9][A-Z0-9_-]{2,31})\s*(?:\n|$)/i);
-  if (explicit?.[1]) return explicit[1].toUpperCase();
-  const generic = text.match(/(?:คูปอง|coupon|โค้ด)\s+([A-Z0-9][A-Z0-9_-]{2,31})/i);
-  return generic?.[1]?.toUpperCase() ?? null;
+  const codeLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^(?:โค้ด|CODE)\s+/i.test(line));
+  if (codeLine) return codeLine.replace(/^(?:โค้ด|CODE)\s+/i, "").trim().toUpperCase() || null;
+  return null;
+}
+
+type CouponClaimTokenPayload = {
+  tenantId: string;
+  customerId: string;
+  code: string;
+  exp: number;
+};
+
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function base64UrlDecode(value: string): string {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function couponClaimSecret(): string {
+  return (
+    process.env.BMS_COUPON_CLAIM_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET ||
+    process.env.JWT_SECRET ||
+    "dev-only-coupon-claim-secret"
+  );
+}
+
+function signCouponClaimPayload(encodedPayload: string): string {
+  return createHmac("sha256", couponClaimSecret()).update(encodedPayload).digest("base64url");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+export function createCouponClaimToken(input: {
+  tenantId: string;
+  customerId: string;
+  code: string;
+  expiresInSeconds?: number;
+}): string {
+  const payload: CouponClaimTokenPayload = {
+    tenantId: input.tenantId,
+    customerId: input.customerId,
+    code: input.code.trim().toUpperCase(),
+    exp: Math.floor(Date.now() / 1000) + Math.max(input.expiresInSeconds ?? 60 * 60 * 24 * 30, 60),
+  };
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  return `${encodedPayload}.${signCouponClaimPayload(encodedPayload)}`;
+}
+
+export function verifyCouponClaimToken(token: string): CouponClaimTokenPayload | null {
+  const [encodedPayload, signature, extra] = String(token || "").split(".");
+  if (!encodedPayload || !signature || extra) return null;
+  if (!safeEqual(signature, signCouponClaimPayload(encodedPayload))) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as Partial<CouponClaimTokenPayload>;
+    if (!payload.tenantId || !payload.customerId || !payload.code || !payload.exp) return null;
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return {
+      tenantId: String(payload.tenantId),
+      customerId: String(payload.customerId),
+      code: String(payload.code).trim().toUpperCase(),
+      exp: Number(payload.exp),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function assignCouponToCustomer(
@@ -458,6 +531,17 @@ export async function claimCouponForCustomer(
     [tenantId, customerId, lookup.requested.id]
   );
   return { ok: true, code: lookup.requested.code };
+}
+
+export async function claimCouponByToken(
+  token: string
+): Promise<{ ok: true; code: string } | { ok: false; reason: string }> {
+  const payload = verifyCouponClaimToken(token);
+  if (!payload) return { ok: false, reason: "ลิงก์คูปองไม่ถูกต้องหรือหมดอายุแล้ว" };
+  return claimCouponForCustomer(payload.tenantId, payload.code, {
+    customerId: payload.customerId,
+    actor: "customer:claim-link",
+  });
 }
 
 export async function reserveCustomerCouponInTx(

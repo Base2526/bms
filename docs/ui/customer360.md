@@ -70,18 +70,22 @@ is never inserted into a customer message. Customer links use
 sale-safe fields. See [public-products.md](public-products.md).
 
 The **คูปอง** picker lists active coupons for staff with `coupon.view`. Selecting a coupon inserts a
-reviewable text fallback into the draft (code, discount, minimum order, expiry, remaining usage, and
-the instruction "พิมพ์ ใช้ CODE") so every channel can receive it even before channel-specific coupon
-buttons exist. Staff-side Inbox renders that text as a coupon card, while outbound delivery remains
-the same plain text payload. When a later customer/staff message contains `ใช้ CODE` or the latest
-staff message is a coupon card, Customer 360 passes that code into the create-order modal as a
-pre-filled coupon suggestion; `createOrder()` still performs the authoritative validation.
+reviewable text fallback into the draft (code, discount, minimum order, expiry, remaining usage).
+When staff sends the message, the backend assigns that coupon to the customer's wallet and appends a
+signed claim link (`/coupon/claim?t=...`) to the outbound message. Staff-side Inbox renders the text
+as a coupon card, while the external channel still receives plain text plus the claim URL. A later
+customer message such as `ใช้ SAVE10` or `use SAVE10` is not treated as a claim action; AI can check
+eligibility with backend tools, but only the signed claim link/button marks the wallet row as
+`CLAIMED`. Customer 360 can still pass the latest coupon code into the create-order modal as a
+pre-filled suggestion; `createOrder()` performs the authoritative validation.
 
 Phase 2 extends the same presentation to AI replies. If a customer asks what coupons they have, types
-a code, or asks for a discount, the customer tool loop calls `list_available_coupons`/`check_coupon`.
-The reply can include a CTA like `[ใช้ SAVE10]`; Inbox recognizes the coupon-style body and renders a
-coupon card for staff. The CTA is still text-safe for every channel. It does not consume quota by
-itself — the coupon is redeemed only when an order is actually created with that code.
+a code, or asks for a discount, the customer tool loop calls
+`list_customer_coupons`/`list_available_coupons`/`check_coupon`. The reply should explain verified
+coupons and conditions; it should not ask the customer to type a localized command to claim. The CTA
+is the backend-generated claim link/button, which is text-safe for every channel and language. It
+does not redeem quota by itself — the coupon is redeemed only when an order is actually created with
+that code.
 
 ## Message presentation
 
@@ -94,7 +98,7 @@ each saved message according to its content:
 - a body containing the customer-safe public-product URL uses a product card with cover, name, SKU,
   price, stock summary, and **ดูสินค้า** instead of exposing the raw URL in the staff conversation.
 - a body matching the coupon text fallback uses a coupon card with code, discount, expiry, remaining
-  usage, and the customer instruction to type `ใช้ CODE`.
+  usage, and the backend-generated claim link text when present.
 
 This is a presentation-only enhancement. Customers still receive channel-compatible text/link and
 the optional single cover attachment, so LINE/Meta/Web/TikTok behavior does not diverge.

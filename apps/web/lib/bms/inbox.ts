@@ -20,7 +20,7 @@ import {
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 import { createNotification } from "@/lib/notifications/service";
-import { assignCouponToCustomer, couponCodeFromShareText } from "./coupons";
+import { assignCouponToCustomer, couponCodeFromShareText, createCouponClaimToken } from "./coupons";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -807,36 +807,44 @@ export async function sendStaffMessage(
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
 
   const channel = conv.rows[0].channel;
-  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text, att);
+  const customerId = conv.rows[0].customer_id ?? null;
+  const couponCode = couponCodeFromShareText(text);
+  let outgoingText = text;
+  let couponClaimLink: string | null = null;
+
+  if (couponCode && customerId && !/\/coupon\/claim\?t=/i.test(text)) {
+    try {
+      const assigned = await assignCouponToCustomer(tenantId, customerId, couponCode, {
+        actor: staff,
+        source: "MANUAL_CHAT",
+        note: "Assigned from Inbox coupon share",
+      });
+      if (assigned) {
+        const token = createCouponClaimToken({ tenantId, customerId, code: couponCode });
+        couponClaimLink = absoluteUrl(`/coupon/claim?t=${encodeURIComponent(token)}`);
+        outgoingText = `${text}\n\nกดใช้คูปอง / Claim coupon:\n${couponClaimLink}`;
+      }
+    } catch (error) {
+      console.error("[BMS] assign customer coupon wallet failed:", error);
+    }
+  }
+
+  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, outgoingText, att);
   const status = outboundStatus(channel, delivered);
 
   // body NOT NULL — เก็บข้อความ (อาจว่างถ้าเป็น attachment ล้วน)
   await query(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, $4, $5)`,
-    [tenantId, conversationId, text, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att })]
+    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponClaimLink })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
-  const preview = text || (att ? (isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim()) : "");
+  const preview = outgoingText || (att ? (isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim()) : "");
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, preview.slice(0, 500)]
   );
-
-  const couponCode = couponCodeFromShareText(text);
-  const customerId = conv.rows[0].customer_id ?? null;
-  if (couponCode && customerId) {
-    try {
-      await assignCouponToCustomer(tenantId, customerId, couponCode, {
-        actor: staff,
-        source: "MANUAL_CHAT",
-        note: "Assigned from Inbox coupon share",
-      });
-    } catch (error) {
-      console.error("[BMS] assign customer coupon wallet failed:", error);
-    }
-  }
 
   return { status: "SENT", delivered };
 }
