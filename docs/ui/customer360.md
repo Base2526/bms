@@ -72,20 +72,19 @@ sale-safe fields. See [public-products.md](public-products.md).
 The **คูปอง** picker lists active coupons for staff with `coupon.view`. Selecting a coupon inserts a
 reviewable text fallback into the draft (code, discount, minimum order, expiry, remaining usage).
 When staff sends the message, the backend assigns that coupon to the customer's wallet and appends a
-signed claim link (`/coupon/claim?t=...`) to the outbound message. Staff-side Inbox renders the text
-as a coupon card, while the external channel still receives plain text plus the claim URL. A later
-customer message such as `ใช้ SAVE10` or `use SAVE10` is not treated as a claim action; AI can check
-eligibility with backend tools, but only the signed claim link/button marks the wallet row as
-`CLAIMED`. Customer 360 can still pass the latest coupon code into the create-order modal as a
-pre-filled suggestion; `createOrder()` performs the authoritative validation.
+signed wallet link (`/coupon/wallet?t=...`) to the outbound message. Staff-side Inbox renders the
+text as a coupon card, while the external channel still receives plain text plus the wallet URL.
+Customers do not need to accept the coupon; assignment is automatic. A later customer
+message such as `ใช้ SAVE10` or `use SAVE10` is not treated as a redemption action; AI can check
+eligibility with backend tools and send the wallet link, but `createOrder()` performs the
+authoritative validation and redemption.
 
 Phase 2 extends the same presentation to AI replies. If a customer asks what coupons they have, types
 a code, or asks for a discount, the customer tool loop calls
 `list_customer_coupons`/`list_available_coupons`/`check_coupon`. The reply should explain verified
-coupons and conditions; it should not ask the customer to type a localized command to claim. The CTA
-is the backend-generated claim link/button, which is text-safe for every channel and language. It
-does not redeem quota by itself — the coupon is redeemed only when an order is actually created with
-that code.
+coupons and conditions briefly, then send the backend-generated wallet link. It should not ask the
+customer to type a localized command to activate or use the coupon. Opening the wallet does not redeem
+quota by itself — the coupon is redeemed only when an order is actually created with that code.
 
 ## Message presentation
 
@@ -98,7 +97,7 @@ each saved message according to its content:
 - a body containing the customer-safe public-product URL uses a product card with cover, name, SKU,
   price, stock summary, and **ดูสินค้า** instead of exposing the raw URL in the staff conversation.
 - a body matching the coupon text fallback uses a coupon card with code, discount, expiry, remaining
-  usage, and the backend-generated claim link text when present.
+  usage, and the backend-generated wallet link text when present.
 
 This is a presentation-only enhancement. Customers still receive channel-compatible text/link and
 the optional single cover attachment, so LINE/Meta/Web/TikTok behavior does not diverge.

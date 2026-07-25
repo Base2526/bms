@@ -104,7 +104,6 @@ function safeCoupon(c: any) {
     assignedAt: c.assignedAt ?? null,
     source: c.source ?? null,
     state: c.state ?? "ASSIGNED",
-    claimedAt: c.claimedAt ?? null,
     reservedAt: c.reservedAt ?? null,
     reservedOrderId: c.reservedOrderId ?? null,
     redeemedAt: c.redeemedAt ?? null,
@@ -245,7 +244,7 @@ const listCustomerCouponsTool: BmsTool = {
 const checkCouponTool: BmsTool = {
   name: "check_coupon",
   description:
-    "ตรวจโค้ดคูปองที่ลูกค้าระบุว่าลูกค้าคนนี้ใช้ได้ไหม ถ้าใช้ไม่ได้จะคืนคูปองทางเลือกที่ยังใช้ได้ ห้ามบอกว่าใช้ได้จนกว่าทูลนี้หรือ create_order ตรวจผ่าน และห้ามใช้ทูลนี้แทนการกด claim link/button",
+    "ตรวจโค้ดคูปองที่ลูกค้าระบุว่าลูกค้าคนนี้ใช้ได้ไหม ถ้าใช้ไม่ได้จะคืนคูปองทางเลือกที่ยังใช้ได้ ห้ามบอกว่าใช้ได้จนกว่าทูลนี้หรือ create_order ตรวจผ่าน และห้ามใช้ทูลนี้แทนการใช้คูปองจริงในออเดอร์",
   surfaces: ["customer", "staff"],
   permission: "coupon.view",
   inputSchema: {

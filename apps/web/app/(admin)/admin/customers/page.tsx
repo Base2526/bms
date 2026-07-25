@@ -76,11 +76,17 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const COUPON_STATE_COLOR: Record<string, string> = {
   ASSIGNED: "blue",
-  CLAIMED: "processing",
   RESERVED: "purple",
   REDEEMED: "green",
   EXPIRED: "orange",
   REVOKED: "red",
+};
+const COUPON_STATE_LABEL: Record<string, string> = {
+  ASSIGNED: "แจกแล้ว",
+  RESERVED: "จองกับออเดอร์",
+  REDEEMED: "ใช้แล้ว",
+  EXPIRED: "หมดอายุ",
+  REVOKED: "ยกเลิกสิทธิ์",
 };
 const TAG_OPTIONS = ["VIP", "ลูกค้าใหม่", "ลูกค้าประจำ"];
 
@@ -357,7 +363,7 @@ function CustomerDetail({
     ) },
     { title: "สถานะ", dataIndex: "state", key: "state", width: 120, render: (state: string, coupon: CustomerCoupon) => (
       <Space direction="vertical" size={0}>
-        <Tag color={COUPON_STATE_COLOR[state] || "default"}>{state}</Tag>
+        <Tag color={COUPON_STATE_COLOR[state] || "default"}>{COUPON_STATE_LABEL[state] || state}</Tag>
         {!coupon.available && coupon.reason && <Text type="secondary" style={{ fontSize: 12 }}>{coupon.reason}</Text>}
       </Space>
     ) },

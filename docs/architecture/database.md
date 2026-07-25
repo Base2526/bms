@@ -75,14 +75,16 @@ sent to them in chat", and "which assigned coupons are near expiry" without gues
 active coupons. The current assignment flow is best-effort from staff Inbox coupon sends
 (`sendStaffMessage()`), source-tagged as `MANUAL_CHAT`.
 
-Since `7.26`, the same table also carries a lightweight lifecycle snapshot: `ASSIGNED`, `CLAIMED`,
-`RESERVED`, `REDEEMED`, `REVOKED`, `EXPIRED`, plus timestamps and order links
+Since `7.26`, the same table also carries a lightweight lifecycle snapshot: `ASSIGNED`, `RESERVED`,
+`REDEEMED`, `REVOKED`, `EXPIRED`, plus timestamps and order links
 (`claimed_at`, `reserved_at`/`reserved_order_id`, `redeemed_at`/`redeemed_order_id`, `expired_at`).
 These fields are intentionally derivative and UX-oriented: they help AI and operators talk about
 "ลูกค้าใช้คูปองนี้ไปหรือยัง" or "กำลังจองอยู่กับออเดอร์ไหน" without replacing the authoritative
 order/payment facts. Pre-sale cancellation clears a reservation (and even a paid-path redemption if
 that order is cancelled before shipping) so the wallet remains consistent with the coupon quota
-release policy.
+release policy. The database CHECK still accepts legacy `CLAIMED` rows from the earlier claim-link
+experiment, but the current product flow normalizes those rows back to `ASSIGNED`; customers no
+longer need to press a claim button.
 
 **`bms_tenant_channels`** — one row per `(tenant_id, channel)`, `channel` is a free-text column
 (no CHECK constraint / enum), storing `access_token` and `channel_secret` **encrypted** (AES-256-GCM

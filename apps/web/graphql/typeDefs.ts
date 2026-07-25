@@ -1395,7 +1395,6 @@ export const typeDefs = /* GraphQL */ `
     assignedAt: String
     source: String
     state: String!
-    claimedAt: String
     reservedAt: String
     reservedOrderId: ID
     redeemedAt: String

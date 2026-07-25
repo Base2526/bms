@@ -307,6 +307,31 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
   ต้องเพิ่ม API อีกตัวภายหลัง
 - **suppliers ตั้งใจไม่เพิ่ม kind**: trigger `bms_suppliers` มี (`7.8`) แต่ยังไม่มี code path ไหน UPDATE
   supplier เลย → ถ้าเพิ่ม kind จะเป็นตัวเลือกที่ไม่มีข้อมูล (dead option) รอจนมีหน้าจอแก้ supplier จริงก่อน
+- **Coupons — เพิ่ม kind แล้ว (2026-07)**: migration `7.22__bms_coupons_revisions.sql`
+  (`create_revision_trigger('bms_coupons')`) + `coupons` เข้า `REVISION_CONFIG` (`bmsRevisions.ts`,
+  **parentIdField = `id` (UUID)** — ไม่ใช่ `code` เพราะ code เปลี่ยนได้ (rename โค้ด) ถ้า group ด้วย code
+  ประวัติของคูปองตัวเดียวจะแตกเป็นคนละ entity ตอน rename และ compare ข้ามชื่อไม่ได้; searchFields ยังเป็น
+  `code`/`note` ให้ค้นด้วยโค้ดได้ (คนละเรื่องกับ parentIdField), perm `coupon.view`) + enum `BmsRevisionKind`
+  + `KIND_OPTIONS`/placeholder ในหน้า `/admin/revisions` + `coupon.view` เข้า guard ของหน้า.
+  **editor attribution**: `upsertCoupon()` เดิมใช้ `query()` ธรรมดา (editor = system) — เปลี่ยนมาใช้
+  `getClient()` + `beginTenantTx(client, tenantId, { editorId })` แล้ว, resolver `bmsUpsertCoupon` ส่ง
+  `requireAuth(ctx).author_id`. เหตุผลที่ทำ: audit log เก็บแค่ who/when (`meta:{code}`) ไม่บอกว่าค่าเปลี่ยน
+  จากอะไร (10%→5%) — revision snapshot เก็บแถวก่อน UPDATE จึงตอบได้. trigger fire เฉพาะ UPDATE (สร้างโค้ด
+  ใหม่ = INSERT ไม่มี revision, เหมือน products SKU ใหม่) · `bms_coupons` ไม่มี PII/secret จึง snapshot ทั้ง
+  แถวได้ (ไม่เข้าข่ายเคส `users`/password_hash ที่ 7.16 ห้าม)
+- **Compare guard (ทุก kind, 2026-07)**: หน้า `/admin/revisions` เดิมเลือก 2 แถวไหนก็ compare ได้ แม้เป็น
+  คนละ entity (เช่นคูปองคนละโค้ด) → diff ไม่มีความหมาย. แก้ที่ `page.tsx`: `getCheckboxProps` disable แถวที่
+  entityId ต่างจากแถวที่เลือกไว้แล้ว + `onCompare` เช็คซ้ำก่อนยิง `bmsRevisionCompare` (fail-open เฉพาะตอน
+  ยืนยัน entity ไม่ได้ เช่นแถวหลุด pagination). ใช้ `entityId` ที่ resolver คืนมาจาก `parentIdField` ต่อ kind
+- **Grouped view ราย entity (ทุก kind, 2026-07)**: เดิม flat list เอา revision ทุก entity มาปนกันเรียงเวลา
+  → สับสนว่าแถวไหนของใคร. เปลี่ยนเป็น tree ใน `page.tsx` (frontend-only, ไม่แตะ resolver): `grouped` useMemo
+  จับ `rows` เป็นกลุ่มตาม `entityId` (rows มาเรียง DESC อยู่แล้ว กลุ่มบนสุด = แก้ล่าสุด, children ใหม่→เก่า) ·
+  parent row (`id: "group:<entityId>"`, `isGroup:true`) โชว์ label (จาก `entityLabel(kind, newest.snapshot)`
+  — coupons→code, products→name/sku, …) + จำนวนเวอร์ชัน + แก้ล่าสุดเมื่อไหร่/ใคร · antd `expandable`
+  `defaultExpandAllRows` + `Table key={kind:search}` เพื่อ re-expand ตอนเปลี่ยน kind/search · `rowSelection`
+  `checkStrictly` + group row `disabled` (เลือกได้เฉพาะ revision row) + `onChange` filter คีย์ `group:` ทิ้ง ·
+  columns render แยก `row.isGroup` · **label ใช้ snapshot ล่าสุดของกลุ่ม ไม่ใช่สถานะ live** (สถานะปัจจุบันดูที่
+  หน้า kind นั้น) — ยอมรับได้เพราะ snapshot = ก่อน update ล่าสุด ยังใช้ระบุตัว entity ได้
 
 ## AI tool-calling (2026-07) — ต่อ backend เข้ากับ AI จริง
 
@@ -599,9 +624,26 @@ feature "order status email" ก่อนหน้านี้ที่ order �
 
 **ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — log การใช้งานโค้ด**: คอลัมน์ "ใช้ไปแล้ว" ในตาราง
 `/admin/coupons` กดได้ เปิด modal โชว์ประวัติราย order (`bmsCouponRedemptions(couponId)` →
-`listCouponRedemptions()` ใน `lib/bms/coupons.ts`) — ยืนยันการตัดสินใจเดิมว่าไม่ต้องมีตาราง
-redemption log แยก: query ตรงจาก `bms_orders.coupon_code` ก็พอ (join แบบเดียวกับ
-`COALESCE(NULLIF(cu.name, ...), ci.display_name)` ที่ใช้หา customer name ใน `inbox.ts` อยู่แล้ว)
+`listCouponRedemptions()` ใน `lib/bms/coupons.ts`) — ไม่ต้องมีตาราง redemption log แยก, query ตรงจาก
+`bms_orders` (join customer name แบบเดียวกับ `COALESCE(NULLIF(cu.name, ...), ci.display_name)` ใน `inbox.ts`)
+
+**ล็อกโค้ดหลังมีคนใช้ (แก้ 2026-07)**: ต้นเหตุความสับสน rename/history/display ทั้งหมดคือ "เปลี่ยน code
+ของคูปองที่ถูกใช้ไปแล้ว" (ป้ายบนออเดอร์เก่าค้าง + ชื่อไปชนคูปองอื่นที่มาใช้ชื่อเดิม). แก้ที่ `upsertCoupon()`
+(`coupons.ts`) — UPDATE path `SELECT ... FOR UPDATE` อ่าน `code`+`redemptions_count` ก่อน, ถ้า
+`redemptions_count > 0 && code !== newCode` → `throw` (field อื่น value/วันหมดอายุ/สถานะยังแก้ได้). UI
+(`/admin/coupons`) disable Input ช่อง "โค้ด" + `extra` hint ตอน `editing.redemptionsCount > 0` (disabled input
+antd ยัง submit ค่าเดิม → ผ่าน guard). อยากได้โค้ดใหม่ = สร้างใหม่ (code เป็น identity ที่ลูกค้าพิมพ์/ออเดอร์
+snapshot ไว้). code ยัง rename ได้อิสระถ้ายังไม่เคยถูกใช้ (count=0) — revision-by-id เดิมยังรองรับเคสนั้น
+
+**สำคัญ — join ด้วย `coupon_id` ไม่ใช่ `coupon_code` (แก้ 2026-07, migration `7.23`)**: เดิม order เก็บแค่
+`coupon_code` (string) แล้ว history join ด้วย code → พอ **rename โค้ด** (เช่น SAVE10→SAVE20) `redemptions_count`
+(ผูก `coupon.id` นิ่ง) จะไม่ตรงกับประวัติ (count=1 แต่ modal ว่าง) และออเดอร์อาจไปโผล่ผิดคูปองที่บังเอิญมาใช้
+ชื่อเก่า. แก้โดยเพิ่ม `bms_orders.coupon_id UUID` (FK `ON DELETE SET NULL`, index `idx_bms_orders_coupon_id`)
+— `createOrder()` เก็บ `couponResult.couponId` ลงไปพร้อม `coupon_code` (code = snapshot ชื่อ ณ ตอนสั่ง ไว้ display
+แม้คูปองถูกลบ) · `listCouponRedemptions()` match `o.coupon_id = $id OR (o.coupon_id IS NULL AND o.coupon_code = $currentCode)`
+(clause หลัง = fallback เฉพาะออเดอร์เก่าก่อน 7.23 ที่ยังไม่มี coupon_id) · **ไม่ backfill อัตโนมัติจาก code** ใน
+migration เพราะ rename-แล้ว-เอาชื่อไปใช้ซ้ำจะ match ผิดตัว (ปล่อยเก่าเป็น NULL → ใช้ fallback code) — dev data
+ที่ rename ไปแล้วต้อง backfill `coupon_id` เองถ้าอยากให้ตรง (เทียบจาก `redemptions_count`)
 
 **ต่อยอดแล้ว (เสร็จเช่นกัน, 2026-07) — สรุปโค้ดส่วนลดใน Dashboard**: `/admin/dashboard` มีการ์ด
 "โค้ดส่วนลด (เดือนนี้)" โชว์ยอดส่วนลดรวม + จำนวนครั้งที่ใช้ + top 5 โค้ด (`getDashboard()` เพิ่ม

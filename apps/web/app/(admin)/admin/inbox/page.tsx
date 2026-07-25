@@ -60,6 +60,7 @@ type CouponShare = {
   minOrder: string | null;
   expires: string | null;
   usage: string | null;
+  walletUrl: string | null;
 };
 type SystemEvent = {
   id: string; kind: "assign" | "helper_add" | "helper_remove" | "status";
@@ -300,7 +301,8 @@ function parseCouponShare(body: string): CouponShare | null {
   const minOrder = lines.find((line) => /^ขั้นต่ำ\s+/i.test(line))?.replace(/^ขั้นต่ำ\s+/i, "").trim() || null;
   const expires = lines.find((line) => /^(ใช้ได้ถึง|หมดอายุ)\s+/i.test(line))?.replace(/^(ใช้ได้ถึง|หมดอายุ)\s+/i, "").trim() || null;
   const usage = lines.find((line) => /^สิทธิ์\s+/i.test(line))?.replace(/^สิทธิ์\s+/i, "").trim() || null;
-  return { code, discount, minOrder, expires, usage };
+  const walletUrl = lines.find((line) => /\/coupon\/wallet\?t=/i.test(line)) || null;
+  return { code, discount, minOrder, expires, usage, walletUrl };
 }
 
 function fileKind(attachment: Attachment) {
@@ -1263,7 +1265,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
     setReply((prev) => {
       const prefix = prev.trim() ? `${prev.trim()}\n` : "";
-      return `${prefix}🎟 คูปองส่วนลด\nโค้ด ${coupon.code}\nส่วนลด ${couponDiscountText(coupon)}\nขั้นต่ำ ${minOrder}\nใช้ได้ถึง ${couponExpiresText(coupon.expiresAt)}\nสิทธิ์ ${usageLeft}\n\nระบบจะแนบลิงก์กดใช้คูปองตอนส่งจริงค่ะ`;
+      return `${prefix}🎟 คุณได้รับคูปองส่วนลดแล้วค่ะ\nโค้ด ${coupon.code}\nส่วนลด ${couponDiscountText(coupon)}\nขั้นต่ำ ${minOrder}\nใช้ได้ถึง ${couponExpiresText(coupon.expiresAt)}\nสิทธิ์ ${usageLeft}\n\nคูปองนี้ถูกเพิ่มเข้ากระเป๋าคูปองของคุณแล้วค่ะ`;
     });
     setDraftAttachment(null);
     setCouponPickerOpen(false);
@@ -1320,9 +1322,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               {coupon.expires && <Tag color="orange" style={{ marginInlineEnd: 0 }}>ถึง {coupon.expires}</Tag>}
               {coupon.usage && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{coupon.usage}</Tag>}
             </Space>
-            <div className={messageStyles.productCaption} style={{ margin: "8px 0 0" }}>
-              ระบบแนบลิงก์กดใช้คูปองให้ลูกค้าแล้ว
-            </div>
+            {coupon.walletUrl ? (
+              <a className={messageStyles.productLink} href={coupon.walletUrl} target="_blank" rel="noreferrer" style={{ marginTop: 8 }}>
+                เปิดกระเป๋าคูปอง <RightOutlined />
+              </a>
+            ) : (
+              <div className={messageStyles.productCaption} style={{ margin: "8px 0 0" }}>
+                คูปองนี้ถูกเพิ่มเข้ากระเป๋าคูปองของลูกค้าแล้ว
+              </div>
+            )}
           </div>
         </div>
       );

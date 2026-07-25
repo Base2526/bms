@@ -20,7 +20,7 @@ import {
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 import { createNotification } from "@/lib/notifications/service";
-import { assignCouponToCustomer, couponCodeFromShareText, createCouponClaimToken } from "./coupons";
+import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -78,7 +78,8 @@ export function outboundStatus(channel: string, delivered: boolean): "SENT" | "F
 function absoluteUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url;
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/$/, "");
-  return base ? `${base}${url.startsWith("/") ? "" : "/"}${url}` : url;
+  if (!base) return url;
+  return `${base}${url.startsWith("/") ? "" : "/"}${url}`.replace(":443/", "/");
 }
 
 // ---- hook: บันทึกบทสนทนา (เรียกจาก pipeline หลังได้ reply) ---------
@@ -810,9 +811,9 @@ export async function sendStaffMessage(
   const customerId = conv.rows[0].customer_id ?? null;
   const couponCode = couponCodeFromShareText(text);
   let outgoingText = text;
-  let couponClaimLink: string | null = null;
+  let couponWalletLink: string | null = null;
 
-  if (couponCode && customerId && !/\/coupon\/claim\?t=/i.test(text)) {
+  if (couponCode && customerId && !/\/coupon\/wallet\?t=/i.test(text)) {
     try {
       const assigned = await assignCouponToCustomer(tenantId, customerId, couponCode, {
         actor: staff,
@@ -820,9 +821,9 @@ export async function sendStaffMessage(
         note: "Assigned from Inbox coupon share",
       });
       if (assigned) {
-        const token = createCouponClaimToken({ tenantId, customerId, code: couponCode });
-        couponClaimLink = absoluteUrl(`/coupon/claim?t=${encodeURIComponent(token)}`);
-        outgoingText = `${text}\n\nกดใช้คูปอง / Claim coupon:\n${couponClaimLink}`;
+        const token = createCouponWalletToken({ tenantId, customerId });
+        couponWalletLink = absoluteUrl(`/coupon/wallet?t=${encodeURIComponent(token)}`);
+        outgoingText = `${text}\n\nดูคูปองของคุณ / View your coupons:\n${couponWalletLink}`;
       }
     } catch (error) {
       console.error("[BMS] assign customer coupon wallet failed:", error);
@@ -836,7 +837,7 @@ export async function sendStaffMessage(
   await query(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, $4, $5)`,
-    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponClaimLink })]
+    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponWalletLink })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
   const preview = outgoingText || (att ? (isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim()) : "");

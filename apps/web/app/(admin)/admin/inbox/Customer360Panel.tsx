@@ -49,7 +49,7 @@ const Q_CUSTOMER_360 = gql`
       coupons {
         id walletId code type value minOrderAmount maxRedemptions redemptionsCount perCustomerLimit
         startsAt expiresAt active note available reason discountPreview assigned assignedAt source state
-        claimedAt reservedAt reservedOrderId redeemedAt redeemedOrderId expiredAt revokedAt
+        reservedAt reservedOrderId redeemedAt redeemedOrderId expiredAt revokedAt
         remainingRedemptions customerUsedCount
       }
     }
@@ -111,7 +111,6 @@ const discountLabel = (order: any) =>
     : null;
 const couponStateColor: Record<string, string> = {
   ASSIGNED: "default",
-  CLAIMED: "blue",
   RESERVED: "gold",
   REDEEMED: "green",
   EXPIRED: "red",
@@ -119,7 +118,6 @@ const couponStateColor: Record<string, string> = {
 };
 const couponStateLabel: Record<string, string> = {
   ASSIGNED: "แจกแล้ว",
-  CLAIMED: "ลูกค้ากดใช้แล้ว",
   RESERVED: "จองกับออเดอร์",
   REDEEMED: "ใช้แล้ว",
   EXPIRED: "หมดอายุ",

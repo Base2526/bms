@@ -77,8 +77,7 @@ export type CustomerCoupon = Coupon & {
   assignedAt: string | null;
   source: string | null;
   walletId: string | null;
-  state: "ASSIGNED" | "CLAIMED" | "RESERVED" | "REDEEMED" | "REVOKED" | "EXPIRED";
-  claimedAt: string | null;
+  state: "ASSIGNED" | "RESERVED" | "REDEEMED" | "REVOKED" | "EXPIRED";
   reservedAt: string | null;
   reservedOrderId: string | null;
   redeemedAt: string | null;
@@ -95,7 +94,7 @@ export type CustomerCouponLookup = {
 
 export type CustomerCouponWalletItem = CustomerCoupon;
 
-async function findCustomerIdByIdentity(
+export async function findCustomerIdByIdentity(
   tenantId: string,
   channel?: string | null,
   customerRef?: string | null
@@ -127,7 +126,6 @@ function baseEligibility(
     source?: string | null;
     walletId?: string | null;
     state?: CustomerCoupon["state"];
-    claimedAt?: string | null;
     reservedAt?: string | null;
     reservedOrderId?: string | null;
     redeemedAt?: string | null;
@@ -166,7 +164,6 @@ function baseEligibility(
     source: wallet?.source ?? null,
     walletId: wallet?.walletId ?? null,
     state: wallet?.state ?? "ASSIGNED",
-    claimedAt: wallet?.claimedAt ?? null,
     reservedAt: wallet?.reservedAt ?? null,
     reservedOrderId: wallet?.reservedOrderId ?? null,
     redeemedAt: wallet?.redeemedAt ?? null,
@@ -254,11 +251,27 @@ function derivedWalletState(row: WalletRow, coupon: Coupon): CustomerCoupon["sta
   if (row.redeemed_order_id || row.redeemed_at) return "REDEEMED";
   if (coupon.expiresAt && Date.now() > new Date(coupon.expiresAt).getTime()) return "EXPIRED";
   if (row.reserved_order_id || row.reserved_at) return "RESERVED";
-  if (row.claimed_at) return "CLAIMED";
-  return row.state ?? "ASSIGNED";
+  if (row.state === "REDEEMED" || row.state === "REVOKED" || row.state === "EXPIRED") return row.state;
+  return "ASSIGNED";
 }
 
 async function syncWalletLifecycle(tenantId: string, customerId: string): Promise<void> {
+  await query(
+    `UPDATE bms_customer_coupon_wallet
+        SET state = 'ASSIGNED',
+            claimed_at = NULL,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND customer_id = $2
+        AND (state = 'CLAIMED' OR claimed_at IS NOT NULL)
+        AND reserved_order_id IS NULL
+        AND reserved_at IS NULL
+        AND redeemed_order_id IS NULL
+        AND redeemed_at IS NULL
+        AND revoked_at IS NULL
+        AND expired_at IS NULL`,
+    [tenantId, customerId]
+  );
   await query(
     `UPDATE bms_customer_coupon_wallet w
         SET state = 'EXPIRED',
@@ -297,7 +310,6 @@ export async function listCustomerCouponWallet(
         assignedAt: toIsoOrNull(row.assigned_at),
         source: row.source ?? null,
         state: derivedWalletState(row, coupon),
-        claimedAt: toIsoOrNull(row.claimed_at),
         reservedAt: toIsoOrNull(row.reserved_at),
         reservedOrderId: row.reserved_order_id ?? null,
         redeemedAt: toIsoOrNull(row.redeemed_at),
@@ -394,10 +406,9 @@ export function couponCodeFromShareText(body: string): string | null {
   return null;
 }
 
-type CouponClaimTokenPayload = {
+type CouponWalletTokenPayload = {
   tenantId: string;
   customerId: string;
-  code: string;
   exp: number;
 };
 
@@ -409,18 +420,19 @@ function base64UrlDecode(value: string): string {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-function couponClaimSecret(): string {
+function couponTokenSecret(): string {
   return (
+    process.env.BMS_COUPON_WALLET_SECRET ||
     process.env.BMS_COUPON_CLAIM_SECRET ||
     process.env.NEXTAUTH_SECRET ||
     process.env.AUTH_SECRET ||
     process.env.JWT_SECRET ||
-    "dev-only-coupon-claim-secret"
+    "dev-only-coupon-wallet-secret"
   );
 }
 
-function signCouponClaimPayload(encodedPayload: string): string {
-  return createHmac("sha256", couponClaimSecret()).update(encodedPayload).digest("base64url");
+function signCouponTokenPayload(encodedPayload: string): string {
+  return createHmac("sha256", couponTokenSecret()).update(encodedPayload).digest("base64url");
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -429,39 +441,45 @@ function safeEqual(a: string, b: string): boolean {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-export function createCouponClaimToken(input: {
+export function createCouponWalletToken(input: {
   tenantId: string;
   customerId: string;
-  code: string;
   expiresInSeconds?: number;
 }): string {
-  const payload: CouponClaimTokenPayload = {
+  const payload: CouponWalletTokenPayload = {
     tenantId: input.tenantId,
     customerId: input.customerId,
-    code: input.code.trim().toUpperCase(),
     exp: Math.floor(Date.now() / 1000) + Math.max(input.expiresInSeconds ?? 60 * 60 * 24 * 30, 60),
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  return `${encodedPayload}.${signCouponClaimPayload(encodedPayload)}`;
+  return `${encodedPayload}.${signCouponTokenPayload(encodedPayload)}`;
 }
 
-export function verifyCouponClaimToken(token: string): CouponClaimTokenPayload | null {
+export function verifyCouponWalletToken(token: string): CouponWalletTokenPayload | null {
   const [encodedPayload, signature, extra] = String(token || "").split(".");
   if (!encodedPayload || !signature || extra) return null;
-  if (!safeEqual(signature, signCouponClaimPayload(encodedPayload))) return null;
+  if (!safeEqual(signature, signCouponTokenPayload(encodedPayload))) return null;
   try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as Partial<CouponClaimTokenPayload>;
-    if (!payload.tenantId || !payload.customerId || !payload.code || !payload.exp) return null;
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as Partial<CouponWalletTokenPayload>;
+    if (!payload.tenantId || !payload.customerId || !payload.exp) return null;
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;
     return {
       tenantId: String(payload.tenantId),
       customerId: String(payload.customerId),
-      code: String(payload.code).trim().toUpperCase(),
       exp: Number(payload.exp),
     };
   } catch {
     return null;
   }
+}
+
+export async function listCouponWalletByToken(
+  token: string
+): Promise<{ ok: true; coupons: CustomerCouponWalletItem[] } | { ok: false; reason: string }> {
+  const payload = verifyCouponWalletToken(token);
+  if (!payload) return { ok: false, reason: "ลิงก์กระเป๋าคูปองไม่ถูกต้องหรือหมดอายุแล้ว" };
+  const coupons = await listCustomerCouponWallet(payload.tenantId, { customerId: payload.customerId });
+  return { ok: true, coupons };
 }
 
 export async function assignCouponToCustomer(
@@ -501,69 +519,6 @@ export async function assignCouponToCustomer(
   return true;
 }
 
-export async function claimCouponForCustomer(
-  tenantId: string,
-  rawCode: string,
-  opts: {
-    channel?: string | null;
-    customerRef?: string | null;
-    customerId?: string | null;
-    actor?: string | null;
-    allowFutureStart?: boolean;
-  }
-): Promise<{ ok: true; code: string; startsAt: string | null; expiresAt: string | null } | { ok: false; reason: string }> {
-  const customerId = opts.customerId ?? await findCustomerIdByIdentity(tenantId, opts.channel, opts.customerRef);
-  if (!customerId) return { ok: false, reason: "ยังไม่พบข้อมูลลูกค้า" };
-  const lookup = await checkCouponForCustomer(tenantId, rawCode, {
-    channel: opts.channel,
-    customerRef: opts.customerRef,
-    subtotal: null,
-    alternativeLimit: 3,
-  });
-  if (!lookup.requested) return { ok: false, reason: "ไม่พบคูปองนี้ในสิทธิ์ของลูกค้า" };
-  const canClaimBeforeStart = Boolean(
-    opts.allowFutureStart &&
-    lookup.requested.startsAt &&
-    Date.now() < new Date(lookup.requested.startsAt).getTime() &&
-    lookup.requested.reason === "โค้ดนี้ยังไม่เริ่มใช้ได้"
-  );
-  if (!lookup.requested.available && !canClaimBeforeStart) {
-    return { ok: false, reason: lookup.requested.reason || "คูปองนี้ยังใช้ไม่ได้" };
-  }
-  const assigned = await assignCouponToCustomer(tenantId, customerId, lookup.requested.code, {
-    actor: opts.actor ?? null,
-    source: lookup.requested.source ?? "CUSTOMER_CLAIM",
-    note: opts.allowFutureStart ? "Claimed by customer claim link" : "Claimed by customer intent",
-  });
-  if (!assigned) return { ok: false, reason: "ไม่พบคูปองนี้" };
-  await query(
-    `UPDATE bms_customer_coupon_wallet
-        SET state = 'CLAIMED',
-            claimed_at = COALESCE(claimed_at, now()),
-            updated_at = now()
-      WHERE tenant_id = $1 AND customer_id = $2 AND coupon_id = $3`,
-    [tenantId, customerId, lookup.requested.id]
-  );
-  return {
-    ok: true,
-    code: lookup.requested.code,
-    startsAt: lookup.requested.startsAt,
-    expiresAt: lookup.requested.expiresAt,
-  };
-}
-
-export async function claimCouponByToken(
-  token: string
-): Promise<{ ok: true; code: string; startsAt: string | null; expiresAt: string | null } | { ok: false; reason: string }> {
-  const payload = verifyCouponClaimToken(token);
-  if (!payload) return { ok: false, reason: "ลิงก์คูปองไม่ถูกต้องหรือหมดอายุแล้ว" };
-  return claimCouponForCustomer(payload.tenantId, payload.code, {
-    customerId: payload.customerId,
-    actor: "customer:claim-link",
-    allowFutureStart: true,
-  });
-}
-
 export async function reserveCustomerCouponInTx(
   client: PoolClient,
   tenantId: string,
@@ -575,10 +530,9 @@ export async function reserveCustomerCouponInTx(
   await client.query(
     `INSERT INTO bms_customer_coupon_wallet
        (tenant_id, customer_id, coupon_id, source, assigned_at, updated_at, state, claimed_at, reserved_at, reserved_order_id)
-     VALUES ($1, $2, $3, 'AUTO_CLAIM', now(), now(), 'RESERVED', now(), now(), $4)
+     VALUES ($1, $2, $3, 'ORDER_AUTO_ASSIGN', now(), now(), 'RESERVED', NULL, now(), $4)
      ON CONFLICT (tenant_id, customer_id, coupon_id) DO UPDATE
        SET state = 'RESERVED',
-           claimed_at = COALESCE(bms_customer_coupon_wallet.claimed_at, now()),
            reserved_at = now(),
            reserved_order_id = $4,
            expired_at = NULL,
@@ -592,7 +546,8 @@ export async function releaseCustomerCouponReservationsInTx(client: PoolClient, 
   if (orderIds.length === 0) return;
   await client.query(
     `UPDATE bms_customer_coupon_wallet w
-        SET state = CASE WHEN w.claimed_at IS NOT NULL THEN 'CLAIMED' ELSE 'ASSIGNED' END,
+        SET state = 'ASSIGNED',
+            claimed_at = NULL,
             reserved_at = NULL,
             reserved_order_id = NULL,
             redeemed_at = CASE WHEN w.redeemed_order_id = o.id THEN NULL ELSE w.redeemed_at END,
