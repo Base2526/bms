@@ -504,8 +504,14 @@ export async function assignCouponToCustomer(
 export async function claimCouponForCustomer(
   tenantId: string,
   rawCode: string,
-  opts: { channel?: string | null; customerRef?: string | null; customerId?: string | null; actor?: string | null }
-): Promise<{ ok: true; code: string } | { ok: false; reason: string }> {
+  opts: {
+    channel?: string | null;
+    customerRef?: string | null;
+    customerId?: string | null;
+    actor?: string | null;
+    allowFutureStart?: boolean;
+  }
+): Promise<{ ok: true; code: string; startsAt: string | null } | { ok: false; reason: string }> {
   const customerId = opts.customerId ?? await findCustomerIdByIdentity(tenantId, opts.channel, opts.customerRef);
   if (!customerId) return { ok: false, reason: "ยังไม่พบข้อมูลลูกค้า" };
   const lookup = await checkCouponForCustomer(tenantId, rawCode, {
@@ -515,11 +521,19 @@ export async function claimCouponForCustomer(
     alternativeLimit: 3,
   });
   if (!lookup.requested) return { ok: false, reason: "ไม่พบคูปองนี้ในสิทธิ์ของลูกค้า" };
-  if (!lookup.requested.available) return { ok: false, reason: lookup.requested.reason || "คูปองนี้ยังใช้ไม่ได้" };
+  const canClaimBeforeStart = Boolean(
+    opts.allowFutureStart &&
+    lookup.requested.startsAt &&
+    Date.now() < new Date(lookup.requested.startsAt).getTime() &&
+    lookup.requested.reason === "โค้ดนี้ยังไม่เริ่มใช้ได้"
+  );
+  if (!lookup.requested.available && !canClaimBeforeStart) {
+    return { ok: false, reason: lookup.requested.reason || "คูปองนี้ยังใช้ไม่ได้" };
+  }
   const assigned = await assignCouponToCustomer(tenantId, customerId, lookup.requested.code, {
     actor: opts.actor ?? null,
     source: lookup.requested.source ?? "CUSTOMER_CLAIM",
-    note: "Claimed by customer intent",
+    note: opts.allowFutureStart ? "Claimed by customer claim link" : "Claimed by customer intent",
   });
   if (!assigned) return { ok: false, reason: "ไม่พบคูปองนี้" };
   await query(
@@ -530,17 +544,18 @@ export async function claimCouponForCustomer(
       WHERE tenant_id = $1 AND customer_id = $2 AND coupon_id = $3`,
     [tenantId, customerId, lookup.requested.id]
   );
-  return { ok: true, code: lookup.requested.code };
+  return { ok: true, code: lookup.requested.code, startsAt: lookup.requested.startsAt };
 }
 
 export async function claimCouponByToken(
   token: string
-): Promise<{ ok: true; code: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; code: string; startsAt: string | null } | { ok: false; reason: string }> {
   const payload = verifyCouponClaimToken(token);
   if (!payload) return { ok: false, reason: "ลิงก์คูปองไม่ถูกต้องหรือหมดอายุแล้ว" };
   return claimCouponForCustomer(payload.tenantId, payload.code, {
     customerId: payload.customerId,
     actor: "customer:claim-link",
+    allowFutureStart: true,
   });
 }
 
