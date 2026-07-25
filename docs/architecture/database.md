@@ -24,7 +24,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0`, `6.5` |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns) |
-| Coupons | `bms_coupons` | `7.21` |
+| Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
@@ -58,10 +58,31 @@ totals stay correct even if the coupon is later edited or deleted.
 `PERCENT` (capped at 100 by a `CHECK`) or `FIXED`. Redemption is applied inside the same transaction
 as `createOrder()` (`applyCouponInTx()`, `lib/bms/coupons.ts`) — the coupon row is locked with
 `FOR UPDATE` and `redemptions_count` incremented atomically, so concurrent checkouts can't both
-"win" the last redemption of a limited coupon. `redemptions_count` is **not** decremented when an
-order using it is later cancelled/returned — deliberately conservative, to prevent a
-create-then-cancel loop from re-using a code past its `max_redemptions`. Per-customer limits are
-checked by counting matching `bms_orders` rows directly; there is no separate redemption-log table.
+"win" the last redemption of a limited coupon. `redemptions_count` is decremented again only for
+pre-sale cancellation paths (`cancelOrder()` and unpaid-order auto-release) in the same transaction
+that returns reserved stock. Payment rejection alone leaves the order open and does not release the
+coupon; post-sale returns/refunds do not release coupon quota automatically. Per-customer limits are
+checked by counting matching non-cancelled `bms_orders` rows directly; there is no separate
+redemption-log table.
+
+**`bms_customer_coupon_wallet` (`7.25`)** — a light entitlement table that records which coupons a
+customer has explicitly received. One row represents one `(tenant, customer, coupon)` relationship;
+the unique constraint is intentionally permanent, so re-granting the same coupon later reuses the
+row by clearing `revoked_at` and refreshing `assigned_at` instead of creating duplicates. This table
+does **not** carry the source of truth for usage counts or redemption state — those still come from
+`bms_orders` — but it lets the product answer "which coupons belong to this customer", "what was
+sent to them in chat", and "which assigned coupons are near expiry" without guessing from all global
+active coupons. The current assignment flow is best-effort from staff Inbox coupon sends
+(`sendStaffMessage()`), source-tagged as `MANUAL_CHAT`.
+
+Since `7.26`, the same table also carries a lightweight lifecycle snapshot: `ASSIGNED`, `CLAIMED`,
+`RESERVED`, `REDEEMED`, `REVOKED`, `EXPIRED`, plus timestamps and order links
+(`claimed_at`, `reserved_at`/`reserved_order_id`, `redeemed_at`/`redeemed_order_id`, `expired_at`).
+These fields are intentionally derivative and UX-oriented: they help AI and operators talk about
+"ลูกค้าใช้คูปองนี้ไปหรือยัง" or "กำลังจองอยู่กับออเดอร์ไหน" without replacing the authoritative
+order/payment facts. Pre-sale cancellation clears a reservation (and even a paid-path redemption if
+that order is cancelled before shipping) so the wallet remains consistent with the coupon quota
+release policy.
 
 **`bms_tenant_channels`** — one row per `(tenant_id, channel)`, `channel` is a free-text column
 (no CHECK constraint / enum), storing `access_token` and `channel_secret` **encrypted** (AES-256-GCM

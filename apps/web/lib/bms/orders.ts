@@ -17,7 +17,7 @@ import { beginTenantTx } from "./tenant";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { notifyOrderStatusEmail } from "./orderNotify";
-import { applyCouponInTx } from "./coupons";
+import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -140,6 +140,7 @@ export async function createOrder(
     // ก่อน insert order เสมอ เพื่อให้ ROLLBACK คืนสต็อกที่จองไว้ด้วยถ้าโค้ดใช้ไม่ได้
     let discount = 0;
     let appliedCouponCode: string | null = null;
+    let appliedCouponId: string | null = null;
     if (input.couponCode) {
       const couponResult = await applyCouponInTx(client, tenantId, input.couponCode, customerId, total);
       if (!couponResult.ok) {
@@ -148,17 +149,20 @@ export async function createOrder(
       }
       discount = couponResult.discount;
       appliedCouponCode = couponResult.code;
+      appliedCouponId = couponResult.couponId; // ผูกด้วย id ที่นิ่ง — ประวัติการใช้ join ด้วย id ไม่ใช่ code
     }
     const finalTotal = Math.max(0, total - discount);
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code)
-       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7)
+      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id)
+       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8)
        RETURNING id`,
-      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode]
+      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId]
     );
     const orderId = ord.rows[0].id;
+
+    await reserveCustomerCouponInTx(client, tenantId, customerId, appliedCouponId, orderId);
 
     for (const ln of lines) {
       await client.query(
@@ -284,7 +288,27 @@ async function transition(
 
 /** จ่ายเงินแล้ว: PENDING → PAID */
 export async function payOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const ok = await transition(tenantId, orderId, ["PENDING"], "PAID");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const ord = await client.query(
+      `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+      [tenantId, orderId]
+    );
+    if ((ord.rowCount ?? 0) === 0) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+  const ok = true;
   if (ok) void notifyOrderStatusEmail(tenantId, orderId, "paid");
   return ok;
 }
@@ -442,6 +466,8 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     );
 
     await recordOrderMovements(client, [orderId], "RELEASE", "system");
+    await releaseCouponForOrdersInTx(client, [orderId]);
+    await releaseCustomerCouponReservationsInTx(client, [orderId]);
 
     await client.query("COMMIT");
     void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
@@ -496,6 +522,8 @@ export async function releaseExpiredOrders(
     );
 
     await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
+    await releaseCouponForOrdersInTx(client, ids);
+    await releaseCustomerCouponReservationsInTx(client, ids);
 
     await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()

@@ -711,7 +711,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS Customer 360 (Inbox right panel) =====
     # bmsCustomer360 = eager read (summary/contact/stats/recentOrders/products/draftOrder/notes)
     # bmsCustomerTimeline/bmsCustomerInsights = lazy — fetch only when their panel section is expanded
-    bmsCustomer360(customerId: ID!): BmsCustomer360
+    bmsCustomer360(customerId: ID, channel: String, customerRef: String, conversationId: ID): BmsCustomer360
     bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
     bmsCustomerInsights(customerId: ID!): BmsCustomerInsights
 
@@ -778,6 +778,8 @@ export const typeDefs = /* GraphQL */ `
     customer_ref: String
     status: BmsOrderStatus!
     total_amount: Float!
+    discount_amount: Float!
+    coupon_code: String
     created_at: String!
     updated_at: String!
     items: [BmsOrderItem!]!
@@ -1256,6 +1258,7 @@ export const typeDefs = /* GraphQL */ `
     addresses: [BmsCustomerAddress!]!
     identities: [BmsCustomerIdentity!]!
     orders: [BmsOrder!]!
+    coupons: [BmsCustomerCoupon360!]!
   }
 
   input BmsCustomerInput {
@@ -1321,6 +1324,8 @@ export const typeDefs = /* GraphQL */ `
     status: BmsOrderStatus!
     createdAt: String
     totalAmount: Float!
+    discountAmount: Float!
+    couponCode: String
     items: [BmsCustomerOrderItem360!]!
     paymentStatus: BmsPaymentStatus
     paymentMethod: String
@@ -1356,6 +1361,8 @@ export const typeDefs = /* GraphQL */ `
     channel: String!
     createdAt: String
     totalAmount: Float!
+    discountAmount: Float!
+    couponCode: String
     items: [BmsCustomerOrderItem360!]!
   }
 
@@ -1367,6 +1374,38 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String
   }
 
+  type BmsCustomerCoupon360 {
+    id: ID!
+    walletId: ID
+    code: String!
+    type: String!
+    value: Float!
+    minOrderAmount: Float
+    maxRedemptions: Int
+    redemptionsCount: Int!
+    perCustomerLimit: Int
+    startsAt: String
+    expiresAt: String
+    active: Boolean!
+    note: String
+    available: Boolean!
+    reason: String
+    discountPreview: Float
+    assigned: Boolean!
+    assignedAt: String
+    source: String
+    state: String!
+    claimedAt: String
+    reservedAt: String
+    reservedOrderId: ID
+    redeemedAt: String
+    redeemedOrderId: ID
+    expiredAt: String
+    revokedAt: String
+    remainingRedemptions: Int
+    customerUsedCount: Int!
+  }
+
   type BmsCustomer360 {
     customer: BmsCustomerProfile360
     identities: [BmsCustomerIdentity360!]!
@@ -1376,6 +1415,7 @@ export const typeDefs = /* GraphQL */ `
     products: BmsCustomerProducts!
     draftOrder: BmsCustomerDraftOrder
     notes: [BmsCustomerNote360!]!
+    coupons: [BmsCustomerCoupon360!]!
   }
 
   type BmsCustomerTimelineEntry {
@@ -1441,6 +1481,7 @@ export const typeDefs = /* GraphQL */ `
     code: String!
     redemptions: Int!
     discount: Float!
+    usages: [BmsCouponRedemption!]!
   }
   type BmsCouponSummary {
     discountThisMonth: Float!
@@ -1472,6 +1513,7 @@ export const typeDefs = /* GraphQL */ `
     shipments
     purchase
     purchaseItems
+    coupons
   }
 
   type BmsRevisionEntry {
@@ -1907,6 +1949,7 @@ export const typeDefs = /* GraphQL */ `
   # แถวประวัติการใช้โค้ด — ไม่มีตาราง redemption แยก, derive จาก bms_orders.coupon_code ตรงๆ
   type BmsCouponRedemption {
     orderId: ID!
+    customerId: ID
     customerName: String
     channel: String!
     status: String!
@@ -2129,6 +2172,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
+    bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!

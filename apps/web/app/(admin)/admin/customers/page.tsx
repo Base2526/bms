@@ -4,17 +4,34 @@ import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Alert, Typography, Divider, Empty, Popconfirm,
 } from "antd";
 import { useState, useMemo } from "react";
-import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
 
 type Address = { id: string; label: string | null; address: string; is_default: boolean };
 type Identity = { channel: string; external_ref: string };
 type Order = { id: string; channel: string; status: string; total_amount: number; created_at: string };
+type CustomerCoupon = {
+  id: string;
+  walletId: string | null;
+  code: string;
+  type: string;
+  value: number;
+  minOrderAmount: number | null;
+  expiresAt: string | null;
+  available: boolean;
+  reason: string | null;
+  assignedAt: string | null;
+  state: string;
+  redeemedOrderId: string | null;
+  reservedOrderId: string | null;
+  customerUsedCount: number;
+  remainingRedemptions: number | null;
+};
 type Customer = {
   id: string; name: string; phone: string | null; note: string | null;
   tags: string[]; total_spent: number; order_count: number; created_at: string;
-  addresses: Address[]; identities: Identity[]; orders: Order[];
+  addresses: Address[]; identities: Identity[]; orders: Order[]; coupons: CustomerCoupon[];
 };
 
 const Q_CUSTOMERS = gql`
@@ -24,6 +41,10 @@ const Q_CUSTOMERS = gql`
       identities { channel external_ref }
       addresses { id label address is_default }
       orders { id channel status total_amount created_at }
+      coupons {
+        id walletId code type value minOrderAmount expiresAt available reason
+        assignedAt state redeemedOrderId reservedOrderId customerUsedCount remainingRedemptions
+      }
     }
   }
 `;
@@ -53,7 +74,24 @@ const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue",
   COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
 };
+const COUPON_STATE_COLOR: Record<string, string> = {
+  ASSIGNED: "blue",
+  CLAIMED: "processing",
+  RESERVED: "purple",
+  REDEEMED: "green",
+  EXPIRED: "orange",
+  REVOKED: "red",
+};
 const TAG_OPTIONS = ["VIP", "ลูกค้าใหม่", "ลูกค้าประจำ"];
+
+function formatDiscount(coupon: CustomerCoupon) {
+  if (coupon.type === "PERCENT") return `ลด ${Number(coupon.value).toLocaleString()}%`;
+  return `ลด ${Number(coupon.value).toLocaleString()} ฿`;
+}
+
+function formatDate(value: string | null) {
+  return value ? new Date(value).toLocaleDateString() : "—";
+}
 
 function CustomersManagement() {
   const [form] = Form.useForm();
@@ -169,6 +207,13 @@ function CustomersManagement() {
       render: (v: number) => <Text strong style={{ color: "#389e0d" }}>{Number(v).toLocaleString()} ฿</Text> },
     { title: "ออเดอร์", dataIndex: "order_count", key: "oc", width: 90, align: "center" as const,
       render: (n: number) => <Tag color={n > 0 ? "blue" : "default"}>{n}</Tag> },
+    { title: "คูปอง", dataIndex: "coupons", key: "coupons", width: 100, align: "center" as const,
+      render: (coupons: CustomerCoupon[]) => {
+        const count = coupons?.length || 0;
+        const usable = coupons?.filter((coupon) => coupon.available).length || 0;
+        if (!count) return <Tag>0</Tag>;
+        return <Tag color={usable > 0 ? "gold" : "default"}>{usable}/{count}</Tag>;
+      } },
     { title: "", key: "actions", width: 180,
       render: (_: any, c: Customer) => (
         <Space size="small">
@@ -303,6 +348,32 @@ function CustomerDetail({
   reorderingId: string | null;
   onReorder: (orderId: string) => void;
 }) {
+  const couponCols = [
+    { title: "โค้ด", dataIndex: "code", key: "code", width: 130, render: (code: string, coupon: CustomerCoupon) => (
+      <Space direction="vertical" size={0}>
+        <Text strong><TagOutlined /> {code}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>{formatDiscount(coupon)}</Text>
+      </Space>
+    ) },
+    { title: "สถานะ", dataIndex: "state", key: "state", width: 120, render: (state: string, coupon: CustomerCoupon) => (
+      <Space direction="vertical" size={0}>
+        <Tag color={COUPON_STATE_COLOR[state] || "default"}>{state}</Tag>
+        {!coupon.available && coupon.reason && <Text type="secondary" style={{ fontSize: 12 }}>{coupon.reason}</Text>}
+      </Space>
+    ) },
+    { title: "เงื่อนไข", key: "condition", render: (_: any, coupon: CustomerCoupon) => (
+      <Space wrap size={4}>
+        {coupon.minOrderAmount != null && <Tag>ขั้นต่ำ {Number(coupon.minOrderAmount).toLocaleString()} ฿</Tag>}
+        <Tag>{coupon.remainingRedemptions == null ? "ไม่จำกัดจำนวนครั้ง" : `เหลือ ${coupon.remainingRedemptions} ครั้ง`}</Tag>
+        {coupon.customerUsedCount > 0 && <Tag color="green">ลูกค้าใช้แล้ว {coupon.customerUsedCount}</Tag>}
+      </Space>
+    ) },
+    { title: "หมดอายุ", dataIndex: "expiresAt", key: "expiresAt", width: 130, render: (expiresAt: string | null) => formatDate(expiresAt) },
+    { title: "ออเดอร์", key: "order", width: 120, render: (_: any, coupon: CustomerCoupon) => {
+      const orderId = coupon.redeemedOrderId || coupon.reservedOrderId;
+      return orderId ? <Text code>{orderId.slice(0, 8)}</Text> : <Text type="secondary">—</Text>;
+    } },
+  ];
   const orderCols = [
     { title: "Order", dataIndex: "id", key: "id", width: 100, render: (id: string) => <Text code>{id.slice(0, 8)}</Text> },
     { title: "Channel", dataIndex: "channel", key: "ch", width: 90 },
@@ -344,6 +415,10 @@ function CustomerDetail({
           </Space>
         ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีที่อยู่" />}
       </div>
+      <Divider style={{ margin: "8px 0" }} />
+      <Text strong><TagOutlined /> คูปองของลูกค้า ({c.coupons?.length || 0})</Text>
+      <Table style={{ marginTop: 8, marginBottom: 12 }} rowKey={(coupon: CustomerCoupon) => coupon.walletId || coupon.id} dataSource={c.coupons || []} columns={couponCols}
+        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: "ยังไม่มีคูปองที่ผูกกับลูกค้าคนนี้" }} />
       <Divider style={{ margin: "8px 0" }} />
       <Text strong>🧾 ประวัติการซื้อ ({c.orders?.length || 0})</Text>
       <Table style={{ marginTop: 8 }} rowKey="id" dataSource={c.orders || []} columns={orderCols}

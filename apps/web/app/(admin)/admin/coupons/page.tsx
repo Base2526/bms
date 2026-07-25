@@ -2,7 +2,7 @@
 import { gql, useQuery, useMutation, useLazyQuery } from "@apollo/client";
 import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
-  Select, Switch, DatePicker, Popconfirm, Typography, Empty,
+  Select, Switch, DatePicker, Popconfirm, Typography, Empty, Avatar, Statistic, Row, Col, Divider,
 } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
@@ -28,10 +28,22 @@ const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteCoupon(id: $id) }`;
 const Q_REDEMPTIONS = gql`
   query ($couponId: ID!) {
     bmsCouponRedemptions(couponId: $couponId) {
-      orderId customerName channel status discountAmount totalAmount createdAt
+      orderId customerId customerName channel status discountAmount totalAmount createdAt
     }
   }
 `;
+
+// สีของ avatar ผูกกับตัวลูกค้า (hash ชื่อ/id) ไม่สุ่มใหม่ทุก render กันลูกค้าคนเดิมเปลี่ยนสีไปมา
+const AVATAR_COLORS = ["#2f6fd6", "#e0762b", "#12805c", "#a24fc9", "#c9455a", "#0f9aa6"];
+function avatarColor(key: string) {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
+}
 
 const ORDER_STATUS_COLOR: Record<string, string> = {
   PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue",
@@ -53,6 +65,8 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
   }, [couponId, load]);
 
   const rows = data?.bmsCouponRedemptions || [];
+  const totalDiscount = rows.reduce((sum: number, r: any) => sum + Number(r.discountAmount || 0), 0);
+  const uniqueCustomers = new Set(rows.map((r: any) => r.customerId || r.customerName || r.orderId)).size;
 
   return (
     <Modal
@@ -60,8 +74,18 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
       open={!!couponId}
       onCancel={onClose}
       footer={<Button onClick={onClose}>ปิด</Button>}
-      width={720}
+      width={760}
     >
+      {!loading && rows.length > 0 && (
+        <>
+          <Row gutter={16} style={{ marginBottom: 4 }}>
+            <Col span={8}><Statistic title="ใช้ไปแล้ว" value={rows.length} suffix="ครั้ง" /></Col>
+            <Col span={8}><Statistic title="ส่วนลดรวม" value={totalDiscount} precision={2} suffix="฿" valueStyle={{ color: "#12805c" }} /></Col>
+            <Col span={8}><Statistic title="ลูกค้าที่ใช้" value={uniqueCustomers} suffix="ราย" /></Col>
+          </Row>
+          <Divider style={{ margin: "12px 0" }} />
+        </>
+      )}
       <Table
         rowKey="orderId"
         size="small"
@@ -70,7 +94,26 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
         locale={{ emptyText: <Empty description="ยังไม่มีการใช้งาน" /> }}
         pagination={{ pageSize: 10 }}
         columns={[
-          { title: "ลูกค้า", dataIndex: "customerName", render: (v: string | null) => v || "—" },
+          {
+            title: "ลูกค้า", dataIndex: "customerName", width: 220,
+            render: (v: string | null, r: any) => {
+              const name = v || "ไม่ทราบชื่อ";
+              const key = r.customerId || v || r.orderId;
+              return (
+                <Space size={8}>
+                  <Avatar size={26} style={{ backgroundColor: avatarColor(key), fontSize: 11, fontWeight: 700 }}>
+                    {initials(name)}
+                  </Avatar>
+                  <Space direction="vertical" size={0}>
+                    <Text strong style={{ fontSize: 13 }}>{name}</Text>
+                    <Text type="secondary" copyable={{ text: r.orderId }} style={{ fontSize: 11 }}>
+                      order · {String(r.orderId).slice(0, 8)}
+                    </Text>
+                  </Space>
+                </Space>
+              );
+            },
+          },
           { title: "ช่องทาง", dataIndex: "channel", width: 90 },
           {
             title: "สถานะออเดอร์", dataIndex: "status", width: 110,
@@ -201,8 +244,19 @@ export default function CouponsPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
-          <Form.Item name="code" label="โค้ด" rules={[{ required: true, message: "ระบุโค้ด" }]}>
-            <Input placeholder="เช่น SAVE10" style={{ textTransform: "uppercase" }} />
+          <Form.Item
+            name="code"
+            label="โค้ด"
+            rules={[{ required: true, message: "ระบุโค้ด" }]}
+            extra={editing && editing.redemptionsCount > 0
+              ? `โค้ดนี้ถูกใช้ไปแล้ว ${editing.redemptionsCount} ครั้ง จึงแก้ชื่อโค้ดไม่ได้ (แก้ส่วนลด/วันหมดอายุ/สถานะได้) — ถ้าต้องการโค้ดใหม่ให้สร้างโค้ดใหม่แทน`
+              : undefined}
+          >
+            <Input
+              placeholder="เช่น SAVE10"
+              style={{ textTransform: "uppercase" }}
+              disabled={!!editing && editing.redemptionsCount > 0}
+            />
           </Form.Item>
           <Space.Compact style={{ width: "100%" }}>
             <Form.Item name="type" label="ประเภท" style={{ width: "40%" }} initialValue="PERCENT">

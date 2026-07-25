@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { requireAuth } from "@/lib/auth";
 
-type RevisionKind = "products" | "orders" | "payments" | "shipments" | "purchase" | "purchaseItems";
+type RevisionKind = "products" | "orders" | "payments" | "shipments" | "purchase" | "purchaseItems" | "coupons";
 
 const REVISION_CONFIG: Record<RevisionKind, {
   table: string;
@@ -50,6 +50,15 @@ const REVISION_CONFIG: Record<RevisionKind, {
     searchFields: ["po_id", "product_sku", "size"],
     permission: "purchase.view",
   },
+  // Coupons: entity = UUID id (นิ่ง) ไม่ใช่ code เพราะ code เปลี่ยนได้ (rename โค้ด)
+  // — ถ้า group ด้วย code การ rename จะทำให้ประวัติของคูปองตัวเดียวแตกเป็นคนละ entity
+  // และ compare ข้ามชื่อไม่ได้ · search ยังค้นด้วย code/note ได้ (คนละเรื่องกับ parentIdField)
+  coupons: {
+    table: "bms_coupons_revisions",
+    parentIdField: "id",
+    searchFields: ["code", "note"],
+    permission: "coupon.view",
+  },
 };
 
 function normalizeKind(kind: string): RevisionKind {
@@ -89,6 +98,7 @@ function titleCase(kind: RevisionKind) {
     shipments: "Shipments",
     purchase: "Purchase Orders",
     purchaseItems: "Purchase Order Items",
+    coupons: "Coupons",
   }[kind];
 }
 

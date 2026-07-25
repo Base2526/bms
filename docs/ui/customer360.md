@@ -37,6 +37,11 @@ Recent-order links preserve the operator's place in the conversation. **เป�
 right-side preview drawer inside Inbox; **เปิดหน้า Orders เต็มจอ** opens `/admin/orders` in a new tab
 for deeper work. Closing the drawer returns to the same chat and draft.
 
+When an order has a coupon, Customer 360 and the Inbox order preview show the same price breakdown as
+the authoritative order snapshot: item subtotal, discount amount with the coupon code, then the net
+total. The current cart uses the latest unpaid `PENDING` order and shows the same breakdown so staff
+can see why the visible total is lower than the item line sum.
+
 ## Compact chat workspace and product sharing
 
 The queue filters and active-chat header intentionally use smaller typography and tighter spacing
@@ -64,6 +69,20 @@ is never inserted into a customer message. Customer links use
 `/shop/[tenantSlug]/products/[sku]`, which returns only active products from active shops and exposes
 sale-safe fields. See [public-products.md](public-products.md).
 
+The **คูปอง** picker lists active coupons for staff with `coupon.view`. Selecting a coupon inserts a
+reviewable text fallback into the draft (code, discount, minimum order, expiry, remaining usage, and
+the instruction "พิมพ์ ใช้ CODE") so every channel can receive it even before channel-specific coupon
+buttons exist. Staff-side Inbox renders that text as a coupon card, while outbound delivery remains
+the same plain text payload. When a later customer/staff message contains `ใช้ CODE` or the latest
+staff message is a coupon card, Customer 360 passes that code into the create-order modal as a
+pre-filled coupon suggestion; `createOrder()` still performs the authoritative validation.
+
+Phase 2 extends the same presentation to AI replies. If a customer asks what coupons they have, types
+a code, or asks for a discount, the customer tool loop calls `list_available_coupons`/`check_coupon`.
+The reply can include a CTA like `[ใช้ SAVE10]`; Inbox recognizes the coupon-style body and renders a
+coupon card for staff. The CTA is still text-safe for every channel. It does not consume quota by
+itself — the coupon is redeemed only when an order is actually created with that code.
+
 ## Message presentation
 
 The Inbox keeps the cross-channel payload unchanged (`body` plus at most one attachment), but renders
@@ -74,6 +93,8 @@ each saved message according to its content:
 - non-image files use a compact type/name/download card;
 - a body containing the customer-safe public-product URL uses a product card with cover, name, SKU,
   price, stock summary, and **ดูสินค้า** instead of exposing the raw URL in the staff conversation.
+- a body matching the coupon text fallback uses a coupon card with code, discount, expiry, remaining
+  usage, and the customer instruction to type `ใช้ CODE`.
 
 This is a presentation-only enhancement. Customers still receive channel-compatible text/link and
 the optional single cover attachment, so LINE/Meta/Web/TikTok behavior does not diverge.

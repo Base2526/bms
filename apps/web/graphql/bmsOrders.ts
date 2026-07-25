@@ -46,7 +46,7 @@ export const bmsOrdersResolvers = {
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
 
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, created_at, updated_at
            FROM bms_orders
           WHERE tenant_id = $4
             AND ($1::text IS NULL OR status = $1)
@@ -66,7 +66,7 @@ export const bmsOrdersResolvers = {
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, created_at, updated_at
            FROM bms_orders WHERE tenant_id = $2 AND id = $1`,
         [args.id, getTenantId(ctx)]
       );
@@ -192,6 +192,8 @@ export const bmsOrdersResolvers = {
     },
     // normalize ให้ตรง schema (String! สำหรับ timestamps, Float สำหรับ numeric)
     total_amount: (p: any) => Number(p.total_amount),
+    discount_amount: (p: any) => Number(p.discount_amount ?? 0),
+    coupon_code: (p: any) => p.coupon_code ?? null,
     created_at: (p: any) =>
       p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
     updated_at: (p: any) =>

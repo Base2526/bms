@@ -22,6 +22,8 @@
 
 import { query } from "@/lib/db";
 import crypto from "crypto";
+import { listCustomerCouponWallet } from "./coupons";
+import { resolveActiveCustomerId } from "./customers";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const jIso = (d: any): string | null => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
@@ -150,7 +152,7 @@ export async function getCustomerStatistics(tenantId: string, customerId: string
 // ---------------------------------------------------------------
 export async function getRecentOrders(tenantId: string, customerId: string, limit = 10) {
   const orders = await query(
-    `SELECT id, channel, customer_ref, status, total_amount, created_at, updated_at
+    `SELECT id, channel, customer_ref, status, total_amount, discount_amount, coupon_code, created_at, updated_at
        FROM bms_orders WHERE tenant_id = $1 AND customer_id = $2
        ORDER BY created_at DESC LIMIT $3`,
     [tenantId, customerId, Math.min(Math.max(limit, 1), 50)]
@@ -196,6 +198,8 @@ export async function getRecentOrders(tenantId: string, customerId: string, limi
       status: o.status,
       createdAt: jIso(o.created_at),
       totalAmount: Number(o.total_amount),
+      discountAmount: Number(o.discount_amount ?? 0),
+      couponCode: o.coupon_code ?? null,
       items: itemsByOrder.get(o.id) ?? [],
       paymentStatus: pay?.status ?? null,
       paymentMethod: pay?.method ?? null,
@@ -254,7 +258,7 @@ export async function getCustomerProducts(tenantId: string, customerId: string, 
 // ---------------------------------------------------------------
 export async function getDraftOrder(tenantId: string, customerId: string) {
   const res = await query(
-    `SELECT o.id, o.channel, o.total_amount, o.created_at
+    `SELECT o.id, o.channel, o.total_amount, o.discount_amount, o.coupon_code, o.created_at
        FROM bms_orders o
       WHERE o.tenant_id = $1 AND o.customer_id = $2 AND o.status = 'PENDING'
         AND NOT EXISTS (SELECT 1 FROM bms_payments p WHERE p.order_id = o.id)
@@ -273,6 +277,8 @@ export async function getDraftOrder(tenantId: string, customerId: string) {
     channel: row.channel,
     createdAt: jIso(row.created_at),
     totalAmount: Number(row.total_amount),
+    discountAmount: Number(row.discount_amount ?? 0),
+    couponCode: row.coupon_code ?? null,
     items: items.rows.map((it: any) => ({ sku: it.product_sku, size: it.size, qty: it.qty, unitPrice: Number(it.unit_price) })),
   };
 }
@@ -296,16 +302,54 @@ export async function getCustomerNotes(tenantId: string, customerId: string) {
 }
 
 // ---------------------------------------------------------------
+// Section 7.5 — customer coupon wallet (assigned / claimed /
+// reserved / redeemed / expired / revoked)
+// ---------------------------------------------------------------
+export async function getCustomerCoupons(tenantId: string, customerId: string) {
+  return listCustomerCouponWallet(tenantId, { customerId });
+}
+
+// ---------------------------------------------------------------
 // getCustomer360 — combined eager read (Sections 1–7)
 // ---------------------------------------------------------------
-export async function getCustomer360(tenantId: string, customerId: string) {
-  const [profile, stats, recentOrders, products, draftOrder, notes] = await Promise.all([
-    getCustomerProfile(tenantId, customerId),
-    getCustomerStatistics(tenantId, customerId),
-    getRecentOrders(tenantId, customerId, 10),
-    getCustomerProducts(tenantId, customerId, 5),
-    getDraftOrder(tenantId, customerId),
-    getCustomerNotes(tenantId, customerId),
+export async function getCustomer360(
+  tenantId: string,
+  customerId: string,
+  opts?: { channel?: string | null; customerRef?: string | null }
+) {
+  const activeCustomerId = await resolveActiveCustomerId(tenantId, customerId, opts);
+  if (!activeCustomerId) {
+    return {
+      customer: null,
+      identities: [],
+      addresses: [],
+      stats: {
+        lifetimeValue: 0,
+        totalOrders: 0,
+        avgOrderValue: 0,
+        completedOrders: 0,
+        cancelledOrders: 0,
+        refundCount: 0,
+        lastOrderDate: null,
+        lastConversationAt: null,
+        avgResponseTimeSeconds: null,
+      },
+      recentOrders: [],
+      products: { topPurchased: [], recentlyPurchased: [], frequentlyPurchased: [], favoriteCategories: [] },
+      draftOrder: null,
+      notes: [],
+      coupons: [],
+    };
+  }
+
+  const [profile, stats, recentOrders, products, draftOrder, notes, coupons] = await Promise.all([
+    getCustomerProfile(tenantId, activeCustomerId),
+    getCustomerStatistics(tenantId, activeCustomerId),
+    getRecentOrders(tenantId, activeCustomerId, 10),
+    getCustomerProducts(tenantId, activeCustomerId, 5),
+    getDraftOrder(tenantId, activeCustomerId),
+    getCustomerNotes(tenantId, activeCustomerId),
+    getCustomerCoupons(tenantId, activeCustomerId),
   ]);
 
   return {
@@ -317,6 +361,7 @@ export async function getCustomer360(tenantId: string, customerId: string) {
     products,
     draftOrder,
     notes,
+    coupons,
   };
 }
 

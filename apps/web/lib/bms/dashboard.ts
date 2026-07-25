@@ -15,7 +15,7 @@ const RESERVATION_EXPIRE_MINUTES = 30;       // matches release-expired-orders d
 const RESERVATION_WARN_MINUTES = 20;          // warn window: 20–30 min old, not yet auto-released
 
 export async function getDashboard(tenantId: string) {
-  const [summary, byStatus, low, custCount, topProducts, topCustomers, daily, couponMonth, topCoupons] =
+  const [summary, byStatus, low, custCount, topProducts, topCustomers, daily, couponMonth, topCoupons, couponUsages] =
     await Promise.all([
       query(
         `SELECT
@@ -82,10 +82,55 @@ export async function getDashboard(tenantId: string) {
           ORDER BY redemptions DESC LIMIT 5`,
         [tenantId]
       ),
+      query(
+        `WITH top_codes AS (
+            SELECT coupon_code AS code
+              FROM bms_orders
+             WHERE tenant_id = $1 AND coupon_code IS NOT NULL
+               AND created_at >= date_trunc('month', current_date)
+             GROUP BY coupon_code
+             ORDER BY COUNT(*) DESC
+             LIMIT 5
+          ),
+          ranked AS (
+            SELECT o.coupon_code AS code, o.id AS order_id, o.customer_id, o.channel, o.status,
+                   o.total_amount, o.discount_amount, o.created_at,
+                   COALESCE(NULLIF(c.name, o.customer_ref), ci.display_name, o.customer_ref) AS customer_name,
+                   ROW_NUMBER() OVER (PARTITION BY o.coupon_code ORDER BY o.created_at DESC) AS rn
+              FROM bms_orders o
+              JOIN top_codes tc ON tc.code = o.coupon_code
+              LEFT JOIN bms_customers c ON c.id = o.customer_id
+              LEFT JOIN bms_customer_identities ci
+                ON ci.tenant_id = o.tenant_id AND ci.channel = o.channel AND ci.external_ref = o.customer_ref
+             WHERE o.tenant_id = $1
+               AND o.created_at >= date_trunc('month', current_date)
+          )
+          SELECT code, order_id, customer_id, channel, status, total_amount, discount_amount, created_at, customer_name
+            FROM ranked
+           WHERE rn <= 10
+           ORDER BY code, created_at DESC`,
+        [tenantId]
+      ),
     ]);
 
   const s = summary.rows[0];
   const cm = couponMonth.rows[0];
+  const usagesByCode = new Map<string, any[]>();
+  for (const r of couponUsages.rows as any[]) {
+    const code = String(r.code);
+    const rows = usagesByCode.get(code) ?? [];
+    rows.push({
+      orderId: r.order_id,
+      customerId: r.customer_id ?? null,
+      customerName: r.customer_name ?? null,
+      channel: r.channel,
+      status: r.status,
+      discountAmount: Number(r.discount_amount),
+      totalAmount: Number(r.total_amount),
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    });
+    usagesByCode.set(code, rows);
+  }
   return {
     revenueTotal: Number(s.revenue_total),
     revenueToday: Number(s.revenue_today),
@@ -108,7 +153,7 @@ export async function getDashboard(tenantId: string) {
       discountThisMonth: Number(cm.discount_total),
       redemptionsThisMonth: cm.redemption_count,
       topCoupons: topCoupons.rows.map((r: any) => ({
-        code: r.code, redemptions: r.redemptions, discount: Number(r.discount),
+        code: r.code, redemptions: r.redemptions, discount: Number(r.discount), usages: usagesByCode.get(String(r.code)) ?? [],
       })),
     },
   };

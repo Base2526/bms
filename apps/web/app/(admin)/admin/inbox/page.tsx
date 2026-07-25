@@ -42,6 +42,25 @@ type Msg = {
 type Note = { id: string; author: string | null; body: string; createdAt: string; mentionedUserIds?: string[] };
 type ProductPickerItem = { sku: string; name: string; active: boolean; price: number; imageUrl?: string | null; variants?: { size: string; available: number }[] };
 type ProductShare = { name: string; sku: string; price: string | null; stock: string | null; url: string; caption: string | null };
+type CouponPickerItem = {
+  id: string;
+  code: string;
+  type: "PERCENT" | "FIXED";
+  value: number;
+  minOrderAmount?: number | null;
+  maxRedemptions?: number | null;
+  redemptionsCount: number;
+  perCustomerLimit?: number | null;
+  expiresAt?: string | null;
+  active: boolean;
+};
+type CouponShare = {
+  code: string;
+  discount: string | null;
+  minOrder: string | null;
+  expires: string | null;
+  usage: string | null;
+};
 type SystemEvent = {
   id: string; kind: "assign" | "helper_add" | "helper_remove" | "status";
   at: string; actorName: string; targetName: string | null; statusValue: string | null; auto: boolean;
@@ -99,6 +118,13 @@ const Q_PRODUCTS_PICKER = gql`
     }
   }
 `;
+const Q_COUPONS_PICKER = gql`
+  query {
+    bmsCoupons {
+      id code type value minOrderAmount maxRedemptions redemptionsCount perCustomerLimit expiresAt active
+    }
+  }
+`;
 const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered message } }`;
 const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered message } }`;
 const M_ASSIGN = gql`mutation ($id: ID!, $userId: ID!) { bmsAssignConversation(id: $id, userId: $userId) }`;
@@ -122,6 +148,7 @@ const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 const timeLabel = (iso: string) =>
   new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const baht = (value: number | null | undefined) => `${Number(value ?? 0).toLocaleString("th-TH")} บาท`;
 function dayLabel(iso: string) {
   const key = dayKey(iso);
   const now = new Date();
@@ -180,6 +207,7 @@ function previewNode(last?: string | null) {
   if (!last) return "—";
   if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> รูปภาพ</>;
   if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || "ไฟล์แนบ"}</>;
+  if (parseCouponShare(last)) return <><TagsOutlined /> คูปอง {parseCouponShare(last)?.code}</>;
   return last;
 }
 
@@ -244,6 +272,43 @@ function parseProductShare(body: string): ProductShare | null {
     url,
     caption: lines.slice(0, detailIndex).join("\n") || null,
   };
+}
+
+const couponCodeFromText = (body: string): string | null => {
+  const text = String(body || "");
+  const shared = parseCouponShare(text);
+  if (shared?.code) return shared.code;
+  const explicit = text.match(/(?:ใช้|use|apply)\s+([A-Z0-9][A-Z0-9_-]{2,31})/i);
+  return explicit?.[1]?.toUpperCase() ?? null;
+};
+
+function latestCouponCodeFromMessages(messages: Msg[] = []): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const code = couponCodeFromText(messages[i]?.body || "");
+    if (code) return code;
+  }
+  return null;
+}
+
+function parseCouponShare(body: string): CouponShare | null {
+  const lines = String(body || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const text = lines.join("\n");
+  if (!/🎟|คูปอง|coupon/i.test(text)) return null;
+  const codeLine = lines.find((line) => /^โค้ด\s+[A-Z0-9][A-Z0-9_-]{2,31}$/i.test(line));
+  const code =
+    codeLine?.replace(/^โค้ด\s+/i, "").trim().toUpperCase()
+    ?? text.match(/(?:คูปอง|coupon|โค้ด)\s+([A-Z0-9][A-Z0-9_-]{2,31})/i)?.[1]?.toUpperCase()
+    ?? text.match(/\[\s*ใช้\s+([A-Z0-9][A-Z0-9_-]{2,31})\s*\]/i)?.[1]?.toUpperCase()
+    ?? null;
+  if (!code) return null;
+  const discount =
+    lines.find((line) => /^ส่วนลด\s+/i.test(line))?.replace(/^ส่วนลด\s+/i, "").trim()
+    || lines.find((line) => /^ลด\s+[\d,.]+%?/i.test(line))?.replace(/^ลด\s+/i, "").trim()
+    || null;
+  const minOrder = lines.find((line) => /^ขั้นต่ำ\s+/i.test(line))?.replace(/^ขั้นต่ำ\s+/i, "").trim() || null;
+  const expires = lines.find((line) => /^(ใช้ได้ถึง|หมดอายุ)\s+/i.test(line))?.replace(/^(ใช้ได้ถึง|หมดอายุ)\s+/i, "").trim() || null;
+  const usage = lines.find((line) => /^สิทธิ์\s+/i.test(line))?.replace(/^สิทธิ์\s+/i, "").trim() || null;
+  return { code, discount, minOrder, expires, usage };
 }
 
 function fileKind(attachment: Attachment) {
@@ -343,6 +408,7 @@ function Inbox() {
 
   const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
   const conv = convData?.bmsConversation;
+  const selectedCouponCode = latestCouponCodeFromMessages(conv?.messages || []);
   const [markRead] = useMutation(M_READ);
   const { data: inboxChangedData } = useSubscription(S_INBOX_CHANGED, {
     skip: !can("inbox.view"),
@@ -747,7 +813,7 @@ function Inbox() {
         )}
 
         {/* ---- right: Customer 360 panel ---- */}
-        {conv && !isMobile && !isTablet && <Customer360Panel conv={conv} can={can} />}
+        {conv && !isMobile && !isTablet && <Customer360Panel conv={conv} can={can} selectedCouponCode={selectedCouponCode} />}
       </div>
     </div>
   );
@@ -767,6 +833,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [draftAttachment, setDraftAttachment] = useState<Attachment | null>(null);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  const [couponPickerOpen, setCouponPickerOpen] = useState(false);
+  const [couponSearch, setCouponSearch] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatFeedRef = useRef<HTMLDivElement>(null);
   const isChatPinnedRef = useRef(true);
@@ -842,6 +910,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const { data: productPickerData, loading: productPickerLoading } = useQuery(Q_PRODUCTS_PICKER, {
     variables: { search: productSearch || null },
     skip: !productPickerOpen,
+    fetchPolicy: "cache-and-network",
+  });
+  const { data: couponPickerData, loading: couponPickerLoading } = useQuery(Q_COUPONS_PICKER, {
+    skip: !couponPickerOpen || !can("coupon.view"),
     fetchPolicy: "cache-and-network",
   });
   const [loadCustomer, { data: custData, loading: custLoading, refetch: refetchCustomer }] = useLazyQuery(Q_CUSTOMER, { fetchPolicy: "cache-and-network" });
@@ -1020,6 +1092,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const imgInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const productItems: ProductPickerItem[] = productPickerData?.bmsProducts?.items || [];
+  const couponItems: CouponPickerItem[] = (couponPickerData?.bmsCoupons || [])
+    .filter((coupon: CouponPickerItem) => coupon.active)
+    .filter((coupon: CouponPickerItem) => !couponSearch.trim() || coupon.code.toLowerCase().includes(couponSearch.trim().toLowerCase()));
 
   const sendWith = (attachment: Attachment | null) => {
     const body = reply.trim();
@@ -1185,6 +1260,23 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <Typography.Text type="secondary" style={{ fontSize: 11 }}>{node}</Typography.Text>
     </div>
   );
+  const couponDiscountText = (coupon: CouponPickerItem) =>
+    coupon.type === "PERCENT"
+      ? `${Number(coupon.value).toLocaleString("th-TH")}%`
+      : `${Number(coupon.value).toLocaleString("th-TH")} บาท`;
+  const couponExpiresText = (expiresAt?: string | null) =>
+    expiresAt ? new Date(expiresAt).toLocaleDateString("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }) : "ไม่มีกำหนด";
+  const insertCouponIntoChat = (coupon: CouponPickerItem) => {
+    const usageLeft = coupon.maxRedemptions == null ? "ไม่จำกัดจำนวนครั้ง" : `เหลือ ${Math.max(0, coupon.maxRedemptions - coupon.redemptionsCount).toLocaleString("th-TH")} ครั้ง`;
+    const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
+    setReply((prev) => {
+      const prefix = prev.trim() ? `${prev.trim()}\n` : "";
+      return `${prefix}🎟 คูปองส่วนลด\nโค้ด ${coupon.code}\nส่วนลด ${couponDiscountText(coupon)}\nขั้นต่ำ ${minOrder}\nใช้ได้ถึง ${couponExpiresText(coupon.expiresAt)}\nสิทธิ์ ${usageLeft}\n\nถ้าต้องการใช้คูปองนี้ พิมพ์ “ใช้ ${coupon.code}” ได้เลยค่ะ`;
+    });
+    setDraftAttachment(null);
+    setCouponPickerOpen(false);
+    message.success(`เพิ่มคูปอง ${coupon.code} ในข้อความร่างแล้ว`);
+  };
   const insertProductIntoChat = (product: ProductPickerItem, includeImage: boolean) => {
     const firstAvailable = (product.variants || []).find((variant) => variant.available > 0) || product.variants?.[0];
     const stockText = firstAvailable
@@ -1214,6 +1306,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     const isIn = m.direction === "IN";
     const isStaff = m.sender?.startsWith("staff");
     const product = parseProductShare(m.body);
+    const coupon = parseCouponShare(m.body);
     const rowClass = `${messageStyles.messageRow} ${isIn ? messageStyles.incomingRow : messageStyles.outgoingRow}`;
     const cardClass = `${messageStyles.card} ${isIn ? messageStyles.incomingCard : messageStyles.outgoingCard}`;
     const openImage = () => {
@@ -1222,7 +1315,26 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     };
 
     let content: React.ReactNode;
-    if (product) {
+    if (coupon) {
+      content = (
+        <div className={`${cardClass} ${messageStyles.couponCard}`} data-message-kind="coupon">
+          <div className={messageStyles.couponIcon} aria-hidden="true"><TagsOutlined /></div>
+          <div className={messageStyles.couponInfo}>
+            <div className={messageStyles.productType}><TagsOutlined /> คูปองส่วนลด</div>
+            <div className={messageStyles.couponCode}>{coupon.code}</div>
+            {coupon.discount && <div className={messageStyles.couponDiscount}>ลด {coupon.discount}</div>}
+            <Space size={4} wrap style={{ marginTop: 6 }}>
+              {coupon.minOrder && <Tag style={{ marginInlineEnd: 0 }}>ขั้นต่ำ {coupon.minOrder}</Tag>}
+              {coupon.expires && <Tag color="orange" style={{ marginInlineEnd: 0 }}>ถึง {coupon.expires}</Tag>}
+              {coupon.usage && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{coupon.usage}</Tag>}
+            </Space>
+            <div className={messageStyles.productCaption} style={{ margin: "8px 0 0" }}>
+              ลูกค้าพิมพ์ “ใช้ {coupon.code}” เพื่อใช้คูปองนี้ได้
+            </div>
+          </div>
+        </div>
+      );
+    } else if (product) {
       content = (
         <div className={`${cardClass} ${messageStyles.productCard}`} data-message-kind="product">
           {m.attachment?.isImage ? (
@@ -1396,6 +1508,57 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
           <Modal
+            title="คูปอง"
+            open={couponPickerOpen}
+            onCancel={() => setCouponPickerOpen(false)}
+            footer={null}
+            width={isMobile ? "100%" : 640}
+            style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
+          >
+            {!can("coupon.view") ? (
+              <Alert type="warning" showIcon message="บัญชีนี้ไม่มีสิทธิ์ดูคูปอง" />
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                <Input.Search
+                  placeholder="ค้นหาโค้ด เช่น SAVE10"
+                  allowClear
+                  value={couponSearch}
+                  onChange={(e) => setCouponSearch(e.target.value)}
+                />
+                {!couponItems.length && !couponPickerLoading ? (
+                  <Empty description="ยังไม่มีคูปองที่เปิดใช้งาน" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                ) : (
+                  <List
+                    loading={couponPickerLoading}
+                    dataSource={couponItems}
+                    renderItem={(item) => {
+                      const usageLeft = item.maxRedemptions == null ? "ไม่จำกัด" : `เหลือ ${Math.max(0, item.maxRedemptions - item.redemptionsCount).toLocaleString("th-TH")}`;
+                      return (
+                        <List.Item
+                          actions={[
+                            <Button key="insert" type="primary" size="small" onClick={() => insertCouponIntoChat(item)}>ใส่ในข้อความร่าง</Button>,
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={<Avatar icon={<TagsOutlined />} style={{ background: "#faad14" }} />}
+                            title={<Space size={6} wrap><Typography.Text strong>{item.code}</Typography.Text><Tag color="gold">ลด {couponDiscountText(item)}</Tag></Space>}
+                            description={
+                              <Space size={6} wrap>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>ขั้นต่ำ {item.minOrderAmount ? baht(item.minOrderAmount) : "ไม่มี"}</Typography.Text>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>หมดอายุ {couponExpiresText(item.expiresAt)}</Typography.Text>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>{usageLeft}</Typography.Text>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      );
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </Modal>
+          <Modal
             title="สินค้า"
             open={productPickerOpen}
             onCancel={() => setProductPickerOpen(false)}
@@ -1505,6 +1668,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             </Tooltip>
             <Tooltip title="ค้นหาสินค้าและแทรกข้อมูลลงแชท">
               <Button type="text" size="small" icon={<ShoppingCartOutlined />} onClick={() => setProductPickerOpen(true)}>สินค้า</Button>
+            </Tooltip>
+            <Tooltip title="เลือกคูปองและแทรกเป็นข้อความพร้อมใช้งาน">
+              <Button type="text" size="small" icon={<TagsOutlined />} onClick={() => setCouponPickerOpen(true)}>คูปอง</Button>
             </Tooltip>
           </Space>
           {draftAttachment && (

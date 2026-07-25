@@ -18,6 +18,7 @@ import {
   deleteCustomer,
   mergeCustomers,
 } from "@/lib/bms/customers";
+import { listCustomerCouponWallet } from "@/lib/bms/coupons";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
@@ -116,5 +117,6 @@ export const bmsCustomersResolvers = {
     addresses: (p: any) => customerAddresses(p.tenant_id, p.id),
     identities: (p: any) => customerIdentities(p.tenant_id, p.id),
     orders: (p: any) => customerOrders(p.tenant_id, p.id),
+    coupons: (p: any) => listCustomerCouponWallet(p.tenant_id, { customerId: p.id }),
   },
 };

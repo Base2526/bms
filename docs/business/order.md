@@ -68,6 +68,14 @@ the store header comes from the current store profile/tenant name. It is rendere
 only and is not persisted as a separate invoice, payment, or tax-document record. If a coupon was
 applied, the invoice shows the discount line and code alongside the item subtotal.
 
+The admin order surfaces read the same coupon snapshot. `/admin/orders`, Customer 360 current cart,
+and the Inbox recent-order preview all show subtotal → coupon discount/code → net total, while
+`bms_orders.total_amount` remains the post-discount amount owed.
+Inbox Customer 360 and the expandable row on `/admin/customers` also show a dedicated
+"คูปองของลูกค้า" section backed by `bms_customer_coupon_wallet`, so staff can see which coupons
+belong to that customer, whether each code is still available, near expiry, reserved on an in-flight
+order, or already redeemed.
+
 ## Coupons (discount codes)
 
 **Implemented** (`bms_coupons`, migration `7.21`) — `PERCENT` (capped at 100) or `FIXED` discount
@@ -88,12 +96,71 @@ existing `INSUFFICIENT`/`NOT_FOUND`/`EMPTY`), the same way insufficient stock do
 discount and code are snapshotted onto the order (`bms_orders.discount_amount`/`coupon_code`) so
 historical totals stay correct even if the coupon is edited or deleted afterward.
 
-**Known limitation, by design for v1:** cancelling or returning an order does **not** release its
-coupon's redemption count. This errs conservative (a wasted redemption on an abandoned order) rather
-than permissive (which would let a create→cancel→recreate loop bypass `max_redemptions`). Per-customer
-limits are enforced by counting matching `bms_orders` rows directly — there's no separate redemption
-log table. `reorderFromOrder()` ("ซื้อซ้ำ") does not carry a coupon over to the new order; the
-customer/staff must supply the code again.
+**Customer coupon discovery / apply CTA** — the customer AI surface exposes read-only
+`list_customer_coupons`, `list_available_coupons`, `check_coupon`, and `claim_coupon` tools. When a customer asks
+"มีคูปองอะไรบ้าง", "อะไรใกล้หมดอายุ", types a code such as `SAVE10`, or asks for a discount, the
+model must call those tools before replying. `list_customer_coupons` reads the customer's wallet
+assignment rows (`bms_customer_coupon_wallet`, `7.25`) when the shop has explicitly given them a
+coupon; `list_available_coupons` still works as a discovery fallback for shop-wide active coupons
+when no wallet rows exist. The tools evaluate active/start/expiry/total quota/per-customer quota/
+minimum-order rules and may return alternative coupons if the requested code is unavailable. This is
+intentionally an "auto-validate" flow, not an AI override: a CTA such as `[ใช้ SAVE10]` only carries
+the selected code forward. If the customer explicitly confirms they want to use that code, the system
+may mark the wallet row `CLAIMED`; actual discount and redemption still happen later inside
+`createOrder()` in the same transaction as stock reservation. Once an order is created the wallet
+row becomes `RESERVED`, then `REDEEMED` when the order reaches the paid path, and returns to
+`CLAIMED`/`ASSIGNED` if the order is cancelled before the sale really completes.
+
+**Release policy** — coupon quota is released only when the sale never really happened. Staff/manual
+cancel (`cancelOrder()`) and the unpaid-order cron (`releaseExpiredOrders()`) return both reserved
+stock and the coupon's operational `redemptions_count` in the same transaction. Rejecting a payment
+slip alone does **not** release the coupon because the order remains open for a corrected slip; the
+coupon is released if that order is later cancelled or auto-released. Post-sale returns/refunds do
+not automatically release coupon quota because the coupon was already used on a real transaction.
+Per-customer limits are enforced by counting non-cancelled matching `bms_orders` rows directly —
+there's no separate redemption log table. `reorderFromOrder()` ("ซื้อซ้ำ") does not carry a coupon
+over to the new order; the customer/staff must supply the code again.
+
+**Deletion/editing guard** — once a coupon has ever been attached to an order, it cannot be deleted
+or renamed, even if a cancellation later returns its redemption count to zero. Operators should
+set `active=false` to stop future use while preserving order history and usage traceability.
+
+**Operator workflow**
+
+1. Create the master coupon at `/admin/coupons`: code, percent/fixed amount, minimum order amount,
+   total redemption cap, per-customer cap, start date, expiry date, and `active`.
+2. Give the coupon to a customer from Inbox by using the coupon composer or the Customer 360
+   "แจกคูปอง" action. This creates or updates the customer's `bms_customer_coupon_wallet` row.
+3. Check a customer's wallet from Inbox Customer 360 or by expanding the row in `/admin/customers`.
+   These views show the code, state, expiry, remaining entitlement, reason it cannot be used, and
+   any reserved/redeemed order id.
+4. If the customer asks "มีคูปองอะไรบ้าง", asks for expiring coupons, or types a code like `SAVE10`,
+   the AI must call coupon tools before replying. It can show a use CTA, but it does not override
+   backend validation.
+5. The discount is applied only when an order is created with `couponCode`. If validation fails,
+   order creation returns `COUPON_INVALID` and rolls back like an insufficient-stock order.
+6. Payment confirmation moves the wallet to `REDEEMED`; cancelling or auto-releasing an unpaid order
+   returns the coupon quota and moves the wallet back to `CLAIMED`/`ASSIGNED` as appropriate.
+
+**Condition examples**
+
+- `SAVE10`: active, not expired, quota remains, customer has not exceeded per-customer limit, and the
+  cart reaches the minimum amount → passes; the order snapshot shows subtotal, discount, code, and
+  net total.
+- `WELCOME50`: fixed 50 baht with no minimum and assigned to the customer wallet → appears when the
+  customer asks what coupons they have.
+- `FLASH100`: starts tomorrow → fails before the start time; AI/admin UI should explain that it is
+  not usable yet.
+- `VIP25`: minimum 1,000 baht but current cart is 850 baht → fails with a minimum-order reason and
+  does not reserve or redeem the wallet row.
+- `LAST1`: total redemption cap is exhausted → fails even if the customer has the coupon in their
+  wallet.
+- A reserved order gets cancelled or auto-released before payment → quota is returned and the wallet
+  state rolls back from `RESERVED`.
+- A payment slip is rejected but the order remains open → the coupon is not released yet, because the
+  customer can still submit a corrected slip.
+- A coupon has been used on any order → do not delete or rename it; turn `active` off to stop future
+  use while keeping historical orders traceable.
 
 **Usage history** — the "ใช้ไปแล้ว" count on each coupon's row at `/admin/coupons` is clickable and
 opens a per-order breakdown (customer, channel, order status, discount, net total, timestamp) via
@@ -102,9 +169,11 @@ redemption table was needed — the query reads `bms_orders` directly by `coupon
 source used for the per-customer limit check.
 
 **Dashboard summary** — `bmsDashboard.couponSummary` (`/admin/dashboard`) shows total discount given
-and total redemptions for the current calendar month, plus the top 5 codes by redemption count, all
-derived from the same `bms_orders.coupon_code`/`discount_amount` columns (no new query surface beyond
-what usage history already reads). The field is **masked to `null`** for roles without `coupon.view`
+and total redemptions for the current calendar month, plus the top 5 codes by redemption count. Each
+top code carries recent usage rows so operators can expand it and see which customer/order/channel
+used the code, including subtotal, discount, net total, and order status. All values are derived from
+the same `bms_orders.coupon_code`/`discount_amount` columns (no separate redemption table). The field
+is **masked to `null`** for roles without `coupon.view`
 (e.g. Sales, who has `report.view` and can see the rest of the dashboard) via a field resolver in
 `bmsDashboard.ts` rather than a schema-level permission — this keeps `bmsDashboard` itself usable by
 every `report.view` role while still hiding margin-sensitive numbers from roles that can't open

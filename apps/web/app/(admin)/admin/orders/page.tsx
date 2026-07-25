@@ -43,6 +43,8 @@ type Order = {
   customer_ref: string | null;
   status: OrderStatus;
   total_amount: number;
+  discount_amount: number;
+  coupon_code: string | null;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -53,7 +55,7 @@ type Order = {
 const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
-      id channel customer_ref status total_amount created_at updated_at hasShippingAddress
+      id channel customer_ref status total_amount discount_amount coupon_code created_at updated_at hasShippingAddress
       items { product_sku size qty unit_price }
     }
   }
@@ -101,6 +103,9 @@ const CHANNEL_COLOR: Record<string, string> = {
 };
 
 const FILTERS = ["ALL", "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED"] as const;
+const money = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
+const orderSubtotal = (order: Order) =>
+  order.items.reduce((sum, it) => sum + (Number(it.unit_price) || 0) * (Number(it.qty) || 0), 0);
 
 function OrdersManagement() {
   const { can } = useBmsPermissions();
@@ -195,7 +200,16 @@ function OrdersManagement() {
       { title: "Items", key: "items",
         render: (_: any, r: Order) => <span>{r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / {r.items.length} รายการ</span> },
       { title: "Total", dataIndex: "total_amount", key: "total", width: 110, align: "right" as const,
-        render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+        render: (v: number, r: Order) => (
+          <Space direction="vertical" size={0} style={{ textAlign: "right" }}>
+            <Typography.Text>{money(v)}</Typography.Text>
+            {Number(r.discount_amount || 0) > 0 && (
+              <Typography.Text type="danger" style={{ fontSize: 11 }}>
+                -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}
+              </Typography.Text>
+            )}
+          </Space>
+        ) },
       { title: "Status", dataIndex: "status", key: "status", width: 130,
         render: (s: OrderStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
       { title: "Updated", dataIndex: "updated_at", key: "updated_at", width: 160,
@@ -211,9 +225,9 @@ function OrdersManagement() {
     { title: "Size", dataIndex: "size", key: "size", width: 80 },
     { title: "Qty", dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
     { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
-      render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+      render: (v: number) => money(v) },
     { title: "Line Total", key: "lt", width: 120, align: "right" as const,
-      render: (_: any, it: OrderItem) => `${(it.qty * it.unit_price).toLocaleString()} ฿` },
+      render: (_: any, it: OrderItem) => money(it.qty * it.unit_price) },
   ];
 
   if (error) return <Alert type="error" message="โหลดออร์เดอร์ไม่ได้" description={error.message} showIcon />;
@@ -252,6 +266,24 @@ function OrdersManagement() {
               <div>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
                 <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
+                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                  <Space direction="vertical" size={2} style={{ minWidth: 260 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                      <Typography.Text type="secondary">ยอดสินค้า</Typography.Text>
+                      <Typography.Text>{money(orderSubtotal(r))}</Typography.Text>
+                    </div>
+                    {Number(r.discount_amount || 0) > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                        <Typography.Text type="secondary">ส่วนลด{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
+                        <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px solid var(--app-border, #eee)", paddingTop: 6 }}>
+                      <Typography.Text strong>ยอดรวมสุทธิ</Typography.Text>
+                      <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
+                    </div>
+                  </Space>
+                </div>
               </div>
             </div>
           ),

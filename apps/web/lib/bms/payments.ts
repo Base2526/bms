@@ -17,6 +17,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { STORAGE_DIR } from "@/lib/storage";
 import { notifyOrderStatusEmail } from "./orderNotify";
+import { redeemCustomerCouponForOrderInTx } from "./coupons";
 
 export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -121,6 +122,9 @@ export async function confirmPayment(
         WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
       [tenantId, pay.rows[0].order_id]
     );
+    if ((ord.rowCount ?? 0) > 0) {
+      await redeemCustomerCouponForOrderInTx(client, tenantId, pay.rows[0].order_id);
+    }
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
@@ -155,7 +159,11 @@ async function setStatus(
   return (res.rowCount ?? 0) > 0;
 }
 
-/** ปฏิเสธสลิป: PENDING → REJECTED */
+/**
+ * ปฏิเสธสลิป: PENDING → REJECTED
+ * ไม่คืน coupon quota ที่นี่ เพราะ order ยังเป็น PENDING และลูกค้ายังส่งสลิปใหม่ได้;
+ * quota จะคืนเมื่อ order ถูก cancel/auto-release ผ่าน orders.ts เท่านั้น
+ */
 export function rejectPayment(tenantId: string, paymentId: string, note?: string | null, actor?: string | null) {
   return setStatus(tenantId, paymentId, ["PENDING"], "REJECTED", note, actor);
 }

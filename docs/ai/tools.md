@@ -15,9 +15,11 @@ Registry + surface/RBAC filtering: [`lib/bms/tools/catalog.ts`](../../apps/web/l
 Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_order`, `refund_payment`).
 
 - **Customer surface** (webhook pipeline + playground): read product/stock + `get_order_status`
-  (own orders only), `create_order`, `submit_payment`, `reorder`, plus store/shipping reads
-  (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `recommend_products`,
-  `detect_language`). Never any sensitive/A3 tool.
+  (own orders only), customer coupon wallet / discovery / validation (`list_customer_coupons`,
+  `list_available_coupons`, `check_coupon`, `claim_coupon`),
+  `create_order`, `submit_payment`, `reorder`, plus store/shipping reads (`get_store_info`,
+  `get_payment_info`, `get_shipping_estimate`, `recommend_products`, `detect_language`). Never any
+  sensitive/A3 tool.
 - **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
   documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
   **propose-only** — the tool returns a proposal, a human clicks Confirm, and the UI fires the
@@ -32,6 +34,13 @@ Every attempt writes a redacted `ai.tool_call` entry to `bms_audit_log`; success
 their existing domain audit action (`order.create`, `payment.submit`, etc.). Raw tool args and prompt
 content are not copied into the centralized audit entry.
 Customer read/write of orders is scoped to the conversation's own `(channel, customer_ref)`.
+Coupon read tools are also scoped to that identity: `list_customer_coupons` reads the customer's
+assigned wallet rows (if any) and reports whether each one is currently usable, near expiry, or no
+longer valid. `list_available_coupons` returns currently usable coupons only; when wallet rows exist
+it is filtered to that wallet, otherwise it falls back to globally active coupons. `check_coupon`
+returns the requested code plus alternatives when unavailable. `claim_coupon` is a narrow customer-
+safe write that marks the wallet row `CLAIMED` after the customer explicitly says they want to use
+that code; actual redemption still happens only when `create_order` runs with `couponCode`.
 `create_order` (both surfaces) also accepts an optional `couponCode` — Claude can pass through a
 discount code a customer mentions in free text with no NLU changes needed, since tool-calling already
 extracts it as a structured argument; validation happens server-side in `createOrder()` (see
@@ -46,6 +55,8 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | Tools | Class | Customer | Staff permission | Execution |
 | --- | --- | --- | --- | --- |
 | `search_products`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
+| `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
+| `claim_coupon` | A2 | yes | `coupon.view` | write wallet lifecycle only |
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
 | `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard` | A1 | no | `report.view` | read |

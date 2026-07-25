@@ -25,7 +25,16 @@ const Q_DASH = gql`
       topProducts { sku name qty revenue }
       topCustomers { id name tags spent orders }
       salesDaily { day revenue orders }
-      couponSummary { discountThisMonth redemptionsThisMonth topCoupons { code redemptions discount } }
+      couponSummary {
+        discountThisMonth
+        redemptionsThisMonth
+        topCoupons {
+          code
+          redemptions
+          discount
+          usages { orderId customerId customerName channel status discountAmount totalAmount createdAt }
+        }
+      }
     }
   }
 `;
@@ -473,10 +482,78 @@ export default function Page() {
                 pagination={false}
                 dataSource={d.couponSummary.topCoupons || []}
                 locale={{ emptyText: "ยังไม่มีการใช้โค้ดส่วนลดเดือนนี้" }}
+                expandable={{
+                  rowExpandable: (r: any) => (r.usages || []).length > 0,
+                  expandedRowRender: (r: any) => (
+                    <Table
+                      rowKey="orderId"
+                      size="small"
+                      pagination={false}
+                      dataSource={r.usages || []}
+                      locale={{ emptyText: "ยังไม่มีรายการใช้โค้ดนี้" }}
+                      columns={[
+                        {
+                          title: "เวลาใช้",
+                          dataIndex: "createdAt",
+                          key: "createdAt",
+                          width: 150,
+                          render: (v: string) => new Date(v).toLocaleString("th-TH", {
+                            timeZone: "Asia/Bangkok",
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }),
+                        },
+                        {
+                          title: "ลูกค้า",
+                          key: "customer",
+                          render: (_: any, u: any) => (
+                            <Space direction="vertical" size={0}>
+                              <Text>{u.customerName || "—"}</Text>
+                              {u.customerId && <Text type="secondary" style={{ fontSize: 12 }}>{u.customerId}</Text>}
+                            </Space>
+                          ),
+                        },
+                        { title: "ช่องทาง", dataIndex: "channel", key: "channel", width: 100, render: (c: string) => <Tag>{c}</Tag> },
+                        {
+                          title: "ออเดอร์",
+                          dataIndex: "orderId",
+                          key: "orderId",
+                          width: 120,
+                          render: (id: string) => <Link href={`/admin/orders?highlight=${id}`}>#{String(id).slice(0, 8)}</Link>,
+                        },
+                        {
+                          title: "ยอดสินค้า",
+                          key: "subtotal",
+                          width: 120,
+                          align: "right" as const,
+                          render: (_: any, u: any) => baht(Number(u.totalAmount || 0) + Number(u.discountAmount || 0)),
+                        },
+                        { title: "ส่วนลด", dataIndex: "discountAmount", key: "discountAmount", width: 120, align: "right" as const, render: (v: number) => <Text type="danger">-{baht(v)}</Text> },
+                        { title: "ยอดสุทธิ", dataIndex: "totalAmount", key: "totalAmount", width: 120, align: "right" as const, render: (v: number) => baht(v) },
+                        { title: "สถานะ", dataIndex: "status", key: "status", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
+                      ]}
+                    />
+                  ),
+                }}
                 columns={[
                   { title: "โค้ด", dataIndex: "code", key: "code" },
                   { title: "ใช้ไปแล้ว", dataIndex: "redemptions", key: "redemptions", width: 100, align: "right" },
                   { title: "ส่วนลดรวม", dataIndex: "discount", key: "discount", width: 130, align: "right", render: (v: number) => baht(v) },
+                  {
+                    title: "ล่าสุด",
+                    key: "latest",
+                    render: (_: any, r: any) => {
+                      const latest = r.usages?.[0];
+                      return latest ? (
+                        <Space wrap>
+                          <Text>{latest.customerName || "—"}</Text>
+                          <Link href={`/admin/orders?highlight=${latest.orderId}`}>#{String(latest.orderId).slice(0, 8)}</Link>
+                        </Space>
+                      ) : <Text type="secondary">—</Text>;
+                    },
+                  },
                 ]}
               />
             </Card>

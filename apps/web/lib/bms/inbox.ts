@@ -20,6 +20,7 @@ import {
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 import { createNotification } from "@/lib/notifications/service";
+import { assignCouponToCustomer, couponCodeFromShareText } from "./coupons";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -799,8 +800,8 @@ export async function sendStaffMessage(
   const att = attachment?.url ? attachment : null;
   if (!text && !att) return { status: "EMPTY" };
 
-  const conv = await query<{ channel: string; customer_ref: string | null }>(
-    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
+  const conv = await query<{ channel: string; customer_ref: string | null; customer_id: string | null }>(
+    `SELECT channel, customer_ref, customer_id FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId]
   );
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
@@ -822,6 +823,20 @@ export async function sendStaffMessage(
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, preview.slice(0, 500)]
   );
+
+  const couponCode = couponCodeFromShareText(text);
+  const customerId = conv.rows[0].customer_id ?? null;
+  if (couponCode && customerId) {
+    try {
+      await assignCouponToCustomer(tenantId, customerId, couponCode, {
+        actor: staff,
+        source: "MANUAL_CHAT",
+        note: "Assigned from Inbox coupon share",
+      });
+    } catch (error) {
+      console.error("[BMS] assign customer coupon wallet failed:", error);
+    }
+  }
 
   return { status: "SENT", delivered };
 }

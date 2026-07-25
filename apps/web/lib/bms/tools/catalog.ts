@@ -12,6 +12,7 @@ import type { BmsPermission } from "../permissions";
 import {
   type BmsTool,
   type ExecCtx,
+  ToolArgError,
   type ToolResult,
   enumVal,
   optInt,
@@ -56,6 +57,7 @@ import { getTenantName } from "../platform";
 import { generateInvoice, generateQuotation } from "../documents";
 import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
 import { understand } from "../nlu";
+import { checkCouponForCustomer, claimCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
@@ -74,6 +76,42 @@ async function auditWrite(ec: ExecCtx, action: string, target: string | null, me
 async function customerOwnsOrder(ec: ExecCtx, orderId: string): Promise<boolean> {
   if (!ec.customerRef || !ec.channel) return false;
   return serviceCustomerOwnsOrder(ec.tenantId, ec.channel, ec.customerRef, orderId);
+}
+
+function optMoney(args: Record<string, any>, key: string): number | null {
+  const v = args?.[key];
+  if (v === undefined || v === null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) throw new ToolArgError(`"${key}" ต้องเป็นตัวเลข ≥ 0`);
+  return n;
+}
+
+function safeCoupon(c: any) {
+  return {
+    code: c.code,
+    type: c.type,
+    value: c.value,
+    minOrderAmount: c.minOrderAmount,
+    startsAt: c.startsAt,
+    expiresAt: c.expiresAt,
+    remainingRedemptions: c.remainingRedemptions,
+    customerUsedCount: c.customerUsedCount,
+    subtotalOk: c.subtotalOk,
+    discountPreview: c.discountPreview,
+    available: c.available,
+    reason: c.reason,
+    assigned: Boolean(c.assigned),
+    assignedAt: c.assignedAt ?? null,
+    source: c.source ?? null,
+    state: c.state ?? "ASSIGNED",
+    claimedAt: c.claimedAt ?? null,
+    reservedAt: c.reservedAt ?? null,
+    reservedOrderId: c.reservedOrderId ?? null,
+    redeemedAt: c.redeemedAt ?? null,
+    redeemedOrderId: c.redeemedOrderId ?? null,
+    expiredAt: c.expiredAt ?? null,
+    revokedAt: c.revokedAt ?? null,
+  };
 }
 
 // =============================================================
@@ -147,6 +185,123 @@ const getProduct: BmsTool = {
         })),
       },
     };
+  },
+};
+
+const listAvailableCouponsTool: BmsTool = {
+  name: "list_available_coupons",
+  description:
+    "ดูคูปอง active ที่ลูกค้าคนนี้ยังมีสิทธิ์ใช้ได้จริงตามเวลา/quota/per-customer/minimum ถ้าลูกค้าถามว่ามีคูปองอะไรหรือขอส่วนลด ให้เรียกทูลนี้ก่อนตอบ",
+  surfaces: ["customer", "staff"],
+  permission: "coupon.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อคัดคูปองที่ยอดถึงขั้นต่ำและคำนวณส่วนลด preview" },
+      limit: { type: "integer", description: "จำนวนคูปองสูงสุดที่ต้องการแสดง (default 5, max 20)" },
+      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
+      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const channel = ec.surface === "customer" ? ec.channel : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel | undefined);
+    const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+    const coupons = await listAvailableCouponsForCustomer(ec.tenantId, {
+      channel,
+      customerRef,
+      subtotal: optMoney(args, "subtotal"),
+      limit: optInt(args, "limit", 1) ?? 5,
+    });
+    return { ok: true, data: { coupons: coupons.map(safeCoupon) } };
+  },
+};
+
+const listCustomerCouponsTool: BmsTool = {
+  name: "list_customer_coupons",
+  description:
+    "ดูคูปองใน wallet ของลูกค้าคนนี้โดยตรง พร้อมบอกว่าใบไหนยังใช้ได้ ใบไหนหมดอายุ/ยังไม่เริ่ม/ใช้ครบสิทธิ์ และเหลือส่วนลดประมาณเท่าไร ใช้เมื่อลูกค้าถามว่า 'ฉันมีคูปองอะไรบ้าง' หรือ 'ใบไหนใกล้หมดอายุ'",
+  surfaces: ["customer", "staff"],
+  permission: "coupon.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อเช็กขั้นต่ำและคำนวณส่วนลด preview" },
+      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
+      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const channel = ec.surface === "customer" ? ec.channel : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel | undefined);
+    const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+    const coupons = await listCustomerCouponWallet(ec.tenantId, {
+      channel,
+      customerRef,
+      subtotal: optMoney(args, "subtotal"),
+    });
+    return { ok: true, data: { coupons: coupons.map(safeCoupon) } };
+  },
+};
+
+const checkCouponTool: BmsTool = {
+  name: "check_coupon",
+  description:
+    "ตรวจโค้ดคูปองที่ลูกค้าพิมพ์ เช่น SAVE10/ใช้ SAVE10 ว่าลูกค้าคนนี้ใช้ได้ไหม ถ้าใช้ไม่ได้จะคืนคูปองทางเลือกที่ยังใช้ได้ ห้ามบอกว่าใช้ได้จนกว่าทูลนี้หรือ create_order ตรวจผ่าน",
+  surfaces: ["customer", "staff"],
+  permission: "coupon.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      code: { type: "string", description: "โค้ดคูปองที่ลูกค้าระบุ" },
+      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อเช็กขั้นต่ำและคำนวณ preview" },
+      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
+      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+    },
+    required: ["code"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const channel = ec.surface === "customer" ? ec.channel : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel | undefined);
+    const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+    const lookup = await checkCouponForCustomer(ec.tenantId, reqString(args, "code"), {
+      channel,
+      customerRef,
+      subtotal: optMoney(args, "subtotal"),
+      alternativeLimit: 3,
+    });
+    return {
+      ok: true,
+      data: {
+        requestedCode: lookup.requestedCode,
+        requested: lookup.requested ? safeCoupon(lookup.requested) : null,
+        alternatives: lookup.alternatives.map(safeCoupon),
+      },
+    };
+  },
+};
+
+const claimCouponTool: BmsTool = {
+  name: "claim_coupon",
+  description:
+    "บันทึกว่าลูกค้ากดใช้/ตั้งใจใช้คูปองใบนี้แล้ว (CLAIMED) ใช้หลัง check_coupon ผ่านและลูกค้ายืนยันว่าอยากใช้โค้ดนี้ แม้จะยังไม่ได้สร้างออเดอร์ในทันที",
+  surfaces: ["customer", "staff"],
+  permission: "coupon.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      code: { type: "string", description: "โค้ดคูปองที่ลูกค้ายืนยันว่าจะใช้" },
+      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
+      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+    },
+    required: ["code"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const channel = ec.surface === "customer" ? ec.channel : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel | undefined);
+    const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+    const res = await claimCouponForCustomer(ec.tenantId, reqString(args, "code"), {
+      channel,
+      customerRef,
+      actor: ec.actor,
+    });
+    return res.ok ? { ok: true, data: { code: res.code, state: "CLAIMED" } } : { ok: false, error: res.reason };
   },
 };
 
@@ -1225,6 +1380,10 @@ export const ALL_TOOLS: BmsTool[] = [
   searchProducts,
   getProduct,
   checkStockTool,
+  listCustomerCouponsTool,
+  listAvailableCouponsTool,
+  checkCouponTool,
+  claimCouponTool,
   getOrderStatus,
   listLowStockTool,
   getInventorySummaryTool,

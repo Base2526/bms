@@ -22,8 +22,8 @@ const { Text, Paragraph } = Typography;
 
 // ---- GraphQL --------------------------------------------------
 const Q_CUSTOMER_360 = gql`
-  query ($customerId: ID!) {
-    bmsCustomer360(customerId: $customerId) {
+  query ($customerId: ID, $channel: String, $customerRef: String, $conversationId: ID) {
+    bmsCustomer360(customerId: $customerId, channel: $channel, customerRef: $customerRef, conversationId: $conversationId) {
       customer {
         id name phone email tags createdAt preferredLanguage timezone
         orderCount totalSpent isNewCustomer isReturningCustomer
@@ -35,7 +35,7 @@ const Q_CUSTOMER_360 = gql`
         refundCount lastOrderDate lastConversationAt avgResponseTimeSeconds
       }
       recentOrders {
-        id channel status createdAt totalAmount paymentStatus paymentMethod
+        id channel status createdAt totalAmount discountAmount couponCode paymentStatus paymentMethod
         shipmentStatus carrier trackingNo items { sku size qty unitPrice }
       }
       products {
@@ -44,8 +44,14 @@ const Q_CUSTOMER_360 = gql`
         frequentlyPurchased { sku name category qty revenue lastPurchasedAt orderCount }
         favoriteCategories { category qty }
       }
-      draftOrder { id channel createdAt totalAmount items { sku size qty unitPrice } }
+      draftOrder { id channel createdAt totalAmount discountAmount couponCode items { sku size qty unitPrice } }
       notes { id conversationId author body createdAt }
+      coupons {
+        id walletId code type value minOrderAmount maxRedemptions redemptionsCount perCustomerLimit
+        startsAt expiresAt active note available reason discountPreview assigned assignedAt source state
+        claimedAt reservedAt reservedOrderId redeemedAt redeemedOrderId expiredAt revokedAt
+        remainingRedemptions customerUsedCount
+      }
     }
   }
 `;
@@ -54,6 +60,14 @@ const Q_TIMELINE = gql`
 `;
 const Q_INSIGHTS = gql`
   query ($customerId: ID!) { bmsCustomerInsights(customerId: $customerId) { summary generatedAt cached } }
+`;
+const Q_COUPONS_PICKER = gql`
+  query {
+    bmsCoupons {
+      id code type value minOrderAmount maxRedemptions redemptionsCount perCustomerLimit
+      startsAt expiresAt active note
+    }
+  }
 `;
 const Q_PRODUCTS_FOR_ORDER = gql`
   query { bmsProducts(limit: 200) { items { sku name variants { size available } } } }
@@ -72,6 +86,11 @@ const Q_INVOICE = gql`
     }
   }
 `;
+const M_ASSIGN_CUSTOMER_COUPON = gql`
+  mutation ($customerId: ID, $channel: String, $customerRef: String, $conversationId: ID, $code: String!, $note: String) {
+    bmsAssignCouponToCustomer(customerId: $customerId, channel: $channel, customerRef: $customerRef, conversationId: $conversationId, code: $code, note: $note)
+  }
+`;
 
 const CHANNEL_COLOR: Record<string, string> = {
   line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", lazada: "gold", test: "default",
@@ -84,6 +103,28 @@ const PANEL_COLLAPSE_KEY = "bms_inbox_customer360_collapsed";
 const money = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
 const dateOnly = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
 const dateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+const orderSubtotal = (order: any) =>
+  (order?.items || []).reduce((sum: number, it: any) => sum + (Number(it.unitPrice) || 0) * (Number(it.qty) || 0), 0);
+const discountLabel = (order: any) =>
+  Number(order?.discountAmount || 0) > 0
+    ? `ส่วนลด${order?.couponCode ? ` (${order.couponCode})` : ""}: -${money(order.discountAmount)}`
+    : null;
+const couponStateColor: Record<string, string> = {
+  ASSIGNED: "default",
+  CLAIMED: "blue",
+  RESERVED: "gold",
+  REDEEMED: "green",
+  EXPIRED: "red",
+  REVOKED: "volcano",
+};
+const couponStateLabel: Record<string, string> = {
+  ASSIGNED: "แจกแล้ว",
+  CLAIMED: "ลูกค้ากดใช้แล้ว",
+  RESERVED: "จองกับออเดอร์",
+  REDEEMED: "ใช้แล้ว",
+  EXPIRED: "หมดอายุ",
+  REVOKED: "ยกเลิกสิทธิ์",
+};
 
 function SectionLoading() {
   return <Skeleton active paragraph={{ rows: 3 }} />;
@@ -218,6 +259,9 @@ function RecentOrdersSection({
             {dateOnly(o.createdAt)} · {money(o.totalAmount)}
             {o.trackingNo && <> · เลขพัสดุ {o.trackingNo}</>}
           </div>
+          {discountLabel(o) && (
+            <div style={{ fontSize: 12, color: "var(--app-danger, #cf1322)" }}>{discountLabel(o)}</div>
+          )}
           <div style={{ fontSize: 12, color: "var(--app-muted, #888)" }}>
             {(o.items || []).map((it: any) => `${it.sku}×${it.qty}`).join(", ")}
           </div>
@@ -273,7 +317,13 @@ function OrderPreviewDrawer({
 
           <Descriptions size="small" column={1} colon={false}>
             <Descriptions.Item label="วันที่">{dateTime(order.createdAt)}</Descriptions.Item>
-            <Descriptions.Item label="ยอดรวม">{money(order.totalAmount)}</Descriptions.Item>
+            <Descriptions.Item label="ยอดสินค้า">{money(orderSubtotal(order))}</Descriptions.Item>
+            {Number(order.discountAmount || 0) > 0 && (
+              <Descriptions.Item label={`ส่วนลด${order.couponCode ? ` (${order.couponCode})` : ""}`}>
+                <Text type="danger">-{money(order.discountAmount)}</Text>
+              </Descriptions.Item>
+            )}
+            <Descriptions.Item label="ยอดรวมสุทธิ">{money(order.totalAmount)}</Descriptions.Item>
             <Descriptions.Item label="การชำระเงิน">{order.paymentStatus || "—"}{order.paymentMethod ? ` · ${order.paymentMethod}` : ""}</Descriptions.Item>
             <Descriptions.Item label="การจัดส่ง">
               {order.shipmentStatus || "—"}{order.carrier ? ` · ${order.carrier}` : ""}{order.trackingNo ? ` · ${order.trackingNo}` : ""}
@@ -351,6 +401,7 @@ function ProductsSection({ products }: { products: any }) {
 // ไม่มีสถานะ DRAFT แยกในสคีมา — ใช้ order PENDING ล่าสุดที่ยังไม่มี payment แทน
 function CartSection({ draftOrder }: { draftOrder: any }) {
   if (!draftOrder) return <Empty description="ไม่มีตะกร้าค้างอยู่" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const subtotal = orderSubtotal(draftOrder);
   return (
     <div>
       <List size="small" dataSource={draftOrder.items} renderItem={(it: any) => (
@@ -358,8 +409,16 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
           <Text style={{ fontSize: 12 }}>{it.sku} ({it.size}) × {it.qty} · {money(it.unitPrice * it.qty)}</Text>
         </List.Item>
       )} />
+      {Number(draftOrder.discountAmount || 0) > 0 && (
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>ยอดสินค้า {money(subtotal)}</Text>
+          <Text type="danger" style={{ fontSize: 12 }}>
+            ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""} -{money(draftOrder.discountAmount)}
+          </Text>
+        </div>
+      )}
       <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Text strong style={{ fontSize: 12 }}>รวม {money(draftOrder.totalAmount)}</Text>
+        <Text strong style={{ fontSize: 12 }}>รวมสุทธิ {money(draftOrder.totalAmount)}</Text>
         <Link href={`/admin/orders?highlight=${draftOrder.id}`}><Button size="small" icon={<ShoppingOutlined />}>เปิด Draft Order</Button></Link>
       </div>
     </div>
@@ -378,6 +437,131 @@ function NotesSection({ notes }: { notes: any[] }) {
         />
       </List.Item>
     )} />
+  );
+}
+
+function CouponWalletSection({ coupons }: { coupons: any[] }) {
+  if (!coupons?.length) return <Empty description="ยังไม่มีคูปองที่ผูกกับลูกค้าคนนี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  return (
+    <List
+      size="small"
+      dataSource={coupons}
+      renderItem={(coupon: any) => (
+        <List.Item style={{ display: "block", padding: 10 }}>
+          <Space size={6} wrap style={{ marginBottom: 4 }}>
+            <Text strong>{coupon.code}</Text>
+            <Tag color={couponStateColor[coupon.state] || "default"}>{couponStateLabel[coupon.state] || coupon.state}</Tag>
+            {coupon.available ? <Tag color="green">พร้อมใช้</Tag> : <Tag color="default">ยังใช้ไม่ได้</Tag>}
+          </Space>
+
+          <div style={{ fontSize: 12, marginBottom: 2 }}>
+            {coupon.type === "PERCENT" ? `ลด ${coupon.value}%` : `ลด ${money(coupon.value)}`}
+            {coupon.minOrderAmount != null ? ` · ขั้นต่ำ ${money(coupon.minOrderAmount)}` : ""}
+            {coupon.discountPreview != null ? ` · คาดว่าจะลด ${money(coupon.discountPreview)}` : ""}
+          </div>
+
+          <div style={{ fontSize: 12, color: "var(--app-muted, #888)" }}>
+            แจกเมื่อ {dateTime(coupon.assignedAt)}
+            {coupon.expiresAt ? ` · หมดอายุ ${dateTime(coupon.expiresAt)}` : " · ไม่กำหนดวันหมดอายุ"}
+          </div>
+
+          {(coupon.state === "RESERVED" || coupon.state === "REDEEMED") && (coupon.reservedOrderId || coupon.redeemedOrderId) && (
+            <div style={{ fontSize: 12, marginTop: 2 }}>
+              <Text type="secondary">
+                {coupon.state === "REDEEMED" ? "ผูกกับออเดอร์ที่ใช้จริง" : "กำลังจองกับออเดอร์"}{" "}
+              </Text>
+              <Link href={`/admin/orders?highlight=${coupon.redeemedOrderId || coupon.reservedOrderId}`}>
+                #{String(coupon.redeemedOrderId || coupon.reservedOrderId).slice(0, 8)}
+              </Link>
+            </div>
+          )}
+
+          {!coupon.available && coupon.reason && (
+            <div style={{ fontSize: 12, color: "var(--app-danger, #cf1322)", marginTop: 2 }}>{coupon.reason}</div>
+          )}
+
+          <div style={{ fontSize: 11, color: "var(--app-muted, #888)", marginTop: 2 }}>
+            ใช้ไปแล้ว {coupon.customerUsedCount} ครั้ง
+            {coupon.remainingRedemptions != null ? ` · สิทธิ์รวมเหลือ ${coupon.remainingRedemptions}` : ""}
+            {coupon.source ? ` · ที่มา ${coupon.source}` : ""}
+          </div>
+        </List.Item>
+      )}
+    />
+  );
+}
+
+function AssignCouponModal({
+  open, customerId, channel, customerRef, conversationId, canManage, onClose, onDone,
+}: { open: boolean; customerId: string | null; channel?: string | null; customerRef?: string | null; conversationId?: string | null; canManage: boolean; onClose: () => void; onDone: () => void }) {
+  const [form] = Form.useForm();
+  const { data, loading } = useQuery(Q_COUPONS_PICKER, {
+    skip: !open || !canManage,
+    fetchPolicy: "cache-and-network",
+  });
+  const couponOptions = (data?.bmsCoupons || [])
+    .filter((coupon: any) => coupon.active)
+    .map((coupon: any) => ({
+      value: coupon.code,
+      label: `${coupon.code} · ${coupon.type === "PERCENT" ? `${coupon.value}%` : money(coupon.value)}${coupon.expiresAt ? ` · หมดอายุ ${dateOnly(coupon.expiresAt)}` : ""}`,
+    }));
+
+  const [assignCoupon, { loading: saving }] = useMutation(M_ASSIGN_CUSTOMER_COUPON, {
+    onCompleted: () => {
+      message.success("แจกคูปองให้ลูกค้าแล้ว");
+      form.resetFields();
+      onDone();
+    },
+    onError: (e: any) => message.error(e?.message || "แจกคูปองไม่สำเร็จ"),
+  });
+
+  const submit = async () => {
+    const values = await form.validateFields();
+    await assignCoupon({
+      variables: {
+        customerId,
+        channel: channel ?? null,
+        customerRef: customerRef ?? null,
+        conversationId: conversationId ?? null,
+        code: String(values.code || "").trim(),
+        note: values.note?.trim() || null,
+      },
+    });
+  };
+
+  return (
+    <Modal
+      title="แจกคูปองให้ลูกค้าคนนี้"
+      open={open}
+      onCancel={onClose}
+      onOk={submit}
+      okText="แจกคูปอง"
+      cancelText="ยกเลิก"
+      confirmLoading={saving}
+      destroyOnClose
+    >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="คูปองจะถูกเพิ่มเข้า wallet ของลูกค้าทันที"
+        description="หลังแจกแล้ว ลูกค้าคนนี้จะเห็น/ถูกเช็กสิทธิ์ผ่าน AI flow ได้ แม้ยังไม่ได้ส่งข้อความคูปองในแชท"
+      />
+      <Form form={form} layout="vertical">
+        <Form.Item name="code" label="เลือกคูปอง" rules={[{ required: true, message: "กรุณาเลือกคูปอง" }]}>
+          <Select
+            showSearch
+            placeholder="เลือกโค้ดส่วนลด"
+            loading={loading}
+            options={couponOptions}
+            filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+          />
+        </Form.Item>
+        <Form.Item name="note" label="โน้ต (ไม่บังคับ)">
+          <Input placeholder="เช่น แจกชดเชย / แคมเปญเดือนนี้" />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
@@ -421,13 +605,19 @@ function InsightsSection({ customerId }: { customerId: string }) {
 type ProductOpt = { sku: string; name: string; variants: { size: string; available: number }[] };
 
 function CreateOrderModal({
-  open, conv, onClose, onDone,
-}: { open: boolean; conv: any; onClose: () => void; onDone: () => void }) {
+  open, conv, selectedCouponCode, onClose, onDone,
+}: { open: boolean; conv: any; selectedCouponCode?: string | null; onClose: () => void; onDone: () => void }) {
   const [form] = Form.useForm();
   const { data: prodData, loading: prodLoading } = useQuery(Q_PRODUCTS_FOR_ORDER, {
     skip: !open, fetchPolicy: "cache-and-network",
   });
   const products: ProductOpt[] = prodData?.bmsProducts?.items || [];
+
+  useEffect(() => {
+    if (open && selectedCouponCode) {
+      form.setFieldValue("couponCode", selectedCouponCode);
+    }
+  }, [open, selectedCouponCode, form]);
 
   const [create, { loading }] = useMutation(M_CREATE_ORDER, {
     onCompleted: (d: any) => {
@@ -458,6 +648,15 @@ function CreateOrderModal({
         type="info" showIcon style={{ marginBottom: 16 }}
         message={`ออเดอร์จะผูกกับลูกค้าคนนี้ผ่านช่องทาง ${conv?.channel || "web"} · ราคาตัดตามราคาปัจจุบันของสินค้า · จองสต็อกทันที (สถานะเริ่มต้น PENDING)`}
       />
+      {selectedCouponCode && (
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`พบคูปองล่าสุดในแชท: ${selectedCouponCode}`}
+          description="ระบบใส่โค้ดให้ในฟอร์มแล้ว แต่ backend จะตรวจเงื่อนไขจริงอีกครั้งตอนสร้างออเดอร์"
+        />
+      )}
       <Form form={form} layout="vertical" initialValues={{ items: [{ qty: 1 }] }}>
         <Form.List name="items">
           {(fields, { add, remove }) => (
@@ -617,19 +816,21 @@ function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { 
 }
 
 // ---- Main panel ------------------------------------------------
-export default function Customer360Panel({ conv, can }: { conv: any; can: (p: string) => boolean }) {
+export default function Customer360Panel({ conv, can, selectedCouponCode }: { conv: any; can: (p: string) => boolean; selectedCouponCode?: string | null }) {
   const customerId: string | null = conv?.customerId ?? null;
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => { setCollapsed(window.localStorage.getItem(PANEL_COLLAPSE_KEY) === "1"); }, []);
   const toggle = () => setCollapsed((v) => { const n = !v; window.localStorage.setItem(PANEL_COLLAPSE_KEY, n ? "1" : "0"); return n; });
 
-  const { data, loading, refetch } = useQuery(Q_CUSTOMER_360, {
-    variables: { customerId },
-    skip: !customerId,
+  const { data, loading, error, refetch } = useQuery(Q_CUSTOMER_360, {
+    variables: { customerId, channel: conv?.channel ?? null, customerRef: conv?.customerRef ?? null, conversationId: conv?.id ?? null },
+    skip: !conv?.id,
     fetchPolicy: "cache-and-network",
   });
   const c360 = data?.bmsCustomer360;
+  const resolvedCustomerId: string | null = c360?.customer?.id ?? null;
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
+  const [assignCouponOpen, setAssignCouponOpen] = useState(false);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
   const recentOrders = c360?.recentOrders || [];
@@ -657,21 +858,35 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <Text strong style={{ fontSize: 13 }}>ข้อมูลลูกค้า (Customer 360)</Text>
-        <Tooltip title="ย่อแผงข้อมูลลูกค้า">
-          <Button type="text" size="small" icon={<MenuFoldOutlined />} onClick={toggle} />
-        </Tooltip>
+        <Space size={4}>
+          {conv?.id && can("coupon.manage") && (
+            <Button size="small" onClick={() => setAssignCouponOpen(true)}>แจกคูปอง</Button>
+          )}
+          <Tooltip title="ย่อแผงข้อมูลลูกค้า">
+            <Button type="text" size="small" icon={<MenuFoldOutlined />} onClick={toggle} />
+          </Tooltip>
+        </Space>
       </div>
 
-      {!customerId ? (
-        <Empty description="แชทนี้ยังไม่ผูกกับลูกค้าในระบบ CRM" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      {!conv?.id ? (
+        <Empty description="ไม่พบบทสนทนานี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : loading && !c360 ? (
         <SectionLoading />
+      ) : error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="โหลดข้อมูลลูกค้าไม่สำเร็จ"
+          description="กรุณาลองโหลดข้อมูลใหม่ หากยังไม่สำเร็จระบบจะแสดง error จริงแทนการแสดงว่าไม่มีข้อมูล"
+          action={<Button size="small" onClick={() => refetch()}>ลองใหม่</Button>}
+        />
       ) : (
         <Collapse
           size="small"
           defaultActiveKey={["summary", "cart", "orders", "actions"]}
           items={[
             { key: "summary", label: "สรุปลูกค้า", children: <SummarySection c={c360?.customer} conv={conv} /> },
+            { key: "coupons", label: `คูปองของลูกค้า${c360?.coupons?.length ? ` (${c360.coupons.length})` : ""}`, children: <CouponWalletSection coupons={c360?.coupons || []} /> },
             { key: "cart", label: "ตะกร้าปัจจุบัน", children: <CartSection draftOrder={c360?.draftOrder} /> },
             {
               key: "orders",
@@ -683,16 +898,28 @@ export default function Customer360Panel({ conv, can }: { conv: any; can: (p: st
             { key: "stats", label: "สถิติลูกค้า", children: <StatsSection s={c360?.stats} /> },
             { key: "products", label: "สินค้าที่ซื้อ", children: <ProductsSection products={c360?.products} /> },
             { key: "notes", label: "โน้ตภายใน (เฉพาะ staff)", children: <NotesSection notes={c360?.notes || []} /> },
-            { key: "timeline", label: "Timeline", children: customerId ? <TimelineSection customerId={customerId} /> : null },
-            { key: "insights", label: "AI Insights", children: customerId ? <InsightsSection customerId={customerId} /> : null },
+            { key: "timeline", label: "Timeline", children: resolvedCustomerId ? <TimelineSection customerId={resolvedCustomerId} /> : null },
+            { key: "insights", label: "AI Insights", children: resolvedCustomerId ? <InsightsSection customerId={resolvedCustomerId} /> : null },
           ]}
         />
       )}
       <CreateOrderModal
-        open={createOrderOpen} conv={conv}
+        open={createOrderOpen} conv={conv} selectedCouponCode={selectedCouponCode}
         onClose={() => setCreateOrderOpen(false)}
         onDone={() => { setCreateOrderOpen(false); refetch(); }}
       />
+      {conv?.id && (
+        <AssignCouponModal
+          open={assignCouponOpen}
+          customerId={resolvedCustomerId ?? customerId}
+          channel={conv?.channel ?? null}
+          customerRef={conv?.customerRef ?? null}
+          conversationId={conv?.id ?? null}
+          canManage={can("coupon.manage")}
+          onClose={() => setAssignCouponOpen(false)}
+          onDone={() => { setAssignCouponOpen(false); refetch(); }}
+        />
+      )}
       <InvoiceModal
         open={invoiceOpen} orders={recentOrders}
         onClose={() => setInvoiceOpen(false)}

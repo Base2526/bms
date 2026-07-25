@@ -55,7 +55,7 @@ const personaCards: Record<
       "เพิ่มสินค้า + รูปสินค้า + ราคา + stock ต่อไซซ์",
       "ลองจำลองออเดอร์ผ่าน Playground ให้เห็น flow จริง",
       "เชื่อมช่องทางขายจริงที่หน้า Settings",
-      "เปิด Dashboard ดูภาพรวมร้านและแจ้งเตือน",
+      "เปิด Dashboard ดูภาพรวมร้าน แจ้งเตือน และกางโค้ดส่วนลดเพื่อดูว่าใครใช้กับออเดอร์ไหน",
     ],
     ctaLabel: "เริ่มที่ Products",
     ctaHref: "/admin/products",
@@ -67,7 +67,7 @@ const personaCards: Record<
       "เปิด Inbox ดูแชทใหม่และลูกค้าที่ต้องตอบก่อน",
       "ใช้ Customer 360 เพื่อดูประวัติลูกค้าแบบไม่สลับหน้า",
       "เปิดออเดอร์ล่าสุดแบบ preview ในหน้า Inbox ก่อนได้ และถ้าต้องทำงานลึกค่อยเปิดหน้า Orders เต็มจอเป็นแท็บใหม่",
-      "แชร์สินค้าได้ทั้งข้อความอย่างเดียวหรือข้อความพร้อมรูป โดยตรวจข้อความร่างก่อนกดส่ง",
+      "แชร์สินค้าและคูปองจาก composer โดยตรวจข้อความร่างก่อนกดส่ง",
       "สร้างออเดอร์และออกใบแจ้งหนี้จาก Quick Actions ตามสิทธิ์ของบัญชี",
       "เช็ก Orders / Payment / Shipping ต่อเนื่องเป็นชุดเดียว",
       "ใช้ช่องค้นหาบนแต่ละหน้าเพื่อหา order / payment / tracking เร็วขึ้น",
@@ -121,8 +121,13 @@ const flowCards: Record<
       "ดูแชทใหม่จาก Inbox ก่อน",
       "ใช้ Customer 360 ดูประวัติและข้อมูลลูกค้า",
       "กด สินค้า ที่แถบพิมพ์ แล้วเลือก ข้อความ + ลิงก์ หรือ ข้อความ + รูป + ลิงก์ — ระบบจะใส่ไว้ในข้อความร่างก่อน ยังไม่ส่งทันที",
+      "กด คูปอง เพื่อเลือกโค้ดที่เปิดใช้งาน ระบบจะใส่ข้อความพร้อมคำสั่งให้ลูกค้าพิมพ์ “ใช้ CODE” และแสดงเป็นการ์ดคูปองใน Inbox",
+      "ถ้าลูกค้าถามคูปองหรือพิมพ์โค้ดอย่าง SAVE10 ฝั่ง AI จะตรวจสิทธิ์ด้วย backend แล้วตอบพร้อมปุ่มข้อความ [ใช้ CODE] หรือเสนอคูปองอื่นที่ยังใช้ได้",
       "กด เปิดออเดอร์ เพื่อดูแบบเร็วใน Inbox ก่อน และใช้ปุ่ม เปิดหน้า Orders เต็มจอ เมื่อต้องทำงานต่อในแท็บใหม่",
       "กด สร้างออเดอร์ เลือกสินค้า/ไซซ์/จำนวน — ระบบใช้ราคาปัจจุบันและจอง stock ทันที",
+      "ถ้าแชทมีคูปองล่าสุดหรือข้อความ “ใช้ CODE” ฟอร์มสร้างออเดอร์จะใส่โค้ดให้อัตโนมัติ แล้ว backend ตรวจเงื่อนไขจริงอีกครั้ง",
+      "ถ้าออเดอร์ใช้คูปอง หน้า Inbox/Customer 360/Orders จะแสดงยอดสินค้า → ส่วนลดพร้อมรหัสคูปอง → ยอดสุทธิ",
+      "ถ้าลูกค้าไม่จ่ายหรือยกเลิกก่อนขายจริง ระบบคืน quota คูปองเมื่อออเดอร์ถูก cancel/auto-release; ถ้า reject สลิปอย่างเดียว order ยังเปิดให้ส่งใหม่",
       "กด ออกใบแจ้งหนี้ เพื่อเลือกออเดอร์เดิมและพิมพ์เอกสาร (เอกสารไม่เปลี่ยนสถานะการชำระเงิน)",
       "เปิด Orders เพื่อตามสถานะ PENDING / PAID / PACKING",
       "ค้นหา order / customer / channel ได้จากช่องค้นหาด้านบน",
@@ -157,13 +162,49 @@ const flowCards: Record<
   },
 };
 
+const couponConditions = [
+  { code: "SAVE10", condition: "ลด 10%, active, ยังไม่หมดอายุ, quota เหลือ, ลูกค้ายังไม่เกิน per-customer limit, ยอดถึงขั้นต่ำ", result: "ผ่าน: AI แสดงปุ่มใช้คูปองได้ และตอนสร้างออเดอร์ backend จะลดราคาจริงใน transaction เดียวกับการจองสต็อก" },
+  { code: "WELCOME50", condition: "ลด 50 บาท, ไม่มีขั้นต่ำ, แจกเข้ากระเป๋าลูกค้าแล้ว", result: "ผ่าน: ลูกค้าถามว่ามีคูปองอะไร ระบบดึงจาก wallet แล้วตอบโค้ดนี้ก่อนคูปองทั่วไป" },
+  { code: "FLASH100", condition: "ลด 100 บาท, ตั้งวันเริ่มใช้เป็นพรุ่งนี้", result: "ไม่ผ่านก่อนเวลาเริ่ม: AI/ฟอร์มสร้างออเดอร์ต้องบอกว่าโค้ดยังไม่เริ่มใช้ได้ และไม่สร้างออเดอร์ครึ่ง ๆ กลาง ๆ" },
+  { code: "VIP25", condition: "ลด 25%, ขั้นต่ำ 1,000 บาท, ตะกร้าปัจจุบัน 850 บาท", result: "ไม่ผ่าน: ระบบบอกว่ายอดยังไม่ถึงขั้นต่ำ และยังไม่ mark เป็น redeemed" },
+  { code: "SAVE10", condition: "per-customer limit = 1 และลูกค้าเคยใช้กับออเดอร์ที่ไม่ถูกยกเลิกแล้ว", result: "ไม่ผ่าน: ระบบบอกว่าใช้ครบจำนวนที่กำหนดแล้ว แม้ quota รวมของร้านยังเหลือ" },
+  { code: "LAST1", condition: "max redemptions เต็มแล้ว หรือ remainingRedemptions = 0", result: "ไม่ผ่าน: ระบบตอบว่าโค้ดถูกใช้ครบจำนวนแล้ว และเสนอคูปองอื่นที่ยังใช้ได้ถ้ามี" },
+  { code: "SAVE20", condition: "ลูกค้ากดใช้แล้วสร้างออเดอร์ แต่ยังไม่จ่ายเงิน", result: "สถานะเป็น RESERVED และผูก order id ไว้: ถ้า order ถูก cancel หรือหมดเวลาจ่าย ระบบคืน quota และย้อนกลับเป็น CLAIMED/ASSIGNED ตามประวัติเดิม" },
+  { code: "SAVE20", condition: "ลูกค้าส่งสลิปผิดแล้ว payment ถูก reject แต่ order ยังเปิดอยู่", result: "ยังไม่คืนคูปองทันที: ลูกค้ายังส่งสลิปใหม่ได้ คูปองจะคืนเมื่อ order ถูก cancel หรือ auto-release เท่านั้น" },
+  { code: "OLD10", condition: "คูปองหมดอายุหลังแจกเข้ากระเป๋าแล้ว", result: "สถานะเป็น EXPIRED เมื่อระบบอ่าน wallet ครั้งถัดไป: ลูกค้ายังเห็นประวัติได้ แต่ใช้ไม่ได้" },
+  { code: "USED10", condition: "คูปองเคยถูกใช้/ผูกกับออเดอร์แล้ว", result: "ลบหรือ rename ไม่ได้: ให้ปิด active แทน เพื่อเก็บประวัติและยอดในออเดอร์เก่าให้ trace ได้" },
+];
+
+const couponWhereToSee = [
+  "Inbox > Customer 360: ใช้ดูระหว่างคุยกับลูกค้า เห็นคูปองของลูกค้า, ตะกร้าปัจจุบัน, ออเดอร์ล่าสุด, และปุ่มแจกคูปองให้ลูกค้าคนนี้",
+  "Customers (CRM): กดขยายแถวลูกค้าเพื่อดู coupon wallet, สถานะ, วันหมดอายุ, เหตุผลที่ใช้ไม่ได้, และ order id ที่เกี่ยวข้อง",
+  "Coupons: ใช้จัดการ master coupon และกดจำนวน 'ใช้ไปแล้ว' เพื่อดูว่าโค้ดนี้ถูกใช้กับ order ไหน/ลูกค้าคนไหน",
+  "Dashboard: ใช้ดูภาพรวมเดือนนี้ว่าส่วนลดถูกแจกไปเท่าไร ใช้กี่ครั้ง และ top coupon codes คืออะไร",
+];
+
+const couponWalletStates = [
+  { state: "ASSIGNED", meaning: "ร้านแจกคูปองเข้ากระเป๋าลูกค้าแล้ว แต่ลูกค้ายังไม่ได้กดยืนยันว่าจะใช้" },
+  { state: "CLAIMED", meaning: "ลูกค้ากด/พิมพ์ยืนยันว่าจะใช้โค้ดนี้แล้ว แต่ยังไม่ได้สร้างออเดอร์สำเร็จ" },
+  { state: "RESERVED", meaning: "คูปองถูกผูกกับออเดอร์ที่สร้างแล้วและยังรอจ่าย/ดำเนินการอยู่" },
+  { state: "REDEEMED", meaning: "ออเดอร์เข้าสู่ path ที่จ่ายเงินจริงแล้ว คูปองถือว่าใช้สำเร็จ" },
+  { state: "EXPIRED", meaning: "คูปองหมดอายุแล้ว ใช้ไม่ได้ แต่ยังเก็บประวัติใน wallet" },
+  { state: "REVOKED", meaning: "ร้านยกเลิกสิทธิ์ของลูกค้าคนนี้โดยเฉพาะ ใช้ไม่ได้ แม้ master coupon ยัง active" },
+];
+
+const couponGaps = [
+  "ตอนนี้มี lifecycle ต่อคนต่อคูปองแล้ว (assigned / claimed / reserved / redeemed / expired / revoked) แต่ยังไม่มีหน้ารวมสำหรับทีมการตลาดที่ดึงกลุ่มลูกค้าตาม state แบบ bulk campaign",
+  "ยังไม่มีมุมมอง “คูปองใกล้หมดอายุของลูกค้าคนนี้ทั้งหมด” เป็นหน้าหรือ query แยกสำหรับงาน campaign แม้ AI จะอ่านจาก wallet ได้แล้ว",
+  "ยังไม่รองรับ coupon เฉพาะสินค้า, หมวดหมู่, ช่องทาง, หรือ stack หลายใบในออเดอร์เดียว",
+  "ถ้าลูกค้ายังไม่มี identity/customer_id ใน CRM ระบบยังเช็กได้แค่ quota รวมและเวลา แต่ยังนับ per-customer history แบบเต็มไม่ได้จนกว่าจะผูกตัวตนลูกค้า",
+];
+
 const menuCards = [
   {
     key: "inbox",
     icon: <InboxOutlined />,
     title: "Inbox",
     desc: "รับแชท, ดู Customer 360, assign staff, ตามงานต่อจากแชท",
-    bullets: ["เริ่มงานจากแชทใหม่", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ และสินค้าจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์ และการ์ดสินค้า", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
+    bullets: ["เริ่มงานจากแชทใหม่", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback ทุกช่องทาง ลูกค้าพิมพ์ ใช้ CODE และฟอร์มสร้างออเดอร์ auto-fill code จากแชทล่าสุดได้", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
     href: "/admin/inbox",
   },
   {
@@ -179,7 +220,7 @@ const menuCards = [
     icon: <ShoppingCartOutlined />,
     title: "Orders / Payment / Shipping",
     desc: "3 หน้านี้ควรถูกใช้ต่อเนื่องกันเป็น flow เดียว",
-    bullets: ["มี search บนทุกหน้า", "ตามสถานะงานได้ชัด", "เหมาะกับงานปฏิบัติการรายวัน"],
+    bullets: ["มี search บนทุกหน้า", "ตามสถานะงานได้ชัด", "Orders แสดง subtotal/ส่วนลดคูปอง/ยอดสุทธิ", "เหมาะกับงานปฏิบัติการรายวัน"],
     href: "/admin/orders",
   },
   {
@@ -311,6 +352,7 @@ export default function Page() {
       { key: "hero", href: "#hero", title: "เริ่มต้นเร็ว" },
       { key: "quickstart", href: "#quickstart", title: "Quick start ตามบทบาท" },
       { key: "workflow", href: "#workflow", title: "Flow งานทั้งระบบ" },
+      { key: "coupons", href: "#coupons", title: "คู่มือคูปอง" },
       { key: "menus", href: "#menus", title: "คู่มือตามเมนู" },
       { key: "faq", href: "#faq", title: "คำถามที่เจอบ่อย" },
       { key: "links", href: "#links", title: "ลิงก์ไปหน้าที่ใช้บ่อย" },
@@ -499,6 +541,134 @@ export default function Page() {
                   </Card>
                 </Col>
               </Row>
+            </Section>
+
+            <Section
+              id="coupons"
+              title="🎟 คู่มือคูปองแบบละเอียด"
+              subtitle="อธิบายว่าระบบรู้อะไรเกี่ยวกับคูปองของลูกค้า, ใช้อย่างไร, และเงื่อนไขไหนผ่านหรือไม่ผ่าน"
+            >
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ borderRadius: 14 }}
+                  message="สิ่งที่ระบบเก็บอยู่ตอนนี้"
+                  description="ระบบเก็บ master ของคูปองไว้ที่ bms_coupons, เก็บว่าลูกค้าคนนี้เคยได้รับคูปองอะไรไว้ที่ bms_customer_coupon_wallet, และเก็บการใช้งานจริงไว้ที่ออเดอร์ (bms_orders.coupon_id / coupon_code / discount_amount) จากนั้นคำนวณสดว่าลูกค้าคนนี้ยังใช้โค้ดใดได้บ้างจากเวลา, quota รวม, per-customer limit, ยอดขั้นต่ำ, และประวัติออเดอร์ที่ไม่ถูกยกเลิก"
+                />
+
+                <Card style={{ borderRadius: 16, background: "#fafcff" }}>
+                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <Title level={4} style={{ margin: 0 }}>ขั้นตอนใช้งานจริง</Title>
+                    <Steps
+                      direction="vertical"
+                      current={-1}
+                      items={[
+                        {
+                          title: "1. สร้างคูปองที่หน้า Coupons",
+                          description: "กำหนด code, ประเภทส่วนลด (เปอร์เซ็นต์/บาท), ยอดขั้นต่ำ, จำนวนครั้งรวม, จำนวนครั้งต่อลูกค้า, วันเริ่ม, วันหมดอายุ, และสถานะเปิดใช้งาน",
+                        },
+                        {
+                          title: "2. ส่งคูปองให้ลูกค้าจาก Inbox",
+                          description: "กดปุ่ม คูปอง ที่ composer แล้วเลือกโค้ด ระบบจะแทรกข้อความ fallback ให้ เช่น โค้ด, ส่วนลด, ขั้นต่ำ, วันหมดอายุ, สิทธิ์ที่เหลือ และคำสั่ง พิมพ์ “ใช้ CODE” เมื่อกดส่งจริง ระบบจะบันทึกสิทธิ์นี้ไว้ใน customer coupon wallet ด้วย",
+                        },
+                        {
+                          title: "3. ลูกค้าถามว่ามีคูปองอะไร หรือพิมพ์โค้ดมา",
+                          description: "AI เรียก list_customer_coupons ก่อนถ้าลูกค้าถามคูปองของตัวเองหรือถามว่าอะไรใกล้หมดอายุ และใช้ list_available_coupons / check_coupon ตามบริบท ห้ามเดาเองว่าคูปองใช้ได้ ถ้าลูกค้ายืนยันว่าจะใช้ ระบบจะ mark เป็น CLAIMED ก่อน แล้วถ้าโค้ดใช้ไม่ได้จะเสนอคูปองทางเลือกที่ยังใช้ได้แทน",
+                        },
+                        {
+                          title: "3.5 ทีมงานเปิดดูคูปองของลูกค้าได้ทันที",
+                          description: "ใน Inbox > Customer 360 และหน้า Customers (CRM) ตอนกางแถวลูกค้า จะมี section 'คูปองของลูกค้า' แสดง code, สถานะ (ASSIGNED / CLAIMED / RESERVED / REDEEMED / EXPIRED / REVOKED), วันหมดอายุ, เหตุผลที่ยังใช้ไม่ได้, และถ้าผูกกับออเดอร์อยู่จะเห็น order id นั้นได้เลย",
+                        },
+                        {
+                          title: "4. ตอนสร้างออเดอร์ ระบบค่อยใช้คูปองจริง",
+                          description: "create_order จะส่ง couponCode เข้า createOrder() และ backend ตรวจอีกครั้งใน transaction เดียวกับการจอง stock ถ้าไม่ผ่านจะคืนผล COUPON_INVALID และไม่สร้างออเดอร์ครึ่ง ๆ กลาง ๆ ถ้าผ่าน wallet จะขยับเป็น RESERVED พร้อมผูก order ไว้",
+                        },
+                        {
+                          title: "5. ถ้าออเดอร์ไม่จบการขาย ระบบคืน quota เฉพาะบางกรณี",
+                          description: "confirm payment หรือ pay order จะขยับ wallet เป็น REDEEMED; แต่ถ้า cancel order หรือ auto-release unpaid order ระบบจะคืน quota และย้อน wallet จาก RESERVED/REDEEMED (ของออเดอร์นั้น) กลับไปเป็น CLAIMED หรือ ASSIGNED ตามประวัติเดิม ส่วน reject สลิปอย่างเดียวจะยังไม่คืน เพราะ order ยังเปิดให้ลูกค้าส่งสลิปใหม่ได้",
+                        },
+                      ]}
+                    />
+                  </Space>
+                </Card>
+
+                <Row gutter={[14, 14]}>
+                  <Col xs={24} lg={12}>
+                    <Card style={{ borderRadius: 16, height: "100%" }}>
+                      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                        <Title level={4} style={{ margin: 0 }}>ดูคูปองของลูกค้าได้จากที่ไหน</Title>
+                        <List
+                          size="small"
+                          dataSource={couponWhereToSee}
+                          renderItem={(item) => (
+                            <List.Item style={{ paddingInline: 0 }}>
+                              <Text type="secondary">• {item}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card style={{ borderRadius: 16, height: "100%" }}>
+                      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                        <Title level={4} style={{ margin: 0 }}>ความหมายสถานะใน wallet</Title>
+                        <List
+                          size="small"
+                          dataSource={couponWalletStates}
+                          renderItem={(item) => (
+                            <List.Item style={{ paddingInline: 0 }}>
+                              <Space direction="vertical" size={2}>
+                                <Tag color={item.state === "REDEEMED" ? "green" : item.state === "RESERVED" ? "purple" : item.state === "EXPIRED" ? "orange" : item.state === "REVOKED" ? "red" : "blue"}>
+                                  {item.state}
+                                </Tag>
+                                <Text type="secondary">{item.meaning}</Text>
+                              </Space>
+                            </List.Item>
+                          )}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Card style={{ borderRadius: 16 }}>
+                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <Title level={4} style={{ margin: 0 }}>ตัวอย่างเงื่อนไขที่ระบบใช้ตรวจ</Title>
+                    <List
+                      size="small"
+                      bordered
+                      style={{ borderRadius: 14 }}
+                      dataSource={couponConditions}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Space direction="vertical" size={2}>
+                            <Text strong>{item.code}</Text>
+                            <Text type="secondary">เงื่อนไข: {item.condition}</Text>
+                            <Text>{item.result}</Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  </Space>
+                </Card>
+
+                <Card style={{ borderRadius: 16 }}>
+                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <Title level={4} style={{ margin: 0 }}>สิ่งที่ระบบยังไม่มีหรือยังไม่ครบ</Title>
+                    <List
+                      size="small"
+                      dataSource={couponGaps}
+                      renderItem={(item) => (
+                        <List.Item style={{ paddingInline: 0 }}>
+                          <Text type="secondary">• {item}</Text>
+                        </List.Item>
+                      )}
+                    />
+                  </Space>
+                </Card>
+              </Space>
             </Section>
 
             <Section

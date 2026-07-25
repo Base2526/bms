@@ -79,6 +79,35 @@ export async function getCustomer(tenantId: string, id: string) {
   return res.rows[0] ?? null;
 }
 
+export async function resolveActiveCustomerId(
+  tenantId: string,
+  customerId?: string | null,
+  opts?: { channel?: string | null; customerRef?: string | null }
+): Promise<string | null> {
+  if (opts?.channel && opts?.customerRef) {
+    const byIdentity = await query<{ customer_id: string }>(
+      `SELECT ci.customer_id
+         FROM bms_customer_identities ci
+         JOIN bms_customers c ON c.id = ci.customer_id
+        WHERE ci.tenant_id = $1
+          AND ci.channel = $2
+          AND ci.external_ref = $3
+          AND c.deleted_at IS NULL
+        LIMIT 1`,
+      [tenantId, opts.channel, opts.customerRef]
+    );
+    if (byIdentity.rows[0]?.customer_id) return byIdentity.rows[0].customer_id;
+  }
+
+  if (!customerId) return null;
+
+  const current = await query<{ id: string }>(
+    `SELECT id FROM bms_customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL LIMIT 1`,
+    [tenantId, customerId]
+  );
+  return (current.rowCount ?? 0) > 0 && current.rows[0] ? current.rows[0].id : null;
+}
+
 export async function customerOrders(tenantId: string, customerId: string) {
   const res = await query(
     `SELECT id, channel, customer_ref, customer_id, status, total_amount, created_at, updated_at
