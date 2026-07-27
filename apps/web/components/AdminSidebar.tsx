@@ -33,6 +33,7 @@ import {
   HistoryOutlined,
   NotificationOutlined,
   TagsOutlined,
+  CodeOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -262,6 +263,7 @@ export default function AdminSidebar() {
           link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
           link('/admin/env', 'ENV', <EnvironmentOutlined />),
+          link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),
         // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้
         ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />)] : []),

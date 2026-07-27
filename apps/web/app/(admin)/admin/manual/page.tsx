@@ -81,7 +81,7 @@ const personaCards: Record<
     items: [
       "ตั้งค่า Roles / Permissions ให้ตรงหน้าที่",
       "เช็ก Channel Health และ webhook status",
-      "ดู Billing, package, usage และ tenant setting",
+      "ดู Billing, package, usage, AI credit summary / ledger และ tenant setting",
       "ใช้คู่มือ API / webhook เมื่อต้อง debug หรือเชื่อมระบบเพิ่ม",
     ],
     ctaLabel: "ไปที่ Settings",
@@ -250,6 +250,7 @@ const menuCards = [
       "ต้องกดปุ่ม ยืนยัน เองเสมอ ก่อนระบบจะทำจริง — เหมือนกดปุ่มเดิมในหน้า Payment/Orders",
       "เห็นเฉพาะทูลที่ตรงกับสิทธิ์ (role) ของบัญชีคุณเท่านั้น",
       "ทุกครั้งที่ AI เรียกทูล ระบบบันทึก audit ไว้โดยไม่เก็บข้อความหรือข้อมูลส่วนตัวในรายการ audit กลาง",
+      "ฝั่ง Billing เริ่มมี AI credit summary / usage breakdown / ledger แยกร้าน เพื่อดูว่า AI ถูกใช้ไปกับอะไรบ้างในเดือนนี้",
     ],
     href: "/admin/assistant",
   },

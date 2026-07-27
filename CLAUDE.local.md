@@ -77,7 +77,7 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   `7.16__drop_legacy_revision_triggers.sql` (ลบ trigger revision ระบบเก่าที่ชนกับ BMS revision — ดู § Revision trigger collision) ·
   `7.17__bms_store_profile_extend.sql` (เพิ่ม contact/branding/locale ใน store profile — ดู § ทูลชุด 2)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
-- **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
+- **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) — ดู § แท็บ Timeline ด้านล่าง · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox: compact workspace + composer draft** → queue/header ลด font และ spacing เพื่อคืนพื้นที่ให้สายแชท, ตัด Chat Focus ออก, channel tag อยู่หลังชื่อลูกค้า · ปุ่ม "เปิดออเดอร์" ใน Customer 360 เปิด `OrderPreviewDrawer` โดยไม่ออกจากแชท และ "เปิดหน้า Orders เต็มจอ" เปิดแท็บใหม่ · composer ยังคง data model เดิม (`body` + attachment เดียว) แต่รูป/ไฟล์ที่อัปโหลดจะเข้า draft ก่อนส่งและมี preview/ปุ่มนำออก; loading ของรูปกับไฟล์แยกกัน · message renderer แยก 4 แบบ: text = bubble สีตาม sender, image = light preview card, file = icon/name/type/download card, product = cover/name/SKU/ราคา/สต็อก/`ดูสินค้า` card; attachment/product card เป็น rounded rectangle ไม่มีหางหรือ pseudo-element ยื่นออกนอกกรอบ ใช้ accent border ด้านข้างบอกทิศทางแทน · product ตรวจจาก public URL ใน body จึง render ข้อความเดิมได้โดยไม่เปลี่ยน channel payload · product picker ใช้ `bmsProducts` และให้เลือก "ข้อความ + ลิงก์" หรือ "ข้อความ + รูป + ลิงก์" โดยใส่ชื่อ/SKU/ราคา/ไซซ์+สต็อกและ public URL `/shop/{tenantSlug}/products/{sku}` ลง draft; แบบมีรูปใช้ cover `imageUrl` เป็น attachment เดียว ส่วน gallery ทั้งหมดอยู่หน้า public · ลิงก์ `/admin/products` ยังเป็น internal link เปิดแท็บใหม่เท่านั้นและห้ามใส่ลงข้อความลูกค้า
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
   เท่านั้น: เขียน `bms_conversations`/`bms_messages` sender=`diagnostic`, meta `{ diagnostic: true }`, publish
@@ -116,6 +116,40 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 > `channel_secret` เดิมใน `bms_tenant_channels`, ไม่มี OAuth/sync worker) — ดู [docs/integrations/lazada.md](docs/integrations/lazada.md)
 > สำหรับสถานะจริง (🧪 beta, signature ยังไม่ยืนยันกับเอกสาร Lazada/Shopee Open Platum ตัวจริง) ก่อนจะกลับไปทำแผน
 > OAuth+Sync ต้องตัดสินใจใหม่ก่อนว่าจะเปลี่ยนทางจริงหรือแค่ปรับปรุง webhook scaffold ที่มีอยู่
+
+## แท็บ Timeline ของแชท — แก้ข้อมูลให้ตรงความจริง (2026-07)
+
+**แก้แล้ว** — แท็บ Timeline (`bmsConversationTimeline` → `getTimeline()` ใน `lib/bms/inbox.ts`) เคย
+แสดงข้อมูลที่ "อ่านได้แต่ไม่จริง" หลายจุด:
+
+- **บั๊กหลัก: แถว ORDER ใช้ `created_at` เป็นเวลา แต่พิมพ์ `status` ปัจจุบันในข้อความเดียวกัน** →
+  อ่านออกมาเป็น "ออร์เดอร์ SHIPPED เวลา 21:26" ซึ่งเวลานั้นคือตอน **สร้าง** ออร์เดอร์ (ยัง `PENDING`).
+  แก้เป็น text = `สร้างออร์เดอร์ · ยอดเงิน` และแยกสถานะปัจจุบันไป field ใหม่ `status`/`statusAt`
+  (`updated_at` ของแถว) ให้ UI ติดป้ายว่า "สถานะปัจจุบัน" · **ถ้าต้องการเส้นเวลาการเปลี่ยนสถานะจริง
+  ให้ใช้ `getOrderJourney()` ที่อ่าน `bms_audit_log` อยู่แล้ว ไม่ต้องเขียนใหม่ใน timeline**
+- **ออร์เดอร์ join ด้วย `customer_id` ไม่ใช่ `conversation_id`** (ต่างจาก message/note) → ออร์เดอร์
+  ช่องทางอื่นของลูกค้าคนเดียวกันโผล่ในแชทนี้ด้วยโดยไม่มีอะไรบอก. ไม่เปลี่ยน scope (ตั้งใจให้เห็นข้ามช่องทาง)
+  แต่คืน `channel` มาให้ UI ติดแท็ก + เขียน "(ช่องทางอื่น)" เมื่อ `t.channel !== conv.channel`
+- **ข้อความรูป/ไฟล์ล้วนเคยเป็นแถวว่าง** (`body` ว่างได้จริงตามคอมเมนต์ที่ `sendStaffMessage`) →
+  แยก `messagePreview(body, attachment)` ออกมาเป็น export ใน `inbox.ts` ใช้ร่วมกันทั้ง preview คิวแชท
+  (จุดเดิมที่มี logic นี้ inline) และ timeline
+- **ASSIGN เคยโชว์ actor ดิบ (UUID/email)** ทั้งที่ `listSystemEvents()` resolve ชื่อให้แล้ว →
+  เลิก query `bms_audit_log` ซ้ำใน `getTimeline` แล้วเรียก `listSystemEvents()` ตรง ๆ (ได้ event
+  `inbox.status` ติดมาด้วยเป็นของแถม → type ใหม่ `STATUS`)
+- **query ไม่มีเพดาน** → `TIMELINE_MAX_PER_SOURCE = 200` ต่อแหล่ง (ORDER BY DESC LIMIT = เอาใหม่สุด
+  แล้วค่อย sort ขึ้น) + arg `limit` ที่ resolver (clamp ไม่ให้เกินเพดาน)
+- **sort ไม่เสถียร** (เทียบ `at` เดี่ยว ๆ) → tie-break ด้วย `type` แล้ว `ref`
+- **UI ใช้ `toLocaleString()` เปล่า ๆ** → ได้ "7/22/2026, 1:23:08 AM" ตาม locale เบราว์เซอร์ ขณะที่คิวแชท
+  ข้าง ๆ เป็น `22 ก.ค. 2569 · 01:25`. เปลี่ยนมาใช้ `dayKey`/`dayLabel`/`timeLabel` (Asia/Bangkok) ที่ไฟล์
+  นี้มีอยู่แล้ว + date separator วันนี้/เมื่อวาน แบบเดียวกับสายแชท + map ป้ายไทย `TIMELINE_TYPE`
+- **ไม่มี migration** (ใช้คอลัมน์เดิมทั้งหมด: `bms_orders.channel/status/updated_at`,
+  `bms_messages.meta.attachment`) และ **ไม่มี permission ใหม่** (`inbox.view` เดิม)
+- order id ในแถว ORDER เป็น `Typography.Text code copyable` (คืน `entityId` เต็มมาให้ copy) — **ไม่ได้ทำ
+  deep link** เพราะ `/admin/orders` ยังไม่อ่าน query param ของ order เลย และ `OrderPreviewDrawer` เป็น
+  component ภายใน `Customer360Panel.tsx` (ไม่ได้ export) — ถ้าจะทำลิงก์จริงต้องแตะสองไฟล์นั้นก่อน
+- **ยังไม่มี**: payment/shipment event ในแท็บนี้ (ลูกค้าพิมพ์ "โอนเงินแล้ว" แต่ timeline ไม่มีแถว payment
+  เลย) — ของแบบนั้นอยู่ใน `getCustomerTimeline()` ของ Customer 360 panel คนละตัวกัน ถ้าจะเพิ่มควร reuse
+  service เดิมไม่ query ใหม่
 
 ## Customer 360 (Inbox right panel)
 

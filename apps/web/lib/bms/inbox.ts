@@ -6,7 +6,8 @@
 // assign/tags/status/markRead : จัดการงานในทีม
 // addNote/listNotes : โน้ตภายใน (ลูกค้าไม่เห็น)
 // sendStaffMessage : แอดมินตอบเอง → persist + ยิงกลับช่องทาง (LINE push)
-// getTimeline      : รวม message + note + order เรียงตามเวลา
+// getTimeline      : รวม message + note + order + system event เรียงตามเวลาที่เกิดจริง
+//                    (ORDER = เวลาสร้างออร์เดอร์ · สถานะปัจจุบันอยู่ใน status/statusAt แยกกัน)
 //
 // tenant-scoped ทุก query; logConversation เป็น best-effort (ไม่ทำให้ webhook ล้ม)
 // =============================================================
@@ -60,6 +61,14 @@ export type Attachment = { url: string; name?: string | null; mimeType?: string 
 
 export function isImageMime(mime?: string | null): boolean {
   return !!mime && /^image\//i.test(mime);
+}
+
+/** ข้อความสำหรับ preview/timeline — body ว่างได้ถ้าเป็น attachment ล้วน จึงต้องมี placeholder */
+export function messagePreview(body: string | null | undefined, att?: Attachment | null): string {
+  const text = (body ?? "").trim();
+  if (text) return text;
+  if (!att?.url) return "";
+  return isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim();
 }
 
 // ช่องที่ push ออกได้จริง (มี API ส่ง) → FAILED มีความหมาย
@@ -398,6 +407,80 @@ export async function listMessages(tenantId: string, conversationId: string, lim
     [tenantId, conversationId, lim]
   );
   return res.rows;
+}
+
+export type AiHistoryTurn = { role: "user" | "assistant"; content: string };
+
+/**
+ * หา conversation id ของลูกค้าคนนี้ (ถ้ามีแล้ว) — ใช้ร่วมกันระหว่าง getRecentAiHistory และ
+ * bumpAiTurnCounter กันเสียเวลา query ซ้ำ คืน null ถ้ายังไม่เคยมีบทสนทนา (ข้อความแรกของลูกค้า)
+ * หรือเป็น channel "test" (playground ไม่ persist อยู่แล้วเหมือน logConversation)
+ */
+export async function resolveConversationId(
+  tenantId: string,
+  channel: string,
+  customerRef: string | null | undefined
+): Promise<string | null> {
+  if (!customerRef || channel === "test") return null;
+  const conv = await query<{ id: string }>(
+    `SELECT id FROM bms_conversations WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3 LIMIT 1`,
+    [tenantId, channel, customerRef]
+  );
+  return conv.rows[0]?.id ?? null;
+}
+
+/**
+ * P0 — ดึงบทสนทนาล่าสุดของลูกค้าคนนี้ (ไม่รวมข้อความปัจจุบัน) แปลงเป็น alternating user/assistant
+ * เพื่อป้อนกลับเข้า AI tool loop (เดิม pipeline.ts ส่งแค่ข้อความปัจจุบันข้อความเดียว ทำให้ AI ไม่เห็น
+ * เลยว่าตัวเองเพิ่งถามอะไรไปเมื่อ turn ก่อนหน้า) รับ convId ที่ resolve ไว้แล้ว (null = ยังไม่มีบทสนทนา)
+ */
+export async function getRecentAiHistory(
+  tenantId: string,
+  convId: string | null,
+  maxMessages = 20
+): Promise<AiHistoryTurn[]> {
+  if (!convId) return [];
+
+  const res = await query<{ direction: "IN" | "OUT"; body: string }>(
+    `SELECT direction, body FROM bms_messages
+      WHERE tenant_id = $1 AND conversation_id = $2 AND sender <> 'diagnostic'
+      ORDER BY created_at DESC, id DESC
+      LIMIT $3`,
+    [tenantId, convId, Math.min(Math.max(maxMessages, 1), 100)]
+  );
+
+  const turns: AiHistoryTurn[] = [];
+  for (const row of res.rows.reverse()) {
+    const text = (row.body || "").trim();
+    if (!text) continue;
+    const role: "user" | "assistant" = row.direction === "IN" ? "user" : "assistant";
+    const last = turns[turns.length - 1];
+    // Claude API ต้องการ role สลับ user/assistant เสมอ — merge ข้อความติดกัน role เดียวกัน
+    // (เช่น staff ตอบเองหลายข้อความติดกัน) กัน error strict alternation
+    if (last && last.role === role) {
+      last.content += `\n${text}`;
+    } else {
+      turns.push({ role, content: text });
+    }
+  }
+  return turns;
+}
+
+/**
+ * P1 — Turn/Handoff counter (migration 7.28, bms_conversations.ai_consecutive_askbacks)
+ * reset=true → กลับเป็น 0 (มีความคืบหน้าจริง เช่น create_order/submit_payment สำเร็จ)
+ * reset=false → +1 (AI ตอบไปแต่ไม่คืบหน้า) คืนค่าใหม่หลังอัปเดตให้ caller เทียบ threshold เอง
+ */
+export async function bumpAiTurnCounter(tenantId: string, convId: string, reset: boolean): Promise<number> {
+  const res = await query<{ ai_consecutive_askbacks: number }>(
+    `UPDATE bms_conversations
+        SET ai_consecutive_askbacks = CASE WHEN $3 THEN 0 ELSE ai_consecutive_askbacks + 1 END,
+            updated_at = now()
+      WHERE tenant_id = $1 AND id = $2
+      RETURNING ai_consecutive_askbacks`,
+    [tenantId, convId, reset]
+  );
+  return res.rows[0]?.ai_consecutive_askbacks ?? 0;
 }
 
 // ---- manage --------------------------------------------------
@@ -840,7 +923,7 @@ export async function sendStaffMessage(
     [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponWalletLink })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
-  const preview = outgoingText || (att ? (isImageMime(att.mimeType) ? "[รูปภาพ]" : `[ไฟล์] ${att.name ?? ""}`.trim()) : "");
+  const preview = messagePreview(outgoingText, att);
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
@@ -880,57 +963,96 @@ export async function retryMessage(tenantId: string, messageId: string): Promise
 }
 
 // ---- timeline (message + note + order) -----------------------
-export type TimelineEntry = { type: string; at: string; text: string; ref: string | null };
+// `at` = เวลาที่เหตุการณ์นั้นเกิดจริงเสมอ · ORDER = เวลา "สร้างออร์เดอร์" (created_at) ไม่ใช่เวลาที่ได้สถานะปัจจุบัน
+// สถานะปัจจุบันแยกไปที่ field `status`/`statusAt` เพื่อไม่ให้อ่านเหมือนว่า "SHIPPED ตอน created_at"
+export type TimelineEntry = {
+  type: string;
+  at: string;
+  text: string;
+  ref: string | null;
+  channel: string | null;   // ORDER: ช่องทางที่สั่ง (ออร์เดอร์ scope ตามลูกค้า จึงข้ามช่องทางได้)
+  entityId: string | null;  // ORDER: order id เต็ม (ใช้ลิงก์/preview)
+  status: string | null;    // ORDER: สถานะปัจจุบัน
+  statusAt: string | null;  // ORDER: updated_at ของแถว = ครั้งล่าสุดที่สถานะถูกแก้
+};
 
-export async function getTimeline(tenantId: string, conversationId: string): Promise<TimelineEntry[]> {
+// timeline เป็น query ที่หนักสุดของ panel (รวมทุกข้อความ + ทุกออร์เดอร์ของลูกค้า) → ต้องมีเพดานเสมอ
+export const TIMELINE_MAX_PER_SOURCE = 200;
+
+export async function getTimeline(
+  tenantId: string,
+  conversationId: string,
+  limitPerSource = TIMELINE_MAX_PER_SOURCE
+): Promise<TimelineEntry[]> {
   const conv = await query<{ customer_id: string | null }>(
     `SELECT customer_id FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId]
   );
   if (conv.rowCount === 0) return [];
   const customerId = conv.rows[0].customer_id;
+  const cap = Math.max(1, Math.min(limitPerSource, TIMELINE_MAX_PER_SOURCE));
 
-  const [msgs, notes, orders, assignEvents] = await Promise.all([
-    query(`SELECT direction, body, sender, created_at FROM bms_messages
-             WHERE tenant_id = $1 AND conversation_id = $2`, [tenantId, conversationId]),
+  const [msgs, notes, orders, systemEvents] = await Promise.all([
+    query(`SELECT direction, body, sender, meta, created_at FROM bms_messages
+             WHERE tenant_id = $1 AND conversation_id = $2
+             ORDER BY created_at DESC, id DESC LIMIT $3`, [tenantId, conversationId, cap]),
     query(`SELECT author, body, created_at FROM bms_conversation_notes
-             WHERE tenant_id = $1 AND conversation_id = $2`, [tenantId, conversationId]),
+             WHERE tenant_id = $1 AND conversation_id = $2
+             ORDER BY created_at DESC, id DESC LIMIT $3`, [tenantId, conversationId, cap]),
     customerId
-      ? query(`SELECT id, status, total_amount, created_at FROM bms_orders
-                 WHERE tenant_id = $1 AND customer_id = $2`, [tenantId, customerId])
+      ? query(`SELECT id, channel, status, total_amount, created_at, updated_at FROM bms_orders
+                 WHERE tenant_id = $1 AND customer_id = $2
+                 ORDER BY created_at DESC LIMIT $3`, [tenantId, customerId, cap])
       : Promise.resolve({ rows: [] as any[] }),
-    // ประวัติมอบหมาย/โอน/เพิ่ม-ถอดคนช่วยตอบ — เก็บใน bms_audit_log เดิม (target = conversation id)
-    query(`SELECT actor, action, meta, created_at FROM bms_audit_log
-             WHERE tenant_id = $1 AND target = $2
-               AND action IN ('inbox.assign', 'inbox.helper_add', 'inbox.helper_remove')`,
-      [tenantId, conversationId]),
+    // มอบหมาย/ช่วยตอบ/เปลี่ยนสถานะ — reuse listSystemEvents เพื่อได้ "ชื่อคน" ไม่ใช่ UUID/email ดิบ
+    listSystemEvents(tenantId, conversationId),
   ]);
 
   const toISO = (d: any) => (d instanceof Date ? d.toISOString() : String(d));
-  const assignLabel: Record<string, string> = {
-    "inbox.assign": "มอบหมาย/โอน staff หลัก",
-    "inbox.helper_add": "เพิ่มคนช่วยตอบ",
-    "inbox.helper_remove": "ถอดคนช่วยตอบ",
+  const base = { channel: null, entityId: null, status: null, statusAt: null };
+  const systemLabel = (e: SystemEvent) => {
+    if (e.kind === "assign") return `มอบหมาย/โอน staff หลัก → ${e.targetName ?? "ไม่ทราบ"}`;
+    if (e.kind === "helper_add") return `เพิ่มคนช่วยตอบ → ${e.targetName ?? "ไม่ทราบ"}`;
+    if (e.kind === "helper_remove") return `ถอดคนช่วยตอบ → ${e.targetName ?? "ไม่ทราบ"}`;
+    return `เปลี่ยนสถานะแชท → ${e.statusValue ?? "ไม่ทราบ"}`;
   };
   const entries: TimelineEntry[] = [
     ...msgs.rows.map((m: any) => ({
+      ...base,
       type: m.direction === "IN" ? "MESSAGE_IN" : "MESSAGE_OUT",
-      at: toISO(m.created_at), text: m.body, ref: m.sender ?? null,
+      at: toISO(m.created_at),
+      // body ว่างได้ถ้าเป็นรูป/ไฟล์ล้วน — ใช้ placeholder เดียวกับ preview ในคิวแชท
+      text: messagePreview(m.body, m.meta?.attachment ?? null),
+      ref: m.sender ?? null,
     })),
     ...notes.rows.map((n: any) => ({
+      ...base,
       type: "NOTE", at: toISO(n.created_at), text: n.body, ref: n.author ?? null,
     })),
     ...orders.rows.map((o: any) => ({
-      type: "ORDER", at: toISO(o.created_at),
-      text: `ออร์เดอร์ ${o.status} · ${Number(o.total_amount).toLocaleString()} ฿`,
+      ...base,
+      type: "ORDER",
+      at: toISO(o.created_at),
+      text: `สร้างออร์เดอร์ · ${Number(o.total_amount).toLocaleString()} ฿`,
       ref: String(o.id).slice(0, 8),
+      channel: o.channel ?? null,
+      entityId: String(o.id),
+      status: o.status ?? null,
+      statusAt: o.updated_at ? toISO(o.updated_at) : null,
     })),
-    ...assignEvents.rows.map((e: any) => ({
-      type: "ASSIGN", at: toISO(e.created_at),
-      text: `${assignLabel[e.action] ?? e.action}${e.meta?.auto ? " (auto)" : ""}`,
-      ref: e.actor ?? null,
+    ...systemEvents.map((e) => ({
+      ...base,
+      type: e.kind === "status" ? "STATUS" : "ASSIGN",
+      at: e.at,
+      text: `${systemLabel(e)}${e.auto ? " (auto)" : ""}`,
+      ref: e.actorName,
     })),
   ];
-  entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // tie-break ด้วย type+ref กัน event วินาทีเดียวกันสลับลำดับไปมาทุกครั้งที่โหลด
+  entries.sort((a, b) =>
+    a.at < b.at ? -1 : a.at > b.at ? 1
+      : a.type < b.type ? -1 : a.type > b.type ? 1
+        : String(a.ref).localeCompare(String(b.ref))
+  );
   return entries;
 }

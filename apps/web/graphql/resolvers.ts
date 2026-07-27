@@ -12,6 +12,7 @@ import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
+import { getTenantName } from "@/lib/bms/platform";
 import { addLog } from "@/lib/log/log.server";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -41,6 +42,7 @@ import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
 import { bmsChannelsResolvers } from "@/graphql/bmsChannels";
 import { bmsAiConfigResolvers } from "@/graphql/bmsAiConfig";
+import { bmsSqlConsoleResolvers } from "@/graphql/bmsSqlConsole";
 import { bmsSaasResolvers } from "@/graphql/bmsSaas";
 import { bmsPurchaseResolvers } from "@/graphql/bmsPurchase";
 import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
@@ -673,7 +675,7 @@ const rawResolvers = {
     roleDetails: async (parent: any) => {
       const roleId = parent?.role_id;
       if (!roleId) return null;
-      
+
       try {
         const { rows } = await query(
           `SELECT id, name, description, is_active, created_at, updated_at FROM roles WHERE id = $1 LIMIT 1`,
@@ -684,6 +686,25 @@ const rawResolvers = {
         console.error('[User.roleDetails] Error fetching role:', err);
         return null;
       }
+    },
+    // ให้ platform admin เห็นว่า user นี้เป็นของร้านไหน (หน้า /admin/users แสดง user ข้ามร้านได้
+    // แต่ไม่เคยบอกว่า user เป็นของร้านไหนเลย) — user ที่ไม่มี tenant_id (เช่นบัญชีระบบเก่า) คืน null
+    tenantName: async (parent: any) => {
+      if (!parent?.tenant_id) return null;
+      try {
+        return await getTenantName(parent.tenant_id);
+      } catch (err) {
+        console.error('[User.tenantName] Error fetching tenant name:', err);
+        return null;
+      }
+    },
+    // pg คืน timestamp เป็น Date object — ต้อง .toISOString() เองก่อนคืนใน field ที่เป็น String
+    // (ไม่งั้น GraphQLString.serialize เรียก .valueOf() ได้ epoch number แทน — เจอบั๊กแบบนี้มาแล้วหลายที่
+    // ในโปรเจกต์นี้ เช่น created_at ของ User เอง ที่หน้า list ต้อง workaround ด้วย new Date(Number(d)))
+    lastLoginAt: (parent: any) => {
+      const v = parent?.last_login_at;
+      if (!v) return null;
+      return v instanceof Date ? v.toISOString() : String(v);
     },
   },
   Message: {
@@ -2650,6 +2671,7 @@ const rawResolvers = {
     ...bmsDashboardResolvers.Query,
     ...bmsChannelsResolvers.Query,
     ...bmsAiConfigResolvers.Query,
+    ...bmsSqlConsoleResolvers.Query,
     ...bmsStoreProfileResolvers.Query,
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
@@ -2920,6 +2942,12 @@ const rawResolvers = {
         path: "/",
         maxAge: sessionMaxAgeSec,
       });
+
+      // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
+      query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
+        console.error("[loginAdmin] update last_login_at failed:", err);
+      });
+
       return {
         ok: true,
         message: "Login success",
@@ -7126,6 +7154,7 @@ const rawResolvers = {
     ...bmsDashboardResolvers.Mutation,
     ...bmsChannelsResolvers.Mutation,
     ...bmsAiConfigResolvers.Mutation,
+    ...bmsSqlConsoleResolvers.Mutation,
     ...bmsSaasResolvers.Mutation,
     ...bmsPurchaseResolvers.Mutation,
     ...bmsPaymentsResolvers.Mutation,

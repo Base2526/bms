@@ -33,6 +33,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI facts | `bms_store_profile` | `6.9` |
+| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27` |
 
 ## Notable schema details
 

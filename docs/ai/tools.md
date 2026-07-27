@@ -675,7 +675,17 @@ Permission: inbox.manage
 
 ## addNote() / getTimeline()
 
-โน้ตภายใน (ลูกค้าไม่เห็น) · timeline รวม message + note + order เรียงตามเวลา
+โน้ตภายใน (ลูกค้าไม่เห็น) · timeline รวม message + note + order + system event (มอบหมาย/ช่วยตอบ/
+สถานะแชท) เรียงตามเวลา **ที่เหตุการณ์นั้นเกิดจริง**
+
+- แถว `ORDER` = เวลา **สร้าง** ออร์เดอร์ (`created_at`) — สถานะปัจจุบันแยกเป็น field `status`/`statusAt`
+  ห้ามอ่านรวมกันว่า "ได้สถานะนี้ตอน `at`" (ถ้าต้องการเส้นเวลาการเปลี่ยนสถานะจริง ใช้ `getOrderJourney()`
+  ที่อ่านจาก `bms_audit_log`)
+- ออร์เดอร์ scope ตาม **ลูกค้า** ไม่ใช่ตามแชท → ออร์เดอร์ช่องทางอื่นก็ปรากฏด้วย จึงคืน `channel` มาให้
+  UI ติดป้ายกำกับ
+- ข้อความที่เป็นรูป/ไฟล์ล้วน (`body` ว่าง) คืน `[รูปภาพ]`/`[ไฟล์] ชื่อไฟล์` ผ่าน `messagePreview()`
+  ตัวเดียวกับ preview ในคิวแชท
+- มีเพดาน `TIMELINE_MAX_PER_SOURCE = 200` ต่อแหล่งข้อมูล (arg `limit` ปรับลงได้ แต่ไม่เกินเพดาน)
 
 Permission: inbox.manage (note) / inbox.view (timeline)
 

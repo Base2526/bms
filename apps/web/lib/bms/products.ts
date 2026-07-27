@@ -111,7 +111,14 @@ export async function listProducts(
   if (s) {
     params.push(`%${s}%`);
     const p = `$${params.length}`;
-    conds.push(`(name ILIKE ${p} OR sku ILIKE ${p} OR barcode ILIKE ${p})`);
+    // P-0.5: match keywords[] ด้วย (เดิม match แค่ name/sku/barcode ทำให้ alias ที่ร้านตั้งไว้
+    // ใน bms_products.keywords ใช้ไม่ได้กับ AI tool-calling path เลย — มี GIN index อยู่แล้ว
+    // ดู db/migrations/3.2__bms_products_inventory.sql)
+    conds.push(
+      `(name ILIKE ${p} OR sku ILIKE ${p} OR barcode ILIKE ${p} OR EXISTS (
+         SELECT 1 FROM unnest(keywords) AS k WHERE k ILIKE ${p}
+       ))`
+    );
   }
   if (category) {
     params.push(category);

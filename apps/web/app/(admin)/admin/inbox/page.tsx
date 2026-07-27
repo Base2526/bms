@@ -96,7 +96,7 @@ const S_INBOX_CHANGED = gql`
 `;
 const Q_STAFF = gql`query { bmsAssignableStaff { ${STAFF_FIELDS} } }`;
 const Q_ME = gql`query { bmsMe { id role is_available gender tenant { slug } } bmsActingTenant { slug } }`;
-const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref } }`;
+const Q_TIMELINE = gql`query ($id: ID!) { bmsConversationTimeline(id: $id) { type at text ref channel entityId status statusAt } }`;
 const Q_CUSTOMER = gql`
   query ($id: ID!) {
     bmsCustomer(id: $id) {
@@ -180,6 +180,15 @@ function eventText(ev: SystemEvent) {
 }
 
 const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", shopee: "orange", lazada: "purple", test: "default" };
+// ป้ายของแท็บ Timeline — ORDER = "สร้างออร์เดอร์" เท่านั้น (สถานะปัจจุบันแยกไปอีกบรรทัด ไม่ผูกกับเวลา at)
+const TIMELINE_TYPE: Record<string, { label: string; color: string }> = {
+  MESSAGE_IN: { label: "ลูกค้าส่ง", color: "blue" },
+  MESSAGE_OUT: { label: "ร้านตอบ", color: "default" },
+  NOTE: { label: "โน้ตภายใน", color: "gold" },
+  ORDER: { label: "สร้างออร์เดอร์", color: "green" },
+  ASSIGN: { label: "มอบหมาย", color: "cyan" },
+  STATUS: { label: "สถานะแชท", color: "purple" },
+};
 const STATUS_COLOR: Record<ConvStatus, string> = { OPEN: "green", PENDING: "orange", CLOSED: "default" };
 const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
 const LIST_COLLAPSE_KEY = "bms_inbox_list_collapsed";
@@ -347,9 +356,18 @@ function Inbox() {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("c");
   });
+  // deep-link ไปแท็บเฉพาะ: /admin/inbox?c=<id>&tab=notes — ใช้กับลิงก์จาก mention notification
+  // (เดิม deep-link เปิดแท็บ "แชท" เสมอ ทำให้ staff ต้องเปิดเข้ามาแล้วกดหาแท็บโน้ตเองอีกที)
+  const [initialTab, setInitialTab] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("tab");
+  });
   useEffect(() => {
-    const c = new URLSearchParams(window.location.search).get("c");
+    const params = new URLSearchParams(window.location.search);
+    const c = params.get("c");
     if (c) setActiveId(c);
+    const tab = params.get("tab");
+    if (tab) setInitialTab(tab);
   }, []);
   // แจ้ง GlobalInboxNotifier ว่ากำลังเปิดแชทไหนอยู่ (กันแจ้ง notification ซ้ำกับแชทที่เห็นอยู่ตรงหน้า)
   const setActiveConversationGlobal = useGlobalInboxStore((s) => s.setActiveConversation);
@@ -801,7 +819,7 @@ function Inbox() {
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
             <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
-              gender={me?.gender} tenantSlug={tenantSlug} onChanged={() => { refetchConv(); refetch(); }} />
+              gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={() => { refetchConv(); refetch(); }} />
           )}
         </div>
         )}
@@ -813,11 +831,19 @@ function Inbox() {
   );
 }
 
-function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null }) {
+function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug, initialTab }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null; initialTab?: string | null }) {
+  // ควบคุม tab เอง (เดิม uncontrolled, default "แชท" เสมอ) เพื่อรองรับ deep-link ?tab=notes
+  // จาก mention notification — ใช้ initialTab แค่ตอนเปิดแชทนี้ครั้งแรก ไม่บังคับทับถ้า staff สลับแท็บเอง
+  const [activeTabKey, setActiveTabKey] = useState(initialTab === "notes" ? "notes" : "chat");
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [noteMentionQuery, setNoteMentionQuery] = useState<string | null>(null);
   const [noteMentions, setNoteMentions] = useState<{ id: string; name: string }[]>([]);
+  // ปิด mention picker (dropdown position:absolute) เสมอเมื่อสลับออกจากแท็บโน้ต — กัน dropdown
+  // ค้างเปิดขวางพื้นที่ของแท็บอื่นถ้า pane ที่ไม่ active ยังไม่ถูก unmount เต็มที่
+  useEffect(() => {
+    if (activeTabKey !== "notes") setNoteMentionQuery(null);
+  }, [activeTabKey]);
   const [tags, setTags] = useState<string[]>(conv.tags || []);
   const [showHelperTags, setShowHelperTags] = useState(false);
   const [showAiSuggestion, setShowAiSuggestion] = useState(true);
@@ -1744,13 +1770,18 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       {canManage && (
         <div style={{ position: "relative", marginBottom: 12 }}>
           <Space.Compact style={{ width: "100%" }}>
-            <Input value={note} onChange={(e) => onNoteChange(e.target.value)} placeholder="โน้ตภายใน (ลูกค้าไม่เห็น) — พิมพ์ @ เพื่อกล่าวถึงเพื่อนร่วมทีม" />
-            <Button loading={noting} disabled={!note.trim()} onClick={submitNote}>เพิ่ม</Button>
+            <Input value={note} onChange={(e) => onNoteChange(e.target.value)} placeholder="โน้ตภายใน (ลูกค้าไม่เห็น)" />
+            <Button onClick={() => setNoteMentionQuery("")} title="กล่าวถึงเพื่อนร่วมทีม">@</Button>
+            <Button type="primary" loading={noting} disabled={!note.trim()} onClick={submitNote}>เพิ่ม</Button>
           </Space.Compact>
-          {noteMentionQuery !== null && noteMentionCandidates.length > 0 && (
+          {noteMentionQuery !== null && (
+            // เดิม gate ด้วย noteMentionCandidates.length > 0 — ถ้าร้านมี staff ให้เมนชันได้ 0 คน
+            // (เช่น admin คนเดียว ไม่มี Sales/Manager คนอื่น) กด @ แล้วไม่มีอะไรเกิดขึ้นเลย ไม่รู้ว่า
+            // "ไม่มีให้เลือก" หรือ "ปุ่มพัง" — ใส่ empty state ให้เห็นชัดแทนความเงียบ
             <List size="small" bordered
-              style={{ position: "absolute", top: "100%", left: 0, right: 84, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
+              style={{ position: "absolute", top: "100%", left: 0, right: 116, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
               dataSource={noteMentionCandidates}
+              locale={{ emptyText: <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>ไม่มีเพื่อนร่วมทีมให้กล่าวถึง</div> }}
               renderItem={(s) => (
                 <List.Item style={{ cursor: "pointer", padding: "4px 8px" }} onClick={() => pickNoteMention(s)}>
                   {staffLabel(s)}
@@ -1827,14 +1858,55 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     <div style={{ height: "100%", overflowY: "auto" }}>
       {(!tlData) && <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>โหลด timeline</Button>}
       <List size="small" dataSource={tlData?.bmsConversationTimeline || []} locale={{ emptyText: tlData ? "ไม่มีเหตุการณ์" : "" }}
-        renderItem={(t: any) => (
-          <List.Item>
-            <List.Item.Meta
-              title={<Space><Tag>{t.type}</Tag><span>{new Date(t.at).toLocaleString()}</span></Space>}
-              description={<span>{t.text}{t.ref ? ` · ${t.ref}` : ""}</span>}
-            />
-          </List.Item>
-        )} />
+        renderItem={(t: any, index: number) => {
+          const rows: any[] = tlData?.bmsConversationTimeline || [];
+          const showDay = index === 0 || dayKey(rows[index - 1].at) !== dayKey(t.at);
+          const meta = TIMELINE_TYPE[t.type] || { label: t.type, color: "default" };
+          const isOrder = t.type === "ORDER";
+          // ออร์เดอร์ scope ตามลูกค้า (ไม่ใช่ตามแชท) → ออร์เดอร์ช่องทางอื่นก็โผล่ที่นี่ ต้องติดป้ายให้เห็น
+          const crossChannel = isOrder && !!t.channel && t.channel !== conv.channel;
+          return (
+            <>
+              {showDay && (
+                <Divider plain style={{ margin: "6px 0", fontSize: 11.5 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>{dayLabel(t.at)}</Typography.Text>
+                </Divider>
+              )}
+              <List.Item style={{ padding: "6px 0" }}>
+                <List.Item.Meta
+                  title={
+                    <Space size={4} wrap>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(t.at)}</Typography.Text>
+                      <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+                      {isOrder && t.channel && (
+                        <Tag color={crossChannel ? CHANNEL_COLOR[t.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
+                          {t.channel}{crossChannel ? " (ช่องทางอื่น)" : ""}
+                        </Tag>
+                      )}
+                      {!isOrder && t.ref && <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {t.ref}</Typography.Text>}
+                    </Space>
+                  }
+                  description={
+                    <div style={{ fontSize: 12.5 }}>
+                      <span>{t.text}</span>
+                      {isOrder && (
+                        <div style={{ marginTop: 2 }}>
+                          <Typography.Text code copyable={{ text: t.entityId || t.ref }} style={{ fontSize: 11.5 }}>{t.ref}</Typography.Text>
+                          {t.status && (
+                            <Typography.Text type="secondary" style={{ fontSize: 11.5, marginInlineStart: 6 }}>
+                              · สถานะปัจจุบัน: {t.status}
+                              {t.statusAt ? ` (อัปเดต ${dayLabel(t.statusAt)} ${timeLabel(t.statusAt)})` : ""}
+                            </Typography.Text>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  }
+                />
+              </List.Item>
+            </>
+          );
+        }} />
     </div>
   );
 
@@ -1846,6 +1918,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         size="small"
         className="bms-inbox-tabs-fill"
         tabBarGutter={isMobile ? 18 : undefined}
+        activeKey={activeTabKey}
+        onChange={setActiveTabKey}
         items={[
           { key: "chat", label: "แชท", children: chatTab },
           { key: "customer", label: "ลูกค้า", children: customerTab },

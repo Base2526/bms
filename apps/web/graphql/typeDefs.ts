@@ -26,6 +26,8 @@ export const typeDefs = /* GraphQL */ `
     username: String!
     language: String!
     notifications_enabled: Boolean!
+    tenantName: String # ชื่อร้านของ user นี้ — ให้ platform admin เห็นว่า user เป็นของร้านไหน (null ถ้าไม่มี tenant_id)
+    lastLoginAt: String # ISO string ล่าสุดที่ login สำเร็จ (null = ยังไม่เคย login ตั้งแต่มี column นี้)
   }
 
   type UserConnection {
@@ -692,7 +694,7 @@ export const typeDefs = /* GraphQL */ `
     # assignedTo = user id ของ staff — กรอง conversation ที่เป็น staff หลัก "หรือ" คนช่วยตอบของคนนั้น (ใช้ทำ filter "ของฉัน")
     bmsConversations(status: BmsConvStatus, assignedTo: ID, tag: String, search: String, limit: Int = 50, offset: Int = 0): [BmsConversation!]!
     bmsConversation(id: ID!): BmsConversation
-    bmsConversationTimeline(id: ID!): [BmsTimelineEntry!]!
+    bmsConversationTimeline(id: ID!, limit: Int): [BmsTimelineEntry!]!   # limit = เพดานต่อแหล่งข้อมูล (default/สูงสุด 200)
     bmsAssignableStaff: [BmsStaffRef!]!
     bmsInboxUnreadCount: Int!   # แชท OPEN/PENDING ที่ยังไม่อ่านรวม (Sales เห็นแค่ของตัวเอง) — ใช้ทำ badge บนเมนู sidebar
     bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
@@ -726,6 +728,10 @@ export const typeDefs = /* GraphQL */ `
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
+    bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
+    bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
+    bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
+    bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
@@ -1106,10 +1112,14 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsTimelineEntry {
-    type: String!           # MESSAGE_IN | MESSAGE_OUT | NOTE | ORDER
-    at: String!
+    type: String!           # MESSAGE_IN | MESSAGE_OUT | NOTE | ORDER | ASSIGN | STATUS
+    at: String!             # เวลาที่เหตุการณ์เกิดจริง (ORDER = เวลาสร้างออร์เดอร์)
     text: String!
-    ref: String
+    ref: String             # ผู้ส่ง/ผู้เขียนโน้ต/ชื่อ staff · ORDER = order id 8 ตัวแรก
+    channel: String         # ORDER: ช่องทางที่สั่ง (อาจต่างจากช่องทางของแชทนี้)
+    entityId: ID            # ORDER: order id เต็ม
+    status: String          # ORDER: สถานะปัจจุบัน (ไม่ใช่สถานะ ณ เวลา at)
+    statusAt: String        # ORDER: เวลาที่สถานะถูกแก้ครั้งล่าสุด
   }
 
   type BmsSendResult {
@@ -1557,6 +1567,7 @@ export const typeDefs = /* GraphQL */ `
     code: String!  name: String!  price_monthly: Float!
     max_products: Int!  max_channels: Int!  max_orders_month: Int!  max_users: Int!
     max_ai_messages_month: Int!
+    ai_credits_monthly: Int!
   }
   type BmsUsage { products: Int!  channels: Int!  orders_month: Int!  users: Int! }
   type BmsBilling {
@@ -1620,8 +1631,56 @@ export const typeDefs = /* GraphQL */ `
   type BmsAiUsage {
     count: Int!  limit: Int!  remaining: Int!  unlimited: Boolean!
     planCode: String!  planName: String!
+    requestCount: Int!
+    sharedRequests: Int!
+    byokRequests: Int!
+    blockedRequests: Int!
+    grantedCredits: Int!
+    bonusCredits: Int!
+    adjustedCredits: Int!
+    estimatedCost: Float!
+  }
+  type BmsAiCreditLedgerEntry {
+    id: ID!
+    yearMonth: String!
+    entryType: String!
+    amount: Int!
+    balanceAfter: Int!
+    referenceType: String
+    referenceId: String
+    note: String
+    createdAt: String!
+  }
+  type BmsAiUsageBreakdown {
+    feature: String!
+    requests: Int!
+    creditsUsed: Int!
+    estimatedCost: Float!
   }
   type BmsTestAiKeyResult { ok: Boolean!  message: String! }
+
+  # Dev SQL Console (platform admin only) — ดู docs/AI Context Strategy for Multi-Tenant Shops.md
+  # และ lib/bms/sqlConsole.ts: read-only ใช้ได้ทุก env, write-mode ปิดใน production เสมอ
+  type BmsSqlResult {
+    ok: Boolean!
+    columns: [String!]!
+    rows: JSON!
+    rowCount: Int!
+    durationMs: Int!
+    error: String
+  }
+
+  type BmsJsConsoleLog {
+    level: String!
+    text: String!
+  }
+  type BmsJsConsoleResult {
+    ok: Boolean!
+    logs: [BmsJsConsoleLog!]!
+    result: String
+    durationMs: Int!
+    error: String
+  }
 
   type BmsInboxDiagnosticEventResult {
     ok: Boolean!
@@ -2182,8 +2241,14 @@ export const typeDefs = /* GraphQL */ `
     bmsSetAiKey(apiKey: String, model: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!
+    bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
     bmsTestPlatformAiKey: BmsTestAiKeyResult!
     bmsEmitInboxDiagnosticEvent(channel: String!, probeId: ID!): BmsInboxDiagnosticEventResult!
+
+    # ===== Dev SQL Console (platform admin only) =====
+    bmsRunReadOnlySql(sql: String!): BmsSqlResult!   # SELECT/WITH เท่านั้น, ใช้ได้ทุก env
+    bmsRunSql(sql: String!): BmsSqlResult!           # เขียนได้ — ปิดใช้งานเมื่อ NODE_ENV=production เสมอ
+    bmsRunSandboxedJs(code: String!): BmsJsConsoleResult! # JS sync sandbox + console.log — non-production only
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!

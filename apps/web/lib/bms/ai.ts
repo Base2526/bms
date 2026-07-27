@@ -12,7 +12,13 @@
 
 import type { StockResult } from "./stock";
 import { getTenantAiConfig, DEFAULT_AI_MODEL } from "./aiConfig";
-import { tryConsumeAiQuota } from "./aiUsage";
+import { finalizeAiUsageEvent, recordAiFallback, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "./aiUsage";
+
+type ClaudeReply = {
+  text: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+};
 
 function template(res: StockResult): string {
   switch (res.status) {
@@ -46,7 +52,7 @@ function facts(res: StockResult): string {
   }
 }
 
-async function claude(apiKey: string, model: string, message: string, res: StockResult): Promise<string> {
+async function claude(apiKey: string, model: string, message: string, res: StockResult): Promise<ClaudeReply> {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -70,10 +76,14 @@ async function claude(apiKey: string, model: string, message: string, res: Stock
     }),
   });
   if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-  const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+  const json = (await resp.json()) as { content?: Array<{ text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
   const text = json.content?.[0]?.text?.trim();
   if (!text) throw new Error("Claude empty reply");
-  return text;
+  return {
+    text,
+    inputTokens: json.usage?.input_tokens ?? null,
+    outputTokens: json.usage?.output_tokens ?? null,
+  };
 }
 
 export type AiCredentials = {
@@ -81,6 +91,7 @@ export type AiCredentials = {
   model: string;
   /** byok = key ของร้าน (ไม่ติด quota) · shared = key กลาง (นับ quota ไปแล้ว 1 หน่วย) */
   source: "byok" | "shared";
+  usageEventId?: string;
 };
 
 /**
@@ -88,26 +99,45 @@ export type AiCredentials = {
  * เรียก "ครั้งเดียวต่อ 1 ข้อความลูกค้า" — shared key จะกิน quota 1 หน่วยตรงนี้ ไม่ใช่ต่อ tool-loop รอบ
  * reuse ได้ทั้ง generateResponse (fallback เดิม) และ tool-calling runtime (lib/bms/tools/runtime.ts)
  */
-export async function resolveAiCredentials(tenantId: string): Promise<AiCredentials | null> {
+export async function resolveAiCredentials(tenantId: string, usageCtx?: AiUsageContext): Promise<AiCredentials | null> {
   // 1) ร้านตั้ง API key ของตัวเอง (BYOK) — ใช้ก่อนเสมอ ไม่ติด quota กลาง
   const own = await getTenantAiConfig(tenantId);
   if (own?.apiKey) {
-    return { apiKey: own.apiKey, model: own.model || DEFAULT_AI_MODEL, source: "byok" };
+    const eventId = await recordByokAiUsage(tenantId, {
+      surface: usageCtx?.surface,
+      feature: usageCtx?.feature,
+      channel: usageCtx?.channel,
+      provider: usageCtx?.provider,
+      model: own.model || DEFAULT_AI_MODEL,
+      meta: usageCtx?.meta,
+    });
+    return { apiKey: own.apiKey, model: own.model || DEFAULT_AI_MODEL, source: "byok", usageEventId: eventId };
   }
 
   // 2) shared key ของแพลตฟอร์ม — ต้องเช็ค quota รายเดือนก่อนเรียกจริง
   if (process.env.ANTHROPIC_API_KEY) {
-    const withinQuota = await tryConsumeAiQuota(tenantId);
-    if (withinQuota) {
+    const withinQuota = await tryConsumeAiQuota(tenantId, {
+      surface: usageCtx?.surface,
+      feature: usageCtx?.feature,
+      channel: usageCtx?.channel,
+      provider: usageCtx?.provider,
+      model: process.env.BMS_AI_MODEL || DEFAULT_AI_MODEL,
+      meta: usageCtx?.meta,
+    });
+    if (withinQuota.ok) {
       return {
         apiKey: process.env.ANTHROPIC_API_KEY,
         model: process.env.BMS_AI_MODEL || DEFAULT_AI_MODEL,
         source: "shared",
+        usageEventId: withinQuota.eventId,
       };
     }
   }
 
   // 3) ไม่มี key เลย หรือเกิน quota
+  if (!process.env.ANTHROPIC_API_KEY) {
+    await recordAiFallback(tenantId, "no_credentials", usageCtx);
+  }
   return null;
 }
 
@@ -116,12 +146,30 @@ export async function generateResponse(
   message: string,
   res: StockResult
 ): Promise<string> {
-  const creds = await resolveAiCredentials(tenantId);
+  const creds = await resolveAiCredentials(tenantId, {
+    surface: "customer",
+    feature: "stock_reply",
+    provider: "anthropic",
+  });
   if (!creds) return template(res); // ไม่มี key เลย หรือเกิน quota — deterministic template
 
   try {
-    return await claude(creds.apiKey, creds.model, message, res);
+    const parsed = await claude(creds.apiKey, creds.model, message, res);
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "completed",
+        inputTokens: parsed.inputTokens ?? null,
+        outputTokens: parsed.outputTokens ?? null,
+      });
+    }
+    return parsed.text;
   } catch (err) {
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "failed",
+        errorMessage: err instanceof Error ? err.message : "Claude failed",
+      });
+    }
     console.error(`[BMS] Claude (${creds.source} key) failed, fallback to template:`, err);
     return template(res);
   }
