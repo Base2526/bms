@@ -29,7 +29,7 @@ export function GlobalMentionNotifier() {
       if (result && conversationId) {
         result.onclick = () => {
           window.focus();
-          window.location.href = `/admin/inbox?c=${conversationId}`;
+          window.location.href = `/admin/inbox?c=${conversationId}&tab=notes`;
         };
       }
     },

@@ -123,6 +123,31 @@ No new backend was needed — it reuses the existing `bmsCustomer` GraphQL query
 `getCustomer()`/`customerOrders()` (`lib/bms/customers.ts`). Gated by permission `customer.view`;
 without it, the tab shows an empty state rather than an error.
 
+## The "Timeline" tab (`/admin/inbox`)
+
+Still a manual load (`bmsConversationTimeline(id)` → `getTimeline()` in `lib/bms/inbox.ts`), gated by
+`inbox.view`. It merges messages, internal notes, orders, and system events (assignment, helper
+add/remove, chat status) for the conversation. Rules that keep it honest:
+
+- **`at` is always when the event actually happened.** An `ORDER` row is timestamped by the order's
+  `created_at` — the moment it was created as `PENDING`. The order's present status travels in the
+  separate `status`/`statusAt` fields and the UI labels it "สถานะปัจจุบัน", so the row can never be
+  read as "reached SHIPPED at `at`". For the real status-transition sequence use `bmsOrderJourney`,
+  which reads `bms_audit_log` (`order.pay/pack/ship/complete/cancel/return`).
+- **Orders are customer-scoped, not conversation-scoped.** They are matched on `customer_id`, so a
+  customer's orders from other channels appear here too. Every order row carries `channel`; the UI
+  tags it, and marks it "(ช่องทางอื่น)" when it differs from the conversation's channel.
+- **Image/file-only messages are not blank rows.** `body` is legitimately empty for attachment-only
+  messages, so text falls back to `[รูปภาพ]` / `[ไฟล์] <name>` via the shared `messagePreview()`.
+- **Staff are named, not UUIDs.** System events come from `listSystemEvents()`, which already
+  resolves ids/emails to display names, instead of re-querying `bms_audit_log` and printing the raw
+  actor.
+- **Bounded and stable.** Each source is capped at `TIMELINE_MAX_PER_SOURCE = 200` (newest first,
+  optional smaller `limit` arg), and sorting breaks ties on `type` then `ref` so same-second events
+  keep a fixed order between loads.
+- Times render in `Asia/Bangkok` with Thai formatting and วันนี้/เมื่อวาน day separators, matching
+  the chat thread rather than the browser locale.
+
 The Inbox list/header may show cached channel profile metadata before staff opens Customer 360. For
 LINE OA, the webhook syncs `display_name` and `picture_url` into `bms_customer_identities`; GraphQL
 exposes these as `customerName` fallback and `customerAvatar`. The Customer 360 tab still uses the

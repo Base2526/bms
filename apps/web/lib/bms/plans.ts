@@ -8,7 +8,7 @@ import { query } from "@/lib/db";
 export type Plan = {
   code: string; name: string; price_monthly: number;
   max_products: number; max_channels: number; max_orders_month: number; max_users: number;
-  max_ai_messages_month: number; sort: number;
+  max_ai_messages_month: number; ai_credits_monthly: number; sort: number;
 };
 
 // เรียกผ่าน client เดียวกับ transaction ที่เปิดอยู่ (ถ้ามี) ไม่งั้น fallback ไป pool query() เดิม
@@ -26,7 +26,9 @@ function shapePlan(r: any): Plan {
     code: r.code, name: r.name, price_monthly: Number(r.price_monthly),
     max_products: r.max_products, max_channels: r.max_channels,
     max_orders_month: r.max_orders_month, max_users: r.max_users,
-    max_ai_messages_month: r.max_ai_messages_month, sort: r.sort,
+    max_ai_messages_month: r.max_ai_messages_month,
+    ai_credits_monthly: r.ai_credits_monthly ?? r.max_ai_messages_month,
+    sort: r.sort,
   };
 }
 

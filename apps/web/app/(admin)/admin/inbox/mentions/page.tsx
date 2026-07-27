@@ -41,7 +41,7 @@ export default function MyMentionsPage() {
 
   const openMention = async (m: Mention) => {
     if (!m.readAt) await markRead({ variables: { id: m.id } }).catch(() => {});
-    router.push(`/admin/inbox?c=${m.conversationId}`);
+    router.push(`/admin/inbox?c=${m.conversationId}&tab=notes`);
   };
 
   if (!permsLoading && !can("inbox.view")) {

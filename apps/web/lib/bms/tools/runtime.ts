@@ -9,6 +9,7 @@
 // =============================================================
 
 import { resolveAiCredentials, type AiCredentials } from "../ai";
+import { finalizeAiUsageEvent } from "../aiUsage";
 import { audit } from "../audit";
 import { requirePermission } from "../permissions";
 import { ToolArgError, type BmsTool, type ExecCtx, type ToolProposal } from "./types";
@@ -132,7 +133,15 @@ export async function runToolLoop(opts: {
   if (uniqueNames.size !== opts.tools.length) {
     throw new Error("AI tool registry contains duplicate names");
   }
-  const creds = await resolveAiCredentials(opts.tenantId);
+  const creds = await resolveAiCredentials(opts.tenantId, {
+    surface: opts.execCtx.surface,
+    feature: opts.execCtx.surface === "staff" ? "staff_assistant" : "customer_tool_loop",
+    channel: opts.execCtx.surface === "customer" ? opts.execCtx.channel ?? null : null,
+    provider: "anthropic",
+    meta: {
+      actor: opts.execCtx.actor,
+    },
+  });
   if (!creds) return { reply: "", proposals: [], trace: [], usedAi: false };
 
   const byName = new Map(opts.tools.map((t) => [t.name, t]));
@@ -148,6 +157,8 @@ export async function runToolLoop(opts: {
   const proposals: ToolProposal[] = [];
   const trace: ToolTraceEntry[] = [];
   const messages: AnthMessage[] = [...opts.messages];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   // สำคัญ (write-safety): เมื่อมี credentials แล้ว ถือว่า AI "ทำงานแล้ว" (usedAi:true) เสมอ
   // แม้ callClaude จะล้มกลางคัน — เพื่อไม่ให้ caller ไปรัน rule-based ที่อาจ createOrder ซ้ำ
@@ -155,6 +166,8 @@ export async function runToolLoop(opts: {
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const resp = await callClaude(creds, opts.system, messages, toolSchemas);
+      inputTokens += Number(resp?.usage?.input_tokens ?? 0);
+      outputTokens += Number(resp?.usage?.output_tokens ?? 0);
       const content: any[] = Array.isArray(resp?.content) ? resp.content : [];
       const toolUses = content.filter((b) => b?.type === "tool_use");
 
@@ -165,6 +178,13 @@ export async function runToolLoop(opts: {
           .map((b) => b.text)
           .join("\n")
           .trim();
+        if (creds.usageEventId) {
+          await finalizeAiUsageEvent(creds.usageEventId, {
+            status: "completed",
+            inputTokens,
+            outputTokens,
+          });
+        }
         return { reply, proposals, trace, usedAi: true };
       }
 
@@ -224,6 +244,14 @@ export async function runToolLoop(opts: {
     }
 
     // เกิน MAX_ROUNDS — best-effort (เคสหายาก)
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "fallback",
+        inputTokens,
+        outputTokens,
+        errorMessage: "max_rounds_exceeded",
+      });
+    }
     return {
       reply: "ขออภัยค่ะ ระบบประมวลผลนานเกินไป ลองใหม่อีกครั้งนะคะ 🙏",
       proposals,
@@ -231,6 +259,14 @@ export async function runToolLoop(opts: {
       usedAi: true,
     };
   } catch (err) {
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "failed",
+        inputTokens,
+        outputTokens,
+        errorMessage: err instanceof Error ? err.message : "tool-loop error",
+      });
+    }
     // callClaude ล้มเหลว (network/timeout/!=2xx) — คืน usedAi:true กันการ retry แบบ rule-based
     // (ถ้ามีทูล write ทำงานไปแล้วในรอบก่อน จะไม่ถูกทำซ้ำ)
     console.error("[BMS] tool-loop error:", err);

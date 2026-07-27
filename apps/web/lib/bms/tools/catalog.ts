@@ -301,7 +301,8 @@ const checkStockTool: BmsTool = {
 const getOrderStatus: BmsTool = {
   name: "get_order_status",
   description:
-    "ดูสถานะออร์เดอร์ ฝั่งลูกค้า: คืนออร์เดอร์ล่าสุดของลูกค้าคนนี้ (ไม่ต้องส่ง orderId) · ฝั่งแอดมิน: ส่ง orderId เพื่อดู journey เต็ม",
+    "ดูสถานะออร์เดอร์ ฝั่งลูกค้า: เรียกทันทีโดยไม่ต้องส่ง orderId เลย ระบบจะคืนออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ " +
+    "ห้ามถามลูกค้าว่าเลขออร์เดอร์อะไรก่อนเรียกทูลนี้ — เรียกก่อนแล้วค่อยดูผลว่ามีออร์เดอร์ไหม · ฝั่งแอดมิน: ส่ง orderId เพื่อดู journey เต็ม",
   surfaces: ["customer", "staff"],
   permission: "order.view",
   inputSchema: {
@@ -599,22 +600,34 @@ const createOrderTool: BmsTool = {
 const submitPaymentTool: BmsTool = {
   name: "submit_payment",
   description:
-    "บันทึกการแจ้งชำระเงิน (สถานะ PENDING — ยังไม่ยืนยันเงินเข้า ต้องให้แอดมินตรวจสลิปก่อน) ใช้เมื่อลูกค้าแจ้งว่าโอนแล้ว",
+    "บันทึกการแจ้งชำระเงิน (สถานะ PENDING — ยังไม่ยืนยันเงินเข้า ต้องให้แอดมินตรวจสลิปก่อน) ใช้เมื่อลูกค้าแจ้งว่าโอนแล้ว " +
+    "ฝั่งลูกค้า (customer): ไม่ต้องรู้/ถาม orderId เลย — เว้นว่างไว้ได้ ระบบจะใช้ออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ " +
+    "แต่ต้องรู้ method (ช่องทางที่โอน) ก่อนเรียก ถ้าลูกค้าไม่ได้บอกว่าโอนผ่านช่องทางไหน ให้ถามยืนยัน 1 คำถามก่อน อย่าเดา",
   surfaces: ["customer", "staff"],
   permission: "payment.submit",
   inputSchema: {
     type: "object",
     properties: {
-      orderId: { type: "string" },
+      orderId: { type: "string", description: "รหัสออร์เดอร์ — ฝั่งลูกค้าเว้นว่างได้ (ใช้ออร์เดอร์ล่าสุดอัตโนมัติ), ฝั่งแอดมินต้องระบุ" },
       method: { type: "string", enum: PAYMENT_METHODS as unknown as string[] },
       amount: { type: "number", description: "ยอดที่โอน (เว้นได้ = ยอดรวมออร์เดอร์)" },
       slipRef: { type: "string", description: "เลขอ้างอิง/เลขที่ธุรกรรม" },
       note: { type: "string" },
     },
-    required: ["orderId", "method"],
+    required: ["method"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const orderId = reqString(args, "orderId");
+    let orderId = optString(args, "orderId") ?? null;
+    if (!orderId) {
+      // ฝั่งลูกค้าไม่รู้/ไม่ต้องบอก orderId เอง — resolve เป็นออร์เดอร์ล่าสุดของลูกค้าคนนี้ในช่องทางนี้
+      // (pattern เดียวกับ get_order_status ด้านบน) ฝั่งแอดมินต้องระบุมาตรงๆ เสมอ (ไม่เดาแทนแอดมิน)
+      if (ec.surface !== "customer" || !ec.customerRef || !ec.channel) {
+        return { ok: false, error: "ต้องระบุ orderId" };
+      }
+      const [latest] = await listCustomerOrderStatuses(ec.tenantId, ec.channel, ec.customerRef, 1);
+      if (!latest) return { ok: false, error: "ไม่พบออร์เดอร์ของคุณ" };
+      orderId = latest.orderId;
+    }
     if (ec.surface === "customer" && !(await customerOwnsOrder(ec, orderId))) {
       return { ok: false, error: "ไม่พบออร์เดอร์นี้ในบัญชีของคุณ" };
     }

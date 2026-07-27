@@ -6,11 +6,17 @@
 //     -d '{"message":"Nike XL มีไหม"}'
 // ต้องมี signed admin cookie; tenant derive จาก session/drill-down เท่านั้น
 // คืน trace ทุกขั้นของ AI_WORKFLOW เพื่อ debug
+//
+// logConversation() ต่อจาก runPipeline() เหมือน webhook จริงทุกตัว (line/facebook/...) —
+// เดิม endpoint นี้ไม่เคย persist เลย ทำให้ทดสอบ P0 (conversation history) ผ่าน playground ไม่ได้
+// (channel:"test" ยังไม่ persist เหมือนเดิม — logConversation() เองมี guard นี้อยู่แล้ว);
+// ใช้ channel อื่น เช่น "web" คู่กับ customerRef ที่ตั้งเอง เพื่อทดสอบ multi-turn จริง — ดู scripts/ai-eval/
 // =============================================================
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline, type Channel } from "@/lib/bms/pipeline";
+import { logConversation } from "@/lib/bms/inbox";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { verifyAdminSession } from "@/lib/auth/server";
 import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
@@ -47,5 +53,6 @@ export async function POST(req: NextRequest) {
       : admin.tenant_id || DEFAULT_TENANT_ID;
 
   const result = await runPipeline(message, channel, tenantId, customerRef);
+  await logConversation(tenantId, channel, customerRef, message, result.reply);
   return NextResponse.json(result);
 }

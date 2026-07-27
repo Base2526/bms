@@ -7,7 +7,7 @@ const Q_USERS = gql`
   query($search:String, $limit:Int, $offset:Int){
     users(search:$search, limit:$limit, offset:$offset){
       total
-      items{ id name email phone role created_at avatar }
+      items{ id name email phone role created_at avatar tenantName lastLoginAt }
     }
   }
 `;
@@ -79,18 +79,23 @@ function UsersList(){
       title:'User',
       dataIndex:'name',
       render:(v:any,r:any)=>(
-        <Space>
-          {r.avatar
-            ? <Image src={r.avatar} alt={r.name} width={50} height={50}
-                   style={{borderRadius:'50%',objectFit:'cover'}}/>
-            : <div style={{
-                width:50,height:50,borderRadius:'50%',
-                background:'#ddd',display:'inline-flex',
-                alignItems:'center',justifyContent:'center',fontSize:12
-              }}>
-                {r.name?.[0]?.toUpperCase() || '?'}
-              </div>}
-          <a href={`/admin/users/${r.id}/edit`}>{v}</a>
+        <Space direction="vertical" size={0}>
+          <Space>
+            {r.avatar
+              ? <Image src={r.avatar} alt={r.name} width={50} height={50}
+                     style={{borderRadius:'50%',objectFit:'cover'}}/>
+              : <div style={{
+                  width:50,height:50,borderRadius:'50%',
+                  background:'#ddd',display:'inline-flex',
+                  alignItems:'center',justifyContent:'center',fontSize:12
+                }}>
+                  {r.name?.[0]?.toUpperCase() || '?'}
+                </div>}
+            <a href={`/admin/users/${r.id}/edit`}>{v}</a>
+          </Space>
+          {/* platform admin เห็น user ข้ามร้าน — badge นี้บอกว่า user เป็นของร้านไหน
+              (regular admin เห็นแค่ร้านตัวเองอยู่แล้ว badge จะซ้ำกันทุกแถว แต่ไม่เป็นอันตราย) */}
+          {r.tenantName ? <Tag color="geekblue">{r.tenantName}</Tag> : null}
         </Space>
       )
     },
@@ -101,6 +106,11 @@ function UsersList(){
       title: 'Created',
       dataIndex: 'created_at',
       render: (d: string) => new Date( Number(d) ).toLocaleString(),
+    },
+    {
+      title: 'Last Login',
+      dataIndex: 'lastLoginAt',
+      render: (d: string | null) => d ? new Date(d).toLocaleString() : <span style={{color:'#999'}}>ยังไม่เคย</span>,
     },
     {
       title:'Actions',

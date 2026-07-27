@@ -76,9 +76,9 @@ export const bmsInboxResolvers = {
       return conv;
     },
 
-    async bmsConversationTimeline(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsConversationTimeline(_p: unknown, args: { id: string; limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "inbox.view");
-      return getTimeline(getTenantId(ctx), args.id);
+      return getTimeline(getTenantId(ctx), args.id, args.limit ?? undefined);
     },
 
     async bmsAssignableStaff(_p: unknown, _a: unknown, ctx: any) {

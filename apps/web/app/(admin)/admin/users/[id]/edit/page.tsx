@@ -20,19 +20,23 @@ type User = {
   avatar?: string | null;
   role?: string | null; // Legacy field (backward compatibility)
   role_id?: string | null; // New normalized field
+  tenantName?: string | null;
+  lastLoginAt?: string | null;
 };
 
 // Fetch user details including role_id
 const Q = gql`
   query($id:ID!){
-    user(id:$id){ 
-      id 
-      name 
-      email 
-      phone 
-      avatar 
-      role 
+    user(id:$id){
+      id
+      name
+      email
+      phone
+      avatar
+      role
       role_id
+      tenantName
+      lastLoginAt
     }
   }
 `;
@@ -158,6 +162,10 @@ function FormEdit({ id }: { id: string }) {
 
   return (
     <Card title={`Edit User: ${u.name}`} style={{ maxWidth: 640 }}>
+      <Space direction="vertical" size={0} style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
+        {u.tenantName ? <span>ร้าน: <b>{u.tenantName}</b></span> : null}
+        <span>Last login: {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'ยังไม่เคย'}</span>
+      </Space>
       <Form
         key={u.id}
         form={form}
