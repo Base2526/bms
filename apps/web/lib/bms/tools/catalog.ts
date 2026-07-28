@@ -22,7 +22,7 @@ import {
   reqString,
 } from "./types";
 
-import { listProducts, listVariants, listProductImages, listLowStock } from "../products";
+import { listProducts, listVariants, listLowStock } from "../products";
 import { checkStock } from "../stock";
 import {
   createOrder,
@@ -86,6 +86,11 @@ function optMoney(args: Record<string, any>, key: string): number | null {
   return n;
 }
 
+// เฉพาะ field ที่ใช้ตอบลูกค้าจริง — `state` + `available` + `reason` บอกสถานะได้ครบแล้ว
+// (ใช้ได้/หมดอายุ/ยังไม่เริ่ม/ใช้ครบสิทธิ์) ตามที่ description ของทูลสัญญาไว้ ส่วน timestamp
+// ภายในกับเลขออเดอร์ที่ผูกอยู่ (reserved*/redeemed*/revokedAt/source/assigned*) ไม่ได้ใช้ทั้งใน
+// deterministic reply (couponStateLabel/couponLine ใน pipeline.ts) และในคำตอบที่ลูกค้าควรเห็น
+// จึงไม่ส่งเข้า context — payload ต่อคูปองเล็กลง ~43%
 function safeCoupon(c: any) {
   return {
     code: c.code,
@@ -95,21 +100,11 @@ function safeCoupon(c: any) {
     startsAt: c.startsAt,
     expiresAt: c.expiresAt,
     remainingRedemptions: c.remainingRedemptions,
-    customerUsedCount: c.customerUsedCount,
     subtotalOk: c.subtotalOk,
     discountPreview: c.discountPreview,
     available: c.available,
     reason: c.reason,
-    assigned: Boolean(c.assigned),
-    assignedAt: c.assignedAt ?? null,
-    source: c.source ?? null,
     state: c.state ?? "ASSIGNED",
-    reservedAt: c.reservedAt ?? null,
-    reservedOrderId: c.reservedOrderId ?? null,
-    redeemedAt: c.redeemedAt ?? null,
-    redeemedOrderId: c.redeemedOrderId ?? null,
-    expiredAt: c.expiredAt ?? null,
-    revokedAt: c.revokedAt ?? null,
   };
 }
 
@@ -166,7 +161,6 @@ const getProduct: BmsTool = {
     const p = items.find((x) => x.sku === sku) ?? items[0];
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
     const variants = await listVariants(ec.tenantId, p.sku);
-    const images = await listProductImages(ec.tenantId, p.sku);
     return {
       ok: true,
       data: {
@@ -177,7 +171,8 @@ const getProduct: BmsTool = {
         category: p.category,
         brand: p.brand,
         active: p.active,
-        images: images.map((im) => im.url).filter(Boolean),
+        // ไม่ส่ง images[] — โมเดลมองรูปไม่ได้ (เป็นแค่ URL) และลิงก์ที่ลูกค้าควรได้คือหน้า public
+        // /shop/{tenantSlug}/products/{sku} ไม่ใช่ URL ไฟล์ใน storage
         variants: variants.map((v) => ({
           size: v.size,
           available: Math.max(0, v.current_stock - v.reserved_stock),
@@ -209,7 +204,7 @@ const listAvailableCouponsTool: BmsTool = {
       channel,
       customerRef,
       subtotal: optMoney(args, "subtotal"),
-      limit: optInt(args, "limit", 1) ?? 5,
+      limit: optInt(args, "limit", 1, 20) ?? 5,
     });
     return { ok: true, data: { coupons: coupons.map(safeCoupon) } };
   },
@@ -379,7 +374,7 @@ const getTopProductsTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const from = optString(args, "from") ?? null;
     const to = optString(args, "to") ?? null;
-    const limit = optInt(args, "limit") ?? 10;
+    const limit = optInt(args, "limit", 1, 50) ?? 10;
     return { ok: true, data: await getTopSellingProducts(ec.tenantId, from, to, limit) };
   },
 };
@@ -1247,7 +1242,11 @@ const forecastDemandTool: BmsTool = {
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await forecastDemand(ec.tenantId, optInt(args, "windowDays") ?? 30, optInt(args, "horizonDays") ?? 30);
+    const data = await forecastDemand(
+      ec.tenantId,
+      optInt(args, "windowDays", 1, 365) ?? 30,
+      optInt(args, "horizonDays", 1, 365) ?? 30
+    );
     return { ok: true, data };
   },
 };
@@ -1259,7 +1258,7 @@ const predictStockOutTool: BmsTool = {
   permission: "report.view",
   inputSchema: { type: "object", properties: { windowDays: { type: "integer" } } },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await predictStockOut(ec.tenantId, optInt(args, "windowDays") ?? 30);
+    const data = await predictStockOut(ec.tenantId, optInt(args, "windowDays", 1, 365) ?? 30);
     return { ok: true, data };
   },
 };
@@ -1277,7 +1276,11 @@ const suggestPurchaseOrderTool: BmsTool = {
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await suggestPurchaseOrder(ec.tenantId, optInt(args, "windowDays") ?? 30, optInt(args, "coverageDays") ?? 30);
+    const data = await suggestPurchaseOrder(
+      ec.tenantId,
+      optInt(args, "windowDays", 1, 365) ?? 30,
+      optInt(args, "coverageDays", 1, 365) ?? 30
+    );
     return { ok: true, data };
   },
 };

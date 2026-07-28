@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { __toolLoopTest, type ToolLoopOptions, type ToolLoopTestDeps } from "../../apps/web/lib/bms/tools/runtime.ts";
-import { reqString, type BmsTool, type ExecCtx } from "../../apps/web/lib/bms/tools/types.ts";
+import { optInt, reqString, type BmsTool, type ExecCtx } from "../../apps/web/lib/bms/tools/types.ts";
 
 const CREDS = {
   apiKey: "eval-key-never-sent",
@@ -198,6 +198,19 @@ test("unknown input fields are rejected before tool execution", async () => {
   assert.equal(executions, 0);
   assert.equal(result.trace[0]?.ok, false);
   assert.match(result.trace[0]?.summary ?? "", /ไม่รองรับ field: tenantId/);
+});
+
+test("model-supplied limits are clamped to the declared maximum, not rejected", () => {
+  // เกินเพดาน = clamp (ไม่ throw) เพราะการทำให้ทูลล้มเหลวจะเสีย turn ไปกับการ retry
+  // ส่วน tool_result ที่ใหญ่เกินจะอยู่ใน context ทุกรอบถัดไปและไม่ถูก prompt cache
+  assert.equal(optInt({ limit: 10_000 }, "limit", 1, 20), 20);
+  assert.equal(optInt({ limit: 20 }, "limit", 1, 20), 20);
+  assert.equal(optInt({ limit: 5 }, "limit", 1, 20), 5);
+  // ไม่ระบุ max = พฤติกรรมเดิม ไม่มีเพดาน
+  assert.equal(optInt({ limit: 10_000 }, "limit"), 10_000);
+  // ขาล่างยัง throw เหมือนเดิม (ไม่ clamp) และค่าที่ไม่ได้ส่งมายังเป็น undefined
+  assert.throws(() => optInt({ limit: 0 }, "limit", 1, 20), /จำนวนเต็ม/);
+  assert.equal(optInt({}, "limit", 1, 20), undefined);
 });
 
 test("non-object tool input is rejected before tool execution", async () => {
