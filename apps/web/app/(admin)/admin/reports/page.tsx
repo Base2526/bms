@@ -1,9 +1,11 @@
 'use client';
 import { gql, useQuery } from "@apollo/client";
-import { Card, Statistic, Row, Col, Table, Tag, Space, Button, Alert, DatePicker, Typography } from "antd";
+import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography } from "antd";
 import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
+import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { RangePicker } = DatePicker;
 
@@ -34,6 +36,7 @@ const CHANNEL_COLOR: Record<string, string> = {
 const baht = (v: number) => `${Number(v).toLocaleString()} ฿`;
 
 export default function Page() {
+  const isMobile = useIsMobile();
   const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().subtract(29, "day"), dayjs()]);
   const from = range[0].format("YYYY-MM-DD");
   const to = range[1].format("YYYY-MM-DD");
@@ -51,32 +54,28 @@ export default function Page() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Reports</h2>
-          <Space wrap>
-            <RangePicker value={range} allowClear={false}
-              onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
-              presets={[
-                { label: "7 วัน", value: [dayjs().subtract(6, "day"), dayjs()] },
-                { label: "30 วัน", value: [dayjs().subtract(29, "day"), dayjs()] },
-                { label: "เดือนนี้", value: [dayjs().startOf("month"), dayjs()] },
-              ]}
-            />
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="Reports">
+        <RangePicker value={range} allowClear={false}
+          style={{ width: isMobile ? "100%" : undefined }}
+          onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
+          presets={[
+            { label: "7 วัน", value: [dayjs().subtract(6, "day"), dayjs()] },
+            { label: "30 วัน", value: [dayjs().subtract(29, "day"), dayjs()] },
+            { label: "เดือนนี้", value: [dayjs().startOf("month"), dayjs()] },
+          ]}
+        />
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+      </AdminPageHeader>
 
       {/* ---- Sales KPIs ---- */}
       <Row gutter={[16, 16]}>
-        <Col xs={12} md={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card><Statistic title={`ยอดขาย (${from} → ${to})`} value={s?.revenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
         </Col>
-        <Col xs={12} md={8}>
+        <Col xs={12} sm={12} md={8}>
           <Card><Statistic title="จำนวนออเดอร์ (จ่ายแล้ว)" value={s?.orderCount ?? 0} prefix={<ShoppingCartOutlined />} /></Card>
         </Col>
-        <Col xs={12} md={8}>
+        <Col xs={12} sm={12} md={8}>
           <Card><Statistic title="ยอดเฉลี่ย/ออเดอร์" value={s?.avgOrderValue ?? 0} precision={0} suffix="฿" /></Card>
         </Col>
       </Row>
@@ -99,6 +98,7 @@ export default function Page() {
         <Col xs={24} md={12}>
           <Card title="ยอดขายตามช่องทาง">
             <Table rowKey="channel" size="small" pagination={false} dataSource={s?.byChannel || []}
+              scroll={{ x: "max-content" }}
               columns={[
                 { title: "ช่องทาง", dataIndex: "channel", render: (c: string) => <Tag color={CHANNEL_COLOR[c] || "default"}>{c}</Tag> },
                 { title: "ออเดอร์", dataIndex: "orders", align: "right" as const },
@@ -110,6 +110,7 @@ export default function Page() {
         <Col xs={24} md={12}>
           <Card title="ออเดอร์ตามสถานะ (ทุกสถานะในช่วง)">
             <Table rowKey="status" size="small" pagination={false} dataSource={s?.byStatus || []}
+              scroll={{ x: "max-content" }}
               columns={[
                 { title: "สถานะ", dataIndex: "status", render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag> },
                 { title: "จำนวน", dataIndex: "count", align: "right" as const },
@@ -121,6 +122,7 @@ export default function Page() {
       {/* ---- Top selling ---- */}
       <Card title="สินค้าขายดี (ตามช่วงวันที่)" style={{ marginTop: 16 }}>
         <Table rowKey="sku" size="small" pagination={false} dataSource={top} loading={loading}
+          scroll={{ x: "max-content" }}
           columns={[
             { title: "SKU", dataIndex: "sku" },
             { title: "สินค้า", dataIndex: "name" },

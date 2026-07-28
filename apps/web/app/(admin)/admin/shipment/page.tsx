@@ -1,15 +1,18 @@
 'use client';
 import { gql, useQuery, useMutation, useLazyQuery } from "@apollo/client";
 import {
-  Table, Button, Space, Tag, Segmented, message, Alert, Popconfirm,
+  Table, Button, Space, Tag, message, Alert, Popconfirm,
   Typography, Modal, Form, Input, Select, Descriptions,
 } from "antd";
 import { useState, useMemo, useEffect } from "react";
 import {
-  ReloadOutlined, PlusOutlined, CarOutlined, PrinterOutlined,
+  ReloadOutlined, PlusOutlined, PrinterOutlined,
   CloseCircleOutlined, EditOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
+import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 // ---- Types --------------------------------------------------
 type ShipStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED" | "RETURNED" | "CANCELLED";
@@ -69,6 +72,7 @@ const FILTERS = ["ALL", "PENDING", "SHIPPED", "IN_TRANSIT", "DELIVERED", "RETURN
 
 function ShipmentManagement() {
   const { can } = useBmsPermissions();
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
   const [editShip, setEditShip] = useState<Shipment | null>(null);
@@ -148,35 +152,70 @@ function ShipmentManagement() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Shipping</h2>
-          <Space wrap>
-            <Input.Search
-              placeholder="ค้นหา shipment / order / tracking"
-              allowClear
-              style={{ width: 260 }}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-            <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
-            {can("shipping.create") && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>สร้างการจัดส่ง</Button>
-            )}
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="BMS Shipping">
+        <Input.Search
+          placeholder="ค้นหา shipment / order / tracking"
+          allowClear
+          style={{ width: isMobile ? "100%" : 260 }}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
+        <ResponsiveStatusFilter
+          options={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          labels={{ ALL: "ทุกสถานะ", ...STATUS_LABEL }}
+        />
+        {can("shipping.create") && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>สร้างการจัดส่ง</Button>
+        )}
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+      </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
         message="สร้างการจัดส่งจากออร์เดอร์ PACKING → ตัดสต็อก + ออร์เดอร์เป็น SHIPPED  |  SHIPPED → กำลังส่ง → ถึงแล้ว (ปิดออร์เดอร์เป็น COMPLETED)"
       />
 
-      <Table rowKey="id" loading={loading} dataSource={shipments} columns={columns}
-        scroll={{ x: "max-content" }}
-        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} shipment(s)` }}
-      />
+      {isMobile ? (
+        <AdminMobileList
+          loading={loading}
+          dataSource={shipments}
+          rowKey={(s) => s.id}
+          totalText={(t) => `ทั้งหมด ${t} รายการ`}
+          emptyText="ไม่มีรายการจัดส่ง"
+          renderItem={(r) => (
+            <AdminRecordCard
+              key={r.id}
+              title={
+                <Space size={6} wrap>
+                  <Typography.Text code>{r.id.slice(0, 8)}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {CARRIER_LABEL[r.carrier] || r.carrier}
+                  </Typography.Text>
+                </Space>
+              }
+              extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
+              fields={[
+                { label: "ออร์เดอร์", value: <Typography.Text code>{r.orderId.slice(0, 8)}</Typography.Text> },
+                {
+                  label: "เลขพัสดุ",
+                  value: r.trackingNo
+                    ? <Typography.Text copyable>{r.trackingNo}</Typography.Text>
+                    : <span style={{ color: "#999" }}>—</span>,
+                },
+                { label: "สร้างเมื่อ", value: new Date(r.createdAt).toLocaleString() },
+              ]}
+              actions={actionsFor(r)}
+            />
+          )}
+        />
+      ) : (
+        <Table rowKey="id" loading={loading} dataSource={shipments} columns={columns}
+          scroll={{ x: "max-content" }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} shipment(s)` }}
+        />
+      )}
 
       <CreateShipmentModal open={createOpen} onClose={() => setCreateOpen(false)} onDone={() => { setCreateOpen(false); refetch(); }} />
       <EditTrackingModal shipment={editShip} onClose={() => setEditShip(null)} onDone={() => { setEditShip(null); refetch(); }} />
@@ -187,6 +226,7 @@ function ShipmentManagement() {
 
 // ---- Create shipment modal ----------------------------------
 function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+  const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const { data } = useQuery(Q_PACKING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
   const orders: { id: string; customer_ref: string | null; total_amount: number }[] = data?.bmsOrders || [];
@@ -206,7 +246,7 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
   };
 
   return (
-    <Modal title="สร้างการจัดส่ง" open={open} onCancel={onClose} onOk={submit}
+    <Modal title="สร้างการจัดส่ง" open={open} onCancel={onClose} onOk={submit} width={panelWidth(isMobile, 520)}
       confirmLoading={loading} okText="สร้าง (ตัดสต็อก)" cancelText="ยกเลิก" destroyOnClose>
       <Alert type="warning" showIcon style={{ marginBottom: 16 }}
         message="สร้างจากออร์เดอร์ที่ PACKING — จะตัดสต็อกจริงและเปลี่ยนออร์เดอร์เป็น SHIPPED" />
@@ -236,6 +276,7 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
 
 // ---- Edit tracking modal ------------------------------------
 function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment | null; onClose: () => void; onDone: () => void }) {
+  const isMobile = useIsMobile();
   const [form] = Form.useForm();
   useEffect(() => {
     if (shipment) form.setFieldsValue({ trackingNo: shipment.trackingNo, carrier: shipment.carrier });
@@ -254,6 +295,7 @@ function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment |
 
   return (
     <Modal title={`แก้ tracking — ${shipment?.id.slice(0, 8) ?? ""}`} open={!!shipment} onCancel={onClose} onOk={submit}
+      width={panelWidth(isMobile, 520)}
       confirmLoading={loading} okText="บันทึก" cancelText="ปิด" destroyOnClose>
       <Form form={form} layout="vertical">
         <Form.Item name="carrier" label="ขนส่ง">
@@ -269,15 +311,18 @@ function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment |
 
 // ---- Label modal --------------------------------------------
 function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClose: () => void }) {
+  const isMobile = useIsMobile();
   const [load, { data, loading }] = useLazyQuery(Q_LABEL, { fetchPolicy: "network-only" });
   useEffect(() => { if (shipmentId) load({ variables: { id: shipmentId } }); }, [shipmentId, load]);
 
   const label = data?.bmsShipmentLabel;
   return (
-    <Modal title="ใบปะหน้าพัสดุ (Label)" open={!!shipmentId} onCancel={onClose} footer={null} destroyOnClose>
+    <Modal title="ใบปะหน้าพัสดุ (Label)" open={!!shipmentId} onCancel={onClose} footer={null}
+      width={panelWidth(isMobile, 520)} destroyOnClose>
       {loading && <Typography.Text type="secondary">กำลังโหลด...</Typography.Text>}
       {label && (
-        <Descriptions bordered column={1} size="small">
+        // มือถือใช้ layout แนวตั้ง — bordered แนวนอนบีบคอลัมน์ label/value จนที่อยู่อ่านไม่ออก
+        <Descriptions bordered column={1} size="small" layout={isMobile ? "vertical" : "horizontal"}>
           <Descriptions.Item label="ขนส่ง">{CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
           <Descriptions.Item label="เลขพัสดุ">{label.trackingNo || "—"}</Descriptions.Item>
           <Descriptions.Item label="Order">{label.orderId.slice(0, 8)}</Descriptions.Item>

@@ -8,6 +8,9 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined } from "@an
 import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 const { Text } = Typography;
 
@@ -56,8 +59,16 @@ function valueLabel(r: any) {
   return r.type === "PERCENT" ? `${r.value}%` : money(r.value);
 }
 
+// คู่ field แนวนอนบน desktop — บนมือถือซ้อนกันแทน เพราะแบ่งครึ่งแล้วเหลือช่องละ ~150px
+// (Space.Compact ยังเชื่อมขอบ input ให้ติดกัน ซึ่งบนจอแคบทำให้อ่านยากกว่าเดิม)
+function FieldPair({ isMobile, children }: { isMobile: boolean; children: React.ReactNode }) {
+  if (isMobile) return <>{children}</>;
+  return <Space.Compact style={{ width: "100%" }}>{children}</Space.Compact>;
+}
+
 // ---- Usage history modal — ไม่มีตาราง redemption แยก, query ตรงจาก bms_orders ----
 function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null; code: string; onClose: () => void }) {
+  const isMobile = useIsMobile();
   const [load, { data, loading }] = useLazyQuery(Q_REDEMPTIONS, { fetchPolicy: "network-only" });
 
   useEffect(() => {
@@ -74,14 +85,14 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
       open={!!couponId}
       onCancel={onClose}
       footer={<Button onClick={onClose}>ปิด</Button>}
-      width={760}
+      width={panelWidth(isMobile, 760)}
     >
       {!loading && rows.length > 0 && (
         <>
-          <Row gutter={16} style={{ marginBottom: 4 }}>
-            <Col span={8}><Statistic title="ใช้ไปแล้ว" value={rows.length} suffix="ครั้ง" /></Col>
-            <Col span={8}><Statistic title="ส่วนลดรวม" value={totalDiscount} precision={2} suffix="฿" valueStyle={{ color: "#12805c" }} /></Col>
-            <Col span={8}><Statistic title="ลูกค้าที่ใช้" value={uniqueCustomers} suffix="ราย" /></Col>
+          <Row gutter={[16, 8]} style={{ marginBottom: 4 }}>
+            <Col xs={12} sm={8}><Statistic title="ใช้ไปแล้ว" value={rows.length} suffix="ครั้ง" /></Col>
+            <Col xs={12} sm={8}><Statistic title="ส่วนลดรวม" value={totalDiscount} precision={2} suffix="฿" valueStyle={{ color: "#12805c" }} /></Col>
+            <Col xs={12} sm={8}><Statistic title="ลูกค้าที่ใช้" value={uniqueCustomers} suffix="ราย" /></Col>
           </Row>
           <Divider style={{ margin: "12px 0" }} />
         </>
@@ -93,6 +104,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
         dataSource={rows}
         locale={{ emptyText: <Empty description="ยังไม่มีการใช้งาน" /> }}
         pagination={{ pageSize: 10 }}
+        scroll={{ x: "max-content" }}
         columns={[
           {
             title: "ลูกค้า", dataIndex: "customerName", width: 220,
@@ -130,6 +142,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
 
 export default function CouponsPage() {
   const { can, loading: permsLoading } = useBmsPermissions();
+  const isMobile = useIsMobile();
   const canManage = can("coupon.manage");
   const { data, loading, error, refetch } = useQuery(Q, {
     skip: permsLoading || !can("coupon.view"),
@@ -228,12 +241,55 @@ export default function CouponsPage() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>โค้ดส่วนลด</Typography.Title>
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>โค้ดส่วนลด</Typography.Title>}>
         {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>สร้างโค้ดใหม่</Button>}
-      </Space>
+      </AdminPageHeader>
 
-      <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} pagination={{ pageSize: 20 }} />
+      {isMobile ? (
+        <AdminMobileList
+          loading={loading}
+          dataSource={rows as any[]}
+          rowKey={(r) => r.id}
+          totalText={(t) => `ทั้งหมด ${t} โค้ด`}
+          emptyText="ยังไม่มีโค้ดส่วนลด"
+          renderItem={(r) => (
+            <AdminRecordCard
+              key={r.id}
+              title={
+                <Space size={6} wrap>
+                  <Text strong copyable>{r.code}</Text>
+                  <Tag style={{ marginInlineEnd: 0 }}>{valueLabel(r)}</Tag>
+                </Space>
+              }
+              extra={<Tag color={r.active ? "green" : "default"} style={{ marginInlineEnd: 0 }}>{r.active ? "ใช้งาน" : "ปิดใช้งาน"}</Tag>}
+              fields={[
+                { label: "ขั้นต่ำ", value: money(r.minOrderAmount) },
+                { label: "ต่อลูกค้า", value: r.perCustomerLimit ?? "ไม่จำกัด" },
+                { label: "เริ่ม", value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : "ทันที" },
+                { label: "หมดอายุ", value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : "ไม่มี" },
+                { label: "โน้ต", value: r.note, hidden: !r.note },
+              ]}
+              actions={
+                <>
+                  <Button size="small" type="link" icon={<HistoryOutlined />} onClick={() => setViewingRedemptions({ id: r.id, code: r.code })}>
+                    ใช้ไปแล้ว {r.redemptionsCount}{r.maxRedemptions != null ? ` / ${r.maxRedemptions}` : ""}
+                  </Button>
+                  {canManage && (
+                    <Space size={4} style={{ marginLeft: "auto" }}>
+                      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+                      <Popconfirm title="ลบโค้ดนี้?" onConfirm={() => deleteCoupon({ variables: { id: r.id } })}>
+                        <Button size="small" danger icon={<DeleteOutlined />} />
+                      </Popconfirm>
+                    </Space>
+                  )}
+                </>
+              }
+            />
+          )}
+        />
+      ) : (
+        <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
+      )}
 
       <Modal
         title={editing ? "แก้ไขโค้ดส่วนลด" : "สร้างโค้ดส่วนลด"}
@@ -241,6 +297,7 @@ export default function CouponsPage() {
         onCancel={() => setModalOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={saving}
+        width={panelWidth(isMobile, 520)}
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
@@ -258,36 +315,36 @@ export default function CouponsPage() {
               disabled={!!editing && editing.redemptionsCount > 0}
             />
           </Form.Item>
-          <Space.Compact style={{ width: "100%" }}>
-            <Form.Item name="type" label="ประเภท" style={{ width: "40%" }} initialValue="PERCENT">
+          <FieldPair isMobile={isMobile}>
+            <Form.Item name="type" label="ประเภท" style={{ width: isMobile ? "100%" : "40%" }} initialValue="PERCENT">
               <Select options={[
                 { value: "PERCENT", label: "ลด % " },
                 { value: "FIXED", label: "ลดเป็นจำนวนเงิน" },
               ]} />
             </Form.Item>
-            <Form.Item name="value" label="มูลค่า" style={{ width: "60%" }} rules={[{ required: true, message: "ระบุมูลค่าส่วนลด" }]}>
+            <Form.Item name="value" label="มูลค่า" style={{ width: isMobile ? "100%" : "60%" }} rules={[{ required: true, message: "ระบุมูลค่าส่วนลด" }]}>
               <InputNumber min={0.01} style={{ width: "100%" }} />
             </Form.Item>
-          </Space.Compact>
+          </FieldPair>
           <Form.Item name="minOrderAmount" label="ยอดสั่งซื้อขั้นต่ำ (ไม่บังคับ)">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="ไม่มีขั้นต่ำ" />
           </Form.Item>
-          <Space.Compact style={{ width: "100%" }}>
-            <Form.Item name="maxRedemptions" label="จำนวนครั้งที่ใช้ได้รวม" style={{ width: "50%" }}>
+          <FieldPair isMobile={isMobile}>
+            <Form.Item name="maxRedemptions" label="จำนวนครั้งที่ใช้ได้รวม" style={{ width: isMobile ? "100%" : "50%" }}>
               <InputNumber min={1} style={{ width: "100%" }} placeholder="ไม่จำกัด" />
             </Form.Item>
-            <Form.Item name="perCustomerLimit" label="จำนวนครั้ง/ลูกค้า" style={{ width: "50%" }}>
+            <Form.Item name="perCustomerLimit" label="จำนวนครั้ง/ลูกค้า" style={{ width: isMobile ? "100%" : "50%" }}>
               <InputNumber min={1} style={{ width: "100%" }} placeholder="ไม่จำกัด" />
             </Form.Item>
-          </Space.Compact>
-          <Space.Compact style={{ width: "100%" }}>
-            <Form.Item name="startsAt" label="เริ่มใช้ได้" style={{ width: "50%" }}>
+          </FieldPair>
+          <FieldPair isMobile={isMobile}>
+            <Form.Item name="startsAt" label="เริ่มใช้ได้" style={{ width: isMobile ? "100%" : "50%" }}>
               <DatePicker style={{ width: "100%" }} showTime placeholder="ทันที" />
             </Form.Item>
-            <Form.Item name="expiresAt" label="หมดอายุ" style={{ width: "50%" }}>
+            <Form.Item name="expiresAt" label="หมดอายุ" style={{ width: isMobile ? "100%" : "50%" }}>
               <DatePicker style={{ width: "100%" }} showTime placeholder="ไม่มีวันหมดอายุ" />
             </Form.Item>
-          </Space.Compact>
+          </FieldPair>
           <Form.Item name="note" label="โน้ต (ไม่บังคับ)">
             <Input.TextArea rows={2} />
           </Form.Item>

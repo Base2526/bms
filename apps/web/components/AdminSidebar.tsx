@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Avatar, Button, message, Tooltip } from 'antd';
+import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
@@ -38,6 +38,7 @@ import {
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
 import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
+import { useIsMobile } from '@/app/hooks/useMediaQuery';
 import { useSession } from '@/lib/useSession';
 import { useEffect, useState } from 'react';
 
@@ -108,6 +109,12 @@ const link = (
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  // จอมือถือไม่มีที่ให้ rail 64px (เหลือเนื้อหา ~272px บนจอ 360px) → ซ่อน Sider ทั้งตัว
+  // แล้วเปิดเมนูเดิมใน Drawer จากแถบบนแทน
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // กดเมนูแล้วต้องปิดเอง — Drawer ไม่รู้เรื่อง client-side navigation ของ Next
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
   const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-and-network' });
   const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
   const { admin, refreshSession } = useSession();
@@ -187,6 +194,8 @@ export default function AdminSidebar() {
     setCollapsed(value);
     window.localStorage.setItem(COLLAPSE_STORAGE_KEY, value ? '1' : '0');
   };
+  // ใน Drawer มีที่ให้เมนูเต็มความกว้างเสมอ → ไม่ใช้โหมดย่อ (และ badge ใช้แบบ pill ไม่ใช่แบบเกาะไอคอน)
+  const effectiveCollapsed = isMobile ? false : collapsed;
 
   async function onLogout() {
     const res = await fetch('/api/auth/logout-admin', { method: 'POST' });
@@ -205,8 +214,8 @@ export default function AdminSidebar() {
   // Reports/คู่มือ ใช้ไม่บ่อยเท่า Inbox → Reports ย้ายลงมาไว้หลังกลุ่มร้านค้า, คู่มือย้ายไปแถบล่างสุด
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
-    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, collapsed, true)] : []),
-    ...(canViewInbox ? [link('/admin/inbox/mentions', 'เมนชันของฉัน', <NotificationOutlined />, mentionsUnread, collapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, effectiveCollapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/inbox/mentions', 'เมนชันของฉัน', <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
     // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
     link('/admin/assistant', 'ผู้ช่วย AI', <RobotOutlined />),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
@@ -233,7 +242,7 @@ export default function AdminSidebar() {
       icon: <ApiOutlined />,
       label: 'SaaS',
       children: [
-        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />, channelHealthCount, collapsed),
+        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />, channelHealthCount, effectiveCollapsed),
         ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <ExperimentOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
         ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
@@ -244,7 +253,7 @@ export default function AdminSidebar() {
       icon: <SafetyOutlined />,
       label: 'ผู้ใช้/สิทธิ์',
       children: [
-        link('/admin/users', 'Users', <UserOutlined />, 3, collapsed),
+        link('/admin/users', 'Users', <UserOutlined />, 3, effectiveCollapsed),
         // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
         ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
@@ -277,51 +286,40 @@ export default function AdminSidebar() {
     (items.find((i: any) => i?.key === g) as any)?.children?.some((c: any) => c.key === pathname)
   );
 
-  return (
-    <Sider
-      collapsed={collapsed}
-      collapsedWidth={64}
-      width={220}
-      breakpoint="lg"
-      onCollapse={onCollapse}
-      style={{
-        background: 'var(--app-surface)',
-        borderRight: '1px solid var(--app-border)',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        overflow: 'hidden',
-      }}
-    >
-      {/* wrapper flex ของตัวเอง — .ant-layout-sider-children ที่ antd แทรกให้ไม่ใช่ flex container
-          ถ้าไม่มี div นี้ flex:1 ของเมนูด้านล่างจะไม่มีผล โปรไฟล์/logout จะไม่ติดล่างสุด */}
+  // เนื้อเมนู — ใช้ร่วมกันทั้ง Sider (desktop) และ Drawer (มือถือ)
+  // `mini` = โหมดย่อเหลือไอคอน · `inDrawer` = อยู่ใน Drawer (ไม่ต้องมีปุ่มย่อ/ขยาย)
+  const sidebarBody = (mini: boolean, inDrawer = false) => (
+      /* wrapper flex ของตัวเอง — .ant-layout-sider-children ที่ antd แทรกให้ไม่ใช่ flex container
+          ถ้าไม่มี div นี้ flex:1 ของเมนูด้านล่างจะไม่มีผล โปรไฟล์/logout จะไม่ติดล่างสุด */
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* โลโก้ + ปุ่มย่อ/ขยาย (อยู่บนสุด) */}
       <div
         style={{
           display: 'flex', alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
-          gap: 8, padding: collapsed ? '14px 0' : '14px 16px', flexShrink: 0,
+          justifyContent: mini ? 'center' : 'space-between',
+          gap: 8, padding: mini ? '14px 0' : '14px 16px', flexShrink: 0,
         }}
       >
-        {!collapsed && (
+        {!mini && (
           <Link href="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
             <ShopOutlined />
             <span>AI-BMS</span>
           </Link>
         )}
-        <div
-          role="button"
-          aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
-          onClick={() => onCollapse(!collapsed)}
-          style={{
-            cursor: 'pointer', width: 28, height: 28, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1px solid var(--app-border)', borderRadius: 6, color: 'var(--app-text)',
-          }}
-        >
-          {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-        </div>
+        {!inDrawer && (
+          <div
+            role="button"
+            aria-label={mini ? 'ขยายเมนู' : 'ย่อเมนู'}
+            onClick={() => onCollapse(!mini)}
+            style={{
+              cursor: 'pointer', width: 28, height: 28, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1px solid var(--app-border)', borderRadius: 6, color: 'var(--app-text)',
+            }}
+          >
+            {mini ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          </div>
+        )}
       </div>
 
       {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ (overflowX ต้อง visible ไม่งั้น badge ที่ล้นขอบไอคอนโดนตัด) */}
@@ -338,7 +336,7 @@ export default function AdminSidebar() {
       {/* โควตา AI shared key ฟรี — โชว์ตลอดเมื่อใช้ Shared Key และยกระดับสีเมื่อใกล้/เกินโควตา
           ปักไว้เหนือคู่มือ/โปรไฟล์ เหมือน balance strip ของ Claude Console */}
       {aiShouldShow && (
-        <div style={{ padding: collapsed ? '0 10px' : '0 10px 8px', flexShrink: 0 }}>
+        <div style={{ padding: mini ? '0 10px' : '0 10px 8px', flexShrink: 0 }}>
           <Tooltip
             title={aiTooltip}
             placement="right"
@@ -347,8 +345,8 @@ export default function AdminSidebar() {
               href="/admin/settings"
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                padding: collapsed ? '6px 0' : '6px 8px', borderRadius: 8,
+                justifyContent: mini ? 'center' : 'flex-start',
+                padding: mini ? '6px 0' : '6px 8px', borderRadius: 8,
                 background: aiBg,
                 color: aiTone,
               }}
@@ -360,7 +358,7 @@ export default function AdminSidebar() {
                   background: aiTone, boxShadow: '0 0 0 1.5px var(--app-surface)',
                 }} />
               </span>
-              {!collapsed && (
+              {!mini && (
                 <span style={{ fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {aiStripText}
                 </span>
@@ -372,18 +370,18 @@ export default function AdminSidebar() {
 
       {/* คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — คู่มือใช้ไม่บ่อย เลยลดความสำคัญมาไว้แถบนี้แทน top-level */}
       <div style={{ borderTop: '1px solid var(--app-border)', padding: '10px 10px 0', flexShrink: 0 }}>
-        <Tooltip title={collapsed ? 'คู่มือ' : ''} placement="right">
+        <Tooltip title={mini ? 'คู่มือ' : ''} placement="right">
           <Link
             href="/admin/manual"
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              justifyContent: collapsed ? 'center' : 'flex-start',
+              justifyContent: mini ? 'center' : 'flex-start',
               padding: '4px 8px', marginBottom: 6, borderRadius: 8,
               color: 'var(--app-text-secondary, #888)', fontSize: 13,
             }}
           >
             <BookOutlined />
-            {!collapsed && <span>คู่มือ</span>}
+            {!mini && <span>คู่มือ</span>}
           </Link>
         </Tooltip>
       </div>
@@ -393,12 +391,12 @@ export default function AdminSidebar() {
             href="/admin/profile"
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              justifyContent: collapsed ? 'center' : 'flex-start',
+              justifyContent: mini ? 'center' : 'flex-start',
               padding: '4px', marginBottom: 8, borderRadius: 8, color: 'var(--app-text)',
             }}
           >
             <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
-            {!collapsed && (
+            {!mini && (
               <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {admin.name || admin.username || admin.email}
@@ -409,14 +407,87 @@ export default function AdminSidebar() {
           </Link>
           <Button
             danger type="primary" icon={<LogoutOutlined />} onClick={onLogout}
-            block={!collapsed}
-            style={collapsed ? { width: 32, height: 32, padding: 0, minWidth: 0 } : {}}
+            block={!mini}
+            style={mini ? { width: 32, height: 32, padding: 0, minWidth: 0 } : {}}
           >
-            {!collapsed && 'Logout'}
+            {!mini && 'Logout'}
           </Button>
         </div>
       )}
       </div>
+  );
+
+  // ---- มือถือ: แถบบน (hamburger + โลโก้ + badge สำคัญ) + เมนูเดิมใน Drawer ----
+  // ไม่ render <Sider> เลย → antd Layout เลิกเป็น has-sider แล้วเนื้อหาได้ความกว้างเต็มจอ
+  if (isMobile) {
+    const alerts = inboxUnread + mentionsUnread;
+    return (
+      <>
+        <div
+          style={{
+            position: 'sticky', top: 0, zIndex: 20,
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 12px',
+            background: 'var(--app-surface)',
+            borderBottom: '1px solid var(--app-border)',
+          }}
+        >
+          <Button
+            type="text"
+            aria-label="เปิดเมนู"
+            icon={<MenuUnfoldOutlined />}
+            onClick={() => setDrawerOpen(true)}
+          />
+          <Link
+            href="/admin"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600 }}
+          >
+            <ShopOutlined />
+            <span>AI-BMS</span>
+          </Link>
+          {canViewInbox && alerts > 0 && (
+            <Link href="/admin/inbox" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MessageOutlined style={{ color: 'var(--app-text-secondary, #888)' }} />
+              <span style={PILL_STYLE}>{badgeText(alerts)}</span>
+            </Link>
+          )}
+          {admin && (
+            <Link href="/admin/profile" style={{ marginLeft: canViewInbox && alerts > 0 ? 0 : 'auto', display: 'flex' }}>
+              <Avatar size={28} src={admin.avatar || undefined} icon={<UserOutlined />} />
+            </Link>
+          )}
+        </div>
+        <Drawer
+          placement="left"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          width={260}
+          closable={false}
+          styles={{ body: { padding: 0, background: 'var(--app-surface)' } }}
+        >
+          {sidebarBody(false, true)}
+        </Drawer>
+      </>
+    );
+  }
+
+  return (
+    <Sider
+      collapsed={collapsed}
+      collapsedWidth={64}
+      width={220}
+      breakpoint="lg"
+      onCollapse={onCollapse}
+      style={{
+        background: 'var(--app-surface)',
+        borderRight: '1px solid var(--app-border)',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        overflow: 'hidden',
+      }}
+    >
+      {sidebarBody(collapsed)}
     </Sider>
   );
 }
