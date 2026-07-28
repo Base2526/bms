@@ -157,7 +157,13 @@ async function callClaude(
 
 export type ToolLoopOptions = {
   tenantId: string;
+  /** ส่วนที่ต้อง byte-identical ทุก request ของร้านเดียวกัน — เป็น prefix ที่ถูก cache */
   system: string;
+  /**
+   * ส่วนที่เปลี่ยนได้ทุก turn (เช่น slot memory ของบทสนทนานั้น) วางเป็น system block ที่ 2
+   * หลัง cache breakpoint จึงไม่ทำให้ prefix ที่ cache ไว้ใช้ไม่ได้ — ห้ามย้ายกลับไปต่อใน `system`
+   */
+  volatileSystem?: string | null;
   messages: AnthMessage[];
   tools: BmsTool[];
   execCtx: ExecCtx;
@@ -286,8 +292,9 @@ async function runToolLoopInternal(
       cache_control: EPHEMERAL_CACHE_CONTROL,
     };
   }
-  // Most single-turn requests share the full system prompt. A second breakpoint reuses tools +
-  // system, while the tool-only breakpoint still hits when slot memory changes in later turns.
+  // breakpoint ที่ 2 ครอบ tools + system ให้ request ถัดไปอ่านซ้ำได้ทั้งก้อน
+  // ทุกอย่างที่เปลี่ยนต่อ conversation ต้องอยู่ใน block ที่ 2 (หลัง breakpoint) เท่านั้น —
+  // เพราะ cache match แบบ longest-prefix ถึง breakpoint ข้อมูลหลังจากนั้นจึงเปลี่ยนได้ฟรี
   const cachedSystem: AnthSystemBlock[] = [
     {
       type: "text",
@@ -295,6 +302,10 @@ async function runToolLoopInternal(
       cache_control: EPHEMERAL_CACHE_CONTROL,
     },
   ];
+  const volatileSystem = opts.volatileSystem?.trim();
+  if (volatileSystem) {
+    cachedSystem.push({ type: "text", text: volatileSystem });
+  }
 
   const proposals: ToolProposal[] = [];
   const trace: ToolTraceEntry[] = [];

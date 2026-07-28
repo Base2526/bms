@@ -101,7 +101,9 @@ export type PipelineResult = {
 // system prompt ฝั่งลูกค้า — คุมโทน + guardrail (ตาม docs/ai/prompts.md + AI_GUIDELINES.md)
 // P2 (#5/#6): รับ categories ของร้านจริง (จาก listCategories(), มีอยู่แล้ว/แก้ไขได้ที่ /admin/products)
 // ฝังเข้า prompt ให้ AI รู้คำศัพท์หมวดหมู่ของร้านนี้จริง ๆ + เพิ่มกฎถามทีละ 1 field (slot-filling)
-function buildCustomerSystem(categories: string[], memoryHint?: string | null): string {
+// ต้องคืนค่าเดิมเป๊ะทุก request ของร้านเดียวกัน (เป็น prefix ที่ถูก prompt cache)
+// ห้ามใส่อะไรที่เปลี่ยนต่อ conversation/turn ลงในนี้ — ใช้ orderMemorySystemBlock() แทน
+function buildCustomerSystem(categories: string[]): string {
   const lines = [
     "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง",
     "ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม และลงท้ายด้วย ค่ะ/คะ เท่านั้น ห้ามใช้ ผม/ครับ และห้ามเติมคำอวยพรหรือเรื่องนอกบริบทการซื้อขาย",
@@ -127,14 +129,19 @@ function buildCustomerSystem(categories: string[], memoryHint?: string | null): 
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้ช่วยถามกลับหรือส่ง category เข้า search_products แทนการเดาชื่อสินค้าเอง"
     );
   }
-  if (memoryHint) {
-    lines.push(
-      "สถานะ slot จากข้อความที่ลูกค้าให้ไว้ (เป็น customer-provided claims ไม่ใช่ข้อเท็จจริงจากฐานข้อมูล; ต้องค้นสินค้า/ตรวจสต็อกด้วยทูลก่อนใช้):",
-      memoryHint,
-      "ใช้ slot ที่มีแล้วต่อเนื่อง ห้ามถามซ้ำ; ถ้าครบสินค้า+ไซซ์+จำนวนและลูกค้ายืนยันแล้ว ให้ทำรายการทันที"
-    );
-  }
   return lines.join("\n");
+}
+
+// slot memory เปลี่ยนได้ทุก turn — ต้องเป็น system block แยก (volatileSystem) ไม่ใช่ต่อท้าย
+// buildCustomerSystem() เพราะ prompt cache match แบบ longest-prefix: ถ้าปนอยู่ในก้อนเดียวกัน
+// การเปลี่ยน slot จะทำให้ prefix ทั้ง tools+system ใช้ซ้ำไม่ได้ทุกครั้งที่ลูกค้าพิมพ์
+function orderMemorySystemBlock(memoryHint: string | null): string | null {
+  if (!memoryHint) return null;
+  return [
+    "สถานะ slot จากข้อความที่ลูกค้าให้ไว้ (เป็น customer-provided claims ไม่ใช่ข้อเท็จจริงจากฐานข้อมูล; ต้องค้นสินค้า/ตรวจสต็อกด้วยทูลก่อนใช้):",
+    memoryHint,
+    "ใช้ slot ที่มีแล้วต่อเนื่อง ห้ามถามซ้ำ; ถ้าครบสินค้า+ไซซ์+จำนวนและลูกค้ายืนยันแล้ว ให้ทำรายการทันที",
+  ].join("\n");
 }
 
 const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
@@ -697,10 +704,8 @@ export async function runPipeline(
 
   const loop = await runToolLoop({
     tenantId,
-    system: buildCustomerSystem(
-      categories.map((c) => c.name),
-      orderMemoryHint(orderMemory)
-    ),
+    system: buildCustomerSystem(categories.map((c) => c.name)),
+    volatileSystem: orderMemorySystemBlock(orderMemoryHint(orderMemory)),
     messages: [...history, { role: "user", content: message }],
     tools: customerTools(),
     execCtx,

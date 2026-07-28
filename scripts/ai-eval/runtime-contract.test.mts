@@ -117,6 +117,31 @@ test("provider request marks stable tools and system for prompt caching", async 
   );
 });
 
+test("per-conversation slot memory is sent after the cache breakpoint, never inside the cached prefix", async () => {
+  // ถ้า slot memory ถูกต่อเข้าไปใน system block ที่ 1 (ก้อนที่มี cache_control) prefix
+  // tools+system จะเปลี่ยนทุกครั้งที่ลูกค้าพิมพ์ → cache ใช้ซ้ำไม่ได้เลย และเสีย cache write 1.25x
+  await __toolLoopTest.run(
+    { ...baseOptions([makeTool({ name: "read_product" })]), volatileSystem: '{"size":"XL"}' },
+    depsFor(async (_creds, system, _messages, _tools) => {
+      assert.ok(Array.isArray(system));
+      assert.equal(system.length, 2);
+      assert.equal(system[0]?.text, "eval system");
+      assert.deepEqual(system[0]?.cache_control, { type: "ephemeral" });
+      assert.equal(system[1]?.text, '{"size":"XL"}');
+      assert.equal(system[1]?.cache_control, undefined);
+      return textResponse("เรียบร้อยค่ะ");
+    })
+  );
+  // ไม่มี slot memory = ไม่ต้องมี block ที่ 2 (prefix สั้นที่สุดเท่าที่เป็นไปได้)
+  await __toolLoopTest.run(
+    { ...baseOptions([makeTool({ name: "read_product" })]), volatileSystem: "   " },
+    depsFor(async (_creds, system) => {
+      assert.equal(system.length, 1);
+      return textResponse("เรียบร้อยค่ะ");
+    })
+  );
+});
+
 test("cached usage stores total input tokens and cache-adjusted estimated cost", async () => {
   const usage: Array<{ id: string; payload: any }> = [];
   await __toolLoopTest.run(
