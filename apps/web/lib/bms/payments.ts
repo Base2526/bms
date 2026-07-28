@@ -13,6 +13,7 @@
 
 import path from "path";
 import { readFile } from "fs/promises";
+import sharp from "sharp";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { STORAGE_DIR } from "@/lib/storage";
@@ -238,7 +239,19 @@ export type SlipVerification = {
   checkedAt: string;
 };
 
-/** แปลง /api/files/<id> → { buffer, mediaType } (อ่านจาก STORAGE_DIR) */
+// Claude มองรูปเป็น patch ขนาด 28×28 px = 1 visual token ⇒ ต้นทุน = ⌈w/28⌉ × ⌈h/28⌉
+// Haiku 4.5 อยู่ tier มาตรฐาน เพดาน 1,568 visual token (รูปใหญ่กว่านี้ API ย่อเองอยู่แล้ว)
+// ย่อให้พอดีเพดานนี้ฝั่งเราจึงไม่ได้ลดความละเอียดที่โมเดลเห็นเลย แต่ตัดขนาด byte ที่ส่งลงมาก
+const VISUAL_TOKEN_PATCH_PX = 28;
+const MAX_VISUAL_TOKENS = 1568;
+const MAX_IMAGE_PIXELS = MAX_VISUAL_TOKENS * VISUAL_TOKEN_PATCH_PX * VISUAL_TOKEN_PATCH_PX;
+// base64 พองขึ้น ~4/3 และ Claude API รับไม่เกิน 10MB ต่อรูป — ต่ำกว่านี้ถือว่าส่งได้ปลอดภัย
+const SAFE_RAW_BYTES = 4 * 1024 * 1024;
+
+const visualTokensFor = (w: number, h: number) =>
+  Math.ceil(w / VISUAL_TOKEN_PATCH_PX) * Math.ceil(h / VISUAL_TOKEN_PATCH_PX);
+
+/** แปลง /api/files/<id> → { base64, mediaType } (อ่านจาก STORAGE_DIR) */
 async function loadSlipImage(slipUrl: string): Promise<{ base64: string; mediaType: string } | null> {
   const m = slipUrl.match(/\/api\/files\/(\d+)/);
   if (!m) return null;
@@ -251,10 +264,59 @@ async function loadSlipImage(slipUrl: string): Promise<{ base64: string; mediaTy
   const { relpath, mimetype } = res.rows[0];
   const mediaType = mimetype || "image/jpeg";
   if (!mediaType.startsWith("image/")) return null;
+
+  let buf: Buffer;
   try {
-    const buf = await readFile(path.join(STORAGE_DIR, relpath));
-    return { base64: buf.toString("base64"), mediaType };
+    buf = await readFile(path.join(STORAGE_DIR, relpath));
   } catch {
+    return null;
+  }
+
+  try {
+    const image = sharp(buf, { failOn: "none" });
+    const meta = await image.metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    const pixels = width * height;
+    // เล็กและอยู่ในเพดานอยู่แล้ว → ส่งไฟล์เดิมไม่แตะต้อง (ไม่ re-encode = ไม่เสี่ยงเสียความคมของตัวอักษร)
+    if (
+      pixels > 0 &&
+      visualTokensFor(width, height) <= MAX_VISUAL_TOKENS &&
+      buf.byteLength <= SAFE_RAW_BYTES
+    ) {
+      return { base64: buf.toString("base64"), mediaType };
+    }
+    const scale = pixels > MAX_IMAGE_PIXELS ? Math.sqrt(MAX_IMAGE_PIXELS / pixels) : 1;
+    // ปัดกล่องเป้าหมายลงให้เป็นจำนวนเท่าของ 28 — พอขอบกล่องหารด้วย 28 ลงตัว ⌈⌉ จะไม่ปัดขึ้นเกิน
+    // งบอีก และ fit:"inside" การันตีว่าผลลัพธ์ไม่เกินกล่อง ⇒ อยู่ในงบ 1,568 แน่นอนทุกสัดส่วนภาพ
+    // (จำเป็นสำหรับภาพสัดส่วนสุดขั้ว เช่นสลิปยาว 500×6000 ที่การคุมแค่จำนวนพิกเซลรวมยังล้น)
+    const boxFor = (value: number) =>
+      Math.max(VISUAL_TOKEN_PATCH_PX, Math.floor((value * scale) / VISUAL_TOKEN_PATCH_PX) * VISUAL_TOKEN_PATCH_PX);
+    const resized = await image
+      .rotate() // เคารพ EXIF orientation ก่อนย่อ ไม่งั้นสลิปจากมือถืออาจตะแคง
+      .resize({
+        width: boxFor(width || 1),
+        height: boxFor(height || 1),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      // q90 ใกล้ lossless พอสำหรับ OCR ตัวเลขบนสลิป แต่เล็กกว่า PNG ของรูปถ่ายหลายเท่า
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    // ยืนยันกับขนาดที่ออกมาจริง ไม่เชื่อค่าที่ขอไป (fit:"inside" รักษาสัดส่วน อาจได้ไม่ตรงกล่องเป๊ะ)
+    const out = await sharp(resized).metadata();
+    const outTokens = visualTokensFor(out.width ?? 1, out.height ?? 1);
+    if (outTokens > MAX_VISUAL_TOKENS) {
+      console.warn(
+        `[BMS] slip image still ${outTokens} visual tokens after downscale — API will downscale further`
+      );
+    }
+    return { base64: resized.toString("base64"), mediaType: "image/jpeg" };
+  } catch (err) {
+    console.error("[BMS] slip image downscale failed:", err);
+    // ย่อไม่ได้ (ไฟล์เสีย/ฟอร์แมตแปลก) — ส่งไฟล์เดิมได้เฉพาะตอนที่มั่นใจว่าไม่เกินเพดาน 10MB
+    // ถ้าใหญ่เกินก็ยอมตกไป heuristic ให้คนตรวจ ดีกว่าโดน API ปฏิเสธทั้ง request
+    if (buf.byteLength <= SAFE_RAW_BYTES) return { base64: buf.toString("base64"), mediaType };
     return null;
   }
 }
