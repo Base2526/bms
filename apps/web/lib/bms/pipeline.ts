@@ -103,6 +103,12 @@ export type PipelineResult = {
 // ฝังเข้า prompt ให้ AI รู้คำศัพท์หมวดหมู่ของร้านนี้จริง ๆ + เพิ่มกฎถามทีละ 1 field (slot-filling)
 // ต้องคืนค่าเดิมเป๊ะทุก request ของร้านเดียวกัน (เป็น prefix ที่ถูก prompt cache)
 // ห้ามใส่อะไรที่เปลี่ยนต่อ conversation/turn ลงในนี้ — ใช้ orderMemorySystemBlock() แทน
+//
+// ⚠️ prompt นี้ตั้งใจให้เป็นภาษาไทย (brand voice ค่ะ/คะ จูนมาแล้ว) ต่างจาก tool description
+// ที่เป็นอังกฤษเพื่อประหยัด token — ดู § tool description language ใน docs/ai/prompts.md
+// ⚠️ อย่าย่อ prompt นี้ให้สั้นลงมากโดยไม่วัดก่อน: prefix ที่ cache = tools (2.5k) + system (2.2k)
+// ≈ 4.7k ซึ่งเหนือขั้นต่ำ 4,096 ของ Haiku 4.5 อยู่แค่ ~16% ถ้าหลุดใต้เพดาน caching จะหยุดทำงาน
+// แบบเงียบ ๆ (ไม่มี error) — ยืนยันได้จาก cache_read_input_tokens ที่ต้อง > 0 ใน usage event
 function buildCustomerSystem(categories: string[]): string {
   const lines = [
     "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง",
