@@ -23,6 +23,10 @@ One route per channel, all shaped `POST /api/bms/{channel}/webhook/[tenantId]`:
 | Shopee 🧪 | `shopee/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
 | Lazada 🧪 | `lazada/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
 
+Events with a stable platform id are atomically claimed in `bms_inbound_events` before
+`runPipeline()`. Retries return success without repeating AI or writes. Web Chat accepts
+`messageId` or `Idempotency-Key`; message text is intentionally never used as a dedup key.
+
 Details per channel: [../integrations/](../integrations/).
 
 ## REST — cron endpoints

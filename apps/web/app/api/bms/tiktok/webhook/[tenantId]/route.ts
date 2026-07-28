@@ -13,11 +13,12 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type TikTokMessage = { user_id?: string; content?: { text?: string } };
+type TikTokMessage = { id?: string; message_id?: string; user_id?: string; content?: { text?: string } };
 
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
@@ -51,6 +52,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   for (const m of messages) {
     const text = m.content?.text?.trim() ?? "";
     if (!text) continue;
+    if (!(await claimInboundEvent(tenantId, "tiktok", m.message_id ?? m.id))) {
+      replies.push({ userId: m.user_id, duplicate: true });
+      continue;
+    }
     const userId = m.user_id ?? null;
     const result = await runPipeline(text, "tiktok", tenantId, userId);
 

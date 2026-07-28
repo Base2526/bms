@@ -44,6 +44,17 @@ const Q_AI = gql`query { bmsAiConfig { has_key } bmsAiUsage { count limit remain
 const Q_ALERTS = gql`
   query { bmsOperationalAlerts { packingOverdueCount slipPendingCount reservationExpiringCount chatWaitingCount } }
 `;
+const Q_AI_FAILURES = gql`
+  query {
+    bmsAiFailureSummary(days: 7) {
+      days
+      totalToolCalls
+      errorCalls
+      handoffCount
+      topFailingTools { tool outcome count }
+    }
+  }
+`;
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange",
@@ -165,6 +176,11 @@ export default function Page() {
   const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
   const { data: alertsData } = useQuery(Q_ALERTS, { fetchPolicy: "cache-and-network", pollInterval: 60000 });
   const alerts = alertsData?.bmsOperationalAlerts;
+  const { data: aiFailureData } = useQuery(Q_AI_FAILURES, { fetchPolicy: "cache-and-network", pollInterval: 60000 });
+  const aiFailure = aiFailureData?.bmsAiFailureSummary;
+  const aiFailureRate = aiFailure?.totalToolCalls
+    ? Math.round((aiFailure.errorCalls / aiFailure.totalToolCalls) * 1000) / 10
+    : 0;
 
   if (error) return <Alert type="error" message="โหลด dashboard ไม่ได้" description={error.message} showIcon />;
 
@@ -451,6 +467,50 @@ export default function Page() {
                 },
                 { title: "ออเดอร์", dataIndex: "orders", key: "o", width: 90, align: "right" },
                 { title: "ยอดซื้อ", dataIndex: "spent", key: "s", width: 120, align: "right", render: (v: number) => baht(v) },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={10}>
+          <Card title="AI health (7 วันล่าสุด)" style={{ borderRadius: 8 }}>
+            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Text type="secondary">Tool calls ทั้งหมด</Text>
+                <Text strong>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
+              </Space>
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Text type="secondary">Error / denied</Text>
+                <Text strong>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
+              </Space>
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Text type="secondary">Force handoff</Text>
+                <Text strong>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
+              </Space>
+              {(aiFailure?.errorCalls ?? 0) > 0 && (
+                <Alert
+                  type={aiFailureRate >= 20 ? "warning" : "info"}
+                  showIcon
+                  message={`มี error/denied ${Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ครั้งใน ${aiFailure?.days ?? 7} วันล่าสุด`}
+                />
+              )}
+            </Space>
+          </Card>
+        </Col>
+        <Col xs={24} lg={14}>
+          <Card title="AI tools ที่พลาดบ่อย" style={{ borderRadius: 8 }}>
+            <Table
+              rowKey="tool"
+              size="small"
+              pagination={false}
+              dataSource={aiFailure?.topFailingTools || []}
+              locale={{ emptyText: "ยังไม่พบ error/denied ในช่วง 7 วันล่าสุด" }}
+              columns={[
+                { title: "Tool", dataIndex: "tool", key: "tool" },
+                { title: "Outcome", dataIndex: "outcome", key: "outcome", width: 120, render: (v: string) => <Tag color={v === "denied" ? "gold" : "red"}>{v}</Tag> },
+                { title: "ครั้ง", dataIndex: "count", key: "count", width: 100, align: "right" },
               ]}
             />
           </Card>

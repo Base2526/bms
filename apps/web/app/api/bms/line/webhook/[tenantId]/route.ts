@@ -15,6 +15,7 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, notifyInboxConversationChanged } from "@/lib/bms/inbox";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
 import { recordInboundEvent, recordWebhookVerifyFailed, recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "@/lib/bms/channelHealth";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ type LineEvent = {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; text?: string };
+  message?: { id?: string; type: string; text?: string };
 };
 
 async function pushLineReply(tenantId: string, token: string, replyToken: string, text: string) {
@@ -78,6 +79,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     if (ev.type !== "message" || ev.message?.type !== "text") continue;
     const text = ev.message.text?.trim() ?? "";
     if (!text) continue;
+    if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
+      replies.push({ replyToken: ev.replyToken, duplicate: true });
+      continue;
+    }
 
     const userId = ev.source?.userId ?? null;
     const result = await runPipeline(text, "line", tenantId, userId);

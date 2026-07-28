@@ -19,11 +19,12 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ShopeeMessage = { from_id?: string; sender_id?: string; content?: { text?: string }; message?: string };
+type ShopeeMessage = { id?: string; message_id?: string; from_id?: string; sender_id?: string; content?: { text?: string }; message?: string };
 
 function parseShopeeMessages(body: any): ShopeeMessage[] {
   // TODO(prod): แทนที่ด้วย mapping จริงตาม payload ของ Shopee Open Platform
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   for (const m of messages) {
     const text = (m.content?.text ?? m.message ?? "").trim();
     if (!text) continue;
+    if (!(await claimInboundEvent(tenantId, "shopee", m.message_id ?? m.id))) {
+      replies.push({ userId: m.from_id ?? m.sender_id, duplicate: true });
+      continue;
+    }
     const userId = m.from_id ?? m.sender_id ?? null;
     const result = await runPipeline(text, "shopee", tenantId, userId);
 

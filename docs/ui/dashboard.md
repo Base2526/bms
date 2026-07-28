@@ -15,6 +15,11 @@ Today's overview in one call: revenue, low-stock alerts, order counts by status,
 products/customers, and a 7-day sales trend. This is the landing page after login
 (`/admin` redirects here).
 
+The dashboard also includes an **AI health** card for the last 7 days, backed by
+`bmsAiFailureSummary`: total tool calls, error/denied calls, force-handoff count, and the tools
+that fail most often. This reuses `bms_audit_log` (`ai.tool_call`) and `bms_conversation_notes`
+instead of introducing a separate AI-failure table.
+
 ## Sales Summary (`getSalesSummary(from, to)`)
 
 Defaults to the last 30 days. Revenue only counts orders `PAID` or later (not `PENDING`).

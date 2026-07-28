@@ -15,6 +15,7 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, deliverToChannel } from "@/lib/bms/inbox";
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const events = parseMetaEvents(body);
 
   for (const ev of events) {
+    if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
     const result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
     await logConversation(tenantId, CHANNEL, ev.senderId, ev.text, result.reply);
     await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);

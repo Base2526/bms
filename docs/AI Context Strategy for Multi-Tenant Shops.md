@@ -53,19 +53,18 @@
 
 ```json
 {
-  "businessType": "clothing",
+  "businessType": "fashion",
   "language": "th",
   "orderingStyle": "catalog_variant",
-  "requiredFields": ["product", "color", "size", "qty"],
+  "requiredFields": ["product", "size", "qty"],
   "interpretShortReplyFromContext": true,
   "handoffAfterFailedTurns": 2
 }
 ```
 
-> ⚠️ **สถานะจริง**: field เหล่านี้ยังไม่มีตารางเก็บจริงในระบบ ของจริงมีแค่ `bms_store_profile`
-> (hours/address/policies/payment/shipping — ดู migration `6.9`/`7.17`) ซึ่งไม่มี `orderingStyle`,
-> `requiredFields`, `handoffAfterFailedTurns` เลย ถ้าจะทำจริงต้อง migration ใหม่ (ดูหัวข้อ
-> "สถานะจริงเทียบกับโค้ด" ท้ายเอกสาร)
+> ✅ **Implemented (7.30)**: `bms_store_profile` เก็บ business type, language, ordering style,
+> required fields, short-reply policy และ handoff threshold; Settings เป็นจุดแก้ไขและ pipeline สร้าง
+> tenant summary แบบ deterministic จากค่าที่ backend validate แล้ว
 
 ---
 
@@ -80,7 +79,8 @@
 - field อะไรยังขาด
 - ล่าสุด AI ถามอะไรไว้
 
-> ⚠️ **สถานะจริง**: **ยังไม่มีเลย** — นี่คือช่องว่างที่ใหญ่ที่สุดในระบบตอนนี้ (ดูรายละเอียดท้ายเอกสาร)
+> ✅ **Implemented (7.30)**: recent history มาจาก `bms_messages`; slot/intent/last-asked state ที่ต้อง
+> อยู่ข้าม compression window เก็บใน `bms_conversations.ai_state` และ merge กับ state ที่ derive สด
 
 ---
 
@@ -414,11 +414,9 @@ async function classifyIntent(text, conversationState) {
 }
 ```
 
-> **สถานะจริง**: มีของใกล้เคียงอยู่แล้ว — `lib/bms/nlu.ts` (`understand()`) เป็น rule-based classifier
-> คล้ายกันเป๊ะ (`CHECK_STOCK`/`CONFIRM_ORDER`/`GREETING`/`UNKNOWN`) แต่ **ใช้เป็น fallback path เท่านั้น**
-> (เมื่อไม่มี AI credentials) ไม่ได้ใช้เพื่อเลือก prompt template ให้ AI path หลัก ถ้าจะเอา
-> pre-classifier มาช่วยเลือก system prompt จริง ต้องต่อยอด `nlu.ts` ให้ผลลัพธ์ไหลเข้า
-> `runPipeline()`/`pipeline.ts:180` ก่อนเรียก `runToolLoop()` ไม่ใช่สร้างไฟล์ใหม่ซ้ำ
+> ✅ **Implemented**: `classifyCustomerIntent()` แยก intent ก่อน provider call; intent ที่ชัดเจน
+> server-route ผ่าน approved tool, greeting ตอบ deterministic โดยไม่เรียก model และ intent guidance
+> อยู่ใน volatile block จึงไม่ invalidate prompt cache
 
 ---
 
@@ -459,11 +457,8 @@ function normalizeEntities(string $text, array $normMap): array {
 }
 ```
 
-> **สถานะจริง**: `tools/catalog.ts` (`search_products` ผ่าน `listProducts()`) ยังไม่มี alias/fuzzy
-> matching เลย — เป็น match ตรงชื่อ/SKU เท่านั้น แนวทางที่เข้ากับ native tool-use ของระบบนี้ได้ดีกว่าเขียน
-> regex normalizer แยกทั้ง layer คือ **ฝัง alias table เข้า system prompt ต่อ tenant**
-> (`CUSTOMER_SYSTEM` ใน `pipeline.ts`) ให้ Claude ใช้ตอนเรียก `search_products` เอง — ไม่ต้องมี
-> pre-processing step แยกก่อนเรียก AI ต้องมี migration ใหม่เก็บ alias ต่อ tenant (ยังไม่มีตารางนี้)
+> **สถานะจริงหลัง 7.30**: search ครอบคลุม name/SKU/barcode/category/brand/`keywords[]` และมี
+> human-reviewed synonym discovery; ยังตั้งใจไม่ทำ fuzzy/vector matching เพื่อให้ผลลัพธ์อธิบายได้
 >
 > ⚡ **Quick-win ก่อน Entity Normalizer เต็มรูปแบบ (P-0.5)**: ที่จริงมี alias mechanism อยู่แล้วในระบบ
 > **โดยไม่ต้อง migration ใหม่เลย** — คอลัมน์ `bms_products.keywords[]` มีอยู่แล้ว และ `resolveProduct()`
@@ -512,14 +507,8 @@ function resolveShortReply(text, conversationState) {
 }
 ```
 
-> **สถานะจริง**: ต้องพึ่ง `conversationState.lastAskedField` ซึ่ง**ยังไม่มีอยู่จริง** (ดู Layer เดียวกันนี้
-> ในหัวข้อ Conversation State ด้านบน) — ทำก่อนไม่ได้จนกว่าจะมี conversation state layer ก่อน ดูลำดับ
-> priority ท้ายเอกสาร
->
-> ❌ **ยังไม่ implement**: หลังจาก P0 (conversation history) เสร็จแล้ว เงื่อนไข blocker เดิมหมดไปแล้ว
-> เทคนิคนี้ทำได้จริงตอนนี้ — แต่ยังไม่ได้ implement เป็นทางเลือกที่เหลืออยู่ (ดูส่วน "สถานะล่าสุด" ท้าย
-> เอกสาร) เพราะ native tool-use ให้ Claude เห็น history ทั้งหมดอยู่แล้วและตีความเองได้ในระดับที่ยอมรับได้
-> ROI ของการเขียน resolver แยกจึงต่ำกว่ารายการอื่นที่ implement ไปแล้ว
+> ✅ **Implemented**: `normalizeShortReplyMessage()` resolve size, quantity, payment method และ
+> confirmation จากคำถามล่าสุดก่อนเข้า classifier/tool loop; เปิด/ปิดต่อ tenant ได้
 
 ---
 
@@ -555,6 +544,10 @@ function isDuplicateMessage(string $messageId, int $tenantId): bool {
 > parsing) — ตาม convention ของโปรเจกต์นี้ (เคยพลาดเรื่อง channel array กระจายหลายจุดมาแล้ว ดู
 > `CLAUDE.local.md` § Shopee/Lazada) ถ้ามี logic ซ้ำอยู่แล้วบางช่องทาง ให้รวมเป็นจุดเดียวแทนสร้างตารางใหม่
 > ซ้อนทับ
+>
+> ✅ **Implemented (7.30)**: `bms_inbound_events` ใช้ primary key
+> `(tenant_id, channel, external_event_id)` พร้อม RLS/grants; webhook claim ก่อนเข้า pipeline.
+> Web Chat รับ `messageId`/`Idempotency-Key` และไม่เดา key จากข้อความ
 
 ---
 
@@ -568,7 +561,7 @@ function isDuplicateMessage(string $messageId, int $tenantId): bool {
 {
   "intent": "ordering",
   "confidence": 0.92,
-  "slots": { "product": "Classic Tee", "color": "black", "size": null, "qty": 2 },
+  "slots": { "product": "Classic Tee", "size": null, "qty": 2 },
   "missingSlots": ["size"],
   "action": "ask_back",
   "responseText": "ต้องการไซส์อะไรคะ มี S / M / L / XL",
@@ -603,15 +596,12 @@ Field ที่ AI ถามล่าสุด: "size"
 กฎ: ถามทีละ 1 field เท่านั้น ห้ามถามหลาย field พร้อมกัน
 ```
 
-> **สถานะจริง**: idea นี้ **ทำได้ทันทีและควรทำ** โดยไม่ต้องมี structured output schema ข้างต้นเลย —
-> เพราะเป็นแค่ข้อความเพิ่มเข้า system/user prompt (`CUSTOMER_SYSTEM` ใน `pipeline.ts:39`) แต่ต้องมี
-> conversation state (Layer ที่ยังไม่มี) มาก่อนถึงจะรู้ว่า field ไหน "confirmed" แล้วบ้าง
+> **สถานะจริง**: ใช้ native tool-use ต่อได้โดยไม่ต้องเปลี่ยนเป็น single-shot JSON
 >
-> ✅ **Implemented (รูปแบบย่อ)**: ไม่ได้ทำ "slots ที่เก็บได้แล้ว" เป็น block คำนวณสดต่อ turn ตามตัวอย่าง
-> ข้างบน (ต้องมี explicit slot-tracking ที่ระบบนี้ไม่มี เพราะใช้ native tool-use ไม่ใช่ JSON slots) — แต่
-> เพิ่มกฎ "ถามทีละ 1 field เท่านั้น ห้ามถามหลาย field พร้อมกัน" เป็นบรรทัดตายตัวใน `buildCustomerSystem()`
-> (`pipeline.ts`) แทน โดยอาศัย conversation history (P0) ที่ Claude เห็นแล้วให้ Claude เองเป็นคนดูว่า field
-> ไหน confirmed แล้วจากบทสนทนาที่ผ่านมา — ได้ผลลัพธ์ใกล้เคียงกันโดยไม่ต้องสร้างระบบ track state แยก
+> ✅ **Implemented (native-tool form)**: required fields มาจาก tenant policy; slot state อยู่ใน
+> `bms_conversations.ai_state`, merge กับ recent history และส่งเป็น volatile order-memory block
+> `create_order` ยังรับ `sku + size + qty` ตาม stock invariant เดิม; ถ้า policy ไม่บังคับถาม size
+> โมเดลใช้ variant จากผล tool ได้เฉพาะกรณีมีตัวเลือกเดียว ถ้ามีหลายตัวเลือกต้องถามลูกค้า
 
 ## 2.3) Few-Shot Examples per Business Type
 
@@ -627,13 +617,8 @@ Field ที่ AI ถามล่าสุด: "size"
   AI: เรียก update_draft_order({size: "L"})
 ```
 
-> **สถานะจริง**: ทำได้ทันที — เพิ่มเข้า `CUSTOMER_SYSTEM` ตรงๆ แต่ระบบยังไม่มี field `businessType`
-> ต่อ tenant เลย (ไม่มีใน `bms_store_profile`) ดังนั้นตอนนี้ทำได้แค่ few-shot กลาง (ทุกร้านเหมือนกัน)
-> ถ้าจะแยกตาม business type ต้องเพิ่ม field/migration ก่อน
->
-> ❌ **ยังไม่ implement** — ยังไม่มี field `businessType` และยังไม่ได้เพิ่ม few-shot examples เข้า prompt
-> เลย (ทำสิ่งที่ใกล้เคียงกว่าไปแล้วคือฝัง category list จริงของร้าน — ดู 1.2 — แต่ไม่ใช่ few-shot ตัวอย่าง
-> บทสนทนา) เหลือเป็น backlog
+> ✅ **Implemented**: `businessType` ตั้งจาก Settings และมีตัวอย่าง 2 กรณีต่อ
+> `fashion/beauty/food/electronics/home/general`
 
 ---
 
@@ -707,10 +692,8 @@ function enforceTurnBudget(aiResponse, conversationState, tenantSummary) {
 }
 ```
 
-> **สถานะจริง**: ตรงกับปัญหาที่บันทึกไว้แล้วใน `CLAUDE.local.md` § AI tool-calling ("Haiku มัก
-> conservative เรื่องปิดการขาย, ถามย้ำก่อน create_order") — แต่ field `handoffAfterFailedTurns` ยังไม่มี
-> ที่เก็บจริง (ไม่มีใน `bms_store_profile`) และไม่มี field `action`/`missingSlots` เพราะไม่ได้ใช้
-> structured output ฉบับนี้ วิธีที่เข้ากับระบบจริง: นับจาก **ai.tool_call audit** — ถ้า N ข้อความติดกัน
+> **สถานะจริง**: ตรงกับปัญหาที่บันทึกไว้แล้วใน `CLAUDE.local.md` § AI tool-calling จึงใช้วิธีที่เข้ากับ
+> native tool-use: ถ้า N ข้อความติดกัน
 > จาก `(channel, customerRef)` เดียวกันไม่มี tool call ที่เป็น write action (`create_order`,
 > `submit_payment`) สำเร็จเลย → เพิ่ม counter ผูกกับ `bms_conversations` (มี `assigned_to_user_id`/
 > status column อยู่แล้ว) แล้ว force handoff เมื่อถึง threshold
@@ -720,10 +703,9 @@ function enforceTurnBudget(aiResponse, conversationState, tenantSummary) {
 > `bms_conversations.ai_consecutive_askbacks` · `resolveConversationId()`/`bumpAiTurnCounter()` ใน
 > [`lib/bms/inbox.ts`](../apps/web/lib/bms/inbox.ts) · logic ใน `pipeline.ts`: ไม่มี tool ใน
 > `CUSTOMER_PROGRESS_TOOLS` ที่ ok=true ติดกันครบ
-> `TURN_BUDGET_MAX_FAILED = 3` ครั้ง → override reply เป็นข้อความ handoff + เขียน internal note
+> ครบ threshold จาก `bms_store_profile.ai_handoff_after_failed_turns` → override reply เป็น handoff + เขียน internal note
 > (`addNote(..., author: "AI")`, staff เห็นในแท็บโน้ตของ Inbox ที่มีอยู่แล้ว) แล้ว reset counter กันแจ้งซ้ำ
-> ทุกข้อความถัดไป — threshold เป็น constant กลาง ยังไม่มี fieldต่อ tenant ให้ตั้งเอง (ตรงกับที่หมายเหตุ
-> ไว้ข้างบนว่ายังไม่มีที่เก็บจริง)
+> ทุกข้อความถัดไป
 >
 > **แก้เพิ่ม (2026-07)**: เดิมนับความคืบหน้าจากทูล write เท่านั้น (`create_order`/`submit_payment`/
 > `reorder`) ลูกค้าที่ถามสินค้า/สต็อกสามข้อความติดจึงถูก force handoff ทั้งที่ AI เรียกทูลถูกทุกครั้ง ·
@@ -749,14 +731,9 @@ async function buildConversationContext(turns, currentState) {
 }
 ```
 
-> **สถานะจริง**: **ยังทำเรื่องนี้ไม่ได้เลย เพราะยังไม่มี conversation history เข้า AI ตั้งแต่ต้น**
-> (ดูหัวข้อถัดไป) — layer นี้เป็นการ "บีบอัด history ที่ยาวเกิน" แต่ตอนนี้ history = 0 เสมอ ต้องทำ
-> conversation-state layer (P0 ด้านล่าง) ให้เสร็จก่อน ถึงจะมี "ของที่ยาวเกิน" ให้บีบอัด
->
-> ❌ **ยังไม่ implement** — P0 (conversation history) เสร็จแล้ว (`getRecentAiHistory()` ใน `inbox.ts`)
-> แต่ตอนนี้แค่ "จำกัดจำนวน" (`HISTORY_MAX_MESSAGES = 20` ข้อความล่าสุด, ตัดทิ้งเฉยๆ ไม่บีบอัด) ยังไม่มี
-> rolling summary ของ turns เก่ากว่านั้น — ตอนนี้เป็น backlog ที่ "ของที่ยาวเกิน" มีจริงแล้ว รอ implement
-> จริง ถ้าบทสนทนายาวเกิน 20 ข้อความ ส่วนเก่าจะหายไปเฉยๆ ไม่ถูกสรุปเก็บไว้
+> ✅ **Implemented (bounded deterministic compressor)**: โหลดได้สูงสุด 48 messages; เมื่อเกิน 12
+> จะเก็บ 8 ล่าสุดเต็มและสรุป slot/payment/coupon/ช่วงท้ายจากส่วนเก่าเป็น volatile block. Durable
+> `ai_state` กัน slot สำคัญหายเมื่อพ้น fetch window และไม่เสีย model call เพิ่มเพื่อสร้าง summary
 
 ## 4.2) Retrieval Re-Ranker
 
@@ -775,12 +752,8 @@ function rerankProducts(array $candidates, string $query, array $normalizedEntit
 }
 ```
 
-> **สถานะจริง**: `search_products` (`tools/catalog.ts` → `listProducts()`) ยังเป็น match ตรงชื่อ/SKU
-> เท่านั้น ไม่มี semantic score ให้ re-rank ด้วยซ้ำ — ทำก่อนอันดับต่ำ เพราะประโยชน์ต่ำถ้าจำนวนสินค้า
-> ต่อร้านไม่เยอะมาก (ส่วนใหญ่เป็นร้านเดี่ยว ไม่ใช่ marketplace หมื่น SKU)
->
-> ❌ **ยังไม่ implement** — ยังคง priority ต่ำเท่าเดิม; P-0.5 (keywords match) ช่วยลดความจำเป็นของ
-> re-ranker ไปมากแล้ว เพราะ match เจอมากขึ้นตั้งแต่ต้นโดยไม่ต้อง rank
+> ✅* **Implemented แบบ heuristic**: rank exact SKU/name/barcode/keyword ก่อน prefix และ
+> category/brand แล้วจึงเรียงชื่อ; ไม่อ้างว่าเป็น semantic/vector score
 
 ## 4.3) Turn Budget Enforcer
 
@@ -812,11 +785,10 @@ CREATE TABLE ai_failure_log (
 > `bms_audit_log` ที่มีอยู่แล้ว (เช่น outcome=`error`/`denied` ติดกันหลายครั้ง) แทนสร้าง
 > `ai_failure_log` แยก
 >
-> ⚠️ **Implemented บางส่วน** — `getAiFailureSummary(tenantId, days)` ใน
+> ✅ **Implemented** — `getAiFailureSummary(tenantId, days)` ใน
 > [`lib/bms/aiUsage.ts`](../apps/web/lib/bms/aiUsage.ts) query `bms_audit_log` (action=`ai.tool_call`,
-> outcome error/denied) grouped by tool ตามที่แนะนำไว้ ไม่มีตารางใหม่เลย — **แต่ยังไม่มี GraphQL
-> query/permission/admin UI มาเรียกใช้** เป็น service function พร้อมต่อยอด ไม่ใช่ dead code (ยังไม่มีใคร
-> import ใช้จริง) ต้องต่อ GraphQL + หน้า admin ก่อนถึงจะเห็นผลจริงในมือ staff
+> outcome error/denied) grouped by tool ตามที่แนะนำไว้ ไม่มีตารางใหม่ และต่อ GraphQL
+> `bmsAiFailureSummary` (`report.view`) + การ์ด AI health บน Dashboard แล้ว
 
 ## 5.2) Synonym Discovery
 
@@ -833,14 +805,9 @@ CREATE TABLE ai_synonym_candidates (
 );
 ```
 
-> **สถานะจริง**: idea นี้เป็นของใหม่จริง ไม่ชนกับตารางเดิม — แต่ priority ต่ำ (long-term improvement)
-> ควรทำหลัง entity normalizer (1.2) มีที่เก็บ alias จริงแล้ว เพราะ candidate ที่ approve แล้วต้องไปลง
-> ตารางเดียวกับ alias ไม่ใช่คนละที่
->
-> ❌ **ยังไม่ implement** — ยังคงเป็น backlog ต่ำสุด เนื่องจาก 1.2 เลือกใช้ `keywords[]`/category ที่มีอยู่
-> แล้วแทนการสร้างตาราง alias ใหม่ (ดู 1.2) ทำให้ "ที่เก็บ" สำหรับ synonym ที่ approve แล้วยังไม่มีอยู่ดี —
-> ถ้าจะทำ synonym discovery จริง ต้องตัดสินใจก่อนว่าจะ approve เข้า `bms_products.keywords` ของสินค้านั้น
-> ตรงๆ หรือสร้างตารางแยก
+> ✅ **Implemented with human review**: คำค้น customer ที่ไม่พบผลและผ่าน PII-like filter ถูกนับใน
+> `bms_ai_synonym_candidates`; หน้า Products ให้ผู้มี `product.edit` ผูก SKU แล้ว approve/reject.
+> การ approve reuse `upsertProduct()` เพื่อเพิ่มลง `keywords[]` พร้อม revision attribution
 
 ## 5.3) Per-Tenant Accuracy Metrics
 
@@ -859,11 +826,11 @@ CREATE TABLE ai_tenant_metrics_daily (
 > (`lib/bms/aiUsage.ts`) — ควรพิจารณาต่อยอดตารางนั้นเพิ่ม column แทนสร้างตารางใหม่คู่ขนาน ถ้า field ที่
 > ต้องการ (handoff/clarification count) ใกล้เคียงกับที่ track อยู่แล้ว
 >
-> ⚠️ **Implemented บางส่วน** — ไม่ได้สร้าง `ai_tenant_metrics_daily` (ไม่มี daily snapshot table) แต่
+> ✅ **Implemented แบบ live-window metrics** — ไม่สร้าง daily snapshot ซ้ำ แต่
 > `getAiFailureSummary()` (ดู 5.1) คำนวณ `handoffCount` สดจาก `bms_conversation_notes` (นับ note ที่ turn
 > budget enforcer เขียนตอน force handoff — ดู 3.4) และ `errorCalls`/`totalToolCalls` จาก audit log ในช่วง
-> วันที่ระบุ (default 7 วัน) แทน "clarification rate"/"intent accuracy" เต็มรูปแบบ — ยังไม่มี alert rule
-> อัตโนมัติ ("handoff rate > 20% → auto trigger refresh") และยังไม่มี GraphQL/UI เหมือน 5.1
+> วันที่ระบุ (default 7 วัน) และแสดงบน Dashboard. Usage event เก็บ intent, history fetch/send count,
+> compression flag/summary chars, business type และ cache-token breakdown โดยไม่เก็บ prompt/PII
 
 ---
 
@@ -871,25 +838,22 @@ CREATE TABLE ai_tenant_metrics_daily (
 
 ## 1) Tenant Summary — `tenant_ai_summary`
 
-business type / language / ordering style / required fields / optional fields / fallback policy /
-handoff policy — **ยังไม่มีตารางนี้จริง** (ใกล้เคียงสุดคือ `bms_store_profile` แต่ field คนละชุด)
+ใช้ `bms_store_profile` เป็น source of truth โดยตรง ไม่สร้าง summary table ซ้ำ: business type /
+language / ordering style / required fields / short-reply policy / handoff policy
 
 ## 2) Retrieval Metadata — `tenant_ai_retrieval_terms`
 
-aliases / category keywords / common phrases / modifier terms / typo patterns /
-**normalization map** — **ยังไม่มีตารางนี้จริง**
+ใช้ `bms_products.keywords[]`, categories และ `bms_ai_synonym_candidates` ที่ต้อง human review
 
 ## 3) Refresh Job — `tenant_ai_refresh_job`
 
-weekly refresh / rebuild retrieval metadata / summarize catalog changes / detect new patterns /
-**auto health trigger** — **ยังไม่มี** (มี pattern cron ใกล้เคียงอยู่แล้วที่
-`.github/workflows/daily-log-triage.yml` และ `/api/bms/channels/check-health` — ใช้เป็นแม่แบบได้)
+ไม่ต้องมี refresh job สำหรับ summary เพราะ derive จาก config/catalog สด; synonym candidates เก็บ
+incrementally ตอน search miss และ failure metrics คำนวณจาก audit window
 
 ## 4) Live State (Conversation State)
 
-current product / current draft order / missing fields / last asked question / recent intent /
-**failedTurns** / **lastAskedField** / **rollingSummary** — **ยังไม่มีเลยแม้แต่ field เดียว** (ดูหัวข้อ
-ถัดไป — นี่คือ P0)
+current product / size / qty / confirmation / last asked field / recent intent อยู่ใน
+`bms_conversations.ai_state`; failed turns อยู่ใน `ai_consecutive_askbacks`
 
 ## 5) ตารางใหม่ที่ "เสนอ" ในเอกสาร v2
 
@@ -957,18 +921,18 @@ propose-only flow สำหรับ sensitive action ครบแล้ว
 กว่าและปลอดภัยกว่าอยู่แล้ว ให้แปลงเป้าหมายแต่ละ layer ให้เข้ากับ native tool-use แทน (ดูหมายเหตุใน
 แต่ละ layer ด้านบน)
 
-## 2) ช่องโหว่ใหญ่ที่สุด (ยืนยันจากโค้ด) — ไม่มี conversation history เข้า AI เลย
+## 2) ช่องโหว่เดิมที่ปิดแล้ว — conversation history/state
 
 ทุก webhook (`app/api/bms/{line,facebook,instagram,tiktok,shopee,lazada,web}/webhook/[tenantId]/route.ts`)
 เรียก `runPipeline(text, channel, tenantId, userId)` ด้วยข้อความปัจจุบันข้อความเดียว แล้วใน
 [`pipeline.ts:183`](../apps/web/lib/bms/pipeline.ts) ส่งเข้า `runToolLoop()` เป็น
 `messages: [{ role: "user", content: message }]` — **ไม่มี turn ก่อนหน้าเลย**
 
-หมายความว่า Claude tool-loop stateless ทุก request จริงๆ — ที่มาตัวจริงของปัญหาที่บันทึกไว้แล้วใน
+ก่อน P0 Claude tool-loop stateless ทุก request — ที่มาตัวจริงของปัญหาที่บันทึกไว้แล้วใน
 `CLAUDE.local.md` § AI tool-calling ("Haiku conservative เรื่องปิดการขาย, ถามย้ำก่อน create_order")
 ข้อมูลบทสนทนามีอยู่แล้วจริงใน `bms_messages` (`listMessages()` ที่ [`lib/bms/inbox.ts:390`](../apps/web/lib/bms/inbox.ts))
 — **แค่ไม่เคยถูกดึงกลับมาป้อน prompt** ทุก layer ที่พึ่ง "conversation state" (short reply resolver,
-turn budget, slot-filling state machine) ยังไม่มีฐานให้ยืนจนกว่าจะแก้จุดนี้ก่อน
+turn budget และ slot-filling state machine เคยไม่มีฐานให้ยืนก่อนแก้ P0/7.30
 
 > ✅ **แก้แล้ว (2026-07)** — `getRecentAiHistory()`/`resolveConversationId()` ใน `lib/bms/inbox.ts` +
 > wiring ใน `pipeline.ts` (ดูแถว P0 ในตารางด้านล่าง) ตอนนี้ path หลักเห็น turn ก่อนหน้าแล้วจริง
@@ -978,41 +942,32 @@ turn budget, slot-filling state machine) ยังไม่มีฐานให
 | สถานะ | ลำดับ | งาน | เหตุผล | จุดที่แก้ |
 |---|---|---|---|---|
 | ✅ | **P-0.5** | แก้ `listProducts()` ให้ match `keywords[]` ด้วย | บั๊กจริงที่ยืนยันจากโค้ด: alias ที่ร้านตั้งไว้ใน `bms_products.keywords[]` ใช้ได้เฉพาะ path fallback (`resolveProduct()` ใน `stock.ts`) แต่ path หลัก (`search_products`/`get_product` ผ่าน `listProducts()`) ไม่ query column นี้เลย ทั้งที่ SELECT มาอยู่แล้ว ทำง่ายสุด ไม่มี dependency กับงานอื่น ควรทำก่อน P0 | `lib/bms/products.ts` — WHERE clause ของ `listProducts()` เพิ่ม `EXISTS (SELECT 1 FROM unnest(keywords) ...)` แล้ว |
-| ✅ | **P0** | ป้อน conversation history เข้า tool loop | ทุก layer อื่นพึ่ง state นี้ทั้งหมด ตอนนี้ multi-turn slot-filling แทบไม่ทำงานจริง | `lib/bms/inbox.ts` (`resolveConversationId`/`getRecentAiHistory`) + `pipeline.ts` (ต่อท้าย `opts.messages` ก่อนเรียก `runToolLoop()`) — จำกัด 20 ข้อความล่าสุด |
+| ✅ | **P0** | Conversation history + durable state | multi-turn ต้องไม่หายเมื่อ compress | `getRecentAiHistory()` + `bms_conversations.ai_state`; fetch 48, ส่ง 8 ล่าสุดเมื่อ compressed |
 | ✅ | **P1** | Unverified Fact Detector | ช่องโหว่จริงตอนนี้: ตอบราคา/สต็อกได้โดยไม่มี tool call verify เลย ไม่มีใครดักอยู่ | `pipeline.ts` (`hasUnverifiedFacts()`) เช็ค `loop.reply` เทียบ `loop.trace` ก่อน return |
-| ✅ | **P1** | Turn/Handoff counter ต่อ conversation | ตรงกับปัญหาที่บันทึกไว้แล้วว่า Haiku ถามย้ำ | migration `7.28` (`bms_conversations.ai_consecutive_askbacks`) + `bumpAiTurnCounter()`/`addNote()` ใน `inbox.ts` + logic ใน `pipeline.ts` (threshold = 3, constant กลาง) |
+| ✅ | **P1** | Turn/Handoff counter ต่อ conversation | ตรงกับปัญหาที่บันทึกไว้แล้วว่า Haiku ถามย้ำ | migration `7.28` + threshold ต่อ tenant ใน `bms_store_profile` |
 | ✅* | **P2** | Entity/alias injection เข้า system prompt | `search_products` ยัง match ตรง ไม่มี alias เลย | **เปลี่ยนวิธี**: ไม่ได้สร้าง migration alias ใหม่ตามแผนเดิม — ใช้ `listCategories()` ที่มีอยู่แล้ว (จัดการได้ที่ `/admin/products`) ฝังเข้า `buildCustomerSystem()` แทน |
-| ✅ | **P2** | Slot-filling state ใน prompt (2.2) | ทำได้เบาแค่แต่งข้อความ prompt เพิ่ม | **รูปแบบย่อ**: เพิ่มกฎ "ถามทีละ 1 field" คงที่ใน `buildCustomerSystem()` แทน slot-state block ที่คำนวณสด (ไม่มี explicit slot tracking ในระบบนี้) |
-| ⚠️ | **P3** | Failure/synonym tracking | มี audit log อยู่แล้ว ไม่ต้องสร้างตารางใหม่ 3-4 ตัว | `getAiFailureSummary()` ใน `lib/bms/aiUsage.ts` — query `bms_audit_log`+`bms_conversation_notes` สำเร็จ แต่**ยังไม่มี GraphQL/permission/admin UI wiring** |
-| ❌ | — | Short Reply Resolver (1.3) | blocker เดิม (ไม่มี conversation state) หมดไปแล้วหลัง P0 แต่ยังไม่ implement | ยังไม่ทำ — ROI ต่ำกว่ารายการอื่นเพราะ native tool-use ให้ Claude เห็น history ทั้งหมดแล้วตีความเองได้ |
-| ❌ | — | Conversation Compressor (4.1) | history ยาวเกิน 20 ข้อความ ถูกตัดทิ้งเฉยๆ ไม่บีบอัด | ยังไม่ทำ — relevant มากขึ้นตอนนี้ที่ P0 เสร็จแล้ว |
-| ❌ | — | Few-shot examples ต่อ business type (2.3) | ไม่มี field `businessType` ต่อ tenant | ยังไม่ทำ — ต้องมี migration ก่อน |
-| ❌ | — | Retrieval Re-Ranker (4.2) | ไม่มี semantic score ให้ rank | ยังไม่ทำ — priority ต่ำลงอีกหลัง P-0.5 |
-| ❌ | — | Synonym Discovery (5.2) | ยังไม่มี "ที่เก็บ" ที่ชัดเจนหลังเปลี่ยนแผน 1.2 | ยังไม่ทำ — ต้องตัดสินใจ approve เข้า `keywords[]` ตรงๆ หรือตารางแยกก่อน |
-| ไม่แนะนำ | — | Structured JSON output schema แบบ v2, ตารางใหม่ `ai_message_log`/`ai_failure_log`/`ai_tenant_metrics_daily` | ขัดกับ native tool-use ที่มีอยู่ / ซ้ำซ้อนกับตารางเดิม | — |
+| ✅ | **P2** | Slot-filling state ใน prompt (2.2) | รักษา state ข้าม compression | required fields ต่อ tenant + `ai_state` + volatile order-memory block |
+| ✅ | **P3** | Failure tracking + admin visibility | มี audit log อยู่แล้ว ไม่ต้องสร้างตารางใหม่ 3-4 ตัว | `getAiFailureSummary()` ใน `lib/bms/aiUsage.ts` + GraphQL `bmsAiFailureSummary` + การ์ด AI health บน `/admin/dashboard` |
+| ✅ | — | Short Reply Resolver (1.3) | blocker เดิม (ไม่มี conversation state) หมดไปแล้วหลัง P0 | `pipeline.ts` ขยาย reply สั้น เช่น `XL`, `2`, `พร้อมเพย์`, `เอาเลย` ให้ผูกกับคำถามก่อนหน้าก่อนเข้า intent/tool loop |
+| ✅ | — | Conversation Compressor (4.1) | history ยาวเกิน 20 ข้อความ ถูกตัดทิ้งเฉยๆ ไม่บีบอัด | `pipeline.ts` โหลด history ได้ยาวขึ้น, เก็บ recent turns ไว้เต็ม, และสรุปส่วนเก่าเป็น `volatileSystem` block |
+| ✅ | — | Few-shot examples ต่อ business type (2.3) | prompt ต้องตรงประเภทร้าน | migration `7.30` + Settings + ตัวอย่าง 2 กรณีต่อ business type |
+| ✅* | — | Retrieval Re-Ranker (4.2) | ไม่มี semantic score ให้ rank | **เปลี่ยนวิธี**: ไม่ทำ semantic ranker เต็มรูปแบบ แต่เพิ่ม heuristic ranking ใน `listProducts()` จาก exact/prefix/category/brand/keyword match |
+| ✅ | — | Intent pre-classifier + webhook idempotency | ลด model variance และ duplicate writes | `classifyCustomerIntent()` + `bms_inbound_events` ทุก webhook |
+| ✅ | — | Synonym Discovery (5.2) | เพิ่ม recall โดยไม่ให้ AI แก้ catalog เอง | candidate table + Products review UI + approve ผ่าน `upsertProduct()` |
+| ไม่แนะนำ | — | Structured JSON output schema แบบ v2, `ai_failure_log`/`ai_tenant_metrics_daily` | ขัดกับ native tool-use หรือซ้ำข้อมูลเดิม | ใช้ native schemas + live-window metrics |
 
 `✅*` = implement เสร็จแล้วแต่วิธีต่างจากที่เอกสารเสนอเดิม (ดูรายละเอียดในหัวข้อ 1.2 ด้านบน)
 
-## 4) สถานะล่าสุด (หลัง implement #1–#7, 2026-07) — ตอบคำถาม "ขาดอะไรบ้าง"
+## 4) สถานะล่าสุด (หลัง migration 7.30, 2026-07)
 
-**เสร็จแล้ว**: P-0.5, P0, P1×2 (unverified fact detector + turn/handoff counter), P2×2 (category
-injection แทน alias table + single-field prompt rule) — build ผ่าน `tsc --noEmit` สะอาด **ยังไม่ได้
-ทดสอบ end-to-end จริงในเบราว์เซอร์/docker** (เครื่องนี้ไม่มี DB รันอยู่ตอน implement) ต้อง apply migration
-`7.28` ก่อนใช้งานจริง
+Layer ที่เหมาะกับ native tool-use ในเอกสารนี้ implement ครบแล้ว: tenant policy, durable state,
+retrieval/live verification, intent preprocessing, short replies, inbound idempotency, slot memory,
+few-shot, relevant-fact guard, tenant handoff threshold, compressor, heuristic rerank, failure
+dashboard, synonym review และ live-window metrics
 
-**ยังไม่ implement (เรียงตาม impact ที่เหลือ)**:
-
-1. **P3 GraphQL/UI wiring** — `getAiFailureSummary()` มีแล้วแต่ไม่มีใครเรียกใช้ (ไม่ผูก permission/หน้า
-   admin) — งานที่เหลือคือ GraphQL query + การ์ดในหน้า `/admin/dashboard` หรือหน้าใหม่
-2. **Conversation Compressor (4.1)** — history ที่ยาวเกิน 20 ข้อความถูกตัดทิ้งเฉยๆ ไม่มี rolling summary
-   (relevant มากขึ้นตอนนี้ที่ P0 เสร็จแล้ว)
-3. **Short Reply Resolver (1.3)** — blocker เดิมหมดไปแล้ว แต่ยังไม่ implement (priority ต่ำ เพราะ native
-   tool-use จัดการกรณีนี้ได้เองในระดับหนึ่งผ่าน conversation history แล้ว)
-4. **Few-shot per business type (2.3)** — ต้องมี field `businessType` ก่อน (migration ใหม่)
-5. **Retrieval Re-Ranker (4.2)** — priority ต่ำสุด ยังไม่จำเป็นถ้าจำนวนสินค้า/ร้านไม่เยอะมาก
-6. **Synonym Discovery (5.2)** — รอการตัดสินใจเรื่อง "ที่เก็บ" alias ที่ approve แล้ว
-7. **Intent Pre-Classifier (1.1) แบบเต็มรูปแบบ**, **Idempotency Check (1.4)** — ยังคงเป็น backlog เดิม
-   ไม่มีอะไรเปลี่ยนจากรอบก่อน (ดูหมายเหตุในแต่ละหัวข้อ)
+รายการที่ตั้งใจไม่ทำตามตัวอย่างเดิมคือ single-shot JSON protocol, semantic/vector ranker และตาราง
+daily/failure ซ้ำ เพราะ architecture ปัจจุบันใช้ native tool schemas, heuristic catalog rank และ derive
+metrics จาก usage/audit source of truth
 
 ---
 
@@ -1021,7 +976,7 @@ injection แทน alias table + single-field prompt rule) — build ผ่า�
 แนวทางที่เหมาะที่สุดคือ:
 
 - ใช้ AI สรุป "บริบทร้าน" แบบสั้น
-- ใช้ retrieval ดึงเฉพาะข้อมูลที่เกี่ยว (re-ranked — ยังไม่ทำ, priority ต่ำ)
+- ใช้ retrieval ดึงเฉพาะข้อมูลที่เกี่ยวและ heuristic re-rank
 - ใช้ live tools ตรวจ fact สำคัญ (มีอยู่แล้วในระบบจริง — ส่วนที่ทำได้ดีที่สุด)
 - ไม่โหลดสินค้าทั้งร้านทุก request
 - ไม่ให้ AI จำเองหรือเดาเองทั้งหมด
@@ -1031,13 +986,10 @@ injection แทน alias table + single-field prompt rule) — build ผ่า�
 - **บังคับ structured output แบบ native tool-use เดิม** (ทำอยู่แล้ว ไม่ต้องรื้อ)
 - ✅ **เพิ่ม unverified-fact guard บน trace ที่มีอยู่แล้วสำเร็จ (P1)** และ ✅ **turn/handoff counter (P1)**
   แทน confidence gate ที่ native tool-use ไม่มีให้เช็ค
-- ⚠️ **derive failure signal จาก audit log เดิมสำเร็จ (P3)** แต่ยังไม่มี GraphQL/UI wiring —
-  ยังเห็นผลไม่ได้จริงในมือ staff จนกว่าจะต่องานนี้ให้จบ
+- ✅ **failure signal + Dashboard**, synonym review และ usage diagnostics พร้อมใช้งาน
 
 ประโยคสรุป 1 บรรทัด:
 
-> ใช้ `conversation history (✅ P0) + structured tool-calling (✅ มีแล้ว) + unverified-fact guard
-> (✅ P1) + backend verification (✅ มีแล้ว)` แทนการยัด text เข้า AI แล้วหวังว่าจะตอบถูก — งานที่เหลือ
-> (compressor, short-reply resolver, few-shot ต่อ business type, P3 UI wiring) ไม่ block ความแม่นยำ
-> พื้นฐานอีกต่อไป เป็นแค่ layer เสริมที่ทำเมื่อพร้อม — และก่อน
-> implement layer ไหนของเอกสารนี้ ให้เช็คตาราง Priority ท้ายเอกสารว่า "ของจริง" รองรับอยู่หรือยัง
+> ใช้ `tenant policy + durable state + compressed history + native tool schemas + relevant-fact guard
+> + backend verification + human-reviewed learning loop`; วัด cache/compression จาก usage event
+> metadata แทนการคาดเดาจาก prompt size

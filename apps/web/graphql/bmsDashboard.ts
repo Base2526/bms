@@ -2,6 +2,7 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { getDashboard, getOperationalAlerts } from "@/lib/bms/dashboard";
+import { getAiFailureSummary } from "@/lib/bms/aiUsage";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
   requirePermission,
@@ -32,6 +33,10 @@ export const bmsDashboardResolvers = {
     async bmsOperationalAlerts(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "report.view");
       return getOperationalAlerts(getTenantId(ctx));
+    },
+    async bmsAiFailureSummary(_p: unknown, args: { days?: number }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return getAiFailureSummary(getTenantId(ctx), args.days ?? 7);
     },
     // สิทธิ์ของ admin ปัจจุบัน (สำหรับ UI ซ่อน/แสดงปุ่ม)
     async myBmsPermissions(_p: unknown, _a: unknown, ctx: any) {

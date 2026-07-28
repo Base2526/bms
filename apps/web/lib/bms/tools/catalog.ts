@@ -58,6 +58,7 @@ import { generateInvoice, generateQuotation } from "../documents";
 import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
 import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
+import { recordSynonymCandidate } from "../aiSynonyms";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
@@ -129,6 +130,11 @@ const searchProducts: BmsTool = {
     const search = optString(args, "keyword");
     const category = optString(args, "category") ?? null;
     const { items, total } = await listProducts(ec.tenantId, { search, category, limit: 10 });
+    if (ec.surface === "customer" && search && total === 0) {
+      await recordSynonymCandidate(ec.tenantId, search).catch((error) => {
+        console.error("[BMS] synonym candidate capture failed:", error);
+      });
+    }
     return {
       ok: true,
       data: {
@@ -1175,6 +1181,7 @@ const getStoreInfoTool: BmsTool = {
       ok: true,
       data: {
         storeName,
+        businessType: p.businessType,
         about: p.about, address: p.address, phone: p.phone,
         contactEmail: p.contactEmail, website: p.website,
         country: p.country, timezone: p.timezone,

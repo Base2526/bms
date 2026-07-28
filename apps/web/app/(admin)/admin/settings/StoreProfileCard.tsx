@@ -1,6 +1,6 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col } from "antd";
+import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
 
@@ -10,6 +10,7 @@ const Q = gql`
   query {
     bmsMyTenant { id name slug }
     bmsStoreProfile {
+      businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
@@ -31,7 +32,8 @@ const M_PROFILE = gql`
 `;
 
 const PROFILE_KEYS = [
-  "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
+  "businessType", "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
+  "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
   "timezone", "country", "currency", "businessHours", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
   "emailThemeColor", "emailFooterText",
@@ -62,6 +64,12 @@ export default function StoreProfileCard() {
       form.setFieldsValue({
         name: t?.name || "",
         slug: t?.slug || "",
+        businessType: p?.businessType || undefined,
+        aiLanguage: p?.aiLanguage || "th",
+        aiOrderingStyle: p?.aiOrderingStyle || "catalog_variant",
+        aiRequiredFields: p?.aiRequiredFields || ["product", "size", "qty"],
+        aiInterpretShortReplies: p?.aiInterpretShortReplies !== false,
+        aiHandoffAfterFailedTurns: p?.aiHandoffAfterFailedTurns || 3,
         about: p?.about, address: p?.address, phone: p?.phone,
         contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl, taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
@@ -114,6 +122,69 @@ export default function StoreProfileCard() {
             <Col xs={24} md={10}>
               <Form.Item name="slug" label="Slug" tooltip="ตัวระบุร้านภายในระบบ สร้างอัตโนมัติตอนสมัคร · ยังไม่เปิดให้แก้">
                 <Input disabled addonBefore="/" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <SectionTitle note="ใช้สร้าง tenant summary และควบคุมการถามข้อมูลก่อนรับออร์เดอร์">บริบทสำหรับ AI</SectionTitle>
+          <Row gutter={16}>
+            <Col xs={24} md={10}>
+              <Form.Item name="businessType" label="Business type">
+                <Select
+                  allowClear
+                  placeholder="เลือกประเภทร้าน"
+                  options={[
+                    { value: "fashion", label: "แฟชั่น / เสื้อผ้า" },
+                    { value: "beauty", label: "ความงาม / สกินแคร์" },
+                    { value: "food", label: "อาหาร / เครื่องดื่ม" },
+                    { value: "electronics", label: "อิเล็กทรอนิกส์ / แก็ดเจ็ต" },
+                    { value: "home", label: "ของใช้ในบ้าน" },
+                    { value: "general", label: "ทั่วไป" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={7}>
+              <Form.Item name="aiLanguage" label="ภาษาหลัก">
+                <Select options={[
+                  { value: "th", label: "ไทย" },
+                  { value: "en", label: "English" },
+                  { value: "th-en", label: "ไทย / English" },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={7}>
+              <Form.Item name="aiOrderingStyle" label="รูปแบบการรับออร์เดอร์">
+                <Select options={[
+                  { value: "catalog_variant", label: "สินค้า + ตัวเลือก/ไซซ์" },
+                  { value: "simple_catalog", label: "สินค้าแบบไม่มีตัวเลือก" },
+                  { value: "inquiry_first", label: "สอบถามก่อนเสนอสินค้า" },
+                ]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="aiRequiredFields"
+                label="ข้อมูลที่ต้องครบก่อนสร้างออร์เดอร์"
+                rules={[{ required: true, message: "เลือกข้อมูลที่ต้องถาม" }]}
+              >
+                <Select mode="multiple" options={[
+                  { value: "product", label: "สินค้า" },
+                  { value: "size", label: "ไซซ์ / ตัวเลือก" },
+                  { value: "qty", label: "จำนวน" },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="aiHandoffAfterFailedTurns" label="ส่งต่อแอดมินหลังถามไม่คืบหน้า">
+                <InputNumber min={1} max={10} addonAfter="รอบ" style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="aiInterpretShortReplies" label="ตีความคำตอบสั้น" valuePropName="checked">
+                <Switch checkedChildren="เปิด" unCheckedChildren="ปิด" />
               </Form.Item>
             </Col>
           </Row>

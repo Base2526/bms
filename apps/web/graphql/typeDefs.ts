@@ -672,6 +672,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS products & inventory (admin) =====
     bmsProducts(search: String, category: String, limit: Int, offset: Int): BmsProductConnection!
+    bmsAiSynonymCandidates(status: String = "PENDING", limit: Int = 50): [BmsAiSynonymCandidate!]!
     bmsProductCategories: [BmsProductCategory!]!
     bmsLowStock: [BmsLowStockItem!]!
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
@@ -730,6 +731,7 @@ export const typeDefs = /* GraphQL */ `
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
     bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
+    bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
     bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
@@ -1169,6 +1171,17 @@ export const typeDefs = /* GraphQL */ `
     variants: [BmsVariant!]!
   }
 
+  type BmsAiSynonymCandidate {
+    id: ID!
+    term: String!
+    occurrences: Int!
+    status: String!
+    productSku: String
+    firstSeenAt: String!
+    lastSeenAt: String!
+    reviewedAt: String
+  }
+
   type BmsProductConnection {
     items: [BmsProduct!]!
     total: Int!
@@ -1503,6 +1516,20 @@ export const typeDefs = /* GraphQL */ `
     slipPendingCount: Int!
     reservationExpiringCount: Int!
     chatWaitingCount: Int!
+  }
+
+  type BmsAiToolFailureRow {
+    tool: String!
+    outcome: String!
+    count: Int!
+  }
+
+  type BmsAiFailureSummary {
+    days: Int!
+    totalToolCalls: Int!
+    errorCalls: Int!
+    handoffCount: Int!
+    topFailingTools: [BmsAiToolFailureRow!]!
   }
 
   # ===== BMS audit log =====
@@ -1943,6 +1970,12 @@ export const typeDefs = /* GraphQL */ `
     note: String
   }
   type BmsStoreProfile {
+    businessType: String
+    aiLanguage: String!
+    aiOrderingStyle: String!
+    aiRequiredFields: [String!]!
+    aiInterpretShortReplies: Boolean!
+    aiHandoffAfterFailedTurns: Int!
     about: String
     address: String
     phone: String
@@ -1965,6 +1998,12 @@ export const typeDefs = /* GraphQL */ `
     emailFooterText: String   # ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (ไม่บังคับ)
   }
   input BmsStoreProfileInput {
+    businessType: String
+    aiLanguage: String
+    aiOrderingStyle: String
+    aiRequiredFields: [String!]
+    aiInterpretShortReplies: Boolean
+    aiHandoffAfterFailedTurns: Int
     about: String
     address: String
     phone: String
@@ -2173,6 +2212,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!
+    bmsReviewAiSynonymCandidate(id: ID!, decision: String!, productSku: String): BmsAiSynonymCandidate!
     bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean = false): BmsProductImportResult!
     bmsSetProductActive(sku: String!, active: Boolean!): Boolean!
     bmsCreateProductCategory(name: String!): BmsProductCategory!

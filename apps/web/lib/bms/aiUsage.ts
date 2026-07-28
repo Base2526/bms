@@ -424,10 +424,32 @@ export async function finalizeAiUsageEvent(
     outputTokens?: number | null;
     estimatedCost?: number | null;
     errorMessage?: string | null;
+    // แยกส่วนของ input token ตาม rate ที่จ่ายจริง (regular 1x / cache write 1.25x / cache read 0.1x)
+    // `inputTokens` ยังเป็นผลรวมทั้งสามเหมือนเดิมเพื่อไม่ให้ quota/report ที่อ่านคอลัมน์นี้เปลี่ยนความหมาย
+    // — breakdown เก็บลง meta เพื่อให้ตอบได้ว่า prompt caching ทำงานอยู่จริงไหมโดยไม่ต้องแกะกลับจาก cost
+    cacheReadInputTokens?: number | null;
+    cacheCreationInputTokens?: number | null;
   }
 ): Promise<void> {
   const inputTokens = result.inputTokens ?? null;
   const outputTokens = result.outputTokens ?? null;
+  const cacheReadInputTokens = result.cacheReadInputTokens ?? null;
+  const cacheCreationInputTokens = result.cacheCreationInputTokens ?? null;
+  // เขียน meta เฉพาะตอน caller รู้ค่าจริง (path ที่ไม่ได้ตั้ง cache_control จะไม่มี key เหล่านี้เลย
+  // ซึ่งต่างจากการมี key แล้วเป็น 0 — 0 หมายถึง "ตั้ง cache_control แล้วแต่ไม่ hit")
+  const cacheMeta =
+    cacheReadInputTokens === null && cacheCreationInputTokens === null
+      ? null
+      : JSON.stringify({
+          cache_read_input_tokens: cacheReadInputTokens ?? 0,
+          cache_creation_input_tokens: cacheCreationInputTokens ?? 0,
+          regular_input_tokens: Math.max(
+            0,
+            (inputTokens ?? 0) -
+              (cacheReadInputTokens ?? 0) -
+              (cacheCreationInputTokens ?? 0)
+          ),
+        });
   const event = await query<{ tenant_id: string; year_month: string; model: string | null; estimated_cost: string | number }>(
     `SELECT tenant_id, year_month, model, estimated_cost
        FROM bms_ai_usage_events
@@ -445,6 +467,7 @@ export async function finalizeAiUsageEvent(
                output_tokens = COALESCE($4, output_tokens),
                estimated_cost = COALESCE($5, estimated_cost),
                error_message = COALESCE($6, error_message),
+               meta = meta || COALESCE($7::jsonb, '{}'::jsonb),
                completed_at = now()
          WHERE id = $1
          RETURNING tenant_id, year_month
@@ -456,7 +479,15 @@ export async function finalizeAiUsageEvent(
         FROM upd
        WHERE m.tenant_id = upd.tenant_id
          AND m.year_month = upd.year_month`,
-    [eventId, result.status, inputTokens, outputTokens, estimatedCost, result.errorMessage ?? null]
+    [
+      eventId,
+      result.status,
+      inputTokens,
+      outputTokens,
+      estimatedCost,
+      result.errorMessage ?? null,
+      cacheMeta,
+    ]
   );
 }
 
@@ -529,7 +560,7 @@ export type AiFailureSummary = {
  * P3 — derive "failure signal" จาก bms_audit_log (action='ai.tool_call') + bms_conversation_notes
  * (note author='AI' ที่ turn-budget enforcer เขียนตอน force handoff — ดู lib/bms/pipeline.ts)
  * แทนการสร้างตาราง ai_failure_log ใหม่ตาม docs/AI Context Strategy for Multi-Tenant Shops.md § Layer 5
- * ยังไม่มี GraphQL/UI wiring — เป็น service function ไว้ต่อยอดหน้า admin ภายหลัง
+ * GraphQL/UI แสดงผลรวม live-window บนหน้า dashboard โดยไม่สร้าง aggregate table ซ้ำ
  */
 export async function getAiFailureSummary(tenantId: string, days = 7): Promise<AiFailureSummary> {
   const d = Math.min(Math.max(days, 1), 90);

@@ -15,8 +15,18 @@ import { generateResponse } from "./ai";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
 import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
-import { getRecentAiHistory, resolveConversationId, bumpAiTurnCounter, addNote, getConversation } from "./inbox";
+import {
+  getRecentAiHistory,
+  resolveConversationId,
+  bumpAiTurnCounter,
+  addNote,
+  getConversation,
+  getAiConversationState,
+  setAiConversationState,
+  type AiConversationState,
+} from "./inbox";
 import { listCategories } from "./productCategories";
+import { getStoreProfile } from "./storeProfile";
 import {
   createCouponWalletToken,
   findCustomerIdByIdentity,
@@ -26,18 +36,18 @@ import {
 } from "./coupons";
 
 // P0: จำนวนข้อความบทสนทนาล่าสุด (ไม่รวมข้อความปัจจุบัน) ที่ป้อนกลับเข้า AI tool loop
-// จำกัดไว้กัน prompt บวมเกิน — ยังไม่มี conversation compressor (ดู docs/AI Context Strategy)
-const HISTORY_MAX_MESSAGES = 20;
+// โหลดมากกว่าที่ส่งเข้าโมเดลเพื่อบีบอัดส่วนเก่า ก่อนเก็บ recent messages แบบเต็ม
+const HISTORY_FETCH_MESSAGES = 48;
+const HISTORY_RECENT_MESSAGES = 8;
+const HISTORY_COMPRESS_THRESHOLD = 12;
 
 // P1: ตรวจว่า reply มีตัวเลขราคา/สต็อกที่ไม่มีทูล verify รองรับไหม (unverified fact detector)
 const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
 const STOCK_PATTERN = /(มี|เหลือ)\s*(\d+)\s*(ชิ้น|ตัว|อัน|คู่|ชุด)/i;
-const VERIFIED_FACT_TOOLS = new Set([
+const PRICE_FACT_TOOLS = new Set([
   "search_products",
   "get_product",
   "check_stock",
-  "get_store_info",
-  "get_payment_info",
   "get_shipping_estimate",
   "check_coupon",
   "list_available_coupons",
@@ -47,13 +57,16 @@ const VERIFIED_FACT_TOOLS = new Set([
   "submit_payment",
   "reorder",
 ]);
+const STOCK_FACT_TOOLS = new Set(["get_product", "check_stock", "create_order", "reorder"]);
 
 function hasUnverifiedFacts(replyText: string, trace: ToolTraceEntry[] | undefined): boolean {
   if (!replyText) return false;
-  const mentionsFact = PRICE_PATTERN.test(replyText) || STOCK_PATTERN.test(replyText);
-  if (!mentionsFact) return false;
-  const hasVerifiedCall = (trace ?? []).some((t) => t.ok && VERIFIED_FACT_TOOLS.has(t.tool));
-  return !hasVerifiedCall;
+  const mentionsPrice = PRICE_PATTERN.test(replyText);
+  const mentionsStock = STOCK_PATTERN.test(replyText);
+  const successful = new Set((trace ?? []).filter((t) => t.ok).map((t) => t.tool));
+  if (mentionsPrice && !Array.from(PRICE_FACT_TOOLS).some((tool) => successful.has(tool))) return true;
+  if (mentionsStock && !Array.from(STOCK_FACT_TOOLS).some((tool) => successful.has(tool))) return true;
+  return false;
 }
 
 // P1 (พบจริงจาก eval harness, scripts/ai-eval): ตรวจว่า reply "อ้างว่าทำ write action สำเร็จแล้ว"
@@ -80,9 +93,8 @@ function hasUnverifiedActionClaim(replyText: string, trace: ToolTraceEntry[] | u
 // การอ่านข้อมูลจริงหรือ write สำเร็จล้วนเป็นความคืบหน้า ห้ามลงโทษบทสนทนาที่ model เรียกทูล
 // ถูกต้องแต่ยังไม่ถึงขั้นปิดการขาย (เดิมนับเฉพาะ write ทำให้ถามสินค้า 3 turn แล้ว handoff ผิด)
 const CUSTOMER_PROGRESS_TOOLS = new Set(customerTools().map((tool) => tool.name));
-// เกิน N ข้อความติดกันที่ไม่คืบหน้า → force handoff (ยังไม่มี field ต่อ tenant ให้ตั้งเอง ดู
-// docs/AI Context Strategy for Multi-Tenant Shops.md § Turn Budget Enforcer)
-const TURN_BUDGET_MAX_FAILED = 3;
+// เกินจำนวนรอบที่ tenant ตั้งไว้โดยไม่มีความคืบหน้า → force handoff
+// (docs/AI Context Strategy for Multi-Tenant Shops.md § Turn Budget Enforcer)
 const HANDOFF_REPLY = "ขอโทษนะคะ ขอให้แอดมินช่วยตอบต่อในเรื่องนี้นะคะ รบกวนรอสักครู่ค่ะ 🙏";
 
 export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada" | "test";
@@ -109,15 +121,88 @@ export type PipelineResult = {
 // ⚠️ อย่าย่อ prompt นี้ให้สั้นลงมากโดยไม่วัดก่อน: prefix ที่ cache = tools (2.5k) + system (2.2k)
 // ≈ 4.7k ซึ่งเหนือขั้นต่ำ 4,096 ของ Haiku 4.5 อยู่แค่ ~16% ถ้าหลุดใต้เพดาน caching จะหยุดทำงาน
 // แบบเงียบ ๆ (ไม่มี error) — ยืนยันได้จาก cache_read_input_tokens ที่ต้อง > 0 ใน usage event
-function buildCustomerSystem(categories: string[]): string {
+function buildBusinessTypeExamples(businessType: string | null | undefined): string[] {
+  switch (businessType) {
+    case "fashion":
+      return [
+        'ตัวอย่างร้านแฟชั่น — ลูกค้า: "เสื้อดำไซซ์ใหญ่" → ค้นสินค้าด้วยคำว่า "เสื้อดำ" แล้วถามยืนยันรุ่นที่ตรงที่สุด',
+        'ตัวอย่างร้านแฟชั่น — ลูกค้า: "เปลี่ยนเป็น XL" → ใช้สินค้าที่คุยค้างและเปลี่ยนเฉพาะไซซ์ ห้ามถามชื่อสินค้าใหม่',
+      ];
+    case "beauty":
+      return [
+        'ตัวอย่างร้านความงาม — ลูกค้า: "มีอะไรช่วยเรื่องผิวแห้ง" → ถามหมวดที่สนใจหนึ่งอย่างก่อนค้นสินค้า',
+        'ตัวอย่างร้านความงาม — ลูกค้า: "เอาเซรั่มอันเดิม 2" → ใช้บริบทสินค้าล่าสุดและตีความ 2 เป็นจำนวน',
+      ];
+    case "food":
+      return [
+        'ตัวอย่างร้านอาหาร — ลูกค้า: "วันนี้เปิดไหม" → เรียก get_store_info ก่อนตอบเวลาร้าน',
+        'ตัวอย่างร้านอาหาร — ลูกค้า: "เอาเหมือนเดิม 2" → ใช้ reorder หรือถามยืนยันรายการล่าสุด ห้ามเดาเมนู',
+      ];
+    case "electronics":
+      return [
+        'ตัวอย่างร้านอิเล็กทรอนิกส์ — ลูกค้า: "รุ่น 256 มีไหม" → ค้นด้วยชื่อรุ่นและความจุที่ระบุก่อนตอบ',
+        'ตัวอย่างร้านอิเล็กทรอนิกส์ — ลูกค้า: "เปลี่ยนเป็นสีดำ" → ใช้รุ่นที่คุยค้างและค้น variant จริงก่อนยืนยัน',
+      ];
+    case "home":
+      return [
+        'ตัวอย่างร้านของใช้ในบ้าน — ลูกค้า: "หาไว้จัดห้องครัว" → ใช้หมวดหมู่จริงช่วยถามกลับหนึ่งคำถาม',
+        'ตัวอย่างร้านของใช้ในบ้าน — ลูกค้า: "เอาใหญ่ 2 อัน" → ผูกขนาดและจำนวนกับสินค้าที่คุยล่าสุด',
+      ];
+    case "general":
+      return [
+        'ตัวอย่างร้านทั่วไป — ลูกค้า: "มีอะไรแนะนำ" → ใช้หมวดหมู่จริงถามความสนใจหนึ่งอย่างก่อนค้น',
+        'ตัวอย่างร้านทั่วไป — ลูกค้า: "เอาอันนี้ 2" → ใช้สินค้าล่าสุดและตีความ 2 เป็นจำนวนก่อนตรวจสต็อก',
+      ];
+    default:
+      return [];
+  }
+}
+
+type AiProfileContext = {
+  businessType: string | null;
+  aiLanguage: string;
+  aiOrderingStyle: string;
+  aiRequiredFields: string[];
+  aiInterpretShortReplies: boolean;
+  aiHandoffAfterFailedTurns: number;
+};
+
+const DEFAULT_AI_PROFILE: AiProfileContext = {
+  businessType: null,
+  aiLanguage: "th",
+  aiOrderingStyle: "catalog_variant",
+  aiRequiredFields: ["product", "size", "qty"],
+  aiInterpretShortReplies: true,
+  aiHandoffAfterFailedTurns: 3,
+};
+
+function buildCustomerSystem(categories: string[], profile: AiProfileContext): string {
+  const required = profile.aiRequiredFields.join(", ");
+  const languageInstruction =
+    profile.aiLanguage === "en"
+      ? "Reply in concise, polite English. Do not switch to Thai unless the customer asks."
+      : profile.aiLanguage === "th-en"
+        ? "Reply in the language of the customer's latest message. For Thai, end politely with ค่ะ/คะ; for English, use a concise and friendly shop-admin tone."
+        : "ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง และลงท้ายด้วย ค่ะ/คะ เท่านั้น";
+  const orderingInstruction =
+    profile.aiOrderingStyle === "inquiry_first"
+      ? "รูปแบบร้านคือ inquiry-first: ถามความต้องการหลัก 1 ข้อก่อนแนะนำสินค้า แต่เมื่อข้อมูลสั่งซื้อครบและลูกค้ายืนยันแล้วห้ามถ่วงการสร้างออร์เดอร์"
+      : profile.aiOrderingStyle === "simple_catalog"
+        ? "รูปแบบร้านคือ simple catalog: อย่าถามตัวเลือกที่ลูกค้าไม่จำเป็นต้องรู้; resolve size ภายในได้เฉพาะเมื่อผลทูลมี variant เดียว"
+        : "รูปแบบร้านคือ catalog variant: ต้องยืนยันไซซ์/ตัวเลือกที่ลูกค้าต้องการก่อนสร้างออร์เดอร์";
   const lines = [
-    "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง",
-    "ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม และลงท้ายด้วย ค่ะ/คะ เท่านั้น ห้ามใช้ ผม/ครับ และห้ามเติมคำอวยพรหรือเรื่องนอกบริบทการซื้อขาย",
+    "คุณเป็นแอดมินร้านค้าออนไลน์ ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม ห้ามใช้ ผม/ครับ และห้ามเติมเรื่องนอกบริบทการซื้อขาย",
+    languageInstruction,
+    orderingInstruction,
     "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริง (สินค้า/สต็อก/ราคา/สถานะออร์เดอร์) เท่านั้น",
     "ห้ามเดาหรือแต่งตัวเลขสต็อก ราคา หรือเลขออร์เดอร์เอง — ทุกตัวเลขต้องมาจากผลของทูล",
-    "ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และรู้ไซซ์+จำนวนครบก่อน ถ้าไม่ครบให้ถามกลับ",
+    `Tenant summary: businessType=${profile.businessType || "general"}; language=${profile.aiLanguage}; ` +
+      `orderingStyle=${profile.aiOrderingStyle}; requiredFields=${required}; ` +
+      `handoffAfterFailedTurns=${profile.aiHandoffAfterFailedTurns}`,
+    `ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และข้อมูลที่ร้านกำหนดครบ (${required}) ถ้าไม่ครบให้ถามกลับ`,
     "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
-    "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่เพื่อสั่งซื้อ — เมื่อได้ sku+ไซซ์+จำนวนครบและลูกค้ายืนยัน ให้เรียก create_order ทันที",
+    "create_order ต้องได้รับ sku+size+qty เสมอตามสัญญา backend: ถ้า tenant ไม่กำหนด size เป็นข้อมูลที่ต้องถาม ให้ใช้ size จากผลทูลได้เฉพาะเมื่อสินค้ามีตัวเลือกเดียว; ถ้ามีหลายตัวเลือกต้องถามลูกค้า ห้ามเดา",
+    "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่เพื่อสั่งซื้อ — เมื่อข้อมูลตาม policy ครบ, resolve size ตามกฎข้างต้นได้ และลูกค้ายืนยัน ให้เรียก create_order ทันที",
     "อย่าถามย้ำหลายรอบ: ถ้าลูกค้าบอกชื่อสินค้า+ไซซ์+จำนวนและสั่งยืนยันแล้ว ให้ search_products/check_stock เอง ถ้าเจอสินค้าที่ตรงที่สุดเพียงพอก็เรียก create_order ด้วย sku นั้นเลย ไม่ต้องขอรุ่น/สีเพิ่มถ้าลูกค้าไม่ได้ระบุ",
     "ถ้าข้อมูลยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
     "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าอัตโนมัติ) " +
@@ -135,7 +220,43 @@ function buildCustomerSystem(categories: string[]): string {
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้ช่วยถามกลับหรือส่ง category เข้า search_products แทนการเดาชื่อสินค้าเอง"
     );
   }
+  lines.push(...buildBusinessTypeExamples(profile.businessType));
   return lines.join("\n");
+}
+
+type CustomerIntent =
+  | "ordering"
+  | "inquiry"
+  | "order_status"
+  | "payment"
+  | "reorder"
+  | "coupon"
+  | "complaint"
+  | "greeting";
+
+function classifyCustomerIntent(message: string, understanding: Understanding): CustomerIntent {
+  if (/^(?:สวัสดี|หวัดดี|hello|hi)[\s!?.]*$/i.test(message.trim())) return "greeting";
+  if (/(?:ไม่พอใจ|ร้องเรียน|แย่มาก|โกง|ของเสีย|ของพัง|ได้ของผิด)/i.test(message)) return "complaint";
+  if (isOrderStatusQuestion(message)) return "order_status";
+  if (isPaymentSubmission(message)) return "payment";
+  if (isReorderRequest(message)) return "reorder";
+  if (isCouponQuestion(message)) return "coupon";
+  if (understanding.intent === "CONFIRM_ORDER") return "ordering";
+  return "inquiry";
+}
+
+function intentSystemBlock(intent: CustomerIntent): string {
+  const guidance: Record<CustomerIntent, string> = {
+    ordering: "โหมดรับออร์เดอร์: เก็บ required fields ทีละข้อแล้วตรวจด้วยทูลก่อนสร้างรายการ",
+    inquiry: "โหมดสอบถาม: retrieve เฉพาะข้อมูลที่เกี่ยวและอย่าเดาข้อเท็จจริง",
+    order_status: "โหมดสถานะออร์เดอร์: ใช้ข้อมูลออร์เดอร์ของลูกค้าคนนี้เท่านั้น",
+    payment: "โหมดชำระเงิน: บันทึกเป็น PENDING และห้ามยืนยันว่าเงินเข้าแล้ว",
+    reorder: "โหมดสั่งซ้ำ: ใช้ออร์เดอร์ล่าสุดที่ backend ยืนยัน ห้ามประกอบรายการจากความจำ",
+    coupon: "โหมดคูปอง: ตรวจ wallet/eligibility ของลูกค้าก่อนตอบ",
+    complaint: "โหมดข้อร้องเรียน: ตอบรับปัญหาอย่างกระชับ ไม่โต้แย้ง และส่งต่อแอดมินเร็ว",
+    greeting: "โหมดทักทาย: ตอบสั้นและถามว่าลูกค้าสนใจสินค้าใด",
+  };
+  return `Intent pre-classifier: ${intent}\n${guidance[intent]}`;
 }
 
 // slot memory เปลี่ยนได้ทุก turn — ต้องเป็น system block แยก (volatileSystem) ไม่ใช่ต่อท้าย
@@ -148,6 +269,20 @@ function orderMemorySystemBlock(memoryHint: string | null): string | null {
     memoryHint,
     "ใช้ slot ที่มีแล้วต่อเนื่อง ห้ามถามซ้ำ; ถ้าครบสินค้า+ไซซ์+จำนวนและลูกค้ายืนยันแล้ว ให้ทำรายการทันที",
   ].join("\n");
+}
+
+function historySummarySystemBlock(summary: string | null): string | null {
+  if (!summary) return null;
+  return [
+    "สรุปบทสนทนาก่อนหน้าที่เก่ากว่าข้อความล่าสุด (ใช้เป็น context aid เท่านั้น ไม่ใช่ fact จากฐานข้อมูล):",
+    summary,
+    "ถ้าจะตอบเรื่องราคา สต็อก หรือสถานะออร์เดอร์ ต้องยืนยันด้วยทูลอีกครั้งเสมอ",
+  ].join("\n");
+}
+
+function buildVolatileSystem(...blocks: Array<string | null | undefined>): string | null {
+  const parts = blocks.map((part) => String(part || "").trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
@@ -232,6 +367,72 @@ function sizeClaimFromCustomerText(text: string, previousAssistant: string): str
   return null;
 }
 
+function truncateTurn(text: string, max = 120): string {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 1)}…`;
+}
+
+function compressConversationHistory(
+  history: Awaited<ReturnType<typeof getRecentAiHistory>>
+): { recentTurns: Awaited<ReturnType<typeof getRecentAiHistory>>; summary: string | null } {
+  if (history.length <= HISTORY_COMPRESS_THRESHOLD) {
+    return { recentTurns: history, summary: null };
+  }
+
+  const recentTurns = history.slice(-HISTORY_RECENT_MESSAGES);
+  const olderTurns = history.slice(0, -HISTORY_RECENT_MESSAGES);
+  const olderMemory = buildOrderMemory(olderTurns, "", understand(""));
+  const summaryBits: string[] = [`มีบทสนทนาก่อนหน้านี้ ${olderTurns.length} ข้อความ`];
+  const lastOlderUser = [...olderTurns].reverse().find((turn) => turn.role === "user")?.content ?? "";
+  const lastOlderAssistant = [...olderTurns].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
+
+  if (olderMemory?.product) summaryBits.push(`สินค้าที่คุยค้างล่าสุด: ${olderMemory.product}`);
+  if (olderMemory?.size) summaryBits.push(`ไซซ์ล่าสุดที่ลูกค้าเคยระบุ: ${olderMemory.size}`);
+  if (olderMemory?.qty) summaryBits.push(`จำนวนล่าสุดที่ลูกค้าเคยระบุ: ${olderMemory.qty}`);
+  if (olderTurns.some((turn) => turn.role === "user" && isPaymentSubmission(turn.content))) {
+    summaryBits.push("ลูกค้าเคยแจ้งชำระเงินมาก่อนในบทสนทนานี้");
+  }
+  if (olderTurns.some((turn) => turn.role === "user" && isCouponQuestion(turn.content))) {
+    summaryBits.push("ลูกค้าเคยถามเรื่องคูปอง");
+  }
+  if (lastOlderUser) summaryBits.push(`ข้อความลูกค้าช่วงก่อนหน้า: "${truncateTurn(lastOlderUser)}"`);
+  if (lastOlderAssistant) summaryBits.push(`คำตอบร้านช่วงก่อนหน้า: "${truncateTurn(lastOlderAssistant)}"`);
+
+  return { recentTurns, summary: summaryBits.join("\n") };
+}
+
+function normalizeShortReplyMessage(
+  message: string,
+  history: Awaited<ReturnType<typeof getRecentAiHistory>>
+): string {
+  const text = String(message || "").trim();
+  if (!text || text.length > 24 || history.length === 0) return message;
+
+  const lastAssistant = [...history].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
+  if (!lastAssistant) return message;
+
+  const explicitSize = sizeClaimFromCustomerText(text, lastAssistant);
+  if (explicitSize && /(?:ไซซ์|size|ขนาด)/i.test(lastAssistant)) {
+    return `ลูกค้าตอบคำถามเรื่องไซซ์ว่า ${explicitSize}`;
+  }
+
+  const qtyOnly = text.match(/^(\d+)\s*(?:ชิ้น|ตัว|อัน|คู่|ชุด)?\s*(?:ค่ะ|คะ|ครับ)?$/i)?.[1];
+  if (qtyOnly && /(?:จำนวน|กี่ชิ้น|กี่คู่|กี่ตัว)/i.test(lastAssistant)) {
+    return `ลูกค้าตอบคำถามเรื่องจำนวนว่า ${qtyOnly} ชิ้น`;
+  }
+
+  if (paymentMethodFromMessage(text) && /(?:ช่องทาง|วิธี).*(?:โอน|ชำระ)/i.test(lastAssistant)) {
+    return `ลูกค้าตอบคำถามเรื่องช่องทางชำระเงินว่า ${text}`;
+  }
+
+  if (/^(?:เอาเลย|สั่งเลย|ตกลง|ยืนยัน|โอเค|ได้เลย)(?:ค่ะ|คะ|ครับ)?$/i.test(text)) {
+    return `ลูกค้ายืนยันดำเนินการต่อว่า ${text}`;
+  }
+
+  return message;
+}
+
 function buildOrderMemory(
   history: Awaited<ReturnType<typeof getRecentAiHistory>>,
   message: string,
@@ -307,6 +508,25 @@ function orderMemoryHint(memory: OrderMemory | null): string | null {
     qty: memory.qty,
     confirmed: memory.confirmed,
   });
+}
+
+function mergeStoredOrderMemory(state: AiConversationState, derived: OrderMemory | null): OrderMemory | null {
+  const hasStored = state.product || state.size || state.qty;
+  if (!derived && !hasStored) return null;
+  return {
+    product: derived?.product ?? state.product ?? null,
+    size: derived?.size ?? state.size ?? null,
+    qty: derived?.qty ?? state.qty ?? null,
+    confirmed: derived?.confirmed ?? state.confirmed ?? false,
+  };
+}
+
+function askedFieldFromReply(reply: string): string | null {
+  if (/(?:ไซซ์|size|ขนาด).*(?:อะไร|ไหน|คะ|ค่ะ|\?)/i.test(reply)) return "size";
+  if (/(?:จำนวน|กี่ชิ้น|กี่คู่|กี่ตัว|กี่อัน)/i.test(reply)) return "qty";
+  if (/(?:รุ่นไหน|สินค้าอะไร|ชื่อสินค้า)/i.test(reply)) return "product";
+  if (/(?:ช่องทาง|วิธี).*(?:โอน|ชำระ)/i.test(reply)) return "paymentMethod";
+  return null;
 }
 
 function isOrderStatusQuestion(message: string): boolean {
@@ -499,14 +719,50 @@ export async function runPipeline(
   tenantId: string,
   customerRef?: string | null
 ): Promise<PipelineResult> {
+  let convId: string | null = null;
+  let history: Awaited<ReturnType<typeof getRecentAiHistory>> = [];
+  let storedState: AiConversationState = {};
+  let profile: AiProfileContext = DEFAULT_AI_PROFILE;
+  try {
+    convId = await resolveConversationId(tenantId, channel, customerRef);
+    const loaded = await Promise.all([
+      getRecentAiHistory(tenantId, convId, HISTORY_FETCH_MESSAGES),
+      getAiConversationState(tenantId, convId),
+      getStoreProfile(tenantId),
+    ]);
+    history = loaded[0];
+    storedState = loaded[1];
+    profile = loaded[2];
+  } catch (err) {
+    console.error("[BMS] pipeline pre-context history load failed:", err);
+  }
+
+  const aiInputMessage = profile.aiInterpretShortReplies
+    ? normalizeShortReplyMessage(message, history)
+    : message;
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
-  const understanding = understand(message);
+  const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
+  const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
   const execCtx = customerExecCtx(tenantId, channel, customerRef);
+
+  // Greeting is deterministic and needs no retrieval or provider call.
+  if (classifiedIntent === "greeting") {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:greeting",
+      data: { status: "NOT_FOUND", query: message },
+      reply: profile.aiLanguage === "en"
+        ? "Hello! Which product are you interested in?"
+        : "สวัสดีค่ะ สนใจสินค้ารุ่นไหน แจ้งชื่อสินค้าได้เลยนะคะ",
+    });
+  }
 
   // Intent ที่มี backend action ชัดเจนและไม่ต้องอาศัยการตีความเชิงสร้างสรรค์ ใช้ catalog tool
   // โดยตรงผ่าน authorization+validation+audit boundary เดียวกับ AI loop ลดเคส model ตอบเองโดยไม่เรียกทูล
-  if (isOrderStatusQuestion(message)) {
+  if (isOrderStatusQuestion(aiInputMessage)) {
     const executed = await executeCustomerTool("get_order_status", {}, execCtx);
     let reply: string;
     if (!executed.result.ok) {
@@ -529,21 +785,21 @@ export async function runPipeline(
       incoming: message,
       understanding,
       tool: "deterministic:get_order_status",
-      data: { status: "NOT_FOUND", query: message },
+      data: { status: "NOT_FOUND", query: aiInputMessage },
       reply,
       trace: [executed.trace],
     });
   }
 
-  if (isPaymentSubmission(message)) {
-    const method = paymentMethodFromMessage(message);
+  if (isPaymentSubmission(aiInputMessage)) {
+    const method = paymentMethodFromMessage(aiInputMessage);
     if (!method) {
       return customerSafe({
         channel,
         incoming: message,
         understanding,
         tool: "deterministic:payment_method_question",
-        data: { status: "NOT_FOUND", query: message },
+        data: { status: "NOT_FOUND", query: aiInputMessage },
         reply: "โอนผ่านช่องทางไหนคะ เช่น พร้อมเพย์หรือโอนเข้าบัญชีธนาคาร",
       });
     }
@@ -566,13 +822,13 @@ export async function runPipeline(
       incoming: message,
       understanding,
       tool: "deterministic:submit_payment",
-      data: { status: "NOT_FOUND", query: message },
+      data: { status: "NOT_FOUND", query: aiInputMessage },
       reply,
       trace: [executed.trace],
     });
   }
 
-  if (isReorderRequest(message)) {
+  if (isReorderRequest(aiInputMessage)) {
     const executed = await executeCustomerTool("reorder", {}, execCtx);
     let reply: string;
     let order: CreateOrderResult | undefined;
@@ -592,14 +848,14 @@ export async function runPipeline(
       incoming: message,
       understanding,
       tool: "deterministic:reorder",
-      data: { status: "NOT_FOUND", query: message },
+      data: { status: "NOT_FOUND", query: aiInputMessage },
       order,
       reply,
       trace: [executed.trace],
     });
   }
 
-  if (isCouponWalletQuestion(message)) {
+  if (isCouponWalletQuestion(aiInputMessage)) {
     const executed = await executeCustomerTool("list_customer_coupons", {}, execCtx);
     const wallet =
       executed.result.ok && Array.isArray((executed.result.data as any)?.coupons)
@@ -613,19 +869,19 @@ export async function runPipeline(
       incoming: message,
       understanding,
       tool: "deterministic:list_customer_coupons",
-      data: { status: "NOT_FOUND", query: message },
+      data: { status: "NOT_FOUND", query: aiInputMessage },
       reply,
       trace: [executed.trace],
     });
   }
 
-  if (isCouponQuestion(message)) {
+  if (isCouponQuestion(aiInputMessage)) {
     return customerSafe({
       channel,
       incoming: message,
       understanding,
       tool: "couponQuestion",
-      data: { status: "NOT_FOUND", query: message },
+      data: { status: "NOT_FOUND", query: aiInputMessage },
       reply: await couponQuestionReply(tenantId, channel, customerRef),
     });
   }
@@ -637,26 +893,31 @@ export async function runPipeline(
   // ตัวเองเพิ่งถามอะไรไปเมื่อ turn ก่อนหน้า (multi-turn slot-filling จึงแทบไม่ทำงานจริง)
   // resolve convId ครั้งเดียว ใช้ซ้ำทั้ง history + turn-budget counter ด้านล่าง
   // best-effort: DB สะดุดตรงนี้ต้องไม่ทำให้ทั้ง request ล้ม (fail open → ไม่มี history/categories รอบนี้)
-  let convId: string | null = null;
-  let history: Awaited<ReturnType<typeof getRecentAiHistory>> = [];
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
   try {
-    convId = await resolveConversationId(tenantId, channel, customerRef);
-    [history, categories] = await Promise.all([
-      getRecentAiHistory(tenantId, convId, HISTORY_MAX_MESSAGES),
-      listCategories(tenantId),
-    ]);
+    categories = await listCategories(tenantId);
   } catch (err) {
-    console.error("[BMS] pipeline pre-AI context load failed:", err);
+    console.error("[BMS] pipeline pre-AI static context load failed:", err);
   }
 
-  const orderMemory = buildOrderMemory(history, message, understanding);
+  const { recentTurns, summary } = compressConversationHistory(history);
+  const orderMemory = mergeStoredOrderMemory(
+    storedState,
+    buildOrderMemory(recentTurns, aiInputMessage, understanding)
+  );
+  if (convId && orderMemory) {
+    await setAiConversationState(tenantId, convId, {
+      ...orderMemory,
+      lastIntent: classifiedIntent,
+      lastAskedField: storedState.lastAskedField ?? null,
+    }).catch((err) => console.error("[BMS] pipeline AI state update failed:", err));
+  }
   if (
     orderMemory?.confirmed &&
     orderMemory.product &&
     orderMemory.size &&
     orderMemory.qty &&
-    !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(message)
+    !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(aiInputMessage)
   ) {
     const searched = await executeCustomerTool(
       "search_products",
@@ -693,13 +954,16 @@ export async function runPipeline(
         } else {
           order = created.result.data as CreateOrderResult;
           reply = orderReply({ [selected.sku]: selected.name }, order);
+          if (convId) {
+            await setAiConversationState(tenantId, convId, {}).catch(() => {});
+          }
         }
         return customerSafe({
           channel,
           incoming: message,
           understanding,
           tool: "deterministic:create_order",
-          data: { status: "NOT_FOUND", query: message },
+          data: { status: "NOT_FOUND", query: aiInputMessage },
           order,
           reply,
           trace: [searched.trace, created.trace],
@@ -710,11 +974,23 @@ export async function runPipeline(
 
   const loop = await runToolLoop({
     tenantId,
-    system: buildCustomerSystem(categories.map((c) => c.name)),
-    volatileSystem: orderMemorySystemBlock(orderMemoryHint(orderMemory)),
-    messages: [...history, { role: "user", content: message }],
+    system: buildCustomerSystem(categories.map((c) => c.name), profile),
+    volatileSystem: buildVolatileSystem(
+      intentSystemBlock(classifiedIntent),
+      historySummarySystemBlock(summary),
+      orderMemorySystemBlock(orderMemoryHint(orderMemory))
+    ),
+    messages: [...recentTurns, { role: "user", content: aiInputMessage }],
     tools: customerTools(),
     execCtx,
+    usageMeta: {
+      intent: classifiedIntent,
+      history_messages_fetched: history.length,
+      history_messages_sent: recentTurns.length,
+      history_compressed: summary !== null,
+      history_summary_chars: summary?.length ?? 0,
+      business_type: profile.businessType ?? "general",
+    },
   });
   if (loop.usedAi) {
     // P1: unverified fact detector — reply มีเลขราคา/สต็อกแต่ไม่มีทูล verify รองรับ → อย่าส่งเลขนั้น
@@ -730,6 +1006,22 @@ export async function runPipeline(
       reply = loop.reply || "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏";
     }
 
+    if (convId) {
+      const completedOrder = (loop.trace ?? []).some(
+        (entry) => entry.ok && ["create_order", "reorder"].includes(entry.tool)
+      );
+      const nextState: AiConversationState = completedOrder
+        ? {}
+        : {
+            ...(orderMemory ?? storedState),
+            lastIntent: classifiedIntent,
+            lastAskedField: askedFieldFromReply(reply),
+          };
+      await setAiConversationState(tenantId, convId, nextState).catch((err) =>
+        console.error("[BMS] pipeline AI state persist failed:", err)
+      );
+    }
+
     // P1: turn/handoff counter — นับข้อความติดกันที่ไม่คืบหน้า (ไม่มี write tool สำเร็จ) ต่อ conversation
     // ข้อความแรกสุดของลูกค้ายังไม่มี conversation row (logConversation ยังไม่เคยรันมาก่อน) → ข้าม
     // best-effort เหมือน logConversation: พลาดตรงนี้ต้องไม่ทำให้ reply ที่ AI ตอบไปแล้วหายไปด้วย
@@ -739,7 +1031,7 @@ export async function runPipeline(
           (loop.trace ?? []).some((t) => t.ok && CUSTOMER_PROGRESS_TOOLS.has(t.tool)) ||
           isBusinessClarification(reply);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
-        if (!madeProgress && failedTurns >= TURN_BUDGET_MAX_FAILED) {
+        if (!madeProgress && failedTurns >= profile.aiHandoffAfterFailedTurns) {
           reply = HANDOFF_REPLY;
           // แจ้ง staff หลักจริงผ่านระบบ @mention เดิม (push notification + bms_conversation_note_mentions)
           // — เดิม addNote() เฉยๆ ไม่มีใครถูกแจ้งเตือนเลย ต้องเปิดแชทเองถึงจะเห็นโน้ตนี้ (พบจากรีวิว
