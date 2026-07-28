@@ -72,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const userId = m.buyer_id ?? m.sender_id ?? null;
     const result = await runPipeline(text, "lazada", tenantId, userId);
 
-    await logConversation(tenantId, "lazada", userId, text, result.reply);
+    await logConversation(tenantId, "lazada", userId, text, result.reply, result.quality);
 
     // TODO(prod): ยิงกลับผ่าน Lazada Chat API ด้วย cfg.access_token (ยังไม่ implement)
     replies.push({ userId, reply: result.reply });

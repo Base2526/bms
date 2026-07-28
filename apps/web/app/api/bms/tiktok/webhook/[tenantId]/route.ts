@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const result = await runPipeline(text, "tiktok", tenantId, userId);
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "tiktok", userId, text, result.reply);
+    await logConversation(tenantId, "tiktok", userId, text, result.reply, result.quality);
 
     // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API ด้วย cfg.access_token
     replies.push({ userId: m.user_id, reply: result.reply });

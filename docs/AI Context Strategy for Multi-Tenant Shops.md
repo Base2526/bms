@@ -789,6 +789,12 @@ CREATE TABLE ai_failure_log (
 > [`lib/bms/aiUsage.ts`](../apps/web/lib/bms/aiUsage.ts) query `bms_audit_log` (action=`ai.tool_call`,
 > outcome error/denied) grouped by tool ตามที่แนะนำไว้ ไม่มีตารางใหม่ และต่อ GraphQL
 > `bmsAiFailureSummary` (`report.view`) + การ์ด AI health บน Dashboard แล้ว
+>
+> ✅ **Extended (7.31)** — signal ราย AI turn ถูกเก็บเป็น enum/count ที่
+> `bms_messages.meta.aiQuality` และ queue `bms_ai_quality_reviews` อ้าง message/conversation เดิม
+> โดยไม่ copy raw text. ทุก `FAILURE`/`HANDOFF`/`UNRESOLVED` เข้า Failure Cases และสุ่ม turn ปกติ
+> ประมาณ 5% เข้า QA; หน้า `/admin/ai-quality` redact PII ก่อนแสดงและให้มนุษย์บันทึก
+> `PASS`/`FAIL`/`UNCLEAR`
 
 ## 5.2) Synonym Discovery
 
@@ -831,6 +837,10 @@ CREATE TABLE ai_tenant_metrics_daily (
 > budget enforcer เขียนตอน force handoff — ดู 3.4) และ `errorCalls`/`totalToolCalls` จาก audit log ในช่วง
 > วันที่ระบุ (default 7 วัน) และแสดงบน Dashboard. Usage event เก็บ intent, history fetch/send count,
 > compression flag/summary chars, business type และ cache-token breakdown โดยไม่เก็บ prompt/PII
+>
+> ✅ **Extended (7.31)** — `getAiQualityMetrics()` คำนวณ success/handoff/unresolved rate และกราฟรายวัน
+> สดจาก AI message signal โดยใช้ AI turn เป็น denominator (ไม่ใช่ conversation ที่อยู่ยาวข้ามหลายเรื่อง)
+> พร้อมจำนวน pending/reviewed/human-fail จาก review queue; ไม่สร้าง aggregate snapshot ซ้ำ
 
 ---
 

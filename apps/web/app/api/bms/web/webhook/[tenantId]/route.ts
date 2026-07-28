@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   }
 
   const result = await runPipeline(message, CHANNEL, tenantId, sessionId);
-  await logConversation(tenantId, CHANNEL, sessionId, message, result.reply);
+  await logConversation(tenantId, CHANNEL, sessionId, message, result.reply, result.quality);
 
   return NextResponse.json({ reply: result.reply, sessionId }, { headers: CORS });
 }

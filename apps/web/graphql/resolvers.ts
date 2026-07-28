@@ -54,6 +54,7 @@ import { bmsAssistantResolvers } from "@/graphql/bmsAssistant";
 import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
 import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
+import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
@@ -2669,6 +2670,7 @@ const rawResolvers = {
     ...bmsProductsResolvers.Query,
     ...bmsCustomersResolvers.Query,
     ...bmsDashboardResolvers.Query,
+    ...bmsAiQualityResolvers.Query,
     ...bmsChannelsResolvers.Query,
     ...bmsAiConfigResolvers.Query,
     ...bmsSqlConsoleResolvers.Query,
@@ -7152,6 +7154,7 @@ const rawResolvers = {
     ...bmsProductsResolvers.Mutation,
     ...bmsCustomersResolvers.Mutation,
     ...bmsDashboardResolvers.Mutation,
+    ...bmsAiQualityResolvers.Mutation,
     ...bmsChannelsResolvers.Mutation,
     ...bmsAiConfigResolvers.Mutation,
     ...bmsSqlConsoleResolvers.Mutation,

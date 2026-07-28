@@ -732,6 +732,9 @@ export const typeDefs = /* GraphQL */ `
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
     bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
     bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
+    bmsAiQualityMetrics(days: Int = 30): BmsAiQualityMetrics!
+    bmsAiQualityCases(days: Int = 30, status: String, source: String, outcome: String, limit: Int = 50, offset: Int = 0): [BmsAiQualityCase!]!
+    bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail
     bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
@@ -1532,6 +1535,83 @@ export const typeDefs = /* GraphQL */ `
     topFailingTools: [BmsAiToolFailureRow!]!
   }
 
+  type BmsAiQualityDaily {
+    day: String!
+    totalTurns: Int!
+    successCount: Int!
+    handoffCount: Int!
+    unresolvedCount: Int!
+  }
+
+  type BmsAiQualityMetrics {
+    days: Int!
+    totalTurns: Int!
+    successCount: Int!
+    clarificationCount: Int!
+    handoffCount: Int!
+    unresolvedCount: Int!
+    successRate: Float!
+    handoffRate: Float!
+    unresolvedRate: Float!
+    pendingReviews: Int!
+    reviewedCount: Int!
+    humanFailCount: Int!
+    daily: [BmsAiQualityDaily!]!
+  }
+
+  type BmsAiQualityMessage {
+    id: ID!
+    direction: String!
+    sender: String
+    body: String!
+    createdAt: String!
+  }
+
+  type BmsAiQualityCase {
+    id: ID!
+    conversationId: ID!
+    messageId: ID!
+    channel: String!
+    conversationStatus: String!
+    source: String!
+    signalOutcome: String!
+    reasonCodes: [String!]!
+    severity: String!
+    status: String!
+    verdict: String
+    category: String
+    customerPreview: String!
+    aiPreview: String!
+    reviewerNote: String
+    reviewerName: String
+    reviewedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsAiQualityCaseDetail {
+    id: ID!
+    conversationId: ID!
+    messageId: ID!
+    channel: String!
+    conversationStatus: String!
+    source: String!
+    signalOutcome: String!
+    reasonCodes: [String!]!
+    severity: String!
+    status: String!
+    verdict: String
+    category: String
+    customerPreview: String!
+    aiPreview: String!
+    reviewerNote: String
+    reviewerName: String
+    reviewedAt: String
+    createdAt: String!
+    updatedAt: String!
+    messages: [BmsAiQualityMessage!]!
+  }
+
   # ===== BMS audit log =====
   type BmsAuditEntry {
     id: ID!
@@ -2253,6 +2333,8 @@ export const typeDefs = /* GraphQL */ `
     bmsMarkMentionRead(id: ID!): Boolean!
     bmsMarkAllMentionsRead: Boolean!
     bmsCreateInboxDiagnosticMessage(channel: String!, body: String): BmsInboxDiagnosticMessageResult!
+    bmsReviewAiQualityCase(id: ID!, verdict: String!, category: String!, note: String): BmsAiQualityCaseDetail!
+    bmsDismissAiQualityCase(id: ID!): BmsAiQualityCaseDetail!
 
     # ===== BMS CRM (admin) =====
     bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!

@@ -35,6 +35,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27` |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
+| AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 
 ## Notable schema details
 
@@ -144,6 +145,16 @@ Migration `7.30` also adds validated AI language/ordering/required-field/short-r
 `bms_ai_synonym_candidates` stores bounded search misses for human review. Both have forced RLS and
 `bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
 stock remain backend sources of truth.
+
+**`bms_ai_quality_reviews` (`7.31__bms_ai_quality_review.sql`)** — a tenant-scoped review queue that
+references the existing Inbox conversation and AI message. It stores only automatic outcome/reason
+codes, sampling source, severity, workflow status, and a human verdict/category/note; it does not
+duplicate customer or AI message text. Every failure/handoff/unresolved turn is queued, plus a
+stable approximately 5% sample of normal turns. Source-message deletion cascades to the review row.
+Each message has at most one review. Tenant/date and severity-queue indexes serve dashboard reads;
+foreign-key and partial Inbox indexes keep cascade deletion, metrics, and customer-preview lookups
+bounded as volume grows. RLS and `bms_app` grants follow the standard tenant-owned table pattern. See
+[AI quality control](../ai/quality.md) for metric definitions and privacy behavior.
 
 ## Revision checklist
 

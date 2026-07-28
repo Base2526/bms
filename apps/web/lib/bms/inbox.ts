@@ -23,6 +23,7 @@ import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail }
 import { createNotification } from "@/lib/notifications/service";
 import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
 import { beginTenantTx } from "./tenant";
+import { enqueueAiQualityReview, type AiTurnQuality } from "./aiQuality";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -103,7 +104,8 @@ export async function logConversation(
   channel: string,
   customerRef: string | null,
   incoming: string,
-  reply: string
+  reply: string,
+  quality?: AiTurnQuality
 ): Promise<void> {
   if (!customerRef || channel === "test") return;
   try {
@@ -133,11 +135,29 @@ export async function logConversation(
     );
     const convId = conv.rows[0].id;
 
-    await query(
-      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender)
-       VALUES ($1, $2, 'IN', $3, 'customer'), ($1, $2, 'OUT', $4, 'ai')`,
-      [tenantId, convId, incoming, reply]
+    const messages = await query<{ id: string; direction: "IN" | "OUT" }>(
+      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+       VALUES
+         ($1, $2, 'IN', $3, 'customer', '{}'::jsonb),
+         ($1, $2, 'OUT', $4, 'ai', $5::jsonb)
+       RETURNING id, direction`,
+      [
+        tenantId,
+        convId,
+        incoming,
+        reply,
+        JSON.stringify(quality ? { aiQuality: quality } : {}),
+      ]
     );
+    const aiMessage = messages.rows.find((message) => message.direction === "OUT");
+    if (quality && aiMessage) {
+      try {
+        await enqueueAiQualityReview(tenantId, convId, String(aiMessage.id), quality);
+      } catch (error) {
+        // Quality analytics must never block Inbox assignment/realtime delivery.
+        console.error("[BMS] AI quality enqueue failed:", error);
+      }
+    }
 
     if (conv.rows[0].inserted) {
       await autoAssignConversation(tenantId, convId);
