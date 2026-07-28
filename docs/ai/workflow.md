@@ -25,6 +25,14 @@ Customer
 Receive Message        ← per-tenant webhook (LINE / TikTok / Facebook / Instagram / Web / Shopee / Lazada)
     │
     ▼
+Deterministic intent?  ← coupon wallet / own-order status / payment / reorder / confirmed order slots
+    │                     Server selects an approved catalog tool, then runtime applies the same
+    │                     surface authorization, argument validation, redacted audit, and domain audit.
+    │                     Customer never supplies tenant authority; status/payment/reorder resolve the
+    │                     latest order from the established (channel, customer_ref) identity.
+    │
+    ├─ no ─────────────▶ continue to AI tool-calling
+    ▼
 AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.ts]  (PRIMARY when AI creds exist)
     │                     Claude selects+calls tools itself (search_products / check_stock /
     │                     get_order_status / create_order / submit_payment / reorder), grounded on
@@ -49,6 +57,19 @@ with `requirePermission()` even though the catalog was already filtered. It also
 input fields and records a redacted `ai.tool_call` audit row for every success, failure, denial, and
 proposal. A2 writes additionally retain their domain audit row; a confirmed A3 action is audited by
 the existing GraphQL mutation that the human explicitly clicked.
+
+`runApprovedTool()` is the same execution boundary without provider inference. The customer
+pipeline uses it only for narrow intents whose target is unambiguous. Recent customer turns are also
+reduced to non-authoritative order slots (product text, size, quantity, confirmation); product and
+stock facts still have to come from tools. A successful customer tool call or a relevant
+single-field clarification resets the turn budget, so legitimate browsing/slot filling is not
+mistaken for a stalled conversation.
+
+Every customer reply — AI, deterministic-route, or rule-based fallback — leaves the pipeline through
+one sanitizer (`customerSafe()`): full UUIDs are shortened to their first eight characters, and the
+shop brand voice is normalized (`ครับ` → `ค่ะ`, a standalone `ผม` → `ทางร้าน`) so a model or template
+slip cannot change the shop persona mid-conversation. This is the shop's own voice and is unrelated
+to the per-admin `ครับ/ค่ะ` particle used by Inbox suggested replies.
 
 ## Intents (`nlu.ts`)
 
@@ -161,6 +182,13 @@ confirms before anything reaches production.
 - **Playground** (`/api/bms/chat`, channel=`test`) — requires a signed admin session, derives the
   tenant from that session/drill-down context, and returns the full trace (intent/tool/reply)
   without logging to inbox.
+- **AI eval suites** ([`scripts/ai-eval/`](../../scripts/ai-eval/)) — the deterministic runtime
+  contract suite forces provider/tool validation, authorization, proposal, timeout, bounded-loop,
+  audit-redaction, and post-write-outage paths without network or DB access. The live-model suite
+  uses a development/sandbox tenant, persists `EVAL-*` conversations, creates real test orders and
+  pending payments, and verifies tool arguments plus GraphQL backend postconditions. It rejects
+  remote targets unless `BMS_EVAL_ALLOW_REMOTE_WRITES=true`, reports functional/safety/system
+  results separately, and treats every intermittent safety failure as a defect.
 - **Realtime Diagnostics** (`/admin/inbox/realtime-diagnostics`) — Administrator/platform-admin
   only. `Emit` tests PubSub/WebSocket delivery without DB writes; `Create Msg` creates a diagnostic
   Inbox message for the current tenant without calling the AI pipeline or sending to any external

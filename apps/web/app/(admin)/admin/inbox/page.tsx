@@ -189,6 +189,16 @@ const TIMELINE_TYPE: Record<string, { label: string; color: string }> = {
   ASSIGN: { label: "มอบหมาย", color: "cyan" },
   STATUS: { label: "สถานะแชท", color: "purple" },
 };
+// จุดบนเส้น timeline — สีบอกชนิดเหตุการณ์ (ORDER ใช้สีตามสถานะปัจจุบันของออร์เดอร์แทน)
+const TIMELINE_DOT: Record<string, string> = {
+  MESSAGE_IN: "#378ADD", MESSAGE_OUT: "#B4B2A9", NOTE: "#EF9F27", ASSIGN: "#1D9E75", STATUS: "#7F77DD",
+};
+const ORDER_STATUS_DOT: Record<string, string> = {
+  PENDING: "#EF9F27", PAID: "#639922", PACKING: "#639922", SHIPPED: "#639922",
+  COMPLETED: "#1D9E75", CANCELLED: "#E24B4A", RETURNED: "#EF9F27",
+};
+// ต้องตรงกับ TIMELINE_MAX_PER_SOURCE ใน lib/bms/inbox.ts (ไฟล์นั้น import @/lib/db — client component ดึงตรงไม่ได้)
+const TIMELINE_MAX_PER_SOURCE = 200;
 const STATUS_COLOR: Record<ConvStatus, string> = { OPEN: "green", PENDING: "orange", CLOSED: "default" };
 const FILTERS = ["ALL", "OPEN", "PENDING", "CLOSED"] as const;
 const LIST_COLLAPSE_KEY = "bms_inbox_list_collapsed";
@@ -925,6 +935,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     onCompleted: () => { message.success("เพิ่มโน้ตแล้ว"); setNote(""); setNoteMentions([]); setNoteMentionQuery(null); onChanged(); }, onError: onErr,
   });
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
+  const [tlThisChatOnly, setTlThisChatOnly] = useState(false);
   const { data: staffData } = useQuery(Q_STAFF, { fetchPolicy: "cache-and-network" });
   const staffList: StaffRef[] = staffData?.bmsAssignableStaff || [];
   const { data: productPickerData, loading: productPickerLoading } = useQuery(Q_PRODUCTS_PICKER, {
@@ -1748,9 +1759,19 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     setNoteMentions((prev) => (prev.some((p) => p.id === s.id) ? prev : [...prev, { id: s.id, name: label }]));
   };
   const submitNote = () => {
+    if (!note.trim() || noting) return;   // Enter ยิงได้ทุกจังหวะแล้ว → กันโน้ตว่าง/กดรัวซ้อน mutation
     // ตัด mention ที่ถูกลบ "@ชื่อ" ออกจากข้อความไปแล้วก่อน submit ออก — กันแจ้งเตือนคนที่ถูกลบชื่อทิ้ง
     const mentionedUserIds = noteMentions.filter((m) => note.includes("@" + m.name)).map((m) => m.id);
     addNote({ variables: { id: conv.id, body: note, mentionedUserIds } });
+  };
+  // Enter = บันทึกโน้ต (ไม่มีปุ่ม "เพิ่ม" แล้ว) — ยกเว้นตอน dropdown เมนชันเปิดอยู่และมีคนให้เลือก
+  // ให้ Enter เติมชื่อคนแรกก่อน ไม่งั้นจะเซฟทั้งที่ "@Dett" ยังพิมพ์ไม่จบ = mention ไม่ถูกส่ง
+  const onNoteKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape" && noteMentionQuery !== null) { setNoteMentionQuery(null); return; }
+    if (e.key !== "Enter" || e.shiftKey) return;
+    e.preventDefault();
+    if (noteMentionQuery !== null && noteMentionCandidates.length > 0) pickNoteMention(noteMentionCandidates[0]);
+    else submitNote();
   };
   const renderNoteBody = (body: string) => {
     if (!staffList.length) return body;
@@ -1769,17 +1790,19 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     <div style={{ height: "100%", overflowY: "auto" }}>
       {canManage && (
         <div style={{ position: "relative", marginBottom: 12 }}>
-          <Space.Compact style={{ width: "100%" }}>
-            <Input value={note} onChange={(e) => onNoteChange(e.target.value)} placeholder="โน้ตภายใน (ลูกค้าไม่เห็น)" />
-            <Button onClick={() => setNoteMentionQuery("")} title="กล่าวถึงเพื่อนร่วมทีม">@</Button>
-            <Button type="primary" loading={noting} disabled={!note.trim()} onClick={submitNote}>เพิ่ม</Button>
-          </Space.Compact>
+          <Input
+            value={note}
+            onChange={(e) => onNoteChange(e.target.value)}
+            onKeyDown={onNoteKeyDown}
+            disabled={noting}
+            placeholder="โน้ตภายใน (ลูกค้าไม่เห็น) · พิมพ์ @ เพื่อกล่าวถึง · Enter บันทึก"
+          />
           {noteMentionQuery !== null && (
             // เดิม gate ด้วย noteMentionCandidates.length > 0 — ถ้าร้านมี staff ให้เมนชันได้ 0 คน
             // (เช่น admin คนเดียว ไม่มี Sales/Manager คนอื่น) กด @ แล้วไม่มีอะไรเกิดขึ้นเลย ไม่รู้ว่า
             // "ไม่มีให้เลือก" หรือ "ปุ่มพัง" — ใส่ empty state ให้เห็นชัดแทนความเงียบ
             <List size="small" bordered
-              style={{ position: "absolute", top: "100%", left: 0, right: 116, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
+              style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
               dataSource={noteMentionCandidates}
               locale={{ emptyText: <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>ไม่มีเพื่อนร่วมทีมให้กล่าวถึง</div> }}
               renderItem={(s) => (
@@ -1793,7 +1816,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <List size="small" dataSource={conv.notes || []} locale={{ emptyText: "ยังไม่มีโน้ต" }}
         renderItem={(n: Note) => (
           <List.Item>
-            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {new Date(n.createdAt).toLocaleString()}</Typography.Text>} description={renderNoteBody(n.body)} />
+            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt)} {timeLabel(n.createdAt)}</Typography.Text>} description={renderNoteBody(n.body)} />
           </List.Item>
         )} />
     </div>
@@ -1854,61 +1877,96 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     </div>
   );
 
-  const timelineTab = (
-    <div style={{ height: "100%", overflowY: "auto" }}>
-      {(!tlData) && <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>โหลด timeline</Button>}
-      <List size="small" dataSource={tlData?.bmsConversationTimeline || []} locale={{ emptyText: tlData ? "ไม่มีเหตุการณ์" : "" }}
-        renderItem={(t: any, index: number) => {
-          const rows: any[] = tlData?.bmsConversationTimeline || [];
+  const timelineTab = (() => {
+    const allRows: any[] = tlData?.bmsConversationTimeline || [];
+    const isCrossChannel = (t: any) => t.type === "ORDER" && !!t.channel && t.channel !== conv.channel;
+    // "แชทนี้เท่านั้น" = ซ่อนออร์เดอร์ช่องทางอื่น (ออร์เดอร์ scope ตามลูกค้า ไม่ใช่ตามแชท)
+    const rows = tlThisChatOnly ? allRows.filter((t) => !isCrossChannel(t)) : allRows;
+
+    return (
+      <div style={{ height: "100%", overflowY: "auto", paddingInlineEnd: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {conv.customerName || conv.customerRef} · {conv.channel}
+          </Typography.Text>
+          <Segmented
+            size="small"
+            value={tlThisChatOnly ? "chat" : "all"}
+            onChange={(v) => setTlThisChatOnly(v === "chat")}
+            options={[{ label: "ทุกเหตุการณ์", value: "all" }, { label: "แชทนี้เท่านั้น", value: "chat" }]}
+          />
+        </div>
+
+        {!tlData && (
+          <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>
+            โหลด timeline
+          </Button>
+        )}
+        {tlData && rows.length === 0 && <Empty description="ไม่มีเหตุการณ์" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+
+        {rows.map((t, index) => {
           const showDay = index === 0 || dayKey(rows[index - 1].at) !== dayKey(t.at);
           const meta = TIMELINE_TYPE[t.type] || { label: t.type, color: "default" };
           const isOrder = t.type === "ORDER";
-          // ออร์เดอร์ scope ตามลูกค้า (ไม่ใช่ตามแชท) → ออร์เดอร์ช่องทางอื่นก็โผล่ที่นี่ ต้องติดป้ายให้เห็น
-          const crossChannel = isOrder && !!t.channel && t.channel !== conv.channel;
+          const crossChannel = isCrossChannel(t);
+          const dot = (isOrder ? ORDER_STATUS_DOT[t.status ?? ""] : TIMELINE_DOT[t.type]) || "#B4B2A9";
           return (
-            <>
+            <div key={`${t.type}-${t.at}-${t.ref ?? index}`}>
               {showDay && (
-                <Divider plain style={{ margin: "6px 0", fontSize: 11.5 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>{dayLabel(t.at)}</Typography.Text>
-                </Divider>
+                <div style={{ textAlign: "center", margin: "10px 0 8px" }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 11.5, background: "rgba(0,0,0,0.04)", padding: "2px 10px", borderRadius: 10 }}>
+                    {dayLabel(t.at)}
+                  </Typography.Text>
+                </div>
               )}
-              <List.Item style={{ padding: "6px 0" }}>
-                <List.Item.Meta
-                  title={
-                    <Space size={4} wrap>
-                      <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(t.at)}</Typography.Text>
-                      <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
-                      {isOrder && t.channel && (
-                        <Tag color={crossChannel ? CHANNEL_COLOR[t.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
-                          {t.channel}{crossChannel ? " (ช่องทางอื่น)" : ""}
-                        </Tag>
-                      )}
-                      {!isOrder && t.ref && <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {t.ref}</Typography.Text>}
-                    </Space>
-                  }
-                  description={
-                    <div style={{ fontSize: 12.5 }}>
+              <div style={{ position: "relative", borderInlineStart: "1px solid rgba(0,0,0,0.08)", marginInlineStart: 5, paddingInlineStart: 14, paddingBottom: 12 }}>
+                <span style={{ position: "absolute", inlineSize: 9, blockSize: 9, borderRadius: "50%", background: dot, insetInlineStart: -5, insetBlockStart: 5 }} />
+                <Space size={4} wrap style={{ lineHeight: 1.4 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(t.at)}</Typography.Text>
+                  <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+                  {isOrder && t.channel && (
+                    <Tag color={crossChannel ? CHANNEL_COLOR[t.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
+                      {t.channel}{crossChannel ? " (ช่องทางอื่น)" : ""}
+                    </Tag>
+                  )}
+                  {!isOrder && t.ref && <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {t.ref}</Typography.Text>}
+                </Space>
+                <div style={{ fontSize: 12.5, marginTop: 3 }}>
+                  {isOrder ? (
+                    <Space size={6} wrap>
+                      <Typography.Text code copyable={{ text: t.entityId || t.ref }} style={{ fontSize: 11.5 }}>{t.ref}</Typography.Text>
                       <span>{t.text}</span>
-                      {isOrder && (
-                        <div style={{ marginTop: 2 }}>
-                          <Typography.Text code copyable={{ text: t.entityId || t.ref }} style={{ fontSize: 11.5 }}>{t.ref}</Typography.Text>
-                          {t.status && (
-                            <Typography.Text type="secondary" style={{ fontSize: 11.5, marginInlineStart: 6 }}>
-                              · สถานะปัจจุบัน: {t.status}
-                              {t.statusAt ? ` (อัปเดต ${dayLabel(t.statusAt)} ${timeLabel(t.statusAt)})` : ""}
-                            </Typography.Text>
-                          )}
-                        </div>
+                      {t.status && (
+                        <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
+                          ตอนนี้: <Typography.Text style={{ fontSize: 11.5 }}>{t.status}</Typography.Text>
+                          {t.statusAt ? ` · ${dayLabel(t.statusAt)} ${timeLabel(t.statusAt)}` : ""}
+                        </Typography.Text>
                       )}
-                    </div>
-                  }
-                />
-              </List.Item>
-            </>
+                    </Space>
+                  ) : (
+                    <span>{t.text}</span>
+                  )}
+                </div>
+              </div>
+            </div>
           );
-        }} />
-    </div>
-  );
+        })}
+
+        {tlData && rows.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+            <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
+              แสดง {rows.length.toLocaleString("th-TH")} เหตุการณ์
+              {tlThisChatOnly && allRows.length !== rows.length ? ` (ซ่อนช่องทางอื่น ${(allRows.length - rows.length).toLocaleString("th-TH")})` : ""}
+              {rows.length >= TIMELINE_MAX_PER_SOURCE ? " · ถึงเพดานการแสดงผล" : ""}
+            </Typography.Text>
+            <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>
+              รีเฟรช
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  })();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>

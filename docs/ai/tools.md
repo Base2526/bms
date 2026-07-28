@@ -32,7 +32,10 @@ role cannot use before schemas reach Claude; `runtime.ts` then enforces surface 
 `requirePermission()` again immediately before execution. Unknown input fields are rejected.
 Every attempt writes a redacted `ai.tool_call` entry to `bms_audit_log`; successful writes also keep
 their existing domain audit action (`order.create`, `payment.submit`, etc.). Raw tool args and prompt
-content are not copied into the centralized audit entry.
+content are not copied into the centralized audit entry. Within one provider loop, a successful
+tool call repeated with the same tool name and canonicalized arguments replays its prior
+`tool_result` instead of executing the service again; every repeated attempt is still centrally
+audited. Failed calls are not cached, so the model may correct arguments or retry a transient error.
 Customer read/write of orders is scoped to the conversation's own `(channel, customer_ref)`.
 Coupon read tools are also scoped to that identity: `list_customer_coupons` reads the customer's
 assigned wallet rows (if any) and reports whether each one is currently usable, near expiry, or no
@@ -68,7 +71,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | heuristic/read |
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
-| `create_order`, `reorder` | A2 | yes | `order.create` | execute + domain audit |
+| `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
 | `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
 | `update_tracking`, `set_shipment_status` | A2 | no | `shipping.update` | execute + domain audit |
@@ -752,7 +755,7 @@ Permission: customer.edit · บันทึก audit action `customer.merge`
 Input
 
 {
-    id   # orderId ของออร์เดอร์เก่าที่จะสั่งซ้ำ
+    orderId?  # customer เว้นได้: resolve ออร์เดอร์ล่าสุดจาก channel/customer_ref; staff ต้องระบุ
 }
 
 Output: `{ status, orderId, total, message }` — `status` หนึ่งใน

@@ -12,7 +12,13 @@ import { resolveAiCredentials, type AiCredentials } from "../ai";
 import { finalizeAiUsageEvent } from "../aiUsage";
 import { audit } from "../audit";
 import { requirePermission } from "../permissions";
-import { ToolArgError, type BmsTool, type ExecCtx, type ToolProposal } from "./types";
+import {
+  ToolArgError,
+  type BmsTool,
+  type ExecCtx,
+  type ToolProposal,
+  type ToolResult,
+} from "./types";
 
 export type ToolTraceEntry = {
   tool: string;
@@ -52,6 +58,23 @@ function validateKnownFields(tool: BmsTool, input: Record<string, unknown>): voi
   if (unknown.length > 0) {
     throw new ToolArgError(`ไม่รองรับ field: ${unknown.join(", ")}`);
   }
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function tokenCount(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 /**
@@ -119,13 +142,101 @@ async function callClaude(
   }
 }
 
-export async function runToolLoop(opts: {
+export type ToolLoopOptions = {
   tenantId: string;
   system: string;
   messages: AnthMessage[];
   tools: BmsTool[];
   execCtx: ExecCtx;
-}): Promise<ToolLoopResult> {
+};
+
+/**
+ * Test-only dependency seam for deterministic contract tests.
+ *
+ * Production callers must use runToolLoop(), which always supplies the real credential resolver,
+ * Anthropic transport, usage finalizer, and audit writer. Keeping the seam at the function boundary
+ * lets the eval suite force timeout/malformed/unknown-tool paths without exposing a diagnostic HTTP
+ * endpoint or weakening any runtime authorization.
+ */
+export type ToolLoopTestDeps = {
+  resolveCredentials?: typeof resolveAiCredentials;
+  callProvider?: typeof callClaude;
+  finalizeUsage?: typeof finalizeAiUsageEvent;
+  auditAttempt?: typeof auditToolCall;
+};
+
+export type ApprovedToolOptions = {
+  tool: BmsTool;
+  input?: Record<string, unknown>;
+  execCtx: ExecCtx;
+};
+
+/**
+ * Execute a server-selected catalog tool through the same authorization, validation, and audit
+ * boundary as model-selected tool calls. This is for narrow deterministic routes where asking the
+ * model to choose whether to call the tool would make a factual customer workflow unreliable.
+ */
+async function runApprovedToolInternal(
+  opts: ApprovedToolOptions,
+  deps: Pick<ToolLoopTestDeps, "auditAttempt"> = {}
+): Promise<{ result: ToolResult; trace: ToolTraceEntry }> {
+  const auditAttempt = deps.auditAttempt ?? auditToolCall;
+  const { tool, execCtx } = opts;
+  let input: Record<string, unknown> = {};
+  let outcome: "ok" | "error" | "denied" | "proposal" = "error";
+  let result: ToolResult;
+  let trace: ToolTraceEntry;
+
+  try {
+    await authorizeTool(tool, execCtx);
+    input = inputRecord(opts.input ?? {});
+    validateKnownFields(tool, input);
+    const executed = await tool.execute(input, execCtx);
+    if (executed.ok && executed.proposal) {
+      if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
+      outcome = "proposal";
+      result = executed;
+      trace = {
+        tool: tool.name,
+        input,
+        ok: true,
+        summary: `proposal: ${executed.proposal.summary}`,
+      };
+    } else if (executed.ok) {
+      if (tool.sensitive) throw new Error("sensitive tool must return a proposal");
+      outcome = "ok";
+      result = executed;
+      trace = { tool: tool.name, input, ok: true, summary: "ok" };
+    } else {
+      outcome = "error";
+      result = executed;
+      trace = { tool: tool.name, input, ok: false, summary: executed.error };
+    }
+  } catch (err) {
+    const denied = err instanceof ToolAccessError;
+    outcome = denied ? "denied" : "error";
+    const message =
+      err instanceof ToolArgError || denied ? err.message : "ดึงข้อมูลไม่สำเร็จ";
+    result = { ok: false, error: message };
+    trace = { tool: tool.name, input, ok: false, summary: message };
+    if (!(err instanceof ToolArgError) && !denied) {
+      console.error(`[BMS] approved tool ${tool.name} failed:`, err);
+    }
+  }
+
+  await auditAttempt(execCtx, tool.name, outcome, tool);
+  return { result, trace };
+}
+
+async function runToolLoopInternal(
+  opts: ToolLoopOptions,
+  deps: ToolLoopTestDeps = {}
+): Promise<ToolLoopResult> {
+  const resolveCredentials = deps.resolveCredentials ?? resolveAiCredentials;
+  const callProvider = deps.callProvider ?? callClaude;
+  const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
+  const auditAttempt = deps.auditAttempt ?? auditToolCall;
+
   if (opts.tenantId !== opts.execCtx.tenantId) {
     throw new Error("AI tool-loop tenant context mismatch");
   }
@@ -133,7 +244,7 @@ export async function runToolLoop(opts: {
   if (uniqueNames.size !== opts.tools.length) {
     throw new Error("AI tool registry contains duplicate names");
   }
-  const creds = await resolveAiCredentials(opts.tenantId, {
+  const creds = await resolveCredentials(opts.tenantId, {
     surface: opts.execCtx.surface,
     feature: opts.execCtx.surface === "staff" ? "staff_assistant" : "customer_tool_loop",
     channel: opts.execCtx.surface === "customer" ? opts.execCtx.channel ?? null : null,
@@ -157,6 +268,17 @@ export async function runToolLoop(opts: {
   const proposals: ToolProposal[] = [];
   const trace: ToolTraceEntry[] = [];
   const messages: AnthMessage[] = [...opts.messages];
+  // Provider อาจ retry/repeat tool_use เดิมใน loop เดียวกัน หลัง service write สำเร็จแล้ว
+  // เก็บเฉพาะผลสำเร็จเพื่อ replay tool_result โดยไม่ execute domain action ซ้ำ; error ไม่ cache
+  // เพื่อให้ model แก้ args/retry transient failure ได้ตามปกติ
+  const completedCalls = new Map<
+    string,
+    {
+      resultContent: string;
+      outcome: "ok" | "proposal";
+      summary: string;
+    }
+  >();
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -165,9 +287,9 @@ export async function runToolLoop(opts: {
   // หลังจากทูล create_order ทำงานไปแล้วในรอบก่อนหน้า
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const resp = await callClaude(creds, opts.system, messages, toolSchemas);
-      inputTokens += Number(resp?.usage?.input_tokens ?? 0);
-      outputTokens += Number(resp?.usage?.output_tokens ?? 0);
+      const resp = await callProvider(creds, opts.system, messages, toolSchemas);
+      inputTokens += tokenCount(resp?.usage?.input_tokens);
+      outputTokens += tokenCount(resp?.usage?.output_tokens);
       const content: any[] = Array.isArray(resp?.content) ? resp.content : [];
       const toolUses = content.filter((b) => b?.type === "tool_use");
 
@@ -179,7 +301,7 @@ export async function runToolLoop(opts: {
           .join("\n")
           .trim();
         if (creds.usageEventId) {
-          await finalizeAiUsageEvent(creds.usageEventId, {
+          await finalizeUsage(creds.usageEventId, {
             status: "completed",
             inputTokens,
             outputTokens,
@@ -207,26 +329,42 @@ export async function runToolLoop(opts: {
             await authorizeTool(tool, opts.execCtx);
             traceInput = inputRecord(tu.input ?? {});
             validateKnownFields(tool, traceInput);
-            const r = await tool.execute(traceInput, opts.execCtx);
-            if (r.ok && r.proposal) {
-              if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
-              proposals.push(r.proposal);
-              outcome = "proposal";
-              resultContent = JSON.stringify({
-                status: "PENDING_CONFIRMATION",
-                note: "สร้างคำขอแล้ว รอมนุษย์กดยืนยันใน UI — ยังไม่สำเร็จ ห้ามแจ้งว่าทำเสร็จแล้ว",
-                summary: r.proposal.summary,
+            const callKey = `${toolName}:${stableJson(traceInput)}`;
+            const completed = completedCalls.get(callKey);
+            if (completed) {
+              outcome = completed.outcome;
+              resultContent = completed.resultContent;
+              trace.push({
+                tool: toolName,
+                input: traceInput,
+                ok: true,
+                summary: `duplicate suppressed: ${completed.summary}`,
               });
-              trace.push({ tool: toolName, input: traceInput, ok: true, summary: `proposal: ${r.proposal.summary}` });
-            } else if (r.ok) {
-              if (tool.sensitive) throw new Error("sensitive tool must return a proposal");
-              outcome = "ok";
-              resultContent = JSON.stringify(r.data ?? { ok: true });
-              trace.push({ tool: toolName, input: traceInput, ok: true, summary: "ok" });
             } else {
-              outcome = "error";
-              resultContent = JSON.stringify({ error: r.error });
-              trace.push({ tool: toolName, input: traceInput, ok: false, summary: r.error });
+              const r = await tool.execute(traceInput, opts.execCtx);
+              if (r.ok && r.proposal) {
+                if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
+                proposals.push(r.proposal);
+                outcome = "proposal";
+                resultContent = JSON.stringify({
+                  status: "PENDING_CONFIRMATION",
+                  note: "สร้างคำขอแล้ว รอมนุษย์กดยืนยันใน UI — ยังไม่สำเร็จ ห้ามแจ้งว่าทำเสร็จแล้ว",
+                  summary: r.proposal.summary,
+                });
+                const summary = `proposal: ${r.proposal.summary}`;
+                completedCalls.set(callKey, { resultContent, outcome, summary });
+                trace.push({ tool: toolName, input: traceInput, ok: true, summary });
+              } else if (r.ok) {
+                if (tool.sensitive) throw new Error("sensitive tool must return a proposal");
+                outcome = "ok";
+                resultContent = JSON.stringify(r.data ?? { ok: true });
+                completedCalls.set(callKey, { resultContent, outcome, summary: "ok" });
+                trace.push({ tool: toolName, input: traceInput, ok: true, summary: "ok" });
+              } else {
+                outcome = "error";
+                resultContent = JSON.stringify({ error: r.error });
+                trace.push({ tool: toolName, input: traceInput, ok: false, summary: r.error });
+              }
             }
           } catch (err: any) {
             const denied = err instanceof ToolAccessError;
@@ -237,7 +375,7 @@ export async function runToolLoop(opts: {
             if (!(err instanceof ToolArgError) && !denied) console.error(`[BMS] tool ${toolName} failed:`, err);
           }
         }
-        await auditToolCall(opts.execCtx, toolName, outcome, tool);
+        await auditAttempt(opts.execCtx, toolName, outcome, tool);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultContent });
       }
       messages.push({ role: "user", content: toolResults });
@@ -245,7 +383,7 @@ export async function runToolLoop(opts: {
 
     // เกิน MAX_ROUNDS — best-effort (เคสหายาก)
     if (creds.usageEventId) {
-      await finalizeAiUsageEvent(creds.usageEventId, {
+      await finalizeUsage(creds.usageEventId, {
         status: "fallback",
         inputTokens,
         outputTokens,
@@ -260,7 +398,7 @@ export async function runToolLoop(opts: {
     };
   } catch (err) {
     if (creds.usageEventId) {
-      await finalizeAiUsageEvent(creds.usageEventId, {
+      await finalizeUsage(creds.usageEventId, {
         status: "failed",
         inputTokens,
         outputTokens,
@@ -278,3 +416,19 @@ export async function runToolLoop(opts: {
     };
   }
 }
+
+export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
+  return runToolLoopInternal(opts);
+}
+
+export async function runApprovedTool(
+  opts: ApprovedToolOptions
+): Promise<{ result: ToolResult; trace: ToolTraceEntry }> {
+  return runApprovedToolInternal(opts);
+}
+
+/** @internal ใช้เฉพาะ scripts/ai-eval/runtime-contract.test.mts */
+export const __toolLoopTest = {
+  run: runToolLoopInternal,
+  runApproved: runApprovedToolInternal,
+};

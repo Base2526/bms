@@ -35,6 +35,7 @@ for the full philosophy and module breakdown.
 | [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
 | [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
+| [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | How to run the deterministic runtime-contract and live-model AI evals |
 | [CLAUDE.local.md](CLAUDE.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
 
 ## Current status (2026-07)
@@ -112,6 +113,16 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   fires the same permission-gated mutation the admin UI already used. See
   [docs/ai/workflow.md](docs/ai/workflow.md) and [docs/ai/tools.md](docs/ai/tools.md) for the full
   design, and § AI tool-calling in [CLAUDE.local.md](CLAUDE.local.md) for gotchas/example usage.
+- **Deterministic AI routing + eval suites**: unambiguous customer intents (own-order status, payment
+  submission, reorder, coupon wallet, and a fully confirmed single-item order) are routed by the
+  server through `runApprovedTool()` — the same authorization, argument-validation, and audit boundary
+  as model-selected calls, minus provider tool-selection variance. Within one provider loop, a
+  repeated successful tool call replays its earlier result instead of writing twice, and every
+  customer reply passes one sanitizer that shortens UUIDs and keeps the shop's `ค่ะ` brand voice.
+  Verification lives in [`scripts/ai-eval/`](scripts/ai-eval/README.md): a deterministic runtime
+  contract suite (no network/DB) plus a live-model end-to-end suite that asserts backend state — see
+  [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md#evaluation-checklist). Live evals write real data, so
+  they run against development/sandbox tenants only.
 - **AI tool catalog — batch 2 (store / documents / forecast / AI-native / outbound)**: the catalog now
   also covers **store profile** (migrations `6.9`/`7.17__bms_store_profile*` — hours/address/policies/
   receiving accounts/shipping config, plus contact email/website/logo/tax id/timezone/country/currency,

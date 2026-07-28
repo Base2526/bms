@@ -212,3 +212,16 @@ Gold Standard
 
 ระบบที่ปลอดภัยไม่ใช่ระบบที่เชื่อว่า AI จะไม่ผิด แต่เป็นระบบที่ตรวจพบความไม่แน่ใจ ป้องกันข้อมูลผิด และไม่อนุญาตให้ AI ทำรายการผิดไปถึงลูกค้า
 
+## **ของที่มีจริงในรีโปตอนนี้**
+
+เอกสารนี้เป็นกรอบการวัด ส่วนที่ implement แล้วอยู่ที่ [`scripts/ai-eval/`](../scripts/ai-eval/README.md):
+
+* **deterministic runtime contract suite** — ครอบคลุมข้อ "ผิดไม่ได้" ที่ตรวจได้โดยไม่ต้องมี provider/DB
+  (duplicate order จาก provider retry, write ซ้ำหลัง provider ล้ม, cross-surface/RBAC denial,
+  sensitive action ต้องเป็น proposal, arg validation, audit ไม่มี PII) — ผลต้องเหมือนกันทุกครั้งที่รัน
+* **live-model suite** — ตรวจ tool selection, tool arguments และ **state จริงใน backend** ผ่าน GraphQL
+  (order/payment/status) ไม่เชื่อเพียงข้อความตอบหรือ trace · เขียนข้อมูลจริง ใช้ tenant dev/sandbox เท่านั้น
+
+ส่วนที่**ยังไม่มี**: gold dataset เต็มรูป, summary faithfulness/completeness scoring, historical replay,
+shadow mode, canary rollout — ตัวเลขเป้าหมายด้านบนจึงยังเป็นเกณฑ์ที่ตั้งไว้ ไม่ใช่ค่าที่วัดได้แล้ว
+

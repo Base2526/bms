@@ -131,12 +131,17 @@ add/remove, chat status) for the conversation. Rules that keep it honest:
 
 - **`at` is always when the event actually happened.** An `ORDER` row is timestamped by the order's
   `created_at` — the moment it was created as `PENDING`. The order's present status travels in the
-  separate `status`/`statusAt` fields and the UI labels it "สถานะปัจจุบัน", so the row can never be
+  separate `status`/`statusAt` fields and the UI labels it "ตอนนี้: …", so the row can never be
   read as "reached SHIPPED at `at`". For the real status-transition sequence use `bmsOrderJourney`,
   which reads `bms_audit_log` (`order.pay/pack/ship/complete/cancel/return`).
+- **The order row's text is the amount only** — the net total after any coupon discount, formatted
+  `th-TH`. The "สร้างออร์เดอร์" wording lives in the row's type tag, so the service does not repeat it
+  inside the text.
 - **Orders are customer-scoped, not conversation-scoped.** They are matched on `customer_id`, so a
   customer's orders from other channels appear here too. Every order row carries `channel`; the UI
-  tags it, and marks it "(ช่องทางอื่น)" when it differs from the conversation's channel.
+  tags it, and marks it "(ช่องทางอื่น)" when it differs from the conversation's channel. A
+  `ทุกเหตุการณ์ / แชทนี้เท่านั้น` toggle filters those cross-channel order rows out client-side; it
+  never re-queries, so the same loaded data backs both views.
 - **Image/file-only messages are not blank rows.** `body` is legitimately empty for attachment-only
   messages, so text falls back to `[รูปภาพ]` / `[ไฟล์] <name>` via the shared `messagePreview()`.
 - **Staff are named, not UUIDs.** System events come from `listSystemEvents()`, which already
@@ -146,7 +151,13 @@ add/remove, chat status) for the conversation. Rules that keep it honest:
   optional smaller `limit` arg), and sorting breaks ties on `type` then `ref` so same-second events
   keep a fixed order between loads.
 - Times render in `Asia/Bangkok` with Thai formatting and วันนี้/เมื่อวาน day separators, matching
-  the chat thread rather than the browser locale.
+  the chat thread rather than the browser locale. Internal notes in the `โน้ต` tab use the same
+  helpers instead of the browser's `toLocaleString()`.
+- **Rendered as a real timeline, not a plain list.** Rows sit on a single vertical rail with one dot
+  per event; the dot colour comes from the event type, except `ORDER` rows, which are coloured by the
+  order's current status (pending amber, in-progress green, completed teal, cancelled red). Rows
+  carry stable React keys (`type` + `at` + `ref`), and an empty result shows an explicit empty state
+  instead of a blank pane.
 
 The Inbox list/header may show cached channel profile metadata before staff opens Customer 360. For
 LINE OA, the webhook syncs `display_name` and `picture_url` into `bms_customer_identities`; GraphQL
