@@ -86,10 +86,19 @@ export function reqInt(args: Record<string, any>, key: string, min = 1): number 
   return n;
 }
 
-export function optInt(args: Record<string, any>, key: string, min = 1): number | undefined {
+// max (ถ้าระบุ) = clamp ไม่ throw — limit/ช่วงวันที่ที่โมเดลส่งมาเกินเพดานไม่ควรทำให้ทูลล้มเหลว
+// แล้วเสีย turn ไปกับการ retry แค่จำกัดให้เท่าเพดานที่ schema ประกาศไว้ กัน tool_result บานปลาย
+// (payload เข้า context ทุกรอบถัดไปและไม่ถูก cache) และกันช่วง query ยาวเกินจริง
+export function optInt(
+  args: Record<string, any>,
+  key: string,
+  min = 1,
+  max?: number
+): number | undefined {
   const v = args?.[key];
   if (v === undefined || v === null || v === "") return undefined;
-  return reqInt(args, key, min);
+  const n = reqInt(args, key, min);
+  return typeof max === "number" ? Math.min(n, max) : n;
 }
 
 export function enumVal<T extends string>(

@@ -22,7 +22,7 @@ import {
   reqString,
 } from "./types";
 
-import { listProducts, listVariants, listProductImages, listLowStock } from "../products";
+import { listProducts, listVariants, listLowStock } from "../products";
 import { checkStock } from "../stock";
 import {
   createOrder,
@@ -86,6 +86,11 @@ function optMoney(args: Record<string, any>, key: string): number | null {
   return n;
 }
 
+// เฉพาะ field ที่ใช้ตอบลูกค้าจริง — `state` + `available` + `reason` บอกสถานะได้ครบแล้ว
+// (ใช้ได้/หมดอายุ/ยังไม่เริ่ม/ใช้ครบสิทธิ์) ตามที่ description ของทูลสัญญาไว้ ส่วน timestamp
+// ภายในกับเลขออเดอร์ที่ผูกอยู่ (reserved*/redeemed*/revokedAt/source/assigned*) ไม่ได้ใช้ทั้งใน
+// deterministic reply (couponStateLabel/couponLine ใน pipeline.ts) และในคำตอบที่ลูกค้าควรเห็น
+// จึงไม่ส่งเข้า context — payload ต่อคูปองเล็กลง ~43%
 function safeCoupon(c: any) {
   return {
     code: c.code,
@@ -95,21 +100,11 @@ function safeCoupon(c: any) {
     startsAt: c.startsAt,
     expiresAt: c.expiresAt,
     remainingRedemptions: c.remainingRedemptions,
-    customerUsedCount: c.customerUsedCount,
     subtotalOk: c.subtotalOk,
     discountPreview: c.discountPreview,
     available: c.available,
     reason: c.reason,
-    assigned: Boolean(c.assigned),
-    assignedAt: c.assignedAt ?? null,
-    source: c.source ?? null,
     state: c.state ?? "ASSIGNED",
-    reservedAt: c.reservedAt ?? null,
-    reservedOrderId: c.reservedOrderId ?? null,
-    redeemedAt: c.redeemedAt ?? null,
-    redeemedOrderId: c.redeemedOrderId ?? null,
-    expiredAt: c.expiredAt ?? null,
-    revokedAt: c.revokedAt ?? null,
   };
 }
 
@@ -119,14 +114,15 @@ function safeCoupon(c: any) {
 
 const searchProducts: BmsTool = {
   name: "search_products",
-  description: "ค้นหาสินค้าจากคำค้น (ชื่อ/keyword/หมวดหมู่) คืนรายการ sku/ชื่อ/ราคา ใช้เมื่อลูกค้าถามว่ามีสินค้าอะไรบ้าง",
+  description:
+    "Search products by keyword (name, keyword or category). Returns sku, name and price. Use when the customer asks what is available.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
     type: "object",
     properties: {
-      keyword: { type: "string", description: "คำค้น เช่นชื่อรุ่น/แบรนด์" },
-      category: { type: "string", description: "หมวดหมู่ (ถ้ามี)" },
+      keyword: { type: "string", description: "Search term, e.g. model name or brand." },
+      category: { type: "string", description: "Category, if the customer named one." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
@@ -152,12 +148,12 @@ const searchProducts: BmsTool = {
 
 const getProduct: BmsTool = {
   name: "get_product",
-  description: "ดูรายละเอียดสินค้า 1 ตัวจาก sku พร้อมไซซ์+สต็อกคงเหลือของแต่ละไซซ์",
+  description: "Get one product by sku, including every size and its remaining stock.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
     type: "object",
-    properties: { sku: { type: "string", description: "รหัสสินค้า sku" } },
+    properties: { sku: { type: "string", description: "Product sku." } },
     required: ["sku"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
@@ -166,7 +162,6 @@ const getProduct: BmsTool = {
     const p = items.find((x) => x.sku === sku) ?? items[0];
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
     const variants = await listVariants(ec.tenantId, p.sku);
-    const images = await listProductImages(ec.tenantId, p.sku);
     return {
       ok: true,
       data: {
@@ -177,7 +172,8 @@ const getProduct: BmsTool = {
         category: p.category,
         brand: p.brand,
         active: p.active,
-        images: images.map((im) => im.url).filter(Boolean),
+        // ไม่ส่ง images[] — โมเดลมองรูปไม่ได้ (เป็นแค่ URL) และลิงก์ที่ลูกค้าควรได้คือหน้า public
+        // /shop/{tenantSlug}/products/{sku} ไม่ใช่ URL ไฟล์ใน storage
         variants: variants.map((v) => ({
           size: v.size,
           available: Math.max(0, v.current_stock - v.reserved_stock),
@@ -190,16 +186,20 @@ const getProduct: BmsTool = {
 const listAvailableCouponsTool: BmsTool = {
   name: "list_available_coupons",
   description:
-    "ดูคูปอง active ที่ลูกค้าคนนี้ยังมีสิทธิ์ใช้ได้จริงตามเวลา/quota/per-customer/minimum ถ้าลูกค้าถามว่ามีคูปองอะไรหรือขอส่วนลด ให้เรียกทูลนี้ก่อนตอบ",
+    "List active coupons this customer is genuinely still eligible for, after the time window, quota, per-customer limit and minimum have been checked. Call this before answering when the customer asks about coupons or requests a discount.",
   surfaces: ["customer", "staff"],
   permission: "coupon.view",
   inputSchema: {
     type: "object",
     properties: {
-      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อคัดคูปองที่ยอดถึงขั้นต่ำและคำนวณส่วนลด preview" },
-      limit: { type: "integer", description: "จำนวนคูปองสูงสุดที่ต้องการแสดง (default 5, max 20)" },
-      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
-      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+      subtotal: {
+        type: "number",
+        description:
+          "Current cart subtotal, if known, to keep only coupons whose minimum is met and preview the discount.",
+      },
+      limit: { type: "integer", description: "Maximum coupons to return (default 5, max 20)." },
+      channel: { type: "string", description: "Customer channel (staff surface only)." },
+      customerRef: { type: "string", description: "Customer reference (staff surface only)." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
@@ -209,7 +209,7 @@ const listAvailableCouponsTool: BmsTool = {
       channel,
       customerRef,
       subtotal: optMoney(args, "subtotal"),
-      limit: optInt(args, "limit", 1) ?? 5,
+      limit: optInt(args, "limit", 1, 20) ?? 5,
     });
     return { ok: true, data: { coupons: coupons.map(safeCoupon) } };
   },
@@ -218,15 +218,19 @@ const listAvailableCouponsTool: BmsTool = {
 const listCustomerCouponsTool: BmsTool = {
   name: "list_customer_coupons",
   description:
-    "ดูคูปองใน wallet ของลูกค้าคนนี้โดยตรง พร้อมบอกว่าใบไหนยังใช้ได้ ใบไหนหมดอายุ/ยังไม่เริ่ม/ใช้ครบสิทธิ์ และเหลือส่วนลดประมาณเท่าไร ใช้เมื่อลูกค้าถามว่า 'ฉันมีคูปองอะไรบ้าง' หรือ 'ใบไหนใกล้หมดอายุ'",
+    "List this customer's own coupon wallet, showing which are usable and which are expired, not yet started or fully used, plus the discount still available. Use when the customer asks what coupons they have or which are expiring soon.",
   surfaces: ["customer", "staff"],
   permission: "coupon.view",
   inputSchema: {
     type: "object",
     properties: {
-      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อเช็กขั้นต่ำและคำนวณส่วนลด preview" },
-      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
-      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+      subtotal: {
+        type: "number",
+        description:
+          "Current cart subtotal, if known, to check minimums and preview the discount.",
+      },
+      channel: { type: "string", description: "Customer channel (staff surface only)." },
+      customerRef: { type: "string", description: "Customer reference (staff surface only)." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
@@ -244,16 +248,20 @@ const listCustomerCouponsTool: BmsTool = {
 const checkCouponTool: BmsTool = {
   name: "check_coupon",
   description:
-    "ตรวจโค้ดคูปองที่ลูกค้าระบุว่าลูกค้าคนนี้ใช้ได้ไหม ถ้าใช้ไม่ได้จะคืนคูปองทางเลือกที่ยังใช้ได้ ห้ามบอกว่าใช้ได้จนกว่าทูลนี้หรือ create_order ตรวจผ่าน และห้ามใช้ทูลนี้แทนการใช้คูปองจริงในออเดอร์",
+    "Check whether a coupon code the customer named is usable by this customer; if it is not, usable alternatives are returned. Never tell the customer a code works until this tool or create_order has approved it, and never treat this check as actually applying the coupon to an order.",
   surfaces: ["customer", "staff"],
   permission: "coupon.view",
   inputSchema: {
     type: "object",
     properties: {
-      code: { type: "string", description: "โค้ดคูปองที่ลูกค้าระบุ" },
-      subtotal: { type: "number", description: "ยอดสินค้าในตะกร้าปัจจุบัน ถ้ารู้ เพื่อเช็กขั้นต่ำและคำนวณ preview" },
-      channel: { type: "string", description: "ช่องทางลูกค้า (staff เท่านั้น)" },
-      customerRef: { type: "string", description: "อ้างอิงลูกค้า (staff เท่านั้น)" },
+      code: { type: "string", description: "The coupon code the customer gave." },
+      subtotal: {
+        type: "number",
+        description:
+          "Current cart subtotal, if known, to check the minimum and preview the discount.",
+      },
+      channel: { type: "string", description: "Customer channel (staff surface only)." },
+      customerRef: { type: "string", description: "Customer reference (staff surface only)." },
     },
     required: ["code"],
   },
@@ -279,14 +287,15 @@ const checkCouponTool: BmsTool = {
 
 const checkStockTool: BmsTool = {
   name: "check_stock",
-  description: "เช็คสต็อก+ราคาของสินค้าตามชื่อ/ไซซ์ ใช้เมื่อลูกค้าถามว่า 'มีไหม/เหลือกี่ชิ้น/ราคาเท่าไหร่'",
+  description:
+    "Check stock and price for a product by name and size. Use when the customer asks whether an item is in stock, how many are left, or what it costs.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
     type: "object",
     properties: {
-      product: { type: "string", description: "ชื่อ/คำค้นสินค้า" },
-      size: { type: "string", description: "ไซซ์ (ถ้าลูกค้าระบุ)" },
+      product: { type: "string", description: "Product name or search term." },
+      size: { type: "string", description: "Size, if the customer gave one." },
     },
     required: ["product"],
   },
@@ -301,13 +310,13 @@ const checkStockTool: BmsTool = {
 const getOrderStatus: BmsTool = {
   name: "get_order_status",
   description:
-    "ดูสถานะออร์เดอร์ ฝั่งลูกค้า: เรียกทันทีโดยไม่ต้องส่ง orderId เลย ระบบจะคืนออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ " +
-    "ห้ามถามลูกค้าว่าเลขออร์เดอร์อะไรก่อนเรียกทูลนี้ — เรียกก่อนแล้วค่อยดูผลว่ามีออร์เดอร์ไหม · ฝั่งแอดมิน: ส่ง orderId เพื่อดู journey เต็ม",
+    "Get order status. Customer surface: call it straight away with no orderId — the latest order for this customer is returned automatically. " +
+    "Never ask the customer for an order number before calling this; call first, then read the result to see whether an order exists. Staff surface: pass orderId for the full journey.",
   surfaces: ["customer", "staff"],
   permission: "order.view",
   inputSchema: {
     type: "object",
-    properties: { orderId: { type: "string", description: "รหัสออร์เดอร์ (แอดมินเท่านั้น)" } },
+    properties: { orderId: { type: "string", description: "Order id (staff surface only)." } },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     if (ec.surface === "customer") {
@@ -325,7 +334,7 @@ const getOrderStatus: BmsTool = {
 
 const listLowStockTool: BmsTool = {
   name: "list_low_stock",
-  description: "รายการสินค้าที่สต็อกต่ำกว่าจุดสั่งซื้อ (reorder point) — สำหรับแอดมินวางแผนสั่งของ",
+  description: "List products whose stock is below their reorder point — for staff planning what to restock.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: { type: "object", properties: {} },
@@ -337,7 +346,8 @@ const listLowStockTool: BmsTool = {
 
 const getInventorySummaryTool: BmsTool = {
   name: "get_inventory_summary",
-  description: "สรุปภาพรวมคลัง: จำนวน sku/ไซซ์, หน่วยรวม/จอง/พร้อมขาย, มูลค่าสต็อก, จำนวนสินค้าต่ำ/หมด",
+  description:
+    "Inventory overview: number of skus and sizes, total, reserved and available units, stock value, and how many items are low or out of stock.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: { type: "object", properties: {} },
@@ -346,7 +356,8 @@ const getInventorySummaryTool: BmsTool = {
 
 const getSalesSummaryTool: BmsTool = {
   name: "get_sales_summary",
-  description: "สรุปยอดขายตามช่วงวัน (default 30 วันล่าสุด) รายได้นับเฉพาะ PAID ขึ้นไป",
+  description:
+    "Sales summary for a date range (default: the last 30 days). Revenue counts only orders that reached PAID or later.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
@@ -365,7 +376,7 @@ const getSalesSummaryTool: BmsTool = {
 
 const getTopProductsTool: BmsTool = {
   name: "get_top_products",
-  description: "สินค้าขายดีตามช่วงวัน (ยอดขาย/จำนวนชิ้น)",
+  description: "Best-selling products for a date range (by revenue and units sold).",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
@@ -373,20 +384,21 @@ const getTopProductsTool: BmsTool = {
     properties: {
       from: { type: "string" },
       to: { type: "string" },
-      limit: { type: "integer", description: "จำนวนอันดับ (default 10)" },
+      limit: { type: "integer", description: "How many ranked products to return (default 10)." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const from = optString(args, "from") ?? null;
     const to = optString(args, "to") ?? null;
-    const limit = optInt(args, "limit") ?? 10;
+    const limit = optInt(args, "limit", 1, 50) ?? 10;
     return { ok: true, data: await getTopSellingProducts(ec.tenantId, from, to, limit) };
   },
 };
 
 const getDashboardTool: BmsTool = {
   name: "get_dashboard",
-  description: "ภาพรวมวันนี้: รายได้รวม/วันนี้, จำนวนออร์เดอร์, สินค้าใกล้หมด, ออร์เดอร์แยกสถานะ, สินค้า/ลูกค้าเด่น",
+  description:
+    "Today's overview: total and today's revenue, order count, products running low, orders broken down by status, and top products and customers.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: { type: "object", properties: {} },
@@ -395,7 +407,7 @@ const getDashboardTool: BmsTool = {
 
 const getCustomerTool: BmsTool = {
   name: "get_customer",
-  description: "ดูข้อมูลลูกค้า 1 คนจาก customerId (ยอดซื้อสะสม/จำนวนออร์เดอร์/แท็ก/โน้ต)",
+  description: "Get one customer by customerId (lifetime spend, order count, tags and notes).",
   surfaces: ["staff"],
   permission: "customer.view",
   inputSchema: {
@@ -413,7 +425,7 @@ const getCustomerTool: BmsTool = {
 
 const listCustomersTool: BmsTool = {
   name: "list_customers",
-  description: "ค้นหาลูกค้าจากชื่อ/เบอร์โทร",
+  description: "Search customers by name or phone number.",
   surfaces: ["staff"],
   permission: "customer.view",
   inputSchema: { type: "object", properties: { keyword: { type: "string" } } },
@@ -426,7 +438,7 @@ const listCustomersTool: BmsTool = {
 
 const customerOrdersTool: BmsTool = {
   name: "customer_orders",
-  description: "รายการออร์เดอร์ทั้งหมดของลูกค้า 1 คนจาก customerId",
+  description: "List every order belonging to one customer, by customerId.",
   surfaces: ["staff"],
   permission: "customer.view",
   inputSchema: {
@@ -442,7 +454,7 @@ const customerOrdersTool: BmsTool = {
 
 const listShipmentsTool: BmsTool = {
   name: "list_shipments",
-  description: "ค้นหา/ดูรายการการจัดส่ง (กรองด้วย orderId/สถานะได้)",
+  description: "Search or list shipments (can be filtered by orderId or status).",
   surfaces: ["staff"],
   permission: "shipping.view",
   inputSchema: {
@@ -466,7 +478,7 @@ const listShipmentsTool: BmsTool = {
 
 const getShipmentLabelTool: BmsTool = {
   name: "get_shipment_label",
-  description: "ข้อมูลสำหรับพิมพ์ใบปะหน้าพัสดุ (ผู้รับ/ที่อยู่/รายการ) จาก shipmentId",
+  description: "Data for printing a parcel label (recipient, address, items) by shipmentId.",
   surfaces: ["staff"],
   permission: "shipping.view",
   inputSchema: {
@@ -483,7 +495,7 @@ const getShipmentLabelTool: BmsTool = {
 
 const listPaymentsTool: BmsTool = {
   name: "list_payments",
-  description: "ค้นหา/ดูรายการชำระเงิน (กรองด้วย orderId/สถานะได้)",
+  description: "Search or list payments (can be filtered by orderId or status).",
   surfaces: ["staff"],
   permission: "payment.view",
   inputSchema: {
@@ -507,7 +519,7 @@ const listPaymentsTool: BmsTool = {
 
 const listPurchaseOrdersTool: BmsTool = {
   name: "list_purchase_orders",
-  description: "ค้นหา/ดูใบสั่งซื้อ (PO) ของร้าน",
+  description: "Search or list the shop's purchase orders (POs).",
   surfaces: ["staff"],
   permission: "purchase.view",
   inputSchema: { type: "object", properties: { keyword: { type: "string" } } },
@@ -519,7 +531,7 @@ const listPurchaseOrdersTool: BmsTool = {
 
 const getPurchaseOrderTool: BmsTool = {
   name: "get_purchase_order",
-  description: "ดูรายละเอียดใบสั่งซื้อ 1 ใบจาก poId",
+  description: "Get the full detail of one purchase order by poId.",
   surfaces: ["staff"],
   permission: "purchase.view",
   inputSchema: {
@@ -536,7 +548,7 @@ const getPurchaseOrderTool: BmsTool = {
 
 const listSuppliersTool: BmsTool = {
   name: "list_suppliers",
-  description: "รายชื่อซัพพลายเออร์ + ประวัติสั่งซื้อ",
+  description: "List suppliers together with their purchase history.",
   surfaces: ["staff"],
   permission: "purchase.view",
   inputSchema: { type: "object", properties: {} },
@@ -550,7 +562,7 @@ const listSuppliersTool: BmsTool = {
 const createOrderTool: BmsTool = {
   name: "create_order",
   description:
-    "สร้างออร์เดอร์ + จองสต็อก (atomic) จากรายการ sku+ไซซ์+จำนวน ใช้เมื่อลูกค้ายืนยันจะสั่งซื้อ ต้องมี sku จาก search_products/check_stock ก่อน",
+    "Create an order and reserve stock atomically from a list of sku, size and quantity. Use once the customer has confirmed the purchase. The sku must come from search_products or check_stock first.",
   surfaces: ["customer", "staff"],
   permission: "order.create",
   inputSchema: {
@@ -558,7 +570,7 @@ const createOrderTool: BmsTool = {
     properties: {
       items: {
         type: "array",
-        description: "รายการสินค้า",
+        description: "Line items.",
         items: {
           type: "object",
           properties: {
@@ -569,9 +581,9 @@ const createOrderTool: BmsTool = {
           required: ["sku", "size", "qty"],
         },
       },
-      channel: { type: "string", description: "ช่องทาง (แอดมินเท่านั้น, default web)" },
-      customerRef: { type: "string", description: "อ้างอิงลูกค้า (แอดมินเท่านั้น)" },
-      couponCode: { type: "string", description: "โค้ดส่วนลด (ถ้าลูกค้าระบุมา)" },
+      channel: { type: "string", description: "Channel (staff surface only, default web)." },
+      customerRef: { type: "string", description: "Customer reference (staff surface only)." },
+      couponCode: { type: "string", description: "Discount code, if the customer gave one." },
     },
     required: ["items"],
   },
@@ -600,18 +612,22 @@ const createOrderTool: BmsTool = {
 const submitPaymentTool: BmsTool = {
   name: "submit_payment",
   description:
-    "บันทึกการแจ้งชำระเงิน (สถานะ PENDING — ยังไม่ยืนยันเงินเข้า ต้องให้แอดมินตรวจสลิปก่อน) ใช้เมื่อลูกค้าแจ้งว่าโอนแล้ว " +
-    "ฝั่งลูกค้า (customer): ไม่ต้องรู้/ถาม orderId เลย — เว้นว่างไว้ได้ ระบบจะใช้ออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ " +
-    "แต่ต้องรู้ method (ช่องทางที่โอน) ก่อนเรียก ถ้าลูกค้าไม่ได้บอกว่าโอนผ่านช่องทางไหน ให้ถามยืนยัน 1 คำถามก่อน อย่าเดา",
+    "Record a customer payment notification (status PENDING — funds are NOT confirmed; an admin must verify the slip first). Use when the customer says they have transferred. " +
+    "Customer surface: never ask for or pass orderId — leave it empty and the latest order for this customer is used automatically. " +
+    "You must know `method` (the channel they transferred through) before calling. If the customer did not say which channel, ask exactly one confirming question first. Never guess.",
   surfaces: ["customer", "staff"],
   permission: "payment.submit",
   inputSchema: {
     type: "object",
     properties: {
-      orderId: { type: "string", description: "รหัสออร์เดอร์ — ฝั่งลูกค้าเว้นว่างได้ (ใช้ออร์เดอร์ล่าสุดอัตโนมัติ), ฝั่งแอดมินต้องระบุ" },
+      orderId: {
+        type: "string",
+        description:
+          "Order id. Customer surface may leave it empty (latest order is used automatically); staff surface must provide it.",
+      },
       method: { type: "string", enum: PAYMENT_METHODS as unknown as string[] },
-      amount: { type: "number", description: "ยอดที่โอน (เว้นได้ = ยอดรวมออร์เดอร์)" },
-      slipRef: { type: "string", description: "เลขอ้างอิง/เลขที่ธุรกรรม" },
+      amount: { type: "number", description: "Amount transferred (omit = order total)." },
+      slipRef: { type: "string", description: "Bank reference or transaction id." },
       note: { type: "string" },
     },
     required: ["method"],
@@ -650,8 +666,8 @@ const submitPaymentTool: BmsTool = {
 const reorderTool: BmsTool = {
   name: "reorder",
   description:
-    "สั่งซื้อซ้ำจากออร์เดอร์เก่า (จองสต็อกใหม่ ใช้ราคาปัจจุบัน) ใช้เมื่อลูกค้าบอก 'สั่งเหมือนเดิม' " +
-    "ฝั่งลูกค้าไม่ต้องถาม/ส่ง orderId ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ ฝั่งแอดมินต้องระบุ orderId",
+    "Repeat a previous order (reserves stock again, at current prices). Use when the customer says to order the same as before. " +
+    "Customer surface: never ask for or pass orderId — the customer's latest order is used automatically. Staff surface must pass orderId.",
   surfaces: ["customer", "staff"],
   permission: "order.create",
   inputSchema: {
@@ -659,7 +675,8 @@ const reorderTool: BmsTool = {
     properties: {
       orderId: {
         type: "string",
-        description: "รหัสออร์เดอร์เดิม — ฝั่งลูกค้าเว้นว่างได้ (ใช้ออร์เดอร์ล่าสุด), ฝั่งแอดมินต้องระบุ",
+        description:
+          "Source order id. Customer surface may leave it empty (latest order is used); staff surface must provide it.",
       },
     },
   },
@@ -690,7 +707,8 @@ const reorderTool: BmsTool = {
 
 const createShipmentTool: BmsTool = {
   name: "create_shipment",
-  description: "สร้างการจัดส่ง + ผูก carrier/tracking แล้วส่งจริง (order PACKING → SHIPPED + ตัดสต็อก)",
+  description:
+    "Create a shipment with its carrier and tracking number and actually dispatch it (order PACKING → SHIPPED, and stock is deducted).",
   surfaces: ["staff"],
   permission: "shipping.create",
   inputSchema: {
@@ -721,7 +739,7 @@ const createShipmentTool: BmsTool = {
 
 const updateTrackingTool: BmsTool = {
   name: "update_tracking",
-  description: "อัปเดตเลขพัสดุ/carrier ของการจัดส่ง",
+  description: "Update a shipment's tracking number or carrier.",
   surfaces: ["staff"],
   permission: "shipping.update",
   inputSchema: {
@@ -748,7 +766,7 @@ const updateTrackingTool: BmsTool = {
 
 const setShipmentStatusTool: BmsTool = {
   name: "set_shipment_status",
-  description: "เปลี่ยนสถานะการจัดส่ง (DELIVERED จะ complete ออร์เดอร์ให้)",
+  description: "Change a shipment's status (DELIVERED also completes the order).",
   surfaces: ["staff"],
   permission: "shipping.update",
   inputSchema: {
@@ -770,7 +788,7 @@ const setShipmentStatusTool: BmsTool = {
 
 const createPurchaseOrderTool: BmsTool = {
   name: "create_purchase_order",
-  description: "สร้างใบสั่งซื้อ (PO) จากซัพพลายเออร์ (ยังไม่ขยับสต็อกจนกว่าจะ receive)",
+  description: "Create a purchase order (PO) for a supplier (stock does not move until the goods are received).",
   surfaces: ["staff"],
   permission: "purchase.edit",
   inputSchema: {
@@ -815,7 +833,7 @@ const createPurchaseOrderTool: BmsTool = {
 
 const receivePurchaseOrderTool: BmsTool = {
   name: "receive_purchase_order",
-  description: "รับของเข้าสต็อกจากใบสั่งซื้อ (บางส่วน/ครบ) → เพิ่ม current_stock + STOCK_IN",
+  description: "Receive goods from a purchase order into stock, partially or in full → increases current_stock and records STOCK_IN.",
   surfaces: ["staff"],
   permission: "purchase.receive",
   inputSchema: {
@@ -846,7 +864,8 @@ const receivePurchaseOrderTool: BmsTool = {
 
 const upsertCustomerTool: BmsTool = {
   name: "upsert_customer",
-  description: "สร้าง/แก้ไขข้อมูลลูกค้า (ชื่อ/เบอร์/โน้ต/แท็ก) — ส่ง customerId เพื่อแก้ไข, ไม่ส่ง = สร้างใหม่",
+  description:
+    "Create or edit a customer (name, phone, note, tags) — pass customerId to edit an existing one; omit it to create a new one.",
   surfaces: ["staff"],
   permission: "customer.edit",
   inputSchema: {
@@ -873,7 +892,7 @@ const upsertCustomerTool: BmsTool = {
 
 const setCustomerTagsTool: BmsTool = {
   name: "set_customer_tags",
-  description: "ตั้งแท็กของลูกค้า (แทนที่ชุดเดิมทั้งหมด)",
+  description: "Set a customer's tags (replaces the whole existing set).",
   surfaces: ["staff"],
   permission: "customer.edit",
   inputSchema: {
@@ -895,7 +914,7 @@ const setCustomerTagsTool: BmsTool = {
 
 const assignConversationTool: BmsTool = {
   name: "assign_conversation",
-  description: "มอบหมายแชทให้ staff คนหนึ่ง (staff หลัก)",
+  description: "Assign a conversation to one staff member (as its primary owner).",
   surfaces: ["staff"],
   permission: "inbox.assign",
   inputSchema: {
@@ -913,7 +932,7 @@ const assignConversationTool: BmsTool = {
 
 const setConversationStatusTool: BmsTool = {
   name: "set_conversation_status",
-  description: "เปลี่ยนสถานะแชท (OPEN/PENDING/CLOSED)",
+  description: "Change a conversation's status (OPEN/PENDING/CLOSED).",
   surfaces: ["staff"],
   permission: "inbox.manage",
   inputSchema: {
@@ -935,7 +954,7 @@ const setConversationStatusTool: BmsTool = {
 
 const setConversationTagsTool: BmsTool = {
   name: "set_conversation_tags",
-  description: "ตั้งแท็กของแชท (แทนที่ชุดเดิม)",
+  description: "Set a conversation's tags (replaces the existing set).",
   surfaces: ["staff"],
   permission: "inbox.manage",
   inputSchema: {
@@ -957,7 +976,7 @@ const setConversationTagsTool: BmsTool = {
 
 const addNoteTool: BmsTool = {
   name: "add_note",
-  description: "เพิ่มโน้ตภายในของแชท (ลูกค้าไม่เห็น)",
+  description: "Add an internal note to a conversation (the customer never sees it).",
   surfaces: ["staff"],
   permission: "inbox.manage",
   inputSchema: {
@@ -976,7 +995,7 @@ const addNoteTool: BmsTool = {
 const verifyPaymentSlipTool: BmsTool = {
   name: "verify_payment_slip",
   description:
-    "ให้ AI ตรวจสลิป (OCR/vision) เทียบยอด — แนะนำเท่านั้น ไม่เปลี่ยนสถานะเงิน แอดมินยังต้องกดยืนยันเอง",
+    "Have AI check a payment slip (OCR/vision) against the amount due — advisory only: it does not change the payment status, and an admin must still confirm it themselves.",
   surfaces: ["staff"],
   permission: "payment.confirm",
   inputSchema: {
@@ -1006,7 +1025,9 @@ function proposalTool(cfg: {
 }): BmsTool {
   return {
     name: cfg.name,
-    description: cfg.description + " (ต้องให้มนุษย์กดยืนยันก่อนเสมอ — ทูลนี้แค่เสนอ ไม่ทำทันที)",
+    description:
+      cfg.description +
+      " (A human must always press Confirm first — this tool only proposes the action, it does not perform it immediately.)",
     surfaces: ["staff"],
     permission: cfg.permission,
     sensitive: true,
@@ -1032,7 +1053,7 @@ const idSchema = (label: string): BmsTool["inputSchema"] => ({
 const A3_TOOLS: BmsTool[] = [
   proposalTool({
     name: "confirm_payment",
-    description: "ยืนยันการชำระเงิน (PENDING → CONFIRMED + order → PAID)",
+    description: "Confirm a payment (PENDING → CONFIRMED, and the order → PAID).",
     mutation: "bmsConfirmPayment",
     permission: "payment.confirm",
     inputSchema: idSchema("paymentId"),
@@ -1041,7 +1062,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "reject_payment",
-    description: "ปฏิเสธการชำระเงิน (PENDING → REJECTED)",
+    description: "Reject a payment (PENDING → REJECTED).",
     mutation: "bmsRejectPayment",
     permission: "payment.confirm",
     inputSchema: {
@@ -1054,7 +1075,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "refund_payment",
-    description: "คืนเงิน (CONFIRMED → REFUNDED)",
+    description: "Refund a payment (CONFIRMED → REFUNDED).",
     mutation: "bmsRefundPayment",
     permission: "payment.refund",
     inputSchema: idSchema("paymentId"),
@@ -1063,7 +1084,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "cancel_order",
-    description: "ยกเลิกออร์เดอร์ (PENDING/PAID/PACKING → CANCELLED, คืน reserved)",
+    description: "Cancel an order (PENDING/PAID/PACKING → CANCELLED, releasing the reserved stock).",
     mutation: "bmsCancelOrder",
     permission: "order.cancel",
     inputSchema: idSchema("orderId"),
@@ -1072,7 +1093,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "return_order",
-    description: "คืนสินค้า (SHIPPED/COMPLETED → RETURNED, คืนสต็อก)",
+    description: "Return the goods of an order (SHIPPED/COMPLETED → RETURNED, putting the stock back).",
     mutation: "bmsReturnOrder",
     permission: "order.return",
     inputSchema: idSchema("orderId"),
@@ -1081,7 +1102,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "adjust_stock",
-    description: "ปรับสต็อก (บวก/ลบ) ของ sku+ไซซ์",
+    description: "Adjust stock up or down for a sku and size.",
     mutation: "bmsAdjustStock",
     permission: "stock.adjust",
     inputSchema: {
@@ -1089,7 +1110,7 @@ const A3_TOOLS: BmsTool[] = [
       properties: {
         sku: { type: "string" },
         size: { type: "string" },
-        delta: { type: "integer", description: "จำนวนที่ปรับ (+เพิ่ม / -ลด)" },
+        delta: { type: "integer", description: "Amount to adjust by (+ to add / - to remove)." },
         note: { type: "string" },
       },
       required: ["sku", "size", "delta"],
@@ -1104,7 +1125,8 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "merge_customers",
-    description: "ผสานลูกค้าซ้ำ (ย้ายทุกอย่างจาก mergeId ไป keepId แล้วลบ mergeId — ย้อนไม่ได้)",
+    description:
+      "Merge duplicate customers (moves everything from mergeId onto keepId, then deletes mergeId — this cannot be undone).",
     mutation: "bmsMergeCustomers",
     permission: "customer.edit",
     inputSchema: {
@@ -1117,7 +1139,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "cancel_purchase_order",
-    description: "ยกเลิกใบสั่งซื้อ (OPEN/PARTIAL → CANCELLED)",
+    description: "Cancel a purchase order (OPEN/PARTIAL → CANCELLED).",
     mutation: "bmsCancelPurchaseOrder",
     permission: "purchase.cancel",
     inputSchema: idSchema("poId"),
@@ -1126,7 +1148,7 @@ const A3_TOOLS: BmsTool[] = [
   }),
   proposalTool({
     name: "cancel_shipment",
-    description: "ยกเลิกการจัดส่ง",
+    description: "Cancel a shipment.",
     mutation: "bmsCancelShipment",
     permission: "shipping.update",
     inputSchema: idSchema("shipmentId"),
@@ -1141,7 +1163,8 @@ const A3_TOOLS: BmsTool[] = [
 
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
-  description: "ข้อมูลร้าน: ชื่อ/รายละเอียด/ที่อยู่/เบอร์โทร/เวลาเปิด-ปิด/นโยบายจัดส่ง-คืนสินค้า ใช้ตอบคำถามทั่วไปของลูกค้า",
+  description:
+    "Shop information: name, description, address, phone, opening hours, and the shipping and return policies. Use for the general questions customers ask most.",
   surfaces: ["customer", "staff"],
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
@@ -1163,7 +1186,8 @@ const getStoreInfoTool: BmsTool = {
 
 const getPaymentInfoTool: BmsTool = {
   name: "get_payment_info",
-  description: "ช่องทาง/บัญชีรับชำระเงินของร้าน (โอนธนาคาร/พร้อมเพย์) ใช้เมื่อลูกค้าถามว่าโอนเข้าบัญชีไหน",
+  description:
+    "The shop's own payment channels and receiving accounts (bank transfer, PromptPay). Use when the customer asks which account to transfer to.",
   surfaces: ["customer", "staff"],
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
@@ -1174,11 +1198,17 @@ const getPaymentInfoTool: BmsTool = {
 
 const getShippingEstimateTool: BmsTool = {
   name: "get_shipping_estimate",
-  description: "ประเมินค่าส่ง/ระยะเวลาจัดส่งโดยประมาณจากที่ร้านตั้งไว้ (ส่งยอดสั่งซื้อมาด้วยเพื่อเช็คโปรส่งฟรี)",
+  description:
+    "Estimate shipping cost and delivery time from the rates the shop configured. Pass the order subtotal so any free-shipping threshold is applied.",
   surfaces: ["customer", "staff"],
   inputSchema: {
     type: "object",
-    properties: { subtotal: { type: "number", description: "ยอดสั่งซื้อ (ถ้ามี — ใช้เช็คส่งฟรี)" } },
+    properties: {
+      subtotal: {
+        type: "number",
+        description: "Order subtotal, if known, used to check free shipping.",
+      },
+    },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const subtotal = typeof args.subtotal === "number" ? args.subtotal : null;
@@ -1192,7 +1222,7 @@ const getShippingEstimateTool: BmsTool = {
 
 const generateInvoiceTool: BmsTool = {
   name: "generate_invoice",
-  description: "สร้างใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (รายการ + ยอด snapshot) จาก orderId",
+  description: "Generate an invoice or receipt from a real order by orderId (line items and totals from the order's snapshot).",
   surfaces: ["staff"],
   permission: "order.view",
   inputSchema: { type: "object", properties: { orderId: { type: "string" } }, required: ["orderId"] },
@@ -1205,7 +1235,8 @@ const generateInvoiceTool: BmsTool = {
 
 const generateQuotationTool: BmsTool = {
   name: "generate_quotation",
-  description: "สร้างใบเสนอราคาจากรายการสินค้า (ตีราคาปัจจุบัน + ค่าส่งประเมิน ยังไม่ผูกออร์เดอร์/ไม่จองสต็อก)",
+  description:
+    "Generate a quotation from a list of items (priced at current prices plus estimated shipping; it is not tied to any order and reserves no stock).",
   surfaces: ["staff"],
   permission: "order.view",
   inputSchema: {
@@ -1236,48 +1267,59 @@ const generateQuotationTool: BmsTool = {
 
 const forecastDemandTool: BmsTool = {
   name: "forecast_demand",
-  description: "คาดการณ์ความต้องการสินค้าต่อ sku ในอนาคต (heuristic จากค่าเฉลี่ยยอดขายย้อนหลัง — ไม่ใช่ตัวเลขรับประกัน)",
+  description:
+    "Forecast future demand per sku (heuristic, based on average past sales — not guaranteed figures).",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
     type: "object",
     properties: {
-      windowDays: { type: "integer", description: "ช่วงข้อมูลย้อนหลัง (default 30)" },
-      horizonDays: { type: "integer", description: "คาดการณ์ล่วงหน้ากี่วัน (default 30)" },
+      windowDays: { type: "integer", description: "How many days of past data to use (default 30)." },
+      horizonDays: { type: "integer", description: "How many days ahead to forecast (default 30)." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await forecastDemand(ec.tenantId, optInt(args, "windowDays") ?? 30, optInt(args, "horizonDays") ?? 30);
+    const data = await forecastDemand(
+      ec.tenantId,
+      optInt(args, "windowDays", 1, 365) ?? 30,
+      optInt(args, "horizonDays", 1, 365) ?? 30
+    );
     return { ok: true, data };
   },
 };
 
 const predictStockOutTool: BmsTool = {
   name: "predict_stockout",
-  description: "ประเมินว่าแต่ละไซซ์จะหมดสต็อกในกี่วัน จาก velocity ล่าสุด (heuristic — เรียงเสี่ยงสุดก่อน)",
+  description:
+    "Estimate how many days until each size runs out of stock, based on recent sales velocity (heuristic — highest risk listed first).",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: { type: "object", properties: { windowDays: { type: "integer" } } },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await predictStockOut(ec.tenantId, optInt(args, "windowDays") ?? 30);
+    const data = await predictStockOut(ec.tenantId, optInt(args, "windowDays", 1, 365) ?? 30);
     return { ok: true, data };
   },
 };
 
 const suggestPurchaseOrderTool: BmsTool = {
   name: "suggest_purchase_order",
-  description: "เสนอจำนวนที่ควรสั่งซื้อเพื่อให้มีของพอขายตามจำนวนวันที่กำหนด (heuristic — ต้องรีวิวก่อนสั่งจริง)",
+  description:
+    "Suggest how much to purchase so stock covers a given number of days of sales (heuristic — must be reviewed before ordering for real).",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
     type: "object",
     properties: {
       windowDays: { type: "integer" },
-      coverageDays: { type: "integer", description: "อยากให้มีของพอขายกี่วัน (default 30)" },
+      coverageDays: { type: "integer", description: "How many days of sales the stock should cover (default 30)." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await suggestPurchaseOrder(ec.tenantId, optInt(args, "windowDays") ?? 30, optInt(args, "coverageDays") ?? 30);
+    const data = await suggestPurchaseOrder(
+      ec.tenantId,
+      optInt(args, "windowDays", 1, 365) ?? 30,
+      optInt(args, "coverageDays", 1, 365) ?? 30
+    );
     return { ok: true, data };
   },
 };
@@ -1288,7 +1330,7 @@ const suggestPurchaseOrderTool: BmsTool = {
 
 const detectLanguageTool: BmsTool = {
   name: "detect_language",
-  description: "ตรวจภาษาของข้อความ (th/en/other) แบบ heuristic",
+  description: "Detect the language of a text (th/en/other) heuristically.",
   surfaces: ["customer", "staff"],
   inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
   execute: async (args): Promise<ToolResult> => {
@@ -1307,7 +1349,8 @@ const detectLanguageTool: BmsTool = {
 
 const classifyIntentTool: BmsTool = {
   name: "classify_intent",
-  description: "จำแนกเจตนาของข้อความลูกค้า (CHECK_STOCK/CONFIRM_ORDER/GREETING/UNKNOWN) + entities แบบ rule-based",
+  description:
+    "Classify the intent of a customer message (CHECK_STOCK/CONFIRM_ORDER/GREETING/UNKNOWN) and extract entities, rule-based.",
   surfaces: ["staff"],
   inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
   execute: async (args): Promise<ToolResult> => {
@@ -1318,7 +1361,7 @@ const classifyIntentTool: BmsTool = {
 
 const summarizeConversationTool: BmsTool = {
   name: "summarize_conversation",
-  description: "ดึงข้อความล่าสุดของแชทหนึ่ง (สำหรับสรุป) จาก conversationId",
+  description: "Fetch the latest messages of one conversation by conversationId, for summarizing.",
   surfaces: ["staff"],
   permission: "inbox.view",
   inputSchema: { type: "object", properties: { conversationId: { type: "string" } }, required: ["conversationId"] },
@@ -1333,7 +1376,8 @@ const summarizeConversationTool: BmsTool = {
 
 const recommendProductsTool: BmsTool = {
   name: "recommend_products",
-  description: "ดึงสินค้าที่น่าจะแนะนำ: ถ้ามี keyword ค้นตามคำนั้น ไม่งั้นคืนสินค้าขายดี (ให้ผู้ตอบเลือกแนะนำต่อ)",
+  description:
+    "Fetch candidate products to recommend: searches by keyword when one is given, otherwise returns best sellers, for the responder to choose from.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: { type: "object", properties: { keyword: { type: "string" } } },
@@ -1358,7 +1402,7 @@ const recommendProductsTool: BmsTool = {
 const sendCustomerMessageTool: BmsTool = proposalTool({
   name: "send_customer_message",
   description:
-    "ส่งข้อความเชิงรุกหาลูกค้าในแชท (เฉพาะช่องทางที่ push ได้ เช่น LINE/Facebook/Instagram — ช่องอื่นจะบันทึกแต่ไม่ push)",
+    "Send a proactive message to the customer in a conversation (only on channels that support push, e.g. LINE/Facebook/Instagram — other channels record the message but do not push it).",
   mutation: "bmsSendMessage",
   permission: "inbox.reply",
   inputSchema: {

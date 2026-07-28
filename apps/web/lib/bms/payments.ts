@@ -13,9 +13,12 @@
 
 import path from "path";
 import { readFile } from "fs/promises";
+import sharp from "sharp";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { STORAGE_DIR } from "@/lib/storage";
+import { resolveAiCredentials } from "./ai";
+import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
 
@@ -236,7 +239,19 @@ export type SlipVerification = {
   checkedAt: string;
 };
 
-/** แปลง /api/files/<id> → { buffer, mediaType } (อ่านจาก STORAGE_DIR) */
+// Claude มองรูปเป็น patch ขนาด 28×28 px = 1 visual token ⇒ ต้นทุน = ⌈w/28⌉ × ⌈h/28⌉
+// Haiku 4.5 อยู่ tier มาตรฐาน เพดาน 1,568 visual token (รูปใหญ่กว่านี้ API ย่อเองอยู่แล้ว)
+// ย่อให้พอดีเพดานนี้ฝั่งเราจึงไม่ได้ลดความละเอียดที่โมเดลเห็นเลย แต่ตัดขนาด byte ที่ส่งลงมาก
+const VISUAL_TOKEN_PATCH_PX = 28;
+const MAX_VISUAL_TOKENS = 1568;
+const MAX_IMAGE_PIXELS = MAX_VISUAL_TOKENS * VISUAL_TOKEN_PATCH_PX * VISUAL_TOKEN_PATCH_PX;
+// base64 พองขึ้น ~4/3 และ Claude API รับไม่เกิน 10MB ต่อรูป — ต่ำกว่านี้ถือว่าส่งได้ปลอดภัย
+const SAFE_RAW_BYTES = 4 * 1024 * 1024;
+
+const visualTokensFor = (w: number, h: number) =>
+  Math.ceil(w / VISUAL_TOKEN_PATCH_PX) * Math.ceil(h / VISUAL_TOKEN_PATCH_PX);
+
+/** แปลง /api/files/<id> → { base64, mediaType } (อ่านจาก STORAGE_DIR) */
 async function loadSlipImage(slipUrl: string): Promise<{ base64: string; mediaType: string } | null> {
   const m = slipUrl.match(/\/api\/files\/(\d+)/);
   if (!m) return null;
@@ -249,21 +264,76 @@ async function loadSlipImage(slipUrl: string): Promise<{ base64: string; mediaTy
   const { relpath, mimetype } = res.rows[0];
   const mediaType = mimetype || "image/jpeg";
   if (!mediaType.startsWith("image/")) return null;
+
+  let buf: Buffer;
   try {
-    const buf = await readFile(path.join(STORAGE_DIR, relpath));
-    return { base64: buf.toString("base64"), mediaType };
+    buf = await readFile(path.join(STORAGE_DIR, relpath));
   } catch {
+    return null;
+  }
+
+  try {
+    const image = sharp(buf, { failOn: "none" });
+    const meta = await image.metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    const pixels = width * height;
+    // เล็กและอยู่ในเพดานอยู่แล้ว → ส่งไฟล์เดิมไม่แตะต้อง (ไม่ re-encode = ไม่เสี่ยงเสียความคมของตัวอักษร)
+    if (
+      pixels > 0 &&
+      visualTokensFor(width, height) <= MAX_VISUAL_TOKENS &&
+      buf.byteLength <= SAFE_RAW_BYTES
+    ) {
+      return { base64: buf.toString("base64"), mediaType };
+    }
+    const scale = pixels > MAX_IMAGE_PIXELS ? Math.sqrt(MAX_IMAGE_PIXELS / pixels) : 1;
+    // ปัดกล่องเป้าหมายลงให้เป็นจำนวนเท่าของ 28 — พอขอบกล่องหารด้วย 28 ลงตัว ⌈⌉ จะไม่ปัดขึ้นเกิน
+    // งบอีก และ fit:"inside" การันตีว่าผลลัพธ์ไม่เกินกล่อง ⇒ อยู่ในงบ 1,568 แน่นอนทุกสัดส่วนภาพ
+    // (จำเป็นสำหรับภาพสัดส่วนสุดขั้ว เช่นสลิปยาว 500×6000 ที่การคุมแค่จำนวนพิกเซลรวมยังล้น)
+    const boxFor = (value: number) =>
+      Math.max(VISUAL_TOKEN_PATCH_PX, Math.floor((value * scale) / VISUAL_TOKEN_PATCH_PX) * VISUAL_TOKEN_PATCH_PX);
+    const resized = await image
+      .rotate() // เคารพ EXIF orientation ก่อนย่อ ไม่งั้นสลิปจากมือถืออาจตะแคง
+      .resize({
+        width: boxFor(width || 1),
+        height: boxFor(height || 1),
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      // q90 ใกล้ lossless พอสำหรับ OCR ตัวเลขบนสลิป แต่เล็กกว่า PNG ของรูปถ่ายหลายเท่า
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    // ยืนยันกับขนาดที่ออกมาจริง ไม่เชื่อค่าที่ขอไป (fit:"inside" รักษาสัดส่วน อาจได้ไม่ตรงกล่องเป๊ะ)
+    const out = await sharp(resized).metadata();
+    const outTokens = visualTokensFor(out.width ?? 1, out.height ?? 1);
+    if (outTokens > MAX_VISUAL_TOKENS) {
+      console.warn(
+        `[BMS] slip image still ${outTokens} visual tokens after downscale — API will downscale further`
+      );
+    }
+    return { base64: resized.toString("base64"), mediaType: "image/jpeg" };
+  } catch (err) {
+    console.error("[BMS] slip image downscale failed:", err);
+    // ย่อไม่ได้ (ไฟล์เสีย/ฟอร์แมตแปลก) — ส่งไฟล์เดิมได้เฉพาะตอนที่มั่นใจว่าไม่เกินเพดาน 10MB
+    // ถ้าใหญ่เกินก็ยอมตกไป heuristic ให้คนตรวจ ดีกว่าโดน API ปฏิเสธทั้ง request
+    if (buf.byteLength <= SAFE_RAW_BYTES) return { base64: buf.toString("base64"), mediaType };
     return null;
   }
 }
 
-async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipExtract> {
-  const model = process.env.BMS_AI_MODEL || "claude-haiku-4-5-20251001";
+// credentials ต้องมาจาก resolveAiCredentials() เท่านั้น (BYOK → shared+quota) — ห้ามอ่าน
+// process.env.ANTHROPIC_API_KEY ที่นี่ ไม่งั้น vision call นี้จะไม่ถูกนับใน quota/รายงานของร้าน
+async function claudeReadSlip(
+  base64: string,
+  mediaType: string,
+  creds: { apiKey: string; model: string }
+): Promise<SlipExtract & { inputTokens: number; outputTokens: number }> {
+  const model = creds.model;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
+      "x-api-key": creds.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
@@ -285,7 +355,10 @@ async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipEx
     }),
   });
   if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-  const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+  const json = (await resp.json()) as {
+    content?: Array<{ text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
   const text = json.content?.[0]?.text?.trim() ?? "";
   const jsonStr = text.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
   const parsed = JSON.parse(jsonStr);
@@ -294,6 +367,8 @@ async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipEx
     date: parsed.date ?? null,
     ref: parsed.ref ?? null,
     bank: parsed.bank ?? null,
+    inputTokens: Number(json.usage?.input_tokens ?? 0),
+    outputTokens: Number(json.usage?.output_tokens ?? 0),
   };
 }
 
@@ -309,13 +384,39 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
 
   let result: SlipVerification;
 
-  const img = process.env.ANTHROPIC_API_KEY && pay.rows[0].slip_url
-    ? await loadSlipImage(pay.rows[0].slip_url)
+  // เกิน quota / ไม่มี key → ตกไป heuristic (verified:false, ให้คนตรวจเอง) ซึ่งเป็นพฤติกรรม
+  // ที่ปลอดภัยอยู่แล้วสำหรับเงิน — ไม่เคย auto-verify โดยไม่ได้อ่านสลิปจริง
+  const creds = pay.rows[0].slip_url
+    ? await resolveAiCredentials(tenantId, {
+        surface: "staff",
+        feature: "payment_slip_ocr",
+        provider: "anthropic",
+        meta: { paymentId },
+      })
     : null;
+  const img = creds && pay.rows[0].slip_url ? await loadSlipImage(pay.rows[0].slip_url) : null;
+  // quota ถูกตัดไปแล้วตอน resolve — ถ้าโหลดรูปไม่ได้ต้องปิด event เป็น fallback ไม่ปล่อยค้าง
+  if (creds?.usageEventId && !img) {
+    await finalizeAiUsageEvent(creds.usageEventId, {
+      status: "fallback",
+      errorMessage: "slip image unavailable",
+    });
+  }
 
-  if (img) {
+  if (img && creds) {
     try {
-      const extracted = await claudeReadSlip(img.base64, img.mediaType);
+      const { inputTokens, outputTokens, ...extracted } = await claudeReadSlip(
+        img.base64,
+        img.mediaType,
+        creds
+      );
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "completed",
+          inputTokens,
+          outputTokens,
+        });
+      }
       const amountMatch = extracted.amount != null && Math.abs(extracted.amount - expectedAmount) < 0.01;
       result = {
         method: "ai",
@@ -330,6 +431,12 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
       };
     } catch (err) {
       console.error("[BMS] slip AI verify failed:", err);
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "failed",
+          errorMessage: err instanceof Error ? err.message : "slip ocr failed",
+        });
+      }
       result = {
         method: "heuristic", extracted: null, expectedAmount, amountMatch: false,
         verified: false, reason: "อ่านสลิปด้วย AI ไม่สำเร็จ — กรุณาตรวจสอบด้วยตนเอง", checkedAt,

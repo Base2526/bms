@@ -60,6 +60,43 @@ Unambiguous own-order status, payment-submission, reorder, and fully confirmed s
 flows are server-routed through `runApprovedTool()` before provider inference; this preserves the
 same tool authorization/audit guarantees while removing model tool-selection variance.
 
+The runtime marks two prompt-cache breakpoints: the end of the filtered tool definitions and the end
+of the system prompt. Both blocks must be byte-identical across requests from the same shop, so
+anything that varies per conversation — currently the order slot memory — is sent as a second system
+block placed *after* the breakpoint (`volatileSystem`), where it can change without invalidating the
+cached prefix. Usage events store total logical input tokens while estimated cost applies Anthropic's
+separate regular-input, cache-write, and cache-read rates.
+
+Which breakpoint actually fires depends on the surface, because a prefix below the model's minimum is
+skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
+`claude-haiku-4-5-20251001`:
+
+| Surface | Tools block | Tools + system | Tool-only breakpoint |
+| --- | --- | --- | --- |
+| Customer (15 tools) | 2,545 | 4,754 | below minimum, does not fire |
+| Staff (58 tools, Administrator) | 6,989 | — | fires |
+
+Staff figures are for a role holding every permission; `staffTools(perms)` filters by RBAC, so a
+narrower role sends a smaller — and separately cached — tool block.
+
+The customer surface therefore relies on the tools + system breakpoint, and its ~16% headroom over
+the minimum is the reason `buildCustomerSystem()` must not be shortened without re-measuring. Confirm
+caching is live by checking `cache_read_input_tokens > 0` on the usage event — never assume from the
+absence of an error.
+
+### Tool description language
+
+Tool `description` and per-field descriptions are written in **English**, while the system prompt and
+every customer-facing reply stay **Thai**. This is a token decision, not a style one: Thai barely
+merges under the tokenizer and costs roughly 3.2–4.6 tokens per character against 0.78 for English,
+so the same rules in English are ~3.7x cheaper even when the English text is longer in characters.
+Translating the tool definitions cut the customer block from 14,829 to 2,545 tokens and the full staff
+block from 20,517 to 6,989. Everything the model reads *about* a tool is English; everything a person
+reads — the system prompt, `execute()` error strings, proposal-card `summary:` text — stays Thai. Brand voice is
+unaffected because it is enforced by the Thai system prompt and `sanitizeCustomerReply()`, neither of
+which the model sees as part of a tool schema. Keep new tool descriptions in English; keep anything
+the customer reads in Thai.
+
 ## Standing rules that constrain every prompt/tool interaction
 
 From [../business/](../business/) and [CLAUDE.md](../../CLAUDE.md) — these apply regardless of
