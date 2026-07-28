@@ -22,6 +22,8 @@
 
 import { query } from "@/lib/db";
 import crypto from "crypto";
+import { resolveAiCredentials } from "./ai";
+import { finalizeAiUsageEvent } from "./aiUsage";
 import { listCustomerCouponWallet } from "./coupons";
 import { resolveActiveCustomerId } from "./customers";
 
@@ -475,13 +477,20 @@ function templateSummary(facts: CustomerFacts): string {
   return lines.join("\n");
 }
 
-async function claudeSummarize(facts: CustomerFacts): Promise<string> {
-  const model = process.env.BMS_AI_MODEL || "claude-haiku-4-5-20251001";
+type SummarizeResult = { text: string; inputTokens: number; outputTokens: number };
+
+// รับ credentials มาจาก resolveAiCredentials() เท่านั้น — ห้ามอ่าน process.env.ANTHROPIC_API_KEY
+// ตรงนี้เอง ไม่งั้นร้านที่ตั้ง BYOK จะไม่ได้ใช้ key ตัวเอง และ usage จะไม่ถูกนับใน quota/รายงาน
+async function claudeSummarize(
+  facts: CustomerFacts,
+  creds: { apiKey: string; model: string }
+): Promise<SummarizeResult> {
+  const model = creds.model;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
+      "x-api-key": creds.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
@@ -501,10 +510,17 @@ async function claudeSummarize(facts: CustomerFacts): Promise<string> {
     }),
   });
   if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-  const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+  const json = (await resp.json()) as {
+    content?: Array<{ text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
   const text = json.content?.[0]?.text?.trim();
   if (!text) throw new Error("Claude empty reply");
-  return text;
+  return {
+    text,
+    inputTokens: Number(json.usage?.input_tokens ?? 0),
+    outputTokens: Number(json.usage?.output_tokens ?? 0),
+  };
 }
 
 async function buildCustomerFacts(tenantId: string, customerId: string): Promise<CustomerFacts | null> {
@@ -551,12 +567,40 @@ export async function getCustomerInsights(tenantId: string, customerId: string) 
     return { summary: row.summary.text as string, generatedAt: jIso(row.generated_at), cached: true };
   }
 
-  const summaryText = process.env.ANTHROPIC_API_KEY
-    ? await claudeSummarize(facts).catch((err) => {
-        console.error("[BMS] customer insight AI failed, fallback to template:", err);
-        return templateSummary(facts);
-      })
-    : templateSummary(facts);
+  // BYOK → shared key (นับ quota) → template — เส้นทางเดียวกับ generateResponse()/tool loop
+  // เดิมจุดนี้อ่าน process.env.ANTHROPIC_API_KEY ตรง ๆ ทำให้ค่าใช้จ่ายไม่ถูกนับที่ไหนเลย
+  const creds = await resolveAiCredentials(tenantId, {
+    surface: "staff",
+    feature: "customer_insights",
+    provider: "anthropic",
+    meta: { customerId },
+  });
+  let summaryText: string;
+  if (creds) {
+    try {
+      const result = await claudeSummarize(facts, creds);
+      summaryText = result.text;
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "completed",
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        });
+      }
+    } catch (err) {
+      console.error("[BMS] customer insight AI failed, fallback to template:", err);
+      summaryText = templateSummary(facts);
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "failed",
+          errorMessage: err instanceof Error ? err.message : "customer insight failed",
+        });
+      }
+    }
+  } else {
+    // ไม่มี key หรือเกิน quota → template (พฤติกรรมเดิมของเคส "ไม่มี key")
+    summaryText = templateSummary(facts);
+  }
 
   const generatedAt = new Date().toISOString();
   await query(

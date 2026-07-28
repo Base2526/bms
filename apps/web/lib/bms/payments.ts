@@ -16,6 +16,8 @@ import { readFile } from "fs/promises";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { STORAGE_DIR } from "@/lib/storage";
+import { resolveAiCredentials } from "./ai";
+import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
 
@@ -257,13 +259,19 @@ async function loadSlipImage(slipUrl: string): Promise<{ base64: string; mediaTy
   }
 }
 
-async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipExtract> {
-  const model = process.env.BMS_AI_MODEL || "claude-haiku-4-5-20251001";
+// credentials ต้องมาจาก resolveAiCredentials() เท่านั้น (BYOK → shared+quota) — ห้ามอ่าน
+// process.env.ANTHROPIC_API_KEY ที่นี่ ไม่งั้น vision call นี้จะไม่ถูกนับใน quota/รายงานของร้าน
+async function claudeReadSlip(
+  base64: string,
+  mediaType: string,
+  creds: { apiKey: string; model: string }
+): Promise<SlipExtract & { inputTokens: number; outputTokens: number }> {
+  const model = creds.model;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
+      "x-api-key": creds.apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
@@ -285,7 +293,10 @@ async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipEx
     }),
   });
   if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-  const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+  const json = (await resp.json()) as {
+    content?: Array<{ text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
   const text = json.content?.[0]?.text?.trim() ?? "";
   const jsonStr = text.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
   const parsed = JSON.parse(jsonStr);
@@ -294,6 +305,8 @@ async function claudeReadSlip(base64: string, mediaType: string): Promise<SlipEx
     date: parsed.date ?? null,
     ref: parsed.ref ?? null,
     bank: parsed.bank ?? null,
+    inputTokens: Number(json.usage?.input_tokens ?? 0),
+    outputTokens: Number(json.usage?.output_tokens ?? 0),
   };
 }
 
@@ -309,13 +322,39 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
 
   let result: SlipVerification;
 
-  const img = process.env.ANTHROPIC_API_KEY && pay.rows[0].slip_url
-    ? await loadSlipImage(pay.rows[0].slip_url)
+  // เกิน quota / ไม่มี key → ตกไป heuristic (verified:false, ให้คนตรวจเอง) ซึ่งเป็นพฤติกรรม
+  // ที่ปลอดภัยอยู่แล้วสำหรับเงิน — ไม่เคย auto-verify โดยไม่ได้อ่านสลิปจริง
+  const creds = pay.rows[0].slip_url
+    ? await resolveAiCredentials(tenantId, {
+        surface: "staff",
+        feature: "payment_slip_ocr",
+        provider: "anthropic",
+        meta: { paymentId },
+      })
     : null;
+  const img = creds && pay.rows[0].slip_url ? await loadSlipImage(pay.rows[0].slip_url) : null;
+  // quota ถูกตัดไปแล้วตอน resolve — ถ้าโหลดรูปไม่ได้ต้องปิด event เป็น fallback ไม่ปล่อยค้าง
+  if (creds?.usageEventId && !img) {
+    await finalizeAiUsageEvent(creds.usageEventId, {
+      status: "fallback",
+      errorMessage: "slip image unavailable",
+    });
+  }
 
-  if (img) {
+  if (img && creds) {
     try {
-      const extracted = await claudeReadSlip(img.base64, img.mediaType);
+      const { inputTokens, outputTokens, ...extracted } = await claudeReadSlip(
+        img.base64,
+        img.mediaType,
+        creds
+      );
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "completed",
+          inputTokens,
+          outputTokens,
+        });
+      }
       const amountMatch = extracted.amount != null && Math.abs(extracted.amount - expectedAmount) < 0.01;
       result = {
         method: "ai",
@@ -330,6 +369,12 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
       };
     } catch (err) {
       console.error("[BMS] slip AI verify failed:", err);
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "failed",
+          errorMessage: err instanceof Error ? err.message : "slip ocr failed",
+        });
+      }
       result = {
         method: "heuristic", extracted: null, expectedAmount, amountMatch: false,
         verified: false, reason: "อ่านสลิปด้วย AI ไม่สำเร็จ — กรุณาตรวจสอบด้วยตนเอง", checkedAt,
