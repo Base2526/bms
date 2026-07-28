@@ -1,9 +1,12 @@
 'use client';
 import { gql, useLazyQuery, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Drawer, Input, Modal, Select, Space, Table, Tag, Typography, message, Descriptions } from "antd";
+import { Alert, Button, Card, Checkbox, Drawer, Input, Modal, Select, Space, Table, Tag, Typography, message, Descriptions } from "antd";
 import { useMemo, useState } from "react";
 import { ReloadOutlined, DiffOutlined, FileTextOutlined } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 const KIND_OPTIONS = [
   { value: "products", label: "Products" },
@@ -74,6 +77,7 @@ function entityLabel(kind: string, snapshot: any): string {
 
 export default function Page() {
   const { can } = useBmsPermissions();
+  const isMobile = useIsMobile();
   const [kind, setKind] = useState<"products" | "orders" | "payments" | "shipments" | "purchase" | "purchaseItems" | "coupons">("products");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -129,6 +133,23 @@ export default function Page() {
     if (res?.data?.bmsRevisionDetail) setDetail(res.data.bmsRevisionDetail); // อัปเดตด้วยข้อมูลสด
   };
 
+  // เลือก compare ได้เฉพาะ 2 เวอร์ชันของ entity เดียวกัน (diff ข้ามรายการไม่มีความหมาย)
+  // และเลือกได้ไม่เกิน 2 — เดิมกดตัวที่ 3 ได้แต่ระบบทิ้งเงียบ ๆ (slice(0,2)) ตอนนี้ปิด checkbox ให้เห็นเลย
+  const canSelectRevision = (row: any) => {
+    const id = String(row.id);
+    if (selectedIds.includes(id)) return true;
+    if (selectedIds.length >= 2) return false;
+    if (selectedIds.length === 0) return true;
+    const anchor = rows.find((r: any) => String(r.id) === selectedIds[0]);
+    return !!anchor && String(anchor.entityId ?? "") === String(row.entityId ?? "");
+  };
+  const toggleSelectRevision = (row: any) => {
+    const id = String(row.id);
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 2 ? prev : [...prev, id]
+    );
+  };
+
   const onCompare = async () => {
     if (selectedIds.length !== 2) return;
     // เทียบได้เฉพาะ 2 เวอร์ชันของ "รายการเดียวกัน" (entity เดียวกัน) เท่านั้น —
@@ -168,29 +189,29 @@ export default function Page() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Revision History</h2>
-          <Space wrap>
-            <Select value={kind} options={KIND_OPTIONS} onChange={(v) => { setKind(v); setSelectedIds([]); setDetail(null); setSearchInput(""); setSearch(""); }} style={{ width: 200 }} />
-            <Input
-              placeholder={
-                kind === "products" ? "ค้นหา SKU / ชื่อ / barcode"
-                : kind === "purchaseItems" ? "ค้นหา PO id / SKU / ไซซ์"
-                : kind === "purchase" ? "ค้นหา PO id / status"
-                : kind === "coupons" ? "ค้นหาโค้ด / โน้ต"
-                : "ค้นหา ID / status / reference"
-              }
-              style={{ width: 260 }}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onPressEnter={() => setSearch(searchInput.trim())}
-            />
-            <Button type="primary" onClick={() => setSearch(searchInput.trim())} loading={loading}>Search</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="Revision History">
+        <Select
+          value={kind}
+          options={KIND_OPTIONS}
+          onChange={(v) => { setKind(v); setSelectedIds([]); setDetail(null); setSearchInput(""); setSearch(""); }}
+          style={{ width: isMobile ? "100%" : 200 }}
+        />
+        <Input
+          placeholder={
+            kind === "products" ? "ค้นหา SKU / ชื่อ / barcode"
+            : kind === "purchaseItems" ? "ค้นหา PO id / SKU / ไซซ์"
+            : kind === "purchase" ? "ค้นหา PO id / status"
+            : kind === "coupons" ? "ค้นหาโค้ด / โน้ต"
+            : "ค้นหา ID / status / reference"
+          }
+          style={{ width: isMobile ? "100%" : 260 }}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onPressEnter={() => setSearch(searchInput.trim())}
+        />
+        <Button type="primary" onClick={() => setSearch(searchInput.trim())} loading={loading}>Search</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+      </AdminPageHeader>
 
       <Alert
         type="info"
@@ -209,43 +230,99 @@ export default function Page() {
         </Space>
       </Card>
 
-      <Table
-        key={`${kind}:${search}`}
-        rowKey="id"
-        loading={loading}
-        dataSource={grouped}
-        columns={columns as any}
-        expandable={{ defaultExpandAllRows: true, rowExpandable: (row: any) => !!row.isGroup }}
-        rowSelection={{
-          selectedRowKeys: selectedIds,
-          checkStrictly: true, // เลือกกลุ่มไม่ลามไป children — เลือกได้เฉพาะแถว revision
-          onChange: (keys) => setSelectedIds(keys.map(String).filter((k) => !k.startsWith("group:")).slice(0, 2)),
-          // group row เลือกไม่ได้ · revision row: พอเลือกแถวแรกแล้ว ปิด checkbox ของแถว
-          // ที่คนละ entity — compare ข้ามรายการไม่มีความหมาย (เห็นข้อจำกัดก่อน ไม่ต้องรอ error)
-          getCheckboxProps: (row: any) => {
-            if (row.isGroup) return { disabled: true };
-            if (selectedIds.length === 0 || selectedIds.includes(String(row.id))) return {};
-            const anchor = rows.find((r: any) => String(r.id) === selectedIds[0]);
-            const sameEntity = anchor && String(anchor.entityId ?? "") === String(row.entityId ?? "");
-            return { disabled: !sameEntity };
-          },
-        }}
-        onRow={(row) => ({
-          onClick: () => { if (!row.isGroup) openDetail(row); },
-        })}
-        scroll={{ x: "max-content" }}
-        pagination={{ pageSize: 20, showTotal: () => `${grouped.length} รายการ · ${rows.length} เวอร์ชัน` }}
-      />
+      {isMobile ? (
+        // มือถือ: 1 การ์ด = 1 entity, ในการ์ดคือเวอร์ชันของ entity นั้น (ใหม่→เก่า)
+        // โครงเดียวกับ tree ของตาราง แต่ไม่ต้องเลื่อนแนวนอน 6 คอลัมน์
+        <AdminMobileList
+          key={`${kind}:${search}`}
+          loading={loading}
+          dataSource={grouped}
+          rowKey={(g) => g.id}
+          totalText={() => `${grouped.length} รายการ · ${rows.length} เวอร์ชัน`}
+          emptyText="ไม่มีประวัติการแก้ไข"
+          renderItem={(g) => (
+            <AdminRecordCard
+              key={g.id}
+              title={
+                <Space size={6} wrap>
+                  <Typography.Text strong>{g.label}</Typography.Text>
+                  <Typography.Text type="secondary" code style={{ fontSize: 11 }}>
+                    {String(g.entityId).slice(0, 8)}
+                  </Typography.Text>
+                </Space>
+              }
+              extra={<Tag style={{ marginInlineEnd: 0 }}>{g.count} เวอร์ชัน</Tag>}
+              footer={
+                <div style={{ marginTop: 8 }}>
+                  {g.children.map((rev: any) => (
+                    <div
+                      key={rev.id}
+                      style={{
+                        display: "flex", gap: 8, alignItems: "flex-start",
+                        padding: "8px 0", borderTop: "1px solid var(--app-border, #f0f0f0)",
+                      }}
+                    >
+                      <Checkbox
+                        checked={selectedIds.includes(String(rev.id))}
+                        disabled={!canSelectRevision(rev)}
+                        onChange={() => toggleSelectRevision(rev)}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                          <Typography.Text style={{ fontSize: 12 }}>{fmtDT(rev.created_at)}</Typography.Text>
+                          {rev.editorLabel
+                            ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{rev.editorLabel}</Typography.Text>
+                            : <Tag style={{ marginInlineEnd: 0 }}>system</Tag>}
+                        </div>
+                        <Typography.Paragraph
+                          type="secondary"
+                          style={{ fontSize: 11.5, margin: "4px 0 6px" }}
+                          ellipsis={{ rows: 2 }}
+                        >
+                          {summarizeSnapshot(rev.snapshot)}
+                        </Typography.Paragraph>
+                        <Button size="small" icon={<FileTextOutlined />} onClick={() => openDetail(rev)}>Detail</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              }
+            />
+          )}
+        />
+      ) : (
+        <Table
+          key={`${kind}:${search}`}
+          rowKey="id"
+          loading={loading}
+          dataSource={grouped}
+          columns={columns as any}
+          expandable={{ defaultExpandAllRows: true, rowExpandable: (row: any) => !!row.isGroup }}
+          rowSelection={{
+            selectedRowKeys: selectedIds,
+            checkStrictly: true, // เลือกกลุ่มไม่ลามไป children — เลือกได้เฉพาะแถว revision
+            onChange: (keys) => setSelectedIds(keys.map(String).filter((k) => !k.startsWith("group:")).slice(0, 2)),
+            // group row เลือกไม่ได้ · revision row ใช้เงื่อนไขเดียวกับฝั่งมือถือ (entity เดียวกัน, ไม่เกิน 2)
+            getCheckboxProps: (row: any) =>
+              row.isGroup ? { disabled: true } : { disabled: !canSelectRevision(row) },
+          }}
+          onRow={(row) => ({
+            onClick: () => { if (!row.isGroup) openDetail(row); },
+          })}
+          scroll={{ x: "max-content" }}
+          pagination={{ pageSize: 20, showTotal: () => `${grouped.length} รายการ · ${rows.length} เวอร์ชัน` }}
+        />
+      )}
 
       <Drawer
         title="Revision detail"
-        width={760}
+        width={panelWidth(isMobile, 760)}
         open={!!detailRow}
         onClose={() => setDetail(null)}
       >
         {detailRow ? (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Descriptions bordered size="small" column={1}>
+            <Descriptions bordered size="small" column={1} layout={isMobile ? "vertical" : "horizontal"}>
               <Descriptions.Item label="Revision ID"><Typography.Text code>{String(detailRow.id)}</Typography.Text></Descriptions.Item>
               <Descriptions.Item label="Entity ID"><Typography.Text code>{String(detailRow.entityId ?? detailRow.snapshot?.id ?? detailRow.snapshot?.sku ?? "—")}</Typography.Text></Descriptions.Item>
               <Descriptions.Item label="Kind">{detailRow.kindLabel ?? kind}</Descriptions.Item>
@@ -265,7 +342,7 @@ export default function Page() {
         open={compareOpen}
         onCancel={() => setCompareOpen(false)}
         onOk={() => setCompareOpen(false)}
-        width={1100}
+        width={panelWidth(isMobile, 1100)}
         footer={null}
       >
         {compareLoading ? (
@@ -278,7 +355,22 @@ export default function Page() {
               pagination={false}
               rowKey="path"
               dataSource={compare.diff}
-              columns={[
+              // มือถือ: ยุบ 3 คอลัมน์เป็นคอลัมน์เดียว (field + ก่อน/หลัง ซ้อนกัน) — 3 คอลัมน์ที่มี JSON
+              // ข้างในบีบจนอ่านไม่ได้บนจอแคบ
+              columns={isMobile ? [
+                {
+                  title: "การเปลี่ยนแปลง", dataIndex: "path",
+                  render: (path: any, r: any) => (
+                    <div>
+                      <Typography.Text strong style={{ fontSize: 12 }}>{path}</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>ก่อน</Typography.Text>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 11 }}>{JSON.stringify(r.before, null, 2)}</pre>
+                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>หลัง</Typography.Text>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 11 }}>{JSON.stringify(r.after, null, 2)}</pre>
+                    </div>
+                  ),
+                },
+              ] : [
                 { title: "Field", dataIndex: "path", width: 260 },
                 { title: "Before", dataIndex: "before", render: (v: any) => <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(v, null, 2)}</pre> },
                 { title: "After", dataIndex: "after", render: (v: any) => <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(v, null, 2)}</pre> },

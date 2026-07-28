@@ -5,7 +5,6 @@ import {
   Button,
   Space,
   Tag,
-  Segmented,
   message,
   Alert,
   Popconfirm,
@@ -29,8 +28,13 @@ import {
   CloseCircleOutlined,
   RollbackOutlined,
   EnvironmentOutlined,
+  DownOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
+import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 // ---- Types --------------------------------------------------
 type OrderStatus =
@@ -109,6 +113,7 @@ const orderSubtotal = (order: Order) =>
 
 function OrdersManagement() {
   const { can } = useBmsPermissions();
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -220,77 +225,138 @@ function OrdersManagement() {
     [busy, can]
   );
 
-  const itemColumns = [
-    { title: "SKU", dataIndex: "product_sku", key: "sku" },
-    { title: "Size", dataIndex: "size", key: "size", width: 80 },
-    { title: "Qty", dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
-    { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
-      render: (v: number) => money(v) },
-    { title: "Line Total", key: "lt", width: 120, align: "right" as const,
-      render: (_: any, it: OrderItem) => money(it.qty * it.unit_price) },
-  ];
-
   if (error) return <Alert type="error" message="โหลดออร์เดอร์ไม่ได้" description={error.message} showIcon />;
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Orders (OMS)</h2>
-          <Space wrap>
-            <Input.Search
-              placeholder="ค้นหา order / customer / channel"
-              allowClear
-              style={{ width: 260 }}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-            <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="BMS Orders (OMS)">
+        <Input.Search
+          placeholder="ค้นหา order / customer / channel"
+          allowClear
+          style={{ width: isMobile ? "100%" : 260 }}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
+        <ResponsiveStatusFilter
+          options={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          labels={{ ALL: "ทุกสถานะ", ...STATUS_LABEL }}
+        />
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+      </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
         message="PENDING → (จ่าย) PAID → (แพ็ค) PACKING → (ส่ง) SHIPPED → (ปิด) COMPLETED  |  Cancel คืน reserved (ก่อนส่ง) · Return คืนสต็อก (หลังส่ง)"
       />
 
-      <Table
-        rowKey="id" loading={loading} dataSource={orders} columns={columns}
-        scroll={{ x: "max-content" }}
-        expandable={{
-          expandedRowRender: (r: Order) => (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <OrderJourney orderId={r.id} />
-              <div>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
-                <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
-                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                  <Space direction="vertical" size={2} style={{ minWidth: 260 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-                      <Typography.Text type="secondary">ยอดสินค้า</Typography.Text>
-                      <Typography.Text>{money(orderSubtotal(r))}</Typography.Text>
-                    </div>
-                    {Number(r.discount_amount || 0) > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-                        <Typography.Text type="secondary">ส่วนลด{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
-                        <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>
-                      </div>
-                    )}
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px solid var(--app-border, #eee)", paddingTop: 6 }}>
-                      <Typography.Text strong>ยอดรวมสุทธิ</Typography.Text>
-                      <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
-                    </div>
-                  </Space>
-                </div>
-              </div>
-            </div>
-          ),
-        }}
-        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} order(s)` }}
-      />
+      {isMobile ? (
+        <AdminMobileList
+          loading={loading}
+          dataSource={orders}
+          rowKey={(o) => o.id}
+          totalText={(t) => `ทั้งหมด ${t} ออร์เดอร์`}
+          renderItem={(r) => <MobileOrderCard key={r.id} order={r} actions={actionsFor(r)} />}
+          emptyText="ไม่มีออร์เดอร์"
+        />
+      ) : (
+        <Table
+          rowKey="id" loading={loading} dataSource={orders} columns={columns}
+          scroll={{ x: "max-content" }}
+          expandable={{ expandedRowRender: (r: Order) => <OrderDetails order={r} /> }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} order(s)` }}
+        />
+      )}
     </div>
+  );
+}
+
+const ITEM_COLUMNS = [
+  { title: "SKU", dataIndex: "product_sku", key: "sku" },
+  { title: "Size", dataIndex: "size", key: "size", width: 80 },
+  { title: "Qty", dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
+  { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
+    render: (v: number) => money(v) },
+  { title: "Line Total", key: "lt", width: 120, align: "right" as const,
+    render: (_: any, it: OrderItem) => money(it.qty * it.unit_price) },
+];
+
+/** เส้นทางออร์เดอร์ + รายการสินค้า + สรุปยอด — ใช้ทั้งแถวขยายของตาราง (desktop) และการ์ด (มือถือ) */
+function OrderDetails({ order: r }: { order: Order }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <OrderJourney orderId={r.id} />
+      <div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
+        <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS} pagination={false} size="small" scroll={{ x: "max-content" }} />
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+          <Space direction="vertical" size={2} style={{ minWidth: 0, width: "100%", maxWidth: 320 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+              <Typography.Text type="secondary">ยอดสินค้า</Typography.Text>
+              <Typography.Text>{money(orderSubtotal(r))}</Typography.Text>
+            </div>
+            {Number(r.discount_amount || 0) > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                <Typography.Text type="secondary">ส่วนลด{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
+                <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px solid var(--app-border, #eee)", paddingTop: 6 }}>
+              <Typography.Text strong>ยอดรวมสุทธิ</Typography.Text>
+              <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
+            </div>
+          </Space>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 1 ออร์เดอร์ = 1 การ์ดบนมือถือ — รายละเอียด (journey/รายการ) กางในการ์ดเดียวกัน */
+function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <AdminRecordCard
+      title={
+        <Space size={6} wrap>
+          <Typography.Text code>{r.id.slice(0, 8)}</Typography.Text>
+          <Tag color={CHANNEL_COLOR[r.channel] || "default"} style={{ marginInlineEnd: 0 }}>{r.channel}</Tag>
+        </Space>
+      }
+      extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
+      fields={[
+        { label: "ลูกค้า", value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
+        { label: "รายการ", value: `${r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / ${r.items.length} รายการ` },
+        {
+          label: "ยอดรวม",
+          value: (
+            <>
+              <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
+              {Number(r.discount_amount || 0) > 0 && (
+                <Typography.Text type="danger" style={{ fontSize: 11, display: "block" }}>
+                  -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}
+                </Typography.Text>
+              )}
+            </>
+          ),
+        },
+        { label: "อัปเดต", value: fmtDT(r.updated_at) },
+      ]}
+      footer={open ? <div style={{ marginTop: 12 }}><OrderDetails order={r} /></div> : null}
+      actions={
+        <>
+          {actions}
+          <Button
+            type="link" size="small" style={{ marginLeft: "auto" }}
+            icon={open ? <UpOutlined /> : <DownOutlined />}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "ย่อ" : "รายละเอียด"}
+          </Button>
+        </>
+      }
+    />
   );
 }
 
@@ -329,6 +395,7 @@ function StaffChip({ s, size = 22 }: { s: StaffRef; size?: number }) {
 }
 
 function OrderJourney({ orderId }: { orderId: string }) {
+  const isMobile = useIsMobile();
   const { data, loading } = useQuery(Q_JOURNEY, { variables: { orderId }, fetchPolicy: "cache-and-network" });
   const j = data?.bmsOrderJourney;
   if (loading && !j) return <div style={{ padding: 16, textAlign: "center" }}><Spin size="small" /></div>;
@@ -368,8 +435,14 @@ function OrderJourney({ orderId }: { orderId: string }) {
         )}
       </div>
 
-      {/* stepper หลัก */}
-      <Steps size="small" labelPlacement="vertical" items={stepItems} style={{ marginTop: 4 }} />
+      {/* stepper หลัก — 7 ขั้นเรียงนอนกว้างเกินจอมือถือ จึงพลิกเป็นแนวตั้ง */}
+      <Steps
+        size="small"
+        direction={isMobile ? "vertical" : "horizontal"}
+        labelPlacement={isMobile ? "horizontal" : "vertical"}
+        items={stepItems}
+        style={{ marginTop: 4 }}
+      />
 
       {/* timeline ละเอียด */}
       <div>

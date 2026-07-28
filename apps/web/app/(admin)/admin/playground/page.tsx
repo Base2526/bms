@@ -6,8 +6,12 @@ import {
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text } = Typography;
+
+const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
 // สต็อกสด (ไว้ดูเปลี่ยนแปลงหลังสั่ง)
 const Q_PRODUCTS = gql`
@@ -36,6 +40,7 @@ const INTENT_COLOR: Record<string, string> = {
 };
 
 export default function Page() {
+  const isMobile = useIsMobile();
   const [channel, setChannel] = useState("line");
   const [customerRef, setCustomerRef] = useState("Ucustomer_001");
   const [text, setText] = useState("");
@@ -82,38 +87,39 @@ export default function Page() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Playground</h2>
-          <Space>
-            <Link href="/admin/orders"><Button icon={<ShoppingCartOutlined />}>ไปหน้า Orders</Button></Link>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="BMS Playground">
+        <Link href="/admin/orders"><Button icon={<ShoppingCartOutlined />}>ไปหน้า Orders</Button></Link>
+      </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
         message="จำลองลูกค้าแชตเข้ามา → เห็น NLU/สต็อก/ออร์เดอร์ที่เกิดจริง แล้วสต็อกด้านขวาจะอัปเดต — ไปกด จ่าย/แพ็ค/ส่ง ต่อได้ที่หน้า Orders"
       />
 
+      {/* minWidth ต้องเป็น 0 บนมือถือ — 360px + padding ของ Content ทำให้ล้นจอ 360px */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
         {/* ---- Chat simulator ---- */}
-        <Card title="💬 จำลองแชตลูกค้า" style={{ flex: "1 1 480px", minWidth: 360 }}
+        <Card title="💬 จำลองแชตลูกค้า" style={{ flex: "1 1 480px", minWidth: isMobile ? 0 : 360, width: isMobile ? "100%" : undefined }}
           extra={
-            <Space>
-              <Segmented size="small" value={channel} onChange={(v) => setChannel(v as string)}
-                options={["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"]} />
-            </Space>
+            // Segmented 8 ช่องทางกว้างเกินหัวการ์ดบนมือถือ → ใช้ Select แทน
+            isMobile ? (
+              <Select
+                size="small" value={channel} onChange={setChannel} style={{ width: 120 }}
+                options={CHANNELS.map((c) => ({ value: c, label: c }))}
+              />
+            ) : (
+              <Segmented size="small" value={channel} onChange={(v) => setChannel(v as string)} options={CHANNELS} />
+            )
           }
         >
-          <Space style={{ marginBottom: 8 }}>
+          <Space style={{ marginBottom: 8 }} wrap>
             <Text type="secondary">customerRef:</Text>
             <Input size="small" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} style={{ width: 180 }} />
           </Space>
 
           <div
             ref={logRef}
-            style={{ height: 340, overflowY: "auto", background: "var(--app-surface, #0000000a)", borderRadius: 8, padding: 12, marginBottom: 12 }}
+            style={{ height: isMobile ? 300 : 340, overflowY: "auto", background: "var(--app-surface, #0000000a)", borderRadius: 8, padding: 12, marginBottom: 12 }}
           >
             {chat.length === 0 && <Empty description="ยังไม่มีข้อความ ลองพิมพ์หรือกดตัวอย่างด้านล่าง" />}
             {chat.map((b, i) => (
@@ -163,7 +169,7 @@ export default function Page() {
         </Card>
 
         {/* ---- Live stock ---- */}
-        <Card title="📦 สต็อกสด (available / reserved)" style={{ flex: "1 1 320px", minWidth: 280 }}
+        <Card title="📦 สต็อกสด (available / reserved)" style={{ flex: "1 1 320px", minWidth: isMobile ? 0 : 280, width: isMobile ? "100%" : undefined }}
           extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => refetchStock()}>Refresh</Button>}
         >
           {products.length === 0 && <Empty />}

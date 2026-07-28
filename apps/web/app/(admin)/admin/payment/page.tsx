@@ -1,7 +1,7 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
-  Table, Button, Space, Tag, Segmented, message, Alert, Popconfirm,
+  Table, Button, Space, Tag, message, Alert, Popconfirm,
   Typography, Modal, Form, Input, InputNumber, Select,
 } from "antd";
 import { useState, useMemo, useEffect } from "react";
@@ -10,6 +10,9 @@ import {
   RollbackOutlined, ScanOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
+import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
+import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 // ---- Types --------------------------------------------------
 type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
@@ -61,6 +64,7 @@ const FILTERS = ["ALL", "PENDING", "CONFIRMED", "REJECTED", "REFUNDED"] as const
 
 function PaymentManagement() {
   const { can } = useBmsPermissions();
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [submitOpen, setSubmitOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -172,35 +176,72 @@ function PaymentManagement() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Payment</h2>
-          <Space wrap>
-            <Input.Search
-              placeholder="ค้นหา payment / order / slip ref"
-              allowClear
-              style={{ width: 260 }}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-            <Segmented options={FILTERS as unknown as string[]} value={filter} onChange={(v) => setFilter(v as any)} />
-            {can("payment.submit") && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setSubmitOpen(true)}>บันทึกการชำระ</Button>
-            )}
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-          </Space>
-        </Space>
-      </div>
+      <AdminPageHeader title="BMS Payment">
+        <Input.Search
+          placeholder="ค้นหา payment / order / slip ref"
+          allowClear
+          style={{ width: isMobile ? "100%" : 260 }}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
+        <ResponsiveStatusFilter
+          options={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          labels={{ ALL: "ทุกสถานะ", ...STATUS_LABEL }}
+        />
+        {can("payment.submit") && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setSubmitOpen(true)}>บันทึกการชำระ</Button>
+        )}
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+      </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
         message="PENDING → (ตรวจสลิป/ยืนยัน) CONFIRMED (ออร์เดอร์เป็น PAID) · ปฏิเสธ → REJECTED · คืนเงิน → REFUNDED  |  ตรวจสลิปด้วย AI เป็นเพียงคำแนะนำ ต้องกดยืนยันเอง"
       />
 
-      <Table rowKey="id" loading={loading} dataSource={payments} columns={columns}
-        scroll={{ x: "max-content" }}
-        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} payment(s)` }}
-      />
+      {isMobile ? (
+        <AdminMobileList
+          loading={loading}
+          dataSource={payments}
+          rowKey={(p) => p.id}
+          totalText={(t) => `ทั้งหมด ${t} รายการ`}
+          emptyText="ไม่มีรายการชำระเงิน"
+          renderItem={(r) => (
+            <AdminRecordCard
+              key={r.id}
+              title={
+                <Space size={6} wrap>
+                  <Typography.Text code>{r.id.slice(0, 8)}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {METHOD_LABEL[r.method] || r.method}
+                  </Typography.Text>
+                </Space>
+              }
+              extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
+              fields={[
+                { label: "ออร์เดอร์", value: <Typography.Text code>{r.orderId.slice(0, 8)}</Typography.Text> },
+                { label: "ยอด", value: <Typography.Text strong>{`${Number(r.amount).toLocaleString()} ฿`}</Typography.Text> },
+                {
+                  label: "อ้างอิง/สลิป",
+                  value: r.slipUrl
+                    ? <a href={r.slipUrl} target="_blank" rel="noreferrer">ดูสลิป</a>
+                    : (r.slipRef || <span style={{ color: "#999" }}>—</span>),
+                },
+                { label: "ยืนยันโดย", value: r.verifiedBy || <span style={{ color: "#999" }}>—</span> },
+                { label: "เมื่อ", value: new Date(r.createdAt).toLocaleString() },
+              ]}
+              actions={actionsFor(r)}
+            />
+          )}
+        />
+      ) : (
+        <Table rowKey="id" loading={loading} dataSource={payments} columns={columns}
+          scroll={{ x: "max-content" }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} payment(s)` }}
+        />
+      )}
 
       <SubmitPaymentModal open={submitOpen} onClose={() => setSubmitOpen(false)} onDone={() => { setSubmitOpen(false); refetch(); }} />
     </div>
@@ -209,6 +250,7 @@ function PaymentManagement() {
 
 // ---- Submit payment modal -----------------------------------
 function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+  const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const { data } = useQuery(Q_PENDING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
   const orders: { id: string; customer_ref: string | null; total_amount: number }[] = data?.bmsOrders || [];
@@ -232,7 +274,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
   };
 
   return (
-    <Modal title="บันทึกการชำระเงิน" open={open} onCancel={onClose} onOk={submitForm}
+    <Modal title="บันทึกการชำระเงิน" open={open} onCancel={onClose} onOk={submitForm} width={panelWidth(isMobile, 520)}
       confirmLoading={loading} okText="บันทึก" cancelText="ยกเลิก" destroyOnClose>
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
         message="เลือกออร์เดอร์ที่รอชำระ (PENDING) — เว้นยอดว่างได้ ระบบจะใช้ยอดรวมของออร์เดอร์" />
@@ -250,7 +292,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
           <Select options={METHODS.map((m) => ({ value: m, label: METHOD_LABEL[m] }))} />
         </Form.Item>
         <Form.Item name="amount" label="ยอดชำระ (เว้นว่าง = ยอดรวมออร์เดอร์)">
-          <InputNumber min={0} style={{ width: 200 }} />
+          <InputNumber min={0} style={{ width: isMobile ? "100%" : 200 }} />
         </Form.Item>
         <Form.Item name="slipUrl" label="URL สลิป (เช่น /api/files/123)">
           <Input placeholder="/api/files/<id> (รูปสลิป สำหรับตรวจด้วย AI)" />
