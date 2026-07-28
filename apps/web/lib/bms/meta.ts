@@ -20,7 +20,7 @@ export function metaChallenge(url: URL, cfg: ChannelConfig | null): string | nul
   return challenge;
 }
 
-export type MetaEvent = { senderId: string; text: string };
+export type MetaEvent = { senderId: string; text: string; eventId: string | null };
 
 /** แกะข้อความ text จาก payload (รองรับทั้ง Messenger และ IG) */
 export function parseMetaEvents(body: any): MetaEvent[] {
@@ -32,7 +32,13 @@ export function parseMetaEvents(body: any): MetaEvent[] {
       const senderId = ev?.sender?.id;
       const text = ev?.message?.text?.trim();
       // ข้าม echo (ข้อความที่เพจ/บัญชีส่งเอง) และ event ที่ไม่มี text
-      if (senderId && text && !ev?.message?.is_echo) out.push({ senderId, text });
+      if (senderId && text && !ev?.message?.is_echo) {
+        out.push({
+          senderId,
+          text,
+          eventId: typeof ev?.message?.mid === "string" ? ev.message.mid : null,
+        });
+      }
     }
   }
   return out;

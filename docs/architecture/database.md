@@ -32,8 +32,9 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
-| Store profile / AI facts | `bms_store_profile` | `6.9` |
+| Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27` |
+| AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 
 ## Notable schema details
 
@@ -131,11 +132,18 @@ Realtime diagnostics write `inbox.diagnostic_event` for `Emit` and `inbox.diagno
 rows using `customer_ref = diagnostic:{channel}:{adminId}`, `sender = diagnostic`, and
 `meta.diagnostic = true`; no separate diagnostic tables or migrations are required.
 
-**`bms_store_profile` (`6.9__bms_store_profile.sql`)** — one row per tenant (`tenant_id` PK), holding
-the store facts AI may disclose to customers: name/about/address/phone/hours, shipping and return
-policies, shop-owned receiving accounts, and flat/free-threshold delivery estimates. It has forced
-RLS and explicit `bms_app` grants; writes run through `beginTenantTx()`. Carrier quotes are not stored
-or implied—the current estimate is only the shop-configured flat-rate policy.
+**`bms_store_profile` (`6.9__bms_store_profile.sql`, `7.30__bms_ai_context_strategy.sql`)** —
+one row per tenant (`tenant_id` PK), holding the store facts AI may disclose to customers:
+business type, name/about/address/phone/hours, shipping and return policies, shop-owned receiving
+accounts, and flat/free-threshold delivery estimates. It has forced RLS and explicit `bms_app`
+grants; writes run through `beginTenantTx()`. Carrier quotes are not stored or implied—the current
+estimate is only the shop-configured flat-rate policy.
+
+Migration `7.30` also adds validated AI language/ordering/required-field/short-reply/handoff policy.
+`bms_inbound_events` is the tenant/channel/platform-event idempotency ledger, while
+`bms_ai_synonym_candidates` stores bounded search misses for human review. Both have forced RLS and
+`bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
+stock remain backend sources of truth.
 
 ## Revision checklist
 

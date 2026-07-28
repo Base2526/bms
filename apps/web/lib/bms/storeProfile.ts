@@ -20,6 +20,12 @@ export type PaymentAccount = {
 };
 
 export type StoreProfile = {
+  businessType: string | null;
+  aiLanguage: string;
+  aiOrderingStyle: string;
+  aiRequiredFields: string[];
+  aiInterpretShortReplies: boolean;
+  aiHandoffAfterFailedTurns: number;
   about: string | null;
   address: string | null;
   phone: string | null;
@@ -43,6 +49,12 @@ export type StoreProfile = {
 };
 
 const EMPTY: StoreProfile = {
+  businessType: null,
+  aiLanguage: "th",
+  aiOrderingStyle: "catalog_variant",
+  aiRequiredFields: ["product", "size", "qty"],
+  aiInterpretShortReplies: true,
+  aiHandoffAfterFailedTurns: 3,
   about: null, address: null, phone: null, contactEmail: null, website: null,
   logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
@@ -58,7 +70,9 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 
 export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const res = await query<any>(
-    `SELECT about, address, phone, contact_email, website, logo_url, tax_id,
+    `SELECT business_type, ai_language, ai_ordering_style, ai_required_fields,
+            ai_interpret_short_replies, ai_handoff_after_failed_turns,
+            about, address, phone, contact_email, website, logo_url, tax_id,
             timezone, country, currency, business_hours, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
             shipping_est_days_min, shipping_est_days_max, email_theme_color, email_footer_text
@@ -68,6 +82,12 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const r = res.rows[0];
   if (!r) return { ...EMPTY };
   return {
+    businessType: r.business_type ?? null,
+    aiLanguage: r.ai_language || "th",
+    aiOrderingStyle: r.ai_ordering_style || "catalog_variant",
+    aiRequiredFields: Array.isArray(r.ai_required_fields) ? r.ai_required_fields : ["product", "size", "qty"],
+    aiInterpretShortReplies: r.ai_interpret_short_replies !== false,
+    aiHandoffAfterFailedTurns: Number(r.ai_handoff_after_failed_turns || 3),
     about: r.about ?? null,
     address: r.address ?? null,
     phone: r.phone ?? null,
@@ -94,6 +114,10 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
 export type StoreProfileInput = Partial<StoreProfile>;
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const BUSINESS_TYPES = new Set(["fashion", "beauty", "food", "electronics", "home", "general"]);
+const AI_LANGUAGES = new Set(["th", "en", "th-en"]);
+const AI_ORDERING_STYLES = new Set(["catalog_variant", "simple_catalog", "inquiry_first"]);
+const AI_REQUIRED_FIELDS = new Set(["product", "size", "qty"]);
 
 export async function upsertStoreProfile(
   tenantId: string,
@@ -103,6 +127,19 @@ export async function upsertStoreProfile(
   const cur = await getStoreProfile(tenantId);
   const merged: StoreProfile = { ...cur, ...input };
 
+  if (merged.businessType != null && !BUSINESS_TYPES.has(merged.businessType)) {
+    throw new Error("ประเภทร้านไม่ถูกต้อง");
+  }
+  if (!AI_LANGUAGES.has(merged.aiLanguage)) throw new Error("ภาษาหลักของ AI ไม่ถูกต้อง");
+  if (!AI_ORDERING_STYLES.has(merged.aiOrderingStyle)) throw new Error("รูปแบบการรับออร์เดอร์ไม่ถูกต้อง");
+  merged.aiRequiredFields = Array.from(new Set(merged.aiRequiredFields)).filter((field) => AI_REQUIRED_FIELDS.has(field));
+  if (!merged.aiRequiredFields.includes("product") || !merged.aiRequiredFields.includes("qty")) {
+    throw new Error("ข้อมูลที่ต้องถามต้องมีสินค้าและจำนวน");
+  }
+  merged.aiHandoffAfterFailedTurns = Math.trunc(Number(merged.aiHandoffAfterFailedTurns));
+  if (merged.aiHandoffAfterFailedTurns < 1 || merged.aiHandoffAfterFailedTurns > 10) {
+    throw new Error("จำนวนรอบก่อนส่งต่อแอดมินต้องอยู่ระหว่าง 1–10");
+  }
   if (merged.emailThemeColor != null) {
     const color = merged.emailThemeColor.trim();
     if (color && !HEX_COLOR_RE.test(color)) {
@@ -119,12 +156,20 @@ export async function upsertStoreProfile(
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     await client.query(
       `INSERT INTO bms_store_profile (
-        tenant_id, about, address, phone, contact_email, website, logo_url, tax_id,
+        tenant_id, business_type, ai_language, ai_ordering_style, ai_required_fields,
+        ai_interpret_short_replies, ai_handoff_after_failed_turns,
+        about, address, phone, contact_email, website, logo_url, tax_id,
         timezone, country, currency, business_hours, shipping_policy, return_policy,
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
         email_theme_color, email_footer_text
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,$19,$20,$21)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,$23,$24,$25,$26,$27)
      ON CONFLICT (tenant_id) DO UPDATE SET
+        business_type = EXCLUDED.business_type,
+        ai_language = EXCLUDED.ai_language,
+        ai_ordering_style = EXCLUDED.ai_ordering_style,
+        ai_required_fields = EXCLUDED.ai_required_fields,
+        ai_interpret_short_replies = EXCLUDED.ai_interpret_short_replies,
+        ai_handoff_after_failed_turns = EXCLUDED.ai_handoff_after_failed_turns,
         about = EXCLUDED.about, address = EXCLUDED.address, phone = EXCLUDED.phone,
         contact_email = EXCLUDED.contact_email, website = EXCLUDED.website,
         logo_url = EXCLUDED.logo_url, tax_id = EXCLUDED.tax_id, timezone = EXCLUDED.timezone,
@@ -138,7 +183,9 @@ export async function upsertStoreProfile(
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
-        tenantId, merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
+        tenantId, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
+        merged.aiInterpretShortReplies, merged.aiHandoffAfterFailedTurns,
+        merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
         merged.logoUrl, merged.taxId, merged.timezone, merged.country, merged.currency,
         merged.businessHours, merged.shippingPolicy, merged.returnPolicy,
         JSON.stringify(merged.paymentAccounts ?? []),

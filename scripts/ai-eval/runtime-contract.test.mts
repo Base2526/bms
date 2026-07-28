@@ -103,6 +103,22 @@ test("plain provider response is returned and usage is finalized", async () => {
   assert.equal(usage[0].payload.inputTokens, 3);
 });
 
+test("bounded usage diagnostics are attached when credentials are reserved", async () => {
+  let receivedMeta: Record<string, unknown> | undefined;
+  await __toolLoopTest.run(
+    { ...baseOptions(), usageMeta: { history_compressed: true, history_messages_sent: 8 } },
+    {
+      ...depsFor(async () => textResponse("เรียบร้อยค่ะ")),
+      resolveCredentials: async (_tenantId, context) => {
+        receivedMeta = context.meta;
+        return CREDS;
+      },
+    }
+  );
+  assert.equal(receivedMeta?.history_compressed, true);
+  assert.equal(receivedMeta?.history_messages_sent, 8);
+});
+
 test("provider request marks stable tools and system for prompt caching", async () => {
   const tool = makeTool({ name: "read_product" });
   await __toolLoopTest.run(
@@ -163,6 +179,30 @@ test("cached usage stores total input tokens and cache-adjusted estimated cost",
   assert.equal(usage[0]?.payload.inputTokens, 600);
   assert.equal(usage[0]?.payload.outputTokens, 10);
   assert.equal(usage[0]?.payload.estimatedCost, 0.00129);
+  // breakdown ต้องไหลไปถึง finalizer ด้วย ไม่ใช่แค่ถูกใช้คิด cost แล้วทิ้ง — เพราะคอลัมน์
+  // input_tokens เป็นผลรวม จึงบอกไม่ได้ว่า prompt cache hit จริงไหมถ้าไม่มีสองค่านี้
+  assert.equal(usage[0]?.payload.cacheReadInputTokens, 300);
+  assert.equal(usage[0]?.payload.cacheCreationInputTokens, 200);
+});
+
+test("usage breakdown is reported as zero, not omitted, when a cache breakpoint is sent but never hits", async () => {
+  // แยก "ตั้ง cache_control แล้วไม่ hit" (0) ออกจาก "path นี้ไม่ได้ตั้ง cache_control เลย" (ไม่มี key)
+  // — ถ้ารายงานเป็น undefined ทั้งสองกรณี จะแยกไม่ออกว่า caching ตายเงียบหรือไม่เคยเปิด
+  const usage: Array<{ id: string; payload: any }> = [];
+  await __toolLoopTest.run(
+    baseOptions(),
+    depsFor(
+      async () => ({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "เรียบร้อยค่ะ" }],
+        usage: { input_tokens: 4130, output_tokens: 10 },
+      }),
+      { usage }
+    )
+  );
+  assert.equal(usage[0]?.payload.inputTokens, 4130);
+  assert.equal(usage[0]?.payload.cacheReadInputTokens, 0);
+  assert.equal(usage[0]?.payload.cacheCreationInputTokens, 0);
 });
 
 test("malformed provider content is bounded and returned as an empty safe result for caller fallback wording", async () => {

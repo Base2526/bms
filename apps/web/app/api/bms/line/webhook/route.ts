@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ type LineEvent = {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { type: string; text?: string };
+  message?: { id?: string; type: string; text?: string };
 };
 
 export async function POST(req: NextRequest) {
@@ -31,6 +32,10 @@ export async function POST(req: NextRequest) {
     if (ev.type !== "message" || ev.message?.type !== "text") continue;
     const text = ev.message.text?.trim() ?? "";
     if (!text) continue;
+    if (!(await claimInboundEvent(DEFAULT_TENANT_ID, "line", ev.message.id ?? ev.replyToken))) {
+      replies.push({ replyToken: ev.replyToken, duplicate: true });
+      continue;
+    }
 
     const result = await runPipeline(text, "line", DEFAULT_TENANT_ID, ev.source?.userId ?? null);
     // TODO(prod): await pushLineReply(ev.replyToken, result.reply)

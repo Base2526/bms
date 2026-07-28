@@ -24,6 +24,7 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
+import { listSynonymCandidates, reviewSynonymCandidate } from "@/lib/bms/aiSynonyms";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -65,6 +66,24 @@ export const bmsProductsResolvers = {
       await requirePermission(ctx, "product.view");
       return listCategories(getTenantId(ctx));
     },
+    async bmsAiSynonymCandidates(
+      _p: unknown,
+      args: { status?: string; limit?: number },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.view");
+      const status = String(args.status || "PENDING").toUpperCase();
+      if (!["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+        throw new GraphQLError("สถานะ synonym ไม่ถูกต้อง", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      return listSynonymCandidates(
+        getTenantId(ctx),
+        status as "PENDING" | "APPROVED" | "REJECTED",
+        args.limit ?? 50
+      );
+    },
     async bmsLowStock(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
       return listLowStock(getTenantId(ctx));
@@ -80,6 +99,36 @@ export const bmsProductsResolvers = {
   },
 
   Mutation: {
+    async bmsReviewAiSynonymCandidate(
+      _p: unknown,
+      args: { id: string; decision: string; productSku?: string | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "product.edit");
+      const decision = String(args.decision || "").toUpperCase();
+      if (decision !== "APPROVED" && decision !== "REJECTED") {
+        throw new GraphQLError("decision ต้องเป็น APPROVED หรือ REJECTED", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      const auth = requireAuth(ctx);
+      try {
+        const candidate = await reviewSynonymCandidate(
+          getTenantId(ctx),
+          args.id,
+          decision,
+          args.productSku ?? null,
+          String(auth.author_id || "") || null
+        );
+        await audit(ctx, "ai.synonym_review", args.id, {
+          decision,
+          productSku: decision === "APPROVED" ? args.productSku ?? null : null,
+        });
+        return candidate;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
     async bmsUpsertProduct(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "product.edit");
       const auth = requireAuth(ctx);

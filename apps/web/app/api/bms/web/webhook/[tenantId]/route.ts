@@ -14,6 +14,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,11 +41,21 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const cfg = await getChannel(tenantId, CHANNEL);
   if (cfg && !cfg.active) return NextResponse.json({ error: "web chat disabled" }, { status: 403, headers: CORS });
 
-  const body = (await req.json().catch(() => ({}))) as { message?: unknown; sessionId?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    message?: unknown;
+    sessionId?: unknown;
+    messageId?: unknown;
+  };
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) return NextResponse.json({ error: "message is required" }, { status: 400, headers: CORS });
 
   const sessionId = (typeof body.sessionId === "string" && body.sessionId.trim()) || `web-${randomUUID()}`;
+  const messageId =
+    (typeof body.messageId === "string" && body.messageId.trim()) ||
+    req.headers.get("idempotency-key");
+  if (!(await claimInboundEvent(tenantId, CHANNEL, messageId))) {
+    return NextResponse.json({ duplicate: true, sessionId }, { headers: CORS });
+  }
 
   const result = await runPipeline(message, CHANNEL, tenantId, sessionId);
   await logConversation(tenantId, CHANNEL, sessionId, message, result.reply);

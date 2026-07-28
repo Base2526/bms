@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer } from 'antd';
+import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
@@ -303,7 +303,7 @@ export default function AdminSidebar() {
         {!mini && (
           <Link href="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
             <ShopOutlined />
-            <span>AI-BMS</span>
+            <span>BMS</span>
           </Link>
         )}
         {!inDrawer && (
@@ -443,12 +443,13 @@ export default function AdminSidebar() {
             style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600 }}
           >
             <ShopOutlined />
-            <span>AI-BMS</span>
+            <span>BMS</span>
           </Link>
           {canViewInbox && alerts > 0 && (
-            <Link href="/admin/inbox" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <MessageOutlined style={{ color: 'var(--app-text-secondary, #888)' }} />
-              <span style={PILL_STYLE}>{badgeText(alerts)}</span>
+            <Link href="/admin/inbox" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+              <Badge count={alerts > 99 ? '99+' : alerts} size="small" offset={[-2, 2]}>
+                <MessageOutlined style={{ fontSize: 18, color: 'var(--app-text-secondary, #888)' }} />
+              </Badge>
             </Link>
           )}
           {admin && (

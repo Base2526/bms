@@ -36,7 +36,8 @@ Since AI tool-calling landed, two additional constrained system prompts drive Cl
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
-  Thai shop-admin persona using `ค่ะ/คะ` (never `ผม/ครับ` or unrelated filler); must use tools for
+  tenant-selected Thai, English, or latest-message language and ordering style; the Thai persona
+  uses `ค่ะ/คะ` (never `ผม/ครับ` or unrelated filler); must use tools for
   every stock/price/order number; needs `sku` + size + qty before `create_order`; asks for only one
   missing field per turn; customer identity comes from the channel (don't ask for it). Recent
   customer messages are summarized into product/size/quantity/confirmation slots as customer claims
@@ -62,10 +63,18 @@ same tool authorization/audit guarantees while removing model tool-selection var
 
 The runtime marks two prompt-cache breakpoints: the end of the filtered tool definitions and the end
 of the system prompt. Both blocks must be byte-identical across requests from the same shop, so
-anything that varies per conversation — currently the order slot memory — is sent as a second system
-block placed *after* the breakpoint (`volatileSystem`), where it can change without invalidating the
-cached prefix. Usage events store total logical input tokens while estimated cost applies Anthropic's
-separate regular-input, cache-write, and cache-read rates.
+anything that varies per conversation — intent guidance, compressed history summary and durable order slot
+memory — is sent as a second system block placed *after* the breakpoint (`volatileSystem`), where it
+can change without invalidating the cached prefix. The stable system block may still vary by tenant
+because it includes that shop's categories, business-type examples, and validated AI policy from
+`bms_store_profile`. The `input_tokens` column on a usage event is the *sum* of regular, cache-write, and
+cache-read tokens, so it does not fall when a cache hits and cannot be used to tell whether caching is
+working; `estimated_cost` applies Anthropic's separate rates (write 1.25x, read 0.1x), and the
+per-rate breakdown is stored under `meta.cache_read_input_tokens` /
+`meta.cache_creation_input_tokens` / `meta.regular_input_tokens`. Those keys are absent — not zero —
+on call paths that never set `cache_control`; a zero means the breakpoint was sent but did not hit.
+Usage metadata also records intent, fetched/sent history counts, compression flag, summary
+characters, and business type without storing prompt or customer text.
 
 Which breakpoint actually fires depends on the surface, because a prefix below the model's minimum is
 skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
@@ -79,10 +88,29 @@ skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
 Staff figures are for a role holding every permission; `staffTools(perms)` filters by RBAC, so a
 narrower role sends a smaller — and separately cached — tool block.
 
-The customer surface therefore relies on the tools + system breakpoint, and its ~16% headroom over
-the minimum is the reason `buildCustomerSystem()` must not be shortened without re-measuring. Confirm
-caching is live by checking `cache_read_input_tokens > 0` on the usage event — never assume from the
-absence of an error.
+The customer surface therefore relies on the tools + system breakpoint.
+
+> ⚠️ **The real headroom is far thinner than the table suggests.** Production traffic on
+> 2026-07-28 confirmed caching is live, but the prefix the API actually matched was **~4,130 tokens**,
+> not the 4,754 measured here with `count_tokens` — only about **35 tokens above the 4,096 minimum
+> (~0.8%)**, not the ~16% the isolated measurement implies. Treat 4,754 as an upper bound on the
+> block's own size and ~4,130 as the number that matters. Any trim to `buildCustomerSystem()` — or a
+> shop whose injected category list is shorter than the one measured — can drop the prefix under the
+> minimum, at which point caching stops **silently, with no error**, and the customer surface goes
+> back to paying full input rate on every one of up to 5 rounds per message.
+
+Confirm caching is live from the usage event itself rather than the absence of an error, and rather
+than from the Console's Caching dashboard (which lagged ~4h behind live traffic when this was checked):
+
+```bash
+docker exec bms-postgres-1 psql -U app -d bms -c "SELECT created_at::time(0), input_tokens, meta->>'cache_read_input_tokens' AS cache_read, meta->>'regular_input_tokens' AS regular, estimated_cost FROM bms_ai_usage_events WHERE feature='customer_tool_loop' ORDER BY created_at DESC LIMIT 10;"
+```
+
+A healthy customer request shows `cache_read` ≈ 4,100+ with `regular` in the low hundreds. If
+`cache_read` is `0` the breakpoint is being sent but never hitting (prefix varies per request, or the
+5-minute TTL expired between messages); if the keys are missing entirely, that call path does not set
+`cache_control` at all. Before this breakdown existed the only way to tell was to solve for it from
+`estimated_cost`, which is why the thin-headroom regression above went unnoticed.
 
 ### Tool description language
 

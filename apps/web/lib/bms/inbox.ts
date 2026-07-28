@@ -12,7 +12,7 @@
 // tenant-scoped ทุก query; logConversation เป็น best-effort (ไม่ทำให้ webhook ล้ม)
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 import {
   topicBmsInboxChanged,
@@ -22,6 +22,7 @@ import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 import { createNotification } from "@/lib/notifications/service";
 import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
+import { beginTenantTx } from "./tenant";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -464,6 +465,52 @@ export async function getRecentAiHistory(
     }
   }
   return turns;
+}
+
+export type AiConversationState = {
+  product?: string | null;
+  size?: string | null;
+  qty?: number | null;
+  confirmed?: boolean;
+  lastIntent?: string | null;
+  lastAskedField?: string | null;
+  updatedAt?: string;
+};
+
+export async function getAiConversationState(
+  tenantId: string,
+  convId: string | null
+): Promise<AiConversationState> {
+  if (!convId) return {};
+  const result = await query<{ ai_state: AiConversationState }>(
+    `SELECT ai_state FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, convId]
+  );
+  const state = result.rows[0]?.ai_state;
+  return state && typeof state === "object" && !Array.isArray(state) ? state : {};
+}
+
+export async function setAiConversationState(
+  tenantId: string,
+  convId: string,
+  state: AiConversationState
+): Promise<void> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    await client.query(
+      `UPDATE bms_conversations
+          SET ai_state = $3::jsonb, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, convId, JSON.stringify({ ...state, updatedAt: new Date().toISOString() })]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**

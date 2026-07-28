@@ -21,6 +21,7 @@ import {
   Avatar,
   List,
   Popconfirm,
+  Card,
 } from "antd";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
@@ -136,6 +137,20 @@ const M_REORDER = gql`
 const M_CREATE_CATEGORY = gql`mutation ($name: String!) { bmsCreateProductCategory(name: $name) { id name } }`;
 const M_RENAME_CATEGORY = gql`mutation ($id: ID!, $name: String!) { bmsRenameProductCategory(id: $id, name: $name) { id name } }`;
 const M_DELETE_CATEGORY = gql`mutation ($id: ID!) { bmsDeleteProductCategory(id: $id) }`;
+const Q_SYNONYMS = gql`
+  query {
+    bmsAiSynonymCandidates(status: "PENDING", limit: 50) {
+      id term occurrences lastSeenAt
+    }
+  }
+`;
+const M_REVIEW_SYNONYM = gql`
+  mutation ($id: ID!, $decision: String!, $productSku: String) {
+    bmsReviewAiSynonymCandidate(id: $id, decision: $decision, productSku: $productSku) {
+      id status productSku
+    }
+  }
+`;
 
 const MOVE_COLOR: Record<string, string> = {
   STOCK_IN: "green",
@@ -417,6 +432,8 @@ function ProductsManagement() {
         </Typography.Text>
       </div>
 
+      <SynonymReviewCard canEdit={can("product.edit")} />
+
       <div style={{ marginBottom: 16 }}>
         <Space wrap>
           <Input.Search
@@ -651,6 +668,86 @@ function ProductsManagement() {
         onImported={refreshAll}
       />
     </div>
+  );
+}
+
+function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
+  const [skuById, setSkuById] = useState<Record<string, string>>({});
+  const { data, loading, refetch } = useQuery(Q_SYNONYMS, { fetchPolicy: "cache-and-network" });
+  const [review, { loading: reviewing }] = useMutation(M_REVIEW_SYNONYM, {
+    onCompleted: () => {
+      message.success("ตรวจคำค้นแล้ว");
+      refetch();
+    },
+    onError: (error) => message.error(error.message),
+  });
+  const candidates = data?.bmsAiSynonymCandidates || [];
+  if (!loading && candidates.length === 0) return null;
+
+  return (
+    <Card
+      size="small"
+      loading={loading}
+      title="AI synonym discovery"
+      extra={<Tag color="gold">{candidates.length} คำรอตรวจ</Tag>}
+      style={{ marginBottom: 16 }}
+    >
+      <Typography.Paragraph type="secondary">
+        คำที่ลูกค้าใช้ค้นหาแล้วไม่พบสินค้า ต้องให้ staff ผูกกับ SKU ก่อน ระบบจึงเพิ่มลง keywords ของสินค้านั้น
+      </Typography.Paragraph>
+      <Table
+        size="small"
+        rowKey="id"
+        pagination={false}
+        dataSource={candidates}
+        columns={[
+          { title: "คำที่ลูกค้าใช้", dataIndex: "term" },
+          { title: "พบ", dataIndex: "occurrences", width: 70, render: (value: number) => `${value} ครั้ง` },
+          {
+            title: "ผูกกับ SKU",
+            key: "sku",
+            render: (_value: unknown, row: any) => (
+              <Input
+                size="small"
+                value={skuById[row.id] || ""}
+                disabled={!canEdit}
+                placeholder="เช่น SKU-001"
+                onChange={(event) => setSkuById((current) => ({ ...current, [row.id]: event.target.value }))}
+              />
+            ),
+          },
+          {
+            title: "ตรวจ",
+            key: "actions",
+            width: 180,
+            render: (_value: unknown, row: any) => (
+              <Space>
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={!canEdit || !skuById[row.id]?.trim()}
+                  loading={reviewing}
+                  onClick={() => review({
+                    variables: { id: row.id, decision: "APPROVED", productSku: skuById[row.id].trim() },
+                  })}
+                >
+                  อนุมัติ
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  disabled={!canEdit}
+                  loading={reviewing}
+                  onClick={() => review({ variables: { id: row.id, decision: "REJECTED", productSku: null } })}
+                >
+                  ปฏิเสธ
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Card>
   );
 }
 

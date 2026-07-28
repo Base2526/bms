@@ -19,11 +19,12 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
+import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type LazadaMessage = { buyer_id?: string; sender_id?: string; content?: { text?: string }; message?: string };
+type LazadaMessage = { id?: string; message_id?: string; buyer_id?: string; sender_id?: string; content?: { text?: string }; message?: string };
 
 function parseLazadaMessages(body: any): LazadaMessage[] {
   // TODO(prod): แทนที่ด้วย mapping จริงตาม payload ของ Lazada Open Platform
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   for (const m of messages) {
     const text = (m.content?.text ?? m.message ?? "").trim();
     if (!text) continue;
+    if (!(await claimInboundEvent(tenantId, "lazada", m.message_id ?? m.id))) {
+      replies.push({ userId: m.buyer_id ?? m.sender_id, duplicate: true });
+      continue;
+    }
     const userId = m.buyer_id ?? m.sender_id ?? null;
     const result = await runPipeline(text, "lazada", tenantId, userId);
 

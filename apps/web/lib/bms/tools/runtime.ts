@@ -164,6 +164,8 @@ export type ToolLoopOptions = {
    * หลัง cache breakpoint จึงไม่ทำให้ prefix ที่ cache ไว้ใช้ไม่ได้ — ห้ามย้ายกลับไปต่อใน `system`
    */
   volatileSystem?: string | null;
+  /** Bounded, non-PII diagnostics stored on the usage event (counts/flags only). */
+  usageMeta?: Record<string, string | number | boolean | null>;
   messages: AnthMessage[];
   tools: BmsTool[];
   execCtx: ExecCtx;
@@ -270,6 +272,7 @@ async function runToolLoopInternal(
     provider: "anthropic",
     meta: {
       actor: opts.execCtx.actor,
+      ...(opts.usageMeta ?? {}),
     },
   });
   if (!creds) return { reply: "", proposals: [], trace: [], usedAi: false };
@@ -330,6 +333,9 @@ async function runToolLoopInternal(
     return {
       inputTokens:
         inputTokens + cacheCreationInputTokens + cacheReadInputTokens,
+      // ส่ง breakdown ไปเก็บใน meta ด้วย — คอลัมน์ input_tokens เป็นผลรวมจึงบอกไม่ได้ว่า cache hit หรือไม่
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
       outputTokens,
       estimatedCost: estimateCachedAiCostUsd(
         {

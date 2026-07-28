@@ -101,6 +101,7 @@ export async function listProducts(
   tenantId: string, opts: ListProductsOpts = {}
 ): Promise<{ items: ProductRowFull[]; total: number }> {
   const s = (opts.search ?? "").trim();
+  const normalizedSearch = s.toLowerCase();
   const category = opts.category?.trim() || null;
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
@@ -115,7 +116,7 @@ export async function listProducts(
     // ใน bms_products.keywords ใช้ไม่ได้กับ AI tool-calling path เลย — มี GIN index อยู่แล้ว
     // ดู db/migrations/3.2__bms_products_inventory.sql)
     conds.push(
-      `(name ILIKE ${p} OR sku ILIKE ${p} OR barcode ILIKE ${p} OR EXISTS (
+      `(name ILIKE ${p} OR sku ILIKE ${p} OR barcode ILIKE ${p} OR category ILIKE ${p} OR brand ILIKE ${p} OR EXISTS (
          SELECT 1 FROM unnest(keywords) AS k WHERE k ILIKE ${p}
        ))`
     );
@@ -134,13 +135,36 @@ export async function listProducts(
 
   const limitPos = params.length + 1;
   const offsetPos = params.length + 2;
+  const rankSql = s
+    ? `
+        CASE
+          WHEN lower(sku) = lower($${limitPos}) THEN 900
+          WHEN lower(name) = lower($${limitPos}) THEN 850
+          WHEN lower(COALESCE(barcode, '')) = lower($${limitPos}) THEN 800
+          WHEN EXISTS (
+            SELECT 1 FROM unnest(keywords) AS k WHERE lower(k) = lower($${limitPos})
+          ) THEN 780
+          WHEN lower(name) LIKE lower($${limitPos + 1}) THEN 620
+          WHEN lower(sku) LIKE lower($${limitPos + 1}) THEN 600
+          WHEN EXISTS (
+            SELECT 1 FROM unnest(keywords) AS k WHERE lower(k) LIKE lower($${limitPos + 1})
+          ) THEN 560
+          WHEN category ILIKE $${limitPos + 2} THEN 420
+          WHEN brand ILIKE $${limitPos + 2} THEN 400
+          ELSE 100
+        END AS search_rank
+      `
+    : `0 AS search_rank`;
   const itemsRes = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
-            image_url, description, cost_price, category, brand
+            image_url, description, cost_price, category, brand,
+            ${rankSql}
        FROM bms_products WHERE ${where}
-      ORDER BY name
-      LIMIT $${limitPos} OFFSET $${offsetPos}`,
-    [...params, limit, offset]
+      ORDER BY search_rank DESC, name
+      LIMIT $${s ? limitPos + 3 : limitPos} OFFSET $${s ? limitPos + 4 : offsetPos}`,
+    s
+      ? [...params, normalizedSearch, `${normalizedSearch}%`, `%${s}%`, limit, offset]
+      : [...params, limit, offset]
   );
 
   return { items: itemsRes.rows, total };
