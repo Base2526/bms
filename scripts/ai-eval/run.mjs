@@ -71,6 +71,11 @@ const INTERNAL_PROMPT_PATTERN =
 const CONFIG = {
   baseUrl: process.env.BMS_EVAL_BASE_URL || "http://localhost:3000",
   cookieJarPath: process.env.BMS_EVAL_COOKIE_JAR || "/tmp/bms-cookies.txt",
+  mode: (process.env.BMS_EVAL_MODE || "full").trim().toLowerCase(),
+  caseIds: (process.env.BMS_EVAL_CASES || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
   allTenants: process.env.BMS_EVAL_ALL_TENANTS === "true",
   tenantSlugs: (process.env.BMS_EVAL_TENANT_SLUGS || "")
     .split(",")
@@ -81,6 +86,17 @@ const CONFIG = {
   requestTimeoutMs: positiveInt(process.env.BMS_EVAL_REQUEST_TIMEOUT_MS, 125_000),
   jsonOutput: process.env.BMS_EVAL_JSON_OUTPUT || null,
 };
+
+const SMOKE_CASE_IDS = new Set([
+  "greeting-no-side-effect",
+  "exact-stock",
+  "order-status-payment-happy",
+  "order-status-empty",
+  "coupon-invalid-code",
+  "prompt-injection-system",
+  "customer-cannot-refund",
+  "turn-budget-handoff",
+]);
 
 const ENV_OVERRIDE = {
   productKeyword: process.env.EVAL_PRODUCT_KEYWORD || null,
@@ -139,6 +155,22 @@ function validateTargetSafety() {
   }
   if (!loopback.has(url.hostname)) {
     console.warn(`🚨 REMOTE WRITE EVAL: ${url.origin} (อนุญาตด้วย BMS_EVAL_ALLOW_REMOTE_WRITES=true)`);
+  }
+}
+
+function validateEvalConfig() {
+  if (!["full", "smoke"].includes(CONFIG.mode)) {
+    throw new Error(
+      `BMS_EVAL_MODE ต้องเป็น full หรือ smoke (ได้รับ ${CONFIG.mode || "(ว่าง)"})`
+    );
+  }
+  if (
+    CONFIG.requireFullCoverage &&
+    (CONFIG.mode !== "full" || CONFIG.caseIds.length > 0)
+  ) {
+    throw new Error(
+      "BMS_EVAL_REQUIRE_FULL_COVERAGE=true ใช้ร่วมกับ smoke/case filter ไม่ได้"
+    );
   }
 }
 
@@ -1693,6 +1725,25 @@ function buildCases(fixtures, suiteState) {
   return cases;
 }
 
+function selectCases(cases) {
+  const available = new Set(cases.map((testCase) => testCase.id));
+  const requested = [...new Set(CONFIG.caseIds)];
+  const unknown = requested.filter((id) => !available.has(id));
+  if (unknown.length > 0) {
+    throw new Error(
+      `BMS_EVAL_CASES มี case ที่ไม่รู้จัก: ${unknown.join(", ")}`
+    );
+  }
+  if (requested.length > 0) {
+    const wanted = new Set(requested);
+    return cases.filter((testCase) => wanted.has(testCase.id));
+  }
+  if (CONFIG.mode === "smoke") {
+    return cases.filter((testCase) => SMOKE_CASE_IDS.has(testCase.id));
+  }
+  return cases;
+}
+
 function recordChecks(metrics, caseResult, checks, turnNumber, message, result) {
   for (const item of checks) {
     const normalizedCheck = {
@@ -1742,7 +1793,12 @@ async function runEvalSuite(label, tenantSlug = null) {
   }
 
   const suiteState = {};
-  const cases = buildCases(fixtures, suiteState);
+  const allCases = buildCases(fixtures, suiteState);
+  const cases = selectCases(allCases);
+  console.log(
+    `selection=${CONFIG.caseIds.length > 0 ? "cases" : CONFIG.mode} · ` +
+      `${cases.length}/${allCases.length} cases`
+  );
   const metrics = {
     functional: { passed: 0, total: 0 },
     safety: { passed: 0, total: 0 },
@@ -2025,9 +2081,16 @@ async function resolveCurrentTenantLabel() {
 
 async function main() {
   validateTargetSafety();
+  validateEvalConfig();
   loadCookieJar(CONFIG.cookieJarPath);
   console.log(`AI pipeline live eval — run ${RUN_ID}`);
-  console.log(`target=${CONFIG.baseUrl} · request timeout=${CONFIG.requestTimeoutMs}ms`);
+  console.log(
+    `target=${CONFIG.baseUrl} · request timeout=${CONFIG.requestTimeoutMs}ms · ` +
+      `mode=${CONFIG.mode}` +
+      (CONFIG.caseIds.length > 0
+        ? ` · cases=${CONFIG.caseIds.join(",")}`
+        : "")
+  );
   console.log("⚠️  ชุดนี้เขียน Inbox/order/payment และ reserve stock จริงใน tenant ที่ทดสอบ\n");
 
   let allTenants = CONFIG.allTenants;
@@ -2170,6 +2233,8 @@ async function main() {
     finishedAt: new Date().toISOString(),
     target: CONFIG.baseUrl,
     config: {
+      mode: CONFIG.mode,
+      caseIds: CONFIG.caseIds,
       allTenants: CONFIG.allTenants,
       tenantSlugs: CONFIG.tenantSlugs,
       requireFullCoverage: CONFIG.requireFullCoverage,

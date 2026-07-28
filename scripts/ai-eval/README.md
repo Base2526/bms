@@ -100,6 +100,19 @@ node scripts/ai-eval/run.mjs
 node scripts/ai-eval/run.mjs
 ```
 
+Smoke suite สำหรับรันระหว่างพัฒนา (8 cases ครอบคลุม read/write/security/handoff):
+
+```bash
+BMS_EVAL_MODE=smoke node scripts/ai-eval/run.mjs
+```
+
+เลือกเฉพาะ case ที่กำลังแก้ (`BMS_EVAL_CASES` มีผลเหนือ `BMS_EVAL_MODE`):
+
+```bash
+BMS_EVAL_CASES=exact-stock,prompt-injection-system \
+node scripts/ai-eval/run.mjs
+```
+
 ทุกร้าน active — ต้องเป็น platform admin:
 
 ```bash
@@ -124,6 +137,8 @@ node scripts/ai-eval/run.mjs
 | `BMS_EVAL_BASE_URL` | `http://localhost:3000` | API base URL |
 | `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | Netscape cookie jar |
 | `BMS_EVAL_REQUEST_TIMEOUT_MS` | `125000` | timeout ต่อ HTTP/GraphQL request |
+| `BMS_EVAL_MODE` | `full` | `full` หรือ `smoke` (8 representative cases) |
+| `BMS_EVAL_CASES` | ว่าง | comma-separated exact case IDs; มีผลเหนือ mode |
 | `BMS_EVAL_ALL_TENANTS` | `false` | วนทุก active tenant |
 | `BMS_EVAL_TENANT_SLUGS` | ว่าง | comma-separated tenant filter |
 | `BMS_EVAL_ALLOW_REMOTE_WRITES` | `false` | explicit confirmation สำหรับ remote sandbox |
@@ -233,6 +248,9 @@ pass rate เสมอ
 ใช้ `BMS_EVAL_REQUIRE_FULL_COVERAGE=true` กับ tenant fixture ที่เตรียมครบ เพื่อบังคับให้ skip ใด ๆ
 หรือ customer tool ใน registry ที่ไม่ถูก observe ทำให้ run fail
 
+Full coverage ใช้ร่วมกับ `BMS_EVAL_MODE=smoke` หรือ `BMS_EVAL_CASES` ไม่ได้ เพราะ subset ไม่สามารถ
+พิสูจน์ coverage ของ registry ทั้งชุดได้
+
 Planned budget ป้องกันการชนกันภายใน run เดียว แต่ run ซ้ำยัง reserve stock เพิ่มจริง จึงควร refresh
 sandbox fixture หรือใช้ dedicated eval tenant ก่อนเปรียบเทียบรอบใหม่
 
@@ -257,3 +275,14 @@ Exit code เป็น `1` เมื่อ:
 LLM มีความแปรผัน แต่ safety failure ที่เกิดเพียงบางรอบยังถือเป็น defect ไม่ควรถูกตัดทิ้งว่าเป็น flaky
 โดยอัตโนมัติ สำหรับ functional behavior ให้เก็บ JSON report หลายรอบแล้วเปรียบเทียบ pass rate, model,
 fixture และ latency ภายใต้ state เริ่มต้นเดียวกัน
+
+## Token/cost strategy
+
+Tool-use runtime ใส่ explicit prompt-cache breakpoints ที่ท้าย tool definitions และท้าย system
+prompt แล้ว จึง reuse prefix `tools → system` ระหว่าง request ต่อเนื่องได้ และยัง hit tool-only
+cache เมื่อ slot memory ทำให้ system prompt เปลี่ยน ค่า usage event เก็บ input tokens รวม
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens` แต่ estimated cost ถ่วงราคา
+cache write/read ตาม Anthropic แยกจาก regular input
+
+ระหว่างพัฒนาให้รัน deterministic contract suite ก่อน แล้วใช้ smoke/case filter สำหรับ live model;
+เก็บ full live suite ไว้ก่อน release/nightly เพื่อลด provider calls โดยไม่ลด release coverage
