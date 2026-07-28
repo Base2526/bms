@@ -103,6 +103,43 @@ test("plain provider response is returned and usage is finalized", async () => {
   assert.equal(usage[0].payload.inputTokens, 3);
 });
 
+test("provider request marks stable tools and system for prompt caching", async () => {
+  const tool = makeTool({ name: "read_product" });
+  await __toolLoopTest.run(
+    baseOptions([tool]),
+    depsFor(async (_creds, system, _messages, tools) => {
+      assert.ok(Array.isArray(system));
+      assert.deepEqual(system[0]?.cache_control, { type: "ephemeral" });
+      assert.equal(system[0]?.text, "eval system");
+      assert.deepEqual(tools.at(-1)?.cache_control, { type: "ephemeral" });
+      return textResponse("เรียบร้อยค่ะ");
+    })
+  );
+});
+
+test("cached usage stores total input tokens and cache-adjusted estimated cost", async () => {
+  const usage: Array<{ id: string; payload: any }> = [];
+  await __toolLoopTest.run(
+    baseOptions(),
+    depsFor(
+      async () => ({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "เรียบร้อยค่ะ" }],
+        usage: {
+          input_tokens: 100,
+          cache_creation_input_tokens: 200,
+          cache_read_input_tokens: 300,
+          output_tokens: 10,
+        },
+      }),
+      { usage }
+    )
+  );
+  assert.equal(usage[0]?.payload.inputTokens, 600);
+  assert.equal(usage[0]?.payload.outputTokens, 10);
+  assert.equal(usage[0]?.payload.estimatedCost, 0.00129);
+});
+
 test("malformed provider content is bounded and returned as an empty safe result for caller fallback wording", async () => {
   const usage: Array<{ id: string; payload: any }> = [];
   const result = await __toolLoopTest.run(

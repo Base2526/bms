@@ -58,6 +58,10 @@ input fields and records a redacted `ai.tool_call` audit row for every success, 
 proposal. A2 writes additionally retain their domain audit row; a confirmed A3 action is audited by
 the existing GraphQL mutation that the human explicitly clicked.
 
+The provider request caches the stable tool prefix and system prompt with explicit ephemeral cache
+breakpoints. Tool-only caching remains valid when per-conversation slot memory changes the system
+prompt, reducing repeated input cost without changing the authorization or execution boundary.
+
 `runApprovedTool()` is the same execution boundary without provider inference. The customer
 pipeline uses it only for narrow intents whose target is unambiguous. Recent customer turns are also
 reduced to non-authoritative order slots (product text, size, quantity, confirmation); product and

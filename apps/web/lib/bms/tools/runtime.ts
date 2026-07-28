@@ -9,7 +9,7 @@
 // =============================================================
 
 import { resolveAiCredentials, type AiCredentials } from "../ai";
-import { finalizeAiUsageEvent } from "../aiUsage";
+import { estimateCachedAiCostUsd, finalizeAiUsageEvent } from "../aiUsage";
 import { audit } from "../audit";
 import { requirePermission } from "../permissions";
 import {
@@ -36,10 +36,23 @@ export type ToolLoopResult = {
 };
 
 type AnthMessage = { role: "user" | "assistant"; content: any };
+type AnthCacheControl = { type: "ephemeral" };
+type AnthSystemBlock = {
+  type: "text";
+  text: string;
+  cache_control?: AnthCacheControl;
+};
+type AnthToolSchema = {
+  name: string;
+  description: string;
+  input_schema: unknown;
+  cache_control?: AnthCacheControl;
+};
 
 const MAX_ROUNDS = 5;
 const TIMEOUT_MS = 20_000;
 const MAX_TOKENS = 1024;
+const EPHEMERAL_CACHE_CONTROL: AnthCacheControl = { type: "ephemeral" };
 
 class ToolAccessError extends Error {}
 
@@ -118,9 +131,9 @@ async function auditToolCall(
 
 async function callClaude(
   creds: AiCredentials,
-  system: string,
+  system: string | AnthSystemBlock[],
   messages: AnthMessage[],
-  tools: Array<{ name: string; description: string; input_schema: unknown }>
+  tools: AnthToolSchema[]
 ): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -254,9 +267,10 @@ async function runToolLoopInternal(
     },
   });
   if (!creds) return { reply: "", proposals: [], trace: [], usedAi: false };
+  const model = creds.model;
 
   const byName = new Map(opts.tools.map((t) => [t.name, t]));
-  const toolSchemas = opts.tools.map((t) => ({
+  const toolSchemas: AnthToolSchema[] = opts.tools.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: {
@@ -264,6 +278,23 @@ async function runToolLoopInternal(
       additionalProperties: t.inputSchema.additionalProperties ?? false,
     },
   }));
+  // Cache tool definitions independently so per-conversation system changes do not invalidate
+  // the largest stable request prefix.
+  if (toolSchemas.length > 0) {
+    toolSchemas[toolSchemas.length - 1] = {
+      ...toolSchemas[toolSchemas.length - 1],
+      cache_control: EPHEMERAL_CACHE_CONTROL,
+    };
+  }
+  // Most single-turn requests share the full system prompt. A second breakpoint reuses tools +
+  // system, while the tool-only breakpoint still hits when slot memory changes in later turns.
+  const cachedSystem: AnthSystemBlock[] = [
+    {
+      type: "text",
+      text: opts.system,
+      cache_control: EPHEMERAL_CACHE_CONTROL,
+    },
+  ];
 
   const proposals: ToolProposal[] = [];
   const trace: ToolTraceEntry[] = [];
@@ -280,15 +311,38 @@ async function runToolLoopInternal(
     }
   >();
   let inputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
   let outputTokens = 0;
+
+  function usagePayload() {
+    return {
+      inputTokens:
+        inputTokens + cacheCreationInputTokens + cacheReadInputTokens,
+      outputTokens,
+      estimatedCost: estimateCachedAiCostUsd(
+        {
+          inputTokens,
+          cacheCreationInputTokens,
+          cacheReadInputTokens,
+          outputTokens,
+        },
+        model
+      ),
+    };
+  }
 
   // สำคัญ (write-safety): เมื่อมี credentials แล้ว ถือว่า AI "ทำงานแล้ว" (usedAi:true) เสมอ
   // แม้ callClaude จะล้มกลางคัน — เพื่อไม่ให้ caller ไปรัน rule-based ที่อาจ createOrder ซ้ำ
   // หลังจากทูล create_order ทำงานไปแล้วในรอบก่อนหน้า
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const resp = await callProvider(creds, opts.system, messages, toolSchemas);
+      const resp = await callProvider(creds, cachedSystem, messages, toolSchemas);
       inputTokens += tokenCount(resp?.usage?.input_tokens);
+      cacheCreationInputTokens += tokenCount(
+        resp?.usage?.cache_creation_input_tokens
+      );
+      cacheReadInputTokens += tokenCount(resp?.usage?.cache_read_input_tokens);
       outputTokens += tokenCount(resp?.usage?.output_tokens);
       const content: any[] = Array.isArray(resp?.content) ? resp.content : [];
       const toolUses = content.filter((b) => b?.type === "tool_use");
@@ -303,8 +357,7 @@ async function runToolLoopInternal(
         if (creds.usageEventId) {
           await finalizeUsage(creds.usageEventId, {
             status: "completed",
-            inputTokens,
-            outputTokens,
+            ...usagePayload(),
           });
         }
         return { reply, proposals, trace, usedAi: true };
@@ -385,8 +438,7 @@ async function runToolLoopInternal(
     if (creds.usageEventId) {
       await finalizeUsage(creds.usageEventId, {
         status: "fallback",
-        inputTokens,
-        outputTokens,
+        ...usagePayload(),
         errorMessage: "max_rounds_exceeded",
       });
     }
@@ -400,8 +452,7 @@ async function runToolLoopInternal(
     if (creds.usageEventId) {
       await finalizeUsage(creds.usageEventId, {
         status: "failed",
-        inputTokens,
-        outputTokens,
+        ...usagePayload(),
         errorMessage: err instanceof Error ? err.message : "tool-loop error",
       });
     }

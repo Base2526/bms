@@ -60,6 +60,12 @@ Unambiguous own-order status, payment-submission, reorder, and fully confirmed s
 flows are server-routed through `runApprovedTool()` before provider inference; this preserves the
 same tool authorization/audit guarantees while removing model tool-selection variance.
 
+The runtime marks two stable prompt-cache breakpoints: the end of the filtered tool definitions and
+the end of the system prompt. Repeated requests can therefore reuse `tools → system`; if dynamic
+slot memory changes the system prompt, the earlier tool-only cache remains reusable. Usage events
+store total logical input tokens while estimated cost applies Anthropic's separate regular-input,
+cache-write, and cache-read rates.
+
 ## Standing rules that constrain every prompt/tool interaction
 
 From [../business/](../business/) and [CLAUDE.md](../../CLAUDE.md) — these apply regardless of

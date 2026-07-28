@@ -92,6 +92,9 @@ const DEFAULT_ANTHROPIC_RATE = {
 
 function priceForModel(model?: string | null) {
   const m = String(model || "").toLowerCase();
+  if (m.includes("haiku") && /4[-_.]?5/.test(m)) {
+    return { inputPerMillionUsd: 1, outputPerMillionUsd: 5 };
+  }
   if (m.includes("haiku")) return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4 };
   if (m.includes("sonnet")) return DEFAULT_ANTHROPIC_RATE;
   if (m.includes("opus")) return { inputPerMillionUsd: 15, outputPerMillionUsd: 75 };
@@ -104,6 +107,31 @@ export function estimateAiCostUsd(inputTokens?: number | null, outputTokens?: nu
   const price = priceForModel(model);
   const inputCost = (inTok / 1_000_000) * price.inputPerMillionUsd;
   const outputCost = (outTok / 1_000_000) * price.outputPerMillionUsd;
+  return Number((inputCost + outputCost).toFixed(6));
+}
+
+export function estimateCachedAiCostUsd(
+  usage: {
+    inputTokens?: number | null;
+    cacheCreationInputTokens?: number | null;
+    cacheReadInputTokens?: number | null;
+    outputTokens?: number | null;
+  },
+  model?: string | null
+) {
+  const inputTokens = Math.max(0, Number(usage.inputTokens ?? 0));
+  const cacheCreationInputTokens = Math.max(
+    0,
+    Number(usage.cacheCreationInputTokens ?? 0)
+  );
+  const cacheReadInputTokens = Math.max(0, Number(usage.cacheReadInputTokens ?? 0));
+  const outputTokens = Math.max(0, Number(usage.outputTokens ?? 0));
+  const price = priceForModel(model);
+  const inputCost =
+    ((inputTokens + cacheCreationInputTokens * 1.25 + cacheReadInputTokens * 0.1) /
+      1_000_000) *
+    price.inputPerMillionUsd;
+  const outputCost = (outputTokens / 1_000_000) * price.outputPerMillionUsd;
   return Number((inputCost + outputCost).toFixed(6));
 }
 
