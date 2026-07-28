@@ -151,6 +151,26 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   เลย) — ของแบบนั้นอยู่ใน `getCustomerTimeline()` ของ Customer 360 panel คนละตัวกัน ถ้าจะเพิ่มควร reuse
   service เดิมไม่ query ใหม่
 
+**รอบ 2 (2026-07) — ทำให้ "อ่านเป็นเส้นเวลา" จริง (UI-only + text ของแถว ORDER):**
+
+- **ข้อความแถว ORDER ซ้ำกับป้าย** — เดิม `text` = `สร้างออร์เดอร์ · 1,200 ฿` ขณะที่ tag ข้าง ๆ ก็เขียน
+  "สร้างออร์เดอร์" อยู่แล้ว → เหลือแค่ยอดเงิน (`toLocaleString("th-TH")`, เป็นยอด**สุทธิหลังหักส่วนลด**
+  ตาม `total_amount`) ป้ายชนิดเหตุการณ์ทำหน้าที่บอกว่าเป็นการสร้างออร์เดอร์เอง
+- **เปลี่ยนจาก `List` เป็นเส้นเวลาจริง** — rail เส้นเดียว + จุดต่อเหตุการณ์: `TIMELINE_DOT` ตามชนิด แต่แถว
+  ORDER ใช้ `ORDER_STATUS_DOT` ตามสถานะปัจจุบัน (รอ=เหลือง, กำลังดำเนินการ=เขียว, สำเร็จ=teal, ยกเลิก=แดง)
+  → กวาดตาเห็นได้ทันทีว่าออร์เดอร์ไหนค้าง · ป้าย "สถานะปัจจุบัน:" ยาวเกินไปในบรรทัดเดียว เปลี่ยนคำเป็น
+  "ตอนนี้:" (ความหมายเดิม — ยังไม่ใช่เวลาในคอลัมน์ `at`)
+- **ตัวกรอง `ทุกเหตุการณ์ / แชทนี้เท่านั้น`** (Segmented, state ในคอมโพเนนต์) — "แชทนี้เท่านั้น" = ซ่อนแถว
+  ORDER ที่ `channel` ต่างจากแชทนี้ (ออร์เดอร์ scope ตามลูกค้า ไม่ใช่ตามแชท) · **filter ฝั่ง client จาก data
+  ชุดเดิม ไม่ยิง query ใหม่** และไม่แตะ resolver — สลับกลับไปกลับมาได้ฟรี
+- **`key` ของแถว** — เดิม map ด้วย `<>` ไม่มี key (React warning + reconcile เพี้ยนตอน filter) → ใช้
+  `type`-`at`-`ref` · เพิ่ม `Empty` ตอนโหลดแล้วไม่มีเหตุการณ์ (เดิมเป็นพื้นที่ว่างเปล่า แยกไม่ออกจาก
+  "ยังไม่ได้โหลด")
+- **แถบท้าย** บอกจำนวนเหตุการณ์ที่แสดง + จำนวนที่ซ่อน (โหมด "แชทนี้เท่านั้น") + เตือน "ถึงเพดานการแสดงผล"
+  และมีปุ่มรีเฟรช (โหลดซ้ำ query เดิม) · `TIMELINE_MAX_PER_SOURCE = 200` ถูก **hardcode ซ้ำในหน้า
+  page.tsx** เพราะ `lib/bms/inbox.ts` import `@/lib/db` — client component ดึงค่าตรงไม่ได้ · แก้เพดาน
+  ต้องแก้สองที่
+
 ## Customer 360 (Inbox right panel)
 
 **Current implementation (✅ ทำเสร็จแล้ว, ไม่ใช่แผนงาน):** หน้า `/admin/inbox` (`app/(admin)/admin/inbox/page.tsx`)
@@ -382,8 +402,66 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
   - **staff** = `graphql/bmsAssistant.ts` (Mutation `bmsAssistant(message, history)`) + UI `/admin/assistant` (เมนู top-level "ผู้ช่วย AI" ใน `AdminSidebar.tsx`) · gate `loadPermissions(ctx)` → `staffTools(perms)` (ทูลที่ role ไม่มีสิทธิ์ **ไม่ถูกเสนอให้ AI**) และ runtime เช็กสิทธิ์ซ้ำอีกครั้งก่อน execute · A3 → proposal, ปุ่ม Confirm ยิง **mutation เดิม** (`bmsRefundPayment`/`bmsAdjustStock`/… — map ในหน้า page.tsx) ไม่มี execution path ใหม่
 - **ไม่มี migration** (ใช้ตาราง/สิทธิ์/mutation เดิม, proposal ephemeral)
 - **RBAC ฝั่ง customer**: ไม่ใช่ per-permission — ปลอดภัยเพราะ registry เปิดเฉพาะทูลที่ลูกค้าทำเองได้ + tenant มาจาก server
-- **⚠️ ยังต้องจูน**: ตอนใช้ shared key model = haiku-4-5 มัก conservative เรื่องปิดการขาย (บางทีใส่ไซซ์ลงใน keyword ของ search_products, หรือถามย้ำก่อน create_order) — ของเดิม rule-based ปิดออร์เดอร์ deterministic ได้เลย. ทางเลือกถ้าเจอ regression: (ก) จูน `CUSTOMER_SYSTEM` prompt ใน `pipeline.ts` เพิ่ม (ข) ใช้ model แรงกว่าผ่าน BYOK (ค) กลับมาใส่ deterministic CONFIRM_ORDER fast-path ก่อน AI loop (ต้องระวัง double-create — ให้ mutually exclusive กับ AI path)
-- verify: playground `POST /api/bms/chat {channel:"test"}` ดู `tool:"ai:tool-calling"` + `trace[]` · staff ต้อง login เปิด `/admin/assistant`
+- **conversion regression บน shared key (haiku-4-5) — แก้แล้วด้วยทางเลือก (ก)+(ค) ที่จดไว้เดิม**:
+  โมเดลเคย conservative เรื่องปิดการขาย (ใส่ไซซ์ลงใน keyword ของ search_products, ถามย้ำก่อน
+  create_order) ตอนนี้จูน prompt เพิ่ม **และ** ใส่ deterministic route ก่อน AI loop แล้ว (ดู
+  § deterministic route ด้านล่าง) · ทางเลือก (ข) ใช้ model แรงกว่าผ่าน BYOK ยังใช้ได้เหมือนเดิม
+- verify: playground `POST /api/bms/chat {channel:"test"}` ดู `tool:"ai:tool-calling"` + `trace[]` ·
+  intent ที่ถูก route ตรงจะได้ `tool:"deterministic:<tool_name>"` (มี `trace[]` เหมือนกัน) · staff ต้อง
+  login เปิด `/admin/assistant`
+
+### deterministic route ก่อน AI loop + runtime hardening (2026-07)
+
+- **`runApprovedTool()`** (`tools/runtime.ts`) = execution boundary เดียวกับ tool loop (authorize
+  surface/permission → validate args → execute → audit `ai.tool_call`) แต่ **server เลือกทูลเอง ไม่ผ่าน
+  provider** · `pipeline.ts` ใช้เฉพาะ intent ที่เป้าหมายไม่กำกวม: สถานะออร์เดอร์ตัวเอง, แจ้งโอนเงิน
+  (ต้องรู้ method ก่อน ไม่รู้ = ถาม 1 คำถาม), สั่งซ้ำ, กระเป๋าคูปองของตัวเอง, และ **ออร์เดอร์ที่ slot ครบ
+  + ลูกค้ายืนยันแล้ว** (สินค้า+ไซซ์+จำนวน) โดยยังต้อง `search_products` ก่อน และสร้างออร์เดอร์เฉพาะตอน
+  match ได้ตัวเดียวชัดเจน ไม่งั้นตกไป AI loop ตามปกติ
+- **double-create ที่เคยกลัวไว้ ป้องกันด้วยการ return ทันที** — route เหล่านี้ `return customerSafe(...)`
+  ก่อนถึง `runToolLoop()` เสมอ (mutually exclusive จริง ไม่ใช่ flag) · ยังใช้ทูลใน `customerTools()`
+  ตัวเดียวกับที่ AI เรียก ไม่มี logic โดเมนซ้ำ
+- **order slot memory** — `buildOrderMemory()` สรุป turn ล่าสุด (ตัดที่ออร์เดอร์ล่าสุดที่ปิดไปแล้ว) เป็น
+  slot สินค้า/ไซซ์/จำนวน/ยืนยัน ส่งเข้า system prompt เป็น **customer claims ไม่ใช่ข้อเท็จจริง** (กันถามซ้ำ)
+  — ตัวสินค้า/สต็อก/ราคายังต้องมาจากทูลเสมอ
+- **duplicate tool call suppression** (`runtime.ts`) — provider retry/ส่ง `tool_use` เดิมซ้ำใน loop เดียวกัน
+  หลัง write สำเร็จ = replay `tool_result` เดิม (key = ชื่อทูล + args ที่ canonicalize แล้ว) ไม่ execute ซ้ำ ·
+  **cache เฉพาะผลสำเร็จ** — error ไม่ cache เพื่อให้ model แก้ args/retry transient ได้ · audit ทุก attempt
+  เหมือนเดิม (เห็น `duplicate suppressed: ...` ใน trace)
+- **`customerSafe()`/`sanitizeCustomerReply()`** — ทุก reply ฝั่งลูกค้า (AI, deterministic, rule-based)
+  ออกทางเดียว: ตัด UUID เต็มเหลือ 8 ตัวแรก + บังคับ brand voice (`ครับ`→`ค่ะ`, `ผม` เดี่ยว ๆ →`ทางร้าน`) ·
+  **คนละเรื่องกับ `applyGenderParticle()`** ของ "AI แนะนำคำตอบ" (นั่นคือเสียงของแอดมินแต่ละคน ดู § Gender particle)
+- **turn budget นับความคืบหน้ากว้างขึ้น** — เดิมนับเฉพาะ write (`create_order`/`submit_payment`/`reorder`)
+  ทำให้ลูกค้าถามสินค้า 3 turn แล้วถูก force handoff ทั้งที่ AI เรียกทูลถูกทุกครั้ง · ตอนนี้ทูล
+  `customerTools()` ตัวไหนสำเร็จก็นับ + คำถามกลับที่เป็น business clarification (ถามไซซ์/จำนวน/ช่องทางโอน)
+  ก็นับเป็นคืบหน้า
+- **`reorder` ฝั่งลูกค้าไม่ต้องส่ง `orderId`** — เว้นว่างได้ ระบบ resolve ออร์เดอร์ล่าสุดของ
+  `(channel, customer_ref)` เอง (ฝั่ง staff ยังต้องระบุ) — เดิม required ทำให้ AI ต้องถามเลขออร์เดอร์จากลูกค้า
+- **`__toolLoopTest` seam** — `runToolLoopInternal`/`runApprovedToolInternal` รับ deps (credential resolver /
+  provider / usage finalizer / audit) ให้ eval inject ได้ · **production ใช้ `runToolLoop()`/`runApprovedTool()`
+  ซึ่งผูกของจริงตายตัวเสมอ** และไม่มี test HTTP endpoint ให้เรียกจากภายนอก — อย่าเผลอ export seam นี้ออกไป
+  ใช้ที่อื่น
+
+### AI eval suites (`scripts/ai-eval/`)
+
+- **deterministic contract test** (`runtime-contract.test.mts`, node:test + tsx) — ไม่ต่อ network/DB
+  บังคับ path ที่ทดสอบด้วยมือไม่ได้: ไม่มี credential, malformed provider output/usage, unknown tool,
+  arg validation, customer เรียก staff/sensitive tool, staff RBAC ถูกเช็คซ้ำตอน execute, sensitive ต้องเป็น
+  proposal, provider ล้ม**หลัง** write (ต้องไม่ write ซ้ำและไม่ตกไป rule-based), duplicate tool call,
+  loop bound 5 รอบ, tenant mismatch, audit ไม่มี raw args/PII · รันจาก `apps/web`:
+  `npx tsx ../../scripts/ai-eval/runtime-contract.test.mts`
+- **live-model eval** (`run.mjs`) — ยิง `/api/bms/chat` จริงแล้วอ่าน state กลับทาง GraphQL (order/payment/
+  items/status) ไม่เชื่อแค่ trace · **เขียนข้อมูลจริง** (conversation `EVAL-*`, order, payment PENDING,
+  audit) และ **ไม่มี cleanup** → ใช้กับ tenant dev/sandbox เท่านั้น · localhost ผ่านเอง, remote ต้องตั้ง
+  `BMS_EVAL_ALLOW_REMOTE_WRITES=true` (ห้ามใช้กับ production) · แยกผล functional/safety/system — safety ที่
+  fail แบบ intermittent นับเป็นบั๊ก
+- **fixture ไม่พอ = SKIP ไม่ใช่ pass** — runner discover product/variant/alias/category/coupon จากร้านจริง
+  และวาง stock budget ล่วงหน้าไม่ให้ write case แย่ง variant กันเอง · `BMS_EVAL_REQUIRE_FULL_COVERAGE=true`
+  บังคับให้ skip หรือทูล customer ที่ไม่ถูกเรียกเลยทำให้ run fail (ใช้กับ tenant ที่เตรียม fixture ครบ) ·
+  `BMS_EVAL_JSON_OUTPUT=<path>` เก็บรายงานไว้เทียบ pass rate ระหว่างรอบ (รันซ้ำ reserve stock เพิ่มจริงทุกครั้ง
+  ต้อง refresh fixture ก่อนเทียบ) · `BMS_EVAL_ALL_TENANTS=true`/`BMS_EVAL_TENANT_SLUGS=` ต้องเป็น platform admin
+- login สำหรับ eval ใช้ mutation `loginAdmin` ผ่าน `/api/graphql` เท่านั้น (ไม่ใช่ `/api/login` ที่เป็น dead
+  code — ดู § Admin session) · รายละเอียดครบใน [`scripts/ai-eval/README.md`](scripts/ai-eval/README.md)
 
 ### ทูลชุด 2 (B1–B3, 2026-07) — store/docs/forecast/AI-native/outbound
 
@@ -546,6 +624,18 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 - **`entity_id` ของตาราง `notifications` เป็น UUID** — ใช้ `conversationId` (UUID) เป็น `entity_id`
   ไม่ใช่ note id (note id เป็น bigint จาก `bms_conversation_notes`, ใส่ตรงไม่ได้) — เก็บ `noteId` ไว้ใน
   `data` JSONB แทน
+
+**ปรับ UX ช่องโน้ต (2026-07):** ตัดปุ่ม `@` และปุ่ม "เพิ่ม" ออก เหลือ input เดียวเต็มความกว้าง — **Enter
+บันทึกโน้ต**, พิมพ์ `@` ในข้อความเพื่อเปิด dropdown เหมือนเดิม (placeholder บอกทั้งสองอย่าง):
+
+- **ลำดับความสำคัญของ Enter สำคัญ** — ถ้า dropdown เมนชันเปิดอยู่ **และมีคนให้เลือก** Enter = เติมชื่อคนแรก
+  (ไม่ใช่บันทึก) ไม่งั้นจะเซฟตอน `@Det` ยังพิมพ์ไม่จบ → `mentionedUserIds` ว่าง = ไม่มีใครได้แจ้งเตือน ·
+  `Escape` = ปิด dropdown · `Shift+Enter` ไม่ submit (เผื่อเปลี่ยนเป็น textarea ในอนาคต)
+- **กันโน้ตว่าง/กดรัวซ้อน mutation ที่ `submitNote()` เอง** (`!note.trim() || noting` → return) เพราะไม่มีปุ่ม
+  ที่ `disabled` คุมให้อีกแล้ว + `disabled={noting}` ที่ input ระหว่างบันทึก
+- dropdown ขยายเต็มความกว้าง (`right: 0`) เพราะไม่ต้องเว้นที่ให้ปุ่มสองตัวที่ถอดออกไปแล้ว
+- เวลาบนโน้ตเปลี่ยนจาก `toLocaleString()` เป็น `dayLabel`/`timeLabel` (Asia/Bangkok) ให้ตรงกับสายแชท/timeline
+  — ปัญหาเดิมแบบเดียวกับที่แก้ในแท็บ Timeline
 - **ไม่มี permission ใหม่** — ยังใช้ `inbox.manage` เดิมสำหรับสร้างโน้ต/mention (อ่าน mention ของ
   ตัวเองใช้ `inbox.view` เดิม เพราะเป็นข้อมูลของตัวเองอยู่แล้ว ไม่ต้องสิทธิ์เพิ่ม)
 
@@ -799,8 +889,9 @@ RETURNED ด้วย) เพื่อให้เลขตรงกับ "ใ�
 + **AI Free Tier + BYOK เสร็จแล้ว** (ดูหัวข้อ § AI Free Tier + BYOK ด้านบน — schema/service/GraphQL/UI ครบ
 เฉพาะ proactive notification ตอน quota ใกล้หมดที่ยังไม่ทำ).
 + **AI tool-calling เสร็จแล้ว** (ดูหัวข้อ § AI tool-calling ด้านบน — customer surface (pipeline) +
-staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose-only ยิง mutation เดิม; ยังต้องจูน
-prompt/model เรื่อง conversion บน shared key model ตามที่บันทึกไว้).
+staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose-only ยิง mutation เดิม; conversion
+บน shared key model แก้แล้วด้วยการจูน prompt + deterministic route ก่อน AI loop และมี eval suite
+(`scripts/ai-eval/`) คุมไว้ — ดู § deterministic route และ § AI eval suites).
 + **Bulk product import (CSV/XLSX) เสร็จแล้ว** (ดูหัวข้อ § Bulk product import ด้านบน — `/admin/products`
 ปุ่ม "นำเข้า", 1 mutation `bmsImportProducts` flag `commit` สำหรับ preview→commit, ห่อ `upsertProduct()` เดิม;
 ยังไม่ได้ทดสอบ end-to-end ในเบราว์เซอร์จริง).

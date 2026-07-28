@@ -12,8 +12,9 @@ import { understand, type Understanding } from "./nlu";
 import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
 import { generateResponse } from "./ai";
-import { runToolLoop, type ToolTraceEntry } from "./tools/runtime";
+import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
+import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
 import { getRecentAiHistory, resolveConversationId, bumpAiTurnCounter, addNote, getConversation } from "./inbox";
 import { listCategories } from "./productCategories";
 import {
@@ -41,6 +42,10 @@ const VERIFIED_FACT_TOOLS = new Set([
   "check_coupon",
   "list_available_coupons",
   "list_customer_coupons",
+  "get_order_status",
+  "create_order",
+  "submit_payment",
+  "reorder",
 ]);
 
 function hasUnverifiedFacts(replyText: string, trace: ToolTraceEntry[] | undefined): boolean {
@@ -72,8 +77,9 @@ function hasUnverifiedActionClaim(replyText: string, trace: ToolTraceEntry[] | u
   return !hasSuccessfulWrite;
 }
 
-// P1: ทูลที่แปลว่าบทสนทนา "คืบหน้าจริง" ไปทางปิดการขาย (ไม่ใช่แค่ถามตอบ) — ใช้ reset turn-budget counter
-const PROGRESS_TOOLS = new Set(["create_order", "submit_payment", "reorder"]);
+// การอ่านข้อมูลจริงหรือ write สำเร็จล้วนเป็นความคืบหน้า ห้ามลงโทษบทสนทนาที่ model เรียกทูล
+// ถูกต้องแต่ยังไม่ถึงขั้นปิดการขาย (เดิมนับเฉพาะ write ทำให้ถามสินค้า 3 turn แล้ว handoff ผิด)
+const CUSTOMER_PROGRESS_TOOLS = new Set(customerTools().map((tool) => tool.name));
 // เกิน N ข้อความติดกันที่ไม่คืบหน้า → force handoff (ยังไม่มี field ต่อ tenant ให้ตั้งเอง ดู
 // docs/AI Context Strategy for Multi-Tenant Shops.md § Turn Budget Enforcer)
 const TURN_BUDGET_MAX_FAILED = 3;
@@ -95,16 +101,17 @@ export type PipelineResult = {
 // system prompt ฝั่งลูกค้า — คุมโทน + guardrail (ตาม docs/ai/prompts.md + AI_GUIDELINES.md)
 // P2 (#5/#6): รับ categories ของร้านจริง (จาก listCategories(), มีอยู่แล้ว/แก้ไขได้ที่ /admin/products)
 // ฝังเข้า prompt ให้ AI รู้คำศัพท์หมวดหมู่ของร้านนี้จริง ๆ + เพิ่มกฎถามทีละ 1 field (slot-filling)
-function buildCustomerSystem(categories: string[]): string {
+function buildCustomerSystem(categories: string[], memoryHint?: string | null): string {
   const lines = [
     "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง",
+    "ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม และลงท้ายด้วย ค่ะ/คะ เท่านั้น ห้ามใช้ ผม/ครับ และห้ามเติมคำอวยพรหรือเรื่องนอกบริบทการซื้อขาย",
     "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริง (สินค้า/สต็อก/ราคา/สถานะออร์เดอร์) เท่านั้น",
     "ห้ามเดาหรือแต่งตัวเลขสต็อก ราคา หรือเลขออร์เดอร์เอง — ทุกตัวเลขต้องมาจากผลของทูล",
     "ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และรู้ไซซ์+จำนวนครบก่อน ถ้าไม่ครบให้ถามกลับ",
-    "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น (เช่น 461b9bac) ห้ามพิมพ์ orderId เต็มที่เป็น UUID ยาวๆ ให้ลูกค้าเห็นเด็ดขาด",
+    "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
     "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่เพื่อสั่งซื้อ — เมื่อได้ sku+ไซซ์+จำนวนครบและลูกค้ายืนยัน ให้เรียก create_order ทันที",
     "อย่าถามย้ำหลายรอบ: ถ้าลูกค้าบอกชื่อสินค้า+ไซซ์+จำนวนและสั่งยืนยันแล้ว ให้ search_products/check_stock เอง ถ้าเจอสินค้าที่ตรงที่สุดเพียงพอก็เรียก create_order ด้วย sku นั้นเลย ไม่ต้องขอรุ่น/สีเพิ่มถ้าลูกค้าไม่ได้ระบุ",
-    "ถ้าข้อมูลยังขาดหลาย field (เช่น ทั้งสินค้าและไซซ์) ให้ถามทีละ 1 field ต่อข้อความเท่านั้น — เลือกถามอันที่จำเป็นที่สุดก่อน ห้ามถามหลาย field พร้อมกันในข้อความเดียว จะทำให้ลูกค้าตอบแล้วสับสนว่าตอบอันไหน",
+    "ถ้าข้อมูลยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
     "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าอัตโนมัติ) " +
       "แต่ต้องรู้ method (ช่องทางที่โอน เช่น โอนธนาคาร/พร้อมเพย์) ก่อนเรียกเสมอ ถ้าลูกค้าไม่ได้บอกช่องทาง ให้ถามยืนยัน 1 คำถามก่อน ห้ามเดา " +
       "หลังเรียกสำเร็จ (สถานะ PENDING) แจ้งว่ารอแอดมินตรวจสอบ อย่ายืนยันว่าเงินเข้าแล้ว และห้ามพูดว่า 'บันทึกแล้ว/สำเร็จแล้ว' ถ้าไม่ได้เรียกทูลนี้จริง",
@@ -120,7 +127,247 @@ function buildCustomerSystem(categories: string[]): string {
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้ช่วยถามกลับหรือส่ง category เข้า search_products แทนการเดาชื่อสินค้าเอง"
     );
   }
+  if (memoryHint) {
+    lines.push(
+      "สถานะ slot จากข้อความที่ลูกค้าให้ไว้ (เป็น customer-provided claims ไม่ใช่ข้อเท็จจริงจากฐานข้อมูล; ต้องค้นสินค้า/ตรวจสต็อกด้วยทูลก่อนใช้):",
+      memoryHint,
+      "ใช้ slot ที่มีแล้วต่อเนื่อง ห้ามถามซ้ำ; ถ้าครบสินค้า+ไซซ์+จำนวนและลูกค้ายืนยันแล้ว ให้ทำรายการทันที"
+    );
+  }
   return lines.join("\n");
+}
+
+const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
+  customerTools().map((tool) => [tool.name, tool])
+);
+
+function customerExecCtx(
+  tenantId: string,
+  channel: Channel,
+  customerRef?: string | null
+): ExecCtx {
+  return {
+    tenantId,
+    surface: "customer",
+    actor: "ai:customer",
+    channel,
+    customerRef,
+  };
+}
+
+async function executeCustomerTool(
+  name: string,
+  input: Record<string, unknown>,
+  execCtx: ExecCtx
+): Promise<{ result: ToolResult; trace: ToolTraceEntry }> {
+  const tool = CUSTOMER_TOOL_BY_NAME.get(name);
+  if (!tool) {
+    throw new Error(`customer tool not registered: ${name}`);
+  }
+  return runApprovedTool({ tool, input, execCtx });
+}
+
+type OrderMemory = {
+  product: string | null;
+  size: string | null;
+  qty: number | null;
+  confirmed: boolean;
+};
+
+function productHintFromCustomerText(text: string): string | null {
+  if (
+    /(?:สถานะ|ออร์เดอร์|order).*(?:ถึงไหน|เป็นยังไง|ตรวจ|เช็ค|ดู)/i.test(text) ||
+    /(?:โอน|ชำระ|จ่าย).*(?:แล้ว|เรียบร้อย)/i.test(text) ||
+    /(?:สั่งซ้ำ|เหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม)/i.test(text)
+  ) {
+    return null;
+  }
+
+  const understanding = understand(text);
+  const size = understanding.entities.size;
+  let cleaned = text
+    .replace(/(?:อยากได้|ต้องการ|ขอซื้อ|ขอสั่ง|สั่งซื้อ|สั่ง|ซื้อ|เอา|รับ|จอง|ยืนยัน|เลย)/gi, " ")
+    .replace(/(?:ไซซ์|size|ขนาด)\s*[:=-]?\s*[A-Za-z0-9.-]+/gi, " ")
+    .replace(/\d+\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด|pcs?|pieces?)/gi, " ")
+    .replace(/(?:จำนวน)\s*\d+/gi, " ")
+    .replace(/(?:ค่ะ|คะ|ครับ|นะ|หน่อย|ด้วย|ที)$/gi, " ")
+    .replace(/[,+]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (size) {
+    cleaned = cleaned
+      .replace(new RegExp(`(^|\\s)${size}(?=\\s|$)`, "i"), " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  if (cleaned.length < 2 || cleaned.length > 120 || /^\d+$/.test(cleaned)) return null;
+  return cleaned;
+}
+
+function sizeClaimFromCustomerText(text: string, previousAssistant: string): string | null {
+  const parsed = understand(text).entities.size;
+  if (parsed) return parsed;
+  const explicit = text.match(/(?:ไซซ์|size|ขนาด)\s*[:=-]?\s*([A-Za-z0-9.-]{1,24})/i)?.[1];
+  if (explicit) return explicit.toUpperCase();
+  if (/(?:ไซซ์|size|ขนาด).*(?:อะไร|ไหน|เท่าไหร่|ดี|คะ|ค่ะ|\?)/i.test(previousAssistant)) {
+    const shortAnswer = text
+      .trim()
+      .replace(/\s*(?:ค่ะ|คะ|ครับ)\s*$/i, "")
+      .trim();
+    if (/^[A-Za-z0-9.-]{1,24}$/.test(shortAnswer)) return shortAnswer.toUpperCase();
+  }
+  return null;
+}
+
+function buildOrderMemory(
+  history: Awaited<ReturnType<typeof getRecentAiHistory>>,
+  message: string,
+  currentUnderstanding: Understanding
+): OrderMemory | null {
+  let lastCompleted = -1;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const turn = history[index];
+    if (
+      turn.role === "assistant" &&
+      /(?:รับออร์เดอร์แล้ว|สร้างออร์เดอร์.*แล้ว|เลขออร์เดอร์)/i.test(turn.content)
+    ) {
+      lastCompleted = index;
+      break;
+    }
+  }
+  const recent = history.slice(Math.max(0, lastCompleted + 1));
+  const lastAssistant = [...recent].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
+  const currentLooksLikeSlot =
+    currentUnderstanding.intent === "CONFIRM_ORDER" ||
+    /(?:อยากได้|ต้องการ|สั่ง|ซื้อ|เอา|รับ|จอง|ไซซ์|size|ขนาด|จำนวน|ชิ้น|คู่|ยืนยัน|เอาเลย|สั่งเลย)/i.test(message) ||
+    (/^[A-Za-z0-9.-]{1,8}\s*(?:ค่ะ|คะ|ครับ)?$/i.test(message.trim()) &&
+      /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่)/i.test(lastAssistant));
+  if (!currentLooksLikeSlot) return null;
+
+  const turns = [...recent, { role: "user" as const, content: message }].slice(-12);
+  let product: string | null = null;
+  let size: string | null = null;
+  let qty: number | null = null;
+  let previousAssistant = "";
+  for (const turn of turns) {
+    if (turn.role === "assistant") {
+      previousAssistant = turn.content;
+      continue;
+    }
+    const text = turn.content;
+    const parsed = understand(text);
+    const hint = productHintFromCustomerText(text);
+    if (hint) product = hint;
+    const sizeClaim = sizeClaimFromCustomerText(text, previousAssistant);
+    if (sizeClaim) size = sizeClaim;
+    if (parsed.entities.qty) qty = parsed.entities.qty;
+    if (!qty && /(?:จำนวน|เอา|รับ)\s*(\d+)/i.test(text)) {
+      const n = Number(text.match(/(?:จำนวน|เอา|รับ)\s*(\d+)/i)?.[1]);
+      if (Number.isInteger(n) && n > 0) qty = n;
+    }
+    if (
+      !qty &&
+      /(?:จำนวน|กี่)\s*(?:ชิ้น|ตัว|อัน|คู่|ชุด)?|เอา.*กี่/i.test(previousAssistant)
+    ) {
+      const shortQty = text.trim().match(/^(\d+)\s*(?:ค่ะ|คะ|ครับ)?$/i)?.[1];
+      const n = Number(shortQty);
+      if (Number.isInteger(n) && n > 0) qty = n;
+    }
+  }
+
+  const explicitlyDeclined =
+    /(?:ยังไม่ยืนยัน|ไม่ยืนยัน|ยังไม่สั่ง|ไม่สั่ง|อย่าเพิ่ง|แค่สนใจ|กำลังสนใจ)/i.test(
+      message
+    );
+  const confirmed =
+    !explicitlyDeclined &&
+    (/(?:ยืนยัน(?:สั่ง)?|สั่งเลย|เอาเลย|ตกลง|จัดมา|เอาค่ะ|เอาครับ)/i.test(message) ||
+      /^(?:ขอ)?สั่ง(?:\s|$)/i.test(message.trim()));
+  return { product, size, qty, confirmed };
+}
+
+function orderMemoryHint(memory: OrderMemory | null): string | null {
+  if (!memory) return null;
+  return JSON.stringify({
+    product: memory.product,
+    size: memory.size,
+    qty: memory.qty,
+    confirmed: memory.confirmed,
+  });
+}
+
+function isOrderStatusQuestion(message: string): boolean {
+  return (
+    /(?:สถานะ|ถึงไหน|เป็นยังไง|ไปถึงไหน|ติดตาม|เช็ค|เช็ก|ตรวจ|ดู).*(?:ออร์เดอร์|ออเดอร์|order|คำสั่งซื้อ)/i.test(message) ||
+    /(?:ออร์เดอร์|ออเดอร์|order|คำสั่งซื้อ).*(?:สถานะ|ถึงไหน|เป็นยังไง|ไปถึงไหน|ติดตาม|เช็ค|เช็ก|ตรวจ|ดู)/i.test(message)
+  );
+}
+
+function paymentMethodFromMessage(message: string):
+  | "BANK_TRANSFER"
+  | "QR"
+  | "CARD"
+  | "TIKTOK"
+  | "CASH"
+  | null {
+  if (/(?:พร้อมเพย์|promptpay|คิวอาร์|qr)/i.test(message)) return "QR";
+  if (
+    /(?:โอน(?:เข้า)?(?:บัญชี|ธนาคาร)|บัญชีธนาคาร|bank(?:\s*transfer)?|กสิกร|ไทยพาณิชย์|กรุงไทย|กรุงเทพ|กรุงศรี|ออมสิน|ธ\.?ก\.?ส\.?|ttb)/i.test(
+      message
+    )
+  ) {
+    return "BANK_TRANSFER";
+  }
+  if (/(?:บัตร|card|เครดิต|เดบิต)/i.test(message)) return "CARD";
+  if (/(?:tiktok|ติ๊กต็อก)/i.test(message)) return "TIKTOK";
+  if (/(?:เงินสด|cash|เก็บเงินปลายทาง|cod)/i.test(message)) return "CASH";
+  return null;
+}
+
+function isPaymentSubmission(message: string): boolean {
+  return (
+    /(?:โอน|ชำระ|จ่าย)(?:เงิน)?[^.!?\n]{0,80}(?:แล้ว|เรียบร้อย)/i.test(message) ||
+    /(?:แจ้ง|ส่ง)[^.!?\n]{0,30}(?:สลิป|หลักฐานการโอน)/i.test(message)
+  );
+}
+
+function isReorderRequest(message: string): boolean {
+  return /(?:สั่งซ้ำ|ซื้อซ้ำ|เอาเหมือนเดิม|สั่งเหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม|ออเดอร์เดิม|เหมือน(?:ออร์เดอร์|ออเดอร์|รายการ)ล่าสุด|สั่ง[^.!?\n]{0,30}เหมือน[^.!?\n]{0,30}ล่าสุด)/i.test(
+    message
+  );
+}
+
+function orderStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PENDING: "รอตรวจสอบการชำระเงิน",
+    PAID: "ชำระเงินแล้ว",
+    PACKING: "กำลังแพ็ก",
+    SHIPPED: "จัดส่งแล้ว",
+    COMPLETED: "สำเร็จแล้ว",
+    CANCELLED: "ยกเลิกแล้ว",
+    RETURNED: "คืนสินค้าแล้ว",
+  };
+  return labels[status] ?? status;
+}
+
+function sanitizeCustomerReply(reply: string): string {
+  return String(reply || "")
+    .replace(
+      /\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+      "$1"
+    )
+    .replace(/ครับ/g, "ค่ะ")
+    .replace(/(^|[\s(])ผม(?=$|[\s,.;!?)]|ค่ะ|คะ)/g, "$1ทางร้าน");
+}
+
+function customerSafe(result: PipelineResult): PipelineResult {
+  return { ...result, reply: sanitizeCustomerReply(result.reply) };
+}
+
+function isBusinessClarification(reply: string): boolean {
+  return /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่|ช่องทาง.*(?:โอน|ชำระ)|วิธี.*(?:โอน|ชำระ)).*(?:คะ|ค่ะ|\?)/is.test(
+    reply
+  );
 }
 
 function isCouponQuestion(message: string): boolean {
@@ -129,6 +376,12 @@ function isCouponQuestion(message: string): boolean {
   const mentionsCoupon = /(coupon|คูปอง|คูปองส่วนลด|โค้ดส่วนลด|ส่วนลด|โค้ด)/i.test(text);
   if (!mentionsCoupon) return false;
   return /(มี|เหลือ|กี่|เท่าไร|เท่าไหร่|อะไร|ไหน|ใกล้หมด|หมดอายุ|ใช้ได้|ใช้ได้ไหม|ดู|บอก|ขอ)/i.test(text);
+}
+
+function isCouponWalletQuestion(message: string): boolean {
+  return /(?:กระเป๋าคูปอง|คูปอง[^.!?\n]{0,30}(?:ของฉัน|ของผม|ของหนู|ของเรา)|(?:ฉัน|ผม|หนู|เรา)[^.!?\n]{0,30}คูปอง)/i.test(
+    message
+  );
 }
 
 function shortDate(value: string | null): string | null {
@@ -165,9 +418,11 @@ function couponLine(coupon: CustomerCouponWalletItem): string {
 async function couponQuestionReply(
   tenantId: string,
   channel: Channel,
-  customerRef?: string | null
+  customerRef?: string | null,
+  providedWallet?: CustomerCouponWalletItem[]
 ): Promise<string> {
-  const wallet = await listCustomerCouponWallet(tenantId, { channel, customerRef });
+  const wallet =
+    providedWallet ?? (await listCustomerCouponWallet(tenantId, { channel, customerRef }));
   const customerId = await findCustomerIdByIdentity(tenantId, channel, customerRef);
   const walletLink = customerId
     ? absoluteCouponWalletUrl(createCouponWalletToken({ tenantId, customerId }))
@@ -234,16 +489,132 @@ export async function runPipeline(
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
   const understanding = understand(message);
   const { intent, entities } = understanding;
+  const execCtx = customerExecCtx(tenantId, channel, customerRef);
+
+  // Intent ที่มี backend action ชัดเจนและไม่ต้องอาศัยการตีความเชิงสร้างสรรค์ ใช้ catalog tool
+  // โดยตรงผ่าน authorization+validation+audit boundary เดียวกับ AI loop ลดเคส model ตอบเองโดยไม่เรียกทูล
+  if (isOrderStatusQuestion(message)) {
+    const executed = await executeCustomerTool("get_order_status", {}, execCtx);
+    let reply: string;
+    if (!executed.result.ok) {
+      reply = `ขออภัยค่ะ ตรวจสถานะออร์เดอร์ไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    } else {
+      const orders = Array.isArray((executed.result.data as any)?.orders)
+        ? ((executed.result.data as any).orders as Array<{
+            displayOrderId: string;
+            status: string;
+            total: number;
+          }>)
+        : [];
+      const latest = orders[0];
+      reply = latest
+        ? `ออร์เดอร์ล่าสุด #${latest.displayOrderId} สถานะ “${orderStatusLabel(latest.status)}” ยอด ${Number(latest.total).toLocaleString()} บาทค่ะ`
+        : "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ ไม่ต้องส่งเลขออร์เดอร์ให้ทางร้านนะคะ หากเพิ่งสั่งไปลองเช็คอีกครั้งในอีกสักครู่ค่ะ";
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:get_order_status",
+      data: { status: "NOT_FOUND", query: message },
+      reply,
+      trace: [executed.trace],
+    });
+  }
+
+  if (isPaymentSubmission(message)) {
+    const method = paymentMethodFromMessage(message);
+    if (!method) {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:payment_method_question",
+        data: { status: "NOT_FOUND", query: message },
+        reply: "โอนผ่านช่องทางไหนคะ เช่น พร้อมเพย์หรือโอนเข้าบัญชีธนาคาร",
+      });
+    }
+    const executed = await executeCustomerTool("submit_payment", { method }, execCtx);
+    let reply: string;
+    if (!executed.result.ok) {
+      reply = `ขออภัยค่ะ แจ้งชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    } else {
+      const payment = executed.result.data as { status?: string; amount?: number };
+      if (payment?.status === "SUBMITTED") {
+        reply = `รับแจ้งการชำระเงินยอด ${Number(payment.amount ?? 0).toLocaleString()} บาทแล้วค่ะ ตอนนี้สถานะยังรอแอดมินตรวจสอบ กรุณารอผลยืนยันนะคะ`;
+      } else if (payment?.status === "ORDER_NOT_FOUND") {
+        reply = "ยังไม่พบออร์เดอร์ล่าสุดของบัญชีนี้ จึงยังแจ้งชำระเงินไม่ได้ค่ะ";
+      } else {
+        reply = "ขออภัยค่ะ ยังแจ้งชำระเงินไม่ได้ กรุณาตรวจสอบช่องทางที่โอนแล้วลองอีกครั้งนะคะ";
+      }
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:submit_payment",
+      data: { status: "NOT_FOUND", query: message },
+      reply,
+      trace: [executed.trace],
+    });
+  }
+
+  if (isReorderRequest(message)) {
+    const executed = await executeCustomerTool("reorder", {}, execCtx);
+    let reply: string;
+    let order: CreateOrderResult | undefined;
+    if (!executed.result.ok) {
+      reply = `ขออภัยค่ะ สั่งซ้ำไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    } else {
+      const reordered = executed.result.data as CreateOrderResult | { status: "SOURCE_NOT_FOUND" };
+      if (reordered?.status === "SOURCE_NOT_FOUND") {
+        reply = "ยังไม่พบออร์เดอร์เดิมของบัญชีนี้ จึงสั่งซ้ำไม่ได้ค่ะ";
+      } else {
+        order = reordered as CreateOrderResult;
+        reply = orderReply({}, order);
+      }
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:reorder",
+      data: { status: "NOT_FOUND", query: message },
+      order,
+      reply,
+      trace: [executed.trace],
+    });
+  }
+
+  if (isCouponWalletQuestion(message)) {
+    const executed = await executeCustomerTool("list_customer_coupons", {}, execCtx);
+    const wallet =
+      executed.result.ok && Array.isArray((executed.result.data as any)?.coupons)
+        ? ((executed.result.data as any).coupons as CustomerCouponWalletItem[])
+        : undefined;
+    const reply = executed.result.ok
+      ? await couponQuestionReply(tenantId, channel, customerRef, wallet)
+      : `ขออภัยค่ะ เปิดกระเป๋าคูปองไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:list_customer_coupons",
+      data: { status: "NOT_FOUND", query: message },
+      reply,
+      trace: [executed.trace],
+    });
+  }
 
   if (isCouponQuestion(message)) {
-    return {
+    return customerSafe({
       channel,
       incoming: message,
       understanding,
       tool: "couponQuestion",
       data: { status: "NOT_FOUND", query: message },
       reply: await couponQuestionReply(tenantId, channel, customerRef),
-    };
+    });
   }
 
   // ----- (ทางหลัก) AI tool-calling: ให้ Claude เลือก/เรียกทูลเอง ถ้าร้านมี AI credentials -----
@@ -265,12 +636,74 @@ export async function runPipeline(
   } catch (err) {
     console.error("[BMS] pipeline pre-AI context load failed:", err);
   }
+
+  const orderMemory = buildOrderMemory(history, message, understanding);
+  if (
+    orderMemory?.confirmed &&
+    orderMemory.product &&
+    orderMemory.size &&
+    orderMemory.qty &&
+    !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(message)
+  ) {
+    const searched = await executeCustomerTool(
+      "search_products",
+      { keyword: orderMemory.product },
+      execCtx
+    );
+    if (searched.result.ok) {
+      const products = Array.isArray((searched.result.data as any)?.products)
+        ? ((searched.result.data as any).products as Array<{
+            sku: string;
+            name: string;
+            active?: boolean;
+          }>)
+        : [];
+      const normalizedHint = orderMemory.product.trim().toLowerCase();
+      const exact = products.filter(
+        (product) =>
+          product.sku.toLowerCase() === normalizedHint ||
+          product.name.trim().toLowerCase() === normalizedHint
+      );
+      const selected = exact.length === 1 ? exact[0] : products.length === 1 ? products[0] : null;
+      if (selected) {
+        const created = await executeCustomerTool(
+          "create_order",
+          {
+            items: [{ sku: selected.sku, size: orderMemory.size, qty: orderMemory.qty }],
+          },
+          execCtx
+        );
+        let reply: string;
+        let order: CreateOrderResult | undefined;
+        if (!created.result.ok) {
+          reply = `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
+        } else {
+          order = created.result.data as CreateOrderResult;
+          reply = orderReply({ [selected.sku]: selected.name }, order);
+        }
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: "deterministic:create_order",
+          data: { status: "NOT_FOUND", query: message },
+          order,
+          reply,
+          trace: [searched.trace, created.trace],
+        });
+      }
+    }
+  }
+
   const loop = await runToolLoop({
     tenantId,
-    system: buildCustomerSystem(categories.map((c) => c.name)),
+    system: buildCustomerSystem(
+      categories.map((c) => c.name),
+      orderMemoryHint(orderMemory)
+    ),
     messages: [...history, { role: "user", content: message }],
     tools: customerTools(),
-    execCtx: { tenantId, surface: "customer", actor: "ai:customer", channel, customerRef },
+    execCtx,
   });
   if (loop.usedAi) {
     // P1: unverified fact detector — reply มีเลขราคา/สต็อกแต่ไม่มีทูล verify รองรับ → อย่าส่งเลขนั้น
@@ -291,7 +724,9 @@ export async function runPipeline(
     // best-effort เหมือน logConversation: พลาดตรงนี้ต้องไม่ทำให้ reply ที่ AI ตอบไปแล้วหายไปด้วย
     if (convId) {
       try {
-        const madeProgress = (loop.trace ?? []).some((t) => t.ok && PROGRESS_TOOLS.has(t.tool));
+        const madeProgress =
+          (loop.trace ?? []).some((t) => t.ok && CUSTOMER_PROGRESS_TOOLS.has(t.tool)) ||
+          isBusinessClarification(reply);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
         if (!madeProgress && failedTurns >= TURN_BUDGET_MAX_FAILED) {
           reply = HANDOFF_REPLY;
@@ -315,7 +750,7 @@ export async function runPipeline(
       }
     }
 
-    return {
+    return customerSafe({
       channel,
       incoming: message,
       understanding,
@@ -323,7 +758,7 @@ export async function runPipeline(
       data: { status: "NOT_FOUND", query: message },
       reply,
       trace: loop.trace,
-    };
+    });
   }
 
   // ----- CONFIRM_ORDER: สั่งซื้อ (หลายรายการต่อข้อความได้) → สร้าง order + reserve -----
@@ -362,7 +797,7 @@ export async function runPipeline(
       reply = orderReply(names, order);
     }
 
-    return {
+    return customerSafe({
       channel,
       incoming: message,
       understanding,
@@ -370,7 +805,7 @@ export async function runPipeline(
       data: { status: "NOT_FOUND", query: message }, // ดูรายการจริงใน order
       order,
       reply,
-    };
+    });
   }
 
   // ----- CHECK_STOCK / GREETING / อื่น ๆ -----
@@ -390,5 +825,5 @@ export async function runPipeline(
     reply = await generateResponse(tenantId, message, data);
   }
 
-  return { channel, incoming: message, understanding, tool, data, reply };
+  return customerSafe({ channel, incoming: message, understanding, tool, data, reply });
 }

@@ -155,6 +155,19 @@ Before releasing an AI change, verify at minimum:
 - audit records without secrets or unnecessary PII; and
 - Thai/customer-facing wording for success, clarification, and failure paths.
 
+The repository's eval suites in [`scripts/ai-eval/`](../scripts/ai-eval/README.md) exist to answer
+these items with evidence rather than judgement:
+
+- the **deterministic runtime contract suite** covers argument validation, surface/RBAC denial,
+  propose-only enforcement, malformed provider output, timeout, bounded loops, post-write provider
+  outage, duplicate tool calls, and audit redaction — with no network or database access, so these
+  results must be reproducible on every run;
+- the **live-model suite** checks tool selection, tool arguments, and the resulting backend state
+  (orders, payments, statuses) through GraphQL, and reports functional and safety results separately.
+
+Live evals write real conversations, orders, payments, and audit rows, so run them only against a
+development/sandbox tenant. A safety check that fails intermittently is a defect, not noise.
+
 ## Change review questions
 
 Reviewers should be able to answer "yes" to all of the following:

@@ -719,11 +719,17 @@ function enforceTurnBudget(aiResponse, conversationState, tenantSummary) {
 > [`7.28__bms_conversations_ai_turns.sql`](../db/migrations/7.28__bms_conversations_ai_turns.sql) เพิ่ม
 > `bms_conversations.ai_consecutive_askbacks` · `resolveConversationId()`/`bumpAiTurnCounter()` ใน
 > [`lib/bms/inbox.ts`](../apps/web/lib/bms/inbox.ts) · logic ใน `pipeline.ts`: ไม่มี tool ใน
-> `PROGRESS_TOOLS` (`create_order`/`submit_payment`/`reorder`) ที่ ok=true ติดกันครบ
+> `CUSTOMER_PROGRESS_TOOLS` ที่ ok=true ติดกันครบ
 > `TURN_BUDGET_MAX_FAILED = 3` ครั้ง → override reply เป็นข้อความ handoff + เขียน internal note
 > (`addNote(..., author: "AI")`, staff เห็นในแท็บโน้ตของ Inbox ที่มีอยู่แล้ว) แล้ว reset counter กันแจ้งซ้ำ
 > ทุกข้อความถัดไป — threshold เป็น constant กลาง ยังไม่มี fieldต่อ tenant ให้ตั้งเอง (ตรงกับที่หมายเหตุ
 > ไว้ข้างบนว่ายังไม่มีที่เก็บจริง)
+>
+> **แก้เพิ่ม (2026-07)**: เดิมนับความคืบหน้าจากทูล write เท่านั้น (`create_order`/`submit_payment`/
+> `reorder`) ลูกค้าที่ถามสินค้า/สต็อกสามข้อความติดจึงถูก force handoff ทั้งที่ AI เรียกทูลถูกทุกครั้ง ·
+> ตอนนี้ `CUSTOMER_PROGRESS_TOOLS` = ทูลทั้งชุดของ `customerTools()` และคำถามกลับที่เป็น business
+> clarification (ถามไซซ์/จำนวน/ช่องทางที่โอน) ก็นับเป็นความคืบหน้าด้วย — handoff จึงเหลือไว้สำหรับบทสนทนา
+> ที่ไม่คืบจริง ๆ เท่านั้น
 
 ---
 

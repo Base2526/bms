@@ -649,16 +649,30 @@ const submitPaymentTool: BmsTool = {
 
 const reorderTool: BmsTool = {
   name: "reorder",
-  description: "สั่งซื้อซ้ำจากออร์เดอร์เก่า (จองสต็อกใหม่ ใช้ราคาปัจจุบัน) ใช้เมื่อลูกค้าบอก 'สั่งเหมือนเดิม'",
+  description:
+    "สั่งซื้อซ้ำจากออร์เดอร์เก่า (จองสต็อกใหม่ ใช้ราคาปัจจุบัน) ใช้เมื่อลูกค้าบอก 'สั่งเหมือนเดิม' " +
+    "ฝั่งลูกค้าไม่ต้องถาม/ส่ง orderId ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าคนนี้อัตโนมัติ ฝั่งแอดมินต้องระบุ orderId",
   surfaces: ["customer", "staff"],
   permission: "order.create",
   inputSchema: {
     type: "object",
-    properties: { orderId: { type: "string", description: "รหัสออร์เดอร์เดิมที่จะสั่งซ้ำ" } },
-    required: ["orderId"],
+    properties: {
+      orderId: {
+        type: "string",
+        description: "รหัสออร์เดอร์เดิม — ฝั่งลูกค้าเว้นว่างได้ (ใช้ออร์เดอร์ล่าสุด), ฝั่งแอดมินต้องระบุ",
+      },
+    },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const orderId = reqString(args, "orderId");
+    let orderId = optString(args, "orderId") ?? null;
+    if (!orderId) {
+      if (ec.surface !== "customer" || !ec.customerRef || !ec.channel) {
+        return { ok: false, error: "ต้องระบุ orderId" };
+      }
+      const [latest] = await listCustomerOrderStatuses(ec.tenantId, ec.channel, ec.customerRef, 1);
+      if (!latest) return { ok: false, error: "ไม่พบออร์เดอร์เดิมของคุณ" };
+      orderId = latest.orderId;
+    }
     if (ec.surface === "customer" && !(await customerOwnsOrder(ec, orderId))) {
       return { ok: false, error: "ไม่พบออร์เดอร์นี้ในบัญชีของคุณ" };
     }

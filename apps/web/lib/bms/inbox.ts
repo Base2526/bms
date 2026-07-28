@@ -1033,7 +1033,8 @@ export async function getTimeline(
       ...base,
       type: "ORDER",
       at: toISO(o.created_at),
-      text: `สร้างออร์เดอร์ · ${Number(o.total_amount).toLocaleString()} ฿`,
+      // ป้าย "สร้างออร์เดอร์" อยู่ที่ type แล้ว — text เก็บแค่ยอดเงิน (สุทธิหลังหักส่วนลด) ไม่ต้องซ้ำ
+      text: `${Number(o.total_amount).toLocaleString("th-TH")} ฿`,
       ref: String(o.id).slice(0, 8),
       channel: o.channel ?? null,
       entityId: String(o.id),

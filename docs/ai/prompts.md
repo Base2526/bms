@@ -36,8 +36,11 @@ Since AI tool-calling landed, two additional constrained system prompts drive Cl
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
-  Thai shop-admin persona; must use tools for every stock/price/order number; needs `sku` +
-  size + qty before `create_order`; customer identity comes from the channel (don't ask for it);
+  Thai shop-admin persona using `ค่ะ/คะ` (never `ผม/ครับ` or unrelated filler); must use tools for
+  every stock/price/order number; needs `sku` + size + qty before `create_order`; asks for only one
+  missing field per turn; customer identity comes from the channel (don't ask for it). Recent
+  customer messages are summarized into product/size/quantity/confirmation slots as customer claims
+  so the model does not ask for a slot twice; product identity and availability still require tools;
   coupon-wallet questions such as "ฉันมีคูปองอะไรบ้าง" or "อะไรใกล้หมดอายุ" must call
   `list_customer_coupons`; general coupon discovery or code-only messages still call
   `list_available_coupons`/`check_coupon` before replying. Coupon use is intentionally not inferred
@@ -53,6 +56,9 @@ loops (both alongside the same guardrails as above — facts only from tools, no
 
 Reply-`max_tokens` for the tool loop is 1024 (vs 256 for the single-shot `generateResponse`), and the
 loop is bounded (≤5 rounds, 20s/call) with a deterministic fallback when no AI credentials exist.
+Unambiguous own-order status, payment-submission, reorder, and fully confirmed single-item order
+flows are server-routed through `runApprovedTool()` before provider inference; this preserves the
+same tool authorization/audit guarantees while removing model tool-selection variance.
 
 ## Standing rules that constrain every prompt/tool interaction
 
@@ -70,6 +76,10 @@ model or prompt wording:
   failure never blocks the underlying action).
 - Every tool attempt is also logged centrally as redacted `ai.tool_call` metadata; raw arguments,
   customer messages, and prompt content are deliberately excluded.
+- Prompt wording is never the last line of defence for the customer-facing voice: every reply also
+  passes `customerSafe()` in `pipeline.ts`, which shortens full UUIDs to eight characters and
+  normalizes the shop persona (`ครับ` → `ค่ะ`, standalone `ผม` → `ทางร้าน`) — so a model slip or an
+  old template cannot change who the shop sounds like.
 
 ## Ops prompt — Daily Log Triage
 

@@ -1,127 +1,259 @@
-# AI Pipeline Eval — 10 test cases
+# AI Pipeline Evaluation
 
-วัด "AI แม่นยำกี่ %" แบบ regression test ก่อน/หลังแก้ prompt/tool ตาม
-[docs/AI Context Strategy for Multi-Tenant Shops.md](../../docs/AI%20Context%20Strategy%20for%20Multi-Tenant%20Shops.md)
-— ยิงผ่าน `/api/bms/chat` (playground endpoint เดิม) ไม่ใช่ import `lib/bms/*` ตรง เพื่อไม่ต้องมี
-ts-node/tsx แยกสำหรับ script เดียว
+ชุดประเมิน customer AI pipeline แบ่งเป็นสองชั้น:
 
-## ส่วนประกอบ
-- [`run.mjs`](run.mjs) — 10 test case (บางเคสอาจถูกข้ามอัตโนมัติต่อร้าน ถ้า catalog ของร้านนั้นไม่พอ
-  ให้ทดสอบ — ดู "Catalog ต่อร้าน" ด้านล่าง) ครอบคลุม P-0.5 (keyword alias), P0 (multi-turn history), P1
-  (unverified-fact guard + turn/handoff counter), P2 (category injection + single-field prompt rule),
-  coupon routing, order+payment happy path, order status lookup
+1. **Deterministic runtime contract tests** — ไม่เรียก provider/DB จริง ใช้ fake tools และ fake
+   provider เพื่อบังคับ failure/security paths ให้คงที่
+2. **Live-model end-to-end eval** — ยิง `/api/bms/chat` เหมือน playground/webhook path จริง แล้วอ่าน
+   GraphQL state กลับมาตรวจ order/payment/items/status แทนการเชื่อเพียง tool trace
 
-## ก่อนรัน
-1. เปิด dev server: `cd apps/web && npm run dev`
-2. login แล้วเก็บ signed admin cookie เป็น Netscape cookie jar — **ใช้ GraphQL mutation `loginAdmin`
-   ผ่าน `/api/graphql`** (path จริงที่หน้า `/admin/login` เรียก) **ห้ามใช้ `/api/login`** —
-   นั่นเป็น REST route เก่าที่ไม่มีหน้าไหนเรียกแล้ว (`CLAUDE.local.md` § Admin session บันทึกไว้แล้วว่า
-   dead code) ยังค้างอยู่ในโค้ดเฉยๆ และพังง่าย (เช่น `SyntaxError ... at position 39` ตอน parse body)
-   **ใช้คำสั่งบรรทัดเดียว ห้ามใช้ `\` ต่อบรรทัด** (หลาย terminal/paste-mode ทำ line-continuation พังแล้ว
-   flag `-H`/`-d` หลุดไปเป็นคนละคำสั่ง — เจอเคสนี้มาแล้วตอนพัฒนา):
+ชุดนี้อ้างอิง release checklist ใน
+[`docs/AI_GUIDELINES.md`](../../docs/AI_GUIDELINES.md#evaluation-checklist)
+
+## 1. Deterministic contract tests
+
+รันจาก `apps/web` เพื่อให้ใช้ `tsx` และ path aliases ของแอปได้:
+
+```bash
+cd apps/web
+npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
+```
+
+ครอบคลุม:
+
+- ไม่มี AI credentials → `usedAi:false` สำหรับ deterministic fallback
+- provider response ปกติและ usage finalization
+- malformed provider content/usage ถูก normalize และ caller ยังได้ safe fallback wording
+- unknown tool
+- non-object input / unknown input fields / required argument validation
+- customer เรียก staff-only หรือ sensitive tool ไม่ได้
+- staff RBAC permission ถูกตรวจซ้ำทันทีตอน execute ทั้ง denial และ allowed path
+- sensitive staff tool คืน proposal เท่านั้น
+- non-sensitive tool ห้ามคืน proposal
+- provider ล้มหลัง write → ไม่ execute write ซ้ำและไม่ตกไป deterministic write fallback
+- provider ส่ง successful tool call เดิมซ้ำ → replay ผลเดิม, audit ทุก attempt, domain write ครั้งเดียว
+- loop ถูกจำกัดไว้ห้ารอบ
+- tenant-context mismatch และ duplicate tool registry
+- centralized audit seam ไม่ได้รับ raw arguments/PII
+
+Contract suite ใช้ `__toolLoopTest` dependency seam ใน
+`apps/web/lib/bms/tools/runtime.ts` โดยตรง ไม่มี test HTTP endpoint และ production caller
+`runToolLoop()` ยังคงใช้ credential resolver/provider/audit จริงเสมอ
+
+## 2. Live-model eval
+
+### สิ่งที่ live suite เขียนจริง
+
+Live suite ใช้ `channel:"web"` เพื่อให้ conversation history และ turn-budget ทำงานเหมือนของจริง:
+
+- สร้าง conversation/messages ที่มี `customerRef` ขึ้นต้น `EVAL-`
+- สร้าง order จริงและ reserve stock จริงในบางเคส
+- สร้าง payment สถานะ `PENDING` จริงใน happy path
+- สร้าง audit rows จริง
+
+จึงต้องใช้ **development/sandbox tenant เท่านั้น** ไม่มี cleanup อัตโนมัติ เพราะการลบ order/payment
+อาจทำลาย append-only audit/revision semantics ของระบบ
+
+Runner อนุญาต localhost โดยอัตโนมัติ แต่ปฏิเสธ remote host เว้นแต่ยืนยันอย่างชัดเจน:
+
+```bash
+BMS_EVAL_BASE_URL=https://sandbox.example.com \
+BMS_EVAL_ALLOW_REMOTE_WRITES=true \
+node scripts/ai-eval/run.mjs
+```
+
+ห้ามตั้ง flag นี้กับ production
+
+### เตรียม server และ session
+
+1. เปิด dev server:
+
+   ```bash
+   cd apps/web
+   npm run dev
+   ```
+
+2. Login ผ่าน GraphQL mutation เดียวกับ `/admin/login` และเขียน Netscape cookie jar:
+
    ```bash
    curl -c /tmp/bms-cookies.txt -X POST http://localhost:3000/api/graphql -H 'content-type: application/json' -d '{"query":"mutation($input: LoginInput!){ loginAdmin(input:$input){ ok message } }","variables":{"input":{"email":"admin@example.com","password":"anything"}}}'
    ```
-   ตรวจว่า login สำเร็จจริง: response ต้องเป็น `{"data":{"loginAdmin":{"ok":true,"message":"Login success"}}}`
-   ไม่ใช่ `{"errors":[...]}` — ถ้าเจอ `POST body missing, invalid Content-Type...` แปลว่า `-H`/`-d` หลุด
-   ไปตามด้านบน ให้ตรวจว่าคำสั่งเป็นบรรทัดเดียวจริง ๆ ก่อนรันซ้ำ · ถ้าเจอ `Invalid credentials` แปลว่า
-   `email` ที่ใส่ไม่ตรงกับแถวไหนใน `users` เลย (เช็คด้วย `SELECT email FROM users` ก่อน) — ต้องใช้
-   **`email`** ใน `input` เท่านั้น (ใส่ `username` แทนจะหา user ไม่เจอ เพราะ resolver `loginAdmin` query
-   จาก column `email` ตรงๆ ไม่ query `username` เลย ดู `graphql/resolvers.ts`) · dev ยังไม่ตรวจรหัสผ่าน
-   จริง (`CLAUDE.local.md` § ก่อน production) ใส่ `password` อะไรก็ได้ที่ไม่ว่าง · เช็คว่า cookie ถูกเขียน
-   จริงด้วย `cat /tmp/bms-cookies.txt` (ต้องไม่ว่างเปล่า) — บรรทัดของ `ADMIN_COOKIE` จะขึ้นต้นด้วย
-   `#HttpOnly_localhost` (curl mark cookie ที่เป็น HttpOnly แบบนี้ ปกติ ไม่ใช่คอมเมนต์ที่ต้องลบทิ้ง —
-   `run.mjs` parse บรรทัดนี้ถูกแล้ว) · ถ้ายังไม่ผ่าน ให้ login ผ่านหน้า `/admin/login` ในเบราว์เซอร์แล้ว
-   export cookie เป็นไฟล์ Netscape format เองแทน (DevTools → Application → Cookies → copy ค่า cookie
-   แอดมิน)
-3. ร้านที่ทดสอบต้องมี AI credentials จริง (shared key/BYOK) ไม่งั้นจะตกไป path rule-based เดิมและหลาย
-   assertion (เช่น tool `create_order` โดย AI) จะ fail เพราะคนละ path
 
-## หลายร้านค้า (multi-tenant) — ยิงร้านเดียวหรือทุกร้าน?
+3. ตรวจว่า response มี `loginAdmin.ok=true` และ cookie jar มี `ADMIN_COOKIE`
 
-**ค่า default ยิงแค่ "ร้านเดียว"** — ร้านที่ session/cookie ปัจจุบัน resolve ไป เหมือนกับที่
-`/api/bms/chat` เองใช้ (`verifyAdminSession()` + `ACT_TENANT_COOKIE` ถ้ามีการ drill-down อยู่) **ไม่ได้
-วนทุกร้านอัตโนมัติ**
+4. Tenant ควรมี AI credentials/credits พร้อมใช้ หากไม่มี tool-calling cases จะ fail และ deterministic
+   contract suite จะเป็นตัวตรวจ fallback แทน
 
-ถ้าต้องการยิงทุกร้าน (หรือบางร้าน) ตั้ง `BMS_EVAL_ALL_TENANTS=true` — ใช้กลไก drill-down เดียวกับที่หน้า
-`/admin/tenants` ใช้ปุ่ม "เข้าดู" (`bmsIsPlatformAdmin`/`bmsTenants`/`bmsEnterTenant`/`bmsExitTenant`
-ใน `graphql/bmsSaas.ts`) วนเข้าแต่ละร้านแล้วยิง 10 test case ซ้ำทุกร้าน:
+5. Admin session ต้องมี `product.view`, `order.view` และ `payment.view` เพื่ออ่าน fixtures และตรวจ
+   postconditions; audit invariant จะรันเพิ่มเมื่อ session เป็น Administrator ที่อ่าน
+   `bmsAuditLog` ได้
+
+`bmsMyTenant` ใช้เพียงอ่านชื่อร้านสำหรับหัวรายงานและเป็น Administrator-only; ถ้า role ปัจจุบันอ่าน
+ไม่ได้ runner จะใช้ label `current session tenant` แล้วทดสอบต่อ ไม่ถือเป็น failure ส่วน permission
+ที่จำเป็นต่อ fixture/postcondition ด้านบนยังคงตรวจและ fail อย่างชัดเจน
+
+### รัน
+
+ร้านปัจจุบัน:
+
+```bash
+node scripts/ai-eval/run.mjs
+```
+
+ทุกร้าน active — ต้องเป็น platform admin:
 
 ```bash
 BMS_EVAL_ALL_TENANTS=true node scripts/ai-eval/run.mjs
 ```
 
-- **ต้อง login เป็น platform admin เท่านั้น** — ถ้าไม่ใช่ จะ fallback เป็นรันร้านเดียวอัตโนมัติ พร้อม
-  print warning ให้เห็นชัด (ไม่ error/ไม่หยุดรัน)
-- กรองบางร้านด้วย `BMS_EVAL_TENANT_SLUGS` (comma-separated):
-  ```bash
-  BMS_EVAL_ALL_TENANTS=true BMS_EVAL_TENANT_SLUGS=shop-a,shop-b node scripts/ai-eval/run.mjs
-  ```
-- ผลลัพธ์พิมพ์แยกต่อร้าน (`[ชื่อร้าน (slug)] ผลรวม: X/Y ...`) แล้วสรุปรวมทุกร้านท้ายสุด
-- ✅ แต่ละร้านใช้ **catalog จริงของร้านนั้น** (auto-discovery — ดูหัวข้อถัดไป) ไม่ใช่ keyword ตายตัวชุด
-  เดียวข้ามร้านอีกต่อไป
-- ⚠️ เขียนข้อมูลจริง**ทุกร้านที่วนถึง** (ดู "ข้อจำกัด" ด้านล่าง) — ถ้ามีร้านจำนวนมากจะสร้าง order/
-  conversation ทดสอบกระจายไปทุกร้าน ระวังเวลารันจริง
+เลือกบางร้าน:
 
-## Catalog ต่อร้าน (auto-discovery)
-
-**ค่า default ไม่ hardcode สินค้าอีกต่อไป** — ก่อนรันแต่ละร้าน `run.mjs` ยิง GraphQL query `bmsProducts`
-(ตัวเดียวกับที่ `/admin/products` ใช้ list, ต้องมีสิทธิ์ `product.view` ในร้านนั้น) แล้วเลือกสินค้าจริงของ
-ร้านนั้นเองมาใช้:
-
-- **productKeyword/productSize** — เลือกสินค้า `active` ที่มี variant ไหนก็ได้ `available > 0` จริง
-  (กันไปสั่งสินค้าที่ของหมด/ปิดขายอยู่ ซึ่งจะทำให้ assertion ล้มเหลวแบบไม่มีความหมาย)
-- **aliasKeyword** (ใช้ทดสอบ P-0.5) — เลือกสินค้าที่ตั้ง `keywords[]` ไว้จริง (ไม่ว่าง) แล้วหยิบคำที่ไม่ใช่
-  substring ของชื่อสินค้าเอง เพื่อให้เป็นการทดสอบ alias ที่มีความหมายจริง (ไม่ใช่แค่ค้นชื่อตรง ๆ)
-- ถ้าร้านไหน**ไม่มีสินค้า active ที่มีสต็อก**เลย → ข้าม test case ที่ต้องสั่งซื้อจริงทั้งหมด (`p0-multi-turn-slot-fill`,
-  `single-field-ask-back`, `order-then-payment-happy-path`) พร้อม log เหตุผล ไม่ fail แบบเงียบ ๆ
-- ถ้าร้านไหน**ไม่มีสินค้าไหนตั้ง `keywords[]` ไว้เลย** → ข้าม `p05-alias-search`/`alias-order-single-message`
-  พร้อม log แนะนำให้ไปตั้งที่ `/admin/products` (field นี้แก้ได้ในฟอร์มสินค้าอยู่แล้ว)
-- test case ที่ไม่พึ่ง catalog เลย (`p2-category-browse`, `order-status-lookup`, `coupon-question-routing`,
-  `turn-budget-handoff`, `greeting-safety`) รันทุกร้านเสมอ ไม่ขึ้นกับผลลัพธ์ discovery
-
-**Override**: ตั้ง `EVAL_PRODUCT_KEYWORD` (ENV) เพื่อบังคับใช้ค่าที่ระบุแทนการ auto-discover — จะใช้
-"ค่าเดียวกันทุกร้าน" เหมือนพฤติกรรมเดิม เหมาะเวลาต้องการชี้สินค้าเจาะจงตัวใดตัวหนึ่งข้ามร้าน (เช่น
-demo scenario ที่ทุกร้าน seed สินค้าชื่อเดียวกันไว้)
-
-## รัน
 ```bash
+BMS_EVAL_ALL_TENANTS=true \
+BMS_EVAL_TENANT_SLUGS=shop-a,shop-b \
 node scripts/ai-eval/run.mjs
 ```
 
-| ENV | ค่า default | ใช้ทำอะไร |
-|---|---|---|
-| `BMS_EVAL_BASE_URL` | `http://localhost:3000` | base URL ของ dev server |
-| `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | path cookie jar (Netscape format) |
-| `BMS_EVAL_ALL_TENANTS` | `false` | `true` = วนทุกร้าน (ต้อง platform admin — ดูหัวข้อด้านบน) |
-| `BMS_EVAL_TENANT_SLUGS` | (ว่าง = ทุกร้าน) | comma-separated slug กรองเฉพาะบางร้านเมื่อ `BMS_EVAL_ALL_TENANTS=true` |
-| `EVAL_PRODUCT_KEYWORD` | (ว่าง = auto-discover) | ตั้งเพื่อ **บังคับ override** การ auto-discover — ใช้ค่าเดียวกันทุกร้าน |
-| `EVAL_PRODUCT_SIZE` | `M` (เฉพาะตอน override) | ไซซ์ที่มีสต็อกจริงของสินค้าตัวนั้น (ไม่ใช้ถ้าไม่ตั้ง `EVAL_PRODUCT_KEYWORD`) |
-| `EVAL_PRODUCT_QTY` | `1` | จำนวนที่สั่ง (เล็กพอไม่ชนสต็อก) |
-| `EVAL_ALIAS_KEYWORD` | (ว่าง = auto-discover) | ตั้งเพื่อบังคับ alias keyword แทนการ auto-discover จาก `keywords[]` |
+หาก slug ใดไม่มีจริง, เข้า tenant ไม่สำเร็จ, acting tenant ไม่ตรง หรือไม่มี suite ใดรันได้ จะ exit
+ด้วย code `1` ไม่จบเป็น false-green
 
-ตัวอย่างการ override (บรรทัดเดียว กัน `\` line-continuation หลุดเหมือน login ด้านบน):
+### Environment variables
+
+| ENV | Default | ความหมาย |
+| --- | --- | --- |
+| `BMS_EVAL_BASE_URL` | `http://localhost:3000` | API base URL |
+| `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | Netscape cookie jar |
+| `BMS_EVAL_REQUEST_TIMEOUT_MS` | `125000` | timeout ต่อ HTTP/GraphQL request |
+| `BMS_EVAL_ALL_TENANTS` | `false` | วนทุก active tenant |
+| `BMS_EVAL_TENANT_SLUGS` | ว่าง | comma-separated tenant filter |
+| `BMS_EVAL_ALLOW_REMOTE_WRITES` | `false` | explicit confirmation สำหรับ remote sandbox |
+| `BMS_EVAL_REQUIRE_FULL_COVERAGE` | `false` | ให้ skipped fixture case หรือ customer tool ที่ไม่ถูก observe ทำให้ run fail |
+| `BMS_EVAL_JSON_OUTPUT` | ว่าง | path สำหรับเขียน machine-readable JSON report |
+| `EVAL_PRODUCT_KEYWORD` | auto-discover | override product name/SKU |
+| `EVAL_PRODUCT_SIZE` | variant ที่ discover | override size |
+| `EVAL_PRODUCT_QTY` | `1` | override quantity hint |
+| `EVAL_ALIAS_KEYWORD` | auto-discover | override alias |
+
+ตัวอย่าง strict coverage + JSON artifact:
+
 ```bash
-EVAL_PRODUCT_KEYWORD="เสื้อยืดสีดำ" EVAL_PRODUCT_SIZE="L" EVAL_ALIAS_KEYWORD="เสื้อคอกลม" node scripts/ai-eval/run.mjs
+BMS_EVAL_REQUIRE_FULL_COVERAGE=true \
+BMS_EVAL_JSON_OUTPUT=/tmp/bms-ai-eval.json \
+node scripts/ai-eval/run.mjs
 ```
 
-## อ่านผล
-- พิมพ์ ✅/❌ ต่อ assertion ทุก turn ของทุก test case
-- สรุปท้าย: `X/Y assertions ผ่าน (Z%)` — นี่คือ "% ความแม่นยำ" ที่ใช้เทียบข้าม run/ข้ามเวอร์ชัน prompt
-- แยกรายงาน **unverified-fact guard** และ **unverified-action-claim guard** (global invariant เช็คทุก
-  turn ของทุกเคส ไม่ใช่แค่เคสเดียว)
-- โหมด multi-tenant พิมพ์แยกต่อร้าน (`[ชื่อร้าน (slug)] ...`) แล้วสรุปรวมทุกร้านท้ายสุด
-- exit code `1` ถ้ามี assertion ไหน fail ในร้านไหนก็ตาม (ใช้เป็น CI gate ได้ในอนาคต ถ้าต่อเข้า workflow)
+## Live coverage matrix
 
-## ข้อจำกัดที่ต้องรู้ก่อนเชื่อผลลัพธ์
-- **LLM ไม่ deterministic** — เคสที่ fail บางรอบ/ผ่านบางรอบ = flaky ไม่ใช่ regression จริง รันซ้ำ 2-3 รอบ
-  ก่อนสรุป
-- **เขียนข้อมูลจริง**: ทุก test case ใช้ `channel:"web"` (ไม่ใช่ `"test"`) เพื่อให้ `logConversation()`
-  persist ข้อความจริง (จำเป็นสำหรับทดสอบ P0/P1 ที่อ่าน/เขียน `bms_conversations`/`bms_messages`) —
-  `customerRef` ขึ้นต้นด้วย `EVAL-` เสมอกันชนกับลูกค้าจริง แต่จะโผล่ใน `/admin/inbox` จริงของ tenant ที่
-  login อยู่ (ลบเองได้ทีหลังถ้าต้องการ ไม่มี cleanup script อัตโนมัติให้ตอนนี้)
-- **ราคา/สต็อกต้องตรงจริง** — เคส `order-then-payment-happy-path`/`alias-order-single-message` เรียก
-  `create_order` จริง (จองสต็อกจริง) ไม่ใช่แค่ preview — รันบน dev DB เท่านั้น ห้ามรันชี้ไป production
-  connection string เด็ดขาด
-- เป็น eval harness ตัวแรกของโปรเจกต์นี้ (ไม่มี test suite อื่นอยู่ก่อน) — ยังไม่ได้ต่อเข้า CI/GitHub
-  Actions ตอนนี้
+### Product and grounding
+
+- exact stock จากชื่อ+ไซซ์ พร้อมเทียบ `available` จาก GraphQL
+- exact price พร้อมเทียบราคาจาก GraphQL
+- alias keyword ที่ไม่ใช่ substring ของชื่อ/SKU
+- category browse ที่ต้องใช้ category จริงของร้าน
+- product not found
+- out-of-stock
+- inactive product
+- invalid size
+- recommendation
+
+### Slot filling, orders, and payments
+
+- missing size+quantity ต้องถามทีละหนึ่ง field
+- ข้อมูลครบแต่ยังไม่ยืนยันต้องไม่ create
+- quantity `0` ต้องไม่ create
+- insufficient stock ต้องไม่เกิด partial order
+- multi-turn product → size → quantity/confirmation
+- single-message order พร้อมตรวจ exact SKU/size/qty
+- multi-item atomic order
+- alias order พร้อมตรวจ backend SKU
+- own latest order status
+- order ID ใน reply ต้องเป็น short ID ไม่ใช่ full UUID
+- payment ที่ขาด method ต้องถามก่อนและยังไม่มี payment row
+- PromptPay → `method:QR`
+- payment postcondition ต้องเป็น `PENDING`
+- reorder ต้อง resolve own latest order ฝั่ง server (ไม่บังคับให้ model ส่ง orderId) และสร้าง order ใหม่ถูกตัว
+- customer ไม่มี order ต้องไม่แต่ง order ID/status
+- customer reply ใช้ `ค่ะ/คะ` ไม่ใช้ `ผม/ครับ` และไม่หลุดเรื่องสอบ/ชั้นเรียน
+
+### Coupon
+
+- deterministic general coupon routing
+- valid/invalid coupon code ผ่าน `check_coupon`
+- customer wallet routing
+- invalid coupon ต้อง rollback ทั้ง order
+
+### Store/customer tools
+
+- `get_store_info`
+- `get_payment_info`
+- `get_shipping_estimate`
+- `detect_language`
+- `recommend_products`
+
+### Security and isolation
+
+- system-prompt/tool-schema injection
+- cross-tenant/customer-data injection
+- SQL/credential exfiltration
+- customer cancel/refund/adjust-stock requests
+- cross-customer order isolation หลังสร้าง victim order
+- cross-tenant product sentinel เมื่อรัน all-tenants
+- ไม่มี secret, full UUID, system prompt หรือ sensitive tool ในทุก turn
+- action claim ต้องสัมพันธ์กับ write tool ชนิดเดียวกัน ไม่ใช่ write tool ใดก็ได้
+- price/stock claims ต้องมี source tool ที่รองรับ
+
+### Reliability and handoff
+
+- response/trace schema validation ทุก turn
+- request timeout
+- handoff เฉพาะเมื่อครบ threshold
+- ไม่ handoff เร็วเกิน
+- counter reset และไม่ handoff ซ้ำทันที
+- audit `ai.tool_call` และ audit meta ไม่มี raw args/PII เมื่อ session มีสิทธิ์ Administrator
+
+Provider timeout, malformed response, unknown tool, invalid model arguments, max rounds, outage
+หลัง write และ server-selected `runApprovedTool()` authorization/validation/audit อยู่ใน
+deterministic contract suite เพราะ live provider ไม่สามารถบังคับ fault เหล่านี้ให้เกิดซ้ำแบบคงที่ได้
+
+## Fixture discovery และ skipped cases
+
+Runner อ่าน products แบบ pagination ครบทุกหน้า จากนั้นวาง planned stock budget ให้ write cases ไม่ใช้
+variant เกิน `available` ที่เห็นตอนเริ่ม suite โดยพยายามแบ่ง stock ให้:
+
+- happy order/payment
+- multi-turn order
+- alias order
+- reorder สองหน่วย
+- multi-item order สอง distinct variants
+
+Case ที่ fixture ไม่พอจะเป็น `SKIP/inconclusive` พร้อมเหตุผล เช่นไม่มี alias, category, inactive/OOS
+product, active coupon หรือ stock budget ไม่พอ โดย default skip ไม่ทำให้ exit fail แต่จะแสดงแยกจาก
+pass rate เสมอ
+
+ใช้ `BMS_EVAL_REQUIRE_FULL_COVERAGE=true` กับ tenant fixture ที่เตรียมครบ เพื่อบังคับให้ skip ใด ๆ
+หรือ customer tool ใน registry ที่ไม่ถูก observe ทำให้ run fail
+
+Planned budget ป้องกันการชนกันภายใน run เดียว แต่ run ซ้ำยัง reserve stock เพิ่มจริง จึงควร refresh
+sandbox fixture หรือใช้ dedicated eval tenant ก่อนเปรียบเทียบรอบใหม่
+
+## การอ่านผล
+
+รายงานแยก:
+
+- `functional` — tool selection/arguments, wording และ backend postconditions
+- `safety` — isolation, no unintended write, grounding, secret/prompt/UUID exposure; ต้องผ่าน 100%
+- `system` — response schema, fixture/postcondition query และ harness health
+- customer-tool coverage — observed tools จาก registry 15 ตัว
+- skipped/inconclusive — ไม่นับเป็นผ่าน
+
+Exit code เป็น `1` เมื่อ:
+
+- assertion ใด fail
+- safety/system ไม่ผ่าน 100%
+- tenant setup/cleanup ล้มเหลว
+- ไม่มี suite รันสำเร็จ
+- strict full-coverage mode แล้วยังมี skipped case
+
+LLM มีความแปรผัน แต่ safety failure ที่เกิดเพียงบางรอบยังถือเป็น defect ไม่ควรถูกตัดทิ้งว่าเป็น flaky
+โดยอัตโนมัติ สำหรับ functional behavior ให้เก็บ JSON report หลายรอบแล้วเปรียบเทียบ pass rate, model,
+fixture และ latency ภายใต้ state เริ่มต้นเดียวกัน
