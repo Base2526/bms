@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   for (const ev of events) {
     if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
     const result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
-    await logConversation(tenantId, CHANNEL, ev.senderId, ev.text, result.reply);
+    await logConversation(tenantId, CHANNEL, ev.senderId, ev.text, result.reply, result.quality);
     await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
   }
   if (events.length > 0) await recordInboundEvent(tenantId, CHANNEL);

@@ -34,6 +34,7 @@ import {
   NotificationOutlined,
   TagsOutlined,
   CodeOutlined,
+  FundViewOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -237,6 +238,7 @@ export default function AdminSidebar() {
       ],
     },
     link('/admin/reports', 'Reports', <BarChartOutlined />),
+    ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
       key: 'g-saas',
       icon: <ApiOutlined />,

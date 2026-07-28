@@ -20,6 +20,11 @@ The dashboard also includes an **AI health** card for the last 7 days, backed by
 that fail most often. This reuses `bms_audit_log` (`ai.tool_call`) and `bms_conversation_notes`
 instead of introducing a separate AI-failure table.
 
+The card links to `/admin/ai-quality`, which adds turn-level success/handoff/unresolved trends,
+automatic failure cases, a roughly 5% normal-conversation QA sample, redacted context, and human
+`PASS`/`FAIL`/`UNCLEAR` review. Access uses `ai_quality.view` and `ai_quality.review`; definitions
+and privacy constraints are documented in [AI quality control](../ai/quality.md).
+
 ## Sales Summary (`getSalesSummary(from, to)`)
 
 Defaults to the last 30 days. Revenue only counts orders `PAID` or later (not `PENDING`).

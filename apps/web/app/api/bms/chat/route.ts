@@ -53,6 +53,6 @@ export async function POST(req: NextRequest) {
       : admin.tenant_id || DEFAULT_TENANT_ID;
 
   const result = await runPipeline(message, channel, tenantId, customerRef);
-  await logConversation(tenantId, channel, customerRef, message, result.reply);
+  await logConversation(tenantId, channel, customerRef, message, result.reply, result.quality);
   return NextResponse.json(result);
 }

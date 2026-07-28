@@ -475,7 +475,11 @@ export default function Page() {
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={10}>
-          <Card title="AI health (7 วันล่าสุด)" style={{ borderRadius: 8 }}>
+          <Card
+            title="AI health (7 วันล่าสุด)"
+            style={{ borderRadius: 8 }}
+            extra={<Link href="/admin/ai-quality">เปิด AI Quality</Link>}
+          >
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
               <Space style={{ width: "100%", justifyContent: "space-between" }}>
                 <Text type="secondary">Tool calls ทั้งหมด</Text>

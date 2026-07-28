@@ -88,7 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const result = await runPipeline(text, "line", tenantId, userId);
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "line", userId, text, result.reply);
+    await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
     if (cfg.access_token && ev.replyToken) {

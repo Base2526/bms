@@ -27,6 +27,7 @@ import {
 } from "./inbox";
 import { listCategories } from "./productCategories";
 import { getStoreProfile } from "./storeProfile";
+import { deriveAiTurnQuality, type AiTurnQuality } from "./aiQuality";
 import {
   createCouponWalletToken,
   findCustomerIdByIdentity,
@@ -108,6 +109,7 @@ export type PipelineResult = {
   order?: CreateOrderResult; // ผลการสร้าง order (เฉพาะ path rule-based)
   reply: string; // คำตอบสุดท้ายส่งให้ลูกค้า
   trace?: ToolTraceEntry[]; // ลำดับการเรียกทูลของ AI (เฉพาะ path tool-calling — playground ใช้ debug)
+  quality?: AiTurnQuality; // bounded labels/counts only; no prompt or customer PII
 };
 
 // system prompt ฝั่งลูกค้า — คุมโทน + guardrail (ตาม docs/ai/prompts.md + AI_GUIDELINES.md)
@@ -594,7 +596,8 @@ function sanitizeCustomerReply(reply: string): string {
 }
 
 function customerSafe(result: PipelineResult): PipelineResult {
-  return { ...result, reply: sanitizeCustomerReply(result.reply) };
+  const safeResult = { ...result, reply: sanitizeCustomerReply(result.reply) };
+  return { ...safeResult, quality: deriveAiTurnQuality(safeResult) };
 }
 
 function isBusinessClarification(reply: string): boolean {

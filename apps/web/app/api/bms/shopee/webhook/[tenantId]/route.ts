@@ -72,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const userId = m.from_id ?? m.sender_id ?? null;
     const result = await runPipeline(text, "shopee", tenantId, userId);
 
-    await logConversation(tenantId, "shopee", userId, text, result.reply);
+    await logConversation(tenantId, "shopee", userId, text, result.reply, result.quality);
 
     // TODO(prod): ยิงกลับผ่าน Shopee Chat API ด้วย cfg.access_token (ยังไม่ implement)
     replies.push({ userId, reply: result.reply });

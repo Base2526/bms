@@ -813,7 +813,9 @@ export default function Page() {
                     description: (
                       <>
                         เปิด <Link href="/admin/dashboard">Dashboard</Link> หรือ <Link href="/admin/reports">Reports</Link>
-                        เพื่อดูยอดขาย สต็อก งานค้าง และตอนนี้มีการ์ด <b>AI health</b> ให้ตามจำนวน handoff / tool errors ย้อนหลังได้ด้วย
+                        เพื่อดูยอดขาย สต็อก งานค้าง และการ์ด <b>AI health</b> · ถ้าต้องการตรวจคำตอบรายเคสให้เปิด{" "}
+                        <Link href="/admin/ai-quality">AI Quality</Link> เพื่อดู success/handoff/unresolved rate,
+                        failure cases และบทสนทนาที่สุ่มตรวจ โดยระบบปิดบังข้อมูลส่วนบุคคลในหน้าตรวจให้อัตโนมัติ
                       </>
                     ),
                   },
