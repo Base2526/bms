@@ -21,11 +21,24 @@ type ClaudeReply = {
 };
 
 function template(res: StockResult): string {
+  const alternatives = "alternatives" in res
+    ? (res.alternatives ?? [])
+        .slice(0, 3)
+        .map((item) => `${item.name} ราคา ${item.price.toLocaleString()} บาท`)
+        .join(", ")
+    : "";
   switch (res.status) {
     case "IN_STOCK":
       return `มีค่ะ ✅ ${res.name} ไซซ์ ${res.size} พร้อมส่ง ${res.available} ชิ้น ราคา ${res.price.toLocaleString()} บาท สนใจสั่งเลยไหมคะ?`;
     case "OUT_OF_STOCK":
-      return `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ 🙏 รับไซซ์อื่นแทนได้ไหมคะ?`;
+      if ((res.availableSizes?.length ?? 0) > 0) {
+        return `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ แต่ยังมีไซซ์ ${(res.availableSizes ?? [])
+          .map((item) => item.size)
+          .join(", ")} สนใจรับไซซ์อื่นไหมคะ?`;
+      }
+      return alternatives
+        ? `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ รุ่นที่พร้อมขายใกล้เคียงมี ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+        : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ 🙏 ต้องการให้แอดมินช่วยหาแบบใกล้เคียงไหมคะ?`;
     case "SIZE_UNKNOWN": {
       const avail = res.sizes
         .filter((s) => s.available > 0)
@@ -35,7 +48,9 @@ function template(res: StockResult): string {
     }
     case "NOT_FOUND":
     default:
-      return `ขออภัยค่ะ ยังไม่พบสินค้าที่ต้องการ ลองพิมพ์ชื่อรุ่น เช่น "Nike XL มีไหม" ได้เลยค่ะ 😊`;
+      return alternatives
+        ? `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้ร้านมีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+        : `ขออภัยค่ะ ยังไม่พบสินค้าที่ต้องการ ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้เลยค่ะ 😊`;
   }
 }
 
@@ -44,11 +59,17 @@ function facts(res: StockResult): string {
     case "IN_STOCK":
       return `${res.name} ไซซ์ ${res.size} available=${res.available} ราคา=${res.price}`;
     case "OUT_OF_STOCK":
-      return `${res.name} ไซซ์ ${res.size} available=0 (หมด)`;
+      return `${res.name} ไซซ์ ${res.size} available=0 (หมด); ไซซ์อื่นที่มี=${(res.availableSizes ?? [])
+        .map((item) => `${item.size}:${item.available}`)
+        .join(",") || "ไม่มี"}; สินค้าทดแทน=${(res.alternatives ?? [])
+        .map((item) => `${item.name}:${item.price}`)
+        .join(",") || "ไม่มี"}`;
     case "SIZE_UNKNOWN":
       return `${res.name} สต็อก: ${res.sizes.map((s) => `${s.size}=${s.available}`).join(", ")}`;
     default:
-      return "ไม่พบสินค้าในระบบ";
+      return `ไม่พบสินค้าในระบบ; สินค้าพร้อมขายที่เสนอได้=${(res.alternatives ?? [])
+        .map((item) => `${item.name}:${item.price}`)
+        .join(",") || "ไม่มี"}`;
   }
 }
 

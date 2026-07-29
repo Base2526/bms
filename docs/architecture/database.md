@@ -22,7 +22,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0`, `6.5` |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories` | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes) |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
@@ -38,6 +38,13 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 
 ## Notable schema details
+
+**`bms_products` customer discovery (`7.33`)** — customer AI reads the live active catalog directly;
+there is no product embedding/cache that must be refreshed after an insert. A newly created active
+product with sellable inventory is therefore visible to `browse_catalog`/`list_new_arrivals` on the
+next tool call, even if it introduces a new category. The active-tenant/creation-time index supports
+new-arrival reads, while trigram indexes support bounded partial matching over name, SKU, category,
+and brand. Product aliases remain authoritative in `bms_products.keywords`.
 
 **`bms_customer_identities`** — maps `(tenant_id, channel, external_ref)` → `customer_id`, with a
 `UNIQUE (tenant_id, channel, external_ref)` constraint (added in `4.0`, originally per-channel-only

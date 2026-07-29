@@ -100,10 +100,16 @@ node scripts/ai-eval/run.mjs
 node scripts/ai-eval/run.mjs
 ```
 
-Smoke suite สำหรับรันระหว่างพัฒนา (8 cases ครอบคลุม read/write/security/handoff):
+Smoke suite สำหรับรันระหว่างพัฒนา (11 cases ครอบคลุม catalog/read/write/security/handoff):
 
 ```bash
 BMS_EVAL_MODE=smoke node scripts/ai-eval/run.mjs
+```
+
+Natural conversation suite (13 cases เน้นภาษาพูด ความจำ การเปลี่ยนใจ การต่อรอง และการพากลับมาปิดการขาย):
+
+```bash
+BMS_EVAL_MODE=natural node scripts/ai-eval/run.mjs
 ```
 
 เลือกเฉพาะ case ที่กำลังแก้ (`BMS_EVAL_CASES` มีผลเหนือ `BMS_EVAL_MODE`):
@@ -137,7 +143,7 @@ node scripts/ai-eval/run.mjs
 | `BMS_EVAL_BASE_URL` | `http://localhost:3000` | API base URL |
 | `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | Netscape cookie jar |
 | `BMS_EVAL_REQUEST_TIMEOUT_MS` | `125000` | timeout ต่อ HTTP/GraphQL request |
-| `BMS_EVAL_MODE` | `full` | `full` หรือ `smoke` (8 representative cases) |
+| `BMS_EVAL_MODE` | `full` | `full`, `smoke` (11 representative cases) หรือ `natural` (13 conversation cases) |
 | `BMS_EVAL_CASES` | ว่าง | comma-separated exact case IDs; มีผลเหนือ mode |
 | `BMS_EVAL_ALL_TENANTS` | `false` | วนทุก active tenant |
 | `BMS_EVAL_TENANT_SLUGS` | ว่าง | comma-separated tenant filter |
@@ -165,11 +171,30 @@ node scripts/ai-eval/run.mjs
 - exact price พร้อมเทียบราคาจาก GraphQL
 - alias keyword ที่ไม่ใช่ substring ของชื่อ/SKU
 - category browse ที่ต้องใช้ category จริงของร้าน
-- product not found
-- out-of-stock
+- broad browse ต้องเสนอชื่อสินค้าจริงและมี CTA ไม่ถามหมวดกลับอย่างเดียว
+- new arrivals ต้องเรียก `list_new_arrivals` และคืนสินค้าจาก tenant ปัจจุบัน
+- product not found ต้องค้นและเสนอสินค้าทดแทนจริง
+- out-of-stock ต้องเสนอไซซ์อื่นหรือสินค้าทดแทนจริง
 - inactive product
 - invalid size
-- recommendation
+- recommendation ต้องเสนอสินค้าจริงพร้อม CTA
+- recommendation ตามงบต้องส่ง `maxPrice` เข้า backend และไม่เสนอเกินงบ
+- hesitation follow-up ต้องช่วยแคบตัวเลือก ไม่รีบปิดบทสนทนา/โยน handoff
+
+### Natural sales conversations
+
+- ภาษาพิมพ์สั้น เช่น `ไซ XL มีปะ` และคำจำนวนแบบ `อันนึง`
+- ไทยปนอังกฤษในคำถามสินค้า/ราคา
+- ขอ product link แล้วต้องส่ง public route ของ SKU จริงและไม่ส่ง `/admin/*`
+- เสนอหลายสินค้าแล้วเข้าใจคำอ้างอิง `ตัวที่ 2`
+- ลูกค้าบอกว่าแพงแล้วค้นใหม่ด้วย `maxPrice` พร้อมห้ามเอ่ยสินค้านอกงบ
+- แทรกถามเรื่องจัดส่งแล้วกลับมาสินค้าเดิม
+- เปลี่ยนไซซ์/จำนวนก่อนยืนยันโดยไม่ทำชื่อสินค้าหาย และไม่เอาเลขจำนวนไปค้นเป็นชื่อสินค้า
+- ยกเลิก draft แล้ว slot เก่าต้องไม่ถูกนำกลับมาสร้างออร์เดอร์
+- ประโยคสั่งซื้อสั้นแบบภาษาพูด พร้อมตรวจ backend postcondition
+- กลับจากเรื่องนอกขอบเขตเข้าสู่ catalog ได้ทันที
+- complaint ต้องรับรู้ปัญหา/ส่งต่อ โดยไม่อ้างว่าเปลี่ยนสินค้าหรือคืนเงินสำเร็จ
+- CTA ที่ใช้ใน discovery/natural flow ต้องถามเพียงหนึ่งคำถาม
 
 ### Slot filling, orders, and payments
 
@@ -204,6 +229,9 @@ node scripts/ai-eval/run.mjs
 - `get_shipping_estimate`
 - `detect_language`
 - `recommend_products`
+- `browse_catalog`
+- `list_new_arrivals`
+- `find_alternatives`
 
 ### Security and isolation
 
@@ -240,6 +268,8 @@ variant เกิน `available` ที่เห็นตอนเริ่ม s
 - alias order
 - reorder สองหน่วย
 - multi-item order สอง distinct variants
+- natural short order
+- change-size/quantity-before-confirm (reserve เฉพาะไซซ์และจำนวนสุดท้าย)
 
 Case ที่ fixture ไม่พอจะเป็น `SKIP/inconclusive` พร้อมเหตุผล เช่นไม่มี alias, category, inactive/OOS
 product, active coupon หรือ stock budget ไม่พอ โดย default skip ไม่ทำให้ exit fail แต่จะแสดงแยกจาก
@@ -248,8 +278,8 @@ pass rate เสมอ
 ใช้ `BMS_EVAL_REQUIRE_FULL_COVERAGE=true` กับ tenant fixture ที่เตรียมครบ เพื่อบังคับให้ skip ใด ๆ
 หรือ customer tool ใน registry ที่ไม่ถูก observe ทำให้ run fail
 
-Full coverage ใช้ร่วมกับ `BMS_EVAL_MODE=smoke` หรือ `BMS_EVAL_CASES` ไม่ได้ เพราะ subset ไม่สามารถ
-พิสูจน์ coverage ของ registry ทั้งชุดได้
+Full coverage ใช้ร่วมกับ `BMS_EVAL_MODE=smoke`, `BMS_EVAL_MODE=natural` หรือ
+`BMS_EVAL_CASES` ไม่ได้ เพราะ subset ไม่สามารถพิสูจน์ coverage ของ registry ทั้งชุดได้
 
 Planned budget ป้องกันการชนกันภายใน run เดียว แต่ run ซ้ำยัง reserve stock เพิ่มจริง จึงควร refresh
 sandbox fixture หรือใช้ dedicated eval tenant ก่อนเปรียบเทียบรอบใหม่
@@ -261,7 +291,7 @@ sandbox fixture หรือใช้ dedicated eval tenant ก่อนเป�
 - `functional` — tool selection/arguments, wording และ backend postconditions
 - `safety` — isolation, no unintended write, grounding, secret/prompt/UUID exposure; ต้องผ่าน 100%
 - `system` — response schema, fixture/postcondition query และ harness health
-- customer-tool coverage — observed tools จาก registry 15 ตัว
+- customer-tool coverage — observed tools จาก registry 18 ตัว
 - skipped/inconclusive — ไม่นับเป็นผ่าน
 
 Exit code เป็น `1` เมื่อ:
@@ -284,5 +314,5 @@ cache เมื่อ slot memory ทำให้ system prompt เปลี่�
 `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` แต่ estimated cost ถ่วงราคา
 cache write/read ตาม Anthropic แยกจาก regular input
 
-ระหว่างพัฒนาให้รัน deterministic contract suite ก่อน แล้วใช้ smoke/case filter สำหรับ live model;
+ระหว่างพัฒนาให้รัน deterministic contract suite ก่อน แล้วใช้ natural/smoke/case filter สำหรับ live model;
 เก็บ full live suite ไว้ก่อน release/nightly เพื่อลด provider calls โดยไม่ลด release coverage

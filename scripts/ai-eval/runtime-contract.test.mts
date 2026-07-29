@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { understand } from "../../apps/web/lib/bms/nlu.ts";
 import { __toolLoopTest, type ToolLoopOptions, type ToolLoopTestDeps } from "../../apps/web/lib/bms/tools/runtime.ts";
 import { optInt, reqString, type BmsTool, type ExecCtx } from "../../apps/web/lib/bms/tools/types.ts";
 
@@ -75,6 +76,19 @@ function depsFor(
     },
   };
 }
+
+test("natural Thai quantity words are parsed for colloquial orders", () => {
+  assert.equal(understand("เอาเสื้อไซ XL อันนึง").entities.qty, 1);
+  assert.equal(understand("ขอสองชิ้น").entities.qty, 2);
+  assert.equal(understand("เอา 3 แทนนะ").entities.qty, 3);
+});
+
+test("natural quantity updates remain order intent", () => {
+  const result = understand("เปลี่ยนจำนวนเป็น 2 แทนนะ");
+  assert.equal(result.intent, "CONFIRM_ORDER");
+  assert.equal(result.entities.qty, 2);
+  assert.equal(understand("ขอ 2 แทนนะ").intent, "CONFIRM_ORDER");
+});
 
 test("no credentials returns deterministic-fallback signal without contacting provider", async () => {
   let providerCalls = 0;

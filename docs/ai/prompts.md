@@ -41,7 +41,18 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   every stock/price/order number; needs `sku` + size + qty before `create_order`; asks for only one
   missing field per turn; customer identity comes from the channel (don't ask for it). Recent
   customer messages are summarized into product/size/quantity/confirmation slots as customer claims
-  so the model does not ask for a slot twice; product identity and availability still require tools;
+  so the model does not ask for a slot twice. Colloquial quantity forms (`อันนึง`, `ขอ 2 แทน`) and
+  size changes (`เปลี่ยนเป็น XL`) update only their intended slot. An explicit draft cancellation
+  (`ไม่เอาแล้ว`, `ไว้ก่อน`, `ยกเลิก`) clears those slots and creates a history boundary so an older
+  product cannot be revived by a later ambiguous confirmation; product identity and availability
+  still require tools;
+  product questions are retrieval-first: broad “what do you sell?” discovery must call
+  `browse_catalog`, while an explicit recommendation/use-case/budget request calls
+  `recommend_products`; both show 3–5 real sellable products before asking one narrowing question;
+  new-arrival questions always call `list_new_arrivals`; exact misses or out-of-stock variants call
+  `find_alternatives` (or offer a verified available size from the same product) and present 2–3
+  concrete choices before one sales CTA. The AI must not end at “ไม่มีสินค้า” while verified
+  alternatives exist;
   coupon-wallet questions such as "ฉันมีคูปองอะไรบ้าง" or "อะไรใกล้หมดอายุ" must call
   `list_customer_coupons`; general coupon discovery or code-only messages still call
   `list_available_coupons`/`check_coupon` before replying. Coupon use is intentionally not inferred
@@ -82,11 +93,14 @@ skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
 
 | Surface | Tools block | Tools + system | Tool-only breakpoint |
 | --- | --- | --- | --- |
-| Customer (15 tools) | 2,545 | 4,754 | below minimum, does not fire |
+| Customer (historical 15-tool measurement, before catalog-discovery expansion) | 2,545 | 4,754 | below minimum, does not fire |
 | Staff (58 tools, Administrator) | 6,989 | — | fires |
 
 Staff figures are for a role holding every permission; `staffTools(perms)` filters by RBAC, so a
 narrower role sends a smaller — and separately cached — tool block.
+The current customer registry has 18 tools after adding catalog browsing, new arrivals, and
+alternatives. Re-measure token counts before relying on an exact headroom figure; production truth
+remains `cache_read_input_tokens` in the usage event.
 
 The customer surface therefore relies on the tools + system breakpoint.
 

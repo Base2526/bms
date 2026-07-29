@@ -21,6 +21,8 @@ export type ProductRowFull = {
   cost_price: string | null;
   category: string | null;
   brand: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
 };
 
 export type ProductImage = {
@@ -95,6 +97,8 @@ export type ListProductsOpts = {
   category?: string | null;
   limit?: number;
   offset?: number;
+  activeOnly?: boolean;
+  sort?: "relevance" | "newest" | "name";
 };
 
 export async function listProducts(
@@ -124,6 +128,9 @@ export async function listProducts(
   if (category) {
     params.push(category);
     conds.push(`category = $${params.length}`);
+  }
+  if (opts.activeOnly) {
+    conds.push("active = TRUE");
   }
   const where = conds.join(" AND ");
 
@@ -157,10 +164,16 @@ export async function listProducts(
     : `0 AS search_rank`;
   const itemsRes = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
-            image_url, description, cost_price, category, brand,
+            image_url, description, cost_price, category, brand, created_at, updated_at,
             ${rankSql}
        FROM bms_products WHERE ${where}
-      ORDER BY search_rank DESC, name
+      ORDER BY ${
+        opts.sort === "newest"
+          ? "created_at DESC, name"
+          : opts.sort === "name"
+            ? "name"
+            : "search_rank DESC, name"
+      }
       LIMIT $${s ? limitPos + 3 : limitPos} OFFSET $${s ? limitPos + 4 : offsetPos}`,
     s
       ? [...params, normalizedSearch, `${normalizedSearch}%`, `%${s}%`, limit, offset]
@@ -168,6 +181,312 @@ export async function listProducts(
   );
 
   return { items: itemsRes.rows, total };
+}
+
+export type SellableProduct = {
+  sku: string;
+  name: string;
+  price: number;
+  description: string | null;
+  category: string | null;
+  brand: string | null;
+  createdAt: string;
+  updatedAt: string;
+  availableTotal: number;
+  availableSizes: Array<{ size: string; available: number }>;
+};
+
+export type ListSellableProductsOpts = {
+  search?: string;
+  category?: string | null;
+  brand?: string | null;
+  excludeSku?: string | null;
+  size?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  inStockOnly?: boolean;
+  sort?: "relevance" | "newest" | "availability";
+  limit?: number;
+};
+
+function isoDate(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+/**
+ * Customer-sale catalog view. It always excludes inactive products, derives availability from
+ * inventory, and returns bounded fields that an AI/shopfront can safely use in a sales response.
+ * There is no cache: a newly inserted active product is visible on the next call.
+ */
+export async function listSellableProducts(
+  tenantId: string,
+  opts: ListSellableProductsOpts = {}
+): Promise<{ items: SellableProduct[]; total: number }> {
+  const search = opts.search?.trim() || null;
+  const category = opts.category?.trim() || null;
+  const brand = opts.brand?.trim() || null;
+  const excludeSku = opts.excludeSku?.trim() || null;
+  const size = opts.size?.trim() || null;
+  const minPrice =
+    typeof opts.minPrice === "number" && Number.isFinite(opts.minPrice) ? opts.minPrice : null;
+  const maxPrice =
+    typeof opts.maxPrice === "number" && Number.isFinite(opts.maxPrice) ? opts.maxPrice : null;
+  const limit = Math.min(Math.max(opts.limit ?? 8, 1), 20);
+  const inStockClause = opts.inStockOnly
+    ? `AND EXISTS (
+         SELECT 1
+           FROM bms_inventory sellable_i
+          WHERE sellable_i.tenant_id = p.tenant_id
+            AND sellable_i.product_sku = p.sku
+            AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
+            AND ($6::text IS NULL OR sellable_i.size = $6)
+       )`
+    : "";
+  const orderBy =
+    opts.sort === "newest"
+      ? "created_at DESC, name"
+      : opts.sort === "availability"
+        ? "available_total DESC, updated_at DESC, name"
+        : "search_rank DESC, available_total DESC, name";
+
+  const res = await query<{
+    sku: string;
+    name: string;
+    price: string;
+    description: string | null;
+    category: string | null;
+    brand: string | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+    available_total: string;
+    available_sizes: Array<{ size: string; available: number }> | string | null;
+    total: string;
+  }>(
+    `WITH matched AS (
+       SELECT p.sku,
+              p.name,
+              p.price,
+              p.description,
+              p.category,
+              p.brand,
+              p.created_at,
+              p.updated_at,
+              CASE
+                WHEN $2::text IS NULL THEN 0
+                WHEN lower(p.sku) = lower($2) THEN 900
+                WHEN lower(p.name) = lower($2) THEN 850
+                WHEN lower(COALESCE(p.barcode, '')) = lower($2) THEN 800
+                WHEN EXISTS (
+                  SELECT 1 FROM unnest(p.keywords) AS k WHERE lower(k) = lower($2)
+                ) THEN 780
+                WHEN lower(p.name) LIKE lower($2) || '%' THEN 620
+                WHEN lower(p.sku) LIKE lower($2) || '%' THEN 600
+                WHEN EXISTS (
+                  SELECT 1 FROM unnest(p.keywords) AS k
+                   WHERE lower(k) LIKE lower($2) || '%'
+                ) THEN 560
+                WHEN p.category ILIKE '%' || $2 || '%' THEN 420
+                WHEN p.brand ILIKE '%' || $2 || '%' THEN 400
+                ELSE 100
+              END AS search_rank
+         FROM bms_products p
+        WHERE p.tenant_id = $1
+          AND p.active = TRUE
+          AND ($2::text IS NULL OR
+               lower(p.name) LIKE '%' || lower($2) || '%' OR
+               lower(p.sku) LIKE '%' || lower($2) || '%' OR
+               p.barcode ILIKE '%' || $2 || '%' OR
+               lower(p.category) LIKE '%' || lower($2) || '%' OR
+               lower(p.brand) LIKE '%' || lower($2) || '%' OR
+               EXISTS (
+                 SELECT 1 FROM unnest(p.keywords) AS k WHERE k ILIKE '%' || $2 || '%'
+               ))
+          AND ($3::text IS NULL OR p.category = $3)
+          AND ($4::text IS NULL OR p.brand = $4)
+          AND ($5::text IS NULL OR p.sku <> $5)
+          AND ($7::numeric IS NULL OR p.price >= $7)
+          AND ($8::numeric IS NULL OR p.price <= $8)
+          ${inStockClause}
+     )
+     SELECT m.sku,
+            m.name,
+            m.price,
+            m.description,
+            m.category,
+            m.brand,
+            m.created_at,
+            m.updated_at,
+            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text
+              AS available_total,
+            COALESCE(
+              jsonb_agg(
+                jsonb_build_object(
+                  'size', i.size,
+                  'available', GREATEST(i.current_stock - i.reserved_stock, 0)
+                )
+                ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], i.size), i.size
+              ) FILTER (WHERE i.size IS NOT NULL),
+              '[]'::jsonb
+            ) AS available_sizes,
+            COUNT(*) OVER()::text AS total
+       FROM matched m
+       LEFT JOIN bms_inventory i
+         ON i.tenant_id = $1
+        AND i.product_sku = m.sku
+      GROUP BY m.sku, m.name, m.price, m.description, m.category, m.brand,
+               m.created_at, m.updated_at, m.search_rank
+      ORDER BY ${orderBy}
+      LIMIT $9`,
+    [tenantId, search, category, brand, excludeSku, size, minPrice, maxPrice, limit]
+  );
+
+  const items = res.rows.map((row) => {
+    const parsedSizes =
+      typeof row.available_sizes === "string"
+        ? (JSON.parse(row.available_sizes) as Array<{ size: string; available: number }>)
+        : (row.available_sizes ?? []);
+    return {
+      sku: row.sku,
+      name: row.name,
+      price: Number(row.price),
+      description: row.description,
+      category: row.category,
+      brand: row.brand,
+      createdAt: isoDate(row.created_at),
+      updatedAt: isoDate(row.updated_at),
+      availableTotal: Math.max(0, Number(row.available_total) || 0),
+      availableSizes: parsedSizes.map((variant) => ({
+        size: String(variant.size),
+        available: Math.max(0, Number(variant.available) || 0),
+      })),
+    };
+  });
+  return { items, total: Number(res.rows[0]?.total ?? 0) };
+}
+
+/**
+ * Resolve free-form customer text against the same active catalog fields used by AI search.
+ * It supports both directions: a product field can contain the query, or a customer sentence can
+ * contain the product name/SKU/alias.
+ */
+export async function resolveSellableProduct(
+  tenantId: string,
+  text: string
+): Promise<Pick<SellableProduct, "sku" | "name" | "price" | "category" | "brand"> | null> {
+  const input = text.trim();
+  if (!input) return null;
+  const res = await query<{
+    sku: string;
+    name: string;
+    price: string;
+    category: string | null;
+    brand: string | null;
+  }>(
+    `SELECT p.sku, p.name, p.price, p.category, p.brand
+       FROM bms_products p
+      WHERE p.tenant_id = $1
+        AND p.active = TRUE
+        AND (
+          lower(p.sku) = lower($2) OR
+          lower(p.name) = lower($2) OR
+          lower(COALESCE(p.barcode, '')) = lower($2) OR
+          $2 ILIKE '%' || p.sku || '%' OR
+          $2 ILIKE '%' || p.name || '%' OR
+          lower(p.name) LIKE '%' || lower($2) || '%' OR
+          lower(p.sku) LIKE '%' || lower($2) || '%' OR
+          lower(p.category) LIKE '%' || lower($2) || '%' OR
+          lower(p.brand) LIKE '%' || lower($2) || '%' OR
+          EXISTS (
+            SELECT 1
+              FROM unnest(p.keywords) AS k
+             WHERE lower(k) = lower($2)
+                OR $2 ILIKE '%' || k || '%'
+                OR k ILIKE '%' || $2 || '%'
+          )
+        )
+      ORDER BY
+        CASE
+          WHEN lower(p.sku) = lower($2) THEN 900
+          WHEN lower(p.name) = lower($2) THEN 850
+          WHEN lower(COALESCE(p.barcode, '')) = lower($2) THEN 800
+          WHEN $2 ILIKE '%' || p.sku || '%' THEN 720
+          WHEN $2 ILIKE '%' || p.name || '%' THEN 700
+          WHEN EXISTS (
+            SELECT 1 FROM unnest(p.keywords) AS k WHERE $2 ILIKE '%' || k || '%'
+          ) THEN 680
+          ELSE 100
+        END DESC,
+        char_length(p.name) DESC
+      LIMIT 1`,
+    [tenantId, input]
+  );
+  const row = res.rows[0];
+  return row
+    ? {
+        sku: row.sku,
+        name: row.name,
+        price: Number(row.price),
+        category: row.category,
+        brand: row.brand,
+      }
+    : null;
+}
+
+export async function findAlternativeProducts(
+  tenantId: string,
+  input: {
+    sku?: string | null;
+    keyword?: string | null;
+    category?: string | null;
+    size?: string | null;
+    limit?: number;
+  }
+): Promise<{
+  source: Pick<SellableProduct, "sku" | "name" | "price" | "category" | "brand"> | null;
+  alternatives: SellableProduct[];
+}> {
+  const sourceText = input.sku?.trim() || input.keyword?.trim() || "";
+  const source = sourceText ? await resolveSellableProduct(tenantId, sourceText) : null;
+  const category = input.category?.trim() || source?.category || null;
+  const limit = Math.min(Math.max(input.limit ?? 3, 1), 5);
+  const seen = new Set<string>(source ? [source.sku] : []);
+  const alternatives: SellableProduct[] = [];
+
+  const add = (items: SellableProduct[]) => {
+    for (const item of items) {
+      if (seen.has(item.sku)) continue;
+      seen.add(item.sku);
+      alternatives.push(item);
+      if (alternatives.length >= limit) break;
+    }
+  };
+  const fetchCandidates = async (size: string | null, scopedCategory: string | null) =>
+    listSellableProducts(tenantId, {
+      category: scopedCategory,
+      excludeSku: source?.sku,
+      size,
+      inStockOnly: true,
+      sort: "availability",
+      limit: 20,
+    });
+
+  if (input.size?.trim()) add((await fetchCandidates(input.size.trim(), category)).items);
+  if (alternatives.length < limit && category) add((await fetchCandidates(null, category)).items);
+  if (alternatives.length < limit) add((await fetchCandidates(null, null)).items);
+
+  alternatives.sort((a, b) => {
+    const categoryScore = Number(b.category === source?.category) - Number(a.category === source?.category);
+    if (categoryScore !== 0) return categoryScore;
+    const brandScore = Number(b.brand === source?.brand) - Number(a.brand === source?.brand);
+    if (brandScore !== 0) return brandScore;
+    if (source) {
+      const priceDistance = Math.abs(a.price - source.price) - Math.abs(b.price - source.price);
+      if (priceDistance !== 0) return priceDistance;
+    }
+    return b.availableTotal - a.availableTotal;
+  });
+
+  return { source, alternatives: alternatives.slice(0, limit) };
 }
 
 export async function listVariants(tenantId: string, sku: string): Promise<VariantRow[]> {

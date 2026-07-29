@@ -94,6 +94,15 @@ export async function getTenantName(tenantId: string): Promise<string | null> {
   return r.rows[0]?.name ?? null;
 }
 
+/** Stable public-shop handle used when customer-safe tools return a product link. */
+export async function getTenantSlug(tenantId: string): Promise<string | null> {
+  const r = await query<{ slug: string }>(
+    `SELECT slug FROM bms_tenants WHERE id = $1 AND active = TRUE`,
+    [tenantId]
+  );
+  return r.rows[0]?.slug ?? null;
+}
+
 /** normalize slug: ตัวเล็ก, อนุญาต a-z 0-9 และ '-' (อื่น ๆ → '-'), ตัด '-' ซ้ำ/หัวท้าย */
 function normalizeSlug(raw: string): string {
   return raw

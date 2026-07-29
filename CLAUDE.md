@@ -138,6 +138,23 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   velocity, always tagged with uncertainty), **AI-native helpers** (`detect_language`, `classify_intent`,
   `summarize_conversation`, `recommend_products`), and **propose-only outbound**
   (`send_customer_message` → `bmsSendMessage`, LINE/Meta only). See [docs/ai/tools.md](docs/ai/tools.md).
+- **AI catalog discovery + sales recovery (customer surface)**: three new customer/staff tools —
+  `browse_catalog` (broad "what do you sell?" questions), `list_new_arrivals` (reads `created_at`
+  fresh on every call, no cache to invalidate), and `find_alternatives` (2–5 verified substitutes when
+  an exact product/size is unavailable) — backed by a new sellable-catalog service in
+  `lib/bms/products.ts` (`listSellableProducts()`/`resolveSellableProduct()`/
+  `findAlternativeProducts()`) that always searches the tenant's active + in-stock catalog by
+  name/SKU/barcode/alias/category/brand instead of relying on chat history or the old
+  `keywords[]`-substring lookup. Migration `7.33__bms_product_discovery_indexes.sql` adds `pg_trgm`
+  GIN indexes (name/sku/category/brand) plus an active/`created_at` index so these reads stay bounded
+  without a parallel search store. Out-of-stock/not-found replies (`ai.ts` templates, `pipeline.ts`,
+  and the deterministic no-credential fallback) now offer a verified alternative size or product
+  instead of ending the conversation at "ไม่มี". `nlu.ts`/`pipeline.ts`'s order-slot memory also
+  understands Thai colloquial quantities (`อันนึง`, `สองชิ้น`), in-place corrections (`ขอ 2 แทน`,
+  `เปลี่ยนเป็น XL`) that update only the intended slot, and an explicit draft-cancellation phrase
+  (`ไม่เอาแล้ว`/`ไว้ก่อน`/`ยกเลิก`) that clears stored slots and stops older turns from being revived.
+  See [docs/ai/workflow.md](docs/ai/workflow.md), [docs/ai/tools.md](docs/ai/tools.md), and the new
+  `BMS_EVAL_MODE=natural` suite in [`scripts/ai-eval/`](scripts/ai-eval/README.md).
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
   versions for products, orders, payments, shipments, and purchase orders (header + line items,

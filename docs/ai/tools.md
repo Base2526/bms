@@ -17,8 +17,9 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
 - **Customer surface** (webhook pipeline + playground): read product/stock + `get_order_status`
   (own orders only), customer coupon wallet / discovery / validation (`list_customer_coupons`,
   `list_available_coupons`, `check_coupon`),
-  `create_order`, `submit_payment`, `reorder`, plus store/shipping reads (`get_store_info`,
-  `get_payment_info`, `get_shipping_estimate`, `recommend_products`, `detect_language`). Never any
+  `create_order`, `submit_payment`, `reorder`, plus live-catalog discovery (`browse_catalog`,
+  `list_new_arrivals`, `find_alternatives`, `recommend_products`) and store/shipping reads
+  (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language`). Never any
   sensitive/A3 tool.
 - **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
   documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
@@ -58,7 +59,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 
 | Tools | Class | Customer | Staff permission | Execution |
 | --- | --- | --- | --- | --- |
-| `search_products`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
+| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
@@ -901,7 +902,18 @@ Confidence
 
 - `detect_language(text)` — th/en/other (heuristic) · `classify_intent(text)` — nlu.understand()
 - `summarize_conversation(conversationId)` — ดึงข้อความล่าสุดให้ผู้ช่วยสรุป (staff, `inbox.view`)
-- `recommend_products(keyword?)` — ค้นตามคำ หรือคืนสินค้าขายดี (customer + staff)
+- `search_products(keyword?, category?, maxPrice?)` — ค้น active catalog จากชื่อ/SKU/barcode/alias/
+  หมวด/แบรนด์ คืนราคา สต็อกรวม ไซซ์ที่มี วันที่เพิ่ม และ public product path/URL
+- `get_product(sku)` — อ่านรายละเอียด/ราคา/สต็อกทุกไซซ์ของ SKU พร้อม public path/URL ที่ส่งให้
+  ลูกค้าได้; ห้ามประกอบ URL หรือส่ง `/admin/*` เอง
+- `browse_catalog(keyword?, category?, minPrice?, maxPrice?, limit?)` — สำหรับคำถามกว้าง คืนเฉพาะ
+  สินค้าที่มีของขายจริงแบบ bounded
+- `list_new_arrivals(category?, limit?)` — อ่านสินค้า active + in-stock เรียงจาก `created_at`
+  โดยอ่าน DB ทุกครั้ง สินค้าใหม่จึงเห็นใน turn ถัดไปโดยไม่ต้อง refresh AI cache
+- `find_alternatives(sku?/keyword?/category?, size?, limit?)` — หา 2–5 ตัวเลือกที่มีของจริง โดยให้
+  หมวด/แบรนด์/ราคาใกล้สินค้าต้นทางมาก่อน
+- `recommend_products(keyword?, category?, minPrice?, maxPrice?)` — แนะนำตาม use case/งบ หรือใช้
+  สินค้าขายดีที่ยังมี stock แล้วเติมด้วยสินค้าพร้อมขาย
 
 ## Proactive outbound (staff, propose-only)
 

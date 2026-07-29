@@ -26,6 +26,7 @@ import {
   type AiConversationState,
 } from "./inbox";
 import { listCategories } from "./productCategories";
+import { listSellableProducts } from "./products";
 import { getStoreProfile } from "./storeProfile";
 import { deriveAiTurnQuality, type AiTurnQuality } from "./aiQuality";
 import {
@@ -47,6 +48,10 @@ const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
 const STOCK_PATTERN = /(มี|เหลือ)\s*(\d+)\s*(ชิ้น|ตัว|อัน|คู่|ชุด)/i;
 const PRICE_FACT_TOOLS = new Set([
   "search_products",
+  "browse_catalog",
+  "list_new_arrivals",
+  "find_alternatives",
+  "recommend_products",
   "get_product",
   "check_stock",
   "get_shipping_estimate",
@@ -58,7 +63,17 @@ const PRICE_FACT_TOOLS = new Set([
   "submit_payment",
   "reorder",
 ]);
-const STOCK_FACT_TOOLS = new Set(["get_product", "check_stock", "create_order", "reorder"]);
+const STOCK_FACT_TOOLS = new Set([
+  "search_products",
+  "browse_catalog",
+  "list_new_arrivals",
+  "find_alternatives",
+  "recommend_products",
+  "get_product",
+  "check_stock",
+  "create_order",
+  "reorder",
+]);
 
 function hasUnverifiedFacts(replyText: string, trace: ToolTraceEntry[] | undefined): boolean {
   if (!replyText) return false;
@@ -132,7 +147,7 @@ function buildBusinessTypeExamples(businessType: string | null | undefined): str
       ];
     case "beauty":
       return [
-        'ตัวอย่างร้านความงาม — ลูกค้า: "มีอะไรช่วยเรื่องผิวแห้ง" → ถามหมวดที่สนใจหนึ่งอย่างก่อนค้นสินค้า',
+        'ตัวอย่างร้านความงาม — ลูกค้า: "มีอะไรช่วยเรื่องผิวแห้ง" → ค้น catalog ด้วย use case ก่อน แล้วเสนอสินค้าจริงที่ตรง 2-3 ชิ้น',
         'ตัวอย่างร้านความงาม — ลูกค้า: "เอาเซรั่มอันเดิม 2" → ใช้บริบทสินค้าล่าสุดและตีความ 2 เป็นจำนวน',
       ];
     case "food":
@@ -147,12 +162,12 @@ function buildBusinessTypeExamples(businessType: string | null | undefined): str
       ];
     case "home":
       return [
-        'ตัวอย่างร้านของใช้ในบ้าน — ลูกค้า: "หาไว้จัดห้องครัว" → ใช้หมวดหมู่จริงช่วยถามกลับหนึ่งคำถาม',
+        'ตัวอย่างร้านของใช้ในบ้าน — ลูกค้า: "หาไว้จัดห้องครัว" → browse catalog ด้วยหมวด/use case และเสนอของจริงก่อนถามต่อ',
         'ตัวอย่างร้านของใช้ในบ้าน — ลูกค้า: "เอาใหญ่ 2 อัน" → ผูกขนาดและจำนวนกับสินค้าที่คุยล่าสุด',
       ];
     case "general":
       return [
-        'ตัวอย่างร้านทั่วไป — ลูกค้า: "มีอะไรแนะนำ" → ใช้หมวดหมู่จริงถามความสนใจหนึ่งอย่างก่อนค้น',
+        'ตัวอย่างร้านทั่วไป — ลูกค้า: "มีอะไรแนะนำ" → เรียก browse_catalog/recommend_products และเสนอของจริง 3-5 รายการก่อนถามความสนใจต่อ',
         'ตัวอย่างร้านทั่วไป — ลูกค้า: "เอาอันนี้ 2" → ใช้สินค้าล่าสุดและตีความ 2 เป็นจำนวนก่อนตรวจสต็อก',
       ];
     default:
@@ -196,8 +211,15 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "คุณเป็นแอดมินร้านค้าออนไลน์ ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม ห้ามใช้ ผม/ครับ และห้ามเติมเรื่องนอกบริบทการซื้อขาย",
     languageInstruction,
     orderingInstruction,
+    "เป้าหมายหลักคือช่วยลูกค้าหาสินค้าที่ซื้อได้และพาไปสู่ขั้นตอนเลือกสินค้า/ไซซ์/จำนวนอย่างสุภาพ ไม่สนทนายืดยาวนอกเส้นทางการขาย",
     "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริง (สินค้า/สต็อก/ราคา/สถานะออร์เดอร์) เท่านั้น",
     "ห้ามเดาหรือแต่งตัวเลขสต็อก ราคา หรือเลขออร์เดอร์เอง — ทุกตัวเลขต้องมาจากผลของทูล",
+    "เมื่อลูกค้าถามเกี่ยวกับสินค้า ไม่ว่าจะระบุชื่อชัดหรือถามกว้าง ต้องค้น catalog ของร้านก่อนตอบเสมอ ห้ามตอบจากความจำหรือถามกลับก่อนค้นถ้ามีข้อมูลพอให้ค้นได้",
+    "คำถามกว้าง เช่น มีอะไรขาย/มีอะไรบ้าง ให้เรียก browse_catalog; ถ้าลูกค้าขอให้ช่วยแนะนำตามความต้องการ/งบ ให้เรียก recommend_products แล้วเสนอสินค้าจริงที่พร้อมขาย 3-5 รายการแบบสั้น ๆ ก่อนถามเจาะความต้องการเพียง 1 คำถาม",
+    "คำถามสินค้าใหม่/ของเข้าใหม่/เพิ่งเพิ่ม ให้เรียก list_new_arrivals ทุกครั้ง เพราะสินค้าสามารถเปลี่ยนได้ตลอด ห้ามใช้ประวัติแชทเป็น catalog",
+    "ถ้าสินค้าหรือไซซ์ที่ขอไม่มี/หมด ให้เรียก find_alternatives และเสนอสินค้าจริง 2-3 ตัวเลือก (หรือไซซ์อื่นของรุ่นเดิมจากผลทูล) ก่อนถามว่าจะเช็กตัวไหนต่อ ห้ามจบแค่คำว่าไม่มี",
+    "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ",
+    "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
     `Tenant summary: businessType=${profile.businessType || "general"}; language=${profile.aiLanguage}; ` +
       `orderingStyle=${profile.aiOrderingStyle}; requiredFields=${required}; ` +
       `handoffAfterFailedTurns=${profile.aiHandoffAfterFailedTurns}`,
@@ -219,11 +241,44 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
   if (categories.length > 0) {
     lines.push(
       `ร้านนี้จัดหมวดหมู่สินค้าไว้ดังนี้: ${categories.join(", ")} — ถ้าลูกค้าถามกว้าง ๆ (เช่น "มีอะไรบ้าง") ` +
-        "ให้ใช้ชื่อหมวดหมู่เหล่านี้ช่วยถามกลับหรือส่ง category เข้า search_products แทนการเดาชื่อสินค้าเอง"
+        "ให้ใช้ชื่อหมวดหมู่เหล่านี้กับ browse_catalog/search_products เพื่อเสนอสินค้าจริงก่อน แล้วค่อยถามเลือกหมวดเพียงหนึ่งคำถาม"
     );
   }
   lines.push(...buildBusinessTypeExamples(profile.businessType));
   return lines.join("\n");
+}
+
+function salesAlternativeText(items: Array<{ name: string; price: number }>): string {
+  return items
+    .slice(0, 3)
+    .map((item) => `${item.name} (${item.price.toLocaleString()} บาท)`)
+    .join(", ");
+}
+
+function stockRecoveryReply(result: StockResult): string | null {
+  if (result.status === "OUT_OF_STOCK") {
+    const otherSizes = (result.availableSizes ?? []).map((item) => item.size).join(", ");
+    if (otherSizes) {
+      return `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด แต่ยังมีไซซ์ ${otherSizes} สนใจให้เช็กไซซ์ไหนต่อไหมคะ?`;
+    }
+    const alternatives = salesAlternativeText(result.alternatives ?? []);
+    return alternatives
+      ? `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ตอนนี้มีตัวเลือกพร้อมขายใกล้เคียง เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+      : null;
+  }
+  if (result.status === "NOT_FOUND") {
+    const alternatives = salesAlternativeText(result.alternatives ?? []);
+    return alternatives
+      ? `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กต่อไหมคะ?`
+      : null;
+  }
+  return null;
+}
+
+function isCatalogDiscoveryMessage(message: string): boolean {
+  return /(?:มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(
+    message
+  );
 }
 
 type CustomerIntent =
@@ -324,21 +379,81 @@ type OrderMemory = {
   confirmed: boolean;
 };
 
+function shouldClearDraftOrderMemory(text: string): boolean {
+  return /(?:ไม่เอาแล้ว|ยกเลิก(?:ที่คุย|รายการ|การสั่ง|อันนี้|ตัวนี้)?|เลิกสั่ง|ไม่สั่งแล้ว|พอก่อน|ไว้ก่อน|อย่าเพิ่ง(?:สั่ง|ทำรายการ)?)\s*(?:ค่ะ|คะ|ครับ|นะ|ก่อน|เลย|$)/i.test(
+    text.trim()
+  );
+}
+
+function qtyClaimFromCustomerText(text: string, parsedQty: number | null): number | null {
+  if (parsedQty && parsedQty > 0) return parsedQty;
+
+  const numeric =
+    text.match(
+      /(?:จำนวน|ขอ|เอา|รับ|เปลี่ยน(?:จำนวน)?เป็น|เพิ่มเป็น|ลดเหลือ)\s*(\d+)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)?/i
+    )?.[1] ??
+    text.match(/(\d+)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)?\s*(?:แทน|พอ|นะ|ค่ะ|คะ|ครับ|$)/i)?.[1];
+  if (numeric) {
+    const value = Number(numeric);
+    if (Number.isInteger(value) && value > 0) return value;
+  }
+
+  const thaiNumber = text.match(
+    /(?:ขอ|เอา|รับ|จำนวน)?\s*(หนึ่ง|นึง|สอง|สาม|สี่|ห้า)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)/i
+  )?.[1];
+  if (!thaiNumber) {
+    return /(?:ชิ้น|คู่|อัน|ตัว|ชุด)(?:หนึ่ง|นึง)(?:\s|$|ค่ะ|คะ|ครับ|นะ)/i.test(text)
+      ? 1
+      : null;
+  }
+  return (
+    {
+      หนึ่ง: 1,
+      นึง: 1,
+      สอง: 2,
+      สาม: 3,
+      สี่: 4,
+      ห้า: 5,
+    } as Record<string, number>
+  )[thaiNumber] ?? null;
+}
+
 function productHintFromCustomerText(text: string): string | null {
   if (
     /(?:สถานะ|ออร์เดอร์|order).*(?:ถึงไหน|เป็นยังไง|ตรวจ|เช็ค|ดู)/i.test(text) ||
     /(?:โอน|ชำระ|จ่าย).*(?:แล้ว|เรียบร้อย)/i.test(text) ||
-    /(?:สั่งซ้ำ|เหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม)/i.test(text)
+    /(?:สั่งซ้ำ|เหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม)/i.test(text) ||
+    shouldClearDraftOrderMemory(text) ||
+    /(?:อันนี้|ตัวนี้|ชิ้นนี้|รุ่นนี้|ตัวเดิม|อันเดิม|เมื่อกี้|ตัวที่\s*\d+)/i.test(text) ||
+    /(?:ขอ|เอา|รับ|เปลี่ยน(?:จำนวน)?เป็น|เพิ่มเป็น|ลดเหลือ)\s*\d+\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)?\s*(?:แทน)?/i.test(
+      text
+    )
   ) {
     return null;
   }
 
   const understanding = understand(text);
   const size = understanding.entities.size;
+  if (
+    size &&
+    /(?:เปลี่ยน|แทน|ไซซ์|ไซ|size|ขนาด)/i.test(text) &&
+    !/(?:สินค้า|รุ่น|แบบ)\s*(?:เป็น|ใหม่)?/i.test(text)
+  ) {
+    const withoutSize = text
+      .replace(/(?:ไซซ์|ไซ|size|ขนาด)\s*[:=-]?\s*[A-Za-z0-9.-]+/gi, " ")
+      .replace(/(?:เปลี่ยน|แทน|ค่ะ|คะ|ครับ|นะ|หน่อย|ด้วย)/gi, " ")
+      .trim();
+    if (!/(?:อยากได้|ต้องการ|ขอซื้อ|ขอสั่ง|สั่งซื้อ|สั่ง|ซื้อ|เอา|รับ|จอง)\s+.{2,}/i.test(withoutSize)) {
+      return null;
+    }
+  }
   let cleaned = text
-    .replace(/(?:อยากได้|ต้องการ|ขอซื้อ|ขอสั่ง|สั่งซื้อ|สั่ง|ซื้อ|เอา|รับ|จอง|ยืนยัน|เลย)/gi, " ")
-    .replace(/(?:ไซซ์|size|ขนาด)\s*[:=-]?\s*[A-Za-z0-9.-]+/gi, " ")
+    .replace(/(?:อยากได้|ต้องการ|ขอซื้อ|ขอสั่ง|สั่งซื้อ|สั่ง|ซื้อ|เอา|รับ|จอง|ยืนยัน|จัดมา|ตกลง|โอเค|เลย)/gi, " ")
+    .replace(/(?:เปลี่ยน(?:ไซซ์|size|ขนาด|จำนวน)?(?:เป็น)?|เพิ่มเป็น|ลดเหลือ|แทน)/gi, " ")
+    .replace(/(?:ไซซ์|ไซ|size|ขนาด)\s*[:=-]?\s*[A-Za-z0-9.-]+/gi, " ")
     .replace(/\d+\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด|pcs?|pieces?)/gi, " ")
+    .replace(/(?:หนึ่ง|นึง|สอง|สาม|สี่|ห้า)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)/gi, " ")
+    .replace(/(?:ชิ้น|คู่|อัน|ตัว|ชุด)(?:หนึ่ง|นึง)/gi, " ")
     .replace(/(?:จำนวน)\s*\d+/gi, " ")
     .replace(/(?:ค่ะ|คะ|ครับ|นะ|หน่อย|ด้วย|ที)$/gi, " ")
     .replace(/[,+]/g, " ")
@@ -440,22 +555,23 @@ function buildOrderMemory(
   message: string,
   currentUnderstanding: Understanding
 ): OrderMemory | null {
-  let lastCompleted = -1;
+  let lastReset = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const turn = history[index];
     if (
-      turn.role === "assistant" &&
-      /(?:รับออร์เดอร์แล้ว|สร้างออร์เดอร์.*แล้ว|เลขออร์เดอร์)/i.test(turn.content)
+      (turn.role === "assistant" &&
+        /(?:รับออร์เดอร์แล้ว|สร้างออร์เดอร์.*แล้ว|เลขออร์เดอร์)/i.test(turn.content)) ||
+      (turn.role === "user" && shouldClearDraftOrderMemory(turn.content))
     ) {
-      lastCompleted = index;
+      lastReset = index;
       break;
     }
   }
-  const recent = history.slice(Math.max(0, lastCompleted + 1));
+  const recent = history.slice(Math.max(0, lastReset + 1));
   const lastAssistant = [...recent].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
   const currentLooksLikeSlot =
     currentUnderstanding.intent === "CONFIRM_ORDER" ||
-    /(?:อยากได้|ต้องการ|สั่ง|ซื้อ|เอา|รับ|จอง|ไซซ์|size|ขนาด|จำนวน|ชิ้น|คู่|ยืนยัน|เอาเลย|สั่งเลย)/i.test(message) ||
+    /(?:อยากได้|ต้องการ|สั่ง|ซื้อ|เอา|รับ|จอง|ไซซ์|size|ขนาด|จำนวน|ชิ้น|คู่|ยืนยัน|เอาเลย|สั่งเลย|ขอ\s*\d+|เปลี่ยน(?:จำนวน)?เป็น|เพิ่มเป็น|ลดเหลือ|\d+\s*แทน)/i.test(message) ||
     (/^[A-Za-z0-9.-]{1,8}\s*(?:ค่ะ|คะ|ครับ)?$/i.test(message.trim()) &&
       /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่)/i.test(lastAssistant));
   if (!currentLooksLikeSlot) return null;
@@ -476,11 +592,8 @@ function buildOrderMemory(
     if (hint) product = hint;
     const sizeClaim = sizeClaimFromCustomerText(text, previousAssistant);
     if (sizeClaim) size = sizeClaim;
-    if (parsed.entities.qty) qty = parsed.entities.qty;
-    if (!qty && /(?:จำนวน|เอา|รับ)\s*(\d+)/i.test(text)) {
-      const n = Number(text.match(/(?:จำนวน|เอา|รับ)\s*(\d+)/i)?.[1]);
-      if (Number.isInteger(n) && n > 0) qty = n;
-    }
+    const qtyClaim = qtyClaimFromCustomerText(text, parsed.entities.qty);
+    if (qtyClaim) qty = qtyClaim;
     if (
       !qty &&
       /(?:จำนวน|กี่)\s*(?:ชิ้น|ตัว|อัน|คู่|ชุด)?|เอา.*กี่/i.test(previousAssistant)
@@ -492,7 +605,7 @@ function buildOrderMemory(
   }
 
   const explicitlyDeclined =
-    /(?:ยังไม่ยืนยัน|ไม่ยืนยัน|ยังไม่สั่ง|ไม่สั่ง|อย่าเพิ่ง|แค่สนใจ|กำลังสนใจ)/i.test(
+    /(?:ยังไม่ยืนยัน|ไม่ยืนยัน|ยังไม่สั่ง|ไม่สั่ง|อย่าเพิ่ง|แค่สนใจ|กำลังสนใจ|ไม่เอาแล้ว|ไว้ก่อน|พอก่อน)/i.test(
       message
     );
   const confirmed =
@@ -904,10 +1017,18 @@ export async function runPipeline(
   }
 
   const { recentTurns, summary } = compressConversationHistory(history);
-  const orderMemory = mergeStoredOrderMemory(
-    storedState,
-    buildOrderMemory(recentTurns, aiInputMessage, understanding)
-  );
+  const draftOrderCancelled = shouldClearDraftOrderMemory(aiInputMessage);
+  const orderMemory = draftOrderCancelled
+    ? null
+    : mergeStoredOrderMemory(
+        storedState,
+        buildOrderMemory(recentTurns, aiInputMessage, understanding)
+      );
+  if (convId && draftOrderCancelled) {
+    await setAiConversationState(tenantId, convId, {}).catch((err) =>
+      console.error("[BMS] pipeline AI draft state clear failed:", err)
+    );
+  }
   if (convId && orderMemory) {
     await setAiConversationState(tenantId, convId, {
       ...orderMemory,
@@ -952,12 +1073,24 @@ export async function runPipeline(
         );
         let reply: string;
         let order: CreateOrderResult | undefined;
+        const routeTrace = [searched.trace, created.trace];
         if (!created.result.ok) {
           reply = `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
         } else {
           order = created.result.data as CreateOrderResult;
           reply = orderReply({ [selected.sku]: selected.name }, order);
-          if (convId) {
+          if (order.status !== "CREATED") {
+            const checked = await executeCustomerTool(
+              "check_stock",
+              { product: selected.sku, size: orderMemory.size },
+              execCtx
+            );
+            routeTrace.push(checked.trace);
+            if (checked.result.ok) {
+              reply = stockRecoveryReply(checked.result.data as StockResult) ?? reply;
+            }
+          }
+          if (convId && order.status === "CREATED") {
             await setAiConversationState(tenantId, convId, {}).catch(() => {});
           }
         }
@@ -969,7 +1102,7 @@ export async function runPipeline(
           data: { status: "NOT_FOUND", query: aiInputMessage },
           order,
           reply,
-          trace: [searched.trace, created.trace],
+          trace: routeTrace,
         });
       }
     }
@@ -1013,7 +1146,7 @@ export async function runPipeline(
       const completedOrder = (loop.trace ?? []).some(
         (entry) => entry.ok && ["create_order", "reorder"].includes(entry.tool)
       );
-      const nextState: AiConversationState = completedOrder
+      const nextState: AiConversationState = completedOrder || draftOrderCancelled
         ? {}
         : {
             ...(orderMemory ?? storedState),
@@ -1081,7 +1214,15 @@ export async function runPipeline(
     for (const it of parsed) {
       const product = await resolveProduct(tenantId, it.productText);
       if (!product) {
-        reply = `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ลองพิมพ์ เช่น "สั่ง Nike XL 2 ชิ้น" ค่ะ 😊`;
+        const { items } = await listSellableProducts(tenantId, {
+          inStockOnly: true,
+          sort: "availability",
+          limit: 3,
+        });
+        const alternatives = salesAlternativeText(items);
+        reply = alternatives
+          ? `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+          : `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้ไหมคะ?`;
         break;
       }
       names[product.sku] = product.name;
@@ -1101,6 +1242,10 @@ export async function runPipeline(
       // ทุกรายการครบ → สร้าง order เดียว (createOrder เช็คสต็อก atomic อีกชั้น)
       order = await createOrder({ tenantId, channel, customerRef, items: orderItems });
       reply = orderReply(names, order);
+      if (order.status !== "CREATED" && orderItems.length === 1) {
+        const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
+        reply = stockRecoveryReply(stock) ?? reply;
+      }
     }
 
     return customerSafe({
@@ -1120,6 +1265,16 @@ export async function runPipeline(
   if (intent === "CHECK_STOCK") {
     tool = "checkStock";
     data = await checkStock(tenantId, entities.productText ?? message, entities.size);
+  } else if (isCatalogDiscoveryMessage(message)) {
+    tool = "browseCatalog";
+    const { items } = await listSellableProducts(tenantId, {
+      inStockOnly: true,
+      sort: /(?:ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(message)
+        ? "newest"
+        : "availability",
+      limit: 3,
+    });
+    data = { status: "NOT_FOUND", query: message, alternatives: items };
   } else {
     data = { status: "NOT_FOUND", query: message };
   }

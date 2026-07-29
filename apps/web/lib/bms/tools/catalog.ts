@@ -22,7 +22,14 @@ import {
   reqString,
 } from "./types";
 
-import { listProducts, listVariants, listLowStock } from "../products";
+import {
+  findAlternativeProducts,
+  listProducts,
+  listSellableProducts,
+  listVariants,
+  listLowStock,
+  type SellableProduct,
+} from "../products";
 import { checkStock } from "../stock";
 import {
   createOrder,
@@ -53,7 +60,7 @@ import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { getStoreProfile, estimateShipping } from "../storeProfile";
-import { getTenantName } from "../platform";
+import { getTenantName, getTenantSlug } from "../platform";
 import { generateInvoice, generateQuotation } from "../documents";
 import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
 import { understand } from "../nlu";
@@ -87,6 +94,29 @@ function optMoney(args: Record<string, any>, key: string): number | null {
   return n;
 }
 
+function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null) {
+  const publicPath = tenantSlug
+    ? `/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(product.sku)}`
+    : null;
+  const publicBaseUrl = (
+    process.env.NEXT_PUBLIC_BASE_URL || "https://bms.jachoei.com"
+  ).replace(/\/$/, "");
+  return {
+    sku: product.sku,
+    name: product.name,
+    price: product.price,
+    description: product.description?.slice(0, 400) ?? null,
+    category: product.category,
+    brand: product.brand,
+    availableTotal: product.availableTotal,
+    availableSizes: product.availableSizes.filter((variant) => variant.available > 0),
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+    publicPath,
+    publicUrl: publicPath ? `${publicBaseUrl}${publicPath}` : null,
+  };
+}
+
 // เฉพาะ field ที่ใช้ตอบลูกค้าจริง — `state` + `available` + `reason` บอกสถานะได้ครบแล้ว
 // (ใช้ได้/หมดอายุ/ยังไม่เริ่ม/ใช้ครบสิทธิ์) ตามที่ description ของทูลสัญญาไว้ ส่วน timestamp
 // ภายในกับเลขออเดอร์ที่ผูกอยู่ (reserved*/redeemed*/revokedAt/source/assigned*) ไม่ได้ใช้ทั้งใน
@@ -116,7 +146,7 @@ function safeCoupon(c: any) {
 const searchProducts: BmsTool = {
   name: "search_products",
   description:
-    "Search products by keyword (name, keyword or category). Returns sku, name and price. Use when the customer asks what is available.",
+    "Search the shop's current active catalog by name, SKU, barcode, alias, category or brand. Returns verified price, availability, sizes and a public product path. Call this before answering any product question.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
@@ -124,12 +154,24 @@ const searchProducts: BmsTool = {
     properties: {
       keyword: { type: "string", description: "Search term, e.g. model name or brand." },
       category: { type: "string", description: "Category, if the customer named one." },
+      maxPrice: { type: "number", description: "Maximum customer budget, if stated." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const search = optString(args, "keyword");
     const category = optString(args, "category") ?? null;
-    const { items, total } = await listProducts(ec.tenantId, { search, category, limit: 10 });
+    const maxPrice = optMoney(args, "maxPrice");
+    const [{ items, total }, tenantSlug] = await Promise.all([
+      listSellableProducts(ec.tenantId, {
+        search,
+        category,
+        maxPrice,
+        inStockOnly: ec.surface === "customer" && !search,
+        sort: search || category ? "relevance" : "availability",
+        limit: 10,
+      }),
+      getTenantSlug(ec.tenantId),
+    ]);
     if (ec.surface === "customer" && search && total === 0) {
       await recordSynonymCandidate(ec.tenantId, search).catch((error) => {
         console.error("[BMS] synonym candidate capture failed:", error);
@@ -139,14 +181,138 @@ const searchProducts: BmsTool = {
       ok: true,
       data: {
         total,
-        products: items.map((p) => ({
-          sku: p.sku,
-          name: p.name,
-          price: Number(p.price),
-          category: p.category,
-          brand: p.brand,
-          active: p.active,
-        })),
+        products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
+      },
+    };
+  },
+};
+
+const browseCatalogTool: BmsTool = {
+  name: "browse_catalog",
+  description:
+    "Browse real in-stock products in this shop. Use for broad questions such as 'what do you sell?' and return 3-5 concrete choices before asking one narrowing question.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      keyword: { type: "string", description: "Optional use-case, style, brand or product term." },
+      category: { type: "string", description: "Optional exact shop category." },
+      limit: { type: "integer", description: "Maximum products (default 5, max 8)." },
+      minPrice: { type: "number", description: "Minimum price, if the customer stated one." },
+      maxPrice: { type: "number", description: "Maximum budget, if the customer stated one." },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const keyword = optString(args, "keyword");
+    const category = optString(args, "category") ?? null;
+    const limit = optInt(args, "limit", 1, 8) ?? 5;
+    const minPrice = optMoney(args, "minPrice");
+    const maxPrice = optMoney(args, "maxPrice");
+    let { items, total } = await listSellableProducts(ec.tenantId, {
+      search: keyword,
+      category,
+      minPrice,
+      maxPrice,
+      inStockOnly: true,
+      sort: keyword ? "relevance" : "availability",
+      limit,
+    });
+    if (items.length === 0 && keyword) {
+      const fallback = await listSellableProducts(ec.tenantId, {
+        category,
+        minPrice,
+        maxPrice,
+        inStockOnly: true,
+        sort: "availability",
+        limit,
+      });
+      items = fallback.items;
+      total = fallback.total;
+    }
+    const tenantSlug = await getTenantSlug(ec.tenantId);
+    return {
+      ok: true,
+      data: {
+        total,
+        products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
+      },
+    };
+  },
+};
+
+const listNewArrivalsTool: BmsTool = {
+  name: "list_new_arrivals",
+  description:
+    "List the shop's newest active in-stock products by product creation time. Use whenever the customer asks what is new or just added; results refresh from the database on every call.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      category: { type: "string", description: "Optional exact shop category." },
+      limit: { type: "integer", description: "Maximum products (default 5, max 8)." },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const category = optString(args, "category") ?? null;
+    const limit = optInt(args, "limit", 1, 8) ?? 5;
+    const [{ items, total }, tenantSlug] = await Promise.all([
+      listSellableProducts(ec.tenantId, {
+        category,
+        inStockOnly: true,
+        sort: "newest",
+        limit,
+      }),
+      getTenantSlug(ec.tenantId),
+    ]);
+    return {
+      ok: true,
+      data: {
+        basis: "created_at",
+        total,
+        products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
+      },
+    };
+  },
+};
+
+const findAlternativesTool: BmsTool = {
+  name: "find_alternatives",
+  description:
+    "Find 2-5 real in-stock alternatives when an exact product or requested size is unavailable. Prefer the same category/brand and a nearby price; never invent substitutes.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Unavailable product SKU, if known." },
+      keyword: { type: "string", description: "Customer's requested product text, if SKU is unknown." },
+      category: { type: "string", description: "Known desired category, if any." },
+      size: { type: "string", description: "Requested size/variant, if any." },
+      limit: { type: "integer", description: "Maximum alternatives (default 3, max 5)." },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const sku = optString(args, "sku");
+    const keyword = optString(args, "keyword");
+    const category = optString(args, "category") ?? null;
+    const size = optString(args, "size") ?? null;
+    if (!sku && !keyword && !category) {
+      throw new ToolArgError('ต้องระบุ "sku", "keyword" หรือ "category" อย่างน้อยหนึ่งค่า');
+    }
+    const limit = optInt(args, "limit", 1, 5) ?? 3;
+    const [result, tenantSlug] = await Promise.all([
+      findAlternativeProducts(ec.tenantId, { sku, keyword, category, size, limit }),
+      getTenantSlug(ec.tenantId),
+    ]);
+    return {
+      ok: true,
+      data: {
+        source: result.source,
+        alternatives: result.alternatives.map((product) =>
+          safeCatalogProduct(product, tenantSlug)
+        ),
       },
     };
   },
@@ -154,7 +320,8 @@ const searchProducts: BmsTool = {
 
 const getProduct: BmsTool = {
   name: "get_product",
-  description: "Get one product by sku, including every size and its remaining stock.",
+  description:
+    "Get one product by sku, including every size, remaining stock, and its customer-safe publicPath/publicUrl for sharing.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
@@ -164,8 +331,15 @@ const getProduct: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const sku = reqString(args, "sku");
-    const { items } = await listProducts(ec.tenantId, { search: sku, limit: 5 });
-    const p = items.find((x) => x.sku === sku) ?? items[0];
+    const [{ items }, tenantSlug] = await Promise.all([
+      listProducts(ec.tenantId, {
+        search: sku,
+        activeOnly: ec.surface === "customer",
+        limit: 5,
+      }),
+      getTenantSlug(ec.tenantId),
+    ]);
+    const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
     const variants = await listVariants(ec.tenantId, p.sku);
     return {
@@ -174,10 +348,23 @@ const getProduct: BmsTool = {
         sku: p.sku,
         name: p.name,
         price: Number(p.price),
-        description: p.description,
+        description: p.description?.slice(0, 800) ?? null,
         category: p.category,
         brand: p.brand,
         active: p.active,
+        createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
+        updatedAt: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at),
+        availableTotal: variants.reduce(
+          (sum, variant) =>
+            sum + Math.max(0, variant.current_stock - variant.reserved_stock),
+          0
+        ),
+        publicPath: tenantSlug
+          ? `/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.sku)}`
+          : null,
+        publicUrl: tenantSlug
+          ? `${(process.env.NEXT_PUBLIC_BASE_URL || "https://bms.jachoei.com").replace(/\/$/, "")}/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(p.sku)}`
+          : null,
         // ไม่ส่ง images[] — โมเดลมองรูปไม่ได้ (เป็นแค่ URL) และลิงก์ที่ลูกค้าควรได้คือหน้า public
         // /shop/{tenantSlug}/products/{sku} ไม่ใช่ URL ไฟล์ใน storage
         variants: variants.map((v) => ({
@@ -1387,18 +1574,81 @@ const recommendProductsTool: BmsTool = {
     "Fetch candidate products to recommend: searches by keyword when one is given, otherwise returns best sellers, for the responder to choose from.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
-  inputSchema: { type: "object", properties: { keyword: { type: "string" } } },
+  inputSchema: {
+    type: "object",
+    properties: {
+      keyword: { type: "string", description: "Use-case, style, product, brand or customer need." },
+      category: { type: "string", description: "Optional exact shop category." },
+      minPrice: { type: "number", description: "Minimum desired price." },
+      maxPrice: { type: "number", description: "Maximum customer budget." },
+    },
+  },
   execute: async (args, ec): Promise<ToolResult> => {
     const keyword = optString(args, "keyword");
-    if (keyword) {
-      const { items } = await listProducts(ec.tenantId, { search: keyword, limit: 8 });
+    const category = optString(args, "category") ?? null;
+    const minPrice = optMoney(args, "minPrice");
+    const maxPrice = optMoney(args, "maxPrice");
+    if (keyword || category || minPrice !== null || maxPrice !== null) {
+      let { items } = await listSellableProducts(ec.tenantId, {
+        search: keyword,
+        category,
+        minPrice,
+        maxPrice,
+        inStockOnly: true,
+        sort: "relevance",
+        limit: 8,
+      });
+      let basis = "customer_need";
+      if (items.length === 0 && keyword) {
+        items = (
+          await listSellableProducts(ec.tenantId, {
+            category,
+            minPrice,
+            maxPrice,
+            inStockOnly: true,
+            sort: "availability",
+            limit: 8,
+          })
+        ).items;
+        basis = "available_fallback";
+      }
+      const tenantSlug = await getTenantSlug(ec.tenantId);
       return {
         ok: true,
-        data: { basis: "keyword", candidates: items.map((p) => ({ sku: p.sku, name: p.name, price: Number(p.price) })) },
+        data: {
+          basis,
+          candidates: items.map((product) => safeCatalogProduct(product, tenantSlug)),
+        },
       };
     }
     const top = await getTopSellingProducts(ec.tenantId, null, null, 8);
-    return { ok: true, data: { basis: "top_sellers", candidates: top } };
+    const [{ items: available }, tenantSlug] = await Promise.all([
+      listSellableProducts(ec.tenantId, {
+        category,
+        minPrice,
+        maxPrice,
+        inStockOnly: true,
+        sort: "availability",
+        limit: 20,
+      }),
+      getTenantSlug(ec.tenantId),
+    ]);
+    const bySku = new Map(available.map((product) => [product.sku, product]));
+    const ranked = top
+      .map((product: any) => bySku.get(product.sku))
+      .filter((product): product is SellableProduct => Boolean(product));
+    const seen = new Set(ranked.map((product) => product.sku));
+    for (const product of available) {
+      if (ranked.length >= 8) break;
+      if (!seen.has(product.sku)) ranked.push(product);
+    }
+    return {
+      ok: true,
+      data: {
+        basis: top.length > 0 ? "top_sellers_then_available" : "available",
+        candidates: ranked.map((product) => safeCatalogProduct(product, tenantSlug)),
+      },
+    };
   },
 };
 
@@ -1428,6 +1678,9 @@ const sendCustomerMessageTool: BmsTool = proposalTool({
 export const ALL_TOOLS: BmsTool[] = [
   // A1
   searchProducts,
+  browseCatalogTool,
+  listNewArrivalsTool,
+  findAlternativesTool,
   getProduct,
   checkStockTool,
   listCustomerCouponsTool,
