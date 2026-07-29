@@ -75,10 +75,15 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
 (`apps/web/lib/bms/tools/runtime.ts`) and catalog (`apps/web/lib/bms/tools/catalog.ts`):
 
 - **Customer** (`lib/bms/pipeline.ts`, reached from every channel webhook + the chat playground) —
-  only customer-safe tools (`customerTools()`): read product/stock/own-order-status, plus
-  `create_order`/`submit_payment`/`reorder`. No sensitive tool is ever exposed here. AI-first; falls
-  back to the old deterministic rule-based path only when the tenant has no AI credentials or has
-  exhausted its shared-key quota — never mid-loop, to avoid duplicate writes.
+  only customer-safe tools (`customerTools()`): live-catalog discovery (`search_products`,
+  `browse_catalog`, `list_new_arrivals`, `find_alternatives`) backed by
+  `listSellableProducts()`/`resolveSellableProduct()`/`findAlternativeProducts()` in
+  `lib/bms/products.ts` — always active + in-stock, queried fresh on every call with no cache to
+  invalidate — plus read product/stock/own-order-status and `create_order`/`submit_payment`/
+  `reorder`. No sensitive tool is ever exposed here. Out-of-stock/not-found replies must offer a
+  verified alternative size or product from these tools rather than ending at "not found". AI-first;
+  falls back to the old deterministic rule-based path only when the tenant has no AI credentials or
+  has exhausted its shared-key quota — never mid-loop, to avoid duplicate writes.
 - **Staff** (`graphql/bmsAssistant.ts`, UI `/admin/assistant`) — `staffTools(perms)` filtered by the
   calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
   before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,
@@ -113,7 +118,12 @@ model-supplied args, derive `tenantId` from `ExecCtx`, add a domain `audit()` fo
 the surface + staff permission. If it is refund/cancel/delete/adjust-inventory/merge-like, mark it
 `sensitive: true` and return a proposal instead of executing),
 then update [docs/ai/tools.md](docs/ai/tools.md). Never let a tool description promise a capability the
-backend does not implement. See § "AI tool-calling — example usage" in
+backend does not implement. Any new customer-facing product/catalog tool should reuse
+`listSellableProducts()`/`resolveSellableProduct()`/`findAlternativeProducts()` in
+`lib/bms/products.ts` instead of writing a parallel product query — they already scope to
+active + in-stock and are the only bounded reads covered by the `pg_trgm` indexes added in
+migration `7.33__bms_product_discovery_indexes.sql`; an unindexed `ILIKE` scan on `bms_products`
+will not use them. See § "AI tool-calling — example usage" in
 [CLAUDE.local.md](CLAUDE.local.md) for runnable `curl`/GraphQL examples against both surfaces.
 
 ## Working method

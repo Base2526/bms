@@ -34,8 +34,9 @@ Deterministic intent?  ← coupon wallet / own-order status / payment / reorder 
     ├─ no ─────────────▶ continue to AI tool-calling
     ▼
 AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.ts]  (PRIMARY when AI creds exist)
-    │                     Claude selects+calls tools itself (search_products / check_stock /
-    │                     get_order_status / create_order / submit_payment / reorder), grounded on
+    │                     Claude selects+calls tools itself (search_products / browse_catalog /
+    │                     list_new_arrivals / find_alternatives / check_stock / get_order_status /
+    │                     create_order / submit_payment / reorder), grounded on
     │                     real backend results; every business number traces to a tool result.
     │                     usedAi:true (even on mid-loop error) → return AI reply, never fall through
     │                     (write-safety: no double create_order).
@@ -65,7 +66,9 @@ prompt, reducing repeated input cost without changing the authorization or execu
 `runApprovedTool()` is the same execution boundary without provider inference. The customer
 pipeline uses it only for narrow intents whose target is unambiguous. Recent customer turns are also
 reduced to non-authoritative order slots (product text, size, quantity, confirmation); product and
-stock facts still have to come from tools. A successful customer tool call or a relevant
+stock facts still have to come from tools. Colloquial quantity/size corrections update the
+corresponding slot without overwriting the product, while an explicit draft cancellation clears the
+stored slots and prevents turns before that cancellation from rebuilding them. A successful customer tool call or a relevant
 single-field clarification resets the turn budget, so legitimate browsing/slot filling is not
 mistaken for a stalled conversation.
 
@@ -74,6 +77,14 @@ one sanitizer (`customerSafe()`): full UUIDs are shortened to their first eight 
 shop brand voice is normalized (`ครับ` → `ค่ะ`, a standalone `ผม` → `ทางร้าน`) so a model or template
 slip cannot change the shop persona mid-conversation. This is the shop's own voice and is unrelated
 to the per-admin `ครับ/ค่ะ` particle used by Inbox suggested replies.
+
+Customer product discovery is sales-first and retrieval-first. Broad product questions read
+`browse_catalog` and present real in-stock choices; “what is new?” reads `list_new_arrivals` ordered
+by product creation time; exact misses and out-of-stock requests read `find_alternatives`. These
+tools query the tenant's active catalog on every call, so a newly inserted product (including one in
+a previously unseen category) is available on the next message without retraining or cache
+invalidation. The deterministic no-credential path uses the same product-resolution and sellable
+catalog services and also offers verified alternatives instead of ending at “not found”.
 
 ## Intents (`nlu.ts`)
 

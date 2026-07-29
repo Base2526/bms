@@ -29,7 +29,18 @@ export type Understanding = {
 };
 
 const STOCK_HINTS = ["มีไหม", "มีมั้ย", "เหลือ", "สต็อก", "stock", "ราคา", "ไซซ์", "size", "size?"];
-const ORDER_HINTS = ["สั่ง", "ซื้อ", "จอง", "order", "เอา", "รับ"];
+const ORDER_HINTS = [
+  "สั่ง",
+  "ซื้อ",
+  "จอง",
+  "order",
+  "เอา",
+  "รับ",
+  "ขอ",
+  "เปลี่ยนจำนวน",
+  "เพิ่มเป็น",
+  "ลดเหลือ",
+];
 const GREETING_HINTS = ["สวัสดี", "hello", "hi", "หวัดดี"];
 
 /** ดึงจำนวนจากข้อความ เช่น "2 ชิ้น", "x2", "จำนวน 3" → number */
@@ -37,10 +48,31 @@ function extractQty(text: string): number | null {
   const m =
     text.match(/(\d+)\s*(?:ชิ้น|คู่|อัน|ตัว|pcs?|pieces?)/i) ||
     text.match(/x\s*(\d+)/i) ||
-    text.match(/จำนวน\s*(\d+)/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isInteger(n) && n > 0 ? n : null;
+    text.match(/จำนวน\s*(\d+)/i) ||
+    text.match(
+      /(?:ขอ|เอา|รับ|เปลี่ยน(?:จำนวน)?เป็น|เพิ่มเป็น|ลดเหลือ)\s*(\d+)\s*(?:แทน|พอ|นะ|ค่ะ|คะ|ครับ|$)/i
+    );
+  if (m) {
+    const n = parseInt(m[1], 10);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  }
+
+  const thaiNumber = text.match(
+    /(?:ขอ|เอา|รับ|จำนวน)?\s*(หนึ่ง|นึง|สอง|สาม|สี่|ห้า)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)/i
+  )?.[1];
+  if (!thaiNumber && /(?:ชิ้น|คู่|อัน|ตัว|ชุด)(?:หนึ่ง|นึง)(?:\s|$|ค่ะ|คะ|ครับ|นะ)/i.test(text)) {
+    return 1;
+  }
+  return (
+    {
+      หนึ่ง: 1,
+      นึง: 1,
+      สอง: 2,
+      สาม: 3,
+      สี่: 4,
+      ห้า: 5,
+    } as Record<string, number | undefined>
+  )[thaiNumber ?? ""] ?? null;
 }
 
 /**

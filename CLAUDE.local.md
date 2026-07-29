@@ -552,6 +552,46 @@ mutation {
 `payment.refund`) จะไม่เห็นทูลนั้นถูกเสนอให้ AI เลยตั้งแต่ต้น (กรองที่ `staffTools(perms)`) และถึงมี
 provider output ผิดปกติก็จะถูก runtime ปฏิเสธซ้ำก่อน execute
 
+## AI catalog discovery + sales recovery (2026-07)
+
+**เสร็จแล้ว** — ปัญหาเดิม: ลูกค้าถามกว้าง ("มีอะไรขาย"), ถามของใหม่, หรือเจอสินค้า/ไซซ์หมด แล้ว AI จบบทสนทนา
+ด้วย "ไม่มี"/"ของหมด" ทั้งที่ร้านมีสินค้าขายจริงใกล้เคียงอยู่ — เพราะ `search_products` เดิมพึ่ง `listProducts()`
+(list ทั่วไป ไม่ได้ derive availability) และไม่มีทูลสำหรับ "เรียกดู"/"ของใหม่"/"หาสินค้าแทน" เลย โมเดลเลย
+ตอบจากความจำแชทหรือหยุดคุยแทนที่จะค้น catalog ต่อ:
+
+- **service ใหม่ (`lib/bms/products.ts`)** — `listSellableProducts()` (ค้น catalog ที่ active+derive
+  available ต่อไซซ์จาก `bms_inventory` จริง ตาม name/sku/barcode/alias/category/brand, sort
+  relevance/newest/availability), `resolveSellableProduct()` (แทนที่ query แบบ `keywords[]` substring
+  เดิมใน `stock.ts`'s `resolveProduct()` — ตอนนี้เรียก service กลางตัวนี้แทน), และ
+  `findAlternativeProducts()` (จัดอันดับ same category > same brand > ราคาใกล้ต้นทาง > สต็อกเยอะสุด)
+  — **ไม่มี cache/embedding**: สินค้าที่เพิ่ง insert เป็น active เห็นได้ทันทีในทูลถัดไป แม้เป็นหมวดใหม่
+- **ทูลใหม่ 3 ตัวใน `customerTools()`** (`tools/catalog.ts`, permission `product.view` เดิม, customer+staff):
+  `browse_catalog` (คำถามกว้าง), `list_new_arrivals` (sort `created_at DESC`, อ่านสดทุกครั้ง), และ
+  `find_alternatives` (sku/keyword/category/size → 2–5 ตัวเลือกจริง) — ทั้งหมดคืน `publicPath`/`publicUrl`
+  (`/shop/{tenantSlug}/products/{sku}`) ผ่าน `safeCatalogProduct()` ให้ AI ส่งลิงก์ลูกค้าได้โดยไม่ต้องประกอบ
+  URL เอง หรือหลุดไปส่ง `/admin/*` · `search_products`/`recommend_products`/`get_product` เดิมก็ปรับมาใช้
+  service ใหม่นี้ด้วย (ไม่มี logic ค้นสินค้าคู่ขนาน 2 ชุด)
+- **migration `7.33__bms_product_discovery_indexes.sql`** — เปิด extension `pg_trgm` +
+  GIN trigram index บน `lower(name/sku/category/brand)` และ index
+  `(tenant_id, created_at DESC) WHERE active` สำหรับ new-arrivals — ยังอ่านจาก `bms_products` ตรง ๆ
+  ไม่มี parallel search store ตัวใหม่ (**ยังไม่ได้ apply เข้า docker/production จริงบนเครื่องนี้**)
+- **ตอบของหมด/ไม่พบแบบมีทางไปต่อ** — `checkStock()` (`stock.ts`) คืน `availableSizes`/`alternatives` เพิ่ม,
+  template ฝั่ง `ai.ts` และ AI system prompt ฝั่ง `pipeline.ts` (`buildCustomerSystem`) เปลี่ยนจากจบด้วย
+  "ของหมด"/"ไม่พบ" เป็นเสนอไซซ์อื่นของรุ่นเดิมหรือสินค้าทดแทนจริงก่อนเสมอ · deterministic no-credential
+  fallback (`pipeline.ts`, ไม่มี AI key/เกิน quota) เรียก service เดียวกันนี้ ไม่ได้เขียน fallback แยก
+- **Thai NLU ภาษาพูดเพิ่มเติม** (`nlu.ts`/`pipeline.ts`'s `buildOrderMemory`/`productHintFromCustomerText`)
+  — จำนวนเป็นคำ (`อันนึง`/`นึง`→1 ... `ห้า`→5), รูปแก้ไข slot ระหว่างทาง (`ขอ 2 แทน`, `เปลี่ยนเป็น XL`,
+  `เพิ่มเป็น 3`, `ลดเหลือ 1`) แก้เฉพาะ slot ที่ตั้งใจโดยไม่ทำสินค้าที่คุยอยู่หาย และไม่เอาตัวเลขจำนวนไปตีความ
+  เป็นชื่อสินค้า · วลียกเลิก draft ชัดเจน (`ไม่เอาแล้ว`/`ไว้ก่อน`/`ยกเลิก`/`พอก่อน`) เคลียร์
+  `AiConversationState` (`setAiConversationState(tenantId, convId, {})`) และตั้ง history boundary ใน
+  `buildOrderMemory()` กันไม่ให้ข้อความก่อนยกเลิกถูกดึงกลับมาสร้างออร์เดอร์โดยไม่ตั้งใจ
+- **eval suite ใหม่**: `BMS_EVAL_MODE=natural` (13 case เน้นภาษาพูด/ความจำ/เปลี่ยนใจ/ต่อรอง/product link/
+  ordinal reference `ตัวที่ 2` — ดู `scripts/ai-eval/README.md`) เพิ่มจาก smoke เดิม (8→11 case, เพิ่ม
+  `category-browse`/`new-arrivals-live-catalog`/`natural-colloquial-stock`) · customer tool registry
+  ที่ eval คุม coverage ขยายจาก 15→18 ตัว
+- **ยังไม่ทำ**: ยังไม่ได้ apply migration `7.33` เข้า docker/production เครื่องนี้ และยังไม่ได้รัน
+  `BMS_EVAL_MODE=natural` กับ live model เพื่อดู pass rate จริง (โค้ด + eval case เขียนไว้แล้วเท่านั้น)
+
 ## Revision trigger collision — แก้ users/posts อัปเดตไม่ได้ (2026-07)
 
 **เจอ + แก้แล้ว** — บันทึกโปรไฟล์ `/admin/profile` (และแก้ post/comment) พังด้วย
@@ -895,12 +935,18 @@ staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose
 + **Bulk product import (CSV/XLSX) เสร็จแล้ว** (ดูหัวข้อ § Bulk product import ด้านบน — `/admin/products`
 ปุ่ม "นำเข้า", 1 mutation `bmsImportProducts` flag `commit` สำหรับ preview→commit, ห่อ `upsertProduct()` เดิม;
 ยังไม่ได้ทดสอบ end-to-end ในเบราว์เซอร์จริง).
++ **AI catalog discovery + sales recovery เสร็จแล้ว** (ดูหัวข้อ § AI catalog discovery + sales recovery
+ด้านบน — `browse_catalog`/`list_new_arrivals`/`find_alternatives` + service `listSellableProducts()`/
+`findAlternativeProducts()`, ของหมด/ไม่พบตอบพร้อมทางเลือกจริงแล้ว, Thai NLU ภาษาพูด + ยกเลิก draft ชัดเจน,
+eval `BMS_EVAL_MODE=natural`; ยังไม่ได้ apply migration `7.33` เข้า docker/production จริงและยังไม่ได้รัน
+natural suite กับ live model).
 **เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
 · ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` (endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
 · proactive external notification สำหรับ Channel Health (ต้องออกแบบ LINE user id ผูก admin ก่อน — ดู § Channel Health)
+· apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
 
 ## ก่อน production (สำคัญ)
 
