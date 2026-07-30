@@ -17,12 +17,13 @@
 //                          BUSINESS_RULES) แคชผลไว้ใน bms_customer_ai_summary
 //                          (facts_hash เทียบว่าข้อมูลเปลี่ยนไปหรือยังก่อน
 //                          เรียก Claude ซ้ำ) — ตามแพทเทิร์นเดียวกับ
-//                          verifyPaymentSlip()/claudeReadSlip() ใน payments.ts
+//                          verifyPaymentSlip()/SlipReader adapter ใน payments.ts
 // =============================================================
 
 import { query } from "@/lib/db";
 import crypto from "crypto";
-import { resolveAiCredentials } from "./ai";
+import { resolveAiCredentials, type AiCredentials } from "./ai";
+import { callAnthropicCompatibleMessages } from "./aiProvider";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { listCustomerCouponWallet } from "./coupons";
 import { resolveActiveCustomerId } from "./customers";
@@ -444,8 +445,8 @@ export async function getCustomerTimeline(tenantId: string, customerId: string) 
 
 // ---------------------------------------------------------------
 // Section 9 — AI Insights (facts-only, cached, advisory — never
-// invents numbers; same pattern as verifyPaymentSlip/claudeReadSlip
-// in payments.ts: raw fetch, BMS_AI_MODEL, fallback template on error)
+// invents numbers; same advisory/fallback pattern as verifyPaymentSlip
+// and the SlipReader adapter; raw fetch, BMS_AI_MODEL, fallback template on error)
 // ---------------------------------------------------------------
 type CustomerFacts = {
   name: string;
@@ -483,39 +484,30 @@ type SummarizeResult = { text: string; inputTokens: number; outputTokens: number
 // ตรงนี้เอง ไม่งั้นร้านที่ตั้ง BYOK จะไม่ได้ใช้ key ตัวเอง และ usage จะไม่ถูกนับใน quota/รายงาน
 async function claudeSummarize(
   facts: CustomerFacts,
-  creds: { apiKey: string; model: string }
+  creds: Pick<AiCredentials, "apiKey" | "model" | "provider" | "baseUrl">
 ): Promise<SummarizeResult> {
-  const model = creds.model;
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": creds.apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 300,
-      system:
-        "คุณช่วยแอดมินร้านค้าสรุปพฤติกรรมลูกค้าเป็นภาษาไทย แบบ bullet สั้นๆ " +
-        "ใช้ข้อมูลที่ให้เท่านั้น ห้ามเดา/แต่งตัวเลขหรือข้อเท็จจริงที่ไม่มีในข้อมูล " +
-        "ถ้าจะแนะนำการกระทำ ต้องอ้างอิงจากข้อมูลที่ให้เท่านั้น (เช่น สินค้าที่ซื้อบ่อย, ความถี่การซื้อ) " +
-        "ห้ามแนะนำสิ่งที่ไม่มีข้อมูลรองรับ",
-      messages: [
-        {
-          role: "user",
-          content: `ข้อมูลลูกค้า (JSON): ${JSON.stringify(facts)}\n\nสรุปเป็น bullet ภาษาไทย พร้อมคำแนะนำ 1 ข้อถ้ามีข้อมูลรองรับ`,
-        },
-      ],
-    }),
+  const resp = await callAnthropicCompatibleMessages(creds, {
+    model: creds.model,
+    max_tokens: 300,
+    system:
+      "คุณช่วยแอดมินร้านค้าสรุปพฤติกรรมลูกค้าเป็นภาษาไทย แบบ bullet สั้นๆ " +
+      "ใช้ข้อมูลที่ให้เท่านั้น ห้ามเดา/แต่งตัวเลขหรือข้อเท็จจริงที่ไม่มีในข้อมูล " +
+      "ถ้าจะแนะนำการกระทำ ต้องอ้างอิงจากข้อมูลที่ให้เท่านั้น (เช่น สินค้าที่ซื้อบ่อย, ความถี่การซื้อ) " +
+      "ห้ามแนะนำสิ่งที่ไม่มีข้อมูลรองรับ",
+    messages: [
+      {
+        role: "user",
+        content: `ข้อมูลลูกค้า (JSON): ${JSON.stringify(facts)}\n\nสรุปเป็น bullet ภาษาไทย พร้อมคำแนะนำ 1 ข้อถ้ามีข้อมูลรองรับ`,
+      },
+    ],
   });
-  if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
+  if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
   const json = (await resp.json()) as {
     content?: Array<{ text?: string }>;
     usage?: { input_tokens?: number; output_tokens?: number };
   };
   const text = json.content?.[0]?.text?.trim();
-  if (!text) throw new Error("Claude empty reply");
+  if (!text) throw new Error(`${creds.provider} empty reply`);
   return {
     text,
     inputTokens: Number(json.usage?.input_tokens ?? 0),
@@ -572,7 +564,6 @@ export async function getCustomerInsights(tenantId: string, customerId: string) 
   const creds = await resolveAiCredentials(tenantId, {
     surface: "staff",
     feature: "customer_insights",
-    provider: "anthropic",
     meta: { customerId },
   });
   let summaryText: string;

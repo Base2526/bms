@@ -33,9 +33,10 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
-| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27` |
+| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35` |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
+| AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
 
 ## Notable schema details
 
@@ -116,6 +117,28 @@ transitions (written only when status actually changes), separate from `bms_audi
 are automated events from external platforms, not admin actions. Written exclusively through
 `setChannelStatus()` in `lib/bms/channelHealth.ts` — see [../integrations/lazada.md](../integrations/lazada.md)
 for a caveat on what a `webhook_failed` badge means for the Shopee/Lazada beta scaffold specifically.
+
+**AI Provider Health (`7.34__bms_ai_provider_health.sql`)** — same shape as Channel Health but for the
+shared platform AI provider (Anthropic/DeepSeek/Qwen OCR) instead of a chat channel. `bms_ai_provider_health`
+has **no `tenant_id`** and no RLS (same convention as `bms_plans`) because it tracks the platform's own
+shared credentials, not any one shop's data — a tenant's own BYOK key failing is that tenant's problem
+and is intentionally not tracked here. Composite primary key `(provider, purpose)` because one provider
+can serve more than one purpose independently (Anthropic can back sensitive `chat` baseline/fallback
+and, if `BMS_SLIP_READER_FALLBACK_PROVIDER=anthropic`, `ocr` slip fallback — each can be
+healthy/unhealthy on its own).
+Written exclusively through `setAiProviderStatus()` in `lib/bms/aiProviderHealth.ts`, called from three
+places: `finalizeAiUsageEvent()` in `lib/bms/aiUsage.ts` (the single choke point every shared-key chat
+and OCR call already passes through — BYOK-sourced events are skipped by checking `source = 'shared'`),
+the `/admin/env` "ทดสอบ" button (`testPlatformAiKey()` in `lib/bms/aiConfig.ts`), and the cron
+`POST /api/bms/ai/check-health`. `bms_ai_provider_health_log` is append-only history, written only on
+an actual status change (same anti-spam rule as `bms_channel_health_log`).
+The UI derives `STALE` for a connected row whose `last_checked_at` is older than the configured
+freshness window; `stale` is not stored in the database status constraint.
+
+**Tenant AI provider (`7.35__bms_tenant_ai_provider.sql`)** — adds a constrained
+`bms_tenant_ai_config.provider` (`anthropic`/`deepseek`, default `anthropic`) so legacy BYOK rows
+retain their meaning while new tenants can supply a DeepSeek key. The encrypted-key column remains
+the same and arbitrary tenant-supplied base URLs are intentionally unsupported.
 
 **`bms_product_images` (`6.5__bms_product_images.sql`)** — ordered gallery rows
 `(tenant_id, product_sku, file_id, sort_order)` pointing at the shared `files` table. The older

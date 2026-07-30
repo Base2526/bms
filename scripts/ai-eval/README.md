@@ -5,7 +5,8 @@
 1. **Deterministic runtime contract tests** — ไม่เรียก provider/DB จริง ใช้ fake tools และ fake
    provider เพื่อบังคับ failure/security paths ให้คงที่
 2. **Live-model end-to-end eval** — ยิง `/api/bms/chat` เหมือน playground/webhook path จริง แล้วอ่าน
-   GraphQL state กลับมาตรวจ order/payment/items/status แทนการเชื่อเพียง tool trace
+   GraphQL state กลับมาตรวจ order/payment/items/status แทนการเชื่อเพียง tool trace รวมถึงตรวจ
+   tenant-scoped usage event ว่า provider/routing ที่ใช้จริงตรงกับ policy
 
 ชุดนี้อ้างอิง release checklist ใน
 [`docs/AI_GUIDELINES.md`](../../docs/AI_GUIDELINES.md#evaluation-checklist)
@@ -17,12 +18,23 @@
 ```bash
 cd apps/web
 npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
+```
+
+ถ้า `tsx` CLI ชนข้อจำกัด IPC ของเครื่องหรือ sandbox ให้ใช้ `node --import tsx --test ...`
+แทนได้:
+
+```bash
+cd apps/web
+node --import tsx --test ../../scripts/ai-eval/runtime-contract.test.mts
+node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 ```
 
 ครอบคลุม:
 
 - ไม่มี AI credentials → `usedAi:false` สำหรับ deterministic fallback
 - provider response ปกติและ usage finalization
+- staff sensitive intent ส่ง routing flag เพื่อใช้ baseline provider แต่คำถามอ่านข้อมูลยังใช้ primary
 - malformed provider content/usage ถูก normalize และ caller ยังได้ safe fallback wording
 - unknown tool
 - non-object input / unknown input fields / required argument validation
@@ -35,6 +47,11 @@ npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
 - loop ถูกจำกัดไว้ห้ารอบ
 - tenant-context mismatch และ duplicate tool registry
 - centralized audit seam ไม่ได้รับ raw arguments/PII
+- slip-reader contract รับเฉพาะ amount/date/ref/bank, reject malformed/unknown fields
+- slip reader provider error, unsupported image และ timeout ต้อง fallback ได้อย่างปลอดภัย
+- default slip reader เป็น Qwen OCR และ adapters ทั้ง Anthropic/Qwen ต้องคืน contract เดียวกัน
+- Qwen runtime failure ต้อง retry Anthropic แบบ lazy, finalize usage ของทั้งสอง attempt และไม่ retry write
+- Qwen OCR ใช้อัตราต้นทุนของ provider เอง ไม่ตกไปใช้อัตรา Anthropic
 
 Contract suite ใช้ `__toolLoopTest` dependency seam ใน
 `apps/web/lib/bms/tools/runtime.ts` โดยตรง ไม่มี test HTTP endpoint และ production caller
@@ -50,6 +67,8 @@ Live suite ใช้ `channel:"web"` เพื่อให้ conversation histo
 - สร้าง order จริงและ reserve stock จริงในบางเคส
 - สร้าง payment สถานะ `PENDING` จริงใน happy path
 - สร้าง audit rows จริง
+- อ่าน usage diagnostic ที่ผูกเฉพาะ `customerRef` รูปแบบ `EVAL-*`; runner ไม่บันทึก customer ref
+  ทั่วไปลง usage metadata
 
 จึงต้องใช้ **development/sandbox tenant เท่านั้น** ไม่มี cleanup อัตโนมัติ เพราะการลบ order/payment
 อาจทำลาย append-only audit/revision semantics ของระบบ
@@ -100,7 +119,7 @@ node scripts/ai-eval/run.mjs
 node scripts/ai-eval/run.mjs
 ```
 
-Smoke suite สำหรับรันระหว่างพัฒนา (11 cases ครอบคลุม catalog/read/write/security/handoff):
+Smoke suite สำหรับรันระหว่างพัฒนา (12 cases ครอบคลุม catalog/read/write/security/handoff/provider routing):
 
 ```bash
 BMS_EVAL_MODE=smoke node scripts/ai-eval/run.mjs
@@ -143,13 +162,14 @@ node scripts/ai-eval/run.mjs
 | `BMS_EVAL_BASE_URL` | `http://localhost:3000` | API base URL |
 | `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | Netscape cookie jar |
 | `BMS_EVAL_REQUEST_TIMEOUT_MS` | `125000` | timeout ต่อ HTTP/GraphQL request |
-| `BMS_EVAL_MODE` | `full` | `full`, `smoke` (11 representative cases) หรือ `natural` (13 conversation cases) |
+| `BMS_EVAL_MODE` | `full` | `full`, `smoke` (12 representative cases) หรือ `natural` (13 conversation cases) |
 | `BMS_EVAL_CASES` | ว่าง | comma-separated exact case IDs; มีผลเหนือ mode |
 | `BMS_EVAL_ALL_TENANTS` | `false` | วนทุก active tenant |
 | `BMS_EVAL_TENANT_SLUGS` | ว่าง | comma-separated tenant filter |
 | `BMS_EVAL_ALLOW_REMOTE_WRITES` | `false` | explicit confirmation สำหรับ remote sandbox |
 | `BMS_EVAL_REQUIRE_FULL_COVERAGE` | `false` | ให้ skipped fixture case หรือ customer tool ที่ไม่ถูก observe ทำให้ run fail |
 | `BMS_EVAL_JSON_OUTPUT` | ว่าง | path สำหรับเขียน machine-readable JSON report |
+| `BMS_EVAL_SLIP_PAYMENT_ID` | ว่าง | payment ID ที่มีรูปสลิป เพื่อเปิด case `slip-ocr-provider-routing` (เรียก OCR จริงและมี usage) |
 | `EVAL_PRODUCT_KEYWORD` | auto-discover | override product name/SKU |
 | `EVAL_PRODUCT_SIZE` | variant ที่ discover | override size |
 | `EVAL_PRODUCT_QTY` | `1` | override quantity hint |
@@ -162,6 +182,18 @@ BMS_EVAL_REQUIRE_FULL_COVERAGE=true \
 BMS_EVAL_JSON_OUTPUT=/tmp/bms-ai-eval.json \
 node scripts/ai-eval/run.mjs
 ```
+
+ทดสอบ live OCR แยกเฉพาะ case (ต้องเป็น payment ของ tenant ปัจจุบัน, มี `slipUrl` และ session มี
+`payment.confirm`):
+
+```bash
+BMS_EVAL_CASES=slip-ocr-provider-routing \
+BMS_EVAL_SLIP_PAYMENT_ID=00000000-0000-0000-0000-000000000000 \
+node scripts/ai-eval/run.mjs
+```
+
+เคสนี้ยืนยันว่า Qwen เป็น provider หลัก, Anthropic ถูกใช้เฉพาะ runtime fallback, usage event ของ
+แต่ละ attempt ถูก finalize และสถานะ payment ไม่เปลี่ยน การอ่านสลิปมี usage เล็กน้อยจริง
 
 ## Live coverage matrix
 
@@ -180,6 +212,9 @@ node scripts/ai-eval/run.mjs
 - recommendation ต้องเสนอสินค้าจริงพร้อม CTA
 - recommendation ตามงบต้องส่ง `maxPrice` เข้า backend และไม่เสนอเกินงบ
 - hesitation follow-up ต้องช่วยแคบตัวเลือก ไม่รีบปิดบทสนทนา/โยน handoff
+- ทุก turn ที่ใช้ `ai:tool-calling` ต้องมี usage event ใหม่ของ `customer_tool_loop`, provider ต้องตรง
+  `effectiveProvider`, routing reason/fallback ต้องสอดคล้อง และ customer surface ต้องไม่ถูกจัดเป็น
+  sensitive
 
 ### Natural sales conversations
 
@@ -214,6 +249,8 @@ node scripts/ai-eval/run.mjs
 - reorder ต้อง resolve own latest order ฝั่ง server (ไม่บังคับให้ model ส่ง orderId) และสร้าง order ใหม่ถูกตัว
 - customer ไม่มี order ต้องไม่แต่ง order ID/status
 - customer reply ใช้ `ค่ะ/คะ` ไม่ใช้ `ผม/ครับ` และไม่หลุดเรื่องสอบ/ชั้นเรียน
+- optional live slip OCR ต้องใช้ Qwen primary หรือ Anthropic fallback ที่มี failed Qwen attempt ก่อน
+  และ `bmsVerifyPaymentSlip` ต้องไม่เปลี่ยน payment status
 
 ### Coupon
 

@@ -42,6 +42,12 @@ import {
 const HISTORY_FETCH_MESSAGES = 48;
 const HISTORY_RECENT_MESSAGES = 8;
 const HISTORY_COMPRESS_THRESHOLD = 12;
+const SAFE_EVAL_REF_PATTERN = /^EVAL-[A-Za-z0-9._:-]{1,180}$/;
+
+function safeEvalRef(customerRef?: string | null): string | null {
+  const value = customerRef?.trim() ?? "";
+  return SAFE_EVAL_REF_PATTERN.test(value) ? value : null;
+}
 
 // P1: ตรวจว่า reply มีตัวเลขราคา/สต็อกที่ไม่มีทูล verify รองรับไหม (unverified fact detector)
 const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
@@ -1108,6 +1114,7 @@ export async function runPipeline(
     }
   }
 
+  const evalRef = safeEvalRef(customerRef);
   const loop = await runToolLoop({
     tenantId,
     system: buildCustomerSystem(categories.map((c) => c.name), profile),
@@ -1126,6 +1133,7 @@ export async function runPipeline(
       history_compressed: summary !== null,
       history_summary_chars: summary?.length ?? 0,
       business_type: profile.businessType ?? "general",
+      ...(evalRef ? { eval_ref: evalRef } : {}),
     },
   });
   if (loop.usedAi) {

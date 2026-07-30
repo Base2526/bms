@@ -58,7 +58,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
         body: (
           <ul>
             <li><strong>Operate the service:</strong> run the inbox, product/order/inventory management, and reporting features you use.</li>
-            <li><strong>AI-assisted replies:</strong> when a Shop Owner enables AI auto-reply, customer messages are sent to our AI provider (currently Anthropic/Claude) to generate a suggested or automatic response, and to look up product/stock information.</li>
+            <li><strong>AI-assisted replies:</strong> when a Shop Owner enables AI auto-reply, customer messages are sent to our configured AI provider (for example Anthropic/Claude or DeepSeek) to generate a suggested or automatic response, and to look up product/stock information.</li>
             <li><strong>Payment verification:</strong> uploaded payment slips are analyzed by AI to help confirm amount and reference — this assists the Shop Owner but does not replace their own verification.</li>
             <li><strong>Security and abuse prevention:</strong> detect suspicious activity, enforce rate limits, and keep an audit log of admin actions within each shop.</li>
             <li><strong>Support and communication:</strong> respond to support requests and send service-related notices.</li>
@@ -81,7 +81,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
         body: (
           <ul>
             <li><strong>Messaging channels:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — to send and receive messages on behalf of a shop.</li>
-            <li><strong>AI provider:</strong> Anthropic (Claude) — to generate AI replies and analyze payment slip images, when a Shop Owner enables these features.</li>
+            <li><strong>AI providers:</strong> configured large-model and OCR providers such as Anthropic (Claude), DeepSeek, or Alibaba Cloud Model Studio (Qwen OCR) — to generate AI replies and analyze payment slip images, when a Shop Owner enables these features.</li>
             <li><strong>Infrastructure:</strong> our hosting and database providers, used to run and store the Platform's data securely.</li>
             <li>We do not sell personal data to third parties, and we do not use conversation content for advertising.</li>
           </ul>
@@ -172,7 +172,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
         body: (
           <ul>
             <li><strong>ให้บริการระบบ:</strong> รัน Inbox, จัดการสินค้า/ออเดอร์/สต็อก และรายงานที่คุณใช้งาน</li>
-            <li><strong>AI ตอบลูกค้า:</strong> เมื่อเจ้าของร้านเปิดใช้ AI ตอบอัตโนมัติ ข้อความลูกค้าจะถูกส่งไปยังผู้ให้บริการ AI ของเรา (ปัจจุบันคือ Anthropic/Claude) เพื่อสร้างคำตอบและค้นข้อมูลสินค้า/สต็อก</li>
+            <li><strong>AI ตอบลูกค้า:</strong> เมื่อเจ้าของร้านเปิดใช้ AI ตอบอัตโนมัติ ข้อความลูกค้าจะถูกส่งไปยังผู้ให้บริการ AI ที่ระบบตั้งค่าไว้ (เช่น Anthropic/Claude หรือ DeepSeek) เพื่อสร้างคำตอบและค้นข้อมูลสินค้า/สต็อก</li>
             <li><strong>ตรวจสอบการชำระเงิน:</strong> สลิปที่อัปโหลดจะถูกวิเคราะห์ด้วย AI เพื่อช่วยยืนยันจำนวนเงินและเลขอ้างอิง — เป็นตัวช่วยเจ้าของร้าน ไม่ได้แทนที่การตรวจสอบของเจ้าของร้านเอง</li>
             <li><strong>ความปลอดภัยและป้องกันการใช้งานผิด:</strong> ตรวจจับความผิดปกติ จำกัดอัตราการเรียกใช้ และบันทึก audit log การกระทำของแอดมินในแต่ละร้าน</li>
             <li><strong>สนับสนุนและติดต่อสื่อสาร:</strong> ตอบคำขอ support และแจ้งข่าวสารที่เกี่ยวกับบริการ</li>
@@ -195,7 +195,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
         body: (
           <ul>
             <li><strong>ช่องทางส่งข้อความ:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — เพื่อส่ง/รับข้อความในนามร้าน</li>
-            <li><strong>ผู้ให้บริการ AI:</strong> Anthropic (Claude) — สำหรับสร้างคำตอบ AI และวิเคราะห์สลิปการโอนเงิน เมื่อเจ้าของร้านเปิดใช้ฟีเจอร์เหล่านี้</li>
+            <li><strong>ผู้ให้บริการ AI:</strong> ผู้ให้บริการโมเดลและ OCR ที่ระบบตั้งค่าไว้ เช่น Anthropic (Claude), DeepSeek หรือ Alibaba Cloud Model Studio (Qwen OCR) — สำหรับสร้างคำตอบ AI และวิเคราะห์สลิปการโอนเงิน เมื่อเจ้าของร้านเปิดใช้ฟีเจอร์เหล่านี้</li>
             <li><strong>โครงสร้างพื้นฐาน:</strong> ผู้ให้บริการ hosting และฐานข้อมูลที่เราใช้รันและจัดเก็บข้อมูลของแพลตฟอร์มอย่างปลอดภัย</li>
             <li>เราไม่ขายข้อมูลส่วนบุคคลให้บุคคลที่สาม และไม่ใช้เนื้อหาบทสนทนาเพื่อการโฆษณา</li>
           </ul>

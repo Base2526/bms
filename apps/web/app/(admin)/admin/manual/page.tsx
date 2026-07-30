@@ -141,7 +141,7 @@ const flowCards: Record<
     summary: "หน้า Payment คือจุดที่ตามสถานะเงินทั้งหมด โดย AI ช่วยตรวจสลิปได้ แต่คนยังต้องกดยืนยันเอง",
     checks: [
       "ค้นหา payment id / order id / slip ref ได้",
-      "ตรวจสลิปด้วย AI เป็นคำแนะนำเท่านั้น",
+      "ตรวจสลิปด้วย AI เป็นคำแนะนำเท่านั้น; ถ้า OCR ตัวหลักล้ม ระบบอาจลองตัวสำรองก่อนส่งให้คนตรวจ",
       "Confirm แล้วออเดอร์จะเป็น PAID",
       "Refund ใช้เมื่อรายการอยู่ในสถานะที่คืนเงินได้เท่านั้น",
     ],
@@ -794,6 +794,17 @@ export default function Page() {
                       <>
                         ไปที่ <Link href="/admin/settings">Settings</Link> เพื่อวาง token และตั้ง webhook · ถ้าต้องทดสอบ Inbox realtime ให้เปิด{" "}
                         <Link href="/admin/inbox/realtime-diagnostics">Realtime Diagnostics</Link> แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
+                      </>
+                    ),
+                  },
+                  {
+                    title: "ตั้ง AI Key ของร้านเอง (BYOK)",
+                    description: (
+                      <>
+                        ใน <Link href="/admin/settings">Settings</Link> เลือก Anthropic หรือ DeepSeek
+                        แล้วใส่ API Key/Model ของร้านได้ เมื่อเปลี่ยน provider ต้องกรอก key ใหม่
+                        เสมอ; Slip OCR ยังใช้ provider กลางของแพลตฟอร์ม และการยืนยันเงินยังต้องให้
+                        คนกด Confirm
                       </>
                     ),
                   },

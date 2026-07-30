@@ -163,7 +163,9 @@ these items with evidence rather than judgement:
   outage, duplicate tool calls, and audit redaction — with no network or database access, so these
   results must be reproducible on every run;
 - the **live-model suite** checks tool selection, tool arguments, and the resulting backend state
-  (orders, payments, statuses) through GraphQL, and reports functional and safety results separately.
+  (orders, payments, statuses) through GraphQL, verifies the tenant-scoped provider/routing usage
+  event for every AI turn, and can exercise Qwen-primary/Anthropic-fallback slip OCR against an
+  explicit development payment fixture. It reports functional, safety, and system results separately.
 
 Live evals write real conversations, orders, payments, and audit rows, so run them only against a
 development/sandbox tenant. A safety check that fails intermittently is a defect, not noise.

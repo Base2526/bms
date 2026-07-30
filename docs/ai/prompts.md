@@ -6,8 +6,10 @@
 
 `generateResponse()` in [`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts) is the older single-shot path
 used by the deterministic fallback. The primary customer path is now the tool-calling prompt in the
-next section. Model defaults to `claude-haiku-4-5-20251001` (override via `BMS_AI_MODEL`),
-`max_tokens: 256` for this legacy call.
+next section. Tenant BYOK supports Anthropic (default `claude-haiku-4-5-20251001`) or DeepSeek
+(default `deepseek-v4-flash`); shared customer text defaults to DeepSeek via `BMS_AI_PROVIDER`, while sensitive/baseline staff turns use
+`BMS_AI_SENSITIVE_PROVIDER` (default Anthropic). This legacy call still goes through the same
+anthropic-compatible messages interface with `max_tokens: 256`.
 
 ```
 System:
@@ -32,7 +34,8 @@ fallback and answered from `bms_customer_coupon_wallet` / coupon services, so me
 
 ## Tool-calling system prompts (2026-07)
 
-Since AI tool-calling landed, two additional constrained system prompts drive Claude's tool-use
+Since AI tool-calling landed, two additional constrained system prompts drive the current
+anthropic-compatible provider's tool-use
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
@@ -80,12 +83,13 @@ can change without invalidating the cached prefix. The stable system block may s
 because it includes that shop's categories, business-type examples, and validated AI policy from
 `bms_store_profile`. The `input_tokens` column on a usage event is the *sum* of regular, cache-write, and
 cache-read tokens, so it does not fall when a cache hits and cannot be used to tell whether caching is
-working; `estimated_cost` applies Anthropic's separate rates (write 1.25x, read 0.1x), and the
+working; `estimated_cost` applies the active provider's configured rates. Anthropic prompt caching uses
+write 1.25x and read 0.1x, while other providers may price cache hits differently, and the
 per-rate breakdown is stored under `meta.cache_read_input_tokens` /
 `meta.cache_creation_input_tokens` / `meta.regular_input_tokens`. Those keys are absent — not zero —
 on call paths that never set `cache_control`; a zero means the breakpoint was sent but did not hit.
 Usage metadata also records intent, fetched/sent history counts, compression flag, summary
-characters, and business type without storing prompt or customer text.
+characters, business type, and provider-routing reason without storing prompt or customer text.
 
 Which breakpoint actually fires depends on the surface, because a prefix below the model's minimum is
 skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
@@ -149,8 +153,8 @@ model or prompt wording:
 - AI **never** fabricates stock, price, or order data — every number it states must trace back to
   a tool result.
 - AI must ask for **human confirmation** before: deleting anything, refunding, cancelling, changing
-  a price, or adjusting inventory. `verifyPaymentSlip()` is the canonical example — Claude vision
-  reads the slip and suggests a match, but a human still has to click Confirm.
+  a price, or adjusting inventory. `verifyPaymentSlip()` is the canonical example — the active
+  `SlipReader` provider reads the slip and suggests a match, but a human still has to click Confirm.
 - Every AI-initiated write is logged to `bms_audit_log` via `audit()` (best-effort — a logging
   failure never blocks the underlying action).
 - Every tool attempt is also logged centrally as redacted `ai.tool_call` metadata; raw arguments,

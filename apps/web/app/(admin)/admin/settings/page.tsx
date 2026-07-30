@@ -1,6 +1,6 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table } from "antd";
+import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select } from "antd";
 import { useState, useEffect } from "react";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
@@ -15,7 +15,7 @@ const Q = gql`
       channel active status status_detail
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
     }
-    bmsAiConfig { has_key api_key_masked model }
+    bmsAiConfig { has_key api_key_masked model provider }
     bmsAiUsage { count limit remaining unlimited planCode planName }
   }
 `;
@@ -30,8 +30,8 @@ const M_TEST = gql`
   }
 `;
 const M_SET_AI_KEY = gql`
-  mutation ($apiKey: String, $model: String) {
-    bmsSetAiKey(apiKey: $apiKey, model: $model)
+  mutation ($apiKey: String, $model: String, $provider: String) {
+    bmsSetAiKey(apiKey: $apiKey, model: $model, provider: $provider)
   }
 `;
 const M_REMOVE_AI_KEY = gql`mutation { bmsRemoveAiKey }`;
@@ -276,6 +276,12 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, onSaved }: any) {
 
 function AiCard({ aiConfig, aiUsage, onSaved }: any) {
   const [form] = Form.useForm();
+  useEffect(() => {
+    form.setFieldsValue({
+      provider: aiConfig?.provider || "anthropic",
+      model: aiConfig?.model || "",
+    });
+  }, [aiConfig?.provider, aiConfig?.model, form]);
   const [setAiKey, { loading: saving }] = useMutation(M_SET_AI_KEY, {
     onCompleted: () => { message.success("บันทึก AI Key แล้ว"); form.setFieldsValue({ apiKey: "" }); onSaved(); },
     onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
@@ -294,7 +300,13 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
 
   const submit = async () => {
     const v = await form.validateFields();
-    await setAiKey({ variables: { apiKey: v.apiKey || null, model: v.model || null } });
+    await setAiKey({
+      variables: {
+        apiKey: v.apiKey || null,
+        model: v.model || null,
+        provider: v.provider || "anthropic",
+      },
+    });
   };
 
   const hasKey = !!aiConfig?.has_key;
@@ -306,7 +318,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
     <Card
       title={
         <Space wrap>
-          <Tag color="cyan"><RobotOutlined /> AI (Claude)</Tag>
+          <Tag color="cyan"><RobotOutlined /> AI BYOK</Tag>
           {hasKey ? <Tag color="green">ใช้ Key ของร้าน</Tag> : <Tag color="default">ใช้ Shared Key ฟรี</Tag>}
         </Space>
       }
@@ -318,7 +330,8 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
       )}
     >
       <Paragraph type="secondary" style={{ marginTop: -4 }}>
-        ใช้ตอบลูกค้าอัตโนมัติ (เช่น เช็คสต็อก) ด้วย Claude — ถ้าไม่ใส่ Key ของร้าน ระบบใช้ Shared Key ของแพลตฟอร์มให้ฟรี (มีโควตารายเดือน)
+        ใช้ตอบลูกค้าและเรียกเครื่องมือด้วย Anthropic หรือ DeepSeek ของร้านเอง — ถ้าไม่ใส่ Key
+        ระบบใช้ Shared AI ของแพลตฟอร์ม (มีโควตารายเดือน) ส่วน Slip OCR ยังใช้ provider กลางที่แพลตฟอร์มกำหนด
       </Paragraph>
 
       {!hasKey && usage && (
@@ -340,12 +353,30 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
         />
       )}
 
-      <Form form={form} layout="vertical" initialValues={{ model: aiConfig?.model || "" }}>
-        <Form.Item label={`API Key ${hasKey ? `(ปัจจุบัน: ${aiConfig.api_key_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="apiKey">
-          <Input.Password placeholder={hasKey ? "•••• (ไม่เปลี่ยน)" : "sk-ant-..."} autoComplete="off" />
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{ provider: aiConfig?.provider || "anthropic", model: aiConfig?.model || "" }}
+      >
+        <Form.Item label="AI Provider" name="provider" rules={[{ required: true }]}>
+          <Select
+            options={[
+              { value: "anthropic", label: "Anthropic (Claude)" },
+              { value: "deepseek", label: "DeepSeek" },
+            ]}
+            onChange={(provider) => {
+              form.setFieldValue(
+                "model",
+                provider === "deepseek" ? "deepseek-v4-flash" : "claude-haiku-4-5-20251001"
+              );
+            }}
+          />
         </Form.Item>
-        <Form.Item label="Model (เว้นว่าง = ค่าเริ่มต้น claude-haiku-4-5)" name="model">
-          <Input placeholder="claude-haiku-4-5-20251001" />
+        <Form.Item label={`API Key ${hasKey ? `(ปัจจุบัน: ${aiConfig.api_key_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="apiKey">
+          <Input.Password placeholder={hasKey ? "•••• (ไม่เปลี่ยน)" : "วาง API Key ของ provider ที่เลือก"} autoComplete="off" />
+        </Form.Item>
+        <Form.Item label="Model (เว้นว่าง = ค่าเริ่มต้นของ provider)" name="model">
+          <Input placeholder="claude-haiku-4-5-20251001 หรือ deepseek-v4-flash" />
         </Form.Item>
         <Button type="primary" loading={saving} onClick={submit}>บันทึก AI Key</Button>
       </Form>

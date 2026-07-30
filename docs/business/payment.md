@@ -18,10 +18,19 @@ PENDING → CONFIRMED → REFUNDED
 
 ## AI slip verification
 
-`verifyPaymentSlip()` uses Claude vision to read a payment slip image and compare it against the
-expected amount — but it is **advisory only**. It never changes payment status itself; a human
-must still click Confirm. Without `ANTHROPIC_API_KEY` or without a slip image, it falls back to a
-heuristic that just asks the human to check manually.
+`verifyPaymentSlip()` loads and normalizes the image, obtains the active provider through
+`lib/bms/slipReaders/index.ts`, calls the provider-neutral `SlipReader` contract, and compares the
+extracted amount against the expected backend amount. The current adapters are
+`lib/bms/slipReaders/anthropic.ts` and `lib/bms/slipReaders/qwen.ts`; provider selection now lives
+in the slip-reader registry, so adding an internal OCR service must be done as another registered
+adapter rather than adding provider logic back into `payments.ts`.
+
+Provider output is untrusted: the reader accepts only the exact `amount` / `date` / `ref` / `bank`
+JSON contract and applies a bounded request timeout. Since OCR is read-only, a runtime provider
+failure may retry the configured fallback once; each attempt consumes/records usage independently.
+If both fail, the flow falls back to manual review. Verification is still **advisory only** and never changes payment
+status; a human with `payment.confirm` must click Confirm. Without available AI credentials,
+credits, or a readable slip image, the service asks the human to check manually.
 
 ## Permissions
 

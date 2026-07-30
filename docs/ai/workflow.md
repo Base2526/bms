@@ -6,14 +6,14 @@ Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
 Since the **AI tool-calling** work (2026-07) there are now **two AI surfaces**, both driven by the same
-Claude tool-use runtime ([`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts)) over a
-shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)):
+Anthropic-compatible tool-use runtime ([`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts))
+over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)):
 
-- **Customer surface** — the webhook/playground pipeline below. Claude may call only customer-safe
+- **Customer surface** — the webhook/playground pipeline below. The active provider may call only customer-safe
   tools (`customerTools()`): read product/stock/own-order-status + `create_order`/`submit_payment`/
   `reorder`. No sensitive (A3) tool is ever exposed here.
 - **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
-  UI `/admin/assistant`). Claude gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
+  UI `/admin/assistant`). The active provider gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
   a human confirms in the UI, which then fires the existing permission-gated mutation
   (`bmsRefundPayment`, `bmsAdjustStock`, …). AI never executes an A3 action itself.
@@ -34,7 +34,7 @@ Deterministic intent?  ← coupon wallet / own-order status / payment / reorder 
     ├─ no ─────────────▶ continue to AI tool-calling
     ▼
 AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.ts]  (PRIMARY when AI creds exist)
-    │                     Claude selects+calls tools itself (search_products / browse_catalog /
+    │                     The configured provider selects+calls tools itself (search_products / browse_catalog /
     │                     list_new_arrivals / find_alternatives / check_stock / get_order_status /
     │                     create_order / submit_payment / reorder), grounded on
     │                     real backend results; every business number traces to a tool result.
@@ -48,10 +48,17 @@ AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.
 Reply Customer         ← sent back on-channel + logged to Inbox (logConversation)
 ```
 
-Credential resolution (both surfaces) is `resolveAiCredentials(tenantId)` [lib/bms/ai.ts]: BYOK key →
-shared `ANTHROPIC_API_KEY` (consuming one `tryConsumeAiQuota()` unit per incoming customer message or
-staff-assistant turn) → null. It is called once before the loop, so 1–5 Claude round-trips still count
-as one quota unit. BYOK calls do not consume the platform quota.
+Credential resolution (both surfaces) is `resolveAiCredentials(tenantId)` [lib/bms/ai.ts]: tenant
+BYOK (Anthropic or DeepSeek) → shared provider selected by routing policy → null. General customer sales/text
+work uses `BMS_AI_PROVIDER` (default DeepSeek), while sensitive/baseline staff-assistant turns use
+`BMS_AI_SENSITIVE_PROVIDER` (default Anthropic). A staff turn is sensitive for provider routing only
+when the latest request matches a sensitive action exposed to that user; merely having sensitive
+tools in the catalog no longer routes every read-only staff question to Anthropic. The resolver only falls back to the alternate
+shared provider when the preferred provider is not configured; once a provider call starts, mid-loop
+errors do not retry a different provider, which prevents duplicate writes. Shared calls consume one
+`tryConsumeAiQuota()` unit per incoming customer message or staff-assistant turn. It is called once
+before the loop, so 1–5 provider round-trips still count as one quota unit. BYOK calls do not consume
+the platform quota.
 
 Before each execution, `runtime.ts` independently re-checks the tool surface and staff permission
 with `requirePermission()` even though the catalog was already filtered. It also rejects unknown
@@ -111,32 +118,48 @@ authoritative customer fact unless a backend tool explicitly returns it.
 
 ## AI credits + BYOK (2026-07)
 
-Every tenant can generate AI replies without any setup — the shared platform `ANTHROPIC_API_KEY`
-serves them by default. The old shared-key message count is now complemented by an AI-credit data
+Every tenant can generate AI replies without any setup — the shared platform provider serves them
+by default (`BMS_AI_PROVIDER`, default DeepSeek, with Anthropic reserved as sensitive/baseline
+fallback). The old shared-key message
+count is now complemented by an AI-credit data
 model: per-plan monthly credits (`bms_plans.ai_credits_monthly`), a monthly summary row
 (`bms_ai_usage_monthly`), append-only usage events (`bms_ai_usage_events`), and an append-only
 credit ledger (`bms_ai_credit_ledger`). A shop that wants no shared-key limit (or a different
-model) sets its own Anthropic API key in `/admin/settings` — once set, that shop's replies always
-use its own key and are never deducted from the shared credit pool.
+model) sets its own Anthropic or DeepSeek API key in `/admin/settings`. General turns use that key
+without deducting the shared credit pool. For a sensitive staff request, Anthropic BYOK remains
+first choice; DeepSeek BYOK yields to the shared Anthropic baseline when available and is used only
+as a safe provider fallback when that baseline is unavailable. Payment-slip OCR is configured
+separately through `lib/bms/slipReaders/index.ts`: `BMS_SLIP_READER_PROVIDER` defaults to Qwen OCR
+and `BMS_SLIP_READER_FALLBACK_PROVIDER` defaults to Anthropic. Because OCR is read-only, a failed
+Qwen request retries Anthropic once; each attempt has its own usage event and neither can confirm a payment.
+Qwen cost estimation uses the official US/global `qwen-vl-ocr` list rate ($0.043 input /
+$0.072 output per million tokens as checked 2026-07-30) and can be overridden with
+`QWEN_OCR_INPUT_USD_PER_MILLION` / `QWEN_OCR_OUTPUT_USD_PER_MILLION` for another region; see
+[Alibaba Cloud model pricing](https://www.alibabacloud.com/help/en/model-studio/model-pricing).
 
 - **Schema** (migration [`6.8__bms_ai_config.sql`](../../db/migrations/6.8__bms_ai_config.sql)):
   `bms_tenant_ai_config` (tenant_id PK, `api_key_encrypted` — same AES-256-GCM scheme as
   `bms_tenant_channels.channel_secret`, see [`lib/bms/crypto.ts`](../../apps/web/lib/bms/crypto.ts) —
   plus an optional `model` override). Migration
+  [`7.35__bms_tenant_ai_provider.sql`](../../db/migrations/7.35__bms_tenant_ai_provider.sql)
+  adds the constrained `provider` (`anthropic`/`deepseek`); legacy rows remain Anthropic.
+  Provider base URLs remain platform-controlled.
+  Migration
   [`7.27__bms_ai_credit_usage.sql`](../../db/migrations/7.27__bms_ai_credit_usage.sql) extends
   `bms_ai_usage_monthly` from count-only → monthly summary (shared/byok/blocked requests,
   granted/consumed/bonus/adjusted credits, estimated cost), and adds `bms_ai_usage_events` +
   `bms_ai_credit_ledger`. **No cron/reset job** — a new calendar month is simply a new
   `year_month` row starting at 0, so usage resets itself.
 - **Service** — [`lib/bms/aiConfig.ts`](../../apps/web/lib/bms/aiConfig.ts) (get/set/remove the
-  tenant's own key, `testAiKey()`/`testTenantAiKey()`/`testPlatformAiKey()` via the free
-  `GET /v1/models/{id}` endpoint — no inference cost) and
+  tenant's own key, `testAiKey()`/`testTenantAiKey()` for tenant BYOK Anthropic/DeepSeek, and
+  `testPlatformAiKey()` for whichever shared provider is active) and
   [`lib/bms/aiUsage.ts`](../../apps/web/lib/bms/aiUsage.ts) (`getAiUsage()`,
   `tryConsumeAiQuota()`, `recordByokAiUsage()`, `finalizeAiUsageEvent()`,
-  `listAiCreditLedger()`, `listAiUsageBreakdown()`). Shared-key deduction remains atomic so
+  `listAiCreditLedger()`, `listAiUsageBreakdown()`). Usage metadata records
+  `routing_reason`, configured/effective provider and `fallback_from`; shared-key deduction remains atomic so
   concurrent requests cannot blow past the monthly quota.
 - **`generateResponse()`** ([`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts)) now takes `tenantId` and
-  tries, in order: tenant's own key (BYOK event only, no shared credit deduction) → shared key
+  tries, in order: tenant's own key (BYOK event only, no shared credit deduction) → shared provider
   (quota-gated + ledger deduction) → template. A shop that runs out of shared credits is never
   blocked entirely — it just gets the deterministic template until next month or until it adds its
   own key.
@@ -146,7 +169,7 @@ use its own key and are never deducted from the shared credit pool.
   `bmsUpsertChannel` — **no new permission was seeded**, same reasoning as Channel Health (this is
   connection/config-domain, not an operational `BMS_PERMISSIONS` action). `bmsTestPlatformAiKey`
   (platform admin only, `requirePlatformAdmin()`) tests the shared env-level key.
-- **UI** — AI card in `/admin/settings` (BYOK key + optional model + test/remove, usage banner when
+- **UI** — AI card in `/admin/settings` (BYOK provider + key + optional model + test/remove, usage banner when
   on the shared key); Dashboard alert when shared-key usage is near/over quota
   (`/admin/dashboard`); Billing now has an AI Credit mockup that reads the real monthly summary,
   real ledger, and real usage breakdown while the pricing/top-up engine remains under construction;
@@ -156,7 +179,9 @@ use its own key and are never deducted from the shared credit pool.
   echoing the always-visible balance strip pattern from the Claude Console sidebar: a
   `RobotOutlined` icon with a status dot (blue = has usage, amber = ≤20% of quota left,
   red = exhausted) linking to `/admin/settings`, hidden entirely once the shop has BYOK or an
-  unlimited plan.
+  unlimited plan. Platform `/admin/env` also shows Config Doctor, effective runtime routing,
+  recent routing reasons, and marks a previously connected provider `STALE` when it has not been
+  checked within `BMS_AI_HEALTH_STALE_MINUTES` (default 60).
 
 ## Hard rules (see [../business/](../business/) and [prompts.md](prompts.md))
 
@@ -201,7 +226,13 @@ confirms before anything reaches production.
   contract suite forces provider/tool validation, authorization, proposal, timeout, bounded-loop,
   audit-redaction, and post-write-outage paths without network or DB access. The live-model suite
   uses a development/sandbox tenant, persists `EVAL-*` conversations, creates real test orders and
-  pending payments, and verifies tool arguments plus GraphQL backend postconditions. It rejects
+  pending payments, and verifies tool arguments plus GraphQL backend postconditions. Every live
+  `ai:tool-calling` turn also resolves its tenant-scoped usage event through an `EVAL-*`-only
+  correlation marker and checks configured/effective provider, routing reason, fallback source,
+  finalization, and that customer traffic is never marked sensitive. Supplying
+  `BMS_EVAL_SLIP_PAYMENT_ID` additionally runs advisory Qwen-primary/Anthropic-fallback OCR
+  verification against a real slip and asserts that the payment status does not change (the
+  verification result/audit are still persisted). It rejects
   remote targets unless `BMS_EVAL_ALLOW_REMOTE_WRITES=true`, reports functional/safety/system
   results separately, and treats every intermittent safety failure as a defect.
 - **Realtime Diagnostics** (`/admin/inbox/realtime-diagnostics`) — Administrator/platform-admin

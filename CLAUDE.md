@@ -155,6 +155,36 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   (`ไม่เอาแล้ว`/`ไว้ก่อน`/`ยกเลิก`) that clears stored slots and stops older turns from being revived.
   See [docs/ai/workflow.md](docs/ai/workflow.md), [docs/ai/tools.md](docs/ai/tools.md), and the new
   `BMS_EVAL_MODE=natural` suite in [`scripts/ai-eval/`](scripts/ai-eval/README.md).
+- **Multi-provider AI: DeepSeek chat + per-tenant BYOK provider choice**: the shared chat/tool-calling
+  provider is no longer Anthropic-only — `BMS_AI_PROVIDER` picks the default (DeepSeek is the current
+  primary for ordinary customer chat cost reasons), while `BMS_AI_SENSITIVE_PROVIDER` forces sensitive
+  staff-assistant turns (refund/cancel/adjust-stock intents, detected by `tools/runtime.ts`) onto a
+  fixed baseline regardless of the tenant's own BYOK choice. Migration `7.35` adds a `provider` column
+  (`anthropic`/`deepseek` only — Qwen is never a BYOK option) to `bms_tenant_ai_config`; a shop admin
+  picks their own BYOK provider on `/admin/settings`' "AI BYOK" card, and changing provider requires
+  re-entering that provider's key. Slip OCR is unaffected by a tenant's BYOK choice — it always uses
+  the platform-wide shared provider (`BMS_SLIP_READER_PROVIDER`, default Qwen, with an env-configured
+  fallback `BMS_SLIP_READER_FALLBACK_PROVIDER`, default Anthropic). Every credential-resolution branch
+  (chat and OCR, which use two separate routing-reason vocabularies) now tags its usage event with
+  `routingReason`/`configuredProvider`/`effectiveProvider`/`fallbackFrom` so `bmsAiUsageEvents`
+  (tenant-scoped, `ai_quality.view` permission) and the platform-wide `/admin/env` "Recent Actual
+  Usage" table can show *why* a call used the provider it did, not just which one.
+- **AI Provider Health**: shared AI providers (Anthropic/DeepSeek/Qwen OCR) used to fail silently —
+  a broken key/quota/outage fell back to a template reply or "verify manually," with no alert.
+  Migration `7.34` adds a platform-wide (no `tenant_id`) `bms_ai_provider_health` table tracking each
+  `(provider, purpose)` combo's real connection status — `anthropic/chat`, `deepseek/chat`,
+  `anthropic/ocr`, `qwen/ocr` — written through a single choke point (`finalizeAiUsageEvent()` in
+  `lib/bms/aiUsage.ts`, which every shared-key chat/OCR call already passes through), the existing
+  `/admin/env` "ทดสอบ" buttons (4 of them — Anthropic Chat, Anthropic OCR Fallback, DeepSeek, Qwen;
+  "Anthropic OCR Fallback" is a UI/test-selector string only, not a stored identity — it still writes
+  to the same `(anthropic, ocr)` row), a one-click "ตรวจสอบทั้งหมดตอนนี้" button
+  (`bmsCheckAllAiProviderHealth`) that refreshes the on-page table without reloading, and a cron
+  `POST /api/bms/ai/check-health`. A `connected` row that hasn't been checked within
+  `BMS_AI_HEALTH_STALE_MINUTES` (default 60) is reclassified as `stale` at read time only — `'stale'`
+  is never written to the DB column itself, and `stale` rows count toward the unhealthy badge same as
+  a real error. Visible via a status table and sidebar badge on `/admin/env` (platform-admin only).
+  Tenant BYOK keys are intentionally not tracked here. See § AI Provider Health in
+  [CLAUDE.local.md](CLAUDE.local.md).
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
   versions for products, orders, payments, shipments, and purchase orders (header + line items,

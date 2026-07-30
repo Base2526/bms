@@ -232,16 +232,35 @@ export async function listSellableProducts(
   const maxPrice =
     typeof opts.maxPrice === "number" && Number.isFinite(opts.maxPrice) ? opts.maxPrice : null;
   const limit = Math.min(Math.max(opts.limit ?? 8, 1), 20);
-  const inStockClause = opts.inStockOnly
-    ? `AND EXISTS (
+  const params: Array<string | number | null> = [
+    tenantId,
+    search,
+    category,
+    brand,
+    excludeSku,
+  ];
+  // Build optional placeholders in the same order as params. Keeping a fixed $6 for size while
+  // omitting its SQL clause leaves a gap before price/limit parameters, which PostgreSQL cannot
+  // type-infer when that unused value is null.
+  let inStockClause = "";
+  if (opts.inStockOnly) {
+    params.push(size);
+    const sizeParam = params.length;
+    inStockClause = `AND EXISTS (
          SELECT 1
            FROM bms_inventory sellable_i
           WHERE sellable_i.tenant_id = p.tenant_id
             AND sellable_i.product_sku = p.sku
             AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
-            AND ($6::text IS NULL OR sellable_i.size = $6)
-       )`
-    : "";
+            AND ($${sizeParam}::text IS NULL OR sellable_i.size = $${sizeParam})
+       )`;
+  }
+  params.push(minPrice);
+  const minPriceParam = params.length;
+  params.push(maxPrice);
+  const maxPriceParam = params.length;
+  params.push(limit);
+  const limitParam = params.length;
   const orderBy =
     opts.sort === "newest"
       ? "created_at DESC, name"
@@ -304,8 +323,8 @@ export async function listSellableProducts(
           AND ($3::text IS NULL OR p.category = $3)
           AND ($4::text IS NULL OR p.brand = $4)
           AND ($5::text IS NULL OR p.sku <> $5)
-          AND ($7::numeric IS NULL OR p.price >= $7)
-          AND ($8::numeric IS NULL OR p.price <= $8)
+          AND ($${minPriceParam}::numeric IS NULL OR p.price >= $${minPriceParam})
+          AND ($${maxPriceParam}::numeric IS NULL OR p.price <= $${maxPriceParam})
           ${inStockClause}
      )
      SELECT m.sku,
@@ -336,8 +355,8 @@ export async function listSellableProducts(
       GROUP BY m.sku, m.name, m.price, m.description, m.category, m.brand,
                m.created_at, m.updated_at, m.search_rank
       ORDER BY ${orderBy}
-      LIMIT $9`,
-    [tenantId, search, category, brand, excludeSku, size, minPrice, maxPrice, limit]
+      LIMIT $${limitParam}`,
+    params
   );
 
   const items = res.rows.map((row) => {
