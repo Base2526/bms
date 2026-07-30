@@ -81,6 +81,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
+| Sales Digest Reports (email/Slack/LINE) | ✅ | `lib/bms/reportDigest.ts` · `7.37__bms_report_subscriptions.sql` · `/admin/settings` card + platform-admin `/admin/report-schedule` + `POST /api/bms/reports/send-digest` cron (not yet scheduled) — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
 | Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
@@ -97,7 +98,9 @@ Shopee/Lazada signature verification against real Open Platform docs ·
 proactive external notification for Channel Health (e.g. LINE alert to the shop owner) — needs an
 admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
-not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL).
+not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
+an actual cron schedule for the three ready-but-unscheduled endpoints (`channels/check-health`,
+`ai/check-health`, `reports/send-digest`) — all three just need an external scheduler pointed at them.
 
 ## RBAC model (two tiers)
 

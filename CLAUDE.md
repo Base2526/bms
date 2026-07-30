@@ -258,11 +258,30 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   kinds `purchase`/`purchaseItems`). Product/inventory writes — and now purchase receive/cancel —
   pass the logged-in admin id into `beginTenantTx()`, so new revision rows show the editor label
   instead of `system`.
+- **Sales digest reports (email/Slack/LINE)**: each shop can subscribe to an automatic sales
+  summary (revenue, order count, top products, breakdown by channel) sent DAILY/WEEKLY/MONTHLY.
+  Migration `7.37` adds `bms_report_subscriptions` (one row per tenant, like `bms_store_profile`)
+  and append-only `bms_report_deliveries` (one row per channel per send attempt, like
+  `bms_audit_log`). `lib/bms/reportDigest.ts` computes all periods with direct UTC+7 arithmetic
+  (Asia/Bangkok has no DST, consistent with the rest of the codebase's `Intl.DateTimeFormat`-based
+  date handling — no timezone library dependency added); `runScheduledDigests()` is the cron
+  entrypoint and is idempotent per `(tenant, period)` via `last_period_key`, so it can be invoked
+  at any frequency (e.g. hourly) without double-sending. LINE delivery reuses the shop's own LINE
+  OA `access_token` to push to an admin-supplied LINE user id — there is no separate LINE-to-owner
+  integration. `sendTestDigest()` lets an admin trigger an immediate send (last 24h as the period)
+  without touching the real schedule's `last_sent_at`/`last_period_key`. Configured on
+  `/admin/settings` (`ReportSubscriptionCard.tsx`, `requireTenantAdmin` gate — same config-domain
+  pattern as `bmsChannels`/`bmsStoreProfile`, no new permission); a platform-admin-only
+  `/admin/report-schedule` page audits every tenant's subscription + delivery history. Cron
+  `POST /api/bms/reports/send-digest` follows the same `x-cron-secret` pattern as the other two
+  cron endpoints and is likewise **not yet scheduled**. See [docs/ui/dashboard.md](docs/ui/dashboard.md)
+  and [docs/architecture/api.md](docs/architecture/api.md).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
 Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
-(Manager role) manage their own staff.
+(Manager role) manage their own staff · wiring an actual cron schedule for the three ready-but-unscheduled
+endpoints (`channels/check-health`, `ai/check-health`, `reports/send-digest`).
 
 ## AI rules (non-negotiable)
 
