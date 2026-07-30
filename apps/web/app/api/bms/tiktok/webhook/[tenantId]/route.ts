@@ -35,14 +35,17 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   }
 
   const raw = await req.text();
-  // TikTok: HMAC-SHA256 hex ใน header (ตามที่ตั้ง) — verify ถ้ามี secret
-  if (cfg.channel_secret) {
-    const sig = req.headers.get("x-tiktok-signature") || req.headers.get("x-signature");
-    const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
-    if (!sig || sig !== mac) {
-      await recordWebhookVerifyFailed(tenantId, "tiktok");
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
+  // TikTok: HMAC-SHA256 hex ใน header — fail-closed: channel active ต้องมี channel_secret เสมอ
+  // ไม่งั้นใครก็ปลอม request เข้ามาได้ (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่)
+  if (!cfg.channel_secret) {
+    await recordWebhookVerifyFailed(tenantId, "tiktok");
+    return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
+  }
+  const sig = req.headers.get("x-tiktok-signature") || req.headers.get("x-signature");
+  const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
+  if (!sig || sig !== mac) {
+    await recordWebhookVerifyFailed(tenantId, "tiktok");
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })() as { messages?: TikTokMessage[] };

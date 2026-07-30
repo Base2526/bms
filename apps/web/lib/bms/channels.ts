@@ -75,6 +75,13 @@ export async function upsertChannel(
   const active = input.active ?? prev?.active ?? true;
   const extra = input.extra ?? prev?.extra ?? {};
 
+  // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
+  // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ
+  // โดน 401 เงียบ ๆ ทุก request จนกว่าจะมีคนสังเกตเห็นใน Channel Health
+  if (channel !== "web" && active && !channelSecret) {
+    throw new Error("ต้องกรอก channel secret ก่อนเปิดใช้งานช่องทางนี้ (ป้องกันการปลอม webhook)");
+  }
+
   await query(
     `INSERT INTO bms_tenant_channels (tenant_id, channel, access_token, channel_secret, active, extra)
      VALUES ($1, $2, $3, $4, $5, $6)
