@@ -731,6 +731,10 @@ export const typeDefs = /* GraphQL */ `
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
     bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
+    bmsAiUsageEvents(limit: Int = 20, evalRef: String, feature: String): [BmsAiUsageEvent!]!
+    # platform-admin เท่านั้น (ไม่ผูก tenant) — สถานะเชื่อมต่อจริงของ shared AI provider
+    bmsAiProviderHealth: [BmsAiProviderHealth!]!
+    bmsAiProviderHealthCount: Int!   # จำนวน provider/purpose ที่ configured แต่สถานะไม่ปกติ — badge sidebar
     bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
     bmsAiQualityMetrics(days: Int = 30): BmsAiQualityMetrics!
     bmsAiQualityCases(days: Int = 30, status: String, source: String, outcome: String, limit: Int = 50, offset: Int = 0): [BmsAiQualityCase!]!
@@ -958,6 +962,7 @@ export const typeDefs = /* GraphQL */ `
   # ผลตรวจสลิปด้วย OCR/AI (แนะนำเท่านั้น — ไม่เปลี่ยนสถานะ)
   type BmsSlipVerification {
     method: String!         # ai | heuristic
+    provider: String        # anthropic หรือ provider อื่น; null เมื่อ fallback ให้คนตรวจ
     expectedAmount: Float!
     amountMatch: Boolean!
     verified: Boolean!
@@ -1734,6 +1739,7 @@ export const typeDefs = /* GraphQL */ `
     has_key: Boolean!
     api_key_masked: String
     model: String
+    provider: String!
   }
   type BmsAiUsage {
     count: Int!  limit: Int!  remaining: Int!  unlimited: Boolean!
@@ -1764,7 +1770,39 @@ export const typeDefs = /* GraphQL */ `
     creditsUsed: Int!
     estimatedCost: Float!
   }
+  type BmsAiUsageEvent {
+    id: ID!
+    source: String!
+    surface: String!
+    feature: String!
+    channel: String
+    provider: String!
+    model: String
+    status: String!
+    creditsUsed: Int!
+    inputTokens: Int
+    outputTokens: Int
+    estimatedCost: Float!
+    routingReason: String
+    configuredProvider: String
+    effectiveProvider: String
+    fallbackFrom: String
+    sensitive: Boolean!
+    createdAt: String!
+    completedAt: String
+  }
   type BmsTestAiKeyResult { ok: Boolean!  message: String! }
+
+  # ===== BMS AI Provider Health (platform-wide, ไม่ผูก tenant — ดู CLAUDE.local.md § AI Provider Health) =====
+  type BmsAiProviderHealth {
+    provider: String!          # anthropic / deepseek / qwen
+    purpose: String!           # chat / ocr
+    status: String!            # connected / stale (derived) / token_expired / rate_limited / send_failed / unconfigured
+    status_detail: String
+    last_error_at: String
+    last_success_at: String
+    last_checked_at: String
+  }
 
   # Dev SQL Console (platform admin only) — ดู docs/AI Context Strategy for Multi-Tenant Shops.md
   # และ lib/bms/sqlConsole.ts: read-only ใช้ได้ทุก env, write-mode ปิดใน production เสมอ
@@ -2360,11 +2398,14 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
-    bmsSetAiKey(apiKey: String, model: String): Boolean!
+    bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!
     bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
-    bmsTestPlatformAiKey: BmsTestAiKeyResult!
+    bmsTestPlatformAiKey(provider: String): BmsTestAiKeyResult!
+    # ยิงทดสอบ anthropic/deepseek/qwen พร้อมกันแล้วคืนสถานะล่าสุดทั้งหมด — ใช้กับปุ่ม
+    # "ตรวจสอบทั้งหมดตอนนี้" ในหน้า /admin/env (ไม่ต้องรอ cron ที่ยังไม่ได้ตั้ง schedule)
+    bmsCheckAllAiProviderHealth: [BmsAiProviderHealth!]!
     bmsEmitInboxDiagnosticEvent(channel: String!, probeId: ID!): BmsInboxDiagnosticEventResult!
 
     # ===== Dev SQL Console (platform admin only) =====

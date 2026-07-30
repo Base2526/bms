@@ -8,6 +8,8 @@ import { optInt, reqString, type BmsTool, type ExecCtx } from "../../apps/web/li
 const CREDS = {
   apiKey: "eval-key-never-sent",
   model: "eval-model",
+  provider: "anthropic" as const,
+  baseUrl: "https://api.anthropic.com",
   source: "byok" as const,
   usageEventId: "eval-usage",
 };
@@ -131,6 +133,75 @@ test("bounded usage diagnostics are attached when credentials are reserved", asy
   );
   assert.equal(receivedMeta?.history_compressed, true);
   assert.equal(receivedMeta?.history_messages_sent, 8);
+});
+
+test("staff sensitive intent marks provider routing as sensitive", async () => {
+  let receivedMeta: Record<string, unknown> | undefined;
+  const options = baseOptions([
+    makeTool({
+      name: "refund_payment",
+      surfaces: ["staff"],
+      sensitive: true,
+      execute: async () => ({
+        ok: true,
+        proposal: {
+          tool: "refund_payment",
+          mutation: "bmsRefundPayment",
+          args: { id: "payment-1" },
+          summary: "คืนเงิน payment-1",
+        },
+      }),
+    }),
+  ]);
+  options.execCtx = {
+    tenantId: "tenant-eval",
+    surface: "staff",
+    actor: "admin@example.com",
+    ctx: {},
+  };
+  options.messages = [{ role: "user", content: "ช่วยคืนเงิน payment นี้ให้หน่อย" }];
+
+  await __toolLoopTest.run(options, {
+    ...depsFor(async () => textResponse("พร้อมค่ะ")),
+    resolveCredentials: async (_tenantId, context) => {
+      receivedMeta = context.meta;
+      return CREDS;
+    },
+  });
+
+  assert.equal(receivedMeta?.sensitive, true);
+});
+
+test("read-only staff intent stays on the primary provider even when sensitive tools are available", async () => {
+  let receivedMeta: Record<string, unknown> | undefined;
+  const options = baseOptions([
+    makeTool({
+      name: "refund_payment",
+      surfaces: ["staff"],
+      sensitive: true,
+    }),
+    makeTool({
+      name: "list_payments",
+      surfaces: ["staff"],
+    }),
+  ]);
+  options.execCtx = {
+    tenantId: "tenant-eval",
+    surface: "staff",
+    actor: "admin@example.com",
+    ctx: {},
+  };
+  options.messages = [{ role: "user", content: "ขอดูรายการชำระเงินล่าสุด" }];
+
+  await __toolLoopTest.run(options, {
+    ...depsFor(async () => textResponse("เรียบร้อยค่ะ")),
+    resolveCredentials: async (_tenantId, context) => {
+      receivedMeta = context.meta;
+      return CREDS;
+    },
+  });
+
+  assert.equal(receivedMeta?.sensitive, false);
 });
 
 test("provider request marks stable tools and system for prompt caching", async () => {

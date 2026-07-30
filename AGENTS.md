@@ -126,6 +126,47 @@ migration `7.33__bms_product_discovery_indexes.sql`; an unindexed `ILIKE` scan o
 will not use them. See § "AI tool-calling — example usage" in
 [CLAUDE.local.md](CLAUDE.local.md) for runnable `curl`/GraphQL examples against both surfaces.
 
+## AI provider selection, BYOK, and health
+
+The runtime is multi-provider, not Anthropic-only, and chat/tool-calling and slip OCR each resolve
+their provider independently:
+
+- **Chat/tool-calling** (`resolveAiCredentials()` in `lib/bms/ai.ts`, shared by `pipeline.ts` and
+  `tools/runtime.ts`): tenant BYOK first (`bms_tenant_ai_config`, migration `7.35` — `anthropic` or
+  `deepseek` only, never `qwen`; changing provider requires re-entering that provider's key), then the
+  shared provider decided by `resolveSharedAiProviderDecision()` in `lib/bms/aiProvider.ts`
+  (`BMS_AI_PROVIDER` picks the default; a detected **sensitive** staff intent — refund/cancel/
+  adjust-stock-like tool names, see `hasSensitiveStaffIntent()` in `tools/runtime.ts` — is forced onto
+  `BMS_AI_SENSITIVE_PROVIDER` instead, overriding both the tenant's own BYOK provider and the default
+  shared one), then the deterministic template fallback. Every branch tags its usage event's `meta`
+  with `routingReason`/`configuredProvider`/`effectiveProvider`/`fallbackFrom` so `bmsAiUsageEvents`
+  (tenant-scoped, `ai_quality.view` permission) and the platform `/admin/env` page can show *why* a
+  call used the provider it did.
+- **Slip OCR** is a completely separate registry: `lib/bms/slipReaders/{index,anthropic,qwen}.ts`
+  behind the provider-neutral `SlipReader` contract in `lib/bms/slipReader.ts`. `resolveSlipReader()`
+  picks `BMS_SLIP_READER_PROVIDER` (default Qwen) with a lazy one-shot fallback to
+  `BMS_SLIP_READER_FALLBACK_PROVIDER` (default Anthropic) on timeout/error, using its own
+  routing-reason vocabulary (`ocr_primary`/`ocr_fallback_unconfigured`/`ocr_runtime_fallback`/…) —
+  distinct from the chat one but written into the same usage-event `meta` shape. A tenant's own chat
+  BYOK provider choice has no effect on OCR; OCR always uses the platform-wide shared provider.
+- **AI Provider Health** (`lib/bms/aiProviderHealth.ts`, migration `7.34`, platform-wide — no
+  `tenant_id`, not RLS-scoped, and deliberately does not track tenant BYOK failures) tracks each
+  `(provider, purpose)` combo's real connectivity. It is written through exactly one choke point,
+  `finalizeAiUsageEvent()` in `lib/bms/aiUsage.ts`, which every shared-key chat and OCR call already
+  passes through — **if you add a new shared-provider call site, route its completion through
+  `finalizeAiUsageEvent()` (or extend it) rather than adding a parallel success/error path**, or this
+  monitoring silently stops covering it. A `connected` row not re-checked within
+  `BMS_AI_HEALTH_STALE_MINUTES` (default 60) is reclassified as `stale` at read time only — the DB
+  column itself never stores `'stale'`. Visible on `/admin/env` (platform-admin only): a status table,
+  a one-click "ตรวจสอบทั้งหมดตอนนี้" re-test, and a cron `POST /api/bms/ai/check-health` (no schedule
+  configured yet — see CLAUDE.local.md).
+- Every new provider knob (a key, a model override, a base URL, a per-model cost rate) needs a
+  matching entry in every compose file's `web` service `environment:` block
+  (`docker-compose.yml`/`docker-compose.dev.yml`/`docker-compose.prod.yml`) — `--env-file` only makes
+  `${VAR}` substitution available inside the compose YAML itself, it does not automatically inject the
+  variable into the container. A key present in `.env*` but missing from all three compose files will
+  silently read as `undefined` at runtime with no error.
+
 ## Working method
 
 1. Inspect the service, API adapters, UI caller, schema/migration, and relevant docs before editing.

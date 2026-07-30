@@ -484,8 +484,12 @@ Permission: payment.submit
 
 OCR / AI Validation → **แนะนำเท่านั้น** (ไม่เปลี่ยนสถานะ ตาม BUSINESS_RULES: AI ห้ามยืนยันเงินเอง)
 
-- ไม่มี ANTHROPIC_API_KEY หรือไม่มีรูปสลิป → heuristic (ให้ตรวจเอง)
-- มี key + slipUrl เป็นรูป → Claude vision สกัด amount/date/ref แล้วเทียบยอด
+- ไม่มี AI credentials/credits หรือไม่มีรูปสลิปที่อ่านได้ → heuristic (ให้ตรวจเอง)
+- มี credentials + slipUrl เป็นรูป → `SlipReader` สกัด amount/date/ref/bank แล้ว backend เทียบยอด
+- provider ปัจจุบันรองรับทั้ง Anthropic และ Qwen OCR; contract แยกจาก `payments.ts` เพื่อเพิ่ม
+  internal OCR หรือ provider อื่นภายหลังได้โดยไม่เปลี่ยนกฎ payment
+- malformed output, timeout หรือ provider error → ลอง OCR fallback หนึ่งครั้ง (Qwen → Anthropic
+  ตามค่า default) แล้วจึง fallback ให้คนตรวจเอง; ทุก attempt ถูกนับ usage แยกกัน
 
 Input
 
@@ -497,6 +501,7 @@ Output
 
 {
     method,             // ai | heuristic
+    provider,           // anthropic | qwen | null (เมื่อ heuristic)
     expectedAmount,
     amountMatch,
     verified,           // AI มั่นใจว่ายอดตรง (ยังต้องกดยืนยันเอง)

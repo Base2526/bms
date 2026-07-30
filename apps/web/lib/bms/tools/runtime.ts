@@ -1,14 +1,15 @@
 // =============================================================
-// BMS AI Tools — Claude tool-use runtime (the tool-calling loop)
+// BMS AI Tools — provider-neutral tool-use runtime (Anthropic-compatible)
 // -------------------------------------------------------------
-// วน: Claude → (tool_use) → validate+execute service → tool_result → จนได้ text
+// วน: model → (tool_use) → validate+execute service → tool_result → จนได้ text
 // - bounded: MAX_ROUNDS + timeout ต่อ call (ตาม AI_GUIDELINES § Reliability)
 // - ทูล sensitive (A3) คืน proposal → ไม่ execute, ป้อนกลับว่า "รอมนุษย์ยืนยัน"
 // - ไม่มี credentials (ไม่มี key/เกิน quota) → usedAi:false ให้ caller fallback
-// - callClaude ล้มเหลวหลังเริ่ม loop → usedAi:true + safe error (ไม่ fallback ไป write ซ้ำ)
+// - provider call ล้มเหลวหลังเริ่ม loop → usedAi:true + safe error (ไม่ fallback ไป write ซ้ำ)
 // =============================================================
 
 import { resolveAiCredentials, type AiCredentials } from "../ai";
+import { callAnthropicCompatibleMessages } from "../aiProvider";
 import { estimateCachedAiCostUsd, finalizeAiUsageEvent } from "../aiUsage";
 import { audit } from "../audit";
 import { requirePermission } from "../permissions";
@@ -90,6 +91,53 @@ function tokenCount(value: unknown): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) =>
+      block && typeof block === "object" && typeof (block as any).text === "string"
+        ? (block as any).text
+        : ""
+    )
+    .join(" ");
+}
+
+const SENSITIVE_TOOL_INTENT: Readonly<Record<string, RegExp>> = {
+  confirm_payment: /(ยืนยัน|รับยอด|confirm).*(ชำระ|จ่าย|payment)|(?:ชำระ|จ่าย|payment).*(ยืนยัน|confirm)/i,
+  reject_payment: /(ปฏิเสธ|ไม่รับ|reject).*(ชำระ|จ่าย|payment|สลิป)|(?:ชำระ|payment|สลิป).*(ปฏิเสธ|reject)/i,
+  refund_payment: /(คืนเงิน|refund)/i,
+  cancel_order: /(ยกเลิก|cancel).*(ออเดอร์|order|คำสั่งซื้อ)/i,
+  adjust_stock: /(ปรับ|แก้|เพิ่ม|ลด|adjust).*(สต็อก|stock|inventory)/i,
+  merge_customers: /(รวม|merge).*(ลูกค้า|customer)/i,
+  cancel_purchase_order: /(ยกเลิก|cancel).*(ใบสั่งซื้อ|purchase order|\bpo\b)/i,
+  cancel_shipment: /(ยกเลิก|cancel).*(จัดส่ง|ขนส่ง|shipment)/i,
+  send_customer_message: /(ส่ง|ทัก|ตอบ|message).*(ข้อความ|ลูกค้า|customer)|(?:ข้อความ|message).*(ส่ง|ลูกค้า|customer)/i,
+};
+
+/**
+ * Provider routing only: authorization and propose-only enforcement still happen at tool execution.
+ * Looking at the latest staff request avoids routing every read-only staff turn to the expensive
+ * sensitive baseline merely because sensitive tools are available in the catalog.
+ */
+export function hasSensitiveStaffIntent(
+  messages: AnthMessage[],
+  tools: BmsTool[]
+): boolean {
+  const latestUserText =
+    [...messages]
+      .reverse()
+      .find((message) => message.role === "user")
+      ?.content;
+  const text = messageText(latestUserText).trim();
+  if (!text) return false;
+  return tools.some(
+    (tool) =>
+      tool.sensitive === true &&
+      (SENSITIVE_TOOL_INTENT[tool.name]?.test(text) ?? false)
+  );
+}
+
 /**
  * Gate ตอน execute (defense in depth): การกรอง tool schema ก่อนส่งให้ Claude อย่างเดียวไม่พอ
  * เพราะ model/provider output ถือเป็น untrusted input เสมอ
@@ -129,7 +177,7 @@ async function auditToolCall(
   });
 }
 
-async function callClaude(
+async function callProviderMessages(
   creds: AiCredentials,
   system: string | AnthSystemBlock[],
   messages: AnthMessage[],
@@ -138,17 +186,12 @@ async function callClaude(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": creds.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({ model: creds.model, max_tokens: MAX_TOKENS, system, tools, messages }),
-      signal: controller.signal,
-    });
-    if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
+    const resp = await callAnthropicCompatibleMessages(
+      creds,
+      { model: creds.model, max_tokens: MAX_TOKENS, system, tools, messages },
+      controller.signal
+    );
+    if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
     return await resp.json();
   } finally {
     clearTimeout(timer);
@@ -175,13 +218,13 @@ export type ToolLoopOptions = {
  * Test-only dependency seam for deterministic contract tests.
  *
  * Production callers must use runToolLoop(), which always supplies the real credential resolver,
- * Anthropic transport, usage finalizer, and audit writer. Keeping the seam at the function boundary
+ * provider transport, usage finalizer, and audit writer. Keeping the seam at the function boundary
  * lets the eval suite force timeout/malformed/unknown-tool paths without exposing a diagnostic HTTP
  * endpoint or weakening any runtime authorization.
  */
 export type ToolLoopTestDeps = {
   resolveCredentials?: typeof resolveAiCredentials;
-  callProvider?: typeof callClaude;
+  callProvider?: typeof callProviderMessages;
   finalizeUsage?: typeof finalizeAiUsageEvent;
   auditAttempt?: typeof auditToolCall;
 };
@@ -254,7 +297,7 @@ async function runToolLoopInternal(
   deps: ToolLoopTestDeps = {}
 ): Promise<ToolLoopResult> {
   const resolveCredentials = deps.resolveCredentials ?? resolveAiCredentials;
-  const callProvider = deps.callProvider ?? callClaude;
+  const callProvider = deps.callProvider ?? callProviderMessages;
   const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
   const auditAttempt = deps.auditAttempt ?? auditToolCall;
 
@@ -269,14 +312,17 @@ async function runToolLoopInternal(
     surface: opts.execCtx.surface,
     feature: opts.execCtx.surface === "staff" ? "staff_assistant" : "customer_tool_loop",
     channel: opts.execCtx.surface === "customer" ? opts.execCtx.channel ?? null : null,
-    provider: "anthropic",
     meta: {
       actor: opts.execCtx.actor,
+      sensitive:
+        opts.execCtx.surface === "staff" &&
+        hasSensitiveStaffIntent(opts.messages, opts.tools),
       ...(opts.usageMeta ?? {}),
     },
   });
   if (!creds) return { reply: "", proposals: [], trace: [], usedAi: false };
   const model = creds.model;
+  const provider = creds.provider;
 
   const byName = new Map(opts.tools.map((t) => [t.name, t]));
   const toolSchemas: AnthToolSchema[] = opts.tools.map((t) => ({
@@ -344,13 +390,14 @@ async function runToolLoopInternal(
           cacheReadInputTokens,
           outputTokens,
         },
-        model
+        model,
+        provider
       ),
     };
   }
 
   // สำคัญ (write-safety): เมื่อมี credentials แล้ว ถือว่า AI "ทำงานแล้ว" (usedAi:true) เสมอ
-  // แม้ callClaude จะล้มกลางคัน — เพื่อไม่ให้ caller ไปรัน rule-based ที่อาจ createOrder ซ้ำ
+  // แม้ provider call จะล้มกลางคัน — เพื่อไม่ให้ caller ไปรัน rule-based ที่อาจ createOrder ซ้ำ
   // หลังจากทูล create_order ทำงานไปแล้วในรอบก่อนหน้า
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -473,7 +520,7 @@ async function runToolLoopInternal(
         errorMessage: err instanceof Error ? err.message : "tool-loop error",
       });
     }
-    // callClaude ล้มเหลว (network/timeout/!=2xx) — คืน usedAi:true กันการ retry แบบ rule-based
+    // provider call ล้มเหลว (network/timeout/!=2xx) — คืน usedAi:true กันการ retry แบบ rule-based
     // (ถ้ามีทูล write ทำงานไปแล้วในรอบก่อน จะไม่ถูกทำซ้ำ)
     console.error("[BMS] tool-loop error:", err);
     return {

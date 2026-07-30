@@ -11,6 +11,21 @@ import crypto from "crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { getTenantPlan, type Plan } from "./plans";
+import {
+  recordProviderError,
+  recordProviderSuccess,
+  type AiProviderName,
+  type AiProviderPurpose,
+} from "./aiProviderHealth";
+
+function isTrackedAiProvider(provider: string | null): provider is AiProviderName {
+  return provider === "anthropic" || provider === "deepseek" || provider === "qwen";
+}
+
+/** ทุก feature ตอนนี้เป็น chat ยกเว้น payment_slip_ocr — เพิ่ม OCR feature ใหม่ต้องแก้ที่นี่ */
+function aiProviderPurposeFromFeature(feature: string | null): AiProviderPurpose {
+  return feature === "payment_slip_ocr" ? "ocr" : "chat";
+}
 
 function run<T extends QueryResultRow = QueryResultRow>(client: PoolClient | undefined, sql: string, params: any[] = []) {
   return client ? client.query<T>(sql, params) : query<T>(sql, params);
@@ -85,26 +100,112 @@ export type AiUsageBreakdownRow = {
   estimatedCost: number;
 };
 
+export type RecentAiUsageEvent = {
+  id: string;
+  tenantId: string;
+  tenantName: string | null;
+  source: "shared" | "byok" | "none";
+  surface: "customer" | "staff" | "system";
+  feature: string;
+  channel: string | null;
+  provider: string;
+  model: string | null;
+  status: "started" | "completed" | "failed" | "blocked" | "fallback";
+  creditsUsed: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estimatedCost: number;
+  routingReason: string | null;
+  configuredProvider: string | null;
+  effectiveProvider: string | null;
+  fallbackFrom: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+export type TenantAiUsageEvent = Omit<
+  RecentAiUsageEvent,
+  "tenantId" | "tenantName"
+> & {
+  sensitive: boolean;
+};
+
 const DEFAULT_ANTHROPIC_RATE = {
   inputPerMillionUsd: 3,
   outputPerMillionUsd: 15,
+  cacheCreationMultiplier: 1.25,
+  cacheReadMultiplier: 0.1,
 };
 
-function priceForModel(model?: string | null) {
+const DEFAULT_DEEPSEEK_RATE = {
+  inputPerMillionUsd: 0.14,
+  outputPerMillionUsd: 0.28,
+  cacheCreationMultiplier: 1,
+  cacheReadMultiplier: 0.02,
+};
+
+// qwen-vl-ocr through the US/Frankfurt global endpoint, official list price as of 2026-07-30.
+// Env overrides keep the estimate correct if the deployment region or Alibaba pricing changes.
+const DEFAULT_QWEN_OCR_RATE = {
+  inputPerMillionUsd: 0.043,
+  outputPerMillionUsd: 0.072,
+  cacheCreationMultiplier: 1,
+  cacheReadMultiplier: 1,
+};
+
+function positiveEnvRate(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function priceForModel(
+  model?: string | null,
+  provider?: string | null
+) {
+  const p = String(provider || "anthropic").toLowerCase();
   const m = String(model || "").toLowerCase();
-  if (m.includes("haiku") && /4[-_.]?5/.test(m)) {
-    return { inputPerMillionUsd: 1, outputPerMillionUsd: 5 };
+  if (p === "deepseek") {
+    if (m.includes("pro")) {
+      return {
+        inputPerMillionUsd: 0.435,
+        outputPerMillionUsd: 0.87,
+        cacheCreationMultiplier: 1,
+        cacheReadMultiplier: Number((0.003625 / 0.435).toFixed(6)),
+      };
+    }
+    return DEFAULT_DEEPSEEK_RATE;
   }
-  if (m.includes("haiku")) return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4 };
+  if (p === "qwen") {
+    return {
+      ...DEFAULT_QWEN_OCR_RATE,
+      inputPerMillionUsd: positiveEnvRate(
+        "QWEN_OCR_INPUT_USD_PER_MILLION",
+        DEFAULT_QWEN_OCR_RATE.inputPerMillionUsd
+      ),
+      outputPerMillionUsd: positiveEnvRate(
+        "QWEN_OCR_OUTPUT_USD_PER_MILLION",
+        DEFAULT_QWEN_OCR_RATE.outputPerMillionUsd
+      ),
+    };
+  }
+  if (m.includes("haiku") && /4[-_.]?5/.test(m)) {
+    return { inputPerMillionUsd: 1, outputPerMillionUsd: 5, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
+  }
+  if (m.includes("haiku")) return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
   if (m.includes("sonnet")) return DEFAULT_ANTHROPIC_RATE;
-  if (m.includes("opus")) return { inputPerMillionUsd: 15, outputPerMillionUsd: 75 };
+  if (m.includes("opus")) return { inputPerMillionUsd: 15, outputPerMillionUsd: 75, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
   return DEFAULT_ANTHROPIC_RATE;
 }
 
-export function estimateAiCostUsd(inputTokens?: number | null, outputTokens?: number | null, model?: string | null) {
+export function estimateAiCostUsd(
+  inputTokens?: number | null,
+  outputTokens?: number | null,
+  model?: string | null,
+  provider?: string | null
+) {
   const inTok = Math.max(0, Number(inputTokens ?? 0));
   const outTok = Math.max(0, Number(outputTokens ?? 0));
-  const price = priceForModel(model);
+  const price = priceForModel(model, provider);
   const inputCost = (inTok / 1_000_000) * price.inputPerMillionUsd;
   const outputCost = (outTok / 1_000_000) * price.outputPerMillionUsd;
   return Number((inputCost + outputCost).toFixed(6));
@@ -117,7 +218,8 @@ export function estimateCachedAiCostUsd(
     cacheReadInputTokens?: number | null;
     outputTokens?: number | null;
   },
-  model?: string | null
+  model?: string | null,
+  provider?: string | null
 ) {
   const inputTokens = Math.max(0, Number(usage.inputTokens ?? 0));
   const cacheCreationInputTokens = Math.max(
@@ -126,9 +228,11 @@ export function estimateCachedAiCostUsd(
   );
   const cacheReadInputTokens = Math.max(0, Number(usage.cacheReadInputTokens ?? 0));
   const outputTokens = Math.max(0, Number(usage.outputTokens ?? 0));
-  const price = priceForModel(model);
+  const price = priceForModel(model, provider);
   const inputCost =
-    ((inputTokens + cacheCreationInputTokens * 1.25 + cacheReadInputTokens * 0.1) /
+    ((inputTokens +
+      cacheCreationInputTokens * price.cacheCreationMultiplier +
+      cacheReadInputTokens * price.cacheReadMultiplier) /
       1_000_000) *
     price.inputPerMillionUsd;
   const outputCost = (outputTokens / 1_000_000) * price.outputPerMillionUsd;
@@ -450,15 +554,26 @@ export async function finalizeAiUsageEvent(
               (cacheCreationInputTokens ?? 0)
           ),
         });
-  const event = await query<{ tenant_id: string; year_month: string; model: string | null; estimated_cost: string | number }>(
-    `SELECT tenant_id, year_month, model, estimated_cost
+  const event = await query<{
+    tenant_id: string;
+    year_month: string;
+    model: string | null;
+    provider: string | null;
+    estimated_cost: string | number;
+    source: string | null;
+    feature: string | null;
+  }>(
+    `SELECT tenant_id, year_month, model, provider, estimated_cost, source, feature
        FROM bms_ai_usage_events
       WHERE id = $1`,
     [eventId]
   );
   const current = event.rows[0];
   if (!current) return;
-  const estimatedCost = Number(result.estimatedCost ?? estimateAiCostUsd(inputTokens, outputTokens, current.model));
+  const estimatedCost = Number(
+    result.estimatedCost ??
+      estimateAiCostUsd(inputTokens, outputTokens, current.model, current.provider)
+  );
   await query(
     `WITH upd AS (
         UPDATE bms_ai_usage_events
@@ -489,6 +604,18 @@ export async function finalizeAiUsageEvent(
       cacheMeta,
     ]
   );
+
+  // AI Provider Health: เฉพาะ shared key ของแพลตฟอร์ม (ไม่ track BYOK ของแต่ละร้าน)
+  // และเฉพาะ completed/failed จริง — ข้าม 'fallback' เพราะเหตุผลอื่น (quota_exhausted/
+  // no_credentials/max_rounds_exceeded/slip image unavailable) ไม่ใช่สัญญาณว่า provider ล่ม
+  if (current.source === "shared" && isTrackedAiProvider(current.provider)) {
+    const purpose = aiProviderPurposeFromFeature(current.feature);
+    if (result.status === "completed") {
+      await recordProviderSuccess(current.provider, purpose);
+    } else if (result.status === "failed") {
+      await recordProviderError(current.provider, purpose, result.errorMessage);
+    }
+  }
 }
 
 export async function adjustAiCredits(
@@ -632,5 +759,160 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
     requests: Number(row.requests),
     creditsUsed: Number(row.credits_used),
     estimatedCost: Number(row.estimated_cost ?? 0),
+  }));
+}
+
+/**
+ * Tenant-admin diagnostics used by the live AI eval and the settings surface.
+ * Only safe, normalized routing fields are exposed — never raw prompts, tool
+ * arguments, error messages, or the correlation value itself.
+ */
+export async function listRecentAiUsageEvents(
+  tenantId: string,
+  opts: {
+    limit?: number;
+    evalRef?: string | null;
+    feature?: string | null;
+  } = {}
+): Promise<TenantAiUsageEvent[]> {
+  const res = await query<any>(
+    `SELECT e.id,
+            e.source,
+            e.surface,
+            e.feature,
+            e.channel,
+            e.provider,
+            e.model,
+            e.status,
+            e.credits_used,
+            e.input_tokens,
+            e.output_tokens,
+            e.estimated_cost,
+            e.meta->>'routing_reason' AS routing_reason,
+            e.meta->>'configured_provider' AS configured_provider,
+            e.meta->>'effective_provider' AS effective_provider,
+            e.meta->>'fallback_from' AS fallback_from,
+            CASE
+              WHEN lower(COALESCE(e.meta->>'sensitive', 'false')) = 'true'
+                THEN true
+              ELSE false
+            END AS sensitive,
+            e.created_at,
+            e.completed_at
+       FROM bms_ai_usage_events e
+      WHERE e.tenant_id = $1
+        AND ($2::text IS NULL OR e.meta->>'eval_ref' = $2)
+        AND ($3::text IS NULL OR e.feature = $3)
+      ORDER BY e.created_at DESC
+      LIMIT $4`,
+    [
+      tenantId,
+      opts.evalRef?.trim() || null,
+      opts.feature?.trim() || null,
+      Math.max(1, Math.min(opts.limit ?? 20, 100)),
+    ]
+  );
+  return res.rows.map((row) => ({
+    id: String(row.id),
+    source: row.source,
+    surface: row.surface,
+    feature: String(row.feature),
+    channel: row.channel ? String(row.channel) : null,
+    provider: String(row.provider),
+    model: row.model ? String(row.model) : null,
+    status: row.status,
+    creditsUsed: Number(row.credits_used ?? 0),
+    inputTokens: row.input_tokens == null ? null : Number(row.input_tokens),
+    outputTokens: row.output_tokens == null ? null : Number(row.output_tokens),
+    estimatedCost: Number(row.estimated_cost ?? 0),
+    routingReason: row.routing_reason ? String(row.routing_reason) : null,
+    configuredProvider: row.configured_provider
+      ? String(row.configured_provider)
+      : null,
+    effectiveProvider: row.effective_provider
+      ? String(row.effective_provider)
+      : null,
+    fallbackFrom: row.fallback_from ? String(row.fallback_from) : null,
+    sensitive: Boolean(row.sensitive),
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    completedAt:
+      row.completed_at == null
+        ? null
+        : row.completed_at instanceof Date
+          ? row.completed_at.toISOString()
+          : String(row.completed_at),
+  }));
+}
+
+/**
+ * Platform-admin diagnostics: latest AI usage rows across every tenant.
+ * Caller must enforce platform-admin access before exposing this data.
+ */
+export async function listRecentAiUsageEventsGlobal(
+  limit = 12
+): Promise<RecentAiUsageEvent[]> {
+  const res = await query<any>(
+    `SELECT e.id,
+            e.tenant_id,
+            t.name AS tenant_name,
+            e.source,
+            e.surface,
+            e.feature,
+            e.channel,
+            e.provider,
+            e.model,
+            e.status,
+            e.credits_used,
+            e.input_tokens,
+            e.output_tokens,
+            e.estimated_cost,
+            e.meta->>'routing_reason' AS routing_reason,
+            e.meta->>'configured_provider' AS configured_provider,
+            e.meta->>'effective_provider' AS effective_provider,
+            e.meta->>'fallback_from' AS fallback_from,
+            e.created_at,
+            e.completed_at
+       FROM bms_ai_usage_events e
+       LEFT JOIN bms_tenants t ON t.id = e.tenant_id
+      ORDER BY e.created_at DESC
+      LIMIT $1`,
+    [Math.max(1, Math.min(limit, 50))]
+  );
+  return res.rows.map((row) => ({
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    tenantName: row.tenant_name ? String(row.tenant_name) : null,
+    source: row.source,
+    surface: row.surface,
+    feature: String(row.feature),
+    channel: row.channel ? String(row.channel) : null,
+    provider: String(row.provider),
+    model: row.model ? String(row.model) : null,
+    status: row.status,
+    creditsUsed: Number(row.credits_used ?? 0),
+    inputTokens: row.input_tokens == null ? null : Number(row.input_tokens),
+    outputTokens: row.output_tokens == null ? null : Number(row.output_tokens),
+    estimatedCost: Number(row.estimated_cost ?? 0),
+    routingReason: row.routing_reason ? String(row.routing_reason) : null,
+    configuredProvider: row.configured_provider
+      ? String(row.configured_provider)
+      : null,
+    effectiveProvider: row.effective_provider
+      ? String(row.effective_provider)
+      : null,
+    fallbackFrom: row.fallback_from ? String(row.fallback_from) : null,
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    completedAt:
+      row.completed_at == null
+        ? null
+        : row.completed_at instanceof Date
+          ? row.completed_at.toISOString()
+          : String(row.completed_at),
   }));
 }

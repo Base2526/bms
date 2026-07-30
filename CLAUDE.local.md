@@ -294,6 +294,94 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
   โดยไม่ต้องเปิดแอพ) — ต้องมี LINE user id ของ admin ผูกไว้ก่อน (ยังไม่มี field นี้ในระบบ, คนละเรื่องกับ LINE OA ของร้านที่ใช้
   รับแชทลูกค้า) เป็น feature ใหม่ที่ยังไม่ได้ตัดสินใจร่วมกับ user
 
+## AI Provider Health (2026-07)
+
+**เสร็จแล้ว** — ก่อนหน้านี้ถ้า `ANTHROPIC_API_KEY`/`DEEPSEEK_API_KEY`/`QWEN_OCR_API_KEY` ใช้ไม่ได้ไม่ว่า
+กรณีไหน (key หมดอายุ/rate limit/quota เกิน/network ล่ม/model ถูก deprecate) ระบบจะ **fail แบบเงียบ ๆ
+เสมอ** — แชทลูกค้าตกไปเป็น template ตายตัว ([ai.ts](../apps/web/lib/bms/ai.ts)), OCR สลิปตกไปเป็น
+"ต้องตรวจสอบด้วยมือ" ([payments.ts](../apps/web/lib/bms/payments.ts)) — ทีมงานจะรู้ก็ต่อเมื่อลูกค้าบ่น
+หรือบังเอิญเปิด `/admin/env` เอง ไม่มีระบบแจ้งเตือนอัตโนมัติเลย แก้โดยสร้างระบบแบบเดียวกับ
+§ Channel Health ด้านบนแต่สำหรับ shared AI provider แทนช่องทางแชท:
+
+- **schema** → migration `7.34__bms_ai_provider_health.sql`: ตารางใหม่ `bms_ai_provider_health`
+  (composite PK `(provider, purpose)` เพราะ provider เดียวรับใช้ได้มากกว่า 1 purpose เป็นอิสระต่อกัน —
+  เช่น Anthropic ใช้ได้ทั้ง `chat` tool-calling และ `ocr` ถ้า `BMS_SLIP_READER_PROVIDER=anthropic`)
+  seed ไว้ 4 แถวเริ่มต้น (`anthropic/chat`, `deepseek/chat`, `anthropic/ocr`, `qwen/ocr`) สถานะ
+  `unconfigured` + `bms_ai_provider_health_log` (ประวัติเปลี่ยนสถานะ, เขียนเฉพาะตอนเปลี่ยนจริง) ·
+  **ไม่มี `tenant_id`/RLS** (ตาม convention เดียวกับ `bms_plans`) เพราะเป็นสถานะ key กลางของแพลตฟอร์ม
+  ไม่ใช่ข้อมูลของร้านใดร้านหนึ่ง — **ไม่ track BYOK ของแต่ละร้านเลย** (ตั้งใจ, เพราะ key ของร้านเองพังเป็น
+  ปัญหาของร้านนั้น ไม่ใช่สัญญาณว่า "Claude/DeepSeek ล่ม" ระดับแพลตฟอร์ม)
+- **service** → `lib/bms/aiProviderHealth.ts` — entrypoint เดียวคือ `setAiProviderStatus()` (log เฉพาะ
+  ตอนเปลี่ยน) + `recordProviderSuccess()`/`recordProviderError()` (แกะ HTTP status จาก error message
+  ด้วย regex `/(?:API|HTTP)[^\d]{0,10}(\d{3})/i` เพราะ error message ที่มีอยู่แล้วทั้ง 3 จุด format
+  เป็น `"<provider> API <status>"` หรือ `"... (HTTP <status>)"` อยู่แล้ว ไม่ต้องแก้ error object เดิม
+  ให้มี field `httpStatus` แยก — map 401/403→`token_expired`, 429→`rate_limited`, อื่นๆ→`send_failed`) +
+  `listAiProviderHealth()`/`countUnhealthyAiProviders()`
+- **จุดเดียวที่ wire เข้าจริง คือ `finalizeAiUsageEvent()`** (`aiUsage.ts`) — เพราะทุก shared-key call
+  ทั้งแชท (`ai.ts` generateResponse, `tools/runtime.ts` tool loop) และ OCR (`payments.ts`
+  verifyPaymentSlip) **จบงานผ่านฟังก์ชันนี้อยู่แล้วทั้งหมด** จึง hook จุดเดียวพอ ไม่ต้องกระจายไปแก้ 3
+  catch block แยก (ต่างจาก feature "order status email" ก่อนหน้าที่ order เปลี่ยนสถานะได้จากหลายจุดจริง
+  — เคสนี้ทุกอย่างไหลผ่านจุดเดียวจริง ๆ จึง hook แบบรวมศูนย์ได้) · เช็ค `source = 'shared'` ก่อนเสมอ (ข้าม
+  BYOK) และข้าม status `'fallback'` (ใช้กับเหตุผลอื่นที่ไม่ใช่ provider ล่ม เช่น `quota_exhausted`/
+  `no_credentials`/`max_rounds_exceeded`/`slip image unavailable`) · purpose derive จาก
+  `feature === 'payment_slip_ocr' ? 'ocr' : 'chat'` (ยังมี OCR feature เดียวในระบบตอนนี้)
+- **ปุ่ม "ทดสอบ" เดิมใน `/admin/env` ก็เขียนสถานะจริงไปในตัว** — แก้
+  `testAnthropicCompatibleSharedProvider()`/`testQwenOcrKey()` ใน `aiConfig.ts` ให้เรียก
+  `recordProviderSuccess()`/`recordProviderError()` เป็น side effect (เหมือน `testChannelConnection()`
+  เดิมของ Channel Health) — ไม่ต้องเขียน test logic ซ้ำสำหรับ cron เพราะ reuse ฟังก์ชันเดิมได้เลย
+- **`anthropic-ocr` เป็นแค่ test-selector string ไม่ใช่ identity แยกใน DB** — `testPlatformAiKey()`
+  (`aiConfig.ts`) รับ 4 ค่า: `anthropic`/`deepseek` → `testAnthropicCompatibleSharedProvider()`,
+  `qwen` → `testQwenOcrKey()`, และ `anthropic-ocr` (ใหม่) → `testAnthropicOcrKey()` — แต่ทั้ง
+  `testAnthropicOcrKey()` ก็ยังเรียก `recordProviderSuccess/Error("anthropic", "ocr", ...)` เหมือนเดิม
+  ไม่มีแถวใหม่ใน `bms_ai_provider_health`, `AiProviderName` ยังเป็น 3 ค่า (`anthropic`/`deepseek`/`qwen`)
+  ตารางยังมีแค่ 4 แถวเดิมจาก `7.34` (ทำแบบนี้เพราะ Anthropic ทำหน้าที่ `chat` กับ `ocr` เป็นคนละ endpoint/
+  system prompt กัน จึงอยากมีปุ่มทดสอบแยกให้ตรงกับ path จริงที่ `BMS_SLIP_READER_FALLBACK_PROVIDER`
+  ใช้ แต่ไม่คุ้มจะเพิ่ม provider identity ใหม่ใน schema แค่เพื่อปุ่มทดสอบ)
+- **`stale` status ใหม่ — derive ตอนอ่านเท่านั้น ไม่เขียนลง DB** (`aiProviderHealth.ts`) —
+  `listAiProviderHealth()` เช็ค `status === 'connected' && isStale(last_checked_at)` แล้ว override
+  เป็น `'stale'` ก่อนคืนออกไป (CHECK constraint ของ `7.34` ไม่มี `'stale'` เลยด้วยซ้ำ ยืนยันว่าคอลัมน์จริง
+  ไม่เคยเก็บค่านี้) ควบคุมด้วย env `BMS_AI_HEALTH_STALE_MINUTES` (default 60 นาที ถ้าไม่ตั้ง/ตั้งค่าไม่ถูก)
+  ผ่าน `staleAfterMinutes()`/`isStale()` — เหตุผลที่ต้องมี: แถวที่เคย `connected` แต่ไม่มีทั้ง traffic จริง
+  และไม่มีใครกดปุ่มทดสอบมานานจะค้างโชว์ "เชื่อมต่อสำเร็จ" ทั้งที่ไม่รู้จริงว่ายังใช้ได้อยู่ไหม —
+  `countUnhealthyAiProviders()` นับ `stale` รวมเป็น unhealthy ด้วย (query เช็ค `last_checked_at` เกิน
+  threshold ตรงๆ ไม่ได้พึ่งค่าที่ derive จาก `listAiProviderHealth()`)
+- **cron ใหม่ `POST /api/bms/ai/check-health`** (gate `x-cron-secret` = `BMS_CRON_SECRET` แบบเดียวกับ
+  `/api/bms/channels/check-health`) เรียก `testPlatformAiKey()` ครบทั้ง 4 test-selector
+  (`anthropic`/`anthropic-ocr`/`deepseek`/`qwen`) — **ต่างจาก Channel Health ตรงที่ AI provider ไม่มี
+  traffic สม่ำเสมอพอจะรู้ว่าล่มจาก event จริงได้เร็ว จึง "ยิงทดสอบจริง" เป็นระยะแทนที่จะรอ** (DeepSeek/Qwen
+  ทดสอบด้วย request จริงมี usage เล็กน้อยจริง ไม่ใช่ ping เปล่า ๆ แบบ Anthropic `/v1/models` — แนะนำตั้ง
+  cron รายชั่วโมงพอ ไม่ต้องถี่กว่านั้น) — **ยังไม่ได้ตั้ง cron schedule จริง** (เหมือน Channel Health เดิม
+  ที่ก็ยังไม่ได้ตั้ง — endpoint พร้อมแล้วแค่ยังไม่มีตัวยิงอัตโนมัติ) · comment เดิมใน `aiProviderHealth.ts`
+  ที่อ้าง `checkAiProviderHealthNow()` เป็นชื่อฟังก์ชันที่ไม่มีจริง (ของจริงคือ cron เรียก
+  `testPlatformAiKey()` ตรงๆ ต่อ provider) — แก้ comment ให้ตรงกับโค้ดจริงแล้ว
+- **GraphQL** → `bmsAiProviderHealth`/`bmsAiProviderHealthCount` ใน `graphql/bmsAiConfig.ts` gate ด้วย
+  `requirePlatformAdmin()` (platform-wide ไม่ใช่ tenant-wide จึงไม่ใช้ `requireTenantAdmin()` แบบ
+  Channel Health) · **UI**: การ์ด "AI Provider Health" ใหม่ในหน้า `/admin/env` (ตาราง status/detail/
+  last success/last error/last checked) + badge sidebar ที่เมนู "ENV" (poll
+  `bmsAiProviderHealthCount` ทุก 60s, `skip` ถ้าไม่ใช่ platform admin, ส่ง `effectiveCollapsed` เสมอกัน
+  บั๊กเดิมที่เจอกับเมนู Users)
+- **ปุ่ม "ตรวจสอบทั้งหมดตอนนี้" (มือถือแทน cron ที่ยังไม่ได้ตั้ง schedule)** — mutation ใหม่
+  `bmsCheckAllAiProviderHealth` (`bmsAiConfig.ts`) เรียก `testPlatformAiKey()` ครบทั้ง 4 test-selector
+  พร้อมกันด้วย `Promise.allSettled` (ตัวหนึ่งพังไม่ทำให้ตัวอื่นไม่ถูกทดสอบ) แล้วคืน
+  `listAiProviderHealth()` ล่าสุดให้ client เอาไปอัปเดต state ของตารางตรง ๆ — **แก้ gap ที่เคยมีว่าตาราง
+  ไม่ auto-refresh หลังกดทดสอบ** โดยไม่ต้องแปลงทั้งหน้าเป็น client-side polling query, แค่จุดเดียวนี้พอ ·
+  ปุ่มนี้ยิง request จริงไปหา provider ทุกครั้งที่กด (มี usage เล็กน้อยจริง ไม่ใช่ read-only refresh — เขียน
+  เตือนไว้ในข้อความใต้การ์ดด้วย)
+- **verify แล้วจริงกับ DB/API จริงบนเครื่องนี้** (ไม่ใช่แค่ `tsc`/`build` ผ่าน) — apply migration `7.34`
+  เข้า docker postgres จริง, เรียก `testPlatformAiKey()` ด้วย credential จริงใน `.env.dev` สำเร็จหมด
+  (`anthropic/chat`→connected, `deepseek/chat`→connected, `qwen/ocr`→connected, `anthropic/ocr` ยังคง
+  `unconfigured` ถูกต้องเพราะ `BMS_SLIP_READER_PROVIDER=qwen`), ทดสอบ error classification ด้วย message
+  สังเคราะห์ (401→`token_expired`, 429→`rate_limited`) ก่อน restore กลับเป็น `connected` จริง, และจำลอง
+  resolver logic ของ `bmsCheckAllAiProviderHealth` ตรง ๆ (ยิงทุก provider พร้อมกันแล้วอ่าน health กลับ)
+  ยืนยันผลถูกต้องครบ — **ยังไม่ได้ทดสอบผ่านเบราว์เซอร์จริง** (ไม่มี credential ล็อกอิน platform admin
+  ของเครื่องนี้ให้ทดสอบ UI/ปุ่ม/badge ตรง ๆ แต่ query/mutation/service ที่ UI เรียกใช้ตรวจสอบแล้วว่าทำงาน
+  ถูกต้องทั้งหมด) — **`anthropic-ocr`/staleness ยังไม่ได้ verify กับ DB/API จริงแบบเดียวกัน** (เขียนโค้ด/
+  แก้ doc รอบนี้เท่านั้น ยังไม่ได้รันซ้ำแบบตอน `7.34`)
+- **ยังไม่ทำ**: ไม่ track BYOK ของแต่ละร้าน (ตั้งใจ, ดูเหตุผลด้านบน) · ไม่มี proactive notification
+  ออกนอกแอพ (LINE/Slack) เมื่อ provider ล่ม — เหมือน Channel Health เดิม เห็นได้แค่ตอนเปิด `/admin/env`
+  หรือดู badge sidebar เท่านั้น · ยังไม่ได้ตั้ง cron schedule จริงให้ endpoint ยิงอัตโนมัติ (ปุ่ม
+  "ตรวจสอบทั้งหมดตอนนี้" เป็นทางเลือกมือถือเท่านั้น ไม่ใช่ automation จริง)
+
 ## AI Free Tier + BYOK (2026-07)
 
 **เสร็จแล้ว** — เดิม AI ใช้ `ANTHROPIC_API_KEY` เดียวจาก env ทั้งแพลตฟอร์ม ไม่มี quota, ไม่มีทางให้ร้านใช้ key
@@ -924,6 +1012,8 @@ RETURNED ด้วย) เพื่อให้เลขตรงกับ "ใ�
 + **แท็บ "ลูกค้า"/merge/reorder เสร็จแล้ว** + **Shopee/Lazada beta scaffold เสร็จแล้ว** (ดู [docs/integrations/lazada.md](docs/integrations/lazada.md))
 + **Channel Health status เสร็จแล้ว** (ดูหัวข้อ § Channel Health ด้านบน — schema/service/webhook wiring/GraphQL/UI ครบ
 เฉพาะ proactive external notification ที่ยังไม่ทำ).
++ **AI Provider Health เสร็จแล้ว** (ดูหัวข้อ § AI Provider Health ด้านบน — schema/service/GraphQL/UI ครบ
+และ verify กับ DB/API จริงแล้ว เฉพาะ cron schedule จริงและ proactive external notification ที่ยังไม่ทำ).
 + **Realtime Diagnostics เสร็จแล้ว** (`/admin/inbox/realtime-diagnostics`) — `Emit` ทดสอบ PubSub/WS signal,
 `Create Msg` สร้างข้อความ diagnostic ให้เห็นใน Inbox จริงโดยไม่ส่งออก platform.
 + **AI Free Tier + BYOK เสร็จแล้ว** (ดูหัวข้อ § AI Free Tier + BYOK ด้านบน — schema/service/GraphQL/UI ครบ
@@ -944,8 +1034,10 @@ natural suite กับ live model).
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
-· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` (endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
-· proactive external notification สำหรับ Channel Health (ต้องออกแบบ LINE user id ผูก admin ก่อน — ดู § Channel Health)
+· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` และ `/api/bms/ai/check-health`
+(ทั้งคู่ endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
+· proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
+ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
 
 ## ก่อน production (สำคัญ)

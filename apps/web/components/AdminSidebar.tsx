@@ -47,6 +47,7 @@ const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
+const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
     bmsAiConfig { has_key }
@@ -147,6 +148,13 @@ export default function AdminSidebar() {
     fetchPolicy: 'cache-and-network', pollInterval: 15000,
   });
   const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
+
+  // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
+  // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
+  const { data: aiProviderHealthData } = useQuery(Q_AI_PROVIDER_HEALTH_COUNT, {
+    skip: !isPlatformAdmin, fetchPolicy: 'cache-and-network', pollInterval: 60000,
+  });
+  const aiProviderHealthCount: number = aiProviderHealthData?.bmsAiProviderHealthCount ?? 0;
 
   // โควตา AI (shared key ฟรี) — poll ห่างกว่า inbox/channel เพราะเปลี่ยนไม่บ่อย (นับเป็นเดือน ไม่ใช่วินาที)
   const { data: aiData } = useQuery(Q_AI_USAGE, {
@@ -273,7 +281,7 @@ export default function AdminSidebar() {
           link('/admin/files', 'Files', <FileImageOutlined />, 5),
           link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
-          link('/admin/env', 'ENV', <EnvironmentOutlined />),
+          link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
           link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),
         // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้

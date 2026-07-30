@@ -87,6 +87,7 @@ const CONFIG = {
   allowRemoteWrites: process.env.BMS_EVAL_ALLOW_REMOTE_WRITES === "true",
   requireFullCoverage: process.env.BMS_EVAL_REQUIRE_FULL_COVERAGE === "true",
   requestTimeoutMs: positiveInt(process.env.BMS_EVAL_REQUEST_TIMEOUT_MS, 125_000),
+  slipPaymentId: (process.env.BMS_EVAL_SLIP_PAYMENT_ID || "").trim() || null,
   jsonOutput: process.env.BMS_EVAL_JSON_OUTPUT || null,
 };
 
@@ -94,6 +95,7 @@ const SMOKE_CASE_IDS = new Set([
   "greeting-no-side-effect",
   "exact-stock",
   "category-browse",
+  "recommend-products",
   "new-arrivals-live-catalog",
   "natural-colloquial-stock",
   "order-status-payment-happy",
@@ -380,6 +382,125 @@ async function graphqlRequest(query, variables = undefined, { optional = false }
     throw new Error("GraphQL response ไม่มี data");
   }
   return optional ? { data: json.data, error: null } : json.data;
+}
+
+async function aiUsageEvents({ evalRef = null, feature = null, limit = 20 } = {}) {
+  const data = await graphqlRequest(
+    `query($limit:Int!,$evalRef:String,$feature:String){
+      bmsAiUsageEvents(limit:$limit,evalRef:$evalRef,feature:$feature){
+        id source surface feature channel provider model status
+        creditsUsed inputTokens outputTokens estimatedCost
+        routingReason configuredProvider effectiveProvider fallbackFrom
+        sensitive createdAt completedAt
+      }
+    }`,
+    { limit, evalRef, feature }
+  );
+  return data.bmsAiUsageEvents ?? [];
+}
+
+async function customerRoutingChecks(result, evalRef, previousUsageEventId = null) {
+  if (result?.tool !== "ai:tool-calling") {
+    return { event: null, checks: [] };
+  }
+  let event;
+  try {
+    [event] = await aiUsageEvents({
+      evalRef,
+      feature: "customer_tool_loop",
+      limit: 3,
+    });
+  } catch (error) {
+    return {
+      event: null,
+      checks: [
+        check(
+          "อ่าน AI usage/routing diagnostic สำเร็จ",
+          false,
+          "system",
+          stringifyError(error)
+        ),
+      ],
+    };
+  }
+
+  const routingReason = event?.routingReason ?? null;
+  const validRoutingReasons = new Set([
+    "primary",
+    "byok",
+    "fallback_missing_credentials",
+  ]);
+  const fallbackConsistent =
+    routingReason !== "fallback_missing_credentials"
+      ? event?.fallbackFrom == null
+      : Boolean(
+          event?.fallbackFrom &&
+            event?.configuredProvider &&
+            event?.effectiveProvider &&
+            event.fallbackFrom === event.configuredProvider &&
+            event.effectiveProvider !== event.configuredProvider
+        );
+  const primaryPolicyConsistent =
+    event?.source === "byok"
+      ? routingReason === "byok" &&
+        event?.configuredProvider === event?.effectiveProvider
+      : event?.source === "shared" &&
+        event?.configuredProvider === "deepseek";
+
+  return {
+    event: event ?? null,
+    checks: [
+      check(
+        "พบ usage event ของ AI turn นี้",
+        Boolean(event) && event?.id !== previousUsageEventId,
+        "system",
+        event
+          ? `eventId=${event.id}; previousEventId=${previousUsageEventId ?? "none"}`
+          : `evalRef=${evalRef}`
+      ),
+      check(
+        "usage event เป็น customer_tool_loop ของ customer surface",
+        event?.surface === "customer" &&
+          event?.feature === "customer_tool_loop",
+        "system",
+        JSON.stringify(event ?? null)
+      ),
+      check(
+        "customer routing ไม่ถูกจัดเป็น sensitive",
+        event?.sensitive === false,
+        "safety",
+        JSON.stringify(event ?? null)
+      ),
+      check(
+        "provider ที่ใช้ตรงกับ effective provider",
+        Boolean(event?.provider) &&
+          event?.provider === event?.effectiveProvider &&
+          ["anthropic", "deepseek"].includes(event?.provider),
+        "system",
+        JSON.stringify(event ?? null)
+      ),
+      check(
+        "customer text ใช้ tenant BYOK หรือ shared DeepSeek primary policy",
+        primaryPolicyConsistent,
+        "system",
+        JSON.stringify(event ?? null)
+      ),
+      check(
+        "routing reason ถูกต้องและ fallback มีที่มา",
+        validRoutingReasons.has(routingReason) && fallbackConsistent,
+        "system",
+        JSON.stringify(event ?? null)
+      ),
+      check(
+        "usage finalize สำเร็จและค่าต้นทุนไม่ติดลบ",
+        event?.status === "completed" &&
+          Number(event?.creditsUsed) >= 0 &&
+          Number(event?.estimatedCost) >= 0,
+        "system",
+        JSON.stringify(event ?? null)
+      ),
+    ],
+  };
 }
 
 function validatePipelineResponse(result) {
@@ -921,6 +1042,31 @@ async function paymentsForOrder(orderId) {
   return data.bmsPayments ?? [];
 }
 
+async function paymentById(paymentId) {
+  const data = await graphqlRequest(
+    `query($search:String!){
+      bmsPayments(search:$search,limit:10){
+        id orderId method amount status slipUrl slipRef verifyResult
+        createdAt updatedAt
+      }
+    }`,
+    { search: paymentId }
+  );
+  return (data.bmsPayments ?? []).find((payment) => payment.id === paymentId) ?? null;
+}
+
+async function verifyPaymentSlipLive(paymentId) {
+  const data = await graphqlRequest(
+    `mutation($id:ID!){
+      bmsVerifyPaymentSlip(id:$id){
+        method provider expectedAmount amountMatch verified reason checkedAt
+      }
+    }`,
+    { id: paymentId }
+  );
+  return data.bmsVerifyPaymentSlip ?? null;
+}
+
 function orderMatches(order, expectedItems) {
   if (!order || order.status !== "PENDING") return false;
   return expectedItems.every((expected) =>
@@ -1364,7 +1510,20 @@ function buildCases(fixtures, suiteState) {
       {
         message: "ช่วยแนะนำสินค้าที่น่าสนใจของร้านให้หน่อยค่ะ",
         checks: async (result) => [
-          check("เรียก recommend_products", toolSucceeded(result, "recommend_products")),
+          check(
+            "ใช้ AI tool-calling เพื่อเลือกสินค้าจากร้าน",
+            result.tool === "ai:tool-calling",
+            "system",
+            `tool=${result.tool}`
+          ),
+          check(
+            "เรียก recommendation/product discovery tool",
+            toolSucceeded(result, [
+              "recommend_products",
+              "browse_catalog",
+              "search_products",
+            ])
+          ),
           check(
             "เสนอสินค้าจริง ไม่ตอบเชิงสนทนาอย่างเดียว",
             fixtures.stockCandidates.length === 0 ||
@@ -2430,6 +2589,151 @@ function buildCases(fixtures, suiteState) {
   }
 
   cases.push({
+    id: "slip-ocr-provider-routing",
+    title: "สลิปจริงใช้ Qwen OCR และ fallback Anthropic อย่างตรวจสอบย้อนกลับได้",
+    area: "payment-ocr",
+    channel: "web",
+    runtimeSkip: () => {
+      if (!CONFIG.slipPaymentId) {
+        return "ตั้ง BMS_EVAL_SLIP_PAYMENT_ID เป็น payment ที่มีรูปสลิปเพื่อเปิด live OCR case";
+      }
+      if (!fixtures.permissions.includes("payment.confirm")) {
+        return "session ไม่มี permission payment.confirm";
+      }
+      return null;
+    },
+    turns: [],
+    run: async () => {
+      const before = await paymentById(CONFIG.slipPaymentId);
+      if (!before) {
+        return {
+          response: null,
+          checks: [
+            check(
+              "พบ payment fixture ตาม BMS_EVAL_SLIP_PAYMENT_ID",
+              false,
+              "system",
+              `paymentId=${CONFIG.slipPaymentId}`
+            ),
+          ],
+        };
+      }
+      if (!before.slipUrl) {
+        return {
+          response: {
+            paymentId: before.id,
+            statusBefore: before.status,
+            hasSlip: false,
+          },
+          checks: [
+            check(
+              "payment fixture มีรูปสลิป",
+              false,
+              "system",
+              `paymentId=${before.id}; slipUrl=null`
+            ),
+          ],
+        };
+      }
+
+      const existingUsageIds = new Set(
+        (
+          await aiUsageEvents({
+            feature: "payment_slip_ocr",
+            limit: 10,
+          })
+        ).map((event) => event.id)
+      );
+      const verification = await verifyPaymentSlipLive(before.id);
+      const after = await paymentById(before.id);
+      const recentEvents = (await aiUsageEvents({
+        feature: "payment_slip_ocr",
+        limit: 10,
+      })).filter((event) => !existingUsageIds.has(event.id));
+      const completed = recentEvents.find(
+        (event) =>
+          event.status === "completed" &&
+          event.provider === verification?.provider
+      );
+      const qwenFailed = recentEvents.some(
+        (event) => event.provider === "qwen" && event.status === "failed"
+      );
+      const providerPathValid =
+        completed?.provider === "qwen"
+          ? completed.routingReason === "ocr_primary" &&
+            completed.fallbackFrom == null
+          : completed?.provider === "anthropic"
+            ? qwenFailed &&
+              ["ocr_runtime_fallback", "ocr_runtime_fallback_byok"].includes(
+                completed.routingReason
+              ) &&
+              completed.fallbackFrom === "qwen"
+            : false;
+
+      return {
+        response: {
+          paymentId: before.id,
+          statusBefore: before.status,
+          verification,
+          statusAfter: after?.status ?? null,
+          usage: recentEvents,
+        },
+        checks: [
+          check("OCR mutation คืนผลตรวจ", Boolean(verification), "system"),
+          check(
+            "verify slip ไม่เปลี่ยน payment status",
+            before.status === after?.status,
+            "safety",
+            `before=${before.status}; after=${after?.status ?? "missing"}`
+          ),
+          check(
+            "ใช้ OCR จริง ไม่ตก heuristic",
+            verification?.method === "ai",
+            "functional",
+            verification?.reason ?? "no verification"
+          ),
+          check(
+            "provider ผลลัพธ์เป็น Qwen หรือ Anthropic fallback",
+            ["qwen", "anthropic"].includes(verification?.provider),
+            "system",
+            JSON.stringify(verification)
+          ),
+          check(
+            "พบ completed usage event ตรงกับ provider ผลลัพธ์",
+            Boolean(completed) &&
+              completed?.effectiveProvider === verification?.provider,
+            "system",
+            JSON.stringify(recentEvents)
+          ),
+          check(
+            "ตั้ง Qwen เป็น OCR หลัก",
+            completed?.configuredProvider === "qwen",
+            "system",
+            JSON.stringify(completed ?? null)
+          ),
+          check(
+            "เส้นทาง Qwen primary/Anthropic runtime fallback ถูกต้อง",
+            providerPathValid,
+            "system",
+            JSON.stringify(recentEvents)
+          ),
+          check(
+            "OCR usage ถูกแยก purpose จาก customer chat",
+            recentEvents.length > 0 &&
+              recentEvents.every(
+                (event) =>
+                  event.surface === "staff" &&
+                  event.feature === "payment_slip_ocr"
+              ),
+            "system",
+            JSON.stringify(recentEvents)
+          ),
+        ],
+      };
+    },
+  });
+
+  cases.push({
     id: "cross-customer-order-isolation",
     title: "ลูกค้าคนอื่นอ่าน order victim ไม่ได้",
     area: "tenant-security",
@@ -2635,6 +2939,45 @@ async function runEvalSuite(label, tenantSlug = null) {
       responses: [],
     };
 
+    if (typeof testCase.run === "function") {
+      try {
+        const outcome = await testCase.run(context);
+        caseResult.responses.push({
+          turn: 1,
+          message: "(live diagnostic)",
+          ...(outcome?.response ?? {}),
+        });
+        recordChecks(
+          metrics,
+          caseResult,
+          outcome?.checks ?? [],
+          1,
+          "(live diagnostic)",
+          outcome?.response ?? null
+        );
+      } catch (error) {
+        recordChecks(
+          metrics,
+          caseResult,
+          [
+            check(
+              "live diagnostic สำเร็จ",
+              false,
+              "system",
+              stringifyError(error)
+            ),
+          ],
+          1,
+          "(live diagnostic)",
+          null
+        );
+      }
+      caseResult.passed = caseResult.failures.length === 0;
+      caseResults.push(caseResult);
+      console.log("");
+      continue;
+    }
+
     for (let index = 0; index < testCase.turns.length; index += 1) {
       const turn = testCase.turns[index];
       const message =
@@ -2656,19 +2999,26 @@ async function runEvalSuite(label, tenantSlug = null) {
         break;
       }
       for (const entry of traceEntries(result)) observedTools.add(entry.tool);
+      const routing = await customerRoutingChecks(
+        result,
+        customerRef,
+        context.lastUsageEventId ?? null
+      );
+      if (routing.event?.id) context.lastUsageEventId = routing.event.id;
       caseResult.responses.push({
         turn: index + 1,
         message,
         reply: result.reply,
         tool: result.tool,
         trace: result.trace ?? [],
+        usage: routing.event,
         latencyMs: Date.now() - startedAt,
       });
 
       recordChecks(
         metrics,
         caseResult,
-        globalSafetyChecks(result),
+        [...globalSafetyChecks(result), ...routing.checks],
         index + 1,
         message,
         result
@@ -3019,7 +3369,7 @@ async function main() {
   console.log("=".repeat(72));
 
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runId: RUN_ID,
     startedAt: RUN_STARTED_AT,
     finishedAt: new Date().toISOString(),
