@@ -34,6 +34,8 @@ export async function DELETE() {
   const resOrders = await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
   const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
   const resPO = await query(`DELETE FROM bms_purchase_orders WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
+  // coupons ไม่มี FK ผูกกับ order แบบ RESTRICT (bms_orders.coupon_id → ON DELETE SET NULL) ลบตรงได้เลย
+  const resCoupons = await query(`DELETE FROM bms_coupons WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
   const resSuppliers = await query(
     `DELETE FROM bms_suppliers s
       WHERE s.name LIKE 'FAKE %' AND s.tenant_id = $1
@@ -59,7 +61,7 @@ export async function DELETE() {
 
   const deleted =
     resPosts.rows.length + resUsers.rows.length + resOrders.rows.length + resConversations.rows.length +
-    resPO.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length;
+    resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length;
 
   return NextResponse.json({
     ok: true,
@@ -69,6 +71,7 @@ export async function DELETE() {
     bmsOrders: resOrders.rows.length,
     bmsConversations: resConversations.rows.length,
     bmsPurchaseOrders: resPO.rows.length,
+    bmsCoupons: resCoupons.rows.length,
     bmsSuppliers: resSuppliers.rows.length,
     bmsProducts: resProducts.rows.length,
     bmsCustomers: resCustomers.rows.length,

@@ -21,10 +21,11 @@ const KINDS = [
   { label: 'BMS Orders (+pay/ship)', value: 'bms-orders' },
   { label: 'BMS Conversations', value: 'bms-conversations' },
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
+  { label: 'BMS Coupons', value: 'bms-coupons' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase' | 'bms-ai-usage';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage';
 
 export default function DevFakePage() {
   const [kind, setKind] = useState<FakeKind>('bms-products');
@@ -87,7 +88,7 @@ export default function DevFakePage() {
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Cleanup failed');
       message.success(
-        `Deleted ${j.deleted} — orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0}`
+        `Deleted ${j.deleted} — orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0}`
       );
       setCreated([]);
     } catch (e: any) {
@@ -96,9 +97,16 @@ export default function DevFakePage() {
   }
 
   const cols = [
-    { title: 'id / sku', key: 'id', width: 200, render: (_: any, r: any) => r.sku || r.id },
-    { title: 'name', dataIndex: 'name', key: 'name', render: (_: any, r: any) => r.name || r.title },
-    { title: 'price', dataIndex: 'price', key: 'price', width: 100, render: (v: any) => (v != null ? `${Number(v).toLocaleString()} ฿` : '—') },
+    { title: 'id / sku / code', key: 'id', width: 200, render: (_: any, r: any) => r.sku || r.code || r.id },
+    { title: 'name', dataIndex: 'name', key: 'name', render: (_: any, r: any) => r.name || r.title || r.type },
+    {
+      title: 'price / value', dataIndex: 'price', key: 'price', width: 110,
+      render: (v: any, r: any) => {
+        const n = v ?? r.value;
+        if (n == null) return '—';
+        return r.value != null && r.type === 'PERCENT' ? `${Number(n)}%` : `${Number(n).toLocaleString()} ฿`;
+      },
+    },
     { title: 'phone', dataIndex: 'phone', key: 'phone' },
     { title: 'tags', dataIndex: 'tags', key: 'tags', render: (t: string[]) => (t || []).map((x) => <Tag key={x}>{x}</Tag>) },
   ];
@@ -108,7 +116,7 @@ export default function DevFakePage() {
     <Card title="สร้างร้านทดสอบทั้งร้าน (ครบชุด)" style={{ marginBottom: 16 }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="สร้าง tenant ใหม่ (slug ขึ้นต้น test- เสมอ) + admin user + staff/products/customers/orders/conversations/purchase ครบชุดในคลิกเดียว"
+        message="สร้าง tenant ใหม่ (slug ขึ้นต้น test- เสมอ) + admin user + staff/products/customers/coupons/orders/conversations/purchase ครบชุดในคลิกเดียว"
         description={<>ถ้า seed ขั้นไหนพังกลางทาง ร้านที่เพิ่งสร้างจะถูกลบทิ้งอัตโนมัติ (ไม่เหลือร้าน half-seeded ค้าง) ·
           ลบร้านนี้ทีหลังได้ที่ <code>/admin/tenants</code> (ปุ่ม &quot;ลบ&quot; โชว์เฉพาะร้านที่ slug ขึ้นต้น <code>test-</code>)</>}
       />
@@ -149,7 +157,8 @@ export default function DevFakePage() {
             message="รหัสผ่านนี้แสดงครั้งเดียว — คัดลอกเก็บไว้ก่อนปิดหน้าต่างนี้" />
           <div style={{ marginTop: 12 }}>
             สร้างแล้ว: staff {provisioned.summary.staff ?? 0} · สินค้า {provisioned.summary.products ?? 0} ·
-            ลูกค้า {provisioned.summary.customers ?? 0} · ออเดอร์ {provisioned.summary.orders ?? 0} ·
+            ลูกค้า {provisioned.summary.customers ?? 0} · คูปอง {provisioned.summary.coupons ?? 0} ·
+            ออเดอร์ {provisioned.summary.orders ?? 0} ·
             แชท {provisioned.summary.conversations ?? 0} · PO {provisioned.summary.purchaseOrders ?? 0}
           </div>
         </>
@@ -191,9 +200,10 @@ export default function DevFakePage() {
       <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
         message="ใช้เฉพาะ dev/test (production ปิด default — เปิดด้วย env BMS_ALLOW_FAKE_SEED=1 บนเครื่อง demo)"
-        description={<>ลำดับแนะนำ: <b>Staff → Products → Customers → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
+        description={<>ลำดับแนะนำ: <b>Staff → Products → Customers → Coupons → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
           <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
-          <b>Conversations</b> + messages → เติม Inbox · marker: <code>FAKE-</code> / tag <code>fake</code> ·
+          <b>Conversations</b> + messages → เติม Inbox · <b>Coupons</b> สุ่มทั้ง PERCENT/FIXED บางอันปิดใช้งาน/มีขั้นต่ำ/จำกัดจำนวน →
+          เติมหน้า Coupons · marker: <code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
           <b>AI Usage</b> เพิ่มตัวนับ quota เดือนนี้จริงใน <code>bms_ai_usage_monthly</code> เพื่อทดสอบหน้า Settings ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
       />

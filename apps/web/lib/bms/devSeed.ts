@@ -340,3 +340,35 @@ export async function seedFakeStaff(tenantId: string, count: number, generatedBy
   }
   return created;
 }
+
+// marker: note ขึ้นต้น 'FAKE' → cleanup ลบได้ (เหมือน PO) · code สุ่มด้วย 'FAKE' + short() กันชนกัน
+// เวลา seed ซ้ำ (UNIQUE tenant_id, code — ON CONFLICT DO NOTHING เผื่อชนพอดี ไม่ throw ทั้ง batch)
+export async function seedFakeCoupons(tenantId: string, count: number) {
+  const now = Date.now();
+  const PERCENT_VALUES = [5, 10, 15, 20, 30];
+  const FIXED_VALUES = [20, 50, 100, 150, 200];
+  const MIN_ORDER_POOL: (number | null)[] = [null, null, 300, 500, 1000];
+
+  const created: any[] = [];
+  for (let i = 0; i < count; i++) {
+    const isPercent = R(2) === 0;
+    const type = isPercent ? "PERCENT" : "FIXED";
+    const value = isPercent ? pick(PERCENT_VALUES) : pick(FIXED_VALUES);
+    const minOrderAmount = pick(MIN_ORDER_POOL);
+    const maxRedemptions = R(3) === 0 ? null : 10 + R(90);
+    const perCustomerLimit = R(3) === 0 ? 1 : null;
+    const expiresAt = R(4) === 0 ? null : new Date(now + (7 + R(60)) * 864e5).toISOString();
+    const active = R(5) !== 0; // ส่วนใหญ่ active — เหลือส่วนน้อยปิดไว้ทดสอบ UI สถานะปิดใช้งาน
+    const code = "FAKE" + short().toUpperCase();
+
+    const { rows } = await query(
+      `INSERT INTO bms_coupons (tenant_id, code, type, value, min_order_amount, max_redemptions, per_customer_limit, expires_at, active, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'FAKE coupon (dev seed)')
+       ON CONFLICT (tenant_id, code) DO NOTHING
+       RETURNING id, code, type, value, active`,
+      [tenantId, code, type, value, minOrderAmount, maxRedemptions, perCustomerLimit, expiresAt, active]
+    );
+    if (rows[0]) created.push(rows[0]);
+  }
+  return created;
+}

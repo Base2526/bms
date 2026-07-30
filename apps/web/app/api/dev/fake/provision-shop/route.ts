@@ -17,6 +17,7 @@ import {
   seedFakeOrders,
   seedFakeConversations,
   seedFakePurchase,
+  seedFakeCoupons,
 } from "@/lib/bms/devSeed";
 
 export const runtime = "nodejs";
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     orders: clamp(c.orders, 30, 1, 500),
     conversations: clamp(c.conversations, 15, 1, 500),
     purchase: clamp(c.purchase, 10, 1, 500),
+    coupons: clamp(c.coupons, 5, 0, 200),
   };
 
   let shop;
@@ -58,6 +60,7 @@ export async function POST(req: NextRequest) {
     const orderResult = await seedFakeOrders(shop.tenantId, counts.orders);
     const convResult = await seedFakeConversations(shop.tenantId, counts.conversations);
     const poResult = await seedFakePurchase(shop.tenantId, counts.purchase);
+    const coupons = counts.coupons > 0 ? await seedFakeCoupons(shop.tenantId, counts.coupons) : [];
 
     return NextResponse.json({
       ok: true,
@@ -67,6 +70,7 @@ export async function POST(req: NextRequest) {
         staff: counts.staff,
         products: products.length,
         customers: customers.length,
+        coupons: coupons.length,
         ...orderResult.summary,
         ...convResult.summary,
         ...poResult.summary,
