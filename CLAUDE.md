@@ -34,7 +34,7 @@ for the full philosophy and module breakdown.
 | [docs/ui/public-products.md](docs/ui/public-products.md) | Public product detail/gallery URLs shared from Inbox |
 | [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
-| [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md) | Checkout/payment UX contract (text wireframe) — what is real vs. must not be shown as real |
+| [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md) | Public checkout/payment UX contract (implemented at `/checkout?t=…`) — what is real vs. must not be shown as real |
 | [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | How to run the deterministic runtime-contract and live-model AI evals |
 | [CLAUDE.local.md](CLAUDE.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
@@ -231,8 +231,27 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   collected **one field at a time** and payment channels are listed only once delivery is complete.
   Lazada/Shopee report `marketplaceManaged:true` and are never asked for Seller Center data. The
   customer's answer to the deterministic name/phone/address question is server-routed back through the
-  same approved save tool, so the flow also completes with no AI credentials or quota. UX contract for
-  the future public checkout UI: [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md).
+  same approved save tool, so the flow also completes with no AI credentials or quota.
+- **Public customer checkout (`/checkout?t=<signed-token>`)** — ✅ implemented; the wireframe in
+  [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md) is now an
+  implementation contract rather than a plan. A successful customer `create_order`/`reorder` sets a
+  server-only `createdOrderId` on the tool exec context, and `pipeline.ts` replaces the model's closing
+  prose with `orderCheckoutChatReply()` — a backend-built order summary plus the signed link — so the
+  model can no longer end a successful order at "wait for an admin". `lib/bms/checkoutToken.ts` signs
+  an HMAC binding `tenantId + orderId + exp` (7 days, 30 max) with `BMS_CHECKOUT_SECRET` (falls back to
+  `JWT_SECRET`; production refuses to run unsigned), and `lib/bms/checkout.ts` builds a tenant/order
+  scoped projection: order lines are read-only, existing CRM delivery details are reused, and only the
+  missing fields are collected. `GET/PATCH /api/bms/checkout` reads and saves delivery details;
+  `POST /api/bms/checkout/payment` validates token/method/order state and re-decodes the uploaded slip
+  with `sharp` (JPG/PNG/WEBP, ≤8 MB) before recording a payment. Amount always comes from the order,
+  never the browser. `submitPaymentOnce()` locks the order row and returns an existing
+  `PENDING`/`CONFIRMED` payment as `ALREADY_SUBMITTED` instead of duplicating it, while a `REJECTED`
+  payment may be replaced. Only `BANK_TRANSFER`/`QR` methods backed by a configured BANK/PromptPay
+  account are offered, Lazada/Shopee are rejected as `marketplaceManaged`, and the page **never
+  confirms payment** — it creates `PENDING` and a human still clicks Confirm. The route is a public
+  bearer link, so it is excluded from the session layer via `skipsSessionLayer()` in
+  `ClientProviders.tsx` (not `isAuthPath()`), and responses are `no-store`. Token scope/tamper/expiry
+  is covered by `scripts/ai-eval/checkout-token-contract.test.mts`.
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
   versions for products, orders, payments, shipments, and purchase orders (header + line items,

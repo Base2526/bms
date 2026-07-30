@@ -46,7 +46,7 @@ Customer → Channel Integration → Omnichannel Inbox → AI Orchestrator
 | 6 | Inventory (IMS) | Current/reserved/available stock, movements |
 | 7 | Orders (OMS) | Order lifecycle, staff create/reorder, invoice preview, fulfillment address guard |
 | 8 | Purchase | Supplier purchase orders, receiving |
-| 9 | Payment | Bank transfer/QR/card/cash/TikTok, AI slip verification (advisory only) |
+| 9 | Payment | Bank transfer/QR/card/cash/TikTok, public signed-link checkout, AI slip verification (advisory only) |
 | 10 | Shipping | Carrier tracking, packing, labels |
 | 11 | Reports | Dashboard, sales, inventory, customer, financial |
 | 12 | Public Marketing & Onboarding | Landing infographic, pricing, self-serve signup, session-aware CTA routing |
@@ -78,6 +78,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
+| Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |

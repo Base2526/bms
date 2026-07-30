@@ -84,6 +84,12 @@ receiving account gets no proactive bank/PromptPay/QR suggestion.
 This does not change the order lifecycle: the order is still `PENDING`, and a submitted payment
 remains `PENDING` until a human confirms it.
 
+For customer chat orders, a successful `create_order`/`reorder` always produces a deterministic
+signed `/checkout?t=...` link from the persisted order; the AI model cannot replace this with a
+generic admin handoff. The checkout is read-only for order lines, prices, discount, and total. It
+reuses existing CRM delivery data without requiring re-entry, and shows shipment/tracking data only
+when those records exist. See [Customer Checkout & Payment Wireframe](../ui/customer-checkout-wireframe.md).
+
 ## Coupons (discount codes)
 
 **Implemented** (`bms_coupons`, migration `7.21`) — `PERCENT` (capped at 100) or `FIXED` discount

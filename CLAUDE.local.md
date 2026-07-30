@@ -741,6 +741,51 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 - **ยังไม่ทำ**: ยังไม่ได้ apply migration `7.33` เข้า docker/production เครื่องนี้ และยังไม่ได้รัน
   `BMS_EVAL_MODE=natural` กับ live model เพื่อดู pass rate จริง (โค้ด + eval case เขียนไว้แล้วเท่านั้น)
 
+## Public checkout `/checkout?t=<token>` (2026-07)
+
+**เสร็จแล้ว (โค้ด + `tsc` ผ่าน + contract test 3/3 ผ่าน — ยังไม่ได้ทดสอบ end-to-end ในเบราว์เซอร์จริง
+เพราะ docker stack ไม่ได้รันตอนพัฒนา)** — เดิมลูกค้าสั่งของจบในแชทแล้ว AI มักปิดท้ายว่า "รอแอดมิน
+ติดต่อกลับ" ซึ่งเป็นคำพูดของโมเดลล้วน ๆ ไม่ผูกกับออร์เดอร์จริง ตอนนี้ทุกออร์เดอร์ที่สร้างสำเร็จจะได้
+ลิงก์ checkout ของออร์เดอร์นั้นจริงเสมอ:
+
+- **จุดที่ทำให้ deterministic คือ `ExecCtx.createdOrderId`** (`tools/types.ts`) — `create_order`/
+  `reorder` ใน `catalog.ts` เซ็ตค่านี้เฉพาะ `surface === "customer"` แล้ว `pipeline.ts` เช็ค
+  `execCtx.createdOrderId` **ก่อน** `hasUnverifiedFacts()`/`hasUnverifiedActionClaim()` แล้วเขียนคำตอบ
+  ปิดท้ายใหม่จาก `orderCheckoutChatReply()` ทั้งหมด (ไม่ใช่ต่อท้ายข้อความโมเดล) — **ห้ามให้โมเดลประกอบ
+  URL เอง** และห้ามย้ายลำดับนี้ ไม่งั้นจะกลับไปได้ข้อความ "รอแอดมิน" ทับลิงก์จริง · เป็น server-only
+  field โมเดลส่งเข้ามาเองไม่ได้
+- **token = HMAC ไม่ใช่ JWT** (`checkoutToken.ts`) — `base64url(payload).signature`, ผูก
+  `tenantId + orderId + exp` (default 7 วัน, clamp 60 วิ–30 วัน) · secret จาก `BMS_CHECKOUT_SECRET` →
+  `NEXTAUTH_SECRET` → `AUTH_SECRET` → `JWT_SECRET`, ถ้าไม่มีเลยและ `NODE_ENV=production` จะ **throw**
+  (dev ใช้ค่า dev-only) · เทียบ signature ด้วย `timingSafeEqual` และเช็คความยาวก่อนเสมอ (`timingSafeEqual`
+  โยน error ถ้าความยาวไม่เท่ากัน)
+- **⚠️ เพิ่ม `BMS_CHECKOUT_SECRET` เข้า compose ครบ 3 ไฟล์แล้ว** (`docker-compose.yml`/`.dev`/`.prod`,
+  default `${JWT_SECRET}`) — ตามบทเรียนเดิมว่า `--env-file` ไม่ inject ตัวแปรเข้า container ให้อัตโนมัติ
+  ถ้าลืมไฟล์ใดไฟล์หนึ่งจะกลายเป็น `undefined` เงียบ ๆ แล้วลิงก์ที่ออกจากคนละ instance จะ verify ไม่ผ่าน
+- **`/checkout` ต้องอยู่ใน `skipsSessionLayer()` ไม่ใช่ `isAuthPath()`** (`ClientProviders.tsx`) —
+  แยกสองอย่างนี้ไว้เพราะ `isAuthPath()` มีความหมายว่า "หน้า auth" ซึ่ง `/checkout` ไม่ใช่ (ลูกค้าไม่ต้อง
+  login เลย) แต่ทั้งคู่ต้องไม่โหลด `SessionLayer` (session/chat/notification wires) · หน้าใหม่ที่เป็น
+  public standalone ในอนาคตให้เติมที่ `skipsSessionLayer()`
+- **`submitPaymentOnce()` vs `submitPayment()`** (`payments.ts`) — แชร์ `submitPaymentInternal()`
+  ผ่าน overload, ต่างกันแค่ flag `reuseActive` · public checkout ใช้ตัว `Once`: `SELECT ... FOR UPDATE`
+  บนแถว order เป็นตัว serialize แล้วถ้ามี payment `PENDING`/`CONFIRMED` อยู่แล้วจะคืน
+  `ALREADY_SUBMITTED` (ไม่สร้างซ้ำ) · **`REJECTED` ตั้งใจไม่นับเป็น active** เพื่อให้ลูกค้าอัปสลิปใหม่ได้
+  หลังโดน reject · staff path (`submitPayment()`) พฤติกรรมเดิมทุกอย่าง อย่าเผลอเปลี่ยนให้ reuse ด้วย
+- **ยอดเงินมาจากออร์เดอร์เสมอ** — `submitCheckoutPaymentByToken()` ส่ง `amount: null` ตั้งใจ ไม่รับยอด
+  จาก browser
+- **ตรวจไฟล์สลิปด้วยการ decode จริง** (`sharp` + `limitInputPixels`) ไม่เชื่อ `file.type` อย่างเดียว —
+  จำกัด JPG/PNG/WEBP, 8 MB, 24MP · เช็ค `content-length` ก่อนอ่าน form เพื่อกันไฟล์ใหญ่ตั้งแต่ต้น
+- **route เป็น public bearer link** — ทุก response ใส่ `Cache-Control: no-store`, หน้าเว็บ
+  `noindex`/`no-referrer` · audit ฝั่งลูกค้าใช้ actor `customer:checkout` (`payment.submit` /
+  `customer.checkout_update`) เพื่อแยกจากการกระทำของแอดมิน
+- **ไม่มี migration** — ใช้ `bms_orders`/`bms_payments`/`bms_customer_addresses`/`bms_store_profile`
+  เดิมทั้งหมด และไม่มี permission ใหม่ (ลูกค้าไม่มี RBAC อยู่แล้ว)
+- **ทดสอบ**: `cd apps/web && npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts`
+  (round-trip / payload+signature ที่ถูกแก้ / หมดอายุ) — ไม่ต่อ network/DB
+- **ยังไม่ทำ / ห้ามแสดงว่าใช้ได้**: payment gateway, บัตรออนไลน์, auto-confirm payment, carrier
+  checkout API, marketplace checkout ใน BMS · รูปสินค้าใน checkout ยัง `imageUrl: null` ทุกแถว
+  (`checkout.ts` map จาก `invoice.lines` ซึ่งไม่มีรูป) · ยังไม่มี rate limit เฉพาะทางบน endpoint นี้
+
 ## Revision trigger collision — แก้ users/posts อัปเดตไม่ได้ (2026-07)
 
 **เจอ + แก้แล้ว** — บันทึกโปรไฟล์ `/admin/profile` (และแก้ post/comment) พังด้วย
@@ -1091,6 +1136,9 @@ staff assistant (`/admin/assistant`) ครบ A1/A2/A3, A3 เป็น propose
 `findAlternativeProducts()`, ของหมด/ไม่พบตอบพร้อมทางเลือกจริงแล้ว, Thai NLU ภาษาพูด + ยกเลิก draft ชัดเจน,
 eval `BMS_EVAL_MODE=natural`; ยังไม่ได้ apply migration `7.33` เข้า docker/production จริงและยังไม่ได้รัน
 natural suite กับ live model).
++ **Public checkout เสร็จแล้ว** (ดูหัวข้อ § Public checkout ด้านบน — ออร์เดอร์จากแชททุกใบได้ signed link
+`/checkout?t=...` แบบ deterministic, reuse ข้อมูลจัดส่งเดิม, อัปสลิปเป็น `PENDING` แล้วให้คนกด Confirm;
+ไม่มี migration ใหม่ แต่ต้องตั้ง `BMS_CHECKOUT_SECRET` ก่อน production และยังไม่ได้ทดสอบในเบราว์เซอร์จริง).
 **เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
@@ -1106,6 +1154,11 @@ Shopee/Lazada signature verification กับเอกสาร Open Platform �
 - เปิดตรวจรหัสผ่านใน loginAdmin (dev ยังไม่ตรวจ)
 - ตั้ง env `BMS_SECRET_KEY` (hex 64) — ไม่งั้นใช้ dev key เข้ารหัส token
 - ตั้ง `JWT_SECRET` ให้แน่น — ใช้เซ็นทั้ง session token + cookie drill-down `BMS_ACT_TENANT`
+- ตั้ง `BMS_CHECKOUT_SECRET` (ถ้าไม่ตั้งจะ fallback ไป `JWT_SECRET` ตาม compose; ถ้าไม่มีทั้งคู่
+  production จะ throw ตอนสร้าง/verify ลิงก์ checkout) — หมุนค่านี้เมื่อไหร่ ลิงก์ที่ส่งให้ลูกค้าไปแล้ว
+  จะใช้ไม่ได้ทันทีทั้งหมด
+- ตั้ง `NEXT_PUBLIC_BASE_URL` ให้ตรงโดเมนจริง — `createCheckoutUrl()` ใช้ค่านี้ประกอบลิงก์ที่ส่งหาลูกค้า
+  (default hardcode `https://bms.jachoei.com`)
 - ให้ app ต่อ DB ด้วย role non-superuser เพื่อให้ RLS มีผลกับ read
 - apply migration `5.6` (platform admin) + `5.7` (operational perms) · seed platform admin ชุดแรก = Administrator ของร้าน default
 - ย้าย rate-limit webhook ไป Redis (ตอนนี้ in-memory ต่อ instance)

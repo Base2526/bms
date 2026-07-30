@@ -827,6 +827,7 @@ const createOrderTool: BmsTool = {
       couponCode: optString(args, "couponCode") ?? null,
     });
     if (r.status === "CREATED") {
+      if (ec.surface === "customer") ec.createdOrderId = r.orderId;
       await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });
       if (ec.surface === "customer" && ec.channel && ec.customerRef) {
         return {
@@ -1005,6 +1006,7 @@ const reorderTool: BmsTool = {
       ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null
     );
     if ((r as any).status === "CREATED") {
+      if (ec.surface === "customer") ec.createdOrderId = (r as any).orderId;
       await auditWrite(ec, "order.create", (r as any).orderId, { reorderFrom: orderId });
     }
     return { ok: true, data: r };
