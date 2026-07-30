@@ -38,6 +38,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
 | Failure incidents | `bms_failure_incidents` | `7.36` |
+| Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
 
 ## Notable schema details
 
@@ -153,6 +154,22 @@ later deleted. `notified_shop_at`/`notified_platform_at` double as the alert-coo
 notification actually succeeded, so a failed/timed-out notification retries instead of starting a
 silent cooldown. This table complements rather than replaces Channel Health and AI Provider Health:
 those record *connection status*, this records *customer-visible events that already happened*.
+
+**Sales digest reports (`7.37__bms_report_subscriptions.sql`)** — `bms_report_subscriptions` is one
+row per tenant (`tenant_id` PK, like `bms_store_profile`): frequency (`DAILY`/`WEEKLY`/`MONTHLY`),
+send hour (+ weekday for weekly / day-of-month for monthly), a recipient + enable flag per channel
+(email address, Slack webhook URL — encrypted like `channel_secret` via `lib/bms/crypto.ts`, LINE
+user id), an overall `enabled` flag, and `last_sent_at`/`last_period_key`/`last_status` for
+idempotency. `bms_report_deliveries` is append-only (like `bms_audit_log`), one row per channel per
+send attempt, so the platform-admin page can show real delivery history instead of just a single
+last-status field. `last_period_key` (e.g. `DAILY:2026-07-30`) is the actual dedup key — the cron
+can be invoked at any frequency (hourly, even more often) without ever double-sending, since a
+tenant whose current period already matches `last_period_key` is skipped. `sendTestDigest()`
+deliberately does not touch `last_sent_at`/`last_period_key`, so testing configuration never
+disturbs the real schedule. Both tables have the standard tenant-owned RLS policy and `bms_app`
+grants; there is no new permission — the shop-facing config mutation gates with the same
+`requireTenantAdmin()` pattern as `bms_store_profile`/`bms_tenant_channels`, and the cross-tenant
+platform view gates with `requirePlatformAdmin()`.
 
 **`bms_product_images` (`6.5__bms_product_images.sql`)** — ordered gallery rows
 `(tenant_id, product_sku, file_id, sort_order)` pointing at the shared `files` table. The older

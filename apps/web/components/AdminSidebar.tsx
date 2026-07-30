@@ -17,6 +17,7 @@ import {
   ApiOutlined,
   CreditCardOutlined,
   ShopOutlined,
+  MailOutlined,
   SettingOutlined,
   AppstoreOutlined,
   BookOutlined,
@@ -258,6 +259,7 @@ export default function AdminSidebar() {
         ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <ExperimentOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
         ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
+        ...(isPlatformAdmin ? [link('/admin/report-schedule', 'ตารางส่งรายงาน (แพลตฟอร์ม)', <MailOutlined />)] : []),
       ],
     },
     ...(canManageAccess ? [{

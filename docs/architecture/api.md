@@ -40,6 +40,11 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
 - `POST /api/bms/channels/check-health` — flags channels with no inbound webhook event in
   `NO_EVENTS_THRESHOLD_DAYS` (3) days as `no_events`. `lib/bms/channelHealth.ts` `detectStaleChannels()`.
   Doesn't need to run more than daily — the threshold is in days, not minutes.
+- `POST /api/bms/reports/send-digest` — sends the DAILY/WEEKLY/MONTHLY sales digest (email/Slack/
+  LINE) to every enabled tenant subscription whose scheduled hour/weekday/day-of-month matches now
+  and whose current period hasn't already been sent. `lib/bms/reportDigest.ts` `runScheduledDigests()`.
+  Idempotency comes from `last_period_key`, not cron frequency — safe to invoke hourly or more often
+  without double-sending; recommended schedule is hourly.
 
 ## REST — signed customer checkout
 
@@ -105,6 +110,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
+| `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
 
@@ -154,6 +160,23 @@ resolver even though the client also checks it before calling the mutation at al
 [../business/inventory.md](../business/inventory.md) for the full field mapping, quota, and
 duplicate-SKU rules. If a future feature needs a similar "review before you commit" bulk mutation,
 follow this same shape rather than inventing a separate preview-only query/REST endpoint.
+
+### Sales digest report subscriptions
+
+`bmsReportSchedule.ts` splits into a tenant-facing half and a platform-admin half, both backed by
+`lib/bms/reportDigest.ts`:
+
+- `bmsReportSubscription` / `bmsUpsertReportSubscription` / `bmsSendTestReportNow` /
+  `bmsReportDeliveries` gate with the module's own `requireTenantAdmin(ctx)` (checks
+  `auth.scope === "admin"` only) — the same config-domain pattern as `bmsChannels`/`bmsStoreProfile`/
+  `bmsAiConfig`, deliberately with no new `BMS_PERMISSIONS` entry, since this is shop configuration
+  rather than an operational action.
+- `bmsReportSubscriptions` / `bmsReportDeliveriesForTenant` gate with `requirePlatformAdmin(ctx)`
+  (cross-tenant, like `bmsTenants` in `bmsSaas.ts`) and back the platform-only `/admin/report-schedule`
+  audit page.
+- `bmsSendTestReportNow` calls `sendTestDigest()`, which computes the last 24h as an ad-hoc period
+  and writes to `bms_report_deliveries` without mutating the subscription's real
+  `last_sent_at`/`last_period_key` — testing configuration never desyncs the real schedule.
 
 ### Revision history GraphQL
 
