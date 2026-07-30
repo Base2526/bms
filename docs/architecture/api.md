@@ -41,6 +41,21 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
   `NO_EVENTS_THRESHOLD_DAYS` (3) days as `no_events`. `lib/bms/channelHealth.ts` `detectStaleChannels()`.
   Doesn't need to run more than daily — the threshold is in days, not minutes.
 
+## REST — signed customer checkout
+
+- `GET /api/bms/checkout?t=<token>` returns the tenant/order-scoped checkout projection.
+- `PATCH /api/bms/checkout` saves explicit recipient/phone/address changes without clearing omitted
+  CRM fields.
+- `POST /api/bms/checkout/payment` validates the signed token, configured receiving method, order
+  state, and slip image before recording a `PENDING` payment.
+
+These routes are intentionally public bearer-link endpoints, not admin APIs. The HMAC token binds
+`tenantId`, `orderId`, and expiry; the browser cannot select a tenant, order total, or another
+customer. Responses use `no-store`, the page uses `no-referrer`/`noindex`, and Lazada/Shopee writes
+are rejected because Seller Center remains authoritative. Runtime signing uses
+`BMS_CHECKOUT_SECRET` (all compose files inject it, defaulting to the deployment's `JWT_SECRET`);
+production refuses to create or verify links when no secret is configured.
+
 ## REST — debug / test endpoints
 
 - `POST /api/bms/chat` — run the AI pipeline on a message and return the full trace (intent,

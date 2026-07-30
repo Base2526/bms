@@ -26,6 +26,10 @@ function isAuthPath(pathname: string) {
   );
 }
 
+function skipsSessionLayer(pathname: string) {
+  return isAuthPath(pathname) || pathname === "/checkout";
+}
+
 export default function ClientProviders({
   lang,
   children,
@@ -34,13 +38,13 @@ export default function ClientProviders({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || "";
-  const onAuthRoute = isAuthPath(pathname);
+  const onPublicStandaloneRoute = skipsSessionLayer(pathname);
 
   return (
     <ApolloProvider client={client}>
       <AntdThemeProvider>
         <I18nProvider lang={lang}>
-          {onAuthRoute ? children : <SessionLayer>{children}</SessionLayer>}
+          {onPublicStandaloneRoute ? children : <SessionLayer>{children}</SessionLayer>}
         </I18nProvider>
       </AntdThemeProvider>
     </ApolloProvider>

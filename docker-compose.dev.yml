@@ -31,6 +31,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       BMS_AI_MODEL: ${BMS_AI_MODEL}
       BMS_CRON_SECRET: ${BMS_CRON_SECRET}
+      BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
     ports:
       - "3000:3000"
     volumes:

@@ -26,6 +26,11 @@ export type ExecCtx = {
    * customerRef เหมือนเดิม เพื่อไม่ให้ scope ความปลอดภัยขึ้นกับค่าที่ส่งมาเพิ่ม)
    */
   conversationId?: string | null;
+  /**
+   * Server-only signal set by create_order/reorder. It is never model-supplied and lets the
+   * customer pipeline replace the model's closing prose with the verified checkout link.
+   */
+  createdOrderId?: string;
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
 };

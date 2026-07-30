@@ -44,6 +44,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
+| `apps/web/app/(checkout)/` | Public signed-link customer checkout (`/checkout?t=<token>`); no admin session, no login |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
 | `apps/ws/` | WebSocket gateway |
 | `packages/` | Shared GraphQL, realtime, and queue packages |
@@ -137,6 +138,44 @@ migration `7.33__bms_product_discovery_indexes.sql`; an unindexed `ILIKE` scan o
 will not use them. See § "AI tool-calling — example usage" in
 [CLAUDE.local.md](CLAUDE.local.md) for runnable `curl`/GraphQL examples against both surfaces.
 
+## Public customer checkout (signed link)
+
+A successful customer `create_order`/`reorder` no longer ends in chat prose. The tool stores the
+verified order id on the server-only `ExecCtx.createdOrderId` (`tools/types.ts`), and `pipeline.ts`
+replaces the model's closing sentence with `orderCheckoutChatReply()` — a backend-built order
+summary plus a signed `/checkout?t=<token>` link. Keep that ordering: the link must be derived from
+the persisted order, never composed by the model.
+
+Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutToken.ts`, or
+`app/api/bms/checkout/*`:
+
+- **The token is the only authority.** The HMAC binds `tenantId + orderId + exp` (7 days default,
+  30 max) and is signed with `BMS_CHECKOUT_SECRET` (falls back to `JWT_SECRET`; production throws
+  when neither is set). Never accept a tenant id, order id, order total, or customer identity from
+  the request body — a bearer link that trusts client input is a cross-tenant read.
+- **The page is a public bearer link, not an authenticated surface.** Responses stay `no-store`, the
+  route stays `noindex`/`no-referrer`, and `/checkout` is listed in `skipsSessionLayer()` in
+  `ClientProviders.tsx` so it never mounts admin session/chat/notification wires. Do not "fix" this
+  by adding it to `isAuthPath()` — those are two different exclusions.
+- **Amount comes from the order, never the browser.** `submitCheckoutPaymentByToken()` passes
+  `amount: null` so `submitPayment*` derives it from `bms_orders.total_amount`.
+- **Payment submission is idempotent by design.** `submitPaymentOnce()` locks the order row
+  (`SELECT ... FOR UPDATE`) and returns an existing `PENDING`/`CONFIRMED` payment as
+  `ALREADY_SUBMITTED` instead of creating a duplicate. A `REJECTED` payment is deliberately *not*
+  active, so a customer can upload a replacement slip. Keep `submitPayment()` (staff path)
+  non-reusing; the two behaviors share `submitPaymentInternal()` via overloads.
+- **Uploads stay untrusted.** Slips are limited to JPG/PNG/WEBP, 8 MB, and a pixel bound, and are
+  re-validated by decoding with `sharp` — MIME type alone is not proof of an image.
+- **Only configured receiving accounts are offered.** The method must be `BANK_TRANSFER`/`QR` *and*
+  backed by a currently configured BANK/PromptPay account (`paymentConfiguration.ts`). This matches
+  the chat-surface rule: never surface a payment channel the shop cannot actually receive money on.
+- **The checkout never confirms payment.** It creates `PENDING` only; a human still clicks Confirm
+  before the order becomes `PAID`. Do not add auto-confirm, a payment gateway, or card fields.
+- **Lazada/Shopee are rejected, not re-asked.** Those channels report `marketplaceManaged` and keep
+  delivery + payment in Seller Center.
+- Delivery edits reuse `saveCustomerCheckoutDetails()`, so omitted fields are preserved rather than
+  cleared, and customer actions are audited as `customer:checkout`.
+
 ## AI provider selection, BYOK, and health
 
 The runtime is multi-provider, not Anthropic-only, and chat/tool-calling and slip OCR each resolve
@@ -215,7 +254,13 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 
 - Keep public authentication routes synchronized with `isAuthPath()` in
   `apps/web/app/ClientProviders.tsx`. Public signup/login pages must not load the global session,
-  chat, or notification wires unless they explicitly need them.
+  chat, or notification wires unless they explicitly need them. `skipsSessionLayer()` in the same
+  file is the wider gate that also covers non-auth public standalone routes such as `/checkout`; add
+  new customer-facing pages there rather than widening `isAuthPath()`.
+- The public checkout is a single responsive page on purpose. The wireframe in
+  `docs/ui/customer-checkout-wireframe.md` is written as separate screens, but a multi-page flow
+  loses the signed token in LINE/Messenger in-app browsers; keep each section's rules and acceptance
+  criteria while rendering them in one page.
 - Public marketing/auth surfaces are bilingual (`th`/`en`) and session-aware. If an admin session
   already exists, public CTAs should prefer "go to dashboard / manage store" over "sign up / log in"
   rather than presenting redundant entry points.
@@ -336,6 +381,12 @@ cd packages/realtime && npm run build
   requests, and stock invariants.
 - For AI changes, test verified facts, missing facts, malformed model output, provider failure, and
   deterministic fallback behavior.
+- For signed-link/checkout changes, run the deterministic contract suites from `apps/web` (see
+  [scripts/ai-eval/README.md](scripts/ai-eval/README.md)); they need no network or database:
+
+```bash
+cd apps/web && npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
+```
 
 ## Definition of done
 

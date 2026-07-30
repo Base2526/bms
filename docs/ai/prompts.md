@@ -76,7 +76,9 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   `missingFields` means reuse the existing CRM details without asking the customer to type them
   again. Ask only the first missing field; call `save_customer_checkout_details` only with fields
   explicitly supplied by that customer. Lazada/Shopee return `marketplaceManaged:true` and must not
-  be asked for Seller Center data again.
+  be asked for Seller Center data again. After a customer `create_order`/`reorder` succeeds, the
+  pipeline replaces model closing prose with a backend-built order summary and signed public
+  checkout link, so the model must not tell the customer merely to wait for an admin.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):
   back-office assistant; sensitive actions are prepared as *proposals* the human must confirm — the
   model is told to say "prepared, awaiting confirmation", never "done".

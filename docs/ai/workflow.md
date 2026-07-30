@@ -112,6 +112,14 @@ remains authoritative for delivery and payment details. A reply to the determini
 "phone", or "shipping address" question is server-routed back through the same approved save tool,
 so this continuation also works when the tenant has no AI credentials or shared quota.
 
+Every successful customer `create_order`/`reorder` also sets a server-only `createdOrderId` on the
+tool execution context. Before the customer reply leaves the pipeline, model-written closing prose
+is replaced by `orderCheckoutChatReply()` built from the persisted order and a signed
+`/checkout?t=...` link. This prevents the model from ending at an ungrounded "wait for admin"
+message after the write succeeded. The public checkout reuses complete CRM delivery details,
+collects only missing fields, exposes only configured bank/PromptPay accounts, records uploaded
+slips as `PENDING`, and leaves confirmation to a human.
+
 When a turn fails in a way the customer can feel — a tool throwing, the provider loop erroring or
 timing out, or a reply that never reaches the channel — the pipeline and tool runtime also call
 `reportBmsFailure()` (`lib/bms/failureAlert.ts`), which records the incident against the conversation

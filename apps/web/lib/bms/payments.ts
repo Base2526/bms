@@ -44,6 +44,15 @@ export type SubmitResult =
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_METHOD" };
 
+export type SubmitPaymentOnceResult =
+  | SubmitResult
+  | {
+      status: "ALREADY_SUBMITTED";
+      paymentId: string;
+      paymentStatus: "PENDING" | "CONFIRMED";
+      amount: number;
+    };
+
 export type ConfirmResult =
   | { status: "CONFIRMED"; paymentId: string; orderPaid: boolean }
   | { status: "NOT_FOUND" }
@@ -51,6 +60,31 @@ export type ConfirmResult =
 
 // ---- submit --------------------------------------------------
 export async function submitPayment(input: SubmitPaymentInput): Promise<SubmitResult> {
+  return submitPaymentInternal(input, false);
+}
+
+/**
+ * Public checkout uses the order row as a serialization lock and reuses an active payment.
+ * A REJECTED payment is intentionally not active, so the customer can upload a replacement slip.
+ */
+export async function submitPaymentOnce(
+  input: SubmitPaymentInput
+): Promise<SubmitPaymentOnceResult> {
+  return submitPaymentInternal(input, true);
+}
+
+async function submitPaymentInternal(
+  input: SubmitPaymentInput,
+  reuseActive: false
+): Promise<SubmitResult>;
+async function submitPaymentInternal(
+  input: SubmitPaymentInput,
+  reuseActive: true
+): Promise<SubmitPaymentOnceResult>;
+async function submitPaymentInternal(
+  input: SubmitPaymentInput,
+  reuseActive: boolean
+): Promise<SubmitPaymentOnceResult> {
   const { tenantId } = input;
   if (!PAYMENT_METHODS.includes(input.method)) return { status: "BAD_METHOD" };
 
@@ -59,12 +93,41 @@ export async function submitPayment(input: SubmitPaymentInput): Promise<SubmitRe
     await beginTenantTx(client, tenantId);
 
     const ord = await client.query<{ total_amount: string }>(
-      `SELECT total_amount FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+      `SELECT total_amount
+         FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2
+        FOR UPDATE`,
       [tenantId, input.orderId]
     );
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
+    }
+
+    if (reuseActive) {
+      const active = await client.query<{
+        id: string;
+        status: "PENDING" | "CONFIRMED";
+        amount: string;
+      }>(
+        `SELECT id, status, amount
+           FROM bms_payments
+          WHERE tenant_id = $1
+            AND order_id = $2
+            AND status IN ('PENDING', 'CONFIRMED')
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1`,
+        [tenantId, input.orderId]
+      );
+      if (active.rows[0]) {
+        await client.query("COMMIT");
+        return {
+          status: "ALREADY_SUBMITTED",
+          paymentId: active.rows[0].id,
+          paymentStatus: active.rows[0].status,
+          amount: Number(active.rows[0].amount),
+        };
+      }
     }
 
     const amount =

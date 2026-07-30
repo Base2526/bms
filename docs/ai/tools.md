@@ -74,7 +74,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | heuristic/read |
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
-| `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit |
+| `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit + deterministic signed checkout link |
 | `save_customer_checkout_details` | A2 | own `(channel, customer_ref)` only | — | save only delivery fields explicitly supplied by that customer |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
 | `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
@@ -472,6 +472,12 @@ an address identical to an existing shipping address is selected as default inst
 The tool is customer-only, identity-scoped, validated, transactional, and audited as
 `customer.checkout_update`. If the read status has no missing fields, the AI reuses the existing
 details and must not call this write tool or ask the customer to type them again.
+
+After customer `create_order` or `reorder` returns `CREATED`, the tool stores the verified order id
+only in the server execution context. `pipeline.ts` then calls `orderCheckoutChatReply()` and
+replaces the model's closing sentence with the real order summary plus signed `/checkout?t=...`
+URL. The link is tenant/order-scoped and expires; its page never accepts tenant, total, or order
+ownership from client input.
 
 ---
 

@@ -20,6 +20,7 @@ cd apps/web
 npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 ```
 
 ถ้า `tsx` CLI ชนข้อจำกัด IPC ของเครื่องหรือ sandbox ให้ใช้ `node --import tsx --test ...`
@@ -30,6 +31,7 @@ cd apps/web
 node --import tsx --test ../../scripts/ai-eval/runtime-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
+node --import tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 ```
 
 ครอบคลุม:
@@ -60,6 +62,8 @@ node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 - default slip reader เป็น Qwen OCR และ adapters ทั้ง Anthropic/Qwen ต้องคืน contract เดียวกัน
 - Qwen runtime failure ต้อง retry Anthropic แบบ lazy, finalize usage ของทั้งสอง attempt และไม่ retry write
 - Qwen OCR ใช้อัตราต้นทุนของ provider เอง ไม่ตกไปใช้อัตรา Anthropic
+- checkout token round-trip คืน `tenantId`/`orderId` เดิม, payload หรือ signature ที่ถูกแก้ต้องถูก
+  ปฏิเสธ (ลูกค้าสลับ tenant/order เองไม่ได้) และ token ที่หมดอายุแล้วต้องใช้ไม่ได้
 
 Contract suite ใช้ `__toolLoopTest` dependency seam ใน
 `apps/web/lib/bms/tools/runtime.ts` โดยตรง ไม่มี test HTTP endpoint และ production caller

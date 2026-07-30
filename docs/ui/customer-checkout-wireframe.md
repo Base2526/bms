@@ -1,12 +1,17 @@
 # Customer Checkout & Payment Wireframe
 
-> สถานะ: text wireframe / implementation contract ก่อนสร้าง public checkout UI
+> สถานะ: implemented contract — public checkout ใช้งานที่ `/checkout?t=<signed-token>`
 >
-> ขอบเขตที่ทำงานจริงแล้ว: chat order, CRM delivery completeness, store-configured payment
-> accounts, payment submission `PENDING`, human verification, order/shipping status
+> ขอบเขตที่ทำงานจริงแล้ว: chat order ส่ง signed checkout link แบบ deterministic, order review,
+> reuse/แก้ข้อมูลจัดส่งเดิม, เลือกเฉพาะ BANK/PromptPay ที่ร้านตั้งค่า, upload slip,
+> payment submission `PENDING`, human verification และ order/shipping tracking
 >
 > ขอบเขตที่ยังไม่ควรแสดงว่าใช้งานจริง: payment gateway, บัตรออนไลน์, auto-confirm payment,
 > carrier checkout API และ marketplace checkout ภายใน BMS
+
+หน้าที่แยกไว้ใน wireframe ด้านล่างถูกนำมารวมเป็น responsive single-page flow เพื่อให้เปิดใน
+LINE/Facebook Messenger in-app browser ได้ต่อเนื่องโดยไม่เสีย signed token ระหว่างหน้า แต่แต่ละ
+section/state ยังคงใช้กติกาและ acceptance criteria เดิม
 
 ## หลัก UX ที่ต้องใช้ทุกหน้า
 
@@ -24,6 +29,7 @@
 ```text
 Chat confirms product
   -> Order created (PENDING)
+  -> Pipeline replaces model prose with verified order summary + signed /checkout link
   -> Review order
   -> Check channel
      -> Lazada/Shopee: show Seller Center handoff
@@ -39,6 +45,16 @@ Chat confirms product
   -> Confirmed or rejected
   -> Track shipping
 ```
+
+## Implementation mapping
+
+- `lib/bms/checkoutToken.ts`: HMAC token ผูก `tenantId + orderId + exp` (7 วัน, สูงสุด 30 วัน)
+- `lib/bms/checkout.ts`: tenant/order-scoped projection, delivery update, payment submission และ
+  deterministic post-order chat reply
+- `GET/PATCH /api/bms/checkout`: อ่าน checkout และบันทึกเฉพาะข้อมูลจัดส่งที่ส่งมา
+- `POST /api/bms/checkout/payment`: ตรวจ token/method/order/file, เก็บสลิป และสร้าง payment
+  `PENDING`; duplicate `PENDING/CONFIRMED` คืนรายการเดิม
+- `(checkout)/checkout`: public standalone UI ที่ไม่โหลด admin session/chat providers
 
 ## หน้า 1: Order Created ในแชท
 

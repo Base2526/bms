@@ -16,6 +16,20 @@ PENDING → CONFIRMED → REFUNDED
 
 `CONFIRMED` is atomic with the order transition `PENDING → PAID`.
 
+## Public checkout
+
+Every successful customer chat order receives a signed `/checkout?t=...` link generated from the
+persisted tenant/order pair. `GET/PATCH /api/bms/checkout` reads the order snapshot and reuses CRM
+recipient/phone/default shipping address; the form renders only missing fields unless the customer
+explicitly chooses to edit existing data. Lazada/Shopee remain in Seller Center.
+
+`POST /api/bms/checkout/payment` accepts only JPG/PNG/WEBP slips up to 8 MB and only
+`BANK_TRANSFER`/`QR` methods backed by the shop's currently configured BANK/PromptPay account. The
+amount always comes from the order, not the browser. `submitPaymentOnce()` locks the order and
+returns an existing `PENDING`/`CONFIRMED` payment to prevent duplicate submissions; a `REJECTED`
+payment may be replaced. A successful upload creates `PENDING` only and requires the existing human
+Confirm action before the order becomes `PAID`.
+
 ## AI slip verification
 
 `verifyPaymentSlip()` loads and normalizes the image, obtains the active provider through

@@ -43,6 +43,7 @@ import {
   suppressUnconfiguredPaymentAdvice,
 } from "./customerReplyPolicy";
 import { getCustomerCheckoutStatus } from "./customers";
+import { orderCheckoutChatReply } from "./checkout";
 import {
   createCouponWalletToken,
   findCustomerIdByIdentity,
@@ -928,12 +929,10 @@ async function orderReplyWithCheckout(
   paymentAccounts: PaymentAccount[]
 ): Promise<string> {
   const base = orderReply(names, order);
-  if (order.status !== "CREATED" || !customerRef) return base;
+  if (order.status !== "CREATED") return base;
 
   try {
-    const checkout = await getCustomerCheckoutStatus(tenantId, channel, customerRef);
-    const nextStep = checkoutNextStepReply(checkout, paymentAccounts);
-    return nextStep ? `${base}\n\n${nextStep}` : base;
+    return await orderCheckoutChatReply(tenantId, order.orderId, base);
   } catch (err) {
     console.error("[BMS] pipeline checkout status load failed:", err);
     return base;
@@ -1384,7 +1383,13 @@ export async function runPipeline(
     // + unverified action-claim guard — reply อ้างว่าทำ write action (เช่น บันทึกการโอนเงิน) สำเร็จแล้ว
     // ทั้งที่ไม่มี write tool ที่ ok:true เลย (พบจริงจาก scripts/ai-eval รอบแรก — ดูคอมเมนต์ที่นิยาม)
     let reply: string;
-    if (hasUnverifiedFacts(loop.reply, loop.trace)) {
+    if (execCtx.createdOrderId) {
+      reply = await orderCheckoutChatReply(
+        tenantId,
+        execCtx.createdOrderId,
+        loop.reply || "รับออร์เดอร์แล้วค่ะ"
+      );
+    } else if (hasUnverifiedFacts(loop.reply, loop.trace)) {
       reply = "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
       reply = "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
