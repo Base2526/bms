@@ -33,12 +33,16 @@ import { reportBmsFailure } from "./failureAlert";
 import {
   configuredPaymentAccounts,
   configuredPaymentMethodLabels,
+  customerPaymentAccountLines,
   hasConfiguredPaymentAccounts,
 } from "./paymentConfiguration";
 import {
+  checkoutDetailsFromReply,
+  checkoutNextStepReply,
   isAlternativeCatalogRequest,
   suppressUnconfiguredPaymentAdvice,
 } from "./customerReplyPolicy";
+import { getCustomerCheckoutStatus } from "./customers";
 import {
   createCouponWalletToken,
   findCustomerIdByIdentity,
@@ -244,9 +248,13 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     `ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และข้อมูลที่ร้านกำหนดครบ (${required}) ถ้าไม่ครบให้ถามกลับ`,
     "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
     "create_order ต้องได้รับ sku+size+qty เสมอตามสัญญา backend: ถ้า tenant ไม่กำหนด size เป็นข้อมูลที่ต้องถาม ให้ใช้ size จากผลทูลได้เฉพาะเมื่อสินค้ามีตัวเลือกเดียว; ถ้ามีหลายตัวเลือกต้องถามลูกค้า ห้ามเดา",
-    "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่เพื่อสั่งซื้อ — เมื่อข้อมูลตาม policy ครบ, resolve size ตามกฎข้างต้นได้ และลูกค้ายืนยัน ให้เรียก create_order ทันที",
+    "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่ก่อนสร้างออร์เดอร์ — เมื่อข้อมูลตาม policy ครบ, resolve size ตามกฎข้างต้นได้ และลูกค้ายืนยัน ให้เรียก create_order ทันที",
     "อย่าถามย้ำหลายรอบ: ถ้าลูกค้าบอกชื่อสินค้า+ไซซ์+จำนวนและสั่งยืนยันแล้ว ให้ search_products/check_stock เอง ถ้าเจอสินค้าที่ตรงที่สุดเพียงพอก็เรียก create_order ด้วย sku นั้นเลย ไม่ต้องขอรุ่น/สีเพิ่มถ้าลูกค้าไม่ได้ระบุ",
     "ถ้าข้อมูลยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
+    "หลัง create_order สำเร็จ ให้อ่าน checkout ที่ทูลคืนมา หรือเรียก get_customer_checkout ก่อนถามข้อมูลจัดส่ง: ถ้า missingFields ว่าง ให้ใช้ข้อมูลผู้รับ/เบอร์/ที่อยู่เดิมและห้ามขอให้กรอกซ้ำ; ถ้ายังขาดให้ถามเฉพาะ missingFields ตัวแรก",
+    "ถ้าลูกค้าส่งชื่อผู้รับ เบอร์โทร หรือที่อยู่ใหม่มาอย่างชัดเจน ให้เรียก save_customer_checkout_details โดยส่งเฉพาะ field ที่ลูกค้าให้มา ห้ามเดาหรือเขียนทับ field อื่น และห้ามเรียกทูลนี้เพียงเพื่อยืนยันใช้ข้อมูลเดิม",
+    "ถ้ายังมี missingFields ให้เก็บข้อมูลจัดส่งให้ครบก่อนแจ้งช่องทางชำระเงิน; เมื่อครบแล้วจึงเรียก get_payment_info และแสดงเฉพาะช่องทางที่ตั้งค่าไว้",
+    "ถ้า checkout คืน marketplaceManaged=true ข้อมูลผู้รับ ที่อยู่ และการชำระเงินอยู่ใน Seller Center ห้ามขอให้ลูกค้ากรอกซ้ำในแชท",
     "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าอัตโนมัติ) " +
       "แต่ต้องเรียก get_payment_info และรู้ method ที่ร้านตั้งค่าไว้ก่อนเสมอ ถ้าลูกค้าไม่ได้บอกช่องทาง ให้ถามยืนยันจากช่องทางที่ผลทูลส่งกลับมาเท่านั้น ห้ามยกตัวอย่างช่องทางเอง " +
       "หลังเรียกสำเร็จ (สถานะ PENDING) แจ้งว่ารอแอดมินตรวจสอบ อย่ายืนยันว่าเงินเข้าแล้ว และห้ามพูดว่า 'บันทึกแล้ว/สำเร็จแล้ว' ถ้าไม่ได้เรียกทูลนี้จริง",
@@ -715,30 +723,8 @@ function isPaymentInfoQuestion(message: string): boolean {
   );
 }
 
-function paymentAccountLine(account: PaymentAccount): string | null {
-  const type = String(account.type || "").trim().toUpperCase();
-  const accountName = String(account.accountName || "").trim();
-  if (type === "BANK") {
-    const bankName = String(account.bankName || "").trim() || "บัญชีธนาคาร";
-    const accountNo = String(account.accountNo || "").trim();
-    return accountNo
-      ? `• ${bankName} เลขบัญชี ${accountNo}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`
-      : null;
-  }
-  if (type === "PROMPTPAY" || type === "QR") {
-    const promptpayId = String(account.promptpayId || "").trim();
-    return promptpayId
-      ? `• พร้อมเพย์ ${promptpayId}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`
-      : null;
-  }
-  const note = String(account.note || "").trim();
-  return note ? `• ${note}` : null;
-}
-
 function paymentInfoReply(accounts: PaymentAccount[]): string {
-  const lines = configuredPaymentAccounts(accounts)
-    .map(paymentAccountLine)
-    .filter((line): line is string => Boolean(line));
+  const lines = customerPaymentAccountLines(accounts);
   if (lines.length === 0) {
     return "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
   }
@@ -933,6 +919,27 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult): st
   }
 }
 
+async function orderReplyWithCheckout(
+  names: Record<string, string>,
+  order: CreateOrderResult,
+  tenantId: string,
+  channel: Channel,
+  customerRef: string | null | undefined,
+  paymentAccounts: PaymentAccount[]
+): Promise<string> {
+  const base = orderReply(names, order);
+  if (order.status !== "CREATED" || !customerRef) return base;
+
+  try {
+    const checkout = await getCustomerCheckoutStatus(tenantId, channel, customerRef);
+    const nextStep = checkoutNextStepReply(checkout, paymentAccounts);
+    return nextStep ? `${base}\n\n${nextStep}` : base;
+  } catch (err) {
+    console.error("[BMS] pipeline checkout status load failed:", err);
+    return base;
+  }
+}
+
 export async function runPipeline(
   message: string,
   channel: Channel,
@@ -989,6 +996,34 @@ export async function runPipeline(
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
   const execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+
+  const checkoutDetails = checkoutDetailsFromReply(aiInputMessage, history);
+  if (checkoutDetails) {
+    const executed = await executeCustomerTool(
+      "save_customer_checkout_details",
+      checkoutDetails,
+      execCtx
+    );
+    const checkout =
+      executed.result.ok && executed.result.data
+        ? (executed.result.data as Awaited<ReturnType<typeof getCustomerCheckoutStatus>>)
+        : null;
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:save_customer_checkout_details",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply:
+        checkout
+          ? `บันทึกข้อมูลแล้วค่ะ\n\n${checkoutNextStepReply(
+              checkout,
+              profile.paymentAccounts
+            )}`
+          : `ขออภัยค่ะ บันทึกข้อมูลจัดส่งไม่สำเร็จ (${executed.result.ok ? "ไม่พบผลลัพธ์" : executed.result.error}) กรุณาตรวจสอบแล้วส่งอีกครั้งนะคะ`,
+      trace: [executed.trace],
+    });
+  }
 
   // Greeting is deterministic and needs no retrieval or provider call.
   if (classifiedIntent === "greeting") {
@@ -1140,7 +1175,14 @@ export async function runPipeline(
         reply = "ยังไม่พบออร์เดอร์เดิมของบัญชีนี้ จึงสั่งซ้ำไม่ได้ค่ะ";
       } else {
         order = reordered as CreateOrderResult;
-        reply = orderReply({}, order);
+        reply = await orderReplyWithCheckout(
+          {},
+          order,
+          tenantId,
+          channel,
+          customerRef,
+          profile.paymentAccounts
+        );
       }
     }
     return customerSafe({
@@ -1277,7 +1319,14 @@ export async function runPipeline(
           reply = `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
         } else {
           order = created.result.data as CreateOrderResult;
-          reply = orderReply({ [selected.sku]: selected.name }, order);
+          reply = await orderReplyWithCheckout(
+            { [selected.sku]: selected.name },
+            order,
+            tenantId,
+            channel,
+            customerRef,
+            profile.paymentAccounts
+          );
           if (order.status !== "CREATED") {
             const checked = await executeCustomerTool(
               "check_stock",
@@ -1447,7 +1496,14 @@ export async function runPipeline(
     if (!reply) {
       // ทุกรายการครบ → สร้าง order เดียว (createOrder เช็คสต็อก atomic อีกชั้น)
       order = await createOrder({ tenantId, channel, customerRef, items: orderItems });
-      reply = orderReply(names, order);
+      reply = await orderReplyWithCheckout(
+        names,
+        order,
+        tenantId,
+        channel,
+        customerRef,
+        profile.paymentAccounts
+      );
       if (order.status !== "CREATED" && orderItems.length === 1) {
         const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
         reply = stockRecoveryReply(stock) ?? reply;

@@ -101,6 +101,17 @@ non-blank receiving accounts returned by `get_payment_info`. If no channel is co
 pipeline does not suggest bank transfer, PromptPay, QR, or an invented alternative; it asks the
 customer to wait for an admin's payment details, and no PENDING payment is created.
 
+Post-order delivery is identity-first. A successful deterministic `create_order`/`reorder` response
+loads `getCustomerCheckoutStatus()` and the tool-calling result embeds the same bounded `checkout`
+status. If recipient name, phone, and a shipping address already exist, the reply states that the
+saved details will be reused and never asks the customer to fill them again. If data is incomplete,
+the AI asks only the first item in `missingFields`; `save_customer_checkout_details` writes only
+fields explicitly supplied by that same `(channel, customer_ref)` identity, preserves omitted
+values, and avoids duplicate address rows. Lazada/Shopee skip this collection because Seller Center
+remains authoritative for delivery and payment details. A reply to the deterministic "name",
+"phone", or "shipping address" question is server-routed back through the same approved save tool,
+so this continuation also works when the tenant has no AI credentials or shared quota.
+
 When a turn fails in a way the customer can feel — a tool throwing, the provider loop erroring or
 timing out, or a reply that never reaches the channel — the pipeline and tool runtime also call
 `reportBmsFailure()` (`lib/bms/failureAlert.ts`), which records the incident against the conversation

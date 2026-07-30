@@ -55,7 +55,15 @@ import {
   getPurchaseOrder,
   listSuppliers,
 } from "../purchase";
-import { listCustomers, getCustomer, customerOrders, upsertCustomer, setCustomerTags } from "../customers";
+import {
+  listCustomers,
+  getCustomer,
+  customerOrders,
+  upsertCustomer,
+  setCustomerTags,
+  getCustomerCheckoutStatus,
+  saveCustomerCheckoutDetails,
+} from "../customers";
 import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../reports";
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
@@ -529,6 +537,25 @@ const getOrderStatus: BmsTool = {
   },
 };
 
+const getCustomerCheckoutTool: BmsTool = {
+  name: "get_customer_checkout",
+  description:
+    "Check whether this channel customer already has a recipient name, phone and shipping address. " +
+    "Call before asking for delivery details. If missingFields is empty, reuse the existing details and do not ask the customer to type them again. " +
+    "Lazada/Shopee return marketplaceManaged=true because Seller Center owns delivery and payment details.",
+  surfaces: ["customer"],
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec): Promise<ToolResult> => {
+    if (!ec.channel || !ec.customerRef) {
+      return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    }
+    return {
+      ok: true,
+      data: await getCustomerCheckoutStatus(ec.tenantId, ec.channel, ec.customerRef),
+    };
+  },
+};
+
 const listLowStockTool: BmsTool = {
   name: "list_low_stock",
   description: "List products whose stock is below their reorder point — for staff planning what to restock.",
@@ -801,8 +828,75 @@ const createOrderTool: BmsTool = {
     });
     if (r.status === "CREATED") {
       await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });
+      if (ec.surface === "customer" && ec.channel && ec.customerRef) {
+        return {
+          ok: true,
+          data: {
+            ...r,
+            checkout: await getCustomerCheckoutStatus(
+              ec.tenantId,
+              ec.channel,
+              ec.customerRef
+            ),
+          },
+        };
+      }
     }
     return { ok: true, data: r };
+  },
+};
+
+const saveCustomerCheckoutDetailsTool: BmsTool = {
+  name: "save_customer_checkout_details",
+  description:
+    "Save delivery details that this customer explicitly supplied for their own channel identity. " +
+    "Pass only fields present in the customer's message; omitted fields keep their existing values. " +
+    "Never call this merely to reconfirm existing data. After saving, use returned missingFields and ask for only the first remaining field.",
+  surfaces: ["customer"],
+  inputSchema: {
+    type: "object",
+    properties: {
+      recipientName: {
+        type: "string",
+        description: "Recipient name explicitly supplied by the customer.",
+      },
+      phone: {
+        type: "string",
+        description: "Contact phone explicitly supplied by the customer.",
+      },
+      shippingAddress: {
+        type: "string",
+        description: "Full shipping address explicitly supplied by the customer.",
+      },
+      addressLabel: {
+        type: "string",
+        description: "Optional label such as home or office, only when the customer supplied it.",
+      },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    if (!ec.channel || !ec.customerRef) {
+      return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    }
+    const saved = await saveCustomerCheckoutDetails(
+      ec.tenantId,
+      ec.channel,
+      ec.customerRef,
+      {
+        recipientName: optString(args, "recipientName") ?? null,
+        phone: optString(args, "phone") ?? null,
+        shippingAddress: optString(args, "shippingAddress") ?? null,
+        addressLabel: optString(args, "addressLabel") ?? null,
+      }
+    );
+    await auditWrite(ec, "customer.checkout_update", saved.customerId, {
+      fields: [
+        optString(args, "recipientName") ? "recipientName" : null,
+        optString(args, "phone") ? "phone" : null,
+        optString(args, "shippingAddress") ? "shippingAddress" : null,
+      ].filter(Boolean),
+    });
+    return { ok: true, data: saved.status };
   },
 };
 
@@ -1713,6 +1807,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listAvailableCouponsTool,
   checkCouponTool,
   getOrderStatus,
+  getCustomerCheckoutTool,
   listLowStockTool,
   getInventorySummaryTool,
   getSalesSummaryTool,
@@ -1729,6 +1824,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listSuppliersTool,
   // A2
   createOrderTool,
+  saveCustomerCheckoutDetailsTool,
   submitPaymentTool,
   reorderTool,
   createShipmentTool,

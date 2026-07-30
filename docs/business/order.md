@@ -76,6 +76,14 @@ Inbox Customer 360 and the expandable row on `/admin/customers` also show a dedi
 belong to that customer, whether each code is still available, near expiry, reserved on an in-flight
 order, or already redeemed.
 
+For chat-created orders, the post-order reply is also deterministic about the next step: it reuses
+complete CRM delivery details without asking the customer to enter them again, asks only the first
+missing delivery field when incomplete, and waits until those details are complete before listing
+payment accounts. It lists only accounts the store has actually configured; a store with no
+receiving account gets no proactive bank/PromptPay/QR suggestion.
+This does not change the order lifecycle: the order is still `PENDING`, and a submitted payment
+remains `PENDING` until a human confirms it.
+
 ## Coupons (discount codes)
 
 **Implemented** (`bms_coupons`, migration `7.21`) — `PERCENT` (capped at 100) or `FIXED` discount

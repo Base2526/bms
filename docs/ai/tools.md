@@ -19,7 +19,8 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
   `list_available_coupons`, `check_coupon`),
   `create_order`, `submit_payment`, `reorder`, plus live-catalog discovery (`browse_catalog`,
   `list_new_arrivals`, `find_alternatives`, `recommend_products`) and store/shipping reads
-  (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language`). Never any
+  (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `get_customer_checkout`,
+  `save_customer_checkout_details`, `detect_language`). Never any
   sensitive/A3 tool.
 - **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
   documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
@@ -62,6 +63,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
+| `get_customer_checkout` | A1 | own `(channel, customer_ref)` only | — | completeness read; no raw PII |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
 | `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard` | A1 | no | `report.view` | read |
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read |
@@ -73,6 +75,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
 | `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit |
+| `save_customer_checkout_details` | A2 | own `(channel, customer_ref)` only | — | save only delivery fields explicitly supplied by that customer |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
 | `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
 | `update_tracking`, `set_shipment_status` | A2 | no | `shipping.update` | execute + domain audit |
@@ -450,6 +453,25 @@ Permission: purchase.cancel
 อ่านใบสั่งซื้อ + ประวัติ supplier (Supplier History)
 
 Permission: purchase.view
+
+---
+
+# Customer checkout details
+
+`get_customer_checkout` resolves the customer only from the server-established
+`(tenant_id, channel, customer_ref)` identity and returns bounded completeness flags:
+recipient name, phone, shipping-address presence/count, default address label, and ordered
+`missingFields`. The label is returned only when it is a generic allowlisted value such as
+"บ้าน"/"ที่ทำงาน"/"home"/"office"; it never returns the raw name, phone number, or address to the
+model. Lazada/Shopee return `marketplaceManaged:true`, so the AI must not collect data already owned
+by Seller Center.
+
+`save_customer_checkout_details` accepts only delivery fields the current customer explicitly sent
+(`recipientName`, `phone`, `shippingAddress`, optional `addressLabel`). Omitted values are preserved;
+an address identical to an existing shipping address is selected as default instead of duplicated.
+The tool is customer-only, identity-scoped, validated, transactional, and audited as
+`customer.checkout_update`. If the read status has no missing fields, the AI reuses the existing
+details and must not call this write tool or ask the customer to type them again.
 
 ---
 

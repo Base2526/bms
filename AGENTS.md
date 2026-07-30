@@ -84,6 +84,17 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   verified alternative size or product from these tools rather than ending at "not found". AI-first;
   falls back to the old deterministic rule-based path only when the tenant has no AI credentials or
   has exhausted its shared-key quota — never mid-loop, to avoid duplicate writes.
+  Post-order delivery collection is **identity-first and PII-minimizing**: `get_customer_checkout` /
+  `save_customer_checkout_details` resolve the customer only from the server-established
+  `(tenant_id, channel, customer_ref)` identity — never from an id the model supplies — and the read
+  tool returns completeness only (booleans, an address count, ordered `missingFields`, and an address
+  label solely when it matches a generic allowlist). **Do not "helpfully" widen it to return the raw
+  recipient name, phone, or address**: the model needs to know only whether to ask, and returning the
+  values would ship CRM PII into a prompt and a provider log for no behavioral gain. The write tool
+  persists only the fields the customer explicitly sent in that message, keeps omitted fields, and must
+  not be called merely to reconfirm existing data. When a shop has no configured receiving account, the
+  customer surface must not name a payment channel at all — see `lib/bms/paymentConfiguration.ts`; do
+  not reintroduce a hardcoded bank/PromptPay/QR example anywhere on this surface.
 - **Staff** (`graphql/bmsAssistant.ts`, UI `/admin/assistant`) — `staffTools(perms)` filtered by the
   calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
   before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,

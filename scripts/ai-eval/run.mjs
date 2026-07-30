@@ -28,6 +28,8 @@ const CUSTOMER_TOOL_CATALOG = [
   "get_store_info",
   "get_payment_info",
   "get_shipping_estimate",
+  "get_customer_checkout",
+  "save_customer_checkout_details",
   "detect_language",
   "create_order",
   "reorder",

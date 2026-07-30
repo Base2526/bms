@@ -34,6 +34,7 @@ for the full philosophy and module breakdown.
 | [docs/ui/public-products.md](docs/ui/public-products.md) | Public product detail/gallery URLs shared from Inbox |
 | [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
 | [docs/ui/dashboard.md](docs/ui/dashboard.md) | Dashboard & Reports |
+| [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md) | Checkout/payment UX contract (text wireframe) — what is real vs. must not be shown as real |
 | [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features, AI-generated content, and approval boundaries |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | How to run the deterministic runtime-contract and live-model AI evals |
 | [CLAUDE.local.md](CLAUDE.local.md) | Machine-local dev notes (not a spec — run commands, gotchas, lessons learned) |
@@ -217,6 +218,21 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   (`PAYMENT_METHOD_NOT_CONFIGURED`) instead of creating a PENDING payment against a channel the shop
   cannot receive money on. Staff surfaces keep their existing latitude to record other methods.
   Covered by `scripts/ai-eval/customer-policy-contract.test.mts`.
+- **Identity-first chat checkout**: after a chat order the AI no longer asks for delivery details the
+  shop already has. `getCustomerCheckoutStatus()` (`lib/bms/customers.ts`) reports *completeness* for
+  the server-established `(channel, customer_ref)` identity — booleans, an address count, ordered
+  `missingFields`, and an address label only when it is a generic allowlisted one such as
+  บ้าน/ที่ทำงาน. It deliberately never returns the raw recipient name, phone, or address, so deciding
+  whether to ask does not ship CRM PII into a model prompt. Two customer-only tools expose it:
+  `get_customer_checkout` (read; also embedded as `checkout` in a successful `create_order` result) and
+  `save_customer_checkout_details` (writes only the fields the customer explicitly sent, preserves
+  omitted ones, reuses an identical existing address as default instead of duplicating it, audited as
+  `customer.checkout_update`). Complete details are reused automatically; incomplete details are
+  collected **one field at a time** and payment channels are listed only once delivery is complete.
+  Lazada/Shopee report `marketplaceManaged:true` and are never asked for Seller Center data. The
+  customer's answer to the deterministic name/phone/address question is server-routed back through the
+  same approved save tool, so the flow also completes with no AI credentials or quota. UX contract for
+  the future public checkout UI: [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md).
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
   versions for products, orders, payments, shipments, and purchase orders (header + line items,
