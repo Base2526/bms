@@ -350,6 +350,7 @@ export async function listConversations(
 ) {
   const limit = Math.min(Math.max(Number(opts.limit ?? 50), 1), 200);
   const offset = Math.max(Number(opts.offset ?? 0), 0);
+  const search = opts.search?.trim() || null;
   const res = await query(
     `SELECT c.id, c.channel, c.customer_ref, c.customer_id, c.status,
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar,
@@ -371,10 +372,23 @@ export async function listConversations(
         AND ($3::uuid IS NULL OR c.assigned_to_user_id = $3
              OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = $3))
         AND ($4::text IS NULL OR $4 = ANY(c.tags))
-        AND ($5::text IS NULL OR c.last_message ILIKE '%'||$5||'%' OR cu.name ILIKE '%'||$5||'%' OR ci.display_name ILIKE '%'||$5||'%' OR c.customer_ref ILIKE '%'||$5||'%')
+        AND (
+          $5::text IS NULL
+          OR c.last_message ILIKE '%'||$5||'%'
+          OR cu.name ILIKE '%'||$5||'%'
+          OR ci.display_name ILIKE '%'||$5||'%'
+          OR c.customer_ref ILIKE '%'||$5||'%'
+          OR EXISTS (
+            SELECT 1
+              FROM bms_messages m
+             WHERE m.tenant_id = c.tenant_id
+               AND m.conversation_id = c.id
+               AND m.body ILIKE '%'||$5||'%'
+          )
+        )
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
       LIMIT $6 OFFSET $7`,
-    [tenantId, opts.status ?? null, opts.assignedTo ?? null, opts.tag ?? null, opts.search ?? null, limit, offset]
+    [tenantId, opts.status ?? null, opts.assignedTo ?? null, opts.tag ?? null, search, limit, offset]
   );
   return res.rows;
 }
@@ -383,10 +397,11 @@ export async function listConversations(
  *  assignedTo (ถ้ามี) = scope เดียวกับ listConversations (Sales เห็นแค่ของตัวเอง) */
 export async function countUnreadConversations(tenantId: string, assignedTo?: string | null): Promise<number> {
   const res = await query<{ total: string }>(
-    `SELECT COALESCE(SUM(c.unread), 0) AS total
+    `SELECT COUNT(*) AS total
        FROM bms_conversations c
       WHERE c.tenant_id = $1
         AND c.status IN ('OPEN','PENDING')
+        AND c.unread > 0
         AND ($2::uuid IS NULL OR c.assigned_to_user_id = $2
              OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = $2))`,
     [tenantId, assignedTo ?? null]
@@ -421,10 +436,14 @@ export async function listMessages(tenantId: string, conversationId: string, lim
   const lim = Math.min(Math.max(limit, 1), 500);
   const res = await query(
     `SELECT id, direction, body, sender, meta, created_at
-       FROM bms_messages
-      WHERE tenant_id = $1 AND conversation_id = $2
-      ORDER BY created_at, id
-      LIMIT $3`,
+       FROM (
+         SELECT id, direction, body, sender, meta, created_at
+           FROM bms_messages
+          WHERE tenant_id = $1 AND conversation_id = $2
+          ORDER BY created_at DESC, id DESC
+          LIMIT $3
+       ) recent
+      ORDER BY created_at, id`,
     [tenantId, conversationId, lim]
   );
   return res.rows;
@@ -564,6 +583,7 @@ export async function assignConversation(tenantId: string, id: string, userId: s
       `DELETE FROM bms_conversation_helpers WHERE tenant_id = $1 AND conversation_id = $2 AND user_id = $3`,
       [tenantId, id, userId]
     );
+    publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
   }
   return ok;
 }
@@ -594,12 +614,13 @@ export async function listAssignableStaff(tenantId: string) {
 }
 
 export async function addConversationHelper(tenantId: string, id: string, userId: string, addedBy: string | null): Promise<boolean> {
-  await query(
+  const res = await query(
     `INSERT INTO bms_conversation_helpers (tenant_id, conversation_id, user_id, added_by)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (conversation_id, user_id) DO NOTHING`,
     [tenantId, id, userId, addedBy]
   );
+  if ((res.rowCount ?? 0) > 0) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
   return true;
 }
 
@@ -608,7 +629,9 @@ export async function removeConversationHelper(tenantId: string, id: string, use
     `DELETE FROM bms_conversation_helpers WHERE tenant_id = $1 AND conversation_id = $2 AND user_id = $3`,
     [tenantId, id, userId]
   );
-  return (res.rowCount ?? 0) > 0;
+  const ok = (res.rowCount ?? 0) > 0;
+  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+  return ok;
 }
 
 export async function listConversationHelpers(tenantId: string, id: string) {
@@ -698,7 +721,9 @@ export async function setConversationStatus(tenantId: string, id: string, status
     `UPDATE bms_conversations SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id, status]
   );
-  return (res.rowCount ?? 0) > 0;
+  const ok = (res.rowCount ?? 0) > 0;
+  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+  return ok;
 }
 
 export async function setConversationTags(tenantId: string, id: string, tags: string[]): Promise<boolean> {
@@ -707,7 +732,9 @@ export async function setConversationTags(tenantId: string, id: string, tags: st
     `UPDATE bms_conversations SET tags = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id, clean]
   );
-  return (res.rowCount ?? 0) > 0;
+  const ok = (res.rowCount ?? 0) > 0;
+  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+  return ok;
 }
 
 export async function markRead(tenantId: string, id: string): Promise<boolean> {
@@ -715,7 +742,9 @@ export async function markRead(tenantId: string, id: string): Promise<boolean> {
     `UPDATE bms_conversations SET unread = 0, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
-  return (res.rowCount ?? 0) > 0;
+  const ok = (res.rowCount ?? 0) > 0;
+  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+  return ok;
 }
 
 // ---- notes (internal) ----------------------------------------
@@ -740,6 +769,7 @@ export async function addNote(
   note.mentionedUserIds = note && mentionedUserIds?.length
     ? await notifyMentionedStaff(tenantId, id, note as { id: string | number; body: string }, mentionedUserIds, author)
     : [];
+  publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
   return note;
 }
 
@@ -996,6 +1026,7 @@ export async function sendStaffMessage(
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, preview.slice(0, 500)]
   );
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
 
   return { status: "SENT", delivered };
 }
@@ -1026,6 +1057,7 @@ export async function retryMessage(tenantId: string, messageId: string): Promise
     `UPDATE bms_messages SET meta = meta || $3::jsonb WHERE tenant_id = $1 AND id = $2`,
     [tenantId, messageId, JSON.stringify({ delivered, status })]
   );
+  publishInboxChanged(tenantId, row.conversation_id, "CONVERSATION_CHANGED");
   return { status: "SENT", delivered };
 }
 

@@ -386,8 +386,9 @@ type OrderMemory = {
 };
 
 function shouldClearDraftOrderMemory(text: string): boolean {
-  return /(?:ไม่เอาแล้ว|ยกเลิก(?:ที่คุย|รายการ|การสั่ง|อันนี้|ตัวนี้)?|เลิกสั่ง|ไม่สั่งแล้ว|พอก่อน|ไว้ก่อน|อย่าเพิ่ง(?:สั่ง|ทำรายการ)?)\s*(?:ค่ะ|คะ|ครับ|นะ|ก่อน|เลย|$)/i.test(
-    text.trim()
+  const trimmed = text.trim();
+  return /(?:ไม่เอาแล้ว|ยกเลิก(?:ที่คุย|รายการ|การสั่ง|อันนี้|ตัวนี้)?|เลิกสั่ง|ไม่สั่งแล้ว|พอก่อน|ไว้ก่อน|อย่าเพิ่ง(?:สั่ง|ทำรายการ)?|มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|มีรุ่นไหนแนะนำ|ขอดูสินค้า|ขอดูรุ่น)/i.test(
+    trimmed
   );
 }
 
@@ -1043,6 +1044,7 @@ export async function runPipeline(
     }).catch((err) => console.error("[BMS] pipeline AI state update failed:", err));
   }
   if (
+    classifiedIntent === "ordering" &&
     orderMemory?.confirmed &&
     orderMemory.product &&
     orderMemory.size &&
@@ -1296,3 +1298,4 @@ export async function runPipeline(
 
   return customerSafe({ channel, incoming: message, understanding, tool, data, reply });
 }
+

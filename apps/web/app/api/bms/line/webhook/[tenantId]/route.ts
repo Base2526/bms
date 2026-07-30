@@ -14,7 +14,13 @@ import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, notifyInboxConversationChanged } from "@/lib/bms/inbox";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
-import { recordInboundEvent, recordWebhookVerifyFailed, recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "@/lib/bms/channelHealth";
+import {
+  recordInboundEvent,
+  recordWebhookVerifyFailed,
+  recordOutboundSuccess,
+  recordOutboundError,
+  formatOutboundErrorDetail,
+} from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 
 export const runtime = "nodejs";
@@ -41,6 +47,8 @@ async function pushLineReply(tenantId: string, token: string, replyToken: string
       await recordOutboundError(tenantId, "line", resp.status, detail);
     }
   } catch (e) {
+    const detail = e instanceof Error ? e.message : "LINE reply request failed";
+    await recordOutboundError(tenantId, "line", 500, detail).catch(() => {});
     console.error("[BMS] LINE push failed:", e);
   }
 }
@@ -71,7 +79,13 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     }
   }
 
-  const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })() as { events?: LineEvent[] };
+  const body = (() => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  })() as { events?: LineEvent[] };
   const events = Array.isArray(body.events) ? body.events : [];
 
   const replies = [];
@@ -85,42 +99,64 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     }
 
     const userId = ev.source?.userId ?? null;
-    const result = await runPipeline(text, "line", tenantId, userId);
+    try {
+      const result = await runPipeline(text, "line", tenantId, userId);
 
-    // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
+      // บันทึกลง inbox (เข้า+ออก) — best-effort
+      await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
 
-    // ตอบกลับด้วย token ของร้าน (ถ้ามี)
-    if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply);
-    }
+      // ตอบกลับด้วย token ของร้าน (ถ้ามี)
+      if (cfg.access_token && ev.replyToken) {
+        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply);
+      }
 
-    // Best-effort LINE profile cache. This is intentionally after the
-    // Inbox write/reply path: profile sync must never block the sale-critical
-    // message from appearing in Inbox.
-    if (userId && cfg.access_token) {
-      const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
-      if (profileSync.ok) {
-        for (const conversationId of profileSync.conversationIds) {
-          notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
+      // Best-effort LINE profile cache. This is intentionally after the
+      // Inbox write/reply path: profile sync must never block the sale-critical
+      // message from appearing in Inbox.
+      if (userId && cfg.access_token) {
+        const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
+        if (profileSync.ok) {
+          for (const conversationId of profileSync.conversationIds) {
+            notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
+          }
+        } else if (!profileSync.skipped) {
+          console.warn("[BMS] LINE profile sync skipped/failed:", {
+            tenantId,
+            status: profileSync.status,
+            error: profileSync.error,
+          });
         }
-      } else if (!profileSync.skipped) {
-        console.warn("[BMS] LINE profile sync skipped/failed:", {
-          tenantId,
-          status: profileSync.status,
-          error: profileSync.error,
-        });
+        const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
+        if (!botInfoSync.ok && !botInfoSync.skipped) {
+          console.warn("[BMS] LINE bot info sync skipped/failed:", {
+            tenantId,
+            status: botInfoSync.status,
+            error: botInfoSync.error,
+          });
+        }
       }
-      const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
-      if (!botInfoSync.ok && !botInfoSync.skipped) {
-        console.warn("[BMS] LINE bot info sync skipped/failed:", {
-          tenantId,
-          status: botInfoSync.status,
-          error: botInfoSync.error,
-        });
+      replies.push({ replyToken: ev.replyToken, reply: result.reply });
+    } catch (error) {
+      const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
+      console.error("[BMS] LINE webhook event handling failed:", {
+        tenantId,
+        userId,
+        messageId: ev.message?.id ?? null,
+        replyToken: ev.replyToken ?? null,
+        error,
+      });
+      await logConversation(tenantId, "line", userId, text, fallbackReply).catch((logError) => {
+        console.error("[BMS] LINE fallback logConversation failed:", logError);
+      });
+      if (cfg.access_token && ev.replyToken) {
+        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply);
       }
+      replies.push({
+        replyToken: ev.replyToken,
+        reply: fallbackReply,
+        error: error instanceof Error ? error.message : "event handling failed",
+      });
     }
-    replies.push({ replyToken: ev.replyToken, reply: result.reply });
   }
 
   if (replies.length > 0) await recordInboundEvent(tenantId, "line");
