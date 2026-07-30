@@ -2422,5 +2422,6 @@ export const typeDefs = /* GraphQL */ `
     bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
     bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
     bmsExitTenant: Boolean!                   # ออกจากมุมร้าน
+    bmsDeleteTenant(tenantId: ID!): Boolean!  # ลบร้านถาวร — เฉพาะร้านทดสอบ (slug ขึ้นต้น "test-")
   }
 `;

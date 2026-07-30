@@ -7,7 +7,7 @@ import { myPermissions } from "@/lib/bms/permissions";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
 import { signupShop } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
-import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive } from "@/lib/bms/platform";
+import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
 import { cookies } from "next/headers";
 import { signActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 
@@ -123,6 +123,22 @@ export const bmsSaasResolvers = {
         const ok = await changePlan(args.tenantId, args.planCode);
         if (ok) await audit(ctx, "tenant.plan.change", args.tenantId, { planCode: args.planCode });
         return ok;
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    // ลบร้านถาวร (ใช้กับร้านทดสอบเท่านั้น — deleteTenant() ปฏิเสธ slug ที่ไม่ขึ้นต้นด้วย "test-")
+    // audit ก่อนลบเสมอ (เขียนลง audit log ของร้านผู้กระทำเอง ไม่ใช่ร้านเป้าหมายที่กำลังจะหายไป)
+    async bmsDeleteTenant(_p: unknown, args: { tenantId: string }, ctx: any) {
+      await requirePlatformAdmin(ctx);
+      try {
+        const before = await query<{ slug: string; name: string }>(
+          `SELECT slug, name FROM bms_tenants WHERE id = $1`,
+          [args.tenantId]
+        );
+        await audit(ctx, "tenant.delete", args.tenantId, { slug: before.rows[0]?.slug, name: before.rows[0]?.name });
+        await deleteTenant(args.tenantId);
+        return true;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }
