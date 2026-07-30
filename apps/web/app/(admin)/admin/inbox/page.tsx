@@ -67,6 +67,13 @@ type SystemEvent = {
   at: string; actorName: string; targetName: string | null; statusValue: string | null; auto: boolean;
 };
 
+const PANEL_SURFACE = "var(--app-surface, #ffffff)";
+const PANEL_RAISED_SURFACE = "var(--app-surface-2, #f1f5f9)";
+const PANEL_SUNKEN_SURFACE = "rgba(var(--app-surface-2-rgb, 241, 245, 249), 0.92)";
+const SUBTLE_TEXT = "rgba(var(--app-text-rgb, 15, 23, 42), 0.62)";
+const IDLE_CARD_BORDER = "rgba(var(--app-text-rgb, 15, 23, 42), 0.08)";
+const IDLE_CARD_SHADOW = "0 2px 10px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.10)";
+const RAISED_PANEL_SHADOW = "0 6px 16px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.12)";
 // ---- GraphQL ------------------------------------------------
 const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
 const Q_LIST = gql`
@@ -358,6 +365,7 @@ function Inbox() {
   const { can } = useBmsPermissions();
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const isTablet = useMediaQuery(TABLET_QUERY);
+
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("OPEN");
   const [search, setSearch] = useState("");
   // deep-link จากหน้า Orders: /admin/inbox?c=<conversationId> → เปิดแชทนั้นทันที
@@ -649,7 +657,7 @@ function Inbox() {
       <div style={{ display: "flex", gap: isMobile ? 0 : 12, alignItems: "stretch", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}>
         {/* ---- left: conversation list ---- */}
         {showListPane && (
-        <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : isMobile ? 10 : 12, display: "flex", flexDirection: "column", background: "var(--app-card, transparent)", overflow: "hidden" }}>
+        <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : isMobile ? 10 : 12, display: "flex", flexDirection: "column", background: PANEL_SURFACE, overflow: "hidden" }}>
           <div
             style={{
               display: "flex",
@@ -657,17 +665,17 @@ function Inbox() {
               gap: 8,
               marginBottom: effectiveListCollapsed ? 8 : 10,
               padding: effectiveListCollapsed ? 0 : isMobile ? "8px 8px 6px" : "8px 8px 6px",
-              border: effectiveListCollapsed ? "none" : "1px solid rgba(15,23,42,0.08)",
+              border: effectiveListCollapsed ? "none" : "1px solid var(--app-border, rgba(15,23,42,0.12))",
               borderRadius: effectiveListCollapsed ? 0 : 16,
-              background: effectiveListCollapsed ? "transparent" : "#fff",
-              boxShadow: effectiveListCollapsed ? "none" : "0 6px 16px rgba(15,23,42,0.04)",
+              background: effectiveListCollapsed ? "transparent" : PANEL_RAISED_SURFACE,
+              boxShadow: effectiveListCollapsed ? "none" : RAISED_PANEL_SHADOW,
             }}
           >
           <div style={{ display: "flex", justifyContent: effectiveListCollapsed ? "center" : "space-between", alignItems: "center" }}>
             {!effectiveListCollapsed && (
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
                 <Typography.Text strong style={{ fontSize: 13, lineHeight: 1.1 }}>คิวแชท</Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.1, color: "rgba(15,23,42,0.56)" }}>
+                <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.1, color: SUBTLE_TEXT }}>
                   {needReplyCount} ต้องตอบ · {pendingCount} รอจัดส่ง
                 </Typography.Text>
               </div>
@@ -693,7 +701,7 @@ function Inbox() {
                   padding: 2,
                   borderRadius: 12,
                   fontSize: 12,
-                  background: "#f7f9fc",
+                  background: PANEL_SUNKEN_SURFACE,
                 }}
               />
               <div style={{ display: "grid", gridTemplateColumns: restrictedToOwn ? "1fr" : "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
@@ -765,10 +773,10 @@ function Inbox() {
                     cursor: "pointer", padding: effectiveListCollapsed ? "6px 0" : isMobile ? "8px 10px" : "8px 10px", borderRadius: isMobile ? 12 : 14, marginBottom: 6,
                     display: effectiveListCollapsed ? "flex" : undefined,
                     justifyContent: effectiveListCollapsed ? "center" : undefined,
-                    background: activeId === c.id ? "rgba(22,119,255,0.18)" : "#fff",
+                    background: activeId === c.id ? "rgba(22,119,255,0.18)" : PANEL_SURFACE,
                     borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
-                    border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : "1px solid rgba(15,23,42,0.06)",
-                    boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : "0 2px 10px rgba(15,23,42,0.04)",
+                    border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : `1px solid ${IDLE_CARD_BORDER}`,
+                    boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : IDLE_CARD_SHADOW,
                   }}
                 >
                   {effectiveListCollapsed ? (
@@ -824,7 +832,7 @@ function Inbox() {
 
         {/* ---- middle: active conversation ---- */}
         {showConversationPane && (
-        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: isMobile ? 8 : 14, background: "var(--app-card, transparent)" }}>
+        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: isMobile ? 8 : 14, background: PANEL_SURFACE }}>
           {!conv ? (
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
@@ -1628,7 +1636,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                           alignItems: isMobile ? "start" : "center",
                         }}
                       >
-                        <div style={{ gridArea: isMobile ? "thumb" : undefined, width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "rgba(15,23,42,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ gridArea: isMobile ? "thumb" : undefined, width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "rgba(var(--app-text-rgb, 15, 23, 42), 0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           {item.imageUrl ? (
                             <img src={item.imageUrl} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
@@ -1802,7 +1810,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             // (เช่น admin คนเดียว ไม่มี Sales/Manager คนอื่น) กด @ แล้วไม่มีอะไรเกิดขึ้นเลย ไม่รู้ว่า
             // "ไม่มีให้เลือก" หรือ "ปุ่มพัง" — ใส่ empty state ให้เห็นชัดแทนความเงียบ
             <List size="small" bordered
-              style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#fff", maxHeight: 180, overflowY: "auto" }}
+              style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: PANEL_SURFACE, border: "1px solid var(--app-border, rgba(15,23,42,0.12))", borderRadius: 12, boxShadow: RAISED_PANEL_SHADOW, maxHeight: 180, overflowY: "auto" }}
               dataSource={noteMentionCandidates}
               locale={{ emptyText: <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>ไม่มีเพื่อนร่วมทีมให้กล่าวถึง</div> }}
               renderItem={(s) => (
@@ -2148,3 +2156,4 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 export default function Page() {
   return <Inbox />;
 }
+
