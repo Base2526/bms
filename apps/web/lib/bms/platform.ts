@@ -11,7 +11,8 @@
 
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, getClient } from "@/lib/db";
+import { DEFAULT_TENANT_ID } from "./tenant";
 
 /** platform admin หรือไม่ — อ่านสด ๆ จาก DB ด้วย id ใน session */
 export async function isPlatformAdmin(ctx: any): Promise<boolean> {
@@ -141,4 +142,54 @@ export async function updateTenantIdentity(
   );
   if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
   return res.rows[0];
+}
+
+/**
+ * ลบร้านถาวร — **เฉพาะร้านทดสอบ** (slug ต้องขึ้นต้นด้วย "test-") กันมือลั่นลบร้านลูกค้าจริง
+ * ห้ามลบ DEFAULT_TENANT_ID เด็ดขาด (ร้านระบบที่ fixture/seed เก่าอ้างถึง)
+ *
+ * ลำดับ DELETE อ้างจาก FK graph จริงใน db/migrations (verify แล้ว ไม่ใช่เดา):
+ * เกือบทุกตาราง BMS ผูก tenant_id ... ON DELETE CASCADE เข้า bms_tenants อยู่แล้ว (ตั้งแต่ 5.1
+ * เป็นต้นไป) ยกเว้น 8 ตารางเดิมจาก migration 4.0 ที่ตอนนั้นสร้าง FK แบบ RESTRICT (ไม่ cascade):
+ * bms_products/bms_inventory/bms_orders/bms_order_items/bms_stock_movements/bms_customers/
+ * bms_customer_identities/bms_customer_addresses — 6 ใน 8 ตัวนี้ cascade กันเองอยู่แล้วผ่าน FK
+ * อื่นที่ระบุ ON DELETE CASCADE ทีหลัง (inventory/order_items ← products/orders, identities/
+ * addresses ← customers) เหลือแค่ 2 จุดที่ต้องลบเอง: bms_stock_movements และ bms_purchase_order_items
+ * (ทั้งคู่มี FK ไป bms_products แบบ RESTRICT) — purchase_order_items ลบไปพร้อม bms_purchase_orders
+ * (cascade). users.tenant_id ก็เป็น RESTRICT (4.1) ต้องลบ user ก่อน DELETE bms_tenants เสมอ
+ * ไม่งั้น FK error. ใช้ query() ธรรมดา (ไม่ใช้ beginTenantTx) เพราะ bms_app role ไม่มีสิทธิ์บนตาราง
+ * users เลย (ดู 4.3__bms_rls_role.sql — grant เฉพาะตาราง bms_*)
+ */
+export async function deleteTenant(tenantId: string): Promise<{ slug: string; name: string }> {
+  if (tenantId === DEFAULT_TENANT_ID) {
+    throw new Error("ห้ามลบร้าน default");
+  }
+  const t = await query<{ slug: string; name: string }>(
+    `SELECT slug, name FROM bms_tenants WHERE id = $1`,
+    [tenantId]
+  );
+  if (!t.rowCount) throw new Error("ไม่พบร้าน");
+  const { slug, name } = t.rows[0];
+  if (!slug.startsWith("test-")) {
+    throw new Error(`ลบได้เฉพาะร้านทดสอบ (slug ต้องขึ้นต้นด้วย "test-", ร้านนี้คือ "${slug}")`);
+  }
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = $1`, [tenantId]); // cascade → bms_purchase_order_items
+    await client.query(`DELETE FROM bms_orders WHERE tenant_id = $1`, [tenantId]); // cascade → order_items/payments/shipments
+    await client.query(`DELETE FROM bms_products WHERE tenant_id = $1`, [tenantId]); // cascade → inventory/product_images
+    await client.query(`DELETE FROM bms_customers WHERE tenant_id = $1`, [tenantId]); // cascade → identities/addresses/ai_summary/coupon_wallet
+    await client.query(`DELETE FROM users WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM bms_tenants WHERE id = $1`, [tenantId]); // cascade → ตารางที่เหลือทั้งหมด (channels/coupons/inbox/ai config/…)
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { slug, name };
 }

@@ -1,7 +1,7 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card } from "antd";
-import { ReloadOutlined, ShopOutlined, LoginOutlined } from "@ant-design/icons";
+import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card, Popconfirm } from "antd";
+import { ReloadOutlined, ShopOutlined, LoginOutlined, DeleteOutlined } from "@ant-design/icons";
 
 const Q = gql`
   query {
@@ -16,6 +16,7 @@ const Q = gql`
 const M_ACTIVE = gql`mutation ($tenantId: ID!, $active: Boolean!) { bmsSetTenantActive(tenantId: $tenantId, active: $active) }`;
 const M_PLAN = gql`mutation ($tenantId: ID!, $planCode: String!) { bmsSetTenantPlan(tenantId: $tenantId, planCode: $planCode) }`;
 const M_ENTER = gql`mutation ($tenantId: ID!) { bmsEnterTenant(tenantId: $tenantId) }`;
+const M_DELETE = gql`mutation ($tenantId: ID!) { bmsDeleteTenant(tenantId: $tenantId) }`;
 
 const baht = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
 
@@ -33,6 +34,10 @@ export default function Page() {
     // reload ทั้งหน้าเพื่อให้ context (tenant) ใหม่มีผลกับทุกหน้า
     onCompleted: () => { window.location.href = "/admin/dashboard"; },
     onError: (e) => message.error(e?.message || "เข้าดูร้านไม่สำเร็จ"),
+  });
+  const [deleteTenant, { loading: deleting }] = useMutation(M_DELETE, {
+    onCompleted: () => { message.success("ลบร้านแล้ว"); refetch(); },
+    onError: (e) => message.error(e?.message || "ลบร้านไม่สำเร็จ"),
   });
 
   if (error) return <Alert type="error" showIcon message="โหลดรายการร้านไม่ได้" description={error.message} />;
@@ -88,13 +93,28 @@ export default function Page() {
       render: (v: string) => (v ? new Date(v).toLocaleDateString("th-TH") : "-"),
     },
     {
-      title: "", key: "act", width: 110, fixed: "right" as const,
-      render: (_: any, r: any) => (
-        <Button size="small" icon={<LoginOutlined />} loading={entering}
-          onClick={() => enterTenant({ variables: { tenantId: r.id } })}>
-          เข้าดู
-        </Button>
-      ),
+      title: "", key: "act", width: 180, fixed: "right" as const,
+      render: (_: any, r: any) => {
+        const isTestShop = typeof r.slug === "string" && r.slug.startsWith("test-");
+        return (
+          <Space>
+            <Button size="small" icon={<LoginOutlined />} loading={entering}
+              onClick={() => enterTenant({ variables: { tenantId: r.id } })}>
+              เข้าดู
+            </Button>
+            {isTestShop && (
+              <Popconfirm
+                title="ลบร้านทดสอบนี้ถาวร?"
+                description="ข้อมูลทั้งหมดของร้าน (สินค้า/ออเดอร์/ลูกค้า/แชท/ผู้ใช้) จะหายไปและกู้คืนไม่ได้"
+                okText="ลบถาวร" okButtonProps={{ danger: true }} cancelText="ยกเลิก"
+                onConfirm={() => deleteTenant({ variables: { tenantId: r.id } })}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />} loading={deleting}>ลบ</Button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
