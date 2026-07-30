@@ -73,11 +73,16 @@ export const bmsChannelsResolvers = {
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      const ok = await upsertChannel(getTenantId(ctx), args.channel, {
-        accessToken: args.accessToken,
-        channelSecret: args.channelSecret,
-        active: args.active,
-      });
+      let ok: boolean;
+      try {
+        ok = await upsertChannel(getTenantId(ctx), args.channel, {
+          accessToken: args.accessToken,
+          channelSecret: args.channelSecret,
+          active: args.active,
+        });
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       await audit(ctx, "channel.upsert", args.channel, { active: args.active });
       return ok;
     },

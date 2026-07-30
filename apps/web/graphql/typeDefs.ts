@@ -727,6 +727,8 @@ export const typeDefs = /* GraphQL */ `
     bmsChannels: [BmsChannelConfig!]!
     bmsChannelHealth: [BmsChannelHealth!]!
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
+    bmsReportSubscription: BmsReportSubscription!         # ค่าตั้งของร้านตัวเอง (default ถ้ายังไม่เคยตั้ง)
+    bmsReportDeliveries(limit: Int): [BmsReportDelivery!]! # ประวัติส่งของร้านตัวเอง
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
@@ -758,6 +760,8 @@ export const typeDefs = /* GraphQL */ `
     bmsIsPlatformAdmin: Boolean!          # ใช้ gate เมนู/หน้า
     bmsTenants: [BmsTenantRow!]!          # รายการทุกร้าน (platform admin เท่านั้น)
     bmsActingTenant: BmsActingTenant      # ร้านที่กำลัง drill-down อยู่ (null = ไม่ได้เข้าดู)
+    bmsReportSubscriptions: [BmsReportSubscriptionOverview!]!  # ทุกร้าน + ค่าตั้งส่งรายงาน (platform admin เท่านั้น)
+    bmsReportDeliveriesForTenant(tenantId: ID!, limit: Int): [BmsReportDelivery!]!  # ประวัติส่งของร้านที่ระบุ (platform admin)
 
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
@@ -1734,6 +1738,74 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsTestChannelResult { ok: Boolean!  message: String! }
 
+  # ===== BMS Report Subscriptions (สรุปยอดขายรายวัน/สัปดาห์/เดือน — email/Slack/LINE) =====
+  type BmsReportSubscription {
+    tenantId: ID!
+    frequency: String!        # DAILY / WEEKLY / MONTHLY
+    sendHour: Int!            # 0-23 (Asia/Bangkok)
+    sendWeekday: Int          # 0-6 (0=อาทิตย์) — ใช้เฉพาะ WEEKLY
+    sendDayOfMonth: Int       # 1-28 — ใช้เฉพาะ MONTHLY
+    emailEnabled: Boolean!
+    recipientEmail: String
+    slackEnabled: Boolean!
+    hasSlackWebhook: Boolean!
+    lineEnabled: Boolean!
+    lineUserId: String
+    enabled: Boolean!
+    lastSentAt: String
+    lastStatus: String        # SUCCESS / PARTIAL / FAILED
+    lastPeriodKey: String
+  }
+
+  type BmsReportSubscriptionOverview {
+    tenantId: ID!
+    tenantName: String!
+    tenantSlug: String!
+    frequency: String!
+    sendHour: Int!
+    sendWeekday: Int
+    sendDayOfMonth: Int
+    emailEnabled: Boolean!
+    recipientEmail: String
+    slackEnabled: Boolean!
+    hasSlackWebhook: Boolean!
+    lineEnabled: Boolean!
+    lineUserId: String
+    enabled: Boolean!
+    lastSentAt: String
+    lastStatus: String
+    lastPeriodKey: String
+  }
+
+  type BmsReportDelivery {
+    id: ID!
+    frequency: String!
+    periodKey: String!
+    periodStart: String!
+    periodEnd: String!
+    channel: String!           # EMAIL / SLACK / LINE
+    status: String!            # SUCCESS / FAILED
+    error: String
+    createdAt: String!
+  }
+
+  type BmsReportChannelResult { channel: String!  ok: Boolean!  error: String }
+  type BmsSendReportResult { overallStatus: String!  results: [BmsReportChannelResult!]! }
+
+  input BmsUpsertReportSubscriptionInput {
+    frequency: String
+    sendHour: Int
+    sendWeekday: Int
+    sendDayOfMonth: Int
+    emailEnabled: Boolean
+    recipientEmail: String
+    slackEnabled: Boolean
+    slackWebhookUrl: String
+    lineEnabled: Boolean
+    lineUserId: String
+    enabled: Boolean
+  }
+
   # ===== BMS AI config (BYOK ต่อร้าน + shared-key quota) =====
   type BmsAiConfig {
     has_key: Boolean!
@@ -2398,6 +2470,8 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
+    bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
+    bmsSendTestReportNow: BmsSendReportResult!
     bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!
@@ -2422,5 +2496,6 @@ export const typeDefs = /* GraphQL */ `
     bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
     bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
     bmsExitTenant: Boolean!                   # ออกจากมุมร้าน
+    bmsDeleteTenant(tenantId: ID!): Boolean!  # ลบร้านถาวร — เฉพาะร้านทดสอบ (slug ขึ้นต้น "test-")
   }
 `;

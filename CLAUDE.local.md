@@ -1081,11 +1081,80 @@ RETURNED ด้วย) เพื่อให้เลขตรงกับ "ใ�
   ผ่านสะอาดแล้วเท่านั้น ก่อนใช้งานจริงควรทดสอบผ่าน `/admin/products` เต็ม flow (โหลดเทมเพลต → กรอก →
   อัปโหลด → preview → ยืนยัน) อย่างน้อย 1 รอบ
 
+## Sales digest reports — สรุปยอดขายรายวัน/สัปดาห์/เดือน (2026-07)
+
+**เสร็จแล้ว (verify กับ dev instance จริงแล้ว — เห็น EMAIL ส่งสำเร็จผ่าน SendGrid, SLACK fail ต่อ
+webhook ปลอมได้ 404 ตามคาด, ทุกแถวถูก log, ลบข้อมูลทดสอบออกหมดแล้ว)** — เดิมร้านต้องเข้า
+`/admin/dashboard` เองถึงจะเห็นยอดขาย ตอนนี้แต่ละร้านตั้งค่าให้ระบบส่งสรุปยอดขาย (รายได้/จำนวนออร์เดอร์/
+สินค้าขายดี/แยกตามช่องทาง) อัตโนมัติแบบรายวัน/สัปดาห์/เดือน ผ่านอีเมล/Slack/LINE ได้เอง:
+
+- **schema** → migration `7.37__bms_report_subscriptions.sql` — `bms_report_subscriptions`
+  1 แถวต่อร้าน (แบบเดียวกับ `bms_store_profile`): ความถี่ + ชั่วโมงที่ส่ง (+ วันในสัปดาห์ถ้า WEEKLY /
+  วันที่ในเดือนถ้า MONTHLY) + enable flag/ผู้รับต่อช่องทาง (อีเมล, Slack webhook URL — เข้ารหัสแบบเดียวกับ
+  `channel_secret`, LINE user id ของแอดมิน) + `last_sent_at`/`last_period_key`/`last_status` และ
+  `bms_report_deliveries` แบบ append-only (เหมือน `bms_audit_log`) 1 แถวต่อ 1 ช่องทางต่อการส่ง 1 ครั้ง
+  ให้หน้า platform admin เห็นประวัติส่งจริงแทนที่จะมีแค่ status ล่าสุดแถวเดียว · RLS/grant มาตรฐานเดียวกับ
+  `6.1`/`7.18` · **ไม่มี permission ใหม่** — ฝั่งร้านใช้ `requireTenantAdmin()` เดิม (pattern เดียวกับ
+  `bmsChannels`/`bmsStoreProfile`/`bmsAiConfig` — เป็น config ของร้าน ไม่ใช่ operational action)
+- **เวลา/period คำนวณเป็นเลขคณิต UTC+7 ตรงๆ ไม่ใช้ timezone library** (`lib/bms/reportDigest.ts`,
+  `bkkNow()`/`bkkMidnightUtc()`) เพราะ Asia/Bangkok ไม่มี DST — สอดคล้องกับ convention เดิมของโปรเจกต์ที่
+  ใช้ `Intl.DateTimeFormat` เป็นหลักไม่เพิ่ม dependency ใหม่
+- **`runScheduledDigests()` (cron entrypoint) กันส่งซ้ำด้วย `last_period_key` ไม่ใช่ความถี่ cron** —
+  วนทุก subscription ที่ `enabled`, เช็ค `shouldSendNow()` (ชั่วโมง/วันตรงตามตั้งไว้) แล้วข้ามร้านที่
+  `last_period_key` ตรงกับ period ปัจจุบันอยู่แล้ว → เรียก cron ถี่แค่ไหนก็ได้ (แนะนำรายชั่วโมง) โดยไม่มีวัน
+  ส่งซ้ำ
+- **`sendTestDigest()` (ปุ่ม "ส่งทดสอบตอนนี้") ตั้งใจไม่แตะ `last_sent_at`/`last_period_key` ของจริง** —
+  ใช้ 24 ชม.ล่าสุดเป็น period ชั่วคราว, log ลง `bms_report_deliveries` เหมือนส่งจริง แต่ไม่กระทบ schedule
+  จริงเลย ทดสอบซ้ำกี่ครั้งก็ไม่ทำให้ระบบข้ามรอบส่งจริงไป
+- **LINE ใช้ access_token ของ LINE OA ร้านเอง push หา LINE user id ของแอดมินที่กรอกไว้** — ไม่มี
+  LINE-to-owner integration แยกต่างหาก (บอทของร้านที่รับแชทลูกค้าอยู่แล้วก็ push ข้อความนี้ไปด้วยเลย)
+- **GraphQL** → `graphql/bmsReportSchedule.ts` แยก 2 ฝั่ง: ฝั่งร้าน (`bmsReportSubscription`/
+  `bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`, `requireTenantAdmin()`
+  แบบ local ในไฟล์เดียวกับ `bmsChannels.ts`/`bmsStoreProfile.ts` — เช็คแค่ `auth.scope === "admin"`)
+  กับฝั่ง platform admin ข้ามร้าน (`bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`,
+  `requirePlatformAdmin()` แบบเดียวกับ `bmsTenants` ใน `bmsSaas.ts`)
+- **UI** — การ์ด "รายงานสรุปยอดขาย" (`ReportSubscriptionCard.tsx`) ใน `/admin/settings`: ตั้งความถี่/เวลา/
+  ช่องทาง, บันทึก, ปุ่มส่งทดสอบ, ประวัติส่งล่าสุด · หน้าใหม่ `/admin/report-schedule` (platform-admin เท่านั้น,
+  gate ด้วย `layout.tsx` แบบเดียวกับ `/admin/tenants`) — ตารางทุกร้าน + สถานะส่งล่าสุด + ช่องทางที่เปิด
+  พร้อม drawer ดูประวัติส่งเต็มรายร้าน
+- **cron ใหม่ `POST /api/bms/reports/send-digest`** (gate `x-cron-secret` = `BMS_CRON_SECRET` แบบเดียวกับ
+  `channels/check-health`/`ai/check-health`) — **ยังไม่ได้ตั้ง cron schedule จริง** เหมือนอีก 2 endpoint
+  เดิม (พร้อมแล้วแค่ยังไม่มีตัวยิงอัตโนมัติ)
+- **verify แล้วกับ dev instance จริง** (tenant ที่มีข้อมูลออร์เดอร์ seed จริงราว 45 วัน): `computePeriod`/
+  `shouldSendNow` ถูกต้องครบทั้ง 3 ความถี่, guard validation ของ upsert ครบ, `computeSalesSummary` ตรงกับ
+  ออร์เดอร์จริง (revenue/top-products/by-channel ไม่เป็นศูนย์), ส่งจริง 1 ครั้ง — EMAIL ส่งสำเร็จผ่าน
+  SendGrid ไปที่ `test@example.com`, SLACK ยิงไป webhook ปลอมได้ 404 ตามคาด (error handling ทำงานถูก) —
+  ทุกการส่ง log ครบ, `sendTestDigest` ยืนยันแล้วว่าไม่แตะ `last_period_key`, และ `runScheduledDigests`
+  ยืนยัน idempotent (รันซ้ำ period เดิมถูกข้าม) · ลบแถวทดสอบออกหมดแล้ว ไม่มีข้อมูลค้างในร้านที่ใช้ verify
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
 แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)
-**seed ลง tenant ของ user ที่ล็อกอิน** (ร้านค้าเทสเองแล้วเห็นในร้านตัวเอง) · cleanup ก็ scope ตามร้าน · platform admin อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
+**seed ลง tenant ของ user ที่ล็อกอิน** · cleanup ก็ scope ตามร้าน · อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
+
+**gate (แก้ 2026-07 — เข้มขึ้น):** เดิม API guard เป็น `requireAdminOrInternal()` ซึ่ง**ผ่านทุก role
+ที่ล็อกอิน** (Sales/Warehouse ก็ seed ได้) และหน้า `/admin/dev/fake` **ไม่มี `layout.tsx` กันเลย**
+(ต่างจาก `/admin/env`, `/admin/logs`, `/admin/dev/sql-console`) — สิทธิ์ `can('product.edit')` ใน
+`AdminSidebar.tsx` เป็นแค่การซ่อนเมนู ไม่ใช่ authorization เข้า URL ตรงได้ ตอนนี้:
+
+- API ทั้ง 9 route ใช้ `requirePlatformAdminSeeder()` (`lib/dev-guards.ts`) — อ่าน
+  `users.is_platform_admin` จาก DB ทุกครั้ง (JWT ไม่ได้พก flag นี้) + fail closed ถ้า query ไม่ได้
+- **ห้ามแก้ `requireAdminOrInternal()` ให้เข้มขึ้นแทน** — ฟังก์ชันนั้นถูกใช้โดย route อัปโหลดไฟล์จริง
+  (`api/bms/products/upload`, `api/bms/inbox/upload`) ที่ staff ทั่วไปต้องใช้ได้ ถ้าไปยกระดับตรงนั้น
+  อัปรูปสินค้า/แชทจะพังทันที จึงต้องเป็นฟังก์ชันแยก
+- เพิ่ม `app/(admin)/admin/dev/fake/layout.tsx` → `requirePlatformAdminPage()` และเปลี่ยน
+  `canSeedFake` ใน sidebar เป็น `isPlatformAdmin` ให้ตรงกับ gate จริง (ไม่งั้นเมนูโผล่แล้วกดเข้าโดน redirect)
+- `DELETE FROM posts WHERE fake_test = true` เดิม **ไม่มี tenant scope** (ลบข้ามร้านทุกครั้ง) เพราะตาราง
+  `posts` ไม่มีคอลัมน์ `tenant_id` เลย มีแค่ `author_id` → scope ผ่าน `EXISTS (users u WHERE u.id =
+  p.author_id AND u.tenant_id = $1)` แทน · **ต้องลบ posts ก่อน users เสมอ** (ลำดับเดิมถูกอยู่แล้ว) ไม่งั้น
+  author หายก่อนแล้ว match ไม่เจอ · fake post ที่ `author_id IS NULL` จะเหลือไว้ (ระบุร้านไม่ได้)
+- ปุ่ม Cleanup มี `Popconfirm` แล้ว (เดิมกดครั้งเดียวลบทันทีไม่มีถาม)
+
+**⚠️ ยังไม่ได้แก้ (ต้องทำที่เครื่อง production เอง):** `.env.prod` / `.env` / `.env.dev` ในเครื่องนี้
+ตั้ง `BMS_ALLOW_FAKE_SEED=1` ทั้ง 3 ไฟล์ ทั้งที่คอมเมนต์บรรทัดบนเขียนว่า "เฉพาะเครื่อง demo —
+production จริงอย่าเปิด" · ไฟล์ `.env*` gitignore ไว้และห้ามแก้จาก agent จึงต้องไปเช็ค/ปิดบนเซิร์ฟเวอร์จริง:
+`docker compose ... exec web printenv BMS_ALLOW_FAKE_SEED NODE_ENV`
 
 ## หมายเหตุการเช็ก type/dependency บนเครื่องนี้
 
@@ -1139,12 +1208,16 @@ natural suite กับ live model).
 + **Public checkout เสร็จแล้ว** (ดูหัวข้อ § Public checkout ด้านบน — ออร์เดอร์จากแชททุกใบได้ signed link
 `/checkout?t=...` แบบ deterministic, reuse ข้อมูลจัดส่งเดิม, อัปสลิปเป็น `PENDING` แล้วให้คนกด Confirm;
 ไม่มี migration ใหม่ แต่ต้องตั้ง `BMS_CHECKOUT_SECRET` ก่อน production และยังไม่ได้ทดสอบในเบราว์เซอร์จริง).
++ **Sales digest reports เสร็จแล้ว** (ดูหัวข้อ § Sales digest reports ด้านบน — subscription ต่อร้าน
+ส่งสรุปยอดขายรายวัน/สัปดาห์/เดือนผ่านอีเมล/Slack/LINE, กันส่งซ้ำด้วย `last_period_key`, การ์ดตั้งค่าที่
+`/admin/settings` + หน้า audit ข้ามร้าน `/admin/report-schedule`; verify กับ dev instance จริงแล้วรวมถึง
+ส่ง EMAIL จริงสำเร็จ 1 ครั้ง — ยังไม่ได้ตั้ง cron schedule จริง).
 **เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
-· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health` และ `/api/bms/ai/check-health`
-(ทั้งคู่ endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
+· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health`, `/api/bms/ai/check-health`, และ
+`/api/bms/reports/send-digest` (ทั้งสาม endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
 · proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
 ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model

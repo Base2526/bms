@@ -49,13 +49,17 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
   const raw = await req.text();
   // TODO(prod): ยืนยัน scheme จริงจาก Lazada Open Platform ก่อนใช้ — โครงนี้เป็น placeholder
-  if (cfg.channel_secret) {
-    const sig = req.headers.get("x-lazada-signature") || req.headers.get("authorization");
-    const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
-    if (!sig || sig !== mac) {
-      await recordWebhookVerifyFailed(tenantId, "lazada");
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
+  // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
+  // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
+  if (!cfg.channel_secret) {
+    await recordWebhookVerifyFailed(tenantId, "lazada");
+    return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
+  }
+  const sig = req.headers.get("x-lazada-signature") || req.headers.get("authorization");
+  const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
+  if (!sig || sig !== mac) {
+    await recordWebhookVerifyFailed(tenantId, "lazada");
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
