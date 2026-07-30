@@ -123,8 +123,10 @@ export default function AdminSidebar() {
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
   const { can } = useBmsPermissions();
-  // Fake data (dev): ให้ร้านค้าเทสในมุมตัวเองได้ (seed ลง tenant ตัวเอง) → ผูกกับสิทธิ์แก้สินค้า
-  const canSeedFake = isPlatformAdmin || can('product.edit');
+  // Fake data (dev): platform admin เท่านั้น — ต้องตรงกับ requirePlatformAdminPage() ใน
+  // app/(admin)/admin/dev/fake/layout.tsx และ requirePlatformAdminSeeder() ที่ API
+  // (เดิมผูกกับ can('product.edit') ทำให้ staff เห็นเมนูแล้วกดเข้าไปโดน redirect)
+  const canSeedFake = isPlatformAdmin;
   // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
   const showSystemGroup = isPlatformAdmin || canSeedFake;
 

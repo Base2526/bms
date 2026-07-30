@@ -3,7 +3,7 @@
 // mark ด้วย tag 'fake' เพื่อ cleanup ได้
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminOrInternal, fakeSeedDisabled } from "@/lib/dev-guards";
+import { requirePlatformAdminSeeder, fakeSeedDisabled } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
 
-  const guard = requireAdminOrInternal(req);
+  const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
