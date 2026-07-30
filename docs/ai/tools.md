@@ -478,6 +478,10 @@ Input
 
 Permission: payment.submit
 
+บน customer surface ทูลรับเฉพาะ `method` ที่ตรงกับบัญชีรับเงินซึ่งร้านตั้งค่าไว้ใน
+`get_payment_info`; ถ้าไม่มีหรือ method ไม่ตรง จะคืน `PAYMENT_METHOD_NOT_CONFIGURED` และไม่สร้าง
+payment สถานะ PENDING ส่วน staff surface ยังบันทึกวิธีอื่นตามหลักฐาน/ช่องทางภายนอกได้ตามสิทธิ์เดิม
+
 ---
 
 ## verifyPaymentSlip()
@@ -886,7 +890,8 @@ Confidence
 ## Store profile (read — customer + staff)
 
 - `get_store_info` — ชื่อร้าน/ที่อยู่/เบอร์/เวลาเปิด-ปิด/นโยบายจัดส่ง-คืน · `lib/bms/storeProfile.ts`
-- `get_payment_info` — บัญชีรับเงินของร้าน (ธนาคาร/พร้อมเพย์) — บัญชีของร้านเอง ตั้งใจให้ลูกค้าเห็น
+- `get_payment_info` — บัญชีรับเงินของร้านที่กรอกข้อมูลใช้งานได้จริง (ธนาคาร/พร้อมเพย์) พร้อม
+  `configured`; แถวว่างถูกตัดออก และเมื่อ `configured=false` AI ห้ามยกตัวอย่างช่องทางเอง
 - `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)
 
 ข้อมูลมาจาก migration `6.9__bms_store_profile.sql` (1 แถวต่อร้าน) กรอกที่ `/admin/settings` (การ์ด
@@ -912,7 +917,8 @@ Confidence
 - `get_product(sku)` — อ่านรายละเอียด/ราคา/สต็อกทุกไซซ์ของ SKU พร้อม public path/URL ที่ส่งให้
   ลูกค้าได้; ห้ามประกอบ URL หรือส่ง `/admin/*` เอง
 - `browse_catalog(keyword?, category?, minPrice?, maxPrice?, limit?)` — สำหรับคำถามกว้าง คืนเฉพาะ
-  สินค้าที่มีของขายจริงแบบ bounded
+  สินค้าที่มีของขายจริงแบบ bounded; pipeline ใช้ทูลนี้โดยตรงเมื่อมี follow-up ว่า
+  “ดูอย่างอื่น/สินค้าอื่น/รุ่นอื่น” แล้วตัดสินค้าที่เพิ่งเอ่ยถึงออกก่อนตอบ
 - `list_new_arrivals(category?, limit?)` — อ่านสินค้า active + in-stock เรียงจาก `created_at`
   โดยอ่าน DB ทุกครั้ง สินค้าใหม่จึงเห็นใน turn ถัดไปโดยไม่ต้อง refresh AI cache
 - `find_alternatives(sku?/keyword?/category?, size?, limit?)` — หา 2–5 ตัวเลือกที่มีของจริง โดยให้

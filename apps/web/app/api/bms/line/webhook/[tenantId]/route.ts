@@ -22,6 +22,7 @@ import {
   formatOutboundErrorDetail,
 } from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { reportBmsFailure } from "@/lib/bms/failureAlert";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,13 @@ type LineEvent = {
   message?: { id?: string; type: string; text?: string };
 };
 
-async function pushLineReply(tenantId: string, token: string, replyToken: string, text: string) {
+async function pushLineReply(
+  tenantId: string,
+  token: string,
+  replyToken: string,
+  text: string,
+  customerRef?: string | null
+) {
   try {
     const resp = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -45,11 +52,30 @@ async function pushLineReply(tenantId: string, token: string, replyToken: string
     } else {
       const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
       await recordOutboundError(tenantId, "line", resp.status, detail);
+      // channel health บอกได้แค่ว่า "ช่องทางส่งไม่ออก" — ต้องแจ้งร้านด้วยเพราะ
+      // ลูกค้ารายนี้ไม่ได้รับคำตอบเลย และต้องมีคนตามส่งซ้ำให้
+      await reportBmsFailure({
+        tenantId,
+        code: "channel.push_failed",
+        error: detail,
+        surface: "customer",
+        channel: "line",
+        customerRef: customerRef ?? null,
+        meta: { httpStatus: resp.status },
+      });
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : "LINE reply request failed";
     await recordOutboundError(tenantId, "line", 500, detail).catch(() => {});
     console.error("[BMS] LINE push failed:", e);
+    await reportBmsFailure({
+      tenantId,
+      code: "channel.push_failed",
+      error: e,
+      surface: "customer",
+      channel: "line",
+      customerRef: customerRef ?? null,
+    });
   }
 }
 
@@ -107,7 +133,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
       // ตอบกลับด้วย token ของร้าน (ถ้ามี)
       if (cfg.access_token && ev.replyToken) {
-        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply);
+        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId);
       }
 
       // Best-effort LINE profile cache. This is intentionally after the
@@ -145,11 +171,33 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
         replyToken: ev.replyToken ?? null,
         error,
       });
-      await logConversation(tenantId, "line", userId, text, fallbackReply).catch((logError) => {
-        console.error("[BMS] LINE fallback logConversation failed:", logError);
+      await reportBmsFailure({
+        tenantId,
+        code: "channel.reply_failed",
+        error,
+        surface: "customer",
+        channel: "line",
+        customerRef: userId,
+        meta: { messageId: ev.message?.id ?? null },
       });
+      await logConversation(tenantId, "line", userId, text, fallbackReply).catch(
+        async (logError) => {
+          console.error("[BMS] LINE fallback logConversation failed:", logError);
+          // ร้ายแรงกว่า reply พัง: ลูกค้าทักเข้ามาแล้วไม่ปรากฏใน Inbox เลย
+          // ไม่มีใครเห็นว่ามีคนรออยู่ จึงต้องแจ้งแยกจาก channel.reply_failed
+          await reportBmsFailure({
+            tenantId,
+            code: "inbox.message_lost",
+            error: logError,
+            surface: "customer",
+            channel: "line",
+            customerRef: userId,
+            meta: { messageId: ev.message?.id ?? null },
+          });
+        }
+      );
       if (cfg.access_token && ev.replyToken) {
-        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply);
+        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
       }
       replies.push({
         replyToken: ev.replyToken,

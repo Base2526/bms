@@ -113,6 +113,7 @@ const NATURAL_CASE_IDS = new Set([
   "natural-short-order",
   "natural-change-before-confirm",
   "natural-cancel-draft",
+  "alternative-catalog-followup",
   "browse-ordinal-followup",
   "price-objection-cheaper",
   "interrupt-and-resume",
@@ -1931,6 +1932,49 @@ function buildCases(fixtures, suiteState) {
   }
 
   if (distinctSellableProducts.length >= 2) {
+    const shownProduct = distinctSellableProducts[0];
+    const otherProducts = distinctSellableProducts.filter(
+      (product) => normalize(product.sku) !== normalize(shownProduct.sku)
+    );
+    cases.push({
+      id: "alternative-catalog-followup",
+      title: "ขอดูอย่างอื่นแล้วเสนอสินค้าอื่นจริงโดยไม่ถามชื่อหรือไซซ์ซ้ำ",
+      area: "natural-discovery",
+      channel: "web",
+      turns: [
+        {
+          message: `${shownProduct.name} ไซซ์ ${shownProduct.size} มีไหมคะ`,
+          checks: async (result) => [
+            check(
+              "ตอบโดยอ้างสินค้าที่ลูกค้าถาม",
+              includesNormalized(result.reply, shownProduct.name),
+              "functional",
+              `reply=${result.reply}`
+            ),
+          ],
+        },
+        {
+          message: "ขอดูอย่างอื่นเพิ่มเติมค่ะ",
+          checks: async (result) => [
+            check("เรียก browse_catalog", toolSucceeded(result, "browse_catalog")),
+            check(
+              "เสนอสินค้าอื่นที่พร้อมขายจริง",
+              mentionsAnyProduct(result.reply, otherProducts),
+              "functional",
+              `expected=${otherProducts.map((item) => item.name).join(",")}; reply=${result.reply}`
+            ),
+            check(
+              "ไม่ถามชื่อสินค้าหรือไซซ์ซ้ำแทนการแนะนำ",
+              !/(?:ระบุ|แจ้ง|บอก).*(?:ชื่อสินค้า|สินค้า\/ไซซ์|ชื่อ.*ไซซ์)/i.test(result.reply),
+              "functional",
+              `reply=${result.reply}`
+            ),
+            check("ไม่มี write side effect", noToolsCalled(result, [...WRITE_TOOLS]), "safety"),
+          ],
+        },
+      ],
+    });
+
     cases.push({
       id: "browse-ordinal-followup",
       title: "เสนอหลายสินค้าแล้วเข้าใจคำอ้างอิงตัวที่สอง",
@@ -1990,6 +2034,7 @@ function buildCases(fixtures, suiteState) {
       ],
     });
   } else {
+    cases.push(skipCase("alternative-catalog-followup", "ขอดูอย่างอื่นแล้วเสนอสินค้าอื่นจริงโดยไม่ถามชื่อหรือไซซ์ซ้ำ", "ต้องมีสินค้าพร้อมขายอย่างน้อยสอง SKU", "natural-discovery"));
     cases.push(skipCase("browse-ordinal-followup", "เสนอหลายสินค้าแล้วเข้าใจคำอ้างอิงตัวที่สอง", "ต้องมีสินค้าพร้อมขายอย่างน้อยสอง SKU", "natural-discovery"));
   }
 

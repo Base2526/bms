@@ -75,7 +75,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   สร้าง `<table>_revisions`, trigger, RLS, grants; หน้า `/admin/revisions` ใช้ list/detail/compare) ·
   `7.15__bms_users_gender.sql` (`users.gender` — คำลงท้าย ครับ/ค่ะ ใน AI แนะนำคำตอบ; ดู § Gender particle) ·
   `7.16__drop_legacy_revision_triggers.sql` (ลบ trigger revision ระบบเก่าที่ชนกับ BMS revision — ดู § Revision trigger collision) ·
-  `7.17__bms_store_profile_extend.sql` (เพิ่ม contact/branding/locale ใน store profile — ดู § ทูลชุด 2)
+  `7.17__bms_store_profile_extend.sql` (เพิ่ม contact/branding/locale ใน store profile — ดู § ทูลชุด 2) ·
+  `7.36__bms_failure_incidents.sql` (log เหตุการณ์ระบบขัดข้องที่กระทบลูกค้า + แจ้งร้าน/platform admin —
+  ดู § Failure Incidents)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) — ดู § แท็บ Timeline ด้านล่าง · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
 - **inbox: compact workspace + composer draft** → queue/header ลด font และ spacing เพื่อคืนพื้นที่ให้สายแชท, ตัด Chat Focus ออก, channel tag อยู่หลังชื่อลูกค้า · ปุ่ม "เปิดออเดอร์" ใน Customer 360 เปิด `OrderPreviewDrawer` โดยไม่ออกจากแชท และ "เปิดหน้า Orders เต็มจอ" เปิดแท็บใหม่ · composer ยังคง data model เดิม (`body` + attachment เดียว) แต่รูป/ไฟล์ที่อัปโหลดจะเข้า draft ก่อนส่งและมี preview/ปุ่มนำออก; loading ของรูปกับไฟล์แยกกัน · message renderer แยก 4 แบบ: text = bubble สีตาม sender, image = light preview card, file = icon/name/type/download card, product = cover/name/SKU/ราคา/สต็อก/`ดูสินค้า` card; attachment/product card เป็น rounded rectangle ไม่มีหางหรือ pseudo-element ยื่นออกนอกกรอบ ใช้ accent border ด้านข้างบอกทิศทางแทน · product ตรวจจาก public URL ใน body จึง render ข้อความเดิมได้โดยไม่เปลี่ยน channel payload · product picker ใช้ `bmsProducts` และให้เลือก "ข้อความ + ลิงก์" หรือ "ข้อความ + รูป + ลิงก์" โดยใส่ชื่อ/SKU/ราคา/ไซซ์+สต็อกและ public URL `/shop/{tenantSlug}/products/{sku}` ลง draft; แบบมีรูปใช้ cover `imageUrl` เป็น attachment เดียว ส่วน gallery ทั้งหมดอยู่หน้า public · ลิงก์ `/admin/products` ยังเป็น internal link เปิดแท็บใหม่เท่านั้นและห้ามใส่ลงข้อความลูกค้า
@@ -381,6 +383,65 @@ SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้อ�
   ออกนอกแอพ (LINE/Slack) เมื่อ provider ล่ม — เหมือน Channel Health เดิม เห็นได้แค่ตอนเปิด `/admin/env`
   หรือดู badge sidebar เท่านั้น · ยังไม่ได้ตั้ง cron schedule จริงให้ endpoint ยิงอัตโนมัติ (ปุ่ม
   "ตรวจสอบทั้งหมดตอนนี้" เป็นทางเลือกมือถือเท่านั้น ไม่ใช่ automation จริง)
+
+## Failure Incidents — แจ้งร้าน + platform admin เมื่อระบบขัดข้อง (2026-07)
+
+**เสร็จแล้ว** — ต้นเรื่อง: ลูกค้าจริงในร้านลุงโตได้ `"ขออภัยค่ะ ระบบขัดข้องชั่วคราว"` 3 ครั้ง
+ข้ามวัน (11:29 น. และ 18:46 น.) โดย **ไม่มีใครรู้เลย** — ต้นเหตุจริงคือ production DB ยังไม่ได้
+apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน `bms_tenant_ai_config`) ซึ่ง
+**AI Provider Health จับไม่ได้ตามการออกแบบ** เพราะเป็น Postgres schema error ไม่ใช่ provider ล่ม
+(ตาราง `bms_ai_provider_health` ขึ้น CONNECTED ครบทั้ง 4 แถวในเวลาไล่เลี่ยกัน):
+
+- **schema** → migration `7.36__bms_failure_incidents.sql` — `bms_failure_incidents` เป็น log
+  **ราย occurrence (append-only แบบ `bms_audit_log`)** ไม่ใช่ตารางสถานะ 1 แถวต่อ provider แบบ `7.34`
+  เพราะคำถามที่ต้องตอบคือ "แชทไหนได้รับผลกระทบ" (ร้านต้องตามลูกค้ากลับทีละราย) ไม่ใช่ "ตอนนี้พังอยู่ไหม"
+  · `conversation_id` **ไม่ผูก FK โดยเจตนา** — incident ต้องบันทึกได้แม้ resolve conversation ไม่สำเร็จ
+  (ซึ่งตัวมันเองก็เป็นสาเหตุความล้มเหลวที่จะแจ้ง) และแม้แชทถูกลบไปแล้ว · RLS/grant copy จาก `6.1`/`7.18`
+- **service** → `lib/bms/failureAlert.ts` (`reportBmsFailure()`) — ไม่ throw ทุกกรณี
+- **tier แยกผู้รับ**: `A` = ลูกค้าได้รับผลกระทบจริง (เห็น error **หรือไม่ได้รับคำตอบเลย**) → ร้าน
+  (Administrator/Manager + staff หลักของแชทนั้น) + platform admin · `B` = ระบบยังตอบได้แต่คุณภาพลด →
+  platform admin เท่านั้น (ร้านแก้เองไม่ได้ แจ้งไปเป็น noise) · **tier A ที่เกิดบน staff surface ถูก
+  ลดเป็น B อัตโนมัติ** (`resolveTier`) เพราะแอดมินเห็น error ในหน้า `/admin/assistant` ของตัวเองอยู่แล้ว
+- **⚠️ ห้าม hook จาก `outcome` ของ `auditAttempt()`** แม้จะเป็นจุดที่ทูลทุกตัว (ทั้ง model-selected และ
+  `runApprovedTool`) ไหลผ่านจริง — เพราะ `outcome === "error"` **รวม 3 กรณีที่ต่างกันสิ้นเชิง**: ทูล throw
+  exception จริง / `ToolArgError` จาก args ที่ model ส่งผิด (model retry เองได้) / ทูลคืน `{ok:false}`
+  ตามเหตุผลทางธุรกิจ เช่น `"ไม่พบสินค้า"` → ถ้า hook จาก outcome จะแจ้งเตือนทุกครั้งที่ลูกค้าถามหาสินค้าที่
+  ร้านไม่มี. จุดที่ถูกคือ **ข้าง `console.error` เดิม** ซึ่งมีเงื่อนไข
+  `if (!(err instanceof ToolArgError) && !denied)` กรองไว้ถูกแล้ว
+- **ไม่ hook `!executed.result.ok` ใน `pipeline.ts`** (5 จุด deterministic route) เพราะ
+  `runApprovedTool` catch แล้วแบน exception เป็น `{ok:false}` ไปแล้ว → รายงานที่ runtime layer จุดเดียว
+  ครบกว่า และไม่ double-report/ไม่แจ้ง business error
+- **cooldown ต่อ `(tenant_id, code)` ไม่ใช่ threshold** — `maybeAlertSlackForLog()`
+  (`lib/log/alertSlackServer.ts`, ของแอป legacy ไม่มี `tenant_id` เลย จึงแจ้งร้านไม่ได้) ใช้ "3 ครั้งใน
+  10 นาที" ซึ่ง **จับเคสจริงนี้ไม่ได้เลย** เพราะ error ห่างกัน 7 ชั่วโมง · default 30 นาที ปรับด้วย
+  `BMS_FAILURE_ALERT_COOLDOWN_MINUTES` · อ่าน cooldown จากตารางเดิม (`MAX(notified_*_at)` + bound
+  `created_at` ที่มี index) จึงไม่ต้องมีตาราง dedupe แยกแบบ `slack_alert_dedupe`
+- **`withTimeout()` 5 วิ ครอบขั้นตอนแจ้งเตือน — จำเป็นจริง ไม่ใช่กันไว้เฉย ๆ**: ตัวเรียก `await`
+  (กันการแจ้งเตือนหลุดตอน request จบ) ซึ่งลาก `createNotification()` → `pubsub.publish` → **Redis**
+  เข้ามาอยู่บน critical path ของการตอบลูกค้า · เจอจริงตอน verify: รันสคริปต์จาก host ที่ต่อ Redis ไม่ได้
+  → **ค้างค้างยาวจนต้อง kill** (แถว incident ถูกเขียนไปแล้ว) · หลังใส่ timeout: จบใน ~30 วิ, log
+  `shop/platform notification timed out after 5000ms`, **แถว incident ยังถูกบันทึกครบ** และ
+  `notified_*_at` ยังเป็น NULL → ไม่ไปเริ่ม cooldown ทับ (fail ไปทาง "แจ้งซ้ำ" ดีกว่า "เงียบ")
+  · แยก `try` ต่อผู้รับ: ฝั่งหนึ่งพัง อีกฝั่งยังได้รับแจ้ง
+- **`reportFailure` อยู่ใน `ToolLoopTestDeps` seam ด้วย** — ไม่งั้น `runtime-contract.test.mts` ที่ระบุว่า
+  "ไม่ต่อ network/DB" จะแอบเขียน `bms_failure_incidents` จริงทุกครั้งที่ทดสอบ path ความล้มเหลว
+- **UI** → `components/GlobalFailureNotifier.tsx` (mount ใน `app/SessionLayer.tsx` คู่กับ
+  `GlobalMentionNotifier`) — **ไม่เช็ค `can("inbox.view")` ต่างจาก GlobalMentionNotifier** เพราะผู้รับถูก
+  เลือกไว้แล้วตอนสร้าง notification ถ้าเช็คซ้ำ platform admin ที่ไม่มีสิทธิ์ในร้านนั้นจะไม่ได้รับแจ้ง ·
+  ฝั่งร้านคลิกไป `/admin/inbox?c=<id>`, platform admin ไป `/admin/env` (ไป Inbox ร้านอื่นตรง ๆ ไม่ได้
+  เพราะยังไม่ได้ drill-down `BMS_ACT_TENANT`)
+- **verify กับ DB จริงบนเครื่องนี้แล้ว** (ไม่ใช่แค่ `tsc`): apply `7.36` เข้า docker postgres + รันซ้ำ
+  ยืนยัน idempotent · รัน `reportBmsFailure()` จริงในคอนเทนเนอร์ ยืนยันครบ 4 พฤติกรรม — tier A ได้ทั้ง
+  `bms_failure` (ร้าน) + `bms_failure_platform`, ยิง code เดิมซ้ำทันทีถูก cooldown กรอง, tier B ไม่แจ้งร้าน,
+  tier A บน staff surface ถูกลดเป็น B · `runtime-contract.test.mts` ผ่าน 33/33 และไม่เขียน incident row
+  · **ยังไม่ได้ทดสอบผ่านเบราว์เซอร์จริง** (browser notification/คลิก deep-link)
+- **ยังไม่ทำ**: ไม่มีหน้า list incident (`/admin/env` ยังไม่มีการ์ดนี้) — ตอนนี้เห็นผ่าน browser/bell
+  notification + Slack + query DB ตรงเท่านั้น · ไม่ส่งอีเมล (`store_profile.contact_email`) และไม่ส่ง LINE
+  หาเจ้าของร้าน (ยังไม่มี field admin LINE user id — gap เดิมเดียวกับ § Channel Health) · Slack ใช้
+  `SLACK_WEBHOOK_URL` เดิม ถ้าไม่ตั้งก็ข้ามเงียบ ๆ · **ยังไม่ครอบ webhook ช่องทางอื่น** (wire แล้วเฉพาะ
+  LINE — Facebook/Instagram/TikTok/Shopee/Lazada ยังไม่เรียก `reportBmsFailure`) · ไม่ได้แทนที่
+  § Channel Health / § AI Provider Health (คนละมิติ: ตารางนั้นคือ "สถานะการเชื่อมต่อ" ตารางนี้คือ
+  "เหตุการณ์ที่กระทบลูกค้าไปแล้ว") — proactive notification ของ *status transition* ยังไม่ได้ทำ
 
 ## AI Free Tier + BYOK (2026-07)
 

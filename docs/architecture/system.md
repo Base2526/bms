@@ -65,6 +65,8 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
 | Channel Integration — Shopee/Lazada | 🧪 beta | `app/api/bms/{shopee,lazada}/webhook` — see [../integrations/lazada.md](../integrations/lazada.md) |
 | Channel Health Status | ✅ | `lib/bms/channelHealth.ts` · `6.4__bms_channel_health.sql` · badges on `/admin/settings` + sidebar/dashboard alerts + `POST /api/bms/channels/check-health` cron |
+| AI Provider Health | ✅ | `lib/bms/aiProviderHealth.ts` · `7.34__bms_ai_provider_health.sql` · platform-wide table/badge on `/admin/env` + `POST /api/bms/ai/check-health` cron |
+| Failure Incident Alerting | ✅ | `lib/bms/failureAlert.ts` · `7.36__bms_failure_incidents.sql` · tier-split in-app/browser alerts to shop + platform admins (`GlobalFailureNotifier`) |
 | Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` · see [../ui/customer360.md](../ui/customer360.md) |
 | Inbox Realtime Diagnostics | ✅ | `/admin/inbox/realtime-diagnostics` · see [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
@@ -92,7 +94,9 @@ AI OCR / forecasting (beyond payment-slip verify) · WhatsApp / Email / Voice AI
 letting shop owners (Manager role) manage their own staff (currently Administrator/platform only) ·
 Shopee/Lazada signature verification against real Open Platform docs ·
 proactive external notification for Channel Health (e.g. LINE alert to the shop owner) — needs an
-admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel.
+admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel ·
+failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
+not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL).
 
 ## RBAC model (two tiers)
 

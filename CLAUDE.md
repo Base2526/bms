@@ -185,6 +185,38 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   a real error. Visible via a status table and sidebar badge on `/admin/env` (platform-admin only).
   Tenant BYOK keys are intentionally not tracked here. See § AI Provider Health in
   [CLAUDE.local.md](CLAUDE.local.md).
+- **Failure incident alerting**: AI Provider Health only covers *provider connectivity*, so a real
+  outage caused by anything else (a missing migration, a Postgres error, a broken reply push) still
+  reached customers silently — a live shop's customer got "ขออภัยค่ะ ระบบขัดข้องชั่วคราว" three times
+  across a day with the provider table showing all-green. Migration `7.36` adds tenant-scoped,
+  append-only `bms_failure_incidents`, written only through `reportBmsFailure()`
+  (`lib/bms/failureAlert.ts`). Incidents are classified into two tiers with **different recipients**:
+  **Tier A** (the customer saw an error, or got no reply at all) notifies the shop
+  (Administrator/Manager plus the conversation's assigned staff) *and* platform admins; **Tier B**
+  (degraded quality, the customer still got an answer) notifies platform admins only, because the shop
+  cannot act on it. A Tier A code raised on a staff surface is automatically downgraded to Tier B —
+  the admin already sees the error on their own screen. Alerting fires on the **first** occurrence and
+  is then suppressed by a per-`(tenant_id, code)` cooldown (`BMS_FAILURE_ALERT_COOLDOWN_MINUTES`,
+  default 30) rather than the legacy "3 within 10 minutes" burst threshold, which structurally could
+  not catch failures hours apart. Delivery reuses the existing `notifications` table + subscription
+  (in-app bell and browser notification via `GlobalFailureNotifier`), plus Slack when
+  `SLACK_WEBHOOK_URL` is set; there is deliberately no email or LINE-to-owner path yet. Wired at the
+  AI tool runtime, the customer pipeline, and the LINE webhook. See § Failure Incidents in
+  [CLAUDE.local.md](CLAUDE.local.md) for the two non-obvious rules (never hook the alert off a tool's
+  audit `outcome`; the notification step must stay time-bounded because it is awaited on the
+  customer-reply path).
+- **Customer reply policy: contextual browsing + configuration-first payment guidance**: two
+  small shared policy modules keep the customer surface from inventing things. `browse_catalog` is now
+  server-routed for contextual follow-ups ("ดูอย่างอื่น", "สินค้าอื่น", "มีรุ่นอื่นไหม"), excluding the
+  products named in the immediately previous reply and offering up to three different in-stock choices
+  instead of asking the customer to repeat a product name or size
+  (`lib/bms/customerReplyPolicy.ts`). Payment guidance is derived from the shop's actual configuration:
+  `lib/bms/paymentConfiguration.ts` treats blank receiving-account rows as unconfigured, so
+  `get_payment_info` returns `configured:false`, proactive bank/PromptPay/QR suggestions are stripped
+  from the reply, and the customer-surface `submit_payment` tool refuses an unconfigured method
+  (`PAYMENT_METHOD_NOT_CONFIGURED`) instead of creating a PENDING payment against a channel the shop
+  cannot receive money on. Staff surfaces keep their existing latitude to record other methods.
+  Covered by `scripts/ai-eval/customer-policy-contract.test.mts`.
 - **Revision History**: BMS now has tenant-scoped revision snapshots via migrations `7.0`–`7.14`.
   The `/admin/revisions` page can list recent revisions, inspect a snapshot, and compare two
   versions for products, orders, payments, shipments, and purchase orders (header + line items,

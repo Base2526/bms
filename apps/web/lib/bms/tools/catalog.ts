@@ -60,6 +60,10 @@ import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { getStoreProfile, estimateShipping } from "../storeProfile";
+import {
+  configuredPaymentAccounts,
+  supportsCustomerPaymentMethod,
+} from "../paymentConfiguration";
 import { getTenantName, getTenantSlug } from "../platform";
 import { generateInvoice, generateQuotation } from "../documents";
 import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
@@ -807,7 +811,8 @@ const submitPaymentTool: BmsTool = {
   description:
     "Record a customer payment notification (status PENDING — funds are NOT confirmed; an admin must verify the slip first). Use when the customer says they have transferred. " +
     "Customer surface: never ask for or pass orderId — leave it empty and the latest order for this customer is used automatically. " +
-    "You must know `method` (the channel they transferred through) before calling. If the customer did not say which channel, ask exactly one confirming question first. Never guess.",
+    "Before suggesting or accepting a customer payment method, call get_payment_info and use only a configured channel returned there. " +
+    "You must know `method` (the channel they transferred through) before calling. If the customer did not say which configured channel, ask exactly one confirming question first. Never guess.",
   surfaces: ["customer", "staff"],
   permission: "payment.submit",
   inputSchema: {
@@ -826,6 +831,21 @@ const submitPaymentTool: BmsTool = {
     required: ["method"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
+    const method = enumVal(args, "method", PAYMENT_METHODS)!;
+    if (ec.surface === "customer") {
+      const profile = await getStoreProfile(ec.tenantId);
+      if (!supportsCustomerPaymentMethod(profile.paymentAccounts, method)) {
+        return {
+          ok: true,
+          data: {
+            status: "PAYMENT_METHOD_NOT_CONFIGURED",
+            configuredMethods: configuredPaymentAccounts(profile.paymentAccounts).map(
+              (account) => account.type
+            ),
+          },
+        };
+      }
+    }
     let orderId = optString(args, "orderId") ?? null;
     if (!orderId) {
       // ฝั่งลูกค้าไม่รู้/ไม่ต้องบอก orderId เอง — resolve เป็นออร์เดอร์ล่าสุดของลูกค้าคนนี้ในช่องทางนี้
@@ -840,7 +860,6 @@ const submitPaymentTool: BmsTool = {
     if (ec.surface === "customer" && !(await customerOwnsOrder(ec, orderId))) {
       return { ok: false, error: "ไม่พบออร์เดอร์นี้ในบัญชีของคุณ" };
     }
-    const method = enumVal(args, "method", PAYMENT_METHODS)!;
     const amount = typeof args.amount === "number" ? args.amount : undefined;
     const r = await submitPayment({
       tenantId: ec.tenantId,
@@ -1381,12 +1400,19 @@ const getStoreInfoTool: BmsTool = {
 const getPaymentInfoTool: BmsTool = {
   name: "get_payment_info",
   description:
-    "The shop's own payment channels and receiving accounts (bank transfer, PromptPay). Use when the customer asks which account to transfer to.",
+    "The shop's configured payment channels and receiving accounts. Call before mentioning payment methods or accounts. If configured=false, do not suggest examples or alternative channels; say the shop has not provided payment details yet.",
   surfaces: ["customer", "staff"],
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
     const p = await getStoreProfile(ec.tenantId);
-    return { ok: true, data: { paymentAccounts: p.paymentAccounts } };
+    const paymentAccounts = configuredPaymentAccounts(p.paymentAccounts);
+    return {
+      ok: true,
+      data: {
+        configured: paymentAccounts.length > 0,
+        paymentAccounts,
+      },
+    };
   },
 };
 
