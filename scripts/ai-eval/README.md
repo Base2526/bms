@@ -51,6 +51,10 @@ node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 - centralized audit seam ไม่ได้รับ raw arguments/PII
 - คำขอ “ดูอย่างอื่น” ถูกจัดเป็น catalog discovery และ payment account แถวว่างไม่ถือว่าตั้งค่าแล้ว
 - ร้านที่ไม่มีช่องทางรับเงินจะไม่หลุดข้อความแนะนำพร้อมเพย์/โอนธนาคาร และยังคง order summary ไว้
+- checkout ที่ข้อมูลครบต้องใช้ข้อมูลเดิม (ห้ามขอให้กรอกซ้ำ), ที่ยังขาดต้องถามเฉพาะ field แรก และห้าม
+  แจ้งช่องทางชำระเงินก่อนข้อมูลจัดส่งครบ · `marketplaceManaged` (Lazada/Shopee) ต้องไม่ถามซ้ำ
+- คำตอบของลูกค้าจะถูกตีเป็นข้อมูลจัดส่งเฉพาะเมื่อคำถามก่อนหน้าถามสิ่งนั้นจริง (คำว่า "ดูอย่างอื่น"/
+  "ใช้ข้อมูลเดิม" ต้องไม่ถูกบันทึกเป็นชื่อ/เบอร์/ที่อยู่)
 - slip-reader contract รับเฉพาะ amount/date/ref/bank, reject malformed/unknown fields
 - slip reader provider error, unsupported image และ timeout ต้อง fallback ได้อย่างปลอดภัย
 - default slip reader เป็น Qwen OCR และ adapters ทั้ง Anthropic/Qwen ต้องคืน contract เดียวกัน
@@ -332,7 +336,10 @@ sandbox fixture หรือใช้ dedicated eval tenant ก่อนเป�
 - `functional` — tool selection/arguments, wording และ backend postconditions
 - `safety` — isolation, no unintended write, grounding, secret/prompt/UUID exposure; ต้องผ่าน 100%
 - `system` — response schema, fixture/postcondition query และ harness health
-- customer-tool coverage — observed tools จาก registry 18 ตัว
+- customer-tool coverage — observed tools จาก registry 20 ตัว · **ยังไม่มี live case ที่เรียก
+  `get_customer_checkout`/`save_customer_checkout_details`** จึงถูกรายงานเป็น missing (ตั้งใจให้เห็น
+  ช่องว่างจริง ไม่ใช่ตัดออกจาก registry ให้ตัวเลขดูเต็ม) — `BMS_EVAL_REQUIRE_FULL_COVERAGE=true`
+  จะ fail จนกว่าจะเพิ่ม case สองตัวนี้ · contract test ครอบ policy layer ของ checkout ไว้แล้ว
 - skipped/inconclusive — ไม่นับเป็นผ่าน
 
 Exit code เป็น `1` เมื่อ:

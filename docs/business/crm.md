@@ -26,6 +26,13 @@ order can move from `PACKING` to `SHIPPED`; `shipOrder()` and `createShipment()`
 Lazada/Shopee are exempt because the shipping address stays in Seller Center. Customers are **never
 hard deleted** — only soft-deleted (`deleted_at`).
 
+The customer chat checkout reads delivery completeness through `getCustomerCheckoutStatus()`, scoped
+to the channel identity. Its AI tool returns only booleans/counts, an optional address label, and
+ordered missing-field names; raw CRM PII is not sent merely to decide whether a form is needed.
+Complete saved details are reused automatically. Incomplete details are collected one field at a
+time and saved by `saveCustomerCheckoutDetails()` only when the customer explicitly supplied them.
+An identical shipping address is selected as default rather than inserted again.
+
 ## Omnichannel Inbox
 
 Every conversation belongs to exactly one customer and is **never deleted**. Internal notes are

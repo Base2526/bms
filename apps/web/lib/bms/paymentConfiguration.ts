@@ -60,3 +60,29 @@ export function configuredPaymentMethodLabels(accounts: PaymentAccount[]): strin
   }
   return labels;
 }
+
+export function customerPaymentAccountLines(accounts: PaymentAccount[]): string[] {
+  return configuredPaymentAccounts(accounts)
+    .map((account) => {
+      const type = normalizedType(account);
+      const accountName = value(account.accountName);
+      if (type === "BANK") {
+        const accountNo = value(account.accountNo);
+        if (!accountNo) return null;
+        const bankName = value(account.bankName) || "บัญชีธนาคาร";
+        return `• ${bankName} เลขบัญชี ${accountNo}${
+          accountName ? ` ชื่อบัญชี ${accountName}` : ""
+        }`;
+      }
+      if (type === "PROMPTPAY" || type === "QR") {
+        const promptpayId = value(account.promptpayId);
+        if (!promptpayId) return null;
+        return `• พร้อมเพย์ ${promptpayId}${
+          accountName ? ` ชื่อบัญชี ${accountName}` : ""
+        }`;
+      }
+      const note = value(account.note);
+      return note ? `• ${note}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+}

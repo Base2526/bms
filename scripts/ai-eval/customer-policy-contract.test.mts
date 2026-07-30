@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  checkoutDetailsFromReply,
+  checkoutNextStepReply,
   isAlternativeCatalogRequest,
   suppressUnconfiguredPaymentAdvice,
 } from "../../apps/web/lib/bms/customerReplyPolicy.ts";
 import {
+  customerPaymentAccountLines,
   configuredPaymentAccounts,
   configuredPaymentMethodLabels,
   hasConfiguredPaymentAccounts,
@@ -68,4 +71,122 @@ test("a product whose name mentions QR is not mistaken for payment advice", () =
     ),
     "เครื่องสแกน QR รุ่น Mini ราคา 990 บาท สนใจให้เช็กสต็อกไหมคะ"
   );
+});
+
+test("checkout reuses complete delivery details and does not ask the customer to fill them again", () => {
+  const reply = checkoutNextStepReply(
+    {
+      marketplaceManaged: false,
+      hasRecipientName: true,
+      hasPhone: true,
+      hasShippingAddress: true,
+      shippingAddressCount: 1,
+      defaultAddressLabel: "บ้าน",
+      missingFields: [],
+    },
+    []
+  );
+  assert.match(reply, /ใช้ข้อมูลเดิมให้อัตโนมัติ/);
+  assert.doesNotMatch(reply, /กรอก|แจ้งชื่อผู้รับ|แจ้งเบอร์|แจ้งที่อยู่/);
+  assert.doesNotMatch(reply, /ชำระ|พร้อมเพย์|ธนาคาร/);
+});
+
+test("checkout asks only for the first missing delivery field", () => {
+  const reply = checkoutNextStepReply(
+    {
+      marketplaceManaged: false,
+      hasRecipientName: true,
+      hasPhone: false,
+      hasShippingAddress: false,
+      shippingAddressCount: 0,
+      defaultAddressLabel: null,
+      missingFields: ["phone", "shippingAddress"],
+    },
+    [{ type: "BANK", bankName: "Example Bank", accountNo: "123-4-56789-0" }]
+  );
+  assert.match(reply, /แจ้งเบอร์โทรศัพท์/);
+  assert.doesNotMatch(reply, /แจ้งที่อยู่/);
+  assert.doesNotMatch(reply, /Example Bank|ชำระเงิน/);
+});
+
+test("checkout shows only configured payment accounts", () => {
+  const accounts = [
+    {
+      type: "BANK",
+      bankName: "Example Bank",
+      accountNo: "123-4-56789-0",
+      accountName: "Example Shop",
+    },
+    { type: "PROMPTPAY", promptpayId: " " },
+  ];
+  assert.deepEqual(customerPaymentAccountLines(accounts), [
+    "• Example Bank เลขบัญชี 123-4-56789-0 ชื่อบัญชี Example Shop",
+  ]);
+  const reply = checkoutNextStepReply(
+    {
+      marketplaceManaged: false,
+      hasRecipientName: true,
+      hasPhone: true,
+      hasShippingAddress: true,
+      shippingAddressCount: 1,
+      defaultAddressLabel: null,
+      missingFields: [],
+    },
+    accounts
+  );
+  assert.match(reply, /Example Bank/);
+  assert.doesNotMatch(reply, /พร้อมเพย์/);
+});
+
+test("marketplace checkout never asks for delivery or payment details again", () => {
+  const reply = checkoutNextStepReply(
+    {
+      marketplaceManaged: true,
+      hasRecipientName: false,
+      hasPhone: false,
+      hasShippingAddress: false,
+      shippingAddressCount: 0,
+      defaultAddressLabel: null,
+      missingFields: [],
+    },
+    [{ type: "BANK", bankName: "Example Bank", accountNo: "123" }]
+  );
+  assert.equal(
+    reply,
+    "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินใช้งานจาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ"
+  );
+});
+
+test("checkout continuation maps a reply to the field that was actually requested", () => {
+  assert.deepEqual(
+    checkoutDetailsFromReply("เบอร์ 081-234-5678 ค่ะ", [
+      {
+        role: "assistant",
+        content:
+          "มีชื่อผู้รับแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งเบอร์โทรศัพท์ที่ติดต่อได้ค่ะ",
+      },
+    ]),
+    { phone: "081-234-5678" }
+  );
+  assert.deepEqual(
+    checkoutDetailsFromReply("ที่อยู่: 18 ซอยสุขุมวิท 46 กรุงเทพ 10110", [
+      {
+        role: "assistant",
+        content:
+          "มีชื่อและเบอร์โทรแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งที่อยู่จัดส่งค่ะ",
+      },
+    ]),
+    { shippingAddress: "18 ซอยสุขุมวิท 46 กรุงเทพ 10110" }
+  );
+});
+
+test("checkout continuation does not save navigation or existing-address confirmations as PII", () => {
+  const history = [
+    {
+      role: "assistant" as const,
+      content: "ก่อนจัดส่ง รบกวนแจ้งชื่อผู้รับค่ะ",
+    },
+  ];
+  assert.equal(checkoutDetailsFromReply("ดูอย่างอื่นด้วย", history), null);
+  assert.equal(checkoutDetailsFromReply("ใช้ข้อมูลเดิม", history), null);
 });
