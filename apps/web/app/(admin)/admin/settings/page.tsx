@@ -4,6 +4,7 @@ import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Di
 import { useState, useEffect } from "react";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
+import ReportSubscriptionCard from "./ReportSubscriptionCard";
 
 const { Text, Paragraph } = Typography;
 
@@ -115,6 +116,7 @@ export default function Page() {
       )}
 
       <StoreProfileCard />
+      <ReportSubscriptionCard />
 
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
