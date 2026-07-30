@@ -6,6 +6,7 @@ import { SessionProvider, useSessionCtx } from "@/lib/session-context";
 import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
 import { GlobalMentionNotifier } from "@/components/GlobalMentionNotifier";
+import { GlobalFailureNotifier } from "@/components/GlobalFailureNotifier";
 
 // Keep these global wires out of the auth routes.
 function GlobalWiresWrapper() {
@@ -30,6 +31,7 @@ function GlobalWiresWrapper() {
       {meId ? <GlobalChatListener /> : null}
       {admin?.id ? <GlobalInboxNotifier /> : null}
       {admin?.id ? <GlobalMentionNotifier /> : null}
+      {admin?.id ? <GlobalFailureNotifier /> : null}
     </>
   );
 }

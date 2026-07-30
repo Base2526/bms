@@ -27,8 +27,18 @@ import {
 } from "./inbox";
 import { listCategories } from "./productCategories";
 import { listSellableProducts } from "./products";
-import { getStoreProfile } from "./storeProfile";
+import { getStoreProfile, type PaymentAccount } from "./storeProfile";
 import { deriveAiTurnQuality, type AiTurnQuality } from "./aiQuality";
+import { reportBmsFailure } from "./failureAlert";
+import {
+  configuredPaymentAccounts,
+  configuredPaymentMethodLabels,
+  hasConfiguredPaymentAccounts,
+} from "./paymentConfiguration";
+import {
+  isAlternativeCatalogRequest,
+  suppressUnconfiguredPaymentAdvice,
+} from "./customerReplyPolicy";
 import {
   createCouponWalletToken,
   findCustomerIdByIdentity,
@@ -188,6 +198,7 @@ type AiProfileContext = {
   aiRequiredFields: string[];
   aiInterpretShortReplies: boolean;
   aiHandoffAfterFailedTurns: number;
+  paymentAccounts: PaymentAccount[];
 };
 
 const DEFAULT_AI_PROFILE: AiProfileContext = {
@@ -197,6 +208,7 @@ const DEFAULT_AI_PROFILE: AiProfileContext = {
   aiRequiredFields: ["product", "size", "qty"],
   aiInterpretShortReplies: true,
   aiHandoffAfterFailedTurns: 3,
+  paymentAccounts: [],
 };
 
 function buildCustomerSystem(categories: string[], profile: AiProfileContext): string {
@@ -236,8 +248,9 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "อย่าถามย้ำหลายรอบ: ถ้าลูกค้าบอกชื่อสินค้า+ไซซ์+จำนวนและสั่งยืนยันแล้ว ให้ search_products/check_stock เอง ถ้าเจอสินค้าที่ตรงที่สุดเพียงพอก็เรียก create_order ด้วย sku นั้นเลย ไม่ต้องขอรุ่น/สีเพิ่มถ้าลูกค้าไม่ได้ระบุ",
     "ถ้าข้อมูลยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
     "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าอัตโนมัติ) " +
-      "แต่ต้องรู้ method (ช่องทางที่โอน เช่น โอนธนาคาร/พร้อมเพย์) ก่อนเรียกเสมอ ถ้าลูกค้าไม่ได้บอกช่องทาง ให้ถามยืนยัน 1 คำถามก่อน ห้ามเดา " +
+      "แต่ต้องเรียก get_payment_info และรู้ method ที่ร้านตั้งค่าไว้ก่อนเสมอ ถ้าลูกค้าไม่ได้บอกช่องทาง ให้ถามยืนยันจากช่องทางที่ผลทูลส่งกลับมาเท่านั้น ห้ามยกตัวอย่างช่องทางเอง " +
       "หลังเรียกสำเร็จ (สถานะ PENDING) แจ้งว่ารอแอดมินตรวจสอบ อย่ายืนยันว่าเงินเข้าแล้ว และห้ามพูดว่า 'บันทึกแล้ว/สำเร็จแล้ว' ถ้าไม่ได้เรียกทูลนี้จริง",
+    "ห้ามเสนอหรือถามนำเรื่องโอนธนาคาร พร้อมเพย์ QR หรือวิธีชำระเงินใด ๆ ถ้ายังไม่ได้เรียก get_payment_info ใน turn นั้น; ถ้าทูลคืน configured=false ให้บอกเพียงว่าร้านยังไม่ได้ระบุรายละเอียดการชำระเงินและให้รอแอดมิน ห้ามเสนอช่องทางอื่นหรือยกตัวอย่างเอง",
     "ถ้าลูกค้าถามคูปองของตัวเอง/ถามว่าเหลืออะไร/อะไรใกล้หมดอายุ ให้ใช้ list_customer_coupons ก่อนตอบ ถ้าถามคูปองทั่วไปหรือขอส่วนลดค่อยใช้ list_available_coupons/check_coupon ตามบริบท",
     "ห้ามเดาหรือใช้คูปองจากข้อความอิสระ เช่น 'ใช้ SAVE10' — เมื่อร้านส่งคูปองให้ลูกค้า สิทธิ์จะเข้า wallet อัตโนมัติ และลูกค้าดูรายละเอียดผ่านลิงก์กระเป๋าคูปองเท่านั้น ถ้าลูกค้าพิมพ์โค้ด ให้ตรวจด้วย check_coupon และอธิบายสถานะ/เงื่อนไข แต่ไม่ต้องเปลี่ยนสถานะ wallet จากข้อความนั้น",
     "การลดเงินจริงเกิดตอน create_order ได้รับ couponCode และ backend ตรวจเงื่อนไข/จองสิทธิ์ในทรานแซกชันเดียวกับออร์เดอร์เท่านั้น",
@@ -284,7 +297,7 @@ function stockRecoveryReply(result: StockResult): string | null {
 function isCatalogDiscoveryMessage(message: string): boolean {
   return /(?:มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(
     message
-  );
+  ) || isAlternativeCatalogRequest(message);
 }
 
 type CustomerIntent =
@@ -355,7 +368,8 @@ const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
 function customerExecCtx(
   tenantId: string,
   channel: Channel,
-  customerRef?: string | null
+  customerRef?: string | null,
+  conversationId?: string | null
 ): ExecCtx {
   return {
     tenantId,
@@ -363,6 +377,7 @@ function customerExecCtx(
     actor: "ai:customer",
     channel,
     customerRef,
+    conversationId: conversationId ?? null,
   };
 }
 
@@ -387,8 +402,11 @@ type OrderMemory = {
 
 function shouldClearDraftOrderMemory(text: string): boolean {
   const trimmed = text.trim();
-  return /(?:ไม่เอาแล้ว|ยกเลิก(?:ที่คุย|รายการ|การสั่ง|อันนี้|ตัวนี้)?|เลิกสั่ง|ไม่สั่งแล้ว|พอก่อน|ไว้ก่อน|อย่าเพิ่ง(?:สั่ง|ทำรายการ)?|มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|มีรุ่นไหนแนะนำ|ขอดูสินค้า|ขอดูรุ่น)/i.test(
-    trimmed
+  return (
+    isAlternativeCatalogRequest(trimmed) ||
+    /(?:ไม่เอาแล้ว|ยกเลิก(?:ที่คุย|รายการ|การสั่ง|อันนี้|ตัวนี้)?|เลิกสั่ง|ไม่สั่งแล้ว|พอก่อน|ไว้ก่อน|อย่าเพิ่ง(?:สั่ง|ทำรายการ)?|มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|มีรุ่นไหนแนะนำ|ขอดูสินค้า|ขอดูรุ่น)/i.test(
+      trimmed
+    )
   );
 }
 
@@ -686,6 +704,85 @@ function isPaymentSubmission(message: string): boolean {
   );
 }
 
+function isPaymentInfoQuestion(message: string): boolean {
+  if (isPaymentSubmission(message)) return false;
+  return (
+    /(?:ช่องทาง|วิธี).*(?:ชำระ|จ่าย|โอน)/i.test(message) ||
+    /(?:ชำระ|จ่าย|โอน).*(?:ช่องทาง|วิธี|ยังไง|อย่างไร|ที่ไหน|บัญชี|พร้อมเพย์|คิวอาร์|\bqr\b)/i.test(
+      message
+    ) ||
+    /(?:เลขบัญชี|พร้อมเพย์|promptpay|คิวอาร์|\bqr\b).*(?:อะไร|ไหน|ขอ|มีไหม)/i.test(message)
+  );
+}
+
+function paymentAccountLine(account: PaymentAccount): string | null {
+  const type = String(account.type || "").trim().toUpperCase();
+  const accountName = String(account.accountName || "").trim();
+  if (type === "BANK") {
+    const bankName = String(account.bankName || "").trim() || "บัญชีธนาคาร";
+    const accountNo = String(account.accountNo || "").trim();
+    return accountNo
+      ? `• ${bankName} เลขบัญชี ${accountNo}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`
+      : null;
+  }
+  if (type === "PROMPTPAY" || type === "QR") {
+    const promptpayId = String(account.promptpayId || "").trim();
+    return promptpayId
+      ? `• พร้อมเพย์ ${promptpayId}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`
+      : null;
+  }
+  const note = String(account.note || "").trim();
+  return note ? `• ${note}` : null;
+}
+
+function paymentInfoReply(accounts: PaymentAccount[]): string {
+  const lines = configuredPaymentAccounts(accounts)
+    .map(paymentAccountLine)
+    .filter((line): line is string => Boolean(line));
+  if (lines.length === 0) {
+    return "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
+  }
+  return `ช่องทางชำระเงินที่ทางร้านระบุไว้มีดังนี้ค่ะ\n${lines.join("\n")}`;
+}
+
+type CatalogReplyProduct = {
+  sku: string;
+  name: string;
+  price: number;
+  availableSizes?: Array<{ size: string; available: number }>;
+};
+
+function alternativeCatalogReply(
+  products: CatalogReplyProduct[],
+  lastAssistantReply: string
+): string {
+  const previous = lastAssistantReply.toLowerCase();
+  const alternatives = products
+    .filter(
+      (product) =>
+        !previous.includes(product.sku.toLowerCase()) &&
+        !previous.includes(product.name.toLowerCase())
+    )
+    .slice(0, 3);
+  if (alternatives.length === 0) {
+    return products.length > 0
+      ? "ตอนนี้ยังไม่มีสินค้าอื่นเพิ่มเติมจากรายการที่เพิ่งส่งไปค่ะ สนใจให้ช่วยเช็กไซซ์หรือรายละเอียดของตัวไหนต่อไหมคะ"
+      : "ตอนนี้ยังไม่มีสินค้าอื่นที่พร้อมขายค่ะ หากมีสินค้าเข้าใหม่ทางร้านจะแจ้งให้ทราบนะคะ";
+  }
+  const lines = alternatives.map((product) => {
+    const sizes = (product.availableSizes ?? [])
+      .filter((variant) => variant.available > 0)
+      .map((variant) => variant.size)
+      .slice(0, 5);
+    return `• ${product.name} ${Number(product.price).toLocaleString()} บาท${
+      sizes.length > 0 ? ` (ไซซ์ ${sizes.join(", ")})` : ""
+    }`;
+  });
+  return `ได้เลยค่ะ ลองดูตัวเลือกอื่นที่พร้อมขายตอนนี้นะคะ\n${lines.join(
+    "\n"
+  )}\nสนใจตัวไหนให้ช่วยเช็กไซซ์ต่อคะ`;
+}
+
 function isReorderRequest(message: string): boolean {
   return /(?:สั่งซ้ำ|ซื้อซ้ำ|เอาเหมือนเดิม|สั่งเหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม|ออเดอร์เดิม|เหมือน(?:ออร์เดอร์|ออเดอร์|รายการ)ล่าสุด|สั่ง[^.!?\n]{0,30}เหมือน[^.!?\n]{0,30}ล่าสุด)/i.test(
     message
@@ -858,7 +955,31 @@ export async function runPipeline(
     profile = loaded[2];
   } catch (err) {
     console.error("[BMS] pipeline pre-context history load failed:", err);
+    await reportBmsFailure({
+      tenantId,
+      code: "ai.context_load_failed",
+      error: err,
+      surface: "customer",
+      channel,
+      customerRef,
+      conversationId: convId,
+      meta: { stage: "history_state_profile" },
+    });
   }
+
+  // Tier B — พังเงียบ: ลูกค้ายังได้คำตอบ แต่ความจำบทสนทนาหาย (AI จะถามซ้ำ)
+  // รวมไว้จุดเดียวเพราะมีหลายจุดที่เขียน state ในเทิร์นเดียว
+  const reportStateFailure = (err: unknown, stage: string) =>
+    reportBmsFailure({
+      tenantId,
+      code: "ai.state_persist_failed",
+      error: err,
+      surface: "customer",
+      channel,
+      customerRef,
+      conversationId: convId,
+      meta: { stage },
+    });
 
   const aiInputMessage = profile.aiInterpretShortReplies
     ? normalizeShortReplyMessage(message, history)
@@ -867,7 +988,7 @@ export async function runPipeline(
   const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
-  const execCtx = customerExecCtx(tenantId, channel, customerRef);
+  const execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
 
   // Greeting is deterministic and needs no retrieval or provider call.
   if (classifiedIntent === "greeting") {
@@ -880,6 +1001,34 @@ export async function runPipeline(
       reply: profile.aiLanguage === "en"
         ? "Hello! Which product are you interested in?"
         : "สวัสดีค่ะ สนใจสินค้ารุ่นไหน แจ้งชื่อสินค้าได้เลยนะคะ",
+    });
+  }
+
+  if (isAlternativeCatalogRequest(aiInputMessage)) {
+    const executed = await executeCustomerTool("browse_catalog", { limit: 8 }, execCtx);
+    const products =
+      executed.result.ok && Array.isArray((executed.result.data as any)?.products)
+        ? ((executed.result.data as any).products as CatalogReplyProduct[])
+        : [];
+    const lastAssistant =
+      [...history].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
+    const reply = executed.result.ok
+      ? alternativeCatalogReply(products, lastAssistant)
+      : `ขออภัยค่ะ ดูสินค้าอื่นไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    if (convId) {
+      await setAiConversationState(tenantId, convId, {}).catch(async (err) => {
+        console.error("[BMS] pipeline alternative catalog state clear failed:", err);
+        await reportStateFailure(err, "alternative_catalog_clear");
+      });
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:browse_catalog_alternatives",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply,
+      trace: [executed.trace],
     });
   }
 
@@ -917,13 +1066,19 @@ export async function runPipeline(
   if (isPaymentSubmission(aiInputMessage)) {
     const method = paymentMethodFromMessage(aiInputMessage);
     if (!method) {
+      const configuredLabels = configuredPaymentMethodLabels(profile.paymentAccounts);
       return customerSafe({
         channel,
         incoming: message,
         understanding,
         tool: "deterministic:payment_method_question",
         data: { status: "NOT_FOUND", query: aiInputMessage },
-        reply: "โอนผ่านช่องทางไหนคะ เช่น พร้อมเพย์หรือโอนเข้าบัญชีธนาคาร",
+        reply:
+          configuredLabels.length > 0
+            ? `โอนผ่านช่องทางไหนคะ กรุณาเลือกจากช่องทางที่ร้านตั้งไว้: ${configuredLabels.join(
+                " หรือ "
+              )}`
+            : "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ",
       });
     }
     const executed = await executeCustomerTool("submit_payment", { method }, execCtx);
@@ -936,6 +1091,9 @@ export async function runPipeline(
         reply = `รับแจ้งการชำระเงินยอด ${Number(payment.amount ?? 0).toLocaleString()} บาทแล้วค่ะ ตอนนี้สถานะยังรอแอดมินตรวจสอบ กรุณารอผลยืนยันนะคะ`;
       } else if (payment?.status === "ORDER_NOT_FOUND") {
         reply = "ยังไม่พบออร์เดอร์ล่าสุดของบัญชีนี้ จึงยังแจ้งชำระเงินไม่ได้ค่ะ";
+      } else if (payment?.status === "PAYMENT_METHOD_NOT_CONFIGURED") {
+        reply =
+          "ช่องทางที่แจ้งมายังไม่ได้ตั้งค่าเป็นช่องทางรับชำระเงินของร้านค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
       } else {
         reply = "ขออภัยค่ะ ยังแจ้งชำระเงินไม่ได้ กรุณาตรวจสอบช่องทางที่โอนแล้วลองอีกครั้งนะคะ";
       }
@@ -947,6 +1105,25 @@ export async function runPipeline(
       tool: "deterministic:submit_payment",
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply,
+      trace: [executed.trace],
+    });
+  }
+
+  if (isPaymentInfoQuestion(aiInputMessage)) {
+    const executed = await executeCustomerTool("get_payment_info", {}, execCtx);
+    const accounts =
+      executed.result.ok && Array.isArray((executed.result.data as any)?.paymentAccounts)
+        ? ((executed.result.data as any).paymentAccounts as PaymentAccount[])
+        : [];
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:get_payment_info",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: executed.result.ok
+        ? paymentInfoReply(accounts)
+        : `ขออภัยค่ะ ตรวจช่องทางชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
       trace: [executed.trace],
     });
   }
@@ -1021,6 +1198,16 @@ export async function runPipeline(
     categories = await listCategories(tenantId);
   } catch (err) {
     console.error("[BMS] pipeline pre-AI static context load failed:", err);
+    await reportBmsFailure({
+      tenantId,
+      code: "ai.context_load_failed",
+      error: err,
+      surface: "customer",
+      channel,
+      customerRef,
+      conversationId: convId,
+      meta: { stage: "categories" },
+    });
   }
 
   const { recentTurns, summary } = compressConversationHistory(history);
@@ -1032,16 +1219,20 @@ export async function runPipeline(
         buildOrderMemory(recentTurns, aiInputMessage, understanding)
       );
   if (convId && draftOrderCancelled) {
-    await setAiConversationState(tenantId, convId, {}).catch((err) =>
-      console.error("[BMS] pipeline AI draft state clear failed:", err)
-    );
+    await setAiConversationState(tenantId, convId, {}).catch(async (err) => {
+      console.error("[BMS] pipeline AI draft state clear failed:", err);
+      await reportStateFailure(err, "draft_clear");
+    });
   }
   if (convId && orderMemory) {
     await setAiConversationState(tenantId, convId, {
       ...orderMemory,
       lastIntent: classifiedIntent,
       lastAskedField: storedState.lastAskedField ?? null,
-    }).catch((err) => console.error("[BMS] pipeline AI state update failed:", err));
+    }).catch(async (err) => {
+      console.error("[BMS] pipeline AI state update failed:", err);
+      await reportStateFailure(err, "state_update");
+    });
   }
   if (
     classifiedIntent === "ordering" &&
@@ -1149,7 +1340,10 @@ export async function runPipeline(
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
       reply = "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
     } else {
-      reply = loop.reply || "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏";
+      const modelReply = loop.reply || "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏";
+      reply = hasConfiguredPaymentAccounts(profile.paymentAccounts)
+        ? modelReply
+        : suppressUnconfiguredPaymentAdvice(modelReply);
     }
 
     if (convId) {
@@ -1163,9 +1357,10 @@ export async function runPipeline(
             lastIntent: classifiedIntent,
             lastAskedField: askedFieldFromReply(reply),
           };
-      await setAiConversationState(tenantId, convId, nextState).catch((err) =>
-        console.error("[BMS] pipeline AI state persist failed:", err)
-      );
+      await setAiConversationState(tenantId, convId, nextState).catch(async (err) => {
+        console.error("[BMS] pipeline AI state persist failed:", err);
+        await reportStateFailure(err, "state_persist");
+      });
     }
 
     // P1: turn/handoff counter — นับข้อความติดกันที่ไม่คืบหน้า (ไม่มี write tool สำเร็จ) ต่อ conversation
@@ -1196,6 +1391,7 @@ export async function runPipeline(
         }
       } catch (err) {
         console.error("[BMS] pipeline turn-budget counter failed:", err);
+        await reportStateFailure(err, "turn_budget");
       }
     }
 
@@ -1298,4 +1494,3 @@ export async function runPipeline(
 
   return customerSafe({ channel, incoming: message, understanding, tool, data, reply });
 }
-

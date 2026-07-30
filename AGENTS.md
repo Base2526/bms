@@ -160,6 +160,25 @@ their provider independently:
   column itself never stores `'stale'`. Visible on `/admin/env` (platform-admin only): a status table,
   a one-click "ตรวจสอบทั้งหมดตอนนี้" re-test, and a cron `POST /api/bms/ai/check-health` (no schedule
   configured yet — see CLAUDE.local.md).
+- **Failure incidents** (`lib/bms/failureAlert.ts`, migration `7.36`, tenant-scoped) record and alert
+  on failures that actually reached a customer or degraded a reply — a different dimension from the two
+  health tables above, which only record *connection status*. Report through `reportBmsFailure()` only;
+  it never throws, and callers must keep it out of the transaction that produced the failure. Three
+  rules an agent must not get wrong:
+  - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
+    like the perfect choke point, but its `outcome === "error"` merges a genuine thrown exception, a
+    `ToolArgError` the model can retry itself, and a business-level `{ ok: false }` such as
+    "ไม่พบสินค้า". Alerting there pages the shop every time a customer asks for a product it does not
+    stock. Report next to the existing `console.error` sites, which already filter correctly.
+  - **Choose the tier by who can act on it, not by severity.** Tier A (customer saw an error or got no
+    reply) alerts the shop *and* platform admins; Tier B (degraded but answered) alerts platform admins
+    only. A Tier A code raised on a `staff` surface is auto-downgraded to B, since the admin already
+    sees the error on their own screen. New codes go in `FAILURE_CATALOG` with an explicit tier.
+  - **Keep the notification step time-bounded.** It is `await`ed so an alert is not lost when a
+    serverless request ends, which puts `createNotification()` → Redis pubsub on the customer-reply
+    critical path. Each recipient phase has its own `try` and a timeout; on timeout the incident row is
+    still written and `notified_*_at` is left NULL, so the alert retries later rather than starting a
+    silent cooldown. Preserve that ordering if you extend the delivery paths.
 - Every new provider knob (a key, a model override, a base URL, a per-model cost rate) needs a
   matching entry in every compose file's `web` service `environment:` block
   (`docker-compose.yml`/`docker-compose.dev.yml`/`docker-compose.prod.yml`) — `--env-file` only makes

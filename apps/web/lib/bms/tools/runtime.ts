@@ -12,6 +12,7 @@ import { resolveAiCredentials, type AiCredentials } from "../ai";
 import { callAnthropicCompatibleMessages } from "../aiProvider";
 import { estimateCachedAiCostUsd, finalizeAiUsageEvent } from "../aiUsage";
 import { audit } from "../audit";
+import { reportBmsFailure, type BmsFailureCode } from "../failureAlert";
 import { requirePermission } from "../permissions";
 import {
   ToolArgError,
@@ -56,6 +57,36 @@ const MAX_TOKENS = 1024;
 const EPHEMERAL_CACHE_CONTROL: AnthCacheControl = { type: "ephemeral" };
 
 class ToolAccessError extends Error {}
+
+/**
+ * แจ้งเตือนความล้มเหลวที่ "ไม่คาดคิด" เท่านั้น
+ *
+ * สำคัญ: ห้าม hook จาก outcome ของ auditAttempt ตรง ๆ แม้จะเป็นจุดที่ทูลทุกตัวไหล
+ * ผ่านจริง เพราะ outcome "error" รวม 3 กรณีที่ต่างกันสิ้นเชิงไว้ด้วยกัน —
+ *   (1) ทูล throw exception จริง (DB/schema/network พัง)      ← อันนี้ควรแจ้ง
+ *   (2) ToolArgError จาก args ที่ model ส่งมาผิด (model retry เองได้)
+ *   (3) ทูลคืน { ok:false } ตามเหตุผลทางธุรกิจ เช่น "ไม่พบสินค้า"
+ * ถ้าแจ้งจาก outcome จะกลายเป็น noise ทุกครั้งที่ลูกค้าถามหาสินค้าที่ร้านไม่มี
+ * จึงเรียกจากจุดเดียวกับที่โค้ดเดิม console.error อยู่แล้ว ซึ่งกรองไว้ถูกแล้ว
+ */
+function reportToolFailure(
+  report: typeof reportBmsFailure,
+  code: BmsFailureCode,
+  execCtx: ExecCtx,
+  error: unknown,
+  meta?: Record<string, unknown>
+): Promise<void> {
+  return report({
+    tenantId: execCtx.tenantId,
+    code,
+    error,
+    surface: execCtx.surface,
+    channel: execCtx.channel ?? null,
+    conversationId: execCtx.conversationId ?? null,
+    customerRef: execCtx.customerRef ?? null,
+    meta,
+  });
+}
 
 function inputRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -227,6 +258,11 @@ export type ToolLoopTestDeps = {
   callProvider?: typeof callProviderMessages;
   finalizeUsage?: typeof finalizeAiUsageEvent;
   auditAttempt?: typeof auditToolCall;
+  /**
+   * ต้องอยู่ใน seam ด้วย ไม่งั้น contract test (ที่ระบุว่าไม่ต่อ network/DB) จะแอบ
+   * เขียน bms_failure_incidents จริงทุกครั้งที่ทดสอบ path ความล้มเหลว
+   */
+  reportFailure?: typeof reportBmsFailure;
 };
 
 export type ApprovedToolOptions = {
@@ -242,9 +278,10 @@ export type ApprovedToolOptions = {
  */
 async function runApprovedToolInternal(
   opts: ApprovedToolOptions,
-  deps: Pick<ToolLoopTestDeps, "auditAttempt"> = {}
+  deps: Pick<ToolLoopTestDeps, "auditAttempt" | "reportFailure"> = {}
 ): Promise<{ result: ToolResult; trace: ToolTraceEntry }> {
   const auditAttempt = deps.auditAttempt ?? auditToolCall;
+  const reportFailure = deps.reportFailure ?? reportBmsFailure;
   const { tool, execCtx } = opts;
   let input: Record<string, unknown> = {};
   let outcome: "ok" | "error" | "denied" | "proposal" = "error";
@@ -285,6 +322,10 @@ async function runApprovedToolInternal(
     trace = { tool: tool.name, input, ok: false, summary: message };
     if (!(err instanceof ToolArgError) && !denied) {
       console.error(`[BMS] approved tool ${tool.name} failed:`, err);
+      await reportToolFailure(reportFailure, "ai.tool_failed", execCtx, err, {
+        tool: tool.name,
+        route: "deterministic",
+      });
     }
   }
 
@@ -300,6 +341,7 @@ async function runToolLoopInternal(
   const callProvider = deps.callProvider ?? callProviderMessages;
   const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
   const auditAttempt = deps.auditAttempt ?? auditToolCall;
+  const reportFailure = deps.reportFailure ?? reportBmsFailure;
 
   if (opts.tenantId !== opts.execCtx.tenantId) {
     throw new Error("AI tool-loop tenant context mismatch");
@@ -489,7 +531,13 @@ async function runToolLoopInternal(
             const msg = err instanceof ToolArgError || denied ? err.message : "ดึงข้อมูลไม่สำเร็จ";
             resultContent = JSON.stringify({ error: msg });
             trace.push({ tool: toolName, input: traceInput, ok: false, summary: msg });
-            if (!(err instanceof ToolArgError) && !denied) console.error(`[BMS] tool ${toolName} failed:`, err);
+            if (!(err instanceof ToolArgError) && !denied) {
+              console.error(`[BMS] tool ${toolName} failed:`, err);
+              await reportToolFailure(reportFailure, "ai.tool_failed", opts.execCtx, err, {
+                tool: toolName,
+                route: "model_selected",
+              });
+            }
           }
         }
         await auditAttempt(opts.execCtx, toolName, outcome, tool);
@@ -506,6 +554,13 @@ async function runToolLoopInternal(
         errorMessage: "max_rounds_exceeded",
       });
     }
+    await reportToolFailure(
+      reportFailure,
+      "ai.loop_timeout",
+      opts.execCtx,
+      `max_rounds_exceeded (${MAX_ROUNDS})`,
+      { rounds: MAX_ROUNDS, toolsCalled: trace.map((t) => t.tool) }
+    );
     return {
       reply: "ขออภัยค่ะ ระบบประมวลผลนานเกินไป ลองใหม่อีกครั้งนะคะ 🙏",
       proposals,
@@ -523,6 +578,9 @@ async function runToolLoopInternal(
     // provider call ล้มเหลว (network/timeout/!=2xx) — คืน usedAi:true กันการ retry แบบ rule-based
     // (ถ้ามีทูล write ทำงานไปแล้วในรอบก่อน จะไม่ถูกทำซ้ำ)
     console.error("[BMS] tool-loop error:", err);
+    await reportToolFailure(reportFailure, "ai.loop_failed", opts.execCtx, err, {
+      toolsCalled: trace.map((t) => t.tool),
+    });
     return {
       reply: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ 🙏",
       proposals,

@@ -20,6 +20,12 @@ export type ExecCtx = {
   /** customer surface: ช่องทาง + external ref ของลูกค้า (ใช้ scope การอ่านให้เป็นของลูกค้าคนนั้น) */
   channel?: Channel;
   customerRef?: string | null;
+  /**
+   * แชทที่กำลังคุยอยู่ — ใช้เฉพาะการแจ้งเตือน/ไล่ปัญหา (reportBmsFailure) ให้ลิงก์
+   * ไปแชทที่ได้รับผลกระทบได้ ห้ามใช้ scope การอ่านข้อมูล (ยังต้องใช้ channel +
+   * customerRef เหมือนเดิม เพื่อไม่ให้ scope ความปลอดภัยขึ้นกับค่าที่ส่งมาเพิ่ม)
+   */
+  conversationId?: string | null;
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
 };

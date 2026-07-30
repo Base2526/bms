@@ -90,8 +90,24 @@ Customer product discovery is sales-first and retrieval-first. Broad product que
 by product creation time; exact misses and out-of-stock requests read `find_alternatives`. These
 tools query the tenant's active catalog on every call, so a newly inserted product (including one in
 a previously unseen category) is available on the next message without retraining or cache
-invalidation. The deterministic no-credential path uses the same product-resolution and sellable
+invalidation. A contextual “ดูอย่างอื่น/สินค้าอื่น/รุ่นอื่น” follow-up is routed directly to
+`browse_catalog`; products named in the immediately previous assistant reply are removed before
+presenting up to three alternatives, so the customer is not asked to repeat a product name or size.
+The deterministic no-credential path uses the same product-resolution and sellable
 catalog services and also offers verified alternatives instead of ending at “not found”.
+
+Payment guidance is configuration-first. The customer pipeline and `submit_payment` tool use only
+non-blank receiving accounts returned by `get_payment_info`. If no channel is configured, the
+pipeline does not suggest bank transfer, PromptPay, QR, or an invented alternative; it asks the
+customer to wait for an admin's payment details, and no PENDING payment is created.
+
+When a turn fails in a way the customer can feel — a tool throwing, the provider loop erroring or
+timing out, or a reply that never reaches the channel — the pipeline and tool runtime also call
+`reportBmsFailure()` (`lib/bms/failureAlert.ts`), which records the incident against the conversation
+and alerts the shop and/or platform admins. This is separate from the fallback reply itself: the
+customer still gets the safe template, but the failure is no longer silent. Alerting is intentionally
+*not* driven by the `ai.tool_call` audit outcome, because that outcome also covers ordinary business
+results such as "product not found" — see AGENTS.md § Failure incidents.
 
 ## Intents (`nlu.ts`)
 

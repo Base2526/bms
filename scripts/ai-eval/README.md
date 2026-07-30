@@ -18,6 +18,7 @@
 ```bash
 cd apps/web
 npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 ```
 
@@ -27,6 +28,7 @@ npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 ```bash
 cd apps/web
 node --import tsx --test ../../scripts/ai-eval/runtime-contract.test.mts
+node --import tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 ```
 
@@ -47,6 +49,8 @@ node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 - loop ถูกจำกัดไว้ห้ารอบ
 - tenant-context mismatch และ duplicate tool registry
 - centralized audit seam ไม่ได้รับ raw arguments/PII
+- คำขอ “ดูอย่างอื่น” ถูกจัดเป็น catalog discovery และ payment account แถวว่างไม่ถือว่าตั้งค่าแล้ว
+- ร้านที่ไม่มีช่องทางรับเงินจะไม่หลุดข้อความแนะนำพร้อมเพย์/โอนธนาคาร และยังคง order summary ไว้
 - slip-reader contract รับเฉพาะ amount/date/ref/bank, reject malformed/unknown fields
 - slip reader provider error, unsupported image และ timeout ต้อง fallback ได้อย่างปลอดภัย
 - default slip reader เป็น Qwen OCR และ adapters ทั้ง Anthropic/Qwen ต้องคืน contract เดียวกัน

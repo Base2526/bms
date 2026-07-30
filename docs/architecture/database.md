@@ -37,6 +37,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
+| Failure incidents | `bms_failure_incidents` | `7.36` |
 
 ## Notable schema details
 
@@ -139,6 +140,19 @@ freshness window; `stale` is not stored in the database status constraint.
 `bms_tenant_ai_config.provider` (`anthropic`/`deepseek`, default `anthropic`) so legacy BYOK rows
 retain their meaning while new tenants can supply a DeepSeek key. The encrypted-key column remains
 the same and arbitrary tenant-supplied base URLs are intentionally unsupported.
+
+**Failure incidents (`7.36__bms_failure_incidents.sql`)** — tenant-scoped, append-only log of system
+failures that reached a customer or degraded AI behavior, written only through `reportBmsFailure()`
+in `lib/bms/failureAlert.ts`. Deliberately **per-occurrence rows** (like `bms_audit_log`) rather than
+one status row per subject (like `bms_ai_provider_health`): the question this table answers is *which
+conversations were affected*, so a shop can follow up with each customer, not *is it broken right
+now*. `conversation_id` is **intentionally not a foreign key** — an incident must still be recorded
+when resolving the conversation is itself the failure being reported, and when the conversation was
+later deleted. `notified_shop_at`/`notified_platform_at` double as the alert-cooldown source
+(`MAX(...)` per `(tenant_id, code)`), so no separate dedupe table is needed; they are set only after a
+notification actually succeeded, so a failed/timed-out notification retries instead of starting a
+silent cooldown. This table complements rather than replaces Channel Health and AI Provider Health:
+those record *connection status*, this records *customer-visible events that already happened*.
 
 **`bms_product_images` (`6.5__bms_product_images.sql`)** — ordered gallery rows
 `(tenant_id, product_sku, file_id, sort_order)` pointing at the shared `files` table. The older
