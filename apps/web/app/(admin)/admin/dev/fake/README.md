@@ -1,3 +1,16 @@
+> ⚠️ **เอกสารนี้เป็นโน้ตออกแบบตอนเริ่มทำ (historical) ไม่ใช่สเปกของโค้ดปัจจุบัน**
+> โค้ดตัวอย่างข้างล่างล้าสมัยแล้วหลายจุด — อย่า copy ไปใช้ตรง ๆ โดยเฉพาะ:
+>
+> - guard ในตัวอย่างคือ `requireAdminOrInternal(req)` ซึ่ง **ผ่านทุก role ที่ล็อกอิน** · ของจริงตอนนี้
+>   ทุก route ใช้ `await requirePlatformAdminSeeder()` (platform admin เท่านั้น) และหน้าเว็บถูกกันด้วย
+>   `layout.tsx` → `requirePlatformAdminPage()`
+> - `DELETE FROM posts WHERE fake_test = true` ในตัวอย่างไม่มี tenant scope · ของจริง scope ผ่าน
+>   `author_id` → `users.tenant_id` แล้ว
+> - schema/คอลัมน์ในตัวอย่าง (เช่น `posts.phone`, `posts.content`) ไม่ตรงกับตารางจริง
+>
+> พฤติกรรมจริง + กติกาที่ต้องรักษา ดู § "เติมข้อมูลทดสอบเร็ว ๆ" ใน
+> [CLAUDE.local.md](../../../../../../../CLAUDE.local.md) และอ่านโค้ดใน `app/api/dev/fake/*` เป็นหลัก
+
 **Fake Data** ที่ปลอดภัย (สำหรับใช้ทดสอบ) และให้โค้ดตัวอย่างทั้ง **หน้า UI (Next.js + Antd)** กับ **API routes (Next.js App Router)** ที่สร้างข้อมูลเทียม (users / posts) ให้เลย — คุณสามารถเอาไปวาง ปรับให้เข้ากับโครงโปรเจกต์ได้ทันที
 
 ผมแบ่งเป็น 3 ส่วนสั้น ๆ: แนวคิดความปลอดภัย, API (server) ตัวอย่าง, หน้า UI (client) ตัวอย่าง — ทั้งหมดเป็น TypeScript + Next.js App Router + fetch แบบ `credentials: 'include'` (ถ้าจำเป็น)

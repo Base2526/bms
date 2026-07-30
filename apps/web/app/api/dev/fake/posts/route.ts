@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminOrInternal } from "@/lib/dev-guards";
+import { requirePlatformAdminSeeder } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { nanoid } from "nanoid";
 import { persistWebFile } from "@/lib/storage";
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
   const { count = 5 } = body;
 
   // Admin only
-  const guard = requireAdminOrInternal(req);
+  const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // =============================

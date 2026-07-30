@@ -1085,7 +1085,30 @@ RETURNED ด้วย) เพื่อให้เลขตรงกับ "ใ�
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
 แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)
-**seed ลง tenant ของ user ที่ล็อกอิน** (ร้านค้าเทสเองแล้วเห็นในร้านตัวเอง) · cleanup ก็ scope ตามร้าน · platform admin อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
+**seed ลง tenant ของ user ที่ล็อกอิน** · cleanup ก็ scope ตามร้าน · อยากเทสร้านไหนให้ drill-down เข้าร้านนั้นก่อน
+
+**gate (แก้ 2026-07 — เข้มขึ้น):** เดิม API guard เป็น `requireAdminOrInternal()` ซึ่ง**ผ่านทุก role
+ที่ล็อกอิน** (Sales/Warehouse ก็ seed ได้) และหน้า `/admin/dev/fake` **ไม่มี `layout.tsx` กันเลย**
+(ต่างจาก `/admin/env`, `/admin/logs`, `/admin/dev/sql-console`) — สิทธิ์ `can('product.edit')` ใน
+`AdminSidebar.tsx` เป็นแค่การซ่อนเมนู ไม่ใช่ authorization เข้า URL ตรงได้ ตอนนี้:
+
+- API ทั้ง 9 route ใช้ `requirePlatformAdminSeeder()` (`lib/dev-guards.ts`) — อ่าน
+  `users.is_platform_admin` จาก DB ทุกครั้ง (JWT ไม่ได้พก flag นี้) + fail closed ถ้า query ไม่ได้
+- **ห้ามแก้ `requireAdminOrInternal()` ให้เข้มขึ้นแทน** — ฟังก์ชันนั้นถูกใช้โดย route อัปโหลดไฟล์จริง
+  (`api/bms/products/upload`, `api/bms/inbox/upload`) ที่ staff ทั่วไปต้องใช้ได้ ถ้าไปยกระดับตรงนั้น
+  อัปรูปสินค้า/แชทจะพังทันที จึงต้องเป็นฟังก์ชันแยก
+- เพิ่ม `app/(admin)/admin/dev/fake/layout.tsx` → `requirePlatformAdminPage()` และเปลี่ยน
+  `canSeedFake` ใน sidebar เป็น `isPlatformAdmin` ให้ตรงกับ gate จริง (ไม่งั้นเมนูโผล่แล้วกดเข้าโดน redirect)
+- `DELETE FROM posts WHERE fake_test = true` เดิม **ไม่มี tenant scope** (ลบข้ามร้านทุกครั้ง) เพราะตาราง
+  `posts` ไม่มีคอลัมน์ `tenant_id` เลย มีแค่ `author_id` → scope ผ่าน `EXISTS (users u WHERE u.id =
+  p.author_id AND u.tenant_id = $1)` แทน · **ต้องลบ posts ก่อน users เสมอ** (ลำดับเดิมถูกอยู่แล้ว) ไม่งั้น
+  author หายก่อนแล้ว match ไม่เจอ · fake post ที่ `author_id IS NULL` จะเหลือไว้ (ระบุร้านไม่ได้)
+- ปุ่ม Cleanup มี `Popconfirm` แล้ว (เดิมกดครั้งเดียวลบทันทีไม่มีถาม)
+
+**⚠️ ยังไม่ได้แก้ (ต้องทำที่เครื่อง production เอง):** `.env.prod` / `.env` / `.env.dev` ในเครื่องนี้
+ตั้ง `BMS_ALLOW_FAKE_SEED=1` ทั้ง 3 ไฟล์ ทั้งที่คอมเมนต์บรรทัดบนเขียนว่า "เฉพาะเครื่อง demo —
+production จริงอย่าเปิด" · ไฟล์ `.env*` gitignore ไว้และห้ามแก้จาก agent จึงต้องไปเช็ค/ปิดบนเซิร์ฟเวอร์จริง:
+`docker compose ... exec web printenv BMS_ALLOW_FAKE_SEED NODE_ENV`
 
 ## หมายเหตุการเช็ก type/dependency บนเครื่องนี้
 

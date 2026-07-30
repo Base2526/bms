@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert } from 'antd';
+import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm } from 'antd';
 import { gql, useQuery } from '@apollo/client';
 
 const Q_ME = gql`query { bmsMe { tenant { name slug } } }`;
@@ -84,7 +84,14 @@ export default function DevFakePage() {
         />
         <InputNumber min={1} max={2000} value={count} onChange={(v) => setCount(v || 1)} />
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
-        <Button danger onClick={cleanup} disabled={loading}>Cleanup</Button>
+        <Popconfirm
+          title="ลบข้อมูล fake ทั้งหมดของร้านนี้?"
+          description={<>ลบถาวร ย้อนกลับไม่ได้ — ร้าน <b>{tenant?.name || '…'}</b></>}
+          okText="ลบเลย" okButtonProps={{ danger: true }} cancelText="ยกเลิก"
+          onConfirm={cleanup}
+        >
+          <Button danger disabled={loading}>Cleanup</Button>
+        </Popconfirm>
       </Space>}
     >
       <Alert

@@ -1,20 +1,29 @@
 // apps/web/app/api/dev/fake/cleanup/route.ts
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { requireAdminOrInternal, fakeSeedDisabled } from "@/lib/dev-guards";
+import { requirePlatformAdminSeeder, fakeSeedDisabled } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
-export async function DELETE(req: NextRequest) {
+export async function DELETE() {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
-  const guard = requireAdminOrInternal(req);
+  const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // ลบเฉพาะ fake ของ "ร้านที่ผู้ล็อกอินสังกัด" เท่านั้น (กันลบข้ามร้าน)
   const tenantId = guard.actor?.tenant_id || DEFAULT_TENANT_ID;
 
-  // posts/users เป็น fixtures ระดับระบบ (ไม่ใช่ BMS) — users ผูก tenant แล้วจึง scope ได้
-  const resPosts = await query('DELETE FROM posts WHERE fake_test = true RETURNING id');
+  // posts/users เป็น fixtures ระดับระบบ (ไม่ใช่ BMS)
+  // `posts` ไม่มีคอลัมน์ tenant_id เลย (มีแค่ author_id) — เดิมจึงลบข้ามร้านทุกครั้ง
+  // scope ผ่าน author → users.tenant_id แทน · ต้องลบ posts ก่อน users เสมอ (ลำดับเดิมถูกอยู่แล้ว)
+  // ไม่งั้น author หายไปก่อนแล้ว EXISTS จะ match ไม่เจอ
+  // หมายเหตุ: fake post ที่ author_id เป็น NULL จะไม่ถูกลบ (ระบุร้านไม่ได้) — ยอมเหลือไว้ดีกว่าลบข้ามร้าน
+  const resPosts = await query(
+    `DELETE FROM posts p
+      WHERE p.fake_test = true
+        AND EXISTS (SELECT 1 FROM users u WHERE u.id = p.author_id AND u.tenant_id = $1)
+      RETURNING p.id`,
+    [tenantId]
+  );
   const resUsers = await query('DELETE FROM users WHERE fake_test = true AND tenant_id = $1 RETURNING id', [tenantId]);
 
   // BMS fake data — marker: orders/conversations = customer_ref 'FAKE-%', PO note 'FAKE%',
