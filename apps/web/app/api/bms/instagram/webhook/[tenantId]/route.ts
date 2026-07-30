@@ -41,12 +41,16 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   if (!cfg || !cfg.active) return NextResponse.json({ ok: true, skipped: "channel not configured" });
 
   const raw = await req.text();
-  if (cfg.channel_secret) {
-    const ok = verifyMetaSignature(cfg.channel_secret, raw, req.headers.get("x-hub-signature-256"));
-    if (!ok) {
-      await recordWebhookVerifyFailed(tenantId, CHANNEL);
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
+  // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
+  // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
+  if (!cfg.channel_secret) {
+    await recordWebhookVerifyFailed(tenantId, CHANNEL);
+    return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
+  }
+  const ok = verifyMetaSignature(cfg.channel_secret, raw, req.headers.get("x-hub-signature-256"));
+  if (!ok) {
+    await recordWebhookVerifyFailed(tenantId, CHANNEL);
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();

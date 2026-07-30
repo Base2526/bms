@@ -97,12 +97,16 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
   // ต้องอ่าน raw body เพื่อ verify signature
   const raw = await req.text();
-  if (cfg.channel_secret) {
-    const ok = verifyLineSignature(cfg.channel_secret, raw, req.headers.get("x-line-signature"));
-    if (!ok) {
-      await recordWebhookVerifyFailed(tenantId, "line");
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
+  // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
+  // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
+  if (!cfg.channel_secret) {
+    await recordWebhookVerifyFailed(tenantId, "line");
+    return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
+  }
+  const ok = verifyLineSignature(cfg.channel_secret, raw, req.headers.get("x-line-signature"));
+  if (!ok) {
+    await recordWebhookVerifyFailed(tenantId, "line");
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   const body = (() => {
