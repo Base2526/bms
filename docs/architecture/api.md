@@ -285,5 +285,9 @@ when the dataset is larger than the currently loaded page.
 ## Public/self-service GraphQL surfaces
 
 - `bmsPublicPlans` powers the public landing page pricing cards.
-- `bmsSignup` powers `/shop-signup`.
+- `bmsSignup` powers `/shop-signup`. It stores an expiring pending request and emails a verification
+  link; it does not create a tenant or user yet. `bmsVerifyShopSignup` consumes that link atomically,
+  then creates the free tenant and Manager account. Repeated unverified requests keep independent
+  tokens, so an attacker cannot invalidate the real owner's link; the first valid verification creates
+  the account and consumes the remaining requests for that email.
 - `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.

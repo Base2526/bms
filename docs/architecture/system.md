@@ -136,7 +136,8 @@ docs/                      This documentation tree
   infographic of the message → order → payment → shipping → dashboard flow and must remain
   aligned with the actual implemented workflow.
 - `/shop-signup` is a public auth-safe route. It must stay in the auth-route allowlist so it
-  doesn't initialize admin session/chat providers unnecessarily.
+  doesn't initialize admin session/chat providers unnecessarily. Signup remains pending until the
+  owner verifies the emailed link; only then are the tenant and Manager account created.
 - `/shop/[tenantSlug]/products/[sku]` is the no-login product detail/gallery shared from Inbox. It
   resolves active shops/products through `lib/bms/products.ts`, exposes sale-safe fields only, and
   treats the tenant slug as a stable public routing handle.

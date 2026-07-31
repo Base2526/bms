@@ -60,6 +60,11 @@ services:
       NEXT_PUBLIC_SENDGRID_FROM_EMAIL: ${NEXT_PUBLIC_SENDGRID_FROM_EMAIL}
       NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL}
       NEXT_PUBLIC_WEB_NAME: ${WEB_NAME}
+      # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
+      MAIL_PROVIDER: ${MAIL_PROVIDER}
+      GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
+      GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
+      GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
       # BMS AI (shared key + model override + cron auth) — ต้องมาจากไฟล์ env ที่ compose ใช้จริง
       # (--env-file .env.prod ทำให้ค่า ${...} นี้ resolve ได้เท่านั้น ไม่ inject เข้า container โดยอัตโนมัติ)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}

@@ -91,7 +91,10 @@ export async function notifyOrderStatusEmail(
 
     const tpl = await getLatestEmailTemplate(`order.${statusKey}`, locale);
     const rendered = renderEmailTemplate(tpl, data);
-    await sendEmail({ to: customerEmail, subject: rendered.subject, html: rendered.html, text: rendered.text });
+    await sendEmail(
+      { to: customerEmail, subject: rendered.subject, html: rendered.html, text: rendered.text },
+      { tenantId, category: "order", triggeredBy: `orderNotify:${statusKey}` }
+    );
   } catch (error) {
     // best-effort — อีเมลล้มเหลวต้องไม่ทำให้การเปลี่ยนสถานะออร์เดอร์ล้มตามไปด้วย
     console.error(`[BMS] order.${statusKey} notification email failed:`, error);

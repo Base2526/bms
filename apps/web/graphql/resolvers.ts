@@ -56,6 +56,7 @@ import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
+import { bmsMailLogResolvers } from "@/graphql/bmsMailLog";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
@@ -2679,6 +2680,7 @@ const rawResolvers = {
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
     ...bmsReportScheduleResolvers.Query,
+    ...bmsMailLogResolvers.Query,
     ...bmsSaasResolvers.Query,
     ...bmsPurchaseResolvers.Query,
     ...bmsPaymentsResolvers.Query,
@@ -2915,18 +2917,27 @@ const rawResolvers = {
       };
     },
     loginAdmin: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
-      console.log("[loginAdmin] @1 ", input)
       const { email, username, password } = input || {};
       if (!password || (!email && !username)) {
         throw new Error("Email/Username and password are required");
       }
 
-      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const identifier = String(email || username || "").trim().toLowerCase();
+      const { rows } = await query(
+        `SELECT u.*, t.active AS tenant_active
+           FROM users u
+           LEFT JOIN bms_tenants t ON t.id = u.tenant_id
+          WHERE lower(u.email) = $1 OR lower(u.username) = $1
+          LIMIT 1`,
+        [identifier]
+      );
       const user = rows[0];
 
-      console.log("[loginAdmin] @2 ", user)
-      if (!user) throw new Error("Invalid credentials");
-      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
+      if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
 
       // Administrator = full RBAC permissions → short-lived session; other staff roles get a longer one.
       // Keep this in sync with the cookie maxAge below — a JWT that outlives its cookie (or vice versa)
@@ -2969,8 +2980,8 @@ const rawResolvers = {
       const usernameNorm = String(username || "").trim().toLowerCase();
       const emailNorm = String(email || "").trim().toLowerCase();
       const { rows: [u] } = await query(
-        `INSERT INTO users(name, username, email, phone, role, password_hash)
-        VALUES($1,$2,$3,$4,'Subscriber',$5) RETURNING id, name, username, email, role`,
+        `INSERT INTO users(name, username, email, phone, role, password_hash, is_email_verified)
+        VALUES($1,$2,$3,$4,'Subscriber',$5,FALSE) RETURNING id, name, username, email, role`,
         [usernameNorm, usernameNorm, emailNorm, phone, password_hash]
       );
 
@@ -3002,12 +3013,15 @@ const rawResolvers = {
         expiry_minutes: expiryMinutes,
       });
 
-      await sendEmail({
-        to: email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-      });
+      await sendEmail(
+        {
+          to: email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+        },
+        { category: "auth", triggeredBy: "resolvers:registerUser" }
+      );
 
       // sendMail
 
@@ -3108,8 +3122,8 @@ const rawResolvers = {
       if (t.used) throw new Error("Token already used");
       if (new Date(t.expires_at).getTime() < Date.now()) throw new Error("Token expired");
 
-      // 2) อัปเดตรหัสผ่าน (แนะนำใช้ bcrypt/argon2; ที่นี่ตัวอย่าง sha256 เพื่อความง่าย)
-      const password_hash = sha256Hex(newPassword);
+      // Keep the reset path compatible with every password-based login path.
+      const password_hash = await bcrypt.hash(newPassword, 10);
       await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, t.user_id]);
 
       // 3) มาร์ค token เป็นใช้แล้ว
@@ -6250,12 +6264,15 @@ const rawResolvers = {
         <pre style="white-space:pre-wrap">${escapeHtml(input.message)}</pre>
       `;
 
-      await sendEmail({
-        to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
-        subject,
-        html,
-        text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
-      });
+      await sendEmail(
+        {
+          to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
+          subject,
+          html,
+          text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
+        },
+        { category: "support", triggeredBy: "resolvers:createSupportTicket" }
+      );
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
     },

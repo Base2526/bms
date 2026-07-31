@@ -32,6 +32,11 @@ services:
       BMS_AI_MODEL: ${BMS_AI_MODEL}
       BMS_CRON_SECRET: ${BMS_CRON_SECRET}
       BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
+      # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
+      MAIL_PROVIDER: ${MAIL_PROVIDER}
+      GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
+      GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
+      GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
     ports:
       - "3000:3000"
     volumes:

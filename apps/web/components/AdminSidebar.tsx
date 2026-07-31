@@ -285,6 +285,7 @@ export default function AdminSidebar() {
           link('/admin/files', 'Files', <FileImageOutlined />, 5),
           link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
+          link('/admin/mail-log', 'Mail log', <MailOutlined />),
           link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
           link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),

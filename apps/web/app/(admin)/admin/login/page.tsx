@@ -104,6 +104,9 @@ export default function AdminLoginPage(){
           <Typography.Paragraph type="secondary" style={{marginTop:8,fontSize:12}}>
             Admin only area — you’ll need Administrator role.
           </Typography.Paragraph>
+          <Typography.Paragraph style={{marginBottom:0}}>
+            <a href="/forgot">ลืมรหัสผ่านหรือมีผู้อื่นใช้อีเมลของคุณ?</a>
+          </Typography.Paragraph>
         </Card>
       </div>
   );

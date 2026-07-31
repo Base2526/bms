@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
 
-const { Paragraph, Text } = Typography;
+const { Paragraph } = Typography;
 
 const M_SIGNUP = gql`
   mutation ($shopName: String!, $name: String, $email: String!, $password: String!) {
@@ -18,13 +18,13 @@ const M_SIGNUP = gql`
 
 export default function Page() {
   const [form] = Form.useForm();
-  const [done, setDone] = useState<{ slug: string } | null>(null);
+  const [done, setDone] = useState(false);
 
   const [signup, { loading }] = useMutation(M_SIGNUP, {
     onCompleted: (d) => {
       const r = d?.bmsSignup;
-      if (r?.status === "OK") setDone({ slug: r.slug });
-      else if (r?.status === "EMAIL_TAKEN") message.error("อีเมลนี้ถูกใช้แล้ว");
+      if (r?.status === "PENDING_VERIFICATION") setDone(true);
+      else if (r?.status === "EMAIL_TAKEN") message.error("อีเมลนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบหรือรีเซ็ตรหัสผ่าน");
       else message.error("ข้อมูลไม่ถูกต้อง (รหัสผ่านอย่างน้อย 6 ตัว)");
     },
     onError: (e) => message.error(e?.message || "สมัครไม่สำเร็จ"),
@@ -41,9 +41,9 @@ export default function Page() {
         <div className={styles.successPanel}>
           <Result
             status="success"
-            title="สร้างร้านสำเร็จ! 🎉"
-            subTitle={<>ร้านของคุณ (<Text code>{done.slug}</Text>) พร้อมใช้งานแล้ว ล็อกอินเพื่อเริ่มตั้งค่าสินค้าและเชื่อม LINE/TikTok</>}
-            extra={[<Link key="login" href="/admin/login"><Button type="primary">เข้าสู่ระบบ</Button></Link>]}
+            title="กรุณายืนยันอีเมล"
+            subTitle="เราส่งลิงก์ยืนยันไปยังอีเมลของคุณแล้ว ร้านจะถูกสร้างและเปิดใช้งานหลังจากกดลิงก์ภายใน 30 นาที"
+            extra={[<Link key="login" href="/admin/login"><Button>กลับไปหน้าเข้าสู่ระบบ</Button></Link>]}
           />
         </div>
       </div>

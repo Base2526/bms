@@ -5,7 +5,7 @@ import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { myPermissions } from "@/lib/bms/permissions";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
-import { signupShop } from "@/lib/bms/signup";
+import { signupShop, verifyPendingShopSignup } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
 import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
 import { cookies } from "next/headers";
@@ -98,6 +98,9 @@ export const bmsSaasResolvers = {
       args: { shopName: string; name?: string; email: string; password: string }
     ) {
       return signupShop({ shopName: args.shopName, name: args.name, email: args.email, password: args.password });
+    },
+    async bmsVerifyShopSignup(_p: unknown, args: { token: string }) {
+      return verifyPendingShopSignup(args.token);
     },
     async bmsChangePlan(_p: unknown, args: { planCode: string }, ctx: any) {
       requireTenantAdmin(ctx);

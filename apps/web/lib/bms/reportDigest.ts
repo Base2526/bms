@@ -16,6 +16,7 @@ import { sendEmail } from "@/lib/mailer";
 import { getChannel } from "./channels";
 import { getTenantName } from "./platform";
 import { getStoreProfile, DEFAULT_EMAIL_THEME_COLOR } from "./storeProfile";
+import { parseRecipientList, invalidEmails, invalidSlackWebhookUrls, invalidLineUserIds } from "./reportRecipients";
 
 export type Frequency = "DAILY" | "WEEKLY" | "MONTHLY";
 
@@ -312,12 +313,13 @@ export type ReportDelivery = {
   channel: "EMAIL" | "SLACK" | "LINE";
   status: "SUCCESS" | "FAILED";
   error: string | null;
+  payloadSnapshot: any;
   createdAt: string;
 };
 
 export async function listReportDeliveries(tenantId: string, limit = 50): Promise<ReportDelivery[]> {
   const { rows } = await query<any>(
-    `SELECT id, frequency, period_key, period_start, period_end, channel, status, error, created_at
+    `SELECT id, frequency, period_key, period_start, period_end, channel, status, error, payload_snapshot, created_at
        FROM bms_report_deliveries WHERE tenant_id = $1
       ORDER BY created_at DESC, id DESC LIMIT $2`,
     [tenantId, Math.min(Math.max(limit, 1), 200)]
@@ -331,6 +333,7 @@ export async function listReportDeliveries(tenantId: string, limit = 50): Promis
     channel: r.channel,
     status: r.status,
     error: r.error,
+    payloadSnapshot: r.payload_snapshot ?? null,
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
   }));
 }
@@ -372,19 +375,33 @@ export async function upsertReportSubscription(tenantId: string, input: UpsertRe
     sendDayOfMonth = null;
   }
 
+  // ผู้รับหลายคนต่อช่องทาง: client ส่งมาเป็น "a@x.com, b@x.com" — เก็บกลับเป็น string เดียว
+  // คั่นด้วย ", " ในคอลัมน์ TEXT เดิม (ไม่มี migration) validate ทุกตัวก่อนบันทึกเสมอ
+
   const emailEnabled = input.emailEnabled ?? prev?.email_enabled ?? true;
-  const recipientEmail = input.recipientEmail !== undefined ? (input.recipientEmail?.trim() || null) : (prev?.recipient_email ?? null);
+  const emailList = input.recipientEmail !== undefined ? parseRecipientList(input.recipientEmail) : parseRecipientList(prev?.recipient_email);
+  const badEmails = invalidEmails(emailList);
+  if (badEmails.length) throw new Error(`อีเมลไม่ถูกต้อง: ${badEmails.join(", ")}`);
+  const recipientEmail = emailList.length ? emailList.join(", ") : null;
   if (emailEnabled && !recipientEmail) throw new Error("กรุณาระบุอีเมลผู้รับก่อนเปิดใช้งานช่องทางอีเมล");
 
   const slackEnabled = input.slackEnabled ?? prev?.slack_enabled ?? false;
-  const slackWebhookUrl =
-    input.slackWebhookUrl !== undefined
-      ? (input.slackWebhookUrl && input.slackWebhookUrl.trim() ? encryptSecret(input.slackWebhookUrl.trim()) : null)
-      : (prev?.slack_webhook_url ?? null);
+  let slackWebhookUrl: string | null;
+  if (input.slackWebhookUrl !== undefined) {
+    const slackList = parseRecipientList(input.slackWebhookUrl);
+    const badSlack = invalidSlackWebhookUrls(slackList);
+    if (badSlack.length) throw new Error(`Slack webhook URL ไม่ถูกต้อง (ต้องเป็น https://): ${badSlack.join(", ")}`);
+    slackWebhookUrl = slackList.length ? encryptSecret(slackList.join(", ")) : null;
+  } else {
+    slackWebhookUrl = prev?.slack_webhook_url ?? null;
+  }
   if (slackEnabled && !slackWebhookUrl) throw new Error("กรุณาระบุ Slack webhook URL ก่อนเปิดใช้งานช่องทาง Slack");
 
   const lineEnabled = input.lineEnabled ?? prev?.line_enabled ?? false;
-  const lineUserId = input.lineUserId !== undefined ? (input.lineUserId?.trim() || null) : (prev?.line_user_id ?? null);
+  const lineList = input.lineUserId !== undefined ? parseRecipientList(input.lineUserId) : parseRecipientList(prev?.line_user_id);
+  const badLine = invalidLineUserIds(lineList);
+  if (badLine.length) throw new Error(`LINE user id ไม่ถูกต้อง (ต้องขึ้นต้นด้วย U ตามด้วยรหัส 32 ตัวอักษร): ${badLine.join(", ")}`);
+  const lineUserId = lineList.length ? lineList.join(", ") : null;
   if (lineEnabled && !lineUserId) throw new Error("กรุณาระบุ LINE user id ก่อนเปิดใช้งานช่องทาง LINE");
 
   const enabled = input.enabled ?? prev?.enabled ?? false;
@@ -419,45 +436,101 @@ export async function upsertReportSubscription(tenantId: string, input: UpsertRe
 
 // ---------------- sending ----------------
 
-type ChannelResult = { channel: "EMAIL" | "SLACK" | "LINE"; ok: boolean; error?: string };
+type ChannelResult = { channel: "EMAIL" | "SLACK" | "LINE"; ok: boolean; error?: string; payload?: any };
 
-async function sendEmailChannel(recipientEmail: string | null, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
-  if (!recipientEmail) return { ok: false, error: "ไม่ได้ตั้งอีเมลผู้รับ" };
-  try {
-    await sendEmail({ to: recipientEmail, subject, html });
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "ส่งอีเมลไม่สำเร็จ" };
+// ทุกช่องทางอาจมีผู้รับหลายคน (คั่นด้วย "," ในคอลัมน์เดิม) — ยิงให้ทุกคน, ok=true เฉพาะตอนสำเร็จครบทุกคน
+// "error" ที่คืนกลับ (ลง column `error` ของ bms_report_deliveries เดิม ไม่มี migration ใหม่) เก็บ
+// รายละเอียด "ต่อผู้รับ" เสมอ ทั้งตอนสำเร็จ (เช่น message id ที่ผู้ให้บริการตอบมา) และตอนล้มเหลว
+// (เหตุผลจริงจาก provider ไม่ใช่แค่ "Forbidden" เฉยๆ) เพื่อให้แอดมิน debug ได้จากหน้า UI ตรงๆ
+// โดยไม่ต้องเปิด /admin/logs
+
+/** แกะ error message ที่มีรายละเอียดจริงจาก mail provider (mailer.ts เลือก SendGrid/Gmail SMTP
+ *  ตาม MAIL_PROVIDER แต่ error shape ของสองตัวต่างกัน):
+ *  - SendGrid: e.response.body.errors = [{message, field, help}] — e.message เดี่ยวๆ สั้นเกินไป
+ *    (เช่น "Forbidden") ไม่บอกสาเหตุจริง ต้องแกะ body นี้
+ *  - Gmail SMTP (nodemailer): e.responseCode + e.response เป็น raw SMTP response string */
+function formatProviderError(e: any): string {
+  const errors = e?.response?.body?.errors;
+  if (Array.isArray(errors) && errors.length) {
+    return errors.map((x: any) => x?.message || JSON.stringify(x)).join("; ");
   }
+  if (e?.responseCode && typeof e?.response === "string") {
+    return `SMTP ${e.responseCode}: ${e.response}`;
+  }
+  return e?.message || "ไม่ทราบสาเหตุ";
 }
 
-async function sendSlackChannel(encryptedWebhookUrl: string | null, payload: any): Promise<{ ok: boolean; error?: string }> {
-  const url = decryptSecret(encryptedWebhookUrl);
-  if (!url) return { ok: false, error: "ไม่ได้ตั้ง Slack webhook" };
-  try {
-    const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (!resp.ok) return { ok: false, error: `Slack ตอบกลับ ${resp.status}` };
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "ส่ง Slack ไม่สำเร็จ" };
+async function sendEmailChannel(tenantId: string, recipientEmailCsv: string | null, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
+  const list = parseRecipientList(recipientEmailCsv);
+  if (!list.length) return { ok: false, error: "ไม่ได้ตั้งอีเมลผู้รับ" };
+  const details: string[] = [];
+  let allOk = true;
+  for (const to of list) {
+    try {
+      const { messageId } = await sendEmail(
+        { to, subject, html },
+        { tenantId, category: "digest", triggeredBy: "cron:report-schedule" }
+      );
+      details.push(`${to}: ส่งสำเร็จ${messageId ? ` (id: ${messageId})` : ""}`);
+    } catch (e: any) {
+      allOk = false;
+      details.push(`${to}: ${formatProviderError(e)}`);
+    }
   }
+  return { ok: allOk, error: details.join(" | ") };
 }
 
-async function sendLineChannel(tenantId: string, lineUserId: string | null, text: string): Promise<{ ok: boolean; error?: string }> {
-  if (!lineUserId) return { ok: false, error: "ไม่ได้ตั้ง LINE user id" };
+async function sendSlackChannel(encryptedWebhookUrlCsv: string | null, payload: any): Promise<{ ok: boolean; error?: string }> {
+  const list = parseRecipientList(decryptSecret(encryptedWebhookUrlCsv));
+  if (!list.length) return { ok: false, error: "ไม่ได้ตั้ง Slack webhook" };
+  const details: string[] = [];
+  let allOk = true;
+  for (const url of list) {
+    const label = url.replace(/^https:\/\/hooks\.slack\.com\/services\//, "…/");
+    try {
+      const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const bodyText = await resp.text().catch(() => "");
+      if (resp.ok) {
+        details.push(`${label}: ส่งสำเร็จ`);
+      } else {
+        allOk = false;
+        details.push(`${label}: HTTP ${resp.status}${bodyText ? ` - ${bodyText}` : ""}`);
+      }
+    } catch (e: any) {
+      allOk = false;
+      details.push(`${label}: ${e?.message || "ส่ง Slack ไม่สำเร็จ"}`);
+    }
+  }
+  return { ok: allOk, error: details.join(" | ") };
+}
+
+async function sendLineChannel(tenantId: string, lineUserIdCsv: string | null, text: string): Promise<{ ok: boolean; error?: string }> {
+  const list = parseRecipientList(lineUserIdCsv);
+  if (!list.length) return { ok: false, error: "ไม่ได้ตั้ง LINE user id" };
   const cfg = await getChannel(tenantId, "line");
   if (!cfg?.access_token) return { ok: false, error: "ร้านยังไม่ได้เชื่อม LINE OA (ไม่มี access token)" };
-  try {
-    const resp = await fetch("https://api.line.me/v2/bot/message/push", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
-      body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text }] }),
-    });
-    if (!resp.ok) return { ok: false, error: `LINE push ตอบกลับ ${resp.status}` };
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "ส่ง LINE ไม่สำเร็จ" };
+  const details: string[] = [];
+  let allOk = true;
+  for (const to of list) {
+    try {
+      const resp = await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
+        body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+      });
+      if (resp.ok) {
+        details.push(`${to}: ส่งสำเร็จ`);
+      } else {
+        allOk = false;
+        const bodyText = await resp.text().catch(() => "");
+        details.push(`${to}: HTTP ${resp.status}${bodyText ? ` - ${bodyText}` : ""}`);
+      }
+    } catch (e: any) {
+      allOk = false;
+      details.push(`${to}: ${e?.message || "ส่ง LINE ไม่สำเร็จ"}`);
+    }
   }
+  return { ok: allOk, error: details.join(" | ") };
 }
 
 /** ส่งจริง 1 รอบให้ 1 ร้าน — ใช้ทั้ง cron (runScheduledDigests) และปุ่ม "ส่งทดสอบตอนนี้"
@@ -487,27 +560,31 @@ export async function sendDigestForTenant(
 
   const results: ChannelResult[] = [];
   if (sub.email_enabled) {
+    const subject = `สรุปยอดขาย${FREQ_LABEL_TH[frequency]}${suffix} — ${name}`;
     const html = buildEmailHtml({ tenantName: name, themeColor, frequency, periodLbl, summary });
-    const r = await sendEmailChannel(sub.recipient_email, `สรุปยอดขาย${FREQ_LABEL_TH[frequency]}${suffix} — ${name}`, html);
-    results.push({ channel: "EMAIL", ...r });
+    const r = await sendEmailChannel(tenantId, sub.recipient_email, subject, html);
+    results.push({ channel: "EMAIL", ...r, payload: { subject, html } });
   }
   if (sub.slack_enabled) {
-    const payload = buildSlackPayload({ tenantName: name, frequency, periodLbl, summary });
-    const r = await sendSlackChannel(sub.slack_webhook_url, payload);
-    results.push({ channel: "SLACK", ...r });
+    const slackPayload = buildSlackPayload({ tenantName: name, frequency, periodLbl, summary });
+    const r = await sendSlackChannel(sub.slack_webhook_url, slackPayload);
+    results.push({ channel: "SLACK", ...r, payload: { payload: slackPayload } });
   }
   if (sub.line_enabled) {
     const text = buildLineText({ tenantName: name, frequency, periodLbl, summary }) + (opts.isTest ? "\n\n(นี่คือข้อความทดสอบ)" : "");
     const r = await sendLineChannel(tenantId, sub.line_user_id, text);
-    results.push({ channel: "LINE", ...r });
+    results.push({ channel: "LINE", ...r, payload: { text } });
   }
 
   const loggedPeriodKey = opts.isTest ? `TEST:${periodKey}` : periodKey;
   for (const r of results) {
     await query(
-      `INSERT INTO bms_report_deliveries (tenant_id, frequency, period_key, period_start, period_end, channel, status, error)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [tenantId, frequency, loggedPeriodKey, periodStart.toISOString(), periodEnd.toISOString(), r.channel, r.ok ? "SUCCESS" : "FAILED", r.error ?? null]
+      `INSERT INTO bms_report_deliveries (tenant_id, frequency, period_key, period_start, period_end, channel, status, error, payload_snapshot)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        tenantId, frequency, loggedPeriodKey, periodStart.toISOString(), periodEnd.toISOString(),
+        r.channel, r.ok ? "SUCCESS" : "FAILED", r.error ?? null, JSON.stringify(r.payload ?? null),
+      ]
     );
   }
 

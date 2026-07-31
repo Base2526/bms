@@ -762,6 +762,10 @@ export const typeDefs = /* GraphQL */ `
     bmsActingTenant: BmsActingTenant      # ร้านที่กำลัง drill-down อยู่ (null = ไม่ได้เข้าดู)
     bmsReportSubscriptions: [BmsReportSubscriptionOverview!]!  # ทุกร้าน + ค่าตั้งส่งรายงาน (platform admin เท่านั้น)
     bmsReportDeliveriesForTenant(tenantId: ID!, limit: Int): [BmsReportDelivery!]!  # ประวัติส่งของร้านที่ระบุ (platform admin)
+    # log อีเมลทุกฉบับที่ระบบสั่งส่งจริง ทุกร้าน + ระบบ (platform admin เท่านั้น)
+    bmsMailLog(q: String, status: String, provider: String, category: String, tenantId: ID, page: Int, pageSize: Int): BmsMailLogPage!
+    bmsMailLogEntry(id: ID!): BmsMailLogEntry
+    bmsMailLogStats: BmsMailLogStats!   # สรุปย้อนหลัง 24 ชม. — stat tile
 
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
@@ -1692,6 +1696,7 @@ export const typeDefs = /* GraphQL */ `
     plans: [BmsPlan!]!
   }
   type BmsSignupResult { status: String!  tenantId: ID  slug: String }
+  type BmsVerifyShopSignupResult { status: String!  tenantId: ID  slug: String }
 
   # ===== BMS current-user profile (admin ที่ล็อกอินอยู่) =====
   type BmsMeTenant { id: ID!  name: String!  slug: String!  plan: String! }
@@ -1786,11 +1791,43 @@ export const typeDefs = /* GraphQL */ `
     channel: String!           # EMAIL / SLACK / LINE
     status: String!            # SUCCESS / FAILED
     error: String
+    payloadSnapshot: JSON      # snapshot ของสิ่งที่ส่งจริง — EMAIL:{subject,html} SLACK:{payload} LINE:{text}
     createdAt: String!
   }
 
   type BmsReportChannelResult { channel: String!  ok: Boolean!  error: String }
   type BmsSendReportResult { overallStatus: String!  results: [BmsReportChannelResult!]! }
+
+  type BmsMailLogEntry {
+    id: ID!
+    tenantId: ID
+    tenantName: String    # null = อีเมลระดับระบบ ไม่ผูกร้าน (test/auth ของ user เดิม/support ticket)
+    category: String!     # digest / order / auth / support / test / other
+    provider: String!     # sendgrid / gmail
+    toEmail: String!
+    fromEmail: String
+    subject: String
+    status: String!       # success / error
+    messageId: String
+    statusCode: Int
+    error: String
+    html: String
+    textBody: String
+    triggeredBy: String
+    createdAt: String!
+  }
+
+  type BmsMailLogPage {
+    items: [BmsMailLogEntry!]!
+    total: Int!
+  }
+
+  type BmsMailLogStats {
+    total: Int!
+    success: Int!
+    error: Int!
+    topErrorProvider: String
+  }
 
   input BmsUpsertReportSubscriptionInput {
     frequency: String
@@ -1897,6 +1934,13 @@ export const typeDefs = /* GraphQL */ `
     result: String
     durationMs: Int!
     error: String
+  }
+
+  type BmsTestEmailResult {
+    ok: Boolean!
+    message: String!
+    sent: Int!
+    details: [String!]!
   }
 
   type BmsInboxDiagnosticEventResult {
@@ -2486,9 +2530,11 @@ export const typeDefs = /* GraphQL */ `
     bmsRunReadOnlySql(sql: String!): BmsSqlResult!   # SELECT/WITH เท่านั้น, ใช้ได้ทุก env
     bmsRunSql(sql: String!): BmsSqlResult!           # เขียนได้ — ปิดใช้งานเมื่อ NODE_ENV=production เสมอ
     bmsRunSandboxedJs(code: String!): BmsJsConsoleResult! # JS sync sandbox + console.log — non-production only
+    bmsSendTestEmail(to: String!, html: String): BmsTestEmailResult!
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
+    bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
     bmsChangePlan(planCode: String!): Boolean!
 
     # ===== BMS platform admin (ข้ามร้าน) =====

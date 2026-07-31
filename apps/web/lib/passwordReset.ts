@@ -59,11 +59,14 @@ export async function sendPasswordResetEmail(args: {
   });
 
   // 3) send email via SendGrid
-  await sendEmail({
-    to: args.to,
-    subject: rendered.subject,
-    html: rendered.html,
-    text: rendered.text,
-  });
+  await sendEmail(
+    {
+      to: args.to,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+    },
+    { category: "auth", triggeredBy: "auth:password-reset" }
+  );
 }
 

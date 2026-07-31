@@ -35,6 +35,16 @@ const M_RUN_JS = gql`
     }
   }
 `;
+const M_SEND_TEST_EMAIL = gql`
+  mutation SendTestEmail($to: String!, $html: String) {
+    bmsSendTestEmail(to: $to, html: $html) {
+      ok
+      message
+      sent
+      details
+    }
+  }
+`;
 
 type SqlResult = {
   ok: boolean;
@@ -53,6 +63,13 @@ type JsResult = {
   error: string | null;
 };
 
+type TestEmailResult = {
+  ok: boolean;
+  message: string;
+  sent: number;
+  details: string[];
+};
+
 export default function SqlConsoleClient() {
   const [mode, setMode] = useState<"read" | "write">("read");
   const [confirmWrite, setConfirmWrite] = useState(false);
@@ -65,6 +82,12 @@ export default function SqlConsoleClient() {
 
 add(2, 3)`);
   const [jsResult, setJsResult] = useState<JsResult | null>(null);
+  const [testEmailTo, setTestEmailTo] = useState("");
+  const [testEmailHtml, setTestEmailHtml] = useState(`<div style="font-family:Arial,sans-serif;line-height:1.6">
+  <h2 style="margin:0 0 12px">BMS test email</h2>
+  <p>This is a test email from <code>/admin/dev/sql-console</code>.</p>
+</div>`);
+  const [testEmailResult, setTestEmailResult] = useState<TestEmailResult | null>(null);
 
   const { data: capabilitiesData } = useQuery(Q_CONSOLE_CAPABILITIES);
   const writeEnabled = capabilitiesData?.bmsSqlConsoleWriteEnabled === true;
@@ -81,6 +104,10 @@ add(2, 3)`);
   const [runJs, { loading: runningJs }] = useMutation(M_RUN_JS, {
     onCompleted: (d) => setJsResult(d?.bmsRunSandboxedJs ?? null),
     onError: (e) => setJsResult({ ok: false, logs: [], result: null, durationMs: 0, error: e.message }),
+  });
+  const [sendTestEmail, { loading: sendingTestEmail }] = useMutation(M_SEND_TEST_EMAIL, {
+    onCompleted: (d) => setTestEmailResult(d?.bmsSendTestEmail ?? null),
+    onError: (e) => setTestEmailResult({ ok: false, message: e.message, sent: 0, details: [] }),
   });
 
   const running = runningRead || runningWrite;
@@ -220,6 +247,70 @@ add(2, 3)`);
             </Button>
           </Space>
         </Card>
+
+        <Card title="Test Email" bordered>
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Alert
+              type="info"
+              showIcon
+              message="ส่งอีเมลทดสอบผ่าน mailer ปัจจุบันของระบบ"
+              description="ใส่อีเมลได้หลายรายการ คั่นด้วย comma หรือขึ้นบรรทัดใหม่ และสามารถกำหนด HTML body เองได้"
+            />
+            <TextArea
+              value={testEmailTo}
+              onChange={(e) => setTestEmailTo(e.target.value)}
+              autoSize={{ minRows: 3, maxRows: 8 }}
+              placeholder={"name@example.com\nanother@example.com"}
+            />
+            <TextArea
+              value={testEmailHtml}
+              onChange={(e) => setTestEmailHtml(e.target.value)}
+              autoSize={{ minRows: 8, maxRows: 16 }}
+              style={{ fontFamily: "monospace" }}
+              placeholder="<div>Hello from BMS</div>"
+            />
+            <Button
+              type="primary"
+              loading={sendingTestEmail}
+              disabled={!testEmailTo.trim()}
+              onClick={() => {
+                setTestEmailResult(null);
+                sendTestEmail({ variables: { to: testEmailTo, html: testEmailHtml } });
+              }}
+            >
+              Send test email
+            </Button>
+          </Space>
+        </Card>
+
+        {testEmailResult && (
+          <Card
+            title="Test email result"
+            extra={testEmailResult.ok ? <Tag color="green">OK</Tag> : <Tag color="red">ERROR</Tag>}
+          >
+            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              <Alert
+                type={testEmailResult.ok ? "success" : "error"}
+                showIcon
+                message={testEmailResult.message}
+                description={`ส่งสำเร็จ ${testEmailResult.sent} รายการ`}
+              />
+              {testEmailResult.details.length > 0 && (
+                <div
+                  style={{
+                    background: "#f5f5f5",
+                    borderRadius: 6,
+                    fontFamily: "monospace",
+                    padding: 12,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {testEmailResult.details.join("\n")}
+                </div>
+              )}
+            </Space>
+          </Card>
+        )}
 
         {jsResult && (
           <Card

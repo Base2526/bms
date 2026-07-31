@@ -992,7 +992,8 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 ต่างจาก tenant tools ด้านบนที่ scope ต่อร้าน. gate ด้วย `requirePlatformAdmin()` (`lib/bms/platform.ts`).
 
 ## bmsSignup() — public
-สมัครใช้งานเอง → สร้าง tenant (plan free) + owner (role Manager). ไม่ต้อง auth. (`lib/bms/signup.ts`)
+สมัครใช้งานเอง → เก็บ pending signup และส่งลิงก์ยืนยันอีเมลก่อน โดยยังไม่สร้างร้าน; เมื่อเจ้าของอีเมล
+กดลิงก์จึงสร้าง tenant (plan free) + owner (role Manager) แบบ atomic. ไม่ต้อง auth. (`lib/bms/signup.ts`)
 
 ## bmsTenants() / bmsIsPlatformAdmin()
 list ทุกร้าน + สถิติ (users/products/orders/revenue). `bmsIsPlatformAdmin` ใช้ gate เมนู/หน้า UI.

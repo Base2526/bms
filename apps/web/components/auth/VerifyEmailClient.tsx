@@ -21,6 +21,15 @@ const VERIFY_EMAIL = gql`
   }
 `;
 
+const VERIFY_SHOP_SIGNUP = gql`
+  mutation VerifyShopSignup($token: String!) {
+    bmsVerifyShopSignup(token: $token) {
+      status
+      slug
+    }
+  }
+`;
+
 type Props = {
   token: string | null;
 };
@@ -37,6 +46,7 @@ function VerifyEmailClientInner({ token }: Props) {
     [t]
   );
   const [verifyEmail] = useMutation(VERIFY_EMAIL);
+  const [verifyShopSignup] = useMutation(VERIFY_SHOP_SIGNUP);
 
   const [status, setStatus] = useState(() => strings.verifying);
 
@@ -48,14 +58,22 @@ function VerifyEmailClientInner({ token }: Props) {
 
     let cancelled = false;
 
-    verifyEmail({ variables: { token } })
-      .then(({ data }) => {
+    verifyShopSignup({ variables: { token } })
+      .then(async ({ data }) => {
         if (cancelled) return;
-        if (data?.verifyEmail?.ok) {
-          setStatus(strings.success);
-        } else {
-          setStatus(data?.verifyEmail?.message || strings.failed);
+        const shopStatus = data?.bmsVerifyShopSignup?.status;
+        if (shopStatus === "VERIFIED") {
+          setStatus("ยืนยันอีเมลและเปิดร้านสำเร็จ กำลังไปหน้าเข้าสู่ระบบ...");
+          window.setTimeout(() => window.location.assign("/admin/login"), 1200);
+          return;
         }
+        if (shopStatus === "EMAIL_TAKEN") {
+          setStatus("อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบหรือขอรีเซ็ตรหัสผ่าน");
+          return;
+        }
+        const fallback = await verifyEmail({ variables: { token } });
+        if (cancelled) return;
+        setStatus(fallback.data?.verifyEmail?.ok ? strings.success : (fallback.data?.verifyEmail?.message || strings.failed));
       })
       .catch(() => {
         if (cancelled) return;
@@ -65,7 +83,7 @@ function VerifyEmailClientInner({ token }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [token, verifyEmail, strings.failed, strings.invalidLink, strings.success, strings.verifying]);
+  }, [token, verifyEmail, verifyShopSignup, strings.failed, strings.invalidLink, strings.success, strings.verifying]);
 
   const style = useMemo(() => ({ padding: 40, textAlign: "center" as const }), []);
 
