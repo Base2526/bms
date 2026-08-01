@@ -13,6 +13,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { beginTenantTx } from "./tenant";
+import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 
 // ---- types ---------------------------------------------------
 export type PoItemInput = { sku: string; size: string; qty: number; unitCost?: number };
@@ -248,6 +249,13 @@ export async function receivePurchaseOrder(
     );
 
     await client.query("COMMIT");
+    for (const line of lines) {
+      try {
+        await markRestockSubscriptionsReady(tenantId, line.sku, line.size);
+      } catch (error) {
+        console.error("[BMS] restock ready hook failed after PO receipt:", error);
+      }
+    }
     return {
       status: nextStatus,
       poId,

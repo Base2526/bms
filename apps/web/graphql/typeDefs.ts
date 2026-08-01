@@ -701,6 +701,11 @@ export const typeDefs = /* GraphQL */ `
     bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
     bmsMyMentionsUnreadCount: Int!          # @mention ที่ยังไม่อ่านของฉัน — ใช้ทำ badge บนเมนู sidebar
     bmsMyMentions(unreadOnly: Boolean, limit: Int): [BmsMention!]!
+    bmsRestockSubscriptions(status: String, search: String, limit: Int = 50, offset: Int = 0): BmsRestockSubscriptionConnection!
+    bmsRestockDeliveries(subscriptionId: ID!): [BmsRestockDelivery!]!
+    bmsRestockReadyCount: Int!
+    # ยอดรวมจริงต่อสถานะ (ไม่ผูก pagination) — ใช้ทำ tab บนหน้า /admin/restock-subscriptions
+    bmsRestockStatusCounts(search: String): BmsRestockStatusCounts!
 
     # ===== BMS Reports (admin) =====
     bmsSalesSummary(from: String, to: String): BmsSalesSummary!
@@ -1127,6 +1132,66 @@ export const typeDefs = /* GraphQL */ `
     messages: [BmsMessage!]!
     systemEvents: [BmsSystemEvent!]!
     notes: [BmsConversationNote!]!
+  }
+
+  type BmsRestockSubscription {
+    id: ID!
+    conversationId: ID
+    customerId: ID
+    customerName: String
+    channel: String!
+    customerRef: String!
+    productSku: String!
+    productName: String!
+    size: String!
+    requestedQty: Int!
+    available: Int!
+    status: String!
+    source: String!
+    consentedAt: String!
+    readyAt: String
+    lastNotifiedAt: String
+    resolvedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsRestockSubscriptionConnection {
+    items: [BmsRestockSubscription!]!
+    total: Int!
+  }
+
+  type BmsRestockDelivery {
+    id: ID!
+    attemptNo: Int!
+    channel: String!
+    body: String!
+    status: String!
+    inboxMessageId: ID
+    error: String
+    triggeredBy: String
+    createdAt: String!
+    completedAt: String
+  }
+
+  type BmsRestockSendResult {
+    status: String!
+    delivered: Boolean!
+    message: String!
+    attemptId: ID
+  }
+
+  type BmsRestockStatusCounts {
+    total: Int!
+    active: Int!
+    readyToNotify: Int!
+    notified: Int!
+  }
+
+  type BmsRestockSendAllResult {
+    attempted: Int!
+    sent: Int!
+    failed: Int!
   }
 
   type BmsTimelineEntry {
@@ -2487,6 +2552,10 @@ export const typeDefs = /* GraphQL */ `
     bmsMarkMentionRead(id: ID!): Boolean!
     bmsMarkAllMentionsRead: Boolean!
     bmsCreateInboxDiagnosticMessage(channel: String!, body: String): BmsInboxDiagnosticMessageResult!
+    bmsSendRestockNotification(id: ID!, body: String!): BmsRestockSendResult!
+    bmsCancelRestockSubscription(id: ID!): Boolean!
+    # แจ้งลูกค้าที่ READY_TO_NOTIFY ทั้งหมดในครั้งเดียว ด้วยข้อความ template (ปุ่ม "แจ้งทั้งหมด")
+    bmsSendAllReadyRestockNotifications: BmsRestockSendAllResult!
     bmsReviewAiQualityCase(id: ID!, verdict: String!, category: String!, note: String): BmsAiQualityCaseDetail!
     bmsDismissAiQualityCase(id: ID!): BmsAiQualityCaseDetail!
 

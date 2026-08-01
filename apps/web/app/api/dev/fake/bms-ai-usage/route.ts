@@ -2,9 +2,8 @@
 // เพิ่ม usage ของ AI shared key รายเดือนเพื่อทดสอบ quota UI โดยไม่ต้องเรียก provider จริง
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requirePlatformAdminSeeder, fakeSeedDisabled } from "@/lib/dev-guards";
+import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,23 +20,26 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const count = Math.min(Math.max(Number(body?.count) || 3, 1), 2000);
-  const tenantId = guard.actor?.tenant_id
-    || (typeof body?.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID);
+  const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
   const yearMonth = currentYearMonth();
 
-  const res = await query<{ count: number }>(
-    `INSERT INTO bms_ai_usage_monthly (tenant_id, year_month, count)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (tenant_id, year_month) DO UPDATE SET
-       count = bms_ai_usage_monthly.count + EXCLUDED.count,
-       updated_at = now()
-     RETURNING count`,
-    [tenantId, yearMonth, count]
-  );
+  try {
+    const res = await query<{ count: number }>(
+      `INSERT INTO bms_ai_usage_monthly (tenant_id, year_month, count)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, year_month) DO UPDATE SET
+         count = bms_ai_usage_monthly.count + EXCLUDED.count,
+         updated_at = now()
+       RETURNING count`,
+      [tenantId, yearMonth, count]
+    );
 
-  return NextResponse.json({
-    ok: true,
-    created: [{ id: `${tenantId}:${yearMonth}`, name: `AI usage +${count}`, count: res.rows[0]?.count ?? count }],
-    summary: { aiUsageAdded: count, yearMonth, count: res.rows[0]?.count ?? count },
-  });
+    return NextResponse.json({
+      ok: true,
+      created: [{ id: `${tenantId}:${yearMonth}`, name: `AI usage +${count}`, count: res.rows[0]?.count ?? count }],
+      summary: { aiUsageAdded: count, yearMonth, count: res.rows[0]?.count ?? count },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
+  }
 }

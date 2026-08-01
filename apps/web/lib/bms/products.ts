@@ -4,6 +4,7 @@
 
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
+import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
@@ -1134,6 +1135,13 @@ export async function adjustStock(
     });
 
     await client.query("COMMIT");
+    if (delta > 0) {
+      try {
+        await markRestockSubscriptionsReady(tenantId, sku, sizeUp);
+      } catch (error) {
+        console.error("[BMS] restock ready hook failed after stock adjustment:", error);
+      }
+    }
     return row;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}

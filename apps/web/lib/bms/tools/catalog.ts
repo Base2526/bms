@@ -67,6 +67,7 @@ import {
 import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../reports";
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
+import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile, estimateShipping } from "../storeProfile";
 import {
   configuredPaymentAccounts,
@@ -509,6 +510,39 @@ const checkStockTool: BmsTool = {
     const size = optString(args, "size") ?? null;
     const res = await checkStock(ec.tenantId, product, size);
     return { ok: true, data: res };
+  },
+};
+
+const subscribeRestockNotificationTool: BmsTool = {
+  name: "subscribe_restock_notification",
+  description:
+    "Save this customer's explicit opt-in to be notified when one exact out-of-stock SKU and size is available again. " +
+    "Call only after the customer clearly says yes or directly asks to be notified; never infer consent. " +
+    "The sku must come from a product tool result and the size must be confirmed.",
+  surfaces: ["customer"],
+  inputSchema: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Exact verified product SKU from a product tool result." },
+      size: { type: "string", description: "Exact size or variant confirmed by the customer." },
+      requestedQty: { type: "integer", minimum: 1, maximum: 999, description: "Quantity the customer wanted, default 1." },
+    },
+    required: ["sku", "size"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    if (!ec.channel || !ec.customerRef) {
+      return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    }
+    const result = await subscribeToRestock({
+      tenantId: ec.tenantId,
+      channel: ec.channel,
+      customerRef: ec.customerRef,
+      sku: reqString(args, "sku"),
+      size: reqString(args, "size"),
+      requestedQty: optInt(args, "requestedQty", 1, 999),
+      actor: ec.actor,
+    });
+    return { ok: true, data: result };
   },
 };
 
@@ -1805,6 +1839,7 @@ export const ALL_TOOLS: BmsTool[] = [
   findAlternativesTool,
   getProduct,
   checkStockTool,
+  subscribeRestockNotificationTool,
   listCustomerCouponsTool,
   listAvailableCouponsTool,
   checkCouponTool,

@@ -886,7 +886,7 @@ export async function markAllMentionsRead(tenantId: string, userId: string): Pro
 }
 
 // ---- staff reply (persist + ยิงกลับช่องทาง) ------------------
-export type SendResult = { status: "SENT"; delivered: boolean } | { status: "NOT_FOUND" } | { status: "EMPTY" };
+export type SendResult = { status: "SENT"; delivered: boolean; messageId?: string } | { status: "NOT_FOUND" } | { status: "EMPTY" };
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
 
@@ -1014,9 +1014,10 @@ export async function sendStaffMessage(
   const status = outboundStatus(channel, delivered);
 
   // body NOT NULL — เก็บข้อความ (อาจว่างถ้าเป็น attachment ล้วน)
-  await query(
+  const inserted = await query<{ id: string }>(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
-     VALUES ($1, $2, 'OUT', $3, $4, $5)`,
+     VALUES ($1, $2, 'OUT', $3, $4, $5)
+     RETURNING id`,
     [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponWalletLink })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
@@ -1028,7 +1029,7 @@ export async function sendStaffMessage(
   );
   publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
 
-  return { status: "SENT", delivered };
+  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
 }
 
 /** ส่งข้อความเดิมซ้ำ (retry จากสถานะ FAILED) — ยิงช่องทางใหม่ + อัปเดต meta.status ในแถวเดิม */
