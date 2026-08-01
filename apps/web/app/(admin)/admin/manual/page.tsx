@@ -483,7 +483,7 @@ export default function Page() {
             <Tag color="blue" style={{ width: "fit-content", paddingInline: 12, borderRadius: 999 }}>
               คู่มือใหม่แบบใช้งานจริง
             </Tag>
-            <Title style={{ margin: 0 }}>📘 คู่มือการใช้งาน AI-BMS</Title>
+            <Title style={{ margin: 0 }}>📘 คู่มือการใช้งาน BMS</Title>
             <Paragraph type="secondary" style={{ margin: 0, fontSize: 18 }}>
               ปรับจากเอกสารยาวแบบเดิม ให้เป็นคู่มือที่เริ่มงานได้เร็ว หาเมนูง่าย และสอนทีมใหม่ได้ง่ายกว่าเดิม
             </Paragraph>

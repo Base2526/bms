@@ -23,7 +23,7 @@ It must **not**:
 
 ## Product position
 
-AI-BMS is not just a chat responder. It turns customer conversations into business workflows:
+BMS is not just a chat responder. It turns customer conversations into business workflows:
 
 `chat -> customer identity -> product discovery -> stock decision -> order or restock capture -> payment -> shipping -> follow-up`
 

@@ -12,6 +12,7 @@ import {
   CustomerServiceOutlined,
   FileTextOutlined,
   LockOutlined,
+  MessageOutlined,
   QuestionCircleOutlined,
   RocketOutlined,
   SafetyCertificateOutlined,
@@ -51,7 +52,8 @@ const COPY = {
     description: "ระบบบริหารธุรกิจที่เปลี่ยนทุกบทสนทนาของลูกค้าให้เป็น Workflow ที่ตรวจสอบได้",
     start: "เริ่มใช้ฟรี",
     product: "ผลิตภัณฑ์",
-    workflow: "การทำงานของ AI-BMS",
+    workflow: "การทำงานของ BMS",
+    demo: "ทดลองคุยกับ AI",
     security: "ความปลอดภัย",
     pricing: "แพ็กเกจราคา",
     dashboard: "Dashboard ร้านค้า",
@@ -72,7 +74,7 @@ const COPY = {
     allow: "อนุญาต",
     reject: "ปฏิเสธ",
     close: "ปิด",
-    homeAria: "หน้าแรก AI-BMS",
+    homeAria: "หน้าแรก BMS",
     pdpaDialogAria: "การตั้งค่าคุกกี้ PDPA",
     allowedState: "อนุญาตแล้ว",
     rejectedState: "ปฏิเสธแล้ว",
@@ -81,7 +83,8 @@ const COPY = {
     description: "A business operating system that turns every customer conversation into an auditable workflow.",
     start: "Start free",
     product: "Product",
-    workflow: "How AI-BMS works",
+    workflow: "How BMS works",
+    demo: "Try the AI",
     security: "Security",
     pricing: "Pricing",
     dashboard: "Store dashboard",
@@ -102,7 +105,7 @@ const COPY = {
     allow: "Allow",
     reject: "Reject",
     close: "Close",
-    homeAria: "AI-BMS home",
+    homeAria: "BMS home",
     pdpaDialogAria: "PDPA cookie settings",
     allowedState: "Allowed",
     rejectedState: "Rejected",
@@ -140,6 +143,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
   const productLinks = [
     { href: "/#workflow", label: t.workflow, icon: <ApiOutlined /> },
+    { href: "/demo", label: t.demo, icon: <MessageOutlined /> },
     { href: "/#security", label: t.security, icon: <LockOutlined /> },
     { href: "/#pricing", label: t.pricing, icon: <ShopOutlined /> },
     { href: "/admin/dashboard", label: t.dashboard, icon: <BarChartOutlined /> },
@@ -169,7 +173,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
                 <span className="bms-footer-logo">
                   <img src="/icons/icon.svg" alt="" width={48} height={48} />
                 </span>
-                <span><strong>AI-BMS</strong><small>{t.footerLine}</small></span>
+                <span><strong>BMS</strong><small>{t.footerLine}</small></span>
               </Link>
               <p>{t.description}</p>
               <Link href="/shop-signup" className="bms-footer-cta"><RocketOutlined />{t.start}</Link>
@@ -181,7 +185,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           </div>
 
           <div className="bms-footer-bottom">
-            <span>© {year} AI-BMS · {t.footerLine}</span>
+            <span>© {year} BMS · {t.footerLine}</span>
             <button type="button" onClick={() => setShowPdpa(true)} aria-label={t.pdpa}>
               <SettingOutlined />{t.pdpa}{consent ? <em>({consent === "allow" ? t.allowedState : t.rejectedState})</em> : null}
             </button>

@@ -8,10 +8,10 @@ Every customer conversation should become an executable business workflow.
 
 ```
 Traditional:  Customer → Human → Excel → ERP
-AI-BMS:       Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
+BMS:       Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
 ```
 
-AI-BMS is **not** a chatbot — it is an AI Business Operating System. AI orchestrates; it never
+BMS is **not** a chatbot — it is an AI Business Operating System. AI orchestrates; it never
 becomes the source of truth (the database is).
 
 ## Core philosophy

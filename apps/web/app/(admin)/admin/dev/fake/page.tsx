@@ -19,6 +19,14 @@ type ProvisionResult = {
   summary: Record<string, number>;
 };
 
+type DemoProvisionResult = {
+  key: string;
+  tenant: { id: string; slug: string; name: string };
+  admin: { email: string; password: string };
+  businessArchetype: string;
+  summary: Record<string, number>;
+};
+
 type CreatedRow = any;
 
 const KINDS = [
@@ -57,6 +65,8 @@ export default function DevFakePage() {
   const [shopArchetype, setShopArchetype] = useState<string | undefined>(undefined);
   const [provisioning, setProvisioning] = useState(false);
   const [provisioned, setProvisioned] = useState<ProvisionResult | null>(null);
+  const [provisioningDemo, setProvisioningDemo] = useState(false);
+  const [demoProvisioned, setDemoProvisioned] = useState<DemoProvisionResult[]>([]);
   const [enterTenant, { loading: entering }] = useMutation(M_ENTER_TENANT, {
     // reload ทั้งหน้าเพื่อให้ context (tenant) ใหม่มีผลกับทุกหน้า — pattern เดียวกับ /admin/tenants
     onCompleted: () => { window.location.href = '/admin/dashboard'; },
@@ -92,6 +102,26 @@ export default function DevFakePage() {
     } catch (e: any) {
       message.error(e.message || 'Error');
     } finally { setProvisioning(false); }
+  }
+
+  async function provisionDemoShops(shopKey?: string) {
+    setProvisioningDemo(true);
+    try {
+      const res = await fetch('/api/dev/fake/provision-demo-shops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(shopKey ? { shopKey } : {}),
+        credentials: 'include',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || 'Failed');
+      message.success(`สร้าง demo shop สำเร็จ ${j.created?.length || 0} ร้าน`);
+      setDemoProvisioned(j.created || []);
+    } catch (e: any) {
+      message.error(e.message || 'Error');
+    } finally {
+      setProvisioningDemo(false);
+    }
   }
 
   async function doFake() {
@@ -182,6 +212,38 @@ export default function DevFakePage() {
         />
         <Button type="primary" onClick={provisionShop} loading={provisioning}>สร้างร้านทดสอบ</Button>
       </Space>
+    </Card>
+
+    <Card title="Provision Demo Shops" style={{ marginBottom: 16 }}>
+      <Alert
+        type="info" showIcon style={{ marginBottom: 12 }}
+        message="สร้างร้าน demo คงที่สำหรับ public /demo"
+        description={<>จะสร้าง slug คงที่ 5 ร้านคือ <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code> พร้อมสินค้าและข้อมูล fake เพื่อให้หน้า demo อ่านข้อมูลจริงได้</>}
+      />
+      <Space wrap>
+        <Button type="primary" onClick={() => provisionDemoShops()} loading={provisioningDemo}>
+          สร้าง demo shops ทั้งหมด
+        </Button>
+        <Button onClick={() => provisionDemoShops('fashion')} loading={provisioningDemo}>สร้างเฉพาะ Fashion</Button>
+        <Button onClick={() => provisionDemoShops('food')} loading={provisioningDemo}>Food</Button>
+        <Button onClick={() => provisionDemoShops('beauty')} loading={provisioningDemo}>Beauty</Button>
+        <Button onClick={() => provisionDemoShops('grocery')} loading={provisioningDemo}>Minimart</Button>
+        <Button onClick={() => provisionDemoShops('gadgets')} loading={provisioningDemo}>Gadget</Button>
+      </Space>
+      {demoProvisioned.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          {demoProvisioned.map((row) => (
+            <Alert
+              key={row.tenant.id}
+              type="success"
+              showIcon
+              style={{ marginTop: 8 }}
+              message={`${row.tenant.name} /${row.tenant.slug}`}
+              description={`archetype: ${row.businessArchetype} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} · conversations ${row.summary.conversations ?? 0}`}
+            />
+          ))}
+        </div>
+      )}
     </Card>
 
     <Modal

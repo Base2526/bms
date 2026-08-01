@@ -166,5 +166,5 @@ For demos and team explanations, position this feature as:
 
 `out-of-stock -> capture demand -> notify when replenished -> recover the sale`
 
-That makes `restock subscriptions` one of the clearest examples that AI-BMS is not just answering
+That makes `restock subscriptions` one of the clearest examples that BMS is not just answering
 chat, but turning missed demand into an actionable sales pipeline.

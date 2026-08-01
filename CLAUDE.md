@@ -1,6 +1,6 @@
-# AI Business Management System (AI-BMS)
+# AI Business Management System (BMS)
 
-AI-BMS is an AI-first Business Management System that automates business operations from
+BMS is an AI-first Business Management System that automates business operations from
 customer conversations to order fulfillment. Unlike traditional ERP/CRM, it treats every customer
 conversation as the starting point of a business workflow:
 
@@ -8,7 +8,7 @@ conversation as the starting point of a business workflow:
 Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
 ```
 
-AI-BMS is **not** a chatbot — it is an AI Business Operating System. AI never touches the database
+BMS is **not** a chatbot — it is an AI Business Operating System. AI never touches the database
 directly; it only calls approved backend tools. Business logic always lives in
 `apps/web/lib/bms/*.ts` (shared by REST and GraphQL) — see [docs/architecture/system.md](docs/architecture/system.md)
 for the full philosophy and module breakdown.

@@ -21,18 +21,46 @@ export type ProvisionTestShopResult = {
   adminPassword: string;
 };
 
-export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null } = {}): Promise<ProvisionTestShopResult> {
+type ProvisionShopOpts = {
+  name?: string;
+  businessArchetype?: ShopArchetype | null;
+  slug?: string;
+  adminEmail?: string;
+  adminPassword?: string;
+};
+
+async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<ProvisionTestShopResult> {
   const suffix = nanoid(8).toLowerCase();
-  const slug = `test-${suffix}`;
+  const slug = opts.slug?.trim().toLowerCase() || `test-${suffix}`;
   const name = opts.name?.trim() || `ร้านทดสอบ ${suffix}`;
   const businessArchetype = normalizeShopArchetype(opts.businessArchetype);
   const businessType = archetypeToBusinessType(businessArchetype);
-  const adminEmail = `admin+${suffix}@test.bms.local`;
-  const adminPassword = nanoid(12);
+  const adminEmail = opts.adminEmail?.trim().toLowerCase() || `admin+${suffix}@test.bms.local`;
+  const adminPassword = opts.adminPassword || nanoid(12);
+
+  if (!/^[a-z0-9-]{3,120}$/.test(slug)) {
+    throw new Error("slug ร้านไม่ถูกต้อง");
+  }
 
   const client = await getClient();
   try {
     await client.query("BEGIN");
+
+    const dupTenant = await client.query<{ id: string }>(
+      `SELECT id FROM bms_tenants WHERE slug = $1 LIMIT 1`,
+      [slug]
+    );
+    if (dupTenant.rowCount) {
+      throw new Error(`slug "${slug}" ถูกใช้แล้ว`);
+    }
+
+    const dupUser = await client.query<{ id: string }>(
+      `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+      [adminEmail]
+    );
+    if (dupUser.rowCount) {
+      throw new Error(`email "${adminEmail}" ถูกใช้แล้ว`);
+    }
 
     const t = await client.query<{ id: string }>(
       `INSERT INTO bms_tenants (name, slug, plan) VALUES ($1, $2, 'free') RETURNING id`,
@@ -45,9 +73,6 @@ export async function provisionTestShop(opts: { name?: string; businessArchetype
       [tenantId, businessType, businessArchetype]
     );
 
-    // seed สิทธิ์ role ของร้านใหม่ (คัดลอก template จาก default tenant) — เหมือน signupShop()
-    // ไม่ทำแบบนี้ = ร้านใหม่จะไม่มีแถวใน bms_role_permissions เลย → ทุก requirePermission() ของ role
-    // ที่ไม่ใช่ Administrator จะ 403 หมดตั้งแต่แรก (Administrator เป็น super ในโค้ด ไม่ผ่านตารางนี้)
     await client.query(
       `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
        SELECT $1, role_id, permission FROM bms_role_permissions
@@ -63,7 +88,7 @@ export async function provisionTestShop(opts: { name?: string; businessArchetype
     await client.query(
       `INSERT INTO users (name, username, email, role, role_id, tenant_id, password_hash, fake_test)
        VALUES ($1, $2, $3, 'Administrator', $4, $5, $6, true)`,
-      [`Admin ${suffix}`, adminEmail, adminEmail, roleId, tenantId, hash]
+      [`Admin ${slug}`, adminEmail, adminEmail, roleId, tenantId, hash]
     );
 
     await client.query("COMMIT");
@@ -74,4 +99,24 @@ export async function provisionTestShop(opts: { name?: string; businessArchetype
   } finally {
     client.release();
   }
+}
+
+export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null } = {}): Promise<ProvisionTestShopResult> {
+  const suffix = nanoid(8).toLowerCase();
+  return provisionShopWithIdentity({
+    ...opts,
+    slug: `test-${suffix}`,
+    adminEmail: `admin+${suffix}@test.bms.local`,
+  });
+}
+
+export async function provisionDemoShop(opts: {
+  name: string;
+  slug: string;
+  businessArchetype: ShopArchetype;
+}): Promise<ProvisionTestShopResult> {
+  return provisionShopWithIdentity({
+    ...opts,
+    adminEmail: `admin+${opts.slug}@demo.bms.local`,
+  });
 }

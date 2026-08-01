@@ -1,7 +1,7 @@
-# 🤖 AI-BMS — AI Business Management System
+# 🤖 BMS — AI Business Management System
 
 > Every customer conversation should become an executable business workflow.
-> **AI-BMS is not an AI chatbot — it is an AI Business Operating System.**
+> **BMS is not an AI chatbot — it is an AI Business Operating System.**
 
 ---
 
@@ -16,10 +16,10 @@
 
 ### 📌 Overview
 
-**AI-BMS** is an AI-first Business Management System that automates business
+**BMS** is an AI-first Business Management System that automates business
 operations from the very first customer message all the way to fulfillment.
 
-Unlike traditional ERP/CRM, AI-BMS treats **the conversation** as the starting
+Unlike traditional ERP/CRM, BMS treats **the conversation** as the starting
 point of every workflow:
 
 ```
@@ -174,7 +174,7 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 
 ### 🏢 Multi-Tenancy
 
-AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
+BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
 
 - Self-serve signup that auto-creates a tenant + plan/billing
 - Per-tenant webhooks for LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -283,10 +283,10 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 ### 📌 ภาพรวม
 
-**AI-BMS** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
+**BMS** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
 "ข้อความแรกของลูกค้า" ไปจนถึงการจัดส่ง เป็นอัตโนมัติ
 
-ต่างจาก ERP/CRM ทั่วไป ตรงที่ AI-BMS ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
+ต่างจาก ERP/CRM ทั่วไป ตรงที่ BMS ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
 ทุก workflow:
 
 ```
@@ -389,7 +389,7 @@ API routes ใน [`apps/web/app/api/bms/`](./apps/web/app/api/bms/)
 
 ### 🏢 Multi-Tenancy
 
-AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
+BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
 
 - สมัครเองแล้วสร้าง tenant + แพ็กเกจ/บิลลิ่งอัตโนมัติ
 - Webhook แยกต่อร้าน: LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -496,4 +496,4 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 > ทุกอย่างเริ่มจากบทสนทนา
 > **Conversation → Intent → Business Function → Business Data → Business Action → Customer Response**
 >
-> AI-BMS ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**
+> BMS ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**
