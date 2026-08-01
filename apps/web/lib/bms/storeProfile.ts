@@ -9,6 +9,7 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { isValidShopArchetype } from "./shopArchetypes";
 
 export type PaymentAccount = {
   type: string; // BANK / PROMPTPAY / อื่นๆ
@@ -20,6 +21,7 @@ export type PaymentAccount = {
 };
 
 export type StoreProfile = {
+  businessArchetype: string | null;
   businessType: string | null;
   aiLanguage: string;
   aiOrderingStyle: string;
@@ -50,6 +52,7 @@ export type StoreProfile = {
 
 const EMPTY: StoreProfile = {
   businessType: null,
+  businessArchetype: null,
   aiLanguage: "th",
   aiOrderingStyle: "catalog_variant",
   aiRequiredFields: ["product", "size", "qty"],
@@ -70,7 +73,7 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 
 export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const res = await query<any>(
-    `SELECT business_type, ai_language, ai_ordering_style, ai_required_fields,
+    `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns,
             about, address, phone, contact_email, website, logo_url, tax_id,
             timezone, country, currency, business_hours, shipping_policy, return_policy,
@@ -82,6 +85,7 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
   const r = res.rows[0];
   if (!r) return { ...EMPTY };
   return {
+    businessArchetype: r.business_archetype ?? null,
     businessType: r.business_type ?? null,
     aiLanguage: r.ai_language || "th",
     aiOrderingStyle: r.ai_ordering_style || "catalog_variant",
@@ -127,6 +131,9 @@ export async function upsertStoreProfile(
   const cur = await getStoreProfile(tenantId);
   const merged: StoreProfile = { ...cur, ...input };
 
+  if (!isValidShopArchetype(merged.businessArchetype)) {
+    throw new Error("archetype ร้านไม่ถูกต้อง");
+  }
   if (merged.businessType != null && !BUSINESS_TYPES.has(merged.businessType)) {
     throw new Error("ประเภทร้านไม่ถูกต้อง");
   }
@@ -156,14 +163,15 @@ export async function upsertStoreProfile(
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     await client.query(
       `INSERT INTO bms_store_profile (
-        tenant_id, business_type, ai_language, ai_ordering_style, ai_required_fields,
+        tenant_id, business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
         ai_interpret_short_replies, ai_handoff_after_failed_turns,
         about, address, phone, contact_email, website, logo_url, tax_id,
         timezone, country, currency, business_hours, shipping_policy, return_policy,
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
         email_theme_color, email_footer_text
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,$23,$24,$25,$26,$27)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23,$24,$25,$26,$27,$28)
      ON CONFLICT (tenant_id) DO UPDATE SET
+        business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
         ai_language = EXCLUDED.ai_language,
         ai_ordering_style = EXCLUDED.ai_ordering_style,
@@ -183,7 +191,7 @@ export async function upsertStoreProfile(
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
-        tenantId, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
+        tenantId, merged.businessArchetype, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
         merged.aiInterpretShortReplies, merged.aiHandoffAfterFailedTurns,
         merged.about, merged.address, merged.phone, merged.contactEmail, merged.website,
         merged.logoUrl, merged.taxId, merged.timezone, merged.country, merged.currency,

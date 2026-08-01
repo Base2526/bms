@@ -95,9 +95,15 @@ export const bmsSaasResolvers = {
     // public — ไม่ต้อง auth (สมัครใช้งานเอง)
     async bmsSignup(
       _p: unknown,
-      args: { shopName: string; name?: string; email: string; password: string }
+      args: { shopName: string; name?: string; email: string; password: string; businessArchetype?: string | null }
     ) {
-      return signupShop({ shopName: args.shopName, name: args.name, email: args.email, password: args.password });
+      return signupShop({
+        shopName: args.shopName,
+        name: args.name,
+        email: args.email,
+        password: args.password,
+        businessArchetype: args.businessArchetype,
+      });
     },
     async bmsVerifyShopSignup(_p: unknown, args: { token: string }) {
       return verifyPendingShopSignup(args.token);

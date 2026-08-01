@@ -15,6 +15,7 @@ import { listAutoAssignPool } from "./inbox";
 import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { nanoid } from "nanoid";
+import type { ShopArchetype } from "./shopArchetypes";
 
 const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
@@ -38,22 +39,289 @@ async function bulkInsert(client: any, table: string, cols: string[], rows: any[
   return rows.length;
 }
 
-export async function seedFakeProducts(tenantId: string, count: number) {
+function productPresetForArchetype(archetype: ShopArchetype | null | undefined) {
+  switch (archetype) {
+    case "mini_mart":
+      return {
+        prefix: "Mini Mart",
+        categories: ["เครื่องดื่ม", "ของแห้ง", "ของใช้ประจำวัน", "ขนม", "ของใช้ในบ้าน"],
+        brands: ["Coke", "Nestle", "Mama", "Lays", "No Brand"],
+      };
+    case "fashion":
+      return {
+        prefix: "Fashion",
+        categories: ["เสื้อผ้า", "รองเท้า", "กระเป๋า", "เครื่องประดับ", "ชุดกีฬา"],
+        brands: ["Nike", "Adidas", "Uniqlo", "Zara", "No Brand"],
+      };
+    case "home_kitchen":
+      return {
+        prefix: "Home",
+        categories: ["จานชาม", "เครื่องครัว", "กล่องเก็บอาหาร", "ของใช้ในบ้าน", "ของแต่งบ้าน"],
+        brands: ["LocknLock", "Zebra", "IKEA", "Seagull", "No Brand"],
+      };
+    case "beauty_personal_care":
+      return {
+        prefix: "Beauty",
+        categories: ["คลีนเซอร์", "เซรั่ม", "ครีม", "เมคอัพ", "ของใช้ส่วนตัว"],
+        brands: ["Cerave", "La Roche-Posay", "Nivea", "Maybelline", "No Brand"],
+      };
+    case "food_beverage":
+      return {
+        prefix: "Food",
+        categories: ["พิซซ่า", "เบเกอรี่", "เครื่องดื่ม", "ของทานเล่น", "วัตถุดิบ"],
+        brands: ["Chef House", "Pizza Lab", "Bake Co", "Fresh Daily", "No Brand"],
+      };
+    case "gadgets_accessories":
+      return {
+        prefix: "Gadget",
+        categories: ["เคส", "ฟิล์ม", "สายชาร์จ", "หูฟัง", "อะแดปเตอร์"],
+        brands: ["Apple", "Samsung", "Anker", "Baseus", "No Brand"],
+      };
+    case "b2b_wholesale":
+      return {
+        prefix: "Office",
+        categories: ["กระดาษ", "หมึกพิมพ์", "อุปกรณ์สำนักงาน", "วัสดุสิ้นเปลือง", "แพ็กใหญ่"],
+        brands: ["Double A", "HP", "Canon", "Deli", "No Brand"],
+      };
+    case "gifts_seasonal":
+      return {
+        prefix: "Gift",
+        categories: ["ของขวัญ", "Gift Set", "เทศกาล", "ของฝาก", "พรีเมียม"],
+        brands: ["Premium Box", "Seasonal Co", "Gift Studio", "Local Craft", "No Brand"],
+      };
+    default:
+      return {
+        prefix: "Fake",
+        categories: ["เสื้อผ้า", "รองเท้า", "เครื่องประดับ", "กระเป๋า", "อุปกรณ์กีฬา"],
+        brands: ["Nike", "Adidas", "Uniqlo", "Zara", "No Brand"],
+      };
+  }
+}
+
+function orderPresetForArchetype(archetype: ShopArchetype | null | undefined) {
+  switch (archetype) {
+    case "mini_mart":
+      return {
+        days: 14,
+        statuses: ["COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "PAID", "SHIPPED", "CANCELLED"],
+        channels: ["line", "facebook", "web"],
+        itemCountMax: 4,
+        qtyBase: 1,
+        qtyMax: 6,
+      };
+    case "fashion":
+      return {
+        days: 30,
+        statuses: ["COMPLETED", "COMPLETED", "PAID", "PAID", "SHIPPED", "CANCELLED", "RETURNED"],
+        channels: ["line", "instagram", "facebook", "web"],
+        itemCountMax: 3,
+        qtyBase: 1,
+        qtyMax: 2,
+      };
+    case "beauty_personal_care":
+      return {
+        days: 30,
+        statuses: ["COMPLETED", "COMPLETED", "COMPLETED", "PAID", "SHIPPED", "CANCELLED"],
+        channels: ["line", "facebook", "instagram", "web"],
+        itemCountMax: 3,
+        qtyBase: 1,
+        qtyMax: 3,
+      };
+    case "food_beverage":
+      return {
+        days: 10,
+        statuses: ["COMPLETED", "COMPLETED", "COMPLETED", "PAID", "SHIPPED", "CANCELLED"],
+        channels: ["line", "web", "facebook"],
+        itemCountMax: 4,
+        qtyBase: 1,
+        qtyMax: 4,
+      };
+    case "gadgets_accessories":
+      return {
+        days: 30,
+        statuses: ["COMPLETED", "COMPLETED", "PAID", "SHIPPED", "CANCELLED", "RETURNED"],
+        channels: ["line", "facebook", "instagram", "web"],
+        itemCountMax: 2,
+        qtyBase: 1,
+        qtyMax: 2,
+      };
+    case "b2b_wholesale":
+      return {
+        days: 45,
+        statuses: ["COMPLETED", "PAID", "PAID", "SHIPPED", "SHIPPED", "CANCELLED"],
+        channels: ["line", "facebook", "web"],
+        itemCountMax: 5,
+        qtyBase: 5,
+        qtyMax: 25,
+      };
+    case "gifts_seasonal":
+      return {
+        days: 21,
+        statuses: ["COMPLETED", "COMPLETED", "PAID", "SHIPPED", "CANCELLED"],
+        channels: ["line", "instagram", "facebook", "web"],
+        itemCountMax: 3,
+        qtyBase: 1,
+        qtyMax: 3,
+      };
+    default:
+      return {
+        days: 30,
+        statuses: ["COMPLETED", "COMPLETED", "COMPLETED", "PAID", "PAID", "SHIPPED", "SHIPPED", "CANCELLED", "RETURNED"],
+        channels: CHANNELS,
+        itemCountMax: 3,
+        qtyBase: 1,
+        qtyMax: 3,
+      };
+  }
+}
+
+function couponPresetForArchetype(archetype: ShopArchetype | null | undefined) {
+  switch (archetype) {
+    case "mini_mart":
+      return {
+        percentValues: [5, 8, 10],
+        fixedValues: [10, 20, 30],
+        minOrderPool: [null, 150, 200, 300],
+        notePrefix: "FAKE mini-mart coupon",
+      };
+    case "fashion":
+      return {
+        percentValues: [10, 15, 20, 25],
+        fixedValues: [50, 100, 150],
+        minOrderPool: [null, 500, 800, 1200],
+        notePrefix: "FAKE fashion promo",
+      };
+    case "beauty_personal_care":
+      return {
+        percentValues: [10, 12, 15, 20],
+        fixedValues: [50, 80, 120],
+        minOrderPool: [null, 400, 700, 1000],
+        notePrefix: "FAKE beauty routine promo",
+      };
+    case "food_beverage":
+      return {
+        percentValues: [5, 10, 15],
+        fixedValues: [20, 40, 60],
+        minOrderPool: [null, 250, 400, 600],
+        notePrefix: "FAKE food promo",
+      };
+    case "gadgets_accessories":
+      return {
+        percentValues: [5, 10, 15],
+        fixedValues: [50, 100, 200],
+        minOrderPool: [null, 500, 1000, 1500],
+        notePrefix: "FAKE gadget bundle promo",
+      };
+    case "b2b_wholesale":
+      return {
+        percentValues: [5, 8, 10],
+        fixedValues: [100, 200, 500],
+        minOrderPool: [1000, 2000, 5000, 10000],
+        notePrefix: "FAKE wholesale discount",
+      };
+    case "gifts_seasonal":
+      return {
+        percentValues: [10, 15, 20, 25],
+        fixedValues: [50, 100, 150],
+        minOrderPool: [null, 400, 700, 1000],
+        notePrefix: "FAKE seasonal campaign",
+      };
+    default:
+      return {
+        percentValues: [5, 10, 15, 20, 30],
+        fixedValues: [20, 50, 100, 150, 200],
+        minOrderPool: [null, null, 300, 500, 1000],
+        notePrefix: "FAKE coupon (dev seed)",
+      };
+  }
+}
+
+function purchasePresetForArchetype(archetype: ShopArchetype | null | undefined) {
+  switch (archetype) {
+    case "mini_mart":
+      return {
+        days: 21,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "RECEIVED", "CANCELLED"],
+        qtyMin: 24,
+        qtyMax: 120,
+        supplierPrefix: "FAKE FMCG Supplier",
+      };
+    case "fashion":
+      return {
+        days: 45,
+        statuses: ["OPEN", "OPEN", "PARTIAL", "RECEIVED", "CANCELLED"],
+        qtyMin: 6,
+        qtyMax: 40,
+        supplierPrefix: "FAKE Fashion Supplier",
+      };
+    case "beauty_personal_care":
+      return {
+        days: 35,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "CANCELLED"],
+        qtyMin: 12,
+        qtyMax: 60,
+        supplierPrefix: "FAKE Beauty Supplier",
+      };
+    case "food_beverage":
+      return {
+        days: 14,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "RECEIVED"],
+        qtyMin: 10,
+        qtyMax: 80,
+        supplierPrefix: "FAKE Food Supplier",
+      };
+    case "gadgets_accessories":
+      return {
+        days: 45,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "CANCELLED"],
+        qtyMin: 8,
+        qtyMax: 35,
+        supplierPrefix: "FAKE Gadget Supplier",
+      };
+    case "b2b_wholesale":
+      return {
+        days: 60,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "RECEIVED", "CANCELLED"],
+        qtyMin: 40,
+        qtyMax: 180,
+        supplierPrefix: "FAKE Wholesale Supplier",
+      };
+    case "gifts_seasonal":
+      return {
+        days: 60,
+        statuses: ["OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "CANCELLED"],
+        qtyMin: 15,
+        qtyMax: 90,
+        supplierPrefix: "FAKE Seasonal Supplier",
+      };
+    default:
+      return {
+        days: 45,
+        statuses: ["OPEN", "OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "CANCELLED"],
+        qtyMin: 10,
+        qtyMax: 100,
+        supplierPrefix: "FAKE Supplier",
+      };
+  }
+}
+
+export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
+  const preset = productPresetForArchetype(archetype);
   const sql = `
     WITH gen AS (
       SELECT
         'FAKE-' || substr(md5(random()::text || g::text || clock_timestamp()::text), 1, 12) AS sku,
         g,
         (100 + floor(random() * 4900))::numeric(12,2) AS price,
-        (ARRAY['เสื้อผ้า','รองเท้า','เครื่องประดับ','กระเป๋า','อุปกรณ์กีฬา'])[1 + floor(random() * 5)::int] AS category,
-        (ARRAY['Nike','Adidas','Uniqlo','Zara','No Brand'])[1 + floor(random() * 5)::int] AS brand
+        ($3::text[])[1 + floor(random() * array_length($3::text[], 1))::int] AS category,
+        ($4::text[])[1 + floor(random() * array_length($4::text[], 1))::int] AS brand
       FROM generate_series(1, $2) g
     ),
     np AS (
       INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand)
-      SELECT $1, sku, 'Fake Product ' || g, true, price, ARRAY['fake','test'],
+      SELECT $1, sku, $5 || ' Product ' || g, true, price, ARRAY['fake','test', lower(replace($5, ' ', '_'))],
              'https://picsum.photos/seed/' || sku || '/400/400',
-             'สินค้าทดสอบสำหรับ demo/QA (สร้างโดยระบบอัตโนมัติ) — Fake Product ' || g,
+             'สินค้าทดสอบสำหรับ demo/QA (สร้างโดยระบบอัตโนมัติ) — ' || $5 || ' Product ' || g,
              (price * (0.4 + random() * 0.3))::numeric(12,2),
              category, brand
         FROM gen
@@ -66,7 +334,7 @@ export async function seedFakeProducts(tenantId: string, count: number) {
       RETURNING 1
     )
     SELECT sku, name, price FROM np ORDER BY sku`;
-  const { rows } = await query(sql, [tenantId, count]);
+  const { rows } = await query(sql, [tenantId, count, preset.categories, preset.brands, preset.prefix]);
   return rows;
 }
 
@@ -87,9 +355,8 @@ export async function seedFakeCustomers(tenantId: string, count: number) {
 const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
 const RESTOCK_CHANNELS = ["line", "facebook", "instagram"] as const;
 
-export async function seedFakeOrders(tenantId: string, count: number) {
-  const DAYS = 30;
-  const STATUS_POOL = ["COMPLETED", "COMPLETED", "COMPLETED", "PAID", "PAID", "SHIPPED", "SHIPPED", "CANCELLED", "RETURNED"];
+export async function seedFakeOrders(tenantId: string, count: number, archetype?: ShopArchetype | null) {
+  const preset = orderPresetForArchetype(archetype);
   const METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"];
   const CARRIERS = ["FLASH", "KERRY", "DHL", "AUSPOST", "NZPOST"];
   const PAID_SET = new Set(["PAID", "SHIPPED", "COMPLETED"]);
@@ -119,16 +386,16 @@ export async function seedFakeOrders(tenantId: string, count: number) {
 
   for (let i = 0; i < count; i++) {
     const id = uuid();
-    const status = pick(STATUS_POOL);
-    const channel = pick(CHANNELS);
-    const created = new Date(Date.now() - R(DAYS) * 864e5 - R(86400) * 1000);
+    const status = pick(preset.statuses);
+    const channel = pick(preset.channels);
+    const created = new Date(Date.now() - R(preset.days) * 864e5 - R(86400) * 1000);
     const iso = created.toISOString();
     const customerId = customers.length ? pick(customers).id : null;
 
-    const chosen = sample(variants, 1 + R(3));
+    const chosen = sample(variants, 1 + R(preset.itemCountMax));
     let total = 0;
     for (const v of chosen) {
-      const qty = 1 + R(3);
+      const qty = preset.qtyBase + R(Math.max(1, preset.qtyMax - preset.qtyBase + 1));
       total += Number(v.price) * qty;
       items.push([tenantId, id, v.sku, v.size, qty, v.price]);
     }
@@ -167,7 +434,7 @@ export async function seedFakeOrders(tenantId: string, count: number) {
   };
 }
 
-const SCRIPTS: { dir: "IN" | "OUT"; body: string }[][] = [
+const DEFAULT_SCRIPTS: { dir: "IN" | "OUT"; body: string }[][] = [
   [
     { dir: "IN", body: "สวัสดีครับ" },
     { dir: "OUT", body: "สวัสดีค่ะ 😊 สนใจสินค้ารุ่นไหนดีคะ" },
@@ -188,8 +455,67 @@ const SCRIPTS: { dir: "IN" | "OUT"; body: string }[][] = [
   ],
 ];
 
-export async function seedFakeConversations(tenantId: string, count: number) {
+function conversationScriptsForArchetype(archetype: ShopArchetype | null | undefined) {
+  switch (archetype) {
+    case "mini_mart":
+      return [
+        [
+          { dir: "IN" as const, body: "โค้ก 1.5 ลิตรมีไหม" },
+          { dir: "OUT" as const, body: "มีค่ะ พร้อมส่ง 6 ขวด สนใจรับกี่ขวดคะ" },
+          { dir: "IN" as const, body: "เอา 3 ขวด" },
+          { dir: "OUT" as const, body: "รับออเดอร์แล้วค่ะ เดี๋ยวสรุปยอดให้นะคะ" },
+        ],
+      ];
+    case "fashion":
+      return [
+        [
+          { dir: "IN" as const, body: "รุ่นนี้มีไซซ์ M สีดำไหม" },
+          { dir: "OUT" as const, body: "มีค่ะ ไซซ์ M สีดำพร้อมส่ง 4 ชิ้น สนใจให้ร้านสรุปออเดอร์เลยไหมคะ" },
+        ],
+      ];
+    case "beauty_personal_care":
+      return [
+        [
+          { dir: "IN" as const, body: "ผิวมันเป็นสิวง่าย ใช้ตัวไหนดี" },
+          { dir: "OUT" as const, body: "ถ้าผิวมันและเป็นสิวง่าย แนะนำเริ่มจากคลีนเซอร์อ่อนโยนกับเซรั่มลดการอุดตันค่ะ สนใจให้ร้านแนะนำเป็นชุดไหมคะ" },
+        ],
+      ];
+    case "food_beverage":
+      return [
+        [
+          { dir: "IN" as const, body: "พิซซ่าฮาวายเอี้ยนถาดกลาง 2 ถาด เพิ่มชีส 1 ถาด" },
+          { dir: "OUT" as const, body: "รับออเดอร์แล้วค่ะ ตอนนี้สรุปเป็นฮาวายเอี้ยนถาดกลาง 2 ถาด เพิ่มชีส 1 ถาด ถูกต้องไหมคะ" },
+        ],
+      ];
+    case "gadgets_accessories":
+      return [
+        [
+          { dir: "IN" as const, body: "เคสรุ่นนี้ใช้กับ iPhone 15 Pro ได้ไหม" },
+          { dir: "OUT" as const, body: "ได้ค่ะ รุ่นนี้รองรับ iPhone 15 Pro โดยตรง และถ้าต้องการฟิล์มเข้าชุด ร้านแนะนำเพิ่มได้ค่ะ" },
+        ],
+      ];
+    case "b2b_wholesale":
+      return [
+        [
+          { dir: "IN" as const, body: "ขอกระดาษ A4 50 รีม ออกใบเสนอราคาได้ไหม" },
+          { dir: "OUT" as const, body: "ได้ค่ะ ร้านช่วยสรุปรายการและออกใบเสนอราคาให้ได้ รบกวนยืนยันจำนวนอีกครั้งนะคะ" },
+        ],
+      ];
+    case "gifts_seasonal":
+      return [
+        [
+          { dir: "IN" as const, body: "มีของขวัญงบไม่เกิน 500 ไหม" },
+          { dir: "OUT" as const, body: "มีค่ะ ถ้าต้องการ ร้านช่วยแนะนำเป็นเซ็ตของขวัญตามงบได้เลยค่ะ" },
+        ],
+      ];
+    default:
+      return DEFAULT_SCRIPTS;
+  }
+}
+
+export async function seedFakeConversations(tenantId: string, count: number, archetype?: ShopArchetype | null) {
   const STATUS_POOL = ["OPEN", "OPEN", "PENDING", "CLOSED"];
+  const scripts = conversationScriptsForArchetype(archetype);
 
   const customers = (await query(
     `SELECT id FROM bms_customers WHERE tenant_id = $1 AND deleted_at IS NULL
@@ -209,7 +535,7 @@ export async function seedFakeConversations(tenantId: string, count: number) {
     const channel = pick(CHANNELS);
     const status = pick(STATUS_POOL);
     const customerId = customers.length ? pick(customers).id : null;
-    const script = pick(SCRIPTS);
+    const script = pick(scripts);
     const base = Date.now() - R(7) * 864e5 - R(86400) * 1000;
     const last = script[script.length - 1].body;
     const lastAt = new Date(base).toISOString();
@@ -244,10 +570,9 @@ export async function seedFakeConversations(tenantId: string, count: number) {
   };
 }
 
-export async function seedFakePurchase(tenantId: string, count: number) {
-  const DAYS = 45;
-  const STATUS_POOL = ["OPEN", "OPEN", "PARTIAL", "RECEIVED", "RECEIVED", "CANCELLED"];
-  const SUPPLIER_NAMES = Array.from({ length: 8 }, (_, i) => `FAKE Supplier ${String(i + 1).padStart(2, "0")}`);
+export async function seedFakePurchase(tenantId: string, count: number, archetype?: ShopArchetype | null) {
+  const preset = purchasePresetForArchetype(archetype);
+  const SUPPLIER_NAMES = Array.from({ length: 8 }, (_, i) => `${preset.supplierPrefix} ${String(i + 1).padStart(2, "0")}`);
 
   const variants = (await query(
     `SELECT i.product_sku AS sku, i.size, p.price
@@ -281,15 +606,15 @@ export async function seedFakePurchase(tenantId: string, count: number) {
 
     for (let i = 0; i < count; i++) {
       const id = uuid();
-      const status = pick(STATUS_POOL);
-      const created = new Date(Date.now() - R(DAYS) * 864e5 - R(86400) * 1000);
+      const status = pick(preset.statuses);
+      const created = new Date(Date.now() - R(preset.days) * 864e5 - R(86400) * 1000);
       const iso = created.toISOString();
       const supplierId = pick(supRows).id;
 
       const chosen = sample(variants, 1 + R(4));
       let total = 0;
       for (const v of chosen) {
-        const qtyOrdered = 10 + R(91);
+        const qtyOrdered = preset.qtyMin + R(Math.max(1, preset.qtyMax - preset.qtyMin + 1));
         const unitCost = Math.max(1, Math.round(Number(v.price) * (0.5 + Math.random() * 0.2)));
         let qtyReceived = 0;
         if (status === "RECEIVED") qtyReceived = qtyOrdered;
@@ -323,6 +648,7 @@ type RestockVariant = {
   sku: string;
   size: string;
   name: string;
+  price: number;
 };
 
 const RESTOCK_SCENARIOS = [
@@ -350,7 +676,7 @@ function restockChannelLabel(channel: string) {
 
 export async function seedFakeRestockSubscriptions(tenantId: string, count: number) {
   let variants = (await query<RestockVariant>(
-    `SELECT i.product_sku AS sku, i.size, p.name
+    `SELECT i.product_sku AS sku, i.size, p.name, p.price
        FROM bms_inventory i
        JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
       WHERE i.tenant_id = $1 AND p.active
@@ -361,7 +687,7 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
   if (variants.length < 8) {
     await seedFakeProducts(tenantId, Math.max(8, Math.ceil((count + 8) / 4)));
     variants = (await query<RestockVariant>(
-      `SELECT i.product_sku AS sku, i.size, p.name
+      `SELECT i.product_sku AS sku, i.size, p.name, p.price
          FROM bms_inventory i
          JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
         WHERE i.tenant_id = $1 AND p.active
@@ -407,6 +733,9 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
   const identities: any[][] = [];
   const subs: any[][] = [];
   const deliveries: Array<{ subscriptionId: string; channel: string; body: string; status: "SENT" | "FAILED"; error: string | null; triggeredBy: string; createdAt: string; completedAt: string }> = [];
+  const recoveryOrders: any[][] = [];
+  const recoveryItems: any[][] = [];
+  const recoveryPayments: any[][] = [];
   const createdConversations: Array<{ id: string; customerId: string; customerName: string; customerRef: string; channel: string }> = [];
   const inStockKeys = new Set<string>();
   const outOfStockKeys = new Set<string>();
@@ -481,12 +810,25 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
     }
 
     const subscriptionId = uuid();
+    const requestedQty = 1 + R(3);
     const consentedAt = minutesAgo(20 + R(60 * 24 * 7));
     const readyAt = requiresStock ? minutesAgo(5 + R(60 * 24 * 2)) : null;
     const lastNotifiedAt = scenario === "NOTIFIED" || scenario === "PURCHASED" ? minutesAgo(3 + R(60 * 24)) : null;
     const resolvedAt = scenario === "PURCHASED" || scenario === "CANCELLED" ? minutesAgo(1 + R(60 * 12)) : null;
     const status = scenario === "FAILED" ? "READY_TO_NOTIFY" : scenario;
-    const requestedQty = 1 + R(3);
+    const recoveredOrderId = scenario === "PURCHASED" ? uuid() : null;
+    const recoveredRevenue = recoveredOrderId ? Number(variant.price) * requestedQty : null;
+    if (recoveredOrderId) {
+      recoveryOrders.push([
+        tenantId, recoveredOrderId, conversation.channel, conversation.customerRef,
+        conversation.customerId, "PAID", recoveredRevenue!.toFixed(2), resolvedAt, resolvedAt,
+      ]);
+      recoveryItems.push([tenantId, recoveredOrderId, variant.sku, variant.size, requestedQty, variant.price]);
+      recoveryPayments.push([
+        tenantId, recoveredOrderId, "BANK_TRANSFER", recoveredRevenue!.toFixed(2),
+        "CONFIRMED", "seed@fake:restock", resolvedAt,
+      ]);
+    }
 
     subs.push([
       subscriptionId,
@@ -504,6 +846,9 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
       readyAt,
       lastNotifiedAt,
       resolvedAt,
+      recoveredOrderId ? resolvedAt : null,
+      recoveredOrderId,
+      recoveredRevenue,
       `dev:fake:${scenario.toLowerCase()}`,
       consentedAt,
       resolvedAt || lastNotifiedAt || readyAt || consentedAt,
@@ -535,8 +880,14 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
       ["tenant_id", "conversation_id", "direction", "body", "sender", "created_at"], msgs);
     await bulkInsert(client, "bms_customer_identities",
       ["tenant_id", "customer_id", "channel", "external_ref", "display_name"], identities);
+    await bulkInsert(client, "bms_orders",
+      ["tenant_id", "id", "channel", "customer_ref", "customer_id", "status", "total_amount", "created_at", "updated_at"], recoveryOrders);
+    await bulkInsert(client, "bms_order_items",
+      ["tenant_id", "order_id", "product_sku", "size", "qty", "unit_price"], recoveryItems);
+    await bulkInsert(client, "bms_payments",
+      ["tenant_id", "order_id", "method", "amount", "status", "verified_by", "created_at"], recoveryPayments);
     await bulkInsert(client, "bms_restock_subscriptions",
-      ["id", "tenant_id", "conversation_id", "customer_id", "channel", "customer_ref", "product_sku", "size", "requested_qty", "status", "source", "consented_at", "ready_at", "last_notified_at", "resolved_at", "created_by", "created_at", "updated_at"], subs);
+      ["id", "tenant_id", "conversation_id", "customer_id", "channel", "customer_ref", "product_sku", "size", "requested_qty", "status", "source", "consented_at", "ready_at", "last_notified_at", "resolved_at", "ordered_at", "resolved_order_id", "recovered_revenue", "created_by", "created_at", "updated_at"], subs);
 
     for (const item of deliveries) {
       if (item.status === "SENT") {
@@ -645,30 +996,28 @@ export async function seedFakeStaff(tenantId: string, count: number, generatedBy
 
 // marker: note ขึ้นต้น 'FAKE' → cleanup ลบได้ (เหมือน PO) · code สุ่มด้วย 'FAKE' + short() กันชนกัน
 // เวลา seed ซ้ำ (UNIQUE tenant_id, code — ON CONFLICT DO NOTHING เผื่อชนพอดี ไม่ throw ทั้ง batch)
-export async function seedFakeCoupons(tenantId: string, count: number) {
+export async function seedFakeCoupons(tenantId: string, count: number, archetype?: ShopArchetype | null) {
   const now = Date.now();
-  const PERCENT_VALUES = [5, 10, 15, 20, 30];
-  const FIXED_VALUES = [20, 50, 100, 150, 200];
-  const MIN_ORDER_POOL: (number | null)[] = [null, null, 300, 500, 1000];
+  const preset = couponPresetForArchetype(archetype);
 
   const created: any[] = [];
   for (let i = 0; i < count; i++) {
     const isPercent = R(2) === 0;
     const type = isPercent ? "PERCENT" : "FIXED";
-    const value = isPercent ? pick(PERCENT_VALUES) : pick(FIXED_VALUES);
-    const minOrderAmount = pick(MIN_ORDER_POOL);
+    const value = isPercent ? pick(preset.percentValues) : pick(preset.fixedValues);
+    const minOrderAmount = pick(preset.minOrderPool);
     const maxRedemptions = R(3) === 0 ? null : 10 + R(90);
-    const perCustomerLimit = R(3) === 0 ? 1 : null;
+    const perCustomerLimit = archetype === "b2b_wholesale" ? null : (R(3) === 0 ? 1 : null);
     const expiresAt = R(4) === 0 ? null : new Date(now + (7 + R(60)) * 864e5).toISOString();
     const active = R(5) !== 0; // ส่วนใหญ่ active — เหลือส่วนน้อยปิดไว้ทดสอบ UI สถานะปิดใช้งาน
     const code = "FAKE" + short().toUpperCase();
 
     const { rows } = await query(
       `INSERT INTO bms_coupons (tenant_id, code, type, value, min_order_amount, max_redemptions, per_customer_limit, expires_at, active, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'FAKE coupon (dev seed)')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (tenant_id, code) DO NOTHING
        RETURNING id, code, type, value, active`,
-      [tenantId, code, type, value, minOrderAmount, maxRedemptions, perCustomerLimit, expiresAt, active]
+      [tenantId, code, type, value, minOrderAmount, maxRedemptions, perCustomerLimit, expiresAt, active, preset.notePrefix]
     );
     if (rows[0]) created.push(rows[0]);
   }

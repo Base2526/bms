@@ -20,6 +20,7 @@ import { STORAGE_DIR } from "@/lib/storage";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
+import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { slipAmountMatches, type SlipExtract, type SlipImagePolicy, type SlipReader } from "./slipReader";
 import { resolveSlipReader, runSlipReaderFallback } from "./slipReaders";
 
@@ -193,6 +194,7 @@ export async function confirmPayment(
     );
     if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, pay.rows[0].order_id);
+      await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId: pay.rows[0].order_id, client });
     }
 
     await client.query("COMMIT");

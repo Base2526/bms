@@ -37,7 +37,8 @@ const Q_SUBSCRIPTIONS = gql`
       total
       items {
         id conversationId customerName channel customerRef productSku productName size requestedQty
-        available status source consentedAt readyAt lastNotifiedAt createdAt updatedAt
+        available status source consentedAt readyAt lastNotifiedAt orderedAt resolvedAt
+        resolvedOrderId recoveredRevenue createdAt updatedAt
       }
     }
   }
@@ -48,6 +49,28 @@ const Q_SUBSCRIPTIONS = gql`
 const Q_STATUS_COUNTS = gql`
   query RestockStatusCounts($search: String) {
     bmsRestockStatusCounts(search: $search) { total active readyToNotify notified }
+  }
+`;
+
+const Q_METRICS = gql`
+  query RestockMetrics($search: String) {
+    bmsRestockMetrics(search: $search) {
+      total
+      readyToNotify
+      notified
+      ordered
+      purchased
+      sentDeliveries
+      failedDeliveries
+      recoveredSalesCount
+      recoveredCustomersCount
+      recoveredOrdersCount
+      recoveredRevenue
+      notifiedSubscriptions
+      recoveredFromNotified
+      recoveryRateFromNotified
+      recoveryRateOverall
+    }
   }
 `;
 
@@ -95,6 +118,10 @@ type Subscription = {
   consentedAt: string;
   readyAt: string | null;
   lastNotifiedAt: string | null;
+  orderedAt: string | null;
+  resolvedAt: string | null;
+  resolvedOrderId: string | null;
+  recoveredRevenue: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -115,6 +142,7 @@ const statusMeta: Record<string, { label: string; color: string }> = {
   ACTIVE: { label: "รอสินค้าเข้า", color: "default" },
   READY_TO_NOTIFY: { label: "พร้อมแจ้ง", color: "orange" },
   NOTIFIED: { label: "แจ้งแล้ว", color: "green" },
+  ORDERED: { label: "สร้างออเดอร์แล้ว", color: "cyan" },
   PURCHASED: { label: "ซื้อแล้ว", color: "blue" },
   CANCELLED: { label: "ยกเลิก", color: "red" },
   EXPIRED: { label: "หมดอายุ", color: "default" },
@@ -153,6 +181,14 @@ function formatRelativeNotified(value?: string | null) {
   return `${diffDays} วันที่แล้ว`;
 }
 
+function formatPercent(value?: number | null) {
+  return new Intl.NumberFormat("th-TH", {
+    style: "percent",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value ?? 0);
+}
+
 export default function RestockSubscriptionsPage() {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -175,6 +211,10 @@ export default function RestockSubscriptionsPage() {
     variables: { search: deferredSearch || null },
     fetchPolicy: "cache-and-network",
   });
+  const { data: metricsData, refetch: refetchMetrics } = useQuery(Q_METRICS, {
+    variables: { search: deferredSearch || null },
+    fetchPolicy: "cache-and-network",
+  });
   const { data: deliveryData, loading: deliveriesLoading, refetch: refetchDeliveries } = useQuery(Q_DELIVERIES, {
     variables: { id: selected?.id || "" },
     skip: !selected,
@@ -188,12 +228,30 @@ export default function RestockSubscriptionsPage() {
   const total = data?.bmsRestockSubscriptions?.total ?? 0;
   const deliveries: Delivery[] = deliveryData?.bmsRestockDeliveries ?? [];
   const counts = countsData?.bmsRestockStatusCounts ?? { total: 0, active: 0, readyToNotify: 0, notified: 0 };
+  const metrics = metricsData?.bmsRestockMetrics ?? {
+    total: 0,
+    readyToNotify: 0,
+    notified: 0,
+    ordered: 0,
+    purchased: 0,
+    sentDeliveries: 0,
+    failedDeliveries: 0,
+    recoveredSalesCount: 0,
+    recoveredCustomersCount: 0,
+    recoveredOrdersCount: 0,
+    recoveredRevenue: 0,
+    notifiedSubscriptions: 0,
+    recoveredFromNotified: 0,
+    recoveryRateFromNotified: 0,
+    recoveryRateOverall: 0,
+  };
 
   const statusTabs: Array<{ key: string | undefined; label: string; count: number }> = [
     { key: undefined, label: "ทั้งหมด", count: counts.total },
     { key: "ACTIVE", label: "รอสินค้าเข้า", count: counts.active },
     { key: "READY_TO_NOTIFY", label: "พร้อมแจ้ง", count: counts.readyToNotify },
     { key: "NOTIFIED", label: "แจ้งแล้ว", count: counts.notified },
+    { key: "ORDERED", label: "สร้างออเดอร์แล้ว", count: metrics.ordered },
   ];
 
   const onSendAll = async () => {
@@ -203,7 +261,7 @@ export default function RestockSubscriptionsPage() {
       if (result) {
         message.success(`แจ้งลูกค้าสำเร็จ ${result.sent} จาก ${result.attempted} รายการ${result.failed ? ` (ล้มเหลว ${result.failed})` : ""}`);
       }
-      await Promise.all([refetch(), refetchCounts()]);
+      await Promise.all([refetch(), refetchCounts(), refetchMetrics()]);
     } catch (error: any) {
       message.error(error?.message || "แจ้งลูกค้าไม่สำเร็จ");
     }
@@ -227,7 +285,7 @@ export default function RestockSubscriptionsPage() {
       } else {
         message.error(result?.message || "ส่งข้อความไม่สำเร็จ");
       }
-      await Promise.all([refetch(), refetchDeliveries(), refetchCounts()]);
+      await Promise.all([refetch(), refetchDeliveries(), refetchCounts(), refetchMetrics()]);
     } catch (error: any) {
       message.error(error?.message || "ส่งข้อความไม่สำเร็จ");
     }
@@ -239,7 +297,7 @@ export default function RestockSubscriptionsPage() {
       if (resultData?.bmsCancelRestockSubscription) {
         message.success("ยกเลิกรายการแจ้งเตือนแล้ว");
         if (selected?.id === item.id) setSelected(null);
-        await Promise.all([refetch(), refetchCounts()]);
+        await Promise.all([refetch(), refetchCounts(), refetchMetrics()]);
       }
     } catch (error: any) {
       message.error(error?.message || "ยกเลิกไม่สำเร็จ");
@@ -302,8 +360,44 @@ export default function RestockSubscriptionsPage() {
           <Title level={3} className={styles.title}>แจ้งลูกค้าเมื่อสินค้าเข้า</Title>
           <Text type="secondary" className={styles.subtitle}>ติดตามความต้องการที่ลูกค้ายืนยันไว้ แล้วแจ้งได้ทันทีที่พร้อมขาย</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); }} loading={loading}>รีเฟรช</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); refetchMetrics(); }} loading={loading}>รีเฟรช</Button>
       </div>
+
+      <div className={styles.metricsGrid}>
+        <Card className={styles.metricCard}>
+          <Text type="secondary">มูลค่าที่กู้กลับมา</Text>
+          <Title level={3} className={styles.metricValue}>{metrics.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</Title>
+          <Text className={styles.metricHint}>ยอดสินค้าในออเดอร์ที่ผูกกับ restock โดยตรง</Text>
+        </Card>
+        <Card className={styles.metricCard}>
+          <Text type="secondary">กู้ยอดขายกลับมาได้</Text>
+          <Title level={3} className={styles.metricValue}>{metrics.recoveredSalesCount.toLocaleString("th-TH")} รายการ</Title>
+          <Text className={styles.metricHint}>{metrics.recoveredOrdersCount.toLocaleString("th-TH")} ออเดอร์ที่ตรวจสอบย้อนกลับได้</Text>
+        </Card>
+        <Card className={styles.metricCard}>
+          <Text type="secondary">ลูกค้าที่ปิดการขายกลับมา</Text>
+          <Title level={3} className={styles.metricValue}>{metrics.recoveredCustomersCount.toLocaleString("th-TH")} ราย</Title>
+          <Text className={styles.metricHint}>นับลูกค้าไม่ซ้ำจาก queue นี้</Text>
+        </Card>
+        <Card className={styles.metricCard}>
+          <Text type="secondary">แจ้งแล้ว → ซื้อกลับมา</Text>
+          <Title level={3} className={styles.metricValue}>{formatPercent(metrics.recoveryRateFromNotified)}</Title>
+          <Text className={styles.metricHint}>{metrics.recoveredFromNotified.toLocaleString("th-TH")} จาก {metrics.notifiedSubscriptions.toLocaleString("th-TH")} subscription ที่ส่งแจ้งสำเร็จ</Text>
+        </Card>
+        <Card className={styles.metricCard}>
+          <Text type="secondary">Recovery rate รวม</Text>
+          <Title level={3} className={styles.metricValue}>{formatPercent(metrics.recoveryRateOverall)}</Title>
+          <Text className={styles.metricHint}>ชำระสำเร็จ {metrics.recoveredSalesCount.toLocaleString("th-TH")} จากทั้งหมด {metrics.total.toLocaleString("th-TH")}</Text>
+        </Card>
+      </div>
+
+      <Alert
+        type="success"
+        showIcon
+        className={styles.metricsAlert}
+        message={`Restock queue นี้ส่งแจ้งสำเร็จ ${metrics.sentDeliveries.toLocaleString("th-TH")} ครั้ง และกู้ลูกค้ากลับมาปิดการขายได้ ${metrics.recoveredCustomersCount.toLocaleString("th-TH")} ราย`}
+        description={`ตอนนี้ยังมี ${metrics.readyToNotify.toLocaleString("th-TH")} รายการที่พร้อมแจ้งทันที และมี failed deliveries ${metrics.failedDeliveries.toLocaleString("th-TH")} ครั้งที่ควรตามแก้`}
+      />
 
       <Input.Search
         allowClear
@@ -452,6 +546,19 @@ export default function RestockSubscriptionsPage() {
               {selected.conversationId && <Link href={`/admin/inbox?c=${selected.conversationId}`}><Button icon={<MessageOutlined />}>เปิดประวัติการคุย</Button></Link>}
             </Card>
 
+            {selected.resolvedOrderId && (
+              <Card size="small" title="ออเดอร์ที่เกิดจาก Restock">
+                <Paragraph style={{ marginBottom: 8 }}>
+                  <Text strong>Order {selected.resolvedOrderId.slice(0, 8)}</Text><br />
+                  สร้างออเดอร์เมื่อ {formatDate(selected.orderedAt)}
+                  {selected.status === "PURCHASED" ? <><br />ยืนยันชำระเมื่อ {formatDate(selected.resolvedAt)}</> : null}
+                </Paragraph>
+                {selected.recoveredRevenue != null ? (
+                  <Tag color="green">ยอดกู้กลับ {selected.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</Tag>
+                ) : <Tag color="cyan">รอยืนยันการชำระ</Tag>}
+              </Card>
+            )}
+
             <div>
               <Title level={5}>ประวัติการส่ง</Title>
               {deliveriesLoading ? <Text type="secondary">กำลังโหลด...</Text> : deliveries.length === 0 ? (
@@ -477,7 +584,7 @@ export default function RestockSubscriptionsPage() {
                   {selected.status === "NOTIFIED" ? "Resend พร้อมตรวจข้อความ" : "ตรวจข้อความและส่ง"}
                 </Button>
               )}
-              {!['PURCHASED', 'CANCELLED', 'EXPIRED'].includes(selected.status) && (
+              {!['ORDERED', 'PURCHASED', 'CANCELLED', 'EXPIRED'].includes(selected.status) && (
                 <Popconfirm title="ยกเลิกรายการนี้?" description="ระบบจะหยุดรอและไม่แจ้งลูกค้า" onConfirm={() => onCancel(selected)}>
                   <Button block={isMobile} danger icon={<StopOutlined />} loading={cancelling}>ยกเลิกการติดตาม</Button>
                 </Popconfirm>

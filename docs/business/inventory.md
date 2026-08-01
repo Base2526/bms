@@ -122,6 +122,15 @@ call `subscribe_restock_notification`. The subscription is scoped to the server-
 channel identity and is supported only on channels with real proactive push delivery: LINE,
 Facebook, and Instagram. The AI must not infer consent from a product question or purchase intent.
 
+This is more than a convenience reminder. It is a **sales-recovery workflow**:
+
+- a stock-out conversation should not end as a lost sale when the customer still wants the item;
+- the shop captures that demand as a queue instead of relying on staff memory;
+- once stock returns, staff can follow up from `/admin/restock-subscriptions` and try to convert the
+  waiting customer into revenue; and
+- the queue also shows which SKU/size combinations repeatedly lose sales because inventory was not
+  available, which helps replenishment planning.
+
 Subscriptions move through:
 
 ```text
@@ -137,8 +146,25 @@ ACTIVE -> READY_TO_NOTIFY -> NOTIFIED -> PURCHASED
   `/admin/restock-subscriptions` and confirm the send with `inbox.reply` permission.
 - Each send/resend creates a `bms_restock_deliveries` attempt with a body snapshot, actor, timestamp,
   and `SENT`/`FAILED` result. Failed attempts leave the subscription ready for retry.
+- The admin page also surfaces funnel/report metrics from this queue itself: total waiting demand,
+  ready-to-notify, already-notified, recovered subscriptions, unique recovered customers, linked
+  recovered orders, recovered order-item revenue, and conversion rates. Linking each conversion to
+  its real order avoids double-counting unrelated items in a mixed basket and makes the queue
+  explainable as a measurable sales-recovery workflow.
 - The send path checks live availability again. If stock has sold out, it sends nothing and moves
   the subscription back to `ACTIVE`.
-- Creating an order for the same customer and SKU/size resolves the subscription as `PURCHASED`.
+- Creating an order first moves the subscription to `ORDERED`; it becomes `PURCHASED` only when a
+  staff confirms payment (or marks a manual/cash payment) and the order becomes `PAID`.
+  Cancellation, expiry, and return reopen the subscription and clear its order/revenue attribution.
+- Recovered revenue is the matching order-item value after allocating the order discount
+  proportionally. Metrics require a paid operational order and exclude refunded payments, so refunds
+  do not remain revenue while manual/cash-paid orders are still counted.
 - Sales staff see only subscriptions for conversations assigned to them or where they are a helper;
   Manager and Administrator roles follow the normal tenant-wide Inbox visibility.
+
+For demos and team explanations, position this feature as:
+
+`out-of-stock -> capture demand -> notify when replenished -> recover the sale`
+
+That makes `restock subscriptions` one of the clearest examples that AI-BMS is not just answering
+chat, but turning missed demand into an actionable sales pipeline.

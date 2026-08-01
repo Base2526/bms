@@ -1,8 +1,9 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch } from "antd";
+import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
+import { SHOP_ARCHETYPE_OPTIONS, archetypeNeedsRestockEmphasis, onboardingChecklistForArchetype } from "@/lib/bms/shopArchetypes";
 
 const { Text } = Typography;
 
@@ -10,7 +11,7 @@ const Q = gql`
   query {
     bmsMyTenant { id name slug }
     bmsStoreProfile {
-      businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
+      businessArchetype businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours shippingPolicy returnPolicy
       paymentAccounts { type bankName accountName accountNo promptpayId note }
@@ -33,6 +34,7 @@ const M_PROFILE = gql`
 
 const PROFILE_KEYS = [
   "businessType", "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
+  "businessArchetype",
   "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
   "timezone", "country", "currency", "businessHours", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
@@ -56,6 +58,9 @@ export default function StoreProfileCard() {
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
+  const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const checklist = onboardingChecklistForArchetype(selectedArchetype);
+  const highlightRestock = archetypeNeedsRestockEmphasis(selectedArchetype);
 
   useEffect(() => {
     const t = data?.bmsMyTenant;
@@ -64,6 +69,7 @@ export default function StoreProfileCard() {
       form.setFieldsValue({
         name: t?.name || "",
         slug: t?.slug || "",
+        businessArchetype: p?.businessArchetype || undefined,
         businessType: p?.businessType || undefined,
         aiLanguage: p?.aiLanguage || "th",
         aiOrderingStyle: p?.aiOrderingStyle || "catalog_variant",
@@ -129,6 +135,11 @@ export default function StoreProfileCard() {
           <SectionTitle note="ใช้สร้าง tenant summary และควบคุมการถามข้อมูลก่อนรับออร์เดอร์">บริบทสำหรับ AI</SectionTitle>
           <Row gutter={16}>
             <Col xs={24} md={10}>
+              <Form.Item name="businessArchetype" label="Shop archetype">
+                <Select allowClear placeholder="เลือก archetype ร้าน" options={SHOP_ARCHETYPE_OPTIONS as any} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={10}>
               <Form.Item name="businessType" label="Business type">
                 <Select
                   allowClear
@@ -188,6 +199,24 @@ export default function StoreProfileCard() {
               </Form.Item>
             </Col>
           </Row>
+          <Alert
+            style={{ marginBottom: 16 }}
+            type={highlightRestock ? "success" : "info"}
+            showIcon
+            message={highlightRestock ? "Checklist เริ่มต้น + จุดเน้นเรื่องเก็บยอดขายจากของหมด" : "Checklist เริ่มต้นตาม archetype ร้าน"}
+            description={
+              <div>
+                {checklist.map((item) => (
+                  <div key={item}>- {item}</div>
+                ))}
+                {highlightRestock && (
+                  <div style={{ marginTop: 8 }}>
+                    - แนะนำให้เปิดหน้า <b>/admin/restock-subscriptions</b> และทดสอบ flow “ของหมด แล้วลูกค้าขอให้แจ้งเมื่อของเข้า จากนั้น staff ส่งกลับเมื่อสต๊อกกลับมา”
+                  </div>
+                )}
+              </div>
+            }
+          />
 
           <SectionTitle>ติดต่อ / แบรนด์</SectionTitle>
           <Row gutter={16}>

@@ -18,7 +18,9 @@ import {
   seedFakeConversations,
   seedFakePurchase,
   seedFakeCoupons,
+  seedFakeRestockSubscriptions,
 } from "@/lib/bms/devSeed";
+import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +37,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : undefined;
+  const businessArchetype = normalizeShopArchetype(body?.businessArchetype);
   const c = body?.counts ?? {};
   const counts = {
     staff: clamp(c.staff, 2, 0, 20),
@@ -44,28 +47,33 @@ export async function POST(req: NextRequest) {
     conversations: clamp(c.conversations, 15, 1, 500),
     purchase: clamp(c.purchase, 10, 1, 500),
     coupons: clamp(c.coupons, 5, 0, 200),
+    restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 12 : 0, 0, 200),
   };
 
   let shop;
   try {
-    shop = await provisionTestShop({ name });
+    shop = await provisionTestShop({ name, businessArchetype });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "สร้างร้านไม่สำเร็จ" }, { status: 500 });
   }
 
   try {
     await seedFakeStaff(shop.tenantId, counts.staff, guard.actor?.id);
-    const products = await seedFakeProducts(shop.tenantId, counts.products);
+    const products = await seedFakeProducts(shop.tenantId, counts.products, businessArchetype);
     const customers = await seedFakeCustomers(shop.tenantId, counts.customers);
-    const orderResult = await seedFakeOrders(shop.tenantId, counts.orders);
-    const convResult = await seedFakeConversations(shop.tenantId, counts.conversations);
-    const poResult = await seedFakePurchase(shop.tenantId, counts.purchase);
-    const coupons = counts.coupons > 0 ? await seedFakeCoupons(shop.tenantId, counts.coupons) : [];
+    const orderResult = await seedFakeOrders(shop.tenantId, counts.orders, businessArchetype);
+    const convResult = await seedFakeConversations(shop.tenantId, counts.conversations, businessArchetype);
+    const poResult = await seedFakePurchase(shop.tenantId, counts.purchase, businessArchetype);
+    const coupons = counts.coupons > 0 ? await seedFakeCoupons(shop.tenantId, counts.coupons, businessArchetype) : [];
+    const restockResult = counts.restockSubscriptions > 0
+      ? await seedFakeRestockSubscriptions(shop.tenantId, counts.restockSubscriptions)
+      : { summary: { restockSubscriptions: 0, restockDeliveries: 0, restockConversations: 0 } };
 
     return NextResponse.json({
       ok: true,
       tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name },
       admin: { email: shop.adminEmail, password: shop.adminPassword },
+      businessArchetype,
       summary: {
         staff: counts.staff,
         products: products.length,
@@ -74,6 +82,7 @@ export async function POST(req: NextRequest) {
         ...orderResult.summary,
         ...convResult.summary,
         ...poResult.summary,
+        ...restockResult.summary,
       },
     });
   } catch (e: any) {

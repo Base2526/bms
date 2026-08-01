@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
+import { SHOP_ARCHETYPE_OPTIONS } from '@/lib/bms/shopArchetypes';
 
 const Q_ME = gql`
   query {
@@ -53,6 +54,7 @@ export default function DevFakePage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
   const [shopName, setShopName] = useState('');
+  const [shopArchetype, setShopArchetype] = useState<string | undefined>(undefined);
   const [provisioning, setProvisioning] = useState(false);
   const [provisioned, setProvisioned] = useState<ProvisionResult | null>(null);
   const [enterTenant, { loading: entering }] = useMutation(M_ENTER_TENANT, {
@@ -79,6 +81,7 @@ export default function DevFakePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: shopName.trim() || undefined }),
+
         credentials: 'include',
       });
       const j = await res.json();
@@ -169,6 +172,14 @@ export default function DevFakePage() {
           style={{ width: 260 }}
           onPressEnter={provisionShop}
         />
+        <Select
+          allowClear
+          placeholder="เลือก archetype ร้าน"
+          value={shopArchetype}
+          onChange={setShopArchetype}
+          options={SHOP_ARCHETYPE_OPTIONS as any}
+          style={{ width: 240 }}
+        />
         <Button type="primary" onClick={provisionShop} loading={provisioning}>สร้างร้านทดสอบ</Button>
       </Space>
     </Card>
@@ -189,6 +200,7 @@ export default function DevFakePage() {
         <>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="ร้าน">{provisioned.tenant.name} <span style={{ opacity: 0.7 }}>/{provisioned.tenant.slug}</span></Descriptions.Item>
+            <Descriptions.Item label="Archetype">{(provisioned as any).businessArchetype || '—'}</Descriptions.Item>
             <Descriptions.Item label="Admin email">{provisioned.admin.email}</Descriptions.Item>
             <Descriptions.Item label="Admin password">
               <Typography.Text code copyable>{provisioned.admin.password}</Typography.Text>
@@ -200,7 +212,7 @@ export default function DevFakePage() {
             สร้างแล้ว: staff {provisioned.summary.staff ?? 0} · สินค้า {provisioned.summary.products ?? 0} ·
             ลูกค้า {provisioned.summary.customers ?? 0} · คูปอง {provisioned.summary.coupons ?? 0} ·
             ออเดอร์ {provisioned.summary.orders ?? 0} ·
-            แชท {provisioned.summary.conversations ?? 0} · PO {provisioned.summary.purchaseOrders ?? 0}
+            แชท {provisioned.summary.conversations ?? 0} · Restock {provisioned.summary.restockSubscriptions ?? 0} · PO {provisioned.summary.purchaseOrders ?? 0}
           </div>
         </>
       )}

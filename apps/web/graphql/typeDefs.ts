@@ -706,6 +706,8 @@ export const typeDefs = /* GraphQL */ `
     bmsRestockReadyCount: Int!
     # ยอดรวมจริงต่อสถานะ (ไม่ผูก pagination) — ใช้ทำ tab บนหน้า /admin/restock-subscriptions
     bmsRestockStatusCounts(search: String): BmsRestockStatusCounts!
+    # KPI ของ restock queue เพื่อให้ร้านเห็นว่า queue นี้กู้ยอดขายกลับมาได้เท่าไร
+    bmsRestockMetrics(search: String): BmsRestockMetrics!
 
     # ===== BMS Reports (admin) =====
     bmsSalesSummary(from: String, to: String): BmsSalesSummary!
@@ -749,6 +751,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
+    bmsOnboardingProgress: BmsOnboardingProgress!
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
 
@@ -1151,7 +1154,10 @@ export const typeDefs = /* GraphQL */ `
     consentedAt: String!
     readyAt: String
     lastNotifiedAt: String
+    orderedAt: String
     resolvedAt: String
+    resolvedOrderId: ID
+    recoveredRevenue: Float
     createdAt: String!
     updatedAt: String!
   }
@@ -1186,6 +1192,29 @@ export const typeDefs = /* GraphQL */ `
     active: Int!
     readyToNotify: Int!
     notified: Int!
+    ordered: Int!
+  }
+
+  type BmsRestockMetrics {
+    total: Int!
+    active: Int!
+    readyToNotify: Int!
+    notified: Int!
+    purchased: Int!
+    cancelled: Int!
+    expired: Int!
+    sentDeliveries: Int!
+    failedDeliveries: Int!
+    recoveredSalesCount: Int!
+    recoveredCustomersCount: Int!
+    recoveredOrdersCount: Int!
+    recoveredRevenue: Float!
+    notifiedSubscriptions: Int!
+    recoveredFromNotified: Int!
+    readyRate: Float!
+    notifyRate: Float!
+    recoveryRateFromNotified: Float!
+    recoveryRateOverall: Float!
   }
 
   type BmsRestockSendAllResult {
@@ -2269,6 +2298,7 @@ export const typeDefs = /* GraphQL */ `
     note: String
   }
   type BmsStoreProfile {
+    businessArchetype: String
     businessType: String
     aiLanguage: String!
     aiOrderingStyle: String!
@@ -2296,7 +2326,14 @@ export const typeDefs = /* GraphQL */ `
     emailThemeColor: String   # #RRGGBB — สีแบรนด์ในอีเมลแจ้งสถานะออร์เดอร์ (7.20)
     emailFooterText: String   # ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (ไม่บังคับ)
   }
+  type BmsOnboardingProgress {
+    completed: [String!]!
+    skipped: [String!]!
+    dismissedAt: String
+    lastSeenAt: String
+  }
   input BmsStoreProfileInput {
+    businessArchetype: String
     businessType: String
     aiLanguage: String
     aiOrderingStyle: String
@@ -2572,6 +2609,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
+    bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
@@ -2602,7 +2640,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSendTestEmail(to: String!, html: String): BmsTestEmailResult!
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
-    bmsSignup(shopName: String!, name: String, email: String!, password: String!): BmsSignupResult!
+    bmsSignup(shopName: String!, name: String, email: String!, password: String!, businessArchetype: String): BmsSignupResult!
     bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
     bmsChangePlan(planCode: String!): Boolean!
 

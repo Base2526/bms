@@ -202,6 +202,24 @@ accounts, and flat/free-threshold delivery estimates. It has forced RLS and expl
 grants; writes run through `beginTenantTx()`. Carrier quotes are not stored or implied—the current
 estimate is only the shop-configured flat-rate policy.
 
+Signup/onboarding extension (`7.42`) — the current store-profile `business_type` remains the broad
+AI-facing classification, while the separate optional `business_archetype` field captures richer
+onboarding/demo defaults. `bms_pending_shop_signups.business_archetype` stores the value until email
+verification, then `verifyPendingShopSignup()` copies it into the first `bms_store_profile` row in
+the same transaction that creates the tenant and Manager account. See
+[../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md).
+
+Migration `7.43` enforces the shared archetype allowlist at the database boundary (while allowing
+`NULL`) and stores durable onboarding state on `bms_store_profile`: completed/skipped step keys,
+dismissed time, and last-seen time. It also adds `resolved_order_id` and an order-item
+`recovered_revenue` snapshot to restock subscriptions, so recovery KPIs are attributable to a real
+tenant order rather than inferred from status alone.
+
+Migration `7.44` adds the intermediate restock `ORDERED` state and a tenant-scoped
+`bms_onboarding_seed_runs` ledger. The ledger records completed seed stages and allows a failed or
+stale run to resume without repeating already completed stages; RLS and `bms_app` grants match the
+other tenant-owned onboarding data.
+
 Migration `7.30` also adds validated AI language/ordering/required-field/short-reply/handoff policy.
 `bms_inbound_events` is the tenant/channel/platform-event idempotency ledger, while
 `bms_ai_synonym_candidates` stores bounded search misses for human review. Both have forced RLS and

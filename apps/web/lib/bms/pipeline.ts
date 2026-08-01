@@ -28,6 +28,7 @@ import {
 import { listCategories } from "./productCategories";
 import { listSellableProducts } from "./products";
 import { getStoreProfile, type PaymentAccount } from "./storeProfile";
+import { archetypeNeedsRestockEmphasis, commercePolicyForArchetype } from "./shopArchetypes";
 import { deriveAiTurnQuality, type AiTurnQuality } from "./aiQuality";
 import { reportBmsFailure } from "./failureAlert";
 import {
@@ -196,7 +197,50 @@ function buildBusinessTypeExamples(businessType: string | null | undefined): str
   }
 }
 
+function buildBusinessArchetypeExamples(businessArchetype: string | null | undefined): string[] {
+  switch (businessArchetype) {
+    case "mini_mart":
+      return [
+        'ตัวอย่างร้าน mini mart — ลูกค้า: "โค้ก 1.5 ลิตรมีไหม" → ค้นจากคำเรียกสินค้าทั่วไปและตอบแบบสั้น พร้อมถามจำนวนต่อทันที',
+        'ตัวอย่างร้าน mini mart — ลูกค้า: "เอาเหมือนเดิม 3" → ใช้บริบทสินค้าล่าสุดหรือ reorder ถ้าพอได้ ห้ามถามยืดยาว',
+      ];
+    case "home_kitchen":
+      return [
+        'ตัวอย่างร้าน home & kitchen — ลูกค้า: "มีจานที่เข้าไมโครเวฟได้ไหม" → ค้นจาก use case และเสนอสินค้าจริง 2-3 ชิ้นก่อนถามต่อ 1 คำถาม',
+        'ตัวอย่างร้าน home & kitchen — ลูกค้า: "เอาใหญ่ 2 ใบ" → ผูกขนาดและจำนวนกับสินค้าที่คุยล่าสุด',
+      ];
+    case "beauty_personal_care":
+      return [
+        'ตัวอย่างร้าน beauty & personal care — ลูกค้า: "ผิวมันเป็นสิวง่าย ใช้อะไรดี" → เริ่มจากปัญหาของลูกค้าและเสนอสินค้าจริงแบบ routine สั้น ๆ',
+        'ตัวอย่างร้าน beauty & personal care — ลูกค้า: "เอาตัวเดิม 2" → ใช้บริบทสินค้าล่าสุดและตีความจำนวนจากข้อความสั้น',
+      ];
+    case "food_beverage":
+      return [
+        'ตัวอย่างร้าน food & beverage — ลูกค้า: "ฮาวายเอี้ยน 2 ถาด เพิ่มชีส 1" → สรุปรายการให้ชัดและห้ามเดา option ที่ไม่มีใน catalog',
+        'ตัวอย่างร้าน food & beverage — ลูกค้า: "ร้านเปิดไหม" → ใช้ get_store_info ก่อนตอบเวลาร้านเสมอ',
+      ];
+    case "gadgets_accessories":
+      return [
+        'ตัวอย่างร้าน gadgets & accessories — ลูกค้า: "รุ่นนี้ใช้กับ iPhone 15 Pro ไหม" → ค้นตามรุ่นที่อ้างถึงก่อนตอบ ห้ามตอบจากความจำ',
+        'ตัวอย่างร้าน gadgets & accessories — ลูกค้า: "ถ้าสีนี้หมดมีรุ่นใกล้เคียงไหม" → ใช้ find_alternatives และเสนอของจริงที่ยังขายได้',
+      ];
+    case "b2b_wholesale":
+      return [
+        'ตัวอย่างร้าน B2B / wholesale — ลูกค้า: "ขอ 50 ชิ้น ออกใบเสนอราคาได้ไหม" → ตอบเชิงงานขายองค์กร กระชับ และพาไปสู่การสรุปรายการจริง',
+        'ตัวอย่างร้าน B2B / wholesale — ลูกค้า: "ขอเหมือนออเดอร์ก่อน" → ใช้ reorder หรือถามยืนยันออเดอร์ล่าสุด ห้ามเดาสินค้า',
+      ];
+    case "gifts_seasonal":
+      return [
+        'ตัวอย่างร้าน gifts & seasonal — ลูกค้า: "หาของขวัญงบ 500" → ใช้ recommend_products และเสนอเป็นตัวเลือกตามงบ 3-5 ชิ้น',
+        'ตัวอย่างร้าน gifts & seasonal — ลูกค้า: "มีชุดของขวัญไหม" → browse catalog ตามธีมหรือเซ็ตก่อนถามต่อ 1 คำถาม',
+      ];
+    default:
+      return [];
+  }
+}
+
 type AiProfileContext = {
+  businessArchetype: string | null;
   businessType: string | null;
   aiLanguage: string;
   aiOrderingStyle: string;
@@ -207,6 +251,7 @@ type AiProfileContext = {
 };
 
 const DEFAULT_AI_PROFILE: AiProfileContext = {
+  businessArchetype: null,
   businessType: null,
   aiLanguage: "th",
   aiOrderingStyle: "catalog_variant",
@@ -218,6 +263,7 @@ const DEFAULT_AI_PROFILE: AiProfileContext = {
 
 function buildCustomerSystem(categories: string[], profile: AiProfileContext): string {
   const required = profile.aiRequiredFields.join(", ");
+  const commercePolicy = commercePolicyForArchetype(profile.businessArchetype);
   const languageInstruction =
     profile.aiLanguage === "en"
       ? "Reply in concise, polite English. Do not switch to Thai unless the customer asks."
@@ -234,6 +280,11 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "คุณเป็นแอดมินร้านค้าออนไลน์ ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม ห้ามใช้ ผม/ครับ และห้ามเติมเรื่องนอกบริบทการซื้อขาย",
     languageInstruction,
     orderingInstruction,
+    `Archetype commerce policy: salesMotion=${commercePolicy.salesMotion}.`,
+    `Discovery policy: ${commercePolicy.discovery}`,
+    `Basket policy: ${commercePolicy.basket}`,
+    `Repeat-purchase policy: ${commercePolicy.repeatPurchase}`,
+    `Fulfillment policy: ${commercePolicy.fulfillment}`,
     "เป้าหมายหลักคือช่วยลูกค้าหาสินค้าที่ซื้อได้และพาไปสู่ขั้นตอนเลือกสินค้า/ไซซ์/จำนวนอย่างสุภาพ ไม่สนทนายืดยาวนอกเส้นทางการขาย",
     "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริง (สินค้า/สต็อก/ราคา/สถานะออร์เดอร์) เท่านั้น",
     "ห้ามเดาหรือแต่งตัวเลขสต็อก ราคา หรือเลขออร์เดอร์เอง — ทุกตัวเลขต้องมาจากผลของทูล",
@@ -244,7 +295,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "ถ้าสินค้าหรือไซซ์ที่ลูกค้าต้องการหมด ให้ถามสั้น ๆ ว่าต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมได้ 1 ครั้ง; เรียก subscribe_restock_notification เฉพาะเมื่อลูกค้าตอบรับชัดเจนหรือขอให้แจ้งเอง และต้องมี sku+size ที่ยืนยันแล้ว ห้ามสมัครจากการคาดเดาความสนใจ",
     "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ",
     "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
-    `Tenant summary: businessType=${profile.businessType || "general"}; language=${profile.aiLanguage}; ` +
+    `Tenant summary: businessArchetype=${profile.businessArchetype || "none"}; businessType=${profile.businessType || "general"}; language=${profile.aiLanguage}; ` +
       `orderingStyle=${profile.aiOrderingStyle}; requiredFields=${required}; ` +
       `handoffAfterFailedTurns=${profile.aiHandoffAfterFailedTurns}`,
     `ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และข้อมูลที่ร้านกำหนดครบ (${required}) ถ้าไม่ครบให้ถามกลับ`,
@@ -274,6 +325,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     );
   }
   lines.push(...buildBusinessTypeExamples(profile.businessType));
+  lines.push(...buildBusinessArchetypeExamples(profile.businessArchetype));
   return lines.join("\n");
 }
 
@@ -284,7 +336,7 @@ function salesAlternativeText(items: Array<{ name: string; price: number }>): st
     .join(", ");
 }
 
-function stockRecoveryReply(result: StockResult): string | null {
+function stockRecoveryReply(result: StockResult, businessArchetype?: string | null): string | null {
   if (result.status === "OUT_OF_STOCK") {
     const otherSizes = (result.availableSizes ?? []).map((item) => item.size).join(", ");
     if (otherSizes) {
@@ -293,7 +345,9 @@ function stockRecoveryReply(result: StockResult): string | null {
     const alternatives = salesAlternativeText(result.alternatives ?? []);
     return alternatives
       ? `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ตอนนี้มีตัวเลือกพร้อมขายใกล้เคียง เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
-      : null;
+      : archetypeNeedsRestockEmphasis(businessArchetype)
+        ? `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมคะ?`
+        : null;
   }
   if (result.status === "NOT_FOUND") {
     const alternatives = salesAlternativeText(result.alternatives ?? []);
@@ -1335,7 +1389,7 @@ export async function runPipeline(
             );
             routeTrace.push(checked.trace);
             if (checked.result.ok) {
-              reply = stockRecoveryReply(checked.result.data as StockResult) ?? reply;
+              reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype) ?? reply;
             }
           }
           if (convId && order.status === "CREATED") {
@@ -1374,6 +1428,7 @@ export async function runPipeline(
       history_messages_sent: recentTurns.length,
       history_compressed: summary !== null,
       history_summary_chars: summary?.length ?? 0,
+      business_archetype: profile.businessArchetype ?? "none",
       business_type: profile.businessType ?? "general",
       ...(evalRef ? { eval_ref: evalRef } : {}),
     },
@@ -1512,7 +1567,7 @@ export async function runPipeline(
       );
       if (order.status !== "CREATED" && orderItems.length === 1) {
         const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
-        reply = stockRecoveryReply(stock) ?? reply;
+        reply = stockRecoveryReply(stock, profile.businessArchetype) ?? reply;
       }
     }
 

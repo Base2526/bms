@@ -1,16 +1,17 @@
 'use client';
 import { gql, useMutation } from "@apollo/client";
-import { Card, Form, Input, Button, message, Alert, Typography, Result } from "antd";
+import { Card, Form, Input, Button, message, Alert, Typography, Result, Select } from "antd";
 import { useState } from "react";
 import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
+import { SHOP_ARCHETYPE_OPTIONS } from "@/lib/bms/shopArchetypes";
 
 const { Paragraph } = Typography;
 
 const M_SIGNUP = gql`
-  mutation ($shopName: String!, $name: String, $email: String!, $password: String!) {
-    bmsSignup(shopName: $shopName, name: $name, email: $email, password: $password) {
+  mutation ($shopName: String!, $name: String, $email: String!, $password: String!, $businessArchetype: String) {
+    bmsSignup(shopName: $shopName, name: $name, email: $email, password: $password, businessArchetype: $businessArchetype) {
       status tenantId slug
     }
   }
@@ -32,7 +33,15 @@ export default function Page() {
 
   const submit = async () => {
     const v = await form.validateFields();
-    await signup({ variables: { shopName: v.shopName, name: v.name || null, email: v.email, password: v.password } });
+    await signup({
+      variables: {
+        shopName: v.shopName,
+        name: v.name || null,
+        email: v.email,
+        password: v.password,
+        businessArchetype: v.businessArchetype || null,
+      },
+    });
   };
 
   if (done) {
@@ -60,6 +69,17 @@ export default function Page() {
           <Form form={form} layout="vertical" autoComplete="off">
             <Form.Item label="ชื่อร้าน" name="shopName" rules={[{ required: true, message: "ระบุชื่อร้าน" }]}>
               <Input placeholder="เช่น ร้านรองเท้าพี่หมี" size="large" />
+            </Form.Item>
+            <Form.Item
+              label="ประเภทร้าน"
+              name="businessArchetype"
+              extra="ใช้เพื่อเตรียมหมวดสินค้า ตัวอย่างข้อมูล และคำแนะนำเริ่มต้นให้เหมาะกับร้านของคุณ"
+            >
+              <Select
+                allowClear
+                placeholder="เริ่มจากร้านเปล่า หรือเลือก archetype"
+                options={SHOP_ARCHETYPE_OPTIONS as any}
+              />
             </Form.Item>
             <Form.Item label="ชื่อผู้ใช้ (เจ้าของร้าน)" name="name">
               <Input placeholder="ชื่อคุณ" />

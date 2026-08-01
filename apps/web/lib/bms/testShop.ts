@@ -11,6 +11,7 @@ import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
 import { nanoid } from "nanoid";
 import { DEFAULT_TENANT_ID } from "./tenant";
+import { archetypeToBusinessType, normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
 
 export type ProvisionTestShopResult = {
   tenantId: string;
@@ -20,10 +21,12 @@ export type ProvisionTestShopResult = {
   adminPassword: string;
 };
 
-export async function provisionTestShop(opts: { name?: string } = {}): Promise<ProvisionTestShopResult> {
+export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null } = {}): Promise<ProvisionTestShopResult> {
   const suffix = nanoid(8).toLowerCase();
   const slug = `test-${suffix}`;
   const name = opts.name?.trim() || `ร้านทดสอบ ${suffix}`;
+  const businessArchetype = normalizeShopArchetype(opts.businessArchetype);
+  const businessType = archetypeToBusinessType(businessArchetype);
   const adminEmail = `admin+${suffix}@test.bms.local`;
   const adminPassword = nanoid(12);
 
@@ -36,6 +39,11 @@ export async function provisionTestShop(opts: { name?: string } = {}): Promise<P
       [name, slug]
     );
     const tenantId = t.rows[0].id;
+    await client.query(
+      `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
+       VALUES ($1, $2, $3)`,
+      [tenantId, businessType, businessArchetype]
+    );
 
     // seed สิทธิ์ role ของร้านใหม่ (คัดลอก template จาก default tenant) — เหมือน signupShop()
     // ไม่ทำแบบนี้ = ร้านใหม่จะไม่มีแถวใน bms_role_permissions เลย → ทุก requirePermission() ของ role

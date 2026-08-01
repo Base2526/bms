@@ -19,7 +19,9 @@ import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
-  markRestockSubscriptionsPurchased,
+  markRestockSubscriptionsOrdered,
+  markRestockSubscriptionsPurchasedForOrder,
+  reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
 
@@ -184,18 +186,16 @@ export async function createOrder(
       `customer:${input.customerRef ?? input.channel}`
     );
 
+    await markRestockSubscriptionsOrdered({
+      tenantId,
+      orderId,
+      channel: input.channel,
+      customerRef: input.customerRef,
+      customerId,
+      items,
+      client,
+    });
     await client.query("COMMIT");
-    try {
-      await markRestockSubscriptionsPurchased({
-        tenantId,
-        channel: input.channel,
-        customerRef: input.customerRef,
-        customerId,
-        items,
-      });
-    } catch (error) {
-      console.error("[BMS] restock purchase resolution hook failed:", error);
-    }
     return { status: "CREATED", orderId, total: finalTotal, subtotal: total, discount, couponCode: appliedCouponCode, items: lines };
   } catch (err) {
     try {
@@ -316,6 +316,7 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
       return false;
     }
     await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+    await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
     await client.query("COMMIT");
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -437,6 +438,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     );
 
     await recordOrderMovements(client, [orderId], "RETURN", "system");
+    await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");
     await markRestockSubscriptionsReadyForOrders([orderId]);
@@ -484,6 +486,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await recordOrderMovements(client, [orderId], "RELEASE", "system");
     await releaseCouponForOrdersInTx(client, [orderId]);
     await releaseCustomerCouponReservationsInTx(client, [orderId]);
+    await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");
     await markRestockSubscriptionsReadyForOrders([orderId]);
@@ -541,6 +544,7 @@ export async function releaseExpiredOrders(
     await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
     await releaseCouponForOrdersInTx(client, ids);
     await releaseCustomerCouponReservationsInTx(client, ids);
+    await reopenRestockSubscriptionsForOrders({ orderIds: ids, client });
 
     await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()
