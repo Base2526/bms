@@ -988,6 +988,10 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 · **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้ · เมนูโชว์ให้คนมีสิทธิ์ `product.edit`) · cleanup scope เฉพาะร้านตัวเอง
 · ปิดใน production default · เปิดเครื่อง demo ด้วย env `BMS_ALLOW_FAKE_SEED=1` (`lib/dev-guards.ts` → `fakeSeedDisabled()`) · posts/users fixture ยังปิด production
 
+The explicit onboarding action `/api/bms/onboarding/sample-data` is separate from these dev routes:
+it is Administrator/Manager-only, accepts only the current empty tenant, and uses a resumable
+tenant-scoped seed ledger, so it is intentionally available in production without the dev flag.
+
 ✅ **Platform-only admin pages** — ENV/Logs/Posts/Files/Social Queue/Architecture gate ที่ `layout.tsx`
 ด้วย `requirePlatformAdminPage()` (`lib/auth/platform-page.ts`) — non-platform เข้าตรงผ่าน URL ก็ถูก redirect
 

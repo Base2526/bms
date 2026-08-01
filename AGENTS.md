@@ -81,10 +81,12 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   `listSellableProducts()`/`resolveSellableProduct()`/`findAlternativeProducts()` in
   `lib/bms/products.ts` — always active + in-stock, queried fresh on every call with no cache to
   invalidate — plus read product/stock/own-order-status and `create_order`/`submit_payment`/
-  `reorder`. No sensitive tool is ever exposed here. Out-of-stock/not-found replies must offer a
-  verified alternative size or product from these tools rather than ending at "not found". AI-first;
-  falls back to the old deterministic rule-based path only when the tenant has no AI credentials or
-  has exhausted its shared-key quota — never mid-loop, to avoid duplicate writes.
+  `reorder`/`subscribe_restock_notification`. No sensitive tool is ever exposed here.
+  Out-of-stock/not-found replies must offer a verified alternative size or product from these tools
+  rather than ending at "not found", and the model may create a restock subscription only after the
+  customer explicitly opts in. AI-first; falls back to the old deterministic rule-based path only
+  when the tenant has no AI credentials or has exhausted its shared-key quota — never mid-loop, to
+  avoid duplicate writes.
   Post-order delivery collection is **identity-first and PII-minimizing**: `get_customer_checkout` /
   `save_customer_checkout_details` resolve the customer only from the server-established
   `(tenant_id, channel, customer_ref)` identity — never from an id the model supplies — and the read
@@ -385,6 +387,8 @@ cd packages/realtime && npm run build
   [scripts/ai-eval/README.md](scripts/ai-eval/README.md)); they need no network or database:
 
 ```bash
+cd apps/web && npx tsx --test ../../scripts/ai-eval/archetype-policy-contract.test.mts
+cd apps/web && npx tsx --test ../../scripts/ai-eval/restock-lifecycle-contract.test.mts
 cd apps/web && npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 ```
 

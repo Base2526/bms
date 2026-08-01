@@ -290,4 +290,18 @@ when the dataset is larger than the currently loaded page.
   then creates the free tenant and Manager account. Repeated unverified requests keep independent
   tokens, so an attacker cannot invalidate the real owner's link; the first valid verification creates
   the account and consumes the remaining requests for that email.
+- `/shop-signup` also accepts an **optional** `businessArchetype` field and persists it on the
+  pending signup row until verification. The verified flow initializes the tenant's first
+  store-profile archetype/business-type defaults in the same transaction. This is for onboarding,
+  sample-data, and AI-context defaults only; it does not restrict features. See
+  [../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md).
+- `bmsOnboardingProgress` and `bmsUpdateOnboardingProgress` persist completed, skipped, dismissed,
+  and last-seen onboarding state for the current tenant. The service validates the fixed step
+  allowlist before storing it.
+- `bmsRestockMetrics` includes recovered subscriptions, customers, orders, and revenue. Revenue
+  comes from the linked order-item price snapshot, never from a client-supplied amount.
+- `POST /api/bms/onboarding/sample-data` is an authenticated Administrator/Manager onboarding
+  action, available in production for an empty tenant. A tenant-scoped seed-run ledger prevents
+  concurrent runs and resumes failed runs stage by stage; unlike `/api/dev/fake/*`, it does not use
+  the development fake-seed feature flag.
 - `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.

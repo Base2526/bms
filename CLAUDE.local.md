@@ -600,15 +600,19 @@ apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน
   loop bound 5 รอบ, tenant mismatch, audit ไม่มี raw args/PII · รันจาก `apps/web`:
   `npx tsx ../../scripts/ai-eval/runtime-contract.test.mts`
 - **live-model eval** (`run.mjs`) — ยิง `/api/bms/chat` จริงแล้วอ่าน state กลับทาง GraphQL (order/payment/
-  items/status) ไม่เชื่อแค่ trace · **เขียนข้อมูลจริง** (conversation `EVAL-*`, order, payment PENDING,
-  audit) และ **ไม่มี cleanup** → ใช้กับ tenant dev/sandbox เท่านั้น · localhost ผ่านเอง, remote ต้องตั้ง
-  `BMS_EVAL_ALLOW_REMOTE_WRITES=true` (ห้ามใช้กับ production) · แยกผล functional/safety/system — safety ที่
-  fail แบบ intermittent นับเป็นบั๊ก
+  items/status/restock subscription) ไม่เชื่อแค่ trace · **เขียนข้อมูลจริง** (conversation `EVAL-*`, order,
+  payment PENDING, `ACTIVE` restock subscription, audit) และ **ไม่มี cleanup** → ใช้กับ tenant dev/sandbox
+  เท่านั้น · localhost ผ่านเอง, remote ต้องตั้ง `BMS_EVAL_ALLOW_REMOTE_WRITES=true` (ห้ามใช้กับ production)
+  · แยกผล functional/safety/system — safety ที่ fail แบบ intermittent นับเป็นบั๊ก
 - **fixture ไม่พอ = SKIP ไม่ใช่ pass** — runner discover product/variant/alias/category/coupon จากร้านจริง
   และวาง stock budget ล่วงหน้าไม่ให้ write case แย่ง variant กันเอง · `BMS_EVAL_REQUIRE_FULL_COVERAGE=true`
   บังคับให้ skip หรือทูล customer ที่ไม่ถูกเรียกเลยทำให้ run fail (ใช้กับ tenant ที่เตรียม fixture ครบ) ·
   `BMS_EVAL_JSON_OUTPUT=<path>` เก็บรายงานไว้เทียบ pass rate ระหว่างรอบ (รันซ้ำ reserve stock เพิ่มจริงทุกครั้ง
   ต้อง refresh fixture ก่อนเทียบ) · `BMS_EVAL_ALL_TENANTS=true`/`BMS_EVAL_TENANT_SLUGS=` ต้องเป็น platform admin
+- **archetype policy case แยกต่อ businessArchetype แล้ว** — live suite สร้าง case id แบบ
+  `archetype-commerce-policy-mini_mart`, `...-fashion`, `...-food_beverage` ฯลฯ และจะรันเฉพาะ case ที่ตรงกับ
+  `bmsStoreProfile.businessArchetype` ของ tenant นั้น ส่วน `BMS_EVAL_CASES=archetype-commerce-policy` ยังใช้
+  เป็น selector รวมได้เหมือนเดิมสำหรับเรียกทั้งกลุ่ม
 - login สำหรับ eval ใช้ mutation `loginAdmin` ผ่าน `/api/graphql` เท่านั้น (ไม่ใช่ `/api/login` ที่เป็น dead
   code — ดู § Admin session) · รายละเอียดครบใน [`scripts/ai-eval/README.md`](scripts/ai-eval/README.md)
 
@@ -735,9 +739,9 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
   `AiConversationState` (`setAiConversationState(tenantId, convId, {})`) และตั้ง history boundary ใน
   `buildOrderMemory()` กันไม่ให้ข้อความก่อนยกเลิกถูกดึงกลับมาสร้างออร์เดอร์โดยไม่ตั้งใจ
 - **eval suite ใหม่**: `BMS_EVAL_MODE=natural` (13 case เน้นภาษาพูด/ความจำ/เปลี่ยนใจ/ต่อรอง/product link/
-  ordinal reference `ตัวที่ 2` — ดู `scripts/ai-eval/README.md`) เพิ่มจาก smoke เดิม (8→11 case, เพิ่ม
-  `category-browse`/`new-arrivals-live-catalog`/`natural-colloquial-stock`) · customer tool registry
-  ที่ eval คุม coverage ขยายจาก 15→18 ตัว
+  ordinal reference `ตัวที่ 2` — ดู `scripts/ai-eval/README.md`) และ smoke suite ขยายเป็น 14 case ครอบคลุม
+  `category-browse`/`new-arrivals-live-catalog`/`natural-colloquial-stock`/`restock-explicit-consent`/
+  `archetype-commerce-policy` · customer tool registry ที่ eval คุม coverage ขยายจาก 15→18 ตัว
 - **ยังไม่ทำ**: ยังไม่ได้ apply migration `7.33` เข้า docker/production เครื่องนี้ และยังไม่ได้รัน
   `BMS_EVAL_MODE=natural` กับ live model เพื่อดู pass rate จริง (โค้ด + eval case เขียนไว้แล้วเท่านั้น)
 

@@ -6,6 +6,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { getStoreProfile, upsertStoreProfile, type StoreProfileInput } from "@/lib/bms/storeProfile";
 import { updateTenantIdentity } from "@/lib/bms/platform";
 import { audit } from "@/lib/bms/audit";
+import { getOnboardingProgress, updateOnboardingProgress } from "@/lib/bms/onboarding";
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -20,6 +21,10 @@ export const bmsStoreProfileResolvers = {
       requireTenantAdmin(ctx);
       return getStoreProfile(getTenantId(ctx));
     },
+    async bmsOnboardingProgress(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return getOnboardingProgress(getTenantId(ctx));
+    },
   },
   Mutation: {
     async bmsUpsertStoreProfile(_p: unknown, args: { input: StoreProfileInput }, ctx: any) {
@@ -31,6 +36,26 @@ export const bmsStoreProfileResolvers = {
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกข้อมูลร้านไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
+    },
+    async bmsUpdateOnboardingProgress(
+      _p: unknown,
+      args: { completed?: string[] | null; skipped?: string[] | null; dismissed?: boolean | null },
+      ctx: any
+    ) {
+      requireTenantAdmin(ctx);
+      const result = await updateOnboardingProgress({
+        tenantId: getTenantId(ctx),
+        completed: args.completed,
+        skipped: args.skipped,
+        dismissed: args.dismissed,
+        editorId: ctx?.admin?.id ?? null,
+      });
+      await audit(ctx, "onboarding.progress_update", null, {
+        completed: result.completed,
+        skipped: result.skipped,
+        dismissed: Boolean(result.dismissedAt),
+      });
+      return result;
     },
     // แก้ชื่อร้าน (tenant name) + slug — Administrator ของร้านแก้เองได้
     async bmsUpdateMyTenant(_p: unknown, args: { name?: string; slug?: string }, ctx: any) {

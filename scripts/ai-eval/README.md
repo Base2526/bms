@@ -19,6 +19,8 @@
 cd apps/web
 npx tsx ../../scripts/ai-eval/runtime-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/archetype-policy-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/restock-lifecycle-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 ```
@@ -78,6 +80,7 @@ Live suite ใช้ `channel:"web"` เพื่อให้ conversation histo
 - สร้าง conversation/messages ที่มี `customerRef` ขึ้นต้น `EVAL-`
 - สร้าง order จริงและ reserve stock จริงในบางเคส
 - สร้าง payment สถานะ `PENDING` จริงใน happy path
+- สร้าง restock subscription สถานะ `ACTIVE` จริงเมื่อรัน explicit-consent case
 - สร้าง audit rows จริง
 - อ่าน usage diagnostic ที่ผูกเฉพาะ `customerRef` รูปแบบ `EVAL-*`; runner ไม่บันทึก customer ref
   ทั่วไปลง usage metadata
@@ -131,7 +134,7 @@ node scripts/ai-eval/run.mjs
 node scripts/ai-eval/run.mjs
 ```
 
-Smoke suite สำหรับรันระหว่างพัฒนา (12 cases ครอบคลุม catalog/read/write/security/handoff/provider routing):
+Smoke suite สำหรับรันระหว่างพัฒนา (14 cases ครอบคลุม catalog/read/write/restock/archetype/security/handoff/provider routing):
 
 ```bash
 BMS_EVAL_MODE=smoke node scripts/ai-eval/run.mjs
@@ -174,7 +177,7 @@ node scripts/ai-eval/run.mjs
 | `BMS_EVAL_BASE_URL` | `http://localhost:3000` | API base URL |
 | `BMS_EVAL_COOKIE_JAR` | `/tmp/bms-cookies.txt` | Netscape cookie jar |
 | `BMS_EVAL_REQUEST_TIMEOUT_MS` | `125000` | timeout ต่อ HTTP/GraphQL request |
-| `BMS_EVAL_MODE` | `full` | `full`, `smoke` (12 representative cases) หรือ `natural` (13 conversation cases) |
+| `BMS_EVAL_MODE` | `full` | `full`, `smoke` (14 representative cases) หรือ `natural` (13 conversation cases) |
 | `BMS_EVAL_CASES` | ว่าง | comma-separated exact case IDs; มีผลเหนือ mode |
 | `BMS_EVAL_ALL_TENANTS` | `false` | วนทุก active tenant |
 | `BMS_EVAL_TENANT_SLUGS` | ว่าง | comma-separated tenant filter |
@@ -219,6 +222,13 @@ node scripts/ai-eval/run.mjs
 - new arrivals ต้องเรียก `list_new_arrivals` และคืนสินค้าจาก tenant ปัจจุบัน
 - product not found ต้องค้นและเสนอสินค้าทดแทนจริง
 - out-of-stock ต้องเสนอไซซ์อื่นหรือสินค้าทดแทนจริง
+- explicit restock consent บน push-capable channel ต้องเรียก `subscribe_restock_notification`,
+  สร้าง `ACTIVE` subscription จริง และยังไม่มี order/revenue attribution
+- archetype commerce policy ใช้ prompt ตาม `businessArchetype` ของ tenant แต่ยังต้องค้น catalog จริง,
+  เสนอสินค้าจริง, จบด้วย CTA เดียว และไม่มี write side effect
+  ตอนนี้ runner สร้าง case แยกเป็นราย archetype เช่น
+  `archetype-commerce-policy-mini_mart`, `archetype-commerce-policy-fashion`
+  และยังเลือกแบบรวมผ่าน `BMS_EVAL_CASES=archetype-commerce-policy` ได้เหมือนเดิม
 - inactive product
 - invalid size
 - recommendation ต้องเสนอสินค้าจริงพร้อม CTA

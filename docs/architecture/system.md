@@ -138,6 +138,11 @@ docs/                      This documentation tree
 - `/shop-signup` is a public auth-safe route. It must stay in the auth-route allowlist so it
   doesn't initialize admin session/chat providers unnecessarily. Signup remains pending until the
   owner verifies the emailed link; only then are the tenant and Manager account created.
+- `/shop-signup` offers an optional shop archetype selector that survives the pending-verification
+  flow and seeds the initial store profile / onboarding tips without restricting features. This is
+  especially useful for demo/sample-data flows and for emphasizing revenue-recovery patterns such as
+  `restock subscriptions`. See
+  [../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md).
 - `/shop/[tenantSlug]/products/[sku]` is the no-login product detail/gallery shared from Inbox. It
   resolves active shops/products through `lib/bms/products.ts`, exposes sale-safe fields only, and
   treats the tenant slug as a stable public routing handle.

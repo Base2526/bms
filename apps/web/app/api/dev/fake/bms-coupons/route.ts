@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { seedFakeCoupons } from "@/lib/bms/devSeed";
+import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const count = Math.min(Math.max(Number(body?.count) || 5, 1), 200);
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
-    const created = await seedFakeCoupons(tenantId, count);
+    const archetype = normalizeShopArchetype(body?.businessArchetype);
+    const created = await seedFakeCoupons(tenantId, count, archetype);
     return NextResponse.json({ ok: true, created });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });

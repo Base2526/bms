@@ -6,6 +6,7 @@ import {
   canAccessRestockSubscription,
   cancelRestockSubscription,
   countReadyRestockSubscriptions,
+  getRestockMetrics,
   countRestockSubscriptionsByStatus,
   listRestockDeliveries,
   listRestockSubscriptions,
@@ -47,6 +48,10 @@ export const bmsRestockSubscriptionsResolvers = {
     async bmsRestockStatusCounts(_p: unknown, args: { search?: string }, ctx: any) {
       await requirePermission(ctx, "inbox.view");
       return countRestockSubscriptionsByStatus(getTenantId(ctx), { search: args.search, assignedTo: assignedScope(ctx) });
+    },
+    async bmsRestockMetrics(_p: unknown, args: { search?: string }, ctx: any) {
+      await requirePermission(ctx, "inbox.view");
+      return getRestockMetrics(getTenantId(ctx), { search: args.search, assignedTo: assignedScope(ctx) });
     },
   },
   Mutation: {

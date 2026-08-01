@@ -63,8 +63,8 @@ function VerifyEmailClientInner({ token }: Props) {
         if (cancelled) return;
         const shopStatus = data?.bmsVerifyShopSignup?.status;
         if (shopStatus === "VERIFIED") {
-          setStatus("ยืนยันอีเมลและเปิดร้านสำเร็จ กำลังไปหน้าเข้าสู่ระบบ...");
-          window.setTimeout(() => window.location.assign("/admin/login"), 1200);
+          setStatus("ยืนยันอีเมลและเปิดร้านสำเร็จ กำลังไปหน้าเข้าสู่ระบบเพื่อเริ่ม onboarding...");
+          window.setTimeout(() => window.location.assign("/admin/login?next=/admin/getting-started"), 1200);
           return;
         }
         if (shopStatus === "EMAIL_TAKEN") {

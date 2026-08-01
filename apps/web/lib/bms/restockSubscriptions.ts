@@ -5,6 +5,7 @@ export const RESTOCK_STATUSES = [
   "ACTIVE",
   "READY_TO_NOTIFY",
   "NOTIFIED",
+  "ORDERED",
   "PURCHASED",
   "CANCELLED",
   "EXPIRED",
@@ -38,7 +39,10 @@ function shapeSubscription(row: any) {
     consentedAt: iso(row.consented_at),
     readyAt: iso(row.ready_at),
     lastNotifiedAt: iso(row.last_notified_at),
+    orderedAt: iso(row.ordered_at),
     resolvedAt: iso(row.resolved_at),
+    resolvedOrderId: row.resolved_order_id ?? null,
+    recoveredRevenue: row.recovered_revenue == null ? null : Number(row.recovered_revenue),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -144,17 +148,22 @@ export async function markRestockSubscriptionsReadyForOrders(orderIds: string[])
   }
 }
 
-export async function markRestockSubscriptionsPurchased(input: {
+export async function markRestockSubscriptionsOrdered(input: {
   tenantId: string;
+  orderId: string;
   channel: string;
   customerRef?: string | null;
   customerId?: string | null;
   items: Array<{ sku: string; size: string }>;
+  client?: { query: (text: string, values?: unknown[]) => Promise<any> };
 }): Promise<void> {
+  const runQuery = input.client ? input.client.query.bind(input.client) : query;
   for (const item of input.items) {
-    await query(
+    await runQuery(
       `UPDATE bms_restock_subscriptions
-          SET status = 'PURCHASED', resolved_at = now(), updated_at = now()
+          SET status = 'ORDERED', ordered_at = now(), resolved_at = NULL,
+              resolved_order_id = $7, recovered_revenue = NULL,
+              updated_at = now()
         WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
           AND status IN ('ACTIVE','READY_TO_NOTIFY','NOTIFIED')
           AND (($4::uuid IS NOT NULL AND customer_id = $4)
@@ -166,9 +175,54 @@ export async function markRestockSubscriptionsPurchased(input: {
         input.customerId ?? null,
         input.channel,
         input.customerRef ?? null,
+        input.orderId,
       ]
     );
   }
+}
+
+export async function markRestockSubscriptionsPurchasedForOrder(input: {
+  tenantId: string;
+  orderId: string;
+  client: { query: (text: string, values?: unknown[]) => Promise<any> };
+}): Promise<number> {
+  const result = await input.client.query(
+    `UPDATE bms_restock_subscriptions s
+        SET status = 'PURCHASED', resolved_at = now(),
+            recovered_revenue = ROUND((
+              SELECT COALESCE(SUM(oi.qty * oi.unit_price), 0)
+                FROM bms_order_items oi
+               WHERE oi.tenant_id = s.tenant_id AND oi.order_id = s.resolved_order_id
+                 AND oi.product_sku = s.product_sku AND oi.size = s.size
+            ) * CASE
+              WHEN (SELECT SUM(all_oi.qty * all_oi.unit_price) FROM bms_order_items all_oi
+                     WHERE all_oi.tenant_id = s.tenant_id AND all_oi.order_id = s.resolved_order_id) > 0
+              THEN (SELECT o.total_amount FROM bms_orders o
+                     WHERE o.tenant_id = s.tenant_id AND o.id = s.resolved_order_id) /
+                   (SELECT SUM(all_oi.qty * all_oi.unit_price) FROM bms_order_items all_oi
+                     WHERE all_oi.tenant_id = s.tenant_id AND all_oi.order_id = s.resolved_order_id)
+              ELSE 0
+            END, 2),
+            updated_at = now()
+      WHERE s.tenant_id = $1 AND s.resolved_order_id = $2 AND s.status = 'ORDERED'`,
+    [input.tenantId, input.orderId]
+  );
+  return result.rowCount ?? 0;
+}
+
+export async function reopenRestockSubscriptionsForOrders(input: {
+  orderIds: string[];
+  client: { query: (text: string, values?: unknown[]) => Promise<any> };
+}): Promise<number> {
+  if (!input.orderIds.length) return 0;
+  const result = await input.client.query(
+    `UPDATE bms_restock_subscriptions
+        SET status = 'ACTIVE', ordered_at = NULL, resolved_at = NULL,
+            resolved_order_id = NULL, recovered_revenue = NULL, updated_at = now()
+      WHERE resolved_order_id = ANY($1::uuid[]) AND status IN ('ORDERED','PURCHASED')`,
+    [input.orderIds]
+  );
+  return result.rowCount ?? 0;
 }
 
 export async function listRestockSubscriptions(
@@ -290,6 +344,168 @@ export async function countRestockSubscriptionsByStatus(
     active: byStatus.ACTIVE ?? 0,
     readyToNotify: byStatus.READY_TO_NOTIFY ?? 0,
     notified: byStatus.NOTIFIED ?? 0,
+  };
+}
+
+export async function getRestockMetrics(
+  tenantId: string,
+  options: { search?: string | null; assignedTo?: string | null } = {}
+): Promise<{
+  total: number;
+  active: number;
+  readyToNotify: number;
+  notified: number;
+  ordered: number;
+  purchased: number;
+  cancelled: number;
+  expired: number;
+  sentDeliveries: number;
+  failedDeliveries: number;
+  recoveredSalesCount: number;
+  recoveredCustomersCount: number;
+  recoveredOrdersCount: number;
+  recoveredRevenue: number;
+  notifiedSubscriptions: number;
+  recoveredFromNotified: number;
+  readyRate: number;
+  notifyRate: number;
+  recoveryRateFromNotified: number;
+  recoveryRateOverall: number;
+}> {
+  const search = options.search?.trim() || null;
+  const statusTotals = await query<{ status: string; count: string }>(
+    `SELECT s.status, COUNT(*) AS count
+       FROM bms_restock_subscriptions s
+       JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
+       LEFT JOIN bms_customers cu ON cu.id = s.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = s.tenant_id AND ci.channel = s.channel AND ci.external_ref = s.customer_ref
+      WHERE s.tenant_id = $1
+        AND ($2::text IS NULL OR p.name ILIKE '%'||$2||'%' OR s.product_sku ILIKE '%'||$2||'%'
+             OR cu.name ILIKE '%'||$2||'%' OR ci.display_name ILIKE '%'||$2||'%' OR s.customer_ref ILIKE '%'||$2||'%')
+        AND ($3::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM bms_conversations c
+           WHERE c.tenant_id = s.tenant_id AND c.id = s.conversation_id
+             AND (c.assigned_to_user_id = $3 OR EXISTS (
+               SELECT 1 FROM bms_conversation_helpers h
+                WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3
+             ))
+        ))
+      GROUP BY s.status`,
+    [tenantId, search, options.assignedTo ?? null]
+  );
+
+  const deliveryTotals = await query<{
+    sent_deliveries: string;
+    failed_deliveries: string;
+    notified_subscriptions: string;
+    recovered_from_notified: string;
+  }>(
+    `SELECT
+        COUNT(DISTINCT CASE WHEN d.status = 'SENT' THEN d.id END) AS sent_deliveries,
+        COUNT(DISTINCT CASE WHEN d.status = 'FAILED' THEN d.id END) AS failed_deliveries,
+        COUNT(DISTINCT CASE WHEN d.status = 'SENT' THEN s.id END) AS notified_subscriptions,
+        COUNT(DISTINCT CASE WHEN d.status = 'SENT' AND s.status = 'PURCHASED'
+          AND EXISTS (SELECT 1 FROM bms_orders o
+                       WHERE o.tenant_id = s.tenant_id AND o.id = s.resolved_order_id
+                         AND o.status IN ('PAID','PACKING','SHIPPED','COMPLETED'))
+          AND NOT EXISTS (SELECT 1 FROM bms_payments pay
+                           WHERE pay.tenant_id = s.tenant_id AND pay.order_id = s.resolved_order_id
+                             AND pay.status = 'REFUNDED') THEN s.id END) AS recovered_from_notified
+       FROM bms_restock_subscriptions s
+       JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
+       LEFT JOIN bms_customers cu ON cu.id = s.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = s.tenant_id AND ci.channel = s.channel AND ci.external_ref = s.customer_ref
+       LEFT JOIN bms_restock_deliveries d
+         ON d.tenant_id = s.tenant_id AND d.subscription_id = s.id
+      WHERE s.tenant_id = $1
+        AND ($2::text IS NULL OR p.name ILIKE '%'||$2||'%' OR s.product_sku ILIKE '%'||$2||'%'
+             OR cu.name ILIKE '%'||$2||'%' OR ci.display_name ILIKE '%'||$2||'%' OR s.customer_ref ILIKE '%'||$2||'%')
+        AND ($3::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM bms_conversations c
+           WHERE c.tenant_id = s.tenant_id AND c.id = s.conversation_id
+             AND (c.assigned_to_user_id = $3 OR EXISTS (
+               SELECT 1 FROM bms_conversation_helpers h
+                WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3
+             ))
+        ))`,
+    [tenantId, search, options.assignedTo ?? null]
+  );
+
+  const recoveryRes = await query<{ subscriptions: string; customers: string; orders: string; revenue: string }>(
+    `SELECT
+        COUNT(DISTINCT s.id) AS subscriptions,
+        COUNT(DISTINCT COALESCE(s.customer_id::text, s.channel || ':' || s.customer_ref)) AS customers,
+        COUNT(DISTINCT s.resolved_order_id) AS orders,
+        COALESCE(SUM(s.recovered_revenue), 0)::text AS revenue
+       FROM bms_restock_subscriptions s
+       JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
+       LEFT JOIN bms_customers cu ON cu.id = s.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = s.tenant_id AND ci.channel = s.channel AND ci.external_ref = s.customer_ref
+      WHERE s.tenant_id = $1
+        AND s.status = 'PURCHASED'
+        AND EXISTS (SELECT 1 FROM bms_orders o
+                     WHERE o.tenant_id = s.tenant_id AND o.id = s.resolved_order_id
+                       AND o.status IN ('PAID','PACKING','SHIPPED','COMPLETED'))
+        AND NOT EXISTS (SELECT 1 FROM bms_payments pay
+                         WHERE pay.tenant_id = s.tenant_id AND pay.order_id = s.resolved_order_id
+                           AND pay.status = 'REFUNDED')
+        AND ($2::text IS NULL OR p.name ILIKE '%'||$2||'%' OR s.product_sku ILIKE '%'||$2||'%'
+             OR cu.name ILIKE '%'||$2||'%' OR ci.display_name ILIKE '%'||$2||'%' OR s.customer_ref ILIKE '%'||$2||'%')
+        AND ($3::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM bms_conversations c
+           WHERE c.tenant_id = s.tenant_id AND c.id = s.conversation_id
+             AND (c.assigned_to_user_id = $3 OR EXISTS (
+               SELECT 1 FROM bms_conversation_helpers h
+                WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3
+             ))
+        ))`,
+    [tenantId, search, options.assignedTo ?? null]
+  );
+
+  const byStatus: Record<string, number> = {};
+  let total = 0;
+  for (const row of statusTotals.rows) {
+    const count = Number(row.count);
+    byStatus[row.status] = count;
+    total += count;
+  }
+  const sentDeliveries = Number(deliveryTotals.rows[0]?.sent_deliveries ?? 0);
+  const failedDeliveries = Number(deliveryTotals.rows[0]?.failed_deliveries ?? 0);
+  const notifiedSubscriptions = Number(deliveryTotals.rows[0]?.notified_subscriptions ?? 0);
+  const recoveredFromNotified = Number(deliveryTotals.rows[0]?.recovered_from_notified ?? 0);
+
+  const active = byStatus.ACTIVE ?? 0;
+  const readyToNotify = byStatus.READY_TO_NOTIFY ?? 0;
+  const notified = byStatus.NOTIFIED ?? 0;
+  const ordered = byStatus.ORDERED ?? 0;
+  const purchased = byStatus.PURCHASED ?? 0;
+  const cancelled = byStatus.CANCELLED ?? 0;
+  const expired = byStatus.EXPIRED ?? 0;
+
+  return {
+    total,
+    active,
+    readyToNotify,
+    notified,
+    ordered,
+    purchased,
+    cancelled,
+    expired,
+    sentDeliveries,
+    failedDeliveries,
+    recoveredSalesCount: Number(recoveryRes.rows[0]?.subscriptions ?? 0),
+    recoveredCustomersCount: Number(recoveryRes.rows[0]?.customers ?? 0),
+    recoveredOrdersCount: Number(recoveryRes.rows[0]?.orders ?? 0),
+    recoveredRevenue: Number(recoveryRes.rows[0]?.revenue ?? 0),
+    notifiedSubscriptions,
+    recoveredFromNotified,
+    readyRate: total ? readyToNotify / total : 0,
+    notifyRate: total ? notifiedSubscriptions / total : 0,
+    recoveryRateFromNotified: notifiedSubscriptions ? recoveredFromNotified / notifiedSubscriptions : 0,
+    recoveryRateOverall: total ? Number(recoveryRes.rows[0]?.subscriptions ?? 0) / total : 0,
   };
 }
 

@@ -122,8 +122,12 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   customer reply passes one sanitizer that shortens UUIDs and keeps the shop's `ค่ะ` brand voice.
   Verification lives in [`scripts/ai-eval/`](scripts/ai-eval/README.md): a deterministic runtime
   contract suite (no network/DB) plus a live-model end-to-end suite that asserts backend state — see
-  [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md#evaluation-checklist). Live evals write real data, so
-  they run against development/sandbox tenants only.
+  [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md#evaluation-checklist). Live evals write real data,
+  including `ACTIVE` restock subscriptions from explicit-consent cases, so they run against
+  development/sandbox tenants only. The live archetype-commerce-policy coverage is also split into
+  per-`businessArchetype` case ids such as `archetype-commerce-policy-mini_mart` and
+  `archetype-commerce-policy-fashion`, while `BMS_EVAL_CASES=archetype-commerce-policy` remains a
+  selector for the whole group.
 - **AI tool catalog — batch 2 (store / documents / forecast / AI-native / outbound)**: the catalog now
   also covers **store profile** (migrations `6.9`/`7.17__bms_store_profile*` — hours/address/policies/
   receiving accounts/shipping config, plus contact email/website/logo/tax id/timezone/country/currency,

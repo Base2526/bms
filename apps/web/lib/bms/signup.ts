@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
+import { archetypeToBusinessType, isValidShopArchetype, normalizeShopArchetype } from "./shopArchetypes";
 
 function slugify(name: string): string {
   const base = name.trim().toLowerCase()
@@ -19,7 +20,13 @@ function slugify(name: string): string {
   return base;
 }
 
-export type SignupInput = { shopName: string; name?: string; email: string; password: string };
+export type SignupInput = {
+  shopName: string;
+  name?: string;
+  email: string;
+  password: string;
+  businessArchetype?: string | null;
+};
 export type SignupResult =
   | { status: "PENDING_VERIFICATION" }
   | { status: "EMAIL_TAKEN" }
@@ -41,10 +48,12 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
   const email = input.email?.trim().toLowerCase();
   const password = input.password ?? "";
   const ownerName = input.name?.trim() || null;
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype) ?? (input.businessArchetype?.trim() ? input.businessArchetype.trim() as any : null);
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || "");
   if (
     !shopName || shopName.length > 120 || !email || email.length > 254 || !validEmail ||
-    password.length < 6 || password.length > 128 || (ownerName?.length ?? 0) > 120
+    password.length < 6 || password.length > 128 || (ownerName?.length ?? 0) > 120 ||
+    !isValidShopArchetype(businessArchetype)
   ) return { status: "INVALID" };
 
   const rawToken = crypto.randomBytes(32).toString("hex");
@@ -61,9 +70,9 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
 
     await client.query(
       `INSERT INTO bms_pending_shop_signups
-         (email, shop_name, owner_name, password_hash, token_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5, now() + ($6 * interval '1 minute'))`,
-      [email, shopName, ownerName, hash, tokenHash(rawToken), VERIFY_EXPIRY_MINUTES]
+         (email, shop_name, owner_name, password_hash, token_hash, expires_at, business_archetype)
+       VALUES ($1, $2, $3, $4, $5, now() + ($6 * interval '1 minute'), $7)`,
+      [email, shopName, ownerName, hash, tokenHash(rawToken), VERIFY_EXPIRY_MINUTES, businessArchetype]
     );
 
     await client.query("COMMIT");
@@ -96,8 +105,9 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
     await client.query("BEGIN");
     const pendingResult = await client.query<{
       id: string; email: string; shop_name: string; owner_name: string | null; password_hash: string;
+      business_archetype: string | null;
     }>(
-      `SELECT id, email, shop_name, owner_name, password_hash
+      `SELECT id, email, shop_name, owner_name, password_hash, business_archetype
          FROM bms_pending_shop_signups
         WHERE token_hash = $1 AND verified_at IS NULL AND expires_at > now()
         FOR UPDATE`,
@@ -120,6 +130,9 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
       await client.query("COMMIT");
       return { status: "EMAIL_TAKEN" };
     }
+
+    const businessArchetype = normalizeShopArchetype(pending.business_archetype);
+    const businessType = archetypeToBusinessType(businessArchetype);
 
     const baseSlug = slugify(pending.shop_name);
     let tenantId = "";
@@ -153,6 +166,15 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
          (name, username, email, role, role_id, tenant_id, password_hash, is_email_verified)
        VALUES ($1, $2, $2, 'Manager', $3, $4, $5, TRUE)`,
       [pending.owner_name || pending.shop_name, pending.email, roleId, tenantId, pending.password_hash]
+    );
+    await client.query(
+      `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         business_type = COALESCE(bms_store_profile.business_type, EXCLUDED.business_type),
+         business_archetype = COALESCE(bms_store_profile.business_archetype, EXCLUDED.business_archetype),
+         updated_at = now()`,
+      [tenantId, businessType, businessArchetype]
     );
     await client.query(
       `UPDATE bms_pending_shop_signups

@@ -5,6 +5,13 @@
 Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
+`business_archetype` selects a structured commerce policy in addition to prompt examples. The
+customer runtime uses it to shape discovery, basket/cross-sell, repeat-purchase/restock, and
+fulfillment guidance. The deterministic out-of-stock fallback also offers restock opt-in for
+restock-heavy archetypes when no verified alternative exists. This changes orchestration priorities
+only: catalog, stock, price, payment, and shipping facts still require approved tools and backend
+validation.
+
 Since the **AI tool-calling** work (2026-07) there are now **two AI surfaces**, both driven by the same
 Anthropic-compatible tool-use runtime ([`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts))
 over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)):
@@ -12,8 +19,9 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
 - **Customer surface** — the webhook/playground pipeline below. The active provider may call only customer-safe
   tools (`customerTools()`): read product/stock/own-order-status + `create_order`/`submit_payment`/
   `reorder`/`subscribe_restock_notification`. The restock tool requires explicit customer consent
-  and creates a staff-reviewed queue item; it never sends proactively from the AI turn. No sensitive
-  (A3) tool is ever exposed here.
+  and creates a staff-reviewed queue item; it never sends proactively from the AI turn. This is a
+  revenue-recovery path: out-of-stock demand becomes a queue the shop can convert later when stock
+  returns. No sensitive (A3) tool is ever exposed here.
 - **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
   UI `/admin/assistant`). The active provider gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
@@ -40,6 +48,8 @@ AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.
     │                     list_new_arrivals / find_alternatives / check_stock / get_order_status /
     │                     create_order / submit_payment / reorder / subscribe_restock_notification), grounded on
     │                     real backend results; every business number traces to a tool result.
+    │                     If an exact SKU/size is unavailable, `subscribe_restock_notification` can
+    │                     preserve demand instead of ending the journey at "out of stock".
     │                     usedAi:true (even on mid-loop error) → return AI reply, never fall through
     │                     (write-safety: no double create_order).
     │

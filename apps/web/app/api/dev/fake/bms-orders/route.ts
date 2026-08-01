@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { seedFakeOrders } from "@/lib/bms/devSeed";
+import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const count = Math.min(Math.max(Number(body?.count) || 20, 1), 2000);
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
-    const { created, summary } = await seedFakeOrders(tenantId, count);
+    const archetype = normalizeShopArchetype(body?.businessArchetype);
+    const { created, summary } = await seedFakeOrders(tenantId, count, archetype);
     return NextResponse.json({ ok: true, created, summary });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" || e?.message?.includes("ยังไม่มีสินค้า") ? 400 : 500 });
