@@ -57,6 +57,7 @@ import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
 import { bmsMailLogResolvers } from "@/graphql/bmsMailLog";
+import { bmsRestockSubscriptionsResolvers } from "@/graphql/bmsRestockSubscriptions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
@@ -2687,7 +2688,8 @@ const rawResolvers = {
     ...bmsShippingResolvers.Query,
     ...bmsInboxResolvers.Query,
     ...bmsReportsResolvers.Query,
-    ...bmsCustomer360Resolvers.Query
+    ...bmsCustomer360Resolvers.Query,
+    ...bmsRestockSubscriptionsResolvers.Query,
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -7185,7 +7187,8 @@ const rawResolvers = {
     ...bmsAssistantResolvers.Mutation,
     ...bmsStoreProfileResolvers.Mutation,
     ...bmsCouponsResolvers.Mutation,
-    ...bmsReportScheduleResolvers.Mutation
+    ...bmsReportScheduleResolvers.Mutation,
+    ...bmsRestockSubscriptionsResolvers.Mutation,
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,

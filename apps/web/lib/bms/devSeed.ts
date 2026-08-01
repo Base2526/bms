@@ -85,6 +85,7 @@ export async function seedFakeCustomers(tenantId: string, count: number) {
 }
 
 const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
+const RESTOCK_CHANNELS = ["line", "facebook", "instagram"] as const;
 
 export async function seedFakeOrders(tenantId: string, count: number) {
   const DAYS = 30;
@@ -316,6 +317,307 @@ export async function seedFakePurchase(tenantId: string, count: number) {
   } finally {
     client.release();
   }
+}
+
+type RestockVariant = {
+  sku: string;
+  size: string;
+  name: string;
+};
+
+const RESTOCK_SCENARIOS = [
+  "ACTIVE",
+  "ACTIVE",
+  "ACTIVE",
+  "READY_TO_NOTIFY",
+  "READY_TO_NOTIFY",
+  "NOTIFIED",
+  "FAILED",
+  "PURCHASED",
+  "CANCELLED",
+] as const;
+
+function minutesAgo(mins: number) {
+  return new Date(Date.now() - mins * 60_000).toISOString();
+}
+
+function restockChannelLabel(channel: string) {
+  if (channel === "line") return "LINE";
+  if (channel === "facebook") return "Facebook";
+  if (channel === "instagram") return "Instagram";
+  return channel;
+}
+
+export async function seedFakeRestockSubscriptions(tenantId: string, count: number) {
+  let variants = (await query<RestockVariant>(
+    `SELECT i.product_sku AS sku, i.size, p.name
+       FROM bms_inventory i
+       JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+      WHERE i.tenant_id = $1 AND p.active
+      ORDER BY (p.sku LIKE 'FAKE-%') DESC, random()
+      LIMIT 1000`,
+    [tenantId]
+  )).rows;
+  if (variants.length < 8) {
+    await seedFakeProducts(tenantId, Math.max(8, Math.ceil((count + 8) / 4)));
+    variants = (await query<RestockVariant>(
+      `SELECT i.product_sku AS sku, i.size, p.name
+         FROM bms_inventory i
+         JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+        WHERE i.tenant_id = $1 AND p.active
+        ORDER BY (p.sku LIKE 'FAKE-%') DESC, random()
+        LIMIT 1000`,
+      [tenantId]
+    )).rows;
+  }
+
+  let customers = (await query<{ id: string; name: string }>(
+    `SELECT id, name
+       FROM bms_customers
+      WHERE tenant_id = $1 AND deleted_at IS NULL
+      ORDER BY ('fake' = ANY(tags)) DESC, random()
+      LIMIT 500`,
+    [tenantId]
+  )).rows;
+  if (customers.length < 10) {
+    await seedFakeCustomers(tenantId, Math.max(10, Math.min(30, count)));
+    customers = (await query<{ id: string; name: string }>(
+      `SELECT id, name
+         FROM bms_customers
+        WHERE tenant_id = $1 AND deleted_at IS NULL
+        ORDER BY ('fake' = ANY(tags)) DESC, random()
+        LIMIT 500`,
+      [tenantId]
+    )).rows;
+  }
+
+  if (!variants.length) throw new Error("ยังไม่มีสินค้า — สร้าง BMS Products ก่อน");
+  if (!customers.length) throw new Error("ยังไม่มีลูกค้า — สร้าง BMS Customers ก่อน");
+
+  const shuffled = [...variants].sort(() => Math.random() - 0.5);
+  const splitAt = Math.max(1, Math.floor(shuffled.length / 2));
+  const inStockPool = shuffled.slice(0, splitAt);
+  const outOfStockPool = shuffled.slice(splitAt);
+  const inPool = inStockPool.length ? inStockPool : shuffled;
+  const outPool = outOfStockPool.length ? outOfStockPool : shuffled;
+
+  const staffPool = await listAutoAssignPool(tenantId);
+  const convs: any[][] = [];
+  const msgs: any[][] = [];
+  const identities: any[][] = [];
+  const subs: any[][] = [];
+  const deliveries: Array<{ subscriptionId: string; channel: string; body: string; status: "SENT" | "FAILED"; error: string | null; triggeredBy: string; createdAt: string; completedAt: string }> = [];
+  const createdConversations: Array<{ id: string; customerId: string; customerName: string; customerRef: string; channel: string }> = [];
+  const inStockKeys = new Set<string>();
+  const outOfStockKeys = new Set<string>();
+
+  for (let i = 0; i < count; i++) {
+    const scenario = pick([...RESTOCK_SCENARIOS]);
+    const requiresStock = scenario === "READY_TO_NOTIFY" || scenario === "NOTIFIED" || scenario === "FAILED" || scenario === "PURCHASED";
+    const variant = pick(requiresStock ? inPool : outPool);
+    const variantKey = `${variant.sku}::${variant.size}`;
+    if (requiresStock) inStockKeys.add(variantKey);
+    else outOfStockKeys.add(variantKey);
+
+    let conversation = createdConversations.length && i % 5 === 4 ? pick(createdConversations) : null;
+    if (!conversation) {
+      const customer = pick(customers);
+      const channel = pick([...RESTOCK_CHANNELS]);
+      const customerRef = `FAKE-RS-${short().toUpperCase()}`;
+      const conversationId = uuid();
+      const assignedToUserId = staffPool.length ? staffPool[i % staffPool.length] : null;
+      const createdAt = minutesAgo(60 + R(60 * 24 * 10));
+      const productHint = pick(outPool);
+      const script = [
+        `มี ${productHint.name} ไซซ์ ${productHint.size} ไหมครับ`,
+        `ตอนนี้ ${productHint.name} ไซซ์ ${productHint.size} หมดชั่วคราวค่ะ`,
+        `ถ้าของเข้าแล้วให้ร้านแจ้งกลับได้ไหมคะ`,
+        `ได้ครับ ถ้าเข้าแล้วรบกวนทักมาหน่อย`,
+        `รับทราบค่ะ ถ้าของเข้าแล้วจะรีบแจ้งทันที`,
+      ];
+      convs.push([
+        tenantId,
+        conversationId,
+        channel,
+        customerRef,
+        customer.id,
+        "OPEN",
+        ["fake", "restock"],
+        0,
+        script[script.length - 1].slice(0, 500),
+        createdAt,
+        assignedToUserId,
+      ]);
+      script.forEach((body, idx) => {
+        msgs.push([
+          tenantId,
+          conversationId,
+          idx % 2 === 0 ? "IN" : "OUT",
+          body,
+          idx % 2 === 0 ? "customer" : "ai",
+          new Date(new Date(createdAt).getTime() - (script.length - idx) * 60_000).toISOString(),
+        ]);
+      });
+      identities.push([tenantId, customer.id, channel, customerRef, customer.name]);
+      conversation = { id: conversationId, customerId: customer.id, customerName: customer.name, customerRef, channel };
+      createdConversations.push(conversation);
+    } else {
+      msgs.push([
+        tenantId,
+        conversation.id,
+        "IN",
+        `ถ้า ${variant.name} ไซซ์ ${variant.size} ของเข้าแล้ว รบกวนแจ้งด้วยนะครับ`,
+        "customer",
+        minutesAgo(30 + R(60 * 24 * 4)),
+      ]);
+      msgs.push([
+        tenantId,
+        conversation.id,
+        "OUT",
+        `ได้เลยค่ะ ถ้า ${variant.name} ไซซ์ ${variant.size} เข้ามาแล้ว ร้านจะแจ้งผ่าน ${restockChannelLabel(conversation.channel)} ให้อีกครั้งค่ะ`,
+        "ai",
+        minutesAgo(29 + R(60 * 24 * 4)),
+      ]);
+    }
+
+    const subscriptionId = uuid();
+    const consentedAt = minutesAgo(20 + R(60 * 24 * 7));
+    const readyAt = requiresStock ? minutesAgo(5 + R(60 * 24 * 2)) : null;
+    const lastNotifiedAt = scenario === "NOTIFIED" || scenario === "PURCHASED" ? minutesAgo(3 + R(60 * 24)) : null;
+    const resolvedAt = scenario === "PURCHASED" || scenario === "CANCELLED" ? minutesAgo(1 + R(60 * 12)) : null;
+    const status = scenario === "FAILED" ? "READY_TO_NOTIFY" : scenario;
+    const requestedQty = 1 + R(3);
+
+    subs.push([
+      subscriptionId,
+      tenantId,
+      conversation.id,
+      conversation.customerId,
+      conversation.channel,
+      conversation.customerRef,
+      variant.sku,
+      variant.size,
+      requestedQty,
+      status,
+      i % 4 === 0 ? "ADMIN" : "AI_CHAT",
+      consentedAt,
+      readyAt,
+      lastNotifiedAt,
+      resolvedAt,
+      `dev:fake:${scenario.toLowerCase()}`,
+      consentedAt,
+      resolvedAt || lastNotifiedAt || readyAt || consentedAt,
+    ]);
+
+    if (scenario === "NOTIFIED" || scenario === "FAILED" || scenario === "PURCHASED") {
+      const body = `${variant.name} (${variant.sku}) ไซซ์ ${variant.size} เข้ามาแล้วค่ะ ตอนนี้มีพร้อมขาย ${scenario === "FAILED" ? 2 : 6} ชิ้น สนใจให้ร้านช่วยสั่งให้ไหมคะ`;
+      const createdAt = lastNotifiedAt || readyAt || consentedAt;
+      deliveries.push({
+        subscriptionId,
+        channel: conversation.channel,
+        body,
+        status: scenario === "FAILED" ? "FAILED" : "SENT",
+        error: scenario === "FAILED" ? "Fake send failure for QA review" : null,
+        triggeredBy: scenario === "FAILED" ? "dev:fake:send-error" : "dev:fake:send-success",
+        createdAt,
+        completedAt: createdAt,
+      });
+    }
+  }
+
+  const outboxMessageIds = new Map<string, string>();
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    await bulkInsert(client, "bms_conversations",
+      ["tenant_id", "id", "channel", "customer_ref", "customer_id", "status", "tags", "unread", "last_message", "last_message_at", "assigned_to_user_id"], convs);
+    await bulkInsert(client, "bms_messages",
+      ["tenant_id", "conversation_id", "direction", "body", "sender", "created_at"], msgs);
+    await bulkInsert(client, "bms_customer_identities",
+      ["tenant_id", "customer_id", "channel", "external_ref", "display_name"], identities);
+    await bulkInsert(client, "bms_restock_subscriptions",
+      ["id", "tenant_id", "conversation_id", "customer_id", "channel", "customer_ref", "product_sku", "size", "requested_qty", "status", "source", "consented_at", "ready_at", "last_notified_at", "resolved_at", "created_by", "created_at", "updated_at"], subs);
+
+    for (const item of deliveries) {
+      if (item.status === "SENT") {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta, created_at)
+           SELECT tenant_id, conversation_id, 'OUT', $3, 'staff:dev-fake', '{"delivered":true,"status":"SENT","fake":true}'::jsonb, $4
+             FROM bms_restock_subscriptions
+            WHERE id = $1 AND tenant_id = $2
+           RETURNING id`,
+          [item.subscriptionId, tenantId, item.body, item.createdAt]
+        );
+        if (inserted.rows[0]?.id) outboxMessageIds.set(item.subscriptionId, String(inserted.rows[0].id));
+      }
+    }
+
+    for (let i = 0; i < deliveries.length; i++) {
+      const item = deliveries[i];
+      await client.query(
+        `INSERT INTO bms_restock_deliveries
+           (tenant_id, subscription_id, attempt_no, channel, body, status, inbox_message_id, error, triggered_by, created_at, completed_at)
+         VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          tenantId,
+          item.subscriptionId,
+          item.channel,
+          item.body,
+          item.status,
+          outboxMessageIds.get(item.subscriptionId) ?? null,
+          item.error,
+          item.triggeredBy,
+          item.createdAt,
+          item.completedAt,
+        ]
+      );
+    }
+
+    for (const key of outOfStockKeys) {
+      const [sku, size] = key.split("::");
+      await client.query(
+        `UPDATE bms_inventory
+            SET current_stock = 0, reserved_stock = 0, reorder_point = GREATEST(reorder_point, 3)
+          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+        [tenantId, sku, size]
+      );
+    }
+    for (const key of inStockKeys) {
+      const [sku, size] = key.split("::");
+      await client.query(
+        `UPDATE bms_inventory
+            SET current_stock = $4, reserved_stock = 0, reorder_point = GREATEST(reorder_point, 3)
+          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+        [tenantId, sku, size, 2 + R(10)]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const statusSummary = subs.reduce<Record<string, number>>((acc, row) => {
+    acc[row[9]] = (acc[row[9]] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    created: subs.map((s) => ({
+      id: s[0],
+      name: `${s[6]} · ${s[7]} · ${s[4]}`,
+      status: s[9],
+    })),
+    summary: {
+      restockSubscriptions: subs.length,
+      restockDeliveries: deliveries.length,
+      restockConversations: convs.length,
+      ...statusSummary,
+    },
+  };
 }
 
 const FAKE_STAFF_ROLES = ["Sales", "Warehouse"];

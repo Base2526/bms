@@ -1,9 +1,15 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
 
-const Q_ME = gql`query { bmsMe { tenant { name slug } } }`;
+const Q_ME = gql`
+  query {
+    bmsIsPlatformAdmin
+    bmsMe { tenant { id name slug } }
+  }
+`;
+const Q_TENANTS = gql`query { bmsTenants { id name slug active } }`;
 const M_ENTER_TENANT = gql`mutation ($tenantId: ID!) { bmsEnterTenant(tenantId: $tenantId) }`;
 
 type ProvisionResult = {
@@ -20,20 +26,31 @@ const KINDS = [
   { label: 'BMS Customers', value: 'bms-customers' },
   { label: 'BMS Orders (+pay/ship)', value: 'bms-orders' },
   { label: 'BMS Conversations', value: 'bms-conversations' },
+  { label: 'BMS Restock Subscriptions', value: 'bms-restock-subscriptions' },
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
   { label: 'BMS Coupons', value: 'bms-coupons' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage';
 
 export default function DevFakePage() {
   const [kind, setKind] = useState<FakeKind>('bms-products');
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<CreatedRow[]>([]);
-  const { data: meData } = useQuery(Q_ME, { fetchPolicy: 'cache-and-network' });
-  const tenant = meData?.bmsMe?.tenant;
+  const { data, loading: pageLoading } = useQuery(Q_ME, { fetchPolicy: 'cache-and-network' });
+  const isPlatformAdmin = data?.bmsIsPlatformAdmin === true;
+  const tenant = data?.bmsMe?.tenant;
+  const { data: tenantsData, loading: tenantsLoading } = useQuery(Q_TENANTS, {
+    fetchPolicy: 'cache-and-network',
+    skip: !isPlatformAdmin,
+  });
+  const tenantOptions = (tenantsData?.bmsTenants || []).map((t: any) => ({
+    value: t.id,
+    label: `${t.name} /${t.slug}${t.active === false ? ' (ปิดอยู่)' : ''}`,
+  }));
+  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
   const [shopName, setShopName] = useState('');
   const [provisioning, setProvisioning] = useState(false);
@@ -43,6 +60,17 @@ export default function DevFakePage() {
     onCompleted: () => { window.location.href = '/admin/dashboard'; },
     onError: (e) => message.error(e?.message || 'เข้าดูร้านไม่สำเร็จ'),
   });
+
+  useEffect(() => {
+    if (selectedTenantId) return;
+    if (tenant?.id) {
+      setSelectedTenantId(tenant.id);
+      return;
+    }
+    if (tenantOptions.length > 0) {
+      setSelectedTenantId(tenantOptions[0].value);
+    }
+  }, [selectedTenantId, tenant?.id, tenantOptions]);
 
   async function provisionShop() {
     setProvisioning(true);
@@ -64,12 +92,16 @@ export default function DevFakePage() {
   }
 
   async function doFake() {
+    if (!selectedTenantId) {
+      message.warning('กรุณาเลือกร้านก่อน');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`/api/dev/fake/${kind}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count }),
+        body: JSON.stringify({ tenantId: selectedTenantId, count }),
         credentials: 'include',
       });
       const j = await res.json();
@@ -82,13 +114,22 @@ export default function DevFakePage() {
   }
 
   async function cleanup() {
+    if (!selectedTenantId) {
+      message.warning('กรุณาเลือกร้านก่อน');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch('/api/dev/fake/cleanup', { method: 'DELETE' });
+      const res = await fetch('/api/dev/fake/cleanup', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: selectedTenantId }),
+        credentials: 'include',
+      });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Cleanup failed');
       message.success(
-        `Deleted ${j.deleted} — orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0}`
+        `Deleted ${j.deleted} — restock:${j.bmsRestockSubscriptions ?? 0} orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0}`
       );
       setCreated([]);
     } catch (e: any) {
@@ -169,11 +210,23 @@ export default function DevFakePage() {
       title="Dev: Fake Data Generator"
       extra={<Space wrap>
         <Select
+          showSearch
+          placeholder="เลือกร้าน"
+          value={selectedTenantId}
+          onChange={setSelectedTenantId}
+          options={tenantOptions}
+          optionFilterProp="label"
+          loading={pageLoading || tenantsLoading}
+          disabled={!isPlatformAdmin}
+          style={{ width: 320 }}
+        />
+        <Select
           value={kind}
           onChange={(v) => {
             const next = v as FakeKind;
             setKind(next);
             if (next === 'bms-ai-usage') setCount(3);
+            else if (next === 'bms-restock-subscriptions') setCount(20);
           }}
           options={KINDS}
           style={{ width: 180 }}
@@ -182,20 +235,22 @@ export default function DevFakePage() {
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
         <Popconfirm
           title="ลบข้อมูล fake ทั้งหมดของร้านนี้?"
-          description={<>ลบถาวร ย้อนกลับไม่ได้ — ร้าน <b>{tenant?.name || '…'}</b></>}
+          description={<>ลบถาวร ย้อนกลับไม่ได้ — ร้าน <b>{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || '…'}</b></>}
           okText="ลบเลย" okButtonProps={{ danger: true }} cancelText="ยกเลิก"
           onConfirm={cleanup}
         >
-          <Button danger disabled={loading}>Cleanup</Button>
+          <Button danger disabled={loading || !selectedTenantId}>Cleanup</Button>
         </Popconfirm>
       </Space>}
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message={<Space wrap>กำลังสร้าง/ลบข้อมูลในร้าน:
-          {tenant ? <Tag color="blue">{tenant.name} <span style={{ opacity: 0.7 }}>/{tenant.slug}</span></Tag> : <Tag>กำลังโหลด…</Tag>}
+        message={<Space wrap>ร้านเป้าหมาย:
+          {selectedTenantId
+            ? <Tag color="blue">{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || 'กำลังโหลด…'}</Tag>
+            : <Tag>ยังไม่ได้เลือกร้าน</Tag>}
         </Space>}
-        description="ข้อมูล fake ทั้งหมดลง 'ร้านของคุณ' (ตาม user ที่ล็อกอิน) → เห็นใน list/Dashboard ของร้านตัวเองทันที · Cleanup ลบเฉพาะ fake ของร้านนี้"
+        description="เลือกร้านจากรายการจริงของระบบก่อนทุกครั้ง แล้ว API จะตรวจซ้ำว่า tenant นั้นมีอยู่จริงก่อน seed หรือ cleanup"
       />
       <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
@@ -204,9 +259,20 @@ export default function DevFakePage() {
           <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
           <b>Conversations</b> + messages → เติม Inbox · <b>Coupons</b> สุ่มทั้ง PERCENT/FIXED บางอันปิดใช้งาน/มีขั้นต่ำ/จำกัดจำนวน →
           เติมหน้า Coupons · marker: <code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
+          <b>Restock Subscriptions</b> สร้างหลายสถานะผสมกัน (ACTIVE / READY / NOTIFIED / FAILED / PURCHASED / CANCELLED) พร้อม conversation และ delivery history →
+          เติมหน้า Restock Subscriptions ·
           <b>AI Usage</b> เพิ่มตัวนับ quota เดือนนี้จริงใน <code>bms_ai_usage_monthly</code> เพื่อทดสอบหน้า Settings ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
       />
+      {data && isPlatformAdmin === false && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="เฉพาะแอดมินแพลตฟอร์ม"
+          description="บัญชีนี้ไม่มีสิทธิ์เลือกหรือ seed ข้ามร้าน"
+        />
+      )}
       <Divider style={{ margin: '8px 0 16px' }} />
       <Table dataSource={created} columns={cols} rowKey={(r) => r.id || r.sku} size="small" pagination={{ pageSize: 20 }} />
     </Card>

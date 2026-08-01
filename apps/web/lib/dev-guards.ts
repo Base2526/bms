@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { verifyAdminSession } from "@/lib/auth/server"; // จากที่เราเคยทำ
 import type { JWTPayload } from "@/lib/auth/token";
 import { query } from "@/lib/db";
+import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 // import { verifyInternal } from "@/lib/internal-verify"; // HMAC verify
 
 export function requireAdminOrInternal(req: NextRequest) {
@@ -54,4 +55,17 @@ export async function requirePlatformAdminSeeder(): Promise<
  */
 export function fakeSeedDisabled(): boolean {
   return process.env.NODE_ENV === "production" && process.env.BMS_ALLOW_FAKE_SEED !== "1";
+}
+
+export async function resolveExistingTenantId(rawTenantId: unknown, fallbackTenantId?: string | null): Promise<string> {
+  const tenantId =
+    typeof rawTenantId === "string" && rawTenantId.trim()
+      ? rawTenantId.trim()
+      : (fallbackTenantId && fallbackTenantId.trim()) || DEFAULT_TENANT_ID;
+
+  const r = await query<{ id: string }>(`SELECT id FROM bms_tenants WHERE id = $1`, [tenantId]);
+  if (!r.rowCount) {
+    throw new Error("ไม่พบร้านที่เลือก");
+  }
+  return tenantId;
 }

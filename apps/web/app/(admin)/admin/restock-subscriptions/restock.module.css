@@ -1,0 +1,347 @@
+.page {
+  --restock-ink: #18332b;
+  --restock-green: #237a57;
+  --restock-mint: #dff4e9;
+  --restock-orange: #d46b08;
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding-bottom: 32px;
+}
+
+.headRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0 0 2px !important;
+}
+
+.subtitle {
+  display: block;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border, rgba(15, 23, 42, 0.12));
+  background: var(--app-surface, #fff);
+  color: var(--app-text, #0f172a);
+  cursor: pointer;
+}
+
+.tabActive {
+  background: var(--restock-green);
+  border-color: var(--restock-green);
+  color: #fff;
+}
+
+.tabCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bulkBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fff4e0;
+  border: 1px solid rgba(146, 98, 10, 0.28);
+}
+
+.bulkText {
+  flex: 1;
+  min-width: 200px;
+  color: var(--restock-orange);
+  font-weight: 500;
+}
+
+.queueCard {
+  min-width: 0;
+  border-radius: 16px;
+}
+
+.search {
+  width: 100%;
+}
+
+.resultMeta {
+  margin-bottom: 12px;
+}
+
+.smallText {
+  font-size: 12px;
+}
+
+.available {
+  color: var(--restock-green);
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.drawerContent {
+  width: 100%;
+}
+
+.mobileList {
+  display: grid;
+  gap: 10px;
+}
+
+.mobileCard {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: none;
+  text-align: left;
+}
+
+.mobileCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mobileCustomerBlock,
+.mobileProductBlock {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.mobileIdentityRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobileCustomerName {
+  display: block;
+  font-size: 15px;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.mobileProductName {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-word;
+  margin-top: 2px;
+}
+
+.mobileChannelTag {
+  margin-inline-end: 0 !important;
+  padding-inline: 10px;
+  color: #6c7f99;
+  background: #eef2f7;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.mobileStatusPill {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.statusACTIVE {
+  color: #75839b;
+  background: #eff3f8;
+}
+
+.statusREADY_TO_NOTIFY {
+  color: #a36a08;
+  background: #fff1d8;
+}
+
+.statusNOTIFIED {
+  color: #1d8756;
+  background: #def6e9;
+}
+
+.statusPURCHASED {
+  color: #2f6fec;
+  background: #e8f0ff;
+}
+
+.statusCANCELLED {
+  color: #c34747;
+  background: #fde9e9;
+}
+
+.mobileSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+  color: #6f7e95;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mobileSummary span:not(:last-child)::after {
+  content: "·";
+  margin-left: 4px;
+  color: #a0aabc;
+}
+
+.summaryAvailable {
+  color: #1f8b57;
+}
+
+.mobileMetaLine {
+  margin-top: 4px;
+  color: #48645b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mobileActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mobilePagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.drawer :global(.ant-drawer-body) {
+  padding-bottom: 18px;
+}
+
+.detailLead {
+  padding: 18px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--restock-mint), #f8fbf6);
+}
+
+.detailLead :global(.ant-typography) {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.attempt {
+  padding-bottom: 6px;
+}
+
+.attempt :global(.ant-typography) {
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+
+.deliveryError {
+  margin-top: 8px;
+}
+
+.drawerActions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 0 4px;
+  background: var(--app-surface, #fff);
+}
+
+.reviewAlert {
+  margin-bottom: 14px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    gap: 14px;
+  }
+
+  .headRow {
+    gap: 8px;
+  }
+
+  .bulkBar {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .bulkBar :global(.ant-btn) {
+    width: 100%;
+  }
+
+  .detailLead {
+    padding: 14px;
+  }
+
+  .mobileCardHead {
+    align-items: flex-start;
+  }
+
+  .mobileMetaGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .mobileActions {
+    flex-direction: row;
+  }
+
+  .mobileActions :global(.ant-btn) {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 34px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .mobilePagination {
+    flex-wrap: wrap;
+  }
+
+  .mobilePagination :global(.ant-btn) {
+    flex: 1 1 0;
+  }
+
+  .drawerActions {
+    flex-direction: column;
+  }
+
+  .drawerActions :global(.ant-btn),
+  .drawerActions :global(.ant-popconfirm-open) {
+    width: 100%;
+  }
+}

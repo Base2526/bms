@@ -33,6 +33,7 @@ import {
   RobotOutlined,
   HistoryOutlined,
   NotificationOutlined,
+  BellOutlined,
   TagsOutlined,
   CodeOutlined,
   FundViewOutlined,
@@ -47,6 +48,7 @@ import { useEffect, useState } from 'react';
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
+const Q_RESTOCK_READY = gql`query { bmsRestockReadyCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
 const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
@@ -145,6 +147,11 @@ export default function AdminSidebar() {
   });
   const mentionsUnread: number = mentionsData?.bmsMyMentionsUnreadCount ?? 0;
 
+  const { data: restockData } = useQuery(Q_RESTOCK_READY, {
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+  });
+  const restockReady: number = restockData?.bmsRestockReadyCount ?? 0;
+
   // ช่องทาง active แต่ status ไม่ปกติ (token หมดอายุ/webhook fail/rate limit/no events) —
   // poll เอง 15s แบบเดียวกับ inboxUnread เพื่อให้เห็น badge แม้ไม่ได้อยู่หน้า Settings
   const { data: healthData } = useQuery(Q_CHANNEL_HEALTH_COUNT, {
@@ -227,6 +234,7 @@ export default function AdminSidebar() {
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, effectiveCollapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/restock-subscriptions', 'แจ้งลูกค้าเมื่อของเข้า', <BellOutlined />, restockReady, effectiveCollapsed, true)] : []),
     ...(canViewInbox ? [link('/admin/inbox/mentions', 'เมนชันของฉัน', <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
     // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
     link('/admin/assistant', 'ผู้ช่วย AI', <RobotOutlined />),

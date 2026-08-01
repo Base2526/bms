@@ -3,8 +3,7 @@
 // logic การ insert จริงอยู่ที่ lib/bms/devSeed.ts (ใช้ร่วมกับ provisionTestShop())
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requirePlatformAdminSeeder, fakeSeedDisabled } from "@/lib/dev-guards";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { seedFakeProducts } from "@/lib/bms/devSeed";
 
 export const runtime = "nodejs";
@@ -16,16 +15,13 @@ export async function POST(req: NextRequest) {
   const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const body = await req.json().catch(() => ({}));
-  const count = Math.min(Math.max(Number(body?.count) || 5, 1), 2000);
-  // seed ลงร้านของผู้ล็อกอิน (ร้านค้าเทสได้เอง เห็นใน list ตัวเอง) — fallback: body.tenantId → default
-  const tenantId = guard.actor?.tenant_id
-    || (typeof body?.tenantId === "string" && body.tenantId.trim() ? body.tenantId.trim() : DEFAULT_TENANT_ID);
-
   try {
+    const body = await req.json().catch(() => ({}));
+    const count = Math.min(Math.max(Number(body?.count) || 5, 1), 2000);
+    const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
     const created = await seedFakeProducts(tenantId, count);
     return NextResponse.json({ ok: true, created });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "insert failed" }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
   }
 }

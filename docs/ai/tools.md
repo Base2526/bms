@@ -75,6 +75,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
 | `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit + deterministic signed checkout link |
+| `subscribe_restock_notification` | A2 | explicit opt-in for own channel identity | — | save waitlist entry; staff reviews before outbound |
 | `save_customer_checkout_details` | A2 | own `(channel, customer_ref)` only | — | save only delivery fields explicitly supplied by that customer |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
 | `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
@@ -951,6 +952,10 @@ Confidence
   โดยอ่าน DB ทุกครั้ง สินค้าใหม่จึงเห็นใน turn ถัดไปโดยไม่ต้อง refresh AI cache
 - `find_alternatives(sku?/keyword?/category?, size?, limit?)` — หา 2–5 ตัวเลือกที่มีของจริง โดยให้
   หมวด/แบรนด์/ราคาใกล้สินค้าต้นทางมาก่อน
+- `subscribe_restock_notification(sku, size, requestedQty?)` — customer-safe write สำหรับบันทึก
+  ความยินยอมให้แจ้งเมื่อ SKU/ไซซ์ที่หมดกลับมาพร้อมขาย เรียกได้เฉพาะเมื่อลูกค้าตอบรับชัดเจน;
+  ตัวตนมาจาก `(tenant_id, channel, customer_ref)` ฝั่ง server และรองรับ LINE/Facebook/Instagram
+  เท่านั้น การเติมสต๊อกสร้างงานรอแอดมินตรวจ ไม่ส่งออกอัตโนมัติ
 - `recommend_products(keyword?, category?, minPrice?, maxPrice?)` — แนะนำตาม use case/งบ หรือใช้
   สินค้าขายดีที่ยังมี stock แล้วเติมด้วยสินค้าพร้อมขาย
 
@@ -959,6 +964,8 @@ Confidence
 - `send_customer_message(conversationId, body)` — ส่งข้อความหาลูกค้า **propose-only** → Confirm ยิง
   `bmsSendMessage` เดิม · push จริงเฉพาะช่องที่รองรับ (LINE/Facebook/Instagram) — **TikTok send / email
   ยังไม่มี API จริง จึงยังไม่ทำ** (ตาม roadmap)
+- หน้า `/admin/restock-subscriptions` ใช้ `bmsSendRestockNotification` หลัง staff ตรวจ/แก้ข้อความ;
+  ทุกครั้งรวม `Resend` เก็บ body snapshot และผล `SENT`/`FAILED` แยก attempt โดยไม่เขียนทับประวัติเดิม
 
 # Future Tools (ยังไม่ทำ)
 

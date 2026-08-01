@@ -11,7 +11,9 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
 
 - **Customer surface** — the webhook/playground pipeline below. The active provider may call only customer-safe
   tools (`customerTools()`): read product/stock/own-order-status + `create_order`/`submit_payment`/
-  `reorder`. No sensitive (A3) tool is ever exposed here.
+  `reorder`/`subscribe_restock_notification`. The restock tool requires explicit customer consent
+  and creates a staff-reviewed queue item; it never sends proactively from the AI turn. No sensitive
+  (A3) tool is ever exposed here.
 - **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
   UI `/admin/assistant`). The active provider gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
@@ -36,7 +38,7 @@ Deterministic intent?  ← coupon wallet / own-order status / payment / reorder 
 AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.ts]  (PRIMARY when AI creds exist)
     │                     The configured provider selects+calls tools itself (search_products / browse_catalog /
     │                     list_new_arrivals / find_alternatives / check_stock / get_order_status /
-    │                     create_order / submit_payment / reorder), grounded on
+    │                     create_order / submit_payment / reorder / subscribe_restock_notification), grounded on
     │                     real backend results; every business number traces to a tool result.
     │                     usedAi:true (even on mid-loop error) → return AI reply, never fall through
     │                     (write-safety: no double create_order).

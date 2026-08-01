@@ -18,6 +18,10 @@ import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
+import {
+  markRestockSubscriptionsPurchased,
+  markRestockSubscriptionsReadyForOrders,
+} from "./restockSubscriptions";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -181,6 +185,17 @@ export async function createOrder(
     );
 
     await client.query("COMMIT");
+    try {
+      await markRestockSubscriptionsPurchased({
+        tenantId,
+        channel: input.channel,
+        customerRef: input.customerRef,
+        customerId,
+        items,
+      });
+    } catch (error) {
+      console.error("[BMS] restock purchase resolution hook failed:", error);
+    }
     return { status: "CREATED", orderId, total: finalTotal, subtotal: total, discount, couponCode: appliedCouponCode, items: lines };
   } catch (err) {
     try {
@@ -424,6 +439,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     await recordOrderMovements(client, [orderId], "RETURN", "system");
 
     await client.query("COMMIT");
+    await markRestockSubscriptionsReadyForOrders([orderId]);
     void notifyOrderStatusEmail(tenantId, orderId, "returned");
     return true;
   } catch (err) {
@@ -470,6 +486,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await releaseCustomerCouponReservationsInTx(client, [orderId]);
 
     await client.query("COMMIT");
+    await markRestockSubscriptionsReadyForOrders([orderId]);
     void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
     return true;
   } catch (err) {
@@ -532,6 +549,7 @@ export async function releaseExpiredOrders(
     );
 
     await client.query("COMMIT");
+    await markRestockSubscriptionsReadyForOrders(ids);
     return { released: ids.length, orderIds: ids };
   } catch (err) {
     try {

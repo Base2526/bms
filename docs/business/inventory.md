@@ -114,3 +114,31 @@ cannot receive further — and cancelling never claws back stock already receive
 accounting: what's received stays received).
 
 Permissions: `purchase.view` / `purchase.edit` / `purchase.receive` / `purchase.cancel`.
+
+## Customer restock follow-up
+
+When a customer explicitly opts in after an exact SKU/size is unavailable, the customer AI may
+call `subscribe_restock_notification`. The subscription is scoped to the server-established
+channel identity and is supported only on channels with real proactive push delivery: LINE,
+Facebook, and Instagram. The AI must not infer consent from a product question or purchase intent.
+
+Subscriptions move through:
+
+```text
+ACTIVE -> READY_TO_NOTIFY -> NOTIFIED -> PURCHASED
+   |             |               |
+   +-------------+---------------+-> CANCELLED / EXPIRED
+```
+
+- Manual positive stock adjustments, PO receipt, returned goods, and released reservations re-check
+  availability after the inventory transaction commits. An `ACTIVE` subscription becomes
+  `READY_TO_NOTIFY` only while available stock is greater than zero.
+- Restocking never sends automatically. Staff review or edit the generated draft at
+  `/admin/restock-subscriptions` and confirm the send with `inbox.reply` permission.
+- Each send/resend creates a `bms_restock_deliveries` attempt with a body snapshot, actor, timestamp,
+  and `SENT`/`FAILED` result. Failed attempts leave the subscription ready for retry.
+- The send path checks live availability again. If stock has sold out, it sends nothing and moves
+  the subscription back to `ACTIVE`.
+- Creating an order for the same customer and SKU/size resolves the subscription as `PURCHASED`.
+- Sales staff see only subscriptions for conversations assigned to them or where they are a helper;
+  Manager and Administrator roles follow the normal tenant-wide Inbox visibility.
