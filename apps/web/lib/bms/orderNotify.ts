@@ -18,7 +18,7 @@ import { getTenantName } from "./platform";
 
 export type OrderEmailKey = "paid" | "packing" | "shipped" | "completed" | "cancelled" | "returned";
 
-const APP_NAME = process.env.NEXT_PUBLIC_WEB_NAME ?? "AI-BMS";
+const APP_NAME = process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS";
 const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL ?? "";
 
 export async function notifyOrderStatusEmail(

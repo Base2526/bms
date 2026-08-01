@@ -62,7 +62,7 @@ export default function Page() {
   return (
     <div className={styles.page} data-shop-signup-page>
       <div className={styles.formPanel}>
-        <Card className={styles.card} title={<><ShopOutlined /> สมัครใช้ AI-BMS — เปิดร้านของคุณ</>}>
+        <Card className={styles.card} title={<><ShopOutlined /> สมัครใช้ BMS — เปิดร้านของคุณ</>}>
           <Paragraph type="secondary">
             สร้างร้านฟรี เริ่มขายผ่าน LINE/TikTok ด้วย AI ตอบลูกค้าอัตโนมัติ — เริ่มที่แพ็กเกจ Free
           </Paragraph>

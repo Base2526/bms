@@ -1,4 +1,4 @@
-# AI Pipeline (AI-BMS)
+# AI Pipeline (BMS)
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Tools: [tools.md](tools.md) · Prompts/guardrails: [prompts.md](prompts.md) · Business rules: [../business/](../business/)
 

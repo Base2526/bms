@@ -313,8 +313,13 @@ export default function HomePage() {
             {t("landing.heroDescription")}
           </Paragraph>
           <Space size={12} wrap>
+            {!admin && (
+              <Link href="/demo">
+                <Button type="primary" size="large" icon={<MessageOutlined />}>{t("landing.tryDemo")}</Button>
+              </Link>
+            )}
             <Link href={primaryCta.href}>
-              <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
+              <Button type={admin ? "primary" : "default"} size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
             </Link>
             <Button size="large" icon={<PlayCircleOutlined />} href="#workflow">{t("landing.viewWorkflow")}</Button>
           </Space>
@@ -448,6 +453,10 @@ export default function HomePage() {
             <span>{activeStep + 1} / {flowSteps.length}</span>
           </div>
         </Card>
+        <div className={styles.demoPrompt}>
+          <span><strong>{t("landing.tryDemo")}</strong><small>{t("landing.tryDemoDescription")}</small></span>
+          <Link href="/demo"><Button type="primary" icon={<MessageOutlined />}>{t("landing.tryDemo")}</Button></Link>
+        </div>
       </section>
 
       <section className={styles.safetySection} id="security">
@@ -471,6 +480,7 @@ export default function HomePage() {
           <Text className={styles.eyebrow}>{t("landing.pricingEyebrow")}</Text>
           <Title level={2}>{t("landing.pricingTitle")}</Title>
           <Paragraph>{t("landing.pricingDescription")}</Paragraph>
+          <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
 
         {error && <Alert type="error" showIcon message={t("landing.pricingLoadError")} description={error.message} />}
@@ -501,9 +511,12 @@ export default function HomePage() {
           <Title level={3}>{t("landing.finalTitle")}</Title>
           <Paragraph>{t("landing.finalDescription")}</Paragraph>
         </div>
-        <Link href={primaryCta.href}>
-          <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
-        </Link>
+        <Space wrap>
+          <Link href="/demo"><Button size="large" icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
+          <Link href={primaryCta.href}>
+            <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
+          </Link>
+        </Space>
       </section>
     </div>
   );

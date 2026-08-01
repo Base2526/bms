@@ -1,11 +1,11 @@
 # AGENTS.md
 
-This file defines how coding agents should work in the AI-BMS repository. It applies to the
+This file defines how coding agents should work in the BMS repository. It applies to the
 entire repository unless a more specific `AGENTS.md` exists in a subdirectory.
 
 ## Product context
 
-AI-BMS is an AI-first business operating system that turns customer conversations into business
+BMS is an AI-first business operating system that turns customer conversations into business
 workflows:
 
 ```text

@@ -49,7 +49,7 @@ import type { Lang } from "@/i18n";
 const { Header } = Layout;
 const { Text } = Typography;
 
-// ปิดไว้ก่อน — ค้นหา/ศูนย์ช่วยเหลือยังเป็นของ project เดิม (ไม่เกี่ยว AI-BMS) เปิดใหม่เมื่อมีของจริงให้ผูก
+// ปิดไว้ก่อน — ค้นหา/ศูนย์ช่วยเหลือยังเป็นของ project เดิม (ไม่เกี่ยว BMS) เปิดใหม่เมื่อมีของจริงให้ผูก
 const SHOW_HEADER_SEARCH = false;
 const SHOW_HEADER_HELP = false;
 
@@ -468,6 +468,12 @@ export default function HeaderBar({
     } else {
       items.push(
         {
+          key: "demo",
+          label: t("header.demo"),
+          icon: <MessageOutlined />,
+          onClick: () => router.push("/demo"),
+        },
+        {
           key: "workflow",
           label: t("header.workflow"),
           icon: <ApiOutlined />,
@@ -560,7 +566,7 @@ export default function HeaderBar({
                   src="/icons/icon.svg"
                   width={46}
                   height={46}
-                  alt="AI-BMS"
+                  alt="BMS"
                   style={{
                     display: "block",
                     width: "100%",
@@ -687,6 +693,7 @@ export default function HeaderBar({
           {!isMobileView && !hasSession && !SHOW_HEADER_SEARCH && (
             <nav className="jachoei-product-nav" aria-label={t("header.productNavigation")}>
               <Link href="/#workflow">{t("header.workflow")}</Link>
+              <Link href="/demo">{t("header.demo")}</Link>
               <Link href="/#security">{t("header.security")}</Link>
               <Link href="/#pricing">{t("header.pricing")}</Link>
             </nav>

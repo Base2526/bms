@@ -39,6 +39,69 @@ async function bulkInsert(client: any, table: string, cols: string[], rows: any[
   return rows.length;
 }
 
+type CuratedSeedProduct = {
+  name: string;
+  category: string;
+  brand: string;
+  price: number;
+  description: string;
+  keywords: string[];
+  sizes?: string[];
+};
+
+const CURATED_SEED_PRODUCTS: Partial<Record<ShopArchetype, CuratedSeedProduct[]>> = {
+  fashion: [
+    { name: "เดรส Luna สีดำ", category: "เสื้อผ้า", brand: "Nami Studio", price: 1290, description: "เดรสเข้ารูปสีดำ รุ่นขายดีของร้าน", keywords: ["เดรส", "สีดำ", "luna", "เดรสสีดำ"], sizes: ["S", "M", "L"] },
+    { name: "เดรส Mira ทรง A สีดำ", category: "เสื้อผ้า", brand: "Nami Studio", price: 1190, description: "เดรสทรง A สีดำ สำหรับลูกค้าที่อยากได้ทรงใกล้เคียง", keywords: ["เดรส", "สีดำ", "mira", "ทรงเอ"], sizes: ["S", "M", "L", "XL"] },
+    { name: "เสื้อเชิ้ต Oxford สีขาว", category: "เสื้อผ้า", brand: "Nami Basics", price: 890, description: "เสื้อเชิ้ตทรงคลาสสิก ใส่ทำงานได้", keywords: ["เสื้อเชิ้ต", "สีขาว", "oxford"], sizes: ["S", "M", "L", "XL"] },
+    { name: "กางเกงสแลคทรงตรง", category: "เสื้อผ้า", brand: "Nami Basics", price: 990, description: "กางเกงสแลคทรงตรงสำหรับลุคทำงาน", keywords: ["กางเกงสแลค", "กางเกงทำงาน"], sizes: ["S", "M", "L", "XL"] },
+    { name: "เบลเซอร์สีครีม", category: "เสื้อผ้า", brand: "Nami Studio", price: 1690, description: "เบลเซอร์สีครีม ใส่กับเดรสหรือกางเกงสแลคได้", keywords: ["เบลเซอร์", "สีครีม", "สูท"], sizes: ["M", "L", "XL"] },
+    { name: "กระโปรงพลีทสั้น", category: "เสื้อผ้า", brand: "Nami Weekend", price: 790, description: "กระโปรงพลีทสั้น แมตช์ง่าย", keywords: ["กระโปรง", "พลีท"], sizes: ["S", "M", "L"] },
+  ],
+  food_beverage: [
+    { name: "ข้าวกะเพราหมูสับ", category: "อาหารจานเดียว", brand: "QuickBite Kitchen", price: 79, description: "ข้าวกะเพราหมูสับพร้อมขาย เพิ่มไข่ได้", keywords: ["กะเพรา", "ข้าวกะเพรา", "หมูสับ", "ไข่ดาว"], sizes: ["STD"] },
+    { name: "ข้าวกะเพราไก่", category: "อาหารจานเดียว", brand: "QuickBite Kitchen", price: 75, description: "ข้าวกะเพราไก่ รสจัดพร้อมส่ง", keywords: ["กะเพรา", "ไก่", "ข้าวกะเพราไก่"], sizes: ["STD"] },
+    { name: "ข้าวผัดกุ้ง", category: "อาหารจานเดียว", brand: "QuickBite Kitchen", price: 89, description: "ข้าวผัดกุ้งพร้อมขาย เหมาะกับสั่งคู่เครื่องดื่ม", keywords: ["ข้าวผัด", "กุ้ง", "ข้าวผัดกุ้ง"], sizes: ["STD"] },
+    { name: "ผัดไทยกุ้งสด", category: "เส้น", brand: "QuickBite Kitchen", price: 95, description: "ผัดไทยกุ้งสดเสิร์ฟพร้อมมะนาว", keywords: ["ผัดไทย", "กุ้งสด", "เส้น"], sizes: ["STD"] },
+    { name: "คะน้าหมูกรอบราดข้าว", category: "อาหารจานเดียว", brand: "QuickBite Kitchen", price: 85, description: "คะน้าหมูกรอบราดข้าว เมนูยอดนิยมช่วงกลางวัน", keywords: ["คะน้า", "หมูกรอบ", "ราดข้าว"], sizes: ["STD"] },
+    { name: "ไข่ดาว", category: "add-on", brand: "QuickBite Kitchen", price: 15, description: "เพิ่มไข่ดาวสำหรับเมนูข้าว", keywords: ["ไข่ดาว", "เพิ่มไข่", "ท็อปปิ้ง"], sizes: ["ADDON"] },
+    { name: "ไข่ต้ม", category: "add-on", brand: "QuickBite Kitchen", price: 15, description: "เพิ่มไข่ต้มสำหรับลูกค้าที่ไม่เอาไข่ดาว", keywords: ["ไข่ต้ม", "เพิ่มไข่", "ท็อปปิ้ง"], sizes: ["ADDON"] },
+    { name: "โค้กไม่มีน้ำตาล 325 มล.", category: "เครื่องดื่ม", brand: "Coke", price: 25, description: "เครื่องดื่มเย็นพร้อมขาย", keywords: ["โค้ก", "โค้กไม่มีน้ำตาล", "น้ำอัดลม"], sizes: ["BOT"] },
+    { name: "ชามะนาว", category: "เครื่องดื่ม", brand: "QuickBite Drinks", price: 35, description: "ชามะนาวเย็นสำหรับสั่งคู่มื้ออาหาร", keywords: ["ชามะนาว", "ชาเย็น", "เครื่องดื่ม"], sizes: ["CUP"] },
+    { name: "ข้าวไข่เจียวหมูสับ", category: "อาหารจานเดียว", brand: "QuickBite Kitchen", price: 69, description: "ข้าวไข่เจียวหมูสับพร้อมขาย", keywords: ["ไข่เจียว", "หมูสับ", "ข้าวไข่เจียว"], sizes: ["STD"] },
+  ],
+  beauty_personal_care: [
+    { name: "Gentle Cleanser", category: "คลีนเซอร์", brand: "Lumi Skin", price: 390, description: "คลีนเซอร์อ่อนโยนสำหรับผิวแพ้ง่าย", keywords: ["cleanser", "ล้างหน้า", "ผิวแพ้ง่าย"], sizes: ["120ml"] },
+    { name: "Barrier Serum", category: "เซรั่ม", brand: "Lumi Skin", price: 590, description: "เซรั่มฟื้นเกราะผิว ใช้คู่คลีนเซอร์ได้", keywords: ["serum", "เซรั่ม", "ผิวแพ้ง่าย", "barrier"], sizes: ["30ml"] },
+    { name: "Hydra Moist Gel", category: "ครีม", brand: "Lumi Skin", price: 490, description: "มอยส์เจอร์เนื้อเจลสำหรับผิวมันขาดน้ำ", keywords: ["moisturizer", "มอยส์เจอร์", "ผิวมัน"], sizes: ["50ml"] },
+    { name: "Acne Spot Booster", category: "เซรั่ม", brand: "Lumi Skin", price: 450, description: "แต้มสิวสำหรับใช้เฉพาะจุด", keywords: ["สิว", "แต้มสิว", "spot"], sizes: ["15ml"] },
+    { name: "Daily Sunscreen SPF50", category: "ครีมกันแดด", brand: "Lumi Skin", price: 520, description: "กันแดดเนื้อเบาใช้ได้ทุกวัน", keywords: ["กันแดด", "spf50", "sunscreen"], sizes: ["40ml"] },
+  ],
+  mini_mart: [
+    { name: "มาม่าต้มยำกุ้ง", category: "ของแห้ง", brand: "Mama", price: 7, description: "บะหมี่กึ่งสำเร็จรูปต้มยำกุ้ง", keywords: ["มาม่า", "ต้มยำ", "บะหมี่"], sizes: ["PACK"] },
+    { name: "โค้ก 325 มล.", category: "เครื่องดื่ม", brand: "Coke", price: 18, description: "น้ำอัดลมกระป๋องพร้อมขาย", keywords: ["โค้ก", "น้ำอัดลม"], sizes: ["CAN"] },
+    { name: "น้ำดื่ม 1.5 ลิตร", category: "เครื่องดื่ม", brand: "Nestle", price: 15, description: "น้ำดื่มขวดใหญ่", keywords: ["น้ำเปล่า", "น้ำดื่ม"], sizes: ["BOT"] },
+    { name: "มันฝรั่งทอดรสดั้งเดิม", category: "ขนม", brand: "Lays", price: 30, description: "ขนมทานเล่นยอดนิยม", keywords: ["เลย์", "มันฝรั่งทอด", "ขนม"], sizes: ["PACK"] },
+    { name: "ผงซักฟอก 800 กรัม", category: "ของใช้ประจำวัน", brand: "Attack", price: 79, description: "ผงซักฟอกขนาดกลาง", keywords: ["ผงซักฟอก", "ซักผ้า"], sizes: ["800g"] },
+    { name: "ไข่ไก่เบอร์ 2 แพ็ก 10 ฟอง", category: "ของสด", brand: "Daily Fresh", price: 52, description: "ไข่ไก่แพ็กสำหรับใช้ในครัวเรือน", keywords: ["ไข่ไก่", "ไข่"], sizes: ["10pc"] },
+  ],
+  gadgets_accessories: [
+    { name: "AirGuard Case for iPhone 15 Pro", category: "เคส", brand: "Spark", price: 590, description: "เคสกันกระแทกสำหรับ iPhone 15 Pro", keywords: ["iphone 15 pro", "เคส", "airguard"], sizes: ["Clear", "Black"] },
+    { name: "Tempered Glass for iPhone 15 Pro", category: "ฟิล์ม", brand: "Spark", price: 390, description: "กระจกนิรภัยตรงรุ่น iPhone 15 Pro", keywords: ["iphone 15 pro", "กระจก", "ฟิล์ม"], sizes: ["STD"] },
+    { name: "USB-C Fast Charge Cable 1m", category: "สายชาร์จ", brand: "Baseus", price: 290, description: "สายชาร์จ USB-C ความยาว 1 เมตร", keywords: ["usb-c", "สายชาร์จ", "ชาร์จเร็ว"], sizes: ["1m"] },
+    { name: "30W USB-C Adapter", category: "อะแดปเตอร์", brand: "Anker", price: 690, description: "หัวชาร์จ 30W สำหรับ iPhone และ iPad", keywords: ["adapter", "หัวชาร์จ", "30w"], sizes: ["30W"] },
+    { name: "MagSafe Wallet Stand", category: "อุปกรณ์เสริม", brand: "Spark", price: 790, description: "ขาตั้งพร้อมช่องใส่บัตรแบบ MagSafe", keywords: ["magsafe", "wallet", "stand"], sizes: ["Black", "Cream"] },
+  ],
+};
+
+function substrHash(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 8).toUpperCase();
+}
+
 function productPresetForArchetype(archetype: ShopArchetype | null | undefined) {
   switch (archetype) {
     case "mini_mart":
@@ -306,6 +369,57 @@ function purchasePresetForArchetype(archetype: ShopArchetype | null | undefined)
 }
 
 export async function seedFakeProducts(tenantId: string, count: number, archetype?: ShopArchetype | null) {
+  const curated = archetype ? CURATED_SEED_PRODUCTS[archetype] ?? null : null;
+  if (curated?.length) {
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      const inserted: Array<{ sku: string; name: string; price: string }> = [];
+      for (let i = 0; i < count; i++) {
+        const item = curated[i % curated.length];
+        const sku = `FAKE-${substrHash(`${tenantId}:${archetype}:${item.name}:${i}`)}`;
+        const name = count > curated.length ? `${item.name} ${Math.floor(i / curated.length) + 1}` : item.name;
+        await client.query(
+          `INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand)
+           VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            tenantId,
+            sku,
+            name,
+            item.price.toFixed(2),
+            Array.from(new Set(["fake", "test", ...item.keywords.map((k) => k.toLowerCase())])),
+            `https://picsum.photos/seed/${sku}/400/400`,
+            `${item.description} (ข้อมูลเดโมสำหรับ ${archetype})`,
+            (item.price * 0.58).toFixed(2),
+            item.category,
+            item.brand,
+          ]
+        );
+        for (const size of item.sizes?.length ? item.sizes : ["STD"]) {
+          await client.query(
+            `INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+             VALUES ($1, $2, $3, $4, 0, $5)`,
+            [
+              tenantId,
+              sku,
+              size,
+              Math.max(0, 2 + R(archetype === "food_beverage" ? 16 : 28)),
+              archetype === "food_beverage" ? 3 : 5,
+            ]
+          );
+        }
+        inserted.push({ sku, name, price: item.price.toFixed(2) });
+      }
+      await client.query("COMMIT");
+      return inserted;
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   const preset = productPresetForArchetype(archetype);
   const sql = `
     WITH gen AS (

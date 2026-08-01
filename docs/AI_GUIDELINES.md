@@ -1,6 +1,6 @@
 # AI Guidelines
 
-These rules govern every AI feature in AI-BMS, including customer replies, intent detection,
+These rules govern every AI feature in BMS, including customer replies, intent detection,
 tool selection, payment-slip analysis, customer insights, forecasting, and operational log
 triage. They apply regardless of model or provider.
 
