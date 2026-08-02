@@ -331,7 +331,7 @@ export default function Page() {
             borderStyle: clickable ? "dashed" : "solid",
           };
           return clickable
-            ? <Link key={c.key} href="/admin/settings" style={style}>{content}</Link>
+            ? <Link key={c.key} href={`/admin/settings?focus=channel&channel=${c.key}`} style={style}>{content}</Link>
             : <div key={c.key} style={style}>{content}</div>;
         })}
       </div>

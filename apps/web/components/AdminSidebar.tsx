@@ -37,6 +37,7 @@ import {
   TagsOutlined,
   CodeOutlined,
   FundViewOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -275,7 +276,7 @@ export default function AdminSidebar() {
       icon: <SafetyOutlined />,
       label: 'ผู้ใช้/สิทธิ์',
       children: [
-        link('/admin/users', 'Users', <UserOutlined />, 3, effectiveCollapsed),
+        link('/admin/users', 'Users', <UserOutlined />),
         // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
         ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
@@ -294,6 +295,8 @@ export default function AdminSidebar() {
           link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
+          link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),
+          link('/admin/operations-schedule', 'Batch & Cron', <ClockCircleOutlined />),
           link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
           link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),

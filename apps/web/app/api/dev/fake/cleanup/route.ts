@@ -59,10 +59,14 @@ export async function DELETE(req: NextRequest) {
         RETURNING c.id`,
       [tenantId]
     );
+    const resSupportTickets = await query(
+      `DELETE FROM support_tickets WHERE ref LIKE 'FAKE-SUPPORT-%' RETURNING id`
+    );
 
     const deleted =
       resPosts.rows.length + resUsers.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
-      resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length;
+      resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
+      resSupportTickets.rows.length;
 
     return NextResponse.json({
       ok: true,
@@ -77,6 +81,7 @@ export async function DELETE(req: NextRequest) {
       bmsSuppliers: resSuppliers.rows.length,
       bmsProducts: resProducts.rows.length,
       bmsCustomers: resCustomers.rows.length,
+      supportTickets: resSupportTickets.rows.length,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "cleanup failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
