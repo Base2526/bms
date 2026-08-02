@@ -55,6 +55,8 @@ Full per-domain rules: [../business/order.md](../business/order.md) ·
 [../business/inventory.md](../business/inventory.md) · [../business/payment.md](../business/payment.md) ·
 [../business/crm.md](../business/crm.md)
 
+Scale planning for admin workloads: [admin-scale-readiness.md](./admin-scale-readiness.md)
+
 ## Build status (2026-07)
 
 Operational modules per this spec are **fully built** — order lifecycle closes end-to-end

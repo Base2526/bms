@@ -27,7 +27,13 @@ export async function POST(req: NextRequest){
     return NextResponse.json({error:"Not admin"}, {status:403});
 
   const token = jwt.sign(
-    { sub:String(user.id), role:user.role, name:user.name, email:user.email },
+    {
+      id: user.id,
+      sub: String(user.id),
+      role: user.role,
+      name: user.name,
+      email: user.email,
+    },
     process.env.JWT_SECRET || "changeme_secret",
     { algorithm:"HS256", expiresIn:"7d" }
   );
