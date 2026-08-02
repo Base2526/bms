@@ -774,6 +774,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMailLog(q: String, status: String, provider: String, category: String, tenantId: ID, page: Int, pageSize: Int): BmsMailLogPage!
     bmsMailLogEntry(id: ID!): BmsMailLogEntry
     bmsMailLogStats: BmsMailLogStats!   # สรุปย้อนหลัง 24 ชม. — stat tile
+    bmsSupportTickets(q: String, status: String, topic: String, page: Int, pageSize: Int): BmsSupportTicketPage!
 
     # ===== BMS RBAC (admin) =====
     myBmsPermissions: [String!]!          # สิทธิ์ของ admin ปัจจุบัน (UI gating)
@@ -2219,6 +2220,47 @@ export const typeDefs = /* GraphQL */ `
     ticketId: String
   }
 
+  type BmsSupportTicket {
+    id: ID!
+    ticketId: String!
+    name: String
+    email: String!
+    phone: String
+    topic: String!
+    subject: String!
+    message: String!
+    ref: String
+    pageUrl: String
+    userAgent: String
+    ip: String
+    status: String!
+    createdAt: String!
+    updatedAt: String
+    closedAt: String
+    comments: [BmsSupportTicketComment!]!
+  }
+
+  type BmsSupportTicketPage {
+    items: [BmsSupportTicket!]!
+    total: Int!
+  }
+
+  type BmsSupportTicketComment {
+    id: ID!
+    authorId: ID
+    authorEmail: String
+    fromStatus: String
+    toStatus: String
+    body: String!
+    createdAt: String!
+  }
+
+  input BmsUpdateSupportTicketInput {
+    id: ID!
+    status: String
+    comment: String
+  }
+
   input UploadDiagnosticsInput {
     userId: ID
     platform: String!
@@ -2506,6 +2548,7 @@ export const typeDefs = /* GraphQL */ `
     unblockScamPhone(input: UnblockScamPhoneInput!): ScamPhone!
 
     createSupportTicket(input: SupportTicketInput!): SupportTicketPayload!
+    bmsUpdateSupportTicket(input: BmsUpdateSupportTicketInput!): BmsSupportTicket!
 
 
     blockPhone(input: BlockPhoneInput!): BlockPhonePayload!

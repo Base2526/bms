@@ -170,6 +170,11 @@ function UsersList(){
         columns={columns as any}
         rowSelection={rowSelection}
         scroll={{ x: "max-content" }}
+        locale={{
+          emptyText: search.trim()
+            ? "ไม่พบผู้ใช้ที่ตรงกับคำค้นหาในร้านนี้"
+            : "ร้านนี้ยังไม่มีผู้ใช้ กด + New User เพื่อเพิ่มแอดมินหรือทีมงานของร้าน",
+        }}
         pagination={{
           current: page,
           pageSize,

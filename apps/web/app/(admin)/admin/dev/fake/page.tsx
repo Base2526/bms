@@ -39,9 +39,10 @@ const KINDS = [
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
   { label: 'BMS Coupons', value: 'bms-coupons' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
+  { label: 'Support Tickets', value: 'support-tickets' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage' | 'support-tickets';
 
 export default function DevFakePage() {
   const [kind, setKind] = useState<FakeKind>('bms-products');
@@ -162,7 +163,7 @@ export default function DevFakePage() {
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Cleanup failed');
       message.success(
-        `Deleted ${j.deleted} — restock:${j.bmsRestockSubscriptions ?? 0} orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0}`
+        `Deleted ${j.deleted} — restock:${j.bmsRestockSubscriptions ?? 0} orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0} support:${j.supportTickets ?? 0}`
       );
       setCreated([]);
     } catch (e: any) {

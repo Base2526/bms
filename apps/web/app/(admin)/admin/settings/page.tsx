@@ -1,7 +1,8 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select } from "antd";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
 import ReportSubscriptionCard from "./ReportSubscriptionCard";
@@ -87,9 +88,16 @@ function fmtDT(iso: string | null | undefined) {
 }
 
 export default function Page() {
+  const searchParams = useSearchParams();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [origin, setOrigin] = useState("");
   useEffect(() => { setOrigin(window.location.origin); }, []);
+  const focus = searchParams.get("focus");
+  const focusChannel = searchParams.get("channel");
+  const highlightedChannel = useMemo(() => {
+    if (focus !== "channel" || !focusChannel) return null;
+    return CHANNELS.some((ch) => ch.key === focusChannel) ? focusChannel : null;
+  }, [focus, focusChannel]);
 
   if (error) return <Alert type="error" message="โหลด settings ไม่ได้" description={error.message} showIcon />;
 
@@ -156,7 +164,16 @@ export default function Page() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "start" }}>
         {CHANNELS.map((ch) => (
-          <ChannelCard key={ch.key} ch={ch} cfg={cfgOf(ch.key)} health={healthOf(ch.key)} tenantId={tenant?.id} origin={origin} onSaved={refetch} />
+          <ChannelCard
+            key={ch.key}
+            ch={ch}
+            cfg={cfgOf(ch.key)}
+            health={healthOf(ch.key)}
+            tenantId={tenant?.id}
+            origin={origin}
+            focused={highlightedChannel === ch.key}
+            onSaved={refetch}
+          />
         ))}
         <AiCard aiConfig={data?.bmsAiConfig} aiUsage={data?.bmsAiUsage} onSaved={refetch} />
       </div>
@@ -173,8 +190,9 @@ export default function Page() {
   );
 }
 
-function ChannelCard({ ch, cfg, health, tenantId, origin, onSaved }: any) {
+function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: any) {
   const [form] = Form.useForm();
+  const accessTokenInputRef = useRef<any>(null);
   const [saveChannel, { loading: saving }] = useMutation(M, {
     onCompleted: () => { message.success(`บันทึก ${ch.label} แล้ว`); form.setFieldsValue({ accessToken: "", channelSecret: "" }); onSaved(); },
     onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
@@ -212,15 +230,39 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, onSaved }: any) {
 
   const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && healthBadge.text === "เชื่อมต่อสำเร็จ";
 
+  useEffect(() => {
+    if (!focused) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`channel-setting-${ch.key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      accessTokenInputRef.current?.focus?.({ cursor: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [ch.key, focused]);
+
   return (
     <Card
+      id={`channel-setting-${ch.key}`}
       title={<Space wrap><Tag color={ch.color}>{ch.label}</Tag><Tag color={healthBadge.color}>{healthBadge.text}</Tag></Space>}
       extra={canTest && (
         <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testChannel({ variables: { channel: ch.key } })}>
           ทดสอบ
         </Button>
       )}
+      style={focused ? {
+        borderColor: "#1677ff",
+        boxShadow: "0 0 0 3px rgba(22, 119, 255, 0.16), 0 10px 28px rgba(22, 119, 255, 0.12)",
+      } : undefined}
     >
+      {focused && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`กำลังตั้งค่า ${ch.label}`}
+          description="มาจาก Dashboard จึงเลื่อนมาที่ช่องทางนี้ให้อัตโนมัติ"
+        />
+      )}
+
       <Paragraph type="secondary" style={{ marginTop: -4 }}>{ch.hint}</Paragraph>
 
       {healthBadge.action && (
@@ -247,7 +289,7 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, onSaved }: any) {
 
       <Form form={form} layout="vertical" initialValues={{ active: cfg?.active ?? true }}>
         <Form.Item label={`Access Token ${cfg?.has_token ? `(ปัจจุบัน: ${cfg.access_token_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="accessToken">
-          <Input.Password placeholder={cfg?.has_token ? "•••• (ไม่เปลี่ยน)" : "วาง access token"} autoComplete="off" />
+          <Input.Password ref={accessTokenInputRef} placeholder={cfg?.has_token ? "•••• (ไม่เปลี่ยน)" : "วาง access token"} autoComplete="off" />
         </Form.Item>
         <Form.Item label={`Channel Secret ${cfg?.has_secret ? `(ปัจจุบัน: ${cfg.channel_secret_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""} — ใช้ verify signature`} name="channelSecret">
           <Input.Password placeholder={cfg?.has_secret ? "•••• (ไม่เปลี่ยน)" : "วาง channel secret"} autoComplete="off" />

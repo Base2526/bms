@@ -67,14 +67,16 @@ import { logAsync } from "@/lib/logger";
 
 // =============================================================
 // Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
-// platform admin เห็น/แก้ได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง · role อื่นถูกปฏิเสธ
+// platform admin เห็น/แก้ได้ทุกร้านเมื่ออยู่มุมแพลตฟอร์ม
+// แต่ถ้ากำลัง drill-down/acting tenant ต้องทำตัวเป็น tenant-scoped เพื่อไม่หลุดร้านที่กำลังดู
 // =============================================================
 async function requireUserAdmin(ctx: any): Promise<{ platform: boolean; tenantId: string }> {
   const auth = requireAuth(ctx);
   if (auth.scope !== "admin") {
     throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
   }
-  const platform = await isPlatformAdmin(ctx);
+  const actingTenant = !!ctx?.admin?.__actingTenantId;
+  const platform = (await isPlatformAdmin(ctx)) && !actingTenant;
   const isSuper = ctx?.admin?.role === "Administrator";
   if (!platform && !isSuper) {
     throw new GraphQLError("เฉพาะผู้ดูแลร้าน (Administrator) หรือแอดมินแพลตฟอร์มเท่านั้น", {
@@ -208,6 +210,40 @@ function escapeHtml(s: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function mapSupportComment(row: any) {
+  return {
+    id: String(row.id),
+    authorId: row.author_id ? String(row.author_id) : null,
+    authorEmail: row.author_email,
+    fromStatus: row.from_status,
+    toStatus: row.to_status,
+    body: row.body,
+    createdAt: toIsoOrNull(row.created_at) || new Date(0).toISOString(),
+  };
+}
+
+function mapSupportTicket(row: any, comments: any[] = []) {
+  return {
+    id: String(row.id),
+    ticketId: row.ticket_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    topic: row.topic,
+    subject: row.subject,
+    message: row.message,
+    ref: row.ref,
+    pageUrl: row.page_url,
+    userAgent: row.user_agent,
+    ip: row.ip,
+    status: row.status,
+    createdAt: toIsoOrNull(row.created_at) || new Date(0).toISOString(),
+    updatedAt: toIsoOrNull(row.updated_at),
+    closedAt: toIsoOrNull(row.closed_at),
+    comments: comments.map(mapSupportComment),
+  };
 }
 
 function normalizeTel(raw: string) {
@@ -756,6 +792,62 @@ const rawResolvers = {
       return rows[0];
     },
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
+    bmsSupportTickets: async (_: any, args: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
+      const page = Math.max(1, Number(args.page || 1));
+      const pageSize = Math.min(100, Math.max(1, Number(args.pageSize || 20)));
+      const where: string[] = [];
+      const params: any[] = [];
+
+      if (args.status) {
+        params.push(String(args.status));
+        where.push(`status = $${params.length}`);
+      }
+      if (args.topic) {
+        params.push(String(args.topic));
+        where.push(`topic = $${params.length}`);
+      }
+      if (args.q) {
+        params.push(`%${String(args.q).trim()}%`);
+        where.push(`(ticket_id ILIKE $${params.length} OR email ILIKE $${params.length} OR name ILIKE $${params.length} OR subject ILIKE $${params.length})`);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const totalRes = await query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM support_tickets ${whereSql}`,
+        params
+      );
+      params.push(pageSize, (page - 1) * pageSize);
+      const rows = await query<any>(
+        `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                user_agent, ip, status, created_at, updated_at, closed_at
+           FROM support_tickets
+          ${whereSql}
+          ORDER BY created_at DESC
+          LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      );
+      const ticketIds = rows.rows.map((row: any) => row.id);
+      const commentsByTicket = new Map<string, any[]>();
+      if (ticketIds.length > 0) {
+        const commentRows = await query<any>(
+          `SELECT id, ticket_id, author_id, author_email, from_status, to_status, body, created_at
+             FROM support_ticket_comments
+            WHERE ticket_id = ANY($1::uuid[])
+            ORDER BY created_at DESC`,
+          [ticketIds]
+        );
+        for (const comment of commentRows.rows) {
+          const key = String(comment.ticket_id);
+          commentsByTicket.set(key, [...(commentsByTicket.get(key) || []), comment]);
+        }
+      }
+
+      return {
+        total: Number(totalRes.rows[0]?.count || 0),
+        items: rows.rows.map((row: any) => mapSupportTicket(row, commentsByTicket.get(String(row.id)) || [])),
+      };
+    },
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -1568,8 +1660,19 @@ const rawResolvers = {
       return { items: itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
+      const { author_id, scope } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] user", id, author_id);
+
+      if (scope === "admin") {
+        const { platform, tenantId } = await requireUserAdmin(ctx);
+        if (!platform) {
+          const { rows } = await query(
+            `SELECT id FROM users WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+            [id, tenantId]
+          );
+          if (!rows[0]) return null;
+        }
+      }
 
       return await getUserById(id);
     },
@@ -5211,6 +5314,7 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      const { platform, tenantId } = await requireUserAdmin(ctx);
       const author_id = String(auth.author_id);
 
       console.log("[Mutation] uploadAvatar :", author_id);
@@ -5226,10 +5330,14 @@ const rawResolvers = {
 
         const avatarUrl = buildFileUrlById(row.id);
 
-        await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [
-          avatarUrl,
-          user_id,
-        ]);
+        const updateRes = platform
+          ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
+          : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
+        if (updateRes.rowCount !== 1) {
+          throw new GraphQLError("user not found in current tenant", {
+            extensions: { code: "NOT_FOUND" },
+          });
+        }
 
         await addLog("info", "upload-avatar", "Upload avatar", {
           userId: user_id,
@@ -5249,7 +5357,9 @@ const rawResolvers = {
       console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
       // แชท OPEN/PENDING ที่ยัง assign อยู่กับ user นี้ต้องโอนก่อนเสมอ (ห้ามเหลือแชทไม่มี staff)
-      const target = await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1`, [id]);
+      const target = platform
+        ? await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1`, [id])
+        : await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
       if (target.rows[0]?.tenant_id) {
         await reassignStaffConversations(target.rows[0].tenant_id, id);
       }
@@ -5288,9 +5398,13 @@ const rawResolvers = {
       if (uuidIds.length === 0) return false;
 
       // เหมือน deleteUser — โอนแชทค้างของแต่ละคนก่อนลบเสมอ
-      const targets = await query<{ id: string; tenant_id: string }>(
-        `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]
-      );
+      const targets = platform
+        ? await query<{ id: string; tenant_id: string }>(
+            `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]
+          )
+        : await query<{ id: string; tenant_id: string }>(
+            `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[]) AND tenant_id = $2`, [uuidIds, tenantId]
+          );
       for (const t of targets.rows) {
         if (t.tenant_id) await reassignStaffConversations(t.tenant_id, t.id);
       }
@@ -6247,36 +6361,146 @@ const rawResolvers = {
       return result;
     },
     createSupportTicket: async (_: any, { input }: any, ctx: any) => {
-      // ticketId แบบง่าย
-      const ticketId = `SUP-${Date.now()}`;
+      const ticketId = `SUP-${Date.now()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+      const ip =
+        ctx?.req?.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+        ctx?.req?.headers?.get?.("x-real-ip") ||
+        ctx?.req?.headers?.get?.("cf-connecting-ip") ||
+        null;
+
+      await query(
+        `INSERT INTO support_tickets
+           (ticket_id, name, email, phone, topic, subject, message, ref, page_url, user_agent, ip)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          ticketId,
+          String(input.name || "").trim() || null,
+          String(input.email || "").trim(),
+          input.phone ? String(input.phone).trim() : null,
+          String(input.topic || "").trim(),
+          String(input.subject || "").trim(),
+          String(input.message || "").trim(),
+          input.ref ? String(input.ref).trim() : null,
+          input.pageUrl ? String(input.pageUrl).slice(0, 1000) : null,
+          input.userAgent ? String(input.userAgent).slice(0, 1000) : null,
+          ip,
+        ]
+      );
 
       const subject = `[${ticketId}] ${input.topic.toUpperCase()}: ${input.subject}`;
 
       const html = `
         <h2>New Support Ticket</h2>
         <p><b>Ticket:</b> ${ticketId}</p>
-        <p><b>Name:</b> ${input.name}</p>
-        <p><b>Email:</b> ${input.email}</p>
-        <p><b>Phone:</b> ${input.phone ?? "-"}</p>
-        <p><b>Topic:</b> ${input.topic}</p>
-        <p><b>Ref:</b> ${input.ref ?? "-"}</p>
-        <p><b>Page:</b> ${input.pageUrl ?? "-"}</p>
-        <p><b>User-Agent:</b> ${input.userAgent ?? "-"}</p>
+        <p><b>Name:</b> ${escapeHtml(String(input.name || "-"))}</p>
+        <p><b>Email:</b> ${escapeHtml(String(input.email || "-"))}</p>
+        <p><b>Phone:</b> ${escapeHtml(String(input.phone ?? "-"))}</p>
+        <p><b>Topic:</b> ${escapeHtml(String(input.topic || "-"))}</p>
+        <p><b>Ref:</b> ${escapeHtml(String(input.ref ?? "-"))}</p>
+        <p><b>Page:</b> ${escapeHtml(String(input.pageUrl ?? "-"))}</p>
+        <p><b>User-Agent:</b> ${escapeHtml(String(input.userAgent ?? "-"))}</p>
         <hr />
-        <pre style="white-space:pre-wrap">${escapeHtml(input.message)}</pre>
+        <pre style="white-space:pre-wrap">${escapeHtml(String(input.message || ""))}</pre>
       `;
 
-      await sendEmail(
-        {
-          to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
-          subject,
-          html,
-          text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
-        },
-        { category: "support", triggeredBy: "resolvers:createSupportTicket" }
-      );
+      try {
+        await sendEmail(
+          {
+            to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
+            subject,
+            html,
+            text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
+          },
+          { category: "support", triggeredBy: "resolvers:createSupportTicket" }
+        );
+      } catch (e: any) {
+        console.error("[support] email notification failed", e?.message || e);
+      }
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
+    },
+    bmsUpdateSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
+      const ticketId = String(input.id || "").trim();
+      const nextStatus = input.status ? String(input.status).trim() : null;
+      const comment = input.comment ? String(input.comment).trim() : "";
+      const allowedStatuses = new Set(["open", "pending", "closed"]);
+      const actorId = ctx?.admin?.id ? String(ctx.admin.id) : null;
+      const actorEmail = ctx?.admin?.email ? String(ctx.admin.email) : null;
+
+      if (!ticketId) {
+        throw new GraphQLError("ticket id is required", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      if (nextStatus && !allowedStatuses.has(nextStatus)) {
+        throw new GraphQLError("invalid support ticket status", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      if (!nextStatus && !comment) {
+        throw new GraphQLError("status or comment is required", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+
+      const { result } = await runInTransaction(actorId || "00000000-0000-0000-0000-000000000000", async (client) => {
+        const current = await client.query<any>(
+          `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                  user_agent, ip, status, created_at, updated_at, closed_at
+             FROM support_tickets
+            WHERE id = $1
+            FOR UPDATE`,
+          [ticketId]
+        );
+        const row = current.rows[0];
+        if (!row) {
+          throw new GraphQLError("support ticket not found", { extensions: { code: "NOT_FOUND" } });
+        }
+
+        const fromStatus = row.status;
+        const toStatus = nextStatus || fromStatus;
+
+        if (nextStatus && nextStatus !== fromStatus) {
+          const closedAtSql = nextStatus === "closed"
+            ? "now()"
+            : fromStatus === "closed"
+            ? "NULL"
+            : "closed_at";
+          await client.query(
+            `UPDATE support_tickets
+                SET status = $2,
+                    updated_at = now(),
+                    closed_at = ${closedAtSql}
+              WHERE id = $1`,
+            [ticketId, nextStatus]
+          );
+        } else if (comment) {
+          await client.query(`UPDATE support_tickets SET updated_at = now() WHERE id = $1`, [ticketId]);
+        }
+
+        if (comment || nextStatus) {
+          const body = comment || `Status changed: ${fromStatus} -> ${toStatus}`;
+          await client.query(
+            `INSERT INTO support_ticket_comments
+               (ticket_id, author_id, author_email, from_status, to_status, body)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [ticketId, actorId, actorEmail, fromStatus, toStatus, body]
+          );
+        }
+
+        const updated = await client.query<any>(
+          `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                  user_agent, ip, status, created_at, updated_at, closed_at
+             FROM support_tickets
+            WHERE id = $1`,
+          [ticketId]
+        );
+        const comments = await client.query<any>(
+          `SELECT id, ticket_id, author_id, author_email, from_status, to_status, body, created_at
+             FROM support_ticket_comments
+            WHERE ticket_id = $1
+            ORDER BY created_at DESC`,
+          [ticketId]
+        );
+        return mapSupportTicket(updated.rows[0], comments.rows);
+      });
+
+      return result;
     },
 
     uploadDiagnostics: async (_: any, { input }: any, ctx: any) => {
