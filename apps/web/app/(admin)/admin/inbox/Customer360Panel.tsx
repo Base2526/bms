@@ -139,14 +139,16 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
   ];
   return (
     <div>
-      <Space align="start">
-        <Avatar size={48} icon={<UserOutlined />} />
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>ID: {c.id}</Text>
+      {/* ขนาดพวกนี้ต้องกำหนดตรงนี้ ไม่ใช่ที่ customer360.module.css — inline style/prop
+          ชนะ CSS module เสมอ (เคยพลาดตอนย่อ panel รอบแรก แล้วชื่อ/avatar ไม่เล็กลงจริง) */}
+      <Space align="start" size={8}>
+        <Avatar size={34} icon={<UserOutlined />} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 12.5, lineHeight: 1.25 }}>{c.name}</div>
+          <Text type="secondary" style={{ fontSize: 9.5 }}>ID: {c.id}</Text>
         </div>
       </Space>
-      <div style={{ margin: "8px 0" }}>
+      <div style={{ margin: "6px 0" }}>
         <Space size={4} wrap>
           {tagBadges.map((t) => <Tag key={t.label} color={t.color}>{t.label}</Tag>)}
           {(c.tags || []).filter((t: string) => t !== "VIP" && t !== "Fraud Risk").map((t: string) => <Tag key={t}>{t}</Tag>)}
@@ -240,11 +242,11 @@ function RecentOrdersSection({
         <List.Item
           style={{
             display: "block",
-            padding: 10,
-            marginBottom: 8,
-            borderRadius: 12,
+            padding: 7,
+            marginBottom: 5,
+            borderRadius: 9,
             border: selectedOrderId === o.id ? "1px solid rgba(22,119,255,0.35)" : "1px solid rgba(15,23,42,0.08)",
-            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "#fff",
+            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "var(--app-surface, #fff)",
           }}
         >
           <Space size={4} wrap style={{ marginBottom: 2 }}>
@@ -446,9 +448,9 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
       size="small"
       dataSource={coupons}
       renderItem={(coupon: any) => (
-        <List.Item style={{ display: "block", padding: 10 }}>
-          <Space size={6} wrap style={{ marginBottom: 4 }}>
-            <Text strong>{coupon.code}</Text>
+        <List.Item style={{ display: "block", padding: 7 }}>
+          <Space size={5} wrap style={{ marginBottom: 3 }}>
+            <Text strong style={{ fontSize: 12 }}>{coupon.code}</Text>
             <Tag color={couponStateColor[coupon.state] || "default"}>{couponStateLabel[coupon.state] || coupon.state}</Tag>
             {coupon.available ? <Tag color="green">พร้อมใช้</Tag> : <Tag color="default">ยังใช้ไม่ได้</Tag>}
           </Space>
