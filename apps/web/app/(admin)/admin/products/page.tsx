@@ -60,6 +60,7 @@ type Product = {
   images: Array<{ id: string | number; url: string }>;
   description: string | null;
   costPrice: number | null;
+  weightGrams: number | null;
   category: string | null;
   brand: string | null;
   variants: Variant[];
@@ -91,6 +92,7 @@ const Q_PRODUCTS = gql`
         images { id url }
         description
         costPrice
+        weightGrams
         category
         brand
         variants {
@@ -274,6 +276,7 @@ function ProductsManagement() {
       sku: p.sku, name: p.name, price: p.price,
       keywords: p.keywords, active: p.active, barcode: p.barcode || "",
       description: p.description || "", costPrice: p.costPrice ?? undefined,
+      weightGrams: p.weightGrams ?? undefined,
       category: p.category || "", brand: p.brand || "",
     });
     setModalOpen(true);
@@ -309,6 +312,7 @@ function ProductsManagement() {
           image_urls: imageUrls,
           description: v.description?.trim() || null,
           cost_price: v.costPrice != null && v.costPrice !== "" ? Number(v.costPrice) : null,
+          weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
           category: v.category?.trim() || null,
           brand: v.brand?.trim() || null,
         },
@@ -625,8 +629,16 @@ function ProductsManagement() {
             <Form.Item label="ราคาขาย (บาท)" name="price" rules={[{ required: true, message: "ระบุราคา" }]} style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>
-            <Form.Item label="ต้นทุน (บาท, ไม่บังคับ)" name="costPrice" style={{ flex: 1 }}>
+            <Form.Item label="ต้นทุน (บาท, ไม่บังคับ)" name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} placeholder="ใช้คำนวณกำไร" />
+            </Form.Item>
+            <Form.Item
+              label="น้ำหนัก (กรัม, ไม่บังคับ)"
+              name="weightGrams"
+              style={{ flex: 1 }}
+              tooltip="ใช้คิดค่าส่งตามน้ำหนัก · ถ้าไม่กรอก ระบบจะไม่คิดค่าน้ำหนักส่วนเพิ่มให้สินค้านี้"
+            >
+              <InputNumber min={0} style={{ width: "100%" }} placeholder="เช่น 500" />
             </Form.Item>
           </Space.Compact>
 

@@ -89,6 +89,7 @@ export const bmsPaymentsResolvers = {
       const msg: Record<string, string> = {
         NOT_FOUND: "ไม่พบรายการชำระ",
         INVALID_STATE: "สถานะไม่อนุญาตให้ยืนยัน",
+        INVALID_AMOUNT: "ยอดชำระไม่ตรงกับยอดที่ต้องเก็บ",
       };
       return { status: res.status, paymentId: args.id, message: msg[res.status] ?? "ยืนยันไม่ได้" };
     },

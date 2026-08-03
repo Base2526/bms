@@ -32,7 +32,7 @@ const Q_PAYMENTS = gql`
   }
 `;
 const Q_PENDING_ORDERS = gql`
-  query { bmsOrders(status: PENDING, limit: 200) { id customer_ref total_amount } }
+  query { bmsOrders(status: PENDING, limit: 200) { id customer_ref total_amount shipping_fee amount_due } }
 `;
 const M_SUBMIT = gql`
   mutation ($orderId: ID!, $method: BmsPaymentMethod!, $amount: Float, $slipUrl: String, $slipRef: String, $note: String) {
@@ -253,7 +253,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const { data } = useQuery(Q_PENDING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
-  const orders: { id: string; customer_ref: string | null; total_amount: number }[] = data?.bmsOrders || [];
+  const orders: { id: string; customer_ref: string | null; total_amount: number; shipping_fee: number; amount_due: number }[] = data?.bmsOrders || [];
 
   const [submit, { loading }] = useMutation(M_SUBMIT, {
     onCompleted: (d: any) => {
@@ -283,7 +283,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
           <Select showSearch placeholder="เลือกออร์เดอร์"
             options={orders.map((o) => ({
               value: o.id,
-              label: `${o.id.slice(0, 8)} · ${o.customer_ref ?? "-"} · ${Number(o.total_amount).toLocaleString()} ฿`,
+              label: `${o.id.slice(0, 8)} · ${o.customer_ref ?? "-"} · ${Number(o.amount_due).toLocaleString()} ฿`,
             }))}
             filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
           />

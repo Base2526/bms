@@ -68,11 +68,10 @@ type SystemEvent = {
 };
 
 const PANEL_SURFACE = "var(--app-surface, #ffffff)";
-const PANEL_RAISED_SURFACE = "var(--app-surface-2, #f1f5f9)";
 const PANEL_SUNKEN_SURFACE = "rgba(var(--app-surface-2-rgb, 241, 245, 249), 0.92)";
 const SUBTLE_TEXT = "rgba(var(--app-text-rgb, 15, 23, 42), 0.62)";
 const IDLE_CARD_BORDER = "rgba(var(--app-text-rgb, 15, 23, 42), 0.08)";
-const IDLE_CARD_SHADOW = "0 2px 10px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.10)";
+const IDLE_CARD_SHADOW = "0 1px 4px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.06)";
 const RAISED_PANEL_SHADOW = "0 6px 16px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.12)";
 // ---- GraphQL ------------------------------------------------
 const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
@@ -187,6 +186,8 @@ function eventText(ev: SystemEvent) {
 }
 
 const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", shopee: "orange", lazada: "purple", test: "default" };
+// ตัวย่อช่องทางสำหรับคิวแชท — ชื่อเต็มกินที่มากเกินไปในแถวแคบ ๆ (ช่องทางที่ไม่มีในนี้ใช้ชื่อเดิม)
+const CHANNEL_SHORT: Record<string, string> = { line: "LINE", tiktok: "TT", facebook: "FB", instagram: "IG", web: "WEB", shopee: "SHP", lazada: "LZD", test: "TEST" };
 // ป้ายของแท็บ Timeline — ORDER = "สร้างออร์เดอร์" เท่านั้น (สถานะปัจจุบันแยกไปอีกบรรทัด ไม่ผูกกับเวลา at)
 const TIMELINE_TYPE: Record<string, { label: string; color: string }> = {
   MESSAGE_IN: { label: "ลูกค้าส่ง", color: "blue" },
@@ -658,17 +659,16 @@ function Inbox() {
         {/* ---- left: conversation list ---- */}
         {showListPane && (
         <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : isMobile ? 10 : 12, display: "flex", flexDirection: "column", background: PANEL_SURFACE, overflow: "hidden" }}>
+          {/* หัวคิวไม่ต้องเป็นการ์ดซ้อนในการ์ด — ตัวคอลัมน์มีกรอบอยู่แล้ว กรอบชั้นที่สอง
+              กินความกว้าง/ความสูงฟรี ๆ เหลือแค่เส้นคั่นด้านล่าง */}
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 8,
-              marginBottom: effectiveListCollapsed ? 8 : 10,
-              padding: effectiveListCollapsed ? 0 : isMobile ? "8px 8px 6px" : "8px 8px 6px",
-              border: effectiveListCollapsed ? "none" : "1px solid var(--app-border, rgba(15,23,42,0.12))",
-              borderRadius: effectiveListCollapsed ? 0 : 16,
-              background: effectiveListCollapsed ? "transparent" : PANEL_RAISED_SURFACE,
-              boxShadow: effectiveListCollapsed ? "none" : RAISED_PANEL_SHADOW,
+              gap: 6,
+              marginBottom: effectiveListCollapsed ? 8 : 8,
+              paddingBottom: effectiveListCollapsed ? 0 : 8,
+              borderBottom: effectiveListCollapsed ? "none" : "1px solid var(--app-border, rgba(15,23,42,0.12))",
             }}
           >
           <div style={{ display: "flex", justifyContent: effectiveListCollapsed ? "center" : "space-between", alignItems: "center" }}>
@@ -734,7 +734,7 @@ function Inbox() {
                 ghost={quickFilter !== "urgent"}
                 icon={<FireOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "urgent" ? null : "urgent")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500 }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600 }}
               >
                 ด่วนก่อน
               </Button>
@@ -743,7 +743,7 @@ function Inbox() {
                 type={quickFilter === "payment" ? "primary" : "default"}
                 icon={<CreditCardOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "payment" ? null : "payment")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
               >
                 มีสลิป
               </Button>
@@ -752,7 +752,7 @@ function Inbox() {
                 type={quickFilter === "product" ? "primary" : "default"}
                 icon={<ShoppingCartOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "product" ? null : "product")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
               >
                 ถามสินค้า
               </Button>
@@ -770,13 +770,13 @@ function Inbox() {
                 <List.Item
                   onClick={() => openConversation(c.id)}
                   style={{
-                    cursor: "pointer", padding: effectiveListCollapsed ? "6px 0" : isMobile ? "8px 10px" : "8px 10px", borderRadius: isMobile ? 12 : 14, marginBottom: 6,
+                    cursor: "pointer", padding: effectiveListCollapsed ? "5px 0" : "6px 8px", borderRadius: 9, marginBottom: 4,
                     display: effectiveListCollapsed ? "flex" : undefined,
                     justifyContent: effectiveListCollapsed ? "center" : undefined,
-                    background: activeId === c.id ? "rgba(22,119,255,0.18)" : PANEL_SURFACE,
-                    borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
+                    background: activeId === c.id ? "rgba(22,119,255,0.12)" : PANEL_SURFACE,
+                    borderLeft: activeId === c.id ? "2px solid #1677ff" : "2px solid transparent",
                     border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : `1px solid ${IDLE_CARD_BORDER}`,
-                    boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : IDLE_CARD_SHADOW,
+                    boxShadow: activeId === c.id ? "0 2px 8px rgba(22,119,255,0.08)" : IDLE_CARD_SHADOW,
                   }}
                 >
                   {effectiveListCollapsed ? (
@@ -784,40 +784,48 @@ function Inbox() {
                       <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr)", columnGap: 8, width: "100%", minWidth: 0, alignItems: "start" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 7, width: "100%", minWidth: 0, alignItems: "start" }}>
                       <Badge count={c.unread} size="small" offset={[-2, 2]}>
-                        <Avatar size={34} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
+                        <Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
                       </Badge>
-                      <div style={{ minWidth: 0, display: "grid", gap: 3 }}>
+                      {/* ชื่อขึ้นก่อน (สิ่งที่ staff กวาดตาหา) ช่องทางเป็น chip เล็กชิดขวา —
+                          เดิมเอา Tag ช่องทางไว้หน้าชื่อ ทำให้ชื่อถูกดันและอ่านยากตอน list แคบ */}
+                      <div style={{ minWidth: 0, display: "grid", gap: 1 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                          <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 500, paddingInline: 6, lineHeight: "18px", fontSize: 10 }}>{c.channel}</Tag>
-                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
+                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11.5 }}>
                             {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
                           </Typography.Text>
                           {c.assignedStaff && (
                             <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
-                              <Avatar size={20} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 9, backgroundColor: "#1677ff", flexShrink: 0 }}>
+                              <Avatar size={15} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 8, backgroundColor: "#1677ff", flexShrink: 0 }}>
                                 {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
                               </Avatar>
                             </Tooltip>
                           )}
+                          <Typography.Text
+                            style={{
+                              flexShrink: 0, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.04em",
+                              textTransform: "uppercase", color: "var(--app-muted)",
+                            }}
+                          >
+                            {CHANNEL_SHORT[c.channel] || c.channel}
+                          </Typography.Text>
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, flex: 1, fontSize: 10, lineHeight: 1.2 }}>
-                            {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
-                          </Typography.Text>
-                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 500, fontSize: 10, lineHeight: "18px", paddingInline: 6 }}>
+                        <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 9.5, lineHeight: 1.25 }}>
+                          {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
+                        </Typography.Text>
+
+                        <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 10.5, lineHeight: 1.3 }} type="secondary">
+                          {previewNode(c.lastMessage)}
+                        </Typography.Text>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, marginTop: 1 }}>
+                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 600, fontSize: 9, lineHeight: "15px", paddingInline: 5 }}>
                             {convPriority(c).label}
                           </Tag>
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <Typography.Text ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11, lineHeight: 1.3 }} type="secondary">
-                            {previewNode(c.lastMessage)}
-                          </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 10, flexShrink: 0 }}>
-                            {c.lastMessageAt ? `${dayLabel(c.lastMessageAt)} · ${timeLabel(c.lastMessageAt)}` : "ยังไม่มีเวลา"}
+                          <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
+                            {c.lastMessageAt ? timeLabel(c.lastMessageAt) : ""}
                           </Typography.Text>
                         </div>
                       </div>
@@ -832,7 +840,7 @@ function Inbox() {
 
         {/* ---- middle: active conversation ---- */}
         {showConversationPane && (
-        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: isMobile ? 8 : 14, background: PANEL_SURFACE }}>
+        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: isMobile ? 7 : 10, background: PANEL_SURFACE }}>
           {!conv ? (
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
@@ -1701,23 +1709,6 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               )}
             </div>
           </Modal>
-          <Space size={2} wrap style={{ marginBottom: 6 }}>
-            <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
-              <Button type="text" size="small" icon={<SmileOutlined />}>อีโมจิ</Button>
-            </Popover>
-            <Tooltip title="แนบรูปไว้ในข้อความร่าง">
-              <Button type="text" size="small" icon={<PictureOutlined />} disabled={uploading && uploadAction !== "image"} loading={uploading && uploadAction === "image"} onClick={() => imgInputRef.current?.click()}>รูป</Button>
-            </Tooltip>
-            <Tooltip title="แนบไฟล์ไว้ในข้อความร่าง (สูงสุด 10MB)">
-              <Button type="text" size="small" icon={<PaperClipOutlined />} disabled={uploading && uploadAction !== "file"} loading={uploading && uploadAction === "file"} onClick={() => fileInputRef.current?.click()}>ไฟล์</Button>
-            </Tooltip>
-            <Tooltip title="ค้นหาสินค้าและแทรกข้อมูลลงแชท">
-              <Button type="text" size="small" icon={<ShoppingCartOutlined />} onClick={() => setProductPickerOpen(true)}>สินค้า</Button>
-            </Tooltip>
-            <Tooltip title="เลือกคูปองและแทรกเป็นข้อความพร้อมใช้งาน">
-              <Button type="text" size="small" icon={<TagsOutlined />} onClick={() => setCouponPickerOpen(true)}>คูปอง</Button>
-            </Tooltip>
-          </Space>
           {draftAttachment && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", marginBottom: 7, border: "1px solid rgba(22,119,255,0.24)", borderRadius: 10, background: "rgba(22,119,255,0.06)" }}>
               {draftAttachment.isImage ? (
@@ -1734,15 +1725,35 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               <Button type="text" size="small" aria-label="นำไฟล์แนบออก" icon={<CloseOutlined />} onClick={() => setDraftAttachment(null)} />
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+          {/* เครื่องมือแนบอยู่แถวเดียวกับช่องพิมพ์ (เดิมเป็นแถวป้ายข้อความแยกด้านบน กินสูง ~34px
+              ของพื้นที่สายแชททุกหน้าจอ) — เหลือไอคอนล้วน ความหมายอยู่ใน tooltip/aria-label */}
+          <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
+            <Space size={0} style={{ flexShrink: 0 }}>
+              <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
+                <Button type="text" size="small" aria-label="อีโมจิ" icon={<SmileOutlined />} />
+              </Popover>
+              <Tooltip title="แนบรูปไว้ในข้อความร่าง">
+                <Button type="text" size="small" aria-label="แนบรูป" icon={<PictureOutlined />} disabled={uploading && uploadAction !== "image"} loading={uploading && uploadAction === "image"} onClick={() => imgInputRef.current?.click()} />
+              </Tooltip>
+              <Tooltip title="แนบไฟล์ไว้ในข้อความร่าง (สูงสุด 10MB)">
+                <Button type="text" size="small" aria-label="แนบไฟล์" icon={<PaperClipOutlined />} disabled={uploading && uploadAction !== "file"} loading={uploading && uploadAction === "file"} onClick={() => fileInputRef.current?.click()} />
+              </Tooltip>
+              <Tooltip title="ค้นหาสินค้าและแทรกข้อมูลลงแชท">
+                <Button type="text" size="small" aria-label="แทรกสินค้า" icon={<ShoppingCartOutlined />} onClick={() => setProductPickerOpen(true)} />
+              </Tooltip>
+              <Tooltip title="เลือกคูปองและแทรกเป็นข้อความพร้อมใช้งาน">
+                <Button type="text" size="small" aria-label="แทรกคูปอง" icon={<TagsOutlined />} onClick={() => setCouponPickerOpen(true)} />
+              </Tooltip>
+            </Space>
             <Input.TextArea
-              rows={isMobile ? 1 : 2} value={reply} onChange={(e) => setReply(e.target.value)}
+              rows={1} value={reply} onChange={(e) => setReply(e.target.value)}
+              autoSize={{ minRows: 1, maxRows: 4 }}
               placeholder="พิมพ์ตอบลูกค้า (Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่)"
-              style={{ flex: 1, resize: "none" }}
+              style={{ flex: 1, resize: "none", fontSize: 12.5 }}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
-            <Button type="primary" size="large" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ height: "auto", minWidth: isMobile ? 58 : 88 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
+              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
           </div>
         </div>
       )}

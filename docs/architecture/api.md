@@ -111,6 +111,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
+| `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
 
@@ -177,6 +178,14 @@ follow this same shape rather than inventing a separate preview-only query/REST 
 - `bmsSendTestReportNow` calls `sendTestDigest()`, which computes the last 24h as an ad-hoc period
   and writes to `bms_report_deliveries` without mutating the subscription's real
   `last_sent_at`/`last_period_key` — testing configuration never desyncs the real schedule.
+
+### Support tickets
+
+`createSupportTicket` powers the public `/support` form. It persists the ticket row, best-effort
+emails the support inbox, and returns a ticket code the user can keep for follow-up. Platform
+admins review tickets through `bmsSupportTickets`, change status and leave internal notes through
+`bmsUpdateSupportTicket`, and the resolver appends those notes to `support_ticket_comments` so the
+status trail stays visible. The UI is intentionally BMS-specific rather than a generic contact page.
 
 ### Revision history GraphQL
 

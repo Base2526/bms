@@ -27,6 +27,8 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
   **propose-only** — the tool returns a proposal, a human clicks Confirm, and the UI fires the
   existing permission-gated mutation (`bmsConfirmPayment`, `bmsRefundPayment`, `bmsCancelOrder`,
   `bmsAdjustStock`, `bmsMergeCustomers`, `bmsSendMessage`, …). AI never executes A3 itself.
+  Support intake/review is intentionally **not** an AI tool surface: `/support` writes directly to
+  `support_tickets`, and `/admin/support-tickets` is a human ops page for platform admins.
 
 Each tool wraps an existing `lib/bms/*.ts` service (no duplicated business logic), validates
 model-supplied args, and derives `tenantId` from the server. `staffTools(perms)` removes tools the

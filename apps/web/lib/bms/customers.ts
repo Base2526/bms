@@ -5,6 +5,7 @@
 import type { PoolClient } from "pg";
 import { query, getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { normalizeProvince } from "./shippingZones";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const MARKETPLACE_CHECKOUT_CHANNELS = new Set(["lazada", "shopee"]);
@@ -40,6 +41,9 @@ export type SaveCustomerCheckoutDetailsInput = {
   phone?: string | null;
   shippingAddress?: string | null;
   addressLabel?: string | null;
+  /** จังหวัด/รหัสไปรษณีย์ปลายทาง (7.47) — ใช้คิดค่าส่งตามโซน ไม่บังคับกรอก */
+  province?: string | null;
+  postcode?: string | null;
 };
 
 function cleanOptional(value: string | null | undefined): string | null {
@@ -153,7 +157,12 @@ export async function saveCustomerCheckoutDetails(
   const phone = cleanOptional(input.phone);
   const shippingAddress = cleanOptional(input.shippingAddress);
   const addressLabel = cleanOptional(input.addressLabel);
+  const province = normalizeProvince(cleanOptional(input.province));
+  const postcode = cleanOptional(input.postcode);
 
+  if (postcode && !/^\d{5}$/.test(postcode)) {
+    throw new Error("รหัสไปรษณีย์ต้องเป็นเลข 5 หลัก");
+  }
   if (!recipientName && !phone && !shippingAddress) {
     throw new Error("ต้องระบุข้อมูลจัดส่งอย่างน้อย 1 รายการ");
   }
@@ -214,18 +223,32 @@ export async function saveCustomerCheckoutDetails(
         await client.query(
           `UPDATE bms_customer_addresses
               SET label = COALESCE($3, label),
+                  province = COALESCE($4, province),
+                  postcode = COALESCE($5, postcode),
                   is_default = true
             WHERE tenant_id = $1 AND id = $2`,
-          [tenantId, existing.rows[0].id, addressLabel]
+          [tenantId, existing.rows[0].id, addressLabel, province, postcode]
         );
       } else {
         await client.query(
           `INSERT INTO bms_customer_addresses
-             (tenant_id, customer_id, label, address, is_default, address_type)
-           VALUES ($1, $2, $3, $4, true, 'shipping')`,
-          [tenantId, customerId, addressLabel, shippingAddress]
+             (tenant_id, customer_id, label, address, is_default, address_type, province, postcode)
+           VALUES ($1, $2, $3, $4, true, 'shipping', $5, $6)`,
+          [tenantId, customerId, addressLabel, shippingAddress, province, postcode]
         );
       }
+    } else if (province || postcode) {
+      // ส่งมาแค่จังหวัด/ไปรษณีย์ (ไม่ได้แก้ที่อยู่) → เติมให้แถวที่อยู่ default เดิม
+      await client.query(
+        `UPDATE bms_customer_addresses
+            SET province = COALESCE($3, province), postcode = COALESCE($4, postcode)
+          WHERE tenant_id = $1 AND id = (
+            SELECT id FROM bms_customer_addresses
+             WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
+             ORDER BY is_default DESC, id LIMIT 1
+          )`,
+        [tenantId, customerId, province, postcode]
+      );
     }
 
     await client.query("COMMIT");

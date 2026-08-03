@@ -365,28 +365,28 @@ export default function RestockSubscriptionsPage() {
 
       <div className={styles.metricsGrid}>
         <Card className={styles.metricCard}>
-          <Text type="secondary">มูลค่าที่กู้กลับมา</Text>
-          <Title level={3} className={styles.metricValue}>{metrics.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</Title>
+          <Text type="secondary" className={styles.metricLabel}>มูลค่าที่กู้กลับมา</Text>
+          <Title level={3} className={`${styles.metricValue} ${styles.metricGood}`}>{metrics.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</Title>
           <Text className={styles.metricHint}>ยอดสินค้าในออเดอร์ที่ผูกกับ restock โดยตรง</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary">กู้ยอดขายกลับมาได้</Text>
+          <Text type="secondary" className={styles.metricLabel}>กู้ยอดขายกลับมาได้</Text>
           <Title level={3} className={styles.metricValue}>{metrics.recoveredSalesCount.toLocaleString("th-TH")} รายการ</Title>
           <Text className={styles.metricHint}>{metrics.recoveredOrdersCount.toLocaleString("th-TH")} ออเดอร์ที่ตรวจสอบย้อนกลับได้</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary">ลูกค้าที่ปิดการขายกลับมา</Text>
+          <Text type="secondary" className={styles.metricLabel}>ลูกค้าที่ปิดการขายกลับมา</Text>
           <Title level={3} className={styles.metricValue}>{metrics.recoveredCustomersCount.toLocaleString("th-TH")} ราย</Title>
           <Text className={styles.metricHint}>นับลูกค้าไม่ซ้ำจาก queue นี้</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary">แจ้งแล้ว → ซื้อกลับมา</Text>
-          <Title level={3} className={styles.metricValue}>{formatPercent(metrics.recoveryRateFromNotified)}</Title>
+          <Text type="secondary" className={styles.metricLabel}>แจ้งแล้ว → ซื้อกลับมา</Text>
+          <Title level={3} className={`${styles.metricValue} ${styles.metricPrimary}`}>{formatPercent(metrics.recoveryRateFromNotified)}</Title>
           <Text className={styles.metricHint}>{metrics.recoveredFromNotified.toLocaleString("th-TH")} จาก {metrics.notifiedSubscriptions.toLocaleString("th-TH")} subscription ที่ส่งแจ้งสำเร็จ</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary">Recovery rate รวม</Text>
-          <Title level={3} className={styles.metricValue}>{formatPercent(metrics.recoveryRateOverall)}</Title>
+          <Text type="secondary" className={styles.metricLabel}>Recovery rate รวม</Text>
+          <Title level={3} className={`${styles.metricValue} ${styles.metricPrimary}`}>{formatPercent(metrics.recoveryRateOverall)}</Title>
           <Text className={styles.metricHint}>ชำระสำเร็จ {metrics.recoveredSalesCount.toLocaleString("th-TH")} จากทั้งหมด {metrics.total.toLocaleString("th-TH")}</Text>
         </Card>
       </div>
@@ -399,25 +399,27 @@ export default function RestockSubscriptionsPage() {
         description={`ตอนนี้ยังมี ${metrics.readyToNotify.toLocaleString("th-TH")} รายการที่พร้อมแจ้งทันที และมี failed deliveries ${metrics.failedDeliveries.toLocaleString("th-TH")} ครั้งที่ควรตามแก้`}
       />
 
-      <Input.Search
-        allowClear
-        placeholder="ค้นหาลูกค้า ชื่อสินค้า หรือ SKU"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        className={styles.search}
-      />
+      <div className={styles.toolbar}>
+        <Input.Search
+          allowClear
+          placeholder="ค้นหาลูกค้า ชื่อสินค้า หรือ SKU"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className={styles.search}
+        />
 
-      <div className={styles.tabs}>
-        {statusTabs.map((tab) => (
-          <button
-            key={tab.key ?? "ALL"}
-            type="button"
-            className={`${styles.tab} ${status === tab.key ? styles.tabActive : ""}`}
-            onClick={() => setStatus(tab.key)}
-          >
-            {tab.label} <span className={styles.tabCount}>{tab.count.toLocaleString("th-TH")}</span>
-          </button>
-        ))}
+        <div className={styles.tabs}>
+          {statusTabs.map((tab) => (
+            <button
+              key={tab.key ?? "ALL"}
+              type="button"
+              className={`${styles.tab} ${status === tab.key ? styles.tabActive : ""}`}
+              onClick={() => setStatus(tab.key)}
+            >
+              {tab.label} <span className={styles.tabCount}>{tab.count.toLocaleString("th-TH")}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {counts.readyToNotify > 0 && (
@@ -505,7 +507,8 @@ export default function RestockSubscriptionsPage() {
             columns={columns}
             dataSource={items}
             loading={loading}
-            size="middle"
+            size="small"
+            className={styles.table}
             scroll={{ x: 920 }}
             onRow={(item) => ({ onClick: () => setSelected(item), className: styles.clickableRow })}
             pagination={{

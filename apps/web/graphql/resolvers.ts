@@ -5354,6 +5354,14 @@ const rawResolvers = {
       const { platform, tenantId } = await requireUserAdmin(ctx);
       const author_id = String(requireAuth(ctx).author_id);
 
+      // ห้ามลบบัญชีตัวเอง — ไม่งั้น Administrator คนสุดท้ายของร้าน (หรือ platform admin เอง)
+      // ลบตัวเองแล้วล็อกทุกคนออกจากร้าน/แพลตฟอร์มไปเลย ไม่มีใครกู้คืนได้ผ่าน UI
+      if (String(id) === author_id) {
+        throw new GraphQLError("ลบบัญชีของตัวเองไม่ได้", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+
       console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
       // แชท OPEN/PENDING ที่ยัง assign อยู่กับ user นี้ต้องโอนก่อนเสมอ (ห้ามเหลือแชทไม่มี staff)
@@ -5393,7 +5401,9 @@ const rawResolvers = {
 
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const uuidIds = ids.filter((i) => uuidPattern.test(i));
+      // กรองบัญชีตัวเองออกเสมอ (เหมือน deleteUser) แทนที่จะปฏิเสธทั้ง batch — เลือกหลายคนรวมตัวเอง
+      // มาด้วยได้ แค่ตัวเองไม่โดนลบ ที่เหลือยังลบตามปกติ
+      const uuidIds = ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id);
 
       if (uuidIds.length === 0) return false;
 

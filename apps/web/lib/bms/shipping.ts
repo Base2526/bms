@@ -15,13 +15,20 @@ import { getClient, query } from "@/lib/db";
 import { recordOrderMovements } from "./movements";
 import { beginTenantTx } from "./tenant";
 import { notifyOrderStatusEmail } from "./orderNotify";
+import { getCarrierClient } from "./carriers";
+import type { CarrierClientStatus, CarrierTrackResult } from "./carriers/types";
 
 // Lazada/Shopee keep the shipping address in Seller Center. All other implemented channels,
 // including TikTok Chat, require a shipping address stored in BMS before fulfillment can ship.
 export const MARKETPLACE_CHANNELS = new Set(["lazada", "shopee"]);
 
-export const CARRIERS = ["FLASH", "KERRY", "DHL", "AUSPOST", "NZPOST", "OTHER"] as const;
-export type Carrier = (typeof CARRIERS)[number];
+// Carrier codes/labels live in carriers/constants.ts so client components can import them
+// without pulling in @/lib/db. Re-exported here to keep existing `from "./shipping"` imports working.
+export { CARRIER_CODES as CARRIERS, CARRIER_LABELS, isCarrier } from "./carriers/constants";
+export type { Carrier } from "./carriers/constants";
+
+import { isCarrier } from "./carriers/constants";
+import type { Carrier } from "./carriers/constants";
 
 export const SHIPMENT_STATUSES = [
   "PENDING", "SHIPPED", "IN_TRANSIT", "DELIVERED", "RETURNED", "CANCELLED",
@@ -47,7 +54,7 @@ export type CreateShipmentResult =
 // ---- create --------------------------------------------------
 export async function createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
   const { tenantId } = input;
-  if (!CARRIERS.includes(input.carrier)) return { status: "BAD_CARRIER" };
+  if (!isCarrier(input.carrier)) return { status: "BAD_CARRIER" };
 
   const client = await getClient();
   try {
@@ -135,7 +142,7 @@ export async function updateTracking(
   patch: { trackingNo?: string | null; carrier?: Carrier | null },
   actor?: string | null
 ): Promise<boolean> {
-  if (patch.carrier != null && !CARRIERS.includes(patch.carrier)) return false;
+  if (patch.carrier != null && !isCarrier(patch.carrier)) return false;
   const res = await query(
     `UPDATE bms_shipments
         SET tracking_no = COALESCE($3, tracking_no),
@@ -234,6 +241,21 @@ export async function listShipments(
     [tenantId, opts.orderId ?? null, opts.status ?? null, limit, offset, search]
   );
   return res.rows;
+}
+
+// ---- carrier API status (scaffold — FLASH/KERRY have no key yet) ----
+// Returns "unconfigured" for FLASH/KERRY until FLASH_API_KEY/KERRY_API_KEY
+// (see lib/bms/carriers/{flash,kerry}.ts) are set, and null for carriers
+// with no client at all (DHL/AUSPOST/NZPOST/OTHER stay fully manual).
+export function getCarrierApiStatus(carrier: Carrier): CarrierClientStatus | null {
+  return getCarrierClient(carrier)?.getStatus() ?? null;
+}
+
+/** Live tracking lookup, if that carrier is configured — otherwise a typed "unconfigured" result. */
+export async function trackShipmentLive(carrier: Carrier, trackingNo: string): Promise<CarrierTrackResult | null> {
+  const client = getCarrierClient(carrier);
+  if (!client) return null;
+  return client.trackShipment(trackingNo);
 }
 
 // ---- label (ข้อมูลสำหรับพิมพ์ — ยังไม่ผูก carrier API จริง) --------

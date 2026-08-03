@@ -70,6 +70,17 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the cover image; `/admin/products` remains staff-only.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
   name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Tenant-scoped Users page**: `/admin/users` now respects the acting tenant when a platform admin
+  drills into a shop. In Shop B mode the list/detail/delete/avatar paths are tenant-scoped, so the
+  page no longer leaks cross-tenant users or opens a user from another shop by direct URL. The
+  empty state now explicitly says when the current shop has no users yet.
+- **Support tickets + comments**: `/support` now persists tickets to `support_tickets` and
+  `/admin/support-tickets` lets platform admins review the queue, change status, and leave internal
+  comments. `support_ticket_comments` keeps the status trail and note history; support topics were
+  narrowed to BMS-relevant categories and a fake seed route exists for testing.
+- **Batch & Cron ops view**: `/admin/operations-schedule` lists the batch/cron jobs, when they last
+  ran, what each one does, and why it exists so operators don't have to guess whether a job already
+  ran today.
 - **Bulk product import (CSV/XLSX)**: `/admin/products` "นำเข้า" button opens `ImportModal.tsx`,
   which parses the file client-side (`xlsx`) and drives a preview-then-commit flow over one
   mutation, `bmsImportProducts(items, commit)` — `commit:false` validates only, `commit:true` writes

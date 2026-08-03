@@ -9,6 +9,10 @@ live transactional tables (no separate reporting/analytics store). Implemented i
 `bmsSalesSummary` / `bmsInventorySummary` / `bmsTopSellingProducts`, admin UI `/admin/reports` +
 `/admin/dashboard`. Every report requires permission `report.view`.
 
+Shipping note since `7.47__bms_shipping_fee_zone_weight.sql`: `bms_orders.total_amount` still means
+"ค่าสินค้า - ส่วนลด" only. Any operator-facing surface that needs the amount a customer should pay must use
+`shipping_fee` / `amount_due` (or an equivalent computed total), not reinterpret `total_amount`.
+
 ## Dashboard (`getDashboard()`)
 
 Today's overview in one call: revenue, low-stock alerts, order counts by status, top

@@ -270,6 +270,14 @@ export default function CheckoutClient({
                     <dd>-{money(checkout.order.discount, checkout.store.currency)}</dd>
                   </div>
                 )}
+                <div>
+                  <dt>ค่าจัดส่ง</dt>
+                  <dd>
+                    {checkout.order.shippingFee > 0
+                      ? money(checkout.order.shippingFee, checkout.store.currency)
+                      : "ฟรี"}
+                  </dd>
+                </div>
                 <div className={styles.grandTotal}>
                   <dt>ยอดที่ต้องชำระ</dt>
                   <dd>{money(checkout.order.total, checkout.store.currency)}</dd>

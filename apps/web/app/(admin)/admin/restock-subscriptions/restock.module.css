@@ -1,12 +1,13 @@
+/* Compact, operational layout — this page is checked many times a day,
+   so density beats decoration. Colors reuse the app's real tokens
+   (--app-primary / --text-success / --text-warning) instead of a
+   bespoke green/mint/orange palette. */
+
 .page {
-  --restock-ink: #18332b;
-  --restock-green: #237a57;
-  --restock-mint: #dff4e9;
-  --restock-orange: #d46b08;
   display: grid;
   min-width: 0;
-  gap: 18px;
-  padding-bottom: 32px;
+  gap: 12px;
+  padding-bottom: 24px;
 }
 
 .headRow {
@@ -19,41 +20,97 @@
 
 .title {
   margin: 0 0 2px !important;
+  font-size: 18px !important;
 }
 
 .subtitle {
   display: block;
+  font-size: 12px !important;
 }
 
 .metricsGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .metricCard {
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at top right, rgba(35, 122, 87, 0.12), transparent 42%),
-    linear-gradient(180deg, #ffffff, #f7fbf8);
+  border-radius: 10px;
+  background: var(--app-surface, #fff);
+}
+
+.metricCard :global(.ant-card-body) {
+  padding: 10px 12px !important;
+}
+
+.metricLabel {
+  font-size: 11px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
 .metricValue {
-  margin: 6px 0 2px !important;
+  margin: 3px 0 1px !important;
+  font-size: 16.5px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricGood {
+  color: var(--text-success, #059669) !important;
+}
+
+.metricPrimary {
+  color: var(--app-primary, #1677ff) !important;
 }
 
 .metricHint {
-  color: #5a6f68;
-  font-size: 12px;
+  color: var(--app-muted, #64748b);
+  font-size: 10.5px;
+  line-height: 1.35;
 }
 
 .metricsAlert {
-  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+}
+
+.metricsAlert :global(.ant-alert-message) {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.metricsAlert :global(.ant-alert-description) {
+  font-size: 11.5px;
+  color: var(--app-muted, #64748b);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search {
+  width: 100%;
+  max-width: 280px;
+}
+
+.search :global(.ant-input),
+.search :global(.ant-input-affix-wrapper) {
+  font-size: 12.5px;
 }
 
 .tabs {
   display: flex;
-  gap: 8px;
+  gap: 5px;
+  flex-wrap: wrap;
   overflow-x: auto;
   padding-bottom: 2px;
 }
@@ -62,69 +119,98 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 7px 14px;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid var(--app-border, rgba(15, 23, 42, 0.12));
   background: var(--app-surface, #fff);
-  color: var(--app-text, #0f172a);
+  color: var(--app-muted, #64748b);
   cursor: pointer;
 }
 
 .tabActive {
-  background: var(--restock-green);
-  border-color: var(--restock-green);
+  background: var(--app-primary, #1677ff);
+  border-color: var(--app-primary, #1677ff);
   color: #fff;
 }
 
 .tabCount {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  font-size: 10px;
+  background: var(--app-surface-2, #f1f5f9);
+  color: var(--app-text, #0f172a);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.tabActive .tabCount {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
 }
 
 .bulkBar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: #fff4e0;
-  border: 1px solid rgba(146, 98, 10, 0.28);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.28);
 }
 
 .bulkText {
   flex: 1;
   min-width: 200px;
-  color: var(--restock-orange);
+  font-size: 12.5px;
+  color: var(--text-warning, #d97706);
   font-weight: 500;
 }
 
 .queueCard {
   min-width: 0;
-  border-radius: 16px;
+  border-radius: 10px;
 }
 
-.search {
-  width: 100%;
+.queueCard :global(.ant-card-body) {
+  padding: 12px !important;
 }
 
 .resultMeta {
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .smallText {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .available {
-  color: var(--restock-green);
+  color: var(--text-success, #059669);
 }
 
 .clickableRow {
   cursor: pointer;
+}
+
+/* Compact antd Table — desktop queue list */
+.table :global(.ant-table) {
+  font-size: 12.5px;
+}
+
+.table :global(.ant-table-thead > tr > th) {
+  padding: 6px 10px !important;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--app-muted, #64748b);
+  background: transparent;
+}
+
+.table :global(.ant-table-tbody > tr > td) {
+  padding: 8px 10px !important;
 }
 
 .drawerContent {
@@ -133,16 +219,16 @@
 
 .mobileList {
   display: grid;
-  gap: 10px;
+  gap: 7px;
 }
 
 .mobileCard {
   width: 100%;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid #d8dee8;
-  border-radius: 18px;
-  background: #fff;
+  padding: 9px 11px;
+  border: 1px solid var(--app-border, rgba(15, 23, 42, 0.12));
+  border-radius: 10px;
+  background: var(--app-surface, #fff);
   box-shadow: none;
   text-align: left;
 }
@@ -151,113 +237,123 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mobileCustomerBlock,
 .mobileProductBlock {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .mobileIdentityRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .mobileCustomerName {
   display: block;
-  font-size: 15px;
+  font-size: 12.5px !important;
   line-height: 1.25;
   word-break: break-word;
 }
 
 .mobileProductName {
   display: block;
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: 12.5px !important;
+  line-height: 1.3;
   word-break: break-word;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .mobileChannelTag {
   margin-inline-end: 0 !important;
-  padding-inline: 10px;
-  color: #6c7f99;
-  background: #eef2f7;
+  padding-inline: 7px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--app-primary, #1677ff);
+  background: rgba(22, 119, 255, 0.09);
   border-color: transparent;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .mobileStatusPill {
   flex: 0 0 auto;
-  padding: 7px 12px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.4;
   white-space: nowrap;
 }
 
 .statusACTIVE {
-  color: #75839b;
-  background: #eff3f8;
+  color: var(--app-muted, #64748b);
+  background: var(--app-surface-2, #f1f5f9);
 }
 
 .statusREADY_TO_NOTIFY {
-  color: #a36a08;
-  background: #fff1d8;
+  color: var(--text-warning, #d97706);
+  background: rgba(217, 119, 6, 0.14);
 }
 
 .statusNOTIFIED {
-  color: #1d8756;
-  background: #def6e9;
+  color: var(--text-success, #059669);
+  background: rgba(5, 150, 105, 0.12);
 }
 
 .statusPURCHASED {
-  color: #2f6fec;
-  background: #e8f0ff;
+  color: var(--app-primary, #1677ff);
+  background: rgba(22, 119, 255, 0.09);
 }
 
 .statusCANCELLED {
-  color: #c34747;
-  background: #fde9e9;
+  color: var(--text-danger, #dc2626);
+  background: rgba(220, 38, 38, 0.1);
 }
 
 .mobileSummary {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 2px;
-  color: #6f7e95;
-  font-size: 12px;
-  line-height: 1.45;
+  margin-top: 4px;
+  color: var(--app-muted, #64748b);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .mobileSummary span:not(:last-child)::after {
   content: "·";
   margin-left: 4px;
-  color: #a0aabc;
+  color: var(--app-border, #cbd5e1);
 }
 
 .summaryAvailable {
-  color: #1f8b57;
+  color: var(--text-success, #059669);
 }
 
 .mobileMetaLine {
-  margin-top: 4px;
-  color: #48645b;
-  font-size: 12px;
+  margin-top: 3px;
+  color: var(--app-muted, #64748b);
+  font-size: 10.5px;
   line-height: 1.35;
 }
 
 .mobileActions {
   display: flex;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--app-border, rgba(15, 23, 42, 0.12));
+}
+
+.mobileActions :global(.ant-btn) {
+  font-size: 11.5px;
+  height: 28px;
+  padding-inline: 8px;
 }
 
 .mobilePagination {
@@ -265,7 +361,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-top: 6px;
+  padding-top: 4px;
 }
 
 .drawer :global(.ant-drawer-body) {
@@ -273,9 +369,9 @@
 }
 
 .detailLead {
-  padding: 18px;
-  border-radius: 14px;
-  background: linear-gradient(145deg, var(--restock-mint), #f8fbf6);
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--app-surface-2, #f1f5f9);
 }
 
 .detailLead :global(.ant-typography) {
@@ -312,17 +408,17 @@
 
 @media (max-width: 1100px) {
   .metricsGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
   .page {
-    gap: 14px;
+    gap: 10px;
   }
 
   .metricsGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .headRow {
@@ -339,17 +435,16 @@
     width: 100%;
   }
 
+  .search {
+    max-width: none;
+  }
+
   .detailLead {
-    padding: 14px;
+    padding: 12px;
   }
 
   .mobileCardHead {
     align-items: flex-start;
-  }
-
-  .mobileMetaGrid {
-    grid-template-columns: 1fr;
-    gap: 10px;
   }
 
   .mobileActions {
@@ -359,9 +454,6 @@
   .mobileActions :global(.ant-btn) {
     flex: 1 1 0;
     min-width: 0;
-    height: 34px;
-    padding-inline: 8px;
-    font-size: 12px;
   }
 
   .mobilePagination {

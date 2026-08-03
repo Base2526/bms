@@ -811,7 +811,10 @@ export const typeDefs = /* GraphQL */ `
     status: BmsOrderStatus!
     total_amount: Float!
     discount_amount: Float!
+    shipping_fee: Float!
+    amount_due: Float!
     coupon_code: String
+    preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
     created_at: String!
     updated_at: String!
     items: [BmsOrderItem!]!
@@ -1277,6 +1280,7 @@ export const typeDefs = /* GraphQL */ `
     images: [Image!]!
     description: String
     costPrice: Float
+    weightGrams: Int   # น้ำหนักต่อชิ้น (กรัม) — ใช้คิดค่าส่งตามน้ำหนัก (7.47)
     category: String
     brand: String
     variants: [BmsVariant!]!
@@ -1309,6 +1313,7 @@ export const typeDefs = /* GraphQL */ `
     image_urls: [String!]
     description: String
     cost_price: Float
+    weight_grams: Int
     category: String
     brand: String
   }
@@ -2365,6 +2370,12 @@ export const typeDefs = /* GraphQL */ `
     shippingFreeThreshold: Float
     shippingEstDaysMin: Int
     shippingEstDaysMax: Int
+    enabledCarriers: [BmsCarrier!]!   # ขนส่งที่ร้านใช้จริง (ว่าง = ไม่ให้ลูกค้าเลือก) (7.46)
+    shippingMode: String!             # flat | zone | carrier (7.47)
+    shippingOriginProvince: String
+    shippingOriginPostcode: String
+    shippingZoneRates: [BmsShippingZoneRate!]!
+    shippingWeightTiers: [BmsShippingWeightTier!]!
     emailThemeColor: String   # #RRGGBB — สีแบรนด์ในอีเมลแจ้งสถานะออร์เดอร์ (7.20)
     emailFooterText: String   # ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (ไม่บังคับ)
   }
@@ -2400,9 +2411,21 @@ export const typeDefs = /* GraphQL */ `
     shippingFreeThreshold: Float
     shippingEstDaysMin: Int
     shippingEstDaysMax: Int
+    enabledCarriers: [BmsCarrier!]
+    shippingMode: String
+    shippingOriginProvince: String
+    shippingOriginPostcode: String
+    shippingZoneRates: [BmsShippingZoneRateInput!]
+    shippingWeightTiers: [BmsShippingWeightTierInput!]
     emailThemeColor: String
     emailFooterText: String
   }
+
+  # ค่าส่งตามโซนปลายทาง / ขั้นน้ำหนัก (7.47)
+  type BmsShippingZoneRate { zone: String!, fee: Float! }
+  input BmsShippingZoneRateInput { zone: String!, fee: Float! }
+  type BmsShippingWeightTier { maxGrams: Int!, surcharge: Float! }
+  input BmsShippingWeightTierInput { maxGrams: Int!, surcharge: Float! }
 
   # ===== BMS Coupons (โค้ดส่วนลด) =====
   type BmsCoupon {
@@ -2587,7 +2610,7 @@ export const typeDefs = /* GraphQL */ `
     bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
     bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
     bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
-    bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!, couponCode: String): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
+    bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!, couponCode: String, preferredCarrier: BmsCarrier): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
 
     # ===== BMS products & inventory (admin) =====
     bmsUpsertProduct(input: BmsProductInput!): BmsProduct!

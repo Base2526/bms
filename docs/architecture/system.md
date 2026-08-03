@@ -88,6 +88,8 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
 | Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
 | Self Profile & Avatar | ✅ | `/admin/profile` · `bmsMe` / `updateMe` / `uploadAvatar` |
+| Support Tickets | ✅ | `support_tickets` / `support_ticket_comments` · `/support` · `/admin/support-tickets` |
+| Batch & Cron Ops View | ✅ | `lib/bms/operationsSchedule.ts` · `/admin/operations-schedule` |
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
@@ -111,7 +113,8 @@ an actual cron schedule for the three ready-but-unscheduled endpoints (`channels
 - **Tenant role** (Administrator / Manager / Sales / Warehouse) — manages only their own shop.
   Every resolver scopes with `getTenantId(ctx)` + `requirePermission()`.
 
-Users list/CRUD is gated to Administrator/platform (scoped by shop). Role CRUD is platform-only.
+Users list/CRUD is gated to Administrator/platform, but platform admins in drill-down mode are
+treated as tenant-scoped so `/admin/users` only shows the current shop. Role CRUD is platform-only.
 Platform-level pages (Architecture, ENV/Logs/Posts/Files/Queue) are gated server-side in
 `layout.tsx` via `requirePlatformAdminPage()` — not just a hidden menu item.
 

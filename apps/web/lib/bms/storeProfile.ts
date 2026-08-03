@@ -10,6 +10,8 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { isValidShopArchetype } from "./shopArchetypes";
+import { isCarrier, type Carrier } from "./carriers/constants";
+import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 
 export type PaymentAccount = {
   type: string; // BANK / PROMPTPAY / อื่นๆ
@@ -46,6 +48,16 @@ export type StoreProfile = {
   shippingFreeThreshold: number | null;
   shippingEstDaysMin: number | null;
   shippingEstDaysMax: number | null;
+  // Carriers the shop actually uses. Empty = not specified, and the AI must not
+  // offer the customer a carrier choice at all (7.46).
+  enabledCarriers: Carrier[];
+  // How shipping is priced (7.47). 'flat' = pre-7.47 behaviour.
+  shippingMode: "flat" | "zone" | "carrier";
+  shippingOriginProvince: string | null;
+  shippingOriginPostcode: string | null;
+  // [{zone,fee}] / [{maxGrams,surcharge}] — parsed + validated in shippingRates.ts
+  shippingZoneRates: unknown;
+  shippingWeightTiers: unknown;
   emailThemeColor: string | null;  // #RRGGBB — validated at the resolver before it reaches here
   emailFooterText: string | null;  // ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (7.19/7.20)
 };
@@ -64,6 +76,10 @@ const EMPTY: StoreProfile = {
   paymentAccounts: [],
   shippingFlatRate: null, shippingFreeThreshold: null,
   shippingEstDaysMin: null, shippingEstDaysMax: null,
+  enabledCarriers: [],
+  shippingMode: "flat",
+  shippingOriginProvince: null, shippingOriginPostcode: null,
+  shippingZoneRates: [], shippingWeightTiers: [],
   emailThemeColor: null, emailFooterText: null,
 };
 
@@ -78,7 +94,10 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
             about, address, phone, contact_email, website, logo_url, tax_id,
             timezone, country, currency, business_hours, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
-            shipping_est_days_min, shipping_est_days_max, email_theme_color, email_footer_text
+            shipping_est_days_min, shipping_est_days_max, enabled_carriers,
+            shipping_mode, shipping_origin_province, shipping_origin_postcode,
+            shipping_zone_rates, shipping_weight_tiers,
+            email_theme_color, email_footer_text
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -110,6 +129,12 @@ export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
     shippingFreeThreshold: num(r.shipping_free_threshold),
     shippingEstDaysMin: r.shipping_est_days_min ?? null,
     shippingEstDaysMax: r.shipping_est_days_max ?? null,
+    enabledCarriers: Array.isArray(r.enabled_carriers) ? r.enabled_carriers.filter(isCarrier) : [],
+    shippingMode: SHIPPING_MODES.has(r.shipping_mode) ? r.shipping_mode : "flat",
+    shippingOriginProvince: r.shipping_origin_province ?? null,
+    shippingOriginPostcode: r.shipping_origin_postcode ?? null,
+    shippingZoneRates: Array.isArray(r.shipping_zone_rates) ? r.shipping_zone_rates : [],
+    shippingWeightTiers: Array.isArray(r.shipping_weight_tiers) ? r.shipping_weight_tiers : [],
     emailThemeColor: r.email_theme_color ?? null,
     emailFooterText: r.email_footer_text ?? null,
   };
@@ -122,6 +147,7 @@ const BUSINESS_TYPES = new Set(["fashion", "beauty", "food", "electronics", "hom
 const AI_LANGUAGES = new Set(["th", "en", "th-en"]);
 const AI_ORDERING_STYLES = new Set(["catalog_variant", "simple_catalog", "inquiry_first"]);
 const AI_REQUIRED_FIELDS = new Set(["product", "size", "qty"]);
+const SHIPPING_MODES = new Set(["flat", "zone", "carrier"]);
 
 export async function upsertStoreProfile(
   tenantId: string,
@@ -147,6 +173,23 @@ export async function upsertStoreProfile(
   if (merged.aiHandoffAfterFailedTurns < 1 || merged.aiHandoffAfterFailedTurns > 10) {
     throw new Error("จำนวนรอบก่อนส่งต่อแอดมินต้องอยู่ระหว่าง 1–10");
   }
+  // Drop unknown carrier codes rather than throwing — same forgiving filter as aiRequiredFields.
+  merged.enabledCarriers = Array.from(new Set(merged.enabledCarriers ?? [])).filter(isCarrier);
+
+  if (!SHIPPING_MODES.has(merged.shippingMode)) throw new Error("รูปแบบการคิดค่าส่งไม่ถูกต้อง");
+  // Normalize/validate through the same parsers the rate engine uses, so what we store
+  // is exactly what quoteShipping() will accept — no silently-ignored rows in the DB.
+  merged.shippingZoneRates = parseZoneRates(merged.shippingZoneRates);
+  merged.shippingWeightTiers = parseWeightTiers(merged.shippingWeightTiers);
+  if (merged.shippingMode === "zone" && (merged.shippingZoneRates as unknown[]).length === 0) {
+    throw new Error("โหมดคิดค่าส่งตามโซน ต้องตั้งเรตอย่างน้อย 1 โซน");
+  }
+  merged.shippingOriginProvince = normalizeProvince(merged.shippingOriginProvince);
+  if (merged.shippingOriginPostcode != null) {
+    const pc = String(merged.shippingOriginPostcode).trim();
+    if (pc && !/^\d{5}$/.test(pc)) throw new Error("รหัสไปรษณีย์ต้นทางต้องเป็นเลข 5 หลัก");
+    merged.shippingOriginPostcode = pc || null;
+  }
   if (merged.emailThemeColor != null) {
     const color = merged.emailThemeColor.trim();
     if (color && !HEX_COLOR_RE.test(color)) {
@@ -168,8 +211,11 @@ export async function upsertStoreProfile(
         about, address, phone, contact_email, website, logo_url, tax_id,
         timezone, country, currency, business_hours, shipping_policy, return_policy,
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
-        email_theme_color, email_footer_text
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23,$24,$25,$26,$27,$28)
+        enabled_carriers, email_theme_color, email_footer_text,
+        shipping_mode, shipping_origin_province, shipping_origin_postcode,
+        shipping_zone_rates, shipping_weight_tiers
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23,$24,$25,$26,$27,$28,$29,
+               $30,$31,$32,$33::jsonb,$34::jsonb)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -188,6 +234,12 @@ export async function upsertStoreProfile(
         shipping_free_threshold = EXCLUDED.shipping_free_threshold,
         shipping_est_days_min = EXCLUDED.shipping_est_days_min,
         shipping_est_days_max = EXCLUDED.shipping_est_days_max,
+        enabled_carriers = EXCLUDED.enabled_carriers,
+        shipping_mode = EXCLUDED.shipping_mode,
+        shipping_origin_province = EXCLUDED.shipping_origin_province,
+        shipping_origin_postcode = EXCLUDED.shipping_origin_postcode,
+        shipping_zone_rates = EXCLUDED.shipping_zone_rates,
+        shipping_weight_tiers = EXCLUDED.shipping_weight_tiers,
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
@@ -198,7 +250,9 @@ export async function upsertStoreProfile(
         merged.businessHours, merged.shippingPolicy, merged.returnPolicy,
         JSON.stringify(merged.paymentAccounts ?? []),
         merged.shippingFlatRate, merged.shippingFreeThreshold, merged.shippingEstDaysMin, merged.shippingEstDaysMax,
-        merged.emailThemeColor, merged.emailFooterText,
+        merged.enabledCarriers, merged.emailThemeColor, merged.emailFooterText,
+        merged.shippingMode, merged.shippingOriginProvince, merged.shippingOriginPostcode,
+        JSON.stringify(merged.shippingZoneRates ?? []), JSON.stringify(merged.shippingWeightTiers ?? []),
       ]
     );
     await client.query("COMMIT");
@@ -211,40 +265,6 @@ export async function upsertStoreProfile(
   }
 }
 
-export type ShippingEstimate = {
-  configured: boolean;
-  fee: number | null;
-  currency: string;
-  freeThreshold: number | null;
-  freeShippingApplied: boolean;
-  estDaysMin: number | null;
-  estDaysMax: number | null;
-  note: string;
-};
-
-/** ประเมินค่าส่ง/ระยะเวลาจาก config ของร้าน (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ) */
-export async function estimateShipping(tenantId: string, subtotal?: number | null): Promise<ShippingEstimate> {
-  const p = await getStoreProfile(tenantId);
-  const flat = p.shippingFlatRate;
-  const threshold = p.shippingFreeThreshold;
-  const configured = flat != null || threshold != null || p.shippingEstDaysMin != null;
-
-  let fee = flat;
-  let free = false;
-  if (threshold != null && subtotal != null && subtotal >= threshold) {
-    fee = 0;
-    free = true;
-  }
-  return {
-    configured,
-    fee: fee ?? null,
-    currency: p.currency || "THB",
-    freeThreshold: threshold,
-    freeShippingApplied: free,
-    estDaysMin: p.shippingEstDaysMin,
-    estDaysMax: p.shippingEstDaysMax,
-    note: configured
-      ? "ประเมินจากค่าส่งเหมาที่ร้านตั้งไว้ (ยังไม่ผูก carrier API จริง)"
-      : "ร้านยังไม่ได้ตั้งค่าส่ง",
-  };
-}
+// ค่าส่งย้ายไปคิดที่ lib/bms/shippingRates.ts (quoteShipping) ตั้งแต่ 7.47 — จุดเดียว
+// ที่รู้เรื่องโซน/น้ำหนัก/carrier ห้ามคำนวณค่าส่งซ้ำในไฟล์นี้อีก ไม่งั้นจะได้ตัวเลข
+// คนละชุดระหว่างที่โชว์ลูกค้ากับที่เก็บเงินจริง

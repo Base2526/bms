@@ -48,6 +48,8 @@ type Order = {
   status: OrderStatus;
   total_amount: number;
   discount_amount: number;
+  shipping_fee: number;
+  amount_due: number;
   coupon_code: string | null;
   created_at: string;
   updated_at: string;
@@ -59,7 +61,7 @@ type Order = {
 const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
-      id channel customer_ref status total_amount discount_amount coupon_code created_at updated_at hasShippingAddress
+      id channel customer_ref status total_amount discount_amount shipping_fee amount_due coupon_code created_at updated_at hasShippingAddress
       items { product_sku size qty unit_price }
     }
   }
@@ -204,10 +206,15 @@ function OrdersManagement() {
         render: (c: string | null) => c || <span style={{ color: "#999" }}>—</span> },
       { title: "Items", key: "items",
         render: (_: any, r: Order) => <span>{r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / {r.items.length} รายการ</span> },
-      { title: "Total", dataIndex: "total_amount", key: "total", width: 110, align: "right" as const,
+      { title: "ยอดชำระ", dataIndex: "amount_due", key: "amount_due", width: 130, align: "right" as const,
         render: (v: number, r: Order) => (
           <Space direction="vertical" size={0} style={{ textAlign: "right" }}>
             <Typography.Text>{money(v)}</Typography.Text>
+            {Number(r.shipping_fee || 0) > 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                รวมค่าส่ง {money(r.shipping_fee)}
+              </Typography.Text>
+            )}
             {Number(r.discount_amount || 0) > 0 && (
               <Typography.Text type="danger" style={{ fontSize: 11 }}>
                 -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}
@@ -302,9 +309,15 @@ function OrderDetails({ order: r }: { order: Order }) {
                 <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>
               </div>
             )}
+            {Number(r.shipping_fee || 0) > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                <Typography.Text type="secondary">ค่าส่ง</Typography.Text>
+                <Typography.Text>{money(r.shipping_fee)}</Typography.Text>
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px solid var(--app-border, #eee)", paddingTop: 6 }}>
-              <Typography.Text strong>ยอดรวมสุทธิ</Typography.Text>
-              <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
+              <Typography.Text strong>ยอดชำระสุทธิ</Typography.Text>
+              <Typography.Text strong>{money(r.amount_due)}</Typography.Text>
             </div>
           </Space>
         </div>
@@ -329,10 +342,15 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
         { label: "ลูกค้า", value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
         { label: "รายการ", value: `${r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / ${r.items.length} รายการ` },
         {
-          label: "ยอดรวม",
+          label: "ยอดชำระ",
           value: (
             <>
-              <Typography.Text strong>{money(r.total_amount)}</Typography.Text>
+              <Typography.Text strong>{money(r.amount_due)}</Typography.Text>
+              {Number(r.shipping_fee || 0) > 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                  รวมค่าส่ง {money(r.shipping_fee)}
+                </Typography.Text>
+              )}
               {Number(r.discount_amount || 0) > 0 && (
                 <Typography.Text type="danger" style={{ fontSize: 11, display: "block" }}>
                   -{money(r.discount_amount)} {r.coupon_code ? `(${r.coupon_code})` : ""}

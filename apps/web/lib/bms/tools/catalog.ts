@@ -31,8 +31,11 @@ import {
   type SellableProduct,
 } from "../products";
 import { checkStock } from "../stock";
+import { CARRIER_CODES } from "../carriers/constants";
+import { quoteShipping } from "../shippingRates";
 import {
   createOrder,
+  recalculateOrderShipping,
   reorderFromOrder,
   getOrderJourney,
   listCustomerOrderStatuses,
@@ -68,7 +71,7 @@ import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
-import { getStoreProfile, estimateShipping } from "../storeProfile";
+import { getStoreProfile } from "../storeProfile";
 import {
   configuredPaymentAccounts,
   supportsCustomerPaymentMethod,
@@ -842,6 +845,11 @@ const createOrderTool: BmsTool = {
       channel: { type: "string", description: "Channel (staff surface only, default web)." },
       customerRef: { type: "string", description: "Customer reference (staff surface only)." },
       couponCode: { type: "string", description: "Discount code, if the customer gave one." },
+      preferredCarrier: {
+        type: "string",
+        description:
+          "Carrier the customer asked for. Only pass a code listed in get_store_info's enabledCarriers, and only if the customer named one — never guess. This is a preference the shop confirms at packing time, not a guarantee, and it does not change the shipping fee.",
+      },
     },
     required: ["items"],
   },
@@ -852,6 +860,22 @@ const createOrderTool: BmsTool = {
         ? ec.channel ?? "web"
         : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel) ?? "web";
     const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+
+    // A carrier preference is only accepted if the shop actually uses that carrier —
+    // otherwise reject the argument so the model asks again instead of recording a
+    // preference the shop can never honour.
+    const requestedCarrier = enumVal(args, "preferredCarrier", CARRIER_CODES, false);
+    if (requestedCarrier) {
+      const { enabledCarriers } = await getStoreProfile(ec.tenantId);
+      if (!enabledCarriers.includes(requestedCarrier)) {
+        throw new ToolArgError(
+          enabledCarriers.length
+            ? `ร้านนี้ส่งได้เฉพาะ: ${enabledCarriers.join(", ")}`
+            : "ร้านนี้ยังไม่ได้ระบุขนส่งที่ใช้ อย่าเสนอตัวเลือกขนส่งให้ลูกค้า"
+        );
+      }
+    }
+
     const r = await createOrder({
       tenantId: ec.tenantId,
       channel,
@@ -859,6 +883,7 @@ const createOrderTool: BmsTool = {
       items,
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       couponCode: optString(args, "couponCode") ?? null,
+      preferredCarrier: requestedCarrier ?? null,
     });
     if (r.status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = r.orderId;
@@ -907,6 +932,15 @@ const saveCustomerCheckoutDetailsTool: BmsTool = {
         type: "string",
         description: "Optional label such as home or office, only when the customer supplied it.",
       },
+      province: {
+        type: "string",
+        description:
+          "Destination province, only when the customer stated it. Used to price shipping by zone — never infer it from the address yourself.",
+      },
+      postcode: {
+        type: "string",
+        description: "5-digit destination postcode, only when the customer stated it.",
+      },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
@@ -922,13 +956,19 @@ const saveCustomerCheckoutDetailsTool: BmsTool = {
         phone: optString(args, "phone") ?? null,
         shippingAddress: optString(args, "shippingAddress") ?? null,
         addressLabel: optString(args, "addressLabel") ?? null,
+        province: optString(args, "province") ?? null,
+        postcode: optString(args, "postcode") ?? null,
       }
     );
+    // ที่อยู่/จังหวัดเพิ่งมาถึง → คิดค่าส่งของออร์เดอร์ที่ยังไม่จ่ายใหม่ (7.47)
+    if (saved.customerId) await recalculateOrderShipping(ec.tenantId, saved.customerId);
     await auditWrite(ec, "customer.checkout_update", saved.customerId, {
       fields: [
         optString(args, "recipientName") ? "recipientName" : null,
         optString(args, "phone") ? "phone" : null,
         optString(args, "shippingAddress") ? "shippingAddress" : null,
+        optString(args, "province") ? "province" : null,
+        optString(args, "postcode") ? "postcode" : null,
       ].filter(Boolean),
     });
     return { ok: true, data: saved.status };
@@ -1522,6 +1562,13 @@ const getStoreInfoTool: BmsTool = {
         contactEmail: p.contactEmail, website: p.website,
         country: p.country, timezone: p.timezone,
         businessHours: p.businessHours, shippingPolicy: p.shippingPolicy, returnPolicy: p.returnPolicy,
+        // Carriers the shop uses. Empty = do not offer the customer any carrier choice.
+        // Picking one does not change the fee or delivery estimate (no carrier API is wired up),
+        // and the shop confirms the real carrier at packing time.
+        enabledCarriers: p.enabledCarriers,
+        carrierChoiceNote: p.enabledCarriers.length
+          ? "ลูกค้าเลือกขนส่งได้จากรายการนี้ แต่เป็นความต้องการเบื้องต้น ร้านยืนยันอีกครั้งตอนแพ็คของ และไม่มีผลกับค่าส่ง"
+          : "ร้านยังไม่ได้ระบุขนส่งที่ใช้ — อย่าเสนอให้ลูกค้าเลือกขนส่ง",
       },
     };
   },
@@ -1549,7 +1596,9 @@ const getPaymentInfoTool: BmsTool = {
 const getShippingEstimateTool: BmsTool = {
   name: "get_shipping_estimate",
   description:
-    "Estimate shipping cost and delivery time from the rates the shop configured. Pass the order subtotal so any free-shipping threshold is applied.",
+    "Estimate shipping cost and delivery time from the rates the shop configured. Pass the order subtotal so any free-shipping threshold is applied, " +
+    "and pass province when the customer has stated their destination so the zone rate is used instead of the shop's flat rate. " +
+    "Read `warnings` before answering: if it says the province was guessed or product weights are missing, tell the customer the fee is an estimate to be confirmed.",
   surfaces: ["customer", "staff"],
   inputSchema: {
     type: "object",
@@ -1558,11 +1607,38 @@ const getShippingEstimateTool: BmsTool = {
         type: "number",
         description: "Order subtotal, if known, used to check free shipping.",
       },
+      province: {
+        type: "string",
+        description: "Destination province, only when the customer stated it. Never invent one.",
+      },
+      items: {
+        type: "array",
+        description: "Line items, if known, so parcel weight can be summed for weight-based rates.",
+        items: {
+          type: "object",
+          properties: { sku: { type: "string" }, qty: { type: "integer" } },
+          required: ["sku", "qty"],
+        },
+      },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const subtotal = typeof args.subtotal === "number" ? args.subtotal : null;
-    return { ok: true, data: await estimateShipping(ec.tenantId, subtotal) };
+    const rawItems = Array.isArray(args.items) ? args.items : null;
+    const items = rawItems
+      ? rawItems
+          .map((r: any) => ({ sku: String(r?.sku ?? "").trim(), qty: Number(r?.qty) || 1 }))
+          .filter((r) => r.sku)
+      : null;
+    return {
+      ok: true,
+      data: await quoteShipping({
+        tenantId: ec.tenantId,
+        subtotal,
+        province: optString(args, "province") ?? null,
+        items: items && items.length ? items : null,
+      }),
+    };
   },
 };
 

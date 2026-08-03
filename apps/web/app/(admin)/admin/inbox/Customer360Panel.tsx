@@ -17,6 +17,7 @@ import {
   PlusOutlined, MinusCircleOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
+import panelStyles from "./customer360.module.css";
 
 const { Text, Paragraph } = Typography;
 
@@ -138,14 +139,16 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
   ];
   return (
     <div>
-      <Space align="start">
-        <Avatar size={48} icon={<UserOutlined />} />
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>ID: {c.id}</Text>
+      {/* ขนาดพวกนี้ต้องกำหนดตรงนี้ ไม่ใช่ที่ customer360.module.css — inline style/prop
+          ชนะ CSS module เสมอ (เคยพลาดตอนย่อ panel รอบแรก แล้วชื่อ/avatar ไม่เล็กลงจริง) */}
+      <Space align="start" size={8}>
+        <Avatar size={34} icon={<UserOutlined />} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 12.5, lineHeight: 1.25 }}>{c.name}</div>
+          <Text type="secondary" style={{ fontSize: 9.5 }}>ID: {c.id}</Text>
         </div>
       </Space>
-      <div style={{ margin: "8px 0" }}>
+      <div style={{ margin: "6px 0" }}>
         <Space size={4} wrap>
           {tagBadges.map((t) => <Tag key={t.label} color={t.color}>{t.label}</Tag>)}
           {(c.tags || []).filter((t: string) => t !== "VIP" && t !== "Fraud Risk").map((t: string) => <Tag key={t}>{t}</Tag>)}
@@ -239,11 +242,11 @@ function RecentOrdersSection({
         <List.Item
           style={{
             display: "block",
-            padding: 10,
-            marginBottom: 8,
-            borderRadius: 12,
+            padding: 7,
+            marginBottom: 5,
+            borderRadius: 9,
             border: selectedOrderId === o.id ? "1px solid rgba(22,119,255,0.35)" : "1px solid rgba(15,23,42,0.08)",
-            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "#fff",
+            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "var(--app-surface, #fff)",
           }}
         >
           <Space size={4} wrap style={{ marginBottom: 2 }}>
@@ -402,23 +405,35 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
   const subtotal = orderSubtotal(draftOrder);
   return (
     <div>
-      <List size="small" dataSource={draftOrder.items} renderItem={(it: any) => (
-        <List.Item>
-          <Text style={{ fontSize: 12 }}>{it.sku} ({it.size}) × {it.qty} · {money(it.unitPrice * it.qty)}</Text>
-        </List.Item>
-      )} />
-      {Number(draftOrder.discountAmount || 0) > 0 && (
-        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>ยอดสินค้า {money(subtotal)}</Text>
-          <Text type="danger" style={{ fontSize: 12 }}>
-            ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""} -{money(draftOrder.discountAmount)}
-          </Text>
+      {/* รายการ/ราคาเรียงเป็นคอลัมน์ (ชื่อซ้าย ราคาขวา) แทนบรรทัดเดียวคั่นด้วย · —
+          กวาดตาหาราคาได้เร็วกว่าเวลามีหลายรายการ */}
+      {draftOrder.items?.map((it: any) => (
+        <div key={`${it.sku}-${it.size}`} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "2px 0" }}>
+          <Text style={{ fontSize: 11.5, minWidth: 0, flex: 1 }}>{it.sku} ({it.size}) × {it.qty}</Text>
+          <Text style={{ fontSize: 11.5, fontWeight: 600, flexShrink: 0 }}>{money(it.unitPrice * it.qty)}</Text>
         </div>
+      ))}
+      {Number(draftOrder.discountAmount || 0) > 0 && (
+        <>
+          <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>ยอดสินค้า</Text>
+            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{money(subtotal)}</Text>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>
+              ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""}
+            </Text>
+            <Text type="danger" style={{ fontSize: 11, flexShrink: 0 }}>-{money(draftOrder.discountAmount)}</Text>
+          </div>
+        </>
       )}
-      <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Text strong style={{ fontSize: 12 }}>รวมสุทธิ {money(draftOrder.totalAmount)}</Text>
-        <Link href={`/admin/orders?highlight=${draftOrder.id}`}><Button size="small" icon={<ShoppingOutlined />}>เปิด Draft Order</Button></Link>
+      <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--app-border, rgba(15,23,42,0.12))", display: "flex", alignItems: "baseline", gap: 8 }}>
+        <Text strong style={{ fontSize: 12, minWidth: 0, flex: 1 }}>รวมสุทธิ</Text>
+        <Text strong style={{ fontSize: 13, flexShrink: 0 }}>{money(draftOrder.totalAmount)}</Text>
       </div>
+      <Link href={`/admin/orders?highlight=${draftOrder.id}`} style={{ display: "block", marginTop: 7 }}>
+        <Button size="small" block icon={<ShoppingOutlined />}>เปิด Draft Order</Button>
+      </Link>
     </div>
   );
 }
@@ -445,9 +460,9 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
       size="small"
       dataSource={coupons}
       renderItem={(coupon: any) => (
-        <List.Item style={{ display: "block", padding: 10 }}>
-          <Space size={6} wrap style={{ marginBottom: 4 }}>
-            <Text strong>{coupon.code}</Text>
+        <List.Item style={{ display: "block", padding: 7 }}>
+          <Space size={5} wrap style={{ marginBottom: 3 }}>
+            <Text strong style={{ fontSize: 12 }}>{coupon.code}</Text>
             <Tag color={couponStateColor[coupon.state] || "default"}>{couponStateLabel[coupon.state] || coupon.state}</Tag>
             {coupon.available ? <Tag color="green">พร้อมใช้</Tag> : <Tag color="default">ยังใช้ไม่ได้</Tag>}
           </Space>
@@ -849,13 +864,13 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
   }
 
   return (
-    <div style={{
-      width: 320, maxWidth: "32vw", flexShrink: 0, minHeight: 0, minWidth: 280, overflowY: "auto", overflowX: "hidden",
-      border: "1px solid var(--app-border, #eee)", borderRadius: 8, padding: 10,
+    <div className={panelStyles.panel} style={{
+      width: 292, maxWidth: "30vw", flexShrink: 0, minHeight: 0, minWidth: 260, overflowY: "auto", overflowX: "hidden",
+      border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: 8,
       position: "sticky", top: 0, height: "100%",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <Text strong style={{ fontSize: 13 }}>ข้อมูลลูกค้า (Customer 360)</Text>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <Text strong style={{ fontSize: 12 }}>ข้อมูลลูกค้า (Customer 360)</Text>
         <Space size={4}>
           {conv?.id && can("coupon.manage") && (
             <Button size="small" onClick={() => setAssignCouponOpen(true)}>แจกคูปอง</Button>
