@@ -32,6 +32,9 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 
 - `docker-compose.dev.yml` ต้อง mount `web_next_cache` ที่ `/app/apps/web/.next` และ
   `web_node_modules` ที่ `/app/apps/web/node_modules` แยกจาก bind mount ของ source code
+- dev compose จะรัน `npm ci` เฉพาะตอน `node_modules/.package-lock.json` ยังไม่มีใน volume เพื่อให้ start
+  รอบถัดไปเร็วขึ้น; ถ้าเปลี่ยน dependency/package-lock แล้ว dependency ใน container ไม่ตรง ให้ recreate
+  เฉพาะ node_modules volume หรือ exec เข้า container ไปรัน `npm ci` ใหม่
 - ถ้า Docker Next dev กับ host Next dev เขียน `.next` ชุดเดียวกัน manifest ของ App Router จะปนกัน
   และทุก route อาจพังด้วย `Cannot read properties of undefined (reading 'clientModules')`
 - `node_modules` ก็ห้ามแชร์ระหว่าง Linux container กับ macOS เพราะ native package เช่น `esbuild`
@@ -47,12 +50,19 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **Admin UI** → `apps/web/app/(admin)/admin/*/page.tsx` + เมนูซ้าย `components/AdminSidebar.tsx`
   (`Sider` ย่อ/ขยายได้ จำสถานะใน `localStorage` — โปรไฟล์/Logout ปักล่างสุดของ sidebar ไม่มี header แถวบนแล้ว)
   · เมนูจัดลำดับตามความถี่ใช้จริง: **Inbox เป็น top-level** (ไม่ฝังใน submenu ร้านค้าแล้ว) พร้อม badge unread
-  (`bmsInboxUnreadCount`, poll 15s ที่ sidebar เอง เพราะติดทุกหน้า ไม่ใช่แค่หน้า Inbox — Sales เห็นแค่ของตัวเอง
+  (`bmsInboxUnreadCount`, poll 30s ที่ sidebar เอง เพราะติดทุกหน้า ไม่ใช่แค่หน้า Inbox — Sales เห็นแค่ของตัวเอง
   ตาม scope เดียวกับ `bmsConversations`) · Reports ย้ายลงมาหลังกลุ่มร้านค้า · คู่มือย้ายไปแถบล่างสุดคู่โปรไฟล์
   (ใช้ไม่บ่อย ไม่ควรแย่งที่ top-level)
   · `/admin/inbox/realtime-diagnostics` อยู่ในกลุ่ม SaaS และเปิดให้เฉพาะ Administrator/platform admin: `Emit`
   ทดสอบ Redis/WebSocket signal อย่างเดียว (ไม่เขียน DB, ไม่ควรเห็นแชทใหม่), `Create Msg` สร้างข้อความ diagnostic
   ใน Inbox จริง (`diagnostic:{channel}:{adminId}`) โดยไม่เรียก AI pipeline และไม่ส่งออก platform
+- ถ้า admin local ยังรู้สึกหน่วง ให้เช็ค 3 ชั้นนี้ก่อน: (1) Network tab ว่า `/graphql` ยิงซ้ำจาก shell หรือไม่,
+  (2) WebSocket tab ว่าหน้า `/admin/*` ไม่ควรเปิด `GlobalChatListener` ของ chat หลัก, และ (3) Postgres slow
+  query จาก dashboard/badge read path. Migration `7.49__bms_admin_read_path_indexes.sql` เพิ่ม index สำหรับ
+  dashboard, unread badge, AI failure summary, และ payment/order alerts แล้ว.
+- บนเครื่องพื้นที่เหลือน้อย ให้ดูขนาด `apps/web/.next`, `apps/web/node_modules`, และ Docker volumes ด้วย
+  (`df -h .`, `du -sh apps/web/.next apps/web/node_modules`). โปรเจกต์นี้จงใจแยก host cache กับ Docker cache
+  เพื่อกัน native package/Next manifest ปนกัน จึงใช้พื้นที่มากกว่าหนึ่งชุดเป็นปกติ.
   · **เมนูที่มี badge (`link(..., badge, collapsed)`) ต้องส่ง `collapsed` มาด้วยเสมอ** — ถ้าลืม (ค่า default
   เป็น `false`) label จะ render เป็น flex+pill layout เสมอ ซึ่งพอ sidebar ย่อจริงแล้วเปิดเป็น submenu flyout
   popup, span ข้อความจะยุบเหลือ 0 (overflow:hidden) → hover ไม่เห็นตัวหนังสือเลย (เจอที่เมนู Users เพราะลืมส่ง

@@ -1,9 +1,9 @@
 services:
   ws:
     command: >
-      sh -c "npm ci &&
-             npm --prefix ../../packages/realtime ci &&
-             npm --prefix ../../packages/graphql-core ci &&
+      sh -c "test -f node_modules/.package-lock.json || npm ci &&
+             test -f ../../packages/realtime/node_modules/.package-lock.json || npm --prefix ../../packages/realtime ci &&
+             test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci &&
              npm run dev"
     environment:
       NODE_ENV: development
@@ -15,8 +15,8 @@ services:
 
   web:
     command: >
-      sh -c "npm ci && 
-             npm --prefix ../../packages/social-queue ci &&
+      sh -c "test -f node_modules/.package-lock.json || npm ci &&
+             test -f ../../packages/social-queue/node_modules/.package-lock.json || npm --prefix ../../packages/social-queue ci &&
              npm run dev"
     environment:
       NODE_ENV: development
@@ -60,7 +60,7 @@ services:
     #          npm run worker:social"
     # command: npm run worker:social
     working_dir: /app/apps/web
-    command: sh -c "npm ci && npm run worker:social"
+    command: sh -c "test -f node_modules/.package-lock.json || npm ci && npm run worker:social"
     volumes:
       - .:/app
       - /app/apps/web/node_modules

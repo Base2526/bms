@@ -11,7 +11,7 @@ const Q_ACTING = gql`query { bmsActingTenant { id name slug } }`;
 const M_EXIT = gql`mutation { bmsExitTenant }`;
 
 function ImpersonationBanner() {
-  const { data } = useQuery(Q_ACTING, { fetchPolicy: "cache-and-network" });
+  const { data } = useQuery(Q_ACTING, { fetchPolicy: "cache-first" });
   const [exit, { loading }] = useMutation(M_EXIT, {
     onCompleted: () => { window.location.href = "/admin/tenants"; },
   });
