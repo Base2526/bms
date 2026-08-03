@@ -20,7 +20,11 @@ export async function getDashboard(tenantId: string) {
       query(
         `SELECT
            COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($1)), 0) AS revenue_total,
-           COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($1) AND created_at::date = current_date), 0) AS revenue_today,
+           COALESCE(SUM(total_amount) FILTER (
+             WHERE status = ANY($1)
+               AND created_at >= current_date
+               AND created_at < current_date + interval '1 day'
+           ), 0) AS revenue_today,
            COUNT(*) AS order_count
          FROM bms_orders WHERE tenant_id = $2`,
         [PAID, tenantId]
@@ -60,7 +64,10 @@ export async function getDashboard(tenantId: string) {
                 COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($1)), 0) AS revenue,
                 COUNT(o.id) FILTER (WHERE o.status = ANY($1))::int AS orders
            FROM generate_series(current_date - 6, current_date, interval '1 day') d
-           LEFT JOIN bms_orders o ON o.created_at::date = d::date AND o.tenant_id = $2
+           LEFT JOIN bms_orders o
+             ON o.tenant_id = $2
+            AND o.created_at >= d
+            AND o.created_at < d + interval '1 day'
           GROUP BY day ORDER BY day`,
         [PAID, tenantId]
       ),

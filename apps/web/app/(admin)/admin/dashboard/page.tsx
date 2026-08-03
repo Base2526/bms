@@ -179,22 +179,22 @@ function TriageRow({
 }
 
 export default function Page() {
-  const { data, loading, error, refetch } = useQuery(Q_DASH, { fetchPolicy: "cache-and-network" });
+  const { data, loading, error, refetch } = useQuery(Q_DASH, { fetchPolicy: "cache-first" });
   const d = data?.bmsDashboard;
-  const { data: channelsData } = useQuery(Q_CHANNELS, { fetchPolicy: "cache-and-network", pollInterval: 30000 });
+  const { data: channelsData } = useQuery(Q_CHANNELS, { fetchPolicy: "cache-first", pollInterval: 60000 });
   const cfgByChannel: Record<string, any> = Object.fromEntries((channelsData?.bmsChannels || []).map((c: any) => [c.channel, c]));
   const healthByChannel: Record<string, any> = Object.fromEntries((channelsData?.bmsChannelHealth || []).map((h: any) => [h.channel, h]));
   const channelStates = CHANNEL_ORDER.map((key) => ({ key, ...channelState(cfgByChannel[key], healthByChannel[key]) }));
   const brokenChannels = channelStates.filter((c) => c.tone === "bad");
 
-  const { data: aiData } = useQuery(Q_AI, { fetchPolicy: "cache-and-network" });
+  const { data: aiData } = useQuery(Q_AI, { fetchPolicy: "cache-first" });
   const aiUsage = aiData?.bmsAiUsage;
   const aiHasKey = aiData?.bmsAiConfig?.has_key;
   const aiOverLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.remaining === 0;
   const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
-  const { data: alertsData } = useQuery(Q_ALERTS, { fetchPolicy: "cache-and-network", pollInterval: 60000 });
+  const { data: alertsData } = useQuery(Q_ALERTS, { fetchPolicy: "cache-first", pollInterval: 120000 });
   const alerts = alertsData?.bmsOperationalAlerts;
-  const { data: aiFailureData } = useQuery(Q_AI_FAILURES, { fetchPolicy: "cache-and-network", pollInterval: 60000 });
+  const { data: aiFailureData } = useQuery(Q_AI_FAILURES, { fetchPolicy: "cache-first", pollInterval: 120000 });
   const aiFailure = aiFailureData?.bmsAiFailureSummary;
   const aiFailureRate = aiFailure?.totalToolCalls
     ? Math.round((aiFailure.errorCalls / aiFailure.totalToolCalls) * 1000) / 10

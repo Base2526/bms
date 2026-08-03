@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 
 import { SessionProvider, useSessionCtx } from "@/lib/session-context";
 import { GlobalChatListener } from "@/components/GlobalChatListener";
@@ -10,8 +11,10 @@ import { GlobalFailureNotifier } from "@/components/GlobalFailureNotifier";
 
 // Keep these global wires out of the auth routes.
 function GlobalWiresWrapper() {
+  const pathname = usePathname() || "";
   const { user, admin } = useSessionCtx();
   const meId = user?.id || admin?.id;
+  const isAdminRoute = pathname.startsWith("/admin");
 
   React.useEffect(() => {
     const frontendLogout = () => (window.location.href = "/login");
@@ -28,7 +31,7 @@ function GlobalWiresWrapper() {
 
   return (
     <>
-      {meId ? <GlobalChatListener /> : null}
+      {meId && !isAdminRoute ? <GlobalChatListener /> : null}
       {admin?.id ? <GlobalInboxNotifier /> : null}
       {admin?.id ? <GlobalMentionNotifier /> : null}
       {admin?.id ? <GlobalFailureNotifier /> : null}

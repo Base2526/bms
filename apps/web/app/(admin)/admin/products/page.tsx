@@ -1,5 +1,5 @@
 'use client';
-import { gql, useQuery, useMutation } from "@apollo/client";
+import { gql, useLazyQuery, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
   Button,
@@ -214,7 +214,7 @@ function ProductsManagement() {
     variables: { search: search || null, category: categoryFilter || null, limit: pageSize, offset: (page - 1) * pageSize },
     fetchPolicy: "cache-and-network",
   });
-  const { data: catData, refetch: refetchCategories } = useQuery(Q_CATEGORIES, { fetchPolicy: "cache-and-network" });
+  const { data: catData, refetch: refetchCategories } = useQuery(Q_CATEGORIES, { fetchPolicy: "cache-first" });
   const { data: lowData, refetch: refetchLow } = useQuery(Q_LOW, {
     fetchPolicy: "cache-and-network",
   });
@@ -856,9 +856,8 @@ function ProductDetail({
     onCompleted: () => { message.success("ตั้งจุดแจ้งเตือนแล้ว"); onChanged(); },
     onError: onErr,
   });
-  const { data: movesData, refetch: refetchMoves } = useQuery(Q_MOVEMENTS, {
-    variables: { sku: product.sku },
-    fetchPolicy: "cache-and-network",
+  const [loadMoves, { data: movesData, loading: movesLoading, called: movesCalled, refetch: refetchMoves }] = useLazyQuery(Q_MOVEMENTS, {
+    fetchPolicy: "cache-first",
   });
 
   const [newSize, setNewSize] = useState<string | undefined>();
@@ -884,14 +883,17 @@ function ProductDetail({
   );
   const moves: Movement[] = movesData?.bmsStockMovements || [];
   const visibleMoves = historyExpanded ? moves : moves.slice(0, 4);
+  const ensureMovesLoaded = useCallback(() => {
+    if (!movesCalled) void loadMoves({ variables: { sku: product.sku } });
+  }, [loadMoves, movesCalled, product.sku]);
 
   const runAdjust = useCallback(async (size: string, delta: number, successText = "ปรับสต็อกแล้ว") => {
     if (!delta) return;
     await adjustStockMut({ variables: { sku: product.sku, size, delta } });
     message.success(successText);
     onChanged();
-    refetchMoves();
-  }, [adjustStockMut, onChanged, product.sku, refetchMoves]);
+    if (movesCalled) void refetchMoves?.({ sku: product.sku });
+  }, [adjustStockMut, movesCalled, onChanged, product.sku, refetchMoves]);
 
   const openBulkAdjust = () => {
     setBulkDraft(
@@ -1178,9 +1180,15 @@ function ProductDetail({
           <Typography.Text strong style={{ fontSize: 18 }}>
             <HistoryOutlined /> ประวัติการเคลื่อนไหว
           </Typography.Text>
-          {moves.length > 4 && (
-            <Button type="link" onClick={() => setHistoryExpanded((prev) => !prev)}>
-              {historyExpanded ? "ย่อรายการ" : "ดูทั้งหมด"}
+          {movesCalled ? (
+            moves.length > 4 && (
+              <Button type="link" onClick={() => setHistoryExpanded((prev) => !prev)}>
+                {historyExpanded ? "ย่อรายการ" : "ดูทั้งหมด"}
+              </Button>
+            )
+          ) : (
+            <Button type="link" icon={<HistoryOutlined />} onClick={ensureMovesLoaded}>
+              โหลดประวัติ
             </Button>
           )}
         </div>
@@ -1190,9 +1198,10 @@ function ProductDetail({
           dataSource={visibleMoves}
           columns={moveCols}
           size="small"
+          loading={movesLoading}
           scroll={{ x: "max-content" }}
           pagination={false}
-          locale={{ emptyText: "ยังไม่มีประวัติ" }}
+          locale={{ emptyText: movesCalled ? "ยังไม่มีประวัติ" : "กดโหลดประวัติเพื่อดูรายการเคลื่อนไหวล่าสุด" }}
         />
       </div>
 
@@ -1243,7 +1252,7 @@ function ProductDetail({
             message.success(`ปรับสต็อก ${entries.length} ไซซ์แล้ว`);
             setBulkOpen(false);
             onChanged();
-            refetchMoves();
+            if (movesCalled) void refetchMoves?.({ sku: product.sku });
           } catch (error: any) {
             onErr(error);
           } finally {

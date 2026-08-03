@@ -30,7 +30,8 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
               COUNT(*)::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1 AND status = ANY($2)
-          AND created_at::date BETWEEN $3 AND $4`,
+          AND created_at >= $3::date
+          AND created_at < $4::date + interval '1 day'`,
       [tenantId, PAID, r.from, r.to]
     ),
     query(
@@ -39,14 +40,18 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
               COUNT(o.id) FILTER (WHERE o.status = ANY($2))::int AS orders
          FROM generate_series($3::date, $4::date, interval '1 day') d
          LEFT JOIN bms_orders o
-           ON o.created_at::date = d::date AND o.tenant_id = $1
+           ON o.tenant_id = $1
+          AND o.created_at >= d
+          AND o.created_at < d + interval '1 day'
         GROUP BY day ORDER BY day`,
       [tenantId, PAID, r.from, r.to]
     ),
     query(
       `SELECT status, COUNT(*)::int AS count
          FROM bms_orders
-        WHERE tenant_id = $1 AND created_at::date BETWEEN $2 AND $3
+        WHERE tenant_id = $1
+          AND created_at >= $2::date
+          AND created_at < $3::date + interval '1 day'
         GROUP BY status ORDER BY count DESC`,
       [tenantId, r.from, r.to]
     ),
@@ -55,7 +60,9 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
               COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
               COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
          FROM bms_orders
-        WHERE tenant_id = $1 AND created_at::date BETWEEN $3 AND $4
+        WHERE tenant_id = $1
+          AND created_at >= $3::date
+          AND created_at < $4::date + interval '1 day'
         GROUP BY channel ORDER BY revenue DESC`,
       [tenantId, PAID, r.from, r.to]
     ),
@@ -122,7 +129,8 @@ export async function getTopSellingProducts(
        JOIN bms_orders o ON o.id = oi.order_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND o.status = ANY($2)
-        AND o.created_at::date BETWEEN $3 AND $4
+        AND o.created_at >= $3::date
+        AND o.created_at < $4::date + interval '1 day'
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
       LIMIT $5`,

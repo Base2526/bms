@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useEffect, useState } from "react";
 import Link from "next/link";
-import { gql, useMutation, useQuery } from "@apollo/client";
+import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
@@ -211,9 +211,8 @@ export default function RestockSubscriptionsPage() {
     variables: { search: deferredSearch || null },
     fetchPolicy: "cache-and-network",
   });
-  const { data: metricsData, refetch: refetchMetrics } = useQuery(Q_METRICS, {
-    variables: { search: deferredSearch || null },
-    fetchPolicy: "cache-and-network",
+  const [loadMetrics, { data: metricsData, loading: metricsLoading, refetch: refetchMetrics }] = useLazyQuery(Q_METRICS, {
+    fetchPolicy: "cache-first",
   });
   const { data: deliveryData, loading: deliveriesLoading, refetch: refetchDeliveries } = useQuery(Q_DELIVERIES, {
     variables: { id: selected?.id || "" },
@@ -246,6 +245,22 @@ export default function RestockSubscriptionsPage() {
     recoveryRateOverall: 0,
   };
 
+  useEffect(() => {
+    const variables = { search: deferredSearch || null };
+    const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
+      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 1200 })
+      : (cb: () => void) => window.setTimeout(cb, 0);
+    const cancel = typeof window !== "undefined" && "cancelIdleCallback" in window
+      ? (id: number) => window.cancelIdleCallback(id)
+      : (id: number) => window.clearTimeout(id);
+    const id = schedule(() => void loadMetrics({ variables }));
+    return () => cancel(id);
+  }, [deferredSearch, loadMetrics]);
+
+  const refreshMetrics = () => refetchMetrics
+    ? refetchMetrics({ search: deferredSearch || null })
+    : loadMetrics({ variables: { search: deferredSearch || null } });
+
   const statusTabs: Array<{ key: string | undefined; label: string; count: number }> = [
     { key: undefined, label: "ทั้งหมด", count: counts.total },
     { key: "ACTIVE", label: "รอสินค้าเข้า", count: counts.active },
@@ -261,7 +276,7 @@ export default function RestockSubscriptionsPage() {
       if (result) {
         message.success(`แจ้งลูกค้าสำเร็จ ${result.sent} จาก ${result.attempted} รายการ${result.failed ? ` (ล้มเหลว ${result.failed})` : ""}`);
       }
-      await Promise.all([refetch(), refetchCounts(), refetchMetrics()]);
+      await Promise.all([refetch(), refetchCounts(), refreshMetrics()]);
     } catch (error: any) {
       message.error(error?.message || "แจ้งลูกค้าไม่สำเร็จ");
     }
@@ -285,7 +300,7 @@ export default function RestockSubscriptionsPage() {
       } else {
         message.error(result?.message || "ส่งข้อความไม่สำเร็จ");
       }
-      await Promise.all([refetch(), refetchDeliveries(), refetchCounts(), refetchMetrics()]);
+      await Promise.all([refetch(), refetchDeliveries(), refetchCounts(), refreshMetrics()]);
     } catch (error: any) {
       message.error(error?.message || "ส่งข้อความไม่สำเร็จ");
     }
@@ -297,7 +312,7 @@ export default function RestockSubscriptionsPage() {
       if (resultData?.bmsCancelRestockSubscription) {
         message.success("ยกเลิกรายการแจ้งเตือนแล้ว");
         if (selected?.id === item.id) setSelected(null);
-        await Promise.all([refetch(), refetchCounts(), refetchMetrics()]);
+        await Promise.all([refetch(), refetchCounts(), refreshMetrics()]);
       }
     } catch (error: any) {
       message.error(error?.message || "ยกเลิกไม่สำเร็จ");
@@ -360,7 +375,7 @@ export default function RestockSubscriptionsPage() {
           <Title level={3} className={styles.title}>แจ้งลูกค้าเมื่อสินค้าเข้า</Title>
           <Text type="secondary" className={styles.subtitle}>ติดตามความต้องการที่ลูกค้ายืนยันไว้ แล้วแจ้งได้ทันทีที่พร้อมขาย</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); refetchMetrics(); }} loading={loading}>รีเฟรช</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); refreshMetrics(); }} loading={loading || metricsLoading}>รีเฟรช</Button>
       </div>
 
       <div className={styles.metricsGrid}>

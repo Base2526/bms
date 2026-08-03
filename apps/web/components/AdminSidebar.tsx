@@ -121,7 +121,7 @@ export default function AdminSidebar() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // กดเมนูแล้วต้องปิดเอง — Drawer ไม่รู้เรื่อง client-side navigation ของ Next
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
-  const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-and-network' });
+  const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-first' });
   const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
   const { admin, refreshSession } = useSession();
   const isAdministrator = admin?.role === 'Administrator';
@@ -138,38 +138,38 @@ export default function AdminSidebar() {
   // เพราะ sidebar ติดอยู่ทุกหน้า ไม่ใช่แค่หน้า Inbox
   const canViewInbox = can('inbox.view');
   const { data: unreadData } = useQuery(Q_INBOX_UNREAD, {
-    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const inboxUnread: number = unreadData?.bmsInboxUnreadCount ?? 0;
 
   // @mention ที่ยังไม่อ่านของฉัน — badge แยกจาก inboxUnread (คนละความหมาย: ข้อความลูกค้า vs ถูกกล่าวถึง)
   const { data: mentionsData } = useQuery(Q_MENTIONS_UNREAD, {
-    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const mentionsUnread: number = mentionsData?.bmsMyMentionsUnreadCount ?? 0;
 
   const { data: restockData } = useQuery(Q_RESTOCK_READY, {
-    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 15000,
+    skip: !canViewInbox, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const restockReady: number = restockData?.bmsRestockReadyCount ?? 0;
 
   // ช่องทาง active แต่ status ไม่ปกติ (token หมดอายุ/webhook fail/rate limit/no events) —
   // poll เอง 15s แบบเดียวกับ inboxUnread เพื่อให้เห็น badge แม้ไม่ได้อยู่หน้า Settings
   const { data: healthData } = useQuery(Q_CHANNEL_HEALTH_COUNT, {
-    fetchPolicy: 'cache-and-network', pollInterval: 15000,
+    fetchPolicy: 'cache-and-network', pollInterval: 60000,
   });
   const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
 
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
   // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
   const { data: aiProviderHealthData } = useQuery(Q_AI_PROVIDER_HEALTH_COUNT, {
-    skip: !isPlatformAdmin, fetchPolicy: 'cache-and-network', pollInterval: 60000,
+    skip: !isPlatformAdmin, fetchPolicy: 'cache-first', pollInterval: 120000,
   });
   const aiProviderHealthCount: number = aiProviderHealthData?.bmsAiProviderHealthCount ?? 0;
 
   // โควตา AI (shared key ฟรี) — poll ห่างกว่า inbox/channel เพราะเปลี่ยนไม่บ่อย (นับเป็นเดือน ไม่ใช่วินาที)
   const { data: aiData } = useQuery(Q_AI_USAGE, {
-    fetchPolicy: 'cache-and-network', pollInterval: 60000,
+    fetchPolicy: 'cache-first', pollInterval: 300000,
   });
   const aiHasKey: boolean = aiData?.bmsAiConfig?.has_key ?? false;
   const aiUsage = aiData?.bmsAiUsage;
