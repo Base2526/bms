@@ -179,9 +179,11 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
               <Link href="/shop-signup" className="bms-footer-cta"><RocketOutlined />{t.start}</Link>
             </div>
 
-            <FooterColumn title={t.product} links={productLinks} />
-            <FooterColumn title={t.resources} links={resourceLinks} />
-            <FooterColumn title={t.legal} links={legalLinks} />
+            <div className="bms-footer-columns">
+              <FooterColumn title={t.product} links={productLinks} />
+              <FooterColumn title={t.resources} links={resourceLinks} />
+              <FooterColumn title={t.legal} links={legalLinks} />
+            </div>
           </div>
 
           <div className="bms-footer-bottom">
@@ -230,6 +232,8 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           grid-template-columns: minmax(260px, 1.45fr) repeat(3, minmax(150px, .8fr));
           gap: 42px;
         }
+
+        .bms-footer-columns { display: contents; }
 
         .bms-footer-brand { display: grid; gap: 15px; align-content: start; }
         .bms-footer-brand p { margin: 0; max-width: 390px; color: var(--app-muted); line-height: 1.7; }
@@ -365,8 +369,31 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         @media (max-width: 640px) {
           .bms-footer { padding-inline: 18px; }
           .bms-footer--with-pdpa { padding-bottom: 210px; }
-          .bms-footer-grid { grid-template-columns: 1fr; gap: 28px; }
-          .bms-footer-cta { width: 100%; justify-content: center; }
+          .bms-footer-shell { padding-top: 26px; }
+          .bms-footer-grid { grid-template-columns: 1fr; gap: 22px; }
+
+          .bms-footer-brand p { max-width: none; font-size: 13.5px; }
+          .bms-footer-logo { width: 40px; height: 40px; border-radius: 13px; }
+          .bms-footer-brand-line strong { font-size: 16px; }
+          .bms-footer-brand-line small { font-size: 12.5px; }
+          .bms-footer-cta { width: 100%; justify-content: center; font-size: 13.5px; padding: 10px 15px; }
+
+          /* Collapse the 3 link columns into a tighter 2-up grid so the footer
+             doesn't run into one long stack of rows on narrow screens. */
+          .bms-footer-columns {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 16px;
+            row-gap: 22px;
+          }
+          .bms-footer-columns .bms-footer-column:last-child { grid-column: 1 / -1; }
+
+          .bms-footer-column { gap: 9px; }
+          .bms-footer-column h2 { font-size: 12.5px; margin-bottom: 2px; }
+          .bms-footer-link { font-size: 13.5px; gap: 7px; }
+          .bms-footer-link svg { font-size: 13px; }
+
+          .bms-footer-bottom { margin-top: 22px; padding-top: 14px; gap: 10px; }
           .bms-footer-bottom, .bms-pdpa-card { align-items: flex-start; flex-direction: column; }
           .bms-pdpa-actions { width: 100%; flex-wrap: wrap; }
           .bms-pdpa-actions button { justify-content: center; flex: 1; }
