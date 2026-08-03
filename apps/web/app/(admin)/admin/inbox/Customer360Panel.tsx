@@ -405,23 +405,35 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
   const subtotal = orderSubtotal(draftOrder);
   return (
     <div>
-      <List size="small" dataSource={draftOrder.items} renderItem={(it: any) => (
-        <List.Item>
-          <Text style={{ fontSize: 12 }}>{it.sku} ({it.size}) × {it.qty} · {money(it.unitPrice * it.qty)}</Text>
-        </List.Item>
-      )} />
-      {Number(draftOrder.discountAmount || 0) > 0 && (
-        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>ยอดสินค้า {money(subtotal)}</Text>
-          <Text type="danger" style={{ fontSize: 12 }}>
-            ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""} -{money(draftOrder.discountAmount)}
-          </Text>
+      {/* รายการ/ราคาเรียงเป็นคอลัมน์ (ชื่อซ้าย ราคาขวา) แทนบรรทัดเดียวคั่นด้วย · —
+          กวาดตาหาราคาได้เร็วกว่าเวลามีหลายรายการ */}
+      {draftOrder.items?.map((it: any) => (
+        <div key={`${it.sku}-${it.size}`} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "2px 0" }}>
+          <Text style={{ fontSize: 11.5, minWidth: 0, flex: 1 }}>{it.sku} ({it.size}) × {it.qty}</Text>
+          <Text style={{ fontSize: 11.5, fontWeight: 600, flexShrink: 0 }}>{money(it.unitPrice * it.qty)}</Text>
         </div>
+      ))}
+      {Number(draftOrder.discountAmount || 0) > 0 && (
+        <>
+          <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>ยอดสินค้า</Text>
+            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{money(subtotal)}</Text>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>
+              ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""}
+            </Text>
+            <Text type="danger" style={{ fontSize: 11, flexShrink: 0 }}>-{money(draftOrder.discountAmount)}</Text>
+          </div>
+        </>
       )}
-      <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Text strong style={{ fontSize: 12 }}>รวมสุทธิ {money(draftOrder.totalAmount)}</Text>
-        <Link href={`/admin/orders?highlight=${draftOrder.id}`}><Button size="small" icon={<ShoppingOutlined />}>เปิด Draft Order</Button></Link>
+      <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--app-border, rgba(15,23,42,0.12))", display: "flex", alignItems: "baseline", gap: 8 }}>
+        <Text strong style={{ fontSize: 12, minWidth: 0, flex: 1 }}>รวมสุทธิ</Text>
+        <Text strong style={{ fontSize: 13, flexShrink: 0 }}>{money(draftOrder.totalAmount)}</Text>
       </div>
+      <Link href={`/admin/orders?highlight=${draftOrder.id}`} style={{ display: "block", marginTop: 7 }}>
+        <Button size="small" block icon={<ShoppingOutlined />}>เปิด Draft Order</Button>
+      </Link>
     </div>
   );
 }
