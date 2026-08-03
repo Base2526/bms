@@ -40,6 +40,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
 | Failure incidents | `bms_failure_incidents` | `7.36` |
 | Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
+| Support tickets | `support_tickets`, `support_ticket_comments` | `7.45` |
 
 ## Notable schema details
 
@@ -179,6 +180,13 @@ compatibility with existing UI/API consumers. In the current implementation, pro
 the gallery rows for that SKU inside the same tenant-scoped transaction, then repopulates them in
 the submitted order. The table has its own RLS policy and explicit `bms_app` grants; forgetting
 those breaks product save even if the table itself exists.
+
+**Support tickets (`7.45__support_ticket_comments.sql`)** — `support_tickets` stores the public
+support intake from `/support`; it keeps the user-submitted contact/topic/message plus page/UA/IP
+metadata and trackable `updated_at` / `closed_at` timestamps. `support_ticket_comments` stores the
+internal notes and status transitions for `/admin/support-tickets`, preserving a readable history
+of what changed and why. The support tables are platform-wide rather than tenant-owned because
+they belong to ops/support, not a specific shop's business data.
 
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a

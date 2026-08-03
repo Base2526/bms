@@ -62,6 +62,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 - **RBAC/tenant** → `lib/bms/{permissions,tenant,platform}.ts` · gate: `requirePermission()` (per-tenant) ·
   `requireUserAdmin()`/`requirePlatformOnly()` (จัดการ user/role ใน `resolvers.ts`) ·
   platform admin = `users.is_platform_admin` · drill-down = cookie `BMS_ACT_TENANT` (signed, ผูก admin.id) override tenant ใน `app/api/graphql/route.ts`
+  · เมื่อ platform admin อยู่ในมุมร้าน ให้ treat หน้า `/admin/users` เป็น tenant-scoped จริง ๆ
+  (list/detail/delete/avatar ต้องไม่หลุดข้ามร้าน) แม้บัญชี session จะยังเป็น platform admin อยู่
 - **migrations** → `db/migrations/*.sql` (idempotent, apply ตามเลข) — ล่าสุด `5.6` (platform admin) · `5.7` (เติมสิทธิ์ operational ให้ Manager/Sales/Warehouse) · `5.8` (`bms_plans.max_users` — quota staff/plan: free=3, pro=10, business=ไม่จำกัด) · `5.9` (`bms_products`: image_url/description/cost_price/category/brand) · `6.0` (`bms_product_categories` — list หมวดหมู่ที่จัดการได้ + backfill จาก category เดิม) ·
   `6.1__bms_inbox_assignment.sql` (`bms_conversations.assigned_to_user_id` FK จริง แทน `assigned_to` TEXT เดิม (ยังอยู่ในตารางแต่เลิกใช้แล้ว) + `bms_conversation_helpers` (คนช่วยตอบ) + `users.is_available` + permission ใหม่ `inbox.assign`) ·
   `6.2__bms_customer_360.sql` (ดู § Customer 360 ด้านล่าง) ·
@@ -103,6 +105,12 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   ต้องอยู่ใน `isAuthPath()` เสมอ ไม่งั้นจะเผลอโหลด session/chat wires แล้ว layout สับสน
 - **quota** → `lib/bms/plans.ts` (`enforceProductQuota`/`enforceUserQuota`) — เรียกก่อน INSERT เท่านั้น (ไม่ gate platform admin) · แพ็กเกจใหม่ที่มี limit ต้องเพิ่ม `enforce*Quota()` เอง ไม่มีมิดเดิลแวร์กลาง
 - **role dropdown** → ต้อง query `roles` จาก DB เสมอ (`app/(admin)/admin/users/[id]/edit/page.tsx` ทำถูก) **ห้าม hardcode** ชื่อ role ในหน้า UI (เคยพลาดที่ `users/new/page.tsx` มี role ค้างจาก project เก่า ทำให้ Manager/Sales/Warehouse หายไปจาก dropdown)
+- **support tickets** → `/support` เป็นฟอร์มสาธารณะที่เขียนลง `support_tickets` แล้ว และ
+  `/admin/support-tickets` เป็นมุมของ platform admin สำหรับอ่าน/เปลี่ยนสถานะ/ใส่ internal comment
+  โดย `support_ticket_comments` เก็บ status trail + note history; fake seed route อยู่ที่
+  `/api/dev/fake/support-tickets`
+- **batch & cron ops** → `/admin/operations-schedule` ใช้ดู batch/cron ทุกตัวแบบอ่านง่ายว่ารันเมื่อไร
+  ทำอะไร และมีไว้เพื่ออะไร เพื่อไม่ต้องเดาว่ารันวันนี้แล้วหรือยัง
 - **แก้ Permissions ต้อง drill-down ก่อน** → หน้า `/admin/permissions` แก้สิทธิ์ตาม `getTenantId(ctx)` = ร้านที่แอดมินยืนอยู่ตอนนั้น platform admin ที่ไม่ได้ `/admin/tenants` → "เข้าดู" ร้านเป้าหมายก่อน จะแก้สิทธิ์ผิดร้านโดยไม่มี error ใดเตือน (เช็ค banner เหลืองว่าอยู่ร้านไหนก่อนกดบันทึกเสมอ)
 - **Date จาก pg ต้อง `.toISOString()` ก่อนคืนใน resolver ที่ field เป็น `String!`** — `pg` คืนเป็น `Date` object, ถ้าไม่แปลง `GraphQLString.serialize` จะเรียก `.valueOf()` ได้ epoch number แล้วแปลงเป็น string ตัวเลข (ไม่ใช่ ISO) → frontend `new Date(...)` ได้ **Invalid Date** (ใช้ pattern `toISO()` ที่มีอยู่แล้วใน `bmsInbox.ts`/`bmsOrders.ts` เป็นตัวอย่าง — เคยพลาดใน `platform.ts`/`bmsSaas.ts`)
 - **ops automation** → `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
