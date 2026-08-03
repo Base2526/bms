@@ -1131,6 +1131,142 @@ webhook ปลอมได้ 404 ตามคาด, ทุกแถวถู�
   ทุกการส่ง log ครบ, `sendTestDigest` ยืนยันแล้วว่าไม่แตะ `last_period_key`, และ `runScheduledDigests`
   ยืนยัน idempotent (รันซ้ำ period เดิมถูกข้าม) · ลบแถวทดสอบออกหมดแล้ว ไม่มีข้อมูลค้างในร้านที่ใช้ verify
 
+## Carrier scaffold (Flash/Kerry) + ให้ลูกค้าเลือกขนส่งตอนแชท (2026-08)
+
+**ยังไม่ผูก API จริง — เป็น scaffold + mock mode เท่านั้น** (ไม่มี API key ของ Flash/Kerry และยังไม่มี
+เอกสาร endpoint/auth/payload จริงของทั้งสองเจ้า):
+
+- **`lib/bms/carriers/`** — `constants.ts` (`CARRIER_CODES`/`Carrier`/`CARRIER_LABELS`/`isCarrier` —
+  **ไม่ import อะไรเลย** เพื่อให้ client component เอาไปใช้ได้ เหมือนเหตุผลของ
+  `productImport.constants.ts`) · `types.ts` (`CarrierClient` contract — `trackShipment()` **ไม่ throw**
+  คืน typed result เสมอ) · `flash.ts`/`kerry.ts` · `index.ts` (registry — มีแค่ FLASH/KERRY, เจ้าอื่น
+  return `null` = manual เหมือนเดิม)
+- **`shipping.ts` re-export `CARRIERS`/`Carrier` จาก `carriers/constants`** เพื่อไม่ให้ import เดิมทั้ง
+  โปรเจกต์พัง · **ผลพลอยได้: แก้ circular import** (เดิม `carriers/index.ts` จะ import `Carrier` จาก
+  `../shipping` ซึ่ง import `./carriers` กลับ) · `/admin/shipment/page.tsx` เคยมี `CARRIERS`/
+  `CARRIER_LABEL`/`type Carrier` ของตัวเอง (copy ที่ 2) ตอนนี้ดึงจาก constants แล้ว
+- **⚠️ `FLASH_MOCK=true`/`KERRY_MOCK=true` = ข้อมูลปลอมทั้งหมด** — `mock.ts` สร้าง timeline จำลอง
+  (deterministic ต่อเลขพัสดุ: `seedFromString` → 1–4 stage) ทุก event ต่อท้าย "(ข้อมูลจำลอง)" และผลลัพธ์
+  ติด **`source: "mock"`** ซึ่ง**ต้องคงอยู่ใน type ตลอดไป** — เป็นสิ่งเดียวที่กัน mock data ไปโผล่เป็น
+  ข้อมูลจริง · `mockModeAllowed()` เช็ค `NODE_ENV !== "production"` → **production เปิด mock ไม่ได้เลย
+  แม้ตั้ง env** (verify แล้ว: `NODE_ENV=production FLASH_MOCK=true` → `unconfigured`)
+- **key ปลอมช่วยไม่ได้** (คำถามที่เคยถาม) — ปัญหาไม่ใช่ auth ไม่ผ่าน แต่ไม่รู้ endpoint/payload จริง
+  ถ้าใส่ key จริงแต่ยังไม่เขียน request → คืน `not_implemented` (ตั้งใจ ไม่เดา shape เอง แบบเดียวกับ
+  บทเรียน Lazada/Shopee ที่ placeholder ถูกเข้าใจผิดว่าใช้ได้จริง)
+
+**ให้ลูกค้าเลือกขนส่งตอนแชท (migration `7.46`)** — 2 คอลัมน์: `bms_store_profile.enabled_carriers TEXT[]`
+(ร้านใช้เจ้าไหนบ้าง) + `bms_orders.preferred_carrier TEXT`:
+
+- **เป็น preference ไม่ใช่คำมั่นสัญญา** — ตัวจริงที่ส่งคือ `bms_shipments.carrier` ที่แอดมินยืนยันตอน
+  แพ็คของ · **ห้ามให้ AI เทียบราคา/ETA ระหว่างเจ้า** เพราะไม่มีข้อมูลจริง (จะกลายเป็น fabricate ราคา
+  ผิด AI rules) — `get_store_info` จึงคืน `carrierChoiceNote` กำกับไว้ให้โมเดลอ่านทุกครั้ง
+- **`enabled_carriers` ว่าง = AI ต้องไม่ถามเรื่องขนส่งเลย** (ไม่ใช่ "เสนอทุกเจ้า") — กันเสนอเจ้าที่ร้าน
+  ไม่ได้ใช้
+- **guard 2 ชั้นใน `create_order`**: `enumVal` เช็คว่าเป็นโค้ดที่มีจริง แล้วเช็คซ้ำว่าอยู่ใน
+  `enabledCarriers` ของร้านนั้น ถ้าไม่ผ่าน **throw `ToolArgError`** (ให้โมเดลถามใหม่) ไม่ใช่เก็บ null
+  เงียบ ๆ — ไม่งั้น AI อาจบอกลูกค้าว่า "ส่ง Flash ให้" แต่ DB เป็น null · query `getStoreProfile` เพิ่ม
+  **เฉพาะตอนมี arg นี้มา** ไม่ได้ยิงทุกออร์เดอร์
+- **`createOrder()` เก็บ null ถ้าโค้ดไม่รู้จัก ไม่ throw** (ต่างจาก tool layer) เพราะเป็น service กลางที่
+  caller อื่น (REST/reorder) เรียกด้วย — ออร์เดอร์ต้องไม่ล้มเพราะ field เสริม
+- **`reorderFromOrder()` carry `preferred_carrier` จากออร์เดอร์เดิม** (ลูกค้าคนเดิม preference เดิม) —
+  ต่างจาก coupon ที่ตั้งใจไม่ carry
+- **validate ที่ service layer ไม่ใช่ CHECK constraint** (ตาม `business_type`/`ai_language` เดิม) ·
+  `upsertStoreProfile` **filter โค้ดที่ไม่รู้จักทิ้งเงียบ ๆ** (เหมือน `aiRequiredFields`) ไม่ throw
+- **UI**: `/admin/settings` การ์ดข้อมูลร้าน → ใต้หัวข้อ "ค่าส่ง" มี Select multiple "ขนส่งที่ร้านใช้"
+  (`Select mode="multiple"` = house style ของไฟล์นี้ ไม่ใช่ `Checkbox.Group`) · เพิ่มเข้า `PROFILE_KEYS`
+  แล้ว จึง round-trip ผ่าน `onFinish` generic loop เอง
+- **verify กับ DB จริงในคอนเทนเนอร์แล้ว** (ไม่ใช่แค่ `tsc`): migration idempotent (รันซ้ำได้) ·
+  store config round-trip + กรอง `BOGUS_CARRIER` ออก · `get_store_info` โชว์ `["FLASH","KERRY"]` +
+  note · **DHL (ร้านไม่ได้เปิด) ถูกปฏิเสธ** ว่า "ร้านนี้ส่งได้เฉพาะ: FLASH, KERRY" · โค้ดมั่วถูกปฏิเสธ ·
+  FLASH ผ่านและ persist ลง `bms_orders.preferred_carrier` จริง · ไม่ส่ง = null · **ลบ order ทดสอบ +
+  reset `enabled_carriers` กลับ `{}` แล้ว** และเช็ค reservation drift ของ variant ที่ใช้ทดสอบว่าเป็น 0
+  (drift ของ ADIDAS-RUN/NIKE-AIR ไซซ์ M/XL ที่เห็นในฐานข้อมูล dev เป็นของเดิม ไม่ได้เกิดจากรอบนี้)
+- **pre-fill ในหน้า `/admin/shipment` (ทำแล้ว)** — `BmsOrder.preferred_carrier` (enum `BmsCarrier`,
+  field resolver ใน `bmsOrders.ts` + เพิ่มคอลัมน์ใน SELECT ของ `bmsOrders`/`bmsOrder` ทั้งสองจุด) →
+  modal "สร้างการจัดส่ง" อ่านมาใช้:
+  - dropdown ออร์เดอร์ต่อท้ายว่า `· ขอ Kerry` ให้เห็นก่อนเลือก
+  - เลือกออร์เดอร์แล้ว **auto-fill ช่องขนส่ง แต่เฉพาะตอนช่องยังว่าง** (`if (next && !form.getFieldValue("carrier"))`)
+    — ห้ามเขียนทับค่าที่แอดมินเลือกไว้เองแล้ว
+  - `extra` ใต้ช่องขนส่งเตือนสองแบบ: `ลูกค้าขอ X (เปลี่ยนได้)` กับ **`ลูกค้าขอ X — คุณกำลังเลือกเจ้าอื่น`**
+    ตอนค่าที่เลือกต่างจาก preference (ไม่บล็อก เพราะ preference ไม่ใช่คำมั่นสัญญา)
+  - **ไม่แตะ `bmsCreateShipment`** — ค่าที่ส่งจริงยังมาจากฟอร์มเสมอ (pre-fill เป็น UX ล้วน ๆ)
+- **verify GraphQL จริงผ่าน introspection ของ instance ที่รันอยู่** (ไม่ใช่แค่ `tsc`):
+  `BmsOrder.preferred_carrier` เป็น ENUM `BmsCarrier` · `BmsStoreProfile.enabledCarriers` มีจริง ·
+  `bmsCreateOrder` args = `[channel, customerRef, items, couponCode, preferredCarrier]` · SELECT ของ
+  resolver คืนค่า `KERRY` จริงและ field resolver map ถูก (null/missing → null) · **revert ค่าทดสอบแล้ว**
+  (`orders_with_pref_left = 0`)
+- **⚠️ หมายเหตุที่เจอตอน verify: `loginAdmin` ตรวจรหัสผ่านจริงแล้ว** — โน้ตเก่าในไฟล์นี้ (§ ก่อน production)
+  ที่เขียนว่า "dev ยังไม่ตรวจ" **ไม่ตรงกับโค้ดปัจจุบัน** (ยิง `loginAdmin` ด้วยรหัสมั่วได้
+  `Invalid credentials`) — ถ้าจะทดสอบผ่าน HTTP ต้องมีรหัสจริง หรือทดสอบที่ service layer แทน
+- **ยังไม่ทำ**: public checkout (`/checkout?t=`) ยังไม่ให้เลือกขนส่ง · deterministic no-credential
+  fallback ใน `pipeline.ts` ไม่รู้จัก slot ขนส่ง (known gap เดียวกับ coupon) ·
+  `trackShipmentLive()`/`getCarrierApiStatus()` มีแล้วแต่ยังไม่มีหน้าไหนเรียก · หน้า Orders
+  (`/admin/orders`) ยังไม่โชว์ `preferred_carrier` (โชว์เฉพาะใน modal สร้างการจัดส่ง)
+
+## ค่าส่งจริง: บวกเข้าออร์เดอร์ + คิดตามโซน/น้ำหนัก (2026-08, migration `7.47`)
+
+**ต้นเรื่อง (บั๊กเก็บเงินขาด):** `estimateShipping()` เดิมเป็นค่าเหมาที่**ไม่ดูปลายทางเลย** (รับแค่
+`tenantId, subtotal`) และที่แย่กว่านั้นคือ **ค่าส่งไม่เคยถูกบวกเข้าออร์เดอร์** — `bms_orders` ไม่มีคอลัมน์
+ค่าส่ง, `generateInvoice()` เขียน `shippingFee: null` ไว้ตรง ๆ, และ `submitPaymentInternal()` เอา
+`total_amount` (ค่าสินค้าล้วน) ไปเป็นยอด payment → **AI บอกลูกค้าว่า "ค่าส่ง 50" ได้ แต่ยอดในลิงก์
+checkout ไม่มี 50 นั้น ร้านขาดค่าส่งทุกออร์เดอร์**
+
+- **⚠️ `total_amount` ความหมายไม่เปลี่ยน = ค่าสินค้า − ส่วนลด** (ตั้งใจ) เพราะ dashboard/report/digest/
+  coupon อ่านคอลัมน์นี้อยู่ ถ้าเปลี่ยนความหมายตัวเลขรายได้ย้อนหลังเพี้ยนทั้งระบบ ·
+  **ยอดที่ลูกค้าต้องจ่าย = `total_amount + shipping_fee` ("amount due")** คิดที่จุดเก็บเงินเท่านั้น
+  (payments/checkout/invoice) ไม่เขียนทับ `total_amount` · ออร์เดอร์เก่าได้ `shipping_fee DEFAULT 0`
+  จึงไม่กระทบยอดเดิม
+- **engine เดียว = `quoteShipping()` (`lib/bms/shippingRates.ts`)** — `estimateShipping()` **ถูกลบทิ้ง**
+  (ไม่ใช่ deprecated) เพื่อไม่ให้มีสูตรค่าส่ง 2 ชุดระหว่าง "ที่โชว์ลูกค้า" กับ "ที่เก็บเงินจริง"
+  · precedence: `carrier` → `zone` → `flat` → `none` (`fee: null` ห้ามเดาเป็น 0)
+- **`lib/bms/shippingZones.ts` ไม่ import อะไรเลย** (client component ใช้ได้ + กัน circular import กับ
+  `storeProfile.ts` ที่ต้องใช้ `parseZoneRates`/`parseWeightTiers` ตอน validate) · **โซน 3 ระดับ
+  BANGKOK/PERIMETER/UPCOUNTRY — ตั้งใจไม่ทำตาราง 77 จังหวัด** เพราะ zone mapping จริงต้องรู้แค่ กรุงเทพ +
+  ปริมณฑล 5 จังหวัด ที่เหลือ = ต่างจังหวัด (list ยาว ๆ พิมพ์เองคือแหล่งพิมพ์ผิด) · `normalizeProvince()`
+  ตัด `จ.`/`จังหวัด` + alias (กทม/Bangkok/bkk)
+- **กติกา "ไม่รู้ ≠ เดา" (สำคัญสุด อย่าแก้ให้ฉลาดขึ้น):**
+  - ไม่รู้จังหวัด → **ตกไป flat ไม่ใช่เดาโซน** (เดาผิด = เก็บเงินผิดแบบเงียบ ๆ)
+  - สินค้าตัวใดยังไม่กรอก `weight_grams` → `totalGrams = null` **ไม่คิดค่าน้ำหนักส่วนเพิ่ม + ใส่ warning**
+    (`sumItemWeightGrams()` คืน null ทั้งก้อน ห้ามเอาผลบวกบางส่วนไปคิดเงิน)
+  - `guessProvinceFromAddress()` เดาจาก free text ได้เฉพาะชื่อที่ special-case ไว้ และติดธง
+    `provinceIsGuess: true` + warning "ควรยืนยันก่อนเก็บเงิน" — มีไว้เพราะที่อยู่เก่าทุกแถวไม่มีคอลัมน์
+    `province` ถ้าไม่เดาเลย โหมด zone จะไม่ทำงานกับลูกค้าเดิมทั้งหมด
+  - `mode: carrier` แต่ไม่มี key/ไม่มี client → **ไม่คืนราคาลอย ๆ** ตกไป zone/flat + warning
+- **`shipping_fee` ถูกคิด 2 จังหวะ** เพราะ identity-first checkout เก็บที่อยู่ **หลัง** สร้างออร์เดอร์:
+  1. ตอน `createOrder()` (`computeOrderShippingFeeInTx`) — มักได้ flat/0 เพราะยังไม่มีที่อยู่ ·
+     **catch error เองคืน 0** ค่าส่งคิดไม่ได้ต้องไม่ทำให้ออร์เดอร์+สต็อกที่จองไว้ล้มทั้งก้อน
+  2. ตอนที่อยู่มาถึง → `recalculateOrderShipping(tenantId, customerId)` เรียกจาก **caller ทั้ง 2 ทาง**
+     (`checkout.ts` PATCH + tool `save_customer_checkout_details`) — **ไม่ได้เรียกใน `customers.ts` เอง
+     โดยเจตนา** เพราะ `orders.ts` import `customers.ts` อยู่แล้ว (จะ circular)
+  - **แตะเฉพาะออร์เดอร์ `PENDING` ที่ยังไม่มี payment `PENDING`/`CONFIRMED`** — ห้ามขยับยอดของออร์เดอร์ที่
+    ลูกค้าโอนตามยอดเดิมไปแล้ว (verify แล้วว่าได้ `updated: 0` จริงหลังมี payment)
+- **UI**: `/admin/settings` การ์ดข้อมูลร้าน → หัวข้อ "ค่าส่ง" มีวิธีคิด (เหมา/โซน/ถามขนส่ง) + จังหวัด-
+  ไปรษณีย์ต้นทาง + `Form.List` เรตต่อโซน + `Form.List` ขั้นน้ำหนัก (กรอง row ที่ยังกรอกไม่ครบก่อนส่ง) ·
+  `/admin/products` ฟอร์มสินค้ามีช่อง "น้ำหนัก (กรัม)" ข้างต้นทุน · `/checkout` โชว์บรรทัด "ค่าจัดส่ง"
+  (ฟรี = คำว่า "ฟรี") · **ข้อความปิดออร์เดอร์ในแชทแยกค่าสินค้า/ค่าส่ง/รวม** เมื่อมีค่าส่ง ไม่งั้นลูกค้าเห็น
+  ยอดสูงกว่าราคาที่คุยไว้แล้วสงสัย
+- **`get_shipping_estimate` รับ `province`/`items` เพิ่ม** และ description สั่งให้โมเดล**อ่าน `warnings`
+  ก่อนตอบ** (ถ้าเดาจังหวัด/น้ำหนักไม่ครบ ต้องบอกลูกค้าว่าเป็นค่าประเมิน) · `save_customer_checkout_details`
+  รับ `province`/`postcode` และย้ำใน description ว่า **ห้ามเดาจังหวัดจากที่อยู่เอง**
+- **#4 carrier rate API = seam + mock เท่านั้น (ยังไม่มี key/เอกสารจริง)** — `CarrierClient.quoteRate?()`
+  optional, `flash.ts`/`kerry.ts` คืน `unconfigured`/`not_implemented`, `buildMockRateResult()` ใน
+  `mock.ts` คืนราคาจำลองที่**ไม่ได้พยายามเลียนเรตจริงของ Kerry/Flash** และติด `source:"mock"` ซึ่ง
+  `quoteShipping` แปลงเป็น warning "อย่าใช้เก็บเงินลูกค้าจริง" · mock ปิดตายใน production เหมือน tracking
+- **verify กับ DB จริงในคอนเทนเนอร์แล้ว** (ไม่ใช่แค่ `tsc`): migration idempotent (รันซ้ำ 10 NOTICE
+  skipping) · zone mapping ครบ (กทม./Bangkok/จ.นนทบุรี/เชียงใหม่/ว่าง) · flat 50 · ส่งฟรีเมื่อถึงเกณฑ์ ·
+  zone 40/55/70 ตามจังหวัด · ไม่รู้จังหวัด→flat + warning · เดาจังหวัดจากที่อยู่→zone + ธง guess ·
+  weight tier 800g→+0, 2400g→+30, 16kg→ขั้นสูงสุด, สินค้าไม่มีน้ำหนัก→ไม่คิด+warning ·
+  **flat 50 → ที่อยู่ กทม. มา → 40 → เปลี่ยนเป็นเชียงใหม่ → 70 → payment.amount = 3200+70 = 3270 ✅**
+  (ก่อนแก้จะเป็น 3200) · invoice `shippingFee: 70` · ออร์เดอร์ที่มี payment แล้ว recalc ไม่แตะ ·
+  carrier mock off→ตกไป zone, mock on→`source:"carrier"` + warning, DHL (ไม่มี client)→ตกไป zone ·
+  introspection ยืนยัน `shippingMode/shippingZoneRates/shippingWeightTiers/weightGrams` ใน schema จริง ·
+  **ลบข้อมูลทดสอบครบและคืน config ร้านกลับเป็น flat/ว่างแล้ว** (`orders_with_fee = 0`), reservation drift
+  ของ variant ที่ใช้ทดสอบ = 0 (drift ADIDAS-RUN/NIKE-AIR M/XL ที่เห็นในฐาน dev เป็นของเดิมก่อนงานนี้)
+- **ยังไม่ทำ**: ไม่มีเรตต่อ carrier (เรตโซนชุดเดียวใช้กับทุกเจ้า) · ไม่คิดขนาด/ปริมาตร (dimensional weight) ·
+  ที่อยู่ยังเป็น free text 1 ช่อง + `province`/`postcode` เสริม (ไม่ได้แยก อำเภอ/ตำบล และไม่ backfill
+  ที่อยู่เก่า) · **`/admin/orders` ยังไม่โชว์ `shipping_fee`** · REST `POST /api/bms/order` ไม่ได้ส่ง
+  province เข้ามา · bulk product import ยังไม่รับคอลัมน์น้ำหนัก · ไม่มี rate API จริง (ดูข้อบน)
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**

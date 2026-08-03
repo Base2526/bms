@@ -57,7 +57,8 @@ export type SubmitPaymentOnceResult =
 export type ConfirmResult =
   | { status: "CONFIRMED"; paymentId: string; orderPaid: boolean }
   | { status: "NOT_FOUND" }
-  | { status: "INVALID_STATE"; current: string };
+  | { status: "INVALID_STATE"; current: string }
+  | { status: "INVALID_AMOUNT"; expected: number; actual: number };
 
 // ---- submit --------------------------------------------------
 export async function submitPayment(input: SubmitPaymentInput): Promise<SubmitResult> {
@@ -93,8 +94,8 @@ async function submitPaymentInternal(
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ total_amount: string }>(
-      `SELECT total_amount
+    const ord = await client.query<{ total_amount: string; shipping_fee: string }>(
+      `SELECT total_amount, shipping_fee
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -131,10 +132,10 @@ async function submitPaymentInternal(
       }
     }
 
-    const amount =
-      input.amount != null && Number.isFinite(input.amount) && input.amount >= 0
-        ? Number(input.amount)
-        : Number(ord.rows[0].total_amount);
+    // ยอดที่ต้องเก็บ = ค่าสินค้า(หลังส่วนลด) + ค่าส่ง (7.47)
+    // full payment only: ห้าม override amount เพื่อไม่ให้ยอดรับเงินจริงเพี้ยน
+    const amountDue = Number(ord.rows[0].total_amount) + Number(ord.rows[0].shipping_fee ?? 0);
+    const amount = amountDue;
 
     const ins = await client.query<{ id: string }>(
       `INSERT INTO bms_payments
@@ -164,8 +165,8 @@ export async function confirmPayment(
   try {
     await beginTenantTx(client, tenantId);
 
-    const pay = await client.query<{ status: string; order_id: string }>(
-      `SELECT status, order_id FROM bms_payments
+    const pay = await client.query<{ status: string; order_id: string; amount: string }>(
+      `SELECT status, order_id, amount FROM bms_payments
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, paymentId]
     );
@@ -177,6 +178,24 @@ export async function confirmPayment(
       const current = pay.rows[0].status;
       await client.query("ROLLBACK");
       return { status: "INVALID_STATE", current };
+    }
+
+    const orderRes = await client.query<{ total_amount: string; shipping_fee: string }>(
+      `SELECT total_amount, shipping_fee
+         FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2
+        FOR UPDATE`,
+      [tenantId, pay.rows[0].order_id]
+    );
+    if (orderRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+    const expected = Number(orderRes.rows[0].total_amount) + Number(orderRes.rows[0].shipping_fee ?? 0);
+    const actual = Number(pay.rows[0].amount);
+    if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
+      await client.query("ROLLBACK");
+      return { status: "INVALID_AMOUNT", expected, actual: Number.isFinite(actual) ? actual : 0 };
     }
 
     await client.query(

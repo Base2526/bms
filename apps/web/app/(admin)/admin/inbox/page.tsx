@@ -72,7 +72,7 @@ const PANEL_RAISED_SURFACE = "var(--app-surface-2, #f1f5f9)";
 const PANEL_SUNKEN_SURFACE = "rgba(var(--app-surface-2-rgb, 241, 245, 249), 0.92)";
 const SUBTLE_TEXT = "rgba(var(--app-text-rgb, 15, 23, 42), 0.62)";
 const IDLE_CARD_BORDER = "rgba(var(--app-text-rgb, 15, 23, 42), 0.08)";
-const IDLE_CARD_SHADOW = "0 2px 10px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.10)";
+const IDLE_CARD_SHADOW = "0 1px 4px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.06)";
 const RAISED_PANEL_SHADOW = "0 6px 16px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.12)";
 // ---- GraphQL ------------------------------------------------
 const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
@@ -734,7 +734,7 @@ function Inbox() {
                 ghost={quickFilter !== "urgent"}
                 icon={<FireOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "urgent" ? null : "urgent")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500 }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600 }}
               >
                 ด่วนก่อน
               </Button>
@@ -743,7 +743,7 @@ function Inbox() {
                 type={quickFilter === "payment" ? "primary" : "default"}
                 icon={<CreditCardOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "payment" ? null : "payment")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
               >
                 มีสลิป
               </Button>
@@ -752,7 +752,7 @@ function Inbox() {
                 type={quickFilter === "product" ? "primary" : "default"}
                 icon={<ShoppingCartOutlined />}
                 onClick={() => setQuickFilter((prev) => prev === "product" ? null : "product")}
-                style={{ borderRadius: 999, paddingInline: 10, fontSize: 11, height: 28, fontWeight: 500, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
+                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
               >
                 ถามสินค้า
               </Button>
@@ -770,13 +770,13 @@ function Inbox() {
                 <List.Item
                   onClick={() => openConversation(c.id)}
                   style={{
-                    cursor: "pointer", padding: effectiveListCollapsed ? "6px 0" : isMobile ? "8px 10px" : "8px 10px", borderRadius: isMobile ? 12 : 14, marginBottom: 6,
+                    cursor: "pointer", padding: effectiveListCollapsed ? "5px 0" : "6px 8px", borderRadius: 9, marginBottom: 4,
                     display: effectiveListCollapsed ? "flex" : undefined,
                     justifyContent: effectiveListCollapsed ? "center" : undefined,
-                    background: activeId === c.id ? "rgba(22,119,255,0.18)" : PANEL_SURFACE,
-                    borderLeft: activeId === c.id ? "3px solid #1677ff" : "3px solid transparent",
+                    background: activeId === c.id ? "rgba(22,119,255,0.12)" : PANEL_SURFACE,
+                    borderLeft: activeId === c.id ? "2px solid #1677ff" : "2px solid transparent",
                     border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : `1px solid ${IDLE_CARD_BORDER}`,
-                    boxShadow: activeId === c.id ? "0 8px 24px rgba(22,119,255,0.10)" : IDLE_CARD_SHADOW,
+                    boxShadow: activeId === c.id ? "0 2px 8px rgba(22,119,255,0.08)" : IDLE_CARD_SHADOW,
                   }}
                 >
                   {effectiveListCollapsed ? (
@@ -784,39 +784,39 @@ function Inbox() {
                       <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr)", columnGap: 8, width: "100%", minWidth: 0, alignItems: "start" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 7, width: "100%", minWidth: 0, alignItems: "start" }}>
                       <Badge count={c.unread} size="small" offset={[-2, 2]}>
-                        <Avatar size={34} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
+                        <Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
                       </Badge>
-                      <div style={{ minWidth: 0, display: "grid", gap: 3 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                          <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 500, paddingInline: 6, lineHeight: "18px", fontSize: 10 }}>{c.channel}</Tag>
-                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
+                      <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                          <Tag color={CHANNEL_COLOR[c.channel] || "default"} style={{ marginInlineEnd: 0, fontWeight: 600, paddingInline: 5, lineHeight: "15px", fontSize: 9 }}>{c.channel}</Tag>
+                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11.5 }}>
                             {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
                           </Typography.Text>
                           {c.assignedStaff && (
                             <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
-                              <Avatar size={20} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 9, backgroundColor: "#1677ff", flexShrink: 0 }}>
+                              <Avatar size={16} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 8, backgroundColor: "#1677ff", flexShrink: 0 }}>
                                 {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
                               </Avatar>
                             </Tooltip>
                           )}
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, flex: 1, fontSize: 10, lineHeight: 1.2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                          <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, flex: 1, fontSize: 9.5, lineHeight: 1.2 }}>
                             {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
                           </Typography.Text>
-                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 500, fontSize: 10, lineHeight: "18px", paddingInline: 6 }}>
+                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 600, fontSize: 9, lineHeight: "15px", paddingInline: 5 }}>
                             {convPriority(c).label}
                           </Tag>
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <Typography.Text ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11, lineHeight: 1.3 }} type="secondary">
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                          <Typography.Text ellipsis style={{ minWidth: 0, flex: 1, fontSize: 10.5, lineHeight: 1.3 }} type="secondary">
                             {previewNode(c.lastMessage)}
                           </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 10, flexShrink: 0 }}>
+                          <Typography.Text type="secondary" style={{ fontSize: 9.5, flexShrink: 0 }}>
                             {c.lastMessageAt ? `${dayLabel(c.lastMessageAt)} · ${timeLabel(c.lastMessageAt)}` : "ยังไม่มีเวลา"}
                           </Typography.Text>
                         </div>
@@ -832,7 +832,7 @@ function Inbox() {
 
         {/* ---- middle: active conversation ---- */}
         {showConversationPane && (
-        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: isMobile ? 8 : 14, background: PANEL_SURFACE }}>
+        <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: isMobile ? 7 : 10, background: PANEL_SURFACE }}>
           {!conv ? (
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
@@ -1734,15 +1734,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               <Button type="text" size="small" aria-label="นำไฟล์แนบออก" icon={<CloseOutlined />} onClick={() => setDraftAttachment(null)} />
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
             <Input.TextArea
               rows={isMobile ? 1 : 2} value={reply} onChange={(e) => setReply(e.target.value)}
               placeholder="พิมพ์ตอบลูกค้า (Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่)"
-              style={{ flex: 1, resize: "none" }}
+              style={{ flex: 1, resize: "none", fontSize: 12.5 }}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
-            <Button type="primary" size="large" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ height: "auto", minWidth: isMobile ? 58 : 88 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
+              style={{ height: "auto", minWidth: isMobile ? 48 : 68, fontSize: 12 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
           </div>
         </div>
       )}

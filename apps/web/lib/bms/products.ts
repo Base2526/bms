@@ -20,6 +20,7 @@ export type ProductRowFull = {
   image_url: string | null;
   description: string | null;
   cost_price: string | null;
+  weight_grams: number | null;
   category: string | null;
   brand: string | null;
   created_at: Date | string;
@@ -165,7 +166,7 @@ export async function listProducts(
     : `0 AS search_rank`;
   const itemsRes = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
-            image_url, description, cost_price, category, brand, created_at, updated_at,
+            image_url, description, cost_price, weight_grams, category, brand, created_at, updated_at,
             ${rankSql}
        FROM bms_products WHERE ${where}
       ORDER BY ${
@@ -530,6 +531,7 @@ export type UpsertProductInput = {
   image_url?: string | null;
   description?: string | null;
   cost_price?: number | null;
+  weight_grams?: number | null;
   category?: string | null;
   brand?: string | null;
   image_urls?: string[] | null;
@@ -907,6 +909,7 @@ export type NormalizedProductFields = {
   category: string | null;
   brand: string | null;
   costPrice: number | null;
+  weightGrams: number | null;
 };
 
 /**
@@ -933,7 +936,16 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
     if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("ต้นทุนไม่ถูกต้อง");
   }
 
-  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice };
+  // น้ำหนัก (กรัม) — ไม่บังคับ; null = ยังไม่ได้กรอก (ต่างจาก 0) → ค่าส่งตามน้ำหนัก
+  // จะไม่ถูกคิดและ quoteShipping() จะเตือนแทนการเดาน้ำหนัก
+  let weightGrams: number | null = null;
+  if (input.weight_grams != null && input.weight_grams !== ("" as any)) {
+    weightGrams = Math.trunc(Number(input.weight_grams));
+    if (!Number.isFinite(weightGrams) || weightGrams < 0) throw new Error("น้ำหนักไม่ถูกต้อง");
+    if (weightGrams > 2_000_000) throw new Error("น้ำหนักเกินความเป็นจริง (สูงสุด 2,000 กก.)");
+  }
+
+  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams };
 }
 
 export async function upsertProduct(
@@ -942,7 +954,7 @@ export async function upsertProduct(
   editorId?: string | number | null,
   revisionId?: string | null
 ): Promise<ProductRowFull> {
-  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice } =
+  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams } =
     validateProductFields(input);
   const imageUrls = normalizeImageUrls(input);
   const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
@@ -961,15 +973,16 @@ export async function upsertProduct(
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products
-         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand, weight_grams)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (tenant_id, sku) DO UPDATE
          SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
              active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
              description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
-             category = EXCLUDED.category, brand = EXCLUDED.brand, updated_at = now()
-       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand`,
-      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand]
+             category = EXCLUDED.category, brand = EXCLUDED.brand,
+             weight_grams = EXCLUDED.weight_grams, updated_at = now()
+       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand, weight_grams`,
+      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand, weightGrams]
     );
 
     await client.query(

@@ -16,6 +16,9 @@ import { resolveOrCreateCustomer } from "./customers";
 import { beginTenantTx } from "./tenant";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
+import { isCarrier, type Carrier } from "./carriers/constants";
+import { quoteShipping, type ShippingFeeSource } from "./shippingRates";
+import type { PoolClient } from "pg";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
@@ -34,10 +37,17 @@ export type CreateOrderInput = {
   items: OrderItemInput[];
   editorId?: string | number | null;
   couponCode?: string | null;
+  /**
+   * Carrier the customer asked for. A *preference* only — the carrier actually used is
+   * bms_shipments.carrier, confirmed by staff at packing time. Unknown codes are stored
+   * as null rather than failing the order (7.46).
+   */
+  preferredCarrier?: string | null;
 };
 
 export type CreatedLine = {
   sku: string;
+  name: string;
   size: string;
   qty: number;
   unitPrice: number;
@@ -45,7 +55,20 @@ export type CreatedLine = {
 };
 
 export type CreateOrderResult =
-  | { status: "CREATED"; orderId: string; total: number; subtotal: number; discount: number; couponCode: string | null; items: CreatedLine[] }
+  | {
+      status: "CREATED";
+      orderId: string;
+      /** ค่าสินค้า − ส่วนลด (ตรงกับ bms_orders.total_amount — ความหมายไม่เปลี่ยนตั้งแต่ก่อน 7.47) */
+      total: number;
+      subtotal: number;
+      discount: number;
+      shippingFee: number;
+      /** ยอดที่ลูกค้าต้องจ่ายจริง = total + shippingFee */
+      amountDue: number;
+      couponCode: string | null;
+      preferredCarrier: Carrier | null;
+      items: CreatedLine[];
+    }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
   | { status: "COUPON_INVALID"; reason: string }
@@ -64,6 +87,107 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   return [...map.values()].sort((a, b) =>
     a.sku === b.sku ? a.size.localeCompare(b.size) : a.sku.localeCompare(b.sku)
   );
+}
+
+/**
+ * คิดค่าส่งของออร์เดอร์จากที่อยู่ default ของลูกค้า (ใช้ client เดิมในทรานแซกชัน)
+ * ไม่มีที่อยู่ / ร้านยังไม่ตั้งค่าส่ง → 0 พร้อม source บอกเหตุผล (ไม่ throw —
+ * ค่าส่งต้องไม่ทำให้การสร้างออร์เดอร์ล้ม)
+ */
+async function computeOrderShippingFeeInTx(
+  client: PoolClient,
+  args: {
+    tenantId: string;
+    customerId: string | null;
+    subtotal: number;
+    items: OrderItemInput[];
+    carrier: Carrier | null;
+  }
+): Promise<{ fee: number; source: ShippingFeeSource }> {
+  try {
+    let province: string | null = null;
+    let addressText: string | null = null;
+    if (args.customerId) {
+      const addr = await client.query<{ province: string | null; address: string }>(
+        `SELECT province, address
+           FROM bms_customer_addresses
+          WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
+          ORDER BY is_default DESC, id
+          LIMIT 1`,
+        [args.tenantId, args.customerId]
+      );
+      province = addr.rows[0]?.province ?? null;
+      addressText = addr.rows[0]?.address ?? null;
+    }
+
+    const quote = await quoteShipping({
+      tenantId: args.tenantId,
+      subtotal: args.subtotal,
+      province,
+      addressText,
+      items: args.items.map((it) => ({ sku: it.sku, qty: it.qty })),
+      carrier: args.carrier,
+    });
+    return { fee: quote.fee ?? 0, source: quote.source };
+  } catch {
+    // ค่าส่งคิดไม่ได้ต้องไม่ทำให้ออร์เดอร์/สต็อกที่จองไว้ล้มทั้งก้อน
+    return { fee: 0, source: "none" };
+  }
+}
+
+/**
+ * คิดค่าส่งใหม่หลังที่อยู่จัดส่งมาถึง (เรียกจาก saveCustomerCheckoutDetails)
+ * แตะเฉพาะออร์เดอร์ PENDING ที่ยังไม่มี payment PENDING/CONFIRMED — ห้ามขยับยอด
+ * ของออร์เดอร์ที่ลูกค้าโอนเงินตามยอดเดิมไปแล้ว
+ */
+export async function recalculateOrderShipping(
+  tenantId: string,
+  customerId: string
+): Promise<{ updated: number }> {
+  const open = await query<{ id: string; total_amount: string; preferred_carrier: string | null }>(
+    `SELECT o.id, o.total_amount, o.preferred_carrier
+       FROM bms_orders o
+      WHERE o.tenant_id = $1 AND o.customer_id = $2 AND o.status = 'PENDING'
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_payments p
+           WHERE p.tenant_id = o.tenant_id AND p.order_id = o.id
+             AND p.status IN ('PENDING','CONFIRMED')
+        )`,
+    [tenantId, customerId]
+  );
+  if (open.rowCount === 0) return { updated: 0 };
+
+  let updated = 0;
+  for (const row of open.rows) {
+    const itemsRes = await query<{ product_sku: string; qty: number }>(
+      `SELECT product_sku, qty FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+      [tenantId, row.id]
+    );
+    const addr = await query<{ province: string | null; address: string }>(
+      `SELECT province, address FROM bms_customer_addresses
+        WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
+        ORDER BY is_default DESC, id LIMIT 1`,
+      [tenantId, customerId]
+    );
+
+    const quote = await quoteShipping({
+      tenantId,
+      subtotal: Number(row.total_amount),
+      province: addr.rows[0]?.province ?? null,
+      addressText: addr.rows[0]?.address ?? null,
+      items: itemsRes.rows.map((r) => ({ sku: r.product_sku, qty: Number(r.qty) })),
+      carrier: row.preferred_carrier,
+    });
+
+    const res = await query(
+      `UPDATE bms_orders SET shipping_fee = $3, shipping_fee_source = $4, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2
+          AND (shipping_fee IS DISTINCT FROM $3::numeric OR shipping_fee_source IS DISTINCT FROM $4)`,
+      [tenantId, row.id, quote.fee ?? 0, quote.source]
+    );
+    updated += res.rowCount ?? 0;
+  }
+  return { updated };
 }
 
 export async function createOrder(
@@ -114,8 +238,8 @@ export async function createOrder(
       }
 
       // ดึงราคา (สินค้าต้อง active)
-      const prod = await client.query<{ price: string }>(
-        `SELECT price FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
+      const prod = await client.query<{ price: string; name: string }>(
+        `SELECT price, name FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
         [it.sku, tenantId]
       );
       if (prod.rowCount === 0) {
@@ -127,6 +251,7 @@ export async function createOrder(
       total += unitPrice * it.qty;
       lines.push({
         sku: it.sku,
+        name: prod.rows[0].name,
         size: it.size,
         qty: it.qty,
         unitPrice,
@@ -159,12 +284,28 @@ export async function createOrder(
     }
     const finalTotal = Math.max(0, total - discount);
 
+    // ขนส่งที่ลูกค้าอยากได้ — เก็บเฉพาะโค้ดที่รู้จัก ที่เหลือทิ้งเป็น null (ไม่ทำให้ออร์เดอร์ล้ม)
+    const preferredCarrier: Carrier | null = isCarrier(input.preferredCarrier) ? input.preferredCarrier : null;
+
+    // ค่าส่ง (7.47) — คิดจากที่อยู่ default ของลูกค้าที่มีอยู่ "ตอนนี้"
+    // แชทส่วนใหญ่ยังไม่มีที่อยู่ตอนสร้างออร์เดอร์ (identity-first checkout เก็บทีหลัง)
+    // → จุดนี้อาจได้ค่าเหมา/ไม่มีค่าส่ง แล้วถูกคิดใหม่ตอนที่อยู่มาถึงผ่าน
+    //   recalculateOrderShipping() ใน saveCustomerCheckoutDetails
+    const shippingFee = await computeOrderShippingFeeInTx(client, {
+      tenantId,
+      customerId,
+      subtotal: finalTotal,
+      items,
+      carrier: preferredCarrier,
+    });
+
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
+    // total_amount = ค่าสินค้า − ส่วนลด (ไม่รวมค่าส่ง — ดู migration 7.47)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id)
-       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8)
+      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source)
+       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
-      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId]
+      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source]
     );
     const orderId = ord.rows[0].id;
 
@@ -172,9 +313,9 @@ export async function createOrder(
 
     for (const ln of lines) {
       await client.query(
-        `INSERT INTO bms_order_items (tenant_id, order_id, product_sku, size, qty, unit_price)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [tenantId, orderId, ln.sku, ln.size, ln.qty, ln.unitPrice]
+        `INSERT INTO bms_order_items (tenant_id, order_id, product_sku, product_name, size, qty, unit_price)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice]
       );
     }
 
@@ -196,7 +337,18 @@ export async function createOrder(
       client,
     });
     await client.query("COMMIT");
-    return { status: "CREATED", orderId, total: finalTotal, subtotal: total, discount, couponCode: appliedCouponCode, items: lines };
+    return {
+      status: "CREATED",
+      orderId,
+      total: finalTotal,
+      subtotal: total,
+      discount,
+      shippingFee: shippingFee.fee,
+      amountDue: finalTotal + shippingFee.fee,
+      couponCode: appliedCouponCode,
+      preferredCarrier,
+      items: lines,
+    };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -265,8 +417,8 @@ export async function reorderFromOrder(
   orderId: string,
   editorId?: string | number | null
 ): Promise<ReorderResult> {
-  const src = await query<{ channel: Channel; customer_ref: string | null }>(
-    `SELECT channel, customer_ref FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+  const src = await query<{ channel: Channel; customer_ref: string | null; preferred_carrier: string | null }>(
+    `SELECT channel, customer_ref, preferred_carrier FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
     [tenantId, orderId]
   );
   if (src.rowCount === 0) return { status: "SOURCE_NOT_FOUND" };
@@ -283,6 +435,8 @@ export async function reorderFromOrder(
     customerRef: src.rows[0].customer_ref,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
     editorId,
+    // Same customer reordering — keep the carrier they asked for last time.
+    preferredCarrier: src.rows[0].preferred_carrier,
   });
 }
 

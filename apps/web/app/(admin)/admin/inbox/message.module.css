@@ -16,9 +16,10 @@
 
 .textBubble {
   position: relative;
-  padding: 7px 11px;
-  border-radius: 14px;
-  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -43,25 +44,25 @@
 
 .card {
   position: relative;
-  width: min(100%, 520px);
+  width: min(100%, 400px);
   overflow: visible;
   color: var(--app-text, #0f172a);
   border: 1px solid var(--app-border, #dbeafe);
-  border-radius: 15px;
+  border-radius: 12px;
   background: var(--app-surface, #fff);
-  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 
 .outgoingCard {
-  border-right: 4px solid #1677ff;
+  border-right: 3px solid #1677ff;
 }
 
 .incomingCard {
-  border-left: 4px solid #94a3b8;
+  border-left: 3px solid #94a3b8;
 }
 
 .mediaCard {
-  width: min(100%, 440px);
+  width: min(100%, 340px);
 }
 
 .imageButton {
@@ -71,7 +72,7 @@
   overflow: hidden;
   cursor: zoom-in;
   border: 0;
-  border-radius: 14px 14px 0 0;
+  border-radius: 11px 11px 0 0;
   background: rgba(148, 163, 184, 0.1);
 }
 
@@ -85,16 +86,16 @@
 .imageButton img {
   display: block;
   width: 100%;
-  max-height: 320px;
+  max-height: 220px;
   object-fit: contain;
 }
 
 .mediaFooter {
   display: flex;
-  min-height: 42px;
+  min-height: 34px;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px 8px 12px;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
 }
 
 .mediaCaption {
@@ -102,8 +103,8 @@
   flex: 1;
   overflow: hidden;
   color: var(--app-text, #334155);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: pre-wrap;
 }
@@ -118,9 +119,9 @@
 }
 
 .cardAction {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
   border: 1px solid var(--app-border, #dbeafe);
   border-radius: 50%;
   background: var(--app-surface, #fff);
@@ -128,22 +129,22 @@
 
 .fileCard {
   display: grid;
-  width: min(100%, 460px);
-  grid-template-columns: 54px minmax(0, 1fr) 32px;
+  width: min(100%, 400px);
+  grid-template-columns: 40px minmax(0, 1fr) 26px;
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
+  gap: 9px;
+  padding: 8px 10px;
 }
 
 .fileIcon {
   display: grid;
-  width: 54px;
-  height: 54px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   color: #1677ff;
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(22, 119, 255, 0.08);
-  font-size: 25px;
+  font-size: 18px;
 }
 
 .pdfIcon {
@@ -158,40 +159,40 @@
 .fileName {
   overflow: hidden;
   color: var(--app-text, #0f172a);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .fileMeta {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--app-muted, #64748b);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .fileCaption {
-  margin-top: 4px;
+  margin-top: 3px;
   overflow: hidden;
   color: var(--app-muted, #64748b);
-  font-size: 11px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .productCard {
   display: grid;
-  width: min(100%, 520px);
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: 14px;
-  padding: 12px;
+  width: min(100%, 400px);
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px;
 }
 
 .productImageButton,
 .productPlaceholder {
-  width: 132px;
-  height: 132px;
-  border-radius: 12px;
+  width: 88px;
+  height: 88px;
+  border-radius: 10px;
 }
 
 .productImageButton {
@@ -213,7 +214,7 @@
   place-items: center;
   color: #94a3b8;
   background: rgba(148, 163, 184, 0.12);
-  font-size: 28px;
+  font-size: 22px;
 }
 
 .productInfo {
@@ -225,53 +226,53 @@
 .productType {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--app-muted, #64748b);
-  font-size: 10px;
+  font-size: 9.5px;
 }
 
 .productName {
-  margin-top: 4px;
+  margin-top: 3px;
   overflow: hidden;
   color: var(--app-text, #0f172a);
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .productSku {
-  margin-top: 2px;
+  margin-top: 1px;
   overflow: hidden;
   color: var(--app-muted, #64748b);
-  font-size: 10px;
+  font-size: 9.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .productPrice {
-  margin-top: 8px;
+  margin-top: 5px;
   color: var(--app-text, #0f172a);
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .stockPill {
   align-self: flex-start;
-  margin-top: 5px;
-  padding: 3px 8px;
+  margin-top: 3px;
+  padding: 2px 7px;
   color: #15803d;
   border-radius: 999px;
   background: rgba(34, 197, 94, 0.12);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 650;
 }
 
 .productLink {
   align-self: flex-end;
   margin-top: auto;
-  padding-top: 6px;
-  font-size: 12px;
+  padding-top: 4px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -279,28 +280,28 @@
   grid-column: 1 / -1;
   margin: -2px 2px 0;
   color: var(--app-muted, #64748b);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 10.5px;
+  line-height: 1.4;
   white-space: pre-wrap;
 }
 
 .couponCard {
   display: grid;
-  width: min(100%, 480px);
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 12px;
-  padding: 12px;
+  width: min(100%, 400px);
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 9px;
+  padding: 9px;
 }
 
 .couponIcon {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   color: #b45309;
-  border-radius: 14px;
+  border-radius: 11px;
   background: rgba(245, 158, 11, 0.14);
-  font-size: 26px;
+  font-size: 19px;
 }
 
 .couponInfo {
@@ -308,24 +309,24 @@
 }
 
 .couponCode {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--app-text, #0f172a);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 
 .couponDiscount {
-  margin-top: 2px;
+  margin-top: 1px;
   color: #b45309;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .meta {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--app-muted, #888);
-  font-size: 10px;
+  font-size: 9.5px;
 }
 
 @media (max-width: 767px) {
@@ -337,39 +338,39 @@
   }
 
   .productCard {
-    grid-template-columns: 92px minmax(0, 1fr);
-    gap: 10px;
-    padding: 10px;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
   }
 
   .couponCard {
-    grid-template-columns: 48px minmax(0, 1fr);
-    gap: 10px;
-    padding: 10px;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
   }
 
   .productImageButton,
   .productPlaceholder {
-    width: 92px;
-    height: 92px;
+    width: 74px;
+    height: 74px;
   }
 
   .couponIcon {
-    width: 48px;
-    height: 48px;
-    font-size: 22px;
+    width: 40px;
+    height: 40px;
+    font-size: 17px;
   }
 
   .productPrice {
-    margin-top: 4px;
-    font-size: 16px;
+    margin-top: 3px;
+    font-size: 14px;
   }
 
   .productLink {
-    font-size: 11px;
+    font-size: 10.5px;
   }
 
   .imageButton img {
-    max-height: 230px;
+    max-height: 180px;
   }
 }

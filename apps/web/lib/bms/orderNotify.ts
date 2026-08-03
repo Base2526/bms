@@ -28,7 +28,7 @@ export async function notifyOrderStatusEmail(
 ): Promise<void> {
   try {
     const orderRes = await query(
-      `SELECT o.id, o.total_amount,
+      `SELECT o.id, o.total_amount, o.shipping_fee,
               cu.name AS customer_name, cu.email AS customer_email, cu.preferred_language
          FROM bms_orders o
          LEFT JOIN bms_customers cu ON cu.id = o.customer_id
@@ -40,7 +40,7 @@ export async function notifyOrderStatusEmail(
     if (!order || !customerEmail) return; // ไม่มีอีเมล = ข้ามเงียบๆ (ปกติมาก ไม่ใช่ error)
 
     const itemsRes = await query(
-      `SELECT oi.size, oi.qty, oi.unit_price, p.name AS product_name
+      `SELECT oi.size, oi.qty, oi.unit_price, COALESCE(oi.product_name, p.name) AS product_name
          FROM bms_order_items oi
          JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
         WHERE oi.tenant_id = $1 AND oi.order_id = $2`,
@@ -69,6 +69,9 @@ export async function notifyOrderStatusEmail(
     const currency = profile.currency || "THB";
     const fmt = (n: number) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
+    const shippingFee = Number(order.shipping_fee ?? 0);
+    const amountDue = Number(order.total_amount) + shippingFee;
+
     const data = {
       app_name: APP_NAME,
       year: new Date().getFullYear(),
@@ -78,7 +81,9 @@ export async function notifyOrderStatusEmail(
       order_ref: String(order.id).slice(0, 8).toUpperCase(),
       customer_name: order.customer_name || "",
       currency,
-      total: fmt(order.total_amount),
+      subtotal: fmt(order.total_amount),
+      shipping_fee: fmt(shippingFee),
+      total: fmt(amountDue),
       items: itemsRes.rows.map((r: any) => ({
         name: r.product_name, size: r.size, qty: r.qty,
         line_total: fmt(Number(r.unit_price) * Number(r.qty)),

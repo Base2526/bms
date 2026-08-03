@@ -265,6 +265,7 @@ export const bmsProductsResolvers = {
     },
     description: (p: any) => p.description ?? null,
     costPrice: (p: any) => (p.cost_price != null ? Number(p.cost_price) : null),
+    weightGrams: (p: any) => (p.weight_grams != null ? Number(p.weight_grams) : null),
     category: (p: any) => p.category ?? null,
     brand: (p: any) => p.brand ?? null,
     async variants(parent: { sku: string; tenant_id: string }) {

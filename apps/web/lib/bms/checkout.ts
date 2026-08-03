@@ -6,6 +6,7 @@ import {
   type SaveCustomerCheckoutDetailsInput,
 } from "./customers";
 import { generateInvoice } from "./documents";
+import { recalculateOrderShipping } from "./orders";
 import {
   configuredPaymentAccounts,
   supportsCustomerPaymentMethod,
@@ -48,6 +49,9 @@ export type CheckoutView = {
     status: string;
     subtotal: number;
     discount: number;
+    /** ค่าส่งที่คิดจริงกับออร์เดอร์นี้ (7.47) */
+    shippingFee: number;
+    /** ยอดที่ต้องโอน = ค่าสินค้า − ส่วนลด + ค่าส่ง */
     total: number;
     couponCode: string | null;
     createdAt: string;
@@ -285,6 +289,8 @@ export async function getCheckoutByToken(
         status: order.status,
         subtotal: invoice.subtotal,
         discount: invoice.discount,
+        // generateInvoice() คิด shippingFee/total (รวมค่าส่ง) มาให้แล้ว — อย่าคำนวณซ้ำที่นี่
+        shippingFee: invoice.shippingFee ?? 0,
         total: invoice.total,
         couponCode: invoice.couponCode,
         createdAt: new Date(order.created_at).toISOString(),
@@ -372,12 +378,15 @@ export async function saveCheckoutDeliveryByToken(
     return { ok: false, reason: "ออร์เดอร์นี้ไม่มีตัวตนลูกค้าที่แก้ไขได้" };
   }
 
-  await saveCustomerCheckoutDetails(
+  const { customerId } = await saveCustomerCheckoutDetails(
     payload.tenantId,
     order.channel,
     order.customer_ref,
     input
   );
+  // ที่อยู่เพิ่งมาถึง/เปลี่ยน → คิดค่าส่งใหม่ก่อนลูกค้าจ่าย ไม่งั้นยอดที่โชว์จะเป็นค่าส่งเดิม
+  // (เฉพาะออร์เดอร์ PENDING ที่ยังไม่มี payment — ดู recalculateOrderShipping)
+  if (customerId) await recalculateOrderShipping(payload.tenantId, customerId);
   return getCheckoutByToken(token);
 }
 
@@ -462,10 +471,21 @@ export async function orderCheckoutChatReply(
           `• ${item.name} ไซซ์ ${item.size} × ${item.qty}`
       )
       .join("\n");
+    // แยกค่าส่งให้เห็นเสมอเมื่อมีการคิดค่าส่ง — ยอด total รวมค่าส่งอยู่แล้ว (7.47)
+    // ถ้าไม่แยก ลูกค้าจะเห็นยอดสูงกว่าราคาสินค้าที่คุยกันไว้แล้วสงสัย
+    const amountLines =
+      checkout.order.shippingFee > 0
+        ? [
+            `ค่าสินค้า ${(checkout.order.total - checkout.order.shippingFee).toLocaleString("th-TH")} บาท`,
+            `ค่าส่ง ${checkout.order.shippingFee.toLocaleString("th-TH")} บาท`,
+            `รวมที่ต้องชำระ ${checkout.order.total.toLocaleString("th-TH")} บาท`,
+          ].join("\n")
+        : `รวม ${checkout.order.total.toLocaleString("th-TH")} บาท`;
+
     const parts = [
       "รับออร์เดอร์แล้วค่ะ ✅",
       itemLines,
-      `รวม ${checkout.order.total.toLocaleString("th-TH")} บาท`,
+      amountLines,
       `เลขออร์เดอร์: ${checkout.order.displayId}`,
     ];
 

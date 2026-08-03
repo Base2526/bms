@@ -46,7 +46,9 @@ export const bmsOrdersResolvers = {
         args.status && ORDER_STATUSES.includes(args.status) ? args.status : null;
 
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, shipping_fee,
+                (total_amount + shipping_fee) AS amount_due,
+                coupon_code, preferred_carrier, created_at, updated_at
            FROM bms_orders
           WHERE tenant_id = $4
             AND ($1::text IS NULL OR status = $1)
@@ -66,7 +68,9 @@ export const bmsOrdersResolvers = {
     async bmsOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.view");
       const res = await query(
-        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, created_at, updated_at
+        `SELECT id, channel, customer_ref, customer_id, status, total_amount, discount_amount, shipping_fee,
+                (total_amount + shipping_fee) AS amount_due,
+                coupon_code, preferred_carrier, created_at, updated_at
            FROM bms_orders WHERE tenant_id = $2 AND id = $1`,
         [args.id, getTenantId(ctx)]
       );
@@ -138,7 +142,7 @@ export const bmsOrdersResolvers = {
     },
     async bmsCreateOrder(
       _p: unknown,
-      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[]; couponCode?: string | null },
+      args: { channel?: string | null; customerRef?: string | null; items: { sku: string; size: string; qty: number }[]; couponCode?: string | null; preferredCarrier?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "order.create");
@@ -152,6 +156,7 @@ export const bmsOrdersResolvers = {
         items: args.items ?? [],
         editorId: ctx?.admin?.id ?? null,
         couponCode: args.couponCode ?? null,
+        preferredCarrier: args.preferredCarrier ?? null,
       });
       if (r.status === "CREATED") {
         await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total, discount: r.discount, couponCode: r.couponCode });
@@ -193,7 +198,10 @@ export const bmsOrdersResolvers = {
     // normalize ให้ตรง schema (String! สำหรับ timestamps, Float สำหรับ numeric)
     total_amount: (p: any) => Number(p.total_amount),
     discount_amount: (p: any) => Number(p.discount_amount ?? 0),
+    shipping_fee: (p: any) => Number(p.shipping_fee ?? 0),
+    amount_due: (p: any) => Number(p.amount_due ?? (Number(p.total_amount ?? 0) + Number(p.shipping_fee ?? 0))),
     coupon_code: (p: any) => p.coupon_code ?? null,
+    preferred_carrier: (p: any) => p.preferred_carrier ?? null,
     created_at: (p: any) =>
       p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
     updated_at: (p: any) =>

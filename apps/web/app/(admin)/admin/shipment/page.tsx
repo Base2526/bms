@@ -13,10 +13,11 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
+import { CARRIER_CODES, CARRIER_LABELS, type Carrier as CarrierCode } from "@/lib/bms/carriers/constants";
 
 // ---- Types --------------------------------------------------
 type ShipStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED" | "RETURNED" | "CANCELLED";
-type Carrier = "FLASH" | "KERRY" | "DHL" | "AUSPOST" | "NZPOST" | "OTHER";
+type Carrier = CarrierCode;
 type Shipment = {
   id: string; orderId: string; carrier: Carrier; trackingNo: string | null;
   status: ShipStatus; note: string | null; createdAt: string; updatedAt: string;
@@ -31,7 +32,7 @@ const Q_SHIPMENTS = gql`
   }
 `;
 const Q_PACKING_ORDERS = gql`
-  query { bmsOrders(status: PACKING, limit: 200) { id customer_ref total_amount } }
+  query { bmsOrders(status: PACKING, limit: 200) { id customer_ref total_amount shipping_fee amount_due preferred_carrier } }
 `;
 const Q_LABEL = gql`
   query ($id: ID!) {
@@ -63,10 +64,8 @@ const STATUS_COLOR: Record<ShipStatus, string> = {
 const STATUS_LABEL: Record<ShipStatus, string> = {
   PENDING: "รอส่ง", SHIPPED: "ส่งแล้ว", IN_TRANSIT: "กำลังส่ง", DELIVERED: "ถึงแล้ว", RETURNED: "ตีกลับ", CANCELLED: "ยกเลิก",
 };
-const CARRIERS: Carrier[] = ["FLASH", "KERRY", "DHL", "AUSPOST", "NZPOST", "OTHER"];
-const CARRIER_LABEL: Record<Carrier, string> = {
-  FLASH: "Flash", KERRY: "Kerry", DHL: "DHL", AUSPOST: "Australia Post", NZPOST: "NZ Post", OTHER: "อื่น ๆ",
-};
+const CARRIERS: readonly Carrier[] = CARRIER_CODES;
+const CARRIER_LABEL = CARRIER_LABELS;
 const NEXT_STATUS: ShipStatus[] = ["IN_TRANSIT", "DELIVERED", "RETURNED"];
 const FILTERS = ["ALL", "PENDING", "SHIPPED", "IN_TRANSIT", "DELIVERED", "RETURNED", "CANCELLED"] as const;
 
@@ -229,7 +228,21 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const { data } = useQuery(Q_PACKING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
-  const orders: { id: string; customer_ref: string | null; total_amount: number }[] = data?.bmsOrders || [];
+  const orders: { id: string; customer_ref: string | null; total_amount: number; shipping_fee: number; amount_due: number; preferred_carrier: Carrier | null }[] =
+    data?.bmsOrders || [];
+
+  // The carrier the customer asked for is only a preference — pre-fill it to save typing,
+  // but staff stay free to change it (what actually ships is whatever they submit here).
+  const selectedOrderId = Form.useWatch("orderId", form);
+  const selectedOrder = orders.find((o) => o.id === selectedOrderId) ?? null;
+  const requestedCarrier = selectedOrder?.preferred_carrier ?? null;
+  const carrierValue = Form.useWatch("carrier", form);
+
+  const onOrderChange = (orderId: string) => {
+    const next = orders.find((o) => o.id === orderId)?.preferred_carrier ?? null;
+    // Only fill an empty field — never silently overwrite a carrier staff already picked.
+    if (next && !form.getFieldValue("carrier")) form.setFieldsValue({ carrier: next });
+  };
 
   const [create, { loading }] = useMutation(M_CREATE, {
     onCompleted: (d: any) => {
@@ -253,14 +266,27 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
       <Form form={form} layout="vertical">
         <Form.Item name="orderId" label="ออร์เดอร์ (PACKING)" rules={[{ required: true, message: "เลือกออร์เดอร์" }]}>
           <Select showSearch placeholder="เลือกออร์เดอร์"
+            onChange={onOrderChange}
             options={orders.map((o) => ({
               value: o.id,
-              label: `${o.id.slice(0, 8)} · ${o.customer_ref ?? "-"} · ${Number(o.total_amount).toLocaleString()} ฿`,
+              label: `${o.id.slice(0, 8)} · ${o.customer_ref ?? "-"} · ${Number(o.amount_due).toLocaleString()} ฿`
+                + (o.preferred_carrier ? ` · ขอ ${CARRIER_LABEL[o.preferred_carrier]}` : ""),
             }))}
             filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
           />
         </Form.Item>
-        <Form.Item name="carrier" label="ขนส่ง" rules={[{ required: true, message: "เลือกขนส่ง" }]}>
+        <Form.Item
+          name="carrier"
+          label="ขนส่ง"
+          rules={[{ required: true, message: "เลือกขนส่ง" }]}
+          extra={
+            requestedCarrier
+              ? carrierValue && carrierValue !== requestedCarrier
+                ? `ลูกค้าขอ ${CARRIER_LABEL[requestedCarrier]} — คุณกำลังเลือกเจ้าอื่น`
+                : `ลูกค้าขอ ${CARRIER_LABEL[requestedCarrier]} (เปลี่ยนได้)`
+              : undefined
+          }
+        >
           <Select options={CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))} />
         </Form.Item>
         <Form.Item name="trackingNo" label="เลขพัสดุ (ใส่ทีหลังได้)">

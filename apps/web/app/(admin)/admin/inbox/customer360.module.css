@@ -1,0 +1,51 @@
+/* Compact Customer 360 panel — sits beside a live chat, so vertical space is
+   scarce and staff scan it constantly. Shrinks antd Collapse/List/Descriptions
+   chrome in one place instead of per-component props. */
+
+.panel :global(.ant-collapse-header) {
+  padding: 6px 10px !important;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.panel :global(.ant-collapse-content-box) {
+  padding: 8px 10px !important;
+}
+
+.panel :global(.ant-descriptions-item-label),
+.panel :global(.ant-descriptions-item-content) {
+  font-size: 11px;
+  padding-bottom: 3px !important;
+}
+
+.panel :global(.ant-list-item) {
+  padding: 5px 0 !important;
+  font-size: 11.5px;
+}
+
+.panel :global(.ant-tag) {
+  font-size: 9.5px;
+  line-height: 16px;
+  padding-inline: 6px;
+  margin-inline-end: 3px;
+}
+
+.panel :global(.ant-btn-sm) {
+  font-size: 11px;
+  height: 24px;
+  padding-inline: 8px;
+}
+
+.panel :global(.ant-table) {
+  font-size: 11px;
+}
+
+.panel :global(.ant-table-thead > tr > th) {
+  padding: 4px 6px !important;
+  font-size: 10px;
+  background: transparent;
+}
+
+.panel :global(.ant-table-tbody > tr > td) {
+  padding: 4px 6px !important;
+}

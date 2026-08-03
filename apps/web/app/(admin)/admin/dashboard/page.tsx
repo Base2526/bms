@@ -18,6 +18,7 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
+import styles from "./dashboard.module.css";
 
 const { Text, Title } = Typography;
 
@@ -123,14 +124,14 @@ function channelState(cfg: any, health: any): { tone: "ok" | "bad" | "unset"; te
 
 function KpiCard({ title, value, hint, icon }: { title: string; value: string | number; hint: string; icon: React.ReactNode }) {
   return (
-    <Card style={{ height: "100%", borderRadius: 8 }} bodyStyle={{ padding: 18 }}>
-      <Space direction="vertical" size={8} style={{ width: "100%" }}>
-        <Space style={{ justifyContent: "space-between", width: "100%" }} align="start">
-          <Text type="secondary">{title}</Text>
-          <span style={{ color: "#1677ff", fontSize: 22 }}>{icon}</span>
+    <Card style={{ height: "100%", borderRadius: 10 }} styles={{ body: { padding: "10px 12px" } }}>
+      <Space direction="vertical" size={2} style={{ width: "100%" }}>
+        <Space style={{ justifyContent: "space-between", width: "100%" }} align="center">
+          <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</Text>
+          <span style={{ color: "#1677ff", fontSize: 13, flexShrink: 0 }}>{icon}</span>
         </Space>
-        <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.1 }}>{value}</div>
-        <Text type="secondary" style={{ fontSize: 12 }}>{hint}</Text>
+        <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.01em" }}>{value}</div>
+        <Text type="secondary" style={{ fontSize: 10.5 }}>{hint}</Text>
       </Space>
     </Card>
   );
@@ -350,44 +351,44 @@ export default function Page() {
         )}
       </div>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
-        <Col xs={24} sm={12} xl={6}>
+      <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
+        <Col xs={12} xl={6}>
           <KpiCard title="ยอดขายวันนี้" value={baht(d?.revenueToday)} hint={`ยอดขายรวม ${baht(d?.revenueTotal)}`} icon={<DollarOutlined />} />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} xl={6}>
           <KpiCard title="ออเดอร์ทั้งหมด" value={d?.orderCount ?? 0} hint={`สำเร็จ ${completed} · ส่งแล้ว ${shipped}`} icon={<ShoppingCartOutlined />} />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} xl={6}>
           <KpiCard title="ลูกค้าทั้งหมด" value={d?.customerCount ?? 0} hint="คน" icon={<TeamOutlined />} />
         </Col>
-        <Col xs={24} sm={12} xl={6}>
+        <Col xs={12} xl={6}>
           <KpiCard title="สินค้าใกล้หมด" value={`${d?.lowStockCount ?? 0} รายการ`} hint="ดูรายละเอียดในลิสต์ด้านบน" icon={<InboxOutlined />} />
         </Col>
       </Row>
 
       {/* ===== ภาพรวมธุรกิจ — ดูเมื่อมีเวลา ไม่ใช่งานเร่งด่วน จึงลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า ===== */}
-      <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 14, padding: 16, marginTop: 16 }}>
-        <Text strong style={{ display: "block", marginBottom: 12 }}>ภาพรวมธุรกิจ</Text>
+      <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 12 }}>
+        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>ภาพรวมธุรกิจ</Text>
 
-        <Row gutter={[16, 16]}>
+        <Row gutter={[8, 8]}>
           <Col xs={24} lg={16}>
-            <Card title="ยอดขาย 7 วันล่าสุด" loading={loading} style={{ borderRadius: 8 }}>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 190, paddingTop: 8 }}>
+            <Card title="ยอดขาย 7 วันล่าสุด" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, paddingTop: 4 }}>
                 {(d?.salesDaily || []).map((x: any) => (
                   <div key={x.day} style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: "#888", marginBottom: 4, minHeight: 16 }}>
+                    <div style={{ fontSize: 9.5, color: "var(--app-muted)", marginBottom: 3, minHeight: 12 }}>
                       {x.revenue > 0 ? `${(x.revenue / 1000).toFixed(1)}k` : ""}
                     </div>
                     <div
                       title={`${x.revenue.toLocaleString()} ฿ · ${x.orders} ออเดอร์`}
                       style={{
-                        height: `${Math.round((x.revenue / maxRev) * 140)}px`,
-                        minHeight: x.revenue > 0 ? 6 : 2,
-                        background: x.revenue > 0 ? "linear-gradient(180deg,#69b1ff,#1677ff)" : "#f0f0f0",
-                        borderRadius: "6px 6px 0 0",
+                        height: `${Math.round((x.revenue / maxRev) * 66)}px`,
+                        minHeight: x.revenue > 0 ? 4 : 2,
+                        background: x.revenue > 0 ? "linear-gradient(180deg,#69b1ff,#1677ff)" : "var(--app-surface-2)",
+                        borderRadius: "4px 4px 0 0",
                       }}
                     />
-                    <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>{x.day.slice(5)}</div>
+                    <div style={{ fontSize: 9.5, color: "var(--app-muted)", marginTop: 4 }}>{x.day.slice(5)}</div>
                   </div>
                 ))}
               </div>
@@ -395,33 +396,33 @@ export default function Page() {
           </Col>
 
           <Col xs={24} lg={8}>
-            <Card title="สรุปธุรกิจ" loading={loading} style={{ borderRadius: 8, height: "100%" }}>
-              <Space direction="vertical" size={14} style={{ width: "100%" }}>
+            <Card title="สรุปธุรกิจ" loading={loading} style={{ borderRadius: 10, height: "100%" }} className={styles.compactCard}>
+              <Space direction="vertical" size={4} style={{ width: "100%", fontSize: 12 }}>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">ยอดขายรวม</Text>
-                  <Text strong>{baht(d?.revenueTotal)}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>ยอดขายรวม</Text>
+                  <Text strong style={{ fontSize: 12 }}>{baht(d?.revenueTotal)}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">ลูกค้า</Text>
-                  <Text strong><TeamOutlined /> {Number(d?.customerCount ?? 0).toLocaleString()}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>ลูกค้า</Text>
+                  <Text strong style={{ fontSize: 12 }}><TeamOutlined /> {Number(d?.customerCount ?? 0).toLocaleString()}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">สินค้าใกล้หมด</Text>
-                  <Text strong>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>สินค้าใกล้หมด</Text>
+                  <Text strong style={{ fontSize: 12 }}>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
                 </Space>
-                <Space wrap>
-                  <Link href="/admin/reports"><Button>Reports</Button></Link>
-                  <Link href="/admin/products"><Button>Products</Button></Link>
-                  <Link href="/admin/customers"><Button>Customers</Button></Link>
+                <Space wrap size={6} style={{ marginTop: 2 }}>
+                  <Link href="/admin/reports"><Button size="small">Reports</Button></Link>
+                  <Link href="/admin/products"><Button size="small">Products</Button></Link>
+                  <Link href="/admin/customers"><Button size="small">Customers</Button></Link>
                 </Space>
               </Space>
             </Card>
           </Col>
         </Row>
 
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
           <Col xs={24} lg={14}>
-            <Card title="สินค้าขายดี" loading={loading} style={{ borderRadius: 8 }}>
+            <Card title="สินค้าขายดี" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="sku"
                 size="small"
@@ -437,7 +438,7 @@ export default function Page() {
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card title="ลูกค้ายอดสูง" loading={loading} style={{ borderRadius: 8 }}>
+            <Card title="ลูกค้ายอดสูง" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="id"
                 size="small"
@@ -461,43 +462,45 @@ export default function Page() {
           </Col>
         </Row>
 
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
           <Col xs={24} lg={10}>
             <Card
               title="AI health (7 วันล่าสุด)"
-              style={{ borderRadius: 8 }}
+              style={{ borderRadius: 10 }}
+              className={styles.compactCard}
               extra={<Link href="/admin/ai-quality">เปิด AI Quality</Link>}
             >
-              <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 {(aiOverLimit || aiNearLimit) && (
                   <Alert
                     type={aiOverLimit ? "error" : "warning"}
                     showIcon
+                    style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11.5, marginBottom: 4 }}
                     message={
                       aiOverLimit
                         ? <>เกินโควตาฟรีเดือนนี้แล้ว <Tag>แพ็กเกจ {aiUsage.planName}</Tag> — ตอบด้วย template แทน AI ชั่วคราว</>
                         : <>ใกล้เต็มโควตาฟรี <Tag>แพ็กเกจ {aiUsage.planName}</Tag> เหลือ <b>{aiUsage.remaining}</b>/{aiUsage.limit} ครั้ง</>
                     }
-                    description={<Link href="/admin/settings">ใส่ AI Key ของร้านเองเพื่อไม่จำกัด</Link>}
+                    description={<Link href="/admin/settings" style={{ fontSize: 11 }}>ใส่ AI Key ของร้านเองเพื่อไม่จำกัด</Link>}
                   />
                 )}
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">Tool calls ทั้งหมด</Text>
-                  <Text strong>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Tool calls ทั้งหมด</Text>
+                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">Error / denied</Text>
-                  <Text strong>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Error / denied</Text>
+                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary">Force handoff</Text>
-                  <Text strong>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Force handoff</Text>
+                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
                 </Space>
               </Space>
             </Card>
           </Col>
           <Col xs={24} lg={14}>
-            <Card title="AI tools ที่พลาดบ่อย" style={{ borderRadius: 8 }}>
+            <Card title="AI tools ที่พลาดบ่อย" style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="tool"
                 size="small"
@@ -515,22 +518,23 @@ export default function Page() {
         </Row>
 
         {d?.couponSummary && (
-          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
             <Col xs={24}>
               <Card
                 title="โค้ดส่วนลด (เดือนนี้)"
                 loading={loading}
-                style={{ borderRadius: 8 }}
+                style={{ borderRadius: 10 }}
+                className={styles.compactCard}
                 extra={<Link href="/admin/coupons"><Button size="small">จัดการโค้ด</Button></Link>}
               >
-                <Space size="large" wrap style={{ marginBottom: 12 }}>
+                <Space size="large" wrap style={{ marginBottom: 8 }}>
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary">ส่วนลดที่แจกไปแล้ว</Text>
-                    <Text strong style={{ fontSize: 18 }}>{baht(d.couponSummary.discountThisMonth)}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>ส่วนลดที่แจกไปแล้ว</Text>
+                    <Text strong style={{ fontSize: 15 }}>{baht(d.couponSummary.discountThisMonth)}</Text>
                   </Space>
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary">จำนวนครั้งที่ใช้โค้ด</Text>
-                    <Text strong style={{ fontSize: 18 }}>{Number(d.couponSummary.redemptionsThisMonth).toLocaleString()}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>จำนวนครั้งที่ใช้โค้ด</Text>
+                    <Text strong style={{ fontSize: 15 }}>{Number(d.couponSummary.redemptionsThisMonth).toLocaleString()}</Text>
                   </Space>
                 </Space>
                 <Table

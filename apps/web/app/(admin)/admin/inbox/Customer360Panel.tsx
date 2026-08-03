@@ -17,6 +17,7 @@ import {
   PlusOutlined, MinusCircleOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
+import panelStyles from "./customer360.module.css";
 
 const { Text, Paragraph } = Typography;
 
@@ -849,13 +850,13 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
   }
 
   return (
-    <div style={{
-      width: 320, maxWidth: "32vw", flexShrink: 0, minHeight: 0, minWidth: 280, overflowY: "auto", overflowX: "hidden",
-      border: "1px solid var(--app-border, #eee)", borderRadius: 8, padding: 10,
+    <div className={panelStyles.panel} style={{
+      width: 292, maxWidth: "30vw", flexShrink: 0, minHeight: 0, minWidth: 260, overflowY: "auto", overflowX: "hidden",
+      border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: 8,
       position: "sticky", top: 0, height: "100%",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <Text strong style={{ fontSize: 13 }}>ข้อมูลลูกค้า (Customer 360)</Text>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <Text strong style={{ fontSize: 12 }}>ข้อมูลลูกค้า (Customer 360)</Text>
         <Space size={4}>
           {conv?.id && can("coupon.manage") && (
             <Button size="small" onClick={() => setAssignCouponOpen(true)}>แจกคูปอง</Button>
