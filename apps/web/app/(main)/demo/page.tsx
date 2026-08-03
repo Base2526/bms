@@ -19,6 +19,7 @@ import {
 } from 'antd';
 import {
   CheckCircleOutlined,
+  DownOutlined,
   MessageOutlined,
   RobotOutlined,
   ShopOutlined,
@@ -26,7 +27,7 @@ import {
   StarOutlined,
 } from '@ant-design/icons';
 
-const { Title, Paragraph, Text } = Typography;
+const { Paragraph, Text } = Typography;
 
 type ArchetypeKey = 'fashion' | 'food' | 'beauty' | 'grocery' | 'gadgets';
 
@@ -411,6 +412,7 @@ export default function DemoPage() {
     ready: false,
   });
   const [sessions, setSessions] = useState<DemoSessionMap>({});
+  const [heroOpen, setHeroOpen] = useState(false);
   const sessionsReadyRef = useRef(false);
   const demo = DEMOS[archetype];
 
@@ -509,35 +511,76 @@ export default function DemoPage() {
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '24px 16px 64px' }}>
       <Space direction="vertical" size={20} style={{ width: '100%' }}>
         <Card
-          style={{
-            borderRadius: 26,
-            background:
-              'linear-gradient(135deg, rgba(18,39,59,1) 0%, rgba(33,103,88,1) 55%, rgba(215,184,92,1) 100%)',
-          }}
-          styles={{ body: { padding: 28 } }}
+          style={{ borderRadius: 18, border: '1px solid var(--app-border)' }}
+          styles={{ body: { padding: '14px 20px' } }}
         >
-          <Space direction="vertical" size={14} style={{ width: '100%' }}>
-            <Space wrap>
-              {heroTags.map((tag) => (
-                <Tag key={tag} color="gold" style={{ borderRadius: 999, paddingInline: 12 }}>
-                  {tag}
-                </Tag>
-              ))}
-            </Space>
-            <Title level={1} style={{ margin: 0, color: '#fff' }}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setHeroOpen((v) => !v)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setHeroOpen((v) => !v);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
+          >
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                background: 'var(--app-surface-2)',
+                color: 'var(--app-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transform: heroOpen ? 'rotate(180deg)' : undefined,
+                transition: 'transform .15s ease',
+              }}
+            >
+              <DownOutlined style={{ fontSize: 10 }} />
+            </span>
+            <Text strong style={{ fontSize: 16.5, flex: 1 }}>
               ลองถาม AI ของ BMS บนร้าน demo จริง
-            </Title>
-            <Paragraph style={{ margin: 0, color: 'rgba(255,255,255,0.88)', fontSize: 17 }}>
-              เลือกร้าน demo ก่อนคุย แล้วระบบจะผูกบริบทเป็นร้านนั้นโดยตรง เพื่อให้ AI อ่านสินค้าและตอบตามร้านที่เลือก
-            </Paragraph>
-            <Alert
-              type="info"
-              showIcon
-              message="ร้านที่เลือกจะถูกใช้เป็น context ของบทสนทนา"
-              description="ถ้า tenant demo ร้านนั้นถูกเตรียมสินค้าไว้แล้ว AI จะตอบบนข้อมูลร้านจริง ถ้ายังไม่พร้อม ระบบจะแจ้ง slug ร้านที่ต้องเตรียมให้ชัดเจน"
-              style={{ borderRadius: 16 }}
-            />
-          </Space>
+            </Text>
+            {!heroOpen ? <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>วิธีใช้ ▸</Text> : null}
+          </div>
+
+          {heroOpen ? (
+            <div style={{ paddingTop: 16, marginTop: 14, borderTop: '1px solid var(--app-border)' }}>
+              <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                <Space wrap>
+                  {heroTags.map((tag) => (
+                    <Tag
+                      key={tag}
+                      style={{
+                        borderRadius: 999,
+                        paddingInline: 12,
+                        background: 'rgba(var(--app-primary-rgb),0.09)',
+                        color: 'var(--app-primary)',
+                        border: 'none',
+                      }}
+                    >
+                      {tag}
+                    </Tag>
+                  ))}
+                </Space>
+                <Paragraph style={{ margin: 0, color: 'var(--app-muted)', fontSize: 14.5 }}>
+                  เลือกร้าน demo ก่อนคุย แล้วระบบจะผูกบริบทเป็นร้านนั้นโดยตรง เพื่อให้ AI อ่านสินค้าและตอบตามร้านที่เลือก
+                </Paragraph>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="ร้านที่เลือกจะถูกใช้เป็น context ของบทสนทนา"
+                  description="ถ้า tenant demo ร้านนั้นถูกเตรียมสินค้าไว้แล้ว AI จะตอบบนข้อมูลร้านจริง ถ้ายังไม่พร้อม ระบบจะแจ้ง slug ร้านที่ต้องเตรียมให้ชัดเจน"
+                  style={{ borderRadius: 16 }}
+                />
+              </Space>
+            </div>
+          ) : null}
         </Card>
 
         <Row gutter={[20, 20]} align="top">
