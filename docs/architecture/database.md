@@ -29,7 +29,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
 | Shipping | `bms_shipments` | `5.4` |
-| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5` |
+| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
@@ -60,6 +60,13 @@ metadata (`display_name`, `picture_url`, `status_message`, `language`, `profile_
 `profile_error_at`, `profile_error`) for display-only use. LINE OA sync writes these fields after
 webhook processing; Inbox uses them as fallback when no authoritative CRM customer name/avatar is
 available.
+
+**Omnichannel Inbox read path (`7.51`)** — `/admin/inbox` reads the latest conversation list and the
+selected conversation separately. Recent-list indexes cover tenant/status/time ordering, detail
+indexes cover latest message/event slices, and trigram indexes support bounded text search across
+conversation previews, customer refs, message bodies, CRM names, and cached channel display names.
+Keep list/detail GraphQL queries bounded; do not reintroduce unbounded message/note/event reads on
+the initial inbox view.
 
 **`bms_orders` / `bms_order_items`** — orders start directly at `PENDING` with stock already
 reserved; there is no separate `DRAFT` status in the implementation despite earlier planning docs

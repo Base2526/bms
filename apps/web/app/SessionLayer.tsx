@@ -8,6 +8,11 @@ import { GlobalChatListener } from "@/components/GlobalChatListener";
 import { GlobalInboxNotifier } from "@/components/GlobalInboxNotifier";
 import { GlobalMentionNotifier } from "@/components/GlobalMentionNotifier";
 import { GlobalFailureNotifier } from "@/components/GlobalFailureNotifier";
+import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === "light" || value === "dark" || value === "system";
+}
 
 // Keep these global wires out of the auth routes.
 function GlobalWiresWrapper() {
@@ -15,6 +20,7 @@ function GlobalWiresWrapper() {
   const { user, admin } = useSessionCtx();
   const meId = user?.id || admin?.id;
   const isAdminRoute = pathname.startsWith("/admin");
+  const sessionThemePreference = admin?.themePreference ?? user?.themePreference;
 
   React.useEffect(() => {
     const frontendLogout = () => (window.location.href = "/login");
@@ -28,6 +34,12 @@ function GlobalWiresWrapper() {
       window.removeEventListener("backend-logout", backendLogout);
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!isThemeMode(sessionThemePreference)) return;
+    if (getThemeMode() === sessionThemePreference) return;
+    setThemeMode(sessionThemePreference);
+  }, [sessionThemePreference]);
 
   return (
     <>

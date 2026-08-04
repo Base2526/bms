@@ -86,5 +86,7 @@ Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / 
 
 Separate from CRM customer records, staff/admin users now have a self-service profile page at
 `/admin/profile` backed by `bmsMe`, `updateMe`, and `uploadAvatar`. This is for the logged-in
-operator's own account metadata (name, phone, language, avatar) and does not change customer
-records or tenant-wide user-role assignments.
+operator's own account metadata (name, phone, language, avatar, and UI theme preference) and does
+not change customer records or tenant-wide user-role assignments. The UI theme is stored on
+`users.theme_preference` as `system`, `light`, or `dark`, so it follows the user across devices
+after login while public/signed-out pages continue to use the local cookie/storage fallback.

@@ -4,7 +4,7 @@ import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
   Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
 } from "antd";
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   ReloadOutlined, SendOutlined, UserOutlined,
@@ -88,22 +88,22 @@ const TOOL_CHIP_BASE: React.CSSProperties = {
 // ---- GraphQL ------------------------------------------------
 const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
 const Q_LIST = gql`
-  query ($status: BmsConvStatus, $search: String, $assignedTo: ID) {
-    bmsConversations(status: $status, search: $search, assignedTo: $assignedTo, limit: 100) {
+  query ($status: BmsConvStatus, $search: String, $assignedTo: ID, $limit: Int) {
+    bmsConversations(status: $status, search: $search, assignedTo: $assignedTo, limit: $limit) {
       id channel customerRef customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessage lastMessageAt
       assignedStaff { id name avatar }
     }
   }
 `;
 const Q_CONV = gql`
-  query ($id: ID!) {
+  query ($id: ID!, $messageLimit: Int, $eventLimit: Int, $noteLimit: Int) {
     bmsConversation(id: $id) {
       id channel customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
       assignedStaff { ${STAFF_FIELDS} }
       helpers { ${STAFF_FIELDS} }
-      messages { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
-      systemEvents { id kind at actorName targetName statusValue auto }
-      notes { id author body createdAt mentionedUserIds }
+      messages(limit: $messageLimit) { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
+      systemEvents(limit: $eventLimit) { id kind at actorName targetName statusValue auto }
+      notes(limit: $noteLimit) { id author body createdAt mentionedUserIds }
     }
   }
 `;
@@ -226,6 +226,10 @@ const AI_SUGGESTION_VISIBILITY_KEY = "bms_inbox_ai_suggestion_visibility";
 const CHAT_BOTTOM_THRESHOLD_PX = 120;
 const MOBILE_QUERY = "(max-width: 767px)";
 const TABLET_QUERY = "(min-width: 768px) and (max-width: 1180px)";
+const INBOX_CONVERSATION_LIST_LIMIT = 50;
+const INBOX_DETAIL_MESSAGES_LIMIT = 80;
+const INBOX_DETAIL_EVENTS_LIMIT = 30;
+const INBOX_DETAIL_NOTES_LIMIT = 30;
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
@@ -373,6 +377,100 @@ function nextAction(conv: any) {
   return { label: "ขั้นต่อไป", value: "ตอบลูกค้า", icon: <SendOutlined />, color: "#d48806" };
 }
 
+const ConversationListItem = memo(function ConversationListItem({
+  conversation: c,
+  active,
+  collapsed,
+  onOpen,
+}: {
+  conversation: Conversation;
+  active: boolean;
+  collapsed: boolean;
+  onOpen: (conversationId: string) => void;
+}) {
+  const priority = convPriority(c);
+  const source = sourceLabel(c);
+  const displayName = c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า";
+  const avatarLetter = (c.customerName || c.customerRef || "").slice(0, 1).toUpperCase() || undefined;
+
+  return (
+    <List.Item
+      onClick={() => onOpen(c.id)}
+      /* แถวเรียบคั่นด้วยเส้น ไม่ใช่การ์ดมีเงา/ขอบรอบตัว (ตาม mockup) — การ์ดซ้อนในคอลัมน์ที่มี
+         กรอบอยู่แล้วกินความกว้างและทำให้ 5 แถวดูเหมือน 5 กล่องแยกกันแทนที่จะเป็นคิวเดียว */
+      style={{
+        cursor: "pointer", padding: collapsed ? "5px 0" : "8px 10px", borderRadius: 0, marginBottom: 0,
+        display: collapsed ? "flex" : undefined,
+        justifyContent: collapsed ? "center" : undefined,
+        background: active ? "rgba(22,119,255,0.07)" : "transparent",
+        border: "none",
+        borderLeft: active ? "2px solid #1677ff" : "2px solid transparent",
+        borderBottom: `1px solid ${IDLE_CARD_BORDER}`,
+      }}
+    >
+      {collapsed ? (
+        <Tooltip placement="right" title={`${c.channel} · ${displayName}`}>
+          <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
+        </Tooltip>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 8, width: "100%", minWidth: 0, alignItems: "start" }}>
+          <Badge count={c.unread} size="small" offset={[-2, 2]}>
+            {/* ไม่มีรูปจริง = ตัวอักษรแรกบนพื้น gradient (mockup) — อ่านออกว่าเป็นใคร
+                เร็วกว่าไอคอนคนสีเทาที่เหมือนกันหมดทุกแถว */}
+            <Avatar
+              size={28}
+              src={c.customerAvatar || undefined}
+              icon={c.customerAvatar ? undefined : (c.customerName || c.customerRef) ? undefined : <UserOutlined />}
+              style={c.customerAvatar ? undefined : {
+                background: "linear-gradient(135deg, #1677ff, #059669)",
+                fontSize: 11, fontWeight: 700,
+              }}
+            >
+              {avatarLetter}
+            </Avatar>
+          </Badge>
+          {/* ชื่อขึ้นก่อน (สิ่งที่ staff กวาดตาหา) ช่องทางเป็น chip เล็กชิดขวา —
+              เดิมเอา Tag ช่องทางไว้หน้าชื่อ ทำให้ชื่อถูกดันและอ่านยากตอน list แคบ */}
+          <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
+                {displayName}
+              </Typography.Text>
+              {c.assignedStaff && (
+                <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
+                  <Avatar size={15} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 8, backgroundColor: "#1677ff", flexShrink: 0 }}>
+                    {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
+                  </Avatar>
+                </Tooltip>
+              )}
+              <span style={CHANNEL_CHIP_STYLE}>
+                {CHANNEL_SHORT[c.channel] || c.channel}
+              </span>
+            </div>
+
+            <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 10, lineHeight: 1.25 }}>
+              {source ? `ร้าน: ${source}` : c.customerRef || c.id}
+            </Typography.Text>
+
+            <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 11, lineHeight: 1.3 }} type="secondary">
+              {previewNode(c.lastMessage)}
+            </Typography.Text>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, marginTop: 1 }}>
+              <Tag color={priority.color} icon={priority.icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 700, fontSize: 9, lineHeight: "16px", paddingInline: 6 }}>
+                {priority.label}
+              </Tag>
+              <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
+                {c.lastMessageAt ? timeLabel(c.lastMessageAt) : ""}
+              </Typography.Text>
+            </div>
+          </div>
+        </div>
+      )}
+    </List.Item>
+  );
+});
+
 function Inbox() {
   const apollo = useApolloClient();
   const { can } = useBmsPermissions();
@@ -417,6 +515,7 @@ function Inbox() {
     if (typeof window === "undefined") return "list";
     return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";
   });
+  const [customer360Ready, setCustomer360Ready] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
 
@@ -442,23 +541,51 @@ function Inbox() {
     });
   };
 
+  const listVariables = useMemo(() => ({
+    status: filter === "ALL" ? null : filter,
+    search: search || null,
+    assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null,
+    limit: INBOX_CONVERSATION_LIST_LIMIT,
+  }), [filter, search, mineOnly, restrictedToOwn, me?.id]);
+  const convVariables = useCallback((id: string) => ({
+    id,
+    messageLimit: INBOX_DETAIL_MESSAGES_LIMIT,
+    eventLimit: INBOX_DETAIL_EVENTS_LIMIT,
+    noteLimit: INBOX_DETAIL_NOTES_LIMIT,
+  }), []);
+
   const { data, loading, refetch } = useQuery(Q_LIST, {
-    variables: { status: filter === "ALL" ? null : filter, search: search || null, assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null },
+    variables: listVariables,
     fetchPolicy: "cache-and-network",
     pollInterval: 20000,
     skip: (mineOnly || restrictedToOwn) && !me?.id, // กันยิงก่อนรู้ id ตัวเอง (จะได้ทั้งหมดโดยไม่ตั้งใจ)
   });
   const conversations: Conversation[] = data?.bmsConversations || [];
-  const needReplyCount = conversations.filter((c) => c.unread > 0).length;
-  const pendingCount = conversations.filter((c) => c.status === "PENDING").length;
-  const visibleConversations = conversations.filter((c) => matchesQuickFilter(c, quickFilter));
+  const needReplyCount = useMemo(() => conversations.filter((c) => c.unread > 0).length, [conversations]);
+  const pendingCount = useMemo(() => conversations.filter((c) => c.status === "PENDING").length, [conversations]);
+  const visibleConversations = useMemo(
+    () => conversations.filter((c) => matchesQuickFilter(c, quickFilter)),
+    [conversations, quickFilter]
+  );
   const effectiveListCollapsed = !isMobile && (listCollapsed || isTablet);
   const showListPane = !isMobile || mobilePane === "list";
   const showConversationPane = !isMobile || mobilePane === "chat";
 
   const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
   const conv = convData?.bmsConversation;
-  const selectedCouponCode = latestCouponCodeFromMessages(conv?.messages || []);
+  const showCustomer360Pane = Boolean(conv && !isMobile && !isTablet);
+  const selectedCouponCode = useMemo(
+    () => latestCouponCodeFromMessages(conv?.messages || []),
+    [conv?.messages]
+  );
+
+  useEffect(() => {
+    setCustomer360Ready(false);
+    if (!showCustomer360Pane) return;
+    const timer = window.setTimeout(() => setCustomer360Ready(true), 350);
+    return () => window.clearTimeout(timer);
+  }, [showCustomer360Pane, conv?.id]);
+
   const [markRead] = useMutation(M_READ);
   const { data: inboxChangedData } = useSubscription(S_INBOX_CHANGED, {
     skip: !can("inbox.view"),
@@ -475,20 +602,12 @@ function Inbox() {
   const clearUnreadInCache = useCallback((conversationId: string) => {
     const list = apollo.cache.readQuery<any>({
       query: Q_LIST,
-      variables: {
-        status: filter === "ALL" ? null : filter,
-        search: search || null,
-        assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null,
-      },
+      variables: listVariables,
     });
     if (list?.bmsConversations) {
       apollo.cache.writeQuery({
         query: Q_LIST,
-        variables: {
-          status: filter === "ALL" ? null : filter,
-          search: search || null,
-          assignedTo: (mineOnly || restrictedToOwn) ? me?.id ?? null : null,
-        },
+        variables: listVariables,
         data: {
           bmsConversations: list.bmsConversations.map((c: Conversation) =>
             c.id === conversationId ? { ...c, unread: 0 } : c
@@ -499,16 +618,16 @@ function Inbox() {
 
     const detail = apollo.cache.readQuery<any>({
       query: Q_CONV,
-      variables: { id: conversationId },
+      variables: convVariables(conversationId),
     });
     if (detail?.bmsConversation) {
       apollo.cache.writeQuery({
         query: Q_CONV,
-        variables: { id: conversationId },
+        variables: convVariables(conversationId),
         data: { bmsConversation: { ...detail.bmsConversation, unread: 0 } },
       });
     }
-  }, [apollo, filter, search, mineOnly, restrictedToOwn, me?.id]);
+  }, [apollo, listVariables, convVariables]);
 
   // Refresh the first event immediately, then cap sustained bursts at two list
   // queries per second while guaranteeing one trailing refresh is not lost.
@@ -583,11 +702,11 @@ function Inbox() {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === event.conversationId) {
-          void refetchConv({ id: event.conversationId });
+          void refetchConv(convVariables(event.conversationId));
         }
       }, 150);
     }
-  }, [inboxChangedData, refetchConv, triggerListRefresh, markActiveConversationRead]);
+  }, [inboxChangedData, refetchConv, triggerListRefresh, markActiveConversationRead, convVariables]);
 
   useEffect(() => () => {
     if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
@@ -598,14 +717,17 @@ function Inbox() {
 
   useEffect(() => {
     if (activeId) {
-      loadConv({ variables: { id: activeId } });
+      loadConv({ variables: convVariables(activeId) });
       void markActiveConversationRead(activeId);
     }
   }, [activeId]); // eslint-disable-line
 
   // If the socket misses an event, the existing 20s list poll detects a newer
   // message and refreshes only the active pane instead of polling every pane.
-  const activeListConversation = conversations.find((c) => c.id === activeId);
+  const activeListConversation = useMemo(
+    () => conversations.find((c) => c.id === activeId),
+    [conversations, activeId]
+  );
   const activeListMessageAt = activeListConversation?.lastMessageAt;
   const activeListUnread = activeListConversation?.unread ?? 0;
 
@@ -627,7 +749,7 @@ function Inbox() {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === activeId) {
-          void refetchConv({ id: activeId });
+          void refetchConv(convVariables(activeId));
         }
       }, 150);
     }
@@ -642,10 +764,10 @@ function Inbox() {
     }
   }, [activeId, conv?.id, conv?.unread, renderedLatestMessageId, markActiveConversationRead]);
 
-  const openConversation = (conversationId: string) => {
+  const openConversation = useCallback((conversationId: string) => {
     setActiveId(conversationId);
     if (isMobile) setMobilePane("chat");
-  };
+  }, [isMobile]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100dvh - 48px)" : "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
@@ -677,7 +799,7 @@ function Inbox() {
                 </Space>
               </Tooltip>
             )}
-            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(); }} loading={loading}>Refresh</Button>
+            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(convVariables(activeId)); }} loading={loading}>Refresh</Button>
           </Space>
         </Space>
       </div>
@@ -816,80 +938,12 @@ function Inbox() {
               loading={loading} dataSource={visibleConversations}
               locale={{ emptyText: effectiveListCollapsed ? null : <Empty description="ไม่มีบทสนทนา" /> }}
               renderItem={(c) => (
-                <List.Item
-                  onClick={() => openConversation(c.id)}
-                  /* แถวเรียบคั่นด้วยเส้น ไม่ใช่การ์ดมีเงา/ขอบรอบตัว (ตาม mockup) — การ์ดซ้อนในคอลัมน์ที่มี
-                     กรอบอยู่แล้วกินความกว้างและทำให้ 5 แถวดูเหมือน 5 กล่องแยกกันแทนที่จะเป็นคิวเดียว */
-                  style={{
-                    cursor: "pointer", padding: effectiveListCollapsed ? "5px 0" : "8px 10px", borderRadius: 0, marginBottom: 0,
-                    display: effectiveListCollapsed ? "flex" : undefined,
-                    justifyContent: effectiveListCollapsed ? "center" : undefined,
-                    background: activeId === c.id ? "rgba(22,119,255,0.07)" : "transparent",
-                    border: "none",
-                    borderLeft: activeId === c.id ? "2px solid #1677ff" : "2px solid transparent",
-                    borderBottom: `1px solid ${IDLE_CARD_BORDER}`,
-                  }}
-                >
-                  {effectiveListCollapsed ? (
-                    <Tooltip placement="right" title={`${c.channel} · ${c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}`}>
-                      <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
-                    </Tooltip>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 8, width: "100%", minWidth: 0, alignItems: "start" }}>
-                      <Badge count={c.unread} size="small" offset={[-2, 2]}>
-                        {/* ไม่มีรูปจริง = ตัวอักษรแรกบนพื้น gradient (mockup) — อ่านออกว่าเป็นใคร
-                            เร็วกว่าไอคอนคนสีเทาที่เหมือนกันหมดทุกแถว */}
-                        <Avatar
-                          size={28}
-                          src={c.customerAvatar || undefined}
-                          icon={c.customerAvatar ? undefined : (c.customerName || c.customerRef) ? undefined : <UserOutlined />}
-                          style={c.customerAvatar ? undefined : {
-                            background: "linear-gradient(135deg, #1677ff, #059669)",
-                            fontSize: 11, fontWeight: 700,
-                          }}
-                        >
-                          {(c.customerName || c.customerRef || "").slice(0, 1).toUpperCase() || undefined}
-                        </Avatar>
-                      </Badge>
-                      {/* ชื่อขึ้นก่อน (สิ่งที่ staff กวาดตาหา) ช่องทางเป็น chip เล็กชิดขวา —
-                          เดิมเอา Tag ช่องทางไว้หน้าชื่อ ทำให้ชื่อถูกดันและอ่านยากตอน list แคบ */}
-                      <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
-                            {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
-                          </Typography.Text>
-                          {c.assignedStaff && (
-                            <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
-                              <Avatar size={15} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 8, backgroundColor: "#1677ff", flexShrink: 0 }}>
-                                {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
-                              </Avatar>
-                            </Tooltip>
-                          )}
-                          <span style={CHANNEL_CHIP_STYLE}>
-                            {CHANNEL_SHORT[c.channel] || c.channel}
-                          </span>
-                        </div>
-
-                        <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 10, lineHeight: 1.25 }}>
-                          {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
-                        </Typography.Text>
-
-                        <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 11, lineHeight: 1.3 }} type="secondary">
-                          {previewNode(c.lastMessage)}
-                        </Typography.Text>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, marginTop: 1 }}>
-                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 700, fontSize: 9, lineHeight: "16px", paddingInline: 6 }}>
-                            {convPriority(c).label}
-                          </Tag>
-                          <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
-                            {c.lastMessageAt ? timeLabel(c.lastMessageAt) : ""}
-                          </Typography.Text>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </List.Item>
+                <ConversationListItem
+                  conversation={c}
+                  active={activeId === c.id}
+                  collapsed={effectiveListCollapsed}
+                  onOpen={openConversation}
+                />
               )}
             />
           </div>
@@ -903,13 +957,13 @@ function Inbox() {
             <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
           ) : (
             <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
-              gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={() => { refetchConv(); refetch(); }} />
+              gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={() => { refetchConv(convVariables(conv.id)); refetch(); }} />
           )}
         </div>
         )}
 
         {/* ---- right: Customer 360 panel ---- */}
-        {conv && !isMobile && !isTablet && <Customer360Panel conv={conv} can={can} selectedCouponCode={selectedCouponCode} />}
+        {showCustomer360Pane && customer360Ready && <Customer360Panel conv={conv} can={can} selectedCouponCode={selectedCouponCode} />}
       </div>
     </div>
   );
@@ -1010,7 +1064,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   const [tlThisChatOnly, setTlThisChatOnly] = useState(false);
   const { data: staffData } = useQuery(Q_STAFF, { fetchPolicy: "cache-and-network" });
-  const staffList: StaffRef[] = staffData?.bmsAssignableStaff || [];
+  const staffList: StaffRef[] = useMemo(() => staffData?.bmsAssignableStaff || [], [staffData?.bmsAssignableStaff]);
   const { data: productPickerData, loading: productPickerLoading } = useQuery(Q_PRODUCTS_PICKER, {
     variables: { search: productSearch || null },
     skip: !productPickerOpen,
@@ -1057,8 +1111,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const canManage = can("inbox.manage");
   const canAssign = can("inbox.assign");
   const canHelp = can("inbox.reply");
-  const action = nextAction(conv);
-  const aiReply = suggestedReply(conv, gender);
+  const action = useMemo(() => nextAction(conv), [conv]);
+  const aiReply = useMemo(() => suggestedReply(conv, gender), [conv, gender]);
   const aiIntent = action.value === "เช็กสต็อก"
     ? "ถามสินค้า"
     : action.value === "ยืนยันสลิป"
@@ -1068,9 +1122,14 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         : "ต้องตอบลูกค้า";
 
   // กัน primary โผล่เป็น helper ด้วย (เผื่อข้อมูลเก่าก่อน backend cleanup) — คนละบทบาทกัน ห้ามซ้ำ
-  const helpers: StaffRef[] = (conv.helpers || []).filter((h: StaffRef) => h.id !== conv.assignedStaff?.id);
-  const helperIds = new Set(helpers.map((h) => h.id));
-  const helperCandidates = staffList.filter((s) => s.id !== conv.assignedStaff?.id && !helperIds.has(s.id));
+  const helpers: StaffRef[] = useMemo(
+    () => (conv.helpers || []).filter((h: StaffRef) => h.id !== conv.assignedStaff?.id),
+    [conv.helpers, conv.assignedStaff?.id]
+  );
+  const helperCandidates = useMemo(() => {
+    const helperIds = new Set(helpers.map((h) => h.id));
+    return staffList.filter((s) => s.id !== conv.assignedStaff?.id && !helperIds.has(s.id));
+  }, [staffList, helpers, conv.assignedStaff?.id]);
 
   const headerControls = (
     <Space size={8} wrap style={{ justifyContent: isMobile ? "flex-start" : "flex-end", width: isMobile ? "100%" : undefined }}>
@@ -1229,10 +1288,16 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [uploading, setUploading] = useState(false);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const productItems: ProductPickerItem[] = productPickerData?.bmsProducts?.items || [];
-  const couponItems: CouponPickerItem[] = (couponPickerData?.bmsCoupons || [])
-    .filter((coupon: CouponPickerItem) => coupon.active)
-    .filter((coupon: CouponPickerItem) => !couponSearch.trim() || coupon.code.toLowerCase().includes(couponSearch.trim().toLowerCase()));
+  const productItems: ProductPickerItem[] = useMemo(
+    () => productPickerData?.bmsProducts?.items || [],
+    [productPickerData?.bmsProducts?.items]
+  );
+  const couponItems: CouponPickerItem[] = useMemo(() => {
+    const needle = couponSearch.trim().toLowerCase();
+    return (couponPickerData?.bmsCoupons || [])
+      .filter((coupon: CouponPickerItem) => coupon.active)
+      .filter((coupon: CouponPickerItem) => !needle || coupon.code.toLowerCase().includes(needle));
+  }, [couponPickerData?.bmsCoupons, couponSearch]);
 
   const sendWith = (attachment: Attachment | null) => {
     const body = reply.trim();
@@ -2194,4 +2259,3 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 export default function Page() {
   return <Inbox />;
 }
-

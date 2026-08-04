@@ -664,13 +664,20 @@ export type SystemEvent = {
   auto: boolean;
 };
 
-export async function listSystemEvents(tenantId: string, conversationId: string): Promise<SystemEvent[]> {
+export async function listSystemEvents(tenantId: string, conversationId: string, limit = 50): Promise<SystemEvent[]> {
+  const lim = Math.min(Math.max(Number(limit || 50), 1), 200);
   const res = await query<{ id: string; actor: string | null; action: string; meta: any; created_at: any }>(
-    `SELECT id, actor, action, meta, created_at FROM bms_audit_log
-      WHERE tenant_id = $1 AND target = $2
-        AND action IN ('inbox.assign','inbox.helper_add','inbox.helper_remove','inbox.status')
+    `SELECT id, actor, action, meta, created_at
+       FROM (
+         SELECT id, actor, action, meta, created_at
+           FROM bms_audit_log
+          WHERE tenant_id = $1 AND target = $2
+            AND action IN ('inbox.assign','inbox.helper_add','inbox.helper_remove','inbox.status')
+          ORDER BY created_at DESC, id DESC
+          LIMIT $3
+       ) recent
       ORDER BY created_at, id`,
-    [tenantId, conversationId]
+    [tenantId, conversationId, lim]
   );
   if (res.rowCount === 0) return [];
 
@@ -816,7 +823,8 @@ async function notifyMentionedStaff(
   return validIds;
 }
 
-export async function listNotes(tenantId: string, id: string) {
+export async function listNotes(tenantId: string, id: string, limit = 50) {
+  const lim = Math.min(Math.max(Number(limit || 50), 1), 200);
   const res = await query(
     `SELECT n.id, n.author, n.body, n.created_at,
             COALESCE(
@@ -825,8 +833,9 @@ export async function listNotes(tenantId: string, id: string) {
             ) AS mentioned_user_ids
        FROM bms_conversation_notes n
       WHERE n.tenant_id = $1 AND n.conversation_id = $2
-      ORDER BY n.created_at DESC, n.id DESC`,
-    [tenantId, id]
+      ORDER BY n.created_at DESC, n.id DESC
+      LIMIT $3`,
+    [tenantId, id, lim]
   );
   return res.rows;
 }

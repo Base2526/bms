@@ -3,11 +3,13 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Descriptions, Avatar, Tag, Space, Alert, Button, Row, Col, Empty, Upload, Form, Input, Select, message } from "antd";
 import { UserOutlined, ReloadOutlined, CrownOutlined, ShopOutlined, SafetyOutlined, UploadOutlined, SaveOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { useTheme } from "@/lib/useTheme";
+import type { ThemeMode } from "@/lib/theme";
 
 const Q = gql`
   query {
     bmsMe {
-      id name username email phone avatar role language gender
+      id name username email phone avatar role language gender themePreference
       is_platform_admin created_at
       tenant { id name slug plan }
       permissions
@@ -30,6 +32,7 @@ const M_UPDATE_ME = gql`
       phone
       username
       language
+      themePreference
       avatar
     }
   }
@@ -44,6 +47,7 @@ export default function Page() {
   const [uploadAvatar, { loading: uploadingAvatar }] = useMutation(M_UPLOAD_AVATAR);
   const [updateMe, { loading: saving }] = useMutation(M_UPDATE_ME);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
+  const { setTheme } = useTheme();
 
   const me = data?.bmsMe;
 
@@ -54,6 +58,7 @@ export default function Page() {
       phone: me.phone || "",
       language: me.language || "th",
       gender: me.gender || undefined,
+      themePreference: me.themePreference || "system",
       email: me.email || "",
       username: me.username || "",
     });
@@ -89,11 +94,16 @@ export default function Page() {
             phone: values.phone?.trim() || "",
             language: values.language || "th",
             gender: values.gender || null,
+            themePreference: values.themePreference || "system",
           },
         },
       });
 
       if (res?.data?.updateMe?.id) {
+        const nextTheme = res.data.updateMe.themePreference as ThemeMode | undefined;
+        if (nextTheme === "light" || nextTheme === "dark" || nextTheme === "system") {
+          setTheme(nextTheme);
+        }
         message.success("บันทึกโปรไฟล์แล้ว");
         refetch();
       } else {
@@ -172,6 +182,17 @@ export default function Page() {
                         options={[
                           { value: "th", label: "ไทย" },
                           { value: "en", label: "English" },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="themePreference" label="ธีมหน้าจอ">
+                      <Select
+                        options={[
+                          { value: "system", label: "ตามระบบเครื่อง" },
+                          { value: "light", label: "โหมดสว่าง" },
+                          { value: "dark", label: "โหมดมืด" },
                         ]}
                       />
                     </Form.Item>

@@ -260,15 +260,15 @@ export const bmsInboxResolvers = {
       const rows = await listConversationHelpers(getTenantId(ctx), p.id);
       return rows.map(staffRef);
     },
-    async systemEvents(p: any, _a: unknown, ctx: any) {
-      return listSystemEvents(getTenantId(ctx), p.id);
+    async systemEvents(p: any, args: { limit?: number | null }, ctx: any) {
+      return listSystemEvents(getTenantId(ctx), p.id, args.limit ?? undefined);
     },
     lastMessage: (p: any) => p.last_message ?? null,
     lastMessageAt: (p: any) => toISO(p.last_message_at),
     createdAt: (p: any) => toISO(p.created_at),
     updatedAt: (p: any) => toISO(p.updated_at),
-    async messages(p: any, _a: unknown, ctx: any) {
-      const rows = await listMessages(getTenantId(ctx), p.id);
+    async messages(p: any, args: { limit?: number | null }, ctx: any) {
+      const rows = await listMessages(getTenantId(ctx), p.id, args.limit ?? 80);
       const channel = p.channel;
       return rows.map((m: any) => {
         const att = m.meta?.attachment;
@@ -287,8 +287,8 @@ export const bmsInboxResolvers = {
         };
       });
     },
-    async notes(p: any, _a: unknown, ctx: any) {
-      const rows = await listNotes(getTenantId(ctx), p.id);
+    async notes(p: any, args: { limit?: number | null }, ctx: any) {
+      const rows = await listNotes(getTenantId(ctx), p.id, args.limit ?? undefined);
       return rows.map((n: any) => ({
         id: String(n.id), author: n.author ?? null, body: n.body, createdAt: toISO(n.created_at),
         mentionedUserIds: (n.mentioned_user_ids || []).map(String),

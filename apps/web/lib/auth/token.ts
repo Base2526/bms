@@ -5,6 +5,7 @@ export interface JWTPayload {
   email: string;
   role: string;
   tenant_id?: string;
+  themePreference?: "system" | "light" | "dark";
   exp?: number;
   iat?: number;
 }

@@ -25,6 +25,7 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
     username: String!
     language: String!
+    themePreference: String
     notifications_enabled: Boolean!
     tenantName: String # ชื่อร้านของ user นี้ — ให้ platform admin เห็นว่า user เป็นของร้านไหน (null ถ้าไม่มี tenant_id)
     lastLoginAt: String # ISO string ล่าสุดที่ login สำเร็จ (null = ยังไม่เคย login ตั้งแต่มี column นี้)
@@ -1136,9 +1137,9 @@ export const typeDefs = /* GraphQL */ `
     lastMessageAt: String
     createdAt: String!
     updatedAt: String!
-    messages: [BmsMessage!]!
-    systemEvents: [BmsSystemEvent!]!
-    notes: [BmsConversationNote!]!
+    messages(limit: Int): [BmsMessage!]!
+    systemEvents(limit: Int): [BmsSystemEvent!]!
+    notes(limit: Int): [BmsConversationNote!]!
   }
 
   type BmsRestockSubscription {
@@ -1803,6 +1804,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsMe {
     id: ID!  name: String  username: String  email: String  phone: String  avatar: String
     role: String!  language: String  gender: String   # 'male' | 'female' | null (ไม่ระบุ)
+    themePreference: String!
     is_platform_admin: Boolean!
     is_available: Boolean!
     created_at: String
@@ -2124,6 +2126,7 @@ export const typeDefs = /* GraphQL */ `
     username: String
     language: String
     gender: String
+    themePreference: String
     notifications_enabled: Boolean
   }
 
