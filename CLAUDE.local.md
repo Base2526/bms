@@ -92,7 +92,81 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
   ดู § Failure Incidents)
 - **inbox: มอบหมาย staff** → `lib/bms/inbox.ts` (`pickAutoAssignee`/`autoAssignConversation`/`reassignStaffConversations`) — แชทใหม่ auto-assign ให้ Sales ที่ว่างและถือแชท OPEN/PENDING น้อยสุดก่อนเสมอ (fallback Manager → Administrator ถ้าร้านยังไม่มี Sales) · **ทุก conversation ต้องมี staff หลักเสมอ** — `deleteUser`/`deleteUsers` (`resolvers.ts`) เรียก `reassignStaffConversations()` โอนแชทค้างออกก่อนลบทุกครั้ง ห้ามลบ user ตรงๆ โดยข้ามขั้นตอนนี้ · ประวัติมอบหมาย/โอน/helper ใช้ `bms_audit_log` เดิม (target = conversation id, action `inbox.assign`/`inbox.helper_add`/`inbox.helper_remove`) ไม่ได้สร้างตาราง log ใหม่ · `inbox.assign` (โอน staff หลัก) แยกจาก `inbox.manage` (status/tags/notes) เพราะ Sales ต้องโอนแชทตัวเองได้โดยไม่ต้องมีสิทธิ์จัดการเต็ม · helper add/remove ใช้สิทธิ์ `inbox.reply` เดิม (ไม่ต้องสิทธิ์พิเศษ)
 - **inbox: สายแชท + system event** → หน้าแชทรวม message + system event (`listSystemEvents` → `bmsConversation.systemEvents`) เรียงตามเวลาในสายเดียว: มอบหมาย/เพิ่ม-ถอดผู้ช่วยตอบ/เปลี่ยนสถานะ แสดงเป็นแถวกลางสีเทา + marker "เริ่มการสนทนา" หัวสาย (derive จาก `created_at`/ข้อความแรก ไม่ได้ log เพิ่ม) + date separator (วันนี้/เมื่อวาน/วันที่, timezone Asia/Bangkok) · `systemEvents` resolve ชื่อคนจาก UUID/email ใน `bms_audit_log` แล้ว (user ถูกลบ → "ผู้ใช้ที่ถูกลบ") · แท็บ Timeline เดิมเก็บไว้คู่กัน (รวม order history ที่ไม่ควรแทรกในแชท) — ดู § แท็บ Timeline ด้านล่าง · **Sales เห็นเฉพาะแชทของตัวเอง** (staff หลัก/ผู้ช่วยตอบ) — บังคับที่ `bmsConversations`/`bmsConversation` (`bmsInbox.ts`, `role === "Sales"`) · role อื่นเห็นทั้งร้าน
-- **inbox: compact workspace + composer draft** → queue/header ลด font และ spacing เพื่อคืนพื้นที่ให้สายแชท, ตัด Chat Focus ออก, channel tag อยู่หลังชื่อลูกค้า · ปุ่ม "เปิดออเดอร์" ใน Customer 360 เปิด `OrderPreviewDrawer` โดยไม่ออกจากแชท และ "เปิดหน้า Orders เต็มจอ" เปิดแท็บใหม่ · composer ยังคง data model เดิม (`body` + attachment เดียว) แต่รูป/ไฟล์ที่อัปโหลดจะเข้า draft ก่อนส่งและมี preview/ปุ่มนำออก; loading ของรูปกับไฟล์แยกกัน · message renderer แยก 4 แบบ: text = bubble สีตาม sender, image = light preview card, file = icon/name/type/download card, product = cover/name/SKU/ราคา/สต็อก/`ดูสินค้า` card; attachment/product card เป็น rounded rectangle ไม่มีหางหรือ pseudo-element ยื่นออกนอกกรอบ ใช้ accent border ด้านข้างบอกทิศทางแทน · product ตรวจจาก public URL ใน body จึง render ข้อความเดิมได้โดยไม่เปลี่ยน channel payload · product picker ใช้ `bmsProducts` และให้เลือก "ข้อความ + ลิงก์" หรือ "ข้อความ + รูป + ลิงก์" โดยใส่ชื่อ/SKU/ราคา/ไซซ์+สต็อกและ public URL `/shop/{tenantSlug}/products/{sku}` ลง draft; แบบมีรูปใช้ cover `imageUrl` เป็น attachment เดียว ส่วน gallery ทั้งหมดอยู่หน้า public · ลิงก์ `/admin/products` ยังเป็น internal link เปิดแท็บใหม่เท่านั้นและห้ามใส่ลงข้อความลูกค้า
+- **inbox: compact workspace + composer draft** → queue/header ลด font และ spacing เพื่อคืนพื้นที่ให้สายแชท, ตัด Chat Focus ออก, channel tag อยู่หลังชื่อลูกค้า ·
+  **รอบ mockup "compact cards" (2026-08)**: คิวแชทเป็น *แถวเรียบคั่นด้วยเส้น* ไม่ใช่การ์ดมีขอบ/เงารายใบ
+  (คอลัมน์ `padding: 0` ตอนกางอยู่ ส่วนหัวคิวถือ padding เอง เพื่อให้เส้นคั่นกินเต็มความกว้าง) · ลำดับใน
+  หัวคิวคือ ค้นหา → แท็บสถานะ → chip ตัวกรอง · **ช่องค้นหาไม่มีปุ่มแล้ว** เป็น `Input` เดียวเต็มความกว้าง
+  พร้อม debounce 300ms (`searchInput` → `search`) เพราะ `search` เป็น arg ของ `bmsConversations`
+  ไม่ใช่ filter ฝั่ง table · **สวิตช์ "ของฉันเท่านั้น" กลายเป็น chip "ของฉัน"** ในแถวตัวกรองเดียวกับ
+  ด่วนก่อน/มีสลิป/ถามสินค้า (เดิมเบียดช่องค้นหาให้เหลือครึ่งแถว) และ role Sales เห็น chip นี้แบบ disabled ·
+  ช่องทางใช้ `CHANNEL_CHIP_STYLE` ชุดเดียวทั้งในคิวและหัวแชท (เลิกใช้ `Tag color={CHANNEL_COLOR}` สีทึบ
+  ที่หัวแชท) · chip ใต้หัวแชทใช้ `TOOL_CHIP_BASE` เป็นเส้นขอบจางหมด ยกเว้น AI (ฟ้า) และ "ยังไม่ผูก CRM"
+  (ส้ม) ที่ยังต้องเด่นเพราะต้องลงมือแก้ · พื้นสายแชทเป็น `--app-bg` (จมกว่าหัวแชท/composer ที่เป็น
+  `--app-surface`) จึงเปลี่ยน bubble ลูกค้าเป็นพื้นการ์ด + เส้นขอบ แทนพื้นเทาทึบ ·
+  **การ์ด "คำตอบแนะนำ" + placeholder (มือถือ, 2026-08)**: การ์ดเป็น `display:grid` คอลัมน์เดียว
+  (หัว / ข้อความ / ปุ่ม) — **ห้ามกลับไปเป็น flex row ที่วางข้อความไว้ข้างกลุ่มปุ่ม** เพราะคอลัมน์ข้อความ
+  เป็น `flex:1; min-width:0` (ยุบได้) แต่กลุ่มปุ่ม 3 อันยุบไม่ได้ → บนจอ ~360px ปุ่มไม่ตกบรรทัด ข้อความ
+  ถูกบีบเป็นริบบิ้นแคบและหัวข้อตัด 2 บรรทัด (เคสจริงที่ผู้ใช้แคปมา) · ป้าย "AI แนะนำคำตอบ" + ปุ่มตา
+  ยุบเข้ามาเป็นหัวการ์ดแล้ว (ประหยัด 1 แถว) เหลือแถบ `AI ถูกซ่อนอยู่` แยกไว้เฉพาะตอนปิด suggestion ·
+  "ขอตรวจสอบ/ขอบคุณ" เป็น chip ขอบมน แยกน้ำหนักจากปุ่มหลัก เพราะเป็น template ของระบบ ไม่ใช่ข้อความ
+  ที่ AI แนะนำ · placeholder ช่องพิมพ์: มือถือ `พิมพ์ตอบลูกค้า…` / เดสก์ท็อป `พิมพ์ตอบลูกค้า · Enter ส่ง`
+  โดยคำอธิบายเต็มอยู่ใน **native `title`** ของ textarea (ไม่ใช้ antd `Tooltip` เพราะจะเด้งค้างระหว่างพิมพ์) ·
+  **แถวตัวกรองด่วน/สลิป/สินค้า/ของฉัน แยกเป็น 2 กลุ่ม (2026-08)**: เดิม 4 chip อยู่ใน `Space wrap`
+  เดียวกัน พอเพิ่ม "ของฉัน" เข้าไปทีหลัง (แทน Switch เดิม) ความกว้างรวมเกิน 320px ของคอลัมน์เสมอ →
+  "ของฉัน" ตกไปแถวใหม่ลอยตัวเดียว. แก้โดยแยกเป็นสองกลุ่มคั่นเส้นบาง — กลุ่มซ้าย (ด่วนก่อน/มีสลิป/
+  ถามสินค้า) เป็น `.bms-inbox-filter-strip` (`overflow-x:auto`, `flex-wrap` ไม่ใช้เลย, scrollbar ซ่อนด้วย
+  CSS ใน `globals.css`) ส่วน "ของฉัน" ปักขวาสุดเสมอ ไม่อยู่ใน strip เดียวกัน เพราะเป็นคนละมิติ (กรอง
+  เนื้อหาแชท vs. กรองเจ้าของแชท) ไม่ควรแย่งพื้นที่กัน · **บทเรียน JSX**: อย่าวางคอมเมนต์บล็อก `/* ... */`
+  เป็น child แรกทันทีหลัง `{cond && (` — parser จะงงกับ `"` ในคอมเมนต์ (TS1109/TS1381) ต้องย้าย
+  คอมเมนต์ไปไว้เหนือ `{cond && (` แทน ·
+  **แยกปุ่ม "ผู้ช่วยตอบ" กับ "แท็ก" ออกจากกัน (2026-08)**: เดิม chip `{n} ผู้ช่วย` เป็น toggle เดียวเปิด
+  แถวขยาย 1 แถวที่ยัดทั้งการจัดการผู้ช่วยตอบ (คน, สิทธิ์ `inbox.reply`) กับแก้แท็ก (ป้ายกำกับ, สิทธิ์
+  `inbox.manage`) ปนกันไม่มีขอบเขต และดันความสูง header อยู่เสมอตอนกดขยาย. แก้เป็น **2 ปุ่ม chip แยก
+  คนละ `Popover`** (`{helpers.length} ผู้ช่วย` กับ `{tags.length} แท็ก`, ปุ่มหลังโชว์เฉพาะ `canManage`
+  เหมือน parity เดิม) — เนื้อหาใน popover เป็นโค้ดเดิมทั้งหมด ย้ายที่อยู่เฉยๆ ไม่แก้ mutation
+  (`addHelper`/`removeHelper`/`saveTags`) · ลบ state `showHelperTags` ทิ้ง ใช้ `open` ของ Popover เอง
+  (uncontrolled) แทน — ปิดอัตโนมัติเมื่อคลิกที่อื่น ไม่ต้อง state เพิ่มฝั่งเรา · ตอนปิดอยู่ไม่ดันความสูง
+  header เลย (ต่างจากแถวขยายเดิม) ·
+  **Customer 360 panel — หัวข้อค้าง/ชิปออเดอร์/Quick Actions (2026-08)**: 3 จุดใน
+  `Customer360Panel.tsx`. (1) หัวข้อ "ข้อมูลลูกค้า (Customer 360)" + ปุ่มแจกคูปอง/ย่อแผง เดิมเป็น div
+  ธรรมดาเลื่อนหายไปพร้อมเนื้อหา → เพิ่ม `position:"sticky", top:0, zIndex:2` + พื้น/เส้นขอบล่าง ปักไว้บน
+  สุดของ scroll container เดิม (panel เดิม `overflowY:"auto"` อยู่แล้ว ไม่ต้องเพิ่ม container ใหม่)
+  (2) ชิปช่องทาง/สถานะในการ์ด "ออเดอร์ล่าสุด" เดิมใช้ antd `<Tag color="...">` preset (ขอบ 4px, พื้น
+  อิ่มสี) คนละสไตล์จากชิปที่ปรับใหม่ในหัวแชท → สร้าง `Pill`/`OutlinePill` component + `CHANNEL_PILL`/
+  `STATUS_PILL` (rgba พื้นจาง 10-12%, rounded-999 เหมือน `TOOL_CHIP_BASE`ใน `page.tsx`) แทน
+  `CHANNEL_COLOR`/`STATUS_COLOR` เดิม — ใช้ร่วมกัน 3 จุดในไฟล์นี้ (การ์ดออเดอร์ในลิสต์, ช่องทางปัจจุบันใน
+  สรุปลูกค้า, บัญชีที่เชื่อมต่อใน contact, `OrderPreviewDrawer`) ไม่ทิ้งจุดใดจุดหนึ่งไว้ไม่ตรงกัน · การ์ด
+  ออเดอร์พื้นเปลี่ยนจาก `#fff` ตรง ๆ → `var(--app-surface-2)` ให้เห็นขอบเขตการ์ดชัดโดยไม่ต้องมีเงา
+  (3) `QuickActionsSection` เดิม 5 ปุ่ม `<Button block>` ทรงเดียวกันหมด ไม่มีลำดับความสำคัญ → สร้าง
+  `QaButton` (icon วงกลม + label + chevron `RightOutlined`, ปุ่มแรก "สร้างออเดอร์" ได้ prop `primary`
+  ยกพื้น/ตัวหนังสือให้เด่น) — logic สิทธิ์/`disabled`/`Tooltip` เดิมทั้งหมดยังอยู่ครบ (`can()` check,
+  `hasRefundable`, `orders?.length`) แค่ย้าย `Tooltip` มาห่อ `QaButton` ตัวเดียวแทนสร้าง `Button disabled`
+  คู่ขนาน 2 ทาง · **แก้รอยฉีก/เงาระหว่างเลื่อน (2026-08)**: panel ทั้งใบมี `position:"sticky", top:0`
+  ของตัวเองอยู่แล้วก่อนหน้านี้ (ไม่เกี่ยวกับ sticky header ที่เพิ่มใหม่) แต่ parent (`.columns` ใน
+  `page.tsx`) เป็น `overflow:"hidden"` ไม่มี scroll ให้ sticky นั้นยึดจริงเลย — พอซ้อนกับ sticky header
+  ตัวใหม่ที่ยึดกับ panel เอง (ตัวที่ scroll จริง) กลายเป็น sticky ซ้อน sticky ผิดชั้น ทำให้ browser
+  คำนวณ compositing layer พลาดจนเห็นรอยฉีก/ภาพซ้อนตอนเลื่อน. **แก้โดยลบ sticky ของ panel ทิ้ง** เหลือ
+  แค่ sticky ของ header ตัวเดียว (เหตุผลเดียวกับที่มันไม่มีผลอะไรอยู่แล้วตั้งแต่แรก) — บทเรียน: ก่อนเพิ่ม
+  `position:"sticky"` ให้ลูก ต้องเช็คว่า parent ไม่มี `position:"sticky"` ซ้อนอยู่แบบไม่มี scroll
+  ancestor จริงด้วย · **แก้ "พื้นหลังไม่เต็ม" รอบ 2**: panel ทั้งใบไม่เคยมี `background` ของตัวเองเลย
+  (พึ่งพื้นของ card/section ย่อยแต่ละอันเอาเอง) ช่องว่างระหว่าง section (เช่น margin ใต้ sticky header)
+  จึงโปร่งใส เห็นสิ่งข้างหลังทะลุมาตอนเลื่อน → เพิ่ม `backgroundColor: var(--app-surface)` ให้ตัว panel
+  เอง · sticky header เปลี่ยนจาก "sticky ในกรอบ padding 8 เดิม" (มีช่องเล็กๆที่มุมโค้งของ panel ไม่ถูก
+  คลุมเพราะ header เป็นสี่เหลี่ยมมุมตรง) → ใช้ negative-margin trick มาตรฐาน (`margin:"-8px -8px 5px"`,
+  `padding:"8px 8px 6px"`, `top:-8`) ให้ header คลุมเต็มถึงขอบ panel จริง ๆ + `borderRadius:"10px 10px 0 0"`
+  ให้มุมบนโค้งตรงกับ panel ไม่มีช่องมุมโผล่ ·
+  **ดูรูปในแชท — lightbox โปร่งแสง (2026-08)**: Modal เดิมเป็นการ์ดขาว/ไล่เฉดทึบเต็มพื้นที่ ปิดบังสายแชท
+  ทั้งหมด, ปุ่มก่อนหน้า/ถัดไปเป็นวงกลมนอกภาพมีแค่เดสก์ท็อป (มือถือมีอีกชุดซ้อนในเงื่อนไข `isMobile`),
+  และมีปุ่มปิดซ้ำกัน 2 อัน (native ✕ ของ antd `Modal` + ปุ่ม "ปิด" ที่สร้างเอง เพราะไม่ได้ตั้ง
+  `closable={false}` ไว้). แก้เป็น scrim เข้มโปร่งแสง + เบลอ (`background:"rgba(8,13,24,0.72)"`,
+  `backdropFilter:"blur(6px)"` ที่ `styles.content`) ให้เห็นสายแชทเลือน ๆ อยู่ข้างหลัง ·
+  `closable={false}` เหลือปุ่มปิดทางเดียวเป็นไอคอน ✕ ลอย (ไม่ใช่ปุ่มข้อความ "ปิด" แบบเดิม — Esc/คลิกนอก
+  modal ยังปิดได้เหมือนเดิมผ่าน `onCancel`) · ปุ่มก่อนหน้า/ถัดไปลอยข้างรูปแบบเดียวกันทุกขนาดจอแล้ว
+  (ตัดโค้ดซ้อนที่เคยแยก `isMobile`/ไม่ใช่ `isMobile` ทิ้ง) · **ตัด caption/thumbnail ทิ้งตามที่ขอ** —
+  ไม่โชว์ `body`/ข้อความประกอบรูปอีก เหลือผู้ส่ง+เวลาเป็น chip เล็กลอยมุมล่างซ้ายของรูปพอ (ไม่ใช่การ์ด
+  แยกเหมือนเดิม) ปุ่ม "เปิดไฟล์" ก็เหลือแค่ไอคอนไม่มี label ข้อความ · `chatImages`/`movePreview`/
+  `imagePreviewIndex` ใช้ของเดิมทั้งหมด ไม่เพิ่ม state ใหม่ ·
+  ปุ่ม "เปิดออเดอร์" ใน Customer 360 เปิด `OrderPreviewDrawer` โดยไม่ออกจากแชท และ "เปิดหน้า Orders เต็มจอ" เปิดแท็บใหม่ · composer ยังคง data model เดิม (`body` + attachment เดียว) แต่รูป/ไฟล์ที่อัปโหลดจะเข้า draft ก่อนส่งและมี preview/ปุ่มนำออก; loading ของรูปกับไฟล์แยกกัน · message renderer แยก 4 แบบ: text = bubble สีตาม sender, image = light preview card, file = icon/name/type/download card, product = cover/name/SKU/ราคา/สต็อก/`ดูสินค้า` card; attachment/product card เป็น rounded rectangle ไม่มีหางหรือ pseudo-element ยื่นออกนอกกรอบ ใช้ accent border ด้านข้างบอกทิศทางแทน · product ตรวจจาก public URL ใน body จึง render ข้อความเดิมได้โดยไม่เปลี่ยน channel payload · product picker ใช้ `bmsProducts` และให้เลือก "ข้อความ + ลิงก์" หรือ "ข้อความ + รูป + ลิงก์" โดยใส่ชื่อ/SKU/ราคา/ไซซ์+สต็อกและ public URL `/shop/{tenantSlug}/products/{sku}` ลง draft; แบบมีรูปใช้ cover `imageUrl` เป็น attachment เดียว ส่วน gallery ทั้งหมดอยู่หน้า public · ลิงก์ `/admin/products` ยังเป็น internal link เปิดแท็บใหม่เท่านั้นและห้ามใส่ลงข้อความลูกค้า
 - **inbox realtime diagnostics** → `lib/bms/inbox.ts` มี `createDiagnosticInboxMessage()` สำหรับปุ่ม `Create Msg`
   เท่านั้น: เขียน `bms_conversations`/`bms_messages` sender=`diagnostic`, meta `{ diagnostic: true }`, publish
   `bmsInboxChanged`, audit `inbox.diagnostic_message`; ห้าม reuse สำหรับ webhook จริง/AI pipeline และห้ามเรียก

@@ -308,6 +308,15 @@ html.dark .ant-drawer-mask {
   overflow: hidden;
 }
 
+/* Inbox quick-filter strip: เลื่อนแนวนอนได้เมื่อ chip ล้นแทนการตกบรรทัด — ซ่อน scrollbar
+   เพราะ chip เตี้ยเกินจะมี scrollbar แถบหนาแบบปกติแสดงสวย ๆ (ยังเลื่อนด้วย wheel/touch ได้ตามปกติ) */
+.bms-inbox-filter-strip {
+  scrollbar-width: none;
+}
+.bms-inbox-filter-strip::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 767px) {
   .bms-inbox-tabs-fill > .ant-tabs-nav {
     margin-bottom: 6px;

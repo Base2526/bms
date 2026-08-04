@@ -101,6 +101,22 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   editable customer draft. Saved messages render as four compact types: sender-colored text bubbles,
   light image cards, file cards, and public-product cards with cover/price/stock/`ดูสินค้า`; the
   cross-channel `body + one attachment` contract remains unchanged.
+- **Inbox mockup-driven redesign (2026-08)**: visual/UX polish only, no schema/permission/payload
+  changes — every step was mocked up as an HTML artifact and approved before editing code (see
+  `CLAUDE.local.md` for the per-change design rationale). Queue header's quick-filter row is split
+  into a scrollable content-filter strip plus a pinned "ของฉัน" chip so it never wraps. The chat
+  header's "ผู้ช่วยตอบ"/"แท็ก" controls are two independent `Popover` buttons instead of one toggle
+  that expanded both together. The "AI แนะนำคำตอบ" suggestion card is a single-column grid so its
+  button row can no longer squeeze the suggested text into a narrow ribbon on mobile. The Customer
+  360 panel's own title bar is sticky within its own scroll container (the panel itself no longer
+  sets a redundant `position: sticky` with nothing to stick to) and has an explicit background so
+  scrolled content cannot show through the gap; its order-card and channel/status badges share one
+  `Pill`/`OutlinePill` chip system with the rest of Inbox instead of raw antd `Tag` presets; Quick
+  Actions render as icon-led rows with the primary action visually distinct, keeping the same
+  permission/disabled/tooltip logic. The in-chat image viewer is a transparent, blurred lightbox
+  (not an opaque white card) with icon-only close/download controls, same-styled prev/next arrows on
+  every screen size, and no caption or thumbnail strip — sender/time is a small floating chip on the
+  image itself. `chatImages`/`movePreview`/`imagePreviewIndex` are unchanged.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.

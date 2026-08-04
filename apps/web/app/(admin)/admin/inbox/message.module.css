@@ -16,9 +16,9 @@
 
 .textBubble {
   position: relative;
-  padding: 6px 10px;
+  padding: 7px 11px;
   border-radius: 12px;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -27,19 +27,21 @@
 .staffText {
   color: #fff;
   background: #1677ff;
-  border-bottom-right-radius: 5px;
+  border-bottom-right-radius: 3px;
 }
 
 .aiText {
   color: #fff;
-  background: #15803d;
-  border-bottom-right-radius: 5px;
+  background: #059669;
+  border-bottom-right-radius: 3px;
 }
 
+/* ลูกค้าเป็น bubble สีพื้นการ์ดมีเส้นขอบ (mockup) — สายแชทมีพื้นจมอยู่แล้ว จึงไม่ต้องใช้พื้นเทาทึบ */
 .incomingText {
   color: var(--app-text, inherit);
-  background: rgba(148, 163, 184, 0.2);
-  border-bottom-left-radius: 5px;
+  background: var(--app-surface, #fff);
+  border: 1px solid var(--app-border, rgba(15, 23, 42, 0.12));
+  border-bottom-left-radius: 3px;
 }
 
 .card {
