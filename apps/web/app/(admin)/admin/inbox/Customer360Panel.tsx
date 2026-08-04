@@ -14,7 +14,8 @@ import {
 import { useEffect, useState } from "react";
 import {
   UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ShoppingOutlined,
-  PlusOutlined, MinusCircleOutlined,
+  PlusOutlined, MinusCircleOutlined, ContainerOutlined, RollbackOutlined,
+  FileTextOutlined, RightOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import panelStyles from "./customer360.module.css";
@@ -93,13 +94,52 @@ const M_ASSIGN_CUSTOMER_COUPON = gql`
   }
 `;
 
-const CHANNEL_COLOR: Record<string, string> = {
-  line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue", lazada: "gold", test: "default",
+// pill สีจาง (rounded-999, พื้นทึบเบา) ชุดเดียวกับ CHANNEL_CHIP_STYLE/TOOL_CHIP_BASE ที่ใช้ในหัวแชท
+// (page.tsx) — เดิมการ์ดออเดอร์ที่นี่ใช้ antd <Tag color="..."> preset (ขอบ 4px, พื้นอิ่มสีกว่า) ทำให้
+// ชิปช่องทาง/สถานะในคอลัมน์เดียวกันหน้าตาไม่ตรงกัน จึงย้ายมาใช้ Pill ของตัวเองแทน
+const CHANNEL_PILL: Record<string, { color: string; bg: string }> = {
+  line: { color: "#059669", bg: "rgba(5,150,105,0.12)" },
+  tiktok: { color: "#db2777", bg: "rgba(219,39,119,0.12)" },
+  facebook: { color: "#1677ff", bg: "rgba(22,119,255,0.1)" },
+  instagram: { color: "#7c3aed", bg: "rgba(124,58,237,0.12)" },
+  web: { color: "#1677ff", bg: "rgba(22,119,255,0.1)" },
+  shopee: { color: "#ea580c", bg: "rgba(234,88,12,0.12)" },
+  lazada: { color: "#d97706", bg: "rgba(217,119,6,0.12)" },
+  test: { color: "#64748b", bg: "rgba(100,116,139,0.12)" },
 };
-const STATUS_COLOR: Record<string, string> = {
-  PENDING: "orange", PAID: "blue", PACKING: "cyan", SHIPPED: "geekblue",
-  COMPLETED: "green", CANCELLED: "default", RETURNED: "red",
+const STATUS_PILL: Record<string, { color: string; bg: string }> = {
+  PENDING: { color: "#d97706", bg: "rgba(217,119,6,0.12)" },
+  PAID: { color: "#1677ff", bg: "rgba(22,119,255,0.1)" },
+  PACKING: { color: "#0891b2", bg: "rgba(8,145,178,0.12)" },
+  SHIPPED: { color: "#7c3aed", bg: "rgba(124,58,237,0.12)" },
+  COMPLETED: { color: "#059669", bg: "rgba(5,150,105,0.12)" },
+  CANCELLED: { color: "#64748b", bg: "rgba(100,116,139,0.12)" },
+  RETURNED: { color: "#dc2626", bg: "rgba(220,38,38,0.12)" },
 };
+const DEFAULT_PILL = { color: "#64748b", bg: "rgba(100,116,139,0.12)" };
+function Pill({ tone, children }: { tone: { color: string; bg: string }; children: React.ReactNode }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700,
+      borderRadius: 999, padding: "2px 7px", lineHeight: "15px", color: tone.color, background: tone.bg,
+    }}>
+      {children}
+    </span>
+  );
+}
+// ชิปรอง (ชำระ/จัดส่ง) เป็นเส้นขอบจางแบบ TOOL_CHIP_BASE — ไม่ติดสีเหมือน channel/status เพราะเป็น
+// ข้อมูลเสริม ไม่ใช่สถานะหลักของออเดอร์
+function OutlinePill({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 600,
+      borderRadius: 999, padding: "2px 7px", lineHeight: "15px", color: "var(--app-muted, #64748b)",
+      border: "1px solid var(--app-border, rgba(15,23,42,0.12))",
+    }}>
+      {children}
+    </span>
+  );
+}
 const PANEL_COLLAPSE_KEY = "bms_inbox_customer360_collapsed";
 const money = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
 const dateOnly = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
@@ -159,7 +199,7 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
         <Descriptions.Item label="ภาษาที่ใช้">{c.preferredLanguage || "—"}</Descriptions.Item>
         <Descriptions.Item label="เขตเวลา">{c.timezone || "—"}</Descriptions.Item>
         <Descriptions.Item label="ช่องทางปัจจุบัน">
-          <Tag color={CHANNEL_COLOR[conv?.channel] || "default"}>{conv?.channel}</Tag>
+          <Pill tone={CHANNEL_PILL[conv?.channel] || DEFAULT_PILL}>{conv?.channel}</Pill>
         </Descriptions.Item>
         <Descriptions.Item label="ผู้รับผิดชอบ">{conv?.assignedStaff?.name || conv?.assignedStaff?.email || "ยังไม่มอบหมาย"}</Descriptions.Item>
         <Descriptions.Item label="สถานะแชท">{conv?.status}</Descriptions.Item>
@@ -197,9 +237,9 @@ function ContactSection({ c, identities, addresses }: { c: any; identities: any[
       {identities.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>ไม่มีบัญชีเชื่อมต่อ</Text></div> : (
         <Space size={4} wrap style={{ marginTop: 4 }}>
           {identities.map((i) => (
-            <Tag key={`${i.channel}-${i.externalRef}`} color={CHANNEL_COLOR[i.channel] || "default"}>
+            <Pill key={`${i.channel}-${i.externalRef}`} tone={CHANNEL_PILL[i.channel] || DEFAULT_PILL}>
               {i.channel}: {i.externalRef.slice(0, 10)}
-            </Tag>
+            </Pill>
           ))}
         </Space>
       )}
@@ -236,49 +276,61 @@ function RecentOrdersSection({
 }: { orders: any[]; selectedOrderId: string | null; onOpenPreview: (orderId: string) => void }) {
   if (!orders?.length) return <Empty description="ยังไม่มีออเดอร์" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
-    <List
-      size="small" dataSource={orders}
-      renderItem={(o: any) => (
-        <List.Item
-          style={{
-            display: "block",
-            padding: 7,
-            marginBottom: 5,
-            borderRadius: 9,
-            border: selectedOrderId === o.id ? "1px solid rgba(22,119,255,0.35)" : "1px solid rgba(15,23,42,0.08)",
-            background: selectedOrderId === o.id ? "rgba(22,119,255,0.06)" : "var(--app-surface, #fff)",
-          }}
-        >
-          <Space size={4} wrap style={{ marginBottom: 2 }}>
-            <Tag color={CHANNEL_COLOR[o.channel] || "default"}>{o.channel}</Tag>
-            <Text strong style={{ fontSize: 12 }}>#{String(o.id).slice(0, 8)}</Text>
-            <Tag color={STATUS_COLOR[o.status] || "default"}>{o.status}</Tag>
-            {o.paymentStatus && <Tag color="blue">ชำระ: {o.paymentStatus}</Tag>}
-            {o.shipmentStatus && <Tag color="purple">จัดส่ง: {o.shipmentStatus}</Tag>}
-          </Space>
-          <div style={{ fontSize: 12 }}>
-            {dateOnly(o.createdAt)} · {money(o.totalAmount)}
-            {o.trackingNo && <> · เลขพัสดุ {o.trackingNo}</>}
-          </div>
-          {discountLabel(o) && (
-            <div style={{ fontSize: 12, color: "var(--app-danger, #cf1322)" }}>{discountLabel(o)}</div>
-          )}
-          <div style={{ fontSize: 12, color: "var(--app-muted, #888)" }}>
-            {(o.items || []).map((it: any) => `${it.sku}×${it.qty}`).join(", ")}
-          </div>
-          <Space size={8} style={{ marginTop: 4 }}>
-            <Button size="small" type={selectedOrderId === o.id ? "primary" : "default"} onClick={() => onOpenPreview(o.id)}>
-              เปิดออเดอร์
-            </Button>
-            {o.channel !== "web" && o.channel !== "test" && (
-              <Tooltip title="เปิดหน้าออเดอร์ในช่องทางต้นทาง (ยังไม่รองรับทุกช่องทาง)">
-                <Button size="small" disabled>เปิด Marketplace</Button>
-              </Tooltip>
+    <Space direction="vertical" size={6} style={{ width: "100%" }}>
+      {orders.map((o: any) => {
+        const selected = selectedOrderId === o.id;
+        return (
+          <div
+            key={o.id}
+            style={{
+              padding: "9px 10px",
+              borderRadius: 10,
+              border: selected ? "1px solid rgba(22,119,255,0.35)" : "1px solid var(--app-border, rgba(15,23,42,0.12))",
+              // พื้นการ์ดจมลงหนึ่งระดับจากพื้น panel (var(--app-surface-2)) แทนพื้นขาวตรง ๆ ให้เห็น
+              // ขอบเขตการ์ดชัดโดยไม่ต้องมีเงา และตัดปัญหาสีชิปข้างในดูขัดกับพื้นการ์ดขาวจั๊วะ
+              background: selected ? "rgba(22,119,255,0.06)" : "var(--app-surface-2, #f1f5f9)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6, flexWrap: "wrap" }}>
+              <Pill tone={CHANNEL_PILL[o.channel] || DEFAULT_PILL}>{o.channel}</Pill>
+              <Pill tone={STATUS_PILL[o.status] || DEFAULT_PILL}>{o.status}</Pill>
+              <Text style={{ fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: "var(--app-muted, #64748b)", marginInlineStart: "auto" }}>
+                #{String(o.id).slice(0, 8)}
+              </Text>
+            </div>
+            {(o.paymentStatus || o.shipmentStatus) && (
+              <Space size={4} wrap style={{ marginBottom: 6 }}>
+                {o.paymentStatus && <OutlinePill>ชำระ: {o.paymentStatus}</OutlinePill>}
+                {o.shipmentStatus && <OutlinePill>จัดส่ง: {o.shipmentStatus}</OutlinePill>}
+              </Space>
             )}
-          </Space>
-        </List.Item>
-      )}
-    />
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+              <Text type="secondary" style={{ fontSize: 10.5 }}>{dateOnly(o.createdAt)}</Text>
+              <Text strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{money(o.totalAmount)}</Text>
+            </div>
+            {o.trackingNo && (
+              <div style={{ fontSize: 11, color: "var(--app-muted, #64748b)" }}>เลขพัสดุ {o.trackingNo}</div>
+            )}
+            {discountLabel(o) && (
+              <div style={{ fontSize: 11, color: "var(--app-danger, #dc2626)", marginTop: 2 }}>{discountLabel(o)}</div>
+            )}
+            <div style={{ fontSize: 11, color: "var(--app-muted, #64748b)", marginTop: 4, marginBottom: 8 }}>
+              {(o.items || []).map((it: any) => `${it.sku}×${it.qty}`).join(", ")}
+            </div>
+            <Space size={6}>
+              <Button size="small" type={selected ? "primary" : "default"} style={{ fontWeight: 600 }} onClick={() => onOpenPreview(o.id)}>
+                เปิดออเดอร์
+              </Button>
+              {o.channel !== "web" && o.channel !== "test" && (
+                <Tooltip title="เปิดหน้าออเดอร์ในช่องทางต้นทาง (ยังไม่รองรับทุกช่องทาง)">
+                  <Button size="small" disabled>เปิด Marketplace</Button>
+                </Tooltip>
+              )}
+            </Space>
+          </div>
+        );
+      })}
+    </Space>
   );
 }
 
@@ -311,9 +363,9 @@ function OrderPreviewDrawer({
       ) : (
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Space size={6} wrap>
-            <Tag color={CHANNEL_COLOR[order.channel] || "default"}>{order.channel}</Tag>
+            <Pill tone={CHANNEL_PILL[order.channel] || DEFAULT_PILL}>{order.channel}</Pill>
             <Text strong style={{ fontSize: 18 }}>#{String(order.id).slice(0, 8)}</Text>
-            <Tag color={STATUS_COLOR[order.status] || "default"}>{order.status}</Tag>
+            <Pill tone={STATUS_PILL[order.status] || DEFAULT_PILL}>{order.status}</Pill>
           </Space>
 
           <Descriptions size="small" column={1} colon={false}>
@@ -803,27 +855,72 @@ function InvoiceModal({
 }
 
 // ---- Section 10 — Quick Actions ------------------------------------
+// แถว icon+label+chevron แทน <Button block> 5 ปุ่มทรงเดียวกันเดิม — ปุ่มแรก (สร้างออเดอร์ = action
+// ที่ใช้บ่อยสุด) ใส่ prop primary ให้พื้น/ตัวหนังสือเด่นกว่าที่เหลือ ส่วน logic สิทธิ์/disabled/Tooltip
+// เดิมทั้งหมดยังอยู่ครบ แค่ย้าย Tooltip มาห่อ QaButton ตัวเดียวกันแทนการสร้าง Button disabled คู่ขนาน
+function QaButton({
+  icon, primary, disabled, tooltip, href, onClick, children,
+}: { icon: React.ReactNode; primary?: boolean; disabled?: boolean; tooltip?: string; href?: string; onClick?: () => void; children: React.ReactNode }) {
+  const iconWrap = (
+    <span style={{
+      width: 26, height: 26, borderRadius: 999, flexShrink: 0, display: "inline-flex",
+      alignItems: "center", justifyContent: "center", fontSize: 12,
+      background: primary && !disabled ? "rgba(22,119,255,0.16)" : "var(--app-surface-2, #f1f5f9)",
+      color: primary && !disabled ? "#1677ff" : "var(--app-muted, #64748b)",
+    }}>
+      {icon}
+    </span>
+  );
+  const rowStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 9, height: "auto", width: "100%",
+    padding: "7px 8px", borderRadius: 8, textAlign: "start",
+    background: primary && !disabled ? "rgba(22,119,255,0.08)" : "transparent",
+    border: primary && !disabled ? "1px solid rgba(22,119,255,0.22)" : "1px solid transparent",
+  };
+  const btn = (
+    <Button block type="text" disabled={disabled} onClick={onClick} style={rowStyle}>
+      {iconWrap}
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: primary ? 700 : 600, color: primary && !disabled ? "#1677ff" : undefined }}>
+        {children}
+      </span>
+      <RightOutlined style={{ fontSize: 9, color: "var(--app-muted, #64748b)", flexShrink: 0 }} />
+    </Button>
+  );
+  const wrapped = href && !disabled ? <Link href={href}>{btn}</Link> : btn;
+  return tooltip ? <Tooltip title={tooltip}>{wrapped}</Tooltip> : wrapped;
+}
+
 function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { can: (p: string) => boolean; conv: any; orders: any[]; onCreateOrder: () => void; onInvoice: () => void }) {
   const hasRefundable = orders?.some((o) => o.paymentStatus === "CONFIRMED");
   return (
-    <Space direction="vertical" size={6} style={{ width: "100%" }}>
-      {can("order.create") ? (
-        <Button block onClick={onCreateOrder}>สร้างออเดอร์</Button>
-      ) : (
-        <Tooltip title="ไม่มีสิทธิ์ order.create"><Button block disabled>สร้างออเดอร์</Button></Tooltip>
-      )}
-      <Link href="/admin/products"><Button block>ตรวจสอบสต็อก</Button></Link>
-      {can("payment.refund") ? (
-        <Link href="/admin/payment"><Button block disabled={!hasRefundable}>คืนเงิน</Button></Link>
-      ) : (
-        <Tooltip title="ไม่มีสิทธิ์ payment.refund"><Button block disabled>คืนเงิน</Button></Tooltip>
-      )}
-      {can("order.view") ? (
-        <Button block disabled={!orders?.length} onClick={onInvoice}>ออกใบแจ้งหนี้</Button>
-      ) : (
-        <Tooltip title="ไม่มีสิทธิ์ order.view"><Button block disabled>ออกใบแจ้งหนี้</Button></Tooltip>
-      )}
-      <Link href="/admin/customers"><Button block>เปิดหน้าลูกค้า</Button></Link>
+    <Space direction="vertical" size={2} style={{ width: "100%" }}>
+      <QaButton
+        icon={<PlusOutlined />}
+        primary
+        disabled={!can("order.create")}
+        tooltip={can("order.create") ? undefined : "ไม่มีสิทธิ์ order.create"}
+        onClick={onCreateOrder}
+      >
+        สร้างออเดอร์
+      </QaButton>
+      <QaButton icon={<ContainerOutlined />} href="/admin/products">ตรวจสอบสต็อก</QaButton>
+      <QaButton
+        icon={<RollbackOutlined />}
+        href="/admin/payment"
+        disabled={!can("payment.refund") || !hasRefundable}
+        tooltip={!can("payment.refund") ? "ไม่มีสิทธิ์ payment.refund" : !hasRefundable ? "ไม่มีออเดอร์ที่ชำระแล้วให้คืนเงิน" : undefined}
+      >
+        คืนเงิน
+      </QaButton>
+      <QaButton
+        icon={<FileTextOutlined />}
+        disabled={!can("order.view") || !orders?.length}
+        tooltip={!can("order.view") ? "ไม่มีสิทธิ์ order.view" : !orders?.length ? "ยังไม่มีออเดอร์ให้ออกใบแจ้งหนี้" : undefined}
+        onClick={onInvoice}
+      >
+        ออกใบแจ้งหนี้
+      </QaButton>
+      <QaButton icon={<UserOutlined />} href="/admin/customers">เปิดหน้าลูกค้า</QaButton>
     </Space>
   );
 }
@@ -867,13 +964,40 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
     <div className={panelStyles.panel} style={{
       width: 292, maxWidth: "30vw", flexShrink: 0, minHeight: 0, minWidth: 260, overflowY: "auto", overflowX: "hidden",
       border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: 8,
-      position: "sticky", top: 0, height: "100%",
+      height: "100%",
+      // panel เองไม่เคยมี background ของตัวเอง (พึ่งพื้นของ card/section ย่อยแต่ละอันเอาเอง) — ช่องว่าง
+      // ระหว่าง section (เช่น margin ใต้ sticky header) จึงโปร่งใส เห็นสิ่งที่อยู่ข้างหลังทะลุมา ดูเหมือน
+      // "พื้นหลังไม่เต็ม" ตอนเลื่อนเนื้อหาผ่านช่องว่างนั้น ใส่พื้นทึบให้ตัว panel เองไปเลย
+      backgroundColor: "var(--app-surface, #ffffff)",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+      {/* ปักหัวข้อ + ปุ่มแจกคูปอง/ย่อแผงไว้บนสุดของกรอบสกรอลล์เดียวกับเนื้อหา (panel เดิม overflowY:"auto"
+          อยู่แล้ว ไม่ต้องเพิ่ม scroll container ใหม่) — เดิมเลื่อนหายไปพร้อมเนื้อหาด้านล่าง ต้องเลื่อน
+          กลับขึ้นบนสุดถึงจะกดแจกคูปอง/ย่อแผงได้อีกครั้ง
+          ⚠️ panel เดิมมี position:"sticky" ของตัวเองด้วย (top:0) — แต่พาเรนต์ (`.columns` ใน page.tsx)
+          เป็น overflow:"hidden" ไม่มี scroll ให้ panel นั้น sticky ต่อจริงเลย กลายเป็น sticky ที่ไม่มี
+          ancestor ให้ยึด ซ้อนกับ sticky ของ header ข้างล่างที่ยึดกับ panel เอง (ตัวที่ scroll จริง) —
+          สอง position:sticky ซ้อนกันแบบนี้ทำให้ browser คำนวณ compositing layer ผิด เกิดรอยฉีก/เงา
+          ระหว่างเลื่อน (ตามที่เจอ) ลบ sticky ของ panel ออก เหลือแค่ sticky ของ header ตัวเดียวพอ */}
+      <div style={{
+        position: "sticky", top: -8, zIndex: 2,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        margin: "-8px -8px 5px", padding: "8px 8px 6px",
+        backgroundColor: "var(--app-surface, #ffffff)",
+        borderBottom: "1px solid var(--app-border, rgba(15,23,42,0.12))",
+        borderRadius: "10px 10px 0 0",
+        isolation: "isolate",
+      }}>
         <Text strong style={{ fontSize: 12 }}>ข้อมูลลูกค้า (Customer 360)</Text>
         <Space size={4}>
           {conv?.id && can("coupon.manage") && (
-            <Button size="small" onClick={() => setAssignCouponOpen(true)}>แจกคูปอง</Button>
+            /* pill เส้นขอบจางตาม mockup — ปุ่มสี่เหลี่ยมเต็มใบเดิมแย่งน้ำหนักภาพกับหัวข้อแผงเอง */
+            <Button
+              size="small"
+              onClick={() => setAssignCouponOpen(true)}
+              style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 22, fontWeight: 600, color: "#1677ff", borderColor: "rgba(22,119,255,0.3)" }}
+            >
+              แจกคูปอง
+            </Button>
           )}
           <Tooltip title="ย่อแผงข้อมูลลูกค้า">
             <Button type="text" size="small" icon={<MenuFoldOutlined />} onClick={toggle} />
@@ -896,6 +1020,8 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
       ) : (
         <Collapse
           size="small"
+          /* ลูกศรอยู่ท้ายหัวข้อ (mockup) — ชื่อ section เริ่มชิดซ้ายเสมอ กวาดตาอ่านเป็นคอลัมน์เดียวได้ */
+          expandIconPosition="end"
           defaultActiveKey={["summary", "cart", "orders", "actions"]}
           items={[
             { key: "summary", label: "สรุปลูกค้า", children: <SummarySection c={c360?.customer} conv={conv} /> },

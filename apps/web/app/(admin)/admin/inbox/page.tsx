@@ -14,7 +14,7 @@ import {
   FireOutlined, ClockCircleOutlined, ShoppingCartOutlined, CreditCardOutlined,
   TruckOutlined, ThunderboltOutlined, TagsOutlined, SearchOutlined,
   LeftOutlined, RightOutlined, DownloadOutlined,
-  EyeOutlined, EyeInvisibleOutlined, UpOutlined, DownOutlined,
+  EyeOutlined, EyeInvisibleOutlined,
   FileOutlined, FilePdfOutlined,
 } from "@ant-design/icons";
 
@@ -73,6 +73,18 @@ const SUBTLE_TEXT = "rgba(var(--app-text-rgb, 15, 23, 42), 0.62)";
 const IDLE_CARD_BORDER = "rgba(var(--app-text-rgb, 15, 23, 42), 0.08)";
 const IDLE_CARD_SHADOW = "0 1px 4px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.06)";
 const RAISED_PANEL_SHADOW = "0 6px 16px rgba(var(--app-shadow-rgb, 15, 23, 42), 0.12)";
+// ภาษาภาพชุดเดียวสำหรับ chip เล็กในคิวแชท/หัวแชท (ตาม mockup "compact cards") — ช่องทางเป็น pill
+// ฟ้าอ่อน ส่วน chip สถานะอื่นเป็นเส้นขอบจาง ไม่ใช่ Tag สีทึบทั้งแถว ซึ่งเดิมแย่งสายตาจากตัวข้อความ
+const CHANNEL_CHIP_STYLE: React.CSSProperties = {
+  flexShrink: 0, fontSize: 9, fontWeight: 700, lineHeight: "16px", letterSpacing: "0.03em",
+  textTransform: "uppercase", color: "#1677ff", background: "rgba(22,119,255,0.09)",
+  borderRadius: 999, paddingInline: 6,
+};
+const TOOL_CHIP_BASE: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 4, marginInlineEnd: 0,
+  fontSize: 10.5, fontWeight: 600, lineHeight: "18px", paddingInline: 9, borderRadius: 999,
+  background: PANEL_SURFACE, borderColor: "var(--app-border, rgba(15,23,42,0.12))", color: "var(--app-muted, #64748b)",
+};
 // ---- GraphQL ------------------------------------------------
 const STAFF_FIELDS = `id name email avatar role isAvailable openCount`;
 const Q_LIST = gql`
@@ -369,6 +381,13 @@ function Inbox() {
 
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("OPEN");
   const [search, setSearch] = useState("");
+  // ช่องค้นหาไม่มีปุ่มแล้ว (mockup เป็น input เดียวเต็มความกว้าง) — พิมพ์แล้วค้นเองแบบ debounce 300ms
+  // เหมือนหน้า operations อื่น ๆ เพราะ search เป็น arg ของ bmsConversations ไม่ใช่ filter ใน table
+  const [searchInput, setSearchInput] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   // deep-link จากหน้า Orders: /admin/inbox?c=<conversationId> → เปิดแชทนั้นทันที
   // อ่านตอน mount (hard load) + useEffect กันเคส SPA client-nav ที่ URL อัปเดตหลัง render แรก
   const [activeId, setActiveId] = useState<string | null>(() => {
@@ -634,22 +653,31 @@ function Inbox() {
       <div style={{ marginBottom: isMobile ? 8 : 10, flexShrink: 0 }}>
         <Space style={{ width: "100%", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center" }} wrap>
           <Space direction="vertical" size={0}>
-            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : undefined, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
+            <Typography.Text type="secondary" style={{ fontSize: isMobile ? 12 : 10.5 }}>
               ตอบลูกค้า · เช็กสต็อก · ยืนยันสลิป · ส่งต่อจัดส่ง ในหน้าจอเดียว
             </Typography.Text>
           </Space>
-          <Space wrap size={isMobile ? 8 : undefined}>
+          <Space wrap size={isMobile ? 8 : 8}>
             {me && (
+              /* สถานะรับแชทเป็น pill สีตามสถานะจริง (mockup) — เดิมเป็น Switch เปล่า ๆ ที่ต้องเพ่งดูว่าเปิดอยู่ไหม */
               <Tooltip title="ปิดไว้ = จะไม่ถูก auto-assign แชทใหม่เข้ามาให้ (แชทที่ถืออยู่แล้วไม่กระทบ)">
-                <Space size={6}>
+                <Space
+                  size={6}
+                  style={{
+                    borderRadius: 999, paddingInline: 10, paddingBlock: 3,
+                    background: me.is_available ? "rgba(5,150,105,0.10)" : "rgba(148,163,184,0.16)",
+                  }}
+                >
                   <Switch size="small" checked={me.is_available} loading={settingAvail}
                     onChange={(v) => setAvailability({ variables: { available: v } })} />
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>พร้อมรับแชทใหม่</Typography.Text>
+                  <Typography.Text style={{ fontSize: 11, fontWeight: 600, color: me.is_available ? "#059669" : "var(--app-muted, #64748b)" }}>
+                    พร้อมรับแชทใหม่
+                  </Typography.Text>
                 </Space>
               </Tooltip>
             )}
-            <Button icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(); }} loading={loading}>Refresh</Button>
+            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(); }} loading={loading}>Refresh</Button>
           </Space>
         </Space>
       </div>
@@ -657,8 +685,10 @@ function Inbox() {
 
       <div style={{ display: "flex", gap: isMobile ? 0 : 12, alignItems: "stretch", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}>
         {/* ---- left: conversation list ---- */}
+        {/* padding ของคอลัมน์เป็น 0 ตอนกางอยู่ เพื่อให้แถวคิวและเส้นคั่นกินเต็มความกว้างแบบ mockup
+            (ส่วนหัวคิวถือ padding ของตัวเองไว้) */}
         {showListPane && (
-        <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : isMobile ? 10 : 12, display: "flex", flexDirection: "column", background: PANEL_SURFACE, overflow: "hidden" }}>
+        <div style={{ width: isMobile ? "100%" : effectiveListCollapsed ? 72 : 320, flexShrink: 0, minHeight: 0, minWidth: 0, border: "1px solid var(--app-border, #eee)", borderRadius: isMobile ? 12 : 14, padding: effectiveListCollapsed ? "10px 6px" : 0, display: "flex", flexDirection: "column", background: PANEL_SURFACE, overflow: "hidden" }}>
           {/* หัวคิวไม่ต้องเป็นการ์ดซ้อนในการ์ด — ตัวคอลัมน์มีกรอบอยู่แล้ว กรอบชั้นที่สอง
               กินความกว้าง/ความสูงฟรี ๆ เหลือแค่เส้นคั่นด้านล่าง */}
           <div
@@ -666,8 +696,8 @@ function Inbox() {
               display: "flex",
               flexDirection: "column",
               gap: 6,
-              marginBottom: effectiveListCollapsed ? 8 : 8,
-              paddingBottom: effectiveListCollapsed ? 0 : 8,
+              marginBottom: 0,
+              padding: effectiveListCollapsed ? "0 0 8px" : isMobile ? "8px 10px" : "9px 10px",
               borderBottom: effectiveListCollapsed ? "none" : "1px solid var(--app-border, rgba(15,23,42,0.12))",
             }}
           >
@@ -690,6 +720,17 @@ function Inbox() {
           </div>
           {!effectiveListCollapsed && (
             <>
+              {/* ค้นหาอยู่เหนือแท็บสถานะตาม mockup — เป็นสิ่งที่ staff เอื้อมหาเร็วที่สุดเวลาลูกค้าโทรมา
+                  ถามถึงแชทของตัวเอง ไม่ควรอยู่ใต้แถวตัวกรองที่กดนาน ๆ ครั้ง */}
+              <Input
+                size="small"
+                placeholder="ค้นหาชื่อ/ข้อความ/ref"
+                allowClear
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                prefix={<SearchOutlined style={{ color: "var(--app-muted, #94a3b8)", fontSize: 11 }} />}
+                style={{ borderRadius: 7, fontSize: 11.5, background: PANEL_SUNKEN_SURFACE }}
+              />
               <Segmented
                 block
                 size="small"
@@ -699,64 +740,72 @@ function Inbox() {
                 style={{
                   marginBottom: 0,
                   padding: 2,
-                  borderRadius: 12,
-                  fontSize: 12,
+                  borderRadius: 8,
+                  fontSize: 10.5,
+                  fontWeight: 700,
                   background: PANEL_SUNKEN_SURFACE,
                 }}
               />
-              <div style={{ display: "grid", gridTemplateColumns: restrictedToOwn ? "1fr" : "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
-                <Input.Search
-                  size="middle"
-                  placeholder="ค้นหาชื่อ/ข้อความ/ref"
-                  allowClear
-                  enterButton={<SearchOutlined />}
-                  onSearch={setSearch}
-                />
-                {restrictedToOwn ? (
-                  <Tooltip title="role Sales เห็นเฉพาะแชทของตัวเองเสมอ">
-                    <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>แสดงเฉพาะแชทของฉัน</Typography.Text>
-                  </Tooltip>
-                ) : (
-                  <Space size={6} style={{ whiteSpace: "nowrap" }}>
-                    <Switch size="small" checked={mineOnly} onChange={setMineOnly} />
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>ของฉันเท่านั้น</Typography.Text>
-                  </Space>
-                )}
-              </div>
             </>
           )}
+          {/* ตัวกรองเนื้อหาแชท (ด่วน/สลิป/สินค้า) กับ "ของฉัน" เป็นคนละมิติกัน (กรองเนื้อหา vs.
+              กรองเจ้าของแชท) เลย split เป็นสองกลุ่มคั่นด้วยเส้นบาง — กลุ่มซ้าย flex แถวเดียวไม่ wrap
+              (เลื่อนแนวนอนได้ถ้าล้น) "ของฉัน" ปักขวาสุดเสมอ กันตกบรรทัดแบบที่เคยเกิดตอนเพิ่ม chip ที่ 4 */}
           {!effectiveListCollapsed && (
-            <Space wrap size={6}>
-              <Button
-                size="small"
-                type={quickFilter === "urgent" ? "primary" : "default"}
-                danger={quickFilter !== "urgent"}
-                ghost={quickFilter !== "urgent"}
-                icon={<FireOutlined />}
-                onClick={() => setQuickFilter((prev) => prev === "urgent" ? null : "urgent")}
-                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600 }}
-              >
-                ด่วนก่อน
-              </Button>
-              <Button
-                size="small"
-                type={quickFilter === "payment" ? "primary" : "default"}
-                icon={<CreditCardOutlined />}
-                onClick={() => setQuickFilter((prev) => prev === "payment" ? null : "payment")}
-                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
-              >
-                มีสลิป
-              </Button>
-              <Button
-                size="small"
-                type={quickFilter === "product" ? "primary" : "default"}
-                icon={<ShoppingCartOutlined />}
-                onClick={() => setQuickFilter((prev) => prev === "product" ? null : "product")}
-                style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
-              >
-                ถามสินค้า
-              </Button>
-            </Space>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <div className="bms-inbox-filter-strip" style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, minWidth: 0, paddingBottom: 1 }}>
+                <Button
+                  size="small"
+                  type={quickFilter === "urgent" ? "primary" : "default"}
+                  danger={quickFilter !== "urgent"}
+                  ghost={quickFilter !== "urgent"}
+                  icon={<FireOutlined />}
+                  onClick={() => setQuickFilter((prev) => prev === "urgent" ? null : "urgent")}
+                  style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}
+                >
+                  ด่วนก่อน
+                </Button>
+                <Button
+                  size="small"
+                  type={quickFilter === "payment" ? "primary" : "default"}
+                  icon={<CreditCardOutlined />}
+                  onClick={() => setQuickFilter((prev) => prev === "payment" ? null : "payment")}
+                  style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
+                >
+                  มีสลิป
+                </Button>
+                <Button
+                  size="small"
+                  type={quickFilter === "product" ? "primary" : "default"}
+                  icon={<ShoppingCartOutlined />}
+                  onClick={() => setQuickFilter((prev) => prev === "product" ? null : "product")}
+                  style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
+                >
+                  ถามสินค้า
+                </Button>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "var(--app-border, rgba(15,23,42,0.12))", flexShrink: 0 }} />
+              {restrictedToOwn ? (
+                <Tooltip title="role Sales เห็นเฉพาะแชทของตัวเองเสมอ">
+                  <Button size="small" type="default" disabled icon={<UserOutlined />}
+                    style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}>
+                    ของฉัน
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip title={mineOnly ? "กำลังแสดงเฉพาะแชทที่ฉันถืออยู่" : "แสดงเฉพาะแชทที่ฉันถืออยู่"}>
+                  <Button
+                    size="small"
+                    type={mineOnly ? "primary" : "default"}
+                    icon={<UserOutlined />}
+                    onClick={() => setMineOnly(!mineOnly)}
+                    style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}
+                  >
+                    ของฉัน
+                  </Button>
+                </Tooltip>
+              )}
+            </div>
           )}
           </div>
           <div
@@ -769,14 +818,16 @@ function Inbox() {
               renderItem={(c) => (
                 <List.Item
                   onClick={() => openConversation(c.id)}
+                  /* แถวเรียบคั่นด้วยเส้น ไม่ใช่การ์ดมีเงา/ขอบรอบตัว (ตาม mockup) — การ์ดซ้อนในคอลัมน์ที่มี
+                     กรอบอยู่แล้วกินความกว้างและทำให้ 5 แถวดูเหมือน 5 กล่องแยกกันแทนที่จะเป็นคิวเดียว */
                   style={{
-                    cursor: "pointer", padding: effectiveListCollapsed ? "5px 0" : "6px 8px", borderRadius: 9, marginBottom: 4,
+                    cursor: "pointer", padding: effectiveListCollapsed ? "5px 0" : "8px 10px", borderRadius: 0, marginBottom: 0,
                     display: effectiveListCollapsed ? "flex" : undefined,
                     justifyContent: effectiveListCollapsed ? "center" : undefined,
-                    background: activeId === c.id ? "rgba(22,119,255,0.12)" : PANEL_SURFACE,
+                    background: activeId === c.id ? "rgba(22,119,255,0.07)" : "transparent",
+                    border: "none",
                     borderLeft: activeId === c.id ? "2px solid #1677ff" : "2px solid transparent",
-                    border: activeId === c.id ? "1px solid rgba(22,119,255,0.28)" : `1px solid ${IDLE_CARD_BORDER}`,
-                    boxShadow: activeId === c.id ? "0 2px 8px rgba(22,119,255,0.08)" : IDLE_CARD_SHADOW,
+                    borderBottom: `1px solid ${IDLE_CARD_BORDER}`,
                   }}
                 >
                   {effectiveListCollapsed ? (
@@ -784,15 +835,27 @@ function Inbox() {
                       <Badge count={c.unread} size="small"><Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} /></Badge>
                     </Tooltip>
                   ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 7, width: "100%", minWidth: 0, alignItems: "start" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", columnGap: 8, width: "100%", minWidth: 0, alignItems: "start" }}>
                       <Badge count={c.unread} size="small" offset={[-2, 2]}>
-                        <Avatar size={28} src={c.customerAvatar || undefined} icon={<UserOutlined />} />
+                        {/* ไม่มีรูปจริง = ตัวอักษรแรกบนพื้น gradient (mockup) — อ่านออกว่าเป็นใคร
+                            เร็วกว่าไอคอนคนสีเทาที่เหมือนกันหมดทุกแถว */}
+                        <Avatar
+                          size={28}
+                          src={c.customerAvatar || undefined}
+                          icon={c.customerAvatar ? undefined : (c.customerName || c.customerRef) ? undefined : <UserOutlined />}
+                          style={c.customerAvatar ? undefined : {
+                            background: "linear-gradient(135deg, #1677ff, #059669)",
+                            fontSize: 11, fontWeight: 700,
+                          }}
+                        >
+                          {(c.customerName || c.customerRef || "").slice(0, 1).toUpperCase() || undefined}
+                        </Avatar>
                       </Badge>
                       {/* ชื่อขึ้นก่อน (สิ่งที่ staff กวาดตาหา) ช่องทางเป็น chip เล็กชิดขวา —
                           เดิมเอา Tag ช่องทางไว้หน้าชื่อ ทำให้ชื่อถูกดันและอ่านยากตอน list แคบ */}
-                      <div style={{ minWidth: 0, display: "grid", gap: 1 }}>
+                      <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 11.5 }}>
+                          <Typography.Text strong ellipsis style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
                             {c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า"}
                           </Typography.Text>
                           {c.assignedStaff && (
@@ -802,26 +865,21 @@ function Inbox() {
                               </Avatar>
                             </Tooltip>
                           )}
-                          <Typography.Text
-                            style={{
-                              flexShrink: 0, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.04em",
-                              textTransform: "uppercase", color: "var(--app-muted)",
-                            }}
-                          >
+                          <span style={CHANNEL_CHIP_STYLE}>
                             {CHANNEL_SHORT[c.channel] || c.channel}
-                          </Typography.Text>
+                          </span>
                         </div>
 
-                        <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 9.5, lineHeight: 1.25 }}>
+                        <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 10, lineHeight: 1.25 }}>
                           {sourceLabel(c) ? `ร้าน: ${sourceLabel(c)}` : c.customerRef || c.id}
                         </Typography.Text>
 
-                        <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 10.5, lineHeight: 1.3 }} type="secondary">
+                        <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 11, lineHeight: 1.3 }} type="secondary">
                           {previewNode(c.lastMessage)}
                         </Typography.Text>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, marginTop: 1 }}>
-                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 600, fontSize: 9, lineHeight: "15px", paddingInline: 5 }}>
+                          <Tag color={convPriority(c).color} icon={convPriority(c).icon} style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 700, fontSize: 9, lineHeight: "16px", paddingInline: 6 }}>
                             {convPriority(c).label}
                           </Tag>
                           <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
@@ -871,7 +929,6 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     if (activeTabKey !== "notes") setNoteMentionQuery(null);
   }, [activeTabKey]);
   const [tags, setTags] = useState<string[]>(conv.tags || []);
-  const [showHelperTags, setShowHelperTags] = useState(false);
   const [showAiSuggestion, setShowAiSuggestion] = useState(true);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const [newMessageCount, setNewMessageCount] = useState(0);
@@ -1038,16 +1095,24 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             {isMobile && (
               <Button type="text" size="small" icon={<LeftOutlined />} onClick={onBack} style={{ flexShrink: 0 }} />
             )}
-            <Avatar size={isMobile ? 28 : 30} src={conv.customerAvatar || undefined} icon={<UserOutlined />} style={{ flexShrink: 0 }} />
-            <Typography.Text strong ellipsis style={{ fontSize: isMobile ? 14 : 15, minWidth: 0, flex: "0 1 auto" }}>
+            <Avatar
+              size={isMobile ? 28 : 26}
+              src={conv.customerAvatar || undefined}
+              icon={conv.customerAvatar || conv.customerName || conv.customerRef ? undefined : <UserOutlined />}
+              style={conv.customerAvatar ? { flexShrink: 0 } : { flexShrink: 0, background: "linear-gradient(135deg, #1677ff, #059669)", fontSize: 10, fontWeight: 700 }}
+            >
+              {(conv.customerName || conv.customerRef || "").slice(0, 1).toUpperCase() || undefined}
+            </Avatar>
+            <Typography.Text strong ellipsis style={{ fontSize: isMobile ? 14 : 12.5, minWidth: 0, flex: "0 1 auto" }}>
               {conv.customerName || conv.customerRef || "ลูกค้า"}
             </Typography.Text>
-            <Tag color={CHANNEL_COLOR[conv.channel] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0, fontSize: 10, lineHeight: "18px", paddingInline: 6 }}>{conv.channel}</Tag>
+            {/* ช่องทางเป็น chip จางแบบเดียวกับในคิว (mockup) ไม่ใช่ Tag สีทึบที่เด่นกว่าชื่อลูกค้าเอง */}
+            <span style={CHANNEL_CHIP_STYLE}>{conv.channel}</span>
             {isMobile && (
               <Tag color={STATUS_COLOR[conv.status as ConvStatus] || "default"} style={{ marginInlineEnd: 0, flexShrink: 0, fontSize: 10, lineHeight: "18px", paddingInline: 6 }}>{conv.status}</Tag>
             )}
           </div>
-          <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.2 }}>{conv.customerRef || conv.id}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 10, lineHeight: 1.25 }}>{conv.customerRef || conv.id}</Typography.Text>
           {sourceLabel(conv) && (
             <Space size={6} wrap={!isMobile} style={{ minWidth: 0 }}>
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>ทักจาก:</Typography.Text>
@@ -1063,75 +1128,101 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 
       {isMobile && headerControls}
 
+      {/* แถบ chip ใต้หัวแชท: มีแค่ AI ที่ติดสี ที่เหลือเป็นเส้นขอบจาง (mockup) — เดิม Tag สีทึบ 4 อัน
+          เรียงกันทำให้ไม่รู้ว่าอันไหนสำคัญ ยกเว้น "ยังไม่ผูก CRM" ที่ยังเป็นสีเตือนเพราะต้องลงมือแก้จริง */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-        <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 8, borderRadius: 999, fontSize: 11, lineHeight: "20px" }}>
+        <Tag
+          icon={<ThunderboltOutlined />}
+          style={{ ...TOOL_CHIP_BASE, color: "#1677ff", borderColor: "rgba(22,119,255,0.3)", background: "rgba(22,119,255,0.06)" }}
+        >
           AI: {aiIntent}
         </Tag>
-        <Tag color={action.color === "#389e0d" ? "green" : action.color === "#1677ff" ? "blue" : action.color === "#722ed1" ? "purple" : "orange"} icon={action.icon} style={{ marginInlineEnd: 0, paddingInline: 8, borderRadius: 999, fontSize: 11, lineHeight: "20px" }}>
+        <Tag icon={action.icon} style={TOOL_CHIP_BASE}>
           {action.value}
         </Tag>
-        <Tag color={conv.customerId ? "green" : "default"} icon={<ShoppingCartOutlined />} style={{ marginInlineEnd: 0, paddingInline: 8, borderRadius: 999, fontSize: 11, lineHeight: "20px" }}>
+        <Tag
+          icon={<ShoppingCartOutlined />}
+          style={conv.customerId ? TOOL_CHIP_BASE : { ...TOOL_CHIP_BASE, color: "#d97706", borderColor: "rgba(217,119,6,0.35)", background: "rgba(217,119,6,0.06)" }}
+        >
           {conv.customerId ? "ผูก CRM แล้ว" : "ยังไม่ผูก CRM"}
         </Tag>
-        <Tag
-          color="gold" icon={<TagsOutlined />}
-          style={{ marginInlineEnd: 0, paddingInline: 8, borderRadius: 999, cursor: "pointer", fontSize: 11, lineHeight: "20px" }}
-          onClick={() => setShowHelperTags((v) => !v)}
-        >
-          {helpers.length || 0} ผู้ช่วย {showHelperTags ? <UpOutlined /> : <DownOutlined />}
-        </Tag>
-      </div>
-
-      {showHelperTags && (
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <Space size={6} wrap>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>ผู้ช่วยตอบ:</Typography.Text>
-            {helpers.length === 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>ยังไม่มี</Typography.Text>}
-            {helpers.map((h) => (
-              <Tooltip key={h.id} title={h.name || h.email || h.id}>
-                <span style={{ position: "relative", display: "inline-flex" }}>
-                  <Avatar size={18} src={h.avatar || undefined} style={{ fontSize: 9 }}>
-                    {(h.name || "?").slice(0, 1).toUpperCase()}
-                  </Avatar>
-                  {canHelp && (
-                    <CloseOutlined
-                      onClick={() => removeHelper({ variables: { id: conv.id, userId: h.id } })}
-                      style={{ position: "absolute", top: -4, right: -4, fontSize: 8, background: "#ff4d4f", color: "#fff", borderRadius: "50%", padding: 2, cursor: "pointer" }}
-                    />
-                  )}
-                </span>
-              </Tooltip>
-            ))}
-            {canHelp && (
-              helperCandidates.length > 0 ? (
-                <Popover
-                  trigger="click"
-                  placement="bottomRight"
-                  content={
-                    <Select
-                      size="small" style={{ width: 220 }} placeholder="เพิ่มคนช่วยตอบ"
-                      options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s) }))}
-                      onSelect={(userId: string) => addHelper({ variables: { id: conv.id, userId } })}
-                    />
-                  }
-                >
-                  <Button type="dashed" size="small" shape="circle" icon={<PlusOutlined style={{ fontSize: 10 }} />} />
-                </Popover>
-              ) : (
-                <Tooltip title="ยังไม่มี staff คนอื่นในร้านให้เพิ่มเป็นผู้ช่วยตอบ (ไปเพิ่ม staff ที่ /admin/users ก่อน)">
-                  <Button type="dashed" size="small" shape="circle" disabled icon={<PlusOutlined style={{ fontSize: 10 }} />} />
-                </Tooltip>
-              )
-            )}
-          </Space>
-          {canManage && (
-            <Space size={6} wrap>
-              <Select mode="tags" size="small" style={{ minWidth: 180 }} value={tags} onChange={setTags} placeholder="แท็ก" />
-              <Button size="small" onClick={() => saveTags({ variables: { id: conv.id, tags } })}>บันทึกแท็ก</Button>
+        {/* ผู้ช่วยตอบ (คน) กับแท็ก (ป้ายกำกับ) เป็นคนละมิติกัน — เดิม toggle ตัวเดียวเปิดทั้งคู่พร้อมกัน
+            ทำให้แถวที่ขยายออกมาปนกันไม่มีขอบเขต แยกเป็นปุ่ม Popover คนละอันแทน แต่ละอันไม่ดันความสูง
+            ของหัวแชทเลยตอนปิดอยู่ (ต่างจากแถวขยายเดิมที่ต้องเผื่อพื้นที่ไว้เสมอ) */}
+        <Popover
+          trigger="click"
+          placement="bottomLeft"
+          content={
+            <Space direction="vertical" size={8} style={{ minWidth: 200 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                ผู้ช่วยตอบ
+              </Typography.Text>
+              <Space size={6} wrap>
+                {helpers.length === 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>ยังไม่มี</Typography.Text>}
+                {helpers.map((h) => (
+                  <Tooltip key={h.id} title={h.name || h.email || h.id}>
+                    <span style={{ position: "relative", display: "inline-flex" }}>
+                      <Avatar size={18} src={h.avatar || undefined} style={{ fontSize: 9 }}>
+                        {(h.name || "?").slice(0, 1).toUpperCase()}
+                      </Avatar>
+                      {canHelp && (
+                        <CloseOutlined
+                          onClick={() => removeHelper({ variables: { id: conv.id, userId: h.id } })}
+                          style={{ position: "absolute", top: -4, right: -4, fontSize: 8, background: "#ff4d4f", color: "#fff", borderRadius: "50%", padding: 2, cursor: "pointer" }}
+                        />
+                      )}
+                    </span>
+                  </Tooltip>
+                ))}
+                {canHelp && (
+                  helperCandidates.length > 0 ? (
+                    <Popover
+                      trigger="click"
+                      placement="bottomRight"
+                      content={
+                        <Select
+                          size="small" style={{ width: 220 }} placeholder="เพิ่มคนช่วยตอบ"
+                          options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s) }))}
+                          onSelect={(userId: string) => addHelper({ variables: { id: conv.id, userId } })}
+                        />
+                      }
+                    >
+                      <Button type="dashed" size="small" shape="circle" icon={<PlusOutlined style={{ fontSize: 10 }} />} />
+                    </Popover>
+                  ) : (
+                    <Tooltip title="ยังไม่มี staff คนอื่นในร้านให้เพิ่มเป็นผู้ช่วยตอบ (ไปเพิ่ม staff ที่ /admin/users ก่อน)">
+                      <Button type="dashed" size="small" shape="circle" disabled icon={<PlusOutlined style={{ fontSize: 10 }} />} />
+                    </Tooltip>
+                  )
+                )}
+              </Space>
             </Space>
-          )}
-        </div>
-      )}
+          }
+        >
+          <Tag icon={<UsergroupAddOutlined />} style={{ ...TOOL_CHIP_BASE, cursor: "pointer" }}>
+            {helpers.length || 0} ผู้ช่วย
+          </Tag>
+        </Popover>
+        {canManage && (
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            content={
+              <Space direction="vertical" size={8} style={{ minWidth: 200 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  แท็กของแชทนี้
+                </Typography.Text>
+                <Select mode="tags" size="small" style={{ minWidth: 200 }} value={tags} onChange={setTags} placeholder="แท็ก" />
+                <Button size="small" style={{ alignSelf: "flex-end" }} onClick={() => saveTags({ variables: { id: conv.id, tags } })}>บันทึกแท็ก</Button>
+              </Space>
+            }
+          >
+            <Tag icon={<TagsOutlined />} style={{ ...TOOL_CHIP_BASE, cursor: "pointer" }}>
+              {tags.length || 0} แท็ก
+            </Tag>
+          </Popover>
+        )}
+      </div>
     </div>
   );
 
@@ -1445,7 +1536,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     }
 
     return (
-      <div key={`m-${m.id}`} className={rowClass} style={{ maxWidth: isMobile ? "94%" : "78%" }}>
+      <div key={`m-${m.id}`} className={rowClass} style={{ maxWidth: isMobile ? "94%" : "62%" }}>
         {content}
         <Typography.Text type="secondary" className={messageStyles.meta}>
           {m.sender} · {timeLabel(m.createdAt)}{statusNode(m)}
@@ -1477,12 +1568,14 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* ข้อความ — เต็มพื้นที่ด้านบน scroll ได้ */}
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        {/* พื้นสายแชทจมลงหนึ่งระดับจากหัวแชท/composer ที่เป็นสีพื้นการ์ด (mockup) — ทำให้ bubble ขาว
+            ของลูกค้ามีขอบเขตชัดขึ้นโดยไม่ต้องใช้พื้นเทาทึบใน bubble */}
         <div
           ref={chatScrollRef}
           onScroll={onChatScroll}
-          style={{ height: "100%", overflowY: "auto", padding: isMobile ? 4 : 6 }}
+          style={{ height: "100%", overflowY: "auto", padding: isMobile ? 8 : 12, background: "var(--app-bg, #f8fafc)", borderRadius: 8 }}
         >
-          <div ref={chatFeedRef} style={{ minHeight: "100%", display: "flex", flexDirection: "column", gap: isMobile ? 7 : 8 }}>
+          <div ref={chatFeedRef} style={{ minHeight: "100%", display: "flex", flexDirection: "column", gap: isMobile ? 6 : 6 }}>
             {feedNodes}
             {/* optimistic: กำลังส่ง/อัปโหลด */}
             {sending && (
@@ -1516,40 +1609,46 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         )}
       </div>
 
+      {/* คำตอบแนะนำ = grid คอลัมน์เดียว (หัว / ข้อความ / ปุ่ม) ไม่ใช่ flex row ที่เอาข้อความไปแข่งพื้นที่
+          กับกลุ่มปุ่ม — โครงเดิมบนจอ ~360px ปุ่มไม่ยอมตกบรรทัด ข้อความจึงถูกบีบเป็นคอลัมน์แคบและหัวข้อ
+          ตัด 2 บรรทัด · ปุ่มตา/ป้าย "AI" ยุบเข้ามาเป็นหัวการ์ด ประหยัดไปอีกหนึ่งแถวเต็ม */}
       {can("inbox.reply") && (
         <div style={{ display: "grid", gap: 8, marginTop: 6, flexShrink: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999 }}>
-              {showAiSuggestion ? "AI แนะนำคำตอบ" : "AI ถูกซ่อนอยู่"}
-            </Tag>
-            <Tooltip title={showAiSuggestion ? "ซ่อน AI suggestion" : "แสดง AI suggestion"}>
-              <Button
-                size="small"
-                shape="circle"
-                icon={showAiSuggestion ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                onClick={toggleAiSuggestion}
-              />
-            </Tooltip>
-          </div>
-
-          {showAiSuggestion && (
+          {showAiSuggestion ? (
             <div style={{
+              display: "grid",
+              gap: 8,
               border: "1px dashed rgba(22,119,255,0.45)",
               background: "rgba(22,119,255,0.08)",
-              borderRadius: isMobile ? 12 : 16,
+              borderRadius: isMobile ? 12 : 14,
               padding: isMobile ? 10 : 12,
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: isMobile ? 8 : 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <Space direction="vertical" size={4} style={{ flex: 1, minWidth: isMobile ? 0 : 240 }}>
-                  <Typography.Text strong style={{ fontSize: 13 }}>คำตอบแนะนำแบบย่อ</Typography.Text>
-                  <Typography.Text style={{ fontSize: 13 }}>{aiReply}</Typography.Text>
-                </Space>
-                <Space wrap>
-                  <Button size="small" type="primary" onClick={() => setReply(aiReply)}>ใส่ในช่องพิมพ์</Button>
-                  <Button size="small" onClick={() => setReply(applyGenderParticle("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ", gender))}>ขอตรวจสอบ</Button>
-                  <Button size="small" onClick={() => setReply(applyGenderParticle("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏", gender))}>ขอบคุณ</Button>
-                </Space>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <Typography.Text style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.04em", color: "#1677ff" }}>
+                  <ThunderboltOutlined /> คำตอบแนะนำ
+                </Typography.Text>
+                <Tooltip title="ซ่อน AI suggestion">
+                  <Button size="small" shape="circle" icon={<EyeInvisibleOutlined />} onClick={toggleAiSuggestion} />
+                </Tooltip>
               </div>
+              <Typography.Text style={{ fontSize: 12.5, lineHeight: 1.5 }}>{aiReply}</Typography.Text>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <Button size="small" type="primary" style={{ fontSize: 11.5, fontWeight: 700 }} onClick={() => setReply(aiReply)}>ใส่ในช่องพิมพ์</Button>
+                {/* คำตอบด่วนเป็น chip — เป็น template ของระบบ ไม่ใช่ข้อความที่ AI แนะนำ จึงไม่ควรหนักเท่าปุ่มหลัก */}
+                <Button size="small" style={{ borderRadius: 999, paddingInline: 10, fontSize: 11 }}
+                  onClick={() => setReply(applyGenderParticle("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ", gender))}>ขอตรวจสอบ</Button>
+                <Button size="small" style={{ borderRadius: 999, paddingInline: 10, fontSize: 11 }}
+                  onClick={() => setReply(applyGenderParticle("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏", gender))}>ขอบคุณ</Button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+              <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999, fontSize: 11 }}>
+                AI ถูกซ่อนอยู่
+              </Tag>
+              <Tooltip title="แสดง AI suggestion">
+                <Button size="small" shape="circle" icon={<EyeOutlined />} onClick={toggleAiSuggestion} />
+              </Tooltip>
             </div>
           )}
         </div>
@@ -1748,12 +1847,16 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             <Input.TextArea
               rows={1} value={reply} onChange={(e) => setReply(e.target.value)}
               autoSize={{ minRows: 1, maxRows: 4 }}
-              placeholder="พิมพ์ตอบลูกค้า (Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่)"
-              style={{ flex: 1, resize: "none", fontSize: 12.5 }}
+              /* มือถือไม่มี Shift+Enter ให้กดอยู่แล้ว placeholder ยาว ๆ เลยได้แค่ตัด 2 บรรทัด —
+                 คำอธิบายฉบับเต็มย้ายไป native tooltip (`title`) ของช่องพิมพ์บนเดสก์ท็อป ไม่ได้หายไป
+                 และไม่ใช้ antd Tooltip เพราะมันจะเด้งค้างระหว่างพิมพ์ */
+              placeholder={isMobile ? "พิมพ์ตอบลูกค้า…" : "พิมพ์ตอบลูกค้า · Enter ส่ง"}
+              title={isMobile ? undefined : "Enter = ส่ง · Shift+Enter = ขึ้นบรรทัดใหม่"}
+              style={{ flex: 1, resize: "none", fontSize: 12, borderRadius: 8, background: PANEL_SUNKEN_SURFACE }}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
+              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
           </div>
         </div>
       )}
@@ -2004,159 +2107,83 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           { key: "timeline", label: "Timeline", children: timelineTab },
         ]}
       />
+      {/* Lightbox โปร่งแสง — พื้นหลังเป็น scrim เข้ม+เบลอ (เห็นสายแชทเลือน ๆ อยู่ข้างหลัง) แทนการ์ดขาว
+          ทึบเต็มพื้นที่เดิม · closable=false + ปุ่ม ✕ ของเราเองปุ่มเดียว (native close ของ antd ซ้ำกับ
+          ปุ่มปิดเดิม) · ปุ่มก่อนหน้า/ถัดไปลอยข้างรูปเสมอทุกขนาดจอ (เดิมมีแค่ isMobile ซ้อนอีกชุด) ·
+          ไม่มี caption/thumbnail แล้ว เหลือผู้ส่ง/เวลาเป็น chip เล็กลอยมุมล่างของรูปพอ */}
       <Modal
         open={imagePreviewIndex != null}
         onCancel={() => setImagePreviewIndex(null)}
         footer={null}
+        closable={false}
         width={isMobile ? "100%" : "min(92vw, 1080px)"}
         style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
         centered={!isMobile}
         styles={{
           content: {
-            padding: isMobile ? 10 : 16,
-            borderRadius: isMobile ? 0 : 28,
+            padding: 0,
+            borderRadius: isMobile ? 0 : 20,
             overflow: "hidden",
-            background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+            background: "rgba(8,13,24,0.72)",
+            backdropFilter: "blur(6px)",
           },
           body: { padding: 0 },
         }}
       >
         {imagePreviewIndex != null && chatImages[imagePreviewIndex] && (
-          <div style={{ display: "grid", gap: isMobile ? 10 : 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <Space direction="vertical" size={2}>
-                <Typography.Text strong style={{ fontSize: isMobile ? 15 : 28, lineHeight: 1 }}>
-                  รูป {imagePreviewIndex + 1} / {chatImages.length}
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
-                </Typography.Text>
-              </Space>
-              <Space wrap size={isMobile ? 6 : 8}>
-                <Button size={isMobile ? "small" : "middle"} icon={<DownloadOutlined />} href={chatImages[imagePreviewIndex].url} target="_blank">
-                  เปิดไฟล์
-                </Button>
-                <Button size={isMobile ? "small" : "middle"} type="primary" onClick={() => setImagePreviewIndex(null)}>ปิด</Button>
+          <div style={{ display: "flex", flexDirection: "column", minHeight: isMobile ? "80vh" : "70vh" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: isMobile ? "10px 12px" : "12px 16px", flexShrink: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "4px 11px" }}>
+                {imagePreviewIndex + 1} / {chatImages.length}
+              </span>
+              <Space size={6}>
+                <Tooltip title="เปิดไฟล์ในแท็บใหม่">
+                  <Button
+                    shape="circle" size={isMobile ? "small" : "middle"} icon={<DownloadOutlined />}
+                    href={chatImages[imagePreviewIndex].url} target="_blank" aria-label="เปิดไฟล์"
+                    style={{ background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff" }}
+                  />
+                </Tooltip>
+                <Button
+                  shape="circle" size={isMobile ? "small" : "middle"} icon={<CloseOutlined />}
+                  onClick={() => setImagePreviewIndex(null)} aria-label="ปิด"
+                  style={{ background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff" }}
+                />
               </Space>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "56px minmax(0, 1fr) 56px", gap: 14, alignItems: "center" }}>
-              {!isMobile && (
-                <Button
-                  shape="circle"
-                  icon={<LeftOutlined />}
-                  onClick={() => movePreview(-1)}
-                  style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(15,23,42,0.12)" }}
+            <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? "0 44px 16px" : "0 64px 20px" }}>
+              <Button
+                shape="circle" icon={<LeftOutlined />} onClick={() => movePreview(-1)} aria-label="รูปก่อนหน้า"
+                style={{
+                  position: "absolute", left: isMobile ? 6 : 16, top: "50%", transform: "translateY(-50%)",
+                  width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
+                  background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff",
+                }}
+              />
+              <div style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", display: "inline-flex" }}>
+                <img
+                  src={chatImages[imagePreviewIndex].url}
+                  alt={chatImages[imagePreviewIndex].name}
+                  style={{ maxWidth: "100%", maxHeight: isMobile ? "56vh" : "64vh", borderRadius: 8, boxShadow: "0 20px 50px rgba(0,0,0,0.4)", display: "block" }}
                 />
-              )}
-
-              <div style={{
-                border: "1px solid rgba(15,23,42,0.08)",
-                borderRadius: isMobile ? 16 : 24,
-                padding: isMobile ? 10 : 18,
-                background: "linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%)",
-                display: "grid",
-                gap: isMobile ? 10 : 14,
-              }}>
                 <div style={{
-                  position: "relative",
-                  borderRadius: isMobile ? 12 : 20,
-                  overflow: "hidden",
-                  background: "#eaf1fb",
-                  minHeight: isMobile ? "42vh" : "58vh",
-                  display: "grid",
-                  placeItems: "center",
+                  position: "absolute", insetInlineStart: 10, insetBlockEnd: 10,
+                  fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,0.9)",
+                  background: "rgba(8,13,24,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "4px 10px",
                 }}>
-                  <img
-                    src={chatImages[imagePreviewIndex].url}
-                    alt={chatImages[imagePreviewIndex].name}
-                    style={{ width: "100%", maxHeight: isMobile ? "42vh" : "58vh", objectFit: "contain", display: "block" }}
-                  />
-                  {isMobile && (
-                    <>
-                      <Button
-                        shape="circle"
-                        size="small"
-                        icon={<LeftOutlined />}
-                        onClick={() => movePreview(-1)}
-                        style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(15,23,42,0.5)", color: "#fff", border: "none", boxShadow: "0 6px 16px rgba(15,23,42,0.2)" }}
-                      />
-                      <Button
-                        shape="circle"
-                        size="small"
-                        icon={<RightOutlined />}
-                        onClick={() => movePreview(1)}
-                        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(15,23,42,0.5)", color: "#fff", border: "none", boxShadow: "0 6px 16px rgba(15,23,42,0.2)" }}
-                      />
-                    </>
-                  )}
-                  <div style={{
-                    position: "absolute",
-                    left: 14,
-                    right: 14,
-                    bottom: 14,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-end",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}>
-                    <div style={{
-                      backdropFilter: "blur(14px)",
-                      background: "rgba(255,255,255,0.72)",
-                      border: "1px solid rgba(255,255,255,0.85)",
-                      borderRadius: 16,
-                      padding: "10px 12px",
-                      boxShadow: "0 10px 28px rgba(15,23,42,0.16)",
-                    }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>ผู้ส่ง</Typography.Text>
-                      <Typography.Text strong>{chatImages[imagePreviewIndex].sender}</Typography.Text>
-                    </div>
-                    <div style={{
-                      backdropFilter: "blur(14px)",
-                      background: "rgba(255,255,255,0.72)",
-                      border: "1px solid rgba(255,255,255,0.85)",
-                      borderRadius: 16,
-                      padding: "10px 12px",
-                      boxShadow: "0 10px 28px rgba(15,23,42,0.16)",
-                    }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>เวลา</Typography.Text>
-                      <Typography.Text strong>{timeLabel(chatImages[imagePreviewIndex].createdAt)}</Typography.Text>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", gap: 10, alignItems: isMobile ? "stretch" : "flex-start", flexWrap: "wrap" }}>
-                  <div style={{
-                    flex: 1,
-                    minWidth: isMobile ? 0 : 220,
-                    padding: "12px 14px",
-                    borderRadius: 16,
-                    background: "rgba(22,119,255,0.08)",
-                    border: "1px solid rgba(22,119,255,0.12)",
-                  }}>
-                    <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>คำอธิบาย</Typography.Text>
-                    <Typography.Text>
-                      {chatImages[imagePreviewIndex].body || "รูปนี้ไม่มีข้อความประกอบในแชท"}
-                    </Typography.Text>
-                  </div>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    ใช้ลูกศรซ้าย-ขวา เพื่อดูรูปก่อนหน้าและถัดไป
-                  </Typography.Text>
+                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
                 </div>
               </div>
-
-              {!isMobile && (
-                <Button
-                  shape="circle"
-                  icon={<RightOutlined />}
-                  type="primary"
-                  onClick={() => movePreview(1)}
-                  style={{ width: 56, height: 56, justifySelf: "center", boxShadow: "0 10px 24px rgba(22,119,255,0.22)" }}
-                />
-              )}
+              <Button
+                shape="circle" icon={<RightOutlined />} onClick={() => movePreview(1)} aria-label="รูปถัดไป"
+                style={{
+                  position: "absolute", right: isMobile ? 6 : 16, top: "50%", transform: "translateY(-50%)",
+                  width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
+                  background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff",
+                }}
+              />
             </div>
-
           </div>
         )}
       </Modal>
