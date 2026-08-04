@@ -123,6 +123,7 @@ const th = {
     startFree: "เริ่มใช้ฟรี",
     dashboard: "Dashboard ร้านของฉัน",
     inbox: "Inbox ลูกค้า",
+    liveDashboard: "Live Dashboard",
     productNavigation: "เมนูผลิตภัณฑ์ BMS",
   },
   landing: {

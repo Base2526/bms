@@ -35,6 +35,7 @@ import {
   ApiOutlined,
   RocketOutlined,
   ShopOutlined,
+  VideoCameraOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -416,6 +417,12 @@ export default function HeaderBar({
           label: t("header.dashboard"),
           icon: <ShopOutlined />,
           onClick: () => router.push("/admin/dashboard"),
+        },
+        {
+          key: "live-dashboard",
+          label: t("header.liveDashboard"),
+          icon: <VideoCameraOutlined />,
+          onClick: () => router.push("/live-dashboard"),
         },
         ...(canViewInbox
           ? [
@@ -812,6 +819,19 @@ export default function HeaderBar({
                 <>
                   {isAdminSession && isDesktopView && (
                     <div className="jachoei-admin-quick-actions">
+                      <Tooltip title={t("header.liveDashboard")}>
+                        <Button
+                          type="default"
+                          icon={<VideoCameraOutlined />}
+                          size="large"
+                          onClick={() => router.push("/live-dashboard")}
+                          className="jachoei-admin-inbox-btn jachoei-admin-live-btn"
+                          aria-label={t("header.liveDashboard")}
+                        >
+                          <span className="jachoei-admin-live-label">{t("header.liveDashboard")}</span>
+                        </Button>
+                      </Tooltip>
+
                       {canViewInbox && (
                         <Button
                           type="default"
@@ -954,7 +974,11 @@ export default function HeaderBar({
           margin: 0 auto;
           height: 100%;
           display: grid;
-          grid-template-columns: minmax(240px, 360px) minmax(500px, 1fr) auto;
+          /* คอลัมน์กลางต้อง min เป็น 0 เสมอ — ตอน login แล้วมันว่างเปล่า (search ปิดด้วย
+             SHOW_HEADER_SEARCH, product nav โชว์เฉพาะตอนยังไม่ login) ถ้าตั้ง min เป็น 500px
+             ค้างไว้ พื้นที่นั้นจะถูกจองทั้งที่ไม่มีอะไรอยู่ แล้วดันคอลัมน์ขวา (ปุ่ม Live
+             Dashboard/Inbox/Dashboard) ล้นออกนอกจอ ทำให้ทั้งหน้าเลื่อนแนวนอน */
+          grid-template-columns: minmax(240px, 360px) minmax(0, 1fr) auto;
           align-items: center;
           gap: 18px;
           padding: 0 18px;
@@ -1065,6 +1089,7 @@ export default function HeaderBar({
           display: flex;
           align-items: center;
           justify-content: flex-end;
+          min-width: 0;
         }
 
         .jachoei-lang-btn {
@@ -1209,7 +1234,7 @@ export default function HeaderBar({
 
         @media (max-width: 1399px) {
           .jachoei-header-shell {
-            grid-template-columns: minmax(220px, 320px) minmax(420px, 1fr) auto;
+            grid-template-columns: minmax(220px, 320px) minmax(0, 1fr) auto;
             gap: 16px;
             padding: 0 16px;
           }
@@ -1217,11 +1242,21 @@ export default function HeaderBar({
           .jachoei-search-wrap {
             min-width: 360px;
           }
+
+          /* จอเดสก์ท็อปแคบ: เหลือ 3 ปุ่มเรียงกันแล้วเบียด — ยุบปุ่ม Live Dashboard เป็นไอคอน
+             (ชื่อยังอ่านได้จาก tooltip/aria-label) ไม่ได้ซ่อนปุ่มทิ้ง */
+          .jachoei-admin-live-label {
+            display: none;
+          }
+
+          .jachoei-admin-live-btn {
+            padding-inline: 12px !important;
+          }
         }
 
         @media (max-width: 1179px) {
           .jachoei-header-shell {
-            grid-template-columns: minmax(180px, 260px) minmax(260px, 1fr) auto;
+            grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto;
             gap: 12px;
             padding: 0 12px;
           }
