@@ -70,6 +70,18 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the cover image; `/admin/products` remains staff-only.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
   name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Per-user theme preference (2026-08)**: `users.theme_preference` (migration
+  `7.50__users_theme_preference.sql` — `system`/`light`/`dark`, `CHECK` constraint, default
+  `'system'`) persists a signed-in user's UI theme across browsers/devices. `bmsMe`/`updateMe` read
+  and write it (`themePreference` on both `GraphQL User` and `MeInput`); `/admin/profile` and the
+  public `/settings` page each expose a theme `Select` and call `setTheme()` (`lib/useTheme`) after a
+  successful save. `SessionLayer.tsx` applies the session's `themePreference` to the local
+  cookie/localStorage theme on load (via `lib/theme.ts`'s `getThemeMode()`/`setThemeMode()`) so a
+  freshly logged-in browser picks up the account's saved choice; `ThemeToggle` also pushes a manual
+  toggle back to the server through the same `updateMe` mutation, swallowing the error on
+  public/signed-out pages where the mutation can't succeed (local cookie/storage fallback still
+  applies there). Public and signed-out pages are unaffected — they still use the pre-existing local
+  cookie/localStorage theme with no account to sync to.
 - **Tenant-scoped Users page**: `/admin/users` now respects the acting tenant when a platform admin
   drills into a shop. In Shop B mode the list/detail/delete/avatar paths are tenant-scoped, so the
   page no longer leaks cross-tenant users or opens a user from another shop by direct URL. The
@@ -117,6 +129,20 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   (not an opaque white card) with icon-only close/download controls, same-styled prev/next arrows on
   every screen size, and no caption or thumbnail strip — sender/time is a small floating chip on the
   image itself. `chatImages`/`movePreview`/`imagePreviewIndex` are unchanged.
+- **Inbox read-path performance (2026-08)**: `bmsConversations`/`bmsConversation` now take bounded
+  `limit`/`messageLimit`/`eventLimit`/`noteLimit` args instead of returning every row — the list caps
+  at `INBOX_CONVERSATION_LIST_LIMIT` (50) and a conversation's detail caps at `INBOX_DETAIL_*_LIMIT`
+  (messages 80, events 30, notes 30), all clamped server-side in `lib/bms/inbox.ts`
+  (`listSystemEvents()`/`listNotes()`; `listMessages()` already took a limit). Migration
+  `7.51__bms_inbox_read_path_indexes.sql` adds tenant/status/recency indexes for the conversation
+  list and message reads, plus `pg_trgm` GIN indexes so bounded `ILIKE` search stays indexed across
+  conversation previews, customer refs, message bodies, CRM names, and cached channel display names.
+  Do not reintroduce an unbounded read on the initial inbox view. The conversation-list row is also
+  extracted into a memoized `ConversationListItem`, and the page wraps its derived lists/callbacks
+  (`listVariables`, `convVariables`, `visibleConversations`, etc.) in `useMemo`/`useCallback` so a
+  poll tick or unrelated state change doesn't re-render every row. The Customer 360 panel now mounts
+  ~350ms after a conversation is opened (`customer360Ready`) instead of immediately, so rapidly
+  clicking through the queue doesn't mount/query it for chats the operator is just passing through.
 - **Operational search on admin pages**: Orders / Purchase / Payment / Shipping now use server-side
   search arguments with debounced live search, while Customers keeps its existing search by
   name/phone.

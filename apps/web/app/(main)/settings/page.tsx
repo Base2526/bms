@@ -44,6 +44,8 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import Link from 'next/link';
 import BookmarkButton from '@/components/BookmarkButton';
 import { useSessionCtx } from '@/lib/session-context';
+import { useTheme } from '@/lib/useTheme';
+import type { ThemeMode } from '@/lib/theme';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -112,6 +114,7 @@ const Q_ME = gql`
       phone
       username
       language
+      themePreference
       notifications_enabled
       role
       avatar
@@ -129,6 +132,7 @@ const M_UPDATE_ME = gql`
       phone
       username
       language
+      themePreference
       notifications_enabled
       avatar
     }
@@ -977,6 +981,7 @@ export default function SettingsPage() {
   const [savingNotifications, setSavingNotifications] = useState(false);
 
   const { user } = useSessionCtx();
+  const { setTheme } = useTheme();
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
   const me = meData?.me;
 
@@ -988,6 +993,7 @@ export default function SettingsPage() {
       name: me.name ?? '',
       phone: me.phone ?? '',
       language: me.language ?? 'en',
+      themePreference: me.themePreference ?? 'system',
       notifications_enabled: me.notifications_enabled !== false,
       email: me.email ?? '',
       username: me.username ?? '',
@@ -1040,12 +1046,17 @@ export default function SettingsPage() {
         name: values.name?.trim() || '',
         phone: values.phone?.trim() || '',
         language: values.language || 'en',
+        themePreference: values.themePreference || 'system',
         notifications_enabled: values.notifications_enabled !== false,
         username: values.username?.trim() || '',
       };
 
       const res = await updateMe({ variables: { data: payload } });
       if (res?.data?.updateMe?.id) {
+        const nextTheme = res.data.updateMe.themePreference as ThemeMode | undefined;
+        if (nextTheme === 'light' || nextTheme === 'dark' || nextTheme === 'system') {
+          setTheme(nextTheme);
+        }
         message.success('Profile & Account saved');
         refetchMe();
       } else {
@@ -1173,6 +1184,18 @@ export default function SettingsPage() {
                         options={[
                           { value: 'en', label: 'English' },
                           { value: 'th', label: 'ไทย' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item name="themePreference" label="Theme">
+                      <Select
+                        options={[
+                          { value: 'system', label: 'Use system setting' },
+                          { value: 'light', label: 'Light mode' },
+                          { value: 'dark', label: 'Dark mode' },
                         ]}
                       />
                     </Form.Item>

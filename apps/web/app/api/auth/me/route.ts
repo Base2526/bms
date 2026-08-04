@@ -1,17 +1,40 @@
 // apps/web/app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
 import { verifyUserSession, verifyAdminSession } from "@/lib/auth/server";
+import { query } from "@/lib/db";
+import type { JWTPayload } from "@/lib/auth/token";
+import type { ThemeMode } from "@/lib/theme";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function cleanThemePreference(value: unknown): ThemeMode {
+  return value === "light" || value === "dark" || value === "system" ? value : "system";
+}
+
+async function withUserPreferences<T extends JWTPayload | null>(session: T): Promise<T> {
+  if (!session?.id) return session;
+  const { rows } = await query<{ theme_preference: string | null }>(
+    `SELECT theme_preference FROM users WHERE id = $1 LIMIT 1`,
+    [session.id]
+  );
+  return {
+    ...session,
+    themePreference: cleanThemePreference(rows[0]?.theme_preference),
+  } as T;
+}
+
 export async function GET() {
   const user  = verifyUserSession();
   const admin  = verifyAdminSession();
+  const [userWithPreferences, adminWithPreferences] = await Promise.all([
+    withUserPreferences(user),
+    withUserPreferences(admin),
+  ]);
 
   return NextResponse.json({
-    isAuthenticated: Boolean(user || admin),
-    user,
-    admin
+    isAuthenticated: Boolean(userWithPreferences || adminWithPreferences),
+    user: userWithPreferences,
+    admin: adminWithPreferences
   }, { headers: { 'Cache-Control': 'no-store' }});
 }

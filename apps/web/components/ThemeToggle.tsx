@@ -3,9 +3,19 @@
 import React, { memo, useMemo } from "react";
 import { Button, Dropdown, type MenuProps, Tooltip } from "antd";
 import { LaptopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
+import { gql, useMutation } from "@apollo/client";
 
 import { useTheme } from "@/lib/useTheme";
 import type { ThemeMode } from "@/lib/theme";
+
+const M_UPDATE_THEME = gql`
+  mutation($data: MeInput!) {
+    updateMe(data: $data) {
+      id
+      themePreference
+    }
+  }
+`;
 
 function labelFor(mode: ThemeMode) {
   if (mode === "light") return "Light";
@@ -21,6 +31,7 @@ function iconFor(mode: ThemeMode) {
 
 function ThemeToggleInner() {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const [updateTheme] = useMutation(M_UPDATE_THEME);
 
   const items: MenuProps["items"] = useMemo(
     () =>
@@ -37,10 +48,15 @@ function ThemeToggleInner() {
       selectable: true,
       selectedKeys: [theme],
       onClick: ({ key }: { key: string }) => {
-        if (key === "light" || key === "dark" || key === "system") setTheme(key);
+        if (key === "light" || key === "dark" || key === "system") {
+          setTheme(key);
+          void updateTheme({ variables: { data: { themePreference: key } } }).catch(() => {
+            // Public/signed-out pages still keep the local cookie/storage preference.
+          });
+        }
       },
     }),
-    [items, setTheme, theme]
+    [items, setTheme, theme, updateTheme]
   );
 
   const tooltip = theme === "system" ? `Theme: System (${resolvedTheme})` : `Theme: ${labelFor(theme)}`;

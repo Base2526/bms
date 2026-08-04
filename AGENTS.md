@@ -303,6 +303,17 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   addresses remain in Seller Center; TikTok in this codebase is chat commerce, not TikTok Shop.
 - Profile editing should reuse the existing `bmsMe`, `updateMe`, and `uploadAvatar` flows rather
   than introducing parallel account-profile endpoints.
+- Per-user UI theme (`users.theme_preference`, migration `7.50`) is read/written through `bmsMe`/
+  `updateMe` like every other profile field, then applied to the browser via `lib/theme.ts`'s
+  `getThemeMode()`/`setThemeMode()` — do not write the theme cookie/localStorage directly from a
+  page component. `SessionLayer.tsx` is the one place that syncs a freshly loaded session's
+  `themePreference` onto the local theme; `ThemeToggle` is the one place that pushes a manual toggle
+  back to the server. Public/signed-out pages have no account to sync to and keep using the
+  pre-existing local-only fallback.
+- Inbox's `bmsConversations`/`bmsConversation` GraphQL fields take bounded `limit`/`messageLimit`/
+  `eventLimit`/`noteLimit` arguments (`lib/bms/inbox.ts`, migration
+  `7.51__bms_inbox_read_path_indexes.sql`). Do not reintroduce an unbounded read on either the list
+  or the detail view — a busy tenant's conversation history is unbounded by nature.
 - Thai polite particles in staff-facing text: an admin's own particle (ครับ vs ค่ะ) comes from
   `users.gender` (`'male'` → ครับ, `'female'`/null → ค่ะ), carried through `bmsMe.gender`. The Inbox
   "AI แนะนำคำตอบ" templates convert via `applyGenderParticle()` in the inbox page. This is only for

@@ -712,6 +712,7 @@ const rawResolvers = {
     },
   },
   User: {
+    themePreference: (parent: any) => parent?.themePreference ?? parent?.theme_preference ?? null,
     roleDetails: async (parent: any) => {
       const roleId = parent?.role_id;
       if (!roleId) return null;
@@ -3273,22 +3274,27 @@ const rawResolvers = {
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const { name, phone, username, language, gender, notifications_enabled } = data;
+      const { name, phone, username, language, gender, themePreference, notifications_enabled } = data;
       // gender รับเฉพาะ 'male'/'female'/null (ไม่งั้นไม่แตะค่าเดิม)
       const genderVal = gender === "male" || gender === "female" ? gender : null;
+      const themePreferenceVal =
+        themePreference === "light" || themePreference === "dark" || themePreference === "system"
+          ? themePreference
+          : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, gender, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, gender, themePreferenceVal, notifications_enabled );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
           phone = COALESCE($2, phone),
           language = COALESCE($3, language),
           gender = COALESCE($4, gender),
-          notifications_enabled = COALESCE($5, notifications_enabled),
+          theme_preference = COALESCE($5, theme_preference),
+          notifications_enabled = COALESCE($6, notifications_enabled),
           updated_at = NOW()
-        WHERE id = $6
-        RETURNING id, name, email, phone, username, language, gender, avatar, notifications_enabled`,
-        [name, phone, language, genderVal, notifications_enabled, author_id]
+        WHERE id = $7
+        RETURNING id, name, email, phone, username, language, gender, theme_preference AS "themePreference", avatar, notifications_enabled`,
+        [name, phone, language, genderVal, themePreferenceVal, notifications_enabled, author_id]
       );
       return rows[0];
     },

@@ -1022,7 +1022,7 @@ Permission: platform admin
 Permission: platform admin · audit: `tenant.impersonate.enter/exit`
 
 ## bmsMe() — profile ผู้ล็อกอิน
-คืนโปรไฟล์เต็มของ admin ปัจจุบัน (ชื่อ/อีเมล/role/ภาษา/ร้านที่สังกัด+plan/สิทธิ์/is_platform_admin) อ่านสดจาก DB.
+คืนโปรไฟล์เต็มของ admin ปัจจุบัน (ชื่อ/อีเมล/role/ภาษา/theme preference/ร้านที่สังกัด+plan/สิทธิ์/is_platform_admin) อ่านสดจาก DB.
 Permission: admin ที่ล็อกอิน
 
 > **Users/Roles management** (ใน `resolvers.ts`): `users`/`upsertUser`/`deleteUser(s)` gate ด้วย `requireUserAdmin()`
