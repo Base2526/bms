@@ -42,7 +42,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/app/(admin)/admin/` | Admin UI |
 | `apps/web/app/(admin)/admin/assistant/` | Staff AI assistant chat UI (proposal cards for sensitive actions) |
 | `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, shipments, and purchase orders (header + line items) |
-| `apps/web/app/(main)/` | Public landing page, interactive product overview, and pricing |
+| `apps/web/app/(main)/` | Public landing page, interactive product overview, pricing, and `/live-dashboard` (session-gated live sales monitor; layout only, mock data) |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
 | `apps/web/app/(checkout)/` | Public signed-link customer checkout (`/checkout?t=<token>`); no admin session, no login |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
@@ -319,6 +319,31 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
   "AI แนะนำคำตอบ" templates convert via `applyGenderParticle()` in the inbox page. This is only for
   text the admin sends as themselves — the customer-facing AI brand voice (`lib/bms/pipeline.ts`,
   `ai.ts`) stays ค่ะ and is not tied to any one admin's gender.
+- Grid columns in shared chrome must be able to shrink. `.jachoei-header-shell` in
+  `components/HeaderBar.tsx` uses `minmax(0, 1fr)` for its centre column because that column is
+  **empty while signed in** (header search is disabled via `SHOW_HEADER_SEARCH`, and the product nav
+  only renders for signed-out visitors). It previously reserved a hard `minmax(500px, 1fr)`, so
+  adding one more right-hand quick-action button pushed the right column past the viewport, gave the
+  whole document a horizontal scrollbar, and clipped the last header button on **every** page. When
+  adding a header action, re-check the total width of `.jachoei-header-right` and prefer collapsing a
+  label to an icon (with `Tooltip` + `aria-label`) over letting the row grow.
+- A page-level `<style>{...}</style>` block in a client component is plain CSS, not a CSS Module and
+  not styled-jsx. `:global(...)` inside it is invalid and silently dropped — target third-party
+  classes (e.g. `.ant-alert-description`) with ordinary descendant selectors instead.
+- Screens whose only purpose is watching numbers (currently `/live-dashboard`) must keep the primary
+  figures reachable without scrolling on a phone. Wide children — channel strips, tables — scroll
+  inside their own `overflow-x: auto` container; they must never widen the document. Explanatory
+  banners get trimmed on small screens rather than pushing the data below the fold.
+- When a comparison chart draws two series, normalise every series against one shared maximum.
+  Scaling each line by its own maximum makes both peak at the same height and silently destroys the
+  comparison the chart exists to show.
+- Placeholder figures on an operator-facing screen must be unmistakable and self-documenting: a
+  standing banner, a per-figure "ตัวอย่าง" tag explaining why, and a `// TODO(real):` comment naming
+  the query that will replace it. Distinguish "not wired yet" (the data exists — e.g.
+  `bmsOperationalAlerts`, `bmsSalesSummary().byChannel`) from "no data source exists" (live-stream
+  viewers/comments/conversion, which need per-platform Live API work); never let the second kind
+  imply the shop can already see it. A `?demo=1`-style bypass of the permission gate is acceptable
+  only while a page has no real data to expose, and must be revisited when queries are connected.
 - The Docker development stack owns its own `apps/web/.next` and `apps/web/node_modules` volumes.
   Do not remove those volume mounts or share the same Next.js output directory between host and
   container dev servers; mixed manifests cause App Router `clientModules` failures across routes.

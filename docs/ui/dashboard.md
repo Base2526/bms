@@ -29,6 +29,48 @@ automatic failure cases, a roughly 5% normal-conversation QA sample, redacted co
 `PASS`/`FAIL`/`UNCLEAR` review. Access uses `ai_quality.view` and `ai_quality.review`; definitions
 and privacy constraints are documented in [AI quality control](../ai/quality.md).
 
+## Live Dashboard (`/live-dashboard`) — 🚧 layout only, not wired to real data
+
+A **public-route** monitoring screen for watching sales during a live-selling session without going
+through the admin shell. It lives at `apps/web/app/(main)/live-dashboard/page.tsx` (next to
+`/checkout` and `/shop/...`, **not** under `/admin/*`), so it renders with the public header/footer
+instead of `AdminSidebar`/`AdminLayoutClient`. The intended use case is putting it on a TV or second
+monitor in the shop while a live stream runs.
+
+**Current status is deliberate and important: every number on this page is mock data.** The page
+holds `MOCK_*` constants, renders a persistent warning banner, tags each figure with a
+"ตัวอย่าง" chip (hover for the reason), and carries `// TODO(real):` comments naming the query each
+block will eventually read. Nothing may present a mock figure as a real one — see
+[../AI_GUIDELINES.md](../AI_GUIDELINES.md) and the AI rules in [CLAUDE.md](../../CLAUDE.md#ai-rules-non-negotiable).
+
+- **Access**: reuses the existing session cookie. A signed-in admin with `report.view` sees the
+  dashboard; signed-in without the permission sees a 403 result; signed out sees a login prompt
+  linking to `/admin/login?next=/live-dashboard`. No new permission was added.
+- **`?demo=1`**: renders the layout with no session at all, for design review. It is safe only
+  because the page has no real data to leak yet — **this must be re-evaluated the moment real
+  queries are wired in.**
+- **Fullscreen**: `element.requestFullscreen()` on the page shell, with layout/typography scaled up
+  through the CSS `:fullscreen` pseudo-class (not a React state class) so the styling can never
+  disagree with the browser's actual state. A `fullscreenchange` listener is the single source of
+  truth for the button label, because the user can leave fullscreen with Esc without touching it.
+- **Planned data sources** (all already exist; none are connected yet):
+
+  | Block | Will read from |
+  | --- | --- |
+  | KPI + "เทียบเมื่อวาน" deltas | `bmsDashboard.salesDaily[]`, `avgOrderValue` |
+  | งานค้าง tiles | `bmsOperationalAlerts` |
+  | ออเดอร์ที่เพิ่งเข้า feed | `bmsOrders(limit)` ordered by `created_at DESC` |
+  | สัดส่วนตามช่องทาง donut | `bmsSalesSummary().byChannel` |
+  | ยอดขาย trend chart | `bmsDashboard.salesDaily[]` |
+  | สินค้าขายดี · ออเดอร์ตามสถานะ · สินค้าใกล้หมด | `bmsDashboard.topProducts` / `ordersByStatus` / `lowStockCount` |
+  | Sidebar channel rows | `bmsSalesSummary().byChannel` + `bmsChannelHealth` |
+
+- **Live-stream metrics are a different category.** ผู้ชมสด / Conversion / คอมเมนต์ are not
+  "unwired" — BMS has no data for them at all, and getting it requires per-platform Live API
+  integration (Facebook Live, TikTok Live, Shopee/Lazada Live) that does not exist. They are
+  deliberately placed last, on a dashed-border card, and must keep their "ตัวอย่าง" tag until a real
+  integration lands. Conversion in particular cannot be computed before viewer counts are real.
+
 ## Sales Summary (`getSalesSummary(from, to)`)
 
 Defaults to the last 30 days. Revenue only counts orders `PAID` or later (not `PENDING`).

@@ -70,6 +70,24 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the cover image; `/admin/products` remains staff-only.
 - **Admin profile editing**: `/admin/profile` now supports avatar upload plus self-editing of
   name/phone/language/gender via `bmsMe`, `uploadAvatar`, and `updateMe`.
+- **Live Dashboard (`/live-dashboard`, 2026-08)** — 🚧 **layout only; every number is mock data**:
+  a public route (in `app/(main)/`, *not* `/admin/*`) for watching sales during a live-selling
+  session without entering the admin shell — intended for a TV/second monitor in the shop. Reuses the
+  existing session cookie: `report.view` sees the dashboard, signed-in-without-permission sees 403,
+  signed-out gets a login prompt to `/admin/login?next=/live-dashboard` (that route now honors
+  `?next=` instead of always redirecting to `/admin`). Sections: KPI + "เทียบเมื่อวาน" deltas ·
+  งานค้าง tiles linking into Payment/Orders/Inbox · ออเดอร์ที่เพิ่งเข้า feed · GMV-by-channel donut ·
+  sales trend vs. previous period · สินค้าขายดี · ออเดอร์ตามสถานะ + สินค้าใกล้หมด · sidebar channel
+  rows with connection-status dots. Fullscreen uses `requestFullscreen()` with CSS `:fullscreen`
+  scaling plus a `fullscreenchange` listener as the single source of truth for button state.
+  **No query is wired yet** — the page holds `MOCK_*` constants, shows a standing warning banner,
+  tags every figure with a "ตัวอย่าง" chip, and carries `// TODO(real):` comments naming the intended
+  source (`bmsOperationalAlerts`, `bmsSalesSummary().byChannel`, `salesDaily[]`, `bmsOrders(limit)`,
+  `bmsChannelHealth`, …). Do not remove those tags before the corresponding query is connected.
+  ผู้ชมสด/Conversion/คอมเมนต์ are a separate category — BMS has **no data for them at all** and they
+  need per-platform Live API integration, so they sit last on a dashed card. `?demo=1` renders the
+  layout with no session for design review; it is safe only while the page has no real data.
+  Full section: [docs/ui/dashboard.md](docs/ui/dashboard.md) § Live Dashboard.
 - **Per-user theme preference (2026-08)**: `users.theme_preference` (migration
   `7.50__users_theme_preference.sql` — `system`/`light`/`dark`, `CHECK` constraint, default
   `'system'`) persists a signed-in user's UI theme across browsers/devices. `bmsMe`/`updateMe` read

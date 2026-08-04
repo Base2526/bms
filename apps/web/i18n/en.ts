@@ -126,6 +126,7 @@ const en = {
     tryBeforeSignup: "Try before signing up",
     dashboard: "My store dashboard",
     inbox: "Customer inbox",
+    liveDashboard: "Live Dashboard",
     productNavigation: "BMS product navigation",
   },
   landing: {

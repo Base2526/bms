@@ -1413,6 +1413,53 @@ production จริงอย่าเปิด" · ไฟล์ `.env*` gitigno
 ไม่ใช่หยิบ Phase A–D เดิมมาทำต่อ (เลขไมเกรชัน `6.2`/`6.3`/`6.4` ที่แผนเดิมจะใช้ ตอนนี้ถูก customer_360/order_create_perm
 (renumber จาก `6.1` เดิม)/channel_health ใช้ไปแล้วจริง — ดู § Channel Health ด้านบน)
 
+## Live Dashboard `/live-dashboard` (2026-08) — เลย์เอาต์เสร็จ ยังเป็น mock ทั้งหมด
+
+**ยังไม่ต่อข้อมูลจริงเลยแม้แต่ตัวเดียว — ตั้งใจ** (ผู้ใช้สั่ง "ยังไม่ต้องต่อข้อมูลจริง ใช้ fake ไปก่อน") ตัวเลขทุกตัวมาจาก
+`MOCK_*` ใน `app/(main)/live-dashboard/page.tsx` + แบนเนอร์เตือนค้างบนหน้า + ป้าย "ตัวอย่าง" ทุก field (13 จุด) +
+คอมเมนต์ `// TODO(real):` บอกว่าแต่ละก้อนจะดึงจาก query ไหน
+
+- **route อยู่ `app/(main)/` ไม่ใช่ `/admin/*`** — ตั้งใจ เพราะโจทย์คือ "ดูยอดขายโดยไม่ต้องเข้าหลังบ้าน" (เอาไปเสียบจอทีวี
+  ในร้านตอนไลฟ์) จึงได้ header/footer สาธารณะ ไม่ใช่ `AdminSidebar`/`AdminLayoutClient` · **ไม่ต้องเติมใน
+  `skipsSessionLayer()`** เพราะหน้านี้ *ต้องใช้* session cookie จริง (ต่างจาก `/checkout` ที่เป็น bearer link ไม่มี session)
+- **สิทธิ์**: ใช้ `report.view` เดิม ไม่เพิ่ม permission ใหม่ · signed-in ไม่มีสิทธิ์ → 403 · signed-out → ปุ่มไป
+  `/admin/login?next=/live-dashboard`
+- **แก้ `/admin/login` ให้ redirect ตาม `?next=` จริง** — เดิมอ่าน `sp.get("next")` มาเก็บใน `const next` แล้ว
+  **hardcode `router.replace("/admin")` ทิ้ง** (ตัวแปรถูกอ่านแต่ไม่ถูกใช้) ทำให้ลิงก์ที่ส่ง `?next=` มาเด้งผิดที่ทุกครั้ง
+- **`?demo=1`** = ข้าม session/permission ทั้งหมดเพื่อ preview เลย์เอาต์ — **ปลอดภัยเฉพาะตอนที่หน้ายังไม่มีข้อมูลจริง
+  เท่านั้น ต้องกลับมาทบทวนตอนต่อ query จริง** (ไม่งั้นกลายเป็นช่องดูยอดขายร้านโดยไม่ต้องล็อกอิน)
+- **ปุ่มเข้าหน้านี้** อยู่ใน `HeaderBar.tsx` — desktop quick actions + เมนู "..." ของ mobile/tablet, i18n key
+  `header.liveDashboard` (th/en)
+- **ผู้ชมสด/Conversion/คอมเมนต์ คนละเรื่องกับ field อื่นในหน้า** — ไม่ใช่ "ยังไม่ต่อ" แต่ **ไม่มีข้อมูลใน BMS ให้ต่อเลย**
+  ต้องต่อ Live API รายแพลตฟอร์มก่อน (Facebook/TikTok/Shopee/Lazada Live) จึงวางไว้ล่างสุดบนการ์ดเส้นประ ·
+  Conversion คำนวณไม่ได้จนกว่าจะมี viewer จริง
+
+### บทเรียนจากรอบนี้ (สำคัญกว่าตัวฟีเจอร์)
+
+- **⚠️ `.jachoei-header-shell` เคยจองคอลัมน์กลาง `minmax(500px, 1fr)` ไว้ทั้งที่มันว่างเปล่าตอน login แล้ว**
+  (`SHOW_HEADER_SEARCH = false` และ product nav render เฉพาะตอนยังไม่ login) → พอเพิ่มปุ่ม Live Dashboard เป็นปุ่มที่ 3
+  ในคอลัมน์ขวา ความกว้างรวมทะลุ viewport ทำให้ **ทั้งเอกสารเลื่อนแนวนอน** ลากเอา header (sticky, กว้างเท่าเอกสาร)
+  ไปด้วย ปุ่มขวาสุดถูกตัดออกจอ **ทุกหน้าในเว็บ ไม่ใช่แค่หน้าใหม่** · แก้เป็น `minmax(0, 1fr)` ทั้ง 3 breakpoint +
+  `min-width:0` ที่ `.jachoei-header-right` + ยุบ label ปุ่ม Live เป็นไอคอนเมื่อ ≤1399px (มี `Tooltip`/`aria-label`)
+  · **เสียเวลาหลายรอบเพราะไปแก้ CSS ในหน้าใหม่ก่อน ทั้งที่ต้นเหตุอยู่ที่ header ที่ใช้ร่วมทุกหน้า** — คราวหน้าถ้าเห็น
+  หน้าเลื่อนแนวนอน ให้วัด `document.documentElement.scrollWidth` เทียบ `innerWidth` แล้วไล่หา element ที่ `right`
+  เกินขอบก่อน อย่าเดาจากภาพ
+- **`<style>{...}</style>` ในไฟล์นี้เป็น CSS ธรรมดา ไม่ใช่ CSS Module/styled-jsx** → `:global(...)` ข้างในเป็น CSS
+  ที่ถูกทิ้งเงียบ ๆ (เผลอเขียนไปแล้วจับได้ตอน verify) ต้อง target `.ant-alert-description` ตรง ๆ แบบ descendant selector
+- **กราฟ 2 เส้นต้อง normalize ด้วย max ร่วมกัน** — ตอนแรกให้ `trendPath()` หา max จากชุดตัวเองทำให้เส้น "ช่วงก่อนหน้า"
+  สูงเท่าเส้น "ช่วงนี้" ตลอดและทับกัน = การเทียบไม่มีความหมาย (ตอนนี้รับ `max` เป็น param บังคับ)
+- **มือถือ: แบนเนอร์เตือนกิน ~370px จาก 812px** ดันตัวเลขจริงตกใต้ fold ทั้งหมด ซึ่งขัดกับเหตุผลของหน้า → ซ่อนเฉพาะ
+  `.ant-alert-description` ที่ ≤640px เหลือ 61px (ป้าย "ตัวอย่าง" ยังอยู่ครบ ไม่ได้ลดความชัดเจน) · sidebar กลายเป็น
+  **แถบการ์ดเลื่อนแนวนอน** (แพทเทิร์นเดียวกับ filter strip ของ Inbox) · ตารางห่อ `.ld-table-wrap` (`overflow-x:auto`)
+  ให้เลื่อนในกรอบตัวเอง ไม่ดันหน้า
+- **fullscreen**: สไตล์ผูกกับ CSS `:fullscreen` ไม่ใช่ class จาก React state (สไตล์จะขัดกับสถานะจริงของเบราว์เซอร์ไม่ได้)
+  และ `fullscreenchange` เป็นแหล่งความจริงเดียวของ label ปุ่ม — เดิม `setIsFullscreen` อัปเดตแค่ใน `.then()` ของปุ่ม
+  กด Esc ออกแล้ว label ค้างเป็น "ออกจากเต็มจอ" · **เบราว์เซอร์ใน Claude Code (in-app pane) บล็อก Fullscreen API เงียบ ๆ
+  ไม่มี error** — verify ของจริงไม่ได้จากที่นี่ ต้องกดที่เครื่องผู้ใช้เอง (รอบนี้ทดสอบโดย mirror กฎ `:fullscreen` ลง
+  class ทดสอบแล้ววัดค่าแทน: panel ยืดเต็ม 900px, dead space = 0, ฟอนต์ขยายตามที่ตั้ง)
+- **ทริคเวลาต้องเปิดเบราว์เซอร์ตรวจแต่ docker dev ยึดพอร์ต 3000 อยู่**: เพิ่ม config `web-inspect` (`next dev -p 3001`)
+  ใน `.claude/launch.json` ชั่วคราว แล้ว **ลบออกให้ `launch.json` กลับสภาพเดิมทุกครั้งหลังตรวจเสร็จ**
+
 ## สถานะปัจจุบัน
 
 โมดูลเชิงปฏิบัติการครบแล้ว (ดูตาราง Build Status ใน CLAUDE.md) + **Customer 360 panel ใน Inbox เสร็จแล้ว** (ดูหัวข้อด้านบน)
@@ -1444,7 +1491,13 @@ natural suite กับ live model).
 ส่งสรุปยอดขายรายวัน/สัปดาห์/เดือนผ่านอีเมล/Slack/LINE, กันส่งซ้ำด้วย `last_period_key`, การ์ดตั้งค่าที่
 `/admin/settings` + หน้า audit ข้ามร้าน `/admin/report-schedule`; verify กับ dev instance จริงแล้วรวมถึง
 ส่ง EMAIL จริงสำเร็จ 1 ครั้ง — ยังไม่ได้ตั้ง cron schedule จริง).
-**เหลือ:** TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
++ **Live Dashboard เลย์เอาต์เสร็จแล้ว แต่ยังเป็น mock ทั้งหมด** (ดูหัวข้อ § Live Dashboard ด้านบน — `/live-dashboard`
+เป็น public route ที่ใช้ session เดิม, ปุ่มเข้าอยู่ใน HeaderBar, มี fullscreen + responsive มือถือ; **ยังไม่ต่อ query
+จริงเลยแม้แต่ตัวเดียว** ทุกตัวเลขเป็น `MOCK_*` + ป้าย "ตัวอย่าง" + `// TODO(real):`).
+**เหลือ:** ต่อข้อมูลจริงให้ `/live-dashboard` (query มีพร้อมหมดแล้ว: `bmsOperationalAlerts`,
+`bmsSalesSummary().byChannel`, `salesDaily[]`, `bmsOrders(limit)`, `bmsChannelHealth` — ยกเว้นผู้ชม/Conversion/
+คอมเมนต์ที่ต้องต่อ Live API รายแพลตฟอร์มก่อน) และทบทวน `?demo=1` ตอนนั้น ·
+TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)

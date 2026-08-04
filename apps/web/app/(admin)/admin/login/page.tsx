@@ -70,10 +70,7 @@ export default function AdminLoginPage(){
         // }
   
         message.success(`Welcome ${res.user?.name || ''}!`);
-        // // TODO: redirect ถ้าต้องการ เช่น window.location.href = '/'
-  
-        // window.location.href = "/admin";
-        router.replace("/admin");
+        router.replace(next);
       } catch (err: any) {
         message.error(err?.message || 'Login failed');
       }
