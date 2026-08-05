@@ -683,6 +683,16 @@ apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน
   ซึ่งผูกของจริงตายตัวเสมอ** และไม่มี test HTTP endpoint ให้เรียกจากภายนอก — อย่าเผลอ export seam นี้ออกไป
   ใช้ที่อื่น
 
+### Registry-only tool metadata (2026-08)
+
+`BmsTool` (`tools/types.ts`) มี field เสริม 4 ตัว — `whenToUse`/`whenNotToUse`/`commonMistakes`/
+`example` — สำหรับ docs/human เท่านั้น **ไม่ถูกส่งเข้า Anthropic tool schema** (`tools/runtime.ts`
+~L370 ส่งแค่ `name`/`description`/`input_schema`) จึงไม่กิน token ต่อ turn เลยจนกว่าจะมีคนตั้งใจย้าย
+เนื้อหาไปต่อท้าย `description` เอง — ใส่ไว้แล้ว 7 ทูล (5 ทูล product-discovery ที่ทับซ้อนกัน +
+`create_order`/`reorder`) เพราะเป็นกลุ่มที่เคยถูกเรียกผิดจริง ไม่ได้ตั้งใจทำครบทุกทูล — รายละเอียดเต็ม
+อยู่ที่ [docs/ai/tools.md](docs/ai/tools.md#registry-only-tool-metadata-disambiguation-not-schema)
+(ตารางเดียวกับ § Authoritative runtime registry and gates)
+
 ### AI eval suites (`scripts/ai-eval/`)
 
 - **deterministic contract test** (`runtime-contract.test.mts`, node:test + tsx) — ไม่ต่อ network/DB
