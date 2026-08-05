@@ -351,6 +351,20 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   `POST /api/bms/reports/send-digest` follows the same `x-cron-secret` pattern as the other two
   cron endpoints and is likewise **not yet scheduled**. See [docs/ui/dashboard.md](docs/ui/dashboard.md)
   and [docs/architecture/api.md](docs/architecture/api.md).
+- **Generated reports & document export (2026-08)**: `/admin/reports` now includes an **AI Report
+  Generator** card that produces real XLSX/CSV/PDF files for Sales / Inventory / Profit, stores an
+  append-only audit row in `bms_generated_reports` (migration `7.53`), and lets staff re-download
+  prior exports from the same page. The shared service is `lib/bms/reportEngine.ts`: GraphQL
+  (`bmsGenerateReport` / `bmsGeneratedReports`), REST (`POST /api/bms/reports/generate`), and the
+  staff AI tool `generate_report` all call the same function so export behavior cannot drift across
+  surfaces. Files are persisted through the existing `files`/`STORAGE_DIR` mechanism via
+  `persistBuffer()` (`lib/storage.ts`) but must be downloaded through the tenant-gated
+  `/api/bms/reports/download/[id]` route rather than `/api/files/[id]`, because these exports may
+  contain business-sensitive data. Profit reports are explicitly **estimated** from current
+  `bms_products.cost_price` against historical `bms_order_items.unit_price` snapshots — no historical
+  cost snapshot exists yet — so the export and the optional AI executive summary must keep that
+  disclaimer. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
+  render Thai glyphs correctly; XLSX/CSV remain UTF-8 and handle Thai data today.
 - **Follow-up Automation (`lib/bms/followups.ts`, 2026-08)** — 🚧 **MVP core only**: a configurable
   Rule Engine + Scheduler decides whether to re-engage a customer whose conversation went quiet,
   instead of a fixed timer. Migration `7.52` adds `bms_conversations.last_sender_type` (set by

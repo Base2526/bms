@@ -82,6 +82,7 @@ import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../foreca
 import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 import { recordSynonymCandidate } from "../aiSynonyms";
+import { generateReport, REPORT_TYPES, REPORT_FORMATS } from "../reportEngine";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
@@ -681,6 +682,46 @@ const getDashboardTool: BmsTool = {
   permission: "report.view",
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => ({ ok: true, data: await getDashboard(ec.tenantId) }),
+};
+
+const generateReportTool: BmsTool = {
+  name: "generate_report",
+  description:
+    "Generate a downloadable report file (Excel/CSV/PDF) for Sales, Inventory, or Profit and return a download link. " +
+    "Produces a real file the user can open/download — use this instead of get_sales_summary/get_inventory_summary " +
+    "when the user explicitly asks to export/download/generate a document (e.g. 'export sales to Excel', " +
+    "'generate a PDF profit report'), not when they're just asking a question you can answer in chat.",
+  whenToUse:
+    "The user's message asks for a file/export/document (mentions Excel/CSV/PDF, 'export', 'download', 'generate a report').",
+  whenNotToUse:
+    "The user is just asking a question about numbers ('how much did we sell this month?') — answer that with get_sales_summary/get_inventory_summary/get_top_products instead; those return inline data for you to describe, not a file.",
+  example: {
+    input: { reportType: "SALES", dateFrom: "2026-01-01", dateTo: "2026-03-31", format: "XLSX" },
+    note: "User said 'Export sales from January to March 2026 to Excel.'",
+  },
+  surfaces: ["staff"],
+  permission: "report.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      reportType: { type: "string", enum: [...REPORT_TYPES], description: "Which report to generate." },
+      dateFrom: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
+      dateTo: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
+      format: { type: "string", enum: [...REPORT_FORMATS], description: "Output file format." },
+      includeSummary: { type: "boolean", description: "Include a short AI executive summary (default true)." },
+    },
+    required: ["reportType", "format"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const result = await generateReport(ec.tenantId, ec.ctx, {
+      reportType: enumVal(args, "reportType", REPORT_TYPES) as string,
+      dateFrom: optString(args, "dateFrom") ?? null,
+      dateTo: optString(args, "dateTo") ?? null,
+      format: enumVal(args, "format", REPORT_FORMATS) as string,
+      includeSummary: args.includeSummary !== false,
+    });
+    return { ok: true, data: result };
+  },
 };
 
 const getCustomerTool: BmsTool = {
@@ -1987,6 +2028,7 @@ export const ALL_TOOLS: BmsTool[] = [
   setConversationTagsTool,
   addNoteTool,
   verifyPaymentSlipTool,
+  generateReportTool,
   // B1 — store profile (read)
   getStoreInfoTool,
   getPaymentInfoTool,

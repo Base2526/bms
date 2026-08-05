@@ -82,6 +82,13 @@ production refuses to create or verify links when no secret is configured.
 - `POST /api/bms/products/upload` — product image upload endpoint used by `/admin/products`
   before saving the product form. It stores files first, then the product save mutation decides
   which uploaded image becomes `image_url` (cover) and which remain in the gallery.
+- `POST /api/bms/reports/generate` — signed-admin, tenant-derived, curl-testable report export that
+  calls `generateReport()` directly. Accepts `reportType`, `format`, optional `dateFrom`/`dateTo`,
+  and `includeSummary`; requires `report.view`; used for scripting and debugging without going
+  through GraphQL or AI tool-calling.
+- `GET /api/bms/reports/download/[id]` — signed-admin, tenant-gated report download. It verifies the
+  current tenant owns a `bms_generated_reports` row for the requested `file_id` before streaming the
+  underlying `files` row from `STORAGE_DIR`; deliberately not interchangeable with `/api/files/[id]`.
 
 ## Admin diagnostics
 
@@ -115,6 +122,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
+| `bmsReportEngine.ts` | generated report export history + on-demand XLSX/CSV/PDF generation (`bmsGeneratedReports`, `bmsGenerateReport`) |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
@@ -197,6 +205,22 @@ follow this same shape rather than inventing a separate preview-only query/REST 
 - `bmsSendTestReportNow` calls `sendTestDigest()`, which computes the last 24h as an ad-hoc period
   and writes to `bms_report_deliveries` without mutating the subscription's real
   `last_sent_at`/`last_period_key` — testing configuration never desyncs the real schedule.
+
+### On-demand generated report exports
+
+`bmsReportEngine.ts` is the read/write GraphQL layer for the export flow behind `/admin/reports`,
+backed by `lib/bms/reportEngine.ts`:
+
+- `bmsGeneratedReports(limit)` requires `report.view` and returns the tenant's own append-only export
+  history, newest first, capped server-side.
+- `bmsGenerateReport(input)` also requires `report.view` and calls `generateReport()`, which validates
+  `reportType` (`SALES` / `INVENTORY` / `PROFIT`) and `format` (`XLSX` / `CSV` / `PDF`), reads the
+  existing report services, optionally drafts a short AI executive summary from those exact facts,
+  persists the file to the shared storage/files system, writes a `bms_generated_reports` row, and
+  audits `report.generate`.
+- The staff AI tool `generate_report` and REST `POST /api/bms/reports/generate` both call the same
+  service function. Keep validation, file generation, persistence, and audit inside the service so
+  the three entry points cannot drift apart.
 
 ### Support tickets
 

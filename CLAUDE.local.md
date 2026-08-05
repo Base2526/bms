@@ -1223,6 +1223,27 @@ webhook ปลอมได้ 404 ตามคาด, ทุกแถวถู�
   ทุกการส่ง log ครบ, `sendTestDigest` ยืนยันแล้วว่าไม่แตะ `last_period_key`, และ `runScheduledDigests`
   ยืนยัน idempotent (รันซ้ำ period เดิมถูกข้าม) · ลบแถวทดสอบออกหมดแล้ว ไม่มีข้อมูลค้างในร้านที่ใช้ verify
 
+## Generated reports / AI Report Generator (2026-08)
+
+ฟีเจอร์นี้คือ **รายงานแบบกดสร้างไฟล์ทันที** คนละอย่างกับ sales digest subscription:
+
+- จุดเข้าใช้มี 3 ทางแต่ **ต้องรวมที่ service เดียวเสมอ**: หน้า `/admin/reports` (การ์ด **AI Report Generator**),
+  GraphQL `bmsGenerateReport`/`bmsGeneratedReports`, REST `POST /api/bms/reports/generate`, และ AI tool
+  `generate_report` ล้วนต้องเรียก `lib/bms/reportEngine.ts` — ห้ามแยก validate/assemble/persist/audit กันคนละที่
+- ไฟล์ถูกเก็บผ่าน `persistBuffer()` → ตาราง `files` เดิม + `STORAGE_DIR` เดิม แล้วเขียนประวัติ append-only
+  ลง `bms_generated_reports` (`7.53__bms_generated_reports.sql`)
+- **ดาวน์โหลดห้ามใช้ `/api/files/[id]`** แม้จะสะดวกกว่า เพราะ route นั้นไม่มี auth/tenant gate;
+  report export ต้องผ่าน `/api/bms/reports/download/[id]` ที่เช็คก่อนว่า tenant ปัจจุบันมีแถวใน
+  `bms_generated_reports` ของ `file_id` นี้จริง ไม่งั้น enumerate file id ข้ามร้านได้
+- `PROFIT` เป็น **ค่าประมาณเท่านั้น**: revenue มาจาก `bms_order_items.unit_price` snapshot จริง แต่ cost ใช้
+  `bms_products.cost_price` **ปัจจุบัน** เพราะ order item ไม่มี cost snapshot ณ วันขาย ห้ามเขียน docs/UI/AI ให้ดู
+  เหมือนกำไรบัญชีที่แม่นย้อนหลัง
+- PDF ตอนนี้ใช้ `pdfkit` ฟอนต์มาตรฐาน → **Thai glyph ยังไม่ขึ้นถูกต้อง** จึงตั้งใจให้ title/label ใน generator
+  เป็น English ก่อน; XLSX/CSV เป็น UTF-8 ใช้ภาษาไทยในข้อมูลได้ปกติ ถ้าจะทำ PDF ภาษาไทยจริงต้อง embed ฟอนต์ไทย
+  (เช่น Noto Sans Thai) ใน `documentGenerator.ts` ก่อน ไม่ใช่แค่แปล string
+- `draftSummary()` ให้ AI เขียน executive summary จาก facts ที่ collect มาแล้วเท่านั้น; ไม่มี credentials/quota
+  หรือ provider fail → คืน `null` เฉย ๆ **ไม่ fallback เป็นข้อความเดาเอง**
+
 ## Carrier scaffold (Flash/Kerry) + ให้ลูกค้าเลือกขนส่งตอนแชท (2026-08)
 
 **ยังไม่ผูก API จริง — เป็น scaffold + mock mode เท่านั้น** (ไม่มี API key ของ Flash/Kerry และยังไม่มี

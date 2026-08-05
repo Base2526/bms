@@ -138,3 +138,63 @@ export async function getTopSellingProducts(
   );
   return res.rows.map((x: any) => ({ sku: x.sku, name: x.name, qty: x.qty, revenue: Number(x.revenue) }));
 }
+
+/**
+ * ประเมินกำไรขั้นต้น — ใช้ราคาต้นทุน**ปัจจุบัน**ของสินค้า (bms_products.cost_price) เทียบกับ
+ * unit_price ที่ snapshot ไว้จริงใน bms_order_items เพราะ order item ไม่ได้เก็บ cost snapshot
+ * ตอนขาย ดังนั้นตัวเลขนี้เป็น**ค่าประเมิน**เท่านั้น (method: "approximate") ถ้าต้นทุนสินค้าเปลี่ยนไป
+ * หลังวันที่ขายจริง กำไรที่คำนวณได้จะไม่ตรงกับกำไรจริง ณ วันนั้น — ห้ามนำไปแสดงเป็นตัวเลขที่แน่นอน
+ * (แนวทางเดียวกับ forecast.ts ที่ tag ทุกผลลัพธ์ด้วย method + disclaimer)
+ */
+export async function getProfitSummary(tenantId: string, from?: string | null, to?: string | null) {
+  const r = range(from, to);
+  const [totals, byDay] = await Promise.all([
+    query(
+      `SELECT COALESCE(SUM(oi.qty * oi.unit_price), 0) AS revenue,
+              COALESCE(SUM(oi.qty * COALESCE(p.cost_price, 0)), 0) AS cost
+         FROM bms_order_items oi
+         JOIN bms_orders o ON o.id = oi.order_id
+         JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+        WHERE oi.tenant_id = $1 AND o.status = ANY($2)
+          AND o.created_at >= $3::date
+          AND o.created_at < $4::date + interval '1 day'`,
+      [tenantId, PAID, r.from, r.to]
+    ),
+    query(
+      `SELECT o.created_at::date AS day,
+              COALESCE(SUM(oi.qty * oi.unit_price), 0) AS revenue,
+              COALESCE(SUM(oi.qty * COALESCE(p.cost_price, 0)), 0) AS cost
+         FROM bms_order_items oi
+         JOIN bms_orders o ON o.id = oi.order_id
+         JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+        WHERE oi.tenant_id = $1 AND o.status = ANY($2)
+          AND o.created_at >= $3::date
+          AND o.created_at < $4::date + interval '1 day'
+        GROUP BY day ORDER BY day`,
+      [tenantId, PAID, r.from, r.to]
+    ),
+  ]);
+
+  const revenue = Number(totals.rows[0].revenue);
+  const cost = Number(totals.rows[0].cost);
+  const profit = revenue - cost;
+  const toISO = (d: any) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+
+  return {
+    method: "approximate" as const,
+    disclaimer:
+      "กำไรนี้คำนวณจากต้นทุนสินค้าปัจจุบัน ไม่ใช่ต้นทุน ณ วันที่ขายจริง — ใช้เป็นค่าประมาณ ไม่ใช่ตัวเลขบัญชีที่แน่นอน",
+    from: r.from,
+    to: r.to,
+    revenue,
+    cost,
+    profit,
+    marginPct: revenue > 0 ? (profit / revenue) * 100 : 0,
+    byDay: byDay.rows.map((x: any) => ({
+      day: toISO(x.day),
+      revenue: Number(x.revenue),
+      cost: Number(x.cost),
+      profit: Number(x.revenue) - Number(x.cost),
+    })),
+  };
+}

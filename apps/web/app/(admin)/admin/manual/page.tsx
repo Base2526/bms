@@ -68,6 +68,7 @@ const personaCards: Record<
       "ใช้ Customer 360 เพื่อดูประวัติลูกค้าแบบไม่สลับหน้า",
       "เปิดออเดอร์ล่าสุดแบบ preview ในหน้า Inbox ก่อนได้ และถ้าต้องทำงานลึกค่อยเปิดหน้า Orders เต็มจอเป็นแท็บใหม่",
       "แชร์สินค้าและคูปองจาก composer โดยตรวจข้อความร่างก่อนกดส่ง",
+      "ถ้าต้องส่งไฟล์รายงานให้หัวหน้าหรือดาวน์โหลดเก็บ ใช้ AI Report Generator ในหน้า Reports เพื่อสร้าง Excel/CSV/PDF",
       "เปิด แจ้งลูกค้าเมื่อของเข้า เพื่อตามรายการที่ลูกค้ายินยอมไว้ ตรวจข้อความ และ Resend เมื่อส่งไม่สำเร็จ",
       "สร้างออเดอร์และออกใบแจ้งหนี้จาก Quick Actions ตามสิทธิ์ของบัญชี",
       "เช็ก Orders / Payment / Shipping ต่อเนื่องเป็นชุดเดียว",
@@ -987,7 +988,9 @@ export default function Page() {
                     description: (
                       <>
                         เปิด <Link href="/admin/dashboard">Dashboard</Link> หรือ <Link href="/admin/reports">Reports</Link>
-                        เพื่อดูยอดขาย สต็อก งานค้าง และการ์ด <b>AI health</b> · ถ้าต้องการตรวจคำตอบรายเคสให้เปิด{" "}
+                        เพื่อดูยอดขาย สต็อก งานค้าง และการ์ด <b>AI health</b> · ถ้าต้องการไฟล์จริงให้ใช้การ์ด
+                        <b> AI Report Generator</b> ในหน้า Reports เพื่อสร้าง Excel / CSV / PDF ของยอดขาย สต็อก
+                        หรือกำไรขั้นต้น (ค่าประมาณ) แล้วดาวน์โหลดภายหลังจากประวัติรายงานเดิมได้ · ถ้าต้องการตรวจคำตอบรายเคสให้เปิด{" "}
                         <Link href="/admin/ai-quality">AI Quality</Link> เพื่อดู success/handoff/unresolved rate,
                         failure cases และบทสนทนาที่สุ่มตรวจ โดยระบบปิดบังข้อมูลส่วนบุคคลในหน้าตรวจให้อัตโนมัติ
                       </>
@@ -998,6 +1001,7 @@ export default function Page() {
                     description: (
                       <>
                         เปิด <Link href="/admin/assistant">ผู้ช่วย AI</Link> เพื่อถามรายงาน/สต็อก/ออร์เดอร์ด้วยภาษาพูด
+                        หรือพิมพ์ขอ export เช่น "export sales to Excel" / "สร้าง PDF รายงานกำไร" ได้เลย
                         — งานที่กระทบเงิน/สต็อกจะต้องกดยืนยันเองก่อนเสมอ
                       </>
                     ),

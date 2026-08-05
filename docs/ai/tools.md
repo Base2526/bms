@@ -67,7 +67,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
 | `get_customer_checkout` | A1 | own `(channel, customer_ref)` only | — | completeness read; no raw PII |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
-| `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard` | A1 | no | `report.view` | read |
+| `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard`, `generate_report` | A1 | no | `report.view` | read / file export |
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read |
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
 | `list_payments` | A1 | no | `payment.view` | read |
@@ -875,6 +875,46 @@ Input
 Output
 
 [ { sku, name, qty, revenue } ]
+
+---
+
+## generate_report()
+
+สร้างไฟล์รายงานให้ดาวน์โหลดจริง (XLSX / CSV / PDF) จากข้อมูลรายงานที่ backend อ่านยืนยันแล้ว ไม่ใช่แค่สรุปตัวเลขในแชท
+
+Input
+
+{
+    reportType,         // SALES | INVENTORY | PROFIT
+    dateFrom?,          // YYYY-MM-DD, ใช้กับ SALES / PROFIT
+    dateTo?,            // YYYY-MM-DD
+    format,             // XLSX | CSV | PDF
+    includeSummary?     // default true — ให้ AI เขียน executive summary จาก facts เดิมเท่านั้น
+}
+
+Output
+
+{
+    fileId,
+    fileUrl,            // /api/bms/reports/download/<id>
+    reportType,
+    format,
+    summary?            // null ได้ ถ้าไม่มี AI credentials หรือ summary generation fail
+}
+
+Permission: report.view
+
+ใช้เมื่อผู้ใช้ "ขอไฟล์" ชัดเจน เช่น "export sales to Excel", "สร้าง PDF รายงานกำไร", "ขอดาวน์โหลดรายงานสต็อก"
+
+อย่าใช้เมื่อผู้ใช้แค่ถามตัวเลขในบทสนทนา เช่น "เดือนนี้ขายได้เท่าไหร่" — กรณีนั้นใช้
+`get_sales_summary` / `get_inventory_summary` / `get_top_products` แล้วตอบในแชท
+
+ข้อจำกัดสำคัญ:
+
+- `PROFIT` เป็น **ค่าประมาณ** เพราะ cost มาจาก `bms_products.cost_price` ปัจจุบัน ไม่ใช่ snapshot ณ วันขาย
+- PDF ใช้ `pdfkit` font มาตรฐาน จึงยังไม่รองรับ Thai glyphs ครบ; heading/label ของเอกสารจงใจเป็น English
+- ดาวน์โหลดต้องผ่าน `/api/bms/reports/download/<id>` ซึ่งเช็ค tenant ownership ของ `bms_generated_reports`
+  ก่อนเสมอ ไม่ใช้ `/api/files/<id>` ตรง ๆ
 
 ---
 

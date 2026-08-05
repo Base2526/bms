@@ -127,6 +127,17 @@ Also documents (`lib/bms/documents.ts` —
 outbound (`send_customer_message` → `bmsSendMessage`, LINE/Meta only — TikTok send and email have no
 real API yet, so they are intentionally not implemented rather than stubbed).
 
+Generated report exports (`lib/bms/reportEngine.ts`, `lib/bms/documentGenerator.ts`, migration
+`7.53__bms_generated_reports.sql`) are also shared across three entry points: staff AI tool
+`generate_report`, GraphQL `bmsGenerateReport`/`bmsGeneratedReports`, and REST
+`POST /api/bms/reports/generate` + `GET /api/bms/reports/download/[id]`. Preserve that single-service
+shape: date-range validation, report assembly, optional AI executive summary, file persistence, DB row,
+and audit all belong in `generateReport()`, while API layers stay thin. Downloaded files must go through
+the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/files/[id]` path, because
+generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
+labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
+embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+
 Adding a new AI tool: wrap the existing `lib/bms/*.ts` function in `tools/catalog.ts` (validate
 model-supplied args, derive `tenantId` from `ExecCtx`, add a domain `audit()` for writes, and assign
 the surface + staff permission. If it is refund/cancel/delete/adjust-inventory/merge-like, mark it

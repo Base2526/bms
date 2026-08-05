@@ -715,6 +715,9 @@ export const typeDefs = /* GraphQL */ `
     bmsInventorySummary: BmsInventorySummary!
     bmsTopSellingProducts(from: String, to: String, limit: Int = 10): [BmsTopProduct!]!
 
+    # ===== BMS AI Report & Document Generation (MVP core) =====
+    bmsGeneratedReports(limit: Int): [BmsGeneratedReport!]!
+
     # ===== BMS CRM (admin) =====
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0): [BmsCustomer!]!
     bmsCustomer(id: ID!): BmsCustomer
@@ -1604,6 +1607,35 @@ export const typeDefs = /* GraphQL */ `
     stockValue: Float!
     lowStockCount: Int!
     outOfStockCount: Int!
+  }
+
+  # ===== BMS AI Report & Document Generation (MVP core) =====
+  input BmsGenerateReportInput {
+    reportType: String!   # SALES / INVENTORY / PROFIT
+    dateFrom: String       # YYYY-MM-DD, ไม่ใช้กับ INVENTORY
+    dateTo: String
+    format: String!        # XLSX / CSV / PDF
+    includeSummary: Boolean
+  }
+
+  type BmsGenerateReportResult {
+    fileId: Int!
+    fileUrl: String!
+    reportType: String!
+    format: String!
+    summary: String
+  }
+
+  type BmsGeneratedReport {
+    id: ID!
+    reportType: String!
+    format: String!
+    params: JSON!
+    fileId: Int
+    fileUrl: String
+    summary: String
+    generatedBy: String
+    createdAt: String!
   }
 
   type BmsDashboard {
@@ -2745,6 +2777,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
+    bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!   # permission report.view
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
     bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)
