@@ -1,7 +1,7 @@
 'use client';
 import { gql, useApolloClient } from "@apollo/client";
 import {
-  Card, Input, Button, Space, Tag, Typography, Empty, Alert, message, Tooltip, Popconfirm, Drawer,
+  Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
 } from "antd";
 import { useState, useRef, useEffect, Fragment } from "react";
 import {
@@ -163,6 +163,13 @@ const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[
 ];
 const EXAMPLE_COUNT = EXAMPLE_GROUPS.reduce((n, g) => n + g.items.length, 0);
 
+// ปุ่มเริ่มด่วนใน empty state — เลือกมาสั้นๆ 3 อัน ให้กดแล้วเริ่มได้ทันทีโดยไม่ต้องเลื่อนไปหา sidebar/Drawer
+const QUICK_START: Array<{ label: string; fill: string }> = [
+  { label: "ยอดขาย 7 วันล่าสุด", fill: "ยอดขาย 7 วันล่าสุดเป็นยังไง" },
+  { label: "สินค้าใกล้หมด", fill: "สินค้าอะไรใกล้หมดบ้าง" },
+  { label: "สร้างรายงาน Excel", fill: "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel" },
+];
+
 export default function Page() {
   const client = useApolloClient();
   const isMobile = useIsMobile();
@@ -276,38 +283,61 @@ export default function Page() {
 
   // ใช้ร่วมกันทั้ง sidebar (จอกว้าง, โชว์ค้าง) และ Drawer (จอแคบ, เปิดตามสั่ง) — เนื้อหาชุดเดียว
   // ไม่ duplicate ป้องกันแก้ตัวอย่างที่นึงแล้วอีกที่ไม่ตรงกัน
+  // แถวเดียว ตัด ellipsis ถ้ายาวเกิน (ดูชื่อเต็มจาก Tooltip) แทนปุ่มบล็อกที่ห่อ 2-3 บรรทัดแล้วสูงไม่เท่ากัน
   const exampleGroupsContent = (
-    <Space direction="vertical" style={{ width: "100%" }} size={14}>
+    <Space direction="vertical" style={{ width: "100%" }} size={0}>
       {EXAMPLE_GROUPS.map((group) => (
-        <Space key={group.label} direction="vertical" style={{ width: "100%" }} size={6}>
+        <div key={group.label}>
           <Text
             type="secondary"
-            style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}
+            style={{
+              display: "block",
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+              padding: "10px 10px 4px",
+            }}
           >
             {group.label}
           </Text>
           {group.items.map((ex) => (
-            <Button
-              key={ex}
-              block
-              style={{
-                textAlign: "left",
-                height: "auto",
-                whiteSpace: "normal",
-                padding: "8px 10px",
-                borderLeft: group.sensitive ? "3px solid #faad14" : undefined,
-              }}
-              onClick={() => pickExample(ex)}
-            >
-              {ex}
-              {group.sensitive && (
-                <Tag color="warning" style={{ marginLeft: 6, fontSize: 10 }}>
-                  ต้องยืนยัน
-                </Tag>
-              )}
-            </Button>
+            <Tooltip key={ex} title={ex} placement="left" mouseEnterDelay={0.4}>
+              <button
+                onClick={() => pickExample(ex)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  textAlign: "left",
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--app-text)",
+                  borderRadius: 8,
+                  padding: "9px 10px",
+                  fontSize: 12.8,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--app-surface-3, var(--app-surface-2))")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                {group.sensitive && (
+                  <span style={{ width: 5, height: 5, borderRadius: 999, background: "#faad14", flex: "none" }} />
+                )}
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {ex}
+                </span>
+                {group.sensitive && (
+                  <Tag color="warning" style={{ margin: 0, fontSize: 9.5, flex: "none" }}>
+                    ยืนยัน
+                  </Tag>
+                )}
+              </button>
+            </Tooltip>
           ))}
-        </Space>
+        </div>
       ))}
     </Space>
   );
@@ -380,26 +410,57 @@ export default function Page() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 272px",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 280px",
           gap: 16,
-          alignItems: "start",
+          alignItems: "stretch",
         }}
       >
-      <div>
       <Card
-        styles={{ body: { padding: 0 } }}
-        style={{ marginBottom: 12 }}
+        style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
+        styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
       >
-        <div ref={logRef} style={{ height: 460, overflowY: "auto", padding: 16 }}>
+        <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: 16 }}>
           {chat.length === 0 ? (
-            <Empty
-              description={
-                isMobile
-                  ? "ยังไม่มีบทสนทนา — ลองกดปุ่ม \"ตัวอย่างคำสั่ง\" ด้านบน หรือพิมพ์คำถามด้านล่าง"
-                  : "ยังไม่มีบทสนทนา — ลองกดตัวอย่างด้านขวา หรือพิมพ์คำถามด้านล่าง"
-              }
-              style={{ marginTop: 120 }}
-            />
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 14,
+                textAlign: "center",
+                padding: 20,
+              }}
+            >
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 14,
+                  background: "rgba(var(--app-primary-rgb), 0.12)",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "var(--app-primary)",
+                  fontSize: 24,
+                }}
+              >
+                <RobotOutlined />
+              </div>
+              <Typography.Text strong style={{ fontSize: 15 }}>ยังไม่มีบทสนทนา</Typography.Text>
+              <Text type="secondary" style={{ fontSize: 13, maxWidth: 320 }}>
+                {isMobile
+                  ? "พิมพ์คำถามด้านล่าง หรือเริ่มจากตัวอย่างที่ใช้บ่อย"
+                  : "พิมพ์คำถามด้านล่าง หรือเริ่มจากตัวอย่างที่ใช้บ่อยทางขวา"}
+              </Text>
+              <Space wrap size={8} style={{ justifyContent: "center" }}>
+                {QUICK_START.map((q) => (
+                  <Button key={q.fill} shape="round" size="small" onClick={() => pickExample(q.fill)}>
+                    {q.label}
+                  </Button>
+                ))}
+              </Space>
+            </div>
           ) : (
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
               {chat.map((b, i) => (
@@ -492,29 +553,46 @@ export default function Page() {
             </Space>
           )}
         </div>
+
+        {/* composer เย็บเป็นส่วนเดียวกับการ์ดแชท (เส้นแบ่ง + พื้นหลังต่างเฉด) ไม่ใช่แถบลอยแยกที่มีช่องว่างเหมือนเดิม */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: 12,
+            borderTop: "1px solid var(--app-border)",
+            background: "var(--app-surface-2)",
+          }}
+        >
+          <Input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onPressEnter={() => send()}
+            placeholder="พิมพ์คำถามหรือคำสั่ง เช่น 'ยอดขายเดือนนี้เท่าไหร่'"
+            disabled={sending}
+          />
+          <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
+            ส่ง
+          </Button>
+        </div>
       </Card>
 
-      <Space.Compact style={{ width: "100%" }}>
-        <Input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onPressEnter={() => send()}
-          placeholder="พิมพ์คำถามหรือคำสั่ง เช่น 'ยอดขายเดือนนี้เท่าไหร่'"
-          disabled={sending}
-        />
-        <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-          ส่ง
-        </Button>
-      </Space.Compact>
-      </div>
-
       {!isMobile && (
-        <Card size="small" title={<Space><BulbOutlined style={{ color: "var(--app-primary)" }} />ตัวอย่างคำสั่ง</Space>}>
-          <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 10 }}>
-            กดที่ตัวอย่างเพื่อใส่ลงช่องพิมพ์ได้ทันที
-          </Text>
-          {exampleGroupsContent}
+        <Card
+          style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
+          styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
+        >
+          <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--app-border)" }}>
+            <Space size={6}>
+              <BulbOutlined style={{ color: "var(--app-primary)" }} />
+              <Text strong style={{ fontSize: 13 }}>ตัวอย่างคำสั่ง</Text>
+            </Space>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11.5 }}>กดเพื่อใส่ลงช่องพิมพ์ทันที</Text>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>{exampleGroupsContent}</div>
         </Card>
       )}
       </div>
