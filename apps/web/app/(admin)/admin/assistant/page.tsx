@@ -1,14 +1,20 @@
 'use client';
 import { gql, useApolloClient } from "@apollo/client";
 import {
-  Card, Input, Button, Space, Tag, Typography, Empty, Alert, message, Tooltip,
+  Card, Input, Button, Space, Tag, Typography, Empty, Alert, message, Tooltip, Popconfirm, Drawer,
 } from "antd";
 import { useState, useRef, useEffect, Fragment } from "react";
 import {
   SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
+  DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined,
 } from "@ant-design/icons";
+import { useIsMobile } from "@/app/hooks/useMediaQuery";
 
 const { Text, Paragraph } = Typography;
+
+// เก็บแชทไว้ในเครื่องนี้อัตโนมัติ (ต่อเบราว์เซอร์ ไม่ sync ข้ามอุปกรณ์/แท็บอื่น) — ผู้ใช้ต้องกด
+// "ล้างแชท" เองเท่านั้น ไม่มีการล้างอัตโนมัติ (เช่น ตอนปิดแท็บ/refresh)
+const CHAT_STORAGE_KEY = "bms-assistant-chat-v1";
 
 // ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
 // เต็มรูปแบบติดตั้งอยู่ — parse เท่าที่ต้องใช้จริง (bold/inline code/URL) แทนที่จะโชว์ asterisk ดิบๆ
@@ -130,23 +136,84 @@ type Bubble = {
   proposalStates?: Record<number, "done" | "dismissed">;
 };
 
-const EXAMPLES = [
-  "ยอดขาย 7 วันล่าสุดเป็นยังไง",
-  "สินค้าอะไรใกล้หมดบ้าง",
-  "ออร์เดอร์ล่าสุดของลูกค้ามีอะไรบ้าง",
-  "คืนเงินการชำระ (payment id ...)",
+const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[] }> = [
+  {
+    label: "ถามข้อมูล (อ่านอย่างเดียว)",
+    items: [
+      "ยอดขาย 7 วันล่าสุดเป็นยังไง",
+      "สินค้าอะไรใกล้หมดบ้าง",
+      "ออร์เดอร์ล่าสุดของลูกค้ามีอะไรบ้าง",
+    ],
+  },
+  {
+    label: "สร้างไฟล์/รายงาน",
+    items: [
+      "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel",
+      "Export inventory report เป็น PDF พร้อมสรุปให้ด้วย",
+    ],
+  },
+  {
+    label: "คำสั่งที่ต้องยืนยัน",
+    sensitive: true,
+    items: [
+      "คืนเงินการชำระ (payment id ...)",
+      "ปรับสต็อก NIKE-001 ไซซ์ XL ลบ 2 ชิ้น เพราะของเสีย",
+    ],
+  },
 ];
+const EXAMPLE_COUNT = EXAMPLE_GROUPS.reduce((n, g) => n + g.items.length, 0);
 
 export default function Page() {
   const client = useApolloClient();
+  const isMobile = useIsMobile();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [chat, setChat] = useState<Bubble[]>([]);
+  const [chatLoaded, setChatLoaded] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<any>(null);
+
+  // โหลดแชทที่บันทึกไว้ตอน mount ครั้งเดียว — ต้องรอ mount ก่อน (localStorage ไม่มีบน server)
+  // ไม่งั้น hydration mismatch; chatLoaded กันไม่ให้ effect เซฟทับค่าว่างก่อนโหลดเสร็จ
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (raw) setChat(JSON.parse(raw));
+    } catch {
+      // เก็บพัง (เช่น quota/JSON เพี้ยน) — เริ่มแชทใหม่เงียบๆ ดีกว่าทำหน้าอื่นพังไปด้วย
+    } finally {
+      setChatLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!chatLoaded) return;
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chat));
+    } catch {
+      // เต็ม/ปิด storage ไว้ — ปล่อยผ่าน ไม่ใช่ error ที่ควรขัดจังหวะการคุย
+    }
+  }, [chat, chatLoaded]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [chat]);
+
+  const clearChat = () => {
+    setChat([]);
+    try {
+      localStorage.removeItem(CHAT_STORAGE_KEY);
+    } catch {
+      // ไม่มีผลต่อ state ในหน้า — เคลียร์ที่ setChat([]) ไปแล้ว
+    }
+  };
+
+  const pickExample = (ex: string) => {
+    setText(ex);
+    inputRef.current?.focus?.();
+    setExamplesOpen(false); // ปิด drawer เสมอ (จอกว้างไม่เคยเปิด drawer นี้อยู่แล้ว ปิดซ้ำไม่มีผล)
+  };
 
   const send = async (msg?: string) => {
     const m = (msg ?? text).trim();
@@ -207,12 +274,82 @@ export default function Page() {
     );
   };
 
+  // ใช้ร่วมกันทั้ง sidebar (จอกว้าง, โชว์ค้าง) และ Drawer (จอแคบ, เปิดตามสั่ง) — เนื้อหาชุดเดียว
+  // ไม่ duplicate ป้องกันแก้ตัวอย่างที่นึงแล้วอีกที่ไม่ตรงกัน
+  const exampleGroupsContent = (
+    <Space direction="vertical" style={{ width: "100%" }} size={14}>
+      {EXAMPLE_GROUPS.map((group) => (
+        <Space key={group.label} direction="vertical" style={{ width: "100%" }} size={6}>
+          <Text
+            type="secondary"
+            style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}
+          >
+            {group.label}
+          </Text>
+          {group.items.map((ex) => (
+            <Button
+              key={ex}
+              block
+              style={{
+                textAlign: "left",
+                height: "auto",
+                whiteSpace: "normal",
+                padding: "8px 10px",
+                borderLeft: group.sensitive ? "3px solid #faad14" : undefined,
+              }}
+              onClick={() => pickExample(ex)}
+            >
+              {ex}
+              {group.sensitive && (
+                <Tag color="warning" style={{ marginLeft: 6, fontSize: 10 }}>
+                  ต้องยืนยัน
+                </Tag>
+              )}
+            </Button>
+          ))}
+        </Space>
+      ))}
+    </Space>
+  );
+
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: 16 }}>
-      <Space align="center" style={{ marginBottom: 8 }}>
-        <RobotOutlined style={{ fontSize: 22 }} />
-        <Typography.Title level={4} style={{ margin: 0 }}>ผู้ช่วย AI (หลังบ้าน)</Typography.Title>
-      </Space>
+    <div style={{ maxWidth: isMobile ? 640 : 1080, margin: "0 auto", padding: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 10,
+          marginBottom: 8,
+        }}
+      >
+        <Space align="center">
+          <RobotOutlined style={{ fontSize: 22 }} />
+          <Typography.Title level={4} style={{ margin: 0 }}>ผู้ช่วย AI (หลังบ้าน)</Typography.Title>
+        </Space>
+        <Space size={14}>
+          <Tooltip title="บันทึกไว้ในเครื่องนี้อัตโนมัติ (เบราว์เซอร์นี้เท่านั้น ไม่ sync ข้ามอุปกรณ์)">
+            <Text type="secondary" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
+              <SaveOutlined /> {!isMobile && "บันทึกไว้ในเครื่องนี้อัตโนมัติ"}
+            </Text>
+          </Tooltip>
+          <Popconfirm
+            title="ล้างประวัติแชททั้งหมดในเครื่องนี้?"
+            description="กู้คืนไม่ได้"
+            okText="ล้างแชท"
+            okType="danger"
+            cancelText="ยกเลิก"
+            onConfirm={clearChat}
+            disabled={chat.length === 0}
+          >
+            <Button size="small" icon={<DeleteOutlined />} disabled={chat.length === 0}>
+              ล้างแชท
+            </Button>
+          </Popconfirm>
+        </Space>
+      </div>
+
       <Alert
         type="info"
         showIcon
@@ -220,19 +357,49 @@ export default function Page() {
         message="ถาม/สั่งงานด้วยภาษาพูดได้ — AI ดึงข้อมูลจริงและทำงานตามสิทธิ์ของคุณ งานที่กระทบเงิน/สต็อก/ลบข้อมูลจะเป็น 'คำขอ' ให้กดยืนยันเองก่อนเสมอ"
       />
 
+      {isMobile && (
+        <Button
+          block
+          onClick={() => setExamplesOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 10,
+          }}
+        >
+          <Space>
+            <BulbOutlined style={{ color: "var(--app-primary)" }} />
+            ตัวอย่างคำสั่ง
+            <Tag color="blue" style={{ marginInlineStart: 0 }}>{EXAMPLE_COUNT}</Tag>
+          </Space>
+          <DownOutlined style={{ fontSize: 11, color: "var(--text-secondary)" }} />
+        </Button>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 272px",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
+      <div>
       <Card
         styles={{ body: { padding: 0 } }}
         style={{ marginBottom: 12 }}
       >
         <div ref={logRef} style={{ height: 460, overflowY: "auto", padding: 16 }}>
           {chat.length === 0 ? (
-            <Empty description="ยังไม่มีบทสนทนา" style={{ marginTop: 120 }}>
-              <Space direction="vertical" style={{ width: "100%" }}>
-                {EXAMPLES.map((ex) => (
-                  <Button key={ex} size="small" onClick={() => send(ex)}>{ex}</Button>
-                ))}
-              </Space>
-            </Empty>
+            <Empty
+              description={
+                isMobile
+                  ? "ยังไม่มีบทสนทนา — ลองกดปุ่ม \"ตัวอย่างคำสั่ง\" ด้านบน หรือพิมพ์คำถามด้านล่าง"
+                  : "ยังไม่มีบทสนทนา — ลองกดตัวอย่างด้านขวา หรือพิมพ์คำถามด้านล่าง"
+              }
+              style={{ marginTop: 120 }}
+            />
           ) : (
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
               {chat.map((b, i) => (
@@ -329,6 +496,7 @@ export default function Page() {
 
       <Space.Compact style={{ width: "100%" }}>
         <Input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPressEnter={() => send()}
@@ -339,6 +507,38 @@ export default function Page() {
           ส่ง
         </Button>
       </Space.Compact>
+      </div>
+
+      {!isMobile && (
+        <Card size="small" title={<Space><BulbOutlined style={{ color: "var(--app-primary)" }} />ตัวอย่างคำสั่ง</Space>}>
+          <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 10 }}>
+            กดที่ตัวอย่างเพื่อใส่ลงช่องพิมพ์ได้ทันที
+          </Text>
+          {exampleGroupsContent}
+        </Card>
+      )}
+      </div>
+
+      {isMobile && (
+        <Drawer
+          placement="bottom"
+          height="72vh"
+          open={examplesOpen}
+          onClose={() => setExamplesOpen(false)}
+          title={
+            <Space>
+              <BulbOutlined style={{ color: "var(--app-primary)" }} />
+              ตัวอย่างคำสั่ง
+            </Space>
+          }
+          styles={{ body: { paddingTop: 8 } }}
+        >
+          <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+            กดที่ตัวอย่างเพื่อใส่ลงช่องพิมพ์ได้ทันที
+          </Text>
+          {exampleGroupsContent}
+        </Drawer>
+      )}
     </div>
   );
 }
