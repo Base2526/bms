@@ -737,6 +737,11 @@ export const typeDefs = /* GraphQL */ `
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
     bmsReportSubscription: BmsReportSubscription!         # ค่าตั้งของร้านตัวเอง (default ถ้ายังไม่เคยตั้ง)
     bmsReportDeliveries(limit: Int): [BmsReportDelivery!]! # ประวัติส่งของร้านตัวเอง
+
+    # ===== BMS Follow-up Automation (MVP core) =====
+    bmsFollowupRules: [BmsFollowupRule!]!
+    bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
+    bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
@@ -1900,6 +1905,66 @@ export const typeDefs = /* GraphQL */ `
   type BmsReportChannelResult { channel: String!  ok: Boolean!  error: String }
   type BmsSendReportResult { overallStatus: String!  results: [BmsReportChannelResult!]! }
 
+  # ===== BMS Follow-up Automation (MVP core) =====
+  type BmsFollowupRule {
+    id: ID!
+    tenantId: ID!
+    intent: String!         # ASK_PRICE / PRODUCT_INFORMATION / ORDER / BOOKING / SUPPORT /
+                             # COMPLAINT / PAYMENT / DELIVERY / GENERAL_QUESTION / OTHER
+    enabled: Boolean!
+    priority: Int!
+    delayMinutes: Int!
+    maxRetry: Int!
+    stopConditions: [String!]!   # เก็บไว้สำหรับ workflow engine ในอนาคต — scheduler ยังไม่อ่านค่านี้
+    messageGoal: String!         # CLOSE_SALE / COLLECT_MISSING_INFO / CONTINUE_CONVERSATION / CONFIRM_BOOKING /
+                                  # CUSTOMER_SATISFACTION / PAYMENT_REMINDER / RECOVER_ABANDONED_CART / SUPPORT_FOLLOWUP
+    businessHoursOnly: Boolean!
+    template: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  input BmsFollowupRuleInput {
+    id: ID
+    intent: String!
+    enabled: Boolean
+    priority: Int
+    delayMinutes: Int!
+    maxRetry: Int
+    stopConditions: [String!]
+    messageGoal: String!
+    businessHoursOnly: Boolean
+    template: String
+  }
+
+  type BmsFollowupJob {
+    id: ID!
+    status: String!          # PENDING / SENT / STOPPED / FAILED
+    nextRunAt: String!
+    retryCount: Int!
+    lastResult: String
+    conversationId: ID!
+    ruleId: ID!
+    intent: String!
+    messageGoal: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsFollowupHistoryEntry {
+    id: ID!
+    jobId: ID
+    conversationId: ID!
+    ruleId: ID
+    outcome: String!         # SENT / SKIPPED / FAILED
+    reason: String
+    messageBody: String
+    goal: String
+    createdAt: String!
+  }
+
+  type BmsFollowupRunResult { scanned: Int!  sent: Int!  skipped: Int!  failed: Int! }
+
   type BmsMailLogEntry {
     id: ID!
     tenantId: ID
@@ -2692,6 +2757,11 @@ export const typeDefs = /* GraphQL */ `
     bmsTestChannel(channel: String!): BmsTestChannelResult!
     bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
     bmsSendTestReportNow: BmsSendReportResult!
+
+    # ===== BMS Follow-up Automation (MVP core) =====
+    bmsUpsertFollowupRule(input: BmsFollowupRuleInput!): BmsFollowupRule!
+    bmsDeleteFollowupRule(id: ID!): Boolean!
+    bmsRunFollowupsNow: BmsFollowupRunResult!
     bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!

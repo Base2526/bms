@@ -41,6 +41,7 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Failure incidents | `bms_failure_incidents` | `7.36` |
 | Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
 | Support tickets | `support_tickets`, `support_ticket_comments` | `7.45` |
+| Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
 
 ## Notable schema details
 
