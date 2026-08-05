@@ -218,6 +218,41 @@ test("provider request marks stable tools and system for prompt caching", async 
   );
 });
 
+test("registry-only tool metadata (whenToUse/whenNotToUse/commonMistakes/example) never reaches the provider payload", async () => {
+  // feat/function-registry (8480aeba) added these fields to BmsTool for docs/humans only — they
+  // must never be serialized into the Anthropic tool schema, or every turn silently starts paying
+  // token cost for them. This guards the invariant runtime.ts's serialization block currently
+  // upholds by hand-picking name/description/input_schema; it would catch a future refactor that
+  // spreads `...tool` instead.
+  const documentedTool: BmsTool = {
+    name: "documented_tool",
+    description: "eval tool with registry-only metadata",
+    whenToUse: "must never leak into the provider payload",
+    whenNotToUse: "must never leak into the provider payload",
+    commonMistakes: ["must never leak into the provider payload"],
+    example: { input: {}, note: "must never leak into the provider payload" },
+    inputSchema: { type: "object", properties: {} },
+    surfaces: ["customer"],
+    execute: async () => ({ ok: true }),
+  };
+  let seenTools: Array<Record<string, unknown>> = [];
+  await __toolLoopTest.run(
+    baseOptions([documentedTool]),
+    depsFor(async (_creds, _system, _messages, tools) => {
+      seenTools = tools;
+      return textResponse("เรียบร้อยค่ะ");
+    })
+  );
+  assert.equal(seenTools.length, 1);
+  const keys = Object.keys(seenTools[0]);
+  for (const forbidden of ["whenToUse", "whenNotToUse", "commonMistakes", "example"]) {
+    assert.ok(!keys.includes(forbidden), `"${forbidden}" must not be serialized into the provider tool schema`);
+  }
+  // ยืนยันบวก ไม่ใช่แค่ปฏิเสธ 4 field ที่รู้ชื่อไว้ก่อน — เผื่อมี field registry-only ใหม่ในอนาคต
+  // ที่ยังไม่มีใครเขียนชื่อไว้ในลิสต์ข้างบน
+  assert.deepEqual(new Set(keys), new Set(["name", "description", "input_schema", "cache_control"]));
+});
+
 test("per-conversation slot memory is sent after the cache breakpoint, never inside the cached prefix", async () => {
   // ถ้า slot memory ถูกต่อเข้าไปใน system block ที่ 1 (ก้อนที่มี cache_control) prefix
   // tools+system จะเปลี่ยนทุกครั้งที่ลูกค้าพิมพ์ → cache ใช้ซ้ำไม่ได้เลย และเสีย cache write 1.25x
