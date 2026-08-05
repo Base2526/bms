@@ -138,6 +138,15 @@ export function buildProfitReportDoc(data: {
 
 // ---- format builders ----
 
+/**
+ * Excel sheet names forbid : \ / ? * [ ] and are capped at 31 chars — replace the forbidden
+ * characters instead of just truncating, or `book_append_sheet` throws (hit this for real with
+ * doc.sheets[].name === "Low / out of stock" — every INVENTORY/XLSX export failed 100% of the time).
+ */
+function safeSheetName(name: string): string {
+  return name.replace(/[:\\/?*[\]]/g, "-").slice(0, 31) || "Sheet1";
+}
+
 export function buildXlsx(doc: ReportDoc): Buffer {
   const wb = XLSX.utils.book_new();
 
@@ -151,7 +160,7 @@ export function buildXlsx(doc: ReportDoc): Buffer {
     const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
     // best-effort auto width — spec asks for it, this is the cheap version
     ws["!cols"] = sheet.columns.map((c) => ({ wch: Math.max(c.label.length + 2, 12) }));
-    XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31)); // Excel sheet name limit
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheet.name));
   }
 
   const out = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
