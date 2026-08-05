@@ -820,44 +820,44 @@ export default function HeaderBar({
                   {isAdminSession && isDesktopView && (
                     <div className="jachoei-admin-quick-actions">
                       <Tooltip title={t("header.liveDashboard")}>
-                        <Button
-                          type="default"
-                          icon={<VideoCameraOutlined />}
-                          size="large"
+                        <button
+                          type="button"
                           onClick={() => router.push("/live-dashboard")}
-                          className="jachoei-admin-inbox-btn jachoei-admin-live-btn"
+                          className="jachoei-admin-icon-btn jachoei-admin-live-icon"
                           aria-label={t("header.liveDashboard")}
                         >
-                          <span className="jachoei-admin-live-label">{t("header.liveDashboard")}</span>
-                        </Button>
+                          <VideoCameraOutlined />
+                        </button>
                       </Tooltip>
 
                       {canViewInbox && (
-                        <Button
-                          type="default"
-                          icon={<MessageOutlined />}
-                          size="large"
-                          onClick={() => router.push("/admin/inbox")}
-                          className="jachoei-admin-inbox-btn"
-                        >
-                          <span>{t("header.inbox")}</span>
-                          {inboxUnreadCount > 0 && (
-                            <span className="jachoei-admin-inbox-badge">
-                              {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
-                            </span>
-                          )}
-                        </Button>
+                        <Tooltip title={t("header.inbox")}>
+                          <button
+                            type="button"
+                            onClick={() => router.push("/admin/inbox")}
+                            className="jachoei-admin-icon-btn"
+                            aria-label={t("header.inbox")}
+                          >
+                            <MessageOutlined />
+                            {inboxUnreadCount > 0 && (
+                              <span className="jachoei-admin-inbox-badge">
+                                {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
+                              </span>
+                            )}
+                          </button>
+                        </Tooltip>
                       )}
 
-                      <Button
-                        type="primary"
-                        icon={<ShopOutlined />}
-                        size="large"
-                        onClick={() => router.push("/admin/dashboard")}
-                        className="jachoei-signup-btn"
-                      >
-                        {t("header.dashboard")}
-                      </Button>
+                      <Tooltip title={t("header.dashboard")}>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/admin/dashboard")}
+                          className="jachoei-admin-icon-btn jachoei-admin-icon-btn-primary"
+                          aria-label={t("header.dashboard")}
+                        >
+                          <ShopOutlined />
+                        </button>
+                      </Tooltip>
                     </div>
                   )}
                   <Dropdown
@@ -1146,8 +1146,106 @@ export default function HeaderBar({
         .jachoei-admin-quick-actions {
           display: inline-flex;
           align-items: center;
-          gap: 10px;
+          gap: 4px;
           margin-right: 2px;
+          padding: 4px;
+          border-radius: 999px;
+          background: rgba(var(--app-text-rgb),0.04);
+          border: 1px solid var(--app-border);
+        }
+
+        .jachoei-admin-icon-btn {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: none;
+          background: transparent;
+          color: var(--app-text-secondary, var(--app-text));
+          font-size: 18px;
+          cursor: pointer;
+          transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+        }
+
+        .jachoei-admin-icon-btn:hover {
+          background: rgba(var(--app-text-rgb),0.08);
+          color: var(--app-text);
+          transform: translateY(-1px);
+        }
+
+        .jachoei-admin-icon-btn:focus-visible {
+          outline: 2px solid var(--app-primary);
+          outline-offset: 2px;
+        }
+
+        .jachoei-admin-icon-btn-primary {
+          background: var(--app-primary);
+          color: #fff;
+        }
+
+        .jachoei-admin-icon-btn-primary:hover {
+          background: var(--app-primary);
+          color: #fff;
+          filter: brightness(1.06);
+        }
+
+        /* Live Dashboard: ring เต้น + จุดแดงกระพริบ สื่อว่า "กำลังถ่ายทอดสด" */
+        .jachoei-admin-live-icon::before {
+          content: "";
+          position: absolute;
+          inset: -3px;
+          border-radius: 999px;
+          border: 1.5px solid #e5484d;
+          opacity: 0.55;
+          animation: jachoei-live-ring 2.2s ease-out infinite;
+        }
+
+        .jachoei-admin-live-icon::after {
+          content: "";
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #e5484d;
+          box-shadow: 0 0 0 2px var(--app-surface);
+          animation: jachoei-live-dot 1.6s ease-in-out infinite;
+        }
+
+        @keyframes jachoei-live-ring {
+          0% {
+            transform: scale(0.9);
+            opacity: 0.55;
+          }
+          70%,
+          100% {
+            transform: scale(1.35);
+            opacity: 0;
+          }
+        }
+
+        @keyframes jachoei-live-dot {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.35;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .jachoei-admin-live-icon::before {
+            animation: none;
+            opacity: 0.55;
+          }
+          .jachoei-admin-live-icon::after {
+            animation: none;
+          }
         }
 
         .jachoei-signup-btn {
@@ -1157,39 +1255,24 @@ export default function HeaderBar({
           box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),0.18) !important;
         }
 
-        .jachoei-admin-inbox-btn {
-          display: inline-flex !important;
-          align-items: center !important;
-          gap: 8px !important;
-          border-radius: 999px !important;
-          height: 40px !important;
-          padding-inline: 14px !important;
-          background: rgba(var(--app-primary-rgb),0.12) !important;
-          border: 1px solid rgba(var(--app-primary-rgb),0.22) !important;
-          color: var(--app-primary) !important;
-          font-weight: 700 !important;
-          box-shadow: 0 8px 18px rgba(var(--app-primary-rgb),0.10) !important;
-        }
-
-        .jachoei-admin-inbox-btn:hover {
-          background: rgba(var(--app-primary-rgb),0.18) !important;
-          color: var(--app-primary) !important;
-          border-color: rgba(var(--app-primary-rgb),0.32) !important;
-        }
-
         .jachoei-admin-inbox-badge {
+          position: absolute;
+          top: -3px;
+          right: -3px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 18px;
-          height: 18px;
-          padding: 0 5px;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 4px;
           border-radius: 999px;
           background: #e5484d;
           color: #fff;
-          font-size: 11px;
+          font-size: 9.5px;
           font-weight: 800;
           line-height: 1;
+          box-shadow: 0 0 0 2px var(--app-surface);
+          font-variant-numeric: tabular-nums;
         }
 
         .jachoei-mobile-search-backdrop {
@@ -1241,16 +1324,6 @@ export default function HeaderBar({
 
           .jachoei-search-wrap {
             min-width: 360px;
-          }
-
-          /* จอเดสก์ท็อปแคบ: เหลือ 3 ปุ่มเรียงกันแล้วเบียด — ยุบปุ่ม Live Dashboard เป็นไอคอน
-             (ชื่อยังอ่านได้จาก tooltip/aria-label) ไม่ได้ซ่อนปุ่มทิ้ง */
-          .jachoei-admin-live-label {
-            display: none;
-          }
-
-          .jachoei-admin-live-btn {
-            padding-inline: 12px !important;
           }
         }
 
