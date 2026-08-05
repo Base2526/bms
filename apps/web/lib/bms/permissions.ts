@@ -39,6 +39,7 @@ export const BMS_PERMISSIONS = [
   "customer.view",
   "customer.edit",
   "report.view",
+  "report.email",
   "ai_quality.view",
   "ai_quality.review",
   "coupon.view",

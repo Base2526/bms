@@ -83,6 +83,7 @@ import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 import { recordSynonymCandidate } from "../aiSynonyms";
 import { generateReport, REPORT_TYPES, REPORT_FORMATS } from "../reportEngine";
+import { isKnownReportRecipient } from "../reportEmail";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
@@ -721,6 +722,84 @@ const generateReportTool: BmsTool = {
       includeSummary: args.includeSummary !== false,
     });
     return { ok: true, data: result };
+  },
+};
+
+// generate_report เดิม (A1) คืนแค่ลิงก์ดาวน์โหลด — ทูลนี้ต่อยอดให้ "ส่งไฟล์นั้นออกเป็นอีเมล" ด้วย
+// แต่ปลายทางเป็น free text ที่ผู้ใช้พิมพ์เอง ไม่ผ่านการยืนยันตัวตนใดๆ (ต่างจาก send_customer_message
+// ที่ปลายทางคือ conversationId ที่ระบบรู้จักอยู่แล้ว) จึงต้องเป็น A3 เสมอ — ทูลนี้จึง "ทำงานจริง" แค่
+// ครึ่งแรก (generate ไฟล์ผ่าน generateReport() เดิม, ไม่ sensitive) แล้วเสนอครึ่งหลัง (ส่งอีเมล) เป็น
+// proposal ให้กด Confirm ยิง bmsEmailReport — ไม่ใช้ proposalTool() helper เพราะต้องมี side effect
+// จริง (สร้างไฟล์) ก่อนจะประกอบ proposal ต่างจาก A3_TOOLS ที่ทั้งก้อนเป็นแค่ transform args ล้วนๆ
+const emailReportTool: BmsTool = {
+  name: "email_report",
+  description:
+    "Generate a report file (same as generate_report) AND propose emailing it to an address. " +
+    "The email is never sent automatically — a human must review the recipient address and press Confirm first, " +
+    "because the recipient comes from free text and is never verified. Use this instead of generate_report only " +
+    "when the user explicitly asks to email/send the report to an address.",
+  whenToUse:
+    "The user asks for a report AND explicitly gives an email address to send it to (e.g. 'export sales to Excel and email it to x@y.com').",
+  whenNotToUse:
+    "The user only asks for a report/export with no email address — use generate_report instead (it just returns a download link, no external send).",
+  example: {
+    input: { reportType: "SALES", format: "XLSX", to: "owner@example.com" },
+    note: "User said 'ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel แล้วส่ง email owner@example.com'",
+  },
+  surfaces: ["staff"],
+  permission: "report.email",
+  sensitive: true,
+  inputSchema: {
+    type: "object",
+    properties: {
+      reportType: { type: "string", enum: [...REPORT_TYPES], description: "Which report to generate." },
+      dateFrom: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
+      dateTo: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
+      format: { type: "string", enum: [...REPORT_FORMATS], description: "Output file format." },
+      includeSummary: { type: "boolean", description: "Include a short AI executive summary (default true)." },
+      to: { type: "string", description: "Destination email address, exactly as given by the user." },
+      subject: { type: "string", description: "Optional custom email subject." },
+    },
+    required: ["reportType", "format", "to"],
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const to = reqString(args, "to");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new ToolArgError(`"to" ต้องเป็นอีเมลที่ถูกต้อง ได้รับ: ${to}`);
+    }
+    const reportType = enumVal(args, "reportType", REPORT_TYPES) as string;
+    const format = enumVal(args, "format", REPORT_FORMATS) as string;
+
+    // generate ไฟล์จริงตอนนี้เลย (ไม่ sensitive — เหมือน generate_report เดิมทุกประการ, แค่ยังดาวน์โหลด
+    // เองได้ปกติแม้จะยกเลิกคำขอส่งอีเมลทีหลัง) มีแค่ "ส่งออกไปที่ไหน" เท่านั้นที่รอการยืนยัน
+    const generated = await generateReport(ec.tenantId, ec.ctx, {
+      reportType,
+      dateFrom: optString(args, "dateFrom") ?? null,
+      dateTo: optString(args, "dateTo") ?? null,
+      format,
+      includeSummary: args.includeSummary !== false,
+    });
+
+    const known = await isKnownReportRecipient(ec.tenantId, to);
+    const subject = optString(args, "subject") ?? null;
+
+    return {
+      ok: true,
+      data: generated,
+      proposal: {
+        tool: "email_report",
+        mutation: "bmsEmailReport",
+        args: {
+          fileId: generated.fileId,
+          to,
+          subject,
+          reportType: generated.reportType,
+          format: generated.format,
+          isKnownRecipient: known,
+        },
+        summary: `ส่งรายงาน${generated.reportType === "SALES" ? "ยอดขาย" : generated.reportType === "INVENTORY" ? "สต็อกสินค้า" : "กำไร"} (${generated.format}) ไปที่ ${to}`,
+      },
+    };
   },
 };
 
@@ -2029,6 +2108,7 @@ export const ALL_TOOLS: BmsTool[] = [
   addNoteTool,
   verifyPaymentSlipTool,
   generateReportTool,
+  emailReportTool,
   // B1 — store profile (read)
   getStoreInfoTool,
   getPaymentInfoTool,

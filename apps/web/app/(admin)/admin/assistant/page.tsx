@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, Fragment } from "react";
 import {
   SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
   DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
-  ArrowDownOutlined,
+  ArrowDownOutlined, MailOutlined, WarningOutlined, FileExcelOutlined,
 } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 
@@ -141,6 +141,18 @@ const CONFIRM_MUTATIONS: Record<
     doc: gql`mutation($id: ID!, $body: String) { bmsSendMessage(id: $id, body: $body) { status } }`,
     vars: (a) => ({ id: a.id, body: a.body }),
   },
+  bmsEmailReport: {
+    doc: gql`mutation($fileId: Int!, $to: String!, $subject: String) {
+      bmsEmailReport(fileId: $fileId, to: $to, subject: $subject) { fileId to reportType format }
+    }`,
+    vars: (a) => ({ fileId: a.fileId, to: a.to, subject: a.subject ?? null }),
+  },
+};
+
+const REPORT_TYPE_LABEL_TH: Record<string, string> = {
+  SALES: "ยอดขาย",
+  INVENTORY: "สต็อกสินค้า",
+  PROFIT: "กำไร (ประมาณการ)",
 };
 
 type Proposal = { tool: string; mutation: string; args: any; summary: string };
@@ -198,6 +210,7 @@ const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[
       "ปรับสต็อก NIKE-001 ไซซ์ XL ลบ 2 ชิ้น เพราะของเสีย",
       "ยกเลิกออร์เดอร์ #1234",
       "รวมลูกค้าที่ซ้ำกัน 2 คนเป็นคนเดียว",
+      "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel แล้วส่ง email owner@example.com",
     ],
   },
 ];
@@ -221,6 +234,9 @@ export default function Page() {
   const [showScrollLatest, setShowScrollLatest] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  // ที่อยู่อีเมลที่แก้ไขได้ก่อนกด "ยืนยันส่ง" ของ proposal email_report — key = "bubbleIdx:propIdx"
+  // เริ่มต้นจาก p.args.to ที่ AI เสนอมา แต่แก้ไขได้เสมอก่อนยิงจริง (ปลายทางเป็น free text ไม่ผ่านการยืนยันตัวตน)
+  const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
 
@@ -362,14 +378,15 @@ export default function Page() {
     }
   };
 
-  const confirmProposal = async (bubbleIdx: number, propIdx: number, p: Proposal) => {
+  const confirmProposal = async (bubbleIdx: number, propIdx: number, p: Proposal, argsOverride?: Record<string, unknown>) => {
     const entry = CONFIRM_MUTATIONS[p.mutation];
     if (!entry) {
       message.error(`ไม่รองรับการยืนยัน: ${p.mutation}`);
       return;
     }
+    const args = argsOverride ? { ...p.args, ...argsOverride } : p.args;
     try {
-      await client.mutate({ mutation: entry.doc, variables: entry.vars(p.args) });
+      await client.mutate({ mutation: entry.doc, variables: entry.vars(args) });
       message.success(`ยืนยันแล้ว: ${p.summary}`);
       setChat((c) =>
         c.map((b, i) =>
@@ -451,9 +468,11 @@ export default function Page() {
   );
 
   return (
-    <div>{/* ไม่มี maxWidth/padding ของตัวเอง — AdminLayoutClient's <Content> ให้ padding มาแล้ว
-             ทุกหน้า admin (ตาม convention ของ /admin/orders ฯลฯ) เดิมหน้านี้ประกาศ maxWidth:1080
-             เองด้วย ทำให้เหลือพื้นที่ว่างข้างขวาบนจอกว้างโดยไม่จำเป็น */}
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 96px)", minHeight: 0 }}>
+      {/* ไม่มี maxWidth ของตัวเอง — AdminLayoutClient's <Content> ให้ padding มาแล้ว
+          ทุกหน้า admin (ตาม convention ของ /admin/orders ฯลฯ) เดิมหน้านี้ประกาศ maxWidth:1080
+          เองด้วย ทำให้เหลือพื้นที่ว่างข้างขวาบนจอกว้างโดยไม่จำเป็น
+          สูง = เต็มความสูงที่เหลือของ viewport ลบ header/alert/margin ด้านบนของหน้านี้เอง (ประมาณ 96px) */}
       <style jsx>{`
         .bms-assistant-typing-dot {
           display: inline-block;
@@ -536,10 +555,12 @@ export default function Page() {
           gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 280px",
           gap: 16,
           alignItems: "stretch",
+          flex: 1,
+          minHeight: 0,
         }}
       >
       <Card
-        style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
+        style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}
         styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
       >
         <div ref={logRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 6px", position: "relative" }}>
@@ -667,9 +688,94 @@ export default function Page() {
                         </Button>
                       )}
 
-                  {/* proposal cards (A3) */}
+                  {/* proposal cards (A3) — email_report มี UI เฉพาะของมัน (แก้ปลายทางได้ + เตือนอีเมล
+                      แปลกหน้า) เพราะปลายทางเป็น free text ที่ไม่ผ่านการยืนยันตัวตน ต่างจาก proposal อื่น
+                      ที่พารามิเตอร์ทั้งหมดมาจากระบบที่รู้จักอยู่แล้ว (orderId/paymentId/sku ฯลฯ) */}
                   {(b.proposals ?? []).map((p, pi) => {
                     const state = b.proposalStates?.[pi];
+                    if (p.tool === "email_report") {
+                      const editKey = `${i}:${pi}`;
+                      const toValue = emailEdits[editKey] ?? String(p.args.to ?? "");
+                      const isKnown = p.args.isKnownRecipient === true;
+                      const reportLabel = REPORT_TYPE_LABEL_TH[String(p.args.reportType)] ?? String(p.args.reportType ?? "");
+                      return (
+                        <Card
+                          key={pi}
+                          size="small"
+                          style={{ marginTop: 8, maxWidth: "92%", borderColor: "#faad14", overflow: "hidden" }}
+                          styles={{ body: { padding: 0 } }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(250,173,20,0.10)", borderBottom: "1px solid rgba(250,173,20,0.35)" }}>
+                            <Tag color="orange" style={{ margin: 0 }}>ต้องยืนยัน</Tag>
+                            <Text code style={{ fontSize: 11.5 }}>email_report</Text>
+                          </div>
+                          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                            <Text strong>{p.summary}</Text>
+
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid var(--app-border)", background: "var(--app-surface-2)", borderRadius: 8, padding: "7px 11px", width: "fit-content" }}>
+                              <div style={{ width: 26, height: 26, borderRadius: 6, background: "rgba(26,138,82,0.12)", color: "#1a8a52", display: "grid", placeItems: "center", flex: "none" }}>
+                                <FileExcelOutlined style={{ fontSize: 13 }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 12.5, fontWeight: 600 }}>รายงาน{reportLabel} · {String(p.args.format ?? "")}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>สร้างไฟล์เรียบร้อยแล้ว — ดาวน์โหลดเองได้ปกติแม้ยกเลิกคำขอนี้</div>
+                              </div>
+                            </div>
+
+                            {state === undefined && (
+                              <div
+                                style={{
+                                  display: "flex", alignItems: "center", gap: 8,
+                                  border: "1px solid var(--app-border)", borderRadius: 8, padding: "6px 10px",
+                                }}
+                              >
+                                <Text type="secondary" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>ถึง</Text>
+                                <Input
+                                  size="small"
+                                  variant="borderless"
+                                  value={toValue}
+                                  onChange={(e) => setEmailEdits((m) => ({ ...m, [editKey]: e.target.value }))}
+                                  style={{ fontFamily: "monospace", fontSize: 12.5 }}
+                                />
+                              </div>
+                            )}
+
+                            {!isKnown && (
+                              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", border: "1px solid rgba(255,77,79,.35)", background: "rgba(255,77,79,.08)", borderRadius: 8, padding: "8px 10px" }}>
+                                <WarningOutlined style={{ color: "#ff4d4f", fontSize: 13, marginTop: 2 }} />
+                                <Text style={{ fontSize: 12, color: "#ff4d4f" }}>
+                                  <Text strong style={{ color: "#ff4d4f", fontSize: 12 }}>{toValue || "(ยังไม่ระบุ)"}</Text>{" "}
+                                  ไม่ตรงกับอีเมลติดต่อที่บันทึกไว้ในระบบร้าน — ตรวจสอบก่อนกดยืนยัน
+                                </Text>
+                              </div>
+                            )}
+
+                            {state === "done" ? (
+                              <Tag icon={<CheckOutlined />} color="success" style={{ width: "fit-content" }}>
+                                ส่งไปที่ {toValue} แล้ว
+                              </Tag>
+                            ) : state === "dismissed" ? (
+                              <Tag color="default" style={{ width: "fit-content" }}>ยกเลิกคำขอแล้ว — ไม่มีอีเมลถูกส่ง</Tag>
+                            ) : (
+                              <Space>
+                                <Button
+                                  type="primary"
+                                  size="small"
+                                  icon={<MailOutlined />}
+                                  disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toValue.trim())}
+                                  onClick={() => confirmProposal(i, pi, p, { to: toValue.trim() })}
+                                >
+                                  ยืนยันส่ง
+                                </Button>
+                                <Button size="small" icon={<CloseOutlined />} onClick={() => dismissProposal(i, pi)}>
+                                  ยกเลิกคำขอ
+                                </Button>
+                              </Space>
+                            )}
+                          </div>
+                        </Card>
+                      );
+                    }
                     return (
                       <Card
                         key={pi}
@@ -813,7 +919,7 @@ export default function Page() {
 
       {!isMobile && (
         <Card
-          style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
+          style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}
           styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
         >
           <div

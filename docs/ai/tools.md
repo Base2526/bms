@@ -97,6 +97,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `cancel_purchase_order` | A3 | no | `purchase.cancel` | proposal only |
 | `cancel_shipment` | A3 | no | `shipping.update` | proposal only |
 | `send_customer_message` | A3 | no | `inbox.reply` | proposal only |
+| `email_report` | A3 | no | `report.email` | generates the file immediately (same as `generate_report`), proposes the *send* only — recipient is free text, never verified, so a human must Confirm before anything is emailed |
 
 ## Registry-only tool metadata (disambiguation, not schema)
 

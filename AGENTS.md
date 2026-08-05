@@ -102,7 +102,7 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
   before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,
   cancel order/PO/shipment, adjust stock, merge customers,
-  confirm/reject payment) are **propose-only** — the tool returns a proposal object instead of
+  confirm/reject payment, email a generated report to an address) are **propose-only** — the tool returns a proposal object instead of
   executing, and the UI's Confirm button fires the pre-existing permission-gated GraphQL mutation
   (e.g. `bmsRefundPayment`). The model never executes a sensitive action itself.
 
@@ -137,6 +137,14 @@ the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/fi
 generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
 labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
 embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+
+The staff assistant can also email a generated report (`email_report` tool, `lib/bms/reportEmail.ts`,
+`bmsEmailReport` mutation, permission `report.email`). It generates the file the same non-sensitive way
+as `generate_report`, but the *send* is always a proposal (`sensitive: true`) because the recipient is
+free text from the chat message and is never independently verified — a human must review/edit the
+address and press Confirm in `/admin/assistant` before anything is emailed. `lib/mailer.ts`'s
+`sendEmail()` gained optional `attachments` support for this; do not add a second, parallel way to send
+an outbound email with a file attached. See § "ส่งรายงานเป็นอีเมล" in `CLAUDE.local.md`.
 
 Adding a new AI tool: wrap the existing `lib/bms/*.ts` function in `tools/catalog.ts` (validate
 model-supplied args, derive `tenantId` from `ExecCtx`, add a domain `audit()` for writes, and assign

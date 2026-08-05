@@ -1256,6 +1256,47 @@ webhook ปลอมได้ 404 ตามคาด, ทุกแถวถู�
 - `draftSummary()` ให้ AI เขียน executive summary จาก facts ที่ collect มาแล้วเท่านั้น; ไม่มี credentials/quota
   หรือ provider fail → คืน `null` เฉย ๆ **ไม่ fallback เป็นข้อความเดาเอง**
 
+## ส่งรายงานเป็นอีเมล — email_report (A3, 2026-08)
+
+**เสร็จแล้ว (โค้ด + `tsc` ผ่าน — ยังไม่ได้ apply migration `7.54`/ทดสอบ end-to-end จริง เพราะเครื่องนี้
+ไม่มี docker stack รันอยู่ตอนพัฒนา)** — ต่อยอดจาก generate_report (§ ด้านบน) ให้สั่งด้วยประโยคเดียว เช่น
+"ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel แล้วส่ง email sss@gmail.com" ได้ แต่ **ต้องกดยืนยันก่อนส่งจริงเสมอ**
+เพราะปลายทางเป็น free text ที่ไม่ผ่านการยืนยันตัวตนใดๆ (วิเคราะห์ไว้ก่อนเริ่มโค้ดในบทสนทนานี้ — สรุป: ตรงกับ
+กฎ AI ของโปรเจกต์เองที่ sensitive action ต้อง human confirm + RBAC, และเป็น data-exfiltration vector ที่
+irreversible กว่า refund/adjust stock ด้วยซ้ำ):
+
+- **permission ใหม่ `report.email`** แยกจาก `report.view` เดิม (migration `7.54`, seed ให้ Manager เท่านั้น
+  — Administrator เป็น super อยู่แล้ว, **ไม่ให้ Sales/Warehouse** ต่างจาก `report.view` ที่ Sales มีด้วย
+  เพราะส่งข้อมูลออกนอกระบบเสี่ยงกว่าดู/ดาวน์โหลดภายใน)
+- **`lib/mailer.ts`'s `sendEmail()` รองรับ `attachments` แล้ว** (ก่อนหน้านี้ไม่รองรับเลยแม้ตัว SDK
+  ทั้ง `@sendgrid/mail`/nodemailer จะรองรับอยู่แล้วก็ตาม) — SendGrid path แปลง Buffer → base64,
+  Gmail SMTP path ส่ง Buffer ตรงๆ ผ่าน nodemailer ได้เลย ไม่ต้อง encode เอง
+- **`lib/bms/reportEmail.ts` (ใหม่)** — `emailGeneratedReport()` คือจุดเดียวที่ทั้งทูล AI และมิวเทชัน
+  Confirm ต้องเรียก (ไม่ generate ไฟล์ซ้ำ — รับแค่ `fileId` ของรายงานที่ `generateReport()` สร้างไว้แล้ว,
+  ยืนยัน tenant ownership ด้วย `findGeneratedReportByFileId()` เดียวกับ route ดาวน์โหลด กัน enumerate
+  fileId ข้ามร้าน) · `isKnownReportRecipient()` เทียบปลายทางกับ `store_profile.contactEmail` เท่านั้น
+  (ยังไม่เทียบ `bms_customers.email` เพราะทูลนี้เป็นของ staff ไม่ใช่ customer surface) — ใช้แค่เตือน UI
+  ก่อนกดยืนยัน **ไม่ block การส่ง** ปลายทางถูกต้องหรือไม่ยังเป็นดุลพินิจของแอดมิน
+- **`email_report` tool (`tools/catalog.ts`) ไม่ใช้ `proposalTool()` helper** เหมือน A3 ตัวอื่น (ที่
+  `execute()` แค่ transform args ล้วนๆ ไม่มี side effect) เพราะทูลนี้ต้อง **สร้างไฟล์จริงก่อน** (เรียก
+  `generateReport()` เดิมตรงๆ ไม่ sensitive) แล้วค่อยประกอบ proposal สำหรับ "ส่ง" เท่านั้น — ไฟล์ที่สร้าง
+  ระหว่างทางยังดาวน์โหลดเองได้ปกติแม้แอดมินจะกด "ยกเลิกคำขอ" ทีหลัง (เหมือน `generate_report` เดิมทุกจุด
+  ต่างกันแค่มี proposal ต่อท้าย)
+- **`/admin/assistant` มี UI เฉพาะของ proposal นี้** (ไม่ใช้การ์ด generic แบบ A3 ตัวอื่น) — ช่องแก้ไข
+  ปลายทางได้ก่อนกดยืนยัน (state แยกต่างหาก `emailEdits`, key ต่อ bubble+proposal index) + แถบเตือนแดงเมื่อ
+  `isKnownRecipient === false` + ปุ่ม "ยืนยันส่ง" disabled ถ้ารูปแบบอีเมลไม่ถูกต้อง — mockup ที่อนุมัติไว้
+  ก่อนเริ่มโค้ดคือ artifact `email_report confirm mockup` ในบทสนทนานี้
+- **audit** เขียนที่ 2 จุด: `report.generate` (ตอน generate ไฟล์, ของเดิม) + `report.email` (ตอนส่งจริง
+  ผ่าน `emailGeneratedReport()`, เก็บ `to`/`reportType`/`format` — ไม่เก็บเนื้อไฟล์)
+- **mail log category ใช้ `"other"` ชั่วคราว** (ไม่ได้เพิ่ม `"report"` เข้า `MailLogCategory`/CHECK
+  constraint ของ `bms_mail_log` เพราะเป็น migration แยกที่ไม่คุ้มทำแค่เพื่อ label — แยกด้วย
+  `triggeredBy: "ai:email_report"` แทน) ถ้าต้องกรองอีเมลกลุ่มนี้ในหน้า mail log จริงจัง ค่อยพิจารณาเพิ่ม
+  category ทีหลัง
+- **ยังไม่ทำ**: apply migration `7.54` เข้า docker/production จริง · ทดสอบส่งอีเมลจริงผ่าน SendGrid/Gmail
+  พร้อม attachment (โค้ด mailer.ts ที่ขยายยังไม่เคย exercise จริง) · ไม่ได้เทียบปลายทางกับ
+  `bms_customers.email` (เฉพาะ contact email ร้านเท่านั้น) · ไม่มี rate limit เฉพาะทางบนทูลนี้ (พึ่ง AI
+  quota เดิม + ต้องกดยืนยันทุกครั้งเป็นตัวกันสแปมหลัก)
+
 ## Carrier scaffold (Flash/Kerry) + ให้ลูกค้าเลือกขนส่งตอนแชท (2026-08)
 
 **ยังไม่ผูก API จริง — เป็น scaffold + mock mode เท่านั้น** (ไม่มี API key ของ Flash/Kerry และยังไม่มี

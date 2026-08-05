@@ -8,6 +8,16 @@ import { recordMailLog, type MailLogCategory } from "@/lib/bms/mailLog";
 // ตั้ง MAIL_PROVIDER=gmail + GMAIL_SMTP_USER + GMAIL_SMTP_APP_PASSWORD เพื่อส่งผ่าน Gmail SMTP แทน
 type MailProvider = "sendgrid" | "gmail";
 
+// แนบไฟล์ — ทั้ง SendGrid (`@sendgrid/mail`) และ nodemailer (Gmail SMTP) รองรับ attachment
+// อยู่แล้วในระดับ SDK เพียงแต่ sendEmail() เดิมไม่เคย forward field นี้เข้าไปเลย (ใช้แค่ verify
+// signup/order notify/report digest ที่ไม่มีไฟล์แนบ) — เพิ่มเป็น optional เพื่อไม่กระทบ caller เดิม
+export type MailAttachment = {
+  filename: string;
+  /** เนื้อไฟล์ดิบ — SendGrid ต้องการ base64 string (แปลงให้ตอนส่งใน sendViaSendGrid), nodemailer รับ Buffer ตรงๆ */
+  content: Buffer;
+  mimeType: string;
+};
+
 function currentProvider(): MailProvider {
   return process.env.MAIL_PROVIDER === "gmail" ? "gmail" : "sendgrid";
 }
@@ -35,7 +45,7 @@ function initSendGrid() {
   sendgridInitialized = true;
 }
 
-async function sendViaSendGrid(opts: { to: string; subject: string; html: string; text?: string }) {
+async function sendViaSendGrid(opts: { to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] }) {
   const from = process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL;
 
   if (!from) {
@@ -57,6 +67,12 @@ async function sendViaSendGrid(opts: { to: string; subject: string; html: string
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
+      attachments: opts.attachments?.map((a) => ({
+        filename: a.filename,
+        type: a.mimeType,
+        content: a.content.toString("base64"),
+        disposition: "attachment",
+      })),
     });
 
     const messageId = res?.headers?.["x-message-id"];
@@ -114,7 +130,7 @@ function getGmailTransporter(): nodemailer.Transporter {
   return gmailTransporter;
 }
 
-async function sendViaGmail(opts: { to: string; subject: string; html: string; text?: string }) {
+async function sendViaGmail(opts: { to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] }) {
   const user = process.env.GMAIL_SMTP_USER;
   const fromName = process.env.GMAIL_SMTP_FROM_NAME;
 
@@ -126,6 +142,11 @@ async function sendViaGmail(opts: { to: string; subject: string; html: string; t
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
+      attachments: opts.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.mimeType,
+      })),
     });
 
     await addLog("info", "email", "Email sent successfully (gmail smtp)", {
@@ -176,16 +197,19 @@ export async function sendEmail(
     subject: string;
     html: string;
     text?: string;
+    /** ไฟล์แนบ (เช่น รายงาน Excel ที่สร้างไว้แล้ว) — optional, caller เดิมทั้งหมดไม่ส่งค่านี้ */
+    attachments?: MailAttachment[];
   },
   meta: { tenantId?: string | null; category?: MailLogCategory; triggeredBy?: string | null } = {}
 ) {
   const provider = currentProvider();
 
-  // log: ก่อนส่ง (ใช้ร่วมทั้งสอง provider)
+  // log: ก่อนส่ง (ใช้ร่วมทั้งสอง provider) — ไม่ log เนื้อไฟล์แนบ แค่ชื่อ/จำนวน กัน log บวมและกัน PII/ข้อมูลธุรกิจรั่วเข้า log
   await addLog("info", "email", "Sending email", {
     to: opts.to,
     subject: opts.subject,
     provider,
+    attachmentCount: opts.attachments?.length ?? 0,
   });
 
   const logBase = {

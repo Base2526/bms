@@ -1638,6 +1638,13 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  type BmsEmailReportResult {
+    fileId: Int!
+    to: String!
+    reportType: String!
+    format: String!
+  }
+
   type BmsDashboard {
     revenueTotal: Float!
     revenueToday: Float!
@@ -2778,6 +2785,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
     bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!   # permission report.view
+    bmsEmailReport(fileId: Int!, to: String!, subject: String): BmsEmailReportResult!   # permission report.email — ปุ่ม Confirm ของ proposal email_report (A3) เท่านั้น
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
     bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)

@@ -365,6 +365,19 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   cost snapshot exists yet — so the export and the optional AI executive summary must keep that
   disclaimer. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
   render Thai glyphs correctly; XLSX/CSV remain UTF-8 and handle Thai data today.
+- **Email a generated report — `email_report` (2026-08, A3)**: the staff assistant can now do
+  "generate this report and email it to X" in one command (e.g. "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel
+  แล้วส่ง email owner@example.com"). The file is generated immediately via the existing
+  `generateReport()` (not sensitive), but sending it is always a **human-confirmed proposal** — the
+  recipient is free text from the chat message and is never independently verified, so the tool only
+  proposes; the admin reviews (and can edit) the address in `/admin/assistant` before pressing Confirm,
+  which fires the new `bmsEmailReport` mutation. New permission `report.email` (migration `7.54`,
+  Manager + Administrator only — deliberately narrower than `report.view`, since exporting data outside
+  the system is riskier than viewing/downloading it inside). `lib/mailer.ts`'s `sendEmail()` gained
+  optional `attachments` support (both SendGrid and Gmail SMTP paths) to make this possible — no other
+  caller passes attachments yet. See § "ส่งรายงานเป็นอีเมล" in [CLAUDE.local.md](CLAUDE.local.md) for
+  the full design and unverified items (migration not yet applied/exercised against a live mail
+  provider).
 - **Follow-up Automation (`lib/bms/followups.ts`, 2026-08)** — 🚧 **MVP core only**: a configurable
   Rule Engine + Scheduler decides whether to re-engage a customer whose conversation went quiet,
   instead of a fixed timer. Migration `7.52` adds `bms_conversations.last_sender_type` (set by
