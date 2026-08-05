@@ -14,6 +14,14 @@ const nextConfig = {
     // appDir: true,
     optimizePackageImports: ['antd'],
     externalDir: true,
+    // Next spawns up to (CPUs - 1) parallel build workers, each its own V8
+    // isolate that can grow independently. On a 10-CPU host that's ~9 workers
+    // competing for the Docker Desktop VM's memory at once — the aggregate
+    // demand can exceed the VM's total RAM even though any single worker's
+    // heap looks fine, causing an OOM inside `next build`. Cap concurrency so
+    // total memory pressure stays predictable (override via NEXT_BUILD_CPUS
+    // for machines with more RAM to spare).
+    cpus: Number(process.env.NEXT_BUILD_CPUS) || 2,
   },
   // ✅ Cache header สำหรับ SVG
   async headers() {
