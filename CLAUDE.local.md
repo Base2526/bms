@@ -717,8 +717,8 @@ apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน
   `archetype-commerce-policy-mini_mart`, `...-fashion`, `...-food_beverage` ฯลฯ และจะรันเฉพาะ case ที่ตรงกับ
   `bmsStoreProfile.businessArchetype` ของ tenant นั้น ส่วน `BMS_EVAL_CASES=archetype-commerce-policy` ยังใช้
   เป็น selector รวมได้เหมือนเดิมสำหรับเรียกทั้งกลุ่ม
-- login สำหรับ eval ใช้ mutation `loginAdmin` ผ่าน `/api/graphql` เท่านั้น (ไม่ใช่ `/api/login` ที่เป็น dead
-  code — ดู § Admin session) · รายละเอียดครบใน [`scripts/ai-eval/README.md`](scripts/ai-eval/README.md)
+- login สำหรับ eval ใช้ mutation `loginAdmin` ผ่าน `/api/graphql` เท่านั้น (`/api/login` REST route เดิม
+  ถูกลบไปแล้ว 2026-08 — ดู § Admin session) · รายละเอียดครบใน [`scripts/ai-eval/README.md`](scripts/ai-eval/README.md)
 
 ### ทูลชุด 2 (B1–B3, 2026-07) — store/docs/forecast/AI-native/outbound
 
@@ -757,10 +757,11 @@ apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน
 **1) ฝั่งลูกค้า (admin playground, ต้อง login, ไม่ log เข้า inbox จริง):**
 
 ```bash
-# login ก่อนและเก็บ signed admin cookie (เปลี่ยนค่า placeholder เป็นบัญชี dev ของคุณ)
-curl -s -c /tmp/bms-cookies.txt -X POST http://localhost:3000/api/login \
+# login ก่อนและเก็บ signed admin cookie (เปลี่ยนค่า placeholder เป็นบัญชี dev ของคุณ) — ผ่าน GraphQL
+# mutation loginAdmin เท่านั้น ('/api/login' REST route เดิมถูกลบไปแล้ว 2026-08, ไม่มีหน้าไหนเรียกจริง)
+curl -s -c /tmp/bms-cookies.txt -X POST http://localhost:3000/api/graphql \
   -H 'content-type: application/json' \
-  -d '{"username":"admin@example.com","password":"YOUR_DEV_PASSWORD"}'
+  -d '{"query":"mutation($input: LoginInput!) { loginAdmin(input: $input) { ok message } }","variables":{"input":{"email":"admin@example.com","password":"YOUR_DEV_PASSWORD"}}}'
 
 # ถามสต็อก/ราคา — AI เรียก search_products/check_stock เอง ตอบจากข้อมูลจริง
 curl -s -b /tmp/bms-cookies.txt -X POST http://localhost:3000/api/bms/chat \
@@ -914,9 +915,11 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
 ## Admin session (JWT/cookie) expiry — แก้ mismatch แล้ว (2026-07)
 
 **แก้แล้ว** — `loginAdmin` (`graphql/resolvers.ts`, mutation จริงที่ `/admin/login` เรียก — **ไม่ใช่**
-`app/api/login/route.ts` ซึ่งเป็น REST route เก่าที่ไม่มีหน้าไหนเรียกแล้ว, และ **ไม่ใช่** `lib/auth/jwt.ts`
-ซึ่งเป็นโค้ด dead ที่ import ไว้แต่คอมเมนต์ทิ้ง — สองไฟล์นี้เคยทำให้เข้าใจผิดว่า JWT อายุ 30 วันชนกับ cookie
-7 วัน ทั้งที่ไม่มีผลจริงเลย) เดิม sign JWT ด้วย `expiresIn: "1d"` แต่ `cookies().set(ADMIN_COOKIE, ...)`
+`lib/auth/jwt.ts` ซึ่งเป็นโค้ด dead ที่ import ไว้แต่คอมเมนต์ทิ้ง; ตอนจดโน้ตนี้ครั้งแรกมี
+`app/api/login/route.ts` เป็น REST route เก่าที่ไม่มีหน้าไหนเรียกอีกไฟล์ที่ทำให้สับสน — **ลบไปแล้ว 2026-08**
+พร้อมย้าย `scripts/load-test/run.mts` ให้เรียก `loginAdmin` ผ่าน `/api/graphql` แทน — สองไฟล์นี้เคยทำให้
+เข้าใจผิดว่า JWT อายุ 30 วันชนกับ cookie 7 วัน ทั้งที่ไม่มีผลจริงเลย) เดิม sign JWT ด้วย `expiresIn: "1d"`
+แต่ `cookies().set(ADMIN_COOKIE, ...)`
 **ไม่ได้ใส่ `maxAge`** เลย → cookie กลายเป็น session cookie (อยู่จนกว่าจะปิดเบราว์เซอร์) คนละ clock กับ JWT
 ที่หมดอายุจริงใน 1 วันตาม `exp` ฝั่ง server:
 
@@ -935,9 +938,10 @@ provider output ผิดปกติก็จะถูก runtime ปฏิเ�
   ไม่มี client-side timer บังคับออกทันทีที่ token หมดอายุ ถ้าแท็บ idle ไม่มี request เลยจะยังไม่ถูกเตะจนกว่าจะมี
   action หรือ poll ถัดไป — แต่ในทางปฏิบัติ sidebar poll เดิมอยู่แล้ว (unread count/channel health ทุก 15s, AI
   usage ทุก 60s) ทำให้แท็บที่เปิดค้างไว้โดน redirect ภายใน ~1 นาทีหลังหมดอายุจริง
-- **บทเรียน**: โปรเจกต์นี้มี auth/login code เก่าที่ยังไม่ลบทิ้งหลายชุด (`app/api/login/route.ts`,
-  `lib/auth/jwt.ts`, comment ทิ้งใน `resolvers.ts`) ก่อนจะแก้ auth/session ใดๆ ต้อง grep หา endpoint/mutation
-  ที่หน้า UI จริงเรียกก่อนเสมอ (เช็คที่ `page.tsx` ของหน้า login) ไม่งั้นแก้ผิดไฟล์ที่ไม่มีผลอะไรเลย
+- **บทเรียน**: โปรเจกต์นี้เคยมี auth/login code เก่าที่ไม่ได้ลบทิ้งหลายชุด (`app/api/login/route.ts` —
+  ลบแล้ว 2026-08, `lib/auth/jwt.ts` — ยังเป็น dead code อยู่, comment ทิ้งใน `resolvers.ts`) ก่อนจะแก้
+  auth/session ใดๆ ต้อง grep หา endpoint/mutation ที่หน้า UI จริงเรียกก่อนเสมอ (เช็คที่ `page.tsx` ของ
+  หน้า login) ไม่งั้นแก้ผิดไฟล์ที่ไม่มีผลอะไรเลย
 
 ## @mention ใน "โน้ตภายใน" ของ Inbox (2026-07)
 

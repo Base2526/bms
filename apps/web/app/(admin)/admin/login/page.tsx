@@ -22,27 +22,6 @@ export default function AdminLoginPage(){
   const next = sp.get("next") || "/admin";
 
   const [login, { loading: loadingLogin }] = useMutation(LOGIN);
-  
-  // async function onFinish(v:any){
-
-  //   setLoading(true);
-  //   try{
-  //     const res = await fetch("/api/login", {
-  //       method:"POST",
-  //       headers:{ "Content-Type":"application/json" },
-  //       body: JSON.stringify(v),
-  //     });
-
-  //     console.log("[res]", res, next);
-  //     if(!res.ok){
-  //       const j = await res.json().catch(()=>({error:"Login failed"}));
-  //       message.error(j.error||"Login failed");
-  //       return;
-  //     }
-  //     message.success("Welcome, admin");
-  //     router.replace(next);
-  //   }finally{ setLoading(false); }
-  // }
 
   const onFinish = async (values: { identifier: string; password: string }) => {
       const { identifier, password } = values;

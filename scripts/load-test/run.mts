@@ -442,14 +442,30 @@ function requiredEnv(name: string) {
 async function loginAdminSession(workerId: number): Promise<Session> {
   const email = requiredEnv("BMS_ADMIN_EMAIL");
   const password = requiredEnv("BMS_ADMIN_PASSWORD");
-  const login = await timedFetch(`${baseUrl}/api/login`, {
+
+  // ไม่มี REST /api/login แล้ว (dead route ที่ไม่มีหน้าไหนเรียกจริง — ถูกลบไปแล้ว) — login จริง
+  // ทั้งระบบไปทาง GraphQL mutation `loginAdmin` เท่านั้น (ดู graphql/resolvers.ts, ตัวเดียวกับที่
+  // /admin/login เรียก) เซ็ต ADMIN_COOKIE ผ่าน cookies().set() ในตัว resolver เอง
+  const loginMutation = `
+    mutation LoadTestLogin($input: LoginInput!) {
+      loginAdmin(input: $input) { ok message }
+    }
+  `;
+  const login = await timedFetch(`${baseUrl}/api/graphql`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: email, password }),
+    body: JSON.stringify({ query: loginMutation, variables: { input: { email, password } } }),
   });
 
   if (!login.response.ok) {
     throw new Error(`worker ${workerId}: login failed with ${login.response.status}`);
+  }
+  const loginBody = safeJsonParse(login.text);
+  if (loginBody?.errors?.length) {
+    throw new Error(`worker ${workerId}: login failed: ${loginBody.errors[0]?.message}`);
+  }
+  if (!loginBody?.data?.loginAdmin?.ok) {
+    throw new Error(`worker ${workerId}: login did not return ok`);
   }
 
   const rawCookie = login.response.headers.get("set-cookie") || "";
