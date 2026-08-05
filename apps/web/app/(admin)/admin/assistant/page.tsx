@@ -451,7 +451,9 @@ export default function Page() {
   );
 
   return (
-    <div style={{ maxWidth: isMobile ? 640 : 1080, margin: "0 auto", padding: 16 }}>
+    <div>{/* ไม่มี maxWidth/padding ของตัวเอง — AdminLayoutClient's <Content> ให้ padding มาแล้ว
+             ทุกหน้า admin (ตาม convention ของ /admin/orders ฯลฯ) เดิมหน้านี้ประกาศ maxWidth:1080
+             เองด้วย ทำให้เหลือพื้นที่ว่างข้างขวาบนจอกว้างโดยไม่จำเป็น */}
       <style jsx>{`
         .bms-assistant-typing-dot {
           display: inline-block;
