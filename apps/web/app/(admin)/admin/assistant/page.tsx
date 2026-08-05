@@ -3,10 +3,62 @@ import { gql, useApolloClient } from "@apollo/client";
 import {
   Card, Input, Button, Space, Tag, Typography, Empty, Alert, message, Tooltip,
 } from "antd";
-import { useState, useRef, useEffect } from "react";
-import { SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined } from "@ant-design/icons";
+import { useState, useRef, useEffect, Fragment } from "react";
+import {
+  SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
+} from "@ant-design/icons";
 
 const { Text, Paragraph } = Typography;
+
+// ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
+// เต็มรูปแบบติดตั้งอยู่ — parse เท่าที่ต้องใช้จริง (bold/inline code/URL) แทนที่จะโชว์ asterisk ดิบๆ
+// ไม่ใช้ dangerouslySetInnerHTML เลย จึงไม่มีความเสี่ยง XSS จากข้อความที่ AI แต่งขึ้น
+const INLINE_TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`|\/api\/bms\/reports\/download\/\d+|https?:\/\/[^\s)]+)/g;
+const REPORT_DOWNLOAD_RE = /^\/api\/bms\/reports\/download\/\d+$/;
+
+function renderAssistantText(text: string) {
+  return text.split(INLINE_TOKEN_RE).map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      // AI มักห่อลิงก์ดาวน์โหลดด้วย backtick เอง เช่น `/api/bms/reports/download/7546` —
+      // ต้องเช็คเนื้อในก่อนตัดสินใจว่าเป็นโค้ดเฉยๆ หรือควรเป็นปุ่มดาวน์โหลดจริง
+      const inner = part.slice(1, -1);
+      if (REPORT_DOWNLOAD_RE.test(inner)) {
+        part = inner;
+      } else {
+        return <Text code key={i}>{inner}</Text>;
+      }
+    }
+    if (REPORT_DOWNLOAD_RE.test(part)) {
+      // route เดิมตั้ง Content-Disposition: attachment ให้แล้ว (ดู
+      // app/api/bms/reports/download/[id]/route.ts) — ลิงก์ปกติกดแล้วดาวน์โหลดได้เลย ไม่ต้องเปิดแท็บใหม่
+      return (
+        <Button
+          key={i}
+          type="primary"
+          ghost
+          size="small"
+          icon={<DownloadOutlined />}
+          href={part}
+          style={{ marginTop: 4, marginBottom: 4 }}
+        >
+          ดาวน์โหลดไฟล์
+        </Button>
+      );
+    }
+    if (/^https?:\/\//.test(part)) {
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer">
+          {part}
+        </a>
+      );
+    }
+    return <Fragment key={i}>{part}</Fragment>;
+  });
+}
 
 const M_ASSISTANT = gql`
   mutation BmsAssistant($message: String!, $history: [BmsAssistantTurn!]) {
@@ -190,12 +242,18 @@ export default function Page() {
                       display: "inline-block",
                       maxWidth: "88%",
                       textAlign: "left",
-                      background: b.role === "user" ? "#e6f4ff" : "#f5f5f5",
+                      background:
+                        b.role === "user"
+                          ? "rgba(var(--app-primary-rgb), 0.12)"
+                          : "var(--app-surface-2)",
+                      border: "1px solid var(--app-border)",
                       borderRadius: 10,
                       padding: "8px 12px",
                     }}
                   >
-                    <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>{b.text}</Paragraph>
+                    <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                      {renderAssistantText(b.text)}
+                    </Paragraph>
                   </div>
 
                   {/* proposal cards (A3) */}
@@ -243,13 +301,19 @@ export default function Page() {
                     );
                   })}
 
-                  {/* trace (ทูลที่ AI เรียก) */}
+                  {/* trace: เครื่องมือ (function/tool) จริงที่ AI เลือกเรียกใช้เพื่อตอบข้อความนี้ —
+                      เช่น "generate_report" คือฟังก์ชันสร้างไฟล์รายงานที่ AI เพิ่งเรียกไป (ดูสรุปผลใน tooltip) */}
                   {b.role === "assistant" && (b.trace?.length ?? 0) > 0 && (
                     <div style={{ marginTop: 6 }}>
                       <Space wrap size={4}>
-                        <ToolOutlined style={{ color: "#999", fontSize: 12 }} />
+                        <Tooltip title="เครื่องมือ (tool/function) ที่ AI เลือกเรียกใช้จริงเพื่อตอบข้อความนี้ — ชื่อในกล่องคือชื่อฟังก์ชันในระบบ">
+                          <ToolOutlined style={{ color: "var(--text-secondary)", fontSize: 12 }} />
+                        </Tooltip>
                         {b.trace!.map((t, ti) => (
-                          <Tooltip key={ti} title={t.summary}>
+                          <Tooltip
+                            key={ti}
+                            title={`เรียกฟังก์ชัน "${t.tool}" — ${t.ok ? `สำเร็จ${t.summary && t.summary !== "ok" ? `: ${t.summary}` : ""}` : `ไม่สำเร็จ: ${t.summary}`}`}
+                          >
                             <Tag color={t.ok ? "blue" : "red"} style={{ fontSize: 11 }}>{t.tool}</Tag>
                           </Tooltip>
                         ))}
