@@ -43,6 +43,8 @@ export const BMS_PERMISSIONS = [
   "ai_quality.review",
   "coupon.view",
   "coupon.manage",
+  "followup.view",
+  "followup.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

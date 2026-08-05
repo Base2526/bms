@@ -249,6 +249,8 @@ export default function AdminSidebar() {
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         link('/admin/revisions', 'Revision History', <HistoryOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
         link('/admin/payment', 'Payment', <DollarOutlined />),

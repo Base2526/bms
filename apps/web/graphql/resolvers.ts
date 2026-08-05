@@ -57,6 +57,7 @@ import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
+import { bmsFollowupsResolvers } from "@/graphql/bmsFollowups";
 import { bmsMailLogResolvers } from "@/graphql/bmsMailLog";
 import { bmsRestockSubscriptionsResolvers } from "@/graphql/bmsRestockSubscriptions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -2786,6 +2787,7 @@ const rawResolvers = {
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
     ...bmsReportScheduleResolvers.Query,
+    ...bmsFollowupsResolvers.Query,
     ...bmsMailLogResolvers.Query,
     ...bmsSaasResolvers.Query,
     ...bmsPurchaseResolvers.Query,
@@ -7431,6 +7433,7 @@ const rawResolvers = {
     ...bmsCouponsResolvers.Mutation,
     ...bmsReportEngineResolvers.Mutation,
     ...bmsReportScheduleResolvers.Mutation,
+    ...bmsFollowupsResolvers.Mutation,
     ...bmsRestockSubscriptionsResolvers.Mutation,
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,

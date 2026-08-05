@@ -39,9 +39,10 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
 | Failure incidents | `bms_failure_incidents` | `7.36` |
-| Generated report exports | `bms_generated_reports` | `7.52` |
+| Generated report exports | `bms_generated_reports` | `7.53` |
 | Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
 | Support tickets | `support_tickets`, `support_ticket_comments` | `7.45` |
+| Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
 
 ## Notable schema details
 
@@ -165,7 +166,7 @@ notification actually succeeded, so a failed/timed-out notification retries inst
 silent cooldown. This table complements rather than replaces Channel Health and AI Provider Health:
 those record *connection status*, this records *customer-visible events that already happened*.
 
-**Generated report exports (`7.52__bms_generated_reports.sql`)** — tenant-scoped, append-only rows
+**Generated report exports (`7.53__bms_generated_reports.sql`)** — tenant-scoped, append-only rows
 describing each on-demand report export (`SALES` / `INVENTORY` / `PROFIT`) created from
 `lib/bms/reportEngine.ts`, regardless of whether the caller came from GraphQL, REST, or the staff AI
 tool. Each row stores the export type/format, user-supplied params JSON, optional AI executive

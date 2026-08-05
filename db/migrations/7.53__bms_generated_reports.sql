@@ -1,5 +1,5 @@
 -- =============================================================
--- 7.52  BMS AI Report & Document Generation — MVP core
+-- 7.53  BMS AI Report & Document Generation — MVP core
 -- -------------------------------------------------------------
 -- Audit trail for on-demand generated reports (spec §11: who/when/filters/
 -- destination/result). Append-only, same pattern as bms_audit_log/

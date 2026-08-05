@@ -1231,7 +1231,7 @@ webhook ปลอมได้ 404 ตามคาด, ทุกแถวถู�
   GraphQL `bmsGenerateReport`/`bmsGeneratedReports`, REST `POST /api/bms/reports/generate`, และ AI tool
   `generate_report` ล้วนต้องเรียก `lib/bms/reportEngine.ts` — ห้ามแยก validate/assemble/persist/audit กันคนละที่
 - ไฟล์ถูกเก็บผ่าน `persistBuffer()` → ตาราง `files` เดิม + `STORAGE_DIR` เดิม แล้วเขียนประวัติ append-only
-  ลง `bms_generated_reports` (`7.52__bms_generated_reports.sql`)
+  ลง `bms_generated_reports` (`7.53__bms_generated_reports.sql`)
 - **ดาวน์โหลดห้ามใช้ `/api/files/[id]`** แม้จะสะดวกกว่า เพราะ route นั้นไม่มี auth/tenant gate;
   report export ต้องผ่าน `/api/bms/reports/download/[id]` ที่เช็คก่อนว่า tenant ปัจจุบันมีแถวใน
   `bms_generated_reports` ของ `file_id` นี้จริง ไม่งั้น enumerate file id ข้ามร้านได้
@@ -1380,6 +1380,89 @@ checkout ไม่มี 50 นั้น ร้านขาดค่าส่ง
   ที่อยู่เก่า) · **`/admin/orders` ยังไม่โชว์ `shipping_fee`** · REST `POST /api/bms/order` ไม่ได้ส่ง
   province เข้ามา · bulk product import ยังไม่รับคอลัมน์น้ำหนัก · ไม่มี rate API จริง (ดูข้อบน)
 
+## Follow-up Automation — MVP core (2026-08)
+
+**เสร็จแล้วเฉพาะ MVP core — ยังไม่ได้ verify กับ DB จริงบนเครื่องนี้** (ไม่มี BMS postgres container
+รันอยู่ตอน build feature นี้ — มีแค่ docker stack ของโปรเจกต์อื่นรันอยู่ เลย apply migration/curl cron
+endpoint จริงไม่ได้ในรอบนี้ `npx tsc --noEmit` ผ่านสะอาดเท่านั้น) — ต้นเรื่อง: อยากให้ AI ตัดสินใจว่า
+"ควร follow-up ลูกค้าที่เงียบไปไหม" แทนที่จะตั้ง timer คงที่ ทำตามแผนที่ตกลงไว้ล่วงหน้าใน plan mode
+(บันทึกไว้ที่ `C:\Users\somkid_voovadigital\.claude\plans\jolly-exploring-seahorse.md`) โดยตัด scope
+ให้เหลือแค่ MVP core ตามที่ user เลือก — ไม่ทำ Workflow Engine, Follow-up Scoring, และ Analytics
+dashboard เต็มรูปในรอบนี้:
+
+- **schema** → migration `7.52__bms_followups.sql`:
+  - `bms_conversations.last_sender_type` (`customer`/`staff`/`ai`) — คอลัมน์ที่ **ไม่มีมาก่อนเลย**
+    (ของเดิมมีแค่ `last_message`/`last_message_at` ไม่รู้ว่าใครส่งล่าสุด) เซ็ตที่ 3 จุดใน `inbox.ts`:
+    `logConversation()` (เซ็ต `'ai'` เสมอ เพราะฟังก์ชันนี้ insert คู่ IN(customer)+OUT(ai) พร้อมกันอยู่แล้ว
+    — `'ai'` คือข้อความล่าสุดจริงตามเวลา), `sendStaffMessage()` (เซ็ต `'staff'`), และ
+    `sendFollowupMessage()` ใหม่ (เซ็ต `'ai'`) — เป็น signal ราคาถูกที่ scheduler ใช้เช็ค "ลูกค้า/staff
+    ตอบไปแล้วหรือยัง" โดยไม่ต้อง join `bms_messages` ทุกรอบ poll
+  - `bms_customers.followup_opt_out` — เก็บระดับลูกค้า (ไม่ใช่ระดับแชท) เพราะการปฏิเสธรับข้อความควรติด
+    ตัวลูกค้าข้ามช่องทาง/แชทตลอดไป
+  - ตารางใหม่ 4 ตัว: `bms_conversation_intents` (append-only แบบ `bms_audit_log`, intent 10 ค่า
+    ASK_PRICE/PRODUCT_INFORMATION/ORDER/BOOKING/SUPPORT/COMPLAINT/PAYMENT/DELIVERY/GENERAL_QUESTION/
+    OTHER — **คนละชุดกับ `Intent` ใน `nlu.ts`** (CHECK_STOCK/CONFIRM_ORDER/GREETING/UNKNOWN) ห้ามเอาไป
+    รวมกันเพราะ `nlu.ts` เป็น deterministic fallback ของ live chat pipeline อยู่แล้ว แก้ shape จะกระทบ
+    ทันที) · `bms_followup_rules` (rule engine จริง — priority/delay_minutes/max_retry/message_goal/
+    business_hours_only/template, scheduler ไม่ hardcode อะไรเลย อ่านจากตารางนี้ล้วน) ·
+    `bms_followup_jobs` (1 แถวต่อ conversation+rule ที่ยังไม่จบ, unique partial index กัน schedule ซ้ำ) ·
+    `bms_followup_history` (append-only log ผลลัพธ์ SENT/SKIPPED/FAILED, เหมือน `bms_audit_log`)
+  - permission ใหม่ `followup.view`/`followup.manage` seed ให้ Manager (ทั้งคู่) + Sales (view เท่านั้น)
+    ตาม pattern เดียวกับ `6.1`
+- **service** → `lib/bms/followups.ts` — entrypoint คือ `runDueFollowups(tenantId?)`:
+  1. `scheduleNewJobs()` หาแชท `OPEN`/`PENDING` ที่ `last_sender_type != 'staff'` และยังไม่มี job
+     `PENDING` ค้าง → classify intent (AI-first ผ่าน `resolveAiCredentials`/`callAnthropicCompatibleMessages`
+     ขอ JSON ตรงๆ, deterministic keyword fallback แยกชุดคำจาก `nlu.ts`) → `matchRule()` (priority สูงสุด
+     ที่ enabled) → ไม่มี rule ตรง = ไม่ทำอะไรเลย (**ไม่ invent rule เอง**) → สร้าง job
+  2. `processDueJobs()` หา job ที่ `next_run_at <= now()` แล้ว **เช็ค stop condition สดทุกครั้ง** (ไม่เชื่อ
+     สถานะตอน schedule): ลูกค้า/staff ตอบไปแล้ว (`last_sender_type` เทียบกับเวลา job ถูกสร้าง),
+     แชทปิด, เกิน `max_retry`, ลูกค้า opt-out, rule ถูกปิดไปแล้ว — **6 เงื่อนไขนี้ enforce เสมอ ไม่ใช่
+     ให้ rule เลือกได้** (คอลัมน์ `stop_conditions` ของ `bms_followup_rules` แค่ validate/เก็บไว้เผื่อ
+     workflow engine อนาคต **scheduler ไม่อ่านค่านี้เลยในรอบนี้** — ตัดสินใจแบบนี้เพราะสเปคเดิมเขียนเป็น
+     "never follow up if..." แบบไม่มีเงื่อนไข ถ้าให้ rule เลือกได้จริงจะเสี่ยงเปิดสแปมซ้ำลูกค้าที่ตอบไปแล้ว
+     โดยไม่ตั้งใจ) · `business_hours_only` เช็คแบบ **ประมาณเท่านั้น** (fix 09:00–18:00 Asia/Bangkok ผ่าน
+     `Intl.DateTimeFormat` แบบเดียวกับ `reportDigest.ts`'s `bkkNow()`) เพราะ `getStoreProfile().businessHours`
+     เป็น free text ล้วน ไม่มี schema เปิด/ปิดจริงให้ parse (known gap เดียวกับที่เจอตอนทำ ค่าส่งจริง)
+  3. generate ข้อความ (`generateFollowupMessage()`) — มี goal→guidance map 8 goal (Close Sale/Collect
+     Missing Info/.../Support Follow-up) บังคับ "ห้ามถามลอยๆ ว่ายังสนใจอยู่ไหม ต้องให้คุณค่าจริง" ตามสเปค
+     ป้อน context ให้ครบ (ประวัติแชท จาก `listMessages`, stats จาก `getCustomer360()` ถ้ามี `customer_id`,
+     store profile, follow-up ที่เคยส่งไปแล้วจาก `bms_followup_history` กันพูดซ้ำ, retry count, เวลาปัจจุบัน)
+     — ไม่มี AI credentials/quota → fallback `rule.template` ถ้ามี ไม่งั้น fallback text ต่อ goal (Thai,
+     brand voice ค่ะ) เหมือน pattern `generateResponse()`/template ของ `ai.ts` เดิม
+  4. ส่งจริงผ่าน `sendFollowupMessage()` ใหม่ใน `inbox.ts` (เหมือน `sendStaffMessage()` แต่ sender='ai'
+     + meta.followup={ruleId,jobId,goal}, reuse `deliverToChannel()`/`publishInboxChanged()` เดิม)
+  5. log ผลเข้า `bms_followup_history` + audit `followup.sent`/`followup.skipped`/`followup.failed`
+     (ใช้ synthetic ctx `{tenant_id, admin:{email:"system:followup-scheduler"}}` เพราะ cron ไม่มี GraphQL
+     ctx จริง — audit()/getTenantId() อ่านได้จาก field พวกนี้พอ ไม่ต้องผ่าน `runApprovedTool()`/RBAC เพราะ
+     นี่คือ system job ไม่ใช่ AI tool call ที่ model เลือกเอง)
+  - **`runDueFollowups(tenantId?)` scope ได้** — ไม่ส่ง tenantId = สแกนทุกร้าน (path cron จริง, เหมือน
+    `detectStaleChannels()`/`runScheduledDigests()`) ส่ง tenantId = สแกนแค่ร้านนั้น (path "รันตอนนี้" จาก
+    GraphQL) **แก้บั๊กที่เจอตอน build**: ตอนแรก resolver `bmsRunFollowupsNow` เรียก `runDueFollowups()`
+    เฉยๆ ทำให้ role ที่มีแค่ `followup.manage` ของร้านตัวเอง (Manager) กดปุ่มแล้วไป trigger follow-up ของ
+    **ทุกร้านในระบบ** ได้ — เป็น tenancy leak ทั้งที่ resolver gate ด้วย permission ระดับร้านอยู่แล้ว
+    แก้โดยส่ง `getTenantId(ctx)` เข้า `runDueFollowups()` เสมอฝั่ง manual trigger (บทเรียนทั่วไป: ปุ่ม
+    manual trigger ทับ cron/service ที่ scan ข้ามร้านได้ ต้อง scope ตาม tenant ของผู้กดเสมอ)
+- **cron** → `POST /api/bms/followups/run` (`x-cron-secret` = `BMS_CRON_SECRET` แบบเดียวกับ
+  `channels/check-health`/`reports/send-digest`) — **ยังไม่ได้ตั้ง cron schedule จริง** (เหมือนอีก 2
+  endpoint เดิมที่ก็ยังไม่ได้ตั้ง)
+- **GraphQL** → `graphql/bmsFollowups.ts` gate ด้วย `requirePermission(ctx, "followup.view"|"followup.manage")`
+  เหมือน `bmsCoupons.ts` (ไม่ใช่ `requireTenantAdmin` local แบบ `bmsReportSchedule.ts` เพราะ feature นี้มี
+  permission จริงของตัวเอง ไม่ใช่ config ระดับร้านที่ Administrator เท่านั้นแก้ได้) · wire เข้า
+  `resolvers.ts`/`typeDefs.ts` ตาม merge point เดียวกับโมดูลอื่นทุกตัว
+- **UI** → `/admin/followup-rules` (CRUD กฎ, `followup.manage` แก้/`followup.view` ดู, pattern เดียวกับ
+  `/admin/coupons`) และ `/admin/followup-queue` (อ่าน `bms_followup_jobs`/`bms_followup_history`, ปุ่ม
+  "รันตอนนี้" เรียก `bmsRunFollowupsNow` สำหรับทดสอบโดยไม่ต้องรอ cron, deep-link ไป `/admin/inbox?c=<id>`)
+  · เมนู sidebar 2 อันใหม่ในกลุ่ม "ร้านค้า" ถัดจาก Coupons, gate ด้วย `can('followup.view')`
+- **ยังไม่ทำ (ตัดออกตั้งใจ ดูเหตุผลใน plan file)**: Workflow Engine + Workflow Builder UI แบบ branching
+  tree (รอ 30 นาที → รอ 1 วัน → เสนอโปรโมชัน → หยุด ตามสเปค) — MVP นี้ทำได้แค่ retry ซ้ำ rule เดิมที่
+  delay เท่ากันจนครบ `max_retry` ไม่ใช่ branch ไปกฎอื่น · Follow-up Scoring (คำนวณคะแนนจากหลายปัจจัยเทียบ
+  threshold) — ใช้ `priority` + stop condition ที่ enforce ตายตัวแทน, ถ้าจะทำ scoring จริงในอนาคตให้สลับ
+  `matchRule()` เป็น `scoreAndSelectRule()` โดยไม่ต้องแก้ loop หลักของ scheduler · Analytics dashboard เต็ม
+  (Intent Statistics/Success Rate/Conversion Rate/Retry Statistics) — รอ `bms_followup_history` มีข้อมูล
+  จริงสะสมก่อนจะมีอะไรให้กราฟ · ยังไม่ได้ apply migration `7.52` เข้า docker/production จริงบนเครื่องนี้
+  และยังไม่ได้ทดสอบ end-to-end (สร้างแชทค้าง → ตั้งกฎ → curl cron → ดูข้อความจริงใน Inbox) ตามที่ระบุไว้ใน
+  plan file — ต้องทำก่อนใช้งานจริง
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
@@ -1515,6 +1598,12 @@ natural suite กับ live model).
 + **Live Dashboard เลย์เอาต์เสร็จแล้ว แต่ยังเป็น mock ทั้งหมด** (ดูหัวข้อ § Live Dashboard ด้านบน — `/live-dashboard`
 เป็น public route ที่ใช้ session เดิม, ปุ่มเข้าอยู่ใน HeaderBar, มี fullscreen + responsive มือถือ; **ยังไม่ต่อ query
 จริงเลยแม้แต่ตัวเดียว** ทุกตัวเลขเป็น `MOCK_*` + ป้าย "ตัวอย่าง" + `// TODO(real):`).
++ **Follow-up Automation MVP core เสร็จแล้ว แต่ยังไม่ verify กับ DB จริง** (ดูหัวข้อ § Follow-up Automation
+ด้านบน — migration `7.52`, `lib/bms/followups.ts` (rule engine + scheduler + AI message generation),
+cron `/api/bms/followups/run`, `/admin/followup-rules` + `/admin/followup-queue`; **ตัด scope เหลือแค่
+MVP core ตามที่ user เลือก** — ไม่มี Workflow Engine/Scoring model/Analytics dashboard ในรอบนี้ ดูเหตุผล
+เต็มในหัวข้อนั้น. ยังไม่ได้ apply migration เข้า docker/production จริงและยังไม่ได้ทดสอบ end-to-end).
+
 **เหลือ:** ต่อข้อมูลจริงให้ `/live-dashboard` (query มีพร้อมหมดแล้ว: `bmsOperationalAlerts`,
 `bmsSalesSummary().byChannel`, `salesDaily[]`, `bmsOrders(limit)`, `bmsChannelHealth` — ยกเว้นผู้ชม/Conversion/
 คอมเมนต์ที่ต้องต่อ Live API รายแพลตฟอร์มก่อน) และทบทวน `?demo=1` ตอนนั้น ·
@@ -1522,11 +1611,13 @@ TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเ�
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
-· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health`, `/api/bms/ai/check-health`, และ
-`/api/bms/reports/send-digest` (ทั้งสาม endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
+· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health`, `/api/bms/ai/check-health`,
+`/api/bms/reports/send-digest`, และ `/api/bms/followups/run` (ทั้งสี่ endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
 · proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
 ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
+· apply migration `7.52` เข้า docker/production จริง + ทดสอบ Follow-up Automation end-to-end ·
+Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ดู § Follow-up Automation)
 
 ## ก่อน production (สำคัญ)
 

@@ -82,6 +82,21 @@ platforms.
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
 
+**Follow-up Automation (MVP core, `lib/bms/followups.ts`, migration `7.52`):** rather than a fixed
+timer, a configurable Rule Engine decides whether a customer whose conversation went idle should be
+re-engaged. `bms_conversations.last_sender_type` tracks who sent the most recent message
+(`customer`/`staff`/`ai`) so the scheduler can tell "the customer already replied" without joining
+`bms_messages`; a per-customer `followup_opt_out` flag (`bms_customers`) suppresses future
+follow-ups entirely. Every AI-drafted follow-up records why it was sent (`message_goal`, e.g. Close
+Sale/Recover Abandoned Cart) and is stored in `bms_messages` like a normal AI reply, tagged
+`meta.followup`, so it appears in the same conversation thread. Six stop conditions — customer/staff
+already replied, conversation closed, retry limit reached, customer opted out, rule disabled — are
+**always enforced by the scheduler**, not something a rule can turn off. Managed at
+`/admin/followup-rules` (`followup.manage`) and observed at `/admin/followup-queue`
+(`followup.view`, seeded to Sales as read-only). See `CLAUDE.local.md` § Follow-up Automation for
+what this MVP deliberately does not implement yet (multi-step workflow branching, a numeric scoring
+model, and analytics).
+
 ## Self profile
 
 Separate from CRM customer records, staff/admin users now have a self-service profile page at

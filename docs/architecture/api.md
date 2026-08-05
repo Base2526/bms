@@ -45,6 +45,11 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
   and whose current period hasn't already been sent. `lib/bms/reportDigest.ts` `runScheduledDigests()`.
   Idempotency comes from `last_period_key`, not cron frequency — safe to invoke hourly or more often
   without double-sending; recommended schedule is hourly.
+- `POST /api/bms/followups/run` — Follow-up Automation MVP core: schedules new jobs for idle
+  conversations that match an enabled rule, then processes due jobs (re-checks stop conditions live,
+  drafts an AI follow-up, sends it, logs the result). `lib/bms/followups.ts` `runDueFollowups()`.
+  Scans every tenant when called with no argument (this cron path); the GraphQL "run now" mutation
+  passes its own tenant id instead — see `bmsRunFollowupsNow` below.
 
 ## REST — signed customer checkout
 
@@ -155,6 +160,20 @@ the `create_order` AI tool, the REST order endpoint, — gets validated, atomic 
 free. See [../business/order.md](../business/order.md#coupons-discount-codes) for the full
 validation order and the `COUPON_INVALID` result status. `bmsCouponRedemptions(couponId)` has no
 backing table of its own; it reads `bms_orders` directly by `coupon_code`.
+
+### Follow-up Automation (MVP core)
+
+`graphql/bmsFollowups.ts` gates every field with real `BMS_PERMISSIONS` entries (not a local
+`requireTenantAdmin`, unlike the Coupons/Sales-digest modules above), the same shape as
+`bmsCoupons.ts`: `bmsFollowupRules` / `bmsFollowupQueue` / `bmsFollowupHistory` require
+`followup.view`; `bmsUpsertFollowupRule` / `bmsDeleteFollowupRule` / `bmsRunFollowupsNow` require
+`followup.manage`. `bmsRunFollowupsNow` is a manual test trigger (same idea as
+`bmsSendTestReportNow`) but calls `runDueFollowups(getTenantId(ctx))` — **always pass the caller's
+own tenant id here**; calling the bare cron function would let a tenant-scoped `followup.manage`
+grant fire (and be attributed to) every tenant's conversations, not just the caller's own. See
+[../business/crm.md](../business/crm.md) and `CLAUDE.local.md` § Follow-up Automation for the rule
+engine/stop-condition/scheduler design, and the § "Follow-up automation scheduler" note in
+[AGENTS.md](../../AGENTS.md) for the durable invariants.
 
 ### Bulk product import (preview + commit over one mutation)
 

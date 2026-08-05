@@ -69,9 +69,10 @@ export type BmsTool = {
   execute: (args: Record<string, any>, ec: ExecCtx) => Promise<ToolResult>;
 
   // ---- registry-only metadata (สำหรับ docs/human, ไม่ถูกส่งเข้า Anthropic tool schema) ----
-  // ดู tools/runtime.ts: payload ที่ยิงจริงมีแค่ name/description/input_schema เท่านั้น
-  // ฟิลด์ด้านล่างนี้ "ฟรี" ไม่กิน token ต่อ turn — ทำเฉพาะทูลที่เคยสับสน/เรียกผิดจริง ไม่ต้องทำครบทุกทูล
-  /** ใช้ตอนไหน — เขียนไว้กันทูลที่ทับซ้อนกัน */
+  // ดู tools/runtime.ts (~L370): payload ที่ยิงจริงมีแค่ name/description/input_schema เท่านั้น
+  // ฟิลด์ด้านล่างนี้ "ฟรี" ไม่กิน token ต่อ turn — จะกินก็ต่อเมื่อ deliberately ต่อท้ายเข้า `description` เอง
+  // (แนะนำทำเฉพาะกลุ่มทูลที่เคยสับสน/เรียกผิดจริง ไม่ต้องทำครบทุกทูล)
+  /** ใช้ตอนไหน — เขียนไว้กันทูลที่ทับซ้อนกัน (เช่น search_products vs browse_catalog vs recommend_products) */
   whenToUse?: string;
   /** อย่าใช้ตอนไหน — คู่กับ whenToUse */
   whenNotToUse?: string;
