@@ -165,6 +165,13 @@ const searchProducts: BmsTool = {
     "Search the shop's current active catalog by name, SKU, barcode, alias, category or brand. Returns verified price, availability, sizes and a public product path. Call this before answering any product question.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
+  whenToUse: "The customer named a specific product/model/SKU/brand and you need to confirm real price/stock before answering or before creating an order.",
+  whenNotToUse: "Broad question like 'what do you sell?' → use browse_catalog instead; asking about new items → use list_new_arrivals; the named product/size is out of stock → use find_alternatives.",
+  commonMistakes: [
+    "Do not fold a size into keyword (e.g. 'shirt XL') — size is checked via check_stock/get_product, not filtered by this tool.",
+    "Never guess a sku and skip straight to create_order — always call this tool first to confirm the real sku/price/stock.",
+  ],
+  example: { input: { keyword: "Nike Air shoes" }, note: "Customer asked for a specific named product/brand." },
   inputSchema: {
     type: "object",
     properties: {
@@ -209,6 +216,9 @@ const browseCatalogTool: BmsTool = {
     "Browse real in-stock products in this shop. Use for broad questions such as 'what do you sell?' and return 3-5 concrete choices before asking one narrowing question.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
+  whenToUse: "Broad question with no specific product named, e.g. 'what do you sell?', 'do you have men's clothing?'.",
+  whenNotToUse: "The customer already named a specific product/model/SKU → use search_products instead (more precise, avoids guessing the wrong sku).",
+  example: { input: { keyword: "home decor", limit: 5 }, note: "Customer asked a broad question with no specific product named." },
   inputSchema: {
     type: "object",
     properties: {
@@ -263,6 +273,9 @@ const listNewArrivalsTool: BmsTool = {
     "List the shop's newest active in-stock products by product creation time. Use whenever the customer asks what is new or just added; results refresh from the database on every call.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
+  whenToUse: "The customer asks about new/just-arrived/latest items (e.g. 'anything new?', 'did the new model come in?').",
+  whenNotToUse: "The customer asks for a specific product/category by name → use search_products/browse_catalog instead.",
+  example: { input: { limit: 5 }, note: "Customer asked whether any new items have arrived." },
   inputSchema: {
     type: "object",
     properties: {
@@ -299,6 +312,10 @@ const findAlternativesTool: BmsTool = {
     "Find 2-5 real in-stock alternatives when an exact product or requested size is unavailable. Prefer the same category/brand and a nearby price; never invent substitutes.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
+  whenToUse: "After search_products/check_stock has confirmed the requested product/size is out of stock — offer alternatives instead of ending the conversation with 'not available'.",
+  whenNotToUse: "Stock has not actually been checked yet — confirm it is really unavailable via check_stock/search_products first, then look for alternatives.",
+  commonMistakes: ["Never suggest a substitute from chat memory alone — this tool must confirm real stock before offering it to the customer."],
+  example: { input: { sku: "NIKE-AIR-001", size: "XL" }, note: "Size XL of NIKE-AIR-001 is out of stock; customer wants an alternative." },
   inputSchema: {
     type: "object",
     properties: {
@@ -826,6 +843,17 @@ const createOrderTool: BmsTool = {
     "Create an order and reserve stock atomically from a list of sku, size and quantity. Use once the customer has confirmed the purchase. The sku must come from search_products or check_stock first.",
   surfaces: ["customer", "staff"],
   permission: "order.create",
+  whenToUse: "Only after the customer has confirmed the purchase (product + size + qty are all known and the customer said yes) — this writes to the DB and reserves real stock.",
+  whenNotToUse: "The customer hasn't confirmed yet, or the exact sku isn't known → always call search_products/check_stock first to fill those in.",
+  commonMistakes: [
+    "Never guess a sku — it must come from a prior search_products/check_stock result only.",
+    "Do not call this repeatedly if the customer hasn't changed their order — the tool loop already suppresses duplicate calls, but avoid calling it needlessly regardless.",
+    "preferredCarrier must be a code listed in get_store_info's enabledCarriers only — never guess one.",
+  ],
+  example: {
+    input: { items: [{ sku: "NIKE-AIR-001", size: "XL", qty: 1 }] },
+    note: "Customer confirmed buying 1 Nike Air, size XL.",
+  },
   inputSchema: {
     type: "object",
     properties: {
@@ -1051,6 +1079,10 @@ const reorderTool: BmsTool = {
     "Customer surface: never ask for or pass orderId — the customer's latest order is used automatically. Staff surface must pass orderId.",
   surfaces: ["customer", "staff"],
   permission: "order.create",
+  whenToUse: "The customer explicitly says 'order again/same as before/repeat my last order' and wants every item from that order, not just some of them.",
+  whenNotToUse: "The customer wants to change some items from the previous order → use create_order with the new items instead; don't use reorder expecting to edit it afterward.",
+  commonMistakes: ["On the customer surface, never pass orderId even if the customer states an order number themselves — the system always resolves that customer's own latest order, to prevent guessing someone else's orderId."],
+  example: { input: {}, note: "Customer surface: customer said 'same as last time', so orderId is omitted." },
   inputSchema: {
     type: "object",
     properties: {
@@ -1806,6 +1838,9 @@ const recommendProductsTool: BmsTool = {
     "Fetch candidate products to recommend: searches by keyword when one is given, otherwise returns best sellers, for the responder to choose from.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
+  whenToUse: "You need to recommend products for the customer to choose from (not the customer searching on their own) — e.g. closing out after answering another question, or the customer asked you to pick for them.",
+  whenNotToUse: "The customer already stated what they want → use search_products; asked broadly what's sold → use browse_catalog.",
+  example: { input: { keyword: "new year gift" }, note: "Customer asked to be recommended something, without naming a product themselves." },
   inputSchema: {
     type: "object",
     properties: {
