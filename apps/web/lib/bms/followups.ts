@@ -1,0 +1,651 @@
+// =============================================================
+// BMS Follow-up Automation — MVP core
+// -------------------------------------------------------------
+// Conversation entity / intent detection already live in bms_conversations /
+// bms_conversation_intents (migration 7.52). This module is the configurable
+// Rule Engine + Scheduler + AI follow-up generation — nothing here hardcodes
+// a delay/goal/retry count, it only ever reads bms_followup_rules.
+//
+// Deliberately NOT the full spec (see CLAUDE.local.md § Follow-up Automation):
+// no Workflow Engine (multi-step branching trees) and no Follow-up Scoring
+// model — this MVP uses rule `priority` + universal stop-conditions instead.
+// `bms_followup_rules.stop_conditions` is stored/validated for forward
+// compatibility with a future workflow engine, but is NOT read here: the six
+// stop rules in the spec ("never follow up if...") are treated as always-on
+// safety rails, not something a rule can opt out of — an admin should not be
+// able to accidentally re-enable spamming a customer who already replied.
+//
+// Cron entrypoint is runDueFollowups() (called by
+// app/api/bms/followups/run/route.ts) — it scans every tenant itself, same
+// shape as detectStaleChannels()/runScheduledDigests().
+// =============================================================
+
+import { query } from "@/lib/db";
+import { audit } from "./audit";
+import { getConversation, listMessages, sendFollowupMessage } from "./inbox";
+import { getCustomer360 } from "./customer360";
+import { getStoreProfile } from "./storeProfile";
+import { resolveAiCredentials, type AiCredentials } from "./ai";
+import { finalizeAiUsageEvent } from "./aiUsage";
+import { callAnthropicCompatibleMessages } from "./aiProvider";
+
+export const FOLLOWUP_INTENTS = [
+  "ASK_PRICE",
+  "PRODUCT_INFORMATION",
+  "ORDER",
+  "BOOKING",
+  "SUPPORT",
+  "COMPLAINT",
+  "PAYMENT",
+  "DELIVERY",
+  "GENERAL_QUESTION",
+  "OTHER",
+] as const;
+export type FollowupIntent = (typeof FOLLOWUP_INTENTS)[number];
+
+export const MESSAGE_GOALS = [
+  "CLOSE_SALE",
+  "COLLECT_MISSING_INFO",
+  "CONTINUE_CONVERSATION",
+  "CONFIRM_BOOKING",
+  "CUSTOMER_SATISFACTION",
+  "PAYMENT_REMINDER",
+  "RECOVER_ABANDONED_CART",
+  "SUPPORT_FOLLOWUP",
+] as const;
+export type MessageGoal = (typeof MESSAGE_GOALS)[number];
+
+// Stored/validated for the future workflow engine — see module header. Not
+// interpreted by runDueFollowups() today.
+export const STOP_CONDITIONS = [
+  "customer_replied",
+  "staff_replied",
+  "conversation_closed",
+  "max_retry_exceeded",
+  "opted_out",
+  "rule_disabled",
+] as const;
+export type StopCondition = (typeof STOP_CONDITIONS)[number];
+
+export type FollowupRule = {
+  id: string;
+  tenantId: string;
+  intent: FollowupIntent;
+  enabled: boolean;
+  priority: number;
+  delayMinutes: number;
+  maxRetry: number;
+  stopConditions: string[];
+  messageGoal: MessageGoal;
+  businessHoursOnly: boolean;
+  template: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FollowupRuleInput = {
+  id?: string | null;
+  intent: string;
+  enabled?: boolean;
+  priority?: number;
+  delayMinutes: number;
+  maxRetry?: number;
+  stopConditions?: string[];
+  messageGoal: string;
+  businessHoursOnly?: boolean;
+  template?: string | null;
+};
+
+function mapRule(r: any): FollowupRule {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    intent: r.intent,
+    enabled: r.enabled,
+    priority: r.priority,
+    delayMinutes: r.delay_minutes,
+    maxRetry: r.max_retry,
+    stopConditions: r.stop_conditions ?? [],
+    messageGoal: r.message_goal,
+    businessHoursOnly: r.business_hours_only,
+    template: r.template ?? null,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  };
+}
+
+function assertIntent(v: string): FollowupIntent {
+  if (!(FOLLOWUP_INTENTS as readonly string[]).includes(v)) {
+    throw new Error(`intent ต้องเป็นหนึ่งใน: ${FOLLOWUP_INTENTS.join(", ")}`);
+  }
+  return v as FollowupIntent;
+}
+
+function assertGoal(v: string): MessageGoal {
+  if (!(MESSAGE_GOALS as readonly string[]).includes(v)) {
+    throw new Error(`messageGoal ต้องเป็นหนึ่งใน: ${MESSAGE_GOALS.join(", ")}`);
+  }
+  return v as MessageGoal;
+}
+
+/** ทิ้งค่าที่ไม่รู้จักเงียบๆ (ตาม convention เดียวกับ enabled_carriers filter) */
+function sanitizeStopConditions(list: string[] | undefined | null): string[] {
+  if (!Array.isArray(list)) return [];
+  return list.filter((v) => (STOP_CONDITIONS as readonly string[]).includes(v));
+}
+
+function systemActor(tenantId: string) {
+  return { tenant_id: tenantId, admin: { email: "system:followup-scheduler" } };
+}
+
+// =============================================================
+// Rule CRUD
+// =============================================================
+
+export async function listFollowupRules(tenantId: string): Promise<FollowupRule[]> {
+  const res = await query(
+    `SELECT * FROM bms_followup_rules WHERE tenant_id = $1 ORDER BY priority DESC, created_at DESC`,
+    [tenantId]
+  );
+  return res.rows.map(mapRule);
+}
+
+export async function upsertFollowupRule(tenantId: string, input: FollowupRuleInput): Promise<FollowupRule> {
+  const intent = assertIntent(input.intent);
+  const messageGoal = assertGoal(input.messageGoal);
+  const delayMinutes = Number(input.delayMinutes);
+  if (!Number.isInteger(delayMinutes) || delayMinutes <= 0) {
+    throw new Error("delayMinutes ต้องเป็นจำนวนเต็มมากกว่า 0");
+  }
+  const maxRetry = input.maxRetry != null ? Number(input.maxRetry) : 1;
+  if (!Number.isInteger(maxRetry) || maxRetry < 0) {
+    throw new Error("maxRetry ต้องเป็นจำนวนเต็ม >= 0");
+  }
+  const stopConditions = sanitizeStopConditions(input.stopConditions);
+  const priority = input.priority != null ? Number(input.priority) : 0;
+  const enabled = input.enabled ?? true;
+  const businessHoursOnly = input.businessHoursOnly ?? false;
+  const template = input.template ?? null;
+
+  if (input.id) {
+    const res = await query(
+      `UPDATE bms_followup_rules
+          SET intent = $2, enabled = $3, priority = $4, delay_minutes = $5, max_retry = $6,
+              stop_conditions = $7, message_goal = $8, business_hours_only = $9, template = $10,
+              updated_at = now()
+        WHERE tenant_id = $1 AND id = $11
+      RETURNING *`,
+      [tenantId, intent, enabled, priority, delayMinutes, maxRetry, stopConditions, messageGoal, businessHoursOnly, template, input.id]
+    );
+    if (res.rowCount === 0) throw new Error("ไม่พบ follow-up rule");
+    return mapRule(res.rows[0]);
+  }
+
+  const res = await query(
+    `INSERT INTO bms_followup_rules
+       (tenant_id, intent, enabled, priority, delay_minutes, max_retry, stop_conditions, message_goal, business_hours_only, template)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [tenantId, intent, enabled, priority, delayMinutes, maxRetry, stopConditions, messageGoal, businessHoursOnly, template]
+  );
+  return mapRule(res.rows[0]);
+}
+
+export async function deleteFollowupRule(tenantId: string, id: string): Promise<boolean> {
+  const res = await query(`DELETE FROM bms_followup_rules WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** highest-priority enabled rule for this intent — null = ไม่มี rule ให้ทำอะไรเลย (ไม่ invent) */
+export async function matchRule(tenantId: string, intent: string): Promise<FollowupRule | null> {
+  const res = await query(
+    `SELECT * FROM bms_followup_rules
+      WHERE tenant_id = $1 AND intent = $2 AND enabled
+      ORDER BY priority DESC, created_at ASC
+      LIMIT 1`,
+    [tenantId, intent]
+  );
+  return res.rowCount ? mapRule(res.rows[0]) : null;
+}
+
+// =============================================================
+// Intent classification — AI-first, deterministic keyword fallback.
+// A separate intent set from lib/bms/nlu.ts's Intent (CHECK_STOCK/
+// CONFIRM_ORDER/GREETING/UNKNOWN) on purpose: that type is load-bearing for
+// the live chat pipeline's deterministic fallback and must not change shape.
+// =============================================================
+
+const HEURISTIC_KEYWORDS: Array<[FollowupIntent, string[]]> = [
+  ["COMPLAINT", ["ผิดหวัง", "แย่", "ไม่พอใจ", "ร้องเรียน", "complaint", "bad", "disappointed"]],
+  ["PAYMENT", ["โอนเงิน", "ชำระ", "จ่ายเงิน", "สลิป", "payment", "pay", "transfer"]],
+  ["DELIVERY", ["จัดส่ง", "ส่งของ", "พัสดุ", "ติดตาม", "delivery", "shipping", "tracking"]],
+  ["BOOKING", ["จอง", "นัด", "booking", "appointment", "reserve"]],
+  ["SUPPORT", ["ช่วยด้วย", "แก้ปัญหา", "support", "help", "issue", "problem"]],
+  ["ORDER", ["สั่งซื้อ", "สั่งของ", "order", "buy", "purchase"]],
+  ["ASK_PRICE", ["ราคา", "เท่าไหร่", "price", "cost", "how much"]],
+  ["PRODUCT_INFORMATION", ["สินค้า", "รายละเอียด", "สเปค", "product", "detail", "spec"]],
+  ["GENERAL_QUESTION", ["สอบถาม", "คำถาม", "question", "ask"]],
+];
+
+function heuristicIntent(text: string): { intent: FollowupIntent; confidence: number } {
+  const lower = text.toLowerCase();
+  for (const [intent, keywords] of HEURISTIC_KEYWORDS) {
+    if (keywords.some((k) => lower.includes(k.toLowerCase()))) {
+      return { intent, confidence: 0.5 };
+    }
+  }
+  return { intent: "OTHER", confidence: 0.3 };
+}
+
+function parseAiIntentJson(text: string): { intent: string; confidence: number } | null {
+  try {
+    const match = text.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : text);
+    if (typeof parsed?.intent === "string" && typeof parsed?.confidence === "number") {
+      return { intent: parsed.intent, confidence: parsed.confidence };
+    }
+  } catch {
+    // fall through to heuristic
+  }
+  return null;
+}
+
+export async function classifyConversationIntent(
+  tenantId: string,
+  conversationId: string
+): Promise<{ intent: FollowupIntent; confidence: number; source: "ai" | "heuristic" }> {
+  const messages = await listMessages(tenantId, conversationId, 20);
+  const transcript = messages
+    .map((m: any) => `${m.direction === "IN" ? "customer" : "shop"}: ${(m.body || "").slice(0, 300)}`)
+    .join("\n");
+
+  let result: { intent: FollowupIntent; confidence: number; source: "ai" | "heuristic" } | null = null;
+
+  const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "followup_intent" });
+  if (creds) {
+    try {
+      const resp = await callAnthropicCompatibleMessages(creds as AiCredentials, {
+        model: creds.model,
+        max_tokens: 100,
+        system:
+          `Classify the customer conversation's intent. Reply with ONLY a JSON object ` +
+          `{"intent": "<ONE_OF>", "confidence": <0..1>} — no other text. ` +
+          `<ONE_OF> must be exactly one of: ${FOLLOWUP_INTENTS.join(", ")}.`,
+        messages: [{ role: "user", content: transcript || "(no messages)" }],
+      });
+      if (resp.ok) {
+        const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+        const raw = json.content?.[0]?.text?.trim();
+        const parsed = raw ? parseAiIntentJson(raw) : null;
+        if (parsed && (FOLLOWUP_INTENTS as readonly string[]).includes(parsed.intent)) {
+          result = {
+            intent: parsed.intent as FollowupIntent,
+            confidence: Math.max(0, Math.min(1, parsed.confidence)),
+            source: "ai",
+          };
+        }
+      }
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, { status: result ? "completed" : "failed" });
+      }
+    } catch (err) {
+      if (creds.usageEventId) {
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: "failed",
+          errorMessage: err instanceof Error ? err.message : "followup intent classification failed",
+        });
+      }
+      console.error("[BMS] followup intent classification (AI) failed, falling back:", err);
+    }
+  }
+
+  if (!result) {
+    const h = heuristicIntent(transcript);
+    result = { ...h, source: "heuristic" };
+  }
+
+  await query(
+    `INSERT INTO bms_conversation_intents (tenant_id, conversation_id, intent, confidence, source)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [tenantId, conversationId, result.intent, result.confidence, result.source]
+  );
+  return result;
+}
+
+const INTENT_STALE_MS = 24 * 60 * 60 * 1000; // reclassify if the latest intent row is older than this
+
+async function getOrClassifyIntent(tenantId: string, conversationId: string): Promise<FollowupIntent> {
+  const latest = await query<{ intent: string; detected_at: Date | string }>(
+    `SELECT intent, detected_at FROM bms_conversation_intents
+      WHERE conversation_id = $1 ORDER BY detected_at DESC LIMIT 1`,
+    [conversationId]
+  );
+  const row = latest.rows[0];
+  if (row) {
+    const age = Date.now() - new Date(row.detected_at).getTime();
+    if (age < INTENT_STALE_MS) return row.intent as FollowupIntent;
+  }
+  const fresh = await classifyConversationIntent(tenantId, conversationId);
+  return fresh.intent;
+}
+
+// =============================================================
+// Business hours — MVP approximation only (documented known gap: store
+// profile's businessHours is free text today, no structured open/close
+// schema to parse). Fixed 09:00–18:00 Asia/Bangkok window.
+// =============================================================
+
+function isWithinBusinessHours(now: Date = new Date()): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", hour: "2-digit", hour12: false }).format(now)
+  );
+  return hour >= 9 && hour < 18;
+}
+
+// =============================================================
+// AI follow-up message generation
+// -------------------------------------------------------------
+// Section 7 of the spec: never "are you still interested?" — provide value
+// specific to the rule's goal. Falls back to rule.template, else a plain
+// goal-labeled message, when there are no AI credentials/quota (same
+// AI-then-template shape as generateResponse() in ai.ts).
+// =============================================================
+
+const GOAL_GUIDANCE: Record<MessageGoal, string> = {
+  CLOSE_SALE:
+    "Help the customer decide: recommend the specific product(s) discussed, mention real stock availability if known, and suggest a clear next step to buy.",
+  COLLECT_MISSING_INFO:
+    "Politely ask for exactly the one piece of information still missing to proceed (e.g. size, delivery address, payment method) — do not re-ask what they already gave.",
+  CONTINUE_CONVERSATION:
+    "Offer something genuinely useful related to what they were asking about — a related product, an answer to a likely follow-up question, or a helpful tip.",
+  CONFIRM_BOOKING:
+    "Confirm the booking details discussed and ask them to confirm, or offer to adjust the time/date if needed.",
+  CUSTOMER_SATISFACTION:
+    "Check whether their issue/complaint was actually resolved to their satisfaction. If they say no, they should feel comfortable saying so.",
+  PAYMENT_REMINDER:
+    "Gently remind them the order is awaiting payment, restate the amount and how to pay, without pressuring them.",
+  RECOVER_ABANDONED_CART:
+    "Remind them of the items still in their cart, mention stock/promotion if relevant, and make it easy to complete the order.",
+  SUPPORT_FOLLOWUP:
+    "Follow up on their support request — offer to help further or ask if anything is still unresolved.",
+};
+
+const GOAL_FALLBACK_TEXT: Record<MessageGoal, string> = {
+  CLOSE_SALE: "รบกวนสอบถามเพิ่มเติมค่ะ สนใจสินค้าที่คุยกันไว้อยู่ไหมคะ ทางร้านพร้อมช่วยเช็คสต็อก/ราคาให้เลยค่ะ",
+  COLLECT_MISSING_INFO: "ขออภัยที่รบกวนนะคะ ทางร้านยังขาดข้อมูลอีกเล็กน้อยเพื่อดำเนินการต่อ รบกวนแจ้งเพิ่มได้ไหมคะ",
+  CONTINUE_CONVERSATION: "สวัสดีค่ะ มีอะไรให้ทางร้านช่วยเพิ่มเติมไหมคะ",
+  CONFIRM_BOOKING: "รบกวนขอคอนเฟิร์มรายละเอียดการจองอีกครั้งค่ะ ถ้าสะดวกแจ้งกลับได้เลยนะคะ",
+  CUSTOMER_SATISFACTION: "ขอสอบถามค่ะ ปัญหาที่แจ้งไว้ได้รับการแก้ไขเรียบร้อยดีไหมคะ",
+  PAYMENT_REMINDER: "ขออนุญาตติดตามค่ะ ออร์เดอร์ของคุณยังรอการชำระเงินอยู่ค่ะ สะดวกโอนตอนนี้ไหมคะ",
+  RECOVER_ABANDONED_CART: "สินค้าที่เลือกไว้ยังอยู่ในตะกร้านะคะ สนใจดำเนินการต่อไหมคะ ทางร้านพร้อมช่วยเช็คให้ค่ะ",
+  SUPPORT_FOLLOWUP: "ขอติดตามค่ะ เรื่องที่แจ้งไว้ยังต้องการให้ทางร้านช่วยอะไรเพิ่มไหมคะ",
+};
+
+async function generateFollowupMessage(
+  tenantId: string,
+  conversationId: string,
+  rule: FollowupRule,
+  retryCount: number
+): Promise<string> {
+  const [conv, messages, history] = await Promise.all([
+    getConversation(tenantId, conversationId),
+    listMessages(tenantId, conversationId, 20),
+    query<{ message_body: string | null; created_at: Date | string }>(
+      `SELECT message_body, created_at FROM bms_followup_history
+        WHERE conversation_id = $1 AND outcome = 'SENT'
+        ORDER BY created_at DESC LIMIT 5`,
+      [conversationId]
+    ),
+  ]);
+
+  const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "followup_message" });
+  if (!creds) return rule.template?.trim() || GOAL_FALLBACK_TEXT[rule.messageGoal];
+
+  try {
+    const [customer360, storeProfile] = await Promise.all([
+      (conv as any)?.customer_id ? getCustomer360(tenantId, (conv as any).customer_id) : Promise.resolve(null),
+      getStoreProfile(tenantId),
+    ]);
+    const transcript = messages
+      .map((m: any) => `${m.direction === "IN" ? "customer" : "shop"}: ${(m.body || "").slice(0, 300)}`)
+      .join("\n");
+    const priorFollowups = history.rows.map((r) => r.message_body).filter(Boolean).join("\n---\n");
+
+    const contextLines = [
+      `Store: ${storeProfile.businessType ?? ""}, hours (as configured, free text): ${storeProfile.businessHours ?? "unknown"}`,
+      `Conversation history:\n${transcript || "(no messages)"}`,
+      customer360?.stats
+        ? `Customer stats: lifetimeValue=${customer360.stats.lifetimeValue}, totalOrders=${customer360.stats.totalOrders}`
+        : "Customer: unknown/new",
+      `Current time: ${new Date().toISOString()}`,
+      `Retry attempt: ${retryCount + 1} of ${rule.maxRetry}`,
+      priorFollowups ? `Previous follow-up messages already sent (never repeat these):\n${priorFollowups}` : "No previous follow-ups sent yet.",
+    ];
+
+    const resp = await callAnthropicCompatibleMessages(creds, {
+      model: creds.model,
+      max_tokens: 220,
+      system:
+        `You are a store assistant drafting ONE proactive follow-up message to a customer whose conversation went quiet. ` +
+        `Goal: ${GOAL_GUIDANCE[rule.messageGoal]} ` +
+        `Never simply ask "are you still interested?" — provide real value. Be natural, polite, concise, never pressure the customer, ` +
+        `never repeat a previous follow-up message verbatim, and reply in the same language the customer was using. ` +
+        `Reply with ONLY the message text, no preamble.`,
+      messages: [{ role: "user", content: contextLines.join("\n\n") }],
+    });
+    if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
+    const json = (await resp.json()) as { content?: Array<{ text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
+    const text = json.content?.[0]?.text?.trim();
+    if (!text) throw new Error(`${creds.provider} empty reply`);
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "completed",
+        inputTokens: json.usage?.input_tokens ?? null,
+        outputTokens: json.usage?.output_tokens ?? null,
+      });
+    }
+    return text;
+  } catch (err) {
+    if (creds.usageEventId) {
+      await finalizeAiUsageEvent(creds.usageEventId, {
+        status: "failed",
+        errorMessage: err instanceof Error ? err.message : "followup message generation failed",
+      });
+    }
+    console.error("[BMS] followup message generation (AI) failed, falling back to template:", err);
+    return rule.template?.trim() || GOAL_FALLBACK_TEXT[rule.messageGoal];
+  }
+}
+
+// =============================================================
+// Scheduler — cron entrypoint
+// =============================================================
+
+const CANDIDATE_BATCH = 200;
+const DUE_JOB_BATCH = 100;
+
+type RunSummary = { scanned: number; sent: number; skipped: number; failed: number };
+
+async function scheduleNewJobs(tenantId?: string): Promise<number> {
+  // conversations with no PENDING job at all, still open, and not last-answered by staff
+  // (staff already engaged — don't auto-follow-up over a human)
+  const candidates = await query<{ id: string; tenant_id: string; last_message_at: Date | string }>(
+    `SELECT c.id, c.tenant_id, c.last_message_at
+       FROM bms_conversations c
+      WHERE c.status IN ('OPEN', 'PENDING')
+        AND c.last_sender_type IS NOT NULL
+        AND c.last_sender_type != 'staff'
+        AND ($1::uuid IS NULL OR c.tenant_id = $1)
+        AND NOT EXISTS (SELECT 1 FROM bms_followup_jobs j WHERE j.conversation_id = c.id AND j.status = 'PENDING')
+      ORDER BY c.last_message_at ASC
+      LIMIT ${CANDIDATE_BATCH}`,
+    [tenantId ?? null]
+  );
+
+  let created = 0;
+  for (const c of candidates.rows) {
+    const intent = await getOrClassifyIntent(c.tenant_id, c.id);
+    const rule = await matchRule(c.tenant_id, intent);
+    if (!rule) continue; // no matching enabled rule — never invent one
+
+    const res = await query(
+      `INSERT INTO bms_followup_jobs (tenant_id, conversation_id, rule_id, next_run_at)
+       VALUES ($1, $2, $3, $4::timestamptz + ($5 || ' minutes')::interval)
+       ON CONFLICT (conversation_id, rule_id) WHERE status = 'PENDING' DO NOTHING
+       RETURNING id`,
+      [c.tenant_id, c.id, rule.id, c.last_message_at, rule.delayMinutes]
+    );
+    if (res.rowCount) created += 1;
+  }
+  return created;
+}
+
+async function processDueJobs(tenantId?: string): Promise<RunSummary> {
+  const summary: RunSummary = { scanned: 0, sent: 0, skipped: 0, failed: 0 };
+
+  const due = await query<{
+    job_id: string;
+    tenant_id: string;
+    conversation_id: string;
+    rule_id: string;
+    retry_count: number;
+    job_created_at: Date | string;
+  }>(
+    `SELECT j.id AS job_id, j.tenant_id, j.conversation_id, j.rule_id, j.retry_count, j.created_at AS job_created_at
+       FROM bms_followup_jobs j
+      WHERE j.status = 'PENDING' AND j.next_run_at <= now()
+        AND ($1::uuid IS NULL OR j.tenant_id = $1)
+      ORDER BY j.next_run_at ASC
+      LIMIT ${DUE_JOB_BATCH}`,
+    [tenantId ?? null]
+  );
+
+  for (const job of due.rows) {
+    summary.scanned += 1;
+    const ctx = systemActor(job.tenant_id);
+
+    const [rule, convRow] = await Promise.all([
+      query(`SELECT * FROM bms_followup_rules WHERE id = $1`, [job.rule_id]).then((r) => (r.rowCount ? mapRule(r.rows[0]) : null)),
+      query<{ status: string; last_sender_type: string | null; last_message_at: Date | string; customer_id: string | null }>(
+        `SELECT status, last_sender_type, last_message_at, customer_id FROM bms_conversations WHERE id = $1`,
+        [job.conversation_id]
+      ).then((r) => r.rows[0] ?? null),
+    ]);
+
+    const stop = async (reason: string) => {
+      await query(`UPDATE bms_followup_jobs SET status = 'STOPPED', last_result = $2, updated_at = now() WHERE id = $1`, [job.job_id, reason]);
+      await query(
+        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
+         VALUES ($1, $2, $3, $4, 'SKIPPED', $5, $6)`,
+        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, reason, rule?.messageGoal ?? null]
+      );
+      await audit(ctx, "followup.skipped", job.conversation_id, { ruleId: job.rule_id, reason });
+      summary.skipped += 1;
+    };
+
+    if (!convRow) {
+      await stop("conversation_not_found");
+      continue;
+    }
+    if (!rule || !rule.enabled) {
+      await stop("rule_disabled");
+      continue;
+    }
+    if (convRow.status === "CLOSED") {
+      await stop("conversation_closed");
+      continue;
+    }
+    const repliedSince = new Date(convRow.last_message_at).getTime() > new Date(job.job_created_at).getTime();
+    if (repliedSince && convRow.last_sender_type === "customer") {
+      await stop("customer_replied");
+      continue;
+    }
+    if (repliedSince && convRow.last_sender_type === "staff") {
+      await stop("staff_replied");
+      continue;
+    }
+    if (convRow.customer_id) {
+      const optOut = await query<{ followup_opt_out: boolean }>(
+        `SELECT followup_opt_out FROM bms_customers WHERE id = $1`,
+        [convRow.customer_id]
+      );
+      if (optOut.rows[0]?.followup_opt_out) {
+        await stop("opted_out");
+        continue;
+      }
+    }
+    if (job.retry_count >= rule.maxRetry) {
+      await stop("max_retry_exceeded");
+      continue;
+    }
+    if (rule.businessHoursOnly && !isWithinBusinessHours()) {
+      // just wait — doesn't consume a retry, doesn't log a skip
+      continue;
+    }
+
+    try {
+      const text = await generateFollowupMessage(job.tenant_id, job.conversation_id, rule, job.retry_count);
+      const sendResult = await sendFollowupMessage(job.tenant_id, job.conversation_id, text, {
+        ruleId: job.rule_id,
+        jobId: job.job_id,
+        goal: rule.messageGoal,
+      });
+      if (sendResult.status !== "SENT") {
+        await query(`UPDATE bms_followup_jobs SET status = 'FAILED', last_result = $2, updated_at = now() WHERE id = $1`, [job.job_id, sendResult.status]);
+        await query(
+          `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
+           VALUES ($1, $2, $3, $4, 'FAILED', $5, $6)`,
+          [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, sendResult.status, rule.messageGoal]
+        );
+        await audit(ctx, "followup.failed", job.conversation_id, { ruleId: job.rule_id, reason: sendResult.status });
+        summary.failed += 1;
+        continue;
+      }
+
+      const nextRetryCount = job.retry_count + 1;
+      const done = nextRetryCount >= rule.maxRetry;
+      await query(
+        `UPDATE bms_followup_jobs
+            SET retry_count = $2,
+                status = CASE WHEN $3 THEN 'SENT' ELSE 'PENDING' END,
+                next_run_at = CASE WHEN $3 THEN next_run_at ELSE now() + ($4 || ' minutes')::interval END,
+                last_result = 'sent',
+                updated_at = now()
+          WHERE id = $1`,
+        [job.job_id, nextRetryCount, done, rule.delayMinutes]
+      );
+      await query(
+        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, message_body, goal)
+         VALUES ($1, $2, $3, $4, 'SENT', $5, $6)`,
+        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, text, rule.messageGoal]
+      );
+      await audit(ctx, "followup.sent", job.conversation_id, { ruleId: job.rule_id, goal: rule.messageGoal, retry: nextRetryCount });
+      summary.sent += 1;
+    } catch (err) {
+      console.error("[BMS] followup job failed:", err);
+      await query(`UPDATE bms_followup_jobs SET status = 'FAILED', last_result = $2, updated_at = now() WHERE id = $1`, [
+        job.job_id,
+        err instanceof Error ? err.message.slice(0, 200) : "unknown error",
+      ]);
+      await query(
+        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
+         VALUES ($1, $2, $3, $4, 'FAILED', $5, $6)`,
+        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, "exception", rule?.messageGoal ?? null]
+      );
+      summary.failed += 1;
+    }
+  }
+
+  return summary;
+}
+
+/**
+ * Cron entrypoint — scans every tenant itself (matches detectStaleChannels()/
+ * runScheduledDigests()) when tenantId is omitted. The manual "run now" GraphQL
+ * mutation passes its own tenantId so a tenant-scoped followup.manage grant
+ * can't trigger (or observe side effects on) another tenant's conversations.
+ */
+export async function runDueFollowups(tenantId?: string): Promise<RunSummary> {
+  await scheduleNewJobs(tenantId);
+  return processDueJobs(tenantId);
+}

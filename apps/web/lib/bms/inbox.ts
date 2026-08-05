@@ -119,14 +119,17 @@ export async function logConversation(
 
     // upsert conversation — (xmax = 0) บอกว่าเป็น INSERT จริง (ไม่ใช่ไปเข้า DO UPDATE)
     // ใช้แยกว่าควร auto-assign staff หลักไหม (ครั้งแรกที่ลูกค้าทักเท่านั้น ไม่ใช่ทุกข้อความ)
+    // last_sender_type = 'ai' เสมอ เพราะ logConversation() ถูกเรียกหลัง pipeline ได้ reply
+    // มาแล้ว (insert คู่ IN(customer)+OUT(ai) ด้านล่างพร้อมกัน — 'ai' คือข้อความล่าสุดจริง)
     const conv = await query<{ id: string; inserted: boolean }>(
       `INSERT INTO bms_conversations
-         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at)
-       VALUES ($1, $2, $3, $4, 'OPEN', 1, $5, now())
+         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
+       VALUES ($1, $2, $3, $4, 'OPEN', 1, $5, now(), 'ai')
        ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
          SET unread = bms_conversations.unread + 1,
              last_message = EXCLUDED.last_message,
              last_message_at = now(),
+             last_sender_type = 'ai',
              customer_id = COALESCE(bms_conversations.customer_id, EXCLUDED.customer_id),
              status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
              updated_at = now()
@@ -1032,9 +1035,50 @@ export async function sendStaffMessage(
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
   const preview = messagePreview(outgoingText, att);
   await query(
-    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), updated_at = now()
+    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'staff', updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
     [tenantId, conversationId, preview.slice(0, 500)]
+  );
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+
+  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
+}
+
+/**
+ * ส่ง follow-up ที่ AI generate มา — เหมือน sendStaffMessage() แต่ sender='ai' +
+ * แนบ meta.followup (ruleId/jobId/goal) ให้แชทเห็นว่าเป็น follow-up ไม่ใช่ตอบสด
+ * เรียกจาก lib/bms/followups.ts's runDueFollowups() เท่านั้น — ไม่มี attachment
+ * (ข้อความ AI ล้วน ตามสเปก follow-up)
+ */
+export async function sendFollowupMessage(
+  tenantId: string,
+  conversationId: string,
+  body: string,
+  followupMeta: { ruleId: string; jobId: string; goal: string }
+): Promise<SendResult> {
+  const text = (body || "").trim();
+  if (!text) return { status: "EMPTY" };
+
+  const conv = await query<{ channel: string; customer_ref: string | null }>(
+    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, conversationId]
+  );
+  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
+
+  const channel = conv.rows[0].channel;
+  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
+  const status = outboundStatus(channel, delivered);
+
+  const inserted = await query<{ id: string }>(
+    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+     VALUES ($1, $2, 'OUT', $3, 'ai', $4)
+     RETURNING id`,
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, followup: true, ...followupMeta })]
+  );
+  await query(
+    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, conversationId, messagePreview(text).slice(0, 500)]
   );
   publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
 

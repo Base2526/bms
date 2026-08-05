@@ -351,12 +351,41 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   `POST /api/bms/reports/send-digest` follows the same `x-cron-secret` pattern as the other two
   cron endpoints and is likewise **not yet scheduled**. See [docs/ui/dashboard.md](docs/ui/dashboard.md)
   and [docs/architecture/api.md](docs/architecture/api.md).
+- **Follow-up Automation (`lib/bms/followups.ts`, 2026-08)** — 🚧 **MVP core only**: a configurable
+  Rule Engine + Scheduler decides whether to re-engage a customer whose conversation went quiet,
+  instead of a fixed timer. Migration `7.52` adds `bms_conversations.last_sender_type` (set by
+  `logConversation()`/`sendStaffMessage()`/`sendFollowupMessage()` in `inbox.ts` — the cheap indexed
+  signal for "did the customer/staff reply since we scheduled this"), `bms_customers.followup_opt_out`,
+  and 4 new tables: `bms_conversation_intents` (append-only intent+confidence log, AI-first with a
+  deterministic keyword fallback — a separate 10-value intent set from `nlu.ts`'s customer-chat
+  `Intent`, do not conflate them), `bms_followup_rules` (the config surface — intent/enabled/priority/
+  delay/max_retry/`message_goal`/`business_hours_only`/template; the scheduler never hardcodes a
+  delay or goal), `bms_followup_jobs` (one row per conversation+rule in flight), and
+  `bms_followup_history` (append-only send/skip/fail log, like `bms_audit_log`). Cron
+  `POST /api/bms/followups/run` (same `x-cron-secret` pattern, **not yet scheduled**) calls
+  `runDueFollowups()`, which re-checks every stop condition live at send time (customer/staff replied
+  since scheduling, conversation closed, max retry, opted out, rule disabled) — these six are
+  **always enforced**, not opt-in per rule; `bms_followup_rules.stop_conditions` is stored/validated
+  only for a future workflow engine and is not read by the scheduler yet. AI-drafted messages follow
+  a goal → guidance map (Close Sale/Collect Missing Info/.../Support Follow-up — never a bare "are you
+  still interested?") with a template/plain-text fallback when there's no AI credentials/quota, same
+  AI-then-template shape as `generateResponse()`. `/admin/followup-rules` (CRUD, `followup.manage`)
+  and `/admin/followup-queue` (read-only queue/history + manual "run now", `followup.view`) are
+  gated by two new permissions, seeded to Manager (both) and Sales (view only). **Deferred on
+  purpose** (see `CLAUDE.local.md` § Follow-up Automation for why): the multi-step branching
+  Workflow Engine + visual Workflow Builder, the numeric Follow-up Scoring model, and the full
+  Analytics dashboard (Intent Statistics/Success Rate/Conversion Rate/Retry Statistics) — rule
+  `priority` stands in for scoring in this MVP. `business_hours_only` is a fixed 09:00–18:00
+  Asia/Bangkok approximation, not a parse of the shop's free-text `businessHours` (no structured
+  open/close schema exists yet). **Not verified against a live DB in the session that built it** —
+  `tsc` passed but the migration was never applied/exercised end-to-end; verify before relying on it.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
 Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
-(Manager role) manage their own staff · wiring an actual cron schedule for the three ready-but-unscheduled
-endpoints (`channels/check-health`, `ai/check-health`, `reports/send-digest`).
+(Manager role) manage their own staff · wiring an actual cron schedule for the four ready-but-unscheduled
+endpoints (`channels/check-health`, `ai/check-health`, `reports/send-digest`, `followups/run`) ·
+Follow-up Automation's Workflow Engine, Scoring model, and Analytics dashboard (see above).
 
 ## AI rules (non-negotiable)
 
