@@ -6,7 +6,8 @@ import {
 import { useState, useRef, useEffect, Fragment } from "react";
 import {
   SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
-  DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined,
+  DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
+  ArrowDownOutlined,
 } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 
@@ -15,6 +16,23 @@ const { Text, Paragraph } = Typography;
 // เก็บแชทไว้ในเครื่องนี้อัตโนมัติ (ต่อเบราว์เซอร์ ไม่ sync ข้ามอุปกรณ์/แท็บอื่น) — ผู้ใช้ต้องกด
 // "ล้างแชท" เองเท่านั้น ไม่มีการล้างอัตโนมัติ (เช่น ตอนปิดแท็บ/refresh)
 const CHAT_STORAGE_KEY = "bms-assistant-chat-v1";
+
+// ---- วันที่/เวลา — ยืมธรรมเนียมเดิมจาก Inbox (app/(admin)/admin/inbox/page.tsx) ตรงๆ ไม่คิดใหม่
+// เพื่อให้ label "วันนี้/เมื่อวาน/วันที่" ตรงกันทั้งระบบ (Asia/Bangkok ทุกเครื่อง ไม่ขึ้นกับ timezone browser) ----
+const BKK = "Asia/Bangkok";
+const dayKey = (iso: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+const timeLabel = (iso: string) =>
+  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+function dayLabel(iso: string) {
+  const key = dayKey(iso);
+  const now = new Date();
+  const todayKey = dayKey(now.toISOString());
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (key === todayKey) return "วันนี้";
+  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+}
 
 // ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
 // เต็มรูปแบบติดตั้งอยู่ — parse เท่าที่ต้องใช้จริง (bold/inline code/URL) แทนที่จะโชว์ asterisk ดิบๆ
@@ -130,12 +148,19 @@ type TraceEntry = { tool: string; ok: boolean; summary: string };
 type Bubble = {
   role: "user" | "assistant";
   text: string;
+  /** ISO timestamp — บับเบิลเก่าที่เคยเซฟไว้ก่อนมี field นี้จะไม่มีค่า ให้ render ข้ามเวลาไปเฉยๆ */
+  createdAt?: string;
   proposals?: Proposal[];
   trace?: TraceEntry[];
   /** สถานะ proposal ต่อ index: undefined=รอ, 'done'=ยืนยันแล้ว, 'dismissed'=ยกเลิก */
   proposalStates?: Record<number, "done" | "dismissed">;
+  /** true = เรียก AI ไม่สำเร็จ (ต่างจาก error ทางธุรกิจที่ AI ตอบเองว่าทำไม่ได้) — ให้ปุ่ม "ลองอีกครั้ง" ส่ง retryText ซ้ำ */
+  error?: boolean;
+  retryText?: string;
 };
 
+// ครอบคลุมกว้างกว่าเดิม ตามหมวดทูลจริงใน tools/catalog.ts (อ่าน A1 / เขียนไม่ sensitive A2 / เขียน sensitive A3)
+// ไม่ใช่ทุกทูลที่มี — เลือกตัวแทนแต่ละหมวดที่พนักงานพิมพ์ถามจริงบ่อยที่สุด
 const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[] }> = [
   {
     label: "ถามข้อมูล (อ่านอย่างเดียว)",
@@ -143,6 +168,9 @@ const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[
       "ยอดขาย 7 วันล่าสุดเป็นยังไง",
       "สินค้าอะไรใกล้หมดบ้าง",
       "ออร์เดอร์ล่าสุดของลูกค้ามีอะไรบ้าง",
+      "สินค้าขายดี 5 อันดับเดือนนี้คืออะไร",
+      "การชำระเงินที่รอตรวจสอบมีกี่รายการ",
+      "ใบสั่งซื้อที่ยังไม่ได้รับของมีอะไรบ้าง",
     ],
   },
   {
@@ -150,6 +178,16 @@ const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[
     items: [
       "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel",
       "Export inventory report เป็น PDF พร้อมสรุปให้ด้วย",
+      "สร้างใบเสนอราคา NIKE-001 ไซซ์ XL 10 ชิ้น",
+      "พยากรณ์ยอดขาย 30 วันข้างหน้าของ NIKE-001",
+    ],
+  },
+  {
+    label: "สั่งงานได้ทันที",
+    items: [
+      "สร้างใบสั่งซื้อจาก supplier ก. สินค้า NIKE-001 ไซซ์ XL 10 ชิ้น",
+      "สร้างการจัดส่งออร์เดอร์ #1234 ด้วย Kerry",
+      "ปักแท็ก VIP ให้ลูกค้าเบอร์ 08x-xxx-xxxx",
     ],
   },
   {
@@ -158,6 +196,8 @@ const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[
     items: [
       "คืนเงินการชำระ (payment id ...)",
       "ปรับสต็อก NIKE-001 ไซซ์ XL ลบ 2 ชิ้น เพราะของเสีย",
+      "ยกเลิกออร์เดอร์ #1234",
+      "รวมลูกค้าที่ซ้ำกัน 2 คนเป็นคนเดียว",
     ],
   },
 ];
@@ -178,6 +218,9 @@ export default function Page() {
   const [chat, setChat] = useState<Bubble[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [showScrollLatest, setShowScrollLatest] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
 
@@ -207,6 +250,27 @@ export default function Page() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [chat]);
 
+  // ปุ่ม "ข้อความล่าสุด" โผล่เฉพาะตอนผู้ใช้เลื่อนขึ้นไปดูของเก่าเอง (ไม่เกี่ยวกับ auto-scroll ตอนมีข้อความใหม่ด้านบน)
+  const handleScroll = () => {
+    const el = logRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollLatest(distanceFromBottom > 120);
+  };
+  const scrollToLatest = () => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+  };
+
+  const copyText = async (text: string, idx: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx((c) => (c === idx ? null : c)), 1500);
+    } catch {
+      message.error("คัดลอกไม่สำเร็จ — เบราว์เซอร์นี้อาจไม่รองรับ");
+    }
+  };
+
   const clearChat = () => {
     setChat([]);
     try {
@@ -226,9 +290,9 @@ export default function Page() {
     const m = (msg ?? text).trim();
     if (!m || sending) return;
     setSending(true);
-    // history = สายก่อนหน้า (ไม่รวมข้อความใหม่)
-    const history = chat.map((b) => ({ role: b.role, text: b.text }));
-    setChat((c) => [...c, { role: "user", text: m }]);
+    // history = สายก่อนหน้า ไม่รวมข้อความใหม่ และไม่รวมบับเบิล error (ไม่ใช่คำตอบจริงของ AI ครั้งก่อน)
+    const history = chat.filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
+    setChat((c) => [...c, { role: "user", text: m, createdAt: new Date().toISOString() }]);
     setText("");
     try {
       const { data } = await client.mutate({
@@ -241,6 +305,7 @@ export default function Page() {
         {
           role: "assistant",
           text: res?.reply ?? "—",
+          createdAt: new Date().toISOString(),
           proposals: res?.proposals ?? [],
           trace: res?.trace ?? [],
           proposalStates: {},
@@ -248,7 +313,50 @@ export default function Page() {
       ]);
     } catch (e: any) {
       message.error(e?.message || "เรียกผู้ช่วย AI ไม่สำเร็จ");
-      setChat((c) => [...c, { role: "assistant", text: "ขออภัย ระบบขัดข้อง ลองใหม่อีกครั้งนะครับ", trace: [] }]);
+      setChat((c) => [
+        ...c,
+        {
+          role: "assistant",
+          text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ",
+          createdAt: new Date().toISOString(),
+          trace: [],
+          error: true,
+          retryText: m,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // แทนที่บับเบิล error ตัวเดิมในตำแหน่งเดิม ไม่ดันข้อความผู้ใช้ซ้ำอีกแถว (ต่างจากพิมพ์คำถามเดิมส่งใหม่)
+  const retry = async (idx: number) => {
+    const bubble = chat[idx];
+    if (!bubble?.retryText || sending) return;
+    const m = bubble.retryText;
+    setSending(true);
+    // ประวัติที่ถูกต้องคือทุกอย่างก่อนข้อความผู้ใช้ที่ทำให้เกิด error นี้ (อยู่ตำแหน่ง idx-1 เสมอ ตาม send())
+    const history = chat.slice(0, Math.max(idx - 1, 0)).filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
+    try {
+      const { data } = await client.mutate({ mutation: M_ASSISTANT, variables: { message: m, history } });
+      const res = data?.bmsAssistant;
+      setChat((c) =>
+        c.map((b, i) =>
+          i === idx
+            ? {
+                role: "assistant",
+                text: res?.reply ?? "—",
+                createdAt: new Date().toISOString(),
+                proposals: res?.proposals ?? [],
+                trace: res?.trace ?? [],
+                proposalStates: {},
+              }
+            : b
+        )
+      );
+    } catch (e: any) {
+      message.error(e?.message || "เรียกผู้ช่วย AI ไม่สำเร็จ");
+      setChat((c) => c.map((b, i) => (i === idx ? { ...b, createdAt: new Date().toISOString() } : b)));
     } finally {
       setSending(false);
     }
@@ -344,6 +452,19 @@ export default function Page() {
 
   return (
     <div style={{ maxWidth: isMobile ? 640 : 1080, margin: "0 auto", padding: 16 }}>
+      <style jsx>{`
+        .bms-assistant-typing-dot {
+          display: inline-block;
+          animation: bms-assistant-bounce 1.2s ease-in-out infinite;
+        }
+        @keyframes bms-assistant-bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-3px); opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .bms-assistant-typing-dot { animation: none; opacity: 0.8; }
+        }
+      `}</style>
       <div
         style={{
           display: "flex",
@@ -419,7 +540,7 @@ export default function Page() {
         style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
         styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
       >
-        <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+        <div ref={logRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 6px", position: "relative" }}>
           {chat.length === 0 ? (
             <div
               style={{
@@ -462,27 +583,87 @@ export default function Page() {
               </Space>
             </div>
           ) : (
-            <Space direction="vertical" style={{ width: "100%" }} size={12}>
-              {chat.map((b, i) => (
-                <div key={i} style={{ textAlign: b.role === "user" ? "right" : "left" }}>
-                  <div
-                    style={{
-                      display: "inline-block",
-                      maxWidth: "88%",
-                      textAlign: "left",
-                      background:
-                        b.role === "user"
-                          ? "rgba(var(--app-primary-rgb), 0.12)"
-                          : "var(--app-surface-2)",
-                      border: "1px solid var(--app-border)",
-                      borderRadius: 10,
-                      padding: "8px 12px",
-                    }}
-                  >
-                    <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                      {renderAssistantText(b.text)}
-                    </Paragraph>
-                  </div>
+            <>
+            <Space direction="vertical" style={{ width: "100%" }} size={4}>
+              {chat.map((b, i) => {
+                // เส้นแบ่งวัน — ยืมธรรมเนียม Inbox มาตรงๆ เพราะแชทนี้เก็บถาวรใน localStorage แล้ว
+                // (ไม่ใช่แชทที่หายตอนปิดแท็บ) เปิดมาอีกวันแล้วไม่มีตัวแบ่งจะดูเหมือนข้อความคนละวันปนกัน
+                const prevDay = i > 0 && chat[i - 1].createdAt ? dayKey(chat[i - 1].createdAt!) : null;
+                const curDay = b.createdAt ? dayKey(b.createdAt) : null;
+                const showDaySep = curDay && curDay !== prevDay;
+                return (
+                  <div key={i}>
+                    {showDaySep && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+                        <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
+                        <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--text-soft, var(--text-secondary))", whiteSpace: "nowrap" }}>
+                          {dayLabel(b.createdAt!)}
+                        </Text>
+                        <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
+                      </div>
+                    )}
+                    <div
+                      style={{ textAlign: b.role === "user" ? "right" : "left", marginBottom: 10 }}
+                      onMouseEnter={() => setHoveredIdx(i)}
+                      onMouseLeave={() => setHoveredIdx((h) => (h === i ? null : h))}
+                    >
+                      <div style={{ display: "inline-flex", alignItems: "flex-end", gap: 6, maxWidth: "88%" }}>
+                        <div
+                          style={{
+                            display: "inline-block",
+                            textAlign: "left",
+                            background: b.error
+                              ? "rgba(255, 77, 79, 0.1)"
+                              : b.role === "user"
+                                ? "rgba(var(--app-primary-rgb), 0.12)"
+                                : "var(--app-surface-2)",
+                            border: b.error ? "1px solid rgba(255, 77, 79, 0.35)" : "1px solid var(--app-border)",
+                            borderRadius: 10,
+                            padding: "8px 12px",
+                            order: b.role === "user" ? 1 : 0,
+                          }}
+                        >
+                          <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                            {renderAssistantText(b.text)}
+                          </Paragraph>
+                        </div>
+                        {b.role === "assistant" && !b.error && (
+                          <Tooltip title={copiedIdx === i ? "คัดลอกแล้ว" : "คัดลอกข้อความนี้"}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={copiedIdx === i ? <CheckOutlined style={{ color: "#52c41a" }} /> : <CopyOutlined />}
+                              onClick={() => copyText(b.text, i)}
+                              style={{
+                                opacity: hoveredIdx === i || copiedIdx === i ? 1 : 0,
+                                transition: "opacity 120ms ease",
+                                color: "var(--text-secondary)",
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                      </div>
+                      <div style={{ marginTop: 2 }}>
+                        <Text style={{ fontSize: 11, color: "var(--text-soft, var(--text-secondary))" }}>
+                          {b.createdAt ? timeLabel(b.createdAt) : ""}
+                          {b.error && (
+                            <Text style={{ fontSize: 11, color: "#ff4d4f", fontWeight: 600, marginInlineStart: 6 }}>
+                              · ส่งไม่สำเร็จ
+                            </Text>
+                          )}
+                        </Text>
+                      </div>
+                      {b.error && (
+                        <Button
+                          size="small"
+                          icon={<ReloadOutlined />}
+                          onClick={() => retry(i)}
+                          disabled={sending}
+                          style={{ marginTop: 4, fontSize: 11.5, color: "#ff4d4f", borderColor: "rgba(255,77,79,.35)" }}
+                        >
+                          ลองส่งอีกครั้ง
+                        </Button>
+                      )}
 
                   {/* proposal cards (A3) */}
                   {(b.proposals ?? []).map((p, pi) => {
@@ -548,9 +729,59 @@ export default function Page() {
                       </Space>
                     </div>
                   )}
-                </div>
-              ))}
+                    </div>
+                  </div>
+                );
+              })}
             </Space>
+
+            {sending && (
+              <div style={{ display: "flex", marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    background: "var(--app-surface-2)",
+                    border: "1px solid var(--app-border)",
+                    borderRadius: 10,
+                    padding: "11px 14px",
+                  }}
+                >
+                  <span className="bms-assistant-typing-dot" style={{ width: 6, height: 6, borderRadius: 999, background: "var(--text-soft, var(--text-secondary))" }} />
+                  <span className="bms-assistant-typing-dot" style={{ width: 6, height: 6, borderRadius: 999, background: "var(--text-soft, var(--text-secondary))", animationDelay: "0.15s" }} />
+                  <span className="bms-assistant-typing-dot" style={{ width: 6, height: 6, borderRadius: 999, background: "var(--text-soft, var(--text-secondary))", animationDelay: "0.3s" }} />
+                </div>
+              </div>
+            )}
+            </>
+          )}
+
+          {showScrollLatest && (
+            <button
+              type="button"
+              onClick={scrollToLatest}
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: "var(--app-surface)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: "var(--app-text)",
+                boxShadow: "0 8px 20px rgba(0,0,0,0.14)",
+                cursor: "pointer",
+              }}
+            >
+              <ArrowDownOutlined style={{ fontSize: 11 }} />
+              ข้อความล่าสุด
+            </button>
           )}
         </div>
 
@@ -583,14 +814,30 @@ export default function Page() {
           style={{ height: 560, display: "flex", flexDirection: "column", overflow: "hidden" }}
           styles={{ body: { padding: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" } }}
         >
-          <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--app-border)" }}>
-            <Space size={6}>
-              <BulbOutlined style={{ color: "var(--app-primary)" }} />
-              <Text strong style={{ fontSize: 13 }}>ตัวอย่างคำสั่ง</Text>
-            </Space>
+          <div
+            style={{
+              padding: "14px 16px 10px",
+              borderBottom: "1px solid var(--app-border)",
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
             <div>
-              <Text type="secondary" style={{ fontSize: 11.5 }}>กดเพื่อใส่ลงช่องพิมพ์ทันที</Text>
+              <Space size={6}>
+                <BulbOutlined style={{ color: "var(--app-primary)" }} />
+                <Text strong style={{ fontSize: 13 }}>ตัวอย่างคำสั่ง</Text>
+              </Space>
+              <div>
+                <Text type="secondary" style={{ fontSize: 11.5 }}>กดเพื่อใส่ลงช่องพิมพ์ทันที</Text>
+              </div>
             </div>
+            {chat.length > 0 && (
+              <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+                {chat.length} ข้อความ
+              </Text>
+            )}
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>{exampleGroupsContent}</div>
         </Card>
