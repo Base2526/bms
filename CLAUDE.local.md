@@ -688,9 +688,11 @@ apply migration `7.35` (`column "provider" does not exist` ตอนอ่าน
 `BmsTool` (`tools/types.ts`) มี field เสริม 4 ตัว — `whenToUse`/`whenNotToUse`/`commonMistakes`/
 `example` — สำหรับ docs/human เท่านั้น **ไม่ถูกส่งเข้า Anthropic tool schema** (`tools/runtime.ts`
 ~L370 ส่งแค่ `name`/`description`/`input_schema`) จึงไม่กิน token ต่อ turn เลยจนกว่าจะมีคนตั้งใจย้าย
-เนื้อหาไปต่อท้าย `description` เอง — ใส่ไว้แล้ว 7 ทูล (5 ทูล product-discovery ที่ทับซ้อนกัน +
-`create_order`/`reorder`) เพราะเป็นกลุ่มที่เคยถูกเรียกผิดจริง ไม่ได้ตั้งใจทำครบทุกทูล — รายละเอียดเต็ม
-อยู่ที่ [docs/ai/tools.md](docs/ai/tools.md#registry-only-tool-metadata-disambiguation-not-schema)
+เนื้อหาไปต่อท้าย `description` เอง — ใส่ไว้แล้ว 8 ทูล (5 ทูล product-discovery ที่ทับซ้อนกัน +
+`create_order`/`reorder` + `generate_report` ที่ `feat/report-generation` เพิ่มเข้ามาทีหลังแยกกัน)
+เพราะเป็นกลุ่มที่เคยถูกเรียกผิดจริง ไม่ได้ตั้งใจทำครบทุกทูล — **จำนวนนี้ไม่นิ่ง** อย่าเชื่อเลขในเอกสาร
+ให้ดู `catalog.ts` จริงก่อนเสมอ — รายละเอียดเต็มอยู่ที่
+[docs/ai/tools.md](docs/ai/tools.md#registry-only-tool-metadata-disambiguation-not-schema)
 (ตารางเดียวกับ § Authoritative runtime registry and gates)
 
 ### AI eval suites (`scripts/ai-eval/`)

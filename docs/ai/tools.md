@@ -108,12 +108,17 @@ tool exhaustively.
 - **Zero token cost by default.** `tools/runtime.ts` (~L370) only serializes `name`/`description`/
   `input_schema` into the Anthropic tool payload — these fields never reach the model unless someone
   deliberately folds their content into a tool's `description` string.
-- **Populated so far** (7 tools, all product-discovery overlap + the two order-creation tools):
-  `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`,
-  `recommend_products`, `create_order`, `reorder` — see `catalog.ts` for the exact wording. Example:
-  `search_products.whenNotToUse` points to `browse_catalog` for broad questions and to
-  `find_alternatives` when the named item is out of stock, so the five overlapping catalog tools
-  cross-reference each other instead of relying on the model to infer the boundary from prose alone.
+- **Populated so far** (8 tools — the five overlapping product-discovery tools, the two
+  order-creation tools, and `generate_report`): `search_products`, `browse_catalog`,
+  `list_new_arrivals`, `find_alternatives`, `recommend_products`, `create_order`, `reorder`,
+  `generate_report` — see `catalog.ts` for the exact wording. Example: `search_products.whenNotToUse`
+  points to `browse_catalog` for broad questions and to `find_alternatives` when the named item is
+  out of stock, so the five overlapping catalog tools cross-reference each other instead of relying
+  on the model to infer the boundary from prose alone; `generate_report.whenNotToUse` similarly
+  points to `get_sales_summary`/`get_inventory_summary`/`get_top_products` for a plain question that
+  doesn't need a downloadable file.
+  **This list drifts** — it was 7 tools until `feat/report-generation` added an 8th independently;
+  re-check `catalog.ts` rather than trusting the count here.
 - **`commonMistakes` records a real failure**, not a hypothetical one — e.g. `reorder`'s entry warns
   never to pass `orderId` on the customer surface even if the customer states one, because the tool
   always resolves that customer's own latest order (prevents guessing someone else's `orderId`).
