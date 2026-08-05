@@ -86,6 +86,11 @@ RUN npm rebuild sharp --force || true
 
 COPY apps/web ./
 
+# Next.js/webpack build can OOM inside a memory-constrained container (V8's
+# default heap sizing doesn't always respect the cgroup limit). Cap it explicitly
+# so it fails predictably below the container ceiling instead of hard OOM-killing.
+ENV NODE_OPTIONS=--max-old-space-size=4096
+
 RUN npm run build
 
 # --- Runner stage ---
