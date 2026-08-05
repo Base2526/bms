@@ -1,13 +1,109 @@
 'use client';
-import { gql, useQuery } from "@apollo/client";
-import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography } from "antd";
-import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined } from "@ant-design/icons";
+import { gql, useQuery, useMutation } from "@apollo/client";
+import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography, Select, Space, message, Switch } from "antd";
+import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined, FileExcelOutlined, DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { RangePicker } = DatePicker;
+
+// ---- AI Report Generator (MVP core) -------------------------
+const Q_GENERATED_REPORTS = gql`
+  query {
+    bmsGeneratedReports(limit: 20) {
+      id reportType format fileUrl summary generatedBy createdAt
+    }
+  }
+`;
+const M_GENERATE_REPORT = gql`
+  mutation ($input: BmsGenerateReportInput!) {
+    bmsGenerateReport(input: $input) { fileId fileUrl reportType format summary }
+  }
+`;
+const REPORT_TYPE_OPTIONS = [
+  { value: "SALES", label: "ยอดขาย (Sales)" },
+  { value: "INVENTORY", label: "สต็อก (Inventory)" },
+  { value: "PROFIT", label: "กำไรขั้นต้น (Profit, ค่าประมาณ)" },
+];
+const FORMAT_OPTIONS = [
+  { value: "XLSX", label: "Excel (.xlsx)" },
+  { value: "CSV", label: "CSV" },
+  { value: "PDF", label: "PDF" },
+];
+
+function ReportGeneratorCard({ from, to }: { from: string; to: string }) {
+  const [reportType, setReportType] = useState("SALES");
+  const [format, setFormat] = useState("XLSX");
+  const [includeSummary, setIncludeSummary] = useState(true);
+  const { data, loading, refetch } = useQuery(Q_GENERATED_REPORTS, { fetchPolicy: "cache-and-network" });
+  const [generate, { loading: generating }] = useMutation(M_GENERATE_REPORT, {
+    onCompleted: (d) => {
+      message.success("สร้างรายงานสำเร็จ");
+      if (d?.bmsGenerateReport?.fileUrl) window.open(d.bmsGenerateReport.fileUrl, "_blank");
+      refetch();
+    },
+    onError: (e) => message.error(e?.message || "สร้างรายงานไม่สำเร็จ"),
+  });
+
+  const rows = data?.bmsGeneratedReports || [];
+
+  return (
+    <Card title="AI Report Generator" style={{ marginTop: 16 }}>
+      <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+        สร้างรายงานเป็นไฟล์ Excel/CSV/PDF ให้ดาวน์โหลด (ใช้ช่วงวันที่จากตัวกรองด้านบนสำหรับ Sales/Profit —
+        ไม่มีผลกับ Inventory เพราะเป็น snapshot ปัจจุบัน) หรือพิมพ์ขอกับ AI ผู้ช่วยที่{" "}
+        <a href="/admin/assistant">/admin/assistant</a> ได้เลย เช่น &quot;Export sales to Excel&quot;
+      </Typography.Paragraph>
+      <Space wrap>
+        <Select value={reportType} onChange={setReportType} options={REPORT_TYPE_OPTIONS} style={{ width: 220 }} />
+        <Select value={format} onChange={setFormat} options={FORMAT_OPTIONS} style={{ width: 160 }} />
+        <Space size={6}><Switch checked={includeSummary} onChange={setIncludeSummary} size="small" /> AI summary</Space>
+        <Button
+          type="primary"
+          icon={<FileExcelOutlined />}
+          loading={generating}
+          onClick={() =>
+            generate({
+              variables: {
+                input: { reportType, format, includeSummary, dateFrom: from, dateTo: to },
+              },
+            })
+          }
+        >
+          สร้างรายงาน
+        </Button>
+      </Space>
+
+      <Table
+        rowKey="id"
+        style={{ marginTop: 16 }}
+        size="small"
+        loading={loading}
+        dataSource={rows}
+        pagination={{ pageSize: 10 }}
+        scroll={{ x: "max-content" }}
+        columns={[
+          { title: "ประเภท", dataIndex: "reportType" },
+          { title: "รูปแบบ", dataIndex: "format" },
+          {
+            title: "สรุป (AI)", dataIndex: "summary",
+            render: (v: string | null) => v ? <Typography.Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Typography.Text> : "—",
+          },
+          { title: "โดย", dataIndex: "generatedBy" },
+          { title: "เมื่อ", dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+          {
+            title: "", key: "download",
+            render: (_: any, r: any) => r.fileUrl
+              ? <Button size="small" icon={<DownloadOutlined />} href={r.fileUrl} target="_blank">ดาวน์โหลด</Button>
+              : "—",
+          },
+        ]}
+      />
+    </Card>
+  );
+}
 
 // ---- GraphQL ------------------------------------------------
 const Q_REPORTS = gql`
@@ -144,6 +240,8 @@ export default function Page() {
           <Col xs={12} md={6}><Statistic title="หมดสต็อก" value={inv?.outOfStockCount ?? 0} valueStyle={{ color: "#cf1322" }} /></Col>
         </Row>
       </Card>
+
+      <ReportGeneratorCard from={from} to={to} />
     </div>
   );
 }

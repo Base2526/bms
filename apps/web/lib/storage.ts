@@ -147,6 +147,45 @@ export async function persistUploadStream(
   };
 }
 
+/**
+ * รับ Buffer ที่สร้างขึ้นในเมมโมรี (เช่นไฟล์ report ที่ generate เอง ไม่มี File/stream object
+ * ให้ใช้แบบ persistWebFile/persistUploadStream) → เซฟลง STORAGE_DIR เหมือนกัน → คืน row เดียวกัน
+ */
+export async function persistBuffer(buf: Buffer, filename: string, mimetype: string | null) {
+  const checksum = crypto.createHash("sha256").update(buf).digest("hex");
+
+  const dir = dateDir();
+  await mkdir(dir, { recursive: true });
+
+  const safeName = makeSafeName(filename || "file.bin");
+  const ts = Date.now();
+  const storedName = `${ts}-${safeName}`;
+  const full = path.join(dir, storedName);
+
+  await writeFile(full, buf);
+
+  const rel = full.replace(STORAGE_DIR + path.sep, "");
+
+  const { rows } = await query(
+    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
+    [storedName, filename || null, mimetype, buf.length, checksum, rel]
+  );
+
+  return rows[0] as {
+    id: number;
+    filename: string;
+    original_name: string | null;
+    mimetype: string | null;
+    size: number;
+    checksum: string;
+    relpath: string;
+    created_at: string;
+    updated_at: string;
+  };
+}
+
 /** สร้าง URL เสิร์ฟไฟล์ (แบบ REST ผ่าน id) */
 export function buildFileUrlById(id: number) {
   return `/api/files/${id}`;

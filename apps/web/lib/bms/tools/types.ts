@@ -67,6 +67,18 @@ export type BmsTool = {
   /** true = propose-only (ไม่ execute จาก AI) */
   sensitive?: boolean;
   execute: (args: Record<string, any>, ec: ExecCtx) => Promise<ToolResult>;
+
+  // ---- registry-only metadata (สำหรับ docs/human, ไม่ถูกส่งเข้า Anthropic tool schema) ----
+  // ดู tools/runtime.ts: payload ที่ยิงจริงมีแค่ name/description/input_schema เท่านั้น
+  // ฟิลด์ด้านล่างนี้ "ฟรี" ไม่กิน token ต่อ turn — ทำเฉพาะทูลที่เคยสับสน/เรียกผิดจริง ไม่ต้องทำครบทุกทูล
+  /** ใช้ตอนไหน — เขียนไว้กันทูลที่ทับซ้อนกัน */
+  whenToUse?: string;
+  /** อย่าใช้ตอนไหน — คู่กับ whenToUse */
+  whenNotToUse?: string;
+  /** ข้อผิดพลาดที่เคยเกิดจริง (จาก eval/production) กันโมเดล/คนแก้ทูลทำซ้ำ */
+  commonMistakes?: string[];
+  /** ตัวอย่าง args ที่ถูกต้อง 1 ชุด (+ note อธิบายบริบท) สำหรับ docs/registry */
+  example?: { input: Record<string, unknown>; note?: string };
 };
 
 // ---- arg validation helpers (model-supplied args = untrusted) ----

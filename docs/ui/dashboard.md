@@ -5,9 +5,11 @@
 Reports are strictly **read-only** — they never modify business data, and they always read from
 live transactional tables (no separate reporting/analytics store). Implemented in
 [`lib/bms/dashboard.ts`](../../apps/web/lib/bms/dashboard.ts) +
-[`lib/bms/reports.ts`](../../apps/web/lib/bms/reports.ts), REST `/api/bms/reports/*`, GraphQL
-`bmsSalesSummary` / `bmsInventorySummary` / `bmsTopSellingProducts`, admin UI `/admin/reports` +
-`/admin/dashboard`. Every report requires permission `report.view`.
+[`lib/bms/reports.ts`](../../apps/web/lib/bms/reports.ts) plus generated-export service
+[`lib/bms/reportEngine.ts`](../../apps/web/lib/bms/reportEngine.ts), REST `/api/bms/reports/*`,
+GraphQL `bmsSalesSummary` / `bmsInventorySummary` / `bmsTopSellingProducts` /
+`bmsGenerateReport` / `bmsGeneratedReports`, admin UI `/admin/reports` + `/admin/dashboard`.
+Every report requires permission `report.view`.
 
 Shipping note since `7.47__bms_shipping_fee_zone_weight.sql`: `bms_orders.total_amount` still means
 "ค่าสินค้า - ส่วนลด" only. Any operator-facing surface that needs the amount a customer should pay must use
@@ -103,6 +105,37 @@ when a new channel is added, since channel is just a grouping column).
 ## Top Selling Products (`getTopSellingProducts(from, to, limit=10)`)
 
 Returns `[{ sku, name, qty, revenue }]` for the given date range.
+
+## On-demand generated reports (XLSX / CSV / PDF)
+
+`/admin/reports` now includes an **AI Report Generator** card for staff with `report.view`. It
+creates real downloadable files from the same live read paths the dashboard already uses, instead of
+introducing a separate reporting store:
+
+- **Report types**: `SALES`, `INVENTORY`, `PROFIT`.
+- **Formats**: `XLSX`, `CSV`, `PDF`.
+- **History**: every export writes an append-only `bms_generated_reports` row and appears in the
+  same page's "recent exports" table for re-download.
+- **Shared service**: GraphQL `bmsGenerateReport` / `bmsGeneratedReports`, REST
+  `POST /api/bms/reports/generate`, and the staff AI tool `generate_report` all call
+  `lib/bms/reportEngine.ts` so the export semantics are identical no matter how staff request it.
+- **Download path**: exports are served from tenant-gated `GET /api/bms/reports/download/[id]`, not
+  `/api/files/[id]`, because they may contain sensitive revenue/profit/customer information.
+
+Current per-report behavior:
+
+- **Sales**: summary + by-day + top-products + by-channel, with the selected date range.
+- **Inventory**: current stock snapshot + low/out-of-stock rows; ignores the date-range picker.
+- **Profit**: estimated gross profit only. Revenue comes from historical order-item snapshots, but
+  cost comes from the product's **current** `cost_price`, so this export must continue to present
+  itself as an estimate rather than an accounting-perfect historical profit statement.
+
+Known output limitation:
+
+- **PDF Thai text**: current PDF generation uses `pdfkit`'s built-in fonts, which do not render Thai
+  glyphs correctly. The generator therefore keeps its own headings/labels in English for now. Thai
+  data values in PDF remain a known limitation until a Thai-capable TTF is embedded. XLSX/CSV use
+  UTF-8 and handle Thai correctly today.
 
 ## Sales digest subscriptions (email/Slack/LINE)
 
