@@ -68,9 +68,6 @@ ENV FCM_PRIVATE_KEY=$FCM_PRIVATE_KEY
 
 RUN npm ci --include=optional
 
-# install dependencies for imported monorepo package
-RUN cd /app/packages/social-queue && npm install --omit=dev
-
 RUN npm install --os=linux --cpu=arm64 sharp --force --ignore-scripts=false || true
 RUN npm rebuild sharp --force || true
 
