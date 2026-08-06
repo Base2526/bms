@@ -68,6 +68,8 @@ ENV FCM_PRIVATE_KEY=$FCM_PRIVATE_KEY
 
 RUN npm ci --include=optional
 
+RUN cd /app/packages/realtime && npm ci --omit=dev
+
 RUN npm install --os=linux --cpu=arm64 sharp --force --ignore-scripts=false || true
 RUN npm rebuild sharp --force || true
 
