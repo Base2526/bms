@@ -298,6 +298,59 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
 Do not modify unrelated user changes, secrets, local environment files, generated artifacts, or
 database dumps. Never commit `.env*`, access tokens, customer data, or credentials.
 
+## i18n coverage (what "bilingual" actually means today)
+
+There are **three i18n mechanisms in this codebase; only treat the first as real**:
+
+- **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the one
+  actually wired in. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes
+  it into `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin — but the
+  dictionaries in `apps/web/i18n/{th,en}.ts` only have ~12 namespaces (`common, login, register,
+  forgot, reset, verify, header, landing, footer, notificationPage, searchPage, roadmap`). This is
+  what a per-user language preference (see CLAUDE.md's "Per-user language preference") actually
+  switches.
+- **`apps/web/lib/i18n.ts` + `lib/useTranslation.ts` + `apps/web/locales/`** — dead code. `grep` for
+  `useTranslation(` outside its own definition returns zero hits anywhere in the app. Do not extend
+  this; if you're touching it, delete it instead.
+- **`apps/web/lib/static-page-i18n.ts`**'s `resolveBilingual()` — a page-local pattern used only by
+  ~8 static/legal pages (terms, privacy, pdpa, license, etc.), each hand-rolling its own
+  `{ en: T, th: T }` content object. Not a shared dictionary; don't route new pages through it as if
+  it were one.
+
+**Real coverage, as of 2026-08**: public marketing/legal pages, auth forms (login/register/forgot/
+reset — `verify-email` is only partially migrated), and the public header/footer/nav chrome. That's
+it. **The admin app has zero i18n plumbing** — none of the ~74 files under
+`apps/web/app/(admin)/admin/**/*.tsx` call `useI18n()`, and roughly 61 of them (82%) contain literal
+Thai text directly in JSX, including the admin nav shell itself (`AdminSidebar.tsx`,
+`AdminLayoutClient.tsx`). The public checkout (3 files) and the public product storefront
+(`app/(main)/shop/**`, 8 files) are the same — 100% hardcoded Thai, no `useI18n()` calls at all.
+Generated report files (`lib/bms/documentGenerator.ts`) have no language parameter and are English-
+label-only regardless of the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not
+deliberate for XLSX/CSV, just not done).
+
+If you're asked to "make X bilingual," check which of the three systems above (if any) the file
+already uses before adding translated strings — most files use none, and adding real 2-language
+support to the admin app is a from-scratch, many-file effort (extract strings into new dictionary
+namespaces, not just add keys to the existing 12), not a small addition to what's already there. The
+DB-backed email template system (`getLatestEmailTemplate(key, locale)`, real `th`/`en` rows with
+genuinely distinct translated copy, `en`-fallback if a locale is missing) is the one subsystem that's
+already done well and needs no rework — model any future per-locale content store on it, not on the
+admin UI's current state.
+
+**Per-user preference pattern** (theme, language — reuse this shape for any future one): store it as
+a plain `NOT NULL` column on `users` with a `CHECK` constraint and a sane default; expose it on both
+`bmsMe`/`User` (GraphQL) and accept it on `MeInput`; whitelist-validate the incoming value inside
+`updateMe` before it reaches the `UPDATE` (do not rely on the DB `CHECK` alone — the resolver must
+reject bad values so a bad request never round-trips to a constraint-violation error); re-read it
+fresh from Postgres in `/api/auth/me`'s `withUserPreferences()` rather than signing it into the JWT,
+so a change on one device shows up on others without waiting for token expiry; and sync it onto the
+device in `SessionLayer.tsx` only when it actually differs from the current local value (compare
+before writing, or you risk redundant renders/loops). Theme applies purely client-side
+(`lib/theme.ts`'s cookie+localStorage+DOM class, no server round-trip needed); language is read
+server-side to pick a dictionary, so applying a change requires `router.refresh()` after writing the
+`lang` cookie (`lib/lang.ts`), not just a client-side toggle — check which category a new preference
+falls into before copying one pattern verbatim.
+
 ## Frontend and CSS Modules
 
 - Keep public authentication routes synchronized with `isAuthPath()` in

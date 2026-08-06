@@ -100,6 +100,28 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   public/signed-out pages where the mutation can't succeed (local cookie/storage fallback still
   applies there). Public and signed-out pages are unaffected — they still use the pre-existing local
   cookie/localStorage theme with no account to sync to.
+- **Per-user language preference (2026-08)**: `users.language` (added long ago in
+  `1.13__users_username-language.sql`, `TEXT NOT NULL DEFAULT 'en'`, but never read/written outside
+  registration until now) now drives a real per-account UI language switcher, following the exact
+  same shape as theme preference above. Migration `7.55__users_language_check.sql` adds a
+  `CHECK (language IN ('th','en'))` constraint; `updateMe` now whitelist-validates `language` before
+  writing (it previously accepted any string — the resolver-level guard `themePreference` already had
+  but `language` didn't). `/admin/profile` and public `/settings` both expose a language `Select`
+  that already posted to `updateMe`, but neither actually *applied* the change until now: on a
+  successful save both pages take the server-confirmed `language` and call the new
+  `lib/lang.ts`'s `setLangCookie()` + `router.refresh()` (language, unlike theme, is read
+  server-side in `app/layout.tsx` to pick the i18n dictionary, so a fresh server render — not just a
+  client-side DOM toggle — is required for it to visibly take effect). `SessionLayer.tsx` syncs a
+  freshly loaded session's `language` into the local `lang` cookie the same way it does for
+  `themePreference`, and `/api/auth/me`'s `withUserPreferences()` re-reads `language` fresh from
+  Postgres on every call (not signed into the JWT) for the same staleness reasons. `HeaderBar.tsx`'s
+  existing public-site language switcher was refactored to use the new shared `getLangCookie()`/
+  `setLangCookie()` helpers instead of its own inline cookie regex, so there's one cookie
+  read/write implementation, not two. **Scope note**: this makes the switch itself work end-to-end,
+  but the i18n dictionary (`apps/web/i18n/`) still only has ~12 namespaces covering the public
+  marketing/auth/nav chrome — switching language does not yet change any of the ~61 admin page files
+  that hardcode Thai text directly, since those never call `useI18n()`. See "i18n coverage" in
+  [AGENTS.md](AGENTS.md) for the full breakdown of what's covered vs. not.
 - **Tenant-scoped Users page**: `/admin/users` now respects the acting tenant when a platform admin
   drills into a shop. In Shop B mode the list/detail/delete/avatar paths are tenant-scoped, so the
   page no longer leaks cross-tenant users or opens a user from another shop by direct URL. The

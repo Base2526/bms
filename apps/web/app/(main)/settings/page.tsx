@@ -46,6 +46,8 @@ import BookmarkButton from '@/components/BookmarkButton';
 import { useSessionCtx } from '@/lib/session-context';
 import { useTheme } from '@/lib/useTheme';
 import type { ThemeMode } from '@/lib/theme';
+import { useRouter } from 'next/navigation';
+import { getLangCookie, setLangCookie, isLang } from '@/lib/lang';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -982,6 +984,7 @@ export default function SettingsPage() {
 
   const { user } = useSessionCtx();
   const { setTheme } = useTheme();
+  const router = useRouter();
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
   const me = meData?.me;
 
@@ -1056,6 +1059,11 @@ export default function SettingsPage() {
         const nextTheme = res.data.updateMe.themePreference as ThemeMode | undefined;
         if (nextTheme === 'light' || nextTheme === 'dark' || nextTheme === 'system') {
           setTheme(nextTheme);
+        }
+        const nextLang = res.data.updateMe.language;
+        if (isLang(nextLang) && getLangCookie() !== nextLang) {
+          setLangCookie(nextLang);
+          router.refresh();
         }
         message.success('Profile & Account saved');
         refetchMe();

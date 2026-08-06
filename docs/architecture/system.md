@@ -88,7 +88,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
 | Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
-| Self Profile & Avatar | ✅ | `/admin/profile` · `bmsMe` / `updateMe` / `uploadAvatar` · per-user `theme_preference` |
+| Self Profile & Avatar | ✅ | `/admin/profile` · `bmsMe` / `updateMe` / `uploadAvatar` · per-user `theme_preference` / `language` |
 | Support Tickets | ✅ | `support_tickets` / `support_ticket_comments` · `/support` · `/admin/support-tickets` |
 | Batch & Cron Ops View | ✅ | `lib/bms/operationsSchedule.ts` · `/admin/operations-schedule` |
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |

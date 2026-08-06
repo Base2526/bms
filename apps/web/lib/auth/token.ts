@@ -6,6 +6,10 @@ export interface JWTPayload {
   role: string;
   tenant_id?: string;
   themePreference?: "system" | "light" | "dark";
+  // Not signed into the JWT — re-read fresh from Postgres on every /api/auth/me call (see
+  // withUserPreferences there) so a language change on one device/session shows up on others
+  // without waiting for token expiry, same reasoning as themePreference above.
+  language?: "th" | "en";
   exp?: number;
   iat?: number;
 }

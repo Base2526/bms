@@ -105,3 +105,9 @@ operator's own account metadata (name, phone, language, avatar, and UI theme pre
 not change customer records or tenant-wide user-role assignments. The UI theme is stored on
 `users.theme_preference` as `system`, `light`, or `dark`, so it follows the user across devices
 after login while public/signed-out pages continue to use the local cookie/storage fallback.
+UI language works the same way via `users.language` (`th`/`en`), synced into the browser's `lang`
+cookie on login and re-applied with a page refresh (language, unlike theme, is resolved
+server-side to pick an i18n dictionary, so it needs that refresh rather than a client-only toggle).
+This only affects the ~15% of the app already wired to the i18n dictionary (public marketing/auth
+pages and nav chrome) — most admin pages are still Thai-only regardless of this setting; see
+[../architecture/system.md](../architecture/system.md) for what's covered.

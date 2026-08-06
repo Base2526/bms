@@ -1520,6 +1520,48 @@ dashboard เต็มรูปในรอบนี้:
   และยังไม่ได้ทดสอบ end-to-end (สร้างแชทค้าง → ตั้งกฎ → curl cron → ดูข้อความจริงใน Inbox) ตามที่ระบุไว้ใน
   plan file — ต้องทำก่อนใช้งานจริง
 
+## Per-user language switcher (2026-08)
+
+**เสร็จแล้ว (branch `multi-language`, `tsc --noEmit` ผ่านสะอาด ไม่มี error ใหม่ — error เดิมที่เจอใน
+`packages/social-queue` ของ branch นี้ไม่เกี่ยวข้อง)** — ต้นเรื่องมาจากการสำรวจว่าระบบ 2 ภาษาตอนนี้
+ครอบคลุมแค่ไหน (พบว่าครอบคลุมแค่ ~15% ของแอป — public/auth/nav เท่านั้น admin ทั้งหมด Thai-only) แล้ว
+เลือกทำ per-user switcher ก่อนเป็นจุดเริ่ม โดย copy โครงจาก `theme_preference` ที่มีอยู่แล้วให้เหมือน
+ที่สุด ไม่คิด pattern ใหม่:
+
+- **`users.language` มีมานานแล้วจริง** (migration `1.13__users_username-language.sql`,
+  `TEXT NOT NULL DEFAULT 'en'`) แต่ไม่มี CHECK constraint และไม่มีใครอ่าน/เขียนมันจริงนอกจากตอน
+  register — เพิ่ม `7.55__users_language_check.sql` ให้ `CHECK (language IN ('th','en'))` ตาม pattern
+  เดียวกับ `7.50` (idempotent existence-check ผ่าน `pg_constraint`, coerce แถวนอก whitelist เป็น 'en'
+  ก่อนเพิ่ม constraint กันพัง)
+- **`updateMe` resolver ไม่เคย validate `language` เลย** (รับ string อะไรก็ได้ตรงเข้า DB) ต่างจาก
+  `themePreference` ที่ whitelist ไว้อยู่แล้ว — แก้ให้เข้มเท่ากัน (`language === "th" || language ===
+  "en" ? language : null` ก่อนเข้า `COALESCE`)
+- **`lib/lang.ts` ใหม่** — `getLangCookie()`/`setLangCookie()`/`isLang()` มาแทน regex parse cookie ที่
+  เคย inline อยู่ใน `HeaderBar.tsx` (2 จุด: read effect ตอน mount + `changeLang()`) — รวมเป็น
+  implementation เดียว ไม่ใช่ copy ซ้ำที่ 3 (SessionLayer, profile page, settings page)
+- **`/api/auth/me`'s `withUserPreferences()` เพิ่ม `language`** อ่านสดจาก Postgres ทุกครั้งเหมือน
+  `theme_preference` (ไม่ฝังลง JWT) — เหตุผลเดียวกัน: เปลี่ยนเครื่องนี้แล้วอีกเครื่องต้องเห็นทันที ไม่ต้อง
+  รอ token หมดอายุ · เพิ่ม `language?: "th" | "en"` เป็น field เสริมใน `JWTPayload` type (comment บอกว่า
+  ไม่ได้ sign เข้า token จริง เผื่อคนงงว่าทำไมมี field แต่ไม่เห็นใน `jwt.sign()`)
+- **`SessionLayer.tsx` เพิ่ม effect sync ภาษา** คู่กับ theme — ต่างกันจุดสำคัญ 1 จุด: **theme ไม่ต้อง
+  `router.refresh()`** (เปลี่ยน DOM class/cookie/localStorage ฝั่ง client พอ) แต่ **language ต้อง
+  refresh** เพราะ `lang` ถูกอ่านฝั่ง server ใน `app/layout.tsx` เพื่อเลือก dictionary — ถ้าไม่ refresh
+  หน้าที่ mount ไปแล้วจะไม่เปลี่ยนภาษาเลยแม้ cookie เปลี่ยนแล้วก็ตาม
+- **gap ที่แท้จริงที่แก้คือ "form มีอยู่แล้วแต่กดบันทึกแล้วไม่มีผลกับหน้าจอ"** — ทั้ง `/admin/profile`
+  และ public `/settings` มี `Select` ภาษาอยู่แล้วเดิม ส่ง `language` ไป `updateMe` ได้แล้ว แต่ไม่มีขั้นตอน
+  "เอาผลลัพธ์ที่ server ยืนยันกลับมา ไปเขียน cookie + refresh" เหมือนที่ theme ทำ (`setTheme(nextTheme)`)
+  เลย — เพิ่มบล็อกคู่กันในทั้ง 2 หน้า ใช้ `res.data.updateMe.language` (ค่าที่ server confirm แล้ว ไม่ใช่
+  ค่าดิบจาก form) เหมือน pattern ของ theme เป๊ะ
+- **เช็คแล้วว่า admin ไม่มีปุ่มสวิตช์เร็วๆที่ topbar เลย ทั้ง theme และ language** — `ThemeToggle.tsx`
+  ใช้อยู่แค่ใน `HeaderBar.tsx` (หน้า public) เท่านั้น ไม่ได้เอาไปใส่ใน admin shell — เป็น pattern เดิมของ
+  ระบบที่สม่ำเสมออยู่แล้ว (ต้องเข้า `/admin/profile` ไปเปลี่ยนทั้งสองอย่าง) ไม่ใช่ gap ที่เพิ่งเกิดจากงานนี้
+- **ยังไม่ทำ/gap ที่รู้ตัว**: ยัง apply migration `7.55` เข้า DB จริงไม่ได้ (ไม่มี docker/postgres รันอยู่
+  ตอนพัฒนา) และยังไม่ได้ทดสอบสลับภาษาจริงในเบราว์เซอร์ · switcher นี้เปลี่ยนภาษาได้จริงแค่ ~15% ของแอป
+  (หน้าที่ผ่าน `useI18n()` อยู่แล้ว) ส่วน admin 61 ไฟล์ยัง hardcode ไทยเหมือนเดิมจนกว่าจะแปลง string เข้า
+  i18n dictionary (ดู § i18n coverage ใน [AGENTS.md](AGENTS.md)) · user ใหม่ที่ register ยังได้
+  `language = 'en'` เสมอ (ค่า default เดิมจาก `1.13`) แม้ product เป็นภาษาไทยเป็นหลัก — ไม่ใช่บั๊กใหม่
+  แค่ไม่มีผลกระทบอะไรจนกว่าจะมี switcher รอบนี้
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**

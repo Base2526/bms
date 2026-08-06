@@ -3285,8 +3285,12 @@ const rawResolvers = {
         themePreference === "light" || themePreference === "dark" || themePreference === "system"
           ? themePreference
           : null;
+      // เดิม `language` ไม่ validate เลย (รับ string อะไรก็ได้ตรงเข้า DB) ต่างจาก themePreference
+      // ที่ whitelist ก่อนเข้า COALESCE — แก้ให้เข้มเท่ากัน กัน column กลายเป็นค่าที่ i18n dictionary
+      // (apps/web/i18n) ไม่รู้จัก ซึ่งจะ getMessage() แล้วได้ key เปล่ากลับมาแทนข้อความจริง
+      const languageVal = language === "th" || language === "en" ? language : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, gender, themePreferenceVal, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, languageVal, gender, themePreferenceVal, notifications_enabled );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
@@ -3298,7 +3302,7 @@ const rawResolvers = {
           updated_at = NOW()
         WHERE id = $7
         RETURNING id, name, email, phone, username, language, gender, theme_preference AS "themePreference", avatar, notifications_enabled`,
-        [name, phone, language, genderVal, themePreferenceVal, notifications_enabled, author_id]
+        [name, phone, languageVal, genderVal, themePreferenceVal, notifications_enabled, author_id]
       );
       return rows[0];
     },
