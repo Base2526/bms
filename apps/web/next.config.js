@@ -44,16 +44,9 @@ const nextConfig = {
     // alias ไปที่แพ็กเกจ core (src) เพื่อ dev-hot-reload
     config.resolve.alias['@core'] = path.resolve(__dirname, '../../packages/graphql-core/src');
 
-    // ✅ กันไฟล์ server-only เผลอถูก bundle ฝั่ง client
-    // (ถ้า client ไป import เข้า จะให้มัน fail เร็ว ๆ หรือ ignore)
-    if (!isServer) {
-      config.resolve.alias["@social/queue.server"] = false;
-      config.resolve.alias["@social/pubsub.server"] = false;
-    }
-
     return config;
   },
-  transpilePackages: [ "antd", "events", "social-queue" ],
+  transpilePackages: [ "antd", "events" ],
 
   productionBrowserSourceMaps: false,
   swcMinify: true,

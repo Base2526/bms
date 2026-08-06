@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runScheduledDigests } from "@/lib/bms/reportDigest";
+import { recordJobRun } from "@/lib/bms/jobRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runScheduledDigests();
+    const result = await recordJobRun("report-digest", "cron", () => runScheduledDigests());
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "send-digest failed" }, { status: 500 });

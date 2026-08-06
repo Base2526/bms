@@ -1380,6 +1380,109 @@ checkout ไม่มี 50 นั้น ร้านขาดค่าส่ง
   ที่อยู่เก่า) · **`/admin/orders` ยังไม่โชว์ `shipping_fee`** · REST `POST /api/bms/order` ไม่ได้ส่ง
   province เข้ามา · bulk product import ยังไม่รับคอลัมน์น้ำหนัก · ไม่มี rate API จริง (ดูข้อบน)
 
+## Redis: เอา queue โซเชียลออก + เพิ่ม cache/session/persistence (2026-08)
+
+**เสร็จแล้ว (branch `feat/redis-infra-improvements`, `tsc --noEmit` ผ่านสะอาดทุกจุด)** — จุดเริ่มคือ
+สำรวจว่า Redis ใช้ทำอะไรอยู่บ้างจริงๆ (ไม่ใช่แค่ตามเอกสาร) แล้วพบว่ามี job queue เก่าที่ไม่เกี่ยวกับ
+BMS เลย + client ซ้ำกัน 3 ชุด + ไม่มี cache/session/persistence ทั้งที่ Redis ตัวเองพร้อมอยู่แล้ว:
+
+- **เอาออกทั้งชุด: job queue โพสต์โซเชียลอัตโนมัติ** (`packages/social-queue`, `packages/events`,
+  `apps/web/scripts/social-worker.mjs`, หน้า/route `/admin/queue` ทั้งหมด, service `social-worker`
+  ใน docker-compose ทั้ง 3 ไฟล์, sidebar link, path alias `@social`/`@events`) — เดิมเป็นของ feature
+  "โพสต์บทความ/community แล้วยิงขึ้น Facebook อัตโนมัติ" คนละเรื่องกับ BMS เลย และไม่มี consumer อะไร
+  เหลือให้เก็บไว้ · **ก่อน deploy ของจริงต้องเช็ค `LLEN social:publish:queue` ใน production ก่อนเสมอ**
+  ว่ามีงานค้างอยู่ไหม เพราะลบ producer+consumer พร้อมกัน งานที่ค้างจะหายไปเงียบๆไม่มี error — ถ้ามีค้าง
+  ต้องรอให้รันจนหมดคิวก่อน หรือยอมรับว่าจะไม่โพสต์ให้โพสต์เหล่านั้น
+  · เจอ dead code ที่ตกหล่นจากการลบรอบแรกอีก 2 จุด: env var `FB_PAGE_ID`/`FB_PAGE_ACCESS_TOKEN`/
+  `SOCIAL_QUEUE_KEY`/`SOCIAL_DLQ_KEY`/`SOCIAL_DELAYED_KEY` ยังถูกส่งเข้า service `web` (ไม่ใช่แค่
+  `social-worker`) ทั้งใน `docker-compose.prod.yml` และ `apps/web/Dockerfile` (ARG+ENV) ทั้งที่ไม่มี
+  โค้ดอ่านค่าพวกนี้แล้ว — ลบตามไปด้วย · และ `apps/web/app/api/logout/route.ts` เป็น route ซ้ำที่ไม่มีใคร
+  เรียก (ของจริงคือ `/api/auth/logout-admin`) hardcode ชื่อ cookie เองแทน import จาก `token.ts` — ลบทิ้ง
+  **บทเรียน**: หลังลบ feature ใหญ่ ต้อง grep เผื่อ env var/route ซ้ำที่ผูกกับ service อื่นที่ไม่ใช่ตัวหลัก
+  ของ feature นั้นด้วย ไม่ใช่ลบแค่ที่เจอจากการอ่าน entrypoint เดียว
+- **Redis client ซ้ำ 3 ชุด → เหลือ 1 ชุดต่อ process** — `apps/web/lib/pubsub.ts` เดิมเปิด
+  publisher+subscriber ของตัวเองอีกคู่ (คนละ object กับที่ `packages/realtime/src/pubsub.ts` ใช้ ซึ่ง
+  `apps/ws` ก็ import ตัวนั้นเหมือนกัน) ทั้งที่ยิงไป Redis instance/channel เดียวกัน — ใช้งานได้เพราะ
+  Redis pub/sub เป็น broker กลาง ไม่จำเป็นต้องเป็น object เดียวกันในโค้ด แต่เปิด connection เกินจำเป็น
+  แก้โดยให้ `lib/pubsub.ts` แค่ `export { pubsub } from "../../../packages/realtime/src/pubsub.js"` ไม่
+  สร้าง client ใหม่เอง (import ข้าม package boundary แบบ relative path ได้เพราะ `packages/graphql-core`
+  ก็ import `packages/realtime` แบบเดียวกันอยู่แล้ว ไม่ใช่ pattern ใหม่) · client ตัวที่ 3
+  (`packages/social-queue/pubsub.server.ts`) เป็น dead code อยู่แล้วตั้งแต่ก่อนหน้านี้ หายไปพร้อมข้อบน
+- **Cache layer ใหม่** → `lib/cache.ts` (`getOrSetCache()`/`invalidateCache()`/`invalidateCachePrefix()`)
+  **fail-open เสมอ** (Redis error = log แล้วถือเป็น cache miss ไม่ throw) เพราะระบบนี้ไม่เคยพึ่ง Redis
+  เพื่อความถูกต้องมาก่อน จะให้ cache กลายเป็นจุดพังใหม่ไม่ได้ · ใช้จริงจุดแรกคือ `getStoreProfile()`
+  (`lib/bms/storeProfile.ts`) เพราะเป็น read ที่หนักสุด (ทุก AI tool call ที่ถาม store info/payment/
+  shipping + ทุกครั้งที่เปิด public checkout) แต่เปลี่ยนน้อยที่สุด — TTL 60 วิ + `invalidateCache()`
+  ทันทีหลัง `upsertStoreProfile()` COMMIT สำเร็จ · **ตั้งใจไม่แคช catalog/product read**
+  (`listSellableProducts()`/`browse_catalog`/`list_new_arrivals`) เพราะเอกสารเดิมยืนยันไว้ชัดว่าต้อง
+  อ่านสดทุกครั้งไม่มี cache (สินค้าใหม่ insert แล้วต้องเห็นทันทีในทูลถัดไป) — แคชจุดนั้นจะพังของเดิมที่
+  ตั้งใจออกแบบไว้แล้ว
+- **Session revocation ผ่าน Redis** → `lib/redisSession.ts` (`createAdminSession()`/
+  `isAdminSessionActive()`/`revokeAdminSession()`) เดิม `ADMIN_COOKIE` เป็น JWT stateless ล้วน
+  (บันทึกไว้แล้วก่อนหน้านี้ว่า "revoke ก่อนหมดอายุไม่ได้เลย") ตอนนี้ `loginAdmin` (`resolvers.ts`) มินต์
+  `jti` ใหม่ทุกครั้งใส่ลง JWT + เก็บ `session:admin:<jti> = userId` ใน Redis (TTL เท่า session) ·
+  `/api/auth/logout-admin` decode cookie เดิมก่อนเคลียร์ แล้วเรียก `revokeAdminSession(jti)` จริง (ไม่ใช่
+  แค่เคลียร์ cookie ฝั่ง browser เหมือนเดิม) · จุดตรวจจริงอยู่ที่ `createContext()`
+  (`app/api/graphql/route.ts`) — เช็ค Redis ก่อนเชื่อ token ทุก request ของ scope admin เพราะเป็น choke
+  point ที่ action จริงแทบทั้งหมดผ่าน (ตาม CLAUDE.md ที่บอกว่า business logic อยู่ที่ GraphQL/lib/bms)
+  · **fail-open เหมือนกัน**: Redis ล่ม = เชื่อ JWT อย่างเดียวเหมือนก่อนมีฟีเจอร์นี้ ไม่ล็อกแอดมินทุกคน
+  ออกเพราะ infra บั๊ก — แลกมาด้วย latency: `isAdminSessionActive()` เป็น await ต่อ request เสมอ ถ้า
+  Redis เอื้อมไม่ถึงจะหน่วงก่อน fail-open ทุกครั้ง ไม่ใช่ fail-open แบบไม่มีต้นทุนเลย
+  **ยังไม่ทำ (gap ที่รู้ตัว)**: ครอบคลุมแค่ฝั่ง Admin (`ADMIN_COOKIE`) — ฝั่ง user/community app
+  (`USER_COOKIE`: `loginUser`/`loginWithSocial`/`registerUser`) ยังเป็น JWT stateless ล้วน 100% ไม่มี
+  `jti`/ไม่มี Redis session เลย ถ้าจะทำต่อให้ใช้ pattern เดียวกัน (prefix `session:user:` แยกจาก admin)
+  ไม่ต้องคิดกลไกใหม่ · ไม่มี "revoke ทุก session ของ user คนเดียว" (เช่น ตอนเปลี่ยนรหัสผ่านให้ตัดทุก
+  เครื่องที่ล็อกอินอยู่) ต้องเก็บ set ของ jti ต่อ user เพิ่มถ้าต้องการ
+- **Redis persistence** → `docker-compose.yml` เปิด `--appendonly yes --appendfsync everysec` + named
+  volume `redis_data:/data` — dev/prod compose ไม่มี override ของ redis service เองอยู่แล้ว จึงได้ผลนี้
+  ไปอัตโนมัติทั้ง 3 environment โดยไม่ต้องแก้ไฟล์อื่น
+- **ยังไม่ทำ (ต้องปิดก่อน production จริง)**: Redis **ไม่มี password/TLS เลย** ในทุก compose file —
+  เดิมรับได้เพราะมีแค่ pub/sub (ข้อมูลชั่วคราว) แต่ตอนนี้เก็บ session id + แคช `payment_accounts`
+  (เลขบัญชีธนาคาร/PromptPay ของร้าน) ด้วย ถ้า network isolation หลุดจะเห็นข้อมูลพวกนี้เป็น plaintext
+  ตรงๆ — ต้องเพิ่ม `requirepass` (ผ่าน env ที่ user ต้องเติมเองใน `.env`, agent ห้ามแก้ `.env` ไฟล์จริง)
+  ก่อนขึ้น production จริง, และถ้า Redis อยู่ข้าม host/node จริงควรใช้ `rediss://` ไม่ใช่ `redis://`
+
+## Cron/batch run history จริง (2026-08)
+
+**เสร็จแล้ว** — `/admin/operations-schedule` (gate `requirePlatformAdminPage()` = super admin/platform
+admin เท่านั้นอยู่แล้วเดิม) เดิมเป็นแค่หน้า**เดาว่า cron job ควรทำอะไร** โดยอ่าน source file/comment มา
+scrape (`lib/bms/operationsSchedule.ts`) — ในโค้ดมี banner เขียนตรงๆว่า "ยังไม่มี trustworthy
+run-history source" และไม่มีตารางบันทึกการรันจริงเลยสักที่:
+
+- **schema ใหม่** → `db/migrations/7.53__bms_job_runs.sql` — `bms_job_runs` platform-wide (ไม่มี
+  `tenant_id`/RLS เหมือน `bms_ai_provider_health`) เพราะ cron run ไม่ใช่ข้อมูลของร้านไหนร้านหนึ่ง ·
+  1 แถวต่อการรัน 1 ครั้ง (`job_name`, `status` running/success/error, `started_at`/`finished_at`,
+  `duration_ms`, `output` jsonb, `error`, `triggered_by`)
+- **service** → `lib/bms/jobRuns.ts` — entrypoint หลักคือ `recordJobRun(jobName, triggeredBy, fn)`:
+  insert แถว `running` ก่อนเรียก `fn()` แล้ว update เป็น `success`/`error` เสมอไม่ว่าผลจะเป็นยังไง
+  (ห่อ try/catch ไว้ในฟังก์ชันเดียว กันเผลอลืมปิดแถวถ้าไปเขียน start/finish แยกกันเอง) + re-throw error
+  เดิมออกไปให้ route จัดการ response เองเหมือนก่อนมีฟีเจอร์นี้ — ไม่เปลี่ยนพฤติกรรม response ของ route
+  เลย แค่เพิ่มการบันทึกคู่ขนาน · `recordExternalJobRun()` สำหรับงานที่รันนอกแอป (รายงานผลย้อนหลังเป็น
+  แถวที่ปิดแล้วทันที ไม่ใช่ insert running ก่อน)
+- **เสียบเข้าจริงทั้ง 4 cron endpoint** (`orders/release-expired`, `channels/check-health`,
+  `ai/check-health`, `reports/send-digest`) — ห่อ `recordJobRun()` รอบฟังก์ชันเดิมที่เรียกอยู่แล้ว ไม่ได้
+  เขียน logic ธุรกิจซ้ำ, response ของ route เหมือนเดิมทุกจุด (แค่ error path ต้อง try/catch เพิ่มเพราะ
+  `recordJobRun` re-throw)
+- **`daily-log-triage` (GitHub Action) ก็ได้ด้วย** ทั้งที่รันนอกแอปเราเลย — เพิ่ม endpoint ใหม่
+  `POST /api/bms/jobs/report-run` (gate `x-cron-secret` แบบเดียวกับ cron endpoint อื่น) ให้ workflow
+  ยิงกลับมารายงานผลตอนจบ step ด้วย `if: always()` + `${{ job.status }}` — **ต้องตั้ง 2 secret ใหม่ใน
+  GitHub repo ก่อนถึงจะเห็นผล**: `BMS_APP_BASE_URL` (URL deployment จริง) กับ `BMS_CRON_SECRET` — ถ้า
+  ไม่ตั้ง step นี้ข้ามเงียบๆ ไม่ทำให้ workflow fail (เจตนา ไม่อยากให้ฟีเจอร์ observability เสริมไปทำให้
+  งานหลักพัง)
+- **UI** → `OperationsScheduleClient.tsx` เพิ่มคอลัมน์ "Last run" (success/error/running/never-run) +
+  กางแถวดู "Recent runs" ล่าสุด 15 ครั้งพร้อม error message ถ้ามี + alert แดงอัตโนมัติเมื่อมี job error
+  หรือ "ค้าง" (`STUCK_RUNNING_MINUTES = 30` — แถว `running` ที่เก่ากว่านี้ถือว่า process ตายแบบไม่ได้ปิด
+  งาน ไม่ auto-correct ให้ เป็นสัญญาณให้คนไปเช็คเอง) · banner เดิมที่บอกว่า "ยังไม่มี run-history" ถูก
+  แทนที่ด้วย alert บอกว่าต้อง apply migration 7.53 ก่อนถึงจะเห็นข้อมูล (กันสับสนถ้า deploy แล้วยังโชว์
+  "Never run yet" อยู่ทั้งที่ endpoint ถูกเรียกจริง)
+- **`job_name` ผูกกับ `key` ใน `DEFINITIONS`array ของ `operationsSchedule.ts` ด้วยชื่อ ไม่ใช่ FK** —
+  ตั้งใจ เพราะสองอันนี้เป็น registry คนละงาน (อันหนึ่งบอก "job นี้ควรทำอะไร" อีกอันบอก "เกิดอะไรขึ้นจริง")
+  join กันแค่ตอน render UI เท่านั้น
+- **ยังไม่ทำ**: ต้อง apply migration `7.53` เข้า DB จริงก่อนถึงจะเห็นผล (หน้าเว็บเตือนไว้แล้ว) · ยังไม่ได้
+  ตั้ง cron schedule จริงให้ทั้ง 4 endpoint (เหมือนเดิมก่อนหน้านี้ — ฟีเจอร์นี้แค่ทำให้ "เห็นได้" ว่ารันไป
+  แล้วผลเป็นยังไง ไม่ได้ทำให้มันถูกยิงอัตโนมัติ) · ยังไม่ได้ verify กับ DB จริงบนเครื่องนี้ (ไม่มี docker
+  postgres รันอยู่ตอนพัฒนา รอบนี้ `tsc --noEmit` ผ่านสะอาดเท่านั้น)
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
@@ -1512,6 +1615,12 @@ natural suite กับ live model).
 ส่งสรุปยอดขายรายวัน/สัปดาห์/เดือนผ่านอีเมล/Slack/LINE, กันส่งซ้ำด้วย `last_period_key`, การ์ดตั้งค่าที่
 `/admin/settings` + หน้า audit ข้ามร้าน `/admin/report-schedule`; verify กับ dev instance จริงแล้วรวมถึง
 ส่ง EMAIL จริงสำเร็จ 1 ครั้ง — ยังไม่ได้ตั้ง cron schedule จริง).
++ **Redis infra hardening + Cron/batch run history เสร็จแล้ว** (ดูหัวข้อ § Redis: เอา queue โซเชียลออก...
+และ § Cron/batch run history จริง ด้านบน — เอา job queue โซเชียลที่ไม่เกี่ยว BMS ออกทั้งชุด, Redis client
+ซ้ำ 3→1, เพิ่ม cache layer (`lib/cache.ts`) + admin session revocation (`lib/redisSession.ts`) + AOF
+persistence, และ `bms_job_runs` (migration `7.53`) ให้ `/admin/operations-schedule` เห็น run history จริง
+ของทั้ง 4 cron endpoint + `daily-log-triage`; ยังไม่ verify กับ DB จริงบนเครื่องนี้ (`tsc` ผ่านสะอาดเท่านั้น),
+Redis ยังไม่มี password/TLS, session revocation ครอบคลุมแค่ฝั่ง admin).
 + **Live Dashboard เลย์เอาต์เสร็จแล้ว แต่ยังเป็น mock ทั้งหมด** (ดูหัวข้อ § Live Dashboard ด้านบน — `/live-dashboard`
 เป็น public route ที่ใช้ session เดิม, ปุ่มเข้าอยู่ใน HeaderBar, มี fullscreen + responsive มือถือ; **ยังไม่ต่อ query
 จริงเลยแม้แต่ตัวเดียว** ทุกตัวเลขเป็น `MOCK_*` + ป้าย "ตัวอย่าง" + `// TODO(real):`).
@@ -1522,8 +1631,10 @@ TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเ�
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
-· ตั้ง cron schedule จริงให้ `/api/bms/channels/check-health`, `/api/bms/ai/check-health`, และ
-`/api/bms/reports/send-digest` (ทั้งสาม endpoint พร้อมแล้ว แค่ยังไม่มีตัวยิงอัตโนมัติ)
+· ตั้ง cron schedule จริงให้ `/api/bms/orders/release-expired`, `/api/bms/channels/check-health`,
+`/api/bms/ai/check-health`, และ `/api/bms/reports/send-digest` (ทั้ง 4 endpoint พร้อมแล้วและตอนนี้บันทึก
+run history จริงลง `bms_job_runs` ทุกครั้งที่ถูกเรียก — ดู § Cron/batch run history จริง — แค่ยังไม่มี
+ตัวยิงอัตโนมัติ) · เพิ่ม password/TLS ให้ Redis ก่อน production จริง (ดู § Redis ด้านบน)
 · proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
 ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model

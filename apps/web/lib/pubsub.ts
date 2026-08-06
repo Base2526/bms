@@ -1,10 +1,6 @@
-import { RedisPubSub } from 'graphql-redis-subscriptions';
-import Redis from 'ioredis';
-
-const url = process.env.REDIS_URL || 'redis://redis:6379';
-const opts = { lazyConnect: true, maxRetriesPerRequest: null } as const;
-
-export const pubsub = new RedisPubSub({
-  publisher: new Redis(url, opts),
-  subscriber: new Redis(url, opts),
-});
+// Re-export the single shared RedisPubSub instance instead of opening a second
+// publisher+subscriber connection pair to the same Redis server. `apps/ws` and
+// `apps/web` both end up on this one module (via packages/realtime), so every
+// `pubsub.publish(...)` call in this process reaches the exact same client
+// `packages/graphql-core`'s subscription resolvers listen on.
+export { pubsub } from "../../../packages/realtime/src/pubsub.js";

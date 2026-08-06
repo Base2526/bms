@@ -365,12 +365,41 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   cost snapshot exists yet — so the export and the optional AI executive summary must keep that
   disclaimer. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
   render Thai glyphs correctly; XLSX/CSV remain UTF-8 and handle Thai data today.
+- **Redis infrastructure hardening (2026-08)**: the legacy social-media auto-publish job queue
+  (`packages/social-queue`, `packages/events`, `apps/web/scripts/social-worker.mjs`, `/admin/queue`)
+  was removed entirely — it published blog/community posts to Facebook, was unrelated to BMS, and had
+  no consumer left worth keeping. What's new instead: `apps/web/lib/cache.ts` (generic fail-open
+  read-through Redis cache, applied to `getStoreProfile()`), `apps/web/lib/redisSession.ts`
+  (Redis-backed revocation for the admin `ADMIN_COOKIE` JWT — logout now actually invalidates a
+  session instead of only clearing the browser cookie; enforced once in `createContext()` in
+  `app/api/graphql/route.ts`), and Redis persistence (`--appendonly yes` + a named volume in
+  `docker-compose.yml`, inherited by dev/prod). `apps/web/lib/pubsub.ts` now re-exports the single
+  shared `RedisPubSub` instance from `packages/realtime` instead of opening a second one. See "Redis
+  usage" in [AGENTS.md](AGENTS.md) for the invariants (what's cached vs. never cached, fail-open
+  design, what's *not* covered — community/`USER_COOKIE` logins are still stateless JWT with no
+  revocation). **Not done**: Redis has no password/TLS in any compose file yet — treat as required
+  before a production deploy that doesn't already isolate Redis at the network layer.
+- **Cron/batch run history (2026-08)**: `/admin/operations-schedule` (platform-admin only) used to
+  only describe what a job is *supposed* to do by reading source files — it explicitly said it had no
+  real run history. Migration `7.53__bms_job_runs.sql` + `lib/bms/jobRuns.ts` (`recordJobRun()`/
+  `recordExternalJobRun()`) now record every invocation (status, duration, output/error) of the four
+  cron-secret-gated endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
+  `reports/send-digest`) and, via a new `POST /api/bms/jobs/report-run` write-back endpoint, the
+  `daily-log-triage` GitHub Action too (only if `BMS_APP_BASE_URL`/`BMS_CRON_SECRET` are set as repo
+  secrets — otherwise that one step just skips itself). The page now shows a real "Last run"
+  status/history per job and flags a `running` row stuck past 30 minutes as needing attention. Still
+  requires applying migration `7.53` before any run shows up, and still doesn't give any of the four
+  endpoints an actual external scheduler — this only makes existing/future invocations observable, it
+  doesn't schedule them (see the unchanged "ตั้ง cron schedule จริง" item in Roadmap remaining below).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
 Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
-(Manager role) manage their own staff · wiring an actual cron schedule for the three ready-but-unscheduled
-endpoints (`channels/check-health`, `ai/check-health`, `reports/send-digest`).
+(Manager role) manage their own staff · wiring an actual cron schedule for the four ready-but-unscheduled
+endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`, `reports/send-digest`) —
+each now records its own run history (see "Cron/batch run history" above), it just isn't triggered
+automatically yet · adding a password/TLS to Redis before a real production deploy (see "Redis
+infrastructure hardening" above).
 
 ## AI rules (non-negotiable)
 

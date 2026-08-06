@@ -9,6 +9,7 @@ import path from "path";
 import GraphQLJSON from "graphql-type-json";
 
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
+import { createAdminSession } from "@/lib/redisSession";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
@@ -26,7 +27,6 @@ import { createNotification } from '@/lib/notifications/service';
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
 
-import { emitPostEvent } from "@events/emit.server";
 import {
   deactivateDevicePushToken,
   listActiveFcmTokens,
@@ -771,17 +771,6 @@ const rawResolvers = {
   },
   Query: {
     _health: async() =>{
-      await emitPostEvent("post.created", {
-        postId: "result.id",
-        actorId: "author_id",
-        title: "result.title",
-        summary: undefined,
-        url: undefined,
-        revisionId: "revisionId",
-        eventId: randomUUID(),
-        occurredAt: new Date().toISOString()
-      });
-
       console.error("[health] called");
 
       return `ok`;
@@ -3052,8 +3041,12 @@ const rawResolvers = {
       // makes the two clocks disagree about when the session actually ends.
       const sessionMaxAgeSec = user.role === "Administrator" ? 60 * 60 * 24 : 60 * 60 * 24 * 7;
 
+      // jti = this session's id in Redis (lib/redisSession.ts) — the JWT itself is still
+      // stateless/self-verifying, this is only what makes logout/revocation possible before `exp`.
+      const jti = randomUUID();
+
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
+        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id, jti },
         JWT_SECRET,
         { expiresIn: sessionMaxAgeSec }
       );
@@ -3065,6 +3058,9 @@ const rawResolvers = {
         path: "/",
         maxAge: sessionMaxAgeSec,
       });
+
+      // best-effort — Redis ล่มไม่ควรทำให้ login ล้มเหลว (แค่ revoke ก่อนหมดอายุจะทำไม่ได้ชั่วคราว)
+      await createAdminSession(jti, user.id, sessionMaxAgeSec);
 
       // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
@@ -3778,44 +3774,6 @@ const rawResolvers = {
       // ============================================================
       // ✅ EMIT EVENT (หลัง commit เท่านั้น)
       // ============================================================
-      try {
-        const eventName = id ? "post.updated" : "post.created";
-
-        if (finalPostId) {
-          const payload: any = {
-            eventId: randomUUID(),
-            occurredAt: new Date().toISOString(),
-
-            postId: finalPostId,
-            actorId: String(author_id),
-            revisionId,
-
-            title: finalTitle ?? null,
-            summary: finalSummary ?? null,
-            url: finalUrl ?? null,
-
-            // ✅ สำคัญ: ส่ง auto_publish ให้ worker
-            auto_publish: finalAutoPublish ?? null,
-
-            images: (result?.images ?? []).map((img: any) => ({
-              id: img.id,
-              url: img.url,
-            })),
-          };
-
-          // ✅ NEW: ถ้า request มี data.tel_numbers ให้ emit tel_numbers ไปด้วย
-          if (Array.isArray(data?.tel_numbers)) {
-            payload.tel_numbers = Array.isArray(finalTelNumbers) ? finalTelNumbers : [];
-          }
-
-          console.log("[upsertPost][payload] = ", payload);
-
-          await emitPostEvent(eventName, payload);
-        }
-      } catch (e: any) {
-        console.error("[events] emit failed (ignored)", e?.message ?? e);
-      }
-
       return result;
     },
     deletePost: async (_: any, { id }: { id: string }, ctx: any) => {
@@ -3889,29 +3847,6 @@ const rawResolvers = {
           return { ok, snap: ok ? snap : null };
         }
       );
-
-      // ✅ 3) emit หลัง commit เท่านั้น
-      try {
-        if (result.ok && result.snap) {
-          const snap = result.snap;
-          await emitPostEvent("post.deleted", {
-            eventId: randomUUID(),
-            occurredAt: new Date().toISOString(),
-
-            postId: snap.postId,
-            actorId: String(author_id),
-            revisionId,
-
-            title: snap.title ?? null,
-            summary: snap.summary ?? null,
-            url: snap.url ?? null,
-            auto_publish: snap.auto_publish ?? null,
-            images: snap.images ?? [],
-          });
-        }
-      } catch (e: any) {
-        console.error("[events] emit post.deleted failed (ignored)", e?.message ?? e);
-      }
 
       return result.ok;
     },
@@ -3995,30 +3930,6 @@ const rawResolvers = {
 
         return deletedCount > 0;
       });
-
-      // ✅ 3) emit หลัง commit: ยิงทีละโพสต์
-      try {
-        if (result && snaps.length) {
-          for (const s of snaps) {
-            await emitPostEvent("post.deleted", {
-              eventId: randomUUID(),
-              occurredAt: new Date().toISOString(),
-
-              postId: s.postId,
-              actorId: String(author_id),
-              revisionId,
-
-              title: s.title ?? null,
-              summary: s.summary ?? null,
-              url: s.url ?? null,
-              auto_publish: s.auto_publish ?? null,
-              images: s.images ?? [],
-            });
-          }
-        }
-      } catch (e: any) {
-        console.error("[events] emit post.deleted (bulk) failed (ignored)", e?.message ?? e);
-      }
 
       return result;
     },
