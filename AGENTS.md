@@ -137,6 +137,14 @@ the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/fi
 generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
 labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
 embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+Report field completeness is a two-step contract, not one: a summary query (e.g. `getSalesSummary()`,
+`listLowStock()` in `lib/bms/reports.ts`/`products.ts`) can return a field that never reaches any
+output, because each `build*ReportDoc()` function in `documentGenerator.ts` explicitly lists which
+columns go into which sheet. Adding a field to the query is not sufficient — add it to the matching
+sheet's `columns` array too, or it is silently dropped from every format. Also remember `buildCsv()`
+has no native multi-sheet concept; it now iterates every sheet in `doc.sheets` (each preceded by a
+`# <sheet name>` line) — do not reduce it back to `doc.sheets[0]`, which previously dropped every
+sheet but the first from CSV exports while XLSX/PDF stayed correct.
 
 Adding a new AI tool: wrap the existing `lib/bms/*.ts` function in `tools/catalog.ts` (validate
 model-supplied args, derive `tenantId` from `ExecCtx`, add a domain `audit()` for writes, and assign

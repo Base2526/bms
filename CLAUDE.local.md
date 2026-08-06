@@ -1244,6 +1244,24 @@ webhook ปลอมได้ 404 ตามคาด, ทุกแถวถู�
 - `draftSummary()` ให้ AI เขียน executive summary จาก facts ที่ collect มาแล้วเท่านั้น; ไม่มี credentials/quota
   หรือ provider fail → คืน `null` เฉย ๆ **ไม่ fallback เป็นข้อความเดาเอง**
 
+**บั๊ก field หายจากไฟล์ — เจอ+แก้แล้ว (2026-08):** user รายงานว่าออกรายงานแล้ว field ไม่ครบ ตรวจแล้วพบว่า
+query ดึงข้อมูลมาครบตั้งแต่ต้น แต่ตอนประกอบไฟล์ output ทิ้งบาง field ไปเงียบๆ 3 จุด:
+
+- **`buildCsv()` เดิมเขียนแค่ `doc.sheets[0]`** — รายงาน Sales มี 3 sheet (By day/Top products/By
+  channel) แต่ CSV ได้แค่ sheet แรก สินค้าขายดี+แยกช่องทางหายไปทั้งหมดถ้า export เป็น CSV (XLSX/PDF ไม่
+  กระทบ เพราะ `buildXlsx`/`buildPdf` ไล่ทุก sheet อยู่แล้ว) แก้โดยให้ `buildCsv()` ไล่ทุก sheet เหมือนกัน
+  คั่นด้วยบรรทัด `# ชื่อ sheet`
+- **`getSalesSummary()` ดึง `byStatus` (ยอดแยกตามสถานะออร์เดอร์) มาจริงแต่ไม่เคยถูก map ลง sheet ไหนเลย**
+  ทั้ง 3 format — เพิ่ม sheet "By status" ใหม่ใน `buildSalesReportDoc()`
+- **`listLowStock()` select `reorder_point` มาแล้วแต่ `buildInventoryReportDoc()` ไม่เอาใส่ column list**
+  — field นี้มีประโยชน์สุดสำหรับอธิบายว่าทำไมแถวนั้นถึงถูก flag ว่าใกล้หมด เพิ่มเข้าคอลัมน์ "Reorder point"
+  ใน sheet "Low / out of stock" แล้ว
+- **บทเรียน**: "query ได้ข้อมูลมา" กับ "field โผล่ในไฟล์" เป็นคนละ step กันเสมอในไฟล์นี้ — ทุก
+  `build*ReportDoc()` ต้อง list column/sheet เองแยกจาก query เพิ่ม field ใหม่ในบทสรุป (`reports.ts`/
+  `products.ts`) แล้วต้องไปเพิ่มใน `documentGenerator.ts` ด้วยเสมอ ไม่งั้นข้อมูลจะถูก query มาแล้วทิ้งแบบ
+  เงียบๆไม่มี error ใดเตือน — ยังไม่ได้ทดสอบ export ไฟล์จริงในเบราว์เซอร์ (แก้แล้ว + `tsc --noEmit` ผ่าน
+  เท่านั้น)
+
 ## Carrier scaffold (Flash/Kerry) + ให้ลูกค้าเลือกขนส่งตอนแชท (2026-08)
 
 **ยังไม่ผูก API จริง — เป็น scaffold + mock mode เท่านั้น** (ไม่มี API key ของ Flash/Kerry และยังไม่มี

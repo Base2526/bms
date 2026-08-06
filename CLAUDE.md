@@ -365,6 +365,17 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   cost snapshot exists yet — so the export and the optional AI executive summary must keep that
   disclaimer. PDF output currently keeps headings in English because `pdfkit`'s default fonts do not
   render Thai glyphs correctly; XLSX/CSV remain UTF-8 and handle Thai data today.
+  **Fixed (2026-08)** — three fields were queried but silently dropped before reaching the output
+  file: CSV export only ever wrote `doc.sheets[0]`, so a Sales report's "Top products"/"By
+  channel"/"By status" sheets were missing from CSV (XLSX/PDF were unaffected, they already
+  iterated every sheet); `getSalesSummary()`'s `byStatus` breakdown was fetched from the DB but never
+  mapped into any sheet in any format; and the Inventory report's low-stock sheet omitted
+  `reorder_point` even though `listLowStock()` already selects it. All three are fixed in
+  `lib/bms/documentGenerator.ts` (`buildCsv()` now iterates every sheet with a `# <sheet name>`
+  marker line between sections; `buildSalesReportDoc()` adds a "By status" sheet; the inventory
+  sheet's column list adds `reorder_point`). If you add a new field to a report's underlying summary
+  query, it does not appear anywhere until you also add it to the corresponding `build*ReportDoc()`
+  column/sheet list in the same file — the query and the file layout are two separate steps.
 - **Follow-up Automation (`lib/bms/followups.ts`, 2026-08)** — 🚧 **MVP core only**: a configurable
   Rule Engine + Scheduler decides whether to re-engage a customer whose conversation went quiet,
   instead of a fixed timer. Migration `7.52` adds `bms_conversations.last_sender_type` (set by
