@@ -1,6 +1,7 @@
 'use client';
 import { Card, Empty, Pagination, Skeleton, Typography } from "antd";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { useI18n } from "@/lib/i18nContext";
 
 export type AdminCardField = {
   label: string;
@@ -101,7 +102,7 @@ export function AdminMobileList<T>({
   rowKey,
   renderItem,
   pageSize = 10,
-  emptyText = "ไม่มีข้อมูล",
+  emptyText,
   totalText,
 }: {
   loading?: boolean;
@@ -110,9 +111,10 @@ export function AdminMobileList<T>({
   renderItem: (item: T, index: number) => ReactNode;
   pageSize?: number;
   emptyText?: ReactNode;
-  /** ข้อความสรุปท้ายรายการ (ไม่ส่ง = "ทั้งหมด N รายการ") */
+  /** ข้อความสรุปท้ายรายการ (ไม่ส่ง = "ทั้งหมด N รายการ" / "N item(s) total") */
   totalText?: (total: number) => ReactNode;
 }) {
+  const { t } = useI18n();
   const [page, setPage] = useState(1);
   const total = dataSource.length;
   const maxPage = Math.max(1, Math.ceil(total / pageSize));
@@ -130,7 +132,7 @@ export function AdminMobileList<T>({
     );
   }
   if (total === 0) {
-    return <Empty description={emptyText} style={{ padding: "32px 0" }} />;
+    return <Empty description={emptyText ?? t("admin.no_data")} style={{ padding: "32px 0" }} />;
   }
 
   const slice = dataSource.slice((page - 1) * pageSize, page * pageSize);
@@ -144,7 +146,7 @@ export function AdminMobileList<T>({
       ))}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 12 }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {totalText ? totalText(total) : `ทั้งหมด ${total} รายการ`}
+          {totalText ? totalText(total) : t("admin.total_items", { total })}
         </Typography.Text>
         {total > pageSize && (
           <Pagination

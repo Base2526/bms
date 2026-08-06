@@ -45,6 +45,7 @@ import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
 import { useIsMobile } from '@/app/hooks/useMediaQuery';
 import { useSession } from '@/lib/useSession';
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/lib/i18nContext';
 
 const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
@@ -114,6 +115,7 @@ const link = (
 });
 
 export default function AdminSidebar() {
+  const { t } = useI18n();
   const pathname = usePathname();
   // จอมือถือไม่มีที่ให้ rail 64px (เหลือเนื้อหา ~272px บนจอ 360px) → ซ่อน Sider ทั้งตัว
   // แล้วเปิดเมนูเดิมใน Drawer จากแถบบนแทน
@@ -181,18 +183,18 @@ export default function AdminSidebar() {
   const aiBg = aiOverLimit ? 'rgba(229,72,77,0.1)' : aiNearLimit ? 'rgba(212,136,6,0.1)' : 'rgba(22,119,255,0.1)';
   const aiTooltip = aiOverLimit
     ? aiNeedsManualAttention
-      ? `AI หมดโควตาแล้ว และมีลูกค้ารออ่าน ${inboxUnread} เคส — กดเพื่อใส่ AI Key หรืออัปเกรด`
-      : 'AI หมดโควตาฟรีเดือนนี้แล้ว — กดเพื่อใส่ AI Key ของร้านเองหรืออัปเกรด'
+      ? t('admin.ai_tooltip_exhausted_pending', { n: inboxUnread })
+      : t('admin.ai_tooltip_exhausted')
     : aiNearLimit
-      ? `AI ใกล้หมดโควตา เหลือ ${aiUsage?.remaining}/${aiUsage?.limit} ครั้งเดือนนี้ — เตรียมใส่ AI Key หรืออัปเกรด`
-      : `AI ตอบลูกค้าอัตโนมัติ ใช้ไปแล้ว ${aiUsage?.count}/${aiUsage?.limit} ครั้งเดือนนี้`;
+      ? t('admin.ai_tooltip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiUsage?.limit ?? 0 })
+      : t('admin.ai_tooltip_normal', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 });
   const aiStripText = aiOverLimit
     ? aiNeedsManualAttention
-      ? `AI หมด · ลูกค้ารอ ${inboxUnread}`
-      : 'AI หมดโควตาฟรี'
+      ? t('admin.ai_strip_exhausted_pending', { n: inboxUnread })
+      : t('admin.ai_strip_exhausted')
     : aiNearLimit
-      ? `AI เหลือ ${aiUsage?.remaining}/${aiUsage?.limit} ครั้ง`
-      : `AI ใช้ไป ${aiUsage?.count}/${aiUsage?.limit} ครั้ง`;
+      ? t('admin.ai_strip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiUsage?.limit ?? 0 })
+      : t('admin.ai_strip_normal', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 });
 
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage) — ผสมกับจอแคบ (breakpoint="lg" ของ Sider ด้านล่าง)
   // ต้องคำนวณทั้งสองเงื่อนไขในเอฟเฟกต์เดียวกัน ไม่งั้นเอฟเฟกต์ breakpoint ของ Sider (child)
@@ -235,16 +237,16 @@ export default function AdminSidebar() {
   const items: MenuProps['items'] = [
     link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
     ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, effectiveCollapsed, true)] : []),
-    ...(canViewInbox ? [link('/admin/restock-subscriptions', 'แจ้งลูกค้าเมื่อของเข้า', <BellOutlined />, restockReady, effectiveCollapsed, true)] : []),
-    ...(canViewInbox ? [link('/admin/inbox/mentions', 'เมนชันของฉัน', <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/restock-subscriptions', t('admin.menu_restock_subscriptions'), <BellOutlined />, restockReady, effectiveCollapsed, true)] : []),
+    ...(canViewInbox ? [link('/admin/inbox/mentions', t('admin.menu_mentions'), <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
     // ผู้ช่วย AI หลังบ้าน — ถาม/สั่งงานด้วยภาษาพูด (tool-calling); งาน sensitive ต้องกดยืนยันเอง
-    link('/admin/assistant', 'ผู้ช่วย AI', <RobotOutlined />),
+    link('/admin/assistant', t('admin.menu_assistant'), <RobotOutlined />),
     // Architecture = เอกสาร dev ภายใน (ERD/security/migrations) → platform admin เท่านั้น
     ...(isPlatformAdmin ? [link('/admin/architecture', 'Architecture', <PartitionOutlined />)] : []),
     {
       key: 'g-bms',
       icon: <ShopOutlined />,
-      label: 'ร้านค้า',
+      label: t('admin.group_shop'),
       children: [
         link('/admin/products', 'Products', <ShoppingCartOutlined />),
         link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
@@ -266,17 +268,17 @@ export default function AdminSidebar() {
       icon: <ApiOutlined />,
       label: 'SaaS',
       children: [
-        link('/admin/settings', 'Settings (เชื่อมช่องทาง)', <ApiOutlined />, channelHealthCount, effectiveCollapsed),
+        link('/admin/settings', t('admin.menu_settings_channels'), <ApiOutlined />, channelHealthCount, effectiveCollapsed),
         ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <ExperimentOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
-        ...(isPlatformAdmin ? [link('/admin/tenants', 'ร้านค้าทั้งหมด (แพลตฟอร์ม)', <ShopOutlined />)] : []),
-        ...(isPlatformAdmin ? [link('/admin/report-schedule', 'ตารางส่งรายงาน (แพลตฟอร์ม)', <MailOutlined />)] : []),
+        ...(isPlatformAdmin ? [link('/admin/tenants', t('admin.menu_all_shops'), <ShopOutlined />)] : []),
+        ...(isPlatformAdmin ? [link('/admin/report-schedule', t('admin.menu_report_schedule'), <MailOutlined />)] : []),
       ],
     },
     ...(canManageAccess ? [{
       key: 'g-access',
       icon: <SafetyOutlined />,
-      label: 'ผู้ใช้/สิทธิ์',
+      label: t('admin.group_access'),
       children: [
         link('/admin/users', 'Users', <UserOutlined />),
         // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
@@ -288,7 +290,7 @@ export default function AdminSidebar() {
     ...(showSystemGroup ? [{
       key: 'g-system',
       icon: <AppstoreOutlined />,
-      label: 'ระบบ',
+      label: t('admin.group_system'),
       children: [
         // ระดับแพลตฟอร์ม → platform admin เท่านั้น
         ...(isPlatformAdmin ? [
@@ -336,7 +338,7 @@ export default function AdminSidebar() {
         {!inDrawer && (
           <div
             role="button"
-            aria-label={mini ? 'ขยายเมนู' : 'ย่อเมนู'}
+            aria-label={mini ? t('admin.expand_menu') : t('admin.collapse_menu')}
             onClick={() => onCollapse(!mini)}
             style={{
               cursor: 'pointer', width: 28, height: 28, flexShrink: 0,
@@ -397,7 +399,7 @@ export default function AdminSidebar() {
 
       {/* คู่มือ + โปรไฟล์ + Logout (ปักล่างสุด) — คู่มือใช้ไม่บ่อย เลยลดความสำคัญมาไว้แถบนี้แทน top-level */}
       <div style={{ borderTop: '1px solid var(--app-border)', padding: '10px 10px 0', flexShrink: 0 }}>
-        <Tooltip title={mini ? 'คู่มือ' : ''} placement="right">
+        <Tooltip title={mini ? t('admin.manual') : ''} placement="right">
           <Link
             href="/admin/manual"
             style={{
@@ -408,7 +410,7 @@ export default function AdminSidebar() {
             }}
           >
             <BookOutlined />
-            {!mini && <span>คู่มือ</span>}
+            {!mini && <span>{t('admin.manual')}</span>}
           </Link>
         </Tooltip>
       </div>
@@ -461,7 +463,7 @@ export default function AdminSidebar() {
         >
           <Button
             type="text"
-            aria-label="เปิดเมนู"
+            aria-label={t('admin.open_menu')}
             icon={<MenuUnfoldOutlined />}
             onClick={() => setDrawerOpen(true)}
           />

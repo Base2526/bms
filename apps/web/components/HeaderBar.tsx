@@ -46,6 +46,7 @@ import { useGlobalChatStore } from "@/store/globalChatStore";
 import { useI18n } from "@/lib/i18nContext";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { Lang } from "@/i18n";
+import { getLangCookie, setLangCookie } from "@/lib/lang";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -172,8 +173,7 @@ export default function HeaderBar({
   }, [lang]);
 
   useEffect(() => {
-    const m = document.cookie.match(/(?:^|; )lang=([^;]+)/);
-    const c = (m ? decodeURIComponent(m[1]) : null) as Lang | null;
+    const c = getLangCookie();
     if (c && c !== currentLang) setCurrentLang(c);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -219,7 +219,7 @@ export default function HeaderBar({
 
   const changeLang = (nextLang: Lang) => {
     if (nextLang === currentLang) return;
-    document.cookie = `lang=${nextLang}; path=/; samesite=lax`;
+    setLangCookie(nextLang);
     setCurrentLang(nextLang);
     setLang?.(nextLang);
     router.refresh();

@@ -18,6 +18,7 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
+import { useI18n } from "@/lib/i18nContext";
 import styles from "./dashboard.module.css";
 
 const { Text, Title } = Typography;
@@ -78,15 +79,6 @@ const STATUS_COLOR: Record<string, string> = {
   CANCELLED: "default",
   RETURNED: "red",
 };
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "รอชำระ",
-  PAID: "จ่ายแล้ว",
-  PACKING: "พร้อมส่ง",
-  SHIPPED: "จัดส่งแล้ว",
-  COMPLETED: "สำเร็จ",
-  CANCELLED: "ยกเลิก",
-  RETURNED: "คืนสินค้า",
-};
 const TAG_COLOR: Record<string, string> = { VIP: "gold", "ลูกค้าใหม่": "blue", "ลูกค้าประจำ": "green" };
 
 // เรียง "แชท-ตอบสด" ก่อน ตามด้วยช่องทางที่ต้อง token จริง — ตั้งใจไม่รวม "web" (Live Chat หน้าเว็บ)
@@ -102,24 +94,23 @@ const CHANNEL_LABEL: Record<string, string> = {
   shopee: "Shopee",
   lazada: "Lazada",
 };
-const HEALTH_TEXT: Record<string, string> = {
-  token_expired: "Token หมดอายุ/ถูก revoke",
-  webhook_failed: "Webhook verify ไม่ผ่าน",
-  rate_limited: "โดน Rate Limit",
-  no_events: "ไม่มีข้อความเข้านานผิดปกติ",
-  send_failed: "รับข้อความได้ แต่ตอบกลับไม่ได้",
-};
-
 const baht = (value: number | null | undefined) => `${Number(value ?? 0).toLocaleString()} ฿`;
 const countOf = (rows: any[] = [], status: string) => Number(rows.find((r) => r.status === status)?.count ?? 0);
 
 // ลำดับความสำคัญเดียวกับ /admin/settings: ยังไม่ตั้งค่า > ปิดใช้งานเอง > สุขภาพจริง
-function channelState(cfg: any, health: any): { tone: "ok" | "bad" | "unset"; text: string } {
-  if (!cfg?.has_token) return { tone: "unset", text: "ยังไม่ตั้งค่า" };
-  if (cfg?.active === false) return { tone: "unset", text: "ปิดใช้งานเอง" };
+function channelState(cfg: any, health: any, t: (key: string) => string): { tone: "ok" | "bad" | "unset"; text: string } {
+  if (!cfg?.has_token) return { tone: "unset", text: t("admin_dashboard.channel_unset") };
+  if (cfg?.active === false) return { tone: "unset", text: t("admin_dashboard.channel_disabled") };
   const status = health?.status || "connected";
-  if (status === "connected") return { tone: "ok", text: "พร้อมใช้งาน" };
-  return { tone: "bad", text: HEALTH_TEXT[status] || status };
+  if (status === "connected") return { tone: "ok", text: t("admin_dashboard.channel_ok") };
+  const healthKey: Record<string, string> = {
+    token_expired: "admin_dashboard.health_token_expired",
+    webhook_failed: "admin_dashboard.health_webhook_failed",
+    rate_limited: "admin_dashboard.health_rate_limited",
+    no_events: "admin_dashboard.health_no_events",
+    send_failed: "admin_dashboard.health_send_failed",
+  };
+  return { tone: "bad", text: healthKey[status] ? t(healthKey[status]) : status };
 }
 
 function KpiCard({ title, value, hint, icon }: { title: string; value: string | number; hint: string; icon: React.ReactNode }) {
@@ -179,12 +170,13 @@ function TriageRow({
 }
 
 export default function Page() {
+  const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q_DASH, { fetchPolicy: "cache-first" });
   const d = data?.bmsDashboard;
   const { data: channelsData } = useQuery(Q_CHANNELS, { fetchPolicy: "cache-first", pollInterval: 60000 });
   const cfgByChannel: Record<string, any> = Object.fromEntries((channelsData?.bmsChannels || []).map((c: any) => [c.channel, c]));
   const healthByChannel: Record<string, any> = Object.fromEntries((channelsData?.bmsChannelHealth || []).map((h: any) => [h.channel, h]));
-  const channelStates = CHANNEL_ORDER.map((key) => ({ key, ...channelState(cfgByChannel[key], healthByChannel[key]) }));
+  const channelStates = CHANNEL_ORDER.map((key) => ({ key, ...channelState(cfgByChannel[key], healthByChannel[key], t) }));
   const brokenChannels = channelStates.filter((c) => c.tone === "bad");
 
   const { data: aiData } = useQuery(Q_AI, { fetchPolicy: "cache-first" });
@@ -200,7 +192,7 @@ export default function Page() {
     ? Math.round((aiFailure.errorCalls / aiFailure.totalToolCalls) * 1000) / 10
     : 0;
 
-  if (error) return <Alert type="error" message="โหลด dashboard ไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_dashboard.load_error")} description={error.message} showIcon />;
 
   const ordersByStatus = d?.ordersByStatus || [];
   const pending = countOf(ordersByStatus, "PENDING");
@@ -217,65 +209,65 @@ export default function Page() {
   for (const ch of brokenChannels) {
     triage.push({
       id: `ch-${ch.key}`, tier: "crit", icon: <ApiOutlined />,
-      title: `ช่องทาง ${CHANNEL_LABEL[ch.key]} เชื่อมต่อมีปัญหา`,
-      sub: `${ch.text} — ข้อความลูกค้าอาจเข้าไม่ได้ตั้งแต่ตอนนี้`,
-      count: 1, href: "/admin/settings", cta: "ไปที่ Settings",
+      title: t("admin_dashboard.triage_channel_title", { channel: CHANNEL_LABEL[ch.key] }),
+      sub: t("admin_dashboard.triage_channel_sub", { text: ch.text }),
+      count: 1, href: "/admin/settings", cta: t("admin_dashboard.triage_cta_settings"),
     });
   }
   if (alerts?.chatWaitingCount > 0) {
     triage.push({
       id: "chat", tier: "crit", icon: <MessageOutlined />,
-      title: "แชทลูกค้ารอตอบนานเกิน 30 นาที", sub: "ลูกค้าอาจรอไปหาที่อื่นแล้ว — เร่งด่วนที่สุดในตอนนี้",
-      count: alerts.chatWaitingCount, href: "/admin/inbox", cta: "เปิด Inbox",
+      title: t("admin_dashboard.triage_chat_title"), sub: t("admin_dashboard.triage_chat_sub"),
+      count: alerts.chatWaitingCount, href: "/admin/inbox", cta: t("admin_dashboard.triage_cta_open_inbox"),
     });
   }
   if (alerts?.slipPendingCount > 0) {
     triage.push({
       id: "slip", tier: "warn", icon: <FileTextOutlined />,
-      title: "สลิปโอนรอตรวจนานเกิน 2 ชั่วโมง", sub: "ลูกค้าโอนแล้วแต่ยังไม่ถูกยืนยัน",
-      count: alerts.slipPendingCount, href: "/admin/payment?status=PENDING", cta: "ตรวจสลิป",
+      title: t("admin_dashboard.triage_slip_title"), sub: t("admin_dashboard.triage_slip_sub"),
+      count: alerts.slipPendingCount, href: "/admin/payment?status=PENDING", cta: t("admin_dashboard.triage_cta_check_slip"),
     });
   }
   if (pending > 0) {
     triage.push({
       id: "pending", tier: "warn", icon: <CreditCardOutlined />,
-      title: "ออเดอร์รอลูกค้าชำระเงิน", sub: "สต็อกถูกจองไว้ระหว่างรอ — ติดตามลูกค้าถ้าเกินกำหนด",
-      count: pending, href: "/admin/orders", cta: "ดูออเดอร์",
+      title: t("admin_dashboard.triage_pending_title"), sub: t("admin_dashboard.triage_pending_sub"),
+      count: pending, href: "/admin/orders", cta: t("admin_dashboard.triage_cta_view_orders"),
     });
   }
   if (alerts?.packingOverdueCount > 0) {
     triage.push({
       id: "packover", tier: "warn", icon: <InboxOutlined />,
-      title: "ออเดอร์ค้างแพ็คนานเกิน 24 ชั่วโมง", sub: "จ่ายเงินแล้ว ค้างอยู่ในขั้นแพ็คนานผิดปกติ",
-      count: alerts.packingOverdueCount, href: "/admin/orders?status=PACKING", cta: "ดูออเดอร์",
+      title: t("admin_dashboard.triage_packover_title"), sub: t("admin_dashboard.triage_packover_sub"),
+      count: alerts.packingOverdueCount, href: "/admin/orders?status=PACKING", cta: t("admin_dashboard.triage_cta_view_orders"),
     });
   }
   if (paid > 0) {
     triage.push({
       id: "paid", tier: "warn", icon: <CheckCircleOutlined />,
-      title: "ออเดอร์รอเริ่มแพ็ค", sub: "จ่ายเงินแล้ว รอเข้าสู่ขั้นแพ็ค",
-      count: paid, href: "/admin/orders", cta: "ดูออเดอร์",
+      title: t("admin_dashboard.triage_paid_title"), sub: t("admin_dashboard.triage_paid_sub"),
+      count: paid, href: "/admin/orders", cta: t("admin_dashboard.triage_cta_view_orders"),
     });
   }
   if (alerts?.reservationExpiringCount > 0) {
     triage.push({
       id: "resv", tier: "warn", icon: <ClockCircleOutlined />,
-      title: "การจองสต็อกใกล้หมดอายุ", sub: "ติดตามลูกค้าก่อนสต็อกที่จองไว้ถูกปล่อยคืน",
-      count: alerts.reservationExpiringCount, href: "/admin/orders?status=PENDING", cta: "ติดตามลูกค้า",
+      title: t("admin_dashboard.triage_resv_title"), sub: t("admin_dashboard.triage_resv_sub"),
+      count: alerts.reservationExpiringCount, href: "/admin/orders?status=PENDING", cta: t("admin_dashboard.triage_cta_follow_up"),
     });
   }
   if (packing > 0) {
     triage.push({
       id: "ready", tier: "info", icon: <TruckOutlined />,
-      title: "แพ็คเสร็จแล้ว พร้อมส่ง", sub: "รอสร้างพัสดุและอัปเดตเลขติดตาม",
-      count: packing, href: "/admin/shipment", cta: "สร้างพัสดุ",
+      title: t("admin_dashboard.triage_ready_title"), sub: t("admin_dashboard.triage_ready_sub"),
+      count: packing, href: "/admin/shipment", cta: t("admin_dashboard.triage_cta_create_shipment"),
     });
   }
   if ((d?.lowStockCount ?? 0) > 0) {
     triage.push({
       id: "stock", tier: "info", icon: <ShoppingCartOutlined />,
-      title: "สินค้าใกล้หมด/หมดสต็อก", sub: "อาจพลาดโอกาสขายถ้าไม่เติมทัน",
-      count: d.lowStockCount, href: "/admin/products", cta: "ดูสินค้า",
+      title: t("admin_dashboard.triage_stock_title"), sub: t("admin_dashboard.triage_stock_sub"),
+      count: d.lowStockCount, href: "/admin/products", cta: t("admin_dashboard.triage_cta_view_products"),
     });
   }
 
@@ -286,11 +278,11 @@ export default function Page() {
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap>
         <div>
           <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
-          <Text type="secondary">ภาพรวมวันนี้และงานที่ควรจัดการก่อน</Text>
+          <Text type="secondary">{t("admin_dashboard.subtitle")}</Text>
         </div>
         <Space size={10}>
           <span
-            title={systemOk ? "" : `ช่องทางที่มีปัญหา: ${brokenChannels.map((c) => CHANNEL_LABEL[c.key]).join(", ")}`}
+            title={systemOk ? "" : t("admin_dashboard.broken_channels_tooltip", { list: brokenChannels.map((c) => CHANNEL_LABEL[c.key]).join(", ") })}
             style={{
               display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500,
               padding: "5px 11px", borderRadius: 999, border: "1px solid",
@@ -300,15 +292,15 @@ export default function Page() {
             }}
           >
             {systemOk ? <CheckCircleOutlined /> : <WarningOutlined />}
-            {systemOk ? "ระบบพร้อมใช้งาน" : "มีปัญหาที่ต้องตรวจสอบ"}
+            {systemOk ? t("admin_dashboard.system_ok") : t("admin_dashboard.system_bad")}
           </span>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_dashboard.refresh")}</Button>
         </Space>
       </Space>
 
-      <Text strong style={{ display: "block", marginBottom: 4 }}>สถานะช่องทางเชื่อมต่อ</Text>
+      <Text strong style={{ display: "block", marginBottom: 4 }}>{t("admin_dashboard.channel_status_heading")}</Text>
       <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 10 }}>
-        เฉพาะช่องทางที่ตั้งค่าไว้จะขึ้นสถานะจริง — ที่ยังไม่ตั้งค่ากดไปตั้งค่าได้เลย
+        {t("admin_dashboard.channel_status_subtitle")}
       </Text>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
         {channelStates.map((c) => {
@@ -322,7 +314,7 @@ export default function Page() {
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{CHANNEL_LABEL[c.key]}</div>
                 <div style={{ fontSize: 11.5, color: textColor, marginTop: 1 }}>{c.text}</div>
               </span>
-              {clickable && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--app-muted)" }}>ไปที่ Settings →</span>}
+              {clickable && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--app-muted)" }}>{t("admin_dashboard.go_to_settings")}</span>}
             </>
           );
           const style: React.CSSProperties = {
@@ -337,14 +329,14 @@ export default function Page() {
         })}
       </div>
 
-      <Text strong style={{ display: "block", marginBottom: 4 }}>ต้องทำตอนนี้</Text>
+      <Text strong style={{ display: "block", marginBottom: 4 }}>{t("admin_dashboard.triage_heading")}</Text>
       <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 10 }}>
-        เรียงตามความรุนแรง — งานด่วนที่สุดอยู่บนสุด
+        {t("admin_dashboard.triage_subtitle")}
       </Text>
       <div style={{ background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
         {triage.length === 0 ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px", fontSize: 13, color: "#0f7a4d", background: "#e7f7ef" }}>
-            <CheckCircleOutlined /> ไม่มีงานด่วนตอนนี้ — ทุกอย่างเรียบร้อย
+            <CheckCircleOutlined /> {t("admin_dashboard.triage_empty")}
           </div>
         ) : (
           triage.map((t) => <TriageRow key={t.id} {...t} />)
@@ -353,26 +345,26 @@ export default function Page() {
 
       <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
         <Col xs={12} xl={6}>
-          <KpiCard title="ยอดขายวันนี้" value={baht(d?.revenueToday)} hint={`ยอดขายรวม ${baht(d?.revenueTotal)}`} icon={<DollarOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_revenue_today")} value={baht(d?.revenueToday)} hint={t("admin_dashboard.kpi_revenue_total_hint", { value: baht(d?.revenueTotal) })} icon={<DollarOutlined />} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title="ออเดอร์ทั้งหมด" value={d?.orderCount ?? 0} hint={`สำเร็จ ${completed} · ส่งแล้ว ${shipped}`} icon={<ShoppingCartOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_order_count")} value={d?.orderCount ?? 0} hint={t("admin_dashboard.kpi_order_hint", { completed, shipped })} icon={<ShoppingCartOutlined />} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title="ลูกค้าทั้งหมด" value={d?.customerCount ?? 0} hint="คน" icon={<TeamOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_customer_count")} value={d?.customerCount ?? 0} hint={t("admin_dashboard.kpi_people_unit")} icon={<TeamOutlined />} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title="สินค้าใกล้หมด" value={`${d?.lowStockCount ?? 0} รายการ`} hint="ดูรายละเอียดในลิสต์ด้านบน" icon={<InboxOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_low_stock")} value={t("admin_dashboard.kpi_items_unit", { n: d?.lowStockCount ?? 0 })} hint={t("admin_dashboard.kpi_low_stock_hint")} icon={<InboxOutlined />} />
         </Col>
       </Row>
 
       {/* ===== ภาพรวมธุรกิจ — ดูเมื่อมีเวลา ไม่ใช่งานเร่งด่วน จึงลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า ===== */}
       <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 12 }}>
-        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>ภาพรวมธุรกิจ</Text>
+        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>{t("admin_dashboard.business_overview")}</Text>
 
         <Row gutter={[8, 8]}>
           <Col xs={24} lg={16}>
-            <Card title="ยอดขาย 7 วันล่าสุด" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
+            <Card title={t("admin_dashboard.sales_7d")} loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, paddingTop: 4 }}>
                 {(d?.salesDaily || []).map((x: any) => (
                   <div key={x.day} style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
@@ -380,7 +372,7 @@ export default function Page() {
                       {x.revenue > 0 ? `${(x.revenue / 1000).toFixed(1)}k` : ""}
                     </div>
                     <div
-                      title={`${x.revenue.toLocaleString()} ฿ · ${x.orders} ออเดอร์`}
+                      title={`${x.revenue.toLocaleString()} ฿ · ${x.orders} ${t("admin_dashboard.orders_unit")}`}
                       style={{
                         height: `${Math.round((x.revenue / maxRev) * 66)}px`,
                         minHeight: x.revenue > 0 ? 4 : 2,
@@ -396,18 +388,18 @@ export default function Page() {
           </Col>
 
           <Col xs={24} lg={8}>
-            <Card title="สรุปธุรกิจ" loading={loading} style={{ borderRadius: 10, height: "100%" }} className={styles.compactCard}>
+            <Card title={t("admin_dashboard.business_summary")} loading={loading} style={{ borderRadius: 10, height: "100%" }} className={styles.compactCard}>
               <Space direction="vertical" size={4} style={{ width: "100%", fontSize: 12 }}>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>ยอดขายรวม</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.total_revenue")}</Text>
                   <Text strong style={{ fontSize: 12 }}>{baht(d?.revenueTotal)}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>ลูกค้า</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.customers_label")}</Text>
                   <Text strong style={{ fontSize: 12 }}><TeamOutlined /> {Number(d?.customerCount ?? 0).toLocaleString()}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>สินค้าใกล้หมด</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.kpi_low_stock")}</Text>
                   <Text strong style={{ fontSize: 12 }}>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
                 </Space>
                 <Space wrap size={6} style={{ marginTop: 2 }}>
@@ -422,40 +414,40 @@ export default function Page() {
 
         <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
           <Col xs={24} lg={14}>
-            <Card title="สินค้าขายดี" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
+            <Card title={t("admin_dashboard.top_products")} loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="sku"
                 size="small"
                 pagination={false}
                 dataSource={d?.topProducts || []}
-                locale={{ emptyText: "ยังไม่มียอดขาย" }}
+                locale={{ emptyText: t("admin_dashboard.empty_no_sales") }}
                 columns={[
-                  { title: "สินค้า", dataIndex: "name", key: "name" },
-                  { title: "ขายได้", dataIndex: "qty", key: "qty", width: 90, align: "right", render: (v: number) => `${v} ชิ้น` },
-                  { title: "รายได้", dataIndex: "revenue", key: "rev", width: 120, align: "right", render: (v: number) => baht(v) },
+                  { title: t("admin_dashboard.col_product"), dataIndex: "name", key: "name" },
+                  { title: t("admin_dashboard.col_sold"), dataIndex: "qty", key: "qty", width: 90, align: "right", render: (v: number) => t("admin_dashboard.pieces_unit", { n: v }) },
+                  { title: t("admin_dashboard.col_revenue"), dataIndex: "revenue", key: "rev", width: 120, align: "right", render: (v: number) => baht(v) },
                 ]}
               />
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card title="ลูกค้ายอดสูง" loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
+            <Card title={t("admin_dashboard.top_customers")} loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="id"
                 size="small"
                 pagination={false}
                 dataSource={d?.topCustomers || []}
-                locale={{ emptyText: "ยังไม่มีลูกค้า" }}
+                locale={{ emptyText: t("admin_dashboard.empty_no_customers") }}
                 columns={[
                   {
-                    title: "ลูกค้า",
+                    title: t("admin_dashboard.col_customer"),
                     dataIndex: "name",
                     key: "name",
                     render: (n: string, r: any) => (
-                      <Space wrap>{n}{(r.tags || []).map((t: string) => <Tag key={t} color={TAG_COLOR[t] || "default"}>{t}</Tag>)}</Space>
+                      <Space wrap>{n}{(r.tags || []).map((tag: string) => <Tag key={tag} color={TAG_COLOR[tag] || "default"}>{tag}</Tag>)}</Space>
                     ),
                   },
-                  { title: "ออเดอร์", dataIndex: "orders", key: "o", width: 90, align: "right" },
-                  { title: "ยอดซื้อ", dataIndex: "spent", key: "s", width: 120, align: "right", render: (v: number) => baht(v) },
+                  { title: t("admin_dashboard.col_orders"), dataIndex: "orders", key: "o", width: 90, align: "right" },
+                  { title: t("admin_dashboard.col_spent"), dataIndex: "spent", key: "s", width: 120, align: "right", render: (v: number) => baht(v) },
                 ]}
               />
             </Card>
@@ -465,10 +457,10 @@ export default function Page() {
         <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
           <Col xs={24} lg={10}>
             <Card
-              title="AI health (7 วันล่าสุด)"
+              title={t("admin_dashboard.ai_health_7d")}
               style={{ borderRadius: 10 }}
               className={styles.compactCard}
-              extra={<Link href="/admin/ai-quality">เปิด AI Quality</Link>}
+              extra={<Link href="/admin/ai-quality">{t("admin_dashboard.open_ai_quality")}</Link>}
             >
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 {(aiOverLimit || aiNearLimit) && (
@@ -478,39 +470,39 @@ export default function Page() {
                     style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11.5, marginBottom: 4 }}
                     message={
                       aiOverLimit
-                        ? <>เกินโควตาฟรีเดือนนี้แล้ว <Tag>แพ็กเกจ {aiUsage.planName}</Tag> — ตอบด้วย template แทน AI ชั่วคราว</>
-                        : <>ใกล้เต็มโควตาฟรี <Tag>แพ็กเกจ {aiUsage.planName}</Tag> เหลือ <b>{aiUsage.remaining}</b>/{aiUsage.limit} ครั้ง</>
+                        ? <>{t("admin_dashboard.ai_over_limit")} <Tag>{t("admin_dashboard.ai_plan_tag", { plan: aiUsage.planName })}</Tag> — {t("admin_dashboard.ai_over_limit_note")}</>
+                        : <>{t("admin_dashboard.ai_near_limit")} <Tag>{t("admin_dashboard.ai_plan_tag", { plan: aiUsage.planName })}</Tag> {t("admin_dashboard.ai_near_limit_remaining", { remaining: aiUsage.remaining, limit: aiUsage.limit })}</>
                     }
-                    description={<Link href="/admin/settings" style={{ fontSize: 11 }}>ใส่ AI Key ของร้านเองเพื่อไม่จำกัด</Link>}
+                    description={<Link href="/admin/settings" style={{ fontSize: 11 }}>{t("admin_dashboard.ai_add_key_hint")}</Link>}
                   />
                 )}
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Tool calls ทั้งหมด</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.total_tool_calls")}</Text>
                   <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Error / denied</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.error_denied")}</Text>
                   <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
                 </Space>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Force handoff</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.force_handoff")}</Text>
                   <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
                 </Space>
               </Space>
             </Card>
           </Col>
           <Col xs={24} lg={14}>
-            <Card title="AI tools ที่พลาดบ่อย" style={{ borderRadius: 10 }} className={styles.compactCard}>
+            <Card title={t("admin_dashboard.ai_top_failing_tools")} style={{ borderRadius: 10 }} className={styles.compactCard}>
               <Table
                 rowKey="tool"
                 size="small"
                 pagination={false}
                 dataSource={aiFailure?.topFailingTools || []}
-                locale={{ emptyText: "ยังไม่พบ error/denied ในช่วง 7 วันล่าสุด" }}
+                locale={{ emptyText: t("admin_dashboard.empty_no_ai_failures") }}
                 columns={[
                   { title: "Tool", dataIndex: "tool", key: "tool" },
                   { title: "Outcome", dataIndex: "outcome", key: "outcome", width: 120, render: (v: string) => <Tag color={v === "denied" ? "gold" : "red"}>{v}</Tag> },
-                  { title: "ครั้ง", dataIndex: "count", key: "count", width: 100, align: "right" },
+                  { title: t("admin_dashboard.col_times"), dataIndex: "count", key: "count", width: 100, align: "right" },
                 ]}
               />
             </Card>
@@ -521,19 +513,19 @@ export default function Page() {
           <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
             <Col xs={24}>
               <Card
-                title="โค้ดส่วนลด (เดือนนี้)"
+                title={t("admin_dashboard.coupon_summary_month")}
                 loading={loading}
                 style={{ borderRadius: 10 }}
                 className={styles.compactCard}
-                extra={<Link href="/admin/coupons"><Button size="small">จัดการโค้ด</Button></Link>}
+                extra={<Link href="/admin/coupons"><Button size="small">{t("admin_dashboard.manage_coupons")}</Button></Link>}
               >
                 <Space size="large" wrap style={{ marginBottom: 8 }}>
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary" style={{ fontSize: 11 }}>ส่วนลดที่แจกไปแล้ว</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{t("admin_dashboard.discount_given")}</Text>
                     <Text strong style={{ fontSize: 15 }}>{baht(d.couponSummary.discountThisMonth)}</Text>
                   </Space>
                   <Space direction="vertical" size={0}>
-                    <Text type="secondary" style={{ fontSize: 11 }}>จำนวนครั้งที่ใช้โค้ด</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{t("admin_dashboard.redemption_count")}</Text>
                     <Text strong style={{ fontSize: 15 }}>{Number(d.couponSummary.redemptionsThisMonth).toLocaleString()}</Text>
                   </Space>
                 </Space>
@@ -542,7 +534,7 @@ export default function Page() {
                   size="small"
                   pagination={false}
                   dataSource={d.couponSummary.topCoupons || []}
-                  locale={{ emptyText: "ยังไม่มีการใช้โค้ดส่วนลดเดือนนี้" }}
+                  locale={{ emptyText: t("admin_dashboard.empty_no_coupon_usage") }}
                   expandable={{
                     rowExpandable: (r: any) => (r.usages || []).length > 0,
                     expandedRowRender: (r: any) => (
@@ -551,10 +543,10 @@ export default function Page() {
                         size="small"
                         pagination={false}
                         dataSource={r.usages || []}
-                        locale={{ emptyText: "ยังไม่มีรายการใช้โค้ดนี้" }}
+                        locale={{ emptyText: t("admin_dashboard.empty_no_code_usage") }}
                         columns={[
                           {
-                            title: "เวลาใช้",
+                            title: t("admin_dashboard.col_used_at"),
                             dataIndex: "createdAt",
                             key: "createdAt",
                             width: 150,
@@ -567,7 +559,7 @@ export default function Page() {
                             }),
                           },
                           {
-                            title: "ลูกค้า",
+                            title: t("admin_dashboard.col_customer"),
                             key: "customer",
                             render: (_: any, u: any) => (
                               <Space direction="vertical" size={0}>
@@ -576,34 +568,34 @@ export default function Page() {
                               </Space>
                             ),
                           },
-                          { title: "ช่องทาง", dataIndex: "channel", key: "channel", width: 100, render: (c: string) => <Tag>{c}</Tag> },
+                          { title: t("admin_dashboard.col_channel"), dataIndex: "channel", key: "channel", width: 100, render: (c: string) => <Tag>{c}</Tag> },
                           {
-                            title: "ออเดอร์",
+                            title: t("admin_dashboard.col_order"),
                             dataIndex: "orderId",
                             key: "orderId",
                             width: 120,
                             render: (id: string) => <Link href={`/admin/orders?highlight=${id}`}>#{String(id).slice(0, 8)}</Link>,
                           },
                           {
-                            title: "ยอดสินค้า",
+                            title: t("admin_dashboard.col_subtotal"),
                             key: "subtotal",
                             width: 120,
                             align: "right" as const,
                             render: (_: any, u: any) => baht(Number(u.totalAmount || 0) + Number(u.discountAmount || 0)),
                           },
-                          { title: "ส่วนลด", dataIndex: "discountAmount", key: "discountAmount", width: 120, align: "right" as const, render: (v: number) => <Text type="danger">-{baht(v)}</Text> },
-                          { title: "ยอดสุทธิ", dataIndex: "totalAmount", key: "totalAmount", width: 120, align: "right" as const, render: (v: number) => baht(v) },
-                          { title: "สถานะ", dataIndex: "status", key: "status", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
+                          { title: t("admin_dashboard.col_discount"), dataIndex: "discountAmount", key: "discountAmount", width: 120, align: "right" as const, render: (v: number) => <Text type="danger">-{baht(v)}</Text> },
+                          { title: t("admin_dashboard.col_net_total"), dataIndex: "totalAmount", key: "totalAmount", width: 120, align: "right" as const, render: (v: number) => baht(v) },
+                          { title: t("admin_dashboard.col_status"), dataIndex: "status", key: "status", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
                         ]}
                       />
                     ),
                   }}
                   columns={[
-                    { title: "โค้ด", dataIndex: "code", key: "code" },
-                    { title: "ใช้ไปแล้ว", dataIndex: "redemptions", key: "redemptions", width: 100, align: "right" },
-                    { title: "ส่วนลดรวม", dataIndex: "discount", key: "discount", width: 130, align: "right", render: (v: number) => baht(v) },
+                    { title: t("admin_dashboard.col_code"), dataIndex: "code", key: "code" },
+                    { title: t("admin_dashboard.col_redemptions"), dataIndex: "redemptions", key: "redemptions", width: 100, align: "right" },
+                    { title: t("admin_dashboard.col_total_discount"), dataIndex: "discount", key: "discount", width: 130, align: "right", render: (v: number) => baht(v) },
                     {
-                      title: "ล่าสุด",
+                      title: t("admin_dashboard.col_latest"),
                       key: "latest",
                       render: (_: any, r: any) => {
                         const latest = r.usages?.[0];

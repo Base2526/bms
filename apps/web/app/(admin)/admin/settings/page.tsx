@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
 import ReportSubscriptionCard from "./ReportSubscriptionCard";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph } = Typography;
 
@@ -42,45 +43,44 @@ const M_TEST_AI_KEY = gql`mutation { bmsTestAiKey { ok message } }`;
 // เฉพาะช่องทางที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง (ดู channelHealth.ts)
 const TESTABLE_CHANNELS = new Set(["line", "facebook", "instagram"]);
 
-const CHANNELS = [
-  { key: "line", label: "LINE Official Account", color: "green",
-    hint: "เอา Channel access token + Channel secret จาก LINE Developers Console → Messaging API",
-    needs: "LINE Developers Console → Messaging API", status: "ready" },
-  { key: "tiktok", label: "TikTok", color: "magenta",
-    hint: "เอา Access token + Secret จาก TikTok for Business",
-    needs: "TikTok for Business", status: "ready" },
-  { key: "facebook", label: "Facebook Messenger", color: "blue",
-    hint: "Access token = Page Access Token · Channel Secret = App Secret (ใช้ทั้ง verify token ตอนตั้ง webhook และ verify signature)",
-    needs: "Page Access Token + App Secret", status: "ready" },
-  { key: "instagram", label: "Instagram DM", color: "purple",
-    hint: "IG DM ผ่าน Messenger Platform · Access token = Page Access Token (ผูก IG) · Channel Secret = App Secret",
-    needs: "Page Access Token (ผูก IG) + App Secret", status: "ready" },
-  { key: "web", label: "Website Live Chat", color: "geekblue",
-    hint: "ฝังวิดเจ็ตหน้าเว็บให้ POST ไปที่ URL ด้านล่าง (ไม่ต้องใช้ token) — เปิด/ปิดด้วยสวิตช์",
-    needs: "ไม่ต้องมี Token — ฝัง widget ชี้ Webhook URL", status: "no-token" },
-  { key: "shopee", label: "Shopee (beta)", color: "orange",
-    hint: "⚠️ โครงยังไม่ยืนยันกับเอกสาร Shopee Open Platform จริง — เชื่อมได้แต่ยังไม่รองรับตอบกลับอัตโนมัติ (send API = roadmap)",
-    needs: "Shopee Open Platform", status: "beta" },
-  { key: "lazada", label: "Lazada (beta)", color: "purple",
-    hint: "⚠️ โครงยังไม่ยืนยันกับเอกสาร Lazada Open Platform จริง — เชื่อมได้แต่ยังไม่รองรับตอบกลับอัตโนมัติ (send API = roadmap)",
-    needs: "Lazada Open Platform", status: "beta" },
-];
+function useChannels(t: (key: string, vars?: Record<string, string | number>) => string) {
+  return useMemo(() => [
+    { key: "line", label: "LINE Official Account", color: "green",
+      hint: t("admin_settings.channel_line_hint"), needs: t("admin_settings.channel_line_needs"), status: "ready" },
+    { key: "tiktok", label: "TikTok", color: "magenta",
+      hint: t("admin_settings.channel_tiktok_hint"), needs: t("admin_settings.channel_tiktok_needs"), status: "ready" },
+    { key: "facebook", label: "Facebook Messenger", color: "blue",
+      hint: t("admin_settings.channel_facebook_hint"), needs: t("admin_settings.channel_facebook_needs"), status: "ready" },
+    { key: "instagram", label: "Instagram DM", color: "purple",
+      hint: t("admin_settings.channel_instagram_hint"), needs: t("admin_settings.channel_instagram_needs"), status: "ready" },
+    { key: "web", label: "Website Live Chat", color: "geekblue",
+      hint: t("admin_settings.channel_web_hint"), needs: t("admin_settings.channel_web_needs"), status: "no-token" },
+    { key: "shopee", label: "Shopee (beta)", color: "orange",
+      hint: t("admin_settings.channel_shopee_hint"), needs: t("admin_settings.channel_shopee_needs"), status: "beta" },
+    { key: "lazada", label: "Lazada (beta)", color: "purple",
+      hint: t("admin_settings.channel_lazada_hint"), needs: t("admin_settings.channel_lazada_needs"), status: "beta" },
+  ], [t]);
+}
 
-const STATUS_META: Record<string, { color: string; text: string }> = {
-  ready: { color: "green", text: "ใช้งานจริง" },
-  "no-token": { color: "default", text: "ไม่ใช้ Token" },
-  beta: { color: "orange", text: "Beta — ยังไม่ตอบกลับอัตโนมัติ" },
-};
+function useStatusMeta(t: (key: string) => string): Record<string, { color: string; text: string }> {
+  return useMemo(() => ({
+    ready: { color: "green", text: t("admin_settings.status_ready") },
+    "no-token": { color: "default", text: t("admin_settings.status_no_token") },
+    beta: { color: "orange", text: t("admin_settings.status_beta") },
+  }), [t]);
+}
 
 // สถานะ "สุขภาพ" การเชื่อมต่อจริง (bmsChannelHealth.status) — คนละมิติกับ active (สวิตช์เปิด/ปิด)
-const HEALTH_META: Record<string, { color: string; text: string; action: string }> = {
-  connected: { color: "green", text: "เชื่อมต่อสำเร็จ", action: "" },
-  token_expired: { color: "red", text: "Token หมดอายุ/ถูก revoke", action: "ต่ออายุ Token ในการ์ดด้านล่าง แล้วบันทึกใหม่" },
-  webhook_failed: { color: "red", text: "Webhook verify ไม่ผ่าน", action: "ตรวจสอบ Channel Secret ให้ตรงกับ console ของแพลตฟอร์ม" },
-  rate_limited: { color: "gold", text: "โดน Rate Limit", action: "แพลตฟอร์มจำกัดอัตราการส่งชั่วคราว รอสักครู่แล้วลองใหม่" },
-  no_events: { color: "gold", text: "ไม่มีข้อความเข้านานผิดปกติ", action: "ตรวจสอบว่า Webhook URL ตั้งถูกฝั่ง console ของแพลตฟอร์มหรือไม่" },
-  send_failed: { color: "red", text: "รับข้อความได้ แต่ตอบกลับไม่ได้", action: "ตรวจสอบ Access Token ฝั่งส่งข้อความ" },
-};
+function useHealthMeta(t: (key: string) => string): Record<string, { color: string; text: string; action: string }> {
+  return useMemo(() => ({
+    connected: { color: "green", text: t("admin_settings.health_connected"), action: "" },
+    token_expired: { color: "red", text: t("admin_settings.health_token_expired"), action: t("admin_settings.health_token_expired_action") },
+    webhook_failed: { color: "red", text: t("admin_settings.health_webhook_failed"), action: t("admin_settings.health_webhook_failed_action") },
+    rate_limited: { color: "gold", text: t("admin_settings.health_rate_limited"), action: t("admin_settings.health_rate_limited_action") },
+    no_events: { color: "gold", text: t("admin_settings.health_no_events"), action: t("admin_settings.health_no_events_action") },
+    send_failed: { color: "red", text: t("admin_settings.health_send_failed"), action: t("admin_settings.health_send_failed_action") },
+  }), [t]);
+}
 
 function fmtDT(iso: string | null | undefined) {
   if (!iso) return "-";
@@ -88,6 +88,9 @@ function fmtDT(iso: string | null | undefined) {
 }
 
 export default function Page() {
+  const { t } = useI18n();
+  const CHANNELS = useChannels(t);
+  const STATUS_META = useStatusMeta(t);
   const searchParams = useSearchParams();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [origin, setOrigin] = useState("");
@@ -97,9 +100,9 @@ export default function Page() {
   const highlightedChannel = useMemo(() => {
     if (focus !== "channel" || !focusChannel) return null;
     return CHANNELS.some((ch) => ch.key === focusChannel) ? focusChannel : null;
-  }, [focus, focusChannel]);
+  }, [focus, focusChannel, CHANNELS]);
 
-  if (error) return <Alert type="error" message="โหลด settings ไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_settings.load_error")} description={error.message} showIcon />;
 
   const tenant = data?.bmsMyTenant;
   const channels: any[] = data?.bmsChannels || [];
@@ -111,15 +114,15 @@ export default function Page() {
     <div style={{ maxWidth: 1600 }}>
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Settings — เชื่อมช่องทาง</h2>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+          <h2 style={{ margin: 0 }}>{t("admin_settings.page_title")}</h2>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
         </Space>
       </div>
 
       {tenant && (
         <Alert type="info" showIcon style={{ marginBottom: 16 }}
-          message={<>ร้าน: <b>{tenant.name}</b> <Text code>{tenant.slug}</Text> · tenant id: <Text code>{tenant.id}</Text></>}
-          description="เชื่อม LINE / TikTok / Facebook / Instagram ของร้านคุณ แล้วเอา Webhook URL ด้านล่างไปตั้งใน console ของแต่ละแพลตฟอร์ม · Website Live Chat ให้ฝังวิดเจ็ตชี้มาที่ URL · Shopee/Lazada เป็น beta — เชื่อม webhook ได้แต่ยังไม่ตอบกลับอัตโนมัติ"
+          message={<>{t("admin_settings.tenant_info_prefix")} <b>{tenant.name}</b> <Text code>{tenant.slug}</Text> · {t("admin_settings.tenant_id_prefix")} <Text code>{tenant.id}</Text></>}
+          description={t("admin_settings.tenant_info_desc")}
         />
       )}
 
@@ -128,24 +131,20 @@ export default function Page() {
 
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
-        <Card size="small" title="4 ขั้นตอน (ทำเหมือนกันทุกช่องทาง)">
+        <Card size="small" title={t("admin_settings.steps_card_title")}>
           <Steps
             size="small"
             direction="vertical"
             items={[
-              { title: "ไปเอา Token", icon: <KeyOutlined />,
-                description: "คัดลอก Access Token + Channel Secret จาก console ของแพลตฟอร์มนั้น" },
-              { title: "วางแล้วบันทึก", icon: <SaveOutlined />,
-                description: "วางในการ์ดช่องทางด้านล่าง กด บันทึก — เข้ารหัสก่อนเก็บทันที" },
-              { title: "คัดลอก Webhook URL", icon: <LinkOutlined />,
-                description: "เอาไปวางกลับใน console เดิมของแพลตฟอร์มนั้น" },
-              { title: "เปิดสวิตช์", icon: <PoweroffOutlined />,
-                description: "เปิด เปิดใช้งาน ให้เป็นสีเขียว — ข้อความลูกค้าจะเริ่มไหลเข้า Inbox" },
+              { title: t("admin_settings.step1_title"), icon: <KeyOutlined />, description: t("admin_settings.step1_desc") },
+              { title: t("admin_settings.step2_title"), icon: <SaveOutlined />, description: t("admin_settings.step2_desc") },
+              { title: t("admin_settings.step3_title"), icon: <LinkOutlined />, description: t("admin_settings.step3_desc") },
+              { title: t("admin_settings.step4_title"), icon: <PoweroffOutlined />, description: t("admin_settings.step4_desc") },
             ]}
           />
         </Card>
 
-        <Card size="small" title="แต่ละช่องทางต้องใช้อะไร (สรุปเปรียบเทียบ)">
+        <Card size="small" title={t("admin_settings.compare_card_title")}>
           <Table
             size="small"
             pagination={false}
@@ -153,9 +152,9 @@ export default function Page() {
             dataSource={CHANNELS}
             scroll={{ x: "max-content" }}
             columns={[
-              { title: "ช่องทาง", dataIndex: "label", render: (_: string, r: any) => <Tag color={r.color}>{r.label}</Tag> },
-              { title: "ไปเอา Token/Secret จาก", dataIndex: "needs" },
-              { title: "สถานะ", dataIndex: "status",
+              { title: t("admin_settings.col_channel"), dataIndex: "label", render: (_: string, r: any) => <Tag color={r.color}>{r.label}</Tag> },
+              { title: t("admin_settings.col_needs"), dataIndex: "needs" },
+              { title: t("admin_settings.col_status"), dataIndex: "status",
                 render: (s: string) => <Tag color={STATUS_META[s].color}>{STATUS_META[s].text}</Tag> },
             ]}
           />
@@ -179,35 +178,37 @@ export default function Page() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
-        <Alert type="info" showIcon message="ความปลอดภัย"
-          description="Token/Secret เข้ารหัส AES-256-GCM ก่อนเก็บ · ทุก Webhook ตรวจ signature ก่อนรับข้อความเสมอ" />
-        <Alert type="warning" showIcon message="ข้อควรระวัง"
-          description="Shopee/Lazada เชื่อม Webhook ได้ แต่ AI ยังตอบกลับอัตโนมัติไม่ได้ (ส่ง API ยังอยู่ใน roadmap)" />
-        <Alert type="success" showIcon message="แก้ไขทีหลัง"
-          description="เว้นช่อง Access Token/Secret ว่างไว้ = ไม่เปลี่ยนของเดิม ระบบโชว์ค่าปัจจุบันแบบ mask ให้ดูก่อน" />
+        <Alert type="info" showIcon message={t("admin_settings.security_title")}
+          description={t("admin_settings.security_desc")} />
+        <Alert type="warning" showIcon message={t("admin_settings.caution_title")}
+          description={t("admin_settings.caution_desc")} />
+        <Alert type="success" showIcon message={t("admin_settings.edit_later_title")}
+          description={t("admin_settings.edit_later_desc")} />
       </div>
     </div>
   );
 }
 
 function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: any) {
+  const { t } = useI18n();
+  const HEALTH_META = useHealthMeta(t);
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
   const [saveChannel, { loading: saving }] = useMutation(M, {
-    onCompleted: () => { message.success(`บันทึก ${ch.label} แล้ว`); form.setFieldsValue({ accessToken: "", channelSecret: "" }); onSaved(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_settings.save_success", { label: ch.label })); form.setFieldsValue({ accessToken: "", channelSecret: "" }); onSaved(); },
+    onError: (e) => message.error(e?.message || t("admin_settings.save_failed")),
   });
   const [testChannel, { loading: testing }] = useMutation(M_TEST, {
     onCompleted: (d) => {
       const r = d?.bmsTestChannel;
-      if (r?.ok) message.success(r.message); else message.error(r?.message || "ทดสอบไม่สำเร็จ");
+      if (r?.ok) message.success(r.message); else message.error(r?.message || t("admin_settings.test_failed"));
       onSaved();
     },
-    onError: (e) => message.error(e?.message || "ทดสอบไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("admin_settings.test_failed")),
   });
 
   const webhookUrl = tenantId ? `${origin}/api/bms/${ch.key}/webhook/${tenantId}` : "";
-  const copy = () => { navigator.clipboard?.writeText(webhookUrl); message.success("คัดลอก Webhook URL แล้ว"); };
+  const copy = () => { navigator.clipboard?.writeText(webhookUrl); message.success(t("admin_settings.copy_webhook_success")); };
 
   const submit = async () => {
     const v = await form.validateFields();
@@ -223,12 +224,12 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
   // ตอนยังไม่กรอก token เลย status บน DB ยังเป็นค่า default ('connected') อยู่ ไม่มีความหมาย
   // จึงต้องเช็ค has_token/active ก่อนเสมอ ไม่ใช้ health.status ตรง ๆ
   const healthBadge = !cfg?.has_token
-    ? { color: "default", text: "ยังไม่ตั้งค่า", action: "" }
+    ? { color: "default", text: t("admin_settings.channel_unset"), action: "" }
     : cfg?.active === false
-    ? { color: "default", text: "ปิดใช้งานเอง", action: "" }
+    ? { color: "default", text: t("admin_settings.channel_disabled"), action: "" }
     : HEALTH_META[health?.status as string] || HEALTH_META.connected;
 
-  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && healthBadge.text === "เชื่อมต่อสำเร็จ";
+  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && healthBadge.text === t("admin_settings.health_connected");
 
   useEffect(() => {
     if (!focused) return;
@@ -245,7 +246,7 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
       title={<Space wrap><Tag color={ch.color}>{ch.label}</Tag><Tag color={healthBadge.color}>{healthBadge.text}</Tag></Space>}
       extra={canTest && (
         <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testChannel({ variables: { channel: ch.key } })}>
-          ทดสอบ
+          {t("admin_settings.test_btn")}
         </Button>
       )}
       style={focused ? {
@@ -258,8 +259,8 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`กำลังตั้งค่า ${ch.label}`}
-          description="มาจาก Dashboard จึงเลื่อนมาที่ช่องทางนี้ให้อัตโนมัติ"
+          message={t("admin_settings.focused_alert_title", { label: ch.label })}
+          description={t("admin_settings.focused_alert_desc")}
         />
       )}
 
@@ -275,42 +276,42 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
           description={
             <>
               {healthBadge.action}
-              {health?.last_error_at && <div>เจอครั้งล่าสุด: {fmtDT(health.last_error_at)}</div>}
+              {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at) })}</div>}
             </>
           }
         />
       )}
 
-      <Text strong><LinkOutlined /> Webhook URL (เอาไปใส่ใน console):</Text>
+      <Text strong><LinkOutlined /> {t("admin_settings.webhook_url_label")}</Text>
       <div style={{ display: "flex", gap: 8, margin: "6px 0 16px" }}>
         <Input readOnly value={webhookUrl} />
-        <Button icon={<CopyOutlined />} onClick={copy}>คัดลอก</Button>
+        <Button icon={<CopyOutlined />} onClick={copy}>{t("admin_settings.copy_btn")}</Button>
       </div>
 
       <Form form={form} layout="vertical" initialValues={{ active: cfg?.active ?? true }}>
-        <Form.Item label={`Access Token ${cfg?.has_token ? `(ปัจจุบัน: ${cfg.access_token_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="accessToken">
-          <Input.Password ref={accessTokenInputRef} placeholder={cfg?.has_token ? "•••• (ไม่เปลี่ยน)" : "วาง access token"} autoComplete="off" />
+        <Form.Item label={`${t("admin_settings.access_token_label")} ${cfg?.has_token ? t("admin_settings.access_token_current", { masked: cfg.access_token_masked }) : ""}`} name="accessToken">
+          <Input.Password ref={accessTokenInputRef} placeholder={cfg?.has_token ? t("admin_settings.access_token_placeholder_set") : t("admin_settings.access_token_placeholder_empty")} autoComplete="off" />
         </Form.Item>
-        <Form.Item label={`Channel Secret ${cfg?.has_secret ? `(ปัจจุบัน: ${cfg.channel_secret_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""} — ใช้ verify signature`} name="channelSecret">
-          <Input.Password placeholder={cfg?.has_secret ? "•••• (ไม่เปลี่ยน)" : "วาง channel secret"} autoComplete="off" />
+        <Form.Item label={`${t("admin_settings.channel_secret_label")} ${cfg?.has_secret ? t("admin_settings.access_token_current", { masked: cfg.channel_secret_masked }) : ""} ${t("admin_settings.channel_secret_suffix")}`} name="channelSecret">
+          <Input.Password placeholder={cfg?.has_secret ? t("admin_settings.access_token_placeholder_set") : t("admin_settings.channel_secret_placeholder_empty")} autoComplete="off" />
         </Form.Item>
-        <Form.Item label="เปิดใช้งาน" name="active" valuePropName="checked">
-          <Switch checkedChildren="เปิด" unCheckedChildren="ปิด" />
+        <Form.Item label={t("admin_settings.active_label")} name="active" valuePropName="checked">
+          <Switch checkedChildren={t("admin_settings.switch_on")} unCheckedChildren={t("admin_settings.switch_off")} />
         </Form.Item>
-        <Button type="primary" loading={saving} onClick={submit}>บันทึก {ch.label}</Button>
+        <Button type="primary" loading={saving} onClick={submit}>{t("admin_settings.save_channel_btn", { label: ch.label })}</Button>
       </Form>
 
       <Divider style={{ margin: "16px 0 0" }} />
       <Text type="secondary" style={{ fontSize: 12 }}>
-        token/secret ถูกเข้ารหัส (AES-256-GCM) ก่อนเก็บ · signature ตรวจสอบทุก webhook
+        {t("admin_settings.encrypted_note")}
       </Text>
       {cfg?.has_token && (
         <div style={{ marginTop: 4 }}>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            ข้อความเข้าล่าสุด: {fmtDT(health?.last_inbound_event_at)}
+            {t("admin_settings.last_inbound_event", { time: fmtDT(health?.last_inbound_event_at) })}
           </Text>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            ส่งออกสำเร็จล่าสุด: {fmtDT(health?.last_outbound_success_at)}
+            {t("admin_settings.last_outbound_success", { time: fmtDT(health?.last_outbound_success_at) })}
           </Text>
         </div>
       )}
@@ -319,6 +320,7 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
 }
 
 function AiCard({ aiConfig, aiUsage, onSaved }: any) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   useEffect(() => {
     form.setFieldsValue({
@@ -327,19 +329,19 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
     });
   }, [aiConfig?.provider, aiConfig?.model, form]);
   const [setAiKey, { loading: saving }] = useMutation(M_SET_AI_KEY, {
-    onCompleted: () => { message.success("บันทึก AI Key แล้ว"); form.setFieldsValue({ apiKey: "" }); onSaved(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_settings.ai_key_saved")); form.setFieldsValue({ apiKey: "" }); onSaved(); },
+    onError: (e) => message.error(e?.message || t("admin_settings.save_failed")),
   });
   const [removeAiKey, { loading: removing }] = useMutation(M_REMOVE_AI_KEY, {
-    onCompleted: () => { message.success("ลบ AI Key แล้ว — กลับไปใช้ Shared Key ของแพลตฟอร์ม"); onSaved(); },
-    onError: (e) => message.error(e?.message || "ลบไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_settings.ai_key_removed")); onSaved(); },
+    onError: (e) => message.error(e?.message || t("admin_settings.ai_remove_failed")),
   });
   const [testAiKey, { loading: testing }] = useMutation(M_TEST_AI_KEY, {
     onCompleted: (d) => {
       const r = d?.bmsTestAiKey;
-      if (r?.ok) message.success(r.message); else message.error(r?.message || "ทดสอบไม่สำเร็จ");
+      if (r?.ok) message.success(r.message); else message.error(r?.message || t("admin_settings.test_failed"));
     },
-    onError: (e) => message.error(e?.message || "ทดสอบไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("admin_settings.test_failed")),
   });
 
   const submit = async () => {
@@ -362,20 +364,19 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
     <Card
       title={
         <Space wrap>
-          <Tag color="cyan"><RobotOutlined /> AI BYOK</Tag>
-          {hasKey ? <Tag color="green">ใช้ Key ของร้าน</Tag> : <Tag color="default">ใช้ Shared Key ฟรี</Tag>}
+          <Tag color="cyan"><RobotOutlined /> {t("admin_settings.ai_byok")}</Tag>
+          {hasKey ? <Tag color="green">{t("admin_settings.ai_using_own_key")}</Tag> : <Tag color="default">{t("admin_settings.ai_using_shared_key")}</Tag>}
         </Space>
       }
       extra={hasKey && (
         <Space>
-          <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testAiKey()}>ทดสอบ</Button>
-          <Button size="small" danger icon={<DeleteOutlined />} loading={removing} onClick={() => removeAiKey()}>ลบ</Button>
+          <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testAiKey()}>{t("admin_settings.test_btn")}</Button>
+          <Button size="small" danger icon={<DeleteOutlined />} loading={removing} onClick={() => removeAiKey()}>{t("admin_settings.delete_btn")}</Button>
         </Space>
       )}
     >
       <Paragraph type="secondary" style={{ marginTop: -4 }}>
-        ใช้ตอบลูกค้าและเรียกเครื่องมือด้วย Anthropic หรือ DeepSeek ของร้านเอง — ถ้าไม่ใส่ Key
-        ระบบใช้ Shared AI ของแพลตฟอร์ม (มีโควตารายเดือน) ส่วน Slip OCR ยังใช้ provider กลางที่แพลตฟอร์มกำหนด
+        {t("admin_settings.ai_card_desc")}
       </Paragraph>
 
       {!hasKey && usage && (
@@ -385,13 +386,13 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
           style={{ marginBottom: 16 }}
           message={
             <>
-              <Tag>แพ็กเกจ {usage.planName}</Tag>
-              {usage.unlimited ? "ใช้งานได้ไม่จำกัด" : `ใช้ไปแล้ว ${usage.count}/${usage.limit} ครั้งเดือนนี้`}
+              <Tag>{t("admin_settings.ai_plan_tag", { plan: usage.planName })}</Tag>
+              {usage.unlimited ? t("admin_settings.ai_unlimited") : t("admin_settings.ai_usage_count", { count: usage.count, limit: usage.limit })}
             </>
           }
           description={
             overLimit
-              ? "เกินโควตาแล้ว — ระบบจะตอบด้วยข้อความ template แทน AI จนกว่าจะขึ้นเดือนใหม่ หรือใส่ AI Key ของร้านเองด้านล่าง"
+              ? t("admin_settings.ai_over_limit_desc")
               : undefined
           }
         />
@@ -402,7 +403,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
         layout="vertical"
         initialValues={{ provider: aiConfig?.provider || "anthropic", model: aiConfig?.model || "" }}
       >
-        <Form.Item label="AI Provider" name="provider" rules={[{ required: true }]}>
+        <Form.Item label={t("admin_settings.ai_provider_label")} name="provider" rules={[{ required: true }]}>
           <Select
             options={[
               { value: "anthropic", label: "Anthropic (Claude)" },
@@ -416,18 +417,18 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
             }}
           />
         </Form.Item>
-        <Form.Item label={`API Key ${hasKey ? `(ปัจจุบัน: ${aiConfig.api_key_masked} — เว้นว่างถ้าไม่เปลี่ยน)` : ""}`} name="apiKey">
-          <Input.Password placeholder={hasKey ? "•••• (ไม่เปลี่ยน)" : "วาง API Key ของ provider ที่เลือก"} autoComplete="off" />
+        <Form.Item label={`${t("admin_settings.ai_key_label")} ${hasKey ? t("admin_settings.ai_key_current", { masked: aiConfig.api_key_masked }) : ""}`} name="apiKey">
+          <Input.Password placeholder={hasKey ? t("admin_settings.access_token_placeholder_set") : t("admin_settings.ai_key_placeholder_empty")} autoComplete="off" />
         </Form.Item>
-        <Form.Item label="Model (เว้นว่าง = ค่าเริ่มต้นของ provider)" name="model">
-          <Input placeholder="claude-haiku-4-5-20251001 หรือ deepseek-v4-flash" />
+        <Form.Item label={t("admin_settings.ai_model_label")} name="model">
+          <Input placeholder={t("admin_settings.ai_model_placeholder")} />
         </Form.Item>
-        <Button type="primary" loading={saving} onClick={submit}>บันทึก AI Key</Button>
+        <Button type="primary" loading={saving} onClick={submit}>{t("admin_settings.save_ai_key_btn")}</Button>
       </Form>
 
       <Divider style={{ margin: "16px 0 0" }} />
       <Text type="secondary" style={{ fontSize: 12 }}>
-        API Key เข้ารหัส (AES-256-GCM) ก่อนเก็บเหมือนกับ token ของช่องทางอื่น
+        {t("admin_settings.ai_encrypted_note")}
       </Text>
     </Card>
   );

@@ -4,8 +4,8 @@ import React, { createContext, useContext, useMemo } from 'react';
 import { useSession } from '@/lib/useSession';
 
 type SessionValue = {
-  user: { id:number; email:string; role:string; themePreference?: string | null } | null;
-  admin: { id:number; email:string; role:string; themePreference?: string | null } | null;
+  user: { id:number; email:string; role:string; themePreference?: string | null; language?: string | null } | null;
+  admin: { id:number; email:string; role:string; themePreference?: string | null; language?: string | null } | null;
   isAuthenticated: boolean;
   loading: boolean;
   refreshSession: () => void;

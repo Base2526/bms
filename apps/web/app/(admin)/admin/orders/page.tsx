@@ -35,6 +35,7 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
+import { useI18n } from "@/lib/i18nContext";
 
 // ---- Types --------------------------------------------------
 type OrderStatus =
@@ -94,15 +95,17 @@ const STATUS_COLOR: Record<OrderStatus, string> = {
   CANCELLED: "default",
   RETURNED: "red",
 };
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  PENDING: "รอชำระเงิน",
-  PAID: "จ่ายแล้ว",
-  PACKING: "กำลังแพ็ค",
-  SHIPPED: "จัดส่งแล้ว",
-  COMPLETED: "สำเร็จ",
-  CANCELLED: "ยกเลิก",
-  RETURNED: "คืนสินค้า",
-};
+function getStatusLabel(t: (key: string) => string): Record<OrderStatus, string> {
+  return {
+    PENDING: t("admin_orders.status_pending"),
+    PAID: t("admin_orders.status_paid"),
+    PACKING: t("admin_orders.status_packing"),
+    SHIPPED: t("admin_orders.status_shipped"),
+    COMPLETED: t("admin_orders.status_completed"),
+    CANCELLED: t("admin_orders.status_cancelled"),
+    RETURNED: t("admin_orders.status_returned"),
+  };
+}
 const CHANNEL_COLOR: Record<string, string> = {
   line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue",
   shopee: "orange", lazada: "purple", test: "default",
@@ -114,6 +117,8 @@ const orderSubtotal = (order: Order) =>
   order.items.reduce((sum, it) => sum + (Number(it.unit_price) || 0) * (Number(it.qty) || 0), 0);
 
 function OrdersManagement() {
+  const { t } = useI18n();
+  const STATUS_LABEL = useMemo(() => getStatusLabel(t), [t]);
   const { can } = useBmsPermissions();
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
@@ -130,23 +135,23 @@ function OrdersManagement() {
     fetchPolicy: "cache-and-network",
   });
 
-  const onErr = (e: any) => message.error(e?.message || "การทำรายการล้มเหลว");
+  const onErr = (e: any) => message.error(e?.message || t("admin_orders.action_failed"));
   // handler ร่วม: mutation คืน Boolean — false = สถานะไม่ถูกต้อง
   const opts = (ok: string) => ({
     onCompleted: (d: any) => {
       Object.values(d || {})[0]
         ? (message.success(ok), refetch())
-        : onErr({ message: "ทำรายการไม่ได้ (สถานะไม่ถูกต้อง)" });
+        : onErr({ message: t("admin_orders.invalid_status") });
     },
     onError: onErr,
   });
 
-  const [pay, { loading: l1 }] = useMutation(M_PAY, opts("บันทึกการจ่ายเงินแล้ว"));
-  const [pack, { loading: l2 }] = useMutation(M_PACK, opts("เริ่มแพ็คของ"));
-  const [ship, { loading: l3 }] = useMutation(M_SHIP, opts("จัดส่งแล้ว (ตัดสต็อก)"));
-  const [complete, { loading: l4 }] = useMutation(M_COMPLETE, opts("ปิดออร์เดอร์สำเร็จ"));
-  const [cancel, { loading: l5 }] = useMutation(M_CANCEL, opts("ยกเลิกแล้ว (คืนสต็อกที่จอง)"));
-  const [ret, { loading: l6 }] = useMutation(M_RETURN, opts("รับคืนสินค้าแล้ว (คืนสต็อก)"));
+  const [pay, { loading: l1 }] = useMutation(M_PAY, opts(t("admin_orders.paid_success")));
+  const [pack, { loading: l2 }] = useMutation(M_PACK, opts(t("admin_orders.packing_success")));
+  const [ship, { loading: l3 }] = useMutation(M_SHIP, opts(t("admin_orders.shipped_success")));
+  const [complete, { loading: l4 }] = useMutation(M_COMPLETE, opts(t("admin_orders.completed_success")));
+  const [cancel, { loading: l5 }] = useMutation(M_CANCEL, opts(t("admin_orders.cancelled_success")));
+  const [ret, { loading: l6 }] = useMutation(M_RETURN, opts(t("admin_orders.returned_success")));
   const busy = l1 || l2 || l3 || l4 || l5 || l6;
 
   const orders: Order[] = data?.bmsOrders || [];
@@ -154,23 +159,23 @@ function OrdersManagement() {
   const actionsFor = (r: Order) => {
     const v = { variables: { id: r.id } };
     const btns: any[] = [];
-    const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>จ่ายเงิน</Button>;
-    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>แพ็ค</Button>;
+    const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>{t("admin_orders.btn_pay")}</Button>;
+    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{t("admin_orders.btn_pack")}</Button>;
     const shipBtn = r.hasShippingAddress ? (
-      <Popconfirm key="ship" title="จัดส่งออร์เดอร์นี้?" description="จะตัดสต็อกจริง" okText="จัดส่ง" cancelText="ยกเลิก" disabled={busy} onConfirm={() => ship(v)}>
-        <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>จัดส่ง</Button>
+      <Popconfirm key="ship" title={t("admin_orders.ship_confirm_title")} description={t("admin_orders.ship_confirm_desc")} okText={t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
+        <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>{t("admin_orders.btn_ship")}</Button>
       </Popconfirm>
     ) : (
       <Space key="ship" size={4}>
-        <Tooltip title="ลูกค้ายังไม่มีที่อยู่จัดส่งในระบบ — เพิ่มที่อยู่ก่อนจึงจัดส่งได้">
-          <Button type="link" size="small" icon={<CarOutlined />} disabled>จัดส่ง</Button>
+        <Tooltip title={t("admin_orders.no_shipping_address_tooltip")}>
+          <Button type="link" size="small" icon={<CarOutlined />} disabled>{t("admin_orders.btn_ship")}</Button>
         </Tooltip>
-        <Link href="/admin/customers"><Button type="link" size="small" icon={<EnvironmentOutlined />}>เพิ่มที่อยู่</Button></Link>
+        <Link href="/admin/customers"><Button type="link" size="small" icon={<EnvironmentOutlined />}>{t("admin_orders.btn_add_address")}</Button></Link>
       </Space>
     );
-    const doneBtn = <Button key="done" type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy} onClick={() => complete(v)}>สำเร็จ</Button>;
-    const cancelBtn = <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} />;
-    const returnBtn = <ReturnBtn key="r" onOk={() => ret(v)} disabled={busy} />;
+    const doneBtn = <Button key="done" type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy} onClick={() => complete(v)}>{t("admin_orders.btn_done")}</Button>;
+    const cancelBtn = <CancelBtn key="c" onOk={() => cancel(v)} disabled={busy} t={t} />;
+    const returnBtn = <ReturnBtn key="r" onOk={() => ret(v)} disabled={busy} t={t} />;
 
     switch (r.status) {
       case "PENDING":
@@ -205,14 +210,14 @@ function OrdersManagement() {
       { title: "Customer", dataIndex: "customer_ref", key: "customer_ref",
         render: (c: string | null) => c || <span style={{ color: "#999" }}>—</span> },
       { title: "Items", key: "items",
-        render: (_: any, r: Order) => <span>{r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / {r.items.length} รายการ</span> },
-      { title: "ยอดชำระ", dataIndex: "amount_due", key: "amount_due", width: 130, align: "right" as const,
+        render: (_: any, r: Order) => <span>{t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length })}</span> },
+      { title: t("admin_orders.col_amount_due"), dataIndex: "amount_due", key: "amount_due", width: 130, align: "right" as const,
         render: (v: number, r: Order) => (
           <Space direction="vertical" size={0} style={{ textAlign: "right" }}>
             <Typography.Text>{money(v)}</Typography.Text>
             {Number(r.shipping_fee || 0) > 0 && (
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                รวมค่าส่ง {money(r.shipping_fee)}
+                {t("admin_orders.incl_shipping", { value: money(r.shipping_fee) })}
               </Typography.Text>
             )}
             {Number(r.discount_amount || 0) > 0 && (
@@ -224,21 +229,21 @@ function OrdersManagement() {
         ) },
       { title: "Status", dataIndex: "status", key: "status", width: 130,
         render: (s: OrderStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
-      { title: "Updated", dataIndex: "updated_at", key: "updated_at", width: 160,
+      { title: t("admin_orders.col_updated"), dataIndex: "updated_at", key: "updated_at", width: 160,
         render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 220,
+      { title: t("admin_orders.col_actions"), key: "actions", width: 220,
         render: (_: any, r: Order) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [busy, can]
+    [busy, can, t, STATUS_LABEL]
   );
 
-  if (error) return <Alert type="error" message="โหลดออร์เดอร์ไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_orders.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
-      <AdminPageHeader title="BMS Orders (OMS)">
+      <AdminPageHeader title={t("admin_orders.page_title")}>
         <Input.Search
-          placeholder="ค้นหา order / customer / channel"
+          placeholder={t("admin_orders.search_placeholder")}
           allowClear
           style={{ width: isMobile ? "100%" : 260 }}
           value={searchInput}
@@ -248,14 +253,14 @@ function OrdersManagement() {
           options={FILTERS}
           value={filter}
           onChange={setFilter}
-          labels={{ ALL: "ทุกสถานะ", ...STATUS_LABEL }}
+          labels={{ ALL: t("admin_orders.status_all"), ...STATUS_LABEL }}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_orders.refresh")}</Button>
       </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="PENDING → (จ่าย) PAID → (แพ็ค) PACKING → (ส่ง) SHIPPED → (ปิด) COMPLETED  |  Cancel คืน reserved (ก่อนส่ง) · Return คืนสต็อก (หลังส่ง)"
+        message={t("admin_orders.workflow_hint")}
       />
 
       {isMobile ? (
@@ -263,9 +268,9 @@ function OrdersManagement() {
           loading={loading}
           dataSource={orders}
           rowKey={(o) => o.id}
-          totalText={(t) => `ทั้งหมด ${t} ออร์เดอร์`}
+          totalText={(n) => t("admin_orders.total_orders", { n })}
           renderItem={(r) => <MobileOrderCard key={r.id} order={r} actions={actionsFor(r)} />}
-          emptyText="ไม่มีออร์เดอร์"
+          emptyText={t("admin_orders.empty_no_orders")}
         />
       ) : (
         <Table
@@ -291,32 +296,33 @@ const ITEM_COLUMNS = [
 
 /** เส้นทางออร์เดอร์ + รายการสินค้า + สรุปยอด — ใช้ทั้งแถวขยายของตาราง (desktop) และการ์ด (มือถือ) */
 function OrderDetails({ order: r }: { order: Order }) {
+  const { t } = useI18n();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <OrderJourney orderId={r.id} />
       <div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>รายการสินค้า</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>
         <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS} pagination={false} size="small" scroll={{ x: "max-content" }} />
         <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
           <Space direction="vertical" size={2} style={{ minWidth: 0, width: "100%", maxWidth: 320 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-              <Typography.Text type="secondary">ยอดสินค้า</Typography.Text>
+              <Typography.Text type="secondary">{t("admin_orders.subtotal")}</Typography.Text>
               <Typography.Text>{money(orderSubtotal(r))}</Typography.Text>
             </div>
             {Number(r.discount_amount || 0) > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-                <Typography.Text type="secondary">ส่วนลด{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
+                <Typography.Text type="secondary">{t("admin_orders.discount")}{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
                 <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>
               </div>
             )}
             {Number(r.shipping_fee || 0) > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-                <Typography.Text type="secondary">ค่าส่ง</Typography.Text>
+                <Typography.Text type="secondary">{t("admin_orders.shipping_fee")}</Typography.Text>
                 <Typography.Text>{money(r.shipping_fee)}</Typography.Text>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", gap: 16, borderTop: "1px solid var(--app-border, #eee)", paddingTop: 6 }}>
-              <Typography.Text strong>ยอดชำระสุทธิ</Typography.Text>
+              <Typography.Text strong>{t("admin_orders.net_total")}</Typography.Text>
               <Typography.Text strong>{money(r.amount_due)}</Typography.Text>
             </div>
           </Space>
@@ -328,6 +334,8 @@ function OrderDetails({ order: r }: { order: Order }) {
 
 /** 1 ออร์เดอร์ = 1 การ์ดบนมือถือ — รายละเอียด (journey/รายการ) กางในการ์ดเดียวกัน */
 function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.ReactNode }) {
+  const { t } = useI18n();
+  const STATUS_LABEL = useMemo(() => getStatusLabel(t), [t]);
   const [open, setOpen] = useState(false);
   return (
     <AdminRecordCard
@@ -339,16 +347,16 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
       }
       extra={<Tag color={STATUS_COLOR[r.status]} style={{ marginInlineEnd: 0 }}>{STATUS_LABEL[r.status]}</Tag>}
       fields={[
-        { label: "ลูกค้า", value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
-        { label: "รายการ", value: `${r.items.reduce((n, it) => n + it.qty, 0)} ชิ้น / ${r.items.length} รายการ` },
+        { label: t("admin_orders.customer_label"), value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
+        { label: t("admin_orders.items_short_label"), value: t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length }) },
         {
-          label: "ยอดชำระ",
+          label: t("admin_orders.col_amount_due"),
           value: (
             <>
               <Typography.Text strong>{money(r.amount_due)}</Typography.Text>
               {Number(r.shipping_fee || 0) > 0 && (
                 <Typography.Text type="secondary" style={{ fontSize: 11, display: "block" }}>
-                  รวมค่าส่ง {money(r.shipping_fee)}
+                  {t("admin_orders.incl_shipping", { value: money(r.shipping_fee) })}
                 </Typography.Text>
               )}
               {Number(r.discount_amount || 0) > 0 && (
@@ -359,7 +367,7 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
             </>
           ),
         },
-        { label: "อัปเดต", value: fmtDT(r.updated_at) },
+        { label: t("admin_orders.updated_label"), value: fmtDT(r.updated_at) },
       ]}
       footer={open ? <div style={{ marginTop: 12 }}><OrderDetails order={r} /></div> : null}
       actions={
@@ -370,7 +378,7 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
             icon={open ? <UpOutlined /> : <DownOutlined />}
             onClick={() => setOpen((v) => !v)}
           >
-            {open ? "ย่อ" : "รายละเอียด"}
+            {open ? t("admin_orders.collapse") : t("admin_orders.details")}
           </Button>
         </>
       }
@@ -378,17 +386,17 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
   );
 }
 
-function CancelBtn({ onOk, disabled }: { onOk: () => void; disabled: boolean }) {
+function CancelBtn({ onOk, disabled, t }: { onOk: () => void; disabled: boolean; t: (key: string) => string }) {
   return (
-    <Popconfirm title="ยกเลิกออร์เดอร์นี้?" description="จะคืนสต็อกที่จองไว้" okText="ยกเลิกออร์เดอร์" okButtonProps={{ danger: true }} cancelText="ไม่" disabled={disabled} onConfirm={onOk}>
-      <Button type="link" size="small" danger icon={<CloseCircleOutlined />} disabled={disabled}>ยกเลิก</Button>
+    <Popconfirm title={t("admin_orders.cancel_confirm_title")} description={t("admin_orders.cancel_confirm_desc")} okText={t("admin_orders.cancel_ok_text")} okButtonProps={{ danger: true }} cancelText={t("admin_orders.no_text")} disabled={disabled} onConfirm={onOk}>
+      <Button type="link" size="small" danger icon={<CloseCircleOutlined />} disabled={disabled}>{t("admin_orders.btn_cancel")}</Button>
     </Popconfirm>
   );
 }
-function ReturnBtn({ onOk, disabled }: { onOk: () => void; disabled: boolean }) {
+function ReturnBtn({ onOk, disabled, t }: { onOk: () => void; disabled: boolean; t: (key: string) => string }) {
   return (
-    <Popconfirm title="รับคืนสินค้า?" description="จะคืนสต็อกเข้าคลัง" okText="รับคืน" cancelText="ไม่" disabled={disabled} onConfirm={onOk}>
-      <Button type="link" size="small" icon={<RollbackOutlined />} disabled={disabled}>คืนสินค้า</Button>
+    <Popconfirm title={t("admin_orders.return_confirm_title")} description={t("admin_orders.return_confirm_desc")} okText={t("admin_orders.return_ok_text")} cancelText={t("admin_orders.no_text")} disabled={disabled} onConfirm={onOk}>
+      <Button type="link" size="small" icon={<RollbackOutlined />} disabled={disabled}>{t("admin_orders.btn_return")}</Button>
     </Popconfirm>
   );
 }
@@ -413,11 +421,12 @@ function StaffChip({ s, size = 22 }: { s: StaffRef; size?: number }) {
 }
 
 function OrderJourney({ orderId }: { orderId: string }) {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const { data, loading } = useQuery(Q_JOURNEY, { variables: { orderId }, fetchPolicy: "cache-and-network" });
   const j = data?.bmsOrderJourney;
   if (loading && !j) return <div style={{ padding: 16, textAlign: "center" }}><Spin size="small" /></div>;
-  if (!j) return <Empty description="ไม่มีข้อมูลเส้นทาง" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  if (!j) return <Empty description={t("admin_orders.no_journey")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
 
   const steps: JStep[] = j.steps || [];
   const events: JEvent[] = j.events || [];
@@ -438,15 +447,15 @@ function OrderJourney({ orderId }: { orderId: string }) {
       {/* จุดเริ่มต้น */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "center", padding: "10px 12px", background: "var(--app-surface-2, rgba(148,163,184,0.08))", borderRadius: 8 }}>
         <Space size={6}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>ต้นทาง:</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.origin_label")}</Typography.Text>
           <Tag color={CHANNEL_COLOR_O[j.channel] || "default"}>{j.channel}</Tag>
           {j.conversationId
-            ? <Link href={`/admin/inbox?c=${j.conversationId}`} style={{ fontSize: 12 }}>เปิดดูแชท →</Link>
-            : <Typography.Text type="secondary" style={{ fontSize: 12 }}>ไม่มีแชทต้นทาง</Typography.Text>}
+            ? <Link href={`/admin/inbox?c=${j.conversationId}`} style={{ fontSize: 12 }}>{t("admin_orders.open_chat")}</Link>
+            : <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.no_origin_chat")}</Typography.Text>}
         </Space>
         {(j.assignedStaff || helpers.length > 0) && (
           <Space size={6}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>ผู้ดูแล:</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.assigned_staff_label")}</Typography.Text>
             {j.assignedStaff && <StaffChip s={j.assignedStaff} />}
             {helpers.map((h) => <StaffChip key={h.id} s={h} size={18} />)}
           </Space>
@@ -464,7 +473,7 @@ function OrderJourney({ orderId }: { orderId: string }) {
 
       {/* timeline ละเอียด */}
       <div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>ไทม์ไลน์ละเอียด</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.detailed_timeline")}</Typography.Text>
         <Timeline style={{ marginTop: 10 }} items={events.map((e) => ({
           children: (
             <span style={{ fontSize: 12 }}>

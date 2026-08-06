@@ -6,6 +6,7 @@ import { useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { useI18n } from "@/lib/i18nContext";
 
 const { RangePicker } = DatePicker;
 
@@ -22,44 +23,44 @@ const M_GENERATE_REPORT = gql`
     bmsGenerateReport(input: $input) { fileId fileUrl reportType format summary }
   }
 `;
-const REPORT_TYPE_OPTIONS = [
-  { value: "SALES", label: "ยอดขาย (Sales)" },
-  { value: "INVENTORY", label: "สต็อก (Inventory)" },
-  { value: "PROFIT", label: "กำไรขั้นต้น (Profit, ค่าประมาณ)" },
-];
-const FORMAT_OPTIONS = [
-  { value: "XLSX", label: "Excel (.xlsx)" },
-  { value: "CSV", label: "CSV" },
-  { value: "PDF", label: "PDF" },
-];
 
 function ReportGeneratorCard({ from, to }: { from: string; to: string }) {
+  const { t } = useI18n();
+  const REPORT_TYPE_OPTIONS = [
+    { value: "SALES", label: t("admin_reports.report_type_sales") },
+    { value: "INVENTORY", label: t("admin_reports.report_type_inventory") },
+    { value: "PROFIT", label: t("admin_reports.report_type_profit") },
+  ];
+  const FORMAT_OPTIONS = [
+    { value: "XLSX", label: t("admin_reports.format_xlsx") },
+    { value: "CSV", label: t("admin_reports.format_csv") },
+    { value: "PDF", label: t("admin_reports.format_pdf") },
+  ];
   const [reportType, setReportType] = useState("SALES");
   const [format, setFormat] = useState("XLSX");
   const [includeSummary, setIncludeSummary] = useState(true);
   const { data, loading, refetch } = useQuery(Q_GENERATED_REPORTS, { fetchPolicy: "cache-and-network" });
   const [generate, { loading: generating }] = useMutation(M_GENERATE_REPORT, {
     onCompleted: (d) => {
-      message.success("สร้างรายงานสำเร็จ");
+      message.success(t("admin_reports.generate_success"));
       if (d?.bmsGenerateReport?.fileUrl) window.open(d.bmsGenerateReport.fileUrl, "_blank");
       refetch();
     },
-    onError: (e) => message.error(e?.message || "สร้างรายงานไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("admin_reports.generate_failed")),
   });
 
   const rows = data?.bmsGeneratedReports || [];
 
   return (
-    <Card title="AI Report Generator" style={{ marginTop: 16 }}>
+    <Card title={t("admin_reports.generator_title")} style={{ marginTop: 16 }}>
       <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-        สร้างรายงานเป็นไฟล์ Excel/CSV/PDF ให้ดาวน์โหลด (ใช้ช่วงวันที่จากตัวกรองด้านบนสำหรับ Sales/Profit —
-        ไม่มีผลกับ Inventory เพราะเป็น snapshot ปัจจุบัน) หรือพิมพ์ขอกับ AI ผู้ช่วยที่{" "}
-        <a href="/admin/assistant">/admin/assistant</a> ได้เลย เช่น &quot;Export sales to Excel&quot;
+        {t("admin_reports.generator_desc")}{" "}
+        <a href="/admin/assistant">/admin/assistant</a> {t("admin_reports.generator_desc_end")}
       </Typography.Paragraph>
       <Space wrap>
         <Select value={reportType} onChange={setReportType} options={REPORT_TYPE_OPTIONS} style={{ width: 220 }} />
         <Select value={format} onChange={setFormat} options={FORMAT_OPTIONS} style={{ width: 160 }} />
-        <Space size={6}><Switch checked={includeSummary} onChange={setIncludeSummary} size="small" /> AI summary</Space>
+        <Space size={6}><Switch checked={includeSummary} onChange={setIncludeSummary} size="small" /> {t("admin_reports.ai_summary_label")}</Space>
         <Button
           type="primary"
           icon={<FileExcelOutlined />}
@@ -72,7 +73,7 @@ function ReportGeneratorCard({ from, to }: { from: string; to: string }) {
             })
           }
         >
-          สร้างรายงาน
+          {t("admin_reports.generate_report_btn")}
         </Button>
       </Space>
 
@@ -85,18 +86,18 @@ function ReportGeneratorCard({ from, to }: { from: string; to: string }) {
         pagination={{ pageSize: 10 }}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "ประเภท", dataIndex: "reportType" },
-          { title: "รูปแบบ", dataIndex: "format" },
+          { title: t("admin_reports.col_report_type"), dataIndex: "reportType" },
+          { title: t("admin_reports.col_format"), dataIndex: "format" },
           {
-            title: "สรุป (AI)", dataIndex: "summary",
+            title: t("admin_reports.col_ai_summary"), dataIndex: "summary",
             render: (v: string | null) => v ? <Typography.Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Typography.Text> : "—",
           },
-          { title: "โดย", dataIndex: "generatedBy" },
-          { title: "เมื่อ", dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+          { title: t("admin_reports.col_generated_by"), dataIndex: "generatedBy" },
+          { title: t("admin_reports.col_generated_at"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
           {
             title: "", key: "download",
             render: (_: any, r: any) => r.fileUrl
-              ? <Button size="small" icon={<DownloadOutlined />} href={r.fileUrl} target="_blank">ดาวน์โหลด</Button>
+              ? <Button size="small" icon={<DownloadOutlined />} href={r.fileUrl} target="_blank">{t("admin_reports.download")}</Button>
               : "—",
           },
         ]}
@@ -132,6 +133,7 @@ const CHANNEL_COLOR: Record<string, string> = {
 const baht = (v: number) => `${Number(v).toLocaleString()} ฿`;
 
 export default function Page() {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().subtract(29, "day"), dayjs()]);
   const from = range[0].format("YYYY-MM-DD");
@@ -141,7 +143,7 @@ export default function Page() {
     variables: { from, to }, fetchPolicy: "cache-and-network",
   });
 
-  if (error) return <Alert type="error" message="โหลดรายงานไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_reports.load_error")} description={error.message} showIcon />;
 
   const s = data?.bmsSalesSummary;
   const inv = data?.bmsInventorySummary;
@@ -150,94 +152,94 @@ export default function Page() {
 
   return (
     <div>
-      <AdminPageHeader title="Reports">
+      <AdminPageHeader title={t("admin_reports.page_title")}>
         <RangePicker value={range} allowClear={false}
           style={{ width: isMobile ? "100%" : undefined }}
           onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
           presets={[
-            { label: "7 วัน", value: [dayjs().subtract(6, "day"), dayjs()] },
-            { label: "30 วัน", value: [dayjs().subtract(29, "day"), dayjs()] },
-            { label: "เดือนนี้", value: [dayjs().startOf("month"), dayjs()] },
+            { label: t("admin_reports.preset_7d"), value: [dayjs().subtract(6, "day"), dayjs()] },
+            { label: t("admin_reports.preset_30d"), value: [dayjs().subtract(29, "day"), dayjs()] },
+            { label: t("admin_reports.preset_this_month"), value: [dayjs().startOf("month"), dayjs()] },
           ]}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_reports.refresh")}</Button>
       </AdminPageHeader>
 
       {/* ---- Sales KPIs ---- */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={8}>
-          <Card><Statistic title={`ยอดขาย (${from} → ${to})`} value={s?.revenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
+          <Card><Statistic title={t("admin_reports.kpi_sales_range", { from, to })} value={s?.revenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
         </Col>
         <Col xs={12} sm={12} md={8}>
-          <Card><Statistic title="จำนวนออเดอร์ (จ่ายแล้ว)" value={s?.orderCount ?? 0} prefix={<ShoppingCartOutlined />} /></Card>
+          <Card><Statistic title={t("admin_reports.kpi_order_count")} value={s?.orderCount ?? 0} prefix={<ShoppingCartOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={12} md={8}>
-          <Card><Statistic title="ยอดเฉลี่ย/ออเดอร์" value={s?.avgOrderValue ?? 0} precision={0} suffix="฿" /></Card>
+          <Card><Statistic title={t("admin_reports.kpi_avg_order")} value={s?.avgOrderValue ?? 0} precision={0} suffix="฿" /></Card>
         </Col>
       </Row>
 
       {/* ---- Sales by day (mini bars) ---- */}
-      <Card title="ยอดขายรายวัน" style={{ marginTop: 16 }}>
+      <Card title={t("admin_reports.daily_sales")} style={{ marginTop: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 140, overflowX: "auto" }}>
           {(s?.byDay || []).map((x: any) => (
-            <div key={x.day} title={`${x.day}: ${baht(x.revenue)} (${x.orders} ออเดอร์)`}
+            <div key={x.day} title={t("admin_reports.daily_sales_tooltip", { day: x.day, revenue: baht(x.revenue), orders: x.orders })}
               style={{ flex: "1 0 8px", minWidth: 8, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center" }}>
               <div style={{ width: "100%", height: `${(x.revenue / maxRev) * 120}px`, background: "#52c41a", borderRadius: 2 }} />
             </div>
           ))}
         </div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>ชี้ที่แท่งเพื่อดูยอดรายวัน</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_reports.hover_hint")}</Typography.Text>
       </Card>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         {/* ---- By channel ---- */}
         <Col xs={24} md={12}>
-          <Card title="ยอดขายตามช่องทาง">
+          <Card title={t("admin_reports.sales_by_channel")}>
             <Table rowKey="channel" size="small" pagination={false} dataSource={s?.byChannel || []}
               scroll={{ x: "max-content" }}
               columns={[
-                { title: "ช่องทาง", dataIndex: "channel", render: (c: string) => <Tag color={CHANNEL_COLOR[c] || "default"}>{c}</Tag> },
-                { title: "ออเดอร์", dataIndex: "orders", align: "right" as const },
-                { title: "ยอดขาย", dataIndex: "revenue", align: "right" as const, render: baht },
+                { title: t("admin_reports.col_channel"), dataIndex: "channel", render: (c: string) => <Tag color={CHANNEL_COLOR[c] || "default"}>{c}</Tag> },
+                { title: t("admin_reports.col_orders"), dataIndex: "orders", align: "right" as const },
+                { title: t("admin_reports.col_sales"), dataIndex: "revenue", align: "right" as const, render: baht },
               ]} />
           </Card>
         </Col>
         {/* ---- By status ---- */}
         <Col xs={24} md={12}>
-          <Card title="ออเดอร์ตามสถานะ (ทุกสถานะในช่วง)">
+          <Card title={t("admin_reports.orders_by_status")}>
             <Table rowKey="status" size="small" pagination={false} dataSource={s?.byStatus || []}
               scroll={{ x: "max-content" }}
               columns={[
-                { title: "สถานะ", dataIndex: "status", render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag> },
-                { title: "จำนวน", dataIndex: "count", align: "right" as const },
+                { title: t("admin_reports.col_status"), dataIndex: "status", render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag> },
+                { title: t("admin_reports.col_count"), dataIndex: "count", align: "right" as const },
               ]} />
           </Card>
         </Col>
       </Row>
 
       {/* ---- Top selling ---- */}
-      <Card title="สินค้าขายดี (ตามช่วงวันที่)" style={{ marginTop: 16 }}>
+      <Card title={t("admin_reports.top_products")} style={{ marginTop: 16 }}>
         <Table rowKey="sku" size="small" pagination={false} dataSource={top} loading={loading}
           scroll={{ x: "max-content" }}
           columns={[
             { title: "SKU", dataIndex: "sku" },
-            { title: "สินค้า", dataIndex: "name" },
-            { title: "ขายได้ (ชิ้น)", dataIndex: "qty", align: "right" as const },
-            { title: "ยอดขาย", dataIndex: "revenue", align: "right" as const, render: baht },
+            { title: t("admin_reports.col_product"), dataIndex: "name" },
+            { title: t("admin_reports.col_qty_sold"), dataIndex: "qty", align: "right" as const },
+            { title: t("admin_reports.col_sales"), dataIndex: "revenue", align: "right" as const, render: baht },
           ]} />
       </Card>
 
       {/* ---- Inventory summary ---- */}
-      <Card title="สรุปสต็อก (ปัจจุบัน)" style={{ marginTop: 16 }}>
+      <Card title={t("admin_reports.inventory_summary")} style={{ marginTop: 16 }}>
         <Row gutter={[16, 16]}>
-          <Col xs={12} md={6}><Statistic title="มูลค่าสต็อก" value={inv?.stockValue ?? 0} precision={0} suffix="฿" prefix={<InboxOutlined />} /></Col>
-          <Col xs={12} md={6}><Statistic title="สินค้า (SKU)" value={inv?.skuCount ?? 0} /></Col>
-          <Col xs={12} md={6}><Statistic title="คงเหลือรวม (ชิ้น)" value={inv?.totalUnits ?? 0} /></Col>
-          <Col xs={12} md={6}><Statistic title="พร้อมขาย (ชิ้น)" value={inv?.availableUnits ?? 0} /></Col>
-          <Col xs={12} md={6}><Statistic title="จองอยู่ (ชิ้น)" value={inv?.reservedUnits ?? 0} /></Col>
-          <Col xs={12} md={6}><Statistic title="ตัวเลือก (variant)" value={inv?.variantCount ?? 0} /></Col>
-          <Col xs={12} md={6}><Statistic title="ใกล้หมด" value={inv?.lowStockCount ?? 0} valueStyle={{ color: "#d46b08" }} prefix={<WarningOutlined />} /></Col>
-          <Col xs={12} md={6}><Statistic title="หมดสต็อก" value={inv?.outOfStockCount ?? 0} valueStyle={{ color: "#cf1322" }} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.stock_value")} value={inv?.stockValue ?? 0} precision={0} suffix="฿" prefix={<InboxOutlined />} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.sku_count")} value={inv?.skuCount ?? 0} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.total_units")} value={inv?.totalUnits ?? 0} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.available_units")} value={inv?.availableUnits ?? 0} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.reserved_units")} value={inv?.reservedUnits ?? 0} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.variant_count")} value={inv?.variantCount ?? 0} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.low_stock")} value={inv?.lowStockCount ?? 0} valueStyle={{ color: "#d46b08" }} prefix={<WarningOutlined />} /></Col>
+          <Col xs={12} md={6}><Statistic title={t("admin_reports.out_of_stock")} value={inv?.outOfStockCount ?? 0} valueStyle={{ color: "#cf1322" }} /></Col>
         </Row>
       </Card>
 

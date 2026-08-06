@@ -3,8 +3,10 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Descriptions, Avatar, Tag, Space, Alert, Button, Row, Col, Empty, Upload, Form, Input, Select, message } from "antd";
 import { UserOutlined, ReloadOutlined, CrownOutlined, ShopOutlined, SafetyOutlined, UploadOutlined, SaveOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "@/lib/useTheme";
 import type { ThemeMode } from "@/lib/theme";
+import { getLangCookie, setLangCookie, isLang } from "@/lib/lang";
 
 const Q = gql`
   query {
@@ -48,6 +50,7 @@ export default function Page() {
   const [updateMe, { loading: saving }] = useMutation(M_UPDATE_ME);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const { setTheme } = useTheme();
+  const router = useRouter();
 
   const me = data?.bmsMe;
 
@@ -103,6 +106,12 @@ export default function Page() {
         const nextTheme = res.data.updateMe.themePreference as ThemeMode | undefined;
         if (nextTheme === "light" || nextTheme === "dark" || nextTheme === "system") {
           setTheme(nextTheme);
+        }
+        // เหมือน setTheme ด้านบน — ใช้ค่าที่ server ยืนยันกลับมา ไม่ใช่ค่าดิบจาก form
+        const nextLang = res.data.updateMe.language;
+        if (isLang(nextLang) && getLangCookie() !== nextLang) {
+          setLangCookie(nextLang);
+          router.refresh();
         }
         message.success("บันทึกโปรไฟล์แล้ว");
         refetch();

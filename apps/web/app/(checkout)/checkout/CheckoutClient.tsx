@@ -5,6 +5,8 @@ import type {
   CheckoutPaymentAccount,
   CheckoutView,
 } from "@/lib/bms/checkout";
+import { useI18n } from "@/lib/i18nContext";
+import type { Lang } from "@/i18n";
 import styles from "./checkout.module.css";
 
 type Props = {
@@ -12,26 +14,10 @@ type Props = {
   initialCheckout: CheckoutView;
 };
 
-const statusLabels: Record<string, string> = {
-  PENDING: "รอชำระเงิน",
-  PAID: "ชำระเงินแล้ว",
-  PACKING: "กำลังแพ็ก",
-  SHIPPED: "จัดส่งแล้ว",
-  COMPLETED: "สำเร็จ",
-  CANCELLED: "ยกเลิกแล้ว",
-  RETURNED: "คืนสินค้า",
-};
-
-const missingLabels = {
-  recipientName: "ชื่อผู้รับ",
-  phone: "เบอร์โทรศัพท์",
-  shippingAddress: "ที่อยู่จัดส่ง",
-};
-
 const orderProgress = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
-function money(value: number, currency: string) {
-  return new Intl.NumberFormat("th-TH", {
+function money(value: number, currency: string, lang: Lang) {
+  return new Intl.NumberFormat(lang === "en" ? "en-US" : "th-TH", {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
@@ -42,10 +28,12 @@ function PaymentAccountCard({
   account,
   checked,
   onSelect,
+  t,
 }: {
   account: CheckoutPaymentAccount;
   checked: boolean;
   onSelect: () => void;
+  t: (key: string) => string;
 }) {
   const number = account.accountNo || account.promptpayId || "";
   return (
@@ -77,7 +65,7 @@ function PaymentAccountCard({
           void navigator.clipboard?.writeText(number);
         }}
       >
-        คัดลอก
+        {t("checkout.copy")}
       </button>
     </label>
   );
@@ -87,6 +75,7 @@ export default function CheckoutClient({
   token,
   initialCheckout,
 }: Props) {
+  const { t, lang } = useI18n();
   const [checkout, setCheckout] = useState(initialCheckout);
   const [editingDelivery, setEditingDelivery] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(
@@ -99,6 +88,22 @@ export default function CheckoutClient({
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [error, setError] = useState("");
   const [slipName, setSlipName] = useState("");
+
+  const statusLabels: Record<string, string> = {
+    PENDING: t("checkout.status_pending"),
+    PAID: t("checkout.status_paid"),
+    PACKING: t("checkout.timeline_packing"),
+    SHIPPED: t("checkout.timeline_shipped"),
+    COMPLETED: t("checkout.timeline_completed"),
+    CANCELLED: t("checkout.status_cancelled"),
+    RETURNED: t("checkout.status_returned"),
+  };
+
+  const missingLabels: Record<string, string> = {
+    recipientName: t("checkout.recipient_name"),
+    phone: t("checkout.phone_full"),
+    shippingAddress: t("checkout.shipping_address_default_label"),
+  };
 
   const delivery = checkout.delivery;
   const payment = checkout.payment;
@@ -130,7 +135,7 @@ export default function CheckoutClient({
         error?: string;
       };
       if (!response.ok || !data.checkout) {
-        throw new Error(data.error || "บันทึกข้อมูลจัดส่งไม่สำเร็จ");
+        throw new Error(data.error || t("checkout.save_delivery_error"));
       }
       setCheckout(data.checkout);
       setSelectedAddressId(data.checkout.delivery.selectedAddress?.id || "");
@@ -139,7 +144,7 @@ export default function CheckoutClient({
       setError(
         caught instanceof Error
           ? caught.message
-          : "บันทึกข้อมูลจัดส่งไม่สำเร็จ"
+          : t("checkout.save_delivery_error")
       );
     } finally {
       setDeliveryBusy(false);
@@ -176,7 +181,7 @@ export default function CheckoutClient({
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedAccount) {
-      setError("กรุณาเลือกช่องทางชำระเงิน");
+      setError(t("checkout.select_payment_method_error"));
       return;
     }
     setPaymentBusy(true);
@@ -194,12 +199,12 @@ export default function CheckoutClient({
         error?: string;
       };
       if (!response.ok || !data.checkout) {
-        throw new Error(data.error || "แจ้งชำระไม่สำเร็จ");
+        throw new Error(data.error || t("checkout.submit_payment_error"));
       }
       setCheckout(data.checkout);
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "แจ้งชำระไม่สำเร็จ"
+        caught instanceof Error ? caught.message : t("checkout.submit_payment_error")
       );
     } finally {
       setPaymentBusy(false);
@@ -220,14 +225,14 @@ export default function CheckoutClient({
             <strong>{checkout.store.name}</strong>
           </div>
         </div>
-        <span className={styles.securePill}>ลิงก์เฉพาะออร์เดอร์</span>
+        <span className={styles.securePill}>{t("checkout.secure_order_link")}</span>
       </header>
 
       <div className={styles.shell}>
         <section className={styles.hero}>
           <div>
-            <p className={styles.heroKicker}>ORDER #{checkout.order.displayId}</p>
-            <h1>ตรวจสอบให้ครบ<br />แล้วแจ้งชำระ</h1>
+            <p className={styles.heroKicker}>{t("checkout.order_number_prefix")}{checkout.order.displayId}</p>
+            <h1>{t("checkout.review_heading_line1")}<br />{t("checkout.review_heading_line2")}</h1>
           </div>
           <div className={styles.statusBadge}>
             <span />
@@ -241,9 +246,9 @@ export default function CheckoutClient({
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.step}>01</span>
-                  <h2>รายการสั่งซื้อ</h2>
+                  <h2>{t("checkout.items_step_label")}</h2>
                 </div>
-                <span>{checkout.order.items.length} รายการ</span>
+                <span>{checkout.order.items.length} {t("checkout.items_count_suffix")}</span>
               </div>
 
               <div className={styles.itemList}>
@@ -254,33 +259,33 @@ export default function CheckoutClient({
                     </div>
                     <div className={styles.itemInfo}>
                       <strong>{item.name}</strong>
-                      <span>ไซซ์ {item.size} · {item.qty} ชิ้น</span>
+                      <span>{t("checkout.size_label")} {item.size} · {item.qty} {t("checkout.qty_unit")}</span>
                       <small>{item.sku}</small>
                     </div>
-                    <b>{money(item.amount, checkout.store.currency)}</b>
+                    <b>{money(item.amount, checkout.store.currency, lang)}</b>
                   </article>
                 ))}
               </div>
 
               <dl className={styles.totals}>
-                <div><dt>ยอดสินค้า</dt><dd>{money(checkout.order.subtotal, checkout.store.currency)}</dd></div>
+                <div><dt>{t("checkout.subtotal")}</dt><dd>{money(checkout.order.subtotal, checkout.store.currency, lang)}</dd></div>
                 {checkout.order.discount > 0 && (
                   <div className={styles.discountRow}>
-                    <dt>ส่วนลด {checkout.order.couponCode ? `(${checkout.order.couponCode})` : ""}</dt>
-                    <dd>-{money(checkout.order.discount, checkout.store.currency)}</dd>
+                    <dt>{t("checkout.discount")} {checkout.order.couponCode ? `(${checkout.order.couponCode})` : ""}</dt>
+                    <dd>-{money(checkout.order.discount, checkout.store.currency, lang)}</dd>
                   </div>
                 )}
                 <div>
-                  <dt>ค่าจัดส่ง</dt>
+                  <dt>{t("checkout.shipping_fee")}</dt>
                   <dd>
                     {checkout.order.shippingFee > 0
-                      ? money(checkout.order.shippingFee, checkout.store.currency)
-                      : "ฟรี"}
+                      ? money(checkout.order.shippingFee, checkout.store.currency, lang)
+                      : t("checkout.free")}
                   </dd>
                 </div>
                 <div className={styles.grandTotal}>
-                  <dt>ยอดที่ต้องชำระ</dt>
-                  <dd>{money(checkout.order.total, checkout.store.currency)}</dd>
+                  <dt>{t("checkout.grand_total")}</dt>
+                  <dd>{money(checkout.order.total, checkout.store.currency, lang)}</dd>
                 </div>
               </dl>
             </section>
@@ -289,17 +294,17 @@ export default function CheckoutClient({
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.step}>02</span>
-                  <h2>ข้อมูลจัดส่ง</h2>
+                  <h2>{t("checkout.delivery_step_label")}</h2>
                 </div>
                 {delivery.complete && !delivery.marketplaceManaged && (
-                  <span className={styles.readyText}>พร้อมใช้</span>
+                  <span className={styles.readyText}>{t("checkout.ready_text")}</span>
                 )}
               </div>
 
               {delivery.marketplaceManaged ? (
                 <div className={styles.notice}>
-                  <strong>ใช้ข้อมูลจาก Seller Center</strong>
-                  <p>ชื่อผู้รับ ที่อยู่ และการชำระเงินของออร์เดอร์นี้จัดการโดย Marketplace ไม่ต้องกรอกซ้ำใน BMS</p>
+                  <strong>{t("checkout.marketplace_managed_title")}</strong>
+                  <p>{t("checkout.marketplace_managed_body")}</p>
                 </div>
               ) : (
                 <>
@@ -308,15 +313,15 @@ export default function CheckoutClient({
                       <div className={styles.savedBanner}>
                         <span>✓</span>
                         <div>
-                          <strong>ใช้ข้อมูลเดิมอัตโนมัติ</strong>
-                          <p>ไม่ต้องกรอกข้อมูลชุดนี้อีก</p>
+                          <strong>{t("checkout.saved_delivery_title")}</strong>
+                          <p>{t("checkout.saved_delivery_body")}</p>
                         </div>
                       </div>
                       <dl>
-                        <div><dt>ชื่อผู้รับ</dt><dd>{delivery.recipientName}</dd></div>
-                        <div><dt>เบอร์โทร</dt><dd>{delivery.phone}</dd></div>
+                        <div><dt>{t("checkout.recipient_name")}</dt><dd>{delivery.recipientName}</dd></div>
+                        <div><dt>{t("checkout.phone_short")}</dt><dd>{delivery.phone}</dd></div>
                         <div>
-                          <dt>ที่อยู่</dt>
+                          <dt>{t("checkout.address")}</dt>
                           <dd>
                             {delivery.selectedAddress?.label && <b>{delivery.selectedAddress.label}</b>}
                             {delivery.selectedAddress?.address}
@@ -326,7 +331,7 @@ export default function CheckoutClient({
 
                       {delivery.addresses.length > 1 && (
                         <div className={styles.addressChooser}>
-                          <p>เปลี่ยนไปใช้ที่อยู่เดิมรายการอื่น</p>
+                          <p>{t("checkout.change_saved_address")}</p>
                           {delivery.addresses.map((address) => (
                             <label key={address.id}>
                               <input
@@ -337,7 +342,7 @@ export default function CheckoutClient({
                                 onChange={() => setSelectedAddressId(address.id)}
                               />
                               <span>
-                                <strong>{address.label || "ที่อยู่จัดส่ง"}</strong>
+                                <strong>{address.label || t("checkout.shipping_address_default_label")}</strong>
                                 {address.address}
                               </span>
                             </label>
@@ -349,7 +354,7 @@ export default function CheckoutClient({
                               disabled={deliveryBusy}
                               onClick={selectExistingAddress}
                             >
-                              ใช้ที่อยู่นี้
+                              {t("checkout.use_this_address")}
                             </button>
                           )}
                         </div>
@@ -360,62 +365,62 @@ export default function CheckoutClient({
                         className={styles.textButton}
                         onClick={() => setEditingDelivery(true)}
                       >
-                        ต้องการแก้ข้อมูล
+                        {t("checkout.want_to_edit")}
                       </button>
                     </div>
                   ) : (
                     <form className={styles.deliveryForm} onSubmit={saveDelivery}>
                       {!delivery.complete && (
                         <div className={styles.missingStrip}>
-                          กรอกเฉพาะข้อมูลที่ยังขาด:{" "}
+                          {t("checkout.missing_fields_prefix")}{" "}
                           {delivery.missingFields.map((field) => missingLabels[field]).join(", ")}
                         </div>
                       )}
 
                       {(editingDelivery || delivery.missingFields.includes("recipientName")) && (
                         <label>
-                          <span>ชื่อผู้รับ</span>
+                          <span>{t("checkout.recipient_name")}</span>
                           <input
                             name="recipientName"
                             defaultValue={delivery.recipientName || ""}
                             required={!delivery.recipientName}
                             minLength={2}
                             maxLength={120}
-                            placeholder="ชื่อสำหรับรับพัสดุ"
+                            placeholder={t("checkout.recipient_name_placeholder")}
                           />
                         </label>
                       )}
                       {(editingDelivery || delivery.missingFields.includes("phone")) && (
                         <label>
-                          <span>เบอร์โทรศัพท์</span>
+                          <span>{t("checkout.phone_full")}</span>
                           <input
                             name="phone"
                             defaultValue={delivery.phone || ""}
                             required={!delivery.phone}
                             inputMode="tel"
-                            placeholder="เช่น 0891234567"
+                            placeholder={t("checkout.phone_placeholder")}
                           />
                         </label>
                       )}
                       {(editingDelivery || delivery.missingFields.includes("shippingAddress")) && (
                         <>
                           <label>
-                            <span>ชื่อที่อยู่ <small>(ไม่บังคับ)</small></span>
+                            <span>{t("checkout.address_label_field")} <small>{t("checkout.optional")}</small></span>
                             <input
                               name="addressLabel"
                               defaultValue={delivery.selectedAddress?.label || ""}
-                              placeholder="เช่น บ้าน หรือ ที่ทำงาน"
+                              placeholder={t("checkout.address_label_placeholder")}
                             />
                           </label>
                           <label>
-                            <span>ที่อยู่จัดส่ง</span>
+                            <span>{t("checkout.shipping_address_default_label")}</span>
                             <textarea
                               name="shippingAddress"
                               defaultValue={delivery.selectedAddress?.address || ""}
                               required={!delivery.selectedAddress}
                               minLength={10}
                               maxLength={1000}
-                              placeholder="บ้านเลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์"
+                              placeholder={t("checkout.shipping_address_placeholder")}
                             />
                           </label>
                         </>
@@ -427,7 +432,7 @@ export default function CheckoutClient({
                             className={styles.textButton}
                             onClick={() => setEditingDelivery(false)}
                           >
-                            ยกเลิก
+                            {t("common.cancel")}
                           </button>
                         )}
                         <button
@@ -435,7 +440,7 @@ export default function CheckoutClient({
                           className={styles.primaryButton}
                           disabled={deliveryBusy}
                         >
-                          {deliveryBusy ? "กำลังบันทึก..." : "บันทึกข้อมูลจัดส่ง"}
+                          {deliveryBusy ? t("checkout.saving") : t("checkout.save_delivery")}
                         </button>
                       </div>
                     </form>
@@ -450,58 +455,58 @@ export default function CheckoutClient({
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.step}>03</span>
-                  <h2>แจ้งชำระเงิน</h2>
+                  <h2>{t("checkout.payment_step_label")}</h2>
                 </div>
               </div>
 
               {delivery.marketplaceManaged ? (
                 <div className={styles.notice}>
-                  <strong>ชำระผ่าน Marketplace</strong>
-                  <p>กลับไปดำเนินการใน Seller Center ของช่องทางที่สั่งซื้อ</p>
+                  <strong>{t("checkout.marketplace_payment_title")}</strong>
+                  <p>{t("checkout.marketplace_payment_body")}</p>
                 </div>
               ) : orderClosed ? (
                 <div className={styles.noPayment}>
                   <span>—</span>
-                  <h3>ออร์เดอร์นี้ปิดแล้ว</h3>
-                  <p>สถานะปัจจุบันไม่อนุญาตให้แจ้งชำระเงินเพิ่มเติม</p>
+                  <h3>{t("checkout.order_closed_title")}</h3>
+                  <p>{t("checkout.order_closed_body")}</p>
                 </div>
               ) : paymentResolved ? (
                 <div className={styles.successState}>
                   <span>✓</span>
-                  <h3>ออร์เดอร์ชำระเงินแล้ว</h3>
-                  <p>ร้านจะดำเนินการแพ็กและจัดส่งตามลำดับ</p>
+                  <h3>{t("checkout.paid_title")}</h3>
+                  <p>{t("checkout.paid_body")}</p>
                 </div>
               ) : paymentPending ? (
                 <div className={styles.pendingState}>
                   <span className={styles.pendingPulse} />
-                  <p className={styles.eyebrow}>PAYMENT RECEIVED</p>
-                  <h3>รับแจ้งชำระแล้ว</h3>
-                  <p>กำลังรอแอดมินตรวจสลิป การส่งสลิปยังไม่ถือว่ายืนยันยอดจนกว่าแอดมินจะกด Confirm</p>
+                  <p className={styles.eyebrow}>{t("checkout.payment_received_eyebrow")}</p>
+                  <h3>{t("checkout.payment_received_title")}</h3>
+                  <p>{t("checkout.payment_received_body")}</p>
                   <dl>
-                    <div><dt>ยอดแจ้งชำระ</dt><dd>{money(payment.latest?.amount || checkout.order.total, checkout.store.currency)}</dd></div>
-                    <div><dt>สถานะ</dt><dd>รอตรวจสอบ</dd></div>
+                    <div><dt>{t("checkout.amount_submitted")}</dt><dd>{money(payment.latest?.amount || checkout.order.total, checkout.store.currency, lang)}</dd></div>
+                    <div><dt>{t("checkout.status")}</dt><dd>{t("checkout.awaiting_review")}</dd></div>
                   </dl>
                 </div>
               ) : !payment.configured ? (
                 <div className={styles.noPayment}>
                   <span>—</span>
-                  <h3>ร้านยังไม่ได้ระบุช่องทางชำระเงิน</h3>
-                  <p>หน้านี้จึงไม่แสดงหรือแนะนำบัญชีธนาคาร พร้อมเพย์ QR หรือช่องทางอื่นแทนร้าน</p>
+                  <h3>{t("checkout.no_payment_method_title")}</h3>
+                  <p>{t("checkout.no_payment_method_body")}</p>
                 </div>
               ) : !delivery.complete ? (
                 <div className={styles.lockedPayment}>
                   <span>02</span>
-                  <h3>กรอกข้อมูลจัดส่งก่อน</h3>
-                  <p>เมื่อข้อมูลส่วนที่ขาดครบ ช่องทางชำระเงินจะพร้อมใช้งานทันที</p>
+                  <h3>{t("checkout.fill_delivery_first_title")}</h3>
+                  <p>{t("checkout.fill_delivery_first_body")}</p>
                 </div>
               ) : (
                 <form className={styles.paymentForm} onSubmit={submitPayment}>
                   {payment.latest?.status === "REJECTED" && (
                     <div className={styles.rejectedStrip}>
-                      สลิปก่อนหน้าไม่ผ่านการตรวจสอบ กรุณาตรวจข้อมูลและส่งใหม่
+                      {t("checkout.slip_rejected_notice")}
                     </div>
                   )}
-                  <p className={styles.formIntro}>เลือกบัญชีที่ร้านตั้งค่าไว้</p>
+                  <p className={styles.formIntro}>{t("checkout.choose_account_intro")}</p>
                   <div className={styles.accountList}>
                     {payment.accounts.map((account) => (
                       <PaymentAccountCard
@@ -509,13 +514,14 @@ export default function CheckoutClient({
                         account={account}
                         checked={selectedAccount?.key === account.key}
                         onSelect={() => setSelectedAccountKey(account.key)}
+                        t={t}
                       />
                     ))}
                   </div>
 
                   <div className={styles.amountPanel}>
-                    <span>ยอดที่ต้องชำระ</span>
-                    <strong>{money(checkout.order.total, checkout.store.currency)}</strong>
+                    <span>{t("checkout.amount_due")}</span>
+                    <strong>{money(checkout.order.total, checkout.store.currency, lang)}</strong>
                   </div>
 
                   <label className={styles.upload}>
@@ -529,12 +535,12 @@ export default function CheckoutClient({
                       }
                     />
                     <span className={styles.uploadMark}>+</span>
-                    <strong>{slipName || "แนบรูปสลิป"}</strong>
-                    <small>JPG, PNG หรือ WEBP ไม่เกิน 8 MB</small>
+                    <strong>{slipName || t("checkout.attach_slip")}</strong>
+                    <small>{t("checkout.slip_file_hint")}</small>
                   </label>
 
                   <label className={styles.referenceInput}>
-                    <span>เลขอ้างอิง <small>(ไม่บังคับ)</small></span>
+                    <span>{t("checkout.reference_number")} <small>{t("checkout.optional")}</small></span>
                     <input name="slipRef" maxLength={120} />
                   </label>
 
@@ -543,10 +549,10 @@ export default function CheckoutClient({
                     className={styles.primaryButton}
                     disabled={paymentBusy}
                   >
-                    {paymentBusy ? "กำลังส่งสลิป..." : "แจ้งชำระและส่งให้ร้านตรวจ"}
+                    {paymentBusy ? t("checkout.sending_slip") : t("checkout.submit_payment")}
                   </button>
                   <p className={styles.paymentFootnote}>
-                    การส่งสลิปจะสร้างสถานะ “รอตรวจสอบ” เท่านั้น ระบบไม่ยืนยันการชำระเงินอัตโนมัติ
+                    {t("checkout.payment_footnote")}
                   </p>
                 </form>
               )}
@@ -556,16 +562,16 @@ export default function CheckoutClient({
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.step}>04</span>
-                  <h2>ติดตามออร์เดอร์</h2>
+                  <h2>{t("checkout.track_order_step_label")}</h2>
                 </div>
               </div>
               <ol className={styles.timeline}>
                 {[
-                  ["สร้างออร์เดอร์", 0],
-                  ["ยืนยันการชำระเงิน", 1],
-                  ["กำลังแพ็ก", 2],
-                  ["จัดส่งแล้ว", 3],
-                  ["สำเร็จ", 4],
+                  [t("checkout.timeline_created"), 0],
+                  [t("checkout.timeline_confirmed"), 1],
+                  [t("checkout.timeline_packing"), 2],
+                  [t("checkout.timeline_shipped"), 3],
+                  [t("checkout.timeline_completed"), 4],
                 ].map(([label, index]) => {
                   const stepIndex = Number(index);
                   const active = progressIndex >= stepIndex;
@@ -578,7 +584,7 @@ export default function CheckoutClient({
                       <span>{active ? "✓" : ""}</span>
                       <div>
                         <strong>{label}</strong>
-                        {current && <small>สถานะปัจจุบัน</small>}
+                        {current && <small>{t("checkout.current_status")}</small>}
                       </div>
                     </li>
                   );
@@ -586,7 +592,7 @@ export default function CheckoutClient({
               </ol>
               {checkout.fulfillment.trackingNo && (
                 <div className={styles.trackingNumber}>
-                  <span>เลขพัสดุ</span>
+                  <span>{t("checkout.tracking_number")}</span>
                   <strong>{checkout.fulfillment.trackingNo}</strong>
                   {checkout.fulfillment.carrier && (
                     <small>{checkout.fulfillment.carrier}</small>
@@ -595,7 +601,7 @@ export default function CheckoutClient({
               )}
               {orderClosed && (
                 <div className={styles.closedStrip}>
-                  ออร์เดอร์นี้อยู่ในสถานะ{" "}
+                  {t("checkout.order_in_status_prefix")}{" "}
                   {statusLabels[checkout.order.status] || checkout.order.status}
                 </div>
               )}
@@ -611,7 +617,7 @@ export default function CheckoutClient({
 
         <footer className={styles.footer}>
           <span>BMS CHECKOUT</span>
-          <p>ยอด รายการสินค้า และสถานะทั้งหมดอ้างอิงจากออร์เดอร์ของร้านโดยตรง</p>
+          <p>{t("checkout.footer_note")}</p>
         </footer>
       </div>
     </main>
