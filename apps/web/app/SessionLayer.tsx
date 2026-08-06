@@ -28,7 +28,7 @@ function GlobalWiresWrapper() {
   const sessionLanguage = admin?.language ?? user?.language;
 
   React.useEffect(() => {
-    const frontendLogout = () => (window.location.href = "/login");
+    const frontendLogout = () => (window.location.href = "/admin/login");
     const backendLogout = () => (window.location.href = "/admin/login");
 
     window.addEventListener("frontend-logout", frontendLogout);

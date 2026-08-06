@@ -36,7 +36,18 @@ function ForgotClientInner() {
   );
   const [mut, { loading }] = useMutation(MUT_REQ);
 
-  const outerStyle = useMemo(() => ({ display: "flex", justifyContent: "center", padding: "40px 16px" }), []);
+  const outerStyle = useMemo(
+    () => ({
+      minHeight: "100dvh",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      padding: 16,
+      paddingTop: "clamp(24px, 12vh, 140px)",
+      boxSizing: "border-box" as const,
+    }),
+    []
+  );
   const cardStyle = useMemo(() => ({ width: 400, maxWidth: "100%" as const }), []);
 
   const onFinish = useCallback(

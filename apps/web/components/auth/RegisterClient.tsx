@@ -191,7 +191,7 @@ function RegisterClientInner() {
         const res = await mutate({ variables: { input: payload } });
         if (res.data?.registerUser) {
           message.success(strings.success);
-          window.location.href = "/login";
+          window.location.href = "/admin/login";
         } else {
           message.error(strings.failed);
         }
@@ -319,7 +319,7 @@ function RegisterClientInner() {
 
           <Space style={{ width: "100%", justifyContent: "space-between" }}>
             <Text type="secondary">
-              {strings.alreadyHave} <a href="/login">{strings.signIn}</a>
+              {strings.alreadyHave} <a href="/admin/login">{strings.signIn}</a>
             </Text>
             <Button type="primary" htmlType="submit" loading={loading}>
               {strings.submit}

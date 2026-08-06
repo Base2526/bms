@@ -65,7 +65,7 @@ function ResetClientInner({ token }: Props) {
         const res = await mut({ variables: { token, newPassword: values.password } });
         if (res.data?.resetPassword) {
           message.success(strings.success);
-          router.push("/login");
+          router.push("/admin/login");
         }
       } catch (e: any) {
         message.error(e?.message || strings.error);
