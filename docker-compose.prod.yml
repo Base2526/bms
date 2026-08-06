@@ -43,11 +43,6 @@ services:
         COOKIE_SECURE: ${COOKIE_SECURE} 
         WEB_NAME: ${WEB_NAME}
 
-        FB_PAGE_ID: ${FB_PAGE_ID}
-        FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-        SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-        SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-        SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
         ADMIN_TOKEN: ${ADMIN_TOKEN}
         JWT_SECRET: ${JWT_SECRET}
         DEBUG_LOG: ${DEBUG_LOG}
@@ -87,11 +82,6 @@ services:
 
       COOKIE_SECURE: ${COOKIE_SECURE}
 
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
       ADMIN_TOKEN: ${ADMIN_TOKEN}
 
       JWT_SECRET: ${JWT_SECRET}
@@ -124,34 +114,6 @@ services:
       bms_shared:
         aliases:
           - web_b
-
-  social-worker:
-    image: myapp-web:latest
-    working_dir: /app/apps/web
-    command: ["node", "scripts/social-worker.mjs"]
-    environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL}
-
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
-    volumes:
-      # - ./:/app
-      - ${STORAGE_HOST_DIR:-./storage}:/app/storage
-    depends_on:
-      - web
-      - postgres
-      - redis
-    restart: unless-stopped
 
 networks:
   bms_shared:

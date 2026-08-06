@@ -32,7 +32,7 @@ Details per channel: [../integrations/](../integrations/).
 ## REST — cron endpoints
 
 Protected by header `x-cron-secret` matching env `BMS_CRON_SECRET` (skipped if unset — fine for
-dev, must be set in production). Neither has a schedule wired up yet; both expect an external cron
+dev, must be set in production). None has a schedule wired up yet; each expects an external cron
 (GitHub Actions, system crontab, etc.) to `POST` them on an interval.
 
 - `POST /api/bms/orders/release-expired?minutes=30` — cancels `RESERVED` orders older than N
@@ -40,16 +40,31 @@ dev, must be set in production). Neither has a schedule wired up yet; both expec
 - `POST /api/bms/channels/check-health` — flags channels with no inbound webhook event in
   `NO_EVENTS_THRESHOLD_DAYS` (3) days as `no_events`. `lib/bms/channelHealth.ts` `detectStaleChannels()`.
   Doesn't need to run more than daily — the threshold is in days, not minutes.
+- `POST /api/bms/ai/check-health` — actively probes each shared AI provider/purpose combo and writes
+  the result to `bms_ai_provider_health`. `lib/bms/aiConfig.ts` `testPlatformAiKey()`. Recommended
+  hourly; DeepSeek/Qwen checks make a real (small-cost) request, not a bare ping.
 - `POST /api/bms/reports/send-digest` — sends the DAILY/WEEKLY/MONTHLY sales digest (email/Slack/
   LINE) to every enabled tenant subscription whose scheduled hour/weekday/day-of-month matches now
   and whose current period hasn't already been sent. `lib/bms/reportDigest.ts` `runScheduledDigests()`.
   Idempotency comes from `last_period_key`, not cron frequency — safe to invoke hourly or more often
   without double-sending; recommended schedule is hourly.
+- `POST /api/bms/jobs/report-run` — lets a job that runs *outside* this app (currently only the
+  `daily-log-triage` GitHub Action) record its own outcome into the same run-history table as the
+  four endpoints above. Not itself a job to schedule — it's the write-back path for one.
+
+Every one of the four endpoints above (2026-08) records each invocation into `bms_job_runs`
+(migration `7.55__bms_job_runs.sql`, `lib/bms/jobRuns.ts` `recordJobRun()`/`recordExternalJobRun()`)
+so `/admin/operations-schedule` (platform-admin only) can show real last-run status/history instead
+of only the source-derived "what this job is supposed to do" text it showed before. A new cron route
+should wrap its work in `recordJobRun(jobName, "cron", () => ...)` rather than skip it, or that job
+silently has no run history on the ops page.
+
 - `POST /api/bms/followups/run` — Follow-up Automation MVP core: schedules new jobs for idle
   conversations that match an enabled rule, then processes due jobs (re-checks stop conditions live,
   drafts an AI follow-up, sends it, logs the result). `lib/bms/followups.ts` `runDueFollowups()`.
   Scans every tenant when called with no argument (this cron path); the GraphQL "run now" mutation
-  passes its own tenant id instead — see `bmsRunFollowupsNow` below.
+  passes its own tenant id instead — see `bmsRunFollowupsNow` below. Not yet wired into
+  `recordJobRun()`/`bms_job_runs` — its own outcomes are logged separately in `bms_followup_history`.
 
 ## REST — signed customer checkout
 

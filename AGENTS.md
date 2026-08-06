@@ -47,7 +47,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/app/(checkout)/` | Public signed-link customer checkout (`/checkout?t=<token>`); no admin session, no login |
 | `apps/web/app/(admin)/admin/manual/` | In-app operator manual for shop staff/admins |
 | `apps/ws/` | WebSocket gateway |
-| `packages/` | Shared GraphQL, realtime, and queue packages |
+| `packages/` | Shared GraphQL and realtime (Redis pub/sub) packages |
 | `db/migrations/` | Ordered, idempotent database migrations |
 | `docs/` | Architecture, business rules, integrations, AI, and UI documentation |
 | `scripts/bms-log-triage/` | Daily redacted-log analysis and draft-PR workflow |
@@ -283,6 +283,39 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   stock-reply template — this is a system-initiated text generation, not a model-selected tool call,
   so it does not go through `tools/runtime.ts`/`ExecCtx`/RBAC the way the customer/staff AI
   tool-calling surfaces do.
+
+## Redis usage (pub/sub, cache, sessions, job runs)
+
+Redis backs four distinct things in this app — do not conflate them or add a fifth ad hoc client:
+
+- **Realtime pub/sub** (`packages/realtime/src/pubsub.ts`) — the one `RedisPubSub` instance shared by
+  `apps/web` and `apps/ws` for GraphQL subscriptions (messages, notifications, `bmsInboxChanged`, the
+  admin "Emit" diagnostics). `apps/web/lib/pubsub.ts` re-exports this same instance rather than
+  opening a second publisher/subscriber pair — do not revert that to its own `new Redis(...)` calls.
+- **Read-through cache** (`apps/web/lib/cache.ts`, `getOrSetCache()`/`invalidateCache()`) — fail-open
+  by design: a Redis error is logged and treated as a cache miss, never thrown. Used today for
+  `getStoreProfile()` (`lib/bms/storeProfile.ts`); call `invalidateCache()` in the same function that
+  writes the row, immediately after commit. **Do not cache product/catalog reads** —
+  `listSellableProducts()`/`browse_catalog`/`list_new_arrivals` are intentionally always-fresh so a
+  newly created product is visible on the very next AI tool call; adding a cache there reintroduces
+  exactly the staleness that design avoids.
+- **Admin session revocation** (`apps/web/lib/redisSession.ts`) — the admin JWT (`ADMIN_COOKIE`) is
+  still stateless and still carries its own `exp`; this only adds the ability to revoke it *before*
+  `exp` (logout). Enforced once, in `createContext()` in `app/api/graphql/route.ts`, which is the
+  choke point nearly every admin action goes through. Fail-open on Redis error (trust the JWT alone,
+  same behavior as before this existed) rather than locking out every admin during a Redis outage.
+  **Not yet extended to the community/`USER_COOKIE` login paths** (`loginUser`/`loginWithSocial`/
+  `registerUser` in `resolvers.ts`) — those remain fully stateless JWT; extend using the same
+  `jti` + Redis-key pattern if that's ever asked for, don't invent a second mechanism.
+- **Job run history** (`apps/web/lib/bms/jobRuns.ts`, migration `7.55`) — see `docs/architecture/api.md`'s
+  cron section. Every cron-secret-gated route must wrap
+  its real work in `recordJobRun(jobName, "cron", () => ...)`, not call the underlying function
+  directly, or that job has no run history on `/admin/operations-schedule`.
+
+Redis has no password/TLS configured in any compose file as of 2026-08 — acceptable while it only held
+pub/sub, more of a real gap now that it also holds session ids and (transiently) store payment-account
+data via the cache. Treat "add Redis auth" as outstanding before a production deployment that doesn't
+already isolate Redis at the network layer.
 
 ## Working method
 

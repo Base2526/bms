@@ -115,8 +115,7 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | API | **GraphQL Yoga** + Apollo Client (GraphQL over HTTP + WS) |
 | Realtime | **WebSocket gateway** (`apps/ws`) + `graphql-ws` + Redis pub/sub |
 | Database | **PostgreSQL 16** (`pg`) |
-| Cache / Queue | **Redis 7** (cache, pub/sub, social publishing queue) |
-| Background jobs | **social-worker** (`npm run worker:social`) |
+| Cache / Sessions | **Redis 7** (pub/sub, read-through cache, admin session revocation) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
 | AI | Anthropic Claude (`ANTHROPIC_API_KEY`) — optional; falls back to deterministic templates |
@@ -158,7 +157,7 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 │   │   │           └── orders/release-expired/  # release expired reservations
 │   │   └── lib/bms/             # Services / tools (single source of truth)
 │   └── ws/                      # WebSocket gateway (GraphQL subscriptions)
-├── packages/                    # Shared libs: graphql-core, realtime, social-queue
+├── packages/                    # Shared libs: graphql-core, realtime
 ├── db/                          # SQL: init, migrations/, triggers, helpers
 ├── storage/                     # Uploaded files / assets
 ├── scripts/bms-log-triage/      # Daily AI log triage (collector + LINE notify)
@@ -206,14 +205,13 @@ BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
    ```
 
    This brings up **postgres**, **redis**, **web** (Next.js), **ws** (WebSocket
-   gateway), **social-worker**, **caddy**, and **pgAdmin** (http://localhost:5050).
+   gateway), **caddy**, and **pgAdmin** (http://localhost:5050).
 
 3. **Or run apps locally** (against Docker Postgres/Redis):
 
    ```bash
    cd apps/web && npm install && npm run dev        # http://localhost:3000
    cd apps/ws  && npm install && npm run dev        # WS gateway :8080
-   npm run worker:social --prefix apps/web          # social publishing worker
    ```
 
 > 🧪 Without `ANTHROPIC_API_KEY`, the AI layer returns deterministic Thai
@@ -375,8 +373,7 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | API | **GraphQL Yoga** + Apollo Client |
 | Realtime | **WebSocket gateway** (`apps/ws`) + `graphql-ws` + Redis pub/sub |
 | ฐานข้อมูล | **PostgreSQL 16** |
-| Cache / Queue | **Redis 7** (cache, pub/sub, คิวโพสต์โซเชียล) |
-| งานเบื้องหลัง | **social-worker** |
+| Cache / Session | **Redis 7** (pub/sub, cache แบบ read-through, revoke admin session) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
 | AI | Anthropic Claude (ตั้ง `ANTHROPIC_API_KEY`) — ถ้าไม่ตั้งจะใช้ template ภาษาไทยแทน |
@@ -419,7 +416,7 @@ BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — �
    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
    ```
 
-   จะได้ **postgres**, **redis**, **web**, **ws**, **social-worker**,
+   จะได้ **postgres**, **redis**, **web**, **ws**,
    **caddy** และ **pgAdmin** (http://localhost:5050)
 
 3. **หรือรันแอปในเครื่อง** (ต่อ Postgres/Redis ใน Docker):
@@ -427,7 +424,6 @@ BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — �
    ```bash
    cd apps/web && npm install && npm run dev        # http://localhost:3000
    cd apps/ws  && npm install && npm run dev        # WS gateway :8080
-   npm run worker:social --prefix apps/web          # worker โพสต์โซเชียล
    ```
 
 > 🧪 ถ้าไม่ตั้ง `ANTHROPIC_API_KEY` AI จะตอบด้วย template ภาษาไทยแบบ

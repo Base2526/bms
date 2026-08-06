@@ -6,6 +6,10 @@ export interface JWTPayload {
   role: string;
   tenant_id?: string;
   themePreference?: "system" | "light" | "dark";
+  // Redis session id (lib/redisSession.ts) — lets logout/revocation work despite
+  // the JWT itself being stateless. Optional: tokens minted before this shipped
+  // (or the non-admin `login`/`registerUser` flows below) don't have one.
+  jti?: string;
   exp?: number;
   iat?: number;
 }

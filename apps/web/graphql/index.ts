@@ -3,8 +3,6 @@ import { coreTypeDefs } from "../../../packages/graphql-core/src/typeDefs";
 import { typeDefs } from "./typeDefs";
 import { resolvers } from "./resolvers";
 
-import "@events/init.server";
-
 function mergeResolvers(base:any, extra:any){
   return {
     ...base, ...extra,

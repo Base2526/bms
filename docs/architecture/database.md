@@ -43,6 +43,8 @@ this project was built on top of (users/sessions/messages/etc.) and is out of sc
 | Sales digest reports | `bms_report_subscriptions`, `bms_report_deliveries` | `7.37` |
 | Support tickets | `support_tickets`, `support_ticket_comments` | `7.45` |
 | Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
+| Report email permission | (permission-only, no new table) | `7.54` |
+| Job run history | `bms_job_runs` (platform-wide, no `tenant_id`) | `7.55` (renumbered from `7.53` — see note below) |
 
 ## Notable schema details
 
@@ -177,6 +179,24 @@ database row is tenant-owned and RLS-protected, but the referenced file still li
 That is why report downloads use `/api/bms/reports/download/[id]` instead of the public-ish
 `/api/files/[id]` path used for ordinary attachments/images. This table is an audit/history ledger,
 not a mutable "latest report" state table: re-generating the same report creates a new row and file.
+
+**Job run history (`7.55__bms_job_runs.sql`, renumbered from `7.53` while merging
+`feat/redis-infra-improvements` into `feat/report-generation` — `7.53` was already
+`7.53__bms_generated_reports.sql` on this branch, and `7.54` is
+`7.54__bms_report_email_permission.sql`)** — platform-wide (no `tenant_id`/RLS, same convention
+as `bms_ai_provider_health`) append-only log of every cron/batch invocation, filling a gap
+`/admin/operations-schedule` used to admit openly: that page could describe a job's intended
+schedule/purpose by reading source files, but never showed a real last-run status. One row per
+invocation via `lib/bms/jobRuns.ts` `recordJobRun()` (inserts `status='running'`, then updates to
+`success`/`error` once the wrapped function settles — the same helper closes the row on both
+outcomes so a route can't forget to) or `recordExternalJobRun()` for a job that already finished
+outside this process (currently only the `daily-log-triage` GitHub Action, reporting back through
+`POST /api/bms/jobs/report-run`). `job_name` matches the `key` used in
+`lib/bms/operationsSchedule.ts`'s `DEFINITIONS` array by convention, not a foreign key — the two
+were built as separate registries (one describes "what a job is", the other "what actually
+happened") and are joined only in the UI. A `running` row whose process crashed before finishing is
+never auto-corrected; the UI flags it "stuck" once it's older than a fixed threshold rather than
+guessing at a real outcome.
 
 **Sales digest reports (`7.37__bms_report_subscriptions.sql`)** — `bms_report_subscriptions` is one
 row per tenant (`tenant_id` PK, like `bms_store_profile`): frequency (`DAILY`/`WEEKLY`/`MONTHLY`),
