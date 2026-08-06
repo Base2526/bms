@@ -12,7 +12,8 @@ type PageProps = { params: { tenantSlug: string } };
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const shop = await getPublicShop(params.tenantSlug);
   if (!shop) {
-    return { title: "ไม่พบร้าน", robots: { index: false, follow: false } };
+    const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
+    return { title: lang === "en" ? "Shop not found" : "ไม่พบร้าน", robots: { index: false, follow: false } };
   }
 
   return {

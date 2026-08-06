@@ -4,6 +4,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Button, Layout } from "antd";
 import { LogoutOutlined, EyeOutlined } from "@ant-design/icons";
 import AdminSidebar from "@/components/AdminSidebar";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Content } = Layout;
 
@@ -11,12 +12,13 @@ const Q_ACTING = gql`query { bmsActingTenant { id name slug } }`;
 const M_EXIT = gql`mutation { bmsExitTenant }`;
 
 function ImpersonationBanner() {
+  const { t: tr } = useI18n();
   const { data } = useQuery(Q_ACTING, { fetchPolicy: "cache-first" });
   const [exit, { loading }] = useMutation(M_EXIT, {
     onCompleted: () => { window.location.href = "/admin/tenants"; },
   });
-  const t = data?.bmsActingTenant;
-  if (!t) return null;
+  const actingTenant = data?.bmsActingTenant;
+  if (!actingTenant) return null;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
@@ -24,10 +26,13 @@ function ImpersonationBanner() {
       padding: "8px 16px", margin: "0 0 16px", borderRadius: 8, fontWeight: 500,
     }}>
       <EyeOutlined />
-      <span>กำลังดูในมุมของร้าน: <b>{t.name}</b> <span style={{ opacity: 0.75 }}>/{t.slug}</span> — ข้อมูลทั้งหมดในหน้าจอเป็นของร้านนี้</span>
+      <span>
+        {tr("admin.impersonation_banner_prefix")} <b>{actingTenant.name}</b>{" "}
+        <span style={{ opacity: 0.75 }}>/{actingTenant.slug}</span> — {tr("admin.impersonation_banner_suffix")}
+      </span>
       <Button size="small" icon={<LogoutOutlined />} loading={loading}
         onClick={() => exit()} style={{ marginLeft: "auto" }}>
-        ออกจากมุมร้าน
+        {tr("admin.exit_impersonation")}
       </Button>
     </div>
   );

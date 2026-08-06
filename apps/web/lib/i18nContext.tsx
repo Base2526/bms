@@ -5,7 +5,7 @@ import { Lang, getMessage } from "@/i18n";
 
 type I18nContextValue = {
   lang: Lang;
-  t: (key: string) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   setLang?: (lang: Lang) => void; // ให้ component ข้างในเปลี่ยนได้
 };
 
@@ -27,7 +27,7 @@ export function I18nProvider({
     () => ({
       lang,
       setLang,
-      t: (key: string) => getMessage(lang, key),
+      t: (key: string, vars?: Record<string, string | number>) => getMessage(lang, key, vars),
     }),
     [lang, setLang]
   );

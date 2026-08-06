@@ -8,7 +8,11 @@ export const messages = {
   en,
 };
 
-export function getMessage(lang: Lang, path: string): string {
+export function getMessage(
+  lang: Lang,
+  path: string,
+  vars?: Record<string, string | number>
+): string {
   const parts = path.split(".");
   let obj: any = messages[lang];
 
@@ -20,5 +24,9 @@ export function getMessage(lang: Lang, path: string): string {
     }
   }
 
-  return typeof obj === "string" ? obj : path;
+  if (typeof obj !== "string") return path;
+  // {name} style placeholders — optional, most keys don't use it. th/en can put {var}
+  // wherever fits each language's word order since substitution just does string replace.
+  if (!vars) return obj;
+  return obj.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
 }

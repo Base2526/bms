@@ -14,10 +14,13 @@ const loadProduct = cache((tenantSlug: string, sku: string) => getPublicProduct(
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const result = await loadProduct(params.tenantSlug, params.sku);
-  if (!result) return { title: "ไม่พบสินค้า", robots: { index: false, follow: false } };
+  const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
+  if (!result) return { title: lang === "en" ? "Product not found" : "ไม่พบสินค้า", robots: { index: false, follow: false } };
 
   const canonical = `/shop/${encodeURIComponent(result.shop.slug)}/products/${encodeURIComponent(result.product.sku)}`;
-  const description = result.product.description || `${result.product.name} จาก ${result.shop.name}`;
+  const description =
+    result.product.description ||
+    (lang === "en" ? `${result.product.name} from ${result.shop.name}` : `${result.product.name} จาก ${result.shop.name}`);
   return {
     title: `${result.product.name} — ${result.shop.name}`,
     description,

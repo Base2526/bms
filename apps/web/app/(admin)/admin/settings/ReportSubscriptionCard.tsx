@@ -4,6 +4,7 @@ import { Card, Input, Button, Space, Tag, message, Form, Divider, Typography, Se
 import { MailOutlined, SaveOutlined, SendOutlined, FileSearchOutlined, CopyOutlined, DownloadOutlined, ExportOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { parseRecipientList, invalidEmails, invalidSlackWebhookUrls, invalidLineUserIds } from "@/lib/bms/reportRecipients";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 
@@ -30,13 +31,7 @@ const M_TEST = gql`
   mutation { bmsSendTestReportNow { overallStatus results { channel ok error } } }
 `;
 
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: `${String(h).padStart(2, "0")}:00 น.` }));
-const WEEKDAY_OPTIONS = [
-  { value: 1, label: "วันจันทร์" }, { value: 2, label: "วันอังคาร" }, { value: 3, label: "วันพุธ" },
-  { value: 4, label: "วันพฤหัสบดี" }, { value: 5, label: "วันศุกร์" }, { value: 6, label: "วันเสาร์" }, { value: 0, label: "วันอาทิตย์" },
-];
 const STATUS_COLOR: Record<string, string> = { SUCCESS: "green", PARTIAL: "orange", FAILED: "red" };
-const CHANNEL_LABEL: Record<string, string> = { EMAIL: "อีเมล", SLACK: "Slack", LINE: "LINE" };
 
 // รายละเอียดต่อผู้รับถูก join ด้วย " | " จาก reportDigest.ts (sendEmailChannel/sendSlackChannel/sendLineChannel)
 function detailLines(errorText: string | null | undefined): string[] {
@@ -80,21 +75,35 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 export default function ReportSubscriptionCard() {
+  const { t } = useI18n();
+  const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: t("admin_report_subscription.hour_suffix", { h: String(h).padStart(2, "0") }) }));
+  const WEEKDAY_OPTIONS = [
+    { value: 1, label: t("admin_report_subscription.weekday_mon") }, { value: 2, label: t("admin_report_subscription.weekday_tue") },
+    { value: 3, label: t("admin_report_subscription.weekday_wed") }, { value: 4, label: t("admin_report_subscription.weekday_thu") },
+    { value: 5, label: t("admin_report_subscription.weekday_fri") }, { value: 6, label: t("admin_report_subscription.weekday_sat") },
+    { value: 0, label: t("admin_report_subscription.weekday_sun") },
+  ];
+  const CHANNEL_LABEL: Record<string, string> = {
+    EMAIL: t("admin_report_subscription.channel_email"),
+    SLACK: t("admin_report_subscription.channel_slack"),
+    LINE: t("admin_report_subscription.channel_line"),
+  };
+
   const [form] = Form.useForm();
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [save, { loading: saving }] = useMutation(M_SAVE, {
-    onCompleted: () => { message.success("บันทึกการตั้งค่ารายงานแล้ว"); refetch(); },
-    onError: (e) => message.error(e.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_report_subscription.save_success")); refetch(); },
+    onError: (e) => message.error(e.message || t("admin_report_subscription.save_failed")),
   });
   const [sendTest, { loading: testing }] = useMutation(M_TEST, {
     onCompleted: (d) => {
       const r = d?.bmsSendTestReportNow;
       const failed = (r?.results || []).filter((x: any) => !x.ok);
-      if (r?.overallStatus === "SUCCESS") message.success("ส่งทดสอบสำเร็จทุกช่องทาง");
-      else if (failed.length) message.warning(`บางช่องทางส่งไม่สำเร็จ: ${failed.map((f: any) => `${f.channel} (${f.error})`).join(", ")}`);
+      if (r?.overallStatus === "SUCCESS") message.success(t("admin_report_subscription.test_all_success"));
+      else if (failed.length) message.warning(t("admin_report_subscription.test_partial_failed", { detail: failed.map((f: any) => `${f.channel} (${f.error})`).join(", ") }));
       refetch();
     },
-    onError: (e) => message.error(e.message || "ส่งทดสอบไม่สำเร็จ"),
+    onError: (e) => message.error(e.message || t("admin_report_subscription.test_failed")),
   });
 
   const [detailDelivery, setDetailDelivery] = useState<any | null>(null);
@@ -144,63 +153,67 @@ export default function ReportSubscriptionCard() {
   };
 
   return (
-    <Card title={<Space><MailOutlined /> รายงานสรุปยอดขาย</Space>} loading={loading} style={{ marginTop: 16 }}>
+    <Card title={<Space><MailOutlined /> {t("admin_report_subscription.card_title")}</Space>} loading={loading} style={{ marginTop: 16 }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 16 }}
-        message="ส่งสรุปยอดขาย/ออเดอร์/สินค้าขายดีอัตโนมัติตามความถี่ที่ตั้งไว้ ผ่านอีเมล/Slack/LINE"
-        description="LINE ใช้ access token ของ LINE OA ร้านนี้เอง (การ์ดช่องทาง LINE ด้านบน) ส่งหา 'LINE user id' ที่ระบุ — ต้องเชื่อม LINE OA ไว้ก่อน"
+        message={t("admin_report_subscription.intro_alert")}
+        description={t("admin_report_subscription.intro_alert_desc")}
       />
       <Form form={form} layout="vertical" onFinish={onFinish}>
-        <SectionTitle>ความถี่และเวลาส่ง</SectionTitle>
+        <SectionTitle>{t("admin_report_subscription.section_frequency")}</SectionTitle>
         <Space wrap align="start">
-          <Form.Item name="frequency" label="ความถี่" style={{ marginBottom: 8 }}>
+          <Form.Item name="frequency" label={t("admin_report_subscription.frequency_label")} style={{ marginBottom: 8 }}>
             <Select
               style={{ width: 160 }}
               onChange={(v) => setFrequency(v)}
-              options={[{ value: "DAILY", label: "รายวัน" }, { value: "WEEKLY", label: "รายสัปดาห์" }, { value: "MONTHLY", label: "รายเดือน" }]}
+              options={[
+                { value: "DAILY", label: t("admin_report_subscription.frequency_daily") },
+                { value: "WEEKLY", label: t("admin_report_subscription.frequency_weekly") },
+                { value: "MONTHLY", label: t("admin_report_subscription.frequency_monthly") },
+              ]}
             />
           </Form.Item>
-          <Form.Item name="sendHour" label="เวลาส่ง" style={{ marginBottom: 8 }}>
+          <Form.Item name="sendHour" label={t("admin_report_subscription.send_hour_label")} style={{ marginBottom: 8 }}>
             <Select style={{ width: 130 }} options={HOUR_OPTIONS} />
           </Form.Item>
           {frequency === "WEEKLY" && (
-            <Form.Item name="sendWeekday" label="วันในสัปดาห์" style={{ marginBottom: 8 }}>
+            <Form.Item name="sendWeekday" label={t("admin_report_subscription.send_weekday_label")} style={{ marginBottom: 8 }}>
               <Select style={{ width: 160 }} options={WEEKDAY_OPTIONS} />
             </Form.Item>
           )}
           {frequency === "MONTHLY" && (
-            <Form.Item name="sendDayOfMonth" label="วันที่ของเดือน" style={{ marginBottom: 8 }}>
+            <Form.Item name="sendDayOfMonth" label={t("admin_report_subscription.send_day_of_month_label")} style={{ marginBottom: 8 }}>
               <InputNumber min={1} max={28} style={{ width: 130 }} />
             </Form.Item>
           )}
-          <Form.Item name="enabled" label="เปิดใช้งาน" valuePropName="checked" style={{ marginBottom: 8 }}>
+          <Form.Item name="enabled" label={t("admin_report_subscription.enabled_label")} valuePropName="checked" style={{ marginBottom: 8 }}>
             <Switch />
           </Form.Item>
         </Space>
 
-        <SectionTitle>ช่องทางที่ส่ง</SectionTitle>
+        <SectionTitle>{t("admin_report_subscription.section_channels")}</SectionTitle>
         <Space direction="vertical" style={{ width: "100%", maxWidth: 480 }}>
           <Space align="center">
             <Form.Item name="emailEnabled" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Switch onChange={setEmailEnabled} />
             </Form.Item>
-            <Text strong>อีเมล</Text>
+            <Text strong>{t("admin_report_subscription.channel_email")}</Text>
           </Space>
           {emailEnabled && (
             <Form.Item
               name="recipientEmail"
               style={{ marginBottom: 0 }}
-              extra="ใส่ได้หลายอีเมล คั่นด้วย , (comma)"
+              extra={t("admin_report_subscription.email_recipients_extra")}
               rules={[
                 {
                   validator: async (_, value) => {
                     const bad = invalidEmails(parseRecipientList(value));
-                    if (bad.length) throw new Error(`อีเมลไม่ถูกต้อง: ${bad.join(", ")}`);
+                    if (bad.length) throw new Error(t("admin_report_subscription.email_invalid", { list: bad.join(", ") }));
                   },
                 },
               ]}
             >
-              <Input placeholder="อีเมลผู้รับ เช่น owner@shop.com, sales@shop.com" />
+              <Input placeholder={t("admin_report_subscription.email_placeholder")} />
             </Form.Item>
           )}
 
@@ -208,24 +221,24 @@ export default function ReportSubscriptionCard() {
             <Form.Item name="slackEnabled" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Switch onChange={setSlackEnabled} />
             </Form.Item>
-            <Text strong>Slack</Text>
-            {sub?.hasSlackWebhook && <Tag color="blue">ตั้งค่าไว้แล้ว</Tag>}
+            <Text strong>{t("admin_report_subscription.channel_slack")}</Text>
+            {sub?.hasSlackWebhook && <Tag color="blue">{t("admin_report_subscription.slack_configured")}</Tag>}
           </Space>
           {slackEnabled && (
             <Form.Item
               name="slackWebhookUrl"
               style={{ marginBottom: 0 }}
-              extra="ใส่ได้หลาย webhook คั่นด้วย , (comma) — กรอกใหม่ทั้งหมดเฉพาะถ้าต้องการเปลี่ยน (เว้นว่าง = คงค่าเดิม)"
+              extra={t("admin_report_subscription.slack_webhook_extra")}
               rules={[
                 {
                   validator: async (_, value) => {
                     const bad = invalidSlackWebhookUrls(parseRecipientList(value));
-                    if (bad.length) throw new Error(`Slack webhook URL ไม่ถูกต้อง (ต้องเป็น https://): ${bad.join(", ")}`);
+                    if (bad.length) throw new Error(t("admin_report_subscription.slack_webhook_invalid", { list: bad.join(", ") }));
                   },
                 },
               ]}
             >
-              <Input placeholder={sub?.hasSlackWebhook ? "กรอกใหม่เฉพาะถ้าต้องการเปลี่ยน webhook URL" : "Slack Incoming Webhook URL"} />
+              <Input placeholder={sub?.hasSlackWebhook ? t("admin_report_subscription.slack_webhook_placeholder_set") : t("admin_report_subscription.slack_webhook_placeholder_empty")} />
             </Form.Item>
           )}
 
@@ -233,44 +246,44 @@ export default function ReportSubscriptionCard() {
             <Form.Item name="lineEnabled" valuePropName="checked" style={{ marginBottom: 0 }}>
               <Switch onChange={setLineEnabled} />
             </Form.Item>
-            <Text strong>LINE</Text>
+            <Text strong>{t("admin_report_subscription.channel_line")}</Text>
           </Space>
           {lineEnabled && (
             <Form.Item
               name="lineUserId"
               style={{ marginBottom: 0 }}
-              extra="ใส่ได้หลาย LINE user id คั่นด้วย , (comma)"
+              extra={t("admin_report_subscription.line_user_id_extra")}
               rules={[
                 {
                   validator: async (_, value) => {
                     const bad = invalidLineUserIds(parseRecipientList(value));
-                    if (bad.length) throw new Error(`LINE user id ไม่ถูกต้อง (ต้องขึ้นต้นด้วย U ตามด้วยรหัส 32 ตัวอักษร): ${bad.join(", ")}`);
+                    if (bad.length) throw new Error(t("admin_report_subscription.line_user_id_invalid", { list: bad.join(", ") }));
                   },
                 },
               ]}
             >
-              <Input placeholder="LINE user id ของผู้รับ เช่น U4af4980629..., U9bc1234567..." />
+              <Input placeholder={t("admin_report_subscription.line_user_id_placeholder")} />
             </Form.Item>
           )}
         </Space>
 
         <Divider />
         <Space>
-          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>บันทึก</Button>
-          <Button icon={<SendOutlined />} loading={testing} onClick={() => sendTest()}>ส่งทดสอบตอนนี้ (24 ชม. ล่าสุด)</Button>
+          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>{t("admin_report_subscription.save_btn")}</Button>
+          <Button icon={<SendOutlined />} loading={testing} onClick={() => sendTest()}>{t("admin_report_subscription.send_test_btn")}</Button>
         </Space>
       </Form>
 
       {sub?.lastSentAt && (
         <Text type="secondary" style={{ display: "block", marginTop: 12, fontSize: 12.5 }}>
-          ส่งล่าสุด: {new Date(sub.lastSentAt).toLocaleString("th-TH")} ·{" "}
+          {t("admin_report_subscription.last_sent_prefix", { time: new Date(sub.lastSentAt).toLocaleString("th-TH") })}{" "}
           <Tag color={STATUS_COLOR[sub.lastStatus] || "default"} style={{ marginLeft: 4 }}>{sub.lastStatus}</Tag>
         </Text>
       )}
 
       {deliveries.length > 0 && (
         <>
-          <SectionTitle>ประวัติการส่งล่าสุด</SectionTitle>
+          <SectionTitle>{t("admin_report_subscription.section_delivery_history")}</SectionTitle>
           <List
             size="small"
             dataSource={deliveries}
@@ -293,7 +306,7 @@ export default function ReportSubscriptionCard() {
                         style={{ padding: 0, height: "auto", fontSize: 12, color: d.status === "FAILED" ? "#ff4d4f" : undefined }}
                         onClick={() => setDetailDelivery(d)}
                       >
-                        ดูรายละเอียด
+                        {t("admin_report_subscription.view_details")}
                       </Button>
                     </div>
                   )}
@@ -329,7 +342,7 @@ export default function ReportSubscriptionCard() {
                       type="text"
                       size="small"
                       icon={<CopyOutlined />}
-                      onClick={() => { navigator.clipboard.writeText(line); message.success("คัดลอกแล้ว"); }}
+                      onClick={() => { navigator.clipboard.writeText(line); message.success(t("admin_report_subscription.copied")); }}
                     />,
                   ]}
                 >
@@ -341,9 +354,9 @@ export default function ReportSubscriptionCard() {
               size="small"
               icon={<CopyOutlined />}
               style={{ marginTop: 8 }}
-              onClick={() => { navigator.clipboard.writeText(detailLines(detailDelivery.error).join("\n")); message.success("คัดลอกทั้งหมดแล้ว"); }}
+              onClick={() => { navigator.clipboard.writeText(detailLines(detailDelivery.error).join("\n")); message.success(t("admin_report_subscription.copy_all_success")); }}
             >
-              คัดลอกทั้งหมด
+              {t("admin_report_subscription.copy_all_btn")}
             </Button>
           </>
         )}
@@ -354,8 +367,8 @@ export default function ReportSubscriptionCard() {
           return (
             <>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12, fontSize: 12.5 }}>
-                <div><Text type="secondary">ถึง </Text>{to.join(", ") || "-"}</div>
-                <div><Text type="secondary">หัวข้อ </Text>{snap.subject || "-"}</div>
+                <div><Text type="secondary">{t("admin_report_subscription.to_label")} </Text>{to.join(", ") || "-"}</div>
+                <div><Text type="secondary">{t("admin_report_subscription.subject_label")} </Text>{snap.subject || "-"}</div>
               </div>
               {snap.html ? (
                 <iframe
@@ -365,7 +378,7 @@ export default function ReportSubscriptionCard() {
                   style={{ width: "100%", height: 360, border: "0.5px solid #d9d9d9", borderRadius: 6 }}
                 />
               ) : (
-                <Text type="secondary">ไม่มี preview เนื้อหา (ส่งก่อนอัปเดตฟีเจอร์นี้)</Text>
+                <Text type="secondary">{t("admin_report_subscription.no_preview")}</Text>
               )}
               {snap.html && (
                 <Space style={{ marginTop: 12 }}>
@@ -374,7 +387,7 @@ export default function ReportSubscriptionCard() {
                     icon={<DownloadOutlined />}
                     onClick={() => downloadBlob(`report-${detailDelivery.id}.eml`, buildEml(to, snap.subject || "", snap.html), "message/rfc822")}
                   >
-                    ดาวน์โหลด .eml
+                    {t("admin_report_subscription.download_eml")}
                   </Button>
                   <Button
                     size="small"
@@ -384,7 +397,7 @@ export default function ReportSubscriptionCard() {
                       window.open(URL.createObjectURL(blob), "_blank");
                     }}
                   >
-                    เปิดดูแบบเต็ม
+                    {t("admin_report_subscription.open_full")}
                   </Button>
                 </Space>
               )}
@@ -406,11 +419,11 @@ export default function ReportSubscriptionCard() {
                 style={{ marginTop: 8 }}
                 onClick={() => downloadBlob(`report-${detailDelivery.id}.json`, json, "application/json")}
               >
-                ดาวน์โหลด .json
+                {t("admin_report_subscription.download_json")}
               </Button>
             </>
           ) : (
-            <Text type="secondary">ไม่มี preview เนื้อหา (ส่งก่อนอัปเดตฟีเจอร์นี้)</Text>
+            <Text type="secondary">{t("admin_report_subscription.no_preview")}</Text>
           );
         })()}
 
@@ -425,13 +438,13 @@ export default function ReportSubscriptionCard() {
                 size="small"
                 icon={<CopyOutlined />}
                 style={{ marginTop: 8 }}
-                onClick={() => { navigator.clipboard.writeText(snap.text); message.success("คัดลอกแล้ว"); }}
+                onClick={() => { navigator.clipboard.writeText(snap.text); message.success(t("admin_report_subscription.copied")); }}
               >
-                คัดลอกข้อความ
+                {t("admin_report_subscription.copy_message")}
               </Button>
             </>
           ) : (
-            <Text type="secondary">ไม่มี preview เนื้อหา (ส่งก่อนอัปเดตฟีเจอร์นี้)</Text>
+            <Text type="secondary">{t("admin_report_subscription.no_preview")}</Text>
           );
         })()}
       </Modal>
