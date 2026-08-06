@@ -238,15 +238,15 @@ export default function BlockedPage() {
   const requireAuthOrRedirect = React.useCallback((): boolean => {
     if (user) return true;
     const next = nextUrlRef.current || nextUrl;
-    router.replace(`/login?next=${encodeURIComponent(next)}`);
+    router.replace(`/admin/login?next=${encodeURIComponent(next)}`);
     return false;
   }, [nextUrl, router, user]);
 
   React.useEffect(() => {
     if (user) return;
     const next = nextUrlRef.current || nextUrl;
-    if (typeof window !== "undefined" && window.location.pathname === "/login") return;
-    router.replace(`/login?next=${encodeURIComponent(next)}`);
+    if (typeof window !== "undefined" && window.location.pathname === "/admin/login") return;
+    router.replace(`/admin/login?next=${encodeURIComponent(next)}`);
   }, [nextUrl, router, user]);
 
   const {

@@ -33,7 +33,7 @@ function frontendLogout(reason?: string) {
   addLog( "warn", "frontend-logout", msg, {} );
   window.dispatchEvent(new CustomEvent("frontend-logout", { detail: { reason } }));
   document.cookie = "token=; Max-Age=0; path=/";
-  window.location.href = "/login";
+  window.location.href = "/admin/login";
 }
 
 

@@ -17,7 +17,6 @@ const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
 
 function isAuthPath(pathname: string) {
   return (
-    pathname === "/login" ||
     pathname === "/register" ||
     pathname === "/forgot" ||
     pathname === "/reset" ||

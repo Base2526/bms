@@ -484,7 +484,7 @@ export default function PostView({
         ? `${window.location.pathname}${window.location.search || ''}`
         : '/';
 
-    router.push(`/login?next=${encodeURIComponent(nextPath)}`);
+    router.push(`/admin/login?next=${encodeURIComponent(nextPath)}`);
     return false;
   }, [router, user]);
 
