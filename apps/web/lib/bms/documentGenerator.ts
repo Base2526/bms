@@ -71,6 +71,14 @@ export function buildSalesReportDoc(data: {
         ],
         rows: summary.byChannel,
       },
+      {
+        name: "By status",
+        columns: [
+          { key: "status", label: "Status" },
+          { key: "count", label: "Order count" },
+        ],
+        rows: summary.byStatus,
+      },
     ],
   };
 }
@@ -101,6 +109,7 @@ export function buildInventoryReportDoc(data: {
           { key: "current_stock", label: "Current stock" },
           { key: "reserved_stock", label: "Reserved" },
           { key: "available", label: "Available" },
+          { key: "reorder_point", label: "Reorder point" },
         ],
         rows: lowStock,
       },
@@ -172,11 +181,19 @@ function csvEscape(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** ใช้แค่ sheet แรกของ doc — CSV ไม่มีแนวคิด multi-sheet (known simplification) */
+/**
+ * CSV has no multi-sheet concept, so every sheet is written into the same file
+ * one after another, each preceded by a "# <sheet name>" marker line and
+ * separated by a blank line — this used to only emit `doc.sheets[0]`, silently
+ * dropping every other sheet (e.g. "Top products"/"By channel"/"By status" on
+ * the Sales report) from CSV exports while XLSX/PDF were unaffected.
+ */
 export function buildCsv(doc: ReportDoc): Buffer {
-  const sheet = doc.sheets[0];
   const lines: string[] = [];
-  if (sheet) {
+  for (const sheet of doc.sheets) {
+    if (sheet.rows.length === 0) continue;
+    if (lines.length > 0) lines.push("");
+    lines.push(`# ${sheet.name}`);
     lines.push(sheet.columns.map((c) => csvEscape(c.label)).join(","));
     for (const row of sheet.rows) {
       lines.push(sheet.columns.map((c) => csvEscape(row[c.key])).join(","));

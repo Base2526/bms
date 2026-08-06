@@ -21,6 +21,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { testPlatformAiKey } from "@/lib/bms/aiConfig";
+import { recordJobRun } from "@/lib/bms/jobRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,11 +34,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const results = await Promise.all(
-    CHECKED_PROVIDERS.map(async (provider) => {
-      const result = await testPlatformAiKey(provider);
-      return { provider, ...result };
-    })
-  );
-  return NextResponse.json({ ok: true, results });
+  try {
+    const results = await recordJobRun("ai-health", "cron", () =>
+      Promise.all(
+        CHECKED_PROVIDERS.map(async (provider) => {
+          const result = await testPlatformAiKey(provider);
+          return { provider, ...result };
+        })
+      )
+    );
+    return NextResponse.json({ ok: true, results });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
+  }
 }

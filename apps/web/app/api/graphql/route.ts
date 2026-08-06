@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/server";
 import { cookies } from "next/headers";
 import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
+import { isAdminSessionActive } from "@/lib/redisSession";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
@@ -92,6 +93,14 @@ async function createContext(request: NextRequest) {
 
     // (optional) ถ้าอนาคต admin app ใช้ Bearer ก็เปิดบรรทัดนี้:
     // if (!admin) admin = verifyAdminFromRequest(request);
+
+    // Redis session revocation (lib/redisSession.ts) — the JWT can still be
+    // cryptographically valid (not yet `exp`) but the admin logged out, so this
+    // is the actual enforcement point for "logout means logged out now".
+    // Fail-open: Redis error or a pre-existing token with no `jti` → still trusted.
+    if (admin && !(await isAdminSessionActive(admin.jti))) {
+      admin = null;
+    }
 
     // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
     // เชื่อ token ได้เพราะเซ็นแล้ว + ผูกกับ admin.id (มินต์โดย bmsEnterTenant ที่ตรวจ platform admin แล้ว)

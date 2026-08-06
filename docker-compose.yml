@@ -23,6 +23,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    # AOF ต่อคีย์ pub/sub เองไม่กระทบ (ephemeral by nature) แต่ session/cache ที่เพิ่มเข้ามา
+    # (lib/redisSession.ts, lib/cache.ts) ควรรอด container restart — เปิด AOF ไว้กันข้อมูลหาย
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
     # ports:
     #   - "6379:6379"
 
@@ -106,34 +111,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
-  social-worker:
-    image: node:20-alpine
-    # image: myapp-web:latest
-    working_dir: /app/apps/web
-    environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL}
-
-      # DB (แนะนำใส่ให้ worker ใช้ตรง ๆ)
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      # Social
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
-
-    depends_on:
-      - postgres
-      - redis
-
 volumes:
   pgdata:
+  redis_data:
   caddy_data:
   caddy_config:

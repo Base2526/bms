@@ -124,11 +124,26 @@ introducing a separate reporting store:
 
 Current per-report behavior:
 
-- **Sales**: summary + by-day + top-products + by-channel, with the selected date range.
-- **Inventory**: current stock snapshot + low/out-of-stock rows; ignores the date-range picker.
+- **Sales**: summary + by-day + top-products + by-channel + **by-status** (order count per status,
+  added 2026-08 — was queried by `getSalesSummary()` but never reached any output format until then),
+  with the selected date range.
+- **Inventory**: current stock snapshot + low/out-of-stock rows, including each row's **reorder
+  point** (added 2026-08 — `listLowStock()` already selected it, it just wasn't in the output column
+  list); ignores the date-range picker.
 - **Profit**: estimated gross profit only. Revenue comes from historical order-item snapshots, but
   cost comes from the product's **current** `cost_price`, so this export must continue to present
   itself as an estimate rather than an accounting-perfect historical profit statement.
+
+Every report type is defined once as a `ReportDoc` (title/subtitle/meta + one or more named sheets)
+in `lib/bms/documentGenerator.ts`'s `build*ReportDoc()` functions, then rendered by format-specific
+builders (`buildXlsx`/`buildCsv`/`buildPdf`) that all read the same sheets — so XLSX/CSV/PDF cannot
+drift in which rows/columns they contain, only in layout. They *did* drift once: `buildCsv()` used to
+only emit `doc.sheets[0]`, so a Sales CSV export silently omitted "Top products", "By channel", and
+"By status" while XLSX/PDF already included them — fixed by making `buildCsv()` iterate every sheet
+(each sheet gets a `# <sheet name>` marker line). A query field only appears in the file once it is
+also listed in the corresponding sheet's `columns`/`rows` in `documentGenerator.ts` — the two are
+separate steps, and forgetting the second one is exactly how the by-status/reorder-point fields above
+went missing for a while.
 
 Known output limitation:
 

@@ -8,10 +8,18 @@
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
+import { getOrSetCache, invalidateCache } from "@/lib/cache";
 import { beginTenantTx } from "./tenant";
 import { isValidShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
+
+// Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
+// every checkout page load, and the public storefront — but written only from
+// /admin/settings. Short TTL is plenty; upsertStoreProfile() below busts it immediately
+// on write so admins never see a stale save.
+const STORE_PROFILE_CACHE_TTL_SECONDS = 60;
+const storeProfileCacheKey = (tenantId: string) => `store-profile:${tenantId}`;
 
 export type PaymentAccount = {
   type: string; // BANK / PROMPTPAY / อื่นๆ
@@ -88,6 +96,12 @@ export const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 export async function getStoreProfile(tenantId: string): Promise<StoreProfile> {
+  return getOrSetCache(storeProfileCacheKey(tenantId), STORE_PROFILE_CACHE_TTL_SECONDS, () =>
+    fetchStoreProfile(tenantId)
+  );
+}
+
+async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
   const res = await query<any>(
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns,
@@ -256,6 +270,7 @@ export async function upsertStoreProfile(
       ]
     );
     await client.query("COMMIT");
+    await invalidateCache(storeProfileCacheKey(tenantId));
     return merged;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}

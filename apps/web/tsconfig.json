@@ -11,9 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@core/*": ["../../packages/graphql-core/src/*"],
-      "@events/*": ["../../packages/events/*"],
-      "@social/*": ["../../packages/social-queue/*"]
+      "@core/*": ["../../packages/graphql-core/src/*"]
     },
     "strict": true,
     "allowJs": true,

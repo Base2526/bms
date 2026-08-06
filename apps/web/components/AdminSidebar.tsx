@@ -294,7 +294,6 @@ export default function AdminSidebar() {
         ...(isPlatformAdmin ? [
           link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
           link('/admin/files', 'Files', <FileImageOutlined />, 5),
-          link('/admin/queue', 'Social Queue', <DatabaseOutlined />),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
           link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),

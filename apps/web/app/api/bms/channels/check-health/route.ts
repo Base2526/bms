@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { detectStaleChannels } from "@/lib/bms/channelHealth";
+import { recordJobRun } from "@/lib/bms/jobRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const flagged = await detectStaleChannels();
-  return NextResponse.json({ ok: true, flagged });
+  try {
+    const flagged = await recordJobRun("channel-health", "cron", () => detectStaleChannels());
+    return NextResponse.json({ ok: true, flagged });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
+  }
 }
