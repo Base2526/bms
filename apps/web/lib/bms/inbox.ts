@@ -1085,6 +1085,48 @@ export async function sendFollowupMessage(
   return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
 }
 
+export type PharmacyIntakeMessageMeta = { kind: string; caseId: string | null };
+
+/**
+ * ส่งข้อความของ AI Pharmacy Intake — เหมือน sendFollowupMessage() แต่ sender='ai' +
+ * แนบ meta.pharmacyIntake ให้แชทเห็นว่าเป็นข้อความจากขั้นตอนซักประวัติ
+ * เรียกจาก lib/bms/pharmacy/intake.ts เท่านั้น — ไม่มี attachment
+ */
+export async function sendPharmacyIntakeMessage(
+  tenantId: string,
+  conversationId: string,
+  body: string,
+  meta: PharmacyIntakeMessageMeta
+): Promise<SendResult> {
+  const text = (body || "").trim();
+  if (!text) return { status: "EMPTY" };
+
+  const conv = await query<{ channel: string; customer_ref: string | null }>(
+    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, conversationId]
+  );
+  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
+
+  const channel = conv.rows[0].channel;
+  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
+  const status = outboundStatus(channel, delivered);
+
+  const inserted = await query<{ id: string }>(
+    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+     VALUES ($1, $2, 'OUT', $3, 'ai', $4)
+     RETURNING id`,
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, pharmacyIntake: meta })]
+  );
+  await query(
+    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, conversationId, messagePreview(text).slice(0, 500)]
+  );
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED");
+
+  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
+}
+
 /** ส่งข้อความเดิมซ้ำ (retry จากสถานะ FAILED) — ยิงช่องทางใหม่ + อัปเดต meta.status ในแถวเดิม */
 export async function retryMessage(tenantId: string, messageId: string): Promise<SendResult> {
   const m = await query<{ conversation_id: string; body: string; meta: any }>(

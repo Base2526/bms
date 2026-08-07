@@ -85,6 +85,18 @@ const CURATED_SEED_PRODUCTS: Partial<Record<ShopArchetype, CuratedSeedProduct[]>
     { name: "ผงซักฟอก 800 กรัม", category: "ของใช้ประจำวัน", brand: "Attack", price: 79, description: "ผงซักฟอกขนาดกลาง", keywords: ["ผงซักฟอก", "ซักผ้า"], sizes: ["800g"] },
     { name: "ไข่ไก่เบอร์ 2 แพ็ก 10 ฟอง", category: "ของสด", brand: "Daily Fresh", price: 52, description: "ไข่ไก่แพ็กสำหรับใช้ในครัวเรือน", keywords: ["ไข่ไก่", "ไข่"], sizes: ["10pc"] },
   ],
+  pharmacy: [
+    { name: "พาราเซตามอล 500 มก.", category: "ยาสามัญประจำบ้าน", brand: "GPO", price: 20, description: "ยาบรรเทาปวด ลดไข้ สำหรับผู้ใหญ่", keywords: ["พารา", "พาราเซตามอล", "ลดไข้", "แก้ปวด"], sizes: ["10 เม็ด", "100 เม็ด"] },
+    { name: "ยาลดกรด ธาตุน้ำขาว", category: "ยาสามัญประจำบ้าน", brand: "GPO", price: 25, description: "บรรเทาอาการแสบร้อนกลางอก ท้องอืด", keywords: ["ยาลดกรด", "ธาตุน้ำขาว", "ท้องอืด"], sizes: ["60 ml", "150 ml"] },
+    { name: "เกลือแร่ ORS ผงละลายน้ำ", category: "เวชภัณฑ์", brand: "ORS", price: 10, description: "ผงเกลือแร่ทดแทนการสูญเสียน้ำ เหมาะเมื่อท้องเสีย", keywords: ["ORS", "เกลือแร่", "ท้องเสีย", "ผงเกลือแร่"], sizes: ["ซอง"] },
+    { name: "ยาแก้แพ้ ลอราทาดีน 10 มก.", category: "ยาสามัญประจำบ้าน", brand: "Loratadine", price: 35, description: "บรรเทาอาการคัดจมูก น้ำมูกไหลจากภูมิแพ้ ไม่ทำให้ง่วง", keywords: ["ยาแก้แพ้", "ลอราทาดีน", "ภูมิแพ้", "คัดจมูก"], sizes: ["10 เม็ด"] },
+    { name: "ยาแก้ไอมะขามป้อม น้ำเชื่อม", category: "ยาสามัญประจำบ้าน", brand: "ตรามือ", price: 45, description: "ยาน้ำแก้ไอ ขับเสมหะ สูตรสมุนไพร", keywords: ["ยาแก้ไอ", "มะขามป้อม", "ขับเสมหะ"], sizes: ["60 ml", "120 ml"] },
+    { name: "ยาแก้ท้องอืด โดมเพอริโดน", category: "ยาสามัญประจำบ้าน", brand: "Domperidone", price: 40, description: "บรรเทาอาการท้องอืด แน่นท้อง คลื่นไส้", keywords: ["ท้องอืด", "โดมเพอริโดน", "แน่นท้อง", "คลื่นไส้"], sizes: ["10 เม็ด"] },
+    { name: "เจลแอลกอฮอล์ล้างมือ 70%", category: "เวชภัณฑ์", brand: "Cleanse", price: 55, description: "เจลทำความสะอาดมือแบบไม่ใช้น้ำ", keywords: ["เจลแอลกอฮอล์", "ล้างมือ", "ทำความสะอาด"], sizes: ["100 ml", "450 ml"] },
+    { name: "หน้ากากอนามัย กล่อง 50 ชิ้น", category: "เวชภัณฑ์", brand: "Medishield", price: 89, description: "หน้ากากอนามัยทางการแพทย์ 3 ชั้น", keywords: ["หน้ากากอนามัย", "แมส", "mask"], sizes: ["กล่อง 50 ชิ้น"] },
+    { name: "พลาสเตอร์ปิดแผลกันน้ำ", category: "เวชภัณฑ์", brand: "Elastoplast", price: 39, description: "พลาสเตอร์ปิดแผลกันน้ำ ระบายอากาศได้", keywords: ["พลาสเตอร์", "ปิดแผล", "แผล"], sizes: ["กล่อง 10 แผ่น"] },
+    { name: "วิตามินซี 1000 มก. ฟู่", category: "วิตามิน/อาหารเสริม", brand: "Redoxon", price: 120, description: "วิตามินซีเสริมภูมิคุ้มกัน ชนิดเม็ดฟู่", keywords: ["วิตามินซี", "vitamin c", "เสริมภูมิ"], sizes: ["10 เม็ด", "30 เม็ด"] },
+  ],
   gadgets_accessories: [
     { name: "AirGuard Case for iPhone 15 Pro", category: "เคส", brand: "Spark", price: 590, description: "เคสกันกระแทกสำหรับ iPhone 15 Pro", keywords: ["iphone 15 pro", "เคส", "airguard"], sizes: ["Clear", "Black"] },
     { name: "Tempered Glass for iPhone 15 Pro", category: "ฟิล์ม", brand: "Spark", price: 390, description: "กระจกนิรภัยตรงรุ่น iPhone 15 Pro", keywords: ["iphone 15 pro", "กระจก", "ฟิล์ม"], sizes: ["STD"] },

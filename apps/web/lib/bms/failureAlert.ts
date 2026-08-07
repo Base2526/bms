@@ -45,7 +45,11 @@ export type BmsFailureCode =
   /** โหลด context (history/state/store profile) ไม่สำเร็จ → AI ตอบโดยข้อมูลไม่ครบ */
   | "ai.context_load_failed"
   /** บันทึก state ของบทสนทนาไม่สำเร็จ → ความจำหาย ถามซ้ำ */
-  | "ai.state_persist_failed";
+  | "ai.state_persist_failed"
+  /** AI Pharmacy Intake: ไม่มี credentials/เกิน quota/validation retry หมด → ส่งเคสให้เภสัชกรตรวจเอง */
+  | "pharmacy_ai.unavailable"
+  /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
+  | "pharmacy_ai.validation_exhausted";
 
 type CatalogEntry = {
   tier: FailureTier;
@@ -100,6 +104,17 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     tier: "B",
     shopTitle: "ผู้ช่วย AI บันทึกความจำบทสนทนาไม่สำเร็จ",
     shopMessage: "ระบบบันทึกสถานะบทสนทนาไม่สำเร็จ AI อาจถามข้อมูลเดิมซ้ำ",
+  },
+  "pharmacy_ai.unavailable": {
+    tier: "A",
+    shopTitle: "⚠️ AI Pharmacy Intake ไม่พร้อมใช้งาน — ส่งเคสให้เภสัชกรตรวจเองแล้ว",
+    shopMessage:
+      "ระบบผู้ช่วยซักประวัติไม่สามารถประมวลผลอาการของลูกค้าได้ (ไม่มี credentials/เกิน quota/provider ล้ม) เคสถูกส่งให้เภสัชกรตรวจสอบข้อมูลดิบด้วยตนเองแล้ว",
+  },
+  "pharmacy_ai.validation_exhausted": {
+    tier: "B",
+    shopTitle: "AI Pharmacy Intake ตอบผิดรูปแบบซ้ำหลายครั้ง",
+    shopMessage: "ผลลัพธ์จาก AI ไม่ผ่านการตรวจสอบรูปแบบข้อมูลซ้ำจนครบจำนวนที่กำหนด ระบบ fallback ไปให้เภสัชกรตรวจเอง",
   },
 };
 

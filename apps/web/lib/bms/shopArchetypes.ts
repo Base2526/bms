@@ -7,6 +7,7 @@ export const SHOP_ARCHETYPE_OPTIONS = [
   { value: "gadgets_accessories", label: "Gadgets & Accessories" },
   { value: "b2b_wholesale", label: "B2B / Wholesale" },
   { value: "gifts_seasonal", label: "Gifts & Seasonal" },
+  { value: "pharmacy", label: "Pharmacy" },
   { value: "other", label: "Other" },
 ] as const;
 

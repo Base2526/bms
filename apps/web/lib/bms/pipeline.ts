@@ -52,6 +52,8 @@ import {
   listCustomerCouponWallet,
   type CustomerCouponWalletItem,
 } from "./coupons";
+import { isPharmacyIntakeEnabled } from "./pharmacy/config";
+import { detectPharmacyIntakeTrigger, getPharmacyIntakeState, runPharmacyIntakeTurn, startPharmacyIntake } from "./pharmacy/intake";
 
 // P0: จำนวนข้อความบทสนทนาล่าสุด (ไม่รวมข้อความปัจจุบัน) ที่ป้อนกลับเข้า AI tool loop
 // โหลดมากกว่าที่ส่งเข้าโมเดลเพื่อบีบอัดส่วนเก่า ก่อนเก็บ recent messages แบบเต็ม
@@ -1050,6 +1052,42 @@ export async function runPipeline(
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
   const execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+
+  // ===== AI Pharmacy Intake Assistant — deterministic early-return, same
+  // shape as the checkoutDetailsFromReply() branch just below: if this
+  // conversation has a case in flight, hand the ENTIRE turn to the
+  // dedicated orchestrator and never enter the normal AI tool loop. AI
+  // never decides to intercept here — the branch itself is deterministic.
+  if (isPharmacyIntakeEnabled() && convId) {
+    const pharmacyState = await getPharmacyIntakeState(tenantId, convId).catch(() => ({ stage: "NONE" as const }));
+    if (pharmacyState.stage !== "NONE") {
+      const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, convId, aiInputMessage, pharmacyState);
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: `pharmacy:${pharmacyState.stage.toLowerCase()}`,
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: result.reply,
+      });
+    }
+    const trigger = detectPharmacyIntakeTrigger(aiInputMessage);
+    if (trigger) {
+      const customerId = await findCustomerIdByIdentity(tenantId, channel, customerRef);
+      const started = await startPharmacyIntake(tenantId, convId, customerId, channel, trigger.protocolKey);
+      if (started.caseId) {
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: `pharmacy:start:${trigger.protocolKey}`,
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: started.reply,
+        });
+      }
+      // protocol not enabled/not clinically approved — fall through to normal chat
+    }
+  }
 
   const checkoutDetails = checkoutDetailsFromReply(aiInputMessage, history);
   if (checkoutDetails) {

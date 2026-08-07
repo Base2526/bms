@@ -46,6 +46,14 @@ export const BMS_PERMISSIONS = [
   "coupon.manage",
   "followup.view",
   "followup.manage",
+  "pharmacy.assessment.read",
+  "pharmacy.assessment.assign",
+  "pharmacy.assessment.request_more_information",
+  "pharmacy.assessment.review",
+  "pharmacy.assessment.approve",
+  "pharmacy.assessment.reject",
+  "pharmacy.protocol.manage",
+  "pharmacy.audit.read",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

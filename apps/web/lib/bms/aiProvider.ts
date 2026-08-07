@@ -116,7 +116,9 @@ export function isSensitiveAiRoutingContext(ctx?: AiProviderRoutingContext): boo
     ctx?.meta?.sensitive === true ||
     ctx?.feature === "staff_sensitive_assistant" ||
     ctx?.feature === "payment_confirmation" ||
-    ctx?.feature === "refund_payment"
+    ctx?.feature === "refund_payment" ||
+    // health-data-adjacent — same sensitive-provider preference as payment confirmation
+    ctx?.feature === "pharmacy_intake"
   );
 }
 
