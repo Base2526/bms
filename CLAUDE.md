@@ -117,11 +117,37 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   Postgres on every call (not signed into the JWT) for the same staleness reasons. `HeaderBar.tsx`'s
   existing public-site language switcher was refactored to use the new shared `getLangCookie()`/
   `setLangCookie()` helpers instead of its own inline cookie regex, so there's one cookie
-  read/write implementation, not two. **Scope note**: this makes the switch itself work end-to-end,
-  but the i18n dictionary (`apps/web/i18n/`) still only has ~12 namespaces covering the public
-  marketing/auth/nav chrome — switching language does not yet change any of the ~61 admin page files
-  that hardcode Thai text directly, since those never call `useI18n()`. See "i18n coverage" in
-  [AGENTS.md](AGENTS.md) for the full breakdown of what's covered vs. not.
+  read/write implementation, not two. **Scope note (updated 2026-08, see next bullet)**: this made
+  the switch itself work end-to-end, but at the time the dictionary only covered public marketing/
+  auth/nav chrome — the admin app (`/admin/**`) still has zero i18n plumbing and remains out of scope.
+  See "i18n coverage" in [AGENTS.md](AGENTS.md) for the current breakdown of what's covered vs. not.
+- **Public-page i18n coverage expanded (2026-08)**: a follow-up pass took the `apps/web/i18n/`
+  dictionary from ~12 namespaces to 25 (new: `shopSignup`, `settingsPage`, `blockedPage`, `chatPage`,
+  `couponWallet`, plus more keys added to `searchPage`/`notificationPage`/`verify`) and wired
+  `useI18n()` into every public/auth page that was still Thai-only or partially migrated:
+  `/verify-email` (finished the last 2 hardcoded strings), `/shop-signup`, `/settings` (Profile &
+  Account/Security/My Posts/My Bookmarks panels — the dead `UsersPanel`/`Files`/`Logs` sub-views
+  reachable only via a commented-out menu item were left English-only, not worth wiring), `/search`,
+  `/blocked`, `/notification`, `/chat` (2 leaked strings — a delete-confirm dialog and a "typing…"
+  indicator; the rest of that 3000-line legacy chat page was already English), and `/coupon/wallet`
+  (rewritten as a server component reading the `lang` cookie via `getMessage()`, since it's a public
+  bearer-link page with no client-side session). `/help` and `/demo` — both large prose/content pages
+  with **no prior i18n scaffolding at all** — got full English translations via a page-local
+  `resolveBilingual()` content object (same pattern as `/privacy`/`/terms`/etc., see below). `/demo`
+  is the tricky one: it's an *interactive* simulated chat, not static prose, so its keyword-based
+  intent detection (`inferFlowStep()`/`buildOrderState()` in that file) had to be extended to
+  recognize **both** Thai and English phrasing — translating only the display strings would have left
+  the demo's simulated "AI" blind to English input. **Verified already fine, not touched**: `/support`,
+  `/privacy`, `/roadmap`, `/donate`, `/license`, `/open-source`, `/pdpa`, `/terms` (all already used
+  `resolveBilingual()` correctly — an earlier raw-Thai-character grep had flagged their `th:` content
+  values as false-positive "leaks") and the public product storefront `/shop/**` (already bilingual
+  via an inline `lang === "en" ? ... : ...` ternary in each view component — a fourth, page-local
+  pattern equivalent in effect to `resolveBilingual()` but not routed through the shared helper).
+  **Deliberately left as-is**: `/live-dashboard` (still mock-data-only per the note above — translating
+  copy that will likely be reworked once wired to real queries isn't worth it yet) and the legacy
+  community pages `/my/posts`, `/my/profile`, `/post/**`, `/post/[id]/edit`, `/profile/[id]` (English-
+  only, no Thai to leak, simply never localized — out of scope, these predate BMS). The admin app
+  (`/admin/**`) is completely unaffected by this pass and still has zero i18n plumbing.
 - **Tenant-scoped Users page**: `/admin/users` now respects the acting tenant when a platform admin
   drills into a shop. In Shop B mode the list/detail/delete/avatar paths are tenant-scoped, so the
   page no longer leaks cross-tenant users or opens a user from another shop by direct URL. The

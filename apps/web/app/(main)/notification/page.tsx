@@ -23,6 +23,9 @@ import {
   MoreOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
+import { useI18n } from '@/lib/i18nContext';
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -106,14 +109,14 @@ function getIcon(entity_type: string) {
   }
 }
 
-function getTagLabel(entity_type: string, type: string): string {
-  if (entity_type === 'chat') return 'Chat';
-  if (entity_type === 'post') return 'Post';
-  if (type.startsWith('SYSTEM_')) return 'System';
-  return 'General';
+function getTagLabel(entity_type: string, type: string, t: Translate): string {
+  if (entity_type === 'chat') return t('notificationPage.tagChat');
+  if (entity_type === 'post') return t('notificationPage.tagPost');
+  if (type.startsWith('SYSTEM_')) return t('notificationPage.tagSystem');
+  return t('notificationPage.tagGeneral');
 }
 
-function getTimeLabel(created_at: string | number): string {
+function getTimeLabel(created_at: string | number, t: Translate): string {
   // Normalise input: convert string → number if looks like timestamp
   let created: Date;
 
@@ -137,18 +140,18 @@ function getTimeLabel(created_at: string | number): string {
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
-  if (diffSec < 60) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
+  if (diffSec < 60) return t('notificationPage.timeJustNow');
+  if (diffMin < 60) return t('notificationPage.timeMinutesAgo', { n: diffMin });
+  if (diffHour < 24) return t('notificationPage.timeHoursAgo', { n: diffHour });
+  if (diffDay < 7) return t('notificationPage.timeDaysAgo', { n: diffDay });
   return created.toLocaleDateString();
 }
 
-function getGroupLabel(created_at: string | number): string {
+function getGroupLabel(created_at: string | number, t: Translate): string {
   // 1) รองรับ timestamp (number หรือ string)
   const d = new Date(typeof created_at === 'number' ? created_at : Number(created_at) || created_at);
 
-  if (isNaN(d.getTime())) return 'Unknown';
+  if (isNaN(d.getTime())) return t('notificationPage.groupUnknown');
 
   const now = new Date();
 
@@ -160,22 +163,20 @@ function getGroupLabel(created_at: string | number): string {
   const diffMs = today.getTime() - createdDay.getTime();
   const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDay < 0) return 'Future';       // กันกรณี timestamp คลาด
-  if (diffDay === 0) return 'Today';
-  if (diffDay === 1) return 'Yesterday';
-  if (diffDay <= 7) return 'This week';
+  if (diffDay < 0) return t('notificationPage.groupFuture');       // กันกรณี timestamp คลาด
+  if (diffDay === 0) return t('notificationPage.groupToday');
+  if (diffDay === 1) return t('notificationPage.groupYesterday');
+  if (diffDay <= 7) return t('notificationPage.groupThisWeek');
 
-  return 'Earlier';
+  return t('notificationPage.groupEarlier');
 }
 
-function mapNotificationToItem(n: GqlNotification): NotificationItem {
-
-  console.log("[mapNotificationToItem] = ", n, getTimeLabel(new Date(n.created_at).toLocaleString()));
+function mapNotificationToItem(n: GqlNotification, t: Translate): NotificationItem {
   return {
     ...n,
-    tagLabel: getTagLabel(n.entity_type, n.type),
-    timeLabel: getTimeLabel(n.created_at), // 
-    groupLabel: getGroupLabel(n.created_at),
+    tagLabel: getTagLabel(n.entity_type, n.type, t),
+    timeLabel: getTimeLabel(n.created_at, t),
+    groupLabel: getGroupLabel(n.created_at, t),
   };
 }
 
@@ -184,6 +185,7 @@ function mapNotificationToItem(n: GqlNotification): NotificationItem {
  * ===================== */
 
 export default function NotificationPage() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
 
@@ -213,8 +215,8 @@ export default function NotificationPage() {
   const rawNotifications: GqlNotification[] = data?.myNotifications ?? [];
 
   const items: NotificationItem[] = useMemo(
-    () => rawNotifications.map(mapNotificationToItem),
-    [rawNotifications]
+    () => rawNotifications.map((n) => mapNotificationToItem(n, t)),
+    [rawNotifications, t]
   );
 
   const backendUnreadCount = unreadData?.myUnreadNotificationCount ?? 0;
@@ -276,7 +278,7 @@ export default function NotificationPage() {
       items={[
         {
           key: 'read',
-          label: item.is_read ? 'Mark as unread (local only)' : 'Mark as read',
+          label: item.is_read ? t('notificationPage.markAsUnread') : t('notificationPage.markAsRead'),
           onClick: () => {
             if (!item.is_read) {
               onMarkSingleRead(item.id, item.is_read);
@@ -287,7 +289,7 @@ export default function NotificationPage() {
         {
           key: 'delete',
           danger: true,
-          label: 'Delete (TODO)',
+          label: t('notificationPage.deleteTodo'),
           onClick: () => {
             // ถ้าต้องการลบจริง ให้เพิ่ม mutation deleteNotification ก่อน
             console.log('TODO: delete notification', item.id);
@@ -305,16 +307,16 @@ export default function NotificationPage() {
       >
         <Space>
           <Title level={3} style={{ margin: 0 }}>
-            Notifications
+            {t('notificationPage.title')}
           </Title>
           {backendUnreadCount > 0 && <Badge count={backendUnreadCount} />}
         </Space>
         <Space>
           <Button type="link" icon={<SettingOutlined />}>
-            Settings
+            {t('notificationPage.settings')}
           </Button>
           <Button onClick={onMarkAllRead} disabled={backendUnreadCount === 0}>
-            Mark all as read
+            {t('notificationPage.markAllRead')}
           </Button>
         </Space>
       </Space>
@@ -322,16 +324,16 @@ export default function NotificationPage() {
       {/* Tabs + Search */}
       <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
         <Tabs activeKey={tab} onChange={setTab}>
-          <TabPane tab="All" key="all" />
+          <TabPane tab={t('notificationPage.tabAll')} key="all" />
           <TabPane
-            tab={`Unread (${backendUnreadCount})`}
+            tab={`${t('notificationPage.unreadLabel')} (${backendUnreadCount})`}
             key="unread"
           />
-          <TabPane tab="Chat" key="chat" />
-          <TabPane tab="Posts" key="post" />
+          <TabPane tab={t('notificationPage.tabChat')} key="chat" />
+          <TabPane tab={t('notificationPage.tabPosts')} key="post" />
         </Tabs>
         <Search
-          placeholder="Search notifications..."
+          placeholder={t('notificationPage.searchPlaceholder')}
           allowClear
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -347,7 +349,7 @@ export default function NotificationPage() {
       {error && (
         <Alert
           type="error"
-          message="Failed to load notifications"
+          message={t('notificationPage.loadFailedTitle')}
           description={error.message}
           style={{ marginBottom: 16 }}
         />
@@ -355,7 +357,7 @@ export default function NotificationPage() {
 
       {/* List group by day */}
       {!loading && !error && Object.keys(groups).length === 0 ? (
-        <Text type="secondary">No notifications.</Text>
+        <Text type="secondary">{t('notificationPage.empty')}</Text>
       ) : (
         Object.entries(groups).map(([groupLabel, groupItems]) => (
           <div key={groupLabel} style={{ marginBottom: 24 }}>

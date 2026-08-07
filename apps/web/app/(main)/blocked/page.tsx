@@ -29,6 +29,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useSessionCtx } from "@/lib/session-context";
+import { useI18n } from "@/lib/i18nContext";
 
 import { TelBlockDialog } from "@/components/jachoei/TelBlockDialog";
 import type { TelBlockDialogValue } from "@/components/jachoei/TelBlockDialog";
@@ -195,6 +196,7 @@ function formatDateShort(iso?: string | null): string {
 }
 
 export default function BlockedPage() {
+  const { t } = useI18n();
   const { user } = useSessionCtx();
   const router = useRouter();
   const pathname = usePathname();
@@ -343,7 +345,7 @@ export default function BlockedPage() {
             });
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Report failed";
-            message.warning(`Blocked, but report failed: ${msg}`);
+            message.warning(`${t("blockedPage.report_failed_prefix")} ${msg}`);
           }
         }
 
@@ -354,19 +356,19 @@ export default function BlockedPage() {
           tags: reportPayload?.tags ?? optimisticEntry.tags,
         });
 
-        message.success(wasBlocked ? "Updated" : "Blocked");
+        message.success(wasBlocked ? t("blockedPage.updated_toast") : t("blockedPage.blocked_toast"));
         void refetchBlocked?.();
         return true;
       } catch (err: unknown) {
         if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
         else jachoei.removeBlockedTelEntry(tel);
 
-        const msg = err instanceof Error ? err.message : "Action failed";
+        const msg = err instanceof Error ? err.message : t("blockedPage.action_failed");
         message.error(msg);
         return false;
       }
     },
-    [jachoei, jachoeiMut, refetchBlocked, requireAuthOrRedirect]
+    [jachoei, jachoeiMut, refetchBlocked, requireAuthOrRedirect, t]
   );
 
   const performTelUndo = React.useCallback(
@@ -388,7 +390,7 @@ export default function BlockedPage() {
 
       try {
         await jachoeiMut.unblockPhone({ phone: tel });
-        message.success("Unblocked");
+        message.success(t("blockedPage.unblocked_toast"));
         void refetchBlocked?.();
         return true;
       } catch (err: unknown) {
@@ -402,12 +404,12 @@ export default function BlockedPage() {
         if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
         else if (wasBlocked) jachoei.setBlockedTelEntry(tel, {});
 
-        const msg = err instanceof Error ? err.message : "Action failed";
+        const msg = err instanceof Error ? err.message : t("blockedPage.action_failed");
         message.error(msg);
         return false;
       }
     },
-    [jachoei, jachoeiMut, refetchBlocked, requireAuthOrRedirect]
+    [jachoei, jachoeiMut, refetchBlocked, requireAuthOrRedirect, t]
   );
 
   const openTelManage = React.useCallback(
@@ -600,7 +602,7 @@ export default function BlockedPage() {
           tags: payload.tags ?? optimisticEntry.tags,
         });
 
-        message.success(wasReported ? "Updated report" : "Reported");
+        message.success(wasReported ? t("blockedPage.report_updated_toast") : t("blockedPage.reported_toast"));
         void refetchReportedPhones?.();
         void refetchReportedBanks?.();
         return true;
@@ -608,12 +610,12 @@ export default function BlockedPage() {
         if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
         else jachoei.removeReportedBankEntry(account);
 
-        const msg = err instanceof Error ? err.message : "Action failed";
+        const msg = err instanceof Error ? err.message : t("blockedPage.action_failed");
         message.error(msg);
         return false;
       }
     },
-    [jachoei, jachoeiMut, refetchReportedBanks, refetchReportedPhones, requireAuthOrRedirect]
+    [jachoei, jachoeiMut, refetchReportedBanks, refetchReportedPhones, requireAuthOrRedirect, t]
   );
 
   const performBankUndo = React.useCallback(
@@ -639,7 +641,7 @@ export default function BlockedPage() {
           category: prevEntry?.category,
           reason: prevEntry?.note ?? null,
         });
-        message.success("Unreported");
+        message.success(t("blockedPage.unreported_toast"));
         void refetchReportedPhones?.();
         void refetchReportedBanks?.();
         return true;
@@ -653,12 +655,12 @@ export default function BlockedPage() {
         if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
         else if (wasReported) jachoei.setReportedBankEntry(account, { bank_name: bankName ?? null });
 
-        const msg = err instanceof Error ? err.message : "Action failed";
+        const msg = err instanceof Error ? err.message : t("blockedPage.action_failed");
         message.error(msg);
         return false;
       }
     },
-    [jachoei, jachoeiMut, refetchReportedBanks, refetchReportedPhones, requireAuthOrRedirect]
+    [jachoei, jachoeiMut, refetchReportedBanks, refetchReportedPhones, requireAuthOrRedirect, t]
   );
 
   return (
@@ -680,7 +682,7 @@ export default function BlockedPage() {
               label: (
                 <Space size={6} align="center">
                   <LockOutlined />
-                  <span>Blocked</span>
+                  <span>{t("blockedPage.tab_blocked")}</span>
                 </Space>
               ),
             },
@@ -689,7 +691,7 @@ export default function BlockedPage() {
               label: (
                 <Space size={6} align="center">
                   <SoundOutlined />
-                  <span>My Reports</span>
+                  <span>{t("blockedPage.tab_reports")}</span>
                 </Space>
               ),
             },
@@ -702,7 +704,7 @@ export default function BlockedPage() {
         title={
           <Space size={10} align="center">
             <Typography.Text strong style={{ fontSize: isMobile ? 16 : 18 }}>
-              {tab === "blocked" ? "Blocked (เบอร์ที่บล็อก)" : "My Reports (รายการที่ฉันรายงาน)"}
+              {tab === "blocked" ? t("blockedPage.title_blocked") : t("blockedPage.title_reports")}
             </Typography.Text>
             <Badge count={tab === "blocked" ? count : reportCount} showZero />
           </Space>
@@ -721,12 +723,12 @@ export default function BlockedPage() {
               onChange={(e) => setSearch(e.target.value)}
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="Search blocked phone numbers"
+              placeholder={t("blockedPage.search_placeholder")}
             />
 
             <Space size={6} wrap>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Filter:
+                {t("blockedPage.filter_label")}
               </Typography.Text>
               {(["ALL", "HIGH", "MEDIUM", "LOW"] as const).map((k) => (
                 <Tag.CheckableTag
@@ -742,7 +744,7 @@ export default function BlockedPage() {
 
             <Space size={10} wrap align="center">
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Sort:
+                {t("blockedPage.sort_label")}
               </Typography.Text>
               <Segmented
                 size={isMobile ? "small" : "middle"}
@@ -756,7 +758,7 @@ export default function BlockedPage() {
 
             {blockedError && jachoei.blockedTelSet.size > 0 ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                <ExclamationCircleOutlined /> ใช้ข้อมูลจากเครื่อง (local) ชั่วคราว เพราะโหลดจากเซิร์ฟเวอร์ไม่สำเร็จ
+                <ExclamationCircleOutlined /> {t("blockedPage.offline_notice")}
               </Typography.Text>
             ) : null}
 
@@ -765,9 +767,9 @@ export default function BlockedPage() {
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   <Space direction="vertical" size={4}>
-                    <Typography.Text strong>ยังไม่มีรายการ</Typography.Text>
+                    <Typography.Text strong>{t("blockedPage.empty_title")}</Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      เมื่อคุณบล็อกเบอร์โทรศัพท์ รายการจะมาแสดงที่หน้านี้
+                      {t("blockedPage.empty_blocked_desc")}
                     </Typography.Text>
                   </Space>
                 }
@@ -792,7 +794,7 @@ export default function BlockedPage() {
                           disabled={!canAct}
                           onClick={() => openTelManage(telRaw)}
                         >
-                          Manage
+                          {t("blockedPage.manage")}
                         </Button>,
                         <Button
                           key="unblock"
@@ -804,7 +806,7 @@ export default function BlockedPage() {
                             void performTelUndo(telRaw);
                           }}
                         >
-                          Unblock
+                          {t("blockedPage.unblock")}
                         </Button>,
                       ]}
                     >
@@ -821,13 +823,13 @@ export default function BlockedPage() {
                         description={
                           <Space size={10} wrap>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              Reports: {Number(item.report_count || 0).toLocaleString("th-TH")}
+                              {t("blockedPage.reports_label")} {Number(item.report_count || 0).toLocaleString("th-TH")}
                             </Typography.Text>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              Last: {formatDateShort(item.last_report_at)}
+                              {t("blockedPage.last_label")} {formatDateShort(item.last_report_at)}
                             </Typography.Text>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              Blocked: {formatDateShort(item.my_blocked_at)}
+                              {t("blockedPage.blocked_label")} {formatDateShort(item.my_blocked_at)}
                             </Typography.Text>
                           </Space>
                         }
@@ -842,7 +844,7 @@ export default function BlockedPage() {
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             {reportedPhonesError || reportedBanksError ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                <ExclamationCircleOutlined /> โหลดข้อมูล My Reports ไม่สำเร็จ
+                <ExclamationCircleOutlined /> {t("blockedPage.reports_load_failed")}
               </Typography.Text>
             ) : null}
 
@@ -853,9 +855,9 @@ export default function BlockedPage() {
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   <Space direction="vertical" size={4}>
-                    <Typography.Text strong>ยังไม่มีรายการ</Typography.Text>
+                    <Typography.Text strong>{t("blockedPage.empty_title")}</Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      เมื่อคุณรายงานเบอร์โทรหรือบัญชีธนาคาร รายการจะมาแสดงที่หน้านี้
+                      {t("blockedPage.empty_reports_desc")}
                     </Typography.Text>
                   </Space>
                 }
@@ -878,7 +880,7 @@ export default function BlockedPage() {
                             size={isMobile ? "small" : "middle"}
                             onClick={() => openTelManage(tel)}
                           >
-                            Manage
+                            {t("blockedPage.manage")}
                           </Button>,
                           isBlocked ? (
                             <Button
@@ -888,7 +890,7 @@ export default function BlockedPage() {
                               loading={jachoeiMut.loading.unblockPhone}
                               onClick={() => void performTelUndo(tel)}
                             >
-                              Unblock
+                              {t("blockedPage.unblock")}
                             </Button>
                           ) : null,
                         ].filter(Boolean)}
@@ -907,10 +909,10 @@ export default function BlockedPage() {
                           description={
                             <Space size={10} wrap>
                               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                Reports: {Number(item.report_count || 0).toLocaleString("th-TH")}
+                                {t("blockedPage.reports_label")} {Number(item.report_count || 0).toLocaleString("th-TH")}
                               </Typography.Text>
                               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                Updated: {formatDateShort(item.updated_at)}
+                                {t("blockedPage.updated_label")} {formatDateShort(item.updated_at)}
                               </Typography.Text>
                             </Space>
                           }
@@ -931,7 +933,7 @@ export default function BlockedPage() {
                           size={isMobile ? "small" : "middle"}
                           onClick={() => openBankManage(bankName, account)}
                         >
-                          Manage
+                          {t("blockedPage.manage")}
                         </Button>,
                         <Button
                           key="undo"
@@ -940,7 +942,7 @@ export default function BlockedPage() {
                           loading={jachoeiMut.loading.unreportBank}
                           onClick={() => void performBankUndo(bankName, account)}
                         >
-                          Undo report
+                          {t("blockedPage.undo_report")}
                         </Button>,
                       ]}
                     >
@@ -957,7 +959,7 @@ export default function BlockedPage() {
                             </Tag>
                             {reportedOnDevice ? (
                               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                (device)
+                                {t("blockedPage.device_tag")}
                               </Typography.Text>
                             ) : null}
                           </Space>
@@ -965,10 +967,10 @@ export default function BlockedPage() {
                         description={
                           <Space size={10} wrap>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              Reports: {Number(item.report_count || 0).toLocaleString("th-TH")}
+                              {t("blockedPage.reports_label")} {Number(item.report_count || 0).toLocaleString("th-TH")}
                             </Typography.Text>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              Updated: {formatDateShort(item.updated_at)}
+                              {t("blockedPage.updated_label")} {formatDateShort(item.updated_at)}
                             </Typography.Text>
                           </Space>
                         }

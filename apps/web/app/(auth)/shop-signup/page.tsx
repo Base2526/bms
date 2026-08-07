@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
 import { SHOP_ARCHETYPE_OPTIONS } from "@/lib/bms/shopArchetypes";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Paragraph } = Typography;
 
@@ -18,6 +19,7 @@ const M_SIGNUP = gql`
 `;
 
 export default function Page() {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [done, setDone] = useState(false);
 
@@ -25,10 +27,10 @@ export default function Page() {
     onCompleted: (d) => {
       const r = d?.bmsSignup;
       if (r?.status === "PENDING_VERIFICATION") setDone(true);
-      else if (r?.status === "EMAIL_TAKEN") message.error("อีเมลนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบหรือรีเซ็ตรหัสผ่าน");
-      else message.error("ข้อมูลไม่ถูกต้อง (รหัสผ่านอย่างน้อย 6 ตัว)");
+      else if (r?.status === "EMAIL_TAKEN") message.error(t("shopSignup.email_taken"));
+      else message.error(t("shopSignup.invalid_data"));
     },
-    onError: (e) => message.error(e?.message || "สมัครไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("shopSignup.signup_failed")),
   });
 
   const submit = async () => {
@@ -50,9 +52,9 @@ export default function Page() {
         <div className={styles.successPanel}>
           <Result
             status="success"
-            title="กรุณายืนยันอีเมล"
-            subTitle="เราส่งลิงก์ยืนยันไปยังอีเมลของคุณแล้ว ร้านจะถูกสร้างและเปิดใช้งานหลังจากกดลิงก์ภายใน 30 นาที"
-            extra={[<Link key="login" href="/admin/login"><Button>กลับไปหน้าเข้าสู่ระบบ</Button></Link>]}
+            title={t("shopSignup.done_title")}
+            subTitle={t("shopSignup.done_subtitle")}
+            extra={[<Link key="login" href="/admin/login"><Button>{t("shopSignup.back_to_login")}</Button></Link>]}
           />
         </div>
       </div>
@@ -62,38 +64,38 @@ export default function Page() {
   return (
     <div className={styles.page} data-shop-signup-page>
       <div className={styles.formPanel}>
-        <Card className={styles.card} title={<><ShopOutlined /> สมัครใช้ BMS — เปิดร้านของคุณ</>}>
+        <Card className={styles.card} title={<><ShopOutlined /> {t("shopSignup.heading")}</>}>
           <Paragraph type="secondary">
-            สร้างร้านฟรี เริ่มขายผ่าน LINE/TikTok ด้วย AI ตอบลูกค้าอัตโนมัติ — เริ่มที่แพ็กเกจ Free
+            {t("shopSignup.tagline")}
           </Paragraph>
           <Form form={form} layout="vertical" autoComplete="off">
-            <Form.Item label="ชื่อร้าน" name="shopName" rules={[{ required: true, message: "ระบุชื่อร้าน" }]}>
-              <Input placeholder="เช่น ร้านรองเท้าพี่หมี" size="large" />
+            <Form.Item label={t("shopSignup.shop_name")} name="shopName" rules={[{ required: true, message: t("shopSignup.shop_name_required") }]}>
+              <Input placeholder={t("shopSignup.shop_name_placeholder")} size="large" />
             </Form.Item>
             <Form.Item
-              label="ประเภทร้าน"
+              label={t("shopSignup.shop_type")}
               name="businessArchetype"
-              extra="ใช้เพื่อเตรียมหมวดสินค้า ตัวอย่างข้อมูล และคำแนะนำเริ่มต้นให้เหมาะกับร้านของคุณ"
+              extra={t("shopSignup.shop_type_hint")}
             >
               <Select
                 allowClear
-                placeholder="เริ่มจากร้านเปล่า หรือเลือก archetype"
+                placeholder={t("shopSignup.shop_type_placeholder")}
                 options={SHOP_ARCHETYPE_OPTIONS as any}
               />
             </Form.Item>
-            <Form.Item label="ชื่อผู้ใช้ (เจ้าของร้าน)" name="name">
-              <Input placeholder="ชื่อคุณ" />
+            <Form.Item label={t("shopSignup.owner_name")} name="name">
+              <Input placeholder={t("shopSignup.owner_name_placeholder")} />
             </Form.Item>
-            <Form.Item label="อีเมล" name="email" rules={[{ required: true, type: "email", message: "อีเมลไม่ถูกต้อง" }]}>
-              <Input placeholder="you@example.com" />
+            <Form.Item label={t("shopSignup.email")} name="email" rules={[{ required: true, type: "email", message: t("shopSignup.email_invalid") }]}>
+              <Input placeholder={t("shopSignup.email_placeholder")} />
             </Form.Item>
-            <Form.Item label="รหัสผ่าน" name="password" rules={[{ required: true, min: 6, message: "อย่างน้อย 6 ตัว" }]}>
-              <Input.Password placeholder="อย่างน้อย 6 ตัวอักษร" />
+            <Form.Item label={t("shopSignup.password")} name="password" rules={[{ required: true, min: 6, message: t("shopSignup.password_min") }]}>
+              <Input.Password placeholder={t("shopSignup.password_placeholder")} />
             </Form.Item>
-            <Button type="primary" size="large" block loading={loading} onClick={submit}>สร้างร้านฟรี</Button>
+            <Button type="primary" size="large" block loading={loading} onClick={submit}>{t("shopSignup.submit")}</Button>
           </Form>
           <Alert className={styles.loginAlert} type="info" showIcon
-            message="มีบัญชีแล้ว?" description={<Link href="/admin/login">เข้าสู่ระบบ</Link>} />
+            message={t("shopSignup.has_account")} description={<Link href="/admin/login">{t("shopSignup.login_link")}</Link>} />
         </Card>
       </div>
     </div>

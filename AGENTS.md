@@ -341,42 +341,69 @@ database dumps. Never commit `.env*`, access tokens, customer data, or credentia
 
 ## i18n coverage (what "bilingual" actually means today)
 
-There are **three i18n mechanisms in this codebase; only treat the first as real**:
+There are **four i18n mechanisms in this codebase; treat the first three as real, the fourth as dead**:
 
-- **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the one
-  actually wired in. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes
-  it into `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin — but the
-  dictionaries in `apps/web/i18n/{th,en}.ts` only have ~12 namespaces (`common, login, register,
-  forgot, reset, verify, header, landing, footer, notificationPage, searchPage, roadmap`). This is
-  what a per-user language preference (see CLAUDE.md's "Per-user language preference") actually
-  switches.
+- **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
+  dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08 the
+  dictionaries in `apps/web/i18n/{th,en}.ts` have **25 namespaces** (`common, login, register, forgot,
+  reset, shopSignup, verify, header, landing, footer, notificationPage, searchPage, blockedPage,
+  chatPage, couponWallet, roadmap, checkout, admin, admin_dashboard, admin_orders, admin_reports,
+  settingsPage, admin_settings, admin_store_profile, admin_report_subscription`) — up from ~12 before
+  a 2026-08 pass (see CLAUDE.md's "Public-page i18n coverage expanded" entry). This is what a
+  per-user language preference (see CLAUDE.md's "Per-user language preference") actually switches.
+  Grep `apps/web/i18n/th.ts`/`en.ts` for the current list before assuming a namespace exists or
+  doesn't — this count will keep moving.
+- **`apps/web/lib/static-page-i18n.ts`**'s `resolveBilingual()` — a page-local pattern, each page
+  hand-rolling its own `{ en: T, th: T }` content object read via `resolveBilingual(CONTENT, lang)`.
+  Used by the static/legal pages (`terms`, `privacy`, `pdpa`, `license`, `open-source`, `donate`,
+  `roadmap`) plus `/support`, `/help`, and `/demo` (added 2026-08 — `/demo` additionally needed its
+  keyword-based intent matcher extended to recognize both languages, since it's an interactive
+  simulated chat, not static prose, and the customer's raw typed/starter text drives its logic
+  regardless of UI language). Reach for this pattern for any new prose-heavy public page; it is *not*
+  a shared dictionary, so don't expect keys to be visible to other pages.
+- **Inline `lang === "en" ? {...} : {...}"` ternary** — functionally identical to `resolveBilingual()`
+  but not routed through the shared helper. Used by the public product storefront
+  (`app/(main)/shop/**`, all 8 files: `ShopDirectoryView.tsx`, `PublicProductCard.tsx`,
+  `ShopLandingView.tsx`, `ShopProductsView.tsx`, `PublicProductView.tsx`, and the 3 route `page.tsx`
+  metadata builders) and `/checkout`'s layout metadata. Fine as-is; prefer `resolveBilingual()` for
+  *new* pages so there's one less pattern to remember, but don't "fix" these into it — they work.
 - **`apps/web/lib/i18n.ts` + `lib/useTranslation.ts` + `apps/web/locales/`** — dead code. `grep` for
   `useTranslation(` outside its own definition returns zero hits anywhere in the app. Do not extend
   this; if you're touching it, delete it instead.
-- **`apps/web/lib/static-page-i18n.ts`**'s `resolveBilingual()` — a page-local pattern used only by
-  ~8 static/legal pages (terms, privacy, pdpa, license, etc.), each hand-rolling its own
-  `{ en: T, th: T }` content object. Not a shared dictionary; don't route new pages through it as if
-  it were one.
 
-**Real coverage, as of 2026-08**: public marketing/legal pages, auth forms (login/register/forgot/
-reset — `verify-email` is only partially migrated), and the public header/footer/nav chrome. That's
-it. **The admin app has zero i18n plumbing** — none of the ~74 files under
+**Real coverage, as of 2026-08**: every public marketing/legal page, every auth form (login/register/
+forgot/reset/verify-email — verify-email is now fully migrated, not partial), `/checkout`, the public
+product storefront (`/shop/**`), and a long tail of previously-Thai-only public utility pages —
+`/shop-signup`, `/settings` (the reachable Profile & Account/Security/My Posts/My Bookmarks panels;
+its dead `UsersPanel`/`Files`/`Logs` sub-views, reachable only by manually setting React state since
+their menu entries are commented out, were left English-only on purpose — not worth wiring dead UI),
+`/search`, `/blocked`, `/notification`, `/chat` (the chat page itself is a ~3000-line legacy
+English-only community feature; only 2 genuinely leaked Thai strings — a delete-confirm dialog and a
+"typing…" indicator — needed fixing), `/coupon/wallet` (a public bearer-link page with no client
+session, so it reads the `lang` cookie server-side via `getMessage()` rather than `useI18n()`),
+`/help`, and `/demo`. **The admin app still has zero i18n plumbing** — none of the ~74 files under
 `apps/web/app/(admin)/admin/**/*.tsx` call `useI18n()`, and roughly 61 of them (82%) contain literal
 Thai text directly in JSX, including the admin nav shell itself (`AdminSidebar.tsx`,
-`AdminLayoutClient.tsx`). The public checkout (3 files) and the public product storefront
-(`app/(main)/shop/**`, 8 files) are the same — 100% hardcoded Thai, no `useI18n()` calls at all.
-Generated report files (`lib/bms/documentGenerator.ts`) have no language parameter and are English-
-label-only regardless of the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not
-deliberate for XLSX/CSV, just not done).
+`AdminLayoutClient.tsx`). **Deliberately still Thai-only, not a gap to silently fix**:
+`/live-dashboard` (still mock-data-only; its copy will likely be reworked once wired to real queries,
+so translating now is wasted effort — see CLAUDE.md's "Live Dashboard" section). **English-only by
+age, not a Thai leak**: the legacy pre-BMS community pages `/my/posts`, `/my/profile`, `/post/**`,
+`/profile/[id]` — never localized either direction, out of scope. Generated report files
+(`lib/bms/documentGenerator.ts`) have no language parameter and are English-label-only regardless of
+the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not deliberate for XLSX/CSV,
+just not done).
 
-If you're asked to "make X bilingual," check which of the three systems above (if any) the file
-already uses before adding translated strings — most files use none, and adding real 2-language
+If you're asked to "make X bilingual," check which of the mechanisms above (if any) the file already
+uses before adding translated strings — most *admin* files use none, and adding real 2-language
 support to the admin app is a from-scratch, many-file effort (extract strings into new dictionary
-namespaces, not just add keys to the existing 12), not a small addition to what's already there. The
-DB-backed email template system (`getLatestEmailTemplate(key, locale)`, real `th`/`en` rows with
-genuinely distinct translated copy, `en`-fallback if a locale is missing) is the one subsystem that's
-already done well and needs no rework — model any future per-locale content store on it, not on the
-admin UI's current state.
+namespaces, not just add keys to existing ones), not a small addition to what's already there. Before
+trusting any specific file/namespace/line claim in this section, verify it against the current code —
+this section gets updated per-pass, not continuously, so treat counts as "true as of the date given,"
+not as live. The DB-backed email template system (`getLatestEmailTemplate(key, locale)`, real
+`th`/`en` rows with genuinely distinct translated copy, `en`-fallback if a locale is missing) is the
+one subsystem that's already done well and needs no rework — model any future per-locale content
+store on it, not on the admin UI's current state.
 
 **Per-user preference pattern** (theme, language — reuse this shape for any future one): store it as
 a plain `NOT NULL` column on `users` with a `CHECK` constraint and a sane default; expose it on both

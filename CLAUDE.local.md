@@ -1688,6 +1688,18 @@ run-history source" และไม่มีตารางบันทึกก
   `language = 'en'` เสมอ (ค่า default เดิมจาก `1.13`) แม้ product เป็นภาษาไทยเป็นหลัก — ไม่ใช่บั๊กใหม่
   แค่ไม่มีผลกระทบอะไรจนกว่าจะมี switcher รอบนี้
 
+**ต่อยอดแล้ว — ขยาย coverage หน้า public (2026-08)**: ตัวเลข "~15%"/"admin 61 ไฟล์" ด้านบนเป็นสถานะ ณ
+ตอนทำ switcher เท่านั้น ตอนนี้ล้าสมัยแล้ว — รอบถัดมาไล่แปลงหน้า public/auth ที่ยัง Thai-only หรือแปลครึ่งๆ
+กลางๆ จนครบ (`/verify-email` ที่ค้าง 2 ข้อความ, `/shop-signup`, `/settings` เฉพาะ panel ที่กดถึงได้จริง,
+`/search`, `/blocked`, `/notification`, `/chat` เฉพาะ 2 จุดที่หลุด, `/coupon/wallet`, และ `/help`/`/demo`
+ที่เดิมไม่มี i18n เลยเพราะเป็นหน้า prose/เดโมแบบโต้ตอบ) ตรวจซ้ำแล้วว่า `/support`/`/privacy`/`/roadmap`/
+`/donate`/`/license`/`/open-source`/`/pdpa`/`/terms` และ storefront สาธารณะ `/shop/**` เป็น 2 ภาษาอยู่แล้ว
+ตั้งแต่ก่อนรอบนี้ (ใช้ `resolveBilingual()`/ternary `lang==="en"?...` ของตัวเอง ไม่ใช่ gap) — ดู
+"Public-page i18n coverage expanded" ใน [CLAUDE.md](CLAUDE.md) และ § i18n coverage ใน
+[AGENTS.md](AGENTS.md) สำหรับรายละเอียดครบ (namespace ปัจจุบันในดิกชันนารีกลางคือ 25 ตัว ไม่ใช่ ~12) ·
+**ยังจริงอยู่**: admin (`/admin/**`) ทั้งหมดยัง 0% i18n เหมือนเดิม ไม่ถูกแตะในรอบนี้ · `/live-dashboard`
+ตั้งใจไม่แปล (รอข้อมูลจริง) · ยังไม่ได้ apply migration `7.56`/ทดสอบสลับภาษาจริงในเบราว์เซอร์ (ค้างจากเดิม)
+
 ## เติมข้อมูลทดสอบเร็ว ๆ
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
