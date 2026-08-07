@@ -1,7 +1,7 @@
 'use client';
-import { gql, useApolloClient } from "@apollo/client";
+import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
-  Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
+  Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer, Switch,
 } from "antd";
 import { useState, useRef, useEffect, Fragment } from "react";
 import {
@@ -93,6 +93,23 @@ const M_ASSISTANT = gql`
     }
   }
 `;
+const M_PHARMACY_TEST = gql`
+  mutation BmsPharmacyAssistantTest($message: String!, $session: BmsPharmacyAssistantSessionInput) {
+    bmsPharmacyAssistantTest(message: $message, session: $session) {
+      reply
+      session
+    }
+  }
+`;
+const Q_ME = gql`
+  query {
+    bmsMe {
+      id
+      email
+      tenant { id slug }
+    }
+  }
+`;
 
 // A3 sensitive → ปุ่ม Confirm ยิง mutation เดิม (permission-gated ที่ backend อยู่แล้ว)
 const CONFIRM_MUTATIONS: Record<
@@ -170,6 +187,75 @@ type Bubble = {
   error?: boolean;
   retryText?: string;
 };
+type PharmacySession = {
+  protocolKey?: string;
+  phase?: string;
+  protocolId?: string;
+  answers?: Record<string, string>;
+  currentQuestionKey?: string | null;
+  currentFieldKey?: string | null;
+};
+
+type QuickReply = { label: string; value: string };
+
+function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] {
+  if (!session) return [];
+  if (session.phase === "AWAITING_CONSENT") {
+    return [
+      { label: "ยินยอม", value: "ยินยอม" },
+      { label: "ไม่ยินยอม", value: "ไม่ยินยอม" },
+    ];
+  }
+
+  const fieldKey = session.currentFieldKey ?? session.currentQuestionKey ?? "";
+  if (["has_fever", "hydration_status", "blood_in_sputum", "blood_in_stool", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury", "breathing_difficulty", "chest_pain", "high_fever"].includes(fieldKey)) {
+    return [
+      { label: "มี", value: "มี" },
+      { label: "ไม่มี", value: "ไม่มี" },
+    ];
+  }
+  if (fieldKey === "severity") {
+    return [
+      { label: "1", value: "1" },
+      { label: "3", value: "3" },
+      { label: "5", value: "5" },
+      { label: "7", value: "7" },
+      { label: "10", value: "10" },
+    ];
+  }
+  if (fieldKey === "duration_days") {
+    return [
+      { label: "1 วัน", value: "1" },
+      { label: "3 วัน", value: "3" },
+      { label: "7 วัน", value: "7" },
+      { label: "2 สัปดาห์", value: "14" },
+    ];
+  }
+  if (fieldKey === "duration_hours") {
+    return [
+      { label: "6 ชม.", value: "6" },
+      { label: "12 ชม.", value: "12" },
+      { label: "1 วัน", value: "24" },
+      { label: "2 วัน", value: "48" },
+    ];
+  }
+  if (fieldKey === "frequency_per_day") {
+    return [
+      { label: "1 ครั้ง", value: "1" },
+      { label: "3 ครั้ง", value: "3" },
+      { label: "5 ครั้ง", value: "5" },
+      { label: "มากกว่า 5", value: "6" },
+    ];
+  }
+  if (fieldKey === "patient_age_years") {
+    return [
+      { label: "น้อยกว่า 2 ปี", value: "1" },
+      { label: "2-12 ปี", value: "6" },
+      { label: "ผู้ใหญ่", value: "18" },
+    ];
+  }
+  return [];
+}
 
 // ครอบคลุมกว้างกว่าเดิม ตามหมวดทูลจริงใน tools/catalog.ts (อ่าน A1 / เขียนไม่ sensitive A2 / เขียน sensitive A3)
 // ไม่ใช่ทุกทูลที่มี — เลือกตัวแทนแต่ละหมวดที่พนักงานพิมพ์ถามจริงบ่อยที่สุด
@@ -241,6 +327,7 @@ const QUICK_START: Array<{ label: string; fill: string }> = [
 
 export default function Page() {
   const client = useApolloClient();
+  const { data: meData } = useQuery(Q_ME);
   const isMobile = useIsMobile();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -253,14 +340,21 @@ export default function Page() {
   // ที่อยู่อีเมลที่แก้ไขได้ก่อนกด "ยืนยันส่ง" ของ proposal email_report — key = "bubbleIdx:propIdx"
   // เริ่มต้นจาก p.args.to ที่ AI เสนอมา แต่แก้ไขได้เสมอก่อนยิงจริง (ปลายทางเป็น free text ไม่ผ่านการยืนยันตัวตน)
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
+  const [pharmacyMode, setPharmacyMode] = useState(false);
+  const [pharmacySession, setPharmacySession] = useState<PharmacySession | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
+  const chatStorageKey = [
+    "bms-assistant-chat-v1",
+    meData?.bmsMe?.tenant?.id || "no-tenant",
+    meData?.bmsMe?.id || "no-user",
+  ].join(":");
 
   // โหลดแชทที่บันทึกไว้ตอน mount ครั้งเดียว — ต้องรอ mount ก่อน (localStorage ไม่มีบน server)
   // ไม่งั้น hydration mismatch; chatLoaded กันไม่ให้ effect เซฟทับค่าว่างก่อนโหลดเสร็จ
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+      const raw = localStorage.getItem(chatStorageKey);
       if (raw) setChat(JSON.parse(raw));
     } catch {
       // เก็บพัง (เช่น quota/JSON เพี้ยน) — เริ่มแชทใหม่เงียบๆ ดีกว่าทำหน้าอื่นพังไปด้วย
@@ -272,11 +366,11 @@ export default function Page() {
   useEffect(() => {
     if (!chatLoaded) return;
     try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chat));
+      localStorage.setItem(chatStorageKey, JSON.stringify(chat));
     } catch {
       // เต็ม/ปิด storage ไว้ — ปล่อยผ่าน ไม่ใช่ error ที่ควรขัดจังหวะการคุย
     }
-  }, [chat, chatLoaded]);
+  }, [chat, chatLoaded, chatStorageKey]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
@@ -305,8 +399,9 @@ export default function Page() {
 
   const clearChat = () => {
     setChat([]);
+    setPharmacySession(null);
     try {
-      localStorage.removeItem(CHAT_STORAGE_KEY);
+      localStorage.removeItem(chatStorageKey);
     } catch {
       // ไม่มีผลต่อ state ในหน้า — เคลียร์ที่ setChat([]) ไปแล้ว
     }
@@ -327,11 +422,17 @@ export default function Page() {
     setChat((c) => [...c, { role: "user", text: m, createdAt: new Date().toISOString() }]);
     setText("");
     try {
-      const { data } = await client.mutate({
-        mutation: M_ASSISTANT,
-        variables: { message: m, history },
-      });
-      const res = data?.bmsAssistant;
+      const { data } = pharmacyMode
+        ? await client.mutate({
+            mutation: M_PHARMACY_TEST,
+            variables: { message: m, session: pharmacySession },
+          })
+        : await client.mutate({
+            mutation: M_ASSISTANT,
+            variables: { message: m, history },
+          });
+      const res = pharmacyMode ? data?.bmsPharmacyAssistantTest : data?.bmsAssistant;
+      if (pharmacyMode) setPharmacySession(res?.session ?? null);
       setChat((c) => [
         ...c,
         {
@@ -370,8 +471,11 @@ export default function Page() {
     // ประวัติที่ถูกต้องคือทุกอย่างก่อนข้อความผู้ใช้ที่ทำให้เกิด error นี้ (อยู่ตำแหน่ง idx-1 เสมอ ตาม send())
     const history = chat.slice(0, Math.max(idx - 1, 0)).filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
     try {
-      const { data } = await client.mutate({ mutation: M_ASSISTANT, variables: { message: m, history } });
-      const res = data?.bmsAssistant;
+      const { data } = pharmacyMode
+        ? await client.mutate({ mutation: M_PHARMACY_TEST, variables: { message: m, session: pharmacySession } })
+        : await client.mutate({ mutation: M_ASSISTANT, variables: { message: m, history } });
+      const res = pharmacyMode ? data?.bmsPharmacyAssistantTest : data?.bmsAssistant;
+      if (pharmacyMode) setPharmacySession(res?.session ?? null);
       setChat((c) =>
         c.map((b, i) =>
           i === idx
@@ -544,6 +648,24 @@ export default function Page() {
         style={{ marginBottom: 12 }}
         message="ถาม/สั่งงานด้วยภาษาพูดได้ — AI ดึงข้อมูลจริงและทำงานตามสิทธิ์ของคุณ งานที่กระทบเงิน/สต็อก/ลบข้อมูลจะเป็น 'คำขอ' ให้กดยืนยันเองก่อนเสมอ"
       />
+      <Alert
+        type={pharmacyMode ? "success" : "warning"}
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={
+          <Space wrap>
+            <span>Pharmacy test mode</span>
+            <Switch
+              checked={pharmacyMode}
+              onChange={(checked) => {
+                setPharmacyMode(checked);
+                setPharmacySession(null);
+              }}
+            />
+          </Space>
+        }
+        description="เปิดเพื่อทดสอบ flow ซักอาการแบบร้านยาในหน้าผู้ช่วยนี้ โดยจะใช้ state ทดสอบแยกจาก assistant ปกติ"
+      />
 
       {isMobile && (
         <Button
@@ -699,9 +821,29 @@ export default function Page() {
                           onClick={() => retry(i)}
                           disabled={sending}
                           style={{ marginTop: 4, fontSize: 11.5, color: "#ff4d4f", borderColor: "rgba(255,77,79,.35)" }}
-                        >
+                          >
                           ลองส่งอีกครั้ง
                         </Button>
+                      )}
+
+                      {pharmacyMode && b.role === "assistant" && i === chat.length - 1 && (
+                        <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8, maxWidth: "88%" }}>
+                          {getPharmacyQuickReplies(pharmacySession).map((opt) => (
+                            <Button
+                              key={`${i}:${opt.value}`}
+                              size="small"
+                              onClick={() => send(opt.value)}
+                              disabled={sending}
+                              style={{
+                                borderRadius: 999,
+                                paddingInline: 14,
+                                height: 34,
+                              }}
+                            >
+                              {opt.label}
+                            </Button>
+                          ))}
+                        </div>
                       )}
 
                   {/* proposal cards (A3) — email_report มี UI เฉพาะของมัน (แก้ปลายทางได้ + เตือนอีเมล

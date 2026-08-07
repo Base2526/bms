@@ -13,6 +13,7 @@ import { loadPermissions } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { runToolLoop } from "@/lib/bms/tools/runtime";
 import { staffTools } from "@/lib/bms/tools/catalog";
+import { runPharmacyTestHarness } from "@/lib/bms/pharmacy/testHarness";
 
 const STAFF_SYSTEM = [
   "คุณเป็นผู้ช่วย AI สำหรับแอดมินร้านค้า ตอบเป็นภาษาไทย กระชับ ชัดเจน",
@@ -67,6 +68,18 @@ export const bmsAssistantResolvers = {
         proposals: loop.proposals,
         trace: loop.trace.map((t) => ({ tool: t.tool, ok: t.ok, summary: t.summary })),
       };
+    },
+    async bmsPharmacyAssistantTest(
+      _p: unknown,
+      args: { message: string; session?: { protocolKey?: string | null; phase?: string | null; protocolId?: string | null; answers?: Record<string, string>; currentQuestionKey?: string | null } },
+      ctx: any
+    ) {
+      requireAuth(ctx);
+      const tenantId = getTenantId(ctx);
+      const message = String(args.message ?? "").trim();
+      if (!message) throw new GraphQLError("message ว่าง", { extensions: { code: "BAD_USER_INPUT" } });
+      const result = await runPharmacyTestHarness(tenantId, message, args.session ?? null);
+      return { reply: result.reply, session: result.session };
     },
   },
 };

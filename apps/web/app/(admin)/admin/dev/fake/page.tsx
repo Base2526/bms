@@ -39,10 +39,11 @@ const KINDS = [
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
   { label: 'BMS Coupons', value: 'bms-coupons' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
+  { label: 'BMS Pharmacy Assessments', value: 'bms-pharmacy-assessments' },
   { label: 'Support Tickets', value: 'support-tickets' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage' | 'support-tickets';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
   const [kind, setKind] = useState<FakeKind>('bms-products');
@@ -91,7 +92,10 @@ export default function DevFakePage() {
       const res = await fetch('/api/dev/fake/provision-shop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: shopName.trim() || undefined }),
+        body: JSON.stringify({
+          name: shopName.trim() || undefined,
+          businessArchetype: shopArchetype || undefined,
+        }),
 
         credentials: 'include',
       });
@@ -300,12 +304,13 @@ export default function DevFakePage() {
           onChange={(v) => {
             const next = v as FakeKind;
             setKind(next);
-            if (next === 'bms-ai-usage') setCount(3);
-            else if (next === 'bms-restock-subscriptions') setCount(20);
-          }}
-          options={KINDS}
-          style={{ width: 180 }}
-        />
+          if (next === 'bms-ai-usage') setCount(3);
+          else if (next === 'bms-restock-subscriptions') setCount(20);
+          else if (next === 'bms-pharmacy-assessments') setCount(5);
+        }}
+        options={KINDS}
+        style={{ width: 180 }}
+      />
         <InputNumber min={1} max={2000} value={count} onChange={(v) => setCount(v || 1)} />
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
         <Popconfirm
@@ -336,6 +341,8 @@ export default function DevFakePage() {
           เติมหน้า Coupons · marker: <code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
           <b>Restock Subscriptions</b> สร้างหลายสถานะผสมกัน (ACTIVE / READY / NOTIFIED / FAILED / PURCHASED / CANCELLED) พร้อม conversation และ delivery history →
           เติมหน้า Restock Subscriptions ·
+          <b>Pharmacy Assessments</b> สร้างเคสตัวอย่าง 5 แบบ (normal / incomplete / allergy / high-risk / emergency) →
+          เติมหน้า Pharmacy Queue ·
           <b>AI Usage</b> เพิ่มตัวนับ quota เดือนนี้จริงใน <code>bms_ai_usage_monthly</code> เพื่อทดสอบหน้า Settings ·
           <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
       />

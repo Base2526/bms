@@ -3,6 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
+import bcrypt from "bcryptjs";
 
 // TypeScript Types
 type Role = {
@@ -64,14 +65,6 @@ mutation($user_id:ID!, $file:Upload!){
   uploadAvatar(user_id:$user_id, file:$file)
 }
 `;
-
-async function sha256Hex(input: string) {
-  const enc = new TextEncoder();
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode(input));
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 function FormEdit({ id }: { id: string }) {
   const [form] = Form.useForm();
@@ -190,7 +183,7 @@ function FormEdit({ id }: { id: string }) {
             if (!pwd) { message.error('Password is empty'); return; }
             if (pwd.length < 8) { message.error('Password must be at least 8 characters'); return; }
             if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
-            dataToSend.passwordHash = await sha256Hex(pwd);
+            dataToSend.passwordHash = await bcrypt.hash(pwd, 10);
           }
 
           // Validate role_id

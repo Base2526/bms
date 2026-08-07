@@ -2,6 +2,7 @@
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Card, Form, Input, Select, Button, message, Alert } from "antd";
 import React from "react";
+import bcrypt from "bcryptjs";
 
 const M_UPSERT = gql`
 mutation($data:UserInput!){
@@ -14,12 +15,6 @@ mutation($data:UserInput!){
 const Q_ROLES = gql`
 query { roles { id name } }
 `;
-
-async function sha256Hex(input: string) {
-  const enc = new TextEncoder();
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode(input));
-  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
 
 function FormNew(){
   const [form] = Form.useForm();
@@ -38,7 +33,7 @@ function FormNew(){
     const pwd2: string = v.confirmPassword?.trim() || '';
     if (!pwd) { message.error('Password is required'); return; }
     if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
-    const passwordHash = await sha256Hex(pwd);
+    const passwordHash = await bcrypt.hash(pwd, 10);
 
     await save({ variables:{
       data: {
