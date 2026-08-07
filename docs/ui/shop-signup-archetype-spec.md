@@ -100,6 +100,7 @@ Use stable snake_case ids so UI labels can evolve without data migrations.
 | `gadgets_accessories` | Gadgets & Accessories | compatibility and upsell |
 | `b2b_wholesale` | B2B / Wholesale | large orders, quotation, repeat buying |
 | `gifts_seasonal` | Gifts & Seasonal | occasion-led discovery and campaigns |
+| `pharmacy` | Pharmacy | health / pharmacy retail with repeat purchases |
 | `other` | Other | no archetype-specific defaults |
 
 ## Data model
@@ -153,6 +154,7 @@ Initial mapping on verification:
 | `gadgets_accessories` | `electronics` |
 | `b2b_wholesale` | `general` |
 | `gifts_seasonal` | `general` |
+| `pharmacy` | `general` |
 | `other` | `general` |
 
 This preserves existing AI defaults while allowing a richer archetype layer later.

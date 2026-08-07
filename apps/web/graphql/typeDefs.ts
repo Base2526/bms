@@ -2697,6 +2697,14 @@ export const typeDefs = /* GraphQL */ `
     role: String!
     text: String!
   }
+  input BmsPharmacyAssistantSessionInput {
+    protocolKey: String
+    phase: String
+    protocolId: String
+    answers: JSON
+    currentQuestionKey: String
+    currentFieldKey: String
+  }
   type BmsAssistantProposal {
     tool: String!
     mutation: String!
@@ -2712,6 +2720,10 @@ export const typeDefs = /* GraphQL */ `
     reply: String!
     proposals: [BmsAssistantProposal!]!
     trace: [BmsAssistantTrace!]!
+  }
+  type BmsPharmacyAssistantResult {
+    reply: String!
+    session: JSON!
   }
 
   type Mutation {
@@ -2897,6 +2909,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
+    bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
