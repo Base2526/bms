@@ -19,6 +19,7 @@ import {
   editAssessmentSummary,
   escalateToEmergency,
   getAssessment,
+  getAssessmentConversationHistory,
   listAssessments,
   recordConsent,
   recordMedicationSuggestions,
@@ -36,6 +37,8 @@ import {
   type UpsertPharmacyProtocolInput,
 } from "@/lib/bms/pharmacy/protocols";
 import { applyManualAnswers } from "@/lib/bms/pharmacy/intake";
+import { seedPharmacyQueueDemo } from "@/lib/bms/pharmacy/demo";
+import { listSellableProducts } from "@/lib/bms/products";
 
 function requireIntakeEnabled() {
   if (!isPharmacyIntakeEnabled()) {
@@ -115,6 +118,15 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.read");
       return getAssessment(getTenantId(ctx), args.id);
     },
+    async bmsPharmacyAssessmentConversationHistory(
+      _p: unknown,
+      args: { assessmentId: string; limit?: number },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      const limit = Math.min(Math.max(args.limit ?? 100, 1), 300);
+      return getAssessmentConversationHistory(getTenantId(ctx), args.assessmentId, limit);
+    },
     async bmsPharmacyAssessmentEvents(_p: unknown, args: { assessmentId: string; limit?: number }, ctx: any) {
       await requirePermission(ctx, "pharmacy.audit.read");
       const limit = Math.min(Math.max(args.limit ?? 100, 1), 300);
@@ -160,6 +172,24 @@ export const bmsPharmacyResolvers = {
     },
   },
   Mutation: {
+    async bmsSeedPharmacyQueueDemo(
+      _p: unknown,
+      args: {
+        protocolKey?: string | null;
+        answers?: Record<string, unknown> | null;
+        transcript?: Array<{ role?: unknown; text?: unknown; createdAt?: unknown }> | null;
+      },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      const tenantId = getTenantId(ctx);
+      const created = await seedPharmacyQueueDemo(tenantId, args.protocolKey, args.answers, args.transcript, ctx);
+      if (created === 0) {
+        throw new GraphQLError("ไม่พบ protocol ที่เปิดใช้งานสำหรับทดสอบ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      return true;
+    },
     async bmsAssignPharmacist(_p: unknown, args: { assessmentId: string; pharmacistUserId: string }, ctx: any) {
       requireIntakeEnabled();
       await requirePermission(ctx, "pharmacy.assessment.assign");
@@ -288,10 +318,28 @@ export const bmsPharmacyResolvers = {
         });
       }
       if (!assessment.protocolId) throw new GraphQLError("เคสนี้ยังไม่มี protocol ผูกอยู่", { extensions: { code: "BAD_USER_INPUT" } });
+      const medicationSafetyMissing: string[] = [];
+      if (assessment.patientAgeYears == null) medicationSafetyMissing.push("อายุ");
+      if (assessment.biologicalSex === "UNKNOWN") medicationSafetyMissing.push("เพศกำเนิด");
+      if (assessment.biologicalSex === "FEMALE" && assessment.pregnancyStatus === "UNKNOWN") {
+        medicationSafetyMissing.push("สถานะตั้งครรภ์");
+      }
+      if (assessment.biologicalSex === "FEMALE" && assessment.breastfeedingStatus === "UNKNOWN") {
+        medicationSafetyMissing.push("สถานะให้นมบุตร");
+      }
+      const structuredAnswers = assessment.structuredAnswers as Record<string, unknown>;
+      if (!("allergies" in structuredAnswers)) medicationSafetyMissing.push("ประวัติแพ้ยา");
+      if (!("current_medications" in structuredAnswers)) medicationSafetyMissing.push("ยาที่ใช้อยู่");
+      if (medicationSafetyMissing.length > 0) {
+        throw new GraphQLError(
+          `ข้อมูลความปลอดภัยยังไม่ครบ: ${medicationSafetyMissing.join(", ")} — กรุณาเก็บข้อมูลก่อนขอข้อเสนอจาก AI`,
+          { extensions: { code: "BAD_USER_INPUT" } }
+        );
+      }
       const protocol = await getPharmacyProtocol(tenantId, assessment.protocolId);
       if (!protocol) throw new GraphQLError("ไม่พบ protocol ของเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
-      const allergiesText = String((assessment.structuredAnswers as any)?.allergies ?? "");
-      const currentMedicationsText = String((assessment.structuredAnswers as any)?.current_medications ?? "");
+      const allergiesText = String(structuredAnswers.allergies ?? "");
+      const currentMedicationsText = String(structuredAnswers.current_medications ?? "");
       const ai = new AnthropicCompatiblePharmacyIntakeAI();
       const result = await ai.suggestMedications({
         tenantId,
@@ -311,9 +359,32 @@ export const bmsPharmacyResolvers = {
         });
       }
       const { kept, excluded } = filterMedicationSuggestionsAgainstAllergies(result, allergiesText);
+      const withCatalogMatches = async <T extends { drugName: string }>(suggestion: T) => {
+        const { items } = await listSellableProducts(tenantId, {
+          search: suggestion.drugName,
+          inStockOnly: true,
+          sort: "relevance",
+          limit: 3,
+        });
+        return {
+          ...suggestion,
+          catalogMatches: items.map((item) => ({
+            sku: item.sku,
+            name: item.name,
+            price: item.price,
+            availableTotal: item.availableTotal,
+          })),
+        };
+      };
       const stored = [
-        ...kept.map((s) => ({ ...s, excluded: false })),
-        ...excluded.map((e) => ({ ...e.suggestion, excluded: true, exclusionReason: e.reason })),
+        ...(await Promise.all(kept.map(async (s) => ({ ...(await withCatalogMatches(s)), excluded: false })))),
+        ...(await Promise.all(
+          excluded.map(async (e) => ({
+            ...(await withCatalogMatches(e.suggestion)),
+            excluded: true,
+            exclusionReason: e.reason,
+          }))
+        )),
       ];
       await recordMedicationSuggestions(tenantId, args.assessmentId, stored, actorId(ctx), ctx);
       return getAssessment(tenantId, args.assessmentId);

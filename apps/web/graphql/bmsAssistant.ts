@@ -13,7 +13,11 @@ import { loadPermissions } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { runToolLoop } from "@/lib/bms/tools/runtime";
 import { staffTools } from "@/lib/bms/tools/catalog";
-import { runPharmacyTestHarness } from "@/lib/bms/pharmacy/testHarness";
+import {
+  runPharmacyTestHarness,
+  type PharmacyTestPhase,
+  type PharmacyTestSession,
+} from "@/lib/bms/pharmacy/testHarness";
 
 const STAFF_SYSTEM = [
   "คุณเป็นผู้ช่วย AI สำหรับแอดมินร้านค้า ตอบเป็นภาษาไทย กระชับ ชัดเจน",
@@ -71,14 +75,28 @@ export const bmsAssistantResolvers = {
     },
     async bmsPharmacyAssistantTest(
       _p: unknown,
-      args: { message: string; session?: { protocolKey?: string | null; phase?: string | null; protocolId?: string | null; answers?: Record<string, string>; currentQuestionKey?: string | null } },
+      args: { message: string; session?: { protocolKey?: string | null; phase?: string | null; protocolId?: string | null; answers?: Record<string, string | number>; currentQuestionKey?: string | null; currentFieldKey?: string | null } },
       ctx: any
     ) {
       requireAuth(ctx);
       const tenantId = getTenantId(ctx);
       const message = String(args.message ?? "").trim();
       if (!message) throw new GraphQLError("message ว่าง", { extensions: { code: "BAD_USER_INPUT" } });
-      const result = await runPharmacyTestHarness(tenantId, message, args.session ?? null);
+      const validPhases = new Set<PharmacyTestPhase>(["NONE", "AWAITING_CONSENT", "ASKING", "WAITING"]);
+      const requestedPhase = args.session?.phase;
+      const session: PharmacyTestSession | null = args.session
+        ? {
+            protocolKey: args.session.protocolKey ?? undefined,
+            phase: requestedPhase && validPhases.has(requestedPhase as PharmacyTestPhase)
+              ? (requestedPhase as PharmacyTestPhase)
+              : undefined,
+            protocolId: args.session.protocolId ?? undefined,
+            answers: args.session.answers ?? undefined,
+            currentQuestionKey: args.session.currentQuestionKey ?? undefined,
+            currentFieldKey: args.session.currentFieldKey ?? undefined,
+          }
+        : null;
+      const result = await runPharmacyTestHarness(tenantId, message, session);
       return { reply: result.reply, session: result.session };
     },
   },

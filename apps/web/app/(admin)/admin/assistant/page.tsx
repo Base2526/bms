@@ -4,6 +4,7 @@ import {
   Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer, Switch,
 } from "antd";
 import { useState, useRef, useEffect, Fragment } from "react";
+import { useRouter } from "next/navigation";
 import {
   SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
   DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
@@ -101,6 +102,11 @@ const M_PHARMACY_TEST = gql`
     }
   }
 `;
+const M_SEED_PHARMACY_QUEUE = gql`
+  mutation BmsSeedPharmacyQueueDemo($protocolKey: String, $answers: JSON, $transcript: JSON) {
+    bmsSeedPharmacyQueueDemo(protocolKey: $protocolKey, answers: $answers, transcript: $transcript)
+  }
+`;
 const Q_ME = gql`
   query {
     bmsMe {
@@ -191,7 +197,7 @@ type PharmacySession = {
   protocolKey?: string;
   phase?: string;
   protocolId?: string;
-  answers?: Record<string, string>;
+  answers?: Record<string, string | number>;
   currentQuestionKey?: string | null;
   currentFieldKey?: string | null;
 };
@@ -208,7 +214,7 @@ function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] 
   }
 
   const fieldKey = session.currentFieldKey ?? session.currentQuestionKey ?? "";
-  if (["has_fever", "hydration_status", "blood_in_sputum", "blood_in_stool", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury", "breathing_difficulty", "chest_pain", "high_fever"].includes(fieldKey)) {
+  if (["has_fever", "hydration_status", "blood_in_sputum", "blood_in_stool", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury", "breathing_difficulty", "chest_pain", "high_fever", "pregnancy_status", "breastfeeding_status"].includes(fieldKey)) {
     return [
       { label: "มี", value: "มี" },
       { label: "ไม่มี", value: "ไม่มี" },
@@ -253,6 +259,25 @@ function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] 
       { label: "2-12 ปี", value: "6" },
       { label: "ผู้ใหญ่", value: "18" },
     ];
+  }
+  if (fieldKey === "biological_sex") {
+    return [
+      { label: "หญิง", value: "หญิง" },
+      { label: "ชาย", value: "ชาย" },
+    ];
+  }
+  if (fieldKey === "sputum") {
+    return [
+      { label: "ไม่มีเสมหะ", value: "ไม่มีเสมหะ" },
+      { label: "เสมหะใส", value: "เสมหะใส" },
+      { label: "เสมหะเหลือง/เขียว", value: "เสมหะเหลืองหรือเขียว" },
+    ];
+  }
+  if (fieldKey === "allergies") {
+    return [{ label: "ไม่เคยแพ้ยา", value: "ไม่เคยแพ้ยา" }];
+  }
+  if (fieldKey === "current_medications") {
+    return [{ label: "ไม่ได้ใช้ยาอยู่", value: "ไม่ได้ใช้ยาอยู่" }];
   }
   return [];
 }
@@ -326,6 +351,7 @@ const QUICK_START: Array<{ label: string; fill: string }> = [
 ];
 
 export default function Page() {
+  const router = useRouter();
   const client = useApolloClient();
   const { data: meData } = useQuery(Q_ME);
   const isMobile = useIsMobile();
@@ -342,6 +368,7 @@ export default function Page() {
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
   const [pharmacyMode, setPharmacyMode] = useState(false);
   const [pharmacySession, setPharmacySession] = useState<PharmacySession | null>(null);
+  const [seedingQueue, setSeedingQueue] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
   const chatStorageKey = [
@@ -404,6 +431,31 @@ export default function Page() {
       localStorage.removeItem(chatStorageKey);
     } catch {
       // ไม่มีผลต่อ state ในหน้า — เคลียร์ที่ setChat([]) ไปแล้ว
+    }
+  };
+
+  const seedPharmacyQueue = async () => {
+    setSeedingQueue(true);
+    try {
+      const { data } = await client.mutate({
+        mutation: M_SEED_PHARMACY_QUEUE,
+        variables: {
+          protocolKey: pharmacySession?.protocolKey ?? null,
+          answers: pharmacySession?.answers ?? null,
+          transcript: chat.map((bubble) => ({
+            role: bubble.role,
+            text: bubble.text,
+            createdAt: bubble.createdAt ?? null,
+          })),
+        },
+      });
+      if (!data?.bmsSeedPharmacyQueueDemo) throw new Error("seed failed");
+      message.success("ส่งเคสจากบทสนทนานี้เข้าคิวเภสัชกรแล้ว");
+      router.push("/admin/pharmacy-queue");
+    } catch (e: any) {
+      message.error(e?.message || "สร้างเคสเข้าคิวไม่สำเร็จ");
+    } finally {
+      setSeedingQueue(false);
     }
   };
 
@@ -826,26 +878,6 @@ export default function Page() {
                         </Button>
                       )}
 
-                      {pharmacyMode && b.role === "assistant" && i === chat.length - 1 && (
-                        <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8, maxWidth: "88%" }}>
-                          {getPharmacyQuickReplies(pharmacySession).map((opt) => (
-                            <Button
-                              key={`${i}:${opt.value}`}
-                              size="small"
-                              onClick={() => send(opt.value)}
-                              disabled={sending}
-                              style={{
-                                borderRadius: 999,
-                                paddingInline: 14,
-                                height: 34,
-                              }}
-                            >
-                              {opt.label}
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-
                   {/* proposal cards (A3) — email_report มี UI เฉพาะของมัน (แก้ปลายทางได้ + เตือนอีเมล
                       แปลกหน้า) เพราะปลายทางเป็น free text ที่ไม่ผ่านการยืนยันตัวตน ต่างจาก proposal อื่น
                       ที่พารามิเตอร์ทั้งหมดมาจากระบบที่รู้จักอยู่แล้ว (orderId/paymentId/sku ฯลฯ) */}
@@ -1073,6 +1105,58 @@ export default function Page() {
             ส่ง
           </Button>
         </div>
+
+        {pharmacyMode && (
+          <div
+            style={{
+              padding: "0 12px 12px",
+              borderTop: "1px solid var(--app-border)",
+              background: "var(--app-surface-2)",
+            }}
+          >
+            <Space direction="vertical" style={{ width: "100%" }} size={8}>
+              <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+                <Text strong style={{ fontSize: 12.5 }}>Quick reply สำหรับโหมด pharmacy</Text>
+                <Space wrap>
+                  <Button size="small" onClick={() => setPharmacySession(null)}>
+                    รีเซ็ตคำถาม
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={seedPharmacyQueue}
+                    loading={seedingQueue}
+                    disabled={!pharmacySession?.protocolKey || Object.keys(pharmacySession.answers ?? {}).length === 0}
+                  >
+                    ส่งเคสนี้เข้าคิว
+                  </Button>
+                </Space>
+              </Space>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {getPharmacyQuickReplies(pharmacySession).length > 0 ? (
+                  getPharmacyQuickReplies(pharmacySession).map((opt) => (
+                    <Button
+                      key={opt.value}
+                      size="small"
+                      onClick={() => send(opt.value)}
+                      disabled={sending}
+                      style={{
+                        borderRadius: 999,
+                        paddingInline: 14,
+                        height: 34,
+                      }}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    ยังไม่มี quick reply สำหรับสถานะนี้ ลองพิมพ์อาการหรือกด “สร้างเคสเข้าคิว” เพื่อเทสหน้า queue
+                  </Text>
+                )}
+              </div>
+            </Space>
+          </div>
+        )}
       </Card>
 
       {!isMobile && (
