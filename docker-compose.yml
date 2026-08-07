@@ -70,6 +70,9 @@ services:
       GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
       GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
       GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
+      PHARMACY_INTAKE_ENABLED: ${PHARMACY_INTAKE_ENABLED}
+      PHARMACY_AI_ENABLED: ${PHARMACY_AI_ENABLED}
+      PHARMACY_PROTOCOLS_ENABLED: ${PHARMACY_PROTOCOLS_ENABLED}
       # BMS AI (shared key + model override + cron auth) — ต้องมาจากไฟล์ env ที่ compose ใช้จริง
       # (--env-file .env.prod ทำให้ค่า ${...} นี้ resolve ได้เท่านั้น ไม่ inject เข้า container โดยอัตโนมัติ)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
