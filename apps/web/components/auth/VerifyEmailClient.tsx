@@ -10,6 +10,8 @@ type VerifyStrings = {
   invalidLink: string;
   success: string;
   failed: string;
+  shopVerified: string;
+  shopEmailTaken: string;
 };
 
 const VERIFY_EMAIL = gql`
@@ -42,6 +44,8 @@ function VerifyEmailClientInner({ token }: Props) {
       invalidLink: t("verify.invalid_link"),
       success: t("verify.success"),
       failed: t("verify.failed"),
+      shopVerified: t("verify.shop_verified"),
+      shopEmailTaken: t("verify.shop_email_taken"),
     }),
     [t]
   );
@@ -63,12 +67,12 @@ function VerifyEmailClientInner({ token }: Props) {
         if (cancelled) return;
         const shopStatus = data?.bmsVerifyShopSignup?.status;
         if (shopStatus === "VERIFIED") {
-          setStatus("ยืนยันอีเมลและเปิดร้านสำเร็จ กำลังไปหน้าเข้าสู่ระบบเพื่อเริ่ม onboarding...");
+          setStatus(strings.shopVerified);
           window.setTimeout(() => window.location.assign("/admin/login?next=/admin/getting-started"), 1200);
           return;
         }
         if (shopStatus === "EMAIL_TAKEN") {
-          setStatus("อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบหรือขอรีเซ็ตรหัสผ่าน");
+          setStatus(strings.shopEmailTaken);
           return;
         }
         const fallback = await verifyEmail({ variables: { token } });
@@ -83,7 +87,17 @@ function VerifyEmailClientInner({ token }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [token, verifyEmail, verifyShopSignup, strings.failed, strings.invalidLink, strings.success, strings.verifying]);
+  }, [
+    token,
+    verifyEmail,
+    verifyShopSignup,
+    strings.failed,
+    strings.invalidLink,
+    strings.success,
+    strings.verifying,
+    strings.shopVerified,
+    strings.shopEmailTaken,
+  ]);
 
   const style = useMemo(() => ({ padding: 40, textAlign: "center" as const }), []);
 

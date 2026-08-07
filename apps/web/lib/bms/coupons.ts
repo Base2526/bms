@@ -474,10 +474,11 @@ export function verifyCouponWalletToken(token: string): CouponWalletTokenPayload
 }
 
 export async function listCouponWalletByToken(
-  token: string
+  token: string,
+  invalidReason: string = "ลิงก์กระเป๋าคูปองไม่ถูกต้องหรือหมดอายุแล้ว"
 ): Promise<{ ok: true; coupons: CustomerCouponWalletItem[] } | { ok: false; reason: string }> {
   const payload = verifyCouponWalletToken(token);
-  if (!payload) return { ok: false, reason: "ลิงก์กระเป๋าคูปองไม่ถูกต้องหรือหมดอายุแล้ว" };
+  if (!payload) return { ok: false, reason: invalidReason };
   const coupons = await listCustomerCouponWallet(payload.tenantId, { customerId: payload.customerId });
   return { ok: true, coupons };
 }

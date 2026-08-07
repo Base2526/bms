@@ -114,32 +114,32 @@ export default function SearchPage() {
   const usersTitle = (
     <span>
       <UserOutlined style={{ marginRight: 8 }} />
-      ผู้ใช้ ({users.length})
-      {users.length === 0 && " ไม่พบผู้ใช้"}
+      {t("searchPage.users_title", { count: users.length })}
+      {users.length === 0 && ` ${t("searchPage.users_none")}`}
     </span>
   );
 
   const phonesTitle = (
     <span>
       <PhoneOutlined style={{ marginRight: 8 }} />
-      เบอร์โทรที่ถูกรายงาน ({phones.length})
-      {phones.length === 0 && " ไม่พบบันทึกเบอร์โทร"}
+      {t("searchPage.phones_title", { count: phones.length })}
+      {phones.length === 0 && ` ${t("searchPage.phones_none")}`}
     </span>
   );
 
   const banksTitle = (
     <span>
       <BankOutlined style={{ marginRight: 8 }} />
-      บัญชีธนาคารต้องสงสัย ({bankAccounts.length})
-      {bankAccounts.length === 0 && " ไม่พบบัญชีต้องสงสัย"}
+      {t("searchPage.banks_title", { count: bankAccounts.length })}
+      {bankAccounts.length === 0 && ` ${t("searchPage.banks_none")}`}
     </span>
   );
 
   const postsTitle = (
     <span>
       <FileTextOutlined style={{ marginRight: 8 }} />
-      รายงาน / โพสต์ ({posts.length})
-      {posts.length === 0 && " ไม่พบรายงาน"}
+      {t("searchPage.posts_title", { count: posts.length })}
+      {posts.length === 0 && ` ${t("searchPage.posts_none")}`}
     </span>
   );
 
@@ -302,7 +302,7 @@ export default function SearchPage() {
                                 size="small"
                                 onClick={(e) => goToPost(pid, e)}
                               >
-                                ไปยังโพสต์ #{pid}
+                                {t("searchPage.go_to_post", { id: pid })}
                               </Button>
                             ))}
                           </Space>
@@ -313,7 +313,7 @@ export default function SearchPage() {
                             type="secondary"
                             style={{ fontSize: 12 }}
                           >
-                            รายงานล่าสุด:{" "}
+                            {t("searchPage.last_report")}{" "}
                             {new Date(
                               item.last_report_at
                             ).toLocaleString()}
@@ -385,7 +385,7 @@ export default function SearchPage() {
                                 size="small"
                                 onClick={(e) => goToPost(pid, e)}
                               >
-                                ไปยังโพสต์ #{pid}
+                                {t("searchPage.go_to_post", { id: pid })}
                               </Button>
                             ))}
                           </Space>
@@ -396,7 +396,7 @@ export default function SearchPage() {
                             type="secondary"
                             style={{ fontSize: 12 }}
                           >
-                            รายงานล่าสุด:{" "}
+                            {t("searchPage.last_report")}{" "}
                             {new Date(
                               item.last_report_at
                             ).toLocaleString()}

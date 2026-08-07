@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { listCouponWalletByToken, type CustomerCouponWalletItem } from "@/lib/bms/coupons";
+import { getMessage, type Lang } from "@/i18n";
 import styles from "./wallet.module.css";
 
 type WalletPageProps = {
@@ -7,42 +9,46 @@ type WalletPageProps = {
 };
 
 type CouponGroupKey = "ready" | "upcoming" | "used" | "unavailable";
+type T = (key: string, vars?: Record<string, string | number>) => string;
 
-const sectionMeta: Record<CouponGroupKey, { title: string; empty: string; accent: string }> = {
-  ready: { title: "พร้อมใช้", empty: "ยังไม่มีคูปองที่พร้อมใช้ตอนนี้", accent: "green" },
-  upcoming: { title: "รอเริ่มใช้", empty: "ยังไม่มีคูปองที่รอเริ่มใช้", accent: "orange" },
-  used: { title: "ใช้แล้ว / จองอยู่", empty: "ยังไม่มีคูปองที่ใช้แล้วหรือจองกับออเดอร์", accent: "blue" },
-  unavailable: { title: "ใช้ไม่ได้ / หมดอายุ", empty: "ยังไม่มีคูปองที่ใช้ไม่ได้", accent: "gray" },
-};
+function sectionMeta(t: T): Record<CouponGroupKey, { title: string; empty: string; accent: string }> {
+  return {
+    ready: { title: t("couponWallet.section_ready_title"), empty: t("couponWallet.section_ready_empty"), accent: "green" },
+    upcoming: { title: t("couponWallet.section_upcoming_title"), empty: t("couponWallet.section_upcoming_empty"), accent: "orange" },
+    used: { title: t("couponWallet.section_used_title"), empty: t("couponWallet.section_used_empty"), accent: "blue" },
+    unavailable: { title: t("couponWallet.section_unavailable_title"), empty: t("couponWallet.section_unavailable_empty"), accent: "gray" },
+  };
+}
 
-function formatDate(value: string | null): string {
-  if (!value) return "ไม่ระบุ";
+function formatDate(value: string | null, lang: Lang, t: T): string {
+  if (!value) return t("couponWallet.unspecified");
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "ไม่ระบุ";
-  return date.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  if (Number.isNaN(date.getTime())) return t("couponWallet.unspecified");
+  return date.toLocaleDateString(lang === "en" ? "en-US" : "th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function discountText(coupon: CustomerCouponWalletItem): string {
+function discountText(coupon: CustomerCouponWalletItem, lang: Lang, t: T): string {
+  const locale = lang === "en" ? "en-US" : "th-TH";
   return coupon.type === "PERCENT"
-    ? `ลด ${Number(coupon.value).toLocaleString("th-TH")}%`
-    : `ลด ${Number(coupon.value).toLocaleString("th-TH")} บาท`;
+    ? t("couponWallet.discount_percent", { value: Number(coupon.value).toLocaleString(locale) })
+    : t("couponWallet.discount_amount", { value: Number(coupon.value).toLocaleString(locale) });
 }
 
-function stateText(coupon: CustomerCouponWalletItem): string {
-  if (coupon.state === "REDEEMED") return "ใช้แล้ว";
-  if (coupon.state === "RESERVED") return "จองกับออเดอร์อยู่";
-  if (coupon.state === "EXPIRED") return "หมดอายุ";
-  if (coupon.state === "REVOKED") return "ใช้ไม่ได้";
-  if (coupon.startsAt && new Date(coupon.startsAt).getTime() > Date.now()) return "รอเริ่มใช้";
-  if (coupon.available) return "พร้อมใช้";
-  return "ใช้ไม่ได้";
+function stateText(coupon: CustomerCouponWalletItem, t: T): string {
+  if (coupon.state === "REDEEMED") return t("couponWallet.state_redeemed");
+  if (coupon.state === "RESERVED") return t("couponWallet.state_reserved");
+  if (coupon.state === "EXPIRED") return t("couponWallet.state_expired");
+  if (coupon.state === "REVOKED") return t("couponWallet.state_revoked");
+  if (coupon.startsAt && new Date(coupon.startsAt).getTime() > Date.now()) return t("couponWallet.state_upcoming");
+  if (coupon.available) return t("couponWallet.state_ready");
+  return t("couponWallet.state_unavailable");
 }
 
-function badgeTone(coupon: CustomerCouponWalletItem): string {
-  const state = stateText(coupon);
-  if (state === "พร้อมใช้") return styles.badgeReady;
-  if (state === "รอเริ่มใช้") return styles.badgeUpcoming;
-  if (state === "ใช้แล้ว" || state === "จองกับออเดอร์อยู่") return styles.badgeUsed;
+function badgeTone(coupon: CustomerCouponWalletItem, t: T): string {
+  const state = stateText(coupon, t);
+  if (state === t("couponWallet.state_ready")) return styles.badgeReady;
+  if (state === t("couponWallet.state_upcoming")) return styles.badgeUpcoming;
+  if (state === t("couponWallet.state_redeemed") || state === t("couponWallet.state_reserved")) return styles.badgeUsed;
   return styles.badgeUnavailable;
 }
 
@@ -59,11 +65,14 @@ function groupCoupons(coupons: CustomerCouponWalletItem[]): Record<CouponGroupKe
   };
 }
 
-function CouponCard({ coupon }: { coupon: CustomerCouponWalletItem }) {
-  const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
+function CouponCard({ coupon, lang, t }: { coupon: CustomerCouponWalletItem; lang: Lang; t: T }) {
+  const locale = lang === "en" ? "en-US" : "th-TH";
+  const minOrder = coupon.minOrderAmount
+    ? t("couponWallet.min_amount", { value: Number(coupon.minOrderAmount).toLocaleString(locale) })
+    : t("couponWallet.no_min");
   const remaining = coupon.remainingRedemptions == null
-    ? "ไม่จำกัดจำนวนครั้ง"
-    : `เหลือ ${coupon.remainingRedemptions.toLocaleString("th-TH")} ครั้ง`;
+    ? t("couponWallet.unlimited_uses")
+    : t("couponWallet.remaining_uses", { n: coupon.remainingRedemptions.toLocaleString(locale) });
   const orderId = coupon.reservedOrderId || coupon.redeemedOrderId;
 
   return (
@@ -75,29 +84,29 @@ function CouponCard({ coupon }: { coupon: CustomerCouponWalletItem }) {
       <div className={styles.couponMain}>
         <div className={styles.couponTop}>
           <div>
-            <p className={styles.label}>รหัสคูปอง</p>
+            <p className={styles.label}>{t("couponWallet.code_label")}</p>
             <h3 className={styles.code}>{coupon.code}</h3>
           </div>
-          <span className={`${styles.statusBadge} ${badgeTone(coupon)}`}>{stateText(coupon)}</span>
+          <span className={`${styles.statusBadge} ${badgeTone(coupon, t)}`}>{stateText(coupon, t)}</span>
         </div>
 
-        <div className={styles.discount}>{discountText(coupon)}</div>
+        <div className={styles.discount}>{discountText(coupon, lang, t)}</div>
 
         <dl className={styles.conditions}>
           <div>
-            <dt>ขั้นต่ำ</dt>
+            <dt>{t("couponWallet.min_label")}</dt>
             <dd>{minOrder}</dd>
           </div>
           <div>
-            <dt>เริ่มใช้</dt>
-            <dd>{coupon.startsAt ? formatDate(coupon.startsAt) : "ใช้ได้แล้ว"}</dd>
+            <dt>{t("couponWallet.starts_label")}</dt>
+            <dd>{coupon.startsAt ? formatDate(coupon.startsAt, lang, t) : t("couponWallet.starts_now")}</dd>
           </div>
           <div>
-            <dt>หมดอายุ</dt>
-            <dd>{formatDate(coupon.expiresAt)}</dd>
+            <dt>{t("couponWallet.expires_label")}</dt>
+            <dd>{formatDate(coupon.expiresAt, lang, t)}</dd>
           </div>
           <div>
-            <dt>สิทธิ์</dt>
+            <dt>{t("couponWallet.rights_label")}</dt>
             <dd>{remaining}</dd>
           </div>
         </dl>
@@ -105,7 +114,11 @@ function CouponCard({ coupon }: { coupon: CustomerCouponWalletItem }) {
         {(coupon.reason || orderId) && (
           <div className={styles.noteBox}>
             {coupon.reason && <p>{coupon.reason}</p>}
-            {orderId && <p>{coupon.state === "RESERVED" ? "จองกับออเดอร์" : "ใช้กับออเดอร์"} #{orderId.slice(0, 8)}</p>}
+            {orderId && (
+              <p>
+                {coupon.state === "RESERVED" ? t("couponWallet.reserved_with_order") : t("couponWallet.used_with_order")} #{orderId.slice(0, 8)}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -113,17 +126,18 @@ function CouponCard({ coupon }: { coupon: CustomerCouponWalletItem }) {
   );
 }
 
-function CouponSection({ id, coupons }: { id: CouponGroupKey; coupons: CustomerCouponWalletItem[] }) {
-  const meta = sectionMeta[id];
+function CouponSection({ id, coupons, lang, t }: { id: CouponGroupKey; coupons: CustomerCouponWalletItem[]; lang: Lang; t: T }) {
+  const meta = sectionMeta(t)[id];
+  const locale = lang === "en" ? "en-US" : "th-TH";
   return (
     <section id={id} className={styles.section}>
       <div className={styles.sectionHeader}>
         <h2>{meta.title}</h2>
-        <span>{coupons.length.toLocaleString("th-TH")} ใบ</span>
+        <span>{coupons.length.toLocaleString(locale)} {t("couponWallet.count_unit")}</span>
       </div>
       {coupons.length > 0 ? (
         <div className={styles.couponList}>
-          {coupons.map((coupon) => <CouponCard key={coupon.walletId || coupon.id} coupon={coupon} />)}
+          {coupons.map((coupon) => <CouponCard key={coupon.walletId || coupon.id} coupon={coupon} lang={lang} t={t} />)}
         </div>
       ) : (
         <div className={styles.emptyState}>{meta.empty}</div>
@@ -133,16 +147,23 @@ function CouponSection({ id, coupons }: { id: CouponGroupKey; coupons: CustomerC
 }
 
 export default async function CouponWalletPage({ searchParams }: WalletPageProps) {
+  const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
+  const t: T = (key, vars) => getMessage(lang, key, vars);
+  const locale = lang === "en" ? "en-US" : "th-TH";
+
   const params = await searchParams;
   const token = typeof params?.t === "string" ? params.t : "";
-  const result = token ? await listCouponWalletByToken(token) : { ok: false as const, reason: "ไม่พบลิงก์กระเป๋าคูปอง" };
+  const result = token
+    ? await listCouponWalletByToken(token, t("couponWallet.invalid_or_expired"))
+    : { ok: false as const, reason: t("couponWallet.link_not_found") };
   const coupons = result.ok ? result.coupons : [];
   const groups = groupCoupons(coupons);
+  const meta = sectionMeta(t);
   const summary: Array<{ id: CouponGroupKey; label: string; count: number }> = [
-    { id: "ready", label: "พร้อมใช้", count: groups.ready.length },
-    { id: "upcoming", label: "รอเริ่ม", count: groups.upcoming.length },
-    { id: "used", label: "ใช้แล้ว/จอง", count: groups.used.length },
-    { id: "unavailable", label: "ใช้ไม่ได้", count: groups.unavailable.length },
+    { id: "ready", label: meta.ready.title, count: groups.ready.length },
+    { id: "upcoming", label: t("couponWallet.summary_upcoming"), count: groups.upcoming.length },
+    { id: "used", label: t("couponWallet.summary_used"), count: groups.used.length },
+    { id: "unavailable", label: meta.unavailable.title, count: groups.unavailable.length },
   ];
 
   return (
@@ -153,13 +174,13 @@ export default async function CouponWalletPage({ searchParams }: WalletPageProps
             <div className={styles.logoMark}>🎟</div>
             <div>
               <p className={styles.eyebrow}>Coupon Wallet</p>
-              <p className={styles.brandSub}>กระเป๋าคูปองส่วนตัวของคุณ</p>
+              <p className={styles.brandSub}>{t("couponWallet.brand_sub")}</p>
             </div>
           </div>
 
-          <h1>คูปองของคุณอยู่ที่นี่แล้ว</h1>
+          <h1>{t("couponWallet.hero_title")}</h1>
           <p className={styles.lead}>
-            ร้านได้เพิ่มคูปองเข้ากระเป๋าของคุณเรียบร้อย ไม่ต้องกดรับซ้ำ ส่วนลดจะถูกตรวจและใช้จริงตอนร้านสร้างออเดอร์ค่ะ
+            {t("couponWallet.hero_lead")}
           </p>
         </div>
 
@@ -168,30 +189,30 @@ export default async function CouponWalletPage({ searchParams }: WalletPageProps
             <>
               <div className={styles.summaryGrid}>
                 {summary.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className={`${styles.summaryCard} ${styles[sectionMeta[item.id].accent]}`}>
-                    <strong>{item.count.toLocaleString("th-TH")}</strong>
+                  <a key={item.id} href={`#${item.id}`} className={`${styles.summaryCard} ${styles[meta[item.id].accent]}`}>
+                    <strong>{item.count.toLocaleString(locale)}</strong>
                     <span>{item.label}</span>
                   </a>
                 ))}
               </div>
 
               <div className={styles.infoStrip}>
-                <span>วิธีใช้</span>
-                <p>แจ้งร้านว่าต้องการใช้คูปองใบไหนตอนสั่งซื้อ ระบบจะตรวจยอดขั้นต่ำ วันหมดอายุ และสิทธิ์คงเหลืออีกครั้งก่อนลดราคา</p>
+                <span>{t("couponWallet.howto_label")}</span>
+                <p>{t("couponWallet.howto_text")}</p>
               </div>
 
               {coupons.length === 0 ? (
                 <div className={styles.emptyWallet}>
                   <div className={styles.emptyIcon}>🎁</div>
-                  <h2>ยังไม่มีคูปองในบัญชีนี้</h2>
-                  <p>ถ้ามีโปรโมชันใหม่ ร้านจะแจ้งและเพิ่มคูปองให้คุณอัตโนมัติค่ะ</p>
+                  <h2>{t("couponWallet.empty_wallet_title")}</h2>
+                  <p>{t("couponWallet.empty_wallet_text")}</p>
                 </div>
               ) : (
                 <>
-                  <CouponSection id="ready" coupons={groups.ready} />
-                  <CouponSection id="upcoming" coupons={groups.upcoming} />
-                  <CouponSection id="used" coupons={groups.used} />
-                  <CouponSection id="unavailable" coupons={groups.unavailable} />
+                  <CouponSection id="ready" coupons={groups.ready} lang={lang} t={t} />
+                  <CouponSection id="upcoming" coupons={groups.upcoming} lang={lang} t={t} />
+                  <CouponSection id="used" coupons={groups.used} lang={lang} t={t} />
+                  <CouponSection id="unavailable" coupons={groups.unavailable} lang={lang} t={t} />
                 </>
               )}
             </>
@@ -199,14 +220,14 @@ export default async function CouponWalletPage({ searchParams }: WalletPageProps
             <div className={styles.errorState}>
               <div className={styles.errorIcon}>!</div>
               <p className={styles.eyebrow}>Coupon Wallet</p>
-              <h1>เปิดกระเป๋าคูปองไม่ได้</h1>
+              <h1>{t("couponWallet.error_title")}</h1>
               <p>{result.reason}</p>
-              <p>กรุณากลับไปที่แชทและขอลิงก์ใหม่จากร้านค่ะ</p>
+              <p>{t("couponWallet.error_hint")}</p>
             </div>
           )}
 
           <div className={styles.footer}>
-            <Link href="/">กลับหน้าแรก</Link>
+            <Link href="/">{t("couponWallet.back_home")}</Link>
           </div>
         </div>
       </section>
