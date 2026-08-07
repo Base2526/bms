@@ -1,0 +1,402 @@
+// GraphQL resolver — AI Pharmacy Intake Assistant
+// permission model: pharmacy.assessment.{read,assign,request_more_information,
+// review,approve,reject}, pharmacy.protocol.manage, pharmacy.audit.read
+// (lib/bms/permissions.ts) — approve/reject/refer ALSO check
+// users.is_licensed_pharmacist unconditionally inside the service layer
+// (lib/bms/pharmacy/assessments.ts); requirePermission() here is not the
+// only gate for those three.
+import { GraphQLError } from "graphql/error";
+import { requirePermission } from "@/lib/bms/permissions";
+import { requireAuth } from "@/lib/auth";
+import { getTenantId } from "@/lib/bms/tenant";
+import { query } from "@/lib/db";
+import { audit } from "@/lib/bms/audit";
+import { isPharmacyAiEnabled, isPharmacyIntakeEnabled } from "@/lib/bms/pharmacy/config";
+import { AnthropicCompatiblePharmacyIntakeAI, filterMedicationSuggestionsAgainstAllergies } from "@/lib/bms/pharmacy/ai";
+import {
+  approveAssessment,
+  assignPharmacist,
+  editAssessmentSummary,
+  escalateToEmergency,
+  getAssessment,
+  listAssessments,
+  recordConsent,
+  recordMedicationSuggestions,
+  referToDoctor,
+  rejectAssessment,
+  requestMoreInformation,
+  softDeleteAssessment,
+  startReview,
+} from "@/lib/bms/pharmacy/assessments";
+import {
+  getPharmacyProtocol,
+  listPharmacyProtocols,
+  setPharmacyProtocolEnabled,
+  upsertPharmacyProtocol,
+  type UpsertPharmacyProtocolInput,
+} from "@/lib/bms/pharmacy/protocols";
+import { applyManualAnswers } from "@/lib/bms/pharmacy/intake";
+
+function requireIntakeEnabled() {
+  if (!isPharmacyIntakeEnabled()) {
+    throw new GraphQLError("Pharmacy Intake ยังไม่ได้เปิดใช้งาน (PHARMACY_INTAKE_ENABLED=false)", {
+      extensions: { code: "BAD_USER_INPUT" },
+    });
+  }
+}
+
+function actorId(ctx: any): string {
+  const id = requireAuth(ctx).author_id;
+  if (!id) throw new GraphQLError("Unauthenticated", { extensions: { code: "UNAUTHENTICATED" } });
+  return String(id);
+}
+
+/**
+ * Granting/revoking a pharmacist license is a fact about a human, not a
+ * BMS operational permission — gated the same way role assignment is,
+ * Administrator only. Deliberately a standalone check here (not a new
+ * BMS_PERMISSIONS entry) so it can never be granted away to a non-admin
+ * role, and deliberately not touching the shared `users`/`upsertUser`
+ * resolver at all — this is fully additive.
+ */
+function requireAdministrator(ctx: any) {
+  if (ctx?.admin?.role !== "Administrator") {
+    throw new GraphQLError("เฉพาะ Administrator เท่านั้นที่กำหนดสถานะเภสัชกรได้", {
+      extensions: { code: "FORBIDDEN" },
+    });
+  }
+}
+
+/** GraphQL `String!` only guarantees non-null, not non-empty — every free-text
+ *  field that drives a real decision (reason/summary) is re-checked here so
+ *  a raw GraphQL call (bypassing the UI's disabled-button convenience) can't
+ *  record an empty reason. */
+function requireNonEmpty(value: string, label: string): string {
+  const trimmed = (value || "").trim();
+  if (!trimmed) {
+    throw new GraphQLError(`ต้องระบุ "${label}"`, { extensions: { code: "BAD_USER_INPUT" } });
+  }
+  return trimmed;
+}
+
+function decisionResultToGraphQLError(result: { status: string; [k: string]: unknown }): never {
+  const messages: Record<string, string> = {
+    NOT_FOUND: "ไม่พบเคสนี้",
+    INVALID_STATE: `สถานะเคสไม่ตรง (ปัจจุบัน: ${result.current})`,
+    STALE_VERSION: "ข้อมูลถูกแก้ไขไปแล้วโดยคนอื่น กรุณาโหลดใหม่",
+    NOT_A_LICENSED_PHARMACIST: "บัญชีนี้ไม่ได้ระบุว่าเป็นเภสัชกรที่มีใบประกอบวิชาชีพ",
+    EXPIRED_NEEDS_REEVALUATION: "เคสหมดอายุแล้ว ต้องเปิดประเมินใหม่ก่อนอนุมัติ",
+    MISSING_REQUIRED_FIELDS: `ข้อมูลยังไม่ครบ: ${(result.fields as string[] | undefined)?.join(", ") ?? ""}`,
+  };
+  throw new GraphQLError(messages[result.status] || "ดำเนินการไม่สำเร็จ", {
+    extensions: { code: "BAD_USER_INPUT", pharmacyStatus: result.status },
+  });
+}
+
+export const bmsPharmacyResolvers = {
+  Query: {
+    async bmsPharmacyAssessments(
+      _p: unknown,
+      args: {
+        status?: string;
+        riskLevel?: string;
+        assignedPharmacistId?: string;
+        channelId?: string;
+        createdAfter?: string;
+        limit?: number;
+        offset?: number;
+      },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return listAssessments(getTenantId(ctx), args);
+    },
+    async bmsPharmacyAssessment(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return getAssessment(getTenantId(ctx), args.id);
+    },
+    async bmsPharmacyAssessmentEvents(_p: unknown, args: { assessmentId: string; limit?: number }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.audit.read");
+      const limit = Math.min(Math.max(args.limit ?? 100, 1), 300);
+      const res = await query(
+        `SELECT * FROM bms_pharmacy_assessment_events
+          WHERE tenant_id = $1 AND assessment_id = $2
+          ORDER BY created_at DESC LIMIT $3`,
+        [getTenantId(ctx), args.assessmentId, limit]
+      );
+      return res.rows.map((r: any) => ({
+        id: String(r.id),
+        assessmentId: r.assessment_id,
+        actor: r.actor,
+        action: r.action,
+        previousState: r.previous_state,
+        nextState: r.next_state,
+        meta: r.meta ?? {},
+        createdAt: new Date(r.created_at).toISOString(),
+      }));
+    },
+    async bmsPharmacyProtocols(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return listPharmacyProtocols(getTenantId(ctx));
+    },
+    async bmsPharmacyProtocol(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      return getPharmacyProtocol(getTenantId(ctx), args.id);
+    },
+    async bmsPharmacyLicenseCandidates(_p: unknown, _a: unknown, ctx: any) {
+      requireAdministrator(ctx);
+      const res = await query(
+        `SELECT id, name, email, is_licensed_pharmacist, pharmacist_license_no
+           FROM users WHERE tenant_id = $1 ORDER BY name`,
+        [getTenantId(ctx)]
+      );
+      return res.rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        isLicensedPharmacist: r.is_licensed_pharmacist === true,
+        pharmacistLicenseNo: r.pharmacist_license_no ?? null,
+      }));
+    },
+  },
+  Mutation: {
+    async bmsAssignPharmacist(_p: unknown, args: { assessmentId: string; pharmacistUserId: string }, ctx: any) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.assign");
+      const ok = await assignPharmacist(getTenantId(ctx), args.assessmentId, args.pharmacistUserId, ctx);
+      if (!ok) throw new GraphQLError("ไม่พบเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsStartPharmacistReview(_p: unknown, args: { assessmentId: string }, ctx: any) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const result = await startReview(getTenantId(ctx), args.assessmentId, actorId(ctx), ctx);
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsRequestMoreInformation(
+      _p: unknown,
+      args: { assessmentId: string; expectedVersion: number; fields: string[]; note?: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.request_more_information");
+      const result = await requestMoreInformation(
+        getTenantId(ctx),
+        args.assessmentId,
+        args.expectedVersion,
+        args.fields,
+        args.note ?? null,
+        actorId(ctx),
+        ctx
+      );
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsApproveAssessment(
+      _p: unknown,
+      args: { assessmentId: string; expectedVersion: number; pharmacistResponse: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      // pharmacy.assessment.approve gates who is OFFERED the button; the
+      // unconditional is_licensed_pharmacist check inside approveAssessment()
+      // is the actual authorization boundary and is not bypassable by the
+      // Administrator super-role.
+      await requirePermission(ctx, "pharmacy.assessment.approve");
+      const result = await approveAssessment(
+        getTenantId(ctx),
+        args.assessmentId,
+        actorId(ctx),
+        args.expectedVersion,
+        args.pharmacistResponse,
+        ctx
+      );
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsRejectAssessment(
+      _p: unknown,
+      args: { assessmentId: string; expectedVersion: number; reason: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.reject");
+      const reason = requireNonEmpty(args.reason, "reason");
+      const result = await rejectAssessment(getTenantId(ctx), args.assessmentId, actorId(ctx), args.expectedVersion, reason, ctx);
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsReferAssessmentToDoctor(
+      _p: unknown,
+      args: { assessmentId: string; expectedVersion: number; reason: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const reason = requireNonEmpty(args.reason, "reason");
+      const result = await referToDoctor(getTenantId(ctx), args.assessmentId, actorId(ctx), args.expectedVersion, reason, ctx);
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsEscalateAssessmentToEmergency(
+      _p: unknown,
+      args: { assessmentId: string; reason: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      // A pharmacist choosing to escalate is a "be more conservative" action,
+      // not an authorization to dispense — gated by review permission only,
+      // no is_licensed_pharmacist check (unlike approve/reject/refer).
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const reason = requireNonEmpty(args.reason, "reason");
+      const ok = await escalateToEmergency(getTenantId(ctx), args.assessmentId, reason, ctx);
+      if (!ok) throw new GraphQLError("ไม่พบเคสนี้ หรือสถานะปัจจุบันส่งต่อฉุกเฉินไม่ได้", { extensions: { code: "BAD_USER_INPUT" } });
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsEditAssessmentSummary(
+      _p: unknown,
+      args: { assessmentId: string; summaryText: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const summaryText = requireNonEmpty(args.summaryText, "summaryText");
+      const result = await editAssessmentSummary(getTenantId(ctx), args.assessmentId, summaryText, actorId(ctx), ctx);
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsGenerateMedicationSuggestions(_p: unknown, args: { assessmentId: string }, ctx: any) {
+      requireIntakeEnabled();
+      // Staff-initiated only (explicit button click) — never called from the
+      // customer pipeline. Gated the same as edit-summary/escalate: viewing
+      // a suggestion doesn't itself dispense anything, the unconditional
+      // is_licensed_pharmacist check inside approveAssessment() is still the
+      // real authorization boundary for the case's final decision.
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      if (!isPharmacyAiEnabled()) {
+        throw new GraphQLError("AI ปิดอยู่ (PHARMACY_AI_ENABLED=false) — ไม่สามารถขอคำแนะนำยาได้", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const tenantId = getTenantId(ctx);
+      const assessment = await getAssessment(tenantId, args.assessmentId);
+      if (!assessment) throw new GraphQLError("ไม่พบเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      if (assessment.status !== "PHARMACIST_REVIEWING") {
+        throw new GraphQLError("ขอคำแนะนำยาได้เฉพาะตอนเภสัชกรกำลังตรวจสอบเคสอยู่ (PHARMACIST_REVIEWING)", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      if (!assessment.protocolId) throw new GraphQLError("เคสนี้ยังไม่มี protocol ผูกอยู่", { extensions: { code: "BAD_USER_INPUT" } });
+      const protocol = await getPharmacyProtocol(tenantId, assessment.protocolId);
+      if (!protocol) throw new GraphQLError("ไม่พบ protocol ของเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      const allergiesText = String((assessment.structuredAnswers as any)?.allergies ?? "");
+      const currentMedicationsText = String((assessment.structuredAnswers as any)?.current_medications ?? "");
+      const ai = new AnthropicCompatiblePharmacyIntakeAI();
+      const result = await ai.suggestMedications({
+        tenantId,
+        caseId: args.assessmentId,
+        symptomGroup: protocol.supportedSymptomGroup,
+        allAnswers: assessment.structuredAnswers,
+        allergiesText,
+        currentMedicationsText,
+        pregnancyStatus: assessment.pregnancyStatus,
+        breastfeedingStatus: assessment.breastfeedingStatus,
+        patientAgeYears: assessment.patientAgeYears,
+        locale: "th",
+      });
+      if (!result) {
+        throw new GraphQLError("AI ไม่พร้อมใช้งานตอนนี้ ลองใหม่อีกครั้ง หรือกรอกคำแนะนำเองได้", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const { kept, excluded } = filterMedicationSuggestionsAgainstAllergies(result, allergiesText);
+      const stored = [
+        ...kept.map((s) => ({ ...s, excluded: false })),
+        ...excluded.map((e) => ({ ...e.suggestion, excluded: true, exclusionReason: e.reason })),
+      ];
+      await recordMedicationSuggestions(tenantId, args.assessmentId, stored, actorId(ctx), ctx);
+      return getAssessment(tenantId, args.assessmentId);
+    },
+    async bmsManualFillAssessmentFields(
+      _p: unknown,
+      args: { assessmentId: string; fields: Record<string, string | number> },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      // Closes the "AI degraded mid-conversation" dead end — a pharmacist
+      // supplying the missing structured data by hand, re-run through the
+      // SAME deterministic rule engine the AI-driven path uses.
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      if (!args.fields || typeof args.fields !== "object" || Object.keys(args.fields).length === 0) {
+        throw new GraphQLError("ต้องระบุ fields อย่างน้อย 1 รายการ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      try {
+        await applyManualAnswers(getTenantId(ctx), args.assessmentId, args.fields, actorId(ctx), ctx);
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "บันทึกข้อมูลไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsSetPharmacistLicense(
+      _p: unknown,
+      args: { userId: string; isLicensedPharmacist: boolean; licenseNo?: string },
+      ctx: any
+    ) {
+      requireAdministrator(ctx);
+      const tenantId = getTenantId(ctx);
+      const res = await query(
+        `UPDATE users SET is_licensed_pharmacist = $3, pharmacist_license_no = $4
+          WHERE id = $1 AND tenant_id = $2`,
+        [args.userId, tenantId, args.isLicensedPharmacist, args.licenseNo ?? null]
+      );
+      if ((res.rowCount ?? 0) === 0) {
+        throw new GraphQLError("ไม่พบผู้ใช้นี้ในร้านนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      await audit(ctx, "pharmacy.pharmacist_license_set", args.userId, { isLicensedPharmacist: args.isLicensedPharmacist });
+      return true;
+    },
+    async bmsSoftDeleteAssessment(_p: unknown, args: { assessmentId: string }, ctx: any) {
+      // Data-governance action, not a clinical one — Administrator only,
+      // same standalone check as license granting. Only terminal (already
+      // decided/closed) cases are eligible; see softDeleteAssessment().
+      requireAdministrator(ctx);
+      const ok = await softDeleteAssessment(getTenantId(ctx), args.assessmentId, actorId(ctx), ctx);
+      if (!ok) {
+        throw new GraphQLError("ไม่พบเคสนี้ หรือเคสยังไม่ปิด (ลบได้เฉพาะเคสที่จบแล้ว)", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      return true;
+    },
+    async bmsRecordPharmacyConsent(
+      _p: unknown,
+      args: { assessmentId: string; status: "GRANTED" | "REVOKED"; consentVersion: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      if (args.status !== "GRANTED" && args.status !== "REVOKED") {
+        throw new GraphQLError('status ต้องเป็น "GRANTED" หรือ "REVOKED"', { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const ok = await recordConsent(getTenantId(ctx), args.assessmentId, args.status, requireNonEmpty(args.consentVersion, "consentVersion"));
+      if (!ok) throw new GraphQLError("ไม่พบเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsUpsertPharmacyProtocol(_p: unknown, args: { input: UpsertPharmacyProtocolInput }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      try {
+        const protocol = await upsertPharmacyProtocol(getTenantId(ctx), args.input);
+        return protocol;
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    async bmsSetPharmacyProtocolEnabled(_p: unknown, args: { id: string; enabled: boolean }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      try {
+        return await setPharmacyProtocolEnabled(getTenantId(ctx), args.id, args.enabled);
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "ดำเนินการไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+  },
+};

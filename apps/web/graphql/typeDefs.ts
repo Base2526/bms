@@ -745,6 +745,14 @@ export const typeDefs = /* GraphQL */ `
     bmsFollowupRules: [BmsFollowupRule!]!
     bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
     bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
+
+    # ===== AI Pharmacy Intake Assistant =====
+    bmsPharmacyAssessments(status: String, riskLevel: String, assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int): [BmsPharmacyAssessment!]!
+    bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
+    bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
+    bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
+    bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
+    bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
@@ -2004,6 +2012,114 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsFollowupRunResult { scanned: Int!  sent: Int!  skipped: Int!  failed: Int! }
 
+  # ===== AI Pharmacy Intake Assistant =====
+  # AI never writes status — see lib/bms/pharmacy/assessments.ts. Approve/
+  # reject/refer additionally require users.is_licensed_pharmacist, checked
+  # server-side regardless of role/permission.
+  type BmsPharmacyAssessment {
+    id: ID!
+    tenantId: ID!
+    customerId: ID
+    channelId: String
+    conversationId: ID
+    protocolId: ID
+    patientRelationship: String!   # SELF / CHILD / PARENT / OTHER
+    consentStatus: String!         # PENDING / GRANTED / REVOKED
+    consentAt: String
+    consentVersion: String
+    status: String!                # DRAFT / COLLECTING_INFORMATION / WAITING_FOR_PHARMACIST /
+                                    # PHARMACIST_REVIEWING / NEED_MORE_INFORMATION / APPROVED /
+                                    # REJECTED / REFER_TO_DOCTOR / EMERGENCY_REFERRAL / CLOSED
+    needsManualIntake: Boolean!
+    riskLevel: String!             # LOW / MODERATE / HIGH / EMERGENCY / UNKNOWN
+    assignedPharmacistId: ID
+    approvedBy: ID
+    approvedAt: String
+    decisionReason: String
+    patientDob: String
+    patientAgeYears: Int
+    biologicalSex: String!         # MALE / FEMALE / UNKNOWN
+    weightKg: Float
+    heightCm: Float
+    pregnancyStatus: String!       # YES / NO / UNKNOWN / NOT_APPLICABLE
+    breastfeedingStatus: String!   # YES / NO / UNKNOWN / NOT_APPLICABLE
+    complaint: JSON!
+    medicalInfo: JSON!
+    currentQuestionKey: String
+    missingFields: [String!]!
+    conflictingFields: [String!]!
+    detectedRedFlags: JSON!
+    outOfScopeReason: String
+    escalationReason: String
+    rawMessages: JSON!
+    structuredAnswers: JSON!
+    aiSummary: String
+    aiSummaryVersion: Int!
+    aiPromptVersion: String
+    aiModelVersion: String
+    pharmacistEdits: JSON!
+    pharmacistDecisionNotes: String
+    medicationSuggestions: JSON! # pharmacist-only — never sent to the customer, see README
+    version: Int!
+    expiresAt: String
+    closedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsPharmacyAssessmentEvent {
+    id: ID!
+    assessmentId: ID!
+    actor: String!
+    action: String!
+    previousState: String
+    nextState: String
+    meta: JSON!
+    createdAt: String!
+  }
+
+  type BmsPharmacyProtocol {
+    id: ID!
+    tenantId: ID!
+    protocolKey: String!
+    name: String!
+    version: Int!
+    supportedSymptomGroup: String!
+    requiredFields: JSON!
+    conditionalQuestions: JSON!
+    redFlagRules: JSON!
+    completionRules: JSON!
+    escalationRules: JSON!
+    status: String!            # DRAFT / PENDING_REVIEW / APPROVED / RETIRED
+    clinicallyApproved: Boolean!
+    enabled: Boolean!
+    reviewedBy: ID
+    reviewedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsPharmacyLicenseUser {
+    id: ID!
+    name: String!
+    email: String
+    isLicensedPharmacist: Boolean!
+    pharmacistLicenseNo: String
+  }
+
+  input BmsPharmacyProtocolInput {
+    id: ID
+    protocolKey: String!
+    name: String!
+    version: Int
+    supportedSymptomGroup: String!
+    requiredFields: JSON!
+    conditionalQuestions: JSON!
+    redFlagRules: JSON!
+    completionRules: JSON!
+    escalationRules: JSON!
+  }
+
   type BmsMailLogEntry {
     id: ID!
     tenantId: ID
@@ -2803,6 +2919,23 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertFollowupRule(input: BmsFollowupRuleInput!): BmsFollowupRule!
     bmsDeleteFollowupRule(id: ID!): Boolean!
     bmsRunFollowupsNow: BmsFollowupRunResult!
+
+    # ===== AI Pharmacy Intake Assistant =====
+    bmsAssignPharmacist(assessmentId: ID!, pharmacistUserId: ID!): BmsPharmacyAssessment!
+    bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
+    bmsRequestMoreInformation(assessmentId: ID!, expectedVersion: Int!, fields: [String!]!, note: String): BmsPharmacyAssessment!
+    bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, pharmacistResponse: String!): BmsPharmacyAssessment!
+    bmsRejectAssessment(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
+    bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
+    bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!
+    bmsEditAssessmentSummary(assessmentId: ID!, summaryText: String!): BmsPharmacyAssessment!
+    bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
+    bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
+    bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
+    bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String): Boolean!
+    bmsRecordPharmacyConsent(assessmentId: ID!, status: String!, consentVersion: String!): BmsPharmacyAssessment!
+    bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
+    bmsSetPharmacyProtocolEnabled(id: ID!, enabled: Boolean!): BmsPharmacyProtocol!
     bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!

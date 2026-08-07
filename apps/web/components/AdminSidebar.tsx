@@ -38,6 +38,7 @@ import {
   CodeOutlined,
   FundViewOutlined,
   ClockCircleOutlined,
+  MedicineBoxOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -52,6 +53,7 @@ const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_RESTOCK_READY = gql`query { bmsRestockReadyCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
+const Q_PHARMACY_EMERGENCY_COUNT = gql`query { bmsPharmacyAssessments(riskLevel: "EMERGENCY", limit: 50) { id } }`;
 const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
@@ -162,6 +164,13 @@ export default function AdminSidebar() {
   });
   const channelHealthCount: number = healthData?.bmsChannelHealthCount ?? 0;
 
+  // AI Pharmacy Intake — เคสความเสี่ยง EMERGENCY ที่ยังไม่ปิด, poll แบบเดียวกับ channel health
+  const canViewPharmacy = can('pharmacy.assessment.read');
+  const { data: pharmacyData } = useQuery(Q_PHARMACY_EMERGENCY_COUNT, {
+    skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
+  });
+  const pharmacyEmergencyCount: number = pharmacyData?.bmsPharmacyAssessments?.length ?? 0;
+
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
   // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
   const { data: aiProviderHealthData } = useQuery(Q_AI_PROVIDER_HEALTH_COUNT, {
@@ -253,6 +262,9 @@ export default function AdminSidebar() {
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
+        ...(canViewPharmacy ? [link('/admin/pharmacy-queue', 'Pharmacy Intake Queue', <MedicineBoxOutlined />, pharmacyEmergencyCount, effectiveCollapsed, true)] : []),
+        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
+        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
         link('/admin/revisions', 'Revision History', <HistoryOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
         link('/admin/payment', 'Payment', <DollarOutlined />),
