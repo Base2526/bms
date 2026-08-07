@@ -749,6 +749,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== AI Pharmacy Intake Assistant =====
     bmsPharmacyAssessments(status: String, riskLevel: String, assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int): [BmsPharmacyAssessment!]!
     bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
+    bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
@@ -2067,6 +2068,24 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  type BmsPharmacyConversationHistoryMessage {
+    id: ID!
+    direction: String!
+    body: String!
+    sender: String
+    createdAt: String!
+    status: String
+  }
+
+  type BmsPharmacyConversationHistory {
+    conversationId: ID!
+    channel: String!
+    customerName: String
+    customerRef: String
+    status: String!
+    messages: [BmsPharmacyConversationHistoryMessage!]!
+  }
+
   type BmsPharmacyAssessmentEvent {
     id: ID!
     assessmentId: ID!
@@ -2910,6 +2929,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
     bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
+    bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): Boolean!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)

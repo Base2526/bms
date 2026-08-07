@@ -54,6 +54,13 @@ const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_RESTOCK_READY = gql`query { bmsRestockReadyCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
 const Q_PHARMACY_EMERGENCY_COUNT = gql`query { bmsPharmacyAssessments(riskLevel: "EMERGENCY", limit: 50) { id } }`;
+const Q_STORE_PROFILE = gql`
+  query {
+    bmsStoreProfile {
+      businessArchetype
+    }
+  }
+`;
 const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
@@ -131,6 +138,10 @@ export default function AdminSidebar() {
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
   const { can } = useBmsPermissions();
+  const { data: storeProfileData } = useQuery(Q_STORE_PROFILE, {
+    fetchPolicy: 'cache-and-network',
+    skip: !admin,
+  });
   // Fake data (dev): platform admin เท่านั้น — ต้องตรงกับ requirePlatformAdminPage() ใน
   // app/(admin)/admin/dev/fake/layout.tsx และ requirePlatformAdminSeeder() ที่ API
   // (เดิมผูกกับ can('product.edit') ทำให้ staff เห็นเมนูแล้วกดเข้าไปโดน redirect)
@@ -170,6 +181,7 @@ export default function AdminSidebar() {
     skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const pharmacyEmergencyCount: number = pharmacyData?.bmsPharmacyAssessments?.length ?? 0;
+  const isPharmacyShop = storeProfileData?.bmsStoreProfile?.businessArchetype === "pharmacy";
 
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
   // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
@@ -262,9 +274,9 @@ export default function AdminSidebar() {
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
-        ...(canViewPharmacy ? [link('/admin/pharmacy-queue', 'Pharmacy Intake Queue', <MedicineBoxOutlined />, pharmacyEmergencyCount, effectiveCollapsed, true)] : []),
-        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
-        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
+        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-queue', 'Pharmacy Intake Queue', <MedicineBoxOutlined />, pharmacyEmergencyCount, effectiveCollapsed, true)] : []),
+        ...(isPharmacyShop && can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
+        ...(isPharmacyShop && isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
         link('/admin/revisions', 'Revision History', <HistoryOutlined />),
         link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
         link('/admin/payment', 'Payment', <DollarOutlined />),

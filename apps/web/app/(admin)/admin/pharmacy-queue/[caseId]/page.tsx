@@ -19,6 +19,10 @@ const Q = gql`
       pharmacistDecisionNotes needsManualIntake protocolId medicationSuggestions
       createdAt updatedAt expiresAt
     }
+    bmsPharmacyAssessmentConversationHistory(assessmentId: $id, limit: 100) {
+      conversationId channel customerName customerRef status
+      messages { id direction body sender createdAt status }
+    }
     bmsPharmacyAssessmentEvents(assessmentId: $id, limit: 100) {
       id actor action previousState nextState createdAt
     }
@@ -117,6 +121,7 @@ export default function PharmacyCaseDetailPage() {
   if (error) return <Alert type="error" showIcon message="โหลดเคสไม่ได้" description={error.message} />;
 
   const c = data?.bmsPharmacyAssessment;
+  const history = data?.bmsPharmacyAssessmentConversationHistory;
   const events = data?.bmsPharmacyAssessmentEvents || [];
   if (loading && !c) return <Alert type="info" showIcon message="กำลังโหลด..." />;
   if (!c) return <Alert type="warning" showIcon message="ไม่พบเคสนี้" />;
@@ -232,6 +237,47 @@ export default function PharmacyCaseDetailPage() {
 
       <Card
         size="small"
+        title="Conversation history"
+        style={{ marginBottom: 12 }}
+        extra={
+          history ? (
+            <Text type="secondary">
+              {history.channel} · {history.status}
+            </Text>
+          ) : undefined
+        }
+      >
+        {history ? (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Text type="secondary">
+              ลูกค้า: {history.customerName || history.customerRef || "ไม่ทราบ"} · conversation {history.conversationId.slice(0, 8)}
+            </Text>
+            <List
+              size="small"
+              dataSource={history.messages || []}
+              locale={{ emptyText: "ยังไม่มีข้อความใน conversation นี้" }}
+              renderItem={(m: any) => (
+                <List.Item>
+                  <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                    <Space wrap size={8}>
+                      <Tag color={m.direction === "IN" ? "blue" : "green"}>{m.direction === "IN" ? "customer" : "staff/outbound"}</Tag>
+                      {m.sender ? <Text type="secondary">{m.sender}</Text> : null}
+                      {m.status ? <Tag>{m.status}</Tag> : null}
+                      <Text type="secondary">{new Date(m.createdAt).toLocaleString()}</Text>
+                    </Space>
+                    <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{m.body || "(empty message)"}</Paragraph>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Space>
+        ) : (
+          <Text type="secondary">เคสนี้ยังไม่ได้ผูกกับ customer conversation จริง จึงมีให้ดูเฉพาะ raw conversation ด้านล่าง</Text>
+        )}
+      </Card>
+
+      <Card
+        size="small"
         title={`สรุปโดย AI (v${c.aiSummaryVersion}) — ยังไม่ได้ตรวจสอบ`}
         style={{ marginBottom: 12 }}
         extra={
@@ -307,7 +353,7 @@ export default function PharmacyCaseDetailPage() {
                               )
                             }
                           >
-                            ใช้คำแนะนำนี้
+                            เพิ่มในร่างคำแนะนำเภสัชกร
                           </a>,
                         ]
                   }
@@ -319,6 +365,19 @@ export default function PharmacyCaseDetailPage() {
                     </Text>
                     <Text>{m.dosageInstruction}</Text>
                     {m.rationale && <Text type="secondary">เหตุผล: {m.rationale}</Text>}
+                    {(m.catalogMatches || []).length > 0 ? (
+                      <Space wrap size={4}>
+                        <Text type="secondary">สินค้าในร้านที่ชื่อใกล้เคียง:</Text>
+                        {(m.catalogMatches as any[]).map((item) => (
+                          <Tag key={item.sku} color="blue">
+                            {item.name} · {item.sku} · ฿{Number(item.price).toLocaleString()} · เหลือ {item.availableTotal}
+                          </Tag>
+                        ))}
+                      </Space>
+                    ) : (
+                      <Text type="secondary">ไม่พบสินค้า active ที่มีสต็อกและชื่อใกล้เคียงในร้าน</Text>
+                    )}
+                    <Text type="secondary">ต้องตรวจสอบตัวยาสำคัญ/รูปแบบยา/ความแรงกับสินค้าจริงก่อนเลือกใช้</Text>
                     {m.excluded && m.exclusionReason && <Text type="danger">เหตุผลที่กรองออก: {m.exclusionReason}</Text>}
                     {(m.warnings || []).length > 0 && (
                       <Text type="warning">คำเตือน: {(m.warnings as string[]).join("; ")}</Text>

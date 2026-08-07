@@ -32,3 +32,5 @@ db/*.dump
 .tokensave/*.db-shm
 .tokensave/*.db-wal
 *.tsbuildinfo
+
+.pnpm-store/

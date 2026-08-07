@@ -25,6 +25,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { sendStaffMessage } from "../inbox";
+import { getConversation, listMessages } from "../inbox";
 import { recordPharmacyEvent } from "./events";
 import {
   ALLOWED_TRANSITIONS,
@@ -127,6 +128,22 @@ export type PharmacyAssessmentRow = {
   updatedAt: string;
 };
 
+export type PharmacyAssessmentConversationHistory = {
+  conversationId: string;
+  channel: string;
+  customerName: string | null;
+  customerRef: string | null;
+  status: string;
+  messages: Array<{
+    id: string;
+    direction: string;
+    body: string;
+    sender: string | null;
+    createdAt: string;
+    status: string | null;
+  }>;
+};
+
 function mapRow(r: any): PharmacyAssessmentRow {
   return {
     id: r.id,
@@ -184,6 +201,38 @@ export async function getAssessment(tenantId: string, id: string): Promise<Pharm
     [tenantId, id]
   );
   return res.rowCount ? mapRow(res.rows[0]) : null;
+}
+
+export async function getAssessmentConversationHistory(
+  tenantId: string,
+  assessmentId: string,
+  limit = 100
+): Promise<PharmacyAssessmentConversationHistory | null> {
+  const assessment = await getAssessment(tenantId, assessmentId);
+  const conversationId = assessment?.conversationId;
+  if (!conversationId) return null;
+
+  const [conversation, messages] = await Promise.all([
+    getConversation(tenantId, conversationId),
+    listMessages(tenantId, conversationId, limit),
+  ]);
+  if (!conversation) return null;
+
+  return {
+    conversationId,
+    channel: String(conversation.channel || ""),
+    customerName: conversation.customer_name ?? null,
+    customerRef: conversation.customer_ref ?? null,
+    status: String(conversation.status || ""),
+    messages: (messages || []).map((message: any) => ({
+      id: String(message.id),
+      direction: String(message.direction || ""),
+      body: String(message.body || ""),
+      sender: message.sender ?? null,
+      createdAt: new Date(message.created_at).toISOString(),
+      status: message.meta?.status ?? null,
+    })),
+  };
 }
 
 export async function listAssessments(
@@ -854,8 +903,8 @@ export type PharmacistDecisionResult =
 
 async function isLicensedPharmacist(client: PoolClient, tenantId: string, userId: string): Promise<boolean> {
   const res = await client.query<{ is_licensed_pharmacist: boolean }>(
-    `SELECT is_licensed_pharmacist FROM users WHERE id = $1 AND tenant_id = $2`,
-    [userId, tenantId]
+    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS is_licensed_pharmacist`,
+    [tenantId, userId]
   );
   return res.rows[0]?.is_licensed_pharmacist === true;
 }

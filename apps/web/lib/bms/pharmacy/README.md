@@ -51,6 +51,8 @@ tenant's monthly AI quota like any other shared-key call.
 - `7.61__bms_conversations_pharmacy_intake.sql` — `bms_conversations.pharmacy_intake_case_id`.
 - `7.62__bms_pharmacy_medication_suggestions.sql` — `bms_pharmacy_assessments.medication_suggestions`
   (pharmacist-only AI drug/dosage draft — see § AI medication suggestions).
+- `7.64__bms_pharmacist_license_check.sql` — tenant-scoped `SECURITY DEFINER` boolean check used
+  by clinical decisions, avoiding a broad `SELECT` grant on the `users` table.
 
 ## Permissions
 
@@ -173,6 +175,10 @@ call sites listed below are what currently enforces the boundary):
   turn handler — grep `suggestMedications(` to confirm there is exactly one call site.
 - **Gated by `pharmacy.assessment.review` + `status === 'PHARMACIST_REVIEWING'`** — a case
   still being collected, or already decided, cannot generate suggestions.
+- **Minimum medication-safety profile is mandatory.** Age, biological sex, allergies, and
+  current medications must be known; female patients additionally require pregnancy and
+  breastfeeding status. The GraphQL mutation rejects the request and lists missing fields
+  instead of asking the model to guess.
 - **Two independent safety layers before a pharmacist ever sees it**: (1) the model itself
   is prompted with the patient's allergies/current meds/pregnancy/breastfeeding/age and told
   to exclude anything contraindicated; (2) `filterMedicationSuggestionsAgainstAllergies()`
@@ -189,6 +195,11 @@ call sites listed below are what currently enforces the boundary):
   already types their own advice into — it does not skip or shortcut the existing
   Approve/Reject/Refer flow, and the pharmacist can edit or delete it before Approve like
   any other text they typed themselves.
+- **Catalog matching is factual but non-clinical.** Each AI draft is searched against the
+  tenant's current active, in-stock catalog through `listSellableProducts()`. Bounded matches
+  show SKU, price, and availability to the pharmacist, but are labelled as name matches only:
+  the product schema does not yet model active ingredient/dosage form/strength well enough to
+  claim therapeutic equivalence.
 - **Not available to Manager/Administrator via a role shortcut** — same
   `is_licensed_pharmacist` boundary as approve/reject/refer still applies at the point the
   *case* is actually approved; generating a suggestion doesn't itself authorize anything.
