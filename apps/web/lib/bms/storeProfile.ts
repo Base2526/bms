@@ -10,7 +10,7 @@
 import { getClient, query } from "@/lib/db";
 import { getOrSetCache, invalidateCache } from "@/lib/cache";
 import { beginTenantTx } from "./tenant";
-import { isValidShopArchetype } from "./shopArchetypes";
+import { normalizeShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 
@@ -118,7 +118,7 @@ async function fetchStoreProfile(tenantId: string): Promise<StoreProfile> {
   const r = res.rows[0];
   if (!r) return { ...EMPTY };
   return {
-    businessArchetype: r.business_archetype ?? null,
+    businessArchetype: normalizeShopArchetype(r.business_archetype) ?? null,
     businessType: r.business_type ?? null,
     aiLanguage: r.ai_language || "th",
     aiOrderingStyle: r.ai_ordering_style || "catalog_variant",
@@ -171,9 +171,12 @@ export async function upsertStoreProfile(
   const cur = await getStoreProfile(tenantId);
   const merged: StoreProfile = { ...cur, ...input };
 
-  if (!isValidShopArchetype(merged.businessArchetype)) {
+  const rawBusinessArchetype = merged.businessArchetype?.trim?.() ?? merged.businessArchetype;
+  const normalizedBusinessArchetype = normalizeShopArchetype(rawBusinessArchetype);
+  if (rawBusinessArchetype && !normalizedBusinessArchetype) {
     throw new Error("archetype ร้านไม่ถูกต้อง");
   }
+  merged.businessArchetype = normalizedBusinessArchetype;
   if (merged.businessType != null && !BUSINESS_TYPES.has(merged.businessType)) {
     throw new Error("ประเภทร้านไม่ถูกต้อง");
   }
