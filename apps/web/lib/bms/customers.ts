@@ -284,13 +284,87 @@ export async function resolveOrCreateCustomer(
     [tenantId, externalRef]
   );
   const customerId = cust.rows[0].id;
-  await client.query(
+  const identity = await client.query<{ customer_id: string }>(
     `INSERT INTO bms_customer_identities (tenant_id, customer_id, channel, external_ref)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (tenant_id, channel, external_ref) DO NOTHING`,
+     ON CONFLICT (tenant_id, channel, external_ref) DO NOTHING
+     RETURNING customer_id`,
     [tenantId, customerId, channel, externalRef]
   );
-  return customerId;
+  if (identity.rows[0]) return identity.rows[0].customer_id;
+
+  // Another webhook may have established the same identity concurrently.
+  // Discard this transaction's unused customer row and use the winner so an
+  // intake can never be attached to an orphan CRM record.
+  const winner = await client.query<{ customer_id: string }>(
+    `SELECT customer_id FROM bms_customer_identities
+      WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3`,
+    [tenantId, channel, externalRef]
+  );
+  await client.query(
+    `DELETE FROM bms_customers
+      WHERE tenant_id = $1 AND id = $2
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_customer_identities
+           WHERE tenant_id = $1 AND customer_id = $2
+        )`,
+    [tenantId, customerId]
+  );
+  return winner.rows[0]?.customer_id ?? null;
+}
+
+/**
+ * Establish the canonical CRM customer before a health intake is created.
+ * Customer webhooks normally persist the Inbox after runPipeline() returns;
+ * pharmacy intake needs the customer_id earlier so reusable consented health
+ * context is never orphaned on a first-ever message.
+ */
+export async function ensureCustomerForIdentity(
+  tenantId: string,
+  channel: string,
+  externalRef: string | null | undefined
+): Promise<string | null> {
+  const ref = String(externalRef || "").trim();
+  if (!ref) return null;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const customerId = await resolveOrCreateCustomer(client, tenantId, channel, ref);
+    if (!customerId) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `UPDATE bms_conversations
+          SET customer_id = $4, updated_at = now()
+        WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
+          AND customer_id IS DISTINCT FROM $4`,
+      [tenantId, channel, ref, customerId]
+    );
+    const conversations = await client.query<{ id: string }>(
+      `SELECT id FROM bms_conversations
+        WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3`,
+      [tenantId, channel, ref]
+    );
+    const conversationIds = conversations.rows.map((row) => row.id);
+    if (conversationIds.length > 0) {
+      await client.query(
+        `UPDATE bms_pharmacy_assessments
+            SET customer_id = $3, updated_at = now()
+          WHERE tenant_id = $1
+            AND conversation_id = ANY($2::uuid[])
+            AND customer_id IS NULL`,
+        [tenantId, conversationIds, customerId]
+      );
+    }
+    await client.query("COMMIT");
+    return customerId;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listCustomers(tenantId: string, search = "", limit = 50, offset = 0) {
@@ -432,6 +506,11 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
     );
     await client.query(
       `UPDATE bms_conversations SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_pharmacy_assessments SET customer_id = $3, updated_at = now()
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
     );

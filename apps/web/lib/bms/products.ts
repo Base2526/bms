@@ -493,7 +493,6 @@ export async function findAlternativeProducts(
 
   if (input.size?.trim()) add((await fetchCandidates(input.size.trim(), category)).items);
   if (alternatives.length < limit && category) add((await fetchCandidates(null, category)).items);
-  if (alternatives.length < limit) add((await fetchCandidates(null, null)).items);
 
   alternatives.sort((a, b) => {
     const categoryScore = Number(b.category === source?.category) - Number(a.category === source?.category);

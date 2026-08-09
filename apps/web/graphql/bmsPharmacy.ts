@@ -17,6 +17,7 @@ import {
   approveAssessment,
   assignPharmacist,
   editAssessmentSummary,
+  editPharmacistDecisionNotes,
   escalateToEmergency,
   getAssessment,
   getAssessmentConversationHistory,
@@ -32,13 +33,66 @@ import {
 import {
   getPharmacyProtocol,
   listPharmacyProtocols,
+  reviewPharmacyProtocol,
   setPharmacyProtocolEnabled,
+  submitPharmacyProtocolForReview,
   upsertPharmacyProtocol,
   type UpsertPharmacyProtocolInput,
 } from "@/lib/bms/pharmacy/protocols";
 import { applyManualAnswers } from "@/lib/bms/pharmacy/intake";
 import { seedPharmacyQueueDemo } from "@/lib/bms/pharmacy/demo";
 import { listSellableProducts } from "@/lib/bms/products";
+import {
+  listPharmacyProductPolicies,
+  listPharmacyProductPoliciesPage,
+  reviewPharmacyProductPolicy,
+  submitPharmacyProductPolicyForReview,
+  upsertPharmacyProductPolicyDraft,
+  type UpsertPharmacyProductPolicyInput,
+} from "@/lib/bms/pharmacy/productPolicy";
+
+const PHARMACY_SEARCH_ALIAS_GROUPS: Array<{ match: RegExp; aliases: string[] }> = [
+  {
+    match: /\b(paracetamol|acetaminophen)\b|พารา|พาราเซตามอล/i,
+    aliases: ["paracetamol", "acetaminophen", "พาราเซตามอล", "พารา", "ลดไข้", "ยาน้ำพารา"],
+  },
+  {
+    match: /\b(ibuprofen)\b|ไอบูโพรเฟน/i,
+    aliases: ["ibuprofen", "ไอบูโพรเฟน", "ยาน้ำไอบูโพรเฟน", "ลดไข้เด็ก"],
+  },
+  {
+    match: /\b(oral rehydration salts|ors)\b|เกลือแร่/i,
+    aliases: ["ors", "oral rehydration salts", "เกลือแร่", "ผงเกลือแร่"],
+  },
+  {
+    match: /\b(loratadine)\b|ลอราทาดีน/i,
+    aliases: ["loratadine", "ลอราทาดีน", "ยาแก้แพ้", "ภูมิแพ้"],
+  },
+  {
+    match: /\b(domperidone)\b|โดมเพอริโดน/i,
+    aliases: ["domperidone", "โดมเพอริโดน", "คลื่นไส้", "ท้องอืด"],
+  },
+  {
+    match: /\b(cough|cough syrup)\b|ยาแก้ไอ|ขับเสมหะ|มะขามป้อม/i,
+    aliases: ["cough syrup", "ยาแก้ไอ", "ขับเสมหะ", "มะขามป้อม", "ไอ"],
+  },
+];
+
+function buildPharmacySearchTerms(suggestion: { drugName?: string; strength?: string; dosageInstruction?: string }) {
+  const base = [suggestion.drugName, suggestion.strength]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const out = new Set<string>(base);
+  const haystack = [suggestion.drugName, suggestion.strength, suggestion.dosageInstruction]
+    .map((value) => String(value || ""))
+    .join(" ");
+  for (const group of PHARMACY_SEARCH_ALIAS_GROUPS) {
+    if (group.match.test(haystack)) {
+      for (const alias of group.aliases) out.add(alias);
+    }
+  }
+  return Array.from(out).slice(0, 8);
+}
 
 function requireIntakeEnabled() {
   if (!isPharmacyIntakeEnabled()) {
@@ -89,6 +143,8 @@ function decisionResultToGraphQLError(result: { status: string; [k: string]: unk
     STALE_VERSION: "ข้อมูลถูกแก้ไขไปแล้วโดยคนอื่น กรุณาโหลดใหม่",
     NOT_A_LICENSED_PHARMACIST: "บัญชีนี้ไม่ได้ระบุว่าเป็นเภสัชกรที่มีใบประกอบวิชาชีพ",
     EXPIRED_NEEDS_REEVALUATION: "เคสหมดอายุแล้ว ต้องเปิดประเมินใหม่ก่อนอนุมัติ",
+    CUSTOMER_CONFIRMATION_REQUIRED: "ลูกค้ายังไม่ได้ยืนยันสรุปข้อมูล และยังไม่มีการกรอกข้อมูลโดยเภสัชกรเพื่อใช้เส้นทาง manual override",
+    PRODUCT_POLICY_BLOCKED: `รายการสินค้ายังไม่ผ่าน Product Policy: ${(result.fields as string[] | undefined)?.join(", ") ?? ""}`,
     MISSING_REQUIRED_FIELDS: `ข้อมูลยังไม่ครบ: ${(result.fields as string[] | undefined)?.join(", ") ?? ""}`,
   };
   throw new GraphQLError(messages[result.status] || "ดำเนินการไม่สำเร็จ", {
@@ -147,9 +203,45 @@ export const bmsPharmacyResolvers = {
         createdAt: new Date(r.created_at).toISOString(),
       }));
     },
+    async bmsPharmacyCatalog(_p: unknown, args: { search?: string | null; limit?: number | null }, ctx: any) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const { items } = await listSellableProducts(getTenantId(ctx), {
+        search: args.search?.trim() || undefined,
+        inStockOnly: true,
+        sort: "relevance",
+        limit: args.limit ?? 12,
+      });
+      const policies = await listPharmacyProductPolicies(getTenantId(ctx));
+      const policyBySku = new Map(policies.map((policy) => [policy.productSku, policy]));
+      return items.map((item) => ({
+        sku: item.sku,
+        name: item.name,
+        price: item.price,
+        category: item.category,
+        brand: item.brand,
+        availableTotal: item.availableTotal,
+        variants: item.availableSizes.filter((variant) => variant.available > 0),
+        productType: policyBySku.get(item.sku)?.productType ?? "UNKNOWN",
+        salePolicy: policyBySku.get(item.sku)?.salePolicy ?? "UNKNOWN",
+        policyStatus: policyBySku.get(item.sku)?.status ?? "MISSING",
+      }));
+    },
     async bmsPharmacyProtocols(_p: unknown, _args: unknown, ctx: any) {
       await requirePermission(ctx, "pharmacy.assessment.read");
       return listPharmacyProtocols(getTenantId(ctx));
+    },
+    async bmsPharmacyProductPolicies(
+      _p: unknown,
+      args: { search?: string | null; limit?: number | null; offset?: number | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return listPharmacyProductPoliciesPage(getTenantId(ctx), {
+        search: args.search?.trim() || undefined,
+        limit: args.limit ?? undefined,
+        offset: args.offset ?? undefined,
+      });
     },
     async bmsPharmacyProtocol(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
@@ -172,6 +264,71 @@ export const bmsPharmacyResolvers = {
     },
   },
   Mutation: {
+    async bmsUpsertPharmacyProductPolicy(
+      _p: unknown,
+      args: { input: UpsertPharmacyProductPolicyInput },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      try {
+        const policy = await upsertPharmacyProductPolicyDraft(getTenantId(ctx), args.input);
+        await audit(ctx, "pharmacy.product_policy.draft_saved", policy.productSku, {
+          productType: policy.productType,
+          regulatoryFramework: policy.regulatoryFramework,
+          regulatoryClass: policy.regulatoryClass,
+          regulatoryEvidenceSource: policy.regulatoryEvidenceSource,
+          salePolicy: policy.salePolicy,
+        });
+        return policy;
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "บันทึก Product Policy ไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+    },
+    async bmsSubmitPharmacyProductPolicyForReview(
+      _p: unknown,
+      args: { productSku: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      try {
+        const policy = await submitPharmacyProductPolicyForReview(getTenantId(ctx), args.productSku);
+        await audit(ctx, "pharmacy.product_policy.submitted", policy.productSku);
+        return policy;
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "ส่งตรวจ Product Policy ไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+    },
+    async bmsReviewPharmacyProductPolicy(
+      _p: unknown,
+      args: { productSku: string; decision: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      const decision = String(args.decision || "").toUpperCase();
+      if (decision !== "APPROVE" && decision !== "REJECT") {
+        throw new GraphQLError("decision ต้องเป็น APPROVE หรือ REJECT", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      try {
+        const policy = await reviewPharmacyProductPolicy(
+          getTenantId(ctx),
+          args.productSku,
+          actorId(ctx),
+          decision
+        );
+        await audit(ctx, "pharmacy.product_policy.reviewed", policy.productSku, { decision });
+        return policy;
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "ตรวจ Product Policy ไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+    },
     async bmsSeedPharmacyQueueDemo(
       _p: unknown,
       args: {
@@ -185,10 +342,14 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.read");
       const tenantId = getTenantId(ctx);
       const created = await seedPharmacyQueueDemo(tenantId, args.protocolKey, args.answers, args.transcript, ctx);
-      if (created === 0) {
+      if (created.createdCount === 0) {
         throw new GraphQLError("ไม่พบ protocol ที่เปิดใช้งานสำหรับทดสอบ", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      return true;
+      return {
+        createdCount: created.createdCount,
+        assessmentId: created.assessmentIds[0] ?? null,
+        assessmentIds: created.assessmentIds,
+      };
     },
     async bmsAssignPharmacist(_p: unknown, args: { assessmentId: string; pharmacistUserId: string }, ctx: any) {
       requireIntakeEnabled();
@@ -225,7 +386,7 @@ export const bmsPharmacyResolvers = {
     },
     async bmsApproveAssessment(
       _p: unknown,
-      args: { assessmentId: string; expectedVersion: number; pharmacistResponse: string },
+      args: { assessmentId: string; expectedVersion: number; pharmacistResponse: string; orderDraft?: unknown },
       ctx: any
     ) {
       requireIntakeEnabled();
@@ -240,6 +401,7 @@ export const bmsPharmacyResolvers = {
         actorId(ctx),
         args.expectedVersion,
         args.pharmacistResponse,
+        args.orderDraft as any,
         ctx
       );
       if (result.status !== "OK") decisionResultToGraphQLError(result);
@@ -293,6 +455,30 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.review");
       const summaryText = requireNonEmpty(args.summaryText, "summaryText");
       const result = await editAssessmentSummary(getTenantId(ctx), args.assessmentId, summaryText, actorId(ctx), ctx);
+      if (result.status !== "OK") decisionResultToGraphQLError(result);
+      return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsEditPharmacistDecisionNotes(
+      _p: unknown,
+      args: { assessmentId: string; expectedVersion: number; decisionNotes: string },
+      ctx: any
+    ) {
+      requireIntakeEnabled();
+      await requirePermission(ctx, "pharmacy.assessment.review");
+      const decisionNotes = requireNonEmpty(args.decisionNotes, "decisionNotes");
+      if (decisionNotes.length > 10_000) {
+        throw new GraphQLError("decisionNotes ยาวเกิน 10,000 ตัวอักษร", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const result = await editPharmacistDecisionNotes(
+        getTenantId(ctx),
+        args.assessmentId,
+        args.expectedVersion,
+        decisionNotes,
+        actorId(ctx),
+        ctx
+      );
       if (result.status !== "OK") decisionResultToGraphQLError(result);
       return getAssessment(getTenantId(ctx), args.assessmentId);
     },
@@ -359,21 +545,51 @@ export const bmsPharmacyResolvers = {
         });
       }
       const { kept, excluded } = filterMedicationSuggestionsAgainstAllergies(result, allergiesText);
-      const withCatalogMatches = async <T extends { drugName: string }>(suggestion: T) => {
-        const { items } = await listSellableProducts(tenantId, {
-          search: suggestion.drugName,
-          inStockOnly: true,
-          sort: "relevance",
-          limit: 3,
-        });
+      const productPolicies = await listPharmacyProductPolicies(tenantId);
+      const productPolicyBySku = new Map(productPolicies.map((policy) => [policy.productSku, policy]));
+      const withCatalogMatches = async <T extends { drugName: string; strength?: string; dosageInstruction?: string }>(suggestion: T) => {
+        const bySku = new Map<
+          string,
+          {
+            sku: string;
+            name: string;
+            price: number;
+            availableTotal: number;
+            availableSizes: Array<{ size: string; available: number }>;
+            productType: string;
+            salePolicy: string;
+            policyStatus: string;
+          }
+        >();
+        for (const term of buildPharmacySearchTerms(suggestion)) {
+          const { items } = await listSellableProducts(tenantId, {
+            search: term,
+            inStockOnly: true,
+            sort: "relevance",
+            limit: 3,
+          });
+          for (const item of items) {
+            if (!bySku.has(item.sku)) {
+              bySku.set(item.sku, {
+                sku: item.sku,
+                name: item.name,
+                price: item.price,
+                availableTotal: item.availableTotal,
+                availableSizes: Array.isArray(item.availableSizes)
+                  ? item.availableSizes.filter((variant) => Number(variant.available) > 0)
+                  : [],
+                productType: productPolicyBySku.get(item.sku)?.productType ?? "UNKNOWN",
+                salePolicy: productPolicyBySku.get(item.sku)?.salePolicy ?? "UNKNOWN",
+                policyStatus: productPolicyBySku.get(item.sku)?.status ?? "MISSING",
+              });
+            }
+            if (bySku.size >= 5) break;
+          }
+          if (bySku.size >= 5) break;
+        }
         return {
           ...suggestion,
-          catalogMatches: items.map((item) => ({
-            sku: item.sku,
-            name: item.name,
-            price: item.price,
-            availableTotal: item.availableTotal,
-          })),
+          catalogMatches: Array.from(bySku.values()),
         };
       };
       const stored = [
@@ -467,6 +683,30 @@ export const bmsPharmacyResolvers = {
         return await setPharmacyProtocolEnabled(getTenantId(ctx), args.id, args.enabled);
       } catch (err: any) {
         throw new GraphQLError(err?.message || "ดำเนินการไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    async bmsSubmitPharmacyProtocolForReview(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      try {
+        const protocol = await submitPharmacyProtocolForReview(getTenantId(ctx), args.id);
+        await audit(ctx, "pharmacy.protocol.review_requested", `pharmacy_protocol:${args.id}`, {});
+        return protocol;
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "ส่งตรวจไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    async bmsReviewPharmacyProtocol(_p: unknown, args: { id: string; decision: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      const decision = String(args.decision || "").toUpperCase();
+      if (decision !== "APPROVE" && decision !== "REJECT") {
+        throw new GraphQLError("decision ต้องเป็น APPROVE หรือ REJECT", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      try {
+        const protocol = await reviewPharmacyProtocol(getTenantId(ctx), args.id, actorId(ctx), decision);
+        await audit(ctx, `pharmacy.protocol.${decision.toLowerCase()}`, `pharmacy_protocol:${args.id}`, {});
+        return protocol;
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "ตรวจ protocol ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
     },
   },

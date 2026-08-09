@@ -27,6 +27,7 @@ import {
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
+import { checkPharmacySaleInTx, type PharmacySaleBlockStatus, type PharmacySalePolicy } from "./pharmacy/productPolicy";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -43,6 +44,8 @@ export type CreateOrderInput = {
    * as null rather than failing the order (7.46).
    */
   preferredCarrier?: string | null;
+  /** Server-derived only. A customer/model must never supply this id. */
+  pharmacyApprovedAssessmentId?: string | null;
 };
 
 export type CreatedLine = {
@@ -72,6 +75,13 @@ export type CreateOrderResult =
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
   | { status: "COUPON_INVALID"; reason: string }
+  | {
+      status: PharmacySaleBlockStatus;
+      sku: string;
+      salePolicy: PharmacySalePolicy | "UNKNOWN";
+      maxQuantity?: number;
+      requested?: number;
+    }
   | { status: "EMPTY" };
 
 /** รวมรายการซ้ำ (sku+size เดียวกัน) แล้วบวก qty */
@@ -202,6 +212,25 @@ export async function createOrder(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: input.editorId });
+
+    // Enforce pharmacy sale policy before reserving any inventory. The model,
+    // UI and channel adapters are not regulatory authority.
+    const pharmacySale = await checkPharmacySaleInTx(
+      client,
+      tenantId,
+      items,
+      input.pharmacyApprovedAssessmentId
+    );
+    if (!pharmacySale.allowed) {
+      await client.query("ROLLBACK");
+      return {
+        status: pharmacySale.status,
+        sku: pharmacySale.sku,
+        salePolicy: pharmacySale.salePolicy,
+        ...(pharmacySale.maxQuantity == null ? {} : { maxQuantity: pharmacySale.maxQuantity }),
+        ...(pharmacySale.requested == null ? {} : { requested: pharmacySale.requested }),
+      };
+    }
 
     const lines: CreatedLine[] = [];
     let total = 0;

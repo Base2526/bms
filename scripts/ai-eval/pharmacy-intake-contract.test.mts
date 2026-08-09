@@ -32,15 +32,34 @@ import {
   detectConflicts,
   detectRedFlags,
   evaluateAnswer,
+  GLOBAL_REQUIRED_FIELDS,
   type ProtocolDefinition,
 } from "../../apps/web/lib/bms/pharmacy/ruleEngine.ts";
 import { ALLOWED_TRANSITIONS, canTransition, isTerminalStatus, TERMINAL_STATUSES } from "../../apps/web/lib/bms/pharmacy/stateMachine.ts";
 import { minimizeForAudit } from "../../apps/web/lib/bms/pharmacy/events.ts";
 import {
+  validatePharmacyProtocolInput,
+  type UpsertPharmacyProtocolInput,
+} from "../../apps/web/lib/bms/pharmacy/protocols.ts";
+import {
+  detectPharmacyIntakeTrigger,
+  isExplicitPharmacyProductRequest,
+  normalizePharmacyProductSearchText,
+  normalizePharmacyClarificationReply,
+  pharmacyAmbiguousClarificationReply,
+} from "../../apps/web/lib/bms/pharmacy/trigger.ts";
+import {
   AiOutputValidationError,
   __pharmacyAiTest,
   filterMedicationSuggestionsAgainstAllergies,
 } from "../../apps/web/lib/bms/pharmacy/ai.ts";
+import { evaluatePharmacySale } from "../../apps/web/lib/bms/pharmacy/productPolicyDecision.ts";
+import { __pharmacyProductCartTest, runPharmacyTestHarness } from "../../apps/web/lib/bms/pharmacy/testHarness.ts";
+import { buildCustomerConfirmationLinesFromAnswers } from "../../apps/web/lib/bms/pharmacy/customerConfirmation.ts";
+import {
+  pharmacyRouterReply,
+  routePharmacyConversationMessage,
+} from "../../apps/web/lib/bms/pharmacy/conversationRouter.ts";
 
 // ---------------------------------------------------------------
 // Fixtures mirroring db/migrations/7.58's 3 MVP protocols
@@ -106,9 +125,68 @@ const DIARRHEA_PROTOCOL: ProtocolDefinition = {
 };
 
 const FULLY_ANSWERED_HEADACHE = {
+  patient_relationship: "SELF",
+  patient_age_years: 30,
+  biological_sex: "MALE",
   onset_days: 2,
   severity: 5,
   location: "ขมับซ้าย",
+  allergies: "UNKNOWN",
+  current_medications: "UNKNOWN",
+};
+
+const COMPOUND_PROTOCOL: ProtocolDefinition = {
+  id: "proto-fever-qa",
+  protocolKey: "fever",
+  requiredFields: [
+    { key: "fever_temp", label: "อุณหภูมิ", type: "number", questionKey: "q_fever_temp" },
+    { key: "duration_days", label: "ระยะเวลา", type: "number", questionKey: "q_fever_duration" },
+    { key: "breathing_difficulty", label: "หายใจลำบาก", type: "yes_no", questionKey: "q_fever_breathing" },
+    { key: "seizure", label: "ชัก", type: "yes_no", questionKey: "q_fever_seizure" },
+    { key: "neck_stiffness", label: "คอแข็ง", type: "yes_no", questionKey: "q_fever_neck" },
+  ],
+  conditionalQuestions: [],
+  redFlagRules: [
+    {
+      code: "QA_YOUNG_HIGH_TEMP",
+      label: "อายุน้อยร่วมกับอุณหภูมิสูง",
+      severity: "EMERGENCY",
+      condition: { allOf: [{ field: "patient_age_years", lessThan: 1 }, { field: "fever_temp", greaterThanOrEqual: 38 }] },
+    },
+    {
+      code: "QA_EMERGENCY_SYMPTOM",
+      label: "พบอาการฉุกเฉิน",
+      severity: "EMERGENCY",
+      condition: { anyOf: [{ field: "breathing_difficulty", equals: "YES" }, { field: "seizure", equals: "YES" }] },
+    },
+    {
+      code: "QA_HIGH_TEMP",
+      label: "อุณหภูมิสูง",
+      severity: "HIGH",
+      condition: { field: "fever_temp", greaterThanOrEqual: 40 },
+    },
+    {
+      code: "QA_PERSISTENT",
+      label: "อาการต่อเนื่องโดยไม่มีคอแข็ง",
+      severity: "MODERATE",
+      condition: { allOf: [{ field: "duration_days", greaterThan: 5 }, { not: { field: "neck_stiffness", equals: "YES" } }] },
+    },
+  ],
+  completionRules: { requireAllOf: ["fever_temp", "duration_days", "breathing_difficulty", "seizure", "neck_stiffness"] },
+  escalationRules: {
+    bySeverity: {
+      LOW: "CONTINUE",
+      MODERATE: "PHARMACIST_REVIEW",
+      HIGH: "URGENT_MEDICAL_REVIEW",
+      EMERGENCY: "EMERGENCY_REFERRAL",
+    },
+  },
+};
+
+const BASE_PATIENT = {
+  patient_relationship: "SELF",
+  patient_age_years: 30,
+  biological_sex: "MALE",
   allergies: "UNKNOWN",
   current_medications: "UNKNOWN",
 };
@@ -125,7 +203,10 @@ test("missing-information case: nothing answered yet -> MISSING_FIELDS lists eve
   const result = evaluateAnswer(HEADACHE_PROTOCOL, {});
   assert.equal(result.decision, "MISSING_FIELDS");
   if (result.decision === "MISSING_FIELDS") {
-    assert.deepEqual(new Set(result.missingFieldKeys), new Set(["onset_days", "severity", "location", "allergies", "current_medications"]));
+    assert.deepEqual(
+      new Set(result.missingFieldKeys),
+      new Set([...GLOBAL_REQUIRED_FIELDS.map((field) => field.key), "onset_days", "severity", "location"])
+    );
   }
 });
 
@@ -179,6 +260,313 @@ test("evaluateAnswer is a pure function — identical input always yields identi
   const a = evaluateAnswer(HEADACHE_PROTOCOL, FULLY_ANSWERED_HEADACHE);
   const b = evaluateAnswer(HEADACHE_PROTOCOL, FULLY_ANSWERED_HEADACHE);
   assert.deepEqual(a, b);
+});
+
+// ---------------------------------------------------------------
+// 1b) Compound conditions + deterministic escalation precedence
+// ---------------------------------------------------------------
+test("compound allOf requires every child and routes the matching severity", () => {
+  const matched = evaluateAnswer(COMPOUND_PROTOCOL, { ...BASE_PATIENT, patient_age_years: 0, fever_temp: 38 });
+  assert.equal(matched.decision, "RED_FLAG");
+  if (matched.decision === "RED_FLAG") assert.equal(matched.flag.action, "EMERGENCY_REFERRAL");
+
+  const notMatched = detectRedFlags(COMPOUND_PROTOCOL, { ...BASE_PATIENT, patient_age_years: 20, fever_temp: 38 });
+  assert.ok(!notMatched.some((flag) => flag.code === "QA_YOUNG_HIGH_TEMP"));
+});
+
+test("compound anyOf matches when one child is true", () => {
+  const result = evaluateAnswer(COMPOUND_PROTOCOL, { ...BASE_PATIENT, breathing_difficulty: "YES", seizure: "NO" });
+  assert.equal(result.decision, "RED_FLAG");
+  if (result.decision === "RED_FLAG") assert.equal(result.flag.code, "QA_EMERGENCY_SYMPTOM");
+});
+
+test("compound not participates in allOf and maps MODERATE to pharmacist review", () => {
+  const matched = evaluateAnswer(COMPOUND_PROTOCOL, { ...BASE_PATIENT, duration_days: 6, neck_stiffness: "NO" });
+  assert.equal(matched.decision, "RED_FLAG");
+  if (matched.decision === "RED_FLAG") assert.equal(matched.flag.action, "PHARMACIST_REVIEW");
+
+  const notMatched = detectRedFlags(COMPOUND_PROTOCOL, { ...BASE_PATIENT, duration_days: 6, neck_stiffness: "YES" });
+  assert.ok(!notMatched.some((flag) => flag.code === "QA_PERSISTENT"));
+});
+
+test("highest escalation action wins when HIGH and EMERGENCY conditions both match", () => {
+  const result = evaluateAnswer(COMPOUND_PROTOCOL, {
+    ...BASE_PATIENT,
+    patient_age_years: 0,
+    fever_temp: 40,
+    breathing_difficulty: "NO",
+    seizure: "NO",
+    duration_days: 1,
+    neck_stiffness: "NO",
+  });
+  assert.equal(result.decision, "RED_FLAG");
+  if (result.decision === "RED_FLAG") {
+    assert.equal(result.flag.severity, "EMERGENCY");
+    assert.equal(result.flag.action, "EMERGENCY_REFERRAL");
+  }
+});
+
+test("HIGH defaults to urgent review while legacy onRedFlag keeps emergency behavior", () => {
+  const modern = evaluateAnswer(COMPOUND_PROTOCOL, { ...BASE_PATIENT, patient_age_years: 30, fever_temp: 40 });
+  assert.equal(modern.decision, "RED_FLAG");
+  if (modern.decision === "RED_FLAG") assert.equal(modern.flag.action, "URGENT_MEDICAL_REVIEW");
+
+  const legacy = evaluateAnswer(COUGH_PROTOCOL, { ...BASE_PATIENT, duration_days: 30 });
+  assert.equal(legacy.decision, "RED_FLAG");
+  if (legacy.decision === "RED_FLAG") assert.equal(legacy.flag.action, "EMERGENCY_REFERRAL");
+});
+
+test("LOW/CONTINUE matches do not block completion or manufacture an escalation", () => {
+  const protocol: ProtocolDefinition = {
+    ...COMPOUND_PROTOCOL,
+    redFlagRules: [{ code: "QA_LOW", field: "duration_days", greaterThan: 0, severity: "LOW", label: "low observation" }],
+  };
+  const result = evaluateAnswer(protocol, {
+    ...BASE_PATIENT,
+    fever_temp: 37,
+    duration_days: 1,
+    breathing_difficulty: "NO",
+    seizure: "NO",
+    neck_stiffness: "NO",
+  });
+  assert.equal(result.decision, "COMPLETE");
+});
+
+// ---------------------------------------------------------------
+// 1c) Protocol authoring boundary + dynamic trigger contract
+// ---------------------------------------------------------------
+function validProtocolInput(): UpsertPharmacyProtocolInput {
+  return {
+    protocolKey: "fever",
+    name: "Fever QA draft",
+    version: 1,
+    supportedSymptomGroup: "fever",
+    displayLabel: "ไข้",
+    triggerTerms: ["ไข้", "ตัวร้อน", "fever"],
+    requiredFields: COMPOUND_PROTOCOL.requiredFields,
+    conditionalQuestions: [],
+    redFlagRules: COMPOUND_PROTOCOL.redFlagRules,
+    completionRules: COMPOUND_PROTOCOL.completionRules,
+    escalationRules: COMPOUND_PROTOCOL.escalationRules,
+  };
+}
+
+test("protocol validator accepts a bounded compound-condition draft", () => {
+  const result = validatePharmacyProtocolInput(validProtocolInput());
+  assert.equal(result.protocolKey, "fever");
+  assert.deepEqual(result.triggerTerms, ["ไข้", "ตัวร้อน", "fever"]);
+});
+
+test("protocol validator rejects unknown field references and multiple leaf operators", () => {
+  const unknown = validProtocolInput();
+  unknown.redFlagRules = [{
+    code: "BAD_FIELD",
+    label: "bad",
+    severity: "HIGH",
+    condition: { field: "not_declared", equals: "YES" },
+  }];
+  assert.throws(() => validatePharmacyProtocolInput(unknown), /field ที่ไม่มี/);
+
+  const operators = validProtocolInput();
+  operators.redFlagRules = [{
+    code: "BAD_OPERATORS",
+    label: "bad",
+    severity: "HIGH",
+    condition: { field: "fever_temp", greaterThan: 38, lessThan: 41 },
+  }];
+  assert.throws(() => validatePharmacyProtocolInput(operators), /operator เพียงหนึ่งชนิด/);
+});
+
+test("protocol validator bounds condition depth and validates escalation actions", () => {
+  const deep = validProtocolInput();
+  let condition: any = { field: "fever_temp", greaterThan: 38 };
+  for (let i = 0; i < 7; i++) condition = { not: condition };
+  deep.redFlagRules = [{ code: "TOO_DEEP", label: "deep", severity: "HIGH", condition }];
+  assert.throws(() => validatePharmacyProtocolInput(deep), /ซ้อนลึกเกิน/);
+
+  const invalidMapping = validProtocolInput();
+  invalidMapping.escalationRules = { bySeverity: { HIGH: "MODEL_DECIDES" as any } };
+  assert.throws(() => validatePharmacyProtocolInput(invalidMapping), /escalation mapping/);
+});
+
+const DYNAMIC_DEFINITIONS = [
+  { protocolKey: "fever", displayLabel: "ไข้", triggerTerms: ["ไข้", "ตัวร้อน", "fever"] },
+];
+
+test("dynamic trigger classifies ambiguous, clinical, medicine-product, and emergency wording", () => {
+  assert.deepEqual(detectPharmacyIntakeTrigger("มีไข้ไหม", DYNAMIC_DEFINITIONS), { protocolKey: "fever", intent: "ambiguous" });
+  assert.deepEqual(detectPharmacyIntakeTrigger("มีไข้สูงมาก", DYNAMIC_DEFINITIONS), { protocolKey: "fever", intent: "clinical_advice" });
+  assert.deepEqual(detectPharmacyIntakeTrigger("มียาแก้ไข้ไหม", DYNAMIC_DEFINITIONS), { protocolKey: "fever", intent: "medicine_product" });
+  assert.deepEqual(detectPharmacyIntakeTrigger("ตัวร้อนและชัก", DYNAMIC_DEFINITIONS), { protocolKey: "fever", intent: "emergency" });
+  assert.equal(detectPharmacyIntakeTrigger("มีเสื้อสีฟ้าไหม", DYNAMIC_DEFINITIONS), null);
+});
+
+test("conversation router keeps greetings and thanks out of clinical answers", () => {
+  assert.equal(routePharmacyConversationMessage("สวัสดีครับ").intent, "GREETING");
+  assert.equal(routePharmacyConversationMessage("ขอบคุณค่ะ").intent, "THANKS");
+  assert.equal(routePharmacyConversationMessage("ขอบคุณมากครับ").intent, "THANKS");
+  assert.equal(routePharmacyConversationMessage("ไม่มีไข้ครับ ขอบคุณ").intent, "CLINICAL_OR_UNKNOWN");
+
+  const route = routePharmacyConversationMessage("สวัสดีครับ");
+  const reply = pharmacyRouterReply(route, {
+    activeClinicalWorkflow: true,
+    resumePrompt: "มีไข้ร่วมด้วยไหมคะ?",
+  });
+  assert.match(reply ?? "", /ข้อมูลที่ตอบไว้ยังอยู่ครบ/);
+  assert.match(reply ?? "", /มีไข้ร่วมด้วยไหม/);
+});
+
+test("conversation router gives emergency wording priority over other intents", () => {
+  const emergency = routePharmacyConversationMessage("สวัสดีครับ ตอนนี้หายใจไม่ออก");
+  assert.equal(emergency.intent, "EMERGENCY");
+  assert.equal(emergency.interruptsClinicalAnswer, true);
+});
+
+test("conversation router does not treat side topics as clinical answers", () => {
+  assert.equal(routePharmacyConversationMessage("ขอซื้อพาราเซตามอล 1 แผง").intent, "PRODUCT_SIDE_INTENT");
+  assert.equal(routePharmacyConversationMessage("มียาพาราไหม").intent, "PRODUCT_SIDE_INTENT");
+  assert.equal(routePharmacyConversationMessage("มีปวดหัวไหม").intent, "PRODUCT_SIDE_INTENT");
+  assert.equal(routePharmacyConversationMessage("ขอตรวจสถานะคำสั่งซื้อ").intent, "ORDER_STATUS");
+  assert.equal(routePharmacyConversationMessage("ไม่มีไข้").interruptsClinicalAnswer, false);
+});
+
+test("explicit named product requests bypass symptom intake while generic symptom medicines stay ambiguous", () => {
+  assert.equal(isExplicitPharmacyProductRequest("ขอซื้อพาราเซตามอล 500 มก. 1 แผงค่ะ"), true);
+  assert.equal(isExplicitPharmacyProductRequest("มีพาราเซตามอล 500 มก. ไหม"), true);
+  assert.equal(isExplicitPharmacyProductRequest("ขอซื้อผ้าก๊อซปลอดเชื้อ 2 กล่อง"), true);
+  assert.equal(isExplicitPharmacyProductRequest("ขอซื้อยาแก้ไอให้ลูกครับ"), false);
+  assert.equal(isExplicitPharmacyProductRequest("มีปวดหัวไหม"), false);
+  assert.equal(normalizePharmacyProductSearchText("ขอซื้อพาราเซตามอล 500 มก. 1 แผงค่ะ"), "พาราเซตามอล 500 มก.");
+  assert.equal(normalizePharmacyProductSearchText("ขอซื้อผ้าก๊อซปลอดเชื้อ 2 กล่องครับ"), "ผ้าก๊อซปลอดเชื้อ");
+  assert.equal(normalizePharmacyProductSearchText("ขอซื้อผ้าก๊อซปลอดเชื้อ 2 แพ็คครับ"), "ผ้าก๊อซปลอดเชื้อ");
+});
+
+test("pharmacy product cart keeps multiple SKU prices and computes a visible total", () => {
+  const answers = {
+    __product_cart: JSON.stringify([
+      { sku: "PARA-500", name: "พาราเซตามอล 500 มก.", qty: 2, unitPrice: 20, salePolicy: "DIRECT_SALE", size: "10 เม็ด" },
+      { sku: "GAUZE-01", name: "ผ้าก๊อซ", qty: 3, unitPrice: 15, salePolicy: "DIRECT_SALE" },
+      { sku: "RED-01", name: "ยาแดง", qty: 1, unitPrice: 30, salePolicy: "DIRECT_SALE" },
+      { sku: "MASK-01", name: "หน้ากาก", qty: 2, unitPrice: 10, salePolicy: "DIRECT_SALE" },
+      { sku: "COTTON-01", name: "สำลี", qty: 1, unitPrice: 25, salePolicy: "DIRECT_SALE" },
+    ]),
+  };
+  const cart = __pharmacyProductCartTest.parseProductCart(answers);
+  assert.equal(cart.length, 5);
+  const summary = __pharmacyProductCartTest.formatProductCart(cart);
+  assert.match(summary, /PARA-500 · 10 เม็ด/);
+  assert.match(summary, /GAUZE-01/);
+  assert.match(summary, /9 ชิ้น จาก 5 รายการ/);
+  assert.match(summary, /160\.00 บาท/);
+  assert.equal(__pharmacyProductCartTest.requestedProductQuantity("ขอซื้อ ๕ แผง"), 5);
+  assert.equal(__pharmacyProductCartTest.explicitProductQuantity("จำนวน 5"), 5);
+  assert.deepEqual(
+    buildCustomerConfirmationLinesFromAnswers({ patient_age_years: 30, __product_cart: answers.__product_cart }),
+    [{ fieldKey: "patient_age_years", label: "อายุ", valueText: "30" }]
+  );
+});
+
+test("pharmacy product cart resolves targeted item removal commands", () => {
+  const cart = [
+    { sku: "SKU-1", name: "พาราเซตามอล", qty: 1, unitPrice: 20, salePolicy: "DIRECT_SALE" },
+    { sku: "SKU-2", name: "ยาแก้ไอ", qty: 1, unitPrice: 45, salePolicy: "DIRECT_SALE" },
+  ];
+  assert.equal(__pharmacyProductCartTest.resolveCartRemovalTarget(cart, "ลบ SKU-2", null)?.sku, "SKU-2");
+  assert.equal(__pharmacyProductCartTest.resolveCartRemovalTarget(cart, "ลบ ยาแก้ไอ", null)?.sku, "SKU-2");
+  assert.equal(__pharmacyProductCartTest.resolveCartRemovalTarget(cart, "ลบ 1", null)?.sku, "SKU-1");
+  assert.equal(__pharmacyProductCartTest.resolveCartRemovalTarget(cart, "ลบรายการล่าสุด", "SKU-1")?.sku, "SKU-1");
+});
+
+test("pharmacy product selection options allow short numeric replies", () => {
+  const answers = {
+    __product_options: JSON.stringify([
+      { sku: "FAKE-2F8DE584", name: "พาราเซตามอล 500 มก. 1" },
+      { sku: "FAKE-C22ECB4B", name: "พาราเซตามอล 500 มก. 2" },
+    ]),
+  };
+  assert.equal(__pharmacyProductCartTest.resolveProductSelectionOption(answers, "1")?.sku, "FAKE-2F8DE584");
+  assert.equal(__pharmacyProductCartTest.resolveProductSelectionOption(answers, "2")?.sku, "FAKE-C22ECB4B");
+  assert.equal(__pharmacyProductCartTest.resolveProductSelectionOption(answers, "FAKE-C22ECB4B")?.sku, "FAKE-C22ECB4B");
+});
+
+test("pharmacy product size options allow short numeric replies", () => {
+  const answers = {
+    __product_size_options: JSON.stringify([
+      { size: "10 เม็ด", available: 8 },
+      { size: "100 เม็ด", available: 12 },
+    ]),
+  };
+  assert.equal(__pharmacyProductCartTest.resolveProductSizeOption(answers, "1")?.size, "10 เม็ด");
+  assert.equal(__pharmacyProductCartTest.resolveProductSizeOption(answers, "2")?.size, "100 เม็ด");
+  assert.equal(__pharmacyProductCartTest.resolveProductSizeOption(answers, "100 เม็ด")?.size, "100 เม็ด");
+});
+
+test("ambiguous clarification uses the DB-driven label and normalizes the customer's choice", () => {
+  const prompt = pharmacyAmbiguousClarificationReply("fever", DYNAMIC_DEFINITIONS);
+  assert.match(prompt, /ชื่อหรือยี่ห้อสินค้าที่ต้องการซื้อ/);
+  assert.match(prompt, /อาการไข้/);
+  assert.equal(
+    normalizePharmacyClarificationReply("ข้อสอง", [{ role: "assistant", content: prompt }], DYNAMIC_DEFINITIONS),
+    "ไข้ อยากคัดกรองอาการเบื้องต้น"
+  );
+  assert.equal(
+    normalizePharmacyClarificationReply("ข้อแรก", [{ role: "assistant", content: prompt }], DYNAMIC_DEFINITIONS),
+    "ต้องการซื้อสินค้าที่มีชื่อหรือยี่ห้ออยู่แล้ว"
+  );
+});
+
+test("product purchase mode sends symptom-like wording back to ambiguity clarification", async () => {
+  const result = await runPharmacyTestHarness("tenant-test", "มีปวดหัวไหม", {
+    phase: "PRODUCT_PURCHASE",
+    answers: {},
+  });
+  assert.equal(result.session.phase, "AWAITING_INTENT_CLARIFICATION");
+  assert.equal(result.session.protocolKey, "headache");
+  assert.match(result.reply, /ชื่อหรือยี่ห้อสินค้าที่ต้องการซื้ออยู่แล้ว/);
+  assert.match(result.reply, /อาการปวดหัว/);
+});
+
+test("pharmacy product policy fails closed when SKU has no approved policy", () => {
+  assert.deepEqual(evaluatePharmacySale([{ sku: "UNKNOWN-SKU", qty: 1 }], []), {
+    allowed: false,
+    status: "PHARMACY_POLICY_UNKNOWN",
+    sku: "UNKNOWN-SKU",
+    salePolicy: "UNKNOWN",
+  });
+});
+
+test("approved direct-sale medical supply can proceed without clinical intake", () => {
+  assert.deepEqual(evaluatePharmacySale(
+    [{ sku: "GAUZE-STERILE", qty: 2 }],
+    [{ productSku: "GAUZE-STERILE", salePolicy: "DIRECT_SALE", status: "APPROVED", maxQuantity: 10 }]
+  ), { allowed: true });
+});
+
+test("quantity limit and regulated sale policies block deterministically", () => {
+  assert.equal(evaluatePharmacySale(
+    [{ sku: "GAUZE-STERILE", qty: 11 }],
+    [{ productSku: "GAUZE-STERILE", salePolicy: "DIRECT_SALE", status: "APPROVED", maxQuantity: 10 }]
+  ).allowed, false);
+  const prescription = evaluatePharmacySale(
+    [{ sku: "RX-ONLY", qty: 1 }],
+    [{ productSku: "RX-ONLY", salePolicy: "PRESCRIPTION_REQUIRED", status: "APPROVED", maxQuantity: null }]
+  );
+  assert.equal(prescription.allowed, false);
+  if (!prescription.allowed) assert.equal(prescription.status, "PHARMACY_PRESCRIPTION_REQUIRED");
+  const splitAcrossSizes = evaluatePharmacySale(
+    [{ sku: "LIMITED", qty: 6 }, { sku: "LIMITED", qty: 5 }],
+    [{ productSku: "LIMITED", salePolicy: "DIRECT_SALE", status: "APPROVED", maxQuantity: 10 }]
+  );
+  assert.equal(splitAcrossSizes.allowed, false, "maxQuantity applies to total SKU quantity, not each variant line");
+});
+
+test("pharmacist-review product proceeds only with a matching approved assessment SKU", () => {
+  const policies = [{ productSku: "PHARM-ONLY", salePolicy: "PHARMACIST_APPROVAL" as const, status: "APPROVED" as const, maxQuantity: null }];
+  assert.equal(evaluatePharmacySale([{ sku: "PHARM-ONLY", qty: 1 }], policies).allowed, false);
+  assert.deepEqual(
+    evaluatePharmacySale([{ sku: "PHARM-ONLY", qty: 1 }], policies, new Set(["PHARM-ONLY"])),
+    { allowed: true }
+  );
 });
 
 // ---------------------------------------------------------------

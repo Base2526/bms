@@ -21,6 +21,21 @@ userId)` → `logConversation()` (best-effort, records both the incoming message
 in the Omnichannel Inbox) → if the shop's `access_token` is set and the event had a `replyToken`,
 reply immediately via LINE's `reply` API (`pushLineReply`).
 
+Health wording is guarded before the general AI/tool loop. An unclear phrase such as
+`มีปวดหัวไหม` or `มียาแก้ปวดหัวไหม` never starts a pharmacy assessment by itself: a pharmacy OA asks
+whether the customer already has a named product/brand or wants a pharmacist to assess the symptom,
+and a non-pharmacy OA asks whether they mean an in-store
+product or contacted the wrong chat. A short follow-up (`มีชื่อสินค้า`, `ให้เภสัชกรประเมิน`, `อันแรก`, or
+`อันหลัง`) is resolved against that immediately preceding question before intake can continue.
+The recognized symptom names come from the tenant's active protocol `display_label` and
+`trigger_terms`, not a LINE-specific hardcoded list. The same definitions drive Pharmacy Intake
+Lab and remain subject to clinical approval, tenant enablement, and the platform allowlist.
+
+When a named product reaches ordering, LINE has no channel-specific bypass: the shared backend
+Product Policy gate runs before inventory reservation. Unknown/draft policy, pharmacist review,
+prescription, online-sale prohibition, and quantity-limit results are returned safely instead of
+retrying `create_order`.
+
 After the sale-critical Inbox write/reply path, the route also performs a best-effort LINE profile
 sync using `GET /v2/bot/profile/{userId}`. The response is cached on
 `bms_customer_identities` (`display_name`, `picture_url`, `status_message`, `language`,

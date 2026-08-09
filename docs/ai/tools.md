@@ -76,7 +76,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | heuristic/read |
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
-| `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order | `order.create` | execute + domain audit + deterministic signed checkout link |
+| `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order; pharmacy SKU must pass approved backend Product Policy | `order.create` | execute + domain audit + deterministic signed checkout link |
 | `subscribe_restock_notification` | A2 | explicit opt-in for own channel identity | — | save waitlist entry; staff reviews before outbound |
 | `save_customer_checkout_details` | A2 | own `(channel, customer_ref)` only | — | save only delivery fields explicitly supplied by that customer |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
@@ -793,8 +793,9 @@ Permission: customer.view (ถ้าไม่มีสิทธิ์ → โช
 สร้างเป็นคนละ `bms_customers` record เพราะจับคู่ตาม `(tenant_id, channel, external_ref)` เท่านั้น —
 `mergeCustomers(tenantId, keepId, mergeId)` ใช้ยุบ record ซ้ำเข้าด้วยกันด้วยมือ:
 
-- ย้าย `bms_customer_identities` / `bms_orders` / `bms_customer_addresses` / `bms_conversations`
-  ทั้งหมดจาก `mergeId` ไป `keepId` (ปลอดภัย ไม่ชนกัน เพราะ identity unique ต่อ tenant+channel+ref อยู่แล้ว)
+- ย้าย `bms_customer_identities` / `bms_orders` / `bms_customer_addresses` / `bms_conversations` /
+  `bms_pharmacy_assessments` ทั้งหมดจาก `mergeId` ไป `keepId` (ปลอดภัย ไม่ชนกัน เพราะ identity
+  unique ต่อ tenant+channel+ref อยู่แล้ว)
 - รวม tags (union), เติม phone/note ที่ `keepId` ไม่มีจาก `mergeId`
 - soft-delete `mergeId` (`deleted_at`) — **ทำแล้วย้อนกลับเองไม่ได้**
 - ทั้งหมดอยู่ในทรานแซกชันเดียว (`beginTenantTx`)

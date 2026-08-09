@@ -23,6 +23,7 @@ npx tsx --test ../../scripts/ai-eval/archetype-policy-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/restock-lifecycle-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 ```
 
 ถ้า `tsx` CLI ชนข้อจำกัด IPC ของเครื่องหรือ sandbox ให้ใช้ `node --import tsx --test ...`
@@ -34,6 +35,7 @@ node --import tsx --test ../../scripts/ai-eval/runtime-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
+node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 ```
 
 ครอบคลุม:
@@ -66,6 +68,15 @@ node --import tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 - Qwen OCR ใช้อัตราต้นทุนของ provider เอง ไม่ตกไปใช้อัตรา Anthropic
 - checkout token round-trip คืน `tenantId`/`orderId` เดิม, payload หรือ signature ที่ถูกแก้ต้องถูก
   ปฏิเสธ (ลูกค้าสลับ tenant/order เองไม่ได้) และ token ที่หมดอายุแล้วต้องใช้ไม่ได้
+- pharmacy contract ตรวจ global patient fields, compound conditions (`allOf`/`anyOf`/`not`),
+  escalation precedence/mapping, legacy compatibility, bounded protocol validation, dynamic trigger,
+  ambiguous confirmation, Product Policy แบบ fail-closed/direct-sale/pharmacist-review/quantity-limit
+  และป้องกัน AI เปลี่ยน assessment status
+
+Pharmacy contract เป็น deterministic suite: ไม่เรียก provider/DB และไม่ใช้ model-as-judge
+สำหรับ clinical safety decision ส่วน migration, approval workflow, LINE OA webhook และ queue
+ให้รัน integration/manual matrix เพิ่มจาก
+[`docs/testing/pharmacy-protocol-workflow-and-test-cases.md`](../../docs/testing/pharmacy-protocol-workflow-and-test-cases.md)
 
 Contract suite ใช้ `__toolLoopTest` dependency seam ใน
 `apps/web/lib/bms/tools/runtime.ts` โดยตรง ไม่มี test HTTP endpoint และ production caller

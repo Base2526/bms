@@ -41,6 +41,7 @@ import {
   listCustomerOrderStatuses,
   customerOwnsOrder as serviceCustomerOwnsOrder,
 } from "../orders";
+import { createProductReviewAssessmentOnce } from "../pharmacy/assessments";
 import { submitPayment, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
 import {
   createShipment,
@@ -967,6 +968,7 @@ const createOrderTool: BmsTool = {
   whenNotToUse: "The customer hasn't confirmed yet, or the exact sku isn't known → always call search_products/check_stock first to fill those in.",
   commonMistakes: [
     "Never guess a sku — it must come from a prior search_products/check_stock result only.",
+    "For pharmacy shops, backend Product Policy may block, require a safety check, pharmacist review, or prescription. Explain that result and never retry to bypass it.",
     "Do not call this repeatedly if the customer hasn't changed their order — the tool loop already suppresses duplicate calls, but avoid calling it needlessly regardless.",
     "preferredCarrier must be a code listed in get_store_info's enabledCarriers only — never guess one.",
   ],
@@ -1033,6 +1035,34 @@ const createOrderTool: BmsTool = {
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
     });
+    if (
+      ec.surface === "customer" &&
+      ec.conversationId &&
+      ec.channel &&
+      (r.status === "PHARMACY_REVIEW_REQUIRED" || r.status === "PHARMACY_SAFETY_CHECK_REQUIRED")
+    ) {
+      try {
+        const review = await createProductReviewAssessmentOnce({
+          tenantId: ec.tenantId,
+          channelId: ec.channel,
+          conversationId: ec.conversationId,
+          items,
+          requiresSafetyCheck: r.status === "PHARMACY_SAFETY_CHECK_REQUIRED",
+        });
+        ec.pharmacyReviewCaseId = review.assessmentId.slice(0, 8);
+        return {
+          ok: true,
+          data: {
+            ...r,
+            pharmacyReviewCaseId: ec.pharmacyReviewCaseId,
+            pharmacyReviewCreated: review.status === "CREATED",
+          },
+        };
+      } catch (error) {
+        console.error("[BMS] pharmacy product review request failed:", error);
+        return { ok: true, data: { ...r, pharmacyReviewCaseId: null, pharmacyReviewCreated: false } };
+      }
+    }
     if (r.status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = r.orderId;
       await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });

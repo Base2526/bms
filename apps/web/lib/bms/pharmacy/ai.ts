@@ -414,15 +414,20 @@ async function callWithValidation<T>(
     try {
       const resp = await callProvider(creds, {
         model: creds.model,
-        max_tokens: 512,
+        // Medication drafts contain several dosage/warning fields and were
+        // being truncated mid-JSON at the generic 512-token limit.
+        max_tokens: step === "suggest_medications" ? 1400 : 512,
         system,
         messages: [{ role: "user", content: userText }],
       });
       if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
       const json = (await resp.json()) as { content?: Array<{ text?: string }> };
-      const text = json.content?.[0]?.text;
-      if (!text) throw new AiOutputValidationError(`${step}: empty reply`);
-      const parsed = JSON.parse(text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, ""));
+      const responseText = (json.content ?? [])
+        .map((block) => (typeof block?.text === "string" ? block.text : ""))
+        .join("")
+        .trim();
+      if (!responseText) throw new AiOutputValidationError(`${step}: empty reply`);
+      const parsed = JSON.parse(responseText.replace(/^```json\s*/i, "").replace(/```\s*$/, ""));
       return validate(parsed);
     } catch (err) {
       lastErr = err;

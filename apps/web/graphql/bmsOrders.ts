@@ -137,6 +137,12 @@ export const bmsOrdersResolvers = {
         EMPTY: "ออร์เดอร์ต้นทางไม่มีรายการสินค้า",
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
+        PHARMACY_POLICY_UNKNOWN: "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติ",
+        PHARMACY_SAFETY_CHECK_REQUIRED: "สินค้านี้ต้องผ่านการตรวจข้อมูลความปลอดภัยก่อน",
+        PHARMACY_REVIEW_REQUIRED: "สินค้านี้ต้องผ่านการตรวจโดยเภสัชกรก่อน",
+        PHARMACY_PRESCRIPTION_REQUIRED: "สินค้านี้ต้องมีใบสั่งและผ่านการตรวจโดยเภสัชกร",
+        PHARMACY_ONLINE_SALE_PROHIBITED: "สินค้านี้ไม่อนุญาตให้สร้างออร์เดอร์ออนไลน์",
+        PHARMACY_QUANTITY_LIMIT_EXCEEDED: "จำนวนเกินข้อกำหนดของ Product Policy",
       };
       return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ซ้ำไม่สำเร็จ" };
     },
@@ -168,6 +174,14 @@ export const bmsOrdersResolvers = {
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
         COUPON_INVALID: r.status === "COUPON_INVALID" ? r.reason : "โค้ดส่วนลดใช้ไม่ได้",
+        PHARMACY_POLICY_UNKNOWN: "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติ",
+        PHARMACY_SAFETY_CHECK_REQUIRED: "สินค้านี้ต้องผ่านการตรวจข้อมูลความปลอดภัยก่อน",
+        PHARMACY_REVIEW_REQUIRED: "สินค้านี้ต้องผ่านการตรวจโดยเภสัชกรก่อน",
+        PHARMACY_PRESCRIPTION_REQUIRED: "สินค้านี้ต้องมีใบสั่งและผ่านการตรวจโดยเภสัชกร",
+        PHARMACY_ONLINE_SALE_PROHIBITED: "สินค้านี้ไม่อนุญาตให้สร้างออร์เดอร์ออนไลน์",
+        PHARMACY_QUANTITY_LIMIT_EXCEEDED: r.status === "PHARMACY_QUANTITY_LIMIT_EXCEEDED"
+          ? `สินค้านี้สั่งได้ไม่เกิน ${r.maxQuantity} ชิ้นต่อครั้ง`
+          : "จำนวนเกินข้อกำหนด",
       };
       return { status: r.status, orderId: null, total: null, message: messages[r.status] ?? "สร้างออร์เดอร์ไม่สำเร็จ" };
     },

@@ -96,7 +96,8 @@ function absoluteUrl(url: string): string {
 // ---- hook: บันทึกบทสนทนา (เรียกจาก pipeline หลังได้ reply) ---------
 /**
  * บันทึกข้อความเข้า (ลูกค้า) + ออก (AI) ลง inbox
- * ข้ามถ้าไม่มี customerRef หรือเป็น channel ทดสอบ (playground)
+ * ข้ามถ้าไม่มี customerRef หรือเป็น channel ทดสอบทั่วไป (playground)
+ * แต่เก็บ Pharmacy Lab ที่มี prefix เฉพาะ เพื่อให้ตรวจ conversation/order E2E ได้
  * ห้าม throw — ครอบ try/catch ใน caller อยู่แล้ว แต่กันไว้อีกชั้น
  */
 export async function logConversation(
@@ -107,7 +108,7 @@ export async function logConversation(
   reply: string,
   quality?: AiTurnQuality
 ): Promise<void> {
-  if (!customerRef || channel === "test") return;
+  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return;
   try {
     // best-effort link ลูกค้า (ถ้าเคยสั่งซื้อ/มี identity แล้ว)
     const cust = await query<{ customer_id: string }>(
@@ -454,22 +455,59 @@ export async function listMessages(tenantId: string, conversationId: string, lim
 
 export type AiHistoryTurn = { role: "user" | "assistant"; content: string };
 
+function isPersistedPharmacyLabConversation(channel: string, customerRef: string | null | undefined) {
+  return channel === "test" && Boolean(customerRef?.startsWith("pharmacy-lab:"));
+}
+
 /**
  * หา conversation id ของลูกค้าคนนี้ (ถ้ามีแล้ว) — ใช้ร่วมกันระหว่าง getRecentAiHistory และ
  * bumpAiTurnCounter กันเสียเวลา query ซ้ำ คืน null ถ้ายังไม่เคยมีบทสนทนา (ข้อความแรกของลูกค้า)
- * หรือเป็น channel "test" (playground ไม่ persist อยู่แล้วเหมือน logConversation)
+ * หรือเป็น channel "test" ทั่วไป (playground ไม่ persist อยู่แล้วเหมือน logConversation)
+ * ยกเว้น Pharmacy Lab ซึ่งสร้าง conversation จริงเพื่อทดสอบ approve -> customer
+ * confirmation -> order ให้จบในเส้นทางเดียวกัน
  */
 export async function resolveConversationId(
   tenantId: string,
   channel: string,
   customerRef: string | null | undefined
 ): Promise<string | null> {
-  if (!customerRef || channel === "test") return null;
+  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
   const conv = await query<{ id: string }>(
     `SELECT id FROM bms_conversations WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3 LIMIT 1`,
     [tenantId, channel, customerRef]
   );
   return conv.rows[0]?.id ?? null;
+}
+
+export async function ensureConversationForPipeline(
+  tenantId: string,
+  channel: string,
+  customerRef: string | null | undefined,
+  incoming: string
+): Promise<string | null> {
+  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
+  const cust = await query<{ customer_id: string }>(
+    `SELECT customer_id FROM bms_customer_identities
+      WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3 LIMIT 1`,
+    [tenantId, channel, customerRef]
+  );
+  const customerId = cust.rows[0]?.customer_id ?? null;
+  const conv = await query<{ id: string; inserted: boolean }>(
+    `INSERT INTO bms_conversations
+       (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
+     VALUES ($1, $2, $3, $4, 'OPEN', 0, $5, now(), 'customer')
+     ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
+       SET customer_id = COALESCE(bms_conversations.customer_id, EXCLUDED.customer_id),
+           status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
+           updated_at = now()
+     RETURNING id, (xmax = 0) AS inserted`,
+    [tenantId, channel, customerRef, customerId, incoming.slice(0, 500)]
+  );
+  const convId = conv.rows[0]?.id ?? null;
+  if (conv.rows[0]?.inserted && convId) {
+    await autoAssignConversation(tenantId, convId);
+  }
+  return convId;
 }
 
 /**

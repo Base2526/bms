@@ -9,7 +9,8 @@
 
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { loadPermissions } from "@/lib/bms/permissions";
+import { audit } from "@/lib/bms/audit";
+import { loadPermissions, requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { runToolLoop } from "@/lib/bms/tools/runtime";
 import { staffTools } from "@/lib/bms/tools/catalog";
@@ -18,6 +19,7 @@ import {
   type PharmacyTestPhase,
   type PharmacyTestSession,
 } from "@/lib/bms/pharmacy/testHarness";
+import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 
 const STAFF_SYSTEM = [
   "คุณเป็นผู้ช่วย AI สำหรับแอดมินร้านค้า ตอบเป็นภาษาไทย กระชับ ชัดเจน",
@@ -82,7 +84,15 @@ export const bmsAssistantResolvers = {
       const tenantId = getTenantId(ctx);
       const message = String(args.message ?? "").trim();
       if (!message) throw new GraphQLError("message ว่าง", { extensions: { code: "BAD_USER_INPUT" } });
-      const validPhases = new Set<PharmacyTestPhase>(["NONE", "AWAITING_CONSENT", "ASKING", "WAITING"]);
+      const validPhases = new Set<PharmacyTestPhase>([
+        "NONE",
+        "AWAITING_INTENT_CLARIFICATION",
+        "PRODUCT_PURCHASE",
+        "AWAITING_CONSENT",
+        "ASKING",
+        "PENDING_CONFIRMATION",
+        "WAITING",
+      ]);
       const requestedPhase = args.session?.phase;
       const session: PharmacyTestSession | null = args.session
         ? {
@@ -98,6 +108,54 @@ export const bmsAssistantResolvers = {
         : null;
       const result = await runPharmacyTestHarness(tenantId, message, session);
       return { reply: result.reply, session: result.session };
+    },
+    async bmsCreatePharmacyLabOrder(
+      _p: unknown,
+      args: { items: Array<{ sku: string; qty: number; size?: string | null }> },
+      ctx: any
+    ) {
+      requireAuth(ctx);
+      await requirePermission(ctx, "order.create");
+      const tenantId = getTenantId(ctx);
+      const result = await createPharmacyLabOrder(tenantId, args.items ?? [], ctx?.admin?.id ?? null);
+      if (result.status === "CREATED") {
+        await audit(ctx, "order.create", result.orderId, {
+          itemCount: Array.isArray(args.items) ? args.items.length : 0,
+          total: result.total,
+          source: "pharmacy-intake-lab",
+          customerRef: "customerRef" in result ? result.customerRef ?? null : null,
+        });
+        return {
+          status: result.status,
+          orderId: result.orderId,
+          total: result.total,
+          message: `สร้างออร์เดอร์แล้ว ยอดรวม ${result.total.toLocaleString()} ฿`,
+        };
+      }
+      const messages: Record<string, string> = {
+        EMPTY: "ไม่มีรายการสินค้าในตะกร้า",
+        NOT_FOUND: `ไม่พบสินค้า ${"sku" in result ? result.sku : ""} หรือไม่มีสต็อกแล้ว`,
+        INSUFFICIENT: result.status === "INSUFFICIENT"
+          ? `${result.sku} (${result.size}) เหลือ ${result.available} ไม่พอสั่ง ${result.requested}`
+          : "สต็อกไม่พอ",
+        PHARMACY_POLICY_UNKNOWN: "สินค้านี้ยังไม่มีการอนุมัติให้ขายในระบบ",
+        PHARMACY_SAFETY_CHECK_REQUIRED: "สินค้านี้ต้องเก็บข้อมูลความปลอดภัยก่อน จึงยังสร้างออเดอร์ไม่ได้",
+        PHARMACY_REVIEW_REQUIRED: "สินค้านี้ต้องให้เภสัชกรตรวจสอบก่อน จึงยังสร้างออเดอร์ไม่ได้",
+        PHARMACY_PRESCRIPTION_REQUIRED: "สินค้านี้ต้องมีใบสั่งและผ่านการตรวจโดยเภสัชกรก่อน",
+        PHARMACY_ONLINE_SALE_PROHIBITED: "สินค้านี้ไม่อนุญาตให้สร้างออเดอร์ออนไลน์",
+        PHARMACY_QUANTITY_LIMIT_EXCEEDED: result.status === "PHARMACY_QUANTITY_LIMIT_EXCEEDED"
+          ? `สินค้านี้สั่งได้ไม่เกิน ${result.maxQuantity} ชิ้นต่อครั้ง`
+          : "จำนวนเกินข้อกำหนด",
+        SIZE_REQUIRED: result.status === "SIZE_REQUIRED"
+          ? `${result.name} (${result.sku}) มีหลายขนาดในสต็อก: ${result.availableSizes.join(", ")} กรุณาระบุขนาดก่อนสร้างออเดอร์`
+          : "กรุณาระบุขนาดสินค้า",
+      };
+      return {
+        status: result.status,
+        orderId: null,
+        total: null,
+        message: messages[result.status] ?? "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ",
+      };
     },
   },
 };

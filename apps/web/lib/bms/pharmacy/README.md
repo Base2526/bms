@@ -53,6 +53,14 @@ tenant's monthly AI quota like any other shared-key call.
   (pharmacist-only AI drug/dosage draft — see § AI medication suggestions).
 - `7.64__bms_pharmacist_license_check.sql` — tenant-scoped `SECURITY DEFINER` boolean check used
   by clinical decisions, avoiding a broad `SELECT` grant on the `users` table.
+- `7.71__bms_pharmacy_product_policy.sql` — SKU-level product type/regulatory/sale policy. Every
+  row starts as Draft and requires licensed-pharmacist review; pharmacy order creation fails closed
+  when an SKU has no approved policy.
+- `7.72__bms_pharmacy_regulatory_classification.sql` — closed-set regulatory framework/class plus
+  evidence source/reference; the admin workflow no longer accepts an arbitrary class string. Existing
+  approved policies return to Draft once so a licensed pharmacist can verify the new evidence fields.
+- `7.73__bms_pharmacy_product_framework_consistency.sql` — DB-level product-type/framework consistency;
+  contradictory legacy rows fail closed to `UNKNOWN`/`DRAFT`.
 
 ## Permissions
 
@@ -71,7 +79,7 @@ someone has separately set `is_licensed_pharmacist = true` on that user row.
 ## State machine
 
 ```
-DRAFT → COLLECTING_INFORMATION → WAITING_FOR_PHARMACIST → PHARMACIST_REVIEWING
+DRAFT → COLLECTING_INFORMATION → PENDING_CONFIRMATION → WAITING_FOR_PHARMACIST → PHARMACIST_REVIEWING
                     ↑                        ↑                    │
                     └── NEED_MORE_INFORMATION ┘         ┌──────────┼──────────┬─────────────────┐
                                                           ▼          ▼          ▼                 ▼
@@ -98,18 +106,31 @@ includes `status` in a `SET` clause.
 
 ## Workflow
 
-1. Customer says something matching a symptom keyword (`th/en` regex in `intake.ts`'s
-   `detectPharmacyIntakeTrigger()`) → deterministic entry, not AI-decided.
+1. Customer says something matching a symptom keyword → deterministic entry, not AI-decided.
+   Medicine-shaped but unclear wording is first clarified as named-product purchase vs symptom
+   assessment. A named-product purchase exits to commerce; it is not a clinical protocol.
+   In Pharmacy Intake Lab, an approved `DIRECT_SALE` SKU is added to a session cart using the
+   live catalog price. The customer can add multiple SKUs, change the latest item's quantity,
+   remove an item, review line totals and the cart total, then confirm the cart once. Confirmation
+   re-reads every SKU's current price/stock and Product Policy before creating a real test-channel
+   order through the same `createOrder()` service used elsewhere; it does not create a pharmacy
+   assessment queue row for this direct-sale path.
+   If backend Product Policy requires a short safety check or pharmacist approval after the customer
+   confirms an exact SKU/size/quantity, the customer tool creates an idempotent product-review case
+   in the same Pharmacy Queue and returns an eight-character tracking id.
 2. Disclaimer ("AI ≠ pharmacist") + consent prompt, both fixed backend copy.
 3. Consent granted → AI (or a deterministic fallback if AI is off) asks one question at a
    time, chosen from the protocol's own field list — it can never invent a new question.
 4. Every answer is run through the deterministic rule engine
    (`lib/bms/pharmacy/ruleEngine.ts`): red flag → `EMERGENCY_REFERRAL` immediately (stop
-   asking); missing fields → ask the next one; conflicting answers → `WAITING_FOR_PHARMACIST`
-   for a human to resolve; complete → AI summarizes (never recommends) → `WAITING_FOR_PHARMACIST`.
+   asking); missing fields → ask the next one; conflicting answers → ask for clarification;
+   complete → AI summarizes (never recommends) → customer confirms summary → `WAITING_FOR_PHARMACIST`.
 5. A pharmacist claims the case (`WAITING_FOR_PHARMACIST → PHARMACIST_REVIEWING`), reviews
    raw conversation + AI summary + missing/conflicting fields + red flags, can request more
-   info, edit, and finally Approve/Reject/Refer/Emergency-refer.
+   info, edit, and finally Approve/Reject/Refer/Emergency-refer. On approve the pharmacist
+   may also attach a tenant-catalog-backed checkout draft (SKU + size + qty); if the customer
+   later replies `ยืนยันสั่งซื้อ` in that same conversation, the normal BMS order/checkout
+   flow creates a real order and returns the usual checkout link.
 6. On Approve, the customer receives **the pharmacist's own typed text, verbatim** —
    delivered as a `staff:<email>`-attributed message, never AI-authored, never paraphrased.
    Reject/Refer-to-doctor/Emergency-referral each deliver a fixed, safe, non-clinical-detail
@@ -259,6 +280,13 @@ Cleanup action** — call it directly for now.
 
 ## Known limitations (MVP scope, decided with the user)
 
+- The queue detail's manual medication picker reads through the pharmacy-scoped
+  `bmsPharmacyCatalog` query. It reuses `listSellableProducts()` and returns only this tenant's
+  active, in-stock products, so a pharmacist reviewing a case does not also need the broader
+  `product.view` permission. It also returns Product Policy status; missing/draft,
+  prescription-required, and online-prohibited products cannot be selected into an approval draft.
+  The service checks the policy again during approval and order creation.
+
 - **Plain-text delivery only, no custom chat widget.** LINE/Facebook/Instagram render their
   own native chat UI (this repo cannot ship custom interactive widgets into them), and there
   is no in-house customer-facing chat widget for the `web` channel either — every intake
@@ -276,9 +304,24 @@ Cleanup action** — call it directly for now.
 - **No hard-delete/retention policy implemented.** `deleted_at` exists (matches the
   existing soft-delete convention) but nothing sets it yet — health-record retention
   duration is a legal/compliance decision this pass deliberately did not make unilaterally.
-- **Protocol editing UI is enable/disable-only** (`/admin/pharmacy-protocols`) — no
-  visual JSON editor for `required_fields`/`red_flag_rules`/etc. yet; edit via
-  `bmsUpsertPharmacyProtocol` directly (GraphQL) or SQL until that's built.
+- **Protocol authoring and clinical review** live at `/admin/pharmacy-protocols`.
+  New protocols are always `DRAFT`; backend validation checks field references,
+  conditional rules, red-flag operators, completion fields, and trigger terms before
+  a draft can move to `PENDING_REVIEW`. Only a licensed pharmacist can move it to
+  `APPROVED`, and approval does not enable it automatically. Runtime additionally
+  requires `APPROVED + clinically_approved + enabled + PHARMACY_PROTOCOLS_ENABLED`.
+- Protocol discovery is data-driven through `display_label` and `trigger_terms`.
+  LINE/customer intake and Pharmacy Intake Lab load the same active definitions;
+  adding a protocol does not require another hardcoded starter or trigger regex.
+- Red-flag rules accept either the legacy single-field shape or a bounded condition tree:
+  `allOf`, `anyOf`, `not`, and leaf comparisons (`equals`, `notEquals`, `in`,
+  `greaterThan*`, `lessThan*`, `exists`). Trees are limited to five levels and validated
+  against declared/global field keys. `escalation_rules.bySeverity` deterministically maps
+  `EMERGENCY` to emergency referral, `HIGH` to urgent medical review, `MODERATE` to direct
+  pharmacist review, and `LOW` to continue (each mapping is configurable on the approved
+  protocol). The model never selects an escalation tier.
+- End-to-end rollout workflow and the migration/protocol/LINE/Lab/compound-rule QA matrix
+  are documented in `docs/testing/pharmacy-protocol-workflow-and-test-cases.md`.
 - **`PHARMACY_INTAKE_ENABLED`/`PHARMACY_AI_ENABLED`/`PHARMACY_PROTOCOLS_ENABLED` default to
   off/empty** — nothing in this module runs until a shop/ops explicitly turns it on, and
   even then the 3 seeded protocols ship `enabled=false`/`clinically_approved=false` — a
@@ -312,20 +355,30 @@ Cleanup action** — call it directly for now.
   `bmsManualFillAssessmentFields` lets a pharmacist type the answers in by hand, re-run
   through the exact same `evaluateAnswer()` rule engine (never a looser check), exposed as a
   small per-field form on the case page whenever `missingFields` is non-empty.
+  Manual entry now accepts only fields that are actually missing, normalizes typed values
+  (including a Thai-labelled `SELF/CHILD/PARENT/OTHER` selector), re-runs the deterministic
+  rule engine, and records `assessment.manual_answer_recorded`. That event is the explicit,
+  audited alternative to customer summary confirmation; approval still requires
+  `completeness_status=COMPLETE`, no conflicts/anomalies, and all other pharmacist gates.
+- ~~Pharmacy Lab queue rows could show `patient_relationship=SELF` while simultaneously
+  listing `patient_relationship` as missing~~ — fixed: Lab now preserves the normalized
+  relationship answer and stores `UNKNOWN` rather than inventing `SELF` when none was given.
 - ~~`users.is_licensed_pharmacist` had no UI at all — the entire approve-gate was only
   reachable via raw SQL~~ — fixed: `bmsSetPharmacistLicense` (Administrator-only, standalone
   check, does not touch the shared `users`/`upsertUser` resolver) + `/admin/pharmacy-protocols/licenses`.
 
 ## Before relying on this in production
 
-1. Apply migrations `7.57`–`7.61` and confirm they're idempotent (re-run once).
+1. Apply migrations `7.57`–`7.73` and confirm they're idempotent (re-run once).
 2. Set `PHARMACY_INTAKE_ENABLED=true` and `PHARMACY_AI_ENABLED=true` for a dev/sandbox
    tenant only.
 3. As an Administrator, flip at least one real user's pharmacist license switch at
    `/admin/pharmacy-protocols/licenses`.
-4. Have a pharmacist review a protocol's rules, then flip its `enabled` flag via
-   `bmsSetPharmacyProtocolEnabled` — do **not** flip `clinically_approved` blind; there is no
-   automated path that sets it, by design.
-5. Drive one full flow end-to-end: trigger a keyword, answer questions, hit a red flag,
+4. Save the protocol as `DRAFT`, submit it to `PENDING_REVIEW`, have a licensed pharmacist
+   approve it through `/admin/pharmacy-protocols`, then separately enable it. Approval sets
+   `clinically_approved`; it deliberately does not enable the protocol automatically.
+5. Add the reviewed `protocol_key` to `PHARMACY_PROTOCOLS_ENABLED` and restart the service;
+   all four runtime gates must agree before LINE OA or Lab can discover it.
+6. Drive one full flow end-to-end: trigger a keyword, answer questions, hit a red flag,
    confirm it lands in `EMERGENCY_REFERRAL`, confirm a non-pharmacist cannot approve, confirm
    a licensed pharmacist can.
