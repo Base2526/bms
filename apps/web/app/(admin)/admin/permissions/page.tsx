@@ -3,11 +3,13 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Checkbox, Button, Space, Tag, message, Alert, Typography, Divider } from "antd";
 import { useState, useEffect } from "react";
 import { ReloadOutlined, SaveOutlined, CrownOutlined } from "@ant-design/icons";
+import { Q_MY_PERMS } from "@/app/hooks/useBmsPermissions";
 
 const { Text } = Typography;
 
 const Q = gql`
   query {
+    bmsMyTenant { id name slug }
     bmsPermissionCatalog
     bmsRolePermissions { id name is_super permissions }
   }
@@ -22,7 +24,10 @@ const M_SET = gql`
 function groupByResource(perms: string[]) {
   const g: Record<string, string[]> = {};
   perms.forEach((p) => {
-    const res = p.split(".")[0];
+    const parts = p.split(".");
+    const res = parts[0] === "pharmacy" && parts.length >= 2
+      ? `${parts[0]}.${parts[1]}`
+      : parts[0];
     (g[res] ||= []).push(p);
   });
   return g;
@@ -30,11 +35,29 @@ function groupByResource(perms: string[]) {
 
 const RES_LABEL: Record<string, string> = {
   product: "สินค้า", stock: "สต็อก", order: "ออเดอร์", customer: "ลูกค้า", report: "รายงาน",
+  purchase: "purchase",
+  payment: "payment",
+  shipping: "shipping",
+  inbox: "inbox",
+  ai_quality: "ai_quality",
+  coupon: "coupon",
+  followup: "followup",
+  "pharmacy.assessment": "pharmacy assessment",
+  "pharmacy.protocol": "pharmacy protocol",
+  "pharmacy.audit": "pharmacy audit",
 };
+
+function permissionActionLabel(permission: string) {
+  const parts = permission.split(".");
+  if (parts[0] === "pharmacy") return parts.slice(2).join(".") || parts[1];
+  return parts.slice(1).join(".") || permission;
+}
 
 export default function Page() {
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [setPerms] = useMutation(M_SET, {
+    refetchQueries: [Q_MY_PERMS],
+    awaitRefetchQueries: true,
     onCompleted: () => { message.success("บันทึกสิทธิ์แล้ว"); refetch(); },
     onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
   });
@@ -65,7 +88,8 @@ export default function Page() {
       </div>
 
       <Alert type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="กำหนดว่าแต่ละ role ทำอะไรได้ (เฉพาะ Administrator แก้ได้) — Administrator ได้ทุกสิทธิ์เสมอ · การเปลี่ยนมีผลกับผู้ใช้ที่อยู่ใน role นั้นทันที" />
+        message={<>กำลังแก้สิทธิ์ของร้าน <b>{data?.bmsMyTenant?.name || "-"}</b> <Text code>{data?.bmsMyTenant?.slug || data?.bmsMyTenant?.id || "-"}</Text></>}
+        description="สิทธิ์แยกต่อร้าน การเปลี่ยนมีผลเฉพาะผู้ใช้ในร้านนี้ทันที หากต้องการแก้ร้านอื่น ให้เข้ามุมมองของร้านนั้นก่อนบันทึก — Administrator ได้ทุกสิทธิ์เสมอ" />
 
       <Space direction="vertical" style={{ width: "100%" }} size={16}>
         {roles.map((role: any) => {
@@ -98,7 +122,7 @@ export default function Page() {
                             disabled={role.is_super}
                             checked={role.is_super || current.includes(p)}
                             onChange={(e) => toggle(p, e.target.checked)}>
-                            {p.split(".")[1]}
+                            {permissionActionLabel(p)}
                           </Checkbox>
                         ))}
                       </Space>

@@ -12,6 +12,13 @@ cross-channel dedup** by phone or email: the same person messaging via two diffe
 becomes two separate customer records until staff manually merges them
 (`mergeCustomers()` — see [../ui/customer360.md](../ui/customer360.md)).
 
+For pharmacy intake, the customer identity is created before the first assessment rather than
+waiting for post-reply Inbox logging or checkout. Existing conversations and previously orphaned
+assessments linked to those conversations are backfilled to that customer. This makes a consented,
+customer-confirmed intake discoverable as patient memory on a later visit. It does not weaken the cross-channel
+rule above: identities from different channels are still joined only by an explicit staff merge,
+not by an unverified matching name or phone number.
+
 Channel identities may also cache platform display metadata. LINE OA currently syncs
 `display_name`, `picture_url`, `status_message`, `language`, `profile_synced_at`, and any sync
 error fields on `bms_customer_identities`. This metadata is a display fallback for Inbox only:

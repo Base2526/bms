@@ -22,6 +22,7 @@
 // =============================================================
 
 import type { PoolClient } from "pg";
+import { checkPharmacistDraftPolicyInTx } from "./productPolicy";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { sendStaffMessage } from "../inbox";
@@ -32,6 +33,7 @@ import {
   type AssessmentStatus,
 } from "./stateMachine";
 import { pharmacyAssessmentTtlMinutes } from "./config";
+import type { CompletenessStatus, ProtocolEscalationAction } from "./ruleEngine";
 
 // ---------------------------------------------------------------
 // Delivering a pharmacist's decision back to the customer's chat
@@ -109,7 +111,12 @@ export type PharmacyAssessmentRow = {
   currentQuestionKey: string | null;
   missingFields: string[];
   conflictingFields: string[];
+  anomalies: unknown[];
+  completenessStatus: CompletenessStatus;
   detectedRedFlags: unknown[];
+  customerConfirmationStatus: CustomerConfirmationStatus;
+  customerConfirmationSummary: CustomerConfirmationSummary | null;
+  customerConfirmedAt: string | null;
   outOfScopeReason: string | null;
   escalationReason: string | null;
   rawMessages: unknown[];
@@ -121,6 +128,7 @@ export type PharmacyAssessmentRow = {
   pharmacistEdits: unknown[];
   pharmacistDecisionNotes: string | null;
   medicationSuggestions: unknown[];
+  checkoutOrderDraft: PharmacyCheckoutOrderDraft | null;
   version: number;
   expiresAt: string | null;
   closedAt: string | null;
@@ -143,6 +151,90 @@ export type PharmacyAssessmentConversationHistory = {
     status: string | null;
   }>;
 };
+
+export type RememberedPatientProfile = {
+  sourceAssessmentId: string;
+  fields: Record<string, string | number>;
+};
+
+export type CustomerConfirmationStatus = "NOT_REQUESTED" | "PENDING" | "CONFIRMED";
+
+export type CustomerConfirmationSummary = {
+  protocolKey: string;
+  symptomGroup: string;
+  lines: Array<{ fieldKey: string; label: string; valueText: string }>;
+  summaryText: string;
+  generatedAt: string;
+};
+
+export type PharmacyCheckoutDraftItem = {
+  sku: string;
+  size: string;
+  qty: number;
+  unitPrice: number;
+  productName: string;
+  drugName?: string | null;
+  dosageInstruction?: string | null;
+  pharmacistNote?: string | null;
+};
+
+export type PharmacyCheckoutOrderDraft = {
+  status: "AWAITING_CUSTOMER_CONFIRMATION" | "ORDER_CREATED";
+  items: PharmacyCheckoutDraftItem[];
+  estimatedTotal: number;
+  createdOrderId: string | null;
+  approvedAt: string | null;
+};
+
+function normalizeCheckoutDraftItem(value: any): PharmacyCheckoutDraftItem | null {
+  const sku = String(value?.sku || "").trim();
+  const size = String(value?.size || "").trim();
+  const qty = Number(value?.qty || 0);
+  const unitPrice = Number(value?.unitPrice || 0);
+  const productName = String(value?.productName || "").trim();
+  if (!sku || !size || !productName || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+    return null;
+  }
+  return {
+    sku,
+    size,
+    qty,
+    unitPrice,
+    productName,
+    drugName: value?.drugName ? String(value.drugName) : null,
+    dosageInstruction: value?.dosageInstruction ? String(value.dosageInstruction) : null,
+    pharmacistNote: value?.pharmacistNote ? String(value.pharmacistNote) : null,
+  };
+}
+
+function normalizeCheckoutOrderDraft(value: any): PharmacyCheckoutOrderDraft | null {
+  const status = String(value?.status || "").trim();
+  if (status !== "AWAITING_CUSTOMER_CONFIRMATION" && status !== "ORDER_CREATED") return null;
+  const items = Array.isArray(value?.items)
+    ? (value.items.map(normalizeCheckoutDraftItem).filter(Boolean) as PharmacyCheckoutDraftItem[])
+    : [];
+  if (items.length === 0) return null;
+  const estimatedTotal = Number(
+    value?.estimatedTotal ?? items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
+  );
+  return {
+    status,
+    items,
+    estimatedTotal: Number.isFinite(estimatedTotal) ? estimatedTotal : 0,
+    createdOrderId: value?.createdOrderId ? String(value.createdOrderId) : null,
+    approvedAt: value?.approvedAt ? String(value.approvedAt) : null,
+  };
+}
+
+function buildApprovedCustomerMessage(baseResponse: string, orderDraft: PharmacyCheckoutOrderDraft | null): string {
+  const trimmed = baseResponse.trim();
+  if (!orderDraft || orderDraft.items.length === 0) return trimmed;
+  return [
+    trimmed,
+    "",
+    'หากต้องการสั่งซื้อตามรายการยานี้ ตอบว่า "ยืนยันสั่งซื้อ" ได้เลยค่ะ ระบบจะส่งลิงก์ checkout กลับให้อัตโนมัติ',
+  ].join("\n");
+}
 
 function mapRow(r: any): PharmacyAssessmentRow {
   return {
@@ -175,7 +267,12 @@ function mapRow(r: any): PharmacyAssessmentRow {
     currentQuestionKey: r.current_question_key ?? null,
     missingFields: r.missing_fields ?? [],
     conflictingFields: r.conflicting_fields ?? [],
+    anomalies: r.anomalies ?? [],
+    completenessStatus: r.completeness_status ?? "UNKNOWN",
     detectedRedFlags: r.detected_red_flags ?? [],
+    customerConfirmationStatus: r.customer_confirmation_status ?? "NOT_REQUESTED",
+    customerConfirmationSummary: r.customer_confirmation_summary ?? null,
+    customerConfirmedAt: r.customer_confirmed_at ? new Date(r.customer_confirmed_at).toISOString() : null,
     outOfScopeReason: r.out_of_scope_reason ?? null,
     escalationReason: r.escalation_reason ?? null,
     rawMessages: r.raw_messages ?? [],
@@ -187,6 +284,7 @@ function mapRow(r: any): PharmacyAssessmentRow {
     pharmacistEdits: r.pharmacist_edits ?? [],
     pharmacistDecisionNotes: r.pharmacist_decision_notes ?? null,
     medicationSuggestions: r.medication_suggestions ?? [],
+    checkoutOrderDraft: normalizeCheckoutOrderDraft(r.checkout_order_draft),
     version: r.version,
     expiresAt: r.expires_at ? new Date(r.expires_at).toISOString() : null,
     closedAt: r.closed_at ? new Date(r.closed_at).toISOString() : null,
@@ -201,6 +299,110 @@ export async function getAssessment(tenantId: string, id: string): Promise<Pharm
     [tenantId, id]
   );
   return res.rowCount ? mapRow(res.rows[0]) : null;
+}
+
+export async function getApprovedAssessmentCheckoutDraftByConversation(
+  tenantId: string,
+  conversationId: string
+): Promise<{ assessmentId: string; draft: PharmacyCheckoutOrderDraft } | null> {
+  const res = await query<{ id: string; checkout_order_draft: any }>(
+    `SELECT id, checkout_order_draft
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1
+        AND conversation_id = $2
+        AND status = 'APPROVED'
+        AND deleted_at IS NULL
+      ORDER BY approved_at DESC NULLS LAST, updated_at DESC
+      LIMIT 1`,
+    [tenantId, conversationId]
+  );
+  if (!res.rowCount) return null;
+  const draft = normalizeCheckoutOrderDraft(res.rows[0].checkout_order_draft);
+  if (!draft) return null;
+  return { assessmentId: res.rows[0].id, draft };
+}
+
+export async function markAssessmentOrderCreated(
+  tenantId: string,
+  assessmentId: string,
+  orderId: string,
+  actor = "system:pharmacy-order"
+): Promise<void> {
+  const current = await getAssessment(tenantId, assessmentId);
+  if (!current?.checkoutOrderDraft) return;
+  const nextDraft: PharmacyCheckoutOrderDraft = {
+    ...current.checkoutOrderDraft,
+    status: "ORDER_CREATED",
+    createdOrderId: orderId,
+  };
+  await query(
+    `UPDATE bms_pharmacy_assessments
+        SET checkout_order_draft = $3::jsonb,
+            updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [tenantId, assessmentId, JSON.stringify(nextDraft)]
+  );
+  await recordPharmacyEvent({
+    tenantId,
+    assessmentId,
+    actor,
+    action: "assessment.checkout_order_created",
+    meta: { orderId },
+  });
+}
+
+export async function getLatestReusablePatientProfile(
+  tenantId: string,
+  customerId: string | null,
+  patientRelationship: string,
+  excludeAssessmentId?: string | null
+): Promise<RememberedPatientProfile | null> {
+  // A single channel account may represent several patients. Until dependent
+  // profiles have their own stable ids, reuse is safe only for the account
+  // owner. Never borrow a child's/parent's fields for another case.
+  if (!customerId || patientRelationship !== "SELF") return null;
+  const params: any[] = [tenantId, customerId];
+  let excludeSql = "";
+  if (excludeAssessmentId) {
+    params.push(excludeAssessmentId);
+    excludeSql = `AND id <> $${params.length}`;
+  }
+  const res = await query(
+    `SELECT *
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1
+        AND customer_id = $2
+        AND patient_relationship = 'SELF'
+        AND consent_status = 'GRANTED'
+        AND customer_confirmation_status = 'CONFIRMED'
+        AND deleted_at IS NULL
+        ${excludeSql}
+      ORDER BY customer_confirmed_at DESC NULLS LAST, updated_at DESC
+      LIMIT 20`,
+    params
+  );
+  if (!res.rowCount) return null;
+  const fields: Record<string, string | number> = {};
+  const now = Date.now();
+  for (const rawRow of res.rows) {
+    const row = mapRow(rawRow);
+    const ageReference = row.customerConfirmedAt || row.consentAt || row.updatedAt;
+    const ageReferenceMs = new Date(ageReference).getTime();
+    const ageElapsedMs = now - ageReferenceMs;
+    const ageIsFresh = Number.isFinite(ageReferenceMs) && ageElapsedMs >= 0 && ageElapsedMs <= 365 * 24 * 60 * 60 * 1000;
+    if (!("patient_age_years" in fields) && ageIsFresh && row.patientAgeYears != null) {
+      fields.patient_age_years = row.patientAgeYears;
+    }
+    if (!("biological_sex" in fields) && row.biologicalSex !== "UNKNOWN") {
+      fields.biological_sex = row.biologicalSex;
+    }
+    for (const key of ["allergies", "chronic_diseases"] as const) {
+      if (key in fields) continue;
+      const value = row.structuredAnswers?.[key];
+      if (typeof value === "string" && value.trim()) fields[key] = value.trim();
+    }
+  }
+  return Object.keys(fields).length > 0 ? { sourceAssessmentId: String(res.rows[0].id), fields } : null;
 }
 
 export async function getAssessmentConversationHistory(
@@ -293,12 +495,156 @@ export type CreateAssessmentInput = {
   channelId?: string | null;
   conversationId?: string | null;
   protocolId: string;
-  patientRelationship?: "SELF" | "CHILD" | "PARENT" | "OTHER";
+  patientRelationship?: "UNKNOWN" | "SELF" | "CHILD" | "PARENT" | "OTHER";
 };
 
 export type CreateAssessmentResult =
   | { status: "CREATED"; assessmentId: string }
   | { status: "ALREADY_EXISTS"; assessmentId: string; assessmentStatus: AssessmentStatus };
+
+export async function createProductReviewAssessmentOnce(input: {
+  tenantId: string;
+  channelId: string;
+  conversationId: string;
+  items: Array<{ sku: string; size: string; qty: number }>;
+  requiresSafetyCheck?: boolean;
+}): Promise<CreateAssessmentResult> {
+  const merged = new Map<string, { sku: string; size: string; qty: number }>();
+  for (const item of input.items) {
+    if (!item.sku || !item.size || !Number.isInteger(item.qty) || item.qty <= 0) continue;
+    const key = `${item.sku}\u0000${item.size}`;
+    const current = merged.get(key);
+    if (current) current.qty += item.qty;
+    else merged.set(key, { ...item });
+  }
+  const items = [...merged.values()];
+  if (items.length === 0) throw new Error("ไม่มีรายการสินค้าสำหรับส่งเภสัชกรตรวจ");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId);
+    const conversation = await client.query<{ customer_id: string | null }>(
+      `SELECT customer_id FROM bms_conversations
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [input.tenantId, input.conversationId]
+    );
+    if (!conversation.rowCount) throw new Error("ไม่พบบทสนทนาสำหรับสร้างเคส Product Review");
+    const active = await client.query<{ id: string; status: AssessmentStatus }>(
+      `SELECT id, status FROM bms_pharmacy_assessments
+        WHERE tenant_id = $1 AND conversation_id = $2
+          AND status IN (
+            'DRAFT','COLLECTING_INFORMATION','PENDING_CONFIRMATION',
+            'WAITING_FOR_PHARMACIST','PHARMACIST_REVIEWING','NEED_MORE_INFORMATION'
+          ) AND deleted_at IS NULL
+        ORDER BY created_at DESC LIMIT 1`,
+      [input.tenantId, input.conversationId]
+    );
+    if (active.rows[0]) {
+      await client.query("COMMIT");
+      return { status: "ALREADY_EXISTS", assessmentId: active.rows[0].id, assessmentStatus: active.rows[0].status };
+    }
+
+    const skus = [...new Set(items.map((item) => item.sku))];
+    const products = await client.query<{ sku: string; name: string; price: string }>(
+      `SELECT sku, name, price FROM bms_products
+        WHERE tenant_id = $1 AND sku = ANY($2::text[]) AND active = TRUE`,
+      [input.tenantId, skus]
+    );
+    const bySku = new Map(products.rows.map((product) => [product.sku, product]));
+    for (const item of items) {
+      const inventory = await client.query<{ available: number }>(
+        `SELECT (current_stock - reserved_stock) AS available
+           FROM bms_inventory
+          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+        [input.tenantId, item.sku, item.size]
+      );
+      if (!inventory.rowCount) throw new Error(`ไม่พบสินค้า ${item.sku} ขนาด ${item.size}`);
+      if (Number(inventory.rows[0].available) < item.qty) {
+        throw new Error(`สินค้า ${item.sku} ขนาด ${item.size} มีจำนวนไม่พอสำหรับส่งตรวจ`);
+      }
+    }
+    const draftItems = items.map((item) => {
+      const product = bySku.get(item.sku);
+      if (!product) throw new Error(`ไม่พบสินค้า ${item.sku} หรือสินค้าไม่พร้อมขาย`);
+      return {
+        sku: item.sku,
+        size: item.size,
+        qty: item.qty,
+        unitPrice: Number(product.price),
+        productName: product.name,
+        drugName: null,
+        dosageInstruction: null,
+        pharmacistNote: null,
+      };
+    });
+    const estimatedTotal = draftItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+    const checkoutDraft: PharmacyCheckoutOrderDraft = {
+      status: "AWAITING_CUSTOMER_CONFIRMATION",
+      items: draftItems,
+      estimatedTotal,
+      createdOrderId: null,
+      approvedAt: null,
+    };
+    const summary = {
+      protocolKey: "product_purchase",
+      symptomGroup: "product_purchase",
+      lines: draftItems.map((item) => ({
+        fieldKey: `product:${item.sku}:${item.size}`,
+        label: "สินค้าที่ต้องการซื้อ",
+        valueText: `${item.productName} (${item.sku}) / ${item.size} × ${item.qty}`,
+      })),
+      summaryText: draftItems.map((item) => `${item.productName} (${item.sku}) / ${item.size} × ${item.qty}`).join("\n"),
+      generatedAt: new Date().toISOString(),
+    };
+    const ttlMinutes = pharmacyAssessmentTtlMinutes();
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_pharmacy_assessments
+         (tenant_id, customer_id, channel_id, conversation_id, protocol_id,
+          patient_relationship, consent_status, status, needs_manual_intake, risk_level,
+          complaint, structured_answers, missing_fields, conflicting_fields,
+          completeness_status, customer_confirmation_status, customer_confirmation_summary,
+          customer_confirmed_at, checkout_order_draft, expires_at)
+       VALUES ($1,$2,$3,$4,NULL,'UNKNOWN','PENDING','WAITING_FOR_PHARMACIST',TRUE,'UNKNOWN',
+               $5::jsonb,'{}'::jsonb,$6::text[],'{}'::text[],
+               $7,'CONFIRMED',$8::jsonb,now(),$9::jsonb,
+               now() + make_interval(mins => $10))
+       RETURNING id`,
+      [
+        input.tenantId,
+        conversation.rows[0].customer_id,
+        input.channelId,
+        input.conversationId,
+        JSON.stringify({ requestType: "PRODUCT_PURCHASE", requiresSafetyCheck: input.requiresSafetyCheck === true }),
+        input.requiresSafetyCheck ? ["patient_relationship", "patient_age_years", "allergies", "current_medications"] : [],
+        input.requiresSafetyCheck ? "INCOMPLETE" : "COMPLETE",
+        JSON.stringify(summary),
+        JSON.stringify(checkoutDraft),
+        ttlMinutes,
+      ]
+    );
+    const assessmentId = inserted.rows[0].id;
+    await client.query(
+      `UPDATE bms_conversations SET pharmacy_intake_case_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, input.conversationId, assessmentId]
+    );
+    await client.query("COMMIT");
+    await recordPharmacyEvent({
+      tenantId: input.tenantId,
+      assessmentId,
+      actor: "system:pharmacy-product-gate",
+      action: "assessment.product_review_requested",
+      previousState: null,
+      nextState: "WAITING_FOR_PHARMACIST",
+      meta: { itemCount: draftItems.length, requiresSafetyCheck: input.requiresSafetyCheck === true },
+    });
+    return { status: "CREATED", assessmentId };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export async function createAssessmentOnce(input: CreateAssessmentInput): Promise<CreateAssessmentResult> {
   const client = await getClient();
@@ -316,7 +662,10 @@ export async function createAssessmentOnce(input: CreateAssessmentInput): Promis
       const active = await client.query<{ id: string; status: AssessmentStatus }>(
         `SELECT id, status FROM bms_pharmacy_assessments
           WHERE tenant_id = $1 AND conversation_id = $2
-            AND status NOT IN ('CLOSED', 'REJECTED') AND deleted_at IS NULL
+            AND status IN (
+              'DRAFT','COLLECTING_INFORMATION','PENDING_CONFIRMATION',
+              'WAITING_FOR_PHARMACIST','PHARMACIST_REVIEWING','NEED_MORE_INFORMATION'
+            ) AND deleted_at IS NULL
           ORDER BY created_at DESC LIMIT 1`,
         [input.tenantId, input.conversationId]
       );
@@ -339,7 +688,7 @@ export async function createAssessmentOnce(input: CreateAssessmentInput): Promis
         input.channelId ?? null,
         input.conversationId ?? null,
         input.protocolId,
-        input.patientRelationship ?? "SELF",
+        input.patientRelationship ?? "UNKNOWN",
         ttlMinutes,
       ]
     );
@@ -361,7 +710,7 @@ export async function createAssessmentOnce(input: CreateAssessmentInput): Promis
       action: "assessment.created",
       previousState: null,
       nextState: "DRAFT",
-      meta: { protocolId: input.protocolId, patientRelationship: input.patientRelationship ?? "SELF" },
+      meta: { protocolId: input.protocolId, patientRelationship: input.patientRelationship ?? "UNKNOWN" },
     });
     return { status: "CREATED", assessmentId };
   } catch (err) {
@@ -435,6 +784,11 @@ export type AnswerUpdate = {
   structuredAnswersPatch?: Record<string, unknown>;
   missingFields?: string[];
   conflictingFields?: string[];
+  anomalies?: unknown[];
+  completenessStatus?: CompletenessStatus;
+  customerConfirmationStatus?: CustomerConfirmationStatus;
+  customerConfirmationSummary?: CustomerConfirmationSummary | null;
+  customerConfirmedAt?: string | null;
   detectedRedFlags?: unknown[];
   riskLevel?: string;
   currentQuestionKey?: string | null;
@@ -442,6 +796,7 @@ export type AnswerUpdate = {
   biologicalSex?: string;
   pregnancyStatus?: string;
   breastfeedingStatus?: string;
+  patientRelationship?: string;
 };
 
 /**
@@ -463,6 +818,11 @@ export async function updateAnswers(tenantId: string, assessmentId: string, patc
   if (patch.structuredAnswersPatch) push("structured_answers", JSON.stringify({ ...patch.structuredAnswersPatch }));
   if (patch.missingFields) push("missing_fields", patch.missingFields);
   if (patch.conflictingFields) push("conflicting_fields", patch.conflictingFields);
+  if (patch.anomalies) push("anomalies", JSON.stringify(patch.anomalies));
+  if (patch.completenessStatus) push("completeness_status", patch.completenessStatus);
+  if (patch.customerConfirmationStatus) push("customer_confirmation_status", patch.customerConfirmationStatus);
+  if (patch.customerConfirmationSummary !== undefined) push("customer_confirmation_summary", JSON.stringify(patch.customerConfirmationSummary));
+  if (patch.customerConfirmedAt !== undefined) push("customer_confirmed_at", patch.customerConfirmedAt);
   if (patch.detectedRedFlags) push("detected_red_flags", JSON.stringify(patch.detectedRedFlags));
   if (patch.riskLevel) push("risk_level", patch.riskLevel);
   if (patch.currentQuestionKey !== undefined) push("current_question_key", patch.currentQuestionKey);
@@ -470,9 +830,17 @@ export async function updateAnswers(tenantId: string, assessmentId: string, patc
   if (patch.biologicalSex) push("biological_sex", patch.biologicalSex);
   if (patch.pregnancyStatus) push("pregnancy_status", patch.pregnancyStatus);
   if (patch.breastfeedingStatus) push("breastfeeding_status", patch.breastfeedingStatus);
+  if (patch.patientRelationship) push("patient_relationship", patch.patientRelationship);
 
   // JSONB columns need explicit cast — build the SET clause with casts for the JSON ones.
-  const jsonCols = new Set(["complaint", "medical_info", "structured_answers", "detected_red_flags"]);
+  const jsonCols = new Set([
+    "complaint",
+    "medical_info",
+    "structured_answers",
+    "anomalies",
+    "customer_confirmation_summary",
+    "detected_red_flags",
+  ]);
   const setClause = sets
     .map((s) => {
       const [col] = s.split(" = ");
@@ -528,6 +896,11 @@ export async function recordAiSummary(
 
 export type EditSummaryResult = { status: "OK" | "NOT_FOUND" | "INVALID_STATE"; current?: AssessmentStatus };
 
+export type EditPharmacistDecisionNotesResult = {
+  status: "OK" | "NOT_FOUND" | "INVALID_STATE" | "STALE_VERSION";
+  current?: AssessmentStatus;
+};
+
 /**
  * The pharmacist's own edit to the AI-drafted summary — kept distinct from
  * recordAiSummary() (which is the AI-authored path and bumps
@@ -568,6 +941,58 @@ export async function editAssessmentSummary(
     ctx,
   });
   return { status: "OK" };
+}
+
+/**
+ * Saves the pharmacist-authored response draft before the final decision.
+ * The text is sensitive clinical/customer content, so the audit event records
+ * only that the field changed. Optimistic version matching prevents one
+ * reviewer from silently overwriting another reviewer's draft.
+ */
+export async function editPharmacistDecisionNotes(
+  tenantId: string,
+  assessmentId: string,
+  expectedVersion: number,
+  decisionNotes: string,
+  actorUserId: string,
+  ctx?: any
+): Promise<EditPharmacistDecisionNotesResult> {
+  const updated = await query(
+    `UPDATE bms_pharmacy_assessments
+        SET pharmacist_decision_notes = $4,
+            version = version + 1,
+            updated_at = now()
+      WHERE tenant_id = $1
+        AND id = $2
+        AND version = $3
+        AND status = 'PHARMACIST_REVIEWING'
+        AND deleted_at IS NULL
+      RETURNING id`,
+    [tenantId, assessmentId, expectedVersion, decisionNotes.trim()]
+  );
+  if (updated.rowCount) {
+    await recordPharmacyEvent({
+      tenantId,
+      assessmentId,
+      actor: ctx?.admin?.email || ctx?.admin?.id || actorUserId,
+      action: "assessment.pharmacist_summary_edited",
+      meta: {},
+      ctx,
+    });
+    return { status: "OK" };
+  }
+
+  const current = await query<{ status: AssessmentStatus; version: number }>(
+    `SELECT status, version
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [tenantId, assessmentId]
+  );
+  if (!current.rowCount) return { status: "NOT_FOUND" };
+  if (current.rows[0].status !== "PHARMACIST_REVIEWING") {
+    return { status: "INVALID_STATE", current: current.rows[0].status };
+  }
+  return { status: "STALE_VERSION" };
 }
 
 /**
@@ -640,15 +1065,95 @@ async function transition(
   return { ok: (res.rowCount ?? 0) > 0, previousState };
 }
 
-export async function markWaitingForPharmacist(
+export async function markPendingCustomerConfirmation(
   tenantId: string,
   assessmentId: string,
-  reason?: "customer_requested"
+  summary: CustomerConfirmationSummary
 ): Promise<boolean> {
   const { ok, previousState } = await transition(
     tenantId,
     assessmentId,
     ["COLLECTING_INFORMATION", "NEED_MORE_INFORMATION"],
+    "PENDING_CONFIRMATION",
+    ", customer_confirmation_status = $5, customer_confirmation_summary = $6::jsonb, customer_confirmed_at = NULL, current_question_key = NULL",
+    ["PENDING", JSON.stringify(summary)]
+  );
+  if (!ok) return false;
+  await recordPharmacyEvent({
+    tenantId,
+    assessmentId,
+    actor: "system:pharmacy-intake",
+    action: "assessment.confirmation_requested",
+    previousState,
+    nextState: "PENDING_CONFIRMATION",
+    meta: { lineCount: summary.lines.length, protocolKey: summary.protocolKey },
+  });
+  return true;
+}
+
+export async function reopenForCustomerCorrection(tenantId: string, assessmentId: string): Promise<boolean> {
+  const { ok, previousState } = await transition(
+    tenantId,
+    assessmentId,
+    ["PENDING_CONFIRMATION"],
+    "COLLECTING_INFORMATION",
+    ", customer_confirmation_status = 'NOT_REQUESTED', customer_confirmed_at = NULL, current_question_key = NULL"
+  );
+  if (!ok) return false;
+  await recordPharmacyEvent({
+    tenantId,
+    assessmentId,
+    actor: "customer:pharmacy-intake",
+    action: "assessment.reopened_for_customer_correction",
+    previousState,
+    nextState: "COLLECTING_INFORMATION",
+    meta: {},
+  });
+  return true;
+}
+
+export async function confirmCustomerSummary(tenantId: string, assessmentId: string): Promise<boolean> {
+  const current = await query<{ completeness_status: CompletenessStatus }>(
+    `SELECT completeness_status FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, assessmentId]
+  );
+  if (!current.rowCount || current.rows[0].completeness_status !== "COMPLETE") return false;
+  const { ok, previousState } = await transition(
+    tenantId,
+    assessmentId,
+    ["PENDING_CONFIRMATION"],
+    "WAITING_FOR_PHARMACIST",
+    ", customer_confirmation_status = 'CONFIRMED', customer_confirmed_at = now()"
+  );
+  if (!ok) return false;
+  await recordPharmacyEvent({
+    tenantId,
+    assessmentId,
+    actor: "customer:pharmacy-intake",
+    action: "assessment.confirmed_by_customer",
+    previousState,
+    nextState: "WAITING_FOR_PHARMACIST",
+    meta: {},
+  });
+  return true;
+}
+
+export async function markWaitingForPharmacist(
+  tenantId: string,
+  assessmentId: string,
+  reason?: "customer_requested" | "ai_unavailable"
+): Promise<boolean> {
+  if (!reason) {
+    const current = await query<{ completeness_status: CompletenessStatus }>(
+      `SELECT completeness_status FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, assessmentId]
+    );
+    if (!current.rowCount || current.rows[0].completeness_status !== "COMPLETE") return false;
+  }
+  const { ok, previousState } = await transition(
+    tenantId,
+    assessmentId,
+    ["COLLECTING_INFORMATION", "NEED_MORE_INFORMATION", "PENDING_CONFIRMATION"],
     "WAITING_FOR_PHARMACIST",
     reason ? ", escalation_reason = $5" : "",
     reason ? [reason] : []
@@ -658,7 +1163,12 @@ export async function markWaitingForPharmacist(
       tenantId,
       assessmentId,
       actor: reason === "customer_requested" ? "customer:pharmacy-intake" : "system:pharmacy-intake",
-      action: reason === "customer_requested" ? "assessment.customer_requested_pharmacist" : "assessment.submitted_for_review",
+      action:
+        reason === "customer_requested"
+          ? "assessment.customer_requested_pharmacist"
+          : reason === "ai_unavailable"
+            ? "assessment.submitted_for_manual_intake"
+            : "assessment.submitted_for_review",
       previousState,
       nextState: "WAITING_FOR_PHARMACIST",
       meta: reason ? { reason } : {},
@@ -734,7 +1244,8 @@ export async function escalateToEmergency(
   tenantId: string,
   assessmentId: string,
   reason: string,
-  ctx?: any
+  ctx?: any,
+  deliverCustomerMessage = true
 ): Promise<boolean> {
   const { ok, previousState } = await transition(
     tenantId,
@@ -755,7 +1266,46 @@ export async function escalateToEmergency(
       meta: { reason },
       ctx,
     });
-    await notifyCustomerOfDecision(tenantId, assessmentId, EMERGENCY_CUSTOMER_MESSAGE, "emergency_referral");
+    if (deliverCustomerMessage) {
+      await notifyCustomerOfDecision(tenantId, assessmentId, EMERGENCY_CUSTOMER_MESSAGE, "emergency_referral");
+    }
+  }
+  return ok;
+}
+
+export async function routeProtocolEscalation(
+  tenantId: string,
+  assessmentId: string,
+  action: Exclude<ProtocolEscalationAction, "CONTINUE">,
+  reason: string,
+  severity: "LOW" | "MODERATE" | "HIGH" | "EMERGENCY",
+  ctx?: any,
+  deliverCustomerMessage = true
+): Promise<boolean> {
+  if (action === "EMERGENCY_REFERRAL") return escalateToEmergency(tenantId, assessmentId, reason, ctx, deliverCustomerMessage);
+  const nextState: AssessmentStatus = action === "URGENT_MEDICAL_REVIEW" ? "REFER_TO_DOCTOR" : "WAITING_FOR_PHARMACIST";
+  const { ok, previousState } = await transition(
+    tenantId,
+    assessmentId,
+    ["DRAFT", "COLLECTING_INFORMATION", "PENDING_CONFIRMATION", "NEED_MORE_INFORMATION"],
+    nextState,
+    `, escalation_reason = $5, risk_level = $6${nextState === "REFER_TO_DOCTOR" ? ", closed_at = now()" : ""}`,
+    [reason, severity]
+  );
+  if (ok) {
+    await recordPharmacyEvent({
+      tenantId,
+      assessmentId,
+      actor: ctx?.admin?.email || ctx?.admin?.id || "system:pharmacy-intake",
+      action: action === "URGENT_MEDICAL_REVIEW" ? "assessment.protocol_urgent_medical_review" : "assessment.protocol_pharmacist_review",
+      previousState,
+      nextState,
+      meta: { reason, severity },
+      ctx,
+    });
+    if (action === "URGENT_MEDICAL_REVIEW" && deliverCustomerMessage) {
+      await notifyCustomerOfDecision(tenantId, assessmentId, REFERRED_CUSTOMER_MESSAGE, "referred_to_doctor");
+    }
   }
   return ok;
 }
@@ -804,23 +1354,24 @@ export async function startReview(
   );
   if (!cur.rowCount) return { status: "NOT_FOUND" };
   const row = cur.rows[0];
-  if (!ALLOWED_TRANSITIONS[row.status]?.includes("PHARMACIST_REVIEWING")) {
-    return { status: "INVALID_STATE", current: row.status };
+  const currentStatus = row.status as AssessmentStatus;
+  if (!ALLOWED_TRANSITIONS[currentStatus]?.includes("PHARMACIST_REVIEWING")) {
+    return { status: "INVALID_STATE", current: currentStatus };
   }
   const res = await query(
     `UPDATE bms_pharmacy_assessments
         SET status = 'PHARMACIST_REVIEWING', version = version + 1, updated_at = now(),
             assigned_pharmacist_id = COALESCE(assigned_pharmacist_id, $3)
       WHERE tenant_id = $1 AND id = $2 AND status = $4`,
-    [tenantId, assessmentId, actorUserId, row.status]
+    [tenantId, assessmentId, actorUserId, currentStatus]
   );
-  if ((res.rowCount ?? 0) === 0) return { status: "INVALID_STATE", current: row.status };
+  if ((res.rowCount ?? 0) === 0) return { status: "INVALID_STATE", current: currentStatus };
   await recordPharmacyEvent({
     tenantId,
     assessmentId,
     actor: ctx?.admin?.email || ctx?.admin?.id || actorUserId,
     action: "assessment.pharmacist_assigned",
-    previousState: row.status,
+    previousState: currentStatus,
     nextState: "PHARMACIST_REVIEWING",
     meta: { claimedBy: actorUserId },
     ctx,
@@ -899,6 +1450,8 @@ export type PharmacistDecisionResult =
   | { status: "STALE_VERSION" }
   | { status: "NOT_A_LICENSED_PHARMACIST" }
   | { status: "EXPIRED_NEEDS_REEVALUATION" }
+  | { status: "CUSTOMER_CONFIRMATION_REQUIRED" }
+  | { status: "PRODUCT_POLICY_BLOCKED"; fields: string[] }
   | { status: "MISSING_REQUIRED_FIELDS"; fields: string[] };
 
 async function isLicensedPharmacist(client: PoolClient, tenantId: string, userId: string): Promise<boolean> {
@@ -1019,9 +1572,11 @@ export async function approveAssessment(
   actorUserId: string,
   expectedVersion: number,
   pharmacistResponse: string,
+  orderDraft: PharmacyCheckoutOrderDraft | null = null,
   ctx?: any
 ): Promise<PharmacistDecisionResult> {
   const trimmedResponse = (pharmacistResponse || "").trim();
+  const normalizedOrderDraft = normalizeCheckoutOrderDraft(orderDraft);
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorUserId });
@@ -1030,9 +1585,24 @@ export async function approveAssessment(
       version: number;
       expires_at: Date | null;
       missing_fields: string[];
+      conflicting_fields: string[];
+      anomalies: unknown[];
+      completeness_status: CompletenessStatus;
+      customer_confirmation_status: CustomerConfirmationStatus;
+      has_manual_override: boolean;
     }>(
-      `SELECT status, version, expires_at, missing_fields FROM bms_pharmacy_assessments
-        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
+      `SELECT a.status, a.version, a.expires_at, a.missing_fields, a.conflicting_fields,
+              a.anomalies, a.completeness_status, a.customer_confirmation_status,
+              EXISTS (
+                SELECT 1 FROM bms_pharmacy_assessment_events e
+                 WHERE e.tenant_id = a.tenant_id AND e.assessment_id = a.id
+                   AND (
+                     e.action = 'assessment.manual_answer_recorded'
+                     OR (e.action = 'assessment.answer_changed' AND e.meta->>'source' = 'manual_pharmacist_entry')
+                   )
+              ) AS has_manual_override
+         FROM bms_pharmacy_assessments a
+        WHERE a.tenant_id = $1 AND a.id = $2 AND a.deleted_at IS NULL FOR UPDATE`,
       [tenantId, assessmentId]
     );
     if (!cur.rowCount) {
@@ -1060,6 +1630,21 @@ export async function approveAssessment(
       await client.query("ROLLBACK");
       return { status: "MISSING_REQUIRED_FIELDS", fields: row.missing_fields };
     }
+    if (row.completeness_status !== "COMPLETE") {
+      await client.query("ROLLBACK");
+      return { status: "MISSING_REQUIRED_FIELDS", fields: ["completeness_status"] };
+    }
+    if ((row.conflicting_fields?.length ?? 0) > 0 || (Array.isArray(row.anomalies) && row.anomalies.length > 0)) {
+      await client.query("ROLLBACK");
+      return { status: "MISSING_REQUIRED_FIELDS", fields: [
+        ...(row.conflicting_fields ?? []),
+        ...(Array.isArray(row.anomalies) && row.anomalies.length > 0 ? ["anomalies"] : []),
+      ] };
+    }
+    if (row.customer_confirmation_status !== "CONFIRMED" && !row.has_manual_override) {
+      await client.query("ROLLBACK");
+      return { status: "CUSTOMER_CONFIRMATION_REQUIRED" };
+    }
     if (!trimmedResponse) {
       await client.query("ROLLBACK");
       return { status: "MISSING_REQUIRED_FIELDS", fields: ["pharmacist_response"] };
@@ -1070,12 +1655,29 @@ export async function approveAssessment(
       return { status: "NOT_A_LICENSED_PHARMACIST" };
     }
 
+    if (normalizedOrderDraft) {
+      const productPolicy = await checkPharmacistDraftPolicyInTx(
+        client,
+        tenantId,
+        normalizedOrderDraft.items.map((item) => ({ sku: item.sku, qty: item.qty }))
+      );
+      if (!productPolicy.allowed) {
+        await client.query("ROLLBACK");
+        return {
+          status: "PRODUCT_POLICY_BLOCKED",
+          fields: [`${productPolicy.sku}:${productPolicy.status}`],
+        };
+      }
+    }
+
     await client.query(
       `UPDATE bms_pharmacy_assessments
           SET status = 'APPROVED', approved_by = $3, approved_at = now(),
-              pharmacist_decision_notes = $4, version = version + 1, updated_at = now(), closed_at = now()
+              pharmacist_decision_notes = $4,
+              checkout_order_draft = $5::jsonb,
+              version = version + 1, updated_at = now(), closed_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'PHARMACIST_REVIEWING'`,
-      [tenantId, assessmentId, actorUserId, trimmedResponse]
+      [tenantId, assessmentId, actorUserId, trimmedResponse, JSON.stringify(normalizedOrderDraft)]
     );
     await client.query("COMMIT");
     const staffActor = ctx?.admin?.email || ctx?.admin?.id || actorUserId;
@@ -1086,11 +1688,17 @@ export async function approveAssessment(
       action: "assessment.approved",
       previousState: "PHARMACIST_REVIEWING",
       nextState: "APPROVED",
-      meta: {},
+      meta: normalizedOrderDraft ? { checkoutDraftItems: normalizedOrderDraft.items.length } : {},
       ctx,
     });
     // The pharmacist's own verbatim text — never AI-authored/paraphrased.
-    await notifyCustomerOfDecision(tenantId, assessmentId, trimmedResponse, "approved", staffActor);
+    await notifyCustomerOfDecision(
+      tenantId,
+      assessmentId,
+      buildApprovedCustomerMessage(trimmedResponse, normalizedOrderDraft),
+      "approved",
+      staffActor
+    );
     return { status: "OK" };
   } catch (err) {
     try {

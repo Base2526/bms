@@ -1,8 +1,9 @@
 import { query } from "@/lib/db";
 import { recordPharmacyEvent } from "./events";
 import { getActivePharmacyProtocolByKey, toProtocolDefinition } from "./protocols";
-import { computeMissingFields, evaluateAnswer, type KnownFields } from "./ruleEngine";
+import { computeMissingFields, evaluateAnswer, type KnownFields, type ProtocolCondition } from "./ruleEngine";
 import type { AssessmentStatus } from "./stateMachine";
+import { buildCustomerConfirmationLinesFromAnswers } from "./customerConfirmation";
 
 type DemoScenario = {
   status: AssessmentStatus;
@@ -31,22 +32,31 @@ const DEMO_SCENARIOS: Record<string, DemoScenario[]> = {
   ],
 };
 
+function conditionFieldKeys(condition: ProtocolCondition | undefined): string[] {
+  if (!condition) return [];
+  if ("allOf" in condition) return condition.allOf.flatMap(conditionFieldKeys);
+  if ("anyOf" in condition) return condition.anyOf.flatMap(conditionFieldKeys);
+  if ("not" in condition) return conditionFieldKeys(condition.not);
+  return [condition.field];
+}
+
 export async function seedPharmacyQueueDemo(
   tenantId: string,
   requestedProtocolKey: string | null | undefined,
   requestedAnswers: Record<string, unknown> | null | undefined,
   requestedTranscript: Array<{ role?: unknown; text?: unknown; createdAt?: unknown }> | null | undefined,
   ctx?: any
-): Promise<number> {
+): Promise<{ createdCount: number; assessmentIds: string[] }> {
   const desiredKeys = requestedProtocolKey ? [requestedProtocolKey] : ["headache", "cough", "diarrhea"];
   const protocol = (await Promise.all(desiredKeys.map((key) => getActivePharmacyProtocolByKey(tenantId, key)))).find(Boolean);
-  if (!protocol) return 0;
+  if (!protocol) return { createdCount: 0, assessmentIds: [] };
 
   const protocolDef = toProtocolDefinition(protocol);
   const allowedKeys = new Set([
     ...protocolDef.requiredFields.map((field) => field.key),
     ...protocolDef.conditionalQuestions.map((field) => field.key),
-    ...protocolDef.redFlagRules.map((rule) => rule.field),
+    ...protocolDef.redFlagRules.flatMap((rule) => rule.field ? [rule.field] : conditionFieldKeys(rule.condition)),
+    "patient_relationship",
     "patient_age_years",
     "biological_sex",
     "pregnancy_status",
@@ -55,13 +65,21 @@ export async function seedPharmacyQueueDemo(
   const answers: KnownFields = {};
   for (const [key, value] of Object.entries(requestedAnswers ?? {})) {
     if (allowedKeys.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")) {
+      if (key === "patient_relationship" && !["SELF", "CHILD", "PARENT", "OTHER"].includes(String(value))) continue;
       answers[key] = value;
     }
   }
-  const decision = Object.keys(answers).length > 0 ? evaluateAnswer(protocolDef, answers) : null;
+  const hasRequestedScenario = requestedAnswers !== null && requestedAnswers !== undefined;
+  const decision = hasRequestedScenario ? evaluateAnswer(protocolDef, answers) : null;
   const liveScenario: DemoScenario | null = decision
     ? {
-        status: decision.decision === "RED_FLAG" ? "EMERGENCY_REFERRAL" : "WAITING_FOR_PHARMACIST",
+        status: decision.decision === "RED_FLAG"
+          ? decision.flag.action === "EMERGENCY_REFERRAL"
+            ? "EMERGENCY_REFERRAL"
+            : decision.flag.action === "URGENT_MEDICAL_REVIEW"
+              ? "REFER_TO_DOCTOR"
+              : "WAITING_FOR_PHARMACIST"
+          : "WAITING_FOR_PHARMACIST",
         riskLevel: decision.decision === "RED_FLAG" ? decision.flag.severity : "LOW",
         answers: answers as Record<string, string | number | boolean>,
         redFlags:
@@ -91,22 +109,59 @@ export async function seedPharmacyQueueDemo(
     : [];
   const scenarios = liveScenario ? [liveScenario] : (DEMO_SCENARIOS[protocol.protocolKey] ?? DEMO_SCENARIOS.headache);
   let created = 0;
+  const assessmentIds: string[] = [];
+  const transcriptPreview = rawMessages[rawMessages.length - 1]?.text || `Pharmacy lab ${protocol.protocolKey}`;
   for (const scenario of scenarios) {
+    const missingFields = computeMissingFields(protocolDef, scenario.answers);
+    const completenessStatus = missingFields.length === 0 ? "COMPLETE" : "INCOMPLETE";
+    const customerConfirmationStatus =
+      completenessStatus === "COMPLETE" && scenario.status === "WAITING_FOR_PHARMACIST"
+        ? "CONFIRMED"
+        : "NOT_REQUESTED";
+    const confirmationLines = buildCustomerConfirmationLinesFromAnswers(scenario.answers);
+    const customerConfirmationSummary = {
+      protocolKey: protocol.protocolKey,
+      symptomGroup: protocol.supportedSymptomGroup,
+      lines: confirmationLines,
+      summaryText: [
+        `อาการหลัก: ${protocol.supportedSymptomGroup}`,
+        ...confirmationLines.map((line) => `${line.label}: ${line.valueText}`),
+      ].join("\n"),
+      generatedAt: new Date().toISOString(),
+    };
+    const conversationRes = await query<{ id: string }>(
+      `INSERT INTO bms_conversations
+         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
+       VALUES
+         ($1, 'test', $2, NULL, 'OPEN', 0, $3, now(), $4)
+       RETURNING id`,
+      [
+        tenantId,
+        `pharmacy-lab:${protocol.protocolKey}:${Date.now()}:${created + 1}`,
+        transcriptPreview.slice(0, 500),
+        rawMessages[rawMessages.length - 1]?.role === "customer" ? "customer" : "ai",
+      ]
+    );
+    const conversationId = conversationRes.rows[0]?.id ?? null;
+
     const result = await query<{ id: string; status: AssessmentStatus }>(
       `INSERT INTO bms_pharmacy_assessments
          (tenant_id, customer_id, channel_id, conversation_id, protocol_id, patient_relationship,
           status, risk_level, consent_status, consent_at, consent_version,
           patient_age_years, biological_sex, pregnancy_status, breastfeeding_status,
           structured_answers, raw_messages, missing_fields, detected_red_flags, escalation_reason,
-          ai_summary, ai_summary_version)
+          ai_summary, ai_summary_version, completeness_status, customer_confirmation_status,
+          customer_confirmation_summary, customer_confirmed_at)
        VALUES
-         ($1, NULL, 'FAKE-ASSISTANT', NULL, $2, 'SELF',
-          $3, $4, 'GRANTED', now(), 'assistant-test-mode',
-          $5, $6, $7, $8,
-          $9::jsonb, $10::jsonb, $11, $12::jsonb, $13, $14, $15)
+         ($1, NULL, 'TEST-LAB', $2, $3, $20,
+          $4, $5, 'GRANTED', now(), 'assistant-test-mode',
+          $6, $7, $8, $9,
+          $10::jsonb, $11::jsonb, $12, $13::jsonb, $14, $15, $16, $17, $18,
+          $19::jsonb, CASE WHEN $18 = 'CONFIRMED' THEN now() ELSE NULL END)
        RETURNING id, status`,
       [
         tenantId,
+        conversationId,
         protocol.id,
         scenario.status,
         scenario.riskLevel,
@@ -122,16 +177,48 @@ export async function seedPharmacyQueueDemo(
           : "UNKNOWN",
         JSON.stringify(scenario.answers),
         JSON.stringify(rawMessages),
-        computeMissingFields(protocolDef, scenario.answers),
+        missingFields,
         JSON.stringify(scenario.redFlags ?? []),
         scenario.escalationReason ?? null,
         scenario.summary ?? null,
         scenario.summary ? 1 : 0,
+        completenessStatus,
+        customerConfirmationStatus,
+        JSON.stringify(customerConfirmationSummary),
+        ["SELF", "CHILD", "PARENT", "OTHER"].includes(String(scenario.answers.patient_relationship))
+          ? String(scenario.answers.patient_relationship)
+          : "UNKNOWN",
       ]
     );
     const row = result.rows[0];
     if (!row) continue;
+    if (conversationId) {
+      await query(
+        `UPDATE bms_conversations
+            SET pharmacy_intake_case_id = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, conversationId, row.id]
+      );
+      if (rawMessages.length > 0) {
+        for (const entry of rawMessages) {
+          await query(
+            `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+            [
+              tenantId,
+              conversationId,
+              entry.role === "customer" ? "IN" : "OUT",
+              entry.text,
+              entry.role === "customer" ? "customer" : "ai",
+              JSON.stringify({ pharmacyIntakeLab: true, assessmentId: row.id }),
+              entry.at,
+            ]
+          );
+        }
+      }
+    }
     created += 1;
+    assessmentIds.push(row.id);
     await recordPharmacyEvent({
       tenantId,
       assessmentId: row.id,
@@ -142,5 +229,5 @@ export async function seedPharmacyQueueDemo(
       ctx,
     });
   }
-  return created;
+  return { createdCount: created, assessmentIds };
 }

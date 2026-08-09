@@ -751,7 +751,9 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
     bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
+    bmsPharmacyCatalog(search: String, limit: Int): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
+    bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
     bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
@@ -875,6 +877,12 @@ export const typeDefs = /* GraphQL */ `
     sku: String!
     size: String!
     qty: Int!
+  }
+
+  input BmsPharmacyLabCartItemInput {
+    sku: String!
+    qty: Int!
+    size: String
   }
 
   # ===== BMS documents (invoice/quotation) — คำนวณสด ไม่ persist =====
@@ -1912,6 +1920,7 @@ export const typeDefs = /* GraphQL */ `
     lineEnabled: Boolean!
     lineUserId: String
     enabled: Boolean!
+    platformAllowed: Boolean!
     lastSentAt: String
     lastStatus: String        # SUCCESS / PARTIAL / FAILED
     lastPeriodKey: String
@@ -2013,6 +2022,12 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsFollowupRunResult { scanned: Int!  sent: Int!  skipped: Int!  failed: Int! }
 
+  type BmsSeedPharmacyQueueDemoResult {
+    createdCount: Int!
+    assessmentId: ID
+    assessmentIds: [ID!]!
+  }
+
   # ===== AI Pharmacy Intake Assistant =====
   # AI never writes status — see lib/bms/pharmacy/assessments.ts. Approve/
   # reject/refer additionally require users.is_licensed_pharmacist, checked
@@ -2049,7 +2064,12 @@ export const typeDefs = /* GraphQL */ `
     currentQuestionKey: String
     missingFields: [String!]!
     conflictingFields: [String!]!
+    anomalies: JSON!
+    completenessStatus: String!
     detectedRedFlags: JSON!
+    customerConfirmationStatus: String!   # NOT_REQUESTED / PENDING / CONFIRMED
+    customerConfirmationSummary: JSON!
+    customerConfirmedAt: String
     outOfScopeReason: String
     escalationReason: String
     rawMessages: JSON!
@@ -2061,6 +2081,7 @@ export const typeDefs = /* GraphQL */ `
     pharmacistEdits: JSON!
     pharmacistDecisionNotes: String
     medicationSuggestions: JSON! # pharmacist-only — never sent to the customer, see README
+    checkoutOrderDraft: JSON
     version: Int!
     expiresAt: String
     closedAt: String
@@ -2097,6 +2118,24 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  type BmsPharmacyCatalogVariant {
+    size: String!
+    available: Int!
+  }
+
+  type BmsPharmacyCatalogItem {
+    sku: String!
+    name: String!
+    price: Float!
+    category: String
+    brand: String
+    availableTotal: Int!
+    productType: String!
+    salePolicy: String!
+    policyStatus: String!
+    variants: [BmsPharmacyCatalogVariant!]!
+  }
+
   type BmsPharmacyProtocol {
     id: ID!
     tenantId: ID!
@@ -2104,6 +2143,8 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     version: Int!
     supportedSymptomGroup: String!
+    displayLabel: String!
+    triggerTerms: [String!]!
     requiredFields: JSON!
     conditionalQuestions: JSON!
     redFlagRules: JSON!
@@ -2112,10 +2153,52 @@ export const typeDefs = /* GraphQL */ `
     status: String!            # DRAFT / PENDING_REVIEW / APPROVED / RETIRED
     clinicallyApproved: Boolean!
     enabled: Boolean!
+    platformAllowed: Boolean!  # protocol key is present in the server-side PHARMACY_PROTOCOLS_ENABLED allowlist
     reviewedBy: ID
     reviewedAt: String
     createdAt: String!
     updatedAt: String!
+  }
+
+  type BmsPharmacyProductPolicy {
+    id: ID!
+    tenantId: ID!
+    productSku: String!
+    productName: String!
+    productType: String!
+    regulatoryFramework: String!
+    regulatoryClass: String!
+    regulatoryEvidenceSource: String!
+    regulatoryEvidenceRef: String
+    salePolicy: String!
+    registrationNo: String
+    maxQuantity: Int
+    safetyRuleKey: String
+    status: String!
+    reviewedBy: ID
+    reviewedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type BmsPharmacyProductPolicyPage {
+    items: [BmsPharmacyProductPolicy!]!
+    total: Int!
+    limit: Int!
+    offset: Int!
+  }
+
+  input BmsPharmacyProductPolicyInput {
+    productSku: String!
+    productType: String!
+    regulatoryFramework: String!
+    regulatoryClass: String!
+    regulatoryEvidenceSource: String!
+    regulatoryEvidenceRef: String
+    salePolicy: String!
+    registrationNo: String
+    maxQuantity: Int
+    safetyRuleKey: String
   }
 
   type BmsPharmacyLicenseUser {
@@ -2132,6 +2215,8 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     version: Int
     supportedSymptomGroup: String!
+    displayLabel: String!
+    triggerTerms: [String!]!
     requiredFields: JSON!
     conditionalQuestions: JSON!
     redFlagRules: JSON!
@@ -2929,7 +3014,8 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!
     bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
-    bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): Boolean!
+    bmsCreatePharmacyLabOrder(items: [BmsPharmacyLabCartItemInput!]!): BmsReorderResult!
+    bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): BmsSeedPharmacyQueueDemoResult!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!          # แก้ชื่อร้าน/slug (Administrator ของร้าน)
@@ -2957,18 +3043,24 @@ export const typeDefs = /* GraphQL */ `
     bmsAssignPharmacist(assessmentId: ID!, pharmacistUserId: ID!): BmsPharmacyAssessment!
     bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
     bmsRequestMoreInformation(assessmentId: ID!, expectedVersion: Int!, fields: [String!]!, note: String): BmsPharmacyAssessment!
-    bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, pharmacistResponse: String!): BmsPharmacyAssessment!
+    bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, pharmacistResponse: String!, orderDraft: JSON): BmsPharmacyAssessment!
     bmsRejectAssessment(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
     bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
     bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!
     bmsEditAssessmentSummary(assessmentId: ID!, summaryText: String!): BmsPharmacyAssessment!
+    bmsEditPharmacistDecisionNotes(assessmentId: ID!, expectedVersion: Int!, decisionNotes: String!): BmsPharmacyAssessment!
     bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
     bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
     bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
     bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String): Boolean!
     bmsRecordPharmacyConsent(assessmentId: ID!, status: String!, consentVersion: String!): BmsPharmacyAssessment!
     bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
+    bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!
+    bmsReviewPharmacyProtocol(id: ID!, decision: String!): BmsPharmacyProtocol!
     bmsSetPharmacyProtocolEnabled(id: ID!, enabled: Boolean!): BmsPharmacyProtocol!
+    bmsUpsertPharmacyProductPolicy(input: BmsPharmacyProductPolicyInput!): BmsPharmacyProductPolicy!
+    bmsSubmitPharmacyProductPolicyForReview(productSku: String!): BmsPharmacyProductPolicy!
+    bmsReviewPharmacyProductPolicy(productSku: String!, decision: String!): BmsPharmacyProductPolicy!
     bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!

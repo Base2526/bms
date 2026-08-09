@@ -31,6 +31,8 @@ export type ExecCtx = {
    * customer pipeline replace the model's closing prose with the verified checkout link.
    */
   createdOrderId?: string;
+  /** Server-only tracking id for a product purchase routed to pharmacist review. */
+  pharmacyReviewCaseId?: string;
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
 };

@@ -23,6 +23,7 @@ import {
   getConversation,
   getAiConversationState,
   setAiConversationState,
+  ensureConversationForPipeline,
   type AiConversationState,
 } from "./inbox";
 import { listCategories } from "./productCategories";
@@ -38,12 +39,17 @@ import {
   hasConfiguredPaymentAccounts,
 } from "./paymentConfiguration";
 import {
+  createProductReviewAssessmentOnce,
+  getApprovedAssessmentCheckoutDraftByConversation,
+  markAssessmentOrderCreated,
+} from "./pharmacy/assessments";
+import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
   isAlternativeCatalogRequest,
   suppressUnconfiguredPaymentAdvice,
 } from "./customerReplyPolicy";
-import { getCustomerCheckoutStatus } from "./customers";
+import { ensureCustomerForIdentity, getCustomerCheckoutStatus } from "./customers";
 import { orderCheckoutChatReply } from "./checkout";
 import {
   createCouponWalletToken,
@@ -53,7 +59,22 @@ import {
   type CustomerCouponWalletItem,
 } from "./coupons";
 import { isPharmacyIntakeEnabled } from "./pharmacy/config";
-import { detectPharmacyIntakeTrigger, getPharmacyIntakeState, runPharmacyIntakeTurn, startPharmacyIntake } from "./pharmacy/intake";
+import {
+  getPharmacyIntakeState,
+  runPharmacyIntakeTurn,
+  startPharmacyIntake,
+} from "./pharmacy/intake";
+import { listActivePharmacyTriggerDefinitions, type PharmacyTriggerDefinition } from "./pharmacy/protocols";
+import {
+  detectPharmacyIntakeTrigger,
+  normalizePharmacyClarificationReply,
+  pharmacyAmbiguousClarificationReply,
+  pharmacyEmergencyReply,
+} from "./pharmacy/trigger";
+import { routePharmacyConversationMessage } from "./pharmacy/conversationRouter";
+
+const PHARMACY_CHECKOUT_CONFIRM_PATTERN =
+  /(ยืนยันสั่งซื้อ|ยืนยันซื้อ|สั่งซื้อเลย|เอาตามนี้|ตกลงเอาตามนี้|โอเคเอาตามนี้|confirm order)/i;
 
 // P0: จำนวนข้อความบทสนทนาล่าสุด (ไม่รวมข้อความปัจจุบัน) ที่ป้อนกลับเข้า AI tool loop
 // โหลดมากกว่าที่ส่งเข้าโมเดลเพื่อบีบอัดส่วนเก่า ก่อนเก็บ recent messages แบบเต็ม
@@ -294,6 +315,8 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "คำถามกว้าง เช่น มีอะไรขาย/มีอะไรบ้าง ให้เรียก browse_catalog; ถ้าลูกค้าขอให้ช่วยแนะนำตามความต้องการ/งบ ให้เรียก recommend_products แล้วเสนอสินค้าจริงที่พร้อมขาย 3-5 รายการแบบสั้น ๆ ก่อนถามเจาะความต้องการเพียง 1 คำถาม",
     "คำถามสินค้าใหม่/ของเข้าใหม่/เพิ่งเพิ่ม ให้เรียก list_new_arrivals ทุกครั้ง เพราะสินค้าสามารถเปลี่ยนได้ตลอด ห้ามใช้ประวัติแชทเป็น catalog",
     "ถ้าสินค้าหรือไซซ์ที่ขอไม่มี/หมด ให้เรียก find_alternatives และเสนอสินค้าจริง 2-3 ตัวเลือก (หรือไซซ์อื่นของรุ่นเดิมจากผลทูล) ก่อนถามว่าจะเช็กตัวไหนต่อ ห้ามจบแค่คำว่าไม่มี",
+    "ห้ามเสนอสินค้าทดแทนคนละหมวดแบบเดาสุ่ม: ถ้า find_alternatives ไม่คืนตัวเลือกที่เกี่ยวข้อง ให้บอกว่าไม่มีตัวเลือกใกล้เคียงที่ตรวจสอบได้ แล้วถามว่าต้องการให้แอดมินช่วยดูต่อไหม",
+    "ข้อความสุขภาพหรืออาการป่วยที่กำกวมต้องถามยืนยันก่อน โดยเฉพาะร้านที่ไม่ใช่ pharmacy ห้ามเดาว่าลูกค้าต้องการยา/สินค้า และห้ามวินิจฉัยโรค",
     "ถ้าสินค้าหรือไซซ์ที่ลูกค้าต้องการหมด ให้ถามสั้น ๆ ว่าต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมได้ 1 ครั้ง; เรียก subscribe_restock_notification เฉพาะเมื่อลูกค้าตอบรับชัดเจนหรือขอให้แจ้งเอง และต้องมี sku+size ที่ยืนยันแล้ว ห้ามสมัครจากการคาดเดาความสนใจ",
     "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ",
     "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
@@ -324,6 +347,14 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     lines.push(
       `ร้านนี้จัดหมวดหมู่สินค้าไว้ดังนี้: ${categories.join(", ")} — ถ้าลูกค้าถามกว้าง ๆ (เช่น "มีอะไรบ้าง") ` +
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้กับ browse_catalog/search_products เพื่อเสนอสินค้าจริงก่อน แล้วค่อยถามเลือกหมวดเพียงหนึ่งคำถาม"
+    );
+  }
+  if (profile.businessArchetype === "pharmacy") {
+    lines.push(
+      "กฎร้านยา: ถ้ายังไม่ชัดว่าลูกค้าระบุสินค้าที่ต้องการซื้อเอง หรือกำลังขอให้ช่วยเลือกยาจากอาการ ต้องถามยืนยันเจตนาก่อน ห้ามตัดสินแทนลูกค้า",
+      "กฎร้านยา: เมื่อลูกค้าระบุชื่อสินค้าแล้ว ให้ค้น Catalog จริงก่อน ถ้าพบหลายสูตร/ความแรง/ขนาดต้องให้ลูกค้าเลือก ห้ามเดา SKU หรือสรุปประเภททางกฎหมายจากชื่อเรียกทั่วไป เช่น 'ยาแดง'",
+      "กฎร้านยา: Product Policy จาก backend เป็นผู้ตัดสินสุดท้าย ถ้า create_order คืนว่าต้องตรวจความปลอดภัย ต้องผ่านเภสัชกร ต้องมีใบสั่ง ห้ามขายออนไลน์ หรือ policy ยังไม่ทราบ ให้แจ้งตามผลนั้นและห้ามพยายามสร้างออร์เดอร์ซ้ำ",
+      "กฎร้านยา: ถ้าผล create_order มี pharmacyReviewCaseId ให้แจ้งเลขเคส 8 ตัวนั้นแก่ลูกค้าเพื่อใช้ติดตาม; ถ้าเป็น null ห้ามอ้างว่าสร้างเคสแล้ว"
     );
   }
   lines.push(...buildBusinessTypeExamples(profile.businessType));
@@ -861,6 +892,10 @@ function customerSafe(result: PipelineResult): PipelineResult {
   return { ...safeResult, quality: deriveAiTurnQuality(safeResult) };
 }
 
+function nonPharmacyHealthClarificationReply(): string {
+  return "ขอเช็กนิดนึงค่ะ ร้านนี้ไม่ได้ตั้งค่าเป็นร้านขายยา หมายถึงถามหาสินค้าในร้าน หรือพิมพ์เรื่องอาการป่วยมาผิดแชทคะ?";
+}
+
 function isBusinessClarification(reply: string): boolean {
   return /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่|ช่องทาง.*(?:โอน|ชำระ)|วิธี.*(?:โอน|ชำระ)).*(?:คะ|ค่ะ|\?)/is.test(
     reply
@@ -971,6 +1006,18 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult): st
       return `ขออภัยค่ะ ${nameOf(order.sku)} ไซซ์ ${order.size} มีของพร้อมส่งแค่ ${order.available} ชิ้น (ขอ ${order.requested}) รับตามจำนวนที่มี หรือเปลี่ยนไซซ์ไหมคะ?`;
     case "NOT_FOUND":
       return `ขออภัยค่ะ ไม่พบสินค้า ${nameOf(order.sku)} ไซซ์ ${order.size} ในระบบค่ะ`;
+    case "PHARMACY_POLICY_UNKNOWN":
+      return "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติค่ะ จึงยังสร้างออร์เดอร์ให้อัตโนมัติไม่ได้ ทางร้านจะส่งให้เภสัชกรตรวจสอบก่อนนะคะ";
+    case "PHARMACY_SAFETY_CHECK_REQUIRED":
+      return "สินค้านี้ต้องตรวจข้อมูลความปลอดภัยสั้น ๆ ก่อนสั่งซื้อค่ะ ขอส่งให้เภสัชกรช่วยตรวจสอบก่อนนะคะ";
+    case "PHARMACY_REVIEW_REQUIRED":
+      return "สินค้านี้ต้องให้เภสัชกรตรวจสอบก่อนสร้างออร์เดอร์ค่ะ";
+    case "PHARMACY_PRESCRIPTION_REQUIRED":
+      return "สินค้านี้ต้องมีใบสั่งและให้เภสัชกรตรวจสอบก่อนค่ะ จึงยังสร้างออร์เดอร์อัตโนมัติไม่ได้";
+    case "PHARMACY_ONLINE_SALE_PROHIBITED":
+      return "สินค้านี้ไม่สามารถสร้างออร์เดอร์ผ่านช่องทางออนไลน์ได้ค่ะ กรุณาติดต่อเภสัชกรของร้านโดยตรง";
+    case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
+      return `สินค้านี้สั่งได้ไม่เกิน ${order.maxQuantity} ชิ้นต่อครั้งค่ะ กรุณาปรับจำนวนก่อนยืนยันนะคะ`;
     case "EMPTY":
     default:
       return `ขออภัยค่ะ ไม่แน่ใจว่าต้องการสั่งอะไร ลองพิมพ์ เช่น "สั่ง Nike XL 2 ชิ้น" ได้เลยค่ะ`;
@@ -1006,16 +1053,19 @@ export async function runPipeline(
   let history: Awaited<ReturnType<typeof getRecentAiHistory>> = [];
   let storedState: AiConversationState = {};
   let profile: AiProfileContext = DEFAULT_AI_PROFILE;
+  let pharmacyTriggerDefinitions: PharmacyTriggerDefinition[] = [];
   try {
     convId = await resolveConversationId(tenantId, channel, customerRef);
     const loaded = await Promise.all([
       getRecentAiHistory(tenantId, convId, HISTORY_FETCH_MESSAGES),
       getAiConversationState(tenantId, convId),
       getStoreProfile(tenantId),
+      listActivePharmacyTriggerDefinitions(tenantId),
     ]);
     history = loaded[0];
     storedState = loaded[1];
     profile = loaded[2];
+    pharmacyTriggerDefinitions = loaded[3];
   } catch (err) {
     console.error("[BMS] pipeline pre-context history load failed:", err);
     await reportBmsFailure({
@@ -1044,48 +1094,205 @@ export async function runPipeline(
       meta: { stage },
     });
 
-  const aiInputMessage = profile.aiInterpretShortReplies
-    ? normalizeShortReplyMessage(message, history)
-    : message;
+  const isPharmacyTenant = profile.businessArchetype === "pharmacy";
+  const triggerDefinitions = isPharmacyTenant ? pharmacyTriggerDefinitions : undefined;
+  const aiInputMessage = normalizePharmacyClarificationReply(message, history, triggerDefinitions) ?? (
+    profile.aiInterpretShortReplies
+      ? normalizeShortReplyMessage(message, history)
+      : message
+  );
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
   const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
   const execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+  const pharmacyTrigger = detectPharmacyIntakeTrigger(
+    aiInputMessage,
+    triggerDefinitions
+  );
+  const pharmacyConversationRoute = routePharmacyConversationMessage(aiInputMessage);
+  const isPharmacyEmergency =
+    pharmacyConversationRoute.intent === "EMERGENCY" || pharmacyTrigger?.intent === "emergency";
+
+  if (isPharmacyEmergency && !isPharmacyTenant) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: pharmacyEmergencyReply(),
+    });
+  }
+
+  if (!isPharmacyTenant && (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `pharmacy:clarify:${pharmacyTrigger.protocolKey}`,
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: nonPharmacyHealthClarificationReply(),
+    });
+  }
+
+  if (pharmacyTrigger && !isPharmacyTenant) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `health:outside_pharmacy:${pharmacyTrigger.protocolKey}`,
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: nonPharmacyHealthClarificationReply(),
+    });
+  }
 
   // ===== AI Pharmacy Intake Assistant — deterministic early-return, same
   // shape as the checkoutDetailsFromReply() branch just below: if this
   // conversation has a case in flight, hand the ENTIRE turn to the
   // dedicated orchestrator and never enter the normal AI tool loop. AI
   // never decides to intercept here — the branch itself is deterministic.
-  if (isPharmacyIntakeEnabled() && convId) {
-    const pharmacyState = await getPharmacyIntakeState(tenantId, convId).catch(() => ({ stage: "NONE" as const }));
-    if (pharmacyState.stage !== "NONE") {
-      const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, convId, aiInputMessage, pharmacyState);
-      return customerSafe({
-        channel,
-        incoming: message,
-        understanding,
-        tool: `pharmacy:${pharmacyState.stage.toLowerCase()}`,
-        data: { status: "NOT_FOUND", query: aiInputMessage },
-        reply: result.reply,
-      });
-    }
-    const trigger = detectPharmacyIntakeTrigger(aiInputMessage);
-    if (trigger) {
-      const customerId = await findCustomerIdByIdentity(tenantId, channel, customerRef);
-      const started = await startPharmacyIntake(tenantId, convId, customerId, channel, trigger.protocolKey);
-      if (started.caseId) {
+  if (isPharmacyTenant && isPharmacyIntakeEnabled() && (convId || pharmacyTrigger || isPharmacyEmergency)) {
+    const canonicalCustomerId = await ensureCustomerForIdentity(tenantId, channel, customerRef).catch(async (err) => {
+      await reportStateFailure(err, "pharmacy_customer_identity");
+      return null;
+    });
+    const pharmacyConvId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+    if (pharmacyConvId) {
+      convId = pharmacyConvId;
+      const pharmacyState = await getPharmacyIntakeState(tenantId, pharmacyConvId).catch(() => ({ stage: "NONE" as const }));
+      if (pharmacyState.stage !== "NONE") {
+        const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, pharmacyConvId, aiInputMessage, pharmacyState);
         return customerSafe({
           channel,
           incoming: message,
           understanding,
-          tool: `pharmacy:start:${trigger.protocolKey}`,
+          tool: `pharmacy:${pharmacyState.stage.toLowerCase()}`,
           data: { status: "NOT_FOUND", query: aiInputMessage },
-          reply: started.reply,
+          reply: result.reply,
         });
       }
-      // protocol not enabled/not clinically approved — fall through to normal chat
+      if (isPharmacyEmergency) {
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: pharmacyEmergencyReply(),
+        });
+      }
+      if (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product") {
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: `pharmacy:clarify:${pharmacyTrigger.protocolKey}`,
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: pharmacyAmbiguousClarificationReply(pharmacyTrigger.protocolKey, pharmacyTriggerDefinitions),
+        });
+      }
+      const trigger = pharmacyTrigger;
+      if (trigger) {
+        const customerId = canonicalCustomerId ?? await findCustomerIdByIdentity(tenantId, channel, customerRef);
+        const started = await startPharmacyIntake(tenantId, pharmacyConvId, customerId, channel, trigger.protocolKey);
+        if (started.caseId) {
+          return customerSafe({
+            channel,
+            incoming: message,
+            understanding,
+            tool: `pharmacy:start:${trigger.protocolKey}`,
+            data: { status: "NOT_FOUND", query: aiInputMessage },
+            reply: started.reply,
+          });
+        }
+        // protocol not enabled/not clinically approved — fall through to normal chat
+      }
+    }
+  }
+
+  // Fail safe even when a conversation row could not be resolved: urgent
+  // wording must never fall through to the general AI/customer tool loop.
+  if (isPharmacyTenant && isPharmacyEmergency) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: pharmacyEmergencyReply(),
+    });
+  }
+  if (isPharmacyTenant && (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `pharmacy:clarify:${pharmacyTrigger.protocolKey}`,
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: pharmacyAmbiguousClarificationReply(pharmacyTrigger.protocolKey, pharmacyTriggerDefinitions),
+    });
+  }
+
+  if (convId) {
+    const approvedCheckoutDraft = await getApprovedAssessmentCheckoutDraftByConversation(tenantId, convId).catch(() => null);
+    if (approvedCheckoutDraft?.draft) {
+      if (approvedCheckoutDraft.draft.createdOrderId) {
+        if (PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage)) {
+          return customerSafe({
+            channel,
+            incoming: message,
+            understanding,
+            tool: "pharmacy:approved_checkout_existing",
+            data: { status: "NOT_FOUND", query: aiInputMessage },
+            reply: await orderCheckoutChatReply(
+              tenantId,
+              approvedCheckoutDraft.draft.createdOrderId,
+              "เราเตรียมลิงก์ checkout เดิมไว้ให้แล้วค่ะ"
+            ),
+          });
+        }
+      } else if (
+        approvedCheckoutDraft.draft.status === "AWAITING_CUSTOMER_CONFIRMATION" &&
+        PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage)
+      ) {
+        const order = await createOrder({
+          tenantId,
+          channel,
+          customerRef,
+          pharmacyApprovedAssessmentId: approvedCheckoutDraft.assessmentId,
+          items: approvedCheckoutDraft.draft.items.map((item) => ({
+            sku: item.sku,
+            size: item.size,
+            qty: item.qty,
+          })),
+        });
+        if (order.status === "CREATED") {
+          await markAssessmentOrderCreated(tenantId, approvedCheckoutDraft.assessmentId, order.orderId);
+          return customerSafe({
+            channel,
+            incoming: message,
+            understanding,
+            tool: "pharmacy:approved_checkout_create_order",
+            data: { status: "NOT_FOUND", query: aiInputMessage },
+            order,
+            reply: await orderCheckoutChatReply(
+              tenantId,
+              order.orderId,
+              "ยืนยันรายการแล้วค่ะ ระบบสร้างออร์เดอร์ให้แล้ว"
+            ),
+          });
+        }
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: "pharmacy:approved_checkout_create_order",
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          order,
+          reply: orderReply({}, order),
+        });
+      }
     }
   }
 
@@ -1483,6 +1690,8 @@ export async function runPipeline(
         execCtx.createdOrderId,
         loop.reply || "รับออร์เดอร์แล้วค่ะ"
       );
+    } else if (execCtx.pharmacyReviewCaseId) {
+      reply = `รายการนี้ต้องให้เภสัชกรตรวจสอบก่อนค่ะ ระบบส่งเข้าคิวแล้ว ยังไม่ได้สร้างออร์เดอร์ เลขเคสสำหรับติดตาม: ${execCtx.pharmacyReviewCaseId}`;
     } else if (hasUnverifiedFacts(loop.reply, loop.trace)) {
       reply = "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
@@ -1603,6 +1812,23 @@ export async function runPipeline(
         customerRef,
         profile.paymentAccounts
       );
+      if (
+        convId &&
+        (order.status === "PHARMACY_REVIEW_REQUIRED" || order.status === "PHARMACY_SAFETY_CHECK_REQUIRED")
+      ) {
+        try {
+          const review = await createProductReviewAssessmentOnce({
+            tenantId,
+            channelId: channel,
+            conversationId: convId,
+            items: orderItems,
+            requiresSafetyCheck: order.status === "PHARMACY_SAFETY_CHECK_REQUIRED",
+          });
+          reply = `${reply}\nเลขเคสสำหรับติดตาม: ${review.assessmentId.slice(0, 8)}`;
+        } catch (error) {
+          console.error("[BMS] deterministic pharmacy product review request failed:", error);
+        }
+      }
       if (order.status !== "CREATED" && orderItems.length === 1) {
         const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
         reply = stockRecoveryReply(stock, profile.businessArchetype) ?? reply;

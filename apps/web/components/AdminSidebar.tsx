@@ -54,6 +54,11 @@ const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_RESTOCK_READY = gql`query { bmsRestockReadyCount }`;
 const Q_CHANNEL_HEALTH_COUNT = gql`query { bmsChannelHealthCount }`;
 const Q_PHARMACY_EMERGENCY_COUNT = gql`query { bmsPharmacyAssessments(riskLevel: "EMERGENCY", limit: 50) { id } }`;
+const Q_PHARMACY_PENDING_CONFIRMATION_COUNT = gql`
+  query {
+    bmsPharmacyAssessments(status: "PENDING_CONFIRMATION", limit: 50) { id }
+  }
+`;
 const Q_STORE_PROFILE = gql`
   query {
     bmsStoreProfile {
@@ -78,6 +83,12 @@ const badgeText = (n: number) => (n > 99 ? '99+' : String(n));
 const PILL_STYLE: React.CSSProperties = {
   minWidth: 20, height: 20, padding: '0 7px', borderRadius: 10,
   background: '#e5484d', color: '#fff', fontSize: 11, fontWeight: 600,
+  lineHeight: '20px', textAlign: 'center', flexShrink: 0,
+};
+
+const GOLD_PILL_STYLE: React.CSSProperties = {
+  minWidth: 20, height: 20, padding: '0 7px', borderRadius: 10,
+  background: '#d48806', color: '#fff', fontSize: 11, fontWeight: 600,
   lineHeight: '20px', textAlign: 'center', flexShrink: 0,
 };
 
@@ -123,6 +134,31 @@ const link = (
     ),
 });
 
+const pharmacyQueueLink = (
+  collapsed: boolean,
+  emergencyCount: number,
+  pendingConfirmationCount: number,
+) => {
+  const totalBadge = emergencyCount + pendingConfirmationCount;
+  return {
+    key: '/admin/pharmacy-queue',
+    icon: collapsed && totalBadge > 0
+      ? iconWithBadge(<MedicineBoxOutlined />, totalBadge)
+      : <MedicineBoxOutlined />,
+    label: !collapsed ? (
+      <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          Pharmacy Intake Queue
+        </span>
+        {pendingConfirmationCount > 0 ? <span style={GOLD_PILL_STYLE}>รอยืนยัน {badgeText(pendingConfirmationCount)}</span> : null}
+        {emergencyCount > 0 ? <span style={PILL_STYLE}>ฉุกเฉิน {badgeText(emergencyCount)}</span> : null}
+      </Link>
+    ) : (
+      <Link href="/admin/pharmacy-queue">Pharmacy Intake Queue</Link>
+    ),
+  };
+};
+
 export default function AdminSidebar() {
   const { t } = useI18n();
   const pathname = usePathname();
@@ -138,6 +174,7 @@ export default function AdminSidebar() {
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
   const { can } = useBmsPermissions();
+  const canViewReports = can('report.view');
   const { data: storeProfileData } = useQuery(Q_STORE_PROFILE, {
     fetchPolicy: 'cache-and-network',
     skip: !admin,
@@ -181,6 +218,10 @@ export default function AdminSidebar() {
     skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const pharmacyEmergencyCount: number = pharmacyData?.bmsPharmacyAssessments?.length ?? 0;
+  const { data: pharmacyPendingConfirmationData } = useQuery(Q_PHARMACY_PENDING_CONFIRMATION_COUNT, {
+    skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
+  });
+  const pharmacyPendingConfirmationCount: number = pharmacyPendingConfirmationData?.bmsPharmacyAssessments?.length ?? 0;
   const isPharmacyShop = storeProfileData?.bmsStoreProfile?.businessArchetype === "pharmacy";
 
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
@@ -256,7 +297,7 @@ export default function AdminSidebar() {
   // กลุ่ม "ร้านค้า" เดิม (เคยฝังลึก 2 คลิกกว่าจะถึง) พร้อม badge unread ให้เห็นทันที
   // Reports/คู่มือ ใช้ไม่บ่อยเท่า Inbox → Reports ย้ายลงมาไว้หลังกลุ่มร้านค้า, คู่มือย้ายไปแถบล่างสุด
   const items: MenuProps['items'] = [
-    link('/admin/dashboard', 'Dashboard', <DashboardOutlined />),
+    ...(canViewReports ? [link('/admin/dashboard', 'Dashboard', <DashboardOutlined />)] : []),
     ...(canViewInbox ? [link('/admin/inbox', 'Inbox', <MessageOutlined />, inboxUnread, effectiveCollapsed, true)] : []),
     ...(canViewInbox ? [link('/admin/restock-subscriptions', t('admin.menu_restock_subscriptions'), <BellOutlined />, restockReady, effectiveCollapsed, true)] : []),
     ...(canViewInbox ? [link('/admin/inbox/mentions', t('admin.menu_mentions'), <NotificationOutlined />, mentionsUnread, effectiveCollapsed, true)] : []),
@@ -269,23 +310,25 @@ export default function AdminSidebar() {
       icon: <ShopOutlined />,
       label: t('admin.group_shop'),
       children: [
-        link('/admin/products', 'Products', <ShoppingCartOutlined />),
-        link('/admin/orders', 'Orders', <ShoppingCartOutlined />),
+        ...(can('product.view') ? [link('/admin/products', 'Products', <ShoppingCartOutlined />)] : []),
+        ...(can('order.view') ? [link('/admin/orders', 'Orders', <ShoppingCartOutlined />)] : []),
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
-        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-queue', 'Pharmacy Intake Queue', <MedicineBoxOutlined />, pharmacyEmergencyCount, effectiveCollapsed, true)] : []),
+        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <ExperimentOutlined />)] : []),
+        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-review-mockup', 'Pharmacy Review Mockup', <MedicineBoxOutlined />)] : []),
+        ...(isPharmacyShop && canViewPharmacy ? [pharmacyQueueLink(effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
         ...(isPharmacyShop && can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
         ...(isPharmacyShop && isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
         link('/admin/revisions', 'Revision History', <HistoryOutlined />),
-        link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />),
-        link('/admin/payment', 'Payment', <DollarOutlined />),
-        link('/admin/shipment', 'Shipping', <CarOutlined />),
-        link('/admin/customers', 'Customers', <TeamOutlined />),
+        ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
+        ...(can('payment.view') ? [link('/admin/payment', 'Payment', <DollarOutlined />)] : []),
+        ...(can('shipping.view') ? [link('/admin/shipment', 'Shipping', <CarOutlined />)] : []),
+        ...(can('customer.view') ? [link('/admin/customers', 'Customers', <TeamOutlined />)] : []),
         link('/admin/playground', 'Playground', <ExperimentOutlined />),
       ],
     },
-    link('/admin/reports', 'Reports', <BarChartOutlined />),
+    ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
       key: 'g-saas',

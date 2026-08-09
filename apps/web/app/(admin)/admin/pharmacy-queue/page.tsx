@@ -14,6 +14,9 @@ const Q = gql`
     bmsPharmacyAssessments(status: $status, riskLevel: $riskLevel, channelId: $channelId, createdAfter: $createdAfter, limit: 200) {
       id status riskLevel patientRelationship needsManualIntake assignedPharmacistId
       channelId createdAt updatedAt currentQuestionKey
+      completenessStatus customerConfirmationStatus customerConfirmedAt
+      missingFields conflictingFields
+      customerConfirmationSummary
     }
   }
 `;
@@ -28,6 +31,7 @@ const RISK_COLOR: Record<string, string> = {
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: "default",
   COLLECTING_INFORMATION: "blue",
+  PENDING_CONFIRMATION: "gold",
   WAITING_FOR_PHARMACIST: "orange",
   PHARMACIST_REVIEWING: "purple",
   NEED_MORE_INFORMATION: "gold",
@@ -44,6 +48,12 @@ const TIME_OPTIONS = [
   { value: "7d", label: "7 วันล่าสุด" },
   { value: "30d", label: "30 วันล่าสุด" },
 ];
+const CONFIRMATION_OPTIONS = [
+  { value: "", label: "ทุกสถานะการยืนยัน" },
+  { value: "PENDING", label: "รอลูกค้ายืนยันสรุป" },
+  { value: "CONFIRMED", label: "ลูกค้ายืนยันแล้ว" },
+  { value: "NOT_REQUESTED", label: "ยังไม่ถึงขั้นยืนยัน" },
+];
 
 function createdAfterFor(range: string): string | undefined {
   if (!range) return undefined;
@@ -51,7 +61,59 @@ function createdAfterFor(range: string): string | undefined {
   return new Date(Date.now() - ms).toISOString();
 }
 
+function normalizeConfirmationStatus(row: any): "PENDING" | "CONFIRMED" | "NOT_REQUESTED" {
+  if (row.customerConfirmationStatus === "PENDING" || row.status === "PENDING_CONFIRMATION") return "PENDING";
+  if (row.customerConfirmationStatus === "CONFIRMED") return "CONFIRMED";
+  return "NOT_REQUESTED";
+}
+
+function priorityForRow(row: any): number {
+  if (row.status === "PENDING_CONFIRMATION") return 0;
+  if (normalizeConfirmationStatus(row) === "PENDING") return 1;
+  if (row.riskLevel === "EMERGENCY") return 2;
+  if (row.riskLevel === "HIGH") return 3;
+  if (row.status === "WAITING_FOR_PHARMACIST") return 4;
+  if (row.status === "PHARMACIST_REVIEWING") return 5;
+  return 6;
+}
+
 function buildColumns() {
+  function renderConfirmationStatus(row: any) {
+    const confirmationStatus = normalizeConfirmationStatus(row);
+    if (confirmationStatus === "CONFIRMED") {
+      return (
+        <Space direction="vertical" size={2}>
+          <Tag color="green">ลูกค้ายืนยันแล้ว</Tag>
+          <Text type="secondary">{row.customerConfirmedAt ? new Date(row.customerConfirmedAt).toLocaleString() : "—"}</Text>
+        </Space>
+      );
+    }
+    if (confirmationStatus === "PENDING") {
+      return <Tag color="gold">รอลูกค้ายืนยันสรุป</Tag>;
+    }
+    return <Tag>ยังไม่ถึงขั้นยืนยัน</Tag>;
+  }
+
+  function renderSummaryPreview(row: any) {
+    const lines = Array.isArray(row.customerConfirmationSummary?.lines) ? row.customerConfirmationSummary.lines : [];
+    if (lines.length === 0) {
+      if ((row.missingFields || []).length > 0) return <Text type="secondary">ยังเก็บข้อมูลไม่ครบ</Text>;
+      if ((row.conflictingFields || []).length > 0) return <Text type="warning">มีข้อมูลขัดแย้ง รอแก้ไข</Text>;
+      return <Text type="secondary">ยังไม่มี summary สำหรับยืนยัน</Text>;
+    }
+    const preview = lines
+      .slice(0, 2)
+      .map((line: any) => `${line.label}: ${line.valueText}`)
+      .join(" | ");
+    const remaining = lines.length - 2;
+    return (
+      <Space direction="vertical" size={2}>
+        <Text>{preview}</Text>
+        {remaining > 0 ? <Text type="secondary">+ อีก {remaining} รายการ</Text> : null}
+      </Space>
+    );
+  }
+
   return [
     {
       title: "เคส",
@@ -74,6 +136,16 @@ function buildColumns() {
       render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag>,
     },
     {
+      title: "การยืนยันข้อมูล",
+      key: "confirmation",
+      render: (_: unknown, row: any) => renderConfirmationStatus(row),
+    },
+    {
+      title: "สรุปล่าสุด",
+      key: "summaryPreview",
+      render: (_: unknown, row: any) => renderSummaryPreview(row),
+    },
+    {
       title: "AI",
       dataIndex: "needsManualIntake",
       key: "needsManualIntake",
@@ -87,6 +159,7 @@ export default function PharmacyQueuePage() {
   const { can, loading: permsLoading } = useBmsPermissions();
   const [tab, setTab] = useState<"emergency" | "urgent" | "normal" | "all">("emergency");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [confirmationFilter, setConfirmationFilter] = useState<string>("");
   const [channelFilter, setChannelFilter] = useState("");
   const [timeRange, setTimeRange] = useState("");
 
@@ -116,9 +189,27 @@ export default function PharmacyQueuePage() {
   }
   if (error) return <Alert type="error" showIcon message="โหลดคิว Pharmacy Intake ไม่ได้" description={error.message} />;
 
-  const rows = (data?.bmsPharmacyAssessments || []).filter((r: any) =>
-    tab === "normal" ? !["EMERGENCY", "HIGH"].includes(r.riskLevel) : true
+  const baseRows = data?.bmsPharmacyAssessments || [];
+  const confirmationCounts = baseRows.reduce(
+    (acc: Record<string, number>, row: any) => {
+      const key = normalizeConfirmationStatus(row);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    },
+    { PENDING: 0, CONFIRMED: 0, NOT_REQUESTED: 0 }
   );
+  const rows = baseRows
+    .filter((r: any) => {
+    const matchesRisk = tab === "normal" ? !["EMERGENCY", "HIGH"].includes(r.riskLevel) : true;
+    const normalizedConfirmation = normalizeConfirmationStatus(r);
+    const matchesConfirmation = !confirmationFilter || normalizedConfirmation === confirmationFilter;
+    return matchesRisk && matchesConfirmation;
+    })
+    .sort((a: any, b: any) => {
+      const priorityDiff = priorityForRow(a) - priorityForRow(b);
+      if (priorityDiff !== 0) return priorityDiff;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
 
   return (
     <div>
@@ -144,6 +235,29 @@ export default function PharmacyQueuePage() {
         ]}
       />
       <Space wrap style={{ marginBottom: 12 }}>
+        <Tag
+          color={confirmationFilter === "PENDING" ? "processing" : "gold"}
+          style={{ cursor: "pointer" }}
+          onClick={() => setConfirmationFilter((prev) => (prev === "PENDING" ? "" : "PENDING"))}
+        >
+          รอลูกค้ายืนยัน {confirmationCounts.PENDING}
+        </Tag>
+        <Tag
+          color={confirmationFilter === "CONFIRMED" ? "processing" : "green"}
+          style={{ cursor: "pointer" }}
+          onClick={() => setConfirmationFilter((prev) => (prev === "CONFIRMED" ? "" : "CONFIRMED"))}
+        >
+          ยืนยันแล้ว {confirmationCounts.CONFIRMED}
+        </Tag>
+        <Tag
+          color={confirmationFilter === "NOT_REQUESTED" ? "processing" : "default"}
+          style={{ cursor: "pointer" }}
+          onClick={() => setConfirmationFilter((prev) => (prev === "NOT_REQUESTED" ? "" : "NOT_REQUESTED"))}
+        >
+          ยังไม่ถึงขั้นยืนยัน {confirmationCounts.NOT_REQUESTED}
+        </Tag>
+      </Space>
+      <Space wrap style={{ marginBottom: 12 }}>
         <Select
           allowClear
           placeholder="กรองตามสถานะ"
@@ -151,6 +265,12 @@ export default function PharmacyQueuePage() {
           options={STATUS_OPTIONS}
           value={statusFilter}
           onChange={(v) => setStatusFilter(v)}
+        />
+        <Select
+          style={{ width: 220 }}
+          options={CONFIRMATION_OPTIONS}
+          value={confirmationFilter}
+          onChange={(v) => setConfirmationFilter(v)}
         />
         <Input
           placeholder="กรองตามช่องทาง (channel)"

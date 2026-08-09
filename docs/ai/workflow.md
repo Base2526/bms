@@ -97,6 +97,78 @@ shop brand voice is normalized (`ครับ` → `ค่ะ`, a standalone `�
 slip cannot change the shop persona mid-conversation. This is the shop's own voice and is unrelated
 to the per-admin `ครับ/ค่ะ` particle used by Inbox suggested replies.
 
+Health/symptom entry is classified deterministically before either the normal customer AI loop or
+the pharmacy intake flow. A product-shaped or medicine-shaped but unclear phrase such as `มีปวดหัวไหม`
+or `มียาแก้ปวดหัวไหม` does not start an assessment: pharmacy shops ask whether the customer already
+has a named product/brand to buy or needs a pharmacist to assess the symptom, while
+non-pharmacy shops ask whether they mean an in-store product or contacted the wrong chat. Clear
+symptom/advice requests may enter the pharmacy consent flow only for a pharmacy
+archetype; emergency red-flag wording returns urgent-care guidance immediately. The standalone
+Pharmacy Intake Lab uses this same classifier, so lab behavior matches the customer entry boundary.
+Once an assessment is active, every turn also passes through the shared deterministic pharmacy
+conversation router before extraction. Emergency wording has highest priority. A standalone greeting,
+thanks, or small-talk message is recorded as an interruption rather than a clinical answer, preserves
+the assessment/current-question state, and returns the customer to the same question. Product and
+order-status side intents are likewise prevented from becoming health answers; the customer is asked
+to stop the intake explicitly before changing workflows. This boundary is shared by persisted customer
+channels (including LINE OA) and the Pharmacy Intake Lab; the model does not decide whether to mutate
+clinical state.
+For named products with an approved `DIRECT_SALE` policy, the Lab keeps a multi-SKU session cart,
+shows catalog-derived unit prices and totals, and revalidates price, stock, quantity limits, and
+policy for every line when the cart is confirmed. The Lab now creates a real `test`-channel order
+through the same backend `createOrder()` service after cart confirmation, so OMS, stock reservation,
+and policy enforcement stay on the same path as production order creation.
+An emergency message keeps the session at `NONE`. For an ambiguous message,
+the lab records only an `AWAITING_INTENT_CLARIFICATION` state (no assessment or health answers) so a
+short follow-up such as `มีชื่อสินค้าที่ต้องการ` or `ให้เภสัชกรประเมิน` retains the symptom context; only that explicit
+choice advances to the consent prompt. A rejection/cancellation returns the lab to `NONE`.
+
+Named-product purchases are a commerce flow, not a twelfth clinical protocol. In a pharmacy tenant,
+`createOrder()` checks the SKU's approved `bms_pharmacy_product_policies` row inside the same
+transaction and before reserving stock. Missing/draft policy fails closed. `DIRECT_SALE` may proceed;
+short-safety-check and pharmacist-only products require an approved assessment; prescription-required
+and online-prohibited products cannot be created through customer checkout. The approved assessment id
+is server-derived from the conversation checkout draft and is never accepted from model arguments.
+When a confirmed customer order is blocked specifically for short-safety-check or pharmacist review,
+the customer tool creates one idempotent `WAITING_FOR_PHARMACIST` product-review case linked to the
+conversation and returns its eight-character tracking id. It snapshots only verified active/in-stock
+catalog items; a missing policy, prescription requirement, or online prohibition does not create a
+misleading review case.
+On persisted customer channels, the pipeline resolves the same short clarification replies from the
+immediately preceding assistant question (including `มีชื่อสินค้า`, `ให้เภสัชกรประเมิน`, `อันแรก`, and
+`อันหลัง`) before trigger classification. This safety continuation is always active and does not
+depend on the shop's general short-reply interpretation preference.
+
+Before a new pharmacy assessment asks demographic or medication-safety questions, it establishes
+the canonical channel identity and asks who the patient is. Reusable memory is currently allowed
+only for `SELF`; dependent patients are deliberately asked afresh until they have their own stable
+patient-profile ids. For `SELF`, intake combines the newest consented and customer-confirmed value per stable field:
+biological sex, allergies, and chronic diseases, plus age only when confirmed within the last 365
+days. It does not reuse current medications, pregnancy, or breastfeeding because these can change
+between episodes. Reused fields are written into the new assessment and appear in the final
+customer-confirmation summary, so convenience never bypasses explicit review of the current case.
+
+Pharmacy symptom discovery is protocol-driven. Each protocol stores a customer-facing
+`display_label` and bounded `trigger_terms`; the customer pipeline and Pharmacy Intake Lab load the
+same tenant-scoped definitions. A protocol is executable only when its status is `APPROVED`, a
+licensed pharmacist has set `clinically_approved`, the tenant row is enabled, and the platform ENV
+allowlist contains its key. Draft edits are validated server-side and approval never enables a
+protocol automatically.
+
+Clinical red flags may use bounded compound conditions (`allOf`/`anyOf`/`not`) so age-specific
+thresholds and multi-symptom combinations remain deterministic. Escalation is also deterministic:
+the approved protocol maps severity to `CONTINUE`, `PHARMACIST_REVIEW`,
+`URGENT_MEDICAL_REVIEW`, or `EMERGENCY_REFERRAL`. AI extraction supplies candidate field values;
+it never chooses whether a condition matched or which route the customer takes.
+
+The pharmacist case-detail workspace keeps AI-authored analysis separate from the pharmacist's own
+saved response draft. `bmsEditPharmacistDecisionNotes` permits edits only while the assessment is
+`PHARMACIST_REVIEWING`, requires the caller's review permission, uses the assessment version for
+optimistic concurrency, and records an audit/event without copying the clinical text into logs. A
+saved draft is not delivered until the pharmacist explicitly approves the assessment. The UI shows
+the linked live conversation as the primary history and exposes the case's immutable intake
+snapshot only as a verification detail, rather than presenting them as two equivalent histories.
+
 Customer product discovery is sales-first and retrieval-first. Broad product questions read
 `browse_catalog` and present real in-stock choices; “what is new?” reads `list_new_arrivals` ordered
 by product creation time; exact misses and out-of-stock requests read `find_alternatives`. These

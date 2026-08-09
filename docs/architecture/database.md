@@ -65,6 +65,34 @@ metadata (`display_name`, `picture_url`, `status_message`, `language`, `profile_
 webhook processing; Inbox uses them as fallback when no authoritative CRM customer name/avatar is
 available.
 
+Pharmacy intake establishes this identity before creating an assessment, then stores the canonical
+`customer_id` on `bms_pharmacy_assessments`. Migration `7.69` changes new assessments to begin with
+`patient_relationship = 'UNKNOWN'`; intake must resolve `SELF`/`CHILD`/`PARENT`/`OTHER` before any
+patient memory can be reused. Historical implicit `SELF` values are reset to `UNKNOWN`. The partial
+patient-memory index supports newest consented and customer-confirmed profile reads by tenant,
+customer, and relationship.
+
+Migration `7.70` adds `display_label` and `trigger_terms` to `bms_pharmacy_protocols`. Active
+protocol reads require `status = 'APPROVED'`, `clinically_approved = true`, and `enabled = true`;
+the ENV allowlist remains an independent platform kill switch.
+
+Migration `7.71` adds tenant/SKU-scoped `bms_pharmacy_product_policies`. Product names and free-text
+categories are never regulatory authority: a policy starts as `DRAFT`, must be reviewed by a user
+verified through `bms_is_licensed_pharmacist`, and only `APPROVED` rows participate in order
+authorization. The order transaction checks this table before reserving inventory and fails closed
+for a pharmacy SKU with no approved policy.
+
+Migration `7.72` replaces free-text regulatory classification with a structured framework/class pair
+(`DRUG`, `MEDICAL_DEVICE`, `NOT_REGULATED`, or `UNKNOWN`) and an evidence source/reference. A Draft may
+remain `UNKNOWN`, but it cannot be submitted for pharmacist review until both the classification and
+its evidence source are identified. On first installation, legacy policies return to `DRAFT` because
+their previous approval did not verify the new evidence fields. Its legacy backfill runs only once, so rerunning
+the idempotent migration does not overwrite pharmacist-reviewed values.
+
+Migration `7.73` adds a database constraint between `product_type` and `regulatory_framework`.
+Contradictory legacy rows are reset to `UNKNOWN`/`DRAFT` for human review instead of being guessed
+into a legal class.
+
 **Omnichannel Inbox read path (`7.51`)** — `/admin/inbox` reads the latest conversation list and the
 selected conversation separately. Recent-list indexes cover tenant/status/time ordering, detail
 indexes cover latest message/event slices, and trigram indexes support bounded text search across
