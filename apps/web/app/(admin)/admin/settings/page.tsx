@@ -1,14 +1,14 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select } from "antd";
+import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select, Tabs, Collapse } from "antd";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined } from "@ant-design/icons";
+import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined, ShopOutlined, MessageOutlined, FileTextOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
 import ReportSubscriptionCard from "./ReportSubscriptionCard";
 import { useI18n } from "@/lib/i18nContext";
 
-const { Text, Paragraph } = Typography;
+const { Text, Paragraph, Title } = Typography;
 
 const Q = gql`
   query {
@@ -42,6 +42,15 @@ const M_TEST_AI_KEY = gql`mutation { bmsTestAiKey { ok message } }`;
 
 // เฉพาะช่องทางที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง (ดู channelHealth.ts)
 const TESTABLE_CHANNELS = new Set(["line", "facebook", "instagram"]);
+
+// dot/label สีตาม antd Tag color name ที่ badge ใช้อยู่แล้ว (green/red/gold/default) —
+// map เป็น hex ไว้ที่เดียวให้ dot กับตัวหนังสือสถานะในหัวแถว Collapse ใช้สีตรงกัน
+const BADGE_HEX: Record<string, string> = {
+  green: "#2f9e6b",
+  red: "#c1443a",
+  gold: "#a8760a",
+  default: "var(--app-muted)",
+};
 
 function useChannels(t: (key: string, vars?: Record<string, string | number>) => string) {
   return useMemo(() => [
@@ -82,6 +91,21 @@ function useHealthMeta(t: (key: string) => string): Record<string, { color: stri
   }), [t]);
 }
 
+// ลำดับความสำคัญ: ยังไม่ตั้งค่า > ปิดใช้งานเอง > สุขภาพจริง (bmsChannelHealth.status) — ตอนยังไม่กรอก
+// token เลย status บน DB ยังเป็นค่า default ('connected') อยู่ ไม่มีความหมาย จึงต้องเช็ค has_token/active
+// ก่อนเสมอ ไม่ใช้ health.status ตรง ๆ — ใช้ร่วมกันทั้งหัวแถว Collapse (parent) และตัวฟอร์ม (ChannelPanelBody)
+function computeHealthBadge(
+  cfg: any,
+  health: any,
+  HEALTH_META: Record<string, { color: string; text: string; action: string }>,
+  unsetText: string,
+  disabledText: string
+) {
+  if (!cfg?.has_token) return { color: "default", text: unsetText, action: "" };
+  if (cfg?.active === false) return { color: "default", text: disabledText, action: "" };
+  return HEALTH_META[health?.status as string] || HEALTH_META.connected;
+}
+
 function fmtDT(iso: string | null | undefined) {
   if (!iso) return "-";
   return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
@@ -91,6 +115,7 @@ export default function Page() {
   const { t } = useI18n();
   const CHANNELS = useChannels(t);
   const STATUS_META = useStatusMeta(t);
+  const HEALTH_META = useHealthMeta(t);
   const searchParams = useSearchParams();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [origin, setOrigin] = useState("");
@@ -102,6 +127,24 @@ export default function Page() {
     return CHANNELS.some((ch) => ch.key === focusChannel) ? focusChannel : null;
   }, [focus, focusChannel, CHANNELS]);
 
+  // แท็บเดียวที่มองเห็นพร้อมกัน แทนการเรียงฟอร์มร้าน/ช่องทาง/AI/รายงานต่อกันแนวตั้งยาวทั้งหมด
+  const [activeTab, setActiveTab] = useState("channels");
+  useEffect(() => {
+    if (highlightedChannel) setActiveTab("channels");
+  }, [highlightedChannel]);
+
+  // แถวช่องทางเป็น Collapse ทีละแถว (เดิมเป็นการ์ดใหญ่ 7 ใบเปิดพร้อมกันหมด) — เปิดเฉพาะช่องทางที่
+  // มาจาก deep-link (?focus=channel) เป็น default, ผู้ใช้กางเพิ่ม/ยุบเองได้อิสระทีละแถว
+  const [openChannels, setOpenChannels] = useState<string[]>([]);
+  useEffect(() => {
+    if (!highlightedChannel) return;
+    setOpenChannels((prev) => (prev.includes(highlightedChannel) ? prev : [...prev, highlightedChannel]));
+    const timer = window.setTimeout(() => {
+      document.getElementById(`channel-setting-${highlightedChannel}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [highlightedChannel]);
+
   if (error) return <Alert type="error" message={t("admin_settings.load_error")} description={error.message} showIcon />;
 
   const tenant = data?.bmsMyTenant;
@@ -110,14 +153,19 @@ export default function Page() {
   const cfgOf = (k: string) => channels.find((c) => c.channel === k);
   const healthOf = (k: string) => health.find((h) => h.channel === k);
 
+  const badgeOf = (ch: any) =>
+    computeHealthBadge(cfgOf(ch.key), healthOf(ch.key), HEALTH_META, t("admin_settings.channel_unset"), t("admin_settings.channel_disabled"));
+  const brokenChannelCount = CHANNELS.filter((ch) => badgeOf(ch).color === "red").length;
+
   return (
-    <div style={{ maxWidth: 1600 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>{t("admin_settings.page_title")}</h2>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
-        </Space>
-      </div>
+    <div style={{ maxWidth: 1200 }}>
+      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap align="start">
+        <div>
+          <Title level={2} style={{ margin: 0 }}>{t("admin_settings.page_title")}</Title>
+          <Text type="secondary">{t("admin_settings.page_subtitle")}</Text>
+        </div>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
+      </Space>
 
       {tenant && (
         <Alert type="info" showIcon style={{ marginBottom: 16 }}
@@ -126,72 +174,130 @@ export default function Page() {
         />
       )}
 
-      <StoreProfileCard />
-      <ReportSubscriptionCard />
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: "store",
+            label: <span><ShopOutlined /> {t("admin_settings.tab_store")}</span>,
+            children: <StoreProfileCard />,
+          },
+          {
+            key: "channels",
+            label: (
+              <span>
+                <MessageOutlined /> {t("admin_settings.tab_channels")}
+                {brokenChannelCount > 0 && (
+                  <Tag color="red" style={{ marginLeft: 6 }}>{brokenChannelCount}</Tag>
+                )}
+              </span>
+            ),
+            children: (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
+                  <Card size="small" title={t("admin_settings.steps_card_title")}>
+                    <Steps
+                      size="small"
+                      direction="vertical"
+                      items={[
+                        { title: t("admin_settings.step1_title"), icon: <KeyOutlined />, description: t("admin_settings.step1_desc") },
+                        { title: t("admin_settings.step2_title"), icon: <SaveOutlined />, description: t("admin_settings.step2_desc") },
+                        { title: t("admin_settings.step3_title"), icon: <LinkOutlined />, description: t("admin_settings.step3_desc") },
+                        { title: t("admin_settings.step4_title"), icon: <PoweroffOutlined />, description: t("admin_settings.step4_desc") },
+                      ]}
+                    />
+                  </Card>
 
+                  <Card size="small" title={t("admin_settings.compare_card_title")}>
+                    <Table
+                      size="small"
+                      pagination={false}
+                      rowKey="key"
+                      dataSource={CHANNELS}
+                      scroll={{ x: "max-content" }}
+                      columns={[
+                        { title: t("admin_settings.col_channel"), dataIndex: "label", render: (_: string, r: any) => <Tag color={r.color}>{r.label}</Tag> },
+                        { title: t("admin_settings.col_needs"), dataIndex: "needs" },
+                        { title: t("admin_settings.col_status"), dataIndex: "status",
+                          render: (s: string) => <Tag color={STATUS_META[s].color}>{STATUS_META[s].text}</Tag> },
+                      ]}
+                    />
+                  </Card>
+                </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "stretch" }}>
-        <Card size="small" title={t("admin_settings.steps_card_title")}>
-          <Steps
-            size="small"
-            direction="vertical"
-            items={[
-              { title: t("admin_settings.step1_title"), icon: <KeyOutlined />, description: t("admin_settings.step1_desc") },
-              { title: t("admin_settings.step2_title"), icon: <SaveOutlined />, description: t("admin_settings.step2_desc") },
-              { title: t("admin_settings.step3_title"), icon: <LinkOutlined />, description: t("admin_settings.step3_desc") },
-              { title: t("admin_settings.step4_title"), icon: <PoweroffOutlined />, description: t("admin_settings.step4_desc") },
-            ]}
-          />
-        </Card>
+                <Collapse
+                  activeKey={openChannels}
+                  onChange={(keys) => setOpenChannels(keys as string[])}
+                  style={{ marginBottom: 16 }}
+                  items={CHANNELS.map((ch) => {
+                    const cfg = cfgOf(ch.key);
+                    const chHealth = healthOf(ch.key);
+                    const badge = badgeOf(ch);
+                    const focused = highlightedChannel === ch.key;
+                    return {
+                      key: ch.key,
+                      forceRender: true,
+                      style: focused ? { borderColor: "#1677ff", boxShadow: "0 0 0 3px rgba(22, 119, 255, 0.16)" } : undefined,
+                      label: (
+                        <Space id={`channel-setting-${ch.key}`} wrap align="center" size={10}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: BADGE_HEX[badge.color] || BADGE_HEX.default, display: "inline-block" }} />
+                          <Tag color={ch.color}>{ch.label}</Tag>
+                          <Text style={{ color: BADGE_HEX[badge.color] || undefined, fontWeight: 600, fontSize: 12.5 }}>{badge.text}</Text>
+                          {cfg?.has_token && cfg?.active !== false && chHealth?.last_inbound_event_at ? (
+                            <Text type="secondary" style={{ fontSize: 11.5 }}>
+                              · {t("admin_settings.last_inbound_event", { time: fmtDT(chHealth.last_inbound_event_at) })}
+                            </Text>
+                          ) : null}
+                        </Space>
+                      ),
+                      children: (
+                        <ChannelPanelBody
+                          ch={ch}
+                          cfg={cfg}
+                          health={chHealth}
+                          badge={badge}
+                          tenantId={tenant?.id}
+                          origin={origin}
+                          focused={focused}
+                          onSaved={refetch}
+                        />
+                      ),
+                    };
+                  })}
+                />
 
-        <Card size="small" title={t("admin_settings.compare_card_title")}>
-          <Table
-            size="small"
-            pagination={false}
-            rowKey="key"
-            dataSource={CHANNELS}
-            scroll={{ x: "max-content" }}
-            columns={[
-              { title: t("admin_settings.col_channel"), dataIndex: "label", render: (_: string, r: any) => <Tag color={r.color}>{r.label}</Tag> },
-              { title: t("admin_settings.col_needs"), dataIndex: "needs" },
-              { title: t("admin_settings.col_status"), dataIndex: "status",
-                render: (s: string) => <Tag color={STATUS_META[s].color}>{STATUS_META[s].text}</Tag> },
-            ]}
-          />
-        </Card>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))", gap: 16, marginBottom: 16, alignItems: "start" }}>
-        {CHANNELS.map((ch) => (
-          <ChannelCard
-            key={ch.key}
-            ch={ch}
-            cfg={cfgOf(ch.key)}
-            health={healthOf(ch.key)}
-            tenantId={tenant?.id}
-            origin={origin}
-            focused={highlightedChannel === ch.key}
-            onSaved={refetch}
-          />
-        ))}
-        <AiCard aiConfig={data?.bmsAiConfig} aiUsage={data?.bmsAiUsage} onSaved={refetch} />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
-        <Alert type="info" showIcon message={t("admin_settings.security_title")}
-          description={t("admin_settings.security_desc")} />
-        <Alert type="warning" showIcon message={t("admin_settings.caution_title")}
-          description={t("admin_settings.caution_desc")} />
-        <Alert type="success" showIcon message={t("admin_settings.edit_later_title")}
-          description={t("admin_settings.edit_later_desc")} />
-      </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
+                  <Alert type="info" showIcon message={t("admin_settings.security_title")}
+                    description={t("admin_settings.security_desc")} />
+                  <Alert type="warning" showIcon message={t("admin_settings.caution_title")}
+                    description={t("admin_settings.caution_desc")} />
+                  <Alert type="success" showIcon message={t("admin_settings.edit_later_title")}
+                    description={t("admin_settings.edit_later_desc")} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: "ai",
+            label: <span><RobotOutlined /> {t("admin_settings.tab_ai")}</span>,
+            children: <AiCard aiConfig={data?.bmsAiConfig} aiUsage={data?.bmsAiUsage} onSaved={refetch} />,
+          },
+          {
+            key: "reports",
+            label: <span><FileTextOutlined /> {t("admin_settings.tab_reports")}</span>,
+            children: <ReportSubscriptionCard />,
+          },
+        ]}
+      />
     </div>
   );
 }
 
-function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: any) {
+// เนื้อหาฟอร์มของช่องทางเดียว — เดิมเป็นทั้ง <Card> (มี title/extra ของตัวเอง) ตอนนี้เหลือแค่ body
+// เพราะหัวแถว (dot/ชื่อ/สถานะ) ย้ายไปเรนเดอร์ที่ parent เป็น label ของ Collapse.Panel แทนแล้ว
+function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, onSaved }: any) {
   const { t } = useI18n();
-  const HEALTH_META = useHealthMeta(t);
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
   const [saveChannel, { loading: saving }] = useMutation(M, {
@@ -220,40 +326,18 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
     }});
   };
 
-  // ลำดับความสำคัญ: ยังไม่ตั้งค่า > ปิดใช้งานเอง > สุขภาพจริง (bmsChannelHealth.status)
-  // ตอนยังไม่กรอก token เลย status บน DB ยังเป็นค่า default ('connected') อยู่ ไม่มีความหมาย
-  // จึงต้องเช็ค has_token/active ก่อนเสมอ ไม่ใช้ health.status ตรง ๆ
-  const healthBadge = !cfg?.has_token
-    ? { color: "default", text: t("admin_settings.channel_unset"), action: "" }
-    : cfg?.active === false
-    ? { color: "default", text: t("admin_settings.channel_disabled"), action: "" }
-    : HEALTH_META[health?.status as string] || HEALTH_META.connected;
-
-  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && healthBadge.text === t("admin_settings.health_connected");
+  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && badge.text === t("admin_settings.health_connected");
 
   useEffect(() => {
     if (!focused) return;
     const timer = window.setTimeout(() => {
-      document.getElementById(`channel-setting-${ch.key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       accessTokenInputRef.current?.focus?.({ cursor: "start" });
-    }, 120);
+    }, 150);
     return () => window.clearTimeout(timer);
   }, [ch.key, focused]);
 
   return (
-    <Card
-      id={`channel-setting-${ch.key}`}
-      title={<Space wrap><Tag color={ch.color}>{ch.label}</Tag><Tag color={healthBadge.color}>{healthBadge.text}</Tag></Space>}
-      extra={canTest && (
-        <Button size="small" icon={<PlayCircleOutlined />} loading={testing} onClick={() => testChannel({ variables: { channel: ch.key } })}>
-          {t("admin_settings.test_btn")}
-        </Button>
-      )}
-      style={focused ? {
-        borderColor: "#1677ff",
-        boxShadow: "0 0 0 3px rgba(22, 119, 255, 0.16), 0 10px 28px rgba(22, 119, 255, 0.12)",
-      } : undefined}
-    >
+    <div>
       {focused && (
         <Alert
           type="info"
@@ -266,16 +350,16 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
 
       <Paragraph type="secondary" style={{ marginTop: -4 }}>{ch.hint}</Paragraph>
 
-      {healthBadge.action && (
+      {badge.action && (
         <Alert
-          type={healthBadge.color === "red" ? "error" : "warning"}
+          type={badge.color === "red" ? "error" : "warning"}
           showIcon
-          icon={healthBadge.color === "gold" ? <ClockCircleOutlined /> : <WarningOutlined />}
+          icon={badge.color === "gold" ? <ClockCircleOutlined /> : <WarningOutlined />}
           style={{ marginBottom: 16 }}
-          message={health?.status_detail || healthBadge.text}
+          message={health?.status_detail || badge.text}
           description={
             <>
-              {healthBadge.action}
+              {badge.action}
               {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at) })}</div>}
             </>
           }
@@ -298,7 +382,14 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
         <Form.Item label={t("admin_settings.active_label")} name="active" valuePropName="checked">
           <Switch checkedChildren={t("admin_settings.switch_on")} unCheckedChildren={t("admin_settings.switch_off")} />
         </Form.Item>
-        <Button type="primary" loading={saving} onClick={submit}>{t("admin_settings.save_channel_btn", { label: ch.label })}</Button>
+        <Space wrap>
+          <Button type="primary" loading={saving} onClick={submit}>{t("admin_settings.save_channel_btn", { label: ch.label })}</Button>
+          {canTest && (
+            <Button icon={<PlayCircleOutlined />} loading={testing} onClick={() => testChannel({ variables: { channel: ch.key } })}>
+              {t("admin_settings.test_btn")}
+            </Button>
+          )}
+        </Space>
       </Form>
 
       <Divider style={{ margin: "16px 0 0" }} />
@@ -315,7 +406,7 @@ function ChannelCard({ ch, cfg, health, tenantId, origin, focused, onSaved }: an
           </Text>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

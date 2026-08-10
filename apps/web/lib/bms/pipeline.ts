@@ -318,7 +318,8 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "ห้ามเสนอสินค้าทดแทนคนละหมวดแบบเดาสุ่ม: ถ้า find_alternatives ไม่คืนตัวเลือกที่เกี่ยวข้อง ให้บอกว่าไม่มีตัวเลือกใกล้เคียงที่ตรวจสอบได้ แล้วถามว่าต้องการให้แอดมินช่วยดูต่อไหม",
     "ข้อความสุขภาพหรืออาการป่วยที่กำกวมต้องถามยืนยันก่อน โดยเฉพาะร้านที่ไม่ใช่ pharmacy ห้ามเดาว่าลูกค้าต้องการยา/สินค้า และห้ามวินิจฉัยโรค",
     "ถ้าสินค้าหรือไซซ์ที่ลูกค้าต้องการหมด ให้ถามสั้น ๆ ว่าต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมได้ 1 ครั้ง; เรียก subscribe_restock_notification เฉพาะเมื่อลูกค้าตอบรับชัดเจนหรือขอให้แจ้งเอง และต้องมี sku+size ที่ยืนยันแล้ว ห้ามสมัครจากการคาดเดาความสนใจ",
-    "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ",
+    "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ " +
+      "ห้ามใช้ตาราง markdown (เช่น เส้น | คั่นคอลัมน์ หรือแถว ---) เด็ดขาด เพราะช่องทางแชทส่งได้แค่ข้อความล้วน ไม่มี renderer ตีความตาราง ให้จัดเป็นบล็อกต่อสินค้าแทน: บรรทัดแรก 🏷️ ชื่อสินค้า — หมวด/ยี่ห้อ แล้วบรรทัดถัดไปคือ ราคา · ไซซ์ที่มี เว้นบรรทัดว่างระหว่างสินค้าแต่ละตัว",
     "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
     `Tenant summary: businessArchetype=${profile.businessArchetype || "none"}; businessType=${profile.businessType || "general"}; language=${profile.aiLanguage}; ` +
       `orderingStyle=${profile.aiOrderingStyle}; requiredFields=${required}; ` +
@@ -877,8 +878,62 @@ function orderStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
+// backstop เผื่อโมเดลหลุดส่งตาราง markdown ออกมาทั้งที่ system prompt ห้ามไว้แล้ว (ดูบรรทัด
+// "ห้ามใช้ตาราง markdown..." ด้านบน) — LINE/Messenger รับได้แค่ plain text ไม่มี renderer ตีความ
+// | / --- เป็นตาราง จึง reflow เป็นบล็อกต่อแถวแทนก่อนส่งออกเสมอ ไม่ปล่อยให้ลูกค้าเห็นเส้น | ดิบๆ
+function isMarkdownTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith("|") && t.endsWith("|") && t.length > 1;
+}
+function isMarkdownTableSeparator(line: string): boolean {
+  const t = line.trim();
+  return t.includes("-") && /^\|?[\s:|-]+\|?$/.test(t);
+}
+function splitMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+function reflowMarkdownTables(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (
+      isMarkdownTableRow(lines[i]) &&
+      i + 1 < lines.length &&
+      isMarkdownTableSeparator(lines[i + 1])
+    ) {
+      const header = splitMarkdownTableRow(lines[i]);
+      i += 2;
+      const blocks: string[] = [];
+      while (i < lines.length && isMarkdownTableRow(lines[i])) {
+        const cells = splitMarkdownTableRow(lines[i]);
+        const name = cells[0] || "";
+        const rest = cells
+          .slice(1)
+          .map((cell, idx) => {
+            const label = header[idx + 1];
+            return label ? `${label}: ${cell}` : cell;
+          })
+          .filter(Boolean);
+        blocks.push(name ? `🏷️ ${name}${rest.length ? `\n${rest.join(" · ")}` : ""}` : rest.join(" · "));
+        i++;
+      }
+      out.push(blocks.join("\n\n"));
+      continue;
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join("\n");
+}
+
 function sanitizeCustomerReply(reply: string): string {
-  return String(reply || "")
+  return reflowMarkdownTables(String(reply || ""))
     .replace(
       /\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
       "$1"
