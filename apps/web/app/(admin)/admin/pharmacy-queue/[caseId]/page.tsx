@@ -29,7 +29,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  ExclamationCircleOutlined,
   MedicineBoxOutlined,
   PlusOutlined,
   RobotOutlined,
@@ -37,7 +36,6 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
-import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import {
   getCompletenessTagMeta,
   getCustomerConfirmationTagMeta,
@@ -533,21 +531,30 @@ export default function PharmacyCaseDetailPage() {
   if (loading && !c) return <Alert type="info" showIcon message="กำลังโหลด..." />;
   if (!c) return <Alert type="warning" showIcon message="ไม่พบเคสนี้" />;
 
+  const riskTone = c.riskLevel === "EMERGENCY" ? "bad" : c.riskLevel === "URGENT" ? "warn" : "ok";
+  const riskColor = riskTone === "bad" ? "#b3261e" : riskTone === "warn" ? "#92620a" : "#0f7a4d";
+  const riskBg = riskTone === "bad" ? "#fdecea" : riskTone === "warn" ? "#fff4e0" : "#e7f7ef";
+
   return (
     <div>
-      <AdminPageHeader
-        title={
-          <Space wrap>
-            <Title level={4} style={{ margin: 0 }}>เคส {c.id.slice(0, 8)}</Title>
-            <Tag>{c.status}</Tag>
-            <Tag color={c.riskLevel === "EMERGENCY" ? "red" : c.riskLevel === "URGENT" ? "orange" : "green"}>
+      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap align="start">
+        <div>
+          <Space align="center" wrap size={10}>
+            <Title level={2} style={{ margin: 0 }}>เคส {c.id.slice(0, 8)}</Title>
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
+                padding: "4px 10px", borderRadius: 999, color: riskColor, background: riskBg,
+                border: `1px solid ${riskColor}45`,
+              }}
+            >
               Risk: {c.riskLevel}
-            </Tag>
+            </span>
           </Space>
-        }
-      >
+          <Text type="secondary">สถานะ: {c.status}{history?.customerName || history?.customerRef ? ` · ลูกค้า: ${history.customerName || history.customerRef}` : ""}</Text>
+        </div>
         <Button onClick={() => router.push("/admin/pharmacy-queue")}>กลับไปคิว</Button>
-      </AdminPageHeader>
+      </Space>
 
       <Alert
         type="warning"
@@ -585,7 +592,7 @@ export default function PharmacyCaseDetailPage() {
         />
       )}
 
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }}>
         <Space wrap size={12}>
           <Tag color={completenessMeta.color}>Completeness: {completenessMeta.text}</Tag>
           <Tag color={confirmationMeta.color}>Confirmation: {confirmationMeta.text}</Tag>
@@ -593,28 +600,22 @@ export default function PharmacyCaseDetailPage() {
           <Tag color="purple">AI summary v{c.aiSummaryVersion}</Tag>
           <Tag color="gold">Medication candidates: {medicationSuggestions.length}</Tag>
           <Tag color={c.conversationId ? "green" : "default"}>
-            {c.conversationId ? "Linked to conversation" : "No customer conversation"}
+            {c.conversationId
+              ? `Linked to conversation${history?.channel ? ` (${history.channel})` : ""}`
+              : "No customer conversation"}
           </Tag>
         </Space>
       </Card>
 
-      <Alert
-        type={c.conversationId ? "success" : "warning"}
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={
-          c.conversationId
-            ? "เคสนี้ผูกกับ customer conversation แล้ว"
-            : "เคสนี้ยังไม่ได้ผูกกับ customer conversation"
-        }
-        description={
-          c.conversationId
-            ? `Approve and send จะบันทึกข้อความกลับเข้า conversation เดิม${
-                history?.channel ? ` (channel: ${history.channel})` : ""
-              } และถ้า channel รองรับก็จะพยายาม push ออกจริงด้วย`
-            : "Approve จะเปลี่ยนสถานะเคสได้ แต่จะยังไม่มีปลายทางให้ส่งข้อความกลับลูกค้าอัตโนมัติ"
-        }
-      />
+      {!c.conversationId ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="เคสนี้ยังไม่ได้ผูกกับ customer conversation"
+          description="Approve จะเปลี่ยนสถานะเคสได้ แต่จะยังไม่มีปลายทางให้ส่งข้อความกลับลูกค้าอัตโนมัติ"
+        />
+      ) : null}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={16}>
@@ -631,7 +632,7 @@ export default function PharmacyCaseDetailPage() {
                 คัดลอก
               </Button>
             }
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 12, borderRadius: 10 }}
           >
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
               <div
@@ -708,7 +709,7 @@ export default function PharmacyCaseDetailPage() {
             </Space>
           </Card>
 
-          <Card size="small" title="Structured Intake + Patient Memory" style={{ marginBottom: 12 }}>
+          <Card size="small" title="Structured Intake + Patient Memory" style={{ marginBottom: 12, borderRadius: 10 }}>
             <Descriptions size="small" column={2} bordered>
               <Descriptions.Item label="ไข้">{String(structuredAnswers.has_fever ?? "UNKNOWN")}</Descriptions.Item>
               <Descriptions.Item label="อุณหภูมิ">{String(structuredAnswers.fever_temp ?? "UNKNOWN")}</Descriptions.Item>
@@ -726,7 +727,7 @@ export default function PharmacyCaseDetailPage() {
             <Card
               size="small"
               title="กรอกข้อมูลที่ขาดเอง (ใช้เมื่อ AI ไม่พร้อมใช้งานหรือลูกค้าไม่ตอบต่อ)"
-              style={{ marginBottom: 12 }}
+              style={{ marginBottom: 12, borderRadius: 10 }}
             >
               <Space direction="vertical" style={{ width: "100%" }}>
                 {missing.map((key) => (
@@ -785,7 +786,7 @@ export default function PharmacyCaseDetailPage() {
                 <span>AI Analysis Summary</span>
               </Space>
             }
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 12, borderRadius: 10 }}
             extra={
               canDecide && can("pharmacy.assessment.review") && summaryDraft === null ? (
                 <a onClick={() => setSummaryDraft(c.aiSummary || "")}>แก้ไขสรุป</a>
@@ -819,7 +820,7 @@ export default function PharmacyCaseDetailPage() {
                 <span>AI Draft Medication Plan</span>
               </Space>
             }
-            style={{ marginBottom: 12, borderColor: "#d48806" }}
+            style={{ marginBottom: 12, borderColor: "#d48806", borderRadius: 10 }}
             extra={
               can("pharmacy.assessment.review") && c.status === "PHARMACIST_REVIEWING" ? (
                 <Space>
@@ -1019,7 +1020,7 @@ export default function PharmacyCaseDetailPage() {
                 <span>Pharmacist Summary Draft</span>
               </Space>
             }
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 12, borderRadius: 10 }}
           >
             <TextArea
               placeholder="สรุป clinical summary / rationale หรือร่างข้อความก่อนตัดสินใจ"
@@ -1064,7 +1065,7 @@ export default function PharmacyCaseDetailPage() {
         </Col>
 
         <Col xs={24} xl={8}>
-          <Card size="small" title="Conversation" style={{ marginBottom: 12 }}>
+          <Card size="small" title="Conversation" style={{ marginBottom: 12, borderRadius: 10 }}>
             {history ? (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Text type="secondary">
@@ -1131,7 +1132,7 @@ export default function PharmacyCaseDetailPage() {
             ) : null}
           </Card>
 
-          <Card size="small" title="Action workspace" style={{ marginBottom: 12 }}>
+          <Card size="small" title="Action workspace" style={{ marginBottom: 12, borderRadius: 10 }}>
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
               <Descriptions size="small" column={1} bordered>
                 <Descriptions.Item label="จำนวนสินค้าที่เลือก">{selectedMedicationSummary.count} รายการ</Descriptions.Item>
@@ -1246,24 +1247,7 @@ export default function PharmacyCaseDetailPage() {
             </Space>
           </Card>
 
-          <Card size="small" title="What this layout reduces" style={{ marginBottom: 12 }}>
-            <Space direction="vertical" size={10}>
-              <Paragraph style={{ marginBottom: 0 }}>
-                <ExclamationCircleOutlined style={{ color: "#faad14", marginRight: 8 }} />
-                ลดเวลาที่เภสัชต้องไล่อ่านแชทย้อนหลังเองทั้งหมด
-              </Paragraph>
-              <Paragraph style={{ marginBottom: 0 }}>
-                <ExclamationCircleOutlined style={{ color: "#faad14", marginRight: 8 }} />
-                ลดการจับคู่ยาในร้านแบบ manual ทีละตัว
-              </Paragraph>
-              <Paragraph style={{ marginBottom: 0 }}>
-                <ExclamationCircleOutlined style={{ color: "#faad14", marginRight: 8 }} />
-                ลดการสลับหลาย section ก่อนจะ approve/send
-              </Paragraph>
-            </Space>
-          </Card>
-
-          <Card size="small" title="Audit Timeline">
+          <Card size="small" title="Audit Timeline" style={{ borderRadius: 10 }}>
             <div style={{ maxHeight: 420, overflowY: "auto", padding: "4px 8px 0 4px" }}>
               <Timeline
                 items={events.map((e: any) => ({

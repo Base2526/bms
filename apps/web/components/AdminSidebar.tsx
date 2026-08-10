@@ -125,9 +125,10 @@ const link = (
   // ไม่งั้น span flex:1 overflow:hidden จะยุบเหลือ 0 ใน popup flyout ตอนย่อ → text หาย
   label:
     !collapsed && badge > 0 ? (
-      <Link href={href} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
-        <span style={PILL_STYLE}>{badgeText(badge)}</span>
+      // whiteSpace: 'normal' (ไม่ nowrap/ellipsis) — เดิมตัดข้อความยาวเป็น "..." อ่านไม่ออกว่าเมนูอะไร
+      <Link href={href} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>{text}</span>
+        <span style={{ ...PILL_STYLE, flexShrink: 0 }}>{badgeText(badge)}</span>
       </Link>
     ) : (
       <Link href={href}>{text}</Link>
@@ -146,12 +147,13 @@ const pharmacyQueueLink = (
       ? iconWithBadge(<MedicineBoxOutlined />, totalBadge)
       : <MedicineBoxOutlined />,
     label: !collapsed ? (
-      <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      // whiteSpace: 'normal' (ไม่ nowrap/ellipsis) — เดิมตัดข้อความยาวเป็น "..." อ่านไม่ออกว่าเมนูอะไร
+      <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>
           Pharmacy Intake Queue
         </span>
-        {pendingConfirmationCount > 0 ? <span style={GOLD_PILL_STYLE}>รอยืนยัน {badgeText(pendingConfirmationCount)}</span> : null}
-        {emergencyCount > 0 ? <span style={PILL_STYLE}>ฉุกเฉิน {badgeText(emergencyCount)}</span> : null}
+        {pendingConfirmationCount > 0 ? <span style={{ ...GOLD_PILL_STYLE, flexShrink: 0 }}>รอยืนยัน {badgeText(pendingConfirmationCount)}</span> : null}
+        {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>ฉุกเฉิน {badgeText(emergencyCount)}</span> : null}
       </Link>
     ) : (
       <Link href="/admin/pharmacy-queue">Pharmacy Intake Queue</Link>
@@ -316,7 +318,6 @@ export default function AdminSidebar() {
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <ExperimentOutlined />)] : []),
-        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-review-mockup', 'Pharmacy Review Mockup', <MedicineBoxOutlined />)] : []),
         ...(isPharmacyShop && canViewPharmacy ? [pharmacyQueueLink(effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
         ...(isPharmacyShop && can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
         ...(isPharmacyShop && isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
@@ -421,6 +422,7 @@ export default function AdminSidebar() {
       {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ (overflowX ต้อง visible ไม่งั้น badge ที่ล้นขอบไอคอนโดนตัด) */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'visible' }}>
         <Menu
+          className="bms-admin-sidebar-menu"
           mode="inline"
           items={items}
           selectedKeys={selectedKeys}

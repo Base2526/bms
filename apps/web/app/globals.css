@@ -337,6 +337,23 @@ html.dark .ant-drawer-mask {
   opacity: 1 !important;
 }
 
+/* Sidebar: label เมนูยาว (เช่น "Pharmacy Intake Lab"/"Pharmacy Protocols") เดิมโดน antd ตัดเป็น
+   "..." ด้วย ellipsis + height คงที่ของ .ant-menu-item อ่านไม่ออกว่าเมนูอะไร — scope เฉพาะ sidebar
+   (ไม่แตะ Menu อื่นในแอป เช่น dropdown) เปลี่ยนเป็นขึ้นบรรทัดใหม่แทนตัดคำ */
+.bms-admin-sidebar-menu .ant-menu-item,
+.bms-admin-sidebar-menu .ant-menu-submenu-title {
+  height: auto;
+  line-height: 1.4;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.bms-admin-sidebar-menu .ant-menu-title-content {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+}
+
 /* overlay เวลา +more รูป */
 .chat-image-overlay {
   position: absolute;

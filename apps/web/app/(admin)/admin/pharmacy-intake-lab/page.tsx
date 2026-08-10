@@ -4,8 +4,10 @@ import {
   Alert,
   Button,
   Card,
+  Col,
   Input,
   List,
+  Row,
   Space,
   Tag,
   Typography,
@@ -21,7 +23,6 @@ import {
   ReloadOutlined,
   SendOutlined,
 } from "@ant-design/icons";
-import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import {
   buildCustomerConfirmationLinesFromAnswers,
   formatCustomerConfirmationClipboardText,
@@ -32,6 +33,22 @@ import {
 const { Text, Paragraph, Title } = Typography;
 
 const CHAT_STORAGE_KEY = "bms-pharmacy-intake-lab-chat-v1";
+
+// ---- วันที่ — ยืมธรรมเนียมเดิมจาก Inbox/Assistant มาตรงๆ (app/(admin)/admin/assistant/page.tsx)
+// เพื่อให้ label "วันนี้/เมื่อวาน/วันที่" ตรงกันทั้งระบบ (Asia/Bangkok ทุกเครื่อง ไม่ขึ้นกับ timezone browser)
+// จำเป็นที่นี่เพราะแชทเก็บถาวรใน localStorage แล้ว เปิดมาอีกวันจะเห็นข้อความคนละวันปนกันถ้าไม่มีตัวแบ่ง
+const BKK = "Asia/Bangkok";
+const dayKey = (iso: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+function dayLabel(iso: string) {
+  const key = dayKey(iso);
+  const now = new Date();
+  const todayKey = dayKey(now.toISOString());
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (key === todayKey) return "วันนี้";
+  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+}
 
 const M_PHARMACY_TEST = gql`
   mutation BmsPharmacyAssistantTest($message: String!, $session: BmsPharmacyAssistantSessionInput) {
@@ -294,7 +311,6 @@ export default function PharmacyIntakeLabPage() {
   const [lastCreatedOrderId, setLastCreatedOrderId] = useState<string | null>(null);
   const [autoQueueStatus, setAutoQueueStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [showArchetypeNotice, setShowArchetypeNotice] = useState(true);
-  const [showInfoNotice, setShowInfoNotice] = useState(true);
   const [chat, setChat] = useState<Bubble[]>([]);
   const [session, setSession] = useState<PharmacySession | null>(null);
   const [chatLoaded, setChatLoaded] = useState(false);
@@ -580,23 +596,18 @@ export default function PharmacyIntakeLabPage() {
     }
   };
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "calc(100dvh - 120px)", minHeight: 0 }}>
-      {!storeProfileLoading && !isPharmacyShop && showArchetypeNotice ? (
-        <Alert
-          type="warning"
-          showIcon
-          closable
-          onClose={() => setShowArchetypeNotice(false)}
-          message="หน้านี้ใช้ได้เฉพาะร้าน archetype = Pharmacy"
-          description="ร้านนี้ไม่ได้ตั้งเป็น Pharmacy ระบบกำลังพากลับไปที่ผู้ช่วย AI ปกติ"
-        />
-      ) : null}
+  const queueStatusColor = autoQueueStatus === "done" ? "green" : autoQueueStatus === "running" ? "gold" : autoQueueStatus === "error" ? "red" : "default";
 
-      <AdminPageHeader
-        title={<Title level={4} style={{ margin: 0 }}>Pharmacy Intake Lab</Title>}
-      >
-        <Space>
+  return (
+    <div>
+      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap>
+        <div>
+          <Title level={2} style={{ margin: 0 }}>Pharmacy Intake Lab</Title>
+          <Text type="secondary">
+            ทดสอบบทสนทนาซักอาการ, quick reply และการส่งเคสเข้าคิว — แยกจากผู้ช่วย AI หลังบ้านปกติ ({"/admin/assistant"})
+          </Text>
+        </div>
+        <Space size={10} wrap>
           <Button onClick={() => router.push("/admin/pharmacy-queue")}>ไปหน้า Queue</Button>
           <Popconfirm
             title="ล้างบทสนทนาทดสอบนี้?"
@@ -609,154 +620,168 @@ export default function PharmacyIntakeLabPage() {
             <Button icon={<DeleteOutlined />} disabled={chat.length === 0}>ล้าง lab</Button>
           </Popconfirm>
         </Space>
-      </AdminPageHeader>
+      </Space>
 
-      {showInfoNotice ? (
+      {!storeProfileLoading && !isPharmacyShop && showArchetypeNotice ? (
         <Alert
-          type="info"
+          type="warning"
           showIcon
           closable
-          onClose={() => setShowInfoNotice(false)}
-          message="หน้าทดสอบเฉพาะ Pharmacy intake"
-          description="ใช้สำหรับจำลองบทสนทนาซักอาการ, quick reply, summary confirmation และการส่งเคสเข้าคิว โดยแยกออกจากผู้ช่วย AI หลังบ้านปกติ"
+          onClose={() => setShowArchetypeNotice(false)}
+          message="หน้านี้ใช้ได้เฉพาะร้าน archetype = Pharmacy"
+          description="ร้านนี้ไม่ได้ตั้งเป็น Pharmacy ระบบกำลังพากลับไปที่ผู้ช่วย AI ปกติ"
+          style={{ marginBottom: 16 }}
         />
       ) : null}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 16, alignItems: "stretch", flex: 1, minHeight: 0 }}>
-        <Card
-          style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100%", minHeight: 0 }}
-          styles={{ body: { flex: 1, display: "flex", flexDirection: "column", padding: 0, minHeight: 0 } }}
-        >
-          <div ref={logRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 16 }}>
-            {chat.length === 0 ? (
-              <div style={{ height: "100%", display: "grid", placeItems: "center", textAlign: "center", padding: 24 }}>
-                <Space direction="vertical" size={12}>
-                  <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(var(--app-primary-rgb),0.12)", display: "grid", placeItems: "center", color: "var(--app-primary)", fontSize: 26, margin: "0 auto" }}>
-                    <ExperimentOutlined />
-                  </div>
-                  <Text strong style={{ fontSize: 16 }}>เริ่มทดสอบบทสนทนาร้านยา</Text>
-                  <Text type="secondary">{starters.length > 0 ? `กด starter ด้านล่างหรือพิมพ์อาการ เช่น ${starterExample}` : "ยังไม่มี Protocol ที่ผ่านการอนุมัติ เปิดใช้งาน และอยู่ใน Platform allowlist"}</Text>
-                  <Space wrap style={{ justifyContent: "center" }}>
-                    {starters.map((item) => (
-                      <Button key={item.value} shape="round" onClick={() => send(item.value)}>
-                        {item.label}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card
+            style={{ borderRadius: 10, display: "flex", flexDirection: "column", overflow: "hidden", height: "min(74vh, 680px)" }}
+            styles={{ body: { flex: 1, display: "flex", flexDirection: "column", padding: 0, minHeight: 0 } }}
+          >
+            <div ref={logRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 16 }}>
+              {chat.length === 0 ? (
+                <div style={{ height: "100%", display: "grid", placeItems: "center", textAlign: "center", padding: 24 }}>
+                  <Space direction="vertical" size={12}>
+                    <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(var(--app-primary-rgb),0.12)", display: "grid", placeItems: "center", color: "var(--app-primary)", fontSize: 26, margin: "0 auto" }}>
+                      <ExperimentOutlined />
+                    </div>
+                    <Text strong style={{ fontSize: 16 }}>เริ่มทดสอบบทสนทนาร้านยา</Text>
+                    <Text type="secondary">{starters.length > 0 ? `กด starter ด้านล่างหรือพิมพ์อาการ เช่น ${starterExample}` : "ยังไม่มี Protocol ที่ผ่านการอนุมัติ เปิดใช้งาน และอยู่ใน Platform allowlist"}</Text>
+                    <Space wrap style={{ justifyContent: "center" }}>
+                      {starters.map((item) => (
+                        <Button key={item.value} shape="round" onClick={() => send(item.value)}>
+                          {item.label}
+                        </Button>
+                      ))}
+                    </Space>
+                  </Space>
+                </div>
+              ) : (
+                <Space direction="vertical" style={{ width: "100%" }} size={4}>
+                  {chat.map((bubble, idx) => {
+                    const prevDay = idx > 0 ? dayKey(chat[idx - 1].createdAt) : null;
+                    const curDay = dayKey(bubble.createdAt);
+                    const showDaySep = curDay !== prevDay;
+                    return (
+                      <div key={idx}>
+                        {showDaySep ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+                            <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
+                            <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
+                              {dayLabel(bubble.createdAt)}
+                            </Text>
+                            <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
+                          </div>
+                        ) : null}
+                        <div style={{ textAlign: bubble.role === "user" ? "right" : "left", marginBottom: 8 }}>
+                          <div
+                            style={{
+                              display: "inline-block",
+                              maxWidth: "88%",
+                              whiteSpace: "pre-wrap",
+                              padding: "10px 12px",
+                              borderRadius: 12,
+                              border: bubble.error ? "1px solid rgba(255,77,79,.35)" : "1px solid var(--app-border)",
+                              background: bubble.error
+                                ? "rgba(255,77,79,.1)"
+                                : bubble.role === "user"
+                                  ? "rgba(var(--app-primary-rgb), 0.12)"
+                                  : "var(--app-surface-2)",
+                            }}
+                          >
+                            <Paragraph style={{ margin: 0 }}>{bubble.text}</Paragraph>
+                          </div>
+                          <div style={{ marginTop: 4 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              {new Date(bubble.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                            </Text>
+                          </div>
+                          {bubble.error ? (
+                            <Button
+                              size="small"
+                              icon={<ReloadOutlined />}
+                              onClick={() => retry(idx)}
+                              disabled={sending}
+                              style={{ marginTop: 6 }}
+                            >
+                              ลองอีกครั้ง
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Space>
+              )}
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--app-border)", background: "var(--app-surface-2)", padding: 12 }}>
+              {session?.phase === "PRODUCT_PURCHASE" && cartItems.length > 0 ? (
+                <div style={{ marginBottom: 10 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>ลบรายสินค้า</Text>
+                  <Space wrap style={{ display: "flex", marginTop: 6 }}>
+                    {cartItems.map((item) => (
+                      <Button
+                        key={`remove-${item.sku}`}
+                        size="small"
+                        shape="round"
+                        danger
+                        onClick={() => send(`ลบ ${item.sku}`)}
+                        disabled={sending}
+                      >
+                        {`✕ ${item.name}`}
                       </Button>
                     ))}
                   </Space>
-                </Space>
-              </div>
-            ) : (
-              <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                {chat.map((bubble, idx) => (
-                  <div key={idx} style={{ textAlign: bubble.role === "user" ? "right" : "left" }}>
-                    <div
-                      style={{
-                        display: "inline-block",
-                        maxWidth: "88%",
-                        whiteSpace: "pre-wrap",
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: bubble.error ? "1px solid rgba(255,77,79,.35)" : "1px solid var(--app-border)",
-                        background: bubble.error
-                          ? "rgba(255,77,79,.1)"
-                          : bubble.role === "user"
-                            ? "rgba(var(--app-primary-rgb), 0.12)"
-                            : "var(--app-surface-2)",
-                      }}
-                    >
-                      <Paragraph style={{ margin: 0 }}>{bubble.text}</Paragraph>
-                    </div>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {new Date(bubble.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
-                      </Text>
-                    </div>
-                    {bubble.error ? (
-                      <Button
-                        size="small"
-                        icon={<ReloadOutlined />}
-                        onClick={() => retry(idx)}
-                        disabled={sending}
-                        style={{ marginTop: 6 }}
-                      >
-                        ลองอีกครั้ง
-                      </Button>
-                    ) : null}
-                  </div>
+                </div>
+              ) : null}
+              <Space wrap style={{ marginBottom: 10 }}>
+                {primaryReplies.map((item) => (
+                  <Button key={item.value} size="small" shape="round" onClick={() => send(item.value)} disabled={sending}>
+                    {item.label}
+                  </Button>
                 ))}
               </Space>
-            )}
-          </div>
-
-          <div style={{ borderTop: "1px solid var(--app-border)", background: "var(--app-surface-2)", padding: 12 }}>
-            {session?.phase === "PRODUCT_PURCHASE" && cartItems.length > 0 ? (
-              <div style={{ marginBottom: 10 }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>ลบรายสินค้า</Text>
-                <Space wrap style={{ display: "flex", marginTop: 6 }}>
-                  {cartItems.map((item) => (
-                    <Button
-                      key={`remove-${item.sku}`}
-                      size="small"
-                      shape="round"
-                      danger
-                      onClick={() => send(`ลบ ${item.sku}`)}
-                      disabled={sending}
-                    >
-                      {`✕ ${item.name}`}
-                    </Button>
-                  ))}
-                </Space>
-              </div>
-            ) : null}
-            <Space wrap style={{ marginBottom: 10 }}>
-              {primaryReplies.map((item) => (
-                <Button key={item.value} size="small" shape="round" onClick={() => send(item.value)} disabled={sending}>
-                  {item.label}
+              <div style={{ display: "flex", gap: 8 }}>
+                <Input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onPressEnter={() => send()}
+                  placeholder="พิมพ์อาการหรือคำตอบ เช่น 'มีไข้ 38.5' หรือ 'ข้อมูลถูกต้อง'"
+                  disabled={sending}
+                />
+                <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
+                  ส่ง
                 </Button>
-              ))}
-            </Space>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onPressEnter={() => send()}
-                placeholder="พิมพ์อาการหรือคำตอบ เช่น 'มีไข้ 38.5' หรือ 'ข้อมูลถูกต้อง'"
-                disabled={sending}
-              />
-              <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-                ส่ง
-              </Button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </Col>
 
-        <Card
-          title="Lab Controls"
-          style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100%", minHeight: 0 }}
-          styles={{ body: { flex: 1, display: "flex", flexDirection: "column", padding: 0, minHeight: 0 } }}
-        >
-          <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 24, display: "flex", flexDirection: "column", gap: 12 }}>
-            <Alert
-              type="warning"
-              showIcon
-              message="แยกจากผู้ช่วย AI ปกติ"
-              description="หน้านี้ใช้ state ทดสอบของ pharmacy โดยเฉพาะ ไม่ปนกับ /admin/assistant"
-            />
-
-            <div>
-              <Text strong>Session state</Text>
-              <div style={{ marginTop: 8 }}>
+        <Col xs={24} xl={8}>
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            {/* ===== สถานะ session ตอนนี้ — chip เดียวกับสไตล์ /admin/dashboard ===== */}
+            <Card size="small" style={{ borderRadius: 10 }} styles={{ body: { padding: "12px 14px" } }}>
+              <Text strong style={{ fontSize: 12.5, display: "block", marginBottom: 8 }}>สถานะ session</Text>
+              <Space wrap size={[8, 8]}>
                 <Tag color="blue">phase: {session?.phase || "NONE"}</Tag>
                 <Tag>protocol: {session?.protocolKey || "—"}</Tag>
-                <Tag color={autoQueueStatus === "done" ? "green" : autoQueueStatus === "running" ? "gold" : autoQueueStatus === "error" ? "red" : "default"}>
-                  queue: {autoQueueStatus}
-                </Tag>
-              </div>
-            </div>
+                <Tag color={queueStatusColor}>queue: {autoQueueStatus}</Tag>
+              </Space>
+              <Button size="small" style={{ marginTop: 10 }} onClick={() => setSession(null)}>
+                รีเซ็ต session
+              </Button>
+            </Card>
 
-            <div>
-              <Text strong>Quick replies</Text>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <Card
+              size="small"
+              title={<Text strong style={{ fontSize: 12.5 }}>Quick replies ทั้งหมด</Text>}
+              style={{ borderRadius: 10 }}
+              styles={{ body: { padding: "12px 14px" } }}
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {quickReplies.length > 0 ? (
                   quickReplies.map((opt) => (
                     <Button key={opt.value} size="small" onClick={() => send(opt.value)} disabled={sending}>
@@ -764,107 +789,107 @@ export default function PharmacyIntakeLabPage() {
                     </Button>
                   ))
                 ) : (
-                  <Text type="secondary">ยังไม่มี quick reply สำหรับสถานะนี้</Text>
+                  <Text type="secondary" style={{ fontSize: 12.5 }}>ยังไม่มี quick reply สำหรับสถานะนี้</Text>
                 )}
               </div>
-            </div>
+            </Card>
 
-            <div>
-              <Text strong>Customer confirmation snapshot</Text>
+            <Card
+              size="small"
+              title={<Text strong style={{ fontSize: 12.5 }}>Customer confirmation snapshot</Text>}
+              style={{ borderRadius: 10 }}
+              styles={{ body: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } }}
+            >
+              <Space wrap size={[8, 8]}>
+                <Tag color={completenessMeta.color}>ครบถ้วน: {completenessMeta.text}</Tag>
+                <Tag color={confirmationMeta.color}>ยืนยัน: {confirmationMeta.text}</Tag>
+                <Button size="small" icon={<CopyOutlined />} onClick={copySummary} disabled={summaryRows.length === 0}>
+                  copy summary
+                </Button>
+              </Space>
+              {summaryRows.length > 0 ? (
+                <List
+                  size="small"
+                  bordered
+                  dataSource={summaryRows}
+                  renderItem={(row) => (
+                    <List.Item key={row.fieldKey}>
+                      <Space direction="vertical" size={0} style={{ width: "100%" }}>
+                        <Text strong style={{ fontSize: 12.5 }}>{row.label}</Text>
+                        <Text style={{ fontSize: 12.5 }}>{row.valueText}</Text>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <Text type="secondary" style={{ fontSize: 12.5 }}>ยังไม่มีข้อมูลสรุปสำหรับยืนยัน</Text>
+              )}
+            </Card>
+
+            {(lastSeededAssessmentId || lastCreatedOrderId) ? (
               <Card
                 size="small"
-                style={{ marginTop: 8, background: "var(--app-surface-2)" }}
-                styles={{ body: { display: "flex", flexDirection: "column", gap: 8 } }}
+                title={<Text strong style={{ fontSize: 12.5 }}>ผลลัพธ์ล่าสุด</Text>}
+                style={{ borderRadius: 10 }}
+                styles={{ body: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 } }}
               >
-                <Space wrap>
-                  <Text strong>ความครบถ้วน:</Text>
-                  <Tag color={completenessMeta.color}>{completenessMeta.text}</Tag>
-                  <Text strong>การยืนยัน:</Text>
-                  <Tag color={confirmationMeta.color}>{confirmationMeta.text}</Tag>
-                  <Tag>{session?.protocolKey || "ยังไม่เลือก protocol"}</Tag>
-                  <Button size="small" icon={<CopyOutlined />} onClick={copySummary} disabled={summaryRows.length === 0}>
-                    copy summary
-                  </Button>
-                </Space>
-                {summaryRows.length > 0 ? (
-                  <List
-                    size="small"
-                    bordered
-                    dataSource={summaryRows}
-                    renderItem={(row) => (
-                      <List.Item key={row.fieldKey}>
-                        <Space direction="vertical" size={0} style={{ width: "100%" }}>
-                          <Text strong>{row.label}</Text>
-                          <Text>{row.valueText}</Text>
-                        </Space>
-                      </List.Item>
-                    )}
-                  />
-                ) : (
-                  <Text type="secondary">ยังไม่มีข้อมูลสรุปสำหรับยืนยัน</Text>
-                )}
+                {lastSeededAssessmentId ? (
+                  <Space direction="vertical" style={{ width: "100%" }} size={6}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>เคสล่าสุด</Text>
+                    <Space.Compact style={{ width: "100%" }}>
+                      <Input value={lastSeededAssessmentId} readOnly size="small" />
+                      <Button
+                        size="small"
+                        icon={<CopyOutlined />}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(lastSeededAssessmentId);
+                            message.success("คัดลอกหมายเลขเคสแล้ว");
+                          } catch {
+                            message.error("คัดลอกหมายเลขเคสไม่สำเร็จ");
+                          }
+                        }}
+                      />
+                    </Space.Compact>
+                    <Space wrap size={6}>
+                      <Button size="small" onClick={() => router.push("/admin/pharmacy-queue")}>เปิด queue list</Button>
+                      <Button size="small" onClick={() => router.push(`/admin/pharmacy-queue/${lastSeededAssessmentId}`)}>เปิด case detail</Button>
+                    </Space>
+                  </Space>
+                ) : null}
+                {lastCreatedOrderId ? (
+                  <Space direction="vertical" style={{ width: "100%" }} size={6}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>ออเดอร์ล่าสุด</Text>
+                    <Space.Compact style={{ width: "100%" }}>
+                      <Input value={lastCreatedOrderId} readOnly size="small" />
+                      <Button
+                        size="small"
+                        icon={<CopyOutlined />}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(lastCreatedOrderId);
+                            message.success("คัดลอกหมายเลขออเดอร์แล้ว");
+                          } catch {
+                            message.error("คัดลอกหมายเลขออเดอร์ไม่สำเร็จ");
+                          }
+                        }}
+                      />
+                    </Space.Compact>
+                    <Button size="small" onClick={() => router.push("/admin/orders")}>เปิด Orders</Button>
+                  </Space>
+                ) : null}
               </Card>
-            </div>
-
-            <div>
-              <Text strong>Current answers</Text>
-              <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0", padding: 10, borderRadius: 8, background: "var(--app-surface-2)", border: "1px solid var(--app-border)", fontSize: 12 }}>
-                {JSON.stringify(session?.answers || {}, null, 2)}
-              </pre>
-            </div>
-          </div>
-
-          <div style={{ borderTop: "1px solid var(--app-border)", background: "var(--app-surface-1)", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            <Button onClick={() => setSession(null)}>รีเซ็ต session</Button>
-            {lastSeededAssessmentId ? (
-              <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                <Text type="secondary">เคสล่าสุด</Text>
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input value={lastSeededAssessmentId} readOnly />
-                  <Button
-                    icon={<CopyOutlined />}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(lastSeededAssessmentId);
-                        message.success("คัดลอกหมายเลขเคสแล้ว");
-                      } catch {
-                        message.error("คัดลอกหมายเลขเคสไม่สำเร็จ");
-                      }
-                    }}
-                  />
-                </Space.Compact>
-                <Button onClick={() => router.push("/admin/pharmacy-queue")}>
-                  เปิด queue list
-                </Button>
-                <Button onClick={() => router.push(`/admin/pharmacy-queue/${lastSeededAssessmentId}`)}>
-                  เปิด case detail ล่าสุด
-                </Button>
-              </Space>
             ) : null}
-            {lastCreatedOrderId ? (
-              <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                <Text type="secondary">ออเดอร์ล่าสุด</Text>
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input value={lastCreatedOrderId} readOnly />
-                  <Button
-                    icon={<CopyOutlined />}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(lastCreatedOrderId);
-                        message.success("คัดลอกหมายเลขออเดอร์แล้ว");
-                      } catch {
-                        message.error("คัดลอกหมายเลขออเดอร์ไม่สำเร็จ");
-                      }
-                    }}
-                  />
-                </Space.Compact>
-                <Button onClick={() => router.push("/admin/orders")}>
-                  เปิด Orders
-                </Button>
-              </Space>
-            ) : null}
-          </div>
-        </Card>
+          </Space>
+        </Col>
+      </Row>
+
+      {/* ===== debug ล้วน ๆ — ลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า เหมือน "ภาพรวมธุรกิจ" ใน dashboard ===== */}
+      <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 16 }}>
+        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>Current answers (debug)</Text>
+        <pre style={{ whiteSpace: "pre-wrap", margin: 0, padding: 10, borderRadius: 8, background: "var(--app-surface)", border: "1px solid var(--app-border)", fontSize: 12 }}>
+          {JSON.stringify(session?.answers || {}, null, 2)}
+        </pre>
       </div>
     </div>
   );
