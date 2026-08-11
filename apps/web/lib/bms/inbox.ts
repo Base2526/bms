@@ -24,6 +24,7 @@ import { createNotification } from "@/lib/notifications/service";
 import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
 import { beginTenantTx } from "./tenant";
 import { enqueueAiQualityReview, type AiTurnQuality } from "./aiQuality";
+import { ensureCustomerForIdentity } from "./customers";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -116,7 +117,16 @@ export async function logConversation(
         WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3 LIMIT 1`,
       [tenantId, channel, customerRef]
     );
-    const customerId = cust.rows[0]?.customer_id ?? null;
+    let customerId = cust.rows[0]?.customer_id ?? null;
+    if (!customerId) {
+      try {
+        const ensuredCustomerId = await ensureCustomerForIdentity(tenantId, channel, customerRef);
+        if (ensuredCustomerId) customerId = ensuredCustomerId;
+      } catch (error) {
+        // Inbox persistence remains fail-open if CRM identity creation is unavailable.
+        console.error("[BMS] logConversation customer identity failed:", error);
+      }
+    }
 
     // upsert conversation — (xmax = 0) บอกว่าเป็น INSERT จริง (ไม่ใช่ไปเข้า DO UPDATE)
     // ใช้แยกว่าควร auto-assign staff หลักไหม (ครั้งแรกที่ลูกค้าทักเท่านั้น ไม่ใช่ทุกข้อความ)
@@ -299,6 +309,17 @@ export async function listAutoAssignPool(tenantId: string): Promise<string[]> {
     if (res.rowCount) return res.rows.map((r) => r.id);
   }
   return [];
+}
+
+/** Licensed pharmacists who may receive a direct customer handoff notification. */
+export async function listLicensedPharmacistIds(tenantId: string): Promise<string[]> {
+  const res = await query<{ id: string }>(
+    `SELECT id FROM users
+      WHERE tenant_id = $1 AND is_licensed_pharmacist = TRUE AND is_available = TRUE
+      ORDER BY created_at`,
+    [tenantId]
+  );
+  return res.rows.map((row) => row.id);
 }
 
 /** โอนแชท OPEN/PENDING ทั้งหมดออกจาก user คนหนึ่ง — เรียกก่อนลบ user เสมอ กันแชทค้างไม่มี staff
@@ -834,7 +855,7 @@ async function notifyMentionedStaff(
     `SELECT u.id FROM users u
        JOIN roles r ON r.id = u.role_id
       WHERE u.tenant_id = $1 AND u.id = ANY($2::uuid[])
-        AND r.name IN ('Sales','Manager','Administrator')`,
+        AND (r.name IN ('Sales','Manager','Administrator') OR u.is_licensed_pharmacist = TRUE)`,
     [tenantId, mentionedUserIds]
   );
   const validIds: string[] = validRes.rows.map((r: any) => r.id);

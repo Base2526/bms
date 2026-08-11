@@ -109,9 +109,10 @@ tool exhaustively.
 - **Zero token cost by default.** `tools/runtime.ts` (~L370) only serializes `name`/`description`/
   `input_schema` into the Anthropic tool payload — these fields never reach the model unless someone
   deliberately folds their content into a tool's `description` string.
-- **Populated so far** (8 tools — the five overlapping product-discovery tools, the two
-  order-creation tools, and `generate_report`): `search_products`, `browse_catalog`,
+- **Populated so far** (12 tools — the five overlapping product-discovery tools, the two
+  order-creation tools, four identity-sensitive checkout/order/payment tools, and `generate_report`): `search_products`, `browse_catalog`,
   `list_new_arrivals`, `find_alternatives`, `recommend_products`, `create_order`, `reorder`,
+  `get_order_status`, `get_customer_checkout`, `save_customer_checkout_details`, `submit_payment`,
   `generate_report` — see `catalog.ts` for the exact wording. Example: `search_products.whenNotToUse`
   points to `browse_catalog` for broad questions and to `find_alternatives` when the named item is
   out of stock, so the five overlapping catalog tools cross-reference each other instead of relying
@@ -125,6 +126,13 @@ tool exhaustively.
   always resolves that customer's own latest order (prevents guessing someone else's `orderId`).
 - **Don't fill this in for every tool.** Add it only when a tool has actually been called wrong
   (in eval, in production, or in review) — most tools never need it.
+
+Identity resolution (`ensureCustomerForIdentity`, canonical-history lookup and payable-order
+selection) and pharmacy patient-memory helpers are intentionally **not** model-callable tools. They
+run server-side from the established tenant/channel/customer identity; registering them would let
+model-supplied identifiers influence tenancy/PII/health-data boundaries. Pharmacy intake also stays
+in its deterministic state-machine surface and enters this registry only when it returns to the
+normal approved catalog/order flow.
 
 ---
 
@@ -794,9 +802,14 @@ Permission: customer.view (ถ้าไม่มีสิทธิ์ → โช
 `mergeCustomers(tenantId, keepId, mergeId)` ใช้ยุบ record ซ้ำเข้าด้วยกันด้วยมือ:
 
 - ย้าย `bms_customer_identities` / `bms_orders` / `bms_customer_addresses` / `bms_conversations` /
-  `bms_pharmacy_assessments` ทั้งหมดจาก `mergeId` ไป `keepId` (ปลอดภัย ไม่ชนกัน เพราะ identity
-  unique ต่อ tenant+channel+ref อยู่แล้ว)
-- รวม tags (union), เติม phone/note ที่ `keepId` ไม่มีจาก `mergeId`
+  `bms_pharmacy_assessments` / `bms_restock_subscriptions` / coupon wallet ทั้งหมดจาก `mergeId`
+  ไป `keepId` (coupon entitlement ซ้ำรวม lifecycle โดยให้ `REDEEMED/RESERVED` เหนือสถานะที่อ่อนกว่า;
+  identity unique ต่อ tenant+channel+ref อยู่แล้ว) และล้าง AI summary cache ของทั้งคู่เพื่อคำนวณใหม่
+  จาก history ที่รวมแล้ว
+- ถ้า record หลักและ record ที่รวมเข้ามามี default address ประเภทเดียวกัน ให้คง default ของ
+  record หลัก และจัดให้เหลือ default เดียวต่อ `address_type`
+- รวม tags (union), เติม phone/email/note/preferred language/timezone ที่ `keepId` ไม่มีจาก
+  `mergeId` และรักษา `followup_opt_out=true` หาก record ใด record หนึ่งเคย opt out
 - soft-delete `mergeId` (`deleted_at`) — **ทำแล้วย้อนกลับเองไม่ได้**
 - ทั้งหมดอยู่ในทรานแซกชันเดียว (`beginTenantTx`)
 
@@ -818,14 +831,17 @@ Permission: customer.edit · บันทึก audit action `customer.merge`
 ให้ sale กดสั่งซื้อซ้ำจากออร์เดอร์เก่าของลูกค้าได้ทันทีจากแท็บ "ลูกค้า" ในหน้าแชท
 (หรือแถวประวัติซื้อใน `/admin/customers`) โดยไม่ต้องพิมพ์รายการสินค้าใหม่เอง:
 
-- อ่าน channel/customer_ref + รายการสินค้า (sku, size, qty) จากออร์เดอร์ต้นทาง
+- customer surface หาออร์เดอร์ล่าสุดจาก canonical `customer_id` หลัง merge; legacy ที่ยังไม่ผูก
+  ใช้ exact `(channel, customer_ref)` เท่านั้น
+- อ่าน channel/customer_ref + รายการสินค้า (sku, size, qty) จากออร์เดอร์ต้นทาง โดยออร์เดอร์ใหม่
+  ของลูกค้าจะผูกกับ channel identity ปัจจุบัน ไม่ย้อนกลับไปช่องทางเก่า
 - เรียก `createOrder()` เดิมทั้งชุด (จองสต็อกแบบ atomic + ตัดราคาปัจจุบันของสินค้าใหม่ — **ไม่ใช่ราคาย้อนหลัง**)
 - **ไม่มีสถานะ "Draft" แยก** — ออร์เดอร์ใหม่เริ่มที่ `PENDING` พร้อมจองสต็อกทันที เหมือนออร์เดอร์ปกติทุกใบ
 
 Input
 
 {
-    orderId?  # customer เว้นได้: resolve ออร์เดอร์ล่าสุดจาก channel/customer_ref; staff ต้องระบุ
+    orderId?  # customer เว้นได้: resolve ออร์เดอร์ล่าสุดจาก canonical customer; staff ต้องระบุ
 }
 
 Output: `{ status, orderId, total, message }` — `status` หนึ่งใน

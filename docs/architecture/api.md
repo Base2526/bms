@@ -322,12 +322,35 @@ Public web pages are intentionally session-aware: when a browser already has an 
 This keeps landing/self-service surfaces aligned with the active admin session while preserving the
 explicit `admin` scope for `/admin/*` routes and RBAC-gated admin operations.
 
+**Login identity (migration `7.75`):** usernames and email addresses are canonicalized with trim +
+lowercase before lookup or persistence. Application input also uses Unicode NFKC normalization, so
+case/full-width variants of the same public username resolve to one identity. Postgres unique
+expression indexes on `lower(btrim(email))` and `lower(btrim(username))` close concurrent-register
+and direct-SQL races; the migration refuses to guess if historical case-only duplicates already
+exist and requires those accounts to be resolved first. Public registration validates username,
+email, phone, and bcrypt's 72-byte password boundary on the backend, reserves system-like handles,
+and does not issue a login cookie until email verification. `loginUser`, `loginAdmin`, legacy
+`login`, social login, mobile login, and password-reset lookup all use the same canonical identity.
+Auth attempts use bounded in-memory IP + hashed-identity rate limits; this is per app instance and
+must move to Redis before relying on it as a distributed production limit.
+
+Google social login verifies the ID token signature, issuer, expiry, audience, subject, and verified
+email through `google-auth-library`; decoding JWT claims without verification is forbidden. Facebook
+login accepts only a valid debug-token response whose `app_id` and `user_id` match the configured app
+and `/me` response. `FACEBOOK_APP_SECRET` is server-only; the old
+`NEXT_PUBLIC_FACEBOOK_APP_SECRET` name is accepted only by Compose as a temporary environment-value
+fallback and is never injected under a public runtime name.
+
+Email verification and password-reset consumption are single atomic SQL statements, so one token
+cannot succeed twice under concurrent requests. Admin login additionally rejects public Subscriber
+accounts rather than issuing them an admin cookie.
+
 **Admin session lifetime (2026-07):** `loginAdmin` (`graphql/resolvers.ts`) signs the JWT and sets
 `ADMIN_COOKIE`'s `maxAge` from the same `sessionMaxAgeSec` value, so the two can't drift apart —
 Administrator (full RBAC permissions) gets a 1-day session; Manager/Sales/Warehouse get 7 days.
-There is no server-side session table, so a token cannot be revoked before it expires except by
-rotating `JWT_SECRET` (which logs everyone out at once) — keep that in mind before lengthening
-either duration. Expiry itself is enforced only when the *next* request is made: `verifyTokenString()`
+Admin session ids are stored in Redis, so logout can revoke an admin token before JWT expiry;
+Redis failures deliberately fail open and trust the still-valid JWT. Expiry itself is enforced only
+when the *next* request is made: `verifyTokenString()`
 (`lib/auth/token.ts`) swallows `jwt.verify()`'s `TokenExpiredError` and returns `null`, `requireAuth()`
 (`lib/auth.ts`) then throws `UNAUTHENTICATED`/`reason: "backend_admin"`, and the Apollo `errorLink`
 (`lib/apollo.ts`) catches that to clear the cookie and redirect to `/admin/login`. There is no

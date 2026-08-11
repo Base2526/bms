@@ -49,7 +49,9 @@ export type BmsFailureCode =
   /** AI Pharmacy Intake: ไม่มี credentials/เกิน quota/validation retry หมด → ส่งเคสให้เภสัชกรตรวจเอง */
   | "pharmacy_ai.unavailable"
   /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
-  | "pharmacy_ai.validation_exhausted";
+  | "pharmacy_ai.validation_exhausted"
+  /** AI Pharmacy Intake: บันทึกสถานะ emergency ไม่สำเร็จ แต่ยังส่งคำเตือนฉุกเฉินให้ลูกค้า */
+  | "pharmacy_intake.persistence_failed";
 
 type CatalogEntry = {
   tier: FailureTier;
@@ -115,6 +117,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     tier: "B",
     shopTitle: "AI Pharmacy Intake ตอบผิดรูปแบบซ้ำหลายครั้ง",
     shopMessage: "ผลลัพธ์จาก AI ไม่ผ่านการตรวจสอบรูปแบบข้อมูลซ้ำจนครบจำนวนที่กำหนด ระบบ fallback ไปให้เภสัชกรตรวจเอง",
+  },
+  "pharmacy_intake.persistence_failed": {
+    tier: "A",
+    shopTitle: "⚠️ บันทึกเคสฉุกเฉินของลูกค้าไม่สำเร็จ",
+    shopMessage:
+      "ลูกค้าได้รับคำแนะนำให้ติดต่อฉุกเฉินแล้ว แต่ระบบบันทึกสถานะเคสไม่สำเร็จ รบกวนเปิดแชทและติดตามลูกค้าทันที",
   },
 };
 

@@ -28,6 +28,25 @@ export function isAssessmentStatus(value: unknown): value is AssessmentStatus {
   return typeof value === "string" && (ASSESSMENT_STATUSES as readonly string[]).includes(value);
 }
 
+export type PharmacyConversationStage =
+  | "AWAITING_CONSENT"
+  | "ASKING"
+  | "PENDING_CONFIRMATION"
+  | "WAITING";
+
+/** Map persisted assessment state to the customer conversation stage. */
+export function resolvePharmacyConversationStage(
+  status: AssessmentStatus,
+  consentStatus: string
+): PharmacyConversationStage {
+  // A customer-requested handoff may deliberately enter the queue before
+  // consent. Never regress that case back to the consent prompt.
+  if (status === "WAITING_FOR_PHARMACIST" || status === "PHARMACIST_REVIEWING") return "WAITING";
+  if (consentStatus !== "GRANTED") return "AWAITING_CONSENT";
+  if (status === "PENDING_CONFIRMATION") return "PENDING_CONFIRMATION";
+  return "ASKING";
+}
+
 /**
  * Documentation/validation matrix only. The real guard for each transition
  * lives in the corresponding function in assessments.ts, which additionally
@@ -36,7 +55,8 @@ export function isAssessmentStatus(value: unknown): value is AssessmentStatus {
  * pharmacist may").
  *
  * - DRAFT → COLLECTING_INFORMATION → PENDING_CONFIRMATION → WAITING_FOR_PHARMACIST is the
- *   rule-engine-driven intake path.
+ *   rule-engine-driven intake path. A customer-requested human handoff may also move
+ *   DRAFT directly to WAITING_FOR_PHARMACIST before consent; it does not submit health answers.
  * - WAITING_FOR_PHARMACIST → PHARMACIST_REVIEWING requires an explicit
  *   claim/assign — separate from the actual decision.
  * - Only PHARMACIST_REVIEWING can reach APPROVED/REJECTED/REFER_TO_DOCTOR —
@@ -47,7 +67,7 @@ export function isAssessmentStatus(value: unknown): value is AssessmentStatus {
  *   TTL sweep or an explicit close action).
  */
 export const ALLOWED_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
-  DRAFT: ["COLLECTING_INFORMATION", "REFER_TO_DOCTOR", "CLOSED"],
+  DRAFT: ["COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "REFER_TO_DOCTOR", "EMERGENCY_REFERRAL", "CLOSED"],
   COLLECTING_INFORMATION: ["PENDING_CONFIRMATION", "WAITING_FOR_PHARMACIST", "REFER_TO_DOCTOR", "EMERGENCY_REFERRAL", "CLOSED"],
   PENDING_CONFIRMATION: ["COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "REFER_TO_DOCTOR", "EMERGENCY_REFERRAL", "CLOSED"],
   WAITING_FOR_PHARMACIST: ["PHARMACIST_REVIEWING", "EMERGENCY_REFERRAL", "CLOSED"],
@@ -57,6 +77,7 @@ export const ALLOWED_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> =
     "REJECTED",
     "REFER_TO_DOCTOR",
     "EMERGENCY_REFERRAL",
+    "CLOSED",
   ],
   NEED_MORE_INFORMATION: ["COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "REFER_TO_DOCTOR", "EMERGENCY_REFERRAL", "CLOSED"],
   APPROVED: ["CLOSED"],

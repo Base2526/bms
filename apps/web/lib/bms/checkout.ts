@@ -449,74 +449,91 @@ export async function submitCheckoutPaymentByToken(
   return { ok: true, result, checkout: refreshed.checkout };
 }
 
-function missingFieldLabel(field: CustomerCheckoutMissingField): string {
-  if (field === "recipientName") return "ชื่อผู้รับ";
-  if (field === "phone") return "เบอร์โทรศัพท์";
-  return "ที่อยู่จัดส่ง";
+function missingFieldLabel(field: CustomerCheckoutMissingField, english = false): string {
+  if (field === "recipientName") return english ? "recipient name" : "ชื่อผู้รับ";
+  if (field === "phone") return english ? "phone number" : "เบอร์โทรศัพท์";
+  return english ? "shipping address" : "ที่อยู่จัดส่ง";
 }
 
 export async function orderCheckoutChatReply(
   tenantId: string,
   orderId: string,
-  fallback: string
+  fallback: string,
+  language: "th" | "en" = "th"
 ): Promise<string> {
   try {
     const token = createCheckoutToken({ tenantId, orderId });
     const result = await getCheckoutByToken(token);
     if (!result.ok) return fallback;
     const checkout = result.checkout;
+    const english = language === "en";
     const itemLines = checkout.order.items
       .map(
         (item) =>
-          `• ${item.name} ไซซ์ ${item.size} × ${item.qty}`
+          english
+            ? `• ${item.name}, size ${item.size} × ${item.qty}`
+            : `• ${item.name} ไซซ์ ${item.size} × ${item.qty}`
       )
       .join("\n");
     // แยกค่าส่งให้เห็นเสมอเมื่อมีการคิดค่าส่ง — ยอด total รวมค่าส่งอยู่แล้ว (7.47)
     // ถ้าไม่แยก ลูกค้าจะเห็นยอดสูงกว่าราคาสินค้าที่คุยกันไว้แล้วสงสัย
     const amountLines =
       checkout.order.shippingFee > 0
-        ? [
-            `ค่าสินค้า ${(checkout.order.total - checkout.order.shippingFee).toLocaleString("th-TH")} บาท`,
-            `ค่าส่ง ${checkout.order.shippingFee.toLocaleString("th-TH")} บาท`,
-            `รวมที่ต้องชำระ ${checkout.order.total.toLocaleString("th-TH")} บาท`,
-          ].join("\n")
-        : `รวม ${checkout.order.total.toLocaleString("th-TH")} บาท`;
+        ? english
+          ? [
+              `Items: ${(checkout.order.total - checkout.order.shippingFee).toLocaleString("en-US")} THB`,
+              `Shipping: ${checkout.order.shippingFee.toLocaleString("en-US")} THB`,
+              `Total due: ${checkout.order.total.toLocaleString("en-US")} THB`,
+            ].join("\n")
+          : [
+              `ค่าสินค้า ${(checkout.order.total - checkout.order.shippingFee).toLocaleString("th-TH")} บาท`,
+              `ค่าส่ง ${checkout.order.shippingFee.toLocaleString("th-TH")} บาท`,
+              `รวมที่ต้องชำระ ${checkout.order.total.toLocaleString("th-TH")} บาท`,
+            ].join("\n")
+        : english
+          ? `Total: ${checkout.order.total.toLocaleString("en-US")} THB`
+          : `รวม ${checkout.order.total.toLocaleString("th-TH")} บาท`;
 
     const parts = [
-      "รับออร์เดอร์แล้วค่ะ ✅",
+      english ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ ✅",
       itemLines,
       amountLines,
-      `เลขออร์เดอร์: ${checkout.order.displayId}`,
+      english ? `Order number: ${checkout.order.displayId}` : `เลขออร์เดอร์: ${checkout.order.displayId}`,
     ];
 
     if (checkout.delivery.marketplaceManaged) {
-      parts.push(
-        "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินจะใช้จาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ"
-      );
+      parts.push(english
+        ? "Recipient, address, and payment details come from Seller Center, so you do not need to enter them again."
+        : "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินจะใช้จาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ");
       return parts.join("\n");
     }
     if (checkout.delivery.complete) {
-      parts.push(
-        "พบข้อมูลผู้รับ เบอร์โทร และที่อยู่จัดส่งเดิมแล้ว ระบบจะใช้ข้อมูลเดิมให้อัตโนมัติค่ะ"
-      );
+      parts.push(english
+        ? "Your existing recipient, phone number, and shipping address are complete and will be reused automatically."
+        : "พบข้อมูลผู้รับ เบอร์โทร และที่อยู่จัดส่งเดิมแล้ว ระบบจะใช้ข้อมูลเดิมให้อัตโนมัติค่ะ");
     } else {
-      parts.push(
-        `ยังขาด ${checkout.delivery.missingFields
-          .map(missingFieldLabel)
-          .join(" และ ")} — ในลิงก์จะแสดงให้กรอกเฉพาะข้อมูลที่ขาดค่ะ`
-      );
+      const missing = checkout.delivery.missingFields
+        .map((field) => missingFieldLabel(field, english))
+        .join(english ? " and " : " และ ");
+      parts.push(english
+        ? `Still needed: ${missing}. The link will ask only for the missing details.`
+        : `ยังขาด ${missing} — ในลิงก์จะแสดงให้กรอกเฉพาะข้อมูลที่ขาดค่ะ`);
     }
 
     const url = createCheckoutUrl(tenantId, orderId);
     parts.push(
       checkout.payment.configured
-        ? `ตรวจสอบข้อมูลและแจ้งชำระเงินได้ที่นี่ค่ะ:\n${url}`
-        : `ตรวจสอบออร์เดอร์และข้อมูลจัดส่งได้ที่นี่ค่ะ:\n${url}`
+        ? english
+          ? `Review the details and submit payment here:\n${url}`
+          : `ตรวจสอบข้อมูลและแจ้งชำระเงินได้ที่นี่ค่ะ:\n${url}`
+        : english
+          ? `Review the order and delivery details here:\n${url}`
+          : `ตรวจสอบออร์เดอร์และข้อมูลจัดส่งได้ที่นี่ค่ะ:\n${url}`
     );
     if (!checkout.payment.configured) {
-      parts.push(
-        "ตอนนี้ร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ ระบบจึงยังไม่แนะนำวิธีชำระเงินค่ะ"
-      );
+      parts.push(english
+        ? "The shop has not configured a receiving account, so no payment method is suggested yet."
+        : "ตอนนี้ร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ ระบบจึงยังไม่แนะนำวิธีชำระเงินค่ะ");
     }
     return parts.join("\n\n");
   } catch (error) {

@@ -98,6 +98,15 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   not be called merely to reconfirm existing data. When a shop has no configured receiving account, the
   customer surface must not name a payment channel at all — see `lib/bms/paymentConfiguration.ts`; do
   not reintroduce a hardcoded bank/PromptPay/QR example anywhere on this surface.
+  General-shop and pharmacy conversations share one tenant-scoped CRM identity: normalize the
+  server-established `(channel, customer_ref)` through `customerIdentity.ts`/`customers.ts` and keep
+  orders, conversations, restock subscriptions, and pharmacy assessments linked to that canonical
+  `customer_id` (migration `7.74`). Canonical own-order history and reorder may span channels, but
+  `submit_payment` must select only a `PENDING` order on the current channel and must use
+  `submitPaymentOnce()`; never reuse broad canonical history for payment selection. Pharmacy patient
+  memory is server-side only and may reuse only consented, customer-confirmed, relationship-matched
+  safe fields. Current-message values win, stale age is dropped, and none of identity lookup,
+  payable-order selection, or patient-memory retrieval belongs in the model tool registry.
 - **Staff** (`graphql/bmsAssistant.ts`, UI `/admin/assistant`) — `staffTools(perms)` filtered by the
   calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
   before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,
@@ -166,6 +175,37 @@ active + in-stock and are the only bounded reads covered by the `pg_trgm` indexe
 migration `7.33__bms_product_discovery_indexes.sql`; an unindexed `ILIKE` scan on `bms_products`
 will not use them. See § "AI tool-calling — example usage" in
 [CLAUDE.local.md](CLAUDE.local.md) for runnable `curl`/GraphQL examples against both surfaces.
+`ALL_TOOLS` is validated at module startup by `assertValidToolRegistry()`; do not remove that guard.
+It enforces unique snake_case names, valid surfaces, staff-only sensitive tools, and declared required
+schema fields. Registry-only metadata (`whenToUse`/`whenNotToUse`/`commonMistakes`/`example`) stays out
+of provider payloads and should be added only for a real observed ambiguity, not mechanically to every
+tool. The current snapshot is 66 tools total / 21 customer tools; verify the source rather than
+trusting this count after any catalog change.
+
+## Authentication identity and registration
+
+- `apps/web/lib/auth/identity.ts` is the shared normalization/validation source for public login and
+  registration. Username and email identity is trim + Unicode NFKC + lowercase; never add a new auth
+  path that queries raw `email = $1` / `username = $1` or duplicates frontend-only validation.
+- Migration `7.75__users_case_insensitive_identity.sql` adds unique indexes over
+  `lower(btrim(email))` and `lower(btrim(username))`. It must abort on historical case-only duplicates;
+  never auto-merge user security principals or silently rename one during a migration. Resolve those
+  records explicitly, then rerun.
+- Public registration reserves system handles (`admin`, `administrator`, `root`, `system`, `support`,
+  etc.), validates phone/password on the backend, and does not issue `USER_COOKIE` before email
+  verification. A public Subscriber must never receive `ADMIN_COOKIE`; admin login requires a
+  platform admin or a non-Subscriber tenant user.
+- Password comparisons must use the dummy bcrypt hash when an account is absent to reduce timing
+  enumeration. Keep the 72-byte bcrypt input limit for newly registered/reset passwords. Verification
+  and reset tokens are single-use via atomic SQL, not a SELECT followed by a later mark-used UPDATE.
+- Auth rate limiting currently reuses the bounded in-memory limiter with IP and hashed-identity keys.
+  It is per instance and fail-local; move it to Redis before treating it as distributed production
+  protection. Never put raw email, username, token, or password into a rate-limit key/log.
+- Google login must call `google-auth-library.verifyIdToken()` with the configured audience and require
+  a verified email. Decoding claims without signature/issuer/expiry/audience validation is an account
+  takeover. Facebook login must verify debug-token `app_id`, `user_id`, and `/me`; keep
+  `FACEBOOK_APP_SECRET` server-only. Every provider knob must remain in all three Compose web-service
+  environments, and secrets must never use a `NEXT_PUBLIC_*` runtime name.
 
 ## Public customer checkout (signed link)
 

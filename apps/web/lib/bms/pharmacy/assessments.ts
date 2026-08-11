@@ -32,6 +32,12 @@ import {
   ALLOWED_TRANSITIONS,
   type AssessmentStatus,
 } from "./stateMachine";
+import {
+  buildReusablePatientProfile,
+  type RememberedPatientProfile,
+  type ReusablePatientProfileCandidate,
+} from "./patientMemory";
+export type { RememberedPatientProfile } from "./patientMemory";
 import { pharmacyAssessmentTtlMinutes } from "./config";
 import type { CompletenessStatus, ProtocolEscalationAction } from "./ruleEngine";
 
@@ -150,11 +156,6 @@ export type PharmacyAssessmentConversationHistory = {
     createdAt: string;
     status: string | null;
   }>;
-};
-
-export type RememberedPatientProfile = {
-  sourceAssessmentId: string;
-  fields: Record<string, string | number>;
 };
 
 export type CustomerConfirmationStatus = "NOT_REQUESTED" | "PENDING" | "CONFIRMED";
@@ -367,8 +368,17 @@ export async function getLatestReusablePatientProfile(
     params.push(excludeAssessmentId);
     excludeSql = `AND id <> $${params.length}`;
   }
-  const res = await query(
-    `SELECT *
+  const res = await query<{
+    id: string;
+    patient_age_years: number | null;
+    biological_sex: string;
+    structured_answers: Record<string, unknown> | null;
+    customer_confirmed_at: Date | string | null;
+    consent_at: Date | string | null;
+    updated_at: Date | string;
+  }>(
+    `SELECT id, patient_age_years, biological_sex, structured_answers,
+            customer_confirmed_at, consent_at, updated_at
        FROM bms_pharmacy_assessments
       WHERE tenant_id = $1
         AND customer_id = $2
@@ -378,31 +388,20 @@ export async function getLatestReusablePatientProfile(
         AND deleted_at IS NULL
         ${excludeSql}
       ORDER BY customer_confirmed_at DESC NULLS LAST, updated_at DESC
-      LIMIT 20`,
+      `,
     params
   );
   if (!res.rowCount) return null;
-  const fields: Record<string, string | number> = {};
-  const now = Date.now();
-  for (const rawRow of res.rows) {
-    const row = mapRow(rawRow);
-    const ageReference = row.customerConfirmedAt || row.consentAt || row.updatedAt;
-    const ageReferenceMs = new Date(ageReference).getTime();
-    const ageElapsedMs = now - ageReferenceMs;
-    const ageIsFresh = Number.isFinite(ageReferenceMs) && ageElapsedMs >= 0 && ageElapsedMs <= 365 * 24 * 60 * 60 * 1000;
-    if (!("patient_age_years" in fields) && ageIsFresh && row.patientAgeYears != null) {
-      fields.patient_age_years = row.patientAgeYears;
-    }
-    if (!("biological_sex" in fields) && row.biologicalSex !== "UNKNOWN") {
-      fields.biological_sex = row.biologicalSex;
-    }
-    for (const key of ["allergies", "chronic_diseases"] as const) {
-      if (key in fields) continue;
-      const value = row.structuredAnswers?.[key];
-      if (typeof value === "string" && value.trim()) fields[key] = value.trim();
-    }
-  }
-  return Object.keys(fields).length > 0 ? { sourceAssessmentId: String(res.rows[0].id), fields } : null;
+  const candidates: ReusablePatientProfileCandidate[] = res.rows.map((row) => ({
+    id: String(row.id),
+    patientAgeYears: row.patient_age_years == null ? null : Number(row.patient_age_years),
+    biologicalSex: row.biological_sex,
+    structuredAnswers: row.structured_answers ?? {},
+    customerConfirmedAt: row.customer_confirmed_at ? new Date(row.customer_confirmed_at).toISOString() : null,
+    consentAt: row.consent_at ? new Date(row.consent_at).toISOString() : null,
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }));
+  return buildReusablePatientProfile(candidates);
 }
 
 export async function getAssessmentConversationHistory(
@@ -1153,7 +1152,9 @@ export async function markWaitingForPharmacist(
   const { ok, previousState } = await transition(
     tenantId,
     assessmentId,
-    ["COLLECTING_INFORMATION", "NEED_MORE_INFORMATION", "PENDING_CONFIRMATION"],
+    reason === "customer_requested"
+      ? ["DRAFT", "COLLECTING_INFORMATION", "NEED_MORE_INFORMATION", "PENDING_CONFIRMATION"]
+      : ["COLLECTING_INFORMATION", "NEED_MORE_INFORMATION", "PENDING_CONFIRMATION"],
     "WAITING_FOR_PHARMACIST",
     reason ? ", escalation_reason = $5" : "",
     reason ? [reason] : []
@@ -1182,7 +1183,7 @@ export async function closeAssessment(tenantId: string, assessmentId: string, re
   const { ok, previousState } = await transition(
     tenantId,
     assessmentId,
-    ["DRAFT", "COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "PHARMACIST_REVIEWING", "NEED_MORE_INFORMATION"],
+    ["DRAFT", "COLLECTING_INFORMATION", "PENDING_CONFIRMATION", "WAITING_FOR_PHARMACIST", "PHARMACIST_REVIEWING", "NEED_MORE_INFORMATION"],
     "CLOSED",
     ", decision_reason = $5, closed_at = now()",
     [reason]
@@ -1212,7 +1213,7 @@ export async function closeAssessmentIfExpired(tenantId: string, assessmentId: s
   const { ok, previousState } = await transition(
     tenantId,
     assessmentId,
-    ["DRAFT", "COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "PHARMACIST_REVIEWING", "NEED_MORE_INFORMATION"],
+    ["DRAFT", "COLLECTING_INFORMATION", "PENDING_CONFIRMATION", "WAITING_FOR_PHARMACIST", "PHARMACIST_REVIEWING", "NEED_MORE_INFORMATION"],
     "CLOSED",
     ", decision_reason = 'expired_no_action', closed_at = now()"
   );
@@ -1250,7 +1251,7 @@ export async function escalateToEmergency(
   const { ok, previousState } = await transition(
     tenantId,
     assessmentId,
-    ["DRAFT", "COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "NEED_MORE_INFORMATION", "PHARMACIST_REVIEWING"],
+    ["DRAFT", "COLLECTING_INFORMATION", "PENDING_CONFIRMATION", "WAITING_FOR_PHARMACIST", "NEED_MORE_INFORMATION", "PHARMACIST_REVIEWING"],
     "EMERGENCY_REFERRAL",
     ", escalation_reason = $5, risk_level = 'EMERGENCY', closed_at = now()",
     [reason]

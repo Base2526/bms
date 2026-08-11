@@ -45,14 +45,16 @@ export function supportsCustomerPaymentMethod(
   return configured.some((account) => normalizedType(account) === method);
 }
 
-export function configuredPaymentMethodLabels(accounts: PaymentAccount[]): string[] {
+export function configuredPaymentMethodLabels(accounts: PaymentAccount[], english = false): string[] {
   const labels: string[] = [];
   for (const account of configuredPaymentAccounts(accounts)) {
     const type = normalizedType(account);
-    if (type === "BANK" && !labels.includes("โอนเข้าบัญชีธนาคาร")) {
-      labels.push("โอนเข้าบัญชีธนาคาร");
-    } else if ((type === "PROMPTPAY" || type === "QR") && !labels.includes("พร้อมเพย์")) {
-      labels.push("พร้อมเพย์");
+    const bankLabel = english ? "bank transfer" : "โอนเข้าบัญชีธนาคาร";
+    const promptPayLabel = english ? "PromptPay" : "พร้อมเพย์";
+    if (type === "BANK" && !labels.includes(bankLabel)) {
+      labels.push(bankLabel);
+    } else if ((type === "PROMPTPAY" || type === "QR") && !labels.includes(promptPayLabel)) {
+      labels.push(promptPayLabel);
     } else if (type !== "BANK" && type !== "PROMPTPAY" && type !== "QR") {
       const label = value(account.note);
       if (label && !labels.includes(label)) labels.push(label);
@@ -61,7 +63,7 @@ export function configuredPaymentMethodLabels(accounts: PaymentAccount[]): strin
   return labels;
 }
 
-export function customerPaymentAccountLines(accounts: PaymentAccount[]): string[] {
+export function customerPaymentAccountLines(accounts: PaymentAccount[], english = false): string[] {
   return configuredPaymentAccounts(accounts)
     .map((account) => {
       const type = normalizedType(account);
@@ -69,17 +71,19 @@ export function customerPaymentAccountLines(accounts: PaymentAccount[]): string[
       if (type === "BANK") {
         const accountNo = value(account.accountNo);
         if (!accountNo) return null;
-        const bankName = value(account.bankName) || "บัญชีธนาคาร";
-        return `• ${bankName} เลขบัญชี ${accountNo}${
+        const bankName = value(account.bankName) || (english ? "Bank account" : "บัญชีธนาคาร");
+        return english
+          ? `• ${bankName}, account number ${accountNo}${accountName ? `, account name ${accountName}` : ""}`
+          : `• ${bankName} เลขบัญชี ${accountNo}${
           accountName ? ` ชื่อบัญชี ${accountName}` : ""
         }`;
       }
       if (type === "PROMPTPAY" || type === "QR") {
         const promptpayId = value(account.promptpayId);
         if (!promptpayId) return null;
-        return `• พร้อมเพย์ ${promptpayId}${
-          accountName ? ` ชื่อบัญชี ${accountName}` : ""
-        }`;
+        return english
+          ? `• PromptPay ${promptpayId}${accountName ? `, account name ${accountName}` : ""}`
+          : `• พร้อมเพย์ ${promptpayId}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`;
       }
       const note = value(account.note);
       return note ? `• ${note}` : null;

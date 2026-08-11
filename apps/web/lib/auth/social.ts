@@ -1,5 +1,5 @@
-import jwt from "jsonwebtoken";
 import fetch from "node-fetch";
+import { OAuth2Client } from "google-auth-library";
 
 /* =====================================================
    Verify Google Credential  (From @react-oauth/google)
@@ -7,8 +7,14 @@ import fetch from "node-fetch";
 
 export async function verifyGoogle(accessToken: string) {
   try {
-    // Google credential เป็น JWT → decode header
-    const googleData = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId || !accessToken) return null;
+    const ticket = await new OAuth2Client(clientId).verifyIdToken({
+      idToken: accessToken,
+      audience: clientId,
+    });
+    const googleData = ticket.getPayload();
+    if (!googleData?.sub || !googleData.email || googleData.email_verified !== true) return null;
 
     return {
       email: googleData.email,
@@ -16,6 +22,7 @@ export async function verifyGoogle(accessToken: string) {
       picture: googleData.picture || "",
       provider: "google",
       provider_id: googleData.sub,
+      email_verified: true,
     };
   } catch (err) {
     console.error("[verifyGoogle] error", err);
@@ -29,14 +36,15 @@ export async function verifyGoogle(accessToken: string) {
 
 export async function verifyFacebook(accessToken: string) {
   try {
-    const FB_APP_ID     = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID!;
-    const FB_APP_SECRET = process.env.NEXT_PUBLIC_FACEBOOK_APP_SECRET!;
+    const FB_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
+    const FB_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
+    if (!FB_APP_ID || !FB_APP_SECRET || !accessToken) return null;
     
     // ตรวจสอบ token ว่าถูกต้องหรือไม่
     const debugUrl = `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${FB_APP_ID}|${FB_APP_SECRET}`;
     const debugRes = await fetch(debugUrl).then(r => r.json());
 
-    if (!debugRes?.data?.is_valid) {
+    if (!debugRes?.data?.is_valid || String(debugRes.data.app_id) !== String(FB_APP_ID)) {
       return null;
     }
 
@@ -44,12 +52,15 @@ export async function verifyFacebook(accessToken: string) {
     const meUrl = `https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${accessToken}`;
     const me = await fetch(meUrl).then(r => r.json());
 
+    if (!me?.id || String(me.id) !== String(debugRes.data.user_id) || !me.email) return null;
+
     return {
       email: me.email,                    // FB บางบัญชีไม่มี email
       name: me.name,
       picture: me.picture?.data?.url || "",
       provider: "facebook",
-      provider_id: me.id
+      provider_id: me.id,
+      email_verified: true,
     };
   } catch (err) {
     console.error("[verifyFacebook] error", err);

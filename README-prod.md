@@ -65,6 +65,8 @@ services:
       REDIS_URL: ${REDIS_URL}
       STORAGE_DIR: /app/storage
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
     depends_on:
       - postgres
       - redis

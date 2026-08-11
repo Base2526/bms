@@ -36,7 +36,6 @@ import {
   getLatestReusablePatientProfile,
   type CustomerConfirmationSummary,
   type PharmacyAssessmentRow,
-  type RememberedPatientProfile,
 } from "./assessments";
 import { getActivePharmacyProtocolByKey, getPharmacyProtocol, toProtocolDefinition, type PharmacyProtocolRow } from "./protocols";
 import {
@@ -59,11 +58,24 @@ import {
   pharmacyRouterReply,
   routePharmacyConversationMessage,
 } from "./conversationRouter";
+import { resolvePharmacyConversationStage } from "./stateMachine";
+import {
+  compactPatientFields,
+  mergeLatestPatientFields,
+  mergeRememberedFields,
+  rememberedFieldKeysAdded,
+  rememberedSourceAssessmentIds,
+} from "./patientMemory";
 
 const CONSENT_VERSION = "pharmacy-intake-v1";
 const DEFAULT_AI: PharmacyIntakeAI = new AnthropicCompatiblePharmacyIntakeAI();
+const PATIENT_MEMORY_NOTICE_TEXT =
+  "ระบบนำข้อมูลสุขภาพเดิมที่คุณเคยยืนยันไว้มาใช้เฉพาะส่วนที่ยังเหมาะสมค่ะ หากมีข้อมูลเปลี่ยน แจ้งแก้ได้ทันที และระบบจะแสดงให้ตรวจอีกครั้งในสรุปท้าย";
 
-const TALK_TO_PHARMACIST_PATTERN = /(คุยกับเภสัชกร|ขอคุยกับเภสัชกร|ปรึกษาเภสัชกร|ปรึกษาอาการ|ขอคุยเภสัชกร)/i;
+function withPatientMemoryNotice(text: string, rememberedKeys: string[]): string {
+  return rememberedKeys.length > 0 ? `${PATIENT_MEMORY_NOTICE_TEXT}\n\n${text}` : text;
+}
+
 const RESTART_PATTERN = /(ไม่เอาแล้ว|ยกเลิก|หยุดซักอาการ|เริ่มใหม่|อาการเปลี่ยน|เปลี่ยนอาการ)/i;
 
 // ---------------------------------------------------------------
@@ -95,14 +107,9 @@ export async function getPharmacyIntakeState(tenantId: string, convId: string | 
   if (!caseId) return { stage: "NONE" };
   const assessment = await getAssessment(tenantId, caseId);
   if (!assessment || !OPEN_STATUSES.has(assessment.status)) return { stage: "NONE" };
-  if (assessment.consentStatus !== "GRANTED") return { stage: "AWAITING_CONSENT", caseId };
-  if (assessment.status === "PENDING_CONFIRMATION") {
-    return { stage: "PENDING_CONFIRMATION", caseId, status: assessment.status };
-  }
-  if (assessment.status === "WAITING_FOR_PHARMACIST" || assessment.status === "PHARMACIST_REVIEWING") {
-    return { stage: "WAITING", caseId, status: assessment.status };
-  }
-  return { stage: "ASKING", caseId, status: assessment.status };
+  const stage = resolvePharmacyConversationStage(assessment.status, assessment.consentStatus);
+  if (stage === "AWAITING_CONSENT") return { stage, caseId };
+  return { stage, caseId, status: assessment.status };
 }
 
 async function clearConversationLink(tenantId: string, convId: string): Promise<void> {
@@ -123,37 +130,6 @@ function buildKnownFields(assessment: PharmacyAssessmentRow): KnownFields {
   if (assessment.breastfeedingStatus !== "UNKNOWN") fields.breastfeeding_status = assessment.breastfeedingStatus;
   if (assessment.patientAgeYears != null) fields.patient_age_years = assessment.patientAgeYears;
   return fields;
-}
-
-const REMEMBERED_FIELD_KEYS = new Set([
-  "patient_age_years",
-  "biological_sex",
-  "allergies",
-  "chronic_diseases",
-]);
-
-function mergeRememberedFields(currentKnownFields: KnownFields, rememberedProfile: RememberedPatientProfile | null): KnownFields {
-  if (!rememberedProfile) return currentKnownFields;
-  const merged: KnownFields = { ...currentKnownFields };
-  for (const [key, value] of Object.entries(rememberedProfile.fields)) {
-    if (!REMEMBERED_FIELD_KEYS.has(key)) continue;
-    if (merged[key] === undefined || merged[key] === null || merged[key] === "") {
-      merged[key] = value;
-    }
-  }
-  return merged;
-}
-
-function rememberedFieldKeysAdded(
-  currentKnownFields: KnownFields,
-  rememberedProfile: RememberedPatientProfile | null
-): string[] {
-  if (!rememberedProfile) return [];
-  return Object.keys(rememberedProfile.fields).filter(
-    (key) =>
-      REMEMBERED_FIELD_KEYS.has(key) &&
-      (currentKnownFields[key] === undefined || currentKnownFields[key] === null || currentKnownFields[key] === "")
-  );
 }
 
 function normalizePatientRelationship(value: unknown): "SELF" | "CHILD" | "PARENT" | "OTHER" | null {
@@ -527,6 +503,45 @@ export async function runPharmacyIntakeTurn(
 ): Promise<PharmacyIntakeTurnResult> {
   if (state.stage === "NONE") return { reply: "", caseId: null };
 
+  const conversationRoute = routePharmacyConversationMessage(message);
+  if (conversationRoute.intent === "EMERGENCY") {
+    // Safety copy must not depend on database availability. Persist/audit the
+    // escalation best-effort, but always return the emergency instruction.
+    try {
+      if (state.stage !== "AWAITING_CONSENT") {
+        await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
+      }
+      await recordPharmacyEvent({
+        tenantId,
+        assessmentId: state.caseId,
+        actor: "system:conversation-router",
+        action: "assessment.red_flag_detected",
+        meta: { code: "ROUTER_EMERGENCY", severity: "EMERGENCY" },
+      });
+      const transitioned = await routeProtocolEscalation(
+        tenantId,
+        state.caseId,
+        "EMERGENCY_REFERRAL",
+        "พบข้อความฉุกเฉินระหว่างบทสนทนา",
+        "EMERGENCY",
+        undefined,
+        false
+      );
+      if (!transitioned) throw new Error("Emergency assessment transition was rejected");
+    } catch (error) {
+      console.error("[BMS] pharmacy emergency persistence failed:", error);
+      await reportBmsFailure({
+        tenantId,
+        code: "pharmacy_intake.persistence_failed",
+        error,
+        surface: "customer",
+        conversationId: convId,
+        meta: { assessmentId: state.caseId, step: "emergency_transition" },
+      });
+    }
+    return reply(tenantId, convId, state.caseId, RED_FLAG_TEXT);
+  }
+
   // Expiry check first — mid-conversation, independent of the batch cron sweep.
   const expired = await closeAssessmentIfExpired(tenantId, state.caseId);
   if (expired) {
@@ -534,28 +549,25 @@ export async function runPharmacyIntakeTurn(
     return reply(tenantId, convId, null, EXPIRED_TEXT);
   }
 
-  const conversationRoute = routePharmacyConversationMessage(message);
-  if (conversationRoute.intent === "EMERGENCY") {
+  if (conversationRoute.intent === "CANCEL_OR_RESTART" || RESTART_PATTERN.test(message)) {
     if (state.stage !== "AWAITING_CONSENT") {
       await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
     }
-    await recordPharmacyEvent({
-      tenantId,
-      assessmentId: state.caseId,
-      actor: "system:conversation-router",
-      action: "assessment.red_flag_detected",
-      meta: { code: "ROUTER_EMERGENCY", severity: "EMERGENCY" },
-    });
-    await routeProtocolEscalation(
-      tenantId,
-      state.caseId,
-      "EMERGENCY_REFERRAL",
-      "พบข้อความฉุกเฉินระหว่างบทสนทนา",
-      "EMERGENCY",
-      undefined,
-      false
-    );
-    return reply(tenantId, convId, state.caseId, RED_FLAG_TEXT);
+    const closed = await closeAssessment(tenantId, state.caseId, "customer_restart");
+    if (!closed) return reply(tenantId, convId, state.caseId, AI_UNAVAILABLE_TEXT);
+    await clearConversationLink(tenantId, convId);
+    return reply(tenantId, convId, null, RESTART_TEXT);
+  }
+
+  if (conversationRoute.intent === "HUMAN_HANDOFF") {
+    if (state.stage !== "AWAITING_CONSENT") {
+      await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
+    }
+    if (state.stage !== "WAITING") {
+      const transitioned = await markWaitingForPharmacist(tenantId, state.caseId, "customer_requested");
+      if (!transitioned) return reply(tenantId, convId, state.caseId, AI_UNAVAILABLE_TEXT);
+    }
+    return reply(tenantId, convId, state.caseId, CUSTOMER_REQUESTED_TEXT);
   }
 
   if (["GREETING", "THANKS", "SMALL_TALK", "PRODUCT_SIDE_INTENT", "ORDER_STATUS"].includes(conversationRoute.intent)) {
@@ -588,11 +600,6 @@ export async function runPharmacyIntakeTurn(
 
   if (state.stage === "WAITING") {
     await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
-    if (RESTART_PATTERN.test(message)) {
-      await closeAssessment(tenantId, state.caseId, "customer_restart");
-      await clearConversationLink(tenantId, convId);
-      return reply(tenantId, convId, null, RESTART_TEXT);
-    }
     return reply(tenantId, convId, state.caseId, WAITING_TEXT);
   }
 
@@ -627,7 +634,7 @@ async function handleConsent(tenantId: string, convId: string, caseId: string, m
     assessment.patientRelationship,
     caseId
   );
-  const rememberedKnownFields = mergeRememberedFields({}, rememberedProfile);
+  const rememberedKnownFields = mergeRememberedFields({}, rememberedProfile) as KnownFields;
   const rememberedKeys = rememberedFieldKeysAdded({}, rememberedProfile);
   if (rememberedProfile && rememberedKeys.length > 0) {
     await recordPharmacyEvent({
@@ -635,7 +642,10 @@ async function handleConsent(tenantId: string, convId: string, caseId: string, m
       assessmentId: caseId,
       actor: "system:pharmacy-intake",
       action: "assessment.patient_memory_reused",
-      meta: { sourceAssessmentId: rememberedProfile.sourceAssessmentId, fields: rememberedKeys },
+      meta: {
+        sourceAssessmentIds: rememberedSourceAssessmentIds(rememberedProfile, rememberedKeys),
+        fields: rememberedKeys,
+      },
     });
   }
   const missing = computeMissingFields(protocolDef, rememberedKnownFields);
@@ -655,7 +665,7 @@ async function handleConsent(tenantId: string, convId: string, caseId: string, m
     anomalies: [],
     completenessStatus: resolveCompletenessStatus(protocolDef, rememberedKnownFields),
   });
-  return reply(tenantId, convId, caseId, question.questionText);
+  return reply(tenantId, convId, caseId, withPatientMemoryNotice(question.questionText, rememberedKeys));
 }
 
 async function handlePendingConfirmation(
@@ -665,13 +675,6 @@ async function handlePendingConfirmation(
   message: string
 ): Promise<PharmacyIntakeTurnResult> {
   const text = message.trim();
-
-  if (RESTART_PATTERN.test(text)) {
-    await appendRawMessage(tenantId, caseId, { role: "customer", text });
-    await closeAssessment(tenantId, caseId, "customer_restart");
-    await clearConversationLink(tenantId, convId);
-    return reply(tenantId, convId, null, RESTART_TEXT);
-  }
 
   if (isConfirmationAccepted(text)) {
     await appendRawMessage(tenantId, caseId, { role: "customer", text });
@@ -697,18 +700,6 @@ async function handlePendingConfirmation(
 }
 
 async function handleAsking(tenantId: string, convId: string, caseId: string, message: string): Promise<PharmacyIntakeTurnResult> {
-  if (RESTART_PATTERN.test(message)) {
-    await appendRawMessage(tenantId, caseId, { role: "customer", text: message });
-    await closeAssessment(tenantId, caseId, "customer_restart");
-    await clearConversationLink(tenantId, convId);
-    return reply(tenantId, convId, null, RESTART_TEXT);
-  }
-  if (TALK_TO_PHARMACIST_PATTERN.test(message)) {
-    await appendRawMessage(tenantId, caseId, { role: "customer", text: message });
-    await markWaitingForPharmacist(tenantId, caseId, "customer_requested");
-    return reply(tenantId, convId, caseId, CUSTOMER_REQUESTED_TEXT);
-  }
-
   const assessment = await getAssessment(tenantId, caseId);
   if (!assessment || !assessment.protocolId) return reply(tenantId, convId, caseId, AI_UNAVAILABLE_TEXT);
   const protocol = await getPharmacyProtocol(tenantId, assessment.protocolId);
@@ -737,7 +728,9 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
     protocolId: protocol.id,
     protocolVersion: protocol.version,
     symptomGroup: protocol.supportedSymptomGroup,
-    priorAnswers: buildPriorAnswersForExtraction(mergeRememberedFields(buildKnownFields(assessment), rememberedProfile)),
+    priorAnswers: buildPriorAnswersForExtraction(
+      mergeRememberedFields(buildKnownFields(assessment), rememberedProfile) as KnownFields
+    ),
     latestCustomerMessage: message,
     currentQuestionKey: assessment.currentQuestionKey,
     knownFieldKeys,
@@ -759,11 +752,11 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
     return reply(tenantId, convId, caseId, AI_UNAVAILABLE_TEXT);
   }
 
-  const newlyExtracted = normalizeExtractedPatientFields(
+  const newlyExtracted = compactPatientFields(normalizeExtractedPatientFields(
     extraction.extractedFields,
     message,
     assessment.currentQuestionKey
-  );
+  )) as KnownFields;
   const extractedRelationship = normalizePatientRelationship(newlyExtracted.patient_relationship);
   if (!rememberedProfile && extractedRelationship === "SELF") {
     rememberedProfile = await getLatestReusablePatientProfile(
@@ -774,18 +767,22 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
     );
   }
   const assessmentKnownFields = buildKnownFields(assessment);
-  const rememberedKeys = rememberedFieldKeysAdded(assessmentKnownFields, rememberedProfile);
+  const latestKnownFields = mergeLatestPatientFields(assessmentKnownFields, newlyExtracted) as KnownFields;
+  const rememberedKeys = rememberedFieldKeysAdded(latestKnownFields, rememberedProfile);
   if (rememberedProfile && rememberedKeys.length > 0) {
     await recordPharmacyEvent({
       tenantId,
       assessmentId: caseId,
       actor: "system:pharmacy-intake",
       action: "assessment.patient_memory_reused",
-      meta: { sourceAssessmentId: rememberedProfile.sourceAssessmentId, fields: rememberedKeys },
+      meta: {
+        sourceAssessmentIds: rememberedSourceAssessmentIds(rememberedProfile, rememberedKeys),
+        fields: rememberedKeys,
+      },
     });
   }
-  const priorKnownFields = mergeRememberedFields(assessmentKnownFields, rememberedProfile);
-  const knownFields: KnownFields = { ...priorKnownFields, ...newlyExtracted };
+  const priorKnownFields = mergeRememberedFields(assessmentKnownFields, rememberedProfile) as KnownFields;
+  const knownFields = mergeLatestPatientFields(priorKnownFields, newlyExtracted) as KnownFields;
 
   if (Object.keys(newlyExtracted).length > 0) {
     await recordPharmacyEvent({
@@ -842,7 +839,12 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
       completenessStatus: "INCOMPLETE",
       currentQuestionKey: anomalyQuestion?.questionKey ?? assessment.currentQuestionKey,
     });
-    return reply(tenantId, convId, caseId, clarificationForAnomaly(first.fieldKey, first.label));
+    return reply(
+      tenantId,
+      convId,
+      caseId,
+      withPatientMemoryNotice(clarificationForAnomaly(first.fieldKey, first.label), rememberedKeys)
+    );
   }
 
   if (decision.decision === "MISSING_FIELDS") {
@@ -854,7 +856,7 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
     });
     const question = await askNextQuestion(tenantId, caseId, protocol, protocolDef, knownFields, decision.missingFieldKeys);
     await updateAnswers(tenantId, caseId, { currentQuestionKey: question.questionKey });
-    return reply(tenantId, convId, caseId, question.questionText);
+    return reply(tenantId, convId, caseId, withPatientMemoryNotice(question.questionText, rememberedKeys));
   }
 
   if (decision.decision === "CONFLICT") {
@@ -865,7 +867,12 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
       completenessStatus: "CONFLICT",
       currentQuestionKey: getQuestionFieldDef(protocolDef, decision.conflictingFieldKeys[0])?.questionKey ?? assessment.currentQuestionKey,
     });
-    return reply(tenantId, convId, caseId, clarificationForConflict(decision.conflictingFieldKeys[0]));
+    return reply(
+      tenantId,
+      convId,
+      caseId,
+      withPatientMemoryNotice(clarificationForConflict(decision.conflictingFieldKeys[0]), rememberedKeys)
+    );
   }
 
   // COMPLETE
@@ -909,7 +916,12 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
   }
   const confirmationSummary = buildCustomerConfirmationSummary(protocol, protocolDef, knownFields);
   await markPendingCustomerConfirmation(tenantId, caseId, confirmationSummary);
-  return reply(tenantId, convId, caseId, renderCustomerConfirmationPrompt(confirmationSummary));
+  return reply(
+    tenantId,
+    convId,
+    caseId,
+    withPatientMemoryNotice(renderCustomerConfirmationPrompt(confirmationSummary), rememberedKeys)
+  );
 }
 
 // ---------------------------------------------------------------

@@ -204,6 +204,13 @@ the channel/customer_ref/items of an old order and calls the normal `createOrder
 new order gets **current** stock and pricing, not a historical snapshot. Gated by permission
 `order.create` (seeded to Manager/Sales via migration `6.3__bms_order_create_perm.sql`).
 
+On the customer surface, latest-order lookup and ownership use the canonical CRM `customer_id`, not
+only the current channel key. This lets an explicitly merged customer repeat an order from another
+of their identities without exposing another customer's order. The new order is attributed to the
+current channel identity; staff-initiated reorder keeps the source order's identity as before.
+Staff can still reorder an internally created order whose `customer_ref` is null; canonical channel
+override is applied only to customer-initiated reorder.
+
 ## Shipping
 
 **Implemented** (`bms_shipments`): carrier = `FLASH` / `KERRY` / `DHL` / `AUSPOST` / `NZPOST` / `OTHER`.

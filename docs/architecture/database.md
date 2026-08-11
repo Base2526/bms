@@ -18,6 +18,11 @@ be idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded
 BMS-specific migrations start at `3.2`; anything before that belongs to the base platform template
 this project was built on top of (users/sessions/messages/etc.) and is out of scope here.
 
+The base-platform `users` table originally had case-sensitive unique constraints. Migration `7.75`
+adds canonical lowercase/trim checks and unique indexes for both email and username. It aborts when
+historical case-insensitive duplicates exist rather than merging security principals automatically;
+operators must resolve those records before retrying the migration.
+
 ## Tables by module
 
 | Module | Tables | Key migration |

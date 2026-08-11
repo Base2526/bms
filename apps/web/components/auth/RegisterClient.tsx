@@ -5,6 +5,16 @@ import { gql, useMutation } from "@apollo/client";
 import { Card, Checkbox, Form, Input, Button, Typography, message, Progress, Space } from "antd";
 
 import { useI18n } from "@/lib/i18nContext";
+import {
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MIN,
+  USERNAME_MAX,
+  USERNAME_MIN,
+  normalizeEmail,
+  normalizeUsername,
+  validateNewPassword,
+  validateUsername as validateUsernameIdentity,
+} from "@/lib/auth/identity";
 
 const { Title, Text } = Typography;
 
@@ -32,13 +42,6 @@ function calcStrength(pw: string) {
   return Math.min(score, 100);
 }
 
-const USERNAME_MIN = 3;
-const USERNAME_MAX = 20;
-
-function normalizeUsername(input: string) {
-  return (input || "").trim().toLowerCase();
-}
-
 function format(template: string, vars?: Record<string, string | number>) {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (match, key) => {
@@ -59,6 +62,7 @@ type RegisterStrings = {
   usernameAllowed: string;
   usernameStartEnd: string;
   usernameConsecutive: string;
+  usernameReserved: string;
   emailLabel: string;
   emailRequired: string;
   emailInvalid: string;
@@ -68,6 +72,7 @@ type RegisterStrings = {
   passwordLabel: string;
   passwordRequired: string;
   passwordMin: string; // supports `{min}`
+  passwordMax: string; // supports `{max}`
   passwordStrength: string;
   passwordPlaceholder: string;
   confirmPasswordLabel: string;
@@ -89,19 +94,23 @@ type RegisterStrings = {
 };
 
 function validateUsername(usernameRaw: string, s: RegisterStrings) {
-  const u = (usernameRaw || "").trim();
-
-  if (!u) return { ok: false as const, message: s.usernameRequired };
-  if (/\s/.test(u)) return { ok: false as const, message: s.usernameNoSpaces };
-
-  if (u.length < USERNAME_MIN) return { ok: false as const, message: format(s.usernameMin, { min: USERNAME_MIN }) };
-  if (u.length > USERNAME_MAX) return { ok: false as const, message: format(s.usernameMax, { max: USERNAME_MAX }) };
-
-  if (!/^[A-Za-z0-9._-]+$/.test(u)) return { ok: false as const, message: s.usernameAllowed };
-  if (/^[._-]/.test(u) || /[._-]$/.test(u)) return { ok: false as const, message: s.usernameStartEnd };
-  if (/[._-]{2,}/.test(u)) return { ok: false as const, message: s.usernameConsecutive };
-
-  return { ok: true as const };
+  const result = validateUsernameIdentity(usernameRaw);
+  if (result.ok) return { ok: true as const };
+  if (/\s/.test((usernameRaw || "").trim())) return { ok: false as const, message: s.usernameNoSpaces };
+  if (result.code === "REQUIRED") return { ok: false as const, message: s.usernameRequired };
+  if (result.code === "LENGTH") {
+    const length = normalizeUsername(usernameRaw).length;
+    return {
+      ok: false as const,
+      message: length < USERNAME_MIN
+        ? format(s.usernameMin, { min: USERNAME_MIN })
+        : format(s.usernameMax, { max: USERNAME_MAX }),
+    };
+  }
+  if (result.code === "EDGE") return { ok: false as const, message: s.usernameStartEnd };
+  if (result.code === "CONSECUTIVE") return { ok: false as const, message: s.usernameConsecutive };
+  if (result.code === "RESERVED") return { ok: false as const, message: s.usernameReserved };
+  return { ok: false as const, message: s.usernameAllowed };
 }
 
 function RegisterClientInner() {
@@ -120,6 +129,7 @@ function RegisterClientInner() {
       usernameAllowed: t("register.username_allowed"),
       usernameStartEnd: t("register.username_start_end"),
       usernameConsecutive: t("register.username_consecutive"),
+      usernameReserved: t("register.username_reserved"),
       emailLabel: t("register.email"),
       emailPlaceholder: t("register.email_placeholder"),
       emailRequired: t("register.email_required"),
@@ -131,6 +141,7 @@ function RegisterClientInner() {
       passwordPlaceholder: t("register.password_placeholder"),
       passwordRequired: t("register.password_required"),
       passwordMin: t("register.password_min"),
+      passwordMax: t("register.password_max"),
       passwordStrength: t("register.password_strength"),
       confirmPasswordLabel: t("register.confirm_password"),
       confirmRequired: t("register.confirm_required"),
@@ -182,7 +193,7 @@ function RegisterClientInner() {
 
         const payload = {
           username,
-          email: values.email.trim(),
+          email: normalizeEmail(values.email),
           phone: values.phone?.trim() || null,
           password: values.password,
           agree: values.agree === true,
@@ -191,7 +202,7 @@ function RegisterClientInner() {
         const res = await mutate({ variables: { input: payload } });
         if (res.data?.registerUser) {
           message.success(strings.success);
-          window.location.href = "/admin/login";
+          window.location.href = "/login";
         } else {
           message.error(strings.failed);
         }
@@ -262,7 +273,16 @@ function RegisterClientInner() {
             label={strings.passwordLabel}
             rules={[
               { required: true, message: strings.passwordRequired },
-              { min: 8, message: format(strings.passwordMin, { min: 8 }) },
+              { min: PASSWORD_MIN, message: format(strings.passwordMin, { min: PASSWORD_MIN }) },
+              () => ({
+                validator(_, value) {
+                  const result = validateNewPassword(value);
+                  if (result.ok || result.code !== "TOO_LONG") return Promise.resolve();
+                  return Promise.reject(
+                    new Error(format(strings.passwordMax, { max: PASSWORD_MAX_BYTES }))
+                  );
+                },
+              }),
             ]}
           >
             <Input.Password placeholder={strings.passwordPlaceholder} onChange={onPasswordChange} />
