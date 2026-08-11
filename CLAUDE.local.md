@@ -1341,6 +1341,11 @@ irreversible กว่า refund/adjust stock ด้วยซ้ำ):
 - **key ปลอมช่วยไม่ได้** (คำถามที่เคยถาม) — ปัญหาไม่ใช่ auth ไม่ผ่าน แต่ไม่รู้ endpoint/payload จริง
   ถ้าใส่ key จริงแต่ยังไม่เขียน request → คืน `not_implemented` (ตั้งใจ ไม่เดา shape เอง แบบเดียวกับ
   บทเรียน Lazada/Shopee ที่ placeholder ถูกเข้าใจผิดว่าใช้ได้จริง)
+- **carrier booking hardening (`7.76`/`7.77`)** — local fulfillment commit และปล่อย DB lock ก่อนยิง
+  carrier; shipment UUID เป็น idempotency key; failure/unconfigured/not-implemented ถูกเก็บและแสดงให้
+  retry ผ่าน `bmsBookShipmentLive` แทน silent manual fallback. Tracking sync re-lock/re-check ก่อนเขียน,
+  เก็บ timeline ใน `bms_shipment_tracking_events`, รับเฉพาะ HTTPS label URL และมี cron endpoint
+  `/api/bms/shipping/sync-carriers` (แนะนำทุก 15 นาที, ยังไม่ได้ schedule จริง)
 
 **ให้ลูกค้าเลือกขนส่งตอนแชท (migration `7.46`)** — 2 คอลัมน์: `bms_store_profile.enabled_carriers TEXT[]`
 (ร้านใช้เจ้าไหนบ้าง) + `bms_orders.preferred_carrier TEXT`:

@@ -37,7 +37,8 @@ export const kerryClient: CarrierClient = {
   carrier: "KERRY",
 
   getStatus() {
-    return isConfigured() ? "configured" : "unconfigured";
+    if (isMockEnabled()) return "mock";
+    return isConfigured() ? "not_implemented" : "unconfigured";
   },
 
   async createShipment(req: CarrierCreateShipmentRequest): Promise<CarrierCreateShipmentResult> {

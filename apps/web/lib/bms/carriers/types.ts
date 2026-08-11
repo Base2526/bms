@@ -9,9 +9,10 @@
 // admin UI) can treat "no key yet" as a normal, expected state.
 // =============================================================
 
-export type CarrierClientStatus = "unconfigured" | "configured";
+export type CarrierClientStatus = "unconfigured" | "mock" | "not_implemented" | "configured";
 
 export type CarrierTrackEvent = {
+  /** Adapter-normalized status such as PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, or RETURNED. */
   status: string;
   description: string;
   occurredAt: string;
@@ -39,7 +40,16 @@ export type CarrierCreateShipmentItem = {
 };
 
 export type CarrierCreateShipmentRequest = {
+  /** Stable across retries; live adapters must forward this through the carrier's idempotency mechanism. */
+  idempotencyKey: string;
   orderId: string;
+  shipFrom: {
+    name: string | null;
+    phone: string | null;
+    address: string | null;
+    province: string | null;
+    postcode: string | null;
+  };
   carrier: string;
   shipTo: {
     name: string | null;
@@ -76,6 +86,7 @@ export type CarrierRateResult =
 export interface CarrierClient {
   readonly carrier: string;
   getStatus(): CarrierClientStatus;
+  /** Create once per idempotencyKey. Never throws; callers still guard the external boundary. */
   createShipment?(req: CarrierCreateShipmentRequest): Promise<CarrierCreateShipmentResult>;
   /** Look up live tracking events from the carrier. Never throws — returns a typed result. */
   trackShipment(trackingNo: string): Promise<CarrierTrackResult>;

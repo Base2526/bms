@@ -26,6 +26,8 @@ export type {
   CarrierClientStatus,
   CarrierTrackResult,
   CarrierTrackEvent,
+  CarrierCreateShipmentRequest,
+  CarrierCreateShipmentResult,
   CarrierRateRequest,
   CarrierRateResult,
 } from "./types";

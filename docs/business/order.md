@@ -213,10 +213,13 @@ override is applied only to customer-initiated reorder.
 
 ## Shipping
 
+Carrier adapter setup and live-enablement checklist: [../integrations/carriers.md](../integrations/carriers.md).
+
 **Implemented** (`bms_shipments`): carrier = `FLASH` / `KERRY` / `DHL` / `AUSPOST` / `NZPOST` / `OTHER`.
 As of August 11, 2026, shipment rows can also keep carrier-integration metadata so BMS can
 progressively support real carrier-backed shipment creation and sync (`external_shipment_id`,
-`carrier_last_synced_at`, `carrier_tracking_source`) without changing the core fulfillment flow.
+`carrier_last_synced_at`, `carrier_tracking_source`, `carrier_booking_*`) without changing the core
+fulfillment flow. Normalized carrier events are retained in `bms_shipment_tracking_events`.
 
 ```
 PENDING → SHIPPED → IN_TRANSIT → DELIVERED
@@ -227,18 +230,28 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
 deducting stock again. A tracking number is optional at shipment creation and can be added later;
 an order cannot reach `COMPLETED` before it's `SHIPPED`. When a configured carrier client supports
-shipment creation, BMS now attempts to capture the carrier's own shipment id, tracking number, and
-label URL during creation; otherwise it falls back to the same manual flow as before. Flash/Kerry
+shipment creation, BMS first commits the local fulfillment transaction, releases its database locks,
+and then attempts carrier booking with the shipment UUID as a stable idempotency key. A failed,
+unconfigured, or unavailable carrier no longer looks like a successful booking: its typed status and
+bounded error are shown in Shipping, where staff can retry with `bmsBookShipmentLive`. Flash/Kerry
 currently expose only a safe scaffold here: mock mode works end-to-end for testing, but live
-request/response shapes remain intentionally unverified until real carrier docs/keys are wired.
+request/response shapes remain intentionally unverified until merchant-specific docs/keys are wired.
 If staff supplies a tracking number during creation, BMS treats the parcel as already created
-externally and skips carrier shipment creation to prevent duplicates.
+externally and skips carrier shipment creation to prevent duplicates. Lazada/Shopee also skip BMS
+carrier booking because their fulfillment remains marketplace-managed in Seller Center.
 
 The Shipping admin page exposes `bmsSyncShipmentLive` for Flash/Kerry shipments with a tracking
 number. A successful lookup stores the sync timestamp/source and advances the shipment status from
-the newest carrier event. Carrier sync never moves a status backwards and never changes a terminal
-`DELIVERED`, `RETURNED`, or `CANCELLED` shipment. A carrier label URL is opened when available;
-the existing printable BMS label remains the fallback.
+the event with the newest valid `occurredAt`. The status and event history are persisted in one
+tenant transaction after re-locking and re-checking the carrier/tracking number, so a concurrent edit
+cannot revive a cancelled shipment. Carrier sync never moves a status backwards and never changes a
+terminal `DELIVERED`, `RETURNED`, or `CANCELLED` shipment. Carrier label links must be HTTPS; the
+existing printable BMS label remains the fallback.
+
+`POST /api/bms/shipping/sync-carriers` is the cron-secret-gated polling entrypoint. It scans up to
+100 active shipments older than 15 minutes, runs five lookups concurrently, records its job run, and
+skips adapters that are not configured or still marked `not_implemented`. No repository-level cron
+schedule is configured yet.
 
 Before a `PACKING` order can become `SHIPPED`, both `shipOrder()` and `createShipment()` enforce the
 same address rule:

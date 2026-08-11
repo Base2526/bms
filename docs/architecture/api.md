@@ -51,8 +51,11 @@ dev, must be set in production). None has a schedule wired up yet; each expects 
 - `POST /api/bms/jobs/report-run` — lets a job that runs *outside* this app (currently only the
   `daily-log-triage` GitHub Action) record its own outcome into the same run-history table as the
   four endpoints above. Not itself a job to schedule — it's the write-back path for one.
+- `POST /api/bms/shipping/sync-carriers` — polls active configured Flash/Kerry shipments whose
+  tracking is at least 15 minutes stale, with a bounded batch/concurrency. Recommended every
+  15 minutes; unavailable adapters are skipped.
 
-Every one of the four endpoints above (2026-08) records each invocation into `bms_job_runs`
+Every scheduled-work endpoint above (2026-08) records each invocation into `bms_job_runs`
 (migration `7.55__bms_job_runs.sql`, `lib/bms/jobRuns.ts` `recordJobRun()`/`recordExternalJobRun()`)
 so `/admin/operations-schedule` (platform-admin only) can show real last-run status/history instead
 of only the source-derived "what this job is supposed to do" text it showed before. A new cron route
@@ -63,11 +66,8 @@ silently has no run history on the ops page.
   conversations that match an enabled rule, then processes due jobs (re-checks stop conditions live,
   drafts an AI follow-up, sends it, logs the result). `lib/bms/followups.ts` `runDueFollowups()`.
   Scans every tenant when called with no argument (this cron path); the GraphQL "run now" mutation
-  passes its own tenant id instead — see `bmsRunFollowupsNow` below. Not yet wired into
-  `recordJobRun()`/`bms_job_runs` — its own outcomes are logged separately in `bms_followup_history`.
-  As of August 11, 2026, this route also records each invocation into `bms_job_runs` under the
-  job key `followups`, so `/admin/operations-schedule` can show real run history for the scheduler
-  itself in addition to the per-message results stored in `bms_followup_history`.
+  passes its own tenant id instead — see `bmsRunFollowupsNow` below. The route records each invocation
+  into `bms_job_runs` under `followups`; per-message outcomes remain in `bms_followup_history`.
 
 ## REST — signed customer checkout
 
@@ -169,11 +169,17 @@ introducing one just for itself.
 
 ### Shipping carrier sync
 
-`bmsSyncShipmentLive(id)` requires `shipping.update`, derives the tenant from the authenticated
-admin context, and delegates to `syncShipmentLive()`. The service calls only the registered carrier
-adapter, maps normalized carrier events to BMS shipment states without status regression, and stores
-`carrier_last_synced_at` plus the `live`/`mock` source. Missing keys and unverified live adapters are
-returned as typed results rather than throwing or pretending the carrier accepted the request.
+`bmsBookShipmentLive(id)` and `bmsSyncShipmentLive(id)` require `shipping.update` and derive the
+tenant from the authenticated admin context. Booking uses the shipment UUID as its idempotency key,
+runs outside the inventory transaction, persists a retryable `carrier_booking_status`, and never
+hides an unavailable/error result behind a successful manual fallback. Sync calls the registered
+adapter with a 10-second boundary timeout, then re-locks the shipment and atomically stores normalized
+events/status/source without status regression. `bmsShipmentTrackingEvents` requires `shipping.view`.
+
+`POST /api/bms/shipping/sync-carriers` is the cross-tenant polling entrypoint, protected by
+`x-cron-secret` and wrapped in `recordJobRun("carrier-tracking-sync", ...)`. Missing credentials and
+unverified live adapters are typed/skipped rather than throwing or pretending the carrier accepted
+the request. The endpoint is ready but unscheduled; recommended cadence is every 15 minutes.
 
 ### Coupons
 

@@ -90,11 +90,11 @@ export function buildMockCreateShipmentResult(
   carrier: string,
   req: CarrierCreateShipmentRequest
 ): CarrierCreateShipmentResult {
-  const seed = seedFromString(`${carrier}:${req.orderId}`);
+  const seed = seedFromString(`${carrier}:${req.idempotencyKey}`);
   const trackingNo = `${carrier}-${String(seed).padStart(10, "0").slice(0, 10)}`;
   return {
     ok: true,
-    externalShipmentId: `mock-${carrier.toLowerCase()}-${req.orderId.slice(0, 8)}`,
+    externalShipmentId: `mock-${carrier.toLowerCase()}-${req.idempotencyKey.slice(0, 8)}`,
     trackingNo,
     labelUrl: null,
     source: "mock",

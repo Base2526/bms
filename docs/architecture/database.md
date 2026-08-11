@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| Shipping | `bms_shipments` | `5.4` |
+| Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
