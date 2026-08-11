@@ -453,7 +453,9 @@ export class AnthropicCompatiblePharmacyIntakeAI implements PharmacyIntakeAI {
       '{"extractedFields": {"<fieldKey>": <string|number|null>, ...}, ' +
       '"fieldConfidence": {"<fieldKey>": "high"|"medium"|"low"}, "unmappedText": string|null, "extractionFailed": boolean}. ' +
       `Known field keys: ${input.knownFieldKeys.join(", ")}. ` +
-      'If the customer did not give a usable answer, do not guess a value — omit the field or leave it null; never invent "no"/"none".';
+      'If the customer did not give a usable answer, do not guess a value — omit the field or leave it null; never invent "no"/"none". ' +
+      "The latest customer message is authoritative for any field it explicitly changes, even when it differs from prior answers. " +
+      "Extract that new value and never copy unchanged prior answers into extractedFields.";
     const userText = [
       `Symptom group: ${input.symptomGroup}`,
       `Currently asking: ${input.currentQuestionKey ?? "(opening question)"}`,

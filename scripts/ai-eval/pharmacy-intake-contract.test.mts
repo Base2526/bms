@@ -35,7 +35,13 @@ import {
   GLOBAL_REQUIRED_FIELDS,
   type ProtocolDefinition,
 } from "../../apps/web/lib/bms/pharmacy/ruleEngine.ts";
-import { ALLOWED_TRANSITIONS, canTransition, isTerminalStatus, TERMINAL_STATUSES } from "../../apps/web/lib/bms/pharmacy/stateMachine.ts";
+import {
+  ALLOWED_TRANSITIONS,
+  canTransition,
+  isTerminalStatus,
+  resolvePharmacyConversationStage,
+  TERMINAL_STATUSES,
+} from "../../apps/web/lib/bms/pharmacy/stateMachine.ts";
 import { minimizeForAudit } from "../../apps/web/lib/bms/pharmacy/events.ts";
 import {
   validatePharmacyProtocolInput,
@@ -60,6 +66,15 @@ import {
   pharmacyRouterReply,
   routePharmacyConversationMessage,
 } from "../../apps/web/lib/bms/pharmacy/conversationRouter.ts";
+import {
+  buildReusablePatientProfile,
+  compactPatientFields,
+  mergeLatestPatientFields,
+  mergeRememberedFields,
+  rememberedFieldKeysAdded,
+  rememberedSourceAssessmentIds,
+  type ReusablePatientProfileCandidate,
+} from "../../apps/web/lib/bms/pharmacy/patientMemory.ts";
 
 // ---------------------------------------------------------------
 // Fixtures mirroring db/migrations/7.58's 3 MVP protocols
@@ -422,6 +437,20 @@ test("conversation router gives emergency wording priority over other intents", 
   assert.equal(emergency.interruptsClinicalAnswer, true);
 });
 
+test("conversation router sends explicit pharmacist requests to human handoff", () => {
+  for (const message of ["ขอคุยกับเภสัชกรค่ะ", "อยากคุยกับเภสัชกร", "ขอปรึกษาเภสัชกร", "ปรึกษาอาการครับ", "talk to a pharmacist"]) {
+    const route = routePharmacyConversationMessage(message);
+    assert.equal(route.intent, "HUMAN_HANDOFF");
+    assert.equal(route.interruptsClinicalAnswer, true);
+  }
+});
+
+test("conversation router recognizes cancellation before consent or clinical questions", () => {
+  for (const message of ["ยกเลิก", "ไม่เอาแล้ว", "เริ่มใหม่", "หยุดซักอาการ"]) {
+    assert.equal(routePharmacyConversationMessage(message).intent, "CANCEL_OR_RESTART");
+  }
+});
+
 test("conversation router does not treat side topics as clinical answers", () => {
   assert.equal(routePharmacyConversationMessage("ขอซื้อพาราเซตามอล 1 แผง").intent, "PRODUCT_SIDE_INTENT");
   assert.equal(routePharmacyConversationMessage("มียาพาราไหม").intent, "PRODUCT_SIDE_INTENT");
@@ -435,6 +464,8 @@ test("explicit named product requests bypass symptom intake while generic sympto
   assert.equal(isExplicitPharmacyProductRequest("มีพาราเซตามอล 500 มก. ไหม"), true);
   assert.equal(isExplicitPharmacyProductRequest("ขอซื้อผ้าก๊อซปลอดเชื้อ 2 กล่อง"), true);
   assert.equal(isExplicitPharmacyProductRequest("ขอซื้อยาแก้ไอให้ลูกครับ"), false);
+  assert.equal(isExplicitPharmacyProductRequest("ขอซื้อยาแก้ไอให้ลูก 1 ขวดครับ"), false);
+  assert.equal(isExplicitPharmacyProductRequest("ขอซื้อยาแก้ปวดหัว 1 แผง"), false);
   assert.equal(isExplicitPharmacyProductRequest("มีปวดหัวไหม"), false);
   assert.equal(normalizePharmacyProductSearchText("ขอซื้อพาราเซตามอล 500 มก. 1 แผงค่ะ"), "พาราเซตามอล 500 มก.");
   assert.equal(normalizePharmacyProductSearchText("ขอซื้อผ้าก๊อซปลอดเชื้อ 2 กล่องครับ"), "ผ้าก๊อซปลอดเชื้อ");
@@ -576,6 +607,10 @@ test("state transition: DRAFT cannot jump straight to APPROVED", () => {
   assert.equal(canTransition("DRAFT", "APPROVED"), false);
 });
 
+test("state transition: customer-requested handoff can enter the pharmacist queue before consent", () => {
+  assert.equal(canTransition("DRAFT", "WAITING_FOR_PHARMACIST"), true);
+});
+
 test("state transition: only PHARMACIST_REVIEWING can reach APPROVED/REJECTED/REFER_TO_DOCTOR", () => {
   for (const status of Object.keys(ALLOWED_TRANSITIONS) as Array<keyof typeof ALLOWED_TRANSITIONS>) {
     if (status === "PHARMACIST_REVIEWING") continue;
@@ -584,14 +619,122 @@ test("state transition: only PHARMACIST_REVIEWING can reach APPROVED/REJECTED/RE
   assert.equal(canTransition("PHARMACIST_REVIEWING", "APPROVED"), true);
 });
 
-test("state transition: EMERGENCY_REFERRAL is reachable from every intake state that can have collected an answer", () => {
-  // DRAFT is pre-consent (no question has been asked yet, so no red flag can
-  // exist to detect) — every state from COLLECTING_INFORMATION onward, where
-  // an answer could have triggered a red flag, must be able to escalate.
-  for (const status of ["COLLECTING_INFORMATION", "WAITING_FOR_PHARMACIST", "NEED_MORE_INFORMATION"] as const) {
+test("state transition: EMERGENCY_REFERRAL is reachable from every open intake state", () => {
+  for (const status of [
+    "DRAFT",
+    "COLLECTING_INFORMATION",
+    "PENDING_CONFIRMATION",
+    "WAITING_FOR_PHARMACIST",
+    "PHARMACIST_REVIEWING",
+    "NEED_MORE_INFORMATION",
+  ] as const) {
     assert.equal(canTransition(status, "EMERGENCY_REFERRAL"), true, `${status} -> EMERGENCY_REFERRAL should be allowed`);
   }
-  assert.equal(canTransition("DRAFT", "EMERGENCY_REFERRAL"), false, "DRAFT (pre-consent) should not jump straight to EMERGENCY_REFERRAL");
+});
+
+test("conversation stage keeps pre-consent handoffs in the pharmacist queue", () => {
+  assert.equal(resolvePharmacyConversationStage("DRAFT", "PENDING"), "AWAITING_CONSENT");
+  assert.equal(resolvePharmacyConversationStage("PENDING_CONFIRMATION", "GRANTED"), "PENDING_CONFIRMATION");
+  assert.equal(resolvePharmacyConversationStage("WAITING_FOR_PHARMACIST", "PENDING"), "WAITING");
+  assert.equal(resolvePharmacyConversationStage("PHARMACIST_REVIEWING", "PENDING"), "WAITING");
+});
+
+test("patient memory combines the newest confirmed value per safe reusable field", () => {
+  const now = Date.parse("2026-08-11T00:00:00.000Z");
+  const candidates: ReusablePatientProfileCandidate[] = [
+    {
+      id: "case-new",
+      patientAgeYears: 50,
+      biologicalSex: "FEMALE",
+      structuredAnswers: { chronic_diseases: "เบาหวาน", current_medications: "metformin" },
+      customerConfirmedAt: "2026-08-01T00:00:00.000Z",
+      consentAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    },
+    {
+      id: "case-older",
+      patientAgeYears: 49,
+      biologicalSex: "MALE",
+      structuredAnswers: { allergies: "penicillin", pregnancy_status: "NO" },
+      customerConfirmedAt: "2026-02-01T00:00:00.000Z",
+      consentAt: "2026-02-01T00:00:00.000Z",
+      updatedAt: "2026-02-01T00:00:00.000Z",
+    },
+  ];
+  const profile = buildReusablePatientProfile(candidates, now);
+  assert.deepEqual(profile?.fields, {
+    patient_age_years: 50,
+    biological_sex: "FEMALE",
+    chronic_diseases: "เบาหวาน",
+    allergies: "penicillin",
+  });
+  assert.equal("current_medications" in (profile?.fields ?? {}), false);
+  assert.equal("pregnancy_status" in (profile?.fields ?? {}), false);
+  assert.deepEqual(profile?.fieldSources, {
+    patient_age_years: "case-new",
+    biological_sex: "case-new",
+    chronic_diseases: "case-new",
+    allergies: "case-older",
+  });
+  assert.deepEqual(profile?.sourceAssessmentIds, ["case-new", "case-older"]);
+});
+
+test("patient memory drops stale age but keeps explicitly confirmed stable fields", () => {
+  const profile = buildReusablePatientProfile([{
+    id: "case-stale",
+    patientAgeYears: 30,
+    biologicalSex: "FEMALE",
+    structuredAnswers: { allergies: "UNKNOWN", chronic_diseases: "ไม่มี" },
+    customerConfirmedAt: "2024-01-01T00:00:00.000Z",
+    consentAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  }], Date.parse("2026-08-11T00:00:00.000Z"));
+  assert.deepEqual(profile?.fields, {
+    biological_sex: "FEMALE",
+    allergies: "UNKNOWN",
+    chronic_diseases: "ไม่มี",
+  });
+});
+
+test("latest customer values override memory and null model output cannot clear known fields", () => {
+  const profile = buildReusablePatientProfile([{
+    id: "case-memory",
+    patientAgeYears: 34,
+    biologicalSex: "FEMALE",
+    structuredAnswers: { allergies: "ไม่มี" },
+    customerConfirmedAt: "2026-08-01T00:00:00.000Z",
+    consentAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  }], Date.parse("2026-08-11T00:00:00.000Z"));
+  assert.ok(profile);
+  const current = compactPatientFields({ patient_relationship: "SELF", patient_age_years: 35, allergies: null });
+  const rememberedKeys = rememberedFieldKeysAdded(current, profile);
+  assert.deepEqual(rememberedKeys, ["biological_sex", "allergies"]);
+  const mergedMemory = mergeRememberedFields(current, profile);
+  const mergedLatest = mergeLatestPatientFields(mergedMemory, {
+    patient_age_years: 35,
+    biological_sex: null,
+  });
+  assert.deepEqual(mergedLatest, {
+    patient_relationship: "SELF",
+    patient_age_years: 35,
+    biological_sex: "FEMALE",
+    allergies: "ไม่มี",
+  });
+  assert.deepEqual(rememberedSourceAssessmentIds(profile, rememberedKeys), ["case-memory"]);
+});
+
+test("state transition: customer cancellation can close every open intake state", () => {
+  for (const status of [
+    "DRAFT",
+    "COLLECTING_INFORMATION",
+    "PENDING_CONFIRMATION",
+    "WAITING_FOR_PHARMACIST",
+    "PHARMACIST_REVIEWING",
+    "NEED_MORE_INFORMATION",
+  ] as const) {
+    assert.equal(canTransition(status, "CLOSED"), true, `${status} -> CLOSED should be allowed`);
+  }
 });
 
 test("state transition: terminal statuses only ever transition to CLOSED", () => {

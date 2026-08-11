@@ -39,7 +39,8 @@ Deterministic intent?  ← coupon wallet / own-order status / payment / reorder 
     │                     Server selects an approved catalog tool, then runtime applies the same
     │                     surface authorization, argument validation, redacted audit, and domain audit.
     │                     Customer never supplies tenant authority; status/payment/reorder resolve the
-    │                     latest order from the established (channel, customer_ref) identity.
+    │                     latest own history from canonical customer identity; payment auto-selects
+    │                     only a PENDING order on the current (channel, customer_ref).
     │
     ├─ no ─────────────▶ continue to AI tool-calling
     ▼
@@ -55,7 +56,7 @@ AI tool-calling?       ← runToolLoop(customerTools())  [lib/bms/tools/runtime.
     │
     ├─ usedAi:false (no key / quota exceeded) ──▶ deterministic rule-based fallback:
     │        Detect Intent (understand() [nlu.ts]) → checkStock()/createOrder() → generateResponse()
-    │        → Thai-language template. This is the customer-critical deterministic path.
+    │        → tenant-selected Thai/English template. This is the customer-critical deterministic path.
     ▼
 Reply Customer         ← sent back on-channel + logged to Inbox (logConversation)
 ```
@@ -112,7 +113,18 @@ the assessment/current-question state, and returns the customer to the same ques
 order-status side intents are likewise prevented from becoming health answers; the customer is asked
 to stop the intake explicitly before changing workflows. This boundary is shared by persisted customer
 channels (including LINE OA) and the Pharmacy Intake Lab; the model does not decide whether to mutate
-clinical state.
+clinical state. An explicit request to speak with a pharmacist moves any active intake, including the
+pre-consent `DRAFT` stage, to `WAITING_FOR_PHARMACIST`; it does not get parsed as consent or as a
+clinical answer.
+Pack count, dosage form, or container wording alone is not a product identity: phrases such as
+`ยาแก้ไอให้ลูก 1 ขวด` and `ยาแก้ปวดหัว 1 แผง` remain in clarification/intake unless a specific
+product name is present. A direct `ขอคุยกับเภสัชกร` with no active assessment is recorded as an
+Inbox handoff note and notifies available licensed pharmacists plus the conversation assignee; it
+does not create a synthetic clinical assessment or collect health data without consent.
+Cancellation/restart wording is handled before every intake stage, including pre-consent and summary
+confirmation, and closes the persisted case before clearing the conversation link. Emergency wording
+is evaluated before expiry/database maintenance; the urgent-care reply is returned even if recording
+the emergency transition fails, while that persistence failure raises a shop/platform incident.
 For named products with an approved `DIRECT_SALE` policy, the Lab keeps a multi-SKU session cart,
 shows catalog-derived unit prices and totals, and revalidates price, stock, quantity limits, and
 policy for every line when the cart is confirmed. The Lab now creates a real `test`-channel order
@@ -124,6 +136,10 @@ short follow-up such as `มีชื่อสินค้าที่ต้อ�
 choice advances to the consent prompt. A rejection/cancellation returns the lab to `NONE`.
 
 Named-product purchases are a commerce flow, not a twelfth clinical protocol. In a pharmacy tenant,
+an identifiable product request bypasses symptom clarification only when no clinical intake is active,
+then continues through the same customer catalog/tool flow used by general shops. Emergency wording
+still has priority, and an active intake still requires the customer to stop that intake before changing
+to product shopping. In all cases,
 `createOrder()` checks the SKU's approved `bms_pharmacy_product_policies` row inside the same
 transaction and before reserving stock. Missing/draft policy fails closed. `DIRECT_SALE` may proceed;
 short-safety-check and pharmacist-only products require an approved assessment; prescription-required
@@ -145,8 +161,13 @@ only for `SELF`; dependent patients are deliberately asked afresh until they hav
 patient-profile ids. For `SELF`, intake combines the newest consented and customer-confirmed value per stable field:
 biological sex, allergies, and chronic diseases, plus age only when confirmed within the last 365
 days. It does not reuse current medications, pregnancy, or breastfeeding because these can change
-between episodes. Reused fields are written into the new assessment and appear in the final
-customer-confirmation summary, so convenience never bypasses explicit review of the current case.
+between episodes. The lookup is not derived from purchase history alone and reads only the bounded
+columns needed for these fields. Provenance is retained per field because a profile may combine the
+newest values from several confirmed assessments. The customer receives a generic notice when
+memory is used, can correct it immediately, and the latest non-blank value they provide always wins;
+a null/blank model extraction cannot clear a known value. Reused fields are written into the new
+assessment and appear in the final customer-confirmation summary, so convenience never bypasses
+explicit review of the current case.
 
 Pharmacy symptom discovery is protocol-driven. Each protocol stores a customer-facing
 `display_label` and bounded `trigger_terms`; the customer pipeline and Pharmacy Intake Lab load the
@@ -195,6 +216,15 @@ values, and avoids duplicate address rows. Lazada/Shopee skip this collection be
 remains authoritative for delivery and payment details. A reply to the deterministic "name",
 "phone", or "shipping address" question is server-routed back through the same approved save tool,
 so this continuation also works when the tenant has no AI credentials or shared quota.
+
+The general and pharmacy customer surfaces establish the same canonical CRM identity before their
+specialized routing. Own-order status/payment/reorder then scope by that canonical `customer_id`,
+with an exact channel-key fallback only for legacy unlinked orders. After a staff-approved customer
+merge, combined cross-channel purchase history is available to both archetypes, while health memory
+still follows the stricter consent/confirmation rules above. Customer records never cross tenants.
+Payment does not use that wider history for implicit selection: only a current-channel `PENDING`
+order is eligible, marketplace channels stay in Seller Center, and an existing active payment is
+returned rather than duplicated.
 
 Every successful customer `create_order`/`reorder` also sets a server-only `createdOrderId` on the
 tool execution context. Before the customer reply leaves the pipeline, model-written closing prose

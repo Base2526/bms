@@ -212,6 +212,10 @@ AI ไม่มีสิทธิ์เลือก severity/action เอง �
 | IDN-06 | ข้อมูลในข้อความล่าสุดขัดกับ memory | ใช้ข้อมูลล่าสุดเป็น candidate/ขอ confirm; ไม่ overwrite แบบเงียบ ๆ |
 | IDN-07 | ส่งจาก LINE, Shopee, IG ที่ยังไม่ link identity | แยก channel identity; ห้ามรวมคนจากชื่อเหมือนกันเอง |
 | IDN-08 | identity ถูก link อย่างมีหลักฐานใน CRM | ใช้ stable memory/ที่อยู่ตาม policy แต่ยังไม่ส่ง raw PII เข้า AI prompt โดยไม่จำเป็น |
+| IDN-09 | มีเพียงประวัติซื้อ แต่ไม่มี SELF assessment ที่ consent และ confirm | ไม่สร้าง health memory จากรายการซื้อ และถามข้อมูลตาม protocol ตามปกติ |
+| IDN-10 | เคสยืนยันเก่าหลายเคสมีข้อมูลคนละฟิลด์ | เลือกค่าที่ยืนยันล่าสุดแยกรายฟิลด์ และ audit source assessment ของแต่ละฟิลด์ถูกต้อง |
+| IDN-11 | memory มีข้อมูลเดิม แต่ model คืน `null`/ค่าว่าง หรือผู้ใช้แจ้งค่าใหม่ | ค่าว่างไม่ลบข้อมูลเดิม; ค่าล่าสุดที่ผู้ใช้แจ้งชนะ และทุกค่าปรากฏใน final confirmation |
+| IDN-12 | memory มี current medications/pregnancy/breastfeeding หรืออายุเกิน 365 วัน | ไม่ reuse ฟิลด์ที่เปลี่ยนตามเวลาและไม่ reuse อายุหมดอายุ; ถามใหม่ตาม protocol |
 
 ### E. Compound conditions และ escalation
 

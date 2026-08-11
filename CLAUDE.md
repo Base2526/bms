@@ -386,6 +386,25 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   Lazada/Shopee report `marketplaceManaged:true` and are never asked for Seller Center data. The
   customer's answer to the deterministic name/phone/address question is server-routed back through the
   same approved save tool, so the flow also completes with no AI credentials or quota.
+- **Shared customer identity across general + pharmacy flows (2026-08)**: both surfaces now resolve
+  the same tenant-scoped `bms_customers` record through normalized `(channel, customer_ref)` identities
+  (`lib/bms/customerIdentity.ts` / `customers.ts`); there is no pharmacy-only customer table and no
+  cross-tenant sharing. Migration `7.74` backfills historical orders, conversations, restock
+  subscriptions, and pharmacy assessments onto that canonical customer. Own-order history/reorder may
+  follow canonical `customer_id` across channels, but customer payment auto-selection is deliberately
+  narrower: only a `PENDING` order on the current channel is payable, marketplace payment remains in
+  Seller Center, and repeated notices use `submitPaymentOnce()` rather than creating duplicates.
+  Pharmacy patient memory reuses only consented, customer-confirmed, relationship-matched safe fields;
+  current-message values win and stale age is discarded. Inbox logging best-effort establishes the
+  identity even on deterministic/mock/fallback routes so early exits do not leave CRM history unlinked.
+- **AI function registry hardening (2026-08)**: `tools/catalog.ts` remains the authoritative registry
+  (66 total tools, 21 customer tools at this snapshot). `assertValidToolRegistry()` now fails startup
+  for duplicate/non-snake-case names, invalid/duplicate surfaces, sensitive tools exposed to customers,
+  or required schema fields that were never declared. Registry-only disambiguation metadata now also
+  covers `get_order_status`, `get_customer_checkout`, `save_customer_checkout_details`, and
+  `submit_payment`, preserving the canonical-history vs. current-channel-payment boundary. Internal
+  identity lookup, payable-order selection, and pharmacy patient-memory helpers are intentionally not
+  model-callable tools because model-supplied customer/health identifiers must never become authority.
 - **Public customer checkout (`/checkout?t=<signed-token>`)** — ✅ implemented; the wireframe in
   [docs/ui/customer-checkout-wireframe.md](docs/ui/customer-checkout-wireframe.md) is now an
   implementation contract rather than a plan. A successful customer `create_order`/`reorder` sets a
@@ -510,6 +529,21 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   design, what's *not* covered — community/`USER_COOKIE` logins are still stateless JWT with no
   revocation). **Not done**: Redis has no password/TLS in any compose file yet — treat as required
   before a production deploy that doesn't already isolate Redis at the network layer.
+- **Authentication identity + social-login hardening (2026-08)**: `lib/auth/identity.ts` is the
+  shared public-login/register contract: trim + Unicode NFKC + lowercase for username/email,
+  server-side username/email/phone/password validation, reserved system handles, and bcrypt's
+  72-byte effective password bound. Migration `7.75` canonicalizes stored values and adds unique
+  indexes on `lower(btrim(email))` / `lower(btrim(username))`; it intentionally aborts if historical
+  case-only duplicates exist rather than merging security principals. `Admin`/`admin`/`aDmin` are
+  therefore one login identity, while public registration rejects `admin` entirely. Public
+  registration no longer creates a session before email verification, public Subscribers cannot get
+  an admin cookie, missing-account password checks use a dummy bcrypt hash, and auth endpoints have
+  bounded in-memory IP + hashed-identity limits (still per-instance; move to Redis for distributed
+  enforcement). Mobile login is implemented; email verification/password reset consume tokens
+  atomically. Google ID tokens must be verified with `google-auth-library` (never decoded-only), and
+  Facebook debug-token `app_id`/`user_id` must match. `FACEBOOK_APP_SECRET` is server-only; Compose
+  accepts the old public-named env only as a temporary value fallback without exposing that name to
+  the app runtime. See [docs/architecture/api.md](docs/architecture/api.md).
 - **Cron/batch run history (2026-08)**: `/admin/operations-schedule` (platform-admin only) used to
   only describe what a job is *supposed* to do by reading source files — it explicitly said it had no
   real run history. Migration `7.55__bms_job_runs.sql` + `lib/bms/jobRuns.ts` (`recordJobRun()`/

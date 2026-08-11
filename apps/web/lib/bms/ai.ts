@@ -27,37 +27,65 @@ type AiReply = {
   outputTokens: number | null;
 };
 
-function template(res: StockResult): string {
+function isEnglishReply(language: string | null | undefined, message: string): boolean {
+  if (language === "en") return true;
+  if (language === "th-en") {
+    const thai = (message.match(/[฀-๿]/g) || []).length;
+    const latin = (message.match(/[A-Za-z]/g) || []).length;
+    return latin > thai;
+  }
+  return false;
+}
+
+function template(res: StockResult, language: string, message: string): string {
+  const english = isEnglishReply(language, message);
   const alternatives = "alternatives" in res
     ? (res.alternatives ?? [])
         .slice(0, 3)
-        .map((item) => `${item.name} ราคา ${item.price.toLocaleString()} บาท`)
+        .map((item) =>
+          english
+            ? `${item.name} at ${item.price.toLocaleString()} baht`
+            : `${item.name} ราคา ${item.price.toLocaleString()} บาท`
+        )
         .join(", ")
     : "";
   switch (res.status) {
     case "IN_STOCK":
-      return `มีค่ะ ✅ ${res.name} ไซซ์ ${res.size} พร้อมส่ง ${res.available} ชิ้น ราคา ${res.price.toLocaleString()} บาท สนใจสั่งเลยไหมคะ?`;
+      return english
+        ? `Yes, it is available. ${res.name} size ${res.size} has ${res.available} item(s) ready to ship at ${res.price.toLocaleString()} baht. Would you like to place the order?`
+        : `มีค่ะ ✅ ${res.name} ไซซ์ ${res.size} พร้อมส่ง ${res.available} ชิ้น ราคา ${res.price.toLocaleString()} บาท สนใจสั่งเลยไหมคะ?`;
     case "OUT_OF_STOCK":
       if ((res.availableSizes?.length ?? 0) > 0) {
-        return `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ แต่ยังมีไซซ์ ${(res.availableSizes ?? [])
-          .map((item) => item.size)
-          .join(", ")} สนใจรับไซซ์อื่นไหมคะ?`;
+        const sizes = (res.availableSizes ?? []).map((item) => item.size).join(", ");
+        return english
+          ? `Sorry, ${res.name} size ${res.size} is out of stock right now, but sizes ${sizes} are still available. Would you like another size?`
+          : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ แต่ยังมีไซซ์ ${sizes} สนใจรับไซซ์อื่นไหมคะ?`;
       }
       return alternatives
-        ? `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ รุ่นที่พร้อมขายใกล้เคียงมี ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
-        : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ 🙏 ต้องการให้แอดมินช่วยหาแบบใกล้เคียงไหมคะ?`;
+        ? english
+          ? `Sorry, ${res.name} size ${res.size} is out of stock right now. Similar available options are ${alternatives}. Would you like me to check one of those next?`
+          : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ รุ่นที่พร้อมขายใกล้เคียงมี ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+        : english
+          ? `Sorry, ${res.name} size ${res.size} is out of stock right now. Would you like the shop admin to help find a similar option?`
+          : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ 🙏 ต้องการให้แอดมินช่วยหาแบบใกล้เคียงไหมคะ?`;
     case "SIZE_UNKNOWN": {
       const avail = res.sizes
         .filter((s) => s.available > 0)
         .map((s) => `${s.size} (${s.available})`)
         .join(", ");
-      return `${res.name} ตอนนี้มีไซซ์: ${avail || "หมดทุกไซซ์ค่ะ"} รับไซซ์ไหนดีคะ?`;
+      return english
+        ? `${res.name} is currently available in these sizes: ${avail || "out of stock in every size"}. Which size would you like?`
+        : `${res.name} ตอนนี้มีไซซ์: ${avail || "หมดทุกไซซ์ค่ะ"} รับไซซ์ไหนดีคะ?`;
     }
     case "NOT_FOUND":
     default:
       return alternatives
-        ? `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้ร้านมีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
-        : `ขออภัยค่ะ ยังไม่พบสินค้าที่ต้องการ ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้เลยค่ะ 😊`;
+        ? english
+          ? `Sorry, I could not find that item. Available alternatives right now include ${alternatives}. Would you like me to check one of those next?`
+          : `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้ร้านมีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+        : english
+          ? "Sorry, I could not find the requested item. Please send the product name, model, color, or category and I will check again."
+          : `ขออภัยค่ะ ยังไม่พบสินค้าที่ต้องการ ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้เลยค่ะ 😊`;
   }
 }
 
@@ -213,13 +241,14 @@ export async function resolveAiCredentials(tenantId: string, usageCtx?: AiUsageC
 export async function generateResponse(
   tenantId: string,
   message: string,
-  res: StockResult
+  res: StockResult,
+  language = "th"
 ): Promise<string> {
   const creds = await resolveAiCredentials(tenantId, {
     surface: "customer",
     feature: "stock_reply",
   });
-  if (!creds) return template(res); // ไม่มี key เลย หรือเกิน quota — deterministic template
+  if (!creds) return template(res, language, message); // ไม่มี key เลย หรือเกิน quota — deterministic template
 
   try {
     const parsed = await generateAiReply(creds, message, res);
@@ -242,6 +271,6 @@ export async function generateResponse(
       `[BMS] ${creds.provider} (${creds.source} key) failed, fallback to template:`,
       err
     );
-    return template(res);
+    return template(res, language, message);
   }
 }

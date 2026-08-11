@@ -108,7 +108,11 @@ includes `status` in a `SET` clause.
 
 1. Customer says something matching a symptom keyword → deterministic entry, not AI-decided.
    Medicine-shaped but unclear wording is first clarified as named-product purchase vs symptom
-   assessment. A named-product purchase exits to commerce; it is not a clinical protocol.
+   assessment. Pack count/container text alone never makes a generic symptom medicine a named
+   product. A named-product purchase exits to commerce; it is not a clinical protocol.
+   A direct request to speak with a pharmacist enters the existing assessment queue when an intake
+   is active; without an active assessment it creates an internal Inbox handoff note and notifies
+   available licensed pharmacists plus the assigned staff member, without creating synthetic health data.
    In Pharmacy Intake Lab, an approved `DIRECT_SALE` SKU is added to a session cart using the
    live catalog price. The customer can add multiple SKUs, change the latest item's quantity,
    remove an item, review line totals and the cart total, then confirm the cart once. Confirmation
@@ -121,10 +125,20 @@ includes `status` in a `SET` clause.
 2. Disclaimer ("AI ≠ pharmacist") + consent prompt, both fixed backend copy.
 3. Consent granted → AI (or a deterministic fallback if AI is off) asks one question at a
    time, chosen from the protocol's own field list — it can never invent a new question.
+   For the same canonical customer and `SELF` relationship only, the intake can reuse the newest
+   consented and customer-confirmed age (up to 365 days old), biological sex, allergies, and chronic
+   diseases. Purchase history by itself is not health-memory consent. Current medications,
+   pregnancy, breastfeeding, and dependent-patient data are always collected again. Reuse is
+   disclosed without echoing health values early, audited with per-field source assessment ids, and
+   every value is shown again in the final confirmation; the customer's latest non-blank correction
+   always wins and a null/blank AI extraction cannot erase known data.
 4. Every answer is run through the deterministic rule engine
    (`lib/bms/pharmacy/ruleEngine.ts`): red flag → `EMERGENCY_REFERRAL` immediately (stop
    asking); missing fields → ask the next one; conflicting answers → ask for clarification;
    complete → AI summarizes (never recommends) → customer confirms summary → `WAITING_FOR_PHARMACIST`.
+   Emergency text is checked before expiry/database maintenance so the fixed emergency reply is
+   still returned if persistence fails. Cancellation/restart closes the case from every open intake
+   stage, including `DRAFT` and `PENDING_CONFIRMATION`, before unlinking it from the conversation.
 5. A pharmacist claims the case (`WAITING_FOR_PHARMACIST → PHARMACIST_REVIEWING`), reviews
    raw conversation + AI summary + missing/conflicting fields + red flags, can request more
    info, edit, and finally Approve/Reject/Refer/Emergency-refer. On approve the pharmacist

@@ -116,7 +116,7 @@ skipped silently with no error (Claude Haiku 4.5: 4,096 tokens). Measured on
 
 Staff figures are for a role holding every permission; `staffTools(perms)` filters by RBAC, so a
 narrower role sends a smaller — and separately cached — tool block.
-The current customer registry has 20 tools after adding checkout completeness/read-save tools.
+The current customer registry has 21 tools after adding checkout completeness/read-save and coupon tools.
 Re-measure token counts before relying on an exact headroom figure; production truth
 remains `cache_read_input_tokens` in the usage event.
 
@@ -146,16 +146,16 @@ A healthy customer request shows `cache_read` ≈ 4,100+ with `regular` in the l
 
 ### Tool description language
 
-Tool `description` and per-field descriptions are written in **English**, while the system prompt and
-every customer-facing reply stay **Thai**. This is a token decision, not a style one: Thai barely
+Tool `description` and per-field descriptions are written in **English**, while customer-facing copy
+follows the tenant's configured Thai, English, or latest-message language. The pharmacy clinical
+intake remains fixed Thai backend copy by design. English tool schemas are a token decision, not a style one: Thai barely
 merges under the tokenizer and costs roughly 3.2–4.6 tokens per character against 0.78 for English,
 so the same rules in English are ~3.7x cheaper even when the English text is longer in characters.
 Translating the tool definitions cut the customer block from 14,829 to 2,545 tokens and the full staff
-block from 20,517 to 6,989. Everything the model reads *about* a tool is English; everything a person
-reads — the system prompt, `execute()` error strings, proposal-card `summary:` text — stays Thai. Brand voice is
-unaffected because it is enforced by the Thai system prompt and `sanitizeCustomerReply()`, neither of
-which the model sees as part of a tool schema. Keep new tool descriptions in English; keep anything
-the customer reads in Thai.
+block from 20,517 to 6,989. Everything the model reads *about* a tool stays English; system prompts and
+deterministic customer replies may be localized, while staff proposal summaries and pharmacy clinical
+copy stay Thai. Keep new tool descriptions in English and preserve the language policy of the surface
+that renders the result.
 
 ## Standing rules that constrain every prompt/tool interaction
 

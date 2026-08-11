@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { logConversation } from "@/lib/bms/inbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,9 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const result = await runPipeline(text, "line", DEFAULT_TENANT_ID, ev.source?.userId ?? null);
+    const customerRef = ev.source?.userId ?? null;
+    const result = await runPipeline(text, "line", DEFAULT_TENANT_ID, customerRef);
+    await logConversation(DEFAULT_TENANT_ID, "line", customerRef, text, result.reply, result.quality);
     // TODO(prod): await pushLineReply(ev.replyToken, result.reply)
     replies.push({ replyToken: ev.replyToken, reply: result.reply });
   }

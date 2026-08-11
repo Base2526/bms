@@ -20,6 +20,7 @@ services:
              npm run dev"
     environment:
       NODE_ENV: development
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-${NEXT_PUBLIC_FACEBOOK_APP_SECRET}}
       COOKIE_SECURE: ${COOKIE_SECURE}
       DEBUG_LOG: ${DEBUG_LOG}
       DB_LOG: ${DB_LOG}

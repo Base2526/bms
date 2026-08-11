@@ -24,6 +24,7 @@ import {
   getAiConversationState,
   setAiConversationState,
   ensureConversationForPipeline,
+  listLicensedPharmacistIds,
   type AiConversationState,
 } from "./inbox";
 import { listCategories } from "./productCategories";
@@ -49,11 +50,10 @@ import {
   isAlternativeCatalogRequest,
   suppressUnconfiguredPaymentAdvice,
 } from "./customerReplyPolicy";
-import { ensureCustomerForIdentity, getCustomerCheckoutStatus } from "./customers";
+import { ensureCustomerForIdentity, findCustomerIdByIdentity, getCustomerCheckoutStatus } from "./customers";
 import { orderCheckoutChatReply } from "./checkout";
 import {
   createCouponWalletToken,
-  findCustomerIdByIdentity,
   listAvailableCouponsForCustomer,
   listCustomerCouponWallet,
   type CustomerCouponWalletItem,
@@ -67,11 +67,17 @@ import {
 import { listActivePharmacyTriggerDefinitions, type PharmacyTriggerDefinition } from "./pharmacy/protocols";
 import {
   detectPharmacyIntakeTrigger,
+  isExplicitPharmacyProductRequest,
   normalizePharmacyClarificationReply,
   pharmacyAmbiguousClarificationReply,
   pharmacyEmergencyReply,
 } from "./pharmacy/trigger";
 import { routePharmacyConversationMessage } from "./pharmacy/conversationRouter";
+import {
+  couponCodeFromMessage,
+  isEnglishCustomerReply,
+  shippingProvinceFromMessage,
+} from "./customerMessageRouting";
 
 const PHARMACY_CHECKOUT_CONFIRM_PATTERN =
   /(ยืนยันสั่งซื้อ|ยืนยันซื้อ|สั่งซื้อเลย|เอาตามนี้|ตกลงเอาตามนี้|โอเคเอาตามนี้|confirm order)/i;
@@ -157,6 +163,7 @@ const CUSTOMER_PROGRESS_TOOLS = new Set(customerTools().map((tool) => tool.name)
 // เกินจำนวนรอบที่ tenant ตั้งไว้โดยไม่มีความคืบหน้า → force handoff
 // (docs/AI Context Strategy for Multi-Tenant Shops.md § Turn Budget Enforcer)
 const HANDOFF_REPLY = "ขอโทษนะคะ ขอให้แอดมินช่วยตอบต่อในเรื่องนี้นะคะ รบกวนรอสักครู่ค่ะ 🙏";
+const HANDOFF_REPLY_EN = "Sorry, an admin needs to help with this request. Please wait a moment.";
 
 export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada" | "test";
 
@@ -334,7 +341,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "ถ้าลูกค้าส่งชื่อผู้รับ เบอร์โทร หรือที่อยู่ใหม่มาอย่างชัดเจน ให้เรียก save_customer_checkout_details โดยส่งเฉพาะ field ที่ลูกค้าให้มา ห้ามเดาหรือเขียนทับ field อื่น และห้ามเรียกทูลนี้เพียงเพื่อยืนยันใช้ข้อมูลเดิม",
     "ถ้ายังมี missingFields ให้เก็บข้อมูลจัดส่งให้ครบก่อนแจ้งช่องทางชำระเงิน; เมื่อครบแล้วจึงเรียก get_payment_info และแสดงเฉพาะช่องทางที่ตั้งค่าไว้",
     "ถ้า checkout คืน marketplaceManaged=true ข้อมูลผู้รับ ที่อยู่ และการชำระเงินอยู่ใน Seller Center ห้ามขอให้ลูกค้ากรอกซ้ำในแชท",
-    "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้ออร์เดอร์ล่าสุดของลูกค้าอัตโนมัติ) " +
+    "ถ้าลูกค้าแจ้งว่าโอนแล้ว ใช้ submit_payment ทันที (ไม่ต้องรู้/ถาม orderId เอง ระบบใช้เฉพาะออร์เดอร์ PENDING ล่าสุดบนช่องทางปัจจุบันอัตโนมัติ) " +
       "แต่ต้องเรียก get_payment_info และรู้ method ที่ร้านตั้งค่าไว้ก่อนเสมอ ถ้าลูกค้าไม่ได้บอกช่องทาง ให้ถามยืนยันจากช่องทางที่ผลทูลส่งกลับมาเท่านั้น ห้ามยกตัวอย่างช่องทางเอง " +
       "หลังเรียกสำเร็จ (สถานะ PENDING) แจ้งว่ารอแอดมินตรวจสอบ อย่ายืนยันว่าเงินเข้าแล้ว และห้ามพูดว่า 'บันทึกแล้ว/สำเร็จแล้ว' ถ้าไม่ได้เรียกทูลนี้จริง",
     "ห้ามเสนอหรือถามนำเรื่องโอนธนาคาร พร้อมเพย์ QR หรือวิธีชำระเงินใด ๆ ถ้ายังไม่ได้เรียก get_payment_info ใน turn นั้น; ถ้าทูลคืน configured=false ให้บอกเพียงว่าร้านยังไม่ได้ระบุรายละเอียดการชำระเงินและให้รอแอดมิน ห้ามเสนอช่องทางอื่นหรือยกตัวอย่างเอง",
@@ -363,30 +370,40 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
   return lines.join("\n");
 }
 
-function salesAlternativeText(items: Array<{ name: string; price: number }>): string {
+function salesAlternativeText(items: Array<{ name: string; price: number }>, english = false): string {
   return items
     .slice(0, 3)
-    .map((item) => `${item.name} (${item.price.toLocaleString()} บาท)`)
+    .map((item) => english
+      ? `${item.name} (${item.price.toLocaleString("en-US")} THB)`
+      : `${item.name} (${item.price.toLocaleString()} บาท)`)
     .join(", ");
 }
 
-function stockRecoveryReply(result: StockResult, businessArchetype?: string | null): string | null {
+function stockRecoveryReply(result: StockResult, businessArchetype?: string | null, english = false): string | null {
   if (result.status === "OUT_OF_STOCK") {
     const otherSizes = (result.availableSizes ?? []).map((item) => item.size).join(", ");
     if (otherSizes) {
-      return `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด แต่ยังมีไซซ์ ${otherSizes} สนใจให้เช็กไซซ์ไหนต่อไหมคะ?`;
+      return english
+        ? `Sorry, ${result.name} size ${result.size} is out of stock, but sizes ${otherSizes} are available. Which size should I check?`
+        : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด แต่ยังมีไซซ์ ${otherSizes} สนใจให้เช็กไซซ์ไหนต่อไหมคะ?`;
     }
-    const alternatives = salesAlternativeText(result.alternatives ?? []);
+    const alternatives = salesAlternativeText(result.alternatives ?? [], english);
     return alternatives
-      ? `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ตอนนี้มีตัวเลือกพร้อมขายใกล้เคียง เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+      ? english
+        ? `Sorry, ${result.name} size ${result.size} is out of stock. Similar products available now include ${alternatives}. Which one should I check?`
+        : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ตอนนี้มีตัวเลือกพร้อมขายใกล้เคียง เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
       : archetypeNeedsRestockEmphasis(businessArchetype)
-        ? `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมคะ?`
+        ? english
+          ? `Sorry, ${result.name} size ${result.size} is out of stock. Would you like the shop to notify you when it is restocked?`
+          : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมคะ?`
         : null;
   }
   if (result.status === "NOT_FOUND") {
-    const alternatives = salesAlternativeText(result.alternatives ?? []);
+    const alternatives = salesAlternativeText(result.alternatives ?? [], english);
     return alternatives
-      ? `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กต่อไหมคะ?`
+      ? english
+        ? `Sorry, that product was not found. Available products include ${alternatives}. Which one should I check?`
+        : `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กต่อไหมคะ?`
       : null;
   }
   return null;
@@ -813,12 +830,16 @@ function isPaymentInfoQuestion(message: string): boolean {
   );
 }
 
-function paymentInfoReply(accounts: PaymentAccount[]): string {
-  const lines = customerPaymentAccountLines(accounts);
+function paymentInfoReply(accounts: PaymentAccount[], english = false): string {
+  const lines = customerPaymentAccountLines(accounts, english);
   if (lines.length === 0) {
-    return "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
+    return english
+      ? "The shop has not configured a payment method yet. Please wait for an admin to confirm the details."
+      : "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
   }
-  return `ช่องทางชำระเงินที่ทางร้านระบุไว้มีดังนี้ค่ะ\n${lines.join("\n")}`;
+  return english
+    ? `The shop has configured these payment methods:\n${lines.join("\n")}`
+    : `ช่องทางชำระเงินที่ทางร้านระบุไว้มีดังนี้ค่ะ\n${lines.join("\n")}`;
 }
 
 type CatalogReplyProduct = {
@@ -830,7 +851,8 @@ type CatalogReplyProduct = {
 
 function alternativeCatalogReply(
   products: CatalogReplyProduct[],
-  lastAssistantReply: string
+  lastAssistantReply: string,
+  english = false
 ): string {
   const previous = lastAssistantReply.toLowerCase();
   const alternatives = products
@@ -842,21 +864,29 @@ function alternativeCatalogReply(
     .slice(0, 3);
   if (alternatives.length === 0) {
     return products.length > 0
-      ? "ตอนนี้ยังไม่มีสินค้าอื่นเพิ่มเติมจากรายการที่เพิ่งส่งไปค่ะ สนใจให้ช่วยเช็กไซซ์หรือรายละเอียดของตัวไหนต่อไหมคะ"
-      : "ตอนนี้ยังไม่มีสินค้าอื่นที่พร้อมขายค่ะ หากมีสินค้าเข้าใหม่ทางร้านจะแจ้งให้ทราบนะคะ";
+      ? english
+        ? "There are no additional products beyond the list just shown. Would you like details or available sizes for one of them?"
+        : "ตอนนี้ยังไม่มีสินค้าอื่นเพิ่มเติมจากรายการที่เพิ่งส่งไปค่ะ สนใจให้ช่วยเช็กไซซ์หรือรายละเอียดของตัวไหนต่อไหมคะ"
+      : english
+        ? "There are no other products ready for sale right now."
+        : "ตอนนี้ยังไม่มีสินค้าอื่นที่พร้อมขายค่ะ หากมีสินค้าเข้าใหม่ทางร้านจะแจ้งให้ทราบนะคะ";
   }
   const lines = alternatives.map((product) => {
     const sizes = (product.availableSizes ?? [])
       .filter((variant) => variant.available > 0)
       .map((variant) => variant.size)
       .slice(0, 5);
-    return `• ${product.name} ${Number(product.price).toLocaleString()} บาท${
-      sizes.length > 0 ? ` (ไซซ์ ${sizes.join(", ")})` : ""
-    }`;
+    return english
+      ? `• ${product.name} ${Number(product.price).toLocaleString("en-US")} THB${sizes.length > 0 ? ` (sizes ${sizes.join(", ")})` : ""}`
+      : `• ${product.name} ${Number(product.price).toLocaleString()} บาท${
+          sizes.length > 0 ? ` (ไซซ์ ${sizes.join(", ")})` : ""
+        }`;
   });
-  return `ได้เลยค่ะ ลองดูตัวเลือกอื่นที่พร้อมขายตอนนี้นะคะ\n${lines.join(
-    "\n"
-  )}\nสนใจตัวไหนให้ช่วยเช็กไซซ์ต่อคะ`;
+  return english
+    ? `Here are other products currently ready for sale:\n${lines.join("\n")}\nWhich one would you like me to check?`
+    : `ได้เลยค่ะ ลองดูตัวเลือกอื่นที่พร้อมขายตอนนี้นะคะ\n${lines.join(
+        "\n"
+      )}\nสนใจตัวไหนให้ช่วยเช็กไซซ์ต่อคะ`;
 }
 
 function isReorderRequest(message: string): boolean {
@@ -865,17 +895,17 @@ function isReorderRequest(message: string): boolean {
   );
 }
 
-function orderStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    PENDING: "รอตรวจสอบการชำระเงิน",
-    PAID: "ชำระเงินแล้ว",
-    PACKING: "กำลังแพ็ก",
-    SHIPPED: "จัดส่งแล้ว",
-    COMPLETED: "สำเร็จแล้ว",
-    CANCELLED: "ยกเลิกแล้ว",
-    RETURNED: "คืนสินค้าแล้ว",
+function orderStatusLabel(status: string, english = false): string {
+  const labels: Record<string, [string, string]> = {
+    PENDING: ["รอตรวจสอบการชำระเงิน", "Awaiting payment review"],
+    PAID: ["ชำระเงินแล้ว", "Paid"],
+    PACKING: ["กำลังแพ็ก", "Packing"],
+    SHIPPED: ["จัดส่งแล้ว", "Shipped"],
+    COMPLETED: ["สำเร็จแล้ว", "Completed"],
+    CANCELLED: ["ยกเลิกแล้ว", "Cancelled"],
+    RETURNED: ["คืนสินค้าแล้ว", "Returned"],
   };
-  return labels[status] ?? status;
+  return labels[status]?.[english ? 1 : 0] ?? status;
 }
 
 // backstop เผื่อโมเดลหลุดส่งตาราง markdown ออกมาทั้งที่ system prompt ห้ามไว้แล้ว (ดูบรรทัด
@@ -971,21 +1001,158 @@ function isCouponWalletQuestion(message: string): boolean {
   );
 }
 
-function shortDate(value: string | null): string | null {
+function isStoreInfoQuestion(message: string): boolean {
+  return /(?:ร้านชื่ออะไร|ชื่อร้าน|เปิด(?:กี่โมง|ไหม|วันไหนบ้าง)|เวลาทำการ|business hours|opening hours|ติดต่อร้าน|เบอร์ร้าน|ที่อยู่ร้าน|นโยบาย(?:การส่ง|คืนสินค้า)|shipping policy|return policy)/i.test(
+    message
+  );
+}
+
+function isShippingEstimateQuestion(message: string): boolean {
+  return /(?:ค่าส่ง|ส่งกี่วัน|ส่งกี่วันถึง|ใช้เวลากี่วัน|จัดส่งกี่วัน|ค่าส่งเท่าไหร่|shipping|delivery)/i.test(
+    message
+  );
+}
+
+function storeInfoReply(
+  info: {
+    storeName?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    businessHours?: string | null;
+    shippingPolicy?: string | null;
+    returnPolicy?: string | null;
+  },
+  profile: AiProfileContext,
+  message: string
+): string {
+  const english = isEnglishCustomerReply(profile.aiLanguage, message);
+  const lines: string[] = [];
+  if (info.storeName) {
+    lines.push(english ? `Shop name: ${info.storeName}` : `ชื่อร้าน: ${info.storeName}`);
+  }
+  if (info.businessHours && /(?:เปิด|เวลา|hours?)/i.test(message)) {
+    lines.push(english ? `Opening hours: ${info.businessHours}` : `เวลาทำการ: ${info.businessHours}`);
+  }
+  if (info.phone && /(?:ติดต่อ|เบอร์|phone|contact)/i.test(message)) {
+    lines.push(english ? `Phone: ${info.phone}` : `เบอร์ติดต่อ: ${info.phone}`);
+  }
+  if (info.address && /(?:ที่อยู่|address|ร้านอยู่)/i.test(message)) {
+    lines.push(english ? `Address: ${info.address}` : `ที่อยู่ร้าน: ${info.address}`);
+  }
+  if (info.shippingPolicy && /(?:ส่ง|shipping)/i.test(message)) {
+    lines.push(english ? `Shipping policy: ${info.shippingPolicy}` : `นโยบายการจัดส่ง: ${info.shippingPolicy}`);
+  }
+  if (info.returnPolicy && /(?:คืน|เปลี่ยน|return)/i.test(message)) {
+    lines.push(english ? `Return policy: ${info.returnPolicy}` : `นโยบายคืน/เปลี่ยนสินค้า: ${info.returnPolicy}`);
+  }
+  if (lines.length === 0) {
+    if (info.storeName) lines.push(english ? `Shop name: ${info.storeName}` : `ชื่อร้าน: ${info.storeName}`);
+    if (info.businessHours) lines.push(english ? `Opening hours: ${info.businessHours}` : `เวลาทำการ: ${info.businessHours}`);
+    if (info.phone) lines.push(english ? `Phone: ${info.phone}` : `เบอร์ติดต่อ: ${info.phone}`);
+  }
+  return lines.length > 0
+    ? lines.join("\n")
+    : english
+      ? "The shop has not added those details yet. Please wait for an admin to confirm them."
+      : "ตอนนี้ร้านยังไม่ได้ระบุรายละเอียดส่วนนั้นไว้ค่ะ กรุณารอแอดมินยืนยันให้อีกครั้งนะคะ";
+}
+
+function shippingEstimateReply(
+  estimate: {
+    configured?: boolean;
+    fee?: number | null;
+    currency?: string | null;
+    estDaysMin?: number | null;
+    estDaysMax?: number | null;
+    warnings?: string[];
+    note?: string | null;
+  },
+  profile: AiProfileContext,
+  message: string
+): string {
+  const english = isEnglishCustomerReply(profile.aiLanguage, message);
+  if (!estimate.configured) {
+    return english
+      ? "The shop has not configured shipping rates yet, so I cannot confirm the shipping fee right now."
+      : "ตอนนี้ร้านยังไม่ได้ตั้งค่าค่าส่งไว้ค่ะ จึงยังยืนยันค่าส่งให้ไม่ได้ตอนนี้นะคะ";
+  }
+  const feeText =
+    estimate.fee == null
+      ? english
+        ? "Shipping fee still needs confirmation"
+        : "ค่าส่งยังต้องยืนยันอีกครั้ง"
+      : english
+        ? `Estimated shipping fee: ${Number(estimate.fee).toLocaleString()} ${estimate.currency || "THB"}`
+        : `ค่าส่งโดยประมาณ: ${Number(estimate.fee).toLocaleString()} ${estimate.currency || "บาท"}`;
+  const dayText =
+    estimate.estDaysMin != null || estimate.estDaysMax != null
+      ? english
+        ? `Estimated delivery time: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} day(s)`
+        : `ระยะเวลาจัดส่งโดยประมาณ: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} วัน`
+      : null;
+  const warning = estimate.warnings?.[0];
+  const warningText = warning
+    ? english
+      ? `Please note: ${warning}`
+      : `หมายเหตุ: ${warning}`
+    : null;
+  return [feeText, dayText, warningText].filter(Boolean).join("\n");
+}
+
+function couponCheckReply(
+  lookup: {
+    requestedCode?: string | null;
+    requested?: {
+      available?: boolean;
+      reason?: string | null;
+      discountPreview?: number | null;
+      minOrderAmount?: number | null;
+    } | null;
+    alternatives?: Array<{ code?: string | null; available?: boolean; reason?: string | null }>;
+  },
+  profile: AiProfileContext,
+  message: string
+): string {
+  const english = isEnglishCustomerReply(profile.aiLanguage, message);
+  const code = lookup.requestedCode || "coupon";
+  if (lookup.requested?.available) {
+    const min = lookup.requested.minOrderAmount;
+    const discount = lookup.requested.discountPreview;
+    return english
+      ? `${code} can be used for this customer${discount ? ` with an estimated discount of ${Number(discount).toLocaleString()} baht` : ""}${min ? ` when the order reaches at least ${Number(min).toLocaleString()} baht` : ""}. The actual discount is checked again when the order is created.`
+      : `${code} ใช้ได้สำหรับลูกค้าบัญชีนี้${discount ? ` โดยคาดว่าส่วนลดประมาณ ${Number(discount).toLocaleString()} บาท` : ""}${min ? ` เมื่อยอดถึงอย่างน้อย ${Number(min).toLocaleString()} บาท` : ""} ค่ะ ส่วนลดจริงจะตรวจอีกครั้งตอนสร้างออเดอร์นะคะ`;
+  }
+  const reason = lookup.requested?.reason || (english ? "This code is not available right now." : "โค้ดนี้ยังใช้ไม่ได้ตอนนี้ค่ะ");
+  const alternatives = (lookup.alternatives ?? [])
+    .filter((item) => item.available && item.code)
+    .slice(0, 3)
+    .map((item) => item.code);
+  return alternatives.length > 0
+    ? english
+      ? `${code} cannot be used right now: ${reason} Available alternatives are ${alternatives.join(", ")}.`
+      : `${code} ยังใช้ไม่ได้ตอนนี้ค่ะ: ${reason} โค้ดที่ยังใช้ได้มี ${alternatives.join(", ")} ค่ะ`
+    : english
+      ? `${code} cannot be used right now: ${reason}`
+      : `${code} ยังใช้ไม่ได้ตอนนี้ค่ะ: ${reason}`;
+}
+
+function shortDate(value: string | null, english = false): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return date.toLocaleDateString(english ? "en-US" : "th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function couponStateLabel(coupon: CustomerCouponWalletItem): string {
-  if (coupon.state === "REDEEMED") return "ใช้ไปแล้ว";
-  if (coupon.state === "RESERVED") return "จองกับออเดอร์อยู่";
-  if (coupon.state === "REVOKED") return "ถูกยกเลิก";
-  if (coupon.state === "EXPIRED") return "หมดอายุ";
-  if (coupon.state === "ASSIGNED") return coupon.available ? "ได้รับแล้ว พร้อมใช้" : (coupon.reason || "ได้รับแล้ว ยังใช้ไม่ได้");
-  if (coupon.available) return "ใช้ได้ตอนนี้";
-  return coupon.reason || "ยังใช้ไม่ได้";
+function couponStateLabel(coupon: CustomerCouponWalletItem, english = false): string {
+  if (coupon.state === "REDEEMED") return english ? "redeemed" : "ใช้ไปแล้ว";
+  if (coupon.state === "RESERVED") return english ? "reserved for an order" : "จองกับออเดอร์อยู่";
+  if (coupon.state === "REVOKED") return english ? "revoked" : "ถูกยกเลิก";
+  if (coupon.state === "EXPIRED") return english ? "expired" : "หมดอายุ";
+  if (coupon.state === "ASSIGNED") return coupon.available
+    ? (english ? "assigned and ready to use" : "ได้รับแล้ว พร้อมใช้")
+    : (coupon.reason || (english ? "assigned but unavailable" : "ได้รับแล้ว ยังใช้ไม่ได้"));
+  if (coupon.available) return english ? "available now" : "ใช้ได้ตอนนี้";
+  return coupon.reason || (english ? "unavailable" : "ยังใช้ไม่ได้");
 }
 
 function absoluteCouponWalletUrl(token: string): string {
@@ -993,12 +1160,12 @@ function absoluteCouponWalletUrl(token: string): string {
   return `${base}/coupon/wallet?t=${encodeURIComponent(token)}`.replace(":443/", "/");
 }
 
-function couponLine(coupon: CustomerCouponWalletItem): string {
-  const parts = [coupon.code, couponStateLabel(coupon)];
-  const starts = shortDate(coupon.startsAt);
-  const expires = shortDate(coupon.expiresAt);
-  if (starts && new Date(coupon.startsAt || "").getTime() > Date.now()) parts.push(`เริ่ม ${starts}`);
-  if (expires) parts.push(`หมดอายุ ${expires}`);
+function couponLine(coupon: CustomerCouponWalletItem, english = false): string {
+  const parts = [coupon.code, couponStateLabel(coupon, english)];
+  const starts = shortDate(coupon.startsAt, english);
+  const expires = shortDate(coupon.expiresAt, english);
+  if (starts && new Date(coupon.startsAt || "").getTime() > Date.now()) parts.push(english ? `starts ${starts}` : `เริ่ม ${starts}`);
+  if (expires) parts.push(english ? `expires ${expires}` : `หมดอายุ ${expires}`);
   return `• ${parts.join(" · ")}`;
 }
 
@@ -1006,7 +1173,8 @@ async function couponQuestionReply(
   tenantId: string,
   channel: Channel,
   customerRef?: string | null,
-  providedWallet?: CustomerCouponWalletItem[]
+  providedWallet?: CustomerCouponWalletItem[],
+  english = false
 ): Promise<string> {
   const wallet =
     providedWallet ?? (await listCustomerCouponWallet(tenantId, { channel, customerRef }));
@@ -1020,8 +1188,21 @@ async function couponQuestionReply(
       coupon.startsAt && new Date(coupon.startsAt).getTime() > Date.now()
     ).length;
     const unavailable = Math.max(0, wallet.length - usable - upcoming);
-    const lines = wallet.slice(0, 3).map(couponLine).join("\n");
-    const more = wallet.length > 3 ? `\nและยังมีอีก ${wallet.length - 3} ใบ ดูทั้งหมดในลิงก์ด้านล่างค่ะ` : "";
+    const lines = wallet.slice(0, 3).map((coupon) => couponLine(coupon, english)).join("\n");
+    const more = wallet.length > 3
+      ? english
+        ? `\nThere are ${wallet.length - 3} more. View all coupons at the link below.`
+        : `\nและยังมีอีก ${wallet.length - 3} ใบ ดูทั้งหมดในลิงก์ด้านล่างค่ะ`
+      : "";
+    if (english) {
+      return [
+        `You currently have ${wallet.length} coupon(s) in your wallet.`,
+        `${usable} available now${upcoming ? ` · ${upcoming} not started` : ""}${unavailable ? ` · ${unavailable} unavailable or expired` : ""}`,
+        lines ? `\n${lines}${more}` : "",
+        walletLink ? `\nView all your coupons here:\n${walletLink}` : "",
+        "\nCoupons in the wallet have not been redeemed. The discount is checked again when an order is created.",
+      ].filter(Boolean).join("\n");
+    }
     return [
       `ตอนนี้คุณมีคูปองในกระเป๋า ${wallet.length} ใบค่ะ`,
       `ใช้ได้ตอนนี้ ${usable} ใบ${upcoming ? ` · รอเริ่มใช้ ${upcoming} ใบ` : ""}${unavailable ? ` · ยังใช้ไม่ได้/หมดอายุ ${unavailable} ใบ` : ""}`,
@@ -1033,10 +1214,20 @@ async function couponQuestionReply(
 
   const available = await listAvailableCouponsForCustomer(tenantId, { channel, customerRef, limit: 5 });
   if (available.length === 0) {
-    return "ตอนนี้ยังไม่มีคูปองที่ผูกกับบัญชีนี้ และยังไม่มีคูปองทั่วไปที่ใช้ได้ค่ะ หากร้านมีโปรใหม่จะแจ้งให้ทราบนะคะ 😊";
+    return english
+      ? "There are no coupons assigned to this account and no general coupons available right now."
+      : "ตอนนี้ยังไม่มีคูปองที่ผูกกับบัญชีนี้ และยังไม่มีคูปองทั่วไปที่ใช้ได้ค่ะ หากร้านมีโปรใหม่จะแจ้งให้ทราบนะคะ 😊";
   }
 
-  const lines = available.map((coupon) => couponLine(coupon)).join("\n");
+  const lines = available.map((coupon) => couponLine(coupon, english)).join("\n");
+  if (english) {
+    return [
+      "No coupon is assigned directly to this account, but these general coupons may be available:",
+      lines,
+      walletLink ? `\nView your coupon wallet here:\n${walletLink}` : "",
+      "\nAsk an admin to assign a coupon to your wallet if you want to use one.",
+    ].join("\n");
+  }
   return [
     "ตอนนี้ยังไม่มีคูปองที่ผูกกับบัญชีนี้โดยตรงค่ะ แต่มีคูปองทั่วไปที่อาจใช้ได้:",
     lines,
@@ -1047,20 +1238,28 @@ async function couponQuestionReply(
 
 // order confirmation ใช้ข้อความ deterministic (Correctness > สำนวน)
 // names: map sku → ชื่อสินค้า (สำหรับแสดงผลหลายรายการ)
-function orderReply(names: Record<string, string>, order: CreateOrderResult): string {
+function orderReply(names: Record<string, string>, order: CreateOrderResult, english = false): string {
   const nameOf = (sku: string) => names[sku] ?? sku;
   switch (order.status) {
     case "CREATED": {
       const shortId = order.orderId.slice(0, 8);
       const lines = order.items
-        .map((l) => `• ${nameOf(l.sku)} ไซซ์ ${l.size} × ${l.qty} (คงเหลือ ${l.availableAfter})`)
+        .map((l) => english
+          ? `• ${nameOf(l.sku)}, size ${l.size} × ${l.qty} (${l.availableAfter} remaining)`
+          : `• ${nameOf(l.sku)} ไซซ์ ${l.size} × ${l.qty} (คงเหลือ ${l.availableAfter})`)
         .join("\n");
-      return `รับออร์เดอร์แล้วค่ะ ✅\n${lines}\nรวม ${order.total.toLocaleString()} บาท\nเลขออร์เดอร์: ${shortId} 🙏`;
+      return english
+        ? `Your order has been received.\n${lines}\nTotal ${order.total.toLocaleString("en-US")} THB\nOrder number: ${shortId}`
+        : `รับออร์เดอร์แล้วค่ะ ✅\n${lines}\nรวม ${order.total.toLocaleString()} บาท\nเลขออร์เดอร์: ${shortId} 🙏`;
     }
     case "INSUFFICIENT":
-      return `ขออภัยค่ะ ${nameOf(order.sku)} ไซซ์ ${order.size} มีของพร้อมส่งแค่ ${order.available} ชิ้น (ขอ ${order.requested}) รับตามจำนวนที่มี หรือเปลี่ยนไซซ์ไหมคะ?`;
+      return english
+        ? `Sorry, ${nameOf(order.sku)} size ${order.size} has only ${order.available} available (${order.requested} requested). Would you like the available quantity or another size?`
+        : `ขออภัยค่ะ ${nameOf(order.sku)} ไซซ์ ${order.size} มีของพร้อมส่งแค่ ${order.available} ชิ้น (ขอ ${order.requested}) รับตามจำนวนที่มี หรือเปลี่ยนไซซ์ไหมคะ?`;
     case "NOT_FOUND":
-      return `ขออภัยค่ะ ไม่พบสินค้า ${nameOf(order.sku)} ไซซ์ ${order.size} ในระบบค่ะ`;
+      return english
+        ? `Sorry, ${nameOf(order.sku)} size ${order.size} was not found.`
+        : `ขออภัยค่ะ ไม่พบสินค้า ${nameOf(order.sku)} ไซซ์ ${order.size} ในระบบค่ะ`;
     case "PHARMACY_POLICY_UNKNOWN":
       return "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติค่ะ จึงยังสร้างออร์เดอร์ให้อัตโนมัติไม่ได้ ทางร้านจะส่งให้เภสัชกรตรวจสอบก่อนนะคะ";
     case "PHARMACY_SAFETY_CHECK_REQUIRED":
@@ -1075,7 +1274,9 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult): st
       return `สินค้านี้สั่งได้ไม่เกิน ${order.maxQuantity} ชิ้นต่อครั้งค่ะ กรุณาปรับจำนวนก่อนยืนยันนะคะ`;
     case "EMPTY":
     default:
-      return `ขออภัยค่ะ ไม่แน่ใจว่าต้องการสั่งอะไร ลองพิมพ์ เช่น "สั่ง Nike XL 2 ชิ้น" ได้เลยค่ะ`;
+      return english
+        ? `I am not sure what you want to order. Try "order Nike XL, quantity 2".`
+        : `ขออภัยค่ะ ไม่แน่ใจว่าต้องการสั่งอะไร ลองพิมพ์ เช่น "สั่ง Nike XL 2 ชิ้น" ได้เลยค่ะ`;
   }
 }
 
@@ -1085,13 +1286,14 @@ async function orderReplyWithCheckout(
   tenantId: string,
   channel: Channel,
   customerRef: string | null | undefined,
-  paymentAccounts: PaymentAccount[]
+  paymentAccounts: PaymentAccount[],
+  english = false
 ): Promise<string> {
-  const base = orderReply(names, order);
+  const base = orderReply(names, order, english);
   if (order.status !== "CREATED") return base;
 
   try {
-    return await orderCheckoutChatReply(tenantId, order.orderId, base);
+    return await orderCheckoutChatReply(tenantId, order.orderId, base, english ? "en" : "th");
   } catch (err) {
     console.error("[BMS] pipeline checkout status load failed:", err);
     return base;
@@ -1156,11 +1358,12 @@ export async function runPipeline(
       ? normalizeShortReplyMessage(message, history)
       : message
   );
+  const englishReply = !isPharmacyTenant && isEnglishCustomerReply(profile.aiLanguage, aiInputMessage);
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
   const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
-  const execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+  let execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
   const pharmacyTrigger = detectPharmacyIntakeTrigger(
     aiInputMessage,
     triggerDefinitions
@@ -1168,6 +1371,8 @@ export async function runPipeline(
   const pharmacyConversationRoute = routePharmacyConversationMessage(aiInputMessage);
   const isPharmacyEmergency =
     pharmacyConversationRoute.intent === "EMERGENCY" || pharmacyTrigger?.intent === "emergency";
+  const isExplicitPharmacyProduct =
+    isPharmacyTenant && isExplicitPharmacyProductRequest(aiInputMessage);
 
   if (isPharmacyEmergency && !isPharmacyTenant) {
     return customerSafe({
@@ -1202,19 +1407,30 @@ export async function runPipeline(
     });
   }
 
+  const shouldPersistCustomerIdentity = Boolean(
+    customerRef && (channel !== "test" || customerRef.startsWith("pharmacy-lab:"))
+  );
+  const canonicalCustomerId = shouldPersistCustomerIdentity
+    ? await ensureCustomerForIdentity(tenantId, channel, customerRef).catch(async (err) => {
+        await reportStateFailure(err, "shared_customer_identity");
+        return null;
+      })
+    : null;
+
   // ===== AI Pharmacy Intake Assistant — deterministic early-return, same
   // shape as the checkoutDetailsFromReply() branch just below: if this
   // conversation has a case in flight, hand the ENTIRE turn to the
   // dedicated orchestrator and never enter the normal AI tool loop. AI
   // never decides to intercept here — the branch itself is deterministic.
-  if (isPharmacyTenant && isPharmacyIntakeEnabled() && (convId || pharmacyTrigger || isPharmacyEmergency)) {
-    const canonicalCustomerId = await ensureCustomerForIdentity(tenantId, channel, customerRef).catch(async (err) => {
-      await reportStateFailure(err, "pharmacy_customer_identity");
-      return null;
-    });
+  if (
+    isPharmacyTenant &&
+    isPharmacyIntakeEnabled() &&
+    (convId || pharmacyTrigger || isExplicitPharmacyProduct || isPharmacyEmergency)
+  ) {
     const pharmacyConvId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
     if (pharmacyConvId) {
       convId = pharmacyConvId;
+      execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
       const pharmacyState = await getPharmacyIntakeState(tenantId, pharmacyConvId).catch(() => ({ stage: "NONE" as const }));
       if (pharmacyState.stage !== "NONE") {
         const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, pharmacyConvId, aiInputMessage, pharmacyState);
@@ -1237,7 +1453,10 @@ export async function runPipeline(
           reply: pharmacyEmergencyReply(),
         });
       }
-      if (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product") {
+      if (
+        !isExplicitPharmacyProduct &&
+        (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")
+      ) {
         return customerSafe({
           channel,
           incoming: message,
@@ -1247,7 +1466,7 @@ export async function runPipeline(
           reply: pharmacyAmbiguousClarificationReply(pharmacyTrigger.protocolKey, pharmacyTriggerDefinitions),
         });
       }
-      const trigger = pharmacyTrigger;
+      const trigger = isExplicitPharmacyProduct ? null : pharmacyTrigger;
       if (trigger) {
         const customerId = canonicalCustomerId ?? await findCustomerIdByIdentity(tenantId, channel, customerRef);
         const started = await startPharmacyIntake(tenantId, pharmacyConvId, customerId, channel, trigger.protocolKey);
@@ -1278,7 +1497,42 @@ export async function runPipeline(
       reply: pharmacyEmergencyReply(),
     });
   }
-  if (isPharmacyTenant && (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")) {
+  if (isPharmacyTenant && pharmacyConversationRoute.intent === "HUMAN_HANDOFF") {
+    const handoffConvId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+    if (handoffConvId) {
+      try {
+        const [conversation, pharmacistIds] = await Promise.all([
+          getConversation(tenantId, handoffConvId),
+          listLicensedPharmacistIds(tenantId),
+        ]);
+        const notifyIds = new Set(pharmacistIds);
+        if (conversation?.assigned_to_user_id) notifyIds.add(String(conversation.assigned_to_user_id));
+        await addNote(
+          tenantId,
+          handoffConvId,
+          "AI",
+          "ลูกค้าขอคุยกับเภสัชกรโดยตรง กรุณาให้เภสัชกรรับช่วงตอบในแชทนี้",
+          [...notifyIds]
+        );
+      } catch (err) {
+        console.error("[BMS] pharmacy direct handoff notification failed:", err);
+        await reportStateFailure(err, "pharmacy_handoff");
+      }
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "pharmacy:human_handoff",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: "รับทราบค่ะ ทางร้านจะให้เภสัชกรรับช่วงตอบในแชทนี้ กรุณารอสักครู่นะคะ",
+    });
+  }
+  if (
+    isPharmacyTenant &&
+    !isExplicitPharmacyProduct &&
+    (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")
+  ) {
     return customerSafe({
       channel,
       incoming: message,
@@ -1370,11 +1624,12 @@ export async function runPipeline(
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply:
         checkout
-          ? `บันทึกข้อมูลแล้วค่ะ\n\n${checkoutNextStepReply(
-              checkout,
-              profile.paymentAccounts
-            )}`
-          : `ขออภัยค่ะ บันทึกข้อมูลจัดส่งไม่สำเร็จ (${executed.result.ok ? "ไม่พบผลลัพธ์" : executed.result.error}) กรุณาตรวจสอบแล้วส่งอีกครั้งนะคะ`,
+          ? englishReply
+            ? `Your delivery details have been saved.\n\n${checkoutNextStepReply(checkout, profile.paymentAccounts, true)}`
+            : `บันทึกข้อมูลแล้วค่ะ\n\n${checkoutNextStepReply(checkout, profile.paymentAccounts)}`
+          : englishReply
+            ? `Sorry, I could not save the delivery details (${executed.result.ok ? "no result returned" : executed.result.error}). Please check them and try again.`
+            : `ขออภัยค่ะ บันทึกข้อมูลจัดส่งไม่สำเร็จ (${executed.result.ok ? "ไม่พบผลลัพธ์" : executed.result.error}) กรุณาตรวจสอบแล้วส่งอีกครั้งนะคะ`,
       trace: [executed.trace],
     });
   }
@@ -1387,7 +1642,7 @@ export async function runPipeline(
       understanding,
       tool: "deterministic:greeting",
       data: { status: "NOT_FOUND", query: message },
-      reply: profile.aiLanguage === "en"
+      reply: englishReply
         ? "Hello! Which product are you interested in?"
         : "สวัสดีค่ะ สนใจสินค้ารุ่นไหน แจ้งชื่อสินค้าได้เลยนะคะ",
     });
@@ -1402,8 +1657,10 @@ export async function runPipeline(
     const lastAssistant =
       [...history].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
     const reply = executed.result.ok
-      ? alternativeCatalogReply(products, lastAssistant)
-      : `ขออภัยค่ะ ดูสินค้าอื่นไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      ? alternativeCatalogReply(products, lastAssistant, englishReply)
+      : englishReply
+        ? `Sorry, I could not load other products (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ ดูสินค้าอื่นไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
     if (convId) {
       await setAiConversationState(tenantId, convId, {}).catch(async (err) => {
         console.error("[BMS] pipeline alternative catalog state clear failed:", err);
@@ -1427,7 +1684,9 @@ export async function runPipeline(
     const executed = await executeCustomerTool("get_order_status", {}, execCtx);
     let reply: string;
     if (!executed.result.ok) {
-      reply = `ขออภัยค่ะ ตรวจสถานะออร์เดอร์ไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      reply = englishReply
+        ? `Sorry, I could not check the order status (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ ตรวจสถานะออร์เดอร์ไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
     } else {
       const orders = Array.isArray((executed.result.data as any)?.orders)
         ? ((executed.result.data as any).orders as Array<{
@@ -1438,8 +1697,12 @@ export async function runPipeline(
         : [];
       const latest = orders[0];
       reply = latest
-        ? `ออร์เดอร์ล่าสุด #${latest.displayOrderId} สถานะ “${orderStatusLabel(latest.status)}” ยอด ${Number(latest.total).toLocaleString()} บาทค่ะ`
-        : "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ ไม่ต้องส่งเลขออร์เดอร์ให้ทางร้านนะคะ หากเพิ่งสั่งไปลองเช็คอีกครั้งในอีกสักครู่ค่ะ";
+        ? englishReply
+          ? `Latest order #${latest.displayOrderId}: ${orderStatusLabel(latest.status, true)}. Total ${Number(latest.total).toLocaleString("en-US")} THB.`
+          : `ออร์เดอร์ล่าสุด #${latest.displayOrderId} สถานะ “${orderStatusLabel(latest.status)}” ยอด ${Number(latest.total).toLocaleString()} บาทค่ะ`
+        : englishReply
+          ? "No order was found for this account. You do not need to send an order number; if you just ordered, please check again shortly."
+          : "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ ไม่ต้องส่งเลขออร์เดอร์ให้ทางร้านนะคะ หากเพิ่งสั่งไปลองเช็คอีกครั้งในอีกสักครู่ค่ะ";
     }
     return customerSafe({
       channel,
@@ -1455,7 +1718,7 @@ export async function runPipeline(
   if (isPaymentSubmission(aiInputMessage)) {
     const method = paymentMethodFromMessage(aiInputMessage);
     if (!method) {
-      const configuredLabels = configuredPaymentMethodLabels(profile.paymentAccounts);
+      const configuredLabels = configuredPaymentMethodLabels(profile.paymentAccounts, englishReply);
       return customerSafe({
         channel,
         incoming: message,
@@ -1464,27 +1727,50 @@ export async function runPipeline(
         data: { status: "NOT_FOUND", query: aiInputMessage },
         reply:
           configuredLabels.length > 0
-            ? `โอนผ่านช่องทางไหนคะ กรุณาเลือกจากช่องทางที่ร้านตั้งไว้: ${configuredLabels.join(
-                " หรือ "
-              )}`
-            : "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ",
+            ? englishReply
+              ? `Which payment method did you use? Please choose a configured method: ${configuredLabels.join(" or ")}.`
+              : `โอนผ่านช่องทางไหนคะ กรุณาเลือกจากช่องทางที่ร้านตั้งไว้: ${configuredLabels.join(
+                  " หรือ "
+                )}`
+            : englishReply
+              ? "The shop has not configured a payment method yet. Please wait for an admin to confirm the details."
+              : "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ",
       });
     }
     const executed = await executeCustomerTool("submit_payment", { method }, execCtx);
     let reply: string;
     if (!executed.result.ok) {
-      reply = `ขออภัยค่ะ แจ้งชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      reply = englishReply
+        ? `Sorry, I could not submit the payment notice (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ แจ้งชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
     } else {
-      const payment = executed.result.data as { status?: string; amount?: number };
+      const payment = executed.result.data as {
+        status?: string;
+        amount?: number;
+        paymentStatus?: "PENDING" | "CONFIRMED";
+      };
       if (payment?.status === "SUBMITTED") {
-        reply = `รับแจ้งการชำระเงินยอด ${Number(payment.amount ?? 0).toLocaleString()} บาทแล้วค่ะ ตอนนี้สถานะยังรอแอดมินตรวจสอบ กรุณารอผลยืนยันนะคะ`;
+        reply = englishReply
+          ? `Payment of ${Number(payment.amount ?? 0).toLocaleString("en-US")} THB has been submitted and is awaiting admin review.`
+          : `รับแจ้งการชำระเงินยอด ${Number(payment.amount ?? 0).toLocaleString()} บาทแล้วค่ะ ตอนนี้สถานะยังรอแอดมินตรวจสอบ กรุณารอผลยืนยันนะคะ`;
+      } else if (payment?.status === "ALREADY_SUBMITTED") {
+        reply = englishReply
+          ? `A payment notification for ${Number(payment.amount ?? 0).toLocaleString("en-US")} THB already exists and is ${payment.paymentStatus === "CONFIRMED" ? "confirmed" : "waiting for admin review"}. No duplicate was created.`
+          : `มีรายการแจ้งชำระเงินยอด ${Number(payment.amount ?? 0).toLocaleString()} บาทอยู่แล้วค่ะ สถานะ${payment.paymentStatus === "CONFIRMED" ? "ยืนยันแล้ว" : "กำลังรอแอดมินตรวจสอบ"} ระบบไม่ได้สร้างรายการซ้ำ`;
       } else if (payment?.status === "ORDER_NOT_FOUND") {
-        reply = "ยังไม่พบออร์เดอร์ล่าสุดของบัญชีนี้ จึงยังแจ้งชำระเงินไม่ได้ค่ะ";
+        reply = englishReply ? "No recent order was found for this account, so payment cannot be submitted yet." : "ยังไม่พบออร์เดอร์ล่าสุดของบัญชีนี้ จึงยังแจ้งชำระเงินไม่ได้ค่ะ";
       } else if (payment?.status === "PAYMENT_METHOD_NOT_CONFIGURED") {
-        reply =
-          "ช่องทางที่แจ้งมายังไม่ได้ตั้งค่าเป็นช่องทางรับชำระเงินของร้านค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
+        reply = englishReply
+          ? "That payment method is not configured as a receiving method for this shop. Please wait for an admin to confirm the details."
+          : "ช่องทางที่แจ้งมายังไม่ได้ตั้งค่าเป็นช่องทางรับชำระเงินของร้านค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ";
+      } else if (payment?.status === "MARKETPLACE_MANAGED") {
+        reply = englishReply
+          ? "Payment for this order is managed in Seller Center. No payment notification was created here."
+          : "ออร์เดอร์ช่องทางนี้จัดการการชำระเงินใน Seller Center ค่ะ ระบบจึงไม่ได้สร้างรายการแจ้งชำระเงินซ้ำ";
       } else {
-        reply = "ขออภัยค่ะ ยังแจ้งชำระเงินไม่ได้ กรุณาตรวจสอบช่องทางที่โอนแล้วลองอีกครั้งนะคะ";
+        reply = englishReply
+          ? "Sorry, payment cannot be submitted yet. Check the payment method and try again."
+          : "ขออภัยค่ะ ยังแจ้งชำระเงินไม่ได้ กรุณาตรวจสอบช่องทางที่โอนแล้วลองอีกครั้งนะคะ";
       }
     }
     return customerSafe({
@@ -1511,8 +1797,10 @@ export async function runPipeline(
       tool: "deterministic:get_payment_info",
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply: executed.result.ok
-        ? paymentInfoReply(accounts)
-        : `ขออภัยค่ะ ตรวจช่องทางชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
+        ? paymentInfoReply(accounts, englishReply)
+        : englishReply
+          ? `Sorry, I could not load the payment methods (${executed.result.error}). Please try again.`
+          : `ขออภัยค่ะ ตรวจช่องทางชำระเงินไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
       trace: [executed.trace],
     });
   }
@@ -1522,11 +1810,13 @@ export async function runPipeline(
     let reply: string;
     let order: CreateOrderResult | undefined;
     if (!executed.result.ok) {
-      reply = `ขออภัยค่ะ สั่งซ้ำไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      reply = englishReply
+        ? `Sorry, I could not reorder (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ สั่งซ้ำไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
     } else {
       const reordered = executed.result.data as CreateOrderResult | { status: "SOURCE_NOT_FOUND" };
       if (reordered?.status === "SOURCE_NOT_FOUND") {
-        reply = "ยังไม่พบออร์เดอร์เดิมของบัญชีนี้ จึงสั่งซ้ำไม่ได้ค่ะ";
+        reply = englishReply ? "No previous order was found for this account, so it cannot be reordered." : "ยังไม่พบออร์เดอร์เดิมของบัญชีนี้ จึงสั่งซ้ำไม่ได้ค่ะ";
       } else {
         order = reordered as CreateOrderResult;
         reply = await orderReplyWithCheckout(
@@ -1535,7 +1825,8 @@ export async function runPipeline(
           tenantId,
           channel,
           customerRef,
-          profile.paymentAccounts
+          profile.paymentAccounts,
+          englishReply
         );
       }
     }
@@ -1551,6 +1842,25 @@ export async function runPipeline(
     });
   }
 
+  const couponCode = couponCodeFromMessage(aiInputMessage);
+  if (couponCode) {
+    const executed = await executeCustomerTool("check_coupon", { code: couponCode }, execCtx);
+    const lookup = executed.result.ok ? ((executed.result.data as Record<string, unknown>) ?? {}) : {};
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:check_coupon",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: executed.result.ok
+        ? couponCheckReply(lookup as any, profile, aiInputMessage)
+        : englishReply
+          ? `Sorry, I could not check that coupon code (${executed.result.error}). Please try again.`
+          : `ขออภัยค่ะ ตรวจโค้ดคูปองไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
+      trace: [executed.trace],
+    });
+  }
+
   if (isCouponWalletQuestion(aiInputMessage)) {
     const executed = await executeCustomerTool("list_customer_coupons", {}, execCtx);
     const wallet =
@@ -1558,8 +1868,10 @@ export async function runPipeline(
         ? ((executed.result.data as any).coupons as CustomerCouponWalletItem[])
         : undefined;
     const reply = executed.result.ok
-      ? await couponQuestionReply(tenantId, channel, customerRef, wallet)
-      : `ขออภัยค่ะ เปิดกระเป๋าคูปองไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      ? await couponQuestionReply(tenantId, channel, customerRef, wallet, englishReply)
+      : englishReply
+        ? `Sorry, I could not open the coupon wallet (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ เปิดกระเป๋าคูปองไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
     return customerSafe({
       channel,
       incoming: message,
@@ -1578,7 +1890,48 @@ export async function runPipeline(
       understanding,
       tool: "couponQuestion",
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: await couponQuestionReply(tenantId, channel, customerRef),
+      reply: await couponQuestionReply(tenantId, channel, customerRef, undefined, englishReply),
+    });
+  }
+
+  if (isStoreInfoQuestion(aiInputMessage)) {
+    const executed = await executeCustomerTool("get_store_info", {}, execCtx);
+    const info = executed.result.ok ? ((executed.result.data as Record<string, unknown>) ?? {}) : {};
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:get_store_info",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: executed.result.ok
+        ? storeInfoReply(info as any, profile, aiInputMessage)
+        : englishReply
+          ? `Sorry, I could not load the shop information (${executed.result.error}). Please try again.`
+          : `ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
+      trace: [executed.trace],
+    });
+  }
+
+  if (isShippingEstimateQuestion(aiInputMessage)) {
+    const province = shippingProvinceFromMessage(aiInputMessage);
+    const executed = await executeCustomerTool(
+      "get_shipping_estimate",
+      province ? { province } : {},
+      execCtx
+    );
+    const estimate = executed.result.ok ? ((executed.result.data as Record<string, unknown>) ?? {}) : {};
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:get_shipping_estimate",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: executed.result.ok
+        ? shippingEstimateReply(estimate as any, profile, aiInputMessage)
+        : englishReply
+          ? `Sorry, I could not calculate shipping (${executed.result.error}). Please try again.`
+          : `ขออภัยค่ะ ตรวจค่าส่งไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
+      trace: [executed.trace],
     });
   }
 
@@ -1670,7 +2023,9 @@ export async function runPipeline(
         let order: CreateOrderResult | undefined;
         const routeTrace = [searched.trace, created.trace];
         if (!created.result.ok) {
-          reply = `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
+          reply = englishReply
+            ? `Sorry, I could not create the order (${created.result.error}). Please try again.`
+            : `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
         } else {
           order = created.result.data as CreateOrderResult;
           reply = await orderReplyWithCheckout(
@@ -1679,7 +2034,8 @@ export async function runPipeline(
             tenantId,
             channel,
             customerRef,
-            profile.paymentAccounts
+            profile.paymentAccounts,
+            englishReply
           );
           if (order.status !== "CREATED") {
             const checked = await executeCustomerTool(
@@ -1689,7 +2045,7 @@ export async function runPipeline(
             );
             routeTrace.push(checked.trace);
             if (checked.result.ok) {
-              reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype) ?? reply;
+              reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype, englishReply) ?? reply;
             }
           }
           if (convId && order.status === "CREATED") {
@@ -1743,19 +2099,26 @@ export async function runPipeline(
       reply = await orderCheckoutChatReply(
         tenantId,
         execCtx.createdOrderId,
-        loop.reply || "รับออร์เดอร์แล้วค่ะ"
+        loop.reply || (englishReply ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ"),
+        englishReply ? "en" : "th"
       );
     } else if (execCtx.pharmacyReviewCaseId) {
       reply = `รายการนี้ต้องให้เภสัชกรตรวจสอบก่อนค่ะ ระบบส่งเข้าคิวแล้ว ยังไม่ได้สร้างออร์เดอร์ เลขเคสสำหรับติดตาม: ${execCtx.pharmacyReviewCaseId}`;
     } else if (hasUnverifiedFacts(loop.reply, loop.trace)) {
-      reply = "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
+      reply = englishReply
+        ? "Sorry, I need to verify that information first. Please ask again or specify the product and size."
+        : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
-      reply = "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
+      reply = englishReply
+        ? "Sorry, that action was not actually saved. Please send the request again."
+        : "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
     } else {
-      const modelReply = loop.reply || "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏";
+      const modelReply = loop.reply || (englishReply
+        ? "Sorry, could you rephrase that request?"
+        : "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏");
       reply = hasConfiguredPaymentAccounts(profile.paymentAccounts)
         ? modelReply
-        : suppressUnconfiguredPaymentAdvice(modelReply);
+        : suppressUnconfiguredPaymentAdvice(modelReply, englishReply);
     }
 
     if (convId) {
@@ -1785,7 +2148,7 @@ export async function runPipeline(
           isBusinessClarification(reply);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
         if (!madeProgress && failedTurns >= profile.aiHandoffAfterFailedTurns) {
-          reply = HANDOFF_REPLY;
+          reply = englishReply ? HANDOFF_REPLY_EN : HANDOFF_REPLY;
           // แจ้ง staff หลักจริงผ่านระบบ @mention เดิม (push notification + bms_conversation_note_mentions)
           // — เดิม addNote() เฉยๆ ไม่มีใครถูกแจ้งเตือนเลย ต้องเปิดแชทเองถึงจะเห็นโน้ตนี้ (พบจากรีวิว
           // จริงใน /admin/inbox ตอนทดสอบ eval — ทุก conversation มี assigned_to_user_id เสมอตาม invariant
@@ -1837,19 +2200,27 @@ export async function runPipeline(
           sort: "availability",
           limit: 3,
         });
-        const alternatives = salesAlternativeText(items);
+        const alternatives = salesAlternativeText(items, englishReply);
         reply = alternatives
-          ? `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
-          : `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้ไหมคะ?`;
+          ? englishReply
+            ? `Sorry, "${it.productText}" was not found. Available products include ${alternatives}. Which one should I check?`
+            : `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
+          : englishReply
+            ? `Sorry, "${it.productText}" was not found. Could you provide the product name, model, color, or category?`
+            : `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ลองระบุชื่อ รุ่น สี หรือหมวดสินค้าเพิ่มได้ไหมคะ?`;
         break;
       }
       names[product.sku] = product.name;
       if (!it.size) {
-        reply = `รับ ${product.name} ไซซ์ไหนดีคะ? แจ้งไซซ์ + จำนวน เช่น "สั่ง XL 2 ชิ้น" ค่ะ`;
+        reply = englishReply
+          ? `Which size of ${product.name} would you like? Please provide the size and quantity, for example "order XL, quantity 2".`
+          : `รับ ${product.name} ไซซ์ไหนดีคะ? แจ้งไซซ์ + จำนวน เช่น "สั่ง XL 2 ชิ้น" ค่ะ`;
         break;
       }
       if (!it.qty) {
-        reply = `รับ ${product.name} ไซซ์ ${it.size} จำนวนกี่ชิ้นดีคะ?`;
+        reply = englishReply
+          ? `How many ${product.name}, size ${it.size}, would you like?`
+          : `รับ ${product.name} ไซซ์ ${it.size} จำนวนกี่ชิ้นดีคะ?`;
         break;
       }
       orderItems.push({ sku: product.sku, size: it.size, qty: it.qty });
@@ -1865,7 +2236,8 @@ export async function runPipeline(
         tenantId,
         channel,
         customerRef,
-        profile.paymentAccounts
+        profile.paymentAccounts,
+        englishReply
       );
       if (
         convId &&
@@ -1886,7 +2258,7 @@ export async function runPipeline(
       }
       if (order.status !== "CREATED" && orderItems.length === 1) {
         const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
-        reply = stockRecoveryReply(stock, profile.businessArchetype) ?? reply;
+        reply = stockRecoveryReply(stock, profile.businessArchetype, englishReply) ?? reply;
       }
     }
 
@@ -1923,9 +2295,11 @@ export async function runPipeline(
 
   let reply: string;
   if (intent === "GREETING") {
-    reply = "สวัสดีค่ะ 😊 สนใจสินค้ารุ่นไหน แจ้งชื่อรุ่น + ไซซ์ได้เลยนะคะ";
+    reply = englishReply
+      ? "Hello! Which product are you interested in? Please provide the product name and size."
+      : "สวัสดีค่ะ 😊 สนใจสินค้ารุ่นไหน แจ้งชื่อรุ่น + ไซซ์ได้เลยนะคะ";
   } else {
-    reply = await generateResponse(tenantId, message, data);
+    reply = await generateResponse(tenantId, message, data, profile.aiLanguage);
   }
 
   return customerSafe({ channel, incoming: message, understanding, tool, data, reply });

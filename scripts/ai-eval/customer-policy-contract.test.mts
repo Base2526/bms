@@ -14,6 +14,36 @@ import {
   hasConfiguredPaymentAccounts,
   supportsCustomerPaymentMethod,
 } from "../../apps/web/lib/bms/paymentConfiguration.ts";
+import {
+  normalizeCustomerIdentity,
+  reorderTargetIdentity,
+} from "../../apps/web/lib/bms/customerIdentity.ts";
+
+test("general and pharmacy flows normalize the same channel customer identity", () => {
+  assert.deepEqual(normalizeCustomerIdentity(" LINE ", "  U123  "), {
+    channel: "line",
+    customerRef: "U123",
+  });
+  assert.equal(normalizeCustomerIdentity("line", "  "), null);
+});
+
+test("a cross-channel reorder is stored on the customer's current identity", () => {
+  assert.deepEqual(
+    reorderTargetIdentity(
+      { channel: "facebook", customerRef: "FB-OLD" },
+      { channel: "line", customerRef: "LINE-CURRENT" }
+    ),
+    { channel: "line", customerRef: "LINE-CURRENT" }
+  );
+  assert.deepEqual(
+    reorderTargetIdentity({ channel: "facebook", customerRef: "FB-OLD" }),
+    { channel: "facebook", customerRef: "FB-OLD" }
+  );
+  assert.deepEqual(
+    reorderTargetIdentity({ channel: "web", customerRef: null }),
+    { channel: "web", customerRef: null }
+  );
+});
 
 test("short Thai requests for other products are catalog discovery", () => {
   assert.equal(isAlternativeCatalogRequest("ดูอย่างอื่นด้วย"), true);
@@ -61,6 +91,10 @@ test("payment-only advice becomes a safe unconfigured notice", () => {
       "สนใจชำระผ่านช่องทางไหนดีคะ โอนธนาคารหรือพร้อมเพย์"
     ),
     "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ"
+  );
+  assert.equal(
+    suppressUnconfiguredPaymentAdvice("Would you like to pay by bank transfer or PromptPay?", true),
+    "The shop has not configured a payment method yet. Please wait for an admin to confirm the details."
   );
 });
 
@@ -189,4 +223,31 @@ test("checkout continuation does not save navigation or existing-address confirm
   ];
   assert.equal(checkoutDetailsFromReply("ดูอย่างอื่นด้วย", history), null);
   assert.equal(checkoutDetailsFromReply("ใช้ข้อมูลเดิม", history), null);
+});
+
+test("English checkout copy and continuation stay on the same deterministic contract", () => {
+  const status = {
+    marketplaceManaged: false,
+    hasRecipientName: true,
+    hasPhone: false,
+    hasShippingAddress: false,
+    shippingAddressCount: 0,
+    defaultAddressLabel: null,
+    missingFields: ["phone", "shippingAddress"] as Array<"phone" | "shippingAddress">,
+  };
+  const reply = checkoutNextStepReply(status, [], true);
+  assert.match(reply, /provide a contact phone number/i);
+  assert.doesNotMatch(reply, /shipping address/i);
+  assert.deepEqual(
+    checkoutDetailsFromReply("Phone: 081-234-5678", [{ role: "assistant", content: reply }]),
+    { phone: "081-234-5678" }
+  );
+  assert.equal(
+    checkoutDetailsFromReply("use existing details", [{ role: "assistant", content: "Please provide the recipient name." }]),
+    null
+  );
+  assert.deepEqual(configuredPaymentMethodLabels([
+    { type: "BANK", bankName: "Example Bank", accountNo: "123" },
+    { type: "PROMPTPAY", promptpayId: "0812345678" },
+  ], true), ["bank transfer", "PromptPay"]);
 });

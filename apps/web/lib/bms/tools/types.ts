@@ -84,6 +84,42 @@ export type BmsTool = {
   example?: { input: Record<string, unknown>; note?: string };
 };
 
+/** Fail fast when the authoritative registry drifts into an unsafe or unusable shape. */
+export function assertValidToolRegistry(tools: readonly BmsTool[]): void {
+  const names = new Set<string>();
+
+  for (const tool of tools) {
+    if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(tool.name)) {
+      throw new Error(`AI tool registry name must be snake_case: ${tool.name}`);
+    }
+    if (names.has(tool.name)) {
+      throw new Error(`AI tool registry contains duplicate name: ${tool.name}`);
+    }
+    names.add(tool.name);
+
+    if (!tool.description.trim()) {
+      throw new Error(`AI tool registry description is empty: ${tool.name}`);
+    }
+    if (tool.surfaces.length === 0 || new Set(tool.surfaces).size !== tool.surfaces.length) {
+      throw new Error(`AI tool registry surfaces are invalid: ${tool.name}`);
+    }
+    if (tool.sensitive && (tool.surfaces.length !== 1 || tool.surfaces[0] !== "staff")) {
+      throw new Error(`Sensitive AI tool must be staff-only: ${tool.name}`);
+    }
+    if (tool.inputSchema.type !== "object" || !tool.inputSchema.properties) {
+      throw new Error(`AI tool registry input schema is invalid: ${tool.name}`);
+    }
+    for (const field of tool.inputSchema.required ?? []) {
+      if (!(field in tool.inputSchema.properties)) {
+        throw new Error(`AI tool registry required field is undeclared: ${tool.name}.${field}`);
+      }
+    }
+    if (tool.commonMistakes?.some((mistake) => !mistake.trim())) {
+      throw new Error(`AI tool registry has an empty commonMistakes entry: ${tool.name}`);
+    }
+  }
+}
+
 // ---- arg validation helpers (model-supplied args = untrusted) ----
 
 export class ToolArgError extends Error {}

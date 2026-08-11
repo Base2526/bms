@@ -4,6 +4,13 @@
 
 ## Customer identity
 
+General-shop and pharmacy-shop archetypes use the same tenant-scoped CRM source of truth:
+`bms_customers` for the person and `bms_customer_identities` for their channel accounts. Orders,
+addresses, conversations, restock subscriptions, coupon wallet rows, and pharmacy assessments all
+reference that shared `customer_id`; there is no separate pharmacy-customer table. This sharing is
+inside one tenant only. Two different shops/tenants must never share or resolve customer data across
+the tenant boundary.
+
 A customer may come from multiple channels (LINE, TikTok, Facebook, Website, ...) that should
 resolve to the same person. **Implemented matching key:** `(tenant_id, channel, external_ref)` via
 `bms_customer_identities` — this is narrower than the originally planned priority list
@@ -12,12 +19,19 @@ cross-channel dedup** by phone or email: the same person messaging via two diffe
 becomes two separate customer records until staff manually merges them
 (`mergeCustomers()` — see [../ui/customer360.md](../ui/customer360.md)).
 
-For pharmacy intake, the customer identity is created before the first assessment rather than
-waiting for post-reply Inbox logging or checkout. Existing conversations and previously orphaned
-assessments linked to those conversations are backfilled to that customer. This makes a consented,
-customer-confirmed intake discoverable as patient memory on a later visit. It does not weaken the cross-channel
+For every persisted customer channel, the pipeline establishes the identity before routing either
+the general commerce flow or pharmacy intake rather than waiting for checkout. New identities claim
+older unlinked orders, conversations, restock subscriptions, and assessments with the exact same
+channel key; migration `7.74__bms_shared_customer_identity_backfill.sql` repairs historical rows for
+identities that already existed. This makes purchase history, saved delivery details, and consented,
+customer-confirmed patient memory discoverable on later visits. It does not weaken the cross-channel
 rule above: identities from different channels are still joined only by an explicit staff merge,
 not by an unverified matching name or phone number.
+
+Every API route that invokes the customer pipeline also invokes the shared Inbox logger, including
+the legacy default-tenant LINE/TikTok mock routes. The logger establishes a missing identity before
+persisting its conversation as a final safety net, so early-return and fallback replies do not leave
+a persistable conversation detached from CRM merely because specialized routing returned first.
 
 Channel identities may also cache platform display metadata. LINE OA currently syncs
 `display_name`, `picture_url`, `status_message`, `language`, `profile_synced_at`, and any sync
@@ -39,6 +53,24 @@ ordered missing-field names; raw CRM PII is not sent merely to decide whether a 
 Complete saved details are reused automatically. Incomplete details are collected one field at a
 time and saved by `saveCustomerCheckoutDetails()` only when the customer explicitly supplied them.
 An identical shipping address is selected as default rather than inserted again.
+
+Customer-safe own-order status, payment submission, and reorder resolve the channel identity to its
+canonical `customer_id` first. After staff merges duplicate LINE/Facebook/etc. records, those reads
+therefore see the combined cross-channel order history. Legacy orders with no `customer_id` remain
+readable only through their exact server-established `(channel, customer_ref)` key. A customer
+reorder creates the new order on the channel currently talking to BMS, even when its source order
+came from another merged identity.
+
+Payment auto-selection is deliberately narrower: it uses only the latest `PENDING` order whose
+stored `(channel, customer_ref)` matches the current server-established identity. It never silently
+selects a merged order from another channel, and Lazada/Shopee remain Seller Center-managed.
+Repeated customer notices reuse an existing active payment instead of inserting another `PENDING`
+payment row.
+
+Manual merge preserves customer-level profile fields as well as linked rows: tags are unioned;
+missing phone/email/note/language/timezone values are filled from the merged record; and follow-up
+opt-out is combined conservatively with boolean OR so merging can never silently re-enable messages
+for a customer who opted out on either identity.
 
 ## Omnichannel Inbox
 

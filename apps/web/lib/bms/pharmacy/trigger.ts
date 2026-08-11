@@ -22,10 +22,8 @@ const PRODUCT_REQUEST_PATTERN =
   /(?:ขอซื้อ|ต้องการซื้อ|อยากซื้อ|ขอสั่ง|สั่งซื้อ|เอา|รับ|มี|ขาย|หา)\s*\S+/i;
 const SPECIFIC_PHARMACY_PRODUCT_PATTERN =
   /(พารา(?:เซตามอล)?|paracetamol|acetaminophen|ibuprofen|ไอบูโพรเฟน|aspirin|แอสไพริน|loratadine|ลอราทาดีน|domperidone|โดมเพอริโดน|ors|เกลือแร่|ผ้าก๊อซ|ยาแดง|แอลกอฮอล์|พลาสเตอร์|สำลี|ปรอท|หน้ากาก)/i;
-const PRODUCT_SPECIFICATION_PATTERN =
-  /\d+(?:\.\d+)?\s*(?:มก\.?|mg|กรัม|g|มล\.?|ml|เม็ด|แคปซูล|แผง|ซอง|ขวด|กล่อง|ชิ้น|นิ้ว)/i;
 const GENERIC_SYMPTOM_MEDICINE_PATTERN =
-  /ยา\s*(?:แก้|สำหรับ)?\s*(?:ปวดหัว|ปวดศีรษะ|ไอ|ท้องเสีย|ถ่ายเหลว|ไข้|แพ้|คลื่นไส้|อาเจียน)(?!\s*\d)/i;
+  /ยา\s*(?:แก้|สำหรับ)?\s*(?:ปวดหัว|ปวดศีรษะ|ไอ|ท้องเสีย|ถ่ายเหลว|ไข้|แพ้|คลื่นไส้|อาเจียน)/i;
 
 export type PharmacyIntakeTriggerIntent = "ambiguous" | "clinical_advice" | "medicine_product" | "emergency";
 
@@ -38,9 +36,10 @@ export function isExplicitPharmacyProductRequest(message: string): boolean {
   const text = String(message || "").trim();
   if (!text || !PRODUCT_REQUEST_PATTERN.test(text)) return false;
   const hasSpecificProduct = SPECIFIC_PHARMACY_PRODUCT_PATTERN.test(text);
-  const hasSpecification = PRODUCT_SPECIFICATION_PATTERN.test(text);
-  if (AMBIGUOUS_HEALTH_PRODUCT_PATTERN.test(text) && !hasSpecificProduct && !hasSpecification) return false;
-  if (GENERIC_SYMPTOM_MEDICINE_PATTERN.test(text) && !hasSpecificProduct && !hasSpecification) return false;
+  // Pack count/size is not a product identity. "ยาแก้ไอให้ลูก 1 ขวด" still
+  // needs clinical clarification; only a named product may bypass intake.
+  if (AMBIGUOUS_HEALTH_PRODUCT_PATTERN.test(text) && !hasSpecificProduct) return false;
+  if (GENERIC_SYMPTOM_MEDICINE_PATTERN.test(text) && !hasSpecificProduct) return false;
   return true;
 }
 

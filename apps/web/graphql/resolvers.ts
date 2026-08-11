@@ -9,6 +9,13 @@ import path from "path";
 import GraphQLJSON from "graphql-type-json";
 
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
+import {
+  normalizeEmail,
+  normalizeUsername,
+  validateEmail,
+  validateNewPassword,
+  validateUsername,
+} from "@/lib/auth/identity";
 import { createAdminSession } from "@/lib/redisSession";
 import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
@@ -65,6 +72,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
 import { reassignStaffConversations } from "@/lib/bms/inbox";
+import { rateLimit } from "@/lib/bms/rateLimit";
 
 import { logAsync } from "@/lib/logger";
 
@@ -148,6 +156,7 @@ type GraphQLUploadFile = {
 // }, 50000);
 
 const TOKEN_TTL_DAYS = 7;
+const DUMMY_PASSWORD_HASH = "$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.";
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 type Iso = string;
@@ -160,6 +169,42 @@ function normalizeStr(input: string): string {
     .replace(/[^a-z0-9]+/g, "_") // อะไรที่ไม่ใช่ a-z 0-9 → _
     .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
+}
+
+function authRequestIp(ctx: any): string {
+  const headers = ctx?.req?.headers;
+  const getHeader = (name: string) =>
+    typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
+  return String(
+    getHeader("cf-connecting-ip") ||
+    getHeader("x-real-ip") ||
+    String(getHeader("x-forwarded-for") || "").split(",")[0].trim() ||
+    "unknown"
+  ).slice(0, 80);
+}
+
+function enforceAuthRateLimit(
+  ctx: any,
+  action: string,
+  identity: string,
+  identityLimit: number,
+  ipLimit: number,
+  windowMs: number
+): void {
+  const ip = authRequestIp(ctx);
+  const identityHash = crypto.createHash("sha256").update(identity).digest("hex").slice(0, 24);
+  const byIp = rateLimit(`auth:${action}:ip:${ip}`, ipLimit, windowMs);
+  const byIdentity = rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs);
+  if (!byIp.ok || !byIdentity.ok) {
+    throw new GraphQLError("Too many attempts. Please try again later.", {
+      extensions: { code: "RATE_LIMITED" },
+    });
+  }
+}
+
+async function passwordMatches(password: string, user: any): Promise<boolean> {
+  const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+  return !!user?.password_hash && valid;
 }
 
 async function getUserById(id: string) {
@@ -2799,25 +2844,21 @@ const rawResolvers = {
         throw new Error("Email/Username and password are required");
       }
 
-      // เลือกฟิลด์ที่ใช้ล็อกอิน: email (แนะนำ) หรือ username (ถ้ามีคอลัมน์นี้ใน users)
-      // ตัวอย่างนี้ใช้ email เป็นหลัก
-      const identifier = email?.trim().toLowerCase() || username?.trim();
-      const idField = email ? "email" : "name"; // ถ้าอยากใช้ username จริง ๆ ให้มีคอลัมน์ username แยก
-
-      // ตรวจสอบรหัสผ่านด้วย pgcrypto (bcrypt)
+      const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
+      if (!identifier) return { ok: false, message: "Invalid credentials" };
+      enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
-        SELECT id, name, email, role, avatar, phone
+        SELECT id, name, username, email, role, avatar, phone, password_hash
         FROM users
-        WHERE ${idField} = $1
-          AND password_hash = crypt($2, password_hash)
+        WHERE ${email ? "lower(btrim(email))" : "lower(btrim(username))"} = $1
         LIMIT 1
         `,
-        [identifier, password]
+        [identifier]
       );
 
       const user = rows[0];
-      if (!user) {
+      if (!(await passwordMatches(password, user))) {
         // ป้องกันการเดารหัส/บัญชี โดยไม่บอกว่า email หรือ password ผิด
         return { ok: false, message: "Invalid credentials" };
       }
@@ -2870,17 +2911,19 @@ const rawResolvers = {
         throw new Error("Email/Username and password are required");
       }
 
-      const emailNorm = email ? String(email).trim().toLowerCase() : null;
-      const usernameNorm = username ? String(username).trim().toLowerCase() : null;
+      const emailNorm = email ? normalizeEmail(email) : null;
+      const usernameNorm = username ? normalizeUsername(username) : null;
+      if (!(emailNorm || usernameNorm)) throw new Error("Invalid credentials");
+      enforceAuthRateLimit(ctx, "login", emailNorm || usernameNorm || "", 10, 60, 15 * 60_000);
 
       const { rows } = emailNorm
-        ? await query("SELECT * FROM users WHERE email=$1", [emailNorm])
-        : await query("SELECT * FROM users WHERE username=$1", [usernameNorm]);
+        ? await query("SELECT * FROM users WHERE lower(btrim(email))=$1 LIMIT 1", [emailNorm])
+        : await query("SELECT * FROM users WHERE lower(btrim(username))=$1 LIMIT 1", [usernameNorm]);
       const user = rows[0];
 
-      if (!user) throw new Error("Invalid credentials");
-      const valid = await bcrypt.compare(password, user.password_hash);
+      const valid = await passwordMatches(password, user);
       if (!valid) throw new Error("Invalid credentials");
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -2898,6 +2941,14 @@ const rawResolvers = {
     },
     loginWithSocial: async (_: any, { input }: any, ctx: any) => {
       const { provider, accessToken } = input;
+      enforceAuthRateLimit(
+        ctx,
+        "social",
+        `${String(provider || "unknown")}:${String(accessToken || "")}`,
+        10,
+        60,
+        15 * 60_000
+      );
 
       let socialData = null;
 
@@ -2912,15 +2963,21 @@ const rawResolvers = {
       if (!socialData) {
         throw new GraphQLError("Social token invalid");
       }
+      if (socialData.email_verified !== true) {
+        throw new GraphQLError("Social account email is not verified");
+      }
 
       const { email, name, picture, provider_id } = socialData;
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) throw new GraphQLError("Social account did not provide a valid email");
+      const emailNorm = emailResult.value;
 
       /* ======================================================
             1) หา user ถ้ามี email อยู่แล้ว → login เลย
          ====================================================== */
       const { rows: existing } = await query(
-        `SELECT * FROM users WHERE email = $1 LIMIT 1`,
-        [email]
+        `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
       );
 
       let user = existing[0];
@@ -2933,14 +2990,22 @@ const rawResolvers = {
 
         const { rows: newUser } = await query(
           `
-          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta)
-          VALUES ($1,$2,$3,$4,'Subscriber', crypt($5, gen_salt('bf')),$6,$7,$8)
+          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta, is_email_verified)
+          VALUES ($1,NULL,$2,$3,'Subscriber', crypt($4, gen_salt('bf')),$5,$6,$7,TRUE)
+          ON CONFLICT (email) DO NOTHING
           RETURNING *
         `,
-          [name, normalizeStr(email), email, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
+          [name, emailNorm, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
         );
 
         user = newUser[0];
+        if (!user) {
+          const raced = await query(
+            `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+            [emailNorm]
+          );
+          user = raced.rows[0];
+        }
       }
 
       /*
@@ -2991,8 +3056,7 @@ const rawResolvers = {
 
       //  id: user.id, email: user.email, role: user.role
 
-      console.log("[loginWithSocial] @1 = ", socialData);
-      console.log("[loginWithSocial] @2 = ", user);
+      if (!user) throw new GraphQLError("Unable to create social account");
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -3023,18 +3087,23 @@ const rawResolvers = {
         throw new Error("Email/Username and password are required");
       }
 
-      const identifier = String(email || username || "").trim().toLowerCase();
+      const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
+      if (!identifier) throw new Error("Invalid credentials");
+      enforceAuthRateLimit(ctx, "admin-login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `SELECT u.*, t.active AS tenant_active
            FROM users u
            LEFT JOIN bms_tenants t ON t.id = u.tenant_id
-          WHERE lower(u.email) = $1 OR lower(u.username) = $1
+          WHERE lower(btrim(u.email)) = $1 OR lower(btrim(u.username)) = $1
           LIMIT 1`,
         [identifier]
       );
       const user = rows[0];
 
-      if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+      if (!(await passwordMatches(password, user))) {
+        throw new Error("Invalid credentials");
+      }
+      if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
         throw new Error("Invalid credentials");
       }
       if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
@@ -3078,20 +3147,73 @@ const rawResolvers = {
         user,
       };
     },
-    registerUser: async(_: any, { input }: any) => {
+    loginMobile: async (_: any, { email, password }: { email: string; password: string }, ctx: any) => {
+      const emailNorm = normalizeEmail(email);
+      if (!emailNorm || !password) throw new Error("Invalid credentials");
+      enforceAuthRateLimit(ctx, "mobile-login", emailNorm, 10, 60, 15 * 60_000);
+      const { rows } = await query(
+        `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
+      );
+      const user = rows[0];
+      if (!(await passwordMatches(password, user))) throw new Error("Invalid credentials");
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+      return { ok: true, message: "Login success", token, user };
+    },
+    registerUser: async(_: any, { input }: any, ctx: any) => {
       const { username, email, phone, password, agree } = input;
       if (!agree) throw new Error('Please accept terms');
-      const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
-      if (exists.length) throw new Error('Email already registered');
+      const usernameResult = validateUsername(username);
+      if (!usernameResult.ok) throw new Error(`Invalid username (${usernameResult.code.toLowerCase()})`);
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) throw new Error("Invalid email");
+      const passwordResult = validateNewPassword(password);
+      if (!passwordResult.ok) throw new Error(`Invalid password (${passwordResult.code.toLowerCase()})`);
 
-      const password_hash = await bcrypt.hash(password, 10);
-      const usernameNorm = String(username || "").trim().toLowerCase();
-      const emailNorm = String(email || "").trim().toLowerCase();
-      const { rows: [u] } = await query(
-        `INSERT INTO users(name, username, email, phone, role, password_hash, is_email_verified)
-        VALUES($1,$2,$3,$4,'Subscriber',$5,FALSE) RETURNING id, name, username, email, role`,
-        [usernameNorm, usernameNorm, emailNorm, phone, password_hash]
+      const usernameNorm = usernameResult.value;
+      const emailNorm = emailResult.value;
+      enforceAuthRateLimit(ctx, "register", emailNorm, 3, 10, 60 * 60_000);
+      const phoneNorm = phone == null || String(phone).trim() === "" ? null : String(phone).trim();
+      if (phoneNorm && (phoneNorm.length > 30 || !/^[0-9+\-\s()]+$/.test(phoneNorm))) {
+        throw new Error("Invalid phone");
+      }
+      const duplicate = await query<{ email_taken: boolean; username_taken: boolean }>(
+        `SELECT
+           EXISTS(SELECT 1 FROM users WHERE lower(btrim(email)) = $1) AS email_taken,
+           EXISTS(SELECT 1 FROM users WHERE lower(btrim(username)) = $2) AS username_taken`,
+        [emailNorm, usernameNorm]
       );
+      if (duplicate.rows[0]?.email_taken) throw new Error('Email already registered');
+      if (duplicate.rows[0]?.username_taken) throw new Error('Username already registered');
+
+      const password_hash = await bcrypt.hash(passwordResult.value, 10);
+      let u: any;
+      try {
+        const inserted = await query(
+          `INSERT INTO users(name, username, email, phone, role, password_hash, is_email_verified)
+          VALUES($1,$2,$3,$4,'Subscriber',$5,FALSE) RETURNING id, name, username, email, role`,
+          [usernameNorm, usernameNorm, emailNorm, phoneNorm, password_hash]
+        );
+        u = inserted.rows[0];
+      } catch (error: any) {
+        if (error?.code !== "23505") throw error;
+        const constraint = String(error?.constraint ?? "");
+        if (constraint.includes("username")) throw new Error('Username already registered');
+        throw new Error('Email already registered');
+      }
+
+      const cleanupUnverifiedRegistration = async () => {
+        await query(
+          `DELETE FROM users
+            WHERE id = $1 AND email = $2 AND username = $3 AND is_email_verified = FALSE`,
+          [u.id, emailNorm, usernameNorm]
+        );
+      };
 
       /* =========================
         CREATE VERIFY TOKEN
@@ -3100,11 +3222,18 @@ const rawResolvers = {
       const tokenHash = sha256Hex(rawToken);         // เก็บใน DB
       const expiryMinutes = 30;
 
-      await query(
-        `INSERT INTO email_verify_tokens(user_id, token_hash, expires_at)
-        VALUES ($1, $2, now() + interval '${expiryMinutes} minutes')`,
-        [u.id, tokenHash]
-      );
+      try {
+        await query(
+          `INSERT INTO email_verify_tokens(user_id, token_hash, expires_at)
+          VALUES ($1, $2, now() + interval '${expiryMinutes} minutes')`,
+          [u.id, tokenHash]
+        );
+      } catch (tokenError) {
+        await cleanupUnverifiedRegistration().catch((cleanupError) => {
+          console.error("[registerUser] cleanup after verification-token failure failed:", cleanupError);
+        });
+        throw tokenError;
+      }
 
       const verify_url =`${process.env.NEXT_PUBLIC_BASE_URL}/verify-email?token=${rawToken}`;
 
@@ -3121,20 +3250,25 @@ const rawResolvers = {
         expiry_minutes: expiryMinutes,
       });
 
-      await sendEmail(
-        {
-          to: email,
-          subject: rendered.subject,
-          html: rendered.html,
-          text: rendered.text,
-        },
-        { category: "auth", triggeredBy: "resolvers:registerUser" }
-      );
+      try {
+        await sendEmail(
+          {
+            to: emailNorm,
+            subject: rendered.subject,
+            html: rendered.html,
+            text: rendered.text,
+          },
+          { category: "auth", triggeredBy: "resolvers:registerUser" }
+        );
+      } catch (mailError) {
+        // Do not leave a newly-created, unusable account that makes the retry look like a duplicate.
+        await cleanupUnverifiedRegistration().catch((cleanupError) => {
+          console.error("[registerUser] cleanup after verification-email failure failed:", cleanupError);
+        });
+        throw mailError;
+      }
 
       // sendMail
-
-      const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: useSecureCookie && !isDev, path: '/' });
 
       /* =========================
         CREATE ADMIN CHAT
@@ -3173,10 +3307,14 @@ const rawResolvers = {
       return true;
     },
     requestPasswordReset: async (_: any, { email }: { email: string }, ctx: any) => {
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) return true;
+      const emailNorm = emailResult.value;
+      enforceAuthRateLimit(ctx, "password-reset", emailNorm, 3, 20, 60 * 60_000);
       // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
       const { rows } = await query(
-        `SELECT id, email, name, language FROM users WHERE email = $1 LIMIT 1`,
-        [email]
+        `SELECT id, email, name, language FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
       );
 
       if (rows.length === 0) {
@@ -3217,25 +3355,24 @@ const rawResolvers = {
       return true;
     },
     resetPassword: async(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any)=>{
-      // 1) หา token
-      const { rows } = await query(
-        `SELECT prt.id, prt.user_id, prt.expires_at, prt.used
-           FROM password_reset_tokens prt
-           WHERE prt.token = $1`,
-        [token]
+      const passwordResult = validateNewPassword(newPassword);
+      if (!passwordResult.ok) throw new Error("Invalid new password");
+      const password_hash = await bcrypt.hash(passwordResult.value, 10);
+      const claimed = await query(
+        `WITH claimed AS (
+           UPDATE password_reset_tokens
+              SET used = true
+            WHERE token = $1 AND used = false AND expires_at > now()
+            RETURNING user_id
+         )
+         UPDATE users u
+            SET password_hash = $2
+           FROM claimed c
+          WHERE u.id = c.user_id
+         RETURNING u.id`,
+        [token, password_hash]
       );
-      if (rows.length === 0) throw new Error("Invalid token");
-
-      const t = rows[0];
-      if (t.used) throw new Error("Token already used");
-      if (new Date(t.expires_at).getTime() < Date.now()) throw new Error("Token expired");
-
-      // Keep the reset path compatible with every password-based login path.
-      const password_hash = await bcrypt.hash(newPassword, 10);
-      await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, t.user_id]);
-
-      // 3) มาร์ค token เป็นใช้แล้ว
-      await query(`UPDATE password_reset_tokens SET used = true WHERE id = $1`, [t.id]);
+      if (!claimed.rowCount) throw new Error("Invalid or expired token");
 
       // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
 
@@ -3244,32 +3381,28 @@ const rawResolvers = {
     verifyEmail: async (_: any, { token }: { token: string }) => {
       const tokenHash = sha256Hex(token);
 
-      const { rows } = await query(
-        `
-        SELECT evt.id, evt.user_id
-        FROM email_verify_tokens evt
-        WHERE evt.token_hash = $1
-          AND evt.used_at IS NULL
-          AND evt.expires_at > now()
-        LIMIT 1
-        `,
+      const verified = await query(
+        `WITH claimed AS (
+           UPDATE email_verify_tokens
+              SET used_at = now()
+            WHERE id = (
+              SELECT id FROM email_verify_tokens
+               WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+               LIMIT 1
+               FOR UPDATE SKIP LOCKED
+            )
+            RETURNING user_id
+         )
+         UPDATE users u
+            SET is_email_verified = true
+           FROM claimed c
+          WHERE u.id = c.user_id
+         RETURNING u.id`,
         [tokenHash]
       );
-
-      if (!rows[0]) {
+      if (!verified.rowCount) {
         return { ok: false, message: "Invalid or expired token" };
       }
-
-      const { id: tokenId, user_id } = rows[0];
-
-      await query(`UPDATE users SET is_email_verified = true WHERE id = $1`, [
-        user_id,
-      ]);
-
-      await query(
-        `UPDATE email_verify_tokens SET used_at = now() WHERE id = $1`,
-        [tokenId]
-      );
 
       return { ok: true, message: "Email verified successfully" };
     },

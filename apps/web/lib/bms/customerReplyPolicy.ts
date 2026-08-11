@@ -14,7 +14,7 @@ export function isAlternativeCatalogRequest(message: string): boolean {
   return ALTERNATIVE_CATALOG_PATTERN.test(String(message || "").trim());
 }
 
-export function suppressUnconfiguredPaymentAdvice(reply: string): string {
+export function suppressUnconfiguredPaymentAdvice(reply: string, english = false): string {
   const text = String(reply || "").trim();
   if (!PAYMENT_CHANNEL_ADVICE_PATTERN.test(text)) return text;
 
@@ -31,7 +31,9 @@ export function suppressUnconfiguredPaymentAdvice(reply: string): string {
     .trim();
   return (
     preservedParagraphs ||
-    "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ"
+    (english
+      ? "The shop has not configured a payment method yet. Please wait for an admin to confirm the details."
+      : "ตอนนี้ทางร้านยังไม่ได้ระบุช่องทางชำระเงินไว้ค่ะ กรุณารอแอดมินแจ้งรายละเอียดก่อนนะคะ")
   );
 }
 
@@ -51,10 +53,13 @@ export type CheckoutReplyStatus = {
  */
 export function checkoutNextStepReply(
   status: CheckoutReplyStatus,
-  paymentAccounts: PaymentAccount[]
+  paymentAccounts: PaymentAccount[],
+  english = false
 ): string {
   if (status.marketplaceManaged) {
-    return "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินใช้งานจาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ";
+    return english
+      ? "Recipient, address, and payment details come from Seller Center, so you do not need to enter them again."
+      : "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินใช้งานจาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ";
   }
 
   const sections: string[] = [];
@@ -62,30 +67,30 @@ export function checkoutNextStepReply(
     const addressLabel = status.defaultAddressLabel
       ? ` “${status.defaultAddressLabel}”`
       : "";
-    sections.push(
-      `พบข้อมูลผู้รับ เบอร์โทร และที่อยู่จัดส่งเดิม${addressLabel}แล้วค่ะ ทางร้านจะใช้ข้อมูลเดิมให้อัตโนมัติ หากต้องการเปลี่ยนแจ้งได้เลยค่ะ`
-    );
+    sections.push(english
+      ? `Your existing recipient, phone number, and shipping address${addressLabel} are complete. The shop will reuse them automatically; tell us if you want to change them.`
+      : `พบข้อมูลผู้รับ เบอร์โทร และที่อยู่จัดส่งเดิม${addressLabel}แล้วค่ะ ทางร้านจะใช้ข้อมูลเดิมให้อัตโนมัติ หากต้องการเปลี่ยนแจ้งได้เลยค่ะ`);
   } else {
     const nextMissing = status.missingFields[0];
     if (nextMissing === "recipientName") {
-      sections.push("ก่อนจัดส่ง รบกวนแจ้งชื่อผู้รับค่ะ");
+      sections.push(english ? "Before shipping, please provide the recipient name." : "ก่อนจัดส่ง รบกวนแจ้งชื่อผู้รับค่ะ");
     } else if (nextMissing === "phone") {
-      sections.push("มีชื่อผู้รับแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งเบอร์โทรศัพท์ที่ติดต่อได้ค่ะ");
+      sections.push(english ? "The recipient name is saved. Please provide a contact phone number." : "มีชื่อผู้รับแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งเบอร์โทรศัพท์ที่ติดต่อได้ค่ะ");
     } else {
-      sections.push("มีชื่อและเบอร์โทรแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งที่อยู่จัดส่งค่ะ");
+      sections.push(english ? "The name and phone number are saved. Please provide the shipping address." : "มีชื่อและเบอร์โทรแล้วค่ะ ก่อนจัดส่งรบกวนแจ้งที่อยู่จัดส่งค่ะ");
     }
   }
 
   const paymentLines =
     status.missingFields.length === 0
-      ? customerPaymentAccountLines(paymentAccounts)
+      ? customerPaymentAccountLines(paymentAccounts, english)
       : [];
   if (paymentLines.length > 0) {
-    sections.push(
-      `ช่องทางชำระเงินที่ร้านตั้งค่าไว้:\n${paymentLines.join(
+    sections.push(english
+      ? `Configured payment methods:\n${paymentLines.join("\n")}\nAfter paying, send the slip here. The shop will review it before confirming payment.`
+      : `ช่องทางชำระเงินที่ร้านตั้งค่าไว้:\n${paymentLines.join(
         "\n"
-      )}\nเมื่อชำระแล้วส่งสลิปมาได้เลยค่ะ ทางร้านจะตรวจสอบก่อนยืนยันยอด`
-    );
+      )}\nเมื่อชำระแล้วส่งสลิปมาได้เลยค่ะ ทางร้านจะตรวจสอบก่อนยืนยันยอด`);
   }
 
   return sections.join("\n\n");
@@ -104,36 +109,36 @@ export function checkoutDetailsFromReply(
   if (!answer) return null;
   if (
     isAlternativeCatalogRequest(answer) ||
-    /^(?:ใช้ข้อมูลเดิม|ใช้ที่อยู่เดิม|ไม่เปลี่ยน|ยกเลิก|ไว้ก่อน|พอก่อน)$/i.test(answer)
+    /^(?:ใช้ข้อมูลเดิม|ใช้ที่อยู่เดิม|ไม่เปลี่ยน|ยกเลิก|ไว้ก่อน|พอก่อน|use (?:the )?existing (?:details|address)|no change|cancel|later)$/i.test(answer)
   ) {
     return null;
   }
 
   if (
-    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?ที่อยู่จัดส่ง/i.test(lastAssistant)
+    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?ที่อยู่จัดส่ง|(?:please\s+)?provide(?:\s+the)?\s+shipping address/i.test(lastAssistant)
   ) {
     return {
       shippingAddress: answer
-        .replace(/^(?:ที่อยู่(?:จัดส่ง)?)\s*[:=-]?\s*/i, "")
+        .replace(/^(?:ที่อยู่(?:จัดส่ง)?|shipping address)\s*[:=-]?\s*/i, "")
         .trim(),
     };
   }
   if (
-    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?เบอร์โทร(?:ศัพท์)?/i.test(
+    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?เบอร์โทร(?:ศัพท์)?|(?:please\s+)?provide(?:\s+a)?\s+contact phone number/i.test(
       lastAssistant
     )
   ) {
     return {
       phone: answer
-        .replace(/^(?:เบอร์(?:โทร(?:ศัพท์)?)?|โทร)\s*[:=-]?\s*/i, "")
+        .replace(/^(?:เบอร์(?:โทร(?:ศัพท์)?)?|โทร|phone(?: number)?)\s*[:=-]?\s*/i, "")
         .trim(),
     };
   }
   if (
-    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?ชื่อผู้รับ/i.test(lastAssistant)
+    /(?:รบกวน|กรุณา|ขอ).*?(?:แจ้ง|ส่ง).*?ชื่อผู้รับ|(?:please\s+)?provide(?:\s+the)?\s+recipient name/i.test(lastAssistant)
   ) {
     return {
-      recipientName: answer.replace(/^ชื่อ(?:ผู้รับ)?\s*[:=-]?\s*/i, "").trim(),
+      recipientName: answer.replace(/^(?:ชื่อ(?:ผู้รับ)?|recipient name)\s*[:=-]?\s*/i, "").trim(),
     };
   }
   return null;

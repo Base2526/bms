@@ -24,6 +24,7 @@ npx tsx --test ../../scripts/ai-eval/restock-lifecycle-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 npx tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
+npx tsx --test ../../scripts/ai-eval/customer-message-routing-contract.test.mts
 ```
 
 ถ้า `tsx` CLI ชนข้อจำกัด IPC ของเครื่องหรือ sandbox ให้ใช้ `node --import tsx --test ...`
@@ -36,6 +37,7 @@ node --import tsx --test ../../scripts/ai-eval/customer-policy-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/slip-reader-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/checkout-token-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
+node --import tsx --test ../../scripts/ai-eval/customer-message-routing-contract.test.mts
 ```
 
 ครอบคลุม:
@@ -61,6 +63,10 @@ node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
   แจ้งช่องทางชำระเงินก่อนข้อมูลจัดส่งครบ · `marketplaceManaged` (Lazada/Shopee) ต้องไม่ถามซ้ำ
 - คำตอบของลูกค้าจะถูกตีเป็นข้อมูลจัดส่งเฉพาะเมื่อคำถามก่อนหน้าถามสิ่งนั้นจริง (คำว่า "ดูอย่างอื่น"/
   "ใช้ข้อมูลเดิม" ต้องไม่ถูกบันทึกเป็นชื่อ/เบอร์/ที่อยู่)
+- deterministic routing แยกโค้ดคูปองออกจากคำถามคูปองทั่วไป, ส่งจังหวัดปลายทางที่ระบุชัดเข้า
+  shipping tool และเลือกภาษา Thai/English ตามค่า tenant โดย parser ข้อมูลจัดส่งรองรับภาษาที่ถาม
+- customer identity contract ใช้ normalization เดียวกันทั้งร้านทั่วไป/ร้านยา และการสั่งซ้ำจาก
+  order ข้าม identity ที่ merge แล้วต้องสร้าง order ใหม่บน channel identity ปัจจุบัน
 - slip-reader contract รับเฉพาะ amount/date/ref/bank, reject malformed/unknown fields
 - slip reader provider error, unsupported image และ timeout ต้อง fallback ได้อย่างปลอดภัย
 - default slip reader เป็น Qwen OCR และ adapters ทั้ง Anthropic/Qwen ต้องคืน contract เดียวกัน
@@ -71,7 +77,10 @@ node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 - pharmacy contract ตรวจ global patient fields, compound conditions (`allOf`/`anyOf`/`not`),
   escalation precedence/mapping, legacy compatibility, bounded protocol validation, dynamic trigger,
   ambiguous confirmation, Product Policy แบบ fail-closed/direct-sale/pharmacist-review/quantity-limit
-  และป้องกัน AI เปลี่ยน assessment status
+  ป้องกัน AI เปลี่ยน assessment status, ปิด generic-medicine pack-count bypass และคง handoff
+  ก่อน consent ไว้ในคิวเภสัชกร รวมถึง patient memory ที่เลือกค่าล่าสุดแยกรายฟิลด์, ไม่ reuse
+  current medications/pregnancy, ตัดอายุเกิน 365 วัน, เก็บ source assessment ถูกต้อง และให้ค่า
+  ล่าสุดจากลูกค้าชนะโดยค่าว่างจาก model ลบข้อมูลเดิมไม่ได้
 
 Pharmacy contract เป็น deterministic suite: ไม่เรียก provider/DB และไม่ใช้ model-as-judge
 สำหรับ clinical safety decision ส่วน migration, approval workflow, LINE OA webhook และ queue

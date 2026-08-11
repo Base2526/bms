@@ -28,6 +28,11 @@ import {
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
 import { checkPharmacySaleInTx, type PharmacySaleBlockStatus, type PharmacySalePolicy } from "./pharmacy/productPolicy";
+import {
+  normalizeCustomerIdentity,
+  reorderTargetIdentity,
+  type CustomerChannelIdentity,
+} from "./customerIdentity";
 
 export type OrderItemInput = { sku: string; size: string; qty: number };
 
@@ -406,12 +411,27 @@ export async function listCustomerOrderStatuses(
   limit = 10
 ): Promise<CustomerOrderStatus[]> {
   const boundedLimit = Math.min(Math.max(limit, 1), 20);
+  const identity = normalizeCustomerIdentity(channel, customerRef);
+  if (!identity) return [];
   const res = await query<{ id: string; status: string; total_amount: string; created_at: Date | string }>(
-    `SELECT id, status, total_amount, created_at
-       FROM bms_orders
-      WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
-      ORDER BY created_at DESC LIMIT $4`,
-    [tenantId, channel, customerRef, boundedLimit]
+    `WITH identity AS (
+       SELECT customer_id
+         FROM bms_customer_identities
+        WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3
+        LIMIT 1
+     )
+     SELECT orders.id, orders.status, orders.total_amount, orders.created_at
+       FROM bms_orders orders
+      WHERE orders.tenant_id = $1
+        AND (
+          orders.customer_id = (SELECT customer_id FROM identity)
+          OR (
+            orders.channel = $2 AND orders.customer_ref = $3
+            AND (orders.customer_id IS NULL OR NOT EXISTS (SELECT 1 FROM identity))
+          )
+        )
+      ORDER BY orders.created_at DESC LIMIT $4`,
+    [tenantId, identity.channel, identity.customerRef, boundedLimit]
   );
   return res.rows.map((row) => ({
     orderId: String(row.id),
@@ -428,12 +448,74 @@ export async function customerOwnsOrder(
   customerRef: string,
   orderId: string
 ): Promise<boolean> {
+  const identity = normalizeCustomerIdentity(channel, customerRef);
+  if (!identity) return false;
   const res = await query(
-    `SELECT 1 FROM bms_orders
-      WHERE tenant_id = $1 AND id::text = $2 AND channel = $3 AND customer_ref = $4 LIMIT 1`,
-    [tenantId, orderId, channel, customerRef]
+    `WITH identity AS (
+       SELECT customer_id
+         FROM bms_customer_identities
+        WHERE tenant_id = $1 AND channel = $3 AND external_ref = $4
+        LIMIT 1
+     )
+     SELECT 1 FROM bms_orders orders
+      WHERE orders.tenant_id = $1 AND orders.id::text = $2
+        AND (
+          orders.customer_id = (SELECT customer_id FROM identity)
+          OR (
+            orders.channel = $3 AND orders.customer_ref = $4
+            AND (orders.customer_id IS NULL OR NOT EXISTS (SELECT 1 FROM identity))
+          )
+        )
+      LIMIT 1`,
+    [tenantId, orderId, identity.channel, identity.customerRef]
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Payment auto-selection is intentionally narrower than order history: only a
+ * PENDING order from the channel currently talking to us may be selected.
+ */
+export async function findCustomerPayableOrder(
+  tenantId: string,
+  channel: Channel,
+  customerRef: string,
+  orderId?: string | null
+): Promise<CustomerOrderStatus | null> {
+  const identity = normalizeCustomerIdentity(channel, customerRef);
+  if (!identity) return null;
+  const res = await query<{ id: string; status: string; total_amount: string; created_at: Date | string }>(
+    `WITH identity AS (
+       SELECT customer_id
+         FROM bms_customer_identities
+        WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3
+        LIMIT 1
+     )
+     SELECT orders.id, orders.status, orders.total_amount, orders.created_at
+       FROM bms_orders orders
+      WHERE orders.tenant_id = $1
+        AND orders.channel = $2
+        AND orders.customer_ref = $3
+        AND orders.status = 'PENDING'
+        AND ($4::text IS NULL OR orders.id::text = $4)
+        AND (
+          orders.customer_id = (SELECT customer_id FROM identity)
+          OR orders.customer_id IS NULL
+          OR NOT EXISTS (SELECT 1 FROM identity)
+        )
+      ORDER BY orders.created_at DESC
+      LIMIT 1`,
+    [tenantId, identity.channel, identity.customerRef, orderId ?? null]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    orderId: String(row.id),
+    displayOrderId: String(row.id).slice(0, 8),
+    status: row.status,
+    total: Number(row.total_amount),
+    date: new Date(row.created_at).toISOString(),
+  };
 }
 
 /**
@@ -444,7 +526,8 @@ export async function customerOwnsOrder(
 export async function reorderFromOrder(
   tenantId: string,
   orderId: string,
-  editorId?: string | number | null
+  editorId?: string | number | null,
+  currentIdentity?: CustomerChannelIdentity | null
 ): Promise<ReorderResult> {
   const src = await query<{ channel: Channel; customer_ref: string | null; preferred_carrier: string | null }>(
     `SELECT channel, customer_ref, preferred_carrier FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
@@ -458,10 +541,15 @@ export async function reorderFromOrder(
   );
   if (itemsRes.rowCount === 0) return { status: "EMPTY" };
 
+  const targetIdentity = reorderTargetIdentity(
+    { channel: src.rows[0].channel, customerRef: src.rows[0].customer_ref },
+    currentIdentity
+  );
+
   return createOrder({
     tenantId,
-    channel: src.rows[0].channel,
-    customerRef: src.rows[0].customer_ref,
+    channel: targetIdentity.channel as Channel,
+    customerRef: targetIdentity.customerRef,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
     editorId,
     // Same customer reordering — keep the carrier they asked for last time.

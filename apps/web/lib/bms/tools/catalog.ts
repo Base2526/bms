@@ -14,6 +14,7 @@ import {
   type ExecCtx,
   ToolArgError,
   type ToolResult,
+  assertValidToolRegistry,
   enumVal,
   optInt,
   optString,
@@ -39,10 +40,11 @@ import {
   reorderFromOrder,
   getOrderJourney,
   listCustomerOrderStatuses,
+  findCustomerPayableOrder,
   customerOwnsOrder as serviceCustomerOwnsOrder,
 } from "../orders";
 import { createProductReviewAssessmentOnce } from "../pharmacy/assessments";
-import { submitPayment, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
+import { submitPayment, submitPaymentOnce, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
 import {
   createShipment,
   updateTracking,
@@ -51,6 +53,7 @@ import {
   getShipmentLabel,
   CARRIERS,
   SHIPMENT_STATUSES,
+  MARKETPLACE_CHANNELS,
 } from "../shipping";
 import {
   createPurchaseOrder,
@@ -576,6 +579,12 @@ const getOrderStatus: BmsTool = {
     "Never ask the customer for an order number before calling this; call first, then read the result to see whether an order exists. Staff surface: pass orderId for the full journey.",
   surfaces: ["customer", "staff"],
   permission: "order.view",
+  whenToUse: "The customer asks about order status or purchase history. On the customer surface, call immediately with no orderId so the backend resolves canonical customer history safely.",
+  whenNotToUse: "The customer says they have paid or transferred already -> use submit_payment after verifying the configured payment method; do not use order history to choose a payable order yourself.",
+  commonMistakes: [
+    "Never ask a customer for orderId before the first call and never pass an orderId on the customer surface; canonical ownership is resolved from the server-established identity.",
+  ],
+  example: { input: {}, note: "Customer asked for the status of their latest order." },
   inputSchema: {
     type: "object",
     properties: { orderId: { type: "string", description: "Order id (staff surface only)." } },
@@ -601,6 +610,12 @@ const getCustomerCheckoutTool: BmsTool = {
     "Call before asking for delivery details. If missingFields is empty, reuse the existing details and do not ask the customer to type them again. " +
     "Lazada/Shopee return marketplaceManaged=true because Seller Center owns delivery and payment details.",
   surfaces: ["customer"],
+  whenToUse: "After create_order/reorder, or before asking for recipient name, phone or address, check which delivery fields are already complete.",
+  whenNotToUse: "Do not use this to retrieve raw customer PII; it intentionally returns completeness only. Lazada/Shopee delivery remains in Seller Center.",
+  commonMistakes: [
+    "If missingFields is empty, reuse the saved details and do not ask the customer to type or reconfirm them.",
+  ],
+  example: { input: {}, note: "Check delivery completeness before asking the customer for any PII." },
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec): Promise<ToolResult> => {
     if (!ec.channel || !ec.customerRef) {
@@ -1091,6 +1106,15 @@ const saveCustomerCheckoutDetailsTool: BmsTool = {
     "Pass only fields present in the customer's message; omitted fields keep their existing values. " +
     "Never call this merely to reconfirm existing data. After saving, use returned missingFields and ask for only the first remaining field.",
   surfaces: ["customer"],
+  whenToUse: "The customer's current message explicitly supplies one or more missing delivery fields returned by get_customer_checkout.",
+  whenNotToUse: "Existing fields are already complete, the customer only confirmed them, or the message did not explicitly contain new delivery data.",
+  commonMistakes: [
+    "Pass only fields explicitly present in the current customer message; omitted fields are preserved and must not be reconstructed from chat memory.",
+  ],
+  example: {
+    input: { phone: "0812345678" },
+    note: "The backend requested phone as the first missing field and the customer supplied it in this message.",
+  },
   inputSchema: {
     type: "object",
     properties: {
@@ -1157,18 +1181,29 @@ const submitPaymentTool: BmsTool = {
   name: "submit_payment",
   description:
     "Record a customer payment notification (status PENDING — funds are NOT confirmed; an admin must verify the slip first). Use when the customer says they have transferred. " +
-    "Customer surface: never ask for or pass orderId — leave it empty and the latest order for this customer is used automatically. " +
+    "Customer surface: never ask for or pass orderId — leave it empty and the latest PENDING order on the current channel is used automatically; repeated notices reuse an existing active payment. " +
+    "Lazada/Shopee payment stays in Seller Center and must not create a payment here. " +
     "Before suggesting or accepting a customer payment method, call get_payment_info and use only a configured channel returned there. " +
     "You must know `method` (the channel they transferred through) before calling. If the customer did not say which configured channel, ask exactly one confirming question first. Never guess.",
   surfaces: ["customer", "staff"],
   permission: "payment.submit",
+  whenToUse: "The customer explicitly says payment was transferred and the exact configured receiving method is known, or staff wants to record a payment against an explicit orderId.",
+  whenNotToUse: "The customer is only asking how to pay -> use get_payment_info; the method is unknown/unconfigured; or the channel is Lazada/Shopee where Seller Center owns payment.",
+  commonMistakes: [
+    "On the customer surface never pass orderId: the backend selects only a PENDING order on the current channel, even though get_order_status can show canonical cross-channel history.",
+    "A repeated customer notice may return ALREADY_SUBMITTED; report that the existing payment is awaiting review and never create or claim a duplicate.",
+  ],
+  example: {
+    input: { method: "BANK_TRANSFER", slipRef: "customer-provided-reference" },
+    note: "Customer confirmed a transfer to a BANK account returned by get_payment_info; orderId is omitted on the customer surface.",
+  },
   inputSchema: {
     type: "object",
     properties: {
       orderId: {
         type: "string",
         description:
-          "Order id. Customer surface may leave it empty (latest order is used automatically); staff surface must provide it.",
+          "Order id. Customer surface leaves it empty (latest PENDING order on the current channel); staff surface must provide it.",
       },
       method: { type: "string", enum: PAYMENT_METHODS as unknown as string[] },
       amount: { type: "number", description: "Amount transferred (omit = order total)." },
@@ -1180,6 +1215,9 @@ const submitPaymentTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const method = enumVal(args, "method", PAYMENT_METHODS)!;
     if (ec.surface === "customer") {
+      if (ec.channel && MARKETPLACE_CHANNELS.has(ec.channel)) {
+        return { ok: true, data: { status: "MARKETPLACE_MANAGED" } };
+      }
       const profile = await getStoreProfile(ec.tenantId);
       if (!supportsCustomerPaymentMethod(profile.paymentAccounts, method)) {
         return {
@@ -1194,21 +1232,26 @@ const submitPaymentTool: BmsTool = {
       }
     }
     let orderId = optString(args, "orderId") ?? null;
-    if (!orderId) {
-      // ฝั่งลูกค้าไม่รู้/ไม่ต้องบอก orderId เอง — resolve เป็นออร์เดอร์ล่าสุดของลูกค้าคนนี้ในช่องทางนี้
-      // (pattern เดียวกับ get_order_status ด้านบน) ฝั่งแอดมินต้องระบุมาตรงๆ เสมอ (ไม่เดาแทนแอดมิน)
-      if (ec.surface !== "customer" || !ec.customerRef || !ec.channel) {
+    if (ec.surface === "customer") {
+      if (!ec.customerRef || !ec.channel) {
+        return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+      }
+      const payable = await findCustomerPayableOrder(
+        ec.tenantId,
+        ec.channel,
+        ec.customerRef,
+        orderId
+      );
+      if (!payable) return { ok: true, data: { status: "ORDER_NOT_FOUND" } };
+      orderId = payable.orderId;
+    } else {
+      if (!orderId) {
         return { ok: false, error: "ต้องระบุ orderId" };
       }
-      const [latest] = await listCustomerOrderStatuses(ec.tenantId, ec.channel, ec.customerRef, 1);
-      if (!latest) return { ok: false, error: "ไม่พบออร์เดอร์ของคุณ" };
-      orderId = latest.orderId;
-    }
-    if (ec.surface === "customer" && !(await customerOwnsOrder(ec, orderId))) {
-      return { ok: false, error: "ไม่พบออร์เดอร์นี้ในบัญชีของคุณ" };
     }
     const amount = typeof args.amount === "number" ? args.amount : undefined;
-    const r = await submitPayment({
+    const submit = ec.surface === "customer" ? submitPaymentOnce : submitPayment;
+    const r = await submit({
       tenantId: ec.tenantId,
       orderId,
       method,
@@ -1259,7 +1302,10 @@ const reorderTool: BmsTool = {
     const r = await reorderFromOrder(
       ec.tenantId,
       orderId,
-      ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null
+      ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
+      ec.surface === "customer" && ec.channel && ec.customerRef
+        ? { channel: ec.channel, customerRef: ec.customerRef }
+        : null
     );
     if ((r as any).status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = (r as any).orderId;
@@ -2160,6 +2206,8 @@ export const ALL_TOOLS: BmsTool[] = [
   // A3
   ...A3_TOOLS,
 ];
+
+assertValidToolRegistry(ALL_TOOLS);
 
 /** ทูลฝั่งลูกค้า: เฉพาะ surface=customer (ไม่มี A3/A2-staff ตั้งแต่ต้น) */
 export function customerTools(): BmsTool[] {

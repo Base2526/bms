@@ -3,7 +3,13 @@ import test from "node:test";
 
 import { understand } from "../../apps/web/lib/bms/nlu.ts";
 import { __toolLoopTest, type ToolLoopOptions, type ToolLoopTestDeps } from "../../apps/web/lib/bms/tools/runtime.ts";
-import { optInt, reqString, type BmsTool, type ExecCtx } from "../../apps/web/lib/bms/tools/types.ts";
+import {
+  assertValidToolRegistry,
+  optInt,
+  reqString,
+  type BmsTool,
+  type ExecCtx,
+} from "../../apps/web/lib/bms/tools/types.ts";
 
 const CREDS = {
   apiKey: "eval-key-never-sent",
@@ -59,6 +65,36 @@ function baseOptions(tools: BmsTool[] = []): ToolLoopOptions {
     },
   };
 }
+
+test("tool registry validation accepts a well-formed registry", () => {
+  assert.doesNotThrow(() =>
+    assertValidToolRegistry([
+      makeTool({ name: "read_order", surfaces: ["customer", "staff"] }),
+      makeTool({ name: "cancel_order", surfaces: ["staff"], sensitive: true }),
+    ])
+  );
+});
+
+test("tool registry validation rejects duplicate, unsafe, and incomplete definitions", () => {
+  assert.throws(
+    () => assertValidToolRegistry([makeTool({ name: "read_order" }), makeTool({ name: "read_order" })]),
+    /duplicate name/
+  );
+  assert.throws(
+    () => assertValidToolRegistry([makeTool({ name: "refund_payment", surfaces: ["customer"], sensitive: true })]),
+    /staff-only/
+  );
+  assert.throws(
+    () =>
+      assertValidToolRegistry([
+        makeTool({
+          name: "create_order",
+          inputSchema: { type: "object", properties: {}, required: ["items"] },
+        }),
+      ]),
+    /required field is undeclared/
+  );
+});
 
 function depsFor(
   provider: ToolLoopTestDeps["callProvider"],

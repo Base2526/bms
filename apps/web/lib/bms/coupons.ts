@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { findCustomerIdByIdentity } from "./customers";
 
 export type CouponType = "PERCENT" | "FIXED";
 
@@ -93,22 +94,6 @@ export type CustomerCouponLookup = {
 };
 
 export type CustomerCouponWalletItem = CustomerCoupon;
-
-export async function findCustomerIdByIdentity(
-  tenantId: string,
-  channel?: string | null,
-  customerRef?: string | null
-): Promise<string | null> {
-  if (!channel || !customerRef) return null;
-  const res = await query<{ customer_id: string }>(
-    `SELECT customer_id
-       FROM bms_customer_identities
-      WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3
-      LIMIT 1`,
-    [tenantId, channel, customerRef]
-  );
-  return res.rows[0]?.customer_id ?? null;
-}
 
 function discountFor(c: Coupon, subtotal: number | null | undefined): number | null {
   if (subtotal == null || !Number.isFinite(subtotal) || subtotal < 0) return null;

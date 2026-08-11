@@ -6,6 +6,7 @@ import type { PoolClient } from "pg";
 import { query, getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { normalizeProvince } from "./shippingZones";
+import { normalizeCustomerIdentity } from "./customerIdentity";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const MARKETPLACE_CHECKOUT_CHANNELS = new Set(["lazada", "shopee"]);
@@ -270,28 +271,39 @@ export async function resolveOrCreateCustomer(
   channel: string,
   externalRef: string | null
 ): Promise<string | null> {
-  if (!externalRef) return null;
+  const identity = normalizeCustomerIdentity(channel, externalRef);
+  if (!identity) return null;
+  const { channel: normalizedChannel, customerRef: normalizedRef } = identity;
 
   const found = await client.query<{ customer_id: string }>(
     `SELECT customer_id FROM bms_customer_identities
       WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3`,
-    [tenantId, channel, externalRef]
+    [tenantId, normalizedChannel, normalizedRef]
   );
   if (found.rowCount && found.rows[0]) return found.rows[0].customer_id;
 
   const cust = await client.query<{ id: string }>(
     `INSERT INTO bms_customers (tenant_id, name, tags) VALUES ($1, $2, ARRAY['ลูกค้าใหม่']) RETURNING id`,
-    [tenantId, externalRef]
+    [tenantId, normalizedRef]
   );
   const customerId = cust.rows[0].id;
-  const identity = await client.query<{ customer_id: string }>(
+  const insertedIdentity = await client.query<{ customer_id: string }>(
     `INSERT INTO bms_customer_identities (tenant_id, customer_id, channel, external_ref)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (tenant_id, channel, external_ref) DO NOTHING
      RETURNING customer_id`,
-    [tenantId, customerId, channel, externalRef]
+    [tenantId, customerId, normalizedChannel, normalizedRef]
   );
-  if (identity.rows[0]) return identity.rows[0].customer_id;
+  if (insertedIdentity.rows[0]) {
+    await linkCustomerOwnedRecordsInTx(
+      client,
+      tenantId,
+      normalizedChannel,
+      normalizedRef,
+      insertedIdentity.rows[0].customer_id
+    );
+    return insertedIdentity.rows[0].customer_id;
+  }
 
   // Another webhook may have established the same identity concurrently.
   // Discard this transaction's unused customer row and use the winner so an
@@ -299,7 +311,7 @@ export async function resolveOrCreateCustomer(
   const winner = await client.query<{ customer_id: string }>(
     `SELECT customer_id FROM bms_customer_identities
       WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3`,
-    [tenantId, channel, externalRef]
+    [tenantId, normalizedChannel, normalizedRef]
   );
   await client.query(
     `DELETE FROM bms_customers
@@ -310,52 +322,107 @@ export async function resolveOrCreateCustomer(
         )`,
     [tenantId, customerId]
   );
-  return winner.rows[0]?.customer_id ?? null;
+  const winnerId = winner.rows[0]?.customer_id ?? null;
+  if (winnerId) {
+    await linkCustomerOwnedRecordsInTx(
+      client,
+      tenantId,
+      normalizedChannel,
+      normalizedRef,
+      winnerId
+    );
+  }
+  return winnerId;
+}
+
+async function linkCustomerOwnedRecordsInTx(
+  client: PoolClient,
+  tenantId: string,
+  channel: string,
+  customerRef: string,
+  customerId: string
+): Promise<void> {
+  await client.query(
+    `UPDATE bms_orders
+        SET customer_id = $4, updated_at = now()
+      WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
+        AND customer_id IS NULL`,
+    [tenantId, channel, customerRef, customerId]
+  );
+  await client.query(
+    `UPDATE bms_conversations
+        SET customer_id = $4, updated_at = now()
+      WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
+        AND customer_id IS NULL`,
+    [tenantId, channel, customerRef, customerId]
+  );
+  await client.query(
+    `UPDATE bms_restock_subscriptions
+        SET customer_id = $4, updated_at = now()
+      WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
+        AND customer_id IS NULL`,
+    [tenantId, channel, customerRef, customerId]
+  );
+  await client.query(
+    `UPDATE bms_pharmacy_assessments assessment
+        SET customer_id = $4, updated_at = now()
+       FROM bms_conversations conversation
+      WHERE assessment.tenant_id = $1
+        AND conversation.tenant_id = $1
+        AND conversation.channel = $2
+        AND conversation.customer_ref = $3
+        AND conversation.customer_id = $4
+        AND assessment.conversation_id = conversation.id
+        AND assessment.customer_id IS NULL`,
+    [tenantId, channel, customerRef, customerId]
+  );
+}
+
+export async function findCustomerIdByIdentity(
+  tenantId: string,
+  channel?: string | null,
+  customerRef?: string | null
+): Promise<string | null> {
+  const identity = normalizeCustomerIdentity(channel, customerRef);
+  if (!identity) return null;
+  const res = await query<{ customer_id: string }>(
+    `SELECT ci.customer_id
+       FROM bms_customer_identities ci
+       JOIN bms_customers customer
+         ON customer.tenant_id = ci.tenant_id
+        AND customer.id = ci.customer_id
+        AND customer.deleted_at IS NULL
+      WHERE ci.tenant_id = $1 AND ci.channel = $2 AND ci.external_ref = $3
+      LIMIT 1`,
+    [tenantId, identity.channel, identity.customerRef]
+  );
+  return res.rows[0]?.customer_id ?? null;
 }
 
 /**
- * Establish the canonical CRM customer before a health intake is created.
- * Customer webhooks normally persist the Inbox after runPipeline() returns;
- * pharmacy intake needs the customer_id earlier so reusable consented health
- * context is never orphaned on a first-ever message.
+ * Establish the shared canonical CRM customer for commerce and pharmacy flows.
+ * New identities also claim any older unlinked records with the same channel key;
+ * deployment migration 7.74 performs the equivalent backfill for existing identities.
  */
 export async function ensureCustomerForIdentity(
   tenantId: string,
   channel: string,
   externalRef: string | null | undefined
 ): Promise<string | null> {
-  const ref = String(externalRef || "").trim();
-  if (!ref) return null;
+  const identity = normalizeCustomerIdentity(channel, externalRef);
+  if (!identity) return null;
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    const customerId = await resolveOrCreateCustomer(client, tenantId, channel, ref);
+    const customerId = await resolveOrCreateCustomer(
+      client,
+      tenantId,
+      identity.channel,
+      identity.customerRef
+    );
     if (!customerId) {
       await client.query("ROLLBACK");
       return null;
-    }
-    await client.query(
-      `UPDATE bms_conversations
-          SET customer_id = $4, updated_at = now()
-        WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3
-          AND customer_id IS DISTINCT FROM $4`,
-      [tenantId, channel, ref, customerId]
-    );
-    const conversations = await client.query<{ id: string }>(
-      `SELECT id FROM bms_conversations
-        WHERE tenant_id = $1 AND channel = $2 AND customer_ref = $3`,
-      [tenantId, channel, ref]
-    );
-    const conversationIds = conversations.rows.map((row) => row.id);
-    if (conversationIds.length > 0) {
-      await client.query(
-        `UPDATE bms_pharmacy_assessments
-            SET customer_id = $3, updated_at = now()
-          WHERE tenant_id = $1
-            AND conversation_id = ANY($2::uuid[])
-            AND customer_id IS NULL`,
-        [tenantId, conversationIds, customerId]
-      );
     }
     await client.query("COMMIT");
     return customerId;
@@ -476,8 +543,19 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
   try {
     await beginTenantTx(client, tenantId);
 
-    const rows = await client.query<{ id: string; name: string; phone: string | null; note: string | null; tags: string[] }>(
-      `SELECT id, name, phone, note, tags FROM bms_customers
+    const rows = await client.query<{
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      note: string | null;
+      tags: string[];
+      preferred_language: string | null;
+      timezone: string | null;
+      followup_opt_out: boolean;
+    }>(
+      `SELECT id, name, phone, email, note, tags, preferred_language, timezone, followup_opt_out
+         FROM bms_customers
         WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
         FOR UPDATE`,
       [tenantId, [keepId, mergeId]]
@@ -500,9 +578,42 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       [tenantId, mergeId, keepId]
     );
     await client.query(
+      `UPDATE bms_customer_addresses source
+          SET is_default = false
+        WHERE source.tenant_id = $1
+          AND source.customer_id = $2
+          AND source.is_default = true
+          AND EXISTS (
+            SELECT 1
+              FROM bms_customer_addresses destination
+             WHERE destination.tenant_id = $1
+               AND destination.customer_id = $3
+               AND destination.address_type = source.address_type
+               AND destination.is_default = true
+          )`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
       `UPDATE bms_customer_addresses SET customer_id = $3
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `WITH ranked AS (
+         SELECT id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY address_type
+                  ORDER BY is_default DESC, id
+                ) AS position
+           FROM bms_customer_addresses
+          WHERE tenant_id = $1 AND customer_id = $2
+       )
+       UPDATE bms_customer_addresses address
+          SET is_default = (ranked.position = 1)
+         FROM ranked
+        WHERE address.id = ranked.id
+          AND address.is_default IS DISTINCT FROM (ranked.position = 1)`,
+      [tenantId, keepId]
     );
     await client.query(
       `UPDATE bms_conversations SET customer_id = $3
@@ -514,6 +625,63 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
     );
+    await client.query(
+      `UPDATE bms_restock_subscriptions SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_customer_coupon_wallet destination
+          SET state = source.state,
+              claimed_at = source.claimed_at,
+              reserved_at = source.reserved_at,
+              reserved_order_id = source.reserved_order_id,
+              redeemed_at = source.redeemed_at,
+              redeemed_order_id = source.redeemed_order_id,
+              expired_at = source.expired_at,
+              revoked_at = source.revoked_at,
+              updated_at = GREATEST(destination.updated_at, source.updated_at)
+         FROM bms_customer_coupon_wallet source
+        WHERE source.tenant_id = $1
+          AND source.customer_id = $2
+          AND destination.tenant_id = $1
+          AND destination.customer_id = $3
+          AND destination.coupon_id = source.coupon_id
+          AND (
+            CASE source.state
+              WHEN 'REDEEMED' THEN 60 WHEN 'RESERVED' THEN 50 WHEN 'REVOKED' THEN 40
+              WHEN 'EXPIRED' THEN 30 WHEN 'CLAIMED' THEN 20 ELSE 10
+            END
+            >
+            CASE destination.state
+              WHEN 'REDEEMED' THEN 60 WHEN 'RESERVED' THEN 50 WHEN 'REVOKED' THEN 40
+              WHEN 'EXPIRED' THEN 30 WHEN 'CLAIMED' THEN 20 ELSE 10
+            END
+            OR (source.state = destination.state AND source.updated_at > destination.updated_at)
+          )`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `DELETE FROM bms_customer_coupon_wallet source
+        USING bms_customer_coupon_wallet destination
+       WHERE source.tenant_id = $1
+         AND source.customer_id = $2
+         AND destination.tenant_id = $1
+         AND destination.customer_id = $3
+         AND destination.coupon_id = source.coupon_id`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_customer_coupon_wallet SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // Any cached insight for either record is stale after histories are combined.
+    await client.query(
+      `DELETE FROM bms_customer_ai_summary
+        WHERE tenant_id = $1 AND customer_id = ANY($2::uuid[])`,
+      [tenantId, [keepId, mergeId]]
+    );
 
     const mergedTags = Array.from(new Set([...(keep.tags || []), ...(merge.tags || [])]));
     await client.query(
@@ -521,9 +689,23 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
          phone = COALESCE(phone, $2),
          note = COALESCE(note, $3),
          tags = $4,
+         email = COALESCE(email, $6),
+         preferred_language = COALESCE(preferred_language, $7),
+         timezone = COALESCE(timezone, $8),
+         followup_opt_out = followup_opt_out OR $9,
          updated_at = now()
        WHERE tenant_id = $1 AND id = $5`,
-      [tenantId, merge.phone, merge.note, mergedTags, keepId]
+      [
+        tenantId,
+        merge.phone,
+        merge.note,
+        mergedTags,
+        keepId,
+        merge.email,
+        merge.preferred_language,
+        merge.timezone,
+        merge.followup_opt_out,
+      ]
     );
     await client.query(
       `UPDATE bms_customers SET deleted_at = now(), updated_at = now()
