@@ -216,8 +216,8 @@ export default function Page() {
       <Alert
         type="warning"
         showIcon
-        message="ไม่มีสิทธิ์ดู Dashboard"
-        description="บัญชีนี้ยังไม่มีสิทธิ์ report.view จึงไม่สามารถเปิดภาพรวมรายงานของร้านได้"
+        message={t("admin_dashboard.no_permission_title")}
+        description={t("admin_dashboard.no_permission_desc")}
       />
     );
   }

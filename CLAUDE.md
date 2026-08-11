@@ -148,6 +148,37 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   community pages `/my/posts`, `/my/profile`, `/post/**`, `/post/[id]/edit`, `/profile/[id]` (English-
   only, no Thai to leak, simply never localized — out of scope, these predate BMS). The admin app
   (`/admin/**`) is completely unaffected by this pass and still has zero i18n plumbing.
+- **Admin app i18n — first 10 files done (2026-08)**: a follow-up pass started converting `/admin/**`
+  (previously 0% — no file called `useI18n()`). `admin_dashboard`/`admin_orders`/`admin_reports`/
+  `admin_settings`/`admin_store_profile`/`admin_report_subscription` namespaces already existed with
+  most keys wired; this pass finished the one gap in `admin/dashboard/page.tsx` (the "no `report.view`
+  permission" `Alert` was still two hardcoded Thai strings) and fully converted the Inbox surface —
+  `admin/inbox/page.tsx` (2,261 lines; new `admin_inbox` namespace, ~150 keys), plus confirming
+  `Customer360Panel.tsx`/`admin/inbox/mentions/page.tsx`/`admin/inbox/realtime-diagnostics/page.tsx`
+  were already fully converted in an earlier untracked pass (they use `admin_inbox_customer360`/
+  `admin_inbox_mentions`/`admin_inbox_diagnostics`, which is why an earlier Thai-character-density
+  audit of this codebase mis-flagged them as untranslated — it counted raw Thai characters without
+  excluding files that had already moved their copy into the dictionary). Dictionary is now **30
+  namespaces** total (`apps/web/i18n/{th,en}.ts`), **10 of 78** admin `.tsx` files call `useI18n()`.
+  Two non-obvious fixes needed while converting `admin/inbox/page.tsx`: (1) several render closures
+  reused the loop/prop variable name `t` (`rows.map((t) => ...)`, `tags.map((t) => ...)`) which shadowed
+  the `t()` translate function pulled from `useI18n()` — renamed those to `row`/`tag`; (2) `nextAction()`
+  returned a `value` string (e.g. `"เช็กสต็อก"`) that other code compared against with `===` to derive
+  an AI-intent label — translating `value` directly would have silently broken that comparison, so the
+  function now also returns a stable, untranslated `key` (`"confirm_slip"` / `"issue_tracking"` / …) for
+  comparisons, keeping `label`/`value` as display-only. **Deliberately left in Thai on purpose, not a
+  gap**: customer-facing message content — the AI suggested-reply templates, the composer's quick-reply
+  buttons' canned text, and the coupon/product text a staff member inserts into a draft message — stays
+  Thai regardless of the admin's UI language, same rule as `applyGenderParticle()`'s ครับ/ค่ะ elsewhere
+  in this file (brand voice sent to a Thai-speaking customer must not silently become English just
+  because the staff member's own UI is set to English). Regex patterns matching a *customer's* raw Thai
+  chat text (e.g. `/สลิป|โอน|ชำระ/`) are correctly left untouched too — they detect words a customer
+  typed, not UI copy. Remaining 68 admin files still have zero i18n mechanism; see
+  [AGENTS.md](AGENTS.md) § i18n coverage for the current file-by-file breakdown before touching any of
+  them, and update that section (not just this one) after any future admin i18n pass since it carries
+  the authoritative namespace/file counts. `admin/login/page.tsx` is a known priority gap: it has no
+  i18n mechanism at all and mixes hardcoded English and Thai strings on the one page every admin sees
+  before authenticating.
 - **Tenant-scoped Users page**: `/admin/users` now respects the acting tenant when a platform admin
   drills into a shop. In Shop B mode the list/detail/delete/avatar paths are tenant-scoped, so the
   page no longer leaks cross-tenant users or opens a user from another shop by direct URL. The

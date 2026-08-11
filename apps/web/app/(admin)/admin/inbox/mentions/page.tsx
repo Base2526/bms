@@ -6,6 +6,7 @@ import { CheckOutlined, RobotOutlined, DownOutlined, ArrowRightOutlined } from "
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import styles from "./mentions.module.css";
 
 const Q_MENTIONS = gql`
@@ -40,13 +41,13 @@ const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 const timeLabel = (iso: string) =>
   new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string) {
+function dayLabel(iso: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (key === todayKey) return "วันนี้";
-  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  if (key === todayKey) return t("admin_inbox_mentions.today_label");
+  if (key === dayKey(y.toISOString())) return t("admin_inbox_mentions.yesterday_label");
   return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
@@ -76,6 +77,7 @@ function groupByDay(list: Mention[]): { day: string; groups: Group[] }[] {
 
 export default function MyMentionsPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [filter, setFilter] = useState<"unread" | "all">("unread");
   const [typeFilter, setTypeFilter] = useState<string>("all"); // "all" | "ai" | "human" | "ch:<channel>"
@@ -88,7 +90,7 @@ export default function MyMentionsPage() {
   });
   const [markRead] = useMutation(M_MARK_READ);
   const [markAllRead, { loading: markingAll }] = useMutation(M_MARK_ALL_READ, {
-    onCompleted: () => { message.success("อ่านทั้งหมดแล้ว"); refetch(); },
+    onCompleted: () => { message.success(t("admin_inbox_mentions.mark_all_read_success")); refetch(); },
   });
 
   const mentions: Mention[] = data?.bmsMyMentions || [];
@@ -155,21 +157,24 @@ export default function MyMentionsPage() {
   };
 
   if (!permsLoading && !can("inbox.view")) {
-    return <Alert type="warning" message="ไม่มีสิทธิ์ดูหน้านี้" showIcon />;
+    return <Alert type="warning" message={t("admin_inbox_mentions.no_permission")} showIcon />;
   }
 
   return (
     <div style={{ maxWidth: 980 }}>
       <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>เมนชันของฉัน</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0 }}>{t("admin_inbox_mentions.page_title")}</Typography.Title>
         <Space>
           <Segmented
             value={filter}
             onChange={(v) => setFilter(v as "unread" | "all")}
-            options={[{ label: "ยังไม่อ่าน", value: "unread" }, { label: "ทั้งหมด", value: "all" }]}
+            options={[
+              { label: t("admin_inbox_mentions.filter_unread"), value: "unread" },
+              { label: t("admin_inbox_mentions.filter_all"), value: "all" },
+            ]}
           />
           <Button icon={<CheckOutlined />} loading={markingAll} onClick={() => markAllRead()}>
-            อ่านทั้งหมดแล้ว
+            {t("admin_inbox_mentions.mark_all_read_button")}
           </Button>
         </Space>
       </Space>
@@ -180,12 +185,12 @@ export default function MyMentionsPage() {
             <div style={{ textAlign: "center", padding: "40px 0" }}><Spin /></div>
           )}
           {!loading && dayGroups.length === 0 && (
-            <Empty description={filter === "unread" ? "ไม่มีเมนชันที่ยังไม่อ่าน" : "ยังไม่มีใคร mention คุณ"} />
+            <Empty description={filter === "unread" ? t("admin_inbox_mentions.empty_unread") : t("admin_inbox_mentions.empty_all")} />
           )}
 
           {dayGroups.map(({ day, groups }) => (
             <section key={day} className={styles.dayGroup}>
-              <div className={styles.dayLabel}>{dayLabel(groups[0].items[0].createdAt)}</div>
+              <div className={styles.dayLabel}>{dayLabel(groups[0].items[0].createdAt, t)}</div>
               {groups.map((g) => {
                 const latest = g.items[0];
                 const unreadCount = g.items.filter((i) => !i.readAt).length;
@@ -205,9 +210,13 @@ export default function MyMentionsPage() {
                       </div>
                       <div className={styles.body}>
                         <div className={styles.top}>
-                          <span className={styles.name}>{ai ? "AI ผู้ช่วย" : (g.author || g.customerName || g.channel)}</span>
+                          <span className={styles.name}>{ai ? t("admin_inbox_mentions.ai_assistant_label") : (g.author || g.customerName || g.channel)}</span>
                           <span className={styles.chip}>{g.channel}</span>
-                          {g.items.length > 1 && <span className={`${styles.chip} ${styles.chipRepeat}`}>×{g.items.length} ครั้ง</span>}
+                          {g.items.length > 1 && (
+                            <span className={`${styles.chip} ${styles.chipRepeat}`}>
+                              {t("admin_inbox_mentions.chip_repeat_count", { count: g.items.length })}
+                            </span>
+                          )}
                         </div>
                         <div className={styles.preview}>{g.body}</div>
                       </div>
@@ -218,8 +227,8 @@ export default function MyMentionsPage() {
                           <button
                             type="button"
                             className={styles.iconBtn}
-                            title="ทำเครื่องหมายว่าอ่านแล้ว"
-                            aria-label="ทำเครื่องหมายว่าอ่านแล้ว"
+                            title={t("admin_inbox_mentions.mark_read_tooltip")}
+                            aria-label={t("admin_inbox_mentions.mark_read_tooltip")}
                             onClick={(e) => { e.stopPropagation(); markGroupRead(g); }}
                           >
                             <CheckOutlined style={{ fontSize: 12 }} />
@@ -227,8 +236,8 @@ export default function MyMentionsPage() {
                           <button
                             type="button"
                             className={styles.iconBtn}
-                            title="เปิดบทสนทนา"
-                            aria-label="เปิดบทสนทนา"
+                            title={t("admin_inbox_mentions.open_conversation_tooltip")}
+                            aria-label={t("admin_inbox_mentions.open_conversation_tooltip")}
                             onClick={(e) => { e.stopPropagation(); openGroup(g); }}
                           >
                             <ArrowRightOutlined style={{ fontSize: 12 }} />
@@ -244,7 +253,9 @@ export default function MyMentionsPage() {
                           className={`${styles.expandToggle} ${isOpen ? styles.expandToggleOpen : ""}`}
                           onClick={(e) => { e.stopPropagation(); toggleExpand(groupUid); }}
                         >
-                          {isOpen ? "ซ่อน" : "ดูทั้งหมด"} ({g.items.length} ครั้ง)
+                          {isOpen
+                            ? t("admin_inbox_mentions.toggle_hide_label", { count: g.items.length })
+                            : t("admin_inbox_mentions.toggle_show_label", { count: g.items.length })}
                           <DownOutlined className={styles.expandToggleIcon} style={{ fontSize: 10 }} />
                         </button>
                         {isOpen && (
@@ -256,7 +267,7 @@ export default function MyMentionsPage() {
                                 onClick={(e) => { e.stopPropagation(); if (!i.readAt) markInstanceRead(i.id); }}
                               >
                                 {!i.readAt && <span className={styles.unreadDot} />}
-                                <span>เตือนซ้ำ — บทสนทนานี้</span>
+                                <span>{t("admin_inbox_mentions.repeated_reminder_instance")}</span>
                                 <span className={styles.instanceTime}>{timeLabel(i.createdAt)}</span>
                               </div>
                             ))}
@@ -273,17 +284,17 @@ export default function MyMentionsPage() {
 
         <aside className={styles.rail}>
           <div className={styles.railCard}>
-            <p className={styles.railTitle}>สรุป</p>
+            <p className={styles.railTitle}>{t("admin_inbox_mentions.rail_summary_title")}</p>
             <div className={styles.statBig}>
               <span className={styles.statNum}>{insights.unreadTotal}</span>
-              <span className={styles.statLabel}>ยังไม่อ่าน</span>
+              <span className={styles.statLabel}>{t("admin_inbox_mentions.filter_unread")}</span>
             </div>
-            <p className={styles.statSub}>จากทั้งหมด {insights.total} เมนชันที่โหลดมา</p>
+            <p className={styles.statSub}>{t("admin_inbox_mentions.rail_summary_sub", { total: insights.total })}</p>
           </div>
 
           {(insights.topRepeated || insights.humanCount > 0) && (
             <div className={styles.railCard}>
-              <p className={styles.railTitle}>สิ่งที่ควรรู้</p>
+              <p className={styles.railTitle}>{t("admin_inbox_mentions.rail_insights_title")}</p>
               {insights.topRepeated && (
                 <div
                   className={styles.insight}
@@ -291,10 +302,12 @@ export default function MyMentionsPage() {
                 >
                   <span className={`${styles.insightDot} ${styles.insightWarn}`} />
                   <div className={styles.insightText}>
-                    บทสนทนาช่องทาง <b>{insights.topRepeated.channel}</b>
-                    {insights.topRepeated.customerName ? ` (${insights.topRepeated.customerName})` : ""} ถูก AI แจ้งเตือนซ้ำ{" "}
-                    <b>{insights.topRepeated.count} ครั้ง</b> — ลูกค้าอาจรอคำตอบอยู่
-                    <br /><span className={styles.insightLink}>เปิดบทสนทนานี้ →</span>
+                    {t("admin_inbox_mentions.insight_repeated_prefix")} <b>{insights.topRepeated.channel}</b>
+                    {insights.topRepeated.customerName ? ` (${insights.topRepeated.customerName})` : ""}{" "}
+                    {t("admin_inbox_mentions.insight_repeated_middle")}{" "}
+                    <b>{t("admin_inbox_mentions.insight_repeated_count", { count: insights.topRepeated.count })}</b>{" "}
+                    {t("admin_inbox_mentions.insight_repeated_suffix")}
+                    <br /><span className={styles.insightLink}>{t("admin_inbox_mentions.open_conversation_link")}</span>
                   </div>
                 </div>
               )}
@@ -305,9 +318,12 @@ export default function MyMentionsPage() {
                 >
                   <span className={`${styles.insightDot} ${styles.insightGood}`} />
                   <div className={styles.insightText}>
-                    มีเพื่อนร่วมทีมแท็กคุณ <b>{insights.humanCount} ครั้ง</b>
-                    {insights.humanCount === 1 ? ` — จาก ${insights.latestHuman.author}` : ""}
-                    <br /><span className={styles.insightLink}>ไปที่ข้อความล่าสุด →</span>
+                    {t("admin_inbox_mentions.insight_human_prefix")}{" "}
+                    <b>{t("admin_inbox_mentions.insight_repeated_count", { count: insights.humanCount })}</b>
+                    {insights.humanCount === 1
+                      ? ` ${t("admin_inbox_mentions.insight_human_from", { author: insights.latestHuman.author || "" })}`
+                      : ""}
+                    <br /><span className={styles.insightLink}>{t("admin_inbox_mentions.view_latest_message_link")}</span>
                   </div>
                 </div>
               )}
@@ -315,28 +331,28 @@ export default function MyMentionsPage() {
           )}
 
           <div className={styles.railCard}>
-            <p className={styles.railTitle}>กรองตามประเภท</p>
+            <p className={styles.railTitle}>{t("admin_inbox_mentions.filter_by_type_title")}</p>
             <div className={styles.filterChips}>
               <button
                 type="button"
                 className={`${styles.filterChip} ${typeFilter === "all" ? styles.filterChipActive : ""}`}
                 onClick={() => setTypeFilter("all")}
               >
-                ทั้งหมด
+                {t("admin_inbox_mentions.filter_all")}
               </button>
               <button
                 type="button"
                 className={`${styles.filterChip} ${typeFilter === "ai" ? styles.filterChipActive : ""}`}
                 onClick={() => setTypeFilter("ai")}
               >
-                AI แจ้งเตือน
+                {t("admin_inbox_mentions.filter_ai")}
               </button>
               <button
                 type="button"
                 className={`${styles.filterChip} ${typeFilter === "human" ? styles.filterChipActive : ""}`}
                 onClick={() => setTypeFilter("human")}
               >
-                มีคนแท็กฉัน
+                {t("admin_inbox_mentions.filter_human")}
               </button>
               {channels.map((ch) => (
                 <button
