@@ -526,6 +526,7 @@ const th = {
   },
   admin: {
     group_shop: "ร้านค้า",
+    group_pharmacy: "เภสัชกรรม",
     group_access: "ผู้ใช้/สิทธิ์",
     group_system: "ระบบ",
     menu_restock_subscriptions: "แจ้งลูกค้าเมื่อของเข้า",

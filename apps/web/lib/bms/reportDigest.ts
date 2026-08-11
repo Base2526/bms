@@ -622,11 +622,32 @@ export async function runScheduledDigests(): Promise<{ processed: number; sent: 
     const cfg = { frequency: s.frequency as Frequency, sendHour: s.send_hour, sendWeekday: s.send_weekday, sendDayOfMonth: s.send_day_of_month };
     if (!shouldSendNow(cfg, now)) continue;
     const { periodStart, periodEnd, periodKey } = computePeriod(cfg.frequency, now);
-    if (s.last_period_key === periodKey) continue; // ส่งไปแล้วรอบนี้
+    if (s.last_period_key === periodKey) continue; // ส่งไปแล้วรอบนี้ (เช็คแบบถูกที่สุดจากค่าที่เพิ่งอ่าน)
+
+    // จองรอบนี้แบบ compare-and-set ก่อนส่งจริง — เช็คจากค่าที่อ่านมาข้างบนอย่างเดียวไม่พอเมื่อมี
+    // scheduler ยิงพร้อมกันสองทาง (cron ยิงเข้า LB ที่มี web หลาย instance): ทั้งคู่จะอ่าน
+    // last_period_key ค่าเก่าเหมือนกันแล้วส่ง digest ซ้ำให้เจ้าของร้านสองรอบ
+    const claim = await query(
+      `UPDATE bms_report_subscriptions
+          SET last_period_key = $2, updated_at = now()
+        WHERE tenant_id = $1 AND enabled = true
+          AND last_period_key IS DISTINCT FROM $2`,
+      [s.tenant_id, periodKey]
+    );
+    if (claim.rowCount === 0) continue; // instance อื่นจองรอบนี้ไปแล้ว
+
     try {
       const result = await sendDigestForTenant(s.tenant_id, cfg.frequency, periodStart, periodEnd, periodKey);
       out.push({ tenantId: s.tenant_id, periodKey, ...result });
     } catch (err: any) {
+      // คืนค่า last_period_key เดิมเพื่อให้ cron รอบถัดไปลองใหม่ได้ (พฤติกรรมเดิมก่อนมีการจอง) —
+      // guard ด้วย `= $2` กันเขียนทับกรณีมีใครจองรอบใหม่กว่าไปแล้วระหว่างนี้
+      await query(
+        `UPDATE bms_report_subscriptions
+            SET last_period_key = $3, last_status = 'FAILED', updated_at = now()
+          WHERE tenant_id = $1 AND last_period_key = $2`,
+        [s.tenant_id, periodKey, s.last_period_key ?? null]
+      ).catch(() => {});
       out.push({ tenantId: s.tenant_id, periodKey, error: err?.message || "send failed" });
     }
   }

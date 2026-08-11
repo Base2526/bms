@@ -183,18 +183,23 @@ function authRequestIp(ctx: any): string {
   ).slice(0, 80);
 }
 
-function enforceAuthRateLimit(
+async function enforceAuthRateLimit(
   ctx: any,
   action: string,
   identity: string,
   identityLimit: number,
   ipLimit: number,
   windowMs: number
-): void {
+): Promise<void> {
   const ip = authRequestIp(ctx);
   const identityHash = crypto.createHash("sha256").update(identity).digest("hex").slice(0, 24);
-  const byIp = rateLimit(`auth:${action}:ip:${ip}`, ipLimit, windowMs);
-  const byIdentity = rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs);
+  // Both counters must be incremented on every attempt, so run them together
+  // rather than short-circuiting on the first failure — otherwise an attacker
+  // rotating one dimension never accumulates against the other.
+  const [byIp, byIdentity] = await Promise.all([
+    rateLimit(`auth:${action}:ip:${ip}`, ipLimit, windowMs),
+    rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs),
+  ]);
   if (!byIp.ok || !byIdentity.ok) {
     throw new GraphQLError("Too many attempts. Please try again later.", {
       extensions: { code: "RATE_LIMITED" },
@@ -2846,7 +2851,7 @@ const rawResolvers = {
 
       const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
       if (!identifier) return { ok: false, message: "Invalid credentials" };
-      enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
+      await enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
         SELECT id, name, username, email, role, avatar, phone, password_hash
@@ -2914,7 +2919,7 @@ const rawResolvers = {
       const emailNorm = email ? normalizeEmail(email) : null;
       const usernameNorm = username ? normalizeUsername(username) : null;
       if (!(emailNorm || usernameNorm)) throw new Error("Invalid credentials");
-      enforceAuthRateLimit(ctx, "login", emailNorm || usernameNorm || "", 10, 60, 15 * 60_000);
+      await enforceAuthRateLimit(ctx, "login", emailNorm || usernameNorm || "", 10, 60, 15 * 60_000);
 
       const { rows } = emailNorm
         ? await query("SELECT * FROM users WHERE lower(btrim(email))=$1 LIMIT 1", [emailNorm])
@@ -2941,7 +2946,7 @@ const rawResolvers = {
     },
     loginWithSocial: async (_: any, { input }: any, ctx: any) => {
       const { provider, accessToken } = input;
-      enforceAuthRateLimit(
+      await enforceAuthRateLimit(
         ctx,
         "social",
         `${String(provider || "unknown")}:${String(accessToken || "")}`,
@@ -3089,7 +3094,7 @@ const rawResolvers = {
 
       const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
       if (!identifier) throw new Error("Invalid credentials");
-      enforceAuthRateLimit(ctx, "admin-login", identifier, 10, 60, 15 * 60_000);
+      await enforceAuthRateLimit(ctx, "admin-login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `SELECT u.*, t.active AS tenant_active
            FROM users u
@@ -3150,7 +3155,7 @@ const rawResolvers = {
     loginMobile: async (_: any, { email, password }: { email: string; password: string }, ctx: any) => {
       const emailNorm = normalizeEmail(email);
       if (!emailNorm || !password) throw new Error("Invalid credentials");
-      enforceAuthRateLimit(ctx, "mobile-login", emailNorm, 10, 60, 15 * 60_000);
+      await enforceAuthRateLimit(ctx, "mobile-login", emailNorm, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
         [emailNorm]
@@ -3177,7 +3182,7 @@ const rawResolvers = {
 
       const usernameNorm = usernameResult.value;
       const emailNorm = emailResult.value;
-      enforceAuthRateLimit(ctx, "register", emailNorm, 3, 10, 60 * 60_000);
+      await enforceAuthRateLimit(ctx, "register", emailNorm, 3, 10, 60 * 60_000);
       const phoneNorm = phone == null || String(phone).trim() === "" ? null : String(phone).trim();
       if (phoneNorm && (phoneNorm.length > 30 || !/^[0-9+\-\s()]+$/.test(phoneNorm))) {
         throw new Error("Invalid phone");
@@ -3310,7 +3315,7 @@ const rawResolvers = {
       const emailResult = validateEmail(email);
       if (!emailResult.ok) return true;
       const emailNorm = emailResult.value;
-      enforceAuthRateLimit(ctx, "password-reset", emailNorm, 3, 20, 60 * 60_000);
+      await enforceAuthRateLimit(ctx, "password-reset", emailNorm, 3, 20, 60 * 60_000);
       // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
       const { rows } = await query(
         `SELECT id, email, name, language FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,

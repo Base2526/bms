@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
-import { STORAGE_DIR } from "@/lib/storage";
+import { openStoredFileStream, statStoredFile } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -192,11 +191,11 @@ export async function GET(
       return NextResponse.json({ error: "file path missing" }, { status: 404 });
     }
 
-    const fullPath = path.join(STORAGE_DIR, row.relpath);
+    const stored = await statStoredFile(row.relpath);
 
-    if (!fs.existsSync(fullPath)) {
+    if (!stored) {
       return NextResponse.json(
-        { error: "file missing on disk" },
+        { error: "file missing in storage" },
         { status: 404 }
       );
     }
@@ -223,8 +222,7 @@ export async function GET(
         ? "inline"
         : "attachment";
 
-    const stat = await fs.promises.stat(fullPath);
-    const size = stat.size;
+    const size = stored.size;
     const range = req.headers.get("range");
 
     const baseHeaders: Record<string, string> = {
@@ -252,7 +250,7 @@ export async function GET(
       }
 
       const chunkSize = end - start + 1;
-      const nodeStream = fs.createReadStream(fullPath, { start, end });
+      const nodeStream = await openStoredFileStream(row.relpath, { start, end });
       const webStream = Readable.toWeb(nodeStream) as any;
 
       return new NextResponse(webStream, {
@@ -265,7 +263,7 @@ export async function GET(
       });
     }
 
-    const nodeStream = fs.createReadStream(fullPath);
+    const nodeStream = await openStoredFileStream(row.relpath);
     const webStream = Readable.toWeb(nodeStream) as any;
 
     return new NextResponse(webStream, {

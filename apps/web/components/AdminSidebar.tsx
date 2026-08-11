@@ -39,6 +39,9 @@ import {
   FundViewOutlined,
   ClockCircleOutlined,
   MedicineBoxOutlined,
+  FileSearchOutlined,
+  FileProtectOutlined,
+  IdcardOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -186,7 +189,10 @@ export default function AdminSidebar() {
   // (เดิมผูกกับ can('product.edit') ทำให้ staff เห็นเมนูแล้วกดเข้าไปโดน redirect)
   const canSeedFake = isPlatformAdmin;
   // ระบบ = ของระดับแพลตฟอร์ม (Posts/Files/Queue/Logs/ENV) → platform admin เท่านั้น
-  const showSystemGroup = isPlatformAdmin || canSeedFake;
+  // + ai_quality.view เพิ่มมาเพราะ Playground (dev tool ทดสอบ AI) ย้ายเข้ากลุ่มนี้แล้ว และ
+  // Manager (ที่มี ai_quality.view แต่ไม่ใช่ platform admin) ต้องเห็นกลุ่มนี้เพื่อเห็น Playground —
+  // รายการอื่นในกลุ่มยังกรองด้วย isPlatformAdmin ของตัวเองอยู่แล้ว ไม่หลุดออกไปเพิ่ม
+  const showSystemGroup = isPlatformAdmin || canSeedFake || can('ai_quality.view');
 
   // แชทเข้าคือจุดเริ่ม workflow ทั้งหมด (ตาม CLAUDE.md) — badge unread ต้อง poll เอง
   // เพราะ sidebar ติดอยู่ทุกหน้า ไม่ใช่แค่หน้า Inbox
@@ -311,24 +317,37 @@ export default function AdminSidebar() {
       key: 'g-bms',
       icon: <ShopOutlined />,
       label: t('admin.group_shop'),
+      // เรียงตามความถี่ใช้จริง: งานประจำวัน (Orders/Payment/Shipping คู่ Products/Customers) ก่อน
+      // งานที่ตั้งค่าเป็นระยะ (Coupons/Follow-up/Purchase) — Revision History/Playground/เมนู
+      // เภสัชกรรมย้ายออกไปกลุ่มอื่นแล้ว (ดู g-pharmacy, g-access, g-system ด้านล่าง) เพราะคนละ
+      // audience/permission set ไม่ใช่งานร้านค้าทั่วไป — ก่อนหน้านี้ยัดรวมกัน 11-15 รายการในลิสต์เดียว
       children: [
         ...(can('product.view') ? [link('/admin/products', 'Products', <ShoppingCartOutlined />)] : []),
         ...(can('order.view') ? [link('/admin/orders', 'Orders', <ShoppingCartOutlined />)] : []),
-        ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
-        ...(isPharmacyShop && canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <ExperimentOutlined />)] : []),
-        ...(isPharmacyShop && canViewPharmacy ? [pharmacyQueueLink(effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
-        ...(isPharmacyShop && can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <MedicineBoxOutlined />)] : []),
-        ...(isPharmacyShop && isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <MedicineBoxOutlined />)] : []),
-        link('/admin/revisions', 'Revision History', <HistoryOutlined />),
-        ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
         ...(can('payment.view') ? [link('/admin/payment', 'Payment', <DollarOutlined />)] : []),
         ...(can('shipping.view') ? [link('/admin/shipment', 'Shipping', <CarOutlined />)] : []),
         ...(can('customer.view') ? [link('/admin/customers', 'Customers', <TeamOutlined />)] : []),
-        link('/admin/playground', 'Playground', <ExperimentOutlined />),
+        ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
+        ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
       ],
     },
+    // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience
+    // คนละกลุ่ม (เภสัชกร ไม่ใช่ Sales ทั่วไป) และ workflow เชื่อมกันเอง (รับยา→คิว→protocol→license)
+    // ไอคอนตั้งใจให้ต่างกันทั้ง 3 หน้า (เดิมใช้ MedicineBoxOutlined ซ้ำ 2 หน้า + ExperimentOutlined
+    // ชนกับ Playground) — เลือกให้สื่อความหมายจริง: ตรวจรับ/คิวคนไข้ (คงกล่องยา)/เอกสาร policy/บัตรรับรอง
+    ...(isPharmacyShop && (canViewPharmacy || can('pharmacy.protocol.manage') || isAdministrator) ? [{
+      key: 'g-pharmacy',
+      icon: <MedicineBoxOutlined />,
+      label: t('admin.group_pharmacy'),
+      children: [
+        ...(canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <FileSearchOutlined />)] : []),
+        ...(canViewPharmacy ? [pharmacyQueueLink(effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
+        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <FileProtectOutlined />)] : []),
+        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <IdcardOutlined />)] : []),
+      ],
+    }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
@@ -353,6 +372,9 @@ export default function AdminSidebar() {
         ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
         link('/admin/permissions', 'Permissions', <SafetyOutlined />),
         link('/admin/audit', 'Audit log', <BookOutlined />),
+        // ย้ายมาจาก "ร้านค้า" — ทั้ง Audit log และ Revision History เป็นธีมเดียวกัน
+        // ("ใครแก้อะไรเมื่อไหร่") คนที่เปิดกลุ่มนี้อยู่แล้วคือคนที่สนใจเรื่องนี้จริง
+        link('/admin/revisions', 'Revision History', <HistoryOutlined />),
       ],
     }] : []),
     ...(showSystemGroup ? [{
@@ -362,9 +384,13 @@ export default function AdminSidebar() {
       children: [
         // ระดับแพลตฟอร์ม → platform admin เท่านั้น
         ...(isPlatformAdmin ? [
-          link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
-          link('/admin/files', 'Files', <FileImageOutlined />, 5),
-          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
+          // ⚠️ ต้องส่ง effectiveCollapsed ทุกครั้งที่ส่ง badge (เหมือน ENV ด้านล่าง) — ถ้าลืม
+          // ค่า default `collapsed = false` จะบังคับ label เป็น flex+pill เสมอ แล้วตอน sidebar ย่อ
+          // เมนูกลุ่มนี้เปิดเป็น popup flyout ที่แคบ span flex:1 minWidth:0 จะยุบเหลือ 0 → ข้อความหาย
+          // เห็นแต่ไอคอน (เคสเดียวกับที่เคยเจอที่เมนู Users)
+          link('/admin/posts', 'Posts', <FileTextOutlined />, 2, effectiveCollapsed),
+          link('/admin/files', 'Files', <FileImageOutlined />, 5, effectiveCollapsed),
+          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1, effectiveCollapsed),
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
           link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),
           link('/admin/operations-schedule', 'Batch & Cron', <ClockCircleOutlined />),
@@ -373,13 +399,17 @@ export default function AdminSidebar() {
         ] : []),
         // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้
         ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />)] : []),
+        // ย้ายมาจาก "ร้านค้า" — ไม่ใช่งานธุรกิจ เป็นเครื่องมือ dev สำหรับจำลองแชตทดสอบ AI pipeline
+        // เดิมไม่มี permission gate เลย (Sales/Warehouse เห็น+ใช้ได้) ตอนนี้ gate ด้วย
+        // ai_quality.view เหมือนหน้าเพจเอง (ไม่ใช่แค่ซ่อนเมนู — ดู page.tsx)
+        ...(can('ai_quality.view') ? [link('/admin/playground', 'Playground', <ExperimentOutlined />)] : []),
       ],
     }] : []),
   ];
 
   // ไฮไลต์เมนูที่ตรง path ปัจจุบัน + เปิด submenu ของกลุ่มที่ path อยู่ (เฉพาะตอนขยาย)
   const selectedKeys = [pathname];
-  const openGroupKey = ['g-bms', 'g-saas', 'g-access', 'g-system'].find((g) =>
+  const openGroupKey = ['g-bms', 'g-pharmacy', 'g-saas', 'g-access', 'g-system'].find((g) =>
     (items.find((i: any) => i?.key === g) as any)?.children?.some((c: any) => c.key === pathname)
   );
 

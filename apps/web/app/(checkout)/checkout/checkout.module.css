@@ -1,20 +1,18 @@
 .page {
-  --ink: #142b2b;
-  --muted: #667878;
-  --paper: #fffdf7;
-  --cream: #f3efe3;
-  --line: #d9ded5;
-  --teal: #0f766e;
-  --teal-dark: #0b4f4a;
-  --coral: #ef6a4b;
+  --ink: #16261f;
+  --muted: #6b7570;
+  --paper: #f5f4ef;
+  --surface: #ffffff;
+  --surface-2: #eeece4;
+  --line: #ded9cd;
+  --moss: #2f6f5a;
+  --moss-dark: #1f5442;
+  --warn: #93641a;
+  --danger: #a8412c;
   min-height: 100vh;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 5%, rgba(239, 106, 75, 0.16), transparent 25rem),
-    radial-gradient(circle at 92% 20%, rgba(15, 118, 110, 0.14), transparent 29rem),
-    repeating-linear-gradient(135deg, rgba(20, 43, 43, 0.025) 0 1px, transparent 1px 12px),
-    var(--cream);
-  font-family: "IBM Plex Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  background: var(--paper);
+  font-family: "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
 }
 
 .page *,
@@ -23,229 +21,206 @@
   box-sizing: border-box;
 }
 
+/* digits (amounts, order id, account/tracking numbers) get a tabular numeral face so columns
+   of money and reference numbers line up instead of drifting with the Thai body font's metrics */
+.num {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
 .topbar {
   display: flex;
-  width: min(100% - 32px, 1180px);
-  min-height: 82px;
+  width: min(100% - 32px, 640px);
+  align-items: center;
+  gap: 10px;
   margin: 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid rgba(20, 43, 43, 0.16);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand > span,
-.brand img {
+.brandmark {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 15px;
+  border-radius: 9px;
   background: var(--ink);
-  color: white;
-  font-size: 21px;
-  font-weight: 900;
+  color: var(--paper);
+  font-size: 14px;
+  font-weight: 700;
   object-fit: cover;
 }
 
-.brand strong {
+.brandtext {
+  min-width: 0;
+}
+
+.brandtext strong {
   display: block;
-  margin-top: 2px;
-  font-size: 17px;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eyebrow {
   margin: 0;
-  color: var(--teal);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
+  color: var(--muted);
+  font-size: 11px;
 }
 
-.securePill {
-  padding: 8px 12px;
-  border: 1px solid rgba(15, 118, 110, 0.28);
+.statuschip {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  color: var(--teal-dark);
-  background: rgba(255, 255, 255, 0.52);
-  font-size: 12px;
-  font-weight: 800;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.statuschip::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warn);
+  content: "";
 }
 
 .shell {
-  width: min(100% - 32px, 1180px);
+  width: min(100% - 32px, 640px);
   margin: 0 auto;
-  padding: 54px 0 34px;
+  padding: 20px 0 34px;
 }
 
-.hero {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 30px;
+.orderline {
+  padding: 4px 0 18px;
 }
 
-.heroKicker {
-  margin: 0 0 8px;
-  color: var(--coral);
+.orderline .oid {
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
 }
 
-.hero h1 {
-  margin: 0;
-  font-family: "Th Sarabun New", "Leelawadee UI", Tahoma, sans-serif;
-  font-size: clamp(46px, 7vw, 82px);
+.orderline h1 {
+  margin: 3px 0 0;
+  font-size: 19px;
   font-weight: 800;
-  line-height: 0.86;
-  letter-spacing: -0.055em;
-}
-
-.statusBadge {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 14px;
-  border: 1px solid rgba(15, 118, 110, 0.24);
-  border-radius: 999px;
-  background: rgba(255, 253, 247, 0.72);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.statusBadge span {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
-  background: var(--coral);
-  box-shadow: 0 0 0 5px rgba(239, 106, 75, 0.15);
-}
-
-.columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
-  gap: 20px;
-  align-items: flex-start;
-}
-
-.mainColumn {
-  display: grid;
-  gap: 20px;
-}
-
-.sideColumn {
-  position: sticky;
-  top: 20px;
-  display: grid;
-  gap: 20px;
+  letter-spacing: -0.01em;
 }
 
 .card {
-  padding: 24px;
-  border: 1px solid rgba(20, 43, 43, 0.14);
-  border-radius: 26px;
-  background: rgba(255, 253, 247, 0.93);
-  box-shadow: 0 18px 52px rgba(20, 43, 43, 0.08);
-  backdrop-filter: blur(14px);
+  padding: 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .sectionHeading,
 .sectionHeading > div {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
 }
 
 .sectionHeading {
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 
 .sectionHeading h2 {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.035em;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .sectionHeading > span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
 }
 
 .step {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 12px;
-  color: white;
+  border-radius: 7px;
+  color: var(--paper);
   background: var(--ink);
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .readyText {
-  color: var(--teal) !important;
+  color: var(--moss) !important;
+  font-weight: 700;
 }
 
 .itemList {
   display: grid;
-  gap: 2px;
+  gap: 0;
 }
 
 .item {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.item:last-child {
+  border-bottom: none;
 }
 
 .itemVisual {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 34px;
+  height: 34px;
   place-items: center;
-  border-radius: 18px;
-  color: var(--teal-dark);
-  background: linear-gradient(145deg, #d7eee8, #f8ead8);
-  font-size: 23px;
-  font-weight: 900;
+  border-radius: 8px;
+  color: var(--moss-dark);
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .itemInfo {
   display: grid;
-  gap: 2px;
+  min-width: 0;
+  gap: 1px;
 }
 
 .itemInfo strong {
-  font-size: 15px;
+  font-size: 13.5px;
 }
 
 .itemInfo span,
 .itemInfo small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .item > b {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .totals {
   display: grid;
-  gap: 9px;
-  margin: 20px 0 0;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 
 .totals > div {
@@ -253,7 +228,7 @@
   justify-content: space-between;
   gap: 20px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .totals dt,
@@ -262,42 +237,45 @@
 }
 
 .discountRow dd {
-  color: var(--teal);
-  font-weight: 800;
+  color: var(--moss-dark);
+  font-weight: 700;
 }
 
 .totals .grandTotal {
   margin-top: 4px;
-  padding-top: 14px;
-  border-top: 2px solid var(--ink);
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   color: var(--ink);
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 15.5px;
+  font-weight: 800;
 }
 
 .savedDelivery {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .savedBanner {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 13px;
-  border-radius: 18px;
-  background: #e5f5ef;
+  gap: 10px;
+  align-items: flex-start;
 }
 
 .savedBanner > span {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 99px;
-  color: white;
-  background: var(--teal);
-  font-weight: 900;
+  border-radius: 999px;
+  color: var(--surface);
+  background: var(--moss);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.savedBanner strong {
+  font-size: 13.5px;
 }
 
 .savedBanner p {
@@ -309,16 +287,16 @@
 .savedDelivery dl {
   display: grid;
   gap: 0;
-  margin: 0;
+  margin: 0 0 0 30px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 12px;
 }
 
 .savedDelivery dl > div {
   display: grid;
-  grid-template-columns: 105px minmax(0, 1fr);
-  gap: 14px;
-  padding: 12px 14px;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 12px;
 }
 
 .savedDelivery dl > div + div {
@@ -328,7 +306,7 @@
 .savedDelivery dt,
 .savedDelivery dd {
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .savedDelivery dt {
@@ -336,35 +314,35 @@
 }
 
 .savedDelivery dd {
-  line-height: 1.55;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .savedDelivery dd b {
   display: block;
-  color: var(--teal);
+  color: var(--moss-dark);
 }
 
 .addressChooser {
   display: grid;
   gap: 8px;
-  padding-top: 4px;
+  margin-left: 30px;
 }
 
 .addressChooser > p {
   margin: 0 0 2px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .addressChooser label {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 11px 12px;
+  padding: 10px 11px;
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: 11px;
   cursor: pointer;
 }
 
@@ -378,64 +356,64 @@
 .deliveryForm,
 .paymentForm {
   display: grid;
-  gap: 15px;
+  gap: 13px;
 }
 
 .deliveryForm label,
 .referenceInput {
   display: grid;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 800;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .deliveryForm input,
 .deliveryForm textarea,
 .referenceInput input {
   width: 100%;
-  border: 1px solid #c7d0ca;
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   outline: none;
   color: var(--ink);
-  background: white;
+  background: var(--surface);
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .deliveryForm input,
 .referenceInput input {
-  height: 48px;
-  padding: 0 13px;
+  height: 42px;
+  padding: 0 12px;
 }
 
 .deliveryForm textarea {
-  min-height: 112px;
-  padding: 12px 13px;
+  min-height: 96px;
+  padding: 11px 12px;
   resize: vertical;
 }
 
 .deliveryForm input:focus,
 .deliveryForm textarea:focus,
 .referenceInput input:focus {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px rgba(47, 111, 90, 0.14);
 }
 
 .deliveryForm label small,
 .referenceInput small {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .missingStrip,
 .rejectedStrip {
-  padding: 11px 12px;
-  border-radius: 14px;
-  color: #7c2d12;
-  background: #ffedd5;
+  padding: 10px 12px;
+  border-radius: 11px;
+  color: var(--danger);
+  background: #f6e6e0;
   font-size: 12px;
-  font-weight: 800;
-  line-height: 1.55;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .formActions {
@@ -452,16 +430,15 @@
   border: 0;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .primaryButton {
-  min-height: 48px;
+  min-height: 46px;
   padding: 0 18px;
-  border-radius: 15px;
-  color: white;
-  background: var(--teal);
-  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
+  border-radius: 11px;
+  color: #fff;
+  background: var(--moss);
 }
 
 .paymentForm > .primaryButton {
@@ -469,7 +446,7 @@
 }
 
 .primaryButton:hover {
-  background: var(--teal-dark);
+  background: var(--moss-dark);
 }
 
 .primaryButton:disabled,
@@ -479,20 +456,54 @@
 }
 
 .secondaryButton {
-  min-height: 42px;
-  border: 1px solid var(--teal);
-  border-radius: 13px;
-  color: var(--teal);
+  min-height: 40px;
+  border: 1px solid var(--moss);
+  border-radius: 9px;
+  color: var(--moss-dark);
   background: transparent;
 }
 
 .textButton {
   justify-self: start;
-  padding: 5px 0;
-  color: var(--teal);
+  padding: 4px 0;
+  color: var(--moss-dark);
   background: transparent;
+  font-size: 12.5px;
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: 3px;
+}
+
+/* ---- payment card: the one card that carries the primary action, gets a faint accent wash ---- */
+.paymentCard {
+  border-color: rgba(47, 111, 90, 0.3);
+  background:
+    linear-gradient(180deg, rgba(47, 111, 90, 0.06), transparent 80px),
+    var(--surface);
+}
+
+/* amount due, pinned to the top edge of the payment card so it never scrolls out of view
+   before the account list/upload — negative-margin trick, same pattern used for the sticky
+   Customer 360 panel header in the admin app */
+.amountPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -16px -16px 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+  color: var(--paper);
+  background: var(--ink);
+}
+
+.amountPanel span {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.amountPanel strong {
+  font-size: 19px;
+  font-weight: 700;
 }
 
 .notice,
@@ -500,9 +511,9 @@
 .lockedPayment,
 .successState,
 .pendingState {
-  padding: 20px;
-  border-radius: 20px;
-  background: #f1f4ef;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--surface-2);
 }
 
 .notice strong,
@@ -511,7 +522,7 @@
 .successState h3,
 .pendingState h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .notice p,
@@ -521,8 +532,8 @@
 .pendingState p {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .noPayment,
@@ -536,43 +547,43 @@
 .lockedPayment > span,
 .successState > span {
   display: grid;
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 14px;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 12px;
   place-items: center;
-  border-radius: 16px;
-  color: white;
+  border-radius: 12px;
+  color: var(--paper);
   background: var(--ink);
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .successState > span {
-  background: var(--teal);
+  background: var(--moss);
 }
 
 .pendingState {
-  background: #fff1e7;
+  background: #f7ecd9;
 }
 
 .pendingState .eyebrow {
-  margin-top: 14px;
-  color: #b54227;
+  margin-top: 12px;
+  color: var(--warn);
 }
 
 .pendingPulse {
   display: block;
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   margin: 0 auto;
-  border-radius: 99px;
-  background: var(--coral);
-  box-shadow: 0 0 0 8px rgba(239, 106, 75, 0.16);
+  border-radius: 999px;
+  background: var(--warn);
+  box-shadow: 0 0 0 7px rgba(147, 100, 26, 0.16);
 }
 
 .pendingState dl {
   display: grid;
-  gap: 8px;
-  margin: 16px 0 0;
+  gap: 7px;
+  margin: 14px 0 0;
 }
 
 .pendingState dl > div {
@@ -588,53 +599,54 @@
 }
 
 .pendingState dd {
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .formIntro {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .accountList {
   display: grid;
-  gap: 9px;
+  gap: 8px;
 }
 
 .accountCard {
   display: grid;
-  grid-template-columns: auto 42px minmax(0, 1fr) auto;
+  grid-template-columns: auto 38px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  padding: 11px;
+  padding: 10px 11px;
   border: 1px solid var(--line);
-  border-radius: 17px;
-  background: white;
+  border-radius: 11px;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .accountCardSelected {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.11);
+  border-color: var(--moss);
+  box-shadow: 0 0 0 1px var(--moss) inset;
+  background: rgba(47, 111, 90, 0.06);
 }
 
 .accountCard input {
-  accent-color: var(--teal);
+  accent-color: var(--moss);
 }
 
 .accountIcon {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border-radius: 13px;
-  color: white;
+  border-radius: 9px;
+  color: var(--paper);
   background: var(--ink);
   font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .accountBody {
@@ -656,9 +668,9 @@
 }
 
 .accountBody span {
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.03em;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .accountBody small {
@@ -667,45 +679,35 @@
 }
 
 .copyButton {
-  padding: 6px 8px;
-  border-radius: 9px;
-  color: var(--teal);
-  background: #e5f5ef;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--surface);
   font-size: 10px;
 }
 
-.amountPanel {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 17px;
-  color: white;
-  background: var(--ink);
+.accountCardSelected .copyButton {
+  border-color: rgba(47, 111, 90, 0.4);
+  color: var(--moss-dark);
 }
 
-.amountPanel span {
-  font-size: 11px;
-}
-
-.amountPanel strong {
-  font-size: 22px;
-  line-height: 1;
-}
-
+/* Grid, not flex: the label's real children are <input>(hidden) <span.uploadMark> <strong> <small>
+   as flat siblings (no wrapping "text column" element in the markup) — as a flex row, strong and
+   small would compete with the icon for horizontal space and truncate hard on narrow screens. The
+   grid places the icon in its own column spanning both text rows, so strong/small always get the
+   full remaining width to themselves and simply wrap instead of clipping. */
 .upload {
   display: grid;
-  min-height: 132px;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
-  padding: 16px;
-  border: 1.5px dashed #9ba9a3;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.55);
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  padding: 13px 14px;
+  border: 1.5px dashed var(--line);
+  border-radius: 11px;
+  background: var(--surface);
   cursor: pointer;
-  text-align: center;
+  text-align: left;
 }
 
 .upload input {
@@ -717,96 +719,189 @@
 
 .uploadMark {
   display: grid;
-  width: 34px;
-  height: 34px;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 30px;
+  height: 30px;
+  align-self: center;
   place-items: center;
-  margin-bottom: 2px;
-  border-radius: 99px;
-  color: white;
-  background: var(--coral);
-  font-size: 22px;
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--surface-2);
+  font-size: 16px;
   font-weight: 500;
 }
 
 .upload strong {
-  max-width: 260px;
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
 }
 
 .upload small,
 .paymentFootnote {
+  display: block;
+  margin-top: 1px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+}
+
+.upload small {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .paymentFootnote {
-  margin: -3px 0 0;
+  margin: 10px 0 0;
   line-height: 1.5;
   text-align: center;
+}
+
+/* the in-form submit button doubles with the sticky bar's button on narrow screens — one CTA
+   should be reachable at a time, so the in-form one steps aside for the sticky bar there */
+@media (max-width: 560px) {
+  .formSubmit {
+    display: none;
+  }
+}
+
+/* ---- mobile sticky pay bar: amount + submit stay reachable without scrolling the card ---- */
+.stickyPay {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding-bottom: 84px;
+  }
+
+  .stickyPay {
+    display: flex;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    /* flex-start, not center: once the button's Thai/English label wraps to 2 lines on very
+       narrow screens (~320px), center-aligning would visually detach the amount from the
+       button's first line. Both children are pinned to the top of the bar instead. */
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    box-shadow: 0 -8px 24px rgba(22, 38, 31, 0.12);
+  }
+
+  .stickyPay span {
+    display: block;
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+
+  .stickyPay strong {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .stickyPay button {
+    /* min-height, not height: a long CTA label (long language string, or a small-width device
+       like a 320px phone) can wrap to 2 lines — the button must grow to fit that text instead of
+       clipping it. flex-shrink:0 keeps the amount from squeezing the button below its label's
+       natural width first. */
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--moss);
+    color: #fff;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .stickyPay button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
 }
 
 .trackingCard {
   overflow: hidden;
 }
 
+/* ---- order tracker: one horizontal strip instead of a tall vertical list, so it doesn't
+   push the payment card (the thing the customer actually needs to act on) further down ---- */
 .timeline {
-  display: grid;
-  gap: 0;
-  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  margin: 4px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .timeline li {
   position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 11px;
-  min-height: 49px;
-  color: #8a9692;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
 }
 
-.timeline li:not(:last-child)::after {
+.timeline li::before {
   position: absolute;
-  top: 24px;
-  bottom: -2px;
-  left: 13px;
-  width: 2px;
-  background: #d9ded5;
+  top: 9px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  background: var(--line);
   content: "";
+}
+
+.timeline li:first-child::before {
+  display: none;
 }
 
 .timeline li > span {
   z-index: 1;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   place-items: center;
-  border: 2px solid #cbd3ce;
-  border-radius: 99px;
-  background: var(--paper);
-  font-size: 11px;
-  font-weight: 900;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .timeline li div {
-  display: grid;
-  align-content: flex-start;
-  gap: 1px;
-  padding-top: 4px;
+  margin-top: 6px;
 }
 
 .timeline li strong {
-  font-size: 13px;
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .timeline li small {
-  color: var(--coral);
-  font-size: 10px;
-  font-weight: 800;
+  display: block;
+  color: var(--warn);
+  font-size: 9.5px;
+  font-weight: 700;
 }
 
 .timeline .timelineActive {
@@ -814,22 +909,22 @@
 }
 
 .timeline .timelineActive > span {
-  border-color: var(--teal);
-  color: white;
-  background: var(--teal);
+  border-color: var(--moss);
+  color: #fff;
+  background: var(--moss);
 }
 
-.timeline .timelineActive:not(:last-child)::after {
-  background: var(--teal);
+.timeline .timelineActive::before {
+  background: var(--moss);
 }
 
 .trackingNumber {
   display: grid;
   gap: 2px;
-  margin-top: 8px;
-  padding: 13px 14px;
-  border-radius: 16px;
-  color: white;
+  margin-top: 12px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  color: var(--paper);
   background: var(--ink);
 }
 
@@ -840,18 +935,18 @@
 }
 
 .trackingNumber strong {
-  font-size: 16px;
-  letter-spacing: 0.035em;
+  font-size: 15px;
+  letter-spacing: 0.03em;
 }
 
 .closedStrip {
   margin-top: 8px;
-  padding: 11px 12px;
-  border-radius: 13px;
-  color: #7f1d1d;
-  background: #fee2e2;
+  padding: 10px 12px;
+  border-radius: 11px;
+  color: var(--danger);
+  background: #f6e6e0;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -859,32 +954,32 @@
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 20;
+  z-index: 25;
   max-width: min(420px, calc(100% - 36px));
-  padding: 13px 16px;
-  border-radius: 14px;
-  color: white;
-  background: #9f2d24;
-  box-shadow: 0 16px 44px rgba(82, 24, 18, 0.3);
+  padding: 12px 16px;
+  border-radius: 12px;
+  color: #fff;
+  background: #8a2e22;
+  box-shadow: 0 16px 44px rgba(82, 24, 18, 0.28);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .footer {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  margin-top: 28px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(20, 43, 43, 0.16);
+  gap: 20px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .footer span {
   color: var(--ink);
-  font-weight: 900;
-  letter-spacing: 0.14em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
 }
 
 .footer p {
@@ -892,32 +987,32 @@
 }
 
 .invalidCard {
-  width: min(calc(100% - 32px), 520px);
-  margin: 12vh auto 0;
-  padding: 44px 30px;
-  border: 1px solid rgba(20, 43, 43, 0.14);
-  border-radius: 28px;
-  background: var(--paper);
-  box-shadow: 0 24px 70px rgba(20, 43, 43, 0.12);
+  width: min(calc(100% - 32px), 460px);
+  margin: 14vh auto 0;
+  padding: 36px 26px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
   text-align: center;
 }
 
 .invalidMark {
   display: grid;
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 18px;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
   place-items: center;
-  border-radius: 18px;
-  color: white;
-  background: var(--coral);
-  font-size: 28px;
-  font-weight: 900;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--danger);
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .invalidCard h1 {
   margin: 8px 0;
-  font-size: 32px;
+  font-size: 22px;
+  font-weight: 800;
 }
 
 .invalidCard > p:not(.eyebrow) {
@@ -930,89 +1025,47 @@
   font-size: 13px;
 }
 
-@media (max-width: 860px) {
-  .columns {
-    grid-template-columns: 1fr;
-  }
-
-  .sideColumn {
-    position: static;
-  }
-
-  .hero {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
-
 @media (max-width: 560px) {
-  .topbar,
-  .shell {
-    width: min(100% - 24px, 1180px);
-  }
-
-  .topbar {
-    min-height: 70px;
-  }
-
-  .securePill {
-    display: none;
-  }
-
-  .shell {
-    padding-top: 34px;
-  }
-
-  .hero {
-    margin-bottom: 22px;
-  }
-
-  .hero h1 {
-    font-size: 42px;
-    line-height: 0.94;
-  }
-
   .card {
-    padding: 18px;
-    border-radius: 22px;
+    padding: 14px;
+    border-radius: 12px;
   }
 
   .item {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 30px minmax(0, 1fr);
   }
 
   .itemVisual {
-    width: 48px;
-    height: 48px;
-    border-radius: 15px;
+    width: 30px;
+    height: 30px;
   }
 
   .item > b {
     grid-column: 2;
   }
 
+  .savedDelivery dl,
+  .addressChooser {
+    margin-left: 0;
+  }
+
   .savedDelivery dl > div {
     grid-template-columns: 1fr;
-    gap: 4px;
+    gap: 3px;
   }
 
   .accountCard {
-    grid-template-columns: auto 38px minmax(0, 1fr);
+    grid-template-columns: auto 34px minmax(0, 1fr);
   }
 
   .accountIcon {
-    width: 38px;
-    height: 38px;
+    width: 34px;
+    height: 34px;
   }
 
   .copyButton {
     grid-column: 3;
     justify-self: start;
-  }
-
-  .amountPanel {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .footer {

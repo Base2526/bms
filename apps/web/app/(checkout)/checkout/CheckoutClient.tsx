@@ -120,6 +120,16 @@ export default function CheckoutClient({
   );
   const paymentPending = payment.latest?.status === "PENDING";
   const progressIndex = orderProgress.indexOf(checkout.order.status);
+  // Mirrors the final branch of the big status ternary below (the one that actually renders
+  // the payment form) so the mobile sticky bar knows when there's something to submit, without
+  // duplicating that whole condition chain inline.
+  const showPaymentForm =
+    !delivery.marketplaceManaged &&
+    !orderClosed &&
+    !paymentResolved &&
+    !paymentPending &&
+    payment.configured &&
+    delivery.complete;
 
   async function updateDelivery(payload: Record<string, string>) {
     setDeliveryBusy(true);
@@ -214,400 +224,396 @@ export default function CheckoutClient({
   return (
     <main className={styles.page}>
       <header className={styles.topbar}>
-        <div className={styles.brand}>
-          {checkout.store.logoUrl ? (
-            <img src={checkout.store.logoUrl} alt="" />
-          ) : (
-            <span>{checkout.store.name.slice(0, 1)}</span>
-          )}
-          <div>
-            <p className={styles.eyebrow}>SECURE CHECKOUT</p>
-            <strong>{checkout.store.name}</strong>
-          </div>
+        {checkout.store.logoUrl ? (
+          <img className={styles.brandmark} src={checkout.store.logoUrl} alt="" />
+        ) : (
+          <span className={styles.brandmark}>{checkout.store.name.slice(0, 1)}</span>
+        )}
+        <div className={styles.brandtext}>
+          <strong>{checkout.store.name}</strong>
+          <p className={styles.eyebrow}>{t("checkout.secure_order_link")}</p>
         </div>
-        <span className={styles.securePill}>{t("checkout.secure_order_link")}</span>
+        <div className={styles.statuschip}>
+          <span />
+          {statusLabels[checkout.order.status] || checkout.order.status}
+        </div>
       </header>
 
       <div className={styles.shell}>
-        <section className={styles.hero}>
-          <div>
-            <p className={styles.heroKicker}>{t("checkout.order_number_prefix")}{checkout.order.displayId}</p>
-            <h1>{t("checkout.review_heading_line1")}<br />{t("checkout.review_heading_line2")}</h1>
+        <div className={styles.orderline}>
+          <span className={styles.oid}>
+            {t("checkout.order_number_prefix")}
+            <span className={styles.num}>{checkout.order.displayId}</span>
+          </span>
+          <h1>
+            {t("checkout.review_heading_line1")} {t("checkout.review_heading_line2")}
+          </h1>
+        </div>
+
+        <section className={styles.card}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.step}>01</span>
+              <h2>{t("checkout.items_step_label")}</h2>
+            </div>
+            <span>{checkout.order.items.length} {t("checkout.items_count_suffix")}</span>
           </div>
-          <div className={styles.statusBadge}>
-            <span />
-            {statusLabels[checkout.order.status] || checkout.order.status}
+
+          <div className={styles.itemList}>
+            {checkout.order.items.map((item) => (
+              <article className={styles.item} key={`${item.sku}-${item.size}`}>
+                <div className={styles.itemVisual}>
+                  {item.name.slice(0, 1)}
+                </div>
+                <div className={styles.itemInfo}>
+                  <strong>{item.name}</strong>
+                  <span>{t("checkout.size_label")} {item.size} · {item.qty} {t("checkout.qty_unit")}</span>
+                  <small>{item.sku}</small>
+                </div>
+                <b>{money(item.amount, checkout.store.currency, lang)}</b>
+              </article>
+            ))}
           </div>
+
+          <dl className={styles.totals}>
+            <div><dt>{t("checkout.subtotal")}</dt><dd>{money(checkout.order.subtotal, checkout.store.currency, lang)}</dd></div>
+            {checkout.order.discount > 0 && (
+              <div className={styles.discountRow}>
+                <dt>{t("checkout.discount")} {checkout.order.couponCode ? `(${checkout.order.couponCode})` : ""}</dt>
+                <dd>-{money(checkout.order.discount, checkout.store.currency, lang)}</dd>
+              </div>
+            )}
+            <div>
+              <dt>{t("checkout.shipping_fee")}</dt>
+              <dd>
+                {checkout.order.shippingFee > 0
+                  ? money(checkout.order.shippingFee, checkout.store.currency, lang)
+                  : t("checkout.free")}
+              </dd>
+            </div>
+            <div className={styles.grandTotal}>
+              <dt>{t("checkout.grand_total")}</dt>
+              <dd>{money(checkout.order.total, checkout.store.currency, lang)}</dd>
+            </div>
+          </dl>
         </section>
 
-        <div className={styles.columns}>
-          <div className={styles.mainColumn}>
-            <section className={styles.card}>
-              <div className={styles.sectionHeading}>
-                <div>
-                  <span className={styles.step}>01</span>
-                  <h2>{t("checkout.items_step_label")}</h2>
-                </div>
-                <span>{checkout.order.items.length} {t("checkout.items_count_suffix")}</span>
-              </div>
+        <section className={styles.card}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.step}>02</span>
+              <h2>{t("checkout.delivery_step_label")}</h2>
+            </div>
+            {delivery.complete && !delivery.marketplaceManaged && (
+              <span className={styles.readyText}>{t("checkout.ready_text")}</span>
+            )}
+          </div>
 
-              <div className={styles.itemList}>
-                {checkout.order.items.map((item) => (
-                  <article className={styles.item} key={`${item.sku}-${item.size}`}>
-                    <div className={styles.itemVisual}>
-                      {item.name.slice(0, 1)}
+          {delivery.marketplaceManaged ? (
+            <div className={styles.notice}>
+              <strong>{t("checkout.marketplace_managed_title")}</strong>
+              <p>{t("checkout.marketplace_managed_body")}</p>
+            </div>
+          ) : (
+            <>
+              {delivery.complete && !editingDelivery ? (
+                <div className={styles.savedDelivery}>
+                  <div className={styles.savedBanner}>
+                    <span>✓</span>
+                    <div>
+                      <strong>{t("checkout.saved_delivery_title")}</strong>
+                      <p>{t("checkout.saved_delivery_body")}</p>
                     </div>
-                    <div className={styles.itemInfo}>
-                      <strong>{item.name}</strong>
-                      <span>{t("checkout.size_label")} {item.size} · {item.qty} {t("checkout.qty_unit")}</span>
-                      <small>{item.sku}</small>
-                    </div>
-                    <b>{money(item.amount, checkout.store.currency, lang)}</b>
-                  </article>
-                ))}
-              </div>
-
-              <dl className={styles.totals}>
-                <div><dt>{t("checkout.subtotal")}</dt><dd>{money(checkout.order.subtotal, checkout.store.currency, lang)}</dd></div>
-                {checkout.order.discount > 0 && (
-                  <div className={styles.discountRow}>
-                    <dt>{t("checkout.discount")} {checkout.order.couponCode ? `(${checkout.order.couponCode})` : ""}</dt>
-                    <dd>-{money(checkout.order.discount, checkout.store.currency, lang)}</dd>
                   </div>
-                )}
-                <div>
-                  <dt>{t("checkout.shipping_fee")}</dt>
-                  <dd>
-                    {checkout.order.shippingFee > 0
-                      ? money(checkout.order.shippingFee, checkout.store.currency, lang)
-                      : t("checkout.free")}
-                  </dd>
-                </div>
-                <div className={styles.grandTotal}>
-                  <dt>{t("checkout.grand_total")}</dt>
-                  <dd>{money(checkout.order.total, checkout.store.currency, lang)}</dd>
-                </div>
-              </dl>
-            </section>
+                  <dl>
+                    <div><dt>{t("checkout.recipient_name")}</dt><dd>{delivery.recipientName}</dd></div>
+                    <div><dt>{t("checkout.phone_short")}</dt><dd>{delivery.phone}</dd></div>
+                    <div>
+                      <dt>{t("checkout.address")}</dt>
+                      <dd>
+                        {delivery.selectedAddress?.label && <b>{delivery.selectedAddress.label}</b>}
+                        {delivery.selectedAddress?.address}
+                      </dd>
+                    </div>
+                  </dl>
 
-            <section className={styles.card}>
-              <div className={styles.sectionHeading}>
-                <div>
-                  <span className={styles.step}>02</span>
-                  <h2>{t("checkout.delivery_step_label")}</h2>
-                </div>
-                {delivery.complete && !delivery.marketplaceManaged && (
-                  <span className={styles.readyText}>{t("checkout.ready_text")}</span>
-                )}
-              </div>
+                  {delivery.addresses.length > 1 && (
+                    <div className={styles.addressChooser}>
+                      <p>{t("checkout.change_saved_address")}</p>
+                      {delivery.addresses.map((address) => (
+                        <label key={address.id}>
+                          <input
+                            type="radio"
+                            name="savedAddress"
+                            value={address.id}
+                            checked={selectedAddressId === address.id}
+                            onChange={() => setSelectedAddressId(address.id)}
+                          />
+                          <span>
+                            <strong>{address.label || t("checkout.shipping_address_default_label")}</strong>
+                            {address.address}
+                          </span>
+                        </label>
+                      ))}
+                      {selectedAddressId !== delivery.selectedAddress?.id && (
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          disabled={deliveryBusy}
+                          onClick={selectExistingAddress}
+                        >
+                          {t("checkout.use_this_address")}
+                        </button>
+                      )}
+                    </div>
+                  )}
 
-              {delivery.marketplaceManaged ? (
-                <div className={styles.notice}>
-                  <strong>{t("checkout.marketplace_managed_title")}</strong>
-                  <p>{t("checkout.marketplace_managed_body")}</p>
+                  <button
+                    type="button"
+                    className={styles.textButton}
+                    onClick={() => setEditingDelivery(true)}
+                  >
+                    {t("checkout.want_to_edit")}
+                  </button>
                 </div>
               ) : (
-                <>
-                  {delivery.complete && !editingDelivery ? (
-                    <div className={styles.savedDelivery}>
-                      <div className={styles.savedBanner}>
-                        <span>✓</span>
-                        <div>
-                          <strong>{t("checkout.saved_delivery_title")}</strong>
-                          <p>{t("checkout.saved_delivery_body")}</p>
-                        </div>
-                      </div>
-                      <dl>
-                        <div><dt>{t("checkout.recipient_name")}</dt><dd>{delivery.recipientName}</dd></div>
-                        <div><dt>{t("checkout.phone_short")}</dt><dd>{delivery.phone}</dd></div>
-                        <div>
-                          <dt>{t("checkout.address")}</dt>
-                          <dd>
-                            {delivery.selectedAddress?.label && <b>{delivery.selectedAddress.label}</b>}
-                            {delivery.selectedAddress?.address}
-                          </dd>
-                        </div>
-                      </dl>
+                <form className={styles.deliveryForm} onSubmit={saveDelivery}>
+                  {!delivery.complete && (
+                    <div className={styles.missingStrip}>
+                      {t("checkout.missing_fields_prefix")}{" "}
+                      {delivery.missingFields.map((field) => missingLabels[field]).join(", ")}
+                    </div>
+                  )}
 
-                      {delivery.addresses.length > 1 && (
-                        <div className={styles.addressChooser}>
-                          <p>{t("checkout.change_saved_address")}</p>
-                          {delivery.addresses.map((address) => (
-                            <label key={address.id}>
-                              <input
-                                type="radio"
-                                name="savedAddress"
-                                value={address.id}
-                                checked={selectedAddressId === address.id}
-                                onChange={() => setSelectedAddressId(address.id)}
-                              />
-                              <span>
-                                <strong>{address.label || t("checkout.shipping_address_default_label")}</strong>
-                                {address.address}
-                              </span>
-                            </label>
-                          ))}
-                          {selectedAddressId !== delivery.selectedAddress?.id && (
-                            <button
-                              type="button"
-                              className={styles.secondaryButton}
-                              disabled={deliveryBusy}
-                              onClick={selectExistingAddress}
-                            >
-                              {t("checkout.use_this_address")}
-                            </button>
-                          )}
-                        </div>
-                      )}
-
+                  {(editingDelivery || delivery.missingFields.includes("recipientName")) && (
+                    <label>
+                      <span>{t("checkout.recipient_name")}</span>
+                      <input
+                        name="recipientName"
+                        defaultValue={delivery.recipientName || ""}
+                        required={!delivery.recipientName}
+                        minLength={2}
+                        maxLength={120}
+                        placeholder={t("checkout.recipient_name_placeholder")}
+                      />
+                    </label>
+                  )}
+                  {(editingDelivery || delivery.missingFields.includes("phone")) && (
+                    <label>
+                      <span>{t("checkout.phone_full")}</span>
+                      <input
+                        name="phone"
+                        defaultValue={delivery.phone || ""}
+                        required={!delivery.phone}
+                        inputMode="tel"
+                        placeholder={t("checkout.phone_placeholder")}
+                      />
+                    </label>
+                  )}
+                  {(editingDelivery || delivery.missingFields.includes("shippingAddress")) && (
+                    <>
+                      <label>
+                        <span>{t("checkout.address_label_field")} <small>{t("checkout.optional")}</small></span>
+                        <input
+                          name="addressLabel"
+                          defaultValue={delivery.selectedAddress?.label || ""}
+                          placeholder={t("checkout.address_label_placeholder")}
+                        />
+                      </label>
+                      <label>
+                        <span>{t("checkout.shipping_address_default_label")}</span>
+                        <textarea
+                          name="shippingAddress"
+                          defaultValue={delivery.selectedAddress?.address || ""}
+                          required={!delivery.selectedAddress}
+                          minLength={10}
+                          maxLength={1000}
+                          placeholder={t("checkout.shipping_address_placeholder")}
+                        />
+                      </label>
+                    </>
+                  )}
+                  <div className={styles.formActions}>
+                    {editingDelivery && (
                       <button
                         type="button"
                         className={styles.textButton}
-                        onClick={() => setEditingDelivery(true)}
+                        onClick={() => setEditingDelivery(false)}
                       >
-                        {t("checkout.want_to_edit")}
+                        {t("common.cancel")}
                       </button>
-                    </div>
-                  ) : (
-                    <form className={styles.deliveryForm} onSubmit={saveDelivery}>
-                      {!delivery.complete && (
-                        <div className={styles.missingStrip}>
-                          {t("checkout.missing_fields_prefix")}{" "}
-                          {delivery.missingFields.map((field) => missingLabels[field]).join(", ")}
-                        </div>
-                      )}
-
-                      {(editingDelivery || delivery.missingFields.includes("recipientName")) && (
-                        <label>
-                          <span>{t("checkout.recipient_name")}</span>
-                          <input
-                            name="recipientName"
-                            defaultValue={delivery.recipientName || ""}
-                            required={!delivery.recipientName}
-                            minLength={2}
-                            maxLength={120}
-                            placeholder={t("checkout.recipient_name_placeholder")}
-                          />
-                        </label>
-                      )}
-                      {(editingDelivery || delivery.missingFields.includes("phone")) && (
-                        <label>
-                          <span>{t("checkout.phone_full")}</span>
-                          <input
-                            name="phone"
-                            defaultValue={delivery.phone || ""}
-                            required={!delivery.phone}
-                            inputMode="tel"
-                            placeholder={t("checkout.phone_placeholder")}
-                          />
-                        </label>
-                      )}
-                      {(editingDelivery || delivery.missingFields.includes("shippingAddress")) && (
-                        <>
-                          <label>
-                            <span>{t("checkout.address_label_field")} <small>{t("checkout.optional")}</small></span>
-                            <input
-                              name="addressLabel"
-                              defaultValue={delivery.selectedAddress?.label || ""}
-                              placeholder={t("checkout.address_label_placeholder")}
-                            />
-                          </label>
-                          <label>
-                            <span>{t("checkout.shipping_address_default_label")}</span>
-                            <textarea
-                              name="shippingAddress"
-                              defaultValue={delivery.selectedAddress?.address || ""}
-                              required={!delivery.selectedAddress}
-                              minLength={10}
-                              maxLength={1000}
-                              placeholder={t("checkout.shipping_address_placeholder")}
-                            />
-                          </label>
-                        </>
-                      )}
-                      <div className={styles.formActions}>
-                        {editingDelivery && (
-                          <button
-                            type="button"
-                            className={styles.textButton}
-                            onClick={() => setEditingDelivery(false)}
-                          >
-                            {t("common.cancel")}
-                          </button>
-                        )}
-                        <button
-                          type="submit"
-                          className={styles.primaryButton}
-                          disabled={deliveryBusy}
-                        >
-                          {deliveryBusy ? t("checkout.saving") : t("checkout.save_delivery")}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </>
-              )}
-            </section>
-          </div>
-
-          <aside className={styles.sideColumn}>
-            <section className={`${styles.card} ${styles.paymentCard}`}>
-              <div className={styles.sectionHeading}>
-                <div>
-                  <span className={styles.step}>03</span>
-                  <h2>{t("checkout.payment_step_label")}</h2>
-                </div>
-              </div>
-
-              {delivery.marketplaceManaged ? (
-                <div className={styles.notice}>
-                  <strong>{t("checkout.marketplace_payment_title")}</strong>
-                  <p>{t("checkout.marketplace_payment_body")}</p>
-                </div>
-              ) : orderClosed ? (
-                <div className={styles.noPayment}>
-                  <span>—</span>
-                  <h3>{t("checkout.order_closed_title")}</h3>
-                  <p>{t("checkout.order_closed_body")}</p>
-                </div>
-              ) : paymentResolved ? (
-                <div className={styles.successState}>
-                  <span>✓</span>
-                  <h3>{t("checkout.paid_title")}</h3>
-                  <p>{t("checkout.paid_body")}</p>
-                </div>
-              ) : paymentPending ? (
-                <div className={styles.pendingState}>
-                  <span className={styles.pendingPulse} />
-                  <p className={styles.eyebrow}>{t("checkout.payment_received_eyebrow")}</p>
-                  <h3>{t("checkout.payment_received_title")}</h3>
-                  <p>{t("checkout.payment_received_body")}</p>
-                  <dl>
-                    <div><dt>{t("checkout.amount_submitted")}</dt><dd>{money(payment.latest?.amount || checkout.order.total, checkout.store.currency, lang)}</dd></div>
-                    <div><dt>{t("checkout.status")}</dt><dd>{t("checkout.awaiting_review")}</dd></div>
-                  </dl>
-                </div>
-              ) : !payment.configured ? (
-                <div className={styles.noPayment}>
-                  <span>—</span>
-                  <h3>{t("checkout.no_payment_method_title")}</h3>
-                  <p>{t("checkout.no_payment_method_body")}</p>
-                </div>
-              ) : !delivery.complete ? (
-                <div className={styles.lockedPayment}>
-                  <span aria-hidden="true">🔒</span>
-                  <h3>{t("checkout.fill_delivery_first_title")}</h3>
-                  <p>{t("checkout.fill_delivery_first_body")}</p>
-                </div>
-              ) : (
-                <form className={styles.paymentForm} onSubmit={submitPayment}>
-                  {payment.latest?.status === "REJECTED" && (
-                    <div className={styles.rejectedStrip}>
-                      {t("checkout.slip_rejected_notice")}
-                    </div>
-                  )}
-                  <p className={styles.formIntro}>{t("checkout.choose_account_intro")}</p>
-                  <div className={styles.accountList}>
-                    {payment.accounts.map((account) => (
-                      <PaymentAccountCard
-                        key={account.key}
-                        account={account}
-                        checked={selectedAccount?.key === account.key}
-                        onSelect={() => setSelectedAccountKey(account.key)}
-                        t={t}
-                      />
-                    ))}
+                    )}
+                    <button
+                      type="submit"
+                      className={styles.primaryButton}
+                      disabled={deliveryBusy}
+                    >
+                      {deliveryBusy ? t("checkout.saving") : t("checkout.save_delivery")}
+                    </button>
                   </div>
-
-                  <div className={styles.amountPanel}>
-                    <span>{t("checkout.amount_due")}</span>
-                    <strong>{money(checkout.order.total, checkout.store.currency, lang)}</strong>
-                  </div>
-
-                  <label className={styles.upload}>
-                    <input
-                      type="file"
-                      name="slip"
-                      accept="image/jpeg,image/png,image/webp"
-                      required
-                      onChange={(event) =>
-                        setSlipName(event.target.files?.[0]?.name || "")
-                      }
-                    />
-                    <span className={styles.uploadMark}>+</span>
-                    <strong>{slipName || t("checkout.attach_slip")}</strong>
-                    <small>{t("checkout.slip_file_hint")}</small>
-                  </label>
-
-                  <label className={styles.referenceInput}>
-                    <span>{t("checkout.reference_number")} <small>{t("checkout.optional")}</small></span>
-                    <input name="slipRef" maxLength={120} />
-                  </label>
-
-                  <button
-                    type="submit"
-                    className={styles.primaryButton}
-                    disabled={paymentBusy}
-                  >
-                    {paymentBusy ? t("checkout.sending_slip") : t("checkout.submit_payment")}
-                  </button>
-                  <p className={styles.paymentFootnote}>
-                    {t("checkout.payment_footnote")}
-                  </p>
                 </form>
               )}
-            </section>
+            </>
+          )}
+        </section>
 
-            <section className={`${styles.card} ${styles.trackingCard}`}>
-              <div className={styles.sectionHeading}>
-                <div>
-                  <span className={styles.step}>04</span>
-                  <h2>{t("checkout.track_order_step_label")}</h2>
+        <section className={`${styles.card} ${styles.paymentCard}`}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.step}>03</span>
+              <h2>{t("checkout.payment_step_label")}</h2>
+            </div>
+          </div>
+
+          {showPaymentForm && (
+            <div className={styles.amountPanel}>
+              <span>{t("checkout.amount_due")}</span>
+              <strong className={styles.num}>{money(checkout.order.total, checkout.store.currency, lang)}</strong>
+            </div>
+          )}
+
+          {delivery.marketplaceManaged ? (
+            <div className={styles.notice}>
+              <strong>{t("checkout.marketplace_payment_title")}</strong>
+              <p>{t("checkout.marketplace_payment_body")}</p>
+            </div>
+          ) : orderClosed ? (
+            <div className={styles.noPayment}>
+              <span>—</span>
+              <h3>{t("checkout.order_closed_title")}</h3>
+              <p>{t("checkout.order_closed_body")}</p>
+            </div>
+          ) : paymentResolved ? (
+            <div className={styles.successState}>
+              <span>✓</span>
+              <h3>{t("checkout.paid_title")}</h3>
+              <p>{t("checkout.paid_body")}</p>
+            </div>
+          ) : paymentPending ? (
+            <div className={styles.pendingState}>
+              <span className={styles.pendingPulse} />
+              <p className={styles.eyebrow}>{t("checkout.payment_received_eyebrow")}</p>
+              <h3>{t("checkout.payment_received_title")}</h3>
+              <p>{t("checkout.payment_received_body")}</p>
+              <dl>
+                <div><dt>{t("checkout.amount_submitted")}</dt><dd>{money(payment.latest?.amount || checkout.order.total, checkout.store.currency, lang)}</dd></div>
+                <div><dt>{t("checkout.status")}</dt><dd>{t("checkout.awaiting_review")}</dd></div>
+              </dl>
+            </div>
+          ) : !payment.configured ? (
+            <div className={styles.noPayment}>
+              <span>—</span>
+              <h3>{t("checkout.no_payment_method_title")}</h3>
+              <p>{t("checkout.no_payment_method_body")}</p>
+            </div>
+          ) : !delivery.complete ? (
+            <div className={styles.lockedPayment}>
+              <span aria-hidden="true">🔒</span>
+              <h3>{t("checkout.fill_delivery_first_title")}</h3>
+              <p>{t("checkout.fill_delivery_first_body")}</p>
+            </div>
+          ) : (
+            <form id="bms-payment-form" className={styles.paymentForm} onSubmit={submitPayment}>
+              {payment.latest?.status === "REJECTED" && (
+                <div className={styles.rejectedStrip}>
+                  {t("checkout.slip_rejected_notice")}
                 </div>
+              )}
+              <p className={styles.formIntro}>{t("checkout.choose_account_intro")}</p>
+              <div className={styles.accountList}>
+                {payment.accounts.map((account) => (
+                  <PaymentAccountCard
+                    key={account.key}
+                    account={account}
+                    checked={selectedAccount?.key === account.key}
+                    onSelect={() => setSelectedAccountKey(account.key)}
+                    t={t}
+                  />
+                ))}
               </div>
-              <ol className={styles.timeline}>
-                {[
-                  [t("checkout.timeline_created"), 0],
-                  [t("checkout.timeline_confirmed"), 1],
-                  [t("checkout.timeline_packing"), 2],
-                  [t("checkout.timeline_shipped"), 3],
-                  [t("checkout.timeline_completed"), 4],
-                ].map(([label, index]) => {
-                  const stepIndex = Number(index);
-                  const active = progressIndex >= stepIndex;
-                  const current = progressIndex === stepIndex;
-                  return (
-                    <li
-                      key={String(label)}
-                      className={active ? styles.timelineActive : ""}
-                    >
-                      <span>{active ? "✓" : ""}</span>
-                      <div>
-                        <strong>{label}</strong>
-                        {current && <small>{t("checkout.current_status")}</small>}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-              {checkout.fulfillment.trackingNo && (
-                <div className={styles.trackingNumber}>
-                  <span>{t("checkout.tracking_number")}</span>
-                  <strong>{checkout.fulfillment.trackingNo}</strong>
-                  {checkout.fulfillment.carrier && (
-                    <small>{checkout.fulfillment.carrier}</small>
-                  )}
-                </div>
+
+              <label className={styles.upload}>
+                <input
+                  type="file"
+                  name="slip"
+                  accept="image/jpeg,image/png,image/webp"
+                  required
+                  onChange={(event) =>
+                    setSlipName(event.target.files?.[0]?.name || "")
+                  }
+                />
+                <span className={styles.uploadMark}>+</span>
+                <strong>{slipName || t("checkout.attach_slip")}</strong>
+                <small>{t("checkout.slip_file_hint")}</small>
+              </label>
+
+              <label className={styles.referenceInput}>
+                <span>{t("checkout.reference_number")} <small>{t("checkout.optional")}</small></span>
+                <input name="slipRef" maxLength={120} />
+              </label>
+
+              <button
+                type="submit"
+                className={`${styles.primaryButton} ${styles.formSubmit}`}
+                disabled={paymentBusy}
+              >
+                {paymentBusy ? t("checkout.sending_slip") : t("checkout.submit_payment")}
+              </button>
+              <p className={styles.paymentFootnote}>
+                {t("checkout.payment_footnote")}
+              </p>
+            </form>
+          )}
+        </section>
+
+        <section className={`${styles.card} ${styles.trackingCard}`}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.step}>04</span>
+              <h2>{t("checkout.track_order_step_label")}</h2>
+            </div>
+          </div>
+          <ol className={styles.timeline}>
+            {[
+              [t("checkout.timeline_created"), 0],
+              [t("checkout.timeline_confirmed"), 1],
+              [t("checkout.timeline_packing"), 2],
+              [t("checkout.timeline_shipped"), 3],
+              [t("checkout.timeline_completed"), 4],
+            ].map(([label, index]) => {
+              const stepIndex = Number(index);
+              const active = progressIndex >= stepIndex;
+              const current = progressIndex === stepIndex;
+              return (
+                <li
+                  key={String(label)}
+                  className={active ? styles.timelineActive : ""}
+                >
+                  <span>{active ? "✓" : ""}</span>
+                  <div>
+                    <strong>{label}</strong>
+                    {current && <small>{t("checkout.current_status")}</small>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          {checkout.fulfillment.trackingNo && (
+            <div className={styles.trackingNumber}>
+              <span>{t("checkout.tracking_number")}</span>
+              <strong>{checkout.fulfillment.trackingNo}</strong>
+              {checkout.fulfillment.carrier && (
+                <small>{checkout.fulfillment.carrier}</small>
               )}
-              {orderClosed && (
-                <div className={styles.closedStrip}>
-                  {t("checkout.order_in_status_prefix")}{" "}
-                  {statusLabels[checkout.order.status] || checkout.order.status}
-                </div>
-              )}
-            </section>
-          </aside>
-        </div>
+            </div>
+          )}
+          {orderClosed && (
+            <div className={styles.closedStrip}>
+              {t("checkout.order_in_status_prefix")}{" "}
+              {statusLabels[checkout.order.status] || checkout.order.status}
+            </div>
+          )}
+        </section>
 
         {error && (
           <div className={styles.errorToast} role="alert">
@@ -620,6 +626,18 @@ export default function CheckoutClient({
           <p>{t("checkout.footer_note")}</p>
         </footer>
       </div>
+
+      {showPaymentForm && (
+        <div className={styles.stickyPay}>
+          <div>
+            <span>{t("checkout.amount_due")}</span>
+            <strong className={styles.num}>{money(checkout.order.total, checkout.store.currency, lang)}</strong>
+          </div>
+          <button type="submit" form="bms-payment-form" disabled={paymentBusy}>
+            {paymentBusy ? t("checkout.sending_slip") : t("checkout.submit_payment")}
+          </button>
+        </div>
+      )}
     </main>
   );
 }

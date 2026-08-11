@@ -42,6 +42,36 @@ the authoritative order snapshot: item subtotal, discount amount with the coupon
 total. The current cart uses the latest unpaid `PENDING` order and shows the same breakdown so staff
 can see why the visible total is lower than the item line sum.
 
+Schema (migration `6.2__bms_customer_360.sql`): `bms_customers.email/preferred_language/timezone`
+(there was no email column before this, despite email being a CRM matching criterion elsewhere),
+`bms_customer_addresses.address_type` (`shipping`/`billing`, defaults to `'shipping'` so existing
+rows don't break), and a new `bms_customer_ai_summary` table caching AI insights per customer
+(PK is just `customer_id`, since `bms_customers.id` is already globally unique). `Customer360Panel.tsx`
+is one file split into per-section sub-components (`SummarySection`/`ContactSection`/`StatsSection`/
+`RecentOrdersSection`/`ProductsSection`/`CartSection`/`NotesSection`/`TimelineSection`/
+`InsightsSection`/`QuickActionsSection`) rendered through antd `Collapse`'s `items` prop; the lazy
+Timeline/AI Insights queries only fire the first time their panel is expanded, relying on `Collapse`
+not mounting inactive panel children — that's the whole lazy-load mechanism, not extra debouncing.
+
+Before a `PACKING` order can move to `SHIPPED`, `shipOrder()`/`createShipment()` re-check in the
+backend that LINE/Facebook/Instagram/Web/TikTok Chat customers have a `bms_customer_addresses` row
+with `address_type = 'shipping'` (Lazada/Shopee are exempt — their address stays in Seller Center).
+`BmsOrder.hasShippingAddress` only drives the Orders page UI; the service-layer check is what's
+authoritative.
+
+**Pending improvements (not done yet):**
+- Lazada/Shopee orders don't appear in this panel's recent orders yet — not blocked on the (abandoned)
+  ChannelAdapter refactor, but because `parseLazadaMessages()`/`parseShopeeMessages()` webhook parsing
+  is still an unverified placeholder with no real orders flowing in yet (see
+  [../integrations/lazada.md](../integrations/lazada.md)). The panel's query already accepts channel as
+  free text, so no further change is needed on this side once that's fixed.
+- "Open Marketplace" in Recent Orders stays disabled for every channel (no real deep-link to LINE OA
+  Manager/TikTok/Lazada Seller Center yet) — awaiting separate design.
+- No unit/integration test for `lib/bms/customer360.ts` (the project has no active test suite overall).
+- The avg-response-time query assumes one customer IN followed by one staff OUT in the same
+  conversation is a single response; it does not yet discount time where a chat sat idle overnight
+  before the customer returned, which can skew the number for stale-then-resumed chats.
+
 ## Compact chat workspace and product sharing
 
 The queue filters and active-chat header intentionally use smaller typography and tighter spacing

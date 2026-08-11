@@ -199,9 +199,10 @@ trusting this count after any catalog change.
 - Password comparisons must use the dummy bcrypt hash when an account is absent to reduce timing
   enumeration. Keep the 72-byte bcrypt input limit for newly registered/reset passwords. Verification
   and reset tokens are single-use via atomic SQL, not a SELECT followed by a later mark-used UPDATE.
-- Auth rate limiting currently reuses the bounded in-memory limiter with IP and hashed-identity keys.
-  It is per instance and fail-local; move it to Redis before treating it as distributed production
-  protection. Never put raw email, username, token, or password into a rate-limit key/log.
+- Auth rate limiting uses the same `lib/bms/rateLimit.ts` with IP and hashed-identity keys, counted in
+  Redis so it holds across every `web` instance (see § Multi-instance readiness below) — it degrades to
+  the old per-instance in-memory window if Redis is unreachable, it does not fail open. Never put raw
+  email, username, token, or password into a rate-limit key/log.
 - Google login must call `google-auth-library.verifyIdToken()` with the configured audience and require
   a verified email. Decoding claims without signature/issuer/expiry/audience validation is an account
   takeover. Facebook login must verify debug-token `app_id`, `user_id`, and `/me`; keep
@@ -399,10 +400,40 @@ Redis backs four distinct things in this app — do not conflate them or add a f
   its real work in `recordJobRun(jobName, "cron", () => ...)`, not call the underlying function
   directly, or that job has no run history on `/admin/operations-schedule`.
 
-Redis has no password/TLS configured in any compose file as of 2026-08 — acceptable while it only held
-pub/sub, more of a real gap now that it also holds session ids and (transiently) store payment-account
-data via the cache. Treat "add Redis auth" as outstanding before a production deployment that doesn't
-already isolate Redis at the network layer.
+Redis auth is opt-in as of 2026-08: set `REDIS_PASSWORD` and the compose redis service starts with
+`requirepass` (leave it unset and nothing changes) — `REDIS_URL` must then carry the credential as
+`redis://:<password>@redis:6379`. Turn it on before Redis leaves the host it shares with `web`, since
+it holds session ids, rate-limit counters, and (transiently) store payment-account data via the cache.
+TLS is still not configured anywhere; use `rediss://` for any cross-host hop.
+
+Redis is also now load-bearing for rate limiting (`lib/bms/rateLimit.ts`), not just pub/sub, cache and
+session revocation. That path is deliberately **not** fail-open the way `lib/cache.ts` is: a Redis
+outage drops it back to a per-instance in-memory window, which still refuses traffic over the limit.
+Do not "simplify" it into the cache's fail-open shape — that would disable login brute-force
+protection exactly when Redis is unhealthy.
+
+**Multi-instance readiness (2026-08)**: `web` and `ws` can now run as more than one container with
+every default unchanged from single-instance behavior. If you add a new per-request file write, a
+new rate-limited endpoint, or a new cron/scheduled job, check these invariants before assuming they
+hold:
+- File bytes go through `lib/storageDrivers/` (`readStoredFile`/`statStoredFile`/
+  `openStoredFileStream`/`persistWebFile`/`persistUploadStream`/`persistBuffer` — all re-exported from
+  `lib/storage.ts`). Never build a path from `STORAGE_DIR`/`relpath` yourself; a path built outside
+  the driver is invisible to every instance except the one that wrote it.
+- Anything that must be enforced fleet-wide (a rate limit, a lock, a "has this already run") goes
+  through Redis or Postgres, not a module-level `Map`/counter — that state is per-process, not
+  per-request.
+- A cron/scheduled job that reads rows and later acts on them must claim its batch first
+  (`FOR UPDATE SKIP LOCKED`, or a compare-and-set on the idempotency column) rather than
+  read-then-act, or two schedulers/instances double-fire it. See `runDueFollowups()`
+  (`lib/bms/followups.ts`) and `runScheduledDigests()` (`lib/bms/reportDigest.ts`) for the pattern —
+  `releaseExpiredOrders()` (`lib/bms/orders.ts`) already did this correctly and is the reference
+  example.
+- `apps/ws` has no database connection at all (it only speaks to Redis pub/sub) — do not add one back
+  without a real reason; it is what lets `ws` scale horizontally with zero extra config today.
+
+Full history/rationale of what was found and fixed: § Multi-instance readiness in
+[CLAUDE.local.md](CLAUDE.local.md).
 
 ## Working method
 
