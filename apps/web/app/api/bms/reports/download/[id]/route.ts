@@ -5,14 +5,12 @@
 // check at all — fine for public product images, not for a generated
 // business report). Requires a signed admin session and verifies the
 // bms_generated_reports row for this file id belongs to the caller's own
-// tenant before streaming anything from disk.
+// tenant before streaming anything out of storage.
 // =============================================================
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import fs from "fs";
-import path from "path";
 import { Readable } from "stream";
 import { verifyAdminSession } from "@/lib/auth/server";
 import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
@@ -20,7 +18,7 @@ import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { requirePermission } from "@/lib/bms/permissions";
 import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
 import { query } from "@/lib/db";
-import { STORAGE_DIR } from "@/lib/storage";
+import { openStoredFileStream, statStoredFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,20 +57,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const row = rows[0];
   if (!row || row.deleted_at) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const fullPath = path.join(STORAGE_DIR, row.relpath);
-  if (!fs.existsSync(fullPath)) return NextResponse.json({ error: "file missing on disk" }, { status: 404 });
+  const stored = await statStoredFile(row.relpath);
+  if (!stored) return NextResponse.json({ error: "file missing in storage" }, { status: 404 });
 
-  const stat = await fs.promises.stat(fullPath);
   const downloadName = (row.original_name || row.filename || `report-${fileId}`).replace(/[\/\\?%*:|"<>]/g, "_");
 
-  const nodeStream = fs.createReadStream(fullPath);
+  const nodeStream = await openStoredFileStream(row.relpath);
   const webStream = Readable.toWeb(nodeStream) as any;
 
   return new NextResponse(webStream, {
     status: 200,
     headers: {
       "Content-Type": row.mimetype || "application/octet-stream",
-      "Content-Length": String(stat.size),
+      "Content-Length": String(stored.size),
       "Content-Disposition": `attachment; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
       "Cache-Control": "no-store",
     },

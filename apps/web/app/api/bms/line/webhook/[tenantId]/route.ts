@@ -84,7 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
   // rate limit ต่อร้าน (กัน abuse / flood)
-  const rl = rateLimit(`line:${tenantId}`, 120, 60_000);
+  const rl = await rateLimit(`line:${tenantId}`, 120, 60_000);
   if (!rl.ok) {
     return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { "retry-after": String(rl.retryAfter) } });
   }

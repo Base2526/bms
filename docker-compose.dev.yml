@@ -16,7 +16,6 @@ services:
   web:
     command: >
       sh -c "test -f node_modules/.package-lock.json || npm ci &&
-             test -f ../../packages/social-queue/node_modules/.package-lock.json || npm --prefix ../../packages/social-queue ci &&
              npm run dev"
     environment:
       NODE_ENV: development

@@ -17,12 +17,10 @@
 // permission แยกจาก report.view เดิม เพราะ "ส่งออกนอกระบบ" เสี่ยงกว่า "ดู/ดาวน์โหลด" มาก
 // =============================================================
 
-import fs from "fs";
-import path from "path";
 import { query } from "@/lib/db";
 import { audit } from "./audit";
 import { sendEmail } from "@/lib/mailer";
-import { STORAGE_DIR } from "@/lib/storage";
+import { readStoredFile } from "@/lib/storage";
 import { getStoreProfile } from "./storeProfile";
 import { getTenantName } from "./platform";
 import { findGeneratedReportByFileId, type ReportType, type ReportFormat } from "./reportEngine";
@@ -96,9 +94,12 @@ export async function emailGeneratedReport(
   const row = rows[0];
   if (!row || row.deleted_at) throw new Error("ไฟล์รายงานนี้ถูกลบไปแล้ว หรือหาไม่พบ");
 
-  const fullPath = path.join(STORAGE_DIR, row.relpath);
-  if (!fs.existsSync(fullPath)) throw new Error("ไม่พบไฟล์รายงานบนเซิร์ฟเวอร์ (อาจถูกย้าย/ลบไปแล้ว)");
-  const buf = await fs.promises.readFile(fullPath);
+  let buf: Buffer;
+  try {
+    buf = await readStoredFile(row.relpath);
+  } catch {
+    throw new Error("ไม่พบไฟล์รายงานบนเซิร์ฟเวอร์ (อาจถูกย้าย/ลบไปแล้ว)");
+  }
 
   const tenantName = (await getTenantName(tenantId)) || "ร้านค้า";
   const reportLabel = REPORT_LABEL_TH[row.report_type] ?? row.report_type;

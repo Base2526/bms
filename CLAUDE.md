@@ -534,8 +534,20 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   shared `RedisPubSub` instance from `packages/realtime` instead of opening a second one. See "Redis
   usage" in [AGENTS.md](AGENTS.md) for the invariants (what's cached vs. never cached, fail-open
   design, what's *not* covered — community/`USER_COOKIE` logins are still stateless JWT with no
-  revocation). **Not done**: Redis has no password/TLS in any compose file yet — treat as required
-  before a production deploy that doesn't already isolate Redis at the network layer.
+  revocation). Redis auth is now **opt-in** rather than absent: setting `REDIS_PASSWORD` makes the
+  compose redis service start with `requirepass` (unset = unchanged, no password), and `REDIS_URL`
+  must carry the credential too. **Still not done**: TLS — use `rediss://` and terminate properly
+  before Redis leaves the host it shares with `web`.
+- **Multi-instance readiness (2026-08)** — ✅ every piece of per-instance state that would break
+  running more than one `web` (or `ws`) container is gone, with every default preserving
+  single-instance behavior — nothing here requires setting a new env var to keep working exactly as
+  before. See § Multi-instance readiness in [CLAUDE.local.md](CLAUDE.local.md) for the full list
+  (pg pool sizing on both `web` and `ws`, Redis-backed rate limiting, the `lib/storageDrivers/`
+  abstraction with a `local`/`s3` driver, two cron jobs that used to read-then-act and could
+  double-send under concurrent schedulers, and removal of a second unused Postgres pool inside
+  `apps/ws`). Verified against real Postgres/Redis/MinIO, not just `tsc` — see that section for what
+  each test actually proved. Not yet done: an end-to-end run with `STORAGE_DRIVER=s3` through the
+  app itself, and adding replicas/LB to any compose file (a topology decision, not a code change).
 - **Authentication identity + social-login hardening (2026-08)**: `lib/auth/identity.ts` is the
   shared public-login/register contract: trim + Unicode NFKC + lowercase for username/email,
   server-side username/email/phone/password validation, reserved system handles, and bcrypt's
@@ -545,8 +557,9 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   therefore one login identity, while public registration rejects `admin` entirely. Public
   registration no longer creates a session before email verification, public Subscribers cannot get
   an admin cookie, missing-account password checks use a dummy bcrypt hash, and auth endpoints have
-  bounded in-memory IP + hashed-identity limits (still per-instance; move to Redis for distributed
-  enforcement). Mobile login is implemented; email verification/password reset consume tokens
+  bounded IP + hashed-identity limits (Redis-backed since the multi-instance pass above, so the
+  limit is fleet-wide; it degrades to the old per-instance window if Redis is unreachable rather
+  than failing open). Mobile login is implemented; email verification/password reset consume tokens
   atomically. Google ID tokens must be verified with `google-auth-library` (never decoded-only), and
   Facebook debug-token `app_id`/`user_id` must match. `FACEBOOK_APP_SECRET` is server-only; Compose
   accepts the old public-named env only as a temporary value fallback without exposing that name to

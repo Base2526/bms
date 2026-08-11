@@ -463,6 +463,11 @@ async function generateFollowupMessage(
 
 const CANDIDATE_BATCH = 200;
 const DUE_JOB_BATCH = 100;
+/**
+ * นานแค่ไหนที่งานหนึ่งใบถือว่า "มีคนกำลังทำอยู่" หลังถูกเคลม — ต้องยาวกว่าเวลาที่ใช้สร้างข้อความ
+ * ด้วย AI + ส่งออก channel จริง แต่สั้นพอให้งานที่ค้างเพราะ process ตายกลับมาทำใหม่ได้ไว
+ */
+const JOB_LEASE_MINUTES = 5;
 
 type RunSummary = { scanned: number; sent: number; skipped: number; failed: number };
 
@@ -656,13 +661,28 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
     retry_count: number;
     job_created_at: Date | string;
   }>(
-    `SELECT j.id AS job_id, j.tenant_id, j.conversation_id, j.rule_id, j.retry_count, j.created_at AS job_created_at
-       FROM bms_followup_jobs j
-      WHERE j.status = 'PENDING' AND j.next_run_at <= now()
-        AND ($1::uuid IS NULL OR j.tenant_id = $1)
-      ORDER BY j.next_run_at ASC
-      LIMIT ${DUE_JOB_BATCH}`,
-    [tenantId ?? null]
+    // เคลมงานก่อนทำ ไม่ใช่แค่ SELECT: การอ่านเฉย ๆ แล้วค่อยไปส่งข้อความทีหลัง แปลว่าถ้ามี
+    // scheduler ยิงพร้อมกันสองทาง (cron ชนกับปุ่ม "รันตอนนี้", หรือ cron ยิงเข้า LB ที่มี web
+    // หลาย instance) ทั้งสองฝั่งจะอ่านงานใบเดียวกันแล้ว **ส่งข้อความหาลูกค้าซ้ำ**
+    //
+    // เคลมด้วยการเลื่อน next_run_at ออกไปเป็น lease ไม่ใช่เปลี่ยน status เพราะ CHECK constraint
+    // ของ bms_followup_jobs.status มีแค่ PENDING/SENT/STOPPED/FAILED (ไม่มี RUNNING) — ทำแบบนี้
+    // จึงไม่ต้องมี migration ใหม่ · FOR UPDATE SKIP LOCKED ให้ instance ที่สแกนพร้อมกันข้ามแถวที่
+    // ถูกจับไปแล้วแทนที่จะรอ · ถ้า process ตายกลางทาง lease หมดอายุแล้วงานกลับมาถึงกำหนดเอง
+    `UPDATE bms_followup_jobs j
+        SET next_run_at = now() + ($2 || ' minutes')::interval,
+            updated_at = now()
+      WHERE j.id IN (
+        SELECT id FROM bms_followup_jobs
+         WHERE status = 'PENDING' AND next_run_at <= now()
+           AND ($1::uuid IS NULL OR tenant_id = $1)
+         ORDER BY next_run_at ASC
+         LIMIT ${DUE_JOB_BATCH}
+         FOR UPDATE SKIP LOCKED
+      )
+     RETURNING j.id AS job_id, j.tenant_id, j.conversation_id, j.rule_id, j.retry_count,
+               j.created_at AS job_created_at`,
+    [tenantId ?? null, String(JOB_LEASE_MINUTES)]
   );
 
   for (const job of due.rows) {

@@ -11,12 +11,10 @@
 // การยืนยัน/คืนเงินต้องผ่านสิทธิ์ (payment.confirm / payment.refund)
 // =============================================================
 
-import path from "path";
-import { readFile } from "fs/promises";
 import sharp from "sharp";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { STORAGE_DIR } from "@/lib/storage";
+import { readStoredFile } from "@/lib/storage";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
@@ -348,7 +346,7 @@ function fitsImagePolicy(
   return width * height <= policy.maxImagePixels;
 }
 
-/** แปลง /api/files/<id> → { base64, mediaType } (อ่านจาก STORAGE_DIR) */
+/** แปลง /api/files/<id> → { base64, mediaType } (อ่านผ่าน storage driver) */
 async function loadSlipImage(
   slipUrl: string,
   reader: SlipReader
@@ -367,7 +365,7 @@ async function loadSlipImage(
 
   let buf: Buffer;
   try {
-    buf = await readFile(path.join(STORAGE_DIR, relpath));
+    buf = await readStoredFile(relpath);
   } catch {
     return null;
   }

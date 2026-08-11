@@ -1882,6 +1882,111 @@ Shopee/Lazada signature verification กับเอกสาร Open Platform �
 · apply migration `7.52` เข้า docker/production จริง + ทดสอบ Follow-up Automation end-to-end ·
 Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ดู § Follow-up Automation)
 
+## Multi-instance readiness — เตรียมแยก server (2026-08)
+
+**เสร็จแล้วเฉพาะการถอด per-instance state ออก — ยังไม่ได้แยกเครื่องจริง และ default ทุกค่ายังเป็น
+พฤติกรรมเดิม 100%** (branch `feat/multi-instance-readiness`) ต้นเรื่อง: ตรวจว่าถ้าจะรัน `web`
+มากกว่า 1 instance ต้องแก้อะไรก่อน แล้วพบทีละชั้น — เริ่มจาก state ที่ผูกกับ process/disk ของ `web`
+3 จุด, ตามด้วย pool ที่ซ่อนอยู่ใน `ws` และ cron ที่ "อ่านแล้วค่อยทำ" ที่หลับอยู่เพราะยังมี instance
+เดียว. `admin session`/`AI conversation state`/`scheduleNewJobs()`/`releaseExpiredOrders()` ตรวจแล้ว
+ว่าพร้อมอยู่ก่อนหน้านี้ ไม่ต้องแก้เพิ่ม
+
+- **pg pool มีเพดานชัดเจน** (`lib/db.ts`) — เดิมไม่ตั้ง `max` เลยจึงเป็น default ของ `pg` = 10
+  ต่อ process. ไม่ใช่ปัญหาตอน 1 instance แต่พอ scale แล้ว connection รวม = `POSTGRES_POOL_MAX` ×
+  จำนวน replica ซึ่งพอทะลุ `max_connections` ของ Postgres จะ **ล้มพร้อมกันทุก instance** ไม่ใช่ค่อย ๆ
+  ช้าลง · ตอนนี้ตั้งผ่าน env 3 ตัว (`POSTGRES_POOL_MAX` / `_IDLE_TIMEOUT_MS` / `_CONNECT_TIMEOUT_MS`)
+  **default ยังเป็น 10 เท่าเดิม** — ต้องลดเองก่อนเพิ่ม replica · เพิ่ม `pool.on("error")` ด้วย เพราะ
+  error ระดับ pool (เช่น Postgres restart, idle connection โดน network ตัด) ไม่ได้โผล่ที่ query ไหนเลย
+  ถ้าไม่มี listener Node จะถือเป็น unhandled `'error'` event แล้ว **ฆ่า process ทิ้ง**
+- **rate limit ย้ายไป Redis** (`lib/bms/rateLimit.ts`) — เดิมเป็น `Map` ใน process จึงแปลว่า limit จริง
+  = ค่าที่ตั้ง × จำนวน instance. จุดที่อันตรายไม่ใช่ webhook (7 จุด) แต่คือ `auth:*` (2 จุดใน
+  `resolvers.ts`'s `enforceAuthRateLimit`) — brute force protection ของหน้า login อ่อนลงตามจำนวน
+  instance ตรง ๆ · **fallback ตั้งใจไม่ fail-open**: Redis ล่ม → ตกกลับไปใช้ `Map` เดิม (= per-instance
+  เหมือนก่อนหน้านี้) ไม่ใช่ปล่อยผ่าน — ต่างจาก `lib/cache.ts` ที่ fail-open ได้เพราะแคชพลาดแค่ช้าลง
+  แต่ rate limit ที่ fail-open = ปิดการป้องกันทั้งระบบพอดีตอน Redis มีปัญหา · `rateLimit()` กลายเป็น
+  **async** แล้ว (แก้ call site 9 จุด) · `enforceAuthRateLimit()` ใช้ `Promise.all` ยิงทั้ง 2 counter
+  เสมอ ไม่ short-circuit — ไม่งั้นคนที่หมุน IP อย่างเดียวจะไม่เคยสะสมนับที่ฝั่ง identity เลย
+- **ไฟล์ย้ายไปหลัง driver** (`lib/storageDrivers/`) — จุดที่พังหนักสุดถ้าแยกเครื่องโดยไม่แก้ ไม่ใช่
+  ตอนอัปโหลด แต่คือ **ตอนอ่านกลับใน request ถัดไป** ซึ่ง LB ส่งไป instance ไหนก็ได้: OCR สลิป
+  (`payments.ts`), ดาวน์โหลดรายงาน, แนบไฟล์อีเมล (`reportEmail.ts`), เสิร์ฟรูป (`/api/files/[id]`) —
+  ทั้ง 4 จุดเคยประกอบ `path.join(STORAGE_DIR, relpath)` เอง ตอนนี้เรียก
+  `readStoredFile()`/`statStoredFile()`/`openStoredFileStream()` จาก `lib/storage.ts` แทน
+  **ห้ามประกอบ path เองอีก** · `STORAGE_DRIVER=local` (default) = พฤติกรรมเดิมเป๊ะ, `s3` = ใช้ได้กับ
+  AWS S3/R2/MinIO/GCS S3-interop · `relpath` ในตาราง `files` เป็น key กลางที่ driver ไหนก็ใช้ได้ รูปแบบ
+  `YYYY/MM/DD/<ts>-<name>` เหมือนเดิมทุกอย่าง → **ย้ายไป s3 = copy ต้นไม้ไฟล์เดิมขึ้น bucket ไม่ต้อง
+  migrate DB**
+- **S3 driver เขียนเอง ไม่เพิ่ม dependency** (`storageDrivers/s3.ts`) — SigV4 ด้วย `node:crypto` + fetch,
+  ทำแค่ 3 verb ที่ระบบใช้จริง (PUT/GET รวม ranged/HEAD) · `writeStream` ของ s3 **buffer ทั้งก้อนก่อน PUT**
+  เพราะ signed single-part ต้องรู้ payload hash ก่อน (ไฟล์ที่ผ่านทางนี้คือ avatar/attachment ไม่ใช่ bulk
+  — ถ้าวันหนึ่งมีไฟล์ใหญ่ต้องเปลี่ยนเป็น multipart) · local driver ยัง stream จริงเหมือนเดิม
+- **Redis password เป็น opt-in** (`docker-compose.yml`) — ไม่ตั้ง `REDIS_PASSWORD` = เหมือนเดิมทุกอย่าง,
+  ตั้งเมื่อไหร่ container จะเปิด `requirepass` ให้เอง (และต้องแก้ `REDIS_URL` เป็น
+  `redis://:<password>@redis:6379` ด้วยตัวเอง) · ใช้ `$${VAR:+...}` เพื่อให้ **shell ใน container**
+  ขยาย ไม่ใช่ compose แปลตอน parse — verify แล้วทั้ง 2 ทาง (ไม่ตั้ง → `PING`=PONG, ตั้ง → `NOAUTH`
+  จนกว่าจะ auth)
+- **cron ที่เคย "อ่านแล้วค่อยทำ" → เปลี่ยนเป็นเคลมก่อนทำ** (2 จุด) — เป็นบั๊กที่หลับอยู่ตอนมี instance
+  เดียว เพราะ external cron ยิง URL เดียวจะถึงแค่ instance เดียวต่อ tick แต่จะตื่นทันทีเมื่อ (ก) tick
+  ใหม่ทับ tick เดิมที่ยังรันไม่จบ (ข) ปุ่ม "รันตอนนี้" ในหน้า admin ชนกับ cron หรือ (ค) มี scheduler
+  ยิงเข้าหลาย instance:
+  - `runDueFollowups()` (`followups.ts`) เดิม `SELECT` งานที่ถึงกำหนดมาก่อนแล้วค่อยวนส่งข้อความ →
+    สองฝั่งอ่านงานใบเดียวกันแล้ว **ส่งข้อความหาลูกค้าซ้ำ** · แก้เป็น `UPDATE ... WHERE id IN (SELECT
+    ... FOR UPDATE SKIP LOCKED) RETURNING ...` โดยเคลมด้วยการเลื่อน `next_run_at` เป็น lease
+    (`JOB_LEASE_MINUTES = 5`) **ไม่ใช่เปลี่ยน `status`** เพราะ CHECK ของตารางมีแค่
+    PENDING/SENT/STOPPED/FAILED (ไม่มี RUNNING) — เลี่ยง migration ใหม่ได้ทั้งหมด · process ตายกลางทาง
+    = lease หมดอายุแล้วงานกลับมาถึงกำหนดเอง (เดิมก็ retry อยู่แล้ว แค่ช้าลง 5 นาที)
+  - `runScheduledDigests()` (`reportDigest.ts`) เดิมเช็ค `last_period_key` จากค่าที่ SELECT มา แล้วค่อย
+    ส่ง → สองฝั่งอ่านค่าเก่าเหมือนกัน = เจ้าของร้านได้ digest ซ้ำสองรอบ (email+Slack+LINE) · แก้เป็น
+    compare-and-set: `UPDATE ... WHERE last_period_key IS DISTINCT FROM $key` แล้วดู `rowCount` ก่อนส่ง
+    · **ถ้าส่งแล้ว throw จะคืน `last_period_key` ค่าเดิม** (guard ด้วย `= $key` กันทับคนที่จองรอบใหม่กว่า)
+    เพื่อรักษาพฤติกรรมเดิมที่ cron รอบถัดไปยังลองใหม่ได้
+  - `scheduleNewJobs()` **ไม่ต้องแก้** — มี `ON CONFLICT (conversation_id, rule_id) WHERE status='PENDING'
+    DO NOTHING` คู่กับ unique partial index จาก `7.52` อยู่แล้ว (ที่ซ้ำได้คือค่า AI ตอน classify intent
+    ซึ่งเสียเงินเปล่าเล็กน้อย ไม่ใช่ข้อมูลผิด) · `releaseExpiredOrders()` ก็ไม่ต้องแก้ ใช้
+    `FOR UPDATE SKIP LOCKED` มาตั้งแต่แรก
+  - **ที่รู้ว่ายังไม่ได้แก้ (ยอมรับได้ ไม่ใช่ข้อมูลผิด)**: `runCarrierTrackingSync()` (`shipping.ts`) ยัง
+    SELECT-แล้ว-ค่อยยิง API — สองฝั่งพร้อมกันจะ **เรียก carrier API ซ้ำ** (เปลืองโควตา) แต่ไม่ทำข้อมูล
+    เพี้ยน เพราะ `syncShipmentLive()` re-lock + ไม่ให้ status ถอยหลังอยู่แล้ว · ไม่แก้เพราะทางแก้แบบ
+    lease ต้องไปขยับ `carrier_last_synced_at` ตั้งแต่ตอนเคลม ซึ่งเป็น field ที่ staff เห็นในหน้าจอ
+    (จะกลายเป็น "sync แล้ว" ทั้งที่ยังไม่ได้ sync จริง) — ถ้าจะแก้ควรเพิ่มคอลัมน์ claim แยก
+- **`ws` ไม่ได้ต่อ Postgres เลย — ลบ `apps/ws/src/db/` ทิ้งทั้งโฟลเดอร์** — ตอนไล่หา pool ตัวที่สอง
+  (กลัวว่า scale ws แล้ว connection จะทวีคูณ) พบว่าไฟล์นั้นสร้าง `pg.Pool` จริงและไม่มี `max` เหมือนกัน
+  **แต่ไม่มีใคร import เลยสักที่ และ `pg` ไม่ได้อยู่ใน `dependencies` ของ `apps/ws` ด้วยซ้ำ** →
+  ถ้ามีคนเผลอ import จะพังตอน runtime ในคอนเทนเนอร์ทันที (subscription ทั้งหมดของ ws มาจาก Redis
+  pub/sub อย่างเดียว) · ถอด `DATABASE_URL` ของ service `ws` ออกจาก compose ทั้ง 2 ไฟล์ด้วย เพราะเป็น
+  ตัวแปรที่ไม่มีโค้ดไหนอ่านแล้ว และ hardcode `app:app` ไว้ทำให้เข้าใจผิดว่า ws ต้องใช้ DB ·
+  **ผลพลอยได้: ws scale ตามแนวนอนได้เลยโดยไม่ต้องแตะอะไรอีก**
+- **ลบ `lib/upload-helpers.ts` ทิ้ง** — dead code ไม่มี caller เลย (`saveUpload`/`saveUploads`) ที่
+  hardcode `/app/storage` เขียนไฟล์เองตรง ๆ แล้วคืน URL `/uploads/<name>` ซึ่ง **ไม่มี route รองรับ
+  ด้วยซ้ำ** (ของจริงเสิร์ฟผ่าน `/api/files/[id]`) — ปล่อยไว้เท่ากับมีทางลัดรอให้คนเผลอ import แล้ว
+  bypass storage driver ที่เพิ่งทำ
+- **`docker-compose.dev.yml` มีบรรทัดค้างที่พัง dev stack — ลบแล้ว (ไม่เกี่ยวกับงานรอบนี้ แต่เจอตอน
+  ไล่ตรวจว่า "รันเครื่องเดียวยังปกติไหม")**: web service เดิมรัน
+  `test -f ../../packages/social-queue/node_modules/.package-lock.json || npm --prefix
+  ../../packages/social-queue ci && npm run dev` — แต่ `packages/social-queue` ถูกลบไปแล้วตั้งแต่รอบ
+  "Redis infrastructure hardening" ก่อนหน้านี้ (ดู [CLAUDE.md](CLAUDE.md)) โดยไม่ได้ลบบรรทัดนี้ตาม
+  ไปด้วย. จำลอง shell chain จริงแล้วยืนยันว่า `npm run dev` **ไม่ถูกเรียกเลย** ทุกครั้งที่ container
+  `web` ของ dev stack ถูก recreate/restart เพราะ `npm --prefix` ของ path ที่ไม่มีอยู่จะ exit 1 ตัดสาย
+  `&&` ทิ้งก่อนถึง `npm run dev` เสมอ (ยืนยัน exit code จริง ไม่ใช่เดา) — ตอนนี้เหลือแค่เช็ค
+  `node_modules` ของ `web` เองแล้วรัน `npm run dev` ตรง ๆ **ไม่กระทบ production** (`docker-compose.
+  prod.yml` build ด้วย Dockerfile จริง ไม่เคยอ้าง `social-queue` เลย)
+- **verify ของจริงแล้ว ไม่ใช่แค่ `tsc`**: `scripts/infra/multi-instance-contract.test.mts` ผ่าน 11/11
+  โดยยิงใส่ Redis จริง + **MinIO จริง** (docker) — ครอบ local round-trip/range/stream-hash/ไฟล์หาย/
+  path traversal, Redis counter + TTL ไม่ sliding + fallback ตอน Redis ล่มต้อง **ยังบล็อกอยู่**, และ
+  s3 round-trip/range/HEAD/stream-hash · เคส Redis/S3 จะ **SKIP (ไม่ใช่ pass)** ถ้าไม่ได้ตั้ง env ให้
+  · ต้องใส่ `--test-force-exit` ไม่งั้น ioredis ค้าง handle ไว้แล้ว runner ไม่จบ
+- **SQL เคลมงาน 2 แบบ verify กับ Postgres 16 จริงแล้ว** (ตารางจำลองใน container ชั่วคราว ไม่ได้แตะ dev
+  DB): lease + `FOR UPDATE SKIP LOCKED` — session A เปิด transaction ค้างไว้เคลมได้ 3 แถว ระหว่างนั้น
+  session B ที่รันพร้อมกันได้ **0 แถว** (ไม่ใช่รอ lock) และรันซ้ำหลัง commit ก็ยังได้ 0 เพราะ lease ยัง
+  ไม่หมด · digest CAS — ยิงซ้ำสองครั้งได้ `UPDATE 1` แล้ว `UPDATE 0`
+- **ยังไม่ทำ / gap ที่รู้ตัว**: ยังไม่ได้ทดสอบ `STORAGE_DRIVER=s3` ผ่านแอปจริงในเบราว์เซอร์ (verify ที่
+  ระดับ driver contract เท่านั้น — ยังไม่เคยอัปสลิปจริงผ่าน `/checkout` แล้วให้ OCR อ่านกลับ) · ยังไม่มี
+  สคริปต์ migrate ไฟล์เดิมขึ้น bucket (ใช้ `mc mirror`/`aws s3 sync` มือได้เพราะ key ไม่เปลี่ยน) ·
+  ยังไม่ได้เพิ่ม replica/LB จริงในทุก compose file (ตั้งใจ — เป็นการตัดสินใจเรื่อง topology ไม่ใช่โค้ด) ·
+  `app/api/admin/queue/db/route.ts` เป็น **dead code ที่ตกค้าง** จากตอนถอด social queue: query ตาราง
+  `social_posts` ที่ไม่มีแล้ว, ไม่มีหน้าไหนเรียก, เปิด `Pool` ตัวที่สองต่อ instance โดยไม่มี `max`, และ
+  guard `if (expected && ...)` แปลว่า **ถ้าไม่ได้ตั้ง `ADMIN_TOKEN` = ใครก็เรียกได้** — ตั้งใจไม่ลบใน
+  รอบนี้เพราะอยู่นอกขอบเขต แต่ควรลบ
+
 ## ก่อน production (สำคัญ)
 
 - เปิดตรวจรหัสผ่านใน loginAdmin (dev ยังไม่ตรวจ)
@@ -1894,7 +1999,7 @@ Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ด�
   (default hardcode `https://bms.jachoei.com`)
 - ให้ app ต่อ DB ด้วย role non-superuser เพื่อให้ RLS มีผลกับ read
 - apply migration `5.6` (platform admin) + `5.7` (operational perms) · seed platform admin ชุดแรก = Administrator ของร้าน default
-- ย้าย rate-limit webhook ไป Redis (ตอนนี้ in-memory ต่อ instance)
+- ~~ย้าย rate-limit webhook ไป Redis~~ ✅ ทำแล้ว (ดู § Multi-instance readiness ด้านล่าง)
 - `META_GRAPH_VERSION` (default v21.0) สำหรับ FB/IG send
 - Lazada/Shopee webhook signature ต้อง verify กับเอกสาร Open Platform ตัวจริงก่อนใช้จริง (ตอนนี้ HMAC-SHA256 แบบ TikTok เป็นแค่ placeholder ที่ยังไม่ยืนยัน — ดู [docs/integrations/lazada.md](docs/integrations/lazada.md))
 - fake seeder ปิดใน production · เปิดเฉพาะเครื่อง demo ด้วย `BMS_ALLOW_FAKE_SEED=1` (ร้านเทส seed มุมตัวเองได้)

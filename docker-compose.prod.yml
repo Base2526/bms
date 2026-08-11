@@ -11,12 +11,10 @@ services:
       WS_PORT: "8080"
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
-      DATABASE_URL: postgres://app:app@postgres:5432/appdb
       JWT_SECRET: ${JWT_SECRET}
     # ports:
     #   - "8081:8080"
     depends_on:
-      - postgres
       - redis
     networks:
       default: {}

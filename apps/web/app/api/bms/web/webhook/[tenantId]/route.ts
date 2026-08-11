@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400, headers: CORS });
 
-  const rl = rateLimit(`${CHANNEL}:${tenantId}`, 120, 60_000);
+  const rl = await rateLimit(`${CHANNEL}:${tenantId}`, 120, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { ...CORS, "retry-after": String(rl.retryAfter) } });
 
   // ถ้าตั้ง channel ไว้และปิดอยู่ → ไม่ให้ใช้; ถ้ายังไม่ตั้ง = เปิดโดยปริยาย

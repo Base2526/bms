@@ -37,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
-  const rl = rateLimit(`shopee:${tenantId}`, 120, 60_000);
+  const rl = await rateLimit(`shopee:${tenantId}`, 120, 60_000);
   if (!rl.ok) {
     return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { "retry-after": String(rl.retryAfter) } });
   }
