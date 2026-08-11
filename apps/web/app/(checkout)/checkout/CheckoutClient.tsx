@@ -495,7 +495,7 @@ export default function CheckoutClient({
                 </div>
               ) : !delivery.complete ? (
                 <div className={styles.lockedPayment}>
-                  <span>02</span>
+                  <span aria-hidden="true">🔒</span>
                   <h3>{t("checkout.fill_delivery_first_title")}</h3>
                   <p>{t("checkout.fill_delivery_first_body")}</p>
                 </div>

@@ -61,6 +61,9 @@ tenant's monthly AI quota like any other shared-key call.
   approved policies return to Draft once so a licensed pharmacist can verify the new evidence fields.
 - `7.73__bms_pharmacy_product_framework_consistency.sql` — DB-level product-type/framework consistency;
   contradictory legacy rows fail closed to `UNKNOWN`/`DRAFT`.
+- `7.74__bms_pharmacy_seed_protocol_safety_fields.sql` — repairs untouched MVP Drafts by declaring
+  every safety/red-flag question referenced by their rules. This lets stores converted to the
+  Pharmacy archetype submit the samples for review without weakening field-reference validation.
 
 ## Permissions
 
@@ -383,7 +386,7 @@ Cleanup action** — call it directly for now.
 
 ## Before relying on this in production
 
-1. Apply migrations `7.57`–`7.73` and confirm they're idempotent (re-run once).
+1. Apply migrations `7.57`–`7.74` and confirm they're idempotent (re-run once).
 2. Set `PHARMACY_INTAKE_ENABLED=true` and `PHARMACY_AI_ENABLED=true` for a dev/sandbox
    tenant only.
 3. As an Administrator, flip at least one real user's pharmacist license switch at
