@@ -267,70 +267,8 @@ cd apps/web && npx tsc --noEmit && npm run build   # ✅ ควรรันก�
 
 ## Customer 360 (Inbox right panel)
 
-**Current implementation (✅ ทำเสร็จแล้ว, ไม่ใช่แผนงาน):** หน้า `/admin/inbox` (`app/(admin)/admin/inbox/page.tsx`)
-เดิมเป็น 2 คอลัมน์ (list + แชท พร้อมแท็บ แชท/โน้ต/Timeline ของแชทเดียว) — **ไม่เคยมีคอลัมน์ขวาจริงมาก่อน** แม้
-เอกสารสเปกเดิมจะพูดถึง "3-column layout" ก็ตาม เพิ่มคอลัมน์ที่ 3 จริงตอนนี้ (`Customer360Panel.tsx`) แสดงเมื่อ
-เลือกแชท (`conv.customerId` — field ที่มีอยู่แล้วใน schema แต่หน้านี้ไม่เคย select มาก่อน ต้องเพิ่มใน `Q_CONV`)
-
-**Customer 360 read APIs** (gate ด้วย permission `customer.view` เดิม):
-- `bmsCustomer360(customerId)` — eager, โหลดทันทีตอนเลือกแชท (summary/contact/connected accounts/stats/
-  recent orders ทุกช่องทาง/products purchased/current cart/notes) → `getCustomer360()` ใน `lib/bms/customer360.ts`
-- `bmsCustomerTimeline(customerId)` — lazy, โหลดตอนกาง Collapse panel "Timeline" ครั้งแรกเท่านั้น (หนักสุด
-  — merge ทุกแชท+ออเดอร์+shipment+refund+note ของลูกค้าข้ามช่องทาง) → `getCustomerTimeline()`
-- `bmsCustomerInsights(customerId)` — lazy เหมือนกัน, เรียก Claude (หรือ template ถ้าไม่มี `ANTHROPIC_API_KEY`)
-  จาก "facts bundle" ที่คำนวณแล้วเท่านั้น ห้ามเดา — แคชผลใน `bms_customer_ai_summary` (คีย์ด้วย hash ของ facts,
-  regenerate เฉพาะตอนตัวเลขเปลี่ยนจริง) → `getCustomerInsights()`
-- resolver ทั้งหมดอยู่ที่ `graphql/bmsCustomer360.ts` (ตาม pattern `bmsOrderJourney` ใน `bmsOrders.ts` — resolver
-  บาง แค่ requirePermission + เรียก service), wire เข้า `resolvers.ts` (`bmsCustomer360Resolvers.Query`)
-
-**Quick Actions APIs** (อยู่ใน `graphql/bmsOrders.ts` และ reuse service กลาง):
-- `bmsCreateOrder(channel, customerRef, items)` — permission `order.create`; สร้างออเดอร์ `PENDING`, resolve CRM
-  identity และจองสต็อกแบบ atomic ผ่าน `createOrder()` เดียวกับ customer pipeline/AI; ราคาคือราคาปัจจุบันและ
-  revision context ใช้ admin id ของผู้กด
-- `bmsGenerateInvoice(orderId)` — permission `order.view`; เรียก `generateInvoice()` จาก `lib/bms/documents.ts`,
-  ใช้ราคา snapshot ใน order items, สร้างผลลัพธ์ชั่วคราวเพื่อ preview/print เท่านั้น ไม่ persist เอกสารใหม่
-
-**Schema เพิ่ม (migration `6.2__bms_customer_360.sql`):** `bms_customers.email/preferred_language/timezone`
-(ของเดิมไม่มี email เลย ทั้งที่ BUSINESS_RULES ใช้ email เป็น matching criterion) · `bms_customer_addresses.address_type`
-(shipping/billing, default `'shipping'` ให้แถวเก่าไม่พัง) · ตารางใหม่ `bms_customer_ai_summary` (cache ผล AI ต่อ
-customer, PK = `customer_id` เฉยๆ เหมือน `bms_customers.id` เพราะ UUID unique อยู่แล้วข้ามร้าน) — RLS/grant
-copy จาก `6.1` (per-table style ไม่ใช่ loop แบบ `4.2`)
-
-**Component structure:** `Customer360Panel.tsx` เดียว export default, แตกเป็น sub-component ในไฟล์เดียวกันต่อ
-1 section (`SummarySection`/`ContactSection`/`StatsSection`/`RecentOrdersSection`/`ProductsSection`/`CartSection`/
-`NotesSection`/`TimelineSection`/`InsightsSection`/`QuickActionsSection`) ประกอบเป็น Ant `Collapse` (`items` prop,
-ไม่ใช้ `Collapse.Panel` แบบเก่า) — Section summary/cart/orders/actions ถูกกางเริ่มต้น; ข้อมูลพื้นฐานทุก section
-ได้จาก query เดียว (`bmsCustomer360`, `fetchPolicy: cache-and-network`) ที่โหลดพร้อมกันเสมอ ส่วน
-Timeline/AI Insights เป็น `useLazyQuery`
-ของตัวเอง — ยิงจริงเฉพาะครั้งแรกที่ Collapse panel นั้นถูกกางขึ้นมา (อาศัย behavior เดิมของ antd Collapse ที่ไม่ mount
-children ของ panel ที่ยังไม่เคย active — **นี่คือกลไก lazy-load หลักของ feature นี้ ไม่ใช่ debounce/cache เพิ่มเติม**)
-ย่อ/ขยายทั้ง panel ได้ (ไอคอนมุมขวาบน, จำสถานะ `localStorage` คีย์ `bms_inbox_customer360_collapsed`
-— แพทเทิร์นเดียวกับ `listCollapsed` ของคอลัมน์ซ้าย) · `CreateOrderModal` โหลดสินค้าตอนเปิดและ refetch
-Customer 360 หลังสร้างสำเร็จ · `InvoiceModal` โหลดเอกสารของออเดอร์ที่เลือกแบบ `network-only` และพิมพ์ผ่าน browser
-
-**การตีความ "Current Shopping Cart":** สคีมาไม่มีสถานะ DRAFT แยก (`orders.ts`/`CLAUDE.local.md` เดิมยืนยันแล้ว) —
-"ตะกร้า" = order `PENDING` ล่าสุดของลูกค้าที่ยังไม่มี payment ผูกอยู่เลย (`NOT EXISTS ... bms_payments`)
-
-**Quick Actions ปัจจุบัน:** สร้างออเดอร์ (`order.create`) · ตรวจสต็อก · คืนเงินเมื่อมี payment ที่ยืนยันแล้ว ·
-ออกใบแจ้งหนี้ (`order.view`, ต้องมีออเดอร์) · เปิดหน้าลูกค้า ปุ่ม roadmap เดิมสำหรับ payment link/support ticket
-และปุ่ม assign ซ้ำถูกนำออก; การ assign staff ยังใช้ control ที่หัวแชทเดิม
-
-**Fulfillment address guard:** `shipOrder()` และ `createShipment()` ตรวจซ้ำใน backend ก่อนเปลี่ยน `PACKING →
-SHIPPED` สำหรับ LINE/Facebook/Instagram/Web/TikTok Chat; ต้องมี `bms_customer_addresses.address_type =
-'shipping'`. Lazada/Shopee เท่านั้นที่ exempt เพราะ address อยู่ Seller Center. `BmsOrder.hasShippingAddress`
-ใช้ให้หน้า Orders disable ปุ่มและลิงก์ไป Customers แต่ UI ไม่ใช่ authorization/gate หลัก
-
-**Pending improvements (ยังไม่ทำ):**
-- Lazada/Shopee ยังไม่โผล่ใน recent orders ของ panel นี้จริง — ไม่ใช่เพราะรอ ChannelAdapter refactor (แผนนั้นเลิกทำแล้ว
-  ดู note ด้านบน) แต่เพราะ webhook parsing ของสองช่องทางนี้ยังเป็น unverified placeholder (`parseLazadaMessages()`/
-  `parseShopeeMessages()` เดา field name, ไม่มี order จริงไหลเข้ามา) — ดู [docs/integrations/lazada.md](docs/integrations/lazada.md);
-  query ของ panel รองรับ channel เป็น free text อยู่แล้ว ไม่ต้องแก้เพิ่มฝั่งนี้
-- "Open Marketplace" ปุ่มใน Recent Orders ยัง disabled ทุกช่องทาง (ไม่มี deep-link ไป LINE OA Manager/TikTok
-  Seller Center/Lazada Seller Center จริง) — รอ design ต่างหาก ไม่ใช่ scope ของรอบนี้
-- ยังไม่มี unit/integration test สำหรับ `lib/bms/customer360.ts` (โปรเจกต์นี้ยังไม่มี test suite ที่ใช้งานอยู่โดยรวม)
-- avg response time query สมมติ 1 แถว "IN แล้ว OUT ถัดไปในแชทเดียวกัน" เป็น 1 การตอบ — ยังไม่หัก เวลาที่แชทปิด/เปิดใหม่
-  ข้ามวันออก (edge case ที่อาจทำให้ตัวเลขเพี้ยนถ้าลูกค้าทิ้งแชทค้างไว้ข้ามคืนแล้วมาต่อ)
-- เอกสารรวม right panel + แท็บลูกค้า + merge/reorder อยู่ที่ `docs/ui/customer360.md`
+รายละเอียดเต็ม (read APIs, Quick Actions APIs, schema `6.2`, component structure, "ตะกร้า" interpretation,
+fulfillment address guard, pending improvements) อยู่ที่ [docs/ui/customer360.md](docs/ui/customer360.md)
 
 ## Inbox customer tab / merge / reorder / Shopee/Lazada (beta/scaffold)
 
@@ -1319,149 +1257,17 @@ irreversible กว่า refund/adjust stock ด้วยซ้ำ):
   `bms_customers.email` (เฉพาะ contact email ร้านเท่านั้น) · ไม่มี rate limit เฉพาะทางบนทูลนี้ (พึ่ง AI
   quota เดิม + ต้องกดยืนยันทุกครั้งเป็นตัวกันสแปมหลัก)
 
-## Carrier scaffold (Flash/Kerry) + ให้ลูกค้าเลือกขนส่งตอนแชท (2026-08)
+## Carrier scaffold + shipping fee (โครง carrier + ให้ลูกค้าเลือกขนส่ง + ค่าส่งจริงตามโซน/น้ำหนัก)
 
-**ยังไม่ผูก API จริง — เป็น scaffold + mock mode เท่านั้น** (ไม่มี API key ของ Flash/Kerry และยังไม่มี
-เอกสาร endpoint/auth/payload จริงของทั้งสองเจ้า):
+รายละเอียดเต็ม (mock mode, carrier booking hardening, customer carrier preference migration `7.46`,
+shipping fee engine `quoteShipping()`/migration `7.47`, "ไม่รู้ ≠ เดา" rules, verify results) ย้ายไปที่
+[docs/integrations/carriers.md](docs/integrations/carriers.md) (adapter/mock/booking) และ
+[docs/business/order.md § Shipping](docs/business/order.md#shipping) (customer carrier preference +
+shipping fee calculation) แล้ว
 
-- **`lib/bms/carriers/`** — `constants.ts` (`CARRIER_CODES`/`Carrier`/`CARRIER_LABELS`/`isCarrier` —
-  **ไม่ import อะไรเลย** เพื่อให้ client component เอาไปใช้ได้ เหมือนเหตุผลของ
-  `productImport.constants.ts`) · `types.ts` (`CarrierClient` contract — `trackShipment()` **ไม่ throw**
-  คืน typed result เสมอ) · `flash.ts`/`kerry.ts` · `index.ts` (registry — มีแค่ FLASH/KERRY, เจ้าอื่น
-  return `null` = manual เหมือนเดิม)
-- **`shipping.ts` re-export `CARRIERS`/`Carrier` จาก `carriers/constants`** เพื่อไม่ให้ import เดิมทั้ง
-  โปรเจกต์พัง · **ผลพลอยได้: แก้ circular import** (เดิม `carriers/index.ts` จะ import `Carrier` จาก
-  `../shipping` ซึ่ง import `./carriers` กลับ) · `/admin/shipment/page.tsx` เคยมี `CARRIERS`/
-  `CARRIER_LABEL`/`type Carrier` ของตัวเอง (copy ที่ 2) ตอนนี้ดึงจาก constants แล้ว
-- **⚠️ `FLASH_MOCK=true`/`KERRY_MOCK=true` = ข้อมูลปลอมทั้งหมด** — `mock.ts` สร้าง timeline จำลอง
-  (deterministic ต่อเลขพัสดุ: `seedFromString` → 1–4 stage) ทุก event ต่อท้าย "(ข้อมูลจำลอง)" และผลลัพธ์
-  ติด **`source: "mock"`** ซึ่ง**ต้องคงอยู่ใน type ตลอดไป** — เป็นสิ่งเดียวที่กัน mock data ไปโผล่เป็น
-  ข้อมูลจริง · `mockModeAllowed()` เช็ค `NODE_ENV !== "production"` → **production เปิด mock ไม่ได้เลย
-  แม้ตั้ง env** (verify แล้ว: `NODE_ENV=production FLASH_MOCK=true` → `unconfigured`)
-- **key ปลอมช่วยไม่ได้** (คำถามที่เคยถาม) — ปัญหาไม่ใช่ auth ไม่ผ่าน แต่ไม่รู้ endpoint/payload จริง
-  ถ้าใส่ key จริงแต่ยังไม่เขียน request → คืน `not_implemented` (ตั้งใจ ไม่เดา shape เอง แบบเดียวกับ
-  บทเรียน Lazada/Shopee ที่ placeholder ถูกเข้าใจผิดว่าใช้ได้จริง)
-- **carrier booking hardening (`7.76`/`7.77`)** — local fulfillment commit และปล่อย DB lock ก่อนยิง
-  carrier; shipment UUID เป็น idempotency key; failure/unconfigured/not-implemented ถูกเก็บและแสดงให้
-  retry ผ่าน `bmsBookShipmentLive` แทน silent manual fallback. Tracking sync re-lock/re-check ก่อนเขียน,
-  เก็บ timeline ใน `bms_shipment_tracking_events`, รับเฉพาะ HTTPS label URL และมี cron endpoint
-  `/api/bms/shipping/sync-carriers` (แนะนำทุก 15 นาที, ยังไม่ได้ schedule จริง)
-
-**ให้ลูกค้าเลือกขนส่งตอนแชท (migration `7.46`)** — 2 คอลัมน์: `bms_store_profile.enabled_carriers TEXT[]`
-(ร้านใช้เจ้าไหนบ้าง) + `bms_orders.preferred_carrier TEXT`:
-
-- **เป็น preference ไม่ใช่คำมั่นสัญญา** — ตัวจริงที่ส่งคือ `bms_shipments.carrier` ที่แอดมินยืนยันตอน
-  แพ็คของ · **ห้ามให้ AI เทียบราคา/ETA ระหว่างเจ้า** เพราะไม่มีข้อมูลจริง (จะกลายเป็น fabricate ราคา
-  ผิด AI rules) — `get_store_info` จึงคืน `carrierChoiceNote` กำกับไว้ให้โมเดลอ่านทุกครั้ง
-- **`enabled_carriers` ว่าง = AI ต้องไม่ถามเรื่องขนส่งเลย** (ไม่ใช่ "เสนอทุกเจ้า") — กันเสนอเจ้าที่ร้าน
-  ไม่ได้ใช้
-- **guard 2 ชั้นใน `create_order`**: `enumVal` เช็คว่าเป็นโค้ดที่มีจริง แล้วเช็คซ้ำว่าอยู่ใน
-  `enabledCarriers` ของร้านนั้น ถ้าไม่ผ่าน **throw `ToolArgError`** (ให้โมเดลถามใหม่) ไม่ใช่เก็บ null
-  เงียบ ๆ — ไม่งั้น AI อาจบอกลูกค้าว่า "ส่ง Flash ให้" แต่ DB เป็น null · query `getStoreProfile` เพิ่ม
-  **เฉพาะตอนมี arg นี้มา** ไม่ได้ยิงทุกออร์เดอร์
-- **`createOrder()` เก็บ null ถ้าโค้ดไม่รู้จัก ไม่ throw** (ต่างจาก tool layer) เพราะเป็น service กลางที่
-  caller อื่น (REST/reorder) เรียกด้วย — ออร์เดอร์ต้องไม่ล้มเพราะ field เสริม
-- **`reorderFromOrder()` carry `preferred_carrier` จากออร์เดอร์เดิม** (ลูกค้าคนเดิม preference เดิม) —
-  ต่างจาก coupon ที่ตั้งใจไม่ carry
-- **validate ที่ service layer ไม่ใช่ CHECK constraint** (ตาม `business_type`/`ai_language` เดิม) ·
-  `upsertStoreProfile` **filter โค้ดที่ไม่รู้จักทิ้งเงียบ ๆ** (เหมือน `aiRequiredFields`) ไม่ throw
-- **UI**: `/admin/settings` การ์ดข้อมูลร้าน → ใต้หัวข้อ "ค่าส่ง" มี Select multiple "ขนส่งที่ร้านใช้"
-  (`Select mode="multiple"` = house style ของไฟล์นี้ ไม่ใช่ `Checkbox.Group`) · เพิ่มเข้า `PROFILE_KEYS`
-  แล้ว จึง round-trip ผ่าน `onFinish` generic loop เอง
-- **verify กับ DB จริงในคอนเทนเนอร์แล้ว** (ไม่ใช่แค่ `tsc`): migration idempotent (รันซ้ำได้) ·
-  store config round-trip + กรอง `BOGUS_CARRIER` ออก · `get_store_info` โชว์ `["FLASH","KERRY"]` +
-  note · **DHL (ร้านไม่ได้เปิด) ถูกปฏิเสธ** ว่า "ร้านนี้ส่งได้เฉพาะ: FLASH, KERRY" · โค้ดมั่วถูกปฏิเสธ ·
-  FLASH ผ่านและ persist ลง `bms_orders.preferred_carrier` จริง · ไม่ส่ง = null · **ลบ order ทดสอบ +
-  reset `enabled_carriers` กลับ `{}` แล้ว** และเช็ค reservation drift ของ variant ที่ใช้ทดสอบว่าเป็น 0
-  (drift ของ ADIDAS-RUN/NIKE-AIR ไซซ์ M/XL ที่เห็นในฐานข้อมูล dev เป็นของเดิม ไม่ได้เกิดจากรอบนี้)
-- **pre-fill ในหน้า `/admin/shipment` (ทำแล้ว)** — `BmsOrder.preferred_carrier` (enum `BmsCarrier`,
-  field resolver ใน `bmsOrders.ts` + เพิ่มคอลัมน์ใน SELECT ของ `bmsOrders`/`bmsOrder` ทั้งสองจุด) →
-  modal "สร้างการจัดส่ง" อ่านมาใช้:
-  - dropdown ออร์เดอร์ต่อท้ายว่า `· ขอ Kerry` ให้เห็นก่อนเลือก
-  - เลือกออร์เดอร์แล้ว **auto-fill ช่องขนส่ง แต่เฉพาะตอนช่องยังว่าง** (`if (next && !form.getFieldValue("carrier"))`)
-    — ห้ามเขียนทับค่าที่แอดมินเลือกไว้เองแล้ว
-  - `extra` ใต้ช่องขนส่งเตือนสองแบบ: `ลูกค้าขอ X (เปลี่ยนได้)` กับ **`ลูกค้าขอ X — คุณกำลังเลือกเจ้าอื่น`**
-    ตอนค่าที่เลือกต่างจาก preference (ไม่บล็อก เพราะ preference ไม่ใช่คำมั่นสัญญา)
-  - **ไม่แตะ `bmsCreateShipment`** — ค่าที่ส่งจริงยังมาจากฟอร์มเสมอ (pre-fill เป็น UX ล้วน ๆ)
-- **verify GraphQL จริงผ่าน introspection ของ instance ที่รันอยู่** (ไม่ใช่แค่ `tsc`):
-  `BmsOrder.preferred_carrier` เป็น ENUM `BmsCarrier` · `BmsStoreProfile.enabledCarriers` มีจริง ·
-  `bmsCreateOrder` args = `[channel, customerRef, items, couponCode, preferredCarrier]` · SELECT ของ
-  resolver คืนค่า `KERRY` จริงและ field resolver map ถูก (null/missing → null) · **revert ค่าทดสอบแล้ว**
-  (`orders_with_pref_left = 0`)
-- **⚠️ หมายเหตุที่เจอตอน verify: `loginAdmin` ตรวจรหัสผ่านจริงแล้ว** — โน้ตเก่าในไฟล์นี้ (§ ก่อน production)
-  ที่เขียนว่า "dev ยังไม่ตรวจ" **ไม่ตรงกับโค้ดปัจจุบัน** (ยิง `loginAdmin` ด้วยรหัสมั่วได้
-  `Invalid credentials`) — ถ้าจะทดสอบผ่าน HTTP ต้องมีรหัสจริง หรือทดสอบที่ service layer แทน
-- **ยังไม่ทำ**: public checkout (`/checkout?t=`) ยังไม่ให้เลือกขนส่ง · deterministic no-credential
-  fallback ใน `pipeline.ts` ไม่รู้จัก slot ขนส่ง (known gap เดียวกับ coupon) · หน้า Orders
-  (`/admin/orders`) ยังไม่โชว์ `preferred_carrier` (โชว์เฉพาะใน modal สร้างการจัดส่ง) ·
-  ยังไม่มี webhook ฝั่ง carrier (มีแต่ polling) และยังไม่มี flow ยกเลิกพัสดุกับ carrier
-  · **หมายเหตุที่แก้แล้ว**: `trackShipmentLive()`/`getCarrierApiStatus()` เคยไม่มีหน้าไหนเรียก —
-  ตอนนี้ `/admin/shipment` มีปุ่ม `Book carrier`/`Sync carrier` และมี cron
-  `POST /api/bms/shipping/sync-carriers` เรียกให้แล้ว (ดู bullet carrier booking hardening ด้านบน)
-
-## ค่าส่งจริง: บวกเข้าออร์เดอร์ + คิดตามโซน/น้ำหนัก (2026-08, migration `7.47`)
-
-**ต้นเรื่อง (บั๊กเก็บเงินขาด):** `estimateShipping()` เดิมเป็นค่าเหมาที่**ไม่ดูปลายทางเลย** (รับแค่
-`tenantId, subtotal`) และที่แย่กว่านั้นคือ **ค่าส่งไม่เคยถูกบวกเข้าออร์เดอร์** — `bms_orders` ไม่มีคอลัมน์
-ค่าส่ง, `generateInvoice()` เขียน `shippingFee: null` ไว้ตรง ๆ, และ `submitPaymentInternal()` เอา
-`total_amount` (ค่าสินค้าล้วน) ไปเป็นยอด payment → **AI บอกลูกค้าว่า "ค่าส่ง 50" ได้ แต่ยอดในลิงก์
-checkout ไม่มี 50 นั้น ร้านขาดค่าส่งทุกออร์เดอร์**
-
-- **⚠️ `total_amount` ความหมายไม่เปลี่ยน = ค่าสินค้า − ส่วนลด** (ตั้งใจ) เพราะ dashboard/report/digest/
-  coupon อ่านคอลัมน์นี้อยู่ ถ้าเปลี่ยนความหมายตัวเลขรายได้ย้อนหลังเพี้ยนทั้งระบบ ·
-  **ยอดที่ลูกค้าต้องจ่าย = `total_amount + shipping_fee` ("amount due")** คิดที่จุดเก็บเงินเท่านั้น
-  (payments/checkout/invoice) ไม่เขียนทับ `total_amount` · ออร์เดอร์เก่าได้ `shipping_fee DEFAULT 0`
-  จึงไม่กระทบยอดเดิม
-- **engine เดียว = `quoteShipping()` (`lib/bms/shippingRates.ts`)** — `estimateShipping()` **ถูกลบทิ้ง**
-  (ไม่ใช่ deprecated) เพื่อไม่ให้มีสูตรค่าส่ง 2 ชุดระหว่าง "ที่โชว์ลูกค้า" กับ "ที่เก็บเงินจริง"
-  · precedence: `carrier` → `zone` → `flat` → `none` (`fee: null` ห้ามเดาเป็น 0)
-- **`lib/bms/shippingZones.ts` ไม่ import อะไรเลย** (client component ใช้ได้ + กัน circular import กับ
-  `storeProfile.ts` ที่ต้องใช้ `parseZoneRates`/`parseWeightTiers` ตอน validate) · **โซน 3 ระดับ
-  BANGKOK/PERIMETER/UPCOUNTRY — ตั้งใจไม่ทำตาราง 77 จังหวัด** เพราะ zone mapping จริงต้องรู้แค่ กรุงเทพ +
-  ปริมณฑล 5 จังหวัด ที่เหลือ = ต่างจังหวัด (list ยาว ๆ พิมพ์เองคือแหล่งพิมพ์ผิด) · `normalizeProvince()`
-  ตัด `จ.`/`จังหวัด` + alias (กทม/Bangkok/bkk)
-- **กติกา "ไม่รู้ ≠ เดา" (สำคัญสุด อย่าแก้ให้ฉลาดขึ้น):**
-  - ไม่รู้จังหวัด → **ตกไป flat ไม่ใช่เดาโซน** (เดาผิด = เก็บเงินผิดแบบเงียบ ๆ)
-  - สินค้าตัวใดยังไม่กรอก `weight_grams` → `totalGrams = null` **ไม่คิดค่าน้ำหนักส่วนเพิ่ม + ใส่ warning**
-    (`sumItemWeightGrams()` คืน null ทั้งก้อน ห้ามเอาผลบวกบางส่วนไปคิดเงิน)
-  - `guessProvinceFromAddress()` เดาจาก free text ได้เฉพาะชื่อที่ special-case ไว้ และติดธง
-    `provinceIsGuess: true` + warning "ควรยืนยันก่อนเก็บเงิน" — มีไว้เพราะที่อยู่เก่าทุกแถวไม่มีคอลัมน์
-    `province` ถ้าไม่เดาเลย โหมด zone จะไม่ทำงานกับลูกค้าเดิมทั้งหมด
-  - `mode: carrier` แต่ไม่มี key/ไม่มี client → **ไม่คืนราคาลอย ๆ** ตกไป zone/flat + warning
-- **`shipping_fee` ถูกคิด 2 จังหวะ** เพราะ identity-first checkout เก็บที่อยู่ **หลัง** สร้างออร์เดอร์:
-  1. ตอน `createOrder()` (`computeOrderShippingFeeInTx`) — มักได้ flat/0 เพราะยังไม่มีที่อยู่ ·
-     **catch error เองคืน 0** ค่าส่งคิดไม่ได้ต้องไม่ทำให้ออร์เดอร์+สต็อกที่จองไว้ล้มทั้งก้อน
-  2. ตอนที่อยู่มาถึง → `recalculateOrderShipping(tenantId, customerId)` เรียกจาก **caller ทั้ง 2 ทาง**
-     (`checkout.ts` PATCH + tool `save_customer_checkout_details`) — **ไม่ได้เรียกใน `customers.ts` เอง
-     โดยเจตนา** เพราะ `orders.ts` import `customers.ts` อยู่แล้ว (จะ circular)
-  - **แตะเฉพาะออร์เดอร์ `PENDING` ที่ยังไม่มี payment `PENDING`/`CONFIRMED`** — ห้ามขยับยอดของออร์เดอร์ที่
-    ลูกค้าโอนตามยอดเดิมไปแล้ว (verify แล้วว่าได้ `updated: 0` จริงหลังมี payment)
-- **UI**: `/admin/settings` การ์ดข้อมูลร้าน → หัวข้อ "ค่าส่ง" มีวิธีคิด (เหมา/โซน/ถามขนส่ง) + จังหวัด-
-  ไปรษณีย์ต้นทาง + `Form.List` เรตต่อโซน + `Form.List` ขั้นน้ำหนัก (กรอง row ที่ยังกรอกไม่ครบก่อนส่ง) ·
-  `/admin/products` ฟอร์มสินค้ามีช่อง "น้ำหนัก (กรัม)" ข้างต้นทุน · `/checkout` โชว์บรรทัด "ค่าจัดส่ง"
-  (ฟรี = คำว่า "ฟรี") · **ข้อความปิดออร์เดอร์ในแชทแยกค่าสินค้า/ค่าส่ง/รวม** เมื่อมีค่าส่ง ไม่งั้นลูกค้าเห็น
-  ยอดสูงกว่าราคาที่คุยไว้แล้วสงสัย
-- **`get_shipping_estimate` รับ `province`/`items` เพิ่ม** และ description สั่งให้โมเดล**อ่าน `warnings`
-  ก่อนตอบ** (ถ้าเดาจังหวัด/น้ำหนักไม่ครบ ต้องบอกลูกค้าว่าเป็นค่าประเมิน) · `save_customer_checkout_details`
-  รับ `province`/`postcode` และย้ำใน description ว่า **ห้ามเดาจังหวัดจากที่อยู่เอง**
-- **#4 carrier rate API = seam + mock เท่านั้น (ยังไม่มี key/เอกสารจริง)** — `CarrierClient.quoteRate?()`
-  optional, `flash.ts`/`kerry.ts` คืน `unconfigured`/`not_implemented`, `buildMockRateResult()` ใน
-  `mock.ts` คืนราคาจำลองที่**ไม่ได้พยายามเลียนเรตจริงของ Kerry/Flash** และติด `source:"mock"` ซึ่ง
-  `quoteShipping` แปลงเป็น warning "อย่าใช้เก็บเงินลูกค้าจริง" · mock ปิดตายใน production เหมือน tracking
-- **verify กับ DB จริงในคอนเทนเนอร์แล้ว** (ไม่ใช่แค่ `tsc`): migration idempotent (รันซ้ำ 10 NOTICE
-  skipping) · zone mapping ครบ (กทม./Bangkok/จ.นนทบุรี/เชียงใหม่/ว่าง) · flat 50 · ส่งฟรีเมื่อถึงเกณฑ์ ·
-  zone 40/55/70 ตามจังหวัด · ไม่รู้จังหวัด→flat + warning · เดาจังหวัดจากที่อยู่→zone + ธง guess ·
-  weight tier 800g→+0, 2400g→+30, 16kg→ขั้นสูงสุด, สินค้าไม่มีน้ำหนัก→ไม่คิด+warning ·
-  **flat 50 → ที่อยู่ กทม. มา → 40 → เปลี่ยนเป็นเชียงใหม่ → 70 → payment.amount = 3200+70 = 3270 ✅**
-  (ก่อนแก้จะเป็น 3200) · invoice `shippingFee: 70` · ออร์เดอร์ที่มี payment แล้ว recalc ไม่แตะ ·
-  carrier mock off→ตกไป zone, mock on→`source:"carrier"` + warning, DHL (ไม่มี client)→ตกไป zone ·
-  introspection ยืนยัน `shippingMode/shippingZoneRates/shippingWeightTiers/weightGrams` ใน schema จริง ·
-  **ลบข้อมูลทดสอบครบและคืน config ร้านกลับเป็น flat/ว่างแล้ว** (`orders_with_fee = 0`), reservation drift
-  ของ variant ที่ใช้ทดสอบ = 0 (drift ADIDAS-RUN/NIKE-AIR M/XL ที่เห็นในฐาน dev เป็นของเดิมก่อนงานนี้)
-- **ยังไม่ทำ**: ไม่มีเรตต่อ carrier (เรตโซนชุดเดียวใช้กับทุกเจ้า) · ไม่คิดขนาด/ปริมาตร (dimensional weight) ·
-  ที่อยู่ยังเป็น free text 1 ช่อง + `province`/`postcode` เสริม (ไม่ได้แยก อำเภอ/ตำบล และไม่ backfill
-  ที่อยู่เก่า) · **`/admin/orders` ยังไม่โชว์ `shipping_fee`** · REST `POST /api/bms/order` ไม่ได้ส่ง
-  province เข้ามา · bulk product import ยังไม่รับคอลัมน์น้ำหนัก · ไม่มี rate API จริง (ดูข้อบน)
+- ⚠️ **หมายเหตุที่เจอตอน verify feature นี้**: `loginAdmin` ตรวจรหัสผ่านจริงแล้ว — โน้ตเก่าที่เคยเขียนไว้
+  ตรงนี้ว่า "dev ยังไม่ตรวจ" (ดู § ก่อน production ท้ายไฟล์) **ไม่ตรงกับโค้ดปัจจุบัน** ถ้าจะทดสอบผ่าน HTTP
+  ต้องมีรหัสจริง หรือทดสอบที่ service layer แทน
 
 ## Follow-up Automation — MVP core (2026-08)
 
@@ -1884,108 +1690,9 @@ Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ด�
 
 ## Multi-instance readiness — เตรียมแยก server (2026-08)
 
-**เสร็จแล้วเฉพาะการถอด per-instance state ออก — ยังไม่ได้แยกเครื่องจริง และ default ทุกค่ายังเป็น
-พฤติกรรมเดิม 100%** (branch `feat/multi-instance-readiness`) ต้นเรื่อง: ตรวจว่าถ้าจะรัน `web`
-มากกว่า 1 instance ต้องแก้อะไรก่อน แล้วพบทีละชั้น — เริ่มจาก state ที่ผูกกับ process/disk ของ `web`
-3 จุด, ตามด้วย pool ที่ซ่อนอยู่ใน `ws` และ cron ที่ "อ่านแล้วค่อยทำ" ที่หลับอยู่เพราะยังมี instance
-เดียว. `admin session`/`AI conversation state`/`scheduleNewJobs()`/`releaseExpiredOrders()` ตรวจแล้ว
-ว่าพร้อมอยู่ก่อนหน้านี้ ไม่ต้องแก้เพิ่ม
-
-- **pg pool มีเพดานชัดเจน** (`lib/db.ts`) — เดิมไม่ตั้ง `max` เลยจึงเป็น default ของ `pg` = 10
-  ต่อ process. ไม่ใช่ปัญหาตอน 1 instance แต่พอ scale แล้ว connection รวม = `POSTGRES_POOL_MAX` ×
-  จำนวน replica ซึ่งพอทะลุ `max_connections` ของ Postgres จะ **ล้มพร้อมกันทุก instance** ไม่ใช่ค่อย ๆ
-  ช้าลง · ตอนนี้ตั้งผ่าน env 3 ตัว (`POSTGRES_POOL_MAX` / `_IDLE_TIMEOUT_MS` / `_CONNECT_TIMEOUT_MS`)
-  **default ยังเป็น 10 เท่าเดิม** — ต้องลดเองก่อนเพิ่ม replica · เพิ่ม `pool.on("error")` ด้วย เพราะ
-  error ระดับ pool (เช่น Postgres restart, idle connection โดน network ตัด) ไม่ได้โผล่ที่ query ไหนเลย
-  ถ้าไม่มี listener Node จะถือเป็น unhandled `'error'` event แล้ว **ฆ่า process ทิ้ง**
-- **rate limit ย้ายไป Redis** (`lib/bms/rateLimit.ts`) — เดิมเป็น `Map` ใน process จึงแปลว่า limit จริง
-  = ค่าที่ตั้ง × จำนวน instance. จุดที่อันตรายไม่ใช่ webhook (7 จุด) แต่คือ `auth:*` (2 จุดใน
-  `resolvers.ts`'s `enforceAuthRateLimit`) — brute force protection ของหน้า login อ่อนลงตามจำนวน
-  instance ตรง ๆ · **fallback ตั้งใจไม่ fail-open**: Redis ล่ม → ตกกลับไปใช้ `Map` เดิม (= per-instance
-  เหมือนก่อนหน้านี้) ไม่ใช่ปล่อยผ่าน — ต่างจาก `lib/cache.ts` ที่ fail-open ได้เพราะแคชพลาดแค่ช้าลง
-  แต่ rate limit ที่ fail-open = ปิดการป้องกันทั้งระบบพอดีตอน Redis มีปัญหา · `rateLimit()` กลายเป็น
-  **async** แล้ว (แก้ call site 9 จุด) · `enforceAuthRateLimit()` ใช้ `Promise.all` ยิงทั้ง 2 counter
-  เสมอ ไม่ short-circuit — ไม่งั้นคนที่หมุน IP อย่างเดียวจะไม่เคยสะสมนับที่ฝั่ง identity เลย
-- **ไฟล์ย้ายไปหลัง driver** (`lib/storageDrivers/`) — จุดที่พังหนักสุดถ้าแยกเครื่องโดยไม่แก้ ไม่ใช่
-  ตอนอัปโหลด แต่คือ **ตอนอ่านกลับใน request ถัดไป** ซึ่ง LB ส่งไป instance ไหนก็ได้: OCR สลิป
-  (`payments.ts`), ดาวน์โหลดรายงาน, แนบไฟล์อีเมล (`reportEmail.ts`), เสิร์ฟรูป (`/api/files/[id]`) —
-  ทั้ง 4 จุดเคยประกอบ `path.join(STORAGE_DIR, relpath)` เอง ตอนนี้เรียก
-  `readStoredFile()`/`statStoredFile()`/`openStoredFileStream()` จาก `lib/storage.ts` แทน
-  **ห้ามประกอบ path เองอีก** · `STORAGE_DRIVER=local` (default) = พฤติกรรมเดิมเป๊ะ, `s3` = ใช้ได้กับ
-  AWS S3/R2/MinIO/GCS S3-interop · `relpath` ในตาราง `files` เป็น key กลางที่ driver ไหนก็ใช้ได้ รูปแบบ
-  `YYYY/MM/DD/<ts>-<name>` เหมือนเดิมทุกอย่าง → **ย้ายไป s3 = copy ต้นไม้ไฟล์เดิมขึ้น bucket ไม่ต้อง
-  migrate DB**
-- **S3 driver เขียนเอง ไม่เพิ่ม dependency** (`storageDrivers/s3.ts`) — SigV4 ด้วย `node:crypto` + fetch,
-  ทำแค่ 3 verb ที่ระบบใช้จริง (PUT/GET รวม ranged/HEAD) · `writeStream` ของ s3 **buffer ทั้งก้อนก่อน PUT**
-  เพราะ signed single-part ต้องรู้ payload hash ก่อน (ไฟล์ที่ผ่านทางนี้คือ avatar/attachment ไม่ใช่ bulk
-  — ถ้าวันหนึ่งมีไฟล์ใหญ่ต้องเปลี่ยนเป็น multipart) · local driver ยัง stream จริงเหมือนเดิม
-- **Redis password เป็น opt-in** (`docker-compose.yml`) — ไม่ตั้ง `REDIS_PASSWORD` = เหมือนเดิมทุกอย่าง,
-  ตั้งเมื่อไหร่ container จะเปิด `requirepass` ให้เอง (และต้องแก้ `REDIS_URL` เป็น
-  `redis://:<password>@redis:6379` ด้วยตัวเอง) · ใช้ `$${VAR:+...}` เพื่อให้ **shell ใน container**
-  ขยาย ไม่ใช่ compose แปลตอน parse — verify แล้วทั้ง 2 ทาง (ไม่ตั้ง → `PING`=PONG, ตั้ง → `NOAUTH`
-  จนกว่าจะ auth)
-- **cron ที่เคย "อ่านแล้วค่อยทำ" → เปลี่ยนเป็นเคลมก่อนทำ** (2 จุด) — เป็นบั๊กที่หลับอยู่ตอนมี instance
-  เดียว เพราะ external cron ยิง URL เดียวจะถึงแค่ instance เดียวต่อ tick แต่จะตื่นทันทีเมื่อ (ก) tick
-  ใหม่ทับ tick เดิมที่ยังรันไม่จบ (ข) ปุ่ม "รันตอนนี้" ในหน้า admin ชนกับ cron หรือ (ค) มี scheduler
-  ยิงเข้าหลาย instance:
-  - `runDueFollowups()` (`followups.ts`) เดิม `SELECT` งานที่ถึงกำหนดมาก่อนแล้วค่อยวนส่งข้อความ →
-    สองฝั่งอ่านงานใบเดียวกันแล้ว **ส่งข้อความหาลูกค้าซ้ำ** · แก้เป็น `UPDATE ... WHERE id IN (SELECT
-    ... FOR UPDATE SKIP LOCKED) RETURNING ...` โดยเคลมด้วยการเลื่อน `next_run_at` เป็น lease
-    (`JOB_LEASE_MINUTES = 5`) **ไม่ใช่เปลี่ยน `status`** เพราะ CHECK ของตารางมีแค่
-    PENDING/SENT/STOPPED/FAILED (ไม่มี RUNNING) — เลี่ยง migration ใหม่ได้ทั้งหมด · process ตายกลางทาง
-    = lease หมดอายุแล้วงานกลับมาถึงกำหนดเอง (เดิมก็ retry อยู่แล้ว แค่ช้าลง 5 นาที)
-  - `runScheduledDigests()` (`reportDigest.ts`) เดิมเช็ค `last_period_key` จากค่าที่ SELECT มา แล้วค่อย
-    ส่ง → สองฝั่งอ่านค่าเก่าเหมือนกัน = เจ้าของร้านได้ digest ซ้ำสองรอบ (email+Slack+LINE) · แก้เป็น
-    compare-and-set: `UPDATE ... WHERE last_period_key IS DISTINCT FROM $key` แล้วดู `rowCount` ก่อนส่ง
-    · **ถ้าส่งแล้ว throw จะคืน `last_period_key` ค่าเดิม** (guard ด้วย `= $key` กันทับคนที่จองรอบใหม่กว่า)
-    เพื่อรักษาพฤติกรรมเดิมที่ cron รอบถัดไปยังลองใหม่ได้
-  - `scheduleNewJobs()` **ไม่ต้องแก้** — มี `ON CONFLICT (conversation_id, rule_id) WHERE status='PENDING'
-    DO NOTHING` คู่กับ unique partial index จาก `7.52` อยู่แล้ว (ที่ซ้ำได้คือค่า AI ตอน classify intent
-    ซึ่งเสียเงินเปล่าเล็กน้อย ไม่ใช่ข้อมูลผิด) · `releaseExpiredOrders()` ก็ไม่ต้องแก้ ใช้
-    `FOR UPDATE SKIP LOCKED` มาตั้งแต่แรก
-  - **ที่รู้ว่ายังไม่ได้แก้ (ยอมรับได้ ไม่ใช่ข้อมูลผิด)**: `runCarrierTrackingSync()` (`shipping.ts`) ยัง
-    SELECT-แล้ว-ค่อยยิง API — สองฝั่งพร้อมกันจะ **เรียก carrier API ซ้ำ** (เปลืองโควตา) แต่ไม่ทำข้อมูล
-    เพี้ยน เพราะ `syncShipmentLive()` re-lock + ไม่ให้ status ถอยหลังอยู่แล้ว · ไม่แก้เพราะทางแก้แบบ
-    lease ต้องไปขยับ `carrier_last_synced_at` ตั้งแต่ตอนเคลม ซึ่งเป็น field ที่ staff เห็นในหน้าจอ
-    (จะกลายเป็น "sync แล้ว" ทั้งที่ยังไม่ได้ sync จริง) — ถ้าจะแก้ควรเพิ่มคอลัมน์ claim แยก
-- **`ws` ไม่ได้ต่อ Postgres เลย — ลบ `apps/ws/src/db/` ทิ้งทั้งโฟลเดอร์** — ตอนไล่หา pool ตัวที่สอง
-  (กลัวว่า scale ws แล้ว connection จะทวีคูณ) พบว่าไฟล์นั้นสร้าง `pg.Pool` จริงและไม่มี `max` เหมือนกัน
-  **แต่ไม่มีใคร import เลยสักที่ และ `pg` ไม่ได้อยู่ใน `dependencies` ของ `apps/ws` ด้วยซ้ำ** →
-  ถ้ามีคนเผลอ import จะพังตอน runtime ในคอนเทนเนอร์ทันที (subscription ทั้งหมดของ ws มาจาก Redis
-  pub/sub อย่างเดียว) · ถอด `DATABASE_URL` ของ service `ws` ออกจาก compose ทั้ง 2 ไฟล์ด้วย เพราะเป็น
-  ตัวแปรที่ไม่มีโค้ดไหนอ่านแล้ว และ hardcode `app:app` ไว้ทำให้เข้าใจผิดว่า ws ต้องใช้ DB ·
-  **ผลพลอยได้: ws scale ตามแนวนอนได้เลยโดยไม่ต้องแตะอะไรอีก**
-- **ลบ `lib/upload-helpers.ts` ทิ้ง** — dead code ไม่มี caller เลย (`saveUpload`/`saveUploads`) ที่
-  hardcode `/app/storage` เขียนไฟล์เองตรง ๆ แล้วคืน URL `/uploads/<name>` ซึ่ง **ไม่มี route รองรับ
-  ด้วยซ้ำ** (ของจริงเสิร์ฟผ่าน `/api/files/[id]`) — ปล่อยไว้เท่ากับมีทางลัดรอให้คนเผลอ import แล้ว
-  bypass storage driver ที่เพิ่งทำ
-- **`docker-compose.dev.yml` มีบรรทัดค้างที่พัง dev stack — ลบแล้ว (ไม่เกี่ยวกับงานรอบนี้ แต่เจอตอน
-  ไล่ตรวจว่า "รันเครื่องเดียวยังปกติไหม")**: web service เดิมรัน
-  `test -f ../../packages/social-queue/node_modules/.package-lock.json || npm --prefix
-  ../../packages/social-queue ci && npm run dev` — แต่ `packages/social-queue` ถูกลบไปแล้วตั้งแต่รอบ
-  "Redis infrastructure hardening" ก่อนหน้านี้ (ดู [CLAUDE.md](CLAUDE.md)) โดยไม่ได้ลบบรรทัดนี้ตาม
-  ไปด้วย. จำลอง shell chain จริงแล้วยืนยันว่า `npm run dev` **ไม่ถูกเรียกเลย** ทุกครั้งที่ container
-  `web` ของ dev stack ถูก recreate/restart เพราะ `npm --prefix` ของ path ที่ไม่มีอยู่จะ exit 1 ตัดสาย
-  `&&` ทิ้งก่อนถึง `npm run dev` เสมอ (ยืนยัน exit code จริง ไม่ใช่เดา) — ตอนนี้เหลือแค่เช็ค
-  `node_modules` ของ `web` เองแล้วรัน `npm run dev` ตรง ๆ **ไม่กระทบ production** (`docker-compose.
-  prod.yml` build ด้วย Dockerfile จริง ไม่เคยอ้าง `social-queue` เลย)
-- **verify ของจริงแล้ว ไม่ใช่แค่ `tsc`**: `scripts/infra/multi-instance-contract.test.mts` ผ่าน 11/11
-  โดยยิงใส่ Redis จริง + **MinIO จริง** (docker) — ครอบ local round-trip/range/stream-hash/ไฟล์หาย/
-  path traversal, Redis counter + TTL ไม่ sliding + fallback ตอน Redis ล่มต้อง **ยังบล็อกอยู่**, และ
-  s3 round-trip/range/HEAD/stream-hash · เคส Redis/S3 จะ **SKIP (ไม่ใช่ pass)** ถ้าไม่ได้ตั้ง env ให้
-  · ต้องใส่ `--test-force-exit` ไม่งั้น ioredis ค้าง handle ไว้แล้ว runner ไม่จบ
-- **SQL เคลมงาน 2 แบบ verify กับ Postgres 16 จริงแล้ว** (ตารางจำลองใน container ชั่วคราว ไม่ได้แตะ dev
-  DB): lease + `FOR UPDATE SKIP LOCKED` — session A เปิด transaction ค้างไว้เคลมได้ 3 แถว ระหว่างนั้น
-  session B ที่รันพร้อมกันได้ **0 แถว** (ไม่ใช่รอ lock) และรันซ้ำหลัง commit ก็ยังได้ 0 เพราะ lease ยัง
-  ไม่หมด · digest CAS — ยิงซ้ำสองครั้งได้ `UPDATE 1` แล้ว `UPDATE 0`
-- **ยังไม่ทำ / gap ที่รู้ตัว**: ยังไม่ได้ทดสอบ `STORAGE_DRIVER=s3` ผ่านแอปจริงในเบราว์เซอร์ (verify ที่
-  ระดับ driver contract เท่านั้น — ยังไม่เคยอัปสลิปจริงผ่าน `/checkout` แล้วให้ OCR อ่านกลับ) · ยังไม่มี
-  สคริปต์ migrate ไฟล์เดิมขึ้น bucket (ใช้ `mc mirror`/`aws s3 sync` มือได้เพราะ key ไม่เปลี่ยน) ·
-  ยังไม่ได้เพิ่ม replica/LB จริงในทุก compose file (ตั้งใจ — เป็นการตัดสินใจเรื่อง topology ไม่ใช่โค้ด) ·
-  `app/api/admin/queue/db/route.ts` เป็น **dead code ที่ตกค้าง** จากตอนถอด social queue: query ตาราง
-  `social_posts` ที่ไม่มีแล้ว, ไม่มีหน้าไหนเรียก, เปิด `Pool` ตัวที่สองต่อ instance โดยไม่มี `max`, และ
-  guard `if (expected && ...)` แปลว่า **ถ้าไม่ได้ตั้ง `ADMIN_TOKEN` = ใครก็เรียกได้** — ตั้งใจไม่ลบใน
-  รอบนี้เพราะอยู่นอกขอบเขต แต่ควรลบ
+รายละเอียดเต็ม (pg pool ceiling, Redis-backed rate limit, storage driver abstraction, cron
+claim-before-act fixes, `ws` Postgres removal, verification results, known gaps) ย้ายไปที่
+[docs/architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md)
 
 ## ก่อน production (สำคัญ)
 

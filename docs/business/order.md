@@ -267,6 +267,91 @@ call paths.
 
 Permissions: `shipping.view` / `shipping.create` / `shipping.update`.
 
+### Customer carrier preference (chat checkout)
+
+`bms_store_profile.enabled_carriers TEXT[]` (which carriers a shop actually uses) and
+`bms_orders.preferred_carrier TEXT` (migration `7.46`) let a customer state a carrier preference
+while chatting. This is a **preference, not a commitment** — the carrier that actually ships is
+`bms_shipments.carrier`, chosen by staff at packing time.
+
+- AI must never compare price/ETA between carriers (no real data for that — would be fabrication).
+  `get_store_info` returns a `carrierChoiceNote` the model must read before answering. An empty
+  `enabled_carriers` means the AI must not raise carrier choice at all, not offer every carrier.
+- `create_order`'s tool layer double-guards: `enumVal` checks the code is a real carrier, then checks
+  it's inside the shop's `enabledCarriers`; a violation throws `ToolArgError` so the model re-asks
+  instead of silently storing `null`. `createOrder()` itself (the shared service, called by
+  REST/reorder too) stores `null` for an unrecognized code instead of throwing — an order must never
+  fail because of this optional field.
+- `reorderFromOrder()` carries `preferred_carrier` forward from the original order (unlike coupons,
+  which intentionally do not carry over).
+- UI: `/admin/settings`' store-profile card has a multi-select "ขนส่งที่ร้านใช้" under "ค่าส่ง".
+  `/admin/shipment`'s "สร้างการจัดส่ง" modal shows the requested carrier next to each order in the
+  dropdown and auto-fills the carrier field only when it's still empty (never overwrites a staff
+  choice); it warns when the selected carrier differs from the customer's request but does not block
+  it, since the preference isn't binding. `bmsCreateShipment` is untouched — the value actually sent
+  still always comes from the form.
+- Not yet done: public checkout (`/checkout?t=`) does not offer carrier choice; the deterministic
+  no-credential fallback in `pipeline.ts` doesn't know this slot (same gap as coupons); `/admin/orders`
+  doesn't show `preferred_carrier` (only the shipment-creation modal does); no carrier webhooks (only
+  polling) and no cancel-with-carrier flow yet.
+
+### Shipping fee calculation (zones/weight, migration `7.47`)
+
+Shipping fee is a real, collected amount, computed by one engine — `quoteShipping()`
+(`lib/bms/shippingRates.ts`). The older `estimateShipping()` (flat-rate-only, destination-blind, and
+never actually added to the order) was deleted, not deprecated, so there is never a second fee
+formula between "shown to the customer" and "actually charged".
+
+- `bms_orders.total_amount` still means product total minus discount (unchanged, because
+  dashboard/report/digest/coupon logic all read it) — it is **not** shipping-inclusive. The amount a
+  customer must pay is `total_amount + shipping_fee`, computed only at the money-collection points
+  (payments/checkout/invoice); old orders default `shipping_fee` to 0 so historical totals don't move.
+- Precedence: `carrier` → `zone` → `flat` → `none`. A `fee: null` result must never be guessed as 0.
+- `lib/bms/shippingZones.ts` has no imports (usable from client components; avoids a circular import
+  with `storeProfile.ts`, which needs `parseZoneRates`/`parseWeightTiers` for validation). Zones are
+  3 tiers only — BANGKOK / PERIMETER / UPCOUNTRY (Bangkok + the 5 surrounding provinces vs. everything
+  else) — deliberately not a full 77-province table, since a long hand-typed list is itself a source
+  of typos. `normalizeProvince()` strips `จ.`/`จังหวัด` and known aliases (กทม/Bangkok/bkk).
+- **"Unknown ≠ guess" is the core rule here — do not make this smarter without re-reading this note:**
+  - Unknown province → falls back to `flat`, never a guessed zone (a wrong zone guess is silent
+    mischarging).
+  - Any item missing `weight_grams` → `sumItemWeightGrams()` returns `null` for the whole order (never
+    a partial sum), skips the weight surcharge, and adds a warning.
+  - `guessProvinceFromAddress()` only recognizes special-cased free-text names and always flags
+    `provinceIsGuess: true` plus a "should confirm before charging" warning — needed because existing
+    address rows have no structured `province` column, so without a guess the zone mode would never
+    apply to existing customers.
+  - `mode: carrier` with no key/client configured falls back to zone/flat with a warning instead of
+    returning a made-up live-looking price.
+- The fee is computed at two points because identity-first checkout collects the address **after**
+  order creation: (1) inside `createOrder()`'s transaction (`computeOrderShippingFeeInTx`, usually
+  flat/0 since there's no address yet; failures are caught and return 0 so a fee that can't be
+  computed never rolls back the reserved order/stock), and (2) `recalculateOrderShipping(tenantId,
+  customerId)`, called from both `checkout.ts`'s PATCH handler and the `save_customer_checkout_details`
+  tool once an address arrives (deliberately not called from inside `customers.ts` itself, to avoid a
+  circular import with `orders.ts`). Recalculation only touches `PENDING` orders with no
+  `PENDING`/`CONFIRMED` payment yet — an order a customer already paid at the old total is never moved.
+- UI: `/admin/settings`' store-profile card has a "ค่าส่ง" section for mode (flat/zone/ask-carrier),
+  origin province/postcode, a zone-rate `Form.List`, and a weight-tier `Form.List`. `/admin/products`
+  has a weight-in-grams field next to cost price. `/checkout` shows a "ค่าจัดส่ง" line (free = "ฟรี").
+  The chat order-confirmation message breaks out product total / shipping / grand total whenever
+  shipping is non-zero, so the customer doesn't see a total higher than what was discussed without
+  explanation.
+- `get_shipping_estimate` accepts `province`/`items` and its description tells the model to read
+  `warnings` before answering (guessed province/incomplete weight must be disclosed as an estimate).
+  `save_customer_checkout_details` accepts `province`/`postcode` and is told never to guess a province
+  from free-text address itself.
+- Carrier-quoted rates are a seam only (no live key/docs yet): `CarrierClient.quoteRate?()` is
+  optional; `flash.ts`/`kerry.ts` return `unconfigured`/`not_implemented`; `mock.ts`'s
+  `buildMockRateResult()` deliberately does not try to mimic real Flash/Kerry rates and is tagged
+  `source: "mock"`, which `quoteShipping()` turns into a "do not use for real charging" warning. Mock
+  is disabled in production the same way carrier tracking mock is.
+- Not yet done: no per-carrier rate table (one zone-rate set applies to every carrier); no dimensional
+  weight; addresses are still one free-text field plus optional `province`/`postcode` (no
+  district/subdistrict split, no backfill of old addresses); `/admin/orders` doesn't show
+  `shipping_fee`; REST `POST /api/bms/order` doesn't accept province; bulk product import doesn't
+  accept a weight column; no live carrier rate API (see above).
+
 ## Purchase Orders (supplier replenishment)
 
 See [inventory.md](inventory.md) — Purchase Orders are documented there since receiving stock is

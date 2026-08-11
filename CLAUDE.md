@@ -20,6 +20,7 @@ for the full philosophy and module breakdown.
 | [docs/architecture/system.md](docs/architecture/system.md) | Vision, modules, build status, RBAC model, folder structure |
 | [docs/architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [docs/architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes |
+| [docs/architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) | Running more than one `web`/`ws` instance: pg pool sizing, Redis-backed rate limiting, storage driver abstraction, cron claim-before-act |
 | [docs/business/order.md](docs/business/order.md) | Order lifecycle, reorder, shipping |
 | [docs/business/inventory.md](docs/business/inventory.md) | Stock rules, movement types, purchase orders |
 | [docs/business/payment.md](docs/business/payment.md) | Payment methods, lifecycle, AI slip verification |
