@@ -7,7 +7,14 @@
 // tagged source:"mock" so it can never be mistaken for live carrier data.
 // =============================================================
 
-import type { CarrierRateRequest, CarrierRateResult, CarrierTrackEvent, CarrierTrackResult } from "./types";
+import type {
+  CarrierCreateShipmentRequest,
+  CarrierCreateShipmentResult,
+  CarrierRateRequest,
+  CarrierRateResult,
+  CarrierTrackEvent,
+  CarrierTrackResult,
+} from "./types";
 
 /** Mock mode is a dev/test convenience only — refuse to run it in production no matter what env vars are set. */
 export function mockModeAllowed(): boolean {
@@ -69,6 +76,27 @@ export function buildMockRateResult(carrier: string, req: CarrierRateRequest): C
     fee: base + weightPart,
     currency: "THB",
     etaDays: sameProvince ? 1 : 2 + (seed % 2),
+    source: "mock",
+  };
+}
+
+/**
+ * Fake shipment creation so createShipment() can exercise end-to-end carrier
+ * integration without a real API key/docs. Tracking and external id are stable
+ * for the same order/carrier pair. No label URL is returned because there is no
+ * pretend PDF endpoint; callers exercise the normal printable fallback instead.
+ */
+export function buildMockCreateShipmentResult(
+  carrier: string,
+  req: CarrierCreateShipmentRequest
+): CarrierCreateShipmentResult {
+  const seed = seedFromString(`${carrier}:${req.orderId}`);
+  const trackingNo = `${carrier}-${String(seed).padStart(10, "0").slice(0, 10)}`;
+  return {
+    ok: true,
+    externalShipmentId: `mock-${carrier.toLowerCase()}-${req.orderId.slice(0, 8)}`,
+    trackingNo,
+    labelUrl: null,
     source: "mock",
   };
 }

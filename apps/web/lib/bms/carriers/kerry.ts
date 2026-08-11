@@ -15,8 +15,15 @@
 // before a real key exists.
 // =============================================================
 
-import type { CarrierClient, CarrierRateRequest, CarrierRateResult, CarrierTrackResult } from "./types";
-import { buildMockRateResult, buildMockTrackResult, mockModeAllowed } from "./mock";
+import type {
+  CarrierClient,
+  CarrierCreateShipmentRequest,
+  CarrierCreateShipmentResult,
+  CarrierRateRequest,
+  CarrierRateResult,
+  CarrierTrackResult,
+} from "./types";
+import { buildMockCreateShipmentResult, buildMockRateResult, buildMockTrackResult, mockModeAllowed } from "./mock";
 
 function isMockEnabled(): boolean {
   return mockModeAllowed() && process.env.KERRY_MOCK === "true";
@@ -31,6 +38,17 @@ export const kerryClient: CarrierClient = {
 
   getStatus() {
     return isConfigured() ? "configured" : "unconfigured";
+  },
+
+  async createShipment(req: CarrierCreateShipmentRequest): Promise<CarrierCreateShipmentResult> {
+    if (isMockEnabled()) return buildMockCreateShipmentResult("KERRY", req);
+    if (!isConfigured()) return { ok: false, reason: "unconfigured" };
+    return {
+      ok: false,
+      reason: "not_implemented",
+      detail:
+        "KERRY_API_KEY is set, but the shipment creation request/response shape has not been verified against Kerry Express's real API docs yet.",
+    };
   },
 
   async trackShipment(trackingNo: string): Promise<CarrierTrackResult> {

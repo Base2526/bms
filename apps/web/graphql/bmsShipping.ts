@@ -16,6 +16,7 @@ import {
   getShipment,
   listShipments,
   getShipmentLabel,
+  syncShipmentLive,
   type Carrier,
   type ShipmentStatus,
 } from "@/lib/bms/shipping";
@@ -74,7 +75,9 @@ export const bmsShippingResolvers = {
         return {
           status: "CREATED",
           shipmentId: res.shipmentId,
-          message: res.orderShipped ? "สร้างการจัดส่ง · ออร์เดอร์เป็น SHIPPED (ตัดสต็อกแล้ว)" : "แนบการจัดส่งกับออร์เดอร์แล้ว",
+          message:
+            (res.orderShipped ? "สร้างการจัดส่ง · ออร์เดอร์เป็น SHIPPED (ตัดสต็อกแล้ว)" : "แนบการจัดส่งกับออร์เดอร์แล้ว") +
+            (res.carrierIntegration === "manual" ? "" : ` · carrier ${res.carrierIntegration}`),
         };
       }
       const msg: Record<string, string> = {
@@ -115,6 +118,19 @@ export const bmsShippingResolvers = {
       if (ok) await audit(ctx, "shipping.cancel", args.id);
       return ok;
     },
+
+    async bmsSyncShipmentLive(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "shipping.update");
+      const result = await syncShipmentLive(getTenantId(ctx), args.id);
+      if (result.status === "SYNCED") {
+        await audit(ctx, "shipping.sync_live", args.id, {
+          shipmentStatus: result.shipmentStatus,
+          source: result.source,
+          eventCount: result.eventCount,
+        });
+      }
+      return result;
+    },
   },
 
   // field resolvers — normalize snake_case
@@ -122,6 +138,9 @@ export const bmsShippingResolvers = {
     orderId: (p: any) => p.order_id,
     trackingNo: (p: any) => p.tracking_no ?? null,
     labelUrl: (p: any) => p.label_url ?? null,
+    externalShipmentId: (p: any) => p.external_shipment_id ?? null,
+    carrierLastSyncedAt: (p: any) => toISO(p.carrier_last_synced_at),
+    carrierTrackingSource: (p: any) => p.carrier_tracking_source ?? null,
     createdAt: (p: any) => toISO(p.created_at),
     updatedAt: (p: any) => toISO(p.updated_at),
   },

@@ -214,6 +214,9 @@ override is applied only to customer-initiated reorder.
 ## Shipping
 
 **Implemented** (`bms_shipments`): carrier = `FLASH` / `KERRY` / `DHL` / `AUSPOST` / `NZPOST` / `OTHER`.
+As of August 11, 2026, shipment rows can also keep carrier-integration metadata so BMS can
+progressively support real carrier-backed shipment creation and sync (`external_shipment_id`,
+`carrier_last_synced_at`, `carrier_tracking_source`) without changing the core fulfillment flow.
 
 ```
 PENDING → SHIPPED → IN_TRANSIT → DELIVERED
@@ -223,8 +226,19 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
 movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
 deducting stock again. A tracking number is optional at shipment creation and can be added later;
-an order cannot reach `COMPLETED` before it's `SHIPPED`. Labels are informational only — no real
-carrier API is wired up yet (roadmap item).
+an order cannot reach `COMPLETED` before it's `SHIPPED`. When a configured carrier client supports
+shipment creation, BMS now attempts to capture the carrier's own shipment id, tracking number, and
+label URL during creation; otherwise it falls back to the same manual flow as before. Flash/Kerry
+currently expose only a safe scaffold here: mock mode works end-to-end for testing, but live
+request/response shapes remain intentionally unverified until real carrier docs/keys are wired.
+If staff supplies a tracking number during creation, BMS treats the parcel as already created
+externally and skips carrier shipment creation to prevent duplicates.
+
+The Shipping admin page exposes `bmsSyncShipmentLive` for Flash/Kerry shipments with a tracking
+number. A successful lookup stores the sync timestamp/source and advances the shipment status from
+the newest carrier event. Carrier sync never moves a status backwards and never changes a terminal
+`DELIVERED`, `RETURNED`, or `CANCELLED` shipment. A carrier label URL is opened when available;
+the existing printable BMS label remains the fallback.
 
 Before a `PACKING` order can become `SHIPPED`, both `shipOrder()` and `createShipment()` enforce the
 same address rule:

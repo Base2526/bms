@@ -32,6 +32,39 @@ export type CarrierRateRequest = {
   subtotal: number | null;
 };
 
+export type CarrierCreateShipmentItem = {
+  sku: string;
+  qty: number;
+  weightGrams: number | null;
+};
+
+export type CarrierCreateShipmentRequest = {
+  orderId: string;
+  carrier: string;
+  shipTo: {
+    name: string | null;
+    phone: string | null;
+    address: string | null;
+    province: string | null;
+    postcode: string | null;
+  };
+  subtotal: number | null;
+  totalGrams: number | null;
+  items: CarrierCreateShipmentItem[];
+};
+
+export type CarrierCreateShipmentResult =
+  | {
+      ok: true;
+      externalShipmentId: string;
+      trackingNo: string | null;
+      labelUrl: string | null;
+      source: "live" | "mock";
+    }
+  | { ok: false; reason: "unconfigured" }
+  | { ok: false; reason: "not_implemented"; detail: string }
+  | { ok: false; reason: "carrier_error"; detail: string };
+
 export type CarrierRateResult =
   // Same rule as CarrierTrackResult: `source` must stay on the success shape so a
   // mock-mode rate can never be presented to a customer as a real carrier price.
@@ -43,6 +76,7 @@ export type CarrierRateResult =
 export interface CarrierClient {
   readonly carrier: string;
   getStatus(): CarrierClientStatus;
+  createShipment?(req: CarrierCreateShipmentRequest): Promise<CarrierCreateShipmentResult>;
   /** Look up live tracking events from the carrier. Never throws — returns a typed result. */
   trackShipment(trackingNo: string): Promise<CarrierTrackResult>;
   /**

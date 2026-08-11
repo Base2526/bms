@@ -1049,6 +1049,9 @@ export const typeDefs = /* GraphQL */ `
     trackingNo: String
     status: BmsShipmentStatus!
     labelUrl: String
+    externalShipmentId: String
+    carrierLastSyncedAt: String
+    carrierTrackingSource: String
     note: String
     createdAt: String!
     updatedAt: String!
@@ -1061,6 +1064,7 @@ export const typeDefs = /* GraphQL */ `
     orderId: ID!
     carrier: String!
     trackingNo: String
+    labelUrl: String
     shipTo: BmsLabelShipTo!
     items: [BmsLabelItem!]!
     createdAt: String!
@@ -1070,6 +1074,17 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     shipmentId: ID
     message: String
+  }
+
+  type BmsSyncShipmentLiveResult {
+    status: String!
+    shipmentId: ID
+    trackingNo: String
+    shipmentStatus: BmsShipmentStatus
+    source: String
+    eventCount: Int
+    completedOrder: Boolean
+    detail: String
   }
 
   # ===== BMS inbox =====
@@ -3031,6 +3046,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateTracking(id: ID!, trackingNo: String, carrier: BmsCarrier): Boolean!
     bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!   # DELIVERED → order COMPLETED
     bmsCancelShipment(id: ID!): Boolean!
+    bmsSyncShipmentLive(id: ID!): BmsSyncShipmentLiveResult!
 
     # ===== BMS inbox (admin) =====
     bmsSendMessage(id: ID!, body: String, attachment: BmsAttachmentInput): BmsSendResult!   # ตอบเอง (persist + ยิงกลับช่องทาง) · body หรือ attachment อย่างน้อยหนึ่ง

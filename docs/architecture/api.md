@@ -136,7 +136,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
-| `bmsShipping.ts` | shipments, tracking, labels |
+| `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
@@ -166,6 +166,14 @@ introducing one just for itself.
   not the only gate: `shipOrder()` and `createShipment()` independently enforce the same rule before
   moving non-marketplace orders from `PACKING` to `SHIPPED`. Lazada/Shopee are the only marketplace
   exemptions; TikTok is treated as TikTok Chat.
+
+### Shipping carrier sync
+
+`bmsSyncShipmentLive(id)` requires `shipping.update`, derives the tenant from the authenticated
+admin context, and delegates to `syncShipmentLive()`. The service calls only the registered carrier
+adapter, maps normalized carrier events to BMS shipment states without status regression, and stores
+`carrier_last_synced_at` plus the `live`/`mock` source. Missing keys and unverified live adapters are
+returned as typed results rather than throwing or pretending the carrier accepted the request.
 
 ### Coupons
 

@@ -16,7 +16,11 @@ import { recordOrderMovements } from "./movements";
 import { beginTenantTx } from "./tenant";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { getCarrierClient } from "./carriers";
-import type { CarrierClientStatus, CarrierTrackResult } from "./carriers/types";
+import type {
+  CarrierClientStatus,
+  CarrierCreateShipmentRequest,
+  CarrierTrackResult,
+} from "./carriers/types";
 
 // Lazada/Shopee keep the shipping address in Seller Center. All other implemented channels,
 // including TikTok Chat, require a shipping address stored in BMS before fulfillment can ship.
@@ -45,11 +49,160 @@ export type CreateShipmentInput = {
 };
 
 export type CreateShipmentResult =
-  | { status: "CREATED"; shipmentId: string; orderShipped: boolean }
+  | {
+      status: "CREATED";
+      shipmentId: string;
+      orderShipped: boolean;
+      trackingNo: string | null;
+      labelUrl: string | null;
+      externalShipmentId: string | null;
+      carrierIntegration: "manual" | "live" | "mock";
+    }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_CARRIER" }
   | { status: "MISSING_SHIPPING_ADDRESS" }
   | { status: "INVALID_STATE"; current: string };
+
+export type SyncShipmentLiveResult =
+  | {
+      status: "SYNCED";
+      shipmentId: string;
+      trackingNo: string | null;
+      shipmentStatus: ShipmentStatus;
+      source: "live" | "mock";
+      eventCount: number;
+      completedOrder: boolean;
+    }
+  | { status: "SHIPMENT_NOT_FOUND" }
+  | { status: "TRACKING_REQUIRED" }
+  | { status: "NO_CARRIER_CLIENT" }
+  | { status: "UNCONFIGURED" }
+  | { status: "NOT_IMPLEMENTED"; detail: string }
+  | { status: "CARRIER_ERROR"; detail: string };
+
+function mapCarrierEventStatus(status: string): ShipmentStatus | null {
+  const normalized = String(status || "").trim().toUpperCase();
+  if (!normalized) return null;
+  if (["PICKED_UP", "SHIPPED"].includes(normalized)) return "SHIPPED";
+  if (["IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(normalized)) return "IN_TRANSIT";
+  if (normalized === "DELIVERED") return "DELIVERED";
+  if (["RETURNED", "RETURN_TO_SENDER"].includes(normalized)) return "RETURNED";
+  if (["CANCELLED", "CANCELED"].includes(normalized)) return "CANCELLED";
+  return null;
+}
+
+function resolveCarrierStatus(current: ShipmentStatus, next: ShipmentStatus): ShipmentStatus {
+  if (["DELIVERED", "RETURNED", "CANCELLED"].includes(current)) return current;
+  if (["RETURNED", "CANCELLED"].includes(next)) return next;
+  const rank: Partial<Record<ShipmentStatus, number>> = { PENDING: 0, SHIPPED: 1, IN_TRANSIT: 2, DELIVERED: 3 };
+  return (rank[next] ?? -1) >= (rank[current] ?? -1) ? next : current;
+}
+
+async function buildCarrierCreateShipmentRequest(
+  client: Awaited<ReturnType<typeof getClient>>,
+  tenantId: string,
+  orderId: string,
+  carrier: Carrier
+): Promise<CarrierCreateShipmentRequest | null> {
+  const order = await client.query<{
+    id: string;
+    total_amount: string | number;
+    customer_id: string | null;
+    customer_name: string | null;
+    customer_phone: string | null;
+    address: string | null;
+    province: string | null;
+    postcode: string | null;
+  }>(
+    `SELECT o.id,
+            o.total_amount,
+            o.customer_id,
+            c.name AS customer_name,
+            c.phone AS customer_phone,
+            a.address,
+            a.province,
+            a.postcode
+       FROM bms_orders o
+       LEFT JOIN bms_customers c ON c.id = o.customer_id
+       LEFT JOIN LATERAL (
+         SELECT address, province, postcode
+           FROM bms_customer_addresses
+          WHERE tenant_id = o.tenant_id
+            AND customer_id = o.customer_id
+            AND address_type = 'shipping'
+          ORDER BY is_default DESC, id
+          LIMIT 1
+       ) a ON TRUE
+      WHERE o.tenant_id = $1 AND o.id = $2`,
+    [tenantId, orderId]
+  );
+  if (order.rowCount === 0) return null;
+
+  const items = await client.query<{
+    product_sku: string;
+    qty: number;
+    weight_grams: number | null;
+  }>(
+    `SELECT oi.product_sku, oi.qty, p.weight_grams
+       FROM bms_order_items oi
+       LEFT JOIN bms_products p
+         ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+      WHERE oi.tenant_id = $1 AND oi.order_id = $2
+      ORDER BY oi.product_sku, oi.size`,
+    [tenantId, orderId]
+  );
+
+  const totalGrams = items.rows.reduce((sum, row) => {
+    const perItem = row.weight_grams == null ? 0 : Number(row.weight_grams);
+    return sum + perItem * Number(row.qty ?? 0);
+  }, 0);
+
+  const head = order.rows[0];
+  return {
+    orderId: head.id,
+    carrier,
+    shipTo: {
+      name: head.customer_name ?? null,
+      phone: head.customer_phone ?? null,
+      address: head.address ?? null,
+      province: head.province ?? null,
+      postcode: head.postcode ?? null,
+    },
+    subtotal: Number(head.total_amount ?? 0),
+    totalGrams: totalGrams > 0 ? totalGrams : null,
+    items: items.rows.map((row) => ({
+      sku: row.product_sku,
+      qty: Number(row.qty ?? 0),
+      weightGrams: row.weight_grams == null ? null : Number(row.weight_grams),
+    })),
+  };
+}
+
+async function createCarrierShipmentLive(
+  client: Awaited<ReturnType<typeof getClient>>,
+  tenantId: string,
+  orderId: string,
+  carrier: Carrier
+) {
+  const carrierClient = getCarrierClient(carrier);
+  if (!carrierClient?.createShipment) {
+    return { mode: "manual" as const, externalShipmentId: null, trackingNo: null, labelUrl: null };
+  }
+  const req = await buildCarrierCreateShipmentRequest(client, tenantId, orderId, carrier);
+  if (!req) {
+    return { mode: "manual" as const, externalShipmentId: null, trackingNo: null, labelUrl: null };
+  }
+  const result = await carrierClient.createShipment(req);
+  if (!result.ok) {
+    return { mode: "manual" as const, externalShipmentId: null, trackingNo: null, labelUrl: null };
+  }
+  return {
+    mode: result.source,
+    externalShipmentId: result.externalShipmentId,
+    trackingNo: result.trackingNo,
+    labelUrl: result.labelUrl,
+  };
+}
 
 // ---- create --------------------------------------------------
 export async function createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
@@ -117,16 +270,42 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
       orderShipped = true;
     }
 
+    // A supplied tracking number means staff already created the parcel externally.
+    // Do not create a second carrier shipment behind their back.
+    const carrierLive = input.trackingNo
+      ? { mode: "manual" as const, externalShipmentId: null, trackingNo: null, labelUrl: null }
+      : await createCarrierShipmentLive(client, tenantId, input.orderId, input.carrier);
+    const trackingNo = input.trackingNo ?? carrierLive.trackingNo ?? null;
+
     const ins = await client.query<{ id: string }>(
-      `INSERT INTO bms_shipments (tenant_id, order_id, carrier, tracking_no, status, note)
-       VALUES ($1, $2, $3, $4, 'SHIPPED', $5)
+      `INSERT INTO bms_shipments
+         (tenant_id, order_id, carrier, tracking_no, status, label_url, note, external_shipment_id, carrier_last_synced_at, carrier_tracking_source)
+       VALUES ($1, $2, $3, $4, 'SHIPPED', $5, $6, $7, $8, $9)
        RETURNING id`,
-      [tenantId, input.orderId, input.carrier, input.trackingNo ?? null, input.note ?? null]
+      [
+        tenantId,
+        input.orderId,
+        input.carrier,
+        trackingNo,
+        carrierLive.labelUrl ?? null,
+        input.note ?? null,
+        carrierLive.externalShipmentId ?? null,
+        carrierLive.mode === "manual" ? null : new Date(),
+        carrierLive.mode,
+      ]
     );
 
     await client.query("COMMIT");
     if (orderShipped) void notifyOrderStatusEmail(tenantId, input.orderId, "shipped");
-    return { status: "CREATED", shipmentId: ins.rows[0].id, orderShipped };
+    return {
+      status: "CREATED",
+      shipmentId: ins.rows[0].id,
+      orderShipped,
+      trackingNo,
+      labelUrl: carrierLive.labelUrl ?? null,
+      externalShipmentId: carrierLive.externalShipmentId ?? null,
+      carrierIntegration: carrierLive.mode,
+    };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -148,6 +327,7 @@ export async function updateTracking(
         SET tracking_no = COALESCE($3, tracking_no),
             carrier     = COALESCE($4, carrier),
             note        = COALESCE($5, note),
+            carrier_tracking_source = CASE WHEN $3 IS NOT NULL OR $4 IS NOT NULL THEN 'manual' ELSE carrier_tracking_source END,
             updated_at  = now()
       WHERE tenant_id = $1 AND id = $2
         AND status NOT IN ('CANCELLED','RETURNED')`,
@@ -208,7 +388,8 @@ export function cancelShipment(tenantId: string, shipmentId: string) {
 // ---- read ----------------------------------------------------
 export async function getShipment(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, order_id, carrier, tracking_no, status, label_url, note, created_at, updated_at
+    `SELECT id, order_id, carrier, tracking_no, status, label_url, note, external_shipment_id,
+            carrier_last_synced_at, carrier_tracking_source, created_at, updated_at
        FROM bms_shipments WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
@@ -224,6 +405,7 @@ export async function listShipments(
   const search = opts.search?.trim() || null;
   const res = await query(
     `SELECT id, order_id, carrier, tracking_no, status, label_url, note, created_at, updated_at
+            , external_shipment_id, carrier_last_synced_at, carrier_tracking_source
        FROM bms_shipments
       WHERE tenant_id = $1
         AND ($2::uuid IS NULL OR order_id = $2)
@@ -258,12 +440,72 @@ export async function trackShipmentLive(carrier: Carrier, trackingNo: string): P
   return client.trackShipment(trackingNo);
 }
 
-// ---- label (ข้อมูลสำหรับพิมพ์ — ยังไม่ผูก carrier API จริง) --------
+export async function syncShipmentLive(tenantId: string, shipmentId: string): Promise<SyncShipmentLiveResult> {
+  const shipment = await query<{
+    id: string;
+    order_id: string;
+    carrier: string;
+    tracking_no: string | null;
+    status: string;
+  }>(
+    `SELECT id, order_id, carrier, tracking_no, status
+       FROM bms_shipments
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, shipmentId]
+  );
+  if (shipment.rowCount === 0) return { status: "SHIPMENT_NOT_FOUND" };
+
+  const row = shipment.rows[0];
+  if (!row.tracking_no) return { status: "TRACKING_REQUIRED" };
+  if (!isCarrier(row.carrier)) return { status: "NO_CARRIER_CLIENT" };
+
+  const client = getCarrierClient(row.carrier);
+  if (!client) return { status: "NO_CARRIER_CLIENT" };
+
+  const result = await client.trackShipment(row.tracking_no);
+  if (!result.ok) {
+    if (result.reason === "unconfigured") return { status: "UNCONFIGURED" };
+    if (result.reason === "not_implemented") return { status: "NOT_IMPLEMENTED", detail: result.detail };
+    return { status: "CARRIER_ERROR", detail: result.detail };
+  }
+
+  const currentStatus = row.status as ShipmentStatus;
+  const latest = result.events[result.events.length - 1];
+  const mappedStatus = latest ? mapCarrierEventStatus(latest.status) : null;
+  const shipmentStatus = mappedStatus ? resolveCarrierStatus(currentStatus, mappedStatus) : currentStatus;
+  const statusUpdated = shipmentStatus !== currentStatus
+    ? await setShipmentStatus(tenantId, shipmentId, shipmentStatus)
+    : false;
+  const completedOrder = shipmentStatus === "DELIVERED" && statusUpdated;
+
+  await query(
+    `UPDATE bms_shipments
+        SET tracking_no = $3,
+            carrier_last_synced_at = now(),
+            carrier_tracking_source = $4,
+            updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, shipmentId, result.trackingNo, result.source]
+  );
+
+  return {
+    status: "SYNCED",
+    shipmentId,
+    trackingNo: result.trackingNo,
+    shipmentStatus,
+    source: result.source,
+    eventCount: result.events.length,
+    completedOrder,
+  };
+}
+
+// ---- label (carrier URL when available, printable fallback otherwise) ----
 export type ShipmentLabel = {
   shipmentId: string;
   orderId: string;
   carrier: string;
   trackingNo: string | null;
+  labelUrl: string | null;
   shipTo: { name: string | null; phone: string | null; address: string | null };
   items: { sku: string; size: string; qty: number }[];
   createdAt: string;
@@ -271,10 +513,10 @@ export type ShipmentLabel = {
 
 export async function getShipmentLabel(tenantId: string, shipmentId: string): Promise<ShipmentLabel | null> {
   const head = await query<{
-    id: string; order_id: string; carrier: string; tracking_no: string | null; created_at: any;
+    id: string; order_id: string; carrier: string; tracking_no: string | null; label_url: string | null; created_at: any;
     name: string | null; phone: string | null; address: string | null;
   }>(
-    `SELECT s.id, s.order_id, s.carrier, s.tracking_no, s.created_at,
+    `SELECT s.id, s.order_id, s.carrier, s.tracking_no, s.label_url, s.created_at,
             c.name, c.phone,
             (SELECT a.address FROM bms_customer_addresses a
               WHERE a.tenant_id = s.tenant_id AND a.customer_id = o.customer_id
@@ -300,6 +542,7 @@ export async function getShipmentLabel(tenantId: string, shipmentId: string): Pr
     orderId: h.order_id,
     carrier: h.carrier,
     trackingNo: h.tracking_no,
+    labelUrl: h.label_url,
     shipTo: { name: h.name, phone: h.phone, address: h.address },
     items: items.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: r.qty })),
     createdAt: h.created_at instanceof Date ? h.created_at.toISOString() : String(h.created_at),
