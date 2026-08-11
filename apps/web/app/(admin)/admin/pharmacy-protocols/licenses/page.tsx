@@ -3,6 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Alert, Table, Switch, Input, Typography, message, Space } from "antd";
 import { useState } from "react";
 import { useSession } from "@/lib/useSession";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const Q = gql`
@@ -17,13 +18,14 @@ const M_SET = gql`
 `;
 
 export default function PharmacistLicensesPage() {
+  const { t } = useI18n();
   const { admin } = useSession();
   const isAdministrator = admin?.role === "Administrator";
   const { data, loading, error, refetch } = useQuery(Q, { skip: !isAdministrator, fetchPolicy: "cache-and-network" });
   const [draftLicenseNo, setDraftLicenseNo] = useState<Record<string, string>>({});
   const [setLicense, { loading: saving }] = useMutation(M_SET, {
-    onCompleted: () => { message.success("บันทึกแล้ว"); refetch(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_pharmacist_licenses.save_success")); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_pharmacist_licenses.save_error")),
   });
 
   if (!isAdministrator) {
@@ -31,31 +33,31 @@ export default function PharmacistLicensesPage() {
       <Alert
         type="warning"
         showIcon
-        message="เฉพาะ Administrator เท่านั้นที่กำหนดสถานะเภสัชกร (users.is_licensed_pharmacist) ได้"
+        message={t("admin_pharmacist_licenses.administrator_only")}
       />
     );
   }
-  if (error) return <Alert type="error" showIcon message="โหลดรายชื่อผู้ใช้ไม่ได้" description={error.message} />;
+  if (error) return <Alert type="error" showIcon message={t("admin_pharmacist_licenses.load_error")} description={error.message} />;
 
   const rows = data?.bmsPharmacyLicenseCandidates || [];
   const columns = [
-    { title: "ชื่อ", dataIndex: "name", key: "name" },
-    { title: "อีเมล", dataIndex: "email", key: "email", render: (v: string | null) => v || "—" },
+    { title: t("admin_pharmacist_licenses.col_name"), dataIndex: "name", key: "name" },
+    { title: t("admin_pharmacist_licenses.col_email"), dataIndex: "email", key: "email", render: (v: string | null) => v || "—" },
     {
-      title: "เลขที่ใบประกอบวิชาชีพ",
+      title: t("admin_pharmacist_licenses.col_license_no"),
       key: "licenseNo",
       render: (_: unknown, row: any) => (
         <Input
           size="small"
           style={{ width: 200 }}
           defaultValue={row.pharmacistLicenseNo || ""}
-          placeholder="ไม่บังคับ"
+          placeholder={t("admin_pharmacist_licenses.license_no_placeholder")}
           onChange={(e) => setDraftLicenseNo((prev) => ({ ...prev, [row.id]: e.target.value }))}
         />
       ),
     },
     {
-      title: "เภสัชกรที่มีใบประกอบวิชาชีพ",
+      title: t("admin_pharmacist_licenses.col_is_licensed"),
       key: "isLicensedPharmacist",
       render: (_: unknown, row: any) => (
         <Switch
@@ -77,12 +79,12 @@ export default function PharmacistLicensesPage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>เภสัชกรที่มีใบประกอบวิชาชีพ</Typography.Title>} />
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_pharmacist_licenses.title")}</Typography.Title>} />
       <Alert
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="ค่านี้เป็นตัวบังคับจริงที่ server สำหรับการอนุมัติ/ปฏิเสธ/ส่งต่อแพทย์ใน AI Pharmacy Intake — ไม่ขึ้นกับ role หรือสิทธิ์อื่นใด แม้ Administrator เองก็อนุมัติเคสไม่ได้ถ้ายังไม่เปิดสวิตช์นี้"
+        message={t("admin_pharmacist_licenses.enforcement_notice")}
       />
       <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} pagination={false} scroll={{ x: "max-content" }} />
     </div>

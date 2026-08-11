@@ -3,6 +3,7 @@ import { gql, useMutation, useQuery } from "@apollo/client";
 import { Card, Form, Input, Select, Button, message, Alert } from "antd";
 import React from "react";
 import bcrypt from "bcryptjs";
+import { useI18n } from "@/lib/i18nContext";
 
 const M_UPSERT = gql`
 mutation($data:UserInput!){
@@ -17,6 +18,7 @@ query { roles { id name } }
 `;
 
 function FormNew(){
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const watchName = Form.useWatch('name', form);   // 👈 debug helper
   const watchEmail = Form.useWatch('email', form); // 👈 debug helper
@@ -25,14 +27,14 @@ function FormNew(){
   const roles: { id: string; name: string }[] = rolesData?.roles || [];
 
   const [save,{loading}] = useMutation(M_UPSERT,{
-    onCompleted:()=>{ message.success('Created'); window.location.href='/admin/users'; }
+    onCompleted:()=>{ message.success(t("admin_users_new.create_success")); window.location.href='/admin/users'; }
   });
 
   const onFinish = async (v:any) => {
     const pwd: string = v.password?.trim() || '';
     const pwd2: string = v.confirmPassword?.trim() || '';
-    if (!pwd) { message.error('Password is required'); return; }
-    if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
+    if (!pwd) { message.error(t("admin_users_new.password_required_toast")); return; }
+    if (pwd !== pwd2) { message.error(t("admin_users_new.password_mismatch_toast")); return; }
     const passwordHash = await bcrypt.hash(pwd, 10);
 
     await save({ variables:{
@@ -49,11 +51,11 @@ function FormNew(){
 
   const onFinishFailed = (info:any) => {
     console.warn('[onFinishFailed]', info.errorFields);
-    message.error('กรุณากรอกฟิลด์ที่จำเป็นให้ครบ');
+    message.error(t("admin_users_new.fill_required_fields"));
   };
 
   return (
-    <Card title="New User" style={{maxWidth:640}}>
+    <Card title={t("admin_users_new.title")} style={{maxWidth:640}}>
       {/* สำคัญ: ไม่มี <form> ซ้อนทับ, ปุ่ม submit อยู่ "ใน" Form, ใช้ htmlType="submit" */}
       <Form
         name="user_new"
@@ -63,22 +65,22 @@ function FormNew(){
         onFinish={onFinish}
         onFinishFailed={onFinishFailed}
       >
-        <Form.Item name="name" label="Name" rules={[{ required: true, message:'Name is required' }]}>
-          <Input placeholder="Full name" />
+        <Form.Item name="name" label={t("admin_users_new.name_label")} rules={[{ required: true, message: t("admin_users_new.name_required") }]}>
+          <Input placeholder={t("admin_users_new.name_placeholder")} />
         </Form.Item>
 
-        <Form.Item name="email" label="Email" rules={[{ required: true, message:'Email is required' }, { type: 'email', message:'Invalid email' }]}>
-          <Input placeholder="email@example.com" />
+        <Form.Item name="email" label={t("admin_users_new.email_label")} rules={[{ required: true, message: t("admin_users_new.email_required") }, { type: 'email', message: t("admin_users_new.email_invalid") }]}>
+          <Input placeholder={t("admin_users_new.email_placeholder")} />
         </Form.Item>
 
-        <Form.Item name="phone" label="Phone"><Input /></Form.Item>
-        <Form.Item name="avatar" label="Avatar URL"><Input /></Form.Item>
+        <Form.Item name="phone" label={t("admin_users_new.phone_label")}><Input /></Form.Item>
+        <Form.Item name="avatar" label={t("admin_users_new.avatar_label")}><Input /></Form.Item>
 
-        {rolesError && <Alert type="error" showIcon message="โหลดรายชื่อ role ไม่ได้" description={rolesError.message} style={{ marginBottom: 16 }} />}
-        <Form.Item name="role_id" label="Role" rules={[{ required: true, message: 'กรุณาเลือก Role' }]}>
+        {rolesError && <Alert type="error" showIcon message={t("admin_users_new.roles_load_error")} description={rolesError.message} style={{ marginBottom: 16 }} />}
+        <Form.Item name="role_id" label={t("admin_users_new.role_label")} rules={[{ required: true, message: t("admin_users_new.role_required") }]}>
           <Select
             loading={rolesLoading}
-            placeholder="เลือก Role"
+            placeholder={t("admin_users_new.role_placeholder")}
             options={roles.map((r) => ({ value: r.id, label: r.name }))}
           />
         </Form.Item>
@@ -86,32 +88,32 @@ function FormNew(){
         {/* Password + Confirm */}
         <Form.Item
           name="password"
-          label="Password"
-          rules={[{ required:true, message:'Please input password' }, { min:8, message:'At least 8 characters' }]}
+          label={t("admin_users_new.password_label")}
+          rules={[{ required:true, message: t("admin_users_new.password_required") }, { min:8, message: t("admin_users_new.password_min_length") }]}
           hasFeedback
         >
-          <Input.Password placeholder="Enter password"/>
+          <Input.Password placeholder={t("admin_users_new.password_placeholder")}/>
         </Form.Item>
 
         <Form.Item
           name="confirmPassword"
-          label="Confirm Password"
+          label={t("admin_users_new.confirm_password_label")}
           dependencies={['password']}
           hasFeedback
           rules={[
-            { required:true, message:'Please confirm password' },
+            { required:true, message: t("admin_users_new.confirm_password_required") },
             ({ getFieldValue }) => ({
               validator(_, value) {
                 if (!value || getFieldValue('password') === value) return Promise.resolve();
-                return Promise.reject(new Error('Confirm password not match'));
+                return Promise.reject(new Error(t("admin_users_new.confirm_password_mismatch")));
               },
             }),
           ]}
         >
-          <Input.Password placeholder="Confirm password"/>
+          <Input.Password placeholder={t("admin_users_new.confirm_password_placeholder")}/>
         </Form.Item>
 
-        <Button type="primary" htmlType="submit" loading={loading}>Create</Button>
+        <Button type="primary" htmlType="submit" loading={loading}>{t("admin_users_new.submit")}</Button>
       </Form>
 
       {/* debug ดูค่าในฟอร์ม */}
