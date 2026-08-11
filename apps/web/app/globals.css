@@ -339,15 +339,23 @@ html.dark .ant-drawer-mask {
 
 /* Sidebar: label เมนูยาว (เช่น "Pharmacy Intake Lab"/"Pharmacy Protocols") เดิมโดน antd ตัดเป็น
    "..." ด้วย ellipsis + height คงที่ของ .ant-menu-item อ่านไม่ออกว่าเมนูอะไร — scope เฉพาะ sidebar
-   (ไม่แตะ Menu อื่นในแอป เช่น dropdown) เปลี่ยนเป็นขึ้นบรรทัดใหม่แทนตัดคำ */
-.bms-admin-sidebar-menu .ant-menu-item,
-.bms-admin-sidebar-menu .ant-menu-submenu-title {
+   (ไม่แตะ Menu อื่นในแอป เช่น dropdown) เปลี่ยนเป็นขึ้นบรรทัดใหม่แทนตัดคำ
+
+   ⚠️ ต้อง :not(.ant-menu-inline-collapsed) เสมอ — ตอน Sider ย่อ (จอ 768–992px หรือกดย่อเอง) antd
+   ซ่อน label ด้วย opacity:0 ซึ่ง "ยังกินพื้นที่ layout อยู่" แล้วพึ่ง height คงที่ + overflow:hidden
+   ของ .ant-menu-item เป็นตัวกันไม่ให้ข้อความที่มองไม่เห็นดันความสูง. ถ้าปล่อย height:auto +
+   overflow:visible + word-break:break-word ให้มีผลตอนย่อด้วย ข้อความจะตัดคำทีละตัวอักษรในกล่องกว้าง
+   ~40px → item สูงหลายร้อย px (เจอจริง: Dashboard สูง ~380px) ไอคอนลอยอยู่บนสุดของบล็อกยักษ์
+   ส่วน badge (absolute) กับ tooltip ของ antd ไปโผล่ผิดที่ = เมนูดูเพี้ยนทั้งแถบ
+   popup flyout ของ submenu ตอนย่อถูก portal ออกไปนอก .bms-admin-sidebar-menu จึงไม่โดนกฎนี้อยู่แล้ว */
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-item,
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-submenu-title {
   height: auto;
   line-height: 1.4;
   padding-top: 8px;
   padding-bottom: 8px;
 }
-.bms-admin-sidebar-menu .ant-menu-title-content {
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-title-content {
   white-space: normal;
   overflow: visible;
   text-overflow: unset;

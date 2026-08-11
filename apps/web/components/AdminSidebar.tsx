@@ -362,9 +362,13 @@ export default function AdminSidebar() {
       children: [
         // ระดับแพลตฟอร์ม → platform admin เท่านั้น
         ...(isPlatformAdmin ? [
-          link('/admin/posts', 'Posts', <FileTextOutlined />, 2),
-          link('/admin/files', 'Files', <FileImageOutlined />, 5),
-          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1),
+          // ⚠️ ต้องส่ง effectiveCollapsed ทุกครั้งที่ส่ง badge (เหมือน ENV ด้านล่าง) — ถ้าลืม
+          // ค่า default `collapsed = false` จะบังคับ label เป็น flex+pill เสมอ แล้วตอน sidebar ย่อ
+          // เมนูกลุ่มนี้เปิดเป็น popup flyout ที่แคบ span flex:1 minWidth:0 จะยุบเหลือ 0 → ข้อความหาย
+          // เห็นแต่ไอคอน (เคสเดียวกับที่เคยเจอที่เมนู Users)
+          link('/admin/posts', 'Posts', <FileTextOutlined />, 2, effectiveCollapsed),
+          link('/admin/files', 'Files', <FileImageOutlined />, 5, effectiveCollapsed),
+          link('/admin/logs', 'Logs', <DatabaseOutlined />, 1, effectiveCollapsed),
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
           link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),
           link('/admin/operations-schedule', 'Batch & Cron', <ClockCircleOutlined />),
