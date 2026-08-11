@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text } = Typography;
@@ -40,6 +41,7 @@ const INTENT_COLOR: Record<string, string> = {
 };
 
 export default function Page() {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const [channel, setChannel] = useState("line");
   const [customerRef, setCustomerRef] = useState("Ucustomer_001");
@@ -70,14 +72,14 @@ export default function Page() {
         body: JSON.stringify({ message: message_, channel, customerRef }),
       });
       const data = await res.json();
-      setChat((c) => [...c, { from: "bot", text: data.reply || "(ไม่มีคำตอบ)", trace: data }]);
+      setChat((c) => [...c, { from: "bot", text: data.reply || t("admin_playground.no_reply"), trace: data }]);
       if (data?.order?.status === "CREATED") {
         setLastOrderId(data.order.orderId);
-        message.success(`สร้างออร์เดอร์ ${data.order.orderId.slice(0, 8)} แล้ว`);
+        message.success(t("admin_playground.order_created", { id: data.order.orderId.slice(0, 8) }));
       }
       refetchStock();
     } catch (e: any) {
-      message.error(e?.message || "ส่งไม่สำเร็จ");
+      message.error(e?.message || t("admin_playground.send_error"));
     } finally {
       setSending(false);
     }
@@ -87,19 +89,19 @@ export default function Page() {
 
   return (
     <div>
-      <AdminPageHeader title="BMS Playground">
-        <Link href="/admin/orders"><Button icon={<ShoppingCartOutlined />}>ไปหน้า Orders</Button></Link>
+      <AdminPageHeader title={t("admin_playground.title")}>
+        <Link href="/admin/orders"><Button icon={<ShoppingCartOutlined />}>{t("admin_playground.go_to_orders")}</Button></Link>
       </AdminPageHeader>
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="จำลองลูกค้าแชตเข้ามา → เห็น NLU/สต็อก/ออร์เดอร์ที่เกิดจริง แล้วสต็อกด้านขวาจะอัปเดต — ไปกด จ่าย/แพ็ค/ส่ง ต่อได้ที่หน้า Orders"
+        message={t("admin_playground.intro")}
       />
 
       {/* minWidth ต้องเป็น 0 บนมือถือ — 360px + padding ของ Content ทำให้ล้นจอ 360px */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
         {/* ---- Chat simulator ---- */}
-        <Card title="💬 จำลองแชตลูกค้า" style={{ flex: "1 1 480px", minWidth: isMobile ? 0 : 360, width: isMobile ? "100%" : undefined }}
+        <Card title={t("admin_playground.chat_simulator_title")} style={{ flex: "1 1 480px", minWidth: isMobile ? 0 : 360, width: isMobile ? "100%" : undefined }}
           extra={
             // Segmented 8 ช่องทางกว้างเกินหัวการ์ดบนมือถือ → ใช้ Select แทน
             isMobile ? (
@@ -113,7 +115,7 @@ export default function Page() {
           }
         >
           <Space style={{ marginBottom: 8 }} wrap>
-            <Text type="secondary">customerRef:</Text>
+            <Text type="secondary">{t("admin_playground.customer_ref_label")}</Text>
             <Input size="small" value={customerRef} onChange={(e) => setCustomerRef(e.target.value)} style={{ width: 180 }} />
           </Space>
 
@@ -121,7 +123,7 @@ export default function Page() {
             ref={logRef}
             style={{ height: isMobile ? 300 : 340, overflowY: "auto", background: "var(--app-surface, #0000000a)", borderRadius: 8, padding: 12, marginBottom: 12 }}
           >
-            {chat.length === 0 && <Empty description="ยังไม่มีข้อความ ลองพิมพ์หรือกดตัวอย่างด้านล่าง" />}
+            {chat.length === 0 && <Empty description={t("admin_playground.empty_chat")} />}
             {chat.map((b, i) => (
               <div key={i} style={{ display: "flex", justifyContent: b.from === "customer" ? "flex-end" : "flex-start", marginBottom: 8 }}>
                 <div style={{ maxWidth: "80%" }}>
@@ -140,17 +142,17 @@ export default function Page() {
 
           <Space.Compact style={{ width: "100%" }}>
             <Input
-              placeholder='เช่น "สั่ง Nike XL 2 ชิ้น"'
+              placeholder={t("admin_playground.input_placeholder")}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onPressEnter={() => send()}
               disabled={sending}
             />
-            <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>ส่ง</Button>
+            <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>{t("admin_playground.send")}</Button>
           </Space.Compact>
 
           <div style={{ marginTop: 10 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>ตัวอย่าง:</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_playground.examples_label")}</Text>
             <div style={{ marginTop: 6 }}>
               <Space wrap>
                 {EXAMPLES.map((ex) => (
@@ -163,14 +165,14 @@ export default function Page() {
           {lastOrderId && (
             <Alert
               style={{ marginTop: 12 }} type="success" showIcon
-              message={<>สร้างออร์เดอร์ล่าสุด: <Text code>{lastOrderId.slice(0, 8)}</Text> — <Link href="/admin/orders">จัดการที่หน้า Orders →</Link></>}
+              message={<>{t("admin_playground.last_order_prefix")} <Text code>{lastOrderId.slice(0, 8)}</Text> — <Link href="/admin/orders">{t("admin_playground.manage_at_orders")}</Link></>}
             />
           )}
         </Card>
 
         {/* ---- Live stock ---- */}
-        <Card title="📦 สต็อกสด (available / reserved)" style={{ flex: "1 1 320px", minWidth: isMobile ? 0 : 280, width: isMobile ? "100%" : undefined }}
-          extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => refetchStock()}>Refresh</Button>}
+        <Card title={t("admin_playground.live_stock_title")} style={{ flex: "1 1 320px", minWidth: isMobile ? 0 : 280, width: isMobile ? "100%" : undefined }}
+          extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => refetchStock()}>{t("admin_playground.refresh")}</Button>}
         >
           {products.length === 0 && <Empty />}
           {products.map((p: any) => (
@@ -180,7 +182,7 @@ export default function Page() {
                 <Space wrap size={4}>
                   {p.variants.map((v: any) => (
                     <Tag key={v.size} color={v.available > 0 ? "green" : "default"}>
-                      {v.size}: {v.available}{v.reserved_stock > 0 ? ` (จอง ${v.reserved_stock})` : ""}
+                      {v.size}: {v.available}{v.reserved_stock > 0 ? t("admin_playground.reserved_suffix", { count: v.reserved_stock }) : ""}
                     </Tag>
                   ))}
                 </Space>

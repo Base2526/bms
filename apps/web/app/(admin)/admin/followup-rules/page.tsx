@@ -8,6 +8,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
@@ -17,24 +18,29 @@ const INTENT_OPTIONS = [
   "ASK_PRICE", "PRODUCT_INFORMATION", "ORDER", "BOOKING", "SUPPORT",
   "COMPLAINT", "PAYMENT", "DELIVERY", "GENERAL_QUESTION", "OTHER",
 ];
-const GOAL_OPTIONS = [
-  { value: "CLOSE_SALE", label: "ปิดการขาย" },
-  { value: "COLLECT_MISSING_INFO", label: "เก็บข้อมูลที่ขาด" },
-  { value: "CONTINUE_CONVERSATION", label: "ต่อบทสนทนา" },
-  { value: "CONFIRM_BOOKING", label: "ยืนยันการจอง" },
-  { value: "CUSTOMER_SATISFACTION", label: "ความพึงพอใจลูกค้า" },
-  { value: "PAYMENT_REMINDER", label: "เตือนชำระเงิน" },
-  { value: "RECOVER_ABANDONED_CART", label: "ตามตะกร้าที่ทิ้งไว้" },
-  { value: "SUPPORT_FOLLOWUP", label: "ติดตามเคส support" },
-];
-const STOP_CONDITION_OPTIONS = [
-  { value: "customer_replied", label: "ลูกค้าตอบแล้ว" },
-  { value: "staff_replied", label: "แอดมินตอบแล้ว" },
-  { value: "conversation_closed", label: "แชทปิดแล้ว" },
-  { value: "max_retry_exceeded", label: "ครบจำนวนครั้งที่ลองแล้ว" },
-  { value: "opted_out", label: "ลูกค้าปฏิเสธรับข้อความ" },
-  { value: "rule_disabled", label: "กฎถูกปิดใช้งาน" },
-];
+
+function goalOptions(t: (key: string) => string) {
+  return [
+    { value: "CLOSE_SALE", label: t("admin_followup_rules.goal_close_sale") },
+    { value: "COLLECT_MISSING_INFO", label: t("admin_followup_rules.goal_collect_missing_info") },
+    { value: "CONTINUE_CONVERSATION", label: t("admin_followup_rules.goal_continue_conversation") },
+    { value: "CONFIRM_BOOKING", label: t("admin_followup_rules.goal_confirm_booking") },
+    { value: "CUSTOMER_SATISFACTION", label: t("admin_followup_rules.goal_customer_satisfaction") },
+    { value: "PAYMENT_REMINDER", label: t("admin_followup_rules.goal_payment_reminder") },
+    { value: "RECOVER_ABANDONED_CART", label: t("admin_followup_rules.goal_recover_abandoned_cart") },
+    { value: "SUPPORT_FOLLOWUP", label: t("admin_followup_rules.goal_support_followup") },
+  ];
+}
+function stopConditionOptions(t: (key: string) => string) {
+  return [
+    { value: "customer_replied", label: t("admin_followup_rules.stop_customer_replied") },
+    { value: "staff_replied", label: t("admin_followup_rules.stop_staff_replied") },
+    { value: "conversation_closed", label: t("admin_followup_rules.stop_conversation_closed") },
+    { value: "max_retry_exceeded", label: t("admin_followup_rules.stop_max_retry_exceeded") },
+    { value: "opted_out", label: t("admin_followup_rules.stop_opted_out") },
+    { value: "rule_disabled", label: t("admin_followup_rules.stop_rule_disabled") },
+  ];
+}
 
 const Q = gql`
   query {
@@ -51,9 +57,8 @@ const M_UPSERT = gql`
 `;
 const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteFollowupRule(id: $id) }`;
 
-const goalLabel = (v: string) => GOAL_OPTIONS.find((g) => g.value === v)?.label ?? v;
-
 export default function FollowupRulesPage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const isMobile = useIsMobile();
   const canManage = can("followup.manage");
@@ -65,19 +70,23 @@ export default function FollowupRulesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
 
+  const GOAL_OPTIONS = goalOptions(t);
+  const STOP_CONDITION_OPTIONS = stopConditionOptions(t);
+  const goalLabel = (v: string) => GOAL_OPTIONS.find((g) => g.value === v)?.label ?? v;
+
   const [saveRule, { loading: saving }] = useMutation(M_UPSERT, {
-    onCompleted: () => { message.success("บันทึกกฎ follow-up แล้ว"); setModalOpen(false); refetch(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_followup_rules.create_success")); setModalOpen(false); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_followup_rules.save_error")),
   });
   const [deleteRule] = useMutation(M_DELETE, {
-    onCompleted: () => { message.success("ลบกฎแล้ว"); refetch(); },
-    onError: (e) => message.error(e?.message || "ลบไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_followup_rules.delete_success")); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_followup_rules.delete_error")),
   });
 
   if (!permsLoading && !can("followup.view")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_followup_rules.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message="โหลดรายการกฎไม่ได้" description={error.message} />;
+  if (error) return <Alert type="error" showIcon message={t("admin_followup_rules.load_error")} description={error.message} />;
 
   const rows = data?.bmsFollowupRules || [];
 
@@ -114,24 +123,24 @@ export default function FollowupRulesPage() {
 
   const columns = [
     { title: "Intent", dataIndex: "intent", key: "intent", render: (v: string) => <Text strong>{v}</Text> },
-    { title: "เป้าหมาย", dataIndex: "messageGoal", key: "messageGoal", render: goalLabel },
-    { title: "รอ (นาที)", dataIndex: "delayMinutes", key: "delayMinutes", align: "right" as const },
-    { title: "ลองซ้ำสูงสุด", dataIndex: "maxRetry", key: "maxRetry", align: "right" as const },
-    { title: "priority", dataIndex: "priority", key: "priority", align: "right" as const },
+    { title: t("admin_followup_rules.col_goal"), dataIndex: "messageGoal", key: "messageGoal", render: goalLabel },
+    { title: t("admin_followup_rules.col_delay"), dataIndex: "delayMinutes", key: "delayMinutes", align: "right" as const },
+    { title: t("admin_followup_rules.col_max_retry"), dataIndex: "maxRetry", key: "maxRetry", align: "right" as const },
+    { title: t("admin_followup_rules.col_priority"), dataIndex: "priority", key: "priority", align: "right" as const },
     {
-      title: "เฉพาะเวลาทำการ", dataIndex: "businessHoursOnly", key: "businessHoursOnly",
-      render: (v: boolean) => (v ? <Tag color="blue">ใช่</Tag> : <Tag>ไม่</Tag>),
+      title: t("admin_followup_rules.col_business_hours"), dataIndex: "businessHoursOnly", key: "businessHoursOnly",
+      render: (v: boolean) => (v ? <Tag color="blue">{t("admin_followup_rules.bool_yes")}</Tag> : <Tag>{t("admin_followup_rules.bool_no")}</Tag>),
     },
     {
-      title: "สถานะ", dataIndex: "enabled", key: "enabled",
-      render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Tag>,
+      title: t("admin_followup_rules.col_status"), dataIndex: "enabled", key: "enabled",
+      render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? t("admin_followup_rules.status_enabled") : t("admin_followup_rules.status_disabled")}</Tag>,
     },
     ...(canManage ? [{
       title: "", key: "actions", width: 100,
       render: (_: any, r: any) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-          <Popconfirm title="ลบกฎนี้?" onConfirm={() => deleteRule({ variables: { id: r.id } })}>
+          <Popconfirm title={t("admin_followup_rules.delete_confirm")} onConfirm={() => deleteRule({ variables: { id: r.id } })}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -141,14 +150,14 @@ export default function FollowupRulesPage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>Follow-up Rules</Typography.Title>}>
-        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>สร้างกฎใหม่</Button>}
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_followup_rules.title")}</Typography.Title>}>
+        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_followup_rules.create")}</Button>}
       </AdminPageHeader>
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="เฉพาะ intent ที่มีกฎ enabled อยู่เท่านั้นที่จะถูก follow-up อัตโนมัติ — ไม่มี intent ตรง = ไม่ทำอะไรเลย"
+        message={t("admin_followup_rules.intro")}
       />
 
       {isMobile ? (
@@ -156,23 +165,23 @@ export default function FollowupRulesPage() {
           loading={loading}
           dataSource={rows as any[]}
           rowKey={(r) => r.id}
-          totalText={(t) => `ทั้งหมด ${t} กฎ`}
-          emptyText="ยังไม่มีกฎ follow-up"
+          totalText={(total) => t("admin_followup_rules.total_rules", { total })}
+          emptyText={t("admin_followup_rules.empty_rules")}
           renderItem={(r) => (
             <AdminRecordCard
               key={r.id}
               title={<Text strong>{r.intent}</Text>}
-              extra={<Tag color={r.enabled ? "green" : "default"}>{r.enabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Tag>}
+              extra={<Tag color={r.enabled ? "green" : "default"}>{r.enabled ? t("admin_followup_rules.status_enabled") : t("admin_followup_rules.status_disabled")}</Tag>}
               fields={[
-                { label: "เป้าหมาย", value: goalLabel(r.messageGoal) },
-                { label: "รอ", value: `${r.delayMinutes} นาที` },
-                { label: "ลองซ้ำสูงสุด", value: r.maxRetry },
-                { label: "priority", value: r.priority },
+                { label: t("admin_followup_rules.col_goal"), value: goalLabel(r.messageGoal) },
+                { label: t("admin_followup_rules.col_delay"), value: t("admin_followup_rules.minutes_suffix", { n: r.delayMinutes }) },
+                { label: t("admin_followup_rules.col_max_retry"), value: r.maxRetry },
+                { label: t("admin_followup_rules.col_priority"), value: r.priority },
               ]}
               actions={canManage && (
                 <Space size={4} style={{ marginLeft: "auto" }}>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                  <Popconfirm title="ลบกฎนี้?" onConfirm={() => deleteRule({ variables: { id: r.id } })}>
+                  <Popconfirm title={t("admin_followup_rules.delete_confirm")} onConfirm={() => deleteRule({ variables: { id: r.id } })}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 </Space>
@@ -185,7 +194,7 @@ export default function FollowupRulesPage() {
       )}
 
       <Modal
-        title={editing ? "แก้ไขกฎ Follow-up" : "สร้างกฎ Follow-up"}
+        title={editing ? t("admin_followup_rules.modal_edit_title") : t("admin_followup_rules.modal_create_title")}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={() => form.submit()}
@@ -194,39 +203,39 @@ export default function FollowupRulesPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={onFinish}>
-          <Form.Item name="intent" label="Intent" rules={[{ required: true, message: "เลือก intent" }]}>
+          <Form.Item name="intent" label={t("admin_followup_rules.field_intent")} rules={[{ required: true, message: t("admin_followup_rules.field_intent_required") }]}>
             <Select options={INTENT_OPTIONS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="messageGoal" label="เป้าหมายของข้อความ" rules={[{ required: true, message: "เลือกเป้าหมาย" }]}>
+          <Form.Item name="messageGoal" label={t("admin_followup_rules.field_goal")} rules={[{ required: true, message: t("admin_followup_rules.field_goal_required") }]}>
             <Select options={GOAL_OPTIONS} />
           </Form.Item>
-          <Form.Item name="delayMinutes" label="รอกี่นาทีก่อน follow-up" rules={[{ required: true, message: "ระบุจำนวนนาที" }]}>
-            <InputNumber min={1} style={{ width: "100%" }} placeholder="เช่น 30" />
+          <Form.Item name="delayMinutes" label={t("admin_followup_rules.field_delay")} rules={[{ required: true, message: t("admin_followup_rules.field_delay_required") }]}>
+            <InputNumber min={1} style={{ width: "100%" }} placeholder={t("admin_followup_rules.field_delay_placeholder")} />
           </Form.Item>
-          <Form.Item name="maxRetry" label="ลองซ้ำได้สูงสุดกี่ครั้ง" initialValue={1}>
+          <Form.Item name="maxRetry" label={t("admin_followup_rules.field_max_retry")} initialValue={1}>
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="priority" label="Priority (สูงกว่า = ถูกเลือกก่อนถ้า intent ชนกัน)" initialValue={0}>
+          <Form.Item name="priority" label={t("admin_followup_rules.field_priority")} initialValue={0}>
             <InputNumber style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="stopConditions"
-            label="Stop conditions (เก็บไว้อ้างอิง)"
-            extra="6 เงื่อนไขนี้ระบบบังคับใช้เสมอโดยไม่ต้องเลือก — ช่องนี้เผื่อไว้สำหรับ workflow engine ในอนาคต"
+            label={t("admin_followup_rules.field_stop_conditions")}
+            extra={t("admin_followup_rules.field_stop_conditions_extra")}
           >
             <Select mode="multiple" options={STOP_CONDITION_OPTIONS} />
           </Form.Item>
-          <Form.Item name="businessHoursOnly" label="ส่งเฉพาะเวลาทำการ (09:00–18:00 โดยประมาณ)" valuePropName="checked" initialValue={false}>
+          <Form.Item name="businessHoursOnly" label={t("admin_followup_rules.field_business_hours")} valuePropName="checked" initialValue={false}>
             <Switch />
           </Form.Item>
           <Form.Item
             name="template"
-            label="Template ข้อความสำรอง (ไม่บังคับ)"
-            extra="ใช้เมื่อไม่มี AI credentials/quota — ถ้าไม่กรอกจะใช้ข้อความเริ่มต้นตามเป้าหมาย"
+            label={t("admin_followup_rules.field_template")}
+            extra={t("admin_followup_rules.field_template_extra")}
           >
-            <Input.TextArea rows={2} placeholder="เช่น สวัสดีค่ะ รบกวนสอบถามเพิ่มเติม..." />
+            <Input.TextArea rows={2} placeholder={t("admin_followup_rules.field_template_placeholder")} />
           </Form.Item>
-          <Form.Item name="enabled" label="เปิดใช้งาน" valuePropName="checked" initialValue={true}>
+          <Form.Item name="enabled" label={t("admin_followup_rules.field_enabled")} valuePropName="checked" initialValue={true}>
             <Switch />
           </Form.Item>
         </Form>
