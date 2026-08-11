@@ -487,7 +487,7 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   caller passes attachments yet. See § "ส่งรายงานเป็นอีเมล" in [CLAUDE.local.md](CLAUDE.local.md) for
   the full design and unverified items (migration not yet applied/exercised against a live mail
   provider).
-- **Follow-up Automation (`lib/bms/followups.ts`, 2026-08)** — 🚧 **MVP core only**: a configurable
+- **Follow-up Automation (`lib/bms/followups.ts`, 2026-08; v2 analytics/queue scoring update 2026-08-11)** — 🚧 **MVP core with v2 visibility**: a configurable
   Rule Engine + Scheduler decides whether to re-engage a customer whose conversation went quiet,
   instead of a fixed timer. Migration `7.52` adds `bms_conversations.last_sender_type` (set by
   `logConversation()`/`sendStaffMessage()`/`sendFollowupMessage()` in `inbox.ts` — the cheap indexed
@@ -507,14 +507,20 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   still interested?") with a template/plain-text fallback when there's no AI credentials/quota, same
   AI-then-template shape as `generateResponse()`. `/admin/followup-rules` (CRUD, `followup.manage`)
   and `/admin/followup-queue` (read-only queue/history + manual "run now", `followup.view`) are
-  gated by two new permissions, seeded to Manager (both) and Sales (view only). **Deferred on
-  purpose** (see `CLAUDE.local.md` § Follow-up Automation for why): the multi-step branching
-  Workflow Engine + visual Workflow Builder, the numeric Follow-up Scoring model, and the full
-  Analytics dashboard (Intent Statistics/Success Rate/Conversion Rate/Retry Statistics) — rule
-  `priority` stands in for scoring in this MVP. `business_hours_only` is a fixed 09:00–18:00
-  Asia/Bangkok approximation, not a parse of the shop's free-text `businessHours` (no structured
-  open/close schema exists yet). **Not verified against a live DB in the session that built it** —
-  `tsc` passed but the migration was never applied/exercised end-to-end; verify before relying on it.
+  gated by two new permissions, seeded to Manager (both) and Sales (view only). As of **August 11,
+  2026**, the queue page also exposes **v2 operator visibility**: a heuristic per-job opportunity
+  score (`HOT`/`WARM`/`COOL`) with human-readable reasons, plus 30-day analytics
+  (`bmsFollowupAnalytics`) for reply rate, order-after-follow-up rate, top goals/intents, and a
+  daily trend. The cron route `POST /api/bms/followups/run` now also records run history in
+  `bms_job_runs` under the key `followups`, so `/admin/operations-schedule` can show actual
+  scheduler invocations in addition to per-message outcomes from `bms_followup_history`.
+  **Still deferred on purpose** (see `CLAUDE.local.md` § Follow-up Automation for why): the
+  multi-step branching Workflow Engine + visual Workflow Builder, and a truly **decision-driving**
+  numeric scoring model that replaces rule selection rather than merely helping operators prioritize
+  the queue. `business_hours_only` is a fixed 09:00–18:00 Asia/Bangkok approximation, not a parse
+  of the shop's free-text `businessHours` (no structured open/close schema exists yet). **Not
+  verified against a live DB in the session that built it** — `tsc` passed but the migration was
+  never applied/exercised end-to-end; verify before relying on it.
 - **Redis infrastructure hardening (2026-08)**: the legacy social-media auto-publish job queue
   (`packages/social-queue`, `packages/events`, `apps/web/scripts/social-worker.mjs`, `/admin/queue`)
   was removed entirely — it published blog/community posts to Facebook, was unrelated to BMS, and had
@@ -568,7 +574,8 @@ endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
 `followups/run`) — each of the first four now records its own run history (see "Cron/batch run history"
 above), it just isn't triggered automatically yet · adding a password/TLS to Redis before a real
 production deploy (see "Redis infrastructure hardening" above) · Follow-up Automation's Workflow Engine,
-Scoring model, and Analytics dashboard (see above).
+decision-driving scoring model, and deeper analytics/dashboarding beyond the current queue summary
+(see above).
 
 ## AI rules (non-negotiable)
 

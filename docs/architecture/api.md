@@ -65,6 +65,9 @@ silently has no run history on the ops page.
   Scans every tenant when called with no argument (this cron path); the GraphQL "run now" mutation
   passes its own tenant id instead — see `bmsRunFollowupsNow` below. Not yet wired into
   `recordJobRun()`/`bms_job_runs` — its own outcomes are logged separately in `bms_followup_history`.
+  As of August 11, 2026, this route also records each invocation into `bms_job_runs` under the
+  job key `followups`, so `/admin/operations-schedule` can show real run history for the scheduler
+  itself in addition to the per-message results stored in `bms_followup_history`.
 
 ## REST — signed customer checkout
 
@@ -181,14 +184,20 @@ backing table of its own; it reads `bms_orders` directly by `coupon_code`.
 `graphql/bmsFollowups.ts` gates every field with real `BMS_PERMISSIONS` entries (not a local
 `requireTenantAdmin`, unlike the Coupons/Sales-digest modules above), the same shape as
 `bmsCoupons.ts`: `bmsFollowupRules` / `bmsFollowupQueue` / `bmsFollowupHistory` require
-`followup.view`; `bmsUpsertFollowupRule` / `bmsDeleteFollowupRule` / `bmsRunFollowupsNow` require
-`followup.manage`. `bmsRunFollowupsNow` is a manual test trigger (same idea as
+`followup.view`; `bmsFollowupAnalytics(windowDays)` also requires `followup.view`; and
+`bmsUpsertFollowupRule` / `bmsDeleteFollowupRule` / `bmsRunFollowupsNow` require `followup.manage`.
+`bmsRunFollowupsNow` is a manual test trigger (same idea as
 `bmsSendTestReportNow`) but calls `runDueFollowups(getTenantId(ctx))` — **always pass the caller's
 own tenant id here**; calling the bare cron function would let a tenant-scoped `followup.manage`
 grant fire (and be attributed to) every tenant's conversations, not just the caller's own. See
 [../business/crm.md](../business/crm.md) and `CLAUDE.local.md` § Follow-up Automation for the rule
-engine/stop-condition/scheduler design, and the § "Follow-up automation scheduler" note in
-[AGENTS.md](../../AGENTS.md) for the durable invariants.
+engine/stop-condition/scheduler design. The queue query now also returns queue-level heuristics
+(`score`, `scoreLabel`, `scoreReasons`, idle minutes, simple customer value context) so the admin
+UI can sort and explain which pending jobs look most promising without embedding business logic in
+React. The analytics query summarizes 30-day history by goal/intent/day using the same underlying
+tenant-scoped tables (`bms_followup_jobs`, `bms_followup_history`, `bms_messages`, `bms_orders`).
+See the § "Follow-up automation scheduler" note in [AGENTS.md](../../AGENTS.md) for the durable
+invariants.
 
 ### Bulk product import (preview + commit over one mutation)
 

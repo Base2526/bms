@@ -466,6 +466,151 @@ const DUE_JOB_BATCH = 100;
 
 type RunSummary = { scanned: number; sent: number; skipped: number; failed: number };
 
+export type FollowupQueueEntry = {
+  id: string;
+  status: string;
+  nextRunAt: string;
+  retryCount: number;
+  lastResult: string | null;
+  conversationId: string;
+  ruleId: string;
+  intent: string;
+  messageGoal: string;
+  priority: number;
+  maxRetry: number;
+  businessHoursOnly: boolean;
+  customerName: string | null;
+  lastMessageAt: string | null;
+  idleMinutes: number | null;
+  customerLifetimeValue: number | null;
+  totalOrders: number;
+  score: number;
+  scoreLabel: "HOT" | "WARM" | "COOL";
+  scoreReasons: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FollowupAnalyticsBucket = {
+  key: string;
+  sent: number;
+  replied: number;
+  ordered: number;
+  failed: number;
+  skipped: number;
+};
+
+export type FollowupAnalyticsDaily = {
+  day: string;
+  sent: number;
+  replied: number;
+  ordered: number;
+  failed: number;
+  skipped: number;
+};
+
+export type FollowupAnalytics = {
+  windowDays: number;
+  activeJobs: number;
+  pendingJobs: number;
+  sentJobs: number;
+  stoppedJobs: number;
+  failedJobs: number;
+  totalHistory: number;
+  sentHistory: number;
+  skippedHistory: number;
+  failedHistory: number;
+  repliedAfterFollowup: number;
+  orderedAfterFollowup: number;
+  replyRate: number;
+  orderRate: number;
+  avgRetryCount: number;
+  avgIdleMinutesAtSend: number | null;
+  byGoal: FollowupAnalyticsBucket[];
+  byIntent: FollowupAnalyticsBucket[];
+  daily: FollowupAnalyticsDaily[];
+};
+
+function roundRate(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function scoreLabel(score: number): "HOT" | "WARM" | "COOL" {
+  if (score >= 75) return "HOT";
+  if (score >= 45) return "WARM";
+  return "COOL";
+}
+
+function computeQueueScore(args: {
+  priority: number;
+  idleMinutes: number | null;
+  retryCount: number;
+  lastResult: string | null;
+  customerLifetimeValue: number | null;
+  totalOrders: number;
+  businessHoursOnly: boolean;
+}): { score: number; reasons: string[] } {
+  let score = 40;
+  const reasons: string[] = [];
+
+  const idleMinutes = Math.max(0, Number(args.idleMinutes ?? 0));
+  if (idleMinutes >= 24 * 60) {
+    score += 22;
+    reasons.push("ค้างมานานกว่า 24 ชั่วโมง");
+  } else if (idleMinutes >= 4 * 60) {
+    score += 15;
+    reasons.push("ค้างมาหลายชั่วโมง");
+  } else if (idleMinutes >= 60) {
+    score += 8;
+    reasons.push("เริ่มเงียบเกิน 1 ชั่วโมง");
+  }
+
+  if (args.priority > 0) {
+    score += Math.min(15, args.priority * 4);
+    reasons.push(`กฎมี priority ${args.priority}`);
+  } else if (args.priority < 0) {
+    score += Math.max(-10, args.priority * 3);
+    reasons.push("กฎถูกลดความสำคัญไว้");
+  }
+
+  if ((args.customerLifetimeValue ?? 0) >= 10000) {
+    score += 12;
+    reasons.push("เป็นลูกค้ามูลค่าสูง");
+  } else if ((args.customerLifetimeValue ?? 0) >= 3000) {
+    score += 7;
+    reasons.push("มีประวัติซื้อพอสมควร");
+  }
+
+  if (args.totalOrders === 0) {
+    score += 5;
+    reasons.push("เป็นโอกาสปิดการขายแรก");
+  } else if (args.totalOrders >= 3) {
+    score += 4;
+    reasons.push("มีประวัติซื้อซ้ำ");
+  }
+
+  if (args.retryCount > 0) {
+    score -= Math.min(18, args.retryCount * 8);
+    reasons.push(`เคย follow-up แล้ว ${args.retryCount} ครั้ง`);
+  }
+
+  if (args.lastResult === "FAILED") {
+    score -= 20;
+    reasons.push("ครั้งล่าสุดส่งไม่สำเร็จ");
+  }
+
+  if (args.businessHoursOnly && !isWithinBusinessHours()) {
+    score -= 8;
+    reasons.push("กฎนี้รอเวลาทำการ");
+  }
+
+  return { score: clampScore(score), reasons };
+}
+
 async function scheduleNewJobs(tenantId?: string): Promise<number> {
   // conversations with no PENDING job at all, still open, and not last-answered by staff
   // (staff already engaged — don't auto-follow-up over a human)
@@ -637,6 +782,368 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
   }
 
   return summary;
+}
+
+export async function listFollowupQueue(tenantId: string, limit = 50): Promise<FollowupQueueEntry[]> {
+  const lim = Math.min(Math.max(Number(limit || 50), 1), 200);
+  const res = await query<{
+    id: string;
+    status: string;
+    next_run_at: Date | string;
+    retry_count: number;
+    last_result: string | null;
+    conversation_id: string;
+    rule_id: string;
+    intent: string;
+    message_goal: string;
+    priority: number;
+    max_retry: number;
+    business_hours_only: boolean;
+    customer_name: string | null;
+    last_message_at: Date | string | null;
+    customer_lifetime_value: string | number | null;
+    total_orders: string | number | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+  }>(
+    `SELECT j.id, j.status, j.next_run_at, j.retry_count, j.last_result, j.created_at, j.updated_at,
+            j.conversation_id, j.rule_id,
+            r.intent, r.message_goal, r.priority, r.max_retry, r.business_hours_only,
+            COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name,
+            c.last_message_at,
+            stats.lifetime_value AS customer_lifetime_value,
+            stats.total_orders
+       FROM bms_followup_jobs j
+       JOIN bms_followup_rules r ON r.id = j.rule_id
+       JOIN bms_conversations c ON c.id = j.conversation_id
+       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customer_identities ci
+         ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
+       LEFT JOIN (
+         SELECT customer_id,
+                COUNT(*)::int AS total_orders,
+                COALESCE(SUM(total_amount), 0)::numeric AS lifetime_value
+           FROM bms_orders
+          WHERE tenant_id = $1 AND customer_id IS NOT NULL
+          GROUP BY customer_id
+       ) stats ON stats.customer_id = c.customer_id
+      WHERE j.tenant_id = $1
+      ORDER BY j.updated_at DESC
+      LIMIT $2`,
+    [tenantId, lim]
+  );
+
+  return res.rows.map((row) => {
+    const lastMessageAt = row.last_message_at ? new Date(row.last_message_at) : null;
+    const idleMinutes = lastMessageAt ? Math.max(0, Math.floor((Date.now() - lastMessageAt.getTime()) / 60000)) : null;
+    const { score, reasons } = computeQueueScore({
+      priority: Number(row.priority ?? 0),
+      idleMinutes,
+      retryCount: Number(row.retry_count ?? 0),
+      lastResult: row.last_result ?? null,
+      customerLifetimeValue: row.customer_lifetime_value != null ? Number(row.customer_lifetime_value) : null,
+      totalOrders: Number(row.total_orders ?? 0),
+      businessHoursOnly: Boolean(row.business_hours_only),
+    });
+
+    return {
+      id: row.id,
+      status: row.status,
+      nextRunAt: new Date(row.next_run_at).toISOString(),
+      retryCount: Number(row.retry_count ?? 0),
+      lastResult: row.last_result ?? null,
+      conversationId: row.conversation_id,
+      ruleId: row.rule_id,
+      intent: row.intent,
+      messageGoal: row.message_goal,
+      priority: Number(row.priority ?? 0),
+      maxRetry: Number(row.max_retry ?? 0),
+      businessHoursOnly: Boolean(row.business_hours_only),
+      customerName: row.customer_name ?? null,
+      lastMessageAt: lastMessageAt ? lastMessageAt.toISOString() : null,
+      idleMinutes,
+      customerLifetimeValue: row.customer_lifetime_value != null ? Number(row.customer_lifetime_value) : null,
+      totalOrders: Number(row.total_orders ?? 0),
+      score,
+      scoreLabel: scoreLabel(score),
+      scoreReasons: reasons,
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+    };
+  });
+}
+
+export async function getFollowupAnalytics(tenantId: string, windowDays = 30): Promise<FollowupAnalytics> {
+  const days = Math.min(Math.max(Number(windowDays || 30), 1), 365);
+  const sinceExpr = `now() - ($2::int || ' days')::interval`;
+
+  const [jobCounts, historyCounts, goalCounts, intentCounts, dailyCounts, avgCounts] = await Promise.all([
+    query<{
+      active_jobs: string;
+      pending_jobs: string;
+      sent_jobs: string;
+      stopped_jobs: string;
+      failed_jobs: string;
+      avg_retry_count: string | null;
+    }>(
+      `SELECT COUNT(*)::int AS active_jobs,
+              COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_jobs,
+              COUNT(*) FILTER (WHERE status = 'SENT')::int AS sent_jobs,
+              COUNT(*) FILTER (WHERE status = 'STOPPED')::int AS stopped_jobs,
+              COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed_jobs,
+              AVG(retry_count::numeric) AS avg_retry_count
+         FROM bms_followup_jobs
+        WHERE tenant_id = $1`,
+      [tenantId]
+    ),
+    query<{
+      total_history: string;
+      sent_history: string;
+      skipped_history: string;
+      failed_history: string;
+      replied_after_followup: string;
+      ordered_after_followup: string;
+    }>(
+      `SELECT COUNT(*)::int AS total_history,
+              COUNT(*) FILTER (WHERE h.outcome = 'SENT')::int AS sent_history,
+              COUNT(*) FILTER (WHERE h.outcome = 'SKIPPED')::int AS skipped_history,
+              COUNT(*) FILTER (WHERE h.outcome = 'FAILED')::int AS failed_history,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_messages m
+                   WHERE m.tenant_id = h.tenant_id
+                     AND m.conversation_id = h.conversation_id
+                     AND m.direction = 'IN'
+                     AND m.created_at > h.created_at
+                     AND m.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS replied_after_followup,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_conversations c
+                    JOIN bms_orders o
+                      ON o.tenant_id = c.tenant_id
+                     AND o.customer_id = c.customer_id
+                   WHERE c.id = h.conversation_id
+                     AND c.customer_id IS NOT NULL
+                     AND o.created_at > h.created_at
+                     AND o.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS ordered_after_followup
+         FROM bms_followup_history h
+        WHERE h.tenant_id = $1
+          AND h.created_at >= ${sinceExpr}`,
+      [tenantId, days]
+    ),
+    query<{
+      key: string | null;
+      sent: string;
+      replied: string;
+      ordered: string;
+      failed: string;
+      skipped: string;
+    }>(
+      `SELECT COALESCE(h.goal, 'UNKNOWN') AS key,
+              COUNT(*) FILTER (WHERE h.outcome = 'SENT')::int AS sent,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_messages m
+                   WHERE m.tenant_id = h.tenant_id
+                     AND m.conversation_id = h.conversation_id
+                     AND m.direction = 'IN'
+                     AND m.created_at > h.created_at
+                     AND m.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS replied,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_conversations c
+                    JOIN bms_orders o
+                      ON o.tenant_id = c.tenant_id
+                     AND o.customer_id = c.customer_id
+                   WHERE c.id = h.conversation_id
+                     AND c.customer_id IS NOT NULL
+                     AND o.created_at > h.created_at
+                     AND o.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS ordered,
+              COUNT(*) FILTER (WHERE h.outcome = 'FAILED')::int AS failed,
+              COUNT(*) FILTER (WHERE h.outcome = 'SKIPPED')::int AS skipped
+         FROM bms_followup_history h
+        WHERE h.tenant_id = $1
+          AND h.created_at >= ${sinceExpr}
+        GROUP BY COALESCE(h.goal, 'UNKNOWN')
+        ORDER BY sent DESC, key ASC`,
+      [tenantId, days]
+    ),
+    query<{
+      key: string | null;
+      sent: string;
+      replied: string;
+      ordered: string;
+      failed: string;
+      skipped: string;
+    }>(
+      `SELECT COALESCE(r.intent, 'UNKNOWN') AS key,
+              COUNT(*) FILTER (WHERE h.outcome = 'SENT')::int AS sent,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_messages m
+                   WHERE m.tenant_id = h.tenant_id
+                     AND m.conversation_id = h.conversation_id
+                     AND m.direction = 'IN'
+                     AND m.created_at > h.created_at
+                     AND m.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS replied,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_conversations c
+                    JOIN bms_orders o
+                      ON o.tenant_id = c.tenant_id
+                     AND o.customer_id = c.customer_id
+                   WHERE c.id = h.conversation_id
+                     AND c.customer_id IS NOT NULL
+                     AND o.created_at > h.created_at
+                     AND o.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS ordered,
+              COUNT(*) FILTER (WHERE h.outcome = 'FAILED')::int AS failed,
+              COUNT(*) FILTER (WHERE h.outcome = 'SKIPPED')::int AS skipped
+         FROM bms_followup_history h
+         LEFT JOIN bms_followup_rules r ON r.id = h.rule_id
+        WHERE h.tenant_id = $1
+          AND h.created_at >= ${sinceExpr}
+        GROUP BY COALESCE(r.intent, 'UNKNOWN')
+        ORDER BY sent DESC, key ASC`,
+      [tenantId, days]
+    ),
+    query<{
+      day: string;
+      sent: string;
+      replied: string;
+      ordered: string;
+      failed: string;
+      skipped: string;
+    }>(
+      `SELECT to_char(date_trunc('day', h.created_at AT TIME ZONE 'Asia/Bangkok'), 'YYYY-MM-DD') AS day,
+              COUNT(*) FILTER (WHERE h.outcome = 'SENT')::int AS sent,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_messages m
+                   WHERE m.tenant_id = h.tenant_id
+                     AND m.conversation_id = h.conversation_id
+                     AND m.direction = 'IN'
+                     AND m.created_at > h.created_at
+                     AND m.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS replied,
+              COUNT(*) FILTER (
+                WHERE h.outcome = 'SENT' AND EXISTS (
+                  SELECT 1
+                    FROM bms_conversations c
+                    JOIN bms_orders o
+                      ON o.tenant_id = c.tenant_id
+                     AND o.customer_id = c.customer_id
+                   WHERE c.id = h.conversation_id
+                     AND c.customer_id IS NOT NULL
+                     AND o.created_at > h.created_at
+                     AND o.created_at <= h.created_at + interval '7 days'
+                )
+              )::int AS ordered,
+              COUNT(*) FILTER (WHERE h.outcome = 'FAILED')::int AS failed,
+              COUNT(*) FILTER (WHERE h.outcome = 'SKIPPED')::int AS skipped
+         FROM bms_followup_history h
+        WHERE h.tenant_id = $1
+          AND h.created_at >= ${sinceExpr}
+        GROUP BY 1
+        ORDER BY day DESC
+        LIMIT 14`,
+      [tenantId, days]
+    ),
+    query<{ avg_idle_minutes_at_send: string | null }>(
+      `SELECT AVG(idle_minutes) AS avg_idle_minutes_at_send
+         FROM (
+           SELECT EXTRACT(
+                    EPOCH FROM (
+                      h.created_at - COALESCE(
+                        (
+                          SELECT MAX(m.created_at)
+                            FROM bms_messages m
+                           WHERE m.tenant_id = h.tenant_id
+                             AND m.conversation_id = h.conversation_id
+                             AND m.created_at < h.created_at
+                        ),
+                        h.created_at
+                      )
+                    )
+                  ) / 60.0 AS idle_minutes
+             FROM bms_followup_history h
+            WHERE h.tenant_id = $1
+              AND h.outcome = 'SENT'
+              AND h.created_at >= ${sinceExpr}
+         ) idle_samples`,
+      [tenantId, days]
+    ),
+  ]);
+
+  const jobs = jobCounts.rows[0];
+  const history = historyCounts.rows[0];
+  const sentHistory = Number(history?.sent_history ?? 0);
+
+  return {
+    windowDays: days,
+    activeJobs: Number(jobs?.active_jobs ?? 0),
+    pendingJobs: Number(jobs?.pending_jobs ?? 0),
+    sentJobs: Number(jobs?.sent_jobs ?? 0),
+    stoppedJobs: Number(jobs?.stopped_jobs ?? 0),
+    failedJobs: Number(jobs?.failed_jobs ?? 0),
+    totalHistory: Number(history?.total_history ?? 0),
+    sentHistory,
+    skippedHistory: Number(history?.skipped_history ?? 0),
+    failedHistory: Number(history?.failed_history ?? 0),
+    repliedAfterFollowup: Number(history?.replied_after_followup ?? 0),
+    orderedAfterFollowup: Number(history?.ordered_after_followup ?? 0),
+    replyRate: sentHistory > 0 ? roundRate(Number(history?.replied_after_followup ?? 0) / sentHistory) : 0,
+    orderRate: sentHistory > 0 ? roundRate(Number(history?.ordered_after_followup ?? 0) / sentHistory) : 0,
+    avgRetryCount: roundRate(Number(jobs?.avg_retry_count ?? 0)),
+    avgIdleMinutesAtSend: avgCounts.rows[0]?.avg_idle_minutes_at_send != null
+      ? roundRate(Number(avgCounts.rows[0].avg_idle_minutes_at_send))
+      : null,
+    byGoal: goalCounts.rows.map((row) => ({
+      key: row.key ?? "UNKNOWN",
+      sent: Number(row.sent ?? 0),
+      replied: Number(row.replied ?? 0),
+      ordered: Number(row.ordered ?? 0),
+      failed: Number(row.failed ?? 0),
+      skipped: Number(row.skipped ?? 0),
+    })),
+    byIntent: intentCounts.rows.map((row) => ({
+      key: row.key ?? "UNKNOWN",
+      sent: Number(row.sent ?? 0),
+      replied: Number(row.replied ?? 0),
+      ordered: Number(row.ordered ?? 0),
+      failed: Number(row.failed ?? 0),
+      skipped: Number(row.skipped ?? 0),
+    })),
+    daily: dailyCounts.rows
+      .map((row) => ({
+        day: row.day,
+        sent: Number(row.sent ?? 0),
+        replied: Number(row.replied ?? 0),
+        ordered: Number(row.ordered ?? 0),
+        failed: Number(row.failed ?? 0),
+        skipped: Number(row.skipped ?? 0),
+      }))
+      .reverse(),
+  };
 }
 
 /**

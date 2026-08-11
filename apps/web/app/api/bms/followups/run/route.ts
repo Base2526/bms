@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runDueFollowups } from "@/lib/bms/followups";
+import { recordJobRun } from "@/lib/bms/jobRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runDueFollowups();
+    const result = await recordJobRun("followups", "cron", () => runDueFollowups());
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "failed" }, { status: 500 });

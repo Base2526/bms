@@ -6,6 +6,8 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { runDueFollowups } from "@/lib/bms/followups";
 import {
+  getFollowupAnalytics,
+  listFollowupQueue,
   listFollowupRules,
   upsertFollowupRule,
   deleteFollowupRule,
@@ -21,30 +23,7 @@ export const bmsFollowupsResolvers = {
     },
     async bmsFollowupQueue(_p: unknown, args: { limit?: number }, ctx: any) {
       await requirePermission(ctx, "followup.view");
-      const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
-      const res = await query(
-        `SELECT j.id, j.status, j.next_run_at, j.retry_count, j.last_result, j.created_at, j.updated_at,
-                j.conversation_id, j.rule_id, r.intent, r.message_goal
-           FROM bms_followup_jobs j
-           JOIN bms_followup_rules r ON r.id = j.rule_id
-          WHERE j.tenant_id = $1
-          ORDER BY j.updated_at DESC
-          LIMIT $2`,
-        [getTenantId(ctx), limit]
-      );
-      return res.rows.map((r: any) => ({
-        id: r.id,
-        status: r.status,
-        nextRunAt: new Date(r.next_run_at).toISOString(),
-        retryCount: r.retry_count,
-        lastResult: r.last_result,
-        conversationId: r.conversation_id,
-        ruleId: r.rule_id,
-        intent: r.intent,
-        messageGoal: r.message_goal,
-        createdAt: new Date(r.created_at).toISOString(),
-        updatedAt: new Date(r.updated_at).toISOString(),
-      }));
+      return listFollowupQueue(getTenantId(ctx), args.limit ?? 50);
     },
     async bmsFollowupHistory(_p: unknown, args: { conversationId?: string; limit?: number }, ctx: any) {
       await requirePermission(ctx, "followup.view");
@@ -67,6 +46,10 @@ export const bmsFollowupsResolvers = {
         goal: r.goal,
         createdAt: new Date(r.created_at).toISOString(),
       }));
+    },
+    async bmsFollowupAnalytics(_p: unknown, args: { windowDays?: number }, ctx: any) {
+      await requirePermission(ctx, "followup.view");
+      return getFollowupAnalytics(getTenantId(ctx), args.windowDays ?? 30);
     },
   },
   Mutation: {

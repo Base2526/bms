@@ -745,6 +745,7 @@ export const typeDefs = /* GraphQL */ `
     bmsFollowupRules: [BmsFollowupRule!]!
     bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
     bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
+    bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
 
     # ===== AI Pharmacy Intake Assistant =====
     bmsPharmacyAssessments(status: String, riskLevel: String, assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int): [BmsPharmacyAssessment!]!
@@ -2004,6 +2005,17 @@ export const typeDefs = /* GraphQL */ `
     ruleId: ID!
     intent: String!
     messageGoal: String!
+    priority: Int!
+    maxRetry: Int!
+    businessHoursOnly: Boolean!
+    customerName: String
+    lastMessageAt: String
+    idleMinutes: Int
+    customerLifetimeValue: Float
+    totalOrders: Int!
+    score: Int!
+    scoreLabel: String!      # HOT / WARM / COOL
+    scoreReasons: [String!]!
     createdAt: String!
     updatedAt: String!
   }
@@ -2018,6 +2030,46 @@ export const typeDefs = /* GraphQL */ `
     messageBody: String
     goal: String
     createdAt: String!
+  }
+
+  type BmsFollowupAnalyticsBucket {
+    key: String!
+    sent: Int!
+    replied: Int!
+    ordered: Int!
+    failed: Int!
+    skipped: Int!
+  }
+
+  type BmsFollowupAnalyticsDaily {
+    day: String!
+    sent: Int!
+    replied: Int!
+    ordered: Int!
+    failed: Int!
+    skipped: Int!
+  }
+
+  type BmsFollowupAnalytics {
+    windowDays: Int!
+    activeJobs: Int!
+    pendingJobs: Int!
+    sentJobs: Int!
+    stoppedJobs: Int!
+    failedJobs: Int!
+    totalHistory: Int!
+    sentHistory: Int!
+    skippedHistory: Int!
+    failedHistory: Int!
+    repliedAfterFollowup: Int!
+    orderedAfterFollowup: Int!
+    replyRate: Float!
+    orderRate: Float!
+    avgRetryCount: Float!
+    avgIdleMinutesAtSend: Float
+    byGoal: [BmsFollowupAnalyticsBucket!]!
+    byIntent: [BmsFollowupAnalyticsBucket!]!
+    daily: [BmsFollowupAnalyticsDaily!]!
   }
 
   type BmsFollowupRunResult { scanned: Int!  sent: Int!  skipped: Int!  failed: Int! }
