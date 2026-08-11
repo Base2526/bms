@@ -71,6 +71,11 @@ const HEADACHE_PROTOCOL: ProtocolDefinition = {
     { key: "onset_days", label: "ระยะเวลาที่ปวด (วัน)", type: "number", questionKey: "q_headache_onset" },
     { key: "severity", label: "ความรุนแรง (1-10)", type: "number", questionKey: "q_headache_severity" },
     { key: "location", label: "ตำแหน่งที่ปวด", type: "free_text", questionKey: "q_headache_location" },
+    { key: "has_fever", label: "มีไข้ร่วมด้วยไหม", type: "yes_no", questionKey: "q_headache_fever" },
+    { key: "neck_stiffness", label: "มีคอแข็งไหม", type: "yes_no", questionKey: "q_headache_neck_stiffness" },
+    { key: "worst_ever", label: "รุนแรงที่สุดเท่าที่เคยเป็นไหม", type: "yes_no", questionKey: "q_headache_worst_ever" },
+    { key: "neuro_symptoms", label: "มีอาการทางระบบประสาทไหม", type: "yes_no", questionKey: "q_headache_neuro_symptoms" },
+    { key: "recent_head_injury", label: "มีศีรษะบาดเจ็บไหม", type: "yes_no", questionKey: "q_headache_recent_head_injury" },
     { key: "allergies", label: "ประวัติแพ้ยา", type: "free_text", questionKey: "q_allergies" },
     { key: "current_medications", label: "ยาที่ใช้อยู่ปัจจุบัน", type: "free_text", questionKey: "q_current_meds" },
   ],
@@ -82,7 +87,7 @@ const HEADACHE_PROTOCOL: ProtocolDefinition = {
     { code: "RF_HEADACHE_WORST_EVER", field: "worst_ever", equals: "YES", severity: "EMERGENCY", label: "ปวดหัวรุนแรงที่สุดในชีวิต" },
     { code: "RF_HEADACHE_HEAD_INJURY", field: "recent_head_injury", equals: "YES", severity: "HIGH", label: "ปวดหัวหลังบาดเจ็บที่ศีรษะ" },
   ],
-  completionRules: { requireAllOf: ["onset_days", "severity", "location", "allergies", "current_medications"] },
+  completionRules: { requireAllOf: ["onset_days", "severity", "location", "has_fever", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury", "allergies", "current_medications"] },
   escalationRules: { onRedFlag: "EMERGENCY_REFERRAL", onUnresolvedConflict: "WAITING_FOR_PHARMACIST" },
 };
 
@@ -93,6 +98,9 @@ const COUGH_PROTOCOL: ProtocolDefinition = {
     { key: "duration_days", label: "ระยะเวลาที่ไอ (วัน)", type: "number", questionKey: "q_cough_duration" },
     { key: "sputum", label: "เสมหะ", type: "free_text", questionKey: "q_cough_sputum" },
     { key: "has_fever", label: "มีไข้ไหม", type: "yes_no", questionKey: "q_cough_fever" },
+    { key: "blood_in_sputum", label: "มีเลือดปนในเสมหะไหม", type: "yes_no", questionKey: "q_cough_blood_in_sputum" },
+    { key: "breathing_difficulty", label: "หายใจลำบากไหม", type: "yes_no", questionKey: "q_cough_breathing_difficulty" },
+    { key: "chest_pain", label: "เจ็บแน่นหน้าอกไหม", type: "yes_no", questionKey: "q_cough_chest_pain" },
     { key: "allergies", label: "ประวัติแพ้ยา", type: "free_text", questionKey: "q_allergies" },
     { key: "current_medications", label: "ยาที่ใช้อยู่ปัจจุบัน", type: "free_text", questionKey: "q_current_meds" },
   ],
@@ -101,7 +109,7 @@ const COUGH_PROTOCOL: ProtocolDefinition = {
     { code: "RF_COUGH_BLOOD", field: "blood_in_sputum", equals: "YES", severity: "EMERGENCY", label: "ไอมีเลือดปน" },
     { code: "RF_COUGH_LONG_DURATION", field: "duration_days", greaterThan: 21, severity: "HIGH", label: "ไอเรื้อรังเกิน 3 สัปดาห์" },
   ],
-  completionRules: { requireAllOf: ["duration_days", "sputum", "has_fever", "allergies", "current_medications"] },
+  completionRules: { requireAllOf: ["duration_days", "sputum", "has_fever", "blood_in_sputum", "breathing_difficulty", "chest_pain", "allergies", "current_medications"] },
   escalationRules: { onRedFlag: "EMERGENCY_REFERRAL", onUnresolvedConflict: "WAITING_FOR_PHARMACIST" },
 };
 
@@ -112,6 +120,8 @@ const DIARRHEA_PROTOCOL: ProtocolDefinition = {
     { key: "duration_hours", label: "ระยะเวลา (ชั่วโมง)", type: "number", questionKey: "q_diarrhea_duration" },
     { key: "frequency_per_day", label: "จำนวนครั้งต่อวัน", type: "number", questionKey: "q_diarrhea_frequency" },
     { key: "hydration_status", label: "ขาดน้ำ", type: "yes_no", questionKey: "q_diarrhea_hydration" },
+    { key: "blood_in_stool", label: "มีเลือดปนในอุจจาระไหม", type: "yes_no", questionKey: "q_diarrhea_blood_in_stool" },
+    { key: "high_fever", label: "มีไข้สูงร่วมด้วยไหม", type: "yes_no", questionKey: "q_diarrhea_high_fever" },
     { key: "allergies", label: "ประวัติแพ้ยา", type: "free_text", questionKey: "q_allergies" },
     { key: "current_medications", label: "ยาที่ใช้อยู่ปัจจุบัน", type: "free_text", questionKey: "q_current_meds" },
   ],
@@ -120,7 +130,7 @@ const DIARRHEA_PROTOCOL: ProtocolDefinition = {
     { code: "RF_DIARRHEA_BLOOD", field: "blood_in_stool", equals: "YES", severity: "EMERGENCY", label: "ถ่ายมีเลือดปน" },
     { code: "RF_DIARRHEA_INFANT", field: "patient_age_years", lessThan: 2, severity: "HIGH", label: "ผู้ป่วยอายุต่ำกว่า 2 ปี" },
   ],
-  completionRules: { requireAllOf: ["duration_hours", "frequency_per_day", "hydration_status", "allergies", "current_medications"] },
+  completionRules: { requireAllOf: ["duration_hours", "frequency_per_day", "hydration_status", "blood_in_stool", "high_fever", "allergies", "current_medications"] },
   escalationRules: { onRedFlag: "EMERGENCY_REFERRAL", onUnresolvedConflict: "WAITING_FOR_PHARMACIST" },
 };
 
@@ -131,6 +141,11 @@ const FULLY_ANSWERED_HEADACHE = {
   onset_days: 2,
   severity: 5,
   location: "ขมับซ้าย",
+  has_fever: "NO",
+  neck_stiffness: "NO",
+  worst_ever: "NO",
+  neuro_symptoms: "NO",
+  recent_head_injury: "NO",
   allergies: "UNKNOWN",
   current_medications: "UNKNOWN",
 };
@@ -205,7 +220,7 @@ test("missing-information case: nothing answered yet -> MISSING_FIELDS lists eve
   if (result.decision === "MISSING_FIELDS") {
     assert.deepEqual(
       new Set(result.missingFieldKeys),
-      new Set([...GLOBAL_REQUIRED_FIELDS.map((field) => field.key), "onset_days", "severity", "location"])
+      new Set([...GLOBAL_REQUIRED_FIELDS.map((field) => field.key), ...HEADACHE_PROTOCOL.completionRules.requireAllOf])
     );
   }
 });
@@ -355,6 +370,24 @@ test("protocol validator accepts a bounded compound-condition draft", () => {
   const result = validatePharmacyProtocolInput(validProtocolInput());
   assert.equal(result.protocolKey, "fever");
   assert.deepEqual(result.triggerTerms, ["ไข้", "ตัวร้อน", "fever"]);
+});
+
+test("all three seeded MVP protocol shapes pass the authoring validator", () => {
+  for (const protocol of [HEADACHE_PROTOCOL, COUGH_PROTOCOL, DIARRHEA_PROTOCOL]) {
+    assert.doesNotThrow(() => validatePharmacyProtocolInput({
+      protocolKey: protocol.protocolKey,
+      name: `${protocol.protocolKey} seed`,
+      version: 1,
+      supportedSymptomGroup: protocol.protocolKey,
+      displayLabel: protocol.protocolKey,
+      triggerTerms: [protocol.protocolKey],
+      requiredFields: protocol.requiredFields,
+      conditionalQuestions: protocol.conditionalQuestions,
+      redFlagRules: protocol.redFlagRules,
+      completionRules: protocol.completionRules,
+      escalationRules: protocol.escalationRules,
+    }));
+  }
 });
 
 test("protocol validator rejects unknown field references and multiple leaf operators", () => {

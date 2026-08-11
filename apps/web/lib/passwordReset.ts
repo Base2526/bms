@@ -32,6 +32,36 @@ function baseData(locale: string) {
   };
 }
 
+function defaultResetEmailTemplate(locale: string, data: {
+  user_name: string;
+  reset_url: string;
+  expiry_minutes: number;
+}) {
+  if (locale === "th") {
+    return {
+      subject: "รีเซ็ตรหัสผ่านของคุณ",
+      html: `<h2>รีเซ็ตรหัสผ่าน</h2><p>สวัสดี ${data.user_name}</p><p>กดลิงก์ด้านล่างเพื่อตั้งรหัสผ่านใหม่:</p><p><a href="${data.reset_url}">รีเซ็ตรหัสผ่าน</a></p><p>ลิงก์นี้มีอายุ ${data.expiry_minutes} นาที</p><p>ถ้าคุณไม่ได้ร้องขอการรีเซ็ต ให้ละเว้นอีเมลฉบับนี้ได้เลย</p>`,
+      text: `รีเซ็ตรหัสผ่าน: ${data.reset_url} (ลิงก์มีอายุ ${data.expiry_minutes} นาที)`,
+    };
+  }
+
+  return {
+    subject: "Reset your password",
+    html: `<h2>Reset your password</h2><p>Hello ${data.user_name},</p><p>Use the link below to set a new password:</p><p><a href="${data.reset_url}">Reset password</a></p><p>This link expires in ${data.expiry_minutes} minutes.</p><p>If you did not request this, you can ignore this email.</p>`,
+    text: `Reset your password: ${data.reset_url} (expires in ${data.expiry_minutes} minutes)`,
+  };
+}
+
+function isRenderedTemplateUsable(rendered: { subject?: string; html?: string; text?: string }) {
+  return Boolean(
+    String(rendered.subject || "").trim() &&
+    (
+      String(rendered.html || "").trim() ||
+      String(rendered.text || "").trim()
+    )
+  );
+}
+
 export async function sendPasswordResetEmail(args: {
   to: string;
   locale?: string;
@@ -43,12 +73,7 @@ export async function sendPasswordResetEmail(args: {
   requestTime?: string;
 }) {
   const locale = args.locale ?? "en";
-
-  // 1) load template from PG
-  const tpl = await getLatestEmailTemplate("auth.reset", locale);
-
-  // 2) render variables
-  const rendered = renderEmailTemplate(tpl, {
+  const templateData = {
     ...baseData(locale),
     user_name: args.userName ?? args.to,
     reset_url: args.resetUrl,
@@ -56,9 +81,31 @@ export async function sendPasswordResetEmail(args: {
     request_ip: args.requestIp ?? "-",
     request_device: args.requestDevice ?? "-",
     request_time: args.requestTime ?? new Date().toISOString(),
-  });
+  };
 
-  // 3) send email via SendGrid
+  let rendered:
+    | { subject: string; html: string; text?: string }
+    | { subject: string; html: string; text: string };
+
+  try {
+    const tpl = await getLatestEmailTemplate("auth.reset", locale);
+    rendered = renderEmailTemplate(tpl, templateData);
+    if (!isRenderedTemplateUsable(rendered)) {
+      rendered = defaultResetEmailTemplate(locale, {
+        user_name: templateData.user_name,
+        reset_url: templateData.reset_url,
+        expiry_minutes: templateData.expiry_minutes,
+      });
+    }
+  } catch {
+    rendered = defaultResetEmailTemplate(locale, {
+      user_name: templateData.user_name,
+      reset_url: templateData.reset_url,
+      expiry_minutes: templateData.expiry_minutes,
+    });
+  }
+
+  // 3) send email
   await sendEmail(
     {
       to: args.to,
@@ -69,4 +116,3 @@ export async function sendPasswordResetEmail(args: {
     { category: "auth", triggeredBy: "auth:password-reset" }
   );
 }
-

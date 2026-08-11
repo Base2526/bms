@@ -20,7 +20,7 @@ Protocol authoring, compound conditions, escalation และ pharmacist queue �
 
 ```mermaid
 flowchart TD
-    A["Apply migrations 7.57-7.70"] --> B["Create or edit protocol DRAFT"]
+    A["Apply migrations 7.57-7.74"] --> B["Create or edit protocol DRAFT"]
     B --> C{"Backend validation ผ่านหรือไม่"}
     C -- "ไม่ผ่าน" --> B
     C -- "ผ่าน" --> D["Submit: PENDING_REVIEW"]
