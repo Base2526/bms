@@ -621,11 +621,19 @@ Permission: payment.refund
 
 # Shipping
 
-✅ Implemented — service `lib/bms/shipping.ts`, migration `5.4__bms_shipments.sql`,
-REST `/api/bms/shipment*`, GraphQL `bmsShipment*`, admin UI `/admin/shipment`.
+✅ Implemented — service `lib/bms/shipping.ts`, migrations `5.4__bms_shipments.sql` +
+`7.76`/`7.77` (carrier booking state + tracking events), REST `/api/bms/shipment*`,
+GraphQL `bmsShipment*`, admin UI `/admin/shipment`.
 
 carriers: FLASH / KERRY / DHL / AUSPOST / NZPOST / OTHER
 flow: PENDING → SHIPPED → IN_TRANSIT → DELIVERED (└→ RETURNED / CANCELLED)
+
+carrier adapter (`lib/bms/carriers/`): FLASH/KERRY = mock-ready scaffold เท่านั้น — ใส่ key แล้ว
+`getStatus()` ยังเป็น `not_implemented` เพราะยังไม่มีสัญญา/เอกสาร merchant จริง (ห้ามเดา payload)
+ดู [../integrations/carriers.md](../integrations/carriers.md)
+
+`bookShipmentLive()`/`syncShipmentLive()` **ไม่ได้อยู่ใน AI registry** (ไม่มีชื่อ snake_case ในตาราง
+ด้านบน) — เป็น action ของ staff ผ่าน `/admin/shipment` และของ cron เท่านั้น
 
 ## createShipment()
 
@@ -645,12 +653,23 @@ Input
     note?
 }
 
+ถ้าไม่ได้ส่ง `trackingNo` มาเอง, ไม่ใช่ Lazada/Shopee, และ carrier client รองรับ `createShipment`
+ระบบจะ **commit transaction ในเครื่อง + ปล่อย lock ก่อน** แล้วค่อยจองพัสดุกับ carrier โดยใช้
+shipment UUID เป็น idempotency key; ถ้าจองไม่สำเร็จ shipment ยังถูกสร้าง แต่สถานะการจอง
+(`failed`/`unconfigured`/`not_implemented`) จะถูกเก็บไว้ให้กด retry ได้ ไม่ถูกกลบเป็น manual เงียบ ๆ
+
 Output
 
 {
     status,             // CREATED
     shipmentId,
-    orderShipped        // true = ตัดสต็อก/ship ในครั้งนี้
+    orderShipped,       // true = ตัดสต็อก/ship ในครั้งนี้
+    trackingNo,         // จาก carrier ถ้าจองสำเร็จ
+    labelUrl,           // HTTPS เท่านั้น
+    externalShipmentId,
+    carrierIntegration, // manual | live | mock
+    carrierBookingStatus,
+    carrierWarning      // เหตุผลที่ยังจองกับ carrier ไม่สำเร็จ
 }
 
 Permission: shipping.create
@@ -686,10 +705,78 @@ Permission: shipping.update
 
 ---
 
+## bookShipmentLive()
+
+จอง/จองซ้ำพัสดุกับ carrier สำหรับ shipment ที่ยังไม่มีเลขพัสดุ (GraphQL `bmsBookShipmentLive`)
+— ใช้ shipment UUID เป็น idempotency key, ยิงนอก transaction, และเก็บผลลัพธ์ลง
+`carrier_booking_status`/`_error`/`_attempted_at`
+
+Input
+
+{
+    shipmentId
+}
+
+Output
+
+{
+    status,             // BOOKED | ALREADY_BOOKED | TRACKING_ALREADY_SET | IN_PROGRESS
+                        // | TERMINAL_SHIPMENT | MARKETPLACE_MANAGED | NO_CARRIER_CLIENT
+                        // | UNCONFIGURED | NOT_IMPLEMENTED | CARRIER_ERROR | STALE_SHIPMENT
+    shipmentId, trackingNo, externalShipmentId, labelUrl,
+    source              // live | mock
+}
+
+Permission: shipping.update
+
+---
+
+## syncShipmentLive()
+
+ดึงสถานะ/ไทม์ไลน์ล่าสุดจาก carrier ของ shipment ที่มีเลขพัสดุแล้ว (GraphQL `bmsSyncShipmentLive`;
+cron ข้ามร้าน = `POST /api/bms/shipping/sync-carriers`) — re-lock + re-check ก่อนเขียน,
+ไม่ถอยสถานะ, ไม่แตะ shipment ที่จบแล้ว (DELIVERED/RETURNED/CANCELLED)
+
+Input
+
+{
+    shipmentId
+}
+
+Output
+
+{
+    status,             // SYNCED | SHIPMENT_NOT_FOUND | TRACKING_REQUIRED | NO_CARRIER_CLIENT
+                        // | UNCONFIGURED | NOT_IMPLEMENTED | CARRIER_ERROR | STALE_SHIPMENT
+    shipmentId, trackingNo, shipmentStatus,
+    source,             // live | mock
+    eventCount, completedOrder
+}
+
+Permission: shipping.update
+
+---
+
+## listShipmentTrackingEvents()
+
+ไทม์ไลน์ที่ normalize แล้วจาก `bms_shipment_tracking_events` (GraphQL `bmsShipmentTrackingEvents`)
+— แต่ละ event มี `source` = live | mock เสมอ
+
+Input
+
+{
+    shipmentId,
+    limit?              // default 100
+}
+
+Permission: shipping.view
+
+---
+
 ## getShipmentLabel()
 
-ข้อมูลสำหรับพิมพ์ใบปะหน้า (order + ผู้รับ + ที่อยู่ + รายการ)
-ยังไม่ผูก carrier API จริง — สำหรับพิมพ์/คัดลอกด้วยตนเอง
+ข้อมูลสำหรับพิมพ์ใบปะหน้า (order + ผู้รับ + ที่อยู่ + รายการ) + `labelUrl` ของ carrier ถ้ามี
+(รับเฉพาะลิงก์ HTTPS) — ถ้าไม่มีลิงก์จาก carrier ให้ใช้ใบปะหน้าที่พิมพ์จาก BMS เหมือนเดิม
 
 Input
 

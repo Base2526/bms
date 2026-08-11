@@ -63,7 +63,8 @@ Consult the relevant document before changing a domain:
   [payments](docs/business/payment.md), and [CRM](docs/business/crm.md)
 - [AI workflow](docs/ai/workflow.md), [approved tools](docs/ai/tools.md), and
   [prompts](docs/ai/prompts.md)
-- Channel-specific behavior in `docs/integrations/`
+- Channel-specific behavior in `docs/integrations/`, including the carrier adapter status and
+  live-enablement checklist in [docs/integrations/carriers.md](docs/integrations/carriers.md)
 - Public product sharing in `docs/ui/public-products.md`
 - Machine-local commands and known development issues in `CLAUDE.local.md`
 
@@ -244,6 +245,44 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   delivery + payment in Seller Center.
 - Delivery edits reuse `saveCustomerCheckoutDetails()`, so omitted fields are preserved rather than
   cleared, and customer actions are audited as `customer:checkout`.
+
+## Carrier booking and tracking sync
+
+`lib/bms/carriers/` holds the provider adapters and `lib/bms/shipping.ts` owns every rule around them
+(migrations `7.76`/`7.77`). Flash and Kerry are **mock-ready scaffolds, not verified live adapters** —
+`getStatus()` returns `not_implemented` even when a key is set, because no merchant contract has been
+obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or status codes; follow
+[docs/integrations/carriers.md](docs/integrations/carriers.md) instead. Invariants to preserve:
+
+- **A carrier call never runs inside the fulfillment transaction.** `createShipment()` commits the
+  local order/stock/movement work and releases its locks first, then books. A network call holding a
+  `bms_orders`/`bms_inventory` row lock is the failure mode this design exists to prevent.
+- **The shipment UUID is the idempotency key.** It is passed as
+  `CarrierCreateShipmentRequest.idempotencyKey` and must stay stable across retries; a live adapter
+  must forward it through the carrier's own idempotency/reference mechanism so a retry returns the
+  same parcel. `uq_bms_shipments_external_shipment_id` enforces the one-parcel-per-shipment result.
+- **A failed carrier call must stay visible, never degrade silently into "manual".**
+  `carrier_booking_status` keeps `failed`/`unconfigured`/`not_implemented` with a bounded error, the
+  Shipping page shows it, and `bmsBookShipmentLive` retries. Do not swallow the failure just because
+  the local shipment row already exists.
+- **Sync re-locks before it writes.** `syncShipmentLive()` calls the carrier, then re-locks the
+  shipment and re-checks carrier/tracking number before persisting status plus events in one tenant
+  transaction. It must not regress a status and must not touch a terminal `DELIVERED`/`RETURNED`/
+  `CANCELLED` shipment — a concurrent edit cannot be overwritten by an in-flight lookup.
+- **`source: "live" | "mock"` stays on every carrier result type and on
+  `bms_shipment_tracking_events.source`.** It is the only thing preventing mock data from being read
+  back as real carrier history, and mock mode is blocked in production regardless of env flags.
+- **Adapters return typed results and never throw.** External calls go through
+  `runCarrierCall()` (`carriers/safeCall.ts`, 10-second bound); errors are normalized, not propagated.
+- **Skip booking when BMS is not the one creating the parcel**: a staff-supplied tracking number means
+  the parcel already exists externally, and Lazada/Shopee stay marketplace-managed in Seller Center.
+- Only HTTPS carrier label URLs are retained (`normalizeCarrierLabelUrl()`); the printable BMS label
+  remains the fallback. `bmsBookShipmentLive`/`bmsSyncShipmentLive` require `shipping.update` and
+  `bmsShipmentTrackingEvents` requires `shipping.view`, with the tenant derived from the session —
+  never from an argument.
+- `POST /api/bms/shipping/sync-carriers` is the cron-secret-gated cross-tenant poller (bounded batch
+  and concurrency, skips unconfigured/`not_implemented` adapters) and records into `bms_job_runs` as
+  `carrier-tracking-sync`. It is ready but unscheduled; recommended cadence is every 15 minutes.
 
 ## AI provider selection, BYOK, and health
 

@@ -1392,9 +1392,12 @@ irreversible กว่า refund/adjust stock ด้วยซ้ำ):
   ที่เขียนว่า "dev ยังไม่ตรวจ" **ไม่ตรงกับโค้ดปัจจุบัน** (ยิง `loginAdmin` ด้วยรหัสมั่วได้
   `Invalid credentials`) — ถ้าจะทดสอบผ่าน HTTP ต้องมีรหัสจริง หรือทดสอบที่ service layer แทน
 - **ยังไม่ทำ**: public checkout (`/checkout?t=`) ยังไม่ให้เลือกขนส่ง · deterministic no-credential
-  fallback ใน `pipeline.ts` ไม่รู้จัก slot ขนส่ง (known gap เดียวกับ coupon) ·
-  `trackShipmentLive()`/`getCarrierApiStatus()` มีแล้วแต่ยังไม่มีหน้าไหนเรียก · หน้า Orders
-  (`/admin/orders`) ยังไม่โชว์ `preferred_carrier` (โชว์เฉพาะใน modal สร้างการจัดส่ง)
+  fallback ใน `pipeline.ts` ไม่รู้จัก slot ขนส่ง (known gap เดียวกับ coupon) · หน้า Orders
+  (`/admin/orders`) ยังไม่โชว์ `preferred_carrier` (โชว์เฉพาะใน modal สร้างการจัดส่ง) ·
+  ยังไม่มี webhook ฝั่ง carrier (มีแต่ polling) และยังไม่มี flow ยกเลิกพัสดุกับ carrier
+  · **หมายเหตุที่แก้แล้ว**: `trackShipmentLive()`/`getCarrierApiStatus()` เคยไม่มีหน้าไหนเรียก —
+  ตอนนี้ `/admin/shipment` มีปุ่ม `Book carrier`/`Sync carrier` และมี cron
+  `POST /api/bms/shipping/sync-carriers` เรียกให้แล้ว (ดู bullet carrier booking hardening ด้านบน)
 
 ## ค่าส่งจริง: บวกเข้าออร์เดอร์ + คิดตามโซน/น้ำหนัก (2026-08, migration `7.47`)
 
@@ -1851,19 +1854,28 @@ Redis ยังไม่มี password/TLS, session revocation ครอบค�
 cron `/api/bms/followups/run`, `/admin/followup-rules` + `/admin/followup-queue`; **ตัด scope เหลือแค่
 MVP core ตามที่ user เลือก** — ไม่มี Workflow Engine/Scoring model/Analytics dashboard ในรอบนี้ ดูเหตุผล
 เต็มในหัวข้อนั้น. ยังไม่ได้ apply migration เข้า docker/production จริงและยังไม่ได้ทดสอบ end-to-end).
++ **Carrier booking/tracking sync (โครงความปลอดภัย) เสร็จแล้ว แต่ adapter จริงยังไม่มี** (ดู bullet
+carrier booking hardening ใน § Carrier scaffold ด้านบน + [docs/integrations/carriers.md](docs/integrations/carriers.md)
+— migration `7.76`/`7.77`, ยิง carrier นอก transaction, shipment UUID เป็น idempotency key,
+booking ที่ล้มเหลวเห็นได้/retry ได้จาก `/admin/shipment`, tracking sync re-lock + เก็บ event history,
+cron `POST /api/bms/shipping/sync-carriers`; **Flash/Kerry ยังเป็น mock-ready scaffold** —
+`getStatus()` = `not_implemented` แม้ใส่ key เพราะยังไม่มีเอกสาร merchant จริง).
 
 **เหลือ:** ต่อข้อมูลจริงให้ `/live-dashboard` (query มีพร้อมหมดแล้ว: `bmsOperationalAlerts`,
 `bmsSalesSummary().byChannel`, `salesDaily[]`, `bmsOrders(limit)`, `bmsChannelHealth` — ยกเว้นผู้ชม/Conversion/
 คอมเมนต์ที่ต้องต่อ Live API รายแพลตฟอร์มก่อน) และทบทวน `?demo=1` ตอนนั้น ·
-TikTok send API · carrier API จริง · AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
+TikTok send API · live adapter ของ Flash/Kerry (โครง booking/tracking/label + migration `7.76`/`7.77`
+พร้อมแล้ว เหลือแค่สัญญา/เอกสาร merchant จริง แล้วทำตาม checklist ใน
+[docs/integrations/carriers.md](docs/integrations/carriers.md)) ·
+AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
 ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
 · ตั้ง cron schedule จริงให้ `/api/bms/orders/release-expired`, `/api/bms/channels/check-health`,
-`/api/bms/ai/check-health`, `/api/bms/reports/send-digest`, และ `/api/bms/followups/run` (ทั้ง 5 endpoint
-พร้อมแล้ว และ 4 ตัวแรกตอนนี้บันทึก run history จริงลง `bms_job_runs` ทุกครั้งที่ถูกเรียก — ดู § Cron/batch
-run history จริง — แค่ยังไม่มีตัวยิงอัตโนมัติ) · เพิ่ม password/TLS ให้ Redis ก่อน production จริง (ดู
-§ Redis ด้านบน)
+`/api/bms/ai/check-health`, `/api/bms/reports/send-digest`, `/api/bms/followups/run`, และ
+`/api/bms/shipping/sync-carriers` (แนะนำทุก 15 นาที) — ทั้ง 6 endpoint พร้อมแล้วและบันทึก run history
+จริงลง `bms_job_runs` ทุกครั้งที่ถูกเรียก (ดู § Cron/batch run history จริง) แค่ยังไม่มีตัวยิงอัตโนมัติ ·
+เพิ่ม password/TLS ให้ Redis ก่อน production จริง (ดู § Redis ด้านบน)
 · proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
 ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
