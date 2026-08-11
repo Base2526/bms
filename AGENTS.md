@@ -346,14 +346,18 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
   `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08 the
-  dictionaries in `apps/web/i18n/{th,en}.ts` have **25 namespaces** (`common, login, register, forgot,
+  dictionaries in `apps/web/i18n/{th,en}.ts` have **30 namespaces** (`common, login, register, forgot,
   reset, shopSignup, verify, header, landing, footer, notificationPage, searchPage, blockedPage,
-  chatPage, couponWallet, roadmap, checkout, admin, admin_dashboard, admin_orders, admin_reports,
-  settingsPage, admin_settings, admin_store_profile, admin_report_subscription`) — up from ~12 before
-  a 2026-08 pass (see CLAUDE.md's "Public-page i18n coverage expanded" entry). This is what a
-  per-user language preference (see CLAUDE.md's "Per-user language preference") actually switches.
-  Grep `apps/web/i18n/th.ts`/`en.ts` for the current list before assuming a namespace exists or
-  doesn't — this count will keep moving.
+  chatPage, couponWallet, postPage, roadmap, checkout, admin, admin_dashboard, admin_orders,
+  admin_reports, settingsPage, admin_settings, admin_store_profile, admin_report_subscription,
+  admin_inbox_mentions, admin_inbox_diagnostics, admin_inbox_customer360, admin_inbox`) — up from ~12
+  before an initial 2026-08 pass (see CLAUDE.md's "Public-page i18n coverage expanded" entry) and up
+  from 25 after a second, admin-focused pass added `admin_inbox` and picked up 3 admin-Inbox namespaces
+  (`admin_inbox_mentions`/`admin_inbox_diagnostics`/`admin_inbox_customer360`) that had been added in an
+  earlier untracked change without this doc being updated — **always grep the actual file for the
+  current list**, this doc's namespace count is a snapshot, not a live value, and has already been
+  wrong once. This is what a per-user language preference (see CLAUDE.md's "Per-user language
+  preference") actually switches.
 - **`apps/web/lib/static-page-i18n.ts`**'s `resolveBilingual()` — a page-local pattern, each page
   hand-rolling its own `{ en: T, th: T }` content object read via `resolveBilingual(CONTENT, lang)`.
   Used by the static/legal pages (`terms`, `privacy`, `pdpa`, `license`, `open-source`, `donate`,
@@ -382,10 +386,21 @@ their menu entries are commented out, were left English-only on purpose — not 
 English-only community feature; only 2 genuinely leaked Thai strings — a delete-confirm dialog and a
 "typing…" indicator — needed fixing), `/coupon/wallet` (a public bearer-link page with no client
 session, so it reads the `lang` cookie server-side via `getMessage()` rather than `useI18n()`),
-`/help`, and `/demo`. **The admin app still has zero i18n plumbing** — none of the ~74 files under
-`apps/web/app/(admin)/admin/**/*.tsx` call `useI18n()`, and roughly 61 of them (82%) contain literal
-Thai text directly in JSX, including the admin nav shell itself (`AdminSidebar.tsx`,
-`AdminLayoutClient.tsx`). **Deliberately still Thai-only, not a gap to silently fix**:
+`/help`, and `/demo`. **The admin app is ~13% converted as of 2026-08, not 0% anymore, but the nav
+shell and the vast majority of pages are still untouched** — of 78 `.tsx` files under
+`apps/web/app/(admin)/admin/**`, exactly **10** call `useI18n()` and have no remaining literal-Thai UI
+copy: `admin/dashboard/page.tsx`, `admin/orders/page.tsx`, `admin/reports/page.tsx`,
+`admin/settings/page.tsx`, `admin/settings/StoreProfileCard.tsx`,
+`admin/settings/ReportSubscriptionCard.tsx`, `admin/inbox/page.tsx`,
+`admin/inbox/Customer360Panel.tsx`, `admin/inbox/mentions/page.tsx`, and
+`admin/inbox/realtime-diagnostics/page.tsx`. The other **68 files, including the admin nav shell itself
+(`AdminSidebar.tsx`, `AdminLayoutClient.tsx`) and `admin/login/page.tsx`**, have no `useI18n()` call and
+contain literal Thai (or, for `admin/login/page.tsx`, a mix of hardcoded English and Thai with no
+switching mechanism at all — flagged as the top remaining priority since it's the one page every admin
+sees pre-authentication). Before starting any new admin i18n work, re-run
+`grep -rl "useI18n" apps/web/app/\(admin\)` to get the current file list — this count moves every time
+someone converts another page and this doc is not updated automatically. **Deliberately still
+Thai-only, not a gap to silently fix**:
 `/live-dashboard` (still mock-data-only; its copy will likely be reworked once wired to real queries,
 so translating now is wasted effort — see CLAUDE.md's "Live Dashboard" section). **English-only by
 age, not a Thai leak**: the legacy pre-BMS community pages `/my/posts`, `/my/profile`, `/post/**`,

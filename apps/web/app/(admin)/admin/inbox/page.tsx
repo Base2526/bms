@@ -21,8 +21,11 @@ import {
 const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","😘","😉","😎","🤔","😢","😭","😡","🎉","✨","🔥","💯","❤️","💙","💚","👏","🙌","🛒","📦","🚚","💰","✅","❌","⭐","📌","🏷️","🎁","👌"];
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useGlobalInboxStore } from "@/store/globalInboxStore";
+import { useI18n } from "@/lib/i18nContext";
 import Customer360Panel from "./Customer360Panel";
 import messageStyles from "./message.module.css";
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 // ---- Types --------------------------------------------------
 type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
@@ -156,8 +159,8 @@ const M_READ = gql`mutation ($id: ID!) { bmsMarkConversationRead(id: $id) }`;
 const M_NOTE = gql`mutation ($id: ID!, $body: String!, $mentionedUserIds: [ID!]) { bmsAddConversationNote(id: $id, body: $body, mentionedUserIds: $mentionedUserIds) { id author body createdAt mentionedUserIds } }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
-function staffLabel(s: StaffRef) {
-  const busy = typeof s.openCount === "number" ? ` · ${s.openCount} แชท` : "";
+function staffLabel(s: StaffRef, t: Translate) {
+  const busy = typeof s.openCount === "number" ? ` · ${t("admin_inbox.chat_count_suffix", { n: s.openCount })}` : "";
   return `${s.name || s.email || s.id}${s.role ? ` (${s.role})` : ""}${busy}`;
 }
 
@@ -167,14 +170,14 @@ const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 const timeLabel = (iso: string) =>
   new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-const baht = (value: number | null | undefined) => `${Number(value ?? 0).toLocaleString("th-TH")} บาท`;
-function dayLabel(iso: string) {
+const baht = (value: number | null | undefined, t: Translate) => `${Number(value ?? 0).toLocaleString("th-TH")} ${t("admin_inbox.baht_suffix")}`;
+function dayLabel(iso: string, t: Translate) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (key === todayKey) return "วันนี้";
-  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  if (key === todayKey) return t("admin_inbox.today_label");
+  if (key === dayKey(y.toISOString())) return t("admin_inbox.yesterday_label");
   return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
@@ -186,14 +189,14 @@ function eventIcon(kind: SystemEvent["kind"]) {
     case "status": return <CheckCircleOutlined />;
   }
 }
-function eventText(ev: SystemEvent) {
+function eventText(ev: SystemEvent, t: Translate) {
   switch (ev.kind) {
     case "assign": return ev.auto
-      ? `ระบบกำหนดผู้รับผิดชอบหลักเป็น ${ev.targetName} (อัตโนมัติ)`
-      : `${ev.actorName} เปลี่ยนผู้รับผิดชอบหลักเป็น ${ev.targetName}`;
-    case "helper_add": return `${ev.actorName} เพิ่ม ${ev.targetName} เป็นผู้ช่วยตอบ`;
-    case "helper_remove": return `${ev.actorName} ถอด ${ev.targetName} ออกจากผู้ช่วยตอบ`;
-    case "status": return `${ev.actorName} เปลี่ยนสถานะเป็น ${ev.statusValue}`;
+      ? t("admin_inbox.event_assign_auto", { target: ev.targetName || "" })
+      : t("admin_inbox.event_assign_manual", { actor: ev.actorName, target: ev.targetName || "" });
+    case "helper_add": return t("admin_inbox.event_helper_add", { actor: ev.actorName, target: ev.targetName || "" });
+    case "helper_remove": return t("admin_inbox.event_helper_remove", { actor: ev.actorName, target: ev.targetName || "" });
+    case "status": return t("admin_inbox.event_status", { actor: ev.actorName, status: ev.statusValue || "" });
   }
 }
 
@@ -201,14 +204,18 @@ const CHANNEL_COLOR: Record<string, string> = { line: "green", tiktok: "magenta"
 // ตัวย่อช่องทางสำหรับคิวแชท — ชื่อเต็มกินที่มากเกินไปในแถวแคบ ๆ (ช่องทางที่ไม่มีในนี้ใช้ชื่อเดิม)
 const CHANNEL_SHORT: Record<string, string> = { line: "LINE", tiktok: "TT", facebook: "FB", instagram: "IG", web: "WEB", shopee: "SHP", lazada: "LZD", test: "TEST" };
 // ป้ายของแท็บ Timeline — ORDER = "สร้างออร์เดอร์" เท่านั้น (สถานะปัจจุบันแยกไปอีกบรรทัด ไม่ผูกกับเวลา at)
-const TIMELINE_TYPE: Record<string, { label: string; color: string }> = {
-  MESSAGE_IN: { label: "ลูกค้าส่ง", color: "blue" },
-  MESSAGE_OUT: { label: "ร้านตอบ", color: "default" },
-  NOTE: { label: "โน้ตภายใน", color: "gold" },
-  ORDER: { label: "สร้างออร์เดอร์", color: "green" },
-  ASSIGN: { label: "มอบหมาย", color: "cyan" },
-  STATUS: { label: "สถานะแชท", color: "purple" },
-};
+function timelineTypeMeta(type: string, t: Translate): { label: string; color: string } {
+  const map: Record<string, { key: string; color: string }> = {
+    MESSAGE_IN: { key: "timeline_type_message_in", color: "blue" },
+    MESSAGE_OUT: { key: "timeline_type_message_out", color: "default" },
+    NOTE: { key: "timeline_type_note", color: "gold" },
+    ORDER: { key: "timeline_type_order", color: "green" },
+    ASSIGN: { key: "timeline_type_assign", color: "cyan" },
+    STATUS: { key: "timeline_type_status", color: "purple" },
+  };
+  const entry = map[type];
+  return entry ? { label: t(`admin_inbox.${entry.key}`), color: entry.color } : { label: type, color: "default" };
+}
 // จุดบนเส้น timeline — สีบอกชนิดเหตุการณ์ (ORDER ใช้สีตามสถานะปัจจุบันของออร์เดอร์แทน)
 const TIMELINE_DOT: Record<string, string> = {
   MESSAGE_IN: "#378ADD", MESSAGE_OUT: "#B4B2A9", NOTE: "#EF9F27", ASSIGN: "#1D9E75", STATUS: "#7F77DD",
@@ -247,29 +254,29 @@ function useMediaQuery(query: string) {
 }
 
 // preview ในลิสต์: ถ้าข้อความล่าสุดเป็น attachment (marker จาก sendStaffMessage) → โชว์ไอคอน
-function previewNode(last?: string | null) {
+function previewNode(last: string | null | undefined, t: Translate) {
   if (!last) return "—";
-  if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> รูปภาพ</>;
-  if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || "ไฟล์แนบ"}</>;
-  if (parseCouponShare(last)) return <><TagsOutlined /> คูปอง {parseCouponShare(last)?.code}</>;
+  if (last.startsWith("[รูปภาพ]")) return <><PictureOutlined /> {t("admin_inbox.preview_image")}</>;
+  if (last.startsWith("[ไฟล์]")) return <><PaperClipOutlined /> {last.replace("[ไฟล์]", "").trim() || t("admin_inbox.preview_file_fallback")}</>;
+  if (parseCouponShare(last)) return <><TagsOutlined /> {t("admin_inbox.preview_coupon")} {parseCouponShare(last)?.code}</>;
   return last;
 }
 
-function sourceLabel(c: { channel?: string | null; sourceDisplayName?: string | null; sourceHandle?: string | null }) {
+function sourceLabel(c: { channel?: string | null; sourceDisplayName?: string | null; sourceHandle?: string | null }, t: Translate) {
   if (!c.sourceDisplayName && !c.sourceHandle) return null;
   const name = c.sourceDisplayName || c.sourceHandle || "";
   const handle = c.sourceHandle && c.sourceHandle !== name ? ` ${c.sourceHandle}` : "";
-  const prefix = c.channel === "line" ? "LINE OA" : c.channel || "ช่องทาง";
+  const prefix = c.channel === "line" ? "LINE OA" : c.channel || t("admin_inbox.channel_fallback");
   return `${prefix} “${name}”${handle}`;
 }
 
-function convPriority(c: Conversation) {
+function convPriority(c: Conversation, t: Translate) {
   const text = `${c.lastMessage || ""} ${(c.tags || []).join(" ")}`.toLowerCase();
-  if (c.unread > 0) return { label: "ต้องตอบ", color: "red", icon: <FireOutlined /> };
-  if (/สลิป|โอน|paid|payment|ชำระ/.test(text)) return { label: "มีสลิป", color: "blue", icon: <CreditCardOutlined /> };
-  if (/ส่ง|พัสดุ|tracking|จัดส่ง/.test(text) || c.status === "PENDING") return { label: "รอจัดส่ง", color: "purple", icon: <TruckOutlined /> };
-  if (/ราคา|ไซซ์|size|มีไหม|stock|สต็อก/.test(text)) return { label: "ถามสินค้า", color: "green", icon: <ShoppingCartOutlined /> };
-  return { label: "ปกติ", color: "default", icon: <ClockCircleOutlined /> };
+  if (c.unread > 0) return { label: t("admin_inbox.priority_need_reply"), color: "red", icon: <FireOutlined /> };
+  if (/สลิป|โอน|paid|payment|ชำระ/.test(text)) return { label: t("admin_inbox.priority_has_slip"), color: "blue", icon: <CreditCardOutlined /> };
+  if (/ส่ง|พัสดุ|tracking|จัดส่ง/.test(text) || c.status === "PENDING") return { label: t("admin_inbox.priority_awaiting_shipment"), color: "purple", icon: <TruckOutlined /> };
+  if (/ราคา|ไซซ์|size|มีไหม|stock|สต็อก/.test(text)) return { label: t("admin_inbox.priority_ask_product"), color: "green", icon: <ShoppingCartOutlined /> };
+  return { label: t("admin_inbox.priority_normal"), color: "default", icon: <ClockCircleOutlined /> };
 }
 
 function matchesQuickFilter(c: Conversation, quickFilter: QuickFilterKey | null) {
@@ -369,12 +376,13 @@ function suggestedReply(conv: any, gender?: string | null) {
   return applyGenderParticle(base, gender);
 }
 
-function nextAction(conv: any) {
+function nextAction(conv: any, t: Translate) {
   const text = String(conv?.messages?.[conv.messages.length - 1]?.body || "").toLowerCase();
-  if (/สลิป|โอน|ชำระ|payment|paid/.test(text)) return { label: "ขั้นต่อไป", value: "ยืนยันสลิป", icon: <CreditCardOutlined />, color: "#1677ff" };
-  if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text) || conv?.status === "PENDING") return { label: "ขั้นต่อไป", value: "ออกเลขพัสดุ", icon: <TruckOutlined />, color: "#722ed1" };
-  if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) return { label: "ขั้นต่อไป", value: "เช็กสต็อก", icon: <ShoppingCartOutlined />, color: "#389e0d" };
-  return { label: "ขั้นต่อไป", value: "ตอบลูกค้า", icon: <SendOutlined />, color: "#d48806" };
+  const label = t("admin_inbox.next_action_label");
+  if (/สลิป|โอน|ชำระ|payment|paid/.test(text)) return { key: "confirm_slip", label, value: t("admin_inbox.next_action_confirm_slip"), icon: <CreditCardOutlined />, color: "#1677ff" };
+  if (/เลขพัสดุ|tracking|ส่งของ|จัดส่ง/.test(text) || conv?.status === "PENDING") return { key: "issue_tracking", label, value: t("admin_inbox.next_action_issue_tracking"), icon: <TruckOutlined />, color: "#722ed1" };
+  if (/มีไหม|ไซซ์|size|stock|สต็อก|ราคา/.test(text)) return { key: "check_stock", label, value: t("admin_inbox.next_action_check_stock"), icon: <ShoppingCartOutlined />, color: "#389e0d" };
+  return { key: "reply_customer", label, value: t("admin_inbox.next_action_reply_customer"), icon: <SendOutlined />, color: "#d48806" };
 }
 
 const ConversationListItem = memo(function ConversationListItem({
@@ -388,9 +396,10 @@ const ConversationListItem = memo(function ConversationListItem({
   collapsed: boolean;
   onOpen: (conversationId: string) => void;
 }) {
-  const priority = convPriority(c);
-  const source = sourceLabel(c);
-  const displayName = c.customerName || c.customerRef?.slice(0, 12) || "ลูกค้า";
+  const { t } = useI18n();
+  const priority = convPriority(c, t);
+  const source = sourceLabel(c, t);
+  const displayName = c.customerName || c.customerRef?.slice(0, 12) || t("admin_inbox.customer_fallback");
   const avatarLetter = (c.customerName || c.customerRef || "").slice(0, 1).toUpperCase() || undefined;
 
   return (
@@ -437,7 +446,7 @@ const ConversationListItem = memo(function ConversationListItem({
                 {displayName}
               </Typography.Text>
               {c.assignedStaff && (
-                <Tooltip title={`staff หลัก: ${c.assignedStaff.name || c.assignedStaff.id}`}>
+                <Tooltip title={t("admin_inbox.primary_staff_tooltip", { name: c.assignedStaff.name || c.assignedStaff.id })}>
                   <Avatar size={15} src={c.assignedStaff.avatar || undefined} style={{ fontSize: 8, backgroundColor: "#1677ff", flexShrink: 0 }}>
                     {(c.assignedStaff.name || "?").slice(0, 1).toUpperCase()}
                   </Avatar>
@@ -449,11 +458,11 @@ const ConversationListItem = memo(function ConversationListItem({
             </div>
 
             <Typography.Text type="secondary" ellipsis style={{ minWidth: 0, fontSize: 10, lineHeight: 1.25 }}>
-              {source ? `ร้าน: ${source}` : c.customerRef || c.id}
+              {source ? t("admin_inbox.shop_prefix", { source }) : c.customerRef || c.id}
             </Typography.Text>
 
             <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 11, lineHeight: 1.3 }} type="secondary">
-              {previewNode(c.lastMessage)}
+              {previewNode(c.lastMessage, t)}
             </Typography.Text>
 
             <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, marginTop: 1 }}>
@@ -473,6 +482,7 @@ const ConversationListItem = memo(function ConversationListItem({
 
 function Inbox() {
   const apollo = useApolloClient();
+  const { t } = useI18n();
   const { can } = useBmsPermissions();
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const isTablet = useMediaQuery(TABLET_QUERY);
@@ -525,7 +535,7 @@ function Inbox() {
   // Sales เห็นเฉพาะแชทของตัวเองเสมอ (บังคับที่ backend อยู่แล้ว — ฝั่งนี้แค่ปรับ UI ให้ตรงกัน)
   const restrictedToOwn = me?.role === "Sales";
   const [setAvailability, { loading: settingAvail }] = useMutation(M_AVAILABILITY, {
-    onError: (e) => message.error(e.message || "ตั้งค่าไม่สำเร็จ"),
+    onError: (e) => message.error(e.message || t("admin_inbox.settings_error")),
   });
 
   // ย่อ list การสนทนาเหลือแต่ avatar (จำสถานะข้ามหน้าใน localStorage)
@@ -777,13 +787,13 @@ function Inbox() {
           <Space direction="vertical" size={0}>
             <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
             <Typography.Text type="secondary" style={{ fontSize: isMobile ? 12 : 10.5 }}>
-              ตอบลูกค้า · เช็กสต็อก · ยืนยันสลิป · ส่งต่อจัดส่ง ในหน้าจอเดียว
+              {t("admin_inbox.page_subtitle")}
             </Typography.Text>
           </Space>
           <Space wrap size={isMobile ? 8 : 8}>
             {me && (
               /* สถานะรับแชทเป็น pill สีตามสถานะจริง (mockup) — เดิมเป็น Switch เปล่า ๆ ที่ต้องเพ่งดูว่าเปิดอยู่ไหม */
-              <Tooltip title="ปิดไว้ = จะไม่ถูก auto-assign แชทใหม่เข้ามาให้ (แชทที่ถืออยู่แล้วไม่กระทบ)">
+              <Tooltip title={t("admin_inbox.availability_off_tooltip")}>
                 <Space
                   size={6}
                   style={{
@@ -794,7 +804,7 @@ function Inbox() {
                   <Switch size="small" checked={me.is_available} loading={settingAvail}
                     onChange={(v) => setAvailability({ variables: { available: v } })} />
                   <Typography.Text style={{ fontSize: 11, fontWeight: 600, color: me.is_available ? "#059669" : "var(--app-muted, #64748b)" }}>
-                    พร้อมรับแชทใหม่
+                    {t("admin_inbox.availability_on_label")}
                   </Typography.Text>
                 </Space>
               </Tooltip>
@@ -826,14 +836,14 @@ function Inbox() {
           <div style={{ display: "flex", justifyContent: effectiveListCollapsed ? "center" : "space-between", alignItems: "center" }}>
             {!effectiveListCollapsed && (
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
-                <Typography.Text strong style={{ fontSize: 13, lineHeight: 1.1 }}>คิวแชท</Typography.Text>
+                <Typography.Text strong style={{ fontSize: 13, lineHeight: 1.1 }}>{t("admin_inbox.queue_heading")}</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.1, color: SUBTLE_TEXT }}>
-                  {needReplyCount} ต้องตอบ · {pendingCount} รอจัดส่ง
+                  {t("admin_inbox.queue_stats", { need: needReplyCount, pending: pendingCount })}
                 </Typography.Text>
               </div>
             )}
             {!isMobile && (
-            <Tooltip title={effectiveListCollapsed ? "ขยาย list" : "ย่อ list"}>
+            <Tooltip title={effectiveListCollapsed ? t("admin_inbox.expand_list_tooltip") : t("admin_inbox.collapse_list_tooltip")}>
               <Button type="text" size="small"
                 icon={effectiveListCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={toggleListCollapsed} />
@@ -846,7 +856,7 @@ function Inbox() {
                   ถามถึงแชทของตัวเอง ไม่ควรอยู่ใต้แถวตัวกรองที่กดนาน ๆ ครั้ง */}
               <Input
                 size="small"
-                placeholder="ค้นหาชื่อ/ข้อความ/ref"
+                placeholder={t("admin_inbox.search_placeholder")}
                 allowClear
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -885,7 +895,7 @@ function Inbox() {
                   onClick={() => setQuickFilter((prev) => prev === "urgent" ? null : "urgent")}
                   style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}
                 >
-                  ด่วนก่อน
+                  {t("admin_inbox.filter_urgent")}
                 </Button>
                 <Button
                   size="small"
@@ -894,7 +904,7 @@ function Inbox() {
                   onClick={() => setQuickFilter((prev) => prev === "payment" ? null : "payment")}
                   style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0, color: quickFilter === "payment" ? undefined : "#1677ff", borderColor: "rgba(22,119,255,0.35)" }}
                 >
-                  มีสลิป
+                  {t("admin_inbox.filter_payment")}
                 </Button>
                 <Button
                   size="small"
@@ -903,19 +913,19 @@ function Inbox() {
                   onClick={() => setQuickFilter((prev) => prev === "product" ? null : "product")}
                   style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0, color: quickFilter === "product" ? undefined : "#389e0d", borderColor: "rgba(82,196,26,0.45)" }}
                 >
-                  ถามสินค้า
+                  {t("admin_inbox.filter_product")}
                 </Button>
               </div>
               <div style={{ width: 1, alignSelf: "stretch", background: "var(--app-border, rgba(15,23,42,0.12))", flexShrink: 0 }} />
               {restrictedToOwn ? (
-                <Tooltip title="role Sales เห็นเฉพาะแชทของตัวเองเสมอ">
+                <Tooltip title={t("admin_inbox.mine_only_sales_tooltip")}>
                   <Button size="small" type="default" disabled icon={<UserOutlined />}
                     style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}>
-                    ของฉัน
+                    {t("admin_inbox.mine_only_chip")}
                   </Button>
                 </Tooltip>
               ) : (
-                <Tooltip title={mineOnly ? "กำลังแสดงเฉพาะแชทที่ฉันถืออยู่" : "แสดงเฉพาะแชทที่ฉันถืออยู่"}>
+                <Tooltip title={mineOnly ? t("admin_inbox.mine_only_on_tooltip") : t("admin_inbox.mine_only_off_tooltip")}>
                   <Button
                     size="small"
                     type={mineOnly ? "primary" : "default"}
@@ -923,7 +933,7 @@ function Inbox() {
                     onClick={() => setMineOnly(!mineOnly)}
                     style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 24, fontWeight: 600, flexShrink: 0 }}
                   >
-                    ของฉัน
+                    {t("admin_inbox.mine_only_chip")}
                   </Button>
                 </Tooltip>
               )}
@@ -936,7 +946,7 @@ function Inbox() {
           >
             <List
               loading={loading} dataSource={visibleConversations}
-              locale={{ emptyText: effectiveListCollapsed ? null : <Empty description="ไม่มีบทสนทนา" /> }}
+              locale={{ emptyText: effectiveListCollapsed ? null : <Empty description={t("admin_inbox.empty_no_conversations")} /> }}
               renderItem={(c) => (
                 <ConversationListItem
                   conversation={c}
@@ -954,7 +964,7 @@ function Inbox() {
         {showConversationPane && (
         <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: isMobile ? 7 : 10, background: PANEL_SURFACE }}>
           {!conv ? (
-            <Empty description="เลือกบทสนทนาทางซ้าย" style={{ marginTop: 120 }} />
+            <Empty description={t("admin_inbox.empty_select_conversation")} style={{ marginTop: 120 }} />
           ) : (
             <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
               gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={() => { refetchConv(convVariables(conv.id)); refetch(); }} />
@@ -970,6 +980,7 @@ function Inbox() {
 }
 
 function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug, initialTab }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null; initialTab?: string | null }) {
+  const { t } = useI18n();
   // ควบคุม tab เอง (เดิม uncontrolled, default "แชท" เสมอ) เพื่อรองรับ deep-link ?tab=notes
   // จาก mention notification — ใช้ initialTab แค่ตอนเปิดแชทนี้ครั้งแรก ไม่บังคับทับถ้า staff สลับแท็บเอง
   const [activeTabKey, setActiveTabKey] = useState(initialTab === "notes" ? "notes" : "chat");
@@ -1000,7 +1011,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const scrollFrameRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่ได้");
+  const onErr = (e: any) => message.error(e?.message || t("admin_inbox.action_failed"));
 
   const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (scrollFrameRef.current != null) cancelAnimationFrame(scrollFrameRef.current);
@@ -1057,9 +1068,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [addHelper] = useMutation(M_HELPER_ADD, { onCompleted: onChanged, onError: onErr });
   const [removeHelper] = useMutation(M_HELPER_REMOVE, { onCompleted: onChanged, onError: onErr });
   const [setStatus] = useMutation(M_STATUS, { onCompleted: onChanged, onError: onErr });
-  const [saveTags] = useMutation(M_TAGS, { onCompleted: () => { message.success("บันทึกแท็กแล้ว"); onChanged(); }, onError: onErr });
+  const [saveTags] = useMutation(M_TAGS, { onCompleted: () => { message.success(t("admin_inbox.tags_saved")); onChanged(); }, onError: onErr });
   const [addNote, { loading: noting }] = useMutation(M_NOTE, {
-    onCompleted: () => { message.success("เพิ่มโน้ตแล้ว"); setNote(""); setNoteMentions([]); setNoteMentionQuery(null); onChanged(); }, onError: onErr,
+    onCompleted: () => { message.success(t("admin_inbox.note_added")); setNote(""); setNoteMentions([]); setNoteMentionQuery(null); onChanged(); }, onError: onErr,
   });
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   const [tlThisChatOnly, setTlThisChatOnly] = useState(false);
@@ -1083,7 +1094,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       const r = d?.bmsReorderFromOrder;
       setReorderingId(null);
       if (r?.status === "CREATED") { message.success(r.message); refetchCustomer(); }
-      else message.error(r?.message || "ซื้อซ้ำไม่สำเร็จ");
+      else message.error(r?.message || t("admin_inbox.reorder_failed"));
     },
     onError: (e) => { setReorderingId(null); onErr(e); },
   });
@@ -1111,15 +1122,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const canManage = can("inbox.manage");
   const canAssign = can("inbox.assign");
   const canHelp = can("inbox.reply");
-  const action = useMemo(() => nextAction(conv), [conv]);
+  const action = useMemo(() => nextAction(conv, t), [conv, t]);
   const aiReply = useMemo(() => suggestedReply(conv, gender), [conv, gender]);
-  const aiIntent = action.value === "เช็กสต็อก"
-    ? "ถามสินค้า"
-    : action.value === "ยืนยันสลิป"
-      ? "แจ้งชำระเงิน"
-      : action.value === "ออกเลขพัสดุ"
-        ? "ถามจัดส่ง"
-        : "ต้องตอบลูกค้า";
+  const aiIntent = action.key === "check_stock"
+    ? t("admin_inbox.ai_intent_ask_product")
+    : action.key === "confirm_slip"
+      ? t("admin_inbox.ai_intent_payment")
+      : action.key === "issue_tracking"
+        ? t("admin_inbox.ai_intent_shipping")
+        : t("admin_inbox.ai_intent_need_reply");
 
   // กัน primary โผล่เป็น helper ด้วย (เผื่อข้อมูลเก่าก่อน backend cleanup) — คนละบทบาทกัน ห้ามซ้ำ
   const helpers: StaffRef[] = useMemo(
@@ -1139,9 +1150,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <Select
         size="small" style={{ minWidth: isMobile ? 158 : 170, flex: isMobile ? "1 1 158px" : undefined }} disabled={!canAssign} loading={assigning}
         value={conv.assignedStaff?.id ?? undefined}
-        placeholder="ยังไม่มี staff หลัก"
+        placeholder={t("admin_inbox.no_primary_staff_placeholder")}
         onChange={(userId) => assign({ variables: { id: conv.id, userId } })}
-        options={staffList.map((s) => ({ value: s.id, label: staffLabel(s) }))}
+        options={staffList.map((s) => ({ value: s.id, label: staffLabel(s, t) }))}
       />
     </Space>
   );
@@ -1163,7 +1174,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               {(conv.customerName || conv.customerRef || "").slice(0, 1).toUpperCase() || undefined}
             </Avatar>
             <Typography.Text strong ellipsis style={{ fontSize: isMobile ? 14 : 12.5, minWidth: 0, flex: "0 1 auto" }}>
-              {conv.customerName || conv.customerRef || "ลูกค้า"}
+              {conv.customerName || conv.customerRef || t("admin_inbox.customer_fallback")}
             </Typography.Text>
             {/* ช่องทางเป็น chip จางแบบเดียวกับในคิว (mockup) ไม่ใช่ Tag สีทึบที่เด่นกว่าชื่อลูกค้าเอง */}
             <span style={CHANNEL_CHIP_STYLE}>{conv.channel}</span>
@@ -1172,13 +1183,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             )}
           </div>
           <Typography.Text type="secondary" style={{ fontSize: 10, lineHeight: 1.25 }}>{conv.customerRef || conv.id}</Typography.Text>
-          {sourceLabel(conv) && (
+          {sourceLabel(conv, t) && (
             <Space size={6} wrap={!isMobile} style={{ minWidth: 0 }}>
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>ทักจาก:</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t("admin_inbox.from_prefix")}</Typography.Text>
               <Avatar size={16} src={conv.sourceAvatar || undefined} style={{ fontSize: 8 }}>
                 {(conv.sourceDisplayName || conv.channel || "?").slice(0, 1).toUpperCase()}
               </Avatar>
-              <Typography.Text ellipsis style={{ fontSize: 11, minWidth: 0, maxWidth: isMobile ? "calc(100vw - 118px)" : undefined }}>{sourceLabel(conv)}</Typography.Text>
+              <Typography.Text ellipsis style={{ fontSize: 11, minWidth: 0, maxWidth: isMobile ? "calc(100vw - 118px)" : undefined }}>{sourceLabel(conv, t)}</Typography.Text>
             </Space>
           )}
         </Space>
@@ -1203,7 +1214,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           icon={<ShoppingCartOutlined />}
           style={conv.customerId ? TOOL_CHIP_BASE : { ...TOOL_CHIP_BASE, color: "#d97706", borderColor: "rgba(217,119,6,0.35)", background: "rgba(217,119,6,0.06)" }}
         >
-          {conv.customerId ? "ผูก CRM แล้ว" : "ยังไม่ผูก CRM"}
+          {conv.customerId ? t("admin_inbox.crm_linked") : t("admin_inbox.crm_not_linked")}
         </Tag>
         {/* ผู้ช่วยตอบ (คน) กับแท็ก (ป้ายกำกับ) เป็นคนละมิติกัน — เดิม toggle ตัวเดียวเปิดทั้งคู่พร้อมกัน
             ทำให้แถวที่ขยายออกมาปนกันไม่มีขอบเขต แยกเป็นปุ่ม Popover คนละอันแทน แต่ละอันไม่ดันความสูง
@@ -1214,10 +1225,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           content={
             <Space direction="vertical" size={8} style={{ minWidth: 200 }}>
               <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                ผู้ช่วยตอบ
+                {t("admin_inbox.helpers_label")}
               </Typography.Text>
               <Space size={6} wrap>
-                {helpers.length === 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>ยังไม่มี</Typography.Text>}
+                {helpers.length === 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>{t("admin_inbox.helpers_none")}</Typography.Text>}
                 {helpers.map((h) => (
                   <Tooltip key={h.id} title={h.name || h.email || h.id}>
                     <span style={{ position: "relative", display: "inline-flex" }}>
@@ -1240,8 +1251,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       placement="bottomRight"
                       content={
                         <Select
-                          size="small" style={{ width: 220 }} placeholder="เพิ่มคนช่วยตอบ"
-                          options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s) }))}
+                          size="small" style={{ width: 220 }} placeholder={t("admin_inbox.add_helper_placeholder")}
+                          options={helperCandidates.map((s) => ({ value: s.id, label: staffLabel(s, t) }))}
                           onSelect={(userId: string) => addHelper({ variables: { id: conv.id, userId } })}
                         />
                       }
@@ -1249,7 +1260,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       <Button type="dashed" size="small" shape="circle" icon={<PlusOutlined style={{ fontSize: 10 }} />} />
                     </Popover>
                   ) : (
-                    <Tooltip title="ยังไม่มี staff คนอื่นในร้านให้เพิ่มเป็นผู้ช่วยตอบ (ไปเพิ่ม staff ที่ /admin/users ก่อน)">
+                    <Tooltip title={t("admin_inbox.no_other_staff_tooltip")}>
                       <Button type="dashed" size="small" shape="circle" disabled icon={<PlusOutlined style={{ fontSize: 10 }} />} />
                     </Tooltip>
                   )
@@ -1259,7 +1270,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           }
         >
           <Tag icon={<UsergroupAddOutlined />} style={{ ...TOOL_CHIP_BASE, cursor: "pointer" }}>
-            {helpers.length || 0} ผู้ช่วย
+            {t("admin_inbox.helpers_chip", { n: helpers.length || 0 })}
           </Tag>
         </Popover>
         {canManage && (
@@ -1269,15 +1280,15 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             content={
               <Space direction="vertical" size={8} style={{ minWidth: 200 }}>
                 <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  แท็กของแชทนี้
+                  {t("admin_inbox.tags_of_chat")}
                 </Typography.Text>
-                <Select mode="tags" size="small" style={{ minWidth: 200 }} value={tags} onChange={setTags} placeholder="แท็ก" />
-                <Button size="small" style={{ alignSelf: "flex-end" }} onClick={() => saveTags({ variables: { id: conv.id, tags } })}>บันทึกแท็ก</Button>
+                <Select mode="tags" size="small" style={{ minWidth: 200 }} value={tags} onChange={setTags} placeholder={t("admin_inbox.tags_placeholder")} />
+                <Button size="small" style={{ alignSelf: "flex-end" }} onClick={() => saveTags({ variables: { id: conv.id, tags } })}>{t("admin_inbox.save_tags_button")}</Button>
               </Space>
             }
           >
             <Tag icon={<TagsOutlined />} style={{ ...TOOL_CHIP_BASE, cursor: "pointer" }}>
-              {tags.length || 0} แท็ก
+              {t("admin_inbox.tags_chip", { n: tags.length || 0 })}
             </Tag>
           </Popover>
         )}
@@ -1322,11 +1333,11 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       fd.append("file", file);
       const res = await fetch("/api/bms/inbox/upload", { method: "POST", body: fd, credentials: "include" });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || "อัปโหลดไม่สำเร็จ");
+      if (!res.ok) throw new Error(j?.error || t("admin_inbox.upload_failed"));
       setDraftAttachment({ url: j.url, name: j.name, mimeType: j.mimeType, isImage: /^image\//i.test(j.mimeType || "") });
-      message.success("แนบไฟล์ในข้อความร่างแล้ว");
+      message.success(t("admin_inbox.attachment_added"));
     } catch (e: any) {
-      message.error(e?.message || "อัปโหลดไม่สำเร็จ");
+      message.error(e?.message || t("admin_inbox.upload_failed"));
     } finally {
       setUploading(false);
       setUploadAction(null);
@@ -1342,14 +1353,14 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const statusNode = (m: Msg) => {
     if (m.direction !== "OUT" || !m.status) return null;
     if (m.status === "FAILED") return (
-      <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ ส่งไม่สำเร็จ</span>{" "}
+      <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ {t("admin_inbox.send_failed_label")}</span>{" "}
         <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}
-          loading={retrying} onClick={() => retry({ variables: { id: m.id } })}>ส่งใหม่</Button>
+          loading={retrying} onClick={() => retry({ variables: { id: m.id } })}>{t("admin_inbox.resend_button")}</Button>
       </>
     );
     return m.canReportDelivery
-      ? <>{" · "}<span style={{ color: "#52c41a" }}>✓ ส่งแล้ว</span></>
-      : <Tooltip title="ช่องนี้ไม่รายงานสถานะการส่งถึง/อ่าน"><span>{" · ✓ บันทึกแล้ว"}</span></Tooltip>;
+      ? <>{" · "}<span style={{ color: "#52c41a" }}>✓ {t("admin_inbox.sent_label")}</span></>
+      : <Tooltip title={t("admin_inbox.no_delivery_report_tooltip")}><span>{" · ✓ "}{t("admin_inbox.saved_label")}</span></Tooltip>;
   };
 
   const emojiPicker = (
@@ -1478,7 +1489,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     });
     setDraftAttachment(null);
     setCouponPickerOpen(false);
-    message.success(`เพิ่มคูปอง ${coupon.code} ในข้อความร่างแล้ว`);
+    message.success(t("admin_inbox.coupon_added_toast", { code: coupon.code }));
   };
   const insertProductIntoChat = (product: ProductPickerItem, includeImage: boolean) => {
     const firstAvailable = (product.variants || []).find((variant) => variant.available > 0) || product.variants?.[0];
@@ -1503,7 +1514,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       ? { url: product.imageUrl, name: `${product.name} (${product.sku})`, mimeType: "image/*", isImage: true }
       : null);
     setProductPickerOpen(false);
-    message.success(includeImage && product.imageUrl ? "เพิ่มข้อมูลสินค้าและรูปในข้อความร่างแล้ว" : "เพิ่มข้อมูลสินค้าในข้อความร่างแล้ว");
+    message.success(includeImage && product.imageUrl ? t("admin_inbox.product_added_with_image_toast") : t("admin_inbox.product_added_toast"));
   };
   const renderMsg = (m: Msg) => {
     const isIn = m.direction === "IN";
@@ -1523,21 +1534,21 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         <div className={`${cardClass} ${messageStyles.couponCard}`} data-message-kind="coupon">
           <div className={messageStyles.couponIcon} aria-hidden="true"><TagsOutlined /></div>
           <div className={messageStyles.couponInfo}>
-            <div className={messageStyles.productType}><TagsOutlined /> คูปองส่วนลด</div>
+            <div className={messageStyles.productType}><TagsOutlined /> {t("admin_inbox.coupon_badge")}</div>
             <div className={messageStyles.couponCode}>{coupon.code}</div>
-            {coupon.discount && <div className={messageStyles.couponDiscount}>ลด {coupon.discount}</div>}
+            {coupon.discount && <div className={messageStyles.couponDiscount}>{t("admin_inbox.coupon_discount_prefix", { discount: coupon.discount })}</div>}
             <Space size={4} wrap style={{ marginTop: 6 }}>
-              {coupon.minOrder && <Tag style={{ marginInlineEnd: 0 }}>ขั้นต่ำ {coupon.minOrder}</Tag>}
-              {coupon.expires && <Tag color="orange" style={{ marginInlineEnd: 0 }}>ถึง {coupon.expires}</Tag>}
+              {coupon.minOrder && <Tag style={{ marginInlineEnd: 0 }}>{t("admin_inbox.coupon_min_order_prefix", { minOrder: coupon.minOrder })}</Tag>}
+              {coupon.expires && <Tag color="orange" style={{ marginInlineEnd: 0 }}>{t("admin_inbox.coupon_expires_prefix", { expires: coupon.expires })}</Tag>}
               {coupon.usage && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{coupon.usage}</Tag>}
             </Space>
             {coupon.walletUrl ? (
               <a className={messageStyles.productLink} href={coupon.walletUrl} target="_blank" rel="noreferrer" style={{ marginTop: 8 }}>
-                เปิดกระเป๋าคูปอง <RightOutlined />
+                {t("admin_inbox.open_coupon_wallet_link")} <RightOutlined />
               </a>
             ) : (
               <div className={messageStyles.productCaption} style={{ margin: "8px 0 0" }}>
-                คูปองนี้ถูกเพิ่มเข้ากระเป๋าคูปองของลูกค้าแล้ว
+                {t("admin_inbox.coupon_added_to_wallet_note")}
               </div>
             )}
           </div>
@@ -1547,19 +1558,19 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       content = (
         <div className={`${cardClass} ${messageStyles.productCard}`} data-message-kind="product">
           {m.attachment?.isImage ? (
-            <button type="button" className={messageStyles.productImageButton} onClick={openImage} aria-label={`ดูรูป ${product.name}`}>
+            <button type="button" className={messageStyles.productImageButton} onClick={openImage} aria-label={t("admin_inbox.view_image_aria", { name: product.name })}>
               <img src={m.attachment.url} alt={m.attachment.name || product.name} />
             </button>
           ) : (
             <div className={messageStyles.productPlaceholder} aria-hidden="true"><ShoppingCartOutlined /></div>
           )}
           <div className={messageStyles.productInfo}>
-            <div className={messageStyles.productType}><ShoppingCartOutlined /> สินค้า</div>
+            <div className={messageStyles.productType}><ShoppingCartOutlined /> {t("admin_inbox.product_badge")}</div>
             <div className={messageStyles.productName}>{product.name}</div>
             <div className={messageStyles.productSku}>SKU: {product.sku}</div>
             {product.price && <div className={messageStyles.productPrice}>{product.price}</div>}
             {product.stock && <div className={messageStyles.stockPill}>{product.stock}</div>}
-            <a className={messageStyles.productLink} href={product.url} target="_blank" rel="noreferrer">ดูสินค้า <RightOutlined /></a>
+            <a className={messageStyles.productLink} href={product.url} target="_blank" rel="noreferrer">{t("admin_inbox.view_product_link")} <RightOutlined /></a>
           </div>
           {product.caption && <div className={messageStyles.productCaption}>{product.caption}</div>}
         </div>
@@ -1567,12 +1578,12 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     } else if (m.attachment?.isImage) {
       content = (
         <div className={`${cardClass} ${messageStyles.mediaCard}`} data-message-kind="image">
-          <button type="button" className={messageStyles.imageButton} onClick={openImage} aria-label={`ดูรูป ${m.attachment.name || "รูปภาพ"}`}>
+          <button type="button" className={messageStyles.imageButton} onClick={openImage} aria-label={t("admin_inbox.view_image_aria", { name: m.attachment.name || t("admin_inbox.preview_image") })}>
             <img src={m.attachment.url} alt={m.attachment.name || "image"} />
           </button>
           <div className={messageStyles.mediaFooter}>
-            <div className={messageStyles.mediaCaption}>{m.body || m.attachment.name || "รูปภาพ"}</div>
-            <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label="ดาวน์โหลดรูป">
+            <div className={messageStyles.mediaCaption}>{m.body || m.attachment.name || t("admin_inbox.preview_image")}</div>
+            <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label={t("admin_inbox.download_image_aria")}>
               <DownloadOutlined />
             </a>
           </div>
@@ -1586,11 +1597,11 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             {kind.pdf ? <FilePdfOutlined /> : <FileOutlined />}
           </div>
           <div className={messageStyles.fileInfo}>
-            <div className={messageStyles.fileName}>{m.attachment.name || "ไฟล์แนบ"}</div>
+            <div className={messageStyles.fileName}>{m.attachment.name || t("admin_inbox.file_attachment_fallback")}</div>
             <div className={messageStyles.fileMeta}>{kind.label}</div>
             {m.body && <div className={messageStyles.fileCaption}>{m.body}</div>}
           </div>
-          <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label={`ดาวน์โหลด ${m.attachment.name || "ไฟล์แนบ"}`}>
+          <a className={messageStyles.cardAction} href={m.attachment.url} target="_blank" rel="noreferrer" aria-label={t("admin_inbox.download_file_aria", { name: m.attachment.name || t("admin_inbox.file_attachment_fallback") })}>
             <DownloadOutlined />
           </a>
         </div>
@@ -1619,13 +1630,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       feedNodes.push(
         <div key={`d-${key}`} style={{ alignSelf: "center", margin: "4px 0" }}>
           <span style={{ fontSize: 11, color: "var(--app-muted, #888)", background: "rgba(148,163,184,0.16)", padding: "2px 10px", borderRadius: 10 }}>
-            {dayLabel(item.at)}
+            {dayLabel(item.at, t)}
           </span>
         </div>
       );
     }
-    if (item.t === "start") feedNodes.push(centerRow("start", <>เริ่มการสนทนา · ช่องทาง {conv.channel} · {timeLabel(item.at)}</>));
-    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev)} · {timeLabel(item.at)}</>));
+    if (item.t === "start") feedNodes.push(centerRow("start", <>{t("admin_inbox.conversation_start_label", { channel: conv.channel })} · {timeLabel(item.at)}</>));
+    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev, t)} · {timeLabel(item.at)}</>));
     else feedNodes.push(renderMsg(item.msg));
   }
 
@@ -1648,7 +1659,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                 <div style={{ background: "#1677ff", color: "#fff", padding: "8px 12px", borderRadius: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {reply || (draftAttachment?.isImage ? "[รูปภาพ]" : draftAttachment ? `[ไฟล์] ${draftAttachment.name || ""}` : "…")}
                 </div>
-                <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>⏳ กำลังส่ง…</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 2 }}>⏳ {t("admin_inbox.sending_label")}</Typography.Text>
               </div>
             )}
           </div>
@@ -1669,7 +1680,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               zIndex: 2,
             }}
           >
-            ข้อความใหม่ {newMessageCount} ↓
+            {t("admin_inbox.new_messages_button", { count: newMessageCount })}
           </Button>
         )}
       </div>
@@ -1690,28 +1701,29 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <Typography.Text style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.04em", color: "#1677ff" }}>
-                  <ThunderboltOutlined /> คำตอบแนะนำ
+                  <ThunderboltOutlined /> {t("admin_inbox.ai_suggested_reply_title")}
                 </Typography.Text>
-                <Tooltip title="ซ่อน AI suggestion">
+                <Tooltip title={t("admin_inbox.hide_ai_suggestion_tooltip")}>
                   <Button size="small" shape="circle" icon={<EyeInvisibleOutlined />} onClick={toggleAiSuggestion} />
                 </Tooltip>
               </div>
               <Typography.Text style={{ fontSize: 12.5, lineHeight: 1.5 }}>{aiReply}</Typography.Text>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                <Button size="small" type="primary" style={{ fontSize: 11.5, fontWeight: 700 }} onClick={() => setReply(aiReply)}>ใส่ในช่องพิมพ์</Button>
-                {/* คำตอบด่วนเป็น chip — เป็น template ของระบบ ไม่ใช่ข้อความที่ AI แนะนำ จึงไม่ควรหนักเท่าปุ่มหลัก */}
+                <Button size="small" type="primary" style={{ fontSize: 11.5, fontWeight: 700 }} onClick={() => setReply(aiReply)}>{t("admin_inbox.insert_reply_button")}</Button>
+                {/* คำตอบด่วนเป็น chip — เป็น template ของระบบ ไม่ใช่ข้อความที่ AI แนะนำ จึงไม่ควรหนักเท่าปุ่มหลัก
+                    (ข้อความ template เองคงเป็นภาษาไทยเสมอ เพราะเป็นข้อความที่ส่งหาลูกค้าโดยตรง ไม่ใช่ UI) */}
                 <Button size="small" style={{ borderRadius: 999, paddingInline: 10, fontSize: 11 }}
-                  onClick={() => setReply(applyGenderParticle("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ", gender))}>ขอตรวจสอบ</Button>
+                  onClick={() => setReply(applyGenderParticle("ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ", gender))}>{t("admin_inbox.quick_reply_check_button")}</Button>
                 <Button size="small" style={{ borderRadius: 999, paddingInline: 10, fontSize: 11 }}
-                  onClick={() => setReply(applyGenderParticle("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏", gender))}>ขอบคุณ</Button>
+                  onClick={() => setReply(applyGenderParticle("ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏", gender))}>{t("admin_inbox.quick_reply_thanks_button")}</Button>
               </div>
             </div>
           ) : (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
               <Tag color="blue" icon={<ThunderboltOutlined />} style={{ marginInlineEnd: 0, paddingInline: 10, borderRadius: 999, fontSize: 11 }}>
-                AI ถูกซ่อนอยู่
+                {t("admin_inbox.ai_hidden_tag")}
               </Tag>
-              <Tooltip title="แสดง AI suggestion">
+              <Tooltip title={t("admin_inbox.show_ai_suggestion_tooltip")}>
                 <Button size="small" shape="circle" icon={<EyeOutlined />} onClick={toggleAiSuggestion} />
               </Tooltip>
             </div>
@@ -1725,7 +1737,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
           <Modal
-            title="คูปอง"
+            title={t("admin_inbox.coupon_modal_title")}
             open={couponPickerOpen}
             onCancel={() => setCouponPickerOpen(false)}
             footer={null}
@@ -1733,36 +1745,36 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
           >
             {!can("coupon.view") ? (
-              <Alert type="warning" showIcon message="บัญชีนี้ไม่มีสิทธิ์ดูคูปอง" />
+              <Alert type="warning" showIcon message={t("admin_inbox.no_coupon_permission")} />
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 <Input.Search
-                  placeholder="ค้นหาโค้ด เช่น SAVE10"
+                  placeholder={t("admin_inbox.coupon_search_placeholder")}
                   allowClear
                   value={couponSearch}
                   onChange={(e) => setCouponSearch(e.target.value)}
                 />
                 {!couponItems.length && !couponPickerLoading ? (
-                  <Empty description="ยังไม่มีคูปองที่เปิดใช้งาน" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description={t("admin_inbox.no_active_coupons")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 ) : (
                   <List
                     loading={couponPickerLoading}
                     dataSource={couponItems}
                     renderItem={(item) => {
-                      const usageLeft = item.maxRedemptions == null ? "ไม่จำกัด" : `เหลือ ${Math.max(0, item.maxRedemptions - item.redemptionsCount).toLocaleString("th-TH")}`;
+                      const usageLeft = item.maxRedemptions == null ? t("admin_inbox.coupon_unlimited") : t("admin_inbox.coupon_usage_left", { n: Math.max(0, item.maxRedemptions - item.redemptionsCount).toLocaleString("th-TH") });
                       return (
                         <List.Item
                           actions={[
-                            <Button key="insert" type="primary" size="small" onClick={() => insertCouponIntoChat(item)}>ใส่ในข้อความร่าง</Button>,
+                            <Button key="insert" type="primary" size="small" onClick={() => insertCouponIntoChat(item)}>{t("admin_inbox.insert_into_draft_button")}</Button>,
                           ]}
                         >
                           <List.Item.Meta
                             avatar={<Avatar icon={<TagsOutlined />} style={{ background: "#faad14" }} />}
-                            title={<Space size={6} wrap><Typography.Text strong>{item.code}</Typography.Text><Tag color="gold">ลด {couponDiscountText(item)}</Tag></Space>}
+                            title={<Space size={6} wrap><Typography.Text strong>{item.code}</Typography.Text><Tag color="gold">{t("admin_inbox.coupon_discount_prefix", { discount: couponDiscountText(item) })}</Tag></Space>}
                             description={
                               <Space size={6} wrap>
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>ขั้นต่ำ {item.minOrderAmount ? baht(item.minOrderAmount) : "ไม่มี"}</Typography.Text>
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>หมดอายุ {couponExpiresText(item.expiresAt)}</Typography.Text>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox.coupon_min_order_label", { value: item.minOrderAmount ? baht(item.minOrderAmount, t) : t("admin_inbox.coupon_min_order_none") })}</Typography.Text>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox.coupon_expires_label", { date: couponExpiresText(item.expiresAt) })}</Typography.Text>
                                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>{usageLeft}</Typography.Text>
                               </Space>
                             }
@@ -1776,7 +1788,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             )}
           </Modal>
           <Modal
-            title="สินค้า"
+            title={t("admin_inbox.product_modal_title")}
             open={productPickerOpen}
             onCancel={() => setProductPickerOpen(false)}
             footer={null}
@@ -1785,13 +1797,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           >
             <div style={{ display: "grid", gap: 12 }}>
               <Input.Search
-                placeholder="ค้นหาชื่อสินค้า, SKU, แบรนด์..."
+                placeholder={t("admin_inbox.product_search_placeholder")}
                 allowClear
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
               />
               {!productItems.length && !productPickerLoading ? (
-                <Empty description="ไม่พบสินค้า" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <Empty description={t("admin_inbox.no_products_found")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
               ) : (
                 <List
                   loading={productPickerLoading}
@@ -1818,17 +1830,17 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                         <div style={{ gridArea: isMobile ? "info" : undefined, minWidth: 0 }}>
                           <Space size={6} wrap>
                             <Typography.Text strong style={{ fontSize: 14 }}>{item.name}</Typography.Text>
-                            {!item.active && <Tag style={{ marginInlineEnd: 0 }}>ปิดขาย</Tag>}
+                            {!item.active && <Tag style={{ marginInlineEnd: 0 }}>{t("admin_inbox.product_inactive_tag")}</Tag>}
                           </Space>
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              SKU: {item.sku} · {Number(item.price).toLocaleString("th-TH")} บาท
+                              SKU: {item.sku} · {Number(item.price).toLocaleString("th-TH")} {t("admin_inbox.baht_suffix")}
                             </Typography.Text>
                           </div>
                           <Space size={6} wrap style={{ marginTop: 6 }}>
                             {(item.variants || []).slice(0, 4).map((variant) => (
                               <Tag key={`${item.sku}-${variant.size}`} color={variant.available > 0 ? "green" : "default"} style={{ marginInlineEnd: 0 }}>
-                                {variant.size} · เหลือ {variant.available}
+                                {variant.size} · {t("admin_inbox.product_remaining", { n: variant.available })}
                               </Tag>
                             ))}
                           </Space>
@@ -1836,33 +1848,33 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                         {isMobile ? (
                           <div style={{ gridArea: "actions", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
                             <Button type="primary" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)} style={{ gridColumn: "1 / -1" }}>
-                              ข้อความ + ลิงก์
+                              {t("admin_inbox.text_and_link_button")}
                             </Button>
                             <Button disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)} style={{ gridColumn: "1 / -1" }}>
-                              ข้อความ + รูป + ลิงก์
+                              {t("admin_inbox.text_image_link_button")}
                             </Button>
                             {tenantSlug && (
                               <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer" style={{ display: "block" }}>
-                                <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>ดูหน้า Public ↗</Button>
+                                <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>{t("admin_inbox.view_public_page_button")}</Button>
                               </Link>
                             )}
                             <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer" style={{ display: "block" }}>
-                              <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>Products เต็มจอ ↗</Button>
+                              <Button block style={{ color: "#1677ff", borderColor: "#91caff", background: "#f8fbff" }}>{t("admin_inbox.products_fullscreen_button")}</Button>
                             </Link>
                           </div>
                         ) : (
                           <Space direction="vertical" size={6} style={{ alignItems: "flex-end" }}>
-                            <Button type="primary" size="small" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)}>ข้อความ + ลิงก์</Button>
+                            <Button type="primary" size="small" disabled={!item.active || !tenantSlug} onClick={() => insertProductIntoChat(item, false)}>{t("admin_inbox.text_and_link_button")}</Button>
                             <Button size="small" disabled={!item.active || !item.imageUrl || !tenantSlug} onClick={() => insertProductIntoChat(item, true)}>
-                              ข้อความ + รูป + ลิงก์
+                              {t("admin_inbox.text_image_link_button")}
                             </Button>
                             {tenantSlug && (
                               <Link href={`/shop/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
-                                <Button size="small" type="link" style={{ paddingInline: 0 }}>ดูหน้า Public ↗</Button>
+                                <Button size="small" type="link" style={{ paddingInline: 0 }}>{t("admin_inbox.view_public_page_button")}</Button>
                               </Link>
                             )}
                             <Link href={`/admin/products?search=${encodeURIComponent(item.sku)}`} target="_blank" rel="noreferrer">
-                              <Button size="small" type="link" style={{ paddingInline: 0 }}>เปิดหน้า Products เต็มจอ ↗</Button>
+                              <Button size="small" type="link" style={{ paddingInline: 0 }}>{t("admin_inbox.products_fullscreen_link_desktop")}</Button>
                             </Link>
                           </Space>
                         )}
@@ -1876,37 +1888,37 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
           {draftAttachment && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", marginBottom: 7, border: "1px solid rgba(22,119,255,0.24)", borderRadius: 10, background: "rgba(22,119,255,0.06)" }}>
               {draftAttachment.isImage ? (
-                <img src={draftAttachment.url} alt={draftAttachment.name || "รูปที่แนบ"} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                <img src={draftAttachment.url} alt={draftAttachment.name || t("admin_inbox.attached_image_fallback")} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
               ) : (
                 <PaperClipOutlined style={{ fontSize: 20, color: "#1677ff", flexShrink: 0 }} />
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Typography.Text strong ellipsis style={{ display: "block", fontSize: 12 }}>
-                  {draftAttachment.name || (draftAttachment.isImage ? "รูปภาพ" : "ไฟล์แนบ")}
+                  {draftAttachment.name || (draftAttachment.isImage ? t("admin_inbox.preview_image") : t("admin_inbox.file_attachment_fallback"))}
                 </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 10 }}>รอส่งพร้อมข้อความ · แนบได้ครั้งละ 1 รายการ</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 10 }}>{t("admin_inbox.waiting_to_send_hint")}</Typography.Text>
               </div>
-              <Button type="text" size="small" aria-label="นำไฟล์แนบออก" icon={<CloseOutlined />} onClick={() => setDraftAttachment(null)} />
+              <Button type="text" size="small" aria-label={t("admin_inbox.remove_attachment_aria")} icon={<CloseOutlined />} onClick={() => setDraftAttachment(null)} />
             </div>
           )}
           {/* เครื่องมือแนบอยู่แถวเดียวกับช่องพิมพ์ (เดิมเป็นแถวป้ายข้อความแยกด้านบน กินสูง ~34px
               ของพื้นที่สายแชททุกหน้าจอ) — เหลือไอคอนล้วน ความหมายอยู่ใน tooltip/aria-label */}
           <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
             <Space size={0} style={{ flexShrink: 0 }}>
-              <Popover content={emojiPicker} trigger="click" title="อีโมจิ">
-                <Button type="text" size="small" aria-label="อีโมจิ" icon={<SmileOutlined />} />
+              <Popover content={emojiPicker} trigger="click" title={t("admin_inbox.emoji_popover_title")}>
+                <Button type="text" size="small" aria-label={t("admin_inbox.emoji_aria")} icon={<SmileOutlined />} />
               </Popover>
-              <Tooltip title="แนบรูปไว้ในข้อความร่าง">
-                <Button type="text" size="small" aria-label="แนบรูป" icon={<PictureOutlined />} disabled={uploading && uploadAction !== "image"} loading={uploading && uploadAction === "image"} onClick={() => imgInputRef.current?.click()} />
+              <Tooltip title={t("admin_inbox.attach_image_tooltip")}>
+                <Button type="text" size="small" aria-label={t("admin_inbox.attach_image_aria")} icon={<PictureOutlined />} disabled={uploading && uploadAction !== "image"} loading={uploading && uploadAction === "image"} onClick={() => imgInputRef.current?.click()} />
               </Tooltip>
-              <Tooltip title="แนบไฟล์ไว้ในข้อความร่าง (สูงสุด 10MB)">
-                <Button type="text" size="small" aria-label="แนบไฟล์" icon={<PaperClipOutlined />} disabled={uploading && uploadAction !== "file"} loading={uploading && uploadAction === "file"} onClick={() => fileInputRef.current?.click()} />
+              <Tooltip title={t("admin_inbox.attach_file_tooltip")}>
+                <Button type="text" size="small" aria-label={t("admin_inbox.attach_file_aria")} icon={<PaperClipOutlined />} disabled={uploading && uploadAction !== "file"} loading={uploading && uploadAction === "file"} onClick={() => fileInputRef.current?.click()} />
               </Tooltip>
-              <Tooltip title="ค้นหาสินค้าและแทรกข้อมูลลงแชท">
-                <Button type="text" size="small" aria-label="แทรกสินค้า" icon={<ShoppingCartOutlined />} onClick={() => setProductPickerOpen(true)} />
+              <Tooltip title={t("admin_inbox.insert_product_tooltip")}>
+                <Button type="text" size="small" aria-label={t("admin_inbox.insert_product_aria")} icon={<ShoppingCartOutlined />} onClick={() => setProductPickerOpen(true)} />
               </Tooltip>
-              <Tooltip title="เลือกคูปองและแทรกเป็นข้อความพร้อมใช้งาน">
-                <Button type="text" size="small" aria-label="แทรกคูปอง" icon={<TagsOutlined />} onClick={() => setCouponPickerOpen(true)} />
+              <Tooltip title={t("admin_inbox.insert_coupon_tooltip")}>
+                <Button type="text" size="small" aria-label={t("admin_inbox.insert_coupon_aria")} icon={<TagsOutlined />} onClick={() => setCouponPickerOpen(true)} />
               </Tooltip>
             </Space>
             <Input.TextArea
@@ -1915,13 +1927,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               /* มือถือไม่มี Shift+Enter ให้กดอยู่แล้ว placeholder ยาว ๆ เลยได้แค่ตัด 2 บรรทัด —
                  คำอธิบายฉบับเต็มย้ายไป native tooltip (`title`) ของช่องพิมพ์บนเดสก์ท็อป ไม่ได้หายไป
                  และไม่ใช้ antd Tooltip เพราะมันจะเด้งค้างระหว่างพิมพ์ */
-              placeholder={isMobile ? "พิมพ์ตอบลูกค้า…" : "พิมพ์ตอบลูกค้า · Enter ส่ง"}
-              title={isMobile ? undefined : "Enter = ส่ง · Shift+Enter = ขึ้นบรรทัดใหม่"}
+              placeholder={isMobile ? t("admin_inbox.composer_placeholder_mobile") : t("admin_inbox.composer_placeholder_desktop")}
+              title={isMobile ? undefined : t("admin_inbox.composer_title_desktop")}
               style={{ flex: 1, resize: "none", fontSize: 12, borderRadius: 8, background: PANEL_SUNKEN_SURFACE }}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : "ส่ง"}</Button>
+              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : t("admin_inbox.send_button")}</Button>
           </div>
         </div>
       )}
@@ -1982,7 +1994,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             onChange={(e) => onNoteChange(e.target.value)}
             onKeyDown={onNoteKeyDown}
             disabled={noting}
-            placeholder="โน้ตภายใน (ลูกค้าไม่เห็น) · พิมพ์ @ เพื่อกล่าวถึง · Enter บันทึก"
+            placeholder={t("admin_inbox.note_placeholder")}
           />
           {noteMentionQuery !== null && (
             // เดิม gate ด้วย noteMentionCandidates.length > 0 — ถ้าร้านมี staff ให้เมนชันได้ 0 คน
@@ -1991,19 +2003,19 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             <List size="small" bordered
               style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: PANEL_SURFACE, border: "1px solid var(--app-border, rgba(15,23,42,0.12))", borderRadius: 12, boxShadow: RAISED_PANEL_SHADOW, maxHeight: 180, overflowY: "auto" }}
               dataSource={noteMentionCandidates}
-              locale={{ emptyText: <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>ไม่มีเพื่อนร่วมทีมให้กล่าวถึง</div> }}
+              locale={{ emptyText: <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>{t("admin_inbox.no_mention_candidates")}</div> }}
               renderItem={(s) => (
                 <List.Item style={{ cursor: "pointer", padding: "4px 8px" }} onClick={() => pickNoteMention(s)}>
-                  {staffLabel(s)}
+                  {staffLabel(s, t)}
                 </List.Item>
               )} />
           )}
         </div>
       )}
-      <List size="small" dataSource={conv.notes || []} locale={{ emptyText: "ยังไม่มีโน้ต" }}
+      <List size="small" dataSource={conv.notes || []} locale={{ emptyText: t("admin_inbox.no_notes_yet") }}
         renderItem={(n: Note) => (
           <List.Item>
-            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt)} {timeLabel(n.createdAt)}</Typography.Text>} description={renderNoteBody(n.body)} />
+            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt, t)} {timeLabel(n.createdAt)}</Typography.Text>} description={renderNoteBody(n.body)} />
           </List.Item>
         )} />
     </div>
@@ -2011,18 +2023,18 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 
   const customerTab = (
     <div>
-      {!canViewCustomer && <Empty description="ไม่มีสิทธิ์ดูข้อมูลลูกค้า" />}
-      {canViewCustomer && !conv.customerId && <Empty description="บทสนทนานี้ยังไม่ผูกกับลูกค้าในระบบ" />}
-      {canViewCustomer && conv.customerId && custLoading && !custData && <Typography.Text type="secondary">กำลังโหลด…</Typography.Text>}
+      {!canViewCustomer && <Empty description={t("admin_inbox.no_view_customer_permission")} />}
+      {canViewCustomer && !conv.customerId && <Empty description={t("admin_inbox.customer_not_linked")} />}
+      {canViewCustomer && conv.customerId && custLoading && !custData && <Typography.Text type="secondary">{t("admin_inbox.loading_label")}</Typography.Text>}
       {canViewCustomer && custData?.bmsCustomer && (
         <div>
           <Space size="large" wrap style={{ marginBottom: 12 }}>
-            <Statistic title="ยอดซื้อสะสม" value={custData.bmsCustomer.total_spent} suffix="฿" precision={0} />
-            <Statistic title="จำนวนออร์เดอร์" value={custData.bmsCustomer.order_count} />
+            <Statistic title={t("admin_inbox.lifetime_value_stat")} value={custData.bmsCustomer.total_spent} suffix="฿" precision={0} />
+            <Statistic title={t("admin_inbox.order_count_stat")} value={custData.bmsCustomer.order_count} />
           </Space>
           {(custData.bmsCustomer.tags || []).length > 0 && (
             <Space wrap style={{ marginBottom: 8 }}>
-              {custData.bmsCustomer.tags.map((t: string) => <Tag key={t} color="gold">{t}</Tag>)}
+              {custData.bmsCustomer.tags.map((tag: string) => <Tag key={tag} color="gold">{tag}</Tag>)}
             </Space>
           )}
           {custData.bmsCustomer.note && (
@@ -2031,11 +2043,11 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             </Typography.Paragraph>
           )}
           <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text strong style={{ fontSize: 12.5 }}>ประวัติการซื้อ</Typography.Text>
+          <Typography.Text strong style={{ fontSize: 12.5 }}>{t("admin_inbox.purchase_history_heading")}</Typography.Text>
           <List
             size="small"
             dataSource={custData.bmsCustomer.orders || []}
-            locale={{ emptyText: "ยังไม่เคยสั่งซื้อ" }}
+            locale={{ emptyText: t("admin_inbox.no_orders_yet") }}
             renderItem={(o: any) => (
               <List.Item
                 actions={canReorder ? [
@@ -2043,7 +2055,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                     key="reorder" type="link" size="small"
                     loading={reorderingId === o.id}
                     onClick={() => { setReorderingId(o.id); reorder({ variables: { id: o.id } }); }}
-                  >ซื้อซ้ำ</Button>,
+                  >{t("admin_inbox.reorder_button")}</Button>,
                 ] : undefined}
               >
                 <List.Item.Meta
@@ -2066,9 +2078,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 
   const timelineTab = (() => {
     const allRows: any[] = tlData?.bmsConversationTimeline || [];
-    const isCrossChannel = (t: any) => t.type === "ORDER" && !!t.channel && t.channel !== conv.channel;
+    const isCrossChannel = (row: any) => row.type === "ORDER" && !!row.channel && row.channel !== conv.channel;
     // "แชทนี้เท่านั้น" = ซ่อนออร์เดอร์ช่องทางอื่น (ออร์เดอร์ scope ตามลูกค้า ไม่ใช่ตามแชท)
-    const rows = tlThisChatOnly ? allRows.filter((t) => !isCrossChannel(t)) : allRows;
+    const rows = tlThisChatOnly ? allRows.filter((row) => !isCrossChannel(row)) : allRows;
 
     return (
       <div style={{ height: "100%", overflowY: "auto", paddingInlineEnd: 4 }}>
@@ -2080,58 +2092,58 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             size="small"
             value={tlThisChatOnly ? "chat" : "all"}
             onChange={(v) => setTlThisChatOnly(v === "chat")}
-            options={[{ label: "ทุกเหตุการณ์", value: "all" }, { label: "แชทนี้เท่านั้น", value: "chat" }]}
+            options={[{ label: t("admin_inbox.timeline_all_events"), value: "all" }, { label: t("admin_inbox.timeline_this_chat_only"), value: "chat" }]}
           />
         </div>
 
         {!tlData && (
           <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>
-            โหลด timeline
+            {t("admin_inbox.load_timeline_button")}
           </Button>
         )}
-        {tlData && rows.length === 0 && <Empty description="ไม่มีเหตุการณ์" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+        {tlData && rows.length === 0 && <Empty description={t("admin_inbox.no_events")} image={Empty.PRESENTED_IMAGE_SIMPLE} />}
 
-        {rows.map((t, index) => {
-          const showDay = index === 0 || dayKey(rows[index - 1].at) !== dayKey(t.at);
-          const meta = TIMELINE_TYPE[t.type] || { label: t.type, color: "default" };
-          const isOrder = t.type === "ORDER";
-          const crossChannel = isCrossChannel(t);
-          const dot = (isOrder ? ORDER_STATUS_DOT[t.status ?? ""] : TIMELINE_DOT[t.type]) || "#B4B2A9";
+        {rows.map((row, index) => {
+          const showDay = index === 0 || dayKey(rows[index - 1].at) !== dayKey(row.at);
+          const meta = timelineTypeMeta(row.type, t);
+          const isOrder = row.type === "ORDER";
+          const crossChannel = isCrossChannel(row);
+          const dot = (isOrder ? ORDER_STATUS_DOT[row.status ?? ""] : TIMELINE_DOT[row.type]) || "#B4B2A9";
           return (
-            <div key={`${t.type}-${t.at}-${t.ref ?? index}`}>
+            <div key={`${row.type}-${row.at}-${row.ref ?? index}`}>
               {showDay && (
                 <div style={{ textAlign: "center", margin: "10px 0 8px" }}>
                   <Typography.Text type="secondary" style={{ fontSize: 11.5, background: "rgba(0,0,0,0.04)", padding: "2px 10px", borderRadius: 10 }}>
-                    {dayLabel(t.at)}
+                    {dayLabel(row.at, t)}
                   </Typography.Text>
                 </div>
               )}
               <div style={{ position: "relative", borderInlineStart: "1px solid rgba(0,0,0,0.08)", marginInlineStart: 5, paddingInlineStart: 14, paddingBottom: 12 }}>
                 <span style={{ position: "absolute", inlineSize: 9, blockSize: 9, borderRadius: "50%", background: dot, insetInlineStart: -5, insetBlockStart: 5 }} />
                 <Space size={4} wrap style={{ lineHeight: 1.4 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(t.at)}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(row.at)}</Typography.Text>
                   <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
-                  {isOrder && t.channel && (
-                    <Tag color={crossChannel ? CHANNEL_COLOR[t.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
-                      {t.channel}{crossChannel ? " (ช่องทางอื่น)" : ""}
+                  {isOrder && row.channel && (
+                    <Tag color={crossChannel ? CHANNEL_COLOR[row.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
+                      {row.channel}{crossChannel ? t("admin_inbox.cross_channel_suffix") : ""}
                     </Tag>
                   )}
-                  {!isOrder && t.ref && <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {t.ref}</Typography.Text>}
+                  {!isOrder && row.ref && <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {row.ref}</Typography.Text>}
                 </Space>
                 <div style={{ fontSize: 12.5, marginTop: 3 }}>
                   {isOrder ? (
                     <Space size={6} wrap>
-                      <Typography.Text code copyable={{ text: t.entityId || t.ref }} style={{ fontSize: 11.5 }}>{t.ref}</Typography.Text>
-                      <span>{t.text}</span>
-                      {t.status && (
+                      <Typography.Text code copyable={{ text: row.entityId || row.ref }} style={{ fontSize: 11.5 }}>{row.ref}</Typography.Text>
+                      <span>{row.text}</span>
+                      {row.status && (
                         <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
-                          ตอนนี้: <Typography.Text style={{ fontSize: 11.5 }}>{t.status}</Typography.Text>
-                          {t.statusAt ? ` · ${dayLabel(t.statusAt)} ${timeLabel(t.statusAt)}` : ""}
+                          {t("admin_inbox.status_now_label")} <Typography.Text style={{ fontSize: 11.5 }}>{row.status}</Typography.Text>
+                          {row.statusAt ? ` · ${dayLabel(row.statusAt, t)} ${timeLabel(row.statusAt)}` : ""}
                         </Typography.Text>
                       )}
                     </Space>
                   ) : (
-                    <span>{t.text}</span>
+                    <span>{row.text}</span>
                   )}
                 </div>
               </div>
@@ -2142,12 +2154,12 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         {tlData && rows.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.06)" }}>
             <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
-              แสดง {rows.length.toLocaleString("th-TH")} เหตุการณ์
-              {tlThisChatOnly && allRows.length !== rows.length ? ` (ซ่อนช่องทางอื่น ${(allRows.length - rows.length).toLocaleString("th-TH")})` : ""}
-              {rows.length >= TIMELINE_MAX_PER_SOURCE ? " · ถึงเพดานการแสดงผล" : ""}
+              {t("admin_inbox.showing_events_count", { n: rows.length.toLocaleString("th-TH") })}
+              {tlThisChatOnly && allRows.length !== rows.length ? t("admin_inbox.hidden_other_channel_count", { n: (allRows.length - rows.length).toLocaleString("th-TH") }) : ""}
+              {rows.length >= TIMELINE_MAX_PER_SOURCE ? t("admin_inbox.reached_display_cap") : ""}
             </Typography.Text>
             <Button size="small" onClick={() => loadTimeline({ variables: { id: conv.id } })} loading={tlLoading}>
-              รีเฟรช
+              {t("admin_inbox.refresh_timeline_button")}
             </Button>
           </div>
         )}
@@ -2166,10 +2178,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         activeKey={activeTabKey}
         onChange={setActiveTabKey}
         items={[
-          { key: "chat", label: "แชท", children: chatTab },
-          { key: "customer", label: "ลูกค้า", children: customerTab },
-          { key: "notes", label: "โน้ต", children: notesTab },
-          { key: "timeline", label: "Timeline", children: timelineTab },
+          { key: "chat", label: t("admin_inbox.tab_chat"), children: chatTab },
+          { key: "customer", label: t("admin_inbox.tab_customer"), children: customerTab },
+          { key: "notes", label: t("admin_inbox.tab_notes"), children: notesTab },
+          { key: "timeline", label: t("admin_inbox.tab_timeline"), children: timelineTab },
         ]}
       />
       {/* Lightbox โปร่งแสง — พื้นหลังเป็น scrim เข้ม+เบลอ (เห็นสายแชทเลือน ๆ อยู่ข้างหลัง) แทนการ์ดขาว
@@ -2202,16 +2214,16 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                 {imagePreviewIndex + 1} / {chatImages.length}
               </span>
               <Space size={6}>
-                <Tooltip title="เปิดไฟล์ในแท็บใหม่">
+                <Tooltip title={t("admin_inbox.open_file_new_tab_tooltip")}>
                   <Button
                     shape="circle" size={isMobile ? "small" : "middle"} icon={<DownloadOutlined />}
-                    href={chatImages[imagePreviewIndex].url} target="_blank" aria-label="เปิดไฟล์"
+                    href={chatImages[imagePreviewIndex].url} target="_blank" aria-label={t("admin_inbox.open_file_aria")}
                     style={{ background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff" }}
                   />
                 </Tooltip>
                 <Button
                   shape="circle" size={isMobile ? "small" : "middle"} icon={<CloseOutlined />}
-                  onClick={() => setImagePreviewIndex(null)} aria-label="ปิด"
+                  onClick={() => setImagePreviewIndex(null)} aria-label={t("admin_inbox.close_aria")}
                   style={{ background: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.22)", color: "#fff" }}
                 />
               </Space>
@@ -2219,7 +2231,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
 
             <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? "0 44px 16px" : "0 64px 20px" }}>
               <Button
-                shape="circle" icon={<LeftOutlined />} onClick={() => movePreview(-1)} aria-label="รูปก่อนหน้า"
+                shape="circle" icon={<LeftOutlined />} onClick={() => movePreview(-1)} aria-label={t("admin_inbox.prev_image_aria")}
                 style={{
                   position: "absolute", left: isMobile ? 6 : 16, top: "50%", transform: "translateY(-50%)",
                   width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
@@ -2241,7 +2253,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                 </div>
               </div>
               <Button
-                shape="circle" icon={<RightOutlined />} onClick={() => movePreview(1)} aria-label="รูปถัดไป"
+                shape="circle" icon={<RightOutlined />} onClick={() => movePreview(1)} aria-label={t("admin_inbox.next_image_aria")}
                 style={{
                   position: "absolute", right: isMobile ? 6 : 16, top: "50%", transform: "translateY(-50%)",
                   width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,

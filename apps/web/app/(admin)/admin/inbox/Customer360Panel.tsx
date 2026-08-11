@@ -19,6 +19,7 @@ import {
 } from "@ant-design/icons";
 import Link from "next/link";
 import panelStyles from "./customer360.module.css";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph } = Typography;
 
@@ -146,9 +147,12 @@ const dateOnly = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateStrin
 const dateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
 const orderSubtotal = (order: any) =>
   (order?.items || []).reduce((sum: number, it: any) => sum + (Number(it.unitPrice) || 0) * (Number(it.qty) || 0), 0);
-const discountLabel = (order: any) =>
+const discountLabel = (order: any, t: (key: string, vars?: Record<string, any>) => string) =>
   Number(order?.discountAmount || 0) > 0
-    ? `ส่วนลด${order?.couponCode ? ` (${order.couponCode})` : ""}: -${money(order.discountAmount)}`
+    ? t("admin_inbox_customer360.orders_discount_label", {
+        coupon: order?.couponCode ? ` (${order.couponCode})` : "",
+        amount: money(order.discountAmount),
+      })
     : null;
 const couponStateColor: Record<string, string> = {
   ASSIGNED: "default",
@@ -157,13 +161,15 @@ const couponStateColor: Record<string, string> = {
   EXPIRED: "red",
   REVOKED: "volcano",
 };
-const couponStateLabel: Record<string, string> = {
-  ASSIGNED: "แจกแล้ว",
-  RESERVED: "จองกับออเดอร์",
-  REDEEMED: "ใช้แล้ว",
-  EXPIRED: "หมดอายุ",
-  REVOKED: "ยกเลิกสิทธิ์",
+const COUPON_STATE_KEY: Record<string, string> = {
+  ASSIGNED: "coupon_state_assigned",
+  RESERVED: "coupon_state_reserved",
+  REDEEMED: "coupon_state_redeemed",
+  EXPIRED: "coupon_state_expired",
+  REVOKED: "coupon_state_revoked",
 };
+const couponStateLabelText = (state: string, t: (key: string, vars?: Record<string, any>) => string) =>
+  COUPON_STATE_KEY[state] ? t(`admin_inbox_customer360.${COUPON_STATE_KEY[state]}`) : state;
 
 function SectionLoading() {
   return <Skeleton active paragraph={{ rows: 3 }} />;
@@ -171,11 +177,14 @@ function SectionLoading() {
 
 // ---- Section 1 — Customer Summary ------------------------------
 function SummarySection({ c, conv }: { c: any; conv: any }) {
-  if (!c) return <Empty description="ไม่มีข้อมูลลูกค้า" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!c) return <Empty description={t("admin_inbox_customer360.empty_no_customer_data")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const tagBadges: { label: string; color: string }[] = [
     ...(c.tags || []).includes("VIP") ? [{ label: "VIP", color: "gold" }] : [],
     ...(c.tags || []).includes("Fraud Risk") ? [{ label: "Fraud Risk", color: "red" }] : [],
-    c.isNewCustomer ? { label: "ลูกค้าใหม่", color: "blue" } : { label: "ลูกค้าประจำ", color: "cyan" },
+    c.isNewCustomer
+      ? { label: t("admin_inbox_customer360.customer_new"), color: "blue" }
+      : { label: t("admin_inbox_customer360.customer_returning"), color: "cyan" },
   ];
   return (
     <div>
@@ -185,24 +194,24 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
         <Avatar size={34} icon={<UserOutlined />} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 12.5, lineHeight: 1.25 }}>{c.name}</div>
-          <Text type="secondary" style={{ fontSize: 9.5 }}>ID: {c.id}</Text>
+          <Text type="secondary" style={{ fontSize: 9.5 }}>{t("admin_inbox_customer360.id_label", { id: c.id })}</Text>
         </div>
       </Space>
       <div style={{ margin: "6px 0" }}>
         <Space size={4} wrap>
-          {tagBadges.map((t) => <Tag key={t.label} color={t.color}>{t.label}</Tag>)}
-          {(c.tags || []).filter((t: string) => t !== "VIP" && t !== "Fraud Risk").map((t: string) => <Tag key={t}>{t}</Tag>)}
+          {tagBadges.map((tb) => <Tag key={tb.label} color={tb.color}>{tb.label}</Tag>)}
+          {(c.tags || []).filter((tag: string) => tag !== "VIP" && tag !== "Fraud Risk").map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
         </Space>
       </div>
       <Descriptions size="small" column={1} colon={false}>
-        <Descriptions.Item label="ลูกค้าตั้งแต่">{dateOnly(c.createdAt)}</Descriptions.Item>
-        <Descriptions.Item label="ภาษาที่ใช้">{c.preferredLanguage || "—"}</Descriptions.Item>
-        <Descriptions.Item label="เขตเวลา">{c.timezone || "—"}</Descriptions.Item>
-        <Descriptions.Item label="ช่องทางปัจจุบัน">
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_customer_since")}>{dateOnly(c.createdAt)}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_language")}>{c.preferredLanguage || "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_timezone")}>{c.timezone || "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_current_channel")}>
           <Pill tone={CHANNEL_PILL[conv?.channel] || DEFAULT_PILL}>{conv?.channel}</Pill>
         </Descriptions.Item>
-        <Descriptions.Item label="ผู้รับผิดชอบ">{conv?.assignedStaff?.name || conv?.assignedStaff?.email || "ยังไม่มอบหมาย"}</Descriptions.Item>
-        <Descriptions.Item label="สถานะแชท">{conv?.status}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_assignee")}>{conv?.assignedStaff?.name || conv?.assignedStaff?.email || t("admin_inbox_customer360.summary_unassigned")}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_conversation_status")}>{conv?.status}</Descriptions.Item>
       </Descriptions>
     </div>
   );
@@ -210,31 +219,32 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
 
 // ---- Section 2 — Contact Information ---------------------------
 function ContactSection({ c, identities, addresses }: { c: any; identities: any[]; addresses: any[] }) {
-  if (!c) return <Empty description="ไม่มีข้อมูลติดต่อ" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!c) return <Empty description={t("admin_inbox_customer360.contact_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const shipping = addresses.filter((a) => a.addressType === "shipping");
   const billing = addresses.filter((a) => a.addressType === "billing");
   return (
     <div>
       <Descriptions size="small" column={1} colon={false}>
-        <Descriptions.Item label="โทรศัพท์">{c.phone || "—"}</Descriptions.Item>
-        <Descriptions.Item label="อีเมล">{c.email || "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.contact_phone")}>{c.phone || "—"}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.contact_email")}>{c.email || "—"}</Descriptions.Item>
       </Descriptions>
       <Divider style={{ margin: "8px 0" }} />
-      <Text strong style={{ fontSize: 12 }}>ที่อยู่จัดส่ง</Text>
-      {shipping.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>ยังไม่มีที่อยู่</Text></div> : (
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_shipping_address")}</Text>
+      {shipping.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_no_address")}</Text></div> : (
         <List size="small" dataSource={shipping} renderItem={(a: any) => (
-          <List.Item>{a.label ? `${a.label}: ` : ""}{a.address}{a.isDefault ? <Tag color="blue" style={{ marginLeft: 6 }}>ค่าเริ่มต้น</Tag> : null}</List.Item>
+          <List.Item>{a.label ? `${a.label}: ` : ""}{a.address}{a.isDefault ? <Tag color="blue" style={{ marginLeft: 6 }}>{t("admin_inbox_customer360.contact_default_tag")}</Tag> : null}</List.Item>
         )} />
       )}
-      <Text strong style={{ fontSize: 12 }}>ที่อยู่ออกใบเสร็จ</Text>
-      {billing.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>ยังไม่มีที่อยู่</Text></div> : (
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_billing_address")}</Text>
+      {billing.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_no_address")}</Text></div> : (
         <List size="small" dataSource={billing} renderItem={(a: any) => (
           <List.Item>{a.label ? `${a.label}: ` : ""}{a.address}</List.Item>
         )} />
       )}
       <Divider style={{ margin: "8px 0" }} />
-      <Text strong style={{ fontSize: 12 }}>บัญชีที่เชื่อมต่อ</Text>
-      {identities.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>ไม่มีบัญชีเชื่อมต่อ</Text></div> : (
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_connected_accounts")}</Text>
+      {identities.length === 0 ? <div><Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_customer360.contact_no_connected_accounts")}</Text></div> : (
         <Space size={4} wrap style={{ marginTop: 4 }}>
           {identities.map((i) => (
             <Pill key={`${i.channel}-${i.externalRef}`} tone={CHANNEL_PILL[i.channel] || DEFAULT_PILL}>
@@ -249,6 +259,7 @@ function ContactSection({ c, identities, addresses }: { c: any; identities: any[
 
 // ---- Section 3 — Statistics --------------------------------------
 function StatsSection({ s }: { s: any }) {
+  const { t } = useI18n();
   if (!s) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const row = (label: string, value: React.ReactNode) => (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
@@ -257,15 +268,20 @@ function StatsSection({ s }: { s: any }) {
   );
   return (
     <div>
-      {row("มูลค่าตลอดอายุลูกค้า", money(s.lifetimeValue))}
-      {row("ออเดอร์ทั้งหมด", s.totalOrders)}
-      {row("มูลค่าเฉลี่ยต่อออเดอร์", money(s.avgOrderValue))}
-      {row("ออเดอร์สำเร็จ", s.completedOrders)}
-      {row("ออเดอร์ยกเลิก", s.cancelledOrders)}
-      {row("คืนเงิน", s.refundCount)}
-      {row("ออเดอร์ล่าสุด", dateOnly(s.lastOrderDate))}
-      {row("แชทล่าสุด", dateTime(s.lastConversationAt))}
-      {row("เวลาตอบกลับเฉลี่ย", s.avgResponseTimeSeconds != null ? `${Math.round(s.avgResponseTimeSeconds / 60)} นาที` : "—")}
+      {row(t("admin_inbox_customer360.stats_lifetime_value"), money(s.lifetimeValue))}
+      {row(t("admin_inbox_customer360.stats_total_orders"), s.totalOrders)}
+      {row(t("admin_inbox_customer360.stats_avg_order_value"), money(s.avgOrderValue))}
+      {row(t("admin_inbox_customer360.stats_completed_orders"), s.completedOrders)}
+      {row(t("admin_inbox_customer360.stats_cancelled_orders"), s.cancelledOrders)}
+      {row(t("admin_inbox_customer360.stats_refund_count"), s.refundCount)}
+      {row(t("admin_inbox_customer360.stats_last_order"), dateOnly(s.lastOrderDate))}
+      {row(t("admin_inbox_customer360.stats_last_conversation"), dateTime(s.lastConversationAt))}
+      {row(
+        t("admin_inbox_customer360.stats_avg_response_time"),
+        s.avgResponseTimeSeconds != null
+          ? t("admin_inbox_customer360.stats_minutes", { minutes: Math.round(s.avgResponseTimeSeconds / 60) })
+          : "—"
+      )}
     </div>
   );
 }
@@ -274,7 +290,8 @@ function StatsSection({ s }: { s: any }) {
 function RecentOrdersSection({
   orders, selectedOrderId, onOpenPreview,
 }: { orders: any[]; selectedOrderId: string | null; onOpenPreview: (orderId: string) => void }) {
-  if (!orders?.length) return <Empty description="ยังไม่มีออเดอร์" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!orders?.length) return <Empty description={t("admin_inbox_customer360.orders_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <Space direction="vertical" size={6} style={{ width: "100%" }}>
       {orders.map((o: any) => {
@@ -300,8 +317,8 @@ function RecentOrdersSection({
             </div>
             {(o.paymentStatus || o.shipmentStatus) && (
               <Space size={4} wrap style={{ marginBottom: 6 }}>
-                {o.paymentStatus && <OutlinePill>ชำระ: {o.paymentStatus}</OutlinePill>}
-                {o.shipmentStatus && <OutlinePill>จัดส่ง: {o.shipmentStatus}</OutlinePill>}
+                {o.paymentStatus && <OutlinePill>{t("admin_inbox_customer360.orders_payment_label", { status: o.paymentStatus })}</OutlinePill>}
+                {o.shipmentStatus && <OutlinePill>{t("admin_inbox_customer360.orders_shipment_label", { status: o.shipmentStatus })}</OutlinePill>}
               </Space>
             )}
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
@@ -309,21 +326,21 @@ function RecentOrdersSection({
               <Text strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{money(o.totalAmount)}</Text>
             </div>
             {o.trackingNo && (
-              <div style={{ fontSize: 11, color: "var(--app-muted, #64748b)" }}>เลขพัสดุ {o.trackingNo}</div>
+              <div style={{ fontSize: 11, color: "var(--app-muted, #64748b)" }}>{t("admin_inbox_customer360.orders_tracking_no", { trackingNo: o.trackingNo })}</div>
             )}
-            {discountLabel(o) && (
-              <div style={{ fontSize: 11, color: "var(--app-danger, #dc2626)", marginTop: 2 }}>{discountLabel(o)}</div>
+            {discountLabel(o, t) && (
+              <div style={{ fontSize: 11, color: "var(--app-danger, #dc2626)", marginTop: 2 }}>{discountLabel(o, t)}</div>
             )}
             <div style={{ fontSize: 11, color: "var(--app-muted, #64748b)", marginTop: 4, marginBottom: 8 }}>
               {(o.items || []).map((it: any) => `${it.sku}×${it.qty}`).join(", ")}
             </div>
             <Space size={6}>
               <Button size="small" type={selected ? "primary" : "default"} style={{ fontWeight: 600 }} onClick={() => onOpenPreview(o.id)}>
-                เปิดออเดอร์
+                {t("admin_inbox_customer360.orders_open_order")}
               </Button>
               {o.channel !== "web" && o.channel !== "test" && (
-                <Tooltip title="เปิดหน้าออเดอร์ในช่องทางต้นทาง (ยังไม่รองรับทุกช่องทาง)">
-                  <Button size="small" disabled>เปิด Marketplace</Button>
+                <Tooltip title={t("admin_inbox_customer360.orders_open_marketplace_tooltip")}>
+                  <Button size="small" disabled>{t("admin_inbox_customer360.orders_open_marketplace")}</Button>
                 </Tooltip>
               )}
             </Space>
@@ -337,12 +354,13 @@ function RecentOrdersSection({
 function OrderPreviewDrawer({
   open, order, onClose,
 }: { open: boolean; order: any | null; onClose: () => void }) {
+  const { t } = useI18n();
   return (
     <Drawer
       title={
         <Space size={8} wrap>
-          <Text strong>ดูออเดอร์แบบในแชท</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>(ไม่ออกจากหน้าแชท)</Text>
+          <Text strong>{t("admin_inbox_customer360.drawer_title")}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_customer360.drawer_subtitle")}</Text>
         </Space>
       }
       placement="right"
@@ -353,13 +371,13 @@ function OrderPreviewDrawer({
       extra={
         order ? (
           <Link href={`/admin/orders?highlight=${order.id}`} target="_blank" rel="noreferrer">
-            <Button size="small" type="primary">เปิดหน้า Orders เต็มจอ</Button>
+            <Button size="small" type="primary">{t("admin_inbox_customer360.drawer_open_orders_full")}</Button>
           </Link>
         ) : null
       }
     >
       {!order ? (
-        <Empty description="เลือกออเดอร์เพื่อดูรายละเอียด" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("admin_inbox_customer360.drawer_select_order")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Space size={6} wrap>
@@ -369,32 +387,32 @@ function OrderPreviewDrawer({
           </Space>
 
           <Descriptions size="small" column={1} colon={false}>
-            <Descriptions.Item label="วันที่">{dateTime(order.createdAt)}</Descriptions.Item>
-            <Descriptions.Item label="ยอดสินค้า">{money(orderSubtotal(order))}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_date")}>{dateTime(order.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_subtotal")}>{money(orderSubtotal(order))}</Descriptions.Item>
             {Number(order.discountAmount || 0) > 0 && (
-              <Descriptions.Item label={`ส่วนลด${order.couponCode ? ` (${order.couponCode})` : ""}`}>
+              <Descriptions.Item label={t("admin_inbox_customer360.drawer_discount_label", { coupon: order.couponCode ? ` (${order.couponCode})` : "" })}>
                 <Text type="danger">-{money(order.discountAmount)}</Text>
               </Descriptions.Item>
             )}
-            <Descriptions.Item label="ยอดรวมสุทธิ">{money(order.totalAmount)}</Descriptions.Item>
-            <Descriptions.Item label="การชำระเงิน">{order.paymentStatus || "—"}{order.paymentMethod ? ` · ${order.paymentMethod}` : ""}</Descriptions.Item>
-            <Descriptions.Item label="การจัดส่ง">
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_total")}>{money(order.totalAmount)}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_payment")}>{order.paymentStatus || "—"}{order.paymentMethod ? ` · ${order.paymentMethod}` : ""}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_shipment")}>
               {order.shipmentStatus || "—"}{order.carrier ? ` · ${order.carrier}` : ""}{order.trackingNo ? ` · ${order.trackingNo}` : ""}
             </Descriptions.Item>
           </Descriptions>
 
           <div>
-            <Text strong style={{ fontSize: 12 }}>สินค้า</Text>
+            <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.drawer_items")}</Text>
             <List
               size="small"
               dataSource={order.items || []}
-              locale={{ emptyText: "ไม่มีสินค้า" }}
+              locale={{ emptyText: t("admin_inbox_customer360.drawer_no_items") }}
               renderItem={(it: any) => (
                 <List.Item>
                   <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <div>
                       <Text style={{ fontSize: 12 }}>{it.sku}</Text>
-                      <div><Text type="secondary" style={{ fontSize: 11 }}>ไซซ์ {it.size || "—"} · จำนวน {it.qty}</Text></div>
+                      <div><Text type="secondary" style={{ fontSize: 11 }}>{t("admin_inbox_customer360.drawer_item_size_qty", { size: it.size || "—", qty: it.qty })}</Text></div>
                     </div>
                     <Text style={{ fontSize: 12 }}>{money((Number(it.unitPrice) || 0) * (Number(it.qty) || 0))}</Text>
                   </div>
@@ -406,8 +424,8 @@ function OrderPreviewDrawer({
           <Alert
             type="info"
             showIcon
-            message="ดูแบบเร็วจากหน้า Inbox"
-            description="ถ้าต้องแก้ไขลึกหรือทำงานต่อในหน้า Orders ให้ใช้ปุ่ม เปิดหน้า Orders เต็มจอ ซึ่งจะเปิดแท็บใหม่และไม่ทำให้หลุดจากแชทนี้"
+            message={t("admin_inbox_customer360.drawer_alert_title")}
+            description={t("admin_inbox_customer360.drawer_alert_desc")}
           />
         </Space>
       )}
@@ -417,32 +435,34 @@ function OrderPreviewDrawer({
 
 // ---- Section 5 — Products purchased ------------------------------
 function ProductStatList({ rows }: { rows: any[] }) {
-  if (!rows?.length) return <Text type="secondary" style={{ fontSize: 12 }}>ไม่มีข้อมูล</Text>;
+  const { t } = useI18n();
+  if (!rows?.length) return <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_no_data")}</Text>;
   return (
     <List size="small" dataSource={rows} renderItem={(p: any) => (
       <List.Item>
-        <Text style={{ fontSize: 12 }}>{p.name} × {p.qty} ({money(p.revenue)})</Text>
+        <Text style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_row", { name: p.name, qty: p.qty, revenue: money(p.revenue) })}</Text>
       </List.Item>
     )} />
   );
 }
 function ProductsSection({ products }: { products: any }) {
+  const { t } = useI18n();
   if (!products) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const has = products.topPurchased?.length || products.recentlyPurchased?.length;
-  if (!has) return <Empty description="ยังไม่มีสินค้าที่ซื้อ" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  if (!has) return <Empty description={t("admin_inbox_customer360.products_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <div>
-      <Text strong style={{ fontSize: 12 }}>ซื้อมากที่สุด</Text>
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_top")}</Text>
       <ProductStatList rows={products.topPurchased} />
-      <Text strong style={{ fontSize: 12 }}>ซื้อล่าสุด</Text>
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_recent")}</Text>
       <ProductStatList rows={products.recentlyPurchased} />
-      <Text strong style={{ fontSize: 12 }}>ซื้อบ่อย</Text>
+      <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_frequent")}</Text>
       <ProductStatList rows={products.frequentlyPurchased} />
       {products.favoriteCategories?.length > 0 && (
         <>
-          <Text strong style={{ fontSize: 12 }}>หมวดหมู่โปรด</Text>
+          <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.products_favorite_categories")}</Text>
           <Space size={4} wrap style={{ marginTop: 4 }}>
-            {products.favoriteCategories.map((cat: any) => <Tag key={cat.category}>{cat.category} ({cat.qty})</Tag>)}
+            {products.favoriteCategories.map((cat: any) => <Tag key={cat.category}>{t("admin_inbox_customer360.products_category_tag", { category: cat.category, qty: cat.qty })}</Tag>)}
           </Space>
         </>
       )}
@@ -453,7 +473,8 @@ function ProductsSection({ products }: { products: any }) {
 // ---- Section 6 — Current shopping cart ----------------------------
 // ไม่มีสถานะ DRAFT แยกในสคีมา — ใช้ order PENDING ล่าสุดที่ยังไม่มี payment แทน
 function CartSection({ draftOrder }: { draftOrder: any }) {
-  if (!draftOrder) return <Empty description="ไม่มีตะกร้าค้างอยู่" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!draftOrder) return <Empty description={t("admin_inbox_customer360.cart_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const subtotal = orderSubtotal(draftOrder);
   return (
     <div>
@@ -468,23 +489,23 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
       {Number(draftOrder.discountAmount || 0) > 0 && (
         <>
           <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 8 }}>
-            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>ยอดสินค้า</Text>
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>{t("admin_inbox_customer360.cart_subtotal")}</Text>
             <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{money(subtotal)}</Text>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <Text type="secondary" style={{ fontSize: 11, minWidth: 0, flex: 1 }}>
-              ส่วนลด{draftOrder.couponCode ? ` (${draftOrder.couponCode})` : ""}
+              {t("admin_inbox_customer360.cart_discount_label", { coupon: draftOrder.couponCode ? ` (${draftOrder.couponCode})` : "" })}
             </Text>
             <Text type="danger" style={{ fontSize: 11, flexShrink: 0 }}>-{money(draftOrder.discountAmount)}</Text>
           </div>
         </>
       )}
       <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--app-border, rgba(15,23,42,0.12))", display: "flex", alignItems: "baseline", gap: 8 }}>
-        <Text strong style={{ fontSize: 12, minWidth: 0, flex: 1 }}>รวมสุทธิ</Text>
+        <Text strong style={{ fontSize: 12, minWidth: 0, flex: 1 }}>{t("admin_inbox_customer360.cart_total")}</Text>
         <Text strong style={{ fontSize: 13, flexShrink: 0 }}>{money(draftOrder.totalAmount)}</Text>
       </div>
       <Link href={`/admin/orders?highlight=${draftOrder.id}`} style={{ display: "block", marginTop: 7 }}>
-        <Button size="small" block icon={<ShoppingOutlined />}>เปิด Draft Order</Button>
+        <Button size="small" block icon={<ShoppingOutlined />}>{t("admin_inbox_customer360.cart_open_draft")}</Button>
       </Link>
     </div>
   );
@@ -492,7 +513,8 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
 
 // ---- Section 7 — Notes (internal, staff only) ---------------------
 function NotesSection({ notes }: { notes: any[] }) {
-  if (!notes?.length) return <Empty description="ยังไม่มีโน้ต" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!notes?.length) return <Empty description={t("admin_inbox_customer360.notes_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <List size="small" dataSource={notes} renderItem={(n: any) => (
       <List.Item>
@@ -506,7 +528,8 @@ function NotesSection({ notes }: { notes: any[] }) {
 }
 
 function CouponWalletSection({ coupons }: { coupons: any[] }) {
-  if (!coupons?.length) return <Empty description="ยังไม่มีคูปองที่ผูกกับลูกค้าคนนี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  const { t } = useI18n();
+  if (!coupons?.length) return <Empty description={t("admin_inbox_customer360.coupon_wallet_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <List
       size="small"
@@ -515,25 +538,25 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
         <List.Item style={{ display: "block", padding: 7 }}>
           <Space size={5} wrap style={{ marginBottom: 3 }}>
             <Text strong style={{ fontSize: 12 }}>{coupon.code}</Text>
-            <Tag color={couponStateColor[coupon.state] || "default"}>{couponStateLabel[coupon.state] || coupon.state}</Tag>
-            {coupon.available ? <Tag color="green">พร้อมใช้</Tag> : <Tag color="default">ยังใช้ไม่ได้</Tag>}
+            <Tag color={couponStateColor[coupon.state] || "default"}>{couponStateLabelText(coupon.state, t)}</Tag>
+            {coupon.available ? <Tag color="green">{t("admin_inbox_customer360.coupon_available")}</Tag> : <Tag color="default">{t("admin_inbox_customer360.coupon_unavailable")}</Tag>}
           </Space>
 
           <div style={{ fontSize: 12, marginBottom: 2 }}>
-            {coupon.type === "PERCENT" ? `ลด ${coupon.value}%` : `ลด ${money(coupon.value)}`}
-            {coupon.minOrderAmount != null ? ` · ขั้นต่ำ ${money(coupon.minOrderAmount)}` : ""}
-            {coupon.discountPreview != null ? ` · คาดว่าจะลด ${money(coupon.discountPreview)}` : ""}
+            {coupon.type === "PERCENT" ? t("admin_inbox_customer360.coupon_percent_off", { value: coupon.value }) : t("admin_inbox_customer360.coupon_amount_off", { value: money(coupon.value) })}
+            {coupon.minOrderAmount != null ? t("admin_inbox_customer360.coupon_min_order", { amount: money(coupon.minOrderAmount) }) : ""}
+            {coupon.discountPreview != null ? t("admin_inbox_customer360.coupon_discount_preview", { amount: money(coupon.discountPreview) }) : ""}
           </div>
 
           <div style={{ fontSize: 12, color: "var(--app-muted, #888)" }}>
-            แจกเมื่อ {dateTime(coupon.assignedAt)}
-            {coupon.expiresAt ? ` · หมดอายุ ${dateTime(coupon.expiresAt)}` : " · ไม่กำหนดวันหมดอายุ"}
+            {t("admin_inbox_customer360.coupon_assigned_at", { date: dateTime(coupon.assignedAt) })}
+            {coupon.expiresAt ? t("admin_inbox_customer360.coupon_expires_at", { date: dateTime(coupon.expiresAt) }) : t("admin_inbox_customer360.coupon_no_expiry")}
           </div>
 
           {(coupon.state === "RESERVED" || coupon.state === "REDEEMED") && (coupon.reservedOrderId || coupon.redeemedOrderId) && (
             <div style={{ fontSize: 12, marginTop: 2 }}>
               <Text type="secondary">
-                {coupon.state === "REDEEMED" ? "ผูกกับออเดอร์ที่ใช้จริง" : "กำลังจองกับออเดอร์"}{" "}
+                {coupon.state === "REDEEMED" ? t("admin_inbox_customer360.coupon_bound_redeemed") : t("admin_inbox_customer360.coupon_bound_reserved")}{" "}
               </Text>
               <Link href={`/admin/orders?highlight=${coupon.redeemedOrderId || coupon.reservedOrderId}`}>
                 #{String(coupon.redeemedOrderId || coupon.reservedOrderId).slice(0, 8)}
@@ -546,9 +569,9 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
           )}
 
           <div style={{ fontSize: 11, color: "var(--app-muted, #888)", marginTop: 2 }}>
-            ใช้ไปแล้ว {coupon.customerUsedCount} ครั้ง
-            {coupon.remainingRedemptions != null ? ` · สิทธิ์รวมเหลือ ${coupon.remainingRedemptions}` : ""}
-            {coupon.source ? ` · ที่มา ${coupon.source}` : ""}
+            {t("admin_inbox_customer360.coupon_used_count", { count: coupon.customerUsedCount })}
+            {coupon.remainingRedemptions != null ? t("admin_inbox_customer360.coupon_remaining", { n: coupon.remainingRedemptions }) : ""}
+            {coupon.source ? t("admin_inbox_customer360.coupon_source", { source: coupon.source }) : ""}
           </div>
         </List.Item>
       )}
@@ -559,6 +582,7 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
 function AssignCouponModal({
   open, customerId, channel, customerRef, conversationId, canManage, onClose, onDone,
 }: { open: boolean; customerId: string | null; channel?: string | null; customerRef?: string | null; conversationId?: string | null; canManage: boolean; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, loading } = useQuery(Q_COUPONS_PICKER, {
     skip: !open || !canManage,
@@ -568,16 +592,16 @@ function AssignCouponModal({
     .filter((coupon: any) => coupon.active)
     .map((coupon: any) => ({
       value: coupon.code,
-      label: `${coupon.code} · ${coupon.type === "PERCENT" ? `${coupon.value}%` : money(coupon.value)}${coupon.expiresAt ? ` · หมดอายุ ${dateOnly(coupon.expiresAt)}` : ""}`,
+      label: `${coupon.code} · ${coupon.type === "PERCENT" ? `${coupon.value}%` : money(coupon.value)}${coupon.expiresAt ? t("admin_inbox_customer360.assign_coupon_option_expiry", { date: dateOnly(coupon.expiresAt) }) : ""}`,
     }));
 
   const [assignCoupon, { loading: saving }] = useMutation(M_ASSIGN_CUSTOMER_COUPON, {
     onCompleted: () => {
-      message.success("แจกคูปองให้ลูกค้าแล้ว");
+      message.success(t("admin_inbox_customer360.assign_coupon_success"));
       form.resetFields();
       onDone();
     },
-    onError: (e: any) => message.error(e?.message || "แจกคูปองไม่สำเร็จ"),
+    onError: (e: any) => message.error(e?.message || t("admin_inbox_customer360.assign_coupon_error")),
   });
 
   const submit = async () => {
@@ -596,12 +620,12 @@ function AssignCouponModal({
 
   return (
     <Modal
-      title="แจกคูปองให้ลูกค้าคนนี้"
+      title={t("admin_inbox_customer360.assign_coupon_modal_title")}
       open={open}
       onCancel={onClose}
       onOk={submit}
-      okText="แจกคูปอง"
-      cancelText="ยกเลิก"
+      okText={t("admin_inbox_customer360.assign_coupon_ok_text")}
+      cancelText={t("admin_inbox_customer360.cancel_text")}
       confirmLoading={saving}
       destroyOnClose
     >
@@ -609,21 +633,21 @@ function AssignCouponModal({
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="คูปองจะถูกเพิ่มเข้า wallet ของลูกค้าทันที"
-        description="หลังแจกแล้ว ลูกค้าคนนี้จะเห็น/ถูกเช็กสิทธิ์ผ่าน AI flow ได้ แม้ยังไม่ได้ส่งข้อความคูปองในแชท"
+        message={t("admin_inbox_customer360.assign_coupon_alert_title")}
+        description={t("admin_inbox_customer360.assign_coupon_alert_desc")}
       />
       <Form form={form} layout="vertical">
-        <Form.Item name="code" label="เลือกคูปอง" rules={[{ required: true, message: "กรุณาเลือกคูปอง" }]}>
+        <Form.Item name="code" label={t("admin_inbox_customer360.assign_coupon_field_label")} rules={[{ required: true, message: t("admin_inbox_customer360.assign_coupon_field_required") }]}>
           <Select
             showSearch
-            placeholder="เลือกโค้ดส่วนลด"
+            placeholder={t("admin_inbox_customer360.assign_coupon_placeholder")}
             loading={loading}
             options={couponOptions}
             filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
           />
         </Form.Item>
-        <Form.Item name="note" label="โน้ต (ไม่บังคับ)">
-          <Input placeholder="เช่น แจกชดเชย / แคมเปญเดือนนี้" />
+        <Form.Item name="note" label={t("admin_inbox_customer360.assign_coupon_note_label")}>
+          <Input placeholder={t("admin_inbox_customer360.assign_coupon_note_placeholder")} />
         </Form.Item>
       </Form>
     </Modal>
@@ -632,11 +656,12 @@ function AssignCouponModal({
 
 // ---- Section 8 — Timeline (lazy) -----------------------------------
 function TimelineSection({ customerId }: { customerId: string }) {
+  const { t } = useI18n();
   const [load, { data, loading, called }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   useEffect(() => { if (customerId) load({ variables: { customerId } }); }, [customerId]); // eslint-disable-line
   if (!called || loading) return <SectionLoading />;
   const entries = data?.bmsCustomerTimeline || [];
-  if (!entries.length) return <Empty description="ไม่มีเหตุการณ์" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  if (!entries.length) return <Empty description={t("admin_inbox_customer360.timeline_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <List size="small" dataSource={entries} renderItem={(t: any) => (
       <List.Item>
@@ -651,16 +676,20 @@ function TimelineSection({ customerId }: { customerId: string }) {
 
 // ---- Section 9 — AI Insights (lazy) --------------------------------
 function InsightsSection({ customerId }: { customerId: string }) {
+  const { t } = useI18n();
   const [load, { data, loading, called }] = useLazyQuery(Q_INSIGHTS, { fetchPolicy: "cache-first" });
   useEffect(() => { if (customerId) load({ variables: { customerId } }); }, [customerId]); // eslint-disable-line
   if (!called || loading) return <SectionLoading />;
   const insights = data?.bmsCustomerInsights;
-  if (!insights) return <Empty description="ยังไม่มีข้อมูลพอสรุป" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  if (!insights) return <Empty description={t("admin_inbox_customer360.insights_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <div>
       <Paragraph style={{ whiteSpace: "pre-wrap", fontSize: 12, marginBottom: 4 }}>{insights.summary}</Paragraph>
       <Text type="secondary" style={{ fontSize: 11 }}>
-        สรุปจากข้อมูลจริงในระบบเท่านั้น · {insights.cached ? "จากแคช" : "สร้างใหม่"} · {dateTime(insights.generatedAt)}
+        {t("admin_inbox_customer360.insights_footer", {
+          source: insights.cached ? t("admin_inbox_customer360.insights_cached") : t("admin_inbox_customer360.insights_fresh"),
+          date: dateTime(insights.generatedAt),
+        })}
       </Text>
     </div>
   );
@@ -672,6 +701,7 @@ type ProductOpt = { sku: string; name: string; variants: { size: string; availab
 function CreateOrderModal({
   open, conv, selectedCouponCode, onClose, onDone,
 }: { open: boolean; conv: any; selectedCouponCode?: string | null; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const { data: prodData, loading: prodLoading } = useQuery(Q_PRODUCTS_FOR_ORDER, {
     skip: !open, fetchPolicy: "cache-and-network",
@@ -687,10 +717,10 @@ function CreateOrderModal({
   const [create, { loading }] = useMutation(M_CREATE_ORDER, {
     onCompleted: (d: any) => {
       const res = d?.bmsCreateOrder;
-      if (res?.status === "CREATED") { message.success(res.message || "สร้างออร์เดอร์แล้ว"); form.resetFields(); onDone(); }
-      else message.error(res?.message || "สร้างออร์เดอร์ไม่สำเร็จ");
+      if (res?.status === "CREATED") { message.success(res.message || t("admin_inbox_customer360.create_order_success_default")); form.resetFields(); onDone(); }
+      else message.error(res?.message || t("admin_inbox_customer360.create_order_error_default"));
     },
-    onError: (e: any) => message.error(e?.message || "สร้างออร์เดอร์ไม่สำเร็จ"),
+    onError: (e: any) => message.error(e?.message || t("admin_inbox_customer360.create_order_error_default")),
   });
 
   const submit = async () => {
@@ -706,20 +736,20 @@ function CreateOrderModal({
 
   return (
     <Modal
-      title="สร้างออเดอร์ให้ลูกค้า" open={open} onCancel={onClose} onOk={submit}
-      confirmLoading={loading} okText="สร้างออเดอร์" cancelText="ยกเลิก" width={640} destroyOnClose
+      title={t("admin_inbox_customer360.create_order_modal_title")} open={open} onCancel={onClose} onOk={submit}
+      confirmLoading={loading} okText={t("admin_inbox_customer360.create_order_ok_text")} cancelText={t("admin_inbox_customer360.cancel_text")} width={640} destroyOnClose
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 16 }}
-        message={`ออเดอร์จะผูกกับลูกค้าคนนี้ผ่านช่องทาง ${conv?.channel || "web"} · ราคาตัดตามราคาปัจจุบันของสินค้า · จองสต็อกทันที (สถานะเริ่มต้น PENDING)`}
+        message={t("admin_inbox_customer360.create_order_alert", { channel: conv?.channel || "web" })}
       />
       {selectedCouponCode && (
         <Alert
           type="success"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`พบคูปองล่าสุดในแชท: ${selectedCouponCode}`}
-          description="ระบบใส่โค้ดให้ในฟอร์มแล้ว แต่ backend จะตรวจเงื่อนไขจริงอีกครั้งตอนสร้างออเดอร์"
+          message={t("admin_inbox_customer360.create_order_coupon_found_title", { code: selectedCouponCode })}
+          description={t("admin_inbox_customer360.create_order_coupon_found_desc")}
         />
       )}
       <Form form={form} layout="vertical" initialValues={{ items: [{ qty: 1 }] }}>
@@ -729,10 +759,10 @@ function CreateOrderModal({
               {fields.map(({ key, name, ...rest }) => (
                 <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
                   <Form.Item
-                    {...rest} name={[name, "sku"]} rules={[{ required: true, message: "เลือกสินค้า" }]}
+                    {...rest} name={[name, "sku"]} rules={[{ required: true, message: t("admin_inbox_customer360.create_order_select_product_required") }]}
                   >
                     <Select
-                      showSearch style={{ width: 220 }} placeholder="สินค้า" loading={prodLoading}
+                      showSearch style={{ width: 220 }} placeholder={t("admin_inbox_customer360.create_order_product_placeholder")} loading={prodLoading}
                       options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
                       filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
                       onChange={() => form.setFieldValue(["items", name, "size"], undefined)}
@@ -743,29 +773,29 @@ function CreateOrderModal({
                       const sku = form.getFieldValue(["items", name, "sku"]);
                       const prod = products.find((p) => p.sku === sku);
                       return (
-                        <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: "เลือกไซซ์" }]} style={{ marginBottom: 0 }}>
+                        <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: t("admin_inbox_customer360.create_order_select_size_required") }]} style={{ marginBottom: 0 }}>
                           <Select
-                            style={{ width: 170 }} placeholder="ไซซ์" disabled={!prod}
+                            style={{ width: 170 }} placeholder={t("admin_inbox_customer360.create_order_size_placeholder")} disabled={!prod}
                             options={(prod?.variants || []).map((v) => ({
-                              value: v.size, label: `${v.size} (เหลือ ${v.available})`, disabled: v.available <= 0,
+                              value: v.size, label: t("admin_inbox_customer360.create_order_size_available", { size: v.size, available: v.available }), disabled: v.available <= 0,
                             }))}
                           />
                         </Form.Item>
                       );
                     }}
                   </Form.Item>
-                  <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: "จำนวน" }]}>
-                    <InputNumber placeholder="จำนวน" min={1} style={{ width: 90 }} />
+                  <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: t("admin_inbox_customer360.create_order_qty_required") }]}>
+                    <InputNumber placeholder={t("admin_inbox_customer360.create_order_qty_placeholder")} min={1} style={{ width: 90 }} />
                   </Form.Item>
                   {fields.length > 1 && <MinusCircleOutlined onClick={() => remove(name)} />}
                 </Space>
               ))}
-              <Button type="dashed" onClick={() => add({ qty: 1 })} icon={<PlusOutlined />} block>เพิ่มรายการ</Button>
+              <Button type="dashed" onClick={() => add({ qty: 1 })} icon={<PlusOutlined />} block>{t("admin_inbox_customer360.create_order_add_item")}</Button>
             </>
           )}
         </Form.List>
-        <Form.Item name="couponCode" label="โค้ดส่วนลด (ไม่บังคับ)" style={{ marginTop: 16, marginBottom: 0 }}>
-          <Input placeholder="เช่น SAVE10" style={{ width: 220 }} />
+        <Form.Item name="couponCode" label={t("admin_inbox_customer360.create_order_coupon_label")} style={{ marginTop: 16, marginBottom: 0 }}>
+          <Input placeholder={t("admin_inbox_customer360.create_order_coupon_placeholder")} style={{ width: 220 }} />
         </Form.Item>
       </Form>
     </Modal>
@@ -776,6 +806,7 @@ function CreateOrderModal({
 function InvoiceModal({
   open, orders, onClose,
 }: { open: boolean; orders: any[]; onClose: () => void }) {
+  const { t } = useI18n();
   const [orderId, setOrderId] = useState<string | null>(null);
   const [load, { data, loading }] = useLazyQuery(Q_INVOICE, { fetchPolicy: "network-only" });
 
@@ -791,22 +822,22 @@ function InvoiceModal({
 
   return (
     <Modal
-      title="ใบแจ้งหนี้" open={open} onCancel={onClose} width={640} destroyOnClose
+      title={t("admin_inbox_customer360.invoice_modal_title")} open={open} onCancel={onClose} width={640} destroyOnClose
       footer={[
-        <Button key="close" onClick={onClose}>ปิด</Button>,
-        <Button key="print" type="primary" disabled={!doc} onClick={() => window.print()}>พิมพ์</Button>,
+        <Button key="close" onClick={onClose}>{t("admin_inbox_customer360.invoice_close")}</Button>,
+        <Button key="print" type="primary" disabled={!doc} onClick={() => window.print()}>{t("admin_inbox_customer360.invoice_print")}</Button>,
       ]}
     >
       <Select
         style={{ width: "100%", marginBottom: 16 }}
-        placeholder="เลือกออร์เดอร์" value={orderId ?? undefined}
+        placeholder={t("admin_inbox_customer360.invoice_select_order_placeholder")} value={orderId ?? undefined}
         options={(orders || []).map((o: any) => ({
-          value: o.id, label: `#${String(o.id).slice(0, 8)} · ${o.channel} · ${money(o.totalAmount)}`,
+          value: o.id, label: t("admin_inbox_customer360.invoice_select_option_label", { id: String(o.id).slice(0, 8), channel: o.channel, amount: money(o.totalAmount) }),
         }))}
         onChange={pick}
       />
       {loading ? <SectionLoading /> : !doc ? (
-        <Empty description="เลือกออร์เดอร์เพื่อออกใบแจ้งหนี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("admin_inbox_customer360.invoice_select_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
@@ -814,37 +845,37 @@ function InvoiceModal({
               <Text strong style={{ fontSize: 16 }}>{doc.store.name || "—"}</Text><br />
               <Text type="secondary" style={{ fontSize: 12 }}>{doc.store.address || ""}</Text><br />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {doc.store.phone ? `โทร ${doc.store.phone}` : ""}{doc.store.taxId ? ` · เลขผู้เสียภาษี ${doc.store.taxId}` : ""}
+                {doc.store.phone ? t("admin_inbox_customer360.invoice_phone", { phone: doc.store.phone }) : ""}{doc.store.taxId ? t("admin_inbox_customer360.invoice_tax_id", { taxId: doc.store.taxId }) : ""}
               </Text>
             </div>
             <div style={{ textAlign: "right" }}>
-              <Text strong>ใบแจ้งหนี้ #{doc.number}</Text><br />
+              <Text strong>{t("admin_inbox_customer360.invoice_number", { number: doc.number })}</Text><br />
               <Text type="secondary" style={{ fontSize: 12 }}>{dateOnly(doc.date)}</Text>
             </div>
           </div>
           <Descriptions size="small" column={2} colon={false} style={{ marginBottom: 12 }}>
-            <Descriptions.Item label="ลูกค้า">{doc.customerRef || "—"}</Descriptions.Item>
-            <Descriptions.Item label="ช่องทาง">{doc.channel || "—"}</Descriptions.Item>
-            {doc.paymentStatus && <Descriptions.Item label="สถานะออร์เดอร์">{doc.paymentStatus}</Descriptions.Item>}
+            <Descriptions.Item label={t("admin_inbox_customer360.invoice_customer")}>{doc.customerRef || "—"}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.invoice_channel")}>{doc.channel || "—"}</Descriptions.Item>
+            {doc.paymentStatus && <Descriptions.Item label={t("admin_inbox_customer360.invoice_order_status")}>{doc.paymentStatus}</Descriptions.Item>}
           </Descriptions>
           <Table
             size="small" pagination={false} rowKey={(r: any) => `${r.sku}-${r.size}`}
             dataSource={doc.lines}
             columns={[
-              { title: "สินค้า", dataIndex: "name" },
-              { title: "ไซซ์", dataIndex: "size", width: 60 },
-              { title: "จำนวน", dataIndex: "qty", width: 70, align: "right" as const },
-              { title: "ราคา/หน่วย", dataIndex: "unitPrice", width: 100, align: "right" as const, render: money },
-              { title: "รวม", dataIndex: "amount", width: 100, align: "right" as const, render: money },
+              { title: t("admin_inbox_customer360.invoice_col_product"), dataIndex: "name" },
+              { title: t("admin_inbox_customer360.invoice_col_size"), dataIndex: "size", width: 60 },
+              { title: t("admin_inbox_customer360.invoice_col_qty"), dataIndex: "qty", width: 70, align: "right" as const },
+              { title: t("admin_inbox_customer360.invoice_col_unit_price"), dataIndex: "unitPrice", width: 100, align: "right" as const, render: money },
+              { title: t("admin_inbox_customer360.invoice_col_amount"), dataIndex: "amount", width: 100, align: "right" as const, render: money },
             ]}
           />
           <div style={{ marginTop: 12, textAlign: "right" }}>
-            <div><Text type="secondary">ยอดสินค้า: </Text><Text>{money(doc.subtotal)}</Text></div>
+            <div><Text type="secondary">{t("admin_inbox_customer360.invoice_subtotal")}</Text><Text>{money(doc.subtotal)}</Text></div>
             {doc.discount > 0 && (
-              <div><Text type="secondary">ส่วนลด{doc.couponCode ? ` (${doc.couponCode})` : ""}: </Text><Text type="danger">-{money(doc.discount)}</Text></div>
+              <div><Text type="secondary">{t("admin_inbox_customer360.invoice_discount", { coupon: doc.couponCode ? ` (${doc.couponCode})` : "" })}</Text><Text type="danger">-{money(doc.discount)}</Text></div>
             )}
-            {doc.shippingFee != null && <div><Text type="secondary">ค่าส่ง: </Text><Text>{money(doc.shippingFee)}</Text></div>}
-            <div><Text strong style={{ fontSize: 15 }}>รวมทั้งหมด: {money(doc.total)}</Text></div>
+            {doc.shippingFee != null && <div><Text type="secondary">{t("admin_inbox_customer360.invoice_shipping")}</Text><Text>{money(doc.shippingFee)}</Text></div>}
+            <div><Text strong style={{ fontSize: 15 }}>{t("admin_inbox_customer360.invoice_total", { total: money(doc.total) })}</Text></div>
           </div>
           <Divider style={{ margin: "12px 0" }} />
           <Text type="secondary" style={{ fontSize: 11 }}>{doc.note}</Text>
@@ -891,6 +922,7 @@ function QaButton({
 }
 
 function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { can: (p: string) => boolean; conv: any; orders: any[]; onCreateOrder: () => void; onInvoice: () => void }) {
+  const { t } = useI18n();
   const hasRefundable = orders?.some((o) => o.paymentStatus === "CONFIRMED");
   return (
     <Space direction="vertical" size={2} style={{ width: "100%" }}>
@@ -898,35 +930,36 @@ function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { 
         icon={<PlusOutlined />}
         primary
         disabled={!can("order.create")}
-        tooltip={can("order.create") ? undefined : "ไม่มีสิทธิ์ order.create"}
+        tooltip={can("order.create") ? undefined : t("admin_inbox_customer360.qa_no_permission", { perm: "order.create" })}
         onClick={onCreateOrder}
       >
-        สร้างออเดอร์
+        {t("admin_inbox_customer360.qa_create_order")}
       </QaButton>
-      <QaButton icon={<ContainerOutlined />} href="/admin/products">ตรวจสอบสต็อก</QaButton>
+      <QaButton icon={<ContainerOutlined />} href="/admin/products">{t("admin_inbox_customer360.qa_check_stock")}</QaButton>
       <QaButton
         icon={<RollbackOutlined />}
         href="/admin/payment"
         disabled={!can("payment.refund") || !hasRefundable}
-        tooltip={!can("payment.refund") ? "ไม่มีสิทธิ์ payment.refund" : !hasRefundable ? "ไม่มีออเดอร์ที่ชำระแล้วให้คืนเงิน" : undefined}
+        tooltip={!can("payment.refund") ? t("admin_inbox_customer360.qa_no_permission", { perm: "payment.refund" }) : !hasRefundable ? t("admin_inbox_customer360.qa_refund_no_orders") : undefined}
       >
-        คืนเงิน
+        {t("admin_inbox_customer360.qa_refund")}
       </QaButton>
       <QaButton
         icon={<FileTextOutlined />}
         disabled={!can("order.view") || !orders?.length}
-        tooltip={!can("order.view") ? "ไม่มีสิทธิ์ order.view" : !orders?.length ? "ยังไม่มีออเดอร์ให้ออกใบแจ้งหนี้" : undefined}
+        tooltip={!can("order.view") ? t("admin_inbox_customer360.qa_no_permission", { perm: "order.view" }) : !orders?.length ? t("admin_inbox_customer360.qa_invoice_no_orders") : undefined}
         onClick={onInvoice}
       >
-        ออกใบแจ้งหนี้
+        {t("admin_inbox_customer360.qa_invoice")}
       </QaButton>
-      <QaButton icon={<UserOutlined />} href="/admin/customers">เปิดหน้าลูกค้า</QaButton>
+      <QaButton icon={<UserOutlined />} href="/admin/customers">{t("admin_inbox_customer360.qa_open_customer_page")}</QaButton>
     </Space>
   );
 }
 
 // ---- Main panel ------------------------------------------------
 export default function Customer360Panel({ conv, can, selectedCouponCode }: { conv: any; can: (p: string) => boolean; selectedCouponCode?: string | null }) {
+  const { t } = useI18n();
   const customerId: string | null = conv?.customerId ?? null;
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => { setCollapsed(window.localStorage.getItem(PANEL_COLLAPSE_KEY) === "1"); }, []);
@@ -953,7 +986,7 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
   if (collapsed) {
     return (
       <div style={{ width: 40, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 8 }}>
-        <Tooltip title="ขยายข้อมูลลูกค้า" placement="left">
+        <Tooltip title={t("admin_inbox_customer360.panel_expand_tooltip")} placement="left">
           <Button type="text" size="small" icon={<MenuUnfoldOutlined />} onClick={toggle} />
         </Tooltip>
       </div>
@@ -987,7 +1020,7 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
         borderRadius: "10px 10px 0 0",
         isolation: "isolate",
       }}>
-        <Text strong style={{ fontSize: 12 }}>ข้อมูลลูกค้า (Customer 360)</Text>
+        <Text strong style={{ fontSize: 12 }}>{t("admin_inbox_customer360.panel_title")}</Text>
         <Space size={4}>
           {conv?.id && can("coupon.manage") && (
             /* pill เส้นขอบจางตาม mockup — ปุ่มสี่เหลี่ยมเต็มใบเดิมแย่งน้ำหนักภาพกับหัวข้อแผงเอง */
@@ -996,26 +1029,26 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
               onClick={() => setAssignCouponOpen(true)}
               style={{ borderRadius: 999, paddingInline: 9, fontSize: 10.5, height: 22, fontWeight: 600, color: "#1677ff", borderColor: "rgba(22,119,255,0.3)" }}
             >
-              แจกคูปอง
+              {t("admin_inbox_customer360.panel_assign_coupon_btn")}
             </Button>
           )}
-          <Tooltip title="ย่อแผงข้อมูลลูกค้า">
+          <Tooltip title={t("admin_inbox_customer360.panel_collapse_tooltip")}>
             <Button type="text" size="small" icon={<MenuFoldOutlined />} onClick={toggle} />
           </Tooltip>
         </Space>
       </div>
 
       {!conv?.id ? (
-        <Empty description="ไม่พบบทสนทนานี้" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("admin_inbox_customer360.panel_no_conversation")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : loading && !c360 ? (
         <SectionLoading />
       ) : error ? (
         <Alert
           type="error"
           showIcon
-          message="โหลดข้อมูลลูกค้าไม่สำเร็จ"
-          description="กรุณาลองโหลดข้อมูลใหม่ หากยังไม่สำเร็จระบบจะแสดง error จริงแทนการแสดงว่าไม่มีข้อมูล"
-          action={<Button size="small" onClick={() => refetch()}>ลองใหม่</Button>}
+          message={t("admin_inbox_customer360.panel_load_error_title")}
+          description={t("admin_inbox_customer360.panel_load_error_desc")}
+          action={<Button size="small" onClick={() => refetch()}>{t("admin_inbox_customer360.panel_retry")}</Button>}
         />
       ) : (
         <Collapse
@@ -1024,21 +1057,21 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
           expandIconPosition="end"
           defaultActiveKey={["summary", "cart", "orders", "actions"]}
           items={[
-            { key: "summary", label: "สรุปลูกค้า", children: <SummarySection c={c360?.customer} conv={conv} /> },
-            { key: "coupons", label: `คูปองของลูกค้า${c360?.coupons?.length ? ` (${c360.coupons.length})` : ""}`, children: <CouponWalletSection coupons={c360?.coupons || []} /> },
-            { key: "cart", label: "ตะกร้าปัจจุบัน", children: <CartSection draftOrder={c360?.draftOrder} /> },
+            { key: "summary", label: t("admin_inbox_customer360.panel_section_summary"), children: <SummarySection c={c360?.customer} conv={conv} /> },
+            { key: "coupons", label: t("admin_inbox_customer360.panel_section_coupons", { count: c360?.coupons?.length ? ` (${c360.coupons.length})` : "" }), children: <CouponWalletSection coupons={c360?.coupons || []} /> },
+            { key: "cart", label: t("admin_inbox_customer360.panel_section_cart"), children: <CartSection draftOrder={c360?.draftOrder} /> },
             {
               key: "orders",
-              label: "ออเดอร์ล่าสุด (ทุกช่องทาง)",
+              label: t("admin_inbox_customer360.panel_section_orders"),
               children: <RecentOrdersSection orders={recentOrders} selectedOrderId={previewOrderId} onOpenPreview={setPreviewOrderId} />,
             },
-            { key: "actions", label: "Quick Actions", children: <QuickActionsSection can={can} conv={conv} orders={recentOrders} onCreateOrder={() => setCreateOrderOpen(true)} onInvoice={() => setInvoiceOpen(true)} /> },
-            { key: "contact", label: "ข้อมูลติดต่อ", children: <ContactSection c={c360?.customer} identities={c360?.identities || []} addresses={c360?.addresses || []} /> },
-            { key: "stats", label: "สถิติลูกค้า", children: <StatsSection s={c360?.stats} /> },
-            { key: "products", label: "สินค้าที่ซื้อ", children: <ProductsSection products={c360?.products} /> },
-            { key: "notes", label: "โน้ตภายใน (เฉพาะ staff)", children: <NotesSection notes={c360?.notes || []} /> },
-            { key: "timeline", label: "Timeline", children: resolvedCustomerId ? <TimelineSection customerId={resolvedCustomerId} /> : null },
-            { key: "insights", label: "AI Insights", children: resolvedCustomerId ? <InsightsSection customerId={resolvedCustomerId} /> : null },
+            { key: "actions", label: t("admin_inbox_customer360.panel_section_actions"), children: <QuickActionsSection can={can} conv={conv} orders={recentOrders} onCreateOrder={() => setCreateOrderOpen(true)} onInvoice={() => setInvoiceOpen(true)} /> },
+            { key: "contact", label: t("admin_inbox_customer360.panel_section_contact"), children: <ContactSection c={c360?.customer} identities={c360?.identities || []} addresses={c360?.addresses || []} /> },
+            { key: "stats", label: t("admin_inbox_customer360.panel_section_stats"), children: <StatsSection s={c360?.stats} /> },
+            { key: "products", label: t("admin_inbox_customer360.panel_section_products"), children: <ProductsSection products={c360?.products} /> },
+            { key: "notes", label: t("admin_inbox_customer360.panel_section_notes"), children: <NotesSection notes={c360?.notes || []} /> },
+            { key: "timeline", label: t("admin_inbox_customer360.panel_section_timeline"), children: resolvedCustomerId ? <TimelineSection customerId={resolvedCustomerId} /> : null },
+            { key: "insights", label: t("admin_inbox_customer360.panel_section_insights"), children: resolvedCustomerId ? <InsightsSection customerId={resolvedCustomerId} /> : null },
           ]}
         />
       )}
