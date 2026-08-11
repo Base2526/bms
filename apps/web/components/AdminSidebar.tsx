@@ -139,6 +139,7 @@ const link = (
 });
 
 const pharmacyQueueLink = (
+  t: (key: string) => string,
   collapsed: boolean,
   emergencyCount: number,
   pendingConfirmationCount: number,
@@ -155,8 +156,10 @@ const pharmacyQueueLink = (
         <span style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>
           Pharmacy Intake Queue
         </span>
-        {pendingConfirmationCount > 0 ? <span style={{ ...GOLD_PILL_STYLE, flexShrink: 0 }}>รอยืนยัน {badgeText(pendingConfirmationCount)}</span> : null}
-        {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>ฉุกเฉิน {badgeText(emergencyCount)}</span> : null}
+        {/* เดิม hardcode ไทยตรง ๆ ไม่มี fallback ภาษาอังกฤษเลย — ต่างกับ label อื่นในไฟล์นี้ที่เป็น
+            English เสมอหรือผ่าน t() ทั้งคู่ ตอนนี้ผ่าน t() ให้ตรงตาม lang cookie จริง */}
+        {pendingConfirmationCount > 0 ? <span style={{ ...GOLD_PILL_STYLE, flexShrink: 0 }}>{t('admin.pharmacy_queue_pending')} {badgeText(pendingConfirmationCount)}</span> : null}
+        {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>{t('admin.pharmacy_queue_emergency')} {badgeText(emergencyCount)}</span> : null}
       </Link>
     ) : (
       <Link href="/admin/pharmacy-queue">Pharmacy Intake Queue</Link>
@@ -343,7 +346,7 @@ export default function AdminSidebar() {
       label: t('admin.group_pharmacy'),
       children: [
         ...(canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <FileSearchOutlined />)] : []),
-        ...(canViewPharmacy ? [pharmacyQueueLink(effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
+        ...(canViewPharmacy ? [pharmacyQueueLink(t, effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
         ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <FileProtectOutlined />)] : []),
         ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <IdcardOutlined />)] : []),
       ],

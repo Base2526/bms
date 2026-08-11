@@ -4,6 +4,7 @@ import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert
 import { UploadOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
 import bcrypt from "bcryptjs";
+import { useI18n } from "@/lib/i18nContext";
 
 // TypeScript Types
 type Role = {
@@ -67,14 +68,15 @@ mutation($user_id:ID!, $file:Upload!){
 `;
 
 function FormEdit({ id }: { id: string }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, refetch } = useQuery(Q, { variables: { id } });
-  
+
   // Fetch available roles
   const { data: rolesData, loading: rolesLoading, error: rolesError } = useQuery(Q_ROLES);
-  
+
   const [save, { loading }] = useMutation(M_UPSERT, {
-    onCompleted: () => message.success('Saved'),
+    onCompleted: () => message.success(t("admin_users_edit.save_success")),
   });
   const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -86,16 +88,16 @@ function FormEdit({ id }: { id: string }) {
   // Determine initial role_id with fallback for backward compatibility
   const getInitialRoleId = (): string => {
     if (!u) return '';
-    
+
     // Prefer role_id if available
     if (u.role_id) return u.role_id;
-    
+
     // Fallback: match by role name for backward compatibility
     if (u.role && roles.length > 0) {
       const matchedRole = roles.find(r => r.name === u.role);
       if (matchedRole) return matchedRole.id;
     }
-    
+
     // Default to first role or empty
     return roles[0]?.id || '';
   };
@@ -113,13 +115,13 @@ function FormEdit({ id }: { id: string }) {
   }, [u, roles, form]);
 
   // Loading states
-  if (!u) return <div>Loading user...</div>;
-  if (rolesLoading) return <div>Loading roles...</div>;
+  if (!u) return <div>{t("admin_users_edit.loading_user")}</div>;
+  if (rolesLoading) return <div>{t("admin_users_edit.loading_roles")}</div>;
   if (rolesError) {
     return (
       <Alert
         type="error"
-        message="Error loading roles"
+        message={t("admin_users_edit.roles_load_error_title")}
         description={rolesError.message}
         showIcon
       />
@@ -129,8 +131,8 @@ function FormEdit({ id }: { id: string }) {
     return (
       <Alert
         type="warning"
-        message="No roles available"
-        description="Please create roles in the system before editing users."
+        message={t("admin_users_edit.no_roles_title")}
+        description={t("admin_users_edit.no_roles_desc")}
         showIcon
       />
     );
@@ -144,20 +146,20 @@ function FormEdit({ id }: { id: string }) {
       const url = data?.uploadAvatar;
       if (url) {
         setAvatarUrl(url);
-        message.success('Avatar updated');
+        message.success(t("admin_users_edit.avatar_updated"));
         refetch(); // refresh user info
       }
     } catch (e) {
       console.error(e);
-      message.error('Upload failed');
+      message.error(t("admin_users_edit.upload_failed"));
     }
   }
 
   return (
-    <Card title={`Edit User: ${u.name}`} style={{ maxWidth: 640 }}>
+    <Card title={`${t("admin_users_edit.title_prefix")} ${u.name}`} style={{ maxWidth: 640 }}>
       <Space direction="vertical" size={0} style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
-        {u.tenantName ? <span>ร้าน: <b>{u.tenantName}</b></span> : null}
-        <span>Last login: {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'ยังไม่เคย'}</span>
+        {u.tenantName ? <span>{t("admin_users_edit.shop_label")} <b>{u.tenantName}</b></span> : null}
+        <span>{t("admin_users_edit.last_login")} {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : t("admin_users_edit.never")}</span>
       </Space>
       <Form
         key={u.id}
@@ -180,22 +182,22 @@ function FormEdit({ id }: { id: string }) {
           const pwd: string = (v.password || '').trim();
           const pwd2: string = (v.confirmPassword || '').trim();
           if (pwd || pwd2) {
-            if (!pwd) { message.error('Password is empty'); return; }
-            if (pwd.length < 8) { message.error('Password must be at least 8 characters'); return; }
-            if (pwd !== pwd2) { message.error('Confirm password not match'); return; }
+            if (!pwd) { message.error(t("admin_users_edit.password_empty_error")); return; }
+            if (pwd.length < 8) { message.error(t("admin_users_edit.password_too_short")); return; }
+            if (pwd !== pwd2) { message.error(t("admin_users_edit.confirm_password_mismatch")); return; }
             dataToSend.passwordHash = await bcrypt.hash(pwd, 10);
           }
 
           // Validate role_id
           if (!dataToSend.role_id) {
-            message.error('Please select a role');
+            message.error(t("admin_users_edit.role_required_toast"));
             return;
           }
 
           await save({ variables: { id, data: dataToSend } });
         }}
       >
-        <Form.Item label="Avatar">
+        <Form.Item label={t("admin_users_edit.field_avatar")}>
           <Space direction="vertical">
             <div style={{ width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', background: 'var(--app-surface-2)' }}>
               {currentAvatar ? (
@@ -205,7 +207,7 @@ function FormEdit({ id }: { id: string }) {
                   width: '100%', height: '100%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: 'var(--app-muted)'
-                }}>No Avatar</div>
+                }}>{t("admin_users_edit.no_avatar")}</div>
               )}
             </div>
             <Upload
@@ -216,22 +218,22 @@ function FormEdit({ id }: { id: string }) {
               }}
               accept="image/*"
             >
-              <Button icon={<UploadOutlined />}>Change Avatar</Button>
+              <Button icon={<UploadOutlined />}>{t("admin_users_edit.change_avatar")}</Button>
             </Upload>
           </Space>
         </Form.Item>
-        <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
-        <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}><Input disabled /></Form.Item>
-        <Form.Item name="phone" label="Phone"><Input /></Form.Item>
+        <Form.Item name="name" label={t("admin_users_edit.field_name")} rules={[{ required: true }]}><Input /></Form.Item>
+        <Form.Item name="email" label={t("admin_users_edit.field_email")} rules={[{ required: true, type: 'email' }]}><Input disabled /></Form.Item>
+        <Form.Item name="phone" label={t("admin_users_edit.field_phone")}><Input /></Form.Item>
 
-        <Form.Item 
-          name="role_id" 
-          label="Role" 
-          rules={[{ required: true, message: 'Please select a role' }]}
-          tooltip="Select user role from available roles"
+        <Form.Item
+          name="role_id"
+          label={t("admin_users_edit.field_role")}
+          rules={[{ required: true, message: t("admin_users_edit.role_required") }]}
+          tooltip={t("admin_users_edit.role_tooltip")}
         >
-          <Select 
-            placeholder="Select a role"
+          <Select
+            placeholder={t("admin_users_edit.role_placeholder")}
             options={roles.map(role => ({
               value: role.id,
               label: role.name,
@@ -244,17 +246,17 @@ function FormEdit({ id }: { id: string }) {
 
         <Form.Item
           name="password"
-          label="New Password"
-          tooltip="Leave empty to keep current password"
-          rules={[{ min: 8, message: 'At least 8 characters' }]}
+          label={t("admin_users_edit.field_password")}
+          tooltip={t("admin_users_edit.password_tooltip")}
+          rules={[{ min: 8, message: t("admin_users_edit.password_min_length") }]}
           hasFeedback
         >
-          <Input.Password placeholder="(optional) new password" />
+          <Input.Password placeholder={t("admin_users_edit.password_placeholder")} />
         </Form.Item>
 
         <Form.Item
           name="confirmPassword"
-          label="Confirm New Password"
+          label={t("admin_users_edit.field_confirm_password")}
           dependencies={['password']}
           hasFeedback
           rules={[
@@ -263,17 +265,17 @@ function FormEdit({ id }: { id: string }) {
                 const pwd = getFieldValue('password');
                 if (!pwd && !value) return Promise.resolve();
                 if (pwd === value) return Promise.resolve();
-                return Promise.reject(new Error('Confirm password not match'));
+                return Promise.reject(new Error(t("admin_users_edit.confirm_password_mismatch")));
               },
             }),
           ]}
         >
-          <Input.Password placeholder="(optional) confirm password" />
+          <Input.Password placeholder={t("admin_users_edit.confirm_password_placeholder")} />
         </Form.Item>
 
         <Space>
-          <Button type="primary" htmlType="submit" loading={loading}>Save</Button>
-          <Button href="/admin/users">Back</Button>
+          <Button type="primary" htmlType="submit" loading={loading}>{t("admin_users_edit.save")}</Button>
+          <Button href="/admin/users">{t("admin_users_edit.back")}</Button>
         </Space>
       </Form>
     </Card>

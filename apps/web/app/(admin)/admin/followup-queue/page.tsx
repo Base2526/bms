@@ -4,6 +4,7 @@ import { Table, Tag, Button, Space, Alert, message, Typography, Tabs, Row, Col, 
 import { ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text } = Typography;
@@ -39,6 +40,7 @@ const HISTORY_OUTCOME_COLOR: Record<string, string> = {
 };
 
 export default function FollowupQueuePage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canManage = can("followup.manage");
   const { data, loading, error, refetch } = useQuery(Q, {
@@ -49,16 +51,18 @@ export default function FollowupQueuePage() {
   const [runNow, { loading: running }] = useMutation(M_RUN_NOW, {
     onCompleted: (d) => {
       const r = d?.bmsRunFollowupsNow;
-      message.success(`สแกนแล้ว ${r?.scanned ?? 0} รายการ — ส่ง ${r?.sent ?? 0} · ข้าม ${r?.skipped ?? 0} · ล้มเหลว ${r?.failed ?? 0}`);
+      message.success(t("admin_followup_queue.run_result", {
+        scanned: r?.scanned ?? 0, sent: r?.sent ?? 0, skipped: r?.skipped ?? 0, failed: r?.failed ?? 0,
+      }));
       refetch();
     },
-    onError: (e) => message.error(e?.message || "รันไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("admin_followup_queue.run_error")),
   });
 
   if (!permsLoading && !can("followup.view")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_followup_queue.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message="โหลดคิว follow-up ไม่ได้" description={error.message} />;
+  if (error) return <Alert type="error" showIcon message={t("admin_followup_queue.load_error")} description={error.message} />;
 
   const jobs = data?.bmsFollowupQueue || [];
   const history = data?.bmsFollowupHistory || [];
@@ -79,16 +83,16 @@ export default function FollowupQueuePage() {
 
   const jobColumns = [
     {
-      title: "แชท", dataIndex: "conversationId", key: "conversationId",
+      title: t("admin_followup_queue.col_conversation"), dataIndex: "conversationId", key: "conversationId",
       render: (_: string, row: any) => (
         <Space direction="vertical" size={0}>
           {conversationLink(row.conversationId)}
-          <Text type="secondary">{row.customerName || "ไม่ทราบชื่อลูกค้า"}</Text>
+          <Text type="secondary">{row.customerName || t("admin_followup_queue.col_customer_unknown")}</Text>
         </Space>
       ),
     },
-    { title: "Intent", dataIndex: "intent", key: "intent" },
-    { title: "เป้าหมาย", dataIndex: "messageGoal", key: "messageGoal" },
+    { title: t("admin_followup_queue.col_intent"), dataIndex: "intent", key: "intent" },
+    { title: t("admin_followup_queue.col_goal"), dataIndex: "messageGoal", key: "messageGoal" },
     {
       title: "Score", dataIndex: "score", key: "score",
       render: (v: number, row: any) => (
@@ -104,41 +108,41 @@ export default function FollowupQueuePage() {
       ),
     },
     {
-      title: "สถานะ", dataIndex: "status", key: "status",
+      title: t("admin_followup_queue.col_status"), dataIndex: "status", key: "status",
       render: (v: string) => <Tag color={JOB_STATUS_COLOR[v] || "default"}>{v}</Tag>,
     },
     {
-      title: "เงียบมา", dataIndex: "idleMinutes", key: "idleMinutes",
-      render: (v: number | null) => v == null ? "—" : `${v} นาที`,
+      title: t("admin_followup_queue.col_idle"), dataIndex: "idleMinutes", key: "idleMinutes",
+      render: (v: number | null) => v == null ? "—" : `${v} ${t("admin_followup_queue.idle_minutes_suffix")}`,
     },
-    { title: "รันครั้งถัดไป", dataIndex: "nextRunAt", key: "nextRunAt", render: (v: string) => new Date(v).toLocaleString() },
-    { title: "ลองแล้ว", dataIndex: "retryCount", key: "retryCount", align: "right" as const },
-    { title: "ผลล่าสุด", dataIndex: "lastResult", key: "lastResult", render: (v: string | null) => v || "—" },
+    { title: t("admin_followup_queue.col_next_run"), dataIndex: "nextRunAt", key: "nextRunAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_followup_queue.col_retry_count"), dataIndex: "retryCount", key: "retryCount", align: "right" as const },
+    { title: t("admin_followup_queue.col_last_result"), dataIndex: "lastResult", key: "lastResult", render: (v: string | null) => v || "—" },
   ];
 
   const historyColumns = [
-    { title: "แชท", dataIndex: "conversationId", key: "conversationId", render: conversationLink },
+    { title: t("admin_followup_queue.col_conversation"), dataIndex: "conversationId", key: "conversationId", render: conversationLink },
     {
-      title: "ผลลัพธ์", dataIndex: "outcome", key: "outcome",
+      title: t("admin_followup_queue.col_outcome"), dataIndex: "outcome", key: "outcome",
       render: (v: string) => <Tag color={HISTORY_OUTCOME_COLOR[v] || "default"}>{v}</Tag>,
     },
-    { title: "เป้าหมาย", dataIndex: "goal", key: "goal" },
-    { title: "เหตุผล", dataIndex: "reason", key: "reason", render: (v: string | null) => v || "—" },
+    { title: t("admin_followup_queue.col_goal"), dataIndex: "goal", key: "goal" },
+    { title: t("admin_followup_queue.col_reason"), dataIndex: "reason", key: "reason", render: (v: string | null) => v || "—" },
     {
-      title: "ข้อความที่ส่ง", dataIndex: "messageBody", key: "messageBody",
+      title: t("admin_followup_queue.col_message_body"), dataIndex: "messageBody", key: "messageBody",
       render: (v: string | null) => v ? <Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Text> : "—",
     },
-    { title: "เมื่อ", dataIndex: "createdAt", key: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_followup_queue.col_created_at"), dataIndex: "createdAt", key: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
   ];
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>Follow-up Queue</Typography.Title>}>
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_followup_queue.title")}</Typography.Title>}>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()}>รีเฟรช</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()}>{t("admin_followup_queue.refresh")}</Button>
           {canManage && (
             <Button type="primary" icon={<ThunderboltOutlined />} loading={running} onClick={() => runNow()}>
-              รันตอนนี้
+              {t("admin_followup_queue.run_now")}
             </Button>
           )}
         </Space>
@@ -147,7 +151,7 @@ export default function FollowupQueuePage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="รายการนี้อ่านจาก bms_followup_jobs/bms_followup_history — cron ยังไม่ได้ตั้ง schedule จริง ใช้ปุ่ม “รันตอนนี้” เพื่อทดสอบ"
+        message={t("admin_followup_queue.schedule_notice")}
       />
       {analytics && (
         <Space direction="vertical" size={12} style={{ width: "100%", marginBottom: 16 }}>
@@ -228,12 +232,12 @@ export default function FollowupQueuePage() {
         items={[
           {
             key: "queue",
-            label: `กำลังรอ/ล่าสุด (${jobs.length})`,
+            label: t("admin_followup_queue.tab_queue", { count: jobs.length }),
             children: <Table rowKey="id" loading={loading} dataSource={jobs} columns={jobColumns} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />,
           },
           {
             key: "history",
-            label: `ประวัติ (${history.length})`,
+            label: t("admin_followup_queue.tab_history", { count: history.length }),
             children: <Table rowKey="id" loading={loading} dataSource={history} columns={historyColumns} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />,
           },
         ]}

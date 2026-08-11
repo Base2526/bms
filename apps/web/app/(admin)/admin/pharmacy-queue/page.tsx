@@ -5,6 +5,7 @@ import { ReloadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text } = Typography;
@@ -42,18 +43,23 @@ const STATUS_COLOR: Record<string, string> = {
   CLOSED: "default",
 };
 const STATUS_OPTIONS = Object.keys(STATUS_COLOR).map((v) => ({ value: v, label: v }));
-const TIME_OPTIONS = [
-  { value: "", label: "ทุกช่วงเวลา" },
-  { value: "24h", label: "24 ชั่วโมงล่าสุด" },
-  { value: "7d", label: "7 วันล่าสุด" },
-  { value: "30d", label: "30 วันล่าสุด" },
-];
-const CONFIRMATION_OPTIONS = [
-  { value: "", label: "ทุกสถานะการยืนยัน" },
-  { value: "PENDING", label: "รอลูกค้ายืนยันสรุป" },
-  { value: "CONFIRMED", label: "ลูกค้ายืนยันแล้ว" },
-  { value: "NOT_REQUESTED", label: "ยังไม่ถึงขั้นยืนยัน" },
-];
+
+function timeOptions(t: (key: string) => string) {
+  return [
+    { value: "", label: t("admin_pharmacy_queue.time_all") },
+    { value: "24h", label: t("admin_pharmacy_queue.time_24h") },
+    { value: "7d", label: t("admin_pharmacy_queue.time_7d") },
+    { value: "30d", label: t("admin_pharmacy_queue.time_30d") },
+  ];
+}
+function confirmationOptions(t: (key: string) => string) {
+  return [
+    { value: "", label: t("admin_pharmacy_queue.confirm_all") },
+    { value: "PENDING", label: t("admin_pharmacy_queue.confirm_pending") },
+    { value: "CONFIRMED", label: t("admin_pharmacy_queue.confirm_confirmed") },
+    { value: "NOT_REQUESTED", label: t("admin_pharmacy_queue.confirm_not_requested") },
+  ];
+}
 
 function createdAfterFor(range: string): string | undefined {
   if (!range) return undefined;
@@ -77,29 +83,29 @@ function priorityForRow(row: any): number {
   return 6;
 }
 
-function buildColumns() {
+function buildColumns(t: (key: string, vars?: Record<string, any>) => string) {
   function renderConfirmationStatus(row: any) {
     const confirmationStatus = normalizeConfirmationStatus(row);
     if (confirmationStatus === "CONFIRMED") {
       return (
         <Space direction="vertical" size={2}>
-          <Tag color="green">ลูกค้ายืนยันแล้ว</Tag>
+          <Tag color="green">{t("admin_pharmacy_queue.confirm_confirmed")}</Tag>
           <Text type="secondary">{row.customerConfirmedAt ? new Date(row.customerConfirmedAt).toLocaleString() : "—"}</Text>
         </Space>
       );
     }
     if (confirmationStatus === "PENDING") {
-      return <Tag color="gold">รอลูกค้ายืนยันสรุป</Tag>;
+      return <Tag color="gold">{t("admin_pharmacy_queue.confirm_pending")}</Tag>;
     }
-    return <Tag>ยังไม่ถึงขั้นยืนยัน</Tag>;
+    return <Tag>{t("admin_pharmacy_queue.confirm_not_requested")}</Tag>;
   }
 
   function renderSummaryPreview(row: any) {
     const lines = Array.isArray(row.customerConfirmationSummary?.lines) ? row.customerConfirmationSummary.lines : [];
     if (lines.length === 0) {
-      if ((row.missingFields || []).length > 0) return <Text type="secondary">ยังเก็บข้อมูลไม่ครบ</Text>;
-      if ((row.conflictingFields || []).length > 0) return <Text type="warning">มีข้อมูลขัดแย้ง รอแก้ไข</Text>;
-      return <Text type="secondary">ยังไม่มี summary สำหรับยืนยัน</Text>;
+      if ((row.missingFields || []).length > 0) return <Text type="secondary">{t("admin_pharmacy_queue.summary_incomplete")}</Text>;
+      if ((row.conflictingFields || []).length > 0) return <Text type="warning">{t("admin_pharmacy_queue.summary_conflict")}</Text>;
+      return <Text type="secondary">{t("admin_pharmacy_queue.summary_none")}</Text>;
     }
     const preview = lines
       .slice(0, 2)
@@ -109,53 +115,54 @@ function buildColumns() {
     return (
       <Space direction="vertical" size={2}>
         <Text>{preview}</Text>
-        {remaining > 0 ? <Text type="secondary">+ อีก {remaining} รายการ</Text> : null}
+        {remaining > 0 ? <Text type="secondary">{t("admin_pharmacy_queue.summary_more", { count: remaining })}</Text> : null}
       </Space>
     );
   }
 
   return [
     {
-      title: "เคส",
+      title: t("admin_pharmacy_queue.col_case"),
       dataIndex: "id",
       key: "id",
       render: (id: string) => <Link href={`/admin/pharmacy-queue/${id}`}>{id.slice(0, 8)}</Link>,
     },
-    { title: "ผู้ป่วย", dataIndex: "patientRelationship", key: "patientRelationship" },
-    { title: "ช่องทาง", dataIndex: "channelId", key: "channelId", render: (v: string | null) => v || "—" },
+    { title: t("admin_pharmacy_queue.col_patient"), dataIndex: "patientRelationship", key: "patientRelationship" },
+    { title: t("admin_pharmacy_queue.col_channel"), dataIndex: "channelId", key: "channelId", render: (v: string | null) => v || "—" },
     {
-      title: "ความเสี่ยง",
+      title: t("admin_pharmacy_queue.col_risk"),
       dataIndex: "riskLevel",
       key: "riskLevel",
       render: (v: string) => <Tag color={RISK_COLOR[v] || "default"}>{v}</Tag>,
     },
     {
-      title: "สถานะ",
+      title: t("admin_pharmacy_queue.col_status"),
       dataIndex: "status",
       key: "status",
       render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag>,
     },
     {
-      title: "การยืนยันข้อมูล",
+      title: t("admin_pharmacy_queue.col_confirmation"),
       key: "confirmation",
       render: (_: unknown, row: any) => renderConfirmationStatus(row),
     },
     {
-      title: "สรุปล่าสุด",
+      title: t("admin_pharmacy_queue.col_summary"),
       key: "summaryPreview",
       render: (_: unknown, row: any) => renderSummaryPreview(row),
     },
     {
-      title: "AI",
+      title: t("admin_pharmacy_queue.col_ai"),
       dataIndex: "needsManualIntake",
       key: "needsManualIntake",
-      render: (v: boolean) => (v ? <Tag color="red">ต้องกรอกเอง (AI ไม่พร้อม)</Tag> : <Tag color="default">AI ปกติ</Tag>),
+      render: (v: boolean) => (v ? <Tag color="red">{t("admin_pharmacy_queue.ai_manual_required")}</Tag> : <Tag color="default">{t("admin_pharmacy_queue.ai_normal")}</Tag>),
     },
-    { title: "อัปเดตล่าสุด", dataIndex: "updatedAt", key: "updatedAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_pharmacy_queue.col_updated_at"), dataIndex: "updatedAt", key: "updatedAt", render: (v: string) => new Date(v).toLocaleString() },
   ];
 }
 
 export default function PharmacyQueuePage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [tab, setTab] = useState<"emergency" | "urgent" | "normal" | "all">("emergency");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
@@ -185,9 +192,9 @@ export default function PharmacyQueuePage() {
   });
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_pharmacy_queue.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message="โหลดคิว Pharmacy Intake ไม่ได้" description={error.message} />;
+  if (error) return <Alert type="error" showIcon message={t("admin_pharmacy_queue.load_error")} description={error.message} />;
 
   const baseRows = data?.bmsPharmacyAssessments || [];
   const confirmationCounts = baseRows.reduce(
@@ -213,25 +220,25 @@ export default function PharmacyQueuePage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>AI Pharmacy Intake — คิวเภสัชกร</Typography.Title>}>
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_pharmacy_queue.title")}</Typography.Title>}>
         <Space>
-          <a onClick={() => refetch()}><ReloadOutlined /> รีเฟรช</a>
+          <a onClick={() => refetch()}><ReloadOutlined /> {t("admin_pharmacy_queue.refresh")}</a>
         </Space>
       </AdminPageHeader>
       <Alert
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="AI เป็นผู้ช่วยเก็บข้อมูลเท่านั้น ไม่วินิจฉัยหรือแนะนำยา — เภสัชกรที่มีใบประกอบวิชาชีพเท่านั้นที่อนุมัติได้จริง (ตรวจซ้ำที่ฝั่ง server เสมอ)"
+        message={t("admin_pharmacy_queue.ai_disclaimer")}
       />
       <Tabs
         activeKey={tab}
         onChange={(k) => setTab(k as any)}
         items={[
-          { key: "emergency", label: "Emergency" },
-          { key: "urgent", label: "Urgent" },
-          { key: "normal", label: "Normal" },
-          { key: "all", label: "ทั้งหมด" },
+          { key: "emergency", label: t("admin_pharmacy_queue.tab_emergency") },
+          { key: "urgent", label: t("admin_pharmacy_queue.tab_urgent") },
+          { key: "normal", label: t("admin_pharmacy_queue.tab_normal") },
+          { key: "all", label: t("admin_pharmacy_queue.tab_all") },
         ]}
       />
       <Space wrap style={{ marginBottom: 12 }}>
@@ -240,27 +247,27 @@ export default function PharmacyQueuePage() {
           style={{ cursor: "pointer" }}
           onClick={() => setConfirmationFilter((prev) => (prev === "PENDING" ? "" : "PENDING"))}
         >
-          รอลูกค้ายืนยัน {confirmationCounts.PENDING}
+          {t("admin_pharmacy_queue.confirmation_pending_tag", { count: confirmationCounts.PENDING })}
         </Tag>
         <Tag
           color={confirmationFilter === "CONFIRMED" ? "processing" : "green"}
           style={{ cursor: "pointer" }}
           onClick={() => setConfirmationFilter((prev) => (prev === "CONFIRMED" ? "" : "CONFIRMED"))}
         >
-          ยืนยันแล้ว {confirmationCounts.CONFIRMED}
+          {t("admin_pharmacy_queue.confirmation_confirmed_tag", { count: confirmationCounts.CONFIRMED })}
         </Tag>
         <Tag
           color={confirmationFilter === "NOT_REQUESTED" ? "processing" : "default"}
           style={{ cursor: "pointer" }}
           onClick={() => setConfirmationFilter((prev) => (prev === "NOT_REQUESTED" ? "" : "NOT_REQUESTED"))}
         >
-          ยังไม่ถึงขั้นยืนยัน {confirmationCounts.NOT_REQUESTED}
+          {t("admin_pharmacy_queue.confirmation_not_requested_tag", { count: confirmationCounts.NOT_REQUESTED })}
         </Tag>
       </Space>
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder="กรองตามสถานะ"
+          placeholder={t("admin_pharmacy_queue.filter_status_placeholder")}
           style={{ width: 220 }}
           options={STATUS_OPTIONS}
           value={statusFilter}
@@ -268,19 +275,19 @@ export default function PharmacyQueuePage() {
         />
         <Select
           style={{ width: 220 }}
-          options={CONFIRMATION_OPTIONS}
+          options={confirmationOptions(t)}
           value={confirmationFilter}
           onChange={(v) => setConfirmationFilter(v)}
         />
         <Input
-          placeholder="กรองตามช่องทาง (channel)"
+          placeholder={t("admin_pharmacy_queue.filter_channel_placeholder")}
           style={{ width: 200 }}
           value={channelFilter}
           onChange={(e) => setChannelFilter(e.target.value)}
         />
-        <Select style={{ width: 160 }} options={TIME_OPTIONS} value={timeRange} onChange={(v) => setTimeRange(v)} />
+        <Select style={{ width: 160 }} options={timeOptions(t)} value={timeRange} onChange={(v) => setTimeRange(v)} />
       </Space>
-      <Table rowKey="id" loading={loading} dataSource={rows} columns={buildColumns()} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
+      <Table rowKey="id" loading={loading} dataSource={rows} columns={buildColumns(t)} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
     </div>
   );
 }
