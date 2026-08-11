@@ -132,9 +132,14 @@ Sale/Recover Abandoned Cart) and is stored in `bms_messages` like a normal AI re
 already replied, conversation closed, retry limit reached, customer opted out, rule disabled — are
 **always enforced by the scheduler**, not something a rule can turn off. Managed at
 `/admin/followup-rules` (`followup.manage`) and observed at `/admin/followup-queue`
-(`followup.view`, seeded to Sales as read-only). See `CLAUDE.local.md` § Follow-up Automation for
-what this MVP deliberately does not implement yet (multi-step workflow branching, a numeric scoring
-model, and analytics).
+(`followup.view`, seeded to Sales as read-only). As of 2026-08-11, the queue page also includes a
+**heuristic opportunity score** (`HOT/WARM/COOL`) per job plus a lightweight analytics summary for
+the last 30 days: sent/skipped/failed counts, reply rate after follow-up, order-after-follow-up
+rate, top goals/intents, and a 7-day trend. These v2 metrics are intentionally heuristic and
+observational: they help operators prioritize and review rule quality, but they do not yet replace
+the scheduler's rule matching with a separate numeric scoring engine. See `CLAUDE.local.md` §
+Follow-up Automation for what is still deliberately not implemented (multi-step workflow branching
+and a full scoring/workflow model).
 
 ## Self profile
 

@@ -105,6 +105,20 @@ const DEFINITIONS: OperationDefinition[] = [
     triggerFallback: "POST /api/bms/reports/send-digest",
     evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
   },
+  {
+    key: "followups",
+    name: "Follow-up Automation Run",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/followups/run/route.ts",
+    docsPath: "docs/business/crm.md",
+    triggerHint: "POST /api/bms/followups/run",
+    purposeFallback:
+      "Schedule new follow-up jobs for idle conversations, then process due jobs and record the outcomes.",
+    whenFallback: "Recommended every 2-5 minutes",
+    statusFallback: "Ready but unscheduled",
+    triggerFallback: "POST /api/bms/followups/run",
+    evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
+  },
 ];
 
 async function readSourceIfAvailable(sourcePath: string) {

@@ -85,6 +85,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Generated Reports & Document Export | ✅ | `lib/bms/{reportEngine,documentGenerator}.ts` · `7.53__bms_generated_reports.sql` · `/admin/reports` AI Report Generator + GraphQL/REST/AI tool entry points — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Sales Digest Reports (email/Slack/LINE) | ✅ | `lib/bms/reportDigest.ts` · `7.37__bms_report_subscriptions.sql` · `/admin/settings` card + platform-admin `/admin/report-schedule` + `POST /api/bms/reports/send-digest` cron (not yet scheduled) — see [../ui/dashboard.md](../ui/dashboard.md) |
+| Follow-up Automation | ✅ | `lib/bms/followups.ts` · `7.52__bms_followups.sql` · `/admin/followup-rules` + `/admin/followup-queue` + `POST /api/bms/followups/run` — queue includes heuristic score + 30-day analytics summary |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
 | Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
@@ -104,8 +105,9 @@ proactive external notification for Channel Health (e.g. LINE alert to the shop 
 admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
-an actual cron schedule for the three ready-but-unscheduled endpoints (`channels/check-health`,
-`ai/check-health`, `reports/send-digest`) — all three just need an external scheduler pointed at them.
+an actual cron schedule for the four ready-but-unscheduled endpoints (`channels/check-health`,
+`ai/check-health`, `reports/send-digest`, `followups/run`) — all four just need an external
+scheduler pointed at them.
 
 ## RBAC model (two tiers)
 
