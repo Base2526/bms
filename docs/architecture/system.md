@@ -81,7 +81,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
 | Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
-| Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
+| Shipping | ✅ | `lib/bms/shipping.ts` · migrations `5.4`, `7.76`, `7.77` · idempotent carrier booking, event history, manual/cron sync seam for Flash/Kerry (mock-ready, live merchant docs still pending) · [carrier integration checklist](../integrations/carriers.md) |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Generated Reports & Document Export | ✅ | `lib/bms/{reportEngine,documentGenerator}.ts` · `7.53__bms_generated_reports.sql` · `/admin/reports` AI Report Generator + GraphQL/REST/AI tool entry points — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Sales Digest Reports (email/Slack/LINE) | ✅ | `lib/bms/reportDigest.ts` · `7.37__bms_report_subscriptions.sql` · `/admin/settings` card + platform-admin `/admin/report-schedule` + `POST /api/bms/reports/send-digest` cron (not yet scheduled) — see [../ui/dashboard.md](../ui/dashboard.md) |

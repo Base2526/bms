@@ -691,6 +691,7 @@ export const typeDefs = /* GraphQL */ `
     bmsShipments(search: String, orderId: ID, status: BmsShipmentStatus, limit: Int = 50, offset: Int = 0): [BmsShipment!]!
     bmsShipment(id: ID!): BmsShipment
     bmsShipmentLabel(id: ID!): BmsShipmentLabel
+    bmsShipmentTrackingEvents(shipmentId: ID!, limit: Int = 100): [BmsShipmentTrackingEvent!]!
 
     # ===== BMS Inbox (admin) =====
     # assignedTo = user id ของ staff — กรอง conversation ที่เป็น staff หลัก "หรือ" คนช่วยตอบของคนนั้น (ใช้ทำ filter "ของฉัน")
@@ -1049,6 +1050,13 @@ export const typeDefs = /* GraphQL */ `
     trackingNo: String
     status: BmsShipmentStatus!
     labelUrl: String
+    externalShipmentId: String
+    carrierLastSyncedAt: String
+    carrierTrackingSource: String
+    carrierBookingStatus: String!
+    carrierBookingError: String
+    carrierBookingAttemptedAt: String
+    marketplaceManaged: Boolean!
     note: String
     createdAt: String!
     updatedAt: String!
@@ -1061,15 +1069,47 @@ export const typeDefs = /* GraphQL */ `
     orderId: ID!
     carrier: String!
     trackingNo: String
+    labelUrl: String
     shipTo: BmsLabelShipTo!
     items: [BmsLabelItem!]!
     createdAt: String!
+  }
+
+  type BmsShipmentTrackingEvent {
+    id: ID!
+    carrierStatus: String!
+    description: String!
+    occurredAt: String!
+    source: String!
   }
 
   type BmsShipmentResult {
     status: String!
     shipmentId: ID
     message: String
+    carrierIntegration: String
+    carrierBookingStatus: String
+  }
+
+  type BmsSyncShipmentLiveResult {
+    status: String!
+    shipmentId: ID
+    trackingNo: String
+    shipmentStatus: BmsShipmentStatus
+    source: String
+    eventCount: Int
+    completedOrder: Boolean
+    detail: String
+  }
+
+  type BmsCarrierBookingResult {
+    status: String!
+    shipmentId: ID
+    trackingNo: String
+    externalShipmentId: String
+    labelUrl: String
+    source: String
+    detail: String
   }
 
   # ===== BMS inbox =====
@@ -3031,6 +3071,8 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateTracking(id: ID!, trackingNo: String, carrier: BmsCarrier): Boolean!
     bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!   # DELIVERED → order COMPLETED
     bmsCancelShipment(id: ID!): Boolean!
+    bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
+    bmsSyncShipmentLive(id: ID!): BmsSyncShipmentLiveResult!
 
     # ===== BMS inbox (admin) =====
     bmsSendMessage(id: ID!, body: String, attachment: BmsAttachmentInput): BmsSendResult!   # ตอบเอง (persist + ยิงกลับช่องทาง) · body หรือ attachment อย่างน้อยหนึ่ง

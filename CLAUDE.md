@@ -30,6 +30,7 @@ for the full philosophy and module breakdown.
 | [docs/integrations/line.md](docs/integrations/line.md) | LINE webhook/reply |
 | [docs/integrations/tiktok.md](docs/integrations/tiktok.md) | TikTok webhook (send API = roadmap) |
 | [docs/integrations/lazada.md](docs/integrations/lazada.md) | Lazada + Shopee beta scaffold — what's real vs. placeholder |
+| [docs/integrations/carriers.md](docs/integrations/carriers.md) | Flash/Kerry carrier adapters — safety contract already implemented + checklist before enabling a live adapter |
 | [docs/ui/customer360.md](docs/ui/customer360.md) | Inbox "ลูกค้า" purchase-history tab, cross-channel merge, reorder |
 | [docs/ui/public-products.md](docs/ui/public-products.md) | Public product detail/gallery URLs shared from Inbox |
 | [docs/ui/inbox-diagnostics.md](docs/ui/inbox-diagnostics.md) | Admin-only realtime diagnostics: `Emit` vs `Create Msg` |
@@ -565,14 +566,39 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   Note: this migration was renumbered from `7.53` to `7.55` while merging `feat/redis-infra-improvements`
   into `feat/report-generation`, because `7.53` was already taken by
   `7.53__bms_generated_reports.sql` on this branch; `7.54` is `7.54__bms_report_email_permission.sql`.
+- **Carrier shipment booking + tracking sync (2026-08)** — 🧪 **safety layer complete, live Flash/Kerry
+  request shapes still unverified**: `bms_shipments` now carries carrier-integration state (migrations
+  `7.76`/`7.77` — `external_shipment_id`, `carrier_last_synced_at`, `carrier_tracking_source`,
+  `carrier_booking_status`/`_error`/`_attempted_at`) plus a normalized event history in
+  `bms_shipment_tracking_events`. `createShipment()` commits the local fulfillment transaction and
+  releases its order/inventory locks **before** any carrier call, then books with the shipment UUID as
+  a stable idempotency key; a failed/unconfigured/`not_implemented` carrier is persisted as a visible,
+  retryable state (`bmsBookShipmentLive`) instead of silently looking like a successful manual
+  shipment. `bmsSyncShipmentLive` (and cron `POST /api/bms/shipping/sync-carriers`, recommended every
+  15 minutes, **not yet scheduled** — it does record its run into `bms_job_runs` as
+  `carrier-tracking-sync`) re-locks and re-checks the shipment after the network call, writes
+  status + events atomically, never regresses a status or touches a terminal
+  `DELIVERED`/`RETURNED`/`CANCELLED` shipment, and keeps only HTTPS label URLs. Staff supplying a
+  tracking number at creation, and Lazada/Shopee orders, skip carrier booking entirely (already
+  created externally / marketplace-managed). Every carrier call is bounded by a 10-second timeout and
+  normalized into a typed result — adapters never throw. **What is still not real**: Flash and Kerry
+  remain mock-ready scaffolds; `getStatus()` reports `not_implemented` even with a key set, because
+  neither merchant contract (base URLs, auth/signing, consignment rules, callbacks) has been obtained
+  and this codebase does not guess payload shapes — same lesson as the Lazada/Shopee webhook
+  placeholder. Mock mode is tagged `source: "mock"` end-to-end and refuses to run in production. See
+  [docs/integrations/carriers.md](docs/integrations/carriers.md) for the live-enablement checklist.
 
-**Roadmap remaining:** TikTok send API · email/voice outbound · real carrier API (label PDF/auto-tracking) ·
+**Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
+(booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
+sync" above; what's missing is the carrier-issued merchant contract and credentials, then following
+[docs/integrations/carriers.md](docs/integrations/carriers.md)) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
 Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
 (Manager role) manage their own staff · wiring an actual cron schedule for the ready-but-unscheduled
 endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`, `reports/send-digest`,
-`followups/run`) — each of the first four now records its own run history (see "Cron/batch run history"
-above), it just isn't triggered automatically yet · adding a password/TLS to Redis before a real
+`followups/run`, `shipping/sync-carriers`) — each of them now records its own run history (see
+"Cron/batch run history" above), it just isn't triggered automatically yet · adding a password/TLS
+to Redis before a real
 production deploy (see "Redis infrastructure hardening" above) · Follow-up Automation's Workflow Engine,
 decision-driving scoring model, and deeper analytics/dashboarding beyond the current queue summary
 (see above).

@@ -19,6 +19,7 @@
 import { query } from "@/lib/db";
 import { getStoreProfile, type StoreProfile } from "./storeProfile";
 import { getCarrierClient } from "./carriers";
+import { runCarrierCall } from "./carriers/safeCall";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import {
   guessProvinceFromAddress,
@@ -165,12 +166,15 @@ export async function quoteShipping(input: ShippingQuoteInput): Promise<Shipping
     const carrier = isCarrier(input.carrier) ? (input.carrier as Carrier) : null;
     const client = carrier ? getCarrierClient(carrier) : null;
     const live = client?.quoteRate
-      ? await client.quoteRate({
-          originProvince: p.shippingOriginProvince,
-          destProvince: province,
-          totalGrams,
-          subtotal: num(input.subtotal),
-        })
+      ? await runCarrierCall(
+          () => client.quoteRate!({
+            originProvince: p.shippingOriginProvince,
+            destProvince: province,
+            totalGrams,
+            subtotal: num(input.subtotal),
+          }),
+          (detail) => ({ ok: false as const, reason: "carrier_error" as const, detail })
+        )
       : null;
 
     if (live?.ok) {

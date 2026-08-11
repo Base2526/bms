@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| Shipping | `bms_shipments` | `5.4` |
+| Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
@@ -112,6 +112,20 @@ mentioning one. `bms_order_items` snapshots `unit_price` at order time (not a li
 Since `7.21`, `bms_orders.total_amount` is the **post-discount** amount actually owed;
 `discount_amount`/`coupon_code` are snapshotted at order creation the same way item prices are, so
 totals stay correct even if the coupon is later edited or deleted.
+
+**Shipping carrier integration (`7.76`/`7.77`)** — both migrations are additive on `bms_shipments`;
+a manual shipment stays valid and simply keeps `carrier_booking_status = 'manual'` with the sync
+columns null. `7.76` adds `external_shipment_id`, `carrier_last_synced_at`, and
+`carrier_tracking_source` (`manual`/`live`/`mock`). `7.77` adds the retryable booking state —
+`carrier_booking_status` (`manual`/`ready`/`booking`/`booked`/`failed`/`unconfigured`/
+`not_implemented`), `carrier_booking_error`, `carrier_booking_attempted_at` — and replaces `7.76`'s
+lookup index with `uq_bms_shipments_external_shipment_id` on `(tenant_id, carrier,
+external_shipment_id)`, so an idempotent retry can never bind one carrier parcel to two local
+shipments. `bms_shipment_tracking_events` is the tenant-scoped, RLS-protected event history:
+`UNIQUE (shipment_id, carrier_status, occurred_at)` makes repeated polling idempotent, and
+`source` is constrained to `live`/`mock` so mock-mode data can never be read back as real carrier
+history. Carrier requests happen outside the fulfillment transaction, so these columns — not an
+in-transaction call result — are the record of what the carrier actually accepted.
 
 **`bms_coupons` (`7.21`)** — one row per discount code, `UNIQUE (tenant_id, code)`. `type` is
 `PERCENT` (capped at 100 by a `CHECK`) or `FIXED`. Redemption is applied inside the same transaction

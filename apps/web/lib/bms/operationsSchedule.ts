@@ -119,6 +119,19 @@ const DEFINITIONS: OperationDefinition[] = [
     triggerFallback: "POST /api/bms/followups/run",
     evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
   },
+  {
+    key: "carrier-tracking-sync",
+    name: "Carrier Tracking Sync",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/shipping/sync-carriers/route.ts",
+    docsPath: "docs/architecture/api.md",
+    triggerHint: "POST /api/bms/shipping/sync-carriers",
+    purposeFallback: "Refresh active Flash/Kerry shipment statuses from configured carrier adapters.",
+    whenFallback: "Recommended every 15 minutes",
+    statusFallback: "Ready but unscheduled",
+    triggerFallback: "POST /api/bms/shipping/sync-carriers",
+    evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
+  },
 ];
 
 async function readSourceIfAvailable(sourcePath: string) {

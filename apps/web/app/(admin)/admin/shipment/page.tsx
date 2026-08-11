@@ -7,7 +7,7 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import {
   ReloadOutlined, PlusOutlined, PrinterOutlined,
-  CloseCircleOutlined, EditOutlined,
+  CloseCircleOutlined, EditOutlined, SyncOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
@@ -20,6 +20,11 @@ type ShipStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED" | "RETURNED
 type Carrier = CarrierCode;
 type Shipment = {
   id: string; orderId: string; carrier: Carrier; trackingNo: string | null;
+  externalShipmentId: string | null; carrierLastSyncedAt: string | null;
+  carrierTrackingSource: "manual" | "live" | "mock" | null;
+  carrierBookingStatus: string; carrierBookingError: string | null;
+  carrierBookingAttemptedAt: string | null;
+  marketplaceManaged: boolean;
   status: ShipStatus; note: string | null; createdAt: string; updatedAt: string;
 };
 
@@ -27,7 +32,10 @@ type Shipment = {
 const Q_SHIPMENTS = gql`
   query BmsShipments($search: String, $status: BmsShipmentStatus, $limit: Int) {
     bmsShipments(search: $search, status: $status, limit: $limit) {
-      id orderId carrier trackingNo status note createdAt updatedAt
+      id orderId carrier trackingNo externalShipmentId carrierLastSyncedAt carrierTrackingSource
+      carrierBookingStatus carrierBookingError carrierBookingAttemptedAt
+      marketplaceManaged
+      status note createdAt updatedAt
     }
   }
 `;
@@ -37,16 +45,19 @@ const Q_PACKING_ORDERS = gql`
 const Q_LABEL = gql`
   query ($id: ID!) {
     bmsShipmentLabel(id: $id) {
-      shipmentId orderId carrier trackingNo createdAt
+      shipmentId orderId carrier trackingNo labelUrl createdAt
       shipTo { name phone address }
       items { sku size qty }
+    }
+    bmsShipmentTrackingEvents(shipmentId: $id, limit: 20) {
+      id carrierStatus description occurredAt source
     }
   }
 `;
 const M_CREATE = gql`
   mutation ($orderId: ID!, $carrier: BmsCarrier!, $trackingNo: String, $note: String) {
     bmsCreateShipment(orderId: $orderId, carrier: $carrier, trackingNo: $trackingNo, note: $note) {
-      status shipmentId message
+      status shipmentId message carrierIntegration carrierBookingStatus
     }
   }
 `;
@@ -57,6 +68,20 @@ const M_UPDATE_TRACKING = gql`
 `;
 const M_SET_STATUS = gql`mutation ($id: ID!, $status: BmsShipmentStatus!) { bmsSetShipmentStatus(id: $id, status: $status) }`;
 const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelShipment(id: $id) }`;
+const M_SYNC_LIVE = gql`
+  mutation ($id: ID!) {
+    bmsSyncShipmentLive(id: $id) {
+      status shipmentId trackingNo shipmentStatus source eventCount completedOrder detail
+    }
+  }
+`;
+const M_BOOK_LIVE = gql`
+  mutation ($id: ID!) {
+    bmsBookShipmentLive(id: $id) {
+      status shipmentId trackingNo externalShipmentId labelUrl source detail
+    }
+  }
+`;
 
 const STATUS_COLOR: Record<ShipStatus, string> = {
   PENDING: "orange", SHIPPED: "geekblue", IN_TRANSIT: "cyan", DELIVERED: "green", RETURNED: "red", CANCELLED: "default",
@@ -66,6 +91,7 @@ const STATUS_LABEL: Record<ShipStatus, string> = {
 };
 const CARRIERS: readonly Carrier[] = CARRIER_CODES;
 const CARRIER_LABEL = CARRIER_LABELS;
+const SYNCABLE_CARRIERS: readonly Carrier[] = ["FLASH", "KERRY"];
 const NEXT_STATUS: ShipStatus[] = ["IN_TRANSIT", "DELIVERED", "RETURNED"];
 const FILTERS = ["ALL", "PENDING", "SHIPPED", "IN_TRANSIT", "DELIVERED", "RETURNED", "CANCELLED"] as const;
 
@@ -98,13 +124,95 @@ function ShipmentManagement() {
   });
   const [setStatus, { loading: l1 }] = useMutation(M_SET_STATUS, boolOpts("อัปเดตสถานะแล้ว"));
   const [cancel, { loading: l2 }] = useMutation(M_CANCEL, boolOpts("ยกเลิกการจัดส่งแล้ว"));
-  const busy = l1 || l2;
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [bookingId, setBookingId] = useState<string | null>(null);
+  const [syncLive] = useMutation(M_SYNC_LIVE, {
+    onCompleted: (d: any) => {
+      const result = d?.bmsSyncShipmentLive;
+      if (result?.status === "SYNCED") {
+        message.success(`Sync สำเร็จ · ${result.shipmentStatus} · ${result.eventCount ?? 0} event(s) · ${result.source}`);
+        refetch();
+      } else {
+        const errors: Record<string, string> = {
+          SHIPMENT_NOT_FOUND: "ไม่พบรายการจัดส่ง",
+          TRACKING_REQUIRED: "กรุณาใส่เลขพัสดุก่อน sync",
+          NO_CARRIER_CLIENT: "ขนส่งนี้ยังไม่รองรับ API sync",
+          UNCONFIGURED: "ยังไม่ได้ตั้งค่า API key ของขนส่ง",
+          NOT_IMPLEMENTED: "ตั้งค่า key แล้ว แต่ live endpoint ยังไม่พร้อมใช้งาน",
+          CARRIER_ERROR: "Carrier API ตอบกลับผิดพลาด",
+          STALE_SHIPMENT: "ข้อมูล shipment เปลี่ยนระหว่าง sync กรุณาลองใหม่",
+        };
+        message.error(result?.detail || errors[result?.status] || "Sync สถานะไม่สำเร็จ");
+      }
+      setSyncingId(null);
+    },
+    onError: (e: any) => {
+      setSyncingId(null);
+      onErr(e);
+    },
+  });
+  const [bookLive] = useMutation(M_BOOK_LIVE, {
+    onCompleted: (d: any) => {
+      const result = d?.bmsBookShipmentLive;
+      if (result?.status === "BOOKED" || result?.status === "ALREADY_BOOKED") {
+        message.success(`จองพัสดุกับ carrier สำเร็จ · ${result.trackingNo || result.externalShipmentId} · ${result.source}`);
+        refetch();
+      } else {
+        const errors: Record<string, string> = {
+          SHIPMENT_NOT_FOUND: "ไม่พบรายการจัดส่ง",
+          TRACKING_ALREADY_SET: "รายการนี้มี tracking แล้ว จึงไม่สร้างพัสดุซ้ำ",
+          IN_PROGRESS: "กำลังจองพัสดุกับ carrier อยู่",
+          TERMINAL_SHIPMENT: "สถานะนี้ไม่อนุญาตให้จองพัสดุใหม่",
+          MARKETPLACE_MANAGED: "ออร์เดอร์นี้จัดการขนส่งผ่าน Seller Center",
+          NO_CARRIER_CLIENT: "ขนส่งนี้ยังไม่รองรับ API booking",
+          UNCONFIGURED: "ยังไม่ได้ตั้งค่า carrier credentials",
+          NOT_IMPLEMENTED: "live adapter ของขนส่งนี้ยังไม่พร้อมใช้งาน",
+          CARRIER_ERROR: "Carrier API ตอบกลับผิดพลาด",
+          STALE_SHIPMENT: "ข้อมูล shipment เปลี่ยนระหว่างจอง กรุณาโหลดใหม่",
+        };
+        message.error(result?.detail || errors[result?.status] || "จองพัสดุไม่สำเร็จ");
+        refetch();
+      }
+      setBookingId(null);
+    },
+    onError: (e: any) => {
+      setBookingId(null);
+      onErr(e);
+    },
+  });
+  const busy = l1 || l2 || syncingId !== null || bookingId !== null;
+
+  const runSync = (shipmentId: string) => {
+    setSyncingId(shipmentId);
+    syncLive({ variables: { id: shipmentId } });
+  };
+
+  const runBooking = (shipmentId: string) => {
+    setBookingId(shipmentId);
+    bookLive({ variables: { id: shipmentId } });
+  };
 
   const actionsFor = (r: Shipment) => {
     const btns: any[] = [];
     const done = r.status === "DELIVERED" || r.status === "CANCELLED" || r.status === "RETURNED";
     if (can("shipping.view")) {
       btns.push(<Button key="label" type="link" size="small" icon={<PrinterOutlined />} onClick={() => setLabelId(r.id)}>Label</Button>);
+    }
+    if (can("shipping.update") && r.trackingNo && SYNCABLE_CARRIERS.includes(r.carrier)) {
+      btns.push(
+        <Button key="sync" type="link" size="small" icon={<SyncOutlined spin={syncingId === r.id} />}
+          disabled={busy && syncingId !== r.id} loading={syncingId === r.id} onClick={() => runSync(r.id)}>
+          Sync carrier
+        </Button>
+      );
+    }
+    if (!done && !r.marketplaceManaged && can("shipping.update") && !r.trackingNo && SYNCABLE_CARRIERS.includes(r.carrier)) {
+      btns.push(
+        <Button key="book" type="link" size="small" icon={<SyncOutlined spin={bookingId === r.id} />}
+          disabled={busy && bookingId !== r.id} loading={bookingId === r.id} onClick={() => runBooking(r.id)}>
+          Book carrier
+        </Button>
+      );
     }
     if (!done && can("shipping.update")) {
       btns.push(<Button key="edit" type="link" size="small" icon={<EditOutlined />} disabled={busy} onClick={() => setEditShip(r)}>tracking</Button>);
@@ -139,6 +247,20 @@ function ShipmentManagement() {
         render: (t: string | null) => t ? <Typography.Text copyable>{t}</Typography.Text> : <span style={{ color: "#999" }}>—</span> },
       { title: "สถานะ", dataIndex: "status", key: "status", width: 140,
         render: (s: ShipStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
+      { title: "Carrier sync", key: "carrierSync", width: 170,
+        render: (_: any, r: Shipment) => r.carrierLastSyncedAt ? (
+          <Space direction="vertical" size={0}>
+            <Tag color={r.carrierTrackingSource === "live" ? "green" : "blue"}>{r.carrierTrackingSource || "carrier"}</Tag>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(r.carrierLastSyncedAt).toLocaleString()}</Typography.Text>
+          </Space>
+        ) : (
+          <Space direction="vertical" size={0}>
+            <Tag color={["failed", "unconfigured", "not_implemented"].includes(r.carrierBookingStatus) ? "red" : "default"}>
+              {r.carrierBookingStatus}
+            </Tag>
+            {r.carrierBookingError && <Typography.Text type="danger" ellipsis={{ tooltip: r.carrierBookingError }} style={{ maxWidth: 150, fontSize: 12 }}>{r.carrierBookingError}</Typography.Text>}
+          </Space>
+        ) },
       { title: "สร้างเมื่อ", dataIndex: "createdAt", key: "createdAt", width: 160,
         render: (d: string) => new Date(d).toLocaleString() },
       { title: "Actions", key: "actions", width: 320,
@@ -203,6 +325,12 @@ function ShipmentManagement() {
                     ? <Typography.Text copyable>{r.trackingNo}</Typography.Text>
                     : <span style={{ color: "#999" }}>—</span>,
                 },
+                {
+                  label: "Carrier sync",
+                  value: r.carrierLastSyncedAt
+                    ? `${r.carrierTrackingSource || "carrier"} · ${new Date(r.carrierLastSyncedAt).toLocaleString()}`
+                    : `${r.carrierBookingStatus}${r.carrierBookingError ? ` · ${r.carrierBookingError}` : ""}`,
+                },
                 { label: "สร้างเมื่อ", value: new Date(r.createdAt).toLocaleString() },
               ]}
               actions={actionsFor(r)}
@@ -247,7 +375,12 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
   const [create, { loading }] = useMutation(M_CREATE, {
     onCompleted: (d: any) => {
       const r = d?.bmsCreateShipment;
-      if (r?.status === "CREATED") { message.success(r.message || "สร้างแล้ว"); form.resetFields(); onDone(); }
+      if (r?.status === "CREATED") {
+        const bookingFailed = ["UNCONFIGURED", "NOT_IMPLEMENTED", "CARRIER_ERROR", "STALE_SHIPMENT"].includes(r.carrierBookingStatus);
+        (bookingFailed ? message.warning : message.success)(r.message || "สร้างแล้ว");
+        form.resetFields();
+        onDone();
+      }
       else message.error(r?.message || "สร้างไม่สำเร็จ");
     },
     onError: (e: any) => message.error(e?.message || "สร้างไม่สำเร็จ"),
@@ -342,26 +475,46 @@ function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClos
   useEffect(() => { if (shipmentId) load({ variables: { id: shipmentId } }); }, [shipmentId, load]);
 
   const label = data?.bmsShipmentLabel;
+  const trackingEvents = data?.bmsShipmentTrackingEvents || [];
   return (
     <Modal title="ใบปะหน้าพัสดุ (Label)" open={!!shipmentId} onCancel={onClose} footer={null}
       width={panelWidth(isMobile, 520)} destroyOnClose>
       {loading && <Typography.Text type="secondary">กำลังโหลด...</Typography.Text>}
       {label && (
-        // มือถือใช้ layout แนวตั้ง — bordered แนวนอนบีบคอลัมน์ label/value จนที่อยู่อ่านไม่ออก
-        <Descriptions bordered column={1} size="small" layout={isMobile ? "vertical" : "horizontal"}>
-          <Descriptions.Item label="ขนส่ง">{CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
-          <Descriptions.Item label="เลขพัสดุ">{label.trackingNo || "—"}</Descriptions.Item>
-          <Descriptions.Item label="Order">{label.orderId.slice(0, 8)}</Descriptions.Item>
-          <Descriptions.Item label="ผู้รับ">{label.shipTo?.name || "—"}</Descriptions.Item>
-          <Descriptions.Item label="โทร">{label.shipTo?.phone || "—"}</Descriptions.Item>
-          <Descriptions.Item label="ที่อยู่">{label.shipTo?.address || "—"}</Descriptions.Item>
-          <Descriptions.Item label="รายการ">
-            {(label.items || []).map((it: any) => `${it.sku} ${it.size} ×${it.qty}`).join(", ") || "—"}
-          </Descriptions.Item>
-        </Descriptions>
+        <>
+          {label.labelUrl && (
+            <Button type="primary" href={label.labelUrl} target="_blank" rel="noreferrer" icon={<PrinterOutlined />} style={{ marginBottom: 16 }}>
+              เปิด label จาก carrier
+            </Button>
+          )}
+          {/* มือถือใช้ layout แนวตั้งเพื่อให้ที่อยู่ยังอ่านได้ */}
+          <Descriptions bordered column={1} size="small" layout={isMobile ? "vertical" : "horizontal"}>
+            <Descriptions.Item label="ขนส่ง">{CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
+            <Descriptions.Item label="เลขพัสดุ">{label.trackingNo || "—"}</Descriptions.Item>
+            <Descriptions.Item label="Order">{label.orderId.slice(0, 8)}</Descriptions.Item>
+            <Descriptions.Item label="ผู้รับ">{label.shipTo?.name || "—"}</Descriptions.Item>
+            <Descriptions.Item label="โทร">{label.shipTo?.phone || "—"}</Descriptions.Item>
+            <Descriptions.Item label="ที่อยู่">{label.shipTo?.address || "—"}</Descriptions.Item>
+            <Descriptions.Item label="รายการ">
+              {(label.items || []).map((it: any) => `${it.sku} ${it.size} ×${it.qty}`).join(", ") || "—"}
+            </Descriptions.Item>
+            {trackingEvents.length > 0 && (
+              <Descriptions.Item label="Tracking timeline">
+                <Space direction="vertical" size={4}>
+                  {trackingEvents.map((event: any) => (
+                    <Typography.Text key={event.id} style={{ fontSize: 12 }}>
+                      {new Date(event.occurredAt).toLocaleString()} · {event.carrierStatus} · {event.description}
+                      {event.source === "mock" ? " (mock)" : ""}
+                    </Typography.Text>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        </>
       )}
       <Alert type="info" showIcon style={{ marginTop: 16 }}
-        message="ยังไม่ได้เชื่อม API ขนส่งจริง — ข้อมูลนี้สำหรับพิมพ์/คัดลอกด้วยตนเอง" />
+        message="ระบบใช้ label จาก carrier เมื่อ API ส่งกลับมาได้ และยังใช้ข้อมูลนี้สำหรับพิมพ์/คัดลอกด้วยตนเองเป็น fallback" />
     </Modal>
   );
 }
