@@ -7,6 +7,7 @@ import {
 } from "antd";
 import { CustomerServiceOutlined, SaveOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -107,18 +108,20 @@ type SupportTicket = {
   comments: SupportTicketComment[];
 };
 
-const TOPIC_LABEL: Record<string, string> = {
-  channel_setup: "ตั้งค่าช่องทาง / Webhook",
-  ai_inbox: "ผู้ช่วย AI / Inbox",
-  orders_inventory: "ออเดอร์ / สต๊อก / Restock",
-  payments_checkout: "ชำระเงิน / Checkout",
-  reports_billing: "Reports / Billing",
-  bug: "Bug",
-  feature: "Feature",
-  general: "ทั่วไป",
-  account: "บัญชีผู้ใช้",
-  billing: "Billing",
-};
+function topicLabels(t: (key: string) => string): Record<string, string> {
+  return {
+    channel_setup: t("admin_support_tickets.topic_channel_setup"),
+    ai_inbox: t("admin_support_tickets.topic_ai_inbox"),
+    orders_inventory: t("admin_support_tickets.topic_orders_inventory"),
+    payments_checkout: t("admin_support_tickets.topic_payments_checkout"),
+    reports_billing: "Reports / Billing",
+    bug: "Bug",
+    feature: "Feature",
+    general: t("admin_support_tickets.topic_general"),
+    account: t("admin_support_tickets.topic_account"),
+    billing: "Billing",
+  };
+}
 
 const TOPIC_FILTERS = [
   "channel_setup",
@@ -130,14 +133,16 @@ const TOPIC_FILTERS = [
   "feature",
 ];
 
-function statusTag(status: string) {
-  if (status === "open") return <Tag color="red">เปิดอยู่</Tag>;
-  if (status === "pending") return <Tag color="gold">รอติดตาม</Tag>;
-  if (status === "closed") return <Tag color="green">ปิดแล้ว</Tag>;
+function statusTag(status: string, t: (key: string) => string) {
+  if (status === "open") return <Tag color="red">{t("admin_support_tickets.status_open")}</Tag>;
+  if (status === "pending") return <Tag color="gold">{t("admin_support_tickets.status_pending")}</Tag>;
+  if (status === "closed") return <Tag color="green">{t("admin_support_tickets.status_closed")}</Tag>;
   return <Tag>{status}</Tag>;
 }
 
 export default function SupportTicketsPage() {
+  const { t } = useI18n();
+  const TOPIC_LABEL = topicLabels(t);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string | undefined>();
   const [topic, setTopic] = useState<string | undefined>();
@@ -159,10 +164,10 @@ export default function SupportTicketsPage() {
         setDraftStatus(updated.status);
         setComment("");
       }
-      message.success("อัปเดต support ticket แล้ว");
+      message.success(t("admin_support_tickets.update_success"));
       refetch();
     },
-    onError: (error) => message.error(error?.message || "อัปเดตไม่สำเร็จ"),
+    onError: (error) => message.error(error?.message || t("admin_support_tickets.update_failed")),
   });
 
   useEffect(() => {
@@ -176,7 +181,7 @@ export default function SupportTicketsPage() {
 
   const columns = [
     {
-      title: "เวลา",
+      title: t("admin_support_tickets.col_time"),
       dataIndex: "createdAt",
       width: 150,
       render: (v: string) => (
@@ -190,13 +195,13 @@ export default function SupportTicketsPage() {
       render: (v: string) => <Text code>{v}</Text>,
     },
     {
-      title: "สถานะ",
+      title: t("admin_support_tickets.col_status"),
       dataIndex: "status",
       width: 100,
-      render: statusTag,
+      render: (s: string) => statusTag(s, t),
     },
     {
-      title: "หัวข้อ",
+      title: t("admin_support_tickets.col_subject"),
       dataIndex: "subject",
       ellipsis: true,
       render: (v: string, row: SupportTicket) => (
@@ -207,19 +212,19 @@ export default function SupportTicketsPage() {
       ),
     },
     {
-      title: "ผู้ติดต่อ",
+      title: t("admin_support_tickets.col_contact"),
       dataIndex: "email",
       width: 240,
       ellipsis: true,
       render: (v: string, row: SupportTicket) => (
         <Space direction="vertical" size={0}>
-          <Text>{row.name || "ไม่ระบุชื่อ"}</Text>
+          <Text>{row.name || t("admin_support_tickets.no_name")}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>{v}</Text>
         </Space>
       ),
     },
     {
-      title: "อ้างอิง",
+      title: t("admin_support_tickets.col_ref"),
       dataIndex: "ref",
       width: 160,
       ellipsis: true,
@@ -234,7 +239,7 @@ export default function SupportTicketsPage() {
           <Title level={2} style={{ margin: 0 }}>
             <CustomerServiceOutlined /> Support Tickets
           </Title>
-          <Text type="secondary">รายการจากฟอร์ม /support สำหรับ super admin ตรวจสอบและติดตาม</Text>
+          <Text type="secondary">{t("admin_support_tickets.page_subtitle")}</Text>
         </div>
 
         <Card
@@ -242,25 +247,25 @@ export default function SupportTicketsPage() {
             <Space wrap>
               <Input.Search
                 allowClear
-                placeholder="ค้นหา ticket, email, ชื่อ, หัวข้อ"
+                placeholder={t("admin_support_tickets.search_placeholder")}
                 style={{ width: 260 }}
                 onSearch={(value) => { setPage(1); setQ(value); }}
               />
               <Select
                 allowClear
-                placeholder="สถานะ"
+                placeholder={t("admin_support_tickets.status_placeholder")}
                 style={{ width: 140 }}
                 value={status}
                 onChange={(value) => { setPage(1); setStatus(value); }}
                 options={[
-                  { value: "open", label: "เปิดอยู่" },
-                  { value: "pending", label: "รอติดตาม" },
-                  { value: "closed", label: "ปิดแล้ว" },
+                  { value: "open", label: t("admin_support_tickets.status_open") },
+                  { value: "pending", label: t("admin_support_tickets.status_pending") },
+                  { value: "closed", label: t("admin_support_tickets.status_closed") },
                 ]}
               />
               <Select
                 allowClear
-                placeholder="ประเภท"
+                placeholder={t("admin_support_tickets.topic_placeholder")}
                 style={{ width: 170 }}
                 value={topic}
                 onChange={(value) => { setPage(1); setTopic(value); }}
@@ -302,9 +307,9 @@ export default function SupportTicketsPage() {
                   style={{ width: 150 }}
                   onChange={setDraftStatus}
                   options={[
-                    { value: "open", label: "เปิดอยู่" },
-                    { value: "pending", label: "รอติดตาม" },
-                    { value: "closed", label: "ปิดแล้ว" },
+                    { value: "open", label: t("admin_support_tickets.status_open") },
+                    { value: "pending", label: t("admin_support_tickets.status_pending") },
+                    { value: "closed", label: t("admin_support_tickets.status_closed") },
                   ]}
                 />
                 <Button
@@ -322,20 +327,20 @@ export default function SupportTicketsPage() {
                     },
                   })}
                 >
-                  บันทึก
+                  {t("admin_support_tickets.save")}
                 </Button>
               </Space>
             }
           >
             <Descriptions size="small" bordered column={{ xs: 1, md: 2 }}>
-              <Descriptions.Item label="สถานะ">{statusTag(selected.status)}</Descriptions.Item>
-              <Descriptions.Item label="สร้างเมื่อ">{dayjs(selected.createdAt).format("DD MMM YYYY HH:mm")}</Descriptions.Item>
-              <Descriptions.Item label="อัปเดตล่าสุด">{selected.updatedAt ? dayjs(selected.updatedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
-              <Descriptions.Item label="ปิดเมื่อ">{selected.closedAt ? dayjs(selected.closedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
-              <Descriptions.Item label="ชื่อ">{selected.name || "-"}</Descriptions.Item>
-              <Descriptions.Item label="อีเมล">{selected.email}</Descriptions.Item>
-              <Descriptions.Item label="โทร">{selected.phone || "-"}</Descriptions.Item>
-              <Descriptions.Item label="ประเภท">{TOPIC_LABEL[selected.topic] || selected.topic}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_status")}>{statusTag(selected.status, t)}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_created")}>{dayjs(selected.createdAt).format("DD MMM YYYY HH:mm")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_updated")}>{selected.updatedAt ? dayjs(selected.updatedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_closed")}>{selected.closedAt ? dayjs(selected.closedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_name")}>{selected.name || "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_email")}>{selected.email}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_phone")}>{selected.phone || "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_topic")}>{TOPIC_LABEL[selected.topic] || selected.topic}</Descriptions.Item>
               <Descriptions.Item label="Ref">{selected.ref || "-"}</Descriptions.Item>
               <Descriptions.Item label="IP">{selected.ip || "-"}</Descriptions.Item>
               <Descriptions.Item label="Page URL" span={2}>{selected.pageUrl || "-"}</Descriptions.Item>
@@ -348,16 +353,16 @@ export default function SupportTicketsPage() {
                 rows={4}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                placeholder="ใส่ note ภายใน เช่น ติดต่อกลับแล้ว, รอ log เพิ่ม, ปิดเคสหลังแก้ webhook"
+                placeholder={t("admin_support_tickets.comment_placeholder")}
               />
               <Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-                Comment นี้เห็นเฉพาะ super admin ในหน้า Support Tickets
+                {t("admin_support_tickets.comment_visibility_hint")}
               </Text>
             </Card>
 
             <Card size="small" title="Comments" style={{ marginTop: 16 }}>
               {selected.comments.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มี comment" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_support_tickets.no_comments")} />
               ) : (
                 <Timeline
                   items={selected.comments.map((item) => ({
@@ -382,7 +387,7 @@ export default function SupportTicketsPage() {
           </Card>
         ) : (
           <Card>
-            <Empty description="เลือก ticket เพื่อดูรายละเอียด" />
+            <Empty description={t("admin_support_tickets.select_ticket_hint")} />
           </Card>
         )}
       </Space>

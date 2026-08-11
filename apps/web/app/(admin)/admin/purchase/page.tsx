@@ -24,6 +24,7 @@ import {
   MinusCircleOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 
 // ---- Types --------------------------------------------------
 type POStatus = "OPEN" | "PARTIAL" | "RECEIVED" | "CANCELLED";
@@ -68,13 +69,21 @@ const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`;
 const STATUS_COLOR: Record<POStatus, string> = {
   OPEN: "orange", PARTIAL: "blue", RECEIVED: "green", CANCELLED: "default",
 };
-const STATUS_LABEL: Record<POStatus, string> = {
-  OPEN: "รอรับของ", PARTIAL: "รับบางส่วน", RECEIVED: "รับครบ", CANCELLED: "ยกเลิก",
-};
+
+function statusLabels(t: (key: string) => string): Record<POStatus, string> {
+  return {
+    OPEN: t("admin_purchase.status_open"),
+    PARTIAL: t("admin_purchase.status_partial"),
+    RECEIVED: t("admin_purchase.status_received"),
+    CANCELLED: t("admin_purchase.status_cancelled"),
+  };
+}
 
 type ProductOpt = { sku: string; name: string; variants: { size: string }[] };
 
 function PurchaseManagement() {
+  const { t } = useI18n();
+  const STATUS_LABEL = statusLabels(t);
   const { can } = useBmsPermissions();
   const [createOpen, setCreateOpen] = useState(false);
   const [receivePO, setReceivePO] = useState<PO | null>(null);
@@ -93,14 +102,14 @@ function PurchaseManagement() {
   const { data: prodData } = useQuery(Q_PRODUCTS, { fetchPolicy: "cache-and-network" });
   const products: ProductOpt[] = prodData?.bmsProducts || [];
 
-  const onErr = (e: any) => message.error(e?.message || "การทำรายการล้มเหลว");
+  const onErr = (e: any) => message.error(e?.message || t("admin_purchase.action_failed"));
   const pos: PO[] = data?.bmsPurchaseOrders || [];
 
   const [cancel, { loading: canceling }] = useMutation(M_CANCEL, {
     onCompleted: (d: any) =>
       d?.bmsCancelPurchaseOrder
-        ? (message.success("ยกเลิกใบสั่งซื้อแล้ว"), refetch())
-        : onErr({ message: "ยกเลิกไม่ได้ (สถานะไม่ถูกต้อง)" }),
+        ? (message.success(t("admin_purchase.cancel_success")), refetch())
+        : onErr({ message: t("admin_purchase.cancel_invalid_status") }),
     onError: onErr,
   });
 
@@ -109,16 +118,16 @@ function PurchaseManagement() {
     if ((r.status === "OPEN" || r.status === "PARTIAL") && can("purchase.receive")) {
       btns.push(
         <Button key="recv" type="link" size="small" icon={<InboxOutlined />} onClick={() => setReceivePO(r)}>
-          รับของ
+          {t("admin_purchase.btn_receive")}
         </Button>
       );
     }
     if ((r.status === "OPEN" || r.status === "PARTIAL") && can("purchase.cancel")) {
       btns.push(
-        <Popconfirm key="cancel" title="ยกเลิกใบสั่งซื้อนี้?" description="ของที่รับเข้าแล้วจะไม่ถูกดึงออก"
-          okText="ยกเลิก PO" okButtonProps={{ danger: true }} cancelText="ไม่"
+        <Popconfirm key="cancel" title={t("admin_purchase.cancel_confirm_title")} description={t("admin_purchase.cancel_confirm_desc")}
+          okText={t("admin_purchase.cancel_ok_text")} okButtonProps={{ danger: true }} cancelText={t("admin_purchase.no_text")}
           disabled={canceling} onConfirm={() => cancel({ variables: { id: r.id } })}>
-          <Button type="link" size="small" danger icon={<CloseCircleOutlined />} disabled={canceling}>ยกเลิก</Button>
+          <Button type="link" size="small" danger icon={<CloseCircleOutlined />} disabled={canceling}>{t("admin_purchase.btn_cancel")}</Button>
         </Popconfirm>
       );
     }
@@ -131,32 +140,31 @@ function PurchaseManagement() {
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: "Supplier", key: "supplier",
         render: (_: any, r: PO) => r.supplier?.name || <span style={{ color: "#999" }}>—</span> },
-      { title: "รับแล้ว / สั่ง", key: "progress", width: 130,
-        render: (_: any, r: PO) => `${r.qtyReceived} / ${r.qtyOrdered} ชิ้น` },
-      { title: "มูลค่า", dataIndex: "total", key: "total", width: 120, align: "right" as const,
+      { title: t("admin_purchase.col_progress"), key: "progress", width: 130,
+        render: (_: any, r: PO) => t("admin_purchase.col_progress_value", { received: r.qtyReceived, ordered: r.qtyOrdered }) },
+      { title: t("admin_purchase.col_value"), dataIndex: "total", key: "total", width: 120, align: "right" as const,
         render: (v: number) => `${Number(v).toLocaleString()} ฿` },
-      { title: "สถานะ", dataIndex: "status", key: "status", width: 140,
+      { title: t("admin_purchase.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
-      { title: "สร้างเมื่อ", dataIndex: "createdAt", key: "createdAt", width: 160,
+      { title: t("admin_purchase.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
         render: (d: string) => new Date(d).toLocaleString() },
       { title: "Actions", key: "actions", width: 180,
         render: (_: any, r: PO) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [canceling, can]
+    [canceling, can, STATUS_LABEL]
   );
 
   const itemColumns = [
     { title: "SKU", dataIndex: "sku", key: "sku" },
     { title: "Size", dataIndex: "size", key: "size", width: 80 },
-    { title: "สั่ง", dataIndex: "qtyOrdered", key: "qo", width: 80, align: "right" as const },
-    { title: "รับแล้ว", dataIndex: "qtyReceived", key: "qr", width: 90, align: "right" as const },
-    { title: "คงค้าง", key: "rem", width: 90, align: "right" as const,
+    { title: t("admin_purchase.item_col_received"), dataIndex: "qtyReceived", key: "qr", width: 90, align: "right" as const },
+    { title: t("admin_purchase.item_col_remaining"), key: "rem", width: 90, align: "right" as const,
       render: (_: any, it: POItem) => it.qtyOrdered - it.qtyReceived },
-    { title: "ทุน/หน่วย", dataIndex: "unitCost", key: "uc", width: 110, align: "right" as const,
+    { title: t("admin_purchase.item_col_unit_cost"), dataIndex: "unitCost", key: "uc", width: 110, align: "right" as const,
       render: (v: number) => `${Number(v).toLocaleString()} ฿` },
   ];
 
-  if (error) return <Alert type="error" message="โหลดใบสั่งซื้อไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_purchase.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -165,14 +173,14 @@ function PurchaseManagement() {
           <h2 style={{ margin: 0 }}>BMS Purchase (PO)</h2>
           <Space wrap>
             <Input.Search
-              placeholder="ค้นหา PO / supplier / SKU"
+              placeholder={t("admin_purchase.search_placeholder")}
               allowClear
               style={{ width: 260 }}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
             {can("purchase.edit") && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>สร้างใบสั่งซื้อ</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_purchase.btn_create")}</Button>
             )}
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
           </Space>
@@ -181,7 +189,7 @@ function PurchaseManagement() {
 
       <Alert
         type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="OPEN → (รับของ) PARTIAL → (รับครบ) RECEIVED  |  สต็อกเข้าเฉพาะตอนรับของ (บันทึก STOCK_IN) · ยกเลิกไม่ดึงของที่รับแล้วออก"
+        message={t("admin_purchase.workflow_hint")}
       />
 
       <Table
@@ -213,14 +221,15 @@ function PurchaseManagement() {
 function CreatePOModal({
   open, products, onClose, onDone,
 }: { open: boolean; products: ProductOpt[]; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [create, { loading }] = useMutation(M_CREATE, {
     onCompleted: (d: any) => {
       const res = d?.bmsCreatePurchaseOrder;
-      if (res?.status === "CREATED") { message.success(res.message || "สร้างแล้ว"); form.resetFields(); onDone(); }
-      else message.error(res?.message || "สร้างไม่สำเร็จ");
+      if (res?.status === "CREATED") { message.success(res.message || t("admin_purchase.create_success")); form.resetFields(); onDone(); }
+      else message.error(res?.message || t("admin_purchase.create_failed"));
     },
-    onError: (e: any) => message.error(e?.message || "สร้างไม่สำเร็จ"),
+    onError: (e: any) => message.error(e?.message || t("admin_purchase.create_failed")),
   });
 
   const submit = async () => {
@@ -233,15 +242,15 @@ function CreatePOModal({
 
   return (
     <Modal
-      title="สร้างใบสั่งซื้อ (PO)" open={open} onCancel={onClose} onOk={submit}
-      confirmLoading={loading} okText="สร้าง" cancelText="ยกเลิก" width={720} destroyOnClose
+      title={t("admin_purchase.create_modal_title")} open={open} onCancel={onClose} onOk={submit}
+      confirmLoading={loading} okText={t("admin_purchase.create_ok_text")} cancelText={t("admin_purchase.btn_cancel")} width={720} destroyOnClose
     >
       <Form form={form} layout="vertical" initialValues={{ items: [{}] }}>
-        <Form.Item name="supplierName" label="ผู้ขาย (Supplier)">
-          <Input placeholder="เช่น ABC Trading (เว้นว่างได้)" />
+        <Form.Item name="supplierName" label={t("admin_purchase.supplier_label")}>
+          <Input placeholder={t("admin_purchase.supplier_placeholder")} />
         </Form.Item>
-        <Form.Item name="note" label="หมายเหตุ">
-          <Input placeholder="เช่น ล็อตเดือน ก.ค." />
+        <Form.Item name="note" label={t("admin_purchase.note_label")}>
+          <Input placeholder={t("admin_purchase.note_placeholder")} />
         </Form.Item>
 
         <Form.List name="items">
@@ -249,26 +258,26 @@ function CreatePOModal({
             <>
               {fields.map(({ key, name, ...rest }) => (
                 <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
-                  <Form.Item {...rest} name={[name, "sku"]} rules={[{ required: true, message: "เลือกสินค้า" }]}>
+                  <Form.Item {...rest} name={[name, "sku"]} rules={[{ required: true, message: t("admin_purchase.select_product_required") }]}>
                     <Select
                       showSearch style={{ width: 200 }} placeholder="SKU"
                       options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
                       filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
                     />
                   </Form.Item>
-                  <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: "ระบุไซซ์" }]}>
-                    <Input placeholder="Size (เช่น XL)" style={{ width: 110 }} />
+                  <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: t("admin_purchase.size_required") }]}>
+                    <Input placeholder={t("admin_purchase.size_placeholder")} style={{ width: 110 }} />
                   </Form.Item>
-                  <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: "จำนวน" }]}>
-                    <InputNumber placeholder="จำนวน" min={1} style={{ width: 100 }} />
+                  <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: t("admin_purchase.qty_required") }]}>
+                    <InputNumber placeholder={t("admin_purchase.qty_placeholder")} min={1} style={{ width: 100 }} />
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "unitCost"]}>
-                    <InputNumber placeholder="ทุน/หน่วย" min={0} style={{ width: 120 }} />
+                    <InputNumber placeholder={t("admin_purchase.unit_cost_placeholder")} min={0} style={{ width: 120 }} />
                   </Form.Item>
                   {fields.length > 1 && <MinusCircleOutlined onClick={() => remove(name)} />}
                 </Space>
               ))}
-              <Button type="dashed" onClick={() => add({})} icon={<PlusOutlined />} block>เพิ่มรายการ</Button>
+              <Button type="dashed" onClick={() => add({})} icon={<PlusOutlined />} block>{t("admin_purchase.add_item")}</Button>
             </>
           )}
         </Form.List>
@@ -281,14 +290,15 @@ function CreatePOModal({
 function ReceivePOModal({
   po, onClose, onDone,
 }: { po: PO | null; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [receive, { loading }] = useMutation(M_RECEIVE, {
     onCompleted: (d: any) => {
       const res = d?.bmsReceivePurchaseOrder;
-      if (res?.status === "RECEIVED" || res?.status === "PARTIAL") { message.success(res.message || "รับของแล้ว"); onDone(); }
-      else message.error(res?.message || "รับของไม่สำเร็จ");
+      if (res?.status === "RECEIVED" || res?.status === "PARTIAL") { message.success(res.message || t("admin_purchase.receive_success")); onDone(); }
+      else message.error(res?.message || t("admin_purchase.receive_failed"));
     },
-    onError: (e: any) => message.error(e?.message || "รับของไม่สำเร็จ"),
+    onError: (e: any) => message.error(e?.message || t("admin_purchase.receive_failed")),
   });
 
   const pending = (po?.items || []).filter((it) => it.qtyOrdered - it.qtyReceived > 0);
@@ -299,29 +309,29 @@ function ReceivePOModal({
     const items = pending
       .map((it) => ({ sku: it.sku, size: it.size, qty: Number(v[`${it.sku}__${it.size}`] ?? 0) }))
       .filter((it) => it.qty > 0);
-    if (items.length === 0) { message.warning("ยังไม่ได้ระบุจำนวนที่รับ"); return; }
+    if (items.length === 0) { message.warning(t("admin_purchase.receive_qty_warning")); return; }
     receive({ variables: { id: po.id, items } });
   };
 
   return (
     <Modal
-      title={`รับของเข้าสต็อก — PO ${po?.id.slice(0, 8) ?? ""}`}
+      title={t("admin_purchase.receive_modal_title", { id: po?.id.slice(0, 8) ?? "" })}
       open={!!po} onCancel={onClose} onOk={submit}
-      confirmLoading={loading} okText="รับของ (STOCK_IN)" cancelText="ปิด" destroyOnClose
+      confirmLoading={loading} okText={t("admin_purchase.receive_ok_text")} cancelText={t("admin_purchase.close_text")} destroyOnClose
     >
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
-        message="ระบุจำนวนที่รับจริงต่อรายการ — ค่าเริ่มต้น = จำนวนคงค้าง (รับบางส่วนได้)" />
+        message={t("admin_purchase.receive_alert")} />
       <Form form={form} layout="vertical">
-        {pending.length === 0 && <Typography.Text type="secondary">ไม่มีรายการคงค้าง</Typography.Text>}
+        {pending.length === 0 && <Typography.Text type="secondary">{t("admin_purchase.no_pending_items")}</Typography.Text>}
         {pending.map((it) => {
           const rem = it.qtyOrdered - it.qtyReceived;
           return (
             <Form.Item
               key={`${it.sku}-${it.size}`}
               name={`${it.sku}__${it.size}`}
-              label={`${it.sku} · ${it.size} (คงค้าง ${rem})`}
+              label={t("admin_purchase.receive_item_label", { sku: it.sku, size: it.size, rem })}
               initialValue={rem}
-              rules={[{ type: "number", min: 0, max: rem, message: `รับได้ไม่เกิน ${rem}` }]}
+              rules={[{ type: "number", min: 0, max: rem, message: t("admin_purchase.receive_item_max_error", { rem }) }]}
             >
               <InputNumber min={0} max={rem} style={{ width: 160 }} />
             </Form.Item>
