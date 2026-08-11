@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text } = Typography;
@@ -41,6 +42,7 @@ const INTENT_COLOR: Record<string, string> = {
 
 export default function Page() {
   const isMobile = useIsMobile();
+  const { can } = useBmsPermissions();
   const [channel, setChannel] = useState("line");
   const [customerRef, setCustomerRef] = useState("Ucustomer_001");
   const [text, setText] = useState("");
@@ -84,6 +86,13 @@ export default function Page() {
   };
 
   const products = stockData?.bmsProducts || [];
+
+  // เดิมหน้านี้ไม่มี permission gate เลย (Sales/Warehouse เข้าตรง URL แล้วยิง AI chat จริงได้
+  // โดยไม่มีใครเห็น) — ใช้ ai_quality.view (Manager/Administrator) เพราะเป็นคนกลุ่มเดียวกันที่
+  // ควรมีสิทธิ์เข้าไปจิ้ม AI pipeline โดยตรงและรับผิดชอบโควตาที่ใช้ไป
+  if (!can("ai_quality.view")) {
+    return <Alert type="error" message="ไม่มีสิทธิ์เข้าหน้านี้" showIcon />;
+  }
 
   return (
     <div>

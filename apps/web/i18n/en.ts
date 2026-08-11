@@ -524,6 +524,7 @@ const en = {
   },
   admin: {
     group_shop: "Shop",
+    group_pharmacy: "Pharmacy",
     group_access: "Users & Permissions",
     group_system: "System",
     menu_restock_subscriptions: "Restock notifications",
