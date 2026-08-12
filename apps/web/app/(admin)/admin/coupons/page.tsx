@@ -11,6 +11,7 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 
@@ -68,6 +69,7 @@ function FieldPair({ isMobile, children }: { isMobile: boolean; children: React.
 
 // ---- Usage history modal — ไม่มีตาราง redemption แยก, query ตรงจาก bms_orders ----
 function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null; code: string; onClose: () => void }) {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const [load, { data, loading }] = useLazyQuery(Q_REDEMPTIONS, { fetchPolicy: "network-only" });
 
@@ -81,18 +83,18 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
 
   return (
     <Modal
-      title={`ประวัติการใช้โค้ด "${code}"`}
+      title={t("admin_coupons.redemptions_title", { code })}
       open={!!couponId}
       onCancel={onClose}
-      footer={<Button onClick={onClose}>ปิด</Button>}
+      footer={<Button onClick={onClose}>{t("admin_coupons.btn_close")}</Button>}
       width={panelWidth(isMobile, 760)}
     >
       {!loading && rows.length > 0 && (
         <>
           <Row gutter={[16, 8]} style={{ marginBottom: 4 }}>
-            <Col xs={12} sm={8}><Statistic title="ใช้ไปแล้ว" value={rows.length} suffix="ครั้ง" /></Col>
-            <Col xs={12} sm={8}><Statistic title="ส่วนลดรวม" value={totalDiscount} precision={2} suffix="฿" valueStyle={{ color: "#12805c" }} /></Col>
-            <Col xs={12} sm={8}><Statistic title="ลูกค้าที่ใช้" value={uniqueCustomers} suffix="ราย" /></Col>
+            <Col xs={12} sm={8}><Statistic title={t("admin_coupons.stat_used")} value={rows.length} suffix={t("admin_coupons.stat_used_suffix")} /></Col>
+            <Col xs={12} sm={8}><Statistic title={t("admin_coupons.stat_total_discount")} value={totalDiscount} precision={2} suffix="฿" valueStyle={{ color: "#12805c" }} /></Col>
+            <Col xs={12} sm={8}><Statistic title={t("admin_coupons.stat_customers")} value={uniqueCustomers} suffix={t("admin_coupons.stat_customers_suffix")} /></Col>
           </Row>
           <Divider style={{ margin: "12px 0" }} />
         </>
@@ -102,14 +104,14 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
         size="small"
         loading={loading}
         dataSource={rows}
-        locale={{ emptyText: <Empty description="ยังไม่มีการใช้งาน" /> }}
+        locale={{ emptyText: <Empty description={t("admin_coupons.redemptions_empty")} /> }}
         pagination={{ pageSize: 10 }}
         scroll={{ x: "max-content" }}
         columns={[
           {
-            title: "ลูกค้า", dataIndex: "customerName", width: 220,
+            title: t("admin_coupons.col_customer"), dataIndex: "customerName", width: 220,
             render: (v: string | null, r: any) => {
-              const name = v || "ไม่ทราบชื่อ";
+              const name = v || t("admin_coupons.unknown_customer");
               const key = r.customerId || v || r.orderId;
               return (
                 <Space size={8}>
@@ -126,14 +128,14 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
               );
             },
           },
-          { title: "ช่องทาง", dataIndex: "channel", width: 90 },
+          { title: t("admin_coupons.col_channel"), dataIndex: "channel", width: 90 },
           {
-            title: "สถานะออเดอร์", dataIndex: "status", width: 110,
+            title: t("admin_coupons.col_order_status"), dataIndex: "status", width: 110,
             render: (v: string) => <Tag color={ORDER_STATUS_COLOR[v] || "default"}>{v}</Tag>,
           },
-          { title: "ส่วนลด", dataIndex: "discountAmount", width: 100, align: "right" as const, render: money },
-          { title: "ยอดสุทธิ", dataIndex: "totalAmount", width: 100, align: "right" as const, render: money },
-          { title: "เมื่อ", dataIndex: "createdAt", width: 140, render: (v: string) => new Date(v).toLocaleString() },
+          { title: t("admin_coupons.col_discount_amount"), dataIndex: "discountAmount", width: 100, align: "right" as const, render: money },
+          { title: t("admin_coupons.col_net_total"), dataIndex: "totalAmount", width: 100, align: "right" as const, render: money },
+          { title: t("admin_coupons.col_when"), dataIndex: "createdAt", width: 140, render: (v: string) => new Date(v).toLocaleString() },
         ]}
       />
     </Modal>
@@ -141,6 +143,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
 }
 
 export default function CouponsPage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const isMobile = useIsMobile();
   const canManage = can("coupon.manage");
@@ -154,18 +157,18 @@ export default function CouponsPage() {
   const [viewingRedemptions, setViewingRedemptions] = useState<{ id: string; code: string } | null>(null);
 
   const [saveCoupon, { loading: saving }] = useMutation(M_UPSERT, {
-    onCompleted: () => { message.success("บันทึกโค้ดส่วนลดแล้ว"); setModalOpen(false); refetch(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_coupons.save_success")); setModalOpen(false); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_coupons.save_failed")),
   });
   const [deleteCoupon] = useMutation(M_DELETE, {
-    onCompleted: () => { message.success("ลบโค้ดส่วนลดแล้ว"); refetch(); },
-    onError: (e) => message.error(e?.message || "ลบไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_coupons.delete_success")); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_coupons.delete_failed")),
   });
 
   if (!permsLoading && !can("coupon.view")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_coupons.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message="โหลดรายการโค้ดส่วนลดไม่ได้" description={error.message} />;
+  if (error) return <Alert type="error" showIcon message={t("admin_coupons.load_error")} description={error.message} />;
 
   const rows = data?.bmsCoupons || [];
 
@@ -201,37 +204,37 @@ export default function CouponsPage() {
   };
 
   const columns = [
-    { title: "โค้ด", dataIndex: "code", key: "code", render: (v: string) => <Text strong copyable>{v}</Text> },
-    { title: "ส่วนลด", key: "value", render: (_: any, r: any) => valueLabel(r) },
-    { title: "ขั้นต่ำ", dataIndex: "minOrderAmount", key: "minOrderAmount", render: money },
+    { title: t("admin_coupons.col_code"), dataIndex: "code", key: "code", render: (v: string) => <Text strong copyable>{v}</Text> },
+    { title: t("admin_coupons.col_discount"), key: "value", render: (_: any, r: any) => valueLabel(r) },
+    { title: t("admin_coupons.col_min_order"), dataIndex: "minOrderAmount", key: "minOrderAmount", render: money },
     {
-      title: "ใช้ไปแล้ว", key: "usage",
+      title: t("admin_coupons.col_usage"), key: "usage",
       render: (_: any, r: any) => (
         <Button size="small" type="link" icon={<HistoryOutlined />} onClick={() => setViewingRedemptions({ id: r.id, code: r.code })}>
           {r.redemptionsCount}{r.maxRedemptions != null ? ` / ${r.maxRedemptions}` : ""}
         </Button>
       ),
     },
-    { title: "ต่อลูกค้า", dataIndex: "perCustomerLimit", key: "perCustomerLimit", render: (v: number | null) => v ?? "ไม่จำกัด" },
+    { title: t("admin_coupons.col_per_customer"), dataIndex: "perCustomerLimit", key: "perCustomerLimit", render: (v: number | null) => v ?? t("admin_coupons.unlimited") },
     {
-      title: "ช่วงเวลา", key: "period",
+      title: t("admin_coupons.col_period"), key: "period",
       render: (_: any, r: any) => (
         <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
-          <span>เริ่ม: {r.startsAt ? new Date(r.startsAt).toLocaleDateString() : "ทันที"}</span>
-          <span>หมดอายุ: {r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : "ไม่มี"}</span>
+          <span>{t("admin_coupons.period_starts", { value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : t("admin_coupons.starts_immediately") })}</span>
+          <span>{t("admin_coupons.period_expires", { value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : t("admin_coupons.no_expiry") })}</span>
         </Space>
       ),
     },
     {
-      title: "สถานะ", dataIndex: "active", key: "active",
-      render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? "ใช้งาน" : "ปิดใช้งาน"}</Tag>,
+      title: t("admin_coupons.col_status"), dataIndex: "active", key: "active",
+      render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? t("admin_coupons.status_active") : t("admin_coupons.status_inactive")}</Tag>,
     },
     ...(canManage ? [{
       title: "", key: "actions", width: 100,
       render: (_: any, r: any) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-          <Popconfirm title="ลบโค้ดนี้?" onConfirm={() => deleteCoupon({ variables: { id: r.id } })}>
+          <Popconfirm title={t("admin_coupons.delete_confirm")} onConfirm={() => deleteCoupon({ variables: { id: r.id } })}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -241,8 +244,8 @@ export default function CouponsPage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>โค้ดส่วนลด</Typography.Title>}>
-        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>สร้างโค้ดใหม่</Button>}
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_coupons.title")}</Typography.Title>}>
+        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_coupons.btn_create")}</Button>}
       </AdminPageHeader>
 
       {isMobile ? (
@@ -250,8 +253,8 @@ export default function CouponsPage() {
           loading={loading}
           dataSource={rows as any[]}
           rowKey={(r) => r.id}
-          totalText={(t) => `ทั้งหมด ${t} โค้ด`}
-          emptyText="ยังไม่มีโค้ดส่วนลด"
+          totalText={(n) => t("admin_coupons.mobile_total", { n })}
+          emptyText={t("admin_coupons.mobile_empty")}
           renderItem={(r) => (
             <AdminRecordCard
               key={r.id}
@@ -261,23 +264,23 @@ export default function CouponsPage() {
                   <Tag style={{ marginInlineEnd: 0 }}>{valueLabel(r)}</Tag>
                 </Space>
               }
-              extra={<Tag color={r.active ? "green" : "default"} style={{ marginInlineEnd: 0 }}>{r.active ? "ใช้งาน" : "ปิดใช้งาน"}</Tag>}
+              extra={<Tag color={r.active ? "green" : "default"} style={{ marginInlineEnd: 0 }}>{r.active ? t("admin_coupons.status_active") : t("admin_coupons.status_inactive")}</Tag>}
               fields={[
-                { label: "ขั้นต่ำ", value: money(r.minOrderAmount) },
-                { label: "ต่อลูกค้า", value: r.perCustomerLimit ?? "ไม่จำกัด" },
-                { label: "เริ่ม", value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : "ทันที" },
-                { label: "หมดอายุ", value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : "ไม่มี" },
-                { label: "โน้ต", value: r.note, hidden: !r.note },
+                { label: t("admin_coupons.col_min_order"), value: money(r.minOrderAmount) },
+                { label: t("admin_coupons.col_per_customer"), value: r.perCustomerLimit ?? t("admin_coupons.unlimited") },
+                { label: t("admin_coupons.field_starts"), value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : t("admin_coupons.starts_immediately") },
+                { label: t("admin_coupons.field_expires"), value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : t("admin_coupons.no_expiry") },
+                { label: t("admin_coupons.field_note"), value: r.note, hidden: !r.note },
               ]}
               actions={
                 <>
                   <Button size="small" type="link" icon={<HistoryOutlined />} onClick={() => setViewingRedemptions({ id: r.id, code: r.code })}>
-                    ใช้ไปแล้ว {r.redemptionsCount}{r.maxRedemptions != null ? ` / ${r.maxRedemptions}` : ""}
+                    {t("admin_coupons.mobile_usage", { count: r.redemptionsCount })}{r.maxRedemptions != null ? ` / ${r.maxRedemptions}` : ""}
                   </Button>
                   {canManage && (
                     <Space size={4} style={{ marginLeft: "auto" }}>
                       <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                      <Popconfirm title="ลบโค้ดนี้?" onConfirm={() => deleteCoupon({ variables: { id: r.id } })}>
+                      <Popconfirm title={t("admin_coupons.delete_confirm")} onConfirm={() => deleteCoupon({ variables: { id: r.id } })}>
                         <Button size="small" danger icon={<DeleteOutlined />} />
                       </Popconfirm>
                     </Space>
@@ -292,7 +295,7 @@ export default function CouponsPage() {
       )}
 
       <Modal
-        title={editing ? "แก้ไขโค้ดส่วนลด" : "สร้างโค้ดส่วนลด"}
+        title={editing ? t("admin_coupons.modal_edit_title") : t("admin_coupons.modal_create_title")}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={() => form.submit()}
@@ -303,52 +306,52 @@ export default function CouponsPage() {
         <Form form={form} layout="vertical" onFinish={onFinish}>
           <Form.Item
             name="code"
-            label="โค้ด"
-            rules={[{ required: true, message: "ระบุโค้ด" }]}
+            label={t("admin_coupons.form_code")}
+            rules={[{ required: true, message: t("admin_coupons.form_code_required") }]}
             extra={editing && editing.redemptionsCount > 0
-              ? `โค้ดนี้ถูกใช้ไปแล้ว ${editing.redemptionsCount} ครั้ง จึงแก้ชื่อโค้ดไม่ได้ (แก้ส่วนลด/วันหมดอายุ/สถานะได้) — ถ้าต้องการโค้ดใหม่ให้สร้างโค้ดใหม่แทน`
+              ? t("admin_coupons.form_code_locked", { count: editing.redemptionsCount })
               : undefined}
           >
             <Input
-              placeholder="เช่น SAVE10"
+              placeholder={t("admin_coupons.form_code_placeholder")}
               style={{ textTransform: "uppercase" }}
               disabled={!!editing && editing.redemptionsCount > 0}
             />
           </Form.Item>
           <FieldPair isMobile={isMobile}>
-            <Form.Item name="type" label="ประเภท" style={{ width: isMobile ? "100%" : "40%" }} initialValue="PERCENT">
+            <Form.Item name="type" label={t("admin_coupons.form_type")} style={{ width: isMobile ? "100%" : "40%" }} initialValue="PERCENT">
               <Select options={[
-                { value: "PERCENT", label: "ลด % " },
-                { value: "FIXED", label: "ลดเป็นจำนวนเงิน" },
+                { value: "PERCENT", label: t("admin_coupons.form_type_percent") },
+                { value: "FIXED", label: t("admin_coupons.form_type_fixed") },
               ]} />
             </Form.Item>
-            <Form.Item name="value" label="มูลค่า" style={{ width: isMobile ? "100%" : "60%" }} rules={[{ required: true, message: "ระบุมูลค่าส่วนลด" }]}>
+            <Form.Item name="value" label={t("admin_coupons.form_value")} style={{ width: isMobile ? "100%" : "60%" }} rules={[{ required: true, message: t("admin_coupons.form_value_required") }]}>
               <InputNumber min={0.01} style={{ width: "100%" }} />
             </Form.Item>
           </FieldPair>
-          <Form.Item name="minOrderAmount" label="ยอดสั่งซื้อขั้นต่ำ (ไม่บังคับ)">
-            <InputNumber min={0} style={{ width: "100%" }} placeholder="ไม่มีขั้นต่ำ" />
+          <Form.Item name="minOrderAmount" label={t("admin_coupons.form_min_order")}>
+            <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_coupons.form_min_order_placeholder")} />
           </Form.Item>
           <FieldPair isMobile={isMobile}>
-            <Form.Item name="maxRedemptions" label="จำนวนครั้งที่ใช้ได้รวม" style={{ width: isMobile ? "100%" : "50%" }}>
-              <InputNumber min={1} style={{ width: "100%" }} placeholder="ไม่จำกัด" />
+            <Form.Item name="maxRedemptions" label={t("admin_coupons.form_max_redemptions")} style={{ width: isMobile ? "100%" : "50%" }}>
+              <InputNumber min={1} style={{ width: "100%" }} placeholder={t("admin_coupons.unlimited")} />
             </Form.Item>
-            <Form.Item name="perCustomerLimit" label="จำนวนครั้ง/ลูกค้า" style={{ width: isMobile ? "100%" : "50%" }}>
-              <InputNumber min={1} style={{ width: "100%" }} placeholder="ไม่จำกัด" />
+            <Form.Item name="perCustomerLimit" label={t("admin_coupons.form_per_customer")} style={{ width: isMobile ? "100%" : "50%" }}>
+              <InputNumber min={1} style={{ width: "100%" }} placeholder={t("admin_coupons.unlimited")} />
             </Form.Item>
           </FieldPair>
           <FieldPair isMobile={isMobile}>
-            <Form.Item name="startsAt" label="เริ่มใช้ได้" style={{ width: isMobile ? "100%" : "50%" }}>
-              <DatePicker style={{ width: "100%" }} showTime placeholder="ทันที" />
+            <Form.Item name="startsAt" label={t("admin_coupons.form_starts_at")} style={{ width: isMobile ? "100%" : "50%" }}>
+              <DatePicker style={{ width: "100%" }} showTime placeholder={t("admin_coupons.starts_immediately")} />
             </Form.Item>
-            <Form.Item name="expiresAt" label="หมดอายุ" style={{ width: isMobile ? "100%" : "50%" }}>
-              <DatePicker style={{ width: "100%" }} showTime placeholder="ไม่มีวันหมดอายุ" />
+            <Form.Item name="expiresAt" label={t("admin_coupons.form_expires_at")} style={{ width: isMobile ? "100%" : "50%" }}>
+              <DatePicker style={{ width: "100%" }} showTime placeholder={t("admin_coupons.form_expires_placeholder")} />
             </Form.Item>
           </FieldPair>
-          <Form.Item name="note" label="โน้ต (ไม่บังคับ)">
+          <Form.Item name="note" label={t("admin_coupons.form_note")}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="active" label="เปิดใช้งาน" valuePropName="checked" initialValue={true}>
+          <Form.Item name="active" label={t("admin_coupons.form_active")} valuePropName="checked" initialValue={true}>
             <Switch />
           </Form.Item>
         </Form>

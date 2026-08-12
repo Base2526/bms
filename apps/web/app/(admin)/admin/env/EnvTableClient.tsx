@@ -13,6 +13,7 @@ import type {
 } from "./page";
 import type { RecentAiUsageEvent } from "@/lib/bms/aiUsage";
 import type { AiProviderHealth } from "@/lib/bms/aiProviderHealth";
+import { useI18n } from "@/lib/i18nContext";
 
 const M_TEST_PLATFORM_AI_KEY = gql`
   mutation TestPlatformAiKey($provider: String) {
@@ -43,25 +44,25 @@ const PLATFORM_AI_PROVIDERS = [
     key: "anthropic",
     title: "Anthropic Chat",
     envKey: "ANTHROPIC_API_KEY",
-    note: "ทดสอบด้วย GET /v1/models ไม่เสียเงิน",
+    noteKey: "provider_note_anthropic",
   },
   {
     key: "anthropic-ocr",
     title: "Anthropic OCR Fallback",
     envKey: "ANTHROPIC_API_KEY",
-    note: "ทดสอบ image/OCR request ขนาดเล็ก เพื่อยืนยันว่า Claude fallback อ่านสลิปได้จริง (มี usage เล็กน้อย)",
+    noteKey: "provider_note_anthropic_ocr",
   },
   {
     key: "deepseek",
     title: "DeepSeek",
     envKey: "DEEPSEEK_API_KEY",
-    note: "ทดสอบด้วยข้อความสั้นผ่าน anthropic-compatible API (มี usage เล็กน้อย)",
+    noteKey: "provider_note_deepseek",
   },
   {
     key: "qwen",
     title: "QWEN OCR",
     envKey: "QWEN_OCR_API_KEY",
-    note: "ทดสอบด้วย OCR request ขนาดเล็กกับ model ที่ตั้งใน env (มี usage เล็กน้อย)",
+    noteKey: "provider_note_qwen",
   },
 ] as const;
 type PlatformAiProviderKey = (typeof PLATFORM_AI_PROVIDERS)[number]["key"];
@@ -108,20 +109,23 @@ function providerTag(provider: string) {
   return <Tag>{provider}</Tag>;
 }
 
-function healthUsageNote(row: AiProviderHealth) {
+function healthUsageNote(
+  row: AiProviderHealth,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
   if (row.provider === "deepseek" && row.purpose === "chat") {
-    return "ใช้กับ chat/tool-calling ทั่วไปเมื่อ BMS_AI_PROVIDER=deepseek หรือ fallback จาก Anthropic chat";
+    return t("admin_env_table.used_when_deepseek_chat");
   }
   if (row.provider === "anthropic" && row.purpose === "chat") {
-    return "ใช้เป็น sensitive/baseline chat หรือ fallback เมื่อ DeepSeek chat ไม่ถูกตั้งค่า";
+    return t("admin_env_table.used_when_anthropic_chat");
   }
   if (row.provider === "qwen" && row.purpose === "ocr") {
-    return "ใช้เป็น Slip OCR หลักเมื่อ BMS_SLIP_READER_PROVIDER=qwen";
+    return t("admin_env_table.used_when_qwen_ocr");
   }
   if (row.provider === "anthropic" && row.purpose === "ocr") {
-    return "ใช้เป็น Slip OCR fallback เมื่อ QWEN ไม่ถูกตั้งค่า หรือ request จริงล้มเหลว";
+    return t("admin_env_table.used_when_anthropic_ocr");
   }
-  return "เช็กการเชื่อมต่อ provider/purpose นี้ ไม่ได้แปลว่าถูกเลือกเป็นตัวหลัก";
+  return t("admin_env_table.used_when_default");
 }
 
 function formatDateTime(value: string | null) {
@@ -150,6 +154,7 @@ export default function EnvTableClient({
   providerHealth,
   configDiagnostics,
 }: Props) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [testResults, setTestResults] = useState<
     Partial<Record<PlatformAiProviderKey, { ok: boolean; message: string }>>
@@ -169,10 +174,10 @@ export default function EnvTableClient({
         if (data?.bmsCheckAllAiProviderHealth) {
           setHealth(data.bmsCheckAllAiProviderHealth);
         }
-        message.success("ตรวจสอบครบทุก provider/purpose แล้ว — ดูผลในตารางด้านล่าง");
+        message.success(t("admin_env_table.check_all_success"));
       },
       onError: (error) => {
-        message.error(error?.message || "ตรวจสอบไม่สำเร็จ");
+        message.error(error?.message || t("admin_env_table.check_all_failed"));
       },
     });
   };
@@ -224,14 +229,14 @@ export default function EnvTableClient({
         setTestResults((prev) => ({
           ...prev,
           [provider]:
-            data?.bmsTestPlatformAiKey ?? { ok: false, message: "ทดสอบไม่สำเร็จ" },
+            data?.bmsTestPlatformAiKey ?? { ok: false, message: t("admin_env_table.test_failed") },
         }));
         setActiveProvider((current) => (current === provider ? null : current));
       },
       onError: (error) => {
         setTestResults((prev) => ({
           ...prev,
-          [provider]: { ok: false, message: error?.message || "ทดสอบไม่สำเร็จ" },
+          [provider]: { ok: false, message: error?.message || t("admin_env_table.test_failed") },
         }));
         setActiveProvider((current) => (current === provider ? null : current));
       },
@@ -382,15 +387,15 @@ export default function EnvTableClient({
             <Descriptions.Item label="Now">{meta.now}</Descriptions.Item>
           </Descriptions>
           <div style={{ marginTop: 12, opacity: 0.75 }}>
-            * ค่า secret จะถูก mask อัตโนมัติ (Copy Value จะได้ค่า mask ไม่ใช่ค่าจริง)
+            * {t("admin_env_table.secret_masked_note")}
           </div>
         </Card>
 
         <Card title="Config Doctor" bordered>
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-              ตรวจค่าที่ process นี้ใช้งานจริง หลังแก้ <Text code>.env</Text> ต้อง restart server
-              แล้วโหลดหน้านี้ใหม่
+              {t("admin_env_table.env_restart_note_1")} <Text code>.env</Text>{" "}
+              {t("admin_env_table.env_restart_note_2")}
             </Typography.Paragraph>
             {configDiagnostics.map((item) => (
               <Alert
@@ -439,7 +444,7 @@ export default function EnvTableClient({
         <Card title="Recent Actual Usage" bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-              ใช้ดูว่าระบบเรียก provider อะไรจริงล่าสุดจาก <Text code>bms_ai_usage_events</Text>
+              {t("admin_env_table.usage_desc_1")} <Text code>bms_ai_usage_events</Text>
             </Typography.Paragraph>
             <Descriptions size="small" column={2}>
               <Descriptions.Item label="Latest Chat">
@@ -450,7 +455,7 @@ export default function EnvTableClient({
                     <Text type="secondary">{latestChatUsage.model || "-"}</Text>
                   </Space>
                 ) : (
-                  <Text type="secondary">ยังไม่มี event</Text>
+                  <Text type="secondary">{t("admin_env_table.no_event")}</Text>
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Latest OCR">
@@ -461,7 +466,7 @@ export default function EnvTableClient({
                     <Text type="secondary">{latestOcrUsage.model || "-"}</Text>
                   </Space>
                 ) : (
-                  <Text type="secondary">ยังไม่มี event</Text>
+                  <Text type="secondary">{t("admin_env_table.no_event")}</Text>
                 )}
               </Descriptions.Item>
             </Descriptions>
@@ -470,7 +475,7 @@ export default function EnvTableClient({
               columns={usageColumns}
               dataSource={recentUsage}
               pagination={false}
-              locale={{ emptyText: "ยังไม่มี usage event" }}
+              locale={{ emptyText: t("admin_env_table.no_usage_event") }}
               scroll={{ x: 1200 }}
               size="small"
             />
@@ -486,23 +491,23 @@ export default function EnvTableClient({
               loading={checkingAllHealth}
               onClick={runCheckAllHealth}
             >
-              ตรวจสอบทั้งหมดตอนนี้
+              {t("admin_env_table.btn_check_all")}
             </Button>
           }
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-              สถานะเชื่อมต่อล่าสุดจาก <Text code>bms_ai_provider_health</Text> — ตารางนี้ตอบแค่ว่า
-              provider/purpose นั้นต่อได้ไหม ส่วนระบบจะเลือกใช้ตอนไหนให้ดูที่ <Text code>Active Runtime</Text>
-              และคอลัมน์ <Text code>Used When</Text>. การตรวจสอบจะยิง request จริงไปหา provider
-              จึงมี usage เล็กน้อยจริง ไม่ใช่ read-only refresh
+              {t("admin_env_table.health_desc_1")} <Text code>bms_ai_provider_health</Text>{" "}
+              {t("admin_env_table.health_desc_2")} <Text code>Active Runtime</Text>{" "}
+              {t("admin_env_table.health_desc_3")} <Text code>Used When</Text>
+              {t("admin_env_table.health_desc_4")}
             </Typography.Paragraph>
             <Table<AiProviderHealth>
               rowKey={(r) => `${r.provider}:${r.purpose}`}
               pagination={false}
               size="small"
               dataSource={health}
-              locale={{ emptyText: "ยังไม่มีข้อมูล" }}
+              locale={{ emptyText: t("admin_env_table.no_data") }}
               columns={[
                 {
                   title: "Provider",
@@ -529,7 +534,7 @@ export default function EnvTableClient({
                   width: 360,
                   render: (_, r) => (
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      {healthUsageNote(r)}
+                      {healthUsageNote(r, t)}
                     </Text>
                   ),
                 },
@@ -578,8 +583,8 @@ export default function EnvTableClient({
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-              ทดสอบการเชื่อมต่อ provider กลางที่ระบบใช้กับ AI และ OCR โดยอ่านค่าจาก{" "}
-              <Text code>.env</Text> จริงของเซิร์ฟเวอร์
+              {t("admin_env_table.test_desc_1")}{" "}
+              <Text code>.env</Text> {t("admin_env_table.test_desc_2")}
             </Typography.Paragraph>
             {PLATFORM_AI_PROVIDERS.map((provider) => {
               const result = testResults[provider.key];
@@ -592,14 +597,14 @@ export default function EnvTableClient({
                 >
                   <Space direction="vertical" size={12} style={{ width: "100%" }}>
                     <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-                      {provider.note}
+                      {t(`admin_env_table.${provider.noteKey}`)}
                     </Typography.Paragraph>
                     <Button
                       icon={<PlayCircleOutlined />}
                       loading={loading}
                       onClick={() => runProviderTest(provider.key)}
                     >
-                      ทดสอบ {provider.title}
+                      {t("admin_env_table.btn_test_provider", { provider: provider.title })}
                     </Button>
                     {result && (
                       <Alert
@@ -629,7 +634,7 @@ export default function EnvTableClient({
             allowClear
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search key เช่น DATABASE / REDIS / NEXT_ ..."
+            placeholder={t("admin_env_table.search_placeholder")}
             style={{ marginBottom: 12 }}
           />
 

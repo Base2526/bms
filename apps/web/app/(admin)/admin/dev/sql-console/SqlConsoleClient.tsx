@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Checkbox, Radio, Space, Table, Tag, Typography, Input } from "antd";
 import { PlayCircleOutlined, WarningOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -71,6 +72,7 @@ type TestEmailResult = {
 };
 
 export default function SqlConsoleClient() {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"read" | "write">("read");
   const [confirmWrite, setConfirmWrite] = useState(false);
   const [sql, setSql] = useState("SELECT tenant_id, name FROM bms_tenants ORDER BY created_at DESC LIMIT 20");
@@ -137,7 +139,7 @@ add(2, 3)`);
           type="warning"
           showIcon
           icon={<WarningOutlined />}
-          message="Dev Console เปิดเฉพาะ platform admin และทุกคำสั่งถูกบันทึกใน audit log — JavaScript และ SQL write-mode ปิดเสมอใน production"
+          message={t("admin_sql_console.warning_banner")}
         />
 
         <Card title="SQL Console" bordered>
@@ -147,7 +149,7 @@ add(2, 3)`);
               onChange={(e) => { setMode(e.target.value); setConfirmWrite(false); setResult(null); }}
               options={[
                 { label: "Read-only (SELECT/WITH)", value: "read" },
-                { label: `Write-mode ${writeEnabled ? "" : "(ปิดใน production)"}`, value: "write", disabled: !writeEnabled },
+                { label: `Write-mode ${writeEnabled ? "" : t("admin_sql_console.mode_write_disabled_suffix")}`, value: "write", disabled: !writeEnabled },
               ]}
               optionType="button"
             />
@@ -157,12 +159,12 @@ add(2, 3)`);
               onChange={(e) => setSql(e.target.value)}
               autoSize={{ minRows: 6, maxRows: 16 }}
               style={{ fontFamily: "monospace" }}
-              placeholder={mode === "read" ? "SELECT ... (คำสั่งเดียว ไม่มี ; กลางข้อความ)" : "INSERT/UPDATE/DELETE/... (dev-only, คำสั่งเดียว)"}
+              placeholder={mode === "read" ? t("admin_sql_console.sql_placeholder_read") : t("admin_sql_console.sql_placeholder_write")}
             />
 
             {mode === "write" && (
               <Checkbox checked={confirmWrite} onChange={(e) => setConfirmWrite(e.target.checked)}>
-                ยืนยันว่าเข้าใจว่าคำสั่งนี้เขียนข้อมูลจริง (dev/staging เท่านั้น)
+                {t("admin_sql_console.confirm_write")}
               </Checkbox>
             )}
 
@@ -181,7 +183,7 @@ add(2, 3)`);
 
         {result && (
           <Card
-            title="ผลลัพธ์"
+            title={t("admin_sql_console.result_title")}
             extra={
               result.ok ? (
                 <Space>
@@ -194,7 +196,7 @@ add(2, 3)`);
               )
             }
           >
-            {!result.ok && <Alert type="error" showIcon message={result.error || "ไม่สำเร็จ"} />}
+            {!result.ok && <Alert type="error" showIcon message={result.error || t("admin_sql_console.failed")} />}
             {result.ok && result.columns.length > 0 && (
               <Table
                 rowKey="__key"
@@ -207,7 +209,7 @@ add(2, 3)`);
             )}
             {result.ok && result.columns.length === 0 && (
               <Paragraph type="secondary" style={{ margin: 0 }}>
-                สำเร็จ — ไม่มีแถวข้อมูลคืนกลับมา (เช่น UPDATE/DELETE ที่ไม่มี RETURNING)
+                {t("admin_sql_console.no_rows_returned")}
               </Paragraph>
             )}
           </Card>
@@ -222,8 +224,8 @@ add(2, 3)`);
             <Alert
               type="info"
               showIcon
-              message="ทดสอบ JavaScript แบบ synchronous พร้อมดู console.log()"
-              description="รันใน worker/VM แยก ไม่เปิด process, require, import, timer, network, database หรือ service ภายในระบบ และไม่รองรับ Promise/async"
+              message={t("admin_sql_console.js_alert_title")}
+              description={t("admin_sql_console.js_alert_desc")}
             />
             <TextArea
               value={jsCode}
@@ -253,8 +255,8 @@ add(2, 3)`);
             <Alert
               type="info"
               showIcon
-              message="ส่งอีเมลทดสอบผ่าน mailer ปัจจุบันของระบบ"
-              description="ใส่อีเมลได้หลายรายการ คั่นด้วย comma หรือขึ้นบรรทัดใหม่ และสามารถกำหนด HTML body เองได้"
+              message={t("admin_sql_console.email_alert_title")}
+              description={t("admin_sql_console.email_alert_desc")}
             />
             <TextArea
               value={testEmailTo}
@@ -293,7 +295,7 @@ add(2, 3)`);
                 type={testEmailResult.ok ? "success" : "error"}
                 showIcon
                 message={testEmailResult.message}
-                description={`ส่งสำเร็จ ${testEmailResult.sent} รายการ`}
+                description={t("admin_sql_console.email_sent_count", { count: testEmailResult.sent })}
               />
               {testEmailResult.details.length > 0 && (
                 <div
@@ -327,7 +329,7 @@ add(2, 3)`);
             }
           >
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              {!jsResult.ok && <Alert type="error" showIcon message={jsResult.error || "ไม่สำเร็จ"} />}
+              {!jsResult.ok && <Alert type="error" showIcon message={jsResult.error || t("admin_sql_console.failed")} />}
               {jsResult.logs.length > 0 && (
                 <div
                   style={{
@@ -377,15 +379,15 @@ add(2, 3)`);
           </Card>
         )}
 
-        <Card size="small" title="ข้อจำกัดที่ตั้งใจไว้">
+        <Card size="small" title={t("admin_sql_console.limits_title")}>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>Read-only: รับเฉพาะ SELECT/WITH, ครอบด้วย Postgres <Text code>READ ONLY</Text> transaction จริง + LIMIT 200 เสมอ</li>
-            <li>คำสั่งเดียวต่อครั้ง (ห้าม ; กลางข้อความ กัน stacked query)</li>
-            <li>Statement timeout 5 วินาที กัน query ค้าง</li>
-            <li>Write-mode ปิดเสมอเมื่อ production — ไม่มี env flag ให้เปิดข้าม</li>
-            <li>ทุกคำสั่งถูก audit เต็มข้อความ (action <Text code>dev.sql_console.read</Text>/<Text code>dev.sql_console.write</Text>)</li>
-            <li>JavaScript: synchronous เท่านั้น, timeout 1 วินาที, จำกัด 10,000 ตัวอักษร/200 log entries และปิดเสมอใน production</li>
-            <li>JavaScript audit ใช้ action <Text code>dev.js_console.run</Text>; ไม่เปิด API ของแอป ถ้าต้องทดสอบ service ให้เพิ่ม adapter ใน allowlist โดยเฉพาะ</li>
+            <li>{t("admin_sql_console.limit_read_only_1")} <Text code>READ ONLY</Text> {t("admin_sql_console.limit_read_only_2")}</li>
+            <li>{t("admin_sql_console.limit_single_statement")}</li>
+            <li>{t("admin_sql_console.limit_timeout")}</li>
+            <li>{t("admin_sql_console.limit_write_prod")}</li>
+            <li>{t("admin_sql_console.limit_audit_1")} <Text code>dev.sql_console.read</Text>/<Text code>dev.sql_console.write</Text>)</li>
+            <li>{t("admin_sql_console.limit_js")}</li>
+            <li>{t("admin_sql_console.limit_js_audit_1")} <Text code>dev.js_console.run</Text>{t("admin_sql_console.limit_js_audit_2")}</li>
           </ul>
         </Card>
       </Space>
