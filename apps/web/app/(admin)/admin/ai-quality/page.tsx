@@ -1,6 +1,7 @@
 'use client';
 
 import { gql, useMutation, useQuery } from "@apollo/client";
+import { useI18n } from "@/lib/i18nContext";
 import {
   Alert,
   Button,
@@ -83,12 +84,13 @@ const M_DISMISS = gql`
   }
 `;
 
-const OUTCOME_LABEL: Record<string, string> = {
-  SUCCESS: "สำเร็จ",
-  CLARIFICATION: "ถามเพิ่ม",
-  HANDOFF: "ส่งต่อคน",
-  UNRESOLVED: "ยังไม่จบ",
-  FAILURE: "ผิดพลาด",
+const OUTCOME_KEYS = ["SUCCESS", "CLARIFICATION", "HANDOFF", "UNRESOLVED", "FAILURE"] as const;
+const OUTCOME_LABEL_KEY: Record<string, string> = {
+  SUCCESS: "outcome_success",
+  CLARIFICATION: "outcome_clarification",
+  HANDOFF: "outcome_handoff",
+  UNRESOLVED: "outcome_unresolved",
+  FAILURE: "outcome_failure",
 };
 const OUTCOME_COLOR: Record<string, string> = {
   SUCCESS: "green",
@@ -97,27 +99,28 @@ const OUTCOME_COLOR: Record<string, string> = {
   UNRESOLVED: "orange",
   FAILURE: "red",
 };
-const REASON_LABEL: Record<string, string> = {
-  FORCED_HANDOFF: "บังคับส่งต่อ",
-  TOOL_ERROR: "Tool error",
-  SAFE_GUARD_OR_RETRY: "ตอบแบบ safe/retry",
-  ASKED_CLARIFICATION: "ถามข้อมูลเพิ่ม",
-  ORDER_CREATED: "สร้างออเดอร์",
-  VERIFIED_TOOL_RESULT: "มีข้อมูลจาก tool",
-  DETERMINISTIC_REPLY: "คำตอบ deterministic",
-  ANSWERED: "ตอบแล้ว",
+const REASON_LABEL_KEY: Record<string, string> = {
+  FORCED_HANDOFF: "reason_forced_handoff",
+  SAFE_GUARD_OR_RETRY: "reason_safe_guard_or_retry",
+  ASKED_CLARIFICATION: "reason_asked_clarification",
+  ORDER_CREATED: "reason_order_created",
+  VERIFIED_TOOL_RESULT: "reason_verified_tool_result",
+  DETERMINISTIC_REPLY: "reason_deterministic_reply",
+  ANSWERED: "reason_answered",
 };
-const CATEGORY_OPTIONS = [
-  ["CORRECT", "ถูกต้อง"],
-  ["HALLUCINATION", "แต่งข้อมูล / Hallucination"],
-  ["WRONG_TOOL", "เลือก tool ผิด"],
-  ["TOOL_ERROR", "Tool ทำงานผิดพลาด"],
-  ["MISUNDERSTOOD", "เข้าใจลูกค้าผิด"],
-  ["BAD_HANDOFF", "ส่งต่อไม่เหมาะสม"],
-  ["POLICY", "ผิด policy / ความปลอดภัย"],
-  ["TONE", "ภาษาและน้ำเสียง"],
-  ["OTHER", "อื่น ๆ"],
-].map(([value, label]) => ({ value, label }));
+// TOOL_ERROR is deliberately absent above: it renders as the literal "Tool error",
+// which is already English and shared with the category list below.
+const CATEGORY_KEYS: [string, string][] = [
+  ["CORRECT", "cat_correct"],
+  ["HALLUCINATION", "cat_hallucination"],
+  ["WRONG_TOOL", "cat_wrong_tool"],
+  ["TOOL_ERROR", "cat_tool_error"],
+  ["MISUNDERSTOOD", "cat_misunderstood"],
+  ["BAD_HANDOFF", "cat_bad_handoff"],
+  ["POLICY", "cat_policy"],
+  ["TONE", "cat_tone"],
+  ["OTHER", "cat_other"],
+];
 
 const fmt = (iso?: string | null) =>
   iso
@@ -129,7 +132,9 @@ const fmt = (iso?: string | null) =>
     : "—";
 
 function OutcomeTag({ value }: { value: string }) {
-  return <Tag color={OUTCOME_COLOR[value] || "default"}>{OUTCOME_LABEL[value] || value}</Tag>;
+  const { t } = useI18n();
+  const labelKey = OUTCOME_LABEL_KEY[value];
+  return <Tag color={OUTCOME_COLOR[value] || "default"}>{labelKey ? t(`admin_ai_quality.${labelKey}`) : value}</Tag>;
 }
 
 function MetricCard({
@@ -162,6 +167,7 @@ function MetricCard({
 }
 
 export default function AiQualityPage() {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const canView = can("ai_quality.view");
@@ -190,7 +196,7 @@ export default function AiQualityPage() {
   });
   const [review, { loading: reviewing }] = useMutation(M_REVIEW, {
     onCompleted: async () => {
-      message.success("บันทึกผล QA แล้ว");
+      message.success(t("admin_ai_quality.review_saved"));
       form.resetFields();
       await Promise.all([refetch(), refetchDetail()]);
     },
@@ -198,7 +204,7 @@ export default function AiQualityPage() {
   });
   const [dismiss, { loading: dismissing }] = useMutation(M_DISMISS, {
     onCompleted: async () => {
-      message.success("นำเคสออกจากคิวตรวจแล้ว");
+      message.success(t("admin_ai_quality.dismissed"));
       setActiveId(null);
       form.resetFields();
       await refetch();
@@ -208,10 +214,10 @@ export default function AiQualityPage() {
 
   if (permissionsLoading) return <Card loading />;
   if (!canView) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดู AI Quality" description="ต้องมีสิทธิ์ ai_quality.view" />;
+    return <Alert type="error" showIcon message={t("admin_ai_quality.no_permission")} description={t("admin_ai_quality.no_permission_desc")} />;
   }
   if (error) {
-    return <Alert type="error" showIcon message="โหลด AI Quality ไม่ได้" description={error.message} />;
+    return <Alert type="error" showIcon message={t("admin_ai_quality.load_error")} description={error.message} />;
   }
 
   const metrics = data?.bmsAiQualityMetrics;
@@ -233,8 +239,7 @@ export default function AiQualityPage() {
       <section className={styles.hero}>
         <h1 className={styles.heroTitle}>AI Quality Control</h1>
         <p className={styles.heroCopy}>
-          ดูสุขภาพคำตอบจาก signal ที่ไม่เก็บ prompt, ตรวจ failure cases และสุ่มบทสนทนาปกติประมาณ 5%
-          เพื่อหา blind spot ก่อนกระทบลูกค้าจำนวนมาก
+          {t("admin_ai_quality.hero_copy")}
         </p>
       </section>
 
@@ -245,12 +250,12 @@ export default function AiQualityPage() {
             onChange={setDays}
             style={{ width: 140 }}
             options={[
-              { value: 7, label: "7 วันล่าสุด" },
-              { value: 30, label: "30 วันล่าสุด" },
-              { value: 90, label: "90 วันล่าสุด" },
+              { value: 7, label: t("admin_ai_quality.days_7") },
+              { value: 30, label: t("admin_ai_quality.days_30") },
+              { value: 90, label: t("admin_ai_quality.days_90") },
             ]}
           />
-          <Text type="secondary">Metrics เริ่มนับจาก AI turn ที่มี quality signal หลัง migration 7.31</Text>
+          <Text type="secondary">{t("admin_ai_quality.metrics_note")}</Text>
         </Space>
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
       </Space>
@@ -262,7 +267,7 @@ export default function AiQualityPage() {
             value={metrics?.successRate ?? 0}
             suffix="%"
             color="#087f6b"
-            note={`${metrics?.successCount ?? 0} จาก ${metrics?.totalTurns ?? 0} AI turns`}
+            note={t("admin_ai_quality.success_note", { count: metrics?.successCount ?? 0, total: metrics?.totalTurns ?? 0 })}
             icon={<CheckCircleOutlined />}
           />
         </Col>
@@ -272,7 +277,7 @@ export default function AiQualityPage() {
             value={metrics?.handoffRate ?? 0}
             suffix="%"
             color="#d97706"
-            note={`${metrics?.handoffCount ?? 0} ครั้งที่ส่งต่อให้คน`}
+            note={t("admin_ai_quality.handoff_note", { count: metrics?.handoffCount ?? 0 })}
             icon={<WarningOutlined />}
           />
         </Col>
@@ -282,23 +287,23 @@ export default function AiQualityPage() {
             value={metrics?.unresolvedRate ?? 0}
             suffix="%"
             color="#cf3f3f"
-            note={`${metrics?.unresolvedCount ?? 0} safe retry / failure`}
+            note={t("admin_ai_quality.unresolved_note", { count: metrics?.unresolvedCount ?? 0 })}
             icon={<ExclamationCircleOutlined />}
           />
         </Col>
         <Col xs={12} lg={6}>
           <MetricCard
-            title="รอตรวจ QA"
+            title={t("admin_ai_quality.pending_qa_title")}
             value={metrics?.pendingReviews ?? 0}
             color="#315c9b"
-            note={`ตรวจแล้ว ${metrics?.reviewedCount ?? 0} · คนยืนยันว่าพลาด ${metrics?.humanFailCount ?? 0}`}
+            note={t("admin_ai_quality.pending_qa_note", { reviewed: metrics?.reviewedCount ?? 0, failed: metrics?.humanFailCount ?? 0 })}
             icon={<SafetyOutlined />}
           />
         </Col>
       </Row>
 
       <Card
-        title="แนวโน้มรายวัน"
+        title={t("admin_ai_quality.daily_trend_title")}
         style={{ marginTop: 16, borderRadius: 14 }}
         extra={
           <Space size={12} wrap>
@@ -322,31 +327,31 @@ export default function AiQualityPage() {
             })}
           </div>
         ) : (
-          <Empty description="ยังไม่มี AI turn ที่มี quality signal ในช่วงนี้" />
+          <Empty description={t("admin_ai_quality.trend_empty")} />
         )}
       </Card>
 
       <Card
         title="Review queue"
         style={{ marginTop: 16, borderRadius: 14 }}
-        extra={<Text type="secondary">{cases.length} เคส</Text>}
+        extra={<Text type="secondary">{t("admin_ai_quality.cases_count", { count: cases.length })}</Text>}
       >
         <Space wrap style={{ marginBottom: 14 }}>
           <Select
             allowClear
-            placeholder="สถานะ review"
+            placeholder={t("admin_ai_quality.filter_review_status")}
             value={status}
             onChange={setStatus}
             style={{ width: 160 }}
             options={[
-              { value: "PENDING", label: "รอตรวจ" },
-              { value: "REVIEWED", label: "ตรวจแล้ว" },
-              { value: "DISMISSED", label: "ไม่นำมาตรวจ" },
+              { value: "PENDING", label: t("admin_ai_quality.status_pending") },
+              { value: "REVIEWED", label: t("admin_ai_quality.status_reviewed") },
+              { value: "DISMISSED", label: t("admin_ai_quality.status_dismissed") },
             ]}
           />
           <Select
             allowClear
-            placeholder="แหล่งเคส"
+            placeholder={t("admin_ai_quality.filter_source")}
             value={source}
             onChange={setSource}
             style={{ width: 180 }}
@@ -357,11 +362,11 @@ export default function AiQualityPage() {
           />
           <Select
             allowClear
-            placeholder="ผลจากระบบ"
+            placeholder={t("admin_ai_quality.filter_outcome")}
             value={outcome}
             onChange={setOutcome}
             style={{ width: 170 }}
-            options={Object.entries(OUTCOME_LABEL).map(([value, label]) => ({ value, label }))}
+            options={OUTCOME_KEYS.map((value) => ({ value, label: t(`admin_ai_quality.${OUTCOME_LABEL_KEY[value]}`) }))}
           />
         </Space>
         <Table
@@ -373,7 +378,7 @@ export default function AiQualityPage() {
           onRow={(row: any) => ({ onClick: () => setActiveId(row.id), style: { cursor: "pointer" } })}
           columns={[
             {
-              title: "เวลา",
+              title: t("admin_ai_quality.col_time"),
               dataIndex: "createdAt",
               width: 160,
               render: fmt,
@@ -416,7 +421,7 @@ export default function AiQualityPage() {
                 <Button
                   type="text"
                   icon={<EyeOutlined />}
-                  aria-label="เปิดเคส"
+                  aria-label={t("admin_ai_quality.open_case")}
                   onClick={(event) => {
                     event.stopPropagation();
                     setActiveId(row.id);
@@ -435,7 +440,7 @@ export default function AiQualityPage() {
           form.resetFields();
         }}
         width={isMobile ? "100%" : 680}
-        title="ตรวจ AI response"
+        title={t("admin_ai_quality.drawer_title")}
         destroyOnClose
       >
         {detailLoading || !detail ? (
@@ -445,24 +450,24 @@ export default function AiQualityPage() {
             <Alert
               type="info"
               showIcon
-              message="ข้อความในหน้านี้ถูก redact อีเมล เบอร์โทร URL และรหัสยาวแล้ว"
+              message={t("admin_ai_quality.redact_notice")}
             />
             <Descriptions size="small" column={isMobile ? 1 : 2} bordered>
               <Descriptions.Item label="Signal"><OutcomeTag value={detail.signalOutcome} /></Descriptions.Item>
               <Descriptions.Item label="Channel"><Tag>{detail.channel}</Tag></Descriptions.Item>
-              <Descriptions.Item label="เหตุผล" span={2}>
+              <Descriptions.Item label={t("admin_ai_quality.label_reason")} span={2}>
                 <Space wrap>
                   {(detail.reasonCodes || []).map((reason: string) => (
-                    <Tag key={reason}>{REASON_LABEL[reason] || reason}</Tag>
+                    <Tag key={reason}>{REASON_LABEL_KEY[reason] ? t(`admin_ai_quality.${REASON_LABEL_KEY[reason]}`) : reason}</Tag>
                   ))}
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="Review">{detail.verdict || "รอตรวจ"}</Descriptions.Item>
-              <Descriptions.Item label="ผู้ตรวจ">{detail.reviewerName || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Review">{detail.verdict || t("admin_ai_quality.awaiting_review")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_ai_quality.label_reviewer")}>{detail.reviewerName || "—"}</Descriptions.Item>
             </Descriptions>
 
             <div>
-              <Text strong>Context รอบ AI turn</Text>
+              <Text strong>{t("admin_ai_quality.context_title")}</Text>
               <Space direction="vertical" size={8} style={{ width: "100%", marginTop: 10 }}>
                 {(detail.messages || []).map((item: any) => (
                   <div
@@ -479,11 +484,11 @@ export default function AiQualityPage() {
             </div>
 
             <Link href={`/admin/inbox?c=${detail.conversationId}`}>
-              <Button>เปิดบทสนทนาใน Inbox</Button>
+              <Button>{t("admin_ai_quality.open_in_inbox")}</Button>
             </Link>
 
             {canReview ? (
-              <Card size="small" title={detail.status === "REVIEWED" ? "แก้ผลตรวจ" : "ผลตรวจของมนุษย์"}>
+              <Card size="small" title={detail.status === "REVIEWED" ? t("admin_ai_quality.edit_review_title") : t("admin_ai_quality.human_review_title")}>
                 <Form
                   form={form}
                   layout="vertical"
@@ -502,30 +507,30 @@ export default function AiQualityPage() {
                 >
                   <Row gutter={12}>
                     <Col xs={24} sm={10}>
-                      <Form.Item name="verdict" label="AI ตอบได้ไหม" rules={[{ required: true, message: "เลือกผลตรวจ" }]}>
+                      <Form.Item name="verdict" label={t("admin_ai_quality.form_verdict")} rules={[{ required: true, message: t("admin_ai_quality.form_verdict_required") }]}>
                         <Select options={[
-                          { value: "PASS", label: "PASS — ใช้ได้" },
-                          { value: "FAIL", label: "FAIL — ต้องแก้" },
-                          { value: "UNCLEAR", label: "UNCLEAR — ยังตัดสินไม่ได้" },
+                          { value: "PASS", label: t("admin_ai_quality.verdict_pass") },
+                          { value: "FAIL", label: t("admin_ai_quality.verdict_fail") },
+                          { value: "UNCLEAR", label: t("admin_ai_quality.verdict_unclear") },
                         ]} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={14}>
-                      <Form.Item name="category" label="หมวด" rules={[{ required: true, message: "เลือกหมวด" }]}>
-                        <Select options={CATEGORY_OPTIONS} />
+                      <Form.Item name="category" label={t("admin_ai_quality.form_category")} rules={[{ required: true, message: t("admin_ai_quality.form_category_required") }]}>
+                        <Select options={CATEGORY_KEYS.map(([value, k]) => ({ value, label: t(`admin_ai_quality.${k}`) }))} />
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item name="note" label="หมายเหตุสำหรับทีม (ไม่บังคับ)">
-                    <Input.TextArea rows={3} maxLength={1000} showCount placeholder="ระบุสิ่งที่ควรแก้ใน prompt / tool / rule" />
+                  <Form.Item name="note" label={t("admin_ai_quality.form_note")}>
+                    <Input.TextArea rows={3} maxLength={1000} showCount placeholder={t("admin_ai_quality.form_note_placeholder")} />
                   </Form.Item>
                   <Space wrap>
-                    <Button type="primary" htmlType="submit" loading={reviewing}>บันทึกผล QA</Button>
+                    <Button type="primary" htmlType="submit" loading={reviewing}>{t("admin_ai_quality.btn_save_qa")}</Button>
                     <Popconfirm
-                      title="นำเคสนี้ออกจากคิวตรวจ?"
-                      description="ใช้เมื่อเป็น sample ที่ไม่เหมาะสำหรับ QA และเปิดดูย้อนหลังได้จาก filter DISMISSED"
+                      title={t("admin_ai_quality.dismiss_confirm_title")}
+                      description={t("admin_ai_quality.dismiss_confirm_desc")}
                       okText="Dismiss"
-                      cancelText="ยกเลิก"
+                      cancelText={t("admin_ai_quality.cancel")}
                       onConfirm={() => activeId && dismiss({ variables: { id: activeId } })}
                     >
                       <Button loading={dismissing}>Dismiss</Button>
@@ -534,11 +539,11 @@ export default function AiQualityPage() {
                 </Form>
               </Card>
             ) : (
-              <Alert type="warning" showIcon message="ดูเคสได้ แต่ไม่มีสิทธิ์ ai_quality.review" />
+              <Alert type="warning" showIcon message={t("admin_ai_quality.no_review_permission")} />
             )}
 
             {detail.reviewerNote && (
-              <Paragraph type="secondary">หมายเหตุเดิม: {detail.reviewerNote}</Paragraph>
+              <Paragraph type="secondary">{t("admin_ai_quality.previous_note", { note: detail.reviewerNote })}</Paragraph>
             )}
           </Space>
         )}

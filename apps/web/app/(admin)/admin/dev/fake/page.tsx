@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import { SHOP_ARCHETYPE_OPTIONS } from '@/lib/bms/shopArchetypes';
+import { useI18n } from '@/lib/i18nContext';
 
 const Q_ME = gql`
   query {
@@ -46,6 +47,7 @@ const KINDS = [
 type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
+  const { t } = useI18n();
   const [kind, setKind] = useState<FakeKind>('bms-products');
   const [count, setCount] = useState(50);
   const [loading, setLoading] = useState(false);
@@ -57,9 +59,9 @@ export default function DevFakePage() {
     fetchPolicy: 'cache-and-network',
     skip: !isPlatformAdmin,
   });
-  const tenantOptions = (tenantsData?.bmsTenants || []).map((t: any) => ({
-    value: t.id,
-    label: `${t.name} /${t.slug}${t.active === false ? ' (ปิดอยู่)' : ''}`,
+  const tenantOptions = (tenantsData?.bmsTenants || []).map((row: any) => ({
+    value: row.id,
+    label: `${row.name} /${row.slug}${row.active === false ? t('admin_dev_fake.tenant_inactive_suffix') : ''}`,
   }));
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
@@ -72,7 +74,7 @@ export default function DevFakePage() {
   const [enterTenant, { loading: entering }] = useMutation(M_ENTER_TENANT, {
     // reload ทั้งหน้าเพื่อให้ context (tenant) ใหม่มีผลกับทุกหน้า — pattern เดียวกับ /admin/tenants
     onCompleted: () => { window.location.href = '/admin/dashboard'; },
-    onError: (e) => message.error(e?.message || 'เข้าดูร้านไม่สำเร็จ'),
+    onError: (e) => message.error(e?.message || t('admin_dev_fake.impersonate_failed')),
   });
 
   useEffect(() => {
@@ -101,7 +103,7 @@ export default function DevFakePage() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Failed');
-      message.success(`สร้างร้าน "${j.tenant.name}" (/${j.tenant.slug}) สำเร็จ`);
+      message.success(t('admin_dev_fake.shop_created', { name: j.tenant.name, slug: j.tenant.slug }));
       setProvisioned(j);
       setShopName('');
     } catch (e: any) {
@@ -120,7 +122,7 @@ export default function DevFakePage() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Failed');
-      message.success(`สร้าง demo shop สำเร็จ ${j.created?.length || 0} ร้าน`);
+      message.success(t('admin_dev_fake.demo_created', { count: j.created?.length || 0 }));
       setDemoProvisioned(j.created || []);
     } catch (e: any) {
       message.error(e.message || 'Error');
@@ -131,7 +133,7 @@ export default function DevFakePage() {
 
   async function doFake() {
     if (!selectedTenantId) {
-      message.warning('กรุณาเลือกร้านก่อน');
+      message.warning(t('admin_dev_fake.select_shop_first'));
       return;
     }
     setLoading(true);
@@ -153,7 +155,7 @@ export default function DevFakePage() {
 
   async function cleanup() {
     if (!selectedTenantId) {
-      message.warning('กรุณาเลือกร้านก่อน');
+      message.warning(t('admin_dev_fake.select_shop_first'));
       return;
     }
     setLoading(true);
@@ -192,16 +194,15 @@ export default function DevFakePage() {
 
   return (
     <>
-    <Card title="สร้างร้านทดสอบทั้งร้าน (ครบชุด)" style={{ marginBottom: 16 }}>
+    <Card title={t('admin_dev_fake.provision_card_title')} style={{ marginBottom: 16 }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="สร้าง tenant ใหม่ (slug ขึ้นต้น test- เสมอ) + admin user + staff/products/customers/coupons/orders/conversations/purchase ครบชุดในคลิกเดียว"
-        description={<>ถ้า seed ขั้นไหนพังกลางทาง ร้านที่เพิ่งสร้างจะถูกลบทิ้งอัตโนมัติ (ไม่เหลือร้าน half-seeded ค้าง) ·
-          ลบร้านนี้ทีหลังได้ที่ <code>/admin/tenants</code> (ปุ่ม &quot;ลบ&quot; โชว์เฉพาะร้านที่ slug ขึ้นต้น <code>test-</code>)</>}
+        message={t('admin_dev_fake.provision_alert')}
+        description={<>{t('admin_dev_fake.provision_desc_1')} <code>/admin/tenants</code> {t('admin_dev_fake.provision_desc_2')} <code>test-</code>)</>}
       />
       <Space>
         <Input
-          placeholder="ชื่อร้าน (ไม่ใส่ = สุ่มให้)"
+          placeholder={t('admin_dev_fake.shop_name_placeholder')}
           value={shopName}
           onChange={(e) => setShopName(e.target.value)}
           style={{ width: 260 }}
@@ -209,27 +210,27 @@ export default function DevFakePage() {
         />
         <Select
           allowClear
-          placeholder="เลือก archetype ร้าน"
+          placeholder={t('admin_dev_fake.archetype_placeholder')}
           value={shopArchetype}
           onChange={setShopArchetype}
           options={SHOP_ARCHETYPE_OPTIONS as any}
           style={{ width: 240 }}
         />
-        <Button type="primary" onClick={provisionShop} loading={provisioning}>สร้างร้านทดสอบ</Button>
+        <Button type="primary" onClick={provisionShop} loading={provisioning}>{t('admin_dev_fake.btn_provision')}</Button>
       </Space>
     </Card>
 
     <Card title="Provision Demo Shops" style={{ marginBottom: 16 }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="สร้างร้าน demo คงที่สำหรับ public /demo"
-        description={<>จะสร้าง slug คงที่ 5 ร้านคือ <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code> พร้อมสินค้าและข้อมูล fake เพื่อให้หน้า demo อ่านข้อมูลจริงได้</>}
+        message={t('admin_dev_fake.demo_alert')}
+        description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code> {t('admin_dev_fake.demo_desc_2')}</>}
       />
       <Space wrap>
         <Button type="primary" onClick={() => provisionDemoShops()} loading={provisioningDemo}>
-          สร้าง demo shops ทั้งหมด
+          {t('admin_dev_fake.btn_demo_all')}
         </Button>
-        <Button onClick={() => provisionDemoShops('fashion')} loading={provisioningDemo}>สร้างเฉพาะ Fashion</Button>
+        <Button onClick={() => provisionDemoShops('fashion')} loading={provisioningDemo}>{t('admin_dev_fake.btn_demo_fashion')}</Button>
         <Button onClick={() => provisionDemoShops('food')} loading={provisioningDemo}>Food</Button>
         <Button onClick={() => provisionDemoShops('beauty')} loading={provisioningDemo}>Beauty</Button>
         <Button onClick={() => provisionDemoShops('grocery')} loading={provisioningDemo}>Minimart</Button>
@@ -253,20 +254,20 @@ export default function DevFakePage() {
 
     <Modal
       open={!!provisioned}
-      title="สร้างร้านทดสอบสำเร็จ"
+      title={t('admin_dev_fake.provisioned_title')}
       onCancel={() => setProvisioned(null)}
       footer={[
-        <Button key="close" onClick={() => setProvisioned(null)}>ปิด</Button>,
+        <Button key="close" onClick={() => setProvisioned(null)}>{t('admin_dev_fake.btn_close')}</Button>,
         <Button key="enter" type="primary" loading={entering}
           onClick={() => provisioned && enterTenant({ variables: { tenantId: provisioned.tenant.id } })}>
-          เข้าดูร้านนี้
+          {t('admin_dev_fake.btn_enter_shop')}
         </Button>,
       ]}
     >
       {provisioned && (
         <>
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="ร้าน">{provisioned.tenant.name} <span style={{ opacity: 0.7 }}>/{provisioned.tenant.slug}</span></Descriptions.Item>
+            <Descriptions.Item label={t('admin_dev_fake.label_shop')}>{provisioned.tenant.name} <span style={{ opacity: 0.7 }}>/{provisioned.tenant.slug}</span></Descriptions.Item>
             <Descriptions.Item label="Archetype">{(provisioned as any).businessArchetype || '—'}</Descriptions.Item>
             <Descriptions.Item label="Admin email">{provisioned.admin.email}</Descriptions.Item>
             <Descriptions.Item label="Admin password">
@@ -274,12 +275,18 @@ export default function DevFakePage() {
             </Descriptions.Item>
           </Descriptions>
           <Alert style={{ marginTop: 12 }} type="warning" showIcon
-            message="รหัสผ่านนี้แสดงครั้งเดียว — คัดลอกเก็บไว้ก่อนปิดหน้าต่างนี้" />
+            message={t('admin_dev_fake.password_once_notice')} />
           <div style={{ marginTop: 12 }}>
-            สร้างแล้ว: staff {provisioned.summary.staff ?? 0} · สินค้า {provisioned.summary.products ?? 0} ·
-            ลูกค้า {provisioned.summary.customers ?? 0} · คูปอง {provisioned.summary.coupons ?? 0} ·
-            ออเดอร์ {provisioned.summary.orders ?? 0} ·
-            แชท {provisioned.summary.conversations ?? 0} · Restock {provisioned.summary.restockSubscriptions ?? 0} · PO {provisioned.summary.purchaseOrders ?? 0}
+            {t('admin_dev_fake.summary_line', {
+              staff: provisioned.summary.staff ?? 0,
+              products: provisioned.summary.products ?? 0,
+              customers: provisioned.summary.customers ?? 0,
+              coupons: provisioned.summary.coupons ?? 0,
+              orders: provisioned.summary.orders ?? 0,
+              conversations: provisioned.summary.conversations ?? 0,
+              restock: provisioned.summary.restockSubscriptions ?? 0,
+              po: provisioned.summary.purchaseOrders ?? 0,
+            })}
           </div>
         </>
       )}
@@ -290,7 +297,7 @@ export default function DevFakePage() {
       extra={<Space wrap>
         <Select
           showSearch
-          placeholder="เลือกร้าน"
+          placeholder={t('admin_dev_fake.select_shop_placeholder')}
           value={selectedTenantId}
           onChange={setSelectedTenantId}
           options={tenantOptions}
@@ -314,9 +321,9 @@ export default function DevFakePage() {
         <InputNumber min={1} max={2000} value={count} onChange={(v) => setCount(v || 1)} />
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
         <Popconfirm
-          title="ลบข้อมูล fake ทั้งหมดของร้านนี้?"
-          description={<>ลบถาวร ย้อนกลับไม่ได้ — ร้าน <b>{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || '…'}</b></>}
-          okText="ลบเลย" okButtonProps={{ danger: true }} cancelText="ยกเลิก"
+          title={t('admin_dev_fake.cleanup_confirm_title')}
+          description={<>{t('admin_dev_fake.cleanup_confirm_desc_1')} <b>{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || '…'}</b></>}
+          okText={t('admin_dev_fake.cleanup_ok')} okButtonProps={{ danger: true }} cancelText={t('admin_dev_fake.cleanup_cancel')}
           onConfirm={cleanup}
         >
           <Button danger disabled={loading || !selectedTenantId}>Cleanup</Button>
@@ -325,34 +332,31 @@ export default function DevFakePage() {
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message={<Space wrap>ร้านเป้าหมาย:
+        message={<Space wrap>{t('admin_dev_fake.target_shop_label')}
           {selectedTenantId
-            ? <Tag color="blue">{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || 'กำลังโหลด…'}</Tag>
-            : <Tag>ยังไม่ได้เลือกร้าน</Tag>}
+            ? <Tag color="blue">{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || t('admin_dev_fake.loading_shop')}</Tag>
+            : <Tag>{t('admin_dev_fake.no_shop_selected')}</Tag>}
         </Space>}
-        description="เลือกร้านจากรายการจริงของระบบก่อนทุกครั้ง แล้ว API จะตรวจซ้ำว่า tenant นั้นมีอยู่จริงก่อน seed หรือ cleanup"
+        description={t('admin_dev_fake.target_shop_desc')}
       />
       <Alert
         type="warning" showIcon style={{ marginBottom: 12 }}
-        message="ใช้เฉพาะ dev/test (production ปิด default — เปิดด้วย env BMS_ALLOW_FAKE_SEED=1 บนเครื่อง demo)"
-        description={<>ลำดับแนะนำ: <b>Staff → Products → Customers → Coupons → Orders → Conversations → Purchase</b> (Orders/Conv/Purchase สุ่มจาก products/customers ที่มี) ·
-          <b>Orders</b> backdate 30 วัน + พ่วง payment/shipment → เติม Dashboard/Reports/CRM/Payment/Shipping ·
-          <b>Conversations</b> + messages → เติม Inbox · <b>Coupons</b> สุ่มทั้ง PERCENT/FIXED บางอันปิดใช้งาน/มีขั้นต่ำ/จำกัดจำนวน →
-          เติมหน้า Coupons · marker: <code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
-          <b>Restock Subscriptions</b> สร้างหลายสถานะผสมกัน (ACTIVE / READY / NOTIFIED / FAILED / PURCHASED / CANCELLED) พร้อม conversation และ delivery history →
-          เติมหน้า Restock Subscriptions ·
-          <b>Pharmacy Assessments</b> สร้างเคสตัวอย่าง 5 แบบ (normal / incomplete / allergy / high-risk / emergency) →
-          เติมหน้า Pharmacy Queue ·
-          <b>AI Usage</b> เพิ่มตัวนับ quota เดือนนี้จริงใน <code>bms_ai_usage_monthly</code> เพื่อทดสอบหน้า Settings ·
-          <b>Cleanup</b> ลบ fake ทั้งหมด (ตามลำดับ FK, ข้ามตัวที่มี order อ้างถึง)</>}
+        message={t('admin_dev_fake.dev_only_title')}
+        description={<>{t('admin_dev_fake.seed_desc_p1')}<b>Staff → Products → Customers → Coupons → Orders → Conversations → Purchase</b>{t('admin_dev_fake.seed_desc_p2')}
+          <b>Orders</b>{t('admin_dev_fake.seed_desc_p3')}
+          <b>Conversations</b>{t('admin_dev_fake.seed_desc_p4')}<b>Coupons</b>{t('admin_dev_fake.seed_desc_p5')}<code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
+          <b>Restock Subscriptions</b>{t('admin_dev_fake.seed_desc_p6')}
+          <b>Pharmacy Assessments</b>{t('admin_dev_fake.seed_desc_p7')}
+          <b>AI Usage</b>{t('admin_dev_fake.seed_desc_p8')}<code>bms_ai_usage_monthly</code>{t('admin_dev_fake.seed_desc_p9')}
+          <b>Cleanup</b>{t('admin_dev_fake.seed_desc_p10')}</>}
       />
       {data && isPlatformAdmin === false && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="เฉพาะแอดมินแพลตฟอร์ม"
-          description="บัญชีนี้ไม่มีสิทธิ์เลือกหรือ seed ข้ามร้าน"
+          message={t('admin_dev_fake.platform_only_title')}
+          description={t('admin_dev_fake.platform_only_desc')}
         />
       )}
       <Divider style={{ margin: '8px 0 16px' }} />

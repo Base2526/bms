@@ -5,6 +5,7 @@ import {
 } from "antd";
 import { useState, useMemo } from "react";
 import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 
@@ -65,6 +66,9 @@ const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteCustomer(id: $id) }`;
 const M_MERGE = gql`mutation ($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
+// ⚠️ คีย์ของ TAG_COLOR และค่าใน TAG_OPTIONS เป็น "ค่าที่เก็บใน DB" (customers.tags) ไม่ใช่ UI copy
+// ห้ามแปลตามภาษา UI — ถ้าแปล แท็กที่ลูกค้าเก่ามีอยู่จะ match สีไม่ได้ และแท็กที่สร้างใหม่จาก
+// UI ภาษาอังกฤษจะกลายเป็นค่าคนละตัวกับของเดิม (หลักเดียวกับ HEADER_MAP ใน ImportModal.tsx)
 const TAG_COLOR: Record<string, string> = {
   VIP: "gold",
   "ลูกค้าใหม่": "blue",
@@ -81,25 +85,30 @@ const COUPON_STATE_COLOR: Record<string, string> = {
   EXPIRED: "orange",
   REVOKED: "red",
 };
-const COUPON_STATE_LABEL: Record<string, string> = {
-  ASSIGNED: "แจกแล้ว",
-  RESERVED: "จองกับออเดอร์",
-  REDEEMED: "ใช้แล้ว",
-  EXPIRED: "หมดอายุ",
-  REVOKED: "ยกเลิกสิทธิ์",
+const COUPON_STATE_LABEL_KEY: Record<string, string> = {
+  ASSIGNED: "coupon_state_assigned",
+  RESERVED: "coupon_state_reserved",
+  REDEEMED: "coupon_state_redeemed",
+  EXPIRED: "coupon_state_expired",
+  REVOKED: "coupon_state_revoked",
 };
 const TAG_OPTIONS = ["VIP", "ลูกค้าใหม่", "ลูกค้าประจำ"];
 
-function formatDiscount(coupon: CustomerCoupon) {
-  if (coupon.type === "PERCENT") return `ลด ${Number(coupon.value).toLocaleString()}%`;
-  return `ลด ${Number(coupon.value).toLocaleString()} ฿`;
+function formatDiscount(coupon: CustomerCoupon, t: TFn) {
+  const value = Number(coupon.value).toLocaleString();
+  return coupon.type === "PERCENT"
+    ? t("admin_customers.discount_percent", { value })
+    : t("admin_customers.discount_fixed", { value });
 }
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "—";
 }
 
 function CustomersManagement() {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [addrForm] = Form.useForm();
   const [search, setSearch] = useState("");
@@ -114,11 +123,11 @@ function CustomersManagement() {
     variables: { search: search || null },
     fetchPolicy: "cache-and-network",
   });
-  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+  const onErr = (e: any) => message.error(e?.message || t("admin_customers.action_failed"));
 
   const [searchDupes, { data: dupeData, loading: dupeLoading }] = useLazyQuery(Q_CUSTOMERS, { fetchPolicy: "network-only" });
   const [merge, { loading: merging }] = useMutation(M_MERGE, {
-    onCompleted: () => { message.success("ผสานลูกค้าแล้ว"); closeMergeModal(); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.merged")); closeMergeModal(); refetch(); },
     onError: onErr,
   });
   const [reorderingId, setReorderingId] = useState<string | null>(null);
@@ -127,33 +136,33 @@ function CustomersManagement() {
       const r = d?.bmsReorderFromOrder;
       setReorderingId(null);
       if (r?.status === "CREATED") { message.success(r.message); refetch(); }
-      else message.error(r?.message || "ซื้อซ้ำไม่สำเร็จ");
+      else message.error(r?.message || t("admin_customers.reorder_failed"));
     },
     onError: (e) => { setReorderingId(null); onErr(e); },
   });
 
   const [upsert, { loading: saving }] = useMutation(M_UPSERT, {
-    onCompleted: () => { message.success("บันทึกลูกค้าแล้ว"); setModalOpen(false); setEditing(null); form.resetFields(); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.saved")); setModalOpen(false); setEditing(null); form.resetFields(); refetch(); },
     onError: onErr,
   });
   const [addAddr, { loading: savingAddr }] = useMutation(M_ADDR, {
-    onCompleted: () => { message.success("เพิ่มที่อยู่แล้ว"); setAddrFor(null); addrForm.resetFields(); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.address_added")); setAddrFor(null); addrForm.resetFields(); refetch(); },
     onError: onErr,
   });
   const [updateAddr, { loading: updatingAddr }] = useMutation(M_UPDATE_ADDR, {
-    onCompleted: () => { message.success("บันทึกที่อยู่แล้ว"); setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.address_saved")); setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); refetch(); },
     onError: onErr,
   });
   const [setDefaultAddr] = useMutation(M_SET_DEFAULT_ADDR, {
-    onCompleted: () => { message.success("ตั้งเป็นค่าเริ่มต้นแล้ว"); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.default_set")); refetch(); },
     onError: onErr,
   });
   const [deleteAddr] = useMutation(M_DELETE_ADDR, {
-    onCompleted: () => { message.success("ลบที่อยู่แล้ว"); refetch(); },
+    onCompleted: () => { message.success(t("admin_customers.address_deleted")); refetch(); },
     onError: onErr,
   });
   const [del] = useMutation(M_DELETE, {
-    onCompleted: (d) => { d?.bmsDeleteCustomer ? (message.success("ลบลูกค้าแล้ว"), refetch()) : onErr({ message: "ลบไม่ได้" }); },
+    onCompleted: (d) => { d?.bmsDeleteCustomer ? (message.success(t("admin_customers.customer_deleted")), refetch()) : onErr({ message: t("admin_customers.delete_failed") }); },
     onError: onErr,
   });
 
@@ -192,7 +201,7 @@ function CustomersManagement() {
   };
 
   const columns = useMemo(() => [
-    { title: "ชื่อ", dataIndex: "name", key: "name",
+    { title: t("admin_customers.col_name"), dataIndex: "name", key: "name",
       render: (n: string, c: Customer) => (
         <Space direction="vertical" size={0}>
           <Text strong>{n}</Text>
@@ -203,17 +212,17 @@ function CustomersManagement() {
           )}
         </Space>
       ) },
-    { title: "เบอร์โทร", dataIndex: "phone", key: "phone", width: 130,
+    { title: t("admin_customers.col_phone"), dataIndex: "phone", key: "phone", width: 130,
       render: (p: string | null) => p || <span style={{ color: "#999" }}>—</span> },
     { title: "Tags", dataIndex: "tags", key: "tags",
       render: (tags: string[]) => tags?.length
         ? tags.map((t) => <Tag key={t} color={TAG_COLOR[t] || "default"}>{t}</Tag>)
         : <span style={{ color: "#999" }}>—</span> },
-    { title: "ยอดซื้อสะสม", dataIndex: "total_spent", key: "total", width: 130, align: "right" as const,
+    { title: t("admin_customers.col_total_spent"), dataIndex: "total_spent", key: "total", width: 130, align: "right" as const,
       render: (v: number) => <Text strong style={{ color: "#389e0d" }}>{Number(v).toLocaleString()} ฿</Text> },
-    { title: "ออเดอร์", dataIndex: "order_count", key: "oc", width: 90, align: "center" as const,
+    { title: t("admin_customers.col_orders"), dataIndex: "order_count", key: "oc", width: 90, align: "center" as const,
       render: (n: number) => <Tag color={n > 0 ? "blue" : "default"}>{n}</Tag> },
-    { title: "คูปอง", dataIndex: "coupons", key: "coupons", width: 100, align: "center" as const,
+    { title: t("admin_customers.col_coupons"), dataIndex: "coupons", key: "coupons", width: 100, align: "center" as const,
       render: (coupons: CustomerCoupon[]) => {
         const count = coupons?.length || 0;
         const usable = coupons?.filter((coupon) => coupon.available).length || 0;
@@ -223,17 +232,17 @@ function CustomersManagement() {
     { title: "", key: "actions", width: 180,
       render: (_: any, c: Customer) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>แก้ไข</Button>
-          <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>ที่อยู่</Button>
-          <Button type="link" size="small" icon={<MergeCellsOutlined />} onClick={() => openMerge(c)}>ผสาน</Button>
-          <Popconfirm title="ลบลูกค้า (soft delete)?" okText="ลบ" okButtonProps={{ danger: true }} cancelText="ไม่" onConfirm={() => del({ variables: { id: c.id } })}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>{t("admin_customers.btn_edit")}</Button>
+          <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>{t("admin_customers.btn_address")}</Button>
+          <Button type="link" size="small" icon={<MergeCellsOutlined />} onClick={() => openMerge(c)}>{t("admin_customers.btn_merge")}</Button>
+          <Popconfirm title={t("admin_customers.delete_confirm")} okText={t("admin_customers.delete_ok")} okButtonProps={{ danger: true }} cancelText={t("admin_customers.delete_cancel")} onConfirm={() => del({ variables: { id: c.id } })}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ) },
   ], []);
 
-  if (error) return <Alert type="error" message="โหลดลูกค้าไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_customers.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -241,16 +250,16 @@ function CustomersManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>Customers (CRM)</h2>
           <Space wrap>
-            <Input.Search placeholder="ค้นหา ชื่อ/เบอร์" allowClear style={{ width: 220 }}
+            <Input.Search placeholder={t("admin_customers.search_placeholder")} allowClear style={{ width: 220 }}
               onSearch={(v) => setSearch(v)} onChange={(e) => !e.target.value && setSearch("")} />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มลูกค้า</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_customers.btn_add_customer")}</Button>
           </Space>
         </Space>
       </div>
 
       <Alert type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="ลูกค้าถูกสร้างอัตโนมัติเมื่อมี order เข้ามา (ผูกผ่าน channel:user_id) — กางแถวดูประวัติการซื้อ + ที่อยู่ · ยอดซื้อสะสมนับเฉพาะออเดอร์ที่จ่ายแล้ว" />
+        message={t("admin_customers.info_banner")} />
 
       <Table
         rowKey="id" loading={loading} dataSource={customers} columns={columns}
@@ -272,37 +281,37 @@ function CustomersManagement() {
       />
 
       {/* modal แก้ไข/สร้างลูกค้า */}
-      <Modal title={editing ? `แก้ไข: ${editing.name}` : "เพิ่มลูกค้า"} open={modalOpen}
+      <Modal title={editing ? t("admin_customers.modal_edit_title", { name: editing.name }) : t("admin_customers.modal_create_title")} open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditing(null); form.resetFields(); }}
-        onOk={submit} confirmLoading={saving} okText={editing ? "บันทึก" : "สร้าง"} width={520}>
+        onOk={submit} confirmLoading={saving} okText={editing ? t("admin_customers.btn_save") : t("admin_customers.btn_create")} width={520}>
         <Form form={form} layout="vertical" autoComplete="off">
-          <Form.Item label="ชื่อลูกค้า" name="name" rules={[{ required: true, message: "ระบุชื่อ" }]}>
-            <Input placeholder="เช่น คุณสมชาย" />
+          <Form.Item label={t("admin_customers.form_name")} name="name" rules={[{ required: true, message: t("admin_customers.form_name_required") }]}>
+            <Input placeholder={t("admin_customers.form_name_placeholder")} />
           </Form.Item>
-          <Form.Item label="เบอร์โทร" name="phone"><Input placeholder="08xxxxxxxx" /></Form.Item>
+          <Form.Item label={t("admin_customers.form_phone")} name="phone"><Input placeholder="08xxxxxxxx" /></Form.Item>
           <Form.Item label="Tags" name="tags">
-            <Select mode="tags" options={TAG_OPTIONS.map((t) => ({ value: t, label: t }))} placeholder="VIP / ลูกค้าใหม่ / ลูกค้าประจำ" />
+            <Select mode="tags" options={TAG_OPTIONS.map((t) => ({ value: t, label: t }))} placeholder={t("admin_customers.form_tags_placeholder")} />
           </Form.Item>
-          <Form.Item label="โน้ต" name="note"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item label={t("admin_customers.form_note")} name="note"><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
 
       {/* modal เพิ่ม/แก้ไขที่อยู่ */}
       <Modal
-        title={`${editingAddr ? "แก้ไขที่อยู่" : "เพิ่มที่อยู่"}: ${addrFor?.name || ""}`}
+        title={t("admin_customers.addr_modal_title", { action: editingAddr ? t("admin_customers.addr_modal_edit") : t("admin_customers.addr_modal_add"), name: addrFor?.name || "" })}
         open={!!addrFor}
         onCancel={closeAddrModal}
         onOk={submitAddr} confirmLoading={savingAddr || updatingAddr}
-        okText={editingAddr ? "บันทึก" : "เพิ่ม"} width={480}
+        okText={editingAddr ? t("admin_customers.btn_save") : t("admin_customers.btn_add")} width={480}
       >
         <Form form={addrForm} layout="vertical">
-          <Form.Item label="ป้าย (บ้าน/ที่ทำงาน)" name="label"><Input placeholder="บ้าน" /></Form.Item>
-          <Form.Item label="ที่อยู่" name="address" rules={[{ required: true, message: "ระบุที่อยู่" }]}>
+          <Form.Item label={t("admin_customers.form_label")} name="label"><Input placeholder={t("admin_customers.form_label_placeholder")} /></Form.Item>
+          <Form.Item label={t("admin_customers.form_address")} name="address" rules={[{ required: true, message: t("admin_customers.form_address_required") }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
           {!editingAddr && (
-            <Form.Item name="isDefault" valuePropName="checked" label="ตั้งเป็นค่าเริ่มต้น">
-              <Select options={[{ value: false, label: "ไม่" }, { value: true, label: "ใช่" }]} defaultValue={false} />
+            <Form.Item name="isDefault" valuePropName="checked" label={t("admin_customers.form_is_default")}>
+              <Select options={[{ value: false, label: t("admin_customers.opt_no") }, { value: true, label: t("admin_customers.opt_yes") }]} defaultValue={false} />
             </Form.Item>
           )}
         </Form>
@@ -310,22 +319,22 @@ function CustomersManagement() {
 
       {/* modal ผสานลูกค้าซ้ำ */}
       <Modal
-        title={`ผสานลูกค้าซ้ำเข้ากับ: ${mergeFor?.name || ""}`}
+        title={t("admin_customers.merge_modal_title", { name: mergeFor?.name || "" })}
         open={!!mergeFor}
         onCancel={closeMergeModal}
         onOk={submitMerge}
         confirmLoading={merging}
-        okText="ผสาน" okButtonProps={{ disabled: !mergeTargetId }}
+        okText={t("admin_customers.btn_merge_ok")} okButtonProps={{ disabled: !mergeTargetId }}
         width={520}
       >
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
-          message="ใช้เมื่อลูกค้าคนเดียวกันทักมาคนละช่องทางแล้วกลายเป็นคนละ record"
-          description={`ประวัติการซื้อ/ที่อยู่/ช่องทาง/แชท/เคสร้านยาที่ได้รับ consent ของลูกค้าที่เลือกด้านล่างจะย้ายมารวมกับ "${mergeFor?.name}" แล้วลูกค้าคนนั้นจะถูกลบ (soft delete) — ตรวจให้แน่ใจว่าเป็นคนเดียวกัน เพราะทำแล้วย้อนกลับเองไม่ได้`}
+          message={t("admin_customers.merge_info")}
+          description={t("admin_customers.merge_desc", { name: mergeFor?.name || "" })}
         />
         <Select
           showSearch style={{ width: "100%" }}
-          placeholder="ค้นหาชื่อ/เบอร์ลูกค้าที่จะผสานเข้ามา (ลูกค้าซ้ำ)"
+          placeholder={t("admin_customers.merge_search_placeholder")}
           filterOption={false}
           loading={dupeLoading}
           value={mergeTargetId}
@@ -335,7 +344,7 @@ function CustomersManagement() {
             .filter((c: Customer) => c.id !== mergeFor?.id)
             .map((c: Customer) => ({
               value: c.id,
-              label: `${c.name}${c.phone ? ` · ${c.phone}` : ""} · ${c.order_count} ออเดอร์ · ${Number(c.total_spent).toLocaleString()} ฿`,
+              label: `${c.name}${c.phone ? ` · ${c.phone}` : ""} · ${c.order_count} ${t("admin_customers.merge_option_orders")} · ${Number(c.total_spent).toLocaleString()} ฿`,
             }))}
         />
       </Modal>
@@ -354,28 +363,29 @@ function CustomerDetail({
   reorderingId: string | null;
   onReorder: (orderId: string) => void;
 }) {
+  const { t } = useI18n();
   const couponCols = [
-    { title: "โค้ด", dataIndex: "code", key: "code", width: 130, render: (code: string, coupon: CustomerCoupon) => (
+    { title: t("admin_customers.col_code"), dataIndex: "code", key: "code", width: 130, render: (code: string, coupon: CustomerCoupon) => (
       <Space direction="vertical" size={0}>
         <Text strong><TagOutlined /> {code}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>{formatDiscount(coupon)}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>{formatDiscount(coupon, t)}</Text>
       </Space>
     ) },
-    { title: "สถานะ", dataIndex: "state", key: "state", width: 120, render: (state: string, coupon: CustomerCoupon) => (
+    { title: t("admin_customers.col_status"), dataIndex: "state", key: "state", width: 120, render: (state: string, coupon: CustomerCoupon) => (
       <Space direction="vertical" size={0}>
-        <Tag color={COUPON_STATE_COLOR[state] || "default"}>{COUPON_STATE_LABEL[state] || state}</Tag>
+        <Tag color={COUPON_STATE_COLOR[state] || "default"}>{COUPON_STATE_LABEL_KEY[state] ? t(`admin_customers.${COUPON_STATE_LABEL_KEY[state]}`) : state}</Tag>
         {!coupon.available && coupon.reason && <Text type="secondary" style={{ fontSize: 12 }}>{coupon.reason}</Text>}
       </Space>
     ) },
-    { title: "เงื่อนไข", key: "condition", render: (_: any, coupon: CustomerCoupon) => (
+    { title: t("admin_customers.col_condition"), key: "condition", render: (_: any, coupon: CustomerCoupon) => (
       <Space wrap size={4}>
-        {coupon.minOrderAmount != null && <Tag>ขั้นต่ำ {Number(coupon.minOrderAmount).toLocaleString()} ฿</Tag>}
-        <Tag>{coupon.remainingRedemptions == null ? "ไม่จำกัดจำนวนครั้ง" : `เหลือ ${coupon.remainingRedemptions} ครั้ง`}</Tag>
-        {coupon.customerUsedCount > 0 && <Tag color="green">ลูกค้าใช้แล้ว {coupon.customerUsedCount}</Tag>}
+        {coupon.minOrderAmount != null && <Tag>{t("admin_customers.cond_min", { value: Number(coupon.minOrderAmount).toLocaleString() })}</Tag>}
+        <Tag>{coupon.remainingRedemptions == null ? t("admin_customers.cond_unlimited") : t("admin_customers.cond_remaining", { count: coupon.remainingRedemptions })}</Tag>
+        {coupon.customerUsedCount > 0 && <Tag color="green">{t("admin_customers.cond_used", { count: coupon.customerUsedCount })}</Tag>}
       </Space>
     ) },
-    { title: "หมดอายุ", dataIndex: "expiresAt", key: "expiresAt", width: 130, render: (expiresAt: string | null) => formatDate(expiresAt) },
-    { title: "ออเดอร์", key: "order", width: 120, render: (_: any, coupon: CustomerCoupon) => {
+    { title: t("admin_customers.col_expires"), dataIndex: "expiresAt", key: "expiresAt", width: 130, render: (expiresAt: string | null) => formatDate(expiresAt) },
+    { title: t("admin_customers.col_order"), key: "order", width: 120, render: (_: any, coupon: CustomerCoupon) => {
       const orderId = coupon.redeemedOrderId || coupon.reservedOrderId;
       return orderId ? <Text code>{orderId.slice(0, 8)}</Text> : <Text type="secondary">—</Text>;
     } },
@@ -384,17 +394,17 @@ function CustomerDetail({
     { title: "Order", dataIndex: "id", key: "id", width: 100, render: (id: string) => <Text code>{id.slice(0, 8)}</Text> },
     { title: "Channel", dataIndex: "channel", key: "ch", width: 90 },
     { title: "Status", dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
-    { title: "ยอด", dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
-    { title: "วันที่", dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString() },
+    { title: t("admin_customers.col_amount"), dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+    { title: t("admin_customers.col_date"), dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString() },
     { title: "", key: "actions", width: 90, render: (_: any, o: Order) => (
-      <Button type="link" size="small" loading={reorderingId === o.id} onClick={() => onReorder(o.id)}>ซื้อซ้ำ</Button>
+      <Button type="link" size="small" loading={reorderingId === o.id} onClick={() => onReorder(o.id)}>{t("admin_customers.btn_reorder")}</Button>
     ) },
   ];
   return (
     <div>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Text strong><EnvironmentOutlined /> ที่อยู่</Text>
-        <Button size="small" type="link" icon={<PlusOutlined />} onClick={onAddAddress}>เพิ่มที่อยู่</Button>
+        <Text strong><EnvironmentOutlined /> {t("admin_customers.section_addresses")}</Text>
+        <Button size="small" type="link" icon={<PlusOutlined />} onClick={onAddAddress}>{t("admin_customers.btn_add_address")}</Button>
       </Space>
       <div style={{ marginTop: 6, marginBottom: 12 }}>
         {c.addresses?.length ? (
@@ -402,16 +412,16 @@ function CustomerDetail({
             {c.addresses.map((a) => (
               <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8, width: "100%" }}>
                 <div>
-                  {a.is_default && <Tag color="green">ค่าเริ่มต้น</Tag>}
+                  {a.is_default && <Tag color="green">{t("admin_customers.tag_default")}</Tag>}
                   {a.label && <Text strong>[{a.label}] </Text>}
                   <Text>{a.address}</Text>
                 </div>
                 <Space size={4} style={{ flexShrink: 0 }}>
                   <Button size="small" type="link" icon={<EditOutlined />} onClick={() => onEditAddress(a)} />
                   {!a.is_default && (
-                    <Button size="small" type="link" onClick={() => onSetDefaultAddress(a)}>ตั้งเป็นค่าเริ่มต้น</Button>
+                    <Button size="small" type="link" onClick={() => onSetDefaultAddress(a)}>{t("admin_customers.btn_set_default")}</Button>
                   )}
-                  <Popconfirm title="ลบที่อยู่นี้?" okText="ลบ" okButtonProps={{ danger: true }} cancelText="ไม่"
+                  <Popconfirm title={t("admin_customers.addr_delete_confirm")} okText={t("admin_customers.delete_ok")} okButtonProps={{ danger: true }} cancelText={t("admin_customers.delete_cancel")}
                     onConfirm={() => onDeleteAddress(a)}>
                     <Button size="small" type="link" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
@@ -419,16 +429,16 @@ function CustomerDetail({
               </div>
             ))}
           </Space>
-        ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีที่อยู่" />}
+        ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_customers.no_addresses")} />}
       </div>
       <Divider style={{ margin: "8px 0" }} />
-      <Text strong><TagOutlined /> คูปองของลูกค้า ({c.coupons?.length || 0})</Text>
+      <Text strong><TagOutlined /> {t("admin_customers.section_coupons", { count: c.coupons?.length || 0 })}</Text>
       <Table style={{ marginTop: 8, marginBottom: 12 }} rowKey={(coupon: CustomerCoupon) => coupon.walletId || coupon.id} dataSource={c.coupons || []} columns={couponCols}
-        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: "ยังไม่มีคูปองที่ผูกกับลูกค้าคนนี้" }} />
+        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: t("admin_customers.no_coupons") }} />
       <Divider style={{ margin: "8px 0" }} />
-      <Text strong>🧾 ประวัติการซื้อ ({c.orders?.length || 0})</Text>
+      <Text strong>🧾 {t("admin_customers.section_history", { count: c.orders?.length || 0 })}</Text>
       <Table style={{ marginTop: 8 }} rowKey="id" dataSource={c.orders || []} columns={orderCols}
-        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: "ยังไม่มีประวัติ" }} />
+        size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: t("admin_customers.no_history") }} />
     </div>
   );
 }
