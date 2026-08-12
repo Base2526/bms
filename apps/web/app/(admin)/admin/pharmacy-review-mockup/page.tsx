@@ -31,10 +31,16 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
+import { useI18n } from "@/lib/i18nContext";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
+// ⚠️ ข้อมูลเคสจำลองทั้งหมดด้านล่าง (patientFacts / aiFindings / redFlags / pharmacistChecklist /
+// mockConversation / initialMedicationRows และค่าใน Descriptions ของหน้า) **คงเป็นภาษาไทยโดยเจตนา**
+// — เป็น "ข้อมูลตัวอย่างทางคลินิก" ไม่ใช่ UI copy: มันจำลองบทสนทนาของคนไข้ไทยและ draft ยา/ขนาดยา
+// การแปลเนื้อหาคลินิกเป็นอังกฤษเสี่ยงคลาดเคลื่อนและไม่ได้ประโยชน์กับหน้าที่เป็น design mockup
+// (หลักเดียวกับ /live-dashboard ที่ตั้งใจไม่แปลเพราะเป็น mock data) — ส่วน chrome ของหน้าแปลครบแล้ว
 const patientFacts = [
   ['ผู้ป่วย', 'เด็กชาย อายุ 6 ปี'],
   ['อาการหลัก', 'ไอ 3 วัน มีไข้ต่ำ ไม่มีหอบ ไม่มีเจ็บหน้าอก'],
@@ -135,6 +141,7 @@ const initialMedicationRows: DraftMedicationRow[] = [
 ];
 
 export default function PharmacyReviewMockupPage() {
+  const { t } = useI18n();
   const [rows, setRows] = useState<DraftMedicationRow[]>(initialMedicationRows);
   const [pharmacistSummary, setPharmacistSummary] = useState(
     'ยืนยันเคสไอทั่วไปในเด็ก ยังไม่พบ red flag เร่งด่วน จ่ายยาตามอาการ พร้อมแนะนำสังเกตอาการ'
@@ -159,7 +166,7 @@ export default function PharmacyReviewMockupPage() {
   };
 
   const simulateApprove = () => {
-    message.success('Mockup: เภสัช approve และส่งคำแนะนำกลับลูกค้าแล้ว');
+    message.success(t("admin_pharmacy_review_mockup.approved_toast"));
   };
 
   return (
@@ -174,8 +181,8 @@ export default function PharmacyReviewMockupPage() {
         showIcon
         type="info"
         style={{ marginBottom: 16 }}
-        message="หน้านี้เป็น mockup สำหรับออกแบบประสบการณ์ฝั่งเภสัชกร"
-        description="ใช้ดูรูปแบบที่ AI ส่งข้อมูลผู้ป่วย, ผลวิเคราะห์, และรายการยาที่ดึงจากร้านมาให้เภสัชอ่าน/แก้ไข/อนุมัติ ได้ในหน้าเดียว"
+        message={t("admin_pharmacy_review_mockup.mockup_notice")}
+        description={t("admin_pharmacy_review_mockup.mockup_notice_desc")}
       />
 
       <Card size="small" style={{ marginBottom: 16 }}>
@@ -196,7 +203,7 @@ export default function PharmacyReviewMockupPage() {
               <Space>
                 <UserOutlined />
                 <span>Patient Snapshot</span>
-                <Tag color="green">ข้อมูลครบพอ review</Tag>
+                <Tag color="green">{t("admin_pharmacy_review_mockup.tag_enough_info")}</Tag>
               </Space>
             }
             style={{ marginBottom: 16 }}
@@ -217,14 +224,14 @@ export default function PharmacyReviewMockupPage() {
 
           <Card size="small" title="Structured Intake + Patient Memory" style={{ marginBottom: 16 }}>
             <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="อายุ">6 ปี</Descriptions.Item>
-              <Descriptions.Item label="เพศ">ชาย</Descriptions.Item>
-              <Descriptions.Item label="น้ำหนัก">ยังไม่ยืนยัน</Descriptions.Item>
-              <Descriptions.Item label="ไข้ล่าสุด">37.8 C</Descriptions.Item>
-              <Descriptions.Item label="ประวัติแพ้ยา">ไม่มี</Descriptions.Item>
-              <Descriptions.Item label="ยาที่ใช้อยู่">ไม่มี</Descriptions.Item>
-              <Descriptions.Item label="เคสคล้ายกันก่อนหน้า">เคยซื้อ paracetamol syrup เมื่อ 2 เดือนก่อน</Descriptions.Item>
-              <Descriptions.Item label="ข้อควรจำจาก patient memory">ครอบครัวนี้ชอบรับคำแนะนำก่อนตัดสินใจซื้อ</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_age")}>6 ปี</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_sex")}>ชาย</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_weight")}>ยังไม่ยืนยัน</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_last_fever")}>37.8 C</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_allergies")}>ไม่มี</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_current_meds")}>ไม่มี</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_similar_cases")}>เคยซื้อ paracetamol syrup เมื่อ 2 เดือนก่อน</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_patient_memory")}>ครอบครัวนี้ชอบรับคำแนะนำก่อนตัดสินใจซื้อ</Descriptions.Item>
             </Descriptions>
           </Card>
 
@@ -255,7 +262,7 @@ export default function PharmacyReviewMockupPage() {
               />
 
               <div>
-                <Text strong>สิ่งที่ AI จับตาไว้ให้เภสัช:</Text>
+                <Text strong>{t("admin_pharmacy_review_mockup.ai_watchlist")}</Text>
                 <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {redFlags.map((flag) => (
                     <Tag key={flag} color="red">{flag}</Tag>
@@ -300,7 +307,7 @@ export default function PharmacyReviewMockupPage() {
               scroll={{ x: 1400 }}
               columns={[
                 {
-                  title: 'เลือก',
+                  title: t("admin_pharmacy_review_mockup.col_select"),
                   key: 'enabled',
                   width: 72,
                   render: (_, row) => (
@@ -310,9 +317,9 @@ export default function PharmacyReviewMockupPage() {
                     />
                   ),
                 },
-                { title: 'กลุ่ม', dataIndex: 'group', key: 'group', width: 140 },
+                { title: t("admin_pharmacy_review_mockup.col_group"), dataIndex: 'group', key: 'group', width: 140 },
                 {
-                  title: 'สินค้าที่ดึงจากร้าน',
+                  title: t("admin_pharmacy_review_mockup.col_product_from_shop"),
                   key: 'product',
                   width: 220,
                   render: (_, row) => (
@@ -322,10 +329,10 @@ export default function PharmacyReviewMockupPage() {
                     </Space>
                   ),
                 },
-                { title: 'สต็อก', dataIndex: 'stock', key: 'stock', width: 140 },
+                { title: t("admin_pharmacy_review_mockup.col_stock"), dataIndex: 'stock', key: 'stock', width: 140 },
                 { title: 'AI draft dosage', dataIndex: 'draft', key: 'draft', width: 220 },
                 {
-                  title: 'จำนวน',
+                  title: t("admin_pharmacy_review_mockup.col_qty"),
                   key: 'qty',
                   width: 90,
                   render: (_, row) => (
@@ -337,7 +344,7 @@ export default function PharmacyReviewMockupPage() {
                   ),
                 },
                 {
-                  title: 'ราคา/หน่วย',
+                  title: t("admin_pharmacy_review_mockup.col_unit_price"),
                   key: 'unitPrice',
                   width: 110,
                   render: (_, row) => (
@@ -348,23 +355,23 @@ export default function PharmacyReviewMockupPage() {
                     />
                   ),
                 },
-                { title: 'เหตุผล', dataIndex: 'why', key: 'why', width: 220 },
+                { title: t("admin_pharmacy_review_mockup.col_reason"), dataIndex: 'why', key: 'why', width: 220 },
                 {
-                  title: 'ข้อควรระวัง',
+                  title: t("admin_pharmacy_review_mockup.col_caution"),
                   dataIndex: 'caution',
                   key: 'caution',
                   width: 260,
                   render: (value: string) => <Text type="warning">{value}</Text>,
                 },
                 {
-                  title: 'หมายเหตุเภสัช',
+                  title: t("admin_pharmacy_review_mockup.col_pharmacist_note"),
                   key: 'pharmacistNote',
                   width: 220,
                   render: (_, row) => (
                     <Input
                       value={row.pharmacistNote}
                       onChange={(event) => patchRow(row.key, { pharmacistNote: event.target.value })}
-                      placeholder="เพิ่มโน้ตสั้น ๆ"
+                      placeholder={t("admin_pharmacy_review_mockup.note_placeholder")}
                     />
                   ),
                 },
@@ -376,8 +383,8 @@ export default function PharmacyReviewMockupPage() {
             <Alert
               type="warning"
               showIcon
-              message="แนวคิดของ mockup นี้"
-              description="AI ไม่ควรเป็นคน final ยาเอง แต่ควรช่วย prefill รายการที่มีในร้าน, dose draft, เหตุผล, และข้อควรระวัง เพื่อให้เภสัชอ่านแล้วแก้/ลบ/เพิ่ม ก่อนกด approve ได้เร็วขึ้น"
+              message={t("admin_pharmacy_review_mockup.concept_title")}
+              description={t("admin_pharmacy_review_mockup.concept_desc")}
             />
           </Card>
 
@@ -400,8 +407,8 @@ export default function PharmacyReviewMockupPage() {
               <Alert
                 type="info"
                 showIcon
-                message="เป้าหมายของ block นี้"
-                description="ให้ AI เติม draft clinical summary + recommendation rationale มาให้ก่อน แล้วเภสัชแก้ไขเป็นฉบับสุดท้ายก่อนอนุมัติ"
+                message={t("admin_pharmacy_review_mockup.block_goal_title")}
+                description={t("admin_pharmacy_review_mockup.block_goal_desc")}
               />
             </Space>
           </Card>
@@ -423,7 +430,7 @@ export default function PharmacyReviewMockupPage() {
           <Card size="small" title="Conversation history" style={{ marginBottom: 16 }}>
             <Space style={{ marginBottom: 12 }}>
               <Switch checked={showConversation} onChange={setShowConversation} />
-              <Text>แสดงบทสนทนาย้อนหลัง</Text>
+              <Text>{t("admin_pharmacy_review_mockup.show_conversation")}</Text>
             </Space>
             {showConversation ? (
               <List
@@ -449,11 +456,11 @@ export default function PharmacyReviewMockupPage() {
                 )}
               />
             ) : (
-              <Text type="secondary">ซ่อน raw conversation อยู่</Text>
+              <Text type="secondary">{t("admin_pharmacy_review_mockup.conversation_hidden")}</Text>
             )}
           </Card>
 
-          <Card size="small" title="เภสัชต้องตัดสินใจอะไรบ้าง" style={{ marginBottom: 16 }}>
+          <Card size="small" title={t("admin_pharmacy_review_mockup.decisions_title")} style={{ marginBottom: 16 }}>
             <List
               size="small"
               dataSource={pharmacistChecklist}
@@ -474,7 +481,7 @@ export default function PharmacyReviewMockupPage() {
                 {
                   color: 'blue',
                   dot: <UserOutlined />,
-                  children: '1. Patient snapshot จาก AI intake + patient memory',
+                  children: t("admin_pharmacy_review_mockup.step_1"),
                 },
                 {
                   color: 'purple',
@@ -484,7 +491,7 @@ export default function PharmacyReviewMockupPage() {
                 {
                   color: 'green',
                   dot: <MedicineBoxOutlined />,
-                  children: '3. Medication candidates ที่ match กับ catalog/stocks จริง',
+                  children: t("admin_pharmacy_review_mockup.step_3"),
                 },
                 {
                   color: 'gold',
@@ -498,9 +505,9 @@ export default function PharmacyReviewMockupPage() {
           <Card size="small" title="Action workspace" style={{ marginBottom: 16 }}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Descriptions size="small" column={1} bordered>
-                <Descriptions.Item label="จำนวนยาที่จะส่งต่อ">{selectedRows.length} รายการ</Descriptions.Item>
-                <Descriptions.Item label="มูลค่าประมาณการ">฿{estimatedTotal.toLocaleString()}</Descriptions.Item>
-                <Descriptions.Item label="เภสัช reviewer">Fake Staff ap8IY</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_med_count")}>{t("admin_pharmacy_review_mockup.med_count_unit", { n: selectedRows.length })}</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_estimated_value")}>฿{estimatedTotal.toLocaleString()}</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_review_mockup.label_reviewer")}>Fake Staff ap8IY</Descriptions.Item>
               </Descriptions>
 
               <Space wrap>
@@ -517,15 +524,15 @@ export default function PharmacyReviewMockupPage() {
             <Space direction="vertical" size={10}>
               <Paragraph style={{ marginBottom: 0 }}>
                 <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-                ลดเวลาที่เภสัชต้องไล่อ่านแชทย้อนหลังเองทั้งหมด
+                {t("admin_pharmacy_review_mockup.benefit_1")}
               </Paragraph>
               <Paragraph style={{ marginBottom: 0 }}>
                 <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-                ลดการคิดซ้ำเรื่องยาพื้นฐานที่ AI สามารถ draft ให้ก่อน
+                {t("admin_pharmacy_review_mockup.benefit_2")}
               </Paragraph>
               <Paragraph style={{ marginBottom: 0 }}>
                 <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-                ลดการสลับหลายหน้า ระหว่าง summary, stock, และ pharmacist action
+                {t("admin_pharmacy_review_mockup.benefit_3")}
               </Paragraph>
             </Space>
           </Card>
