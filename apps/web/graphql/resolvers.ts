@@ -17,7 +17,13 @@ import {
   validateUsername,
 } from "@/lib/auth/identity";
 import { createAdminSession } from "@/lib/redisSession";
-import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+import {
+  buildPasswordResetUrl,
+  createResetToken,
+  invalidateResetToken,
+  RESET_TOKEN_TTL_MIN,
+  sendPasswordResetEmail,
+} from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
 import { getTenantName } from "@/lib/bms/platform";
@@ -73,6 +79,14 @@ import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
 import { reassignStaffConversations } from "@/lib/bms/inbox";
 import { rateLimit } from "@/lib/bms/rateLimit";
+import { requirePermission } from "@/lib/bms/permissions";
+import { audit } from "@/lib/bms/audit";
+import {
+  requireManageableTarget,
+  requireManageableTargets,
+  resolveAssignableRole,
+  type UserAdminGate,
+} from "@/lib/bms/userAdmin";
 
 import { logAsync } from "@/lib/logger";
 
@@ -81,20 +95,34 @@ import { logAsync } from "@/lib/logger";
 // platform admin เห็น/แก้ได้ทุกร้านเมื่ออยู่มุมแพลตฟอร์ม
 // แต่ถ้ากำลัง drill-down/acting tenant ต้องทำตัวเป็น tenant-scoped เพื่อไม่หลุดร้านที่กำลังดู
 // =============================================================
-async function requireUserAdmin(ctx: any): Promise<{ platform: boolean; tenantId: string }> {
+async function requireUserAdmin(
+  ctx: any,
+  perm: "user.view" | "user.manage" = "user.manage"
+): Promise<UserAdminGate> {
   const auth = requireAuth(ctx);
   if (auth.scope !== "admin") {
     throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
   }
   const actingTenant = !!ctx?.admin?.__actingTenantId;
   const platform = (await isPlatformAdmin(ctx)) && !actingTenant;
-  const isSuper = ctx?.admin?.role === "Administrator";
+  const actorRole = String(ctx?.admin?.role ?? "");
+  const isSuper = actorRole === "Administrator";
+  // ทางที่สาม (ใหม่): role ที่ได้รับสิทธิ์ `user.*` ในร้านนี้ — seed ให้ Manager ที่ 7.78
+  // ยัง short-circuit platform/super ไว้ก่อน เพื่อไม่ต้อง query สิทธิ์ในเคสปกติ และให้
+  // Administrator ยังทำงานได้แม้ bms_role_permissions ว่าง/ยังไม่ได้ apply migration
+  //
+  // ⚠️ ผ่านด่านนี้แล้ว **ยังไม่พอ** — การแตะแถวใครและ assign role อะไรได้ ถูกคุมอีกชั้น
+  // ด้วย rank guard ใน `lib/bms/userAdmin.ts` (requireManageableTarget/resolveAssignableRole)
   if (!platform && !isSuper) {
-    throw new GraphQLError("เฉพาะผู้ดูแลร้าน (Administrator) หรือแอดมินแพลตฟอร์มเท่านั้น", {
-      extensions: { code: "FORBIDDEN", http: { status: 403 } },
-    });
+    await requirePermission(ctx, perm);
   }
-  return { platform, tenantId: getTenantId(ctx) };
+  return {
+    platform,
+    tenantId: getTenantId(ctx),
+    actorId: String(auth.author_id),
+    actorRole,
+    isSuper,
+  };
 }
 
 /** gate เฉพาะ platform admin (เช่น จัดการ role กลางทั้งระบบ) */
@@ -247,11 +275,12 @@ function calcRisk(reportCount: number): number {
   return 10;
 }
 
+// ค่า default ต้องตรงกับ `lib/bms/orderNotify.ts` และ `lib/passwordReset.ts` (แบรนด์เดียวกันทั้งระบบ)
 function baseData(locale: string) {
   return {
-    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "Jachoei",
+    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS",
     year: new Date().getFullYear(),
-    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://jachoei.com/support",
+    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://bms.jachoei.com/support",
     locale,
   };
 }
@@ -1669,10 +1698,11 @@ const rawResolvers = {
       // scope=admin → หน้าจัดการผู้ใช้ BMS: บังคับสิทธิ์ + กรองตามร้าน
       //   (scope=web/android = ค้นหาคนในแอป social → คงเดิม ไม่กรอง)
       if (auth.scope === "admin") {
-        const { platform, tenantId } = await requireUserAdmin(ctx);
+        const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
         if (!platform) {
           params.push(tenantId);
           conds.push(`tenant_id = $${params.length}`);
+          conds.push(`is_platform_admin = FALSE`);
         }
       }
 
@@ -1707,13 +1737,15 @@ const rawResolvers = {
       console.log("[Query] user", id, author_id);
 
       if (scope === "admin") {
-        const { platform, tenantId } = await requireUserAdmin(ctx);
+        const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
         if (!platform) {
           const { rows } = await query(
-            `SELECT id FROM users WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+            `SELECT * FROM users
+              WHERE id = $1 AND tenant_id = $2 AND is_platform_admin = FALSE
+              LIMIT 1`,
             [id, tenantId]
           );
-          if (!rows[0]) return null;
+          return rows[0] ?? null;
         }
       }
 
@@ -3124,7 +3156,15 @@ const rawResolvers = {
       const jti = randomUUID();
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id, jti },
+        {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          tenant_id: user.tenant_id,
+          is_platform_admin: user.is_platform_admin === true,
+          session_version: Number(user.admin_session_version ?? 0),
+          jti,
+        },
         JWT_SECRET,
         { expiresIn: sessionMaxAgeSec }
       );
@@ -3329,12 +3369,7 @@ const rawResolvers = {
       const user = rows[0];
 
       // 2) สร้าง token + insert (ของคุณมีอยู่แล้ว)
-      const { token, expiresAt } = await createResetToken(user.id);
-      // ถ้า createResetToken ของคุณยังไม่ return expiresAt -> ไม่เป็นไร (ใช้ default 30 นาทีใน email ได้)
-
-      // 3) สร้างลิงก์ไปหน้า /reset
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://yourapp.com";
-      const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
+      const { token } = await createResetToken(String(user.id));
 
       // 4) meta สำหรับ email (optional)
       const requestIp =
@@ -3346,20 +3381,31 @@ const rawResolvers = {
       const requestDevice = ctx?.req?.headers?.["user-agent"] || "-";
 
       // 5) ส่งเมลผ่าน template ใน PG + SendGrid
-      await sendPasswordResetEmail({
-        to: user.email,
-        locale: user.language ?? "en",
-        userName: user.name ?? user.email,
-        resetUrl,
-        expiryMinutes: 30, // หรือคำนวณจาก expiresAt ถ้ามี
-        requestIp: String(requestIp),
-        requestDevice: String(requestDevice),
-        requestTime: new Date().toISOString(),
-      });
+      try {
+        // 3) สร้างลิงก์ไปหน้า /reset; production ไม่มี URL จริงถือว่า
+        // configuration error และ token ที่เพิ่งสร้างจะถูกยกเลิกด้านล่าง
+        const resetUrl = buildPasswordResetUrl(token);
+        await sendPasswordResetEmail({
+          to: user.email,
+          locale: user.language ?? "en",
+          userName: user.name ?? user.email,
+          resetUrl,
+          expiryMinutes: RESET_TOKEN_TTL_MIN,
+          requestIp: String(requestIp),
+          requestDevice: String(requestDevice),
+          requestTime: new Date().toISOString(),
+        });
+      } catch (err) {
+        // Preserve the non-enumerating response and make the unsent token
+        // unusable. The mailer already records the provider failure.
+        await invalidateResetToken(token).catch(() => void 0);
+        console.error("[requestPasswordReset] email delivery failed", err);
+      }
 
       return true;
     },
     resetPassword: async(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any)=>{
+      if (!token || token.length > 256) throw new Error("Invalid or expired token");
       const passwordResult = validateNewPassword(newPassword);
       if (!passwordResult.ok) throw new Error("Invalid new password");
       const password_hash = await bcrypt.hash(passwordResult.value, 10);
@@ -3367,15 +3413,16 @@ const rawResolvers = {
         `WITH claimed AS (
            UPDATE password_reset_tokens
               SET used = true
-            WHERE token = $1 AND used = false AND expires_at > now()
+            WHERE token_hash = $1 AND used = false AND expires_at > now()
             RETURNING user_id
          )
          UPDATE users u
-            SET password_hash = $2
+            SET password_hash = $2,
+                admin_session_version = admin_session_version + 1
            FROM claimed c
           WHERE u.id = c.user_id
          RETURNING u.id`,
-        [token, password_hash]
+        [sha256Hex(token), password_hash]
       );
       if (!claimed.rowCount) throw new Error("Invalid or expired token");
 
@@ -5234,43 +5281,54 @@ const rawResolvers = {
       return deactivateDevicePushToken(String(author_id), String(fcmToken || ""));
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-      // gate: platform admin จัดการได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage (Manager)
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
 
-      console.log("[Mutation] upsertUser :", ctx, author_id);
+      // ไม่ log `ctx` ทั้งก้อน — ข้างในมี admin session object
+      console.log("[Mutation] upsertUser :", author_id, { id, platform });
 
       // 2️⃣ ทำความสะอาดข้อมูล
       const name = (data.name ?? '').trim();
       const avatar = data.avatar ?? null;
       const phone = data.phone ?? null;
-      const email = data.email ? String(data.email).trim().toLowerCase() : null;
-      const passwordHash = data.passwordHash ?? null;
-
-      // ✅ NEW: Handle role_id (preferred) or fallback to role text
-      let roleId = data.role_id || null;
-      const roleText = data.role ? String(data.role).trim() : null;
-
-      // If role_id not provided but role text is, try to find role_id by name
-      if (!roleId && roleText) {
-        try {
-          const { rows } = await query(
-            `SELECT id FROM roles WHERE name = $1 LIMIT 1`,
-            [roleText]
-          );
-          if (rows[0]) {
-            roleId = rows[0].id;
-          }
-        } catch (err) {
-          console.error('[upsertUser] Error looking up role by name:', err);
-        }
+      if (!name) throw new GraphQLError("name is required");
+      const emailResult = data.email ? validateEmail(String(data.email)) : null;
+      if (!id && (!emailResult || !emailResult.ok)) throw new GraphQLError("valid email is required");
+      const email = emailResult?.ok ? emailResult.value : null;
+      const rawPassword = data.password === undefined || data.password === null
+        ? null
+        : String(data.password);
+      if (!id && !rawPassword) throw new GraphQLError("password is required");
+      const passwordResult = rawPassword ? validateNewPassword(rawPassword) : null;
+      if (passwordResult && !passwordResult.ok) {
+        throw new GraphQLError("Invalid password", { extensions: { code: "BAD_USER_INPUT" } });
       }
+      // Hash only on the trusted server. A client-supplied bcrypt hash is a
+      // replayable credential and bypasses password validation.
+      const passwordHash = passwordResult?.ok ? await bcrypt.hash(passwordResult.value, 10) : null;
 
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         let resultUser = null;
+        const resolvedRole = await resolveAssignableRole(
+          ctx,
+          gate,
+          { role_id: data.role_id, role: data.role },
+          id ? {} : { fallbackName: "Subscriber" },
+          client
+        );
+        const roleId = resolvedRole?.roleId ?? null;
 
         if (id) {
+          const target = await requireManageableTarget(ctx, gate, String(id), client, true);
+          if (String(id) === gate.actorId && !platform && !gate.isSuper &&
+              resolvedRole && resolvedRole.roleName !== gate.actorRole) {
+            throw new GraphQLError("เปลี่ยนบทบาทของตัวเองไม่ได้", {
+              extensions: { code: "FORBIDDEN", http: { status: 403 } },
+            });
+          }
           // 🧩 UPDATE: อัปเดต password_hash เฉพาะเมื่อส่งมา
           // Prefer role_id, but keep role for backward compatibility (triggers will sync)
           const updateFields: string[] = [];
@@ -5289,15 +5347,11 @@ const rawResolvers = {
           updateValues.push(phone);
           paramIndex++;
 
-          // ✅ Use role_id if available
+          // เขียนเฉพาะ `role_id` — เลิกเขียน `role` เป็น text (trigger sync ชื่อให้เองอยู่แล้ว)
+          // path text เป็นทางเดียวที่ทำให้เกิด role ใหม่ในตารางกลางโดยไม่ตั้งใจ
           if (roleId) {
             updateFields.push(`role_id = $${paramIndex}`);
             updateValues.push(roleId);
-            paramIndex++;
-          } else if (roleText) {
-            // Fallback to role text (triggers will sync role_id)
-            updateFields.push(`role = $${paramIndex}`);
-            updateValues.push(roleText);
             paramIndex++;
           }
 
@@ -5305,6 +5359,11 @@ const rawResolvers = {
             updateFields.push(`password_hash = $${paramIndex}`);
             updateValues.push(passwordHash);
             paramIndex++;
+          }
+
+          const roleChanged = Boolean(resolvedRole && target.role !== resolvedRole.roleName);
+          if (roleChanged || passwordHash) {
+            updateFields.push(`admin_session_version = admin_session_version + 1`);
           }
 
           updateValues.push(id); // WHERE id = $n
@@ -5332,31 +5391,22 @@ const rawResolvers = {
           }
         } else {
           // 🧩 INSERT: ต้องมี email
-          if (!email) throw new GraphQLError("email is required");
+          if (!email || !passwordHash) throw new GraphQLError("email and password are required");
 
           // user ใหม่สังกัดร้านของผู้สร้าง (platform admin ระบุ tenant อื่นได้)
           const newTenantId = platform && data.tenant_id ? String(data.tenant_id) : tenantId;
           // เกิน quota staff ของแพ็กเกจร้าน → ปฏิเสธ (platform admin ไม่ถูกจำกัด)
-          if (!platform) await enforceUserQuota(newTenantId);
+          if (!platform) await enforceUserQuota(newTenantId, client);
 
-          // Use role_id if available, otherwise use role text
-          if (roleId) {
-            const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-              [name, avatar, phone, email, roleId, passwordHash, newTenantId]
-            );
-            resultUser = rows[0] || null;
-          } else {
-            // Fallback to role text (triggers will sync role_id)
-            const role = roleText || 'Subscriber';
-            const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role, password_hash, tenant_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-              [name, avatar, phone, email, role, passwordHash, newTenantId]
-            );
-            resultUser = rows[0] || null;
-          }
+          // `roleId` มีค่าเสมอตรงนี้ — `resolveAssignableRole()` fallback เป็น 'Subscriber'
+          // ให้แล้วถ้าไม่ได้ระบุมา (และ throw ถ้าชื่อ role ไม่มีจริง) จึงไม่มี path ที่เขียน
+          // `role` เป็น text อีก
+          const { rows } = await client.query(
+            `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [name, avatar, phone, email, roleId, passwordHash, newTenantId]
+          );
+          resultUser = rows[0] || null;
 
           if (resultUser) {
             await addLog(
@@ -5368,10 +5418,23 @@ const rawResolvers = {
           }
         }
 
-        return resultUser;
+        return { user: resultUser, roleName: resolvedRole?.roleName ?? null };
       });
 
-      return result;
+      const resultUser = result.user;
+
+      // audit ลง bms_audit_log (คนละที่กับ addLog/system_logs ด้านบน) — Administrator ของร้าน
+      // อ่านได้ที่ /admin/audit จึงตามได้ว่า Manager แก้ใครไปบ้าง
+      // ⚠️ เรียกหลัง transaction เสมอ (audit() ใช้ pool ธรรมดา ถ้าอยู่ในนั้นจะติด rollback ไปด้วย)
+      // ⚠️ ห้ามใส่ password hash ลง meta
+      if (resultUser?.id) {
+        await audit(ctx, id ? "user.update" : "user.create", String(resultUser.id), {
+          role: result.roleName,
+          passwordChanged: Boolean(passwordHash),
+        });
+      }
+
+      return resultUser;
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -5379,12 +5442,23 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(auth.author_id);
 
       console.log("[Mutation] uploadAvatar :", author_id);
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      // เปลี่ยนรูปคนอื่นต้องมี rank สูงกว่า (รูปตัวเองแก้ได้เสมอ)
+      if (String(user_id) !== gate.actorId) {
+        await requireManageableTarget(ctx, gate, String(user_id));
+      }
+
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        // Repeat the row guard under lock. The target may have been promoted
+        // after the early UX check but before this transaction started.
+        if (String(user_id) !== gate.actorId) {
+          await requireManageableTarget(ctx, gate, String(user_id), client);
+        }
         const f = await file; // { filename, mimetype, encoding, createReadStream }
 
         // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
@@ -5415,8 +5489,9 @@ const rawResolvers = {
       return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
-      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
 
       // ห้ามลบบัญชีตัวเอง — ไม่งั้น Administrator คนสุดท้ายของร้าน (หรือ platform admin เอง)
@@ -5429,15 +5504,13 @@ const rawResolvers = {
 
       console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
-      // แชท OPEN/PENDING ที่ยัง assign อยู่กับ user นี้ต้องโอนก่อนเสมอ (ห้ามเหลือแชทไม่มี staff)
-      const target = platform
-        ? await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1`, [id])
-        : await query<{ tenant_id: string }>(`SELECT tenant_id FROM users WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-      if (target.rows[0]?.tenant_id) {
-        await reassignStaffConversations(target.rows[0].tenant_id, id);
-      }
-
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        const target = await requireManageableTarget(ctx, gate, String(id), client);
+        // Reassignment and deletion are atomic: a failed delete must not leave
+        // conversations moved as a partial side effect.
+        if (target.tenant_id) {
+          await reassignStaffConversations(target.tenant_id, id, client);
+        }
         const res = platform
           ? await client.query(`DELETE FROM users WHERE id=$1`, [id])
           : await client.query(`DELETE FROM users WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -5450,14 +5523,19 @@ const rawResolvers = {
           });
         }
 
-        return ok;
+        return { ok, role: target.role };
       });
 
-      return result;
+      if (result.ok) {
+        await audit(ctx, "user.delete", String(id), { role: result.role });
+      }
+
+      return result.ok;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
 
       console.log("[Mutation] deleteUsers :", author_id, { platform });
@@ -5468,26 +5546,23 @@ const rawResolvers = {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       // กรองบัญชีตัวเองออกเสมอ (เหมือน deleteUser) แทนที่จะปฏิเสธทั้ง batch — เลือกหลายคนรวมตัวเอง
       // มาด้วยได้ แค่ตัวเองไม่โดนลบ ที่เหลือยังลบตามปกติ
-      const uuidIds = ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id);
+      const uuidIds = [...new Set(ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id))].sort();
 
       if (uuidIds.length === 0) return false;
 
-      // เหมือน deleteUser — โอนแชทค้างของแต่ละคนก่อนลบเสมอ
-      const targets = platform
-        ? await query<{ id: string; tenant_id: string }>(
-            `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[])`, [uuidIds]
-          )
-        : await query<{ id: string; tenant_id: string }>(
-            `SELECT id, tenant_id FROM users WHERE id = ANY($1::uuid[]) AND tenant_id = $2`, [uuidIds, tenantId]
-          );
-      for (const t of targets.rows) {
-        if (t.tenant_id) await reassignStaffConversations(t.tenant_id, t.id);
-      }
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        const targets = await requireManageableTargets(ctx, gate, uuidIds, client);
+        if (targets.length === 0) return { ok: false, ids: [] as string[] };
+        const deletableIds = targets.map((t) => t.id);
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+        for (const t of targets) {
+          if (t.tenant_id) {
+            await reassignStaffConversations(t.tenant_id, t.id, client, deletableIds);
+          }
+        }
         const res = platform
-          ? await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [uuidIds])
-          : await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND tenant_id=$2`, [uuidIds, tenantId]);
+          ? await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [deletableIds])
+          : await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND tenant_id=$2`, [deletableIds, tenantId]);
 
         const affected = res.rowCount ?? 0; // กัน null ที่นี่
 
@@ -5496,14 +5571,18 @@ const rawResolvers = {
             "info",
             "user-delete",
             `Deleted ${affected} user(s)`,
-            { userId: author_id, deletedIds: uuidIds }
+            { userId: author_id, deletedIds: deletableIds }
           );
         }
 
-        return affected > 0;
+        return { ok: affected > 0, ids: deletableIds };
       });
 
-      return result;
+      if (result.ok) {
+        await audit(ctx, "user.delete_bulk", null, { ids: result.ids, count: result.ids.length });
+      }
+
+      return result.ok;
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);

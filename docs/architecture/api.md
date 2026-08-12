@@ -155,6 +155,35 @@ any frontend permission list. `bmsChannels.ts` is a deliberate exception: it gat
 permission was ever added for channel config, so Channel Health reuses the same gate rather than
 introducing one just for itself.
 
+**User/staff management is a two-layer gate**, not a plain `requirePermission`. `requireUserAdmin()`
+(`graphql/resolvers.ts`) fronts `users`/`user`/`upsertUser`/`uploadAvatar`/`deleteUser`/`deleteUsers`
+and answers only "may this caller open the Users module?" — platform admin or tenant `Administrator`
+short-circuit through, any other role needs `user.view` (reads) / `user.manage` (writes), seeded to
+`Manager` for every tenant by migration `7.78`. *Which rows* the caller may touch and *which roles*
+they may assign is a second, independent layer: `lib/bms/staffRoles.ts` defines a role rank
+(`Administrator` 100 · `Manager` 60 · `Sales`/`Warehouse`/`Staff` 20 · `Subscriber` 0) and
+`lib/bms/userAdmin.ts` enforces it server-side — a caller may only manage a role **strictly below**
+its own. Three rules there are load-bearing and must not be relaxed:
+
+1. the target's role is always re-read from Postgres, never taken from the request;
+2. a row with `is_platform_admin` is untouchable regardless of rank (a platform admin is an ordinary
+   `users` row carrying a `tenant_id`, so a low-ranked one sitting in the shop would otherwise be a
+   password-reset takeover path);
+3. the requested role is resolved against `roles` **before** any write and an unknown name is
+   rejected — the DB trigger `trg_users_sync_role_and_role_id`
+   (`db/migrations/001_normalize_roles_phase1.sql`) silently `INSERT`s a new global role row for
+   unrecognized `users.role` text, so `upsertUser` writes `role_id` only and never raw role text.
+
+Tenant-scoped callers cannot list or open platform-admin identities, even when such a row carries
+their `tenant_id`. Mutations re-check and lock target rows, role rows, and the tenant quota inside
+the same transaction as the write; batch deletes lock targets in stable UUID order and never choose
+another member of the deletion batch as a conversation assignee. These checks close both cross-tenant
+visibility and role/quota time-of-check-to-time-of-use gaps.
+
+Because `/admin/permissions` itself stays behind `requireSuper` (`bmsDashboard.ts`), a `Manager`
+can never grant `user.manage` to anyone — only the shop `Administrator` can, which also makes
+unticking it the kill switch for this feature.
+
 ### Orders and Customer 360 Quick Actions
 
 - `bmsCreateOrder(channel, customerRef, items)` requires `order.create`, derives the tenant and
@@ -368,6 +397,11 @@ Email verification and password-reset consumption are single atomic SQL statemen
 cannot succeed twice under concurrent requests. Admin login additionally rejects public Subscriber
 accounts rather than issuing them an admin cookie.
 
+Password-reset tokens are stored as SHA-256 hashes (`password_reset_tokens.token_hash`), expire after
+15 minutes, and are invalidated when email delivery fails. Production reset URLs require an explicit
+HTTP(S) `NEXT_PUBLIC_BASE_URL`; they must not silently fall back to localhost. Resetting a password
+increments the user's admin session version so existing admin JWTs stop working on their next request.
+
 **Admin session lifetime (2026-07):** `loginAdmin` (`graphql/resolvers.ts`) signs the JWT and sets
 `ADMIN_COOKIE`'s `maxAge` from the same `sessionMaxAgeSec` value, so the two can't drift apart —
 Administrator (full RBAC permissions) gets a 1-day session; Manager/Sales/Warehouse get 7 days.
@@ -380,6 +414,12 @@ when the *next* request is made: `verifyTokenString()`
 client-side timer — an idle tab with no polling keeps showing stale UI until it makes a request, but
 in practice the admin sidebar's own polling (unread count/channel health every 15s, AI usage every
 60s) triggers the redirect within about a minute of real expiry.
+
+Every admin GraphQL request and `/api/auth/me` also refreshes role, tenant, platform-admin status,
+tenant activity, and `admin_session_version` from Postgres. Role/password changes increment that
+version, and deletion or tenant deactivation makes refresh fail, so stale JWT claims cannot retain
+permissions for the rest of their nominal lifetime. The Redis check remains an additional explicit
+logout mechanism rather than the source of role truth.
 
 ## Operational list search
 

@@ -1,10 +1,13 @@
 import * as jwt from "jsonwebtoken";
 
 export interface JWTPayload {
-  id: number;
+  id: string | number;
   email: string;
   role: string;
   tenant_id?: string;
+  is_platform_admin?: boolean;
+  /** Invalidates tokens issued before a role/password change. */
+  session_version?: number;
   themePreference?: "system" | "light" | "dark";
   // Redis session id (lib/redisSession.ts) — lets logout/revocation work despite
   // the JWT itself being stateless. Optional: tokens minted before this shipped

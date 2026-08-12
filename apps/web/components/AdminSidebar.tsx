@@ -180,8 +180,12 @@ export default function AdminSidebar() {
   const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
   const { admin, refreshSession } = useSession();
   const isAdministrator = admin?.role === 'Administrator';
-  const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Users/Permissions/Audit
+  const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Permissions/Audit/Revisions
   const { can } = useBmsPermissions();
+  // Users แยกออกจาก canManageAccess แล้ว — role ที่มี user.view (seed ให้ Manager ที่ 7.78)
+  // เห็นเมนู Users ได้ แต่ต้อง **ไม่** เห็น Permissions (ยกระดับสิทธิ์ตัวเองได้)/Audit/Revisions
+  // ซึ่ง resolver ฝั่งนั้น gate ด้วย requireSuper อยู่แล้ว กดเข้าไปก็ 403 เปล่า ๆ
+  const canViewUsers = canManageAccess || can('user.view');
   const canViewReports = can('report.view');
   const { data: storeProfileData } = useQuery(Q_STORE_PROFILE, {
     fetchPolicy: 'cache-and-network',
@@ -365,19 +369,23 @@ export default function AdminSidebar() {
         ...(isPlatformAdmin ? [link('/admin/report-schedule', t('admin.menu_report_schedule'), <MailOutlined />)] : []),
       ],
     },
-    ...(canManageAccess ? [{
+    ...(canViewUsers ? [{
       key: 'g-access',
       icon: <SafetyOutlined />,
       label: t('admin.group_access'),
       children: [
-        link('/admin/users', 'Users', <UserOutlined />),
+        ...(canViewUsers ? [link('/admin/users', 'Users', <UserOutlined />)] : []),
         // Roles = นิยามกลางทั้งระบบ → เฉพาะ platform admin
         ...(isPlatformAdmin ? [link('/admin/roles', 'Roles', <SnippetsOutlined />)] : []),
-        link('/admin/permissions', 'Permissions', <SafetyOutlined />),
-        link('/admin/audit', 'Audit log', <BookOutlined />),
-        // ย้ายมาจาก "ร้านค้า" — ทั้ง Audit log และ Revision History เป็นธีมเดียวกัน
-        // ("ใครแก้อะไรเมื่อไหร่") คนที่เปิดกลุ่มนี้อยู่แล้วคือคนที่สนใจเรื่องนี้จริง
-        link('/admin/revisions', 'Revision History', <HistoryOutlined />),
+        // Permissions/Audit/Revisions = Administrator/platform admin เท่านั้น (resolver ก็ requireSuper)
+        // Manager ที่มีแค่ user.view จะเห็นกลุ่มนี้โดยมีแต่ Users
+        ...(canManageAccess ? [
+          link('/admin/permissions', 'Permissions', <SafetyOutlined />),
+          link('/admin/audit', 'Audit log', <BookOutlined />),
+          // ย้ายมาจาก "ร้านค้า" — ทั้ง Audit log และ Revision History เป็นธีมเดียวกัน
+          // ("ใครแก้อะไรเมื่อไหร่") คนที่เปิดกลุ่มนี้อยู่แล้วคือคนที่สนใจเรื่องนี้จริง
+          link('/admin/revisions', 'Revision History', <HistoryOutlined />),
+        ] : []),
       ],
     }] : []),
     ...(showSystemGroup ? [{

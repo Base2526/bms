@@ -40,6 +40,11 @@ export const BMS_PERMISSIONS = [
   "customer.edit",
   "report.view",
   "report.email",
+  // จัดการทีมงานในร้านตัวเอง — seed ให้ Manager ที่ 7.78 (Administrator เป็น super อยู่แล้ว)
+  // ยังมี rank guard อีกชั้นที่ `staffRoles.ts` + `userAdmin.ts`: มีสิทธิ์นี้ก็ยังแตะ
+  // Administrator / Manager คนอื่น / platform admin ไม่ได้
+  "user.view",
+  "user.manage",
   "ai_quality.view",
   "ai_quality.review",
   "coupon.view",

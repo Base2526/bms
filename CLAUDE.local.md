@@ -1676,7 +1676,7 @@ TikTok send API · live adapter ของ Flash/Kerry (โครง booking/trac
 AI OCR/forecasting (นอกเหนือจาก payment-slip verify) ·
 WhatsApp/Email/Voice AI ·
 Shopee/Lazada signature verification กับเอกสาร Open Platform ตัวจริง (ยังไม่ผลิตจริงได้) ·
-ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ · Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
+Customer 360 pending items ที่เหลือ (ดู "Pending improvements" ในหัวข้อ Customer 360)
 · ตั้ง cron schedule จริงให้ `/api/bms/orders/release-expired`, `/api/bms/channels/check-health`,
 `/api/bms/ai/check-health`, `/api/bms/reports/send-digest`, `/api/bms/followups/run`, และ
 `/api/bms/shipping/sync-carriers` (แนะนำทุก 15 นาที) — ทั้ง 6 endpoint พร้อมแล้วและบันทึก run history
