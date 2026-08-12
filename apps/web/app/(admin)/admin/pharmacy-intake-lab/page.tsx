@@ -29,8 +29,11 @@ import {
   getCompletenessTagMeta,
   getCustomerConfirmationTagMeta,
 } from "@/lib/bms/pharmacy/customerConfirmation";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph, Title } = Typography;
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 const CHAT_STORAGE_KEY = "bms-pharmacy-intake-lab-chat-v1";
 
@@ -40,13 +43,13 @@ const CHAT_STORAGE_KEY = "bms-pharmacy-intake-lab-chat-v1";
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string) {
+function dayLabel(iso: string, t: TFn) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (key === todayKey) return "วันนี้";
-  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  if (key === todayKey) return t("admin_pharmacy_intake_lab.day_today");
+  if (key === dayKey(y.toISOString())) return t("admin_pharmacy_intake_lab.day_yesterday");
   return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
@@ -200,26 +203,29 @@ function parseSessionProductSizeOptions(session: PharmacySession | null): Array<
   }
 }
 
-function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] {
+// ⚠️ `label` = ข้อความบนปุ่ม (แปลได้) แต่ `value` = ข้อความที่ถูกส่งเข้า pharmacy assistant แทน
+// ข้อความของ "ลูกค้า" จริง ซึ่ง backend จับคู่ด้วย pattern ภาษาไทย — ต้องคงเป็นภาษาไทยทุกตัว
+// ห้ามแปล ไม่ว่า UI ของแอดมินจะตั้งเป็นภาษาอะไร
+function getPharmacyQuickReplies(session: PharmacySession | null, t: TFn): QuickReply[] {
   if (!session) return [];
   if (session.phase === "AWAITING_INTENT_CLARIFICATION") {
     return [
-      { label: "มีสินค้าที่ต้องการ", value: "มีชื่อสินค้าที่ต้องการซื้อแล้วค่ะ" },
-      { label: "ให้เภสัชกรประเมิน", value: "ให้เภสัชกรช่วยประเมินอาการค่ะ" },
-      { label: "ไม่ใช่ / ยกเลิก", value: "ไม่ใช่ค่ะ" },
+      { label: t("admin_pharmacy_intake_lab.qr_have_product"), value: "มีชื่อสินค้าที่ต้องการซื้อแล้วค่ะ" },
+      { label: t("admin_pharmacy_intake_lab.qr_pharmacist_assess"), value: "ให้เภสัชกรช่วยประเมินอาการค่ะ" },
+      { label: t("admin_pharmacy_intake_lab.qr_no_cancel"), value: "ไม่ใช่ค่ะ" },
     ];
   }
   if (session.phase === "AWAITING_CONSENT") {
     return [
-      { label: "ยินยอม", value: "ยินยอม" },
-      { label: "ไม่ยินยอม", value: "ไม่ยินยอม" },
+      { label: t("admin_pharmacy_intake_lab.qr_consent"), value: "ยินยอม" },
+      { label: t("admin_pharmacy_intake_lab.qr_no_consent"), value: "ไม่ยินยอม" },
     ];
   }
   if (session.phase === "PENDING_CONFIRMATION") {
     return [
-      { label: "ข้อมูลถูกต้อง", value: "ข้อมูลถูกต้อง" },
-      { label: "ยืนยัน", value: "ยืนยัน" },
-      { label: "ขอแก้ไข", value: "ขอแก้ไข" },
+      { label: t("admin_pharmacy_intake_lab.qr_info_correct"), value: "ข้อมูลถูกต้อง" },
+      { label: t("admin_pharmacy_intake_lab.qr_confirm"), value: "ยืนยัน" },
+      { label: t("admin_pharmacy_intake_lab.qr_request_edit"), value: "ขอแก้ไข" },
     ];
   }
   if (session.phase === "PRODUCT_PURCHASE") {
@@ -236,11 +242,11 @@ function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] 
     hasSessionProductCart(session)
   ) {
     return [
-      { label: "เพิ่มสินค้า", value: "เพิ่มสินค้า" },
-      { label: "ดูตะกร้า", value: "ดูตะกร้า" },
-      { label: "ยืนยันตะกร้า", value: "ยืนยันตะกร้า" },
-      { label: "ลบรายการล่าสุด", value: "ลบรายการล่าสุด" },
-      { label: "ล้างตะกร้า", value: "ล้างตะกร้า" },
+      { label: t("admin_pharmacy_intake_lab.qr_add_product"), value: "เพิ่มสินค้า" },
+      { label: t("admin_pharmacy_intake_lab.qr_view_cart"), value: "ดูตะกร้า" },
+      { label: t("admin_pharmacy_intake_lab.qr_confirm_cart"), value: "ยืนยันตะกร้า" },
+      { label: t("admin_pharmacy_intake_lab.qr_remove_last"), value: "ลบรายการล่าสุด" },
+      { label: t("admin_pharmacy_intake_lab.qr_clear_cart"), value: "ล้างตะกร้า" },
     ];
   }
   if (session.phase === "PRODUCT_PURCHASE") {
@@ -256,49 +262,69 @@ function getPharmacyQuickReplies(session: PharmacySession | null): QuickReply[] 
   const fieldKey = session.currentFieldKey ?? session.currentQuestionKey ?? "";
   if (["has_fever", "hydration_status", "blood_in_sputum", "blood_in_stool", "neck_stiffness", "worst_ever", "neuro_symptoms", "recent_head_injury", "breathing_difficulty", "chest_pain", "high_fever", "pregnancy_status", "breastfeeding_status"].includes(fieldKey)) {
     return [
-      { label: "มี", value: "มี" },
-      { label: "ไม่มี", value: "ไม่มี" },
+      { label: t("admin_pharmacy_intake_lab.qr_yes"), value: "มี" },
+      { label: t("admin_pharmacy_intake_lab.qr_no"), value: "ไม่มี" },
     ];
   }
   if (fieldKey === "severity") {
     return [{ label: "3", value: "3" }, { label: "5", value: "5" }, { label: "7", value: "7" }];
   }
   if (fieldKey === "duration_days") {
-    return [{ label: "1 วัน", value: "1 วัน" }, { label: "3 วัน", value: "3 วัน" }, { label: "7 วัน", value: "7 วัน" }];
+    return [
+      { label: t("admin_pharmacy_intake_lab.qr_days", { n: 1 }), value: "1 วัน" },
+      { label: t("admin_pharmacy_intake_lab.qr_days", { n: 3 }), value: "3 วัน" },
+      { label: t("admin_pharmacy_intake_lab.qr_days", { n: 7 }), value: "7 วัน" },
+    ];
   }
   if (fieldKey === "duration_hours") {
-    return [{ label: "6 ชม.", value: "6 ชั่วโมง" }, { label: "12 ชม.", value: "12 ชั่วโมง" }, { label: "1 วัน", value: "24 ชั่วโมง" }];
+    return [
+      { label: t("admin_pharmacy_intake_lab.qr_hours", { n: 6 }), value: "6 ชั่วโมง" },
+      { label: t("admin_pharmacy_intake_lab.qr_hours", { n: 12 }), value: "12 ชั่วโมง" },
+      { label: t("admin_pharmacy_intake_lab.qr_days", { n: 1 }), value: "24 ชั่วโมง" },
+    ];
   }
   if (fieldKey === "frequency_per_day") {
-    return [{ label: "1 ครั้ง", value: "1" }, { label: "3 ครั้ง", value: "3" }, { label: "5 ครั้ง", value: "5" }];
+    return [
+      { label: t("admin_pharmacy_intake_lab.qr_times", { n: 1 }), value: "1" },
+      { label: t("admin_pharmacy_intake_lab.qr_times", { n: 3 }), value: "3" },
+      { label: t("admin_pharmacy_intake_lab.qr_times", { n: 5 }), value: "5" },
+    ];
   }
   if (fieldKey === "patient_age_years") {
-    return [{ label: "1 ปี", value: "1" }, { label: "6 ปี", value: "6" }, { label: "18 ปี", value: "18" }];
+    return [
+      { label: t("admin_pharmacy_intake_lab.qr_years", { n: 1 }), value: "1" },
+      { label: t("admin_pharmacy_intake_lab.qr_years", { n: 6 }), value: "6" },
+      { label: t("admin_pharmacy_intake_lab.qr_years", { n: 18 }), value: "18" },
+    ];
   }
   if (fieldKey === "biological_sex") {
-    return [{ label: "หญิง", value: "หญิง" }, { label: "ชาย", value: "ชาย" }];
+    return [
+      { label: t("admin_pharmacy_intake_lab.qr_female"), value: "หญิง" },
+      { label: t("admin_pharmacy_intake_lab.qr_male"), value: "ชาย" },
+    ];
   }
   if (fieldKey === "patient_relationship") {
     return [
-      { label: "ตัวเอง", value: "ตัวเอง" },
-      { label: "ลูก", value: "ลูก" },
-      { label: "พ่อแม่", value: "พ่อแม่" },
-      { label: "บุคคลอื่น", value: "บุคคลอื่น" },
+      { label: t("admin_pharmacy_intake_lab.qr_self"), value: "ตัวเอง" },
+      { label: t("admin_pharmacy_intake_lab.qr_child"), value: "ลูก" },
+      { label: t("admin_pharmacy_intake_lab.qr_parent"), value: "พ่อแม่" },
+      { label: t("admin_pharmacy_intake_lab.qr_other_person"), value: "บุคคลอื่น" },
     ];
   }
   if (fieldKey === "sputum") {
     return [
-      { label: "ไม่มีเสมหะ", value: "ไม่มีเสมหะ" },
-      { label: "เสมหะใส", value: "เสมหะใส" },
-      { label: "เสมหะเหลือง", value: "เสมหะเหลือง" },
+      { label: t("admin_pharmacy_intake_lab.qr_no_sputum"), value: "ไม่มีเสมหะ" },
+      { label: t("admin_pharmacy_intake_lab.qr_clear_sputum"), value: "เสมหะใส" },
+      { label: t("admin_pharmacy_intake_lab.qr_yellow_sputum"), value: "เสมหะเหลือง" },
     ];
   }
-  if (fieldKey === "allergies") return [{ label: "ไม่เคยแพ้ยา", value: "ไม่เคยแพ้ยา" }];
-  if (fieldKey === "current_medications") return [{ label: "ไม่ได้ใช้ยาอยู่", value: "ไม่ได้ใช้ยาอยู่" }];
+  if (fieldKey === "allergies") return [{ label: t("admin_pharmacy_intake_lab.qr_no_allergy"), value: "ไม่เคยแพ้ยา" }];
+  if (fieldKey === "current_medications") return [{ label: t("admin_pharmacy_intake_lab.qr_no_medication"), value: "ไม่ได้ใช้ยาอยู่" }];
   return [];
 }
 
 export default function PharmacyIntakeLabPage() {
+  const { t } = useI18n();
   const client = useApolloClient();
   const router = useRouter();
   const { data: meData } = useQuery(Q_ME, { fetchPolicy: "cache-first" });
@@ -318,7 +344,8 @@ export default function PharmacyIntakeLabPage() {
   const storageKey = [CHAT_STORAGE_KEY, meData?.bmsMe?.tenant?.id || "no-tenant", meData?.bmsMe?.id || "no-user"].join(":");
   const isPharmacyShop = storeProfileData?.bmsStoreProfile?.businessArchetype === "pharmacy";
   const starters: QuickReply[] = [
-    { label: "ซื้อสินค้า", value: "ซื้อสินค้า" },
+    // value = ข้อความที่ส่งเข้า assistant แทนลูกค้า (backend จับคู่ภาษาไทย) — ห้ามแปล
+    { label: t("admin_pharmacy_intake_lab.starter_buy"), value: "ซื้อสินค้า" },
     ...(protocolData?.bmsPharmacyProtocols || [])
     .filter((protocol: any) => protocol.enabled && protocol.clinicallyApproved && protocol.platformAllowed && protocol.status === "APPROVED")
     .map((protocol: any) => ({ label: protocol.displayLabel, value: protocol.displayLabel })),
@@ -414,21 +441,21 @@ export default function PharmacyIntakeLabPage() {
       try {
         await client.mutate({ mutation: M_START_REVIEW, variables: { id: assessmentId } });
       } catch (e: any) {
-        message.warning(e?.message || "สร้างเคสแล้ว แต่ยัง auto รับเคสไม่ได้");
+        message.warning(e?.message || t("admin_pharmacy_intake_lab.warn_review_auto"));
       }
 
       try {
         await client.mutate({ mutation: M_SUGGEST_MEDICATION, variables: { id: assessmentId } });
       } catch (e: any) {
-        message.warning(e?.message || "สร้างเคสแล้ว แต่ยังดึงคำแนะนำยาอัตโนมัติไม่ได้");
+        message.warning(e?.message || t("admin_pharmacy_intake_lab.warn_medication_auto"));
       }
 
       setAutoQueueStatus("done");
-      message.success(`ส่งเคสเข้าคิวแล้ว: ${assessmentId}`);
+      message.success(t("admin_pharmacy_intake_lab.queue_sent", { id: assessmentId }));
       return assessmentId;
     } catch (e: any) {
       setAutoQueueStatus("error");
-      message.error(e?.message || "สร้างเคสเข้าคิวอัตโนมัติไม่สำเร็จ");
+      message.error(e?.message || t("admin_pharmacy_intake_lab.queue_failed"));
       return null;
     } finally {
       setSeedingQueue(false);
@@ -438,6 +465,7 @@ export default function PharmacyIntakeLabPage() {
   const createDirectSaleOrder = async (nextSession: PharmacySession | null | undefined) => {
     const cart = parseSessionProductCart(nextSession ?? null);
     if (cart.length === 0) {
+      // ข้อความนี้ถูกฝังลงในคำตอบที่ "ลูกค้า" เห็นในบทสนทนาจำลอง (สาเหตุที่ยืนยันตะกร้าไม่ได้) — ต้องเป็นภาษาไทย
       return { ok: false as const, message: "ไม่มีรายการสินค้าในตะกร้า", retryable: false };
     }
     try {
@@ -454,21 +482,23 @@ export default function PharmacyIntakeLabPage() {
       const result = data?.bmsCreatePharmacyLabOrder;
       if (result?.status === "CREATED" && result?.orderId) {
         setLastCreatedOrderId(result.orderId);
-        message.success(result.message || "สร้างออร์เดอร์แล้ว");
+        message.success(result.message || t("admin_pharmacy_intake_lab.order_created"));
         return {
           ok: true as const,
           orderId: String(result.orderId),
           total: typeof result.total === "number" ? result.total : null,
-          message: String(result.message || "สร้างออร์เดอร์แล้ว"),
+          message: String(result.message || t("admin_pharmacy_intake_lab.order_created")),
         };
       }
+      // เหตุผลความล้มเหลวถูกฝังในคำตอบที่ลูกค้าเห็น (บทสนทนาจำลอง) — คงภาษาไทยไว้
       return {
         ok: false as const,
         message: String(result?.message || "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ"),
         retryable: false,
       };
     } catch (e: any) {
-      message.error(e?.message || "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ");
+      message.error(e?.message || t("admin_pharmacy_intake_lab.order_lab_failed"));
+      // เหตุผลความล้มเหลวถูกฝังในคำตอบที่ลูกค้าเห็น (บทสนทนาจำลอง) — คงภาษาไทยไว้
       return {
         ok: false as const,
         message: String(e?.message || "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ"),
@@ -503,6 +533,7 @@ export default function PharmacyIntakeLabPage() {
       if (isDirectSaleCheckout) {
         const orderResult = await createDirectSaleOrder(nextSession);
         if (orderResult.ok) {
+          // ข้อความในบับเบิลนี้คือคำตอบที่ "ลูกค้า" เห็นในบทสนทนาจำลอง (brand voice ค่ะ) — ห้ามแปล
           assistantBubble = {
             ...assistantBubble,
             text: `ยืนยันตะกร้าแล้วค่ะ\nสร้าง Order จริงเรียบร้อยแล้ว\nหมายเลขออเดอร์: ${orderResult.orderId}\n${orderResult.total != null ? `ยอดรวม: ${orderResult.total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท\n` : ""}ดูรายการต่อได้ที่หน้า Orders ค่ะ`,
@@ -511,6 +542,7 @@ export default function PharmacyIntakeLabPage() {
           setAutoQueueStatus("idle");
         } else {
           sessionAfterTurn = nextSession ? { ...nextSession, phase: "PRODUCT_PURCHASE" } : session;
+          // คำตอบที่ลูกค้าเห็นในบทสนทนาจำลอง — ห้ามแปล
           assistantBubble = {
             role: "assistant",
             text: `ยืนยันตะกร้าแล้ว แต่ยังไม่ได้สร้าง Order จริง\nสาเหตุ: ${orderResult.message}\nกรุณาแก้ไขตะกร้าหรือข้อมูลที่ขาด แล้วลองยืนยันใหม่ค่ะ`,
@@ -527,6 +559,7 @@ export default function PharmacyIntakeLabPage() {
         }));
         const assessmentId = await createQueueCase(nextSession, transcript);
         if (assessmentId) {
+          // ข้อความต่อท้ายที่ลูกค้าเห็นในบทสนทนาจำลอง — ห้ามแปล
           assistantBubble = {
             ...assistantBubble,
             text: `${assistantBubble.text}\n\nหมายเลขเคส: ${assessmentId}\nเก็บหมายเลขนี้ไว้เพื่อติดตามเคสได้ค่ะ`,
@@ -539,6 +572,7 @@ export default function PharmacyIntakeLabPage() {
           // answer and attempts queue creation again instead of getting stuck
           // forever in WAITING without a persisted case.
           sessionAfterTurn = session;
+          // คำตอบที่ลูกค้าเห็นในบทสนทนาจำลอง — ห้ามแปล
           assistantBubble = {
             role: "assistant",
             text: "รับข้อมูลยืนยันแล้ว แต่สร้างเคสเข้าคิวไม่สำเร็จ กรุณากดลองอีกครั้งค่ะ",
@@ -551,10 +585,11 @@ export default function PharmacyIntakeLabPage() {
       setSession(sessionAfterTurn);
       setChat((prev) => [...prev, assistantBubble]);
     } catch (e: any) {
-      message.error(e?.message || "เรียก Pharmacy lab ไม่สำเร็จ");
+      message.error(e?.message || t("admin_pharmacy_intake_lab.lab_call_failed"));
       setChat((prev) => [
         ...prev,
         {
+          // คำตอบที่ลูกค้าเห็นในบทสนทนาจำลอง — ห้ามแปล
           role: "assistant",
           text: "ขออภัยค่ะ ระบบทดสอบร้านยาขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ",
           createdAt: new Date().toISOString(),
@@ -573,13 +608,13 @@ export default function PharmacyIntakeLabPage() {
     await send(bubble.retryText);
   };
 
-  const quickReplies = getPharmacyQuickReplies(session);
+  const quickReplies = getPharmacyQuickReplies(session, t);
   const cartItems = parseSessionProductCart(session);
   const primaryReplies = quickReplies.length > 0 ? quickReplies : starters;
 
   const copySummary = async () => {
     if (summaryRows.length === 0) {
-      message.warning("ยังไม่มี summary ให้คัดลอก");
+      message.warning(t("admin_pharmacy_intake_lab.no_summary_to_copy"));
       return;
     }
     try {
@@ -590,9 +625,9 @@ export default function PharmacyIntakeLabPage() {
           confirmationStatus: confirmationMeta.text,
         })
       );
-      message.success("คัดลอก summary แล้ว");
+      message.success(t("admin_pharmacy_intake_lab.summary_copied"));
     } catch {
-      message.error("คัดลอก summary ไม่สำเร็จ");
+      message.error(t("admin_pharmacy_intake_lab.summary_copy_failed"));
     }
   };
 
@@ -604,20 +639,20 @@ export default function PharmacyIntakeLabPage() {
         <div>
           <Title level={2} style={{ margin: 0 }}>Pharmacy Intake Lab</Title>
           <Text type="secondary">
-            ทดสอบบทสนทนาซักอาการ, quick reply และการส่งเคสเข้าคิว — แยกจากผู้ช่วย AI หลังบ้านปกติ ({"/admin/assistant"})
+            {t("admin_pharmacy_intake_lab.subtitle", { path: "/admin/assistant" })}
           </Text>
         </div>
         <Space size={10} wrap>
-          <Button onClick={() => router.push("/admin/pharmacy-queue")}>ไปหน้า Queue</Button>
+          <Button onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_intake_lab.btn_queue_page")}</Button>
           <Popconfirm
-            title="ล้างบทสนทนาทดสอบนี้?"
-            okText="ล้าง"
+            title={t("admin_pharmacy_intake_lab.clear_title")}
+            okText={t("admin_pharmacy_intake_lab.clear_ok")}
             okType="danger"
-            cancelText="ยกเลิก"
+            cancelText={t("admin_pharmacy_intake_lab.cancel")}
             onConfirm={clearLab}
             disabled={chat.length === 0}
           >
-            <Button icon={<DeleteOutlined />} disabled={chat.length === 0}>ล้าง lab</Button>
+            <Button icon={<DeleteOutlined />} disabled={chat.length === 0}>{t("admin_pharmacy_intake_lab.btn_clear_lab")}</Button>
           </Popconfirm>
         </Space>
       </Space>
@@ -628,8 +663,8 @@ export default function PharmacyIntakeLabPage() {
           showIcon
           closable
           onClose={() => setShowArchetypeNotice(false)}
-          message="หน้านี้ใช้ได้เฉพาะร้าน archetype = Pharmacy"
-          description="ร้านนี้ไม่ได้ตั้งเป็น Pharmacy ระบบกำลังพากลับไปที่ผู้ช่วย AI ปกติ"
+          message={t("admin_pharmacy_intake_lab.archetype_warn")}
+          description={t("admin_pharmacy_intake_lab.archetype_warn_desc")}
           style={{ marginBottom: 16 }}
         />
       ) : null}
@@ -647,8 +682,8 @@ export default function PharmacyIntakeLabPage() {
                     <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(var(--app-primary-rgb),0.12)", display: "grid", placeItems: "center", color: "var(--app-primary)", fontSize: 26, margin: "0 auto" }}>
                       <ExperimentOutlined />
                     </div>
-                    <Text strong style={{ fontSize: 16 }}>เริ่มทดสอบบทสนทนาร้านยา</Text>
-                    <Text type="secondary">{starters.length > 0 ? `กด starter ด้านล่างหรือพิมพ์อาการ เช่น ${starterExample}` : "ยังไม่มี Protocol ที่ผ่านการอนุมัติ เปิดใช้งาน และอยู่ใน Platform allowlist"}</Text>
+                    <Text strong style={{ fontSize: 16 }}>{t("admin_pharmacy_intake_lab.empty_title")}</Text>
+                    <Text type="secondary">{starters.length > 0 ? t("admin_pharmacy_intake_lab.empty_hint", { examples: starterExample }) : t("admin_pharmacy_intake_lab.empty_no_protocol")}</Text>
                     <Space wrap style={{ justifyContent: "center" }}>
                       {starters.map((item) => (
                         <Button key={item.value} shape="round" onClick={() => send(item.value)}>
@@ -670,7 +705,7 @@ export default function PharmacyIntakeLabPage() {
                           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
                             <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                             <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
-                              {dayLabel(bubble.createdAt)}
+                              {dayLabel(bubble.createdAt, t)}
                             </Text>
                             <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                           </div>
@@ -706,7 +741,7 @@ export default function PharmacyIntakeLabPage() {
                               disabled={sending}
                               style={{ marginTop: 6 }}
                             >
-                              ลองอีกครั้ง
+                              {t("admin_pharmacy_intake_lab.btn_retry")}
                             </Button>
                           ) : null}
                         </div>
@@ -720,7 +755,7 @@ export default function PharmacyIntakeLabPage() {
             <div style={{ borderTop: "1px solid var(--app-border)", background: "var(--app-surface-2)", padding: 12 }}>
               {session?.phase === "PRODUCT_PURCHASE" && cartItems.length > 0 ? (
                 <div style={{ marginBottom: 10 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>ลบรายสินค้า</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_pharmacy_intake_lab.remove_item_label")}</Text>
                   <Space wrap style={{ display: "flex", marginTop: 6 }}>
                     {cartItems.map((item) => (
                       <Button
@@ -728,6 +763,7 @@ export default function PharmacyIntakeLabPage() {
                         size="small"
                         shape="round"
                         danger
+                        /* คำสั่งที่ส่งเข้า assistant แทนลูกค้า — backend จับคู่คำว่า "ลบ" ภาษาไทย ห้ามแปล */
                         onClick={() => send(`ลบ ${item.sku}`)}
                         disabled={sending}
                       >
@@ -749,11 +785,11 @@ export default function PharmacyIntakeLabPage() {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onPressEnter={() => send()}
-                  placeholder="พิมพ์อาการหรือคำตอบ เช่น 'มีไข้ 38.5' หรือ 'ข้อมูลถูกต้อง'"
+                  placeholder={t("admin_pharmacy_intake_lab.input_placeholder")}
                   disabled={sending}
                 />
                 <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-                  ส่ง
+                  {t("admin_pharmacy_intake_lab.btn_send")}
                 </Button>
               </div>
             </div>
@@ -764,20 +800,20 @@ export default function PharmacyIntakeLabPage() {
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             {/* ===== สถานะ session ตอนนี้ — chip เดียวกับสไตล์ /admin/dashboard ===== */}
             <Card size="small" style={{ borderRadius: 10 }} styles={{ body: { padding: "12px 14px" } }}>
-              <Text strong style={{ fontSize: 12.5, display: "block", marginBottom: 8 }}>สถานะ session</Text>
+              <Text strong style={{ fontSize: 12.5, display: "block", marginBottom: 8 }}>{t("admin_pharmacy_intake_lab.session_status")}</Text>
               <Space wrap size={[8, 8]}>
                 <Tag color="blue">phase: {session?.phase || "NONE"}</Tag>
                 <Tag>protocol: {session?.protocolKey || "—"}</Tag>
                 <Tag color={queueStatusColor}>queue: {autoQueueStatus}</Tag>
               </Space>
               <Button size="small" style={{ marginTop: 10 }} onClick={() => setSession(null)}>
-                รีเซ็ต session
+                {t("admin_pharmacy_intake_lab.btn_reset_session")}
               </Button>
             </Card>
 
             <Card
               size="small"
-              title={<Text strong style={{ fontSize: 12.5 }}>Quick replies ทั้งหมด</Text>}
+              title={<Text strong style={{ fontSize: 12.5 }}>{t("admin_pharmacy_intake_lab.quick_replies_all")}</Text>}
               style={{ borderRadius: 10 }}
               styles={{ body: { padding: "12px 14px" } }}
             >
@@ -789,7 +825,7 @@ export default function PharmacyIntakeLabPage() {
                     </Button>
                   ))
                 ) : (
-                  <Text type="secondary" style={{ fontSize: 12.5 }}>ยังไม่มี quick reply สำหรับสถานะนี้</Text>
+                  <Text type="secondary" style={{ fontSize: 12.5 }}>{t("admin_pharmacy_intake_lab.no_quick_reply")}</Text>
                 )}
               </div>
             </Card>
@@ -801,8 +837,8 @@ export default function PharmacyIntakeLabPage() {
               styles={{ body: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } }}
             >
               <Space wrap size={[8, 8]}>
-                <Tag color={completenessMeta.color}>ครบถ้วน: {completenessMeta.text}</Tag>
-                <Tag color={confirmationMeta.color}>ยืนยัน: {confirmationMeta.text}</Tag>
+                <Tag color={completenessMeta.color}>{t("admin_pharmacy_intake_lab.tag_completeness", { value: completenessMeta.text })}</Tag>
+                <Tag color={confirmationMeta.color}>{t("admin_pharmacy_intake_lab.tag_confirmation", { value: confirmationMeta.text })}</Tag>
                 <Button size="small" icon={<CopyOutlined />} onClick={copySummary} disabled={summaryRows.length === 0}>
                   copy summary
                 </Button>
@@ -822,20 +858,20 @@ export default function PharmacyIntakeLabPage() {
                   )}
                 />
               ) : (
-                <Text type="secondary" style={{ fontSize: 12.5 }}>ยังไม่มีข้อมูลสรุปสำหรับยืนยัน</Text>
+                <Text type="secondary" style={{ fontSize: 12.5 }}>{t("admin_pharmacy_intake_lab.no_summary_data")}</Text>
               )}
             </Card>
 
             {(lastSeededAssessmentId || lastCreatedOrderId) ? (
               <Card
                 size="small"
-                title={<Text strong style={{ fontSize: 12.5 }}>ผลลัพธ์ล่าสุด</Text>}
+                title={<Text strong style={{ fontSize: 12.5 }}>{t("admin_pharmacy_intake_lab.latest_results")}</Text>}
                 style={{ borderRadius: 10 }}
                 styles={{ body: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 } }}
               >
                 {lastSeededAssessmentId ? (
                   <Space direction="vertical" style={{ width: "100%" }} size={6}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>เคสล่าสุด</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_pharmacy_intake_lab.latest_case")}</Text>
                     <Space.Compact style={{ width: "100%" }}>
                       <Input value={lastSeededAssessmentId} readOnly size="small" />
                       <Button
@@ -844,22 +880,22 @@ export default function PharmacyIntakeLabPage() {
                         onClick={async () => {
                           try {
                             await navigator.clipboard.writeText(lastSeededAssessmentId);
-                            message.success("คัดลอกหมายเลขเคสแล้ว");
+                            message.success(t("admin_pharmacy_intake_lab.case_copied"));
                           } catch {
-                            message.error("คัดลอกหมายเลขเคสไม่สำเร็จ");
+                            message.error(t("admin_pharmacy_intake_lab.case_copy_failed"));
                           }
                         }}
                       />
                     </Space.Compact>
                     <Space wrap size={6}>
-                      <Button size="small" onClick={() => router.push("/admin/pharmacy-queue")}>เปิด queue list</Button>
-                      <Button size="small" onClick={() => router.push(`/admin/pharmacy-queue/${lastSeededAssessmentId}`)}>เปิด case detail</Button>
+                      <Button size="small" onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_intake_lab.btn_open_queue_list")}</Button>
+                      <Button size="small" onClick={() => router.push(`/admin/pharmacy-queue/${lastSeededAssessmentId}`)}>{t("admin_pharmacy_intake_lab.btn_open_case_detail")}</Button>
                     </Space>
                   </Space>
                 ) : null}
                 {lastCreatedOrderId ? (
                   <Space direction="vertical" style={{ width: "100%" }} size={6}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>ออเดอร์ล่าสุด</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_pharmacy_intake_lab.latest_order")}</Text>
                     <Space.Compact style={{ width: "100%" }}>
                       <Input value={lastCreatedOrderId} readOnly size="small" />
                       <Button
@@ -868,14 +904,14 @@ export default function PharmacyIntakeLabPage() {
                         onClick={async () => {
                           try {
                             await navigator.clipboard.writeText(lastCreatedOrderId);
-                            message.success("คัดลอกหมายเลขออเดอร์แล้ว");
+                            message.success(t("admin_pharmacy_intake_lab.order_copied"));
                           } catch {
-                            message.error("คัดลอกหมายเลขออเดอร์ไม่สำเร็จ");
+                            message.error(t("admin_pharmacy_intake_lab.order_copy_failed"));
                           }
                         }}
                       />
                     </Space.Compact>
-                    <Button size="small" onClick={() => router.push("/admin/orders")}>เปิด Orders</Button>
+                    <Button size="small" onClick={() => router.push("/admin/orders")}>{t("admin_pharmacy_intake_lab.btn_open_orders")}</Button>
                   </Space>
                 ) : null}
               </Card>

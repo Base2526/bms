@@ -11,8 +11,11 @@ import {
   ArrowDownOutlined, MailOutlined, WarningOutlined, FileExcelOutlined,
 } from "@ant-design/icons";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph } = Typography;
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
 // เก็บแชทไว้ในเครื่องนี้อัตโนมัติ (ต่อเบราว์เซอร์ ไม่ sync ข้ามอุปกรณ์/แท็บอื่น) — ผู้ใช้ต้องกด
 // "ล้างแชท" เองเท่านั้น ไม่มีการล้างอัตโนมัติ (เช่น ตอนปิดแท็บ/refresh)
@@ -25,13 +28,13 @@ const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 const timeLabel = (iso: string) =>
   new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string) {
+function dayLabel(iso: string, t: TFn) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (key === todayKey) return "วันนี้";
-  if (key === dayKey(y.toISOString())) return "เมื่อวาน";
+  if (key === todayKey) return t("admin_assistant.day_today");
+  if (key === dayKey(y.toISOString())) return t("admin_assistant.day_yesterday");
   return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
@@ -41,7 +44,7 @@ function dayLabel(iso: string) {
 const INLINE_TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`|\/api\/bms\/reports\/download\/\d+|https?:\/\/[^\s)]+)/g;
 const REPORT_DOWNLOAD_RE = /^\/api\/bms\/reports\/download\/\d+$/;
 
-function renderAssistantText(text: string) {
+function renderAssistantText(text: string, t: TFn) {
   return text.split(INLINE_TOKEN_RE).map((part, i) => {
     if (!part) return null;
     if (part.startsWith("**") && part.endsWith("**")) {
@@ -70,7 +73,7 @@ function renderAssistantText(text: string) {
           href={part}
           style={{ marginTop: 4, marginBottom: 4 }}
         >
-          ดาวน์โหลดไฟล์
+          {t("admin_assistant.download_file")}
         </Button>
       );
     }
@@ -159,10 +162,11 @@ const CONFIRM_MUTATIONS: Record<
   },
 };
 
-const REPORT_TYPE_LABEL_TH: Record<string, string> = {
-  SALES: "ยอดขาย",
-  INVENTORY: "สต็อกสินค้า",
-  PROFIT: "กำไร (ประมาณการ)",
+// key ของ map นี้คือค่า reportType ที่ backend ส่งมา (ห้ามแปล) — ส่วน value เป็น i18n key ที่ resolve ตอน render
+const REPORT_TYPE_LABEL_KEY: Record<string, string> = {
+  SALES: "admin_assistant.report_type_sales",
+  INVENTORY: "admin_assistant.report_type_inventory",
+  PROFIT: "admin_assistant.report_type_profit",
 };
 
 type Proposal = { tool: string; mutation: string; args: any; summary: string };
@@ -183,73 +187,74 @@ type Bubble = {
 
 // ครอบคลุมกว้างกว่าเดิม ตามหมวดทูลจริงใน tools/catalog.ts (อ่าน A1 / เขียนไม่ sensitive A2 / เขียน sensitive A3)
 // ไม่ใช่ทุกทูลที่มี — เลือกตัวแทนแต่ละหมวดที่พนักงานพิมพ์ถามจริงบ่อยที่สุด
-const EXAMPLE_GROUPS: Array<{ label: string; sensitive?: boolean; items: string[] }> = [
+const EXAMPLE_GROUPS: Array<{ labelKey: string; sensitive?: boolean; itemKeys: string[] }> = [
   {
-    label: "ถามข้อมูล (อ่านอย่างเดียว)",
-    items: [
-      "ยอดขาย 7 วันล่าสุดเป็นยังไง",
-      "สินค้าอะไรใกล้หมดบ้าง",
-      "ออร์เดอร์ล่าสุดของลูกค้ามีอะไรบ้าง",
-      "สินค้าขายดี 5 อันดับเดือนนี้คืออะไร",
-      "การชำระเงินที่รอตรวจสอบมีกี่รายการ",
-      "ใบสั่งซื้อที่ยังไม่ได้รับของมีอะไรบ้าง",
-      "ลูกค้าเบอร์ 08x-xxx-xxxx เคยซื้ออะไรบ้าง",
-      "สรุปภาพรวมร้านวันนี้ให้หน่อย",
-      "มูลค่าสต็อกทั้งหมดตอนนี้เท่าไหร่",
-      "เลขพัสดุของออร์เดอร์ #1234 คืออะไร",
-      "ซัพพลายเออร์ที่มีในระบบมีใครบ้าง",
-      "ใบสั่งซื้อ #PO-1234 มีรายการอะไรบ้าง",
+    labelKey: "admin_assistant.group_read",
+    itemKeys: [
+      "admin_assistant.ex_read_1",
+      "admin_assistant.ex_read_2",
+      "admin_assistant.ex_read_3",
+      "admin_assistant.ex_read_4",
+      "admin_assistant.ex_read_5",
+      "admin_assistant.ex_read_6",
+      "admin_assistant.ex_read_7",
+      "admin_assistant.ex_read_8",
+      "admin_assistant.ex_read_9",
+      "admin_assistant.ex_read_10",
+      "admin_assistant.ex_read_11",
+      "admin_assistant.ex_read_12",
     ],
   },
   {
-    label: "สร้างไฟล์/รายงาน",
-    items: [
-      "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel",
-      "Export inventory report เป็น PDF พร้อมสรุปให้ด้วย",
-      "ขอรายงานกำไรไตรมาสนี้เป็นไฟล์ CSV",
-      "สร้างใบเสนอราคา NIKE-001 ไซซ์ XL 10 ชิ้น",
-      "ออกใบแจ้งหนี้ของออร์เดอร์ #1234",
-      "พยากรณ์ยอดขาย 30 วันข้างหน้าของ NIKE-001",
-      "สินค้าตัวไหนมีแนวโน้มของหมดเร็วที่สุด",
+    labelKey: "admin_assistant.group_reports",
+    itemKeys: [
+      "admin_assistant.ex_report_1",
+      "admin_assistant.ex_report_2",
+      "admin_assistant.ex_report_3",
+      "admin_assistant.ex_report_4",
+      "admin_assistant.ex_report_5",
+      "admin_assistant.ex_report_6",
+      "admin_assistant.ex_report_7",
     ],
   },
   {
-    label: "สั่งงานได้ทันที",
-    items: [
-      "สร้างใบสั่งซื้อจาก supplier ก. สินค้า NIKE-001 ไซซ์ XL 10 ชิ้น",
-      "สร้างการจัดส่งออร์เดอร์ #1234 ด้วย Kerry",
-      "ปักแท็ก VIP ให้ลูกค้าเบอร์ 08x-xxx-xxxx",
-      "อัปเดตเลขพัสดุออร์เดอร์ #1234 เป็น TH1234567890XX",
-      "รับของเข้าใบสั่งซื้อ #PO-1234 ครบตามจำนวน",
-      "บันทึกโน้ตในแชทลูกค้าคนนี้ว่า ขอให้โทรกลับช่วงเย็น",
+    labelKey: "admin_assistant.group_actions",
+    itemKeys: [
+      "admin_assistant.ex_action_1",
+      "admin_assistant.ex_action_2",
+      "admin_assistant.ex_action_3",
+      "admin_assistant.ex_action_4",
+      "admin_assistant.ex_action_5",
+      "admin_assistant.ex_action_6",
     ],
   },
   {
-    label: "คำสั่งที่ต้องยืนยัน",
+    labelKey: "admin_assistant.group_confirm",
     sensitive: true,
-    items: [
-      "คืนเงินการชำระ (payment id ...)",
-      "ปรับสต็อก NIKE-001 ไซซ์ XL ลบ 2 ชิ้น เพราะของเสีย",
-      "ยกเลิกออร์เดอร์ #1234",
-      "คืนสินค้าออร์เดอร์ #1234 (ลูกค้าส่งของกลับมา)",
-      "รวมลูกค้าที่ซ้ำกัน 2 คนเป็นคนเดียว",
-      "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel แล้วส่ง email owner@example.com",
-      "สรุปสต็อกสินค้าเป็น CSV แล้วส่งอีเมลให้ warehouse@example.com",
-      "ขอรายงานกำไรเดือนที่แล้วเป็น PDF ส่งให้ manager@example.com หน่อย",
+    itemKeys: [
+      "admin_assistant.ex_confirm_1",
+      "admin_assistant.ex_confirm_2",
+      "admin_assistant.ex_confirm_3",
+      "admin_assistant.ex_confirm_4",
+      "admin_assistant.ex_confirm_5",
+      "admin_assistant.ex_confirm_6",
+      "admin_assistant.ex_confirm_7",
+      "admin_assistant.ex_confirm_8",
     ],
   },
 ];
-const EXAMPLE_COUNT = EXAMPLE_GROUPS.reduce((n, g) => n + g.items.length, 0);
+const EXAMPLE_COUNT = EXAMPLE_GROUPS.reduce((n, g) => n + g.itemKeys.length, 0);
 
 // ปุ่มเริ่มด่วนใน empty state — เลือกมาสั้นๆ 3 อัน ให้กดแล้วเริ่มได้ทันทีโดยไม่ต้องเลื่อนไปหา sidebar/Drawer
-const QUICK_START: Array<{ label: string; fill: string }> = [
-  { label: "ยอดขาย 7 วันล่าสุด", fill: "ยอดขาย 7 วันล่าสุดเป็นยังไง" },
-  { label: "สินค้าใกล้หมด", fill: "สินค้าอะไรใกล้หมดบ้าง" },
-  { label: "สร้างรายงาน Excel", fill: "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel" },
-  { label: "ส่งรายงานทางอีเมล", fill: "ขอรายงานยอดขายเดือนนี้เป็นไฟล์ Excel แล้วส่ง email owner@example.com" },
+const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
+  { labelKey: "admin_assistant.qs_sales_7d", fillKey: "admin_assistant.ex_read_1" },
+  { labelKey: "admin_assistant.qs_low_stock", fillKey: "admin_assistant.ex_read_2" },
+  { labelKey: "admin_assistant.qs_excel_report", fillKey: "admin_assistant.ex_report_1" },
+  { labelKey: "admin_assistant.qs_email_report", fillKey: "admin_assistant.ex_confirm_6" },
 ];
 
 export default function Page() {
+  const { t } = useI18n();
   const router = useRouter();
   const client = useApolloClient();
   const { data: meData } = useQuery(Q_ME);
@@ -310,13 +315,13 @@ export default function Page() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   };
 
-  const copyText = async (text: string, idx: number) => {
+  const copyText = async (value: string, idx: number) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(value);
       setCopiedIdx(idx);
       setTimeout(() => setCopiedIdx((c) => (c === idx ? null : c)), 1500);
     } catch {
-      message.error("คัดลอกไม่สำเร็จ — เบราว์เซอร์นี้อาจไม่รองรับ");
+      message.error(t("admin_assistant.copy_failed"));
     }
   };
 
@@ -361,12 +366,12 @@ export default function Page() {
         },
       ]);
     } catch (e: any) {
-      message.error(e?.message || "เรียกผู้ช่วย AI ไม่สำเร็จ");
+      message.error(e?.message || t("admin_assistant.assistant_failed"));
       setChat((c) => [
         ...c,
         {
           role: "assistant",
-          text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ",
+          text: t("admin_assistant.error_bubble"),
           createdAt: new Date().toISOString(),
           trace: [],
           error: true,
@@ -404,7 +409,7 @@ export default function Page() {
         )
       );
     } catch (e: any) {
-      message.error(e?.message || "เรียกผู้ช่วย AI ไม่สำเร็จ");
+      message.error(e?.message || t("admin_assistant.assistant_failed"));
       setChat((c) => c.map((b, i) => (i === idx ? { ...b, createdAt: new Date().toISOString() } : b)));
     } finally {
       setSending(false);
@@ -414,20 +419,20 @@ export default function Page() {
   const confirmProposal = async (bubbleIdx: number, propIdx: number, p: Proposal, argsOverride?: Record<string, unknown>) => {
     const entry = CONFIRM_MUTATIONS[p.mutation];
     if (!entry) {
-      message.error(`ไม่รองรับการยืนยัน: ${p.mutation}`);
+      message.error(t("admin_assistant.confirm_unsupported", { mutation: p.mutation }));
       return;
     }
     const args = argsOverride ? { ...p.args, ...argsOverride } : p.args;
     try {
       await client.mutate({ mutation: entry.doc, variables: entry.vars(args) });
-      message.success(`ยืนยันแล้ว: ${p.summary}`);
+      message.success(t("admin_assistant.confirm_done", { summary: p.summary }));
       setChat((c) =>
         c.map((b, i) =>
           i === bubbleIdx ? { ...b, proposalStates: { ...b.proposalStates, [propIdx]: "done" } } : b
         )
       );
     } catch (e: any) {
-      message.error(e?.message || "ยืนยันไม่สำเร็จ (อาจไม่มีสิทธิ์)");
+      message.error(e?.message || t("admin_assistant.confirm_failed"));
     }
   };
 
@@ -445,7 +450,7 @@ export default function Page() {
   const exampleGroupsContent = (
     <Space direction="vertical" style={{ width: "100%" }} size={0}>
       {EXAMPLE_GROUPS.map((group) => (
-        <div key={group.label}>
+        <div key={group.labelKey}>
           <Text
             type="secondary"
             style={{
@@ -457,10 +462,12 @@ export default function Page() {
               padding: "10px 10px 4px",
             }}
           >
-            {group.label}
+            {t(group.labelKey)}
           </Text>
-          {group.items.map((ex) => (
-            <Tooltip key={ex} title={ex} placement="left" mouseEnterDelay={0.4}>
+          {group.itemKeys.map((exKey) => {
+            const ex = t(exKey);
+            return (
+            <Tooltip key={exKey} title={ex} placement="left" mouseEnterDelay={0.4}>
               <button
                 onClick={() => pickExample(ex)}
                 style={{
@@ -489,12 +496,13 @@ export default function Page() {
                 </span>
                 {group.sensitive && (
                   <Tag color="warning" style={{ margin: 0, fontSize: 9.5, flex: "none" }}>
-                    ยืนยัน
+                    {t("admin_assistant.badge_confirm")}
                   </Tag>
                 )}
               </button>
             </Tooltip>
-          ))}
+            );
+          })}
         </div>
       ))}
     </Space>
@@ -531,25 +539,25 @@ export default function Page() {
       >
         <Space align="center">
           <RobotOutlined style={{ fontSize: 22 }} />
-          <Typography.Title level={4} style={{ margin: 0 }}>ผู้ช่วย AI (หลังบ้าน)</Typography.Title>
+          <Typography.Title level={4} style={{ margin: 0 }}>{t("admin_assistant.title")}</Typography.Title>
         </Space>
         <Space size={14}>
-          <Tooltip title="บันทึกไว้ในเครื่องนี้อัตโนมัติ (เบราว์เซอร์นี้เท่านั้น ไม่ sync ข้ามอุปกรณ์)">
+          <Tooltip title={t("admin_assistant.saved_locally_tooltip")}>
             <Text type="secondary" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
-              <SaveOutlined /> {!isMobile && "บันทึกไว้ในเครื่องนี้อัตโนมัติ"}
+              <SaveOutlined /> {!isMobile && t("admin_assistant.saved_locally")}
             </Text>
           </Tooltip>
           <Popconfirm
-            title="ล้างประวัติแชททั้งหมดในเครื่องนี้?"
-            description="กู้คืนไม่ได้"
-            okText="ล้างแชท"
+            title={t("admin_assistant.clear_chat_title")}
+            description={t("admin_assistant.clear_chat_desc")}
+            okText={t("admin_assistant.clear_chat_ok")}
             okType="danger"
-            cancelText="ยกเลิก"
+            cancelText={t("admin_assistant.cancel")}
             onConfirm={clearChat}
             disabled={chat.length === 0}
           >
             <Button size="small" icon={<DeleteOutlined />} disabled={chat.length === 0}>
-              ล้างแชท
+              {t("admin_assistant.clear_chat_btn")}
             </Button>
           </Popconfirm>
         </Space>
@@ -559,7 +567,7 @@ export default function Page() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="ถาม/สั่งงานด้วยภาษาพูดได้ — AI ดึงข้อมูลจริงและทำงานตามสิทธิ์ของคุณ งานที่กระทบเงิน/สต็อก/ลบข้อมูลจะเป็น 'คำขอ' ให้กดยืนยันเองก่อนเสมอ"
+        message={t("admin_assistant.info_alert")}
       />
       <Alert
         type="warning"
@@ -567,13 +575,13 @@ export default function Page() {
         style={{ marginBottom: 12 }}
         message={
           <Space wrap>
-            <span>Pharmacy intake test ถูกแยกออกแล้ว</span>
+            <span>{t("admin_assistant.lab_split_title")}</span>
             <Button size="small" onClick={() => router.push("/admin/pharmacy-intake-lab")}>
-              เปิด Pharmacy Intake Lab
+              {t("admin_assistant.lab_open_btn")}
             </Button>
           </Space>
         }
-        description="หน้าผู้ช่วย AI หลังบ้านนี้เหลือสำหรับงาน assistant ปกติเท่านั้น ส่วน flow ซักอาการ, quick replies และการส่งเคสทดสอบเข้าคิว ย้ายไปที่ /admin/pharmacy-intake-lab"
+        description={t("admin_assistant.lab_split_desc")}
       />
 
       {isMobile && (
@@ -589,7 +597,7 @@ export default function Page() {
         >
           <Space>
             <BulbOutlined style={{ color: "var(--app-primary)" }} />
-            ตัวอย่างคำสั่ง
+            {t("admin_assistant.examples_title")}
             <Tag color="blue" style={{ marginInlineStart: 0 }}>{EXAMPLE_COUNT}</Tag>
           </Space>
           <DownOutlined style={{ fontSize: 11, color: "var(--text-secondary)" }} />
@@ -638,16 +646,16 @@ export default function Page() {
               >
                 <RobotOutlined />
               </div>
-              <Typography.Text strong style={{ fontSize: 15 }}>ยังไม่มีบทสนทนา</Typography.Text>
+              <Typography.Text strong style={{ fontSize: 15 }}>{t("admin_assistant.empty_title")}</Typography.Text>
               <Text type="secondary" style={{ fontSize: 13, maxWidth: 320 }}>
                 {isMobile
-                  ? "พิมพ์คำถามด้านล่าง หรือเริ่มจากตัวอย่างที่ใช้บ่อย"
-                  : "พิมพ์คำถามด้านล่าง หรือเริ่มจากตัวอย่างที่ใช้บ่อยทางขวา"}
+                  ? t("admin_assistant.empty_hint_mobile")
+                  : t("admin_assistant.empty_hint_desktop")}
               </Text>
               <Space wrap size={8} style={{ justifyContent: "center" }}>
                 {QUICK_START.map((q) => (
-                  <Button key={q.fill} shape="round" size="small" onClick={() => pickExample(q.fill)}>
-                    {q.label}
+                  <Button key={q.fillKey} shape="round" size="small" onClick={() => pickExample(t(q.fillKey))}>
+                    {t(q.labelKey)}
                   </Button>
                 ))}
               </Space>
@@ -667,7 +675,7 @@ export default function Page() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                         <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--text-soft, var(--text-secondary))", whiteSpace: "nowrap" }}>
-                          {dayLabel(b.createdAt!)}
+                          {dayLabel(b.createdAt!, t)}
                         </Text>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                       </div>
@@ -694,11 +702,11 @@ export default function Page() {
                           }}
                         >
                           <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                            {renderAssistantText(b.text)}
+                            {renderAssistantText(b.text, t)}
                           </Paragraph>
                         </div>
                         {b.role === "assistant" && !b.error && (
-                          <Tooltip title={copiedIdx === i ? "คัดลอกแล้ว" : "คัดลอกข้อความนี้"}>
+                          <Tooltip title={copiedIdx === i ? t("admin_assistant.copied") : t("admin_assistant.copy_this")}>
                             <Button
                               type="text"
                               size="small"
@@ -718,7 +726,7 @@ export default function Page() {
                           {b.createdAt ? timeLabel(b.createdAt) : ""}
                           {b.error && (
                             <Text style={{ fontSize: 11, color: "#ff4d4f", fontWeight: 600, marginInlineStart: 6 }}>
-                              · ส่งไม่สำเร็จ
+                              {t("admin_assistant.send_failed_note")}
                             </Text>
                           )}
                         </Text>
@@ -731,7 +739,7 @@ export default function Page() {
                           disabled={sending}
                           style={{ marginTop: 4, fontSize: 11.5, color: "#ff4d4f", borderColor: "rgba(255,77,79,.35)" }}
                           >
-                          ลองส่งอีกครั้ง
+                          {t("admin_assistant.retry_send")}
                         </Button>
                       )}
 
@@ -744,7 +752,8 @@ export default function Page() {
                       const editKey = `${i}:${pi}`;
                       const toValue = emailEdits[editKey] ?? String(p.args.to ?? "");
                       const isKnown = p.args.isKnownRecipient === true;
-                      const reportLabel = REPORT_TYPE_LABEL_TH[String(p.args.reportType)] ?? String(p.args.reportType ?? "");
+                      const reportLabelKey = REPORT_TYPE_LABEL_KEY[String(p.args.reportType)];
+                      const reportLabel = reportLabelKey ? t(reportLabelKey) : String(p.args.reportType ?? "");
                       return (
                         <Card
                           key={pi}
@@ -753,7 +762,7 @@ export default function Page() {
                           styles={{ body: { padding: 0 } }}
                         >
                           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(250,173,20,0.10)", borderBottom: "1px solid rgba(250,173,20,0.35)" }}>
-                            <Tag color="orange" style={{ margin: 0 }}>ต้องยืนยัน</Tag>
+                            <Tag color="orange" style={{ margin: 0 }}>{t("admin_assistant.needs_confirm")}</Tag>
                             <Text code style={{ fontSize: 11.5 }}>email_report</Text>
                           </div>
                           <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -764,8 +773,8 @@ export default function Page() {
                                 <FileExcelOutlined style={{ fontSize: 13 }} />
                               </div>
                               <div>
-                                <div style={{ fontSize: 12.5, fontWeight: 600 }}>รายงาน{reportLabel} · {String(p.args.format ?? "")}</div>
-                                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>สร้างไฟล์เรียบร้อยแล้ว — ดาวน์โหลดเองได้ปกติแม้ยกเลิกคำขอนี้</div>
+                                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{t("admin_assistant.report_file_label", { label: reportLabel, format: String(p.args.format ?? "") })}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{t("admin_assistant.file_ready")}</div>
                               </div>
                             </div>
 
@@ -776,7 +785,7 @@ export default function Page() {
                                   border: "1px solid var(--app-border)", borderRadius: 8, padding: "6px 10px",
                                 }}
                               >
-                                <Text type="secondary" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>ถึง</Text>
+                                <Text type="secondary" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{t("admin_assistant.to_label")}</Text>
                                 <Input
                                   size="small"
                                   variant="borderless"
@@ -791,18 +800,18 @@ export default function Page() {
                               <div style={{ display: "flex", gap: 8, alignItems: "flex-start", border: "1px solid rgba(255,77,79,.35)", background: "rgba(255,77,79,.08)", borderRadius: 8, padding: "8px 10px" }}>
                                 <WarningOutlined style={{ color: "#ff4d4f", fontSize: 13, marginTop: 2 }} />
                                 <Text style={{ fontSize: 12, color: "#ff4d4f" }}>
-                                  <Text strong style={{ color: "#ff4d4f", fontSize: 12 }}>{toValue || "(ยังไม่ระบุ)"}</Text>{" "}
-                                  ไม่ตรงกับอีเมลติดต่อที่บันทึกไว้ในระบบร้าน — ตรวจสอบก่อนกดยืนยัน
+                                  <Text strong style={{ color: "#ff4d4f", fontSize: 12 }}>{toValue || t("admin_assistant.not_specified")}</Text>{" "}
+                                  {t("admin_assistant.unknown_recipient_warn")}
                                 </Text>
                               </div>
                             )}
 
                             {state === "done" ? (
                               <Tag icon={<CheckOutlined />} color="success" style={{ width: "fit-content" }}>
-                                ส่งไปที่ {toValue} แล้ว
+                                {t("admin_assistant.sent_to", { email: toValue })}
                               </Tag>
                             ) : state === "dismissed" ? (
-                              <Tag color="default" style={{ width: "fit-content" }}>ยกเลิกคำขอแล้ว — ไม่มีอีเมลถูกส่ง</Tag>
+                              <Tag color="default" style={{ width: "fit-content" }}>{t("admin_assistant.email_dismissed")}</Tag>
                             ) : (
                               <Space>
                                 <Button
@@ -812,10 +821,10 @@ export default function Page() {
                                   disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toValue.trim())}
                                   onClick={() => confirmProposal(i, pi, p, { to: toValue.trim() })}
                                 >
-                                  ยืนยันส่ง
+                                  {t("admin_assistant.confirm_send")}
                                 </Button>
                                 <Button size="small" icon={<CloseOutlined />} onClick={() => dismissProposal(i, pi)}>
-                                  ยกเลิกคำขอ
+                                  {t("admin_assistant.dismiss_request")}
                                 </Button>
                               </Space>
                             )}
@@ -832,7 +841,7 @@ export default function Page() {
                       >
                         <Space direction="vertical" style={{ width: "100%" }} size={6}>
                           <Space wrap>
-                            <Tag color="orange">ต้องยืนยัน</Tag>
+                            <Tag color="orange">{t("admin_assistant.needs_confirm")}</Tag>
                             <Text code>{p.tool}</Text>
                           </Space>
                           <Text strong>{p.summary}</Text>
@@ -842,9 +851,9 @@ export default function Page() {
                               .join(", ")})
                           </Text>
                           {state === "done" ? (
-                            <Tag icon={<CheckOutlined />} color="success">ยืนยันแล้ว</Tag>
+                            <Tag icon={<CheckOutlined />} color="success">{t("admin_assistant.confirmed_tag")}</Tag>
                           ) : state === "dismissed" ? (
-                            <Tag color="default">ยกเลิกคำขอแล้ว</Tag>
+                            <Tag color="default">{t("admin_assistant.dismissed_tag")}</Tag>
                           ) : (
                             <Space>
                               <Button
@@ -853,10 +862,10 @@ export default function Page() {
                                 icon={<CheckOutlined />}
                                 onClick={() => confirmProposal(i, pi, p)}
                               >
-                                ยืนยัน
+                                {t("admin_assistant.btn_confirm")}
                               </Button>
                               <Button size="small" icon={<CloseOutlined />} onClick={() => dismissProposal(i, pi)}>
-                                ยกเลิก
+                                {t("admin_assistant.btn_cancel")}
                               </Button>
                             </Space>
                           )}
@@ -870,15 +879,22 @@ export default function Page() {
                   {b.role === "assistant" && (b.trace?.length ?? 0) > 0 && (
                     <div style={{ marginTop: 6 }}>
                       <Space wrap size={4}>
-                        <Tooltip title="เครื่องมือ (tool/function) ที่ AI เลือกเรียกใช้จริงเพื่อตอบข้อความนี้ — ชื่อในกล่องคือชื่อฟังก์ชันในระบบ">
+                        <Tooltip title={t("admin_assistant.tools_tooltip")}>
                           <ToolOutlined style={{ color: "var(--text-secondary)", fontSize: 12 }} />
                         </Tooltip>
-                        {b.trace!.map((t, ti) => (
+                        {b.trace!.map((entry, ti) => (
                           <Tooltip
                             key={ti}
-                            title={`เรียกฟังก์ชัน "${t.tool}" — ${t.ok ? `สำเร็จ${t.summary && t.summary !== "ok" ? `: ${t.summary}` : ""}` : `ไม่สำเร็จ: ${t.summary}`}`}
+                            title={
+                              entry.ok
+                                ? t("admin_assistant.trace_call_ok", {
+                                    tool: entry.tool,
+                                    extra: entry.summary && entry.summary !== "ok" ? `: ${entry.summary}` : "",
+                                  })
+                                : t("admin_assistant.trace_call_fail", { tool: entry.tool, summary: entry.summary })
+                            }
                           >
-                            <Tag color={t.ok ? "blue" : "red"} style={{ fontSize: 11 }}>{t.tool}</Tag>
+                            <Tag color={entry.ok ? "blue" : "red"} style={{ fontSize: 11 }}>{entry.tool}</Tag>
                           </Tooltip>
                         ))}
                       </Space>
@@ -935,7 +951,7 @@ export default function Page() {
               }}
             >
               <ArrowDownOutlined style={{ fontSize: 11 }} />
-              ข้อความล่าสุด
+              {t("admin_assistant.scroll_latest")}
             </button>
           )}
         </div>
@@ -955,11 +971,11 @@ export default function Page() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onPressEnter={() => send()}
-            placeholder="พิมพ์คำถามหรือคำสั่ง เช่น 'ยอดขายเดือนนี้เท่าไหร่'"
+            placeholder={t("admin_assistant.input_placeholder")}
             disabled={sending}
           />
           <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-            ส่ง
+            {t("admin_assistant.btn_send")}
           </Button>
         </div>
 
@@ -983,15 +999,15 @@ export default function Page() {
             <div>
               <Space size={6}>
                 <BulbOutlined style={{ color: "var(--app-primary)" }} />
-                <Text strong style={{ fontSize: 13 }}>ตัวอย่างคำสั่ง</Text>
+                <Text strong style={{ fontSize: 13 }}>{t("admin_assistant.examples_title")}</Text>
               </Space>
               <div>
-                <Text type="secondary" style={{ fontSize: 11.5 }}>กดเพื่อใส่ลงช่องพิมพ์ทันที</Text>
+                <Text type="secondary" style={{ fontSize: 11.5 }}>{t("admin_assistant.examples_hint")}</Text>
               </div>
             </div>
             {chat.length > 0 && (
               <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
-                {chat.length} ข้อความ
+                {t("admin_assistant.msg_count", { n: chat.length })}
               </Text>
             )}
           </div>
@@ -1009,13 +1025,13 @@ export default function Page() {
           title={
             <Space>
               <BulbOutlined style={{ color: "var(--app-primary)" }} />
-              ตัวอย่างคำสั่ง
+              {t("admin_assistant.examples_title")}
             </Space>
           }
           styles={{ body: { paddingTop: 8 } }}
         >
           <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
-            กดที่ตัวอย่างเพื่อใส่ลงช่องพิมพ์ได้ทันที
+            {t("admin_assistant.drawer_hint")}
           </Text>
           {exampleGroupsContent}
         </Drawer>
