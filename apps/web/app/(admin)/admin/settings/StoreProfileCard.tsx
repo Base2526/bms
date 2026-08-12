@@ -3,7 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
-import { SHOP_ARCHETYPE_OPTIONS, archetypeNeedsRestockEmphasis, onboardingChecklistForArchetype } from "@/lib/bms/shopArchetypes";
+import { SHOP_ARCHETYPE_OPTIONS, archetypeNeedsRestockEmphasis, onboardingChecklistKeysForArchetype } from "@/lib/bms/shopArchetypes";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -78,7 +78,7 @@ export default function StoreProfileCard() {
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const selectedArchetype = Form.useWatch("businessArchetype", form);
-  const checklist = onboardingChecklistForArchetype(selectedArchetype);
+  const checklistKeys = onboardingChecklistKeysForArchetype(selectedArchetype);
   const highlightRestock = archetypeNeedsRestockEmphasis(selectedArchetype);
 
   useEffect(() => {
@@ -256,8 +256,8 @@ export default function StoreProfileCard() {
                       message={highlightRestock ? t("admin_store_profile.checklist_highlight_title") : t("admin_store_profile.checklist_default_title")}
                       description={
                         <div>
-                          {checklist.map((item) => (
-                            <div key={item}>- {item}</div>
+                          {checklistKeys.map((key) => (
+                            <div key={key}>- {t(`admin_getting_started.${key}`)}</div>
                           ))}
                           {highlightRestock && (
                             <div style={{ marginTop: 8 }}>

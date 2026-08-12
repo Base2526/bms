@@ -28,6 +28,7 @@ import {
   StopOutlined,
 } from "@ant-design/icons";
 import styles from "./restock.module.css";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -138,15 +139,18 @@ type Delivery = {
   completedAt: string | null;
 };
 
-const statusMeta: Record<string, { label: string; color: string }> = {
-  ACTIVE: { label: "รอสินค้าเข้า", color: "default" },
-  READY_TO_NOTIFY: { label: "พร้อมแจ้ง", color: "orange" },
-  NOTIFIED: { label: "แจ้งแล้ว", color: "green" },
-  ORDERED: { label: "สร้างออเดอร์แล้ว", color: "cyan" },
-  PURCHASED: { label: "ซื้อแล้ว", color: "blue" },
-  CANCELLED: { label: "ยกเลิก", color: "red" },
-  EXPIRED: { label: "หมดอายุ", color: "default" },
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+const statusMeta: Record<string, { labelKey: string; color: string }> = {
+  ACTIVE: { labelKey: "status_active", color: "default" },
+  READY_TO_NOTIFY: { labelKey: "status_ready", color: "orange" },
+  NOTIFIED: { labelKey: "status_notified", color: "green" },
+  ORDERED: { labelKey: "status_ordered", color: "cyan" },
+  PURCHASED: { labelKey: "status_purchased", color: "blue" },
+  CANCELLED: { labelKey: "status_cancelled", color: "red" },
+  EXPIRED: { labelKey: "status_expired", color: "default" },
 };
+const statusLabel = (status: string, t: TFn) =>
+  statusMeta[status] ? t(`admin_restock.${statusMeta[status].labelKey}`) : status;
 
 const channelLabel: Record<string, string> = {
   line: "LINE",
@@ -163,22 +167,24 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+// ⚠️ ข้อความนี้ส่งถึง "ลูกค้า" ไม่ใช่ UI ของแอดมิน — คงภาษาไทย (และ ค่ะ) ไว้เสมอ ไม่ผูกกับ
+// ภาษา UI ของแอดมิน ตามกฎเดียวกับ suggested reply/brand voice ที่อื่นในระบบ
 function suggestedMessage(item: Subscription) {
   return `${item.productName} (${item.productSku}) ไซซ์ ${item.size} เข้ามาแล้วค่ะ ตอนนี้มีพร้อมขาย ${item.available} ชิ้น สนใจให้ทางร้านช่วยสั่งให้ไหมคะ`;
 }
 
-function formatRelativeNotified(value?: string | null) {
+function formatRelativeNotified(value: string | null | undefined, t: TFn) {
   if (!value) return null;
   const diffMs = Date.now() - new Date(value).getTime();
   if (diffMs < 0) return null;
   const diffHours = Math.floor(diffMs / 3_600_000);
   if (diffHours < 1) {
     const diffMinutes = Math.max(1, Math.floor(diffMs / 60_000));
-    return `${diffMinutes} นาทีที่แล้ว`;
+    return t("admin_restock.rel_minutes_ago", { n: diffMinutes });
   }
-  if (diffHours < 24) return `${diffHours} ชม.ที่แล้ว`;
+  if (diffHours < 24) return t("admin_restock.rel_hours_ago", { n: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} วันที่แล้ว`;
+  return t("admin_restock.rel_days_ago", { n: diffDays });
 }
 
 function formatPercent(value?: number | null) {
@@ -190,6 +196,7 @@ function formatPercent(value?: number | null) {
 }
 
 export default function RestockSubscriptionsPage() {
+  const { t } = useI18n();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [status, setStatus] = useState<string | undefined>();
@@ -262,11 +269,11 @@ export default function RestockSubscriptionsPage() {
     : loadMetrics({ variables: { search: deferredSearch || null } });
 
   const statusTabs: Array<{ key: string | undefined; label: string; count: number }> = [
-    { key: undefined, label: "ทั้งหมด", count: counts.total },
-    { key: "ACTIVE", label: "รอสินค้าเข้า", count: counts.active },
-    { key: "READY_TO_NOTIFY", label: "พร้อมแจ้ง", count: counts.readyToNotify },
-    { key: "NOTIFIED", label: "แจ้งแล้ว", count: counts.notified },
-    { key: "ORDERED", label: "สร้างออเดอร์แล้ว", count: metrics.ordered },
+    { key: undefined, label: t("admin_restock.filter_all"), count: counts.total },
+    { key: "ACTIVE", label: t("admin_restock.status_active"), count: counts.active },
+    { key: "READY_TO_NOTIFY", label: t("admin_restock.status_ready"), count: counts.readyToNotify },
+    { key: "NOTIFIED", label: t("admin_restock.status_notified"), count: counts.notified },
+    { key: "ORDERED", label: t("admin_restock.status_ordered"), count: metrics.ordered },
   ];
 
   const onSendAll = async () => {
@@ -274,11 +281,11 @@ export default function RestockSubscriptionsPage() {
       const { data: resultData } = await sendAllReady();
       const result = resultData?.bmsSendAllReadyRestockNotifications;
       if (result) {
-        message.success(`แจ้งลูกค้าสำเร็จ ${result.sent} จาก ${result.attempted} รายการ${result.failed ? ` (ล้มเหลว ${result.failed})` : ""}`);
+        message.success(t("admin_restock.notify_success", { sent: result.sent, attempted: result.attempted }) + (result.failed ? t("admin_restock.notify_failed_suffix", { failed: result.failed }) : ""));
       }
       await Promise.all([refetch(), refetchCounts(), refreshMetrics()]);
     } catch (error: any) {
-      message.error(error?.message || "แจ้งลูกค้าไม่สำเร็จ");
+      message.error(error?.message || t("admin_restock.notify_failed"));
     }
   };
 
@@ -298,11 +305,11 @@ export default function RestockSubscriptionsPage() {
         message.success(result.message);
         setSendOpen(false);
       } else {
-        message.error(result?.message || "ส่งข้อความไม่สำเร็จ");
+        message.error(result?.message || t("admin_restock.send_failed"));
       }
       await Promise.all([refetch(), refetchDeliveries(), refetchCounts(), refreshMetrics()]);
     } catch (error: any) {
-      message.error(error?.message || "ส่งข้อความไม่สำเร็จ");
+      message.error(error?.message || t("admin_restock.send_failed"));
     }
   };
 
@@ -310,18 +317,18 @@ export default function RestockSubscriptionsPage() {
     try {
       const { data: resultData } = await cancelSubscription({ variables: { id: item.id } });
       if (resultData?.bmsCancelRestockSubscription) {
-        message.success("ยกเลิกรายการแจ้งเตือนแล้ว");
+        message.success(t("admin_restock.cancel_success"));
         if (selected?.id === item.id) setSelected(null);
         await Promise.all([refetch(), refetchCounts(), refreshMetrics()]);
       }
     } catch (error: any) {
-      message.error(error?.message || "ยกเลิกไม่สำเร็จ");
+      message.error(error?.message || t("admin_restock.cancel_failed"));
     }
   };
 
   const columns = [
     {
-      title: "ลูกค้า",
+      title: t("admin_restock.col_customer"),
       key: "customer",
       render: (_: unknown, item: Subscription) => (
         <Space direction="vertical" size={1}>
@@ -331,29 +338,29 @@ export default function RestockSubscriptionsPage() {
       ),
     },
     {
-      title: "สินค้าที่รอ",
+      title: t("admin_restock.col_product"),
       key: "product",
       render: (_: unknown, item: Subscription) => (
         <Space direction="vertical" size={1}>
           <Text strong>{item.productName}</Text>
-          <Text type="secondary" className={styles.smallText}>{item.productSku} · ไซซ์ {item.size} · ต้องการ {item.requestedQty}</Text>
+          <Text type="secondary" className={styles.smallText}>{t("admin_restock.product_meta", { sku: item.productSku, size: item.size, qty: item.requestedQty })}</Text>
         </Space>
       ),
     },
     {
-      title: "พร้อมขาย",
+      title: t("admin_restock.col_available"),
       dataIndex: "available",
       width: 100,
       render: (available: number) => <Text strong className={available > 0 ? styles.available : undefined}>{available}</Text>,
     },
     {
-      title: "สถานะ",
+      title: t("admin_restock.col_status"),
       dataIndex: "status",
       width: 130,
-      render: (value: string) => <Tag color={statusMeta[value]?.color}>{statusMeta[value]?.label || value}</Tag>,
+      render: (value: string) => <Tag color={statusMeta[value]?.color}>{statusLabel(value, t)}</Tag>,
     },
     {
-      title: "อัปเดตล่าสุด",
+      title: t("admin_restock.col_updated"),
       dataIndex: "updatedAt",
       width: 175,
       render: formatDate,
@@ -363,7 +370,7 @@ export default function RestockSubscriptionsPage() {
       key: "actions",
       width: 105,
       render: (_: unknown, item: Subscription) => (
-        <Button type="link" onClick={(event) => { event.stopPropagation(); setSelected(item); }}>ดูรายละเอียด</Button>
+        <Button type="link" onClick={(event) => { event.stopPropagation(); setSelected(item); }}>{t("admin_restock.btn_detail")}</Button>
       ),
     },
   ];
@@ -372,37 +379,37 @@ export default function RestockSubscriptionsPage() {
     <main className={styles.page}>
       <div className={styles.headRow}>
         <div>
-          <Title level={3} className={styles.title}>แจ้งลูกค้าเมื่อสินค้าเข้า</Title>
-          <Text type="secondary" className={styles.subtitle}>ติดตามความต้องการที่ลูกค้ายืนยันไว้ แล้วแจ้งได้ทันทีที่พร้อมขาย</Text>
+          <Title level={3} className={styles.title}>{t("admin_restock.page_title")}</Title>
+          <Text type="secondary" className={styles.subtitle}>{t("admin_restock.page_subtitle")}</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); refreshMetrics(); }} loading={loading || metricsLoading}>รีเฟรช</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => { refetch(); refetchCounts(); refreshMetrics(); }} loading={loading || metricsLoading}>{t("admin_restock.btn_refresh")}</Button>
       </div>
 
       <div className={styles.metricsGrid}>
         <Card className={styles.metricCard}>
-          <Text type="secondary" className={styles.metricLabel}>มูลค่าที่กู้กลับมา</Text>
-          <Title level={3} className={`${styles.metricValue} ${styles.metricGood}`}>{metrics.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</Title>
-          <Text className={styles.metricHint}>ยอดสินค้าในออเดอร์ที่ผูกกับ restock โดยตรง</Text>
+          <Text type="secondary" className={styles.metricLabel}>{t("admin_restock.metric_recovered_revenue")}</Text>
+          <Title level={3} className={`${styles.metricValue} ${styles.metricGood}`}>{metrics.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{t("admin_restock.metric_baht_suffix")}</Title>
+          <Text className={styles.metricHint}>{t("admin_restock.metric_recovered_revenue_hint")}</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary" className={styles.metricLabel}>กู้ยอดขายกลับมาได้</Text>
-          <Title level={3} className={styles.metricValue}>{metrics.recoveredSalesCount.toLocaleString("th-TH")} รายการ</Title>
-          <Text className={styles.metricHint}>{metrics.recoveredOrdersCount.toLocaleString("th-TH")} ออเดอร์ที่ตรวจสอบย้อนกลับได้</Text>
+          <Text type="secondary" className={styles.metricLabel}>{t("admin_restock.metric_recovered_sales")}</Text>
+          <Title level={3} className={styles.metricValue}>{metrics.recoveredSalesCount.toLocaleString("th-TH")}{t("admin_restock.metric_items_suffix")}</Title>
+          <Text className={styles.metricHint}>{t("admin_restock.metric_orders_traceable", { n: metrics.recoveredOrdersCount.toLocaleString("th-TH") })}</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary" className={styles.metricLabel}>ลูกค้าที่ปิดการขายกลับมา</Text>
-          <Title level={3} className={styles.metricValue}>{metrics.recoveredCustomersCount.toLocaleString("th-TH")} ราย</Title>
-          <Text className={styles.metricHint}>นับลูกค้าไม่ซ้ำจาก queue นี้</Text>
+          <Text type="secondary" className={styles.metricLabel}>{t("admin_restock.metric_recovered_customers")}</Text>
+          <Title level={3} className={styles.metricValue}>{metrics.recoveredCustomersCount.toLocaleString("th-TH")}{t("admin_restock.metric_customers_suffix")}</Title>
+          <Text className={styles.metricHint}>{t("admin_restock.metric_unique_customers_hint")}</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary" className={styles.metricLabel}>แจ้งแล้ว → ซื้อกลับมา</Text>
+          <Text type="secondary" className={styles.metricLabel}>{t("admin_restock.metric_notified_to_purchase")}</Text>
           <Title level={3} className={`${styles.metricValue} ${styles.metricPrimary}`}>{formatPercent(metrics.recoveryRateFromNotified)}</Title>
-          <Text className={styles.metricHint}>{metrics.recoveredFromNotified.toLocaleString("th-TH")} จาก {metrics.notifiedSubscriptions.toLocaleString("th-TH")} subscription ที่ส่งแจ้งสำเร็จ</Text>
+          <Text className={styles.metricHint}>{t("admin_restock.metric_from_subscriptions", { recovered: metrics.recoveredFromNotified.toLocaleString("th-TH"), notified: metrics.notifiedSubscriptions.toLocaleString("th-TH") })}</Text>
         </Card>
         <Card className={styles.metricCard}>
-          <Text type="secondary" className={styles.metricLabel}>Recovery rate รวม</Text>
+          <Text type="secondary" className={styles.metricLabel}>{t("admin_restock.metric_recovery_rate")}</Text>
           <Title level={3} className={`${styles.metricValue} ${styles.metricPrimary}`}>{formatPercent(metrics.recoveryRateOverall)}</Title>
-          <Text className={styles.metricHint}>ชำระสำเร็จ {metrics.recoveredSalesCount.toLocaleString("th-TH")} จากทั้งหมด {metrics.total.toLocaleString("th-TH")}</Text>
+          <Text className={styles.metricHint}>{t("admin_restock.metric_paid_of_total", { paid: metrics.recoveredSalesCount.toLocaleString("th-TH"), total: metrics.total.toLocaleString("th-TH") })}</Text>
         </Card>
       </div>
 
@@ -410,14 +417,14 @@ export default function RestockSubscriptionsPage() {
         type="success"
         showIcon
         className={styles.metricsAlert}
-        message={`Restock queue นี้ส่งแจ้งสำเร็จ ${metrics.sentDeliveries.toLocaleString("th-TH")} ครั้ง และกู้ลูกค้ากลับมาปิดการขายได้ ${metrics.recoveredCustomersCount.toLocaleString("th-TH")} ราย`}
-        description={`ตอนนี้ยังมี ${metrics.readyToNotify.toLocaleString("th-TH")} รายการที่พร้อมแจ้งทันที และมี failed deliveries ${metrics.failedDeliveries.toLocaleString("th-TH")} ครั้งที่ควรตามแก้`}
+        message={t("admin_restock.summary_alert", { sent: metrics.sentDeliveries.toLocaleString("th-TH"), customers: metrics.recoveredCustomersCount.toLocaleString("th-TH") })}
+        description={t("admin_restock.summary_alert_desc", { ready: metrics.readyToNotify.toLocaleString("th-TH"), failed: metrics.failedDeliveries.toLocaleString("th-TH") })}
       />
 
       <div className={styles.toolbar}>
         <Input.Search
           allowClear
-          placeholder="ค้นหาลูกค้า ชื่อสินค้า หรือ SKU"
+          placeholder={t("admin_restock.search_placeholder")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className={styles.search}
@@ -439,27 +446,27 @@ export default function RestockSubscriptionsPage() {
 
       {counts.readyToNotify > 0 && (
         <div className={styles.bulkBar}>
-          <Text className={styles.bulkText}>พร้อมแจ้งลูกค้า <b>{counts.readyToNotify.toLocaleString("th-TH")}</b> รายการ</Text>
+          <Text className={styles.bulkText}>{t("admin_restock.bulk_ready_text_1")} <b>{counts.readyToNotify.toLocaleString("th-TH")}</b> {t("admin_restock.bulk_ready_text_2")}</Text>
           <Popconfirm
-            title={`แจ้งลูกค้าที่พร้อมแจ้งทั้งหมด ${counts.readyToNotify} ราย?`}
-            description="ระบบจะส่งข้อความ template ให้ทุกรายการที่พร้อมแจ้งในตอนนี้"
+            title={t("admin_restock.bulk_confirm_title", { count: counts.readyToNotify })}
+            description={t("admin_restock.bulk_confirm_desc")}
             onConfirm={onSendAll}
-            okText="แจ้งทั้งหมด"
-            cancelText="ยกเลิก"
+            okText={t("admin_restock.btn_notify_all")}
+            cancelText={t("admin_restock.cancel")}
           >
-            <Button type="primary" icon={<SendOutlined />} loading={sendingAll}>แจ้งทั้งหมด</Button>
+            <Button type="primary" icon={<SendOutlined />} loading={sendingAll}>{t("admin_restock.btn_notify_all")}</Button>
           </Popconfirm>
         </div>
       )}
 
       <Card className={styles.queueCard}>
         <div className={styles.resultMeta}>
-          <Text type="secondary">พบ {total.toLocaleString("th-TH")} รายการ</Text>
+          <Text type="secondary">{t("admin_restock.found_count", { n: total.toLocaleString("th-TH") })}</Text>
         </div>
         {isMobile ? (
           <div className={styles.mobileList}>
             {items.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีรายการ" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_restock.empty")} />
             ) : (
               items.map((item) => (
                 <button key={item.id} type="button" className={styles.mobileCard} onClick={() => setSelected(item)}>
@@ -471,25 +478,25 @@ export default function RestockSubscriptionsPage() {
                       </div>
                     </div>
                     <span className={`${styles.mobileStatusPill} ${styles[`status${item.status}`] || ""}`}>
-                      {statusMeta[item.status]?.label || item.status}
+                      {statusLabel(item.status, t)}
                     </span>
                   </div>
                   <div className={styles.mobileProductBlock}>
-                    <Text strong className={styles.mobileProductName}>{item.productName} · ไซซ์ {item.size}</Text>
+                    <Text strong className={styles.mobileProductName}>{t("admin_restock.mobile_product", { name: item.productName, size: item.size })}</Text>
                     <div className={styles.mobileSummary}>
-                      <span>ต้องการ {item.requestedQty} ชิ้น</span>
-                      <span>พร้อมขาย <b className={item.available > 0 ? styles.summaryAvailable : undefined}>{item.available} ชิ้น</b></span>
+                      <span>{t("admin_restock.mobile_requested", { qty: item.requestedQty })}</span>
+                      <span>{t("admin_restock.mobile_available_1")} <b className={item.available > 0 ? styles.summaryAvailable : undefined}>{item.available}{t("admin_restock.mobile_pieces")}</b></span>
                       {item.status === "NOTIFIED" && item.lastNotifiedAt && (
-                        <span>แจ้งเมื่อ {formatRelativeNotified(item.lastNotifiedAt)}</span>
+                        <span>{t("admin_restock.mobile_notified_at", { when: formatRelativeNotified(item.lastNotifiedAt, t) || "" })}</span>
                       )}
                     </div>
                   </div>
                   <div className={styles.mobileMetaLine}>
-                    <Text type="secondary" className={styles.smallText}>อัปเดตล่าสุด {formatDate(item.updatedAt)}</Text>
+                    <Text type="secondary" className={styles.smallText}>{t("admin_restock.mobile_updated", { when: formatDate(item.updatedAt) })}</Text>
                   </div>
                   <div className={styles.mobileActions}>
                     <Button size="small" onClick={(event) => { event.stopPropagation(); setSelected(item); }}>
-                      ดูรายละเอียด
+                      {t("admin_restock.btn_detail")}
                     </Button>
                     {(item.status === "READY_TO_NOTIFY" || item.status === "NOTIFIED") && (
                       <Button
@@ -498,12 +505,12 @@ export default function RestockSubscriptionsPage() {
                         onClick={(event) => { event.stopPropagation(); openSend(item); }}
                         disabled={item.available <= 0}
                       >
-                        {item.status === "NOTIFIED" ? "ส่งซ้ำ" : "ส่งข้อความ"}
+                        {item.status === "NOTIFIED" ? t("admin_restock.btn_resend") : t("admin_restock.btn_send")}
                       </Button>
                     )}
                     {!(item.status === "READY_TO_NOTIFY" || item.status === "NOTIFIED") && (
                       <Button size="small" disabled>
-                        ส่งข้อความ
+                        {t("admin_restock.btn_send")}
                       </Button>
                     )}
                   </div>
@@ -511,9 +518,9 @@ export default function RestockSubscriptionsPage() {
               ))
             )}
             <div className={styles.mobilePagination}>
-              <Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>ก่อนหน้า</Button>
-              <Text className={styles.smallText}>หน้า {page} / {Math.max(1, Math.ceil(total / pageSize))}</Text>
-              <Button disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((value) => value + 1)}>ถัดไป</Button>
+              <Button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("admin_restock.btn_prev")}</Button>
+              <Text className={styles.smallText}>{t("admin_restock.page_indicator", { page, total: Math.max(1, Math.ceil(total / pageSize)) })}</Text>
+              <Button disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((value) => value + 1)}>{t("admin_restock.btn_next")}</Button>
             </div>
           </div>
         ) : (
@@ -532,14 +539,14 @@ export default function RestockSubscriptionsPage() {
               total,
               showSizeChanger: false,
               onChange: setPage,
-              showTotal: (value) => `${value} รายการ`,
+              showTotal: (value) => t("admin_restock.show_total", { n: value }),
             }}
           />
         )}
       </Card>
 
       <Drawer
-        title="รายละเอียด Restock Subscription"
+        title={t("admin_restock.drawer_title")}
         width={isMobile ? undefined : 520}
         height={isMobile ? "88vh" : undefined}
         placement={isMobile ? "bottom" : "right"}
@@ -550,45 +557,45 @@ export default function RestockSubscriptionsPage() {
         {selected && (
           <Space direction="vertical" size={20} className={styles.drawerContent}>
             <div className={styles.detailLead}>
-              <Tag color={statusMeta[selected.status]?.color}>{statusMeta[selected.status]?.label}</Tag>
+              <Tag color={statusMeta[selected.status]?.color}>{statusLabel(selected.status, t)}</Tag>
               <Title level={4}>{selected.productName}</Title>
-              <Text>{selected.productSku} · ไซซ์ {selected.size} · พร้อมขาย {selected.available} ชิ้น</Text>
+              <Text>{t("admin_restock.detail_product_meta", { sku: selected.productSku, size: selected.size, available: selected.available })}</Text>
             </div>
 
             {selected.status === "READY_TO_NOTIFY" && (
-              <Alert type="warning" showIcon message="สินค้าเข้าแล้ว รายการนี้พร้อมให้ตรวจข้อความและแจ้งลูกค้า" />
+              <Alert type="warning" showIcon message={t("admin_restock.in_stock_alert")} />
             )}
 
-            <Card size="small" title="ลูกค้าและความยินยอม">
-              <Paragraph><Text strong>{selected.customerName || selected.customerRef}</Text><br />{channelLabel[selected.channel]} · ยืนยันเมื่อ {formatDate(selected.consentedAt)}</Paragraph>
-              {selected.conversationId && <Link href={`/admin/inbox?c=${selected.conversationId}`}><Button icon={<MessageOutlined />}>เปิดประวัติการคุย</Button></Link>}
+            <Card size="small" title={t("admin_restock.card_customer_consent")}>
+              <Paragraph><Text strong>{selected.customerName || selected.customerRef}</Text><br />{channelLabel[selected.channel]}{t("admin_restock.consented_at", { when: formatDate(selected.consentedAt) })}</Paragraph>
+              {selected.conversationId && <Link href={`/admin/inbox?c=${selected.conversationId}`}><Button icon={<MessageOutlined />}>{t("admin_restock.btn_open_conversation")}</Button></Link>}
             </Card>
 
             {selected.resolvedOrderId && (
-              <Card size="small" title="ออเดอร์ที่เกิดจาก Restock">
+              <Card size="small" title={t("admin_restock.card_restock_order")}>
                 <Paragraph style={{ marginBottom: 8 }}>
                   <Text strong>Order {selected.resolvedOrderId.slice(0, 8)}</Text><br />
-                  สร้างออเดอร์เมื่อ {formatDate(selected.orderedAt)}
-                  {selected.status === "PURCHASED" ? <><br />ยืนยันชำระเมื่อ {formatDate(selected.resolvedAt)}</> : null}
+                  {t("admin_restock.ordered_at", { when: formatDate(selected.orderedAt) })}
+                  {selected.status === "PURCHASED" ? <><br />{t("admin_restock.paid_confirmed_at", { when: formatDate(selected.resolvedAt) })}</> : null}
                 </Paragraph>
                 {selected.recoveredRevenue != null ? (
-                  <Tag color="green">ยอดกู้กลับ {selected.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</Tag>
-                ) : <Tag color="cyan">รอยืนยันการชำระ</Tag>}
+                  <Tag color="green">{t("admin_restock.recovered_amount", { amount: selected.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2 }) })}</Tag>
+                ) : <Tag color="cyan">{t("admin_restock.awaiting_payment")}</Tag>}
               </Card>
             )}
 
             <div>
-              <Title level={5}>ประวัติการส่ง</Title>
-              {deliveriesLoading ? <Text type="secondary">กำลังโหลด...</Text> : deliveries.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีการส่งข้อความ" />
+              <Title level={5}>{t("admin_restock.delivery_history")}</Title>
+              {deliveriesLoading ? <Text type="secondary">{t("admin_restock.loading")}</Text> : deliveries.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_restock.no_deliveries")} />
               ) : (
                 <Timeline items={deliveries.map((delivery) => ({
                   color: delivery.status === "SENT" ? "green" : delivery.status === "FAILED" ? "red" : "gray",
                   children: (
                     <div className={styles.attempt}>
-                      <Space><Text strong>ครั้งที่ {delivery.attemptNo}</Text><Tag color={delivery.status === "SENT" ? "green" : "red"}>{delivery.status}</Tag></Space>
-                      <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: "ดูทั้งหมด" }}>{delivery.body}</Paragraph>
-                      <Text type="secondary" className={styles.smallText}>{formatDate(delivery.completedAt || delivery.createdAt)} · {delivery.triggeredBy || "ระบบ"}</Text>
+                      <Space><Text strong>{t("admin_restock.attempt_no", { n: delivery.attemptNo })}</Text><Tag color={delivery.status === "SENT" ? "green" : "red"}>{delivery.status}</Tag></Space>
+                      <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: t("admin_restock.expand_symbol") }}>{delivery.body}</Paragraph>
+                      <Text type="secondary" className={styles.smallText}>{formatDate(delivery.completedAt || delivery.createdAt)} · {delivery.triggeredBy || t("admin_restock.triggered_by_system")}</Text>
                       {delivery.error && <Alert className={styles.deliveryError} type="error" showIcon message={delivery.error} />}
                     </div>
                   ),
@@ -599,12 +606,12 @@ export default function RestockSubscriptionsPage() {
             <div className={styles.drawerActions}>
               {(selected.status === "READY_TO_NOTIFY" || selected.status === "NOTIFIED") && (
                 <Button block={isMobile} type="primary" icon={<SendOutlined />} onClick={() => openSend(selected)} disabled={selected.available <= 0}>
-                  {selected.status === "NOTIFIED" ? "Resend พร้อมตรวจข้อความ" : "ตรวจข้อความและส่ง"}
+                  {selected.status === "NOTIFIED" ? t("admin_restock.btn_resend_review") : t("admin_restock.btn_review_send")}
                 </Button>
               )}
               {!['ORDERED', 'PURCHASED', 'CANCELLED', 'EXPIRED'].includes(selected.status) && (
-                <Popconfirm title="ยกเลิกรายการนี้?" description="ระบบจะหยุดรอและไม่แจ้งลูกค้า" onConfirm={() => onCancel(selected)}>
-                  <Button block={isMobile} danger icon={<StopOutlined />} loading={cancelling}>ยกเลิกการติดตาม</Button>
+                <Popconfirm title={t("admin_restock.cancel_confirm_title")} description={t("admin_restock.cancel_confirm_desc")} onConfirm={() => onCancel(selected)}>
+                  <Button block={isMobile} danger icon={<StopOutlined />} loading={cancelling}>{t("admin_restock.btn_stop_tracking")}</Button>
                 </Popconfirm>
               )}
             </div>
@@ -613,11 +620,11 @@ export default function RestockSubscriptionsPage() {
       </Drawer>
 
       <Modal
-        title={selected?.status === "NOTIFIED" ? "Resend พร้อมตรวจข้อความ" : "ตรวจข้อความก่อนแจ้งลูกค้า"}
+        title={selected?.status === "NOTIFIED" ? t("admin_restock.modal_resend_title") : t("admin_restock.modal_review_title")}
         open={sendOpen}
         onCancel={() => setSendOpen(false)}
-        okText={selected?.status === "NOTIFIED" ? "ยืนยันส่งซ้ำ" : "ส่งข้อความ"}
-        cancelText="ยังไม่ส่ง"
+        okText={selected?.status === "NOTIFIED" ? t("admin_restock.modal_ok_resend") : t("admin_restock.modal_ok_send")}
+        cancelText={t("admin_restock.modal_cancel")}
         confirmLoading={sending}
         onOk={onSend}
         width={isMobile ? "calc(100vw - 24px)" : 640}
@@ -628,10 +635,10 @@ export default function RestockSubscriptionsPage() {
           className={styles.reviewAlert}
           type="info"
           showIcon
-          message="ระบบเตรียมข้อความจากข้อมูลสต๊อกล่าสุด คุณสามารถแก้ไขหรือเพิ่มข้อความก่อนส่งได้"
+          message={t("admin_restock.modal_alert")}
         />
         <Input.TextArea value={draft} onChange={(event) => setDraft(event.target.value)} rows={7} maxLength={2000} showCount />
-        {selected?.status === "NOTIFIED" && <Text type="warning">การส่งซ้ำอาจรบกวนลูกค้า ระบบจำกัดการส่งซ้ำหลังส่งสำเร็จไว้ 5 นาที</Text>}
+        {selected?.status === "NOTIFIED" && <Text type="warning">{t("admin_restock.resend_warning")}</Text>}
       </Modal>
     </main>
   );

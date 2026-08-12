@@ -3,6 +3,7 @@ import { useState } from "react";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Row, Col, Button, Tag, Progress, message, Alert, Typography, Space, Divider, List, Input, InputNumber } from "antd";
 import { CheckOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined, KeyOutlined, BarChartOutlined, WarningOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text, Paragraph } = Typography;
 
@@ -30,13 +31,14 @@ const Q = gql`
 const M = gql`mutation ($planCode: String!) { bmsChangePlan(planCode: $planCode) }`;
 const M_ADJUST = gql`mutation ($amount: Int!, $note: String) { bmsAdjustAiCredits(amount: $amount, note: $note) }`;
 
-const lim = (v: number) => (v < 0 ? "ไม่จำกัด" : v);
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+const lim = (v: number, t: TFn) => (v < 0 ? t("admin_billing.unlimited") : v);
 const pct = (used: number, max: number) => (max < 0 ? 0 : Math.min(100, Math.round((used / Math.max(max, 1)) * 100)));
 
-const AI_PLAN_PRESETS: Record<string, { credits: number; label: string; note: string }> = {
-  free: { credits: 1000, label: "Free", note: "เหมาะสำหรับทดลองใช้ AI ในร้าน" },
-  pro: { credits: 10000, label: "Pro", note: "เหมาะสำหรับร้านที่ใช้งาน AI ทุกวัน" },
-  business: { credits: 50000, label: "Business", note: "เหมาะสำหรับหลายทีม หลายช่องทาง" },
+const AI_PLAN_PRESETS: Record<string, { credits: number; label: string; noteKey: string }> = {
+  free: { credits: 1000, label: "Free", noteKey: "plan_note_free" },
+  pro: { credits: 10000, label: "Pro", noteKey: "plan_note_pro" },
+  business: { credits: 50000, label: "Business", noteKey: "plan_note_business" },
 };
 
 function formatNumber(n: number) {
@@ -85,13 +87,13 @@ function aiQuotaStatus(aiUsage: any) {
   return "normal";
 }
 
-function buildMockLedger(aiUsage: any) {
+function buildMockLedger(aiUsage: any, t: TFn) {
   const used = estimateUsedCredits(aiUsage);
   const total = estimateAiCredits(aiUsage?.limit ?? 0, aiUsage?.planCode);
   if (total < 0) {
     return [
-      { id: "grant", date: "ต้นเดือน", entryType: "BYOK / Unlimited", amount: 0, balanceAfter: 0, note: "ไม่จำกัด" },
-      { id: "usage", date: "เดือนนี้", entryType: "AI usage", amount: 0, balanceAfter: 0, note: `${formatNumber(aiUsage?.count ?? 0)} requests` },
+      { id: "grant", date: t("admin_billing.ledger_start_of_month"), entryType: "BYOK / Unlimited", amount: 0, balanceAfter: 0, note: t("admin_billing.unlimited") },
+      { id: "usage", date: t("admin_billing.ledger_this_month"), entryType: "AI usage", amount: 0, balanceAfter: 0, note: `${formatNumber(aiUsage?.count ?? 0)} requests` },
     ];
   }
   const topup = used > total * 0.8 ? Math.round(total * 0.2) : 0;
@@ -99,9 +101,9 @@ function buildMockLedger(aiUsage: any) {
   const afterUsage = Math.max(afterGrant - used, 0);
   const afterTopup = topup > 0 ? afterUsage + topup : afterUsage;
   return [
-    { id: "grant", date: "ต้นเดือน", entryType: "Monthly grant", amount: total, balanceAfter: afterGrant },
-    { id: "usage", date: "เดือนนี้", entryType: "AI usage", amount: -used, balanceAfter: afterUsage },
-    ...(topup > 0 ? [{ id: "topup", date: "ตัวอย่าง", entryType: "Top-up / Add-on", amount: topup, balanceAfter: afterTopup }] : []),
+    { id: "grant", date: t("admin_billing.ledger_start_of_month"), entryType: "Monthly grant", amount: total, balanceAfter: afterGrant },
+    { id: "usage", date: t("admin_billing.ledger_this_month"), entryType: "AI usage", amount: -used, balanceAfter: afterUsage },
+    ...(topup > 0 ? [{ id: "topup", date: t("admin_billing.ledger_example"), entryType: "Top-up / Add-on", amount: topup, balanceAfter: afterTopup }] : []),
   ];
 }
 
@@ -191,22 +193,23 @@ function AiMetricCard({
 }
 
 export default function Page() {
+  const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [adjustAmount, setAdjustAmount] = useState<number>(1000);
   const [adjustNote, setAdjustNote] = useState<string>("");
   const [changePlan, { loading: changing }] = useMutation(M, {
-    onCompleted: () => { message.success("เปลี่ยนแพ็กเกจแล้ว"); refetch(); },
-    onError: (e) => message.error(e?.message || "เปลี่ยนแพ็กเกจไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_billing.plan_changed")); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_billing.plan_change_failed")),
   });
   const [adjustCredits, { loading: adjustingCredits }] = useMutation(M_ADJUST, {
     onCompleted: () => {
-      message.success("ปรับเครดิต AI แล้ว");
+      message.success(t("admin_billing.credits_adjusted"));
       refetch();
     },
-    onError: (e) => message.error(e?.message || "ปรับเครดิตไม่สำเร็จ"),
+    onError: (e) => message.error(e?.message || t("admin_billing.credits_adjust_failed")),
   });
 
-  if (error) return <Alert type="error" message="โหลด billing ไม่ได้" description={error.message} showIcon />;
+  if (error) return <Alert type="error" message={t("admin_billing.load_error")} description={error.message} showIcon />;
 
   const b = data?.bmsBilling;
   const cur = b?.plan;
@@ -219,7 +222,7 @@ export default function Page() {
   const aiCreditsUsed = estimateUsedCredits(aiUsage);
   const aiCreditsRemaining = hasByok ? -1 : estimateRemainingCredits(aiUsage);
   const aiStatus = aiQuotaStatus(aiUsage);
-  const ledger: BillingLedgerRow[] = data?.bmsAiCreditLedger?.length ? data.bmsAiCreditLedger : buildMockLedger(aiUsage);
+  const ledger: BillingLedgerRow[] = data?.bmsAiCreditLedger?.length ? data.bmsAiCreditLedger : buildMockLedger(aiUsage, t);
   const usagePercent = hasByok || aiCreditsTotal < 0 ? 0 : pct(aiCreditsUsed, aiCreditsTotal);
   const tone = usageTone(aiStatus);
   const split = buildBreakdownRows(data?.bmsAiUsageBreakdown, aiCreditsUsed);
@@ -234,23 +237,23 @@ export default function Page() {
       </div>
 
       {cur && usage && (
-        <Card style={{ marginBottom: 16 }} title={<>แพ็กเกจปัจจุบัน: <Tag color="blue">{cur.name}</Tag>{cur.price_monthly > 0 ? `${cur.price_monthly.toLocaleString()} ฿/เดือน` : "ฟรี"}</>}>
+        <Card style={{ marginBottom: 16 }} title={<>{t("admin_billing.current_plan")}<Tag color="blue">{cur.name}</Tag>{cur.price_monthly > 0 ? `${cur.price_monthly.toLocaleString()}${t("admin_billing.per_month")}` : t("admin_billing.free")}</>}>
           <Row gutter={16}>
             <Col xs={24} md={6}>
-              <Text type="secondary">สินค้า</Text>
-              <Progress percent={pct(usage.products, cur.max_products)} format={() => `${usage.products}/${lim(cur.max_products)}`} status={cur.max_products>=0 && usage.products>=cur.max_products ? "exception":"active"} />
+              <Text type="secondary">{t("admin_billing.label_products")}</Text>
+              <Progress percent={pct(usage.products, cur.max_products)} format={() => `${usage.products}/${lim(cur.max_products, t)}`} status={cur.max_products>=0 && usage.products>=cur.max_products ? "exception":"active"} />
             </Col>
             <Col xs={24} md={6}>
-              <Text type="secondary">ช่องทางที่เชื่อม</Text>
-              <Progress percent={pct(usage.channels, cur.max_channels)} format={() => `${usage.channels}/${lim(cur.max_channels)}`} />
+              <Text type="secondary">{t("admin_billing.label_channels")}</Text>
+              <Progress percent={pct(usage.channels, cur.max_channels)} format={() => `${usage.channels}/${lim(cur.max_channels, t)}`} />
             </Col>
             <Col xs={24} md={6}>
-              <Text type="secondary">ออเดอร์เดือนนี้</Text>
-              <Progress percent={pct(usage.orders_month, cur.max_orders_month)} format={() => `${usage.orders_month}/${lim(cur.max_orders_month)}`} />
+              <Text type="secondary">{t("admin_billing.label_orders_month")}</Text>
+              <Progress percent={pct(usage.orders_month, cur.max_orders_month)} format={() => `${usage.orders_month}/${lim(cur.max_orders_month, t)}`} />
             </Col>
             <Col xs={24} md={6}>
               <Text type="secondary">Staff</Text>
-              <Progress percent={pct(usage.users, cur.max_users)} format={() => `${usage.users}/${lim(cur.max_users)}`} status={cur.max_users>=0 && usage.users>=cur.max_users ? "exception":"active"} />
+              <Progress percent={pct(usage.users, cur.max_users)} format={() => `${usage.users}/${lim(cur.max_users, t)}`} status={cur.max_users>=0 && usage.users>=cur.max_users ? "exception":"active"} />
             </Col>
           </Row>
         </Card>
@@ -276,7 +279,7 @@ export default function Page() {
                   <div>
                     <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15 }}>AI Credit</div>
                     <Text type="secondary" style={{ fontSize: 15 }}>
-                  {hasByok ? "ร้านนี้ใช้ API key ของตัวเองอยู่ จึงไม่ถูกหัก shared credits ของแพลตฟอร์ม" : "ขายเป็นเครดิตให้เข้าใจง่าย และเริ่มผูก monthly summary / ledger / usage events ของจริงแล้ว"}
+                  {hasByok ? t("admin_billing.byok_note") : t("admin_billing.credits_note")}
                     </Text>
                   </div>
                 </div>
@@ -288,11 +291,11 @@ export default function Page() {
                 bodyStyle={{ padding: 16 }}
                 style={{ borderRadius: 16, borderColor: tone.border, background: "#ffffffcc", backdropFilter: "blur(6px)" }}
               >
-                <Text type="secondary">AI policy วันนี้</Text>
+                <Text type="secondary">{t("admin_billing.ai_policy_today")}</Text>
                 <div style={{ fontSize: 16, fontWeight: 700, marginTop: 6 }}>
-                  {hasByok ? "BYOK + platform rate limit" : aiStatus === "exhausted" ? "เครดิตหมด → fallback / upgrade" : aiStatus === "warning" ? "ใกล้ถึง quota → ควรแจ้งเตือน" : "ปกติ → ใช้งานได้ต่อเนื่อง"}
+                  {hasByok ? t("admin_billing.policy_byok") : aiStatus === "exhausted" ? t("admin_billing.policy_exhausted") : aiStatus === "warning" ? t("admin_billing.policy_warning") : t("admin_billing.policy_normal")}
                 </div>
-                <Text type="secondary">ระบบใช้ monthly summary, ledger และ usage breakdown จากข้อมูลจริงของเดือนนี้</Text>
+                <Text type="secondary">{t("admin_billing.policy_source_note")}</Text>
               </Card>
             </Col>
           </Row>
@@ -303,19 +306,19 @@ export default function Page() {
           type="info"
           showIcon
           style={{ marginBottom: 16, borderRadius: 14 }}
-          message="AI Credits ใช้สำหรับคุมโควตา AI ต่อเดือนแยกร้าน โดย backend บันทึก usage event, ledger และต้นทุนโดยประมาณให้ทุกครั้ง"
-          description="ตอนนี้หน้า Billing อ่านข้อมูลจริงได้แล้วทั้งเครดิตคงเหลือ การใช้งานเดือนนี้ breakdown ตาม feature และ ledger การเปลี่ยนแปลงเครดิต"
+          message={t("admin_billing.credits_alert_title")}
+          description={t("admin_billing.credits_alert_desc")}
         />
 
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
           <Col xs={24} md={8}>
-            <AiMetricCard title="เครดิตคงเหลือ" value={hasByok || aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? "BYOK + rate limit" : `จากทั้งหมด ${formatNumber(aiUsage?.grantedCredits ?? aiCreditsTotal)}`} accent={tone.accent} />
+            <AiMetricCard title={t("admin_billing.card_remaining")} value={hasByok || aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiUsage?.grantedCredits ?? aiCreditsTotal) })} accent={tone.accent} />
           </Col>
           <Col xs={24} md={8}>
-            <AiMetricCard title="ใช้ไปเดือนนี้" value={formatNumber(aiCreditsUsed)} subtitle={`${formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0)} AI requests ทั้งหมดเดือนนี้`} accent="#13c2c2" />
+            <AiMetricCard title={t("admin_billing.card_used_this_month")} value={formatNumber(aiCreditsUsed)} subtitle={t("admin_billing.requests_total_month", { count: formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0) })} accent="#13c2c2" />
           </Col>
           <Col xs={24} md={8}>
-            <AiMetricCard title="ต้นทุน AI โดยประมาณ" value={`${Number(aiUsage?.estimatedCost ?? estimateMonthlyCost(aiUsage)).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿`} subtitle="ตอนนี้ใช้ cost summary จาก usage model จริง ถ้ายังไม่มี token cost จะยังเป็น 0" accent="#722ed1" />
+            <AiMetricCard title={t("admin_billing.card_estimated_cost")} value={`${Number(aiUsage?.estimatedCost ?? estimateMonthlyCost(aiUsage)).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿`} subtitle={t("admin_billing.cost_subtitle")} accent="#722ed1" />
           </Col>
         </Row>
 
@@ -323,16 +326,16 @@ export default function Page() {
           <Col xs={24} lg={15}>
             <Card size="small" title="AI Credit usage" style={{ borderRadius: 16 }}>
               {hasByok ? (
-                <Alert type="success" showIcon style={{ borderRadius: 14 }} message="ร้านนี้ใช้ BYOK อยู่ จึงไม่ถูกจำกัดด้วย shared AI credits" description="ยังควรมี rate limit และ cost dashboard แยก เพื่อกัน abuse และดูภาระ orchestration/infrastructure ของแพลตฟอร์ม" />
+                <Alert type="success" showIcon style={{ borderRadius: 14 }} message={t("admin_billing.byok_alert_title")} description={t("admin_billing.byok_alert_desc")} />
               ) : (
                 <>
                   <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }} wrap>
                     <div>
-                      <div style={{ fontSize: 14, color: "#8c8c8c" }}>เดือนนี้ใช้ไป</div>
+                      <div style={{ fontSize: 14, color: "#8c8c8c" }}>{t("admin_billing.used_this_month")}</div>
                       <div style={{ fontSize: 22, fontWeight: 800, color: tone.accent }}>{usagePercent}%</div>
                     </div>
                     <Tag color={aiStatus === "warning" ? "gold" : aiStatus === "exhausted" ? "red" : "blue"} style={{ borderRadius: 999, paddingInline: 10, fontSize: 13 }}>
-                      {aiStatus === "warning" ? "ใกล้ถึง quota" : aiStatus === "exhausted" ? "เครดิตหมด" : "ใช้งานได้ปกติ"}
+                      {aiStatus === "warning" ? t("admin_billing.status_warning") : aiStatus === "exhausted" ? t("admin_billing.status_exhausted") : t("admin_billing.status_normal")}
                     </Tag>
                   </Space>
                   <Progress
@@ -347,11 +350,11 @@ export default function Page() {
                       <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>80%</div>
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
-                      <Text type="secondary">Reset รอบถัดไป</Text>
-                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>ต้นเดือนถัดไป</div>
+                      <Text type="secondary">{t("admin_billing.next_reset")}</Text>
+                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{t("admin_billing.next_month_start")}</div>
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
-                      <Text type="secondary">เมื่อเครดิตหมด</Text>
+                      <Text type="secondary">{t("admin_billing.when_exhausted")}</Text>
                       <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>Fallback / Upgrade</div>
                     </Card>
                   </div>
@@ -393,10 +396,10 @@ export default function Page() {
             <Card size="small" title={<Space><ThunderboltOutlined /> AI Credit plans</Space>} style={{ borderRadius: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 12 }}>
                 {[
-                  { code: "free", name: "Free", credits: "1,000 AI Credits", note: "ทดลองใช้", cta: "เหมาะกับร้านใหม่" },
-                  { code: "pro", name: "Pro", credits: "10,000 AI Credits", note: "ใช้งานจริง", cta: "แนะนำสำหรับร้านที่ใช้ AI ทุกวัน" },
-                  { code: "enterprise", name: "Enterprise", credits: "Custom", note: "ตามดีล", cta: "SLA / analytics / support" },
-                  { code: "byok", name: "BYOK", credits: "Use your own key", note: "ไม่จำกัดเครดิตแพลตฟอร์ม", cta: "ยังมี rate limit และ infra control" },
+                  { code: "free", name: "Free", credits: "1,000 AI Credits", note: t("admin_billing.tier_free_note"), cta: t("admin_billing.tier_free_cta") },
+                  { code: "pro", name: "Pro", credits: "10,000 AI Credits", note: t("admin_billing.tier_pro_note"), cta: t("admin_billing.tier_pro_cta") },
+                  { code: "enterprise", name: "Enterprise", credits: "Custom", note: t("admin_billing.tier_ent_note"), cta: "SLA / analytics / support" },
+                  { code: "byok", name: "BYOK", credits: "Use your own key", note: t("admin_billing.tier_byok_note"), cta: t("admin_billing.tier_byok_cta") },
                 ].map((item) => (
                   <Card
                     key={item.code}
@@ -412,7 +415,7 @@ export default function Page() {
                     <Space direction="vertical" size={4}>
                       <Space wrap>
                         <Text strong style={{ fontSize: 18 }}>{item.name}</Text>
-                        {(item.code === cur?.code || (item.code === "byok" && hasByok)) && <Tag color="blue">ใช้อยู่</Tag>}
+                        {(item.code === cur?.code || (item.code === "byok" && hasByok)) && <Tag color="blue">{t("admin_billing.tag_in_use")}</Tag>}
                       </Space>
                       <div style={{ fontSize: 24, fontWeight: 700 }}>
                         {item.code === "free" || item.code === "pro" || item.code === "business"
@@ -441,7 +444,7 @@ export default function Page() {
                       </Space>
                       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
                         <Text type="secondary">{item.createdAt ? new Date(item.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : item.date}</Text>
-                        <Text type="secondary">คงเหลือ {formatNumber(item.balanceAfter ?? item.balance ?? 0)}</Text>
+                        <Text type="secondary">{t("admin_billing.balance_after", { value: formatNumber(item.balanceAfter ?? item.balance ?? 0) })}</Text>
                       </Space>
                       {(item.note || item.referenceType) && <Text type="secondary" style={{ fontSize: 12 }}>{item.note || item.referenceType}</Text>}
                     </div>
@@ -456,9 +459,9 @@ export default function Page() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={14}>
-            <Card size="small" title="จัดการเครดิต AI" style={{ borderRadius: 16 }}>
+            <Card size="small" title={t("admin_billing.manage_credits_title")} style={{ borderRadius: 16 }}>
               <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                <Text type="secondary">ใช้สำหรับเพิ่ม/ลดเครดิตชั่วคราวในเดือนปัจจุบัน เช่น เครดิตชดเชย เครดิตทดลองเพิ่ม หรือปรับแก้ยอด</Text>
+                <Text type="secondary">{t("admin_billing.manage_credits_note")}</Text>
                 <Space wrap>
                   {[500, 1000, 5000].map((value) => (
                     <Button key={value} onClick={() => setAdjustAmount(value)}>+{formatNumber(value)}</Button>
@@ -473,12 +476,12 @@ export default function Page() {
                     value={adjustAmount}
                     onChange={(value) => setAdjustAmount(Number(value ?? 0))}
                     step={100}
-                    placeholder="จำนวนเครดิต (+/-)"
+                    placeholder={t("admin_billing.amount_placeholder")}
                   />
                   <Input
                     value={adjustNote}
                     onChange={(e) => setAdjustNote(e.target.value)}
-                    placeholder="โน้ต เช่น โปรโมชันเปิดร้าน / เครดิตชดเชย / ปรับแก้ยอด"
+                    placeholder={t("admin_billing.note_placeholder")}
                   />
                 </Space.Compact>
                 <Space wrap>
@@ -488,7 +491,7 @@ export default function Page() {
                     disabled={!adjustAmount}
                     onClick={() => adjustCredits({ variables: { amount: adjustAmount, note: adjustNote || null } })}
                   >
-                    บันทึกการปรับเครดิต
+                    {t("admin_billing.btn_save_adjustment")}
                   </Button>
                   <Button
                     disabled={adjustingCredits}
@@ -497,22 +500,22 @@ export default function Page() {
                       setAdjustNote("");
                     }}
                   >
-                    รีเซ็ตฟอร์ม
+                    {t("admin_billing.btn_reset_form")}
                   </Button>
                 </Space>
               </Space>
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card size="small" title="เครดิตเดือนนี้" style={{ borderRadius: 16 }}>
+            <Card size="small" title={t("admin_billing.credits_month_title")} style={{ borderRadius: 16 }}>
               <List
                 size="small"
                 dataSource={[
-                  { label: "เครดิตจากแพ็กเกจ", value: aiUsage?.grantedCredits ?? 0 },
-                  { label: "เครดิตปรับเพิ่ม/ลด", value: aiUsage?.adjustedCredits ?? 0 },
-                  { label: "เครดิตโบนัส", value: aiUsage?.bonusCredits ?? 0 },
-                  { label: "ใช้งานผ่าน shared key", value: aiUsage?.sharedRequests ?? 0 },
-                  { label: "ใช้งานผ่าน BYOK", value: aiUsage?.byokRequests ?? 0 },
+                  { label: t("admin_billing.row_granted"), value: aiUsage?.grantedCredits ?? 0 },
+                  { label: t("admin_billing.row_adjusted"), value: aiUsage?.adjustedCredits ?? 0 },
+                  { label: t("admin_billing.row_bonus"), value: aiUsage?.bonusCredits ?? 0 },
+                  { label: t("admin_billing.row_shared"), value: aiUsage?.sharedRequests ?? 0 },
+                  { label: t("admin_billing.row_byok"), value: aiUsage?.byokRequests ?? 0 },
                   { label: "blocked / fallback", value: aiUsage?.blockedRequests ?? 0 },
                 ]}
                 renderItem={(item) => (
@@ -532,20 +535,20 @@ export default function Page() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} md={8}>
-            <Alert type="success" showIcon icon={<KeyOutlined />} style={{ borderRadius: 14 }} message="ควรขายเป็นเครดิต" description="หน้าบ้านให้ร้านเห็นเป็น AI Credits ที่เข้าใจง่าย ส่วนหลังบ้านเก็บ token / cost / tool usage จริง" />
+            <Alert type="success" showIcon icon={<KeyOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_credits_title")} description={t("admin_billing.advice_credits_desc")} />
           </Col>
           <Col xs={24} md={8}>
-            <Alert type="warning" showIcon icon={<WarningOutlined />} style={{ borderRadius: 14 }} message="ควรมี ledger + quota enforcement" description="ไม่ใช่แค่ dashboard ต้องมี logic บังคับจริงเมื่อใกล้หมดหรือเกิน limit" />
+            <Alert type="warning" showIcon icon={<WarningOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_ledger_title")} description={t("admin_billing.advice_ledger_desc")} />
           </Col>
           <Col xs={24} md={8}>
-            <Alert type="info" showIcon icon={<RobotOutlined />} style={{ borderRadius: 14 }} message="BYOK ไม่เท่ากับฟรีทุกอย่าง" description="แม้ลูกค้าใช้ key เอง แพลตฟอร์มยังควรมี rate limit และ cost dashboard ฝั่ง orchestration" />
+            <Alert type="info" showIcon icon={<RobotOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_byok_title")} description={t("admin_billing.advice_byok_desc")} />
           </Col>
         </Row>
         </div>
       </Card>
 
       <Alert type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="การเปลี่ยนแพ็กเกจยังเป็นโหมดสาธิตอยู่ แต่โควตาสินค้าและ AI credits เดือนนี้จะแสดง/ทำงานตามข้อมูลจริงในระบบ" />
+        message={t("admin_billing.plan_demo_notice")} />
 
       <Row gutter={[16, 16]}>
         {plans.map((p: any) => {
@@ -555,20 +558,20 @@ export default function Page() {
               <Card
                 title={p.name}
                 style={{ borderColor: isCurrent ? "#1677ff" : undefined, borderWidth: isCurrent ? 2 : 1 }}
-                extra={isCurrent && <Tag color="blue">ใช้อยู่</Tag>}
+                extra={isCurrent && <Tag color="blue">{t("admin_billing.tag_in_use")}</Tag>}
               >
                 <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>
-                  {p.price_monthly > 0 ? <>{p.price_monthly.toLocaleString()} <Text type="secondary" style={{ fontSize: 14 }}>฿/เดือน</Text></> : "ฟรี"}
+                  {p.price_monthly > 0 ? <>{p.price_monthly.toLocaleString()} <Text type="secondary" style={{ fontSize: 14 }}>{t("admin_billing.per_month")}</Text></> : t("admin_billing.free")}
                 </div>
                 <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> สินค้า {lim(p.max_products)}</div>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> ช่องทาง {lim(p.max_channels)}</div>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> ออเดอร์/เดือน {lim(p.max_orders_month)}</div>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_products")} {lim(p.max_products, t)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_channels")} {lim(p.max_channels, t)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_orders_month")} {lim(p.max_orders_month, t)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users, t)}</div>
                 </Space>
                 <Button type={isCurrent ? "default" : "primary"} block disabled={isCurrent || changing}
                   onClick={() => changePlan({ variables: { planCode: p.code } })}>
-                  {isCurrent ? "แพ็กเกจปัจจุบัน" : "เลือกแพ็กเกจนี้"}
+                  {isCurrent ? t("admin_billing.btn_current_plan") : t("admin_billing.btn_select_plan")}
                 </Button>
               </Card>
             </Col>

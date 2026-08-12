@@ -17,8 +17,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   SHOP_ARCHETYPE_OPTIONS,
   archetypeNeedsRestockEmphasis,
-  onboardingChecklistForArchetype,
+  onboardingChecklistKeysForArchetype,
 } from "@/lib/bms/shopArchetypes";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -68,6 +69,7 @@ function archetypeLabel(value: string | null | undefined) {
 }
 
 export default function Page() {
+  const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveProgress] = useMutation(M_PROGRESS);
   const [creatingSample, setCreatingSample] = useState(false);
@@ -78,7 +80,7 @@ export default function Page() {
   const channels: Array<{ channel: string; active?: boolean; has_token?: boolean }> = data?.bmsChannels || [];
   const productTotal = Number(data?.bmsProducts?.total || 0);
   const archetype = profile?.businessArchetype || null;
-  const checklist = onboardingChecklistForArchetype(archetype);
+  const checklistKeys = onboardingChecklistKeysForArchetype(archetype);
   const restockFirstClass = archetypeNeedsRestockEmphasis(archetype);
   const canOfferSampleData = productTotal === 0;
 
@@ -96,48 +98,48 @@ export default function Page() {
   const steps: StepItem[] = [
     {
       key: "shop",
-      title: "ข้อมูลร้าน",
-      description: "ตั้งชื่อร้าน เวลาเปิดปิด ประเทศ สกุลเงิน และช่องทางติดต่อ เพื่อให้ AI ตอบลูกค้าได้จากข้อมูลจริง",
+      title: t("admin_getting_started.step_shop_title"),
+      description: t("admin_getting_started.step_shop_desc"),
       href: "/admin/settings",
-      buttonLabel: "ไปตั้งค่าข้อมูลร้าน",
+      buttonLabel: t("admin_getting_started.step_shop_btn"),
       done: shopInfoDone,
       icon: <ShopOutlined />,
     },
     {
       key: "payment",
-      title: "บัญชีรับเงิน",
-      description: "เพิ่มบัญชีธนาคารหรือพร้อมเพย์ เพื่อให้ AI และ checkout บอกช่องทางชำระเงินได้",
+      title: t("admin_getting_started.step_payment_title"),
+      description: t("admin_getting_started.step_payment_desc"),
       href: "/admin/settings",
-      buttonLabel: "เพิ่มบัญชีรับเงิน",
+      buttonLabel: t("admin_getting_started.step_payment_btn"),
       done: paymentDone,
       icon: <CreditCardOutlined />,
     },
     {
       key: "products",
-      title: "สินค้าชุดแรก",
-      description: "เพิ่มสินค้าอย่างน้อย 1 รายการก่อน เพื่อให้ AI เช็กของ สร้างออเดอร์ และแนะนำสินค้าได้จริง",
+      title: t("admin_getting_started.step_products_title"),
+      description: t("admin_getting_started.step_products_desc"),
       href: "/admin/products",
-      buttonLabel: "เพิ่มสินค้า",
+      buttonLabel: t("admin_getting_started.step_products_btn"),
       done: productsDone,
       icon: <AppstoreOutlined />,
     },
     {
       key: "channels",
-      title: "ช่องทางขาย / AI flow",
-      description: "เชื่อมอย่างน้อย 1 ช่องทาง หรือเริ่มทดสอบจากหลังบ้านก่อน แล้วลองถาม AI หรือสร้างออเดอร์จริงหนึ่งรอบ",
+      title: t("admin_getting_started.step_channels_title"),
+      description: t("admin_getting_started.step_channels_desc"),
       href: "/admin/settings",
-      buttonLabel: "ตั้งค่าช่องทาง",
+      buttonLabel: t("admin_getting_started.step_channels_btn"),
       done: channelsDone,
       icon: <RobotOutlined />,
     },
     {
       key: "restock",
-      title: "เก็บยอดขายจากของหมด",
+      title: t("admin_getting_started.step_restock_title"),
       description: restockFirstClass
-        ? "ร้านประเภทนี้เหมาะมากกับ restock subscriptions: เปลี่ยนลูกค้าที่ถามของแล้วของหมดให้กลายเป็นคิวตามกลับเมื่อสต๊อกเข้า"
-        : "ถ้าร้านคุณมีสินค้าหมดบ่อย สามารถใช้ restock subscriptions เพื่อเก็บ demand ที่กำลังจะหลุดได้",
+        ? t("admin_getting_started.step_restock_desc_emphasis")
+        : t("admin_getting_started.step_restock_desc_default"),
       href: "/admin/restock-subscriptions",
-      buttonLabel: "เปิดหน้า Restock",
+      buttonLabel: t("admin_getting_started.step_restock_btn"),
       done: restockDone,
       recommended: restockFirstClass,
       icon: <BellOutlined />,
@@ -161,7 +163,7 @@ export default function Page() {
   }, [completedKeys.join("|"), data, loading, saveProgress, skippedKeys.join("|"), storedProgress?.dismissedAt]);
 
   if (error) {
-    return <Alert type="error" showIcon message="โหลดหน้าเริ่มต้นใช้งานไม่สำเร็จ" description={error.message} />;
+    return <Alert type="error" showIcon message={t("admin_getting_started.load_error")} description={error.message} />;
   }
 
   const completed = steps.filter((s) => s.done).length;
@@ -175,12 +177,12 @@ export default function Page() {
         credentials: "include",
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || "สร้าง sample data ไม่สำเร็จ");
-      message.success("สร้าง sample data ตาม archetype ให้ร้านนี้แล้ว");
+      if (!res.ok) throw new Error(body?.error || t("admin_getting_started.sample_failed"));
+      message.success(t("admin_getting_started.sample_success"));
       syncedProgress.current = false;
       await refetch();
     } catch (e: any) {
-      message.error(e?.message || "สร้าง sample data ไม่สำเร็จ");
+      message.error(e?.message || t("admin_getting_started.sample_failed"));
     } finally {
       setCreatingSample(false);
     }
@@ -189,7 +191,7 @@ export default function Page() {
   async function skipStep(key: string) {
     const skipped = Array.from(new Set([...skippedKeys, key])).filter((item) => !completedKeys.includes(item));
     await saveProgress({ variables: { completed: completedKeys, skipped, dismissed: false } });
-    message.info("บันทึกว่าข้ามขั้นตอนนี้ไว้แล้ว");
+    message.info(t("admin_getting_started.skip_saved"));
     await refetch();
   }
 
@@ -202,12 +204,12 @@ export default function Page() {
     <div style={{ maxWidth: 1120 }}>
       <Card loading={loading} style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={4} style={{ width: "100%" }}>
-          <Title level={2} style={{ margin: 0 }}>เริ่มต้นใช้งานร้านของคุณ</Title>
+          <Title level={2} style={{ margin: 0 }}>{t("admin_getting_started.page_title")}</Title>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            ใช้ checklist นี้เพื่อพาร้านจาก “สมัครสำเร็จ” ไปสู่ “พร้อมขายผ่าน AI และ workflow หลังบ้านจริง”
+            {t("admin_getting_started.page_subtitle")}
           </Paragraph>
           <Space wrap>
-            <Tag color="blue">{tenant?.name || "ร้านของคุณ"}</Tag>
+            <Tag color="blue">{tenant?.name || t("admin_getting_started.your_shop")}</Tag>
             <Tag>{tenant?.slug ? `/${tenant.slug}` : "slug pending"}</Tag>
             <Tag color="purple">{archetypeLabel(archetype)}</Tag>
             {profile?.businessType ? <Tag color="geekblue">businessType: {profile.businessType}</Tag> : null}
@@ -220,16 +222,16 @@ export default function Page() {
           </Col>
           <Col xs={24} md={14}>
             <Paragraph style={{ marginBottom: 8 }}>
-              ตอนนี้คุณทำไปแล้ว <b>{completed}</b> จาก <b>{steps.length}</b> ขั้นตอน
+              {t("admin_getting_started.progress_text")} <b>{completed}</b> {t("admin_getting_started.progress_of")} <b>{steps.length}</b> {t("admin_getting_started.progress_steps")}
             </Paragraph>
             <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              ระบบจะใช้อ้างอิงข้อมูลจริงของร้านเพื่อบอกว่าอะไรยังขาด เช่น บัญชีรับเงิน, สินค้า, หรือการตั้งค่าที่เกี่ยวกับการขาย
+              {t("admin_getting_started.progress_hint")}
             </Paragraph>
             <Space wrap>
-              <Button onClick={dismissOnboarding}>ข้ามไป Dashboard</Button>
+              <Button onClick={dismissOnboarding}>{t("admin_getting_started.btn_skip_to_dashboard")}</Button>
               <Link href={steps.find((s) => !s.done)?.href || "/admin/dashboard"}>
                 <Button type="primary" icon={<ArrowRightOutlined />}>
-                  {steps.find((s) => !s.done)?.buttonLabel || "ไปที่ Dashboard"}
+                  {steps.find((s) => !s.done)?.buttonLabel || t("admin_getting_started.btn_go_dashboard")}
                 </Button>
               </Link>
             </Space>
@@ -241,15 +243,15 @@ export default function Page() {
         style={{ marginBottom: 16 }}
         type={restockFirstClass ? "success" : "info"}
         showIcon
-        message={restockFirstClass ? "จุดเน้นสำหรับร้านประเภทนี้: กู้ยอดขายจากของหมด" : "Checklist ตาม archetype ร้าน"}
+        message={restockFirstClass ? t("admin_getting_started.alert_emphasis") : t("admin_getting_started.alert_default")}
         description={
           <div>
-            {checklist.map((item) => (
-              <div key={item}>- {item}</div>
+            {checklistKeys.map((key) => (
+              <div key={key}>- {t(`admin_getting_started.${key}`)}</div>
             ))}
             {restockFirstClass && (
               <div style={{ marginTop: 8 }}>
-                - `restock subscriptions` ช่วยเปลี่ยน `out-of-stock` จากปลายทางของแชต ให้กลายเป็น queue ที่ทีมขายตามกลับเมื่อสต๊อกกลับมา
+                - {t("admin_getting_started.restock_extra_note")}
               </div>
             )}
           </div>
@@ -259,26 +261,25 @@ export default function Page() {
       {canOfferSampleData && (
         <Card style={{ marginBottom: 16 }}>
           <Space direction="vertical" size={8} style={{ width: "100%" }}>
-            <Title level={4} style={{ margin: 0 }}>เริ่มเร็วขึ้นด้วยข้อมูลตัวอย่าง</Title>
+            <Title level={4} style={{ margin: 0 }}>{t("admin_getting_started.sample_card_title")}</Title>
             <Paragraph style={{ marginBottom: 0 }}>
-              ร้านนี้ยังไม่มีสินค้า คุณสามารถให้ระบบสร้าง sample data ตาม archetype ปัจจุบันได้ทันที
-              เพื่อใช้ demo การตอบ AI, ออเดอร์, การชำระเงิน, บทสนทนา และ{restockFirstClass ? " restock subscriptions" : " workflow หลังบ้าน"}.
+              {t("admin_getting_started.sample_card_desc_1")}{restockFirstClass ? " restock subscriptions" : t("admin_getting_started.sample_card_desc_workflow")}.
             </Paragraph>
             <Space wrap>
-              <Tag color="blue">สินค้า 12</Tag>
-              <Tag color="blue">ลูกค้า 10</Tag>
-              <Tag color="blue">ออเดอร์ 12</Tag>
-              <Tag color="blue">บทสนทนา 8</Tag>
-              <Tag color="blue">คูปอง 3</Tag>
-              <Tag color="cyan">ใบสั่งซื้อ 6</Tag>
+              <Tag color="blue">{t("admin_getting_started.tag_products")}</Tag>
+              <Tag color="blue">{t("admin_getting_started.tag_customers")}</Tag>
+              <Tag color="blue">{t("admin_getting_started.tag_orders")}</Tag>
+              <Tag color="blue">{t("admin_getting_started.tag_conversations")}</Tag>
+              <Tag color="blue">{t("admin_getting_started.tag_coupons")}</Tag>
+              <Tag color="cyan">{t("admin_getting_started.tag_purchase_orders")}</Tag>
               {restockFirstClass ? <Tag color="gold">Restock 8</Tag> : null}
             </Space>
             <Space wrap>
               <Button type="primary" loading={creatingSample} onClick={createSampleData}>
-                สร้าง sample data ตาม archetype
+                {t("admin_getting_started.btn_create_sample")}
               </Button>
               <Link href="/admin/products">
-                <Button>เริ่มจากร้านเปล่า</Button>
+                <Button>{t("admin_getting_started.btn_start_empty")}</Button>
               </Link>
             </Space>
           </Space>
@@ -298,8 +299,8 @@ export default function Page() {
               }
               extra={
                 step.done
-                  ? <Tag color="green" icon={<CheckCircleOutlined />}>พร้อมแล้ว</Tag>
-                  : <Tag icon={<ClockCircleOutlined />}>ยังไม่ครบ</Tag>
+                  ? <Tag color="green" icon={<CheckCircleOutlined />}>{t("admin_getting_started.tag_ready")}</Tag>
+                  : <Tag icon={<ClockCircleOutlined />}>{t("admin_getting_started.tag_incomplete")}</Tag>
               }
               style={{ height: "100%" }}
             >
@@ -309,9 +310,9 @@ export default function Page() {
                   <Button type={step.done ? "default" : "primary"}>{step.buttonLabel}</Button>
                 </Link>
                 {!step.done && !skippedKeys.includes(step.key) ? (
-                  <Button type="text" onClick={() => skipStep(step.key)}>ไว้ทำภายหลัง</Button>
+                  <Button type="text" onClick={() => skipStep(step.key)}>{t("admin_getting_started.btn_later")}</Button>
                 ) : null}
-                {skippedKeys.includes(step.key) ? <Tag>ข้ามไว้</Tag> : null}
+                {skippedKeys.includes(step.key) ? <Tag>{t("admin_getting_started.tag_skipped")}</Tag> : null}
               </Space>
             </Card>
           </Col>

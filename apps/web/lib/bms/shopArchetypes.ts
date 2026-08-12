@@ -80,69 +80,72 @@ export function commercePolicyForArchetype(value: string | null | undefined): Ar
   }
 }
 
-export function onboardingChecklistForArchetype(value: string | null | undefined): string[] {
+// คืน **i18n key** (ไม่ใช่ข้อความ) เพราะ checklist นี้เป็น admin UI copy ที่ต้องสลับภาษาตาม
+// ผู้ใช้ — ต่างจาก commercePolicyForArchetype() ด้านบนที่เป็นเนื้อหาป้อน AI prompt ให้ตอบลูกค้า
+// ชาวไทย จึงต้องคงภาษาไทยไว้เสมอ. ผู้เรียก resolve ด้วย t(`admin_getting_started.${key}`)
+export function onboardingChecklistKeysForArchetype(value: string | null | undefined): string[] {
   switch (value) {
     case "mini_mart":
       return [
-        "เพิ่มหมวดสินค้าหมุนเร็ว เช่น เครื่องดื่ม ของใช้ และของแห้ง",
-        "ทดสอบคำถามซื้อซ้ำและการใช้คูปองจากแชตลูกค้า",
-        "ตั้งค่าบัญชีรับเงินและค่าส่งให้ครบก่อนเปิด AI ขายจริง",
-        "เปิดใช้ restock subscriptions เพื่อเก็บลูกค้าที่ถามของแล้วของหมด",
+        "checklist_mini_mart_1",
+        "checklist_mini_mart_2",
+        "checklist_mini_mart_3",
+        "checklist_mini_mart_4",
       ];
     case "fashion":
       return [
-        "กำหนด variant ให้ครบ เช่น size / color แล้วเช็กสต๊อกแต่ละตัวเลือก",
-        "อัปโหลดรูปหน้าปกและรูปเสริมเพื่อช่วย AI แนะนำสินค้าได้แม่นขึ้น",
-        "ทดสอบ flow ของหมด -> เสนอไซซ์หรือรุ่นใกล้เคียง",
-        "เปิดใช้ restock subscriptions สำหรับไซซ์ยอดนิยมที่หมดบ่อย",
+        "checklist_fashion_1",
+        "checklist_fashion_2",
+        "checklist_fashion_3",
+        "checklist_fashion_4",
       ];
     case "home_kitchen":
       return [
-        "จัดหมวดสินค้าและคำอธิบายให้ลูกค้าเทียบขนาด/วัสดุได้ง่าย",
-        "ทดสอบคำถามแนวเปรียบเทียบสินค้าและการขายแบบเซ็ต",
-        "ตั้งค่านโยบายจัดส่ง/กันแตกให้ชัดเพื่อให้ AI ตอบเหมือนร้านจริง",
-        "ใช้ restock subscriptions กับสินค้าที่ลูกค้ารอของเข้าได้",
+        "checklist_home_kitchen_1",
+        "checklist_home_kitchen_2",
+        "checklist_home_kitchen_3",
+        "checklist_home_kitchen_4",
       ];
     case "beauty_personal_care":
       return [
-        "จัดหมวดตาม routine หรือปัญหาผิวเพื่อช่วยการแนะนำสินค้า",
-        "ทดสอบคำถามแนว consultative เช่น ขอคำแนะนำตามปัญหา",
-        "ตั้งค่าโปรโมชั่น/คูปองสำหรับลูกค้าซื้อซ้ำ",
-        "ใช้ restock subscriptions กับสินค้าที่ลูกค้าตามหาเป็นประจำ",
+        "checklist_beauty_personal_care_1",
+        "checklist_beauty_personal_care_2",
+        "checklist_beauty_personal_care_3",
+        "checklist_beauty_personal_care_4",
       ];
     case "food_beverage":
       return [
-        "จัดเมนู/สินค้าให้ AI อ่านชื่อและตัวเลือกได้ง่ายจากแคตตาล็อก",
-        "ทดสอบการสั่งหลายรายการในข้อความเดียวและการแก้จำนวนกลางทาง",
-        "ตั้งค่าช่องทางชำระเงินและเวลาจัดส่งให้ชัดเพื่อปิดออเดอร์เร็ว",
-        "ใช้ archetype นี้เพื่อ demo บริบทการสั่งแชต ไม่ได้เพิ่ม POS เฉพาะทาง",
+        "checklist_food_beverage_1",
+        "checklist_food_beverage_2",
+        "checklist_food_beverage_3",
+        "checklist_food_beverage_4",
       ];
     case "gadgets_accessories":
       return [
-        "ใส่ชื่อรุ่นที่รองรับและ keywords ให้ครบเพื่อช่วยตอบเรื่อง compatibility",
-        "ทดสอบ flow ของหมด -> เสนอรุ่นทดแทนหรือ bundle ที่ใกล้เคียง",
-        "เพิ่มชุด upsell เช่น เคส + ฟิล์ม + หัวชาร์จ",
-        "เปิดใช้ restock subscriptions กับรุ่นยอดนิยมที่ของหมดเร็ว",
+        "checklist_gadgets_accessories_1",
+        "checklist_gadgets_accessories_2",
+        "checklist_gadgets_accessories_3",
+        "checklist_gadgets_accessories_4",
       ];
     case "b2b_wholesale":
       return [
-        "ทดสอบออเดอร์จำนวนมากและการซื้อซ้ำจากลูกค้าเดิม",
-        "เช็กใบเสนอราคา/ใบแจ้งหนี้จากข้อมูลร้านให้ครบก่อน demo จริง",
-        "เพิ่มพนักงานและสิทธิ์เพื่อจำลอง flow ระหว่างฝ่ายขายกับคลัง",
-        "ใช้ dashboard/reports ดูสินค้าที่ควรวางแผนเติมเพิ่ม",
+        "checklist_b2b_wholesale_1",
+        "checklist_b2b_wholesale_2",
+        "checklist_b2b_wholesale_3",
+        "checklist_b2b_wholesale_4",
       ];
     case "gifts_seasonal":
       return [
-        "เตรียมสินค้าเป็นเซ็ต/occasion เพื่อให้ AI ช่วยแนะนำตามงบหรือเทศกาล",
-        "ทดสอบคูปองและแคมเปญที่ใช้ช่วงพีค",
-        "เพิ่มภาพสินค้าและคำอธิบายที่เน้นการเลือกของขวัญ",
-        "ดูยอดสินค้าขายดีรายช่วงเพื่อวางแผน stock ก่อนเทศกาล",
+        "checklist_gifts_seasonal_1",
+        "checklist_gifts_seasonal_2",
+        "checklist_gifts_seasonal_3",
+        "checklist_gifts_seasonal_4",
       ];
     default:
       return [
-        "กรอกข้อมูลร้าน บัญชีรับเงิน และค่าส่งให้ครบก่อนเปิด AI ขายจริง",
-        "เพิ่มสินค้าและสต๊อกอย่างน้อยบางส่วนเพื่อให้ AI เช็กของได้จากข้อมูลจริง",
-        "ทดสอบ create order, payment, shipping และ reorder อย่างน้อยหนึ่งรอบ",
+        "checklist_default_1",
+        "checklist_default_2",
+        "checklist_default_3",
       ];
   }
 }
