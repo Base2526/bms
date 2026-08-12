@@ -37,6 +37,7 @@ import {
   ImportOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import debounce from "lodash/debounce";
 import ImportModal from "./ImportModal";
 
@@ -181,6 +182,7 @@ function useMediaQuery(query: string) {
 }
 
 function ProductsManagement() {
+  const { t } = useI18n();
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [form] = Form.useForm();
   const [modalOpen, setModalOpen] = useState(false);
@@ -219,7 +221,7 @@ function ProductsManagement() {
     fetchPolicy: "cache-and-network",
   });
 
-  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+  const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
   const refreshAll = () => {
     refetch();
     refetchLow();
@@ -227,7 +229,7 @@ function ProductsManagement() {
 
   const [upsertProduct, { loading: saving }] = useMutation(M_UPSERT, {
     onCompleted: () => {
-      message.success("บันทึกสินค้าแล้ว");
+      message.success(t("admin_products.product_saved"));
       setModalOpen(false);
       setEditing(null);
       form.resetFields();
@@ -236,7 +238,7 @@ function ProductsManagement() {
     onError: onErr,
   });
   const [setActive] = useMutation(M_SET_ACTIVE, {
-    onCompleted: () => { message.success("อัปเดตสถานะแล้ว"); refreshAll(); },
+    onCompleted: () => { message.success(t("admin_products.status_updated")); refreshAll(); },
     onError: onErr,
   });
 
@@ -289,11 +291,11 @@ function ProductsManagement() {
       fd.append("file", file);
       const res = await fetch("/api/bms/products/upload", { method: "POST", body: fd, credentials: "include" });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || "อัปโหลดรูปไม่สำเร็จ");
+      if (!res.ok) throw new Error(j?.error || t("admin_products.upload_failed"));
       setImageUrls((prev) => (prev.includes(j.url) ? prev : [...prev, j.url]));
-      message.success("อัปโหลดรูปแล้ว");
+      message.success(t("admin_products.upload_success"));
     } catch (e: any) {
-      message.error(e?.message || "อัปโหลดรูปไม่สำเร็จ");
+      message.error(e?.message || t("admin_products.upload_failed"));
     } finally {
       setUploadingImage(false);
     }
@@ -377,7 +379,7 @@ function ProductsManagement() {
             <span>{Number(v).toLocaleString()} ฿</span>
             {p.costPrice != null && (
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                กำไร {(Number(v) - p.costPrice).toLocaleString()} ฿
+                {t("admin_products.profit", { amount: (Number(v) - p.costPrice).toLocaleString() })}
               </Typography.Text>
             )}
           </Space>
@@ -390,9 +392,9 @@ function ProductsManagement() {
           const lows = p.variants.filter((v) => v.low).length;
           return (
             <Space size={4}>
-              <Tag color={avail > 0 ? "green" : "default"}>{avail} ชิ้น</Tag>
+              <Tag color={avail > 0 ? "green" : "default"}>{t("admin_products.units", { n: avail })}</Tag>
               {lows > 0 && (
-                <Tag icon={<WarningOutlined />} color="warning">ใกล้หมด {lows}</Tag>
+                <Tag icon={<WarningOutlined />} color="warning">{t("admin_products.low_n", { n: lows })}</Tag>
               )}
             </Space>
           );
@@ -413,11 +415,11 @@ function ProductsManagement() {
             : <span style={{ color: "#ccc" }}>—</span>,
       },
     ],
-    [can]
+    [can, t]
   );
 
   if (error) {
-    return <Alert type="error" message="โหลดสินค้าไม่ได้" description={error.message} showIcon />;
+    return <Alert type="error" message={t("admin_products.load_error")} description={error.message} showIcon />;
   }
 
   return (
@@ -427,12 +429,12 @@ function ProductsManagement() {
           <h2 style={{ margin: 0 }}>Products & Inventory</h2>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>Refresh</Button>
-            {can("product.edit") && <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>นำเข้า</Button>}
-            {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>เพิ่มสินค้า</Button>}
+            {can("product.edit") && <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>{t("admin_products.btn_import")}</Button>}
+            {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_products.btn_add_product")}</Button>}
           </Space>
         </Space>
         <Typography.Text type="secondary" style={{ display: "block", marginTop: 6 }}>
-          กดกางแต่ละแถวเพื่อดู stock ต่อไซซ์ ปรับสต็อกเร็ว และเช็กประวัติการเคลื่อนไหว
+          {t("admin_products.subtitle")}
         </Typography.Text>
       </div>
 
@@ -441,16 +443,16 @@ function ProductsManagement() {
       <div style={{ marginBottom: 16 }}>
         <Space wrap>
           <Input.Search
-            allowClear placeholder="ค้นหาชื่อ / SKU / barcode" style={{ width: 280 }}
+            allowClear placeholder={t("admin_products.search_placeholder")} style={{ width: 280 }}
             value={searchInput} onChange={(e) => onSearchChange(e.target.value)}
           />
           <Select
-            allowClear placeholder="ทุกหมวดหมู่" style={{ width: 180 }}
+            allowClear placeholder={t("admin_products.all_categories")} style={{ width: 180 }}
             value={categoryFilter} onChange={(v) => { setCategoryFilter(v); setPage(1); }}
             options={categories.map((c) => ({ value: c.name, label: c.name }))}
           />
           {can("product.edit") && (
-            <Button icon={<TagsOutlined />} onClick={() => setCategoryModalOpen(true)}>จัดการหมวดหมู่</Button>
+            <Button icon={<TagsOutlined />} onClick={() => setCategoryModalOpen(true)}>{t("admin_products.btn_manage_categories")}</Button>
           )}
         </Space>
       </div>
@@ -472,14 +474,14 @@ function ProductsManagement() {
               <span style={{ display: "inline-block", transition: "transform .15s ease", transform: lowExpanded ? "rotate(90deg)" : "none" }}>▸</span>
               <WarningOutlined style={{ color: "#ad6800" }} />
               <Typography.Text strong style={{ color: "#ad6800", fontSize: isMobile ? 13 : 14 }}>
-                มีสินค้าใกล้หมด/หมด {lowCount} รายการ
+                {t("admin_products.low_banner_title", { n: lowCount })}
               </Typography.Text>
-              {outOfStockItems.length > 0 && <Tag color="error" style={{ marginInlineEnd: 0 }}>หมด {outOfStockItems.length}</Tag>}
-              {lowStockItems.length > 0 && <Tag color="warning" style={{ marginInlineEnd: 0 }}>ใกล้หมด {lowStockItems.length}</Tag>}
+              {outOfStockItems.length > 0 && <Tag color="error" style={{ marginInlineEnd: 0 }}>{t("admin_products.tag_out_n", { n: outOfStockItems.length })}</Tag>}
+              {lowStockItems.length > 0 && <Tag color="warning" style={{ marginInlineEnd: 0 }}>{t("admin_products.low_n", { n: lowStockItems.length })}</Tag>}
             </Space>
             {!isMobile && (
               <Typography.Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-                คลิกเพื่อ{lowExpanded ? "ย่อ" : "ขยาย"}
+                {lowExpanded ? t("admin_products.click_to_collapse") : t("admin_products.click_to_expand")}
               </Typography.Text>
             )}
           </button>
@@ -489,8 +491,8 @@ function ProductsManagement() {
               {outOfStockItems.length > 0 && (
                 <div style={{ border: "1px solid #ffa39e", background: "#fff1f0", borderRadius: 8, padding: isMobile ? "8px 10px" : "10px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
-                    <Typography.Text strong style={{ color: "#cf1322", fontSize: isMobile ? 12 : 12.5 }}>⛔ หมดสต็อก</Typography.Text>
-                    <Typography.Text style={{ color: "#cf1322", fontSize: 11 }}>{outOfStockItems.length} รายการ</Typography.Text>
+                    <Typography.Text strong style={{ color: "#cf1322", fontSize: isMobile ? 12 : 12.5 }}>{t("admin_products.out_of_stock_heading")}</Typography.Text>
+                    <Typography.Text style={{ color: "#cf1322", fontSize: 11 }}>{t("admin_products.items_count", { n: outOfStockItems.length })}</Typography.Text>
                   </div>
                   <Space wrap size={6}>
                     {outOfStockItems.map((x: any) => (
@@ -498,7 +500,7 @@ function ProductsManagement() {
                         color="error" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
                         onClick={() => onSearchChange(x.sku)}
                       >
-                        {x.name} {x.size}: เหลือ {x.available} (จุดเตือน {x.reorder_point})
+                        {t("admin_products.low_item_tag", { name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
                       </Tag>
                     ))}
                   </Space>
@@ -507,8 +509,8 @@ function ProductsManagement() {
               {lowStockItems.length > 0 && (
                 <div style={{ border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: isMobile ? "8px 10px" : "10px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
-                    <Typography.Text strong style={{ color: "#ad6800", fontSize: isMobile ? 12 : 12.5 }}>⚠️ ใกล้หมด</Typography.Text>
-                    <Typography.Text style={{ color: "#ad6800", fontSize: 11 }}>{lowStockItems.length} รายการ</Typography.Text>
+                    <Typography.Text strong style={{ color: "#ad6800", fontSize: isMobile ? 12 : 12.5 }}>{t("admin_products.low_stock_heading")}</Typography.Text>
+                    <Typography.Text style={{ color: "#ad6800", fontSize: 11 }}>{t("admin_products.items_count", { n: lowStockItems.length })}</Typography.Text>
                   </div>
                   <Space wrap size={6}>
                     {lowStockItems.map((x: any) => (
@@ -516,7 +518,7 @@ function ProductsManagement() {
                         color="warning" key={`${x.sku}-${x.size}`} style={{ marginInlineEnd: 0, cursor: "pointer" }}
                         onClick={() => onSearchChange(x.sku)}
                       >
-                        {x.name} {x.size}: เหลือ {x.available} (จุดเตือน {x.reorder_point})
+                        {t("admin_products.low_item_tag", { name: x.name, size: x.size, available: x.available, rp: x.reorder_point })}
                       </Tag>
                     ))}
                   </Space>
@@ -548,20 +550,20 @@ function ProductsManagement() {
         }}
         pagination={{
           current: page, pageSize, total,
-          showSizeChanger: true, showTotal: (t) => `ทั้งหมด ${t} รายการ`,
+          showSizeChanger: true, showTotal: (n) => t("admin_products.total_items", { n }),
           onChange: (p, ps) => { setPage(p); setPageSize(ps); },
         }}
       />
 
       <Modal
-        title={editing ? `แก้ไขสินค้า: ${editing.sku}` : "เพิ่มสินค้า"}
+        title={editing ? t("admin_products.modal_edit_title", { sku: editing.sku }) : t("admin_products.btn_add_product")}
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditing(null); setImageUrls([]); form.resetFields(); }}
         onOk={submit} confirmLoading={saving}
-        okText={editing ? "บันทึก" : "สร้าง"} width={560}
+        okText={editing ? t("admin_products.btn_save") : t("admin_products.btn_create")} width={560}
       >
         <Form form={form} layout="vertical" autoComplete="off">
-          <Form.Item label="รูปสินค้า" extra="รูปแรกจะถูกใช้เป็นรูปหลักของสินค้า">
+          <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
             <Space align="start" wrap>
               {imageUrls.length > 0 ? (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxWidth: 320 }}>
@@ -601,68 +603,68 @@ function ProductsManagement() {
               )}
               <Upload accept="image/*" multiple showUploadList={false} beforeUpload={uploadImage}>
                 <Button icon={<UploadOutlined />} loading={uploadingImage}>
-                  {imageUrls.length > 0 ? "เพิ่มรูป" : "อัปโหลดรูป"}
+                  {imageUrls.length > 0 ? t("admin_products.btn_add_image") : t("admin_products.btn_upload_image")}
                 </Button>
               </Upload>
               {imageUrls.length > 0 && (
                 <Button type="text" danger onClick={() => setImageUrls([])}>
-                  ลบรูปทั้งหมด
+                  {t("admin_products.btn_remove_all_images")}
                 </Button>
               )}
             </Space>
           </Form.Item>
 
-          <Form.Item label="SKU" name="sku" rules={[{ required: true, message: "ระบุ SKU" }]}>
-            <Input placeholder="เช่น NIKE-AIR" disabled={!!editing} />
+          <Form.Item label="SKU" name="sku" rules={[{ required: true, message: t("admin_products.rule_sku") }]}>
+            <Input placeholder={t("admin_products.placeholder_sku")} disabled={!!editing} />
           </Form.Item>
           <Form.Item label="Barcode" name="barcode">
-            <Input placeholder="เช่น 8850001234567 (ไม่บังคับ)" />
+            <Input placeholder={t("admin_products.placeholder_barcode")} />
           </Form.Item>
-          <Form.Item label="ชื่อสินค้า" name="name" rules={[{ required: true, message: "ระบุชื่อ" }]}>
-            <Input placeholder="เช่น Nike Air" />
+          <Form.Item label={t("admin_products.label_name")} name="name" rules={[{ required: true, message: t("admin_products.rule_name") }]}>
+            <Input placeholder={t("admin_products.placeholder_name")} />
           </Form.Item>
-          <Form.Item label="รายละเอียดสินค้า" name="description">
-            <Input.TextArea rows={3} placeholder="เช่น รองเท้าวิ่ง Nike Air รุ่นล่าสุด เบา ระบายอากาศดี" />
+          <Form.Item label={t("admin_products.label_description")} name="description">
+            <Input.TextArea rows={3} placeholder={t("admin_products.placeholder_description")} />
           </Form.Item>
 
           <Space.Compact block>
-            <Form.Item label="ราคาขาย (บาท)" name="price" rules={[{ required: true, message: "ระบุราคา" }]} style={{ flex: 1, marginInlineEnd: 8 }}>
+            <Form.Item label={t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>
-            <Form.Item label="ต้นทุน (บาท, ไม่บังคับ)" name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
-              <InputNumber min={0} style={{ width: "100%" }} placeholder="ใช้คำนวณกำไร" />
+            <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
+              <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_cost")} />
             </Form.Item>
             <Form.Item
-              label="น้ำหนัก (กรัม, ไม่บังคับ)"
+              label={t("admin_products.label_weight")}
               name="weightGrams"
               style={{ flex: 1 }}
-              tooltip="ใช้คิดค่าส่งตามน้ำหนัก · ถ้าไม่กรอก ระบบจะไม่คิดค่าน้ำหนักส่วนเพิ่มให้สินค้านี้"
+              tooltip={t("admin_products.weight_tooltip")}
             >
-              <InputNumber min={0} style={{ width: "100%" }} placeholder="เช่น 500" />
+              <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_weight")} />
             </Form.Item>
           </Space.Compact>
 
           <Space.Compact block>
             <Form.Item
-              label={<span>หมวดหมู่ <a onClick={() => setCategoryModalOpen(true)} style={{ fontSize: 12 }}>(จัดการ)</a></span>}
+              label={<span>{t("admin_products.label_category")} <a onClick={() => setCategoryModalOpen(true)} style={{ fontSize: 12 }}>{t("admin_products.manage_link")}</a></span>}
               name="category" style={{ flex: 1, marginInlineEnd: 8 }}
             >
               <Select
-                allowClear showSearch placeholder="เลือกหมวดหมู่"
+                allowClear showSearch placeholder={t("admin_products.placeholder_category")}
                 options={categories.map((c) => ({ value: c.name, label: c.name }))}
-                notFoundContent="ยังไม่มีหมวดหมู่ — กด (จัดการ) เพื่อเพิ่ม"
+                notFoundContent={t("admin_products.category_not_found")}
               />
             </Form.Item>
-            <Form.Item label="ยี่ห้อ" name="brand" style={{ flex: 1 }}>
-              <AutoComplete options={brandOptions.map((b) => ({ value: b }))} placeholder="เช่น Nike" filterOption />
+            <Form.Item label={t("admin_products.label_brand")} name="brand" style={{ flex: 1 }}>
+              <AutoComplete options={brandOptions.map((b) => ({ value: b }))} placeholder={t("admin_products.placeholder_brand")} filterOption />
             </Form.Item>
           </Space.Compact>
 
-          <Form.Item label="Keywords (คำที่ลูกค้าพิมพ์แล้ว match สินค้านี้)" name="keywords">
-            <Select mode="tags" tokenSeparators={[",", " "]} placeholder="nike, ไนกี้, air" />
+          <Form.Item label={t("admin_products.label_keywords")} name="keywords">
+            <Select mode="tags" tokenSeparators={[",", " "]} placeholder={t("admin_products.placeholder_keywords")} />
           </Form.Item>
-          <Form.Item label="เปิดขาย" name="active" valuePropName="checked">
-            <Switch checkedChildren="ขายอยู่" unCheckedChildren="ปิด" />
+          <Form.Item label={t("admin_products.label_active")} name="active" valuePropName="checked">
+            <Switch checkedChildren={t("admin_products.switch_on")} unCheckedChildren={t("admin_products.switch_off")} />
           </Form.Item>
         </Form>
       </Modal>
@@ -684,11 +686,12 @@ function ProductsManagement() {
 }
 
 function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
+  const { t } = useI18n();
   const [skuById, setSkuById] = useState<Record<string, string>>({});
   const { data, loading, refetch } = useQuery(Q_SYNONYMS, { fetchPolicy: "cache-and-network" });
   const [review, { loading: reviewing }] = useMutation(M_REVIEW_SYNONYM, {
     onCompleted: () => {
-      message.success("ตรวจคำค้นแล้ว");
+      message.success(t("admin_products.synonym_reviewed"));
       refetch();
     },
     onError: (error) => message.error(error.message),
@@ -701,11 +704,11 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
       size="small"
       loading={loading}
       title="AI synonym discovery"
-      extra={<Tag color="gold">{candidates.length} คำรอตรวจ</Tag>}
+      extra={<Tag color="gold">{t("admin_products.synonym_pending", { n: candidates.length })}</Tag>}
       style={{ marginBottom: 16 }}
     >
       <Typography.Paragraph type="secondary">
-        คำที่ลูกค้าใช้ค้นหาแล้วไม่พบสินค้า ต้องให้ staff ผูกกับ SKU ก่อน ระบบจึงเพิ่มลง keywords ของสินค้านั้น
+        {t("admin_products.synonym_desc")}
       </Typography.Paragraph>
       <Table
         size="small"
@@ -713,23 +716,23 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
         pagination={false}
         dataSource={candidates}
         columns={[
-          { title: "คำที่ลูกค้าใช้", dataIndex: "term" },
-          { title: "พบ", dataIndex: "occurrences", width: 70, render: (value: number) => `${value} ครั้ง` },
+          { title: t("admin_products.col_term"), dataIndex: "term" },
+          { title: t("admin_products.col_occurrences"), dataIndex: "occurrences", width: 70, render: (value: number) => t("admin_products.occurrence_times", { n: value }) },
           {
-            title: "ผูกกับ SKU",
+            title: t("admin_products.col_link_sku"),
             key: "sku",
             render: (_value: unknown, row: any) => (
               <Input
                 size="small"
                 value={skuById[row.id] || ""}
                 disabled={!canEdit}
-                placeholder="เช่น SKU-001"
+                placeholder={t("admin_products.placeholder_link_sku")}
                 onChange={(event) => setSkuById((current) => ({ ...current, [row.id]: event.target.value }))}
               />
             ),
           },
           {
-            title: "ตรวจ",
+            title: t("admin_products.col_review"),
             key: "actions",
             width: 180,
             render: (_value: unknown, row: any) => (
@@ -743,7 +746,7 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
                     variables: { id: row.id, decision: "APPROVED", productSku: skuById[row.id].trim() },
                   })}
                 >
-                  อนุมัติ
+                  {t("admin_products.btn_approve")}
                 </Button>
                 <Button
                   size="small"
@@ -752,7 +755,7 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
                   loading={reviewing}
                   onClick={() => review({ variables: { id: row.id, decision: "REJECTED", productSku: null } })}
                 >
-                  ปฏิเสธ
+                  {t("admin_products.btn_reject")}
                 </Button>
               </Space>
             ),
@@ -767,10 +770,11 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
 function CategoryManagerModal({
   open, onClose, categories, onChanged,
 }: { open: boolean; onClose: () => void; categories: { id: string; name: string }[]; onChanged: () => void }) {
+  const { t } = useI18n();
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+  const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
 
   const [createCategory, { loading: creating }] = useMutation(M_CREATE_CATEGORY, {
     onCompleted: () => { setNewName(""); onChanged(); },
@@ -781,39 +785,39 @@ function CategoryManagerModal({
     onError: onErr,
   });
   const [deleteCategoryMut] = useMutation(M_DELETE_CATEGORY, {
-    onCompleted: () => { message.success("ลบหมวดหมู่แล้ว"); onChanged(); },
+    onCompleted: () => { message.success(t("admin_products.category_deleted")); onChanged(); },
     onError: onErr,
   });
 
   return (
-    <Modal title="จัดการหมวดหมู่สินค้า" open={open} onCancel={onClose} footer={null} width={420}>
+    <Modal title={t("admin_products.category_modal_title")} open={open} onCancel={onClose} footer={null} width={420}>
       <Space.Compact block style={{ marginBottom: 16 }}>
         <Input
-          placeholder="ชื่อหมวดหมู่ใหม่ เช่น รองเท้า" value={newName}
+          placeholder={t("admin_products.placeholder_new_category")} value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onPressEnter={() => newName.trim() && createCategory({ variables: { name: newName.trim() } })}
         />
         <Button type="primary" icon={<PlusOutlined />} loading={creating} disabled={!newName.trim()}
-          onClick={() => createCategory({ variables: { name: newName.trim() } })}>เพิ่ม</Button>
+          onClick={() => createCategory({ variables: { name: newName.trim() } })}>{t("admin_products.btn_add")}</Button>
       </Space.Compact>
 
       <List
         size="small"
         dataSource={categories}
-        locale={{ emptyText: "ยังไม่มีหมวดหมู่" }}
+        locale={{ emptyText: t("admin_products.no_categories") }}
         renderItem={(c) => (
           <List.Item
             actions={
               editingId === c.id
                 ? [
                     <Button key="save" size="small" type="link" loading={renaming} disabled={!editingName.trim()}
-                      onClick={() => renameCategoryMut({ variables: { id: c.id, name: editingName.trim() } })}>บันทึก</Button>,
-                    <Button key="cancel" size="small" type="link" onClick={() => setEditingId(null)}>ยกเลิก</Button>,
+                      onClick={() => renameCategoryMut({ variables: { id: c.id, name: editingName.trim() } })}>{t("admin_products.btn_save")}</Button>,
+                    <Button key="cancel" size="small" type="link" onClick={() => setEditingId(null)}>{t("admin_products.btn_cancel")}</Button>,
                   ]
                 : [
                     <Button key="edit" size="small" type="link" icon={<EditOutlined />}
                       onClick={() => { setEditingId(c.id); setEditingName(c.name); }} />,
-                    <Popconfirm key="del" title={`ลบหมวดหมู่ "${c.name}"?`} okText="ลบ" okButtonProps={{ danger: true }}
+                    <Popconfirm key="del" title={t("admin_products.delete_category_confirm", { name: c.name })} okText={t("admin_products.btn_delete")} okButtonProps={{ danger: true }}
                       onConfirm={() => deleteCategoryMut({ variables: { id: c.id } })}
                     >
                       <Button size="small" type="link" danger icon={<DeleteOutlined />} />
@@ -850,10 +854,11 @@ function ProductDetail({
   onEdit: () => void;
   onToggleActive: (next: boolean) => void;
 }) {
-  const onErr = (e: any) => message.error(e?.message || "ทำรายการไม่สำเร็จ");
+  const { t } = useI18n();
+  const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
   const [adjustStockMut, { loading: adjustingStock }] = useMutation(M_ADJUST, { onError: onErr });
   const [setReorder] = useMutation(M_REORDER, {
-    onCompleted: () => { message.success("ตั้งจุดแจ้งเตือนแล้ว"); onChanged(); },
+    onCompleted: () => { message.success(t("admin_products.reorder_saved")); onChanged(); },
     onError: onErr,
   });
   const [loadMoves, { data: movesData, loading: movesLoading, called: movesCalled, refetch: refetchMoves }] = useLazyQuery(Q_MOVEMENTS, {
@@ -887,13 +892,13 @@ function ProductDetail({
     if (!movesCalled) void loadMoves({ variables: { sku: product.sku } });
   }, [loadMoves, movesCalled, product.sku]);
 
-  const runAdjust = useCallback(async (size: string, delta: number, successText = "ปรับสต็อกแล้ว") => {
+  const runAdjust = useCallback(async (size: string, delta: number, successText?: string) => {
     if (!delta) return;
     await adjustStockMut({ variables: { sku: product.sku, size, delta } });
-    message.success(successText);
+    message.success(successText || t("admin_products.stock_adjusted"));
     onChanged();
     if (movesCalled) void refetchMoves?.({ sku: product.sku });
-  }, [adjustStockMut, movesCalled, onChanged, product.sku, refetchMoves]);
+  }, [adjustStockMut, movesCalled, onChanged, product.sku, refetchMoves, t]);
 
   const openBulkAdjust = () => {
     setBulkDraft(
@@ -915,7 +920,7 @@ function ProductDetail({
       ),
     },
     {
-      title: "พร้อมขาย",
+      title: t("admin_products.col_available"),
       dataIndex: "available",
       key: "avail",
       width: 170,
@@ -933,13 +938,13 @@ function ProductDetail({
             {v}
           </span>
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            คงคลังจริง {r.current_stock}
+            {t("admin_products.on_hand", { n: r.current_stock })}
           </Typography.Text>
         </div>
       ),
     },
     {
-      title: "จอง",
+      title: t("admin_products.col_reserved"),
       dataIndex: "reserved_stock",
       key: "res",
       width: 120,
@@ -951,7 +956,7 @@ function ProductDetail({
       ),
     },
     {
-      title: "จุดเตือน", key: "reorder", width: 130,
+      title: t("admin_products.col_reorder"), key: "reorder", width: 130,
       render: (_: any, r: Variant) => (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <InputNumber
@@ -967,12 +972,12 @@ function ProductDetail({
               }
             }}
           />
-          {r.low && <Tag color="warning" icon={<WarningOutlined />} style={{ width: "fit-content", margin: 0 }}>ใกล้หมด</Tag>}
+          {r.low && <Tag color="warning" icon={<WarningOutlined />} style={{ width: "fit-content", margin: 0 }}>{t("admin_products.tag_low")}</Tag>}
         </div>
       ),
     },
     {
-      title: "ปรับสต็อกเร็ว", key: "adjust", width: 320,
+      title: t("admin_products.col_quick_adjust"), key: "adjust", width: 320,
       render: (_: any, v: Variant) => canAdjust ? (
         <Space wrap size={8}>
           {[-1, 1, 5, 10].map((delta) => (
@@ -993,23 +998,23 @@ function ProductDetail({
               setManualDelta(1);
             }}
           >
-            ระบุเอง
+            {t("admin_products.btn_manual")}
           </Button>
         </Space>
-      ) : <span style={{ color: "#ccc" }}>ไม่มีสิทธิ์</span>,
+      ) : <span style={{ color: "#ccc" }}>{t("admin_products.no_permission")}</span>,
     },
   ];
 
   const moveCols = [
-    { title: "เวลา", dataIndex: "created_at", key: "t", width: 165,
+    { title: t("admin_products.col_time"), dataIndex: "created_at", key: "t", width: 165,
       render: (d: string) => new Date(d).toLocaleString() },
-    { title: "ประเภท", dataIndex: "type", key: "type", width: 110,
-      render: (t: string) => <Tag color={MOVE_COLOR[t] || "default"}>{t}</Tag> },
+    { title: t("admin_products.col_type"), dataIndex: "type", key: "type", width: 110,
+      render: (moveType: string) => <Tag color={MOVE_COLOR[moveType] || "default"}>{moveType}</Tag> },
     { title: "Size", dataIndex: "size", key: "size", width: 60 },
     { title: "Qty", dataIndex: "qty", key: "qty", width: 60, align: "right" as const },
     { title: "Order", dataIndex: "ref_order_id", key: "ref", width: 100,
       render: (o: string | null) => o ? <Typography.Text code>{o.slice(0, 8)}</Typography.Text> : "—" },
-    { title: "โดย", dataIndex: "actor", key: "actor", render: (a: string | null) => a || "—" },
+    { title: t("admin_products.col_actor"), dataIndex: "actor", key: "actor", render: (a: string | null) => a || "—" },
   ];
 
   const SIZE_OPTS = ["S", "M", "L", "XL", "XXL"].filter((s) => !product.variants.some((v) => v.size === s));
@@ -1043,48 +1048,48 @@ function ProductDetail({
                 <Typography.Title level={4} style={{ margin: 0 }}>
                   {product.name}
                 </Typography.Title>
-                <Typography.Text type="secondary">รหัสสินค้า: {product.sku}</Typography.Text>
+                <Typography.Text type="secondary">{t("admin_products.sku_label", { sku: product.sku })}</Typography.Text>
               </div>
               <Space wrap size={6}>
                 {product.brand && <Tag color="blue" style={{ margin: 0 }}>{product.brand}</Tag>}
                 {product.category && <Tag style={{ margin: 0 }}>{product.category}</Tag>}
-                {lowCount > 0 && <Tag color="warning" icon={<WarningOutlined />} style={{ margin: 0 }}>ใกล้หมด {lowCount} ไซซ์</Tag>}
+                {lowCount > 0 && <Tag color="warning" icon={<WarningOutlined />} style={{ margin: 0 }}>{t("admin_products.low_sizes", { n: lowCount })}</Tag>}
               </Space>
             </div>
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch", justifyContent: "flex-end", flex: 1 }}>
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fafafa" }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>ราคา</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_products.stat_price")}</Typography.Text>
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{Number(product.price).toLocaleString()} ฿</div>
               {product.costPrice != null && (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  ต้นทุน {Number(product.costPrice).toLocaleString()} ฿
+                  {t("admin_products.stat_cost", { amount: Number(product.costPrice).toLocaleString() })}
                 </Typography.Text>
               )}
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #d9f7be", borderRadius: 12, background: "#f6ffed" }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>สต็อกรวม</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_products.stat_total_stock")}</Typography.Text>
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, color: totalAvailable > 0 ? "#389e0d" : "#8c8c8c" }}>
                 {totalAvailable}
               </div>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                จองอยู่ {totalReserved}
+                {t("admin_products.stat_reserved", { n: totalReserved })}
               </Typography.Text>
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>สถานะ</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>{t("admin_products.stat_status")}</Typography.Text>
               <Space direction="vertical" size={8}>
                 <Switch checked={product.active} disabled={!canToggleActive} onChange={onToggleActive} />
-                <Typography.Text style={{ fontSize: 12 }}>{product.active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Typography.Text>
+                <Typography.Text style={{ fontSize: 12 }}>{product.active ? t("admin_products.status_enabled") : t("admin_products.status_disabled")}</Typography.Text>
               </Space>
             </div>
 
             <div style={{ display: "flex", alignItems: "center" }}>
               <Button icon={<EditOutlined />} type="primary" ghost disabled={!canEdit} onClick={onEdit}>
-                แก้ไขสินค้า
+                {t("admin_products.btn_edit_product")}
               </Button>
             </div>
           </div>
@@ -1112,10 +1117,10 @@ function ProductDetail({
           }}
         >
           <div>
-            <Typography.Text strong style={{ fontSize: 18 }}>สต็อกสินค้า (แยกตามไซซ์)</Typography.Text>
+            <Typography.Text strong style={{ fontSize: 18 }}>{t("admin_products.stock_section_title")}</Typography.Text>
             <div>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                เน้นดูพร้อมขายก่อน แล้วค่อยปรับสต็อกเร็วจากแถวเดียว
+                {t("admin_products.stock_section_hint")}
               </Typography.Text>
             </div>
           </div>
@@ -1134,15 +1139,15 @@ function ProductDetail({
               disabled={!newSize}
               onClick={async () => {
                 if (!newSize) return;
-                await runAdjust(newSize, newQty, "เพิ่มไซซ์ใหม่แล้ว");
+                await runAdjust(newSize, newQty, t("admin_products.size_added"));
                 setNewSize(undefined);
                 setNewQty(1);
               }}
             >
-              เพิ่มไซซ์ใหม่
+              {t("admin_products.btn_add_size")}
             </Button>
             <Button type="primary" ghost onClick={openBulkAdjust}>
-              ปรับสต็อกหลายรายการ
+              {t("admin_products.btn_bulk_adjust")}
             </Button>
           </Space>
         </div>
@@ -1178,17 +1183,17 @@ function ProductDetail({
           }}
         >
           <Typography.Text strong style={{ fontSize: 18 }}>
-            <HistoryOutlined /> ประวัติการเคลื่อนไหว
+            <HistoryOutlined /> {t("admin_products.history_title")}
           </Typography.Text>
           {movesCalled ? (
             moves.length > 4 && (
               <Button type="link" onClick={() => setHistoryExpanded((prev) => !prev)}>
-                {historyExpanded ? "ย่อรายการ" : "ดูทั้งหมด"}
+                {historyExpanded ? t("admin_products.btn_collapse_list") : t("admin_products.btn_view_all")}
               </Button>
             )
           ) : (
             <Button type="link" icon={<HistoryOutlined />} onClick={ensureMovesLoaded}>
-              โหลดประวัติ
+              {t("admin_products.btn_load_history")}
             </Button>
           )}
         </div>
@@ -1201,12 +1206,12 @@ function ProductDetail({
           loading={movesLoading}
           scroll={{ x: "max-content" }}
           pagination={false}
-          locale={{ emptyText: movesCalled ? "ยังไม่มีประวัติ" : "กดโหลดประวัติเพื่อดูรายการเคลื่อนไหวล่าสุด" }}
+          locale={{ emptyText: movesCalled ? t("admin_products.no_history") : t("admin_products.load_history_hint") }}
         />
       </div>
 
       <Modal
-        title={manualVariant ? `ระบุจำนวนเอง · ไซซ์ ${manualVariant.size}` : "ระบุจำนวนเอง"}
+        title={manualVariant ? t("admin_products.manual_modal_title_size", { size: manualVariant.size }) : t("admin_products.manual_modal_title")}
         open={!!manualVariant}
         onCancel={() => setManualVariant(null)}
         onOk={async () => {
@@ -1215,12 +1220,12 @@ function ProductDetail({
           setManualVariant(null);
           setManualDelta(1);
         }}
-        okText="ยืนยัน"
-        cancelText="ยกเลิก"
+        okText={t("admin_products.btn_confirm")}
+        cancelText={t("admin_products.btn_cancel")}
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            ใส่จำนวนบวกเพื่อเพิ่มสต็อก หรือจำนวนลบเพื่อลดสต็อก
+            {t("admin_products.manual_hint")}
           </Typography.Text>
           <InputNumber
             value={manualDelta}
@@ -1232,16 +1237,16 @@ function ProductDetail({
       </Modal>
 
       <Modal
-        title="ปรับสต็อกหลายรายการ"
+        title={t("admin_products.btn_bulk_adjust")}
         open={bulkOpen}
         onCancel={() => setBulkOpen(false)}
         confirmLoading={bulkApplying}
-        okText="ยืนยันการปรับ"
-        cancelText="ยกเลิก"
+        okText={t("admin_products.btn_confirm_adjust")}
+        cancelText={t("admin_products.btn_cancel")}
         onOk={async () => {
           const entries = Object.entries(bulkDraft).filter(([, delta]) => Number(delta) !== 0);
           if (!entries.length) {
-            message.info("ยังไม่มีรายการที่ต้องปรับ");
+            message.info(t("admin_products.bulk_nothing"));
             return;
           }
           setBulkApplying(true);
@@ -1249,7 +1254,7 @@ function ProductDetail({
             for (const [size, delta] of entries) {
               await adjustStockMut({ variables: { sku: product.sku, size, delta: Number(delta) } });
             }
-            message.success(`ปรับสต็อก ${entries.length} ไซซ์แล้ว`);
+            message.success(t("admin_products.bulk_success", { n: entries.length }));
             setBulkOpen(false);
             onChanged();
             if (movesCalled) void refetchMoves?.({ sku: product.sku });
@@ -1262,7 +1267,7 @@ function ProductDetail({
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            ใส่จำนวนที่ต้องการเพิ่ม/ลดต่อไซซ์ โดย 0 หมายถึงไม่เปลี่ยน
+            {t("admin_products.bulk_hint")}
           </Typography.Text>
           {product.variants.map((variant) => (
             <div
@@ -1276,7 +1281,7 @@ function ProductDetail({
             >
               <Typography.Text strong>{variant.size}</Typography.Text>
               <Typography.Text type="secondary">
-                พร้อมขาย {variant.available} · จอง {variant.reserved_stock}
+                {t("admin_products.bulk_row_info", { available: variant.available, reserved: variant.reserved_stock })}
               </Typography.Text>
               <InputNumber
                 value={bulkDraft[variant.size] ?? 0}
