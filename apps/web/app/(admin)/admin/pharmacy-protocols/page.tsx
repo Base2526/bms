@@ -4,6 +4,7 @@ import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Se
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { useI18n } from "@/lib/i18nContext";
 
 const Q_PROTOCOLS = gql`
   query PharmacyProtocols {
@@ -64,55 +65,61 @@ const M_REVIEW_PRODUCT_POLICY = gql`
   }
 `;
 
-const PRODUCT_TYPE_OPTIONS = [
-  { value: "UNKNOWN", label: "ยังไม่ทราบ (UNKNOWN)" },
-  { value: "GENERAL_PRODUCT", label: "สินค้าทั่วไป (GENERAL_PRODUCT)" },
-  { value: "MEDICAL_SUPPLY", label: "วัสดุการแพทย์ (MEDICAL_SUPPLY)" },
-  { value: "MEDICAL_DEVICE", label: "เครื่องมือแพทย์ (MEDICAL_DEVICE)" },
-  { value: "HOUSEHOLD_REMEDY", label: "ยาสามัญประจำบ้าน (HOUSEHOLD_REMEDY)" },
-  { value: "DRUG", label: "ยา (DRUG)" },
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+type Opt = { value: string; labelKey: string };
+const withLabels = (opts: readonly Opt[], t: TFn) =>
+  opts.map((o) => ({ value: o.value, label: t(`admin_pharmacy_protocols.${o.labelKey}`) }));
+
+const PRODUCT_TYPE_OPTIONS: readonly Opt[] = [
+  { value: "UNKNOWN", labelKey: "ptype_unknown" },
+  { value: "GENERAL_PRODUCT", labelKey: "ptype_general" },
+  { value: "MEDICAL_SUPPLY", labelKey: "ptype_supply" },
+  { value: "MEDICAL_DEVICE", labelKey: "ptype_device" },
+  { value: "HOUSEHOLD_REMEDY", labelKey: "ptype_household" },
+  { value: "DRUG", labelKey: "ptype_drug" },
 ];
-const SALE_POLICY_OPTIONS = [
-  { value: "DIRECT_SALE", label: "ขายตรงได้ (DIRECT_SALE)" },
-  { value: "SHORT_SAFETY_CHECK", label: "ตรวจความปลอดภัยแบบสั้นก่อนขาย" },
-  { value: "PHARMACIST_APPROVAL", label: "เภสัชกรต้องอนุมัติก่อนขาย" },
-  { value: "PRESCRIPTION_REQUIRED", label: "ต้องมีใบสั่งยา" },
-  { value: "ONLINE_SALE_PROHIBITED", label: "ห้ามขายออนไลน์" },
+const SALE_POLICY_OPTIONS: readonly Opt[] = [
+  { value: "DIRECT_SALE", labelKey: "sale_direct" },
+  { value: "SHORT_SAFETY_CHECK", labelKey: "sale_short_check" },
+  { value: "PHARMACIST_APPROVAL", labelKey: "sale_pharmacist" },
+  { value: "PRESCRIPTION_REQUIRED", labelKey: "sale_prescription" },
+  { value: "ONLINE_SALE_PROHIBITED", labelKey: "sale_online_prohibited" },
 ];
-const REGULATORY_FRAMEWORK_OPTIONS = [
-  { value: "UNKNOWN", label: "ยังไม่ทราบ — รอตรวจเอกสาร" },
-  { value: "NOT_REGULATED", label: "ไม่อยู่ในกลุ่มยา/เครื่องมือแพทย์" },
-  { value: "DRUG", label: "ยา" },
-  { value: "MEDICAL_DEVICE", label: "เครื่องมือแพทย์" },
+const REGULATORY_FRAMEWORK_OPTIONS: readonly Opt[] = [
+  { value: "UNKNOWN", labelKey: "fw_unknown" },
+  { value: "NOT_REGULATED", labelKey: "fw_not_regulated" },
+  { value: "DRUG", labelKey: "fw_drug" },
+  { value: "MEDICAL_DEVICE", labelKey: "fw_device" },
 ];
-const REGULATORY_CLASS_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
-  UNKNOWN: [{ value: "UNKNOWN", label: "ยังไม่ทราบ (UNKNOWN)" }],
-  NOT_REGULATED: [{ value: "NOT_APPLICABLE", label: "ไม่เกี่ยวข้อง (NOT_APPLICABLE)" }],
+const REGULATORY_CLASS_OPTIONS: Record<string, readonly Opt[]> = {
+  UNKNOWN: [{ value: "UNKNOWN", labelKey: "rc_unknown_paren" }],
+  NOT_REGULATED: [{ value: "NOT_APPLICABLE", labelKey: "rc_not_applicable" }],
   DRUG: [
-    { value: "UNKNOWN", label: "ยังไม่ทราบ" },
-    { value: "HOUSEHOLD_REMEDY", label: "ยาสามัญประจำบ้าน" },
-    { value: "DANGEROUS_DRUG", label: "ยาอันตราย" },
-    { value: "SPECIALLY_CONTROLLED_DRUG", label: "ยาควบคุมพิเศษ" },
-    { value: "OTHER_DRUG", label: "ยาประเภทอื่นตามเอกสารกำกับ" },
+    { value: "UNKNOWN", labelKey: "rc_unknown" },
+    { value: "HOUSEHOLD_REMEDY", labelKey: "rc_household" },
+    { value: "DANGEROUS_DRUG", labelKey: "rc_dangerous" },
+    { value: "SPECIALLY_CONTROLLED_DRUG", labelKey: "rc_special" },
+    { value: "OTHER_DRUG", labelKey: "rc_other_drug" },
   ],
   MEDICAL_DEVICE: [
-    { value: "UNKNOWN", label: "ยังไม่ทราบ" },
-    { value: "MEDICAL_DEVICE_CLASS_1", label: "เครื่องมือแพทย์ Class 1" },
-    { value: "MEDICAL_DEVICE_CLASS_2", label: "เครื่องมือแพทย์ Class 2" },
-    { value: "MEDICAL_DEVICE_CLASS_3", label: "เครื่องมือแพทย์ Class 3" },
-    { value: "MEDICAL_DEVICE_CLASS_4", label: "เครื่องมือแพทย์ Class 4" },
+    { value: "UNKNOWN", labelKey: "rc_unknown" },
+    { value: "MEDICAL_DEVICE_CLASS_1", labelKey: "rc_class1" },
+    { value: "MEDICAL_DEVICE_CLASS_2", labelKey: "rc_class2" },
+    { value: "MEDICAL_DEVICE_CLASS_3", labelKey: "rc_class3" },
+    { value: "MEDICAL_DEVICE_CLASS_4", labelKey: "rc_class4" },
   ],
 };
-const REGULATORY_EVIDENCE_OPTIONS = [
-  { value: "UNKNOWN", label: "ยังไม่มีหลักฐาน" },
-  { value: "PRODUCT_LABEL", label: "ฉลาก/เอกสารกำกับผลิตภัณฑ์" },
-  { value: "FDA_REGISTRATION", label: "ข้อมูลทะเบียน อย." },
-  { value: "FDA_ANNOUNCEMENT", label: "ประกาศหรือหลักเกณฑ์ของ อย." },
-  { value: "SUPPLIER_DOCUMENT", label: "เอกสารจากผู้ผลิต/ผู้จำหน่าย" },
-  { value: "PHARMACIST_REVIEW", label: "บันทึกการตรวจโดยเภสัชกร" },
+const REGULATORY_EVIDENCE_OPTIONS: readonly Opt[] = [
+  { value: "UNKNOWN", labelKey: "ev_unknown" },
+  { value: "PRODUCT_LABEL", labelKey: "ev_label" },
+  { value: "FDA_REGISTRATION", labelKey: "ev_fda_reg" },
+  { value: "FDA_ANNOUNCEMENT", labelKey: "ev_fda_ann" },
+  { value: "SUPPLIER_DOCUMENT", labelKey: "ev_supplier" },
+  { value: "PHARMACIST_REVIEW", labelKey: "ev_pharmacist" },
 ];
 
 export default function PharmacyProtocolsPage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<any | null>(null);
@@ -152,8 +159,8 @@ export default function PharmacyProtocolsPage() {
     },
   });
   const [setEnabled] = useMutation(M_SET_ENABLED, {
-    onCompleted: () => { message.success("บันทึกแล้ว"); refetchProtocols(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    onCompleted: () => { message.success(t("admin_pharmacy_protocols.saved")); refetchProtocols(); },
+    onError: (e) => message.error(e?.message || t("admin_pharmacy_protocols.save_failed")),
   });
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
   const [submitReview] = useMutation(M_SUBMIT);
@@ -184,12 +191,12 @@ export default function PharmacyProtocolsPage() {
     try {
       const values = await policyForm.validateFields();
       await upsertProductPolicy({ variables: { input: values } });
-      message.success("บันทึก Product Policy เป็น Draft แล้ว");
+      message.success(t("admin_pharmacy_protocols.policy_draft_saved"));
       setPolicyEditorOpen(false);
       refetchProductPolicies();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || "บันทึก Product Policy ไม่สำเร็จ");
+      message.error(error?.message || t("admin_pharmacy_protocols.policy_save_failed"));
     }
   };
 
@@ -200,10 +207,10 @@ export default function PharmacyProtocolsPage() {
       } else {
         await submitProductPolicy({ variables: { productSku: row.productSku } });
       }
-      message.success(decision === "APPROVE" ? "เภสัชกรอนุมัติ Product Policy แล้ว" : decision === "REJECT" ? "ส่งกลับเป็น Draft แล้ว" : "ส่งให้เภสัชกรตรวจแล้ว");
+      message.success(decision === "APPROVE" ? t("admin_pharmacy_protocols.policy_approved") : decision === "REJECT" ? t("admin_pharmacy_protocols.sent_back_draft") : t("admin_pharmacy_protocols.sent_for_review"));
       refetchProductPolicies();
     } catch (error: any) {
-      message.error(error?.message || "ดำเนินการไม่สำเร็จ");
+      message.error(error?.message || t("admin_pharmacy_protocols.action_failed"));
     }
   };
 
@@ -213,9 +220,9 @@ export default function PharmacyProtocolsPage() {
       try {
         const result = await loadProtocolDetail({ variables: { id: row.id } });
         value = result.data?.bmsPharmacyProtocol;
-        if (!value) throw new Error("ไม่พบรายละเอียด Protocol");
+        if (!value) throw new Error(t("admin_pharmacy_protocols.protocol_detail_missing"));
       } catch (error: any) {
-        message.error(error?.message || "โหลดรายละเอียด Protocol ไม่สำเร็จ — กรุณา deploy backend รุ่นใหม่");
+        message.error(error?.message || t("admin_pharmacy_protocols.protocol_detail_failed"));
         return;
       }
     }
@@ -240,7 +247,7 @@ export default function PharmacyProtocolsPage() {
     try {
       const values = await form.validateFields();
       const parse = (key: string) => {
-        try { return JSON.parse(values[key]); } catch { throw new Error(`${key} ต้องเป็น JSON ที่ถูกต้อง`); }
+        try { return JSON.parse(values[key]); } catch { throw new Error(t("admin_pharmacy_protocols.json_invalid", { key })); }
       };
       await upsert({ variables: { input: {
         id: editing?.id,
@@ -256,12 +263,12 @@ export default function PharmacyProtocolsPage() {
         completionRules: parse("completionRules"),
         escalationRules: parse("escalationRules"),
       } } });
-      message.success("บันทึก Draft แล้ว");
+      message.success(t("admin_pharmacy_protocols.draft_saved"));
       setEditorOpen(false);
       refetchProtocols();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || "บันทึกไม่สำเร็จ");
+      message.error(error?.message || t("admin_pharmacy_protocols.save_failed"));
     }
   };
 
@@ -269,15 +276,15 @@ export default function PharmacyProtocolsPage() {
     try {
       if (decision) await review({ variables: { id: row.id, decision } });
       else await submitReview({ variables: { id: row.id } });
-      message.success(decision === "APPROVE" ? "อนุมัติทางคลินิกแล้ว — ยังไม่ได้เปิดใช้งาน" : decision === "REJECT" ? "ส่งกลับเป็น Draft แล้ว" : "ส่งให้เภสัชกรตรวจแล้ว");
+      message.success(decision === "APPROVE" ? t("admin_pharmacy_protocols.clinical_approved") : decision === "REJECT" ? t("admin_pharmacy_protocols.sent_back_draft") : t("admin_pharmacy_protocols.sent_for_review"));
       refetchProtocols();
     } catch (error: any) {
-      message.error(error?.message || "ดำเนินการไม่สำเร็จ");
+      message.error(error?.message || t("admin_pharmacy_protocols.action_failed"));
     }
   };
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_pharmacy_protocols.no_permission")} />;
   }
 
   const rows = protocolData?.bmsPharmacyProtocols || [];
@@ -287,19 +294,19 @@ export default function PharmacyProtocolsPage() {
     { title: "Version", dataIndex: "version", key: "version" },
     { title: "Symptom group", dataIndex: "supportedSymptomGroup", key: "supportedSymptomGroup" },
     {
-      title: "การรับรองทางคลินิก",
+      title: t("admin_pharmacy_protocols.col_clinical_cert"),
       dataIndex: "clinicallyApproved",
       key: "clinicallyApproved",
-      render: (v: boolean) => (v ? <Tag color="green">ผ่านการรับรองแล้ว</Tag> : <Tag color="red">DRAFT — ยังไม่ผ่านการรับรอง</Tag>),
+      render: (v: boolean) => (v ? <Tag color="green">{t("admin_pharmacy_protocols.tag_certified")}</Tag> : <Tag color="red">{t("admin_pharmacy_protocols.tag_draft_uncertified")}</Tag>),
     },
     {
       title: "Platform allowlist",
       dataIndex: "platformAllowed",
       key: "platformAllowed",
-      render: (v: boolean) => v ? <Tag color="green">อนุญาต</Tag> : <Tag color="orange">ยังไม่อยู่ใน ENV</Tag>,
+      render: (v: boolean) => v ? <Tag color="green">{t("admin_pharmacy_protocols.tag_allowed")}</Tag> : <Tag color="orange">{t("admin_pharmacy_protocols.tag_not_in_env")}</Tag>,
     },
     {
-      title: "เปิดใช้งาน",
+      title: t("admin_pharmacy_protocols.col_enabled"),
       dataIndex: "enabled",
       key: "enabled",
       render: (v: boolean, row: any) => (
@@ -310,16 +317,16 @@ export default function PharmacyProtocolsPage() {
         />
       ),
     },
-    { title: "ผู้ตรวจล่าสุด", dataIndex: "reviewedBy", key: "reviewedBy", render: (v: string | null) => v || "—" },
+    { title: t("admin_pharmacy_protocols.col_last_reviewer"), dataIndex: "reviewedBy", key: "reviewedBy", render: (v: string | null) => v || "—" },
     {
-      title: "จัดการ",
+      title: t("admin_pharmacy_protocols.col_actions"),
       key: "actions",
       render: (_: unknown, row: any) => (
         <Space wrap>
-          {row.status === "DRAFT" && <Button size="small" disabled={!canManage} onClick={() => void openEditor(row)}>แก้ไข</Button>}
-          {row.status === "DRAFT" && <Popconfirm title="ส่ง Protocol ให้เภสัชกรตรวจ?" onConfirm={() => transition(row)}><Button size="small" disabled={!canManage}>ส่งตรวจ</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Popconfirm title="ยืนยันว่าได้ตรวจ clinical rules ครบแล้ว?" onConfirm={() => transition(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>Clinical approve</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transition(row, "REJECT")}>ส่งกลับ Draft</Button>}
+          {row.status === "DRAFT" && <Button size="small" disabled={!canManage} onClick={() => void openEditor(row)}>{t("admin_pharmacy_protocols.btn_edit")}</Button>}
+          {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_protocol_review")} onConfirm={() => transition(row)}><Button size="small" disabled={!canManage}>{t("admin_pharmacy_protocols.btn_send_review")}</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_clinical_reviewed")} onConfirm={() => transition(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>Clinical approve</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transition(row, "REJECT")}>{t("admin_pharmacy_protocols.btn_send_back_draft")}</Button>}
         </Space>
       ),
     },
@@ -347,23 +354,23 @@ export default function PharmacyProtocolsPage() {
       ? REGULATORY_EVIDENCE_OPTIONS
       : REGULATORY_EVIDENCE_OPTIONS.filter((option) => option.value !== "FDA_REGISTRATION");
   const policyColumns = [
-    { title: "สินค้า", dataIndex: "productName", key: "productName" },
+    { title: t("admin_pharmacy_protocols.col_product"), dataIndex: "productName", key: "productName" },
     { title: "SKU", dataIndex: "productSku", key: "productSku" },
-    { title: "ประเภท", dataIndex: "productType", key: "productType" },
-    { title: "กรอบกำกับ", dataIndex: "regulatoryFramework", key: "regulatoryFramework" },
+    { title: t("admin_pharmacy_protocols.col_type"), dataIndex: "productType", key: "productType" },
+    { title: t("admin_pharmacy_protocols.col_framework"), dataIndex: "regulatoryFramework", key: "regulatoryFramework" },
     { title: "Regulatory class", dataIndex: "regulatoryClass", key: "regulatoryClass" },
     { title: "Sale policy", dataIndex: "salePolicy", key: "salePolicy", render: (value: string) => <Tag color={value === "DIRECT_SALE" ? "green" : value === "ONLINE_SALE_PROHIBITED" ? "red" : "orange"}>{value}</Tag> },
-    { title: "จำนวนสูงสุด", dataIndex: "maxQuantity", key: "maxQuantity", render: (value: number | null) => value ?? "—" },
-    { title: "สถานะ", dataIndex: "status", key: "status", render: (value: string) => <Tag color={value === "APPROVED" ? "green" : value === "PENDING_REVIEW" ? "blue" : "default"}>{value}</Tag> },
+    { title: t("admin_pharmacy_protocols.col_max_qty"), dataIndex: "maxQuantity", key: "maxQuantity", render: (value: number | null) => value ?? "—" },
+    { title: t("admin_pharmacy_protocols.col_status"), dataIndex: "status", key: "status", render: (value: string) => <Tag color={value === "APPROVED" ? "green" : value === "PENDING_REVIEW" ? "blue" : "default"}>{value}</Tag> },
     {
-      title: "จัดการ",
+      title: t("admin_pharmacy_protocols.col_actions"),
       key: "actions",
       render: (_: unknown, row: any) => (
         <Space wrap>
-          {row.status !== "PENDING_REVIEW" && <Button size="small" disabled={!canManage} onClick={() => openPolicyEditor(row)}>{row.status === "MISSING" ? "ตั้งค่า" : "แก้ไข"}</Button>}
-          {row.status === "DRAFT" && <Popconfirm title="ส่ง Product Policy ให้เภสัชกรตรวจ?" onConfirm={() => transitionProductPolicy(row)}><Button size="small" disabled={!canManage}>ส่งตรวจ</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Popconfirm title="ยืนยันว่าได้ตรวจประเภทผลิตภัณฑ์และเงื่อนไขการขายแล้ว?" onConfirm={() => transitionProductPolicy(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>เภสัชกรอนุมัติ</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transitionProductPolicy(row, "REJECT")}>ส่งกลับ Draft</Button>}
+          {row.status !== "PENDING_REVIEW" && <Button size="small" disabled={!canManage} onClick={() => openPolicyEditor(row)}>{row.status === "MISSING" ? t("admin_pharmacy_protocols.btn_configure") : t("admin_pharmacy_protocols.btn_edit")}</Button>}
+          {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_policy_review")} onConfirm={() => transitionProductPolicy(row)}><Button size="small" disabled={!canManage}>ส่งตรวจ</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_policy_reviewed")} onConfirm={() => transitionProductPolicy(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>เภสัชกรอนุมัติ</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transitionProductPolicy(row, "REJECT")}>{t("admin_pharmacy_protocols.btn_send_back_draft")}</Button>}
         </Space>
       ),
     },
@@ -376,17 +383,17 @@ export default function PharmacyProtocolsPage() {
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="Protocol ใหม่เริ่มเป็น Draft เสมอ ต้องผ่านการตรวจและ Clinical approve โดยเภสัชกรที่มีใบอนุญาตก่อนจึงเปิดใช้งานได้"
+        message={t("admin_pharmacy_protocols.protocol_draft_notice")}
       />
-      <Button type="primary" disabled={!canManage} onClick={() => void openEditor()} style={{ marginBottom: 12 }}>สร้าง Protocol Draft</Button>
+      <Button type="primary" disabled={!canManage} onClick={() => void openEditor()} style={{ marginBottom: 12 }}>{t("admin_pharmacy_protocols.btn_create_protocol_draft")}</Button>
       {protocolsError && (
         <Alert
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          message="โหลด Protocol ไม่ได้"
+          message={t("admin_pharmacy_protocols.protocol_load_error")}
           description={protocolsError.message}
-          action={<Button size="small" onClick={() => refetchProtocols()}>ลองใหม่</Button>}
+          action={<Button size="small" onClick={() => refetchProtocols()}>{t("admin_pharmacy_protocols.btn_retry")}</Button>}
         />
       )}
       <Table rowKey="id" loading={protocolsLoading} dataSource={rows} columns={columns} pagination={false} scroll={{ x: "max-content" }} />
@@ -396,12 +403,12 @@ export default function PharmacyProtocolsPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="SKU ของร้านยาต้องมี Product Policy ที่เภสัชกรอนุมัติก่อนสร้างออร์เดอร์จากช่องทางลูกค้า"
-        description="ห้ามจำแนกจากชื่อสินค้าหรือ category อย่างเดียว หากยังไม่ทราบให้เลือก UNKNOWN / PHARMACIST_APPROVAL แล้วส่งตรวจ"
+        message={t("admin_pharmacy_protocols.policy_required_notice")}
+        description={t("admin_pharmacy_protocols.policy_required_desc")}
       />
       <Space wrap style={{ marginBottom: 12 }}>
         <Input.Search
-          placeholder="ค้นหา SKU หรือชื่อสินค้า"
+          placeholder={t("admin_pharmacy_protocols.search_placeholder")}
           allowClear
           style={{ width: 320 }}
           value={policySearchInput}
@@ -419,7 +426,7 @@ export default function PharmacyProtocolsPage() {
           }}
         />
         <Typography.Text type="secondary">
-          ทั้งหมด {policyTotal.toLocaleString()} SKU
+          {t("admin_pharmacy_protocols.total_skus", { n: policyTotal.toLocaleString() })}
         </Typography.Text>
       </Space>
       {productPoliciesError && (
@@ -427,24 +434,24 @@ export default function PharmacyProtocolsPage() {
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          message="โหลด Product Policy ไม่ได้"
+          message={t("admin_pharmacy_protocols.policy_load_error")}
           description={
             <Space direction="vertical" size={2}>
               <span>{productPoliciesError.message}</span>
-              <span>ตรวจว่า backend GraphQL รุ่นใหม่ถูก deploy และ apply migration ถึง 7.73__bms_pharmacy_product_framework_consistency.sql แล้ว</span>
+              <span>{t("admin_pharmacy_protocols.policy_load_error_hint")}</span>
             </Space>
           }
-          action={<Button size="small" onClick={() => refetchProductPolicies()}>ลองใหม่</Button>}
+          action={<Button size="small" onClick={() => refetchProductPolicies()}>{t("admin_pharmacy_protocols.btn_retry")}</Button>}
         />
       )}
       <Button
         type="primary"
         disabled={!canManage || Boolean(productPoliciesError) || unconfiguredProductOptions.length === 0}
-        title={unconfiguredProductOptions.length === 0 ? "ค้นหา SKU ที่ยัง MISSING แล้วกดตั้งค่าจากแถวในตาราง" : undefined}
+        title={unconfiguredProductOptions.length === 0 ? t("admin_pharmacy_protocols.all_configured_tooltip") : undefined}
         onClick={() => openPolicyEditor()}
         style={{ marginBottom: 12 }}
       >
-        สร้าง Product Policy Draft
+        {t("admin_pharmacy_protocols.btn_create_policy_draft")}
       </Button>
       <Table
         rowKey="id"
@@ -465,23 +472,23 @@ export default function PharmacyProtocolsPage() {
           },
         }}
       />
-      <Modal title={editing ? "แก้ไข Protocol Draft" : "สร้าง Protocol Draft"} open={editorOpen} onCancel={() => setEditorOpen(false)} onOk={saveProtocol} confirmLoading={saving} width={920}>
+      <Modal title={editing ? t("admin_pharmacy_protocols.modal_edit_protocol") : t("admin_pharmacy_protocols.modal_create_protocol")} open={editorOpen} onCancel={() => setEditorOpen(false)} onOk={saveProtocol} confirmLoading={saving} width={920}>
         <Alert
           type="info"
           showIcon
-          message="การบันทึกจะสร้าง Draft เท่านั้น ต้องส่งตรวจและให้เภสัชกรที่มีใบอนุญาต Clinical approve ก่อนจึงเปิดใช้ได้"
-          description={'Compound red flag ใช้ condition เช่น {"allOf":[{"field":"patient_age_years","lessThan":0.25},{"field":"fever_temp","greaterThanOrEqual":38}]} และ escalationRules.bySeverity แยก EMERGENCY/HIGH/MODERATE/LOW'}
+          message={t("admin_pharmacy_protocols.modal_protocol_notice")}
+          description={t("admin_pharmacy_protocols.compound_redflag_hint")}
           style={{ marginBottom: 12 }}
         />
         <Form form={form} layout="vertical">
           <Space align="start" wrap>
             <Form.Item name="protocolKey" label="Protocol key" rules={[{ required: true }]}><Input disabled={Boolean(editing)} placeholder="fever" /></Form.Item>
             <Form.Item name="version" label="Version" rules={[{ required: true }]}><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
-            <Form.Item name="displayLabel" label="ชื่อที่ลูกค้าเห็น" rules={[{ required: true }]}><Input placeholder="ไข้" /></Form.Item>
+            <Form.Item name="displayLabel" label={t("admin_pharmacy_protocols.form_display_label")} rules={[{ required: true }]}><Input placeholder="ไข้" /></Form.Item>{/* placeholder เป็นตัวอย่าง "รูปแบบข้อมูล" ที่ต้องกรอกเป็นไทย ไม่ใช่ UI copy — trigger term/label ถูก match กับข้อความไทยที่คนไข้พิมพ์ ถ้าแปลเป็นอังกฤษแอดมินจะกรอกคำอังกฤษแล้ว match ไม่เจอ */}
           </Space>
-          <Form.Item name="name" label="ชื่อ Protocol" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="name" label={t("admin_pharmacy_protocols.form_protocol_name")} rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="supportedSymptomGroup" label="Symptom group" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="triggerTerms" label="Trigger terms (คั่นด้วย comma)" rules={[{ required: true }]}><Input placeholder="ไข้, ตัวร้อน, fever" /></Form.Item>
+          <Form.Item name="triggerTerms" label={t("admin_pharmacy_protocols.form_trigger_terms")} rules={[{ required: true }]}><Input placeholder="ไข้, ตัวร้อน, fever" /></Form.Item>
           {[
             ["requiredFields", "Required fields JSON"], ["conditionalQuestions", "Conditional questions JSON"],
             ["redFlagRules", "Red flag rules JSON"], ["completionRules", "Completion rules JSON"],
@@ -489,19 +496,19 @@ export default function PharmacyProtocolsPage() {
           ].map(([name, label]) => <Form.Item key={name} name={name} label={label} rules={[{ required: true }]}><Input.TextArea autoSize={{ minRows: 3, maxRows: 12 }} style={{ fontFamily: "monospace" }} /></Form.Item>)}
         </Form>
       </Modal>
-      <Modal title={policyEditing && policyEditing.status !== "MISSING" ? "แก้ไข Product Policy" : "สร้าง Product Policy Draft"} open={policyEditorOpen} onCancel={() => setPolicyEditorOpen(false)} onOk={saveProductPolicy} confirmLoading={savingPolicy} width={720}>
-        {policyEditing?.status === "APPROVED" && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="การแก้ไข Policy ที่อนุมัติแล้วจะกลับเป็น Draft และหยุดขายอัตโนมัติจนกว่าเภสัชกรจะอนุมัติใหม่" />}
-        {(!policyEditing || policyEditing.status === "MISSING") && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="เลือกสินค้าจาก Catalog แล้วกำหนดเงื่อนไขการขาย การบันทึกครั้งแรกจะเป็น Draft เสมอ" />}
+      <Modal title={policyEditing && policyEditing.status !== "MISSING" ? t("admin_pharmacy_protocols.modal_edit_policy") : t("admin_pharmacy_protocols.modal_create_policy")} open={policyEditorOpen} onCancel={() => setPolicyEditorOpen(false)} onOk={saveProductPolicy} confirmLoading={savingPolicy} width={720}>
+        {policyEditing?.status === "APPROVED" && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.approved_edit_warning2")} />}
+        {(!policyEditing || policyEditing.status === "MISSING") && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.pick_from_catalog2")} />}
         <Form form={policyForm} layout="vertical">
           <Form.Item
             name="productSku"
-            label="สินค้า / Product SKU"
-            rules={[{ required: true, message: "กรุณาเลือกสินค้า" }]}
+            label={t("admin_pharmacy_protocols.form_product_sku")}
+            rules={[{ required: true, message: t("admin_pharmacy_protocols.form_product_required") }]}
           >
             <Select
               showSearch
               disabled={Boolean(policyEditing)}
-              placeholder={unconfiguredProductOptions.length ? "เลือกสินค้าที่ยังไม่มี Product Policy" : "สินค้าทุก SKU มี Product Policy แล้ว"}
+              placeholder={unconfiguredProductOptions.length ? t("admin_pharmacy_protocols.form_product_placeholder_unconfigured") : t("admin_pharmacy_protocols.form_product_placeholder_all_done")}
               optionFilterProp="label"
               options={policyEditing
                 ? [{ value: policyEditing.productSku, label: `${policyEditing.productName || policyEditing.productSku} (${policyEditing.productSku})` }]
@@ -509,10 +516,10 @@ export default function PharmacyProtocolsPage() {
             />
           </Form.Item>
           <Space align="start" wrap>
-            <Form.Item name="productType" label="ประเภทผลิตภัณฑ์" rules={[{ required: true }]}>
+            <Form.Item name="productType" label={t("admin_pharmacy_protocols.form_product_type")} rules={[{ required: true }]}>
               <Select
                 style={{ width: 300 }}
-                options={PRODUCT_TYPE_OPTIONS}
+                options={withLabels(PRODUCT_TYPE_OPTIONS, t)}
                 onChange={(productType) => {
                   const next = productType === "DRUG"
                     ? { framework: "DRUG", regulatoryClass: "UNKNOWN" }
@@ -530,15 +537,15 @@ export default function PharmacyProtocolsPage() {
                 }}
               />
             </Form.Item>
-            <Form.Item name="salePolicy" label="นโยบายการขาย" rules={[{ required: true }]}>
-              <Select style={{ width: 330 }} options={SALE_POLICY_OPTIONS} />
+            <Form.Item name="salePolicy" label={t("admin_pharmacy_protocols.form_sale_policy")} rules={[{ required: true }]}>
+              <Select style={{ width: 330 }} options={withLabels(SALE_POLICY_OPTIONS, t)} />
             </Form.Item>
           </Space>
           <Space align="start" wrap>
-            <Form.Item name="regulatoryFramework" label="กรอบข้อกำกับ" rules={[{ required: true }]}>
+            <Form.Item name="regulatoryFramework" label={t("admin_pharmacy_protocols.form_framework")} rules={[{ required: true }]}>
               <Select
                 style={{ width: 300 }}
-                options={allowedFrameworkOptions}
+                options={withLabels(allowedFrameworkOptions, t)}
                 onChange={(framework) => {
                   policyForm.setFieldsValue({
                     regulatoryClass: REGULATORY_CLASS_OPTIONS[framework]?.[0]?.value || "UNKNOWN",
@@ -549,36 +556,36 @@ export default function PharmacyProtocolsPage() {
                 }}
               />
             </Form.Item>
-            <Form.Item name="regulatoryClass" label="ประเภทตามข้อกำกับ" extra="เลือกจากเอกสาร ไม่ให้ระบบเดาจากชื่อสินค้า" rules={[{ required: true }]}>
-              <Select style={{ width: 330 }} options={REGULATORY_CLASS_OPTIONS[selectedRegulatoryFramework] || REGULATORY_CLASS_OPTIONS.UNKNOWN} />
+            <Form.Item name="regulatoryClass" label={t("admin_pharmacy_protocols.form_regulatory_class")} extra={t("admin_pharmacy_protocols.form_regulatory_class_extra")} rules={[{ required: true }]}>
+              <Select style={{ width: 330 }} options={withLabels(REGULATORY_CLASS_OPTIONS[selectedRegulatoryFramework] || REGULATORY_CLASS_OPTIONS.UNKNOWN, t)} />
             </Form.Item>
           </Space>
           <Space align="start" wrap>
-            <Form.Item name="regulatoryEvidenceSource" label="แหล่งอ้างอิง" rules={[{ required: true }]}>
-              <Select style={{ width: 300 }} options={allowedEvidenceOptions} />
+            <Form.Item name="regulatoryEvidenceSource" label={t("admin_pharmacy_protocols.form_evidence_source")} rules={[{ required: true }]}>
+              <Select style={{ width: 300 }} options={withLabels(allowedEvidenceOptions, t)} />
             </Form.Item>
             <Form.Item
               name="regulatoryEvidenceRef"
-              label="รายละเอียด/เลขอ้างอิง"
+              label={t("admin_pharmacy_protocols.form_evidence_detail")}
               rules={[{
                 required: ["FDA_ANNOUNCEMENT", "SUPPLIER_DOCUMENT", "PHARMACIST_REVIEW"].includes(selectedEvidenceSource),
-                message: "กรุณาระบุรายละเอียดหรือเลขอ้างอิง",
+                message: t("admin_pharmacy_protocols.form_evidence_detail_required"),
               }]}
             >
-              <Input style={{ width: 330 }} placeholder="เช่น URL, ชื่อประกาศ หรือเลขเอกสาร" />
+              <Input style={{ width: 330 }} placeholder={t("admin_pharmacy_protocols.form_evidence_detail_placeholder")} />
             </Form.Item>
           </Space>
           {["DRUG", "MEDICAL_DEVICE"].includes(selectedRegulatoryFramework) && (
             <Form.Item
               name="registrationNo"
-              label="เลขทะเบียน/เลขใบรับแจ้ง อย."
-              extra={selectedEvidenceSource === "FDA_REGISTRATION" ? "จำเป็นเมื่อเลือกแหล่งอ้างอิงเป็นข้อมูลทะเบียน อย." : "กรอกเมื่อมีข้อมูลบนฉลากหรือเอกสารทางการ"}
-              rules={[{ required: selectedEvidenceSource === "FDA_REGISTRATION", message: "กรุณาระบุเลขทะเบียน/เลขใบรับแจ้ง อย." }]}
+              label={t("admin_pharmacy_protocols.form_fda_number")}
+              extra={selectedEvidenceSource === "FDA_REGISTRATION" ? t("admin_pharmacy_protocols.form_fda_extra_required") : t("admin_pharmacy_protocols.form_fda_extra_optional")}
+              rules={[{ required: selectedEvidenceSource === "FDA_REGISTRATION", message: t("admin_pharmacy_protocols.form_fda_required_msg") }]}
             >
-              <Input placeholder="กรอกตามฉลากหรือฐานข้อมูล อย. โดยไม่เดาเลข" />
+              <Input placeholder={t("admin_pharmacy_protocols.form_fda_placeholder")} />
             </Form.Item>
           )}
-          <Form.Item name="maxQuantity" label="จำนวนสูงสุดต่อออร์เดอร์"><InputNumber min={1} /></Form.Item>
+          <Form.Item name="maxQuantity" label={t("admin_pharmacy_protocols.form_max_qty")}><InputNumber min={1} /></Form.Item>
         </Form>
       </Modal>
     </div>
