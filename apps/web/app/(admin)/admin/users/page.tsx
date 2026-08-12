@@ -9,6 +9,7 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 import { canManageStaffRole } from "@/lib/bms/staffRoles";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 
 const Q_USERS = gql`
   query($search:String, $limit:Int, $offset:Int){
@@ -74,30 +75,32 @@ function UserAvatar({ name, avatar }: { name: string; avatar: string | null }) {
 // ปุ่มลบ — ปิดใช้งานเมื่อลบแถวนั้นไม่ได้ (แถวตัวเอง หรือ role สูงกว่า/เท่ากับเรา)
 // backend ปฏิเสธซ้ำใน deleteUser/deleteUsers อยู่แล้ว ปิดที่ UI แค่กันงงว่ากดแล้วทำไมฟ้อง error
 function DeleteUserAction({ reason, onConfirm }: { reason: string | null; onConfirm: () => void }) {
+  const { t } = useI18n();
   if (reason) {
     return (
       <Tooltip title={reason}>
-        <Button type="link" size="small" danger disabled icon={<DeleteOutlined />}>ลบ</Button>
+        <Button type="link" size="small" danger disabled icon={<DeleteOutlined />}>{t("admin_users.btn_delete")}</Button>
       </Tooltip>
     );
   }
   return (
-    <Popconfirm title="ลบผู้ใช้นี้?" okText="ลบ" cancelText="ยกเลิก" onConfirm={onConfirm}>
-      <Button type="link" size="small" danger icon={<DeleteOutlined />}>ลบ</Button>
+    <Popconfirm title={t("admin_users.delete_confirm_title")} okText={t("admin_users.btn_delete")} cancelText={t("admin_users.cancel_text")} onConfirm={onConfirm}>
+      <Button type="link" size="small" danger icon={<DeleteOutlined />}>{t("admin_users.btn_delete")}</Button>
     </Popconfirm>
   );
 }
 
 // ปุ่มแก้ไข — role ที่สูงกว่า/เท่ากับเราแก้ไม่ได้ (server เช็คซ้ำที่ requireManageableTarget)
 function EditUserAction({ href, reason }: { href: string; reason: string | null }) {
+  const { t } = useI18n();
   if (reason) {
     return (
       <Tooltip title={reason}>
-        <Button type="link" size="small" disabled icon={<EditOutlined />}>แก้ไข</Button>
+        <Button type="link" size="small" disabled icon={<EditOutlined />}>{t("admin_users.btn_edit")}</Button>
       </Tooltip>
     );
   }
-  return <Button type="link" size="small" icon={<EditOutlined />} href={href}>แก้ไข</Button>;
+  return <Button type="link" size="small" icon={<EditOutlined />} href={href}>{t("admin_users.btn_edit")}</Button>;
 }
 
 function UserNameLink({ href, label, disabledReason }: { href: string; label: string; disabledReason: string | null }) {
@@ -112,6 +115,7 @@ function UserNameLink({ href, label, disabledReason }: { href: string; label: st
 }
 
 function UsersList() {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -140,17 +144,17 @@ function UsersList() {
   // ⚠️ นี่เป็นแค่การซ่อนปุ่ม ไม่ใช่ authorization — ตัวบังคับจริงอยู่ที่ requireManageableTarget()
   const blockedReason = (r: UserRow): string | null => {
     if (!meData) return null; // ยังโหลดสิทธิ์ไม่เสร็จ — อย่าเพิ่งปิดปุ่มให้กะพริบ
-    if (!canWrite) return "บทบาทของคุณดูรายชื่อได้เท่านั้น ไม่มีสิทธิ์แก้ไขผู้ใช้";
+    if (!canWrite) return t("admin_users.reason_read_only");
     if (r.id === myId) return null; // แถวตัวเอง: แก้โปรไฟล์ตัวเองได้ (ลบไม่ได้ — เช็คแยกด้านล่าง)
-    if (r.is_platform_admin) return "บัญชีผู้ดูแลระบบระดับแพลตฟอร์มจัดการจากหน้านี้ไม่ได้";
+    if (r.is_platform_admin) return t("admin_users.reason_platform_admin");
     if (!myRole) return null;
     if (!canManageStaffRole(myRole, r.role)) {
-      return `บทบาทของคุณ (${myRole}) จัดการผู้ใช้ที่เป็น ${r.role} ไม่ได้`;
+      return t("admin_users.reason_role_rank", { myRole, targetRole: r.role });
     }
     return null;
   };
   const deleteReason = (r: UserRow): string | null => {
-    if (r.id === myId) return "ลบบัญชีของตัวเองไม่ได้";
+    if (r.id === myId) return t("admin_users.delete_self_tooltip");
     return blockedReason(r);
   };
 
@@ -183,17 +187,17 @@ function UsersList() {
   const handleBulkDelete = async () => {
     if (!selectedCount) return;
     Modal.confirm({
-      title: `ลบผู้ใช้ ${selectedCount} คน?`,
-      content: "ไม่สามารถย้อนกลับได้",
+      title: t("admin_users.bulk_delete_title", { count: selectedCount }),
+      content: t("admin_users.bulk_delete_content"),
       okButtonProps: { danger: true },
-      okText: "ลบ",
-      cancelText: "ยกเลิก",
+      okText: t("admin_users.btn_delete"),
+      cancelText: t("admin_users.cancel_text"),
       onOk: async () => {
         const ids = selectedRowKeys.map(String);
         try {
           const res = await deleteMany({ variables: { ids } });
           if (res.data?.deleteUsers) {
-            message.success(`ลบผู้ใช้ ${selectedCount} คนแล้ว`);
+            message.success(t("admin_users.bulk_delete_success", { count: selectedCount }));
             setSelectedRowKeys([]);
             const newTotal = total - selectedCount;
             const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
@@ -201,12 +205,12 @@ function UsersList() {
             setPage(nextPage);
             await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
           } else {
-            message.error("ลบไม่สำเร็จ");
+            message.error(t("admin_users.delete_failed"));
           }
         } catch (e: any) {
           // mutation ปฏิเสธได้จริง (ไม่มีสิทธิ์/บทบาทไม่ถึง) — ต้องโชว์เหตุผลจาก server
           // ไม่งั้นจะเป็น unhandled rejection แล้วผู้ใช้ไม่เห็นอะไรเลย
-          message.error(e?.message || "ลบไม่สำเร็จ");
+          message.error(e?.message || t("admin_users.delete_failed"));
         }
       },
     });
@@ -216,25 +220,25 @@ function UsersList() {
     try {
       const res = await deleteOne({ variables: { id: r.id } });
       if (res.data?.deleteUser) {
-        message.success("ลบแล้ว");
+        message.success(t("admin_users.delete_success"));
         const newTotal = total - 1;
         const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
         const nextPage = Math.min(page, maxPage);
         setPage(nextPage);
         await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
       } else {
-        message.error("ลบไม่สำเร็จ");
+        message.error(t("admin_users.delete_failed"));
       }
     } catch (e: any) {
       // เช่น แถวถูกลบไปแล้วโดยคนอื่น (NOT_FOUND) หรือบทบาทไม่ถึง (FORBIDDEN)
-      message.error(e?.message || "ลบไม่สำเร็จ");
+      message.error(e?.message || t("admin_users.delete_failed"));
     }
   };
 
   const columns = useMemo(
     () => [
       {
-        title: "ผู้ใช้",
+        title: t("admin_users.col_user"),
         dataIndex: "name",
         render: (v: string, r: UserRow) => (
           <Space>
@@ -242,7 +246,7 @@ function UsersList() {
             <Space direction="vertical" size={0}>
               <Space size={4}>
                 <UserNameLink href={`/admin/users/${r.id}/edit`} label={v} disabledReason={blockedReason(r)} />
-                {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>คุณ</Tag> : null}
+                {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{t("admin_users.you_tag")}</Tag> : null}
               </Space>
               {/* platform admin เห็น user ข้ามร้าน — badge บอกว่า user เป็นของร้านไหน
                   (regular admin เห็นแค่ร้านตัวเองอยู่แล้ว badge จะซ้ำกันทุกแถว แต่ไม่เป็นอันตราย) */}
@@ -251,13 +255,13 @@ function UsersList() {
           </Space>
         ),
       },
-      { title: "อีเมล", dataIndex: "email" },
-      { title: "เบอร์โทร", dataIndex: "phone", render: (v: string | null) => v || <span style={{ color: "var(--app-muted)" }}>—</span> },
-      { title: "บทบาท", dataIndex: "role", render: roleTag },
-      { title: "สร้างเมื่อ", dataIndex: "created_at", render: formatDate },
-      { title: "เข้าระบบล่าสุด", dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d) : <span style={{ color: "var(--app-muted)" }}>ยังไม่เคย</span> },
+      { title: t("admin_users.col_email"), dataIndex: "email" },
+      { title: t("admin_users.col_phone"), dataIndex: "phone", render: (v: string | null) => v || <span style={{ color: "var(--app-muted)" }}>—</span> },
+      { title: t("admin_users.col_role"), dataIndex: "role", render: roleTag },
+      { title: t("admin_users.col_created"), dataIndex: "created_at", render: formatDate },
+      { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
       {
-        title: "จัดการ",
+        title: t("admin_users.col_actions"),
         render: (_: any, r: UserRow) => (
           <Space size="small">
             <EditUserAction href={`/admin/users/${r.id}/edit`} reason={blockedReason(r)} />
@@ -268,7 +272,7 @@ function UsersList() {
     ],
     // canWrite/meData อยู่ใน closure ของ blockedReason ที่ render ใช้ → ต้องอยู่ใน deps
     // ไม่งั้นปุ่มจะค้างสถานะเดิมตอนสิทธิ์โหลดเสร็จทีหลัง
-    [search, refetch, page, pageSize, total, myId, myRole, canWrite, meData]
+    [search, refetch, page, pageSize, total, myId, myRole, canWrite, meData, t]
   );
 
   const rowSelection = {
@@ -282,19 +286,19 @@ function UsersList() {
 
   return (
     <div>
-      <AdminPageHeader title="ผู้ใช้งาน">
+      <AdminPageHeader title={t("admin_users.title")}>
         <Input.Search
-          placeholder="ค้นหาชื่อ / เบอร์โทร / อีเมล"
+          placeholder={t("admin_users.search_placeholder")}
           allowClear
           style={{ width: isMobile ? "100%" : 260 }}
           value={searchInput}
           onChange={(e) => onSearchChange(e.target.value)}
         />
         <Button danger disabled={!selectedCount || !canWrite} icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-          ลบที่เลือก ({selectedCount})
+          {t("admin_users.btn_delete_selected", { count: selectedCount })}
         </Button>
         <Button type="primary" icon={<PlusOutlined />} href="/admin/users/new" disabled={!canWrite}>
-          เพิ่มผู้ใช้
+          {t("admin_users.btn_add_user")}
         </Button>
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading} />
       </AdminPageHeader>
@@ -304,11 +308,11 @@ function UsersList() {
           loading={loading}
           dataSource={items}
           rowKey={(r) => r.id}
-          totalText={(t) => `ทั้งหมด ${t} คน`}
+          totalText={(n) => t("admin_users.mobile_total", { n })}
           emptyText={
             search.trim()
-              ? "ไม่พบผู้ใช้ที่ตรงกับคำค้นหาในร้านนี้"
-              : "ร้านนี้ยังไม่มีผู้ใช้ กด \"เพิ่มผู้ใช้\" เพื่อเพิ่มแอดมินหรือทีมงานของร้าน"
+              ? t("admin_users.empty_search")
+              : t("admin_users.empty_no_users")
           }
           renderItem={(r) => (
             <AdminRecordCard
@@ -319,7 +323,7 @@ function UsersList() {
                   <Space direction="vertical" size={0}>
                     <Space size={4}>
                       <UserNameLink href={`/admin/users/${r.id}/edit`} label={r.name} disabledReason={blockedReason(r)} />
-                      {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>คุณ</Tag> : null}
+                      {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{t("admin_users.you_tag")}</Tag> : null}
                     </Space>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.email}</Typography.Text>
                   </Space>
@@ -327,10 +331,10 @@ function UsersList() {
               }
               extra={roleTag(r.role)}
               fields={[
-                { label: "เบอร์โทร", value: r.phone || "—" },
-                { label: "ร้าน", value: r.tenantName || "—", hidden: !r.tenantName },
-                { label: "สร้างเมื่อ", value: formatDate(r.created_at) },
-                { label: "เข้าระบบล่าสุด", value: r.lastLoginAt ? formatDate(r.lastLoginAt) : "ยังไม่เคย" },
+                { label: t("admin_users.col_phone"), value: r.phone || "—" },
+                { label: t("admin_users.field_shop"), value: r.tenantName || "—", hidden: !r.tenantName },
+                { label: t("admin_users.col_created"), value: formatDate(r.created_at) },
+                { label: t("admin_users.col_last_login"), value: r.lastLoginAt ? formatDate(r.lastLoginAt) : t("admin_users.never_logged_in") },
               ]}
               actions={
                 <>
@@ -351,8 +355,8 @@ function UsersList() {
           scroll={{ x: "max-content" }}
           locale={{
             emptyText: search.trim()
-              ? "ไม่พบผู้ใช้ที่ตรงกับคำค้นหาในร้านนี้"
-              : "ร้านนี้ยังไม่มีผู้ใช้ กด \"เพิ่มผู้ใช้\" เพื่อเพิ่มแอดมินหรือทีมงานของร้าน",
+              ? t("admin_users.empty_search")
+              : t("admin_users.empty_no_users"),
           }}
           pagination={{
             current: page,
@@ -360,7 +364,7 @@ function UsersList() {
             total,
             showSizeChanger: true,
             pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (tot, range) => `${range[0]}-${range[1]} จาก ${tot} คน`,
+            showTotal: (tot, range) => t("admin_users.pagination_range", { from: range[0], to: range[1], total: tot }),
             onChange: async (nextPage, nextSize) => {
               const sizeChanged = nextSize !== pageSize;
               const finalPage = sizeChanged ? 1 : nextPage;

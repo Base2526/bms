@@ -1,5 +1,7 @@
 // app/admin/env/page.tsx
 import "server-only";
+import { cookies } from "next/headers";
+import { getMessage, type Lang } from "@/i18n";
 import {
   DEFAULT_AI_PROVIDER,
   DEFAULT_SENSITIVE_AI_PROVIDER,
@@ -115,7 +117,7 @@ function resolveSharedOcrProvider(): { provider: "anthropic" | "qwen"; model: st
   return null;
 }
 
-function buildActiveProviderSummary(): ActiveProviderSummary[] {
+function buildActiveProviderSummary(t: (key: string, vars?: Record<string, string | number>) => string): ActiveProviderSummary[] {
   const configuredChat = normalizeAiProvider(process.env.BMS_AI_PROVIDER) ?? DEFAULT_AI_PROVIDER;
   const effectiveChat = resolveSharedAiProvider();
   const configuredSensitive =
@@ -138,10 +140,10 @@ function buildActiveProviderSummary(): ActiveProviderSummary[] {
           ? "active"
           : "fallback",
       note: !effectiveChat
-        ? "ยังไม่มี shared chat provider ที่พร้อมใช้งาน"
+        ? t("admin_env.note_chat_missing")
         : effectiveChat.provider === configuredChat
-          ? "customer sales และ text/tool-calling ทั่วไปจะใช้ provider นี้เป็นหลัก"
-          : "provider หลักไม่มี key พร้อมใช้ จึง fallback ไป provider สำรอง",
+          ? t("admin_env.note_chat_active")
+          : t("admin_env.note_chat_fallback"),
     },
     {
       scope: "sensitive",
@@ -155,10 +157,10 @@ function buildActiveProviderSummary(): ActiveProviderSummary[] {
           ? "active"
           : "fallback",
       note: !effectiveSensitive
-        ? "ยังไม่มี shared sensitive provider ที่พร้อมใช้งาน"
+        ? t("admin_env.note_sensitive_missing")
         : effectiveSensitive.provider === configuredSensitive
-          ? "staff request ที่ตรวจพบเจตนา sensitive จะใช้ provider นี้เป็น baseline"
-          : "sensitive provider ที่ตั้งไว้ไม่มี key พร้อมใช้ จึง fallback ไป provider สำรอง",
+          ? t("admin_env.note_sensitive_active")
+          : t("admin_env.note_sensitive_fallback"),
     },
     {
       scope: "ocr",
@@ -172,15 +174,15 @@ function buildActiveProviderSummary(): ActiveProviderSummary[] {
           ? "active"
           : "fallback",
       note: !effectiveOcr
-        ? "ยังไม่มี shared OCR provider ที่พร้อมใช้งาน"
+        ? t("admin_env.note_ocr_missing")
         : effectiveOcr.provider === configuredOcr
-          ? "verify slip จะใช้ provider นี้ตามค่าปัจจุบัน"
-          : "OCR fallback ไปยัง provider ที่มี key พร้อมใช้",
+          ? t("admin_env.note_ocr_active")
+          : t("admin_env.note_ocr_fallback"),
     },
   ];
 }
 
-function buildConfigDiagnostics(): ConfigDiagnostic[] {
+function buildConfigDiagnostics(t: (key: string, vars?: Record<string, string | number>) => string): ConfigDiagnostic[] {
   const diagnostics: ConfigDiagnostic[] = [];
   const rawChat = process.env.BMS_AI_PROVIDER;
   const rawSensitive = process.env.BMS_AI_SENSITIVE_PROVIDER;
@@ -205,58 +207,58 @@ function buildConfigDiagnostics(): ConfigDiagnostic[] {
     diagnostics.push({
       level: "error",
       code: "invalid_chat_provider",
-      title: "BMS_AI_PROVIDER ไม่ถูกต้อง",
-      detail: `runtime ได้ค่า "${rawChat}" — รองรับเฉพาะ anthropic หรือ deepseek`,
+      title: t("admin_env.diag_invalid_chat_provider_title"),
+      detail: t("admin_env.diag_invalid_provider_detail", { value: rawChat }),
     });
   }
   if (!hasChatKey(chat)) {
     diagnostics.push({
       level: "error",
       code: "chat_key_missing",
-      title: `ไม่มี key สำหรับ chat provider หลัก (${chat})`,
-      detail: "ระบบจะ fallback ไป provider อื่นถ้ามี key; ถ้าไม่มีจะใช้ deterministic template",
+      title: t("admin_env.diag_chat_key_missing_title", { provider: chat }),
+      detail: t("admin_env.diag_chat_key_missing_detail"),
     });
   }
   if (rawSensitive && !normalizeAiProvider(rawSensitive)) {
     diagnostics.push({
       level: "error",
       code: "invalid_sensitive_provider",
-      title: "BMS_AI_SENSITIVE_PROVIDER ไม่ถูกต้อง",
-      detail: `runtime ได้ค่า "${rawSensitive}" — รองรับเฉพาะ anthropic หรือ deepseek`,
+      title: t("admin_env.diag_invalid_sensitive_provider_title"),
+      detail: t("admin_env.diag_invalid_provider_detail", { value: rawSensitive }),
     });
   }
   if (!hasChatKey(sensitive)) {
     diagnostics.push({
       level: "warning",
       code: "sensitive_key_missing",
-      title: `ไม่มี key สำหรับ sensitive baseline (${sensitive})`,
-      detail: "งาน sensitive จะ fallback ไป chat provider ที่มี key โดย safety/RBAC/propose-only ยังทำงานเหมือนเดิม",
+      title: t("admin_env.diag_sensitive_key_missing_title", { provider: sensitive }),
+      detail: t("admin_env.diag_sensitive_key_missing_detail"),
     });
   }
   if (rawOcr && !normalizeOcrProvider(rawOcr)) {
     diagnostics.push({
       level: "error",
       code: "invalid_ocr_provider",
-      title: "BMS_SLIP_READER_PROVIDER ไม่ถูกต้อง",
-      detail: `runtime ได้ค่า "${rawOcr}" — รองรับเฉพาะ qwen หรือ anthropic`,
+      title: t("admin_env.diag_invalid_ocr_provider_title"),
+      detail: t("admin_env.diag_invalid_ocr_provider_detail", { value: rawOcr }),
     });
   }
   if (!hasOcrKey(ocr)) {
     diagnostics.push({
       level: hasOcrKey(ocrFallback) ? "warning" : "error",
       code: "ocr_key_missing",
-      title: `ไม่มี key สำหรับ Slip OCR หลัก (${ocr})`,
+      title: t("admin_env.diag_ocr_key_missing_title", { provider: ocr }),
       detail: hasOcrKey(ocrFallback)
-        ? `ระบบจะใช้ ${ocrFallback} fallback ก่อนส่งให้คนตรวจ`
-        : "ไม่มี OCR provider พร้อมใช้ ระบบจะส่งให้คนตรวจด้วยตนเอง",
+        ? t("admin_env.diag_ocr_key_missing_detail_fallback", { fallback: ocrFallback })
+        : t("admin_env.diag_ocr_key_missing_detail_none"),
     });
   }
   if (ocr === ocrFallback) {
     diagnostics.push({
       level: "warning",
       code: "ocr_fallback_duplicate",
-      title: "Slip OCR primary และ fallback เป็น provider เดียวกัน",
-      detail: "หาก provider ล้มเหลวจะไม่มี provider สำรองให้ลองต่อ",
+      title: t("admin_env.diag_ocr_fallback_duplicate_title"),
+      detail: t("admin_env.diag_ocr_fallback_duplicate_detail"),
     });
   }
   const qwenBaseUrl = process.env.QWEN_OCR_BASE_URL ?? DEFAULT_QWEN_BASE_URL;
@@ -271,28 +273,30 @@ function buildConfigDiagnostics(): ConfigDiagnostic[] {
     diagnostics.push({
       level: "warning",
       code: "qwen_region_rate",
-      title: "QWEN endpoint ไม่ใช่ US แต่ยังใช้อัตราต้นทุน default",
-      detail:
-        "ตั้ง QWEN_OCR_INPUT_USD_PER_MILLION และ QWEN_OCR_OUTPUT_USD_PER_MILLION ให้ตรง region",
+      title: t("admin_env.diag_qwen_region_rate_title"),
+      detail: t("admin_env.diag_qwen_region_rate_detail"),
     });
   }
   if (diagnostics.length === 0) {
     diagnostics.push({
       level: "ok",
       code: "runtime_config_ok",
-      title: "Runtime configuration พร้อมใช้งาน",
-      detail: "provider หลัก, sensitive baseline และ OCR fallback มี key ครบใน process ปัจจุบัน",
+      title: t("admin_env.diag_ok_title"),
+      detail: t("admin_env.diag_ok_detail"),
     });
   }
   return diagnostics;
 }
 
 export default async function EnvPage() {
+  const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
+  const t = (key: string, vars?: Record<string, string | number>) => getMessage(lang, key, vars);
+
   const env = pickEnv(process.env);
-  const activeProviders = buildActiveProviderSummary();
+  const activeProviders = buildActiveProviderSummary(t);
   const recentUsage = await listRecentAiUsageEventsGlobal(10);
   const providerHealth = await listAiProviderHealth();
-  const configDiagnostics = buildConfigDiagnostics();
+  const configDiagnostics = buildConfigDiagnostics(t);
 
   const meta = {
     nodeEnv: process.env.NODE_ENV ?? "-",
