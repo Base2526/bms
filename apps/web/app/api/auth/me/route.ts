@@ -5,6 +5,8 @@ import { query } from "@/lib/db";
 import type { JWTPayload } from "@/lib/auth/token";
 import type { ThemeMode } from "@/lib/theme";
 import type { Lang } from "@/i18n";
+import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
+import { isAdminSessionActive } from "@/lib/redisSession";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,7 +34,10 @@ async function withUserPreferences<T extends JWTPayload | null>(session: T): Pro
 
 export async function GET() {
   const user  = verifyUserSession();
-  const admin  = verifyAdminSession();
+  const adminToken = verifyAdminSession();
+  const admin = adminToken && await isAdminSessionActive(adminToken.jti)
+    ? await refreshAdminIdentity(adminToken)
+    : null;
   const [userWithPreferences, adminWithPreferences] = await Promise.all([
     withUserPreferences(user),
     withUserPreferences(admin),

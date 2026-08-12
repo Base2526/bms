@@ -602,13 +602,39 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   placeholder. Mock mode is tagged `source: "mock"` end-to-end and refuses to run in production. See
   [docs/integrations/carriers.md](docs/integrations/carriers.md) for the live-enablement checklist.
 
+- **Shop owners (Manager role) manage their own staff (2026-08)** — ✅ implemented; previously only a
+  tenant `Administrator` or a platform admin could touch users, because user CRUD predates the
+  permission engine and gated on a hardcoded `ctx.admin.role === "Administrator"` string. Now a
+  **two-layer** model: new permission keys `user.view`/`user.manage` (`BMS_PERMISSIONS`, seeded to
+  `Manager` per-tenant by migration `7.78`) decide *whether* the Users module opens, and a separate
+  code-level role rank (`lib/bms/staffRoles.ts`: Administrator 100 · Manager 60 ·
+  Sales/Warehouse/Staff 20 · Subscriber 0, enforced by `lib/bms/userAdmin.ts`) decides *which rows*
+  may be touched and *which roles* may be assigned — **strictly below the actor's own rank**, which
+  in one rule blocks self-escalation, peer-Manager password resets, and peer demotion. `Administrator`
+  and platform admins short-circuit permission/rank checks for non-platform targets. Three rules there
+  are load-bearing: the target's role is always re-read from Postgres (never trusted from the request); a
+  row with `is_platform_admin` is untouchable by another account regardless of rank (a platform admin is an ordinary
+  `users` row carrying a `tenant_id`, so a low-ranked one inside the shop would otherwise be a
+  password-reset takeover path); and the requested role is resolved against `roles` **before** any
+  write with unknown names rejected — because the trigger `trg_users_sync_role_and_role_id`
+  (`db/migrations/001_normalize_roles_phase1.sql`) silently `INSERT`s a *new global role row* for
+  unrecognized `users.role` text, so `upsertUser` now writes `role_id` only and both raw-text write
+  paths are deleted. `/admin/permissions` stays `requireSuper`, so a Manager can never grant itself
+  `user.manage`; unticking it there is the kill switch. User CRUD also now writes `bms_audit_log`
+  (`user.create`/`update`/`delete`/`delete_bulk`, plus `user.manage_denied` on refusals — never the
+  password hash) so the shop Administrator can see what their Manager did; the previous `system_logs`
+  entries are unchanged. User quota checks now lock the tenant row in the create transaction, while
+  the mandatory `reassignStaffConversations()`-before-delete runs in the delete transaction and
+  excludes every member of a bulk-delete set from reassignment. Full rules:
+  [docs/architecture/api.md](docs/architecture/api.md) § RBAC. **Not yet verified against a live DB** —
+  `tsc` + `next build` pass, but migration `7.78` has not been applied or exercised end-to-end.
+
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following
 [docs/integrations/carriers.md](docs/integrations/carriers.md)) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
-Shopee/Lazada signature verification against real Open Platform docs · letting shop owners
-(Manager role) manage their own staff · wiring an actual cron schedule for the ready-but-unscheduled
+Shopee/Lazada signature verification against real Open Platform docs · wiring an actual cron schedule for the ready-but-unscheduled
 endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`, `reports/send-digest`,
 `followups/run`, `shipping/sync-carriers`) — each of them now records its own run history (see
 "Cron/batch run history" above), it just isn't triggered automatically yet · adding a password/TLS

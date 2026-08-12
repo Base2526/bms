@@ -29,6 +29,7 @@ export const typeDefs = /* GraphQL */ `
     notifications_enabled: Boolean!
     tenantName: String # ชื่อร้านของ user นี้ — ให้ platform admin เห็นว่า user เป็นของร้านไหน (null ถ้าไม่มี tenant_id)
     lastLoginAt: String # ISO string ล่าสุดที่ login สำเร็จ (null = ยังไม่เคย login ตั้งแต่มี column นี้)
+    is_platform_admin: Boolean!
   }
 
   type UserConnection {
@@ -128,7 +129,7 @@ export const typeDefs = /* GraphQL */ `
     email: String
     role: String # Legacy field (optional, backward compatibility)
     role_id: ID # New field - use this for new code
-    passwordHash: String
+    password: String
   }
 
   input CreateRoleInput {

@@ -74,10 +74,17 @@ export async function enforceProductQuota(tenantId: string, client?: PoolClient)
 }
 
 /** เช็คก่อนสร้าง/ย้าย staff เข้าร้าน — เกิน quota → throw */
-export async function enforceUserQuota(tenantId: string): Promise<void> {
-  const plan = await getTenantPlan(tenantId);
+export async function enforceUserQuota(tenantId: string, client?: PoolClient): Promise<void> {
+  // Serialize user creation per tenant. Without this lock two requests can
+  // both observe c=max-1 and commit above the paid plan limit.
+  if (client) {
+    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    if (!tenant.rowCount) throw new Error("ไม่พบร้านที่ระบุ");
+  }
+  const plan = await getTenantPlan(tenantId, client);
   if (plan.max_users < 0) return; // unlimited
-  const res = await query<{ c: number }>(
+  const res = await run<{ c: number }>(
+    client,
     `SELECT COUNT(*)::int AS c FROM users WHERE tenant_id = $1`,
     [tenantId]
   );

@@ -36,7 +36,7 @@ operators must resolve those records before retrying the migration.
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
-| Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8` |
+| Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35` |
@@ -279,6 +279,16 @@ they belong to ops/support, not a specific shop's business data.
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a
 DB-level enum. Administrator role bypasses this table entirely (hardcoded super-access in code).
+Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every tenant, which is what
+lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
+rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
+[api.md](api.md) before changing either half.
+
+**Auth hardening (`7.80__auth_session_and_reset_token_hardening.sql`)** —
+`users.admin_session_version` invalidates existing admin JWTs after a password or role change;
+request authentication compares it with the live user row. `password_reset_tokens.token_hash`
+stores only a SHA-256 digest of the bearer token. The legacy plaintext `token` column remains
+nullable for migration compatibility but new code never writes or queries it.
 
 **`bms_audit_log`** — append-only, written via `audit(ctx, action, target, meta)`
 (`lib/bms/audit.ts`); failures to write are swallowed (never blocks the mutation that triggered it).

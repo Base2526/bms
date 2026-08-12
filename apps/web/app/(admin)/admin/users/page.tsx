@@ -7,17 +7,19 @@ import debounce from "lodash/debounce";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
+import { canManageStaffRole } from "@/lib/bms/staffRoles";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 const Q_USERS = gql`
   query($search:String, $limit:Int, $offset:Int){
     users(search:$search, limit:$limit, offset:$offset){
       total
-      items{ id name email phone role created_at avatar tenantName lastLoginAt }
+      items{ id name email phone role created_at avatar tenantName lastLoginAt is_platform_admin }
     }
   }
 `;
 
-const Q_ME = gql`query { bmsMe { id } }`;
+const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
 
 const M_DELETE = gql`mutation($id:ID!){ deleteUser(id:$id) }`;
 const M_DELETE_MANY = gql`mutation($ids:[ID!]!){ deleteUsers(ids:$ids) }`;
@@ -32,6 +34,7 @@ type UserRow = {
   avatar: string | null;
   tenantName: string | null;
   lastLoginAt: string | null;
+  is_platform_admin: boolean;
 };
 
 // สีตาม role จริงของ BMS (Administrator/Manager/Sales/Warehouse) — ไม่ใช่แค่ Administrator/Author เดิม
@@ -68,12 +71,12 @@ function UserAvatar({ name, avatar }: { name: string; avatar: string | null }) {
   );
 }
 
-// ปุ่มลบ — ปิดใช้งานเสมอสำหรับแถวของตัวเอง (backend ก็ปฏิเสธซ้ำใน deleteUser/deleteUsers อยู่แล้ว
-// แต่ซ่อน/ปิดที่ UI กันงงว่ากดแล้วทำไมฟ้อง error)
-function DeleteUserAction({ isSelf, onConfirm }: { isSelf: boolean; onConfirm: () => void }) {
-  if (isSelf) {
+// ปุ่มลบ — ปิดใช้งานเมื่อลบแถวนั้นไม่ได้ (แถวตัวเอง หรือ role สูงกว่า/เท่ากับเรา)
+// backend ปฏิเสธซ้ำใน deleteUser/deleteUsers อยู่แล้ว ปิดที่ UI แค่กันงงว่ากดแล้วทำไมฟ้อง error
+function DeleteUserAction({ reason, onConfirm }: { reason: string | null; onConfirm: () => void }) {
+  if (reason) {
     return (
-      <Tooltip title="ลบบัญชีของตัวเองไม่ได้">
+      <Tooltip title={reason}>
         <Button type="link" size="small" danger disabled icon={<DeleteOutlined />}>ลบ</Button>
       </Tooltip>
     );
@@ -83,6 +86,29 @@ function DeleteUserAction({ isSelf, onConfirm }: { isSelf: boolean; onConfirm: (
       <Button type="link" size="small" danger icon={<DeleteOutlined />}>ลบ</Button>
     </Popconfirm>
   );
+}
+
+// ปุ่มแก้ไข — role ที่สูงกว่า/เท่ากับเราแก้ไม่ได้ (server เช็คซ้ำที่ requireManageableTarget)
+function EditUserAction({ href, reason }: { href: string; reason: string | null }) {
+  if (reason) {
+    return (
+      <Tooltip title={reason}>
+        <Button type="link" size="small" disabled icon={<EditOutlined />}>แก้ไข</Button>
+      </Tooltip>
+    );
+  }
+  return <Button type="link" size="small" icon={<EditOutlined />} href={href}>แก้ไข</Button>;
+}
+
+function UserNameLink({ href, label, disabledReason }: { href: string; label: string; disabledReason: string | null }) {
+  if (disabledReason) {
+    return (
+      <Tooltip title={disabledReason}>
+        <Typography.Text>{label}</Typography.Text>
+      </Tooltip>
+    );
+  }
+  return <a href={href}>{label}</a>;
 }
 
 function UsersList() {
@@ -102,6 +128,31 @@ function UsersList() {
   // ใช้เช็คว่าแถวไหนคือบัญชีตัวเอง — ห้ามลบตัวเองทั้ง UI (ปุ่ม/checkbox) และ backend (deleteUser/deleteUsers)
   const { data: meData } = useQuery(Q_ME);
   const myId: string | undefined = meData?.bmsMe?.id;
+  const myRole: string | undefined = meData?.bmsMe?.role;
+
+  // สิทธิ์เขียน: platform admin / Administrator ผ่านเสมอ (server ก็ short-circuit ให้)
+  // ส่วน role อื่นต้องมี `user.manage` — role ที่มีแค่ `user.view` จะเห็นรายชื่อแบบอ่านอย่างเดียว
+  const { can } = useBmsPermissions();
+  const canWrite =
+    meData?.bmsMe?.is_platform_admin === true || myRole === "Administrator" || can("user.manage");
+
+  // เหตุผลที่แก้/ลบแถวนี้ไม่ได้ (null = ทำได้) — Manager แตะได้แค่ role ที่ต่ำกว่าตัวเอง
+  // ⚠️ นี่เป็นแค่การซ่อนปุ่ม ไม่ใช่ authorization — ตัวบังคับจริงอยู่ที่ requireManageableTarget()
+  const blockedReason = (r: UserRow): string | null => {
+    if (!meData) return null; // ยังโหลดสิทธิ์ไม่เสร็จ — อย่าเพิ่งปิดปุ่มให้กะพริบ
+    if (!canWrite) return "บทบาทของคุณดูรายชื่อได้เท่านั้น ไม่มีสิทธิ์แก้ไขผู้ใช้";
+    if (r.id === myId) return null; // แถวตัวเอง: แก้โปรไฟล์ตัวเองได้ (ลบไม่ได้ — เช็คแยกด้านล่าง)
+    if (r.is_platform_admin) return "บัญชีผู้ดูแลระบบระดับแพลตฟอร์มจัดการจากหน้านี้ไม่ได้";
+    if (!myRole) return null;
+    if (!canManageStaffRole(myRole, r.role)) {
+      return `บทบาทของคุณ (${myRole}) จัดการผู้ใช้ที่เป็น ${r.role} ไม่ได้`;
+    }
+    return null;
+  };
+  const deleteReason = (r: UserRow): string | null => {
+    if (r.id === myId) return "ลบบัญชีของตัวเองไม่ได้";
+    return blockedReason(r);
+  };
 
   const [deleteOne] = useMutation(M_DELETE);
   const [deleteMany] = useMutation(M_DELETE_MANY);
@@ -139,33 +190,44 @@ function UsersList() {
       cancelText: "ยกเลิก",
       onOk: async () => {
         const ids = selectedRowKeys.map(String);
-        const res = await deleteMany({ variables: { ids } });
-        if (res.data?.deleteUsers) {
-          message.success(`ลบผู้ใช้ ${selectedCount} คนแล้ว`);
-          setSelectedRowKeys([]);
-          const newTotal = total - selectedCount;
-          const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
-          const nextPage = Math.min(page, maxPage);
-          setPage(nextPage);
-          await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
-        } else {
-          message.error("ลบไม่สำเร็จ");
+        try {
+          const res = await deleteMany({ variables: { ids } });
+          if (res.data?.deleteUsers) {
+            message.success(`ลบผู้ใช้ ${selectedCount} คนแล้ว`);
+            setSelectedRowKeys([]);
+            const newTotal = total - selectedCount;
+            const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
+            const nextPage = Math.min(page, maxPage);
+            setPage(nextPage);
+            await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
+          } else {
+            message.error("ลบไม่สำเร็จ");
+          }
+        } catch (e: any) {
+          // mutation ปฏิเสธได้จริง (ไม่มีสิทธิ์/บทบาทไม่ถึง) — ต้องโชว์เหตุผลจาก server
+          // ไม่งั้นจะเป็น unhandled rejection แล้วผู้ใช้ไม่เห็นอะไรเลย
+          message.error(e?.message || "ลบไม่สำเร็จ");
         }
       },
     });
   };
 
   const deleteRow = async (r: UserRow) => {
-    const res = await deleteOne({ variables: { id: r.id } });
-    if (res.data?.deleteUser) {
-      message.success("ลบแล้ว");
-      const newTotal = total - 1;
-      const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
-      const nextPage = Math.min(page, maxPage);
-      setPage(nextPage);
-      await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
-    } else {
-      message.error("ลบไม่สำเร็จ");
+    try {
+      const res = await deleteOne({ variables: { id: r.id } });
+      if (res.data?.deleteUser) {
+        message.success("ลบแล้ว");
+        const newTotal = total - 1;
+        const maxPage = Math.max(1, Math.ceil(newTotal / pageSize));
+        const nextPage = Math.min(page, maxPage);
+        setPage(nextPage);
+        await refetch({ search, limit: pageSize, offset: (nextPage - 1) * pageSize });
+      } else {
+        message.error("ลบไม่สำเร็จ");
+      }
+    } catch (e: any) {
+      // เช่น แถวถูกลบไปแล้วโดยคนอื่น (NOT_FOUND) หรือบทบาทไม่ถึง (FORBIDDEN)
+      message.error(e?.message || "ลบไม่สำเร็จ");
     }
   };
 
@@ -179,7 +241,7 @@ function UsersList() {
             <UserAvatar name={r.name} avatar={r.avatar} />
             <Space direction="vertical" size={0}>
               <Space size={4}>
-                <a href={`/admin/users/${r.id}/edit`}>{v}</a>
+                <UserNameLink href={`/admin/users/${r.id}/edit`} label={v} disabledReason={blockedReason(r)} />
                 {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>คุณ</Tag> : null}
               </Space>
               {/* platform admin เห็น user ข้ามร้าน — badge บอกว่า user เป็นของร้านไหน
@@ -198,21 +260,24 @@ function UsersList() {
         title: "จัดการ",
         render: (_: any, r: UserRow) => (
           <Space size="small">
-            <Button type="link" size="small" icon={<EditOutlined />} href={`/admin/users/${r.id}/edit`}>แก้ไข</Button>
-            <DeleteUserAction isSelf={r.id === myId} onConfirm={() => deleteRow(r)} />
+            <EditUserAction href={`/admin/users/${r.id}/edit`} reason={blockedReason(r)} />
+            <DeleteUserAction reason={deleteReason(r)} onConfirm={() => deleteRow(r)} />
           </Space>
         ),
       },
     ],
-    [search, refetch, page, pageSize, total, myId]
+    // canWrite/meData อยู่ใน closure ของ blockedReason ที่ render ใช้ → ต้องอยู่ใน deps
+    // ไม่งั้นปุ่มจะค้างสถานะเดิมตอนสิทธิ์โหลดเสร็จทีหลัง
+    [search, refetch, page, pageSize, total, myId, myRole, canWrite, meData]
   );
 
   const rowSelection = {
     selectedRowKeys,
     onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
     selections: [Table.SELECTION_ALL, Table.SELECTION_INVERT, Table.SELECTION_NONE],
-    // ห้ามเลือกแถวตัวเองไปรวมกับ "ลบที่เลือก" — กันเผลอลบตัวเองผ่าน bulk delete
-    getCheckboxProps: (r: UserRow) => (r.id === myId ? { disabled: true } : {}),
+    // ห้ามเลือกแถวตัวเอง (กันเผลอลบตัวเองผ่าน bulk delete) และแถวที่ rank ไม่ถึง —
+    // deleteUsers เป็น all-or-nothing ถ้าติ๊กแถวที่แตะไม่ได้ไปด้วยจะ throw ทั้งชุด ไม่ลบอะไรเลย
+    getCheckboxProps: (r: UserRow) => (deleteReason(r) ? { disabled: true } : {}),
   };
 
   return (
@@ -225,10 +290,10 @@ function UsersList() {
           value={searchInput}
           onChange={(e) => onSearchChange(e.target.value)}
         />
-        <Button danger disabled={!selectedCount} icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+        <Button danger disabled={!selectedCount || !canWrite} icon={<DeleteOutlined />} onClick={handleBulkDelete}>
           ลบที่เลือก ({selectedCount})
         </Button>
-        <Button type="primary" icon={<PlusOutlined />} href="/admin/users/new">
+        <Button type="primary" icon={<PlusOutlined />} href="/admin/users/new" disabled={!canWrite}>
           เพิ่มผู้ใช้
         </Button>
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading} />
@@ -253,7 +318,7 @@ function UsersList() {
                   <UserAvatar name={r.name} avatar={r.avatar} />
                   <Space direction="vertical" size={0}>
                     <Space size={4}>
-                      <a href={`/admin/users/${r.id}/edit`}>{r.name}</a>
+                      <UserNameLink href={`/admin/users/${r.id}/edit`} label={r.name} disabledReason={blockedReason(r)} />
                       {r.id === myId ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>คุณ</Tag> : null}
                     </Space>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.email}</Typography.Text>
@@ -269,8 +334,8 @@ function UsersList() {
               ]}
               actions={
                 <>
-                  <Button type="link" size="small" icon={<EditOutlined />} href={`/admin/users/${r.id}/edit`}>แก้ไข</Button>
-                  <DeleteUserAction isSelf={r.id === myId} onConfirm={() => deleteRow(r)} />
+                  <EditUserAction href={`/admin/users/${r.id}/edit`} reason={blockedReason(r)} />
+                  <DeleteUserAction reason={deleteReason(r)} onConfirm={() => deleteRow(r)} />
                 </>
               }
             />

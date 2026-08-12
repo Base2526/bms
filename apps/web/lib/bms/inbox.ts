@@ -13,6 +13,7 @@
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
+import type { PoolClient } from "pg";
 import { pubsub } from "@/lib/pubsub";
 import {
   topicBmsInboxChanged,
@@ -279,17 +280,22 @@ export async function listDiagnosticInboxLatest(tenantId: string): Promise<Diagn
 /** เลือก staff หลักให้แชทใหม่: Sales ที่ว่าง ถือแชท OPEN/PENDING น้อยสุดก่อน
  *  ไม่มี Sales ว่างเลย → ตกไป Manager → Administrator (กันไม่ให้แชทไม่มี staff)
  *  excludeUserId ใช้ตอนกำลังจะลบ/ปิดใช้งาน user คนหนึ่ง — กันเลือกกลับไปหาคนเดิม */
-async function pickAutoAssignee(tenantId: string, excludeUserId?: string): Promise<string | null> {
+async function pickAutoAssignee(
+  tenantId: string,
+  excludeUserIds: string[] = [],
+  client?: PoolClient
+): Promise<string | null> {
+  const run = client ? client.query.bind(client) : query;
   for (const roleName of ["Sales", "Manager", "Administrator"]) {
-    const res = await query<{ id: string }>(
+    const res = await run(
       `SELECT u.id
          FROM users u
          JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
-          AND ($3::uuid IS NULL OR u.id <> $3)
+          AND (cardinality($3::uuid[]) = 0 OR u.id <> ALL($3::uuid[]))
         ORDER BY ${WORKLOAD_COUNT_SQL} ASC, u.created_at ASC
         LIMIT 1`,
-      [tenantId, roleName, excludeUserId ?? null]
+      [tenantId, roleName, excludeUserIds]
     );
     if (res.rowCount) return res.rows[0].id;
   }
@@ -324,26 +330,39 @@ export async function listLicensedPharmacistIds(tenantId: string): Promise<strin
 
 /** โอนแชท OPEN/PENDING ทั้งหมดออกจาก user คนหนึ่ง — เรียกก่อนลบ user เสมอ กันแชทค้างไม่มี staff
  *  คืนจำนวนแชทที่โอนสำเร็จ (แชทที่โอนไม่ได้เพราะร้านเหลือ staff คนเดียว จะไม่ถูกแตะ) */
-export async function reassignStaffConversations(tenantId: string, fromUserId: string): Promise<number> {
-  const convs = await query<{ id: string }>(
+export async function reassignStaffConversations(
+  tenantId: string,
+  fromUserId: string,
+  client?: PoolClient,
+  excludeUserIds: string[] = [fromUserId]
+): Promise<number> {
+  const run = client ? client.query.bind(client) : query;
+  const convs = await run(
     `SELECT id FROM bms_conversations
-      WHERE tenant_id = $1 AND assigned_to_user_id = $2 AND status IN ('OPEN','PENDING')`,
+      WHERE tenant_id = $1 AND assigned_to_user_id = $2 AND status IN ('OPEN','PENDING')
+      ${client ? "FOR UPDATE" : ""}`,
     [tenantId, fromUserId]
   );
   let moved = 0;
   for (const { id } of convs.rows) {
-    const staffId = await pickAutoAssignee(tenantId, fromUserId);
-    if (!staffId) continue;
-    await query(
-      `UPDATE bms_conversations SET assigned_to_user_id = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, id, staffId]
+    const excluded = [...new Set([fromUserId, ...excludeUserIds])];
+    const staffId = await pickAutoAssignee(tenantId, excluded, client);
+    if (!staffId) {
+      throw new Error("ลบผู้ใช้นี้ไม่ได้ เพราะยังมีแชทค้างและไม่มีพนักงานคนอื่นรับช่วงต่อ");
+    }
+    const updated = await run(
+      `UPDATE bms_conversations
+          SET assigned_to_user_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND assigned_to_user_id = $4`,
+      [tenantId, id, staffId, fromUserId]
     );
+    if (updated.rowCount !== 1) continue;
     // ถ้าคนใหม่เคยเป็นผู้ช่วยตอบของแชทนี้อยู่ → ถอดออก (กันซ้ำสองบทบาท)
-    await query(
+    await run(
       `DELETE FROM bms_conversation_helpers WHERE tenant_id = $1 AND conversation_id = $2 AND user_id = $3`,
       [tenantId, id, staffId]
     );
-    await query(
+    await run(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, 'system:reassign-on-delete', 'inbox.assign', $2, $3)`,
       [tenantId, id, JSON.stringify({ toUserId: staffId, fromUserId, auto: true, reason: "staff_removed" })]

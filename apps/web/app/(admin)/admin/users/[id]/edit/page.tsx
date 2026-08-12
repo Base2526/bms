@@ -3,8 +3,9 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
-import bcrypt from "bcryptjs";
 import { useI18n } from "@/lib/i18nContext";
+import { assignableStaffRoles, canManageStaffRole } from "@/lib/bms/staffRoles";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 // TypeScript Types
 type Role = {
@@ -24,6 +25,7 @@ type User = {
   role_id?: string | null; // New normalized field
   tenantName?: string | null;
   lastLoginAt?: string | null;
+  is_platform_admin: boolean;
 };
 
 // Fetch user details including role_id
@@ -39,6 +41,7 @@ const Q = gql`
       role_id
       tenantName
       lastLoginAt
+      is_platform_admin
     }
   }
 `;
@@ -67,6 +70,8 @@ mutation($user_id:ID!, $file:Upload!){
 }
 `;
 
+const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
+
 function FormEdit({ id }: { id: string }) {
   const { t } = useI18n();
   const [form] = Form.useForm();
@@ -77,13 +82,43 @@ function FormEdit({ id }: { id: string }) {
 
   const [save, { loading }] = useMutation(M_UPSERT, {
     onCompleted: () => message.success(t("admin_users_edit.save_success")),
+    // server ปฏิเสธได้จริง (บทบาทไม่ถึง / เปลี่ยน role ตัวเอง) — ต้องโชว์เหตุผล
+    // ใส่ onError แล้ว Apollo จะไม่ reject promise ทิ้งเป็น unhandled rejection
+    onError: (e) => message.error(e.message),
   });
   const [uploadAvatar] = useMutation(M_UPLOAD_AVATAR);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Get roles and user data
-  const roles: Role[] = rolesData?.roles || [];
+  const allRoles: Role[] = (rolesData?.roles || []).filter((r: Role) => r.is_active !== false);
   const u: User | undefined = data?.user;
+
+  const { data: meData } = useQuery(Q_ME);
+  const myId: string | undefined = meData?.bmsMe?.id;
+  const myRole: string | undefined = meData?.bmsMe?.role;
+  const isPlatformAdmin = meData?.bmsMe?.is_platform_admin === true;
+  const { can } = useBmsPermissions();
+  const canWrite = isPlatformAdmin || myRole === "Administrator" || can("user.manage");
+  const isSelf = Boolean(u && myId && u.id === myId);
+  const isAdministrator = myRole === "Administrator";
+  const readOnly = Boolean(meData) && !canWrite;
+
+  // แตะแถวที่ role สูงกว่า/เท่ากับตัวเองไม่ได้ (server ปฏิเสธที่ requireManageableTarget อยู่แล้ว —
+  // เช็คที่นี่ด้วยเพื่อไม่ให้เปิด URL ตรงมาแล้วกดบันทึกเปลี่ยน role โดยไม่รู้ตัว)
+  const blockedByRank = Boolean(
+    u && canWrite && !isSelf && (u.is_platform_admin || (myRole && !canManageStaffRole(myRole, u.role)))
+  );
+
+  // ตัวเลือกบทบาท = ที่ตัวเอง assign ได้ + บทบาทปัจจุบันของเป้าหมาย (ต้องคงอยู่เสมอ ไม่งั้น
+  // getInitialRoleId() จะ fallback ไปบทบาทแรกของลิสต์แล้วกดบันทึกทีเดียวเปลี่ยน role โดยไม่ตั้งใจ)
+  const roles: Role[] = (() => {
+    if (!myRole || isAdministrator) return allRoles;
+    const allowed = new Set(assignableStaffRoles(myRole, allRoles.map((r) => r.name)));
+    return allRoles.filter((r) => allowed.has(r.name) || (u?.role && r.name === u.role));
+  })();
+
+  // แก้บทบาทตัวเองไม่ได้ (server ปฏิเสธด้วย reason self_role_change)
+  const roleSelectDisabled = isSelf && !isAdministrator;
 
   // Determine initial role_id with fallback for backward compatibility
   const getInitialRoleId = (): string => {
@@ -137,6 +172,18 @@ function FormEdit({ id }: { id: string }) {
       />
     );
   }
+  // บทบาทสูงกว่า/เท่ากับเรา → ไม่แสดงฟอร์มเลย (กันกดบันทึกแล้วโดน 403 ทีหลัง)
+  if (blockedByRank) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message={t("admin_users_edit.cannot_manage_title")}
+        description={t("admin_users_edit.cannot_manage_desc")}
+        action={<Button href="/admin/users">{t("admin_users_edit.back")}</Button>}
+      />
+    );
+  }
 
   const currentAvatar = avatarUrl || u.avatar || null;
 
@@ -157,6 +204,15 @@ function FormEdit({ id }: { id: string }) {
 
   return (
     <Card title={`${t("admin_users_edit.title_prefix")} ${u.name}`} style={{ maxWidth: 640 }}>
+      {readOnly && (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("admin_users_edit.read_only_title")}
+          description={t("admin_users_edit.read_only_desc")}
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <Space direction="vertical" size={0} style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
         {u.tenantName ? <span>{t("admin_users_edit.shop_label")} <b>{u.tenantName}</b></span> : null}
         <span>{t("admin_users_edit.last_login")} {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : t("admin_users_edit.never")}</span>
@@ -165,6 +221,7 @@ function FormEdit({ id }: { id: string }) {
         key={u.id}
         form={form}
         layout="vertical"
+        disabled={readOnly}
         initialValues={{
           name: u.name ?? '',
           email: u.email ?? '',
@@ -179,13 +236,13 @@ function FormEdit({ id }: { id: string }) {
             role_id: v.role_id, // ✅ Use role_id instead of role text
           };
 
-          const pwd: string = (v.password || '').trim();
-          const pwd2: string = (v.confirmPassword || '').trim();
+          const pwd: string = typeof v.password === 'string' ? v.password : '';
+          const pwd2: string = typeof v.confirmPassword === 'string' ? v.confirmPassword : '';
           if (pwd || pwd2) {
             if (!pwd) { message.error(t("admin_users_edit.password_empty_error")); return; }
             if (pwd.length < 8) { message.error(t("admin_users_edit.password_too_short")); return; }
             if (pwd !== pwd2) { message.error(t("admin_users_edit.confirm_password_mismatch")); return; }
-            dataToSend.passwordHash = await bcrypt.hash(pwd, 10);
+            dataToSend.password = pwd;
           }
 
           // Validate role_id
@@ -231,9 +288,11 @@ function FormEdit({ id }: { id: string }) {
           label={t("admin_users_edit.field_role")}
           rules={[{ required: true, message: t("admin_users_edit.role_required") }]}
           tooltip={t("admin_users_edit.role_tooltip")}
+          extra={roleSelectDisabled ? t("admin_users_edit.self_role_locked") : undefined}
         >
           <Select
             placeholder={t("admin_users_edit.role_placeholder")}
+            disabled={roleSelectDisabled}
             options={roles.map(role => ({
               value: role.id,
               label: role.name,
@@ -274,7 +333,7 @@ function FormEdit({ id }: { id: string }) {
         </Form.Item>
 
         <Space>
-          <Button type="primary" htmlType="submit" loading={loading}>{t("admin_users_edit.save")}</Button>
+          <Button type="primary" htmlType="submit" loading={loading} disabled={readOnly}>{t("admin_users_edit.save")}</Button>
           <Button href="/admin/users">{t("admin_users_edit.back")}</Button>
         </Space>
       </Form>

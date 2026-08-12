@@ -20,7 +20,7 @@ import {
 import { cookies } from "next/headers";
 import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 import { isAdminSessionActive } from "@/lib/redisSession";
-import { query } from "@/lib/db";
+import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
@@ -70,16 +70,6 @@ function logIncoming(req: NextRequest, extra?: Record<string, any>) {
   if (extra) console.log("[GraphQL IN extra]", extra);
 }
 
-async function hydrateAdminTenant(admin: any) {
-  if (!admin?.id || admin?.tenant_id) return admin;
-  const res = await query<{ tenant_id: string | null }>(
-    `SELECT tenant_id FROM users WHERE id = $1 LIMIT 1`,
-    [admin.id]
-  );
-  const tenantId = res.rows[0]?.tenant_id ?? null;
-  return tenantId ? { ...admin, tenant_id: tenantId } : admin;
-}
-
 // ✅ createContext: รองรับ web/admin(cookie) + android(bearer)
 async function createContext(request: NextRequest) {
   let scope = (request.headers.get("x-scope") || "").trim().toLowerCase();
@@ -113,11 +103,10 @@ async function createContext(request: NextRequest) {
       admin = null;
     }
 
-    // Older admin tokens may not carry tenant_id yet. Backfill it from the
-    // current users row so every tenant-scoped resolver stops falling back to
-    // DEFAULT_TENANT_ID and mutating the wrong shop.
+    // Role/tenant/account existence are read fresh. This also rejects a JWT
+    // issued before a password/role change via admin_session_version.
     if (admin) {
-      admin = await hydrateAdminTenant(admin);
+      admin = await refreshAdminIdentity(admin);
     }
 
     // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
@@ -134,6 +123,16 @@ async function createContext(request: NextRequest) {
     // ✅ web ใช้ cookie
     user = verifyUserSession();
     admin = verifyAdminSession();
+
+    // Some shared/public GraphQL calls intentionally accept an admin cookie
+    // under web scope. They must receive the same fresh/revocable identity as
+    // explicit admin-scope requests, otherwise x-scope:web bypasses demotion.
+    if (admin && !(await isAdminSessionActive(admin.jti))) {
+      admin = null;
+    }
+    if (admin) {
+      admin = await refreshAdminIdentity(admin);
+    }
 
     // (optional) ถ้าอยากให้ web รองรับ Bearer ด้วย:
     // if (!user) user = verifyUserFromRequest(request);
