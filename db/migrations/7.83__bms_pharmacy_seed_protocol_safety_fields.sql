@@ -1,5 +1,9 @@
 -- =============================================================
--- 7.74  Repair the three MVP pharmacy protocol drafts
+-- 7.83  Repair the three MVP pharmacy protocol drafts
+-- Renumbered from 7.74, which collided with
+-- 7.74__bms_shared_customer_identity_backfill.sql (both landed 2026-08-11 from
+-- different branches). Re-running this file is safe, so an environment that
+-- already applied it as 7.74 needs no action.
 -- -------------------------------------------------------------
 -- 7.58 seeded red-flag rules whose fields were not declared as questions.
 -- The authoring validator correctly rejects those drafts, so a newly enabled

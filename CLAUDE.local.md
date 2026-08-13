@@ -57,7 +57,10 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
 3. **role dropdown ต้อง query `roles` จาก DB ห้าม hardcode** — เคยพลาดที่ `users/new/page.tsx`
    ทำให้ Manager/Sales/Warehouse หายจาก dropdown
 4. **เลขไมเกรชันชนกันข้าม branch บ่อยมาก** — `ls db/migrations | sort -V | tail` ก่อนตั้งเลขเสมอ
-   (เคยต้อง renumber `6.1`→`6.3`, `7.53`→`7.55`, `7.55`→`7.56`)
+   (เคยต้อง renumber `6.1`→`6.3`, `7.53`→`7.55`, `7.55`→`7.56`, และ `7.74`→`7.83`) · เช็คซ้ำได้ด้วย
+   `ls db/migrations/*.sql | sed 's#.*/##' | grep -oE '^[0-9]+\.[0-9]+' | sort | uniq -d`
+   (ควรได้ผลว่าง) — เคยหลุดมาแล้ว 2 ไฟล์ถือเลข `7.74` พร้อมกันโดยไม่มีใครรู้ ซึ่งอันตรายเพราะ repo นี้
+   apply ด้วยมือตามเลข คนไล่ apply เห็น `7.74` ผ่านแล้วก็ข้ามไป `7.75` → อีกไฟล์ไม่เคยถูกรัน เงียบ ๆ
 5. **`trg_generic_revision` เป็นชื่อฟังก์ชัน global** — `CREATE OR REPLACE` ทับของระบบเก่าได้ (เคยทำให้
    บันทึกโปรไฟล์/แก้ post พังทั้งระบบ) · **ห้ามเปิด revision ให้ตาราง `users`** เพราะ `to_jsonb(OLD)`
    จะ snapshot `password_hash` ลงตาราง revision
@@ -98,6 +101,10 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `7.56` (`users.language` CHECK), `7.78` (user management perms), `7.81` (default ภาษา = th),
   `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
   (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
+- **`7.83` = ไฟล์เดิมที่เคยชื่อ `7.74__bms_pharmacy_seed_protocol_safety_fields.sql`** (renumber
+  2026-08-13 เพราะเลข `7.74` ถูกใช้ซ้ำกับ `7.74__bms_shared_customer_identity_backfill.sql`) — เป็น
+  `UPDATE ... WHERE NOT EXISTS` รันซ้ำได้ปลอดภัย **environment ที่ apply ไปแล้วตอนยังเป็น `7.74`
+  ไม่ต้องทำอะไรเพิ่ม** ส่วนที่ยังไม่เคย apply ให้รันเป็น `7.83` ตามลำดับปกติ
 - env ที่ต้องตั้ง: `BMS_SECRET_KEY` (hex 64 — ไม่งั้นใช้ dev key เข้ารหัส token) · `JWT_SECRET`
   (เซ็นทั้ง session token + cookie `BMS_ACT_TENANT`) · `BMS_CHECKOUT_SECRET` (ไม่ตั้งจะ fallback ไป
   `JWT_SECRET`; ไม่มีทั้งคู่ production จะ throw — **หมุนค่านี้เมื่อไหร่ ลิงก์ checkout ที่ส่งลูกค้าไป

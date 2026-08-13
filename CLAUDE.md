@@ -23,7 +23,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import · payment + slip verify · customer identity/inbox |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
-| [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.74`, pharmacist-decides contract |
+| [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
 | [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
 | [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
