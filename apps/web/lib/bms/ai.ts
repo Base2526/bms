@@ -12,7 +12,7 @@
 
 import type { StockResult } from "./stock";
 import { getTenantAiConfig } from "./aiConfig";
-import { finalizeAiUsageEvent, recordAiFallback, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "./aiUsage";
+import { finalizeAiUsageEvent, recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "./aiUsage";
 import {
   callAnthropicCompatibleMessages,
   isSensitiveAiRoutingContext,
@@ -251,6 +251,7 @@ export async function generateResponse(
   if (!creds) return template(res, language, message); // ไม่มี key เลย หรือเกิน quota — deterministic template
 
   try {
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
     const parsed = await generateAiReply(creds, message, res);
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {

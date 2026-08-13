@@ -20,7 +20,7 @@ The database is the source of truth. Business decisions are enforced by backend 
 1. **No direct database access.** AI must never read or write the database, issue SQL, or receive
    unrestricted database credentials.
 2. **Approved tools only.** AI may call only tools documented in
-   [docs/ai/tools.md](docs/ai/tools.md). A backend service is not automatically an AI tool.
+   [docs/ai/tools.md](ai/tools.md). A backend service is not automatically an AI tool.
 3. **Never invent business facts.** Stock, availability, SKU, price, discount, customer, order,
    payment, shipment, and report figures must come from a successful backend result.
 4. **Backend rules are authoritative.** The model cannot override validation, tenant isolation,
@@ -75,7 +75,7 @@ Every AI tool must have:
   state-changing operations.
 
 Tool descriptions must not promise capabilities the backend does not implement. Adding a tool
-requires updating [docs/ai/tools.md](docs/ai/tools.md), relevant prompts/workflows, permission and
+requires updating [docs/ai/tools.md](ai/tools.md), relevant prompts/workflows, permission and
 approval rules, and tests.
 
 ## Human confirmation
@@ -133,6 +133,20 @@ template.
 - Do not represent forecasts as guaranteed demand, revenue, or stock requirements.
 - Require human review before a forecast changes purchasing, pricing, or inventory.
 
+### Usage, credits, and cost reporting
+
+- Keep the three dimensions separate and never present one as another: **billable credits** (what the
+  tenant was charged), **provider calls** (attempts actually made), and **attributed USD cost**
+  (tokens × configured rate card).
+- A retry, a tool-loop round, or a provider fallback is provider work, not extra customer usage. One
+  logical request bills one credit on a finite plan and zero on an unlimited plan.
+- Unknown cost must stay `null` and be reported alongside the count of unpriced provider calls. Never
+  substitute `0`, and never round a small real cost down to zero.
+- Never label attributed cost as a provider invoice, and never fold platform-wide health probes into
+  a tenant's totals.
+- A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
+  estimates, sample ledgers, or hardcoded per-credit prices.
+
 ### Operational log triage
 
 - Redact secrets and PII before model analysis.
@@ -152,7 +166,10 @@ Before releasing an AI change, verify at minimum:
 - resistance to prompt injection in messages, files, and retrieved content;
 - malformed output, timeout, rate-limit, and provider-outage handling;
 - deterministic fallback or human handoff;
-- audit records without secrets or unnecessary PII; and
+- audit records without secrets or unnecessary PII;
+- usage accounting: one logical request bills one credit regardless of retries or provider
+  fallbacks, unknown cost stays `null`, and a reservation that never reached a provider is refunded;
+  and
 - Thai/customer-facing wording for success, clarification, and failure paths.
 
 The repository's eval suites in [`scripts/ai-eval/`](../scripts/ai-eval/README.md) exist to answer
@@ -181,5 +198,5 @@ Reviewers should be able to answer "yes" to all of the following:
 - Are sensitive data exposure and prompt injection addressed?
 - Are documentation, tests, fallback behavior, and auditability included in the change?
 
-See [docs/ai/workflow.md](docs/ai/workflow.md), [docs/ai/tools.md](docs/ai/tools.md), and
-[docs/ai/prompts.md](docs/ai/prompts.md) for the current implementation details.
+See [docs/ai/workflow.md](ai/workflow.md), [docs/ai/tools.md](ai/tools.md), and
+[docs/ai/prompts.md](ai/prompts.md) for the current implementation details.

@@ -143,6 +143,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsReportEngine.ts` | generated report export history + on-demand XLSX/CSV/PDF generation (`bmsGeneratedReports`, `bmsGenerateReport`) |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
+| `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/credit reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`, `bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
 
@@ -288,6 +289,28 @@ backed by `lib/bms/reportEngine.ts`:
 - The staff AI tool `generate_report` and REST `POST /api/bms/reports/generate` both call the same
   service function. Keep validation, file generation, persistence, and audit inside the service so
   the three entry points cannot drift apart.
+
+### AI usage, credits, and cost reporting
+
+`bmsAiUsage`, `bmsAiUsageBreakdown`, and `bmsAiUsageEvents` expose three deliberately separate
+dimensions (migration `7.82`), and a client must not add them together or substitute one for another:
+
+| Field | Means | Not |
+| --- | --- | --- |
+| `billableCredits` | what the tenant was charged — one credit per *logical* request on a finite plan | not a count of provider calls; it is `0` for every request on an unlimited plan |
+| `providerCalls` | actual provider attempts, including tool-loop rounds, validation retries, and OCR fallbacks | not something the customer is charged per-unit |
+| `actualCostUsd` | metered cost attributed from provider-reported tokens against the configured rate card | **not a provider invoice**, and it excludes platform-wide health probes |
+| `unpricedProviderCalls` | attempts that returned no usage, so their cost is unknown | not zero-cost calls |
+
+`requests` counts `DISTINCT meta.usage_group_id`, so a Qwen→Anthropic slip-OCR fallback is one
+request with two provider calls. `actualCostUsd` is nullable on `BmsAiUsageEvent` — when nothing
+reported usage, the API returns `null` rather than `0`. Any surface that shows a cost total must also
+show `unpricedProviderCalls`, otherwise partially-known cost reads as a complete figure.
+`bmsAiCreditLedger` is the append-only credit trail (grant / usage / refund / adjustment) and is where
+an automatic refund appears when a reservation ends without a provider call, including the 15-minute
+stale-reservation sweep. `bmsAdjustAiCredits` is the manual adjustment path; the monthly row is locked
+so two adjustments cannot be computed from the same balance. Tenant reads are gated by
+`ai_quality.view`; the platform-wide provider-health operations require platform admin.
 
 ### Support tickets
 

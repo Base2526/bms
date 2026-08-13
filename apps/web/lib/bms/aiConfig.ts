@@ -22,6 +22,11 @@ import {
   recordProviderSuccess,
   setAiProviderStatus,
 } from "./aiProviderHealth";
+import {
+  finalizeAiUsageEvent,
+  recordAiProviderAttempt,
+  recordByokAiUsage,
+} from "./aiUsage";
 
 export const DEFAULT_AI_MODEL = "claude-haiku-4-5-20251001";
 
@@ -141,7 +146,20 @@ export async function testTenantAiKey(tenantId: string): Promise<TestAiKeyResult
     cfg.model || DEFAULT_DEEPSEEK_MODEL,
     cfg.provider
   );
+  const usageEventId = await recordByokAiUsage(tenantId, {
+    surface: "staff",
+    feature: "ai_key_test",
+    provider: provider.provider,
+    model: provider.model,
+    meta: {
+      routing_reason: "byok_key_test",
+      configured_provider: provider.provider,
+      effective_provider: provider.provider,
+      fallback_from: null,
+    },
+  });
   try {
+    await recordAiProviderAttempt(usageEventId);
     const resp = await callAnthropicCompatibleMessages(provider, {
       model: provider.model,
       max_tokens: 1,
@@ -149,16 +167,35 @@ export async function testTenantAiKey(tenantId: string): Promise<TestAiKeyResult
       messages: [{ role: "user", content: "OK" }],
     });
     if (!resp.ok) {
+      await finalizeAiUsageEvent(usageEventId, {
+        status: "failed",
+        providerCalls: 1,
+        errorMessage: `DeepSeek API ${resp.status}`,
+      });
       return {
         ok: false,
         message: `เชื่อมต่อ DeepSeek ไม่สำเร็จ (HTTP ${resp.status})`,
       };
     }
+    const payload = (await resp.json().catch(() => ({}))) as {
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    await finalizeAiUsageEvent(usageEventId, {
+      status: "completed",
+      providerCalls: 1,
+      inputTokens: payload.usage?.input_tokens ?? null,
+      outputTokens: payload.usage?.output_tokens ?? null,
+    });
     return {
       ok: true,
       message: `เชื่อมต่อสำเร็จ — DeepSeek model "${provider.model}" ใช้งานได้`,
     };
   } catch (e: any) {
+    await finalizeAiUsageEvent(usageEventId, {
+      status: "failed",
+      providerCalls: 1,
+      errorMessage: e?.message || "DeepSeek key test failed",
+    });
     return {
       ok: false,
       message: `เรียก DeepSeek API ไม่สำเร็จ: ${e?.message || "unknown error"}`,

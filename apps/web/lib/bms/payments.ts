@@ -12,6 +12,7 @@
 // =============================================================
 
 import sharp from "sharp";
+import crypto from "crypto";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { readStoredFile } from "@/lib/storage";
@@ -453,16 +454,17 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
     "AI อ่านสลิปยังไม่พร้อมใช้งานหรือเครดิตไม่เพียงพอ — ตรวจสอบด้วยตนเอง";
 
   if (pay.rows[0].slip_url) {
+    const usageGroupId = crypto.randomUUID();
     const attempt = await runSlipReaderFallback({
-      resolveNext: (excluded, fallbackFrom) =>
+      resolveNext: (excluded, fallbackFrom, chargeSharedCredit) =>
         resolveSlipReader(
           tenantId,
           {
             surface: "staff",
             feature: "payment_slip_ocr",
-            meta: { paymentId },
+            meta: { paymentId, usage_group_id: usageGroupId },
           },
-          { excludeProviders: excluded, fallbackFrom }
+          { excludeProviders: excluded, fallbackFrom, chargeSharedCredit }
         ),
       loadImage: (reader) => loadSlipImage(pay.rows[0].slip_url as string, reader),
       finalize: finalizeAiUsageEvent,

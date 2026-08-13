@@ -27,9 +27,10 @@ type AnthropicSlipReaderOptions = {
   timeoutMs?: number;
 };
 
-function tokenCount(value: unknown): number {
+function tokenCount(value: unknown): number | null {
+  if (value == null) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
 }
 
 export function createAnthropicSlipReader(
@@ -126,13 +127,16 @@ export function createAnthropicSlipReader(
         throw new SlipReaderError("MALFORMED_OUTPUT", "Anthropic slip OCR returned no text");
       }
 
+      const inputTokens = tokenCount(payload.usage?.input_tokens);
+      const outputTokens = tokenCount(payload.usage?.output_tokens);
+
       return {
         provider: "anthropic",
         model: request.credentials.model,
         extracted: parseSlipExtract(text),
         usage: {
-          inputTokens: tokenCount(payload.usage?.input_tokens),
-          outputTokens: tokenCount(payload.usage?.output_tokens),
+          inputTokens: inputTokens === null || outputTokens === null ? null : inputTokens,
+          outputTokens: inputTokens === null || outputTokens === null ? null : outputTokens,
         },
       };
     },

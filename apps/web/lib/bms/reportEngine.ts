@@ -17,7 +17,7 @@ import { persistBuffer } from "@/lib/storage";
 import { getSalesSummary, getInventorySummary, getTopSellingProducts, getProfitSummary } from "./reports";
 import { listLowStock } from "./products";
 import { resolveAiCredentials } from "./ai";
-import { finalizeAiUsageEvent } from "./aiUsage";
+import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
 import {
   buildSalesReportDoc,
@@ -94,6 +94,7 @@ async function draftSummary(tenantId: string, doc: ReportDoc): Promise<string | 
   const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "report_summary" });
   if (!creds) return null;
   try {
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
     const factsText = [doc.title, doc.subtitle, ...doc.meta.map((m) => `${m.label}: ${m.value}`)].join("\n");
     const resp = await callAnthropicCompatibleMessages(creds, {
       model: creds.model,

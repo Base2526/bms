@@ -396,5 +396,18 @@ cache เมื่อ slot memory ทำให้ system prompt เปลี่�
 `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` แต่ estimated cost ถ่วงราคา
 cache write/read ตาม Anthropic แยกจาก regular input
 
+ตั้งแต่ migration `7.82` การบันทึกแยกเป็น 3 มิติ (`billable_credits` / `provider_calls` /
+`actual_cost_usd` + `unpriced_provider_calls`) **deterministic suite ครอบส่วนที่ไม่ต้องแตะ DB แล้ว**:
+ต้นทุนเล็กระดับต่ำกว่าไมโครดอลลาร์ต้องไม่ถูกปัดหาย, rate card แยกตาม model และ model ที่ไม่รู้จักต้องไม่ถูก
+เดาราคา (ได้ `NULL` ไม่ใช่ 0), usage ที่กลับมาบางส่วนต้องเก็บต้นทุนที่รู้ไว้แล้วนับที่เหลือเป็น unpriced,
+OCR ที่ provider ไม่ส่ง usage มาต้องเป็น unpriced ไม่ใช่ zero-cost, และ Qwen ต้องคิดด้วยเรตของตัวเอง ไม่ใช่
+เรต Anthropic — ดู `runtime-contract.test.mts` (`small provider costs…`, `provider rate cards…`,
+`partial provider usage…`) กับ `slip-reader-contract.test.mts` (`OCR adapters preserve missing usage…`,
+`Qwen OCR cost uses provider-specific rates…`, `runtime OCR failure retries the fallback provider…`)
+
+**ยังไม่มี test อัตโนมัติ** สำหรับส่วนที่ต้องมี Postgres จริง: การนับ 1 credit ต่อ logical request ผ่าน
+`meta.usage_group_id`, การคืน credit ของ reservation ที่ไม่ได้ยิง provider, และตัวกวาด stale reservation
+15 นาที — ถ้าแตะโค้ดสามจุดนี้ต้องตรวจกับ DB จริงเอง อย่าถือว่า suite ข้างบนคุมให้แล้ว
+
 ระหว่างพัฒนาให้รัน deterministic contract suite ก่อน แล้วใช้ natural/smoke/case filter สำหรับ live model;
 เก็บ full live suite ไว้ก่อน release/nightly เพื่อลด provider calls โดยไม่ลด release coverage

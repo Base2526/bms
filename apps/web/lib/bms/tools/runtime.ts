@@ -10,7 +10,7 @@
 
 import { resolveAiCredentials, type AiCredentials } from "../ai";
 import { callAnthropicCompatibleMessages } from "../aiProvider";
-import { estimateCachedAiCostUsd, finalizeAiUsageEvent } from "../aiUsage";
+import { estimateCachedAiCostUsd, finalizeAiUsageEvent, recordAiProviderAttempt } from "../aiUsage";
 import { audit } from "../audit";
 import { reportBmsFailure, type BmsFailureCode } from "../failureAlert";
 import { requirePermission } from "../permissions";
@@ -257,6 +257,7 @@ export type ToolLoopTestDeps = {
   resolveCredentials?: typeof resolveAiCredentials;
   callProvider?: typeof callProviderMessages;
   finalizeUsage?: typeof finalizeAiUsageEvent;
+  recordProviderAttempt?: typeof recordAiProviderAttempt;
   auditAttempt?: typeof auditToolCall;
   /**
    * ต้องอยู่ใน seam ด้วย ไม่งั้น contract test (ที่ระบุว่าไม่ต่อ network/DB) จะแอบ
@@ -340,6 +341,7 @@ async function runToolLoopInternal(
   const resolveCredentials = deps.resolveCredentials ?? resolveAiCredentials;
   const callProvider = deps.callProvider ?? callProviderMessages;
   const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
+  const persistProviderAttempt = deps.recordProviderAttempt ?? recordAiProviderAttempt;
   const auditAttempt = deps.auditAttempt ?? auditToolCall;
   const reportFailure = deps.reportFailure ?? reportBmsFailure;
 
@@ -416,6 +418,9 @@ async function runToolLoopInternal(
   let cacheCreationInputTokens = 0;
   let cacheReadInputTokens = 0;
   let outputTokens = 0;
+  let providerCalls = 0;
+  let pricedProviderCalls = 0;
+  let hasAnyMeteredUsage = false;
 
   function usagePayload() {
     return {
@@ -425,6 +430,9 @@ async function runToolLoopInternal(
       cacheCreationInputTokens,
       cacheReadInputTokens,
       outputTokens,
+      providerCalls,
+      unpricedProviderCalls: providerCalls - pricedProviderCalls,
+      costMeasured: hasAnyMeteredUsage,
       estimatedCost: estimateCachedAiCostUsd(
         {
           inputTokens,
@@ -443,7 +451,21 @@ async function runToolLoopInternal(
   // หลังจากทูล create_order ทำงานไปแล้วในรอบก่อนหน้า
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      providerCalls += 1;
+      if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
       const resp = await callProvider(creds, cachedSystem, messages, toolSchemas);
+      if (
+        Number.isFinite(resp?.usage?.input_tokens) &&
+        Number.isFinite(resp?.usage?.output_tokens)
+      ) {
+        pricedProviderCalls += 1;
+      }
+      if (
+        Number.isFinite(resp?.usage?.input_tokens) ||
+        Number.isFinite(resp?.usage?.output_tokens)
+      ) {
+        hasAnyMeteredUsage = true;
+      }
       inputTokens += tokenCount(resp?.usage?.input_tokens);
       cacheCreationInputTokens += tokenCount(
         resp?.usage?.cache_creation_input_tokens

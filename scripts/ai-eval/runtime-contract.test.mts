@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { understand } from "../../apps/web/lib/bms/nlu.ts";
+import { estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
 import { __toolLoopTest, type ToolLoopOptions, type ToolLoopTestDeps } from "../../apps/web/lib/bms/tools/runtime.ts";
 import {
   assertValidToolRegistry,
@@ -13,12 +14,28 @@ import {
 
 const CREDS = {
   apiKey: "eval-key-never-sent",
-  model: "eval-model",
+  model: "claude-sonnet-4-5-20250929",
   provider: "anthropic" as const,
   baseUrl: "https://api.anthropic.com",
   source: "byok" as const,
   usageEventId: "eval-usage",
 };
+
+test("small provider costs retain sub-micro-dollar precision", () => {
+  assert.equal(estimateAiCostUsd(1, 0, "qwen-vl-ocr", "qwen"), 0.00000004);
+});
+
+test("provider rate cards are model-specific and unknown models are not guessed", () => {
+  assert.equal(
+    estimateAiCostUsd(1_000_000, 1_000_000, "claude-haiku-4-5-20251001", "anthropic"),
+    6
+  );
+  assert.equal(
+    estimateAiCostUsd(1_000_000, 1_000_000, "claude-opus-4-5-20251101", "anthropic"),
+    30
+  );
+  assert.equal(estimateAiCostUsd(1_000_000, 1_000_000, "future-model", "anthropic"), 0);
+});
 
 function textResponse(text: string) {
   return {
@@ -101,17 +118,22 @@ function depsFor(
   events: {
     audits?: Array<{ name: string; outcome: string; tool?: string }>;
     usage?: Array<{ id: string; payload: unknown }>;
+    attempts?: string[];
   } = {}
 ): ToolLoopTestDeps {
   return {
     resolveCredentials: async () => CREDS,
     callProvider: provider,
+    recordProviderAttempt: async (id: string) => {
+      events.attempts?.push(id);
+    },
     auditAttempt: async (_ctx: ExecCtx, name: string, outcome: any, tool?: BmsTool) => {
       events.audits?.push({ name, outcome, tool: tool?.name });
     },
     finalizeUsage: async (id: string, payload: any) => {
       events.usage?.push({ id, payload });
     },
+    reportFailure: async () => undefined,
   };
 }
 
@@ -334,6 +356,9 @@ test("cached usage stores total input tokens and cache-adjusted estimated cost",
   );
   assert.equal(usage[0]?.payload.inputTokens, 600);
   assert.equal(usage[0]?.payload.outputTokens, 10);
+  assert.equal(usage[0]?.payload.providerCalls, 1);
+  assert.equal(usage[0]?.payload.unpricedProviderCalls, 0);
+  assert.equal(usage[0]?.payload.costMeasured, true);
   assert.equal(usage[0]?.payload.estimatedCost, 0.00129);
   // breakdown ต้องไหลไปถึง finalizer ด้วย ไม่ใช่แค่ถูกใช้คิด cost แล้วทิ้ง — เพราะคอลัมน์
   // input_tokens เป็นผลรวม จึงบอกไม่ได้ว่า prompt cache hit จริงไหมถ้าไม่มีสองค่านี้
@@ -376,6 +401,29 @@ test("malformed provider content is bounded and returned as an empty safe result
   assert.deepEqual(result.trace, []);
   assert.equal(usage[0]?.payload.inputTokens, 0);
   assert.equal(usage[0]?.payload.outputTokens, 0);
+  assert.equal(usage[0]?.payload.providerCalls, 1);
+  assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
+  assert.equal(usage[0]?.payload.costMeasured, false);
+});
+
+test("partial provider usage keeps known cost while flagging the call as unpriced", async () => {
+  const usage: Array<{ id: string; payload: any }> = [];
+  await __toolLoopTest.run(
+    baseOptions(),
+    depsFor(
+      async () => ({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "เรียบร้อยค่ะ" }],
+        usage: { input_tokens: 100 },
+      }),
+      { usage }
+    )
+  );
+
+  assert.equal(usage[0]?.payload.providerCalls, 1);
+  assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
+  assert.equal(usage[0]?.payload.costMeasured, true);
+  assert.equal(usage[0]?.payload.estimatedCost, 0.0003);
 });
 
 test("unknown tool is rejected, audited, and returned to the model as an error", async () => {
@@ -770,6 +818,8 @@ test("failed tool calls are not cached so the same arguments can recover from a 
 test("max-round loop is bounded to five tool executions", async () => {
   let executions = 0;
   let providerCalls = 0;
+  const usage: Array<{ id: string; payload: any }> = [];
+  const attempts: string[] = [];
   const tool = makeTool({
     name: "read_loop",
     inputSchema: {
@@ -783,14 +833,19 @@ test("max-round loop is bounded to five tool executions", async () => {
   });
   const result = await __toolLoopTest.run(
     baseOptions([tool]),
-    depsFor(async () => {
-      providerCalls += 1;
-      return toolResponse("read_loop", { round: providerCalls }, `tool-${providerCalls}`);
-    })
+    depsFor(
+      async () => {
+        providerCalls += 1;
+        return toolResponse("read_loop", { round: providerCalls }, `tool-${providerCalls}`);
+      },
+      { usage, attempts }
+    )
   );
   assert.equal(providerCalls, 5);
   assert.equal(executions, 5);
   assert.equal(result.trace.length, 5);
+  assert.equal(usage[0]?.payload.providerCalls, 5);
+  assert.equal(attempts.length, 5);
   assert.match(result.reply, /ประมวลผลนานเกินไป/);
 });
 
@@ -832,6 +887,7 @@ test("audit seam receives only redacted attempt metadata, never raw tool input",
     auditAttempt: async (...args: any[]) => {
       calls.push(args);
     },
+    recordProviderAttempt: async () => {},
     finalizeUsage: async () => {},
   });
   assert.equal(calls.length, 1);

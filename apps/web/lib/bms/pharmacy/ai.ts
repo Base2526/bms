@@ -36,7 +36,14 @@ import {
   type AiProvider,
   type ResolvedAiProvider,
 } from "../aiProvider";
-import { recordAiFallback, tryConsumeAiQuota, type AiUsageContext } from "../aiUsage";
+import {
+  estimateCachedAiCostUsd,
+  finalizeAiUsageEvent,
+  recordAiFallback,
+  recordAiProviderAttempt,
+  tryConsumeAiQuota,
+  type AiUsageContext,
+} from "../aiUsage";
 import { pharmacyAiModelOverride, pharmacyAiProviderOverride, MAX_AI_VALIDATION_RETRIES } from "./config";
 import { recordPharmacyEvent } from "./events";
 import type { ProtocolConditionalQuestion, ProtocolFieldDef } from "./ruleEngine";
@@ -378,6 +385,8 @@ export function filterMedicationSuggestionsAgainstAllergies(
 export type PharmacyAiTestDeps = {
   callProvider?: typeof callAnthropicCompatibleMessages;
   resolveCredentials?: typeof resolvePharmacyAiCredentials;
+  finalizeUsage?: typeof finalizeAiUsageEvent;
+  recordProviderAttempt?: typeof recordAiProviderAttempt;
   /** defaults to recordPharmacyEvent() — injectable so tests never touch Postgres */
   logValidationExhausted?: (input: { tenantId: string; caseId: string; step: string; error: unknown }) => Promise<void>;
 };
@@ -404,14 +413,42 @@ async function callWithValidation<T>(
 ): Promise<T | null> {
   const resolveCredentials = deps.resolveCredentials ?? resolvePharmacyAiCredentials;
   const callProvider = deps.callProvider ?? callAnthropicCompatibleMessages;
+  const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
+  const persistProviderAttempt = deps.recordProviderAttempt ?? recordAiProviderAttempt;
   const logValidationExhausted = deps.logValidationExhausted ?? defaultLogValidationExhausted;
 
   const creds = await resolveCredentials(tenantId, { surface, feature: "pharmacy_intake", meta: { step, caseId } });
   if (!creds) return null;
 
   let lastErr: unknown = null;
+  let inputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
+  let outputTokens = 0;
+  let providerCalls = 0;
+  let pricedProviderCalls = 0;
+  let hasAnyMeteredUsage = false;
+  let validatedResult: T | null = null;
+
+  const usagePayload = () => ({
+    inputTokens: inputTokens + cacheCreationInputTokens + cacheReadInputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    outputTokens,
+    providerCalls,
+    unpricedProviderCalls: providerCalls - pricedProviderCalls,
+    costMeasured: hasAnyMeteredUsage,
+    estimatedCost: estimateCachedAiCostUsd(
+      { inputTokens, cacheCreationInputTokens, cacheReadInputTokens, outputTokens },
+      creds.model,
+      creds.provider
+    ),
+  });
+
   for (let attempt = 0; attempt <= MAX_AI_VALIDATION_RETRIES; attempt++) {
     try {
+      providerCalls += 1;
+      if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
       const resp = await callProvider(creds, {
         model: creds.model,
         // Medication drafts contain several dosage/warning fields and were
@@ -421,18 +458,66 @@ async function callWithValidation<T>(
         messages: [{ role: "user", content: userText }],
       });
       if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
-      const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+      const json = (await resp.json()) as {
+        content?: Array<{ text?: string }>;
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_creation_input_tokens?: number;
+          cache_read_input_tokens?: number;
+        };
+      };
+      if (
+        Number.isFinite(json.usage?.input_tokens) &&
+        Number.isFinite(json.usage?.output_tokens)
+      ) {
+        pricedProviderCalls += 1;
+      }
+      if (
+        Number.isFinite(json.usage?.input_tokens) ||
+        Number.isFinite(json.usage?.output_tokens)
+      ) {
+        hasAnyMeteredUsage = true;
+      }
+      inputTokens += Math.max(0, Number(json.usage?.input_tokens ?? 0));
+      outputTokens += Math.max(0, Number(json.usage?.output_tokens ?? 0));
+      cacheCreationInputTokens += Math.max(
+        0,
+        Number(json.usage?.cache_creation_input_tokens ?? 0)
+      );
+      cacheReadInputTokens += Math.max(
+        0,
+        Number(json.usage?.cache_read_input_tokens ?? 0)
+      );
       const responseText = (json.content ?? [])
         .map((block) => (typeof block?.text === "string" ? block.text : ""))
         .join("")
         .trim();
       if (!responseText) throw new AiOutputValidationError(`${step}: empty reply`);
       const parsed = JSON.parse(responseText.replace(/^```json\s*/i, "").replace(/```\s*$/, ""));
-      return validate(parsed);
+      validatedResult = validate(parsed);
+      break;
     } catch (err) {
       lastErr = err;
       continue;
     }
+  }
+  if (validatedResult !== null) {
+    if (creds.usageEventId) {
+      await finalizeUsage(creds.usageEventId, {
+        status: "completed",
+        ...usagePayload(),
+      });
+    }
+    return validatedResult;
+  }
+  if (creds.usageEventId) {
+    await finalizeUsage(creds.usageEventId, {
+      status: "failed",
+      ...usagePayload(),
+      errorMessage:
+        lastErr instanceof Error ? lastErr.message : `${step}: validation exhausted`,
+    });
   }
   console.error(`[BMS] pharmacy AI ${step} validation exhausted for case ${caseId}:`, lastErr);
   await logValidationExhausted({ tenantId, caseId, step, error: lastErr });

@@ -150,7 +150,7 @@ const CONTENT = {
       <><b>Quick Actions ที่ยัง disable:</b> Generate Invoice / Send Payment Link / Support Ticket — subsystem จริงยังไม่มีในระบบ (ตัดสินใจไว้แล้วว่าไม่ build รอบนี้) ไม่ใช่บั๊ก</>,
     ],
     s10AlertMsg: "Shopee/Lazada ปัจจุบันเป็น webhook beta scaffold ไม่ใช่ OAuth sync worker",
-    s10AlertDesc: <>รายละเอียดเต็ม: <Text code>docs/integrations/lazada.md</Text> และ <Text code>CLAUDE.local.md</Text> § SaaS redesign — แผน OAuth/Channel Sync เดิมถูก supersede แล้ว ต้องออกแบบใหม่ก่อนหยิบกลับมาทำ</>,
+    s10AlertDesc: <>รายละเอียดเต็ม: <Text code>docs/integrations/lazada.md</Text> และ <Text code>docs/local-notes-archive.md</Text> § SaaS redesign — แผน OAuth/Channel Sync เดิมถูก supersede แล้ว ต้องออกแบบใหม่ก่อนหยิบกลับมาทำ</>,
   },
   en: {
     pageTitle: "🏗️ Architecture & Requirements",
@@ -293,7 +293,7 @@ const CONTENT = {
       <><b>Quick Actions still disabled:</b> Generate Invoice / Send Payment Link / Support Ticket — the real subsystem doesn't exist yet (already decided not to build this round) — not a bug</>,
     ],
     s10AlertMsg: "Shopee/Lazada are currently a webhook beta scaffold, not an OAuth sync worker",
-    s10AlertDesc: <>Full details: <Text code>docs/integrations/lazada.md</Text> and <Text code>CLAUDE.local.md</Text> § SaaS redesign — the original OAuth/Channel Sync plan has been superseded and needs a fresh design before picking it back up</>,
+    s10AlertDesc: <>Full details: <Text code>docs/integrations/lazada.md</Text> and <Text code>docs/local-notes-archive.md</Text> § SaaS redesign — the original OAuth/Channel Sync plan has been superseded and needs a fresh design before picking it back up</>,
   },
 };
 

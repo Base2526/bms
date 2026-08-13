@@ -131,6 +131,26 @@ test("Anthropic adapter returns provider metadata and normalized token usage", a
   assert.equal(requestBody.messages[0].content[0].source.data, REQUEST.base64);
 });
 
+test("OCR adapters preserve missing usage as unpriced instead of zero-cost", async () => {
+  const anthropic = createAnthropicSlipReader({
+    fetchImpl: async () =>
+      anthropicResponse('{"amount":100,"date":null,"ref":null,"bank":null}'),
+  });
+  const qwen = createQwenSlipReader({
+    fetchImpl: async () =>
+      qwenResponse('{"amount":100,"date":null,"ref":null,"bank":null}'),
+  });
+
+  assert.deepEqual((await anthropic.read(REQUEST)).usage, {
+    inputTokens: null,
+    outputTokens: null,
+  });
+  assert.deepEqual((await qwen.read(REQUEST)).usage, {
+    inputTokens: null,
+    outputTokens: null,
+  });
+});
+
 test("Anthropic adapter rejects unsupported images before contacting provider", async () => {
   let calls = 0;
   const reader = createAnthropicSlipReader({
@@ -241,14 +261,15 @@ test("runtime OCR failure retries the fallback provider lazily and finalizes bot
   ];
 
   const outcome = await runSlipReaderFallback({
-    resolveNext: async (excluded, fallbackFrom) => {
-      resolved.push(`${excluded.join(",")}|${fallbackFrom ?? "-"}`);
+    resolveNext: async (excluded, fallbackFrom, chargeSharedCredit) => {
+      resolved.push(`${excluded.join(",")}|${fallbackFrom ?? "-"}|${chargeSharedCredit}`);
       return sessions[excluded.length] ?? null;
     },
     loadImage: async () => ({
       base64: REQUEST.base64,
       mediaType: REQUEST.mediaType,
     }),
+    recordProviderAttempt: async () => {},
     finalize: async (id, result) => {
       finalized.push({ id, status: result.status });
     },
@@ -258,7 +279,7 @@ test("runtime OCR failure retries the fallback provider lazily and finalizes bot
   if (!outcome.ok) return;
   assert.equal(outcome.result.provider, "anthropic");
   assert.deepEqual(outcome.attemptedProviders, ["qwen", "anthropic"]);
-  assert.deepEqual(resolved, ["|-", "qwen|qwen"]);
+  assert.deepEqual(resolved, ["|-|true", "qwen|qwen|false"]);
   assert.deepEqual(finalized, [
     { id: "usage-qwen", status: "failed" },
     { id: "usage-anthropic", status: "completed" },

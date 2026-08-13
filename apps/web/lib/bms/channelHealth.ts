@@ -10,7 +10,7 @@
 // เขียนผ่าน setChannelStatus() เท่านั้น (single entrypoint) — กัน log กระจาย
 // ไม่ตรงกับ status จริงบนตาราง และกัน spam log ซ้ำถ้า status ไม่เปลี่ยน
 //
-// wire เข้าจุดจริงแล้ว (ดู CLAUDE.local.md § Channel Health สำหรับ list ทั้งหมด):
+// wire เข้าจุดจริงแล้ว (ดู docs/local-notes-archive.md § Channel Health สำหรับ list ทั้งหมด):
 //   - webhook handler รับ event สำเร็จ      → recordInboundEvent()
 //   - webhook signature verify ไม่ผ่าน      → recordWebhookVerifyFailed()
 //   - เรียก Send API แล้วสำเร็จ              → recordOutboundSuccess()

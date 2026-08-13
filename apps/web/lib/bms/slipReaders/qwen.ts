@@ -34,9 +34,10 @@ type QwenSlipReaderOptions = {
   timeoutMs?: number;
 };
 
-function tokenCount(value: unknown): number {
+function tokenCount(value: unknown): number | null {
+  if (value == null) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
 }
 
 function buildQwenChatCompletionsUrl(baseUrl?: string | null): string {
@@ -138,13 +139,16 @@ export function createQwenSlipReader(
         throw new SlipReaderError("MALFORMED_OUTPUT", "Qwen slip OCR returned no text");
       }
 
+      const inputTokens = tokenCount(payload.usage?.prompt_tokens);
+      const outputTokens = tokenCount(payload.usage?.completion_tokens);
+
       return {
         provider: "qwen",
         model: request.credentials.model,
         extracted: parseSlipExtract(text),
         usage: {
-          inputTokens: tokenCount(payload.usage?.prompt_tokens),
-          outputTokens: tokenCount(payload.usage?.completion_tokens),
+          inputTokens: inputTokens === null || outputTokens === null ? null : inputTokens,
+          outputTokens: inputTokens === null || outputTokens === null ? null : outputTokens,
         },
       };
     },
