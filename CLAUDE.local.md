@@ -1498,9 +1498,8 @@ run-history source" และไม่มีตารางบันทึกก
 - **ยังไม่ทำ/gap ที่รู้ตัว**: ยัง apply migration `7.56` เข้า DB จริงไม่ได้ (ไม่มี docker/postgres รันอยู่
   ตอนพัฒนา) และยังไม่ได้ทดสอบสลับภาษาจริงในเบราว์เซอร์ · switcher นี้เปลี่ยนภาษาได้จริงแค่ ~15% ของแอป
   (หน้าที่ผ่าน `useI18n()` อยู่แล้ว) ส่วน admin 61 ไฟล์ยัง hardcode ไทยเหมือนเดิมจนกว่าจะแปลง string เข้า
-  i18n dictionary (ดู § i18n coverage ใน [AGENTS.md](AGENTS.md)) · user ใหม่ที่ register ยังได้
-  `language = 'en'` เสมอ (ค่า default เดิมจาก `1.13`) แม้ product เป็นภาษาไทยเป็นหลัก — ไม่ใช่บั๊กใหม่
-  แค่ไม่มีผลกระทบอะไรจนกว่าจะมี switcher รอบนี้
+  i18n dictionary (ดู § i18n coverage ใน [AGENTS.md](AGENTS.md)) · ~~user ใหม่ที่ register ยังได้
+  `language = 'en'` เสมอ~~ **แก้แล้ว (2026-08-13)** — ดู § Default language = Thai for new accounts ด้านล่าง
 
 **ต่อยอดแล้ว — ขยาย coverage หน้า public (2026-08)**: ตัวเลข "~15%"/"admin 61 ไฟล์" ด้านบนเป็นสถานะ ณ
 ตอนทำ switcher เท่านั้น ตอนนี้ล้าสมัยแล้ว — รอบถัดมาไล่แปลงหน้า public/auth ที่ยัง Thai-only หรือแปลครึ่งๆ
@@ -1514,7 +1513,30 @@ run-history source" และไม่มีตารางบันทึกก
 **ยังจริงอยู่**: admin (`/admin/**`) ทั้งหมดยัง 0% i18n เหมือนเดิม ไม่ถูกแตะในรอบนี้ · `/live-dashboard`
 ตั้งใจไม่แปล (รอข้อมูลจริง) · ยังไม่ได้ apply migration `7.56`/ทดสอบสลับภาษาจริงในเบราว์เซอร์ (ค้างจากเดิม)
 
-## เติมข้อมูลทดสอบเร็ว ๆ
+## Default language = Thai for new accounts (2026-08-13)
+
+**เสร็จแล้ว, verify กับ docker postgres จริงบนเครื่องนี้แล้ว** — ทุกหน้า public/anonymous (ไม่มี session)
+เป็นไทย default อยู่แล้วอย่างสม่ำเสมอทุกจุดตั้งแต่แรก (pattern `cookie === "en" ? "en" : "th"` ซ้ำอยู่ใน
+10 ไฟล์: `app/layout.tsx`, `app/(main)/layout.tsx` ทั้ง `generateMetadata`+render, `/checkout`,
+`/shop/**`, `/coupon/wallet`, `/admin/env`, รวมถึง `HeaderBar.tsx`'s `initialLang="th"` และ
+`i18nContext.tsx`'s context default `lang:"th"`) — ไม่มี `next.config`/`middleware` ที่ detect จาก
+`Accept-Language`/browser locale มาแทรกด้วย จุดนี้ไม่มีอะไรต้องแก้
+
+**บั๊กจริงอยู่ที่บัญชี user ทั่วไป (ไม่ใช่แค่ admin) ที่สมัคร/ล็อกอินครั้งแรก** — `users.language`
+(`1.13__users_username-language.sql`) ตั้ง `DEFAULT 'en'` ไว้ และทั้ง 3 จุดที่ `INSERT INTO users`
+(`registerUser`, `loginWithSocial`, admin สร้าง BMS staff — ทั้ง 3 อยู่ใน `graphql/resolvers.ts`)
+ไม่ได้ระบุ `language` เอง เลยตกไปใช้ default นี้เสมอ แล้ว `SessionLayer.tsx`'s effect (บรรทัดที่ sync
+`sessionLanguage` เข้า `lang` cookie + `router.refresh()`) จะ **ทับ cookie ไทยที่ผู้ใช้เห็นอยู่ก่อน
+login ให้กลายเป็นอังกฤษทันทีที่บัญชีใหม่ล็อกอินครั้งแรก** ทั้งที่ไม่เคยเลือกอะไรเลย
+
+**แก้**: migration `7.81__users_language_default_th.sql` — เปลี่ยนแค่ column `DEFAULT` จาก `'en'` →
+`'th'` (1 บรรทัด) ไม่ต้องแก้ 3 จุด insert เพราะทุกจุดพึ่ง DB default อยู่แล้ว · **ตั้งใจไม่ backfill
+แถวเก่าที่ `language='en'`** เพราะแยกไม่ออกว่าเคย "เลือก" อังกฤษจริงหรือแค่ไม่เคยแตะ — เปลี่ยนย้อนหลัง
+เสี่ยงพลิกภาษาคนที่ตั้งใจเลือกอังกฤษไว้แล้ว มีผลแค่บัญชีที่สร้างใหม่นับจากนี้
+- **verify แล้วบนเครื่องนี้**: apply เข้า `bms-postgres-1` จริง, เช็ค `\d users` เห็น default เปลี่ยนเป็น
+  `'th'::text`, รัน migration ซ้ำ idempotent (แค่ `ALTER TABLE` เฉยๆ ไม่ error), และ `INSERT` จริงใน
+  transaction ที่ `ROLLBACK` ทันที ยืนยันว่าแถวใหม่ได้ `language='th'` โดยไม่ต้องระบุคอลัมน์นี้เอง
+- **ยังไม่ทำ**: apply migration `7.81` เข้า production จริง (ทำแค่ dev docker เครื่องนี้)
 
 ที่ `/admin/dev/fake` กดสร้างตามลำดับ **Products → Customers → Orders → Conversations → Purchase**
 แล้วดู Dashboard/Reports/Inbox/Payment/Shipping/Purchase · กด **Cleanup** ลบ fake ทั้งหมด (marker `FAKE-`/tag `fake`, ลบตามลำดับ FK)

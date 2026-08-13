@@ -157,71 +157,71 @@ export default function FollowupQueuePage() {
         <Space direction="vertical" size={12} style={{ width: "100%", marginBottom: 16 }}>
           <Row gutter={[12, 12]}>
             <Col xs={24} sm={12} lg={6}>
-              <Card><Statistic title="Pending jobs" value={analytics.pendingJobs} /></Card>
+              <Card><Statistic title={t("admin_followup_queue.stat_pending_jobs")} value={analytics.pendingJobs} /></Card>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card><Statistic title="Reply rate" value={analytics.replyRate * 100} suffix="%" precision={1} /></Card>
+              <Card><Statistic title={t("admin_followup_queue.stat_reply_rate")} value={analytics.replyRate * 100} suffix="%" precision={1} /></Card>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card><Statistic title="Order-after-follow-up" value={analytics.orderRate * 100} suffix="%" precision={1} /></Card>
+              <Card><Statistic title={t("admin_followup_queue.stat_order_rate")} value={analytics.orderRate * 100} suffix="%" precision={1} /></Card>
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <Card><Statistic title="Avg idle before send" value={analytics.avgIdleMinutesAtSend ?? 0} suffix="min" precision={0} /></Card>
+              <Card><Statistic title={t("admin_followup_queue.stat_avg_idle")} value={analytics.avgIdleMinutesAtSend ?? 0} suffix={t("admin_followup_queue.stat_minutes_suffix")} precision={0} /></Card>
             </Col>
           </Row>
           <Row gutter={[12, 12]}>
             <Col xs={24} lg={10}>
-              <Card title={`สรุป ${analytics.windowDays} วันล่าสุด`}>
+              <Card title={t("admin_followup_queue.summary_title", { days: analytics.windowDays })}>
                 <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                  <Text>ส่งแล้ว {analytics.sentHistory} · ข้าม {analytics.skippedHistory} · ล้มเหลว {analytics.failedHistory}</Text>
-                  <Progress percent={Math.round((analytics.replyRate || 0) * 100)} status="active" format={(p) => `Reply ${p}%`} />
-                  <Progress percent={Math.round((analytics.orderRate || 0) * 100)} strokeColor="#52c41a" format={(p) => `Order ${p}%`} />
-                  <Text type="secondary">ลูกค้าตอบกลับหลัง follow-up: {analytics.repliedAfterFollowup} ครั้ง · มีออร์เดอร์ตามมา: {analytics.orderedAfterFollowup} ครั้ง</Text>
+                  <Text>{t("admin_followup_queue.summary_counts", { sent: analytics.sentHistory, skipped: analytics.skippedHistory, failed: analytics.failedHistory })}</Text>
+                  <Progress percent={Math.round((analytics.replyRate || 0) * 100)} status="active" format={(p) => t("admin_followup_queue.summary_progress_reply", { percent: p ?? 0 })} />
+                  <Progress percent={Math.round((analytics.orderRate || 0) * 100)} strokeColor="#52c41a" format={(p) => t("admin_followup_queue.summary_progress_order", { percent: p ?? 0 })} />
+                  <Text type="secondary">{t("admin_followup_queue.summary_outcomes", { replied: analytics.repliedAfterFollowup, ordered: analytics.orderedAfterFollowup })}</Text>
                 </Space>
               </Card>
             </Col>
             <Col xs={24} lg={7}>
-              <Card title="Top goals">
+              <Card title={t("admin_followup_queue.top_goals")}>
                 <Space direction="vertical" size={6} style={{ width: "100%" }}>
                   {topGoals.length ? topGoals.map((row: any) => (
                     <div key={row.key}>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Text>{row.key}</Text>
-                        <Text type="secondary">ส่ง {row.sent} · ตอบ {row.replied}</Text>
+                        <Text type="secondary">{t("admin_followup_queue.breakdown_goal", { sent: row.sent, replied: row.replied })}</Text>
                       </Space>
                     </div>
-                  )) : <Text type="secondary">ยังไม่มีข้อมูล</Text>}
+                  )) : <Text type="secondary">{t("admin_followup_queue.no_data")}</Text>}
                 </Space>
               </Card>
             </Col>
             <Col xs={24} lg={7}>
-              <Card title="Top intents">
+              <Card title={t("admin_followup_queue.top_intents")}>
                 <Space direction="vertical" size={6} style={{ width: "100%" }}>
                   {topIntents.length ? topIntents.map((row: any) => (
                     <div key={row.key}>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Text>{row.key}</Text>
-                        <Text type="secondary">ส่ง {row.sent} · order {row.ordered}</Text>
+                        <Text type="secondary">{t("admin_followup_queue.breakdown_intent", { sent: row.sent, ordered: row.ordered })}</Text>
                       </Space>
                     </div>
-                  )) : <Text type="secondary">ยังไม่มีข้อมูล</Text>}
+                  )) : <Text type="secondary">{t("admin_followup_queue.no_data")}</Text>}
                 </Space>
               </Card>
             </Col>
           </Row>
           {!!latestDaily.length && (
-            <Card title="7 วันล่าสุด">
+            <Card title={t("admin_followup_queue.daily_title")}>
               <Table
                 rowKey="day"
                 size="small"
                 pagination={false}
                 dataSource={latestDaily}
                 columns={[
-                  { title: "วัน", dataIndex: "day", key: "day" },
-                  { title: "ส่ง", dataIndex: "sent", key: "sent", align: "right" as const },
-                  { title: "ตอบกลับ", dataIndex: "replied", key: "replied", align: "right" as const },
-                  { title: "เกิดออร์เดอร์", dataIndex: "ordered", key: "ordered", align: "right" as const },
-                  { title: "ล้มเหลว", dataIndex: "failed", key: "failed", align: "right" as const },
+                  { title: t("admin_followup_queue.daily_col_day"), dataIndex: "day", key: "day" },
+                  { title: t("admin_followup_queue.daily_col_sent"), dataIndex: "sent", key: "sent", align: "right" as const },
+                  { title: t("admin_followup_queue.daily_col_replied"), dataIndex: "replied", key: "replied", align: "right" as const },
+                  { title: t("admin_followup_queue.daily_col_ordered"), dataIndex: "ordered", key: "ordered", align: "right" as const },
+                  { title: t("admin_followup_queue.daily_col_failed"), dataIndex: "failed", key: "failed", align: "right" as const },
                 ]}
               />
             </Card>

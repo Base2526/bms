@@ -93,7 +93,7 @@ export default function Page() {
   // โดยไม่มีใครเห็น) — ใช้ ai_quality.view (Manager/Administrator) เพราะเป็นคนกลุ่มเดียวกันที่
   // ควรมีสิทธิ์เข้าไปจิ้ม AI pipeline โดยตรงและรับผิดชอบโควตาที่ใช้ไป
   if (!can("ai_quality.view")) {
-    return <Alert type="error" message="ไม่มีสิทธิ์เข้าหน้านี้" showIcon />;
+    return <Alert type="error" message={t("admin_playground.no_permission")} showIcon />;
   }
 
   return (

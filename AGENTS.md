@@ -496,25 +496,39 @@ their menu entries are commented out, were left English-only on purpose — not 
 English-only community feature; only 2 genuinely leaked Thai strings — a delete-confirm dialog and a
 "typing…" indicator — needed fixing), `/coupon/wallet` (a public bearer-link page with no client
 session, so it reads the `lang` cookie server-side via `getMessage()` rather than `useI18n()`),
-`/help`, and `/demo`. **The admin app is ~13% converted as of 2026-08, not 0% anymore, but the nav
-shell and the vast majority of pages are still untouched** — of 78 `.tsx` files under
-`apps/web/app/(admin)/admin/**`, exactly **10** call `useI18n()` and have no remaining literal-Thai UI
-copy: `admin/dashboard/page.tsx`, `admin/orders/page.tsx`, `admin/reports/page.tsx`,
-`admin/settings/page.tsx`, `admin/settings/StoreProfileCard.tsx`,
-`admin/settings/ReportSubscriptionCard.tsx`, `admin/inbox/page.tsx`,
-`admin/inbox/Customer360Panel.tsx`, `admin/inbox/mentions/page.tsx`, and
-`admin/inbox/realtime-diagnostics/page.tsx`. The other **68 files, including the admin nav shell itself
-(`AdminSidebar.tsx`, `AdminLayoutClient.tsx`) and `admin/login/page.tsx`**, have no `useI18n()` call and
-contain literal Thai (or, for `admin/login/page.tsx`, a mix of hardcoded English and Thai with no
-switching mechanism at all — flagged as the top remaining priority since it's the one page every admin
-sees pre-authentication). Before starting any new admin i18n work, re-run
-`grep -rl "useI18n" apps/web/app/\(admin\)` to get the current file list — this count moves every time
-someone converts another page and this doc is not updated automatically. **Deliberately still
+`/help`, and `/demo`. **The admin app is ~63% converted as of 2026-08-13** (it was ~13% when this
+paragraph was first written; batches 1–17 landed since) — of 78 `.tsx` files under
+`apps/web/app/(admin)/admin/**`, **49** now carry a bilingual mechanism (`useI18n()`, or
+`resolveBilingual()` for the two prose-heavy pages `admin/manual` and `admin/architecture`), and the
+nav shell (`AdminSidebar.tsx`, `AdminLayoutClient.tsx`) and `admin/login/page.tsx` are converted too —
+those are no longer the gap this paragraph used to flag. The remaining **29** files split into two
+groups, neither of which is a Thai leak: trivial `layout.tsx`/`loading.tsx` guards with no user-visible
+copy, and the **English-only legacy platform-admin pages** — `admin/roles`, `admin/logs` (×3),
+`admin/files`, `admin/posts` + `admin/post/**`, `admin/operations-schedule`, `admin/dev/sql-console`.
+Those predate BMS, contain no Thai at all, and would need translating *into* Thai rather than out of
+it. Verified 2026-08-13 by dictionary audit: `i18n/th.ts` and `i18n/en.ts` are at exact key parity
+(3,552 = 3,552 across 68 namespaces) and every `t("ns.key")` call site in `app`/`components`/`lib`
+resolves to a real key — so there are currently **zero** raw-key-rendering bugs of the kind commit
+`5832eb23` fixed. Re-run that audit rather than trusting these numbers; the useful one-liners are
+`grep -rl "useI18n\|resolveBilingual" apps/web/app/\(admin\)` for the file list, plus a script that
+flattens both dictionaries and diffs the key sets against the `t()` calls in the tree. **Deliberately still
 Thai-only, not a gap to silently fix**:
 `/live-dashboard` (still mock-data-only; its copy will likely be reworked once wired to real queries,
 so translating now is wasted effort — see CLAUDE.md's "Live Dashboard" section). **English-only by
 age, not a Thai leak**: the legacy pre-BMS community pages `/my/posts`, `/my/profile`, `/post/**`,
-`/profile/[id]` — never localized either direction, out of scope. Generated report files
+`/profile/[id]` — never localized either direction, out of scope. **Thai that a grep will flag but that
+must NOT be "fixed"**: customer-facing brand-voice copy (the Inbox suggested-reply templates, the
+restock notification body) stays Thai regardless of the staff member's UI language, same rule as
+`applyGenderParticle()`; regexes that match a *customer's* raw typed Thai (`/สลิป|โอน|ชำระ/` in
+`admin/inbox/page.tsx`) detect what a customer wrote, not UI copy; CRM tag **values**
+(`ลูกค้าใหม่`/`ลูกค้าประจำ` in `admin/customers` and `admin/dashboard`) are stored data, not labels;
+the Thai column headers in `admin/products/ImportModal.tsx` are the CSV/XLSX template's header-matching
+map; `admin/playground`'s sample prompts are Thai test input for the Thai NLU pipeline; the `฿` suffix
+is a currency symbol; and `admin/pharmacy-review-mockup`'s Thai is mock case data (only its chrome was
+converted, on purpose). Separately, `components/AppLayout.tsx` has **zero importers anywhere in the
+repo** — it is dead code carrying its own untranslated PDPA bar and app-download section; the live
+footer/consent bar is `components/footer/AppFooter.tsx`, which is already bilingual via a page-local
+`COPY.th/en`. Delete `AppLayout.tsx` rather than translating it. Generated report files
 (`lib/bms/documentGenerator.ts`) have no language parameter and are English-label-only regardless of
 the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not deliberate for XLSX/CSV,
 just not done).

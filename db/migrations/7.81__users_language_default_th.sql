@@ -1,0 +1,18 @@
+-- =============================================================
+-- 7.81  New accounts default to Thai, not English
+-- =============================================================
+-- 1.13__users_username-language.sql set DEFAULT 'en' on users.language. None of the
+-- 3 INSERT INTO users call sites (community registerUser, loginWithSocial, admin-created
+-- BMS staff) set `language` explicitly, so every new account silently inherited English —
+-- even though every anonymous/logged-out page in this app already defaults to Thai
+-- (see the `cookie === "en" ? "en" : "th"` pattern repeated across app/layout.tsx,
+-- app/(main)/layout.tsx, /checkout, /shop/**, /coupon/wallet, /admin/env, HeaderBar.tsx).
+-- The mismatch surfaced the moment a fresh account logged in: SessionLayer.tsx syncs
+-- `sessionLanguage` (DB) into the `lang` cookie and calls router.refresh(), flipping a
+-- visitor who had been seeing Thai into English on their very first login.
+--
+-- Only the column DEFAULT changes here — existing rows with language='en' are left alone
+-- on purpose, since there is no way to tell "explicitly chose English" apart from "never
+-- touched it" after the fact, and flipping real English choices back to Thai would be
+-- wrong. This only affects accounts created from now on.
+ALTER TABLE users ALTER COLUMN language SET DEFAULT 'th';
