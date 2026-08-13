@@ -24,6 +24,7 @@ import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
+import { metricsPlugin } from "@/graphql/metricsPlugin";
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
@@ -31,6 +32,8 @@ const server = new ApolloServer({
   schema,
   introspection: process.env.NODE_ENV !== "production",
   csrfPrevention: false,
+  // latency/error rate ต่อ operation → /admin/system-health (fail-open, ไม่ throw)
+  plugins: [metricsPlugin()],
 });
 
 function getClientIp(req: NextRequest) {

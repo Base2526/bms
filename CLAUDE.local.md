@@ -1458,6 +1458,79 @@ run-history source" และไม่มีตารางบันทึกก
   แล้วผลเป็นยังไง ไม่ได้ทำให้มันถูกยิงอัตโนมัติ) · ยังไม่ได้ verify กับ DB จริงบนเครื่องนี้ (ไม่มี docker
   postgres รันอยู่ตอนพัฒนา รอบนี้ `tsc --noEmit` ผ่านสะอาดเท่านั้น)
 
+## System Health + request metrics (2026-08)
+
+**เสร็จแล้ว (branch `feat/observability-system-health`, `tsc --noEmit` + `next build` ผ่านทั้งคู่
+exit 0 — แต่ยังไม่ได้เปิดดูในเบราว์เซอร์จริง เพราะ docker stack ของ BMS ไม่ได้รันบนเครื่องนี้ตอนพัฒนา
+มีแต่ container ของโปรเจกต์อื่น และหน้านี้ต้อง login เป็น platform admin ถึงจะเข้าได้)** — ต้นเรื่อง:
+คำถามว่า "จำเป็นต้องแยก DB เป็น primary/replica ไหม" → วิเคราะห์แล้วพบว่ายังไม่ควรแยก (สรุปเต็มอยู่ใน
+[admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) § Phase 6) แต่ระหว่างทางเจอว่า
+**ระบบไม่มี observability พอจะตอบคำถาม "ช้าเพราะอะไร" ได้เลย** จึงทำหน้ารวมสถานะก่อน
+
+- **`/admin/system-health`** (`layout.tsx` → `requirePlatformAdminPage()` เหมือน `/admin/env`) —
+  read-only ล้วน **ห้ามเพิ่มปุ่มที่เขียน/restart อะไรทั้งสิ้นในหน้านี้**
+- **`lib/bms/systemHealth.ts` เป็น composition layer ไม่ใช่ subsystem ใหม่** — reuse
+  `listAiProviderHealth()`/`listLatestJobRunPerJob()`/`listOperationSchedules()` ตรง ๆ เพิ่ม query ใหม่
+  เฉพาะที่ยังไม่มีจริง ๆ 3 อย่าง: (1) Postgres vitals จาก `pg_stat_activity`/`pg_settings`/
+  `pg_database_size` (2) Redis PING+INFO (3) `bms_tenant_channels` **ข้ามร้าน** เพราะ `channelHealth.ts`
+  เดิมเป็น tenant-scoped อย่างเดียว และ (4) `bms_failure_incidents` ซึ่ง**ไม่เคยมีหน้า list เลย**
+  ตั้งแต่ migration `7.36` (โน้ตเดิมในไฟล์นี้เขียนไว้เองว่า "เห็นผ่าน browser/bell notification + Slack
+  + query DB ตรงเท่านั้น") — ตอนนี้มีแล้ว
+- **ทุก read คืน `{ok:false, error}` ไม่ throw** — migration `7.36`/`7.55` ยังไม่ได้ apply ทุกเครื่อง
+  ถ้าตารางหาย ต้องเหลือการ์ดเตือนใบเดียว ไม่ใช่ 500 ทั้งหน้า (ทดสอบ path นี้ไม่ได้บนเครื่องนี้เพราะไม่มี DB
+  แต่โครงสร้าง try/catch ครอบครบทุกฟังก์ชัน)
+- **`lib/cache.ts` export `sharedRedisClient` เพิ่ม** — แอปนี้เปิด ioredis client อยู่ 3 ตัวแล้ว
+  (`cache`/`rateLimit`/`redisSession`) จึงใช้ตัวเดิมของ cache ต่อ ไม่เปิดตัวที่ 4 · ผู้ใช้ export นี้
+  **ต้อง namespace key ของตัวเอง** (`metrics:`) ห้ามแตะ prefix `cache:` ที่เป็นของ `cache.ts` เอง
+
+### request metrics — ทำไมเป็น Redis histogram ไม่ใช่ตาราง Postgres
+
+`lib/bms/requestMetrics.ts` + Apollo plugin `graphql/metricsPlugin.ts` (เสียบที่
+`app/api/graphql/route.ts` จุดเดียว) — เหตุผลการออกแบบที่สำคัญกว่าตัวโค้ด:
+
+- **ไม่เก็บลง Postgres**: เขียน 1 แถวต่อ 1 request = เพิ่มภาระเขียนให้ DB ตัวเดียวกับที่หน้านี้มีไว้
+  วินิจฉัยว่าช้าเพราะอะไร (การวัดทำให้ช้าลงเอง)
+- **ไม่เก็บ latency ดิบทุกค่า**: memory ไม่มีเพดาน → ใช้ histogram bucket 12 ช่อง (5ms…10s…+Inf)
+  แบบ Prometheus · แลกมาด้วย **percentile ที่เป็นค่าประมาณ** (interpolate เชิงเส้นในช่อง bucket)
+- **ไม่ใช้ in-process `Map`**: จะให้เลขต่อ instance ซึ่งอ่านผิดทันทีที่มี replica (งาน multi-instance
+  readiness ทำไปแล้ว) · `HINCRBY` merge ข้าม instance ให้ฟรีโดยไม่ต้องมี aggregator
+- **fail-open + fire-and-forget**: `recordRequestMetric()` ไม่ throw และ**ไม่ถูก await** บน request path
+  (ยิงหลัง response แล้ว จึงไม่นับรวมในเวลาที่วัดเอง)
+- **TTL 4 ชม. ไม่มี cron cleanup** — restart Redis แล้วข้อมูลหายหมด **นี่คือ monitoring data ไม่ใช่
+  system of record** อย่าเอาไปใช้ทำรายงานย้อนหลัง
+- **ตารางเรียงตาม "เวลารวม" (calls × avg) เป็น default ไม่ใช่ p95** — operation ที่เร็วแต่ถูกเรียกบ่อยมาก
+  มักกินเวลา DB รวมมากกว่า operation ที่ช้าแต่นาน ๆ เรียกที ซึ่งตรงกับคำถาม "ช้าเพราะอะไร" มากกว่า
+- **`uploadProcess` (multipart) ก็ถูกนับด้วย** — เช็คแล้วว่ามันเรียก `server.executeOperation()`
+  ซึ่งรัน plugin pipeline เต็ม (เคยกังวลว่าจะหลุดเพราะ route ไม่ได้ผ่าน `handler` ปกติ)
+- **`ApolloServerPlugin<TContext>` ต้อง `extends BaseContext`** ไม่งั้น TS2344 (เจอจริงตอน `tsc`)
+
+**verify แล้วบนเครื่องนี้**: `tsc --noEmit` exit 0 · `next build` exit 0 และ `/admin/system-health`
+ขึ้นเป็น dynamic route (`ƒ`) โดยไม่มี error (ต่างจาก `/admin/operations-schedule` ที่มี prerender
+warning เดิมอยู่แล้วเพราะไม่มี DB ตอน build — ของเราไม่มีเพราะตั้ง `export const dynamic =
+"force-dynamic"`) · **คณิตศาสตร์ percentile ทดสอบจริง 13 เคสผ่านหมด** โดยดึงฟังก์ชันจากไฟล์จริงด้วย
+`sed` มารันใน scratchpad (ไม่ได้เขียนซ้ำ ไม่งั้นเท่ากับทดสอบสำเนาไม่ใช่ของจริง): ขอบ bucket,
+การกระจาย skewed 900 เร็ว + 100 ช้า (p50 ต้องเร็ว p95 ต้องอยู่ในหางช้า), monotonic, input ว่าง,
+และเคส +Inf bucket ที่ต้องไม่คืน `Infinity`/`NaN`
+
+**ยังไม่ทำ / ข้อจำกัดที่รู้ตัว**:
+- **ยังไม่รู้ว่า SQL ตัวไหนช้า** — ต้องมี `pg_stat_statements` ซึ่ง preload ไว้ใน `docker-compose.yml`
+  แล้ว (`command:` override ของ service `postgres` เพราะโปรเจกต์นี้ไม่มี `postgresql.conf` แยกไฟล์
+  และ `docker-compose.dev.yml`/`.prod.yml` ไม่มี override ของ postgres เอง) แต่ **ยังไม่ได้ restart
+  Postgres และยังไม่ได้ `CREATE EXTENSION`** → ยังไม่มีการ์ด slow query · restart จะดรอป connection
+  ของ `web`/`ws` ชั่วครู่ ต้องทำตอน traffic น้อย · rollback = ลบบล็อก `command:` แล้ว restart อีกรอบ
+- **REST route ยังไม่ instrument** — Next App Router ไม่มีจุดกลางให้จับเวลา handler (middleware รัน
+  *ก่อน* handler) ต้องครอบทีละไฟล์ใน `app/api/bms/**` · `recordRequestMetric()` รองรับแล้วผ่าน prefix
+  ในชื่อ (`gql:` วันนี้, `rest:/api/bms/...` ทีหลัง) ไม่ต้องแก้ recorder
+- **CPU/memory ของ container ตั้งใจไม่ทำ** — ต้องให้แอปเข้าถึง Docker socket = privilege escalation
+  surface ต้องตัดสินใจแยกก่อน ไม่ใช่แอบเพิ่ม
+- **ไม่มี auto-refresh** — ต้องกดปุ่มเอง (poll ถี่ = ยิง `pg_stat_activity` ทุกครั้ง) · window selector
+  ใช้ `searchParams` + `force-dynamic` ไม่ได้สร้าง API ใหม่
+- **operation name มาจาก client** — sanitize + ตัด 60 ตัวอักษรแล้ว แต่ client ที่ตั้งใจส่งชื่อสุ่ม
+  ยังทำให้จำนวน field ใน bucket โตได้ จำกัดความเสียหายด้วย TTL 4 ชม. เท่านั้น
+- **metric เริ่มนับหลัง deploy โค้ดนี้** ไม่มีข้อมูลย้อนหลัง (หน้าเว็บเขียนบอกไว้แล้ว)
+- ยังไม่ได้เปิดดูจริงในเบราว์เซอร์ และ query ข้ามร้านที่เพิ่มใหม่ (channel health / failure incidents)
+  ยังไม่เคยรันกับ DB จริงสักครั้ง — เขียนตาม schema ใน migration `6.4`/`7.36` เท่านั้น
+
 ## Per-user language switcher (2026-08)
 
 **เสร็จแล้ว (branch `multi-language`, `tsc --noEmit` ผ่านสะอาด ไม่มี error ใหม่ — error เดิมที่เจอใน
@@ -1688,6 +1761,12 @@ carrier booking hardening ใน § Carrier scaffold ด้านบน + [docs/
 booking ที่ล้มเหลวเห็นได้/retry ได้จาก `/admin/shipment`, tracking sync re-lock + เก็บ event history,
 cron `POST /api/bms/shipping/sync-carriers`; **Flash/Kerry ยังเป็น mock-ready scaffold** —
 `getStatus()` = `not_implemented` แม้ใส่ key เพราะยังไม่มีเอกสาร merchant จริง).
++ **System Health + request metrics เสร็จแล้ว แต่ยังไม่เปิดดูในเบราว์เซอร์จริง** (ดูหัวข้อ
+§ System Health + request metrics ด้านบน — `/admin/system-health` รวม DB/Redis/AI provider/channel/
+cron/failure incident ไว้ที่เดียว + latency p50/p95/p99 และ error rate ต่อ GraphQL operation เก็บใน
+Redis histogram; **ไม่มี migration ไม่มี permission ใหม่**. ยังตอบไม่ได้ว่า SQL ตัวไหนช้า —
+`pg_stat_statements` preload ไว้แล้วแต่ยังไม่ restart Postgres/`CREATE EXTENSION`; REST route ยังไม่
+instrument; CPU/memory ตั้งใจไม่ทำ).
 
 **เหลือ:** ต่อข้อมูลจริงให้ `/live-dashboard` (query มีพร้อมหมดแล้ว: `bmsOperationalAlerts`,
 `bmsSalesSummary().byChannel`, `salesDaily[]`, `bmsOrders(limit)`, `bmsChannelHealth` — ยกเว้นผู้ชม/Conversion/
@@ -1707,6 +1786,9 @@ Customer 360 pending items ที่เหลือ (ดู "Pending improvement
 · proactive external notification สำหรับ Channel Health และ AI Provider Health (ต้องออกแบบ LINE user id
 ผูก admin ก่อน — ดู § Channel Health และ § AI Provider Health)
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
+· restart Postgres ให้ `pg_stat_statements` ที่ preload ไว้แล้วมีผลจริง + `CREATE EXTENSION` ต่อ database
+แล้วเพิ่มการ์ด slow query เข้า `/admin/system-health` · instrument REST route (`rest:` prefix) ·
+ตัดสินใจเรื่อง CPU/memory ผ่าน Docker socket (ดู § System Health + request metrics)
 · apply migration `7.52` เข้า docker/production จริง + ทดสอบ Follow-up Automation end-to-end ·
 Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ดู § Follow-up Automation)
 

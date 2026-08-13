@@ -21,6 +21,7 @@ for the full philosophy and module breakdown.
 | [docs/architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [docs/architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes |
 | [docs/architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) | Running more than one `web`/`ws` instance: pg pool sizing, Redis-backed rate limiting, storage driver abstraction, cron claim-before-act |
+| [docs/architecture/admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Load-test baseline, phased scale plan, observability status, and the read-replica assessment (why not yet, and the trigger conditions) |
 | [docs/business/order.md](docs/business/order.md) | Order lifecycle, reorder, shipping |
 | [docs/business/inventory.md](docs/business/inventory.md) | Stock rules, movement types, purchase orders |
 | [docs/business/payment.md](docs/business/payment.md) | Payment methods, lifecycle, AI slip verification |
@@ -580,6 +581,33 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   Note: this migration was renumbered from `7.53` to `7.55` while merging `feat/redis-infra-improvements`
   into `feat/report-generation`, because `7.53` was already taken by
   `7.53__bms_generated_reports.sql` on this branch; `7.54` is `7.54__bms_report_email_permission.sql`.
+- **System Health page + request metrics (2026-08)** — ✅ implemented, **no migration, no new
+  permission**: `/admin/system-health` (platform-admin only, gated by `requirePlatformAdminPage()` in
+  its own `layout.tsx` like `/admin/env`) is a single read-only page answering "how is the system doing
+  right now", which previously required visiting four separate pages. `lib/bms/systemHealth.ts` is a
+  composition layer — it reuses `listAiProviderHealth()` and `listLatestJobRunPerJob()` unchanged, and
+  only adds reads that genuinely did not exist: Postgres vitals (`pg_stat_activity` connections,
+  longest running query, DB size), a Redis PING/INFO, a **cross-tenant** view of Channel Health
+  (`channelHealth.ts` is tenant-scoped only), and a list of `bms_failure_incidents` — that table
+  (migration `7.36`) had shipped with no list page at all, visible only through bell/Slack
+  notifications. Every read returns `{ok:false, error}` rather than throwing, so an unapplied
+  migration degrades to one warning card instead of a 500 on the whole page.
+  **Latency/error-rate instrumentation** is the second half: `graphql/metricsPlugin.ts` (one Apollo
+  plugin registered in `app/api/graphql/route.ts`) records duration + error code for every GraphQL
+  operation into Redis via `lib/bms/requestMetrics.ts`, surfaced as a p50/p95/p99 + error-rate table
+  with a 15min/1h/3h window selector. Storage is deliberately Redis histogram buckets, not a Postgres
+  table: one row per request would add write load to the very database the page exists to diagnose,
+  raw samples would be unbounded in memory, and an in-process `Map` would report per-instance numbers
+  the moment a replica exists (`HINCRBY` merges across instances for free). Consequences to keep in
+  mind: percentiles are **approximations** interpolated from bucket boundaries, and all metrics are
+  lost on a Redis restart (TTL 4h). The table sorts by *total* time (calls × avg) by default, not p95,
+  because a fast operation called constantly usually costs the database more than a slow one called
+  rarely. **Not covered yet**: which SQL statement is slow (needs `pg_stat_statements` — now preloaded
+  in `docker-compose.yml`, but requires a Postgres restart plus `CREATE EXTENSION` per database before
+  any data exists), REST route timing (Next App Router has no central place to time a route handler;
+  `recordRequestMetric()` already namespaces by name prefix so `rest:/api/bms/...` needs no code
+  change), and container CPU/memory (skipped on purpose — it would require Docker socket access).
+  See § Observability in [AGENTS.md](AGENTS.md).
 - **Carrier shipment booking + tracking sync (2026-08)** — 🧪 **safety layer complete, live Flash/Kerry
   request shapes still unverified**: `bms_shipments` now carries carrier-integration state (migrations
   `7.76`/`7.77` — `external_shipment_id`, `carrier_last_synced_at`, `carrier_tracking_source`,
@@ -641,7 +669,10 @@ endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
 to Redis before a real
 production deploy (see "Redis infrastructure hardening" above) · Follow-up Automation's Workflow Engine,
 decision-driving scoring model, and deeper analytics/dashboarding beyond the current queue summary
-(see above).
+(see above) · finishing observability: restart Postgres so the already-preloaded `pg_stat_statements`
+takes effect (then `CREATE EXTENSION` per database) to get slow-query attribution, instrumenting REST
+routes, and deciding whether container CPU/memory is worth Docker socket access (see "System Health
+page + request metrics" above).
 
 ## AI rules (non-negotiable)
 

@@ -22,6 +22,12 @@ client.on("error", (err) => {
   console.error("[cache] redis error (ignored, falling back to source)", err?.message ?? err);
 });
 
+// Shared connection reuse — this app already opens 3 ioredis clients
+// (cache/rateLimit/session); health checks and request metrics reuse this one
+// rather than adding more. Other modules MUST namespace their own keys
+// (e.g. "metrics:") and never touch the "cache:" prefix owned by this file.
+export { client as sharedRedisClient };
+
 const keyFor = (key: string) => `cache:${key}`;
 
 /**

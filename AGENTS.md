@@ -42,6 +42,7 @@ payment-slip analysis, or any AI-generated customer response.
 | `apps/web/app/(admin)/admin/` | Admin UI |
 | `apps/web/app/(admin)/admin/assistant/` | Staff AI assistant chat UI (proposal cards for sensitive actions) |
 | `apps/web/app/(admin)/admin/revisions/` | Revision History UI: list/detail/compare snapshots for products, orders, payments, shipments, and purchase orders (header + line items) |
+| `apps/web/app/(admin)/admin/system-health/` | Platform-admin read-only status page: DB/Redis vitals, GraphQL latency + error rate, AI provider health, cron runs, cross-tenant channel health, failure incidents |
 | `apps/web/app/(main)/` | Public landing page, interactive product overview, pricing, and `/live-dashboard` (session-gated live sales monitor; layout only, mock data) |
 | `apps/web/app/(auth)/` | Public authentication and shop-signup pages |
 | `apps/web/app/(checkout)/` | Public signed-link customer checkout (`/checkout?t=<token>`); no admin session, no login |
@@ -372,9 +373,11 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   so it does not go through `tools/runtime.ts`/`ExecCtx`/RBAC the way the customer/staff AI
   tool-calling surfaces do.
 
-## Redis usage (pub/sub, cache, sessions, job runs)
+## Redis usage (pub/sub, cache, sessions, job runs, request metrics)
 
-Redis backs four distinct things in this app — do not conflate them or add a fifth ad hoc client:
+Redis backs five distinct things in this app — do not conflate them, and do not add a new `new Redis(...)`
+client for a sixth (there are already three connections: `lib/cache.ts`, `lib/bms/rateLimit.ts`,
+`lib/redisSession.ts`; reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own keys):
 
 - **Realtime pub/sub** (`packages/realtime/src/pubsub.ts`) — the one `RedisPubSub` instance shared by
   `apps/web` and `apps/ws` for GraphQL subscriptions (messages, notifications, `bmsInboxChanged`, the
@@ -399,6 +402,15 @@ Redis backs four distinct things in this app — do not conflate them or add a f
   cron section. Every cron-secret-gated route must wrap
   its real work in `recordJobRun(jobName, "cron", () => ...)`, not call the underlying function
   directly, or that job has no run history on `/admin/operations-schedule`.
+- **Request metrics** (`apps/web/lib/bms/requestMetrics.ts`, 2026-08) — latency histograms + error
+  counts per GraphQL operation, read by `/admin/system-health`. Deliberately **not** a Postgres table:
+  one row per request would add write load to the very database the page exists to diagnose. Stored as
+  fixed-width histogram buckets (not raw samples) so memory is bounded and counters merge across
+  instances for free via `HINCRBY` — an in-process `Map` would report per-instance numbers the moment
+  a replica exists. Fail-open like the cache: `recordRequestMetric()` never throws and is never awaited
+  on the request path. Percentiles are therefore **approximations** interpolated from bucket
+  boundaries, and all of it is lost on a Redis restart (TTL 4h, no cron cleanup) — this is monitoring
+  data, not a system of record.
 
 Redis auth is opt-in as of 2026-08: set `REDIS_PASSWORD` and the compose redis service starts with
 `requirepass` (leave it unset and nothing changes) — `REDIS_URL` must then carry the credential as
@@ -434,6 +446,40 @@ hold:
 
 Full history/rationale of what was found and fixed: § Multi-instance readiness in
 [CLAUDE.local.md](CLAUDE.local.md).
+
+## Observability (`/admin/system-health`)
+
+Platform-admin-only page (`requirePlatformAdminPage()` in its own `layout.tsx`, same gate as
+`/admin/env`) that answers "how is the system doing right now" in one place instead of across four.
+It is **read-only** — it must never gain a button that writes, restarts, or mutates anything.
+
+`lib/bms/systemHealth.ts` is a **composition layer, not a new subsystem**. Two rules for extending it:
+
+- Reuse the existing service if one exists (`listAiProviderHealth()`, `listLatestJobRunPerJob()`,
+  `listOperationSchedules()` are consumed as-is). Only add a query here when the read genuinely does
+  not exist yet — today that means Postgres/Redis vitals, the cross-tenant view of Channel Health
+  (`channelHealth.ts` is tenant-scoped only), and `bms_failure_incidents` (which had no list page at
+  all, only bell/Slack notifications).
+- Every read returns `{ok:false, error}` instead of throwing. Migrations `7.36`/`7.55` are not applied
+  everywhere, and one missing table must degrade to a single warning card, not a 500 on the whole page.
+
+What it does **not** answer yet, so don't assume it does:
+
+- **Which SQL query is slow.** That needs `pg_stat_statements`, which is preloaded in
+  `docker-compose.yml` but requires a Postgres restart plus `CREATE EXTENSION` per database before any
+  data exists. Until both are done there is no slow-query card.
+- **REST route latency/errors.** Only GraphQL is instrumented (one Apollo plugin at
+  `graphql/metricsPlugin.ts`, covering admin UI, AI assistant, and eval traffic — `uploadProcess`
+  multipart requests included, since it routes through `server.executeOperation()`). Next App Router
+  has no central place to time a route handler, so REST needs per-route wrapping. Pass
+  `rest:/api/bms/...` as the metric name when that happens; the prefix is the namespace, and
+  `recordRequestMetric()` needs no change.
+- **CPU/memory of the container.** Deliberately skipped: reading it would mean giving the app access
+  to the Docker socket, which is a real privilege escalation surface. That is a decision to take
+  explicitly, not a feature to add quietly.
+
+Rank operations by *total* time (calls × avg), not p95 — a fast query called constantly usually costs
+the database more than a slow one called rarely. The table defaults to that sort for this reason.
 
 ## Working method
 
