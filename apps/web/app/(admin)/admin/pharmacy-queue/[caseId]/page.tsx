@@ -36,6 +36,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import {
   getCompletenessTagMeta,
   getCustomerConfirmationTagMeta,
@@ -167,6 +168,7 @@ type ManualMedicationRow = {
 };
 
 export default function PharmacyCaseDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ caseId: string }>();
   const router = useRouter();
   const { can, loading: permsLoading } = useBmsPermissions();
@@ -198,31 +200,31 @@ export default function PharmacyCaseDetailPage() {
     message.success(label);
     refetch();
   };
-  const onErr = (e: any) => message.error(e?.message || "ดำเนินการไม่สำเร็จ");
+  const onErr = (e: any) => message.error(e?.message || t("admin_pharmacy_case.action_failed"));
 
-  const [startReview, { loading: starting }] = useMutation(M_START_REVIEW, { onCompleted: onDone("รับเคสแล้ว"), onError: onErr });
-  const [requestMore, { loading: requestingMore }] = useMutation(M_REQUEST_MORE, { onCompleted: onDone("ขอข้อมูลเพิ่มแล้ว"), onError: onErr });
-  const [approve, { loading: approving }] = useMutation(M_APPROVE, { onCompleted: onDone("อนุมัติแล้ว"), onError: onErr });
-  const [reject, { loading: rejecting }] = useMutation(M_REJECT, { onCompleted: onDone("ปฏิเสธแล้ว"), onError: onErr });
-  const [refer, { loading: referring }] = useMutation(M_REFER, { onCompleted: onDone("ส่งต่อแพทย์แล้ว"), onError: onErr });
+  const [startReview, { loading: starting }] = useMutation(M_START_REVIEW, { onCompleted: onDone(t("admin_pharmacy_case.started_review")), onError: onErr });
+  const [requestMore, { loading: requestingMore }] = useMutation(M_REQUEST_MORE, { onCompleted: onDone(t("admin_pharmacy_case.requested_more")), onError: onErr });
+  const [approve, { loading: approving }] = useMutation(M_APPROVE, { onCompleted: onDone(t("admin_pharmacy_case.approved")), onError: onErr });
+  const [reject, { loading: rejecting }] = useMutation(M_REJECT, { onCompleted: onDone(t("admin_pharmacy_case.rejected")), onError: onErr });
+  const [refer, { loading: referring }] = useMutation(M_REFER, { onCompleted: onDone(t("admin_pharmacy_case.referred")), onError: onErr });
   const [escalate, { loading: escalating }] = useMutation(M_EMERGENCY, {
-    onCompleted: () => { message.success("ส่งต่อฉุกเฉินแล้ว"); setEmergencyReason(""); refetch(); },
+    onCompleted: () => { message.success(t("admin_pharmacy_case.emergency_referred")); setEmergencyReason(""); refetch(); },
     onError: onErr,
   });
   const [editSummary, { loading: editingSummary }] = useMutation(M_EDIT_SUMMARY, {
-    onCompleted: () => { message.success("บันทึกการแก้ไขสรุปแล้ว"); setSummaryDraft(null); refetch(); },
+    onCompleted: () => { message.success(t("admin_pharmacy_case.summary_edit_saved")); setSummaryDraft(null); refetch(); },
     onError: onErr,
   });
   const [editPharmacistSummary, { loading: editingPharmacistSummary }] = useMutation(M_EDIT_PHARMACIST_SUMMARY, {
-    onCompleted: () => { message.success("บันทึก Pharmacist Summary Draft แล้ว"); refetch(); },
+    onCompleted: () => { message.success(t("admin_pharmacy_case.pharmacist_draft_saved")); refetch(); },
     onError: onErr,
   });
   const [manualFill, { loading: manualFilling }] = useMutation(M_MANUAL_FILL, {
-    onCompleted: () => { message.success("บันทึกข้อมูลที่กรอกเองแล้ว"); setManualFieldValues({}); refetch(); },
+    onCompleted: () => { message.success(t("admin_pharmacy_case.manual_saved")); setManualFieldValues({}); refetch(); },
     onError: onErr,
   });
   const [suggestMedication, { loading: suggestingMedication }] = useMutation(M_SUGGEST_MEDICATION, {
-    onCompleted: () => { message.success("ได้คำแนะนำยาจาก AI แล้ว — ตรวจสอบก่อนใช้เสมอ"); refetch(); },
+    onCompleted: () => { message.success(t("admin_pharmacy_case.ai_meds_ready")); refetch(); },
     onError: onErr,
   });
 
@@ -247,13 +249,13 @@ export default function PharmacyCaseDetailPage() {
     .filter((line) => !confirmationSafetyKeys.has(line.fieldKey))
     .map((line) => ({ ...line, valueText: formatCustomerConfirmationValue(line.valueText) }));
   const patientConfirmationLines = [
-    { fieldKey: "patient_relationship", label: "ผู้มีอาการ", valueText: formatCustomerConfirmationValue(c?.patientRelationship) },
-    { fieldKey: "patient_age_years", label: "อายุ", valueText: c?.patientAgeYears == null ? "ไม่ทราบ" : `${c.patientAgeYears} ปี` },
-    { fieldKey: "biological_sex", label: "เพศกำเนิด", valueText: formatCustomerConfirmationValue(c?.biologicalSex) },
-    { fieldKey: "allergies", label: "ประวัติแพ้ยา", valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.allergies) },
-    { fieldKey: "current_medications", label: "ยาที่ใช้อยู่", valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.current_medications) },
-    { fieldKey: "pregnancy_status", label: "ตั้งครรภ์", valueText: formatCustomerConfirmationValue(c?.pregnancyStatus) },
-    { fieldKey: "breastfeeding_status", label: "ให้นมบุตร", valueText: formatCustomerConfirmationValue(c?.breastfeedingStatus) },
+    { fieldKey: "patient_relationship", label: t("admin_pharmacy_case.f_relationship"), valueText: formatCustomerConfirmationValue(c?.patientRelationship) },
+    { fieldKey: "patient_age_years", label: t("admin_pharmacy_case.f_age"), valueText: c?.patientAgeYears == null ? t("admin_pharmacy_case.f_age_unknown") : t("admin_pharmacy_case.f_age_years", { n: c.patientAgeYears }) },
+    { fieldKey: "biological_sex", label: t("admin_pharmacy_case.f_sex"), valueText: formatCustomerConfirmationValue(c?.biologicalSex) },
+    { fieldKey: "allergies", label: t("admin_pharmacy_case.f_allergies"), valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.allergies) },
+    { fieldKey: "current_medications", label: t("admin_pharmacy_case.f_current_meds"), valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.current_medications) },
+    { fieldKey: "pregnancy_status", label: t("admin_pharmacy_case.f_pregnancy"), valueText: formatCustomerConfirmationValue(c?.pregnancyStatus) },
+    { fieldKey: "breastfeeding_status", label: t("admin_pharmacy_case.f_breastfeeding"), valueText: formatCustomerConfirmationValue(c?.breastfeedingStatus) },
   ];
   const redFlags: any[] = c?.detectedRedFlags || [];
   const completenessMeta = getCompletenessTagMeta(c?.completenessStatus);
@@ -447,7 +449,7 @@ export default function PharmacyCaseDetailPage() {
       delete next[row.rowKey];
       return next;
     });
-    message.success(`ลบ ${row.drugName || row.catalogMatches?.[0]?.name || "รายการยา"} ออกจากแผนแล้ว`);
+    message.success(t("admin_pharmacy_case.removed_from_plan", { name: row.drugName || row.catalogMatches?.[0]?.name || t("admin_pharmacy_case.fallback_med_name") }));
   };
 
   const addManualProduct = (product: any) => {
@@ -473,7 +475,7 @@ export default function PharmacyCaseDetailPage() {
           drugName: product.name,
           strength: "",
           dosageInstruction: "",
-          rationale: "เภสัชเพิ่มเองจาก catalog ร้านนี้",
+          rationale: t("admin_pharmacy_case.pharmacist_added_rationale"),
           warnings: [],
           excluded: false,
           catalogMatches: [
@@ -502,7 +504,7 @@ export default function PharmacyCaseDetailPage() {
         selectedSize: availableSizes[0]?.size || "",
       },
     }));
-    message.success(`เพิ่ม ${product.name} เข้า medication plan แล้ว`);
+    message.success(t("admin_pharmacy_case.added_to_plan", { name: product.name }));
     setProductPickerOpen(false);
   };
 
@@ -518,18 +520,18 @@ export default function PharmacyCaseDetailPage() {
           }
         )
       );
-      message.success("คัดลอกข้อมูลยืนยันแล้ว");
+      message.success(t("admin_pharmacy_case.copied"));
     } catch {
-      message.error("คัดลอกข้อมูลยืนยันไม่สำเร็จ");
+      message.error(t("admin_pharmacy_case.copy_failed"));
     }
   };
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message="ไม่มีสิทธิ์ดูหน้านี้" />;
+    return <Alert type="warning" showIcon message={t("admin_pharmacy_case.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message="โหลดเคสไม่ได้" description={error.message} />;
-  if (loading && !c) return <Alert type="info" showIcon message="กำลังโหลด..." />;
-  if (!c) return <Alert type="warning" showIcon message="ไม่พบเคสนี้" />;
+  if (error) return <Alert type="error" showIcon message={t("admin_pharmacy_case.load_error")} description={error.message} />;
+  if (loading && !c) return <Alert type="info" showIcon message={t("admin_pharmacy_case.loading")} />;
+  if (!c) return <Alert type="warning" showIcon message={t("admin_pharmacy_case.not_found")} />;
 
   const riskTone = c.riskLevel === "EMERGENCY" ? "bad" : c.riskLevel === "URGENT" ? "warn" : "ok";
   const riskColor = riskTone === "bad" ? "#b3261e" : riskTone === "warn" ? "#92620a" : "#0f7a4d";
@@ -540,7 +542,7 @@ export default function PharmacyCaseDetailPage() {
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap align="start">
         <div>
           <Space align="center" wrap size={10}>
-            <Title level={2} style={{ margin: 0 }}>เคส {c.id.slice(0, 8)}</Title>
+            <Title level={2} style={{ margin: 0 }}>{t("admin_pharmacy_case.case_title", { id: c.id.slice(0, 8) })}</Title>
             <span
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
@@ -551,16 +553,16 @@ export default function PharmacyCaseDetailPage() {
               Risk: {c.riskLevel}
             </span>
           </Space>
-          <Text type="secondary">สถานะ: {c.status}{history?.customerName || history?.customerRef ? ` · ลูกค้า: ${history.customerName || history.customerRef}` : ""}</Text>
+          <Text type="secondary">{t("admin_pharmacy_case.status_line", { status: c.status })}{history?.customerName || history?.customerRef ? t("admin_pharmacy_case.customer_line", { name: history.customerName || history.customerRef }) : ""}</Text>
         </div>
-        <Button onClick={() => router.push("/admin/pharmacy-queue")}>กลับไปคิว</Button>
+        <Button onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_case.btn_back_queue")}</Button>
       </Space>
 
       <Alert
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="AI เป็นเพียงผู้ช่วยเก็บข้อมูลและ draft การวิเคราะห์/ยาที่เกี่ยวข้อง — เภสัชกรต้องเป็นผู้ตัดสินใจสุดท้าย"
+        message={t("admin_pharmacy_case.ai_disclaimer")}
       />
 
       {redFlags.length > 0 && (
@@ -568,7 +570,7 @@ export default function PharmacyCaseDetailPage() {
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          message="พบ Red Flag"
+          message={t("admin_pharmacy_case.red_flag_found")}
           description={redFlags.map((f: any, i: number) => (
             <div key={i}>{f.label} ({f.severity})</div>
           ))}
@@ -582,10 +584,10 @@ export default function PharmacyCaseDetailPage() {
           style={{ marginBottom: 12 }}
           message={
             <>
-              {missing.length > 0 && <div>ข้อมูลที่ยังขาด: {missing.join(", ")}</div>}
-              {conflicting.length > 0 && <div>คำตอบที่ขัดแย้งกัน: {conflicting.join(", ")}</div>}
+              {missing.length > 0 && <div>{t("admin_pharmacy_case.missing_data", { items: missing.join(", ") })}</div>}
+              {conflicting.length > 0 && <div>{t("admin_pharmacy_case.conflicting_answers", { items: conflicting.join(", ") })}</div>}
               {anomalies.length > 0 && (
-                <div>ค่าที่ผิดปกติ: {anomalies.map((item: any) => item?.label || item?.fieldKey || "unknown").join(", ")}</div>
+                <div>{t("admin_pharmacy_case.anomalies", { items: anomalies.map((item: any) => item?.label || item?.fieldKey || t("admin_pharmacy_case.unknown")).join(", ") })}</div>
               )}
             </>
           }
@@ -612,8 +614,8 @@ export default function PharmacyCaseDetailPage() {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="เคสนี้ยังไม่ได้ผูกกับ customer conversation"
-          description="Approve จะเปลี่ยนสถานะเคสได้ แต่จะยังไม่มีปลายทางให้ส่งข้อความกลับลูกค้าอัตโนมัติ"
+          message={t("admin_pharmacy_case.no_conversation_title")}
+          description={t("admin_pharmacy_case.no_conversation_desc")}
         />
       ) : null}
 
@@ -629,7 +631,7 @@ export default function PharmacyCaseDetailPage() {
             }
             extra={
               <Button size="small" icon={<CopyOutlined />} onClick={copyCustomerConfirmation}>
-                คัดลอก
+                {t("admin_pharmacy_case.btn_copy")}
               </Button>
             }
             style={{ marginBottom: 12, borderRadius: 10 }}
@@ -649,16 +651,16 @@ export default function PharmacyCaseDetailPage() {
                 }}
               >
                 <Space wrap>
-                  <Tag color={completenessMeta.color}>ข้อมูล: {completenessMeta.text}</Tag>
-                  <Tag color={confirmationMeta.color}>ลูกค้ายืนยัน: {confirmationMeta.text}</Tag>
+                  <Tag color={completenessMeta.color}>{t("admin_pharmacy_case.tag_completeness", { text: completenessMeta.text })}</Tag>
+                  <Tag color={confirmationMeta.color}>{t("admin_pharmacy_case.tag_confirmation", { text: confirmationMeta.text })}</Tag>
                   {events.some((event: any) => event.action === "assessment.manual_answer_recorded") ? (
-                    <Tag color="blue">มีข้อมูลที่เภสัชกรกรอกเอง</Tag>
+                    <Tag color="blue">{t("admin_pharmacy_case.tag_manual_data")}</Tag>
                   ) : null}
                 </Space>
                 <Text type="secondary">
                   {c.customerConfirmedAt
-                    ? `ยืนยันเมื่อ ${new Date(c.customerConfirmedAt).toLocaleString("th-TH")}`
-                    : "ยังไม่มีเวลายืนยันจากลูกค้า"}
+                    ? t("admin_pharmacy_case.confirmed_at", { when: new Date(c.customerConfirmedAt).toLocaleString("th-TH") })
+                    : t("admin_pharmacy_case.no_confirm_time")}
                 </Text>
               </div>
 
@@ -666,17 +668,17 @@ export default function PharmacyCaseDetailPage() {
                 <Alert
                   type={conflicting.length > 0 || anomalies.length > 0 ? "error" : "warning"}
                   showIcon
-                  message="ยังไม่พร้อมอนุมัติ"
+                  message={t("admin_pharmacy_case.not_ready_approve")}
                   description={[
-                    missing.length > 0 ? `ข้อมูลที่ขาด: ${missing.join(", ")}` : null,
-                    conflicting.length > 0 ? `ข้อมูลขัดแย้ง: ${conflicting.join(", ")}` : null,
-                    anomalies.length > 0 ? `ค่าที่ต้องตรวจ: ${anomalies.map((item: any) => item?.label || item?.fieldKey || "unknown").join(", ")}` : null,
+                    missing.length > 0 ? t("admin_pharmacy_case.missing_list", { items: missing.join(", ") }) : null,
+                    conflicting.length > 0 ? t("admin_pharmacy_case.conflicting_list", { items: conflicting.join(", ") }) : null,
+                    anomalies.length > 0 ? t("admin_pharmacy_case.anomalies_list", { items: anomalies.map((item: any) => item?.label || item?.fieldKey || t("admin_pharmacy_case.unknown")).join(", ") }) : null,
                   ].filter(Boolean).join(" · ")}
                 />
               ) : null}
 
               <div>
-                <Text strong>ข้อมูลผู้ป่วยและความปลอดภัย</Text>
+                <Text strong>{t("admin_pharmacy_case.section_patient_safety")}</Text>
                 <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
                   {patientConfirmationLines.map((line) => (
                     <Col key={line.fieldKey} xs={24} sm={12} lg={8}>
@@ -690,7 +692,7 @@ export default function PharmacyCaseDetailPage() {
               </div>
 
               <div>
-                <Text strong>ข้อมูลอาการที่ลูกค้าตรวจสอบ</Text>
+                <Text strong>{t("admin_pharmacy_case.section_verified_symptoms")}</Text>
                 {symptomConfirmationLines.length > 0 ? (
                   <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
                     {symptomConfirmationLines.map((line) => (
@@ -703,7 +705,7 @@ export default function PharmacyCaseDetailPage() {
                     ))}
                   </Row>
                 ) : (
-                  <Alert style={{ marginTop: 8 }} type="info" showIcon message="ยังไม่มีข้อมูลอาการที่ลูกค้าตรวจสอบ" />
+                  <Alert style={{ marginTop: 8 }} type="info" showIcon message={t("admin_pharmacy_case.no_verified_symptoms")} />
                 )}
               </div>
             </Space>
@@ -711,14 +713,14 @@ export default function PharmacyCaseDetailPage() {
 
           <Card size="small" title="Structured Intake + Patient Memory" style={{ marginBottom: 12, borderRadius: 10 }}>
             <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="ไข้">{String(structuredAnswers.has_fever ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="อุณหภูมิ">{String(structuredAnswers.fever_temp ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="ระยะเวลาอาการ">{String(structuredAnswers.duration_days ?? structuredAnswers.duration_hours ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="ความรุนแรง">{String(structuredAnswers.severity ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="เสมหะ">{String(structuredAnswers.sputum ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="โรคประจำตัว">{String(structuredAnswers.comorbidities ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_fever")}>{String(structuredAnswers.has_fever ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_temp")}>{String(structuredAnswers.fever_temp ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_duration")}>{String(structuredAnswers.duration_days ?? structuredAnswers.duration_hours ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_severity")}>{String(structuredAnswers.severity ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_sputum")}>{String(structuredAnswers.sputum ?? "UNKNOWN")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_pharmacy_case.d_comorbidities")}>{String(structuredAnswers.comorbidities ?? "UNKNOWN")}</Descriptions.Item>
               <Descriptions.Item label="patient memory / prior context" span={2}>
-                {String(structuredAnswers.patient_memory ?? "ยังไม่มี patient memory ที่ดึงมาแสดงในเคสนี้")}
+                {String(structuredAnswers.patient_memory ?? t("admin_pharmacy_case.no_patient_memory"))}
               </Descriptions.Item>
             </Descriptions>
           </Card>
@@ -726,7 +728,7 @@ export default function PharmacyCaseDetailPage() {
           {missing.length > 0 && can("pharmacy.assessment.review") && (
             <Card
               size="small"
-              title="กรอกข้อมูลที่ขาดเอง (ใช้เมื่อ AI ไม่พร้อมใช้งานหรือลูกค้าไม่ตอบต่อ)"
+              title={t("admin_pharmacy_case.manual_entry_title")}
               style={{ marginBottom: 12, borderRadius: 10 }}
             >
               <Space direction="vertical" style={{ width: "100%" }}>
@@ -737,12 +739,12 @@ export default function PharmacyCaseDetailPage() {
                       <Select
                         style={{ width: 320 }}
                         value={manualFieldValues[key] || undefined}
-                        placeholder="เลือกผู้ที่มีอาการจากข้อมูลในบทสนทนา"
+                        placeholder={t("admin_pharmacy_case.manual_rel_placeholder")}
                         options={[
-                          { value: "SELF", label: "ตัวเอง" },
-                          { value: "CHILD", label: "ลูก" },
-                          { value: "PARENT", label: "พ่อแม่" },
-                          { value: "OTHER", label: "บุคคลอื่น" },
+                          { value: "SELF", label: t("admin_pharmacy_case.rel_self") },
+                          { value: "CHILD", label: t("admin_pharmacy_case.rel_child") },
+                          { value: "PARENT", label: t("admin_pharmacy_case.rel_parent") },
+                          { value: "OTHER", label: t("admin_pharmacy_case.rel_other") },
                         ]}
                         onChange={(value) => setManualFieldValues((prev) => ({ ...prev, [key]: value }))}
                       />
@@ -751,7 +753,7 @@ export default function PharmacyCaseDetailPage() {
                         style={{ width: 320 }}
                         value={manualFieldValues[key] ?? ""}
                         onChange={(e) => setManualFieldValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder="กรอกค่าจากบทสนทนาต้นฉบับ"
+                        placeholder={t("admin_pharmacy_case.manual_value_placeholder")}
                       />
                     )}
                   </Space>
@@ -769,10 +771,10 @@ export default function PharmacyCaseDetailPage() {
                     })
                   }
                 >
-                  บันทึกข้อมูลที่กรอกเอง
+                  {t("admin_pharmacy_case.btn_save_manual")}
                 </Button>
                 <Text type="secondary">
-                  ข้อมูลที่กรอกจะถูกตรวจด้วย rule engine เดียวกับที่ AI ใช้ (Red Flag/ข้อมูลขัดแย้งยังตรวจอยู่เหมือนเดิม)
+                  {t("admin_pharmacy_case.manual_rule_note")}
                 </Text>
               </Space>
             </Card>
@@ -789,7 +791,7 @@ export default function PharmacyCaseDetailPage() {
             style={{ marginBottom: 12, borderRadius: 10 }}
             extra={
               canDecide && can("pharmacy.assessment.review") && summaryDraft === null ? (
-                <a onClick={() => setSummaryDraft(c.aiSummary || "")}>แก้ไขสรุป</a>
+                <a onClick={() => setSummaryDraft(c.aiSummary || "")}>{t("admin_pharmacy_case.btn_edit_summary")}</a>
               ) : undefined
             }
           >
@@ -798,17 +800,17 @@ export default function PharmacyCaseDetailPage() {
                 <TextArea value={summaryDraft} onChange={(e) => setSummaryDraft(e.target.value)} rows={5} />
                 <Space>
                   <Button type="primary" loading={editingSummary} onClick={() => editSummary({ variables: { id: c.id, text: summaryDraft } })}>
-                    บันทึกการแก้ไข
+                    {t("admin_pharmacy_case.btn_save_edit")}
                   </Button>
-                  <Button onClick={() => setSummaryDraft(null)}>ยกเลิก</Button>
+                  <Button onClick={() => setSummaryDraft(null)}>{t("admin_pharmacy_case.btn_cancel")}</Button>
                 </Space>
               </Space>
             ) : (
-              <Paragraph style={{ whiteSpace: "pre-wrap" }}>{c.aiSummary || "ยังไม่มีสรุป"}</Paragraph>
+              <Paragraph style={{ whiteSpace: "pre-wrap" }}>{c.aiSummary || t("admin_pharmacy_case.no_summary")}</Paragraph>
             )}
 
             {c.needsManualIntake && (
-              <Tag color="red">เคสนี้ AI ไม่พร้อมใช้งานบางช่วง — ต้องดูบทสนทนาต้นฉบับโดยตรง</Tag>
+              <Tag color="red">{t("admin_pharmacy_case.ai_unavailable_tag")}</Tag>
             )}
           </Card>
 
@@ -825,11 +827,11 @@ export default function PharmacyCaseDetailPage() {
               can("pharmacy.assessment.review") && c.status === "PHARMACIST_REVIEWING" ? (
                 <Space>
                   <Button size="small" icon={<PlusOutlined />} onClick={() => setProductPickerOpen(true)}>
-                    เพิ่มยาเอง
+                    {t("admin_pharmacy_case.btn_add_med")}
                   </Button>
                   {c.protocolId ? (
                     <Button size="small" loading={suggestingMedication} onClick={() => suggestMedication({ variables: { id: c.id } })}>
-                      ขอคำแนะนำยาจาก AI (จากสินค้าในร้านนี้)
+                      {t("admin_pharmacy_case.btn_ai_suggest")}
                     </Button>
                   ) : null}
                 </Space>
@@ -840,8 +842,8 @@ export default function PharmacyCaseDetailPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message="AI จะ draft เฉพาะรายการยาที่อ้างอิงจากร้านยานี้เท่านั้น และเภสัชกรต้องเป็นคน final"
-              description="ระบบจะค้นจาก catalog ของ tenant ร้านนี้แบบ active + in-stock เพื่อช่วยจับคู่ SKU, ราคา และสต็อก ไม่ดึงข้อมูลจากร้านอื่น และไม่ควรส่งต่อให้ลูกค้าแบบอัตโนมัติ"
+              message={t("admin_pharmacy_case.ai_catalog_notice")}
+              description={t("admin_pharmacy_case.ai_catalog_desc")}
             />
 
             {unmatchedAiCount > 0 ? (
@@ -849,13 +851,13 @@ export default function PharmacyCaseDetailPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
-                message={`ตัดข้อเสนอ AI ที่ไม่พบสินค้าจริงในร้านออกแล้ว ${unmatchedAiCount} รายการ`}
-                description="ตารางด้านล่างจะแสดงเฉพาะรายการที่มีสินค้าจริงในร้าน match หรือรายการที่เภสัชเพิ่มเองเท่านั้น"
+                message={t("admin_pharmacy_case.filtered_unmatched", { n: unmatchedAiCount })}
+                description={t("admin_pharmacy_case.filtered_unmatched_desc")}
               />
             ) : null}
 
             {allMedicationRows.length === 0 ? (
-              <Text type="secondary">ยังไม่มีสินค้าจริงที่ใช้ได้ในร้านสำหรับเคสนี้ — กด "เพิ่มยาเอง" เพื่อเลือกจาก catalog ร้าน หรือให้ AI ลองจับคู่ใหม่</Text>
+              <Text type="secondary">{t("admin_pharmacy_case.no_usable_products")}</Text>
             ) : (
               <List
                 dataSource={allMedicationRows}
@@ -883,13 +885,13 @@ export default function PharmacyCaseDetailPage() {
                               <Space direction="vertical" size={2}>
                                 <Space wrap size={6}>
                                   <Text strong style={{ fontSize: 16 }}>
-                                    {primaryMatch?.name || row.drugName || "ไม่ทราบชื่อสินค้า"}
+                                    {primaryMatch?.name || row.drugName || t("admin_pharmacy_case.unknown_product")}
                                   </Text>
                                   <Tag color={row.manual ? "cyan" : "purple"}>{row.manual ? "manual" : "ai"}</Tag>
-                                  {row.excluded ? <Tag color="red">ถูกกรองออก</Tag> : null}
+                                  {row.excluded ? <Tag color="red">{t("admin_pharmacy_case.tag_excluded")}</Tag> : null}
                                 </Space>
                                 <Text type="secondary">
-                                  {primaryMatch?.sku || "-"}{primaryMatch ? ` · เหลือ ${primaryMatch.availableTotal}` : ""}
+                                  {primaryMatch?.sku || "-"}{primaryMatch ? t("admin_pharmacy_case.remaining_suffix", { n: primaryMatch.availableTotal }) : ""}
                                 </Text>
                               </Space>
                             </Space>
@@ -901,7 +903,7 @@ export default function PharmacyCaseDetailPage() {
                                   appendMedicationToDraft(`${row.drugName} ${row.strength} — ${row.dosageInstruction}`)
                                 }
                               >
-                                เพิ่มในร่างข้อความ
+                                {t("admin_pharmacy_case.btn_add_to_draft")}
                               </Button>
                               <Button
                                 size="small"
@@ -909,7 +911,7 @@ export default function PharmacyCaseDetailPage() {
                                 icon={<DeleteOutlined />}
                                 onClick={() => removeMedicationRow(row)}
                               >
-                                ลบ
+                                {t("admin_pharmacy_case.btn_remove")}
                               </Button>
                             </Space>
                           </div>
@@ -919,16 +921,16 @@ export default function PharmacyCaseDetailPage() {
                               {row.drugName} {row.strength}
                             </Descriptions.Item>
                             <Descriptions.Item label="AI draft dosage" span={2}>
-                              {row.dosageInstruction || <Text type="secondary">ยังไม่มี dosage</Text>}
+                              {row.dosageInstruction || <Text type="secondary">{t("admin_pharmacy_case.no_dosage")}</Text>}
                             </Descriptions.Item>
-                            <Descriptions.Item label="สินค้าที่จะจ่าย" span={2}>
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_product_to_dispense")} span={2}>
                               <Select
                                 style={{ width: "100%" }}
                                 value={draft.selectedSku || undefined}
-                                placeholder="เลือกสินค้าจริงในร้าน"
+                                placeholder={t("admin_pharmacy_case.select_real_product")}
                                 options={getCatalogMatches(row).map((item: any) => ({
                                   value: item.sku,
-                                  label: `${item.name} · ${item.sku} · ฿${Number(item.price).toLocaleString()} · เหลือ ${item.availableTotal}`,
+                                  label: `${item.name} · ${item.sku} · ฿${Number(item.price).toLocaleString()}${t("admin_pharmacy_case.remaining_suffix", { n: item.availableTotal })}`,
                                 }))}
                                 onChange={(value) => {
                                   const nextMatch = getCatalogMatches(row).find((item: any) => item.sku === value);
@@ -940,40 +942,40 @@ export default function PharmacyCaseDetailPage() {
                                 }}
                               />
                             </Descriptions.Item>
-                            <Descriptions.Item label="ขนาด / size" span={2}>
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_size")} span={2}>
                               <Select
                                 style={{ width: "100%" }}
                                 value={draft.selectedSize || undefined}
-                                placeholder="เลือก size ที่จะจ่าย"
+                                placeholder={t("admin_pharmacy_case.select_size")}
                                 options={availableSizes.map((item: any) => ({
                                   value: item.size,
-                                  label: `${item.size || "default"} · เหลือ ${item.available}`,
+                                  label: `${item.size || "default"}${t("admin_pharmacy_case.remaining_suffix", { n: item.available })}`,
                                 }))}
                                 onChange={(value) => patchMedicationDraft(row.rowKey, { selectedSize: String(value || "") })}
                               />
                             </Descriptions.Item>
-                            <Descriptions.Item label="จำนวน">
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_qty")}>
                               <InputNumber
                                 min={1}
                                 value={draft.qty}
                                 onChange={(value) => patchMedicationDraft(row.rowKey, { qty: Number(value || 1) })}
                               />
                             </Descriptions.Item>
-                            <Descriptions.Item label="ราคา/หน่วย">
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_unit_price")}>
                               <InputNumber
                                 min={0}
                                 value={draft.unitPrice}
                                 onChange={(value) => patchMedicationDraft(row.rowKey, { unitPrice: Number(value || 0) })}
                               />
                             </Descriptions.Item>
-                            <Descriptions.Item label="เหตุผล" span={2}>
-                              {row.rationale || <Text type="secondary">ไม่มีเหตุผลจาก AI</Text>}
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_reason")} span={2}>
+                              {row.rationale || <Text type="secondary">{t("admin_pharmacy_case.no_ai_reason")}</Text>}
                             </Descriptions.Item>
-                            <Descriptions.Item label="คำเตือน" span={2}>
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_warning")} span={2}>
                               {(row.warnings || []).length > 0 ? (
                                 <Text type="warning">{(row.warnings as string[]).join("; ")}</Text>
                               ) : (
-                                <Text type="secondary">ไม่มี warning เพิ่มเติม</Text>
+                                <Text type="secondary">{t("admin_pharmacy_case.no_extra_warning")}</Text>
                               )}
                               {row.exclusionReason ? (
                                 <>
@@ -982,22 +984,22 @@ export default function PharmacyCaseDetailPage() {
                                 </>
                               ) : null}
                             </Descriptions.Item>
-                            <Descriptions.Item label="หมายเหตุเภสัช" span={2}>
+                            <Descriptions.Item label={t("admin_pharmacy_case.label_pharmacist_note")} span={2}>
                               <Input
                                 value={draft.pharmacistNote}
                                 onChange={(event) => patchMedicationDraft(row.rowKey, { pharmacistNote: event.target.value })}
-                                placeholder="เพิ่มโน้ตสั้น ๆ"
+                                placeholder={t("admin_pharmacy_case.note_placeholder")}
                               />
                             </Descriptions.Item>
                           </Descriptions>
 
                           {(row.catalogMatches || []).length > 1 ? (
                             <div>
-                              <Text strong>ตัวเลือกสินค้าที่ match เพิ่มเติม</Text>
+                              <Text strong>{t("admin_pharmacy_case.more_matches")}</Text>
                               <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
                                 {(row.catalogMatches as any[]).slice(1).map((item) => (
                                   <Tag key={item.sku} color="blue">
-                                    {item.name} · {item.sku} · ฿{Number(item.price).toLocaleString()} · เหลือ {item.availableTotal}
+                                    {item.name} · {item.sku} · ฿{Number(item.price).toLocaleString()}{t("admin_pharmacy_case.remaining_suffix", { n: item.availableTotal })}
                                   </Tag>
                                 ))}
                               </div>
@@ -1023,7 +1025,7 @@ export default function PharmacyCaseDetailPage() {
             style={{ marginBottom: 12, borderRadius: 10 }}
           >
             <TextArea
-              placeholder="สรุป clinical summary / rationale หรือร่างข้อความก่อนตัดสินใจ"
+              placeholder={t("admin_pharmacy_case.draft_placeholder")}
               value={pharmacistSummaryDraft}
               onChange={(event) => setPharmacistSummaryDraft(event.target.value)}
               rows={4}
@@ -1047,18 +1049,18 @@ export default function PharmacyCaseDetailPage() {
                   })
                 }
               >
-                บันทึกร่าง
+                {t("admin_pharmacy_case.btn_save_draft")}
               </Button>
               <Button
                 disabled={!canDecide || !pharmacistSummaryDraft.trim()}
                 onClick={() => setPharmacistResponse(pharmacistSummaryDraft)}
               >
-                ใช้เป็นข้อความตอบลูกค้า
+                {t("admin_pharmacy_case.btn_use_as_reply")}
               </Button>
             </Space>
             <div style={{ marginTop: 8 }}>
               <Text type="secondary">
-                ร่างนี้บันทึกลง backend และ Audit Timeline แต่จะยังไม่ส่งให้ลูกค้าจนกด Approve and send
+                {t("admin_pharmacy_case.draft_note")}
               </Text>
             </div>
           </Card>
@@ -1069,13 +1071,13 @@ export default function PharmacyCaseDetailPage() {
             {history ? (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Text type="secondary">
-                  ลูกค้า: {history.customerName || history.customerRef || "ไม่ทราบ"} · conversation {history.conversationId.slice(0, 8)} · {history.channel}
+                  {t("admin_pharmacy_case.conv_header", { name: history.customerName || history.customerRef || t("admin_pharmacy_case.conv_unknown"), id: history.conversationId.slice(0, 8), channel: history.channel })}
                 </Text>
                 <div style={{ maxHeight: 420, overflowY: "auto", paddingRight: 4 }}>
                   <List
                     size="small"
                     dataSource={history.messages || []}
-                    locale={{ emptyText: "ยังไม่มีข้อความใน conversation นี้" }}
+                    locale={{ emptyText: t("admin_pharmacy_case.no_messages") }}
                     renderItem={(m: any) => (
                       <List.Item>
                         <Space direction="vertical" size={4} style={{ width: "100%" }}>
@@ -1098,8 +1100,8 @@ export default function PharmacyCaseDetailPage() {
               <Alert
                 type="info"
                 showIcon
-                message="เคสนี้ยังไม่ได้ผูกกับ customer conversation จริง"
-                description="ด้านล่างเป็น intake snapshot ที่ถูกเก็บไว้กับเคส"
+                message={t("admin_pharmacy_case.no_real_conversation")}
+                description={t("admin_pharmacy_case.intake_snapshot_desc")}
               />
             )}
 
@@ -1108,7 +1110,7 @@ export default function PharmacyCaseDetailPage() {
                 <Divider style={{ margin: "12px 0" }} />
                 <Space>
                   <Switch checked={showRawConversation} onChange={setShowRawConversation} />
-                  <Text>แสดง intake snapshot สำหรับตรวจสอบ</Text>
+                  <Text>{t("admin_pharmacy_case.show_intake_snapshot")}</Text>
                 </Space>
               </>
             ) : null}
@@ -1135,22 +1137,22 @@ export default function PharmacyCaseDetailPage() {
           <Card size="small" title="Action workspace" style={{ marginBottom: 12, borderRadius: 10 }}>
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
               <Descriptions size="small" column={1} bordered>
-                <Descriptions.Item label="จำนวนสินค้าที่เลือก">{selectedMedicationSummary.count} รายการ</Descriptions.Item>
-                <Descriptions.Item label="มูลค่าประมาณการ">฿{selectedMedicationSummary.total.toLocaleString()}</Descriptions.Item>
-                <Descriptions.Item label="ข้อมูลขาด">{missing.length}</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_case.label_selected_count")}>{t("admin_pharmacy_case.count_items", { n: selectedMedicationSummary.count })}</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_case.label_estimated_value")}>฿{selectedMedicationSummary.total.toLocaleString()}</Descriptions.Item>
+                <Descriptions.Item label={t("admin_pharmacy_case.label_missing")}>{missing.length}</Descriptions.Item>
               </Descriptions>
 
               {checkoutOrderDraft?.status ? (
                 <Alert
                   type="info"
                   showIcon
-                  message={`checkout draft ปัจจุบัน: ${checkoutOrderDraft.status}`}
+                  message={t("admin_pharmacy_case.checkout_draft_status", { status: checkoutOrderDraft.status })}
                   description={
                     checkoutOrderDraft.createdOrderId
-                      ? `สร้าง order แล้ว: ${checkoutOrderDraft.createdOrderId}`
+                      ? t("admin_pharmacy_case.order_created", { id: checkoutOrderDraft.createdOrderId })
                       : (
                         <div>
-                          <div>ยังรอลูกค้ายืนยันสั่งซื้อในแชท</div>
+                          <div>{t("admin_pharmacy_case.awaiting_customer_confirm")}</div>
                           {(checkoutOrderDraft.items || []).map((item: any) => (
                             <div key={`${item.sku}-${item.size}`}>
                               • {item.productName} ({item.sku}) / {item.size} × {item.qty}
@@ -1166,13 +1168,13 @@ export default function PharmacyCaseDetailPage() {
                 <Alert
                   type="warning"
                   showIcon
-                  message="รายการยาที่ยังเปิดใช้งานอยู่ต้องเลือกสินค้าและ size ให้ครบก่อน approve"
+                  message={t("admin_pharmacy_case.meds_need_selection")}
                 />
               ) : null}
 
               {canReview && can("pharmacy.assessment.review") && (
                 <Button type="primary" loading={starting} onClick={() => startReview({ variables: { id: c.id } })}>
-                  รับเคส (Start Review)
+                  {t("admin_pharmacy_case.btn_start_review")}
                 </Button>
               )}
 
@@ -1183,18 +1185,18 @@ export default function PharmacyCaseDetailPage() {
                     requestMore({ variables: { id: c.id, v: c.version, fields: missing.length ? missing : ["additional_info"], note: reason || null } })
                   }
                 >
-                  ขอข้อมูลเพิ่มจากช่องที่ยังขาด
+                  {t("admin_pharmacy_case.btn_request_more")}
                 </Button>
               )}
 
               <TextArea
-                placeholder="คำแนะนำของเภสัชกร (ข้อความนี้จะถูกส่งให้ลูกค้าโดยตรง เมื่อกดอนุมัติ)"
+                placeholder={t("admin_pharmacy_case.advice_placeholder")}
                 value={pharmacistResponse}
                 onChange={(e) => setPharmacistResponse(e.target.value)}
                 rows={5}
                 disabled={!canDecide}
               />
-              <Input placeholder="เหตุผล (สำหรับปฏิเสธ/ส่งต่อแพทย์)" value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canDecide} />
+              <Input placeholder={t("admin_pharmacy_case.reason_placeholder")} value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canDecide} />
 
               <Space wrap>
                 <Button
@@ -1224,8 +1226,8 @@ export default function PharmacyCaseDetailPage() {
               </Space>
 
               <Text type="secondary">
-                ปุ่ม Approve จะเปิดได้เมื่อเคสอยู่สถานะ review + rule engine ยืนยันว่าข้อมูลครบและไม่ขัดแย้ง + ลูกค้ายืนยันสรุป
-                หรือเภสัชกรกรอกข้อมูลที่ขาดเอง + มีข้อความตอบกลับ + รายการยาที่เลือกมีสินค้า/size ครบ
+                {t("admin_pharmacy_case.approve_hint_1")}
+                {t("admin_pharmacy_case.approve_hint_2")}
               </Text>
 
               {c.status !== "CLOSED" && c.status !== "EMERGENCY_REFERRAL" && can("pharmacy.assessment.review") && (
@@ -1234,7 +1236,7 @@ export default function PharmacyCaseDetailPage() {
                   <Text strong type="danger">Emergency referral</Text>
                   <Space.Compact style={{ width: "100%" }}>
                     <Input
-                      placeholder="เหตุผลที่ส่งฉุกเฉิน"
+                      placeholder={t("admin_pharmacy_case.emergency_reason_placeholder")}
                       value={emergencyReason}
                       onChange={(e) => setEmergencyReason(e.target.value)}
                     />
@@ -1268,7 +1270,7 @@ export default function PharmacyCaseDetailPage() {
       </Row>
 
       <Modal
-        title="เพิ่มยาเองจากสินค้าในร้านนี้"
+        title={t("admin_pharmacy_case.modal_add_med_title")}
         open={productPickerOpen}
         onCancel={() => setProductPickerOpen(false)}
         footer={null}
@@ -1278,22 +1280,22 @@ export default function PharmacyCaseDetailPage() {
           <Alert
             type="info"
             showIcon
-            message="ค้นหาเฉพาะสินค้าในร้านนี้"
-            description="ใช้เมื่อเภสัชต้องการเติมรายการยาเองนอกเหนือจากที่ AI draft มา"
+            message={t("admin_pharmacy_case.search_this_shop_only")}
+            description={t("admin_pharmacy_case.search_this_shop_desc")}
           />
           <Input
-            placeholder="ค้นหาชื่อยา / SKU"
+            placeholder={t("admin_pharmacy_case.search_placeholder")}
             value={productSearch}
             onChange={(e) => setProductSearch(e.target.value)}
           />
           {productSearchError ? (
-            <Alert type="error" showIcon message="โหลด catalog ร้านไม่สำเร็จ" description={productSearchError.message} />
+            <Alert type="error" showIcon message={t("admin_pharmacy_case.catalog_load_error")} description={productSearchError.message} />
           ) : null}
           <div style={{ maxHeight: 420, overflowY: "auto" }}>
             <List
               loading={productSearchLoading}
               dataSource={productSearchItems}
-              locale={{ emptyText: "ไม่พบสินค้าที่ตรงคำค้น" }}
+              locale={{ emptyText: t("admin_pharmacy_case.no_matching_products") }}
               renderItem={(product: any) => {
                 const availableTotal = Array.isArray(product.variants)
                   ? product.variants.reduce((sum: number, variant: any) => sum + Math.max(0, Number(variant.available) || 0), 0)
@@ -1302,14 +1304,14 @@ export default function PharmacyCaseDetailPage() {
                   <List.Item
                     actions={[
                       <Button key="add" type="primary" size="small" disabled={!isPolicyEligibleForPharmacistDraft(product)} onClick={() => addManualProduct(product)}>
-                        เพิ่มเข้าแผน
+                        {t("admin_pharmacy_case.btn_add_to_plan")}
                       </Button>,
                     ]}
                   >
                     <Space direction="vertical" size={2} style={{ width: "100%" }}>
                       <Text strong>{product.name}</Text>
                       <Text type="secondary">
-                        {product.sku} · ฿{Number(product.price || 0).toLocaleString()} · เหลือ {availableTotal}
+                        {product.sku} · ฿{Number(product.price || 0).toLocaleString()}{t("admin_pharmacy_case.remaining_suffix", { n: availableTotal })}
                       </Text>
                       <Space wrap size={4}>
                         <Tag color={product.policyStatus === "APPROVED" ? "green" : "red"}>Policy: {product.policyStatus}</Tag>
