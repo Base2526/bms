@@ -57,7 +57,7 @@ Full per-domain rules: [../business/order.md](../business/order.md) ·
 
 Scale planning for admin workloads: [admin-scale-readiness.md](./admin-scale-readiness.md)
 
-## Build status (2026-07)
+## Build status (2026-08)
 
 Operational modules per this spec are **fully built** — order lifecycle closes end-to-end
 (order → payment → shipping → delivered/completed) with omnichannel capture on every major channel.
@@ -73,6 +73,13 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Inbox Realtime Diagnostics | ✅ | `/admin/inbox/realtime-diagnostics` · see [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md) |
 | AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` — see [../ai/workflow.md](../ai/workflow.md) |
 | AI Tool-Calling (customer + staff assistant) | ✅ | `lib/bms/tools/{types,runtime,catalog}.ts` · `graphql/bmsAssistant.ts` · `/admin/assistant` — see [../ai/workflow.md](../ai/workflow.md) and [../ai/tools.md](../ai/tools.md) |
+| AI Usage, Credits & Cost Accounting | ✅ | `lib/bms/{aiUsage,aiConfig}.ts` · `6.8` / `7.27` / `7.35` / `7.82` · `/admin/billing` — billable credits, provider calls, and attributed USD cost are three separate dimensions; see [../ai/workflow.md](../ai/workflow.md) |
+| AI Quality Review | ✅ | `7.31` / `7.32` · `/admin/ai-quality` — see [../ai/quality.md](../ai/quality.md) |
+| AI Pharmacy Intake Assistant | 🧪 flag-gated, off by default | `lib/bms/pharmacy/*` · `7.57`–`7.74` · `/admin/pharmacy-queue`, `/admin/pharmacy-protocols`, `/admin/pharmacy-intake-lab` — AI takes the intake, a **licensed pharmacist** makes every clinical decision; see [`lib/bms/pharmacy/README.md`](../../apps/web/lib/bms/pharmacy/README.md) and the [QA script](../testing/pharmacy-protocol-workflow-and-test-cases.md) |
+| Coupons / Discount Codes | ✅ | `lib/bms/coupons.ts` · `7.21` / `7.23` / `7.25` · `/admin/coupons` + customer coupon wallet — see [../business/order.md](../business/order.md) |
+| Restock Notifications | ✅ | `bms_restock_subscriptions` / `bms_restock_deliveries` · `7.41` · `/admin/restock-subscriptions` — customer opt-in requires explicit consent |
+| Revision History | ✅ | `graphql/bmsRevisions.ts` · `7.0`–`7.14`, `7.22` · `/admin/revisions` — before-UPDATE snapshots for products/orders/payments/shipments/purchase/coupons |
+| Shop Archetype & Onboarding | ✅ | `7.42`–`7.44` · `/shop-signup` capture → sample-data seeding → runtime commerce policy — see [../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md) |
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Product Bulk Import (CSV/XLSX) | ✅ | `lib/bms/productImport.ts` · `graphql/bmsProducts.ts` (`bmsImportProducts`) · `/admin/products` `ImportModal.tsx` — see [../business/inventory.md](../business/inventory.md) |
@@ -92,22 +99,38 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Self Profile & Avatar | ✅ | `/admin/profile` · `bmsMe` / `updateMe` / `uploadAvatar` · per-user `theme_preference` / `language` |
 | Support Tickets | ✅ | `support_tickets` / `support_ticket_comments` · `/support` · `/admin/support-tickets` |
 | Batch & Cron Ops View | ✅ | `lib/bms/operationsSchedule.ts` · `/admin/operations-schedule` |
+| Cron/Batch Run History | ✅ | `lib/bms/jobRuns.ts` · `7.55__bms_job_runs.sql` · every cron endpoint records status/duration/output; `POST /api/bms/jobs/report-run` lets the GitHub Action report back |
+| Staff Management by Shop Owner (Manager) | ✅ | `lib/bms/{userAdmin,staffRoles}.ts` · `7.78__bms_user_management_perms.sql` · `/admin/users` — `user.view`/`user.manage` opens the module, a code-level role rank decides which rows may be touched; see [api.md](./api.md) § RBAC |
+| Per-user Language & Theme Preference | ✅ | `users.language` / `users.theme_preference` · `7.50` / `7.56` / `7.81` (new accounts default to Thai) · `/admin/profile` + public `/settings` |
+| Live Dashboard (`/live-dashboard`) | 🚧 layout only — every number is mock | `app/(main)/live-dashboard/page.tsx` — public route reusing the session cookie + `report.view`; no query is wired yet, see [../ui/dashboard.md](../ui/dashboard.md) |
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
 | Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` |
 
-**Roadmap remaining:** TikTok send API · real carrier API (label PDF/auto-tracking) ·
-AI OCR / forecasting (beyond payment-slip verify) · WhatsApp / Email / Voice AI ·
-letting shop owners (Manager role) manage their own staff (currently Administrator/platform only) ·
+**Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
+plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
+merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
+AI OCR / forecasting (beyond payment-slip verify; forecasting is heuristic, not ML) ·
+WhatsApp / Email / Voice AI ·
 Shopee/Lazada signature verification against real Open Platform docs ·
-proactive external notification for Channel Health (e.g. LINE alert to the shop owner) — needs an
-admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own LINE OA channel ·
+proactive external notification for Channel Health and AI Provider Health (e.g. LINE alert to the shop
+owner) — needs an admin-to-LINE-user-id binding that doesn't exist yet, separate from the shop's own
+LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
-an actual cron schedule for the four ready-but-unscheduled endpoints (`channels/check-health`,
-`ai/check-health`, `reports/send-digest`, `followups/run`) — all four just need an external
-scheduler pointed at them.
+wiring `/live-dashboard` to real queries (and re-reviewing its `?demo=1` bypass at that point) ·
+finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
+§ i18n coverage for what is deliberately *not* a gap) ·
+Follow-up Automation's Workflow Engine and decision-driving scoring model ·
+a password/TLS for Redis before a real production deploy ·
+an actual cron schedule for the six ready-but-unscheduled endpoints (`orders/release-expired`,
+`channels/check-health`, `ai/check-health`, `reports/send-digest`, `followups/run`,
+`shipping/sync-carriers`) — all six already record their own run history in `bms_job_runs`, they just
+need an external scheduler pointed at them.
+
+**Migrations not yet applied to production (2026-08-13):** `7.33`, `7.52`, `7.54`, `7.55`, `7.56`,
+`7.78`, `7.81`, `7.82`. Check the target database rather than trusting this list.
 
 ## RBAC model (two tiers)
 

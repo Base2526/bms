@@ -118,7 +118,7 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | Cache / Sessions | **Redis 7** (pub/sub, read-through cache, admin session revocation) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
-| AI | Anthropic Claude (`ANTHROPIC_API_KEY`) — optional; falls back to deterministic templates |
+| AI | Multi-provider: Anthropic Claude and DeepSeek for chat/tool-calling (`BMS_AI_PROVIDER`, per-tenant BYOK), Qwen for payment-slip OCR (`BMS_SLIP_READER_PROVIDER`) — all optional; without credentials the AI layer falls back to deterministic templates |
 | Orchestration | **Docker Compose** |
 
 The BMS business logic lives in [`apps/web/lib/bms/`](./apps/web/lib/bms/)
@@ -376,7 +376,7 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | Cache / Session | **Redis 7** (pub/sub, cache แบบ read-through, revoke admin session) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
-| AI | Anthropic Claude (ตั้ง `ANTHROPIC_API_KEY`) — ถ้าไม่ตั้งจะใช้ template ภาษาไทยแทน |
+| AI | รองรับหลาย provider: Anthropic Claude + DeepSeek สำหรับแชท/tool-calling (`BMS_AI_PROVIDER`, ร้านใส่ key ตัวเองได้ผ่าน BYOK) และ Qwen สำหรับอ่านสลิป (`BMS_SLIP_READER_PROVIDER`) — ถ้าไม่ตั้ง key เลยจะใช้ template ภาษาไทยแทน |
 | Orchestration | **Docker Compose** |
 
 Business logic อยู่ใน [`apps/web/lib/bms/`](./apps/web/lib/bms/) และเปิดใช้ผ่าน

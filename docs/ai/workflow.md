@@ -341,8 +341,10 @@ $0.072 output per million tokens as checked 2026-07-30) and can be overridden wi
   (platform admin only, `requirePlatformAdmin()`) tests the shared env-level key.
 - **UI** — AI card in `/admin/settings` (BYOK provider + key + optional model + test/remove, usage banner when
   on the shared key); Dashboard alert when shared-key usage is near/over quota
-  (`/admin/dashboard`); Billing now has an AI Credit mockup that reads the real monthly summary,
-  real ledger, and real usage breakdown while the pricing/top-up engine remains under construction;
+  (`/admin/dashboard`); `/admin/billing` reads the real monthly summary, ledger, and usage breakdown —
+  including `billableCredits`/`providerCalls`/`actualCostUsd`/`unpricedProviderCalls` — with the
+  client-side mock estimators (a hardcoded per-credit price and a fabricated ledger) removed; the
+  pricing/top-up engine itself is still under construction, so no purchase flow is offered;
   "ทดสอบ Shared AI Key" button in the platform-only `/admin/env` page; a sidebar indicator
   (`components/AdminSidebar.tsx`, polled every 60s — coarser than the 15s Inbox/Channel-Health
   polls since quota moves monthly, not by the second) pinned above the manual/profile block,

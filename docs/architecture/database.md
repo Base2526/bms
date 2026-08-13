@@ -39,7 +39,7 @@ operators must resolve those records before retrying the migration.
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile` | `6.9`, `7.17`, `7.30` |
-| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35` |
+| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
@@ -283,6 +283,29 @@ Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every ten
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
 [api.md](api.md) before changing either half.
+
+**AI usage accounting (`7.82__bms_ai_usage_accounting.sql`)** — splits what used to be one
+`credits_used`/`estimated_cost` pair on `bms_ai_usage_events` into three independent dimensions:
+`billable_credits` (what the tenant was charged — one credit per *logical* request on a finite plan,
+zero on an unlimited plan), `provider_calls` (actual provider attempts), and `actual_cost_usd` (metered
+cost attributed from provider-reported tokens against the configured rate card), plus
+`unpriced_provider_calls` for attempts that returned no usage. `estimated_cost` on both
+`bms_ai_usage_events` and `bms_ai_usage_monthly` widens to `NUMERIC(16,8)`, because the old
+`NUMERIC(12,4)` rounded small but valid per-request costs to zero. `actual_cost_usd` is nullable **on
+purpose**: unknown cost must never be recorded as an authoritative `$0`. `CHECK` constraints keep all
+three counters non-negative and `unpriced_provider_calls <= provider_calls`. The backfill classifies
+legacy rows (using `meta.provider_calls`, `error_message`, `status`, `source` and `completed_at`) and
+stamps `meta.usage_accounting_version = '2'`, so re-running the migration is a no-op. Two indexes
+support the read paths: `created_at DESC` for the recent-usage tables and a partial
+`(tenant_id, year_month, created_at) WHERE status = 'started' AND completed_at IS NULL` for the stale
+reservation sweep. Attempts belonging to one logical request share `meta.usage_group_id`, and
+`requests` counts `DISTINCT usage_group_id` — do not treat one event as one billed request.
+
+**Default account language (`7.81__users_language_default_th.sql`)** — changes only the `users.language`
+column default from `'en'` (set way back in `1.13`) to `'th'`, because none of the three `INSERT INTO
+users` paths set the column and a brand-new account therefore flipped a Thai visitor's UI to English on
+first login. Existing `'en'` rows are intentionally left alone: an explicit English choice cannot be
+distinguished from an untouched default. The `CHECK (language IN ('th','en'))` from `7.56` still applies.
 
 **Auth hardening (`7.80__auth_session_and_reset_token_hardening.sql`)** —
 `users.admin_session_version` invalidates existing admin JWTs after a password or role change;

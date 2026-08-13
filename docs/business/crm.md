@@ -152,6 +152,9 @@ after login while public/signed-out pages continue to use the local cookie/stora
 UI language works the same way via `users.language` (`th`/`en`), synced into the browser's `lang`
 cookie on login and re-applied with a page refresh (language, unlike theme, is resolved
 server-side to pick an i18n dictionary, so it needs that refresh rather than a client-only toggle).
-This only affects the ~15% of the app already wired to the i18n dictionary (public marketing/auth
-pages and nav chrome) — most admin pages are still Thai-only regardless of this setting; see
-[../architecture/system.md](../architecture/system.md) for what's covered.
+The setting only changes pages wired to the i18n dictionary. As of 2026-08-13 that is every public
+marketing/auth page, the storefront, the checkout, the nav chrome, and 48 of 78 admin pages; the
+remaining admin files are layout/loading guards and English-only legacy platform pages rather than
+untranslated Thai. See [AGENTS.md](../../AGENTS.md) § i18n coverage for the current breakdown, and
+re-run the audit there instead of trusting a percentage written in prose. New accounts default to
+Thai (migration `7.81`).
