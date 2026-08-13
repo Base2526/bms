@@ -46,7 +46,18 @@ function ResetClientInner({ token }: Props) {
   const router = useRouter();
   const [mut, { loading }] = useMutation(MUT_RESET);
 
-  const outerStyle = useMemo(() => ({ display: "flex", justifyContent: "center", padding: 40 }), []);
+  const outerStyle = useMemo(
+    () => ({
+      minHeight: "100dvh",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      padding: 16,
+      paddingTop: "clamp(24px, 12vh, 140px)",
+      boxSizing: "border-box" as const,
+    }),
+    []
+  );
   const cardStyle = useMemo(() => ({ width: 420, maxWidth: "100%" as const }), []);
 
   const onFinish = useCallback(
