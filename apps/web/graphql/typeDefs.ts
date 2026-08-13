@@ -2433,7 +2433,7 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsTestAiKeyResult { ok: Boolean!  message: String! }
 
-  # ===== BMS AI Provider Health (platform-wide, ไม่ผูก tenant — ดู CLAUDE.local.md § AI Provider Health) =====
+  # ===== BMS AI Provider Health (platform-wide, ไม่ผูก tenant — ดู docs/local-notes-archive.md § AI Provider Health) =====
   type BmsAiProviderHealth {
     provider: String!          # anthropic / deepseek / qwen
     purpose: String!           # chat / ocr

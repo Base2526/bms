@@ -12,7 +12,7 @@
 // เขียนผ่าน setAiProviderStatus() เท่านั้น (single entrypoint) — กัน log กระจาย
 // ไม่ตรงกับ status จริงบนตาราง และกัน spam log ซ้ำถ้า status ไม่เปลี่ยน
 //
-// wire เข้าจุดจริงแล้ว (ดู CLAUDE.local.md § AI Provider Health):
+// wire เข้าจุดจริงแล้ว (ดู docs/local-notes-archive.md § AI Provider Health):
 //   - ทุก shared-provider call จริงที่จบงาน (finalizeAiUsageEvent ใน aiUsage.ts)
 //     → recordProviderSuccess()/recordProviderError() อัตโนมัติ (ครอบคลุมทั้ง
 //       ai.ts generateResponse, tools/runtime.ts tool loop, payments.ts slip OCR)

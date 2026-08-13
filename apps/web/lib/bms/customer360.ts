@@ -256,7 +256,7 @@ export async function getCustomerProducts(tenantId: string, customerId: string, 
 
 // ---------------------------------------------------------------
 // Section 6 — current shopping cart
-// ไม่มีสถานะ DRAFT แยกในสคีมา (ดู CLAUDE.local.md) — ใช้ order PENDING
+// ไม่มีสถานะ DRAFT แยกในสคีมา (ดู docs/local-notes-archive.md) — ใช้ order PENDING
 // ล่าสุดที่ยังไม่มี payment ผูกอยู่แทน "ตะกร้า"
 // ---------------------------------------------------------------
 export async function getDraftOrder(tenantId: string, customerId: string) {

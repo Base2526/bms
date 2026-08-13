@@ -6,7 +6,7 @@
 // Rule Engine + Scheduler + AI follow-up generation — nothing here hardcodes
 // a delay/goal/retry count, it only ever reads bms_followup_rules.
 //
-// Deliberately NOT the full spec (see CLAUDE.local.md § Follow-up Automation):
+// Deliberately NOT the full spec (see docs/local-notes-archive.md § Follow-up Automation):
 // no Workflow Engine (multi-step branching trees) and no Follow-up Scoring
 // model — this MVP uses rule `priority` + universal stop-conditions instead.
 // `bms_followup_rules.stop_conditions` is stored/validated for forward
