@@ -2379,6 +2379,10 @@ export const typeDefs = /* GraphQL */ `
     grantedCredits: Int!
     bonusCredits: Int!
     adjustedCredits: Int!
+    billableCredits: Int!
+    providerCalls: Int!
+    actualCostUsd: Float!
+    unpricedProviderCalls: Int!
     estimatedCost: Float!
   }
   type BmsAiCreditLedgerEntry {
@@ -2395,7 +2399,11 @@ export const typeDefs = /* GraphQL */ `
   type BmsAiUsageBreakdown {
     feature: String!
     requests: Int!
+    billableCredits: Int!
     creditsUsed: Int!
+    providerCalls: Int!
+    unpricedProviderCalls: Int!
+    actualCostUsd: Float!
     estimatedCost: Float!
   }
   type BmsAiUsageEvent {
@@ -2407,9 +2415,13 @@ export const typeDefs = /* GraphQL */ `
     provider: String!
     model: String
     status: String!
+    billableCredits: Int!
     creditsUsed: Int!
     inputTokens: Int
     outputTokens: Int
+    providerCalls: Int!
+    unpricedProviderCalls: Int!
+    actualCostUsd: Float
     estimatedCost: Float!
     routingReason: String
     configuredProvider: String

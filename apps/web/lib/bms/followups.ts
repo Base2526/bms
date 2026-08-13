@@ -26,7 +26,7 @@ import { getConversation, listMessages, sendFollowupMessage } from "./inbox";
 import { getCustomer360 } from "./customer360";
 import { getStoreProfile } from "./storeProfile";
 import { resolveAiCredentials, type AiCredentials } from "./ai";
-import { finalizeAiUsageEvent } from "./aiUsage";
+import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
 
 export const FOLLOWUP_INTENTS = [
@@ -263,7 +263,9 @@ export async function classifyConversationIntent(
 
   const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "followup_intent" });
   if (creds) {
+    let usage: { input_tokens?: number; output_tokens?: number } | undefined;
     try {
+      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
       const resp = await callAnthropicCompatibleMessages(creds as AiCredentials, {
         model: creds.model,
         max_tokens: 100,
@@ -274,7 +276,11 @@ export async function classifyConversationIntent(
         messages: [{ role: "user", content: transcript || "(no messages)" }],
       });
       if (resp.ok) {
-        const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+        const json = (await resp.json()) as {
+          content?: Array<{ text?: string }>;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+        usage = json.usage;
         const raw = json.content?.[0]?.text?.trim();
         const parsed = raw ? parseAiIntentJson(raw) : null;
         if (parsed && (FOLLOWUP_INTENTS as readonly string[]).includes(parsed.intent)) {
@@ -286,7 +292,11 @@ export async function classifyConversationIntent(
         }
       }
       if (creds.usageEventId) {
-        await finalizeAiUsageEvent(creds.usageEventId, { status: result ? "completed" : "failed" });
+        await finalizeAiUsageEvent(creds.usageEventId, {
+          status: result ? "completed" : "failed",
+          inputTokens: usage?.input_tokens ?? null,
+          outputTokens: usage?.output_tokens ?? null,
+        });
       }
     } catch (err) {
       if (creds.usageEventId) {
@@ -398,14 +408,24 @@ async function generateFollowupMessage(
     ),
   ]);
 
+  // Prepare all local context before reserving shared quota. A database/cache
+  // failure here must not look like a provider call or charge the tenant.
+  let customer360: Awaited<ReturnType<typeof getCustomer360>> | null;
+  let storeProfile: Awaited<ReturnType<typeof getStoreProfile>>;
+  try {
+    [customer360, storeProfile] = await Promise.all([
+      (conv as any)?.customer_id ? getCustomer360(tenantId, (conv as any).customer_id) : Promise.resolve(null),
+      getStoreProfile(tenantId),
+    ]);
+  } catch (err) {
+    console.error("[BMS] followup context load failed, falling back to template:", err);
+    return rule.template?.trim() || GOAL_FALLBACK_TEXT[rule.messageGoal];
+  }
+
   const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "followup_message" });
   if (!creds) return rule.template?.trim() || GOAL_FALLBACK_TEXT[rule.messageGoal];
 
   try {
-    const [customer360, storeProfile] = await Promise.all([
-      (conv as any)?.customer_id ? getCustomer360(tenantId, (conv as any).customer_id) : Promise.resolve(null),
-      getStoreProfile(tenantId),
-    ]);
     const transcript = messages
       .map((m: any) => `${m.direction === "IN" ? "customer" : "shop"}: ${(m.body || "").slice(0, 300)}`)
       .join("\n");
@@ -422,6 +442,7 @@ async function generateFollowupMessage(
       priorFollowups ? `Previous follow-up messages already sent (never repeat these):\n${priorFollowups}` : "No previous follow-ups sent yet.",
     ];
 
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
     const resp = await callAnthropicCompatibleMessages(creds, {
       model: creds.model,
       max_tokens: 220,

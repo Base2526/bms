@@ -142,8 +142,12 @@ function formatDateTime(value: string | null) {
   });
 }
 
-function formatMoney(value: number) {
-  return `$${value.toFixed(4)}`;
+function formatMoney(value: number | null) {
+  if (value === null) return "Unavailable";
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 8,
+  })}`;
 }
 
 export default function EnvTableClient({
@@ -370,7 +374,25 @@ export default function EnvTableClient({
       title: "Cost",
       key: "cost",
       width: 120,
-      render: (_, record) => formatMoney(record.estimatedCost),
+      render: (_, record) => formatMoney(record.actualCostUsd),
+    },
+    {
+      title: "Usage",
+      key: "usage",
+      width: 150,
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          <Text>{record.billableCredits} credit · {record.providerCalls} call</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {(record.inputTokens ?? 0).toLocaleString()} in · {(record.outputTokens ?? 0).toLocaleString()} out
+          </Text>
+          {record.unpricedProviderCalls > 0 && (
+            <Text type="warning" style={{ fontSize: 12 }}>
+              {record.unpricedProviderCalls} unpriced call
+            </Text>
+          )}
+        </Space>
+      ),
     },
   ];
 

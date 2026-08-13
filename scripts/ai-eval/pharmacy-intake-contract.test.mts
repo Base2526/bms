@@ -810,7 +810,7 @@ test("minimizeForAudit strips raw health data keys and never passes them through
 function fakeResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as any;
 }
-const FAKE_CREDS = { provider: "anthropic" as const, apiKey: "eval-key", model: "eval-model", baseUrl: "https://api.anthropic.com" };
+const FAKE_CREDS = { provider: "anthropic" as const, apiKey: "eval-key", model: "claude-sonnet-4-5-20250929", baseUrl: "https://api.anthropic.com" };
 
 test("malformed AI output (not JSON) fails validation and does not throw out of callWithValidation", async () => {
   let calls = 0;
@@ -832,6 +832,50 @@ test("malformed AI output (not JSON) fails validation and does not throw out of 
   );
   assert.equal(result, null);
   assert.ok(calls >= 1);
+});
+
+test("pharmacy retries use one event and finalize aggregated provider usage once", async () => {
+  let calls = 0;
+  let persistedAttempts = 0;
+  const finalized: Array<{ eventId: string; result: any }> = [];
+  const result = await __pharmacyAiTest.callWithValidation(
+    "tenant-eval",
+    "case-eval",
+    "extract",
+    "sys",
+    "user",
+    (raw) => __pharmacyAiTest.validateIntakeExtraction(raw, ["onset_days"]),
+    {
+      resolveCredentials: async () => ({ ...FAKE_CREDS, usageEventId: "usage-pharmacy" }),
+      callProvider: async () => {
+        calls++;
+        return fakeResponse({
+          content: [{ text: calls === 1 ? "not json" : '{"extractedFields":{"onset_days":2}}' }],
+          usage: { input_tokens: calls === 1 ? 10 : 20, output_tokens: calls === 1 ? 2 : 3 },
+        });
+      },
+      finalizeUsage: async (eventId, usageResult) => {
+        finalized.push({ eventId, result: usageResult });
+      },
+      recordProviderAttempt: async () => {
+        persistedAttempts++;
+      },
+      logValidationExhausted: async () => {},
+    }
+  );
+
+  assert.equal(result?.extractedFields.onset_days, 2);
+  assert.equal(calls, 2);
+  assert.equal(persistedAttempts, 2);
+  assert.equal(finalized.length, 1);
+  assert.equal(finalized[0].eventId, "usage-pharmacy");
+  assert.equal(finalized[0].result.status, "completed");
+  assert.equal(finalized[0].result.providerCalls, 2);
+  assert.equal(finalized[0].result.unpricedProviderCalls, 0);
+  assert.equal(finalized[0].result.costMeasured, true);
+  assert.equal(finalized[0].result.inputTokens, 30);
+  assert.equal(finalized[0].result.outputTokens, 5);
+  assert.equal(finalized[0].result.estimatedCost, 0.000165);
 });
 
 test("unknown questionKey from the model is rejected — AI may pick, never invent, a question", async () => {

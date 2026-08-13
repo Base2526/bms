@@ -1,5 +1,5 @@
 import { DEFAULT_AI_MODEL, getTenantAiConfig } from "../aiConfig";
-import { recordAiFallback, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "../aiUsage";
+import { recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, recordSharedAiRetryUsage, tryConsumeAiQuota, type AiUsageContext } from "../aiUsage";
 import { resolveSharedAiProvider, resolveTenantByokProvider } from "../aiProvider";
 import type {
   SlipReadRequest,
@@ -31,6 +31,7 @@ export type ResolvedSlipReader = {
 export type ResolveSlipReaderOptions = {
   excludeProviders?: ReadonlyArray<"anthropic" | "qwen">;
   fallbackFrom?: "anthropic" | "qwen" | null;
+  chargeSharedCredit?: boolean;
 };
 
 export type SlipReaderAttemptOutcome =
@@ -145,7 +146,14 @@ export async function resolveSlipReader(
 
       const shared = resolveSharedAiProvider("anthropic", false);
       if (shared) {
-        const quota = await tryConsumeAiQuota(tenantId, {
+        const quota = options.chargeSharedCredit === false
+          ? { ok: true, eventId: await recordSharedAiRetryUsage(tenantId, {
+              ...usageCtx,
+              provider: "anthropic",
+              model: shared.model,
+              meta: routingMeta,
+            }) }
+          : await tryConsumeAiQuota(tenantId, {
           ...usageCtx,
           provider: "anthropic",
           model: shared.model,
@@ -169,7 +177,14 @@ export async function resolveSlipReader(
 
     const qwen = qwenSharedCredentials();
     if (!qwen) continue;
-    const quota = await tryConsumeAiQuota(tenantId, {
+    const quota = options.chargeSharedCredit === false
+      ? { ok: true, eventId: await recordSharedAiRetryUsage(tenantId, {
+          ...usageCtx,
+          provider: "qwen",
+          model: qwen.model,
+          meta: routingMeta,
+        }) }
+      : await tryConsumeAiQuota(tenantId, {
       ...usageCtx,
       provider: "qwen",
       model: qwen.model,
@@ -190,13 +205,14 @@ export async function resolveSlipReader(
 }
 
 /**
- * Execute at most two read-only OCR attempts. Credential/quota resolution stays lazy so a fallback
- * credit is consumed only after the first provider actually fails.
+ * Execute at most two read-only OCR attempts. Credential resolution stays lazy and a shared fallback
+ * reuses the logical request's reservation instead of consuming a second credit.
  */
 export async function runSlipReaderFallback(input: {
   resolveNext: (
     excluded: ReadonlyArray<"anthropic" | "qwen">,
-    fallbackFrom: "anthropic" | "qwen" | null
+    fallbackFrom: "anthropic" | "qwen" | null,
+    chargeSharedCredit: boolean
   ) => Promise<ResolvedSlipReader | null>;
   loadImage: (
     reader: SlipReader
@@ -207,16 +223,23 @@ export async function runSlipReaderFallback(input: {
       status: "completed" | "failed" | "fallback";
       inputTokens?: number | null;
       outputTokens?: number | null;
+      providerCalls?: number;
       errorMessage?: string | null;
     }
   ) => Promise<void>;
+  recordProviderAttempt?: typeof recordAiProviderAttempt;
 }): Promise<SlipReaderAttemptOutcome> {
   const attemptedProviders: Array<"anthropic" | "qwen"> = [];
   let fallbackFrom: "anthropic" | "qwen" | null = null;
   let lastError: string | null = null;
+  let sharedCreditReserved = false;
 
   while (attemptedProviders.length < 2) {
-    const session = await input.resolveNext(attemptedProviders, fallbackFrom);
+    const session = await input.resolveNext(
+      attemptedProviders,
+      fallbackFrom,
+      !sharedCreditReserved
+    );
     if (!session) {
       return {
         ok: false,
@@ -226,12 +249,14 @@ export async function runSlipReaderFallback(input: {
       };
     }
     const provider = session.provider as "anthropic" | "qwen";
+    if (session.source === "shared") sharedCreditReserved = true;
     attemptedProviders.push(provider);
     const image = await input.loadImage(session.reader);
     if (!image) {
       if (session.usageEventId) {
         await input.finalize(session.usageEventId, {
           status: "fallback",
+          providerCalls: 0,
           errorMessage: "slip image unavailable",
         });
       }
@@ -243,6 +268,9 @@ export async function runSlipReaderFallback(input: {
       };
     }
     try {
+      if (session.usageEventId) {
+        await (input.recordProviderAttempt ?? recordAiProviderAttempt)(session.usageEventId);
+      }
       const result = await session.reader.read({
         ...image,
         credentials: session.credentials,
@@ -250,6 +278,7 @@ export async function runSlipReaderFallback(input: {
       if (session.usageEventId) {
         await input.finalize(session.usageEventId, {
           status: "completed",
+          providerCalls: 1,
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
         });
@@ -260,6 +289,7 @@ export async function runSlipReaderFallback(input: {
       if (session.usageEventId) {
         await input.finalize(session.usageEventId, {
           status: "failed",
+          providerCalls: 1,
           errorMessage: lastError,
         });
       }

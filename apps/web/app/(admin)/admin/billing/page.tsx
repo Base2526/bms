@@ -17,14 +17,14 @@ const Q = gql`
     bmsAiUsage {
       count limit remaining unlimited planCode planName
       requestCount sharedRequests byokRequests blockedRequests
-      grantedCredits bonusCredits adjustedCredits estimatedCost
+      grantedCredits bonusCredits adjustedCredits billableCredits providerCalls actualCostUsd unpricedProviderCalls
     }
     bmsAiConfig { has_key model }
     bmsAiCreditLedger(limit: 12) {
       id yearMonth entryType amount balanceAfter referenceType referenceId note createdAt
     }
     bmsAiUsageBreakdown(limit: 12) {
-      feature requests creditsUsed estimatedCost
+      feature requests billableCredits providerCalls unpricedProviderCalls actualCostUsd
     }
   }
 `;
@@ -58,53 +58,12 @@ function planAiCredits(plan: any) {
   return estimateAiCredits(plan.max_ai_messages_month ?? 0, plan.code);
 }
 
-function estimateUsedCredits(aiUsage: any) {
-  if (!aiUsage) return 0;
-  if (aiUsage.unlimited || aiUsage.limit < 0) return aiUsage.count;
-  const credits = estimateAiCredits(aiUsage.limit, aiUsage.planCode);
-  if (credits <= 0 || aiUsage.limit <= 0) return 0;
-  return Math.round((aiUsage.count / aiUsage.limit) * credits);
-}
-
-function estimateRemainingCredits(aiUsage: any) {
-  if (!aiUsage) return 0;
-  if (aiUsage.unlimited || aiUsage.limit < 0) return -1;
-  const credits = estimateAiCredits(aiUsage.limit, aiUsage.planCode);
-  return Math.max(credits - estimateUsedCredits(aiUsage), 0);
-}
-
-function estimateMonthlyCost(aiUsage: any) {
-  const used = estimateUsedCredits(aiUsage);
-  if (used <= 0) return 0;
-  return used * 0.35;
-}
-
 function aiQuotaStatus(aiUsage: any) {
   if (!aiUsage || aiUsage.unlimited || aiUsage.limit < 0) return "normal";
   const usedPct = pct(aiUsage.count, aiUsage.limit);
   if (usedPct >= 100) return "exhausted";
   if (usedPct >= 80) return "warning";
   return "normal";
-}
-
-function buildMockLedger(aiUsage: any, t: TFn) {
-  const used = estimateUsedCredits(aiUsage);
-  const total = estimateAiCredits(aiUsage?.limit ?? 0, aiUsage?.planCode);
-  if (total < 0) {
-    return [
-      { id: "grant", date: t("admin_billing.ledger_start_of_month"), entryType: "BYOK / Unlimited", amount: 0, balanceAfter: 0, note: t("admin_billing.unlimited") },
-      { id: "usage", date: t("admin_billing.ledger_this_month"), entryType: "AI usage", amount: 0, balanceAfter: 0, note: `${formatNumber(aiUsage?.count ?? 0)} requests` },
-    ];
-  }
-  const topup = used > total * 0.8 ? Math.round(total * 0.2) : 0;
-  const afterGrant = total;
-  const afterUsage = Math.max(afterGrant - used, 0);
-  const afterTopup = topup > 0 ? afterUsage + topup : afterUsage;
-  return [
-    { id: "grant", date: t("admin_billing.ledger_start_of_month"), entryType: "Monthly grant", amount: total, balanceAfter: afterGrant },
-    { id: "usage", date: t("admin_billing.ledger_this_month"), entryType: "AI usage", amount: -used, balanceAfter: afterUsage },
-    ...(topup > 0 ? [{ id: "topup", date: t("admin_billing.ledger_example"), entryType: "Top-up / Add-on", amount: topup, balanceAfter: afterTopup }] : []),
-  ];
 }
 
 function labelForFeature(feature: string) {
@@ -141,26 +100,17 @@ type BillingLedgerRow = {
   createdAt?: string;
 };
 
-function splitRows(total: number) {
-  return [
-    { label: "Inbox AI replies", value: Math.round(total * 0.45), color: "#1677ff" },
-    { label: "Product / stock", value: Math.round(total * 0.25), color: "#13c2c2" },
-    { label: "Coupon / promo", value: Math.round(total * 0.1), color: "#722ed1" },
-    { label: "Staff assistant", value: Math.round(total * 0.2), color: "#52c41a" },
-  ];
-}
-
-function buildBreakdownRows(rows: Array<{ feature: string; requests: number; creditsUsed: number }> | undefined, fallbackTotal: number) {
-  if (rows && rows.length > 0) {
-    const colors = ["#1677ff", "#13c2c2", "#722ed1", "#52c41a", "#fa8c16", "#eb2f96"];
-    return rows.map((row, idx) => ({
-      label: labelForFeature(row.feature),
-      value: row.creditsUsed,
-      requests: row.requests,
-      color: colors[idx % colors.length],
-    }));
-  }
-  return splitRows(fallbackTotal).map((row) => ({ ...row, requests: 0 }));
+function buildBreakdownRows(rows: Array<{ feature: string; requests: number; billableCredits: number; providerCalls: number; unpricedProviderCalls: number; actualCostUsd: number }> | undefined) {
+  const colors = ["#1677ff", "#13c2c2", "#722ed1", "#52c41a", "#fa8c16", "#eb2f96"];
+  return (rows ?? []).map((row, idx) => ({
+    label: labelForFeature(row.feature),
+    value: row.billableCredits,
+    requests: row.requests,
+    providerCalls: row.providerCalls,
+    unpricedProviderCalls: row.unpricedProviderCalls,
+    actualCostUsd: row.actualCostUsd,
+    color: colors[idx % colors.length],
+  }));
 }
 
 function AiMetricCard({
@@ -218,14 +168,18 @@ export default function Page() {
   const aiUsage = data?.bmsAiUsage;
   const aiConfig = data?.bmsAiConfig;
   const hasByok = !!aiConfig?.has_key;
-  const aiCreditsTotal = hasByok ? -1 : estimateAiCredits(aiUsage?.limit ?? 0, aiUsage?.planCode);
-  const aiCreditsUsed = estimateUsedCredits(aiUsage);
-  const aiCreditsRemaining = hasByok ? -1 : estimateRemainingCredits(aiUsage);
+  const aiCreditsTotal = aiUsage?.unlimited
+    ? -1
+    : Number(aiUsage?.grantedCredits ?? 0) +
+      Number(aiUsage?.bonusCredits ?? 0) +
+      Number(aiUsage?.adjustedCredits ?? 0);
+  const aiCreditsUsed = Number(aiUsage?.billableCredits ?? aiUsage?.count ?? 0);
+  const aiCreditsRemaining = Number(aiUsage?.remaining ?? 0);
   const aiStatus = aiQuotaStatus(aiUsage);
-  const ledger: BillingLedgerRow[] = data?.bmsAiCreditLedger?.length ? data.bmsAiCreditLedger : buildMockLedger(aiUsage, t);
-  const usagePercent = hasByok || aiCreditsTotal < 0 ? 0 : pct(aiCreditsUsed, aiCreditsTotal);
+  const ledger: BillingLedgerRow[] = data?.bmsAiCreditLedger ?? [];
+  const usagePercent = aiCreditsTotal < 0 ? 0 : pct(aiCreditsUsed, aiCreditsTotal);
   const tone = usageTone(aiStatus);
-  const split = buildBreakdownRows(data?.bmsAiUsageBreakdown, aiCreditsUsed);
+  const split = buildBreakdownRows(data?.bmsAiUsageBreakdown);
 
   return (
     <div>
@@ -312,13 +266,13 @@ export default function Page() {
 
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
           <Col xs={24} md={8}>
-            <AiMetricCard title={t("admin_billing.card_remaining")} value={hasByok || aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiUsage?.grantedCredits ?? aiCreditsTotal) })} accent={tone.accent} />
+            <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiCreditsTotal) })} accent={tone.accent} />
           </Col>
           <Col xs={24} md={8}>
-            <AiMetricCard title={t("admin_billing.card_used_this_month")} value={formatNumber(aiCreditsUsed)} subtitle={t("admin_billing.requests_total_month", { count: formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0) })} accent="#13c2c2" />
+            <AiMetricCard title={t("admin_billing.card_used_this_month")} value={formatNumber(aiCreditsUsed)} subtitle={t("admin_billing.requests_total_month", { count: formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0), calls: formatNumber(aiUsage?.providerCalls ?? 0) })} accent="#13c2c2" />
           </Col>
           <Col xs={24} md={8}>
-            <AiMetricCard title={t("admin_billing.card_estimated_cost")} value={`${Number(aiUsage?.estimatedCost ?? estimateMonthlyCost(aiUsage)).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿`} subtitle={t("admin_billing.cost_subtitle")} accent="#722ed1" />
+            <AiMetricCard title={t("admin_billing.card_estimated_cost")} value={`$${Number(aiUsage?.actualCostUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}`} subtitle={aiUsage?.unpricedProviderCalls > 0 ? `${t("admin_billing.cost_subtitle")} · ${t("admin_billing.unpriced_calls", { count: aiUsage.unpricedProviderCalls })}` : t("admin_billing.cost_subtitle")} accent="#722ed1" />
           </Col>
         </Row>
 
@@ -367,6 +321,7 @@ export default function Page() {
               <List
                 size="small"
                 dataSource={split}
+                locale={{ emptyText: t("admin_billing.no_usage_data") }}
                 renderItem={(item) => (
                   <List.Item>
                     <div style={{ width: "100%" }}>
@@ -377,7 +332,10 @@ export default function Page() {
                         </Space>
                         <Text strong>{formatNumber(item.value)} cr</Text>
                       </Space>
-                      {item.requests > 0 && <Text type="secondary" style={{ fontSize: 12 }}>{formatNumber(item.requests)} requests</Text>}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatNumber(item.requests)} requests · {formatNumber(item.providerCalls)} provider calls · ${Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
+                      </Text>
+                      {item.unpricedProviderCalls > 0 && <Text type="warning" style={{ display: "block", fontSize: 12 }}>{t("admin_billing.unpriced_calls", { count: item.unpricedProviderCalls })}</Text>}
                       <div style={{ height: 6, background: "#f5f5f5", borderRadius: 999, marginTop: 8, overflow: "hidden" }}>
                         <div style={{ width: `${aiCreditsUsed > 0 ? Math.max(8, Math.round((item.value / aiCreditsUsed) * 100)) : 0}%`, height: "100%", background: item.color }} />
                       </div>
@@ -435,6 +393,7 @@ export default function Page() {
               <List<BillingLedgerRow>
                 size="small"
                 dataSource={ledger}
+                locale={{ emptyText: t("admin_billing.no_ledger_data") }}
                 renderItem={(item: BillingLedgerRow) => (
                   <List.Item>
                     <div style={{ width: "100%", padding: 6, borderRadius: 12, background: "#fafafa" }}>

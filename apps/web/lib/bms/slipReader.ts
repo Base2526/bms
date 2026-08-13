@@ -29,8 +29,8 @@ export type SlipReadResult = {
   model: string;
   extracted: SlipExtract;
   usage: {
-    inputTokens: number;
-    outputTokens: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
   };
 };
 

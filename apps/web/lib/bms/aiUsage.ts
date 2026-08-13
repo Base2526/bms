@@ -50,6 +50,10 @@ export type AiUsage = {
   grantedCredits: number;
   bonusCredits: number;
   adjustedCredits: number;
+  billableCredits: number;
+  providerCalls: number;
+  actualCostUsd: number;
+  unpricedProviderCalls: number;
   estimatedCost: number;
 };
 
@@ -72,9 +76,13 @@ export type AiUsageEvent = {
   provider: string;
   model: string | null;
   status: "started" | "completed" | "failed" | "blocked" | "fallback";
+  billableCredits: number;
   creditsUsed: number;
   inputTokens: number | null;
   outputTokens: number | null;
+  providerCalls: number;
+  unpricedProviderCalls: number;
+  actualCostUsd: number | null;
   estimatedCost: number;
   errorMessage: string | null;
   createdAt: string;
@@ -96,7 +104,11 @@ export type AiCreditLedgerEntry = {
 export type AiUsageBreakdownRow = {
   feature: string;
   requests: number;
+  billableCredits: number;
   creditsUsed: number;
+  providerCalls: number;
+  unpricedProviderCalls: number;
+  actualCostUsd: number;
   estimatedCost: number;
 };
 
@@ -111,9 +123,13 @@ export type RecentAiUsageEvent = {
   provider: string;
   model: string | null;
   status: "started" | "completed" | "failed" | "blocked" | "fallback";
+  billableCredits: number;
   creditsUsed: number;
   inputTokens: number | null;
   outputTokens: number | null;
+  providerCalls: number;
+  unpricedProviderCalls: number;
+  actualCostUsd: number | null;
   estimatedCost: number;
   routingReason: string | null;
   configuredProvider: string | null;
@@ -158,10 +174,12 @@ function positiveEnvRate(name: string, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+type AiTokenRate = typeof DEFAULT_ANTHROPIC_RATE;
+
 function priceForModel(
   model?: string | null,
   provider?: string | null
-) {
+): AiTokenRate | null {
   const p = String(provider || "anthropic").toLowerCase();
   const m = String(model || "").toLowerCase();
   if (p === "deepseek") {
@@ -173,9 +191,10 @@ function priceForModel(
         cacheReadMultiplier: Number((0.003625 / 0.435).toFixed(6)),
       };
     }
-    return DEFAULT_DEEPSEEK_RATE;
+    return m.includes("v4-flash") ? DEFAULT_DEEPSEEK_RATE : null;
   }
   if (p === "qwen") {
+    if (!m.includes("qwen-vl-ocr")) return null;
     return {
       ...DEFAULT_QWEN_OCR_RATE,
       inputPerMillionUsd: positiveEnvRate(
@@ -191,10 +210,26 @@ function priceForModel(
   if (m.includes("haiku") && /4[-_.]?5/.test(m)) {
     return { inputPerMillionUsd: 1, outputPerMillionUsd: 5, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
   }
-  if (m.includes("haiku")) return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
+  if (m.includes("haiku") && /3[-_.]?5/.test(m)) {
+    return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
+  }
+  if (m.includes("claude-3-haiku") || m.includes("haiku-3")) {
+    return { inputPerMillionUsd: 0.25, outputPerMillionUsd: 1.25, cacheCreationMultiplier: 1.2, cacheReadMultiplier: 0.12 };
+  }
+  if (/sonnet[-_.]?5(?:[-_.]|$)/.test(m)) {
+    const promotionalRateEndsAt = Date.UTC(2026, 8, 1);
+    return Date.now() < promotionalRateEndsAt
+      ? { inputPerMillionUsd: 2, outputPerMillionUsd: 10, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 }
+      : DEFAULT_ANTHROPIC_RATE;
+  }
   if (m.includes("sonnet")) return DEFAULT_ANTHROPIC_RATE;
-  if (m.includes("opus")) return { inputPerMillionUsd: 15, outputPerMillionUsd: 75, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
-  return DEFAULT_ANTHROPIC_RATE;
+  if (m.includes("opus") && /4[-_.]?(?:5|6|7|8)/.test(m)) {
+    return { inputPerMillionUsd: 5, outputPerMillionUsd: 25, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
+  }
+  if (m.includes("opus") && /(?:claude-)?(?:opus[-_.]?)?4(?:[-_.]?1)?(?:[-_.]|$)/.test(m)) {
+    return { inputPerMillionUsd: 15, outputPerMillionUsd: 75, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
+  }
+  return null;
 }
 
 export function estimateAiCostUsd(
@@ -206,9 +241,10 @@ export function estimateAiCostUsd(
   const inTok = Math.max(0, Number(inputTokens ?? 0));
   const outTok = Math.max(0, Number(outputTokens ?? 0));
   const price = priceForModel(model, provider);
+  if (!price) return 0;
   const inputCost = (inTok / 1_000_000) * price.inputPerMillionUsd;
   const outputCost = (outTok / 1_000_000) * price.outputPerMillionUsd;
-  return Number((inputCost + outputCost).toFixed(6));
+  return Number((inputCost + outputCost).toFixed(8));
 }
 
 export function estimateCachedAiCostUsd(
@@ -229,6 +265,7 @@ export function estimateCachedAiCostUsd(
   const cacheReadInputTokens = Math.max(0, Number(usage.cacheReadInputTokens ?? 0));
   const outputTokens = Math.max(0, Number(usage.outputTokens ?? 0));
   const price = priceForModel(model, provider);
+  if (!price) return 0;
   const inputCost =
     ((inputTokens +
       cacheCreationInputTokens * price.cacheCreationMultiplier +
@@ -236,7 +273,7 @@ export function estimateCachedAiCostUsd(
       1_000_000) *
     price.inputPerMillionUsd;
   const outputCost = (outputTokens / 1_000_000) * price.outputPerMillionUsd;
-  return Number((inputCost + outputCost).toFixed(6));
+  return Number((inputCost + outputCost).toFixed(8));
 }
 
 type MonthlyUsageRow = {
@@ -284,26 +321,55 @@ async function ensureMonthlySummary(
     [tenantId, yearMonth, grant]
   );
 
-  await client.query(
-    `UPDATE bms_ai_usage_monthly
-        SET shared_requests = GREATEST(shared_requests, count),
-            credits_consumed = GREATEST(credits_consumed, count),
-            credits_granted = CASE
-              WHEN $3 >= 0 AND credits_granted = 0 THEN $3
-              ELSE credits_granted
-            END
-      WHERE tenant_id = $1 AND year_month = $2`,
-    [tenantId, yearMonth, grant]
-  );
-
   const res = await client.query<MonthlyUsageRow>(
     `SELECT count, shared_requests, byok_requests, blocked_requests,
             credits_granted, credits_consumed, credits_bonus, credits_adjusted, estimated_cost
        FROM bms_ai_usage_monthly
-      WHERE tenant_id = $1 AND year_month = $2`,
+      WHERE tenant_id = $1 AND year_month = $2
+      FOR UPDATE`,
     [tenantId, yearMonth]
   );
-  const row = res.rows[0];
+  let row = res.rows[0];
+
+  if (row.credits_granted !== grant) {
+    const existingGrant = await client.query(
+      `SELECT 1
+         FROM bms_ai_credit_ledger
+        WHERE tenant_id = $1
+          AND year_month = $2
+          AND entry_type = 'grant'
+          AND reference_type = 'monthly_quota'
+        LIMIT 1`,
+      [tenantId, yearMonth]
+    );
+    const grantDelta = grant - row.credits_granted;
+    row = { ...row, credits_granted: grant };
+    await client.query(
+      `UPDATE bms_ai_usage_monthly
+          SET credits_granted = $3,
+              updated_at = now(),
+              last_event_at = now()
+        WHERE tenant_id = $1 AND year_month = $2`,
+      [tenantId, yearMonth, grant]
+    );
+    if ((existingGrant.rowCount ?? 0) > 0) {
+      await client.query(
+        `INSERT INTO bms_ai_credit_ledger (
+            tenant_id, year_month, entry_type, amount, balance_after,
+            reference_type, reference_id, note
+          )
+          VALUES ($1, $2, 'adjustment', $3, $4, 'plan_grant_change', $5, $6)`,
+        [
+          tenantId,
+          yearMonth,
+          grantDelta,
+          balanceFromRow(row),
+          crypto.randomUUID(),
+          `AI plan grant reconciled to ${plan.code}`,
+        ]
+      );
+    }
+  }
 
   if (grant > 0) {
     await client.query(
@@ -327,7 +393,12 @@ function normalizeCtx(ctx?: AiUsageContext) {
     channel: ctx?.channel ?? null,
     provider: ctx?.provider ?? "anthropic",
     model: ctx?.model ?? null,
-    meta: ctx?.meta ?? {},
+    meta: {
+      usage_accounting_version: 2,
+      credit_policy: "logical_request",
+      provider_calls: 0,
+      ...(ctx?.meta ?? {}),
+    },
   } as const;
 }
 
@@ -346,9 +417,14 @@ async function insertUsageEvent(
   await client.query(
     `INSERT INTO bms_ai_usage_events (
         id, tenant_id, year_month, source, surface, feature, channel,
-        provider, model, status, credits_used, error_message, meta
+        provider, model, status, credits_used, billable_credits,
+        provider_calls, unpriced_provider_calls, actual_cost_usd, error_message, meta
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, 0, 0,
+        CASE WHEN $10 IN ('blocked', 'fallback') OR $4 = 'none' THEN 0 ELSE NULL END,
+        $12, $13::jsonb
+      )`,
     [
       id,
       tenantId,
@@ -383,14 +459,125 @@ async function transaction<T>(work: (client: PoolClient) => Promise<T>): Promise
   }
 }
 
+const STALE_AI_RESERVATION_MINUTES = 15;
+
+/**
+ * Release quota held by a process that died after reserving a logical request
+ * but before it persisted any provider attempt. Request counters remain as an
+ * operational trace; only the customer-facing credit is returned.
+ */
+async function reconcileStaleAiReservations(
+  tenantId: string,
+  yearMonth: string
+): Promise<void> {
+  await transaction(async (client) => {
+    const stale = await client.query<{
+      id: string;
+      billable_credits: number;
+      provider_calls: number;
+    }>(
+      `SELECT id, billable_credits, provider_calls
+         FROM bms_ai_usage_events
+        WHERE tenant_id = $1
+          AND year_month = $2
+          AND status = 'started'
+          AND completed_at IS NULL
+          AND created_at < now() - ($3::double precision * interval '1 minute')
+        ORDER BY created_at
+        FOR UPDATE SKIP LOCKED`,
+      [tenantId, yearMonth, STALE_AI_RESERVATION_MINUTES]
+    );
+    if (stale.rows.length === 0) return;
+
+    const ids = stale.rows.map((row) => row.id);
+    const refundCredits = stale.rows.reduce(
+      (sum, row) =>
+        sum + (Number(row.provider_calls ?? 0) === 0 ? Number(row.billable_credits ?? 0) : 0),
+      0
+    );
+    await client.query(
+      `UPDATE bms_ai_usage_events
+          SET status = 'failed',
+              credits_used = CASE WHEN provider_calls = 0 THEN 0 ELSE credits_used END,
+              billable_credits = CASE WHEN provider_calls = 0 THEN 0 ELSE billable_credits END,
+              actual_cost_usd = CASE WHEN provider_calls = 0 THEN 0 ELSE actual_cost_usd END,
+              error_message = COALESCE(
+                error_message,
+                CASE WHEN provider_calls = 0
+                  THEN 'provider_not_started_timeout'
+                  ELSE 'usage_finalization_timeout'
+                END
+              ),
+              meta = meta || CASE WHEN provider_calls = 0
+                THEN '{"credit_refund_reason":"stale_provider_reservation"}'::jsonb
+                ELSE '{"cost_status":"partial_or_unavailable","stale_usage_finalization":true}'::jsonb
+              END,
+              completed_at = now()
+        WHERE id = ANY($1::uuid[])`,
+      [ids]
+    );
+    const summary = await client.query<MonthlyUsageRow>(
+      `UPDATE bms_ai_usage_monthly
+          SET credits_consumed = GREATEST(credits_consumed - $3, 0),
+              updated_at = now(),
+              last_event_at = now()
+        WHERE tenant_id = $1
+          AND year_month = $2
+        RETURNING count, shared_requests, byok_requests, blocked_requests,
+                  credits_granted, credits_consumed, credits_bonus,
+                  credits_adjusted, estimated_cost`,
+      [tenantId, yearMonth, refundCredits]
+    );
+    if (refundCredits > 0 && summary.rows[0]) {
+      await client.query(
+        `INSERT INTO bms_ai_credit_ledger (
+            tenant_id, year_month, entry_type, amount, balance_after,
+            reference_type, reference_id, note
+          )
+          VALUES ($1, $2, 'refund', $3, $4, 'stale_reservation_sweep', $5, $6)`,
+        [
+          tenantId,
+          yearMonth,
+          refundCredits,
+          balanceFromRow(summary.rows[0]),
+          crypto.randomUUID(),
+          `Returned ${refundCredits} credit(s) from provider-free stale reservation(s)`,
+        ]
+      );
+    }
+  });
+}
+
 export async function getAiUsage(tenantId: string): Promise<AiUsage> {
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
   const limit = planCreditLimit(plan);
   const grant = creditGrantForPlan(plan);
 
-  const row = await transaction(async (client) => {
-    return ensureMonthlySummary(client, tenantId, yearMonth, plan);
+  await reconcileStaleAiReservations(tenantId, yearMonth);
+
+  const { row, accounting } = await transaction(async (client) => {
+    const row = await ensureMonthlySummary(client, tenantId, yearMonth, plan);
+    const accounting = await client.query<{
+      requests: number;
+      billable_credits: number;
+      provider_calls: number;
+      unpriced_provider_calls: number;
+      actual_cost_usd: string | number;
+    }>(
+      `SELECT COUNT(DISTINCT COALESCE(meta->>'usage_group_id', id::text)) FILTER (
+                WHERE status IN ('started','completed','failed','fallback')
+              )::int AS requests,
+              COALESCE(SUM(billable_credits), 0)::int AS billable_credits,
+              COALESCE(SUM(provider_calls), 0)::int AS provider_calls,
+              COALESCE(SUM(unpriced_provider_calls), 0)::int AS unpriced_provider_calls,
+              COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd
+         FROM bms_ai_usage_events
+        WHERE tenant_id = $1
+          AND year_month = $2`,
+      [tenantId, yearMonth]
+    );
+    return { row, accounting: accounting.rows[0] };
   });
 
   const remaining = limit < 0 ? -1 : balanceFromRow(row);
@@ -401,13 +588,17 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
     unlimited: limit < 0,
     planCode: plan.code,
     planName: plan.name,
-    requestCount: (row.shared_requests ?? 0) + (row.byok_requests ?? 0),
+    requestCount: Number(accounting?.requests ?? 0),
     sharedRequests: row.shared_requests ?? 0,
     byokRequests: row.byok_requests ?? 0,
     blockedRequests: row.blocked_requests ?? 0,
     grantedCredits: row.credits_granted ?? grant,
     bonusCredits: row.credits_bonus ?? 0,
     adjustedCredits: row.credits_adjusted ?? 0,
+    billableCredits: Number(accounting?.billable_credits ?? 0),
+    providerCalls: Number(accounting?.provider_calls ?? 0),
+    actualCostUsd: Number(accounting?.actual_cost_usd ?? 0),
+    unpricedProviderCalls: Number(accounting?.unpriced_provider_calls ?? 0),
     estimatedCost: Number(row.estimated_cost ?? 0),
   };
 }
@@ -426,6 +617,19 @@ export async function recordByokAiUsage(tenantId: string, ctx?: AiUsageContext):
       [tenantId, yearMonth]
     );
     return insertUsageEvent(client, tenantId, yearMonth, "byok", "started", 0, ctx);
+  });
+}
+
+/** Create a trace/cost event for a provider retry without billing a second logical-request credit. */
+export async function recordSharedAiRetryUsage(
+  tenantId: string,
+  ctx?: AiUsageContext
+): Promise<string> {
+  const plan = await getTenantPlan(tenantId);
+  const yearMonth = currentYearMonth();
+  return transaction(async (client) => {
+    await ensureMonthlySummary(client, tenantId, yearMonth, plan);
+    return insertUsageEvent(client, tenantId, yearMonth, "shared", "started", 0, ctx);
   });
 }
 
@@ -458,13 +662,15 @@ export async function tryConsumeAiQuota(
   const yearMonth = currentYearMonth();
   const unlimited = planCreditLimit(plan) < 0;
 
+  await reconcileStaleAiReservations(tenantId, yearMonth);
+
   return transaction(async (client) => {
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
 
     if (!unlimited) {
       const upd = await client.query<MonthlyUsageRow>(
         `UPDATE bms_ai_usage_monthly
-            SET count = credits_consumed + 1,
+            SET count = count + 1,
                 shared_requests = shared_requests + 1,
                 credits_consumed = credits_consumed + 1,
                 last_event_at = now(),
@@ -505,9 +711,8 @@ export async function tryConsumeAiQuota(
 
     const upd = await client.query<MonthlyUsageRow>(
       `UPDATE bms_ai_usage_monthly
-          SET count = credits_consumed + 1,
+          SET count = count + 1,
               shared_requests = shared_requests + 1,
-              credits_consumed = credits_consumed + 1,
               last_event_at = now(),
               updated_at = now()
         WHERE tenant_id = $1 AND year_month = $2
@@ -515,7 +720,15 @@ export async function tryConsumeAiQuota(
                   credits_granted, credits_consumed, credits_bonus, credits_adjusted, estimated_cost`,
       [tenantId, yearMonth]
     );
-    const eventId = await insertUsageEvent(client, tenantId, yearMonth, "shared", "started", 1, ctx);
+    const eventId = await insertUsageEvent(client, tenantId, yearMonth, "shared", "started", 0, ctx);
+    await client.query(
+      `INSERT INTO bms_ai_credit_ledger (
+          tenant_id, year_month, entry_type, amount, balance_after,
+          reference_type, reference_id, note
+        )
+        VALUES ($1, $2, 'consume', 0, 0, 'ai_usage_event', $3, $4)`,
+      [tenantId, yearMonth, eventId, `${normalizeCtx(ctx).feature} (unlimited plan)`]
+    );
     return { ok: true, eventId };
   });
 }
@@ -533,18 +746,55 @@ export async function finalizeAiUsageEvent(
     // — breakdown เก็บลง meta เพื่อให้ตอบได้ว่า prompt caching ทำงานอยู่จริงไหมโดยไม่ต้องแกะกลับจาก cost
     cacheReadInputTokens?: number | null;
     cacheCreationInputTokens?: number | null;
+    /** Number of provider HTTP attempts represented by this logical event. */
+    providerCalls?: number;
+    /** Provider attempts that returned no usage payload and cannot be priced. */
+    unpricedProviderCalls?: number;
+    /** Overrides token-presence inference when usage is only partially available. */
+    costMeasured?: boolean;
   }
 ): Promise<void> {
-  const inputTokens = result.inputTokens ?? null;
-  const outputTokens = result.outputTokens ?? null;
-  const cacheReadInputTokens = result.cacheReadInputTokens ?? null;
-  const cacheCreationInputTokens = result.cacheCreationInputTokens ?? null;
+  const tokenCount = (value: number | null | undefined): number | null => {
+    if (value == null || !Number.isFinite(value) || value < 0) return null;
+    return Math.min(Math.floor(value), 2_147_483_647);
+  };
+  const inputTokens = tokenCount(result.inputTokens);
+  const outputTokens = tokenCount(result.outputTokens);
+  const cacheReadInputTokens = tokenCount(result.cacheReadInputTokens);
+  const cacheCreationInputTokens = tokenCount(result.cacheCreationInputTokens);
   // เขียน meta เฉพาะตอน caller รู้ค่าจริง (path ที่ไม่ได้ตั้ง cache_control จะไม่มี key เหล่านี้เลย
   // ซึ่งต่างจากการมี key แล้วเป็น 0 — 0 หมายถึง "ตั้ง cache_control แล้วแต่ไม่ hit")
-  const cacheMeta =
+  const rawProviderCalls = Number(result.providerCalls ?? 1);
+  const providerCalls = Number.isFinite(rawProviderCalls)
+    ? Math.min(2_147_483_647, Math.max(0, Math.floor(rawProviderCalls)))
+    : 0;
+  const explicitEstimatedCost = Number(result.estimatedCost);
+  const hasValidExplicitCost =
+    result.estimatedCost != null &&
+    Number.isFinite(explicitEstimatedCost) &&
+    explicitEstimatedCost >= 0;
+  const hasAnyMeteredUsage = result.costMeasured ?? (
+    hasValidExplicitCost ||
+    inputTokens !== null ||
+    outputTokens !== null
+  );
+  const hasCompleteUsage =
+    hasValidExplicitCost ||
+    (inputTokens !== null && outputTokens !== null);
+  const rawUnpricedProviderCalls = Number(
+    result.unpricedProviderCalls ??
+      (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
+  );
+  const reportedUnpricedProviderCalls = Number.isFinite(rawUnpricedProviderCalls)
+    ? Math.min(
+        providerCalls,
+        Math.max(0, Math.floor(rawUnpricedProviderCalls))
+      )
+    : providerCalls;
+  const cacheUsageMeta =
     cacheReadInputTokens === null && cacheCreationInputTokens === null
-      ? null
-      : JSON.stringify({
+      ? {}
+      : {
           cache_read_input_tokens: cacheReadInputTokens ?? 0,
           cache_creation_input_tokens: cacheCreationInputTokens ?? 0,
           regular_input_tokens: Math.max(
@@ -553,68 +803,178 @@ export async function finalizeAiUsageEvent(
               (cacheReadInputTokens ?? 0) -
               (cacheCreationInputTokens ?? 0)
           ),
-        });
-  const event = await query<{
+        };
+  type FinalizedEvent = {
     tenant_id: string;
     year_month: string;
     model: string | null;
     provider: string | null;
-    estimated_cost: string | number;
     source: string | null;
     feature: string | null;
-  }>(
-    `SELECT tenant_id, year_month, model, provider, estimated_cost, source, feature
-       FROM bms_ai_usage_events
-      WHERE id = $1`,
-    [eventId]
-  );
-  const current = event.rows[0];
+  };
+  // Finalization is intentionally one-shot. Callers can encounter overlapping
+  // success/error cleanup paths, but an event must contribute to the monthly
+  // cost or refund a provider-free reservation only once.
+  let current: FinalizedEvent | null;
+  try {
+    current = await transaction<FinalizedEvent | null>(async (client) => {
+    const event = await client.query<FinalizedEvent & {
+      billable_credits: number;
+      completed_at: Date | string | null;
+    }>(
+      `SELECT tenant_id, year_month, model, provider, source, feature,
+              billable_credits, completed_at
+         FROM bms_ai_usage_events
+        WHERE id = $1
+        FOR UPDATE`,
+      [eventId]
+    );
+    const row = event.rows[0];
+    if (!row || row.completed_at) return null;
+
+    const rateKnown = providerCalls === 0 || priceForModel(row.model, row.provider) !== null;
+    const unpricedProviderCalls = rateKnown
+      ? reportedUnpricedProviderCalls
+      : providerCalls;
+    const rawEstimatedCost = Number(
+      (hasValidExplicitCost ? explicitEstimatedCost : null) ??
+        estimateAiCostUsd(inputTokens, outputTokens, row.model, row.provider)
+    );
+    const estimatedCost =
+      Number.isFinite(rawEstimatedCost) && rawEstimatedCost >= 0
+        ? Number(rawEstimatedCost.toFixed(8))
+        : 0;
+    // Keep the cost we can prove even when another attempt in the same logical
+    // request returned no usage payload. The unknown portion remains explicit.
+    const actualCostUsd =
+      providerCalls === 0
+        ? 0
+        : rateKnown && hasAnyMeteredUsage
+          ? estimatedCost
+          : null;
+    const refundCredits = providerCalls === 0 ? Number(row.billable_credits ?? 0) : 0;
+    const finalMeta = JSON.stringify({
+      provider_calls: providerCalls,
+      credit_policy: "logical_request",
+      cost_basis: "provider_usage_rate_card",
+      cost_status:
+        unpricedProviderCalls === 0 ? "measured" : "partial_or_unavailable",
+      rate_status: rateKnown ? "known" : "unknown_model",
+      unpriced_provider_calls: unpricedProviderCalls,
+      ...cacheUsageMeta,
+      ...(refundCredits > 0 ? { credit_refund_reason: "provider_not_called" } : {}),
+    });
+
+    await client.query(
+      `UPDATE bms_ai_usage_events
+          SET status = $2,
+              input_tokens = COALESCE($3, input_tokens),
+              output_tokens = COALESCE($4, output_tokens),
+              estimated_cost = COALESCE($5, estimated_cost),
+              provider_calls = $8,
+              unpriced_provider_calls = $10,
+              actual_cost_usd = $9,
+              billable_credits = GREATEST(billable_credits - $11, 0),
+              credits_used = GREATEST(credits_used - $11, 0),
+              error_message = COALESCE($6, error_message),
+              meta = meta || COALESCE($7::jsonb, '{}'::jsonb),
+              completed_at = now()
+        WHERE id = $1`,
+      [
+        eventId,
+        result.status,
+        inputTokens,
+        outputTokens,
+        estimatedCost,
+        result.errorMessage ?? null,
+        finalMeta,
+        providerCalls,
+        actualCostUsd,
+        unpricedProviderCalls,
+        refundCredits,
+      ]
+    );
+    const summary = await client.query<MonthlyUsageRow>(
+      `UPDATE bms_ai_usage_monthly
+          SET estimated_cost = estimated_cost + COALESCE($3, 0),
+              credits_consumed = GREATEST(credits_consumed - $4, 0),
+              updated_at = now(),
+              last_event_at = now()
+        WHERE tenant_id = $1
+          AND year_month = $2
+        RETURNING count, shared_requests, byok_requests, blocked_requests,
+                  credits_granted, credits_consumed, credits_bonus,
+                  credits_adjusted, estimated_cost`,
+      [row.tenant_id, row.year_month, actualCostUsd, refundCredits]
+    );
+    if (refundCredits > 0 && summary.rows[0]) {
+      await client.query(
+        `INSERT INTO bms_ai_credit_ledger (
+            tenant_id, year_month, entry_type, amount, balance_after,
+            reference_type, reference_id, note
+          )
+          VALUES ($1, $2, 'refund', $3, $4, 'ai_usage_event', $5, 'Provider was not called')
+          ON CONFLICT (tenant_id, year_month, entry_type, reference_type, reference_id)
+          DO NOTHING`,
+        [
+          row.tenant_id,
+          row.year_month,
+          refundCredits,
+          balanceFromRow(summary.rows[0]),
+          eventId,
+        ]
+      );
+    }
+      return row;
+    });
+  } catch (err) {
+    // Accounting is observability after the provider call. Keep the provisional
+    // unpriced attempt visible and never discard a valid user response because
+    // the accounting database had a transient failure.
+    console.error("[BMS] failed to finalize AI usage event:", err);
+    return;
+  }
+
   if (!current) return;
-  const estimatedCost = Number(
-    result.estimatedCost ??
-      estimateAiCostUsd(inputTokens, outputTokens, current.model, current.provider)
-  );
-  await query(
-    `WITH upd AS (
-        UPDATE bms_ai_usage_events
-           SET status = $2,
-               input_tokens = COALESCE($3, input_tokens),
-               output_tokens = COALESCE($4, output_tokens),
-               estimated_cost = COALESCE($5, estimated_cost),
-               error_message = COALESCE($6, error_message),
-               meta = meta || COALESCE($7::jsonb, '{}'::jsonb),
-               completed_at = now()
-         WHERE id = $1
-         RETURNING tenant_id, year_month
-      )
-      UPDATE bms_ai_usage_monthly m
-         SET estimated_cost = m.estimated_cost + $5,
-             updated_at = now(),
-             last_event_at = now()
-        FROM upd
-       WHERE m.tenant_id = upd.tenant_id
-         AND m.year_month = upd.year_month`,
-    [
-      eventId,
-      result.status,
-      inputTokens,
-      outputTokens,
-      estimatedCost,
-      result.errorMessage ?? null,
-      cacheMeta,
-    ]
-  );
 
   // AI Provider Health: เฉพาะ shared key ของแพลตฟอร์ม (ไม่ track BYOK ของแต่ละร้าน)
   // และเฉพาะ completed/failed จริง — ข้าม 'fallback' เพราะเหตุผลอื่น (quota_exhausted/
   // no_credentials/max_rounds_exceeded/slip image unavailable) ไม่ใช่สัญญาณว่า provider ล่ม
-  if (current.source === "shared" && isTrackedAiProvider(current.provider)) {
+  if (
+    providerCalls > 0 &&
+    current.source === "shared" &&
+    isTrackedAiProvider(current.provider)
+  ) {
     const purpose = aiProviderPurposeFromFeature(current.feature);
-    if (result.status === "completed") {
-      await recordProviderSuccess(current.provider, purpose);
-    } else if (result.status === "failed") {
-      await recordProviderError(current.provider, purpose, result.errorMessage);
+    try {
+      if (result.status === "completed") {
+        await recordProviderSuccess(current.provider, purpose);
+      } else if (result.status === "failed") {
+        await recordProviderError(current.provider, purpose, result.errorMessage);
+      }
+    } catch (err) {
+      console.error("[BMS] failed to update AI provider health:", err);
     }
+  }
+}
+
+/**
+ * Persist an attempt before network I/O so a process crash cannot erase the
+ * fact that a provider request was started. Finalization replaces these
+ * provisional counters with the exact totals and pricing result.
+ */
+export async function recordAiProviderAttempt(eventId: string): Promise<void> {
+  try {
+    await query(
+      `UPDATE bms_ai_usage_events
+          SET provider_calls = provider_calls + 1,
+              unpriced_provider_calls = unpriced_provider_calls + 1
+        WHERE id = $1
+          AND completed_at IS NULL`,
+      [eventId]
+    );
+  } catch (err) {
+    console.error("[BMS] failed to persist AI provider attempt:", err);
   }
 }
 
@@ -742,23 +1102,29 @@ export async function listAiUsageBreakdown(tenantId: string, limit = 12): Promis
   const ym = currentYearMonth();
   const res = await query<any>(
     `SELECT feature,
-            COUNT(*)::int AS requests,
-            COALESCE(SUM(credits_used), 0)::int AS credits_used,
-            COALESCE(SUM(estimated_cost), 0)::numeric AS estimated_cost
+            COUNT(DISTINCT COALESCE(meta->>'usage_group_id', id::text))::int AS requests,
+            COALESCE(SUM(billable_credits), 0)::int AS billable_credits,
+            COALESCE(SUM(provider_calls), 0)::int AS provider_calls,
+            COALESCE(SUM(unpriced_provider_calls), 0)::int AS unpriced_provider_calls,
+            COALESCE(SUM(actual_cost_usd), 0)::numeric AS actual_cost_usd
        FROM bms_ai_usage_events
       WHERE tenant_id = $1
         AND year_month = $2
-        AND status IN ('started','completed','failed')
+        AND status IN ('started','completed','failed','fallback')
       GROUP BY feature
-      ORDER BY credits_used DESC, requests DESC, feature
+      ORDER BY billable_credits DESC, requests DESC, feature
       LIMIT $3`,
     [tenantId, ym, Math.max(1, Math.min(limit, 100))]
   );
   return res.rows.map((row) => ({
     feature: String(row.feature),
     requests: Number(row.requests),
-    creditsUsed: Number(row.credits_used),
-    estimatedCost: Number(row.estimated_cost ?? 0),
+    billableCredits: Number(row.billable_credits),
+    creditsUsed: Number(row.billable_credits),
+    providerCalls: Number(row.provider_calls),
+    unpricedProviderCalls: Number(row.unpriced_provider_calls),
+    actualCostUsd: Number(row.actual_cost_usd ?? 0),
+    estimatedCost: Number(row.actual_cost_usd ?? 0),
   }));
 }
 
@@ -784,10 +1150,14 @@ export async function listRecentAiUsageEvents(
             e.provider,
             e.model,
             e.status,
+            e.billable_credits,
             e.credits_used,
             e.input_tokens,
             e.output_tokens,
+            e.actual_cost_usd,
             e.estimated_cost,
+            e.provider_calls,
+            e.unpriced_provider_calls,
             e.meta->>'routing_reason' AS routing_reason,
             e.meta->>'configured_provider' AS configured_provider,
             e.meta->>'effective_provider' AS effective_provider,
@@ -821,9 +1191,13 @@ export async function listRecentAiUsageEvents(
     provider: String(row.provider),
     model: row.model ? String(row.model) : null,
     status: row.status,
+    billableCredits: Number(row.billable_credits ?? 0),
     creditsUsed: Number(row.credits_used ?? 0),
     inputTokens: row.input_tokens == null ? null : Number(row.input_tokens),
     outputTokens: row.output_tokens == null ? null : Number(row.output_tokens),
+    providerCalls: Number(row.provider_calls ?? 0),
+    unpricedProviderCalls: Number(row.unpriced_provider_calls ?? 0),
+    actualCostUsd: row.actual_cost_usd == null ? null : Number(row.actual_cost_usd),
     estimatedCost: Number(row.estimated_cost ?? 0),
     routingReason: row.routing_reason ? String(row.routing_reason) : null,
     configuredProvider: row.configured_provider
@@ -865,10 +1239,14 @@ export async function listRecentAiUsageEventsGlobal(
             e.provider,
             e.model,
             e.status,
+            e.billable_credits,
             e.credits_used,
             e.input_tokens,
             e.output_tokens,
+            e.actual_cost_usd,
             e.estimated_cost,
+            e.provider_calls,
+            e.unpriced_provider_calls,
             e.meta->>'routing_reason' AS routing_reason,
             e.meta->>'configured_provider' AS configured_provider,
             e.meta->>'effective_provider' AS effective_provider,
@@ -892,9 +1270,13 @@ export async function listRecentAiUsageEventsGlobal(
     provider: String(row.provider),
     model: row.model ? String(row.model) : null,
     status: row.status,
+    billableCredits: Number(row.billable_credits ?? 0),
     creditsUsed: Number(row.credits_used ?? 0),
     inputTokens: row.input_tokens == null ? null : Number(row.input_tokens),
     outputTokens: row.output_tokens == null ? null : Number(row.output_tokens),
+    providerCalls: Number(row.provider_calls ?? 0),
+    unpricedProviderCalls: Number(row.unpriced_provider_calls ?? 0),
+    actualCostUsd: row.actual_cost_usd == null ? null : Number(row.actual_cost_usd),
     estimatedCost: Number(row.estimated_cost ?? 0),
     routingReason: row.routing_reason ? String(row.routing_reason) : null,
     configuredProvider: row.configured_provider

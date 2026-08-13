@@ -71,7 +71,11 @@ shared provider when the preferred provider is not configured; once a provider c
 errors do not retry a different provider, which prevents duplicate writes. Shared calls consume one
 `tryConsumeAiQuota()` unit per incoming customer message or staff-assistant turn. It is called once
 before the loop, so 1–5 provider round-trips still count as one quota unit. BYOK calls do not consume
-the platform quota.
+the platform quota. Usage events separately record `provider_calls`, input/output tokens, cache-token
+breakdown, provider/model, and estimated USD cost. This keeps the customer-facing credit policy
+(one credit per finite-plan logical request; unlimited-plan requests are zero-credit) distinct from the provider's metered work and makes multi-round or
+validation-retry cost explainable without charging extra credits. Event finalization is one-shot, so
+overlapping cleanup paths cannot add the same cost to the monthly summary twice.
 
 Before each execution, `runtime.ts` independently re-checks the tool surface and staff permission
 with `requirePermission()` even though the catalog was already filtered. It also rejects unknown
@@ -280,7 +284,10 @@ first choice; DeepSeek BYOK yields to the shared Anthropic baseline when availab
 as a safe provider fallback when that baseline is unavailable. Payment-slip OCR is configured
 separately through `lib/bms/slipReaders/index.ts`: `BMS_SLIP_READER_PROVIDER` defaults to Qwen OCR
 and `BMS_SLIP_READER_FALLBACK_PROVIDER` defaults to Anthropic. Because OCR is read-only, a failed
-Qwen request retries Anthropic once; each attempt has its own usage event and neither can confirm a payment.
+Qwen request retries Anthropic once; each attempt has its own usage/cost event, but a shared-key
+fallback does not bill a second logical-request credit after the primary shared attempt. Neither
+attempt can confirm a payment. Both OCR events carry the same `usage_group_id`, so feature breakdowns
+count one logical request while still reporting two provider attempts.
 Qwen cost estimation uses the official US/global `qwen-vl-ocr` list rate ($0.043 input /
 $0.072 output per million tokens as checked 2026-07-30) and can be overridden with
 `QWEN_OCR_INPUT_USD_PER_MILLION` / `QWEN_OCR_OUTPUT_USD_PER_MILLION` for another region; see
@@ -298,15 +305,29 @@ $0.072 output per million tokens as checked 2026-07-30) and can be overridden wi
   `bms_ai_usage_monthly` from count-only → monthly summary (shared/byok/blocked requests,
   granted/consumed/bonus/adjusted credits, estimated cost), and adds `bms_ai_usage_events` +
   `bms_ai_credit_ledger`. **No cron/reset job** — a new calendar month is simply a new
-  `year_month` row starting at 0, so usage resets itself.
+  `year_month` row starting at 0, so usage resets itself. Migration
+  [`7.82__bms_ai_usage_accounting.sql`](../../db/migrations/7.82__bms_ai_usage_accounting.sql)
+  separates event-level `billable_credits`, `provider_calls`, and `actual_cost_usd`, backfills legacy
+  events, and preserves eight decimal places for small per-request USD costs instead of rounding valid
+  calls to zero. `actual_cost_usd` is calculated from provider-reported token usage and the configured
+  rate card; it is metered cost attribution, not a provider invoice.
 - **Service** — [`lib/bms/aiConfig.ts`](../../apps/web/lib/bms/aiConfig.ts) (get/set/remove the
   tenant's own key, `testAiKey()`/`testTenantAiKey()` for tenant BYOK Anthropic/DeepSeek, and
   `testPlatformAiKey()` for whichever shared provider is active) and
   [`lib/bms/aiUsage.ts`](../../apps/web/lib/bms/aiUsage.ts) (`getAiUsage()`,
   `tryConsumeAiQuota()`, `recordByokAiUsage()`, `finalizeAiUsageEvent()`,
   `listAiCreditLedger()`, `listAiUsageBreakdown()`). Usage metadata records
-  `routing_reason`, configured/effective provider and `fallback_from`; shared-key deduction remains atomic so
-  concurrent requests cannot blow past the monthly quota.
+  `routing_reason`, configured/effective provider, `fallback_from`, and the logical-request credit policy.
+  Billing, provider activity, and cost are first-class separate event columns: `billable_credits` is what
+  the customer was charged (zero on an unlimited plan), `provider_calls` is actual provider attempts, and `actual_cost_usd` attributes
+  metered provider cost. If only some attempts return usage, known cost is retained while the missing attempts
+  remain explicitly unpriced. When no attempt returns usage, `actual_cost_usd` is NULL rather than a misleading
+  zero; summaries expose `unpricedProviderCalls` so known cost is never presented
+  as complete silently. Shared-key deduction and monthly adjustment balances are serialized on the monthly row,
+  so concurrent requests cannot blow past the quota or calculate two adjustments from the same balance.
+  Tenant DeepSeek BYOK key tests are inference calls and are therefore recorded as zero-credit `ai_key_test`
+  events. Platform-wide health probes remain operational overhead outside tenant billing; tenant cost totals do
+  not claim to be the provider invoice or include those probes.
 - **`generateResponse()`** ([`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts)) now takes `tenantId` and
   tries, in order: tenant's own key (BYOK event only, no shared credit deduction) → shared provider
   (quota-gated + ledger deduction) → template. A shop that runs out of shared credits is never

@@ -433,7 +433,7 @@ async function aiUsageEvents({ evalRef = null, feature = null, limit = 20 } = {}
     `query($limit:Int!,$evalRef:String,$feature:String){
       bmsAiUsageEvents(limit:$limit,evalRef:$evalRef,feature:$feature){
         id source surface feature channel provider model status
-        creditsUsed inputTokens outputTokens estimatedCost
+        billableCredits providerCalls unpricedProviderCalls inputTokens outputTokens actualCostUsd
         routingReason configuredProvider effectiveProvider fallbackFrom
         sensitive createdAt completedAt
       }
@@ -538,8 +538,12 @@ async function customerRoutingChecks(result, evalRef, previousUsageEventId = nul
       check(
         "usage finalize สำเร็จและค่าต้นทุนไม่ติดลบ",
         event?.status === "completed" &&
-          Number(event?.creditsUsed) >= 0 &&
-          Number(event?.estimatedCost) >= 0,
+          Number(event?.billableCredits) >= 0 &&
+          Number(event?.providerCalls) >= 0 &&
+          Number(event?.unpricedProviderCalls) >= 0 &&
+          (event?.actualCostUsd == null
+            ? Number(event?.unpricedProviderCalls) > 0
+            : Number(event.actualCostUsd) >= 0),
         "system",
         JSON.stringify(event ?? null)
       ),

@@ -24,7 +24,7 @@ import { query } from "@/lib/db";
 import crypto from "crypto";
 import { resolveAiCredentials, type AiCredentials } from "./ai";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
-import { finalizeAiUsageEvent } from "./aiUsage";
+import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { listCustomerCouponWallet } from "./coupons";
 import { resolveActiveCustomerId } from "./customers";
 
@@ -478,7 +478,7 @@ function templateSummary(facts: CustomerFacts): string {
   return lines.join("\n");
 }
 
-type SummarizeResult = { text: string; inputTokens: number; outputTokens: number };
+type SummarizeResult = { text: string; inputTokens: number | null; outputTokens: number | null };
 
 // รับ credentials มาจาก resolveAiCredentials() เท่านั้น — ห้ามอ่าน process.env.ANTHROPIC_API_KEY
 // ตรงนี้เอง ไม่งั้นร้านที่ตั้ง BYOK จะไม่ได้ใช้ key ตัวเอง และ usage จะไม่ถูกนับใน quota/รายงาน
@@ -510,8 +510,8 @@ async function claudeSummarize(
   if (!text) throw new Error(`${creds.provider} empty reply`);
   return {
     text,
-    inputTokens: Number(json.usage?.input_tokens ?? 0),
-    outputTokens: Number(json.usage?.output_tokens ?? 0),
+    inputTokens: json.usage?.input_tokens ?? null,
+    outputTokens: json.usage?.output_tokens ?? null,
   };
 }
 
@@ -569,6 +569,7 @@ export async function getCustomerInsights(tenantId: string, customerId: string) 
   let summaryText: string;
   if (creds) {
     try {
+      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
       const result = await claudeSummarize(facts, creds);
       summaryText = result.text;
       if (creds.usageEventId) {
