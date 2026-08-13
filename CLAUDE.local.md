@@ -93,6 +93,11 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
 - `/live-dashboard` ยังเป็น mock ทั้งหน้า (ต่อ query จริงแล้วต้องทบทวน `?demo=1` ด้วย)
 - ยังไม่มี cron schedule จริงให้ 6 endpoint ที่พร้อมแล้ว (บันทึกลง `bms_job_runs` ได้แล้ว แค่ยังไม่มี
   ตัวยิงอัตโนมัติ)
+- `/admin/system-health` (ดู § System Health + request metrics ใน
+  [docs/local-notes-archive.md](docs/local-notes-archive.md)) ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ·
+  `pg_stat_statements` preload ไว้แล้วแต่ยังไม่ restart Postgres/`CREATE EXTENSION` เลยยังไม่มีการ์ด
+  slow-query · REST route latency ยังไม่ instrument (มีแค่ GraphQL) · CPU/memory ตั้งใจไม่ทำเพราะต้องใช้
+  Docker socket
 
 ## ก่อน production (สำคัญ)
 

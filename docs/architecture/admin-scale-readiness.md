@@ -131,15 +131,27 @@ Deliverable:
 
 ถ้ายังไม่มี metrics ที่พอ การเพิ่มเครื่องจะกลายเป็นการเดา
 
+**สถานะ (2026-08): ทำไปแล้วบางส่วน** — หน้ารวมอยู่ที่ `/admin/system-health` (platform admin เท่านั้น,
+read-only) ดูรายละเอียดที่ § Observability ใน [AGENTS.md](../../AGENTS.md)
+
 Checklist:
 
-- [ ] เก็บ request rate, p50, p95, p99 แยกตาม route/query
-- [ ] เก็บ error rate แยกตาม route/query
-- [ ] เก็บ CPU / memory ของ app
-- [ ] เก็บ DB connections
-- [ ] เปิด slow query logging
-- [ ] ระบุ top 10 GraphQL queries ที่หนักสุด
-- [ ] เก็บ Redis latency / connection / memory
+- [x] เก็บ request rate, p50, p95, p99 แยกตาม **GraphQL operation** — Apollo plugin
+      (`apps/web/graphql/metricsPlugin.ts`) → Redis histogram (`apps/web/lib/bms/requestMetrics.ts`)
+      · recorder รองรับ namespace prefix แล้ว (`gql:` / `rest:`) โดยรอบนี้เริ่มจาก `gql:` ก่อน
+      · percentile และช่วงเวลาย้อนหลังเป็นค่าประมาณจาก bucket 5 นาที (window อาจเกินค่าที่เลือกไม่ถึง 5 นาที)
+      · metric เริ่มนับหลัง deploy นี้เท่านั้น และหายเมื่อ restart Redis (TTL 4 ชม.)
+- [x] เก็บ error rate แยกตาม GraphQL operation + error code breakdown
+- [ ] เก็บ request/error ของ **REST route** (`/api/bms/**`) — ยังไม่ทำ: Next App Router ไม่มีจุดกลาง
+      ให้จับเวลา handler ต้องครอบทีละ route (`recordRequestMetric()` รองรับแล้วผ่าน prefix `rest:`)
+- [ ] เก็บ CPU / memory ของ app — **ตั้งใจยังไม่ทำ**: ต้องให้ container เข้าถึง Docker socket
+      ซึ่งเป็น privilege escalation surface ต้องตัดสินใจแยกก่อน
+- [x] เก็บ DB connections (`pg_stat_activity`: active/idle/idle-in-tx, longest running query, DB size)
+- [ ] เปิด slow query logging — `pg_stat_statements` preload ไว้ใน `docker-compose.yml` แล้ว
+      แต่**ยังไม่ restart Postgres และยังไม่ `CREATE EXTENSION`** จึงยังไม่มีข้อมูล
+- [ ] ระบุ top 10 GraphQL queries ที่หนักสุด — ตารางเรียงตาม "เวลารวม" (calls × avg) มีแล้ว
+      แต่ยังไม่ได้เก็บผลจริงมาสรุปเป็นรายงาน
+- [x] เก็บ Redis latency / connection / memory (PING + INFO)
 
 ควรแยก metric ตาม scenario ต่อไปนี้อย่างน้อย:
 
@@ -149,10 +161,13 @@ Checklist:
 - `admin-orders-list`
 - `admin-customer360`
 
+> หมายเหตุ: metric แยกตาม GraphQL operation name จริง (เช่น `gql:BmsDashboard`) ไม่ได้แยกตามชื่อ
+> scenario ข้างบน — map กันเองตอนอ่าน เพราะ 1 หน้าอาจยิงหลาย operation
+
 Deliverable:
 
-- dashboard monitoring กลาง 1 ชุด
-- รายงาน slow queries รายวัน
+- dashboard monitoring กลาง 1 ชุด → **`/admin/system-health`** (ทำแล้ว)
+- รายงาน slow queries รายวัน → ยังไม่มี (ติดที่ `pg_stat_statements` ยังไม่เปิดใช้จริง)
 
 ## Phase 3: แก้ read bottlenecks ก่อนซื้อเครื่อง
 
@@ -249,8 +264,43 @@ Checklist:
 - [ ] มี index ตาม query path หลัก
 - [ ] ทบทวน pagination/query bounds ทุกหน้า list ใหญ่
 - [ ] แยก read-heavy workload ที่ไม่จำเป็นต้องอ่านจาก primary โดยตรง
-- [ ] ประเมิน read replica สำหรับ admin read paths
+- [x] ประเมิน read replica สำหรับ admin read paths → **สรุปว่ายังไม่ควรทำตอนนี้** (ดูด้านล่าง)
 - [ ] ประเมิน summary tables/materialized views สำหรับ dashboard
+
+### ประเมิน read replica (2026-08): ยังไม่ควรแยก
+
+ข้อสรุปจากการวิเคราะห์ baseline ด้านบนเทียบกับโค้ดจริง:
+
+- throughput ไม่ขึ้นเลยเมื่อ concurrency 10 → 20 (`~14.5` → `~15.4 req/s`) แต่ p95 เพิ่มเท่าตัว
+  (`~765 ms` → `~1.41 s`) = อาการ **คิวรอ ไม่ใช่กำลังอ่านล้น** ที่ `15 req/s` Postgres ยังไม่เหนื่อย
+- ต้นทุนต่อ query ต่างหากที่แพง: `getDashboard()` ([dashboard.ts](../../apps/web/lib/bms/dashboard.ts))
+  ยิง aggregate 10 ตัวพร้อมกันต่อการเปิดหน้า 1 ครั้ง หลายตัวสแกน `bms_orders` ทั้งตาราง
+  (`revenue_total` ไม่มี date bound) และ join `bms_order_items`/`bms_customers` ทั้งฐาน โดยไม่มี cache
+  ย้ายไป replica = เอา full scan 10 ตัวไปรันอีกเครื่อง p95 เท่าเดิม
+- ต้นทุนที่จะได้มาแทนคือ replication lag ซึ่งชนกับ read-after-write หลายจุดในระบบนี้:
+  mutation → refetch ของหน้า admin แทบทุกหน้า, `logConversation()` → `bmsInboxChanged` → refetch
+  ภายใน ms, และ read-then-write ที่ต้องถูกต้อง 100% (`submitPaymentOnce()`, `tryConsumeAiQuota()`,
+  `enforceProductQuota()`, `applyCouponInTx()`, lease claim ของ `runDueFollowups()`, CAS ของ
+  `runScheduledDigests()`) — ทั้งหมดต้องอยู่ primary เสมอ
+- read/write ปัจจุบันใช้ทางเดียวกันหมด (`await query(...)` ~187 จุดใน `lib/bms`) การแยกแปลว่าต้องไล่
+  จำแนกทุกจุดว่าอันไหน route ไป replica ได้ — งานเยอะ พลาดง่าย โดยที่ p95 ไม่ดีขึ้น
+
+**ควรทำก่อนตามลำดับ**: cache `getDashboard()` ด้วย `lib/cache.ts` (มีอยู่แล้ว, per-tenant key, TTL
+30–60 วิ) → ใส่ date bound + index ให้ aggregate ที่สแกนทั้งตาราง → เปิด `pg_stat_statements` เพื่อวัด
+ก่อนตัดสินใจอะไรต่อ → เพิ่ม web instance + pgBouncer (คุม `POSTGRES_POOL_MAX × replicas` ไม่ให้ชน
+`max_connections`)
+
+**เกณฑ์ที่ค่อยกลับมาแยกจริง** — ต้องครบทั้งสามข้อ ไม่ใช่ข้อใดข้อหนึ่ง:
+
+1. primary CPU ค้าง > 60–70% ต่อเนื่อง โดยที่ cache/index ทำครบแล้ว
+2. `pg_stat_statements` แสดงว่า `total_exec_time` ส่วนใหญ่มาจาก SELECT ไม่ใช่ write
+3. มี workload ที่ทน lag ได้จริงและกินทรัพยากรเยอะ — ในระบบนี้คือ `reportEngine.ts`, `reportDigest.ts`,
+   `forecast.ts` (**แยกสามตัวนี้ไป replica ก่อนอย่างเดียวก็พอ** ไม่ต้องแตะ read path ของ admin เลย)
+
+**วิธี implement ตอนนั้น** (ไม่ต้องรื้อ): เพิ่ม `queryRead()` ใน [db.ts](../../apps/web/lib/db.ts) ที่เปิด
+pool ที่สองจาก `POSTGRES_REPLICA_HOST` และ **fallback ไป pool เดิมเมื่อไม่ได้ตั้ง env** (พฤติกรรม
+single-instance ไม่เปลี่ยนเลย) แล้ว opt-in ทีละ call site · ห้าม route อะไรที่อยู่ใน `getClient()`/
+`beginTenantTx()` เด็ดขาด · RLS ไม่มีปัญหาเพราะ read path ใช้ `WHERE tenant_id` ตรง ๆ ไม่พึ่ง session GUC
 
 ดูเอกสารร่วม:
 

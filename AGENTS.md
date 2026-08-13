@@ -37,7 +37,7 @@ wrong, and update the doc in the same change.
 | `apps/web/lib/bms/tools/` | AI tool catalog + runtime, shared by customer pipeline and staff assistant |
 | `apps/web/lib/bms/pharmacy/` | Flag-gated pharmacy intake |
 | `apps/web/app/api/bms/` · `apps/web/graphql/` | REST/webhooks/cron · GraphQL schema + resolvers |
-| `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`) |
+| `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
 | `apps/ws/` · `packages/` | WebSocket gateway · shared GraphQL + Redis pub/sub |
 | `db/migrations/` · `docs/` · `scripts/` | Ordered idempotent migrations · docs · log triage, AI evals, load tests |
@@ -73,9 +73,10 @@ wrong, and update the doc in the same change.
   degrading silently into "manual".
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
-- **Redis** backs four separate things (pub/sub, read-through cache, admin session revocation, job
-  runs) — do not conflate them or add a fifth client. The cache is fail-open; **rate limiting is
-  not** (it degrades to a per-instance window, never to "allow everything"). Do not cache
+- **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job
+  runs, GraphQL request-latency metrics behind `/admin/system-health`) — do not conflate them or add
+  a new client; reuse `sharedRedisClient` from `lib/cache.ts`. The cache is fail-open; **rate limiting
+  is not** (it degrades to a per-instance window, never to "allow everything"). Do not cache
   product/catalog reads — they are intentionally always-fresh.
 - **Multi-instance** — file bytes go through `lib/storageDrivers/`, fleet-wide state goes to Redis or
   Postgres (never a module-level `Map`), and a scheduled job that reads-then-acts must claim its
@@ -180,6 +181,18 @@ per-user-preference pattern:
 - Realtime diagnostic routes are Administrator/platform-admin only, tenant-scoped, audited, and safe
   to run in production without messaging real customers.
 - Adding a channel means updating every duplicated channel allowlist and the integration docs.
+
+## Observability (`/admin/system-health`)
+
+Platform-admin, **read-only** page answering "how is the system doing right now" in one place —
+never add a button here that writes, restarts, or mutates anything. `lib/bms/systemHealth.ts` is a
+**composition layer, not a new subsystem**: reuse an existing service if one exists, and every read
+returns `{ok:false, error}` instead of throwing (an unapplied migration must degrade to one warning
+card, not a 500). GraphQL latency/error-rate metrics live in Redis histograms
+(`lib/bms/requestMetrics.ts`), not Postgres, on purpose — do not add a per-request DB write here or a
+process-local `Map`. Full rationale, what it does not answer yet (slow-query, REST latency,
+container CPU/memory), and the request-metrics design tradeoffs:
+[agent-invariants.md § Observability](docs/agent-invariants.md#observability-adminsystem-health).
 
 ## Working method
 

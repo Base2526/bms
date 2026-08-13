@@ -42,6 +42,7 @@ import {
   FileSearchOutlined,
   FileProtectOutlined,
   IdcardOutlined,
+  HeartOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -405,6 +406,7 @@ export default function AdminSidebar() {
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
           link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),
           link('/admin/operations-schedule', 'Batch & Cron', <ClockCircleOutlined />),
+          link('/admin/system-health', 'System Health', <HeartOutlined />),
           link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
           link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),

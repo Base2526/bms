@@ -641,6 +641,37 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   [docs/architecture/api.md](architecture/api.md) § RBAC. **Not yet verified against a live DB** —
   `tsc` + `next build` pass, but migration `7.78` has not been applied or exercised end-to-end.
 
+- **System Health page + request metrics (2026-08)** — ✅ implemented, **no migration, no new
+  permission**: `/admin/system-health` (platform-admin only, gated by `requirePlatformAdminPage()` in
+  its own `layout.tsx` like `/admin/env`) is a single read-only page answering "how is the system doing
+  right now", which previously required visiting four separate pages. `lib/bms/systemHealth.ts` is a
+  composition layer — it reuses `listAiProviderHealth()` and `listLatestJobRunPerJob()` unchanged, and
+  only adds reads that genuinely did not exist: Postgres vitals (`pg_stat_activity` connections,
+  longest running query, DB size), a Redis PING/INFO, a **cross-tenant** view of Channel Health
+  (`channelHealth.ts` is tenant-scoped only), and a list of `bms_failure_incidents` — that table
+  (migration `7.36`) had shipped with no list page at all, visible only through bell/Slack
+  notifications. Every read returns `{ok:false, error}` rather than throwing, so an unapplied
+  migration degrades to one warning card instead of a 500 on the whole page.
+  **Latency/error-rate instrumentation** is the second half: `graphql/metricsPlugin.ts` (one Apollo
+  plugin registered in `app/api/graphql/route.ts`) records duration + error code for every GraphQL
+  operation into Redis via `lib/bms/requestMetrics.ts`, surfaced as a p50/p95/p99 + error-rate table
+  with a 15min/1h/3h window selector. Storage is deliberately Redis histogram buckets, not a Postgres
+  table: one row per request would add write load to the very database the page exists to diagnose,
+  raw samples would be unbounded in memory, and an in-process `Map` would report per-instance numbers
+  the moment a replica exists (`HINCRBY` merges across instances for free). Consequences to keep in
+  mind: percentiles are **approximations** interpolated from bucket boundaries, and all metrics are
+  lost on a Redis restart (TTL 4h). The table sorts by *total* time (calls × avg) by default, not p95,
+  because a fast operation called constantly usually costs the database more than a slow one called
+  rarely. **Not covered yet**: which SQL statement is slow (needs `pg_stat_statements` — now preloaded
+  in `docker-compose.yml`, but requires a Postgres restart plus `CREATE EXTENSION` per database before
+  any data exists), REST route timing (Next App Router has no central place to time a route handler;
+  `recordRequestMetric()` already namespaces by name prefix so `rest:/api/bms/...` needs no code
+  change), and container CPU/memory (skipped on purpose — it would require Docker socket access).
+  **Not yet verified against a live browser** — `tsc` + `next build` pass and the percentile math has
+  13 passing unit-style cases, but the docker stack wasn't running on the machine that built this, so
+  the page itself, and the new cross-tenant channel-health/failure-incident queries, have never run
+  against a real DB. See § Observability in [AGENTS.md](../AGENTS.md).
+
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following
@@ -656,4 +687,8 @@ decision-driving scoring model, and deeper analytics/dashboarding beyond the cur
 (see above) · wiring `/live-dashboard` to real queries and re-reviewing its `?demo=1` bypass at that
 point · finishing admin i18n (48 of 78 admin `.tsx` files are bilingual; the remaining 30 are
 layout/loading guards and English-only legacy platform pages — see [AGENTS.md](../AGENTS.md) § i18n
-coverage before assuming any of them is a leak).
+coverage before assuming any of them is a leak) · restarting Postgres to make the already-preloaded
+`pg_stat_statements` take effect (plus `CREATE EXTENSION` per database) so `/admin/system-health` can
+add a slow-query card · instrumenting REST route latency (`rest:` prefix, no recorder change needed)
+· deciding whether container CPU/memory belongs on `/admin/system-health` given the Docker-socket
+access it would require.
