@@ -147,10 +147,12 @@ function percentileFromHistogram(buckets: number[], total: number, p: number): n
 
 type Accumulator = { count: number; sum: number; errors: number; buckets: number[] };
 
-/** อ่านสรุป metric ย้อนหลัง N นาที (ปัดขึ้นเป็นจำนวน time bucket) */
+/** อ่านสรุป metric ย้อนหลัง N นาที (รวมทุก time bucket ที่ทับกับช่วง จึงอาจเกินไม่ถึง 5 นาที) */
 export async function getRequestMetrics(windowMinutes = 60): Promise<RequestMetricsSummary> {
   const clampedWindow = Math.min(Math.max(Math.floor(windowMinutes) || 60, BUCKET_MINUTES), 240);
-  const bucketCount = Math.ceil(clampedWindow / BUCKET_MINUTES);
+  // ต้องรวม bucket ที่คร่อมขอบต้นช่วงด้วย ไม่เช่นนั้น window 60 นาทีจะอ่านจริง
+  // เพียง 55-60 นาทีตามตำแหน่งของเวลาปัจจุบันใน bucket.
+  const bucketCount = Math.ceil(clampedWindow / BUCKET_MINUTES) + 1;
 
   try {
     const now = Date.now();

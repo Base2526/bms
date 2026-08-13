@@ -138,7 +138,9 @@ Checklist:
 
 - [x] เก็บ request rate, p50, p95, p99 แยกตาม **GraphQL operation** — Apollo plugin
       (`apps/web/graphql/metricsPlugin.ts`) → Redis histogram (`apps/web/lib/bms/requestMetrics.ts`)
-      · percentile เป็นค่าประมาณจาก bucket และหายเมื่อ restart Redis (TTL 4 ชม.)
+      · recorder รองรับ namespace prefix แล้ว (`gql:` / `rest:`) โดยรอบนี้เริ่มจาก `gql:` ก่อน
+      · percentile และช่วงเวลาย้อนหลังเป็นค่าประมาณจาก bucket 5 นาที (window อาจเกินค่าที่เลือกไม่ถึง 5 นาที)
+      · metric เริ่มนับหลัง deploy นี้เท่านั้น และหายเมื่อ restart Redis (TTL 4 ชม.)
 - [x] เก็บ error rate แยกตาม GraphQL operation + error code breakdown
 - [ ] เก็บ request/error ของ **REST route** (`/api/bms/**`) — ยังไม่ทำ: Next App Router ไม่มีจุดกลาง
       ให้จับเวลา handler ต้องครอบทีละ route (`recordRequestMetric()` รองรับแล้วผ่าน prefix `rest:`)

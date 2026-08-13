@@ -121,7 +121,7 @@ export default function SystemHealthClient({
   if (requestMetrics.ok && requestMetrics.totalRequests > 0 && requestMetrics.errorRatePct >= 5)
     overallAlerts.push({
       type: "error",
-      text: `Error rate ของ GraphQL อยู่ที่ ${requestMetrics.errorRatePct}% ใน ${requestMetrics.windowMinutes} นาทีล่าสุด`,
+      text: `Error rate ของ request metrics ที่เก็บอยู่ตอนนี้อยู่ที่ ${requestMetrics.errorRatePct}% ใน ${requestMetrics.windowMinutes} นาทีล่าสุด`,
     });
 
   return (
@@ -204,7 +204,7 @@ export default function SystemHealthClient({
       </Row>
 
       <Card
-        title="Request Latency & Error Rate (GraphQL)"
+        title="Request Latency & Error Rate"
         size="small"
         style={{ marginBottom: 16 }}
         extra={
@@ -219,10 +219,17 @@ export default function SystemHealthClient({
           </Space>
         }
       >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="ตอนนี้หน้าจอนี้ยังแสดงเฉพาะ GraphQL operations (`gql:`) ก่อน"
+          description="ตัว recorder รองรับ namespace แล้ว (`gql:` / `rest:`) แต่ฝั่ง REST ของ Next App Router ยังต้องครอบ handler ทีละ route ใน `/api/bms/**` จึงจะเริ่มมี `rest:` เพิ่มเข้ามา"
+        />
         {!requestMetrics.ok ? (
           <Alert type="error" message="อ่าน metric ไม่ได้ (Redis)" description={requestMetrics.error} showIcon />
         ) : requestMetrics.totalRequests === 0 ? (
-          <Empty description="ยังไม่มี request ในช่วงเวลานี้ — metric เริ่มเก็บหลัง deploy โค้ดนี้เท่านั้น ไม่มีข้อมูลย้อนหลัง" />
+          <Empty description="ยังไม่มี request ในช่วงเวลานี้ — metric เริ่มเก็บหลัง deploy เท่านั้น ไม่มีข้อมูลย้อนหลัง และข้อมูลจะหายเมื่อ Redis restart" />
         ) : (
           <>
             <Row gutter={16} style={{ marginBottom: 12 }}>
@@ -315,7 +322,8 @@ export default function SystemHealthClient({
             <Text type="secondary" style={{ fontSize: 12 }}>
               เรียงตาม &quot;เวลารวม&quot; (calls × avg) เป็นค่าเริ่มต้น — operation ที่เร็วแต่ถูกเรียกบ่อยมากอาจกินเวลา
               DB รวมมากกว่า operation ที่ช้าแต่นานๆ เรียกที · percentile คำนวณจาก histogram bucket จึงเป็นค่าประมาณ ·
-              เก็บใน Redis เท่านั้น (TTL 4 ชม.) — restart Redis แล้วข้อมูลหาย
+              ช่วงเวลาอาจเกินค่าที่เลือกไม่ถึง 5 นาทีตามขอบ histogram bucket · metric เริ่มนับหลัง deploy เท่านั้น
+              ไม่มีข้อมูลย้อนหลัง · เก็บใน Redis เท่านั้น (TTL 4 ชม.) — restart Redis แล้วข้อมูลหาย
             </Text>
           </>
         )}
