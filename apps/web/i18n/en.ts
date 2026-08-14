@@ -135,7 +135,7 @@ const en = {
   header: {
     title: "BMS",
 
-    subtitle: "Business management system",
+    subtitle: "AI-powered store management",
     blocked: "Blocked",
 
     // 🔍 search-related
@@ -161,10 +161,10 @@ const en = {
     tryDemo: "Let AI make a sale",
     tryDemoDescription: "Choose a demo store and chat with AI from product discovery and stock checks through a demo order.",
     tryBeforeSignup: "Try before signing up",
-    badge: "AI Business Operating System",
-    heroTitle: "Every customer conversation",
-    heroAccent: "moves the business forward",
-    heroDescription: "BMS connects conversations to customers, orders, inventory, payments, and shipping, using verified backend facts at every step.",
+    badge: "AI sales assistant for online sellers",
+    heroTitle: "Every customer chat",
+    heroAccent: "becomes an order",
+    heroDescription: "AI answers chats, checks stock, opens orders, and tracks shipping automatically — from real data in your store, without you sitting in the inbox all day.",
     startFree: "Start free",
     goToDashboard: "Go to my store dashboard",
     viewWorkflow: "See how it works",

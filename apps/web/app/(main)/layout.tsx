@@ -28,11 +28,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const seo = {
     th: {
-      title: "BMS — ระบบจัดการธุรกิจที่มี AI ตอบลูกค้าให้อัตโนมัติ",
+      title: "BMS — AI ช่วยขายของออนไลน์ ตอบแชทและเปิดออเดอร์อัตโนมัติ",
       desc: "รวมแชทจาก LINE, TikTok, Facebook, Instagram และ Website ไว้ที่เดียว ให้ AI ตอบลูกค้า เช็คสต็อก สร้างออเดอร์ ครบวงจรตั้งแต่แชทแรกจนของถึงมือ",
     },
     en: {
-      title: "BMS — Business management system",
+      title: "BMS — AI sales assistant for online sellers",
       desc: "Unify chats from LINE, TikTok, Facebook, Instagram and your website — let AI handle stock checks, orders, and fulfillment end to end.",
     },
   }[lang];
