@@ -7,7 +7,9 @@
 - Route: `POST /api/bms/line/webhook/[tenantId]` — [`route.ts`](../../apps/web/app/api/bms/line/webhook/%5BtenantId%5D/route.ts)
 - Setup: each shop pastes this URL into their own LINE Developers Console; credentials (channel
   access token + channel secret) are entered on `/admin/settings` and stored encrypted in
-  `bms_tenant_channels`.
+  `bms_tenant_channels`. Surrounding whitespace is removed before encryption. Saving a new access
+  token immediately verifies it with `GET /v2/bot/info`; the manual test action remains available
+  while the channel is unhealthy so a valid replacement can clear a stale `token_expired` status.
 - Signature verification: `X-Line-Signature` header, verified with the shop's `channel_secret` via
   `verifyLineSignature()` (`lib/bms/crypto.ts`). Requests failing verification get `401`.
 - Rate limit: 120 req/min per tenant (`rateLimit()`), returns `429` with `retry-after` when exceeded.

@@ -288,8 +288,10 @@ fulfillment address guard, pending improvements) อยู่ที่ [docs/ui/
     (`requireTenantAdministratorPage`) และ GraphQL resolver (Administrator/platform admin)
   - ปุ่ม **"ทดสอบ"** ในหน้า Settings (เฉพาะ LINE/Facebook/Instagram ที่มี API ตรวจสอบ token โดยไม่ต้องส่งข้อความหาลูกค้าจริง
     — `GET /v2/bot/info` ของ LINE, `GET /me` ของ Graph API) → `testChannelConnection()` (`channelHealth.ts`) +
-    `bmsTestChannel` mutation แสดงเฉพาะตอน badge เป็น "เชื่อมต่อสำเร็จ" เท่านั้น (ตามตารางสถานะเดิม) — กดแล้วอัปเดต
-    `status` จริงไปในตัวผ่าน `recordOutboundSuccess()`/`recordOutboundError()` เดิม (ไม่ใช่แค่ mock ผลลัพธ์)
+    `bmsTestChannel` mutation แสดงเมื่อช่องทางเปิดใช้งานและมี token รวมถึงตอนสถานะผิดปกติเพื่อให้ทดสอบ token
+    ที่เปลี่ยนใหม่ได้ — กดแล้วอัปเดต `status` จริงไปในตัวผ่าน `recordOutboundSuccess()`/`recordOutboundError()` เดิม
+    (ไม่ใช่แค่ mock ผลลัพธ์); เมื่อบันทึก access token ใหม่ UI จะเรียก
+    การทดสอบนี้ต่อทันทีเพื่อเคลียร์ error เก่าหรือแสดงผลปัจจุบัน โดย credential ถูกตัด whitespace รอบนอกก่อนเข้ารหัส
     · TikTok/Shopee/Lazada/Web ไม่มีปุ่มนี้ (ไม่มี API แบบนี้ให้เรียก — ดู `docs/integrations/lazada.md`)
   - `recordOutboundError()` แนบ header `Retry-After` ของ platform เข้า `status_detail` ด้วยถ้ามี (ผ่าน
     `formatOutboundErrorDetail()`) — เดิมมีแค่ status code/body เฉยๆ ไม่ตรงกับตารางสถานะต้นฉบับที่ต้องการเห็นค่านี้
@@ -1788,4 +1790,3 @@ Customer 360 pending items ที่เหลือ (ดู "Pending improvement
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
 · apply migration `7.52` เข้า docker/production จริง + ทดสอบ Follow-up Automation end-to-end ·
 Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ดู § Follow-up Automation)
-
