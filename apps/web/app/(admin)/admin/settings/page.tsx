@@ -318,15 +318,25 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
 
   const submit = async () => {
     const v = await form.validateFields();
+    const hasNewAccessToken = typeof v.accessToken === "string" && v.accessToken.trim() !== "";
     await saveChannel({ variables: {
       channel: ch.key,
       accessToken: v.accessToken || null,
       channelSecret: v.channelSecret || null,
       active: v.active,
     }});
+
+    // Saving only proves that the encrypted value reached our database. Verify a newly
+    // supplied token against the provider immediately so a stale token_expired status is
+    // cleared (or replaced with the current error) without waiting for a real message.
+    if (hasNewAccessToken && v.active && TESTABLE_CHANNELS.has(ch.key)) {
+      await testChannel({ variables: { channel: ch.key } });
+    }
   };
 
-  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && badge.text === t("admin_settings.health_connected");
+  // Keep recovery available while unhealthy: the test itself is what can prove that a
+  // replacement token works and move the channel back to connected.
+  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active;
 
   useEffect(() => {
     if (!focused) return;

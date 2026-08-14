@@ -65,12 +65,16 @@ export async function upsertChannel(
   );
   const prev = cur.rows[0];
 
-  const hasNew = (v: unknown) => typeof v === "string" && v.trim() !== "";
-  const accessToken = hasNew(input.accessToken)
-    ? encryptSecret(input.accessToken as string)
+  // Credentials are commonly pasted from provider consoles. Strip only surrounding
+  // whitespace so an invisible newline is not persisted as part of the Bearer token
+  // or webhook secret.
+  const normalizedAccessToken = typeof input.accessToken === "string" ? input.accessToken.trim() : "";
+  const normalizedChannelSecret = typeof input.channelSecret === "string" ? input.channelSecret.trim() : "";
+  const accessToken = normalizedAccessToken
+    ? encryptSecret(normalizedAccessToken)
     : prev?.access_token ?? null;
-  const channelSecret = hasNew(input.channelSecret)
-    ? encryptSecret(input.channelSecret as string)
+  const channelSecret = normalizedChannelSecret
+    ? encryptSecret(normalizedChannelSecret)
     : prev?.channel_secret ?? null;
   const active = input.active ?? prev?.active ?? true;
   const extra = input.extra ?? prev?.extra ?? {};

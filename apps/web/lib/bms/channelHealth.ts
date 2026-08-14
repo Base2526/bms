@@ -94,15 +94,40 @@ export async function setChannelStatus(
   }
 }
 
-/** webhook รับ event เข้าสำเร็จ — ตั้งเวลาล่าสุด + เคลียร์ no_events/webhook_failed กลับเป็นปกติ */
-export async function recordInboundEvent(tenantId: string, channel: string): Promise<void> {
+async function recordChannelActivity(
+  tenantId: string,
+  channel: string,
+  timestampColumn: "last_inbound_event_at" | "last_outbound_success_at",
+  recoverableStatuses: ChannelHealthStatus[]
+): Promise<void> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    await client.query(
-      `UPDATE bms_tenant_channels SET last_inbound_event_at = now() WHERE tenant_id = $1 AND channel = $2`,
+    const cur = await client.query<{ status: ChannelHealthStatus }>(
+      `SELECT status FROM bms_tenant_channels WHERE tenant_id = $1 AND channel = $2 FOR UPDATE`,
       [tenantId, channel]
     );
+    const prevStatus = cur.rows[0]?.status;
+    const recovers = prevStatus !== undefined && recoverableStatuses.includes(prevStatus);
+
+    await client.query(
+      `UPDATE bms_tenant_channels
+          SET ${timestampColumn} = now(),
+              status = CASE WHEN $3 THEN 'connected' ELSE status END,
+              status_detail = CASE WHEN $3 THEN NULL ELSE status_detail END,
+              last_checked_at = CASE WHEN $3 THEN now() ELSE last_checked_at END
+        WHERE tenant_id = $1 AND channel = $2`,
+      [tenantId, channel, recovers]
+    );
+
+    if (recovers && prevStatus !== "connected") {
+      await client.query(
+        `INSERT INTO bms_channel_health_log (tenant_id, channel, status, detail)
+         VALUES ($1, $2, 'connected', NULL)`,
+        [tenantId, channel]
+      );
+    }
+
     await client.query("COMMIT");
   } catch (err) {
     try {
@@ -112,7 +137,15 @@ export async function recordInboundEvent(tenantId: string, channel: string): Pro
   } finally {
     client.release();
   }
-  await setChannelStatus(tenantId, channel, "connected", null);
+}
+
+/** webhook รับ event เข้าสำเร็จ — ตั้งเวลาล่าสุด + เคลียร์ no_events/webhook_failed กลับเป็นปกติ */
+export async function recordInboundEvent(tenantId: string, channel: string): Promise<void> {
+  await recordChannelActivity(tenantId, channel, "last_inbound_event_at", [
+    "connected",
+    "no_events",
+    "webhook_failed",
+  ]);
 }
 
 /** webhook signature verify ไม่ผ่าน (secret ผิด/เปลี่ยน) */
@@ -126,23 +159,12 @@ export async function recordWebhookVerifyFailed(
 
 /** เรียก Send API สำเร็จ — เคลียร์ token_expired/rate_limited/send_failed กลับเป็นปกติ */
 export async function recordOutboundSuccess(tenantId: string, channel: string): Promise<void> {
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-    await client.query(
-      `UPDATE bms_tenant_channels SET last_outbound_success_at = now() WHERE tenant_id = $1 AND channel = $2`,
-      [tenantId, channel]
-    );
-    await client.query("COMMIT");
-  } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
-  await setChannelStatus(tenantId, channel, "connected", null);
+  await recordChannelActivity(tenantId, channel, "last_outbound_success_at", [
+    "connected",
+    "token_expired",
+    "rate_limited",
+    "send_failed",
+  ]);
 }
 
 /**
@@ -226,7 +248,7 @@ export async function detectStaleChannels(tenantId?: string): Promise<{ tenantId
 export type TestConnectionResult = { ok: boolean; message: string };
 
 /**
- * ปุ่ม "ทดสอบ" ในหน้า Settings (เฉพาะช่องทางที่ active สถานะ 'connected') — เรียก endpoint
+ * ปุ่ม "ทดสอบ" ในหน้า Settings (ช่องทางที่ active และมี token รวมถึงสถานะ error ที่กำลังกู้คืน) — เรียก endpoint
  * แบบ "verify token" ของแพลตฟอร์มที่ไม่ต้องมีผู้รับ (ไม่ต้องส่งข้อความหาลูกค้าจริง):
  *   LINE       → GET /v2/bot/info            (คืนชื่อบอทถ้า token ยังใช้ได้)
  *   FB/IG      → GET /me?access_token=...    (คืนชื่อเพจถ้า token ยังใช้ได้)
