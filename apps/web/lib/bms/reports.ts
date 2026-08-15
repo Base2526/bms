@@ -84,6 +84,61 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
   };
 }
 
+/**
+ * Lifetime aggregate for the staff AI surface. This intentionally omits a
+ * per-day series: generating one row for every day since the shop opened can
+ * make an all-time tool response unnecessarily large.
+ */
+export async function getLifetimeSalesSummary(tenantId: string) {
+  const [totals, byStatus, byChannel] = await Promise.all([
+    query(
+      `SELECT MIN(created_at)::date AS first_order_date,
+              MAX(created_at)::date AS last_order_date,
+              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
+              COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
+         FROM bms_orders
+        WHERE tenant_id = $1`,
+      [tenantId, PAID]
+    ),
+    query(
+      `SELECT status, COUNT(*)::int AS count
+         FROM bms_orders
+        WHERE tenant_id = $1
+        GROUP BY status ORDER BY count DESC`,
+      [tenantId]
+    ),
+    query(
+      `SELECT channel,
+              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
+              COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
+         FROM bms_orders
+        WHERE tenant_id = $1
+        GROUP BY channel ORDER BY revenue DESC`,
+      [tenantId, PAID]
+    ),
+  ]);
+
+  const row = totals.rows[0];
+  const revenue = Number(row.revenue);
+  const orders = Number(row.orders);
+  const toISO = (value: unknown) => value instanceof Date
+    ? value.toISOString().slice(0, 10)
+    : value == null
+      ? null
+      : String(value).slice(0, 10);
+
+  return {
+    scope: "all_time" as const,
+    from: toISO(row.first_order_date),
+    to: toISO(row.last_order_date),
+    revenue,
+    orderCount: orders,
+    avgOrderValue: orders > 0 ? revenue / orders : 0,
+    byStatus: byStatus.rows.map((x: any) => ({ status: x.status, count: x.count })),
+    byChannel: byChannel.rows.map((x: any) => ({ channel: x.channel, revenue: Number(x.revenue), orders: x.orders })),
+  };
+}
+
 export async function getInventorySummary(tenantId: string) {
   const res = await query(
     `SELECT
@@ -126,7 +181,7 @@ export async function getTopSellingProducts(
             SUM(oi.qty)::int AS qty,
             SUM(oi.qty * oi.unit_price) AS revenue
        FROM bms_order_items oi
-       JOIN bms_orders o ON o.id = oi.order_id
+       JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND o.status = ANY($2)
         AND o.created_at >= $3::date
@@ -135,6 +190,25 @@ export async function getTopSellingProducts(
       ORDER BY qty DESC
       LIMIT $5`,
     [tenantId, PAID, r.from, r.to, lim]
+  );
+  return res.rows.map((x: any) => ({ sku: x.sku, name: x.name, qty: x.qty, revenue: Number(x.revenue) }));
+}
+
+/** All-time product ranking without falling through to range()'s 30-day default. */
+export async function getLifetimeTopSellingProducts(tenantId: string, limit = 10) {
+  const lim = Math.min(Math.max(limit, 1), 100);
+  const res = await query(
+    `SELECT oi.product_sku AS sku, p.name,
+            SUM(oi.qty)::int AS qty,
+            SUM(oi.qty * oi.unit_price) AS revenue
+       FROM bms_order_items oi
+       JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
+       JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+      WHERE oi.tenant_id = $1 AND o.status = ANY($2)
+      GROUP BY oi.product_sku, p.name
+      ORDER BY qty DESC
+      LIMIT $3`,
+    [tenantId, PAID, lim]
   );
   return res.rows.map((x: any) => ({ sku: x.sku, name: x.name, qty: x.qty, revenue: Number(x.revenue) }));
 }

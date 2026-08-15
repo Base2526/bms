@@ -89,8 +89,8 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**68 namespaces / 3,555 keys per language,
-   exact th↔en parity** as of 2026-08-13). This is what the per-user language preference switches.
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**68 namespaces / 3,552 keys per language,
+   exact th↔en parity** as of 2026-08-15). This is what the per-user language preference switches.
 2. `resolveBilingual()` (`lib/static-page-i18n.ts`) — page-local content objects. Use for new
    prose-heavy public pages.
 3. Inline `lang === "en" ? … : …` — used by `/shop/**` and `/checkout` metadata. Fine as-is.

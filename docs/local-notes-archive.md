@@ -721,6 +721,9 @@ mutation {
 `payment.refund`) จะไม่เห็นทูลนั้นถูกเสนอให้ AI เลยตั้งแต่ต้น (กรองที่ `staffTools(perms)`) และถึงมี
 provider output ผิดปกติก็จะถูก runtime ปฏิเสธซ้ำก่อน execute
 
+หน้า `/admin/assistant` ไม่มี transitional banner เรื่อง Pharmacy Intake แล้ว (เข้าผ่านเมนู Pharmacy
+Intake Lab โดยตรง) ส่วน info banner วิธีใช้ AI มีปุ่มปิดและจำการปิดต่อ tenant+user ใน browser เดิม
+
 ## AI catalog discovery + sales recovery (2026-07)
 
 **เสร็จแล้ว** — ปัญหาเดิม: ลูกค้าถามกว้าง ("มีอะไรขาย"), ถามของใหม่, หรือเจอสินค้า/ไซซ์หมด แล้ว AI จบบทสนทนา
@@ -1488,7 +1491,7 @@ run-history source" และไม่มีตารางบันทึกก
 
 **ต่อยอดแล้วรอบ 2 — admin batches 1–17 (2026-08-13)**: ประโยค "admin ทั้งหมดยัง 0% i18n" ด้านบน
 **ไม่จริงแล้ว** — ตอนนี้ **48 จาก 78** ไฟล์ `.tsx` ใน `apps/web/app/(admin)/admin/**` มีกลไก 2 ภาษาแล้ว
-(~62%) ดิกชันนารีกลางโตเป็น **68 namespace / 3,555 key ต่อภาษา parity เป๊ะ** (ตรวจ 2026-08-13) ·
+(~62%) ดิกชันนารีกลางโตเป็น **68 namespace / 3,552 key ต่อภาษา parity เป๊ะ** (ตรวจ 2026-08-15) ·
 `AdminSidebar.tsx`/`AdminLayoutClient.tsx`/`admin/login/page.tsx` ที่เคยเป็น gap สำคัญ แปลงครบแล้ว ·
 30 ไฟล์ที่เหลือ**ไม่ใช่ Thai leak**: เป็น `layout.tsx`/`loading.tsx` ที่ไม่มี copy ให้แปล กับหน้า
 platform-admin เก่าที่เป็นอังกฤษล้วนตั้งแต่ก่อนมี BMS (`admin/roles`, `admin/logs`, `admin/files`,

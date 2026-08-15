@@ -20,6 +20,7 @@ import {
   type PharmacyTestSession,
 } from "@/lib/bms/pharmacy/testHarness";
 import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
+import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
 
 const STAFF_SYSTEM = [
   "คุณเป็นผู้ช่วย AI สำหรับแอดมินร้านค้า ตอบเป็นภาษาไทย กระชับ ชัดเจน",
@@ -27,6 +28,8 @@ const STAFF_SYSTEM = [
   "งานที่กระทบเงิน/สต็อก/ลบข้อมูล (ยืนยันเงิน/ปฏิเสธ/คืนเงิน/ยกเลิกออร์เดอร์-PO-การจัดส่ง/ปรับสต็อก/ผสานลูกค้า)",
   "จะเป็น 'คำขอ' ที่ต้องให้แอดมินกดยืนยันเองในหน้าจอ — เมื่อเรียกทูลกลุ่มนี้ ให้แจ้งว่าเตรียมคำขอไว้แล้ว รอกดยืนยัน อย่าบอกว่าทำเสร็จ",
   "ถ้าทูลคืน error หรือไม่พบข้อมูล ให้บอกตามจริงและเสนอขั้นตอนถัดไป",
+  "ถ้าคำขอกำกวมจนขอบเขตข้อมูล ช่วงเวลา เป้าหมาย หรือการกระทำอาจเปลี่ยน ห้ามเดาหรือเลือกค่า default ให้ถามยืนยันสั้น ๆ ก่อนเรียกทูล โดยเฉพาะคำว่า 'ทั้งหมด' ต้องแยกทุกช่วงเวลาออกจากทุกรายการ และ 'รายการขาย' ต้องแยกสินค้าออกจากออร์เดอร์",
+  "เมื่อผู้ใช้ยืนยันว่าต้องการยอดขายหรือสินค้าขายดีตั้งแต่เริ่มขาย/เปิดร้าน/ทุกช่วงเวลา ให้เรียกทูลด้วย scope='all_time' และไม่ส่ง from/to",
 ].join("\n");
 
 type Turn = { role?: string; text?: string };
@@ -45,6 +48,11 @@ export const bmsAssistantResolvers = {
 
       const message = String(args.message ?? "").trim();
       if (!message) throw new GraphQLError("message ว่าง", { extensions: { code: "BAD_USER_INPUT" } });
+
+      const clarification = clarifyAmbiguousStaffRequest(message);
+      if (clarification) {
+        return { reply: clarification, proposals: [], trace: [] };
+      }
 
       const history = Array.isArray(args.history) ? args.history : [];
       const priorTurns = history

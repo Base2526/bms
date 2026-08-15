@@ -71,7 +71,13 @@ import {
   getCustomerCheckoutStatus,
   saveCustomerCheckoutDetails,
 } from "../customers";
-import { getSalesSummary, getInventorySummary, getTopSellingProducts } from "../reports";
+import {
+  getSalesSummary,
+  getInventorySummary,
+  getTopSellingProducts,
+  getLifetimeSalesSummary,
+  getLifetimeTopSellingProducts,
+} from "../reports";
 import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
@@ -653,7 +659,8 @@ const getInventorySummaryTool: BmsTool = {
 const getSalesSummaryTool: BmsTool = {
   name: "get_sales_summary",
   description:
-    "Sales summary for a date range (default: the last 30 days). Revenue counts only orders that reached PAID or later.",
+    "Sales summary for a date range (default: the last 30 days). Revenue counts only orders that reached PAID or later. " +
+    "If 'all' could mean all time versus all rows, ask the user to clarify before calling; never silently choose the 30-day default.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
@@ -661,18 +668,31 @@ const getSalesSummaryTool: BmsTool = {
     properties: {
       from: { type: "string", description: "YYYY-MM-DD" },
       to: { type: "string", description: "YYYY-MM-DD" },
+      scope: {
+        type: "string",
+        enum: ["all_time"],
+        description: "Use all_time only when the user explicitly confirms the period is since the shop began; omit from/to.",
+      },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const from = optString(args, "from") ?? null;
     const to = optString(args, "to") ?? null;
+    const scope = optString(args, "scope") ?? null;
+    if (scope && scope !== "all_time") return { ok: false, error: "scope ไม่ถูกต้อง" };
+    if (scope === "all_time") {
+      if (from || to) return { ok: false, error: "scope=all_time ห้ามส่ง from/to พร้อมกัน" };
+      return { ok: true, data: await getLifetimeSalesSummary(ec.tenantId) };
+    }
     return { ok: true, data: await getSalesSummary(ec.tenantId, from, to) };
   },
 };
 
 const getTopProductsTool: BmsTool = {
   name: "get_top_products",
-  description: "Best-selling products for a date range (by revenue and units sold).",
+  description:
+    "Best-selling products for a date range (by revenue and units sold). This is a bounded ranking, not an unlimited sales ledger. " +
+    "If 'all' could mean all time versus every product/order, ask the user to clarify before calling.",
   surfaces: ["staff"],
   permission: "report.view",
   inputSchema: {
@@ -681,12 +701,23 @@ const getTopProductsTool: BmsTool = {
       from: { type: "string" },
       to: { type: "string" },
       limit: { type: "integer", description: "How many ranked products to return (default 10)." },
+      scope: {
+        type: "string",
+        enum: ["all_time"],
+        description: "Use all_time only when the user explicitly confirms the period is since the shop began; omit from/to.",
+      },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const from = optString(args, "from") ?? null;
     const to = optString(args, "to") ?? null;
     const limit = optInt(args, "limit", 1, 50) ?? 10;
+    const scope = optString(args, "scope") ?? null;
+    if (scope && scope !== "all_time") return { ok: false, error: "scope ไม่ถูกต้อง" };
+    if (scope === "all_time") {
+      if (from || to) return { ok: false, error: "scope=all_time ห้ามส่ง from/to พร้อมกัน" };
+      return { ok: true, data: await getLifetimeTopSellingProducts(ec.tenantId, limit) };
+    }
     return { ok: true, data: await getTopSellingProducts(ec.tenantId, from, to, limit) };
   },
 };

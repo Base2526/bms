@@ -81,7 +81,13 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   checkout link, so the model must not tell the customer merely to wait for an admin.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):
   back-office assistant; sensitive actions are prepared as *proposals* the human must confirm — the
-  model is told to say "prepared, awaiting confirmation", never "done".
+  model is told to say "prepared, awaiting confirmation", never "done". A request whose ambiguity
+  changes the data scope, period, target, or action must receive one concise clarification before any
+  tool call. In particular, "all/ทั้งหมด" must distinguish all time from all rows, and a sales list
+  must distinguish products, summary totals, and individual orders. A deterministic preflight guard
+  handles this known sales-report ambiguity before quota consumption; the prompt covers other cases.
+  Once the user explicitly confirms a lifetime period, the sales tools receive `scope: "all_time"`
+  instead of omitted dates (which intentionally retain the ordinary 30-day default).
 
 Reply-`max_tokens` for the tool loop is 1024 (vs 256 for the single-shot `generateResponse`), and the
 loop is bounded (≤5 rounds, 20s/call) with a deterministic fallback when no AI credentials exist.

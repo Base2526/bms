@@ -463,8 +463,8 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-13
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **68 namespaces / 3,555 leaf keys per language**,
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-08-15
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **68 namespaces / 3,552 leaf keys per language**,
   at exact th↔en parity — up from ~12 before an initial 2026-08 public-page pass (see CLAUDE.md's
   "Public-page i18n coverage expanded" entry), 25 after it, 30 after the first admin batch, and the rest
   added by admin batches 2–17 (one `admin_*` namespace per page or page group, e.g. `admin_login`,
@@ -510,8 +510,8 @@ groups, neither of which is a Thai leak: trivial `layout.tsx`/`loading.tsx` guar
 copy, and the **English-only legacy platform-admin pages** — `admin/roles`, `admin/logs` (×3),
 `admin/files`, `admin/posts` + `admin/post/**`, `admin/operations-schedule`, `admin/dev/sql-console`.
 Those predate BMS, contain no Thai at all, and would need translating *into* Thai rather than out of
-it. Verified 2026-08-13 by dictionary audit: `i18n/th.ts` and `i18n/en.ts` are at exact key parity
-(3,555 = 3,555 across 68 namespaces) and every `t("ns.key")` call site in `app`/`components`/`lib`
+it. Verified 2026-08-15 by dictionary audit: `i18n/th.ts` and `i18n/en.ts` are at exact key parity
+(3,552 = 3,552 across 68 namespaces) and every `t("ns.key")` call site in `app`/`components`/`lib`
 resolves to a real key — so there are currently **zero** raw-key-rendering bugs of the kind commit
 `5832eb23` fixed. Re-run that audit rather than trusting these numbers; the useful one-liners are
 `grep -rl "useI18n\|resolveBilingual" apps/web/app/\(admin\)` for the file list, plus a script that
