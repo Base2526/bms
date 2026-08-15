@@ -14,6 +14,7 @@ import {
   closePosShift,
   getOpenPosShift,
   issuePosDeviceToken,
+  listPosCashiers,
   listPosDevices,
   openPosShift,
   setCashierPin,
@@ -38,6 +39,12 @@ export const bmsPosResolvers = {
     async bmsPosDevices(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pos.device.manage");
       return listPosDevices(getTenantId(ctx));
+    },
+
+    /** พนักงานในร้าน + สถานะ PIN — ใช้ในหน้าตั้งค่า POS ฝั่งแอดมิน */
+    async bmsPosCashiers(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "pos.pin.manage");
+      return listPosCashiers(getTenantId(ctx));
     },
 
     async bmsPosOpenShift(_p: unknown, args: { deviceId: string }, ctx: any) {

@@ -617,6 +617,14 @@ export const typeDefs = /* GraphQL */ `
     token: String!
   }
 
+  type BmsPosCashier {
+    id: ID!
+    name: String
+    email: String
+    isPharmacist: Boolean!
+    hasPin: Boolean!
+  }
+
   type BmsPosShift {
     id: ID!
     locationId: ID!
@@ -738,6 +746,7 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
     bmsPosDevices: [BmsPosDevice!]!
+    bmsPosCashiers: [BmsPosCashier!]!
     bmsPosOpenShift(deviceId: ID!): BmsPosShift
     bmsInventoryLots(productSku: String, size: String, locationId: ID): [BmsInventoryLot!]!
     bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
