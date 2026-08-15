@@ -82,8 +82,21 @@ export default function PosPage() {
   const scanRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(TOKEN_KEY) ?? "";
-    setToken(saved);
+    // จับคู่ผ่านลิงก์ได้: /pos?t=<token>
+    // หน้าแอดมินให้ลิงก์เต็มไปเลย เพราะการก๊อป token เปล่า ๆ แล้วเอาไปวางในช่อง URL
+    // เป็นสิ่งที่เกิดขึ้นจริง (เจอมาแล้ว) — วางลิงก์ในช่อง URL แล้วต้องทำงานเลย
+    const url = new URL(window.location.href);
+    const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
+    if (fromUrl) {
+      window.localStorage.setItem(TOKEN_KEY, fromUrl);
+      setToken(fromUrl);
+      // ล้าง token ออกจาก URL ทันที — ไม่ให้ค้างใน history/แถบที่อยู่ให้ใครเห็น
+      url.searchParams.delete("t");
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.pathname + url.search);
+      return;
+    }
+    setToken(window.localStorage.getItem(TOKEN_KEY) ?? "");
   }, []);
 
   const authHeaders = useMemo(() => ({ "x-pos-device-token": token }), [token]);
@@ -315,13 +328,18 @@ export default function PosPage() {
         <input
           value={tokenInput}
           onChange={(e) => setTokenInput(e.target.value)}
-          placeholder="pos_..."
+          placeholder="pos_... หรือวางลิงก์จับคู่ทั้งลิงก์"
           style={{ width: "100%", padding: 12, fontSize: 16, marginTop: 12 }}
         />
         <button
           disabled={!tokenInput.trim()}
           onClick={() => {
-            const t = tokenInput.trim();
+            // ก๊อปมาทั้งลิงก์ก็รับ — ดึงเฉพาะค่า token ออกมาให้เอง
+            const raw = tokenInput.trim();
+            let t = raw;
+            const m = raw.match(/[?&](?:t|token)=([^&\s]+)/);
+            if (m) t = decodeURIComponent(m[1]);
+            else if (raw.includes("/")) t = raw.split("/").pop() ?? raw;
             window.localStorage.setItem(TOKEN_KEY, t);
             setToken(t);
             setTokenRejected(false);

@@ -67,6 +67,10 @@ export default function PosDevicesPage() {
   const devices: Device[] = data?.bmsPosDevices ?? [];
   const cashiers = data?.bmsPosCashiers ?? [];
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
+  // ลิงก์จับคู่: หน้าขายอ่าน ?t= แล้วเก็บลง localStorage และลบ query ออกจาก URL ทันที
+  const pairUrl = issuedToken
+    ? `${typeof window === "undefined" ? "" : window.location.origin}/pos?t=${encodeURIComponent(issuedToken)}`
+    : "";
 
   async function saveDevice() {
     try {
@@ -298,6 +302,24 @@ export default function PosDevicesPage() {
           message="แสดงครั้งเดียวเท่านั้น"
           description="ฐานข้อมูลเก็บแค่ hash — ปิดหน้านี้แล้วดูซ้ำไม่ได้ ถ้าหายต้องออกใหม่"
         />
+        <Typography.Paragraph strong style={{ marginBottom: 4 }}>
+          วิธีที่ง่ายที่สุด — เปิดลิงก์นี้บนเครื่องขาย
+        </Typography.Paragraph>
+        <Input.TextArea value={pairUrl} readOnly autoSize />
+        <Button
+          type="primary"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            void navigator.clipboard?.writeText(pairUrl);
+            message.success("คัดลอกลิงก์แล้ว — เปิดลิงก์นี้บนเครื่องขาย");
+          }}
+        >
+          คัดลอกลิงก์จับคู่
+        </Button>
+
+        <Typography.Paragraph strong style={{ marginTop: 20, marginBottom: 4 }}>
+          หรือคัดลอกเฉพาะ token ไปวางในช่องบนหน้าจอขาย
+        </Typography.Paragraph>
         <Input.TextArea value={issuedToken ?? ""} readOnly autoSize />
         <Button
           style={{ marginTop: 8 }}
@@ -306,8 +328,11 @@ export default function PosDevicesPage() {
             message.success("คัดลอกแล้ว");
           }}
         >
-          คัดลอก
+          คัดลอก token
         </Button>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+          token ไม่ใช่ที่อยู่เว็บ — วางในช่อง URL ของเบราว์เซอร์จะได้ 404 ให้ใช้ลิงก์ด้านบนแทน
+        </Typography.Paragraph>
       </Modal>
 
       <Modal
