@@ -88,6 +88,8 @@ export type CreatedLine = {
   packUnitName?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
+  /** snapshot ประเภท VAT ตอนขาย — สินค้าเปลี่ยนประเภททีหลังไม่กระทบใบที่ออกไปแล้ว */
+  vatCategory?: string | null;
 };
 
 export type CreateOrderResult =
@@ -327,8 +329,8 @@ export async function createOrder(
       }
 
       // ดึงราคา (สินค้าต้อง active)
-      const prod = await client.query<{ price: string; name: string }>(
-        `SELECT price, name FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
+      const prod = await client.query<{ price: string; name: string; vat_category: string }>(
+        `SELECT price, name, vat_category FROM bms_products WHERE tenant_id = $2 AND sku = $1 AND active`,
         [it.sku, tenantId]
       );
       if (prod.rowCount === 0) {
@@ -354,6 +356,7 @@ export async function createOrder(
         packUnitName: it.packUnitName ?? null,
         packQty,
         packUnitPrice,
+        vatCategory: prod.rows[0].vat_category ?? "UNKNOWN",
       });
     }
 
@@ -415,10 +418,11 @@ export async function createOrder(
     for (const ln of lines) {
       await client.query(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
-                                      pack_code, pack_unit_name, pack_qty, pack_unit_price)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $9, $10, $11, $12)`,
+                                      pack_code, pack_unit_name, pack_qty, pack_unit_price, vat_category)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $9, $10, $11, $12, $13)`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
-          locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null]
+          locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
+          ln.vatCategory ?? "UNKNOWN"]
       );
     }
 

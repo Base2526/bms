@@ -18,10 +18,13 @@ import {
   upsertPosDevice,
 } from "@/lib/bms/pos";
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
+import { issueFullTaxInvoice, listTaxDocumentsForOrder } from "@/lib/bms/taxDocuments";
 import {
   getPharmacyPolicyReadiness,
   listProductsNeedingPolicyReview,
 } from "@/lib/bms/pharmacy/policyReadiness";
+
+type ID_ = string;
 
 export const bmsPosResolvers = {
   Query: {
@@ -70,6 +73,11 @@ export const bmsPosResolvers = {
       return reconcileLotTotals(getTenantId(ctx));
     },
 
+    async bmsTaxDocuments(_p: unknown, args: { orderId: ID_ }, ctx: any) {
+      await requirePermission(ctx, "tax.document.view");
+      return listTaxDocumentsForOrder(getTenantId(ctx), args.orderId);
+    },
+
     async bmsPharmacyPolicyReadiness(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pharmacy.policy.read");
       return getPharmacyPolicyReadiness(getTenantId(ctx));
@@ -112,6 +120,32 @@ export const bmsPosResolvers = {
       // ไม่บันทึกค่า token ลง audit — บันทึกแค่ว่าออกให้เครื่องไหน เมื่อไหร่
       await audit(ctx, "pos.device.token.issue", args.deviceId);
       return issued;
+    },
+
+    /**
+     * ลูกค้าขอใบกำกับเต็มรูป — ยกเลิกใบย่อแล้วออกใบใหม่ที่อ้างอิงเลขเดิม
+     * ตามที่ใบกำกับจริงทุกใบทำ ("เป็นการยกเลิกใบกำกับภาษีอย่างย่อเลขที่ ...")
+     */
+    async bmsIssueFullTaxInvoice(
+      _p: unknown,
+      args: { orderId: ID_; buyer: any },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "tax.document.issue");
+      const result = await issueFullTaxInvoice({
+        tenantId: getTenantId(ctx),
+        orderId: args.orderId,
+        buyer: args.buyer,
+        issuedBy: String(requireAuth(ctx).author_id),
+      });
+      if (result.status === "ISSUED") {
+        await audit(ctx, "tax.document.issue_full", result.document.id, {
+          orderId: args.orderId,
+          docNo: result.document.docNo,
+          replaces: result.cancelledAbbreviated?.docNo ?? null,
+        });
+      }
+      return result;
     },
 
     async bmsOpenPosShift(

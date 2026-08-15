@@ -70,6 +70,10 @@ export const BMS_PERMISSIONS = [
   "pos.shift.close",
   "pos.discount.approve",
   "pos.device.manage",
+  // ใบกำกับภาษี — seed ที่ 7.88
+  "tax.document.view",
+  "tax.document.issue",
+  "tax.setting.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

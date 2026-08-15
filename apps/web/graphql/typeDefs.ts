@@ -676,6 +676,47 @@ export const typeDefs = /* GraphQL */ `
     lotTotal: Int!
   }
 
+  type BmsTaxDocument {
+    id: ID!
+    locationId: ID!
+    orderId: ID!
+    deviceId: ID
+    docType: String!
+    docNo: String!
+    issuedAt: String!
+    issueDate: String!
+    replacesDocumentId: ID
+    cancelledAt: String
+    cancelledReason: String
+    buyerName: String
+    buyerTaxId: String
+    buyerBranchCode: String
+    buyerAddress: String
+    buyerPhone: String
+    taxableAmount: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    roundingAmount: Float!
+    grandTotal: Float!
+    vatRate: Float!
+  }
+
+  input BmsTaxInvoiceBuyerInput {
+    name: String!
+    taxId: String!
+    branchCode: String
+    address: String
+    phone: String
+  }
+
+  type BmsIssueFullTaxInvoiceResult {
+    status: String!
+    document: BmsTaxDocument
+    cancelledAbbreviated: BmsTaxDocument
+    reason: String
+    skus: [String!]
+  }
+
   type BmsPharmacyPolicyReadiness {
     pharmacyArchetype: Boolean!
     totalProducts: Int!
@@ -702,6 +743,7 @@ export const typeDefs = /* GraphQL */ `
     bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
     bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
     bmsLotReconcile: [BmsLotMismatch!]!
+    bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
     bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
     bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
     _health: String!
@@ -3069,6 +3111,7 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS (7.87) ----
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
+    bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
     bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
     bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login

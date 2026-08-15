@@ -24,6 +24,7 @@ import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { confirmPaymentsForOrder, submitPayment, type PaymentMethod } from "./payments";
 import { recordOrderMovements } from "./movements";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
+import { getVatSettings, issueAbbreviatedInvoiceInTx, type TenantVatSettings } from "./taxDocuments";
 
 export const POS_CHANNEL = "pos" as const;
 
@@ -445,6 +446,8 @@ export type PosSaleResult =
       total: number;
       cashTendered: number | null;
       cashChange: number | null;
+      /** เลขใบกำกับภาษีอย่างย่อ — null เมื่อร้านยังไม่จด VAT */
+      docNo: string | null;
       /** true = คีย์นี้เคยขายไปแล้ว คืนบิลเดิม ไม่ได้ขายซ้ำ */
       replayed: boolean;
     }
@@ -487,7 +490,12 @@ async function checkSellableLots(
  * ของออกจากร้านแล้ว: PAID → COMPLETED + ตัด current/reserved + จอง lot แบบ FEFO
  * ไม่ผ่าน PACKING/SHIPPED และไม่สร้าง shipment — หน้าร้านไม่มีอะไรให้ส่ง
  */
-async function fulfilPosOrderInTx(client: PoolClient, tenantId: string, orderId: string): Promise<void> {
+async function fulfilPosOrderInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string,
+  taxArgs: { locationId: string; deviceId: string | null; issuedBy: string; settings: TenantVatSettings }
+): Promise<{ docNo: string | null; vatIssue: string | null }> {
   const ord = await client.query(
     `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
       WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'`,
@@ -547,6 +555,28 @@ async function fulfilPosOrderInTx(client: PoolClient, tenantId: string, orderId:
   // ไม่เพิ่มชนิดใหม่เพราะทุกรายงานที่นับยอดจ่ายออกต้องแก้ตาม — แยกหน้าร้าน/ออนไลน์
   // ด้วย bms_orders.channel = 'pos' แทน
   await recordOrderMovements(client, [orderId], "SHIP", "pos");
+
+  // ใบกำกับอย่างย่อออกในทรานแซกชันเดียวกับการปิดการขาย — บิลที่ตัดสต็อกแล้ว
+  // แต่ไม่มีเลขเอกสารคือบิลที่อธิบายกับสรรพากรไม่ได้
+  const issued = await issueAbbreviatedInvoiceInTx(client, {
+    tenantId,
+    orderId,
+    locationId: taxArgs.locationId,
+    deviceId: taxArgs.deviceId,
+    issuedBy: taxArgs.issuedBy,
+    settings: taxArgs.settings,
+  });
+  if (issued.status === "ISSUED" || issued.status === "ALREADY_ISSUED") {
+    return { docNo: issued.document.docNo, vatIssue: null };
+  }
+  // ร้านที่ยังไม่จด VAT ขายได้ตามปกติ แค่ไม่มีใบกำกับ — ไม่ใช่ error
+  if (issued.status === "NOT_VAT_REGISTERED") return { docNo: null, vatIssue: null };
+  // ร้านจด VAT แล้วแต่สินค้ายังไม่ระบุประเภทภาษี = ออกใบไม่ได้ ต้องหยุดทั้งบิล
+  throw new Error(
+    issued.status === "VAT_CATEGORY_MISSING"
+      ? `ออกใบกำกับไม่ได้: ยังไม่ได้ระบุประเภท VAT ของ ${issued.skus.join(", ")}`
+      : `ออกใบกำกับไม่ได้: ${issued.status}`
+  );
 }
 
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
@@ -675,10 +705,18 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       return { status: "PAYMENT_FAILED", reason: confirmed.status };
     }
 
+    const vatSettings = await getVatSettings(tenantId);
     const client = await getClient();
+    let docNo: string | null = null;
     try {
       await beginTenantTx(client, tenantId, { editorId: input.cashierUserId });
-      await fulfilPosOrderInTx(client, tenantId, orderId);
+      const fulfilled = await fulfilPosOrderInTx(client, tenantId, orderId, {
+        locationId: shift.location_id,
+        deviceId: shift.device_id,
+        issuedBy: input.cashierUserId,
+        settings: vatSettings,
+      });
+      docNo = fulfilled.docNo;
       await client.query("COMMIT");
     } catch (err) {
       try { await client.query("ROLLBACK"); } catch {}
@@ -693,6 +731,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       total: amountDue,
       cashTendered,
       cashChange,
+      docNo,
       replayed: false,
     };
   } catch (err: any) {
@@ -712,11 +751,15 @@ async function findSaleByIdempotencyKey(
     shipping_fee: string | null;
     cash_tendered: string | null;
     cash_change: string | null;
+    doc_no: string | null;
   }>(
-    `SELECT o.id, o.total_amount, o.shipping_fee, pay.cash_tendered, pay.cash_change
+    `SELECT o.id, o.total_amount, o.shipping_fee, pay.cash_tendered, pay.cash_change,
+            doc.doc_no
        FROM bms_orders o
        LEFT JOIN bms_payments pay
          ON pay.order_id = o.id AND pay.status = 'CONFIRMED'
+       LEFT JOIN bms_tax_documents doc
+         ON doc.order_id = o.id AND doc.doc_type = 'ABBREVIATED' AND doc.cancelled_at IS NULL
       WHERE o.tenant_id = $1 AND o.idempotency_key = $2
       LIMIT 1`,
     [tenantId, key]
@@ -729,6 +772,7 @@ async function findSaleByIdempotencyKey(
     total: Number(row.total_amount) + Number(row.shipping_fee ?? 0),
     cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
+    docNo: row.doc_no ?? null,
     replayed: true,
   };
 }
