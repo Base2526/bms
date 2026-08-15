@@ -25,7 +25,8 @@ import { resolveSlipReader, runSlipReaderFallback } from "./slipReaders";
 
 export type { SlipExtract } from "./slipReader";
 
-export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH"] as const;
+// WALLET = e-wallet ที่หน้าร้านรับจริง (ทรูมันนี่ / ShopeePay / Rabbit LINE Pay) — เพิ่มที่ 7.87
+export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export type SubmitPaymentInput = {

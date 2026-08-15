@@ -7,6 +7,18 @@ export type CustomerPaymentMethod =
   | "TIKTOK"
   | "CASH";
 
+/**
+ * วิธีชำระเงินที่ "ถามลูกค้าทางไกลได้" — ไม่รวม WALLET (7.87) เพราะ e-wallet
+ * ที่หน้าร้านต้องยื่นเครื่อง/สแกนต่อหน้า ส่งลิงก์ให้ลูกค้ากดเองไม่ได้
+ */
+export const CUSTOMER_PAYMENT_METHODS: readonly CustomerPaymentMethod[] = [
+  "BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH",
+] as const;
+
+export function isCustomerPaymentMethod(method: string): method is CustomerPaymentMethod {
+  return (CUSTOMER_PAYMENT_METHODS as readonly string[]).includes(method);
+}
+
 function value(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
