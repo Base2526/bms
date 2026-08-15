@@ -59,6 +59,17 @@ export const BMS_PERMISSIONS = [
   "pharmacy.assessment.reject",
   "pharmacy.protocol.manage",
   "pharmacy.audit.read",
+  // จัดประเภทยา/นโยบายการขายรายสินค้า — seed ที่ 7.87
+  // .review ให้เฉพาะ Pharmacist และโค้ดยังเช็ค is_licensed_pharmacist ซ้ำ
+  // เหมือน approveAssessment() เพราะ Administrator ได้ทุก permission อัตโนมัติ
+  "pharmacy.policy.read",
+  "pharmacy.policy.review",
+  // POS — seed ที่ 7.87
+  "pos.sell",
+  "pos.shift.open",
+  "pos.shift.close",
+  "pos.discount.approve",
+  "pos.device.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 
