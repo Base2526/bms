@@ -21,7 +21,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { computeVat, unresolvedVatSkus, type VatCategory, type VatSettings } from "./vat";
+import { computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type VatSettings } from "./vat";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -140,7 +140,7 @@ export type TenantVatSettings = VatSettings & {
 
 export async function getVatSettings(tenantId: string): Promise<TenantVatSettings> {
   const res = await query<any>(
-    `SELECT vat_registered, price_includes_vat, vat_rate, calendar_era,
+    `SELECT vat_registered, price_includes_vat, vat_rate, vat_rounding, calendar_era,
             abbreviated_tax_invoice_approved
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
@@ -150,6 +150,7 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
     vatRegistered: r?.vat_registered ?? false,
     priceIncludesVat: r?.price_includes_vat ?? true,
     vatRate: r?.vat_rate == null ? 7 : Number(r.vat_rate),
+    vatRounding: (r?.vat_rounding ?? "BASE_FIRST") as VatRounding,
     calendarEra: (r?.calendar_era ?? "BE") as "BE" | "CE",
     abbreviatedApproved: r?.abbreviated_tax_invoice_approved ?? false,
   };

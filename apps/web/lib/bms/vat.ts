@@ -1,19 +1,19 @@
 // =============================================================
 // BMS VAT — คำนวณภาษีมูลค่าเพิ่ม + แปลงจำนวนเงินเป็นตัวอักษรไทย (7.88)
 // -------------------------------------------------------------
-// กฎการปัดเศษถอดมาจากใบกำกับจริง ไม่ได้คิดเอง:
+// วิธีปัดเศษไม่มีกฎเดียวที่ใช้ได้กับทุกร้าน — ตรวจกับเลขบนใบจริงแล้วต่างกัน:
 //
-//   วราภรณ์:  VAT = 134.00 × 7/107 = 8.7663  → 8.77
-//             ฐาน = 134.00 − 8.77            = 125.23
-//   Makro:    VAT = 354.00 × 7/107 = 23.1588 → 23.15
-//             ฐาน = 354.00 − 23.15           = 330.85
+//   วราภรณ์  หาฐานก่อน:  134.00 ÷ 1.07  = 125.2336 → 125.23
+//                        VAT = 134.00 − 125.23     = 8.77
+//   Makro    หา VAT ก่อน: 354.00 × 7/107 = 23.1588 → 23.15 (ตัดทิ้ง)
+//                        ฐาน = 354.00 − 23.15      = 330.85
 //
-// ทั้งสองใบ "คิด VAT ก่อน ปัดเศษ แล้วหักออกเพื่อได้ฐาน"
-// ถ้าทำสลับกัน (หาฐานก่อนแล้วคูณ 7%) Makro จะได้ 23.16 → ยอดรวมเพี้ยน 1 สตางค์
-// ซึ่งบนใบกำกับภาษีถือว่าผิด
+// ถ้าใช้วิธีของวราภรณ์กับใบ Makro จะได้ VAT 23.16 ต่างไป 1 สตางค์ ซึ่งบน
+// ใบกำกับภาษีถือว่าผิด → เป็นค่าตั้งต่อร้าน (bms_store_profile.vat_rounding, 7.89)
+// เลือกครั้งเดียวแล้วห้ามเปลี่ยนหลังออกใบกำกับใบแรก
 //
-// และคิดเป็น "กลุ่ม" ไม่ใช่รายบรรทัด — ปัดเศษทีละบรรทัดแล้วบวกกันจะไม่ตรง
-// กับยอดที่พิมพ์บนใบ
+// ที่เหมือนกันทั้งสองเจ้า: คิดเป็น "กลุ่ม" (V รวมกันทีเดียว) ไม่ใช่ปัดทีละบรรทัด
+// แล้วบวกกัน — ปัดทีละบรรทัดจะไม่ตรงกับยอดที่พิมพ์บนใบ
 // =============================================================
 
 export type VatCategory = "V" | "N" | "UNKNOWN";
@@ -38,15 +38,45 @@ export type VatBreakdown = {
   vatRate: number;
 };
 
+/**
+ * BASE_FIRST         ปัดฐานก่อนแล้วลบหา VAT (แบบวราภรณ์) — ค่าเริ่มต้น
+ * VAT_FIRST_TRUNCATE ตัดเศษ VAT ทิ้งแล้วลบหาฐาน (แบบ Makro)
+ * VAT_FIRST_ROUND    ปัด VAT ตามปกติแล้วลบหาฐาน
+ */
+export type VatRounding = "BASE_FIRST" | "VAT_FIRST_TRUNCATE" | "VAT_FIRST_ROUND";
+
 export type VatSettings = {
   vatRegistered: boolean;
   /** true = ราคาสินค้ารวม VAT แล้ว (วราภรณ์/Makro) · false = ยังไม่รวม (KFC) */
   priceIncludesVat: boolean;
   vatRate: number;
+  vatRounding?: VatRounding;
 };
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function trunc2(n: number): number {
+  return Math.floor((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * แยก "ยอดรวม VAT" ออกเป็น ฐาน + VAT ตามวิธีที่ร้านเลือก
+ * ตัวไหนถูกปัดก่อน อีกตัวได้จากการลบเสมอ — ยอดรวมจึงตรงเป๊ะทุกวิธี
+ */
+function splitGross(gross: number, rate: number, mode: VatRounding): { base: number; vat: number } {
+  if (rate <= 0) return { base: round2(gross), vat: 0 };
+  if (mode === "VAT_FIRST_TRUNCATE") {
+    const vat = trunc2((gross * rate) / (100 + rate));
+    return { base: round2(gross - vat), vat };
+  }
+  if (mode === "VAT_FIRST_ROUND") {
+    const vat = round2((gross * rate) / (100 + rate));
+    return { base: round2(gross - vat), vat };
+  }
+  const base = round2(gross / (1 + rate / 100));
+  return { base, vat: round2(gross - base) };
 }
 
 /**
@@ -80,9 +110,9 @@ export function computeVat(
   taxableGross = round2(taxableGross);
   exempt = round2(exempt);
 
-  // ปัดเศษ VAT ก่อน แล้วหาฐานด้วยการลบ — ลำดับนี้สำคัญ (ดูหัวไฟล์)
-  const vatAmount = rate > 0 ? round2((taxableGross * rate) / (100 + rate)) : 0;
-  const netBeforeVat = round2(taxableGross - vatAmount + exempt);
+  const split = splitGross(taxableGross, rate, settings.vatRounding ?? "BASE_FIRST");
+  const vatAmount = split.vat;
+  const netBeforeVat = round2(split.base + exempt);
   const grandTotal = round2(taxableGross + exempt + rounding);
 
   return {

@@ -21,7 +21,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
-import { confirmPaymentsForOrder, submitPayment, type PaymentMethod } from "./payments";
+import { confirmPaymentsForOrder, rejectPayment, submitPartialPayment, type PaymentMethod } from "./payments";
 import { recordOrderMovements } from "./movements";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import { getVatSettings, issueAbbreviatedInvoiceInTx, type TenantVatSettings } from "./taxDocuments";
@@ -236,6 +236,29 @@ export async function resolvePosScan(
     packPrice,
     basePrice,
   };
+}
+
+export type PosCashier = { id: string; name: string | null; email: string | null; isPharmacist: boolean };
+
+/**
+ * รายชื่อพนักงานให้เครื่องเลือกตอนขาย — auth ด้วย device token ของร้านตัวเอง
+ * ⚠️ ยังไม่มี PIN: ตอนนี้เลือกชื่อได้เลย ซึ่งพิสูจน์ตัวตนไม่ได้จริง
+ * ใช้เป็นการ "ระบุผู้ขาย" เพื่อสอบย้อนกลับ ไม่ใช่การยืนยันตัวตน
+ */
+export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
+  const res = await query<any>(
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist
+       FROM users u
+      WHERE u.tenant_id = $1
+      ORDER BY u.name NULLS LAST, u.email`,
+    [tenantId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    name: r.name ?? null,
+    email: r.email ?? null,
+    isPharmacist: Boolean(r.is_licensed_pharmacist),
+  }));
 }
 
 // ---------------------------------------------------------------
@@ -668,21 +691,34 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     }
 
     const submittedIds: string[] = [];
+    // ยกเลิกบิลแล้วต้องปิด payment ที่ค้างด้วย ไม่งั้นเหลือ PENDING คาอยู่บนบิลที่
+    // ยกเลิกไปแล้ว ซึ่งอ่านเหมือน "ยังมีเงินค้างรับ" ทั้งที่ไม่มี (เจอตอนทดสอบจริง)
+    const abandon = async (reason: string): Promise<PosSaleResult> => {
+      for (const id of submittedIds) {
+        await rejectPayment(tenantId, id, "ยกเลิกบิล POS: " + reason, input.cashierUserId).catch(() => {});
+      }
+      await cancelOrder(tenantId, orderId);
+      return { status: "PAYMENT_FAILED", reason };
+    };
     let cashTendered: number | null = null;
     let cashChange: number | null = null;
 
     for (const pay of requested) {
-      const submitted = await submitPayment({
+      // submitPartialPayment ไม่ใช่ submitPayment — ตัวหลังทิ้ง amount แล้วเขียน
+      // ยอดเต็มบิลเสมอ ซึ่งทำให้จ่ายผสมเป็นไปไม่ได้ (เจอตอนทดสอบกับ DB จริง)
+      const submitted = await submitPartialPayment({
         tenantId,
         orderId,
         method: pay.method,
         amount: pay.amount,
         slipRef: pay.ref ?? null,
-        actor: input.cashierUserId,
       });
       if (submitted.status !== "SUBMITTED") {
-        await cancelOrder(tenantId, orderId);
-        return { status: "PAYMENT_FAILED", reason: submitted.status };
+        return abandon(
+          submitted.status === "BAD_AMOUNT"
+            ? `ยอดเกินที่ค้างอยู่ (ค้าง ${submitted.remaining} ขอ ${submitted.requested})`
+            : submitted.status
+        );
       }
       submittedIds.push(submitted.paymentId);
 
@@ -700,10 +736,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     }
 
     const confirmed = await confirmPaymentsForOrder(tenantId, orderId, submittedIds, input.cashierUserId);
-    if (confirmed.status !== "CONFIRMED") {
-      await cancelOrder(tenantId, orderId);
-      return { status: "PAYMENT_FAILED", reason: confirmed.status };
-    }
+    if (confirmed.status !== "CONFIRMED") return abandon(confirmed.status);
 
     const vatSettings = await getVatSettings(tenantId);
     const client = await getClient();

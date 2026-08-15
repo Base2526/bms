@@ -228,6 +228,77 @@ export async function confirmPayment(
   }
 }
 
+export type SubmitPartResult =
+  | { status: "SUBMITTED"; paymentId: string; amount: number }
+  | { status: "ORDER_NOT_FOUND" }
+  | { status: "BAD_METHOD" }
+  | { status: "BAD_AMOUNT"; remaining: number; requested: number };
+
+/**
+ * รับเงิน "บางส่วน" ของบิล — สำหรับจ่ายผสมที่หน้าเคาน์เตอร์เท่านั้น
+ *
+ * submitPayment() ตัวเดิมทิ้ง amount ที่ส่งเข้าไปแล้วใช้ยอดเต็มบิลเสมอ
+ * ("full payment only: ห้าม override amount") ซึ่งถูกสำหรับโอนเงินทางไกล —
+ * ลูกค้าโอนมาไม่ครบแล้วระบบยอมรับคือช่องโหว่ แต่ทำให้จ่ายสด+บัตรเป็นไปไม่ได้
+ *
+ * ตัวนี้จึงเป็นทางแยกที่ระบุยอดได้ พร้อมกันเกินด้วยการนับยอดที่ยังค้างอยู่จริง
+ * ยอดรวมยังถูกตรวจอีกชั้นตอน confirmPaymentsForOrder()
+ */
+export async function submitPartialPayment(input: {
+  tenantId: string;
+  orderId: string;
+  method: PaymentMethod;
+  amount: number;
+  slipRef?: string | null;
+  note?: string | null;
+}): Promise<SubmitPartResult> {
+  const { tenantId, orderId } = input;
+  if (!PAYMENT_METHODS.includes(input.method)) return { status: "BAD_METHOD" };
+  const amount = Math.round((Number(input.amount) + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) return { status: "BAD_AMOUNT", remaining: 0, requested: amount };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+
+    const ord = await client.query<{ total_amount: string; shipping_fee: string }>(
+      `SELECT total_amount, shipping_fee FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [tenantId, orderId]
+    );
+    if (ord.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    const due = Number(ord.rows[0].total_amount) + Number(ord.rows[0].shipping_fee ?? 0);
+
+    const taken = await client.query<{ total: string }>(
+      `SELECT COALESCE(SUM(amount), 0) AS total FROM bms_payments
+        WHERE tenant_id = $1 AND order_id = $2 AND status IN ('PENDING', 'CONFIRMED')`,
+      [tenantId, orderId]
+    );
+    const remaining = Math.round((due - Number(taken.rows[0].total) + Number.EPSILON) * 100) / 100;
+    if (amount - remaining > 0.01) {
+      await client.query("ROLLBACK");
+      return { status: "BAD_AMOUNT", remaining, requested: amount };
+    }
+
+    const ins = await client.query<{ id: string }>(
+      `INSERT INTO bms_payments (tenant_id, order_id, method, amount, slip_ref, note)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [tenantId, orderId, input.method, amount, input.slipRef ?? null, input.note ?? null]
+    );
+
+    await client.query("COMMIT");
+    return { status: "SUBMITTED", paymentId: ins.rows[0].id, amount };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export type ConfirmSplitResult =
   | { status: "CONFIRMED"; paymentIds: string[]; orderPaid: boolean }
   | { status: "NOT_FOUND" }
