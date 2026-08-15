@@ -29,11 +29,21 @@ type ScanHit = {
 
 type CartLine = ScanHit & { packQty: number; key: string };
 
+type Receipt = {
+  docNo: string | null;
+  lines: CartLine[];
+  total: number;
+  tendered: number | null;
+  change: number | null;
+  at: string;
+  cashier: string;
+};
+
 type Session = {
   device: { id: string; code: string; name: string | null; registeredPosNo: string | null };
   location: { id: string; name: string; branchCode: string; pharmacistName: string | null } | null;
   shift: { id: string; openedAt: string; openingFloat: number } | null;
-  cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean }>;
+  cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean; hasPin: boolean }>;
   vat: { registered: boolean; priceIncludesVat: boolean; rate: number; calendarEra: string };
 };
 
@@ -60,6 +70,12 @@ export default function PosPage() {
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<string>("CASH");
   const [tendered, setTendered] = useState<string>("");
+  // PIN อยู่ในหน่วยความจำเท่านั้น — ไม่ลง localStorage เพราะเครื่องหน้าร้าน
+  // เปิดค้างทั้งวันและใครก็เปิด devtools ดูได้
+  const [pin, setPin] = useState<string>("");
+  const [openingFloat, setOpeningFloat] = useState<string>("");
+  const [countedCash, setCountedCash] = useState<string>("");
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -149,8 +165,47 @@ export default function PosPage() {
     return `${deviceCode}-${shiftId.slice(0, 8)}-${seq}`;
   }
 
+  async function shiftAction(action: "open" | "close") {
+    if (!cashierId || !pin || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pos/shift", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          userId: cashierId,
+          pin,
+          openingFloat: action === "open" ? Number(openingFloat || 0) : undefined,
+          countedCash: action === "close" ? Number(countedCash || 0) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data?.error ?? data?.reason ?? `HTTP ${res.status}` });
+      } else if (action === "close" && data.status === "CLOSED") {
+        const v = data.shift?.cashVariance ?? 0;
+        setNotice({
+          type: v === 0 ? "ok" : "error",
+          text: `ปิดกะแล้ว · ควรมี ฿${baht(data.shift.expectedCash)} นับได้ ฿${baht(data.shift.countedCash)} · ${
+            v === 0 ? "ตรงพอดี" : v > 0 ? `เกิน ฿${baht(v)}` : `ขาด ฿${baht(Math.abs(v))}`
+          }`,
+        });
+        setCountedCash("");
+      } else {
+        setNotice({ type: "ok", text: action === "open" ? "เปิดกะแล้ว" : "ปิดกะแล้ว" });
+        setOpeningFloat("");
+      }
+      await loadSession();
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function pay() {
-    if (!session?.shift || cart.length === 0 || !cashierId || busy) return;
+    if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy) return;
     setBusy(true);
     setNotice(null);
     const idempotencyKey = nextIdempotencyKey(session.device.code, session.shift.id);
@@ -161,6 +216,7 @@ export default function PosPage() {
         body: JSON.stringify({
           shiftId: session.shift.id,
           cashierUserId: cashierId,
+          pin,
           idempotencyKey,
           lines: cart.map((l) => ({
             sku: l.sku,
@@ -182,6 +238,18 @@ export default function PosPage() {
       });
       const data = await res.json();
       if (res.ok && data.status === "SOLD") {
+        setReceipt({
+          docNo: data.docNo ?? null,
+          lines: cart,
+          total,
+          tendered: data.cashTendered ?? null,
+          change: data.cashChange ?? null,
+          at: new Date().toLocaleString("th-TH"),
+          cashier:
+            session.cashiers.find((c) => c.id === cashierId)?.name ??
+            session.cashiers.find((c) => c.id === cashierId)?.email ??
+            "",
+        });
         setNotice({
           type: "ok",
           text: `ขายสำเร็จ${data.docNo ? ` · ใบเสร็จ ${data.docNo}` : ""}${
@@ -252,19 +320,30 @@ export default function PosPage() {
             {session?.shift ? " · กะเปิดอยู่" : " · ยังไม่เปิดกะ"}
           </div>
         </div>
-        <select
-          value={cashierId}
-          onChange={(e) => setCashierId(e.target.value)}
-          style={{ padding: 8, fontSize: 14, minWidth: 160 }}
-        >
-          <option value="">เลือกผู้ขาย</option>
-          {(session?.cashiers ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name || c.email}
-              {c.isPharmacist ? " (ภก.)" : ""}
-            </option>
-          ))}
-        </select>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <select
+            value={cashierId}
+            onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
+            style={{ padding: 8, fontSize: 14, minWidth: 160 }}
+          >
+            <option value="">เลือกผู้ขาย</option>
+            {(session?.cashiers ?? []).map((c) => (
+              <option key={c.id} value={c.id} disabled={!c.hasPin}>
+                {c.name || c.email}
+                {c.isPharmacist ? " (ภก.)" : ""}
+                {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
+              </option>
+            ))}
+          </select>
+          <input
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="PIN"
+            style={{ padding: 8, fontSize: 14, width: 90 }}
+          />
+        </div>
       </header>
 
       {sessionError && (
@@ -273,8 +352,33 @@ export default function PosPage() {
         </div>
       )}
       {session && !session.shift && (
-        <div style={{ background: "#fff4e5", color: "#663c00", padding: 12, borderRadius: 8 }}>
-          ยังไม่ได้เปิดกะ — เปิดจากหน้าแอดมินก่อนจึงจะขายได้
+        <div style={{ background: "#fff4e5", color: "#663c00", padding: 12, borderRadius: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span>ยังไม่ได้เปิดกะ</span>
+          <input
+            value={openingFloat}
+            onChange={(e) => setOpeningFloat(e.target.value)}
+            inputMode="decimal"
+            placeholder="เงินตั้งต้นในลิ้นชัก"
+            style={{ padding: 8, fontSize: 14, width: 180 }}
+          />
+          <button disabled={busy || !cashierId || !pin} onClick={() => void shiftAction("open")} style={{ padding: "8px 16px" }}>
+            เปิดกะ
+          </button>
+        </div>
+      )}
+      {session?.shift && cart.length === 0 && (
+        <div style={{ background: "#fff", padding: 10, borderRadius: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+          <span style={{ color: "#666" }}>ปิดกะ:</span>
+          <input
+            value={countedCash}
+            onChange={(e) => setCountedCash(e.target.value)}
+            inputMode="decimal"
+            placeholder="เงินที่นับได้"
+            style={{ padding: 8, fontSize: 14, width: 160 }}
+          />
+          <button disabled={busy || !cashierId || !pin || !countedCash} onClick={() => void shiftAction("close")} style={{ padding: "8px 16px" }}>
+            ปิดกะ + นับเงิน
+          </button>
         </div>
       )}
       {notice && (
@@ -380,12 +484,12 @@ export default function PosPage() {
 
           <div style={{ flex: 1 }} />
           <button
-            disabled={busy || cart.length === 0 || !session?.shift || !cashierId}
+            disabled={busy || cart.length === 0 || !session?.shift || !cashierId || !pin}
             onClick={() => void pay()}
             style={{
               marginTop: 12, padding: "16px 0", fontSize: 18, borderRadius: 8,
               border: "none", color: "#fff",
-              background: busy || cart.length === 0 || !session?.shift || !cashierId ? "#bbb" : "#237804",
+              background: busy || cart.length === 0 || !session?.shift || !cashierId || !pin ? "#bbb" : "#237804",
             }}
           >
             {busy ? "กำลังบันทึก…" : `ชำระเงิน ฿${baht(total)}`}
@@ -398,6 +502,67 @@ export default function PosPage() {
           </button>
         </section>
       </div>
+      {receipt && (
+        <>
+          {/* ใบเสร็จ: พิมพ์ผ่าน print dialog ของเบราว์เซอร์ก่อน — ใช้ได้กับเครื่องพิมพ์
+              ที่ลง driver ไว้แล้วโดยไม่ต้องเขียน ESC/POS · ESC/POS ผ่าน WebUSB
+              (พร้อมคำสั่งเปิดลิ้นชัก) ค่อยทำเมื่อได้เครื่องจริงมาทดสอบ */}
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #pos-receipt, #pos-receipt * { visibility: visible; }
+              #pos-receipt { position: absolute; left: 0; top: 0; width: 72mm; }
+            }
+          `}</style>
+          <div
+            id="pos-receipt"
+            style={{
+              background: "#fff", borderRadius: 12, padding: 16, maxWidth: 320,
+              fontFamily: "ui-monospace, monospace", fontSize: 12, lineHeight: 1.55,
+            }}
+          >
+            <div style={{ textAlign: "center" }}>{session?.location?.name}</div>
+            <div style={{ textAlign: "center" }}>
+              (สาขา {session?.location?.branchCode})
+            </div>
+            {session?.vat.registered && (
+              <div style={{ textAlign: "center" }}>(VAT Included)</div>
+            )}
+            <div style={{ textAlign: "center" }}>
+              POS#{session?.device.registeredPosNo ?? session?.device.code}
+            </div>
+            <div style={{ textAlign: "center", margin: "6px 0" }}>
+              {session?.vat.registered ? "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน"}
+            </div>
+            <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
+            {receipt.lines.map((l) => (
+              <div key={l.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {l.packQty} {l.receiptName}
+                </span>
+                <span>{baht(l.packPrice * l.packQty)}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>ยอดสุทธิ {receipt.lines.reduce((n, l) => n + l.packQty, 0)} ชิ้น</span>
+              <span>{baht(receipt.total)}</span>
+            </div>
+            {receipt.tendered != null && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>เงินสด/เงินทอน</span>
+                <span>{baht(receipt.tendered)} / {baht(receipt.change ?? 0)}</span>
+              </div>
+            )}
+            <div style={{ marginTop: 6 }}>{receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"} · {receipt.at}</div>
+            <div>แคชเชียร์ {receipt.cashier}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => window.print()} style={{ padding: "10px 20px" }}>พิมพ์ใบเสร็จ</button>
+            <button onClick={() => setReceipt(null)} style={{ padding: "10px 20px" }}>ปิด</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

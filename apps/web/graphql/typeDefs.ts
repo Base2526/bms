@@ -3112,6 +3112,8 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
+    "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
+    bmsSetCashierPin(userId: ID!, pin: String): Boolean!
     bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
     bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login

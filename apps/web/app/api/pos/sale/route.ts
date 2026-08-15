@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, recordPosSale, type PosPaymentInput, type PosSaleLine } from "@/lib/bms/pos";
+import { authenticatePosDevice, recordPosSale, verifyCashierPin, type PosPaymentInput, type PosSaleLine } from "@/lib/bms/pos";
 import { PAYMENT_METHODS } from "@/lib/bms/payments";
 
 export const runtime = "nodejs";
@@ -35,6 +35,19 @@ export async function POST(req: NextRequest) {
   const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
   if (!shiftId || !cashierUserId || !idempotencyKey) {
     return badRequest("shiftId, cashierUserId, idempotencyKey จำเป็นทั้งหมด");
+  }
+
+  // PIN ตรวจทุกบิล ไม่ใช่ครั้งเดียวตอนเปิดกะ — จอเก็บไว้ในหน่วยความจำหลังพนักงาน
+  // พิมพ์ครั้งแรก แล้วส่งมาด้วยทุกครั้ง ถูกกว่าการออก token อายุสั้นแล้วต้องดูแลอายุ
+  // พนักงานที่ยังไม่ตั้ง PIN ขายไม่ได้ (ไม่ปล่อยผ่านเป็นค่า default)
+  const pin = typeof body.pin === "string" ? body.pin : "";
+  const auth = await verifyCashierPin(device.tenantId, cashierUserId, pin);
+  if (!auth.ok) {
+    const message =
+      auth.reason === "NO_PIN" ? "พนักงานคนนี้ยังไม่ได้ตั้ง PIN — ตั้งจากหน้าแอดมินก่อน"
+      : auth.reason === "LOCKED" ? "ใส่ PIN ผิดหลายครั้ง ถูกล็อกชั่วคราว"
+      : "PIN ไม่ถูกต้อง";
+    return NextResponse.json({ error: message, reason: auth.reason, lockedUntil: auth.lockedUntil }, { status: 403 });
   }
 
   const rawLines = Array.isArray(body.lines) ? body.lines : [];

@@ -17,6 +17,7 @@
 // =============================================================
 
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
@@ -238,19 +239,27 @@ export async function resolvePosScan(
   };
 }
 
-export type PosCashier = { id: string; name: string | null; email: string | null; isPharmacist: boolean };
+export type PosCashier = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  isPharmacist: boolean;
+  /** false = ยังตั้ง PIN ไม่ได้ → ขายไม่ได้ (ตั้งจากหลังบ้าน) */
+  hasPin: boolean;
+};
 
 /**
  * รายชื่อพนักงานให้เครื่องเลือกตอนขาย — auth ด้วย device token ของร้านตัวเอง
- * ⚠️ ยังไม่มี PIN: ตอนนี้เลือกชื่อได้เลย ซึ่งพิสูจน์ตัวตนไม่ได้จริง
- * ใช้เป็นการ "ระบุผู้ขาย" เพื่อสอบย้อนกลับ ไม่ใช่การยืนยันตัวตน
+ * คนที่ยังไม่ตั้ง PIN ขึ้นในรายการได้แต่ขายไม่ได้ — จอแสดงให้เห็นว่าต้องไป
+ * ตั้ง PIN จากหลังบ้านก่อน ดีกว่าหายไปเฉย ๆ แล้วไม่รู้ว่าทำไม
  */
 export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
   const res = await query<any>(
-    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist,
+            (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
       WHERE u.tenant_id = $1
-      ORDER BY u.name NULLS LAST, u.email`,
+      ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,
     [tenantId]
   );
   return res.rows.map((r: any) => ({
@@ -258,7 +267,88 @@ export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
     name: r.name ?? null,
     email: r.email ?? null,
     isPharmacist: Boolean(r.is_licensed_pharmacist),
+    hasPin: Boolean(r.has_pin),
   }));
+}
+
+// ---------------------------------------------------------------
+// PIN พนักงานหน้าร้าน (7.90)
+// ---------------------------------------------------------------
+
+const PIN_MAX_FAILURES = 5;
+const PIN_LOCK_MINUTES = 15;
+
+export type PinVerifyResult =
+  | { ok: true; userId: string; name: string | null; isPharmacist: boolean }
+  | { ok: false; reason: "NO_PIN" | "WRONG_PIN" | "LOCKED"; lockedUntil?: string };
+
+/**
+ * ตั้ง/เปลี่ยน PIN — เรียกจากหลังบ้านเท่านั้น (permission pos.pin.manage)
+ * PIN สั้นโดยธรรมชาติ จึงจำกัดจำนวนครั้งที่กดผิดแทนการบังคับความยาว
+ */
+export async function setCashierPin(tenantId: string, userId: string, pin: string): Promise<void> {
+  const clean = String(pin ?? "").trim();
+  if (!/^[0-9]{4,8}$/.test(clean)) throw new Error("PIN ต้องเป็นตัวเลข 4–8 หลัก");
+  const hash = await bcrypt.hash(clean, 10);
+  const res = await query(
+    `UPDATE users
+        SET pos_pin_hash = $3, pos_pin_set_at = now(),
+            pos_pin_failures = 0, pos_pin_locked_until = NULL
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, userId, hash]
+  );
+  if (!res.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+}
+
+export async function clearCashierPin(tenantId: string, userId: string): Promise<void> {
+  await query(
+    `UPDATE users SET pos_pin_hash = NULL, pos_pin_set_at = NULL,
+                      pos_pin_failures = 0, pos_pin_locked_until = NULL
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, userId]
+  );
+}
+
+/**
+ * ตรวจ PIN ที่จอขายส่งมา
+ * นับครั้งที่ผิดแล้วล็อกชั่วคราว — PIN 4 หลักเดาได้ใน 10,000 ครั้ง
+ * ถ้าไม่จำกัดจำนวนครั้ง การมี PIN แทบไม่ต่างจากไม่มี
+ */
+export async function verifyCashierPin(
+  tenantId: string,
+  userId: string,
+  pin: string
+): Promise<PinVerifyResult> {
+  const res = await query<any>(
+    `SELECT id, name, pos_pin_hash, pos_pin_failures, pos_pin_locked_until, is_licensed_pharmacist
+       FROM users WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, userId]
+  );
+  const u = res.rows[0];
+  if (!u || !u.pos_pin_hash) return { ok: false, reason: "NO_PIN" };
+
+  if (u.pos_pin_locked_until && new Date(u.pos_pin_locked_until) > new Date()) {
+    return { ok: false, reason: "LOCKED", lockedUntil: new Date(u.pos_pin_locked_until).toISOString() };
+  }
+
+  const match = await bcrypt.compare(String(pin ?? ""), u.pos_pin_hash);
+  if (!match) {
+    const failures = Number(u.pos_pin_failures ?? 0) + 1;
+    const lock = failures >= PIN_MAX_FAILURES;
+    await query(
+      `UPDATE users
+          SET pos_pin_failures = $3,
+              pos_pin_locked_until = CASE WHEN $4 THEN now() + ($5 || ' minutes')::interval ELSE pos_pin_locked_until END
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, userId, lock ? 0 : failures, lock, String(PIN_LOCK_MINUTES)]
+    );
+    return { ok: false, reason: lock ? "LOCKED" : "WRONG_PIN" };
+  }
+
+  if (Number(u.pos_pin_failures ?? 0) > 0) {
+    await query(`UPDATE users SET pos_pin_failures = 0 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId]);
+  }
+  return { ok: true, userId: u.id, name: u.name ?? null, isPharmacist: Boolean(u.is_licensed_pharmacist) };
 }
 
 // ---------------------------------------------------------------

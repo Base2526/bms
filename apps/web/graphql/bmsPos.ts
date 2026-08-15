@@ -10,11 +10,13 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { listLocations } from "@/lib/bms/locations";
 import {
+  clearCashierPin,
   closePosShift,
   getOpenPosShift,
   issuePosDeviceToken,
   listPosDevices,
   openPosShift,
+  setCashierPin,
   upsertPosDevice,
 } from "@/lib/bms/pos";
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
@@ -146,6 +148,23 @@ export const bmsPosResolvers = {
         });
       }
       return result;
+    },
+
+    /**
+     * ตั้ง/ล้าง PIN ของพนักงาน — PIN ไม่เคยถูกส่งกลับหรือบันทึกลง audit
+     * ล้าง PIN = คนนั้นขายหน้าร้านไม่ได้ทันที (ใช้ตอนลาออก)
+     */
+    async bmsSetCashierPin(_p: unknown, args: { userId: ID_; pin?: string | null }, ctx: any) {
+      await requirePermission(ctx, "pos.pin.manage");
+      const tenantId = getTenantId(ctx);
+      try {
+        if (args.pin) await setCashierPin(tenantId, args.userId, args.pin);
+        else await clearCashierPin(tenantId, args.userId);
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "ตั้ง PIN ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      await audit(ctx, args.pin ? "pos.pin.set" : "pos.pin.clear", args.userId);
+      return true;
     },
 
     async bmsOpenPosShift(
