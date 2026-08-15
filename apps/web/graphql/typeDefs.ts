@@ -574,7 +574,136 @@ export const typeDefs = /* GraphQL */ `
     post_id: String
   }
 
+
+  # ---- POS / สาขา / lot ----
+  type BmsLocation {
+    id: ID!
+    code: String!
+    name: String!
+    branchCode: String!
+    isHeadOffice: Boolean!
+    vatCode: String
+    address: String
+    phone: String
+    pharmacyLicenseNo: String
+    pharmacistName: String
+    pharmacistLicenseNo: String
+    active: Boolean!
+  }
+
+  type BmsPosDevice {
+    id: ID!
+    tenantId: ID!
+    locationId: ID!
+    code: String!
+    name: String
+    registeredPosNo: String
+    receiptPrefix: String
+    active: Boolean!
+  }
+
+  input BmsPosDeviceInput {
+    id: ID
+    locationId: ID!
+    code: String!
+    name: String
+    registeredPosNo: String
+    receiptPrefix: String
+    active: Boolean
+  }
+
+  " token ค่าจริงคืนครั้งเดียวตอนออกเท่านั้น ฐานข้อมูลเก็บแต่ hash "
+  type BmsPosDeviceToken {
+    token: String!
+  }
+
+  type BmsPosShift {
+    id: ID!
+    locationId: ID!
+    deviceId: ID!
+    status: String!
+    openedBy: ID!
+    openedAt: String!
+    openingFloat: Float!
+    pharmacistUserId: ID
+    closedAt: String
+    expectedCash: Float
+    countedCash: Float
+    cashVariance: Float
+  }
+
+  type BmsOpenShiftResult {
+    status: String!
+    shift: BmsPosShift
+    reason: String
+  }
+
+  type BmsCloseShiftResult {
+    status: String!
+    shift: BmsPosShift
+  }
+
+  type BmsInventoryLot {
+    id: ID!
+    locationId: ID!
+    productSku: String!
+    size: String!
+    lotNo: String!
+    expiryDate: String
+    receivedAt: String!
+    supplierId: ID
+    unitCost: Float
+    qty: Int!
+    note: String
+  }
+
+  type BmsLotRecallHit {
+    orderId: ID!
+    orderCreatedAt: String!
+    channel: String!
+    productSku: String!
+    qty: Int!
+    customerId: ID
+    customerName: String
+    customerPhone: String
+  }
+
+  type BmsLotMismatch {
+    locationId: ID!
+    productSku: String!
+    size: String!
+    currentStock: Int!
+    lotTotal: Int!
+  }
+
+  type BmsPharmacyPolicyReadiness {
+    pharmacyArchetype: Boolean!
+    totalProducts: Int!
+    approved: Int!
+    pendingReview: Int!
+    draft: Int!
+    missing: Int!
+    ready: Boolean!
+  }
+
+  type BmsUnreviewedProduct {
+    sku: String!
+    name: String!
+    policyStatus: String!
+  }
+
   type Query {
+
+    # ---- POS / สาขา / lot (7.84–7.87) ----
+    bmsLocations: [BmsLocation!]!
+    bmsPosDevices: [BmsPosDevice!]!
+    bmsPosOpenShift(deviceId: ID!): BmsPosShift
+    bmsInventoryLots(productSku: String, size: String, locationId: ID): [BmsInventoryLot!]!
+    bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+    bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
+    bmsLotReconcile: [BmsLotMismatch!]!
+    bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
+    bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
     _health: String!
     meRole: String!
     posts(search: String): [Post!]!
@@ -2936,6 +3065,12 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+
+    # ---- POS (7.87) ----
+    bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
+    bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
+    bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+    bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login
     login(input: LoginInput!): LoginResult!
     loginUser(input: LoginInput!): LoginResult!

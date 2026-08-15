@@ -16,15 +16,134 @@
 // ประตูเดียวและตัดสินเหมือนทุกช่องทาง หน้าเคาน์เตอร์ไม่มีทางลัด
 // =============================================================
 
+import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
-import { confirmPayment, submitPayment, type PaymentMethod } from "./payments";
+import { confirmPaymentsForOrder, submitPayment, type PaymentMethod } from "./payments";
 import { recordOrderMovements } from "./movements";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 
 export const POS_CHANNEL = "pos" as const;
+
+// ---------------------------------------------------------------
+// เครื่องขาย + token ประจำเครื่อง
+// ---------------------------------------------------------------
+
+export type PosDevice = {
+  id: string;
+  tenantId: string;
+  locationId: string;
+  code: string;
+  name: string | null;
+  registeredPosNo: string | null;
+  receiptPrefix: string | null;
+  active: boolean;
+};
+
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+/**
+ * ออก token ให้เครื่อง — เก็บเฉพาะ hash ค่าจริงคืนครั้งเดียวตอนนี้เท่านั้น
+ * ออกใหม่ = ตัวเก่าใช้ไม่ได้ทันที (ใช้ตอนเครื่องหาย)
+ */
+export async function issuePosDeviceToken(
+  tenantId: string,
+  deviceId: string
+): Promise<{ token: string } | null> {
+  const token = `pos_${crypto.randomBytes(32).toString("base64url")}`;
+  const res = await query(
+    `UPDATE bms_pos_devices
+        SET token_hash = $3, token_issued_at = now(), updated_at = now()
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, deviceId, hashToken(token)]
+  );
+  return res.rowCount ? { token } : null;
+}
+
+/**
+ * ตรวจ token ที่เครื่องส่งมา — เทียบด้วย hash เท่านั้น ไม่มีที่ไหนเก็บค่าจริง
+ * ไม่ผูกกับ session ของคน เพราะเครื่องหน้าร้านเปิดค้างทั้งวัน
+ * สิทธิ์ของ "คน" ยังต้องเช็คแยกจาก cashierUserId/PIN อีกชั้น
+ */
+export async function authenticatePosDevice(token: string): Promise<PosDevice | null> {
+  const raw = token.trim();
+  if (!raw) return null;
+  const res = await query<any>(
+    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active
+       FROM bms_pos_devices
+      WHERE token_hash = $1 AND active`,
+    [hashToken(raw)]
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  void query(`UPDATE bms_pos_devices SET last_seen_at = now() WHERE id = $1`, [r.id]).catch(() => {});
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    locationId: r.location_id,
+    code: r.code,
+    name: r.name ?? null,
+    registeredPosNo: r.registered_pos_no ?? null,
+    receiptPrefix: r.receipt_prefix ?? null,
+    active: r.active,
+  };
+}
+
+export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
+  const res = await query<any>(
+    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active
+       FROM bms_pos_devices WHERE tenant_id = $1 ORDER BY code`,
+    [tenantId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    tenantId: r.tenant_id,
+    locationId: r.location_id,
+    code: r.code,
+    name: r.name ?? null,
+    registeredPosNo: r.registered_pos_no ?? null,
+    receiptPrefix: r.receipt_prefix ?? null,
+    active: r.active,
+  }));
+}
+
+export async function upsertPosDevice(
+  tenantId: string,
+  input: {
+    id?: string | null;
+    locationId: string;
+    code: string;
+    name?: string | null;
+    registeredPosNo?: string | null;
+    receiptPrefix?: string | null;
+    active?: boolean;
+  }
+): Promise<PosDevice> {
+  const res = await query<any>(
+    `INSERT INTO bms_pos_devices (id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active)
+     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE))
+     ON CONFLICT (tenant_id, code)
+     DO UPDATE SET location_id = EXCLUDED.location_id,
+                   name = EXCLUDED.name,
+                   registered_pos_no = EXCLUDED.registered_pos_no,
+                   receipt_prefix = EXCLUDED.receipt_prefix,
+                   active = EXCLUDED.active,
+                   updated_at = now()
+     RETURNING id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active`,
+    [input.id ?? null, tenantId, input.locationId, input.code.trim(), input.name ?? null,
+      input.registeredPosNo ?? null, input.receiptPrefix ?? null, input.active ?? null]
+  );
+  const r = res.rows[0];
+  return {
+    id: r.id, tenantId: r.tenant_id, locationId: r.location_id, code: r.code,
+    name: r.name ?? null, registeredPosNo: r.registered_pos_no ?? null,
+    receiptPrefix: r.receipt_prefix ?? null, active: r.active,
+  };
+}
 
 // ---------------------------------------------------------------
 // ยิงบาร์โค้ด → สินค้า + หน่วยขาย
@@ -295,6 +414,15 @@ export type PosSaleLine = {
   packPrice?: number | null;
 };
 
+export type PosPaymentInput = {
+  method: PaymentMethod;
+  amount: number;
+  /** เงินที่ลูกค้ายื่นมา — เงินสดเท่านั้น ใช้คำนวณเงินทอน */
+  cashTendered?: number | null;
+  /** เลขอนุมัติจากเครื่องรูดบัตร / txn id ของ e-wallet */
+  ref?: string | null;
+};
+
 export type PosSaleInput = {
   tenantId: string;
   shiftId: string;
@@ -302,11 +430,8 @@ export type PosSaleInput = {
   /** สร้างที่เครื่อง: {device}-{shift}-{seq} — ยิงซ้ำต้องได้บิลเดิม ไม่ใช่บิลใหม่ */
   idempotencyKey: string;
   lines: PosSaleLine[];
-  method: PaymentMethod;
-  /** เงินที่ลูกค้ายื่นมา (เงินสดเท่านั้น) */
-  cashTendered?: number | null;
-  /** เลขอนุมัติจากเครื่องรูดบัตร / txn id ของ e-wallet */
-  paymentRef?: string | null;
+  /** จ่ายผสมได้ เช่น สด 500 + บัตร 300 — ผลรวมต้องเท่ายอดบิลพอดี */
+  payments: PosPaymentInput[];
   couponCode?: string | null;
   discountApprovedBy?: string | null;
   discountReason?: string | null;
@@ -327,6 +452,7 @@ export type PosSaleResult =
   | { status: "EMPTY" }
   | { status: "LOT_EXPIRED_OR_SHORT"; sku: string; size: string; sellable: number; requested: number }
   | { status: "PAYMENT_FAILED"; reason: string }
+  | { status: "PAYMENT_MISMATCH"; expected: number; received: number }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
 
@@ -500,37 +626,53 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const orderId = created.orderId;
   const amountDue = created.amountDue;
 
-  // จ่ายเงิน — เวอร์ชันนี้รับ 1 วิธีต่อบิล (confirmPayment เทียบยอดเต็มบิล)
-  // จ่ายสด+โอนผสมกันต้องรอ split payment ในเฟสถัดไป
+  // จ่ายเงิน — รับได้หลายวิธีต่อบิล ยืนยันพร้อมกันทีเดียวเมื่อผลรวมตรงยอด
   try {
-    const submitted = await submitPayment({
-      tenantId,
-      orderId,
-      method: input.method,
-      amount: amountDue,
-      slipRef: input.paymentRef ?? null,
-      actor: input.cashierUserId,
-    });
-    if (submitted.status !== "SUBMITTED") {
+    const requested = input.payments
+      .map((p) => ({ ...p, amount: Math.round(Number(p.amount) * 100) / 100 }))
+      .filter((p) => p.amount > 0);
+    const paid = Math.round(requested.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
+    if (requested.length === 0 || Math.abs(paid - amountDue) > 0.01) {
       await cancelOrder(tenantId, orderId);
-      return { status: "PAYMENT_FAILED", reason: submitted.status };
+      return { status: "PAYMENT_MISMATCH", expected: amountDue, received: paid };
     }
 
-    const confirmed = await confirmPayment(tenantId, submitted.paymentId, input.cashierUserId);
+    const submittedIds: string[] = [];
+    let cashTendered: number | null = null;
+    let cashChange: number | null = null;
+
+    for (const pay of requested) {
+      const submitted = await submitPayment({
+        tenantId,
+        orderId,
+        method: pay.method,
+        amount: pay.amount,
+        slipRef: pay.ref ?? null,
+        actor: input.cashierUserId,
+      });
+      if (submitted.status !== "SUBMITTED") {
+        await cancelOrder(tenantId, orderId);
+        return { status: "PAYMENT_FAILED", reason: submitted.status };
+      }
+      submittedIds.push(submitted.paymentId);
+
+      // เงินทอนคิดจากเงินที่ยื่นมาเทียบกับ "ส่วนที่จ่ายด้วยเงินสด" ไม่ใช่ยอดทั้งบิล
+      if (pay.method === "CASH" && pay.cashTendered != null) {
+        const tendered = Math.max(0, Number(pay.cashTendered));
+        const change = Math.max(0, Math.round((tendered - pay.amount) * 100) / 100);
+        cashTendered = (cashTendered ?? 0) + tendered;
+        cashChange = (cashChange ?? 0) + change;
+        await query(
+          `UPDATE bms_payments SET cash_tendered = $2, cash_change = $3, updated_at = now() WHERE id = $1`,
+          [submitted.paymentId, tendered, change]
+        );
+      }
+    }
+
+    const confirmed = await confirmPaymentsForOrder(tenantId, orderId, submittedIds, input.cashierUserId);
     if (confirmed.status !== "CONFIRMED") {
       await cancelOrder(tenantId, orderId);
       return { status: "PAYMENT_FAILED", reason: confirmed.status };
-    }
-
-    const tendered = input.method === "CASH" && input.cashTendered != null
-      ? Math.max(0, Number(input.cashTendered))
-      : null;
-    const change = tendered != null ? Math.max(0, Math.round((tendered - amountDue) * 100) / 100) : null;
-    if (tendered != null) {
-      await query(
-        `UPDATE bms_payments SET cash_tendered = $2, cash_change = $3, updated_at = now() WHERE id = $1`,
-        [submitted.paymentId, tendered, change]
-      );
     }
 
     const client = await getClient();
@@ -549,8 +691,8 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       status: "SOLD",
       orderId,
       total: amountDue,
-      cashTendered: tendered,
-      cashChange: change,
+      cashTendered,
+      cashChange,
       replayed: false,
     };
   } catch (err: any) {

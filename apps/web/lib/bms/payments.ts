@@ -228,6 +228,94 @@ export async function confirmPayment(
   }
 }
 
+export type ConfirmSplitResult =
+  | { status: "CONFIRMED"; paymentIds: string[]; orderPaid: boolean }
+  | { status: "NOT_FOUND" }
+  | { status: "INVALID_STATE"; current: string }
+  | { status: "INVALID_AMOUNT"; expected: number; actual: number };
+
+/**
+ * ยืนยันหลาย payment ของบิลเดียวพร้อมกัน — จ่ายสด 500 + บัตร 300 ในบิล 800
+ *
+ * confirmPayment() ตัวเดิมเทียบยอดของ payment ใบเดียวกับยอดเต็มบิล ซึ่งถูกสำหรับ
+ * โอนเงินทางไกล (1 สลิป = 1 บิล) แต่ปฏิเสธการจ่ายผสมที่หน้าเคาน์เตอร์
+ * ตัวนี้เทียบ "ผลรวม" แทน แล้วยืนยันทุกใบในทรานแซกชันเดียว — ยืนยันไม่ครบ
+ * แล้วบิลค้างครึ่ง ๆ กลาง ๆ ไม่ได้
+ */
+export async function confirmPaymentsForOrder(
+  tenantId: string,
+  orderId: string,
+  paymentIds: string[],
+  actor: string | null = "admin"
+): Promise<ConfirmSplitResult> {
+  if (paymentIds.length === 0) return { status: "NOT_FOUND" };
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+
+    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; status: string }>(
+      `SELECT total_amount, shipping_fee, status FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [tenantId, orderId]
+    );
+    if (orderRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+
+    const pays = await client.query<{ id: string; status: string; amount: string }>(
+      `SELECT id, status, amount FROM bms_payments
+        WHERE tenant_id = $1 AND order_id = $2 AND id = ANY($3::uuid[])
+        FOR UPDATE`,
+      [tenantId, orderId, paymentIds]
+    );
+    if (pays.rowCount !== paymentIds.length) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+    const notPending = pays.rows.find((p) => p.status !== "PENDING");
+    if (notPending) {
+      const current = notPending.status;
+      await client.query("ROLLBACK");
+      return { status: "INVALID_STATE", current };
+    }
+
+    const expected = Number(orderRes.rows[0].total_amount) + Number(orderRes.rows[0].shipping_fee ?? 0);
+    const actual = pays.rows.reduce((sum, p) => sum + Number(p.amount), 0);
+    if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
+      await client.query("ROLLBACK");
+      return { status: "INVALID_AMOUNT", expected, actual: Number.isFinite(actual) ? actual : 0 };
+    }
+
+    await client.query(
+      `UPDATE bms_payments
+          SET status = 'CONFIRMED', verified_by = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [tenantId, paymentIds, actor]
+    );
+
+    const ord = await client.query(
+      `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+      [tenantId, orderId]
+    );
+    if ((ord.rowCount ?? 0) > 0) {
+      await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+      await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
+    }
+
+    await client.query("COMMIT");
+    const orderPaid = (ord.rowCount ?? 0) > 0;
+    if (orderPaid) void notifyOrderStatusEmail(tenantId, orderId, "paid");
+    return { status: "CONFIRMED", paymentIds, orderPaid };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ---- reject / refund (simple guarded transitions) ------------
 async function setStatus(
   tenantId: string,
