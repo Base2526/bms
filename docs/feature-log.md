@@ -126,8 +126,8 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   see the two bullets below for what changed since.
 - **Admin app i18n — batches 1–17 done, ~62% of the admin app (2026-08)**: a series of follow-up passes
   converted `/admin/**` from 0% (no file called `useI18n()`) to **48 of 78** admin `.tsx` files carrying
-  a bilingual mechanism, with the shared dictionary now at **68 namespaces / 3,555 keys per language at
-  exact th↔en parity** (verified 2026-08-13). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
+  a bilingual mechanism, with the shared dictionary now at **68 namespaces / 3,552 keys per language at
+  exact th↔en parity** (verified 2026-08-15). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
   and `admin/login/page.tsx` — both previously flagged here as priority gaps — are converted. The
   remaining 30 files are **not Thai leaks**: they are trivial `layout.tsx`/`loading.tsx` guards with no
   user-visible copy, plus the English-only legacy platform-admin pages (`admin/roles`, `admin/logs`,

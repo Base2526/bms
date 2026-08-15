@@ -955,13 +955,17 @@ Today's overview (revenue, low stock, orders by status, top products/customers, 
 
 ## getSalesSummary()
 
-ยอดขายตามช่วงวันที่ (default = 30 วันล่าสุด) — revenue นับเฉพาะ PAID ขึ้นไป
+ยอดขายตามช่วงวันที่ (default = 30 วันล่าสุด) — revenue นับเฉพาะ PAID ขึ้นไป หากคำว่า
+“ทั้งหมด” ยังไม่ชัดว่าหมายถึงทุกช่วงเวลาหรือทุกรายการ ต้องถามยืนยันก่อน ห้ามปล่อยให้ default 30 วันทำงานแทน
+เมื่อผู้ใช้ยืนยันว่าหมายถึงตั้งแต่เปิดร้าน ให้ส่ง `scope: "all_time"` โดยไม่ส่ง `from`/`to`; โหมดนี้คืน
+aggregate ทั้งช่วงและไม่สร้าง `byDay` รายวัน เพื่อไม่ให้ผลลัพธ์โตตามอายุร้าน
 
 Input
 
 {
     from,               // YYYY-MM-DD (เว้นได้)
-    to
+    to,
+    scope               // "all_time" หลังผู้ใช้ยืนยันเท่านั้น; ห้ามใช้พร้อม from/to
 }
 
 Output
@@ -997,11 +1001,16 @@ Output
 
 ## getTopSellingProducts()
 
+ผลลัพธ์เป็น ranking แบบ bounded ไม่ใช่ sales ledger แบบไม่จำกัด หาก “ทั้งหมด” อาจหมายถึงทุกช่วงเวลา,
+สินค้าทุกรายการ หรือออร์เดอร์ทุกรายการ ต้องถามให้ชัดก่อนเรียก tool
+เมื่อยืนยันว่าเป็นทุกช่วงเวลา ให้ส่ง `scope: "all_time"` โดยไม่ส่ง `from`/`to`
+
 Input
 
 {
     from, to,               // YYYY-MM-DD (เว้นได้)
-    limit                   // default 10
+    limit,                  // default 10
+    scope                   // "all_time" หลังผู้ใช้ยืนยันเท่านั้น; ห้ามใช้พร้อม from/to
 }
 
 Output

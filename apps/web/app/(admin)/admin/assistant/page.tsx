@@ -4,7 +4,6 @@ import {
   Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
 } from "antd";
 import { useState, useRef, useEffect, Fragment } from "react";
-import { useRouter } from "next/navigation";
 import {
   SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
   DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
@@ -20,6 +19,7 @@ type TFn = (key: string, vars?: Record<string, string | number>) => string;
 // เก็บแชทไว้ในเครื่องนี้อัตโนมัติ (ต่อเบราว์เซอร์ ไม่ sync ข้ามอุปกรณ์/แท็บอื่น) — ผู้ใช้ต้องกด
 // "ล้างแชท" เองเท่านั้น ไม่มีการล้างอัตโนมัติ (เช่น ตอนปิดแท็บ/refresh)
 const CHAT_STORAGE_KEY = "bms-assistant-chat-v1";
+const INFO_NOTICE_DISMISSED_STORAGE_KEY = "bms-assistant-info-notice-dismissed-v1";
 
 // ---- วันที่/เวลา — ยืมธรรมเนียมเดิมจาก Inbox (app/(admin)/admin/inbox/page.tsx) ตรงๆ ไม่คิดใหม่
 // เพื่อให้ label "วันนี้/เมื่อวาน/วันที่" ตรงกันทั้งระบบ (Asia/Bangkok ทุกเครื่อง ไม่ขึ้นกับ timezone browser) ----
@@ -255,9 +255,8 @@ const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
 
 export default function Page() {
   const { t } = useI18n();
-  const router = useRouter();
   const client = useApolloClient();
-  const { data: meData } = useQuery(Q_ME);
+  const { data: meData, loading: meLoading } = useQuery(Q_ME);
   const isMobile = useIsMobile();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -267,6 +266,7 @@ export default function Page() {
   const [showScrollLatest, setShowScrollLatest] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [showInfoNotice, setShowInfoNotice] = useState(false);
   // ที่อยู่อีเมลที่แก้ไขได้ก่อนกด "ยืนยันส่ง" ของ proposal email_report — key = "bubbleIdx:propIdx"
   // เริ่มต้นจาก p.args.to ที่ AI เสนอมา แต่แก้ไขได้เสมอก่อนยิงจริง (ปลายทางเป็น free text ไม่ผ่านการยืนยันตัวตน)
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
@@ -277,6 +277,29 @@ export default function Page() {
     meData?.bmsMe?.tenant?.id || "no-tenant",
     meData?.bmsMe?.id || "no-user",
   ].join(":");
+  const infoNoticeStorageKey = [
+    INFO_NOTICE_DISMISSED_STORAGE_KEY,
+    meData?.bmsMe?.tenant?.id || "no-tenant",
+    meData?.bmsMe?.id || "no-user",
+  ].join(":");
+
+  useEffect(() => {
+    if (meLoading) return;
+    try {
+      setShowInfoNotice(localStorage.getItem(infoNoticeStorageKey) !== "1");
+    } catch {
+      setShowInfoNotice(true);
+    }
+  }, [infoNoticeStorageKey, meLoading]);
+
+  const dismissInfoNotice = () => {
+    setShowInfoNotice(false);
+    try {
+      localStorage.setItem(infoNoticeStorageKey, "1");
+    } catch {
+      // ปิดใน state ได้ตามปกติแม้ browser ปิด storage ไว้ แค่จะไม่จำข้าม refresh
+    }
+  };
 
   // โหลดแชทที่บันทึกไว้ตอน mount ครั้งเดียว — ต้องรอ mount ก่อน (localStorage ไม่มีบน server)
   // ไม่งั้น hydration mismatch; chatLoaded กันไม่ให้ effect เซฟทับค่าว่างก่อนโหลดเสร็จ
@@ -563,26 +586,16 @@ export default function Page() {
         </Space>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={t("admin_assistant.info_alert")}
-      />
-      <Alert
-        type="warning"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={
-          <Space wrap>
-            <span>{t("admin_assistant.lab_split_title")}</span>
-            <Button size="small" onClick={() => router.push("/admin/pharmacy-intake-lab")}>
-              {t("admin_assistant.lab_open_btn")}
-            </Button>
-          </Space>
-        }
-        description={t("admin_assistant.lab_split_desc")}
-      />
+      {showInfoNotice && (
+        <Alert
+          type="info"
+          showIcon
+          closable
+          onClose={dismissInfoNotice}
+          style={{ marginBottom: 12 }}
+          message={t("admin_assistant.info_alert")}
+        />
+      )}
 
       {isMobile && (
         <Button
