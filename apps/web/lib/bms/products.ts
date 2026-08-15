@@ -6,6 +6,7 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { resolveDefaultLocationIdInTx } from "./locations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 
@@ -1051,11 +1052,12 @@ export async function setReorderPoint(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId });
+    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
     const res = await client.query<VariantRow>(
       `UPDATE bms_inventory SET reorder_point = $4, updated_at = now()
-        WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
+        WHERE tenant_id = $1 AND location_id = $5 AND product_sku = $2 AND size = $3
         RETURNING size, current_stock, reserved_stock, reorder_point`,
-      [tenantId, sku, size.trim().toUpperCase(), rp]
+      [tenantId, sku, size.trim().toUpperCase(), rp, locationId]
     );
     if (res.rowCount === 0) throw new Error("ไม่พบไซซ์นี้");
     await client.query("COMMIT");
@@ -1106,10 +1108,12 @@ export async function adjustStock(
       throw new Error(`ไม่พบสินค้า ${sku}`);
     }
 
+    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
     const cur = await client.query<VariantRow>(
       `SELECT size, current_stock, reserved_stock, reorder_point
-         FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2 AND size = $3 FOR UPDATE`,
-      [tenantId, sku, sizeUp]
+         FROM bms_inventory
+        WHERE tenant_id = $1 AND location_id = $4 AND product_sku = $2 AND size = $3 FOR UPDATE`,
+      [tenantId, sku, sizeUp, locationId]
     );
 
     let row: VariantRow;
@@ -1119,10 +1123,10 @@ export async function adjustStock(
         throw new Error("ยังไม่มีไซซ์นี้ ลดสต็อกไม่ได้");
       }
       const ins = await client.query<VariantRow>(
-        `INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock)
-         VALUES ($1, $2, $3, $4, 0)
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1, $5, $2, $3, $4, 0)
          RETURNING size, current_stock, reserved_stock, reorder_point`,
-        [tenantId, sku, sizeUp, delta]
+        [tenantId, sku, sizeUp, delta, locationId]
       );
       row = ins.rows[0];
     } else {
@@ -1133,15 +1137,15 @@ export async function adjustStock(
       }
       const upd = await client.query<VariantRow>(
         `UPDATE bms_inventory SET current_stock = current_stock + $4, updated_at = now()
-          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
+          WHERE tenant_id = $1 AND location_id = $5 AND product_sku = $2 AND size = $3
           RETURNING size, current_stock, reserved_stock, reorder_point`,
-        [tenantId, sku, sizeUp, delta]
+        [tenantId, sku, sizeUp, delta, locationId]
       );
       row = upd.rows[0];
     }
 
     await recordMovement(client, {
-      tenantId, sku, size: sizeUp,
+      tenantId, locationId, sku, size: sizeUp,
       type: delta > 0 ? "STOCK_IN" : "STOCK_OUT",
       qty: Math.abs(delta), note: note ?? null, actor: actor ?? "admin",
     });

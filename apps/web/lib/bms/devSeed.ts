@@ -412,8 +412,8 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
         );
         for (const size of item.sizes?.length ? item.sizes : ["STD"]) {
           await client.query(
-            `INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock, reorder_point)
-             VALUES ($1, $2, $3, $4, 0, $5)`,
+            `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+             VALUES ($1, (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1), $2, $3, $4, 0, $5)`,
             [
               tenantId,
               sku,
@@ -457,8 +457,10 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
       RETURNING sku, name, price
     ),
     inv AS (
-      INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock, reorder_point)
-      SELECT $1, np.sku, s.size, floor(random() * 50)::int, 0, 5
+      INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
+      SELECT $1,
+             (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1),
+             np.sku, s.size, floor(random() * 50)::int, 0, 5
         FROM np CROSS JOIN (VALUES ('S'),('M'),('L'),('XL')) AS s(size)
       RETURNING 1
     )
@@ -1058,7 +1060,8 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
       await client.query(
         `UPDATE bms_inventory
             SET current_stock = 0, reserved_stock = 0, reorder_point = GREATEST(reorder_point, 3)
-          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
+            AND location_id = (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1)`,
         [tenantId, sku, size]
       );
     }
@@ -1067,7 +1070,8 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
       await client.query(
         `UPDATE bms_inventory
             SET current_stock = $4, reserved_stock = 0, reorder_point = GREATEST(reorder_point, 3)
-          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
+            AND location_id = (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1)`,
         [tenantId, sku, size, 2 + R(10)]
       );
     }

@@ -14,6 +14,7 @@ import type { Channel } from "./pipeline";
 import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { beginTenantTx } from "./tenant";
+import { resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { isCarrier, type Carrier } from "./carriers/constants";
@@ -34,7 +35,20 @@ import {
   type CustomerChannelIdentity,
 } from "./customerIdentity";
 
-export type OrderItemInput = { sku: string; size: string; qty: number };
+/**
+ * qty คือ "หน่วยฐาน" เสมอ (สต็อกนับเป็นหน่วยฐาน) — ถ้าลูกค้าซื้อเป็นกล่อง
+ * ผู้เรียกต้องคูณ base_qty มาแล้ว แล้วส่ง pack* มาเพื่อให้ใบเสร็จพิมพ์ว่า
+ * "1 กล่อง @230" แทน "10 แผง @23" (7.86)
+ */
+export type OrderItemInput = {
+  sku: string;
+  size: string;
+  qty: number;
+  packCode?: string | null;
+  packUnitName?: string | null;
+  packQty?: number | null;
+  packUnitPrice?: number | null;
+};
 
 export type CreateOrderInput = {
   tenantId: string;
@@ -51,6 +65,16 @@ export type CreateOrderInput = {
   preferredCarrier?: string | null;
   /** Server-derived only. A customer/model must never supply this id. */
   pharmacyApprovedAssessmentId?: string | null;
+  /** สาขาที่ตัดสต็อก — ไม่ระบุ = สาขาเริ่มต้นของร้าน (7.84) */
+  locationId?: string | null;
+  /** POS เท่านั้น — เครื่อง/กะ/คนขาย และคีย์กันบิลซ้ำ (7.87) */
+  posDeviceId?: string | null;
+  posShiftId?: string | null;
+  cashierUserId?: string | null;
+  idempotencyKey?: string | null;
+  /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
+  discountApprovedBy?: string | null;
+  discountReason?: string | null;
 };
 
 export type CreatedLine = {
@@ -60,6 +84,10 @@ export type CreatedLine = {
   qty: number;
   unitPrice: number;
   availableAfter: number;
+  packCode?: string | null;
+  packUnitName?: string | null;
+  packQty?: number | null;
+  packUnitPrice?: number | null;
 };
 
 export type CreateOrderResult =
@@ -89,14 +117,37 @@ export type CreateOrderResult =
     }
   | { status: "EMPTY" };
 
-/** รวมรายการซ้ำ (sku+size เดียวกัน) แล้วบวก qty */
+/**
+ * รวมรายการซ้ำ (sku+size เดียวกัน) แล้วบวก qty
+ * ถ้ารายการที่รวมกันมาคนละหน่วยขาย (ซื้อทั้งกล่องและแผงของยาตัวเดียวกัน)
+ * จะทิ้ง snapshot หน่วยขายไป แล้วพิมพ์ใบเสร็จเป็นหน่วยฐาน — เดาแทนลูกค้าไม่ได้
+ */
 function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   const map = new Map<string, OrderItemInput>();
   for (const it of items) {
     const key = `${it.sku}__${it.size}`;
     const cur = map.get(key);
-    if (cur) cur.qty += it.qty;
-    else map.set(key, { sku: it.sku, size: it.size, qty: it.qty });
+    if (cur) {
+      cur.qty += it.qty;
+      if (cur.packCode !== (it.packCode ?? null)) {
+        cur.packCode = null;
+        cur.packUnitName = null;
+        cur.packQty = null;
+        cur.packUnitPrice = null;
+      } else if (cur.packQty != null && it.packQty != null) {
+        cur.packQty += it.packQty;
+      }
+    } else {
+      map.set(key, {
+        sku: it.sku,
+        size: it.size,
+        qty: it.qty,
+        packCode: it.packCode ?? null,
+        packUnitName: it.packUnitName ?? null,
+        packQty: it.packQty ?? null,
+        packUnitPrice: it.packUnitPrice ?? null,
+      });
+    }
   }
   // เรียง deterministic เพื่อกัน deadlock
   return [...map.values()].sort((a, b) =>
@@ -240,23 +291,27 @@ export async function createOrder(
     const lines: CreatedLine[] = [];
     let total = 0;
 
+    // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
+    const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
+
     for (const it of items) {
       // reserve แบบ atomic บน client ตัวเดียวกับทรานแซกชัน (ล็อกแถว inventory)
       const upd = await client.query<{ available_after: number }>(
         `UPDATE bms_inventory
             SET reserved_stock = reserved_stock + $3, updated_at = now()
-          WHERE tenant_id = $4 AND product_sku = $1 AND size = $2
+          WHERE tenant_id = $4 AND location_id = $5 AND product_sku = $1 AND size = $2
             AND (current_stock - reserved_stock) >= $3
           RETURNING (current_stock - reserved_stock) AS available_after`,
-        [it.sku, it.size, it.qty, tenantId]
+        [it.sku, it.size, it.qty, tenantId, locationId]
       );
 
       if (upd.rowCount === 0) {
         // แยกสาเหตุ: ไม่พบ row หรือ ของไม่พอ
         const cur = await client.query<{ available: number }>(
           `SELECT (current_stock - reserved_stock) AS available
-             FROM bms_inventory WHERE tenant_id = $3 AND product_sku = $1 AND size = $2`,
-          [it.sku, it.size, tenantId]
+             FROM bms_inventory
+            WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
+          [it.sku, it.size, tenantId, locationId]
         );
         await client.query("ROLLBACK");
         if (cur.rowCount === 0) {
@@ -282,7 +337,12 @@ export async function createOrder(
       }
 
       const unitPrice = Number(prod.rows[0].price);
-      total += unitPrice * it.qty;
+      // ราคาต่อหน่วยขาย (กล่อง) ถูกกว่าราคาต่อหน่วยฐาน × จำนวน เสมอ → ยอดบิลต้องคิดจาก
+      // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม
+      // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)
+      const packQty = it.packQty ?? null;
+      const packUnitPrice = it.packUnitPrice ?? null;
+      total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
       lines.push({
         sku: it.sku,
         name: prod.rows[0].name,
@@ -290,6 +350,10 @@ export async function createOrder(
         qty: it.qty,
         unitPrice,
         availableAfter: Number(upd.rows[0].available_after),
+        packCode: it.packCode ?? null,
+        packUnitName: it.packUnitName ?? null,
+        packQty,
+        packUnitPrice,
       });
     }
 
@@ -336,10 +400,13 @@ export async function createOrder(
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     // total_amount = ค่าสินค้า − ส่วนลด (ไม่รวมค่าส่ง — ดู migration 7.47)
     const ord = await client.query<{ id: string }>(
-      `INSERT INTO bms_orders (tenant_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source)
-       VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
+                               pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18)
        RETURNING id`,
-      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source]
+      [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
+        locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
+        input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null]
     );
     const orderId = ord.rows[0].id;
 
@@ -347,9 +414,11 @@ export async function createOrder(
 
     for (const ln of lines) {
       await client.query(
-        `INSERT INTO bms_order_items (tenant_id, order_id, product_sku, product_name, size, qty, unit_price)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice]
+        `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
+                                      pack_code, pack_unit_name, pack_qty, pack_unit_price)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $9, $10, $11, $12)`,
+        [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
+          locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null]
       );
     }
 
@@ -663,6 +732,7 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
          FROM bms_order_items oi
         WHERE oi.order_id = $1
           AND inv.tenant_id = oi.tenant_id
+          AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -703,6 +773,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
          FROM bms_order_items oi
         WHERE oi.order_id = $1
           AND inv.tenant_id = oi.tenant_id
+          AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -749,6 +820,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
          FROM bms_order_items oi
         WHERE oi.order_id = $1
           AND inv.tenant_id = oi.tenant_id
+          AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [orderId]
@@ -807,6 +879,7 @@ export async function releaseExpiredOrders(
          FROM bms_order_items oi
         WHERE oi.order_id = ANY($1::uuid[])
           AND inv.tenant_id = oi.tenant_id
+          AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
           AND inv.size = oi.size`,
       [ids]

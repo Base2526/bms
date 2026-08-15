@@ -12,6 +12,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
+import { resolveDefaultLocationIdInTx } from "./locations";
 import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 
@@ -169,6 +170,7 @@ export async function receivePurchaseOrder(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId });
+    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
 
     // ล็อก PO — ต้องอยู่สถานะที่รับได้
     const po = await client.query<{ status: string }>(
@@ -206,11 +208,11 @@ export async function receivePurchaseOrder(
 
       // สต็อกเข้า: upsert inventory row (สร้างไซซ์ใหม่ได้)
       await client.query(
-        `INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock)
-         VALUES ($1, $2, $3, $4, 0)
-         ON CONFLICT (tenant_id, product_sku, size)
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1, $5, $2, $3, $4, 0)
+         ON CONFLICT (tenant_id, location_id, product_sku, size)
          DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
-        [tenantId, ln.sku, ln.size, ln.qty]
+        [tenantId, ln.sku, ln.size, ln.qty, locationId]
       );
 
       await client.query(
