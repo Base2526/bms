@@ -173,6 +173,9 @@ export type PosScanHit = {
  *
  * ยังไม่ได้ลบ bms_products.barcode ทิ้งเพราะ products.ts ใช้ค้นหาอยู่ —
  * ตราบใดที่ยังมี 2 ที่ ต้องอ่านทั้งคู่ ไม่งั้นสินค้าที่เพิ่มก่อน 7.86 จะยิงไม่เจอ
+ *
+ * รับ SKU ตรง ๆ ด้วย: บาร์โค้ดขาด/ลอก/สินค้ายังไม่ติดบาร์โค้ด เป็นเรื่องปกติหน้าร้าน
+ * ถ้าพิมพ์รหัสสินค้าแล้วหาไม่เจอ พนักงานจะไม่มีทางขายของชิ้นนั้นเลย
  */
 export async function resolvePosScan(
   tenantId: string,
@@ -212,8 +215,8 @@ export async function resolvePosScan(
         AND k.barcode = $2 AND k.active
       WHERE p.tenant_id = $1
         AND p.active
-        AND (k.barcode = $2 OR p.barcode = $2)
-      ORDER BY (k.barcode IS NOT NULL) DESC
+        AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2))
+      ORDER BY (k.barcode IS NOT NULL) DESC, (p.barcode = $2) DESC
       LIMIT 1`,
     [tenantId, barcode, size]
   );
