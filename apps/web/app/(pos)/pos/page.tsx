@@ -108,7 +108,13 @@ export default function PosPage() {
     }
     setLoadingSession(true);
     try {
-      const res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
+      let res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
+      // 401 ครั้งเดียวยังไม่ตัดสินว่า token ตาย — ลองซ้ำก่อน เพราะการไล่คนหน้าร้าน
+      // ไปจับคู่ใหม่ทั้งที่ token ยังดีอยู่ แพงกว่าการยิงซ้ำหนึ่งครั้งมาก
+      if (res.status === 401) {
+        await new Promise((r) => setTimeout(r, 400));
+        res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setSessionError(body?.error ?? `HTTP ${res.status}`);
@@ -318,12 +324,33 @@ export default function PosPage() {
         <h1 style={{ fontSize: 20, fontWeight: 500 }}>จับคู่เครื่องขาย</h1>
         {tokenRejected && (
           <div style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8, margin: "12px 0" }}>
-            token ที่เครื่องนี้เก็บไว้ใช้ไม่ได้แล้ว — อาจถูกออกใหม่ให้เครื่องอื่น หรือเครื่องถูกปิดใช้งาน
-            <br />ไปที่ <b>แอดมิน → ขายหน้าร้าน → เครื่องขาย + PIN</b> แล้วกด &quot;ออก token&quot; ใหม่
+            <div style={{ fontWeight: 500 }}>ระบบไม่รับ token ของเครื่องนี้</div>
+            <div style={{ marginTop: 4 }}>
+              สาเหตุที่พบบ่อยที่สุดคือมีการกด &quot;ออก token&quot; ใหม่ให้เครื่องนี้ระหว่างที่จอขายเปิดอยู่ —
+              ตัวเก่าจะใช้ไม่ได้ทันที
+            </div>
+            {token && (
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                เครื่องยังจำ token เดิมไว้ (ลงท้าย …{token.slice(-6)})
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {token && (
+                <button
+                  onClick={() => { setTokenRejected(false); void loadSession(); }}
+                  style={{ padding: "8px 16px" }}
+                >
+                  ลองใหม่ด้วย token เดิม
+                </button>
+              )}
+              <a href="/admin/pos-devices" style={{ padding: "8px 16px" }}>ไปออก token ใหม่</a>
+            </div>
           </div>
         )}
         <p style={{ color: "#666", fontSize: 14 }}>
-          ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)
+          {tokenRejected
+            ? "ถ้าออก token ใหม่มาแล้ว วางลิงก์หรือ token ตัวใหม่ที่นี่"
+            : "ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)"}
         </p>
         <input
           value={tokenInput}

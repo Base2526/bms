@@ -8,7 +8,7 @@
 // จึงไม่มีปุ่ม "ดูอีกครั้ง" ให้กด หายแล้วออกใหม่อย่างเดียว
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag,
+  Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
 import { useState } from "react";
@@ -175,9 +175,15 @@ export default function PosDevicesPage() {
                       >
                         แก้ไข
                       </Button>
-                      <Button size="small" loading={issuing} onClick={() => void handleIssueToken(d)}>
-                        ออก token
-                      </Button>
+                      <Popconfirm
+                        title="ออก token ใหม่?"
+                        description="เครื่องที่กำลังใช้ token เดิมอยู่จะหลุดทันทีและต้องจับคู่ใหม่"
+                        okText="ออกใหม่"
+                        cancelText="ยกเลิก"
+                        onConfirm={() => void handleIssueToken(d)}
+                      >
+                        <Button size="small" loading={issuing}>ออก token</Button>
+                      </Popconfirm>
                     </Space>
                   ),
                 },
