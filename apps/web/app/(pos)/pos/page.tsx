@@ -63,6 +63,9 @@ export default function PosPage() {
   const [tokenInput, setTokenInput] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [sessionError, setSessionError] = useState<string>("");
+  // token ที่เก็บไว้ใช้ไม่ได้แล้ว (เครื่องถูกปิด/ออก token ใหม่/ใส่ผิด)
+  const [tokenRejected, setTokenRejected] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(true);
   const [cashierId, setCashierId] = useState<string>("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [scanCode, setScanCode] = useState("");
@@ -86,27 +89,50 @@ export default function PosPage() {
   const authHeaders = useMemo(() => ({ "x-pos-device-token": token }), [token]);
 
   const loadSession = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoadingSession(false);
+      return;
+    }
+    setLoadingSession(true);
     try {
       const res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
       if (!res.ok) {
-        setSessionError((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+        const body = await res.json().catch(() => ({}));
+        setSessionError(body?.error ?? `HTTP ${res.status}`);
+        setTokenRejected(res.status === 401);
         setSession(null);
         return;
       }
       const data: Session = await res.json();
       setSession(data);
       setSessionError("");
-      setCashierId((cur) => cur || data.cashiers[0]?.id || "");
+      setTokenRejected(false);
+      setCashierId((cur) => cur || data.cashiers.find((c) => c.hasPin)?.id || "");
     } catch (e: any) {
+      // เน็ตหลุด ≠ token ผิด — อย่าไล่ให้ไปจับคู่ใหม่ทั้งที่แค่เน็ตสะดุด
       setSessionError(String(e?.message ?? e));
       setSession(null);
+    } finally {
+      setLoadingSession(false);
     }
   }, [token, authHeaders]);
+
+  function unpair() {
+    window.localStorage.removeItem(TOKEN_KEY);
+    setToken("");
+    setTokenInput("");
+    setSession(null);
+    setTokenRejected(false);
+    setSessionError("");
+  }
 
   useEffect(() => {
     void loadSession();
   }, [loadSession]);
+
+  const anyCashierHasPin = (session?.cashiers ?? []).some((c) => c.hasPin);
+  // ขายได้ก็ต่อเมื่อครบทั้ง 4: เชื่อมต่อได้ / มีคนตั้ง PIN / เลือกคน+ใส่ PIN / เปิดกะแล้ว
+  const canSell = Boolean(session?.shift && cashierId && pin && anyCashierHasPin);
 
   const total = useMemo(
     () => cart.reduce((sum, l) => sum + l.packPrice * l.packQty, 0),
@@ -273,10 +299,16 @@ export default function PosPage() {
     }
   }
 
-  if (!token) {
+  if (!token || tokenRejected) {
     return (
-      <div style={{ maxWidth: 420, margin: "0 auto", padding: 32 }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 500 }}>จับคู่เครื่องขาย</h1>
+        {tokenRejected && (
+          <div style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8, margin: "12px 0" }}>
+            token ที่เครื่องนี้เก็บไว้ใช้ไม่ได้แล้ว — อาจถูกออกใหม่ให้เครื่องอื่น หรือเครื่องถูกปิดใช้งาน
+            <br />ไปที่ <b>แอดมิน → ขายหน้าร้าน → เครื่องขาย + PIN</b> แล้วกด &quot;ออก token&quot; ใหม่
+          </div>
+        )}
         <p style={{ color: "#666", fontSize: 14 }}>
           ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)
         </p>
@@ -287,14 +319,21 @@ export default function PosPage() {
           style={{ width: "100%", padding: 12, fontSize: 16, marginTop: 12 }}
         />
         <button
+          disabled={!tokenInput.trim()}
           onClick={() => {
-            window.localStorage.setItem(TOKEN_KEY, tokenInput.trim());
-            setToken(tokenInput.trim());
+            const t = tokenInput.trim();
+            window.localStorage.setItem(TOKEN_KEY, t);
+            setToken(t);
+            setTokenRejected(false);
+            setSessionError("");
           }}
           style={{ width: "100%", padding: 14, fontSize: 16, marginTop: 12 }}
         >
           จับคู่
         </button>
+        <p style={{ color: "#888", fontSize: 12, marginTop: 16 }}>
+          เครื่องนี้จะจำ token ไว้จนกว่าจะกดเลิกจับคู่ — ไม่ต้องใส่ใหม่ทุกวัน
+        </p>
       </div>
     );
   }
@@ -309,15 +348,21 @@ export default function PosPage() {
       >
         <div>
           <div style={{ fontWeight: 500 }}>
-            {session?.location?.name ?? "—"}{" "}
-            <span style={{ color: "#888", fontWeight: 400 }}>
-              ({session?.location?.branchCode ?? "—"})
-            </span>
+            {loadingSession && !session ? "กำลังเชื่อมต่อ…" : session?.location?.name ?? "ยังไม่ทราบสาขา"}
+            {session?.location && (
+              <span style={{ color: "#888", fontWeight: 400 }}> (สาขา {session.location.branchCode})</span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: "#666" }}>
-            {session?.device.code ?? "—"}
-            {session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}
-            {session?.shift ? " · กะเปิดอยู่" : " · ยังไม่เปิดกะ"}
+            {session ? (
+              <>
+                {session.device.code}
+                {session.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}
+                {session.shift ? " · กะเปิดอยู่" : " · ยังไม่เปิดกะ"}
+              </>
+            ) : (
+              "ยังไม่ได้เชื่อมต่อกับระบบ"
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -343,12 +388,34 @@ export default function PosPage() {
             placeholder="PIN"
             style={{ padding: 8, fontSize: 14, width: 90 }}
           />
+          <button onClick={unpair} title="เลิกจับคู่เครื่องนี้" style={{ padding: "8px 10px", fontSize: 12 }}>
+            เลิกจับคู่
+          </button>
         </div>
       </header>
 
-      {sessionError && (
+      {sessionError && !tokenRejected && (
         <div style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8 }}>
-          เชื่อมต่อไม่ได้: {sessionError}
+          เชื่อมต่อไม่ได้: {sessionError} — ตรวจอินเทอร์เน็ตแล้วลอง{" "}
+          <button onClick={() => void loadSession()} style={{ padding: "2px 10px" }}>เชื่อมต่อใหม่</button>
+        </div>
+      )}
+
+      {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก */}
+      {session && !canSell && (
+        <div style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
+          <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
+          <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
+            {!anyCashierHasPin && (
+              <li>
+                ยังไม่มีพนักงานคนไหนตั้ง PIN — ตั้งที่{" "}
+                <a href="/admin/pos-devices">แอดมิน → เครื่องขาย + PIN</a>
+              </li>
+            )}
+            {anyCashierHasPin && !cashierId && <li>เลือกผู้ขายมุมขวาบน</li>}
+            {anyCashierHasPin && cashierId && !pin && <li>ใส่ PIN ของผู้ขาย</li>}
+            {!session.shift && <li>เปิดกะ พร้อมระบุเงินตั้งต้นในลิ้นชัก</li>}
+          </ol>
         </div>
       )}
       {session && !session.shift && (
@@ -484,12 +551,12 @@ export default function PosPage() {
 
           <div style={{ flex: 1 }} />
           <button
-            disabled={busy || cart.length === 0 || !session?.shift || !cashierId || !pin}
+            disabled={busy || cart.length === 0 || !canSell}
             onClick={() => void pay()}
             style={{
               marginTop: 12, padding: "16px 0", fontSize: 18, borderRadius: 8,
               border: "none", color: "#fff",
-              background: busy || cart.length === 0 || !session?.shift || !cashierId || !pin ? "#bbb" : "#237804",
+              background: busy || cart.length === 0 || !canSell ? "#bbb" : "#237804",
             }}
           >
             {busy ? "กำลังบันทึก…" : `ชำระเงิน ฿${baht(total)}`}
