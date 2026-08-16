@@ -15,8 +15,11 @@ stock values.
    confirming a non-cash refund each have independent server-side permission checks.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
-4. One bill can be split across cash, QR, card, bank transfer, or wallet. The payment rows must add
-   up to the server-computed order amount; cash tender/change is recorded per cash row.
+4. One bill can be split across cash, QR, card, bank transfer, or wallet. The method is picked from
+   a row of buttons under the amount; cash opens the quick-tender pad, the other methods take a
+   reference number and keep their amount locked to the bill total. "Split payment" switches to the
+   multi-row form. The payment rows must add up to the server-computed order amount; cash
+   tender/change is recorded per cash row.
 5. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
    lots FEFO where lots are tracked, records movements, and issues an abbreviated tax document when
    the tenant is VAT-registered. These steps commit atomically.
@@ -33,6 +36,21 @@ stock values.
    allocation from that shift is pending.
 9. Closing a shift calculates expected cash from opening float + cash collected - completed cash
    refunds, then records counted cash and variance.
+
+## Counter screen layout
+
+A till is typically 768px tall, so vertical space is the scarce axis. Work that happens a few times
+a shift sits on a 68px icon rail down the left — sell, returns, shift, settings — and only the left
+column of the screen changes with it. The totals, cash pad, and pay button stay on the right at all
+times, because queues overlap: the first customer is still paying when the next one hands over a
+bill to return. Below 768px wide the rail becomes a bottom bar.
+
+The page itself never scrolls; each column scrolls inside its own box, so the pay button cannot be
+pushed off screen by a long cart. Three things stay outside the rail on purpose: the "can't sell
+yet" checklist, the cashier selector with the PIN field (memory-only, so it is needed again after
+every reload), and the name of whoever is currently selling. Leaving the sell tab and coming back
+returns focus to the scan box — a scanner typing into the wrong field is the worst failure this
+screen has.
 
 ## Tax settings
 

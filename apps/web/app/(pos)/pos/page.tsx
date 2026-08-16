@@ -20,6 +20,22 @@ import {
   sendToPrinter,
 } from "@/lib/pos/printerClient";
 
+/**
+ * แถบงานด้านซ้าย — จอ POS สูง 768px เป็นมาตรฐาน แกนตั้งจึงเป็นของหายาก
+ * ของที่ใช้วันละไม่กี่ครั้ง (กะ/ตั้งค่า/คืนของ) ย้ายมาอยู่แกนนอนที่เหลือเฟือ
+ * เหลือแกนตั้งไว้ให้ตะกร้ากับปุ่มจ่ายซึ่งใช้วันละร้อยครั้ง
+ *
+ * สลับเฉพาะคอลัมน์ซ้าย — คอลัมน์ยอดเงิน/ปุ่มชำระอยู่ขวาตลอด เพราะคิวหน้าร้าน
+ * ซ้อนกันได้: คนแรกยังจ่ายไม่จบ คนถัดไปยื่นบิลมาขอคืนของ
+ */
+const POS_TABS = [
+  { key: "sell", label: "ขาย", icon: "▮▍▮" },
+  { key: "returns", label: "คืน", icon: "↩" },
+  { key: "shift", label: "กะ", icon: "▤" },
+  { key: "settings", label: "ตั้งค่า", icon: "⚙" },
+] as const;
+type PosTab = (typeof POS_TABS)[number]["key"];
+
 const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
 const PENDING_SALE_KEY = "bms.pos.pendingSale";
@@ -195,6 +211,12 @@ export default function PosPage() {
   const [lookupMode, setLookupMode] = useState(false);
   const [lookup, setLookup] = useState<ScanHit | null>(null);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
+  const [tab, setTab] = useState<PosTab>("sell");
+  // ทุกบิลผูกกับคนนี้ — ต้องเห็นบนแถบบนตลอด ไม่ใช่ซ่อนอยู่ในแท็บตั้งค่า
+  const currentCashierName = useMemo(() => {
+    const found = (session?.cashiers ?? []).find((c) => c.id === cashierId);
+    return found ? found.name || found.email || "" : "";
+  }, [session?.cashiers, cashierId]);
   const [recentOpen, setRecentOpen] = useState(false);
   // เครื่องพิมพ์ ESC/POS: จำที่เลือกไว้ ไม่ต้องเลือกใหม่ทุกเช้า
   // ถ้าไม่มี/เบราว์เซอร์ไม่รองรับ → กลับไปใช้ print dialog เหมือนเดิม
@@ -226,7 +248,10 @@ export default function PosPage() {
   const [approvalPin, setApprovalPin] = useState("");
   const [settlementRefs, setSettlementRefs] = useState<Record<string, string>>({});
   const [hasPendingSale, setHasPendingSale] = useState(false);
-  const [shiftReturnSummary, setShiftReturnSummary] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
+  // pending = คืนเงินจริงที่ยังไม่ยืนยัน ซึ่งบล็อกการปิดกะ — แท็บกะต้องบอกให้เห็น
+  const [shiftReturnSummary, setShiftReturnSummary] = useState<{
+    count: number; total: number; pendingCount: number; pendingTotal: number;
+  }>({ count: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
   const scanRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -291,6 +316,8 @@ export default function PosPage() {
       setShiftReturnSummary({
         count: Number(data.shiftReturnSummary?.returnCount ?? 0),
         total: Number(data.shiftReturnSummary?.returnTotal ?? 0),
+        pendingCount: Number(data.shiftReturnSummary?.pendingCount ?? 0),
+        pendingTotal: Number(data.shiftReturnSummary?.pendingTotal ?? 0),
       });
       setSessionError("");
       setTokenRejected(false);
@@ -641,6 +668,17 @@ export default function PosPage() {
     setPayments((cur) => cur.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)));
   }
 
+  // จ่ายวิธีเดียวที่ไม่ใช่เงินสด: ยอดต้องเท่ายอดบิลเสมอ และยอดบิลขยับได้ตลอด
+  // (ยิงของเพิ่ม/ปัดเศษเปลี่ยน) — ปล่อยให้ค้างค่าเก่าคือบิลโดน PAYMENT_MISMATCH
+  useEffect(() => {
+    if (payments.length !== 1) return;
+    const only = payments[0];
+    if (only.method === "CASH") return;
+    const want = amountDue > 0 ? String(amountDue) : "";
+    if (only.amount !== want) updatePayment(only.id, { amount: want });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amountDue, payments]);
+
   function addPaymentRow() {
     if (hasPendingSale) return;
     // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
@@ -656,7 +694,13 @@ export default function PosPage() {
 
   function removePaymentRow(id: string) {
     if (hasPendingSale) return;
-    setPayments((cur) => (cur.length <= 1 ? cur : cur.filter((payment) => payment.id !== id)));
+    setPayments((cur) => {
+      if (cur.length <= 1) return cur;
+      const next = cur.filter((payment) => payment.id !== id);
+      // ลบจนเหลือวิธีเดียว = เลิกจ่ายผสม แป้นเงินสดกลับมาเองถ้าเหลือเงินสด
+      if (next.length === 1) setSplitMode(false);
+      return next;
+    });
   }
 
   function updateReturnDraft(orderId: string, orderItemId: number, qty: number, maxQty: number) {
@@ -747,6 +791,12 @@ export default function PosPage() {
       window.print();
     }
   }
+
+  // กลับมาแท็บขายเมื่อไหร่ ช่องยิงบาร์โค้ดต้องรับโฟกัสทันที — ไม่งั้นแคชเชียร์
+  // ยิงของแล้วตัวอักษรหายเข้าไปในช่องอื่น เป็นบั๊กที่เจ็บที่สุดของจอขาย
+  useEffect(() => {
+    if (tab === "sell" && !receiptModalOpen) scanRef.current?.focus();
+  }, [tab, receiptModalOpen]);
 
   // แคชเชียร์คุมจอด้วยคีย์บอร์ดมือเดียว — Enter พิมพ์ / Esc ปิด
   // ดักแบบ capture เพราะช่องยิงบาร์โค้ดอาจยังโฟกัสค้างอยู่หลังบิล ถ้าปล่อยผ่าน
@@ -910,8 +960,11 @@ export default function PosPage() {
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
           type: "ok",
+          // จ่ายพอดีไม่ต้องประกาศว่าทอน 0 — บอกยอดที่รับไปแทน
           text: `ขายสำเร็จ${data.docNo ? ` · ใบเสร็จ ${data.docNo}` : ""}${
-            data.cashChange != null ? ` · เงินทอน ฿${baht(data.cashChange)}` : ""
+            data.cashChange != null && Number(data.cashChange) > 0
+              ? ` · เงินทอน ฿${baht(Number(data.cashChange))}`
+              : ` · รับ ฿${baht(soldTotal)}`
           }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
@@ -1240,18 +1293,55 @@ export default function PosPage() {
   }
 
   return (
-    <div className="pos-page" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, minHeight: "100vh" }}>
+    <div className="pos-page" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <style>{`
         .pos-page, .pos-page * { box-sizing: border-box; }
+        /* หน้าไม่เลื่อนทั้งหน้า — ให้แต่ละคอลัมน์เลื่อนของตัวเอง ปุ่มชำระเงิน
+           จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
+        .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden; }
+        .pos-rail { width: 68px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+                    background: #fff; border-right: 1px solid var(--pos-line, #eee); }
+        .pos-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                           height: 56px; width: 100%; border-radius: 10px; font-size: 11px; white-space: nowrap;
+                           border: 1px solid transparent; background: transparent; color: #555; cursor: pointer; }
+        .pos-rail button[aria-current="true"] { background: #e8f0fe; color: #14509a; border-color: #b5d4f4; font-weight: 500; }
+        .pos-rail .pos-rail-icon { font-size: 17px; line-height: 1; }
+        .pos-pane { flex: 1; min-height: 0; overflow-y: auto; }
         @media (max-width: 767px) {
+          .pos-page { flex-direction: column-reverse; height: auto; overflow: visible; }
+          .pos-body { overflow: visible; }
+          /* จอเล็ก = แท็บเล็ต/มือถือ ย้ายแถบไปล่างให้นิ้วโป้งถึง */
+          .pos-rail { width: 100%; flex-direction: row; border-right: none; border-top: 1px solid var(--pos-line, #eee);
+                      position: sticky; bottom: 0; z-index: 20; }
+          .pos-rail button { flex: 1; }
           .pos-header { align-items: flex-start !important; flex-direction: column; }
           .pos-header-actions { width: 100%; flex-wrap: wrap; }
           .pos-header-actions select { flex: 1 1 160px; min-width: 0 !important; }
           .pos-main-grid { grid-template-columns: minmax(0, 1fr) !important; }
+          .pos-pane { overflow: visible; }
           .pos-payment-row, .pos-refund-row { grid-template-columns: minmax(0, 1fr) !important; }
           .pos-payment-row > *, .pos-refund-row > * { width: 100%; min-width: 0 !important; }
         }
       `}</style>
+
+      <nav className="pos-rail" aria-label="งานในจอขาย">
+        {POS_TABS.map((item) => (
+          <button
+            key={item.key}
+            onClick={() => setTab(item.key)}
+            aria-current={tab === item.key}
+            title={item.label}
+          >
+            <span className="pos-rail-icon" aria-hidden="true">{item.icon}</span>
+            <span>{item.label}</span>
+            {item.key === "returns" && shiftReturnSummary.count > 0 && (
+              <span style={{ fontSize: 10, color: "#8a6100" }}>{shiftReturnSummary.count}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      <div className="pos-body">
       <header className="pos-card pos-topbar">
         <div className="pos-shop">
           <div className="pos-shop-mark">
@@ -1276,38 +1366,16 @@ export default function PosPage() {
           </div>
         </div>
 
-        <div className="pos-header-actions" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {receipt && (
-            <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
-              พิมพ์บิลล่าสุด
-            </button>
-          )}
-          <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 12px", fontSize: 12 }}>
-            โหลดบิลล่าสุด
-          </button>
-          {isWebUsbSupported() && (
-            <button
-              onClick={() => void setupPrinter()}
-              title={printerReady ? "เชื่อมเครื่องพิมพ์แล้ว — กดเพื่อเปลี่ยนเครื่อง" : "ยังไม่ได้เชื่อมเครื่องพิมพ์"}
-              style={{ padding: "8px 12px", fontSize: 12 }}
-            >
-              {printerReady ? "เครื่องพิมพ์ ✓" : "ตั้งค่าเครื่องพิมพ์"}
-            </button>
-          )}
-          {printerReady && (
-            <button
-              onClick={() => void sendToPrinter(buildDrawerKick()).catch((e) =>
-                setNotice({ type: "error", text: `เปิดลิ้นชักไม่สำเร็จ: ${String(e?.message ?? e)}` })
-              )}
-              style={{ padding: "8px 12px", fontSize: 12 }}
-            >
-              เปิดลิ้นชัก
-            </button>
-          )}
+        {/* ผู้ขาย + PIN ต้องอยู่ตรงนี้ ติดจอตลอด ห้ามอยู่ในบล็อกที่ซ่อนตัวเองตาม
+            สถานะ: canSell เป็นจริงทันทีที่ pin มีตัวอักษรตัวแรก ถ้าช่องอยู่ในบล็อก
+            แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
+            ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
+        <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <select
             value={cashierId}
             onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
-            style={{ fontSize: 13, minWidth: 150 }}
+            style={{ fontSize: 13, minWidth: 170, padding: 8 }}
+            aria-label="ผู้ขาย"
           >
             <option value="">เลือกผู้ขาย</option>
             {(session?.cashiers ?? []).map((c) => (
@@ -1324,11 +1392,14 @@ export default function PosPage() {
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             placeholder="PIN"
-            style={{ width: 84, fontSize: 14 }}
+            aria-label="PIN ของผู้ขาย"
+            style={{ width: 96, fontSize: 15, padding: 8 }}
           />
-          <button onClick={unpair} title="เลิกจับคู่เครื่องนี้" style={{ padding: "8px 12px", fontSize: 12 }}>
-            เลิกจับคู่
-          </button>
+          {receipt && (
+            <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
+              พิมพ์บิลล่าสุด
+            </button>
+          )}
         </div>
       </header>
 
@@ -1339,7 +1410,9 @@ export default function PosPage() {
         </div>
       )}
 
-      {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก */}
+      {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก
+          ช่องเลือกผู้ขาย/PIN อยู่ในนี้เลย เพราะรีเฟรชหน้าทีไร PIN หายจากหน่วยความจำ
+          ถ้าให้ไปหาในแท็บตั้งค่าคือเพิ่มคลิกให้กับสิ่งที่ต้องทำบ่อยที่สุดหลังรีเฟรช */}
       {session && !canSell && (
         <div style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
           <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
@@ -1350,40 +1423,14 @@ export default function PosPage() {
                 <a href="/admin/pos-devices">แอดมิน → เครื่องขาย + PIN</a>
               </li>
             )}
-            {anyCashierHasPin && !cashierId && <li>เลือกผู้ขายมุมขวาบน</li>}
-            {anyCashierHasPin && cashierId && !pin && <li>ใส่ PIN ของผู้ขาย</li>}
-            {!session.shift && <li>เปิดกะ พร้อมระบุเงินตั้งต้นในลิ้นชัก</li>}
+            {anyCashierHasPin && (!cashierId || !pin) && <li>เลือกผู้ขายและใส่ PIN ที่แถบด้านบน</li>}
+            {!session.shift && (
+              <li>
+                เปิดกะ พร้อมระบุเงินตั้งต้นในลิ้นชัก —{" "}
+                <button onClick={() => setTab("shift")} style={{ padding: "2px 10px", fontSize: 13 }}>ไปที่แท็บกะ</button>
+              </li>
+            )}
           </ol>
-        </div>
-      )}
-      {session && !session.shift && (
-        <div style={{ background: "#fff4e5", color: "#663c00", padding: 12, borderRadius: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span>ยังไม่ได้เปิดกะ</span>
-          <input
-            value={openingFloat}
-            onChange={(e) => setOpeningFloat(e.target.value)}
-            inputMode="decimal"
-            placeholder="เงินตั้งต้นในลิ้นชัก"
-            style={{ padding: 8, fontSize: 14, width: 180 }}
-          />
-          <button disabled={busy || !cashierId || !pin} onClick={() => void shiftAction("open")} style={{ padding: "8px 16px" }}>
-            เปิดกะ
-          </button>
-        </div>
-      )}
-      {session?.shift && cart.length === 0 && (
-        <div style={{ background: "#fff", padding: 10, borderRadius: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
-          <span style={{ color: "#666" }}>ปิดกะ:</span>
-          <input
-            value={countedCash}
-            onChange={(e) => setCountedCash(e.target.value)}
-            inputMode="decimal"
-            placeholder="เงินที่นับได้"
-            style={{ padding: 8, fontSize: 14, width: 160 }}
-          />
-          <button disabled={busy || !cashierId || !pin || !countedCash} onClick={() => void shiftAction("close")} style={{ padding: "8px 16px" }}>
-            ปิดกะ + นับเงิน
-          </button>
         </div>
       )}
       {notice && (
@@ -1396,21 +1443,23 @@ export default function PosPage() {
           ล็อกรายการไว้เพื่อกู้บิลเดิม กรุณากด “ชำระเงิน” ซ้ำ ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลซ้ำ
         </div>
       )}
-      {/* คืนสินค้าเป็นงานส่วนน้อยของกะ แต่เดิมกินหัวจอ 2 แถวเต็มตลอดเวลา
-          ยุบเป็นแถบเดียว กดขยายเมื่อจะใช้ — จอขายต้องนำด้วยการขาย */}
-      <div style={{ background: "#fff", padding: "8px 10px", borderRadius: 8, fontSize: 13 }}>
+      <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1, minHeight: 0 }}>
+      <section className="pos-card pos-pane">
+      {tab === "returns" && (<>
+      <div style={{ fontSize: 13 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            onClick={() => setReturnPanelOpen((v) => !v)}
-            style={{ padding: "4px 12px", fontSize: 13 }}
-          >
-            {returnPanelOpen ? "▾" : "▸"} คืนสินค้า
-          </button>
+          <span style={{ fontWeight: 500 }}>คืนสินค้า</span>
           {session?.shift && (
             <span style={{ color: "#666" }}>
               กะนี้คืนแล้ว {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
             </span>
           )}
+          <button
+            onClick={() => setReturnPanelOpen((v) => !v)}
+            style={{ padding: "4px 12px", fontSize: 13, marginLeft: "auto" }}
+          >
+            {returnPanelOpen ? "▾" : "▸"} ผู้อนุมัติ
+          </button>
           {approvalUserId && approvalPin && !returnPanelOpen && (
             <span style={{ color: "#237804" }}>ตั้งผู้อนุมัติไว้แล้ว</span>
           )}
@@ -1446,9 +1495,127 @@ export default function PosPage() {
           </div>
         )}
       </div>
+      </>)}
 
-      <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1 }}>
-        <section className="pos-card">
+      {tab === "shift" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontWeight: 500 }}>กะขายของเครื่องนี้</div>
+          {session?.shift ? (
+            <>
+              <div style={{ fontSize: 13, color: "#555", lineHeight: 1.9 }}>
+                <div>เปิดกะ {new Date(session.shift.openedAt).toLocaleString("th-TH")}</div>
+                <div>เงินตั้งต้นในลิ้นชัก ฿{baht(session.shift.openingFloat)}</div>
+                <div>
+                  คืนสินค้าในกะนี้ {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
+                  {shiftReturnSummary.pendingCount > 0
+                    ? ` · รอยืนยันคืนเงินจริง ${shiftReturnSummary.pendingCount} รายการ ฿${baht(shiftReturnSummary.pendingTotal)}`
+                    : ""}
+                </div>
+              </div>
+              {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
+              {cart.length > 0 ? (
+                <div style={{ background: "#fff4e5", color: "#663c00", padding: 10, borderRadius: 8, fontSize: 13 }}>
+                  ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    value={countedCash}
+                    onChange={(e) => setCountedCash(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="เงินที่นับได้"
+                    style={{ padding: 10, fontSize: 15, width: 180 }}
+                  />
+                  <button
+                    disabled={busy || !cashierId || !pin || !countedCash}
+                    onClick={() => void shiftAction("close")}
+                    style={{ padding: "10px 18px" }}
+                  >
+                    ปิดกะ + นับเงิน
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                value={openingFloat}
+                onChange={(e) => setOpeningFloat(e.target.value)}
+                inputMode="decimal"
+                placeholder="เงินตั้งต้นในลิ้นชัก"
+                style={{ padding: 10, fontSize: 15, width: 200 }}
+              />
+              <button
+                disabled={busy || !cashierId || !pin}
+                onClick={() => void shiftAction("open")}
+                style={{ padding: "10px 18px" }}
+              >
+                เปิดกะ
+              </button>
+              {(!cashierId || !pin) && (
+                <span style={{ fontSize: 13, color: "#8a6100" }}>เลือกผู้ขายและใส่ PIN ก่อน</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "settings" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <div style={{ fontWeight: 500, marginBottom: 8 }}>ผู้ขายที่เครื่องนี้</div>
+            {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
+            <div style={{ fontSize: 13, color: "#555" }}>
+              {currentCashierName ? `กำลังขายในชื่อ ${currentCashierName}` : "ยังไม่ได้เลือกผู้ขาย"}
+              {currentCashierName && !pin ? " · ยังไม่ใส่ PIN" : ""}
+            </div>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>
+              เปลี่ยนผู้ขาย/ใส่ PIN ได้ที่แถบด้านบน · PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 500, marginBottom: 8 }}>เครื่องพิมพ์และลิ้นชัก</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {isWebUsbSupported() ? (
+                <button onClick={() => void setupPrinter()} style={{ padding: "8px 14px", fontSize: 13 }}>
+                  {printerReady ? "เครื่องพิมพ์ ✓ — เปลี่ยนเครื่อง" : "ตั้งค่าเครื่องพิมพ์"}
+                </button>
+              ) : (
+                <span style={{ fontSize: 13, color: "#888" }}>
+                  เบราว์เซอร์นี้ไม่รองรับ WebUSB — จะพิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์แทน
+                </span>
+              )}
+              {printerReady && (
+                <button onClick={() => void openCashDrawer()} style={{ padding: "8px 14px", fontSize: 13 }}>
+                  เปิดลิ้นชัก
+                </button>
+              )}
+              <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 14px", fontSize: 13 }}>
+                โหลดบิลล่าสุดจากเซิร์ฟเวอร์
+              </button>
+              {receipt && (
+                <button onClick={() => setReceiptModalOpen(true)} style={{ padding: "8px 14px", fontSize: 13 }}>
+                  ดูใบเสร็จล่าสุด
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 500, marginBottom: 8 }}>เครื่องขาย</div>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.9 }}>
+              <div>{session?.location?.name ?? "—"} · สาขา {session?.location?.branchCode ?? "—"}</div>
+              <div>{session?.device.code}{session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}</div>
+            </div>
+            <button onClick={unpair} style={{ padding: "8px 14px", fontSize: 13, marginTop: 8 }}>
+              เลิกจับคู่เครื่องนี้
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tab === "sell" && (<>
           {/* ช่องเดียวจบ: เดิมมี "ยิงบาร์โค้ด" กับ "ค้นชื่อสินค้า" แยกกัน ซึ่งทับกัน
               ตั้งแต่ช่องยิงรับ SKU ได้ด้วย — พนักงานใหม่ลังเลว่าพิมพ์ช่องไหน
               ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
@@ -1619,8 +1786,11 @@ export default function PosPage() {
               </div>
             ))}
           </div>
-          {/* บิลเก่าเป็นงานส่วนน้อย — ระบบค้าปลีกทั่วไปเก็บไว้หลังปุ่ม ไม่วางใต้ตะกร้า
-              ที่ทำงานอยู่ ไม่งั้นตะกร้ายาวขึ้นแล้วบิลเก่าก็ถูกดันหายไปอยู่ดี */}
+      </>)}
+
+      {/* บิลเก่าอยู่แท็บ "คืน" — ตะกร้าที่กำลังขายไม่ถูกดันหาย และคอลัมน์ขวา
+          (ยอด + ปุ่มชำระ) ยังอยู่ที่เดิม กดจ่ายให้ลูกค้าคนแรกได้ระหว่างค้นบิลคืนของ */}
+      {tab === "returns" && (<>
           {recentReceipts.length > 0 && (
             <div style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -1833,9 +2003,15 @@ export default function PosPage() {
               ไม่พบบิลที่ตรงกับคำค้นนี้
             </div>
           )}
+          {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
+            <div style={{ marginTop: 16, fontSize: 13, color: "#999" }}>
+              ยังไม่มีบิลของเครื่องนี้ในกะนี้
+            </div>
+          )}
+      </>)}
         </section>
 
-        <section className="pos-card" style={{ display: "flex", flexDirection: "column" }}>
+        <section className="pos-card pos-pane" style={{ display: "flex", flexDirection: "column" }}>
           <div className="pos-total">
             <div className="pos-total-row">
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
@@ -1861,15 +2037,18 @@ export default function PosPage() {
                 <span>ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}</span>
               </div>
 
-              {justSold.change != null ? (
+              {/* จ่ายพอดี (เงินทอน 0) ต้องไม่ขึ้นเลข 0 ตัวเบ้อเร่อ — ตะกร้าเพิ่งถูกล้าง
+                  ยอดข้างบนก็เป็น 0 อยู่แล้ว ทั้งจอเลยอ่านเหมือนขายไม่สำเร็จ
+                  เลขใหญ่ต้องเป็นสิ่งที่แคชเชียร์ต้องทำต่อ: ทอนเท่านี้ หรือรับครบแล้ว */}
+              {justSold.change != null && justSold.change > 0 ? (
                 <>
                   <div className="pos-success-label">ทอนเงินให้ลูกค้า</div>
-                  {/* ตัวใหญ่สุดบนจอ — สิ่งเดียวที่แคชเชียร์ต้องทำต่อทันที */}
                   <div className="pos-success-value">฿{baht(justSold.change)}</div>
+                  <div style={{ fontSize: 13, marginTop: 2 }}>ยอดบิล ฿{baht(justSold.total)}</div>
                 </>
               ) : (
                 <>
-                  <div className="pos-success-label">รับเงินครบแล้ว</div>
+                  <div className="pos-success-label">รับเงินครบพอดี ไม่ต้องทอน</div>
                   <div className="pos-success-value">฿{baht(justSold.total)}</div>
                 </>
               )}
@@ -1884,9 +2063,46 @@ export default function PosPage() {
             </div>
           )}
 
+          {/* วิธีจ่ายต้องเห็นตลอด — เดิมมีแต่ dropdown ที่อยู่ในฟอร์มเต็ม ซึ่งถูกซ่อน
+              ตอนเป็นบิลเงินสดรายการเดียว (ค่าเริ่มต้นของทุกบิล) และปุ่มเดียวที่เปิด
+              ฟอร์มนั้นได้ก็อยู่ในกล่องที่ถูกซ่อนเอง = QR/บัตร/วอลเล็ท กดไม่ถึงเลย */}
+          {!justSold && payments.length === 1 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+              {METHODS.map((m) => {
+                const active = payments[0]?.method === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSplitMode(false);
+                      updatePayment(payments[0].id, {
+                        method: m.key,
+                        tendered: "",
+                        ref: "",
+                        // เงินสดปล่อยว่างไว้ให้แป้นเงินเติมตอนกดรับเงิน
+                        amount: m.key === "CASH" ? "" : amountDue > 0 ? String(amountDue) : "",
+                      });
+                    }}
+                    style={{
+                      flex: "1 1 0", minWidth: 78, minHeight: 44, padding: "8px 10px", fontSize: 14,
+                      background: active ? "#e8f0fe" : undefined,
+                      borderColor: active ? "#b5d4f4" : undefined,
+                      fontWeight: active ? 500 : 400,
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+              <button onClick={addPaymentRow} style={{ flex: "1 1 0", minWidth: 90, minHeight: 44, fontSize: 13 }}>
+                + จ่ายผสม
+              </button>
+            </div>
+          )}
+
           {/* บิลเงินสดล้วนคือ 95% ของบิล — ให้พิมพ์ช่องเดียวจบ
-              ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก
-              จ่ายผสมค่อยกด "เพิ่มวิธีจ่าย" แล้วฟอร์มเต็มจะโผล่มาแทน */}
+              ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก */}
           {simpleCash && !justSold && (
             <div style={{ marginTop: 12 }}>
               <div className="pos-cash-field">
@@ -1946,6 +2162,14 @@ export default function PosPage() {
                   key={payment.id}
                   style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}
                 >
+                  {/* จ่ายวิธีเดียว: วิธีเลือกจากแถบปุ่มด้านบนแล้ว และยอดต้องเท่ายอดบิล
+                      เสมอ (server ปฏิเสธถ้าไม่ตรง) — ไม่ต้องมีช่องให้พิมพ์ผิด */}
+                  {payments.length === 1 ? (
+                    <div style={{ fontSize: 14 }}>
+                      รับด้วย <strong>{METHODS.find((m) => m.key === payment.method)?.label ?? payment.method}</strong>
+                      {" · "}ยอด <strong>฿{baht(amountDue)}</strong>
+                    </div>
+                  ) : (
                   <div className="pos-payment-row" style={{ display: "grid", gridTemplateColumns: "120px minmax(0,1fr) auto", gap: 8, alignItems: "center" }}>
                     <select
                       value={payment.method}
@@ -1971,6 +2195,7 @@ export default function PosPage() {
                       ลบ
                     </button>
                   </div>
+                  )}
                   {payment.method === "CASH" ? (
                     <div>
                       <input
@@ -1998,9 +2223,12 @@ export default function PosPage() {
               );
             })}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={addPaymentRow} style={{ padding: "8px 12px", fontSize: 13 }}>
-                + เพิ่มวิธีจ่าย
-              </button>
+              {/* ตอนมีวิธีเดียว ปุ่มนี้ซ้ำกับ "+ จ่ายผสม" บนแถบด้านบนแล้ว */}
+              {payments.length > 1 && (
+                <button onClick={addPaymentRow} style={{ padding: "8px 12px", fontSize: 13 }}>
+                  + เพิ่มวิธีจ่าย
+                </button>
+              )}
               <div style={{ fontSize: 13, textAlign: "right", color: paymentSummary.remaining === 0 ? "#1e4620" : "#8a6100" }}>
                 รับแล้ว ฿{baht(paymentSummary.paid)} ·
                 {paymentSummary.remaining > 0
@@ -2042,6 +2270,7 @@ export default function PosPage() {
           </button>
           </>)}
         </section>
+      </div>
       </div>
       {receipt && (
         <div
