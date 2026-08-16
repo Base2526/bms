@@ -150,6 +150,9 @@ export default function PosPage() {
   // แกล้งเพิ่มลงตะกร้าแล้วลบทิ้ง ซึ่งเสี่ยงขายพลาด
   const [lookupMode, setLookupMode] = useState(false);
   const [lookup, setLookup] = useState<ScanHit | null>(null);
+  const [returnPanelOpen, setReturnPanelOpen] = useState(false);
+  // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
+  const [splitMode, setSplitMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -267,6 +270,15 @@ export default function PosPage() {
     [cart]
   );
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
+  // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
+  const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
+  const cashChangePreview = (() => {
+    if (!simpleCash) return null;
+    const t = Number(payments[0]?.tendered);
+    if (!Number.isFinite(t) || t <= 0 || total <= 0) return null;
+    return Math.max(0, Math.round((t - total) * 100) / 100);
+  })();
+
   const paymentSummary = useMemo(() => {
     const normalized = payments.map((payment) => {
       const amount = Number(payment.amount);
@@ -288,6 +300,21 @@ export default function PosPage() {
     const remaining = Math.round((total - paid) * 100) / 100;
     return { normalized, paid, remaining };
   }, [payments, total]);
+
+  /**
+   * เหตุผลที่ยังกดชำระเงินไม่ได้ — เรียงตามลำดับที่พนักงานต้องลงมือทำ
+   * null = กดได้
+   */
+  const payBlockedReason: string | null = (() => {
+    if (cart.length === 0) return "ยังไม่มีสินค้าในบิล";
+    if (!session?.shift) return "ยังไม่ได้เปิดกะ";
+    if (!cashierId) return "เลือกผู้ขายก่อน";
+    if (!pin) return "ใส่ PIN ของผู้ขาย";
+    if (paymentSummary.remaining > 0.01) return `ยังรับเงินไม่ครบ — ขาด ฿${baht(paymentSummary.remaining)}`;
+    if (paymentSummary.remaining < -0.01) return `ยอดรับเกินไป ฿${baht(Math.abs(paymentSummary.remaining))}`;
+    if (!canSell) return "ยังขายไม่ได้";
+    return null;
+  })();
 
   async function handleScan(code: string, size?: string | null) {
     if (hasPendingSale) {
@@ -508,6 +535,10 @@ export default function PosPage() {
     };
   }, [searchTerm, token, authHeaders]);
 
+  function resetToSimpleCash() {
+    setSplitMode(false);
+  }
+
   function changeQty(key: string, delta: number) {
     if (hasPendingSale) return;
     setCart((cur) =>
@@ -524,6 +555,11 @@ export default function PosPage() {
 
   function addPaymentRow() {
     if (hasPendingSale) return;
+    // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
+    setSplitMode(true);
+    setPayments((cur) =>
+      cur.length === 1 && !cur[0].amount ? [{ ...cur[0], amount: String(total) }] : cur
+    );
     setPayments((cur) => [
       ...cur,
       { id: `pay-${Date.now()}-${cur.length + 1}`, method: "QR", amount: "", tendered: "", ref: "" },
@@ -698,6 +734,9 @@ export default function PosPage() {
         window.localStorage.removeItem(PENDING_SALE_KEY);
         setHasPendingSale(false);
         setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+        // บิลถัดไปเริ่มที่ฟอร์มเงินสดง่ายเสมอ ไม่ค้างโหมดจ่ายผสมจากบิลก่อน
+        resetToSimpleCash();
+        setScanCode("");
         setSearchTerm("");
         setSearchResults([]);
         setRecentSalesQuery("");
@@ -1158,60 +1197,83 @@ export default function PosPage() {
           ล็อกรายการไว้เพื่อกู้บิลเดิม กรุณากด “ชำระเงิน” ซ้ำ ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลซ้ำ
         </div>
       )}
-      {session?.shift && (
-        <div style={{ background: "#fff", padding: 10, borderRadius: 8, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13 }}>
-          <span style={{ color: "#666" }}>สรุปคืนสินค้าในกะนี้ (จากฐานข้อมูลทั้งหมด)</span>
-          <span>คืนแล้ว {shiftReturnSummary.count} บิล</span>
-          <span>ยอดคืนรวมประมาณ ฿{baht(shiftReturnSummary.total)}</span>
+      {/* คืนสินค้าเป็นงานส่วนน้อยของกะ แต่เดิมกินหัวจอ 2 แถวเต็มตลอดเวลา
+          ยุบเป็นแถบเดียว กดขยายเมื่อจะใช้ — จอขายต้องนำด้วยการขาย */}
+      <div style={{ background: "#fff", padding: "8px 10px", borderRadius: 8, fontSize: 13 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setReturnPanelOpen((v) => !v)}
+            style={{ padding: "4px 12px", fontSize: 13 }}
+          >
+            {returnPanelOpen ? "▾" : "▸"} คืนสินค้า
+          </button>
+          {session?.shift && (
+            <span style={{ color: "#666" }}>
+              กะนี้คืนแล้ว {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
+            </span>
+          )}
+          {approvalUserId && approvalPin && !returnPanelOpen && (
+            <span style={{ color: "#237804" }}>ตั้งผู้อนุมัติไว้แล้ว</span>
+          )}
         </div>
-      )}
-      <div style={{ background: "#fff", padding: 10, borderRadius: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{ fontSize: 13, color: "#666" }}>ผู้อนุมัติคืนสินค้า (ใช้เมื่อระบบร้องขอ):</span>
-        <select
-          value={approvalUserId}
-          onChange={(e) => setApprovalUserId(e.target.value)}
-          style={{ padding: 8, fontSize: 13, minWidth: 160 }}
-        >
-          <option value="">เลือกผู้อนุมัติ</option>
-          {(session?.cashiers ?? []).map((c) => (
-            <option key={`approval-${c.id}`} value={c.id} disabled={!c.hasPin}>
-              {c.name || c.email}
-              {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
-            </option>
-          ))}
-        </select>
-        <input
-          type="password"
-          inputMode="numeric"
-          value={approvalPin}
-          onChange={(e) => setApprovalPin(e.target.value)}
-          placeholder="PIN ผู้อนุมัติ"
-          style={{ padding: 8, fontSize: 13, width: 130 }}
-        />
-        <span style={{ fontSize: 12, color: "#888" }}>
-          คืนตั้งแต่ ฿500 ขึ้นไปจะเริ่มมี approval flow · ตั้งแต่ ฿2,000 ขึ้นไปถือเป็น high-value return
-        </span>
+
+        {returnPanelOpen && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+            <span style={{ color: "#666" }}>ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):</span>
+            <select
+              value={approvalUserId}
+              onChange={(e) => setApprovalUserId(e.target.value)}
+              style={{ padding: 8, fontSize: 13, minWidth: 160 }}
+            >
+              <option value="">เลือกผู้อนุมัติ</option>
+              {(session?.cashiers ?? []).map((c) => (
+                <option key={`approval-${c.id}`} value={c.id} disabled={!c.hasPin}>
+                  {c.name || c.email}
+                  {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
+                </option>
+              ))}
+            </select>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={approvalPin}
+              onChange={(e) => setApprovalPin(e.target.value)}
+              placeholder="PIN ผู้อนุมัติ"
+              style={{ padding: 8, fontSize: 13, width: 130 }}
+            />
+            <span style={{ fontSize: 12, color: "#888" }}>
+              คืนตั้งแต่ ฿500 ขึ้นไปเริ่มมี approval flow · ตั้งแต่ ฿2,000 ถือเป็น high-value return
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1 }}>
         <section style={{ background: "#fff", borderRadius: 12, padding: 12 }}>
+          {/* ช่องเดียวจบ: เดิมมี "ยิงบาร์โค้ด" กับ "ค้นชื่อสินค้า" แยกกัน ซึ่งทับกัน
+              ตั้งแต่ช่องยิงรับ SKU ได้ด้วย — พนักงานใหม่ลังเลว่าพิมพ์ช่องไหน
+              ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
           <input
             ref={scanRef}
             autoFocus
             value={scanCode}
-            onChange={(e) => setScanCode(e.target.value)}
+            onChange={(e) => {
+              setScanCode(e.target.value);
+              setSearchTerm(e.target.value);
+            }}
             onKeyDown={(e) => {
               // เครื่องสแกนเป็นคีย์บอร์ด: ยิงเสร็จมันเคาะ Enter ให้เอง
-              if (e.key === "Enter") void handleScan(scanCode);
+              if (e.key === "Enter") {
+                void handleScan(scanCode);
+                setSearchTerm("");
+              }
             }}
-            placeholder={lookupMode ? "เช็คของ — ยิงบาร์โค้ด/พิมพ์รหัสแล้วกด Enter" : "ยิงบาร์โค้ด หรือพิมพ์รหัสแล้วกด Enter"}
+            placeholder={
+              lookupMode
+                ? "เช็คของ — ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า"
+                : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
+            }
             style={{ width: "100%", padding: 14, fontSize: 16 }}
-          />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="ค้นชื่อสินค้า / SKU / alias"
-            style={{ width: "100%", padding: 12, fontSize: 14, marginTop: 8 }}
           />
           {(searching || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1226,6 +1288,7 @@ export default function PosPage() {
                     const sizes = item.availableSizes.filter((v) => v.available > 0);
                     if (sizes.length === 1) {
                       void handleScan(item.sku, sizes[0].size);
+                      setScanCode("");
                       setSearchTerm("");
                       setSearchResults([]);
                     }
@@ -1253,6 +1316,7 @@ export default function PosPage() {
                           e.preventDefault();
                           e.stopPropagation();
                           void handleScan(item.sku, variant.size);
+                          setScanCode("");
                           setSearchTerm("");
                           setSearchResults([]);
                         }}
@@ -1294,7 +1358,8 @@ export default function PosPage() {
             <div style={{ marginTop: 10, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 500 }}>{lookup.productName}</div>
               <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
-                {lookup.sku} · {lookup.unitName}
+                {lookup.sku}
+                {lookup.size && lookup.size !== "-" ? ` · ไซซ์ ${lookup.size}` : ""} · {lookup.unitName}
               </div>
               <div style={{ marginTop: 8, display: "flex", gap: 20, alignItems: "baseline" }}>
                 <span style={{ fontSize: 20, fontWeight: 500 }}>฿{baht(lookup.packPrice)}</span>
@@ -1335,7 +1400,21 @@ export default function PosPage() {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14 }}>{l.receiptName}</div>
+                  <div style={{ fontSize: 14 }}>
+                    {l.receiptName}
+                    {/* ไซซ์ต้องเห็นเสมอ: สินค้าตัวเดียวกันคนละไซซ์ (10 เม็ด / 100 เม็ด)
+                        เคยแสดงเหมือนกันทุกอย่างจนดูเป็นรายการซ้ำ และหยิบผิดขวดได้ */}
+                    {l.size && l.size !== "-" && (
+                      <span
+                        style={{
+                          marginLeft: 6, padding: "1px 8px", borderRadius: 10,
+                          background: "#e6f4ff", color: "#003a8c", fontSize: 12, fontWeight: 500,
+                        }}
+                      >
+                        {l.size}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: "#666" }}>
                     {l.packQty} {l.unitName} × ฿{baht(l.packPrice)} · คงเหลือ {l.available}
                   </div>
@@ -1564,7 +1643,58 @@ export default function PosPage() {
             </div>
           )}
 
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* บิลเงินสดล้วนคือ 95% ของบิล — ให้พิมพ์ช่องเดียวจบ
+              ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก
+              จ่ายผสมค่อยกด "เพิ่มวิธีจ่าย" แล้วฟอร์มเต็มจะโผล่มาแทน */}
+          {simpleCash && (
+            <div style={{ marginTop: 12 }}>
+              <input
+                value={payments[0]?.tendered ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updatePayment(payments[0].id, { tendered: v, amount: total > 0 ? String(total) : "" });
+                }}
+                inputMode="decimal"
+                placeholder="รับเงินสดมาเท่าไหร่"
+                style={{ width: "100%", padding: 14, fontSize: 18 }}
+              />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(72px,1fr))", gap: 6, marginTop: 8 }}>
+                <button
+                  onClick={() => updatePayment(payments[0].id, { tendered: String(total), amount: String(total) })}
+                  disabled={total <= 0}
+                  style={{ padding: "12px 0", fontSize: 14, fontWeight: 500 }}
+                >
+                  พอดี
+                </button>
+                {[20, 50, 100, 500, 1000].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const cur = Number(payments[0]?.tendered) || 0;
+                      const next = cur + n;
+                      updatePayment(payments[0].id, { tendered: String(next), amount: total > 0 ? String(total) : "" });
+                    }}
+                    style={{ padding: "12px 0", fontSize: 14 }}
+                  >
+                    +{n}
+                  </button>
+                ))}
+                <button
+                  onClick={() => updatePayment(payments[0].id, { tendered: "" })}
+                  style={{ padding: "12px 0", fontSize: 14, color: "#a8071a" }}
+                >
+                  ล้าง
+                </button>
+              </div>
+              {cashChangePreview != null && (
+                <div style={{ marginTop: 10, fontSize: 18 }}>
+                  เงินทอน <strong>฿{baht(cashChangePreview)}</strong>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, display: simpleCash ? "none" : "flex", flexDirection: "column", gap: 8 }}>
             {payments.map((payment, index) => {
               const normalized = paymentSummary.normalized[index];
               return (
@@ -1639,22 +1769,26 @@ export default function PosPage() {
           </div>
 
           <div style={{ flex: 1 }} />
+          {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
+              เหตุผลจริงเคยอยู่ในข้อความตัวเล็กมุมขวาซึ่งไม่มีใครมอง */}
           <button
-            disabled={busy || cart.length === 0 || !canSell || Math.abs(paymentSummary.remaining) > 0.01}
+            disabled={payBlockedReason !== null || busy}
             onClick={() => void pay()}
             style={{
               marginTop: 12, padding: "16px 0", fontSize: 18, borderRadius: 8,
               border: "none", color: "#fff",
-              background: busy || cart.length === 0 || !canSell || Math.abs(paymentSummary.remaining) > 0.01 ? "#bbb" : "#237804",
+              background: payBlockedReason !== null || busy ? "#bbb" : "#237804",
             }}
           >
-            {busy ? "กำลังบันทึก…" : `ชำระเงิน ฿${baht(total)}`}
+            {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(total)}`}
           </button>
           <button
             disabled={hasPendingSale}
             onClick={() => {
               setCart([]);
               setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+              resetToSimpleCash();
+              setScanCode("");
               setSearchTerm("");
               setSearchResults([]);
               setNotice(null);
