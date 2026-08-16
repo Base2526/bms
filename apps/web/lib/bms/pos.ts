@@ -296,7 +296,10 @@ export async function resolvePosScan(
 ): Promise<PosScanHit | null> {
   const barcode = code.trim();
   if (!barcode) return null;
-  const size = opts.size?.trim().toUpperCase() || null;
+  // ห้าม toUpperCase() — ไซซ์จริงมีตัวพิมพ์เล็ก ("150 ml", "60 ml") การแปลงเป็น
+  // "150 ML" ทำให้เทียบกับ bms_inventory ไม่ตรงแล้วขายสินค้านั้นไม่ได้เลย
+  // (เทียบแบบไม่สนตัวพิมพ์แทน แล้วคืนค่าไซซ์ตามที่เก็บไว้จริง)
+  const size = opts.size?.trim() || null;
 
   const res = await query<{
     sku: string;
@@ -315,7 +318,12 @@ export async function resolvePosScan(
             k.unit_name,
             k.base_qty,
             k.price                                  AS pack_price,
-            COALESCE($3::text, (
+            COALESCE((
+              SELECT i.size FROM bms_inventory i
+               WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                 AND upper(i.size) = upper($3::text)
+               LIMIT 1
+            ), (
               SELECT i.size FROM bms_inventory i
                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
                  AND ($4::uuid IS NULL OR i.location_id = $4)
@@ -927,7 +935,9 @@ async function canonicalizePosSaleLines(
   const items: OrderItemInput[] = [];
   for (const line of lines) {
     const sku = String(line.sku ?? "").trim();
-    const size = String(line.size ?? "").trim().toUpperCase();
+    // ดูเหตุผลที่ห้าม toUpperCase() ที่ resolvePosScan — ไซซ์ที่มีหน่วยตัวพิมพ์เล็ก
+    // จะหาสต๊อกไม่เจอ แล้วขายไม่ได้ทั้งที่ของอยู่บนชั้น
+    const size = String(line.size ?? "").trim();
     const packQty = Number(line.packQty);
     if (!sku || !size || !Number.isInteger(packQty) || packQty <= 0) continue;
     const packCode = String(line.packCode ?? "BASE").trim().toUpperCase() || "BASE";
@@ -937,12 +947,17 @@ async function canonicalizePosSaleLines(
       unit_name: string | null;
       base_qty: number | null;
       pack_price: string | null;
+      stored_size: string | null;
     }>(
       `SELECT p.price AS base_price,
               k.pack_code,
               k.unit_name,
               k.base_qty,
-              k.price AS pack_price
+              k.price AS pack_price,
+              (SELECT i.size FROM bms_inventory i
+                WHERE i.tenant_id = p.tenant_id AND i.location_id = $3
+                  AND i.product_sku = p.sku AND upper(i.size) = upper($5)
+                LIMIT 1) AS stored_size
          FROM bms_products p
          LEFT JOIN bms_product_packs k
            ON k.tenant_id = p.tenant_id
@@ -957,7 +972,7 @@ async function canonicalizePosSaleLines(
              WHERE i.tenant_id = p.tenant_id
                AND i.location_id = $3
                AND i.product_sku = p.sku
-               AND i.size = $5
+               AND upper(i.size) = upper($5)
           )
         LIMIT 1`,
       [tenantId, sku, locationId, packCode, size]
@@ -971,7 +986,9 @@ async function canonicalizePosSaleLines(
     const packPrice = row.pack_price == null ? basePrice * baseQty : Number(row.pack_price);
     items.push({
       sku,
-      size,
+      // ใช้ไซซ์ตามที่เก็บใน bms_inventory ไม่ใช่ที่ client ส่งมา —
+      // order item ต้องตรงกับแถวสต็อกเป๊ะ ไม่งั้น FK/การตัดสต็อกพลาด
+      size: row.stored_size ?? size,
       qty: packQty * baseQty,
       packCode,
       packUnitName: row.unit_name ?? "ชิ้น",

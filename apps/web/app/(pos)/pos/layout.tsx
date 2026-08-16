@@ -4,24 +4,16 @@
 // เพราะสิ่งที่ต้องแยกจริงคือ "หน้าจอ" ไม่ใช่ build/deploy — route group นี้
 // ให้ layout เต็มจอโดยไม่ต้องทำ pipeline ใหม่ ยกออกไปเป็น app แยกทีหลังได้
 // เมื่อมีเหตุผลจริง (เช่น ทำ PWA offline ซึ่งตอนนี้ตัดสินใจว่าไม่ทำ)
+//
+// สไตล์อยู่ใน pos.css — เขียนเองไม่ใช้ antd เพราะจอนี้ต้องการปุ่มขนาดนิ้วโป้ง
+// และแท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า (ดูเหตุผลเต็มในหัวไฟล์ CSS)
 import type { ReactNode } from "react";
+import "./pos.css";
 
 export const metadata = {
   title: "POS — ขายหน้าร้าน",
 };
 
 export default function PosLayout({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f5f5f5",
-        // จอสัมผัส: กันการเลือกข้อความค้างตอนกดปุ่มรัว ๆ
-        userSelect: "none",
-        WebkitUserSelect: "none",
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="pos-root">{children}</div>;
 }

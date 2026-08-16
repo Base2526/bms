@@ -23,9 +23,11 @@ export async function GET(req: NextRequest) {
   }
 
   const code = (req.nextUrl.searchParams.get("code") ?? "").trim();
+  // ไม่แปลงเป็นตัวพิมพ์ใหญ่ — "150 ml" ต้องคงรูปไว้ให้ตรงกับ bms_inventory
+  const size = (req.nextUrl.searchParams.get("size") ?? "").trim() || null;
   if (!code) return NextResponse.json({ error: "ต้องระบุ code" }, { status: 400 });
 
-  const hit = await resolvePosScan(device.tenantId, code);
+  const hit = await resolvePosScan(device.tenantId, code, { size, locationId: device.locationId });
   if (!hit) return NextResponse.json({ error: "ไม่พบสินค้าจากรหัสนี้", code }, { status: 404 });
 
   // ของคงเหลือของสาขานี้ — จอขายต้องเห็นก่อนกดเพิ่มลงตะกร้า

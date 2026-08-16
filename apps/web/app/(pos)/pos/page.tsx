@@ -1079,45 +1079,43 @@ export default function PosPage() {
           .pos-payment-row > *, .pos-refund-row > * { width: 100%; min-width: 0 !important; }
         }
       `}</style>
-      <header
-        className="pos-header"
-        style={{
-          background: "#fff", borderRadius: 12, padding: "10px 14px",
-          display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
-        }}
-      >
-        <div>
-          <div style={{ fontWeight: 500 }}>
-            {loadingSession && !session ? "กำลังเชื่อมต่อ…" : session?.location?.name ?? "ยังไม่ทราบสาขา"}
-            {session?.location && (
-              <span style={{ color: "#888", fontWeight: 400 }}> (สาขา {session.location.branchCode})</span>
-            )}
+      <header className="pos-card pos-topbar">
+        <div className="pos-shop">
+          <div className="pos-shop-mark">
+            {(session?.location?.name ?? "?").trim().charAt(0) || "?"}
           </div>
-          <div style={{ fontSize: 12, color: "#666" }}>
-            {session ? (
-              <>
-                {session.device.code}
-                {session.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}
-                {session.shift ? " · กะเปิดอยู่" : " · ยังไม่เปิดกะ"}
-              </>
-            ) : (
-              "ยังไม่ได้เชื่อมต่อกับระบบ"
-            )}
+          <div style={{ minWidth: 0 }}>
+            <div className="pos-shop-name">
+              {loadingSession && !session ? "กำลังเชื่อมต่อ…" : session?.location?.name ?? "ยังไม่ทราบสาขา"}
+            </div>
+            <div className="pos-chips">
+              {session?.location && <span className="pos-chip">สาขา {session.location.branchCode}</span>}
+              {session && <span className="pos-chip">{session.device.code}</span>}
+              {session?.device.registeredPosNo && (
+                <span className="pos-chip">POS#{session.device.registeredPosNo}</span>
+              )}
+              {session?.shift ? (
+                <span className="pos-chip pos-chip--ok">กะเปิดอยู่</span>
+              ) : (
+                <span className="pos-chip pos-chip--warn">ยังไม่เปิดกะ</span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="pos-header-actions" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+
+        <div className="pos-header-actions" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {receipt && (
-            <button onClick={() => window.print()} style={{ padding: "8px 10px", fontSize: 12 }}>
+            <button onClick={() => window.print()} style={{ padding: "8px 12px", fontSize: 12 }}>
               พิมพ์บิลล่าสุด
             </button>
           )}
-          <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 10px", fontSize: 12 }}>
+          <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 12px", fontSize: 12 }}>
             โหลดบิลล่าสุด
           </button>
           <select
             value={cashierId}
             onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
-            style={{ padding: 8, fontSize: 14, minWidth: 160 }}
+            style={{ fontSize: 13, minWidth: 150 }}
           >
             <option value="">เลือกผู้ขาย</option>
             {(session?.cashiers ?? []).map((c) => (
@@ -1134,9 +1132,9 @@ export default function PosPage() {
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             placeholder="PIN"
-            style={{ padding: 8, fontSize: 14, width: 90 }}
+            style={{ width: 84, fontSize: 14 }}
           />
-          <button onClick={unpair} title="เลิกจับคู่เครื่องนี้" style={{ padding: "8px 10px", fontSize: 12 }}>
+          <button onClick={unpair} title="เลิกจับคู่เครื่องนี้" style={{ padding: "8px 12px", fontSize: 12 }}>
             เลิกจับคู่
           </button>
         </div>
@@ -1197,13 +1195,7 @@ export default function PosPage() {
         </div>
       )}
       {notice && (
-        <div
-          style={{
-            background: notice.type === "ok" ? "#edf7ed" : "#fdecea",
-            color: notice.type === "ok" ? "#1e4620" : "#611a15",
-            padding: 12, borderRadius: 8,
-          }}
-        >
+        <div className={`pos-note ${notice.type === "ok" ? "pos-note--ok" : "pos-note--err"}`}>
           {notice.text}
         </div>
       )}
@@ -1264,10 +1256,12 @@ export default function PosPage() {
       </div>
 
       <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1 }}>
-        <section style={{ background: "#fff", borderRadius: 12, padding: 12 }}>
+        <section className="pos-card">
           {/* ช่องเดียวจบ: เดิมมี "ยิงบาร์โค้ด" กับ "ค้นชื่อสินค้า" แยกกัน ซึ่งทับกัน
               ตั้งแต่ช่องยิงรับ SKU ได้ด้วย — พนักงานใหม่ลังเลว่าพิมพ์ช่องไหน
               ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
+          <div className="pos-scan">
+          <span aria-hidden="true" style={{ fontSize: 18, color: "var(--pos-accent)" }}>▮▍▮▏▮</span>
           <input
             ref={scanRef}
             autoFocus
@@ -1288,8 +1282,8 @@ export default function PosPage() {
                 ? "เช็คของ — ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า"
                 : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
             }
-            style={{ width: "100%", padding: 14, fontSize: 16 }}
           />
+          </div>
           {(searching || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
               {searching && <div style={{ fontSize: 12, color: "#666" }}>กำลังค้นสินค้า…</div>}
@@ -1407,40 +1401,29 @@ export default function PosPage() {
           )}
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
             {cart.map((l) => (
-              <div
-                key={l.key}
-                style={{
-                  border: "1px solid #eee", borderRadius: 8, padding: "8px 10px",
-                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14 }}>
-                    {l.receiptName}
+              <div key={l.key} className="pos-line-item">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="pos-line-name">
+                    <span>{l.receiptName}</span>
                     {/* ไซซ์ต้องเห็นเสมอ: สินค้าตัวเดียวกันคนละไซซ์ (10 เม็ด / 100 เม็ด)
                         เคยแสดงเหมือนกันทุกอย่างจนดูเป็นรายการซ้ำ และหยิบผิดขวดได้ */}
                     {l.size && l.size !== "-" && (
-                      <span
-                        style={{
-                          marginLeft: 6, padding: "1px 8px", borderRadius: 10,
-                          background: "#e6f4ff", color: "#003a8c", fontSize: 12, fontWeight: 500,
-                        }}
-                      >
+                      /* ไซซ์สลับสีตาม sku+size ให้สองไซซ์ของยาตัวเดียวกันไม่ซ้ำสี */
+                      <span className={`pos-badge${l.size.length % 2 === 0 ? " pos-badge--alt" : ""}`}>
                         {l.size}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: "#666" }}>
-                    {l.packQty} {l.unitName} × ฿{baht(l.packPrice)} · คงเหลือ {l.available}
+                  <div className="pos-line-meta">
+                    ฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <button onClick={() => changeQty(l.key, -1)} style={{ padding: "6px 12px", fontSize: 16 }}>−</button>
-                  <button onClick={() => changeQty(l.key, 1)} style={{ padding: "6px 12px", fontSize: 16 }}>+</button>
-                  <div style={{ minWidth: 84, textAlign: "right", fontWeight: 500 }}>
-                    ฿{baht(l.packPrice * l.packQty)}
-                  </div>
+                <div className="pos-qty">
+                  <button onClick={() => changeQty(l.key, -1)} aria-label="ลดจำนวน">−</button>
+                  <span className="pos-qty-value">{l.packQty}</span>
+                  <button onClick={() => changeQty(l.key, 1)} aria-label="เพิ่มจำนวน">+</button>
                 </div>
+                <div className="pos-line-amount">฿{baht(l.packPrice * l.packQty)}</div>
               </div>
             ))}
           </div>
@@ -1648,57 +1631,46 @@ export default function PosPage() {
           )}
         </section>
 
-        <section style={{ background: "#fff", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontSize: 14, color: "#666" }}>{itemCount} ชิ้น</span>
-            <span style={{ fontSize: 28, fontWeight: 500 }}>฿{baht(total)}</span>
-          </div>
-          {session?.vat.registered && (
-            <div style={{ fontSize: 12, color: "#666", textAlign: "right" }}>
-              ราคารวม VAT {session.vat.rate}% แล้ว
+        <section className="pos-card" style={{ display: "flex", flexDirection: "column" }}>
+          <div className="pos-total">
+            <div className="pos-total-row">
+              <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
+              <span className="pos-total-value">฿{baht(total)}</span>
             </div>
-          )}
+            {session?.vat.registered && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                <span>ราคารวม VAT {session.vat.rate}% แล้ว</span>
+              </div>
+            )}
+          </div>
 
           {justSold && (
-            <div
-              style={{
-                marginTop: 12, border: "2px solid #237804", borderRadius: 12,
-                padding: 16, background: "#f6ffed",
-              }}
-            >
-              <div style={{ fontSize: 15, color: "#237804", fontWeight: 500 }}>
-                ✓ ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}
+            <div className="pos-success" style={{ marginTop: 12 }}>
+              <div className="pos-success-head">
+                <span aria-hidden="true">✓</span>
+                <span>ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}</span>
               </div>
 
               {justSold.change != null ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 14, color: "#666" }}>เงินทอน</div>
+                <>
+                  <div className="pos-success-label">ทอนเงินให้ลูกค้า</div>
                   {/* ตัวใหญ่สุดบนจอ — สิ่งเดียวที่แคชเชียร์ต้องทำต่อทันที */}
-                  <div style={{ fontSize: 44, fontWeight: 600, lineHeight: 1.1 }}>
-                    ฿{baht(justSold.change)}
-                  </div>
-                </div>
+                  <div className="pos-success-value">฿{baht(justSold.change)}</div>
+                </>
               ) : (
-                <div style={{ marginTop: 10, fontSize: 24, fontWeight: 500 }}>
-                  รับเงินครบ ฿{baht(justSold.total)}
-                </div>
+                <>
+                  <div className="pos-success-label">รับเงินครบแล้ว</div>
+                  <div className="pos-success-value">฿{baht(justSold.total)}</div>
+                </>
               )}
 
-              <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                <button onClick={() => window.print()} style={{ padding: "12px 20px", fontSize: 15 }}>
-                  พิมพ์ใบเสร็จ
-                </button>
-                <button onClick={() => setReceiptModalOpen(true)} style={{ padding: "12px 20px", fontSize: 15 }}>
-                  ดูใบเสร็จ
-                </button>
-                <button onClick={() => setJustSold(null)} style={{ padding: "12px 20px", fontSize: 15 }}>
-                  ปิด
-                </button>
+              <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
+                <button onClick={() => window.print()} style={{ flex: 1 }}>พิมพ์ใบเสร็จ</button>
+                <button onClick={() => setReceiptModalOpen(true)} style={{ flex: 1 }}>ดูใบเสร็จ</button>
+                <button onClick={() => setJustSold(null)} aria-label="ปิด" style={{ width: 52 }}>✕</button>
               </div>
 
-              <div style={{ marginTop: 12, fontSize: 13, color: "#666" }}>
-                ยิงสินค้าชิ้นถัดไปได้เลย — หน้าจอนี้จะหายเอง
-              </div>
+              <div className="pos-success-hint">ยิงสินค้าชิ้นถัดไปได้เลย — หน้าจอนี้จะหายเอง</div>
             </div>
           )}
 
@@ -1707,21 +1679,24 @@ export default function PosPage() {
               จ่ายผสมค่อยกด "เพิ่มวิธีจ่าย" แล้วฟอร์มเต็มจะโผล่มาแทน */}
           {simpleCash && !justSold && (
             <div style={{ marginTop: 12 }}>
-              <input
-                value={payments[0]?.tendered ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  updatePayment(payments[0].id, { tendered: v, amount: total > 0 ? String(total) : "" });
-                }}
-                inputMode="decimal"
-                placeholder="รับเงินสดมาเท่าไหร่"
-                style={{ width: "100%", padding: 14, fontSize: 18 }}
-              />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(72px,1fr))", gap: 6, marginTop: 8 }}>
+              <div className="pos-cash-field">
+                <label htmlFor="pos-cash-input">รับเงินมา</label>
+                <input
+                  id="pos-cash-input"
+                  value={payments[0]?.tendered ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updatePayment(payments[0].id, { tendered: v, amount: total > 0 ? String(total) : "" });
+                  }}
+                  inputMode="decimal"
+                  placeholder="0"
+                />
+              </div>
+              <div className="pos-quick" style={{ marginTop: 8 }}>
                 <button
                   onClick={() => updatePayment(payments[0].id, { tendered: String(total), amount: String(total) })}
                   disabled={total <= 0}
-                  style={{ padding: "12px 0", fontSize: 14, fontWeight: 500 }}
+                  className="pos-exact"
                 >
                   พอดี
                 </button>
@@ -1733,21 +1708,21 @@ export default function PosPage() {
                       const next = cur + n;
                       updatePayment(payments[0].id, { tendered: String(next), amount: total > 0 ? String(total) : "" });
                     }}
-                    style={{ padding: "12px 0", fontSize: 14 }}
                   >
                     +{n}
                   </button>
                 ))}
                 <button
                   onClick={() => updatePayment(payments[0].id, { tendered: "" })}
-                  style={{ padding: "12px 0", fontSize: 14, color: "#a8071a" }}
+                  className="pos-clear"
                 >
                   ล้าง
                 </button>
               </div>
               {cashChangePreview != null && (
-                <div style={{ marginTop: 10, fontSize: 18 }}>
-                  เงินทอน <strong>฿{baht(cashChangePreview)}</strong>
+                <div className="pos-change" style={{ marginTop: 12 }}>
+                  <span style={{ fontSize: 14, color: "var(--pos-muted)" }}>เงินทอน</span>
+                  <span className="pos-change-value">฿{baht(cashChangePreview)}</span>
                 </div>
               )}
             </div>
@@ -1832,13 +1807,10 @@ export default function PosPage() {
           {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
               เหตุผลจริงเคยอยู่ในข้อความตัวเล็กมุมขวาซึ่งไม่มีใครมอง */}
           <button
+            className="pos-pay"
             disabled={payBlockedReason !== null || busy}
             onClick={() => void pay()}
-            style={{
-              marginTop: 12, padding: "16px 0", fontSize: 18, borderRadius: 8,
-              border: "none", color: "#fff",
-              background: payBlockedReason !== null || busy ? "#bbb" : "#237804",
-            }}
+            style={{ marginTop: 12 }}
           >
             {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(total)}`}
           </button>
