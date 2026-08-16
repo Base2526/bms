@@ -12,6 +12,7 @@
 // งานเบื้องหลังที่ยอมช้าได้ แต่ยอมหายไม่ได้
 // =============================================================
 
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { etaxEnabledGlobally, resolveProvider, resolveSigner } from "./providers";
@@ -72,14 +73,20 @@ export async function etaxEnabledForTenant(tenantId: string): Promise<boolean> {
  * เอกสารเดิมเข้าซ้ำได้ (ON CONFLICT) เพราะ 1 เอกสาร = 1 แถว ห้ามส่งซ้ำ
  * ปิด e-Tax อยู่ก็ไม่เข้าคิว — เปิดทีหลังแล้วค่อย backfill ได้จาก bms_tax_documents
  */
-export async function enqueueTaxDocument(tenantId: string, documentId: string): Promise<void> {
+export async function enqueueTaxDocument(
+  tenantId: string,
+  documentId: string,
+  client?: PoolClient
+): Promise<void> {
   if (!(await etaxEnabledForTenant(tenantId))) return;
-  await query(
-    `INSERT INTO bms_etax_submissions (tenant_id, document_id, status)
-     VALUES ($1, $2, 'PENDING')
-     ON CONFLICT (document_id) DO NOTHING`,
-    [tenantId, documentId]
-  );
+  const sql = `INSERT INTO bms_etax_submissions (tenant_id, document_id, status)
+               VALUES ($1, $2, 'PENDING')
+               ON CONFLICT (document_id) DO NOTHING`;
+  // ต้องเข้าคิวใน "ทรานแซกชันเดียวกับที่สร้างเอกสาร" เมื่อผู้เรียกอยู่ในทรานแซกชัน
+  // ไม่งั้น FK ชี้ไปหาแถวที่ยังไม่ commit → ล้มทุกครั้งอย่างเงียบ ๆ
+  // และบิลหน้าร้านจะไม่เคยเข้าคิวเลยสักใบ
+  if (client) await client.query(sql, [tenantId, documentId]);
+  else await query(sql, [tenantId, documentId]);
 }
 
 /** ดึงข้อมูลเอกสาร + รายการ มาประกอบ XML */

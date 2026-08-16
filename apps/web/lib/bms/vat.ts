@@ -32,8 +32,10 @@ export type VatBreakdown = {
   vatAmount: number;
   /** ฐานก่อน VAT ของทั้งบิล = taxable − vat + exempt */
   netBeforeVat: number;
-  /** ยอดที่ลูกค้าจ่าย = taxable + exempt + rounding */
+  /** ยอดที่ลูกค้าจ่าย = taxable + exempt + rounding (หักส่วนลดแล้ว) */
   grandTotal: number;
+  /** ส่วนลดทั้งบิลที่ถูกกระจายลงฐานภาษีแล้ว */
+  discountAmount: number;
   roundingAmount: number;
   vatRate: number;
 };
@@ -90,10 +92,11 @@ function splitGross(gross: number, rate: number, mode: VatRounding): { base: num
 export function computeVat(
   lines: VatLine[],
   settings: VatSettings,
-  opts: { roundingAmount?: number } = {}
+  opts: { roundingAmount?: number; discountAmount?: number } = {}
 ): VatBreakdown {
   const rate = settings.vatRegistered ? Number(settings.vatRate) : 0;
   const rounding = round2(opts.roundingAmount ?? 0);
+  const discount = Math.max(0, round2(opts.discountAmount ?? 0));
 
   let taxableGross = 0;
   let exempt = 0;
@@ -110,6 +113,24 @@ export function computeVat(
   taxableGross = round2(taxableGross);
   exempt = round2(exempt);
 
+  // ส่วนลดทั้งบิลต้องลดฐานภาษีตามสัดส่วน ไม่ใช่ปล่อยให้ VAT คิดจากราคาเต็ม
+  // ไม่งั้นใบกำกับจะระบุยอดมากกว่าเงินที่รับจริง = เก็บ VAT เกินและเอกสารไม่ตรงเงิน
+  //
+  // หาฝั่งเสียภาษีก่อนแล้วลบเพื่อได้ฝั่งยกเว้น — ปัดสองครั้งแยกกันจะทำให้
+  // ผลรวมไม่ตรงกับยอดที่ลูกค้าจ่ายพอดี
+  if (discount > 0) {
+    const gross = round2(taxableGross + exempt);
+    const applied = Math.min(discount, gross);
+    if (gross > 0) {
+      taxableGross = round2(taxableGross - (applied * taxableGross) / gross);
+      exempt = round2(gross - applied - taxableGross);
+      if (exempt < 0) {
+        taxableGross = round2(taxableGross + exempt);
+        exempt = 0;
+      }
+    }
+  }
+
   const split = splitGross(taxableGross, rate, settings.vatRounding ?? "BASE_FIRST");
   const vatAmount = split.vat;
   const netBeforeVat = round2(split.base + exempt);
@@ -122,6 +143,7 @@ export function computeVat(
     netBeforeVat,
     grandTotal,
     roundingAmount: rounding,
+    discountAmount: discount,
     vatRate: rate,
   };
 }

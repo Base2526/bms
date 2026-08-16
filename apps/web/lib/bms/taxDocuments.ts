@@ -159,6 +159,15 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
 
 type OrderLineForVat = { sku: string; amount: number; vatCategory: VatCategory };
 
+/** ส่วนลดทั้งบิล — ต้องนำไปลดฐานภาษีตามสัดส่วน ไม่งั้นใบกำกับยอดเกินเงินที่รับ */
+async function loadOrderDiscountInTx(client: PoolClient, tenantId: string, orderId: string): Promise<number> {
+  const res = await client.query<{ discount_amount: string }>(
+    `SELECT discount_amount FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, orderId]
+  );
+  return Number(res.rows[0]?.discount_amount ?? 0);
+}
+
 async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId: string): Promise<OrderLineForVat[]> {
   const res = await client.query<any>(
     `SELECT product_sku,
@@ -186,7 +195,8 @@ export async function applyOrderVatInTx(
   roundingAmount = 0
 ) {
   const lines = await loadOrderLinesInTx(client, tenantId, orderId);
-  const breakdown = computeVat(lines, settings, { roundingAmount });
+  const discountAmount = await loadOrderDiscountInTx(client, tenantId, orderId);
+  const breakdown = computeVat(lines, settings, { roundingAmount, discountAmount });
   await client.query(
     `UPDATE bms_orders
         SET taxable_amount = $3, exempt_amount = $4, vat_amount = $5,
@@ -269,10 +279,11 @@ export async function issueAbbreviatedInvoiceInTx(
       breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate, args.issuedBy ?? null]
   );
   const issued = mapDoc(res.rows[0]);
-  // เข้าคิวนำส่ง e-Tax — ทำนอกทรานแซกชันการขายไม่ได้เพราะอยู่ใน tx เดียวกัน
-  // แต่ enqueue เป็นแค่ INSERT แถวเดียว ถ้าล้มก็ rollback ทั้งบิลซึ่งถูกแล้ว
-  // (บิลที่ตัดสต็อกแล้วแต่ไม่มีร่องรอยว่าต้องส่ง = ช่องโหว่ที่หาไม่เจอทีหลัง)
-  await enqueueTaxDocument(tenantId, issued.id).catch(() => {});
+  // เข้าคิวด้วย client ตัวเดียวกับที่เพิ่งสร้างเอกสาร — เอกสารยังไม่ commit
+  // การใช้ connection อื่นจะชน FK ทุกครั้ง
+  // ไม่ .catch() ทิ้ง: บิลที่ตัดสต็อกแล้วแต่ไม่มีร่องรอยว่าต้องนำส่ง
+  // คือช่องโหว่ที่หาไม่เจอทีหลัง — ยอม rollback ทั้งบิลดีกว่า
+  await enqueueTaxDocument(tenantId, issued.id, client);
   return { status: "ISSUED", document: issued };
 }
 
@@ -377,9 +388,9 @@ export async function issueFullTaxInvoice(args: {
         args.issuedBy ?? null]
     );
 
-    await client.query("COMMIT");
     const full = mapDoc(res.rows[0]);
-    await enqueueTaxDocument(tenantId, full.id).catch(() => {});
+    await enqueueTaxDocument(tenantId, full.id, client);
+    await client.query("COMMIT");
     return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
