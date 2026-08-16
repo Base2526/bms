@@ -633,6 +633,48 @@ export const typeDefs = /* GraphQL */ `
     pendingRefundAmount: Float!
   }
 
+  " หน่วยขาย: สิ่งที่ลูกค้าซื้อจริงและมีบาร์โค้ดของตัวเอง (แผง / กล่อง) "
+  type BmsProductPack {
+    id: ID!
+    productSku: String!
+    size: String
+    packCode: String!
+    unitName: String!
+    baseQty: Int!
+    barcode: String
+    " null = คิดจากราคาสินค้า × baseQty "
+    price: Float
+    isBase: Boolean!
+    active: Boolean!
+  }
+
+  type BmsProductPackList {
+    packs: [BmsProductPack!]!
+    " ไซซ์ที่มีแถวสต็อกจริง "
+    sizes: [String!]!
+  }
+
+  input BmsProductPackInput {
+    id: ID
+    productSku: String!
+    size: String
+    packCode: String!
+    unitName: String!
+    baseQty: Int!
+    barcode: String
+    price: Float
+    isBase: Boolean
+    active: Boolean
+  }
+
+  type BmsPackAudit {
+    sku: String!
+    name: String!
+    sizes: Int!
+    packs: Int!
+    sizesWithoutBarcode: [String!]!
+  }
+
   type BmsPosCashier {
     id: ID!
     name: String
@@ -766,6 +808,8 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
     bmsPosDevices: [BmsPosDevice!]!
+    bmsProductPacks(productSku: String!): BmsProductPackList!
+    bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsPosCashiers: [BmsPosCashier!]!
     bmsPosStaff: [BmsPosCashier!]!
     bmsPosOpenShift(deviceId: ID!): BmsPosShift
@@ -3144,6 +3188,8 @@ export const typeDefs = /* GraphQL */ `
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
+    bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
+    bmsDeleteProductPack(id: ID!): Boolean!
     bmsSetCashierPin(userId: ID!, pin: String): Boolean!
     "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
     bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!

@@ -529,6 +529,7 @@ const th = {
     group_pharmacy: "เภสัชกรรม",
     group_pos: "ขายหน้าร้าน",
     menu_pos_devices: "เครื่องขาย + PIN",
+    menu_product_packs: "หน่วยขาย + บาร์โค้ด",
     menu_pos_readiness: "ความพร้อมก่อนเปิด",
     group_access: "ผู้ใช้/สิทธิ์",
     group_system: "ระบบ",

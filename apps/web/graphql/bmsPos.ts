@@ -26,6 +26,14 @@ import {
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
 import { issueFullTaxInvoice, listTaxDocumentsForOrder } from "@/lib/bms/taxDocuments";
 import {
+  deleteProductPack,
+  listProductPacks,
+  listProductsNeedingBarcodes,
+  listSizesForProduct,
+  upsertProductPack,
+  type UpsertPackInput,
+} from "@/lib/bms/productPacks";
+import {
   getPharmacyPolicyReadiness,
   listProductsNeedingPolicyReview,
 } from "@/lib/bms/pharmacy/policyReadiness";
@@ -49,6 +57,23 @@ export const bmsPosResolvers = {
     async bmsPosStaff(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pos.staff.manage");
       return listTenantStaff(getTenantId(ctx));
+    },
+
+    /** หน่วยขายของสินค้า 1 ตัว — ไซซ์ / บาร์โค้ด / ราคาต่อหน่วย */
+    async bmsProductPacks(_p: unknown, args: { productSku: string }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      const tenantId = getTenantId(ctx);
+      const [packs, sizes] = await Promise.all([
+        listProductPacks(tenantId, args.productSku),
+        listSizesForProduct(tenantId, args.productSku),
+      ]);
+      return { packs, sizes };
+    },
+
+    /** สินค้าหลายไซซ์ที่ยังมีบาร์โค้ดไม่ครบ — ยิงไม่เจอ ต้องค้นชื่อเอา */
+    async bmsProductsNeedingBarcodes(_p: unknown, args: { limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      return listProductsNeedingBarcodes(getTenantId(ctx), args.limit ?? 200);
     },
 
     async bmsPosCashiers(_p: unknown, _a: unknown, ctx: any) {
@@ -200,6 +225,26 @@ export const bmsPosResolvers = {
       }
       await audit(ctx, args.posOnly ? "pos.staff.pos_only_on" : "pos.staff.pos_only_off", args.userId);
       return true;
+    },
+
+    async bmsUpsertProductPack(_p: unknown, args: { input: UpsertPackInput }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      try {
+        const pack = await upsertProductPack(getTenantId(ctx), args.input);
+        await audit(ctx, "product.pack.upsert", pack.id, {
+          sku: pack.productSku, size: pack.size, packCode: pack.packCode,
+        });
+        return pack;
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "บันทึกหน่วยขายไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+
+    async bmsDeleteProductPack(_p: unknown, args: { id: ID_ }, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const ok = await deleteProductPack(getTenantId(ctx), args.id);
+      if (ok) await audit(ctx, "product.pack.delete", args.id);
+      return ok;
     },
 
     async bmsOpenPosShift(

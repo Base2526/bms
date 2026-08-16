@@ -43,6 +43,7 @@ import {
   FileProtectOutlined,
   IdcardOutlined,
   DesktopOutlined,
+  BarcodeOutlined,
   SafetyCertificateOutlined,
   HeartOutlined,
 } from '@ant-design/icons';
@@ -367,6 +368,8 @@ export default function AdminSidebar() {
       children: [
         ...(can('pos.device.manage') || can('pos.pin.manage')
           ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
+        ...(can('product.view')
+          ? [link('/admin/product-packs', t('admin.menu_product_packs'), <BarcodeOutlined />)] : []),
         ...(can('pharmacy.policy.read')
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
       ],
