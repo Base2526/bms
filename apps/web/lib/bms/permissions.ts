@@ -77,6 +77,9 @@ export const BMS_PERMISSIONS = [
   "tax.document.view",
   "tax.document.issue",
   "tax.setting.manage",
+  // e-Tax นำส่งกรมสรรพากร — seed ที่ 7.94
+  "etax.view",
+  "etax.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

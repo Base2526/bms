@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type VatSettings } from "./vat";
+import { enqueueTaxDocument } from "./etax/queue";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -158,13 +159,13 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
 
 type OrderLineForVat = { sku: string; amount: number; vatCategory: VatCategory };
 
-async function loadOrderLinesInTx(client: PoolClient, orderId: string): Promise<OrderLineForVat[]> {
+async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId: string): Promise<OrderLineForVat[]> {
   const res = await client.query<any>(
     `SELECT product_sku,
             vat_category,
             COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount
-       FROM bms_order_items WHERE order_id = $1`,
-    [orderId]
+       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, orderId]
   );
   return res.rows.map((r: any) => ({
     sku: r.product_sku,
@@ -184,7 +185,7 @@ export async function applyOrderVatInTx(
   settings: VatSettings,
   roundingAmount = 0
 ) {
-  const lines = await loadOrderLinesInTx(client, orderId);
+  const lines = await loadOrderLinesInTx(client, tenantId, orderId);
   const breakdown = computeVat(lines, settings, { roundingAmount });
   await client.query(
     `UPDATE bms_orders
@@ -251,7 +252,7 @@ export async function issueAbbreviatedInvoiceInTx(
 
   const prefixRes = deviceId
     ? await client.query<{ receipt_prefix: string | null }>(
-        `SELECT receipt_prefix FROM bms_pos_devices WHERE id = $1`, [deviceId]
+        `SELECT receipt_prefix FROM bms_pos_devices WHERE tenant_id = $1 AND id = $2`, [tenantId, deviceId]
       )
     : null;
 
@@ -267,7 +268,12 @@ export async function issueAbbreviatedInvoiceInTx(
       breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
       breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate, args.issuedBy ?? null]
   );
-  return { status: "ISSUED", document: mapDoc(res.rows[0]) };
+  const issued = mapDoc(res.rows[0]);
+  // เข้าคิวนำส่ง e-Tax — ทำนอกทรานแซกชันการขายไม่ได้เพราะอยู่ใน tx เดียวกัน
+  // แต่ enqueue เป็นแค่ INSERT แถวเดียว ถ้าล้มก็ rollback ทั้งบิลซึ่งถูกแล้ว
+  // (บิลที่ตัดสต็อกแล้วแต่ไม่มีร่องรอยว่าต้องส่ง = ช่องโหว่ที่หาไม่เจอทีหลัง)
+  await enqueueTaxDocument(tenantId, issued.id).catch(() => {});
+  return { status: "ISSUED", document: issued };
 }
 
 // ---------------------------------------------------------------
@@ -372,7 +378,9 @@ export async function issueFullTaxInvoice(args: {
     );
 
     await client.query("COMMIT");
-    return { status: "ISSUED", document: mapDoc(res.rows[0]), cancelledAbbreviated: cancelled };
+    const full = mapDoc(res.rows[0]);
+    await enqueueTaxDocument(tenantId, full.id).catch(() => {});
+    return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;

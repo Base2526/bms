@@ -25,6 +25,7 @@ import {
 } from "@/lib/bms/pos";
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
 import { issueFullTaxInvoice, listTaxDocumentsForOrder } from "@/lib/bms/taxDocuments";
+import { backfillEtaxQueue, getEtaxSummary, listEtaxSubmissions, processEtaxQueue } from "@/lib/bms/etax/queue";
 import {
   deleteProductPack,
   listProductPacks,
@@ -74,6 +75,16 @@ export const bmsPosResolvers = {
     async bmsProductsNeedingBarcodes(_p: unknown, args: { limit?: number | null }, ctx: any) {
       await requirePermission(ctx, "product.view");
       return listProductsNeedingBarcodes(getTenantId(ctx), args.limit ?? 200);
+    },
+
+    async bmsEtaxSummary(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "etax.view");
+      return getEtaxSummary(getTenantId(ctx));
+    },
+
+    async bmsEtaxSubmissions(_p: unknown, args: { status?: string | null; limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "etax.view");
+      return listEtaxSubmissions(getTenantId(ctx), { status: args.status ?? null, limit: args.limit ?? 100 });
     },
 
     async bmsPosCashiers(_p: unknown, _a: unknown, ctx: any) {
@@ -245,6 +256,22 @@ export const bmsPosResolvers = {
       const ok = await deleteProductPack(getTenantId(ctx), args.id);
       if (ok) await audit(ctx, "product.pack.delete", args.id);
       return ok;
+    },
+
+    /** เดินคิวด้วยมือ — ปกติ cron ทำให้ แต่ต้องกดเองได้ตอนไล่ปัญหา */
+    async bmsRunEtaxQueue(_p: unknown, args: { limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "etax.manage");
+      const result = await processEtaxQueue(getTenantId(ctx), args.limit ?? 20);
+      await audit(ctx, "etax.queue.run", null, result as any);
+      return result;
+    },
+
+    /** เอาใบกำกับที่ออกก่อนเปิด e-Tax เข้าคิวย้อนหลัง */
+    async bmsBackfillEtaxQueue(_p: unknown, args: { limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "etax.manage");
+      const n = await backfillEtaxQueue(getTenantId(ctx), args.limit ?? 500);
+      await audit(ctx, "etax.queue.backfill", null, { queued: n });
+      return n;
     },
 
     async bmsOpenPosShift(

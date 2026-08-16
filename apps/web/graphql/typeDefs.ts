@@ -675,6 +675,38 @@ export const typeDefs = /* GraphQL */ `
     sizesWithoutBarcode: [String!]!
   }
 
+  type BmsEtaxSummary {
+    enabled: Boolean!
+    pending: Int!
+    sent: Int!
+    accepted: Int!
+    rejected: Int!
+    failed: Int!
+    " ใบกำกับที่ออกแล้วแต่ยังไม่เคยเข้าคิว "
+    notQueued: Int!
+  }
+
+  type BmsEtaxSubmission {
+    id: ID!
+    documentId: ID!
+    docNo: String
+    status: String!
+    provider: String
+    providerRef: String
+    attempts: Int!
+    lastError: String
+    nextAttemptAt: String
+    sentAt: String
+    settledAt: String
+  }
+
+  type BmsEtaxRunResult {
+    processed: Int!
+    accepted: Int!
+    failed: Int!
+    rejected: Int!
+  }
+
   type BmsPosCashier {
     id: ID!
     name: String
@@ -810,6 +842,8 @@ export const typeDefs = /* GraphQL */ `
     bmsPosDevices: [BmsPosDevice!]!
     bmsProductPacks(productSku: String!): BmsProductPackList!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
+    bmsEtaxSummary: BmsEtaxSummary!
+    bmsEtaxSubmissions(status: String, limit: Int = 100): [BmsEtaxSubmission!]!
     bmsPosCashiers: [BmsPosCashier!]!
     bmsPosStaff: [BmsPosCashier!]!
     bmsPosOpenShift(deviceId: ID!): BmsPosShift
@@ -3190,6 +3224,8 @@ export const typeDefs = /* GraphQL */ `
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
     bmsDeleteProductPack(id: ID!): Boolean!
+    bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
+    bmsBackfillEtaxQueue(limit: Int = 500): Int!
     bmsSetCashierPin(userId: ID!, pin: String): Boolean!
     "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
     bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!
