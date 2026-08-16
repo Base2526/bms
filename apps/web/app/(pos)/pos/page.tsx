@@ -151,6 +151,7 @@ export default function PosPage() {
   const [lookupMode, setLookupMode] = useState(false);
   const [lookup, setLookup] = useState<ScanHit | null>(null);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
   // ใบเสร็จตัวเต็มเป็น "เอกสารสำหรับพิมพ์" ไม่ใช่ของที่ต้องอ่านบนจอ →
   // อยู่ใน modal เปิดเมื่อกดดู/พิมพ์บิลเก่าเท่านั้น
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
@@ -1427,10 +1428,17 @@ export default function PosPage() {
               </div>
             ))}
           </div>
+          {/* บิลเก่าเป็นงานส่วนน้อย — ระบบค้าปลีกทั่วไปเก็บไว้หลังปุ่ม ไม่วางใต้ตะกร้า
+              ที่ทำงานอยู่ ไม่งั้นตะกร้ายาวขึ้นแล้วบิลเก่าก็ถูกดันหายไปอยู่ดี */}
           {recentReceipts.length > 0 && (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontSize: 13, color: "#666" }}>บิลล่าสุดของเครื่องนี้</div>
+                <button
+                  onClick={() => setRecentOpen((v) => !v)}
+                  style={{ padding: "6px 12px", fontSize: 12, minHeight: 36 }}
+                >
+                  {recentOpen ? "▾" : "▸"} บิลล่าสุด ({recentReceipts.length})
+                </button>
                 <input
                   value={recentSalesQuery}
                   onChange={(e) => setRecentSalesQuery(e.target.value)}
@@ -1438,7 +1446,7 @@ export default function PosPage() {
                   style={{ padding: "8px 10px", fontSize: 13, width: 200 }}
                 />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: recentOpen ? "flex" : "none", flexDirection: "column", gap: 6 }}>
                 {recentReceipts.map((row, idx) => (
                   <div
                     key={row.orderId ?? `recent-${idx}`}

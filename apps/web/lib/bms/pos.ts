@@ -318,18 +318,22 @@ export async function resolvePosScan(
             k.unit_name,
             k.base_qty,
             k.price                                  AS pack_price,
-            COALESCE((
-              SELECT i.size FROM bms_inventory i
-               WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
-                 AND upper(i.size) = upper($3::text)
-               LIMIT 1
-            ), (
-              SELECT i.size FROM bms_inventory i
-               WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
-                 AND ($4::uuid IS NULL OR i.location_id = $4)
-               ORDER BY (i.current_stock - i.reserved_stock) DESC, i.size
-               LIMIT 1
-            ))                                       AS size
+            COALESCE(
+              -- 1. ผู้เรียกระบุไซซ์มาเอง (กดเลือกจากผลค้นหา)
+              (SELECT i.size FROM bms_inventory i
+                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                  AND upper(i.size) = upper($3::text)
+                LIMIT 1),
+              -- 2. บาร์โค้ดที่ยิงมาเป็นของหน่วยขายที่ผูกไซซ์ไว้แล้ว (7.93)
+              --    นี่คือทางปกติของระบบค้าปลีก: 1 บาร์โค้ด = 1 หน่วยขาย
+              k.size,
+              -- 3. ตกมาถึงนี่คือบาร์โค้ดเก่าที่ยังผูกกับสินค้าไม่ใช่หน่วยขาย
+              --    เลือกไซซ์แรกตามตัวอักษร — ต้องนิ่ง ห้ามขึ้นกับสต็อก ไม่งั้น
+              --    ยิงขวดเดิมวันนี้กับพรุ่งนี้ได้คนละขนาด
+              (SELECT min(i.size) FROM bms_inventory i
+                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                  AND ($4::uuid IS NULL OR i.location_id = $4))
+            )                                        AS size
        FROM bms_products p
        LEFT JOIN bms_product_packs k
          ON k.tenant_id = p.tenant_id AND k.product_sku = p.sku
@@ -964,6 +968,9 @@ async function canonicalizePosSaleLines(
           AND k.product_sku = p.sku
           AND upper(k.pack_code) = $4
           AND k.active
+          -- ผูกไซซ์ด้วย (7.93): pack ของ "10 เม็ด" กับ "100 เม็ด" คนละราคา
+          -- pack เก่าที่ size เป็น NULL ยังใช้ได้กับทุกไซซ์
+          AND (k.size IS NULL OR upper(k.size) = upper($5))
         WHERE p.tenant_id = $1
           AND p.sku = $2
           AND p.active
