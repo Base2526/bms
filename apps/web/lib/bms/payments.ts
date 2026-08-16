@@ -94,8 +94,8 @@ async function submitPaymentInternal(
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ total_amount: string; shipping_fee: string }>(
-      `SELECT total_amount, shipping_fee
+    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -180,8 +180,8 @@ export async function confirmPayment(
       return { status: "INVALID_STATE", current };
     }
 
-    const orderRes = await client.query<{ total_amount: string; shipping_fee: string }>(
-      `SELECT total_amount, shipping_fee
+    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -191,7 +191,10 @@ export async function confirmPayment(
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" };
     }
-    const expected = Number(orderRes.rows[0].total_amount) + Number(orderRes.rows[0].shipping_fee ?? 0);
+    // + ยอดปัดเศษเงินสด (7.95) — ลูกค้าจ่ายยอดที่ปัดแล้ว ไม่ใช่ยอดดิบ
+    const expected = Number(orderRes.rows[0].total_amount)
+      + Number(orderRes.rows[0].shipping_fee ?? 0)
+      + Number(orderRes.rows[0].rounding_amount ?? 0);
     const actual = Number(pay.rows[0].amount);
     if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
       await client.query("ROLLBACK");
@@ -261,8 +264,8 @@ export async function submitPartialPayment(input: {
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ total_amount: string; shipping_fee: string }>(
-      `SELECT total_amount, shipping_fee FROM bms_orders
+    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, orderId]
     );
@@ -270,7 +273,9 @@ export async function submitPartialPayment(input: {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
-    const due = Number(ord.rows[0].total_amount) + Number(ord.rows[0].shipping_fee ?? 0);
+    const due = Number(ord.rows[0].total_amount)
+      + Number(ord.rows[0].shipping_fee ?? 0)
+      + Number(ord.rows[0].rounding_amount ?? 0);
 
     const taken = await client.query<{ total: string }>(
       `SELECT COALESCE(SUM(amount), 0) AS total FROM bms_payments
@@ -324,8 +329,8 @@ export async function confirmPaymentsForOrder(
   try {
     await beginTenantTx(client, tenantId);
 
-    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; status: string }>(
-      `SELECT total_amount, shipping_fee, status FROM bms_orders
+    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount, status FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, orderId]
     );
@@ -351,7 +356,9 @@ export async function confirmPaymentsForOrder(
       return { status: "INVALID_STATE", current };
     }
 
-    const expected = Number(orderRes.rows[0].total_amount) + Number(orderRes.rows[0].shipping_fee ?? 0);
+    const expected = Number(orderRes.rows[0].total_amount)
+      + Number(orderRes.rows[0].shipping_fee ?? 0)
+      + Number(orderRes.rows[0].rounding_amount ?? 0);
     const actual = pays.rows.reduce((sum, p) => sum + Number(p.amount), 0);
     if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
       await client.query("ROLLBACK");

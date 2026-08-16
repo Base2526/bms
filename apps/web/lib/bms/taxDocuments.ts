@@ -134,15 +134,31 @@ function buildDocNo(prefix: string | null, date: Date, seq: number, era: "BE" | 
 // อ่านค่าตั้งภาษี + บรรทัดของบิล
 // ---------------------------------------------------------------
 
+export type CashRounding = "NONE" | "0.25" | "0.50" | "1.00";
+
 export type TenantVatSettings = VatSettings & {
   calendarEra: "BE" | "CE";
   abbreviatedApproved: boolean;
+  cashRounding: CashRounding;
 };
+
+/**
+ * ปัดยอดรับเงินสดให้ลงตัว — คืน "ส่วนต่าง" ที่ต้องบันทึกเป็นยอดปัดเศษ
+ * ปัดขึ้น/ลงเข้าหาค่าที่ใกล้ที่สุด เศษครึ่งพอดีปัดขึ้น (เข้าทางร้าน แบบที่ใช้กันจริง)
+ * ยอดปัดไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT — เป็นบรรทัดของตัวเองบนใบเสร็จ
+ */
+export function cashRoundingDelta(amount: number, mode: CashRounding): number {
+  if (mode === "NONE") return 0;
+  const step = Number(mode);
+  if (!Number.isFinite(step) || step <= 0) return 0;
+  const rounded = Math.round((amount / step) + Number.EPSILON) * step;
+  return Math.round((rounded - amount) * 100) / 100;
+}
 
 export async function getVatSettings(tenantId: string): Promise<TenantVatSettings> {
   const res = await query<any>(
     `SELECT vat_registered, price_includes_vat, vat_rate, vat_rounding, calendar_era,
-            abbreviated_tax_invoice_approved
+            abbreviated_tax_invoice_approved, cash_rounding
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -154,18 +170,29 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
     vatRounding: (r?.vat_rounding ?? "BASE_FIRST") as VatRounding,
     calendarEra: (r?.calendar_era ?? "BE") as "BE" | "CE",
     abbreviatedApproved: r?.abbreviated_tax_invoice_approved ?? false,
+    cashRounding: (r?.cash_rounding ?? "NONE") as CashRounding,
   };
 }
 
 type OrderLineForVat = { sku: string; amount: number; vatCategory: VatCategory };
 
 /** ส่วนลดทั้งบิล — ต้องนำไปลดฐานภาษีตามสัดส่วน ไม่งั้นใบกำกับยอดเกินเงินที่รับ */
-async function loadOrderDiscountInTx(client: PoolClient, tenantId: string, orderId: string): Promise<number> {
-  const res = await client.query<{ discount_amount: string }>(
-    `SELECT discount_amount FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+async function loadOrderAdjustmentsInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string
+): Promise<{ discount: number; shipping: number; rounding: number }> {
+  const res = await client.query<{ discount_amount: string; shipping_fee: string; rounding_amount: string }>(
+    `SELECT discount_amount, shipping_fee, rounding_amount
+       FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
     [tenantId, orderId]
   );
-  return Number(res.rows[0]?.discount_amount ?? 0);
+  const r = res.rows[0];
+  return {
+    discount: Number(r?.discount_amount ?? 0),
+    shipping: Number(r?.shipping_fee ?? 0),
+    rounding: Number(r?.rounding_amount ?? 0),
+  };
 }
 
 async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId: string): Promise<OrderLineForVat[]> {
@@ -195,8 +222,13 @@ export async function applyOrderVatInTx(
   roundingAmount = 0
 ) {
   const lines = await loadOrderLinesInTx(client, tenantId, orderId);
-  const discountAmount = await loadOrderDiscountInTx(client, tenantId, orderId);
-  const breakdown = computeVat(lines, settings, { roundingAmount, discountAmount });
+  const adj = await loadOrderAdjustmentsInTx(client, tenantId, orderId);
+  // ยอดปัดเศษที่บันทึกไว้กับบิลแล้วมีน้ำหนักกว่าค่าที่ผู้เรียกส่งมา
+  const breakdown = computeVat(lines, settings, {
+    roundingAmount: adj.rounding || roundingAmount,
+    discountAmount: adj.discount,
+    shippingAmount: adj.shipping,
+  });
   await client.query(
     `UPDATE bms_orders
         SET taxable_amount = $3, exempt_amount = $4, vat_amount = $5,
@@ -392,6 +424,164 @@ export async function issueFullTaxInvoice(args: {
     await enqueueTaxDocument(tenantId, full.id, client);
     await client.query("COMMIT");
     return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ---------------------------------------------------------------
+// ใบลดหนี้ (7.95)
+// ---------------------------------------------------------------
+
+export type CreditNoteResult =
+  | { status: "ISSUED"; document: TaxDocument }
+  | { status: "ALREADY_ISSUED"; document: TaxDocument }
+  | { status: "NO_ORIGINAL_DOCUMENT" }
+  | { status: "NOT_VAT_REGISTERED" }
+  | { status: "BAD_AMOUNT"; reason: string };
+
+/**
+ * ออกใบลดหนี้เมื่อรับคืนสินค้า
+ *
+ * ใบกำกับเดิม **ไม่ถูกยกเลิก** — ของถูกขายไปจริงแล้ว ใบลดหนี้มาลดยอดทีหลัง
+ * จึงใช้ references_document_id ไม่ใช่ replaces_document_id (ดูเหตุผลใน 7.95)
+ *
+ * เลขใบลดหนี้รันคนละชุดกับใบกำกับ ตามที่กฎหมายแยกประเภทเอกสาร
+ */
+export async function issueCreditNote(args: {
+  tenantId: string;
+  orderId: string;
+  /** ยอดที่คืนให้ลูกค้า (บวกเสมอ — ประเภทเอกสารบอกเองว่าเป็นการลด) */
+  amount: number;
+  reason: string;
+  issuedBy?: string | null;
+  /** คืนของหลายครั้งต่อบิลได้ → ใช้แยกว่าเป็นการคืนครั้งไหน */
+  returnRef?: string | null;
+  /**
+   * รายการที่คืนจริง (orderItemId + ยอด) — ถ้าให้มา จะแยก VAT จากของที่คืนจริง
+   * ไม่ให้มา = แบ่งตามสัดส่วนของบิลเดิม ซึ่งผิดเมื่อคืนเฉพาะของยกเว้น VAT
+   */
+  returnedItems?: Array<{ orderItemId: number; refundAmount: number }>;
+}): Promise<CreditNoteResult> {
+  const { tenantId, orderId } = args;
+  const amount = Math.round((Number(args.amount) + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { status: "BAD_AMOUNT", reason: "ยอดลดหนี้ต้องมากกว่า 0" };
+  }
+
+  const settings = await getVatSettings(tenantId);
+  if (!settings.vatRegistered) return { status: "NOT_VAT_REGISTERED" };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: args.issuedBy ?? null });
+
+    // ใบกำกับที่ยังมีผลของบิลนี้ — ใบเต็มมาก่อนใบย่อถ้ามีทั้งคู่
+    const orig = await client.query<any>(
+      `SELECT * FROM bms_tax_documents
+        WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL
+          AND doc_type IN ('FULL', 'ABBREVIATED')
+        ORDER BY (doc_type = 'FULL') DESC, issued_at DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [tenantId, orderId]
+    );
+    if (!orig.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "NO_ORIGINAL_DOCUMENT" };
+    }
+    const original = mapDoc(orig.rows[0]);
+
+    if (amount - original.grandTotal > 0.01) {
+      await client.query("ROLLBACK");
+      return {
+        status: "BAD_AMOUNT",
+        reason: `ยอดลดหนี้ ${amount} เกินยอดใบกำกับเดิม ${original.grandTotal}`,
+      };
+    }
+
+    // คืนซ้ำด้วยเหตุเดียวกันต้องไม่ออกใบซ้ำ
+    const dupe = await client.query(
+      `SELECT * FROM bms_tax_documents
+        WHERE tenant_id = $1 AND order_id = $2 AND doc_type = 'CREDIT_NOTE'
+          AND cancelled_at IS NULL
+          AND credit_reason IS NOT DISTINCT FROM $3
+          AND grand_total = $4`,
+      [tenantId, orderId, args.returnRef ? `${args.reason} [${args.returnRef}]` : args.reason, amount]
+    );
+    if (dupe.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "ALREADY_ISSUED", document: mapDoc(dupe.rows[0]) };
+    }
+
+    // แยก VAT ของยอดที่คืน
+    //
+    // ถ้ารู้ว่าคืนรายการไหน ให้แยกจากของที่คืนจริง — คืนเฉพาะข้าวสาร (ยกเว้น VAT)
+    // ต้องไม่ไปลด VAT ที่เคยแจ้งไว้ การเฉลี่ยตามสัดส่วนบิลจะลดผิด
+    // ไม่รู้รายการ (เช่น คืนทั้งบิล) จึงค่อยเฉลี่ยตามสัดส่วน
+    let taxable: number;
+    let exempt: number;
+    let vat: number;
+
+    const itemIds = (args.returnedItems ?? []).map((i) => i.orderItemId);
+    const byLine = itemIds.length > 0
+      ? await client.query<{ id: number; vat_category: string }>(
+          `SELECT id, vat_category FROM bms_order_items
+            WHERE tenant_id = $1 AND order_id = $2 AND id = ANY($3::bigint[])`,
+          [tenantId, orderId, itemIds]
+        )
+      : null;
+
+    if (byLine && byLine.rowCount === itemIds.length) {
+      const catById = new Map(byLine.rows.map((r) => [Number(r.id), r.vat_category]));
+      let taxableGross = 0;
+      for (const it of args.returnedItems ?? []) {
+        if (catById.get(it.orderItemId) !== "N") taxableGross += Number(it.refundAmount);
+      }
+      taxable = Math.round(taxableGross * 100) / 100;
+      exempt = Math.round((amount - taxable) * 100) / 100;
+      const rate = Number(original.vatRate);
+      vat = rate > 0 ? Math.round(((taxable * rate) / (100 + rate)) * 100) / 100 : 0;
+    } else {
+      const share = original.grandTotal > 0 ? amount / original.grandTotal : 0;
+      taxable = Math.round(original.taxableAmount * share * 100) / 100;
+      exempt = Math.round((amount - taxable) * 100) / 100;
+      vat = Math.round(original.vatAmount * share * 100) / 100;
+    }
+
+    const now = new Date();
+    const seq = await nextSequenceInTx(client, {
+      tenantId,
+      locationId: original.locationId,
+      deviceId: null,
+      docType: "CREDIT_NOTE",
+      periodKey: String(now.getFullYear()),
+    });
+    const docNo = buildDocNo("CN", now, seq, settings.calendarEra);
+
+    const res = await client.query(
+      `INSERT INTO bms_tax_documents
+         (tenant_id, location_id, order_id, doc_type, doc_no, references_document_id,
+          credit_reason, original_total,
+          buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+          taxable_amount, exempt_amount, vat_amount, grand_total, vat_rate, issued_by)
+       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       RETURNING *`,
+      [tenantId, original.locationId, orderId, docNo, original.id,
+        args.returnRef ? `${args.reason} [${args.returnRef}]` : args.reason,
+        original.grandTotal,
+        original.buyerName, original.buyerTaxId, original.buyerBranchCode,
+        original.buyerAddress, original.buyerPhone,
+        taxable, exempt, vat, amount, original.vatRate, args.issuedBy ?? null]
+    );
+
+    const note = mapDoc(res.rows[0]);
+    await enqueueTaxDocument(tenantId, note.id, client);
+    await client.query("COMMIT");
+    return { status: "ISSUED", document: note };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;

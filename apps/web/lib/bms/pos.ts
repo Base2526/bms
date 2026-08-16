@@ -25,7 +25,13 @@ import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
-import { getVatSettings, issueAbbreviatedInvoiceInTx, type TenantVatSettings } from "./taxDocuments";
+import {
+  cashRoundingDelta,
+  getVatSettings,
+  issueAbbreviatedInvoiceInTx,
+  issueCreditNote,
+  type TenantVatSettings,
+} from "./taxDocuments";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 
@@ -1241,7 +1247,21 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   if (created.status !== "CREATED") return created as PosSaleResult;
 
   const orderId = created.orderId;
-  const amountDue = created.amountDue;
+  let amountDue = created.amountDue;
+
+  // ปัดเศษเงินสด (7.95) — เฉพาะบิลที่จ่ายสดล้วน เพราะบัตร/QR รับเต็มจำนวนได้อยู่แล้ว
+  // ยอดปัดเก็บแยกบนบิล ไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT (ตรงกับบรรทัด
+  // "ยอดเงินปัดเศษ" บนใบกำกับจริงที่ใช้อ้างอิง)
+  const roundingSettings = await getVatSettings(tenantId);
+  const cashOnly = input.payments.length > 0 && input.payments.every((p) => p.method === "CASH");
+  if (cashOnly && roundingSettings.cashRounding !== "NONE") {
+    const delta = cashRoundingDelta(amountDue, roundingSettings.cashRounding);
+    if (delta !== 0) {
+      await query(`UPDATE bms_orders SET rounding_amount = $2, updated_at = now() WHERE tenant_id = $1 AND id = $3`,
+        [tenantId, delta, orderId]);
+      amountDue = Math.round((amountDue + delta) * 100) / 100;
+    }
+  }
   const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
   if (Math.abs(paid - amountDue) > 0.01) {
     await cancelOrder(tenantId, orderId);
@@ -1668,6 +1688,8 @@ export type PosRefundAllocation = {
 export type PosPartialReturnResult =
   | {
       status: "PARTIAL_RETURNED";
+      /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
+      creditNoteNo?: string | null;
       posReturnId: string;
       orderId: string;
       refundAmount: number;
@@ -2147,6 +2169,33 @@ async function processPosReturn(input: {
     );
 
     await client.query("COMMIT");
+
+    // ใบลดหนี้ (7.95) — รับคืนสินค้าแล้วต้องออกเอกสารลดยอด ไม่ใช่ลบบิลทิ้ง
+    // ออกนอกทรานแซกชันการคืนโดยตั้งใจ: ของคืนเข้าคลังและเงินคืนไปแล้ว
+    // การออกเอกสารล้มต้องไม่ย้อนสิ่งที่เกิดขึ้นจริงหน้าเคาน์เตอร์
+    // ร้านที่ไม่ได้จด VAT จะได้ NOT_VAT_REGISTERED แล้วข้ามไปเอง
+    let creditNoteNo: string | null = null;
+    try {
+      const note = await issueCreditNote({
+        tenantId: input.tenantId,
+        orderId: input.orderId,
+        amount: roundedRefundAmount,
+        reason: input.mode === "FULL" ? "รับคืนสินค้าทั้งบิล" : "รับคืนสินค้าบางรายการ",
+        issuedBy: input.actorUserId,
+        returnRef: posReturnId,
+        // ส่งรายการที่คืนจริงไปด้วย — คืนเฉพาะของยกเว้น VAT ต้องไม่ลด VAT
+        returnedItems: returnedItems.map((i) => ({
+          orderItemId: i.orderItemId,
+          refundAmount: i.refundAmount,
+        })),
+      });
+      if (note.status === "ISSUED" || note.status === "ALREADY_ISSUED") {
+        creditNoteNo = note.document.docNo;
+      }
+    } catch (e) {
+      console.error("[POS] ออกใบลดหนี้ไม่สำเร็จ", input.orderId, e);
+    }
+
     return {
       status: "PARTIAL_RETURNED",
       posReturnId,
@@ -2155,6 +2204,7 @@ async function processPosReturn(input: {
       returnedItems,
       settlementStatus,
       refunds,
+      creditNoteNo,
       replayed: false,
     };
   } catch (err) {

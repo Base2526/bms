@@ -36,6 +36,8 @@ export type VatBreakdown = {
   grandTotal: number;
   /** ส่วนลดทั้งบิลที่ถูกกระจายลงฐานภาษีแล้ว */
   discountAmount: number;
+  /** ค่าส่งที่รวมอยู่ในฐานภาษีแล้ว */
+  shippingAmount: number;
   roundingAmount: number;
   vatRate: number;
 };
@@ -92,11 +94,14 @@ function splitGross(gross: number, rate: number, mode: VatRounding): { base: num
 export function computeVat(
   lines: VatLine[],
   settings: VatSettings,
-  opts: { roundingAmount?: number; discountAmount?: number } = {}
+  opts: { roundingAmount?: number; discountAmount?: number; shippingAmount?: number } = {}
 ): VatBreakdown {
   const rate = settings.vatRegistered ? Number(settings.vatRate) : 0;
   const rounding = round2(opts.roundingAmount ?? 0);
   const discount = Math.max(0, round2(opts.discountAmount ?? 0));
+  // ค่าส่งที่เก็บจากลูกค้าเป็นค่าบริการ → อยู่ในฐานภาษีของผู้ประกอบการที่จด VAT
+  // (POS ไม่มีค่าส่ง ค่านี้จึงเป็น 0 เสมอ — มีไว้ให้ใบกำกับของออเดอร์ออนไลน์)
+  const shipping = Math.max(0, round2(opts.shippingAmount ?? 0));
 
   let taxableGross = 0;
   let exempt = 0;
@@ -109,6 +114,11 @@ export function computeVat(
   // ราคายังไม่รวม VAT → บวกเข้าไปก่อน แล้วจากนั้นคิดแบบเดียวกันทั้งสองแบบ
   if (settings.vatRegistered && !settings.priceIncludesVat) {
     taxableGross = round2(taxableGross * (1 + rate / 100));
+  }
+  // ค่าส่งบวกเข้าฝั่งเสียภาษี ก่อนกระจายส่วนลด — ส่วนลดทั้งบิลลดค่าส่งด้วย
+  if (shipping > 0) {
+    if (settings.vatRegistered) taxableGross += shipping;
+    else exempt += shipping;
   }
   taxableGross = round2(taxableGross);
   exempt = round2(exempt);
@@ -144,6 +154,7 @@ export function computeVat(
     grandTotal,
     roundingAmount: rounding,
     discountAmount: discount,
+    shippingAmount: shipping,
     vatRate: rate,
   };
 }
