@@ -45,8 +45,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_bms_product_packs_barcode
   ON bms_product_packs (tenant_id, barcode) WHERE barcode IS NOT NULL;
 
 -- หน่วยฐานต้องมีตัวเดียวต่อสินค้า
-CREATE UNIQUE INDEX IF NOT EXISTS uq_bms_product_packs_base
-  ON bms_product_packs (tenant_id, product_sku) WHERE is_base;
+--
+-- ⚠️ 7.93 เปลี่ยนกฎนี้เป็น "ตัวเดียวต่อ (สินค้า, ไซซ์)" แล้ว เพราะหน่วยขายผูก
+-- กับไซซ์ · ถ้า 7.93 รันไปแล้ว การรัน 7.86 ซ้ำจะสร้าง index เก่ากลับมาไม่ได้
+-- (สินค้าหนึ่งตัวมีหน่วยฐานหลายแถวตามจำนวนไซซ์) → ข้ามไปเมื่อเห็นว่า 7.93 มาแล้ว
+--
+-- repo นี้ apply migration ด้วยมือตามเลข การรันไฟล์เก่าซ้ำจึงเกิดขึ้นได้จริง
+-- ไฟล์เก่าต้องไม่สร้างของที่ไฟล์ใหม่กว่าถอดออกไปแล้ว
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'bms_product_packs'
+       AND column_name = 'size'
+  ) THEN
+    RAISE NOTICE '7.93 applied already — skipping uq_bms_product_packs_base (superseded by the per-size indexes)';
+  ELSE
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_bms_product_packs_base
+      ON bms_product_packs (tenant_id, product_sku) WHERE is_base;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_bms_product_packs_sku
   ON bms_product_packs (tenant_id, product_sku) WHERE active;
