@@ -617,12 +617,30 @@ export const typeDefs = /* GraphQL */ `
     token: String!
   }
 
+  type BmsPosOperationalReadiness {
+    ready: Boolean!
+    blockers: [String!]!
+    warnings: [String!]!
+    activeLocations: Int!
+    activeDevices: Int!
+    pairedDevices: Int!
+    cashiersWithPin: Int!
+    cashiersReady: Int!
+    sellableProducts: Int!
+    stockedVariants: Int!
+    openShifts: Int!
+    pendingRefundCount: Int!
+    pendingRefundAmount: Float!
+  }
+
   type BmsPosCashier {
     id: ID!
     name: String
     email: String
+    role: String
     isPharmacist: Boolean!
     hasPin: Boolean!
+    posOnly: Boolean!
   }
 
   type BmsPosShift {
@@ -649,6 +667,8 @@ export const typeDefs = /* GraphQL */ `
   type BmsCloseShiftResult {
     status: String!
     shift: BmsPosShift
+    count: Int
+    amount: Float
   }
 
   type BmsInventoryLot {
@@ -747,7 +767,9 @@ export const typeDefs = /* GraphQL */ `
     bmsLocations: [BmsLocation!]!
     bmsPosDevices: [BmsPosDevice!]!
     bmsPosCashiers: [BmsPosCashier!]!
+    bmsPosStaff: [BmsPosCashier!]!
     bmsPosOpenShift(deviceId: ID!): BmsPosShift
+    bmsPosOperationalReadiness: BmsPosOperationalReadiness!
     bmsInventoryLots(productSku: String, size: String, locationId: ID): [BmsInventoryLot!]!
     bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
     bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
@@ -3123,6 +3145,8 @@ export const typeDefs = /* GraphQL */ `
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsSetCashierPin(userId: ID!, pin: String): Boolean!
+    "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
+    bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!
     bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
     bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login

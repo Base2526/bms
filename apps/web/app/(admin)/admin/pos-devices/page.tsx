@@ -19,7 +19,7 @@ const Q = gql`
   query PosSetup {
     bmsLocations { id name branchCode isHeadOffice }
     bmsPosDevices { id locationId code name registeredPosNo receiptPrefix active }
-    bmsPosCashiers { id name email isPharmacist hasPin }
+    bmsPosStaff { id name email role isPharmacist hasPin posOnly }
   }
 `;
 const M_UPSERT = gql`
@@ -33,6 +33,9 @@ const M_TOKEN = gql`
 const M_PIN = gql`
   mutation($userId: ID!, $pin: String) { bmsSetCashierPin(userId: $userId, pin: $pin) }
 `;
+const M_MODE = gql`
+  mutation($userId: ID!, $posOnly: Boolean!) { bmsSetCashierAccountMode(userId: $userId, posOnly: $posOnly) }
+`;
 
 type Device = {
   id: string; locationId: string; code: string; name: string | null;
@@ -43,9 +46,10 @@ export default function PosDevicesPage() {
   const { can, loading: permsLoading } = useBmsPermissions();
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
+  const canStaff = can("pos.staff.manage");
   const { data, loading, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
-    skip: !canDevices && !canPins,
+    skip: !canDevices && !canPins && !canStaff,
   });
 
   const [deviceForm] = Form.useForm();
@@ -58,14 +62,15 @@ export default function PosDevicesPage() {
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
   const [issueToken, { loading: issuing }] = useMutation(M_TOKEN);
   const [setPin, { loading: pinSaving }] = useMutation(M_PIN);
+  const [setMode] = useMutation(M_MODE);
 
-  if (!permsLoading && !canDevices && !canPins) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage หรือ pos.pin.manage)" />;
+  if (!permsLoading && !canDevices && !canPins && !canStaff) {
+    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage, pos.pin.manage หรือ pos.staff.manage)" />;
   }
 
   const locations = data?.bmsLocations ?? [];
   const devices: Device[] = data?.bmsPosDevices ?? [];
-  const cashiers = data?.bmsPosCashiers ?? [];
+  const cashiers = data?.bmsPosStaff ?? [];
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
   // ลิงก์จับคู่: หน้าขายอ่าน ?t= แล้วเก็บลง localStorage และลบ query ออกจาก URL ทันที
   const pairUrl = issuedToken
@@ -93,6 +98,16 @@ export default function PosDevicesPage() {
       setIssuedToken(res.data?.bmsIssuePosDeviceToken?.token ?? null);
     } catch (e: any) {
       message.error(e?.message ?? "ออก token ไม่สำเร็จ");
+    }
+  }
+
+  async function toggleMode(userId: string, posOnly: boolean) {
+    try {
+      await setMode({ variables: { userId, posOnly } });
+      message.success(posOnly ? "ปิดทางเข้าหลังบ้านแล้ว" : "เปิดทางเข้าหลังบ้านแล้ว");
+      await refetch();
+    } catch (e: any) {
+      message.error(e?.message ?? "ตั้งค่าไม่สำเร็จ");
     }
   }
 
@@ -203,7 +218,14 @@ export default function PosDevicesPage() {
             showIcon
             style={{ marginBottom: 12 }}
             message="พนักงานที่ยังไม่ตั้ง PIN จะเลือกไม่ได้ที่จอขาย"
-            description="PIN ใช้ยืนยันตัวตนที่หน้าร้านเท่านั้น เข้าระบบหลังบ้านด้วย PIN ไม่ได้ · ใส่ผิด 5 ครั้งจะถูกล็อก 15 นาที"
+            description={
+              <>
+                PIN ใช้ยืนยันตัวตนที่หน้าร้านเท่านั้น เข้าระบบหลังบ้านด้วย PIN ไม่ได้ · ใส่ผิด 5 ครั้งจะถูกล็อก 15 นาที
+                <br />
+                <b>เฉพาะหน้าร้าน</b> = ปิดทางเข้า <code>/admin</code> ของบัญชีนั้นทั้งหมด ต่อให้รู้รหัสผ่านตัวเองก็เข้าไม่ได้ —
+                ใช้กับคนที่มีหน้าที่คิดเงินอย่างเดียว · ให้ role <b>Cashier</b> ด้วยเพื่อไม่ให้เห็นสต็อก/ต้นทุน/รายงาน
+              </>
+            }
           />
           <Table
             size="small"
@@ -221,10 +243,35 @@ export default function PosDevicesPage() {
                 ),
               },
               {
+                title: "role",
+                dataIndex: "role",
+                width: 130,
+                render: (v: string | null) => <Tag color={v === "Cashier" ? "gold" : "default"}>{v ?? "—"}</Tag>,
+              },
+              {
                 title: "PIN",
                 dataIndex: "hasPin",
-                width: 140,
+                width: 110,
                 render: (v: boolean) => (v ? <Tag color="green">ตั้งแล้ว</Tag> : <Tag color="red">ยังไม่ตั้ง</Tag>),
+              },
+              {
+                title: "เฉพาะหน้าร้าน",
+                dataIndex: "posOnly",
+                width: 150,
+                render: (v: boolean, c: any) =>
+                  canStaff ? (
+                    <Switch
+                      checked={v}
+                      disabled={c.role === "Administrator"}
+                      onChange={(checked) => void toggleMode(c.id, checked)}
+                      checkedChildren="ปิด /admin"
+                      unCheckedChildren="เข้าได้"
+                    />
+                  ) : v ? (
+                    <Tag color="green">ปิด /admin</Tag>
+                  ) : (
+                    <Tag>เข้าได้</Tag>
+                  ),
               },
               {
                 title: "",

@@ -13,10 +13,13 @@ import {
   clearCashierPin,
   closePosShift,
   getOpenPosShift,
+  getPosOperationalReadiness,
   issuePosDeviceToken,
   listPosCashiers,
+  listTenantStaff,
   listPosDevices,
   openPosShift,
+  setCashierAccountMode,
   setCashierPin,
   upsertPosDevice,
 } from "@/lib/bms/pos";
@@ -42,6 +45,12 @@ export const bmsPosResolvers = {
     },
 
     /** พนักงานในร้าน + สถานะ PIN — ใช้ในหน้าตั้งค่า POS ฝั่งแอดมิน */
+    /** พนักงานทุกคนในร้าน — สำหรับหน้าจัดการ ไม่ใช่ dropdown ที่เคาน์เตอร์ */
+    async bmsPosStaff(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "pos.staff.manage");
+      return listTenantStaff(getTenantId(ctx));
+    },
+
     async bmsPosCashiers(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pos.pin.manage");
       return listPosCashiers(getTenantId(ctx));
@@ -50,6 +59,11 @@ export const bmsPosResolvers = {
     async bmsPosOpenShift(_p: unknown, args: { deviceId: string }, ctx: any) {
       await requirePermission(ctx, "pos.sell");
       return getOpenPosShift(getTenantId(ctx), args.deviceId);
+    },
+
+    async bmsPosOperationalReadiness(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "pos.device.manage");
+      return getPosOperationalReadiness(getTenantId(ctx));
     },
 
     async bmsInventoryLots(
@@ -171,6 +185,20 @@ export const bmsPosResolvers = {
         throw new GraphQLError(e?.message || "ตั้ง PIN ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
       await audit(ctx, args.pin ? "pos.pin.set" : "pos.pin.clear", args.userId);
+      return true;
+    },
+
+    /** เปิด/ปิดทางเข้าหลังบ้านของบัญชีพนักงานหน้าร้าน (7.92) */
+    async bmsSetCashierAccountMode(_p: unknown, args: { userId: ID_; posOnly: boolean }, ctx: any) {
+      await requirePermission(ctx, "pos.staff.manage");
+      try {
+        await setCashierAccountMode(
+          getTenantId(ctx), args.userId, args.posOnly, String(requireAuth(ctx).author_id)
+        );
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "ตั้งค่าบัญชีไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      await audit(ctx, args.posOnly ? "pos.staff.pos_only_on" : "pos.staff.pos_only_off", args.userId);
       return true;
     },
 

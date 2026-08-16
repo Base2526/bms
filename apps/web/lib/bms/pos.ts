@@ -22,10 +22,12 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
-import { confirmPaymentsForOrder, rejectPayment, submitPartialPayment, type PaymentMethod } from "./payments";
-import { recordOrderMovements } from "./movements";
+import { type PaymentMethod } from "./payments";
+import { recordMovement, recordOrderMovements } from "./movements";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import { getVatSettings, issueAbbreviatedInvoiceInTx, type TenantVatSettings } from "./taxDocuments";
+import { redeemCustomerCouponForOrderInTx } from "./coupons";
+import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 
 export const POS_CHANNEL = "pos" as const;
 
@@ -82,7 +84,10 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
   );
   const r = res.rows[0];
   if (!r) return null;
-  void query(`UPDATE bms_pos_devices SET last_seen_at = now() WHERE id = $1`, [r.id]).catch(() => {});
+  void query(
+    `UPDATE bms_pos_devices SET last_seen_at = now() WHERE tenant_id = $1 AND id = $2`,
+    [r.tenant_id, r.id]
+  ).catch(() => {});
   return {
     id: r.id,
     tenantId: r.tenant_id,
@@ -111,6 +116,113 @@ export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
     receiptPrefix: r.receipt_prefix ?? null,
     active: r.active,
   }));
+}
+
+export type PosOperationalReadiness = {
+  ready: boolean;
+  blockers: string[];
+  warnings: string[];
+  activeLocations: number;
+  activeDevices: number;
+  pairedDevices: number;
+  cashiersWithPin: number;
+  cashiersReady: number;
+  sellableProducts: number;
+  stockedVariants: number;
+  openShifts: number;
+  pendingRefundCount: number;
+  pendingRefundAmount: number;
+};
+
+/** ข้อเท็จจริงที่ตรวจจากฐานข้อมูลได้ก่อนเปิดเคาน์เตอร์ — ไม่แทน rehearsal/hardware checklist */
+export async function getPosOperationalReadiness(tenantId: string): Promise<PosOperationalReadiness> {
+  const [core, products, cashiers, refunds, vat] = await Promise.all([
+    query<any>(
+      `SELECT
+         (SELECT COUNT(*) FROM bms_locations WHERE tenant_id = $1 AND active) AS active_locations,
+         (SELECT COUNT(*) FROM bms_pos_devices WHERE tenant_id = $1 AND active) AS active_devices,
+         (SELECT COUNT(*) FROM bms_pos_devices WHERE tenant_id = $1 AND active AND token_hash IS NOT NULL) AS paired_devices,
+         (SELECT COUNT(*) FROM bms_pos_shifts WHERE tenant_id = $1 AND status = 'OPEN') AS open_shifts`
+      , [tenantId]
+    ),
+    query<any>(
+      `SELECT
+         (SELECT COUNT(*) FROM bms_products WHERE tenant_id = $1 AND active) AS sellable_products,
+         (SELECT COUNT(*)
+            FROM bms_inventory i
+           WHERE i.tenant_id = $1
+             AND i.current_stock - i.reserved_stock > 0
+             AND EXISTS (
+               SELECT 1 FROM bms_pos_devices d
+                WHERE d.tenant_id = i.tenant_id AND d.location_id = i.location_id AND d.active
+             )) AS stocked_variants,
+         (SELECT COUNT(*) FROM bms_products
+           WHERE tenant_id = $1 AND active AND vat_category = 'UNKNOWN') AS unknown_vat_products`
+      , [tenantId]
+    ),
+    query<any>(
+      `SELECT
+         COUNT(*) FILTER (WHERE u.pos_pin_hash IS NOT NULL) AS cashiers_with_pin,
+         COUNT(*) FILTER (
+           WHERE u.pos_pin_hash IS NOT NULL
+             AND (r.name = 'Administrator' OR EXISTS (
+               SELECT 1 FROM bms_role_permissions rp
+                WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = 'pos.sell'
+             ))
+         ) AS cashiers_ready
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1`,
+      [tenantId]
+    ),
+    query<any>(
+      `SELECT COUNT(*) AS pending_count, COALESCE(SUM(amount), 0) AS pending_amount
+         FROM bms_pos_refund_allocations
+        WHERE tenant_id = $1 AND status = 'PENDING'`,
+      [tenantId]
+    ),
+    getVatSettings(tenantId),
+  ]);
+  const row = core.rows[0] ?? {};
+  const productRow = products.rows[0] ?? {};
+  const cashierRow = cashiers.rows[0] ?? {};
+  const refundRow = refunds.rows[0] ?? {};
+  const result: PosOperationalReadiness = {
+    ready: false,
+    blockers: [],
+    warnings: [],
+    activeLocations: Number(row.active_locations ?? 0),
+    activeDevices: Number(row.active_devices ?? 0),
+    pairedDevices: Number(row.paired_devices ?? 0),
+    cashiersWithPin: Number(cashierRow.cashiers_with_pin ?? 0),
+    cashiersReady: Number(cashierRow.cashiers_ready ?? 0),
+    sellableProducts: Number(productRow.sellable_products ?? 0),
+    stockedVariants: Number(productRow.stocked_variants ?? 0),
+    openShifts: Number(row.open_shifts ?? 0),
+    pendingRefundCount: Number(refundRow.pending_count ?? 0),
+    pendingRefundAmount: Number(refundRow.pending_amount ?? 0),
+  };
+  if (result.activeLocations === 0) result.blockers.push("ยังไม่มีสาขาที่เปิดใช้งาน");
+  if (result.activeDevices === 0) result.blockers.push("ยังไม่มีเครื่อง POS ที่เปิดใช้งาน");
+  if (result.pairedDevices === 0) result.blockers.push("ยังไม่มีเครื่อง POS ที่ออก token และจับคู่แล้ว");
+  if (result.cashiersReady === 0) result.blockers.push("ยังไม่มีพนักงานที่มี PIN และสิทธิ์ pos.sell");
+  if (result.sellableProducts === 0) result.blockers.push("ยังไม่มีสินค้าที่เปิดขาย");
+  if (result.stockedVariants === 0) result.blockers.push("ยังไม่มีสต็อกพร้อมขายในสาขาที่ผูกเครื่อง POS");
+  if (result.pendingRefundCount > 0) {
+    result.blockers.push(`มีรายการคืนเงินจริงค้าง ${result.pendingRefundCount} รายการ รวม ${result.pendingRefundAmount.toFixed(2)} บาท`);
+  }
+  if (vat.vatRegistered && Number(productRow.unknown_vat_products ?? 0) > 0) {
+    result.blockers.push(`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${Number(productRow.unknown_vat_products)} รายการ`);
+  }
+  if (result.pairedDevices < result.activeDevices) {
+    result.warnings.push(`มีเครื่องที่เปิดใช้งานแต่ยังไม่จับคู่ ${result.activeDevices - result.pairedDevices} เครื่อง`);
+  }
+  if (result.openShifts > 0) result.warnings.push(`มีกะเปิดค้างอยู่ ${result.openShifts} กะ`);
+  if (vat.vatRegistered && !vat.abbreviatedApproved) {
+    result.warnings.push("ร้านจด VAT แต่ยังไม่ได้บันทึกการอนุมัติใช้ใบกำกับภาษีอย่างย่อ");
+  }
+  result.ready = result.blockers.length === 0;
+  return result;
 }
 
 export async function upsertPosDevice(
@@ -180,7 +292,7 @@ export type PosScanHit = {
 export async function resolvePosScan(
   tenantId: string,
   code: string,
-  opts: { size?: string | null } = {}
+  opts: { size?: string | null; locationId?: string | null } = {}
 ): Promise<PosScanHit | null> {
   const barcode = code.trim();
   if (!barcode) return null;
@@ -206,6 +318,7 @@ export async function resolvePosScan(
             COALESCE($3::text, (
               SELECT i.size FROM bms_inventory i
                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                 AND ($4::uuid IS NULL OR i.location_id = $4)
                ORDER BY (i.current_stock - i.reserved_stock) DESC, i.size
                LIMIT 1
             ))                                       AS size
@@ -218,7 +331,7 @@ export async function resolvePosScan(
         AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2))
       ORDER BY (k.barcode IS NOT NULL) DESC, (p.barcode = $2) DESC
       LIMIT 1`,
-    [tenantId, barcode, size]
+    [tenantId, barcode, size, opts.locationId ?? null]
   );
 
   const row = res.rows[0];
@@ -246,22 +359,37 @@ export type PosCashier = {
   id: string;
   name: string | null;
   email: string | null;
+  role: string | null;
   isPharmacist: boolean;
   /** false = ยังตั้ง PIN ไม่ได้ → ขายไม่ได้ (ตั้งจากหลังบ้าน) */
   hasPin: boolean;
+  /** true = บัญชีนี้เข้าหลังบ้านไม่ได้ ใช้ได้เฉพาะเครื่องขาย (7.92) */
+  posOnly: boolean;
 };
 
 /**
  * รายชื่อพนักงานให้เครื่องเลือกตอนขาย — auth ด้วย device token ของร้านตัวเอง
- * คนที่ยังไม่ตั้ง PIN ขึ้นในรายการได้แต่ขายไม่ได้ — จอแสดงให้เห็นว่าต้องไป
+ * แสดงเฉพาะคนที่มีสิทธิ์ `pos.sell` จริง (7.92) — เดิมแสดงผู้ใช้ทุกคนในร้าน
+ * ทำให้คนทำบัญชี/แอดมินโผล่ใน dropdown ที่เคาน์เตอร์ทั้งที่ไม่เกี่ยวกับการขาย
+ *
+ * คนที่ยังไม่ตั้ง PIN ยังขึ้นในรายการแต่เลือกไม่ได้ — จอแสดงให้เห็นว่าต้องไป
  * ตั้ง PIN จากหลังบ้านก่อน ดีกว่าหายไปเฉย ๆ แล้วไม่รู้ว่าทำไม
  */
 export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
   const res = await query<any>(
-    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist,
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist, u.pos_only,
+            r.name AS role_name,
             (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
       WHERE u.tenant_id = $1
+        AND (
+          r.name = 'Administrator'
+          OR EXISTS (
+            SELECT 1 FROM bms_role_permissions rp
+             WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = 'pos.sell'
+          )
+        )
       ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,
     [tenantId]
   );
@@ -269,8 +397,63 @@ export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
     id: r.id,
     name: r.name ?? null,
     email: r.email ?? null,
+    role: r.role_name ?? null,
     isPharmacist: Boolean(r.is_licensed_pharmacist),
     hasPin: Boolean(r.has_pin),
+    posOnly: Boolean(r.pos_only),
+  }));
+}
+
+/**
+ * ตั้งค่าบัญชีพนักงานหน้าร้าน (7.92)
+ *
+ * posOnly = TRUE ปิดทางเข้า /admin ให้บัญชีนั้นทันที (loginAdmin ปฏิเสธ
+ * ตั้งแต่ก่อนตรวจสิทธิ์) — ใช้กับคนที่มีหน้าที่คิดเงินอย่างเดียว
+ *
+ * ห้ามตั้งกับตัวเอง และห้ามตั้งกับ Administrator — ทั้งสองกรณีคือการล็อก
+ * คนออกจากหลังบ้านโดยที่อาจไม่มีใครเข้าไปแก้คืนได้
+ */
+export async function setCashierAccountMode(
+  tenantId: string,
+  userId: string,
+  posOnly: boolean,
+  actingUserId: string
+): Promise<void> {
+  if (posOnly && userId === actingUserId) {
+    throw new Error("ตั้งบัญชีตัวเองเป็นเฉพาะหน้าร้านไม่ได้ — จะเข้าหลังบ้านไม่ได้อีก");
+  }
+  const target = await query<{ role_name: string | null }>(
+    `SELECT r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1 AND u.id = $2`,
+    [tenantId, userId]
+  );
+  if (!target.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+  if (posOnly && target.rows[0].role_name === "Administrator") {
+    throw new Error("ตั้ง Administrator เป็นบัญชีเฉพาะหน้าร้านไม่ได้");
+  }
+  await query(`UPDATE users SET pos_only = $3 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId, posOnly]);
+}
+
+/** พนักงานทุกคนในร้าน (ไม่กรองสิทธิ์) — สำหรับหน้าจัดการฝั่งแอดมิน */
+export async function listTenantStaff(tenantId: string): Promise<PosCashier[]> {
+  const res = await query<any>(
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist, u.pos_only,
+            r.name AS role_name,
+            (u.pos_pin_hash IS NOT NULL) AS has_pin
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1
+      ORDER BY r.name NULLS LAST, u.name NULLS LAST, u.email`,
+    [tenantId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    name: r.name ?? null,
+    email: r.email ?? null,
+    role: r.role_name ?? null,
+    isPharmacist: Boolean(r.is_licensed_pharmacist),
+    hasPin: Boolean(r.has_pin),
+    posOnly: Boolean(r.pos_only),
   }));
 }
 
@@ -352,6 +535,58 @@ export async function verifyCashierPin(
     await query(`UPDATE users SET pos_pin_failures = 0 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId]);
   }
   return { ok: true, userId: u.id, name: u.name ?? null, isPharmacist: Boolean(u.is_licensed_pharmacist) };
+}
+
+export async function cashierHasPermission(
+  tenantId: string,
+  userId: string,
+  permission: string
+): Promise<boolean> {
+  const res = await query<{ name: string | null; has_permission: boolean }>(
+    `SELECT r.name,
+            CASE
+              WHEN r.name = 'Administrator' THEN TRUE
+              ELSE EXISTS (
+                SELECT 1
+                  FROM bms_role_permissions rp
+                 WHERE rp.tenant_id = $1
+                   AND rp.role_id = u.role_id
+                   AND rp.permission = $3
+              )
+            END AS has_permission
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1 AND u.id = $2
+      LIMIT 1`,
+    [tenantId, userId, permission]
+  );
+  return Boolean(res.rows[0]?.has_permission);
+}
+
+async function cashierHasPermissionInTx(
+  client: PoolClient,
+  tenantId: string,
+  userId: string,
+  permission: string
+): Promise<boolean> {
+  const res = await client.query<{ has_permission: boolean }>(
+    `SELECT CASE
+              WHEN r.name = 'Administrator' THEN TRUE
+              ELSE EXISTS (
+                SELECT 1
+                  FROM bms_role_permissions rp
+                 WHERE rp.tenant_id = $1
+                   AND rp.role_id = u.role_id
+                   AND rp.permission = $3
+              )
+            END AS has_permission
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1 AND u.id = $2
+      LIMIT 1`,
+    [tenantId, userId, permission]
+  );
+  return Boolean(res.rows[0]?.has_permission);
 }
 
 // ---------------------------------------------------------------
@@ -460,6 +695,31 @@ export async function getOpenPosShift(tenantId: string, deviceId: string): Promi
   return res.rowCount ? mapShift(res.rows[0]) : null;
 }
 
+export async function getPosShiftReturnSummary(tenantId: string, deviceId: string, shiftId: string) {
+  const res = await query<any>(
+    `SELECT COUNT(DISTINCT pr.id)::int AS return_count,
+            COALESCE(SUM(a.amount), 0) AS return_total,
+            COALESCE(SUM(a.amount) FILTER (WHERE a.status = 'COMPLETED'), 0) AS settled_total,
+            COALESCE(SUM(a.amount) FILTER (WHERE a.status = 'PENDING'), 0) AS pending_total,
+            COUNT(a.id) FILTER (WHERE a.status = 'PENDING')::int AS pending_count
+       FROM bms_orders o
+       JOIN bms_pos_returns pr
+         ON pr.tenant_id = o.tenant_id AND pr.order_id = o.id AND pr.pos_device_id = $2
+       LEFT JOIN bms_pos_refund_allocations a
+         ON a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+      WHERE o.tenant_id = $1 AND o.pos_shift_id = $3 AND o.pos_device_id = $2`,
+    [tenantId, deviceId, shiftId]
+  );
+  const row = res.rows[0] ?? {};
+  return {
+    returnCount: Number(row.return_count ?? 0),
+    returnTotal: Number(row.return_total ?? 0),
+    settledTotal: Number(row.settled_total ?? 0),
+    pendingTotal: Number(row.pending_total ?? 0),
+    pendingCount: Number(row.pending_count ?? 0),
+  };
+}
+
 /**
  * ปิดกะ: เงินที่ควรมี = เงินตั้งต้น + เงินสดที่รับในกะนี้
  * (amount ของ payment คือยอดบิล ไม่ใช่เงินที่ยื่นมา → เงินทอนหักไปแล้วในตัว)
@@ -471,7 +731,11 @@ export async function closePosShift(input: {
   closedBy: string;
   countedCash: number;
   note?: string | null;
-}): Promise<{ status: "CLOSED"; shift: PosShift } | { status: "NOT_OPEN" }> {
+}): Promise<
+  | { status: "CLOSED"; shift: PosShift; partialReturnCashOut: number }
+  | { status: "NOT_OPEN" }
+  | { status: "PENDING_REFUNDS"; count: number; amount: number }
+> {
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId);
@@ -486,15 +750,44 @@ export async function closePosShift(input: {
       return { status: "NOT_OPEN" };
     }
 
+    const pendingRefunds = await client.query<{ count: string; amount: string }>(
+      `SELECT COUNT(*)::text AS count, COALESCE(SUM(a.amount), 0)::text AS amount
+         FROM bms_pos_refund_allocations a
+         JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+        WHERE a.tenant_id = $1 AND o.pos_shift_id = $2 AND a.status = 'PENDING'`,
+      [input.tenantId, input.shiftId]
+    );
+    if (Number(pendingRefunds.rows[0]?.count ?? 0) > 0) {
+      await client.query("ROLLBACK");
+      return {
+        status: "PENDING_REFUNDS",
+        count: Number(pendingRefunds.rows[0].count),
+        amount: Number(pendingRefunds.rows[0].amount),
+      };
+    }
+
     const cash = await client.query<{ total: string }>(
       `SELECT COALESCE(SUM(pay.amount), 0) AS total
          FROM bms_payments pay
-         JOIN bms_orders o ON o.id = pay.order_id
+         JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
         WHERE o.tenant_id = $1 AND o.pos_shift_id = $2
-          AND pay.method = 'CASH' AND pay.status = 'CONFIRMED'`,
+          AND pay.method = 'CASH' AND pay.status IN ('CONFIRMED','REFUNDED')`,
       [input.tenantId, input.shiftId]
     );
-    const expected = Number(open.rows[0].opening_float) + Number(cash.rows[0].total);
+    const partialReturns = await client.query<{ total: string }>(
+      `SELECT COALESCE(SUM(a.amount), 0) AS total
+         FROM bms_pos_refund_allocations a
+         JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+        WHERE a.tenant_id = $1
+          AND o.pos_shift_id = $2
+          AND a.method = 'CASH'
+          AND a.status = 'COMPLETED'`,
+      [input.tenantId, input.shiftId]
+    );
+    const partialReturnCashOut = Number(partialReturns.rows[0]?.total ?? 0);
+    const expected = Number(open.rows[0].opening_float) + Number(cash.rows[0].total) - partialReturnCashOut;
 
     const res = await client.query(
       `UPDATE bms_pos_shifts
@@ -507,7 +800,7 @@ export async function closePosShift(input: {
     );
 
     await client.query("COMMIT");
-    return { status: "CLOSED", shift: mapShift(res.rows[0]) };
+    return { status: "CLOSED", shift: mapShift(res.rows[0]), partialReturnCashOut };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -542,6 +835,7 @@ export type PosPaymentInput = {
 
 export type PosSaleInput = {
   tenantId: string;
+  deviceId: string;
   shiftId: string;
   cashierUserId: string;
   /** สร้างที่เครื่อง: {device}-{shift}-{seq} — ยิงซ้ำต้องได้บิลเดิม ไม่ใช่บิลใหม่ */
@@ -570,10 +864,123 @@ export type PosSaleResult =
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "EMPTY" }
   | { status: "LOT_EXPIRED_OR_SHORT"; sku: string; size: string; sellable: number; requested: number }
+  | { status: "INVALID_PACK"; sku: string; packCode: string }
   | { status: "PAYMENT_FAILED"; reason: string }
   | { status: "PAYMENT_MISMATCH"; expected: number; received: number }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
+
+export type PosRecentReceipt = {
+  orderId: string;
+  docNo: string | null;
+  orderStatus: string;
+  total: number;
+  cashTendered: number | null;
+  cashChange: number | null;
+  paymentMethod: PaymentMethod | null;
+  paymentRef: string | null;
+  soldAt: string;
+  cashierName: string | null;
+  payments: Array<{
+    id: string;
+    method: PaymentMethod;
+    amount: number;
+    ref: string | null;
+    cashTendered: number | null;
+    cashChange: number | null;
+  }>;
+  refunds: Array<PosRefundAllocation & {
+    posReturnId: string;
+    returnMode: "FULL" | "PARTIAL";
+    returnNote: string | null;
+    returnedAt: string;
+  }>;
+  lines: Array<{
+    orderItemId: number;
+    sku: string;
+    receiptName: string;
+    size: string;
+    packCode: string;
+    baseQty: number;
+    packPrice: number;
+    basePrice: number;
+    packQty: number;
+    returnedPackQty: number;
+    refundablePackQty: number;
+    unitName: string;
+    lineTotal: number;
+  }>;
+};
+
+/**
+ * แปลง cart เป็น OrderItem จากข้อมูลปัจจุบันในฐานเท่านั้น ราคา/baseQty/unitName
+ * ที่ browser ส่งมาเป็นข้อมูลแสดงผลและห้ามเป็น authority ของยอดหรือสต็อก
+ */
+async function canonicalizePosSaleLines(
+  tenantId: string,
+  locationId: string,
+  lines: PosSaleLine[]
+): Promise<
+  | { ok: true; items: OrderItemInput[] }
+  | { ok: false; sku: string; packCode: string }
+> {
+  const items: OrderItemInput[] = [];
+  for (const line of lines) {
+    const sku = String(line.sku ?? "").trim();
+    const size = String(line.size ?? "").trim().toUpperCase();
+    const packQty = Number(line.packQty);
+    if (!sku || !size || !Number.isInteger(packQty) || packQty <= 0) continue;
+    const packCode = String(line.packCode ?? "BASE").trim().toUpperCase() || "BASE";
+    const res = await query<{
+      base_price: string;
+      pack_code: string | null;
+      unit_name: string | null;
+      base_qty: number | null;
+      pack_price: string | null;
+    }>(
+      `SELECT p.price AS base_price,
+              k.pack_code,
+              k.unit_name,
+              k.base_qty,
+              k.price AS pack_price
+         FROM bms_products p
+         LEFT JOIN bms_product_packs k
+           ON k.tenant_id = p.tenant_id
+          AND k.product_sku = p.sku
+          AND upper(k.pack_code) = $4
+          AND k.active
+        WHERE p.tenant_id = $1
+          AND p.sku = $2
+          AND p.active
+          AND EXISTS (
+            SELECT 1 FROM bms_inventory i
+             WHERE i.tenant_id = p.tenant_id
+               AND i.location_id = $3
+               AND i.product_sku = p.sku
+               AND i.size = $5
+          )
+        LIMIT 1`,
+      [tenantId, sku, locationId, packCode, size]
+    );
+    const row = res.rows[0];
+    if (!row || (packCode !== "BASE" && !row.pack_code)) {
+      return { ok: false, sku, packCode };
+    }
+    const baseQty = row.base_qty ?? 1;
+    const basePrice = Number(row.base_price);
+    const packPrice = row.pack_price == null ? basePrice * baseQty : Number(row.pack_price);
+    items.push({
+      sku,
+      size,
+      qty: packQty * baseQty,
+      packCode,
+      packUnitName: row.unit_name ?? "ชิ้น",
+      packQty,
+      packUnitPrice: packPrice,
+    });
+  }
+  return { ok: true, items };
+}
 
 /**
  * lot ที่ยังขายได้ = ยังไม่หมดอายุ ณ วันนี้
@@ -624,24 +1031,35 @@ async function fulfilPosOrderInTx(
         SET current_stock  = current_stock  - oi.qty,
             reserved_stock = reserved_stock - oi.qty,
             updated_at = now()
-       FROM bms_order_items oi
-      WHERE oi.order_id = $1
+       FROM (
+         SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+           FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
+          GROUP BY tenant_id, location_id, product_sku, size
+       ) oi
+      WHERE TRUE
         AND inv.tenant_id = oi.tenant_id
         AND inv.location_id = oi.location_id
         AND inv.product_sku = oi.product_sku
         AND inv.size = oi.size`,
-    [orderId]
+    [orderId, tenantId]
   );
 
   // FEFO: หมดอายุใกล้สุดก่อน ข้าม lot ที่หมดอายุแล้ว
   // ตัดได้เท่าที่มี lot บันทึกไว้ — SKU ที่ยังไม่ backfill lot จะไม่มีแถวผูก
   // (ตรวจส่วนที่ยังไม่ผูกได้จาก query invariant ท้าย 7.85)
   const items = await client.query<{ id: string; location_id: string; product_sku: string; size: string; qty: number }>(
-    `SELECT id, location_id, product_sku, size, qty FROM bms_order_items WHERE order_id = $1`,
-    [orderId]
+    `SELECT id, location_id, product_sku, size, qty
+       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, orderId]
   );
   for (const it of items.rows) {
     let remaining = it.qty;
+    const tracked = await client.query(
+      `SELECT 1 FROM bms_inventory_lots
+        WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
+        LIMIT 1`,
+      [tenantId, it.location_id, it.product_sku, it.size]
+    );
     const lots = await client.query<{ id: string; qty: number }>(
       `SELECT id, qty FROM bms_inventory_lots
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
@@ -654,8 +1072,9 @@ async function fulfilPosOrderInTx(
       if (remaining <= 0) break;
       const take = Math.min(remaining, lot.qty);
       await client.query(
-        `UPDATE bms_inventory_lots SET qty = qty - $2, updated_at = now() WHERE id = $1`,
-        [lot.id, take]
+        `UPDATE bms_inventory_lots SET qty = qty - $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, lot.id, take]
       );
       await client.query(
         `INSERT INTO bms_order_item_lots (tenant_id, order_item_id, lot_id, qty)
@@ -664,6 +1083,9 @@ async function fulfilPosOrderInTx(
         [tenantId, it.id, lot.id, take]
       );
       remaining -= take;
+    }
+    if (tracked.rowCount && remaining > 0) {
+      throw new Error(`lot ที่ขายได้ไม่พอสำหรับ ${it.product_sku}/${it.size} (ขาด ${remaining})`);
     }
   }
 
@@ -705,25 +1127,46 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   );
   if (!shiftRes.rowCount) return { status: "SHIFT_NOT_OPEN" };
   const shift = shiftRes.rows[0];
+  if (shift.device_id !== input.deviceId) return { status: "SHIFT_NOT_OPEN" };
 
-  // ยิงซ้ำเพราะ response หายกลางทาง → คืนบิลเดิม ห้ามขายซ้ำ
-  const replay = await findSaleByIdempotencyKey(tenantId, input.idempotencyKey);
+  const key = input.idempotencyKey.trim();
+  if (!key || key.length > 240) return { status: "PAYMENT_FAILED", reason: "idempotencyKey ไม่ถูกต้อง" };
+
+  // ยิงซ้ำเพราะ response หายกลางทาง: COMPLETED คืนบิลเดิม ส่วน PENDING
+  // เดิน settlement เดิมต่อได้โดยไม่สร้าง order/payment ซ้ำ
+  const replay = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (replay) return replay;
 
-  const items: OrderItemInput[] = input.lines
-    .filter((ln) => ln.sku && ln.size && Number.isInteger(ln.packQty) && ln.packQty > 0)
-    .map((ln) => {
-      const baseQty = ln.baseQty && ln.baseQty > 0 ? ln.baseQty : 1;
-      return {
-        sku: ln.sku,
-        size: ln.size,
-        qty: ln.packQty * baseQty, // สต็อกนับเป็นหน่วยฐานเสมอ
-        packCode: ln.packCode ?? null,
-        packUnitName: ln.unitName ?? null,
-        packQty: ln.packQty,
-        packUnitPrice: ln.packPrice ?? null,
-      };
-    });
+  const requestedPayments = input.payments
+    .map((payment) => ({
+      ...payment,
+      amount: Math.round(Number(payment.amount) * 100) / 100,
+      cashTendered: payment.cashTendered == null ? null : Math.round(Number(payment.cashTendered) * 100) / 100,
+      ref: payment.ref?.trim() || null,
+    }))
+    .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
+  if (requestedPayments.length === 0) return { status: "PAYMENT_FAILED", reason: "ต้องระบุการชำระเงิน" };
+  const invalidCash = requestedPayments.find(
+    (payment) => payment.method === "CASH" && payment.cashTendered != null
+      && (!Number.isFinite(payment.cashTendered) || payment.cashTendered < payment.amount)
+  );
+  if (invalidCash) return { status: "PAYMENT_FAILED", reason: "เงินสดที่รับมาต้องไม่น้อยกว่ายอดเงินสด" };
+
+  const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
+  if (existing) {
+    if (existing.status !== "PENDING" && existing.status !== "PAID") {
+      return { status: "PAYMENT_FAILED", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${existing.status} แล้ว` };
+    }
+    const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+    if (Math.abs(paid - existing.amountDue) > 0.01) {
+      return { status: "PAYMENT_MISMATCH", expected: existing.amountDue, received: paid };
+    }
+    return finalizePosSale({ input, shift, orderId: existing.orderId, amountDue: existing.amountDue, payments: requestedPayments, replayed: true });
+  }
+
+  const canonical = await canonicalizePosSaleLines(tenantId, shift.location_id, input.lines);
+  if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
+  const items = canonical.items;
   if (items.length === 0) return { status: "EMPTY" };
 
   const lotCheck = await checkSellableLots(
@@ -750,7 +1193,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     posDeviceId: shift.device_id,
     posShiftId: shift.id,
     cashierUserId: input.cashierUserId,
-    idempotencyKey: input.idempotencyKey,
+    idempotencyKey: key,
     editorId: input.cashierUserId,
     couponCode: input.couponCode ?? null,
     discountApprovedBy: input.discountApprovedBy ?? null,
@@ -763,112 +1206,166 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   });
 
   if (created === null) {
-    const again = await findSaleByIdempotencyKey(tenantId, input.idempotencyKey);
+    const again = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
     if (again) return again;
-    return { status: "PAYMENT_FAILED", reason: "บิลซ้ำแต่หาบิลเดิมไม่เจอ" };
+    const pending = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
+    if (pending && ["PENDING", "PAID"].includes(pending.status)) {
+      return finalizePosSale({ input, shift, orderId: pending.orderId, amountDue: pending.amountDue, payments: requestedPayments, replayed: true });
+    }
+    return { status: "PAYMENT_FAILED", reason: "คีย์บิลซ้ำแต่สถานะเดิมไม่สามารถทำต่อได้" };
   }
   if (created.status !== "CREATED") return created as PosSaleResult;
 
   const orderId = created.orderId;
   const amountDue = created.amountDue;
+  const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+  if (Math.abs(paid - amountDue) > 0.01) {
+    await cancelOrder(tenantId, orderId);
+    return { status: "PAYMENT_MISMATCH", expected: amountDue, received: paid };
+  }
+  return finalizePosSale({ input, shift, orderId, amountDue, payments: requestedPayments, replayed: false });
+}
 
-  // จ่ายเงิน — รับได้หลายวิธีต่อบิล ยืนยันพร้อมกันทีเดียวเมื่อผลรวมตรงยอด
+async function finalizePosSale(args: {
+  input: PosSaleInput;
+  shift: { id: string; location_id: string; device_id: string };
+  orderId: string;
+  amountDue: number;
+  payments: PosPaymentInput[];
+  replayed: boolean;
+}): Promise<PosSaleResult> {
+  const { input, shift, orderId, amountDue, payments, replayed } = args;
+  const vatSettings = await getVatSettings(input.tenantId);
+  const client = await getClient();
   try {
-    const requested = input.payments
-      .map((p) => ({ ...p, amount: Math.round(Number(p.amount) * 100) / 100 }))
-      .filter((p) => p.amount > 0);
-    const paid = Math.round(requested.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
-    if (requested.length === 0 || Math.abs(paid - amountDue) > 0.01) {
-      await cancelOrder(tenantId, orderId);
-      return { status: "PAYMENT_MISMATCH", expected: amountDue, received: paid };
-    }
+    await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
+    const shiftLock = await client.query(
+      `SELECT 1 FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [input.tenantId, shift.id, input.deviceId]
+    );
+    if (!shiftLock.rowCount) throw new Error("กะถูกปิดแล้วก่อนบันทึกการขาย");
 
-    const submittedIds: string[] = [];
-    // ยกเลิกบิลแล้วต้องปิด payment ที่ค้างด้วย ไม่งั้นเหลือ PENDING คาอยู่บนบิลที่
-    // ยกเลิกไปแล้ว ซึ่งอ่านเหมือน "ยังมีเงินค้างรับ" ทั้งที่ไม่มี (เจอตอนทดสอบจริง)
-    const abandon = async (reason: string): Promise<PosSaleResult> => {
-      for (const id of submittedIds) {
-        await rejectPayment(tenantId, id, "ยกเลิกบิล POS: " + reason, input.cashierUserId).catch(() => {});
-      }
-      await cancelOrder(tenantId, orderId);
-      return { status: "PAYMENT_FAILED", reason };
-    };
+    const orderLock = await client.query<{ status: string; total_amount: string; shipping_fee: string | null }>(
+      `SELECT status, total_amount, shipping_fee FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2 AND pos_shift_id = $3
+          AND pos_device_id = $4 AND cashier_user_id = $5
+        FOR UPDATE`,
+      [input.tenantId, orderId, shift.id, input.deviceId, input.cashierUserId]
+    );
+    if (!orderLock.rowCount) throw new Error("บิลไม่ตรงกับเครื่อง กะ หรือพนักงานผู้ขาย");
+    const current = orderLock.rows[0];
+    const lockedDue = Number(current.total_amount) + Number(current.shipping_fee ?? 0);
+    if (Math.abs(lockedDue - amountDue) > 0.01) throw new Error("ยอดบิลเปลี่ยนระหว่างรับชำระ");
+
     let cashTendered: number | null = null;
     let cashChange: number | null = null;
+    if (current.status === "PENDING") {
+      const active = await client.query(
+        `SELECT 1 FROM bms_payments
+          WHERE tenant_id = $1 AND order_id = $2 AND status IN ('PENDING','CONFIRMED')
+          LIMIT 1 FOR UPDATE`,
+        [input.tenantId, orderId]
+      );
+      if (active.rowCount) throw new Error("บิลค้างมีรายการชำระเงินเดิม ต้องตรวจสอบก่อนทำต่อ");
 
-    for (const pay of requested) {
-      // submitPartialPayment ไม่ใช่ submitPayment — ตัวหลังทิ้ง amount แล้วเขียน
-      // ยอดเต็มบิลเสมอ ซึ่งทำให้จ่ายผสมเป็นไปไม่ได้ (เจอตอนทดสอบกับ DB จริง)
-      const submitted = await submitPartialPayment({
-        tenantId,
-        orderId,
-        method: pay.method,
-        amount: pay.amount,
-        slipRef: pay.ref ?? null,
-      });
-      if (submitted.status !== "SUBMITTED") {
-        return abandon(
-          submitted.status === "BAD_AMOUNT"
-            ? `ยอดเกินที่ค้างอยู่ (ค้าง ${submitted.remaining} ขอ ${submitted.requested})`
-            : submitted.status
+      for (const payment of payments) {
+        const tendered = payment.method === "CASH"
+          ? (payment.cashTendered == null ? payment.amount : Number(payment.cashTendered))
+          : null;
+        const change = tendered == null ? null : Math.round((tendered - payment.amount) * 100) / 100;
+        await client.query(
+          `INSERT INTO bms_payments
+             (tenant_id, order_id, method, amount, status, slip_ref, verified_by,
+              cash_tendered, cash_change, updated_at)
+           VALUES ($1, $2, $3, $4, 'CONFIRMED', $5, $6, $7, $8, now())`,
+          [input.tenantId, orderId, payment.method, payment.amount, payment.ref ?? null,
+            input.cashierUserId, tendered, change]
         );
+        if (tendered != null) {
+          cashTendered = (cashTendered ?? 0) + tendered;
+          cashChange = (cashChange ?? 0) + Number(change ?? 0);
+        }
       }
-      submittedIds.push(submitted.paymentId);
 
-      // เงินทอนคิดจากเงินที่ยื่นมาเทียบกับ "ส่วนที่จ่ายด้วยเงินสด" ไม่ใช่ยอดทั้งบิล
-      if (pay.method === "CASH" && pay.cashTendered != null) {
-        const tendered = Math.max(0, Number(pay.cashTendered));
-        const change = Math.max(0, Math.round((tendered - pay.amount) * 100) / 100);
-        cashTendered = (cashTendered ?? 0) + tendered;
-        cashChange = (cashChange ?? 0) + change;
-        await query(
-          `UPDATE bms_payments SET cash_tendered = $2, cash_change = $3, updated_at = now() WHERE id = $1`,
-          [submitted.paymentId, tendered, change]
-        );
-      }
+      const paidOrder = await client.query(
+        `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+        [input.tenantId, orderId]
+      );
+      if (!paidOrder.rowCount) throw new Error("บิลไม่ได้อยู่สถานะรอชำระ");
+      await redeemCustomerCouponForOrderInTx(client, input.tenantId, orderId);
+      await markRestockSubscriptionsPurchasedForOrder({ tenantId: input.tenantId, orderId, client });
+    } else if (current.status === "PAID") {
+      const cash = await client.query<{ tendered: string; change: string }>(
+        `SELECT COALESCE(SUM(cash_tendered), 0) AS tendered,
+                COALESCE(SUM(cash_change), 0) AS change
+           FROM bms_payments
+          WHERE tenant_id = $1 AND order_id = $2 AND status = 'CONFIRMED'`,
+        [input.tenantId, orderId]
+      );
+      cashTendered = Number(cash.rows[0]?.tendered ?? 0) || null;
+      cashChange = Number(cash.rows[0]?.change ?? 0) || null;
+    } else {
+      throw new Error(`บิลอยู่สถานะ ${current.status} ไม่สามารถปิดการขายได้`);
     }
 
-    const confirmed = await confirmPaymentsForOrder(tenantId, orderId, submittedIds, input.cashierUserId);
-    if (confirmed.status !== "CONFIRMED") return abandon(confirmed.status);
-
-    const vatSettings = await getVatSettings(tenantId);
-    const client = await getClient();
-    let docNo: string | null = null;
-    try {
-      await beginTenantTx(client, tenantId, { editorId: input.cashierUserId });
-      const fulfilled = await fulfilPosOrderInTx(client, tenantId, orderId, {
-        locationId: shift.location_id,
-        deviceId: shift.device_id,
-        issuedBy: input.cashierUserId,
-        settings: vatSettings,
-      });
-      docNo = fulfilled.docNo;
-      await client.query("COMMIT");
-    } catch (err) {
-      try { await client.query("ROLLBACK"); } catch {}
-      throw err;
-    } finally {
-      client.release();
-    }
-
+    const fulfilled = await fulfilPosOrderInTx(client, input.tenantId, orderId, {
+      locationId: shift.location_id,
+      deviceId: shift.device_id,
+      issuedBy: input.cashierUserId,
+      settings: vatSettings,
+    });
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.sale', $3, $4)`,
+      [input.tenantId, input.cashierUserId, orderId, JSON.stringify({ shiftId: shift.id, deviceId: input.deviceId })]
+    );
+    await client.query("COMMIT");
     return {
       status: "SOLD",
       orderId,
       total: amountDue,
       cashTendered,
       cashChange,
-      docNo,
-      replayed: false,
+      docNo: fulfilled.docNo,
+      replayed,
     };
   } catch (err: any) {
-    // เงินรับไปแล้วแต่ตัดสต็อกไม่ผ่าน = บิลค้างที่ PAID ต้องให้คนมาเคลียร์
-    // ห้าม cancel เงียบ ๆ เพราะเงินอยู่ในลิ้นชักแล้ว
+    try { await client.query("ROLLBACK"); } catch {}
     return { status: "PAYMENT_FAILED", reason: String(err?.message ?? err) };
+  } finally {
+    client.release();
   }
+}
+
+async function findPosOrderByIdempotencyKey(
+  tenantId: string,
+  deviceId: string,
+  shiftId: string,
+  key: string
+): Promise<{ orderId: string; status: string; amountDue: number } | null> {
+  const res = await query<{ id: string; status: string; total_amount: string; shipping_fee: string | null }>(
+    `SELECT id, status, total_amount, shipping_fee
+       FROM bms_orders
+      WHERE tenant_id = $1 AND idempotency_key = $2 AND channel = 'pos'
+        AND pos_device_id = $3 AND pos_shift_id = $4
+      LIMIT 1`,
+    [tenantId, key, deviceId, shiftId]
+  );
+  const row = res.rows[0];
+  return row ? {
+    orderId: row.id,
+    status: row.status,
+    amountDue: Number(row.total_amount) + Number(row.shipping_fee ?? 0),
+  } : null;
 }
 
 async function findSaleByIdempotencyKey(
   tenantId: string,
+  deviceId: string,
+  shiftId: string,
   key: string
 ): Promise<(PosSaleResult & { status: "SOLD" }) | null> {
   const res = await query<{
@@ -882,13 +1379,20 @@ async function findSaleByIdempotencyKey(
     `SELECT o.id, o.total_amount, o.shipping_fee, pay.cash_tendered, pay.cash_change,
             doc.doc_no
        FROM bms_orders o
-       LEFT JOIN bms_payments pay
-         ON pay.order_id = o.id AND pay.status = 'CONFIRMED'
+       LEFT JOIN LATERAL (
+         SELECT SUM(cash_tendered) AS cash_tendered, SUM(cash_change) AS cash_change
+           FROM bms_payments
+          WHERE tenant_id = o.tenant_id AND order_id = o.id
+            AND status IN ('CONFIRMED','REFUNDED')
+       ) pay ON TRUE
        LEFT JOIN bms_tax_documents doc
-         ON doc.order_id = o.id AND doc.doc_type = 'ABBREVIATED' AND doc.cancelled_at IS NULL
+         ON doc.tenant_id = o.tenant_id AND doc.order_id = o.id
+        AND doc.doc_type = 'ABBREVIATED' AND doc.cancelled_at IS NULL
       WHERE o.tenant_id = $1 AND o.idempotency_key = $2
+        AND o.channel = 'pos' AND o.status IN ('COMPLETED','RETURNED')
+        AND o.pos_device_id = $3 AND o.pos_shift_id = $4
       LIMIT 1`,
-    [tenantId, key]
+    [tenantId, key, deviceId, shiftId]
   );
   const row = res.rows[0];
   if (!row) return null;
@@ -901,4 +1405,858 @@ async function findSaleByIdempotencyKey(
     docNo: row.doc_no ?? null,
     replayed: true,
   };
+}
+
+export async function getLatestPosSale(
+  tenantId: string,
+  deviceId: string
+): Promise<PosRecentReceipt | null> {
+  const rows = await listRecentPosSales(tenantId, deviceId, 1);
+  return rows[0] ?? null;
+}
+
+export async function listRecentPosSales(
+  tenantId: string,
+  deviceId: string,
+  limit = 5,
+  opts: { query?: string | null } = {}
+): Promise<PosRecentReceipt[]> {
+  const q = String(opts.query ?? "").trim();
+  const orderRes = await query<{
+    id: string;
+    total_amount: string;
+    shipping_fee: string | null;
+    status: string;
+    created_at: string | Date;
+    cashier_name: string | null;
+    payment_method: PaymentMethod | null;
+    payment_ref: string | null;
+    cash_tendered: string | null;
+    cash_change: string | null;
+    doc_no: string | null;
+  }>(
+    `SELECT o.id,
+            o.total_amount,
+            o.shipping_fee,
+            o.status,
+            o.created_at,
+            u.name AS cashier_name,
+            pay.method AS payment_method,
+            pay.slip_ref AS payment_ref,
+            pay.cash_tendered,
+            pay.cash_change,
+            doc.doc_no
+       FROM bms_orders o
+       LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT method, slip_ref, cash_tendered, cash_change
+           FROM bms_payments
+          WHERE tenant_id = o.tenant_id
+            AND order_id = o.id
+            AND status IN ('CONFIRMED','REFUNDED')
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+       ) pay ON TRUE
+       LEFT JOIN bms_tax_documents doc
+         ON doc.tenant_id = o.tenant_id AND doc.order_id = o.id
+        AND doc.doc_type = 'ABBREVIATED'
+        AND doc.cancelled_at IS NULL
+      WHERE o.tenant_id = $1
+        AND o.pos_device_id = $2
+        AND o.channel = 'pos'
+        AND o.status IN ('COMPLETED', 'RETURNED')
+        AND (
+          $4::text IS NULL
+          OR o.id::text ILIKE '%' || $4 || '%'
+          OR COALESCE(doc.doc_no, '') ILIKE '%' || $4 || '%'
+        )
+      ORDER BY o.created_at DESC, o.id DESC
+      LIMIT $3`,
+    [tenantId, deviceId, Math.min(Math.max(limit, 1), 20), q || null]
+  );
+  if (!orderRes.rows.length) return [];
+  const orderIds = orderRes.rows.map((row) => row.id);
+
+  const linesRes = await query<{
+    id: number;
+    order_id: string;
+    product_sku: string;
+    product_name: string;
+    size: string;
+    pack_code: string | null;
+    pack_qty: number | null;
+    qty: number;
+    pack_unit_name: string | null;
+    pack_unit_price: string | null;
+    unit_price: string;
+    returned_pack_qty: string | null;
+  }>(
+    `SELECT oi.id,
+            oi.order_id,
+            oi.product_sku,
+            oi.product_name,
+            oi.size,
+            oi.pack_code,
+            oi.pack_qty,
+            oi.qty,
+            oi.pack_unit_name,
+            oi.pack_unit_price,
+            oi.unit_price,
+            COALESCE((
+              SELECT SUM(pri.pack_qty)
+                FROM bms_pos_return_items pri
+                JOIN bms_pos_returns pr ON pr.id = pri.pos_return_id
+               WHERE pri.tenant_id = oi.tenant_id
+                 AND pri.order_item_id = oi.id
+                 AND pr.order_id = oi.order_id
+            ), 0) AS returned_pack_qty
+       FROM bms_order_items oi
+      WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])
+      ORDER BY order_id, id`,
+    [tenantId, orderIds]
+  );
+
+  const linesByOrder = new Map<string, PosRecentReceipt["lines"]>();
+  for (const line of linesRes.rows) {
+    const packQty = line.pack_qty ?? line.qty;
+    const unitPrice = line.pack_unit_price == null ? Number(line.unit_price) : Number(line.pack_unit_price);
+    const mapped = {
+      orderItemId: line.id,
+      sku: line.product_sku,
+      receiptName: line.product_name,
+      size: line.size,
+      packCode: line.pack_code ?? "BASE",
+      baseQty: Math.max(1, Math.round(line.qty / Math.max(1, packQty))),
+      packPrice: unitPrice,
+      basePrice: Number(line.unit_price),
+      packQty,
+      returnedPackQty: Number(line.returned_pack_qty ?? 0),
+      refundablePackQty: Math.max(0, packQty - Number(line.returned_pack_qty ?? 0)),
+      unitName: line.pack_unit_name ?? "ชิ้น",
+      lineTotal: packQty * unitPrice,
+    };
+    const existing = linesByOrder.get(line.order_id) ?? [];
+    existing.push(mapped);
+    linesByOrder.set(line.order_id, existing);
+  }
+
+  const paymentsRes = await query<{
+    id: string;
+    order_id: string;
+    method: PaymentMethod;
+    amount: string;
+    slip_ref: string | null;
+    cash_tendered: string | null;
+    cash_change: string | null;
+  }>(
+    `SELECT id, order_id, method, amount, slip_ref, cash_tendered, cash_change
+       FROM bms_payments
+      WHERE tenant_id = $1
+        AND order_id = ANY($2::uuid[])
+        AND status IN ('CONFIRMED','REFUNDED')
+      ORDER BY created_at, id`,
+    [tenantId, orderIds]
+  );
+
+  const paymentsByOrder = new Map<string, PosRecentReceipt["payments"]>();
+  for (const payment of paymentsRes.rows) {
+    const existing = paymentsByOrder.get(payment.order_id) ?? [];
+    existing.push({
+      id: payment.id,
+      method: payment.method,
+      amount: Number(payment.amount),
+      ref: payment.slip_ref ?? null,
+      cashTendered: payment.cash_tendered == null ? null : Number(payment.cash_tendered),
+      cashChange: payment.cash_change == null ? null : Number(payment.cash_change),
+    });
+    paymentsByOrder.set(payment.order_id, existing);
+  }
+
+  const refundsRes = await query<any>(
+    `SELECT pr.order_id, pr.id AS pos_return_id, pr.return_mode, pr.note, pr.created_at,
+            a.id, a.payment_id, a.method, a.amount, a.status, a.external_ref
+       FROM bms_pos_returns pr
+       JOIN bms_pos_refund_allocations a
+         ON a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+      WHERE pr.tenant_id = $1 AND pr.order_id = ANY($2::uuid[])
+      ORDER BY pr.created_at, a.created_at, a.id`,
+    [tenantId, orderIds]
+  );
+  const refundsByOrder = new Map<string, PosRecentReceipt["refunds"]>();
+  for (const row of refundsRes.rows) {
+    const existing = refundsByOrder.get(row.order_id) ?? [];
+    existing.push({
+      ...mapRefundAllocation(row),
+      posReturnId: row.pos_return_id,
+      returnMode: row.return_mode,
+      returnNote: row.note ?? null,
+      returnedAt: toISO(row.created_at),
+    });
+    refundsByOrder.set(row.order_id, existing);
+  }
+
+  return orderRes.rows.map((row) => ({
+    orderId: row.id,
+    docNo: row.doc_no ?? null,
+    orderStatus: row.status,
+    total: Number(row.total_amount) + Number(row.shipping_fee ?? 0),
+    cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
+    cashChange: row.cash_change == null ? null : Number(row.cash_change),
+    paymentMethod: row.payment_method ?? null,
+    paymentRef: row.payment_ref ?? null,
+    soldAt: toISO(row.created_at),
+    cashierName: row.cashier_name ?? null,
+    payments: paymentsByOrder.get(row.id) ?? [],
+    refunds: refundsByOrder.get(row.id) ?? [],
+    lines: linesByOrder.get(row.id) ?? [],
+  }));
+}
+
+export type PosReturnResult =
+  | {
+      status: "RETURNED";
+      posReturnId: string;
+      orderId: string;
+      refundAmount: number;
+      settlementStatus: "PENDING" | "COMPLETED";
+      refunds: PosRefundAllocation[];
+      replayed: boolean;
+    }
+  | { status: "ORDER_NOT_FOUND" }
+  | { status: "ORDER_NOT_POS" }
+  | { status: "INVALID_ORDER_STATUS"; current: string }
+  | { status: "NO_CONFIRMED_PAYMENTS" }
+  | { status: "IDEMPOTENCY_CONFLICT" }
+  | { status: "EMPTY" }
+  | { status: "ITEM_NOT_FOUND"; orderItemId: number }
+  | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "APPROVAL_REQUIRED"; reason: string };
+
+export type PosRefundAllocation = {
+  id: string;
+  paymentId: string;
+  method: PaymentMethod;
+  amount: number;
+  status: "PENDING" | "COMPLETED";
+  externalRef: string | null;
+};
+
+export type PosPartialReturnResult =
+  | {
+      status: "PARTIAL_RETURNED";
+      posReturnId: string;
+      orderId: string;
+      refundAmount: number;
+      returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
+      settlementStatus: "PENDING" | "COMPLETED";
+      refunds: PosRefundAllocation[];
+      replayed: boolean;
+    }
+  | { status: "ORDER_NOT_FOUND" }
+  | { status: "ORDER_NOT_POS" }
+  | { status: "INVALID_ORDER_STATUS"; current: string }
+  | { status: "NO_CONFIRMED_PAYMENTS" }
+  | { status: "IDEMPOTENCY_CONFLICT" }
+  | { status: "EMPTY" }
+  | { status: "ITEM_NOT_FOUND"; orderItemId: number }
+  | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "APPROVAL_REQUIRED"; reason: string; refundAmount: number };
+
+function approvalRuleForRefundAmount(refundAmount: number): {
+  requiredPermission: string | null;
+  reason: string | null;
+} {
+  if (refundAmount >= 2000) {
+    return {
+      requiredPermission: "payment.refund",
+      reason: "คืนสินค้าตั้งแต่ 2,000 บาทขึ้นไป ต้องให้ผู้มีสิทธิ์ refund อนุมัติ",
+    };
+  }
+  if (refundAmount >= 500) {
+    return {
+      requiredPermission: "payment.refund",
+      reason: "คืนสินค้าตั้งแต่ 500 บาทขึ้นไป ต้องให้ผู้มีสิทธิ์ refund อนุมัติ",
+    };
+  }
+  return { requiredPermission: null, reason: null };
+}
+
+export async function returnPosSale(input: {
+  tenantId: string;
+  deviceId: string;
+  orderId: string;
+  actorUserId: string;
+  note?: string | null;
+  approvedByUserId?: string | null;
+  idempotencyKey: string;
+}): Promise<PosReturnResult> {
+  const result = await processPosReturn({ ...input, mode: "FULL", lines: [] });
+  if (result.status !== "PARTIAL_RETURNED") return result;
+  return {
+    status: "RETURNED",
+    posReturnId: result.posReturnId,
+    orderId: result.orderId,
+    refundAmount: result.refundAmount,
+    settlementStatus: result.settlementStatus,
+    refunds: result.refunds,
+    replayed: result.replayed,
+  };
+}
+
+export async function partiallyReturnPosSale(input: {
+  tenantId: string;
+  deviceId: string;
+  orderId: string;
+  actorUserId: string;
+  lines: Array<{ orderItemId: number; packQty: number }>;
+  note?: string | null;
+  approvedByUserId?: string | null;
+  idempotencyKey: string;
+}): Promise<PosPartialReturnResult> {
+  return processPosReturn({ ...input, mode: "PARTIAL" });
+}
+
+async function processPosReturn(input: {
+  tenantId: string;
+  deviceId: string;
+  orderId: string;
+  actorUserId: string;
+  mode: "FULL" | "PARTIAL";
+  lines: Array<{ orderItemId: number; packQty: number }>;
+  note?: string | null;
+  approvedByUserId?: string | null;
+  idempotencyKey: string;
+}): Promise<PosPartialReturnResult> {
+  const requestedMap = new Map<number, number>();
+  for (const line of input.lines) {
+    if (!Number.isInteger(line.orderItemId) || !Number.isInteger(line.packQty) || line.packQty <= 0) continue;
+    requestedMap.set(line.orderItemId, (requestedMap.get(line.orderItemId) ?? 0) + line.packQty);
+  }
+  if (input.mode === "PARTIAL" && requestedMap.size === 0) return { status: "EMPTY" };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    const replay = await client.query<{
+      id: string;
+      order_id: string;
+      pos_device_id: string | null;
+      return_mode: "FULL" | "PARTIAL";
+      refund_amount: string;
+      settlement_status: "PENDING" | "COMPLETED";
+    }>(
+      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status
+         FROM bms_pos_returns
+        WHERE tenant_id = $1 AND idempotency_key = $2
+        LIMIT 1`,
+      [input.tenantId, input.idempotencyKey]
+    );
+    if (replay.rows[0]) {
+      const existing = replay.rows[0];
+      if (existing.order_id !== input.orderId
+          || existing.pos_device_id !== input.deviceId
+          || existing.return_mode !== input.mode) {
+        await client.query("ROLLBACK");
+        return { status: "IDEMPOTENCY_CONFLICT" };
+      }
+      const [items, refunds] = await Promise.all([
+        client.query<{ order_item_id: string; pack_qty: number; refund_amount: string }>(
+          `SELECT order_item_id, pack_qty, refund_amount FROM bms_pos_return_items
+            WHERE tenant_id = $1 AND pos_return_id = $2 ORDER BY id`,
+          [input.tenantId, existing.id]
+        ),
+        client.query<any>(
+          `SELECT id, payment_id, method, amount, status, external_ref
+             FROM bms_pos_refund_allocations
+            WHERE tenant_id = $1 AND pos_return_id = $2 ORDER BY created_at, id`,
+          [input.tenantId, existing.id]
+        ),
+      ]);
+      await client.query("ROLLBACK");
+      return {
+        status: "PARTIAL_RETURNED",
+        posReturnId: existing.id,
+        orderId: input.orderId,
+        refundAmount: Number(existing.refund_amount),
+        returnedItems: items.rows.map((row) => ({
+          orderItemId: Number(row.order_item_id),
+          packQty: Number(row.pack_qty),
+          refundAmount: Number(row.refund_amount),
+        })),
+        settlementStatus: existing.settlement_status,
+        refunds: refunds.rows.map(mapRefundAllocation),
+        replayed: true,
+      };
+    }
+
+    const orderRes = await client.query<{
+      id: string;
+      status: string;
+      channel: string;
+      pos_device_id: string | null;
+      total_amount: string;
+      shipping_fee: string | null;
+    }>(
+      `SELECT id, status, channel, pos_device_id, total_amount, shipping_fee
+         FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2
+        FOR UPDATE`,
+      [input.tenantId, input.orderId]
+    );
+    const order = orderRes.rows[0];
+    if (!order) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    if (order.channel !== POS_CHANNEL) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_POS" };
+    }
+    if (order.pos_device_id !== input.deviceId) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    if (order.status !== "COMPLETED") {
+      await client.query("ROLLBACK");
+      return { status: "INVALID_ORDER_STATUS", current: order.status };
+    }
+
+    const itemsRes = await client.query<{
+      id: number;
+      order_id: string;
+      tenant_id: string;
+      location_id: string;
+      product_sku: string;
+      size: string;
+      qty: number;
+      pack_qty: number | null;
+      pack_unit_price: string | null;
+      unit_price: string;
+      returned_pack_qty: string | null;
+      returned_refund_amount: string | null;
+    }>(
+      `SELECT oi.id,
+              oi.order_id,
+              oi.tenant_id,
+              oi.location_id,
+              oi.product_sku,
+              oi.size,
+              oi.qty,
+              oi.pack_qty,
+              oi.pack_unit_price,
+              oi.unit_price,
+              COALESCE((
+                SELECT SUM(pri.pack_qty)
+                  FROM bms_pos_return_items pri
+                  JOIN bms_pos_returns pr ON pr.id = pri.pos_return_id
+                 WHERE pri.tenant_id = oi.tenant_id
+                   AND pri.order_item_id = oi.id
+                   AND pr.order_id = oi.order_id
+              ), 0) AS returned_pack_qty,
+              COALESCE((
+                SELECT SUM(pri.refund_amount)
+                  FROM bms_pos_return_items pri
+                  JOIN bms_pos_returns pr ON pr.id = pri.pos_return_id
+                 WHERE pri.tenant_id = oi.tenant_id
+                   AND pri.order_item_id = oi.id
+                   AND pr.order_id = oi.order_id
+              ), 0) AS returned_refund_amount
+         FROM bms_order_items oi
+        WHERE oi.tenant_id = $1
+          AND oi.order_id = $2
+        ORDER BY oi.id
+        FOR UPDATE`,
+      [input.tenantId, input.orderId]
+    );
+
+    const byId = new Map(itemsRes.rows.map((row) => [row.id, row]));
+    if (input.mode === "PARTIAL") for (const [orderItemId, packQty] of requestedMap) {
+      const line = { orderItemId, packQty };
+      const item = byId.get(line.orderItemId);
+      if (!item) {
+        await client.query("ROLLBACK");
+        return { status: "ITEM_NOT_FOUND", orderItemId: line.orderItemId };
+      }
+      const originalPackQty = item.pack_qty ?? item.qty;
+      const remaining = Math.max(0, originalPackQty - Number(item.returned_pack_qty ?? 0));
+      if (line.packQty > remaining) {
+        await client.query("ROLLBACK");
+        return { status: "RETURN_QTY_EXCEEDED", orderItemId: line.orderItemId, remaining, requested: line.packQty };
+      }
+    }
+
+    if (input.mode === "FULL") {
+      for (const item of itemsRes.rows) {
+        const originalPackQty = item.pack_qty ?? item.qty;
+        const remaining = Math.max(0, originalPackQty - Number(item.returned_pack_qty ?? 0));
+        if (remaining > 0) requestedMap.set(item.id, remaining);
+      }
+      if (requestedMap.size === 0) {
+        await client.query("ROLLBACK");
+        return { status: "EMPTY" };
+      }
+    }
+
+    const orderAmount = Math.round((Number(order.total_amount) + Number(order.shipping_fee ?? 0)) * 100) / 100;
+    const grossTotal = itemsRes.rows.reduce((sum, item) => {
+      const packQty = item.pack_qty ?? item.qty;
+      const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
+      return sum + packQty * price;
+    }, 0);
+    if (!(grossTotal > 0) || !(orderAmount >= 0)) throw new Error("ยอดบิลสำหรับคำนวณคืนเงินไม่ถูกต้อง");
+
+    const lineNetTotals = new Map<number, number>();
+    let allocatedNet = 0;
+    itemsRes.rows.forEach((item, index) => {
+      const packQty = item.pack_qty ?? item.qty;
+      const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
+      const lineNet = index === itemsRes.rows.length - 1
+        ? Math.round((orderAmount - allocatedNet) * 100) / 100
+        : Math.round((orderAmount * ((packQty * price) / grossTotal)) * 100) / 100;
+      lineNetTotals.set(item.id, lineNet);
+      allocatedNet += lineNet;
+    });
+
+    const calculated = [...requestedMap.entries()].map(([orderItemId, packQty]) => {
+      const item = byId.get(orderItemId)!;
+      const originalPackQty = item.pack_qty ?? item.qty;
+      const remainingPackQty = originalPackQty - Number(item.returned_pack_qty ?? 0);
+      const remainingLineRefund = Math.max(0,
+        Number(lineNetTotals.get(item.id) ?? 0) - Number(item.returned_refund_amount ?? 0));
+      const refundAmount = packQty === remainingPackQty
+        ? Math.round(remainingLineRefund * 100) / 100
+        : Math.min(remainingLineRefund, Math.round(((lineNetTotals.get(item.id) ?? 0) * packQty / originalPackQty) * 100) / 100);
+      return { item, packQty, refundAmount };
+    });
+    const roundedRefundAmount = Math.round(calculated.reduce((sum, line) => sum + line.refundAmount, 0) * 100) / 100;
+
+    const approvalRule = approvalRuleForRefundAmount(roundedRefundAmount);
+    let approvedBy = input.approvedByUserId?.trim() || null;
+    if (approvalRule.requiredPermission) {
+      const actorCanApprove = await cashierHasPermissionInTx(
+        client, input.tenantId, input.actorUserId, approvalRule.requiredPermission
+      );
+      const approverCanApprove = approvedBy
+        ? await cashierHasPermissionInTx(client, input.tenantId, approvedBy, approvalRule.requiredPermission)
+        : false;
+      if (!actorCanApprove && !approverCanApprove) {
+        await client.query("ROLLBACK");
+        return {
+          status: "APPROVAL_REQUIRED",
+          reason: approvalRule.reason || "ต้องมีผู้อนุมัติ",
+          refundAmount: roundedRefundAmount,
+        };
+      }
+      // ถ้าแคชเชียร์มีสิทธิ์อนุมัติเอง ให้เก็บตัวตนไว้ใน audit column ด้วย
+      // ไม่ปล่อย approved_by เป็น NULL จนรายงานแยกไม่ออกว่าอนุมัติแล้วหรือข้อมูลขาด
+      if (!approvedBy && actorCanApprove) approvedBy = input.actorUserId;
+    }
+
+    const ret = await client.query<{ id: string }>(
+      `INSERT INTO bms_pos_returns
+         (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
+          refund_amount, settlement_status, idempotency_key, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9)
+       RETURNING id`,
+      [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
+        input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null]
+    );
+    const posReturnId = ret.rows[0].id;
+
+    const returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }> = [];
+
+    for (const line of calculated) {
+      const item = line.item;
+      const originalPackQty = item.pack_qty ?? item.qty;
+      const baseQtyPerPack = Math.max(1, Math.round(item.qty / Math.max(1, originalPackQty)));
+      const baseQtyToReturn = line.packQty * baseQtyPerPack;
+
+      const inventory = await client.query(
+        `UPDATE bms_inventory
+            SET current_stock = current_stock + $2, updated_at = now()
+          WHERE tenant_id = $1
+            AND location_id = $3
+            AND product_sku = $4
+            AND size = $5`,
+        [input.tenantId, baseQtyToReturn, item.location_id, item.product_sku, item.size]
+      );
+      if (!inventory.rowCount) throw new Error(`ไม่พบสต็อก ${item.product_sku}/${item.size} สำหรับรับคืน`);
+
+      const returnItem = await client.query<{ id: string }>(
+        `INSERT INTO bms_pos_return_items
+           (tenant_id, pos_return_id, order_item_id, qty, pack_qty, refund_amount)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [input.tenantId, posReturnId, item.id, baseQtyToReturn, line.packQty, line.refundAmount]
+      );
+
+      let remainingBase = baseQtyToReturn;
+      const lotsRes = await client.query<{ lot_id: string; available_to_return: number }>(
+        `SELECT oil.lot_id,
+                (oil.qty - COALESCE((
+                  SELECT SUM(pril.qty)
+                    FROM bms_pos_return_item_lots pril
+                    JOIN bms_pos_return_items pri ON pri.id = pril.pos_return_item_id
+                   WHERE pril.tenant_id = oil.tenant_id
+                     AND pri.order_item_id = oil.order_item_id
+                     AND pril.lot_id = oil.lot_id
+                ), 0))::integer AS available_to_return
+           FROM bms_order_item_lots oil
+          WHERE oil.tenant_id = $1 AND oil.order_item_id = $2
+          ORDER BY id`,
+        [input.tenantId, item.id]
+      );
+      for (const lot of lotsRes.rows) {
+        if (remainingBase <= 0) break;
+        const giveBack = Math.min(remainingBase, Math.max(0, lot.available_to_return));
+        if (giveBack <= 0) continue;
+        await client.query(
+          `UPDATE bms_inventory_lots
+              SET qty = qty + $3, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2`,
+          [input.tenantId, lot.lot_id, giveBack]
+        );
+        await client.query(
+          `INSERT INTO bms_pos_return_item_lots (tenant_id, pos_return_item_id, lot_id, qty)
+           VALUES ($1, $2, $3, $4)`,
+          [input.tenantId, returnItem.rows[0].id, lot.lot_id, giveBack]
+        );
+        remainingBase -= giveBack;
+      }
+      if (lotsRes.rowCount && remainingBase > 0) {
+        throw new Error(`จำนวน lot ต้นทางของ ${item.product_sku}/${item.size} ไม่พอสำหรับรับคืน`);
+      }
+      await recordMovement(client, {
+        tenantId: input.tenantId,
+        locationId: item.location_id,
+        sku: item.product_sku,
+        size: item.size,
+        type: "RETURN",
+        qty: baseQtyToReturn,
+        refOrderId: input.orderId,
+        note: `POS return ${posReturnId}`,
+        actor: input.actorUserId,
+      });
+      returnedItems.push({ orderItemId: item.id, packQty: line.packQty, refundAmount: line.refundAmount });
+    }
+
+    const payments = await client.query<{
+      id: string; method: PaymentMethod; amount: string; allocated: string;
+    }>(
+      `SELECT p.id, p.method, p.amount,
+              COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
+                         WHERE a.tenant_id = p.tenant_id AND a.payment_id = p.id), 0) AS allocated
+         FROM bms_payments p
+        WHERE p.tenant_id = $1 AND p.order_id = $2
+          AND p.status IN ('CONFIRMED','REFUNDED')
+        ORDER BY p.created_at, p.id
+        FOR UPDATE`,
+      [input.tenantId, input.orderId]
+    );
+    if (!payments.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "NO_CONFIRMED_PAYMENTS" };
+    }
+
+    let remainingRefund = roundedRefundAmount;
+    const refunds: PosRefundAllocation[] = [];
+    for (const payment of payments.rows) {
+      if (remainingRefund <= 0.001) break;
+      const available = Math.max(0, Number(payment.amount) - Number(payment.allocated));
+      const amount = Math.round(Math.min(available, remainingRefund) * 100) / 100;
+      if (amount <= 0) continue;
+      const completed = payment.method === "CASH";
+      const allocation = await client.query<any>(
+        `INSERT INTO bms_pos_refund_allocations
+           (tenant_id, pos_return_id, payment_id, method, amount, status,
+            completed_by, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN $6 = 'COMPLETED' THEN now() ELSE NULL END)
+         RETURNING id, payment_id, method, amount, status, external_ref`,
+        [input.tenantId, posReturnId, payment.id, payment.method, amount,
+          completed ? "COMPLETED" : "PENDING", completed ? input.actorUserId : null]
+      );
+      refunds.push(mapRefundAllocation(allocation.rows[0]));
+      remainingRefund = Math.round((remainingRefund - amount) * 100) / 100;
+
+      if (completed && Number(payment.allocated) + amount >= Number(payment.amount) - 0.01) {
+        await client.query(
+          `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3, updated_at = now()
+            WHERE tenant_id = $1 AND id = $2 AND status = 'CONFIRMED'`,
+          [input.tenantId, payment.id, input.actorUserId]
+        );
+      }
+    }
+    if (remainingRefund > 0.01) throw new Error(`ยอด payment ที่ยังคืนได้ไม่พอ (ขาด ${remainingRefund.toFixed(2)})`);
+
+    const settlementStatus: "PENDING" | "COMPLETED" = refunds.every((refund) => refund.status === "COMPLETED")
+      ? "COMPLETED"
+      : "PENDING";
+    await client.query(
+      `UPDATE bms_pos_returns SET settlement_status = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, posReturnId, settlementStatus]
+    );
+
+    const allReturned = itemsRes.rows.every((item) => {
+      const original = item.pack_qty ?? item.qty;
+      return Number(item.returned_pack_qty ?? 0) + Number(requestedMap.get(item.id) ?? 0) >= original;
+    });
+    if (allReturned) {
+      await client.query(
+        `UPDATE bms_orders SET status = 'RETURNED', updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'COMPLETED'`,
+        [input.tenantId, input.orderId]
+      );
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.return', $3, $4)`,
+      [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({
+        posReturnId,
+        mode: input.mode,
+        refundAmount: roundedRefundAmount,
+        approvedBy,
+        settlementStatus,
+      })]
+    );
+
+    await client.query("COMMIT");
+    return {
+      status: "PARTIAL_RETURNED",
+      posReturnId,
+      orderId: input.orderId,
+      refundAmount: roundedRefundAmount,
+      returnedItems,
+      settlementStatus,
+      refunds,
+      replayed: false,
+    };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function mapRefundAllocation(row: any): PosRefundAllocation {
+  return {
+    id: String(row.id),
+    paymentId: String(row.payment_id),
+    method: row.method as PaymentMethod,
+    amount: Number(row.amount),
+    status: row.status as "PENDING" | "COMPLETED",
+    externalRef: row.external_ref ?? null,
+  };
+}
+
+export type CompletePosRefundResult =
+  | { status: "COMPLETED"; allocation: PosRefundAllocation; returnSettlementStatus: "PENDING" | "COMPLETED"; replayed: boolean }
+  | { status: "NOT_FOUND" }
+  | { status: "APPROVAL_REQUIRED" }
+  | { status: "REFERENCE_REQUIRED" };
+
+/** ยืนยันหลังคืนเงินจริงผ่านเครื่องบัตร/QR/wallet แล้วเท่านั้น */
+export async function completePosRefundAllocation(input: {
+  tenantId: string;
+  deviceId: string;
+  allocationId: string;
+  actorUserId: string;
+  externalRef?: string | null;
+}): Promise<CompletePosRefundResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    if (!(await cashierHasPermissionInTx(client, input.tenantId, input.actorUserId, "payment.refund"))) {
+      await client.query("ROLLBACK");
+      return { status: "APPROVAL_REQUIRED" };
+    }
+    const res = await client.query<any>(
+      `SELECT a.*, pr.order_id
+         FROM bms_pos_refund_allocations a
+         JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+        WHERE a.tenant_id = $1 AND a.id = $2 AND pr.pos_device_id = $3
+        FOR UPDATE`,
+      [input.tenantId, input.allocationId, input.deviceId]
+    );
+    const row = res.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+    if (row.status === "COMPLETED") {
+      const statusRes = await client.query<{ settlement_status: "PENDING" | "COMPLETED" }>(
+        `SELECT settlement_status FROM bms_pos_returns WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, row.pos_return_id]
+      );
+      await client.query("ROLLBACK");
+      return {
+        status: "COMPLETED",
+        allocation: mapRefundAllocation(row),
+        returnSettlementStatus: statusRes.rows[0]?.settlement_status ?? "PENDING",
+        replayed: true,
+      };
+    }
+    const externalRef = input.externalRef?.trim() || null;
+    if (row.method !== "CASH" && !externalRef) {
+      await client.query("ROLLBACK");
+      return { status: "REFERENCE_REQUIRED" };
+    }
+    const updated = await client.query<any>(
+      `UPDATE bms_pos_refund_allocations
+          SET status = 'COMPLETED', external_ref = $3, completed_by = $4,
+              completed_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2
+        RETURNING id, payment_id, method, amount, status, external_ref`,
+      [input.tenantId, input.allocationId, externalRef, input.actorUserId]
+    );
+    const paid = await client.query<{ amount: string; completed: string }>(
+      `SELECT p.amount,
+              COALESCE(SUM(a.amount) FILTER (WHERE a.status = 'COMPLETED'), 0) AS completed
+         FROM bms_payments p
+         LEFT JOIN bms_pos_refund_allocations a
+           ON a.tenant_id = p.tenant_id AND a.payment_id = p.id
+        WHERE p.tenant_id = $1 AND p.id = $2
+        GROUP BY p.id, p.amount`,
+      [input.tenantId, row.payment_id]
+    );
+    if (Number(paid.rows[0]?.completed ?? 0) >= Number(paid.rows[0]?.amount ?? 0) - 0.01) {
+      await client.query(
+        `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'CONFIRMED'`,
+        [input.tenantId, row.payment_id, input.actorUserId]
+      );
+    }
+    const pending = await client.query(
+      `SELECT 1 FROM bms_pos_refund_allocations
+        WHERE tenant_id = $1 AND pos_return_id = $2 AND status = 'PENDING' LIMIT 1`,
+      [input.tenantId, row.pos_return_id]
+    );
+    const returnSettlementStatus: "PENDING" | "COMPLETED" = pending.rowCount ? "PENDING" : "COMPLETED";
+    await client.query(
+      `UPDATE bms_pos_returns SET settlement_status = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, row.pos_return_id, returnSettlementStatus]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.refund.complete', $3, $4)`,
+      [input.tenantId, input.actorUserId, row.order_id,
+        JSON.stringify({ allocationId: input.allocationId, method: row.method, amount: Number(row.amount) })]
+    );
+    await client.query("COMMIT");
+    return {
+      status: "COMPLETED",
+      allocation: mapRefundAllocation(updated.rows[0]),
+      returnSettlementStatus,
+      replayed: false,
+    };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
