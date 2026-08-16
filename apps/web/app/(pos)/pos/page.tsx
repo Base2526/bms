@@ -151,6 +151,12 @@ export default function PosPage() {
   const [lookupMode, setLookupMode] = useState(false);
   const [lookup, setLookup] = useState<ScanHit | null>(null);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
+  // ใบเสร็จตัวเต็มเป็น "เอกสารสำหรับพิมพ์" ไม่ใช่ของที่ต้องอ่านบนจอ →
+  // อยู่ใน modal เปิดเมื่อกดดู/พิมพ์บิลเก่าเท่านั้น
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  // บิลที่เพิ่งขายจบ — แสดงผลในคอลัมน์ขวาแทนแผงจ่ายเงิน (จุดที่เพิ่งกดปุ่ม)
+  // ไม่ใช้ modal เพราะต้องกดปิดทุกบิล = เพิ่ม 1 แตะต่อลูกค้า 1 คน
+  const [justSold, setJustSold] = useState<{ docNo: string | null; change: number | null; total: number } | null>(null);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
   const [splitMode, setSplitMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -337,6 +343,10 @@ export default function PosPage() {
         return;
       }
       const hit: ScanHit = data;
+      // ยิงของชิ้นถัดไปคือสัญญาณว่าลูกค้าคนใหม่มาแล้ว — เก็บผลบิลก่อนให้เอง
+      // รวมถึงใบเสร็จที่เปิดค้างไว้ ไม่งั้นบิลของลูกค้าคนก่อนบังจอคนถัดไป
+      if (justSold) setJustSold(null);
+      if (receiptModalOpen) setReceiptModalOpen(false);
       if (lookupMode) {
         setLookup(hit);
         setNotice(null);
@@ -723,6 +733,11 @@ export default function PosPage() {
           refunds: [],
         };
         setReceipt(nextReceipt);
+        setJustSold({
+          docNo: data.docNo ?? null,
+          change: data.cashChange ?? null,
+          total,
+        });
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
           type: "ok",
@@ -1576,6 +1591,7 @@ export default function PosPage() {
                       <button
                         onClick={() => {
                           setReceipt(row);
+                          setReceiptModalOpen(true);
                           window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(row));
                         }}
                         style={{ padding: "6px 10px", fontSize: 12 }}
@@ -1643,10 +1659,53 @@ export default function PosPage() {
             </div>
           )}
 
+          {justSold && (
+            <div
+              style={{
+                marginTop: 12, border: "2px solid #237804", borderRadius: 12,
+                padding: 16, background: "#f6ffed",
+              }}
+            >
+              <div style={{ fontSize: 15, color: "#237804", fontWeight: 500 }}>
+                ✓ ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}
+              </div>
+
+              {justSold.change != null ? (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 14, color: "#666" }}>เงินทอน</div>
+                  {/* ตัวใหญ่สุดบนจอ — สิ่งเดียวที่แคชเชียร์ต้องทำต่อทันที */}
+                  <div style={{ fontSize: 44, fontWeight: 600, lineHeight: 1.1 }}>
+                    ฿{baht(justSold.change)}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 10, fontSize: 24, fontWeight: 500 }}>
+                  รับเงินครบ ฿{baht(justSold.total)}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                <button onClick={() => window.print()} style={{ padding: "12px 20px", fontSize: 15 }}>
+                  พิมพ์ใบเสร็จ
+                </button>
+                <button onClick={() => setReceiptModalOpen(true)} style={{ padding: "12px 20px", fontSize: 15 }}>
+                  ดูใบเสร็จ
+                </button>
+                <button onClick={() => setJustSold(null)} style={{ padding: "12px 20px", fontSize: 15 }}>
+                  ปิด
+                </button>
+              </div>
+
+              <div style={{ marginTop: 12, fontSize: 13, color: "#666" }}>
+                ยิงสินค้าชิ้นถัดไปได้เลย — หน้าจอนี้จะหายเอง
+              </div>
+            </div>
+          )}
+
           {/* บิลเงินสดล้วนคือ 95% ของบิล — ให้พิมพ์ช่องเดียวจบ
               ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก
               จ่ายผสมค่อยกด "เพิ่มวิธีจ่าย" แล้วฟอร์มเต็มจะโผล่มาแทน */}
-          {simpleCash && (
+          {simpleCash && !justSold && (
             <div style={{ marginTop: 12 }}>
               <input
                 value={payments[0]?.tendered ?? ""}
@@ -1694,7 +1753,7 @@ export default function PosPage() {
             </div>
           )}
 
-          <div style={{ marginTop: 12, display: simpleCash ? "none" : "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ marginTop: 12, display: simpleCash || justSold ? "none" : "flex", flexDirection: "column", gap: 8 }}>
             {payments.map((payment, index) => {
               const normalized = paymentSummary.normalized[index];
               return (
@@ -1769,6 +1828,7 @@ export default function PosPage() {
           </div>
 
           <div style={{ flex: 1 }} />
+          {!justSold && (<>
           {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
               เหตุผลจริงเคยอยู่ในข้อความตัวเล็กมุมขวาซึ่งไม่มีใครมอง */}
           <button
@@ -1798,10 +1858,24 @@ export default function PosPage() {
           >
             ล้างบิล
           </button>
+          </>)}
         </section>
       </div>
       {receipt && (
-        <>
+        <div
+          onClick={() => setReceiptModalOpen(false)}
+          style={
+            receiptModalOpen
+              ? {
+                  position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  padding: 16, zIndex: 50,
+                }
+              : // ยังต้องอยู่ใน DOM ให้ window.print() ใช้ได้ แต่ไม่กินพื้นที่จอ
+                { position: "absolute", left: -10000, top: 0, width: 1, height: 1, overflow: "hidden" }
+          }
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
           {/* ใบเสร็จ: พิมพ์ผ่าน print dialog ของเบราว์เซอร์ก่อน — ใช้ได้กับเครื่องพิมพ์
               ที่ลง driver ไว้แล้วโดยไม่ต้องเขียน ESC/POS · ESC/POS ผ่าน WebUSB
               (พร้อมคำสั่งเปิดลิ้นชัก) ค่อยทำเมื่อได้เครื่องจริงมาทดสอบ */}
@@ -1809,7 +1883,7 @@ export default function PosPage() {
             @media print {
               body * { visibility: hidden; }
               #pos-receipt, #pos-receipt * { visibility: visible; }
-              #pos-receipt { position: absolute; left: 0; top: 0; width: 72mm; }
+              #pos-receipt { position: absolute !important; left: 0 !important; top: 0 !important; width: 72mm; }
             }
           `}</style>
           <div
@@ -1885,11 +1959,12 @@ export default function PosPage() {
             <div style={{ marginTop: 6 }}>{receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"} · {receipt.at}</div>
             <div>แคชเชียร์ {receipt.cashier}</div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "center" }}>
             <button onClick={() => window.print()} style={{ padding: "10px 20px" }}>พิมพ์ใบเสร็จ</button>
-            <button onClick={() => setReceipt(null)} style={{ padding: "10px 20px" }}>ปิด</button>
+            <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 20px" }}>ปิด</button>
           </div>
-        </>
+          </div>
+        </div>
       )}
     </div>
   );
