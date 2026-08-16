@@ -960,8 +960,11 @@ export default function PosPage() {
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
           type: "ok",
+          // จ่ายพอดีไม่ต้องประกาศว่าทอน 0 — บอกยอดที่รับไปแทน
           text: `ขายสำเร็จ${data.docNo ? ` · ใบเสร็จ ${data.docNo}` : ""}${
-            data.cashChange != null ? ` · เงินทอน ฿${baht(data.cashChange)}` : ""
+            data.cashChange != null && Number(data.cashChange) > 0
+              ? ` · เงินทอน ฿${baht(Number(data.cashChange))}`
+              : ` · รับ ฿${baht(soldTotal)}`
           }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
@@ -2034,15 +2037,18 @@ export default function PosPage() {
                 <span>ขายสำเร็จ{justSold.docNo ? ` · ${justSold.docNo}` : ""}</span>
               </div>
 
-              {justSold.change != null ? (
+              {/* จ่ายพอดี (เงินทอน 0) ต้องไม่ขึ้นเลข 0 ตัวเบ้อเร่อ — ตะกร้าเพิ่งถูกล้าง
+                  ยอดข้างบนก็เป็น 0 อยู่แล้ว ทั้งจอเลยอ่านเหมือนขายไม่สำเร็จ
+                  เลขใหญ่ต้องเป็นสิ่งที่แคชเชียร์ต้องทำต่อ: ทอนเท่านี้ หรือรับครบแล้ว */}
+              {justSold.change != null && justSold.change > 0 ? (
                 <>
                   <div className="pos-success-label">ทอนเงินให้ลูกค้า</div>
-                  {/* ตัวใหญ่สุดบนจอ — สิ่งเดียวที่แคชเชียร์ต้องทำต่อทันที */}
                   <div className="pos-success-value">฿{baht(justSold.change)}</div>
+                  <div style={{ fontSize: 13, marginTop: 2 }}>ยอดบิล ฿{baht(justSold.total)}</div>
                 </>
               ) : (
                 <>
-                  <div className="pos-success-label">รับเงินครบแล้ว</div>
+                  <div className="pos-success-label">รับเงินครบพอดี ไม่ต้องทอน</div>
                   <div className="pos-success-value">฿{baht(justSold.total)}</div>
                 </>
               )}
