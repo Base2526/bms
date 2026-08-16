@@ -1363,12 +1363,35 @@ export default function PosPage() {
           </div>
         </div>
 
-        {/* เหลือเฉพาะสิ่งที่ต้องเห็นตลอดเวลา: ใครกำลังขาย และพิมพ์บิลล่าสุดซ้ำ
-            ปุ่มตั้งค่า/เลิกจับคู่/เลือกผู้ขาย ย้ายไปแท็บ "ตั้งค่า" */}
+        {/* ผู้ขาย + PIN ต้องอยู่ตรงนี้ ติดจอตลอด ห้ามอยู่ในบล็อกที่ซ่อนตัวเองตาม
+            สถานะ: canSell เป็นจริงทันทีที่ pin มีตัวอักษรตัวแรก ถ้าช่องอยู่ในบล็อก
+            แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
+            ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, color: currentCashierName ? "#333" : "#c0392b" }}>
-            {currentCashierName ? `ผู้ขาย: ${currentCashierName}${pin ? "" : " · ยังไม่ใส่ PIN"}` : "ยังไม่ได้เลือกผู้ขาย"}
-          </span>
+          <select
+            value={cashierId}
+            onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
+            style={{ fontSize: 13, minWidth: 170, padding: 8 }}
+            aria-label="ผู้ขาย"
+          >
+            <option value="">เลือกผู้ขาย</option>
+            {(session?.cashiers ?? []).map((c) => (
+              <option key={c.id} value={c.id} disabled={!c.hasPin}>
+                {c.name || c.email}
+                {c.isPharmacist ? " (ภก.)" : ""}
+                {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
+              </option>
+            ))}
+          </select>
+          <input
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="PIN"
+            aria-label="PIN ของผู้ขาย"
+            style={{ width: 96, fontSize: 15, padding: 8 }}
+          />
           {receipt && (
             <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
               พิมพ์บิลล่าสุด
@@ -1397,7 +1420,7 @@ export default function PosPage() {
                 <a href="/admin/pos-devices">แอดมิน → เครื่องขาย + PIN</a>
               </li>
             )}
-            {anyCashierHasPin && (!cashierId || !pin) && <li>เลือกผู้ขายและใส่ PIN</li>}
+            {anyCashierHasPin && (!cashierId || !pin) && <li>เลือกผู้ขายและใส่ PIN ที่แถบด้านบน</li>}
             {!session.shift && (
               <li>
                 เปิดกะ พร้อมระบุเงินตั้งต้นในลิ้นชัก —{" "}
@@ -1405,32 +1428,6 @@ export default function PosPage() {
               </li>
             )}
           </ol>
-          {anyCashierHasPin && (!cashierId || !pin) && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
-              <select
-                value={cashierId}
-                onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
-                style={{ fontSize: 14, minWidth: 180, padding: 8 }}
-              >
-                <option value="">เลือกผู้ขาย</option>
-                {(session?.cashiers ?? []).map((c) => (
-                  <option key={c.id} value={c.id} disabled={!c.hasPin}>
-                    {c.name || c.email}
-                    {c.isPharmacist ? " (ภก.)" : ""}
-                    {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="PIN"
-                style={{ width: 110, fontSize: 15, padding: 8 }}
-              />
-            </div>
-          )}
         </div>
       )}
       {notice && (
@@ -1564,32 +1561,13 @@ export default function PosPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <div style={{ fontWeight: 500, marginBottom: 8 }}>ผู้ขายที่เครื่องนี้</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <select
-                value={cashierId}
-                onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
-                style={{ fontSize: 14, minWidth: 200, padding: 8 }}
-              >
-                <option value="">เลือกผู้ขาย</option>
-                {(session?.cashiers ?? []).map((c) => (
-                  <option key={`settings-${c.id}`} value={c.id} disabled={!c.hasPin}>
-                    {c.name || c.email}
-                    {c.isPharmacist ? " (ภก.)" : ""}
-                    {c.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="PIN"
-                style={{ width: 110, fontSize: 15, padding: 8 }}
-              />
+            {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
+            <div style={{ fontSize: 13, color: "#555" }}>
+              {currentCashierName ? `กำลังขายในชื่อ ${currentCashierName}` : "ยังไม่ได้เลือกผู้ขาย"}
+              {currentCashierName && !pin ? " · ยังไม่ใส่ PIN" : ""}
             </div>
             <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>
-              PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่
+              เปลี่ยนผู้ขาย/ใส่ PIN ได้ที่แถบด้านบน · PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่
             </div>
           </div>
 
