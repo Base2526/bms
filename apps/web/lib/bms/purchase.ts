@@ -12,6 +12,8 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
+import { resolveDefaultLocationIdInTx } from "./locations";
+import { receiveLotInTx } from "./lots";
 import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 
@@ -40,7 +42,16 @@ export type CreatePOResult =
   | { status: "NOT_FOUND"; sku: string }
   | { status: "EMPTY" };
 
-export type ReceiveInput = { sku: string; size: string; qty: number };
+export type ReceiveInput = {
+  sku: string;
+  size: string;
+  qty: number;
+  /** เลข lot จากผู้ผลิต — ร้านยาต้องมี ร้านอื่นเว้นได้ (7.85) */
+  lotNo?: string | null;
+  /** YYYY-MM-DD */
+  expiryDate?: string | null;
+  unitCost?: number | null;
+};
 
 export type ReceivePOResult =
   | { status: "RECEIVED" | "PARTIAL"; poId: string; items: PoLine[] }
@@ -51,11 +62,14 @@ export type ReceivePOResult =
   | { status: "EMPTY" };
 
 // ---- helpers -------------------------------------------------
-/** รวมรายการซ้ำ (sku+size) แล้วบวก qty — เรียง deterministic กัน deadlock */
-function mergeItems<T extends { sku: string; size: string; qty: number }>(items: T[]): T[] {
+/**
+ * รวมรายการซ้ำ (sku+size+lot) แล้วบวก qty — เรียง deterministic กัน deadlock
+ * lot ต่างกันห้ามรวมกัน ไม่งั้นวันหมดอายุของกองที่รวมแล้วไม่มีความหมาย
+ */
+function mergeItems<T extends { sku: string; size: string; qty: number; lotNo?: string | null }>(items: T[]): T[] {
   const map = new Map<string, T>();
   for (const it of items) {
-    const key = `${it.sku}__${it.size}`;
+    const key = `${it.sku}__${it.size}__${it.lotNo ?? ""}`;
     const cur = map.get(key);
     if (cur) cur.qty += it.qty;
     else map.set(key, { ...it });
@@ -161,7 +175,14 @@ export async function receivePurchaseOrder(
 ): Promise<ReceivePOResult> {
   const lines = mergeItems(
     received
-      .map((it) => ({ sku: String(it.sku ?? "").trim(), size: String(it.size ?? "").trim(), qty: Number(it.qty) }))
+      .map((it) => ({
+        sku: String(it.sku ?? "").trim(),
+        size: String(it.size ?? "").trim(),
+        qty: Number(it.qty),
+        lotNo: it.lotNo ? String(it.lotNo).trim() : null,
+        expiryDate: it.expiryDate ? String(it.expiryDate).trim() : null,
+        unitCost: it.unitCost == null ? null : Number(it.unitCost),
+      }))
       .filter((it) => it.sku && it.size && Number.isInteger(it.qty) && it.qty > 0)
   );
   if (lines.length === 0) return { status: "EMPTY" };
@@ -169,10 +190,11 @@ export async function receivePurchaseOrder(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId });
+    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
 
     // ล็อก PO — ต้องอยู่สถานะที่รับได้
-    const po = await client.query<{ status: string }>(
-      `SELECT status FROM bms_purchase_orders
+    const po = await client.query<{ status: string; supplier_id: string | null }>(
+      `SELECT status, supplier_id FROM bms_purchase_orders
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, poId]
     );
@@ -181,6 +203,7 @@ export async function receivePurchaseOrder(
       return { status: "PO_NOT_FOUND" };
     }
     const cur = po.rows[0].status;
+    const supplierId = po.rows[0].supplier_id ?? null;
     if (cur !== "OPEN" && cur !== "PARTIAL") {
       await client.query("ROLLBACK");
       return { status: "INVALID_STATE", current: cur };
@@ -206,12 +229,27 @@ export async function receivePurchaseOrder(
 
       // สต็อกเข้า: upsert inventory row (สร้างไซซ์ใหม่ได้)
       await client.query(
-        `INSERT INTO bms_inventory (tenant_id, product_sku, size, current_stock, reserved_stock)
-         VALUES ($1, $2, $3, $4, 0)
-         ON CONFLICT (tenant_id, product_sku, size)
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1, $5, $2, $3, $4, 0)
+         ON CONFLICT (tenant_id, location_id, product_sku, size)
          DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
-        [tenantId, ln.sku, ln.size, ln.qty]
+        [tenantId, ln.sku, ln.size, ln.qty, locationId]
       );
+
+      // lot: บันทึกในทรานแซกชันเดียวกับที่บวก current_stock — invariant ต้องไม่หลุด
+      if (ln.lotNo) {
+        await receiveLotInTx(client, {
+          tenantId,
+          locationId,
+          productSku: ln.sku,
+          size: ln.size,
+          lotNo: ln.lotNo,
+          qty: ln.qty,
+          expiryDate: ln.expiryDate,
+          supplierId,
+          unitCost: ln.unitCost,
+        });
+      }
 
       await client.query(
         `UPDATE bms_purchase_order_items SET qty_received = qty_received + $2 WHERE id = $1`,

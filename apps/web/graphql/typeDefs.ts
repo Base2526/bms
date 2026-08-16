@@ -574,7 +574,312 @@ export const typeDefs = /* GraphQL */ `
     post_id: String
   }
 
+
+  # ---- POS / สาขา / lot ----
+  type BmsLocation {
+    id: ID!
+    code: String!
+    name: String!
+    branchCode: String!
+    isHeadOffice: Boolean!
+    vatCode: String
+    address: String
+    phone: String
+    pharmacyLicenseNo: String
+    pharmacistName: String
+    pharmacistLicenseNo: String
+    active: Boolean!
+  }
+
+  type BmsPosDevice {
+    id: ID!
+    tenantId: ID!
+    locationId: ID!
+    code: String!
+    name: String
+    registeredPosNo: String
+    receiptPrefix: String
+    active: Boolean!
+  }
+
+  input BmsPosDeviceInput {
+    id: ID
+    locationId: ID!
+    code: String!
+    name: String
+    registeredPosNo: String
+    receiptPrefix: String
+    active: Boolean
+  }
+
+  " token ค่าจริงคืนครั้งเดียวตอนออกเท่านั้น ฐานข้อมูลเก็บแต่ hash "
+  type BmsPosDeviceToken {
+    token: String!
+  }
+
+  type BmsPosOperationalReadiness {
+    ready: Boolean!
+    blockers: [String!]!
+    warnings: [String!]!
+    activeLocations: Int!
+    activeDevices: Int!
+    pairedDevices: Int!
+    cashiersWithPin: Int!
+    cashiersReady: Int!
+    sellableProducts: Int!
+    stockedVariants: Int!
+    openShifts: Int!
+    pendingRefundCount: Int!
+    pendingRefundAmount: Float!
+  }
+
+  " หน่วยขาย: สิ่งที่ลูกค้าซื้อจริงและมีบาร์โค้ดของตัวเอง (แผง / กล่อง) "
+  type BmsProductPack {
+    id: ID!
+    productSku: String!
+    size: String
+    packCode: String!
+    unitName: String!
+    baseQty: Int!
+    barcode: String
+    " null = คิดจากราคาสินค้า × baseQty "
+    price: Float
+    isBase: Boolean!
+    active: Boolean!
+  }
+
+  type BmsProductPackList {
+    packs: [BmsProductPack!]!
+    " ไซซ์ที่มีแถวสต็อกจริง "
+    sizes: [String!]!
+  }
+
+  input BmsProductPackInput {
+    id: ID
+    productSku: String!
+    size: String
+    packCode: String!
+    unitName: String!
+    baseQty: Int!
+    barcode: String
+    price: Float
+    isBase: Boolean
+    active: Boolean
+  }
+
+  type BmsPackAudit {
+    sku: String!
+    name: String!
+    sizes: Int!
+    packs: Int!
+    sizesWithoutBarcode: [String!]!
+  }
+
+  type BmsEtaxSummary {
+    enabled: Boolean!
+    pending: Int!
+    sent: Int!
+    accepted: Int!
+    rejected: Int!
+    failed: Int!
+    " ใบกำกับที่ออกแล้วแต่ยังไม่เคยเข้าคิว "
+    notQueued: Int!
+  }
+
+  type BmsEtaxSubmission {
+    id: ID!
+    documentId: ID!
+    docNo: String
+    status: String!
+    provider: String
+    providerRef: String
+    attempts: Int!
+    lastError: String
+    nextAttemptAt: String
+    sentAt: String
+    settledAt: String
+  }
+
+  type BmsEtaxRunResult {
+    processed: Int!
+    accepted: Int!
+    failed: Int!
+    rejected: Int!
+  }
+
+  type BmsPosCashier {
+    id: ID!
+    name: String
+    email: String
+    role: String
+    isPharmacist: Boolean!
+    hasPin: Boolean!
+    posOnly: Boolean!
+  }
+
+  type BmsPosShift {
+    id: ID!
+    locationId: ID!
+    deviceId: ID!
+    status: String!
+    openedBy: ID!
+    openedAt: String!
+    openingFloat: Float!
+    pharmacistUserId: ID
+    closedAt: String
+    expectedCash: Float
+    countedCash: Float
+    cashVariance: Float
+  }
+
+  type BmsOpenShiftResult {
+    status: String!
+    shift: BmsPosShift
+    reason: String
+  }
+
+  type BmsCloseShiftResult {
+    status: String!
+    shift: BmsPosShift
+    count: Int
+    amount: Float
+  }
+
+  type BmsInventoryLot {
+    id: ID!
+    locationId: ID!
+    productSku: String!
+    size: String!
+    lotNo: String!
+    expiryDate: String
+    receivedAt: String!
+    supplierId: ID
+    unitCost: Float
+    qty: Int!
+    note: String
+  }
+
+  type BmsLotRecallHit {
+    orderId: ID!
+    orderCreatedAt: String!
+    channel: String!
+    productSku: String!
+    qty: Int!
+    customerId: ID
+    customerName: String
+    customerPhone: String
+  }
+
+  type BmsLotMismatch {
+    locationId: ID!
+    productSku: String!
+    size: String!
+    currentStock: Int!
+    lotTotal: Int!
+  }
+
+  type BmsTaxDocument {
+    id: ID!
+    locationId: ID!
+    orderId: ID!
+    deviceId: ID
+    docType: String!
+    docNo: String!
+    issuedAt: String!
+    issueDate: String!
+    replacesDocumentId: ID
+    cancelledAt: String
+    cancelledReason: String
+    buyerName: String
+    buyerTaxId: String
+    buyerBranchCode: String
+    buyerAddress: String
+    buyerPhone: String
+    taxableAmount: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    roundingAmount: Float!
+    grandTotal: Float!
+    vatRate: Float!
+  }
+
+  input BmsTaxInvoiceBuyerInput {
+    name: String!
+    taxId: String!
+    branchCode: String
+    address: String
+    phone: String
+  }
+
+  "ค่าตั้งภาษีของร้าน — มีผลกับบิลใหม่เท่านั้น เอกสารเก่าเก็บอัตราของตัวเองไว้แล้ว"
+  type BmsTaxSettings {
+    vatRegistered: Boolean!
+    priceIncludesVat: Boolean!
+    vatRate: Float!
+    "BASE_FIRST | VAT_FIRST_TRUNCATE | VAT_FIRST_ROUND"
+    vatRounding: String!
+    "BE | CE — ปีบนเอกสาร"
+    calendarEra: String!
+    abbreviatedApproved: Boolean!
+    "NONE | 0.25 | 0.50 | 1.00 — ปัดเฉพาะบิลที่จ่ายสดล้วน"
+    cashRounding: String!
+  }
+
+  input BmsTaxSettingsInput {
+    vatRegistered: Boolean!
+    priceIncludesVat: Boolean!
+    vatRate: Float!
+    vatRounding: String!
+    calendarEra: String!
+    abbreviatedApproved: Boolean!
+    cashRounding: String!
+  }
+
+  type BmsIssueFullTaxInvoiceResult {
+    status: String!
+    document: BmsTaxDocument
+    cancelledAbbreviated: BmsTaxDocument
+    reason: String
+    skus: [String!]
+  }
+
+  type BmsPharmacyPolicyReadiness {
+    pharmacyArchetype: Boolean!
+    totalProducts: Int!
+    approved: Int!
+    pendingReview: Int!
+    draft: Int!
+    missing: Int!
+    ready: Boolean!
+  }
+
+  type BmsUnreviewedProduct {
+    sku: String!
+    name: String!
+    policyStatus: String!
+  }
+
   type Query {
+
+    # ---- POS / สาขา / lot (7.84–7.87) ----
+    bmsLocations: [BmsLocation!]!
+    bmsPosDevices: [BmsPosDevice!]!
+    bmsProductPacks(productSku: String!): BmsProductPackList!
+    bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
+    bmsEtaxSummary: BmsEtaxSummary!
+    bmsEtaxSubmissions(status: String, limit: Int = 100): [BmsEtaxSubmission!]!
+    bmsPosCashiers: [BmsPosCashier!]!
+    bmsPosStaff: [BmsPosCashier!]!
+    bmsPosOpenShift(deviceId: ID!): BmsPosShift
+    bmsPosOperationalReadiness: BmsPosOperationalReadiness!
+    bmsInventoryLots(productSku: String, size: String, locationId: ID): [BmsInventoryLot!]!
+    bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+    bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
+    bmsLotReconcile: [BmsLotMismatch!]!
+    bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
+    bmsTaxSettings: BmsTaxSettings!
+    bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
+    bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
     _health: String!
     meRole: String!
     posts(search: String): [Post!]!
@@ -2936,6 +3241,22 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+
+    # ---- POS (7.87) ----
+    bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
+    bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
+    bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
+    bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
+    "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
+    bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
+    bmsDeleteProductPack(id: ID!): Boolean!
+    bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
+    bmsBackfillEtaxQueue(limit: Int = 500): Int!
+    bmsSetCashierPin(userId: ID!, pin: String): Boolean!
+    "posOnly=true → บัญชีนี้ login เข้าหลังบ้านไม่ได้อีก ใช้ได้เฉพาะ PIN ที่เครื่องขาย"
+    bmsSetCashierAccountMode(userId: ID!, posOnly: Boolean!): Boolean!
+    bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+    bmsClosePosShift(shiftId: ID!, countedCash: Float!, note: String): BmsCloseShiftResult!
     # login
     login(input: LoginInput!): LoginResult!
     loginUser(input: LoginInput!): LoginResult!

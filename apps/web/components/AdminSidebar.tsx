@@ -42,6 +42,9 @@ import {
   FileSearchOutlined,
   FileProtectOutlined,
   IdcardOutlined,
+  DesktopOutlined,
+  BarcodeOutlined,
+  SafetyCertificateOutlined,
   HeartOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
@@ -354,6 +357,21 @@ export default function AdminSidebar() {
         ...(canViewPharmacy ? [pharmacyQueueLink(t, effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
         ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <FileProtectOutlined />)] : []),
         ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <IdcardOutlined />)] : []),
+      ],
+    }] : []),
+    // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
+    // และงานคือ "เตรียมจุดขาย" (เครื่อง/PIN/ความพร้อมก่อนเปิด) ไม่ใช่จัดการออร์เดอร์
+    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') ? [{
+      key: 'g-pos',
+      icon: <ShopOutlined />,
+      label: t('admin.group_pos'),
+      children: [
+        ...(can('pos.device.manage') || can('pos.pin.manage')
+          ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
+        ...(can('product.view')
+          ? [link('/admin/product-packs', t('admin.menu_product_packs'), <BarcodeOutlined />)] : []),
+        ...(can('pharmacy.policy.read')
+          ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
       ],
     }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),

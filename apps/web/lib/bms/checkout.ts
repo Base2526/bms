@@ -419,7 +419,7 @@ export async function submitCheckoutPaymentByToken(
 
   const profile = await getStoreProfile(payload.tenantId);
   if (
-    !["BANK_TRANSFER", "QR"].includes(input.method) ||
+    (input.method !== "BANK_TRANSFER" && input.method !== "QR") ||
     !supportsCustomerPaymentMethod(profile.paymentAccounts, input.method)
   ) {
     return {

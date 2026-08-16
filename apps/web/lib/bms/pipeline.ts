@@ -165,7 +165,7 @@ const CUSTOMER_PROGRESS_TOOLS = new Set(customerTools().map((tool) => tool.name)
 const HANDOFF_REPLY = "ขอโทษนะคะ ขอให้แอดมินช่วยตอบต่อในเรื่องนี้นะคะ รบกวนรอสักครู่ค่ะ 🙏";
 const HANDOFF_REPLY_EN = "Sorry, an admin needs to help with this request. Please wait a moment.";
 
-export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada" | "test";
+export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada" | "pos" | "test";
 
 export type PipelineResult = {
   channel: Channel;

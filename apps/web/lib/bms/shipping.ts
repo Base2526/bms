@@ -467,6 +467,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
            FROM bms_order_items oi
           WHERE oi.order_id = $1
             AND inv.tenant_id = oi.tenant_id
+            AND inv.location_id = oi.location_id
             AND inv.product_sku = oi.product_sku
             AND inv.size = oi.size`,
         [input.orderId]

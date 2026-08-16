@@ -68,6 +68,7 @@ import { bmsAssistantResolvers } from "@/graphql/bmsAssistant";
 import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
 import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
 import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
+import { bmsPosResolvers } from "@/graphql/bmsPos";
 import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
 import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
 import { bmsFollowupsResolvers } from "@/graphql/bmsFollowups";
@@ -2858,6 +2859,7 @@ const rawResolvers = {
     ...bmsStoreProfileResolvers.Query,
     ...bmsRevisionsResolvers.Query,
     ...bmsCouponsResolvers.Query,
+    ...bmsPosResolvers.Query,
     ...bmsReportScheduleResolvers.Query,
     ...bmsFollowupsResolvers.Query,
     ...bmsPharmacyResolvers.Query,
@@ -3139,6 +3141,12 @@ const rawResolvers = {
 
       if (!(await passwordMatches(password, user))) {
         throw new Error("Invalid credentials");
+      }
+      // บัญชีเฉพาะหน้าร้าน (7.92): ยืนยันตัวตนด้วย PIN ที่เครื่องขายเท่านั้น
+      // ปฏิเสธที่นี่ ไม่ใช่แค่ไม่ให้สิทธิ์ — แคชเชียร์ที่รู้รหัสผ่านตัวเองต้องเข้า
+      // หลังบ้านไม่ได้เลย ไม่ใช่เข้าได้แต่เห็นหน้าว่าง
+      if (user.pos_only === true) {
+        throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
       }
       if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
         throw new Error("Invalid credentials");
@@ -7565,6 +7573,7 @@ const rawResolvers = {
     ...bmsAssistantResolvers.Mutation,
     ...bmsStoreProfileResolvers.Mutation,
     ...bmsCouponsResolvers.Mutation,
+    ...bmsPosResolvers.Mutation,
     ...bmsReportEngineResolvers.Mutation,
     ...bmsReportScheduleResolvers.Mutation,
     ...bmsFollowupsResolvers.Mutation,

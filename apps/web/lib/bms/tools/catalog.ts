@@ -84,6 +84,7 @@ import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
 import {
   configuredPaymentAccounts,
+  isCustomerPaymentMethod,
   supportsCustomerPaymentMethod,
 } from "../paymentConfiguration";
 import { getTenantName, getTenantSlug } from "../platform";
@@ -1250,7 +1251,7 @@ const submitPaymentTool: BmsTool = {
         return { ok: true, data: { status: "MARKETPLACE_MANAGED" } };
       }
       const profile = await getStoreProfile(ec.tenantId);
-      if (!supportsCustomerPaymentMethod(profile.paymentAccounts, method)) {
+      if (!isCustomerPaymentMethod(method) || !supportsCustomerPaymentMethod(profile.paymentAccounts, method)) {
         return {
           ok: true,
           data: {

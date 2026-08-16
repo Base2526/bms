@@ -59,6 +59,27 @@ export const BMS_PERMISSIONS = [
   "pharmacy.assessment.reject",
   "pharmacy.protocol.manage",
   "pharmacy.audit.read",
+  // จัดประเภทยา/นโยบายการขายรายสินค้า — seed ที่ 7.87
+  // .review ให้เฉพาะ Pharmacist และโค้ดยังเช็ค is_licensed_pharmacist ซ้ำ
+  // เหมือน approveAssessment() เพราะ Administrator ได้ทุก permission อัตโนมัติ
+  "pharmacy.policy.read",
+  "pharmacy.policy.review",
+  // POS — seed ที่ 7.87
+  "pos.sell",
+  "pos.shift.open",
+  "pos.shift.close",
+  "pos.discount.approve",
+  "pos.device.manage",
+  "pos.pin.manage",
+  // จัดการบัญชีพนักงานหน้าร้าน (role Cashier + ปิดทางเข้าหลังบ้าน) — seed ที่ 7.92
+  "pos.staff.manage",
+  // ใบกำกับภาษี — seed ที่ 7.88
+  "tax.document.view",
+  "tax.document.issue",
+  "tax.setting.manage",
+  // e-Tax นำส่งกรมสรรพากร — seed ที่ 7.94
+  "etax.view",
+  "etax.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

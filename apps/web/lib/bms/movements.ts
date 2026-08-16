@@ -4,6 +4,7 @@
 
 import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
+import { resolveDefaultLocationIdInTx } from "./locations";
 
 export type MovementType =
   | "STOCK_IN"
@@ -25,11 +26,15 @@ export type MovementRow = {
   created_at: string;
 };
 
-/** บันทึก 1 movement ในทรานแซกชันเดียวกับการขยับสต็อก */
+/**
+ * บันทึก 1 movement ในทรานแซกชันเดียวกับการขยับสต็อก
+ * locationId ไม่ระบุ → สาขาเริ่มต้นของร้าน (ดู lib/bms/locations.ts)
+ */
 export async function recordMovement(
   client: PoolClient,
   m: {
     tenantId: string;
+    locationId?: string | null;
     sku: string;
     size: string;
     type: MovementType;
@@ -39,16 +44,18 @@ export async function recordMovement(
     actor?: string | null;
   }
 ): Promise<void> {
+  const locationId = m.locationId ?? (await resolveDefaultLocationIdInTx(client, m.tenantId));
   await client.query(
     `INSERT INTO bms_stock_movements
-       (tenant_id, product_sku, size, type, qty, ref_order_id, note, actor)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [m.tenantId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
+       (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, note, actor)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [m.tenantId, locationId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
   );
 }
 
 /**
- * bulk movements ของทุกรายการใน order — ดึง tenant_id/sku/size/qty จาก order_items เอง
+ * bulk movements ของทุกรายการใน order — ดึง tenant_id/location_id/sku/size/qty
+ * จาก order_items เอง (order_items ถือสาขาที่ตัดของจริงตั้งแต่ 7.84)
  */
 export async function recordOrderMovements(
   client: PoolClient,
@@ -58,8 +65,9 @@ export async function recordOrderMovements(
 ): Promise<void> {
   if (orderIds.length === 0) return;
   await client.query(
-    `INSERT INTO bms_stock_movements (tenant_id, product_sku, size, type, qty, ref_order_id, actor)
-     SELECT tenant_id, product_sku, size, $2, qty, order_id, $3
+    `INSERT INTO bms_stock_movements
+       (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, actor)
+     SELECT tenant_id, location_id, product_sku, size, $2, qty, order_id, $3
        FROM bms_order_items
       WHERE order_id = ANY($1::uuid[])`,
     [orderIds, type, actor]

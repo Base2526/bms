@@ -21,6 +21,14 @@ import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZ
 const STORE_PROFILE_CACHE_TTL_SECONDS = 60;
 const storeProfileCacheKey = (tenantId: string) => `store-profile:${tenantId}`;
 
+/**
+ * ล้าง cache โปรไฟล์ร้าน — ให้ไฟล์อื่นที่เขียนแถวเดียวกันเรียกได้
+ * (ค่าตั้งภาษีใน taxDocuments.ts เขียนคอลัมน์ในตารางนี้เหมือนกัน)
+ */
+export async function invalidateStoreProfileCache(tenantId: string): Promise<void> {
+  await invalidateCache(storeProfileCacheKey(tenantId));
+}
+
 export type PaymentAccount = {
   type: string; // BANK / PROMPTPAY / อื่นๆ
   bankName?: string | null;

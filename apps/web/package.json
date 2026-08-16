@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "test:user-admin": "tsx --test ../../scripts/auth-identity-contract.test.mts ../../scripts/user-admin-contract.test.mts"
+    "test:user-admin": "tsx --test ../../scripts/auth-identity-contract.test.mts ../../scripts/user-admin-contract.test.mts",
+    "test:pos": "tsx --test ../../scripts/pos-contract.test.mts"
   },
   "dependencies": {
     "@apollo/client": "^3.10.0",
