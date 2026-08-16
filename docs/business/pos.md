@@ -15,8 +15,11 @@ stock values.
    confirming a non-cash refund each have independent server-side permission checks.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
-4. One bill can be split across cash, QR, card, bank transfer, or wallet. The payment rows must add
-   up to the server-computed order amount; cash tender/change is recorded per cash row.
+4. One bill can be split across cash, QR, card, bank transfer, or wallet. The method is picked from
+   a row of buttons under the amount; cash opens the quick-tender pad, the other methods take a
+   reference number and keep their amount locked to the bill total. "Split payment" switches to the
+   multi-row form. The payment rows must add up to the server-computed order amount; cash
+   tender/change is recorded per cash row.
 5. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
    lots FEFO where lots are tracked, records movements, and issues an abbreviated tax document when
    the tenant is VAT-registered. These steps commit atomically.

@@ -668,6 +668,17 @@ export default function PosPage() {
     setPayments((cur) => cur.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)));
   }
 
+  // จ่ายวิธีเดียวที่ไม่ใช่เงินสด: ยอดต้องเท่ายอดบิลเสมอ และยอดบิลขยับได้ตลอด
+  // (ยิงของเพิ่ม/ปัดเศษเปลี่ยน) — ปล่อยให้ค้างค่าเก่าคือบิลโดน PAYMENT_MISMATCH
+  useEffect(() => {
+    if (payments.length !== 1) return;
+    const only = payments[0];
+    if (only.method === "CASH") return;
+    const want = amountDue > 0 ? String(amountDue) : "";
+    if (only.amount !== want) updatePayment(only.id, { amount: want });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amountDue, payments]);
+
   function addPaymentRow() {
     if (hasPendingSale) return;
     // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
@@ -683,7 +694,13 @@ export default function PosPage() {
 
   function removePaymentRow(id: string) {
     if (hasPendingSale) return;
-    setPayments((cur) => (cur.length <= 1 ? cur : cur.filter((payment) => payment.id !== id)));
+    setPayments((cur) => {
+      if (cur.length <= 1) return cur;
+      const next = cur.filter((payment) => payment.id !== id);
+      // ลบจนเหลือวิธีเดียว = เลิกจ่ายผสม แป้นเงินสดกลับมาเองถ้าเหลือเงินสด
+      if (next.length === 1) setSplitMode(false);
+      return next;
+    });
   }
 
   function updateReturnDraft(orderId: string, orderItemId: number, qty: number, maxQty: number) {
@@ -2062,9 +2079,46 @@ export default function PosPage() {
             </div>
           )}
 
+          {/* วิธีจ่ายต้องเห็นตลอด — เดิมมีแต่ dropdown ที่อยู่ในฟอร์มเต็ม ซึ่งถูกซ่อน
+              ตอนเป็นบิลเงินสดรายการเดียว (ค่าเริ่มต้นของทุกบิล) และปุ่มเดียวที่เปิด
+              ฟอร์มนั้นได้ก็อยู่ในกล่องที่ถูกซ่อนเอง = QR/บัตร/วอลเล็ท กดไม่ถึงเลย */}
+          {!justSold && payments.length === 1 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+              {METHODS.map((m) => {
+                const active = payments[0]?.method === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSplitMode(false);
+                      updatePayment(payments[0].id, {
+                        method: m.key,
+                        tendered: "",
+                        ref: "",
+                        // เงินสดปล่อยว่างไว้ให้แป้นเงินเติมตอนกดรับเงิน
+                        amount: m.key === "CASH" ? "" : amountDue > 0 ? String(amountDue) : "",
+                      });
+                    }}
+                    style={{
+                      flex: "1 1 0", minWidth: 78, minHeight: 44, padding: "8px 10px", fontSize: 14,
+                      background: active ? "#e8f0fe" : undefined,
+                      borderColor: active ? "#b5d4f4" : undefined,
+                      fontWeight: active ? 500 : 400,
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+              <button onClick={addPaymentRow} style={{ flex: "1 1 0", minWidth: 90, minHeight: 44, fontSize: 13 }}>
+                + จ่ายผสม
+              </button>
+            </div>
+          )}
+
           {/* บิลเงินสดล้วนคือ 95% ของบิล — ให้พิมพ์ช่องเดียวจบ
-              ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก
-              จ่ายผสมค่อยกด "เพิ่มวิธีจ่าย" แล้วฟอร์มเต็มจะโผล่มาแทน */}
+              ปุ่มเงินด่วนสำคัญบนจอสัมผัส: กดทีเดียวเร็วกว่าพิมพ์ตัวเลขมาก */}
           {simpleCash && !justSold && (
             <div style={{ marginTop: 12 }}>
               <div className="pos-cash-field">
@@ -2124,6 +2178,14 @@ export default function PosPage() {
                   key={payment.id}
                   style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}
                 >
+                  {/* จ่ายวิธีเดียว: วิธีเลือกจากแถบปุ่มด้านบนแล้ว และยอดต้องเท่ายอดบิล
+                      เสมอ (server ปฏิเสธถ้าไม่ตรง) — ไม่ต้องมีช่องให้พิมพ์ผิด */}
+                  {payments.length === 1 ? (
+                    <div style={{ fontSize: 14 }}>
+                      รับด้วย <strong>{METHODS.find((m) => m.key === payment.method)?.label ?? payment.method}</strong>
+                      {" · "}ยอด <strong>฿{baht(amountDue)}</strong>
+                    </div>
+                  ) : (
                   <div className="pos-payment-row" style={{ display: "grid", gridTemplateColumns: "120px minmax(0,1fr) auto", gap: 8, alignItems: "center" }}>
                     <select
                       value={payment.method}
@@ -2149,6 +2211,7 @@ export default function PosPage() {
                       ลบ
                     </button>
                   </div>
+                  )}
                   {payment.method === "CASH" ? (
                     <div>
                       <input
@@ -2176,9 +2239,12 @@ export default function PosPage() {
               );
             })}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={addPaymentRow} style={{ padding: "8px 12px", fontSize: 13 }}>
-                + เพิ่มวิธีจ่าย
-              </button>
+              {/* ตอนมีวิธีเดียว ปุ่มนี้ซ้ำกับ "+ จ่ายผสม" บนแถบด้านบนแล้ว */}
+              {payments.length > 1 && (
+                <button onClick={addPaymentRow} style={{ padding: "8px 12px", fontSize: 13 }}>
+                  + เพิ่มวิธีจ่าย
+                </button>
+              )}
               <div style={{ fontSize: 13, textAlign: "right", color: paymentSummary.remaining === 0 ? "#1e4620" : "#8a6100" }}>
                 รับแล้ว ฿{baht(paymentSummary.paid)} ·
                 {paymentSummary.remaining > 0
