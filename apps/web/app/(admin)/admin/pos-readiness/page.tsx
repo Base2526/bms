@@ -186,7 +186,15 @@ export default function PosReadinessPage() {
   });
 
   if (!permsLoading && !canRead) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />;
+    // ค่าตั้งภาษีมีสิทธิ์ของตัวเอง (tax.setting.manage) — ไม่ควรถูกล็อกเพราะบัญชีนี้
+    // ไม่มีสิทธิ์ดู lot หรือนโยบายร้านยา ซึ่งเป็นคนละเรื่องกัน
+    return (
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
+        <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />
+        {can("tax.setting.manage") && <TaxSettingsCard onSaved={() => {}} />}
+      </Space>
+    );
   }
 
   const operational = data?.bmsPosOperationalReadiness;
