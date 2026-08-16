@@ -7,13 +7,18 @@
 //
 // การแก้ policy รายตัวยังอยู่ที่ /admin/pharmacy-protocols (มี editor ครบอยู่แล้ว)
 // หน้านี้ตั้งใจไม่ทำซ้ำ — ทำหน้าที่เป็นตัวนับถอยหลังกับรายการงานที่เหลือ
-import { gql, useQuery } from "@apollo/client";
-import { Alert, Card, Empty, Progress, Space, Statistic, Table, Tag, Typography } from "antd";
+import { useEffect } from "react";
+import { gql, useMutation, useQuery } from "@apollo/client";
+import { Alert, Button, Card, Empty, Form, InputNumber, Progress, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const Q_READINESS = gql`
   query PosReadiness {
+    bmsPosOperationalReadiness {
+      ready blockers warnings activeLocations activeDevices pairedDevices cashiersWithPin cashiersReady
+      sellableProducts stockedVariants openShifts pendingRefundCount pendingRefundAmount
+    }
     bmsPharmacyPolicyReadiness {
       pharmacyArchetype
       totalProducts
@@ -45,6 +50,22 @@ const Q_READINESS = gql`
   }
 `;
 
+const Q_TAX_SETTINGS = gql`
+  query PosTaxSettings {
+    bmsTaxSettings {
+      vatRegistered priceIncludesVat vatRate vatRounding calendarEra abbreviatedApproved cashRounding
+    }
+  }
+`;
+
+const M_TAX_SETTINGS = gql`
+  mutation UpdateTaxSettings($input: BmsTaxSettingsInput!) {
+    bmsUpdateTaxSettings(input: $input) {
+      vatRegistered priceIncludesVat vatRate vatRounding calendarEra abbreviatedApproved cashRounding
+    }
+  }
+`;
+
 const POLICY_LABEL: Record<string, { text: string; color: string }> = {
   MISSING: { text: "ยังไม่เริ่ม", color: "red" },
   DRAFT: { text: "ร่าง", color: "orange" },
@@ -52,18 +73,123 @@ const POLICY_LABEL: Record<string, { text: string; color: string }> = {
   RETIRED: { text: "เลิกใช้", color: "default" },
 };
 
+/**
+ * ค่าตั้งภาษี — เดิมอยู่ในตาราง bms_store_profile แต่ไม่มีที่แก้ในแอปเลย
+ * ร้านต้องรัน SQL เอง · วางไว้หน้านี้เพราะเป็นหน้าที่ใช้ก่อนเปิดขายจริง
+ * และ readiness ด้านบนก็เตือนเรื่องใบกำกับอย่างย่อจากค่าชุดเดียวกันนี้
+ */
+function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
+  const [form] = Form.useForm();
+  const { data, loading } = useQuery(Q_TAX_SETTINGS, { fetchPolicy: "cache-and-network" });
+  const [save, { loading: saving }] = useMutation(M_TAX_SETTINGS);
+  const settings = data?.bmsTaxSettings;
+
+  useEffect(() => {
+    if (settings) form.setFieldsValue(settings);
+  }, [settings, form]);
+
+  return (
+    <Card title="ค่าตั้งภาษีของร้าน" loading={loading && !settings}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="มีผลกับบิลใหม่เท่านั้น"
+        description="เอกสารที่ออกไปแล้วเก็บอัตราและยอดของตัวเองไว้ในเอกสารนั้น การแก้ตรงนี้ไม่ย้อนแก้ของเก่า · ค่าที่ถูกต้องให้ยืนยันกับผู้ทำบัญชีของร้านก่อนเปิดขาย"
+      />
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={async (values) => {
+          try {
+            await save({ variables: { input: { ...values, vatRate: Number(values.vatRate) } } });
+            message.success("บันทึกค่าตั้งภาษีแล้ว");
+            onSaved();
+          } catch (e: any) {
+            message.error(e?.message ?? "บันทึกไม่สำเร็จ");
+          }
+        }}
+      >
+        <Space size="large" wrap align="start">
+          <Form.Item name="vatRegistered" label="ร้านจด VAT" valuePropName="checked">
+            <Switch checkedChildren="จด" unCheckedChildren="ไม่จด" />
+          </Form.Item>
+          <Form.Item
+            name="abbreviatedApproved"
+            label="ได้รับอนุมัติให้ออกใบกำกับอย่างย่อ"
+            valuePropName="checked"
+            tooltip="ติ๊กเมื่อร้านได้รับอนุมัติจากสรรพากรแล้ว — ไม่ติ๊กจะยังขายได้แต่หน้าความพร้อมจะเตือนค้างไว้"
+          >
+            <Switch checkedChildren="อนุมัติแล้ว" unCheckedChildren="ยังไม่" />
+          </Form.Item>
+          <Form.Item name="vatRate" label="อัตรา VAT (%)">
+            <InputNumber min={0} max={100} step={0.5} style={{ width: 120 }} />
+          </Form.Item>
+          <Form.Item name="priceIncludesVat" label="ราคาสินค้าที่ตั้งไว้">
+            <Select
+              style={{ width: 200 }}
+              options={[
+                { value: true, label: "รวม VAT แล้ว" },
+                { value: false, label: "ยังไม่รวม VAT" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="vatRounding" label="วิธีปัดเศษ VAT">
+            <Select
+              style={{ width: 220 }}
+              options={[
+                { value: "BASE_FIRST", label: "ปัดฐานก่อน (ค่าเริ่มต้น)" },
+                { value: "VAT_FIRST_TRUNCATE", label: "ตัดเศษ VAT ทิ้ง" },
+                { value: "VAT_FIRST_ROUND", label: "ปัด VAT ตามปกติ" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="calendarEra" label="ปีบนเอกสาร">
+            <Select
+              style={{ width: 140 }}
+              options={[
+                { value: "BE", label: "พ.ศ." },
+                { value: "CE", label: "ค.ศ." },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="cashRounding"
+            label="ปัดเศษเงินสด"
+            tooltip="ใช้เฉพาะบิลที่จ่ายเงินสดล้วน · ยอดปัดเป็นบรรทัดแยกบนใบเสร็จ ไม่ใช่ส่วนลด และไม่แตะฐาน VAT"
+          >
+            <Select
+              style={{ width: 160 }}
+              options={[
+                { value: "NONE", label: "ไม่ปัด" },
+                { value: "0.25", label: "ปัดที่ 0.25" },
+                { value: "0.50", label: "ปัดที่ 0.50" },
+                { value: "1.00", label: "ปัดที่ 1 บาท" },
+              ]}
+            />
+          </Form.Item>
+        </Space>
+        <Button type="primary" htmlType="submit" loading={saving}>
+          บันทึกค่าตั้งภาษี
+        </Button>
+      </Form>
+    </Card>
+  );
+}
+
 export default function PosReadinessPage() {
   const { can, loading: permsLoading } = useBmsPermissions();
-  const canRead = can("pharmacy.policy.read");
-  const { data, loading } = useQuery(Q_READINESS, {
+  const canRead = can("pos.device.manage") && can("pharmacy.policy.read") && can("product.view") && can("stock.adjust");
+  const { data, loading, refetch } = useQuery(Q_READINESS, {
     fetchPolicy: "cache-and-network",
     skip: !canRead,
   });
 
   if (!permsLoading && !canRead) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pharmacy.policy.read)" />;
+    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />;
   }
 
+  const operational = data?.bmsPosOperationalReadiness;
   const readiness = data?.bmsPharmacyPolicyReadiness;
   const pending = data?.bmsProductsNeedingPolicyReview ?? [];
   const expiring = data?.bmsExpiringLots ?? [];
@@ -77,6 +203,32 @@ export default function PosReadinessPage() {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
+
+      <Card title="ความพร้อม POS หลัก" loading={loading}>
+        {operational && (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Alert
+              type={operational.ready ? "success" : "error"}
+              showIcon
+              message={operational.ready ? "ข้อมูลหลักพร้อมสำหรับเปิดกะ" : `ยังมี blocker ${operational.blockers.length} รายการ`}
+              description={operational.ready ? "ยังต้องทดสอบเครื่องสแกน เครื่องพิมพ์ ช่องทางรับเงิน และแผนเมื่อระบบออฟไลน์บนเครื่องจริง" : operational.blockers.join(" · ")}
+            />
+            {operational.warnings.length > 0 && (
+              <Alert type="warning" showIcon message="รายการที่ควรตรวจ" description={operational.warnings.join(" · ")} />
+            )}
+            <Space size="large" wrap>
+              <Statistic title="สาขาที่เปิด" value={operational.activeLocations} />
+              <Statistic title="เครื่องพร้อมใช้" value={operational.pairedDevices} suffix={`/ ${operational.activeDevices}`} />
+              <Statistic title="พนักงานพร้อมขาย" value={operational.cashiersReady} suffix={`/ ${operational.cashiersWithPin}`} />
+              <Statistic title="สินค้าที่เปิดขาย" value={operational.sellableProducts} />
+              <Statistic title="สต็อกพร้อมขาย" value={operational.stockedVariants} />
+              <Statistic title="refund ค้าง" value={operational.pendingRefundCount} valueStyle={operational.pendingRefundCount ? { color: "#cf1322" } : undefined} />
+            </Space>
+          </Space>
+        )}
+      </Card>
+
+      {can("tax.setting.manage") && <TaxSettingsCard onSaved={() => void refetch()} />}
 
       {readiness && !readiness.pharmacyArchetype && (
         <Alert

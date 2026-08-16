@@ -168,3 +168,16 @@ For demos and team explanations, position this feature as:
 
 That makes `restock subscriptions` one of the clearest examples that BMS is not just answering
 chat, but turning missed demand into an actionable sales pipeline.
+
+## POS stock and lot handling
+
+POS catalog search is filtered to the device location. At checkout, the backend re-resolves each
+SKU/size/pack and reserves stock through `createOrder()`; fulfilment then consumes current and
+reserved stock atomically and assigns tracked lots FEFO, skipping expired lots. Mixed base-unit and
+pack lines for the same SKU/size remain distinct order lines, while inventory updates aggregate their
+base quantities before changing the stock row.
+
+Full and partial returns restore both the inventory total and the exact source-lot allocation.
+`bms_pos_return_item_lots` records what has already been restored so repeated partial returns cannot
+credit one lot twice. The stock movement ledger records `RETURN` with the POS order reference. See
+[pos.md](pos.md) for the counter workflow and opening checklist.

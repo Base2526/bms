@@ -811,6 +811,30 @@ export const typeDefs = /* GraphQL */ `
     phone: String
   }
 
+  "ค่าตั้งภาษีของร้าน — มีผลกับบิลใหม่เท่านั้น เอกสารเก่าเก็บอัตราของตัวเองไว้แล้ว"
+  type BmsTaxSettings {
+    vatRegistered: Boolean!
+    priceIncludesVat: Boolean!
+    vatRate: Float!
+    "BASE_FIRST | VAT_FIRST_TRUNCATE | VAT_FIRST_ROUND"
+    vatRounding: String!
+    "BE | CE — ปีบนเอกสาร"
+    calendarEra: String!
+    abbreviatedApproved: Boolean!
+    "NONE | 0.25 | 0.50 | 1.00 — ปัดเฉพาะบิลที่จ่ายสดล้วน"
+    cashRounding: String!
+  }
+
+  input BmsTaxSettingsInput {
+    vatRegistered: Boolean!
+    priceIncludesVat: Boolean!
+    vatRate: Float!
+    vatRounding: String!
+    calendarEra: String!
+    abbreviatedApproved: Boolean!
+    cashRounding: String!
+  }
+
   type BmsIssueFullTaxInvoiceResult {
     status: String!
     document: BmsTaxDocument
@@ -853,6 +877,7 @@ export const typeDefs = /* GraphQL */ `
     bmsLotRecall(lotId: ID!): [BmsLotRecallHit!]!
     bmsLotReconcile: [BmsLotMismatch!]!
     bmsTaxDocuments(orderId: ID!): [BmsTaxDocument!]!
+    bmsTaxSettings: BmsTaxSettings!
     bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
     bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
     _health: String!
@@ -3221,6 +3246,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
+    bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
     bmsDeleteProductPack(id: ID!): Boolean!

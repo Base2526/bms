@@ -3,6 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography, Select, Space, message, Switch } from "antd";
 import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined, FileExcelOutlined, DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
+import { useEffect } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -142,6 +143,36 @@ export default function Page() {
   const { data, loading, error, refetch } = useQuery(Q_REPORTS, {
     variables: { from, to }, fetchPolicy: "cache-and-network",
   });
+  const [posReturns, setPosReturns] = useState<any | null>(null);
+  const [posReturnsLoading, setPosReturnsLoading] = useState(false);
+  const [posReturnAudit, setPosReturnAudit] = useState<any | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPosReturnsLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/bms/reports/pos-returns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+          cache: "no-store",
+        });
+        const body = await res.json().catch(() => null);
+        if (!cancelled) setPosReturns(body);
+        const auditRes = await fetch(`/api/bms/reports/pos-return-audit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+          cache: "no-store",
+        });
+        const auditBody = await auditRes.json().catch(() => null);
+        if (!cancelled) setPosReturnAudit(auditBody);
+      } catch {
+        if (!cancelled) setPosReturns(null);
+        if (!cancelled) setPosReturnAudit(null);
+      } finally {
+        if (!cancelled) setPosReturnsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to]);
 
   if (error) return <Alert type="error" message={t("admin_reports.load_error")} description={error.message} showIcon />;
 
@@ -213,6 +244,109 @@ export default function Page() {
                 { title: t("admin_reports.col_status"), dataIndex: "status", render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag> },
                 { title: t("admin_reports.col_count"), dataIndex: "count", align: "right" as const },
               ]} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} md={10}>
+          <Card title="POS returns / refunds" loading={posReturnsLoading}>
+            <Row gutter={[16, 16]}>
+              <Col span={8}>
+                <Statistic title="Return count" value={posReturns?.returnCount ?? 0} />
+              </Col>
+              <Col span={8}>
+                <Statistic title="คืนเงินจริงแล้ว" value={posReturns?.settledTotal ?? 0} precision={2} suffix="฿" />
+              </Col>
+              <Col span={8}>
+                <Statistic title="รอคืนเงินจริง" value={posReturns?.pendingTotal ?? 0} precision={2} suffix="฿" />
+              </Col>
+            </Row>
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 8 }}>
+              รับคืนสินค้ารวม ฿{baht(posReturns?.refundTotal ?? 0)} ในช่วง {from} ถึง {to}
+              {Number(posReturns?.pendingCount ?? 0) > 0 ? ` · ค้างยืนยัน ${posReturns.pendingCount} รายการ` : ""}
+            </Typography.Paragraph>
+            <Table
+              rowKey={(row: any) => `${row.reasonCode}-${row.reasonText}`}
+              size="small"
+              pagination={false}
+              dataSource={posReturns?.topReasons || []}
+              columns={[
+                { title: "Reason code", dataIndex: "reasonCode" },
+                { title: "Detail", dataIndex: "reasonText" },
+                { title: "Count", dataIndex: "count", align: "right" as const },
+              ]}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} md={14}>
+          <Card title="Recent POS return log" loading={posReturnsLoading}>
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={posReturns?.recent || []}
+              scroll={{ x: "max-content" }}
+              columns={[
+                { title: "When", dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+                { title: "Order", dataIndex: "orderId" },
+                { title: "Refund", dataIndex: "refundAmount", align: "right" as const, render: baht },
+                { title: "Mode", dataIndex: "returnMode" },
+                { title: "Settlement", dataIndex: "settlementStatus", render: (v: string) => <Tag color={v === "COMPLETED" ? "green" : "orange"}>{v}</Tag> },
+                { title: "Pending", dataIndex: "pendingAmount", align: "right" as const, render: baht },
+                { title: "By", dataIndex: "returnedBy", render: (v: string | null) => v || "—" },
+                { title: "Reason code", dataIndex: "reasonCode" },
+                { title: "Reason", dataIndex: "reasonText" },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} md={8}>
+          <Card title="POS return controls" loading={posReturnsLoading}>
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Statistic title="Approval candidates" value={posReturnAudit?.approvalCandidateCount ?? 0} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="High-value returns" value={posReturnAudit?.highValueReturnCount ?? 0} />
+              </Col>
+            </Row>
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+              ตั้งแต่ 16 สิงหาคม 2026 รายการคืนตั้งแต่ ฿500 ต้องผ่านผู้มีสิทธิ์คืนเงิน และบันทึกผู้อนุมัติไว้ตรวจสอบ
+            </Typography.Paragraph>
+            {(posReturnAudit?.anomalySignals || []).length > 0 && (
+              <Alert
+                style={{ marginTop: 12 }}
+                type="warning"
+                showIcon
+                message="Anomaly signals"
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {(posReturnAudit?.anomalySignals || []).map((signal: string) => (
+                      <li key={signal}>{signal}</li>
+                    ))}
+                  </ul>
+                }
+              />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} md={16}>
+          <Card title="POS return by cashier" loading={posReturnsLoading}>
+            <Table
+              rowKey="cashier"
+              size="small"
+              pagination={false}
+              dataSource={posReturnAudit?.byCashier || []}
+              columns={[
+                { title: "Cashier", dataIndex: "cashier" },
+                { title: "Returns", dataIndex: "returnCount", align: "right" as const },
+                { title: "Refund total", dataIndex: "refundTotal", align: "right" as const, render: baht },
+              ]}
+            />
           </Card>
         </Col>
       </Row>

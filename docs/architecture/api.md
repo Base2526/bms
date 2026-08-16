@@ -84,6 +84,22 @@ are rejected because Seller Center remains authoritative. Runtime signing uses
 `BMS_CHECKOUT_SECRET` (all compose files inject it, defaulting to the deployment's `JWT_SECRET`);
 production refuses to create or verify links when no secret is configured.
 
+## REST — POS device surface
+
+`/api/pos/*` uses `x-pos-device-token`; tenant and location always come from the hashed active-device
+record. Read routes expose session, scan/search, and device-local recent/last sales. Mutating routes
+also verify the selected cashier PIN and the action-specific RBAC permission:
+
+- `POST /api/pos/shift` — open/close the device drawer; close is blocked by pending refund settlement.
+- `POST /api/pos/sale` — server-resolved product/pack prices, multi-payment, idempotent atomic close.
+- `POST /api/pos/return` — explicit `FULL`/`PARTIAL`, mandatory structured reason and idempotency key.
+- `POST /api/pos/refund-settlement` — authorized confirmation of a pending non-cash refund reference.
+- `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
+
+The admin POS return reports use the signed admin cookie, derive the active tenant (including signed
+platform drill-down), and require `report.view`; they never accept a tenant id in query parameters.
+See [../business/pos.md](../business/pos.md) for the operator flow and go-live checklist.
+
 ## REST — debug / test endpoints
 
 - `POST /api/bms/chat` — run the AI pipeline on a message and return the full trace (intent,

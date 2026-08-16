@@ -120,23 +120,18 @@ export type CreateOrderResult =
   | { status: "EMPTY" };
 
 /**
- * รวมรายการซ้ำ (sku+size เดียวกัน) แล้วบวก qty
- * ถ้ารายการที่รวมกันมาคนละหน่วยขาย (ซื้อทั้งกล่องและแผงของยาตัวเดียวกัน)
- * จะทิ้ง snapshot หน่วยขายไป แล้วพิมพ์ใบเสร็จเป็นหน่วยฐาน — เดาแทนลูกค้าไม่ได้
+ * รวมรายการซ้ำเฉพาะ sku+size+หน่วยขายเดียวกัน แล้วบวก qty
+ * กล่องกับชิ้นของ SKU/size เดียวกันต้องอยู่คนละบรรทัด มิฉะนั้นราคาต่อ pack
+ * จะหายและยอดบิลถูกคำนวณใหม่เป็นราคาหน่วยฐานทั้งหมด
  */
 function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   const map = new Map<string, OrderItemInput>();
   for (const it of items) {
-    const key = `${it.sku}__${it.size}`;
+    const key = `${it.sku}__${it.size}__${it.packCode ?? "BASE"}`;
     const cur = map.get(key);
     if (cur) {
       cur.qty += it.qty;
-      if (cur.packCode !== (it.packCode ?? null)) {
-        cur.packCode = null;
-        cur.packUnitName = null;
-        cur.packQty = null;
-        cur.packUnitPrice = null;
-      } else if (cur.packQty != null && it.packQty != null) {
+      if (cur.packQty != null && it.packQty != null) {
         cur.packQty += it.packQty;
       }
     } else {
@@ -392,13 +387,17 @@ export async function createOrder(
     // แชทส่วนใหญ่ยังไม่มีที่อยู่ตอนสร้างออร์เดอร์ (identity-first checkout เก็บทีหลัง)
     // → จุดนี้อาจได้ค่าเหมา/ไม่มีค่าส่ง แล้วถูกคิดใหม่ตอนที่อยู่มาถึงผ่าน
     //   recalculateOrderShipping() ใน saveCustomerCheckoutDetails
-    const shippingFee = await computeOrderShippingFeeInTx(client, {
-      tenantId,
-      customerId,
-      subtotal: finalTotal,
-      items,
-      carrier: preferredCarrier,
-    });
+    // ลูกค้ารับของที่เคาน์เตอร์เอง ช่องทาง POS ต้องไม่มีค่าส่ง แม้ร้านจะตั้ง
+    // flat shipping สำหรับออร์เดอร์ออนไลน์ไว้ก็ตาม
+    const shippingFee = input.channel === "pos"
+      ? { fee: 0, source: "none" as ShippingFeeSource }
+      : await computeOrderShippingFeeInTx(client, {
+          tenantId,
+          customerId,
+          subtotal: finalTotal,
+          items,
+          carrier: preferredCarrier,
+        });
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
     // total_amount = ค่าสินค้า − ส่วนลด (ไม่รวมค่าส่ง — ดู migration 7.47)
@@ -733,8 +732,12 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
           SET current_stock  = current_stock  - oi.qty,
               reserved_stock = reserved_stock - oi.qty,
               updated_at = now()
-         FROM bms_order_items oi
-        WHERE oi.order_id = $1
+         FROM (
+           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+             FROM bms_order_items WHERE order_id = $1
+            GROUP BY tenant_id, location_id, product_sku, size
+         ) oi
+        WHERE TRUE
           AND inv.tenant_id = oi.tenant_id
           AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
@@ -774,8 +777,12 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     await client.query(
       `UPDATE bms_inventory inv
           SET current_stock = current_stock + oi.qty, updated_at = now()
-         FROM bms_order_items oi
-        WHERE oi.order_id = $1
+         FROM (
+           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+             FROM bms_order_items WHERE order_id = $1
+            GROUP BY tenant_id, location_id, product_sku, size
+         ) oi
+        WHERE TRUE
           AND inv.tenant_id = oi.tenant_id
           AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
@@ -821,8 +828,12 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await client.query(
       `UPDATE bms_inventory inv
           SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-         FROM bms_order_items oi
-        WHERE oi.order_id = $1
+         FROM (
+           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+             FROM bms_order_items WHERE order_id = $1
+            GROUP BY tenant_id, location_id, product_sku, size
+         ) oi
+        WHERE TRUE
           AND inv.tenant_id = oi.tenant_id
           AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku
@@ -880,8 +891,12 @@ export async function releaseExpiredOrders(
     await client.query(
       `UPDATE bms_inventory inv
           SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-         FROM bms_order_items oi
-        WHERE oi.order_id = ANY($1::uuid[])
+         FROM (
+           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+             FROM bms_order_items WHERE order_id = ANY($1::uuid[])
+            GROUP BY tenant_id, location_id, product_sku, size
+         ) oi
+        WHERE TRUE
           AND inv.tenant_id = oi.tenant_id
           AND inv.location_id = oi.location_id
           AND inv.product_sku = oi.product_sku

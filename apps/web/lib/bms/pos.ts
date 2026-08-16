@@ -867,6 +867,43 @@ export type PosSaleInput = {
   pharmacyApprovedAssessmentId?: string | null;
 };
 
+/**
+ * ตัวเลขภาษีที่ "ออกไปกับใบกำกับจริง" ไม่ใช่ค่าที่คำนวณใหม่ทีหลัง
+ * จอขายเอาไปพิมพ์บนใบเสร็จได้ตรง ๆ — ห้ามให้ client คิด total × 7/107 เอง
+ * เพราะบิลที่มีสินค้ายกเว้น VAT ปนจะได้ตัวเลขไม่ตรงกับเอกสารที่ยื่นสรรพากร
+ */
+export type PosReceiptVat = {
+  rate: number;
+  taxableAmount: number;
+  exemptAmount: number;
+  vatAmount: number;
+  /** ฐานก่อน VAT ของทั้งบิล = taxable − vat + exempt */
+  netBeforeVat: number;
+  roundingAmount: number;
+};
+
+/** แถวจาก bms_tax_documents → ตัวเลขที่ใบเสร็จใช้ · null = บิลนี้ไม่มีใบกำกับ */
+function mapReceiptVat(row: {
+  vat_rate?: string | number | null;
+  taxable_amount?: string | number | null;
+  exempt_amount?: string | number | null;
+  vat_amount?: string | number | null;
+  rounding_amount?: string | number | null;
+}): PosReceiptVat | null {
+  if (row.vat_amount == null && row.taxable_amount == null) return null;
+  const taxable = Number(row.taxable_amount ?? 0);
+  const exempt = Number(row.exempt_amount ?? 0);
+  const vat = Number(row.vat_amount ?? 0);
+  return {
+    rate: Number(row.vat_rate ?? 0),
+    taxableAmount: taxable,
+    exemptAmount: exempt,
+    vatAmount: vat,
+    netBeforeVat: Math.round((taxable - vat + exempt) * 100) / 100,
+    roundingAmount: Number(row.rounding_amount ?? 0),
+  };
+}
+
 export type PosSaleResult =
   | {
       status: "SOLD";
@@ -876,6 +913,10 @@ export type PosSaleResult =
       cashChange: number | null;
       /** เลขใบกำกับภาษีอย่างย่อ — null เมื่อร้านยังไม่จด VAT */
       docNo: string | null;
+      /** null เมื่อร้านยังไม่จด VAT (ไม่มีใบกำกับให้อ้าง) */
+      vat: PosReceiptVat | null;
+      /** ยอดปัดเศษเงินสดที่บวกเข้าไปแล้วใน total (0 = ไม่ได้ปัด) */
+      roundingAmount: number;
       /** true = คีย์นี้เคยขายไปแล้ว คืนบิลเดิม ไม่ได้ขายซ้ำ */
       replayed: boolean;
     }
@@ -891,6 +932,8 @@ export type PosSaleResult =
 export type PosRecentReceipt = {
   orderId: string;
   docNo: string | null;
+  vat: PosReceiptVat | null;
+  roundingAmount: number;
   orderStatus: string;
   total: number;
   cashTendered: number | null;
@@ -1048,7 +1091,7 @@ async function fulfilPosOrderInTx(
   tenantId: string,
   orderId: string,
   taxArgs: { locationId: string; deviceId: string | null; issuedBy: string; settings: TenantVatSettings }
-): Promise<{ docNo: string | null; vatIssue: string | null }> {
+): Promise<{ docNo: string | null; vat: PosReceiptVat | null; vatIssue: string | null }> {
   const ord = await client.query(
     `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
       WHERE tenant_id = $1 AND id = $2 AND status = 'PAID'`,
@@ -1135,10 +1178,22 @@ async function fulfilPosOrderInTx(
     settings: taxArgs.settings,
   });
   if (issued.status === "ISSUED" || issued.status === "ALREADY_ISSUED") {
-    return { docNo: issued.document.docNo, vatIssue: null };
+    const doc = issued.document;
+    return {
+      docNo: doc.docNo,
+      vat: {
+        rate: doc.vatRate,
+        taxableAmount: doc.taxableAmount,
+        exemptAmount: doc.exemptAmount,
+        vatAmount: doc.vatAmount,
+        netBeforeVat: Math.round((doc.taxableAmount - doc.vatAmount + doc.exemptAmount) * 100) / 100,
+        roundingAmount: doc.roundingAmount,
+      },
+      vatIssue: null,
+    };
   }
   // ร้านที่ยังไม่จด VAT ขายได้ตามปกติ แค่ไม่มีใบกำกับ — ไม่ใช่ error
-  if (issued.status === "NOT_VAT_REGISTERED") return { docNo: null, vatIssue: null };
+  if (issued.status === "NOT_VAT_REGISTERED") return { docNo: null, vat: null, vatIssue: null };
   // ร้านจด VAT แล้วแต่สินค้ายังไม่ระบุประเภทภาษี = ออกใบไม่ได้ ต้องหยุดทั้งบิล
   throw new Error(
     issued.status === "VAT_CATEGORY_MISSING"
@@ -1254,9 +1309,11 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   // "ยอดเงินปัดเศษ" บนใบกำกับจริงที่ใช้อ้างอิง)
   const roundingSettings = await getVatSettings(tenantId);
   const cashOnly = input.payments.length > 0 && input.payments.every((p) => p.method === "CASH");
+  let roundingApplied = 0;
   if (cashOnly && roundingSettings.cashRounding !== "NONE") {
     const delta = cashRoundingDelta(amountDue, roundingSettings.cashRounding);
     if (delta !== 0) {
+      roundingApplied = delta;
       await query(`UPDATE bms_orders SET rounding_amount = $2, updated_at = now() WHERE tenant_id = $1 AND id = $3`,
         [tenantId, delta, orderId]);
       amountDue = Math.round((amountDue + delta) * 100) / 100;
@@ -1267,7 +1324,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     await cancelOrder(tenantId, orderId);
     return { status: "PAYMENT_MISMATCH", expected: amountDue, received: paid };
   }
-  return finalizePosSale({ input, shift, orderId, amountDue, payments: requestedPayments, replayed: false });
+  const sold = await finalizePosSale({
+    input, shift, orderId, amountDue, payments: requestedPayments, replayed: false,
+  });
+  return sold.status === "SOLD" ? { ...sold, roundingAmount: roundingApplied } : sold;
 }
 
 async function finalizePosSale(args: {
@@ -1374,6 +1434,10 @@ async function finalizePosSale(args: {
       cashTendered,
       cashChange,
       docNo: fulfilled.docNo,
+      vat: fulfilled.vat,
+      // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
+      // โดยไม่ผ่านการปัด (เช่น replay บิลที่ค้างสถานะ) ไม่มีการปัดเพิ่มอยู่แล้ว
+      roundingAmount: 0,
       replayed,
     };
   } catch (err: any) {
@@ -1419,9 +1483,17 @@ async function findSaleByIdempotencyKey(
     cash_tendered: string | null;
     cash_change: string | null;
     doc_no: string | null;
+    order_rounding: string | null;
+    vat_rate: string | null;
+    taxable_amount: string | null;
+    exempt_amount: string | null;
+    vat_amount: string | null;
+    rounding_amount: string | null;
   }>(
-    `SELECT o.id, o.total_amount, o.shipping_fee, pay.cash_tendered, pay.cash_change,
-            doc.doc_no
+    `SELECT o.id, o.total_amount, o.shipping_fee, o.rounding_amount AS order_rounding,
+            pay.cash_tendered, pay.cash_change,
+            doc.doc_no, doc.vat_rate, doc.taxable_amount, doc.exempt_amount,
+            doc.vat_amount, doc.rounding_amount
        FROM bms_orders o
        LEFT JOIN LATERAL (
          SELECT SUM(cash_tendered) AS cash_tendered, SUM(cash_change) AS cash_change
@@ -1440,13 +1512,18 @@ async function findSaleByIdempotencyKey(
   );
   const row = res.rows[0];
   if (!row) return null;
+  // ยอดปัดเศษเก็บแยกใน rounding_amount และไม่ถูกบวกกลับเข้า total_amount
+  // ต้องบวกตอนอ่านเสมอ ไม่งั้นบิลที่พิมพ์ซ้ำจะแสดงยอดคนละตัวกับเงินที่รับจริง
+  const rounding = Number(row.order_rounding ?? 0);
   return {
     status: "SOLD",
     orderId: row.id,
-    total: Number(row.total_amount) + Number(row.shipping_fee ?? 0),
+    total: Math.round((Number(row.total_amount) + Number(row.shipping_fee ?? 0) + rounding) * 100) / 100,
     cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
     docNo: row.doc_no ?? null,
+    vat: mapReceiptVat(row),
+    roundingAmount: rounding,
     replayed: true,
   };
 }
@@ -1478,10 +1555,17 @@ export async function listRecentPosSales(
     cash_tendered: string | null;
     cash_change: string | null;
     doc_no: string | null;
+    order_rounding: string | null;
+    vat_rate: string | null;
+    taxable_amount: string | null;
+    exempt_amount: string | null;
+    vat_amount: string | null;
+    rounding_amount: string | null;
   }>(
     `SELECT o.id,
             o.total_amount,
             o.shipping_fee,
+            o.rounding_amount AS order_rounding,
             o.status,
             o.created_at,
             u.name AS cashier_name,
@@ -1489,7 +1573,12 @@ export async function listRecentPosSales(
             pay.slip_ref AS payment_ref,
             pay.cash_tendered,
             pay.cash_change,
-            doc.doc_no
+            doc.doc_no,
+            doc.vat_rate,
+            doc.taxable_amount,
+            doc.exempt_amount,
+            doc.vat_amount,
+            doc.rounding_amount
        FROM bms_orders o
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
        LEFT JOIN LATERAL (
@@ -1642,8 +1731,13 @@ export async function listRecentPosSales(
   return orderRes.rows.map((row) => ({
     orderId: row.id,
     docNo: row.doc_no ?? null,
+    vat: mapReceiptVat(row),
+    roundingAmount: Number(row.order_rounding ?? 0),
     orderStatus: row.status,
-    total: Number(row.total_amount) + Number(row.shipping_fee ?? 0),
+    total:
+      Math.round(
+        (Number(row.total_amount) + Number(row.shipping_fee ?? 0) + Number(row.order_rounding ?? 0)) * 100
+      ) / 100,
     cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
     paymentMethod: row.payment_method ?? null,

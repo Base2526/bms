@@ -22,6 +22,8 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type VatSettings } from "./vat";
+import { cashRoundingDelta, isCashRounding, type CashRounding } from "@/lib/pos/cashRounding";
+import { invalidateStoreProfileCache } from "./storeProfile";
 import { enqueueTaxDocument } from "./etax/queue";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
@@ -134,26 +136,15 @@ function buildDocNo(prefix: string | null, date: Date, seq: number, era: "BE" | 
 // อ่านค่าตั้งภาษี + บรรทัดของบิล
 // ---------------------------------------------------------------
 
-export type CashRounding = "NONE" | "0.25" | "0.50" | "1.00";
+// กติกาปัดเศษอยู่ที่ lib/pos/cashRounding.ts — จอขายต้อง import ตัวเดียวกันนี้
+// (re-export ไว้เพื่อไม่ต้องแก้ผู้เรียกเดิม)
+export { cashRoundingDelta, type CashRounding };
 
 export type TenantVatSettings = VatSettings & {
   calendarEra: "BE" | "CE";
   abbreviatedApproved: boolean;
   cashRounding: CashRounding;
 };
-
-/**
- * ปัดยอดรับเงินสดให้ลงตัว — คืน "ส่วนต่าง" ที่ต้องบันทึกเป็นยอดปัดเศษ
- * ปัดขึ้น/ลงเข้าหาค่าที่ใกล้ที่สุด เศษครึ่งพอดีปัดขึ้น (เข้าทางร้าน แบบที่ใช้กันจริง)
- * ยอดปัดไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT — เป็นบรรทัดของตัวเองบนใบเสร็จ
- */
-export function cashRoundingDelta(amount: number, mode: CashRounding): number {
-  if (mode === "NONE") return 0;
-  const step = Number(mode);
-  if (!Number.isFinite(step) || step <= 0) return 0;
-  const rounded = Math.round((amount / step) + Number.EPSILON) * step;
-  return Math.round((rounded - amount) * 100) / 100;
-}
 
 export async function getVatSettings(tenantId: string): Promise<TenantVatSettings> {
   const res = await query<any>(
@@ -172,6 +163,73 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
     abbreviatedApproved: r?.abbreviated_tax_invoice_approved ?? false,
     cashRounding: (r?.cash_rounding ?? "NONE") as CashRounding,
   };
+}
+
+export type TenantVatSettingsInput = {
+  vatRegistered: boolean;
+  priceIncludesVat: boolean;
+  vatRate: number;
+  vatRounding: VatRounding;
+  calendarEra: "BE" | "CE";
+  abbreviatedApproved: boolean;
+  cashRounding: CashRounding;
+};
+
+const VAT_ROUNDING_MODES: VatRounding[] = ["BASE_FIRST", "VAT_FIRST_TRUNCATE", "VAT_FIRST_ROUND"];
+
+/**
+ * ตั้งค่าภาษีของร้าน — ค่าพวกนี้เปลี่ยนหน้าตาเอกสารที่ออกให้ลูกค้าและฐาน VAT
+ * ที่ยื่นสรรพากร จึงตรวจค่าที่รับเข้ามาเองทุกตัว ไม่เชื่อ input จาก client
+ *
+ * มีผลกับ "บิลใหม่" เท่านั้น เอกสารที่ออกไปแล้วเก็บอัตรา/ยอดของตัวเองไว้ในแถว
+ * ของมันเอง (bms_tax_documents.vat_rate) การแก้ตรงนี้จึงไม่ย้อนแก้ของเก่า
+ */
+export async function updateVatSettings(
+  tenantId: string,
+  input: TenantVatSettingsInput
+): Promise<TenantVatSettings> {
+  const rate = Number(input.vatRate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    throw new Error("อัตรา VAT ต้องอยู่ระหว่าง 0–100");
+  }
+  if (!VAT_ROUNDING_MODES.includes(input.vatRounding)) {
+    throw new Error(`วิธีปัดเศษ VAT ไม่ถูกต้อง: ${input.vatRounding}`);
+  }
+  if (input.calendarEra !== "BE" && input.calendarEra !== "CE") {
+    throw new Error(`ปีปฏิทินไม่ถูกต้อง: ${input.calendarEra}`);
+  }
+  if (!isCashRounding(input.cashRounding)) {
+    throw new Error(`วิธีปัดเศษเงินสดไม่ถูกต้อง: ${input.cashRounding}`);
+  }
+
+  await query(
+    `INSERT INTO bms_store_profile (
+       tenant_id, vat_registered, price_includes_vat, vat_rate, vat_rounding,
+       calendar_era, abbreviated_tax_invoice_approved, cash_rounding
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (tenant_id) DO UPDATE SET
+       vat_registered = EXCLUDED.vat_registered,
+       price_includes_vat = EXCLUDED.price_includes_vat,
+       vat_rate = EXCLUDED.vat_rate,
+       vat_rounding = EXCLUDED.vat_rounding,
+       calendar_era = EXCLUDED.calendar_era,
+       abbreviated_tax_invoice_approved = EXCLUDED.abbreviated_tax_invoice_approved,
+       cash_rounding = EXCLUDED.cash_rounding,
+       updated_at = now()`,
+    [
+      tenantId,
+      Boolean(input.vatRegistered),
+      Boolean(input.priceIncludesVat),
+      Math.round(rate * 100) / 100,
+      input.vatRounding,
+      input.calendarEra,
+      Boolean(input.abbreviatedApproved),
+      input.cashRounding,
+    ]
+  );
+  // โปรไฟล์ร้านอยู่แถวเดียวกันและถูก cache ไว้ — ไม่ล้างแล้วหน้าอื่นจะเห็นค่าเก่า
+  await invalidateStoreProfileCache(tenantId);
+  return getVatSettings(tenantId);
 }
 
 type OrderLineForVat = { sku: string; amount: number; vatCategory: VatCategory };

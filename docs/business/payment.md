@@ -50,3 +50,16 @@ credits, or a readable slip image, the service asks the human to check manually.
 
 `payment.view` / `payment.submit` / `payment.confirm` / `payment.refund` — refunding additionally
 requires Manager-level approval in practice (permission is granted narrowly).
+
+## POS settlement
+
+POS payment rows are created as `CONFIRMED` inside the same transaction that marks the order paid,
+fulfils stock, allocates lots, and issues the abbreviated tax document. A bill may have multiple
+payment rows, but their rounded total must equal the server-computed amount. Browser-supplied product
+prices and pack conversions are never authoritative.
+
+Goods return and money settlement are deliberately separate. `bms_pos_returns`/return-item rows
+record the accepted goods and restored stock; `bms_pos_refund_allocations` allocates the net refund
+against the original confirmed payments. Cash completes immediately. Non-cash methods stay pending
+until a user with `payment.refund` records an external reference, and the register shift cannot close
+while one of its allocations is pending. Full workflow: [pos.md](pos.md).

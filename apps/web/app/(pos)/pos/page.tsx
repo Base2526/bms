@@ -10,6 +10,8 @@
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { code39Bars } from "@/lib/pos/barcode";
+import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
 import {
   findRememberedPrinter,
@@ -44,6 +46,15 @@ type CartLine = ScanHit & {
 };
 type ReturnDraft = Record<number, number>;
 
+type ReceiptVat = {
+  rate: number;
+  taxableAmount: number;
+  exemptAmount: number;
+  vatAmount: number;
+  netBeforeVat: number;
+  roundingAmount: number;
+};
+
 type Receipt = {
   orderId?: string | null;
   docNo: string | null;
@@ -61,6 +72,12 @@ type Receipt = {
   branchCode: string | null;
   posLabel: string | null;
   vatRegistered: boolean;
+  /** เลขผู้เสียภาษีของร้าน — มากับ session ไม่ใช่รายบิล */
+  taxId: string | null;
+  /** ตัวเลขจากใบกำกับที่ออกจริง · null = บิลนี้ไม่มีใบกำกับ (ร้านยังไม่จด VAT) */
+  vat: ReceiptVat | null;
+  /** ปัดเศษเงินสดที่บวกอยู่ใน total แล้ว — ร้านที่ไม่ได้จด VAT ก็ปัดได้ */
+  roundingAmount?: number | null;
   paymentLabel: string;
   paymentRef: string | null;
   payments: Array<{
@@ -107,7 +124,14 @@ type Session = {
   shift: { id: string; openedAt: string; openingFloat: number } | null;
   shiftReturnSummary: { returnCount: number; returnTotal: number; settledTotal: number; pendingTotal: number; pendingCount: number };
   cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean; hasPin: boolean }>;
-  vat: { registered: boolean; priceIncludesVat: boolean; rate: number; calendarEra: string };
+  store?: { taxId: string | null };
+  vat: {
+    registered: boolean;
+    priceIncludesVat: boolean;
+    rate: number;
+    calendarEra: string;
+    cashRounding?: CashRounding;
+  };
 };
 
 const METHODS = [
@@ -128,6 +152,19 @@ const RETURN_REASON_OPTIONS = [
 
 function baht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** ตัวเลข VAT ที่ server ส่งมาจากใบกำกับจริง — ไม่มีก็คือไม่มี ห้ามคิดเองจากยอดรวม */
+function parseReceiptVat(raw: any): ReceiptVat | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    rate: Number(raw.rate ?? 0),
+    taxableAmount: Number(raw.taxableAmount ?? 0),
+    exemptAmount: Number(raw.exemptAmount ?? 0),
+    vatAmount: Number(raw.vatAmount ?? 0),
+    netBeforeVat: Number(raw.netBeforeVat ?? 0),
+    roundingAmount: Number(raw.roundingAmount ?? 0),
+  };
 }
 
 export default function PosPage() {
@@ -179,6 +216,9 @@ export default function PosPage() {
   const [searching, setSearching] = useState(false);
   const [recentSalesQuery, setRecentSalesQuery] = useState("");
   const [recentReceipts, setRecentReceipts] = useState<Receipt[]>([]);
+  // เปิดฟอร์มคืนได้ทีละบิล — หน้าร้านทำทีละใบอยู่แล้ว และการกางทุกใบพร้อมกัน
+  // ทำให้เลื่อนหาบิลที่ต้องการไม่เจอ
+  const [returnPanelOrderId, setReturnPanelOrderId] = useState<string | null>(null);
   const [returnDrafts, setReturnDrafts] = useState<Record<string, ReturnDraft>>({});
   const [returnNotes, setReturnNotes] = useState<Record<string, string>>({});
   const [returnReasonCodes, setReturnReasonCodes] = useState<Record<string, string>>({});
@@ -291,13 +331,30 @@ export default function PosPage() {
     [cart]
   );
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
+
+  // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
+  // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
+  // และบิลถูกยกเลิกทิ้ง · ก่อนกรอกจำนวนเงิน ใช้ "วิธีจ่ายที่เลือกไว้" ตัดสินแทน
+  const roundingDelta = useMemo(() => {
+    const mode = session?.vat.cashRounding ?? "NONE";
+    if (mode === "NONE" || total <= 0) return 0;
+    const withAmount = payments.filter((p) => (Number(p.amount) || 0) > 0);
+    const considered = withAmount.length > 0 ? withAmount : payments;
+    if (considered.length === 0 || !considered.every((p) => p.method === "CASH")) return 0;
+    return cashRoundingDelta(total, mode);
+  }, [session?.vat.cashRounding, total, payments]);
+  /** ยอดที่ต้องเก็บจริง = ยอดสินค้า + ปัดเศษ — ทุกที่ที่พูดถึง "ยอดที่ต้องจ่าย" ใช้ตัวนี้ */
+  const amountDue = useMemo(
+    () => Math.round((total + roundingDelta) * 100) / 100,
+    [total, roundingDelta]
+  );
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
   const cashChangePreview = (() => {
     if (!simpleCash) return null;
     const t = Number(payments[0]?.tendered);
-    if (!Number.isFinite(t) || t <= 0 || total <= 0) return null;
-    return Math.max(0, Math.round((t - total) * 100) / 100);
+    if (!Number.isFinite(t) || t <= 0 || amountDue <= 0) return null;
+    return Math.max(0, Math.round((t - amountDue) * 100) / 100);
   })();
 
   const paymentSummary = useMemo(() => {
@@ -318,9 +375,9 @@ export default function PosPage() {
       };
     });
     const paid = Math.round(normalized.reduce((sum, payment) => sum + payment.numericAmount, 0) * 100) / 100;
-    const remaining = Math.round((total - paid) * 100) / 100;
+    const remaining = Math.round((amountDue - paid) * 100) / 100;
     return { normalized, paid, remaining };
-  }, [payments, total]);
+  }, [payments, amountDue]);
 
   /**
    * เหตุผลที่ยังกดชำระเงินไม่ได้ — เรียงตามลำดับที่พนักงานต้องลงมือทำ
@@ -426,6 +483,9 @@ export default function PosPage() {
         branchCode: data.sale.branchCode ?? null,
         posLabel: data.sale.posLabel ?? null,
         vatRegistered: Boolean(data.sale.vatRegistered),
+        taxId: data.sale.taxId ?? session?.store?.taxId ?? null,
+        vat: parseReceiptVat(data.sale.vat),
+        roundingAmount: Number(data.sale.roundingAmount ?? 0),
         paymentLabel: Array.isArray(data.sale.payments) && data.sale.payments.length > 1
           ? "จ่ายหลายวิธี"
           : data.sale.paymentMethod ?? "ไม่ระบุ",
@@ -493,6 +553,9 @@ export default function PosPage() {
           branchCode: session?.location?.branchCode ?? null,
           posLabel: session?.device.registeredPosNo ?? session?.device.code ?? null,
           vatRegistered: Boolean(session?.vat.registered),
+          taxId: session?.store?.taxId ?? null,
+          vat: parseReceiptVat(sale.vat),
+          roundingAmount: Number(sale.roundingAmount ?? 0),
           paymentLabel:
             Array.isArray(sale.payments) && sale.payments.length > 1 ? "จ่ายหลายวิธี" : sale.paymentMethod ?? "ไม่ระบุ",
           paymentRef: sale.paymentRef ?? null,
@@ -645,7 +708,7 @@ export default function PosPage() {
     return buildReceipt({
       storeName: r.storeName ?? session?.location?.name ?? "",
       branchCode: r.branchCode ?? session?.location?.branchCode ?? null,
-      taxId: null,
+      taxId: r.taxId ?? session?.store?.taxId ?? null,
       posNo: session?.device.registeredPosNo ?? session?.device.code ?? null,
       vatIncluded: Boolean(session?.vat.registered),
       docTitle: session?.vat.registered ? "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน",
@@ -654,10 +717,18 @@ export default function PosPage() {
       cashier: r.cashier,
       lines,
       itemCount: r.lines.reduce((n, l) => n + l.packQty, 0),
-      total: r.total,
+      total: r.refundTotal ?? r.total,
       tendered: r.tendered,
       change: r.change,
       paymentLabel: null,
+      // ใบรับคืน/ใบเตรียมเปลี่ยนไม่ใช่ใบกำกับของบิลนี้ — ยอด VAT ของบิลเดิมจะทำให้
+      // เอกสารอ่านเหมือนเก็บ VAT ซ้ำ (ใบลดหนี้ออกแยกจาก taxDocuments.ts อยู่แล้ว)
+      vat:
+        r.receiptType && r.receiptType !== "sale"
+          ? null
+          : r.vat
+            ? { ...r.vat, roundingAmount: Number(r.roundingAmount ?? r.vat.roundingAmount ?? 0) }
+            : null,
     });
   }
 
@@ -674,6 +745,32 @@ export default function PosPage() {
       // เครื่องพิมพ์มีปัญหาไม่ควรทำให้ขายไม่ได้ — บอกแล้วเปิด dialog ให้แทน
       setNotice({ type: "error", text: `พิมพ์ผ่านเครื่องไม่สำเร็จ: ${String(e?.message ?? e)}` });
       window.print();
+    }
+  }
+
+  // แคชเชียร์คุมจอด้วยคีย์บอร์ดมือเดียว — Enter พิมพ์ / Esc ปิด
+  // ดักแบบ capture เพราะช่องยิงบาร์โค้ดอาจยังโฟกัสค้างอยู่หลังบิล ถ้าปล่อยผ่าน
+  // การยิงของชิ้นถัดไปตอน modal เปิดอยู่จะทั้งเพิ่มลงตะกร้าและสั่งพิมพ์พร้อมกัน
+  useEffect(() => {
+    if (!receiptModalOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Enter" && e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") setReceiptModalOpen(false);
+      else void printReceipt(false);
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiptModalOpen, receipt, printerReady]);
+
+  /** เปิดลิ้นชักโดยไม่พิมพ์ซ้ำ — ใช้ตอนหยิบเงินทอนเพิ่มหลังปิดบิลไปแล้ว */
+  async function openCashDrawer() {
+    try {
+      await sendToPrinter(buildDrawerKick());
+    } catch (e: any) {
+      setNotice({ type: "error", text: `เปิดลิ้นชักไม่สำเร็จ: ${String(e?.message ?? e)}` });
     }
   }
 
@@ -778,11 +875,13 @@ export default function PosPage() {
             tendered: payment.method === "CASH" && payment.numericTendered > 0 ? payment.numericTendered : null,
             change: payment.method === "CASH" ? payment.numericChange : null,
           }));
+        // ยอดบนใบเสร็จต้องเป็นยอดที่ server บันทึกไว้ (รวมปัดเศษแล้ว) ไม่ใช่ยอดที่จอบวกเอง
+        const soldTotal = Number.isFinite(Number(data.total)) ? Number(data.total) : amountDue;
         const nextReceipt: Receipt = {
           orderId: data.orderId ?? null,
           docNo: data.docNo ?? null,
           lines: cart,
-          total,
+          total: soldTotal,
           tendered: data.cashTendered ?? null,
           change: data.cashChange ?? null,
           at: new Date().toLocaleString("th-TH"),
@@ -794,6 +893,9 @@ export default function PosPage() {
           branchCode: session.location?.branchCode ?? null,
           posLabel: session.device.registeredPosNo ?? session.device.code,
           vatRegistered: session.vat.registered,
+          taxId: session.store?.taxId ?? null,
+          vat: parseReceiptVat(data.vat),
+          roundingAmount: Number(data.roundingAmount ?? roundingDelta),
           paymentLabel: receiptPayments.length > 1 ? "จ่ายหลายวิธี" : receiptPayments[0]?.label ?? "ไม่ระบุ",
           paymentRef: receiptPayments.length === 1 ? receiptPayments[0]?.ref ?? null : null,
           payments: receiptPayments,
@@ -803,7 +905,7 @@ export default function PosPage() {
         setJustSold({
           docNo: data.docNo ?? null,
           change: data.cashChange ?? null,
-          total,
+          total: soldTotal,
         });
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
@@ -891,6 +993,7 @@ export default function PosPage() {
         if (receipt?.orderId === orderId) setReceipt(null);
         setReturnNotes((cur) => ({ ...cur, [orderId]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [orderId]: "" }));
+        setReturnPanelOrderId(null);
         void loadRecentReceipts(recentSalesQuery);
         return;
       }
@@ -969,6 +1072,7 @@ export default function PosPage() {
         setReturnDrafts((cur) => ({ ...cur, [row.orderId!]: {} }));
         setReturnNotes((cur) => ({ ...cur, [row.orderId!]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: "" }));
+        setReturnPanelOrderId(null);
         void loadRecentReceipts(recentSalesQuery);
         return;
       }
@@ -1053,6 +1157,8 @@ export default function PosPage() {
       }));
     setCart(nextCart);
     setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+    // งานย้ายไปที่ตะกร้าแล้ว — ปล่อยฟอร์มคืนกางค้างไว้จะบังบิลอื่นเปล่า ๆ
+    setReturnPanelOrderId(null);
     setReceipt({
       ...row,
       receiptType: "exchange",
@@ -1532,7 +1638,14 @@ export default function PosPage() {
                 />
               </div>
               <div style={{ display: recentOpen ? "flex" : "none", flexDirection: "column", gap: 6 }}>
-                {recentReceipts.map((row, idx) => (
+                {recentReceipts.map((row, idx) => {
+                  // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
+                  const canReturn =
+                    Boolean(row.orderId) &&
+                    row.orderStatus !== "RETURNED" &&
+                    row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
+                  const panelOpen = canReturn && returnPanelOrderId === row.orderId;
+                  return (
                   <div
                     key={row.orderId ?? `recent-${idx}`}
                     style={{
@@ -1561,35 +1674,37 @@ export default function PosPage() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                          {row.at} · {row.paymentLabel}{row.paymentRef ? ` · ${row.paymentRef}` : ""}
+                        {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
+                            เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
+                        <div style={{ fontSize: 12, color: "#666", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {row.at} · {row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${line.receiptName}`).join(" · ")}
+                          {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
                         </div>
                       </div>
                       <strong>฿{baht(row.total)}</strong>
                     </div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-                      {row.lines.slice(0, 3).map((line) => `${line.packQty}× ${line.receiptName}`).join(" · ")}
-                      {row.lines.length > 3 ? ` · +${row.lines.length - 3} รายการ` : ""}
-                    </div>
-                    {row.orderId && row.orderStatus !== "RETURNED" && row.lines.some((line) => (line.refundablePackQty ?? 0) > 0) && (
+                    {/* ฟอร์มคืนสินค้ากางเฉพาะบิลที่กดเปิด และเปิดได้ทีละใบ
+                        เดิมกางทุกใบตลอดเวลา — 3 บิลก็เลื่อนจอหาไม่เจอแล้ว */}
+                    {panelOpen && (
                       <div style={{ marginTop: 8, borderTop: "1px dashed #ddd", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ fontSize: 12, color: "#666" }}>คืนบางรายการ</div>
-                        <select
-                          value={returnReasonCodes[row.orderId] ?? ""}
-                          onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                          style={{ padding: 8, fontSize: 12 }}
-                        >
-                          <option value="">เลือกประเภทเหตุผล</option>
-                          {RETURN_REASON_OPTIONS.map((opt) => (
-                            <option key={opt.key} value={opt.key}>{opt.label}</option>
-                          ))}
-                        </select>
-                        <textarea
-                          value={returnNotes[row.orderId] ?? ""}
-                          onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                          placeholder="เหตุผลในการคืน (บังคับ)"
-                          style={{ width: "100%", minHeight: 64, padding: 8, fontSize: 12, resize: "vertical" }}
-                        />
+                        <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 200px) minmax(0, 1fr)", gap: 6 }}>
+                          <select
+                            value={returnReasonCodes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                            style={{ padding: 8, fontSize: 12, minHeight: 38 }}
+                          >
+                            <option value="">เลือกประเภทเหตุผล</option>
+                            {RETURN_REASON_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            value={returnNotes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                            placeholder="รายละเอียดเหตุผล (บังคับ)"
+                            style={{ width: "100%", padding: 8, fontSize: 12, minHeight: 38 }}
+                          />
+                        </div>
                         {row.lines
                           .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
                           .map((line) => {
@@ -1608,14 +1723,16 @@ export default function PosPage() {
                                 </div>
                                 <button
                                   onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
-                                  style={{ padding: "4px 8px", fontSize: 12 }}
+                                  style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
+                                  aria-label={`ลดจำนวนคืน ${line.receiptName}`}
                                 >
                                   −
                                 </button>
-                                <div style={{ minWidth: 24, textAlign: "center", fontSize: 12 }}>{selected}</div>
+                                <div style={{ minWidth: 24, textAlign: "center", fontSize: 13, fontWeight: 500 }}>{selected}</div>
                                 <button
                                   onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
-                                  style={{ padding: "4px 8px", fontSize: 12 }}
+                                  style={{ padding: "6px 12px", fontSize: 14, minHeight: 34 }}
+                                  aria-label={`เพิ่มจำนวนคืน ${line.receiptName}`}
                                 >
                                   +
                                 </button>
@@ -1625,13 +1742,28 @@ export default function PosPage() {
                         <div style={{ fontSize: 12, color: "#8a6100" }}>
                           ยอดคืนประมาณ ฿{baht(getPartialRefundPreview(row))}
                         </div>
-                        <div>
+                        {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
+                            (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <button
                             onClick={() => void partialReturnReceipt(row)}
                             disabled={busy || getPartialRefundPreview(row) <= 0}
-                            style={{ padding: "6px 10px", fontSize: 12 }}
+                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                           >
                             คืนบางรายการ
+                          </button>
+                          <button
+                            onClick={() => void returnReceipt(row.orderId!)}
+                            disabled={busy}
+                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
+                          >
+                            คืนทั้งบิล
+                          </button>
+                          <button
+                            onClick={() => startExchangeFromReceipt(row)}
+                            style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
+                          >
+                            ทำบิลเปลี่ยนสินค้า
                           </button>
                         </div>
                       </div>
@@ -1670,50 +1802,29 @@ export default function PosPage() {
                           setReceiptModalOpen(true);
                           window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(row));
                         }}
-                        style={{ padding: "6px 10px", fontSize: 12 }}
+                        style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
                       >
                         ดู/พิมพ์
                       </button>
-                      <button
-                        onClick={() => startExchangeFromReceipt(row)}
-                        style={{ padding: "6px 10px", fontSize: 12 }}
-                      >
-                        ทำบิลเปลี่ยนสินค้า
-                      </button>
-                      {row.orderId && (
-                        <>
-                          {row.orderStatus !== "RETURNED" && (
-                            <>
-                              <select
-                                value={returnReasonCodes[row.orderId] ?? ""}
-                                onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                                style={{ padding: 8, fontSize: 12, minWidth: 160 }}
-                              >
-                                <option value="">ประเภทเหตุผล</option>
-                                {RETURN_REASON_OPTIONS.map((opt) => (
-                                  <option key={`full-${opt.key}`} value={opt.key}>{opt.label}</option>
-                                ))}
-                              </select>
-                              <textarea
-                                value={returnNotes[row.orderId] ?? ""}
-                                onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                                placeholder="เหตุผลในการคืนทั้งบิล (บังคับ)"
-                                style={{ minWidth: 220, minHeight: 38, padding: 8, fontSize: 12, resize: "vertical" }}
-                              />
-                            </>
-                          )}
-                          <button
-                            onClick={() => void returnReceipt(row.orderId!)}
-                            disabled={busy || row.orderStatus === "RETURNED"}
-                            style={{ padding: "6px 10px", fontSize: 12 }}
-                          >
-                            {row.orderStatus === "RETURNED" ? "คืนแล้ว" : "คืนบิล"}
-                          </button>
-                        </>
+                      {canReturn && (
+                        <button
+                          onClick={() =>
+                            setReturnPanelOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))
+                          }
+                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38 }}
+                        >
+                          {panelOpen ? "▾ คืน/เปลี่ยนสินค้า" : "▸ คืน/เปลี่ยนสินค้า"}
+                        </button>
+                      )}
+                      {!canReturn && (
+                        <span style={{ fontSize: 12, color: "#999", alignSelf: "center" }}>
+                          {row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล" : "คืนครบทุกรายการแล้ว"}
+                        </span>
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1728,8 +1839,14 @@ export default function PosPage() {
           <div className="pos-total">
             <div className="pos-total-row">
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
-              <span className="pos-total-value">฿{baht(total)}</span>
+              <span className="pos-total-value">฿{baht(amountDue)}</span>
             </div>
+            {/* ปัดเศษต้องเห็นบนจอ ไม่ใช่โผล่มาเฉพาะบนใบเสร็จ — ลูกค้าถามว่าทำไมไม่ตรงป้าย */}
+            {roundingDelta !== 0 && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                <span>ยอดสินค้า ฿{baht(total)} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
+              </div>
+            )}
             {session?.vat.registered && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
                 <span>ราคารวม VAT {session.vat.rate}% แล้ว</span>
@@ -1779,7 +1896,7 @@ export default function PosPage() {
                   value={payments[0]?.tendered ?? ""}
                   onChange={(e) => {
                     const v = e.target.value;
-                    updatePayment(payments[0].id, { tendered: v, amount: total > 0 ? String(total) : "" });
+                    updatePayment(payments[0].id, { tendered: v, amount: amountDue > 0 ? String(amountDue) : "" });
                   }}
                   inputMode="decimal"
                   placeholder="0"
@@ -1787,8 +1904,8 @@ export default function PosPage() {
               </div>
               <div className="pos-quick" style={{ marginTop: 8 }}>
                 <button
-                  onClick={() => updatePayment(payments[0].id, { tendered: String(total), amount: String(total) })}
-                  disabled={total <= 0}
+                  onClick={() => updatePayment(payments[0].id, { tendered: String(amountDue), amount: String(amountDue) })}
+                  disabled={amountDue <= 0}
                   className="pos-exact"
                 >
                   พอดี
@@ -1799,7 +1916,7 @@ export default function PosPage() {
                     onClick={() => {
                       const cur = Number(payments[0]?.tendered) || 0;
                       const next = cur + n;
-                      updatePayment(payments[0].id, { tendered: String(next), amount: total > 0 ? String(total) : "" });
+                      updatePayment(payments[0].id, { tendered: String(next), amount: amountDue > 0 ? String(amountDue) : "" });
                     }}
                   >
                     +{n}
@@ -1940,7 +2057,18 @@ export default function PosPage() {
                 { position: "absolute", left: -10000, top: 0, width: 1, height: 1, overflow: "hidden" }
           }
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
+          {/* การ์ดเดียวจบ: หัวเรื่อง (ผลของบิล) → กระดาษ → แถบปุ่ม
+              ปุ่มเคยลอยอยู่นอกกระดาษบนพื้น overlay ซึ่งอ่านเหมือนหน้ายังโหลดไม่เสร็จ */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ใบเสร็จ"
+            style={{
+              background: "#fff", color: "#111", borderRadius: 12, width: 380, maxWidth: "100%",
+              maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
+            }}
+          >
           {/* ใบเสร็จ: พิมพ์ผ่าน print dialog ของเบราว์เซอร์ก่อน — ใช้ได้กับเครื่องพิมพ์
               ที่ลง driver ไว้แล้วโดยไม่ต้องเขียน ESC/POS · ESC/POS ผ่าน WebUSB
               (พร้อมคำสั่งเปิดลิ้นชัก) ค่อยทำเมื่อได้เครื่องจริงมาทดสอบ */}
@@ -1951,10 +2079,44 @@ export default function PosPage() {
               #pos-receipt { position: absolute !important; left: 0 !important; top: 0 !important; width: 72mm; }
             }
           `}</style>
+
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "12px 14px", borderBottom: "1px solid #e5e5e5",
+          }}>
+            <span style={{
+              fontSize: 12, padding: "3px 10px", borderRadius: 8, whiteSpace: "nowrap",
+              background: receipt.receiptType === "return" ? "#fdecec" : "#e7f6ec",
+              color: receipt.receiptType === "return" ? "#a32d2d" : "#1a6b3c",
+            }}>
+              {receipt.receiptType === "return" ? "รับคืน" : receipt.receiptType === "exchange" ? "เปลี่ยนสินค้า" : "สำเร็จ"}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"}
+              </div>
+              <div style={{ fontSize: 12, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ฿{baht(receipt.refundTotal ?? receipt.total)} · {receipt.paymentLabel}
+                {receipt.change != null ? ` · เงินทอน ฿${baht(receipt.change)}` : ""}
+              </div>
+            </div>
+            <button
+              onClick={() => setReceiptModalOpen(false)}
+              aria-label="ปิด"
+              style={{ padding: "6px 12px", fontSize: 16, lineHeight: 1 }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{
+            overflowY: "auto", background: "#f4f4f4",
+            padding: 14, display: "flex", justifyContent: "center",
+          }}>
           <div
             id="pos-receipt"
             style={{
-              background: "#fff", borderRadius: 12, padding: 16, maxWidth: 320,
+              background: "#fff", borderRadius: 4, padding: "14px 16px", width: 280, maxWidth: "100%",
               fontFamily: "ui-monospace, monospace", fontSize: 12, lineHeight: 1.55,
             }}
           >
@@ -1962,6 +2124,11 @@ export default function PosPage() {
             <div style={{ textAlign: "center" }}>
               (สาขา {receipt.branchCode ?? "—"})
             </div>
+            {/* ใบกำกับภาษีอย่างย่อต้องมีเลขประจำตัวผู้เสียภาษีของผู้ออก
+                ร้านที่ยังไม่กรอกในโปรไฟล์จะไม่มีบรรทัดนี้ — เห็นแล้วรู้ว่าต้องไปตั้งค่า */}
+            {receipt.taxId && (
+              <div style={{ textAlign: "center" }}>TAX# {receipt.taxId}</div>
+            )}
             {receipt.vatRegistered && (
               <div style={{ textAlign: "center" }}>(VAT Included)</div>
             )}
@@ -1985,7 +2152,36 @@ export default function PosPage() {
               </div>
             ))}
             <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            {/* ตัวเลขชุดนี้มาจากใบกำกับที่ออกจริง ไม่ได้ถอด 7/107 จากยอดรวมที่จอ
+                — บิลที่มีสินค้ายกเว้น VAT ปนจะได้คนละตัวเลขกับเอกสารที่ยื่น
+                ใบรับคืน/ใบเปลี่ยนไม่แสดง เพราะใบลดหนี้เป็นเอกสารคนละใบ */}
+            {receipt.vat && (!receipt.receiptType || receipt.receiptType === "sale") && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+                  <span>มูลค่าก่อน VAT</span>
+                  <span>{baht(receipt.vat.netBeforeVat)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+                  <span>VAT {receipt.vat.rate}%</span>
+                  <span>{baht(receipt.vat.vatAmount)}</span>
+                </div>
+                {receipt.vat.exemptAmount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+                    <span>ยกเว้น VAT (N)</span>
+                    <span>{baht(receipt.vat.exemptAmount)}</span>
+                  </div>
+                )}
+              </>
+            )}
+            {/* ปัดเศษเงินสดแยกจากบล็อก VAT — ร้านที่ไม่ได้จด VAT ก็ตั้งปัดเศษได้
+                ถ้าไม่พิมพ์บรรทัดนี้ ผลรวมรายการจะไม่เท่ายอดสุทธิโดยไม่มีคำอธิบาย */}
+            {Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0) !== 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+                <span>ปัดเศษเงินสด</span>
+                <span>{baht(Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0))}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
               <span>ยอดสุทธิ {receipt.lines.reduce((n, l) => n + l.packQty, 0)} ชิ้น</span>
               <span>{baht(receipt.refundTotal ?? receipt.total)}</span>
             </div>
@@ -2023,15 +2219,62 @@ export default function PosPage() {
             ))}
             <div style={{ marginTop: 6 }}>{receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"} · {receipt.at}</div>
             <div>แคชเชียร์ {receipt.cashier}</div>
+            {/* สแกนเลขบิลตอนลูกค้าเอาบิลมาคืนของ แทนการพิมพ์เลขด้วยมือ */}
+            {receipt.docNo && (
+              <div style={{ marginTop: 8, textAlign: "center" }}>
+                <ReceiptBarcode value={receipt.docNo} />
+                <div>{receipt.docNo}</div>
+              </div>
+            )}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "center" }}>
-            <button onClick={() => void printReceipt(false)} style={{ padding: "10px 20px" }}>พิมพ์ใบเสร็จ</button>
-            <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 20px" }}>ปิด</button>
+          </div>
+
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "12px 14px", borderTop: "1px solid #e5e5e5",
+          }}>
+            <button onClick={() => void printReceipt(false)} style={{ flex: 1, padding: "10px 16px" }}>
+              พิมพ์ใบเสร็จ <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
+            </button>
+            {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
+            {printerReady && (
+              <button onClick={() => void openCashDrawer()} style={{ padding: "10px 14px" }} title="เปิดลิ้นชักเงินสด">
+                ลิ้นชัก
+              </button>
+            )}
+            <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 16px" }}>
+              ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>
+            </button>
           </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * บาร์โค้ดเลขบิลบนจอและใน print dialog
+ * (ทาง ESC/POS ใช้คำสั่งบาร์โค้ดของเครื่องพิมพ์เอง ไม่ได้ส่งภาพนี้ไป)
+ */
+function ReceiptBarcode({ value }: { value: string }) {
+  const code = code39Bars(value);
+  if (!code) return null;
+  const height = 36;
+  return (
+    <svg
+      viewBox={`0 0 ${code.width} ${height}`}
+      width="100%"
+      height={height}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`บาร์โค้ดเลขบิล ${value}`}
+      style={{ display: "block" }}
+    >
+      {code.bars.map((bar, i) => (
+        <rect key={i} x={bar.x} y={0} width={bar.width} height={height} fill="#000" />
+      ))}
+    </svg>
   );
 }
 

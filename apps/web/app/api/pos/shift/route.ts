@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   authenticatePosDevice,
+  cashierHasPermission,
   closePosShift,
   getOpenPosShift,
   openPosShift,
@@ -43,18 +44,17 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "open") {
+    if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.shift.open"))) {
+      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์เปิดกะ" }, { status: 403 });
+    }
     const result = await openPosShift({
       tenantId: device.tenantId,
       deviceId: device.id,
       openedBy: auth.userId,
       openingFloat: Number(body.openingFloat ?? 0),
-      // เภสัชกรเวรระบุแยกได้ ถ้าไม่ระบุแล้วคนเปิดกะเป็นเภสัชกรเอง ก็ใช้คนนั้น
-      pharmacistUserId:
-        typeof body.pharmacistUserId === "string"
-          ? body.pharmacistUserId
-          : auth.isPharmacist
-          ? auth.userId
-          : null,
+      // บันทึกได้เฉพาะคนที่ยืนยัน PIN ในคำขอนี้ ห้ามรับ UUID เภสัชกรคนอื่นจาก body
+      // จนกว่าจะมี flow ยืนยัน PIN ของเภสัชกรเวรแยกต่างหาก
+      pharmacistUserId: auth.isPharmacist ? auth.userId : null,
     });
     const status =
       result.status === "OPENED" || result.status === "ALREADY_OPEN" ? 200
@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "close") {
+    if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.shift.close"))) {
+      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ปิดกะ" }, { status: 403 });
+    }
     const open = await getOpenPosShift(device.tenantId, device.id);
     if (!open) return NextResponse.json({ status: "NOT_OPEN" }, { status: 409 });
 

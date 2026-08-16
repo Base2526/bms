@@ -208,6 +208,8 @@ export type ListSellableProductsOpts = {
   minPrice?: number | null;
   maxPrice?: number | null;
   inStockOnly?: boolean;
+  /** จำกัดยอดคงเหลือ/ไซซ์ให้สาขานี้ — ใช้โดย POS ซึ่งขายจากเครื่องสาขาเดียว */
+  locationId?: string | null;
   sort?: "relevance" | "newest" | "availability";
   limit?: number;
 };
@@ -242,6 +244,8 @@ export async function listSellableProducts(
     brand,
     excludeSku,
   ];
+  params.push(opts.locationId?.trim() || null);
+  const locationParam = params.length;
   // Build optional placeholders in the same order as params. Keeping a fixed $6 for size while
   // omitting its SQL clause leaves a gap before price/limit parameters, which PostgreSQL cannot
   // type-infer when that unused value is null.
@@ -254,6 +258,7 @@ export async function listSellableProducts(
            FROM bms_inventory sellable_i
           WHERE sellable_i.tenant_id = p.tenant_id
             AND sellable_i.product_sku = p.sku
+            AND ($${locationParam}::uuid IS NULL OR sellable_i.location_id = $${locationParam})
             AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
             AND ($${sizeParam}::text IS NULL OR sellable_i.size = $${sizeParam})
        )`;
@@ -355,6 +360,7 @@ export async function listSellableProducts(
        LEFT JOIN bms_inventory i
          ON i.tenant_id = $1
         AND i.product_sku = m.sku
+        AND ($${locationParam}::uuid IS NULL OR i.location_id = $${locationParam})
       GROUP BY m.sku, m.name, m.price, m.description, m.category, m.brand,
                m.created_at, m.updated_at, m.search_rank
       ORDER BY ${orderBy}

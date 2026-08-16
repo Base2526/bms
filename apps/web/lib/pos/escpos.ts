@@ -15,6 +15,8 @@
 // ตัวอักษรขยะ เพราะ 1 อักษรไทยใน UTF-8 กิน 3 ไบต์ แต่เครื่องอ่านทีละไบต์
 // =============================================================
 
+import { sanitizeCode39 } from "./barcode";
+
 const ESC = 0x1b;
 const GS = 0x1d;
 
@@ -114,6 +116,21 @@ export class EscPosBuilder {
     return this.raw(ESC, 0x70, pin, 0x19, 0xfa);
   }
 
+  /**
+   * GS k 69 — บาร์โค้ด CODE39 พร้อมเลขกำกับใต้แท่ง (GS H 2)
+   * ใช้ m=69 แบบระบุความยาว ไม่ใช่ m=4 ที่จบด้วย NUL — รุ่นที่ไม่รองรับ NUL
+   * จะพิมพ์ขยะยาวจนกระดาษหมด
+   * ข้ามให้เงียบเมื่อไม่มีอักขระที่เข้ารหัสได้ — บิลต้องพิมพ์ออกได้เสมอ
+   */
+  barcode39(data: string, height = 60, moduleWidth: 2 | 3 = 2): this {
+    const text = sanitizeCode39(data);
+    if (!text) return this;
+    return this.raw(GS, 0x68, height)
+      .raw(GS, 0x77, moduleWidth)
+      .raw(GS, 0x48, 2)
+      .raw(GS, 0x6b, 69, text.length, ...text.split("").map((ch) => ch.charCodeAt(0)));
+  }
+
   build(): Uint8Array {
     return new Uint8Array(this.bytes);
   }
@@ -143,6 +160,14 @@ export type ReceiptPayload = {
   tendered?: number | null;
   change?: number | null;
   paymentLabel?: string | null;
+  /** ตัวเลขจากใบกำกับที่ออกจริง — ไม่ส่งมา = ไม่พิมพ์บรรทัดแยกฐาน/VAT */
+  vat?: {
+    rate: number;
+    vatAmount: number;
+    netBeforeVat: number;
+    exemptAmount?: number;
+    roundingAmount?: number;
+  } | null;
 };
 
 function money(n: number): string {
@@ -168,6 +193,13 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   }
   b.divider();
 
+  // ใบกำกับภาษีอย่างย่อต้องแสดงยอด VAT แยก — พิมพ์ก่อนยอดสุทธิเหมือนใบจริง
+  if (payload.vat) {
+    b.columnsLine("มูลค่าก่อน VAT", money(payload.vat.netBeforeVat));
+    b.columnsLine(`VAT ${payload.vat.rate}%`, money(payload.vat.vatAmount));
+    if (payload.vat.exemptAmount) b.columnsLine("ยกเว้น VAT (N)", money(payload.vat.exemptAmount));
+    if (payload.vat.roundingAmount) b.columnsLine("ปัดเศษ", money(payload.vat.roundingAmount));
+  }
   b.bold(true).columnsLine(`ยอดสุทธิ ${payload.itemCount} ชิ้น`, money(payload.total)).bold(false);
   if (payload.paymentLabel) b.columnsLine("ชำระโดย", payload.paymentLabel);
   if (payload.tendered != null) {
@@ -179,6 +211,9 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.docNo) b.line(`${payload.docNo}  ${payload.at}`);
   else b.line(payload.at);
   if (payload.cashier) b.line(`แคชเชียร์ ${payload.cashier}`);
+
+  // บาร์โค้ดเลขบิลไว้สแกนตอนรับคืนของ
+  if (payload.docNo) b.feed(1).align(1).barcode39(payload.docNo).align(0);
 
   b.cut();
   return b.build();

@@ -12,6 +12,16 @@
 import { query } from "@/lib/db";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
+const RETURN_REASON_PREFIX_RE = /^\[([A-Z_]+)\]\s*/;
+
+function parseReturnReason(note: string | null | undefined) {
+  const text = String(note ?? "").trim();
+  const match = text.match(RETURN_REASON_PREFIX_RE);
+  return {
+    reasonCode: match?.[1] ?? "UNSPECIFIED",
+    reasonText: text.replace(RETURN_REASON_PREFIX_RE, "") || "(no detail)",
+  };
+}
 
 /** normalize ช่วงวันที่: default = 30 วันล่าสุด (YYYY-MM-DD) */
 function range(from?: string | null, to?: string | null): { from: string; to: string } {
@@ -270,5 +280,167 @@ export async function getProfitSummary(tenantId: string, from?: string | null, t
       cost: Number(x.cost),
       profit: Number(x.revenue) - Number(x.cost),
     })),
+  };
+}
+
+export async function getPosReturnSummary(tenantId: string, from?: string | null, to?: string | null) {
+  const r = range(from, to);
+  const [totals, reasons, recent] = await Promise.all([
+    query(
+      `WITH selected_returns AS (
+         SELECT id, refund_amount
+           FROM bms_pos_returns
+          WHERE tenant_id = $1
+            AND created_at >= $2::date
+            AND created_at < $3::date + interval '1 day'
+       )
+       SELECT COUNT(*)::int AS return_count,
+              COALESCE(SUM(refund_amount), 0) AS refund_total,
+              COALESCE((
+                SELECT SUM(a.amount)
+                  FROM bms_pos_refund_allocations a
+                  JOIN selected_returns sr ON sr.id = a.pos_return_id
+                 WHERE a.tenant_id = $1 AND a.status = 'COMPLETED'
+              ), 0) AS settled_total,
+              COALESCE((
+                SELECT SUM(a.amount)
+                  FROM bms_pos_refund_allocations a
+                  JOIN selected_returns sr ON sr.id = a.pos_return_id
+                 WHERE a.tenant_id = $1 AND a.status = 'PENDING'
+              ), 0) AS pending_total,
+              (SELECT COUNT(*)::int
+                 FROM bms_pos_refund_allocations a
+                 JOIN selected_returns sr ON sr.id = a.pos_return_id
+                WHERE a.tenant_id = $1 AND a.status = 'PENDING') AS pending_count
+         FROM selected_returns`,
+      [tenantId, r.from, r.to]
+    ),
+    query(
+      `SELECT COALESCE(NULLIF(trim(note), ''), '(no reason)') AS note,
+              COUNT(*)::int AS count
+         FROM bms_pos_returns
+        WHERE tenant_id = $1
+          AND created_at >= $2::date
+          AND created_at < $3::date + interval '1 day'
+        GROUP BY 1
+        ORDER BY count DESC, note
+        LIMIT 5`,
+      [tenantId, r.from, r.to]
+    ),
+    query(
+      `SELECT pr.id,
+              pr.order_id,
+              pr.refund_amount,
+              pr.return_mode,
+              pr.settlement_status,
+              pr.note,
+              pr.created_at,
+              COALESCE(u.name, u.email, pr.returned_by::text) AS returned_by,
+              COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
+                         WHERE a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+                           AND a.status = 'COMPLETED'), 0) AS settled_amount,
+              COALESCE((SELECT SUM(a.amount) FROM bms_pos_refund_allocations a
+                         WHERE a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+                           AND a.status = 'PENDING'), 0) AS pending_amount
+         FROM bms_pos_returns pr
+         LEFT JOIN users u ON u.id = pr.returned_by
+        WHERE pr.tenant_id = $1
+          AND pr.created_at >= $2::date
+          AND pr.created_at < $3::date + interval '1 day'
+        ORDER BY pr.created_at DESC
+        LIMIT 10`,
+      [tenantId, r.from, r.to]
+    ),
+  ]);
+
+  return {
+    from: r.from,
+    to: r.to,
+    returnCount: Number(totals.rows[0]?.return_count ?? 0),
+    refundTotal: Number(totals.rows[0]?.refund_total ?? 0),
+    settledTotal: Number(totals.rows[0]?.settled_total ?? 0),
+    pendingTotal: Number(totals.rows[0]?.pending_total ?? 0),
+    pendingCount: Number(totals.rows[0]?.pending_count ?? 0),
+    topReasons: reasons.rows.map((row: any) => {
+      const parsed = parseReturnReason(row.note);
+      return {
+        reasonCode: parsed.reasonCode,
+        reasonText: parsed.reasonText,
+        count: Number(row.count ?? 0),
+      };
+    }),
+    recent: recent.rows.map((row: any) => ({
+      id: row.id,
+      orderId: row.order_id,
+      refundAmount: Number(row.refund_amount ?? 0),
+      returnMode: row.return_mode ?? "FULL",
+      settlementStatus: row.settlement_status ?? "PENDING",
+      settledAmount: Number(row.settled_amount ?? 0),
+      pendingAmount: Number(row.pending_amount ?? 0),
+      note: row.note ?? null,
+      ...parseReturnReason(row.note),
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      returnedBy: row.returned_by ?? null,
+    })),
+  };
+}
+
+export async function getPosReturnAuditSummary(tenantId: string, from?: string | null, to?: string | null) {
+  const r = range(from, to);
+  const [byCashier, approvals] = await Promise.all([
+    query(
+      `SELECT COALESCE(u.name, u.email, pr.returned_by::text, 'unknown') AS cashier,
+              COUNT(*)::int AS return_count,
+              COALESCE(SUM(pr.refund_amount), 0) AS refund_total
+         FROM bms_pos_returns pr
+         LEFT JOIN users u ON u.id = pr.returned_by
+        WHERE pr.tenant_id = $1
+          AND pr.created_at >= $2::date
+          AND pr.created_at < $3::date + interval '1 day'
+        GROUP BY 1
+        ORDER BY refund_total DESC, return_count DESC
+        LIMIT 10`,
+      [tenantId, r.from, r.to]
+    ),
+    query(
+      `SELECT
+          COUNT(*) FILTER (WHERE refund_amount >= 500)::int AS approval_candidate_count,
+          COUNT(*) FILTER (WHERE refund_amount >= 2000)::int AS high_value_return_count,
+          COUNT(*) FILTER (WHERE approved_by IS NOT NULL)::int AS approved_count,
+          COUNT(*) FILTER (WHERE refund_amount >= 500 AND approved_by IS NULL)::int AS missing_approval_count
+         FROM bms_pos_returns
+        WHERE tenant_id = $1
+          AND created_at >= $2::date
+          AND created_at < $3::date + interval '1 day'`,
+      [tenantId, r.from, r.to]
+    ),
+  ]);
+
+  return {
+    from: r.from,
+    to: r.to,
+    byCashier: byCashier.rows.map((row: any) => ({
+      cashier: String(row.cashier ?? "unknown"),
+      returnCount: Number(row.return_count ?? 0),
+      refundTotal: Number(row.refund_total ?? 0),
+    })),
+    approvalCandidateCount: Number(approvals.rows[0]?.approval_candidate_count ?? 0),
+    highValueReturnCount: Number(approvals.rows[0]?.high_value_return_count ?? 0),
+    approvedCount: Number(approvals.rows[0]?.approved_count ?? 0),
+    missingApprovalCount: Number(approvals.rows[0]?.missing_approval_count ?? 0),
+    anomalySignals: [
+      Number(approvals.rows[0]?.missing_approval_count ?? 0) > 0
+        ? "พบรายการตั้งแต่ ฿500 ที่ไม่มีผู้อนุมัติในข้อมูลย้อนหลัง — ควรตรวจรายการก่อนเริ่มใช้กฎใหม่"
+        : null,
+      Number(approvals.rows[0]?.high_value_return_count ?? 0) > 0
+        ? "มี high-value return ในช่วงเวลานี้"
+        : null,
+      byCashier.rows.some((row: any) => Number(row.return_count ?? 0) >= 5)
+        ? "มี cashier ที่คืนสินค้าถี่ผิดปกติ (>= 5 ครั้งในช่วงที่เลือก)"
+        : null,
+      byCashier.rows.some((row: any) => Number(row.refund_total ?? 0) >= 5000)
+        ? "มี cashier ที่ยอดคืนรวมสูงผิดปกติ (>= ฿5,000 ในช่วงที่เลือก)"
+        : null,
+    ].filter(Boolean),
   };
 }

@@ -24,7 +24,12 @@ import {
   upsertPosDevice,
 } from "@/lib/bms/pos";
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
-import { issueFullTaxInvoice, listTaxDocumentsForOrder } from "@/lib/bms/taxDocuments";
+import {
+  getVatSettings,
+  issueFullTaxInvoice,
+  listTaxDocumentsForOrder,
+  updateVatSettings,
+} from "@/lib/bms/taxDocuments";
 import { backfillEtaxQueue, getEtaxSummary, listEtaxSubmissions, processEtaxQueue } from "@/lib/bms/etax/queue";
 import {
   deleteProductPack,
@@ -137,6 +142,12 @@ export const bmsPosResolvers = {
       return listTaxDocumentsForOrder(getTenantId(ctx), args.orderId);
     },
 
+    /** ค่าตั้งภาษีของร้าน — เดิมแก้ได้ทาง SQL อย่างเดียว */
+    async bmsTaxSettings(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "tax.setting.manage");
+      return getVatSettings(getTenantId(ctx));
+    },
+
     async bmsPharmacyPolicyReadiness(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "pharmacy.policy.read");
       return getPharmacyPolicyReadiness(getTenantId(ctx));
@@ -179,6 +190,26 @@ export const bmsPosResolvers = {
       // ไม่บันทึกค่า token ลง audit — บันทึกแค่ว่าออกให้เครื่องไหน เมื่อไหร่
       await audit(ctx, "pos.device.token.issue", args.deviceId);
       return issued;
+    },
+
+    /**
+     * ตั้งค่าภาษีของร้าน (จด VAT / อัตรา / วิธีปัดเศษ / อนุมัติใบกำกับอย่างย่อ)
+     * มีผลกับบิลใหม่เท่านั้น เอกสารที่ออกไปแล้วเก็บอัตราของตัวเองไว้ในแถวของมัน
+     */
+    async bmsUpdateTaxSettings(_p: unknown, args: { input: any }, ctx: any) {
+      await requirePermission(ctx, "tax.setting.manage");
+      const tenantId = getTenantId(ctx);
+      const before = await getVatSettings(tenantId);
+      try {
+        const after = await updateVatSettings(tenantId, args.input);
+        // ค่าพวกนี้เปลี่ยนเอกสารที่ออกให้ลูกค้า — ต้องรู้ว่าใครเปลี่ยนจากอะไรเป็นอะไร
+        await audit(ctx, "tax.setting.update", tenantId, { before, after });
+        return after;
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "บันทึกค่าตั้งภาษีไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
     },
 
     /**

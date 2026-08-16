@@ -11,8 +11,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, recordPosSale, verifyCashierPin, type PosPaymentInput, type PosSaleLine } from "@/lib/bms/pos";
-import { PAYMENT_METHODS } from "@/lib/bms/payments";
+import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
+import { parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,52 +49,31 @@ export async function POST(req: NextRequest) {
       : "PIN ไม่ถูกต้อง";
     return NextResponse.json({ error: message, reason: auth.reason, lockedUntil: auth.lockedUntil }, { status: 403 });
   }
+  if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.sell"))) {
+    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ขายหน้าร้าน" }, { status: 403 });
+  }
 
-  const rawLines = Array.isArray(body.lines) ? body.lines : [];
-  const lines: PosSaleLine[] = rawLines
-    .map((l: any) => ({
-      sku: String(l?.sku ?? "").trim(),
-      size: String(l?.size ?? "").trim(),
-      packQty: Number(l?.packQty),
-      packCode: l?.packCode ? String(l.packCode) : null,
-      unitName: l?.unitName ? String(l.unitName) : null,
-      baseQty: l?.baseQty == null ? null : Number(l.baseQty),
-      packPrice: l?.packPrice == null ? null : Number(l.packPrice),
-    }))
-    .filter((l) => l.sku && l.size && Number.isInteger(l.packQty) && l.packQty > 0);
+  const lines = parsePosSaleLines(body.lines);
   if (lines.length === 0) return badRequest("ต้องมีรายการสินค้าอย่างน้อย 1 รายการ");
 
-  const rawPayments = Array.isArray(body.payments) ? body.payments : [];
-  const payments: PosPaymentInput[] = [];
-  for (const p of rawPayments as any[]) {
-    const method = String(p?.method ?? "").toUpperCase();
-    if (!(PAYMENT_METHODS as readonly string[]).includes(method)) {
-      return badRequest(`วิธีชำระเงินไม่ถูกต้อง: ${method || "(ว่าง)"}`);
-    }
-    const amount = Number(p?.amount);
-    if (!Number.isFinite(amount) || amount <= 0) return badRequest("จำนวนเงินต้องมากกว่า 0");
-    payments.push({
-      method: method as PosPaymentInput["method"],
-      amount,
-      cashTendered: p?.cashTendered == null ? null : Number(p.cashTendered),
-      ref: p?.ref ? String(p.ref) : null,
-    });
-  }
-  if (payments.length === 0) return badRequest("ต้องระบุการชำระเงินอย่างน้อย 1 รายการ");
+  const paymentParse = parsePosPayments(body.payments);
+  if (!paymentParse.ok) return badRequest(paymentParse.error);
+  const payments = paymentParse.payments;
 
   const result = await recordPosSale({
     tenantId: device.tenantId,
+    deviceId: device.id,
     shiftId,
-    cashierUserId,
+    cashierUserId: auth.userId,
     idempotencyKey,
     lines,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
-    discountApprovedBy: typeof body.discountApprovedBy === "string" ? body.discountApprovedBy : null,
-    discountReason: typeof body.discountReason === "string" ? body.discountReason : null,
-    // server-derived เท่านั้น: id ของ assessment ที่เภสัชกรอนุมัติแล้ว
-    pharmacyApprovedAssessmentId:
-      typeof body.pharmacyApprovedAssessmentId === "string" ? body.pharmacyApprovedAssessmentId : null,
+    // หน้า POS รุ่นนี้ยังไม่มี flow อนุมัติส่วนลด/clinical assessment ที่ผูกกับ server state
+    // ห้ามเชื่อ id ผู้อนุมัติหรือ assessment จาก body เพราะปลอม audit/ข้าม human gate ได้
+    discountApprovedBy: null,
+    discountReason: null,
+    pharmacyApprovedAssessmentId: null,
   });
 
   // ขายซ้ำด้วยคีย์เดิม → 200 พร้อม replayed: true (ไม่ใช่ error — เครื่องแค่ยิงซ้ำ)
@@ -105,6 +84,7 @@ export async function POST(req: NextRequest) {
     : result.status === "EMPTY" ? 400
     : result.status === "PAYMENT_MISMATCH" ? 400
     : result.status === "LOT_EXPIRED_OR_SHORT" ? 409
+    : result.status === "INVALID_PACK" ? 409
     : result.status === "INSUFFICIENT" ? 409
     : result.status === "NOT_FOUND" ? 404
     : String(result.status).startsWith("PHARMACY_") ? 403
