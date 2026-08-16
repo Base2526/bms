@@ -10,6 +10,13 @@
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
+import {
+  findRememberedPrinter,
+  isWebUsbSupported,
+  requestPrinter,
+  sendToPrinter,
+} from "@/lib/pos/printerClient";
 
 const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
@@ -152,6 +159,13 @@ export default function PosPage() {
   const [lookup, setLookup] = useState<ScanHit | null>(null);
   const [returnPanelOpen, setReturnPanelOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
+  // เครื่องพิมพ์ ESC/POS: จำที่เลือกไว้ ไม่ต้องเลือกใหม่ทุกเช้า
+  // ถ้าไม่มี/เบราว์เซอร์ไม่รองรับ → กลับไปใช้ print dialog เหมือนเดิม
+  const [printerReady, setPrinterReady] = useState(false);
+
+  useEffect(() => {
+    void findRememberedPrinter().then((d) => setPrinterReady(Boolean(d)));
+  }, []);
   // ใบเสร็จตัวเต็มเป็น "เอกสารสำหรับพิมพ์" ไม่ใช่ของที่ต้องอ่านบนจอ →
   // อยู่ใน modal เปิดเมื่อกดดู/พิมพ์บิลเก่าเท่านั้น
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
@@ -619,6 +633,58 @@ export default function PosPage() {
       hash = Math.imul(hash, 16777619);
     }
     return `pos-return-${row.orderId}-${mode}-${(hash >>> 0).toString(36)}`;
+  }
+
+  /** ประกอบใบเสร็จเป็นไบต์ ESC/POS จาก receipt ที่ค้างอยู่บนจอ */
+  function receiptToEscPos(r: Receipt) {
+    const lines: ReceiptLine[] = r.lines.map((l) => ({
+      name: l.receiptName + (l.size && l.size !== "-" ? ` (${l.size})` : ""),
+      qty: l.packQty,
+      amount: l.packPrice * l.packQty,
+    }));
+    return buildReceipt({
+      storeName: r.storeName ?? session?.location?.name ?? "",
+      branchCode: r.branchCode ?? session?.location?.branchCode ?? null,
+      taxId: null,
+      posNo: session?.device.registeredPosNo ?? session?.device.code ?? null,
+      vatIncluded: Boolean(session?.vat.registered),
+      docTitle: session?.vat.registered ? "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน",
+      docNo: r.docNo,
+      at: r.at,
+      cashier: r.cashier,
+      lines,
+      itemCount: r.lines.reduce((n, l) => n + l.packQty, 0),
+      total: r.total,
+      tendered: r.tendered,
+      change: r.change,
+      paymentLabel: null,
+    });
+  }
+
+  /** พิมพ์จริง: ลอง ESC/POS ก่อน ถ้าไม่ได้ค่อยตกไป print dialog */
+  async function printReceipt(openDrawer = true) {
+    if (!receipt || !isWebUsbSupported() || !printerReady) {
+      window.print();
+      return;
+    }
+    try {
+      await sendToPrinter(receiptToEscPos(receipt));
+      if (openDrawer) await sendToPrinter(buildDrawerKick());
+    } catch (e: any) {
+      // เครื่องพิมพ์มีปัญหาไม่ควรทำให้ขายไม่ได้ — บอกแล้วเปิด dialog ให้แทน
+      setNotice({ type: "error", text: `พิมพ์ผ่านเครื่องไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      window.print();
+    }
+  }
+
+  async function setupPrinter() {
+    try {
+      const d = await requestPrinter();
+      setPrinterReady(Boolean(d));
+      if (d) setNotice({ type: "ok", text: `เชื่อมเครื่องพิมพ์แล้ว: ${d.productName ?? "USB printer"}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
   }
 
   async function shiftAction(action: "open" | "close") {
@@ -1106,13 +1172,32 @@ export default function PosPage() {
 
         <div className="pos-header-actions" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {receipt && (
-            <button onClick={() => window.print()} style={{ padding: "8px 12px", fontSize: 12 }}>
+            <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
               พิมพ์บิลล่าสุด
             </button>
           )}
           <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 12px", fontSize: 12 }}>
             โหลดบิลล่าสุด
           </button>
+          {isWebUsbSupported() && (
+            <button
+              onClick={() => void setupPrinter()}
+              title={printerReady ? "เชื่อมเครื่องพิมพ์แล้ว — กดเพื่อเปลี่ยนเครื่อง" : "ยังไม่ได้เชื่อมเครื่องพิมพ์"}
+              style={{ padding: "8px 12px", fontSize: 12 }}
+            >
+              {printerReady ? "เครื่องพิมพ์ ✓" : "ตั้งค่าเครื่องพิมพ์"}
+            </button>
+          )}
+          {printerReady && (
+            <button
+              onClick={() => void sendToPrinter(buildDrawerKick()).catch((e) =>
+                setNotice({ type: "error", text: `เปิดลิ้นชักไม่สำเร็จ: ${String(e?.message ?? e)}` })
+              )}
+              style={{ padding: "8px 12px", fontSize: 12 }}
+            >
+              เปิดลิ้นชัก
+            </button>
+          )}
           <select
             value={cashierId}
             onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
@@ -1673,7 +1758,7 @@ export default function PosPage() {
               )}
 
               <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-                <button onClick={() => window.print()} style={{ flex: 1 }}>พิมพ์ใบเสร็จ</button>
+                <button onClick={() => void printReceipt(true)} style={{ flex: 1 }}>พิมพ์ใบเสร็จ</button>
                 <button onClick={() => setReceiptModalOpen(true)} style={{ flex: 1 }}>ดูใบเสร็จ</button>
                 <button onClick={() => setJustSold(null)} aria-label="ปิด" style={{ width: 52 }}>✕</button>
               </div>
@@ -1940,7 +2025,7 @@ export default function PosPage() {
             <div>แคชเชียร์ {receipt.cashier}</div>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "center" }}>
-            <button onClick={() => window.print()} style={{ padding: "10px 20px" }}>พิมพ์ใบเสร็จ</button>
+            <button onClick={() => void printReceipt(false)} style={{ padding: "10px 20px" }}>พิมพ์ใบเสร็จ</button>
             <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 20px" }}>ปิด</button>
           </div>
           </div>
