@@ -11,7 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
-import { isCameraScanSupported, startCameraScan } from "@/lib/pos/cameraScan";
+import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
 import {
@@ -227,6 +227,9 @@ export default function PosPage() {
   const [cameraSupported, setCameraSupported] = useState(false);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  // เบราว์เซอร์ที่ไม่มี BarcodeDetector ต้องโหลดตัวถอดรหัสก่อนเริ่มสแกน —
+  // บอกให้เห็นว่ากำลังเตรียมอยู่ ไม่ใช่กล้องค้าง
+  const [cameraPreparing, setCameraPreparing] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -829,6 +832,7 @@ export default function PosPage() {
     if (!cameraModalOpen) return;
     let cancelled = false;
     let handle: { stop: () => void } | null = null;
+    setCameraPreparing(needsDecoderDownload());
     (async () => {
       if (!cameraVideoRef.current) return;
       const h = await startCameraScan({
@@ -843,6 +847,7 @@ export default function PosPage() {
           if (!cancelled) setCameraError(message);
         },
       });
+      if (!cancelled) setCameraPreparing(false);
       if (cancelled) h.stop();
       else handle = h;
     })();
@@ -2388,7 +2393,9 @@ export default function PosPage() {
               </div>
             </div>
             <div style={{ padding: "10px 14px", fontSize: 12, color: cameraError ? "#ffb4a3" : "#c7cdc3" }}>
-              {cameraError || "ส่องกล้องให้เห็นบาร์โค้ด/QR ชัด ๆ — เจอแล้วเพิ่มลงตะกร้าให้อัตโนมัติ"}
+              {cameraError
+                || (cameraPreparing ? "กำลังเตรียมตัวอ่านบาร์โค้ดสำหรับเบราว์เซอร์นี้…" : null)
+                || "ส่องกล้องให้เห็นบาร์โค้ด/QR ชัด ๆ — เจอแล้วเพิ่มลงตะกร้าให้อัตโนมัติ"}
             </div>
           </div>
         </div>
