@@ -149,6 +149,10 @@ type MemberPreview = {
   totalDiscount: number;
   netTotal: number;
   capped: boolean;
+  /** อัตราแลกของร้าน — จอใช้บอกมูลค่าล่วงหน้าและปรับจำนวนเป็นก้าวละหน่วยแลก */
+  redeemPointsPerUnit: number;
+  redeemBahtPerUnit: number;
+  redeemMinPoints: number;
 };
 
 type ReceiptVat = {
@@ -344,6 +348,9 @@ export default function PosPage() {
   const [memberResults, setMemberResults] = useState<PosMember[]>([]);
   const [memberSearching, setMemberSearching] = useState(false);
   const [pointsToRedeem, setPointsToRedeem] = useState<string>("");
+  // แผงปรับจำนวนแต้มโผล่หลังพนักงานกด "ใช้แต้ม" เท่านั้น — บิลส่วนใหญ่ไม่แลกแต้ม
+  // การโชว์ช่องกรอกไว้ตลอดทำให้แถวรุงรังและกดผิดตอนรีบ
+  const [redeemOpen, setRedeemOpen] = useState(false);
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
@@ -546,9 +553,19 @@ export default function PosPage() {
   function clearMember() {
     setMember(null);
     setPointsToRedeem("");
+    setRedeemOpen(false);
     setMemberPreview(null);
     setMemberResults([]);
     setMemberQuery("");
+  }
+
+  /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
+  function stepPoints(direction: 1 | -1) {
+    if (!member) return;
+    const step = memberPreview?.redeemPointsPerUnit ?? 100;
+    const cur = Number(pointsToRedeem) || 0;
+    const next = Math.max(0, Math.min(member.pointsUsable, cur + direction * step));
+    setPointsToRedeem(next === 0 ? "" : String(next));
   }
 
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
@@ -2376,43 +2393,142 @@ export default function PosPage() {
             {/* แถบสมาชิก — วางบนแผงชำระเงินเพราะพนักงานถามลูกค้าตอนกำลังจะรับเงิน */}
             <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
               {member ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <span>
-                      <strong>{member.name}</strong>
-                      {member.tier ? ` · ${member.tier.name}` : ""}
-                      {member.memberNo ? ` · ${member.memberNo}` : ""}
-                    </span>
-                    <button type="button" className="pos-btn-ghost" onClick={clearMember}>เอาออก</button>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span>แต้มใช้ได้ {member.pointsUsable}</span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      placeholder="แลกแต้ม"
-                      value={pointsToRedeem}
-                      max={member.pointsUsable}
-                      min={0}
-                      onChange={(e) => setPointsToRedeem(e.target.value)}
-                      style={{ width: 110 }}
-                    />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* ชั้นสมาชิกเป็น badge — อ่านแวบเดียวได้ ไม่ต้องอ่านทั้งบรรทัด
+                      "เอาออก" ชิดขวาด้วย margin-left:auto ไม่ใช่ space-between เพราะ
+                      .pos-total-break เป็น flex อยู่แล้ว div ลูกจึงไม่กว้างเต็มแถว */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {member.tier && (
+                      <span
+                        style={{
+                          flex: "none", border: "1px solid var(--pos-line)", borderRadius: 6,
+                          padding: "2px 8px", fontSize: 12, color: "var(--pos-muted)",
+                        }}
+                      >
+                        {member.tier.name}
+                      </span>
+                    )}
+                    <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {member.name}
+                    </strong>
+                    {member.memberNo && (
+                      <span style={{ flex: "none", fontSize: 12, color: "var(--pos-muted)" }}>{member.memberNo}</span>
+                    )}
                     <button
                       type="button"
-                      className="pos-btn-ghost"
-                      onClick={() => setPointsToRedeem(String(member.pointsUsable))}
-                      disabled={member.pointsUsable <= 0}
+                      onClick={clearMember}
+                      style={{
+                        marginLeft: "auto", flex: "none", background: "none", border: "none",
+                        borderBottom: "1px solid var(--pos-line)", color: "var(--pos-muted)",
+                        fontSize: 12, padding: "2px 0", cursor: "pointer",
+                      }}
                     >
-                      แลกทั้งหมด
+                      เอาออก
                     </button>
-                    {pointsToRedeem !== "" && (
-                      <button type="button" className="pos-btn-ghost" onClick={() => setPointsToRedeem("")}>
-                        ไม่แลก
-                      </button>
-                    )}
                   </div>
+
+                  {member.pointsUsable <= 0 ? (
+                    /* 0 แต้ม = ไม่มีอะไรให้กด — บอกแค่ว่าบิลนี้จะได้แต้ม */
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                      ยังไม่มีแต้มสะสม · บิลนี้จะได้แต้ม
+                    </span>
+                  ) : total <= 0 ? (
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                      แต้ม {member.pointsUsable} · เพิ่มสินค้าก่อนจึงแลกได้
+                    </span>
+                  ) : !redeemOpen ? (
+                    /* ปุ่มเดียวที่ต้องตัดสินใจ + บอกมูลค่าล่วงหน้า พนักงานถามลูกค้าได้เลย */
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
+                        แต้ม {member.pointsUsable}
+                        {memberPreview && (
+                          <span style={{ color: "var(--pos-muted)" }}>
+                            {" = ลดได้ ฿"}
+                            {baht(
+                              Math.floor(member.pointsUsable / memberPreview.redeemPointsPerUnit)
+                              * memberPreview.redeemBahtPerUnit
+                            )}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        className="pos-btn-ghost"
+                        style={{ flex: "none", padding: "9px 16px" }}
+                        onClick={() => {
+                          setRedeemOpen(true);
+                          setPointsToRedeem(String(member.pointsUsable));
+                        }}
+                      >
+                        ใช้แต้ม
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {/* ปรับด้วยปุ่ม 40×40 ไม่ใช่ spinner ของ input type=number
+                          ลูกศร spinner เล็กเกินกดด้วยนิ้วบนจอทัช */}
+                      <button
+                        type="button"
+                        aria-label="ลดจำนวนแต้ม"
+                        onClick={() => stepPoints(-1)}
+                        style={{
+                          flex: "none", width: 40, height: 40, borderRadius: 8,
+                          border: "1px solid var(--pos-line)", background: "none",
+                          color: "inherit", fontSize: 18, cursor: "pointer",
+                        }}
+                      >
+                        −
+                      </button>
+                      <span
+                        aria-live="polite"
+                        style={{
+                          flex: "none", minWidth: 96, textAlign: "center", padding: "9px 0",
+                          borderRadius: 8, border: "1px solid var(--pos-accent)",
+                          fontSize: 17, fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {Number(pointsToRedeem) || 0}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="เพิ่มจำนวนแต้ม"
+                        onClick={() => stepPoints(1)}
+                        style={{
+                          flex: "none", width: 40, height: 40, borderRadius: 8,
+                          border: "1px solid var(--pos-line)", background: "none",
+                          color: "inherit", fontSize: 18, cursor: "pointer",
+                        }}
+                      >
+                        +
+                      </button>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--pos-muted)" }}>
+                        จาก {member.pointsUsable} แต้ม
+                        {memberPreview?.pointsDiscount ? ` · ลด ฿${baht(memberPreview.pointsDiscount)}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="pos-btn-ghost"
+                        style={{ flex: "none", padding: "9px 13px", fontSize: 13 }}
+                        onClick={() => setPointsToRedeem(String(member.pointsUsable))}
+                      >
+                        ทั้งหมด
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setRedeemOpen(false); setPointsToRedeem(""); }}
+                        style={{
+                          flex: "none", background: "none", border: "none",
+                          borderBottom: "1px solid var(--pos-line)", color: "var(--pos-muted)",
+                          fontSize: 13, padding: "2px 0", cursor: "pointer",
+                        }}
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  )}
+
                   {member.pointsBalance < 0 && (
-                    <span style={{ color: "#c9455a" }}>
+                    <span style={{ fontSize: 12, color: "#c9455a" }}>
                       แต้มติดลบ {member.pointsBalance} (จากการคืนสินค้า) — แต้มที่ได้ครั้งถัดไปจะกลบยอดนี้ก่อน
                     </span>
                   )}
@@ -2727,26 +2843,26 @@ export default function PosPage() {
             role="dialog"
             aria-modal="true"
             aria-label="สมัครสมาชิกใหม่"
-            style={{ background: "#151714", color: "#f2f2ef", borderRadius: 12, width: 520, maxWidth: "100%", overflow: "hidden" }}
+            style={{ background: "var(--pos-surface)", color: "var(--pos-text)", borderRadius: 12, width: 520, maxWidth: "100%", overflow: "hidden" }}
           >
             <div
               style={{
                 padding: "10px 14px", fontSize: 13, fontWeight: 600,
-                borderBottom: "1px solid rgba(255,255,255,0.14)",
+                borderBottom: "1px solid var(--pos-line)",
                 display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
               }}
             >
               <span>สมัครสมาชิก · {enrollStep === "phone" ? "1/2 เบอร์โทร" : "2/2 ชื่อลูกค้า"}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {/* บอกสถานะ PIN ตั้งแต่หัวกล่อง ไม่ให้กรอกจนจบแล้วเจอ 403 */}
-                <span style={{ fontSize: 12, color: cashierId && pin ? "#9fe1cb" : "#ffb4a3" }}>
+                <span style={{ fontSize: 12, color: cashierId && pin ? "#12805c" : "#c9455a" }}>
                   {cashierId && pin ? "PIN พร้อม" : "ยังไม่ได้ใส่ PIN"}
                 </span>
                 <button
                   type="button"
                   onClick={() => setEnrollOpen(false)}
                   aria-label="ปิด"
-                  style={{ background: "none", border: "none", color: "#f2f2ef", fontSize: 16, padding: 4, lineHeight: 1 }}
+                  style={{ background: "none", border: "none", color: "var(--pos-text)", fontSize: 16, padding: 4, lineHeight: 1 }}
                 >
                   ✕
                 </button>
@@ -2759,18 +2875,18 @@ export default function PosPage() {
                   <div
                     aria-live="polite"
                     style={{
-                      background: "#0d0f0d", border: "1px solid #5dcaa5", borderRadius: 8,
+                      background: "var(--pos-sunken)", border: "1px solid #5dcaa5", borderRadius: 8,
                       padding: "10px 12px", fontSize: 22, letterSpacing: 1, minHeight: 46,
                       fontVariantNumeric: "tabular-nums", wordBreak: "break-all",
                     }}
                   >
-                    {enrollPhone || <span style={{ color: "#7d857a", fontSize: 15 }}>เบอร์โทรลูกค้า</span>}
+                    {enrollPhone || <span style={{ color: "var(--pos-muted)", fontSize: 15 }}>เบอร์โทรลูกค้า</span>}
                   </div>
-                  <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
                     เบอร์นี้ใช้ค้นสมาชิกครั้งต่อไป · ลูกค้าที่เคยคุยผ่าน LINE จะถูกผูกกับข้อมูลเดิม ไม่สร้างซ้ำ
                   </span>
                   {cart.length > 0 && (
-                    <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
                       ค้างอยู่ในตะกร้า · {itemCount} ชิ้น ฿{baht(amountDue)}
                     </span>
                   )}
@@ -2792,8 +2908,8 @@ export default function PosPage() {
                       type="button"
                       onClick={() => setEnrollPhone((cur) => (cur.length >= 20 ? cur : cur + digit))}
                       style={{
-                        background: "#22251f", border: "none", borderRadius: 8, color: "#f2f2ef",
-                        padding: "13px 0", fontSize: 19, cursor: "pointer",
+                        background: "var(--pos-surface)", border: "1px solid var(--pos-line-strong)",
+                        borderRadius: 8, color: "var(--pos-text)", padding: "13px 0", fontSize: 19, cursor: "pointer",
                       }}
                     >
                       {digit}
@@ -2802,14 +2918,14 @@ export default function PosPage() {
                   <button
                     type="button"
                     onClick={() => setEnrollPhone("")}
-                    style={{ background: "#1a1d18", border: "none", borderRadius: 8, color: "#a8afa4", padding: "13px 0", fontSize: 13, cursor: "pointer" }}
+                    style={{ background: "var(--pos-sunken)", border: "1px solid var(--pos-line)", borderRadius: 8, color: "var(--pos-muted)", padding: "13px 0", fontSize: 13, cursor: "pointer" }}
                   >
                     ล้าง
                   </button>
                   <button
                     type="button"
                     onClick={() => setEnrollPhone((cur) => (cur.length >= 20 ? cur : cur + "0"))}
-                    style={{ background: "#22251f", border: "none", borderRadius: 8, color: "#f2f2ef", padding: "13px 0", fontSize: 19, cursor: "pointer" }}
+                    style={{ background: "var(--pos-surface)", border: "1px solid var(--pos-line-strong)", borderRadius: 8, color: "var(--pos-text)", padding: "13px 0", fontSize: 19, cursor: "pointer" }}
                   >
                     0
                   </button>
@@ -2817,7 +2933,7 @@ export default function PosPage() {
                     type="button"
                     aria-label="ลบตัวท้าย"
                     onClick={() => setEnrollPhone((cur) => cur.slice(0, -1))}
-                    style={{ background: "#1a1d18", border: "none", borderRadius: 8, color: "#f2f2ef", padding: "13px 0", fontSize: 17, cursor: "pointer" }}
+                    style={{ background: "var(--pos-sunken)", border: "1px solid var(--pos-line)", borderRadius: 8, color: "var(--pos-text)", padding: "13px 0", fontSize: 17, cursor: "pointer" }}
                   >
                     ⌫
                   </button>
@@ -2825,7 +2941,7 @@ export default function PosPage() {
               </div>
             ) : (
               <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                <span style={{ fontSize: 13, color: "#a8afa4" }}>เบอร์ {enrollPhone}</span>
+                <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>เบอร์ {enrollPhone}</span>
                 <input
                   autoFocus
                   placeholder="ชื่อลูกค้า"
@@ -2834,12 +2950,12 @@ export default function PosPage() {
                   onKeyDown={(e) => { if (e.key === "Enter" && cashierId && pin) void enrollMemberFromPos(); }}
                   style={{ width: "100%" }}
                 />
-                <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
                   เบอร์ที่มีลูกค้าเดิมอยู่แล้วจะใช้ชื่อเดิม ไม่ทับด้วยชื่อนี้
                 </span>
                 {/* สมัครสมาชิก = เขียน CRM จริง ต้องมีคนรับผิดชอบ (PIN) เสมอ */}
                 {(!cashierId || !pin) && (
-                  <span style={{ fontSize: 12, color: "#ffb4a3" }}>
+                  <span style={{ fontSize: 12, color: "#c9455a" }}>
                     เลือกผู้ขายและใส่ PIN ที่แถบด้านบนก่อน จึงสมัครสมาชิกได้
                   </span>
                 )}

@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
-import { previewMemberDiscount } from "@/lib/bms/membership";
+import { getLoyaltySettings, previewMemberDiscount } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
 
 export const runtime = "nodejs";
@@ -40,13 +40,24 @@ export async function POST(req: NextRequest) {
     else couponError = check.reason;
   }
 
-  const preview = await previewMemberDiscount({
-    tenantId: device.tenantId,
-    customerId,
-    subtotal,
-    pointsRequested,
-    couponDiscount,
-  });
+  const [preview, settings] = await Promise.all([
+    previewMemberDiscount({
+      tenantId: device.tenantId,
+      customerId,
+      subtotal,
+      pointsRequested,
+      couponDiscount,
+    }),
+    getLoyaltySettings(device.tenantId),
+  ]);
 
-  return NextResponse.json({ ...preview, couponError }, { status: 200 });
+  // ส่งอัตราแลกไปด้วย จอจึงบอกได้ว่า "แต้ม 320 = ลดได้ ฿32" และปรับจำนวนเป็น
+  // ก้าวละ 1 หน่วยแลก (ไม่เหลือเศษแต้มที่ไม่ได้แปลงเป็นส่วนลด)
+  return NextResponse.json({
+    ...preview,
+    couponError,
+    redeemPointsPerUnit: settings.redeemPointsPerUnit,
+    redeemBahtPerUnit: settings.redeemBahtPerUnit,
+    redeemMinPoints: settings.redeemMinPoints,
+  }, { status: 200 });
 }
