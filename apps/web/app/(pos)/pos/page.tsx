@@ -30,12 +30,76 @@ import {
  * ซ้อนกันได้: คนแรกยังจ่ายไม่จบ คนถัดไปยื่นบิลมาขอคืนของ
  */
 const POS_TABS = [
-  { key: "sell", label: "ขาย", icon: "▮▍▮" },
-  { key: "returns", label: "คืน", icon: "↩" },
-  { key: "shift", label: "กะ", icon: "▤" },
-  { key: "settings", label: "ตั้งค่า", icon: "⚙" },
+  { key: "sell", label: "ขาย" },
+  { key: "returns", label: "คืน" },
+  { key: "shift", label: "กะ" },
+  { key: "settings", label: "ตั้งค่า" },
 ] as const;
 type PosTab = (typeof POS_TABS)[number]["key"];
+
+/**
+ * ไอคอนต้องเป็น SVG ห้ามใช้ตัวอักษร
+ * เคยใช้ "↩" (U+21A9) กับ "⚙" (U+2699) ซึ่งมี emoji variant อยู่ในมาตรฐาน Unicode
+ * → iOS เลือกเรนเดอร์เป็นภาพสีให้เอง แถบล่างบน iPhone จึงมีไอคอนสีโผล่มาสองตัว
+ * ส่วน "▮▍▮"/"▤" เป็นอักขระเรขาคณิตที่รูปร่าง/ความกว้างเปลี่ยนไปตามฟอนต์ที่แต่ละ
+ * เครื่องมี และบางเครื่องไม่มี glyph เลยต้องยืมฟอนต์อื่นมาแทน
+ * SVG คุมขนาด เส้น และสีได้เอง และได้หน้าตาเดียวกันทุกเครื่อง
+ */
+function PosTabIcon({ tab }: { tab: PosTab }) {
+  if (tab === "sell") {
+    // บาร์โค้ด = ขาย (ยิงของ)
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <rect x="3" y="5" width="3.4" height="14" rx="1" />
+        <rect x="8.6" y="5" width="2" height="14" rx="1" />
+        <rect x="12" y="5" width="3.4" height="14" rx="1" />
+        <rect x="17.6" y="5" width="3.4" height="14" rx="1" />
+      </svg>
+    );
+  }
+  if (tab === "returns") {
+    // ลูกศรย้อนกลับ = คืนของ
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M9 14L4 9l5-5" />
+        <path d="M4 9h11a5 5 0 010 10h-3" />
+      </svg>
+    );
+  }
+  if (tab === "shift") {
+    // สมุดบันทึก = กะ/ลิ้นชักเงินสด
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+           strokeLinecap="round" aria-hidden="true">
+        <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+        <path d="M3.5 9h17M3.5 13h17M3.5 16.5h17" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M19.4 15a1.6 1.6 0 00.33 1.77l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.6 1.6 0 00-1.77-.33 1.6 1.6 0 00-1 1.47V21a2 2 0 01-4 0v-.1A1.6 1.6 0 008.1 19.4a1.6 1.6 0 00-1.77.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.6 1.6 0 003.83 15a1.6 1.6 0 00-1.47-1H2a2 2 0 010-4h.1a1.6 1.6 0 001.47-1 1.6 1.6 0 00-.33-1.77l-.06-.06a2 2 0 012.83-2.83l.06.06A1.6 1.6 0 009 3.83 1.6 1.6 0 0010 2.36V2a2 2 0 014 0v.1a1.6 1.6 0 001 1.47 1.6 1.6 0 001.77-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.6 1.6 0 0020.17 9v.05a1.6 1.6 0 001.47 1H22a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1z" />
+    </svg>
+  );
+}
+
+/** ไอคอนบาร์โค้ดหน้าช่องยิง — เหตุผลเดียวกับ PosTabIcon: ห้ามใช้อักขระ ▮▍▮▏▮ */
+function ScanBarcodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+         style={{ width: 22, height: 22, flex: "none", color: "var(--pos-accent)" }}>
+      <rect x="2.5" y="5" width="2.2" height="14" rx=".6" />
+      <rect x="6" y="5" width="1.1" height="14" rx=".4" />
+      <rect x="8.6" y="5" width="2.8" height="14" rx=".6" />
+      <rect x="12.7" y="5" width="1.1" height="14" rx=".4" />
+      <rect x="15.2" y="5" width="2.2" height="14" rx=".6" />
+      <rect x="18.8" y="5" width="2.7" height="14" rx=".6" />
+    </svg>
+  );
+}
 
 const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
@@ -1354,7 +1418,10 @@ export default function PosPage() {
                            height: 56px; width: 100%; border-radius: 10px; font-size: 11px; white-space: nowrap;
                            border: 1px solid transparent; background: transparent; color: #555; cursor: pointer; }
         .pos-rail button[aria-current="true"] { background: #e8f0fe; color: #14509a; border-color: #b5d4f4; font-weight: 500; }
-        .pos-rail .pos-rail-icon { font-size: 17px; line-height: 1; }
+        /* ไอคอนเป็น SVG แล้ว — font-size คุมขนาดไม่ได้ ต้องกำหนดที่ตัว svg เอง
+           display:block กัน baseline gap ที่ทำให้ไอคอนกับ label ห่างไม่เท่ากันทุกแท็บ */
+        .pos-rail .pos-rail-icon { line-height: 1; display: flex; }
+        .pos-rail .pos-rail-icon svg { width: 19px; height: 19px; display: block; }
         .pos-pane { flex: 1; min-height: 0; overflow-y: auto; }
         @media (max-width: 767px) {
           /* คงโครง app-shell เหมือนจอใหญ่ (height/overflow ตั้งไว้แล้วด้านบน) —
@@ -1395,7 +1462,7 @@ export default function PosPage() {
             aria-current={tab === item.key}
             title={item.label}
           >
-            <span className="pos-rail-icon" aria-hidden="true">{item.icon}</span>
+            <span className="pos-rail-icon" aria-hidden="true"><PosTabIcon tab={item.key} /></span>
             <span>{item.label}</span>
             {item.key === "returns" && shiftReturnSummary.count > 0 && (
               <span style={{ fontSize: 10, color: "#8a6100" }}>{shiftReturnSummary.count}</span>
@@ -1437,7 +1504,10 @@ export default function PosPage() {
           <select
             value={cashierId}
             onChange={(e) => { setCashierId(e.target.value); setPin(""); }}
-            style={{ fontSize: 13, minWidth: 170, padding: 8 }}
+            /* 16px ไม่ใช่ 13px — iOS Safari ซูมหน้าจอเข้าเองตอนโฟกัสช่องที่ฟอนต์เล็กกว่า
+               16px แล้วเลย์เอาต์เพี้ยนทั้งหน้า · ลดขนาดที่ความสูงแทน (44px = เป้ากดขั้นต่ำ)
+               flex:1 + minWidth:0 ให้ชื่อยาวตัดด้วย … แทนที่จะดันช่อง PIN ตกบรรทัด */
+            style={{ flex: 1, minWidth: 0, height: 44, fontSize: 16, padding: "0 10px" }}
             aria-label="ผู้ขาย"
           >
             <option value="">เลือกผู้ขาย</option>
@@ -1456,7 +1526,8 @@ export default function PosPage() {
             onChange={(e) => setPin(e.target.value)}
             placeholder="PIN"
             aria-label="PIN ของผู้ขาย"
-            style={{ width: 96, fontSize: 15, padding: 8 }}
+            /* 78px พอสำหรับ 4 หลัก · fontSize 16 บังคับด้วยเหตุผลเดียวกับ select ด้านบน */
+            style={{ width: 78, flex: "none", height: 44, fontSize: 16, padding: "0 10px", textAlign: "center" }}
           />
           {receipt && (
             <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
@@ -1683,7 +1754,7 @@ export default function PosPage() {
               ตั้งแต่ช่องยิงรับ SKU ได้ด้วย — พนักงานใหม่ลังเลว่าพิมพ์ช่องไหน
               ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
           <div className="pos-scan">
-          <span aria-hidden="true" style={{ fontSize: 18, color: "var(--pos-accent)" }}>▮▍▮▏▮</span>
+          <ScanBarcodeIcon />
           <input
             ref={scanRef}
             autoFocus

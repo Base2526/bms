@@ -128,19 +128,22 @@
   position: relative;
   flex: none;
   display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; min-height: 0; padding: 0;
+  /* 44px ตามกฎเป้ากดของจอนี้ (หัวไฟล์) — เคยตั้ง 36px ซึ่งเล็กกว่าที่นิ้วโป้งกดได้จริง */
+  width: 44px; height: 44px; padding: 0;
   border: 1px solid var(--pos-line-strong); border-radius: 999px;
   background: var(--pos-surface); color: var(--pos-muted);
 }
-.pos-root .pos-cam-btn svg { width: 17px; height: 17px; }
+.pos-root .pos-cam-btn svg { width: 19px; height: 19px; }
 .pos-root .pos-cam-btn:hover:not(:disabled) {
   color: var(--pos-accent); border-color: var(--pos-accent); background: var(--pos-surface);
 }
+/* จุดบอกโหมดเทสอยู่ "ใน" วงกลม ไม่คร่อมขอบ — เคยวางที่ top/right ติดลบพร้อม ring
+   สีพื้นแถว ผลคือ ring ไปลบเส้นขอบปุ่มตรงมุม วงกลมเลยดูแหว่งเหมือนเรนเดอร์เพี้ยน
+   ตำแหน่งนี้คำนวณให้ขอบจุดห่างจากเส้นขอบวงกลมราว 1px ตามแนวทแยง */
 .pos-root .pos-cam-dot {
-  position: absolute; top: -1px; right: -1px;
-  width: 9px; height: 9px; border-radius: 50%;
+  position: absolute; top: 6px; right: 6px;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--pos-warn);
-  border: 2px solid var(--pos-sunken);
 }
 
 .pos-line-item {
