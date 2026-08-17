@@ -127,6 +127,30 @@ type CartLine = ScanHit & {
 };
 type ReturnDraft = Record<number, number>;
 
+/** สมาชิกที่ค้นเจอจาก /api/pos/member (7.96) */
+type PosMember = {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  memberNo: string | null;
+  pointsBalance: number;
+  pointsUsable: number;
+  tier: { code: string; name: string; discountType: string; discountValue: number } | null;
+};
+
+/** ผลคิดส่วนลดจาก server — จอห้ามคิดเลขนี้เอง (ต้องตรงกับตอน commit) */
+type MemberPreview = {
+  subtotal: number;
+  tierDiscount: number;
+  tierLabel: string | null;
+  couponDiscount: number;
+  pointsDiscount: number;
+  pointsUsed: number;
+  totalDiscount: number;
+  netTotal: number;
+  capped: boolean;
+};
+
 type ReceiptVat = {
   rate: number;
   taxableAmount: number;
@@ -159,6 +183,13 @@ type Receipt = {
   vat: ReceiptVat | null;
   /** ปัดเศษเงินสดที่บวกอยู่ใน total แล้ว — ร้านที่ไม่ได้จด VAT ก็ปัดได้ */
   roundingAmount?: number | null;
+  /** สมาชิก + แต้ม (7.96) — null ทั้งชุดเมื่อบิลนี้ไม่ผูกสมาชิก */
+  memberName?: string | null;
+  memberNo?: string | null;
+  pointsEarned?: number | null;
+  pointsBalance?: number | null;
+  /** ส่วนลดแยกบรรทัดตามที่มา (tier / คูปอง / แต้ม) — ยอดรวมมาจาก server */
+  discountLines?: Array<{ source: string; label: string; amount: number; pointsUsed: number }>;
   paymentLabel: string;
   paymentRef: string | null;
   payments: Array<{
@@ -307,6 +338,15 @@ export default function PosPage() {
   // ไม่ใช้ modal เพราะต้องกดปิดทุกบิล = เพิ่ม 1 แตะต่อลูกค้า 1 คน
   const [justSold, setJustSold] = useState<{ docNo: string | null; change: number | null; total: number } | null>(null);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
+  // ---- สมาชิก + แต้ม (7.96) ----
+  const [member, setMember] = useState<PosMember | null>(null);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberResults, setMemberResults] = useState<PosMember[]>([]);
+  const [memberSearching, setMemberSearching] = useState(false);
+  const [memberPanelOpen, setMemberPanelOpen] = useState(false);
+  const [pointsToRedeem, setPointsToRedeem] = useState<string>("");
+  const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
+  const [enrollName, setEnrollName] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
@@ -434,21 +474,109 @@ export default function PosPage() {
   );
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
+  // ---- สมาชิก + แต้ม (7.96) ----------------------------------------
+  // ส่วนลดทุกชั้นคิดที่ server เท่านั้น (/api/pos/member/preview) จอแค่แสดงผล
+  // ถ้าจอคิดเองแล้วต่างจาก server แม้สตางค์เดียว บิลจะโดน PAYMENT_MISMATCH
+  // แล้วถูกยกเลิกทิ้งทั้งใบ
+  const discountTotal = memberPreview?.totalDiscount ?? 0;
+  const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
+
+  async function searchMember(term: string) {
+    const q = term.trim();
+    if (q.length < 3) { setMemberResults([]); return; }
+    setMemberSearching(true);
+    try {
+      const res = await fetch(`/api/pos/member?q=${encodeURIComponent(q)}`, { headers: authHeaders, cache: "no-store" });
+      const data = await res.json();
+      setMemberResults(Array.isArray(data.members) ? data.members : []);
+    } catch {
+      setMemberResults([]);
+    } finally {
+      setMemberSearching(false);
+    }
+  }
+
+  async function enrollMemberFromPos() {
+    const phone = memberQuery.trim();
+    if (!phone || !cashierId || !pin) {
+      setNotice({ type: "error", text: "ต้องเลือกพนักงาน + ใส่ PIN ก่อนสมัครสมาชิก" });
+      return;
+    }
+    try {
+      const res = await fetch("/api/pos/member", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ phone, name: enrollName.trim() || null, cashierUserId: cashierId, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status === "INVALID") {
+        setNotice({ type: "error", text: data.reason || data.error || "สมัครสมาชิกไม่สำเร็จ" });
+        return;
+      }
+      setMember(data.member);
+      setMemberPanelOpen(false);
+      setEnrollName("");
+      setNotice({
+        type: "ok",
+        text: data.status === "ALREADY_MEMBER"
+          ? `เบอร์นี้เป็นสมาชิกอยู่แล้ว · ${data.member?.memberNo ?? ""}`
+          : `สมัครสมาชิกแล้ว · ${data.member?.memberNo ?? ""}`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  function clearMember() {
+    setMember(null);
+    setPointsToRedeem("");
+    setMemberPreview(null);
+    setMemberResults([]);
+    setMemberQuery("");
+  }
+
+  // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
+  // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
+  useEffect(() => {
+    if (!token || total <= 0) { setMemberPreview(null); return; }
+    if (!member && !pointsToRedeem) { setMemberPreview(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/pos/member/preview", {
+          method: "POST",
+          headers: { ...authHeaders, "content-type": "application/json" },
+          body: JSON.stringify({
+            customerId: member?.customerId ?? null,
+            subtotal: total,
+            pointsToRedeem: Number(pointsToRedeem) || 0,
+          }),
+        });
+        if (!res.ok) { setMemberPreview(null); return; }
+        setMemberPreview(await res.json());
+      } catch {
+        setMemberPreview(null);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [token, authHeaders, member, total, pointsToRedeem]);
+
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
   // และบิลถูกยกเลิกทิ้ง · ก่อนกรอกจำนวนเงิน ใช้ "วิธีจ่ายที่เลือกไว้" ตัดสินแทน
   const roundingDelta = useMemo(() => {
     const mode = session?.vat.cashRounding ?? "NONE";
-    if (mode === "NONE" || total <= 0) return 0;
+    if (mode === "NONE" || netTotal <= 0) return 0;
     const withAmount = payments.filter((p) => (Number(p.amount) || 0) > 0);
     const considered = withAmount.length > 0 ? withAmount : payments;
     if (considered.length === 0 || !considered.every((p) => p.method === "CASH")) return 0;
-    return cashRoundingDelta(total, mode);
-  }, [session?.vat.cashRounding, total, payments]);
-  /** ยอดที่ต้องเก็บจริง = ยอดสินค้า + ปัดเศษ — ทุกที่ที่พูดถึง "ยอดที่ต้องจ่าย" ใช้ตัวนี้ */
+    // server ปัดเศษจากยอด "หลังหักส่วนลด" (createOrder คืน amountDue = finalTotal)
+    // ปัดจากยอดก่อนส่วนลดจะได้เลขคนละตัวแล้วบิลถูกยกเลิกทิ้ง
+    return cashRoundingDelta(netTotal, mode);
+  }, [session?.vat.cashRounding, netTotal, payments]);
+  /** ยอดที่ต้องเก็บจริง = ยอดสินค้า − ส่วนลด + ปัดเศษ — "ยอดที่ต้องจ่าย" ใช้ตัวนี้ */
   const amountDue = useMemo(
-    () => Math.round((total + roundingDelta) * 100) / 100,
-    [total, roundingDelta]
+    () => Math.round((netTotal + roundingDelta) * 100) / 100,
+    [netTotal, roundingDelta]
   );
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
@@ -848,6 +976,17 @@ export default function PosPage() {
           : r.vat
             ? { ...r.vat, roundingAmount: Number(r.roundingAmount ?? r.vat.roundingAmount ?? 0) }
             : null,
+      // ส่วนลด/แต้มพิมพ์เฉพาะใบขาย — ใบรับคืนมีใบลดหนี้ของตัวเองอยู่แล้ว
+      discountLines: r.receiptType && r.receiptType !== "sale" ? null : (r.discountLines ?? null),
+      member:
+        (r.receiptType && r.receiptType !== "sale") || !r.memberNo
+          ? null
+          : {
+              name: r.memberName ?? null,
+              memberNo: r.memberNo ?? null,
+              pointsEarned: r.pointsEarned ?? null,
+              pointsBalance: r.pointsBalance ?? null,
+            },
     });
   }
 
@@ -998,6 +1137,9 @@ export default function PosPage() {
         cashierUserId: cashierId,
         pin,
         idempotencyKey: `${session.device.code}-${session.shift.id.slice(0, 8)}-${crypto.randomUUID()}`,
+        // สมาชิก (7.96) — server ตรวจซ้ำว่า id นี้เป็นลูกค้าของร้านนี้ และล็อกยอดแต้มใน tx
+        customerId: member?.customerId ?? null,
+        pointsToRedeem: memberPreview?.pointsUsed ?? 0,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -1057,6 +1199,11 @@ export default function PosPage() {
           paymentRef: receiptPayments.length === 1 ? receiptPayments[0]?.ref ?? null : null,
           payments: receiptPayments,
           refunds: [],
+          memberName: member?.name ?? null,
+          memberNo: member?.memberNo ?? null,
+          pointsEarned: data.pointsEarned ?? null,
+          pointsBalance: data.pointsBalance ?? null,
+          discountLines: Array.isArray(data.discountLines) ? data.discountLines : [],
         };
         setReceipt(nextReceipt);
         setJustSold({
@@ -1075,6 +1222,9 @@ export default function PosPage() {
           }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
+        // สมาชิกผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้าคนถัดไป
+        // ได้ส่วนลด/แต้มของคนก่อน
+        clearMember();
         window.localStorage.removeItem(PENDING_SALE_KEY);
         setHasPendingSale(false);
         setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
@@ -2173,12 +2323,70 @@ export default function PosPage() {
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
               <span className="pos-total-value">฿{baht(amountDue)}</span>
             </div>
+            {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}
+            {discountTotal > 0 && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                <span>ยอดสินค้า ฿{baht(total)}</span>
+                {memberPreview?.tierDiscount ? (
+                  <div>{memberPreview.tierLabel ?? "ส่วนลดสมาชิก"} −฿{baht(memberPreview.tierDiscount)}</div>
+                ) : null}
+                {memberPreview?.pointsDiscount ? (
+                  <div>แลก {memberPreview.pointsUsed} แต้ม −฿{baht(memberPreview.pointsDiscount)}</div>
+                ) : null}
+                {memberPreview?.capped && <div style={{ color: "#c9455a" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
+              </div>
+            )}
             {/* ปัดเศษต้องเห็นบนจอ ไม่ใช่โผล่มาเฉพาะบนใบเสร็จ — ลูกค้าถามว่าทำไมไม่ตรงป้าย */}
             {roundingDelta !== 0 && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
-                <span>ยอดสินค้า ฿{baht(total)} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
+                <span>{discountTotal > 0 ? `ยอดหลังส่วนลด ฿${baht(netTotal)}` : `ยอดสินค้า ฿${baht(total)}`} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
               </div>
             )}
+            {/* แถบสมาชิก — วางบนแผงชำระเงินเพราะพนักงานถามลูกค้าตอนกำลังจะรับเงิน */}
+            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+              {member ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span>
+                      <strong>{member.name}</strong>
+                      {member.tier ? ` · ${member.tier.name}` : ""}
+                      {member.memberNo ? ` · ${member.memberNo}` : ""}
+                    </span>
+                    <button type="button" className="pos-btn-ghost" onClick={clearMember}>เอาออก</button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span>แต้มใช้ได้ {member.pointsUsable}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="แลกแต้ม"
+                      value={pointsToRedeem}
+                      max={member.pointsUsable}
+                      min={0}
+                      onChange={(e) => setPointsToRedeem(e.target.value)}
+                      style={{ width: 110 }}
+                    />
+                    <button
+                      type="button"
+                      className="pos-btn-ghost"
+                      onClick={() => setPointsToRedeem(String(member.pointsUsable))}
+                      disabled={member.pointsUsable <= 0}
+                    >
+                      แลกทั้งหมด
+                    </button>
+                  </div>
+                  {member.pointsBalance < 0 && (
+                    <span style={{ color: "#c9455a" }}>
+                      แต้มติดลบ {member.pointsBalance} (จากการคืนสินค้า) — แต้มที่ได้ครั้งถัดไปจะกลบยอดนี้ก่อน
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <button type="button" className="pos-btn-ghost" onClick={() => setMemberPanelOpen(true)}>
+                  + สมาชิก / สะสมแต้ม
+                </button>
+              )}
+            </div>
             {session?.vat.registered && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
                 <span>ราคารวม VAT {session.vat.rate}% แล้ว</span>
@@ -2428,6 +2636,100 @@ export default function PosPage() {
         </section>
       </div>
       </div>
+      {/* ค้น/สมัครสมาชิก (7.96) — ค้นด้วยเบอร์ก่อนเสมอ ถ้าไม่เจอจึงสมัครใหม่
+          ในช่องเดียวกัน กันพนักงานสร้างลูกค้าซ้ำ (ร้านนี้ลบลูกค้าถาวรไม่ได้) */}
+      {memberPanelOpen && (
+        <div
+          onClick={() => setMemberPanelOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16, zIndex: 60,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ค้นหาหรือสมัครสมาชิก"
+            style={{ background: "#111", color: "#fff", borderRadius: 12, width: 420, maxWidth: "100%", overflow: "hidden" }}
+          >
+            <div
+              style={{
+                padding: "10px 14px", fontSize: 13, fontWeight: 600,
+                borderBottom: "1px solid rgba(255,255,255,0.14)",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}
+            >
+              <span>สมาชิก</span>
+              <button
+                type="button"
+                onClick={() => setMemberPanelOpen(false)}
+                aria-label="ปิด"
+                style={{ background: "none", border: "none", color: "#fff", fontSize: 16, padding: 4, lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <input
+                autoFocus
+                placeholder="เบอร์โทร / ชื่อ / เลขสมาชิก"
+                value={memberQuery}
+                onChange={(e) => { setMemberQuery(e.target.value); void searchMember(e.target.value); }}
+                style={{ width: "100%" }}
+              />
+              {memberSearching && <span style={{ fontSize: 12, color: "#c7cdc3" }}>กำลังค้น…</span>}
+
+              {memberResults.map((hit) => (
+                <button
+                  key={hit.customerId}
+                  type="button"
+                  onClick={() => {
+                    setMember(hit);
+                    setPointsToRedeem("");
+                    setMemberPanelOpen(false);
+                    setMemberResults([]);
+                  }}
+                  style={{
+                    textAlign: "left", padding: "8px 10px", borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.18)", background: "transparent",
+                    color: "#fff", cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>{hit.name}</div>
+                  <div style={{ fontSize: 12, color: "#c7cdc3" }}>
+                    {hit.memberNo} · {hit.phone ?? "ไม่มีเบอร์"}
+                    {hit.tier ? ` · ${hit.tier.name}` : ""} · {hit.pointsUsable} แต้ม
+                  </div>
+                </button>
+              ))}
+
+              {memberQuery.trim().length >= 3 && memberResults.length === 0 && !memberSearching && (
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "#c7cdc3" }}>
+                    ไม่พบสมาชิก — สมัครใหม่ด้วยเบอร์ “{memberQuery.trim()}”
+                  </span>
+                  <input
+                    placeholder="ชื่อลูกค้า"
+                    value={enrollName}
+                    onChange={(e) => setEnrollName(e.target.value)}
+                    style={{ width: "100%" }}
+                  />
+                  <button type="button" className="pos-btn-ghost" onClick={() => void enrollMemberFromPos()}>
+                    สมัครสมาชิก
+                  </button>
+                </div>
+              )}
+              {memberQuery.trim().length > 0 && memberQuery.trim().length < 3 && (
+                <span style={{ fontSize: 12, color: "#c7cdc3" }}>พิมพ์อย่างน้อย 3 ตัวอักษร</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {cameraModalOpen && (
         <div
           onClick={() => setCameraModalOpen(false)}
@@ -2600,6 +2902,14 @@ export default function PosPage() {
               </div>
             ))}
             <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
+            {/* ส่วนลดแยกที่มา (7.96) — รวมอยู่ในยอดสุทธิด้านล่างแล้ว */}
+            {(!receipt.receiptType || receipt.receiptType === "sale") &&
+              (receipt.discountLines ?? []).map((d, i) => (
+                <div key={`${d.source}-${i}`} style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+                  <span>{d.label}</span>
+                  <span>-{baht(d.amount)}</span>
+                </div>
+              ))}
             {/* ตัวเลขชุดนี้มาจากใบกำกับที่ออกจริง ไม่ได้ถอด 7/107 จากยอดรวมที่จอ
                 — บิลที่มีสินค้ายกเว้น VAT ปนจะได้คนละตัวเลขกับเอกสารที่ยื่น
                 ใบรับคืน/ใบเปลี่ยนไม่แสดง เพราะใบลดหนี้เป็นเอกสารคนละใบ */}
@@ -2636,6 +2946,22 @@ export default function PosPage() {
             {receipt.returnReason && (
               <div style={{ marginTop: 4 }}>
                 เหตุผล: {receipt.returnReason}
+              </div>
+            )}
+            {/* แต้มท้ายบิล — ลูกค้าตรวจเองได้ว่าได้แต้มครบ (7.96) */}
+            {receipt.memberNo && (!receipt.receiptType || receipt.receiptType === "sale") && (
+              <div style={{ marginTop: 6, borderTop: "1px dashed #999", paddingTop: 6 }}>
+                <div>สมาชิก {receipt.memberNo} {receipt.memberName ?? ""}</div>
+                {receipt.pointsEarned != null && (
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>แต้มที่ได้บิลนี้</span><span>+{receipt.pointsEarned}</span>
+                  </div>
+                )}
+                {receipt.pointsBalance != null && (
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>แต้มคงเหลือ</span><span>{receipt.pointsBalance}</span>
+                  </div>
+                )}
               </div>
             )}
             {(receipt.payments.length > 0 ? receipt.payments : [{

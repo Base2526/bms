@@ -34,6 +34,12 @@ import {
 } from "./taxDocuments";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
+import {
+  earnPointsForOrderInTx,
+  listOrderDiscounts,
+  reversePointsForReturnInTx,
+  type OrderDiscountLine,
+} from "./membership";
 
 export const POS_CHANNEL = "pos" as const;
 
@@ -862,6 +868,10 @@ export type PosSaleInput = {
   /** จ่ายผสมได้ เช่น สด 500 + บัตร 300 — ผลรวมต้องเท่ายอดบิลพอดี */
   payments: PosPaymentInput[];
   couponCode?: string | null;
+  /** สมาชิกที่พนักงานค้นเจอที่เคาน์เตอร์ — ได้ส่วนลดตามชั้นและสะสมแต้ม (7.96) */
+  customerId?: string | null;
+  /** แต้มที่ลูกค้าขอแลกเป็นส่วนลดบิลนี้ */
+  pointsToRedeem?: number | null;
   discountApprovedBy?: string | null;
   discountReason?: string | null;
   pharmacyApprovedAssessmentId?: string | null;
@@ -917,6 +927,12 @@ export type PosSaleResult =
       vat: PosReceiptVat | null;
       /** ยอดปัดเศษเงินสดที่บวกเข้าไปแล้วใน total (0 = ไม่ได้ปัด) */
       roundingAmount: number;
+      /** ส่วนลดแยกตามที่มา สำหรับพิมพ์บนใบเสร็จ (7.96) */
+      discountLines: OrderDiscountLine[];
+      /** แต้มที่ได้จากบิลนี้ · null = บิลนี้ไม่ผูกสมาชิก/ร้านปิดโปรแกรม */
+      pointsEarned: number | null;
+      /** แต้มคงเหลือของสมาชิกหลังบิลนี้ (พิมพ์บนใบเสร็จ) */
+      pointsBalance: number | null;
       /** true = คีย์นี้เคยขายไปแล้ว คืนบิลเดิม ไม่ได้ขายซ้ำ */
       replayed: boolean;
     }
@@ -1281,6 +1297,8 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     idempotencyKey: key,
     editorId: input.cashierUserId,
     couponCode: input.couponCode ?? null,
+    customerId: input.customerId ?? null,
+    pointsToRedeem: input.pointsToRedeem ?? null,
     discountApprovedBy: input.discountApprovedBy ?? null,
     discountReason: input.discountReason ?? null,
     pharmacyApprovedAssessmentId: input.pharmacyApprovedAssessmentId ?? null,
@@ -1400,6 +1418,13 @@ async function finalizePosSale(args: {
       );
       if (!paidOrder.rowCount) throw new Error("บิลไม่ได้อยู่สถานะรอชำระ");
       await redeemCustomerCouponForOrderInTx(client, input.tenantId, orderId);
+      // แต้มสะสม (7.96) — ให้หลังบิลเป็น PAID เท่านั้น และอยู่ใน tx เดียวกับเงิน
+      // UNIQUE (tenant_id, order_id, 'EARN') กันแต้มซ้ำเมื่อเครื่องยิงคีย์เดิมซ้ำ
+      await earnPointsForOrderInTx(client, {
+        tenantId: input.tenantId,
+        orderId,
+        actorUserId: input.cashierUserId,
+      });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId: input.tenantId, orderId, client });
     } else if (current.status === "PAID") {
       const cash = await client.query<{ tendered: string; change: string }>(
@@ -1426,7 +1451,29 @@ async function finalizePosSale(args: {
        VALUES ($1, $2, 'pos.sale', $3, $4)`,
       [input.tenantId, input.cashierUserId, orderId, JSON.stringify({ shiftId: shift.id, deviceId: input.deviceId })]
     );
+
+    // ตัวเลขสมาชิกที่ต้องพิมพ์บนใบเสร็จ — อ่านในทรานแซกชันเดียวกับที่เพิ่งเขียน
+    // (ทาง replay บิลที่ PAID อยู่แล้วจะได้แต้มที่เคยให้ไป ไม่ใช่ 0)
+    const loyalty = await client.query<{ earned: string; balance: number | null }>(
+      `SELECT COALESCE((
+                SELECT SUM(l.points) FROM bms_loyalty_ledger l
+                 WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
+              ), 0) AS earned,
+              c.points_balance AS balance
+         FROM bms_orders o
+         LEFT JOIN bms_customers c ON c.tenant_id = o.tenant_id AND c.id = o.customer_id
+        WHERE o.tenant_id = $1 AND o.id = $2`,
+      [input.tenantId, orderId]
+    );
+    const discountRows = await client.query<{ source: string; label: string; amount: string; points_used: number }>(
+      `SELECT source, label, amount, points_used FROM bms_order_discounts
+        WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
+      [input.tenantId, orderId]
+    );
+
     await client.query("COMMIT");
+    const loyaltyRow = loyalty.rows[0];
+    const hasMember = loyaltyRow?.balance != null;
     return {
       status: "SOLD",
       orderId,
@@ -1435,6 +1482,14 @@ async function finalizePosSale(args: {
       cashChange,
       docNo: fulfilled.docNo,
       vat: fulfilled.vat,
+      discountLines: discountRows.rows.map((row) => ({
+        source: row.source as OrderDiscountLine["source"],
+        label: row.label,
+        amount: Number(row.amount),
+        pointsUsed: Number(row.points_used ?? 0),
+      })),
+      pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
+      pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
       // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
       // โดยไม่ผ่านการปัด (เช่น replay บิลที่ค้างสถานะ) ไม่มีการปัดเพิ่มอยู่แล้ว
       roundingAmount: 0,
@@ -1489,12 +1544,20 @@ async function findSaleByIdempotencyKey(
     exempt_amount: string | null;
     vat_amount: string | null;
     rounding_amount: string | null;
+    points_earned: string | null;
+    points_balance: number | null;
   }>(
     `SELECT o.id, o.total_amount, o.shipping_fee, o.rounding_amount AS order_rounding,
             pay.cash_tendered, pay.cash_change,
             doc.doc_no, doc.vat_rate, doc.taxable_amount, doc.exempt_amount,
-            doc.vat_amount, doc.rounding_amount
+            doc.vat_amount, doc.rounding_amount,
+            cust.points_balance,
+            COALESCE((
+              SELECT SUM(l.points) FROM bms_loyalty_ledger l
+               WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN'
+            ), 0) AS points_earned
        FROM bms_orders o
+       LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
        LEFT JOIN LATERAL (
          SELECT SUM(cash_tendered) AS cash_tendered, SUM(cash_change) AS cash_change
            FROM bms_payments
@@ -1524,6 +1587,9 @@ async function findSaleByIdempotencyKey(
     docNo: row.doc_no ?? null,
     vat: mapReceiptVat(row),
     roundingAmount: rounding,
+    discountLines: await listOrderDiscounts(tenantId, row.id),
+    pointsEarned: row.points_balance == null ? null : Number(row.points_earned ?? 0),
+    pointsBalance: row.points_balance == null ? null : Number(row.points_balance),
     replayed: true,
   };
 }
@@ -1790,6 +1856,10 @@ export type PosPartialReturnResult =
       returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
+      /** แต้มที่ดึงคืนเพราะการคืนครั้งนี้ (7.96) */
+      pointsReversed?: number;
+      /** แต้มที่คืนให้ลูกค้าเพราะบิลเดิมใช้แต้มไป */
+      pointsReturned?: number;
       replayed: boolean;
     }
   | { status: "ORDER_NOT_FOUND" }
@@ -2250,6 +2320,18 @@ async function processPosReturn(input: {
         [input.tenantId, input.orderId]
       );
     }
+    // แต้มสะสม (7.96) — ต้องอยู่ใน tx เดียวกับสต็อกและเงินที่คืน
+    // ไม่ทำข้อนี้: ซื้อ → ได้แต้ม → คืนของ → เก็บแต้มไว้ = ปั๊มแต้มฟรี
+    // ratio คิดจากยอดคืนครั้งนี้ ÷ ยอดสุทธิบิลเดิม (ผลรวมทุกครั้งไม่เกิน 1
+    // เพราะ remainingRefund ด้านบนบังคับว่าคืนเกินยอดที่จ่ายมาไม่ได้)
+    const loyaltyReversal = await reversePointsForReturnInTx(client, {
+      tenantId: input.tenantId,
+      orderId: input.orderId,
+      posReturnId,
+      ratio: orderAmount > 0 ? roundedRefundAmount / orderAmount : 0,
+      actorUserId: input.actorUserId,
+    });
+
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.return', $3, $4)`,
@@ -2259,6 +2341,8 @@ async function processPosReturn(input: {
         refundAmount: roundedRefundAmount,
         approvedBy,
         settlementStatus,
+        pointsReversed: loyaltyReversal.earnedReversed,
+        pointsReturned: loyaltyReversal.redeemedReturned,
       })]
     );
 
@@ -2299,6 +2383,8 @@ async function processPosReturn(input: {
       settlementStatus,
       refunds,
       creditNoteNo,
+      pointsReversed: loyaltyReversal.earnedReversed,
+      pointsReturned: loyaltyReversal.redeemedReturned,
       replayed: false,
     };
   } catch (err) {

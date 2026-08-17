@@ -69,6 +69,10 @@ export async function POST(req: NextRequest) {
     lines,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
+    // สมาชิก (7.96): id ถูกตรวจว่าเป็นลูกค้าของร้านนี้ใน createOrder อีกชั้น
+    // แต้มที่ขอแลกเชื่อจาก body ได้ เพราะยอดที่ใช้ได้จริงถูกล็อกและตรวจใน tx
+    customerId: typeof body.customerId === "string" && body.customerId.trim() ? body.customerId.trim() : null,
+    pointsToRedeem: Number.isFinite(Number(body.pointsToRedeem)) ? Number(body.pointsToRedeem) : null,
     // หน้า POS รุ่นนี้ยังไม่มี flow อนุมัติส่วนลด/clinical assessment ที่ผูกกับ server state
     // ห้ามเชื่อ id ผู้อนุมัติหรือ assessment จาก body เพราะปลอม audit/ข้าม human gate ได้
     discountApprovedBy: null,
@@ -86,6 +90,7 @@ export async function POST(req: NextRequest) {
     : result.status === "LOT_EXPIRED_OR_SHORT" ? 409
     : result.status === "INVALID_PACK" ? 409
     : result.status === "INSUFFICIENT" ? 409
+    : result.status === "POINTS_INVALID" ? 400
     : result.status === "NOT_FOUND" ? 404
     : String(result.status).startsWith("PHARMACY_") ? 403
     : 409;

@@ -49,6 +49,13 @@ export const BMS_PERMISSIONS = [
   "ai_quality.review",
   "coupon.view",
   "coupon.manage",
+  // สมาชิก + แต้มสะสม — seed ที่ 7.96
+  // .adjust แยกจาก .manage เพราะปรับแต้มด้วยมือคือการสร้างมูลค่าให้ลูกค้าโดยตรง
+  // (แต้มค้าง = หนี้สินของร้าน) ไม่ใช่แค่แก้ข้อมูลติดต่อ
+  "member.view",
+  "member.manage",
+  "loyalty.adjust",
+  "loyalty.settings",
   "followup.view",
   "followup.manage",
   "pharmacy.assessment.read",

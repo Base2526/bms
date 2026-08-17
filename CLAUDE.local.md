@@ -106,7 +106,15 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `7.56` (`users.language` CHECK), `7.78` (user management perms), `7.81` (default ภาษา = th),
   `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
   (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
-- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.95` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
+- **`7.96__bms_membership_and_loyalty.sql` (สมาชิก + tier + แต้มสะสม + `bms_order_discounts`)
+  เขียนเสร็จ 2026-08-17 แต่ยังไม่เคย apply กับ DB ใด ๆ และยังไม่เคย verify กับ DB จริงเลย** —
+  ผ่านแค่ `tsc` + `npm run build` · migration นี้ seed permission ใหม่ 4 ตัว (`member.view`,
+  `member.manage`, `loyalty.adjust`, `loyalty.settings`) ให้ Manager/Sales/Cashier ถ้าไม่ apply
+  หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ · จุดที่ต้องเทสก่อนเชื่อ: ขายให้สมาชิก (tier + คูปอง +
+  แลกแต้มพร้อมกัน), คืนสินค้าบางส่วนของบิลที่ทั้งได้แต้มและใช้แต้ม (ตรวจว่า ledger สุทธิถูก),
+  ยกเลิกบิลที่แลกแต้มไปแล้ว, และ `bmsLoyaltyOutstanding.balanceMismatchCount` ต้องเป็น 0
+  · ยังไม่มี cron ยิง `POST /api/bms/loyalty/maintenance` → แต้มไม่หมดอายุจนกดปุ่มเอง
+- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
   จริงก่อน go-live ของ POS ทุกครั้ง ดู checklist เต็มใน

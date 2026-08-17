@@ -37,6 +37,70 @@ stock values.
 9. Closing a shift calculates expected cash from opening float + cash collected - completed cash
    refunds, then records counted cash and variance.
 
+## Membership, tier discounts, and loyalty points
+
+Added by migration `7.96`. Before it, POS sales were always anonymous — `createOrder` received
+`channel='pos'` with no `customerRef`, so `bms_orders.customer_id` was `NULL` on every counter bill.
+A side effect was that coupon `per_customer_limit` never applied at the counter. Attaching a
+customer fixes that too.
+
+Three independent discount layers can now stack on one bill, applied in a fixed order:
+
+| Layer | Source | Reversible |
+| --- | --- | --- |
+| 1. Tier discount | `bms_membership_tiers` via `bms_customers.tier_id`, auto-applied | yes |
+| 2. Coupon | existing `bms_coupons` (unchanged) | hard — redemption count already incremented |
+| 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate | yes |
+
+`composeDiscounts()` in [membership.ts](../../apps/web/lib/bms/membership.ts) is the single place
+that combines them, enforces the per-bill cap (`bms_loyalty_settings.max_discount_pct`), and trims
+layers from the most-reversible end when the cap binds. It is a pure function so the counter preview
+(`POST /api/pos/member/preview`) and the committing path (`createOrder`) cannot disagree — if they
+did, the payment rows would not match the server total and the bill would be voided as
+`PAYMENT_MISMATCH`.
+
+**The total of all layers still lands in `bms_orders.discount_amount`.** VAT base and the
+abbreviated tax invoice read that column (`computeVat({ discountAmount })`), so a member discount
+must never be deducted at cash-collection time. `bms_order_discounts` only records *where* that
+total came from, one row per source, and its rows always sum to `discount_amount`.
+
+### Points rules as implemented
+
+- **Earning** happens inside the same transaction that marks the bill `PAID` in `finalizePosSale`.
+  Base is the amount after all discounts by default (`earn_base`), so discounts cannot inflate
+  points. Only customers with a `member_no` earn — a bare CRM record does not.
+- **Idempotency**: `UNIQUE (tenant_id, order_id, kind)` for `EARN`/`REDEEM`. A register replaying the
+  same `idempotencyKey` gets the original bill and no second grant.
+- **Redeeming** deducts points when the order is created, not at a separate "reserved" state.
+  `cancelOrder` calls `releasePointsForOrdersInTx` to return them, so an abandoned `PENDING` bill
+  never holds points hostage.
+- **Returns** call `reversePointsForReturnInTx` with `ratio = this refund ÷ original net total`. It
+  claws back earned points and gives back redeemed points proportionally. Without this, buy → earn →
+  return is a free points generator. Cumulative ratios cannot exceed 1 because `processPosReturn`
+  already refuses to refund more than was paid.
+- **Balances can go negative** when a customer returns goods after spending the points. This is
+  deliberate; clamping to zero would make return-after-redeem profitable. The next grant covers the
+  deficit first (`consumedToCoverDeficit`).
+- **Expiry** is FIFO over grant rows via `consumed_points`, driven by
+  `POST /api/bms/loyalty/maintenance`. **No scheduler runs it in this repo** — until one is wired up,
+  points do not expire and tiers are not re-evaluated unless someone presses the buttons on
+  `/admin/loyalty`.
+- **`bms_customers.points_balance` is a cache** of `SUM(points)`. `bmsLoyaltyOutstanding` reports
+  `balanceMismatchCount`, which must always be 0; `/admin/loyalty` shows a red banner if it isn't.
+
+### Accounting
+
+Outstanding usable points are a liability (deferred revenue under IFRS 15), reported by
+`bmsLoyaltyOutstanding` as both a point count and a baht value at the current redemption rate. Give
+the accountant this figure at period end; it is not an optional dashboard number.
+
+### Permissions
+
+`member.view`, `member.manage`, `loyalty.adjust`, `loyalty.settings` — seeded to
+Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is deliberately separate:
+a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
+writes to `bms_audit_log`.
+
 ## Counter screen layout
 
 A till is typically 768px tall, so vertical space is the scarce axis. Work that happens a few times
@@ -110,8 +174,15 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.95__bms_credit_note_and_cash_rounding.sql` on the target database
-  (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions).
+- Apply migrations through `7.96__bms_membership_and_loyalty.sql` on the target database
+  (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions,
+  `7.96` membership/tiers/points + `bms_order_discounts`).
+- If the loyalty program will be used: enable it at `/admin/loyalty`, set the earn/redeem rates, point
+  lifetime, and per-bill discount cap, and review the three seeded tiers (Silver/Gold/Platinum are
+  defaults, not a recommendation). Then schedule `POST /api/bms/loyalty/maintenance` daily —
+  **nothing expires points or re-evaluates tiers on its own.** Run one rehearsal bill per layer:
+  tier-only, coupon + tier, points redemption, and a partial return of a bill that both earned and
+  redeemed points; confirm the ledger nets out and `balanceMismatchCount` stays 0.
 - Create at least one active location, one active paired device per register, and confirm the device
   is attached to the intended branch.
 - Set cashier PINs and verify role permissions: `pos.sell`, `pos.shift.open`, `pos.shift.close`,

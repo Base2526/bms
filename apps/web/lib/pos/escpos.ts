@@ -168,6 +168,15 @@ export type ReceiptPayload = {
     exemptAmount?: number;
     roundingAmount?: number;
   } | null;
+  /** ส่วนลดแยกที่มา (7.96) — พิมพ์ก่อนยอดสุทธิ ลูกค้าตรวจได้ว่าลดจากอะไร */
+  discountLines?: Array<{ label: string; amount: number }> | null;
+  /** สมาชิก + แต้ม (7.96) — ไม่ส่งมา = บิลนี้ไม่ผูกสมาชิก ไม่พิมพ์ท้ายบิล */
+  member?: {
+    name: string | null;
+    memberNo: string | null;
+    pointsEarned: number | null;
+    pointsBalance: number | null;
+  } | null;
 };
 
 function money(n: number): string {
@@ -193,6 +202,11 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   }
   b.divider();
 
+  // ส่วนลดแยกบรรทัดก่อนยอด VAT — ยอดพวกนี้รวมอยู่ใน total แล้ว
+  for (const d of payload.discountLines ?? []) {
+    if (d.amount > 0) b.columnsLine(d.label, `-${money(d.amount)}`);
+  }
+
   // ใบกำกับภาษีอย่างย่อต้องแสดงยอด VAT แยก — พิมพ์ก่อนยอดสุทธิเหมือนใบจริง
   if (payload.vat) {
     b.columnsLine("มูลค่าก่อน VAT", money(payload.vat.netBeforeVat));
@@ -211,6 +225,19 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.docNo) b.line(`${payload.docNo}  ${payload.at}`);
   else b.line(payload.at);
   if (payload.cashier) b.line(`แคชเชียร์ ${payload.cashier}`);
+
+  // แต้มท้ายบิล — ลูกค้าใช้ตรวจว่าได้แต้มครบ ไม่ต้องถามพนักงาน
+  if (payload.member) {
+    b.feed(1);
+    const who = [payload.member.memberNo, payload.member.name].filter(Boolean).join(" ");
+    if (who) b.line(`สมาชิก ${who}`);
+    if (payload.member.pointsEarned != null) {
+      b.columnsLine("แต้มที่ได้บิลนี้", `+${payload.member.pointsEarned}`);
+    }
+    if (payload.member.pointsBalance != null) {
+      b.columnsLine("แต้มคงเหลือ", String(payload.member.pointsBalance));
+    }
+  }
 
   // บาร์โค้ดเลขบิลไว้สแกนตอนรับคืนของ
   if (payload.docNo) b.feed(1).align(1).barcode39(payload.docNo).align(0);

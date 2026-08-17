@@ -66,6 +66,21 @@ const DEFINITIONS: OperationDefinition[] = [
     evidenceFallback: "Cron endpoint is available, but no repository-level scheduler is configured.",
   },
   {
+    key: "loyalty-maintenance",
+    name: "Loyalty Maintenance",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/loyalty/maintenance/route.ts",
+    docsPath: "docs/business/pos.md",
+    triggerHint: "POST /api/bms/loyalty/maintenance",
+    purposeFallback:
+      "Expire overdue loyalty points (FIFO) and re-evaluate membership tiers for every shop with the program enabled.",
+    whenFallback: "Recommended daily (e.g. 03:00)",
+    statusFallback: "Ready but unscheduled",
+    triggerFallback: "POST /api/bms/loyalty/maintenance",
+    evidenceFallback:
+      "Cron endpoint is available and idempotent, but no repository-level scheduler is configured — points do not expire until it runs.",
+  },
+  {
     key: "channel-health",
     name: "Channel Health Check",
     kind: "Cron Endpoint",

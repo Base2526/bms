@@ -1083,6 +1083,15 @@ export const typeDefs = /* GraphQL */ `
     bmsCoupons: [BmsCoupon!]!           # โค้ดส่วนลดของร้าน (permission coupon.view)
     bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!   # ประวัติการใช้โค้ด (query ตรงจาก bms_orders)
 
+    # ===== BMS membership + แต้มสะสม (7.96) =====
+    bmsLoyaltySettings: BmsLoyaltySettings!                        # permission member.view
+    bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
+    bmsMembers(search: String!, limit: Int): [BmsMember!]!          # ค้นด้วยเบอร์/ชื่อ/เลขสมาชิก
+    bmsMember(customerId: ID!): BmsMember
+    bmsLoyaltyLedger(customerId: ID!, limit: Int): [BmsLoyaltyLedgerEntry!]!
+    bmsLoyaltyOutstanding: BmsLoyaltyOutstanding!                   # แต้มค้าง = หนี้สิน (permission report.view)
+    bmsMemberDiscountPreview(customerId: ID, subtotal: Float!, pointsToRedeem: Int, couponDiscount: Float): BmsMemberDiscountPreview!
+
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
 
@@ -3181,6 +3190,117 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
     updatedAt: String!
   }
+  # ===== BMS membership + แต้มสะสม (7.96) =====
+  type BmsLoyaltySettings {
+    enabled: Boolean!
+    earnMode: String!             # SPEND | VISIT
+    earnPointsPerBaht: Float!
+    visitPoints: Int!
+    earnMinSpend: Float!
+    earnBase: String!             # AFTER_DISCOUNT | BEFORE_DISCOUNT
+    redeemPointsPerUnit: Int!     # แต้มต่อ 1 หน่วยแลก
+    redeemBahtPerUnit: Float!     # มูลค่าบาทต่อ 1 หน่วยแลก
+    redeemMinPoints: Int!
+    maxDiscountPct: Float!        # เพดานส่วนลดรวมทุกชั้นต่อบิล
+    pointsExpireMonths: Int!      # 0 = ไม่หมดอายุ
+  }
+  input BmsLoyaltySettingsInput {
+    enabled: Boolean
+    earnMode: String
+    earnPointsPerBaht: Float
+    visitPoints: Int
+    earnMinSpend: Float
+    earnBase: String
+    redeemPointsPerUnit: Int
+    redeemBahtPerUnit: Float
+    redeemMinPoints: Int
+    maxDiscountPct: Float
+    pointsExpireMonths: Int
+  }
+  type BmsMembershipTier {
+    id: ID!
+    code: String!
+    name: String!
+    discountType: String!         # NONE | PERCENT | FIXED
+    discountValue: Float!
+    qualifySpend12m: Float!       # ยอดซื้อ 12 เดือนที่เข้าเกณฑ์
+    qualifyPoints: Int!           # หรือแต้มสะสมตลอดชีพ
+    sortOrder: Int!               # มากกว่า = ชั้นสูงกว่า
+    active: Boolean!
+  }
+  input BmsMembershipTierInput {
+    id: ID
+    code: String!
+    name: String!
+    discountType: String!
+    discountValue: Float!
+    qualifySpend12m: Float!
+    qualifyPoints: Int!
+    sortOrder: Int!
+    active: Boolean!
+  }
+  type BmsTierDeleteResult {
+    deleted: Boolean!
+    deactivated: Boolean!         # true = ยังมีสมาชิกอยู่ จึงปิดใช้งานแทนการลบ
+  }
+  type BmsMember {
+    customerId: ID!
+    name: String!
+    phone: String
+    memberNo: String
+    memberSince: String
+    tier: BmsMembershipTier
+    pointsBalance: Int!           # SUM ทั้ง ledger — ติดลบได้เมื่อคืนของหลังใช้แต้ม
+    pointsUsable: Int!            # แลกได้จริงตอนนี้ (ตัดก้อนหมดอายุออกแล้ว)
+  }
+  type BmsEnrollMemberResult {
+    status: String!               # ENROLLED | ALREADY_MEMBER | INVALID
+    reason: String
+    member: BmsMember
+  }
+  type BmsLoyaltyLedgerEntry {
+    id: ID!
+    kind: String!                 # EARN | REDEEM | REVERSE | EXPIRE | ADJUST
+    points: Int!
+    orderId: ID
+    posReturnId: ID
+    expiresAt: String
+    note: String
+    createdAt: String!
+  }
+  type BmsLoyaltyBalance {
+    balance: Int!
+  }
+  type BmsTierReviewResult {
+    reviewed: Int!
+    changed: Int!
+  }
+  type BmsLoyaltyExpireResult {
+    customers: Int!
+    points: Int!
+  }
+  type BmsLoyaltyOutstanding {
+    members: Int!
+    outstandingPoints: Int!       # ภาระผูกพัน (IFRS 15 deferred revenue)
+    outstandingValue: Float!      # มูลค่าบาทตามอัตราแลกปัจจุบัน
+    expiringIn30Days: Int!
+    balanceMismatchCount: Int!    # cache ไม่ตรง ledger — ต้องเป็น 0 เสมอ
+  }
+  type BmsMemberDiscountPreview {
+    subtotal: Float!
+    tierDiscount: Float!
+    tierLabel: String
+    couponDiscount: Float!
+    pointsDiscount: Float!
+    pointsUsed: Int!
+    manualDiscount: Float!
+    totalDiscount: Float!
+    netTotal: Float!
+    capped: Boolean!              # true = ส่วนลดถูกตัดเพราะชนเพดาน
+    cappedAt: Float!
+    member: BmsMember
+  }
+
   # แถวประวัติการใช้โค้ด — ไม่มีตาราง redemption แยก, derive จาก bms_orders.coupon_code ตรงๆ
   type BmsCouponRedemption {
     orderId: ID!
@@ -3452,6 +3572,15 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!    # สร้าง/แก้โค้ดส่วนลด (permission coupon.manage)
     bmsDeleteCoupon(id: ID!): Boolean!
     bmsAssignCouponToCustomer(customerId: ID, channel: String, customerRef: String, conversationId: ID, code: String!, note: String): Boolean!   # แจกคูปองเข้ากระเป๋าลูกค้าโดยตรง (permission coupon.manage)
+
+    # ===== BMS membership + แต้มสะสม (7.96) =====
+    bmsUpdateLoyaltySettings(input: BmsLoyaltySettingsInput!): BmsLoyaltySettings!   # permission loyalty.settings
+    bmsUpsertMembershipTier(input: BmsMembershipTierInput!): BmsMembershipTier!
+    bmsDeleteMembershipTier(id: ID!): BmsTierDeleteResult!          # ยังมีสมาชิกอยู่ = ปิดใช้งานแทนลบ
+    bmsEnrollMember(phone: String!, name: String): BmsEnrollMemberResult!   # permission member.manage
+    bmsAdjustLoyaltyPoints(customerId: ID!, points: Int!, note: String!): BmsLoyaltyBalance!   # permission loyalty.adjust — ต้องมีเหตุผล
+    bmsReviewMemberTier(customerId: ID): BmsTierReviewResult!       # ไม่ส่ง customerId = ทบทวนทุกคน
+    bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!                 # ยังไม่มี cron จริง ต้องกดเอง
 
     # ===== BMS RBAC (admin) =====
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
