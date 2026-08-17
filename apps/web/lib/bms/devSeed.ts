@@ -117,6 +117,34 @@ function substrHash(value: string): string {
   return hash.toString(16).padStart(8, "0").slice(0, 8).toUpperCase();
 }
 
+/**
+ * บาร์โค้ด EAN-13 สำหรับสินค้าทดสอบ
+ *
+ * ต้องคำนวณ check digit ให้ถูกจริง ไม่ใช่สุ่ม 13 หลัก — ทั้งเครื่องสแกนหน้าร้าน
+ * และตัวถอดรหัสจากกล้อง (BarcodeDetector/zxing) ตรวจ check digit ของ EAN-13
+ * เลขที่ผิดจะถูกทิ้งเงียบ ๆ แล้วคนทดสอบจะสรุปผิดว่าโค้ดฝั่งกล้องพัง
+ *
+ * ขึ้นต้นด้วย 20 = ช่วง "restricted circulation" ที่ GS1 กันไว้ให้ใช้ในร้าน/ภายใน
+ * จึงไม่ทับเลขของสินค้าจริงที่ผู้ผลิตลงทะเบียนไว้
+ *
+ * deterministic จาก seed — รัน seeder ซ้ำด้วย input เดิมได้เลขเดิม ไม่ชนกันเอง
+ */
+function fakeEan13(seed: string): string {
+  let h = 2166136261 >>> 0; // FNV-1a เพื่อให้เลขกระจายกว่า substrHash ที่ base 31
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  // 10 หลักกลางจาก hash (prefix 20 + 10 หลัก = 12 หลัก แล้วต่อ check digit)
+  const body = `20${h.toString().padStart(10, "0").slice(-10)}`;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    // EAN-13: หลักที่ 1,3,5.. คูณ 1 · หลักที่ 2,4,6.. คูณ 3
+    sum += Number(body[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  return `${body}${(10 - (sum % 10)) % 10}`;
+}
+
 function productPresetForArchetype(archetype: ShopArchetype | null | undefined) {
   switch (archetype) {
     case "mini_mart":
@@ -390,13 +418,30 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
     try {
       await client.query("BEGIN");
       const inserted: Array<{ sku: string; name: string; price: string }> = [];
+      // SKU ของเส้นทางนี้ deterministic จาก (tenant, archetype, ชื่อสินค้า, ลำดับ)
+      // ถ้า index เริ่มที่ 0 ทุกครั้ง การกด seed รอบที่สองจะได้ SKU เดิมแล้วชน
+      // bms_products_pkey (tenant_id, sku) → ทั้ง transaction ล้ม ไม่ได้อะไรเลย
+      // เริ่มนับต่อจากที่มีอยู่ ร้านใหม่จึงยังได้ลำดับเดิมเหมือนก่อน ส่วนร้านที่มีของ
+      // อยู่แล้วจะได้ชุดใหม่ต่อท้าย
+      const seq = await client.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM bms_products WHERE tenant_id = $1 AND sku LIKE 'FAKE-%'`,
+        [tenantId]
+      );
+      const offset = seq.rows[0]?.n ?? 0;
       for (let i = 0; i < count; i++) {
         const item = curated[i % curated.length];
-        const sku = `FAKE-${substrHash(`${tenantId}:${archetype}:${item.name}:${i}`)}`;
-        const name = count > curated.length ? `${item.name} ${Math.floor(i / curated.length) + 1}` : item.name;
-        await client.query(
-          `INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand)
-           VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10)`,
+        const n = offset + i;
+        const sku = `FAKE-${substrHash(`${tenantId}:${archetype}:${item.name}:${n}`)}`;
+        const name = n >= curated.length ? `${item.name} ${Math.floor(n / curated.length) + 1}` : item.name;
+        const sizes = item.sizes?.length ? item.sizes : ["STD"];
+        // บาร์โค้ดระดับสินค้า = ของไซซ์แรก ให้ตรงกับ pack ของไซซ์นั้น
+        // ต้องมีด้วย เพราะหน้า /admin/products โชว์คอลัมน์ Barcode จาก bms_products.barcode
+        // (คนละที่กับ bms_product_packs.barcode ที่ใช้ยิงแยกตามไซซ์)
+        const productBarcode = fakeEan13(`${tenantId}:${sku}:${sizes[0]}`);
+        const ins = await client.query(
+          `INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, barcode)
+           VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (tenant_id, sku) DO NOTHING`,
           [
             tenantId,
             sku,
@@ -408,9 +453,13 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
             (item.price * 0.58).toFixed(2),
             item.category,
             item.brand,
+            productBarcode,
           ]
         );
-        for (const size of item.sizes?.length ? item.sizes : ["STD"]) {
+        // กันเหนียว: ถ้าเคยลบสินค้าบางตัวไปแล้ว count จะไม่ตรงกับลำดับจริงและอาจชนซ้ำ
+        // ข้ามตัวนั้นไปเงียบ ๆ ดีกว่าให้ทั้ง transaction ล้ม แล้วรายงานจำนวนที่สร้างได้จริง
+        if (!ins.rowCount) continue;
+        for (const size of sizes) {
           await client.query(
             `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock, reorder_point)
              VALUES ($1, (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1), $2, $3, $4, 0, $5)`,
@@ -421,6 +470,16 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
               Math.max(0, 2 + R(archetype === "food_beverage" ? 16 : 28)),
               archetype === "food_beverage" ? 3 : 5,
             ]
+          );
+          // หน่วยฐาน 1 แถวต่อไซซ์ พร้อมบาร์โค้ดของตัวเอง — ไม่มีแถวนี้ก็ไม่มีอะไรให้ยิง
+          // ต้องพิมพ์ SKU เอง และ /admin/product-packs จะฟ้องว่า "ยังไม่มีบาร์โค้ด" ทุกตัว
+          // price = NULL แปลว่าใช้ราคาสินค้าตามเดิม การเพิ่ม pack จึงไม่เปลี่ยนราคาขาย
+          await client.query(
+            `INSERT INTO bms_product_packs
+               (tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
+             VALUES ($1, $2, $3, 'BASE', $4, 1, $5, NULL, true, true)
+             ON CONFLICT DO NOTHING`,
+            [tenantId, sku, size, "ชิ้น", fakeEan13(`${tenantId}:${sku}:${size}`)]
           );
         }
         inserted.push({ sku, name, price: item.price.toFixed(2) });
@@ -446,13 +505,37 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
         ($4::text[])[1 + floor(random() * array_length($4::text[], 1))::int] AS brand
       FROM generate_series(1, $2) g
     ),
+    -- บาร์โค้ดของทุก (สินค้า, ไซซ์) คิดที่เดียวตรงนี้ แล้วใช้ทั้งระดับสินค้าและระดับ pack
+    -- ให้เลขตรงกัน · ทำใน SQL เพราะ sku เพิ่งถูกสร้างในคำสั่งเดียวกัน ยังไม่กลับถึง JS
+    -- prefix 20 = ช่วง restricted circulation ของ GS1 จึงไม่ทับสินค้าจริง
+    bodies AS (
+      SELECT gen.sku, s.size,
+             '20' || lpad((('x' || substr(md5($1 || gen.sku || s.size), 1, 8))::bit(32)::bigint % 10000000000)::text, 10, '0') AS body
+        FROM gen CROSS JOIN (VALUES ('S'),('M'),('L'),('XL')) AS s(size)
+    ),
+    -- check digit EAN-13: หลักคี่ ×1 หลักคู่ ×3 แล้วเติมให้ผลรวมหาร 10 ลงตัว
+    -- สูตรเดียวกับ fakeEan13() ฝั่ง JS · ผิดหลักเดียวเครื่องสแกน/กล้องจะทิ้งทั้งโค้ด
+    codes AS (
+      SELECT sku, size, body || ((10 - (
+               (substr(body,1,1)::int * 1) + (substr(body,2,1)::int * 3) +
+               (substr(body,3,1)::int * 1) + (substr(body,4,1)::int * 3) +
+               (substr(body,5,1)::int * 1) + (substr(body,6,1)::int * 3) +
+               (substr(body,7,1)::int * 1) + (substr(body,8,1)::int * 3) +
+               (substr(body,9,1)::int * 1) + (substr(body,10,1)::int * 3) +
+               (substr(body,11,1)::int * 1) + (substr(body,12,1)::int * 3)
+             ) % 10) % 10)::text AS barcode
+        FROM bodies
+    ),
     np AS (
-      INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand)
-      SELECT $1, sku, $5 || ' Product ' || g, true, price, ARRAY['fake','test', lower(replace($5, ' ', '_'))],
-             'https://picsum.photos/seed/' || sku || '/400/400',
+      INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, barcode)
+      SELECT $1, gen.sku, $5 || ' Product ' || g, true, price, ARRAY['fake','test', lower(replace($5, ' ', '_'))],
+             'https://picsum.photos/seed/' || gen.sku || '/400/400',
              'สินค้าทดสอบสำหรับ demo/QA (สร้างโดยระบบอัตโนมัติ) — ' || $5 || ' Product ' || g,
              (price * (0.4 + random() * 0.3))::numeric(12,2),
-             category, brand
+             category, brand,
+             -- ระดับสินค้าใช้เลขของไซซ์ S ให้ตรงกับ pack ของไซซ์นั้น
+             -- หน้า /admin/products อ่านคอลัมน์นี้ ถ้าเว้นว่างจะดูเหมือนไม่มีบาร์โค้ด
+             (SELECT c.barcode FROM codes c WHERE c.sku = gen.sku AND c.size = 'S')
         FROM gen
       RETURNING sku, name, price
     ),
@@ -462,6 +545,15 @@ export async function seedFakeProducts(tenantId: string, count: number, archetyp
              (SELECT id FROM bms_locations WHERE tenant_id = $1 AND active ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1),
              np.sku, s.size, floor(random() * 50)::int, 0, 5
         FROM np CROSS JOIN (VALUES ('S'),('M'),('L'),('XL')) AS s(size)
+      RETURNING 1
+    ),
+    -- หน่วยฐาน 1 แถวต่อไซซ์ · price NULL = ใช้ราคาสินค้าเดิม การเพิ่ม pack ไม่เปลี่ยนราคาขาย
+    pk AS (
+      INSERT INTO bms_product_packs
+             (tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
+      SELECT $1, np.sku, c.size, 'BASE', 'ชิ้น', 1, c.barcode, NULL, true, true
+        FROM np JOIN codes c ON c.sku = np.sku
+      ON CONFLICT DO NOTHING
       RETURNING 1
     )
     SELECT sku, name, price FROM np ORDER BY sku`;
