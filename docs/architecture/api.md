@@ -234,6 +234,33 @@ events/status/source without status regression. `bmsShipmentTrackingEvents` requ
 unverified live adapters are typed/skipped rather than throwing or pretending the carrier accepted
 the request. The endpoint is ready but unscheduled; recommended cadence is every 15 minutes.
 
+### Membership & loyalty (`7.96`)
+
+Reads (`bmsLoyaltySettings`, `bmsMembershipTiers`, `bmsMembers`, `bmsMember`, `bmsLoyaltyLedger`,
+`bmsMembersExpiringPoints`, `bmsMemberDiscountPreview`) require `member.view`; enrolment and tier
+review require `member.manage`; program settings and tiers require `loyalty.settings`; manual point
+adjustment requires `loyalty.adjust` and a mandatory reason. The three report queries
+(`bmsLoyaltyOutstanding`, `bmsLoyaltyActivity`, `bmsSalesByTier`) sit behind `report.view` because
+outstanding points are an accounting liability, not a marketing statistic. All four permissions are
+seeded by `7.96` to Manager, and `member.*` also to Sales and Cashier.
+
+Like coupon redemption, earning and redeeming points are not resolver-level concerns. Redemption
+happens inside `createOrder()` alongside `applyCouponInTx()`, and earning happens wherever an order
+reaches `PAID` — `payOrder()`, `confirmPayment()`, the split-payment confirm, and
+`finalizePosSale()` — so every caller gets it without opting in. Tier is re-evaluated after each of
+those, outside the transaction, because a failed review must not undo a payment that already happened.
+
+POS uses device-token routes rather than GraphQL: `GET /api/pos/member` (search, three-character
+minimum so a till left open cannot page through the customer list), `POST /api/pos/member` (enrol,
+requires cashier PIN plus `member.manage`), and `POST /api/pos/member/preview` (read-only discount
+preview). The preview must agree with `createOrder()` to the satang or the register's payment rows
+will not match the server total and the bill is voided — which is why the arithmetic lives in the
+import-free `lib/bms/loyaltyMath.ts` and is covered by `scripts/loyalty-contract.test.mts`.
+
+`POST /api/bms/loyalty/maintenance` (cron secret) expires points FIFO and re-reviews tiers for every
+shop with the program on. It is idempotent but **unscheduled** — nothing expires points until it runs
+or someone presses the buttons on `/admin/loyalty`.
+
 ### Coupons
 
 `bmsUpsertCoupon`/`bmsDeleteCoupon` require `coupon.manage`; `bmsCoupons`/`bmsCouponRedemptions`

@@ -42,7 +42,7 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `app/api/graphql/route.ts` · platform admin = `users.is_platform_admin`
 - **fake data (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` (ปิดใน production, gate ด้วย
   `requirePlatformAdminSeeder()`) · กดตามลำดับ **Products → Customers → Orders → Conversations →
-  Purchase** แล้วดู Dashboard/Reports/Inbox · Cleanup ลบเฉพาะร้านที่ยืนอยู่ (marker `FAKE-`/tag `fake`)
+  Purchase → BMS Members + Points** แล้วดู Dashboard/Reports/Inbox/Loyalty · Cleanup ลบเฉพาะร้านที่ยืนอยู่ (marker `FAKE-`/tag `fake`)
 - **ops automation** — `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
   (secrets: `BMS_LOG_DATABASE_URL` read-only, `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO`)
 
@@ -114,6 +114,12 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   แลกแต้มพร้อมกัน), คืนสินค้าบางส่วนของบิลที่ทั้งได้แต้มและใช้แต้ม (ตรวจว่า ledger สุทธิถูก),
   ยกเลิกบิลที่แลกแต้มไปแล้ว, และ `bmsLoyaltyOutstanding.balanceMismatchCount` ต้องเป็น 0
   · ยังไม่มี cron ยิง `POST /api/bms/loyalty/maintenance` → แต้มไม่หมดอายุจนกดปุ่มเอง
+  · เทสเลขคณิตส่วนลด: `node --experimental-strip-types --test scripts/loyalty-contract.test.mts`
+    (13 เทส ไม่ต้องมี DB — `lib/bms/loyaltyMath.ts` ตั้งใจไม่ import อะไรเลยเพื่อให้รันได้)
+  · fake data: กด **Customers → Orders → BMS Members + Points** ตามลำดับที่ `/admin/dev/fake`
+    (ปุ่มสมาชิกยกลูกค้าปลอมที่มีอยู่ขึ้นเป็นสมาชิก ไม่สร้างใหม่ — ไม่มีลูกค้าปลอม = ไม่มีอะไรเกิด)
+  · **แต้มค้างเป็นหนี้สินทางบัญชี** — ก่อนปิดงบต้องส่งตัวเลขจาก `bmsLoyaltyOutstanding`
+    (การ์ด "มูลค่าแต้มค้าง" ที่ `/admin/loyalty`) ให้บัญชี · `balanceMismatchCount` ต้องเป็น 0 เสมอ
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

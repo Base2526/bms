@@ -1197,6 +1197,152 @@ export type LoyaltyOutstandingReport = {
   balanceMismatchCount: number;
 };
 
+export type ExpiringPointsRow = {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  memberNo: string | null;
+  expiringPoints: number;
+  /** วันที่ก้อนแรกจะหมด — ใช้เรียงว่าใครควรได้รับการติดต่อก่อน */
+  firstExpiresAt: string;
+};
+
+/**
+ * ใครมีแต้มกำลังจะหมดอายุ — รายชื่อ ไม่ใช่แค่จำนวน
+ *
+ * ยังไม่มีการส่งข้อความอัตโนมัติในระบบนี้ (ดู "ที่ยังไม่ได้ทำ" ใน pos.md)
+ * รายชื่อนี้จึงเป็นทางเดียวที่ร้านจะติดต่อลูกค้าได้ทันก่อนแต้มหาย ซึ่งสำคัญ
+ * เพราะแต้มหมดอายุแบบไม่มีใครบอกคือเรื่องที่ลูกค้าโทรมาต่อว่าทีหลัง
+ */
+export async function membersWithExpiringPoints(
+  tenantId: string,
+  days = 30,
+  limit = 50
+): Promise<ExpiringPointsRow[]> {
+  const window = Math.min(Math.max(Math.floor(days), 1), 365);
+  const res = await query<{
+    id: string; name: string; phone: string | null; member_no: string | null;
+    expiring: string; first_expires_at: Date;
+  }>(
+    `SELECT c.id, c.name, c.phone, c.member_no,
+            SUM(l.points - l.consumed_points) AS expiring,
+            MIN(l.expires_at) AS first_expires_at
+       FROM bms_loyalty_ledger l
+       JOIN bms_customers c ON c.tenant_id = l.tenant_id AND c.id = l.customer_id
+      WHERE l.tenant_id = $1
+        AND c.deleted_at IS NULL AND c.member_no IS NOT NULL
+        AND l.points > l.consumed_points AND l.points > 0
+        AND l.expires_at IS NOT NULL
+        AND l.expires_at > now() AND l.expires_at <= now() + ($2::int * interval '1 day')
+      GROUP BY c.id, c.name, c.phone, c.member_no
+     HAVING SUM(l.points - l.consumed_points) > 0
+      ORDER BY MIN(l.expires_at), SUM(l.points - l.consumed_points) DESC
+      LIMIT $3`,
+    [tenantId, window, Math.min(Math.max(limit, 1), 200)]
+  );
+  return res.rows.map((r) => ({
+    customerId: r.id,
+    name: r.name,
+    phone: r.phone ?? null,
+    memberNo: r.member_no ?? null,
+    expiringPoints: Number(r.expiring),
+    firstExpiresAt: new Date(r.first_expires_at).toISOString(),
+  }));
+}
+
+export type LoyaltyActivityRow = {
+  /** ต้นเดือนแบบ ISO — frontend จัดรูปแบบเอง */
+  month: string;
+  earned: number;
+  redeemed: number;
+  expired: number;
+  /** ดึงคืน/คืนให้จากการคืนสินค้าและยกเลิกบิล (บวก = คืนให้ลูกค้าสุทธิ) */
+  reversedNet: number;
+  adjustedNet: number;
+};
+
+/**
+ * แต้มออก/แลก/หมดอายุรายเดือน — ตัวเลขที่ใช้ตอบว่าโปรแกรมนี้คุ้มไหม
+ * redemption rate = redeemed ÷ earned · ถ้าต่ำมากแปลว่าแต้มกลายเป็นหนี้สินสะสม
+ * ที่ลูกค้าไม่ได้ใช้ ไม่ใช่แรงจูงใจให้กลับมาซื้อ
+ */
+export async function loyaltyActivityReport(tenantId: string, months = 6): Promise<LoyaltyActivityRow[]> {
+  const span = Math.min(Math.max(Math.floor(months), 1), 36);
+  const res = await query<{
+    month: Date; earned: string; redeemed: string; expired: string; reversed: string; adjusted: string;
+  }>(
+    `SELECT date_trunc('month', created_at) AS month,
+            COALESCE(SUM(points) FILTER (WHERE kind = 'EARN'), 0) AS earned,
+            COALESCE(-SUM(points) FILTER (WHERE kind = 'REDEEM'), 0) AS redeemed,
+            COALESCE(-SUM(points) FILTER (WHERE kind = 'EXPIRE'), 0) AS expired,
+            COALESCE(SUM(points) FILTER (WHERE kind = 'REVERSE'), 0) AS reversed,
+            COALESCE(SUM(points) FILTER (WHERE kind = 'ADJUST'), 0) AS adjusted
+       FROM bms_loyalty_ledger
+      WHERE tenant_id = $1
+        AND created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+      GROUP BY 1
+      ORDER BY 1 DESC`,
+    [tenantId, span]
+  );
+  return res.rows.map((r) => ({
+    month: new Date(r.month).toISOString(),
+    earned: Number(r.earned),
+    redeemed: Number(r.redeemed),
+    expired: Number(r.expired),
+    reversedNet: Number(r.reversed),
+    adjustedNet: Number(r.adjusted),
+  }));
+}
+
+export type SalesByTierRow = {
+  tierCode: string;
+  tierName: string;
+  members: number;
+  orders: number;
+  revenue: number;
+  averageBasket: number;
+};
+
+/**
+ * ยอดขายแยกตามชั้นสมาชิก (12 เดือน) — ใช้ตัดสินว่าเกณฑ์เข้าชั้นตั้งไว้เหมาะไหม
+ * แถวสุดท้ายคือลูกค้าที่ไม่ได้เป็นสมาชิก เพื่อเทียบว่าสมาชิกซื้อมากกว่าจริงหรือไม่
+ * (ไม่มีแถวนี้แล้วตัวเลข "สมาชิกซื้อเยอะ" ไม่มีอะไรให้เทียบ)
+ */
+export async function salesByTierReport(tenantId: string): Promise<SalesByTierRow[]> {
+  const res = await query<{
+    tier_code: string | null; tier_name: string | null;
+    members: string; orders: string; revenue: string;
+  }>(
+    `SELECT t.code AS tier_code,
+            t.name AS tier_name,
+            COUNT(DISTINCT o.customer_id) AS members,
+            COUNT(*) AS orders,
+            COALESCE(SUM(o.total_amount), 0) AS revenue
+       FROM bms_orders o
+       LEFT JOIN bms_customers c ON c.tenant_id = o.tenant_id AND c.id = o.customer_id
+                                AND c.member_no IS NOT NULL
+       LEFT JOIN bms_membership_tiers t ON t.tenant_id = c.tenant_id AND t.id = c.tier_id
+      WHERE o.tenant_id = $1
+        AND o.status NOT IN ('CANCELLED','RETURNED')
+        AND o.created_at > now() - interval '12 months'
+      GROUP BY t.code, t.name, t.sort_order
+      ORDER BY t.sort_order NULLS FIRST`,
+    [tenantId]
+  );
+  return res.rows.map((r) => {
+    const orders = Number(r.orders);
+    const revenue = Number(r.revenue);
+    return {
+      tierCode: r.tier_code ?? "NON_MEMBER",
+      tierName: r.tier_name ?? "ไม่ใช่สมาชิก",
+      members: Number(r.members),
+      orders,
+      revenue,
+      averageBasket: orders > 0 ? round2(revenue / orders) : 0,
+    };
+  });
+}
+
 export async function loyaltyOutstandingReport(tenantId: string): Promise<LoyaltyOutstandingReport> {
   const settings = await getLoyaltySettings(tenantId);
   const res = await query<{

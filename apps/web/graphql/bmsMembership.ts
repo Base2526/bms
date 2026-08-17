@@ -19,7 +19,10 @@ import {
   getMember,
   listLoyaltyLedger,
   listMembershipTiers,
+  loyaltyActivityReport,
   loyaltyOutstandingReport,
+  membersWithExpiringPoints,
+  salesByTierReport,
   previewMemberDiscount,
   reviewAllMemberTiers,
   reviewMemberTier,
@@ -72,6 +75,18 @@ export const bmsMembershipResolvers = {
       // ยอดแต้มค้าง = ภาระผูกพันของร้าน ผูกกับ report.view เพราะเป็นตัวเลขทางบัญชี
       await requirePermission(ctx, "report.view");
       return loyaltyOutstandingReport(getTenantId(ctx));
+    },
+    async bmsLoyaltyActivity(_p: unknown, args: { months?: number | null }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return loyaltyActivityReport(getTenantId(ctx), args.months ?? 6);
+    },
+    async bmsSalesByTier(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return salesByTierReport(getTenantId(ctx));
+    },
+    async bmsMembersExpiringPoints(_p: unknown, args: { days?: number | null; limit?: number | null }, ctx: any) {
+      await requirePermission(ctx, "member.view");
+      return membersWithExpiringPoints(getTenantId(ctx), args.days ?? 30, args.limit ?? 50);
     },
     async bmsMemberDiscountPreview(
       _p: unknown,

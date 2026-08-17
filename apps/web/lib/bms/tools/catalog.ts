@@ -70,7 +70,9 @@ import {
   setCustomerTags,
   getCustomerCheckoutStatus,
   saveCustomerCheckoutDetails,
+  findCustomerIdByIdentity,
 } from "../customers";
+import { getLoyaltySettings, getMember, pointsToDiscount } from "../membership";
 import {
   getSalesSummary,
   getInventorySummary,
@@ -576,6 +578,62 @@ const subscribeRestockNotificationTool: BmsTool = {
       actor: ec.actor,
     });
     return { ok: true, data: result };
+  },
+};
+
+/**
+ * แต้มสะสมของลูกค้า (7.96) — อ่านอย่างเดียว
+ *
+ * มีทูลนี้เพราะกฎของระบบคือ AI ห้ามเดาตัวเลขแต้ม/สิทธิ์ (docs/AI_GUIDELINES.md)
+ * ก่อนหน้านี้ไม่มีทูลให้เรียก ลูกค้าถามว่า "มีแต้มเท่าไร" แล้วโมเดลตอบไม่ได้เลย
+ * ตัวเลขที่ตอบได้ต้องมาจากผลลัพธ์ของทูลนี้เท่านั้น
+ *
+ * ทูลนี้ไม่แลกแต้ม — การแลกเกิดตอนสร้างบิลเท่านั้น (create_order / จอ POS)
+ * เพื่อให้แต้มถูกหักในทรานแซกชันเดียวกับที่ออกบิล
+ */
+const getLoyaltyPointsTool: BmsTool = {
+  name: "get_loyalty_points",
+  description:
+    "Get this customer's membership tier and loyalty point balance. Customer surface: call it with no arguments — the signed-in customer is used. " +
+    "Never state a point balance, tier, or discount that did not come from this tool's result, and never promise points the customer has not earned yet. " +
+    "This tool only reads: points are deducted when an order is created, so calling it never spends or reserves anything. " +
+    "If the customer is not enrolled, say so and offer enrolment at the counter rather than quoting zero points.",
+  surfaces: ["customer", "staff"],
+  permission: "member.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      channel: { type: "string", description: "Customer channel (staff surface only)." },
+      customerRef: { type: "string", description: "Customer reference (staff surface only)." },
+    },
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const channel = ec.surface === "customer" ? ec.channel : (enumVal(args, "channel", STAFF_CHANNELS, false) as Channel | undefined);
+    const customerRef = ec.surface === "customer" ? ec.customerRef ?? null : optString(args, "customerRef") ?? null;
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, channel ?? null, customerRef);
+    if (!customerId) return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+
+    const member = await getMember(ec.tenantId, customerId);
+    if (!member?.memberNo) {
+      return { ok: true, data: { enrolled: false, tier: null, pointsUsable: 0, pointsBalance: 0 } };
+    }
+    const settings = await getLoyaltySettings(ec.tenantId);
+    const redeemable = pointsToDiscount(settings, member.pointsUsable);
+    return {
+      ok: true,
+      data: {
+        enrolled: true,
+        memberNo: member.memberNo,
+        tier: member.tier ? { name: member.tier.name, discountType: member.tier.discountType, discountValue: member.tier.discountValue } : null,
+        pointsUsable: member.pointsUsable,
+        // ยอดรวมทั้ง ledger ติดลบได้เมื่อคืนของหลังใช้แต้ม — ส่งไปด้วยเพื่อให้
+        // โมเดลอธิบายได้ว่าทำไมแลกไม่ได้ แทนที่จะบอกแค่ 0
+        pointsBalance: member.pointsBalance,
+        redeemableDiscount: redeemable.discount,
+        redeemMinPoints: settings.redeemMinPoints,
+        programEnabled: settings.enabled,
+      },
+    };
   },
 };
 
@@ -2182,6 +2240,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listCustomerCouponsTool,
   listAvailableCouponsTool,
   checkCouponTool,
+  getLoyaltyPointsTool,
   getOrderStatus,
   getCustomerCheckoutTool,
   listLowStockTool,

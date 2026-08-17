@@ -1090,6 +1090,9 @@ export const typeDefs = /* GraphQL */ `
     bmsMember(customerId: ID!): BmsMember
     bmsLoyaltyLedger(customerId: ID!, limit: Int): [BmsLoyaltyLedgerEntry!]!
     bmsLoyaltyOutstanding: BmsLoyaltyOutstanding!                   # แต้มค้าง = หนี้สิน (permission report.view)
+    bmsLoyaltyActivity(months: Int): [BmsLoyaltyActivityRow!]!      # แต้มออก/แลก/หมดอายุรายเดือน
+    bmsSalesByTier: [BmsSalesByTierRow!]!                           # ยอดขาย 12 เดือนแยกตามชั้น (มีแถวไม่ใช่สมาชิกให้เทียบ)
+    bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!   # รายชื่อคนที่แต้มใกล้หมด (ยังไม่มีระบบส่งข้อความอัตโนมัติ)
     bmsMemberDiscountPreview(customerId: ID, subtotal: Float!, pointsToRedeem: Int, couponDiscount: Float): BmsMemberDiscountPreview!
 
     # ===== BMS billing (admin) =====
@@ -3301,6 +3304,30 @@ export const typeDefs = /* GraphQL */ `
     outstandingValue: Float!      # มูลค่าบาทตามอัตราแลกปัจจุบัน
     expiringIn30Days: Int!
     balanceMismatchCount: Int!    # cache ไม่ตรง ledger — ต้องเป็น 0 เสมอ
+  }
+  type BmsLoyaltyActivityRow {
+    month: String!
+    earned: Int!
+    redeemed: Int!
+    expired: Int!
+    reversedNet: Int!            # บวก = คืนแต้มให้ลูกค้าสุทธิ
+    adjustedNet: Int!
+  }
+  type BmsExpiringPointsRow {
+    customerId: ID!
+    name: String!
+    phone: String
+    memberNo: String
+    expiringPoints: Int!
+    firstExpiresAt: String!
+  }
+  type BmsSalesByTierRow {
+    tierCode: String!            # NON_MEMBER = ลูกค้าที่ไม่ได้สมัคร
+    tierName: String!
+    members: Int!
+    orders: Int!
+    revenue: Float!
+    averageBasket: Float!
   }
   type BmsMemberDiscountPreview {
     subtotal: Float!

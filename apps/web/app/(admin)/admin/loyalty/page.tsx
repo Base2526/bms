@@ -28,6 +28,15 @@ const Q = gql`
     bmsLoyaltyOutstanding {
       members outstandingPoints outstandingValue expiringIn30Days balanceMismatchCount
     }
+    bmsLoyaltyActivity(months: 6) {
+      month earned redeemed expired reversedNet adjustedNet
+    }
+    bmsSalesByTier {
+      tierCode tierName members orders revenue averageBasket
+    }
+    bmsMembersExpiringPoints(days: 30, limit: 50) {
+      customerId name phone memberNo expiringPoints firstExpiresAt
+    }
   }
 `;
 const Q_MEMBERS = gql`
@@ -499,6 +508,106 @@ export default function LoyaltyPage() {
           </Card>
         </Col>
       </Row>
+
+      {/* รายงาน — แต้มคือหนี้สิน ตัวเลขพวกนี้ต้องดูได้ในหน้าเดียวกับที่ตั้งค่า
+          ไม่ใช่ต้องรอ export ไฟล์ (report engine ยังไม่รองรับชนิด LOYALTY) */}
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={13}>
+          <Card size="small" title={t("admin_loyalty.card_activity")} loading={loading}>
+            <Table
+              rowKey="month"
+              size="small"
+              dataSource={data?.bmsLoyaltyActivity || []}
+              locale={{ emptyText: <Empty description={t("admin_loyalty.activity_empty")} /> }}
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              columns={[
+                {
+                  title: t("admin_loyalty.col_month"), dataIndex: "month",
+                  render: (v: string) => new Date(v).toLocaleDateString(undefined, { year: "numeric", month: "short" }),
+                },
+                {
+                  title: t("admin_loyalty.col_earned"), dataIndex: "earned", align: "right" as const,
+                  render: (v: number) => <Text type="success">+{v.toLocaleString()}</Text>,
+                },
+                {
+                  title: t("admin_loyalty.col_redeemed"), dataIndex: "redeemed", align: "right" as const,
+                  render: (v: number) => v.toLocaleString(),
+                },
+                {
+                  title: t("admin_loyalty.col_expired"), dataIndex: "expired", align: "right" as const,
+                  render: (v: number) => <Text type={v > 0 ? "warning" : undefined}>{v.toLocaleString()}</Text>,
+                },
+                {
+                  // redemption rate ต่ำ = แต้มกลายเป็นหนี้สินสะสม ไม่ใช่แรงจูงใจ
+                  title: t("admin_loyalty.col_redemption_rate"), key: "rate", align: "right" as const,
+                  render: (_: any, r: any) => (r.earned > 0 ? `${Math.round((r.redeemed / r.earned) * 100)}%` : "—"),
+                },
+              ]}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} lg={11}>
+          <Card size="small" title={t("admin_loyalty.card_by_tier")} loading={loading}>
+            <Table
+              rowKey="tierCode"
+              size="small"
+              dataSource={data?.bmsSalesByTier || []}
+              locale={{ emptyText: <Empty description={t("admin_loyalty.by_tier_empty")} /> }}
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              columns={[
+                {
+                  title: t("admin_loyalty.col_tier"), dataIndex: "tierName",
+                  render: (v: string, r: any) => (
+                    r.tierCode === "NON_MEMBER" ? <Text type="secondary">{v}</Text> : <Text strong>{v}</Text>
+                  ),
+                },
+                { title: t("admin_loyalty.col_orders"), dataIndex: "orders", align: "right" as const,
+                  render: (v: number) => v.toLocaleString() },
+                { title: t("admin_loyalty.col_revenue"), dataIndex: "revenue", align: "right" as const,
+                  render: (v: number) => money(v) },
+                { title: t("admin_loyalty.col_avg_basket"), dataIndex: "averageBasket", align: "right" as const,
+                  render: (v: number) => money(v) },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* ใครแต้มใกล้หมด — ยังไม่มีระบบส่งข้อความอัตโนมัติ รายชื่อนี้จึงเป็นทางเดียว
+          ที่ร้านจะติดต่อทันก่อนแต้มหาย (แต้มหายเงียบ ๆ = ลูกค้าโทรมาต่อว่าทีหลัง) */}
+      {(data?.bmsMembersExpiringPoints?.length ?? 0) > 0 && (
+        <Card size="small" title={t("admin_loyalty.card_expiring")} style={{ marginTop: 16 }} loading={loading}>
+          <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.expiring_hint")} />
+          <Table
+            rowKey="customerId"
+            size="small"
+            dataSource={data?.bmsMembersExpiringPoints || []}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            scroll={{ x: "max-content" }}
+            columns={[
+              {
+                title: t("admin_loyalty.col_member"), key: "member",
+                render: (_: any, r: any) => (
+                  <Space direction="vertical" size={0}>
+                    <Text strong>{r.name}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{r.memberNo} · {r.phone || "—"}</Text>
+                  </Space>
+                ),
+              },
+              {
+                title: t("admin_loyalty.col_expiring_points"), dataIndex: "expiringPoints", align: "right" as const,
+                render: (v: number) => <Text type="warning" strong>{v.toLocaleString()}</Text>,
+              },
+              {
+                title: t("admin_loyalty.col_expires"), dataIndex: "firstExpiresAt",
+                render: (v: string) => new Date(v).toLocaleDateString(),
+              },
+            ]}
+          />
+        </Card>
+      )}
 
       <Card
         size="small"

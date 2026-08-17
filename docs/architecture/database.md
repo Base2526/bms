@@ -51,8 +51,26 @@ operators must resolve those records before retrying the migration.
 | Follow-up Automation (MVP core) | `bms_conversation_intents`, `bms_followup_rules`, `bms_followup_jobs`, `bms_followup_history` (+ `bms_conversations.last_sender_type`, `bms_customers.followup_opt_out`) | `7.52` |
 | Report email permission | (permission-only, no new table) | `7.54` |
 | Job run history | `bms_job_runs` (platform-wide, no `tenant_id`) | `7.55` (renumbered from `7.53` — see note below) |
+| Membership & loyalty | `bms_loyalty_settings`, `bms_membership_tiers`, `bms_loyalty_ledger`, `bms_order_discounts` (+ `bms_customers.member_no/member_since/tier_id/tier_reviewed_at/points_balance`) | `7.96` |
 
 ## Notable schema details
+
+**Loyalty ledger (`7.96`)** — `bms_loyalty_ledger` is append-only and is the only source of truth for
+points. `bms_customers.points_balance` is a cache of `SUM(points)` and may go negative when a customer
+returns goods after redeeming; the next grant covers the deficit through `consumed_points` before
+adding anything usable. Usable points are `SUM(points - consumed_points)` over grant rows that have
+not expired, consumed FIFO by `expires_at`. `UNIQUE (tenant_id, order_id, kind)` on `EARN`/`REDEEM`
+makes POS replay idempotent; `UNIQUE (tenant_id, pos_return_id, kind)` does the same for partial
+returns, and cancel/full-return reversals are the rows with `pos_return_id IS NULL`.
+
+Two things about writing to these tables:
+
+- `bms_customers` has a revision trigger (`7.1`/`7.6`), so every balance write must set
+  `app.skip_revision` (`7.24`) or the revision table grows by one full row snapshot per sale. Only a
+  real tier change is worth a revision.
+- `bms_order_discounts` records where a bill's discount came from, one row per source, and its rows
+  always sum to `bms_orders.discount_amount`. That column stays the number the VAT base and the
+  abbreviated tax invoice read — a member discount must never be applied at cash-collection time.
 
 **POS sale/return ledger (`7.84`–`7.91`)** — devices bind a browser token to one tenant/location,
 shifts bind the drawer to one device, and orders snapshot device/shift/cashier plus an idempotency

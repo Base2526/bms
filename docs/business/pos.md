@@ -52,12 +52,17 @@ Three independent discount layers can now stack on one bill, applied in a fixed 
 | 2. Coupon | existing `bms_coupons` (unchanged) | hard — redemption count already incremented |
 | 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate | yes |
 
-`composeDiscounts()` in [membership.ts](../../apps/web/lib/bms/membership.ts) is the single place
+`composeDiscounts()` in [loyaltyMath.ts](../../apps/web/lib/bms/loyaltyMath.ts) is the single place
 that combines them, enforces the per-bill cap (`bms_loyalty_settings.max_discount_pct`), and trims
 layers from the most-reversible end when the cap binds. It is a pure function so the counter preview
 (`POST /api/pos/member/preview`) and the committing path (`createOrder`) cannot disagree — if they
 did, the payment rows would not match the server total and the bill would be voided as
-`PAYMENT_MISMATCH`.
+`PAYMENT_MISMATCH`. That module imports nothing so it can be exercised directly by
+`scripts/loyalty-contract.test.mts`:
+
+```bash
+node --experimental-strip-types --test scripts/loyalty-contract.test.mts
+```
 
 **The total of all layers still lands in `bms_orders.discount_amount`.** VAT base and the
 abbreviated tax invoice read that column (`computeVat({ discountAmount })`), so a member discount
@@ -66,9 +71,10 @@ total came from, one row per source, and its rows always sum to `discount_amount
 
 ### Points rules as implemented
 
-- **Earning** happens inside the same transaction that marks the bill `PAID` in `finalizePosSale`.
-  Base is the amount after all discounts by default (`earn_base`), so discounts cannot inflate
-  points. Only customers with a `member_no` earn — a bare CRM record does not.
+- **Earning** happens inside the same transaction that marks the bill `PAID`, on every channel — see
+  "Where points are earned" below. Base is the amount after all discounts by default (`earn_base`),
+  so discounts cannot inflate points. Only customers with a `member_no` earn — a bare CRM record
+  does not.
 - **Idempotency**: `UNIQUE (tenant_id, order_id, kind)` for `EARN`/`REDEEM`. A register replaying the
   same `idempotencyKey` gets the original bill and no second grant.
 - **Redeeming** deducts points when the order is created, not at a separate "reserved" state.
@@ -93,6 +99,30 @@ total came from, one row per source, and its rows always sum to `discount_amount
 Outstanding usable points are a liability (deferred revenue under IFRS 15), reported by
 `bmsLoyaltyOutstanding` as both a point count and a baht value at the current redemption rate. Give
 the accountant this figure at period end; it is not an optional dashboard number.
+
+### Where points are earned
+
+Earning is hooked to every path that moves an order to `PAID` — `payOrder()`, `confirmPayment()`, the
+split-payment confirm, and `finalizePosSale()` — not just the counter, so a customer who orders over
+LINE and transfers the money earns the same as one who walks in. Redemption and tier discount already
+worked everywhere because they live in `createOrder()`.
+
+Returns differ by path: POS uses `processPosReturn`, which reverses proportionally because partial
+returns exist; the non-POS `returnOrder()` is a full return, so it reverses the whole thing.
+`cancelOrder()` releases points the same way.
+
+### What is deliberately not built
+
+- **No automatic messaging.** Nothing tells a customer their points are about to expire or that they
+  moved up a tier. `/admin/loyalty` lists members with points expiring in 30 days so the shop can
+  contact them; that list is the whole mechanism.
+- **No loyalty report export.** The report engine's types are `SALES`, `INVENTORY`, `PROFIT`. Loyalty
+  numbers are on-screen queries (`bmsLoyaltyOutstanding`, `bmsLoyaltyActivity`, `bmsSalesByTier`),
+  not XLSX/CSV/PDF.
+- **Points cannot be redeemed for goods**, only for a bill discount. Redeeming for a product would
+  have to move stock, which is a different feature.
+- **AI can read a balance (`get_loyalty_points`) but never redeems.** Redemption only happens when a
+  bill is created.
 
 ### Permissions
 
