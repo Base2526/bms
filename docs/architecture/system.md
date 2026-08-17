@@ -87,6 +87,9 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
+| POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
+| Tax (VAT invoices, credit notes) | ✅ | `lib/bms/{taxDocuments,vat}.ts` · migrations `7.88`, `7.89`, `7.95` — abbreviated/full tax invoices, credit notes, cash rounding; documents are immutable once issued |
+| Tax — e-Tax submission queue | 🧪 flag-gated, off by default | `lib/bms/etax/*` · `7.94__bms_etax_submissions.sql` · `POST /api/bms/jobs/etax` — background XML submission to the Revenue Department; issuing a tax document does not submit it by itself |
 | Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
 | Shipping | ✅ | `lib/bms/shipping.ts` · migrations `5.4`, `7.76`, `7.77` · idempotent carrier booking, event history, manual/cron sync seam for Flash/Kerry (mock-ready, live merchant docs still pending) · [carrier integration checklist](../integrations/carriers.md) |
 | Reports | ✅ | `lib/bms/{dashboard,reports}.ts` — see [../ui/dashboard.md](../ui/dashboard.md) |
@@ -112,6 +115,11 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 **Roadmap remaining:** TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
+e-Tax XML submission to the Revenue Department (`lib/bms/etax/*`, `7.94`) is built and flag-gated off
+by default — no real signing/submission provider has been wired up or verified yet, and its cron
+route (`POST /api/bms/jobs/etax`) doesn't yet record into `bms_job_runs` like the others do ·
+ESC/POS printing/cash-drawer kick over WebUSB (`lib/pos/escpos.ts`) is written but has never been
+run against real printer hardware ·
 AI OCR / forecasting (beyond payment-slip verify; forecasting is heuristic, not ML) ·
 WhatsApp / Email / Voice AI ·
 Shopee/Lazada signature verification against real Open Platform docs ·
@@ -131,7 +139,9 @@ an actual cron schedule for the six ready-but-unscheduled endpoints (`orders/rel
 need an external scheduler pointed at them.
 
 **Migrations not yet applied to production (2026-08-13):** `7.33`, `7.52`, `7.54`, `7.55`, `7.56`,
-`7.78`, `7.81`, `7.82`. Check the target database rather than trusting this list.
+`7.78`, `7.81`, `7.82`. This list predates the POS/tax feature set (`7.84`–`7.95`) and does not
+cover it — check the target database and [CLAUDE.local.md](../../CLAUDE.local.md) rather than
+trusting this list.
 
 ## RBAC model (two tiers)
 
@@ -154,9 +164,12 @@ permission → shows an error, does **not** log out (`apollo.ts` errorLink only 
 apps/
   web/
     app/api/bms/*        REST endpoints + per-channel webhooks
+    app/api/pos/*        POS device REST surface (x-pos-device-token, not admin session)
     app/(admin)/admin/*  Admin UI (Next.js app router)
+    app/(pos)/pos        Counter POS screen — separate route group, no admin chrome
     graphql/*            GraphQL SDL + resolvers (bms* modules)
     lib/bms/*            Business logic — the ONLY place with SQL
+    lib/pos/*            Device-side helpers (ESC/POS printing, barcode) — not business logic
 db/
   migrations/*.sql        Idempotent, applied in numeric order
 docs/                      This documentation tree

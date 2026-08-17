@@ -33,7 +33,11 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 
 Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
 (🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
-flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock).
+flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock) · **e-Tax submission**
+(🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
+printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
+and Thai tax invoicing (migrations `7.84`–`7.95`) are otherwise fully built — see
+[business/pos.md](docs/business/pos.md).
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in

@@ -64,6 +64,20 @@ on the bill and on the receipt; it is not a discount and does not change the VAT
 screen reads the same setting through `/api/pos/session` and charges the rounded amount, so the
 amount it sends matches what the server computes — a mismatch would cancel the bill outright.
 
+## e-Tax submission queue
+
+Issuing a tax document at the counter never talks to the Revenue Department by itself — it only
+writes the local document row described above. Submitting that document as e-Tax XML is a separate
+background queue (`bms_etax_submissions`, migration `7.94`), gated off by default via
+`ETAX_ENABLED`/`bms_store_profile.etax_enabled`. When enabled, `processEtaxQueue()` drives each
+submission through `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded
+retry/backoff; `POST /api/bms/jobs/etax` runs one pass. That route authenticates with
+`x-job-token`/`BMS_JOB_TOKEN` (not the `x-cron-secret` the other cron routes use — see
+[api.md](../architecture/api.md)) and does not yet record into `bms_job_runs`, so it has no run
+history on `/admin/operations-schedule` today. Until a real signing/submission provider is wired up
+and verified, leave `ETAX_ENABLED` off and rely on locally generated documents plus the accountant's
+own filing process.
+
 ## Receipt preview
 
 The preview dialog is one card: a header stating the outcome (document number, amount, payment
@@ -96,7 +110,8 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.91__bms_pos_returns_and_refund_settlement.sql` on the target database.
+- Apply migrations through `7.95__bms_credit_note_and_cash_rounding.sql` on the target database
+  (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions).
 - Create at least one active location, one active paired device per register, and confirm the device
   is attached to the intended branch.
 - Set cashier PINs and verify role permissions: `pos.sell`, `pos.shift.open`, `pos.shift.close`,
@@ -106,8 +121,13 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 - If inventory lots are used, reconcile lot totals to inventory before opening; expired lots are
   skipped and a tracked SKU cannot sell more than its unexpired lots.
 - For VAT-registered tenants, set the tax settings at `/admin/pos-readiness`, fill in the shop tax id
-  at `/admin/settings`, and set the tax category on every sellable product. Verify numbering and receipt content with the business's accountant/tax adviser;
-  BMS generates documents but does not submit e-Tax data to the Revenue Department.
+  at `/admin/settings`, and set the tax category on every sellable product. Verify numbering and receipt content with the business's accountant/tax adviser.
+  BMS generates documents locally by default; e-Tax submission to the Revenue Department is a
+  separate background queue (`bms_etax_submissions`, migration `7.94`), gated off unless
+  `ETAX_ENABLED`/`bms_store_profile.etax_enabled` is turned on — see "e-Tax submission queue" below.
+- A `pos_only` cashier account (migration `7.92`) is hard-blocked from `/admin` login by `loginAdmin`
+  itself, not just a hidden menu item; it also cannot toggle its own `pos_only` flag or an
+  Administrator's.
 - Pair the actual scanner (keyboard-wedge input), receipt printer, paper size, cash drawer process,
   and payment terminals. Printing falls back to the browser print dialog; the ESC/POS path over
   WebUSB (receipt, barcode, drawer kick) is written but has never been run against real hardware, so

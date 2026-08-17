@@ -14,6 +14,7 @@ whichever is wrong, in the same change.
 - [Authentication identity and registration](#authentication-identity-and-registration)
 - [Public customer checkout (signed link)](#public-customer-checkout-signed-link)
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
+- [POS and tax](#pos-and-tax)
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
@@ -234,6 +235,46 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 - `POST /api/bms/shipping/sync-carriers` is the cron-secret-gated cross-tenant poller (bounded batch
   and concurrency, skips unconfigured/`not_implemented` adapters) and records into `bms_job_runs` as
   `carrier-tracking-sync`. It is ready but unscheduled; recommended cadence is every 15 minutes.
+
+## POS and tax
+
+`lib/bms/pos.ts` (migrations `7.84`–`7.93`) owns the counter sale/return/refund model;
+`lib/bms/{taxDocuments,vat}.ts` (`7.88`, `7.89`, `7.95`) own Thai tax-invoice issuance and credit
+notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/business detail:
+[../docs/business/pos.md](business/pos.md).
+
+- **A device token is not a user.** `/api/pos/*` resolves tenant/location from the hashed active
+  device row (`x-pos-device-token`), never from a client-supplied value. Every *mutating* route
+  additionally verifies the selected cashier's PIN and an action-specific permission (`pos.sell`,
+  `pos.shift.open`/`pos.shift.close`, `order.return`, `payment.refund`). Read routes are
+  device-scoped operational reads with no PIN check.
+- **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
+  `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
+  Administrator's.
+- **Settlement is one atomic transaction.** Order → `COMPLETED`, stock consumption, FEFO lot
+  assignment (`bms_order_item_lots`), movement rows, and tax document issuance commit together or
+  not at all.
+- **Idempotency keys gate every write path** (sale, return, refund settlement). A key tied to a
+  cancelled/returned terminal state cannot be reused as a new sale; a `PENDING`/`PAID` sale can
+  resume its own settlement transaction; a completed key replays its stored result rather than
+  re-running the write.
+- **Refunds split receiving goods from returning money.** `bms_pos_refund_allocations`: cash
+  finishes immediately, non-cash stays `PENDING` until a user with `payment.refund` records the
+  external reference. A shift cannot close while any refund allocation from it is pending.
+- **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
+  issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
+  Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
+  changes the VAT base.
+- **e-Tax submission (`7.94`) is a separate, gated background queue** — issuing a tax document does
+  not submit it to the Revenue Department by itself. `processEtaxQueue()` drives
+  `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded retry/backoff, gated by
+  `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. `POST /api/bms/jobs/etax` runs it, but — unlike
+  every other cron endpoint — auths with `x-job-token`/`BMS_JOB_TOKEN` (not `x-cron-secret`) and does
+  **not** call `recordJobRun()`, so it has no run history on `/admin/operations-schedule`. Don't copy
+  that inconsistency into a new cron route; treat it as a known gap.
+- **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
+  written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
+  Treat it as untested per printer model until run against one.
 
 ## AI provider selection, BYOK, and health
 

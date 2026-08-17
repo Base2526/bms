@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_tax_documents`, `bms_tenant_vat_settings` | `7.84`–`7.91` |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns) | `7.84`–`7.95` |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -62,6 +62,26 @@ provenance rows, so repeated partial returns restore each sold lot quantity only
 immediately while non-cash allocations remain pending until an authorized operator records the
 provider/terminal reference. All POS tables are tenant-owned, RLS-protected, and granted to
 `bms_app`. See [../business/pos.md](../business/pos.md).
+
+**Cashier-only accounts (`7.92__bms_cashier_role_and_pos_only_accounts.sql`)** — adds `users.pos_only`;
+enforced as a hard login gate in `loginAdmin`, not just a hidden menu item. A `pos_only` account
+cannot toggle its own flag or an Administrator's.
+
+**Pack sizes v2 (`7.93__bms_product_packs_per_size.sql`)** — reworks `bms_product_packs` to carry a
+barcode/price per pack size rather than one conversion factor per product.
+
+**e-Tax submission queue (`7.94__bms_etax_submissions.sql`)** — `bms_etax_submissions`, one row per
+issued tax document, tracks `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with
+`attempts`/`next_attempt_at` for backoff retry. Written only through `lib/bms/etax/queue.ts`,
+processed by `POST /api/bms/jobs/etax` — that route authenticates with `x-job-token`/`BMS_JOB_TOKEN`
+(unlike every other cron route's `x-cron-secret`) and does not yet call `recordJobRun()`, so it has
+no run history on `/admin/operations-schedule`. Gated off by default
+(`ETAX_ENABLED`/`bms_store_profile.etax_enabled`).
+
+**Credit note / cash rounding (`7.95__bms_credit_note_and_cash_rounding.sql`)** — adds cash-rounding
+columns to `bms_tax_documents`/`bms_tenant_vat_settings` and formalizes `CREDIT_NOTE` as a `doc_type`
+alongside `ABBREVIATED`/`FULL`. A tax document's rate/amounts are a snapshot at issue time; changing
+`bms_tenant_vat_settings` only affects documents issued afterward.
 
 **`bms_products` customer discovery (`7.33`)** — customer AI reads the live active catalog directly;
 there is no product embedding/cache that must be refreshed after an insert. A newly created active

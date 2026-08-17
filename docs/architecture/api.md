@@ -54,6 +54,12 @@ dev, must be set in production). None has a schedule wired up yet; each expects 
 - `POST /api/bms/shipping/sync-carriers` — polls active configured Flash/Kerry shipments whose
   tracking is at least 15 minutes stale, with a bounded batch/concurrency. Recommended every
   15 minutes; unavailable adapters are skipped.
+- `POST /api/bms/jobs/etax` — drives one pass of the e-Tax submission queue
+  (`processEtaxQueue()`, `lib/bms/etax/queue.ts`), gated off by default
+  (`ETAX_ENABLED`/`bms_store_profile.etax_enabled`). **Inconsistent with every route above**: it
+  authenticates with header `x-job-token` against `BMS_JOB_TOKEN`, not `x-cron-secret`/
+  `BMS_CRON_SECRET`, and it does not call `recordJobRun()` — so it has no run history on
+  `/admin/operations-schedule`. Known gap, not the pattern to copy into a new cron route.
 
 Every scheduled-work endpoint above (2026-08) records each invocation into `bms_job_runs`
 (migration `7.55__bms_job_runs.sql`, `lib/bms/jobRuns.ts` `recordJobRun()`/`recordExternalJobRun()`)
@@ -162,6 +168,7 @@ read/write REST equivalents of their GraphQL counterparts.
 | `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/credit reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`, `bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` mutation) — Claude tool-calling over `lib/bms/tools/catalog.ts`, filtered by the caller's RBAC; sensitive tools return a proposal instead of executing |
+| `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Actual counter selling never goes through GraphQL — see `/api/pos/*` above |
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
 `getTenantId(ctx)` → call the matching `lib/bms/*.ts` function → optionally `audit(ctx, ...)`.

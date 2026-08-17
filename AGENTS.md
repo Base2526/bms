@@ -71,6 +71,14 @@ wrong, and update the doc in the same change.
   guessing endpoints or payloads. A carrier call never runs inside the fulfillment transaction, the
   shipment UUID is the idempotency key, and a failed booking stays visible and retryable rather than
   degrading silently into "manual".
+- **POS/tax** — a device token is not a user; every mutating `/api/pos/*` route re-checks the
+  cashier PIN and an action permission server-side. Settlement (stock, FEFO lots, tax document) is
+  one atomic transaction. Refund allocations split cash (immediate) from non-cash (pending until
+  `payment.refund`); a shift can't close with a pending allocation. Tax documents are immutable once
+  issued; e-Tax submission (`7.94`) is a separate gated queue, not automatic, and its cron route
+  doesn't yet call `recordJobRun()` like the others — don't copy that. `pos_only` accounts are
+  hard-blocked from `/admin` login, not just hidden from the menu. Full detail:
+  [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
 - **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job
