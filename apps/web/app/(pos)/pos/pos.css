@@ -121,6 +121,28 @@
 }
 .pos-scan input:focus { box-shadow: none; }
 
+/* ปุ่มกล้อง (โหมดเทส) — ทรงกลมล้วน ๆ ให้ต่างจากกรอบสี่เหลี่ยมของช่องยิง
+   ต้องเขียนคู่กับ .pos-root ให้ specificity ชนะ `.pos-root button` ด้านบน
+   ไม่งั้นโดน border-radius/padding/min-height ของปุ่มมาตรฐานทับจนเป็นสี่เหลี่ยม */
+.pos-root .pos-cam-btn {
+  position: relative;
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; min-height: 0; padding: 0;
+  border: 1px solid var(--pos-line-strong); border-radius: 999px;
+  background: var(--pos-surface); color: var(--pos-muted);
+}
+.pos-root .pos-cam-btn svg { width: 17px; height: 17px; }
+.pos-root .pos-cam-btn:hover:not(:disabled) {
+  color: var(--pos-accent); border-color: var(--pos-accent); background: var(--pos-surface);
+}
+.pos-root .pos-cam-dot {
+  position: absolute; top: -1px; right: -1px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--pos-warn);
+  border: 2px solid var(--pos-sunken);
+}
+
 .pos-line-item {
   border: 1px solid var(--pos-line); border-radius: var(--pos-radius);
   padding: 9px 10px; display: flex; align-items: center; gap: 10px;
