@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { decoratePosSale, normalizePosSearchQuery, parsePosPayments, parsePosSaleLines } from "../apps/web/lib/bms/posRouteHelpers.ts";
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
+import { checkPosRuntimeHealth } from "../apps/web/lib/bms/posRuntimeHealth.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -110,4 +111,21 @@ test("POS last-sale decorator adds storefront metadata without changing sale fie
     posLabel: "POS01",
     vatRegistered: true,
   });
+});
+
+test("POS runtime readiness reports database success without exposing details", async () => {
+  const health = await checkPosRuntimeHealth(async () => ({ rows: [{ ok: 1 }] }));
+  assert.equal(health.ok, true);
+  assert.equal(health.database, "ok");
+  assert.equal(typeof health.latencyMs, "number");
+  assert.deepEqual(Object.keys(health).sort(), ["database", "latencyMs", "ok"]);
+});
+
+test("POS runtime readiness degrades to a safe 503 payload shape", async () => {
+  const health = await checkPosRuntimeHealth(async () => {
+    throw new Error("contains-sensitive-database-host");
+  });
+  assert.equal(health.ok, false);
+  assert.equal(health.database, "error");
+  assert.equal("error" in health, false);
 });

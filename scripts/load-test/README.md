@@ -17,6 +17,8 @@
 - `admin-inbox-detail` เน้น query รายละเอียดแชทพร้อม messages/notes/system events
 - `admin-orders-list` เน้น query รายการออเดอร์พร้อม line items
 - `admin-customer360` เน้น query ข้อมูลลูกค้า 360 ที่หนักกว่า dashboard
+- `pos-session` เน้น device auth และข้อมูลเริ่มต้นของจอ POS
+- `pos-scan` เน้น device auth, ราคา authoritative และ stock lookup ต่อการสแกน
 - `demo-chat` เน้น AI pipeline + database + conversation logging
 - `checkout-read` เน้น public checkout read path
 
@@ -111,6 +113,28 @@ BMS_ADMIN_PASSWORD=secret
 
 ต้องมี conversation จริงอย่างน้อย 1 รายการใน tenant
 
+### 8. `pos-session`
+
+จำลองการเปิดหรือ refresh จอ POS โดยใช้ device token จริง เป็น read-only scenario
+ยกเว้นการอัปเดต `last_seen_at` ที่ระบบ throttle ไว้ไม่เกินหนึ่งครั้งต่อนาทีต่อเครื่อง
+
+```bash
+cd apps/web
+POS_DEVICE_TOKEN=pos_xxx \
+npx tsx ../../scripts/load-test/run.mts --scenario pos-session --concurrency 20 --duration 60
+```
+
+### 9. `pos-scan`
+
+จำลองการสแกน barcode/SKU ที่มีอยู่จริง ตรวจทั้ง token lookup, canonical price และ stock ของสาขา
+
+```bash
+cd apps/web
+POS_DEVICE_TOKEN=pos_xxx \
+POS_SCAN_CODE=8850000000000 \
+npx tsx ../../scripts/load-test/run.mts --scenario pos-scan --concurrency 20 --duration 60
+```
+
 ## ตัวอย่างไล่ระดับ
 
 เริ่มแบบ step test:
@@ -139,6 +163,8 @@ done
 
 - admin query: `p95 < 800ms`
 - public checkout read: `p95 < 500ms`
+- POS session: `p95 < 500ms`
+- POS scan: `p95 < 250ms`
 - AI chat: `p95 < 5000ms` หรือค่า SLA ที่ธุรกิจยอมรับจริง
 
 ## ข้อควรระวัง
@@ -146,6 +172,7 @@ done
 - `demo-chat` วัดรวม dependency ภายนอกของ AI provider ด้วย จึงตอบคำถามเรื่อง "capacity ของระบบรวม" มากกว่า "capacity ของ app server ล้วน ๆ"
 - ถ้าอยากวัดเฉพาะ backend/app ให้เริ่มจาก `checkout-read` หรือ `admin-dashboard` ก่อน
 - อย่ายิง production แบบหนักโดยไม่มี rate limit / maintenance window / observability พร้อม
+- ใช้ device token ของ staging สำหรับ POS load test; token คือ credential ประจำเครื่องและห้ามใส่ใน git/log
 
 ## คำแนะนำการทดสอบจริง
 

@@ -19,7 +19,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [architecture/system.md](docs/architecture/system.md) | Module build status, RBAC model, folder structure, roadmap |
 | [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
-| [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
+| [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [pos-runtime-readiness.md](docs/architecture/pos-runtime-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · dormant POS runtime split · measured admin load |
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import · payment + slip verify · counter POS/runbook · customer identity/inbox |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
@@ -36,8 +36,9 @@ Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Fl
 flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock) · **e-Tax submission**
 (🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
 printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
-and Thai tax invoicing (migrations `7.84`–`7.95`) are otherwise fully built — see
-[business/pos.md](docs/business/pos.md).
+and Thai tax invoicing (migrations `7.84`–`7.96`) are otherwise fully built — see
+[business/pos.md](docs/business/pos.md). The optional dedicated POS runtime is prepared but dormant;
+see [architecture/pos-runtime-readiness.md](docs/architecture/pos-runtime-readiness.md).
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in

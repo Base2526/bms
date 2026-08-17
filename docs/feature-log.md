@@ -672,13 +672,14 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the page itself, and the new cross-tenant channel-health/failure-incident queries, have never run
   against a real DB. See § Observability in [AGENTS.md](../AGENTS.md).
 
-- **Point of Sale + Thai tax invoicing (2026-08)** — ✅ implemented, migrations `7.84`–`7.95`, fully
+- **Point of Sale + Thai tax invoicing (2026-08)** — ✅ implemented, migrations `7.84`–`7.96`, fully
   documented in [docs/business/pos.md](business/pos.md): a device-token-paired counter screen
   (`/pos`) sells against a location/lot/pack-aware inventory model. Build order was locations → lots
   → product packs (`7.84`–`7.86`) → POS devices/shifts (`7.87`) → VAT/tax documents (`7.88`, `7.89`)
   → cashier PIN (`7.90`) → returns/refund settlement (`7.91`) → cashier-only accounts (`7.92`) →
   per-size pack barcodes (`7.93`) → e-Tax submission queue (`7.94`) → credit notes/cash rounding
-  (`7.95`), then a side-rail layout pass restyled the till for a fixed 768px screen. A device token
+  (`7.95`) → runtime-readiness token index (`7.96`), then a side-rail layout pass restyled the till
+  for a fixed 768px screen. A device token
   identifies tenant/location; a cashier PIN identifies every action, checked server-side per
   mutating route against its own permission (`pos.sell`, `pos.shift.open/close`, `order.return`,
   `payment.refund`). Settlement (stock, FEFO lot consumption, tax document issuance) is one atomic
@@ -692,6 +693,9 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   `bms_job_runs` like the rest of the cron endpoints do. ESC/POS printing and cash-drawer kick over
   WebUSB (`lib/pos/escpos.ts`) are written but have never been run against real printer hardware.
   Full invariants: [docs/agent-invariants.md § POS and tax](agent-invariants.md#pos-and-tax).
+  The dedicated POS runtime remains opt-in: it reuses the same immutable web image and shared
+  PostgreSQL/Redis, exposes `/api/pos/health`, and is activated through
+  [docs/architecture/pos-runtime-readiness.md](architecture/pos-runtime-readiness.md).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking

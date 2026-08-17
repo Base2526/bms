@@ -87,7 +87,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
-| POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
+| POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.96` — see [../business/pos.md](../business/pos.md) |
 | Tax (VAT invoices, credit notes) | ✅ | `lib/bms/{taxDocuments,vat}.ts` · migrations `7.88`, `7.89`, `7.95` — abbreviated/full tax invoices, credit notes, cash rounding; documents are immutable once issued |
 | Tax — e-Tax submission queue | 🧪 flag-gated, off by default | `lib/bms/etax/*` · `7.94__bms_etax_submissions.sql` · `POST /api/bms/jobs/etax` — background XML submission to the Revenue Department; issuing a tax document does not submit it by itself |
 | Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
@@ -139,7 +139,7 @@ an actual cron schedule for the six ready-but-unscheduled endpoints (`orders/rel
 need an external scheduler pointed at them.
 
 **Migrations not yet applied to production (2026-08-13):** `7.33`, `7.52`, `7.54`, `7.55`, `7.56`,
-`7.78`, `7.81`, `7.82`. This list predates the POS/tax feature set (`7.84`–`7.95`) and does not
+`7.78`, `7.81`, `7.82`. This list predates the POS/tax feature set (`7.84`–`7.96`) and does not
 cover it — check the target database and [CLAUDE.local.md](../../CLAUDE.local.md) rather than
 trusting this list.
 

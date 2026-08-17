@@ -7,7 +7,9 @@ type ScenarioName =
   | "admin-orders-list"
   | "admin-customer360"
   | "demo-chat"
-  | "checkout-read";
+  | "checkout-read"
+  | "pos-session"
+  | "pos-scan";
 
 type RequestResult = {
   ok: boolean;
@@ -124,6 +126,34 @@ const scenarios: Record<ScenarioName, ScenarioDefinition> = {
       const result = await timedFetch(
         `${baseUrl}/api/bms/checkout?t=${encodeURIComponent(token)}`,
         { method: "GET" }
+      );
+      return toRequestResult(result);
+    },
+  },
+  "pos-session": {
+    name: "pos-session",
+    description: "POS device authentication + session bootstrap reads",
+    preflight: preflightPosDevice,
+    run: async () => {
+      const result = await timedFetch(`${baseUrl}/api/pos/session`, {
+        method: "GET",
+        headers: posDeviceHeaders(),
+      });
+      return toRequestResult(result);
+    },
+  },
+  "pos-scan": {
+    name: "pos-scan",
+    description: "POS device authentication + canonical barcode/stock lookup",
+    preflight: () => {
+      preflightPosDevice();
+      requiredEnv("POS_SCAN_CODE");
+    },
+    run: async () => {
+      const code = requiredEnv("POS_SCAN_CODE");
+      const result = await timedFetch(
+        `${baseUrl}/api/pos/scan?code=${encodeURIComponent(code)}`,
+        { method: "GET", headers: posDeviceHeaders() }
       );
       return toRequestResult(result);
     },
@@ -433,6 +463,14 @@ function preflightAdminCreds() {
   requiredEnv("BMS_ADMIN_PASSWORD");
 }
 
+function preflightPosDevice() {
+  requiredEnv("POS_DEVICE_TOKEN");
+}
+
+function posDeviceHeaders() {
+  return { "x-pos-device-token": requiredEnv("POS_DEVICE_TOKEN") };
+}
+
 function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`missing env ${name}`);
@@ -648,6 +686,8 @@ Scenarios:
   admin-customer360
   demo-chat
   checkout-read
+  pos-session
+  pos-scan
 
 Options:
   --baseUrl       default: BASE_URL or http://localhost:3000

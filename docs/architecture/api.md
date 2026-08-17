@@ -101,6 +101,7 @@ also verify the selected cashier PIN and the action-specific RBAC permission:
 - `POST /api/pos/return` — explicit `FULL`/`PARTIAL`, mandatory structured reason and idempotency key.
 - `POST /api/pos/refund-settlement` — authorized confirmation of a pending non-cash refund reference.
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
+- `GET /api/pos/health` — unauthenticated runtime readiness; returns only app/database health and latency.
 
 The admin POS return reports use the signed admin cookie, derive the active tenant (including signed
 platform drill-down), and require `report.view`; they never accept a tenant id in query parameters.

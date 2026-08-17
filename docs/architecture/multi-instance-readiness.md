@@ -2,6 +2,8 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Forward-looking scale plan: [admin-scale-readiness.md](admin-scale-readiness.md)
 
+> POS-specific runtime split: [pos-runtime-readiness.md](pos-runtime-readiness.md)
+
 Branch `feat/multi-instance-readiness` (2026-08). **Done: removing per-instance state so running more
 than one `web` (or `ws`) container is safe. Not done: actually deploying replicas/a load balancer** —
 every default still preserves single-instance behavior exactly; nothing here requires a new env var to
@@ -113,12 +115,18 @@ keep working as before. `admin session` revocation, `AI conversation state`, `sc
 
 ## Not yet done / known gaps
 
+- A dedicated POS runtime is now **prepared but dormant**: `docker-compose.pos.yml` defines an
+  opt-in `pos-runtime` profile, `Caddyfile.pos-split.example` contains future path routing, and
+  `/api/pos/health` provides readiness. No active Caddy route or production replica was changed.
+  Migration `7.96` indexes device-token authentication and POS `last_seen_at` writes are throttled.
+  Activate only through the checklist in [pos-runtime-readiness.md](pos-runtime-readiness.md).
+
 - `STORAGE_DRIVER=s3` has not been exercised through the real app in a browser (only verified at the
   driver-contract level — no real slip has gone through `/checkout` and back through OCR on S3 yet).
 - No migration script to move existing files into a bucket (`mc mirror` / `aws s3 sync` works by hand
   since keys are unchanged).
-- No replicas/load balancer have been added to any compose file yet (deliberate — a topology decision,
-  not a code change).
+- No replicas/load balancer have been activated (deliberate — the optional POS service remains behind
+  an explicit Compose profile and the active Caddy config still routes POS through `web`).
 - `app/api/admin/queue/db/route.ts` is leftover dead code from removing the social queue: it queries a
   `social_posts` table that no longer exists, no page calls it, it opens a second per-instance `Pool`
   with no `max`, and its guard (`if (expected && ...)`) means **anyone can call it if `ADMIN_TOKEN` isn't

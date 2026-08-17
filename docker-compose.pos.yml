@@ -1,0 +1,42 @@
+# Optional POS runtime. This file is dormant unless the pos-runtime profile is
+# explicitly enabled. It reuses the exact production web image so POS and web
+# always run the same business logic and database contract.
+services:
+  pos:
+    image: myapp-web:${BMS_IMAGE_TAG:-latest}
+    profiles: ["pos-runtime"]
+    working_dir: /app/apps/web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      POSTGRES_POOL_MAX: ${POS_POSTGRES_POOL_MAX:-5}
+      POSTGRES_POOL_IDLE_TIMEOUT_MS: ${POSTGRES_POOL_IDLE_TIMEOUT_MS:-30000}
+      POSTGRES_POOL_CONNECT_TIMEOUT_MS: ${POSTGRES_POOL_CONNECT_TIMEOUT_MS:-5000}
+      PHARMACY_INTAKE_ENABLED: ${PHARMACY_INTAKE_ENABLED}
+      PHARMACY_AI_ENABLED: ${PHARMACY_AI_ENABLED}
+      PHARMACY_PROTOCOLS_ENABLED: ${PHARMACY_PROTOCOLS_ENABLED}
+      PHARMACY_AI_PROVIDER: ${PHARMACY_AI_PROVIDER:-}
+      PHARMACY_AI_MODEL: ${PHARMACY_AI_MODEL:-}
+      PHARMACY_ASSESSMENT_TTL_MINUTES: ${PHARMACY_ASSESSMENT_TTL_MINUTES:-}
+      ETAX_ENABLED: ${ETAX_ENABLED:-false}
+      ETAX_PROVIDER: ${ETAX_PROVIDER:-noop}
+      ETAX_SIGNER: ${ETAX_SIGNER:-development}
+    ports:
+      - "${POS_BIND_ADDRESS:-127.0.0.1}:${POS_HOST_PORT:-3001}:3000"
+    restart: unless-stopped
+    networks:
+      default: {}
+      bms_shared:
+        aliases:
+          - pos_b
+
+networks:
+  bms_shared:
+    external: true
+    name: bms_shared

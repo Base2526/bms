@@ -110,7 +110,7 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.95__bms_credit_note_and_cash_rounding.sql` on the target database
+- Apply migrations through `7.96__bms_pos_runtime_readiness.sql` on the target database
   (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions).
 - Create at least one active location, one active paired device per register, and confirm the device
   is attached to the intended branch.

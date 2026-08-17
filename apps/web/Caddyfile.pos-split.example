@@ -1,0 +1,25 @@
+# Dormant POS path-routing template. Keep the active Caddyfile unchanged until
+# the optional pos-runtime Compose profile is healthy.
+
+{$BMS_DOMAIN} {
+  tls {$ACME_EMAIL}
+  encode zstd gzip
+
+  @nextStatic path /_next/static/*
+  header @nextStatic Cache-Control "public, max-age=31536000, immutable"
+
+  @pos path /pos /pos/* /api/pos/*
+  reverse_proxy @pos pos_b:3000
+
+  @ws {
+    path /graphql
+    header Connection *Upgrade*
+    header Upgrade websocket
+  }
+  reverse_proxy @ws ws:8080
+
+  @gqlHttp path /graphql*
+  reverse_proxy @gqlHttp web:3000
+
+  reverse_proxy web:3000
+}

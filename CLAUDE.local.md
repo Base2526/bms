@@ -110,6 +110,9 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   2026-08-13 เพราะเลข `7.74` ถูกใช้ซ้ำกับ `7.74__bms_shared_customer_identity_backfill.sql`) — เป็น
   `UPDATE ... WHERE NOT EXISTS` รันซ้ำได้ปลอดภัย **environment ที่ apply ไปแล้วตอนยังเป็น `7.74`
   ไม่ต้องทำอะไรเพิ่ม** ส่วนที่ยังไม่เคย apply ให้รันเป็น `7.83` ตามลำดับปกติ
+- **`7.96__bms_pos_runtime_readiness.sql` ยังไม่ได้ apply production** — เพิ่ม unique partial index
+  ที่ device `token_hash`; ต้อง apply ก่อนเปิด POS runtime pool แยกตาม
+  `docs/architecture/pos-runtime-readiness.md`
 - env ที่ต้องตั้ง: `BMS_SECRET_KEY` (hex 64 — ไม่งั้นใช้ dev key เข้ารหัส token) · `JWT_SECRET`
   (เซ็นทั้ง session token + cookie `BMS_ACT_TENANT`) · `BMS_CHECKOUT_SECRET` (ไม่ตั้งจะ fallback ไป
   `JWT_SECRET`; ไม่มีทั้งคู่ production จะ throw — **หมุนค่านี้เมื่อไหร่ ลิงก์ checkout ที่ส่งลูกค้าไป

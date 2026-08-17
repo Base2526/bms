@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns) | `7.84`–`7.95` |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns) | `7.84`–`7.96` |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -82,6 +82,10 @@ no run history on `/admin/operations-schedule`. Gated off by default
 columns to `bms_tax_documents`/`bms_tenant_vat_settings` and formalizes `CREDIT_NOTE` as a `doc_type`
 alongside `ABBREVIATED`/`FULL`. A tax document's rate/amounts are a snapshot at issue time; changing
 `bms_tenant_vat_settings` only affects documents issued afterward.
+
+**POS runtime readiness (`7.96__bms_pos_runtime_readiness.sql`)** — adds the unique partial index on
+`bms_pos_devices.token_hash` used by every device-authenticated POS request. Unpaired devices keep a
+`NULL` token, while active issued tokens resolve by index instead of scanning all registers.
 
 **`bms_products` customer discovery (`7.33`)** — customer AI reads the live active catalog directly;
 there is no product embedding/cache that must be refreshed after an insert. A newly created active

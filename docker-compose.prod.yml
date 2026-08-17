@@ -49,7 +49,7 @@ services:
         FCM_PROJECT_ID: ${FCM_PROJECT_ID}
         FCM_CLIENT_EMAIL: ${FCM_CLIENT_EMAIL}
         FCM_PRIVATE_KEY: ${FCM_PRIVATE_KEY}
-    image: myapp-web:latest
+    image: myapp-web:${BMS_IMAGE_TAG:-latest}
     environment:
       NODE_ENV: production
       WEB_NAME: ${WEB_NAME}

@@ -79,6 +79,12 @@ wrong, and update the doc in the same change.
   doesn't yet call `recordJobRun()` like the others — don't copy that. `pos_only` accounts are
   hard-blocked from `/admin` login, not just hidden from the menu. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
+- **POS runtime split (`7.96`)** — keep POS and web on the same immutable application image and the
+  same PostgreSQL/Redis; order/inventory/payment/tax settlement must not be split across databases.
+  `docker-compose.pos.yml` and `Caddyfile.pos-split.example` are dormant until explicitly activated.
+  Route only `/pos` and `/api/pos/*` to that pool, budget `POSTGRES_POOL_MAX` across every process,
+  and require `/api/pos/health` plus the `pos-session`/`pos-scan` load tests before switching traffic.
+  See [pos-runtime-readiness.md](docs/architecture/pos-runtime-readiness.md).
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
 - **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job
@@ -242,6 +248,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `ai-eval/checkout-token-contract` | signed checkout link scope/tamper/expiry |
 | `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract` | archetype policy · restock consent · pharmacy intake |
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
+| `pos-contract` | POS parsing, cash rounding, receipt decoration, runtime health payload |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants

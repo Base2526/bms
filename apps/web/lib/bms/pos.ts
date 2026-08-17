@@ -91,7 +91,10 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
   const r = res.rows[0];
   if (!r) return null;
   void query(
-    `UPDATE bms_pos_devices SET last_seen_at = now() WHERE tenant_id = $1 AND id = $2`,
+    `UPDATE bms_pos_devices
+        SET last_seen_at = now()
+      WHERE tenant_id = $1 AND id = $2
+        AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')`,
     [r.tenant_id, r.id]
   ).catch(() => {});
   return {
