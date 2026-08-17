@@ -1335,10 +1335,16 @@ export default function PosPage() {
     );
   }
 
+  // height/overflow อยู่ใน CSS ด้านล่าง ไม่ใช่ inline — inline ชนะ media query เสมอ
+  // และต้องประกาศ 100vh ก่อน 100dvh เพื่อให้เบราว์เซอร์เก่าที่ไม่รู้จัก dvh ตกมาใช้ vh
   return (
-    <div className="pos-page" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+    <div className="pos-page" style={{ display: "flex" }}>
       <style>{`
         .pos-page, .pos-page * { box-sizing: border-box; }
+        /* 100vh บนมือถือ = ความสูงตอนแถบ URL ยุบ ไม่หดตามตอนแถบโผล่ → ท้ายหน้า
+           (แถบงานด้านล่าง) ถูกดันต่ำกว่าพื้นที่ที่มองเห็นจนตัวหนังสือโดนตัด
+           dvh หดตามจริง จึงเป็นค่าที่ถูกสำหรับ app-shell ที่มีแถบติดขอบล่าง */
+        .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
         /* หน้าไม่เลื่อนทั้งหน้า — ให้แต่ละคอลัมน์เลื่อนของตัวเอง ปุ่มชำระเงิน
            จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
         .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: hidden; }
@@ -1351,16 +1357,30 @@ export default function PosPage() {
         .pos-rail .pos-rail-icon { font-size: 17px; line-height: 1; }
         .pos-pane { flex: 1; min-height: 0; overflow-y: auto; }
         @media (max-width: 767px) {
-          .pos-page { flex-direction: column-reverse; height: auto; overflow: visible; }
-          .pos-body { overflow: visible; }
-          /* จอเล็ก = แท็บเล็ต/มือถือ ย้ายแถบไปล่างให้นิ้วโป้งถึง */
+          /* คงโครง app-shell เหมือนจอใหญ่ (height/overflow ตั้งไว้แล้วด้านบน) —
+             สลับแค่ทิศ: แถบงานลงไปอยู่ล่างให้นิ้วโป้งถึง */
+          .pos-page { flex-direction: column-reverse; }
+          /* มือถือเลื่อนทีเดียวจบทั้งก้อน (หัวร้าน + ตะกร้า + ช่องจ่ายเงิน) เหลือแถบงาน
+             ตรึงล่างสุดอย่างเดียว — บนจอแคบสองคอลัมน์จะวางซ้อนกัน ถ้าให้แต่ละคอลัมน์
+             เลื่อนในตัวเองจะได้แถบเลื่อนซ้อนสองอันในจอเดียว ซึ่งหาของยากกว่ามาก
+             และหัวร้าน/ช่อง PIN ที่ตรึงไว้ก็กินความสูงที่มีน้อยอยู่แล้วไปเปล่า ๆ */
+          .pos-body { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+          /* จอเล็ก = แท็บเล็ต/มือถือ ย้ายแถบไปล่างให้นิ้วโป้งถึง
+             ต้องเผื่อ safe-area: บนมือถือจริงแถบระบบ/ปุ่มย้อนกลับทับพื้นที่ล่างของ
+             viewport อยู่ ถ้าชิด bottom:0 เฉย ๆ ตัวหนังสือใต้ไอคอนจะโดนกินหายไปครึ่ง */
           .pos-rail { width: 100%; flex-direction: row; border-right: none; border-top: 1px solid var(--pos-line, #eee);
-                      position: sticky; bottom: 0; z-index: 20; }
-          .pos-rail button { flex: 1; }
+                      position: sticky; bottom: 0; z-index: 20;
+                      padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+          /* ปล่อยให้สูงตามเนื้อหา — ความสูงตายตัว 56px เหลือที่ให้บรรทัดล่างแค่ 2px
+             ซึ่งไม่พอสำหรับสระ/วรรณยุกต์ไทย (เช่น "ตั้งค่า") */
+          .pos-rail button { flex: 1; height: auto; min-height: 52px; padding: 6px 2px; }
           .pos-header { align-items: flex-start !important; flex-direction: column; }
           .pos-header-actions { width: 100%; flex-wrap: wrap; }
           .pos-header-actions select { flex: 1 1 160px; min-width: 0 !important; }
-          .pos-main-grid { grid-template-columns: minmax(0, 1fr) !important; }
+          /* !important เพราะ grid นี้ตั้ง flex/gridTemplateColumns เป็น inline style
+             ซึ่งชนะ stylesheet ตามปกติ · flex:none ให้สูงตามเนื้อหา ไม่ยัดลงพื้นที่ที่เหลือ */
+          .pos-main-grid { grid-template-columns: minmax(0, 1fr) !important; flex: none !important; }
+          /* คอลัมน์ไม่เลื่อนเองแล้ว — ปล่อยให้ยาวไปตามเนื้อหา แล้วให้ .pos-body เลื่อนทีเดียว */
           .pos-pane { overflow: visible; }
           .pos-payment-row, .pos-refund-row { grid-template-columns: minmax(0, 1fr) !important; }
           .pos-payment-row > *, .pos-refund-row > * { width: 100%; min-width: 0 !important; }
