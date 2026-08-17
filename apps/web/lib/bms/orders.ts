@@ -901,6 +901,11 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     );
 
     await recordOrderMovements(client, [orderId], "RETURN", "system");
+    // คืนทั้งบิล = แต้มต้องกลับไปเป็นเหมือนก่อนบิลนี้ (7.96) — ดึงแต้มที่ได้คืน
+    // และคืนแต้มที่ลูกค้าแลกไป · ไม่ทำ = ซื้อ→ได้แต้ม→คืนของ ได้แต้มฟรี และ
+    // แต้มที่แลกไปหายไปเลยทั้งที่ของถูกคืนแล้ว
+    // (POS ใช้ทาง processPosReturn ซึ่งคิดตามสัดส่วนเพราะคืนบางรายการได้)
+    await releasePointsForOrdersInTx(client, tenantId, [orderId], "คืนสินค้าทั้งบิล");
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");

@@ -645,19 +645,34 @@ async function lockMemberPointsInTx(
   };
 }
 
+/**
+ * เขียน cache ยอดแต้มกลับลง bms_customers
+ *
+ * ⚠️ bms_customers มี revision trigger (7.1/7.6) ถ้าไม่ตั้ง app.skip_revision
+ * ทุกบิลที่ให้แต้มจะ snapshot แถวลูกค้าทั้งแถวลง bms_customers_revisions
+ * → ตาราง revision บวมตามจำนวนบิล และหน้า Revision History เต็มไปด้วย
+ * การเปลี่ยนตัวเลขแต้ม ปนกับการแก้ข้อมูลลูกค้าจริง (เหมือนปัญหา
+ * bms_coupons.redemptions_count ที่ 7.24 แก้ไว้ — ดู applyCouponInTx)
+ * ยอดแต้มมี ledger เป็นประวัติของตัวเองอยู่แล้ว
+ */
 async function syncPointsBalanceInTx(client: PoolClient, tenantId: string, customerId: string): Promise<number> {
-  const res = await client.query<{ points_balance: number }>(
-    `UPDATE bms_customers c
-        SET points_balance = COALESCE((
-              SELECT SUM(l.points) FROM bms_loyalty_ledger l
-               WHERE l.tenant_id = c.tenant_id AND l.customer_id = c.id
-            ), 0),
-            updated_at = now()
-      WHERE c.tenant_id = $1 AND c.id = $2
-      RETURNING c.points_balance`,
-    [tenantId, customerId]
-  );
-  return Number(res.rows[0]?.points_balance ?? 0);
+  await client.query("SELECT set_config('app.skip_revision', '1', true)");
+  try {
+    const res = await client.query<{ points_balance: number }>(
+      `UPDATE bms_customers c
+          SET points_balance = COALESCE((
+                SELECT SUM(l.points) FROM bms_loyalty_ledger l
+                 WHERE l.tenant_id = c.tenant_id AND l.customer_id = c.id
+              ), 0),
+              updated_at = now()
+        WHERE c.tenant_id = $1 AND c.id = $2
+        RETURNING c.points_balance`,
+      [tenantId, customerId]
+    );
+    return Number(res.rows[0]?.points_balance ?? 0);
+  } finally {
+    await client.query("SELECT set_config('app.skip_revision', '', true)");
+  }
 }
 
 /**
@@ -928,7 +943,8 @@ export async function reversePointsForReturnInTx(
 export async function releasePointsForOrdersInTx(
   client: PoolClient,
   tenantId: string,
-  orderIds: string[]
+  orderIds: string[],
+  reason = "ยกเลิกบิล"
 ): Promise<void> {
   if (orderIds.length === 0) return;
   const ledger = await client.query<{ order_id: string; customer_id: string; kind: string; points: number }>(
@@ -950,10 +966,13 @@ export async function releasePointsForOrdersInTx(
   }
 
   for (const [orderId, entry] of byOrder) {
+    // REVERSE ที่มาจากการยกเลิก/คืนทั้งบิลคือแถวที่ไม่ผูก pos_return_id
+    // (partial return ของ POS ผูก pos_return_id ทุกแถว) — เช็คด้วยคอลัมน์จริง
+    // ไม่ใช่ข้อความใน note ซึ่งเปลี่ยนคำแล้วการกันซ้ำจะพังเงียบ ๆ
     const done = await client.query(
       `SELECT 1 FROM bms_loyalty_ledger
         WHERE tenant_id = $1 AND order_id = $2 AND kind = 'REVERSE'
-          AND note LIKE 'ยกเลิกบิล%' LIMIT 1`,
+          AND pos_return_id IS NULL LIMIT 1`,
       [tenantId, orderId]
     );
     if (done.rowCount || entry.net === 0) continue;
@@ -968,7 +987,7 @@ export async function releasePointsForOrdersInTx(
       points: entry.net,
       orderId,
       consumedPoints: entry.net > 0 ? consumedToCoverDeficit(balance, entry.net) : 0,
-      note: "ยกเลิกบิล — คืนแต้มที่แลก / ดึงแต้มที่ได้กลับ",
+      note: `${reason} — คืนแต้มที่แลก / ดึงแต้มที่ได้กลับ`,
     });
     await syncPointsBalanceInTx(client, tenantId, entry.customerId);
   }
@@ -1165,6 +1184,15 @@ export async function reviewMemberTier(
   const tiers = await listMembershipTiers(tenantId, true);
   if (tiers.length === 0) return { changed: false, tier: null };
 
+  // ลูกค้าที่ไม่ได้สมัครสมาชิกไม่มีชั้น — POS เรียกตัวนี้ด้วย customerId ของบิล
+  // ซึ่งอาจเป็นลูกค้าธรรมดา (ผูกบิลไว้แต่ไม่ได้เป็นสมาชิก) ต้องไม่ไปตั้ง tier ให้
+  const isMember = await query<{ ok: boolean }>(
+    `SELECT TRUE AS ok FROM bms_customers
+      WHERE tenant_id = $1 AND id = $2 AND member_no IS NOT NULL AND deleted_at IS NULL`,
+    [tenantId, customerId]
+  );
+  if (!isMember.rowCount) return { changed: false, tier: null };
+
   const stats = await query<{ spend_12m: string; lifetime_points: string; tier_id: string | null }>(
     `SELECT
        COALESCE((
@@ -1188,13 +1216,39 @@ export async function reviewMemberTier(
     .filter((t) => spend >= t.qualifySpend12m || (t.qualifyPoints > 0 && lifetime >= t.qualifyPoints))
     .sort((a, b) => b.sortOrder - a.sortOrder);
   const target = eligible[0] ?? tiers[0];
+  const changed = currentTierId !== target.id;
 
-  await query(
-    `UPDATE bms_customers SET tier_id = $3, tier_reviewed_at = now(), updated_at = now()
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, customerId, target.id]
-  );
-  return { changed: currentTierId !== target.id, tier: target };
+  // ทบทวนแล้วชั้นเท่าเดิม = แตะแค่ tier_reviewed_at และต้องไม่เขียน revision
+  // (cron วนทุกคนทุกเดือน ถ้าไม่ข้ามจะได้ revision ต่อสมาชิกต่อรอบ)
+  // ชั้นเปลี่ยนจริงยังเขียน revision ตามปกติ เพราะกระทบส่วนลดที่ลูกค้าได้
+  //
+  // ต้องอยู่ในทรานแซกชันเดียวกับ set_config(..., is_local = true) — ถ้ายิงผ่าน
+  // query() สองครั้ง แต่ละครั้งอาจได้ connection ต่างกันแล้ว flag ไม่มีผล
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    if (!changed) {
+      await client.query("SELECT set_config('app.skip_revision', '1', true)");
+      await client.query(
+        `UPDATE bms_customers SET tier_reviewed_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, customerId]
+      );
+      await client.query("SELECT set_config('app.skip_revision', '', true)");
+    } else {
+      await client.query(
+        `UPDATE bms_customers SET tier_id = $3, tier_reviewed_at = now(), updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, customerId, target.id]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { changed, tier: target };
 }
 
 export async function reviewAllMemberTiers(tenantId: string): Promise<{ reviewed: number; changed: number }> {

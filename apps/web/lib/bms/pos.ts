@@ -38,6 +38,7 @@ import {
   earnPointsForOrderInTx,
   listOrderDiscounts,
   reversePointsForReturnInTx,
+  reviewMemberTier,
   type OrderDiscountLine,
 } from "./membership";
 
@@ -1345,6 +1346,16 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const sold = await finalizePosSale({
     input, shift, orderId, amountDue, payments: requestedPayments, replayed: false,
   });
+
+  // ทบทวนชั้นสมาชิกหลังบิลปิด (7.96) — นอกทรานแซกชันโดยตั้งใจ ล้มได้ไม่กระทบ
+  // การขายที่เกิดขึ้นแล้ว · ถ้ารอ cron รายเดือน ลูกค้าที่ซื้อครบเกณฑ์วันนี้จะยัง
+  // ไม่ได้ส่วนลดชั้นใหม่ในบิลถัดไป ซึ่งเป็นเรื่องที่พนักงานหน้าร้านต้องมาอธิบาย
+  if (sold.status === "SOLD" && input.customerId) {
+    void reviewMemberTier(input.tenantId, input.customerId).catch((e) =>
+      console.error("[POS] ทบทวนชั้นสมาชิกหลังขายไม่สำเร็จ", input.customerId, e)
+    );
+  }
+
   return sold.status === "SOLD" ? { ...sold, roundingAmount: roundingApplied } : sold;
 }
 
