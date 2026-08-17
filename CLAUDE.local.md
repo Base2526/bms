@@ -107,19 +107,36 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
   (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
 - **`7.96__bms_membership_and_loyalty.sql` (สมาชิก + tier + แต้มสะสม + `bms_order_discounts`)
-  เขียนเสร็จ 2026-08-17 แต่ยังไม่เคย apply กับ DB ใด ๆ และยังไม่เคย verify กับ DB จริงเลย** —
-  ผ่านแค่ `tsc` + `npm run build` · migration นี้ seed permission ใหม่ 4 ตัว (`member.view`,
-  `member.manage`, `loyalty.adjust`, `loyalty.settings`) ให้ Manager/Sales/Cashier ถ้าไม่ apply
-  หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ · จุดที่ต้องเทสก่อนเชื่อ: ขายให้สมาชิก (tier + คูปอง +
-  แลกแต้มพร้อมกัน), คืนสินค้าบางส่วนของบิลที่ทั้งได้แต้มและใช้แต้ม (ตรวจว่า ledger สุทธิถูก),
-  ยกเลิกบิลที่แลกแต้มไปแล้ว, และ `bmsLoyaltyOutstanding.balanceMismatchCount` ต้องเป็น 0
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production ·
+  seed permission ใหม่ 4 ตัว (`member.view`, `member.manage`, `loyalty.adjust`, `loyalty.settings`)
+  ให้ Manager/Sales/Cashier ถ้าไม่ apply หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ
   · ยังไม่มี cron ยิง `POST /api/bms/loyalty/maintenance` → แต้มไม่หมดอายุจนกดปุ่มเอง
-  · เทสเลขคณิตส่วนลด: `node --experimental-strip-types --test scripts/loyalty-contract.test.mts`
-    (13 เทส ไม่ต้องมี DB — `lib/bms/loyaltyMath.ts` ตั้งใจไม่ import อะไรเลยเพื่อให้รันได้)
-  · fake data: กด **Customers → Orders → BMS Members + Points** ตามลำดับที่ `/admin/dev/fake`
-    (ปุ่มสมาชิกยกลูกค้าปลอมที่มีอยู่ขึ้นเป็นสมาชิก ไม่สร้างใหม่ — ไม่มีลูกค้าปลอม = ไม่มีอะไรเกิด)
+  · **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะ loyalty**
+
+    ```bash
+    # 1) เลขคณิตส่วนลด (13 เทส, ไม่ต้องมี DB — loyaltyMath.ts ตั้งใจไม่ import อะไรเลย)
+    node --experimental-strip-types --test scripts/loyalty-contract.test.mts
+
+    # 2) ledger/ทรานแซกชันกับ Postgres จริง (22 เทส) — รันจาก apps/web เพราะ tsx อยู่ที่นั่น
+    #    POSTGRES_HOST=localhost เพราะ .env.dev ชี้ host `postgres` (ชื่อใน docker network)
+    #    --import shim: lib/mailer.ts มี `import "server-only"` ซึ่งมีแค่ตอน Next build
+    cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
+      POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
+      REDIS_URL=redis://127.0.0.1:6379 \
+      npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
+        --test --test-force-exit ../../scripts/loyalty-db-contract.test.mts
+    ```
+
+    ชุดที่ 2 สร้าง/ลบข้อมูลของตัวเองครบ (รันซ้ำได้ ยืนยันแล้ว) แต่ **เขียนจริงลงฐาน — ห้ามรันกับ
+    production** · มันตั้ง `bms_loyalty_settings` ของร้านแรกเป็นค่าที่เทสต้องใช้ (เปิดโปรแกรม,
+    100 แต้ม = 10 บาท) แล้วไม่คืนค่าเดิม
   · **แต้มค้างเป็นหนี้สินทางบัญชี** — ก่อนปิดงบต้องส่งตัวเลขจาก `bmsLoyaltyOutstanding`
     (การ์ด "มูลค่าแต้มค้าง" ที่ `/admin/loyalty`) ให้บัญชี · `balanceMismatchCount` ต้องเป็น 0 เสมอ
+  · fake data: กด **Customers → Orders → BMS Members + Points** ตามลำดับที่ `/admin/dev/fake`
+    (ปุ่มสมาชิกยกลูกค้าปลอมที่มีอยู่ขึ้นเป็นสมาชิก ไม่สร้างใหม่ — ไม่มีลูกค้าปลอม = ไม่มีอะไรเกิด)
+  · กับดักที่เจอตอน verify: `upsertMembershipTier` แปลง `code` เป็นตัวพิมพ์ใหญ่เสมอ ถ้าสคริปต์ไหน
+    ลบชั้นทดสอบด้วย `LIKE 'ตัวเล็ก-%'` จะลบไม่โดน แล้วชั้นทดสอบที่ค้างอยู่จะไป **เปลี่ยนชั้นของ
+    สมาชิกจริง** ในรอบทบทวนถัดไป (เจอมาแล้ว — สมาชิก 6 คนย้ายไปชั้นทดสอบ)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

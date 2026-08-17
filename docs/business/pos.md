@@ -58,11 +58,16 @@ layers from the most-reversible end when the cap binds. It is a pure function so
 (`POST /api/pos/member/preview`) and the committing path (`createOrder`) cannot disagree — if they
 did, the payment rows would not match the server total and the bill would be voided as
 `PAYMENT_MISMATCH`. That module imports nothing so it can be exercised directly by
-`scripts/loyalty-contract.test.mts`:
+`scripts/loyalty-contract.test.mts` (13 tests, no database):
 
 ```bash
 node --experimental-strip-types --test scripts/loyalty-contract.test.mts
 ```
+
+The transaction behaviour — FIFO consume, the unique indexes behind POS replay, the revision-trigger
+skip, and what points do on cancel/return/merge/delete — needs a real database, and is covered by
+`scripts/loyalty-db-contract.test.mts` (22 tests). It writes to whatever database it is pointed at,
+so run it against dev only; see CLAUDE.local.md for the exact command.
 
 **The total of all layers still lands in `bms_orders.discount_amount`.** VAT base and the
 abbreviated tax invoice read that column (`computeVat({ discountAmount })`), so a member discount
@@ -77,6 +82,12 @@ total came from, one row per source, and its rows always sum to `discount_amount
   does not.
 - **Idempotency**: `UNIQUE (tenant_id, order_id, kind)` for `EARN`/`REDEEM`. A register replaying the
   same `idempotencyKey` gets the original bill and no second grant.
+- **A redemption that cannot be honoured in full is rejected, not trimmed.** Asking to redeem more
+  points than the member holds (or more than the bill can absorb) fails the order with
+  `POINTS_INVALID`. Quietly redeeming a smaller number would hand the customer a smaller discount
+  than the amount they were quoted and tendered against. The POS screen sends the already-clamped
+  figure from its preview, so it only meets this when the balance changed between preview and
+  payment — at which point the cashier does need to re-quote.
 - **Redeeming** deducts points when the order is created, not at a separate "reserved" state.
   `cancelOrder` calls `releasePointsForOrdersInTx` to return them, so an abandoned `PENDING` bill
   never holds points hostage.

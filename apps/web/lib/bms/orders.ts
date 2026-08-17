@@ -438,13 +438,22 @@ export async function createOrder(
       pointsRequested: requestedPoints,
       pointsAvailable: member?.pointsUsable ?? 0,
     });
-    if (requestedPoints > 0 && breakdown.pointsUsed === 0) {
+    // แลกได้ไม่เท่าที่ขอ = ปฏิเสธทั้งบิล ห้ามหักให้บางส่วนเงียบ ๆ
+    //
+    // composeDiscounts จะ clamp จำนวนที่ขอลงมาตามแต้มที่มีและตามที่บิลรับได้อยู่แล้ว
+    // ถ้าปล่อยผ่าน คนขอแลก 500 แต้ม (คาดว่าจะลด 50 บาท) แต่มี 100 จะได้บิลที่ลดแค่
+    // 10 บาทโดยไม่มีสัญญาณอะไรบอก — ยอดเงินที่เตรียมจ่ายมาจากส่วนลดก้อนใหญ่
+    // จอ POS ส่งค่าที่ผ่าน preview (clamp แล้ว) มาเสมอ จึงไม่ชนกฎนี้ ยกเว้นกรณี
+    // แต้มเปลี่ยนไประหว่าง preview กับตอนกดรับเงิน ซึ่งต้องให้พนักงานคิดเงินใหม่
+    // ไม่ใช่เงียบ ๆ ลดให้น้อยกว่าที่บอกลูกค้าไปแล้ว
+    if (requestedPoints > 0 && breakdown.pointsUsed !== requestedPoints) {
       await client.query("ROLLBACK");
+      const usable = member?.pointsUsable ?? 0;
       return {
         status: "POINTS_INVALID",
-        reason: (member?.pointsUsable ?? 0) < requestedPoints
-          ? `แต้มไม่พอ (ใช้ได้ ${member?.pointsUsable ?? 0} แต้ม)`
-          : `แลกแต้มไม่ได้กับบิลนี้ (ขั้นต่ำ ${loyaltySettings.redeemMinPoints} แต้ม หรือชนเพดานส่วนลด)`,
+        reason: usable < requestedPoints
+          ? `แต้มไม่พอ (ขอแลก ${requestedPoints} แต้ม แต่ใช้ได้ ${usable} แต้ม)`
+          : `แลกแต้มจำนวนนี้กับบิลนี้ไม่ได้ (ขั้นต่ำ ${loyaltySettings.redeemMinPoints} แต้ม, ต้องเป็นจำนวนเท่าของ ${loyaltySettings.redeemPointsPerUnit} แต้ม, และไม่เกินเพดานส่วนลด)`,
       };
     }
 
