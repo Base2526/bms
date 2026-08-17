@@ -11,6 +11,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import {
   adjustPoints,
+  countMembers,
   deleteMembershipTier,
   enrollMember,
   expireLoyaltyPoints,
@@ -43,9 +44,21 @@ export const bmsMembershipResolvers = {
       await requirePermission(ctx, "member.view");
       return listMembershipTiers(getTenantId(ctx), Boolean(args.activeOnly));
     },
-    async bmsMembers(_p: unknown, args: { search: string; limit?: number | null }, ctx: any) {
+    async bmsMembers(
+      _p: unknown,
+      args: { search?: string | null; limit?: number | null; offset?: number | null },
+      ctx: any
+    ) {
       await requirePermission(ctx, "member.view");
-      return searchMembers(getTenantId(ctx), args.search, args.limit ?? 20);
+      const tenantId = getTenantId(ctx);
+      const search = args.search ?? "";
+      const limit = args.limit ?? 25;
+      const offset = args.offset ?? 0;
+      const [members, total] = await Promise.all([
+        searchMembers(tenantId, search, limit, offset),
+        countMembers(tenantId, search),
+      ]);
+      return { members, total };
     },
     async bmsMember(_p: unknown, args: { customerId: string }, ctx: any) {
       await requirePermission(ctx, "member.view");

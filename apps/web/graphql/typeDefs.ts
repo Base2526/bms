@@ -1086,7 +1086,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS membership + แต้มสะสม (7.96) =====
     bmsLoyaltySettings: BmsLoyaltySettings!                        # permission member.view
     bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
-    bmsMembers(search: String!, limit: Int): [BmsMember!]!          # ค้นด้วยเบอร์/ชื่อ/เลขสมาชิก
+    bmsMembers(search: String, limit: Int, offset: Int): BmsMemberPage!   # ไม่ส่ง search = รายชื่อสมาชิกล่าสุด
     bmsMember(customerId: ID!): BmsMember
     bmsLoyaltyLedger(customerId: ID!, limit: Int): [BmsLoyaltyLedgerEntry!]!
     bmsLoyaltyOutstanding: BmsLoyaltyOutstanding!                   # แต้มค้าง = หนี้สิน (permission report.view)
@@ -3252,6 +3252,10 @@ export const typeDefs = /* GraphQL */ `
     tier: BmsMembershipTier
     pointsBalance: Int!           # SUM ทั้ง ledger — ติดลบได้เมื่อคืนของหลังใช้แต้ม
     pointsUsable: Int!            # แลกได้จริงตอนนี้ (ตัดก้อนหมดอายุออกแล้ว)
+  }
+  type BmsMemberPage {
+    members: [BmsMember!]!
+    total: Int!                   # จำนวนที่ตรงคำค้น (ไม่ใช่แค่หน้านี้)
   }
   type BmsEnrollMemberResult {
     status: String!               # ENROLLED | ALREADY_MEMBER | INVALID

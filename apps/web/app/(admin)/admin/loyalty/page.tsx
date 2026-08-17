@@ -2,7 +2,7 @@
 // หน้าจัดการสมาชิก + แต้มสะสม (migration 7.96)
 // ⚠️ ทุกอย่างในหน้านี้อิงร้านที่ยืนอยู่ (getTenantId) — ต้อง drill-down เข้าร้าน
 //    เป้าหมายก่อนแก้ ไม่งั้นจะไปแก้ร้าน default โดยไม่มี error เตือน
-import { gql, useQuery, useMutation, useLazyQuery } from "@apollo/client";
+import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
   Select, Switch, Popconfirm, Typography, Card, Row, Col, Statistic, Divider, Empty, Drawer,
@@ -31,10 +31,13 @@ const Q = gql`
   }
 `;
 const Q_MEMBERS = gql`
-  query ($search: String!) {
-    bmsMembers(search: $search, limit: 20) {
-      customerId name phone memberNo memberSince pointsBalance pointsUsable
-      tier { code name discountType discountValue }
+  query ($search: String, $limit: Int, $offset: Int) {
+    bmsMembers(search: $search, limit: $limit, offset: $offset) {
+      total
+      members {
+        customerId name phone memberNo memberSince pointsBalance pointsUsable
+        tier { code name discountType discountValue }
+      }
     }
   }
 `;
@@ -200,7 +203,16 @@ export default function LoyaltyPage() {
     skip: permsLoading || !can("member.view"),
     fetchPolicy: "cache-and-network",
   });
-  const [searchMembers, { data: memberData, loading: searching }] = useLazyQuery(Q_MEMBERS, { fetchPolicy: "network-only" });
+  // รายชื่อสมาชิกต้องขึ้นทันทีที่เปิดหน้า — การ์ด "สมาชิกทั้งหมด" บอกจำนวนได้
+  // แต่ถ้าตารางบังคับให้ค้นก่อน คนดูจะไม่มีทางรู้ว่า 2 คนนั้นเป็นใคร
+  const MEMBER_PAGE_SIZE = 25;
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberPage, setMemberPage] = useState(1);
+  const { data: memberData, loading: searching, refetch: refetchMembers } = useQuery(Q_MEMBERS, {
+    variables: { search: memberSearch, limit: MEMBER_PAGE_SIZE, offset: (memberPage - 1) * MEMBER_PAGE_SIZE },
+    skip: permsLoading || !can("member.view"),
+    fetchPolicy: "cache-and-network",
+  });
 
   const [settingsForm] = Form.useForm();
   const [tierForm] = Form.useForm();
@@ -235,6 +247,8 @@ export default function LoyaltyPage() {
         : t("admin_loyalty.enroll_success"));
       setEnrollOpen(false);
       enrollForm.resetFields();
+      void refetchMembers();
+      refetch();
     },
     onError: (e) => message.error(e?.message || t("admin_loyalty.enroll_failed")),
   });
@@ -486,22 +500,38 @@ export default function LoyaltyPage() {
         </Col>
       </Row>
 
-      <Card size="small" title={t("admin_loyalty.card_members")} style={{ marginTop: 16 }}>
+      <Card
+        size="small"
+        title={t("admin_loyalty.card_members")}
+        style={{ marginTop: 16 }}
+        extra={<Text type="secondary" style={{ fontSize: 12 }}>
+          {t("admin_loyalty.member_count", { n: memberData?.bmsMembers?.total ?? 0 })}
+        </Text>}
+      >
         <Input.Search
           placeholder={t("admin_loyalty.member_search_placeholder")}
           allowClear
           enterButton
           loading={searching}
-          onSearch={(v) => v.trim().length >= 2 && searchMembers({ variables: { search: v.trim() } })}
+          onSearch={(v) => { setMemberSearch(v.trim()); setMemberPage(1); }}
+          onChange={(e) => { if (!e.target.value) { setMemberSearch(""); setMemberPage(1); } }}
           style={{ maxWidth: 420, marginBottom: 12 }}
         />
         <Table
           rowKey="customerId"
           size="small"
           loading={searching}
-          dataSource={memberData?.bmsMembers || []}
-          locale={{ emptyText: <Empty description={t("admin_loyalty.member_search_empty")} /> }}
-          pagination={false}
+          dataSource={memberData?.bmsMembers?.members || []}
+          locale={{ emptyText: <Empty description={memberSearch
+            ? t("admin_loyalty.member_search_empty")
+            : t("admin_loyalty.member_list_empty")} /> }}
+          pagination={{
+            current: memberPage,
+            pageSize: MEMBER_PAGE_SIZE,
+            total: memberData?.bmsMembers?.total ?? 0,
+            showSizeChanger: false,
+            onChange: setMemberPage,
+          }}
           scroll={{ x: "max-content" }}
           columns={[
             {
@@ -516,6 +546,10 @@ export default function LoyaltyPage() {
             {
               title: t("admin_loyalty.col_tier"), key: "tier",
               render: (_: any, r: any) => (r.tier ? <Tag>{r.tier.name} {tierDiscountLabel(r.tier, t)}</Tag> : "—"),
+            },
+            {
+              title: t("admin_loyalty.col_since"), dataIndex: "memberSince",
+              render: (v: string | null) => (v ? new Date(v).toLocaleDateString() : "—"),
             },
             {
               title: t("admin_loyalty.col_balance"), dataIndex: "pointsBalance", align: "right" as const,

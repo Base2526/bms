@@ -305,21 +305,42 @@ function mapMember(r: any): MemberSummary {
   };
 }
 
-/** ค้นสมาชิกจากเบอร์/ชื่อ/เลขสมาชิก — จอ POS ใช้ช่องเดียวค้นได้ทุกแบบ */
-export async function searchMembers(tenantId: string, rawQuery: string, limit = 10): Promise<MemberSummary[]> {
+/**
+ * ค้นสมาชิกจากเบอร์/ชื่อ/เลขสมาชิก — จอ POS ใช้ช่องเดียวค้นได้ทุกแบบ
+ * คำค้นว่าง = คืนรายชื่อสมาชิกล่าสุด เพื่อให้หน้าแอดมิน "ไล่ดู" ได้ ไม่ใช่บังคับ
+ * ให้เดาคำค้นก่อนจึงจะเห็นอะไร · ฝั่ง POS มี guard ของตัวเองว่าต้องพิมพ์ ≥ 3 ตัว
+ * ก่อนเรียก จึงไม่ทำให้จอขายไล่ดูรายชื่อลูกค้าทั้งร้านได้
+ */
+export async function searchMembers(
+  tenantId: string,
+  rawQuery: string,
+  limit = 10,
+  offset = 0
+): Promise<MemberSummary[]> {
   const q = rawQuery.trim();
-  if (!q) return [];
   const res = await query(
     `${MEMBER_SELECT}
       WHERE c.tenant_id = $1
         AND c.deleted_at IS NULL
         AND c.member_no IS NOT NULL
-        AND (c.phone ILIKE $2 OR c.name ILIKE $2 OR c.member_no ILIKE $2)
-      ORDER BY c.name
-      LIMIT $3`,
-    [tenantId, `%${q}%`, Math.min(Math.max(limit, 1), 50)]
+        AND ($2 = '' OR c.phone ILIKE $3 OR c.name ILIKE $3 OR c.member_no ILIKE $3)
+      ORDER BY c.member_since DESC NULLS LAST, c.name
+      LIMIT $4 OFFSET $5`,
+    [tenantId, q, `%${q}%`, Math.min(Math.max(limit, 1), 200), Math.max(offset, 0)]
   );
   return res.rows.map(mapMember);
+}
+
+/** จำนวนสมาชิกที่ตรงคำค้น — หน้าแอดมินใช้ทำ pagination */
+export async function countMembers(tenantId: string, rawQuery = ""): Promise<number> {
+  const q = rawQuery.trim();
+  const res = await query<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM bms_customers c
+      WHERE c.tenant_id = $1 AND c.deleted_at IS NULL AND c.member_no IS NOT NULL
+        AND ($2 = '' OR c.phone ILIKE $3 OR c.name ILIKE $3 OR c.member_no ILIKE $3)`,
+    [tenantId, q, `%${q}%`]
+  );
+  return Number(res.rows[0]?.n ?? 0);
 }
 
 export async function getMember(tenantId: string, customerId: string): Promise<MemberSummary | null> {
