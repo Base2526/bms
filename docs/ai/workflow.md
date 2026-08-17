@@ -271,6 +271,9 @@ authoritative customer fact unless a backend tool explicitly returns it.
 
 ## AI credits + BYOK (2026-07)
 
+For calculation formulas, worked examples, refund rules, and billing reconciliation, see
+[AI Usage Accounting How-To](usage-accounting.md).
+
 Every tenant can generate AI replies without any setup — the shared platform provider serves them
 by default (`BMS_AI_PROVIDER`, default DeepSeek, with Anthropic reserved as sensitive/baseline
 fallback). The old shared-key message

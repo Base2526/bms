@@ -264,6 +264,43 @@ export default function Page() {
           description={t("admin_billing.credits_alert_desc")}
         />
 
+        <Card
+          size="small"
+          title={t("admin_billing.calculation_title")}
+          style={{ marginBottom: 16, borderRadius: 16 }}
+        >
+          <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            {t("admin_billing.calculation_intro")}
+          </Paragraph>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(230px, 100%), 1fr))", gap: 12 }}>
+            {[
+              ["1", "calculation_credit_title", "calculation_credit_desc"],
+              ["2", "calculation_calls_title", "calculation_calls_desc"],
+              ["3", "calculation_token_title", "calculation_token_desc"],
+              ["4", "calculation_audit_title", "calculation_audit_desc"],
+            ].map(([step, titleKey, descKey]) => (
+              <div key={step} style={{ padding: 14, border: "1px solid #f0f0f0", borderRadius: 14, background: "#fafcff" }}>
+                <Space align="start">
+                  <Tag color="blue" style={{ borderRadius: 999, marginTop: 1 }}>{step}</Tag>
+                  <div>
+                    <Text strong>{t(`admin_billing.${titleKey}`)}</Text>
+                    <Paragraph type="secondary" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                      {t(`admin_billing.${descKey}`)}
+                    </Paragraph>
+                  </div>
+                </Space>
+              </div>
+            ))}
+          </div>
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginTop: 14, borderRadius: 12 }}
+            message={t("admin_billing.calculation_example_title")}
+            description={t("admin_billing.calculation_example_desc")}
+          />
+        </Card>
+
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
           <Col xs={24} md={8}>
             <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiCreditsTotal) })} accent={tone.accent} />
