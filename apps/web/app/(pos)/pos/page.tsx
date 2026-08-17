@@ -11,6 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
+import { isCameraScanSupported, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
 import {
@@ -221,9 +222,16 @@ export default function PosPage() {
   // เครื่องพิมพ์ ESC/POS: จำที่เลือกไว้ ไม่ต้องเลือกใหม่ทุกเช้า
   // ถ้าไม่มี/เบราว์เซอร์ไม่รองรับ → กลับไปใช้ print dialog เหมือนเดิม
   const [printerReady, setPrinterReady] = useState(false);
+  // สแกนด้วยกล้องมือถือ — โหมดเทส/เดโมที่ยังไม่มีเครื่องสแกนจริง
+  // เช็คการรองรับหลัง mount เท่านั้น (ไม่เช็คตอน SSR) กันปุ่มโผล่มาแล้วหายตอน hydrate
+  const [cameraSupported, setCameraSupported] = useState(false);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     void findRememberedPrinter().then((d) => setPrinterReady(Boolean(d)));
+    setCameraSupported(isCameraScanSupported());
   }, []);
   // ใบเสร็จตัวเต็มเป็น "เอกสารสำหรับพิมพ์" ไม่ใช่ของที่ต้องอ่านบนจอ →
   // อยู่ใน modal เปิดเมื่อกดดู/พิมพ์บิลเก่าเท่านั้น
@@ -814,6 +822,36 @@ export default function PosPage() {
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptModalOpen, receipt, printerReady]);
+
+  // เปิด/ปิดกล้องตาม modal — เจอโค้ดแรกแล้วปิด modal + ยิงเข้า handleScan
+  // เหมือนพิมพ์เอง ไม่มีทางพิเศษ ไม่งั้นราคา/สต็อกจะหลุด "server เป็นคนคิดเท่านั้น"
+  useEffect(() => {
+    if (!cameraModalOpen) return;
+    let cancelled = false;
+    let handle: { stop: () => void } | null = null;
+    (async () => {
+      if (!cameraVideoRef.current) return;
+      const h = await startCameraScan({
+        video: cameraVideoRef.current,
+        onDetect: (code) => {
+          if (cancelled) return;
+          cancelled = true; // กันเฟรมถัดไปยิงซ้ำก่อน modal จะปิดจริง
+          setCameraModalOpen(false);
+          void handleScan(code);
+        },
+        onError: (message) => {
+          if (!cancelled) setCameraError(message);
+        },
+      });
+      if (cancelled) h.stop();
+      else handle = h;
+    })();
+    return () => {
+      cancelled = true;
+      handle?.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraModalOpen]);
 
   /** เปิดลิ้นชักโดยไม่พิมพ์ซ้ำ — ใช้ตอนหยิบเงินทอนเพิ่มหลังปิดบิลไปแล้ว */
   async function openCashDrawer() {
@@ -1642,6 +1680,28 @@ export default function PosPage() {
                 : "ยิงบาร์โค้ด หรือพิมพ์ชื่อ/รหัสสินค้า แล้วกด Enter"
             }
           />
+          {/* โหมดเทส — ไม่มีเครื่องสแกนจริงก็ยังทดสอบขายได้ด้วยกล้องมือถือ
+              โผล่เฉพาะเบราว์เซอร์ที่รองรับจริง (เช็คหลัง mount ใน cameraScan.ts)
+              ไอคอนล้วนทรงกลม: แยกจากกรอบสี่เหลี่ยมของช่องยิงให้อ่านเป็นปุ่มคนละหน้าที่
+              จุดส้มมุมบน = ยังเป็นของทดลอง (ส้ม = ต้องดู ตามสีสื่อความหมายของจอนี้) */}
+          {cameraSupported && (
+            <button
+              type="button"
+              onClick={() => {
+                setCameraError("");
+                setCameraModalOpen(true);
+              }}
+              title="สแกนด้วยกล้องมือถือ (โหมดเทส)"
+              aria-label="สแกนด้วยกล้องมือถือ (โหมดเทส)"
+              className="pos-cam-btn"
+            >
+              <span aria-hidden="true" className="pos-cam-dot" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+                <circle cx="12" cy="13" r="3.2" />
+              </svg>
+            </button>
+          )}
           </div>
           {(searching || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -2272,6 +2332,67 @@ export default function PosPage() {
         </section>
       </div>
       </div>
+      {cameraModalOpen && (
+        <div
+          onClick={() => setCameraModalOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16, zIndex: 60,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="สแกนด้วยกล้องมือถือ"
+            style={{
+              background: "#111", color: "#fff", borderRadius: 12, width: 340, maxWidth: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px", fontSize: 13, fontWeight: 600,
+                borderBottom: "1px solid rgba(255,255,255,0.14)",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}
+            >
+              <span>สแกนด้วยกล้อง (โหมดเทส)</span>
+              <button
+                type="button"
+                onClick={() => setCameraModalOpen(false)}
+                aria-label="ปิด"
+                style={{ background: "none", border: "none", color: "#fff", fontSize: 16, padding: 4, lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ position: "relative", background: "#000", lineHeight: 0 }}>
+              {/* muted+playsInline บังคับสำหรับ autoplay บนมือถือ — ขาดตัวใดตัวหนึ่งแล้ว
+                  Safari/Chrome บนมือถือจะไม่เล่นวิดีโอให้เอง */}
+              <video
+                ref={cameraVideoRef}
+                playsInline
+                muted
+                style={{ width: "100%", maxHeight: 260, objectFit: "cover", display: "block" }}
+              />
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute", inset: 0, display: "flex",
+                  alignItems: "center", justifyContent: "center", pointerEvents: "none",
+                }}
+              >
+                <div style={{ width: 160, height: 160, border: "2px solid #f0a468", borderRadius: 10 }} />
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", fontSize: 12, color: cameraError ? "#ffb4a3" : "#c7cdc3" }}>
+              {cameraError || "ส่องกล้องให้เห็นบาร์โค้ด/QR ชัด ๆ — เจอแล้วเพิ่มลงตะกร้าให้อัตโนมัติ"}
+            </div>
+          </div>
+        </div>
+      )}
       {receipt && (
         <div
           onClick={() => setReceiptModalOpen(false)}
