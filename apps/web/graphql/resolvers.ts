@@ -230,8 +230,13 @@ async function enforceAuthRateLimit(
     rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs),
   ]);
   if (!byIp.ok || !byIdentity.ok) {
-    throw new GraphQLError("Too many attempts. Please try again later.", {
-      extensions: { code: "RATE_LIMITED" },
+    const retryAfter = Math.max(byIp.retryAfter || 0, byIdentity.retryAfter || 0);
+    const message =
+      retryAfter > 0
+        ? `Too many attempts. Please try again in ${retryAfter} seconds.`
+        : "Too many attempts. Please try again later.";
+    throw new GraphQLError(message, {
+      extensions: { code: "RATE_LIMITED", retryAfter },
     });
   }
 }
