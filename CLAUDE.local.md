@@ -91,8 +91,8 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `email_report` (`7.54`), Cron run history (`7.55`), Manager staff management (`7.78`),
   AI usage accounting (`7.82`)
 - `/live-dashboard` ยังเป็น mock ทั้งหน้า (ต่อ query จริงแล้วต้องทบทวน `?demo=1` ด้วย)
-- ยังไม่มี cron schedule จริงให้ 6 endpoint ที่พร้อมแล้ว (บันทึกลง `bms_job_runs` ได้แล้ว แค่ยังไม่มี
-  ตัวยิงอัตโนมัติ)
+- cron endpoint ทั้ง 7 ตัวมี workflow ยิงแล้ว (`.github/workflows/bms-cron.yml`) — **ค้างที่ต้องตั้ง
+  secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub repo** ยังไม่ตั้ง = ยังไม่มีอะไรถูกยิงจริง
 - `/admin/system-health` (ดู § System Health + request metrics ใน
   [docs/local-notes-archive.md](docs/local-notes-archive.md)) ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ·
   `pg_stat_statements` preload ไว้แล้วแต่ยังไม่ restart Postgres/`CREATE EXTENSION` เลยยังไม่มีการ์ด
@@ -110,21 +110,27 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production ·
   seed permission ใหม่ 4 ตัว (`member.view`, `member.manage`, `loyalty.adjust`, `loyalty.settings`)
   ให้ Manager/Sales/Cashier ถ้าไม่ apply หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ
-  · ยังไม่มี cron ยิง `POST /api/bms/loyalty/maintenance` → แต้มไม่หมดอายุจนกดปุ่มเอง
+  · cron: `.github/workflows/bms-cron.yml` ยิงให้แล้ว (frequent ทุก 15 นาที / daily 20:00 UTC)
+    **แต่ต้องตั้ง secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub ก่อน** ไม่ตั้ง = ทุก job
+    ข้ามตัวเองเงียบ ๆ (workflow ไม่แดง) แล้วแต้มไม่หมดอายุเหมือนเดิม · ดูว่ายิงจริงหรือยังที่
+    `/admin/operations-schedule` (อ่านจาก `bms_job_runs`)
   · **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะ loyalty**
 
     ```bash
     # 1) เลขคณิตส่วนลด (13 เทส, ไม่ต้องมี DB — loyaltyMath.ts ตั้งใจไม่ import อะไรเลย)
     node --experimental-strip-types --test scripts/loyalty-contract.test.mts
 
-    # 2) ledger/ทรานแซกชันกับ Postgres จริง (22 เทส) — รันจาก apps/web เพราะ tsx อยู่ที่นั่น
+    # 2) ledger + POS ครบ flow กับ Postgres จริง (22 + 10 เทส) — รันจาก apps/web เพราะ tsx อยู่ที่นั่น
     #    POSTGRES_HOST=localhost เพราะ .env.dev ชี้ host `postgres` (ชื่อใน docker network)
     #    --import shim: lib/mailer.ts มี `import "server-only"` ซึ่งมีแค่ตอน Next build
+    #    --test-concurrency=1 บังคับ: สองชุดใช้ร้านแรกร่วมกัน รันขนานกันแล้วเหยียบกันเอง
     cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
       POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
       REDIS_URL=redis://127.0.0.1:6379 \
       npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
-        --test --test-force-exit ../../scripts/loyalty-db-contract.test.mts
+        --test --test-concurrency=1 --test-force-exit \
+        ../../scripts/loyalty-db-contract.test.mts \
+        ../../scripts/pos-loyalty-db-contract.test.mts
     ```
 
     ชุดที่ 2 สร้าง/ลบข้อมูลของตัวเองครบ (รันซ้ำได้ ยืนยันแล้ว) แต่ **เขียนจริงลงฐาน — ห้ามรันกับ

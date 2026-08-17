@@ -2102,7 +2102,13 @@ async function processPosReturn(input: {
       [input.tenantId, input.orderId]
     );
 
-    const byId = new Map(itemsRes.rows.map((row) => [row.id, row]));
+    // bms_order_items.id เป็น BIGSERIAL และ pg คืน int8 มาเป็น "string" (ไม่มี
+    // setTypeParser ในโปรเจกต์นี้) ส่วน orderItemId ที่ผู้เรียกส่งมาเป็น number
+    // ถ้าไม่แปลงให้เป็นชนิดเดียวกัน byId.get(978) จะไม่เจอ "978" แล้วการคืนสินค้า
+    // แบบระบุรายการจะตอบ ITEM_NOT_FOUND ทุกครั้ง (คืนทั้งบิลไม่โดนเพราะสร้าง
+    // requestedMap จาก row.id เอง ชนิดจึงตรงกันโดยบังเอิญ)
+    const orderItems = itemsRes.rows.map((row) => ({ ...row, id: Number(row.id) }));
+    const byId = new Map(orderItems.map((row) => [row.id, row]));
     if (input.mode === "PARTIAL") for (const [orderItemId, packQty] of requestedMap) {
       const line = { orderItemId, packQty };
       const item = byId.get(line.orderItemId);
@@ -2119,7 +2125,7 @@ async function processPosReturn(input: {
     }
 
     if (input.mode === "FULL") {
-      for (const item of itemsRes.rows) {
+      for (const item of orderItems) {
         const originalPackQty = item.pack_qty ?? item.qty;
         const remaining = Math.max(0, originalPackQty - Number(item.returned_pack_qty ?? 0));
         if (remaining > 0) requestedMap.set(item.id, remaining);
@@ -2131,7 +2137,7 @@ async function processPosReturn(input: {
     }
 
     const orderAmount = Math.round((Number(order.total_amount) + Number(order.shipping_fee ?? 0)) * 100) / 100;
-    const grossTotal = itemsRes.rows.reduce((sum, item) => {
+    const grossTotal = orderItems.reduce((sum, item) => {
       const packQty = item.pack_qty ?? item.qty;
       const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
       return sum + packQty * price;
@@ -2140,10 +2146,10 @@ async function processPosReturn(input: {
 
     const lineNetTotals = new Map<number, number>();
     let allocatedNet = 0;
-    itemsRes.rows.forEach((item, index) => {
+    orderItems.forEach((item, index) => {
       const packQty = item.pack_qty ?? item.qty;
       const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
-      const lineNet = index === itemsRes.rows.length - 1
+      const lineNet = index === orderItems.length - 1
         ? Math.round((orderAmount - allocatedNet) * 100) / 100
         : Math.round((orderAmount * ((packQty * price) / grossTotal)) * 100) / 100;
       lineNetTotals.set(item.id, lineNet);
@@ -2331,7 +2337,7 @@ async function processPosReturn(input: {
       [input.tenantId, posReturnId, settlementStatus]
     );
 
-    const allReturned = itemsRes.rows.every((item) => {
+    const allReturned = orderItems.every((item) => {
       const original = item.pack_qty ?? item.qty;
       return Number(item.returned_pack_qty ?? 0) + Number(requestedMap.get(item.id) ?? 0) >= original;
     });

@@ -99,9 +99,10 @@ total came from, one row per source, and its rows always sum to `discount_amount
   deliberate; clamping to zero would make return-after-redeem profitable. The next grant covers the
   deficit first (`consumedToCoverDeficit`).
 - **Expiry** is FIFO over grant rows via `consumed_points`, driven by
-  `POST /api/bms/loyalty/maintenance`. **No scheduler runs it in this repo** — until one is wired up,
-  points do not expire and tiers are not re-evaluated unless someone presses the buttons on
-  `/admin/loyalty`.
+  `POST /api/bms/loyalty/maintenance`. `.github/workflows/bms-cron.yml` calls it daily, but only once
+  `BMS_APP_BASE_URL` and `BMS_CRON_SECRET` are set as Actions secrets — without them every job in
+  that workflow skips itself, and points do not expire until someone presses the button on
+  `/admin/loyalty`. Check `/admin/operations-schedule` to see whether it has actually run.
 - **`bms_customers.points_balance` is a cache** of `SUM(points)`. `bmsLoyaltyOutstanding` reports
   `balanceMismatchCount`, which must always be 0; `/admin/loyalty` shows a red banner if it isn't.
 
@@ -124,7 +125,7 @@ returns exist; the non-POS `returnOrder()` is a full return, so it reverses the 
 
 ### What is deliberately not built
 
-- **No automatic messaging.** Nothing tells a customer their points are about to expire or that they
+- **No automatic messaging to customers.** Nothing tells a customer their points are about to expire or that they
   moved up a tier. `/admin/loyalty` lists members with points expiring in 30 days so the shop can
   contact them; that list is the whole mechanism.
 - **No loyalty report export.** The report engine's types are `SALES`, `INVENTORY`, `PROFIT`. Loyalty

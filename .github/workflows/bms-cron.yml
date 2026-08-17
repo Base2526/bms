@@ -1,0 +1,104 @@
+name: BMS scheduled jobs
+
+# ยิง cron endpoint ที่แอปเตรียมไว้แล้วแต่ไม่เคยมีตัวเรียก
+#
+# ก่อนหน้านี้ทุก endpoint ในนี้ "พร้อมแต่ไม่มีคนยิง" — ผลจริงคือ order ที่จองสต็อก
+# ค้างไม่ถูกปล่อย, follow-up ไม่ถูกส่ง, และแต้มสะสมไม่หมดอายุ (7.96) จนกว่าจะมีคน
+# กดปุ่มในหน้าแอดมินเอง ซึ่งไม่มีใครทำทุกวัน
+#
+# ตั้งค่าที่ต้องมี (Settings → Secrets and variables → Actions):
+#   secrets.BMS_APP_BASE_URL  — URL ของ deployment จริง เช่น https://bms.example.com
+#   secrets.BMS_CRON_SECRET   — ต้องตรงกับ env BMS_CRON_SECRET ของแอป
+#
+# ยังไม่ตั้ง secret = ทุก job ข้ามตัวเองแบบเงียบและ workflow ผ่าน (ไม่ทำให้ CI แดง
+# ระหว่างที่ยังไม่ได้ deploy) — เช็คว่ายิงจริงหรือยังได้ที่ /admin/operations-schedule
+# ซึ่งอ่านจาก bms_job_runs ที่ทุก endpoint บันทึกไว้เอง
+#
+# ทุก endpoint idempotent (บางตัวใช้ unique index กันซ้ำ เช่นแต้มสะสม) รันซ้ำไม่เสียหาย
+# แต่ถ้ารอบก่อนยังไม่จบก็ไม่ควรทับ — จึงตั้ง concurrency ต่อกลุ่ม
+
+on:
+  schedule:
+    # ทุก 15 นาที: งานที่ค้างไว้นานแล้วลูกค้าเห็นผลทันที
+    - cron: "*/15 * * * *"
+    # ทุกวัน 20:00 UTC (~03:00 ตามเวลาไทย): งานกวาดข้อมูล/สรุป
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "กลุ่มที่จะยิง (frequent | daily | all)"
+        required: false
+        default: "all"
+
+concurrency:
+  group: bms-cron-${{ github.event.schedule || github.event.inputs.group || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  frequent:
+    # ยิงเฉพาะรอบ 15 นาที หรือกดเอง
+    if: >-
+      github.event.schedule == '*/15 * * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.group == 'all' || github.event.inputs.group == 'frequent'))
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - name: release-expired
+            path: /api/bms/orders/release-expired?minutes=30
+          - name: followups-run
+            path: /api/bms/followups/run
+          - name: carrier-tracking-sync
+            path: /api/bms/shipping/sync-carriers
+    steps:
+      - name: POST ${{ matrix.job.name }}
+        env:
+          BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::notice::ข้าม ${{ matrix.job.name }} — ยังไม่ได้ตั้ง BMS_APP_BASE_URL / BMS_CRON_SECRET"
+            exit 0
+          fi
+          # --fail-with-body: ให้ body ที่แอปตอบมาโผล่ใน log ด้วยตอน 4xx/5xx
+          # ไม่ใช่เห็นแค่ exit code แล้วต้องไปเดาว่าพังเพราะอะไร
+          curl --silent --show-error --fail-with-body \
+               --max-time 300 --retry 2 --retry-delay 15 \
+               -X POST "$BASE_URL${{ matrix.job.path }}" \
+               -H "x-cron-secret: $CRON_SECRET"
+
+  daily:
+    if: >-
+      github.event.schedule == '0 20 * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.group == 'all' || github.event.inputs.group == 'daily'))
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          # แต้มหมดอายุ (FIFO) + ทบทวนชั้นสมาชิกทุกร้านที่เปิดโปรแกรม — 7.96
+          - name: loyalty-maintenance
+            path: /api/bms/loyalty/maintenance
+          - name: channel-health
+            path: /api/bms/channels/check-health
+          - name: ai-health
+            path: /api/bms/ai/check-health
+          - name: report-digest
+            path: /api/bms/reports/send-digest
+    steps:
+      - name: POST ${{ matrix.job.name }}
+        env:
+          BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::notice::ข้าม ${{ matrix.job.name }} — ยังไม่ได้ตั้ง BMS_APP_BASE_URL / BMS_CRON_SECRET"
+            exit 0
+          fi
+          curl --silent --show-error --fail-with-body \
+               --max-time 600 --retry 2 --retry-delay 30 \
+               -X POST "$BASE_URL${{ matrix.job.path }}" \
+               -H "x-cron-secret: $CRON_SECRET"

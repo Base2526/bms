@@ -258,8 +258,11 @@ will not match the server total and the bill is voided — which is why the arit
 import-free `lib/bms/loyaltyMath.ts` and is covered by `scripts/loyalty-contract.test.mts`.
 
 `POST /api/bms/loyalty/maintenance` (cron secret) expires points FIFO and re-reviews tiers for every
-shop with the program on. It is idempotent but **unscheduled** — nothing expires points until it runs
-or someone presses the buttons on `/admin/loyalty`.
+shop with the program on. It is idempotent, and `.github/workflows/bms-cron.yml` now calls it daily
+along with the other cron endpoints that previously had no caller at all. That workflow needs
+`BMS_APP_BASE_URL` and `BMS_CRON_SECRET` as Actions secrets; without them each job logs a notice and
+exits 0, so CI stays green before the app is deployed. `/admin/operations-schedule` reads
+`bms_job_runs` and is the place to confirm a job really ran.
 
 ### Coupons
 
