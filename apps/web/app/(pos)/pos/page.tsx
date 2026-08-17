@@ -343,9 +343,13 @@ export default function PosPage() {
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<PosMember[]>([]);
   const [memberSearching, setMemberSearching] = useState(false);
-  const [memberPanelOpen, setMemberPanelOpen] = useState(false);
   const [pointsToRedeem, setPointsToRedeem] = useState<string>("");
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
+  // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
+  // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollStep, setEnrollStep] = useState<"phone" | "name">("phone");
+  const [enrollPhone, setEnrollPhone] = useState("");
   const [enrollName, setEnrollName] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -496,8 +500,16 @@ export default function PosPage() {
     }
   }
 
+  /** เปิดกล่องสมัคร โดยยกเบอร์ที่พนักงานพิมพ์ค้นไว้มาต่อ ไม่ต้องพิมพ์ซ้ำ */
+  function openEnroll(prefill: string) {
+    setEnrollPhone(prefill.replace(/[^0-9+]/g, ""));
+    setEnrollName("");
+    setEnrollStep("phone");
+    setEnrollOpen(true);
+  }
+
   async function enrollMemberFromPos() {
-    const phone = memberQuery.trim();
+    const phone = enrollPhone.trim();
     if (!phone || !cashierId || !pin) {
       setNotice({ type: "error", text: "ต้องเลือกพนักงาน + ใส่ PIN ก่อนสมัครสมาชิก" });
       return;
@@ -513,9 +525,13 @@ export default function PosPage() {
         setNotice({ type: "error", text: data.reason || data.error || "สมัครสมาชิกไม่สำเร็จ" });
         return;
       }
+      // สมัครแล้วผูกเข้าบิลที่กำลังขายทันที — พนักงานไม่ต้องกลับไปค้นซ้ำ
       setMember(data.member);
-      setMemberPanelOpen(false);
+      setEnrollOpen(false);
       setEnrollName("");
+      setEnrollPhone("");
+      setMemberQuery("");
+      setMemberResults([]);
       setNotice({
         type: "ok",
         text: data.status === "ALREADY_MEMBER"
@@ -1029,19 +1045,20 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptModalOpen, receipt, printerReady]);
 
-  // Esc ปิดกล่องสมาชิก — ทางเดียวคู่กับปุ่ม ✕ (แตะฉากหลังปิดไม่ได้โดยตั้งใจ)
+  // Esc ปิดกล่องสมัครสมาชิก — ทางเดียวคู่กับปุ่ม ✕ (แตะฉากหลังปิดไม่ได้โดยตั้งใจ:
+  // จอทัชโดนขอบง่ายมาก และการปิดจะทิ้งเบอร์ที่พิมพ์ค้างไว้ทั้งหมด)
   // ดักแบบ capture เหมือนกล่องใบเสร็จ เพราะช่องยิงบาร์โค้ดอาจโฟกัสค้างอยู่
   useEffect(() => {
-    if (!memberPanelOpen) return;
+    if (!enrollOpen) return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
-      setMemberPanelOpen(false);
+      setEnrollOpen(false);
     }
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [memberPanelOpen]);
+  }, [enrollOpen]);
 
   // เปิด/ปิดกล้องตาม modal — เจอโค้ดแรกแล้วปิด modal + ยิงเข้า handleScan
   // เหมือนพิมพ์เอง ไม่มีทางพิเศษ ไม่งั้นราคา/สต็อกจะหลุด "server เป็นคนคิดเท่านั้น"
@@ -2388,6 +2405,11 @@ export default function PosPage() {
                     >
                       แลกทั้งหมด
                     </button>
+                    {pointsToRedeem !== "" && (
+                      <button type="button" className="pos-btn-ghost" onClick={() => setPointsToRedeem("")}>
+                        ไม่แลก
+                      </button>
+                    )}
                   </div>
                   {member.pointsBalance < 0 && (
                     <span style={{ color: "#c9455a" }}>
@@ -2396,9 +2418,47 @@ export default function PosPage() {
                   )}
                 </div>
               ) : (
-                <button type="button" className="pos-btn-ghost" onClick={() => setMemberPanelOpen(true)}>
-                  + สมาชิก / สะสมแต้ม
-                </button>
+                /* ค้นสมาชิกอยู่ในแผงนี้ตรง ๆ ไม่ใช่ modal — พนักงานต้องเห็นยอดบิล
+                   ตลอดเวลาที่คุยกับลูกค้า และการค้นเกิดขึ้นทุกบิล ต้องไม่มีขั้นเปิด/ปิด */
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      placeholder="เบอร์โทร / เลขสมาชิก"
+                      value={memberQuery}
+                      onChange={(e) => { setMemberQuery(e.target.value); void searchMember(e.target.value); }}
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <button
+                      type="button"
+                      className="pos-btn-ghost"
+                      onClick={() => openEnroll(memberQuery)}
+                    >
+                      สมัคร
+                    </button>
+                  </div>
+                  {memberSearching && <span style={{ color: "var(--pos-muted)" }}>กำลังค้น…</span>}
+                  {memberResults.map((hit) => (
+                    <button
+                      key={hit.customerId}
+                      type="button"
+                      onClick={() => { setMember(hit); setPointsToRedeem(""); setMemberResults([]); setMemberQuery(""); }}
+                      style={{
+                        textAlign: "left", padding: "6px 8px", borderRadius: 8,
+                        border: "1px solid var(--pos-line)", background: "transparent",
+                        color: "inherit", cursor: "pointer",
+                      }}
+                    >
+                      <strong>{hit.name}</strong>
+                      {hit.tier ? ` · ${hit.tier.name}` : ""}
+                      <div style={{ color: "var(--pos-muted)" }}>
+                        {hit.memberNo} · {hit.phone ?? "ไม่มีเบอร์"} · {hit.pointsUsable} แต้ม
+                      </div>
+                    </button>
+                  ))}
+                  {memberQuery.trim().length >= 3 && memberResults.length === 0 && !memberSearching && (
+                    <span style={{ color: "var(--pos-muted)" }}>ไม่พบสมาชิก — กด “สมัคร” เพื่อเปิดสมาชิกใหม่</span>
+                  )}
+                </div>
               )}
             </div>
             {session?.vat.registered && (
@@ -2650,9 +2710,10 @@ export default function PosPage() {
         </section>
       </div>
       </div>
-      {/* ค้น/สมัครสมาชิก (7.96) — ค้นด้วยเบอร์ก่อนเสมอ ถ้าไม่เจอจึงสมัครใหม่
-          ในช่องเดียวกัน กันพนักงานสร้างลูกค้าซ้ำ (ร้านนี้ลบลูกค้าถาวรไม่ได้) */}
-      {memberPanelOpen && (
+      {/* สมัครสมาชิก (7.96) — การค้นอยู่ในแผงชำระเงินแล้ว กล่องนี้ทำแค่การสมัคร
+          ซึ่งเกิดนาน ๆ ครั้ง จึงคุ้มที่จะกินพื้นที่และมี numpad ให้กดด้วยนิ้ว
+          สองขั้น (เบอร์ → ชื่อ) เพราะฟอร์มสองช่องพร้อมกันบนจอทัชกดผิดช่องบ่อย */}
+      {enrollOpen && (
         <div
           // ห้ามปิดด้วยการแตะฉากหลัง — จอทัชโดนขอบง่ายมาก และการปิดจะทิ้งเบอร์ที่
           // พิมพ์ค้างไว้ทั้งหมด · ปิดได้ทางปุ่ม ✕ กับ Esc เท่านั้น
@@ -2665,93 +2726,144 @@ export default function PosPage() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="ค้นหาหรือสมัครสมาชิก"
-            style={{ background: "#111", color: "#fff", borderRadius: 12, width: 420, maxWidth: "100%", overflow: "hidden" }}
+            aria-label="สมัครสมาชิกใหม่"
+            style={{ background: "#151714", color: "#f2f2ef", borderRadius: 12, width: 520, maxWidth: "100%", overflow: "hidden" }}
           >
             <div
               style={{
                 padding: "10px 14px", fontSize: 13, fontWeight: 600,
                 borderBottom: "1px solid rgba(255,255,255,0.14)",
-                display: "flex", justifyContent: "space-between", alignItems: "center",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
               }}
             >
-              <span>สมาชิก</span>
-              <button
-                type="button"
-                onClick={() => setMemberPanelOpen(false)}
-                aria-label="ปิด"
-                style={{ background: "none", border: "none", color: "#fff", fontSize: 16, padding: 4, lineHeight: 1 }}
-              >
-                ✕
-              </button>
+              <span>สมัครสมาชิก · {enrollStep === "phone" ? "1/2 เบอร์โทร" : "2/2 ชื่อลูกค้า"}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {/* บอกสถานะ PIN ตั้งแต่หัวกล่อง ไม่ให้กรอกจนจบแล้วเจอ 403 */}
+                <span style={{ fontSize: 12, color: cashierId && pin ? "#9fe1cb" : "#ffb4a3" }}>
+                  {cashierId && pin ? "PIN พร้อม" : "ยังไม่ได้ใส่ PIN"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEnrollOpen(false)}
+                  aria-label="ปิด"
+                  style={{ background: "none", border: "none", color: "#f2f2ef", fontSize: 16, padding: 4, lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </span>
             </div>
 
-            <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              <input
-                autoFocus
-                placeholder="เบอร์โทร / ชื่อ / เลขสมาชิก"
-                value={memberQuery}
-                onChange={(e) => { setMemberQuery(e.target.value); void searchMember(e.target.value); }}
-                style={{ width: "100%" }}
-              />
-              {memberSearching && <span style={{ fontSize: 12, color: "#c7cdc3" }}>กำลังค้น…</span>}
-
-              {memberResults.map((hit) => (
-                <button
-                  key={hit.customerId}
-                  type="button"
-                  onClick={() => {
-                    setMember(hit);
-                    setPointsToRedeem("");
-                    setMemberPanelOpen(false);
-                    setMemberResults([]);
-                  }}
-                  style={{
-                    textAlign: "left", padding: "8px 10px", borderRadius: 8,
-                    border: "1px solid rgba(255,255,255,0.18)", background: "transparent",
-                    color: "#fff", cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>{hit.name}</div>
-                  <div style={{ fontSize: 12, color: "#c7cdc3" }}>
-                    {hit.memberNo} · {hit.phone ?? "ไม่มีเบอร์"}
-                    {hit.tier ? ` · ${hit.tier.name}` : ""} · {hit.pointsUsable} แต้ม
+            {enrollStep === "phone" ? (
+              <div style={{ padding: 14, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,200px)", gap: 14 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                  <div
+                    aria-live="polite"
+                    style={{
+                      background: "#0d0f0d", border: "1px solid #5dcaa5", borderRadius: 8,
+                      padding: "10px 12px", fontSize: 22, letterSpacing: 1, minHeight: 46,
+                      fontVariantNumeric: "tabular-nums", wordBreak: "break-all",
+                    }}
+                  >
+                    {enrollPhone || <span style={{ color: "#7d857a", fontSize: 15 }}>เบอร์โทรลูกค้า</span>}
                   </div>
-                </button>
-              ))}
-
-              {memberQuery.trim().length >= 3 && memberResults.length === 0 && !memberSearching && (
-                <div style={{ borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: "#c7cdc3" }}>
-                    ไม่พบสมาชิก — สมัครใหม่ด้วยเบอร์ “{memberQuery.trim()}”
+                  <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                    เบอร์นี้ใช้ค้นสมาชิกครั้งต่อไป · ลูกค้าที่เคยคุยผ่าน LINE จะถูกผูกกับข้อมูลเดิม ไม่สร้างซ้ำ
                   </span>
-                  <input
-                    placeholder="ชื่อลูกค้า"
-                    value={enrollName}
-                    onChange={(e) => setEnrollName(e.target.value)}
-                    style={{ width: "100%" }}
-                  />
-                  {/* สมัครสมาชิก = เขียน CRM จริง ต้องมีคนรับผิดชอบ (PIN) เสมอ
-                      บอกเงื่อนไขตรงนี้ ไม่ปล่อยให้กดแล้วเด้ง error ทีหลัง */}
+                  {cart.length > 0 && (
+                    <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                      ค้างอยู่ในตะกร้า · {itemCount} ชิ้น ฿{baht(amountDue)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="pos-btn-ghost"
+                    disabled={!/^[0-9+]{8,20}$/.test(enrollPhone)}
+                    onClick={() => setEnrollStep("name")}
+                    style={{ marginTop: "auto", padding: "10px 0", fontSize: 14 }}
+                  >
+                    ถัดไป →
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7, minWidth: 0 }}>
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
+                    <button
+                      key={digit}
+                      type="button"
+                      onClick={() => setEnrollPhone((cur) => (cur.length >= 20 ? cur : cur + digit))}
+                      style={{
+                        background: "#22251f", border: "none", borderRadius: 8, color: "#f2f2ef",
+                        padding: "13px 0", fontSize: 19, cursor: "pointer",
+                      }}
+                    >
+                      {digit}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEnrollPhone("")}
+                    style={{ background: "#1a1d18", border: "none", borderRadius: 8, color: "#a8afa4", padding: "13px 0", fontSize: 13, cursor: "pointer" }}
+                  >
+                    ล้าง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEnrollPhone((cur) => (cur.length >= 20 ? cur : cur + "0"))}
+                    style={{ background: "#22251f", border: "none", borderRadius: 8, color: "#f2f2ef", padding: "13px 0", fontSize: 19, cursor: "pointer" }}
+                  >
+                    0
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="ลบตัวท้าย"
+                    onClick={() => setEnrollPhone((cur) => cur.slice(0, -1))}
+                    style={{ background: "#1a1d18", border: "none", borderRadius: 8, color: "#f2f2ef", padding: "13px 0", fontSize: 17, cursor: "pointer" }}
+                  >
+                    ⌫
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                <span style={{ fontSize: 13, color: "#a8afa4" }}>เบอร์ {enrollPhone}</span>
+                <input
+                  autoFocus
+                  placeholder="ชื่อลูกค้า"
+                  value={enrollName}
+                  onChange={(e) => setEnrollName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && cashierId && pin) void enrollMemberFromPos(); }}
+                  style={{ width: "100%" }}
+                />
+                <span style={{ fontSize: 12, color: "#a8afa4" }}>
+                  เบอร์ที่มีลูกค้าเดิมอยู่แล้วจะใช้ชื่อเดิม ไม่ทับด้วยชื่อนี้
+                </span>
+                {/* สมัครสมาชิก = เขียน CRM จริง ต้องมีคนรับผิดชอบ (PIN) เสมอ */}
+                {(!cashierId || !pin) && (
+                  <span style={{ fontSize: 12, color: "#ffb4a3" }}>
+                    เลือกผู้ขายและใส่ PIN ที่แถบด้านบนก่อน จึงสมัครสมาชิกได้
+                  </span>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="pos-btn-ghost"
+                    onClick={() => setEnrollStep("phone")}
+                    style={{ padding: "10px 16px", fontSize: 14 }}
+                  >
+                    ← ย้อนกลับ
+                  </button>
                   <button
                     type="button"
                     className="pos-btn-ghost"
                     onClick={() => void enrollMemberFromPos()}
                     disabled={!cashierId || !pin}
+                    style={{ flex: 1, padding: "10px 0", fontSize: 14 }}
                   >
                     สมัครสมาชิก
                   </button>
-                  {(!cashierId || !pin) && (
-                    <span style={{ fontSize: 12, color: "#ffb4a3" }}>
-                      เลือกผู้ขายและใส่ PIN ที่แถบด้านบนก่อน จึงสมัครสมาชิกได้
-                    </span>
-                  )}
                 </div>
-              )}
-              {memberQuery.trim().length > 0 && memberQuery.trim().length < 3 && (
-                <span style={{ fontSize: 12, color: "#c7cdc3" }}>พิมพ์อย่างน้อย 3 ตัวอักษร</span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
