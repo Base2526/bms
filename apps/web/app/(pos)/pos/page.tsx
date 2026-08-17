@@ -1029,6 +1029,20 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptModalOpen, receipt, printerReady]);
 
+  // Esc ปิดกล่องสมาชิก — ทางเดียวคู่กับปุ่ม ✕ (แตะฉากหลังปิดไม่ได้โดยตั้งใจ)
+  // ดักแบบ capture เหมือนกล่องใบเสร็จ เพราะช่องยิงบาร์โค้ดอาจโฟกัสค้างอยู่
+  useEffect(() => {
+    if (!memberPanelOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMemberPanelOpen(false);
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [memberPanelOpen]);
+
   // เปิด/ปิดกล้องตาม modal — เจอโค้ดแรกแล้วปิด modal + ยิงเข้า handleScan
   // เหมือนพิมพ์เอง ไม่มีทางพิเศษ ไม่งั้นราคา/สต็อกจะหลุด "server เป็นคนคิดเท่านั้น"
   useEffect(() => {
@@ -2640,7 +2654,8 @@ export default function PosPage() {
           ในช่องเดียวกัน กันพนักงานสร้างลูกค้าซ้ำ (ร้านนี้ลบลูกค้าถาวรไม่ได้) */}
       {memberPanelOpen && (
         <div
-          onClick={() => setMemberPanelOpen(false)}
+          // ห้ามปิดด้วยการแตะฉากหลัง — จอทัชโดนขอบง่ายมาก และการปิดจะทิ้งเบอร์ที่
+          // พิมพ์ค้างไว้ทั้งหมด · ปิดได้ทางปุ่ม ✕ กับ Esc เท่านั้น
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -2648,7 +2663,6 @@ export default function PosPage() {
           }}
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-label="ค้นหาหรือสมัครสมาชิก"
@@ -2717,9 +2731,21 @@ export default function PosPage() {
                     onChange={(e) => setEnrollName(e.target.value)}
                     style={{ width: "100%" }}
                   />
-                  <button type="button" className="pos-btn-ghost" onClick={() => void enrollMemberFromPos()}>
+                  {/* สมัครสมาชิก = เขียน CRM จริง ต้องมีคนรับผิดชอบ (PIN) เสมอ
+                      บอกเงื่อนไขตรงนี้ ไม่ปล่อยให้กดแล้วเด้ง error ทีหลัง */}
+                  <button
+                    type="button"
+                    className="pos-btn-ghost"
+                    onClick={() => void enrollMemberFromPos()}
+                    disabled={!cashierId || !pin}
+                  >
                     สมัครสมาชิก
                   </button>
+                  {(!cashierId || !pin) && (
+                    <span style={{ fontSize: 12, color: "#ffb4a3" }}>
+                      เลือกผู้ขายและใส่ PIN ที่แถบด้านบนก่อน จึงสมัครสมาชิกได้
+                    </span>
+                  )}
                 </div>
               )}
               {memberQuery.trim().length > 0 && memberQuery.trim().length < 3 && (
