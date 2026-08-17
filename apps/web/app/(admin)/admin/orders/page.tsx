@@ -18,7 +18,7 @@ import {
   Input,
 } from "antd";
 import Link from "next/link";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   ReloadOutlined,
   DollarOutlined,
@@ -295,10 +295,54 @@ const ITEM_COLUMNS = [
 ];
 
 /** เส้นทางออร์เดอร์ + รายการสินค้า + สรุปยอด — ใช้ทั้งแถวขยายของตาราง (desktop) และการ์ด (มือถือ) */
+/**
+ * ความกว้างที่ "มองเห็นจริง" ของแถวที่กางออก
+ *
+ * ตารางด้านนอกใช้ scroll={{x:"max-content"}} → <td> ของแถวที่กางออกกว้างเท่าผลรวม
+ * ทุกคอลัมน์ (วัดได้ ~1800px) เนื้อหาข้างในจึงยืดตามไปด้วย ของที่จัดชิดขวา เช่นยอดรวม
+ * และคอลัมน์ Line Total จะหลุดออกนอกจอ (ต้องเลื่อนขวาอีก ~750px จึงเห็น)
+ *
+ * ตรึงความกว้างไว้เป็นเลขคงที่ก็แก้การล้นได้ แต่เสียพื้นที่ที่เหลือไปเปล่า ๆ
+ * (วัดที่พื้นที่ 1040px: คงที่ 900px เหลือช่องว่าง 131px · วัดจริงได้ 1028px เหลือ 3px)
+ * จึงวัด clientWidth ของ scroll container เอา แล้วหักช่องไฟของ <td>
+ */
+function useVisibleRowWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const scroller = el.closest(".ant-table-content, .ant-table-body") as HTMLElement | null;
+    if (!scroller) return; // ไม่เจอ (เช่น AntD เปลี่ยนโครง) → ปล่อยให้ตกไปใช้ maxWidth สำรอง
+    const measure = () => {
+      const td = el.parentElement;
+      const pad = td ? (() => { const cs = getComputedStyle(td); return parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight); })() : 0;
+      setWidth(Math.max(0, scroller.clientWidth - pad));
+    };
+    measure();
+    // ย่อ/ขยายหน้าต่างหรือยุบ sidebar แล้วต้องวัดใหม่ ไม่งั้นค้างความกว้างเดิม
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, width };
+}
+
 function OrderDetails({ order: r }: { order: Order }) {
   const { t } = useI18n();
+  const { ref: wrapRef, width: visibleWidth } = useVisibleRowWidth();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div
+      ref={wrapRef}
+      style={{
+        display: "flex", flexDirection: "column", gap: 16,
+        width: visibleWidth,
+        // สำรองไว้เผื่อวัดไม่ได้ — กันไม่ให้กลับไปยืดเต็ม 1800px
+        maxWidth: visibleWidth ?? 900,
+        // ตรึงซ้ายไว้ให้ยังอยู่ในสายตาแม้เลื่อนตารางไปทางขวา (ทดสอบแล้วเหลือขอบ 2px)
+        position: "sticky", left: 0,
+      }}
+    >
       <OrderJourney orderId={r.id} />
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>
@@ -462,14 +506,25 @@ function OrderJourney({ orderId }: { orderId: string }) {
         )}
       </div>
 
-      {/* stepper หลัก — 7 ขั้นเรียงนอนกว้างเกินจอมือถือ จึงพลิกเป็นแนวตั้ง */}
-      <Steps
-        size="small"
-        direction={isMobile ? "vertical" : "horizontal"}
-        labelPlacement={isMobile ? "horizontal" : "vertical"}
-        items={stepItems}
-        style={{ marginTop: 4 }}
-      />
+      {/* stepper หลัก — 7 ขั้นเรียงนอนกว้างเกินจอมือถือ จึงพลิกเป็นแนวตั้ง
+          โหมด labelPlacement="vertical" ของ AntD ตั้ง .ant-steps-item{overflow:visible},
+          ป้ายกำกับกว้างคงที่ 112px และขั้นสุดท้าย flex:none → ป้ายของขั้นสุดท้ายชิดขอบขวา
+          พอดีเป๊ะ (วัดได้ 1202 จาก 1204px) พอกล่องแคบลงจะล้นออกไปเลย และเพราะ
+          overflow:visible มันล้นพ้นกล่อง Steps ไปดันหน้าเว็บจนแสดงเกินจอ
+          → เผื่อที่ขวาให้ป้ายที่จัดกลาง + ให้ส่วนเกินเลื่อนในกล่องตัวเอง ไม่ดันหน้า */}
+      <div style={{ overflowX: isMobile ? undefined : "auto" }}>
+        <Steps
+          size="small"
+          direction={isMobile ? "vertical" : "horizontal"}
+          labelPlacement={isMobile ? "horizontal" : "vertical"}
+          items={stepItems}
+          style={
+            isMobile
+              ? { marginTop: 4 }
+              : { marginTop: 4, paddingRight: 56, minWidth: stepItems.length * 120 + 56, boxSizing: "border-box" }
+          }
+        />
+      </div>
 
       {/* timeline ละเอียด */}
       <div>

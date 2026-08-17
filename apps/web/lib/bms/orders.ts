@@ -950,6 +950,12 @@ export type OrderJourney = {
 };
 
 const MAIN_FLOW = ["PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
+/**
+ * ขายหน้าร้านไม่มีขั้นแพ็คและส่ง — ลูกค้าถือของออกจากร้านไปแล้วตอนจ่ายเงิน
+ * ถ้าใช้ MAIN_FLOW ร่วมกัน PACKING/SHIPPED จะค้างเป็น "ยังไม่ถึง" ตลอดไป
+ * อ่านเหมือนมีงานคงค้างทั้งที่บิลปิดแล้ว
+ */
+const POS_FLOW = ["PENDING", "PAID", "COMPLETED"] as const;
 const ACTION_TO_STATUS: Record<string, string> = {
   "order.create": "PENDING", "order.reorder": "PENDING",
   "order.pay": "PAID", "order.pack": "PACKING", "order.ship": "SHIPPED", "order.complete": "COMPLETED",
@@ -963,13 +969,34 @@ const STEP_LABEL: Record<string, string> = {
 const jIso = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
 
 export async function getOrderJourney(tenantId: string, orderId: string): Promise<OrderJourney | null> {
-  const o = await query<{ channel: string; customer_ref: string | null; status: string; created_at: any; updated_at: any }>(
-    `SELECT channel, customer_ref, status, created_at, updated_at
-       FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
+  const o = await query<{
+    channel: string; customer_ref: string | null; status: string; created_at: any; updated_at: any;
+    cashier_name: string | null;
+  }>(
+    `SELECT o.channel, o.customer_ref, o.status, o.created_at, o.updated_at,
+            u.name AS cashier_name
+       FROM bms_orders o
+       LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
+      WHERE o.tenant_id = $1 AND o.id = $2`,
     [tenantId, orderId]
   );
   if (o.rowCount === 0) return null;
   const ord = o.rows[0];
+  const isPos = ord.channel === "pos";
+
+  // POS ไม่เขียน audit order.pay (เขียน pos.sale แทน) จึงต้องอ่านการชำระเงินจาก
+  // bms_payments ตรง ๆ ไม่งั้น stepper บอกว่า "ยังไม่ชำระ" ทั้งที่เก็บเงินไปแล้ว
+  // และ timeline ก็ไม่มีบรรทัดไหนบอกว่ารับเงินมาเท่าไหร่
+  const posPayment = isPos
+    ? (await query<{ method: string; amount: string; created_at: any }>(
+        `SELECT method, amount, created_at
+           FROM bms_payments
+          WHERE tenant_id = $1 AND order_id = $2 AND status IN ('CONFIRMED', 'REFUNDED')
+          ORDER BY created_at, id
+          LIMIT 1`,
+        [tenantId, orderId]
+      )).rows[0] ?? null
+    : null;
 
   // audit เกี่ยวกับ order นี้ (target = orderId) — resolve ชื่อ actor จาก email
   const auditRows = (await query<{ actor: string | null; action: string; created_at: any }>(
@@ -998,12 +1025,28 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   }
 
   // ---- steps (เส้นหลัก + กิ่ง cancel/return) ----
-  const steps: OrderStep[] = MAIN_FLOW.map((st) => {
+  const steps: OrderStep[] = (isPos ? POS_FLOW : MAIN_FLOW).map((st) => {
     const hit = lastByStatus.get(st);
     if (st === "PENDING") return { status: st, at: jIso(ord.created_at), actorName: hit?.actorName ?? "ระบบ", reached: true, branch: false };
-    // COMPLETED อาจมาจาก auto (จัดส่งถึง) ที่ไม่ได้ audit → fallback updated_at
+    // ขายหน้าร้าน: การรับเงินยืนยันด้วยแถว payment ไม่ใช่ audit
+    if (isPos && st === "PAID" && posPayment) {
+      return {
+        status: st,
+        at: jIso(posPayment.created_at),
+        actorName: ord.cashier_name ?? "ระบบ",
+        reached: true,
+        branch: false,
+      };
+    }
+    // COMPLETED อาจมาจาก auto (จัดส่งถึง / ปิดบิลที่เครื่องขาย) ที่ไม่ได้ audit → fallback updated_at
     if (!hit && st === "COMPLETED" && ord.status === "COMPLETED") {
-      return { status: st, at: jIso(ord.updated_at), actorName: "ระบบ", reached: true, branch: false };
+      return {
+        status: st,
+        at: jIso(ord.updated_at),
+        actorName: isPos ? (ord.cashier_name ?? "ระบบ") : "ระบบ",
+        reached: true,
+        branch: false,
+      };
     }
     return { status: st, at: hit?.at ?? null, actorName: hit?.actorName ?? null, reached: !!hit, branch: false };
   });
@@ -1046,7 +1089,23 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   // ---- รวม timeline ละเอียด ----
   const events: OrderEvent[] = [];
   if (convStart) events.push({ kind: "chat_start", at: convStart, text: `ลูกค้าทักผ่าน ${ord.channel} · เริ่มบทสนทนา`, actorName: null });
-  events.push({ kind: "order_status", at: jIso(ord.created_at)!, text: "สร้างออเดอร์ → PENDING", actorName: lastByStatus.get("PENDING")?.actorName ?? "ระบบ" });
+  events.push({
+    kind: "order_status",
+    at: jIso(ord.created_at)!,
+    text: isPos ? "เปิดบิลที่เครื่องขาย → PENDING" : "สร้างออเดอร์ → PENDING",
+    actorName: lastByStatus.get("PENDING")?.actorName ?? (isPos ? (ord.cashier_name ?? "ระบบ") : "ระบบ"),
+  });
+  // เงินที่รับมาต้องอยู่ใน timeline — ก่อนหน้านี้บิล POS ที่เก็บเงินแล้วมีแค่บรรทัด
+  // "สร้างออเดอร์" บรรทัดเดียว คนที่เปิดดูเพื่อตรวจยอดจะไม่เห็นว่ารับเงินไปเท่าไหร่
+  if (posPayment) {
+    const amount = Number(posPayment.amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    events.push({
+      kind: "payment",
+      at: jIso(posPayment.created_at)!,
+      text: `รับชำระ ${posPayment.method} ฿${amount} → PAID`,
+      actorName: ord.cashier_name ?? "ระบบ",
+    });
+  }
   for (const e of sysEvents) {
     const text = e.kind === "assign" ? `มอบหมายแชทให้ ${e.targetName}`
       : e.kind === "helper_add" ? `เพิ่ม ${e.targetName} เป็นผู้ช่วยตอบ`
@@ -1061,6 +1120,16 @@ export async function getOrderJourney(tenantId: string, orderId: string): Promis
   for (const s of shipRows as any[]) {
     const track = s.tracking_no ? ` · เลขพัสดุ ${s.tracking_no}` : "";
     events.push({ kind: "shipment", at: jIso(s.created_at)!, text: `สร้างพัสดุ ${s.carrier}${track}`, actorName: null });
+  }
+  // ปิดบิลหน้าร้านก็ไม่มี audit order.complete — ถ้าไม่เติมที่นี่ stepper จะติ๊ก COMPLETED
+  // แต่ timeline ไม่มีบรรทัดปิดบิล อ่านแล้วขัดกันเอง
+  if (isPos && ord.status === "COMPLETED" && !lastByStatus.get("COMPLETED")) {
+    events.push({
+      kind: "order_status",
+      at: jIso(ord.updated_at)!,
+      text: "ปิดบิลที่เครื่องขาย → COMPLETED",
+      actorName: ord.cashier_name ?? "ระบบ",
+    });
   }
   events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
