@@ -44,13 +44,37 @@ Added by migration `7.96`. Before it, POS sales were always anonymous — `creat
 A side effect was that coupon `per_customer_limit` never applied at the counter. Attaching a
 customer fixes that too.
 
-Three independent discount layers can now stack on one bill, applied in a fixed order:
+Four independent discount layers can stack on one bill, applied in a fixed order:
 
 | Layer | Source | Reversible |
 | --- | --- | --- |
 | 1. Tier discount | `bms_membership_tiers` via `bms_customers.tier_id`, auto-applied | yes |
 | 2. Coupon | existing `bms_coupons` (unchanged) | hard — redemption count already incremented |
 | 3. Points redemption | `bms_loyalty_ledger`, at the shop's configured rate | yes |
+| 4. Manual discount | keyed at the counter, needs supervisor approval (below) | yes — trimmed first when the cap binds |
+
+### Manual discount approval
+
+`composeDiscounts()` has carried a `manualDiscount` layer since `7.96`, but nothing reached it —
+`/api/pos/sale` hardcoded `discountApprovedBy`/`discountReason` to `null` because there was no
+server-side approval flow to trust. There is one now.
+
+The counter sends `manualDiscount`, `discountReason`, `discountApproverUserId`, and
+`discountApproverPin`. The route verifies that PIN against the database with `verifyCashierPin` and
+requires `pos.discount.approve` (already seeded to Manager by `7.87` — no new permission, no
+migration). Only then does it pass an amount to `createOrder`. The approver's PIN is a **separate
+entry from the selling cashier's PIN** even when the same person holds both, so a cashier who
+happens to carry the permission still has to make a deliberate second action that lands in the audit
+trail. The PIN is memory-only on the browser and is stripped from the pending-sale recovery record;
+a bill recovered after a reload has to be re-approved rather than silently replaying an approval.
+
+`createOrder` rejects the bill outright (`DISCOUNT_UNAPPROVED`) in two cases: an amount with no
+approver/reason attached, and an amount that the per-bill cap would trim. The second one matters —
+`composeDiscounts` trims the manual layer *first* because it is the most reversible, so a silent
+trim would charge the customer more than the counter quoted. Failing loudly and making staff re-key
+is the correct outcome.
+
+Approval is per-bill, never per-shift: `clearBillCustomerState()` drops it after every sale.
 
 `composeDiscounts()` in [loyaltyMath.ts](../../apps/web/lib/bms/loyaltyMath.ts) is the single place
 that combines them, enforces the per-bill cap (`bms_loyalty_settings.max_discount_pct`), and trims

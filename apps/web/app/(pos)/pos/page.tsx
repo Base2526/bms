@@ -146,6 +146,7 @@ type MemberPreview = {
   couponDiscount: number;
   pointsDiscount: number;
   pointsUsed: number;
+  manualDiscount: number;
   totalDiscount: number;
   netTotal: number;
   capped: boolean;
@@ -356,6 +357,21 @@ export default function PosPage() {
   // คูปองใช้ร่วมกับส่วนลดสมาชิกได้ — server เป็นคนตรวจกฎของโค้ด (ยอดขั้นต่ำ/
   // จำนวนครั้ง/ต่อคน) จอแค่ส่งโค้ดไปแล้วแสดงผล
   const [couponCode, setCouponCode] = useState("");
+  // ---- ส่วนลดมือ ----
+  // เก็บ "ที่ขอ" แยกจาก "ที่อนุมัติแล้ว" โดยตั้งใจ: พนักงานพิมพ์จำนวนได้ตลอด แต่ยอด
+  // จะเข้าไปคิดในพรีวิว/บิลก็ต่อเมื่อหัวหน้ากด PIN ผ่านแล้วเท่านั้น ถ้าใช้ตัวแปรเดียว
+  // จอจะโชว์ยอดลดให้ลูกค้าเห็นตั้งแต่ยังไม่มีใครอนุมัติ
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountDraft, setDiscountDraft] = useState("");
+  const [discountReasonDraft, setDiscountReasonDraft] = useState("");
+  const [discountApproverId, setDiscountApproverId] = useState("");
+  const [discountApproverPin, setDiscountApproverPin] = useState("");
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  // PIN ผู้อนุมัติอยู่ในหน่วยความจำอย่างเดียวเหมือน PIN คนขาย — ไม่เขียนลง
+  // localStorage เด็ดขาด (recovery record ของบิลค้างก็ตัด pin ออกด้วย)
+  const [approvedDiscount, setApprovedDiscount] = useState<
+    { amount: number; reason: string; approverId: string; approverPin: string; approverName: string } | null
+  >(null);
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
@@ -568,6 +584,42 @@ export default function PosPage() {
   function clearBillCustomerState() {
     clearMember();
     setCouponCode("");
+    clearManualDiscount();
+  }
+
+  /** ส่วนลดมืออนุมัติเป็นราย "บิล" ไม่ใช่รายกะ — ขายจบต้องล้างทุกครั้ง ไม่งั้นบิล
+      ถัดไปได้ส่วนลดที่หัวหน้าไม่เคยอนุมัติ */
+  function clearManualDiscount() {
+    setApprovedDiscount(null);
+    setDiscountDraft("");
+    setDiscountReasonDraft("");
+    setDiscountApproverPin("");
+    setDiscountError(null);
+    setDiscountOpen(false);
+  }
+
+  /**
+   * รับส่วนลดมือเข้าบิล — ตรวจแค่รูปแบบที่จอ ส่วนสิทธิ์/PIN/เพดานตรวจจริงที่ server
+   * ตอนกดรับเงิน จอไม่ยิง API ตรงนี้เพราะการอนุมัติต้องผูกกับบิลใบที่ขายจริง
+   * ไม่ใช่ token ลอย ๆ ที่เอาไปใช้กับบิลอื่นได้
+   */
+  function applyManualDiscount() {
+    const amount = Math.round(Number(discountDraft) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) { setDiscountError("จำนวนเงินไม่ถูกต้อง"); return; }
+    if (amount > total) { setDiscountError("ส่วนลดเกินยอดสินค้า"); return; }
+    if (!discountReasonDraft.trim()) { setDiscountError("ต้องระบุเหตุผล"); return; }
+    if (!discountApproverId) { setDiscountError("เลือกผู้อนุมัติก่อน"); return; }
+    if (!discountApproverPin) { setDiscountError("ใส่ PIN ผู้อนุมัติ"); return; }
+    const approver = (session?.cashiers ?? []).find((c) => c.id === discountApproverId);
+    setApprovedDiscount({
+      amount,
+      reason: discountReasonDraft.trim(),
+      approverId: discountApproverId,
+      approverPin: discountApproverPin,
+      approverName: approver?.name ?? approver?.email ?? "—",
+    });
+    setDiscountOpen(false);
+    setDiscountError(null);
   }
 
   /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
@@ -583,7 +635,7 @@ export default function PosPage() {
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
   useEffect(() => {
     if (!token || total <= 0) { setMemberPreview(null); return; }
-    if (!member && !pointsToRedeem && !couponCode.trim()) { setMemberPreview(null); return; }
+    if (!member && !pointsToRedeem && !couponCode.trim() && !approvedDiscount) { setMemberPreview(null); return; }
     const timer = setTimeout(async () => {
       try {
         const res = await fetch("/api/pos/member/preview", {
@@ -594,6 +646,7 @@ export default function PosPage() {
             subtotal: total,
             pointsToRedeem: Number(pointsToRedeem) || 0,
             couponCode: couponCode.trim() || null,
+            manualDiscount: approvedDiscount?.amount ?? 0,
           }),
         });
         if (!res.ok) { setMemberPreview(null); return; }
@@ -603,7 +656,7 @@ export default function PosPage() {
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [token, authHeaders, member, total, pointsToRedeem, couponCode]);
+  }, [token, authHeaders, member, total, pointsToRedeem, couponCode, approvedDiscount]);
 
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
@@ -1192,7 +1245,16 @@ export default function PosPage() {
       const savedAttempt = (() => {
         try { return JSON.parse(window.localStorage.getItem(PENDING_SALE_KEY) ?? "null"); } catch { return null; }
       })();
-      const body = savedAttempt?.body ? { ...savedAttempt.body, cashierUserId: cashierId, pin } : {
+      // บิลค้างที่มีส่วนลดมือ: PIN ผู้อนุมัติไม่ได้ถูกเก็บไว้ (โดยตั้งใจ) ถ้ารีโหลดจอไป
+      // แล้วต้องให้หัวหน้ากดอนุมัติใหม่ ไม่ใช่ปล่อยให้ยิงไปโดน 400 ที่อ่านไม่รู้เรื่อง
+      if (savedAttempt?.body?.manualDiscount > 0 && !approvedDiscount) {
+        setNotice({ type: "error", text: "บิลค้างใบนี้มีส่วนลดหน้าร้าน — ให้หัวหน้ากดอนุมัติใหม่ก่อนกดรับเงิน" });
+        setDiscountOpen(true);
+        return;
+      }
+      const body = savedAttempt?.body
+        ? { ...savedAttempt.body, cashierUserId: cashierId, pin, discountApproverPin: approvedDiscount?.approverPin ?? null }
+        : {
         shiftId: session.shift.id,
         cashierUserId: cashierId,
         pin,
@@ -1201,6 +1263,11 @@ export default function PosPage() {
         customerId: member?.customerId ?? null,
         pointsToRedeem: memberPreview?.pointsUsed ?? 0,
         couponCode: couponCode.trim() || null,
+        // ส่วนลดมือ: server ตรวจ PIN + สิทธิ์ pos.discount.approve ซ้ำอีกชั้นเสมอ
+        manualDiscount: approvedDiscount?.amount ?? 0,
+        discountReason: approvedDiscount?.reason ?? null,
+        discountApproverUserId: approvedDiscount?.approverId ?? null,
+        discountApproverPin: approvedDiscount?.approverPin ?? null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -1216,7 +1283,12 @@ export default function PosPage() {
             ref: payment.method !== "CASH" && payment.ref.trim() ? payment.ref.trim() : null,
           })),
       };
-      window.localStorage.setItem(PENDING_SALE_KEY, JSON.stringify({ body: { ...body, pin: undefined }, cart, payments }));
+      // PIN ทั้งคนขายและผู้อนุมัติห้ามลง localStorage — เครื่องหน้าร้านเปิดค้างทั้งวัน
+      // และ recovery record นี้อยู่ข้ามการรีโหลด
+      window.localStorage.setItem(
+        PENDING_SALE_KEY,
+        JSON.stringify({ body: { ...body, pin: undefined, discountApproverPin: undefined }, cart, payments })
+      );
       setHasPendingSale(true);
       const res = await fetch("/api/pos/sale", {
         method: "POST",
@@ -2414,6 +2486,12 @@ export default function PosPage() {
                 {memberPreview?.pointsDiscount ? (
                   <div>แลก {memberPreview.pointsUsed} แต้ม −฿{baht(memberPreview.pointsDiscount)}</div>
                 ) : null}
+                {memberPreview?.manualDiscount ? (
+                  <div>
+                    ส่วนลดหน้าร้าน −฿{baht(memberPreview.manualDiscount)}
+                    <span style={{ color: "var(--pos-muted)" }}> · อนุมัติโดย {approvedDiscount?.approverName ?? "—"}</span>
+                  </div>
+                ) : null}
                 {memberPreview?.capped && <div style={{ color: "#c9455a" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
               </div>
             )}
@@ -2446,6 +2524,83 @@ export default function PosPage() {
                 <span style={{ fontSize: 12, color: "#12805c" }}>
                   ใช้โค้ดได้ −฿{baht(memberPreview!.couponDiscount)}
                 </span>
+              )}
+            </div>
+            {/* ส่วนลดหน้าร้าน — ชั้นที่ 4 ต่อจาก tier/คูปอง/แต้ม ทุกบาทต้องมีหัวหน้ากด PIN
+                ปุ่มยุบไว้เพราะบิลส่วนใหญ่ไม่มีส่วนลดมือ กางเฉพาะตอนจะใช้ */}
+            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+              {approvedDiscount ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+                  <span style={{ fontSize: 12 }}>
+                    ส่วนลดหน้าร้าน ฿{baht(approvedDiscount.amount)} · {approvedDiscount.reason}
+                  </span>
+                  <button
+                    type="button"
+                    className="pos-btn-ghost"
+                    style={{ marginLeft: "auto" }}
+                    onClick={clearManualDiscount}
+                  >
+                    เอาออก
+                  </button>
+                </div>
+              ) : !discountOpen ? (
+                <button
+                  type="button"
+                  className="pos-btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => { setDiscountOpen(true); setDiscountError(null); }}
+                >
+                  + ส่วนลดหน้าร้าน (ต้องมีหัวหน้าอนุมัติ)
+                </button>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      inputMode="decimal"
+                      placeholder="จำนวนเงิน"
+                      value={discountDraft}
+                      onChange={(e) => setDiscountDraft(e.target.value.replace(/[^0-9.]/g, ""))}
+                      style={{ width: 110 }}
+                    />
+                    <input
+                      placeholder="เหตุผล (บังคับ)"
+                      value={discountReasonDraft}
+                      maxLength={200}
+                      onChange={(e) => setDiscountReasonDraft(e.target.value)}
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {/* เฉพาะคนที่ตั้ง PIN แล้ว — คนที่ไม่มี PIN อนุมัติไม่ได้อยู่แล้วที่ server */}
+                    <select
+                      value={discountApproverId}
+                      onChange={(e) => setDiscountApproverId(e.target.value)}
+                      style={{ flex: 1, minWidth: 0 }}
+                    >
+                      <option value="">— ผู้อนุมัติ —</option>
+                      {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      placeholder="PIN หัวหน้า"
+                      value={discountApproverPin}
+                      onChange={(e) => setDiscountApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                      style={{ width: 110 }}
+                    />
+                  </div>
+                  {discountError && <span style={{ fontSize: 12, color: "#c9455a" }}>{discountError}</span>}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="pos-btn-primary" style={{ flex: 1 }} onClick={applyManualDiscount}>
+                      ใช้ส่วนลด
+                    </button>
+                    <button type="button" className="pos-btn-ghost" onClick={clearManualDiscount}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
             {/* แถบสมาชิก — วางบนแผงชำระเงินเพราะพนักงานถามลูกค้าตอนกำลังจะรับเงิน */}
@@ -3392,6 +3547,12 @@ function describeFailure(data: any): string {
       return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity})`;
     case "COUPON_INVALID":
       return `คูปองใช้ไม่ได้: ${data.reason}`;
+    // สองตัวนี้เดิมตกไปที่ default แล้วโชว์ "ขายไม่สำเร็จ (POINTS_INVALID)" ซึ่งบอก
+    // แคชเชียร์ไม่ได้ว่าต้องทำอะไรต่อ ทั้งที่ server ส่ง reason ที่อ่านรู้เรื่องมาให้แล้ว
+    case "POINTS_INVALID":
+      return `แลกแต้มไม่ได้: ${data.reason}`;
+    case "DISCOUNT_UNAPPROVED":
+      return `ส่วนลดหน้าร้านใช้ไม่ได้: ${data.reason} — ให้หัวหน้าอนุมัติใหม่`;
     case "PAYMENT_FAILED":
       return `บันทึกการชำระเงินไม่สำเร็จ: ${data.reason}`;
     default:

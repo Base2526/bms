@@ -60,6 +60,34 @@ export async function POST(req: NextRequest) {
   if (!paymentParse.ok) return badRequest(paymentParse.error);
   const payments = paymentParse.payments;
 
+  // ---- ส่วนลดมือ: ต้องมีหัวหน้ากด PIN อนุมัติทุกครั้ง ----------------
+  // แยก PIN ของผู้อนุมัติออกจาก PIN คนขายโดยตั้งใจ ถ้าใช้ตัวเดียวกัน แคชเชียร์ที่
+  // บังเอิญมีสิทธิ์ pos.discount.approve จะลดเองได้ไม่จำกัดโดยไม่มีใครรู้ · ผู้อนุมัติ
+  // เป็นคนเดียวกับคนขายได้ถ้าร้านให้สิทธิ์ไว้จริง แต่ต้องกด PIN ซ้ำเป็นการยืนยัน
+  let approval: { amount: number; userId: string; reason: string } | null = null;
+  const requestedDiscount = Math.round(Number(body.manualDiscount ?? 0) * 100) / 100;
+  if (Number.isFinite(requestedDiscount) && requestedDiscount > 0) {
+    const reason = typeof body.discountReason === "string" ? body.discountReason.trim() : "";
+    const approverId = typeof body.discountApproverUserId === "string" ? body.discountApproverUserId.trim() : "";
+    const approverPin = typeof body.discountApproverPin === "string" ? body.discountApproverPin : "";
+    if (!reason) return badRequest("ส่วนลดหน้าร้านต้องระบุเหตุผล");
+    if (reason.length > 200) return badRequest("เหตุผลส่วนลดยาวเกินไป");
+    if (!approverId || !approverPin) return badRequest("ส่วนลดหน้าร้านต้องให้ผู้มีสิทธิ์อนุมัติกด PIN");
+
+    const approver = await verifyCashierPin(device.tenantId, approverId, approverPin);
+    if (!approver.ok) {
+      const message =
+        approver.reason === "NO_PIN" ? "ผู้อนุมัติยังไม่ได้ตั้ง PIN"
+        : approver.reason === "LOCKED" ? "ผู้อนุมัติใส่ PIN ผิดหลายครั้ง ถูกล็อกชั่วคราว"
+        : "PIN ผู้อนุมัติไม่ถูกต้อง";
+      return NextResponse.json({ error: message, reason: approver.reason }, { status: 403 });
+    }
+    if (!(await cashierHasPermission(device.tenantId, approver.userId, "pos.discount.approve"))) {
+      return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติส่วนลด" }, { status: 403 });
+    }
+    approval = { amount: requestedDiscount, userId: approver.userId, reason };
+  }
+
   const result = await recordPosSale({
     tenantId: device.tenantId,
     deviceId: device.id,
@@ -73,10 +101,12 @@ export async function POST(req: NextRequest) {
     // แต้มที่ขอแลกเชื่อจาก body ได้ เพราะยอดที่ใช้ได้จริงถูกล็อกและตรวจใน tx
     customerId: typeof body.customerId === "string" && body.customerId.trim() ? body.customerId.trim() : null,
     pointsToRedeem: Number.isFinite(Number(body.pointsToRedeem)) ? Number(body.pointsToRedeem) : null,
-    // หน้า POS รุ่นนี้ยังไม่มี flow อนุมัติส่วนลด/clinical assessment ที่ผูกกับ server state
-    // ห้ามเชื่อ id ผู้อนุมัติหรือ assessment จาก body เพราะปลอม audit/ข้าม human gate ได้
-    discountApprovedBy: null,
-    discountReason: null,
+    // ส่วนลดมือ: จำนวนเงินเชื่อจาก body ได้ (createOrder บังคับเพดานเองอีกชั้น) แต่
+    // "ใครอนุมัติ" ต้องพิสูจน์ด้วย PIN ที่ตรวจกับฐานข้อมูลข้างบน ห้ามเชื่อ id จาก body
+    manualDiscount: approval?.amount ?? null,
+    discountApprovedBy: approval?.userId ?? null,
+    discountReason: approval?.reason ?? null,
+    // clinical assessment ยังไม่มี flow ที่ผูกกับ server state — ห้ามเชื่อจาก body
     pharmacyApprovedAssessmentId: null,
   });
 

@@ -91,6 +91,12 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * ส่วนลดมือเป็นบาท (ชั้นที่ 4 ต่อจาก tier → คูปอง → แต้ม)
+   * > 0 ต้องมี discountApprovedBy + discountReason เสมอ — ผู้เรียกเป็นคนตรวจ
+   * ว่าคนอนุมัติมีสิทธิ์จริง ที่นี่แค่ปฏิเสธบิลที่ไม่มีหลักฐานอนุมัติติดมา
+   */
+  manualDiscount?: number | null;
   /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
   discountApprovedBy?: string | null;
   discountReason?: string | null;
@@ -134,6 +140,7 @@ export type CreateOrderResult =
   | { status: "NOT_FOUND"; sku: string; size: string }
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
+  | { status: "DISCOUNT_UNAPPROVED"; reason: string }
   | {
       status: PharmacySaleBlockStatus;
       sku: string;
@@ -429,6 +436,14 @@ export async function createOrder(
       return { status: "POINTS_INVALID", reason: "แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก" };
     }
 
+    // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
+    // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
+    const manualDiscount = Math.max(0, Math.round(Number(input.manualDiscount ?? 0) * 100) / 100);
+    if (manualDiscount > 0 && !(input.discountApprovedBy && input.discountReason?.trim())) {
+      await client.query("ROLLBACK");
+      return { status: "DISCOUNT_UNAPPROVED", reason: "ส่วนลดมือต้องมีผู้อนุมัติและเหตุผล" };
+    }
+
     const breakdown = composeDiscounts({
       settings: loyaltySettings,
       subtotal: total,
@@ -437,7 +452,17 @@ export async function createOrder(
       couponDiscount,
       pointsRequested: requestedPoints,
       pointsAvailable: member?.pointsUsable ?? 0,
+      manualDiscount,
     });
+    // ชนเพดาน max_discount_pct แล้วส่วนลดมือถูกตัด = ต้องบอก ไม่ใช่ลดให้น้อยกว่าที่ตกลง
+    // (composeDiscounts ตัดชั้น manual ก่อนเพื่อน เพราะย้อนคืนง่ายที่สุด)
+    if (manualDiscount > 0 && breakdown.manualDiscount !== manualDiscount) {
+      await client.query("ROLLBACK");
+      return {
+        status: "DISCOUNT_UNAPPROVED",
+        reason: `ส่วนลดรวมเกินเพดาน ${loyaltySettings.maxDiscountPct}% ของบิล — ส่วนลดมือลดได้สูงสุด ฿${breakdown.manualDiscount.toFixed(2)}`,
+      };
+    }
     // แลกได้ไม่เท่าที่ขอ = ปฏิเสธทั้งบิล ห้ามหักให้บางส่วนเงียบ ๆ
     //
     // composeDiscounts จะ clamp จำนวนที่ขอลงมาตามแต้มที่มีและตามที่บิลรับได้อยู่แล้ว
@@ -511,6 +536,7 @@ export async function createOrder(
       }
     }
 
+    const manualLabel = `ส่วนลดหน้าร้าน — ${input.discountReason?.trim() ?? ""}`.trim();
     const discountLines: OrderDiscountLine[] = [];
     if (breakdown.tierDiscount > 0 && member?.tier) {
       discountLines.push({ source: "TIER", label: breakdown.tierLabel ?? `สมาชิก ${member.tier.name}`, amount: breakdown.tierDiscount, pointsUsed: 0 });
@@ -521,6 +547,9 @@ export async function createOrder(
     if (breakdown.pointsDiscount > 0) {
       discountLines.push({ source: "POINTS", label: `แลก ${breakdown.pointsUsed} แต้ม`, amount: breakdown.pointsDiscount, pointsUsed: breakdown.pointsUsed });
     }
+    if (breakdown.manualDiscount > 0) {
+      discountLines.push({ source: "MANUAL", label: manualLabel, amount: breakdown.manualDiscount, pointsUsed: 0 });
+    }
     await recordOrderDiscountsInTx(client, tenantId, orderId, [
       ...(breakdown.tierDiscount > 0 && member?.tier
         ? [{ source: "TIER" as const, refId: member.tier.id, label: breakdown.tierLabel ?? `สมาชิก ${member.tier.name}`, amount: breakdown.tierDiscount }]
@@ -530,6 +559,9 @@ export async function createOrder(
         : []),
       ...(breakdown.pointsDiscount > 0
         ? [{ source: "POINTS" as const, label: `แลก ${breakdown.pointsUsed} แต้ม`, amount: breakdown.pointsDiscount, pointsUsed: breakdown.pointsUsed }]
+        : []),
+      ...(breakdown.manualDiscount > 0
+        ? [{ source: "MANUAL" as const, label: manualLabel, amount: breakdown.manualDiscount }]
         : []),
     ]);
 

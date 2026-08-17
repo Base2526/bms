@@ -188,3 +188,42 @@ test("แต้มที่ได้ครั้งถัดไปกลบย�
   assert.equal(consumedToCoverDeficit(0, 83), 0);
   assert.equal(consumedToCoverDeficit(200, 83), 0);
 });
+
+// ---- ส่วนลดมือ (ชั้นที่ 4) -------------------------------------------
+// composeDiscounts รองรับชั้นนี้มาตั้งแต่ 7.96 แต่ createOrder เพิ่งต่อท่อให้ใช้จริง
+// สองเทสนี้ล็อกพฤติกรรมที่ route ฝั่ง POS พึ่งพา: ยอดที่ขอต้องได้เท่าที่ขอ
+// เมื่อยังไม่ชนเพดาน และต้องถูกตัด "ก่อนชั้นอื่น" เมื่อชนเพดาน
+
+test("ส่วนลดมือซ้อนบนชั้นอื่นได้ และผลรวมต่อชั้นเท่ากับ totalDiscount", () => {
+  const r = composeDiscounts({
+    settings: settings({ maxDiscountPct: 100 }),
+    subtotal: 1000,
+    tier: tier(),           // 5% = 50
+    couponDiscount: 100,
+    manualDiscount: 30,
+  });
+  assert.equal(r.tierDiscount, 50);
+  assert.equal(r.couponDiscount, 100);
+  assert.equal(r.manualDiscount, 30);
+  assert.equal(r.totalDiscount, 180);
+  assert.equal(r.netTotal, 820);
+  assert.equal(
+    r.tierDiscount + r.couponDiscount + r.pointsDiscount + r.manualDiscount,
+    r.totalDiscount
+  );
+});
+
+test("ชนเพดานแล้วส่วนลดมือถูกตัดก่อนชั้นอื่น (คูปอง/ชั้นสมาชิกย้อนคืนยากกว่า)", () => {
+  const r = composeDiscounts({
+    settings: settings({ maxDiscountPct: 10 }),   // เพดาน 100 จาก 1000
+    subtotal: 1000,
+    tier: tier(),           // 5% = 50
+    couponDiscount: 40,
+    manualDiscount: 50,     // รวมดิบ 140 → เกินเพดาน 40
+  });
+  assert.equal(r.totalDiscount, 100);
+  assert.equal(r.tierDiscount, 50);      // ชั้นที่ย้อนยากที่สุด ไม่ถูกแตะ
+  assert.equal(r.couponDiscount, 40);
+  assert.equal(r.manualDiscount, 10);    // โดนตัด 40 จากชั้นนี้ทั้งหมด
+  assert.equal(r.capped, true);
+});

@@ -30,6 +30,11 @@ export async function POST(req: NextRequest) {
   const customerId = typeof body.customerId === "string" && body.customerId.trim() ? body.customerId.trim() : null;
   const pointsRequested = Number.isFinite(Number(body.pointsToRedeem)) ? Number(body.pointsToRedeem) : 0;
   const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim() : "";
+  // พรีวิวรวมส่วนลดมือด้วย ไม่งั้นยอดบนจอกับยอดที่ createOrder คิดจะต่างกัน แล้วบิลถูก
+  // ตีตก PAYMENT_MISMATCH ตอนกดรับเงิน · จุดนี้ไม่ตรวจสิทธิ์ผู้อนุมัติ เพราะเป็นการอ่าน
+  // อย่างเดียว การอนุมัติจริงเกิดที่ /api/pos/sale
+  const manualRaw = Number(body.manualDiscount);
+  const manualDiscount = Number.isFinite(manualRaw) && manualRaw > 0 ? Math.round(manualRaw * 100) / 100 : 0;
 
   // คูปองต้องตรวจด้วยกฎเดิมของมัน (ยอดขั้นต่ำ/จำนวนครั้ง/ต่อคน) ไม่ใช่คิด % เอง
   let couponDiscount = 0;
@@ -47,6 +52,7 @@ export async function POST(req: NextRequest) {
       subtotal,
       pointsRequested,
       couponDiscount,
+      manualDiscount,
     }),
     getLoyaltySettings(device.tenantId),
   ]);

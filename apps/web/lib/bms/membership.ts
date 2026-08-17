@@ -467,6 +467,8 @@ export async function previewMemberDiscount(args: {
   subtotal: number;
   pointsRequested?: number;
   couponDiscount?: number;
+  /** ส่วนลดมือที่หัวหน้าอนุมัติ — พรีวิวต้องรวมด้วย ไม่งั้นยอดที่จอโชว์ไม่ตรงกับที่ createOrder คิด */
+  manualDiscount?: number;
 }): Promise<MemberDiscountBreakdown & { member: MemberSummary | null }> {
   const settings = await getLoyaltySettings(args.tenantId);
   const member = args.customerId ? await getMember(args.tenantId, args.customerId) : null;
@@ -477,6 +479,7 @@ export async function previewMemberDiscount(args: {
     couponDiscount: args.couponDiscount,
     pointsRequested: args.pointsRequested,
     pointsAvailable: member?.pointsUsable ?? 0,
+    manualDiscount: args.manualDiscount,
   });
   return { ...breakdown, member };
 }
