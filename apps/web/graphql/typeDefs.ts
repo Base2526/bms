@@ -1156,6 +1156,15 @@ export const typeDefs = /* GraphQL */ `
     updated_at: String!
     items: [BmsOrderItem!]!
     hasShippingAddress: Boolean!   # false = ช่องทางที่ร้านต้องเก็บที่อยู่เอง แต่ลูกค้ายังไม่มีที่อยู่จัดส่ง — จัดส่งไม่ได้
+    # ส่วนลดแยกที่มา (7.96) — ผลรวมเท่ากับ discount_amount เสมอ
+    # discount_amount ยังเป็นตัวเลขที่ฐาน VAT/ใบกำกับใช้ ตารางนี้ตอบว่ามาจากอะไร
+    discountLines: [BmsOrderDiscountLine!]!
+  }
+  type BmsOrderDiscountLine {
+    source: String!             # TIER | COUPON | POINTS | MANUAL
+    label: String!
+    amount: Float!
+    pointsUsed: Int!
   }
 
   # ===== BMS order journey (เส้นทางออเดอร์: ต้นทางแชท + stepper + timeline) =====
@@ -1780,6 +1789,9 @@ export const typeDefs = /* GraphQL */ `
     identities: [BmsCustomerIdentity!]!
     orders: [BmsOrder!]!
     coupons: [BmsCustomerCoupon360!]!
+    # สมาชิก + แต้ม (7.96) — null = ลูกค้าคนนี้ยังไม่ได้สมัครสมาชิก
+    membership: BmsMember
+    loyaltyLedger: [BmsLoyaltyLedgerEntry!]!
   }
 
   input BmsCustomerInput {

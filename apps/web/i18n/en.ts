@@ -2137,6 +2137,8 @@ const en = {
     btn_add_to_plan: "Add to plan",
   },
   admin_customers: {
+    col_membership: "Membership",
+    points_usable: "{usable} redeemable · {balance} balance",
     coupon_state_assigned: "Assigned",
     coupon_state_reserved: "Reserved for an order",
     coupon_state_redeemed: "Redeemed",

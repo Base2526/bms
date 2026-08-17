@@ -49,6 +49,7 @@ type Order = {
   status: OrderStatus;
   total_amount: number;
   discount_amount: number;
+  discountLines?: Array<{ source: string; label: string; amount: number; pointsUsed: number }>;
   shipping_fee: number;
   amount_due: number;
   coupon_code: string | null;
@@ -63,6 +64,7 @@ const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, limit: $limit, offset: $offset) {
       id channel customer_ref status total_amount discount_amount shipping_fee amount_due coupon_code created_at updated_at hasShippingAddress
+      discountLines { source label amount pointsUsed }
       items { product_sku size qty unit_price }
     }
   }
@@ -353,7 +355,16 @@ function OrderDetails({ order: r }: { order: Order }) {
               <Typography.Text type="secondary">{t("admin_orders.subtotal")}</Typography.Text>
               <Typography.Text>{money(orderSubtotal(r))}</Typography.Text>
             </div>
-            {Number(r.discount_amount || 0) > 0 && (
+            {/* ส่วนลดหลายชั้น (7.96) แตกเป็นบรรทัดตามที่มา — บิลเก่าที่ยังไม่มี
+                discountLines ตกไปใช้บรรทัดรวมเดิมเหมือนเคย */}
+            {(r.discountLines?.length ?? 0) > 0 ? (
+              r.discountLines!.map((line) => (
+                <div key={line.source} style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <Typography.Text type="secondary">{line.label}</Typography.Text>
+                  <Typography.Text type="danger">-{money(line.amount)}</Typography.Text>
+                </div>
+              ))
+            ) : Number(r.discount_amount || 0) > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
                 <Typography.Text type="secondary">{t("admin_orders.discount")}{r.coupon_code ? ` (${r.coupon_code})` : ""}</Typography.Text>
                 <Typography.Text type="danger">-{money(r.discount_amount)}</Typography.Text>

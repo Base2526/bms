@@ -153,6 +153,8 @@ type MemberPreview = {
   redeemPointsPerUnit: number;
   redeemBahtPerUnit: number;
   redeemMinPoints: number;
+  /** เหตุผลที่ใช้โค้ดนี้ไม่ได้ — null = ใช้ได้ (หรือไม่ได้กรอกโค้ด) */
+  couponError: string | null;
 };
 
 type ReceiptVat = {
@@ -351,6 +353,9 @@ export default function PosPage() {
   // แผงปรับจำนวนแต้มโผล่หลังพนักงานกด "ใช้แต้ม" เท่านั้น — บิลส่วนใหญ่ไม่แลกแต้ม
   // การโชว์ช่องกรอกไว้ตลอดทำให้แถวรุงรังและกดผิดตอนรีบ
   const [redeemOpen, setRedeemOpen] = useState(false);
+  // คูปองใช้ร่วมกับส่วนลดสมาชิกได้ — server เป็นคนตรวจกฎของโค้ด (ยอดขั้นต่ำ/
+  // จำนวนครั้ง/ต่อคน) จอแค่ส่งโค้ดไปแล้วแสดงผล
+  const [couponCode, setCouponCode] = useState("");
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
@@ -559,6 +564,12 @@ export default function PosPage() {
     setMemberQuery("");
   }
 
+  /** ล้างทุกอย่างที่ผูกกับ "ลูกค้าคนนี้บิลนี้" — เรียกหลังขายจบทุกครั้ง */
+  function clearBillCustomerState() {
+    clearMember();
+    setCouponCode("");
+  }
+
   /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
   function stepPoints(direction: 1 | -1) {
     if (!member) return;
@@ -572,7 +583,7 @@ export default function PosPage() {
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
   useEffect(() => {
     if (!token || total <= 0) { setMemberPreview(null); return; }
-    if (!member && !pointsToRedeem) { setMemberPreview(null); return; }
+    if (!member && !pointsToRedeem && !couponCode.trim()) { setMemberPreview(null); return; }
     const timer = setTimeout(async () => {
       try {
         const res = await fetch("/api/pos/member/preview", {
@@ -582,6 +593,7 @@ export default function PosPage() {
             customerId: member?.customerId ?? null,
             subtotal: total,
             pointsToRedeem: Number(pointsToRedeem) || 0,
+            couponCode: couponCode.trim() || null,
           }),
         });
         if (!res.ok) { setMemberPreview(null); return; }
@@ -591,7 +603,7 @@ export default function PosPage() {
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [token, authHeaders, member, total, pointsToRedeem]);
+  }, [token, authHeaders, member, total, pointsToRedeem, couponCode]);
 
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
@@ -1188,6 +1200,7 @@ export default function PosPage() {
         // สมาชิก (7.96) — server ตรวจซ้ำว่า id นี้เป็นลูกค้าของร้านนี้ และล็อกยอดแต้มใน tx
         customerId: member?.customerId ?? null,
         pointsToRedeem: memberPreview?.pointsUsed ?? 0,
+        couponCode: couponCode.trim() || null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -1270,9 +1283,9 @@ export default function PosPage() {
           }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
-        // สมาชิกผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้าคนถัดไป
-        // ได้ส่วนลด/แต้มของคนก่อน
-        clearMember();
+        // สมาชิก/คูปองผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้า
+        // คนถัดไปได้ส่วนลด/แต้มของคนก่อน
+        clearBillCustomerState();
         window.localStorage.removeItem(PENDING_SALE_KEY);
         setHasPendingSale(false);
         setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
@@ -1515,6 +1528,23 @@ export default function PosPage() {
       }));
     setCart(nextCart);
     setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+    // ยกสมาชิกของบิลเดิมมาที่บิลใหม่ (7.96) — ลูกค้าคนเดิมยืนอยู่ตรงหน้า ถ้าไม่ยกมา
+    // พนักงานต้องค้นซ้ำและมักลืม แล้วลูกค้าเสียส่วนลด/แต้มของการเปลี่ยนสินค้า
+    // ดึงข้อมูลสดใหม่แทนที่จะใช้ค่าบนใบเสร็จ เพราะแต้ม/ชั้นเปลี่ยนไปแล้วได้
+    clearMember();
+    if (row.memberNo) {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/pos/member?q=${encodeURIComponent(row.memberNo!)}`, {
+            headers: authHeaders, cache: "no-store",
+          });
+          const data = await res.json();
+          const hit = (Array.isArray(data.members) ? data.members : [])
+            .find((m: PosMember) => m.memberNo === row.memberNo);
+          if (hit) setMember(hit);
+        } catch { /* ยกสมาชิกไม่สำเร็จต้องไม่ขัดการเปลี่ยนสินค้า — ค้นเองได้ */ }
+      })();
+    }
     // งานย้ายไปที่ตะกร้าแล้ว — ปล่อยฟอร์มคืนกางค้างไว้จะบังบิลอื่นเปล่า ๆ
     setReturnPanelOrderId(null);
     setReceipt({
@@ -2378,6 +2408,9 @@ export default function PosPage() {
                 {memberPreview?.tierDiscount ? (
                   <div>{memberPreview.tierLabel ?? "ส่วนลดสมาชิก"} −฿{baht(memberPreview.tierDiscount)}</div>
                 ) : null}
+                {memberPreview?.couponDiscount ? (
+                  <div>คูปอง {couponCode.trim().toUpperCase()} −฿{baht(memberPreview.couponDiscount)}</div>
+                ) : null}
                 {memberPreview?.pointsDiscount ? (
                   <div>แลก {memberPreview.pointsUsed} แต้ม −฿{baht(memberPreview.pointsDiscount)}</div>
                 ) : null}
@@ -2390,6 +2423,31 @@ export default function PosPage() {
                 <span>{discountTotal > 0 ? `ยอดหลังส่วนลด ฿${baht(netTotal)}` : `ยอดสินค้า ฿${baht(total)}`} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
               </div>
             )}
+            {/* คูปอง — แยกจากแถบสมาชิกเพราะใช้ได้ทั้งลูกค้าทั่วไปและสมาชิก
+                กฎของโค้ดตรวจที่ server ทั้งหมด จอไม่คิด % เอง */}
+            <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  placeholder="โค้ดส่วนลด"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  style={{ flex: 1, minWidth: 0, textTransform: "uppercase" }}
+                />
+                {couponCode !== "" && (
+                  <button type="button" className="pos-btn-ghost" onClick={() => setCouponCode("")}>
+                    ล้าง
+                  </button>
+                )}
+              </div>
+              {couponCode.trim() !== "" && memberPreview?.couponError && (
+                <span style={{ fontSize: 12, color: "#c9455a" }}>{memberPreview.couponError}</span>
+              )}
+              {couponCode.trim() !== "" && !memberPreview?.couponError && (memberPreview?.couponDiscount ?? 0) > 0 && (
+                <span style={{ fontSize: 12, color: "#12805c" }}>
+                  ใช้โค้ดได้ −฿{baht(memberPreview!.couponDiscount)}
+                </span>
+              )}
+            </div>
             {/* แถบสมาชิก — วางบนแผงชำระเงินเพราะพนักงานถามลูกค้าตอนกำลังจะรับเงิน */}
             <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
               {member ? (

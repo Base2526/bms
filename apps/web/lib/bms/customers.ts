@@ -874,7 +874,32 @@ export async function deleteCustomerAddress(tenantId: string, addressId: string)
   return (res.rowCount ?? 0) > 0;
 }
 
+/**
+ * ลบลูกค้า (soft delete)
+ *
+ * สมาชิกที่ยังมีแต้มใช้ได้ค้างอยู่ลบไม่ได้ (7.96) — แต้มค้างเป็นภาระผูกพันของร้าน
+ * ที่รายงานทางบัญชีนับอยู่ ถ้าลบเงียบ ๆ ลูกค้ากลับมาแล้วแต้มหาย ร้านตอบไม่ได้ว่า
+ * หายตอนไหน (ledger ยังอยู่แต่หน้าค้นสมาชิกกรอง deleted_at ออกไปแล้ว)
+ * ถ้าจะลบจริงต้องปรับแต้มเป็น 0 ด้วยเหตุผลก่อน ผ่าน /admin/loyalty
+ * ยอดติดลบไม่กัน — นั่นคือหนี้ของลูกค้า ไม่ใช่ของร้าน
+ */
 export async function deleteCustomer(tenantId: string, id: string) {
+  const points = await query<{ usable: string }>(
+    `SELECT COALESCE(SUM(l.points - l.consumed_points), 0) AS usable
+       FROM bms_loyalty_ledger l
+       JOIN bms_customers c ON c.tenant_id = l.tenant_id AND c.id = l.customer_id
+      WHERE l.tenant_id = $1 AND l.customer_id = $2
+        AND c.member_no IS NOT NULL
+        AND l.points > 0 AND (l.expires_at IS NULL OR l.expires_at > now())`,
+    [tenantId, id]
+  );
+  const usable = Number(points.rows[0]?.usable ?? 0);
+  if (usable > 0) {
+    throw new Error(
+      `ลบไม่ได้: สมาชิกคนนี้มีแต้มใช้ได้ค้างอยู่ ${usable} แต้ม — ปรับแต้มเป็น 0 พร้อมระบุเหตุผลที่หน้าสมาชิกก่อน`
+    );
+  }
+
   const res = await query(
     `UPDATE bms_customers SET deleted_at=now(), updated_at=now()
       WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,

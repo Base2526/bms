@@ -949,6 +949,10 @@ export type PosSaleResult =
 export type PosRecentReceipt = {
   orderId: string;
   docNo: string | null;
+  /** สมาชิกที่ผูกกับบิลนี้ (7.96) — null = บิลไม่ผูกสมาชิก · ใช้ตอนกด "เปลี่ยนสินค้า"
+      เพื่อยกสมาชิกเดิมมาที่บิลใหม่ ไม่ให้พนักงานต้องค้นซ้ำแล้วลืม */
+  memberNo: string | null;
+  memberName: string | null;
   vat: PosReceiptVat | null;
   roundingAmount: number;
   orderStatus: string;
@@ -1638,6 +1642,8 @@ export async function listRecentPosSales(
     exempt_amount: string | null;
     vat_amount: string | null;
     rounding_amount: string | null;
+    member_no: string | null;
+    member_name: string | null;
   }>(
     `SELECT o.id,
             o.total_amount,
@@ -1655,9 +1661,12 @@ export async function listRecentPosSales(
             doc.taxable_amount,
             doc.exempt_amount,
             doc.vat_amount,
-            doc.rounding_amount
+            doc.rounding_amount,
+            cust.member_no,
+            cust.name AS member_name
        FROM bms_orders o
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
+       LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
        LEFT JOIN LATERAL (
          SELECT method, slip_ref, cash_tendered, cash_change
            FROM bms_payments
@@ -1821,6 +1830,8 @@ export async function listRecentPosSales(
     paymentRef: row.payment_ref ?? null,
     soldAt: toISO(row.created_at),
     cashierName: row.cashier_name ?? null,
+    memberNo: row.member_no ?? null,
+    memberName: row.member_no ? (row.member_name ?? null) : null,
     payments: paymentsByOrder.get(row.id) ?? [],
     refunds: refundsByOrder.get(row.id) ?? [],
     lines: linesByOrder.get(row.id) ?? [],

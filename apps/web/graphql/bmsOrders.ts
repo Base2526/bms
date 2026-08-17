@@ -18,6 +18,7 @@ import {
   createOrder,
 } from "@/lib/bms/orders";
 import { MARKETPLACE_CHANNELS } from "@/lib/bms/shipping";
+import { listOrderDiscounts } from "@/lib/bms/membership";
 import { generateInvoice } from "@/lib/bms/documents";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -208,6 +209,10 @@ export const bmsOrdersResolvers = {
         [getTenantId(ctx), parent.customer_id]
       );
       return (res.rowCount ?? 0) > 0;
+    },
+    // ส่วนลดแยกที่มา (7.96) — บิลก่อน 7.96 และบิลที่ไม่มีส่วนลดจะได้ [] ปกติ
+    async discountLines(parent: { id: string }, _args: unknown, ctx: any) {
+      return listOrderDiscounts(getTenantId(ctx), parent.id);
     },
     // normalize ให้ตรง schema (String! สำหรับ timestamps, Float สำหรับ numeric)
     total_amount: (p: any) => Number(p.total_amount),

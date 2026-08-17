@@ -2139,6 +2139,8 @@ const th = {
     btn_add_to_plan: "เพิ่มเข้าแผน",
   },
   admin_customers: {
+    col_membership: "สมาชิก",
+    points_usable: "แลกได้ {usable} · คงเหลือ {balance}",
     coupon_state_assigned: "แจกแล้ว",
     coupon_state_reserved: "จองกับออเดอร์",
     coupon_state_redeemed: "ใช้แล้ว",
