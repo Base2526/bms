@@ -24,11 +24,13 @@ import { notifyOrderStatusEmail } from "./orderNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
   composeDiscounts,
+  earnPointsForOrderInTx,
   getLoyaltySettings,
   getMemberForOrderInTx,
   recordOrderDiscountsInTx,
   redeemPointsInTx,
   releasePointsForOrdersInTx,
+  reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
 import {
@@ -769,6 +771,9 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
       return false;
     }
     await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+    // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึงสถานะ PAID ไม่ใช่แค่หน้าร้าน
+    // ลูกค้าสั่งทาง LINE/TikTok แล้วโอนเงิน ต้องได้แต้มเหมือนเดินมาซื้อเอง
+    await earnPointsForOrderInTx(client, { tenantId, orderId });
     await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
     await client.query("COMMIT");
   } catch (err) {
@@ -777,9 +782,9 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
   } finally {
     client.release();
   }
-  const ok = true;
-  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "paid");
-  return ok;
+  void reviewMemberTierForOrder(tenantId, orderId);
+  void notifyOrderStatusEmail(tenantId, orderId, "paid");
+  return true;
 }
 /** แพ็คของ: PAID → PACKING */
 export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
