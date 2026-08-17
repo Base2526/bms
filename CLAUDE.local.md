@@ -106,6 +106,11 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `7.56` (`users.language` CHECK), `7.78` (user management perms), `7.81` (default ภาษา = th),
   `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
   (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
+- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.95` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
+  POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
+  e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
+  จริงก่อน go-live ของ POS ทุกครั้ง ดู checklist เต็มใน
+  [docs/business/pos.md § Go-live checklist](docs/business/pos.md#go-live-checklist)
 - **`7.83` = ไฟล์เดิมที่เคยชื่อ `7.74__bms_pharmacy_seed_protocol_safety_fields.sql`** (renumber
   2026-08-13 เพราะเลข `7.74` ถูกใช้ซ้ำกับ `7.74__bms_shared_customer_identity_backfill.sql`) — เป็น
   `UPDATE ... WHERE NOT EXISTS` รันซ้ำได้ปลอดภัย **environment ที่ apply ไปแล้วตอนยังเป็น `7.74`
