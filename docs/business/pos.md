@@ -310,6 +310,33 @@ on the bill and on the receipt; it is not a discount and does not change the VAT
 screen reads the same setting through `/api/pos/session` and charges the rounded amount, so the
 amount it sends matches what the server computes — a mismatch would cancel the bill outright.
 
+## Product VAT category
+
+`7.88` added `bms_products.vat_category` (`V` taxable / `N` exempt / `UNKNOWN`) defaulting to
+`UNKNOWN`, and four places read it: the order line snapshot, the tax invoice's taxable/exempt split,
+the e-Tax XML, and the go-live blocker on `/admin/pos-readiness`. Nothing wrote it. `upsertProduct()`
+listed thirteen columns and this was not one of them, there was no mutation and no form field, so a
+VAT-registered shop hit *"สินค้าที่เปิดขายยังไม่ระบุประเภท VAT N รายการ"* with no way to clear it
+short of hand-written SQL.
+
+It is now editable per product on `/admin/products`, and settable in one shot from
+`/admin/pos-readiness` when any active product is still unset.
+
+Three rules the write path enforces:
+
+- **Omitting the field keeps the stored value.** The upsert uses
+  `COALESCE($14, bms_products.vat_category)` rather than `EXCLUDED`, because bulk import and any
+  caller that predates the field would otherwise reset every product to `UNKNOWN` on the next save —
+  wiping a shop's tax classification silently. An unrecognised value is treated as *not supplied*
+  for the same reason, rather than throwing and failing a whole import over one bad cell.
+- **A new product is `UNKNOWN`, never guessed.** Defaulting to `V` would be right most of the time
+  and wrong invisibly the rest, on a field that ends up on filed tax documents.
+- **The bulk setter touches only `UNKNOWN` rows**, and only active ones by default. A shop that has
+  already separated `V` from `N` correctly must not lose that to one button press.
+
+The bulk mutation requires `tax.setting.manage`, not `product.edit`: classifying the whole shop's
+goods for tax is not the same decision as editing a product's name or price.
+
 ## e-Tax submission queue
 
 Issuing a tax document at the counter never talks to the Revenue Department by itself — it only

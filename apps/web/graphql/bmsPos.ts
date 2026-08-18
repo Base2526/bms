@@ -24,6 +24,7 @@ import {
   upsertPosDevice,
 } from "@/lib/bms/pos";
 import { listExpiringLots, listLots, listOrdersForLot, reconcileLotTotals } from "@/lib/bms/lots";
+import { setVatCategoryForUnknown } from "@/lib/bms/products";
 import {
   getVatSettings,
   issueFullTaxInvoice,
@@ -210,6 +211,34 @@ export const bmsPosResolvers = {
           extensions: { code: "BAD_USER_INPUT" },
         });
       }
+    },
+
+    /**
+     * ตั้งประเภท VAT ให้สินค้าที่ยังไม่ระบุทั้งหมดในคราวเดียว
+     *
+     * สิทธิ์ที่ใช้คือ tax.setting.manage ไม่ใช่ product.edit — นี่คือการจัดประเภทภาษี
+     * ของทั้งร้าน ไม่ใช่การแก้สินค้ารายตัว คนที่แก้ชื่อ/ราคาสินค้าได้ไม่ควรตัดสินใจ
+     * แทนร้านว่าสินค้าทั้งหมดคิด VAT หรือยกเว้น
+     */
+    async bmsSetVatCategoryForUnknown(
+      _p: unknown,
+      args: { vatCategory: string; activeOnly?: boolean | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "tax.setting.manage");
+      const tenantId = getTenantId(ctx);
+      const category = String(args.vatCategory ?? "").trim().toUpperCase();
+      if (category !== "V" && category !== "N") {
+        throw new GraphQLError("ประเภท VAT ต้องเป็น V หรือ N", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const activeOnly = args.activeOnly ?? true;
+      const changed = await setVatCategoryForUnknown(tenantId, category, {
+        activeOnly,
+        editorId: requireAuth(ctx).author_id,
+      });
+      // เปลี่ยนฐานภาษีของสินค้าหลายตัวพร้อมกัน — ต้องรู้ว่าใครกดและกดเป็นอะไร
+      await audit(ctx, "tax.product_category.bulk_set", tenantId, { category, activeOnly, changed });
+      return changed;
     },
 
     /**

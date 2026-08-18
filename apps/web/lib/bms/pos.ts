@@ -141,6 +141,8 @@ export type PosOperationalReadiness = {
   cashiersWithPin: number;
   cashiersReady: number;
   sellableProducts: number;
+  /** สินค้าที่เปิดขายแต่ยังเป็น vat_category='UNKNOWN' — บล็อกเฉพาะร้านที่จด VAT */
+  unknownVatProducts: number;
   stockedVariants: number;
   openShifts: number;
   pendingRefundCount: number;
@@ -210,6 +212,7 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
     cashiersWithPin: Number(cashierRow.cashiers_with_pin ?? 0),
     cashiersReady: Number(cashierRow.cashiers_ready ?? 0),
     sellableProducts: Number(productRow.sellable_products ?? 0),
+    unknownVatProducts: Number(productRow.unknown_vat_products ?? 0),
     stockedVariants: Number(productRow.stocked_variants ?? 0),
     openShifts: Number(row.open_shifts ?? 0),
     pendingRefundCount: Number(refundRow.pending_count ?? 0),
@@ -224,8 +227,8 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
   if (result.pendingRefundCount > 0) {
     result.blockers.push(`มีรายการคืนเงินจริงค้าง ${result.pendingRefundCount} รายการ รวม ${result.pendingRefundAmount.toFixed(2)} บาท`);
   }
-  if (vat.vatRegistered && Number(productRow.unknown_vat_products ?? 0) > 0) {
-    result.blockers.push(`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${Number(productRow.unknown_vat_products)} รายการ`);
+  if (vat.vatRegistered && result.unknownVatProducts > 0) {
+    result.blockers.push(`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${result.unknownVatProducts} รายการ`);
   }
   if (result.pairedDevices < result.activeDevices) {
     result.warnings.push(`มีเครื่องที่เปิดใช้งานแต่ยังไม่จับคู่ ${result.activeDevices - result.pairedDevices} เครื่อง`);

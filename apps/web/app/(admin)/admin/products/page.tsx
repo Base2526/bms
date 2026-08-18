@@ -64,6 +64,7 @@ type Product = {
   weightGrams: number | null;
   category: string | null;
   brand: string | null;
+  vatCategory: string | null;
   variants: Variant[];
 };
 type Movement = {
@@ -96,6 +97,7 @@ const Q_PRODUCTS = gql`
         weightGrams
         category
         brand
+        vatCategory
         variants {
           size
           current_stock
@@ -262,7 +264,7 @@ function ProductsManagement() {
     setEditing(null);
     setImageUrls([]);
     form.resetFields();
-    form.setFieldsValue({ active: true, keywords: [] });
+    form.setFieldsValue({ active: true, keywords: [], vatCategory: "UNKNOWN" });
     setModalOpen(true);
   };
   const openEdit = (p: Product) => {
@@ -280,6 +282,7 @@ function ProductsManagement() {
       description: p.description || "", costPrice: p.costPrice ?? undefined,
       weightGrams: p.weightGrams ?? undefined,
       category: p.category || "", brand: p.brand || "",
+      vatCategory: p.vatCategory || "UNKNOWN",
     });
     setModalOpen(true);
   };
@@ -317,6 +320,7 @@ function ProductsManagement() {
           weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
           category: v.category?.trim() || null,
           brand: v.brand?.trim() || null,
+          vat_category: v.vatCategory || null,
         },
       },
     });
@@ -655,8 +659,25 @@ function ProductsManagement() {
                 notFoundContent={t("admin_products.category_not_found")}
               />
             </Form.Item>
-            <Form.Item label={t("admin_products.label_brand")} name="brand" style={{ flex: 1 }}>
+            <Form.Item label={t("admin_products.label_brand")} name="brand" style={{ flex: 1, marginInlineEnd: 8 }}>
               <AutoComplete options={brandOptions.map((b) => ({ value: b }))} placeholder={t("admin_products.placeholder_brand")} filterOption />
+            </Form.Item>
+            {/* ประเภท VAT (7.88) — คอลัมน์มีมานานแต่ไม่มีช่องให้กรอก ร้านที่จด VAT
+                จึงติด blocker ที่ /admin/pos-readiness โดยไม่มีปุ่มแก้ · ค่า default
+                ของฟอร์มคือ UNKNOWN เพื่อไม่ให้การกดบันทึกกลาย ๆ ตั้งค่าภาษีให้เอง */}
+            <Form.Item
+              label={t("admin_products.label_vat_category")}
+              name="vatCategory"
+              style={{ flex: 1 }}
+              tooltip={t("admin_products.vat_category_tooltip")}
+            >
+              <Select
+                options={[
+                  { value: "V", label: t("admin_products.vat_v") },
+                  { value: "N", label: t("admin_products.vat_n") },
+                  { value: "UNKNOWN", label: t("admin_products.vat_unknown") },
+                ]}
+              />
             </Form.Item>
           </Space.Compact>
 

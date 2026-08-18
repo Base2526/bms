@@ -172,6 +172,15 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · checklist ก่อน go-live ของ 7.98 อยู่ใน
     [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
     (ไม่ได้อยู่ใน pos.md — ของ pos.md ครอบคลุมถึง `7.97` แล้วลิงก์ต่อมาที่นี่)
+- **`vat_category` เขียนได้แล้ว (ไม่ต้อง migration — คอลัมน์มีตั้งแต่ `7.88`)** — ก่อนหน้านี้ไม่มีที่ไหน
+  เขียนเลย ร้านที่จด VAT จึงติด blocker ที่ `/admin/pos-readiness` ตลอดโดยไม่มีปุ่มแก้ · ตอนนี้แก้รายตัวที่
+  `/admin/products` และตั้งทีเดียวทั้งร้านที่ `/admin/pos-readiness` (mutation
+  `bmsSetVatCategoryForUnknown` ใช้สิทธิ์ `tax.setting.manage`)
+  · **กับดัก: ไม่ส่ง `vat_category` มาต้องคงค่าเดิม** — upsert ใช้ `COALESCE($14, bms_products.vat_category)`
+    ห้ามเปลี่ยนไปใช้ `EXCLUDED` เด็ดขาด ไม่งั้น bulk import ล้างประเภทภาษีทั้งร้านเงียบ ๆ (มีเทสคุมไว้)
+  · เทสชุดที่ 5 (7 เทส): `../../scripts/product-vat-category-db-contract.test.mts`
+    — รวมห้าชุด 62 เทส ผ่านทั้งหมด · **ชุดนี้แก้สินค้าจริงของร้านแรกตอนทดสอบปุ่ม bulk แล้วคืนค่าให้ตอน
+    teardown** (ปุ่มแก้ทั้งร้านตามดีไซน์) — ถ้า teardown ไม่ทำงาน สินค้าจริงจะค้างเป็น `V`
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
