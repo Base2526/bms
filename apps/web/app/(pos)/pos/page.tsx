@@ -118,12 +118,16 @@ type ScanHit = {
   basePrice: number;
   /** ขั้นราคาส่ง (8.1) — จอคิดด้วย unitPriceForQty ตัวเดียวกับ createOrder */
   priceTiers?: Array<{ minQty: number; unitPrice: number }>;
+  /** true = สินค้านี้ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) */
+  serialTracked?: boolean;
   available: number;
 };
 
 type CartLine = ScanHit & {
   packQty: number;
   key: string;
+  /** เลขเครื่องที่พนักงานยิง/พิมพ์ไว้สำหรับบรรทัดนี้ (8.3) */
+  serials?: string[];
   orderItemId?: number;
   returnedPackQty?: number;
   refundablePackQty?: number;
@@ -1153,6 +1157,7 @@ export default function PosPage() {
           packPrice: Number(line.packPrice ?? 0),
           basePrice: Number(line.basePrice ?? 0),
           priceTiers: line.priceTiers ?? [],
+          serialTracked: line.serialTracked === true,
           available: 0,
           packQty: Number(line.packQty ?? 1),
           key: `last-${idx}-${String(line.sku ?? "")}`,
@@ -1632,6 +1637,8 @@ export default function PosPage() {
           size: line.size,
           packQty: line.packQty,
           packCode: line.packCode,
+          // เลขเครื่อง (8.3) — ส่งเฉพาะที่กรอกไว้ server บังคับความครบเอง
+          serials: line.serials?.length ? line.serials : undefined,
         })),
         payments: paymentSummary.normalized
           .filter((payment) => payment.numericAmount > 0)
@@ -2806,15 +2813,46 @@ export default function PosPage() {
                     )}
                   </div>
                   <div className="pos-line-meta">
-                    ฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}
+                    {tierPriceByKey.has(l.key) ? (
+                      <>
+                        <span style={{ textDecoration: "line-through", opacity: 0.6 }}>฿{baht(l.packPrice)}</span>{" "}
+                        ฿{baht(tierPriceByKey.get(l.key)!)} × {l.packQty} {l.unitName} · ราคาส่ง
+                      </>
+                    ) : (
+                      <>฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}</>
+                    )}
                   </div>
+                  {/* เลขเครื่อง (8.3) — กางเฉพาะสินค้าที่เปิดโหมดนี้
+                      หนึ่งช่องต่อหนึ่งชิ้น เพราะพนักงานยิงกล่องทีละใบ ไม่ใช่พิมพ์รวมกัน
+                      ช่องที่ยังว่างเห็นได้ทันทีว่าเหลืออีกกี่กล่องต้องยิง */}
+                  {l.serialTracked && (
+                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {Array.from({ length: l.packQty * l.baseQty }).map((_, i) => (
+                        <input
+                          key={i}
+                          value={l.serials?.[i] ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value.trim();
+                            setCart((cur) => cur.map((row) => {
+                              if (row.key !== l.key) return row;
+                              const next = [...(row.serials ?? [])];
+                              next[i] = value;
+                              return { ...row, serials: next };
+                            }));
+                          }}
+                          placeholder={`เลขเครื่องชิ้นที่ ${i + 1}`}
+                          style={{ padding: "6px 8px", fontSize: 12 }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="pos-qty">
                   <button onClick={() => changeQty(l.key, -1)} aria-label="ลดจำนวน">−</button>
                   <span className="pos-qty-value">{l.packQty}</span>
                   <button onClick={() => changeQty(l.key, 1)} aria-label="เพิ่มจำนวน">+</button>
                 </div>
-                <div className="pos-line-amount">฿{baht(l.packPrice * l.packQty)}</div>
+                <div className="pos-line-amount">฿{baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}</div>
               </div>
             ))}
           </div>
@@ -4193,6 +4231,10 @@ function describeFailure(data: any): string {
       return `แลกแต้มไม่ได้: ${data.reason}`;
     case "DISCOUNT_UNAPPROVED":
       return `ส่วนลดหน้าร้านใช้ไม่ได้: ${data.reason} — ให้หัวหน้าอนุมัติใหม่`;
+    case "SERIAL_REQUIRED":
+      return `${data.sku}: ต้องระบุเลขเครื่องให้ครบ ${data.expected} เลข (ใส่แล้ว ${data.received})`;
+    case "SERIAL_ALREADY_SOLD":
+      return `เลขเครื่อง ${data.serial} เคยขายไปแล้ว — หยิบกล่องผิดใบหรือยิงซ้ำ`;
     case "PAYMENT_FAILED":
       return `บันทึกการชำระเงินไม่สำเร็จ: ${data.reason}`;
     default:

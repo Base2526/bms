@@ -302,6 +302,8 @@ export type PosScanHit = {
    * ตัดสินราคาเองตอน commit เสมอ ค่านี้ไม่ใช่ราคาที่เชื่อจาก client
    */
   priceTiers: PriceTier[];
+  /** true = ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) — จอต้องกางช่องกรอกให้ */
+  serialTracked: boolean;
 };
 
 /**
@@ -339,6 +341,7 @@ export async function resolvePosScan(
     `SELECT p.sku,
             p.name,
             p.price                                  AS base_price,
+            p.serial_tracked,
             k.pack_code,
             k.unit_name,
             k.base_qty,
@@ -399,6 +402,7 @@ export async function resolvePosScan(
     packPrice,
     basePrice,
     priceTiers,
+    serialTracked: (row as any).serial_tracked === true,
   };
 }
 
@@ -916,6 +920,11 @@ export async function closePosShift(input: {
 // ---------------------------------------------------------------
 
 export type PosSaleLine = {
+  /**
+   * เลขเครื่องของแต่ละชิ้นในบรรทัดนี้ (8.3) — บังคับเมื่อสินค้าเปิด serial_tracked
+   * จำนวนต้องเท่ากับจำนวนหน่วยฐานที่ขายพอดี ไม่ใช่จำนวน pack
+   */
+  serials?: string[] | null;
   sku: string;
   size: string;
   /** จำนวน "หน่วยขาย" ที่ลูกค้าซื้อ เช่น 1 กล่อง (ไม่ใช่หน่วยฐาน) */
@@ -1022,6 +1031,10 @@ export type PosSaleResult =
   | { status: "INVALID_PACK"; sku: string; packCode: string }
   | { status: "PAYMENT_FAILED"; reason: string }
   | { status: "PAYMENT_MISMATCH"; expected: number; received: number }
+  /** สินค้าที่ติดตามเลขเครื่องแต่ยังไม่ได้ระบุเลขให้ครบทุกชิ้น (8.3) */
+  | { status: "SERIAL_REQUIRED"; sku: string; expected: number; received: number }
+  /** เลขเครื่องนี้เคยขายไปแล้ว — เกือบแน่นอนว่ายิงกล่องผิดใบ */
+  | { status: "SERIAL_ALREADY_SOLD"; sku: string; serial: string }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
 
@@ -1341,6 +1354,12 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   );
   if (invalidCash) return { status: "PAYMENT_FAILED", reason: "เงินสดที่รับมาต้องไม่น้อยกว่ายอดเงินสด" };
 
+  // ---- เลขเครื่อง (8.3) ----
+  // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
+  // ไม่มีคูปองถูกนับ · ถ้าไปตรวจหลังจากนั้นต้องย้อนคืนทุกอย่างซึ่งพลาดง่ายกว่ามาก
+  const serialCheck = await validatePosSaleSerials(tenantId, input.lines);
+  if (serialCheck) return serialCheck;
+
   const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (existing) {
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
@@ -1545,6 +1564,11 @@ async function finalizePosSale(args: {
       issuedBy: input.cashierUserId,
       settings: vatSettings,
     });
+    // เลขเครื่อง (8.3) — ในทรานแซกชันเดียวกับการขาย
+    // บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่องของสินค้าที่บังคับเลขเครื่อง
+    // ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้จนวันที่มีคนมาเคลม
+    await recordSerialsInTx(client, input.tenantId, shift.location_id, orderId, input.lines);
+
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.sale', $3, $4)`,
@@ -2445,6 +2469,18 @@ async function processPosReturn(input: {
       await client.query(
         `UPDATE bms_orders SET status = 'RETURNED', updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status = 'COMPLETED'`,
+        [input.tenantId, input.orderId]
+      );
+      // เลขเครื่อง (8.3) — ปลดเฉพาะตอนคืนครบทั้งบิล
+      //
+      // คืนบางส่วนปลดไม่ได้ เพราะระบบไม่รู้ว่าลูกค้าเอา "เครื่องไหน" มาคืน — เก็บเลข
+      // ตอนขายเป็นชุดต่อบรรทัด ไม่ได้ผูกเลขกับชิ้นที่คืน · เดาว่าเป็นเครื่องแรกในชุด
+      // แล้วบันทึกจะทำให้ประวัติประกันชี้ผิดเครื่อง ซึ่งแย่กว่าไม่ปลดเลย
+      // (ที่ปลดได้คือกรณีคืนทั้งบิล ซึ่งของทุกชิ้นกลับมาแน่นอน)
+      await client.query(
+        `UPDATE bms_product_serials
+            SET status = 'RETURNED', returned_at = now(), updated_at = now()
+          WHERE tenant_id = $1 AND order_id = $2 AND status = 'SOLD'`,
         [input.tenantId, input.orderId]
       );
     }
@@ -3457,4 +3493,163 @@ export async function blindReturnPosSale(input: {
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------
+// เลขเครื่อง / IMEI (8.3)
+// ---------------------------------------------------------------
+//
+// ล็อต (7.85) ตอบว่า "ของมาจากชุดไหน" · serial ตอบว่า "เครื่องเลขนี้ขายให้ใครวันไหน"
+// ซึ่งเป็นคำถามที่เกิดขึ้นตอนลูกค้าเอาของมาเคลมประกัน
+//
+// เก็บตอนขาย ไม่ใช่ตอนรับเข้า — ร้านเล็กไม่มีใครนั่งยิง 50 เครื่องเข้าระบบตอนของมาถึง
+// แต่ตอนขายต้องหยิบกล่องมาสแกนอยู่แล้ว
+
+/** จำนวนหน่วยฐานของบรรทัด — pack 2 กล่อง × 10 ชิ้น = 20 เครื่อง ต้องมี 20 เลข */
+function baseUnitsOf(line: PosSaleLine): number {
+  const packQty = Math.max(1, Math.trunc(Number(line.packQty ?? 1)));
+  const baseQty = Math.max(1, Math.trunc(Number((line as any).baseQty ?? 1)));
+  return packQty * baseQty;
+}
+
+/**
+ * ตรวจเลขเครื่องก่อนเปิดบิล — คืน null เมื่อผ่าน
+ *
+ * ตรวจสองอย่าง: ครบจำนวนไหม และเลขนั้นเคยขายไปแล้วหรือยัง
+ * อย่างที่สองสำคัญกว่าที่คิด — พนักงานหยิบกล่องผิดใบเป็นเรื่องปกติ และถ้าปล่อยผ่าน
+ * ประวัติประกันจะชี้ไปที่ลูกค้าคนก่อน ซึ่งเป็นความผิดพลาดที่รู้ตอนมีคนมาเคลมแล้ว
+ */
+async function validatePosSaleSerials(
+  tenantId: string,
+  lines: PosSaleLine[]
+): Promise<PosSaleResult | null> {
+  const skus = Array.from(new Set(lines.map((l) => l.sku)));
+  if (skus.length === 0) return null;
+
+  const tracked = await query<{ sku: string }>(
+    `SELECT sku FROM bms_products
+      WHERE tenant_id = $1 AND sku = ANY($2::text[]) AND serial_tracked`,
+    [tenantId, skus]
+  );
+  if (tracked.rowCount === 0) return null;
+  const trackedSkus = new Set(tracked.rows.map((r) => r.sku));
+
+  for (const line of lines) {
+    if (!trackedSkus.has(line.sku)) continue;
+    const need = baseUnitsOf(line);
+    const given = (line.serials ?? [])
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean);
+    if (given.length !== need) {
+      return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: given.length };
+    }
+    // เลขซ้ำกันเองในบรรทัดเดียว = ยิงกล่องเดิมสองครั้ง
+    if (new Set(given).size !== given.length) {
+      return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: new Set(given).size };
+    }
+    const clash = await query<{ serial: string }>(
+      `SELECT serial FROM bms_product_serials
+        WHERE tenant_id = $1 AND serial = ANY($2::text[]) AND status = 'SOLD'
+        LIMIT 1`,
+      [tenantId, given]
+    );
+    if (clash.rowCount) {
+      return { status: "SERIAL_ALREADY_SOLD", sku: line.sku, serial: clash.rows[0].serial };
+    }
+  }
+  return null;
+}
+
+/**
+ * บันทึกเลขเครื่องผูกกับบิล — เรียกในทรานแซกชันที่ปิดการขายเท่านั้น
+ *
+ * ต้องอยู่ในทรานแซกชันเดียวกับการขาย: บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่อง
+ * ของสินค้าที่บังคับเลขเครื่อง ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้
+ *
+ * ON CONFLICT DO UPDATE เพื่อรองรับเครื่องที่ถูกคืนมาแล้วขายใหม่ (status RETURNED
+ * → SOLD) ซึ่งเป็นเรื่องปกติของสินค้ามือสอง/เครื่องเปลี่ยนคืน
+ */
+async function recordSerialsInTx(
+  client: PoolClient,
+  tenantId: string,
+  locationId: string,
+  orderId: string,
+  lines: PosSaleLine[]
+): Promise<void> {
+  for (const line of lines) {
+    const serials = (line.serials ?? []).map((x) => String(x ?? "").trim()).filter(Boolean);
+    if (serials.length === 0) continue;
+    for (const serial of serials) {
+      await client.query(
+        `INSERT INTO bms_product_serials
+           (tenant_id, product_sku, size, serial, status, location_id, order_id, sold_at)
+         VALUES ($1,$2,$3,$4,'SOLD',$5,$6,now())
+         ON CONFLICT (tenant_id, serial) DO UPDATE
+           SET status = 'SOLD', order_id = EXCLUDED.order_id, sold_at = now(),
+               product_sku = EXCLUDED.product_sku, size = EXCLUDED.size,
+               location_id = EXCLUDED.location_id, returned_at = NULL, updated_at = now()`,
+        [tenantId, line.sku, line.size, serial, locationId, orderId]
+      );
+    }
+  }
+}
+
+export type ProductSerial = {
+  serial: string;
+  sku: string;
+  size: string;
+  status: "IN_STOCK" | "SOLD" | "RETURNED";
+  orderId: string | null;
+  soldAt: string | null;
+  returnedAt: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+};
+
+/**
+ * ค้นว่าเครื่องเลขนี้ขายให้ใครวันไหน — คำถามเดียวที่ทำให้ฟีเจอร์นี้คุ้มค่า
+ * ใช้ตอนลูกค้าเอาของมาเคลมประกันโดยไม่มีใบเสร็จ
+ */
+export async function findSerial(tenantId: string, serial: string): Promise<ProductSerial | null> {
+  const code = serial.trim();
+  if (!code) return null;
+  const res = await query<any>(
+    `SELECT s.serial, s.product_sku, s.size, s.status, s.order_id, s.sold_at, s.returned_at,
+            c.name AS customer_name, c.phone AS customer_phone
+       FROM bms_product_serials s
+       LEFT JOIN bms_orders o ON o.id = s.order_id AND o.tenant_id = s.tenant_id
+       LEFT JOIN bms_customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
+      WHERE s.tenant_id = $1 AND s.serial = $2`,
+    [tenantId, code]
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    serial: r.serial,
+    sku: r.product_sku,
+    size: r.size,
+    status: r.status,
+    orderId: r.order_id ?? null,
+    soldAt: r.sold_at ? toISO(r.sold_at) : null,
+    returnedAt: r.returned_at ? toISO(r.returned_at) : null,
+    customerName: r.customer_name ?? null,
+    customerPhone: r.customer_phone ?? null,
+  };
+}
+
+/** เลขเครื่องทั้งหมดของบิล — พิมพ์บนใบเสร็จ/ใบรับประกันได้ */
+export async function listSerialsForOrder(tenantId: string, orderId: string): Promise<ProductSerial[]> {
+  const res = await query<any>(
+    `SELECT serial, product_sku, size, status, order_id, sold_at, returned_at
+       FROM bms_product_serials
+      WHERE tenant_id = $1 AND order_id = $2 ORDER BY product_sku, serial`,
+    [tenantId, orderId]
+  );
+  return res.rows.map((r: any) => ({
+    serial: r.serial, sku: r.product_sku, size: r.size, status: r.status,
+    orderId: r.order_id ?? null,
+    soldAt: r.sold_at ? toISO(r.sold_at) : null,
+    returnedAt: r.returned_at ? toISO(r.returned_at) : null,
+    customerName: null, customerPhone: null,
+  }));
 }

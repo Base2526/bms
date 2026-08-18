@@ -8,6 +8,8 @@ type ParsedPosSaleLine = {
   unitName: string | null;
   baseQty: number | null;
   packPrice: number | null;
+  /** เลขเครื่องต่อชิ้น (8.3) — ตัดตัวว่างและตัดช่องว่างหัวท้ายทิ้ง */
+  serials: string[] | null;
 };
 
 type ParsedPosPaymentInput = {
@@ -51,6 +53,11 @@ export function parsePosSaleLines(rawLines: unknown): ParsedPosSaleLine[] {
       unitName: line?.unitName ? String(line.unitName) : null,
       baseQty: line?.baseQty == null ? null : Number(line.baseQty),
       packPrice: line?.packPrice == null ? null : Number(line.packPrice),
+      // ตัดตัวว่างที่นี่ทีเดียว — จอส่ง array ที่มีช่องว่างมาได้ตอนพนักงานกรอกไม่ครบ
+      // แล้ว validatePosSaleSerials จะได้ตอบว่า "ขาดกี่เลข" ตรง ๆ
+      serials: Array.isArray(line?.serials)
+        ? (line.serials as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean)
+        : null,
     }))
     .filter((line) => line.sku && line.size && Number.isInteger(line.packQty) && line.packQty > 0);
 }

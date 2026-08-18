@@ -225,6 +225,22 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · **ไม่ออกใบลดหนี้** เพราะไม่มีใบกำกับต้นทางให้อ้าง — เป็นหลักฐานภายในให้บัญชี
   · รายงาน `pos-return-audit` นับแยกจากการคืนปกติ และเตือนทันทีที่มีแม้รายการเดียว
   · เทสชุดใหม่: `scripts/pos-blind-return-db-contract.test.mts` (8 เทส) — รวม DB 87 ผ่านทั้งหมด
+- **`8.3__bms_product_serials.sql` (เลขเครื่อง/IMEI) + `8.4__grant_bms_app_read_users_roles.sql`
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production
+- **⚠️ `8.4` คือการแก้บั๊ก production ของโค้ดที่ปล่อยไปแล้วตั้งแต่ `7.91` — apply ก่อนใครเพื่อนได้เลย**
+  · `beginTenantTx` ทำ `SET LOCAL ROLE bms_app` ทุกครั้ง แต่ **`bms_app` ไม่มีสิทธิ์บน `users`
+    และ `roles` เลย** (`(none)` ทั้งคู่)
+  · `processPosReturn` → `cashierHasPermissionInTx` อ่าน `users JOIN roles` เมื่อยอดคืนถึงเกณฑ์
+    ต้องมีผู้อนุมัติ (**ตั้งแต่ ฿500**) → `permission denied for table users` กลางการคืนของ
+  · **แปลว่าการคืนสินค้ายอดตั้งแต่ ฿500 ล้มทุกครั้ง** ยอดต่ำกว่านั้นผ่านเพราะไม่เข้าเงื่อนไข
+    — ไม่มีใครเจอเพราะเทสเก่าใช้บิลเล็กทั้งหมด (เจอตอนเขียนเทส `8.3` ด้วยบิล ฿2,000)
+  · แก้ด้วย **GRANT ระดับคอลัมน์** บน `users` (ไม่รวม `password_hash`) + `GRANT SELECT ON roles`
+  · เทสกันย้อนกลับ: `scripts/db-role-grants-db-contract.test.mts` (3 เทส · read-only รันกับ
+    production ได้) — ตรวจทั้ง "อ่านคอลัมน์ที่ต้องใช้ได้", "`password_hash` ยังอ่านไม่ได้",
+    "เขียน `users` ไม่ได้"
+  · serial: เก็บตอนขาย ไม่ใช่ตอนรับเข้า · บังคับเฉพาะ POS (ออนไลน์บังคับไม่ได้ ตอนสั่งไม่มีใครรู้ว่า
+    จะหยิบเครื่องไหน) · คืนทั้งบิลปลด serial ได้ · **คืนบางส่วนปลดไม่ได้** เพราะไม่รู้ว่าคืนเครื่องไหน
+  · เทสชุดใหม่: `scripts/pos-serial-db-contract.test.mts` (9 เทส) — รวม DB 99 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

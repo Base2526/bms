@@ -304,6 +304,39 @@ Voided bills leave `salesTotal` and `billCount` and appear on their own line of 
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
 
+## Serial numbers (8.3)
+
+Lots (`7.85`) answer *which batch did this come from*. Serials answer *who bought **this** unit, and
+when* — the question asked when someone arrives with a warranty claim and no receipt. A lot is a
+group; a serial is a piece.
+
+Set `serial_tracked` on a product and the counter must supply one serial per base unit before the sale
+will go through: two boxes of ten is twenty serials, not two. Validation happens **before**
+`createOrder`, so a short entry costs nothing — no stock reserved, no points deducted, no coupon
+counted. Validating afterwards would mean unwinding all of it, which is the easier thing to get wrong.
+
+Duplicates are refused both ways: the same serial twice on one line (the same box scanned twice), and a
+serial already marked `SOLD`. The second matters more than it looks. Staff pick up the wrong box
+regularly, and letting it through points the warranty history at the previous customer — a mistake
+that only surfaces at the claim, when it is too late to reconstruct.
+
+Serials are written inside the transaction that closes the sale, so a committed bill can never lack
+them.
+
+**Serials are captured at the sale, not at goods-in.** A small shop is not going to scan fifty handsets
+into the system when a delivery arrives, but it does pick up the box at the counter. The trade-off is
+that the serial count and the stock count do not match until stock sells through, which is accurate to
+how the shop actually works.
+
+A full return frees the serials to be sold again (`RETURNED` → `SOLD` on the next sale), which is
+ordinary for exchanges and second-hand goods. **A partial return does not**, because nothing records
+which physical unit came back — serials are captured per line, not bound to individual pieces.
+Guessing the first serial in the set would point the warranty history at the wrong unit, which is worse
+than leaving it alone.
+
+**Only the POS enforces this.** An online order cannot: at checkout nobody knows which unit will be
+picked, and the packer does. Enforcing it there would block online sales of every tracked product.
+
 ## Returning goods with no receipt (8.2)
 
 `7.91` handled returns against a bill and required an `orderId`, so a customer who lost the receipt
