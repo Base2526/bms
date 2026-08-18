@@ -591,11 +591,15 @@ test("product purchase mode sends symptom-like wording back to ambiguity clarifi
 });
 
 test("pharmacy product policy fails closed when SKU has no approved policy", () => {
+  // blockers[] was added so a basket with several offending SKUs reports all of
+  // them in one round-trip instead of one at a time — status/sku/salePolicy at
+  // the top level still equal blockers[0], so this stays a same-shape assertion.
   assert.deepEqual(evaluatePharmacySale([{ sku: "UNKNOWN-SKU", qty: 1 }], []), {
     allowed: false,
     status: "PHARMACY_POLICY_UNKNOWN",
     sku: "UNKNOWN-SKU",
     salePolicy: "UNKNOWN",
+    blockers: [{ status: "PHARMACY_POLICY_UNKNOWN", sku: "UNKNOWN-SKU", salePolicy: "UNKNOWN" }],
   });
 });
 

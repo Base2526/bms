@@ -3,6 +3,9 @@
 // entry points classify the same wording before any assessment is created.
 
 import type { PharmacyTriggerDefinition } from "./protocols";
+// requestedItems imports nothing, so importing it keeps this module's
+// side-effect-free contract intact while removing a second copy of the unit list.
+import { ALL_UNIT_PATTERN, parseRequestedItems } from "../requestedItems";
 
 const LEGACY_TRIGGER_DEFINITIONS: PharmacyTriggerDefinition[] = [
   { protocolKey: "headache", displayLabel: "ปวดหัว", triggerTerms: ["ปวดหัว", "ปวดศีรษะ", "migraine", "headache"] },
@@ -18,8 +21,15 @@ const CLINICAL_ADVICE_PATTERN =
   /(ทำไง|ทำอย่างไร|กินอะไร|ใช้ยาอะไร|ควรกิน|ควรทำ|เป็นอะไร|อาการ|เป็นมา|รุนแรง|มาก|ไม่หาย|มีไข้|เวียนหัว|คลื่นไส้|อาเจียน|ลูก|เด็ก|คนท้อง|ตั้งครรภ์|ให้นม|แพ้ยา|โรคประจำตัว|ยาประจำ)/i;
 const EMERGENCY_PATTERN =
   /(หมดสติ|ชัก|หายใจไม่ออก|เจ็บหน้าอก|แน่นหน้าอก|หน้าเบี้ยว|ปากเบี้ยว|แขนชา|ขาชา|แขนขาอ่อนแรง|พูดไม่ชัด|คอแข็ง|ตามัว|มองไม่ชัด|ฉับพลัน|ปวดหัว(?:รุนแรง|ที่สุด|แบบไม่เคยเป็น)|ปวดศีรษะ(?:รุนแรง|ที่สุด|แบบไม่เคยเป็น))/i;
-const PRODUCT_REQUEST_PATTERN =
-  /(?:ขอซื้อ|ต้องการซื้อ|อยากซื้อ|ขอสั่ง|สั่งซื้อ|เอา|รับ|มี|ขาย|หา)\s*\S+/i;
+// Longest alternatives first so "อยากซื้อ" is not shadowed by "อยากได้".
+// "อยากได้" / "ต้องการ" were missing, so the single most common Thai phrasing
+// ("อยากได้ พารา 1 แผง") never reached the catalog path at all. Bare "ขอ" is
+// deliberately NOT here: it widens the intake bypass ("ขอถามอาการ…") for very
+// little gain, and the two guard patterns below are what keep clinical wording
+// out of the catalog path.
+const PRODUCT_REQUEST_VERB_PATTERN =
+  "ขอซื้อ|ต้องการซื้อ|อยากซื้อ|อยากได้|ต้องการ|ขอสั่ง|สั่งซื้อ|เอา|รับ|มี|ขาย|หา";
+const PRODUCT_REQUEST_PATTERN = new RegExp(`(?:${PRODUCT_REQUEST_VERB_PATTERN})\\s*\\S+`, "i");
 const SPECIFIC_PHARMACY_PRODUCT_PATTERN =
   /(พารา(?:เซตามอล)?|paracetamol|acetaminophen|ibuprofen|ไอบูโพรเฟน|aspirin|แอสไพริน|loratadine|ลอราทาดีน|domperidone|โดมเพอริโดน|ors|เกลือแร่|ผ้าก๊อซ|ยาแดง|แอลกอฮอล์|พลาสเตอร์|สำลี|ปรอท|หน้ากาก)/i;
 const GENERIC_SYMPTOM_MEDICINE_PATTERN =
@@ -35,6 +45,21 @@ export type PharmacyIntakeTriggerIntent = "ambiguous" | "clinical_advice" | "med
 export function isExplicitPharmacyProductRequest(message: string): boolean {
   const text = String(message || "").trim();
   if (!text || !PRODUCT_REQUEST_PATTERN.test(text)) return false;
+  // Classify each requested line independently. A named product in one line
+  // must not make a generic symptom-medicine request in another line bypass
+  // clinical clarification (e.g. "พารา 1 แผง, ยาแก้ไอให้ลูก 1 ขวด").
+  const segments = parseRequestedItems(text).map((item) => item.rawText);
+  if (
+    segments.some((segment) => {
+      const segmentSpecific = SPECIFIC_PHARMACY_PRODUCT_PATTERN.test(segment);
+      return !segmentSpecific && (
+        GENERIC_SYMPTOM_MEDICINE_PATTERN.test(segment) ||
+        (MEDICINE_PRODUCT_PATTERN.test(segment) && CLINICAL_ADVICE_PATTERN.test(segment))
+      );
+    })
+  ) {
+    return false;
+  }
   const hasSpecificProduct = SPECIFIC_PHARMACY_PRODUCT_PATTERN.test(text);
   // Pack count/size is not a product identity. "ยาแก้ไอให้ลูก 1 ขวด" still
   // needs clinical clarification; only a named product may bypass intake.
@@ -47,9 +72,9 @@ export function isExplicitPharmacyProductRequest(message: string): boolean {
 export function normalizePharmacyProductSearchText(message: string): string {
   return String(message || "")
     .trim()
-    .replace(/^(?:ขอซื้อ|ต้องการซื้อ|อยากซื้อ|ขอสั่ง|สั่งซื้อ|เอา|รับ|มี|ขาย|หา)\s*/i, "")
+    .replace(new RegExp(`^(?:${PRODUCT_REQUEST_VERB_PATTERN})\\s*`, "i"), "")
     .replace(/(?:ไหม|มั้ย|หรือเปล่า|ป่าว)?\s*(?:คะ|ค่ะ|ครับ|นะคะ|นะครับ)?\s*$/i, "")
-    .replace(/\s+\d+\s*(?:แผง|กล่อง|ขวด|ซอง|ชิ้น|ชุด|แพ็ค|แพ็ก|pack)(?=\s|$)/gi, " ")
+    .replace(new RegExp(`\\s+\\d+\\s*(?:${ALL_UNIT_PATTERN})(?=\\s|$)`, "gi"), " ")
     .replace(/\s+/g, " ")
     .trim();
 }

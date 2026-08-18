@@ -7,6 +7,7 @@
 // =============================================================
 
 import { findSize } from "./stock";
+import { extractQty, parseRequestedItems } from "./requestedItems";
 
 export type Intent = "CHECK_STOCK" | "CONFIRM_ORDER" | "GREETING" | "UNKNOWN";
 
@@ -14,6 +15,13 @@ export type OrderLine = {
   productText: string;
   size: string | null;
   qty: number | null;
+  /**
+   * The unit word the customer counted in ("แผง", "ขวด", …), or null when they
+   * gave a bare number. This is a HINT for resolving a pack in
+   * bms_product_packs — never a piece count. How many pieces a pack holds is
+   * per-product data, so this string must not be turned into a multiplier.
+   */
+  unit: string | null;
 };
 
 export type Entities = {
@@ -37,64 +45,32 @@ const ORDER_HINTS = [
   "เอา",
   "รับ",
   "ขอ",
+  "อยากได้",
+  "ต้องการ",
   "เปลี่ยนจำนวน",
   "เพิ่มเป็น",
   "ลดเหลือ",
 ];
 const GREETING_HINTS = ["สวัสดี", "hello", "hi", "หวัดดี"];
 
-/** ดึงจำนวนจากข้อความ เช่น "2 ชิ้น", "x2", "จำนวน 3" → number */
-function extractQty(text: string): number | null {
-  const m =
-    text.match(/(\d+)\s*(?:ชิ้น|คู่|อัน|ตัว|pcs?|pieces?)/i) ||
-    text.match(/x\s*(\d+)/i) ||
-    text.match(/จำนวน\s*(\d+)/i) ||
-    text.match(
-      /(?:ขอ|เอา|รับ|เปลี่ยน(?:จำนวน)?เป็น|เพิ่มเป็น|ลดเหลือ)\s*(\d+)\s*(?:แทน|พอ|นะ|ค่ะ|คะ|ครับ|$)/i
-    );
-  if (m) {
-    const n = parseInt(m[1], 10);
-    return Number.isInteger(n) && n > 0 ? n : null;
-  }
-
-  const thaiNumber = text.match(
-    /(?:ขอ|เอา|รับ|จำนวน)?\s*(หนึ่ง|นึง|สอง|สาม|สี่|ห้า)\s*(?:ชิ้น|คู่|อัน|ตัว|ชุด)/i
-  )?.[1];
-  if (!thaiNumber && /(?:ชิ้น|คู่|อัน|ตัว|ชุด)(?:หนึ่ง|นึง)(?:\s|$|ค่ะ|คะ|ครับ|นะ)/i.test(text)) {
-    return 1;
-  }
-  return (
-    {
-      หนึ่ง: 1,
-      นึง: 1,
-      สอง: 2,
-      สาม: 3,
-      สี่: 4,
-      ห้า: 5,
-    } as Record<string, number | undefined>
-  )[thaiNumber ?? ""] ?? null;
-}
-
 /**
- * แยกหลายรายการต่อข้อความ ตามคำเชื่อม (กับ / และ / , / +)
+ * แยกหลายรายการต่อข้อความ — ตัวแยกจริงอยู่ที่ requestedItems.ts (โมดูลเดียวของทั้งระบบ)
+ * ที่นี่แค่เติม `size` ซึ่งต้องใช้ findSize() จาก stock.ts เข้าไป
+ *
  * เช่น "สั่ง Nike XL 2 ชิ้น กับ Adidas M 1 ชิ้น" → 2 รายการ
+ * เช่น "อยากได้ พารา 1 แผง, ยาแดง 1 ขวด, ยาแก้ปวด" → 3 รายการ (รายการที่ 3 qty = null)
  */
-function parseOrderItems(text: string): OrderLine[] {
-  const segments = text
-    .split(/\s*(?:กับ|และ|แล้วก็|กะ|,|\+)\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const items = segments.map((seg) => ({
-    productText: seg,
-    size: findSize(seg),
-    qty: extractQty(seg),
-  }));
-
-  // ถ้าแยกแล้วไม่มี segment ที่มีทั้ง size+qty เลย ให้ถือทั้งข้อความเป็น 1 รายการ
-  return items.some((it) => it.size || it.qty)
-    ? items
-    : [{ productText: text, size: findSize(text), qty: extractQty(text) }];
+export function parseOrderItems(text: string): OrderLine[] {
+  // ส่ง findSize เป็น salience test เพื่อคงพฤติกรรมเดิมของร้านเสื้อผ้า:
+  // ข้อความที่ระบุไซซ์แต่ไม่ระบุจำนวนต้องยังแยกรายการได้เหมือนก่อน
+  return parseRequestedItems(text, { isSalientSegment: (seg) => Boolean(findSize(seg)) }).map(
+    (item) => ({
+      productText: item.rawText,
+      size: findSize(item.rawText),
+      qty: item.qty,
+      unit: item.unit,
+    })
+  );
 }
 
 function detectIntent(text: string, qty: number | null): Intent {

@@ -50,6 +50,62 @@ export async function listProductPacks(tenantId: string, productSku: string): Pr
   return res.rows.map(mapPack);
 }
 
+/**
+ * หา pack ที่ขายได้จริงจาก packCode ที่ผู้เรียกอ้างมา (ใช้โดย create_order tool)
+ *
+ * ทำไมต้องมีตัวนี้แยกจาก listProductPacks: AI ส่งได้แค่ "ชื่อหน่วย" (packCode)
+ * เท่านั้น **ห้ามส่ง baseQty หรือราคา** — ทั้งสองอย่างเป็นข้อเท็จจริงของร้านที่ต้อง
+ * อ่านจากฐาน ไม่ใช่สิ่งที่โมเดลอนุมานได้ ถ้าปล่อยให้ส่งราคามา เท่ากับ AI ตั้งราคาขาย
+ *
+ * pack ที่ size เป็น null ใช้ได้กับทุกไซซ์ของสินค้านั้น (ตามที่ 7.86 ออกแบบไว้)
+ */
+export async function resolveSellablePack(
+  tenantId: string,
+  productSku: string,
+  size: string | null,
+  packCode: string
+): Promise<ProductPack | null> {
+  const code = String(packCode || "").trim();
+  if (!code) return null;
+  const res = await query(
+    `SELECT * FROM bms_product_packs
+      WHERE tenant_id = $1
+        AND product_sku = $2
+        AND upper(pack_code) = upper($3)
+        AND active
+        AND (size IS NULL OR size = $4)
+      ORDER BY size NULLS LAST
+      LIMIT 1`,
+    [tenantId, productSku, code, size]
+  );
+  return res.rows[0] ? mapPack(res.rows[0]) : null;
+}
+
+/**
+ * หน่วยขายที่ "ไม่ใช่หน่วยฐาน" ของสินค้า+ไซซ์นี้ — ใช้บอกโมเดลว่าสินค้านี้ขายยกแผง
+ * ยกกล่องได้ด้วย ไม่ใช่แค่ทีละเม็ด
+ *
+ * ตัดหน่วยฐานออกเพราะการไม่ส่ง packCode หมายถึงหน่วยฐานอยู่แล้ว ส่งมาด้วยจะเปลือง
+ * โทเคนใน tool result ทุกครั้งที่เช็กสต็อก โดยไม่เพิ่มข้อมูลให้ตัดสินใจ
+ */
+export async function listSellablePacksForSize(
+  tenantId: string,
+  productSku: string,
+  size: string | null
+): Promise<ProductPack[]> {
+  const res = await query(
+    `SELECT * FROM bms_product_packs
+      WHERE tenant_id = $1
+        AND product_sku = $2
+        AND active
+        AND NOT is_base
+        AND (size IS NULL OR size = $3)
+      ORDER BY base_qty, pack_code`,
+    [tenantId, productSku, size]
+  );
+  return res.rows.map(mapPack);
+}
+
 /** ไซซ์ที่มีแถวสต็อกจริง — หน่วยขายควรผูกกับไซซ์ที่ขายได้เท่านั้น */
 export async function listSizesForProduct(tenantId: string, productSku: string): Promise<string[]> {
   const res = await query<{ size: string }>(

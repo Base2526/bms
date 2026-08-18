@@ -180,11 +180,20 @@ export function enumVal<T extends string>(
   return v as T;
 }
 
-/** items[] สำหรับ create_order / create_purchase_order */
+/**
+ * items[] สำหรับ create_order / create_purchase_order
+ *
+ * `packCode` เป็น optional และเป็น **ชื่อหน่วยขายเท่านั้น** (เช่น "BLISTER")
+ * จำนวนเม็ดต่อหน่วยและราคาต่อหน่วยถูกอ่านจาก bms_product_packs ที่ฝั่ง server
+ * เสมอ — ห้ามเพิ่ม field ราคาหรือ baseQty เข้ามาที่นี่เด็ดขาด ไม่ว่าจะสะดวกแค่ไหน
+ * เพราะเท่ากับให้โมเดลตั้งราคาขายของร้าน (ดู resolveSellablePack ใน productPacks.ts)
+ *
+ * create_purchase_order ไม่ส่ง packCode มา จึงไม่ได้รับผลจากการเพิ่มนี้
+ */
 export function reqItems(
   args: Record<string, any>,
   key = "items"
-): Array<{ sku: string; size: string; qty: number }> {
+): Array<{ sku: string; size: string; qty: number; packCode?: string }> {
   const raw = args?.[key];
   if (!Array.isArray(raw) || raw.length === 0) {
     throw new ToolArgError(`ต้องระบุ "${key}" อย่างน้อย 1 รายการ`);
@@ -194,9 +203,10 @@ export function reqItems(
     const sku = typeof it.sku === "string" ? it.sku.trim() : "";
     const size = typeof it.size === "string" ? it.size.trim() : "";
     const qty = Number(it.qty);
+    const packCode = typeof it.packCode === "string" ? it.packCode.trim() : "";
     if (!sku) throw new ToolArgError(`${key}[${i}].sku ต้องระบุ`);
     if (!size) throw new ToolArgError(`${key}[${i}].size ต้องระบุ`);
     if (!Number.isInteger(qty) || qty < 1) throw new ToolArgError(`${key}[${i}].qty ต้องเป็นจำนวนเต็ม ≥ 1`);
-    return { sku, size, qty };
+    return packCode ? { sku, size, qty, packCode } : { sku, size, qty };
   });
 }

@@ -50,6 +50,9 @@ look done in code but need their migration first.
 
 - AI **never** writes SQL or touches the database — only approved tools in [ai/tools.md](docs/ai/tools.md).
 - AI **never** fabricates stock/price/order numbers — facts come from a successful backend result.
+- AI **never** sets a price, a pack size, or a pieces-per-unit count — a pack code returned by
+  `check_stock` reaches `create_order` as a name only; pieces-per-pack and pack price are always
+  read from `bms_product_packs` server-side, never supplied by the model.
 - Sensitive actions (delete, refund, cancel, change price, adjust inventory) require **human
   confirmation + RBAC permission**.
 - Every AI tool attempt is audited without raw arguments/PII; successful writes and confirmed
