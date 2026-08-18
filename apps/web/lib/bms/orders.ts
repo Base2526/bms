@@ -35,6 +35,7 @@ import {
 } from "./membership";
 import { applyPromotion, unitPriceForQty, type PriceTier, type Promotion } from "./pricing";
 import type { VatCategory } from "./vat";
+import { reverseCreditForOrderInTx } from "./storeCredit";
 import {
   markRestockSubscriptionsOrdered,
   markRestockSubscriptionsPurchasedForOrder,
@@ -1121,6 +1122,9 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     // แต้มที่แลกไปหายไปเลยทั้งที่ของถูกคืนแล้ว
     // (POS ใช้ทาง processPosReturn ซึ่งคิดตามสัดส่วนเพราะคืนบางรายการได้)
     await releasePointsForOrdersInTx(client, tenantId, [orderId], "คืนสินค้าทั้งบิล");
+    // เครดิตร้านที่จ่ายมากับบิลนี้ต้องกลับไปอยู่บนบัตร (8.9) — ไม่คืนคือลูกค้าเสียเงิน
+    // ที่จ่ายด้วยบัตรไปเปล่า ๆ ทั้งที่ของกลับมาแล้ว
+    await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");
@@ -1177,6 +1181,8 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await releaseCustomerCouponReservationsInTx(client, [orderId]);
     // แต้มต้องกลับสู่สถานะก่อนบิลนี้: คืนแต้มที่แลกไป + ดึงแต้มที่ได้กลับ (7.96)
     await releasePointsForOrdersInTx(client, tenantId, [orderId]);
+    // เครดิตร้าน (8.9) — บิลที่ถูกยกเลิกต้องไม่กินยอดบัตรของลูกค้าไป
+    await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");

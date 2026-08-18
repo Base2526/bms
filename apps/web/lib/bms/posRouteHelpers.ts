@@ -1,4 +1,4 @@
-const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET"] as const;
+const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"] as const;
 
 type ParsedPosSaleLine = {
   sku: string;
@@ -13,6 +13,7 @@ type ParsedPosSaleLine = {
 };
 
 type ParsedPosPaymentInput = {
+  /** STORE_CREDIT ใช้ ref เป็นโค้ดบัตร (8.9) — ไม่ต้องเพิ่มฟิลด์ใหม่ในสัญญาเดิม */
   method: (typeof POS_PAYMENT_METHODS)[number];
   amount: number;
   cashTendered: number | null;

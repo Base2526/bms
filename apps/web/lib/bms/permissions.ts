@@ -96,6 +96,12 @@ export const BMS_PERMISSIONS = [
   "pos.return.noreceipt",
   // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
   // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
+  // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9
+  // .redeem ให้ทุกคนที่ขายหน้าร้าน · .issue/.adjust ให้ Manager เพราะเป็นการสร้าง
+  // และแก้ "เงิน" ของลูกค้าโดยตรง ไม่ใช่การรับชำระ
+  "storecredit.issue",
+  "storecredit.redeem",
+  "storecredit.adjust",
   "commission.view",
   "commission.manage",
   // ใบกำกับภาษี — seed ที่ 7.88

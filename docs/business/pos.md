@@ -198,6 +198,49 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Gift cards and store credit (8.9)
+
+Closes two gaps at once: gift cards could not be sold at all, and a return could only go back as cash
+or to the original payment method — never as store credit, which is what shops prefer because the money
+stays in the shop.
+
+Same ledger shape as loyalty points: the balance is `SUM` of the ledger and the column is a cache. A
+column updated without a ledger entry drifts silently the moment some write path forgets it, and
+nothing then reveals when the drift started. `balanceMismatchCount` must always be 0.
+
+**One deliberate difference from points: credit cannot go negative.** Points are allowed to, because
+clamping would make return-after-redeem profitable. Credit is money, and a negative balance is the shop
+owing a customer with nobody having approved it — enforced by a `CHECK` on the table, not only in code.
+
+Redemption happens **inside the sale transaction**, with `FOR UPDATE` on the card row: one card can be
+scanned at two registers at once (someone buys a card as a gift and both people use it), and without
+the lock both would read the old balance and overspend. Validation happens *before* `createOrder`, so a
+bad code or a short balance costs no stock, no points, no coupon.
+
+`STORE_CREDIT` is a payment method but **not cash** — the shop took the money when the card was sold,
+so it must never reach the drawer total or the expected-cash formula at close.
+
+Returns put the credit back on the **same card**, proportionally to what was refunded. The POS return
+path does not go through `cancelOrder`, so it needed its own hook; without it a customer who paid by
+card and returned goods simply lost the money.
+
+That proportional reversal forced the uniqueness design apart. A single
+`UNIQUE (tenant_id, credit_id, order_id, kind)` looks right and is wrong: partial returns happen several
+times per bill and each one must reverse its own share, but that constraint allows only the first — the
+second is silently swallowed and the customer loses the balance. It is now three partial unique
+indexes: redemption keyed by order, cancel-reversal keyed by order, return-reversal keyed by
+`pos_return_id`.
+
+Card codes come from `crypto.getRandomValues`, not a sequence. A gift card is money that whoever holds
+it can spend, so sequential codes (`GC-0001`, `GC-0002`) mean anyone who buys one can guess the rest.
+Visually ambiguous characters (`I`, `O`, `0`, `1`) are excluded so a code can be read over the phone.
+
+Outstanding credit is a **liability** (deferred revenue) exactly like outstanding points. Give the
+accountant `getStoreCreditOutstanding()` at period end.
+
+`storecredit.issue` and `storecredit.adjust` are Manager-only because issuing a card creates money in
+the system; `storecredit.redeem` goes to everyone who sells, since taking a gift card is ordinary work.
+
 ## Promotions: buy-X-get-Y and N-for-a-price (8.7)
 
 Coupons need a code the customer knows. Wholesale steps change the per-unit price. Neither answers

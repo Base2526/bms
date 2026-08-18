@@ -309,6 +309,27 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     ของ POS ทั้งระบบ) · prefix: `20` = เลขที่ร้านสร้าง · `21` = ฝังราคา(สตางค์) · `22` = ฝังน้ำหนัก(กรัม)
   · เทสชุดใหม่: `scripts/bundles-db-contract.test.mts` (7 เทส · รันซ้ำได้ ยืนยัน 2 รอบ) +
     เพิ่มใน `barcode-contract.test.mts` (5 เทส) — รวม pure 45 · DB 138 ผ่านทั้งหมด
+- **`8.9__bms_store_credit.sql` (บัตรของขวัญ + เครดิตร้าน) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 3 ตัว
+  (`storecredit.issue`, `storecredit.adjust` → Manager · `storecredit.redeem` → Manager/Sales/Cashier)
+  · **เพิ่ม `STORE_CREDIT` ใน CHECK ของ `bms_payments.method` และ
+    `bms_pos_refund_allocations.method` ทั้งสองที่** — ลืมที่สองคือคืนเป็นเครดิตไม่ได้
+  · **เครดิตติดลบไม่ได้** (ต่างจากแต้มที่ยอมให้ติดลบโดยตั้งใจ) — บังคับด้วย CHECK ที่ตาราง
+  · **`STORE_CREDIT` ไม่ใช่เงินสด** ต้องไม่เข้าสูตรเงินในลิ้นชัก/ปิดกะ (ร้านรับเงินไปแล้วตอนขายบัตร)
+  · หักเครดิตอยู่ในทรานแซกชันที่ปิดการขาย + `FOR UPDATE` บนแถวบัตร (บัตรใบเดียวยิงสองเครื่อง
+    พร้อมกันได้) · ตรวจบัตรก่อนเรียก `createOrder` เพื่อให้ล้มก่อนตัดสต็อก
+  · **กับดักที่เทสจับได้ 2 อย่าง**:
+    1. การคืนของทาง POS ใช้ `processPosReturn` **ไม่ผ่าน `cancelOrder`** — ต้องมี hook ของตัวเอง
+       ไม่งั้นลูกค้าที่จ่ายด้วยบัตรแล้วคืนของ เสียเงินบนบัตรไปเปล่า ๆ
+    2. `UNIQUE (tenant_id, credit_id, order_id, kind)` ก้อนเดียว **ผิด** — คืนบางส่วนเกิดหลายครั้ง
+       ต่อบิล ก้อนเดียวยอมให้คืนได้ครั้งแรกเท่านั้น · แยกเป็น partial unique 3 ตัว
+       (REDEEM keyed by order · REVERSE-cancel keyed by order · REVERSE-return keyed by pos_return_id)
+  · **`ON CONFLICT ON CONSTRAINT` ใช้กับ unique *index* ไม่ได้** ต้องใช้ `ON CONFLICT (cols) WHERE ...`
+  · โค้ดบัตรสุ่มจาก `crypto.getRandomValues` ไม่ใช่ running number (บัตรเรียงเลข = ซื้อใบเดียวเดาใบอื่นได้)
+    · ตัด `I O 0 1` ออกให้อ่านทางโทรศัพท์ได้
+  · **ยอดเครดิตค้าง = หนี้สินในงบดุล** ส่งตัวเลขจาก `getStoreCreditOutstanding()` ให้บัญชีก่อนปิดงบ
+    · `balanceMismatchCount` ต้องเป็น 0 เสมอ
+  · เทสชุดใหม่: `scripts/store-credit-db-contract.test.mts` (11 เทส)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

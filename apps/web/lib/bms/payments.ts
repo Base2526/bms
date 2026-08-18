@@ -27,7 +27,9 @@ import { resolveSlipReader, runSlipReaderFallback } from "./slipReaders";
 export type { SlipExtract } from "./slipReader";
 
 // WALLET = e-wallet ที่หน้าร้านรับจริง (ทรูมันนี่ / ShopeePay / Rabbit LINE Pay) — เพิ่มที่ 7.87
-export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET"] as const;
+// STORE_CREDIT = บัตรของขวัญ/เครดิตร้าน — เพิ่มที่ 8.9 · ไม่ใช่เงินที่เข้าร้านรอบนี้
+// (ร้านรับเงินไปแล้วตอนขายบัตร) จึงต้องไม่ถูกนับเป็นเงินสดในลิ้นชักหรือยอดรับใหม่
+export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export type SubmitPaymentInput = {

@@ -25,6 +25,12 @@ import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
 import type { PriceTier, Promotion } from "./pricing";
+import {
+  findStoreCredit,
+  lockUsableCreditInTx,
+  redeemCreditInTx,
+  reverseCreditForReturnInTx,
+} from "./storeCredit";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import {
   cashRoundingDelta,
@@ -1058,6 +1064,9 @@ export type PosSaleResult =
   | { status: "SERIAL_REQUIRED"; sku: string; expected: number; received: number }
   /** เลขเครื่องนี้เคยขายไปแล้ว — เกือบแน่นอนว่ายิงกล่องผิดใบ */
   | { status: "SERIAL_ALREADY_SOLD"; sku: string; serial: string }
+  /** บัตรของขวัญ/เครดิตร้านใช้ไม่ได้ (8.9) */
+  | { status: "CREDIT_INVALID"; reason: string; code: string }
+  | { status: "CREDIT_INSUFFICIENT"; code: string; balance: number; requested: number }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
 
@@ -1389,6 +1398,24 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const serialCheck = await validatePosSaleSerials(tenantId, input.lines);
   if (serialCheck) return serialCheck;
 
+  // ---- บัตรของขวัญ / เครดิตร้าน (8.9) ----
+  // ตรวจก่อนสร้างบิลเช่นเดียวกับเลขเครื่อง: บัตรผิด/ยอดไม่พอ ต้องล้มก่อนตัดสต็อก
+  // การหักจริงเกิดในทรานแซกชันที่ปิดการขาย (finalizePosSale) พร้อม FOR UPDATE
+  for (const payment of input.payments) {
+    if (payment.method !== "STORE_CREDIT") continue;
+    const code = (payment.ref ?? "").trim();
+    if (!code) return { status: "PAYMENT_FAILED", reason: "จ่ายด้วยบัตรต้องระบุโค้ดบัตร" };
+    const credit = await findStoreCredit(tenantId, code);
+    if (!credit) return { status: "CREDIT_INVALID", reason: "ไม่พบบัตรนี้", code };
+    if (credit.status !== "ACTIVE") return { status: "CREDIT_INVALID", reason: "บัตรนี้ใช้ไม่ได้แล้ว", code };
+    if (credit.expiresAt && new Date(credit.expiresAt).getTime() <= Date.now()) {
+      return { status: "CREDIT_INVALID", reason: "บัตรนี้หมดอายุแล้ว", code };
+    }
+    if (credit.balance + 0.001 < payment.amount) {
+      return { status: "CREDIT_INSUFFICIENT", code, balance: credit.balance, requested: payment.amount };
+    }
+  }
+
   const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (existing) {
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
@@ -1594,6 +1621,26 @@ async function finalizePosSale(args: {
       issuedBy: input.cashierUserId,
       settings: vatSettings,
     });
+    // บัตรของขวัญ / เครดิตร้าน (8.9) — หักในทรานแซกชันเดียวกับการขาย
+    //
+    // ล็อกแถวบัตรด้วย FOR UPDATE เพราะบัตรใบเดียวถูกยิงสองเครื่องพร้อมกันได้
+    // (คนซื้อบัตรให้กันแล้วใช้พร้อมกัน) ถ้าไม่ล็อก ทั้งสองเห็นยอดเดิมแล้วหักเกินยอด
+    for (const payment of payments) {
+      if (payment.method !== "STORE_CREDIT") continue;
+      const code = (payment.ref ?? "").trim();
+      const usable = await lockUsableCreditInTx(client, input.tenantId, code);
+      if (!usable.ok) throw new Error(`บัตร ${code}: ${usable.reason}`);
+      if (usable.balance + 0.001 < payment.amount) {
+        throw new Error(`บัตร ${code} ยอดไม่พอ (เหลือ ${usable.balance})`);
+      }
+      await redeemCreditInTx(client, input.tenantId, {
+        creditId: usable.creditId,
+        orderId,
+        amount: payment.amount,
+        actorUserId: input.cashierUserId,
+      });
+    }
+
     // เลขเครื่อง (8.3) — ในทรานแซกชันเดียวกับการขาย
     // บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่องของสินค้าที่บังคับเลขเครื่อง
     // ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้จนวันที่มีคนมาเคลม
@@ -2518,11 +2565,22 @@ async function processPosReturn(input: {
     // ไม่ทำข้อนี้: ซื้อ → ได้แต้ม → คืนของ → เก็บแต้มไว้ = ปั๊มแต้มฟรี
     // ratio คิดจากยอดคืนครั้งนี้ ÷ ยอดสุทธิบิลเดิม (ผลรวมทุกครั้งไม่เกิน 1
     // เพราะ remainingRefund ด้านบนบังคับว่าคืนเกินยอดที่จ่ายมาไม่ได้)
+    const refundRatio = orderAmount > 0 ? roundedRefundAmount / orderAmount : 0;
     const loyaltyReversal = await reversePointsForReturnInTx(client, {
       tenantId: input.tenantId,
       orderId: input.orderId,
       posReturnId,
-      ratio: orderAmount > 0 ? roundedRefundAmount / orderAmount : 0,
+      ratio: refundRatio,
+      actorUserId: input.actorUserId,
+    });
+
+    // เครดิตร้าน (8.9) — ส่วนที่จ่ายด้วยบัตรต้องกลับเข้าบัตรเดิมตามสัดส่วนที่คืน
+    // ไม่ทำ = ลูกค้าที่จ่ายด้วยบัตรแล้วคืนของ เสียเงินบนบัตรไปเปล่า ๆ
+    // (ทาง cancelOrder มีของตัวเองแล้ว แต่การคืนของ POS ไม่ผ่านทางนั้น)
+    await reverseCreditForReturnInTx(client, input.tenantId, {
+      orderId: input.orderId,
+      posReturnId,
+      ratio: refundRatio,
       actorUserId: input.actorUserId,
     });
 
