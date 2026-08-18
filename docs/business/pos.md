@@ -17,7 +17,10 @@ run `requirePermission()` against. The equivalent checks live in the routes —
 PIN requirement for discounts, voids, and cash-out sits there too.
 
 The cost is that counter actions are absent from the GraphQL schema and therefore from the AI tool
-catalogue. Anything that needs to reach them from a resolver needs a GraphQL surface added first.
+catalogue today. GraphQL is not a prerequisite for an AI tool: a future staff tool must wrap the
+underlying service in `lib/bms/tools/catalog.ts`, preserve device/person authorization semantics,
+re-check RBAC, and remain propose-only where money or stock moves. It must not call a REST route from
+a resolver or tool as a shortcut.
 
 Auditing does not depend on the transport. `pos.sale`, `pos.return`, `pos.refund.complete`,
 `pos.void`, `pos.cash.movement`, `pos.shift.open`, and `pos.shift.close` are all written to

@@ -23,9 +23,14 @@ logging movement.
 | `RELEASE` | Order cancelled or auto-released (return reservation) |
 | `SHIP` | Order shipped (permanent deduction: current −= qty, reserved −= qty) |
 | `RETURN` | Goods returned (stock re-added) |
+| `TRANSFER_OUT` | Goods sent from one branch and now in transit |
+| `TRANSFER_IN` | Goods received into the destination branch |
+| `COUNT_ADJUST` | Variance accepted from a stock count apply |
 
-`TRANSFER` / `ADJUSTMENT` / `DAMAGED` are roadmap types — adjustments are currently recorded as
-plain `STOCK_IN`/`STOCK_OUT`.
+`TRANSFER` is no longer a roadmap placeholder: `7.98` split it into `TRANSFER_OUT` and
+`TRANSFER_IN` so branch-to-branch movement is not misread as stock leaving or entering the company.
+Generic manual adjustments still record as plain `STOCK_IN`/`STOCK_OUT`; `DAMAGED` remains a future
+reporting-specific type rather than a live schema value today.
 
 ## Product rules
 
@@ -267,8 +272,10 @@ whole list every time.
 
 The cost is real and worth naming: these mutations are invisible to anything that consumes the
 GraphQL schema, including the AI tool catalogue. If a tool ever needs to move stock between
-branches, it needs a GraphQL surface added here first — reaching for the REST route from a resolver
-would skip the audit entry described below.
+branches, it needs a validated wrapper in `lib/bms/tools/catalog.ts`, not necessarily a GraphQL
+mutation. That wrapper must derive the tenant from `ExecCtx`, enforce `inventory.transfer`, keep the
+service's in-transaction audit, and propose the movement for human confirmation rather than execute
+it immediately. Calling the REST route from a resolver or tool is not an acceptable shortcut.
 
 ### What lands in the audit log
 

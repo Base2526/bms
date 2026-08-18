@@ -93,14 +93,53 @@ production refuses to create or verify links when no secret is configured.
 ## REST — POS device surface
 
 `/api/pos/*` uses `x-pos-device-token`; tenant and location always come from the hashed active-device
-record. Read routes expose session, scan/search, and device-local recent/last sales. Mutating routes
-also verify the selected cashier PIN and the action-specific RBAC permission:
+record (`authenticatePosDevice()` compares a SHA-256 hash — the raw token is stored nowhere — and
+rejects an unknown or deactivated device with `401`). A device token identifies the register, never a
+person, so the acting human is a separate layer: `cashierUserId` + `pin` verified by
+`verifyCashierPin()` (bcrypt, 5 wrong PINs lock the user for 15 minutes) and the action permission by
+`cashierHasPermission()`. Read routes expose session, scan/search, and device-local recent/last sales.
+Mutating routes verify both layers — `/api/pos/park` is the single deliberate exception:
 
 - `POST /api/pos/shift` — open/close the device drawer; close is blocked by pending refund settlement.
 - `POST /api/pos/sale` — server-resolved product/pack prices, multi-payment, idempotent atomic close.
 - `POST /api/pos/return` — explicit `FULL`/`PARTIAL`, mandatory structured reason and idempotency key.
 - `POST /api/pos/refund-settlement` — authorized confirmation of a pending non-cash refund reference.
+- `GET|POST /api/pos/park` (`7.97`) — parked carts for the device's open shift. `GET` returns
+  `{ parked }`. `POST` takes `action: "park" | "resume" | "drop"` (default `"park"`): `park` needs
+  `cashierUserId`, `label`, `cart`, `itemCount`, `subtotalHint` and answers `PARKED` (200),
+  `SHIFT_NOT_OPEN`/`TOO_MANY` (409, cap 20 per shift) or `EMPTY` (400); `resume` and `drop` take
+  `parkedId` and answer 200 or 404. **The one mutating POS route with no PIN and no permission
+  check** — parking touches no money, no stock, and no document, so gating it would only push
+  cashiers back to writing on paper.
+- `GET|POST /api/pos/cash-movement` (`7.97`) — non-sale drawer movements for the open shift. `GET`
+  returns `{ movements }`. `POST` takes `direction: "IN" | "OUT"`, `amount`, `reason`,
+  `cashierUserId`, `pin`; `OUT` additionally requires `approverUserId` + `approverPin` from a
+  **second** user holding `pos.cash.movement` (`400` when either is missing, `403` when the PIN or
+  the permission fails; using the actor as approver is `400`). Results: `RECORDED` (200, with `drawerAfter`), `SHIFT_NOT_OPEN`/
+  `WOULD_OVERDRAW` (409), `INVALID` (400). Cash **in** needs no approver on purpose — see
+  [../business/pos.md](../business/pos.md).
+- `POST /api/pos/void` (`7.97`) — cancel a mis-rung bill; deliberately not the return path. Requires
+  `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
+  **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
+  `VOIDED` (200), `NOT_FOUND` (404), `SHIFT_CLOSED`/`ALREADY_RETURNED` (409), `NOT_VOIDABLE` (400).
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
+- `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
+  (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
+  shift at all is `404`. Requires `pos.shift.report` even though it writes nothing: the report breaks
+  sales down per cashier, and a till left open on the counter must not hand that to whoever walks
+  past. Both credentials are read from the query string, so treat the URL as secret-bearing.
+
+Second-person PIN approval is a route-level rule, not a permission-table one: manual discounts
+(`pos.discount.approve`), voids (`pos.void`), and cash-out (`pos.cash.movement`) all re-verify a
+different user's PIN even when the seller holds the permission themselves — holding a right and
+exercising it must be two separate acts in the evidence.
+
+None of these routes has a GraphQL equivalent, and that is a consequence of the auth model rather
+than a gap: a register has no admin session, so there is no GraphQL context for `requirePermission()`
+to read. The cost is that counter actions are invisible to the GraphQL schema and therefore to the AI
+tool catalogue (`lib/bms/tools/catalog.ts`) today. GraphQL itself is not required for a tool; any
+future wrapper must preserve the POS device + acting-person checks, re-check RBAC, and remain
+propose-only for money/stock movement. A tool or resolver must never call the REST route as a shortcut.
 
 The admin POS return reports use the signed admin cookie, derive the active tenant (including signed
 platform drill-down), and require `report.view`; they never accept a tenant id in query parameters.
@@ -146,6 +185,50 @@ Thin per-action routes (`order/[id]/pay`, `/pack`, `/ship`, `/complete`, `/cance
 `shipment/[id]/status|tracking|label`) — these predate the GraphQL admin UI and call the exact
 same `lib/bms/*.ts` functions the GraphQL mutations use. `reports/*` and `inbox/*` similarly expose
 read/write REST equivalents of their GraphQL counterparts.
+
+## REST — inventory transfers and stock counts (`7.98`)
+
+Unlike every other admin module these two are REST-only, and unlike `/api/pos/*` they *do* use the
+admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
+`verifyAdminSession()` → resolves the acting tenant from the signed `BMS_ACT_TENANT` drill-down cookie
+(only when its `by` matches this admin, else the admin's own tenant) → `requirePermission()`. Failures
+return `{ error: "unauthorized" }` with `401` (no session) or `{ error: "forbidden" }` with `403` (no
+permission). The actor recorded on every write is the admin id from that session, not a body field.
+
+- `GET /api/bms/inventory/transfers?status=` — requires `inventory.transfer`. Returns
+  `{ transfers, locations }`; `status` is honoured only when it is one of `DRAFT`, `IN_TRANSIT`,
+  `RECEIVED`, `CANCELLED`, and anything else is treated as no filter.
+- `POST /api/bms/inventory/transfers` — requires `inventory.transfer` for every action.
+  `action: "create"` takes `fromLocationId`, `toLocationId`, `items[] {sku, size, qty}`, optional
+  `note` → `CREATED` (200, with `transferId`/`transferNo`) or `INVALID` (400). `send`, `receive`
+  (optional `received[]` to receive short), and `cancel` take `transferId` (missing → 400) and answer
+  `OK` (200), `NOT_FOUND` (404), or 409 for `WRONG_STATE`/`INSUFFICIENT`.
+- `GET /api/bms/inventory/counts?status=` — requires `inventory.count`. Returns `{ counts, locations }`;
+  the accepted `status` values are `DRAFT`, `APPLIED`, `CANCELLED`.
+- `POST /api/bms/inventory/counts` — **the permission depends on the action**: `apply` requires
+  `inventory.count.apply`, everything else `inventory.count`, because accepting a variance is an
+  accounting decision rather than walking the shelf. `create` takes `locationId` + optional `note` →
+  `CREATED` (200) / `INVALID` (400); `item` takes `countId`, `sku`, `size`, `countedQty`, optional
+  `note` → `OK` (200, with `snapshotQty`/`variance`), `NOT_FOUND` (404), `WRONG_STATE` (409),
+  `INVALID` (400); `apply` → `APPLIED` (200, with `adjustedItems`/`varianceUnits`), `NOT_FOUND` (404),
+  else 409 (`WRONG_STATE`, `WOULD_BREAK_RESERVED`); `cancel` → `OK` (200) / `NOT_FOUND` (404) / 409.
+  An unknown action, or a missing `countId`, is 400.
+
+Both `GET`s deliberately return the tenant's `locations` alongside the main payload: the screens
+always need the branch picker, and fetching it through GraphQL `bmsLocations` would demand
+`product.view`, which a warehouse role need not have.
+
+The reason for staying off GraphQL is the counting loop — one short request per scanned line, hundreds
+of times, from a handheld on shop wifi — and neither screen ever wants a client-composed selection.
+The cost is the same one `/api/pos/*` pays: these writes are absent from the GraphQL schema and from
+the AI tool catalogue today. A future tool does not need a GraphQL mutation, but it does need a
+validated `lib/bms/tools/catalog.ts` wrapper that derives tenant context, enforces permission, keeps
+the service's in-transaction audit, and proposes stock movement for human confirmation. Calling the
+REST route from a resolver or tool is not an acceptable shortcut. Audit actions
+(`inventory.transfer.create|send|receive|cancel`, `inventory.count.create|apply|cancel`) are written
+inside the same transaction as the stock movement, with `actor` stored as a raw `users.id` that
+`listAudit()` resolves to an email on read. Full rationale and the audit-meta table:
+[../business/inventory.md](../business/inventory.md).
 
 ## GraphQL modules
 

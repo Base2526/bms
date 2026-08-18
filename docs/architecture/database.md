@@ -52,6 +52,8 @@ operators must resolve those records before retrying the migration.
 | Report email permission | (permission-only, no new table) | `7.54` |
 | Job run history | `bms_job_runs` (platform-wide, no `tenant_id`) | `7.55` (renumbered from `7.53` — see note below) |
 | Membership & loyalty | `bms_loyalty_settings`, `bms_membership_tiers`, `bms_loyalty_ledger`, `bms_order_discounts` (+ `bms_customers.member_no/member_since/tier_id/tier_reviewed_at/points_balance`) | `7.96` |
+| POS park / drawer cash / void | `bms_pos_parked_sales`, `bms_pos_cash_movements` (+ `bms_pos_returns.is_void`, `bms_orders.voided_at/voided_by/void_reason`) | `7.97` |
+| Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items` (+ widened `bms_stock_movements.type` CHECK) | `7.98` |
 
 ## Notable schema details
 
@@ -100,6 +102,111 @@ no run history on `/admin/operations-schedule`. Gated off by default
 columns to `bms_tax_documents`/`bms_tenant_vat_settings` and formalizes `CREDIT_NOTE` as a `doc_type`
 alongside `ABBREVIATED`/`FULL`. A tax document's rate/amounts are a snapshot at issue time; changing
 `bms_tenant_vat_settings` only affects documents issued afterward.
+
+**Parked bills / drawer cash / void (`7.97__bms_pos_park_cash_void.sql`)** — three things in one file
+because all of them hang off the same shift and all of them feed the close-shift cash formula; applying
+half of it means closing a drawer with half the numbers.
+
+`bms_pos_parked_sales` is a basket snapshot per shift: `label` (`CHECK (btrim(label) <> '')`, required
+so staff can tell two parked bills apart), `cart JSONB`, `item_count`, `subtotal_hint`, plus
+`location_id`, `device_id`, `shift_id`, `parked_by`. `shift_id` is `ON DELETE CASCADE` on purpose —
+closing the drawer expires the parked bills with it instead of carrying them across a day of price and
+stock changes. A parked row reserves **no** stock and locks **no** price: resume re-prices from the live
+catalog, and `createOrder()` still answers `INSUFFICIENT` if the goods sold out meanwhile. That is
+deliberate; reserving stock for a customer who never came back means locked inventory nobody sweeps up.
+`resumeParkedSale()` reads and deletes in a single `DELETE ... RETURNING`, so two terminals sharing one
+shift cannot resume the same basket onto both screens. The 20-per-shift ceiling lives in
+`lib/bms/pos.ts`, not the schema.
+
+`bms_pos_cash_movements` records drawer money that is not a sale: `direction`
+(`CHECK (direction IN ('IN','OUT'))`), `amount NUMERIC(12,2) CHECK (amount > 0)`, a mandatory `reason`
+(`CHECK (btrim(reason) <> '')`), and a deliberately separate `actor_user_id` (NOT NULL) and
+`approved_by` (nullable — the second person is enforced in code, not by the column). The expected drawer
+balance is computed by one formula in both places that need it (`drawerExpectedInTx()` when recording a
+movement and `closePosShift()` when closing): opening float + `CASH` payments on the shift's orders with
+status `CONFIRMED`/`REFUNDED` − completed `CASH` refund allocations + `IN` − `OUT`. An `OUT` that would
+drive that expected balance negative is refused (`WOULD_OVERDRAW`) — not because the system knows what
+is physically in the drawer, but because such a line is a typo for certain and would make the whole
+shift unexplainable. Every movement also writes a `pos.cash.movement` row to `bms_audit_log` in the same
+transaction, since whoever asks "who took money out this month" reads the audit log, not this table.
+
+Void adds `bms_pos_returns.is_void BOOLEAN NOT NULL DEFAULT FALSE`, `bms_orders.voided_at`/`voided_by`/
+`void_reason`, and a partial index `idx_bms_orders_voided ... WHERE voided_at IS NOT NULL`. A void
+reuses the return machinery exactly (`processPosReturn({ isVoid: true })`) so stock, lots, loyalty and
+refunds unwind through the one already-tested path; `is_void` is what keeps a mis-scan out of the return
+reports and out of the `pos-return-audit` fraud signal that fires on frequent cashier returns. The
+stamping happens **inside** that refund transaction — `voided_at`/`voided_by`/`void_reason`, cancelling
+(never deleting) the order's `bms_tax_documents` row through `cancelled_at`/`cancelled_reason` so no
+issued number vanishes from the sequence, and a `pos.void` audit line carrying the approver — so
+"refunded but never stamped" is unreachable. `voidPosSale()` accepts only a `COMPLETED`/`PAID` order on
+the still-open shift that owns it and with no prior return; a replay of an already-voided order answers
+`VOIDED` instead of erroring. `getPosShiftReport()` (the X/Z report) removes voided bills from every
+figure rather than just the bill count, and a closed shift reports the `expected_cash` stored at close
+rather than recomputing, so a reprint matches the paper a manager already signed. Both new tables carry
+the standard tenant RLS policy and `bms_app` grants. Permissions seeded: `pos.void` and
+`pos.cash.movement` for `Manager` only (money disappearing from sales and money disappearing from the
+drawer are the two classic retail leaks), `pos.shift.report` for `Manager`/`Sales`/`Cashier`. A cashier
+can still perform a void or a cash-out, but with a supervisor's PIN at that moment rather than by
+holding the permission.
+
+**Inter-branch transfers & stock counts (`7.98__bms_stock_transfers_and_counts.sql`)** — `7.84` added
+`bms_locations` and `bms_inventory.location_id`, but there was no way to move goods between branches and
+no way to reconcile a shelf against the system, so a second location's numbers could only drift. The
+migration first widens the `bms_stock_movements` type CHECK to accept `TRANSFER_IN`, `TRANSFER_OUT` and
+`COUNT_ADJUST` alongside `STOCK_IN`/`STOCK_OUT`/`RESERVE`/`RELEASE`/`SHIP`/`RETURN`. The split matters
+for reporting: a transfer is not stock leaving the company, and a count variance is goods already lost
+and only now discovered — neither should read as an ordinary receipt or sale.
+
+`bms_stock_transfers` is two-step by design (`status` `DRAFT` → `IN_TRANSIT` → `RECEIVED`, or
+`CANCELLED` from `DRAFT` only), with `UNIQUE (tenant_id, transfer_no)`,
+`CHECK (from_location <> to_location)`, and per-step actor/time columns (`sent_by`/`sent_at`,
+`received_by`/`received_at`, `cancelled_by`/`cancelled_at`). Goods in transit are in no branch's stock
+at all, which is the correct answer: sending decrements `current_stock` at the source, receiving
+increments the destination, so a count run at the source mid-journey rightly does not find them.
+Sending also refuses to push the source below its `reserved_stock` — stock a customer was already
+promised must not be driven to another branch. `bms_stock_transfer_items` has
+`UNIQUE (transfer_id, product_sku, size)`, `qty CHECK (qty > 0)`, and a nullable
+`received_qty CHECK (received_qty >= 0)`: receiving less than was sent is legitimate (breakage, loss,
+miscount at packing) and the shortfall is written as its own `STOCK_OUT` movement at the **source** with
+a note naming the transfer, rather than being absorbed silently into the difference between two
+branches.
+
+`bms_stock_counts` / `bms_stock_count_items` (`DRAFT` → `APPLIED`/`CANCELLED`,
+`UNIQUE (tenant_id, count_no)`, `UNIQUE (count_id, product_sku, size)`) exist for the case where the
+shop keeps selling while somebody walks the aisles. `snapshot_qty` is the system quantity captured the
+moment a line is first entered, and is deliberately **not** refreshed when the counter corrects a typo;
+applying the count adds `counted_qty − snapshot_qty` to `current_stock` instead of overwriting it, so a
+sale made during the count is not conjured back onto the shelf. Applying is refused
+(`WOULD_BREAK_RESERVED`) when the result would fall below `reserved_stock`; that is a conflict for a
+human to settle, not one for the system to pick a side on quietly. Item-level entry is intentionally not
+audited — a shelf count is hundreds of lines and would bury the log — but `inventory.count.apply` writes
+one `bms_audit_log` row naming who accepted the shrinkage.
+
+Both item tables use a composite `FOREIGN KEY (tenant_id, product_sku) REFERENCES
+bms_products(tenant_id, sku)`, because `bms_products`' primary key is `(tenant_id, sku)`. The composite
+form enforces that the line's tenant and the product's tenant are the same row, not merely that the SKU
+exists in *some* tenant. The services still validate SKUs before inserting, so a typo returns a sentence
+naming the bad SKU instead of a bare 500 from the FK. All four tables carry the standard tenant RLS
+policy and `bms_app` grants. Permissions seeded: `inventory.transfer` and `inventory.count` for
+`Manager`/`Warehouse`, `inventory.count.apply` for `Manager` only — entering the numbers is warehouse
+work, accepting that the goods are really gone is an accounting decision, and the two should not be the
+same person.
+
+Two things to know before applying `7.98`. **Apply it with `psql -1`**: the file is not self-wrapping,
+and the first attempt on this repo's dev database failed partway through on a wrong (non-composite) FK,
+leaving half its tables behind to be dropped by hand before a retry. Second, a branch created without an
+explicit `bms_locations.branch_code` takes that column's `'00000'` default from `7.84` and immediately
+collides with head office under `uq_bms_locations_branch_code (tenant_id, branch_code)`; multi-branch
+transfers are the first feature that makes a second location routine, so this is where it first bites.
+
+**Daily document numbers (`lib/bms/dailyDocNo.ts`)** — `bms_stock_transfers.transfer_no` and
+`bms_stock_counts.count_no` are `TRF-YYMMDD-NNN` / `CNT-YYMMDD-NNN`, per tenant per day, not a global
+sequence. Both the date stamp and the counter come from a single SQL statement, so an app running in
+`Asia/Bangkok` against a UTC database cannot stamp today's date onto a counter that is still counting
+yesterday's rows — that produced genuinely duplicate numbers, not merely an unlucky race. The insert
+runs under a `SAVEPOINT` and retries (up to five times) on unique violation `23505`, which converges:
+losing the race means the other writer has committed, so the recount sees its row. It must therefore be
+called from inside an already-open transaction.
 
 **`bms_products` customer discovery (`7.33`)** — customer AI reads the live active catalog directly;
 there is no product embedding/cache that must be refreshed after an insert. A newly created active

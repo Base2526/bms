@@ -276,6 +276,14 @@ Output
 
 Transfer Result
 
+Not an AI tool and not a GraphQL mutation today. Inter-branch transfers/counts (`7.98`) live behind
+REST-only admin routes `/api/bms/inventory/transfers` and `/api/bms/inventory/counts`, authorised by
+the signed admin session plus `inventory.transfer` / `inventory.count` / `inventory.count.apply`.
+They are absent from the runtime AI registry because `lib/bms/tools/catalog.ts` does not register a
+validated wrapper. GraphQL is not a prerequisite for a tool: any future stock-transfer tool must call
+the service through that catalogue, derive the tenant from `ExecCtx`, re-check permission, preserve
+the service's in-transaction audit, and remain propose-only until a person confirms the movement.
+
 ---
 
 ## adjustStock()

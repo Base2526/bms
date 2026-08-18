@@ -19,6 +19,7 @@ import {
   recordCashMovement,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { isDistinctPosApprover } from "@/lib/bms/posRouteHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +58,9 @@ export async function POST(req: NextRequest) {
     const approverPin = typeof body.approverPin === "string" ? body.approverPin : "";
     if (!approverId || !approverPin) {
       return NextResponse.json({ error: "เงินออกจากลิ้นชักต้องมีผู้อนุมัติกด PIN" }, { status: 400 });
+    }
+    if (!isDistinctPosApprover(actor.userId, approverId)) {
+      return NextResponse.json({ error: "ผู้อนุมัติเงินออกต้องเป็นคนละคนกับผู้ทำรายการ" }, { status: 400 });
     }
     const approver = await verifyCashierPin(device.tenantId, approverId, approverPin);
     if (!approver.ok) {

@@ -21,6 +21,12 @@ export function normalizePosSearchQuery(raw: string | null | undefined): string 
   return String(raw ?? "").trim();
 }
 
+export function isDistinctPosApprover(actorUserId: string, approverUserId: string): boolean {
+  const actor = actorUserId.trim().toLowerCase();
+  const approver = approverUserId.trim().toLowerCase();
+  return Boolean(actor && approver && actor !== approver);
+}
+
 export function decoratePosSale(
   sale: Record<string, unknown>,
   extras: { storeName: string | null; branchCode: string | null; posLabel: string | null; vatRegistered: boolean }

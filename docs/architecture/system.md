@@ -83,11 +83,14 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` · cross-channel merge — see [../ui/customer360.md](../ui/customer360.md) |
 | Product Management | ✅ | `lib/bms/products.ts` · `3.2` / `5.9` / `6.0` / `6.5` (multi-image gallery) |
 | Product Bulk Import (CSV/XLSX) | ✅ | `lib/bms/productImport.ts` · `graphql/bmsProducts.ts` (`bmsImportProducts`) · `/admin/products` `ImportModal.tsx` — see [../business/inventory.md](../business/inventory.md) |
-| Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
+| Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` · `adjustStock()` takes an optional `locationId` (omitted = default branch) and verifies the branch belongs to the shop |
+| Inventory — branch transfers & stock counts | ✅ | `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts` · `7.98__bms_stock_transfers_and_counts.sql` · `app/api/bms/inventory/{transfers,counts}` · `/admin/stock-transfers` + `/admin/stock-counts` — send/receive in two steps so goods in transit belong to no branch; counts apply a difference against a snapshot, never an absolute. REST-only, no GraphQL — see [../business/inventory.md](../business/inventory.md) |
 | Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` · staff create/reorder + invoice preview — see [../business/order.md](../business/order.md) |
 | Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
 | Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
 | POS (counter sale/return/refund) | ✅ | `lib/bms/{pos,locations,lots,productPacks}.ts` · `graphql/bmsPos.ts` · `app/(pos)/pos` · `app/api/pos/*` · migrations `7.84`–`7.93` — see [../business/pos.md](../business/pos.md) |
+| POS — parked bills, drawer cash, void, shift report | ✅ | `lib/bms/pos.ts` · `7.97__bms_pos_park_cash_void.sql` · `app/api/pos/{park,cash-movement,void,shift-report}` — a manual discount, a void, and cash out each need a second person's PIN; a void reuses the return machinery under `isVoid` and stamps the bill inside that same transaction |
+| Membership, tiers & loyalty points | ✅ | `lib/bms/{membership,loyaltyMath}.ts` · `graphql/bmsMembership.ts` · `7.96__bms_membership_and_loyalty.sql` · `/admin/loyalty` — points are a ledger, not a balance column, and reverse proportionally on a return; outstanding points are an accounting liability (`bmsLoyaltyOutstanding`) — see [../business/pos.md](../business/pos.md) |
 | Tax (VAT invoices, credit notes) | ✅ | `lib/bms/{taxDocuments,vat}.ts` · migrations `7.88`, `7.89`, `7.95` — abbreviated/full tax invoices, credit notes, cash rounding; documents are immutable once issued |
 | Tax — e-Tax submission queue | 🧪 flag-gated, off by default | `lib/bms/etax/*` · `7.94__bms_etax_submissions.sql` · `POST /api/bms/jobs/etax` — background XML submission to the Revenue Department; issuing a tax document does not submit it by itself |
 | Public Customer Checkout (signed link) | ✅ | `lib/bms/{checkout,checkoutToken}.ts` · `app/api/bms/checkout/*` · `app/(checkout)/checkout` — no migration; slip upload creates `PENDING` only, human confirms — see [../ui/customer-checkout-wireframe.md](../ui/customer-checkout-wireframe.md) |
@@ -133,15 +136,24 @@ finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
 a password/TLS for Redis before a real production deploy ·
-an actual cron schedule for the six ready-but-unscheduled endpoints (`orders/release-expired`,
-`channels/check-health`, `ai/check-health`, `reports/send-digest`, `followups/run`,
-`shipping/sync-carriers`) — all six already record their own run history in `bms_job_runs`, they just
-need an external scheduler pointed at them.
+the two GitHub secrets that make the cron schedule real. `.github/workflows/bms-cron.yml` now points
+at all seven endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
+`reports/send-digest`, `followups/run`, `shipping/sync-carriers`, `loyalty/maintenance`), but
+without `BMS_APP_BASE_URL` and `BMS_CRON_SECRET` set in the repository every job skips itself
+**silently** — the workflow stays green while nothing runs, points never expire, and tiers are never
+re-evaluated. Confirm at `/admin/operations-schedule`, which reads `bms_job_runs`.
 
 **Migrations not yet applied to production (2026-08-13):** `7.33`, `7.52`, `7.54`, `7.55`, `7.56`,
-`7.78`, `7.81`, `7.82`. This list predates the POS/tax feature set (`7.84`–`7.95`) and does not
-cover it — check the target database and [CLAUDE.local.md](../../CLAUDE.local.md) rather than
-trusting this list.
+`7.78`, `7.81`, `7.82`. This list predates the POS/tax/membership/branch-inventory set
+(`7.84`–`7.98`) and does not cover it — check the target database and
+[CLAUDE.local.md](../../CLAUDE.local.md) rather than trusting this list. `7.96`–`7.98` each seed new
+permissions; skip one and its admin screen returns 403 with nothing in the UI to explain why.
+
+**Clean-room replay does not work.** Applying `db/init.sql` plus every migration in order against an
+empty database fails (verified 2026-08-18): `init.sql` ends with a seed referencing a column a later
+migration adds, and 19 of the 175 migrations error out, leaving `roles` and `bms_role_permissions`
+incomplete. These files are applied by hand against a database that grew with them. Disaster recovery
+means restoring a dump, not replaying migrations.
 
 ## RBAC model (two tiers)
 

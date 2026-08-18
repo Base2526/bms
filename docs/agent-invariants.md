@@ -15,6 +15,8 @@ whichever is wrong, in the same change.
 - [Public customer checkout (signed link)](#public-customer-checkout-signed-link)
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
+- [Membership and loyalty points](#membership-and-loyalty-points)
+- [Branch inventory operations](#branch-inventory-operations)
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
@@ -238,7 +240,8 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 
 ## POS and tax
 
-`lib/bms/pos.ts` (migrations `7.84`–`7.93`) owns the counter sale/return/refund model;
+`lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
+shift report) owns the counter sale/return/refund model;
 `lib/bms/{taxDocuments,vat}.ts` (`7.88`, `7.89`, `7.95`) own Thai tax-invoice issuance and credit
 notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/business detail:
 [../docs/business/pos.md](business/pos.md).
@@ -246,8 +249,10 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **A device token is not a user.** `/api/pos/*` resolves tenant/location from the hashed active
   device row (`x-pos-device-token`), never from a client-supplied value. Every *mutating* route
   additionally verifies the selected cashier's PIN and an action-specific permission (`pos.sell`,
-  `pos.shift.open`/`pos.shift.close`, `order.return`, `payment.refund`). Read routes are
-  device-scoped operational reads with no PIN check.
+  `pos.shift.open`/`pos.shift.close`, `order.return`, `payment.refund`) except `/api/pos/park`:
+  parking/resuming/dropping a cart changes no money, stock, or document and is deliberately gated by
+  the active device + open shift only. Read routes are device-scoped operational reads unless the
+  payload is staff-sensitive (`shift-report` re-verifies PIN + `pos.shift.report`).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
   `pos_only` account outright; a `pos_only` account cannot toggle its own flag or an
   Administrator's.
@@ -275,6 +280,54 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
   written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
   Treat it as untested per printer model until run against one.
+
+## Membership and loyalty points
+
+`lib/bms/{membership,loyaltyMath}.ts`, `graphql/bmsMembership.ts`, and migration `7.96` own member
+numbers, tiers, discounts, and points. Operator detail and the go-live checklist live in
+[business/pos.md](business/pos.md#membership-tier-discounts-and-loyalty-points).
+
+- **The ledger is truth; `points_balance` is a cache.** Every earn, redeem, adjustment, expiry, and
+  return reversal appends to `bms_loyalty_ledger` and updates the cached balance in the same tenant
+  transaction. Negative balances are valid after returning goods whose earned points were spent.
+- **Discount composition has one implementation.** `composeDiscounts()` applies tier discount,
+  coupon, manual discount, then points redemption under the configured per-bill cap. POS previews
+  and settlement must use the same math; a manual discount still needs a distinct second person with
+  `pos.discount.approve` at the route boundary.
+- **Returns reverse proportionally and idempotently.** A partial return claws back only its share of
+  earned and redeemed points, keyed to the POS return so replay cannot create a second ledger entry.
+- **Customer AI may read only its own balance.** `get_loyalty_points` resolves identity from the
+  server-established `(tenant_id, channel, customer_ref)` and never redeems or adjusts points.
+  Staff writes require `member.manage`, `loyalty.settings`, or `loyalty.adjust` as appropriate; a
+  manual adjustment requires a reason and audit.
+- **Maintenance is scheduled work, not a read side effect.**
+  `POST /api/bms/loyalty/maintenance` expires grants FIFO and re-reviews tiers. The GitHub workflow
+  calls it only when `BMS_APP_BASE_URL` and `BMS_CRON_SECRET` are configured; verify actual runs in
+  `bms_job_runs`/`/admin/operations-schedule`, not from a green workflow alone.
+
+## Branch inventory operations
+
+`lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts`, the REST admin routes under
+`/api/bms/inventory/*`, and migration `7.98` own inter-branch transfers and shelf counts. Full state,
+audit, and rollout detail: [business/inventory.md](business/inventory.md#multiple-branches-transfers-and-counts-798).
+
+- **A transfer is send then receive.** Sending removes only unreserved stock from the source and
+  records `TRANSFER_OUT`; receiving adds the actual quantity at the destination as `TRANSFER_IN`.
+  Goods in transit belong to no branch. A short receive records a separate source `STOCK_OUT` ledger
+  line and exposes `unitsMissing` in the receive audit instead of hiding the loss.
+- **A count applies a delta, never an absolute.** Each line keeps its first-entry snapshot; apply adds
+  `counted_qty - snapshot_qty` to current stock so sales during the count survive. The whole apply is
+  refused if any result would fall below reserved stock.
+- **Counting and accepting variance are separate jobs.** `inventory.count` may create/edit/cancel a
+  draft; `inventory.count.apply` signs the stock change. Transfers use `inventory.transfer`. The REST
+  routes derive tenant and actor from the signed admin session and drill-down cookie, never the body.
+- **Every decision audit commits with its write.** Create/send/receive/cancel and count
+  create/apply/cancel insert one `bms_audit_log` row inside the service transaction. Individual count
+  lines are intentionally not audited. A future AI tool must wrap the service in
+  `lib/bms/tools/catalog.ts`, remain propose-only for stock movement, and never call the REST route.
+- **Daily numbers use one database clock.** `TRF-`/`CNT-YYMMDD-NNN` creation goes through
+  `insertWithDailyDocNo()` inside an open transaction; do not combine an app-clock date with a
+  database-clock counter. Apply `7.98` atomically (`psql -1`) because the migration is not self-wrapped.
 
 ## AI provider selection, BYOK, and health
 

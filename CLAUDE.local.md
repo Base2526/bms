@@ -158,7 +158,11 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · **apply ด้วย `psql -1`** — รอบแรกล้มกลางไฟล์เพราะ FK ผิด แล้วตารางค้างครึ่งเดียวใน DB
     (ต้อง DROP มือ) · `bms_products` มี PK `(tenant_id, sku)` FK จึงต้องเป็น composite
   · **`bms_locations.branch_code` default `'00000'` + unique `(tenant_id, branch_code)`** — สร้าง
-    สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส)
+    สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส) · **คอลัมน์นี้มาจาก
+    `7.84__bms_locations.sql` ไม่ใช่ `7.98`** (เคยจดไว้ผิดที่ — แก้ 2026-08-18) กับดักมาโผล่ตอน
+    ทำ `7.98` เพราะเพิ่งมีคนสร้างสาขาที่สองเป็นครั้งแรก
+  · `7.98` แก้ตารางเดิมด้วย: drop/recreate `bms_stock_movements_type_check` เพื่อเพิ่ม
+    `TRANSFER_IN`/`TRANSFER_OUT`/`COUNT_ADJUST`
   · เทสชุดที่ 4 (10 เทส): `../../scripts/inventory-multilocation-db-contract.test.mts`
     — รวมสี่ชุด 55 เทส ผ่านทั้งหมด
   · **หน้า UI: `/admin/stock-transfers` + `/admin/stock-counts`** (เมนูอยู่กลุ่มร้านค้า ถัดจาก

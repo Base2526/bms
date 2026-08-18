@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
-import { parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { isDistinctPosApprover, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,9 +61,7 @@ export async function POST(req: NextRequest) {
   const payments = paymentParse.payments;
 
   // ---- ส่วนลดมือ: ต้องมีหัวหน้ากด PIN อนุมัติทุกครั้ง ----------------
-  // แยก PIN ของผู้อนุมัติออกจาก PIN คนขายโดยตั้งใจ ถ้าใช้ตัวเดียวกัน แคชเชียร์ที่
-  // บังเอิญมีสิทธิ์ pos.discount.approve จะลดเองได้ไม่จำกัดโดยไม่มีใครรู้ · ผู้อนุมัติ
-  // เป็นคนเดียวกับคนขายได้ถ้าร้านให้สิทธิ์ไว้จริง แต่ต้องกด PIN ซ้ำเป็นการยืนยัน
+  // ผู้อนุมัติต้องเป็นคนละคนกับคนขาย แม้คนขายจะถือ permission นี้อยู่ก็ตาม
   let approval: { amount: number; userId: string; reason: string } | null = null;
   const requestedDiscount = Math.round(Number(body.manualDiscount ?? 0) * 100) / 100;
   if (Number.isFinite(requestedDiscount) && requestedDiscount > 0) {
@@ -73,6 +71,9 @@ export async function POST(req: NextRequest) {
     if (!reason) return badRequest("ส่วนลดหน้าร้านต้องระบุเหตุผล");
     if (reason.length > 200) return badRequest("เหตุผลส่วนลดยาวเกินไป");
     if (!approverId || !approverPin) return badRequest("ส่วนลดหน้าร้านต้องให้ผู้มีสิทธิ์อนุมัติกด PIN");
+    if (!isDistinctPosApprover(auth.userId, approverId)) {
+      return badRequest("ผู้อนุมัติส่วนลดต้องเป็นคนละคนกับพนักงานขาย");
+    }
 
     const approver = await verifyCashierPin(device.tenantId, approverId, approverPin);
     if (!approver.ok) {

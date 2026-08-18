@@ -77,8 +77,21 @@ wrong, and update the doc in the same change.
   `payment.refund`); a shift can't close with a pending allocation. Tax documents are immutable once
   issued; e-Tax submission (`7.94`) is a separate gated queue, not automatic, and its cron route
   doesn't yet call `recordJobRun()` like the others — don't copy that. `pos_only` accounts are
-  hard-blocked from `/admin` login, not just hidden from the menu. Full detail:
+  hard-blocked from `/admin` login, not just hidden from the menu. **A manual discount, a void, and
+  cash out of the drawer each demand a second person's PIN even when the operator holds the
+  permission themselves** — holding a right and exercising it must be two separate acts in the
+  evidence. A void is not a return: it reuses the return machinery but carries `isVoid`, and its
+  `voided_at` stamp, tax-document cancellation, and audit row happen **inside that reversal's
+  transaction**, never a second one afterwards. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
+- **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
+  transit belong to no branch; that is what keeps a count at the source correct while the van moves.
+  A send never moves reserved stock, and a short receive books the shortfall as lost in transit at
+  the source rather than letting it vanish between two branch totals. A count applies
+  `counted − snapshot` (snapshot taken when the line was first entered), never an absolute, so sales
+  during the count survive; applying is refused if it would drop stock below what customers reserved.
+  `inventory.count` and `inventory.count.apply` are separate on purpose — walking the shelves and
+  signing off the shrinkage are different jobs.
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
 - **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job
@@ -155,7 +168,19 @@ per-user-preference pattern:
 - Every new tenant-owned `bms_*` table needs `tenant_id`, an RLS policy, and `bms_app` grants — follow
   `4.2__bms_rls.sql` and `4.3__bms_rls_role.sql`.
 - Use `beginTenantTx()` for tenant writes; keep multi-step stock/order/payment changes atomic. Pass
-  `{ editorId }` when the write should be attributable in revision history.
+  `{ editorId }` when the write should be attributable in revision history. A "single statement, it
+  has its own `WHERE tenant_id`" write is still wrong: without `beginTenantTx` the GUC is unset, the
+  tenant policy degrades to `tenant_id = tenant_id`, and RLS contributes nothing.
+- A sensitive write records its audit row **in the same transaction** as the change. Resolvers use
+  `audit(ctx, …)`; paths with no GraphQL context (POS device+PIN, admin REST) insert into
+  `bms_audit_log` directly inside the open transaction — see `pos.ts` and `stockTransfers.ts`. Do not
+  audit high-volume inner loops (a shelf count is hundreds of lines); audit the decision that accepts
+  the outcome. `listAudit()` resolves a raw user id back to an email on read, so storing the id is
+  fine — storing nothing is not.
+- Per-day document numbers (`TRF-`/`CNT-YYMMDD-NNN`) go through `insertWithDailyDocNo()`
+  (`lib/bms/dailyDocNo.ts`). Never take the date from the Node clock and the counter from
+  `CURRENT_DATE`: an app on `Asia/Bangkok` against a UTC database then issues duplicates every
+  morning until 07:00.
 - Parameterized queries only. Preserve append-only audit/history semantics.
 - Document new tables, states, constraints, and dependencies in `docs/architecture/database.md` and
   the relevant business doc. If operator workflows change, update the in-app manual
