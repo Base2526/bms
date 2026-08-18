@@ -77,6 +77,9 @@ export const BMS_PERMISSIONS = [
   // เหมือน approveAssessment() เพราะ Administrator ได้ทุก permission อัตโนมัติ
   "pharmacy.policy.read",
   "pharmacy.policy.review",
+  // สาขา (bms_locations มีมาตั้งแต่ 7.84 แต่ไม่เคยมีทางสร้างจากแอป จนมาเปิดที่ 9.1)
+  // — Manager เท่านั้น เพราะผูกกับใบกำกับภาษี/ใบอนุญาตขายยา/การตัดสต็อกข้ามสาขา
+  "location.manage",
   // POS — seed ที่ 7.87
   "pos.sell",
   "pos.shift.open",

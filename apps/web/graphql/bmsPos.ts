@@ -8,7 +8,7 @@ import { requireAuth } from "@/lib/auth";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
-import { listLocations } from "@/lib/bms/locations";
+import { listLocations, upsertLocation } from "@/lib/bms/locations";
 import {
   clearCashierPin,
   closePosShift,
@@ -168,6 +168,19 @@ export const bmsPosResolvers = {
   },
 
   Mutation: {
+    async bmsUpsertLocation(_p: unknown, args: { input: any }, ctx: any) {
+      await requirePermission(ctx, "location.manage");
+      try {
+        const location = await upsertLocation(getTenantId(ctx), args.input);
+        await audit(ctx, "location.upsert", location.id, { code: location.code, branchCode: location.branchCode });
+        return location;
+      } catch (e: any) {
+        throw new GraphQLError(e?.message || "บันทึกสาขาไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+    },
+
     async bmsUpsertPosDevice(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "pos.device.manage");
       try {

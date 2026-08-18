@@ -49,6 +49,7 @@ import {
   BarcodeOutlined,
   SafetyCertificateOutlined,
   HeartOutlined,
+  ClusterOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -368,6 +369,10 @@ export default function AdminSidebar() {
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
+        // สาขา (9.1) วางก่อน Stock Transfers เพราะต้องมีสาขาที่สองก่อนถึงจะมี
+        // อะไรให้โอนย้าย — สิทธิ์ location.manage ให้ Manager เท่านั้น (โครงสร้างร้าน
+        // ไม่ใช่งานประจำวัน)
+        ...(can('location.manage') ? [link('/admin/locations', 'Locations', <ClusterOutlined />)] : []),
         // งานคลัง (7.98) วางต่อจาก Purchase เพราะเป็นงานตระกูลเดียวกัน (ของเข้า/ของย้าย/ของขาด)
         // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
         ...(can('inventory.transfer') ? [link('/admin/stock-transfers', 'Stock Transfers', <SwapOutlined />)] : []),
