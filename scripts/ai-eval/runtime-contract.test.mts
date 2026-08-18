@@ -789,6 +789,35 @@ test("repeated successful tool call with identical arguments is replayed without
   assert.equal(audits.length, 2, "ทุก attempt ยังต้อง audit แม้ execution ถูก deduplicate");
 });
 
+test("customer create_order with different arguments is still limited to one write per logical turn", async () => {
+  let writes = 0;
+  let round = 0;
+  const tool = makeTool({
+    name: "create_order",
+    inputSchema: {
+      type: "object",
+      properties: { sku: { type: "string" }, qty: { type: "integer" } },
+    },
+    execute: async (_args, ec) => {
+      writes += 1;
+      ec.createdOrderId = "order-1";
+      return { ok: true, data: { status: "CREATED", orderId: "order-1" } };
+    },
+  });
+  const result = await __toolLoopTest.run(
+    baseOptions([tool]),
+    depsFor(async () => {
+      round += 1;
+      if (round === 1) return toolResponse("create_order", { sku: "SKU-1", qty: 1 }, "tool-1");
+      if (round === 2) return toolResponse("create_order", { sku: "SKU-2", qty: 1 }, "tool-2");
+      return textResponse("รับออร์เดอร์แล้ว");
+    })
+  );
+  assert.equal(writes, 1);
+  assert.equal(result.trace.length, 2);
+  assert.match(result.trace[1]?.summary ?? "", /ออร์เดอร์ถูกสร้างแล้ว/);
+});
+
 test("failed tool calls are not cached so the same arguments can recover from a transient error", async () => {
   let executions = 0;
   let round = 0;

@@ -16,6 +16,7 @@ import {
   getOpenPosShift,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { isDistinctPosApprover } from "@/lib/bms/posRouteHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,10 @@ export async function POST(req: NextRequest) {
 
   const actor = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!actor.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: actor.reason }, { status: 403 });
+
+  if (!isDistinctPosApprover(actor.userId, approverId)) {
+    return NextResponse.json({ error: "ผู้อนุมัติต้องเป็นคนละคนกับพนักงานที่รับคืน" }, { status: 400 });
+  }
 
   const approver = await verifyCashierPin(device.tenantId, approverId, approverPin);
   if (!approver.ok) return NextResponse.json({ error: "PIN ผู้อนุมัติไม่ถูกต้อง", reason: approver.reason }, { status: 403 });

@@ -42,12 +42,14 @@ const TAG = "deposit-test";
 const SKU = `FAKE-${TAG}-SKU`;
 const SIZE = "M";
 const PIN = "9183";
+const key = (name: string) => `${TAG}-${name}-${process.pid}`;
 
 let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
 let shiftId = "";
+let mainDepositOrderId = "";
 const orders: string[] = [];
 
 const stock = async () => {
@@ -116,9 +118,11 @@ test("taking a deposit reserves the goods without deducting them", async () => {
   const res = await takeDeposit({
     tenantId, orderId: order.orderId, amount: 1000, method: "CASH",
     deviceId, shiftId, createdBy: cashierId, customerNote: "คุณสมชาย 081-xxx",
+    idempotencyKey: key("take-main"),
   });
   assert.equal(res.status, "TAKEN", JSON.stringify(res));
   if (res.status !== "TAKEN") return;
+  mainDepositOrderId = order.orderId;
   assert.equal(res.deposit.totalAmount, 5000);
   assert.equal(res.deposit.depositPaid, 1000);
   assert.equal(res.deposit.balanceDue, 4000);
@@ -139,7 +143,7 @@ test("a deposit equal to the bill is refused — that is a completed sale", asyn
   const order = await newOrder(1);   // 1,000
   const res = await takeDeposit({
     tenantId, orderId: order.orderId, amount: 1000, method: "CASH",
-    deviceId, shiftId, createdBy: cashierId,
+    deviceId, shiftId, createdBy: cashierId, idempotencyKey: key("take-full"),
   });
   assert.equal(res.status, "INVALID");
   if (res.status === "INVALID") {
@@ -148,18 +152,48 @@ test("a deposit equal to the bill is refused — that is a completed sale", asyn
   }
 });
 
+test("an added instalment equal to the remaining balance is also refused", async () => {
+  const order = await newOrder(1); // 1,000
+  const taken = await takeDeposit({
+    tenantId, orderId: order.orderId, amount: 200, method: "CASH",
+    deviceId, shiftId, expectedLocationId: locationId, createdBy: cashierId,
+    idempotencyKey: key("take-add-full"),
+  });
+  assert.equal(taken.status, "TAKEN");
+
+  const full = await addToDeposit({
+    tenantId, orderId: order.orderId, amount: 800, method: "CASH",
+    actorUserId: cashierId, locationId,
+    idempotencyKey: key("add-full"),
+  });
+  assert.equal(full.status, "INVALID", "ยอดที่จ่ายครบต้องใช้ settle เพื่อส่งของและออกใบกำกับ");
+  const unchanged = await getDepositByOrder(tenantId, order.orderId);
+  assert.equal(unchanged?.depositPaid, 200);
+  assert.equal(unchanged?.status, "OPEN");
+});
+
 test("paying more in instalments moves the balance, and overpaying is refused", async () => {
-  const dep = (await listDeposits(tenantId, "OPEN"))[0];
+  const dep = (await listDeposits(tenantId, "OPEN")).find((d) => d.orderId === mainDepositOrderId);
   assert.ok(dep, "ต้องมีมัดจำที่เปิดอยู่จากเทสก่อนหน้า");
 
   const add = await addToDeposit({
     tenantId, orderId: dep.orderId, amount: 1500, method: "CASH", actorUserId: cashierId,
+    idempotencyKey: key("add-main"),
   });
   assert.equal(add.status, "TAKEN");
   if (add.status === "TAKEN") assert.equal(add.deposit.balanceDue, 2500);
 
+  const replay = await addToDeposit({
+    tenantId, orderId: dep.orderId, amount: 1500, method: "CASH", actorUserId: cashierId,
+    idempotencyKey: key("add-main"),
+  });
+  assert.equal(replay.status, "TAKEN");
+  if (replay.status === "TAKEN") assert.equal(replay.deposit.balanceDue, 2500,
+    "retry key เดิมต้องไม่รับเงินงวดเดิมซ้ำ");
+
   const over = await addToDeposit({
     tenantId, orderId: dep.orderId, amount: 9999, method: "CASH", actorUserId: cashierId,
+    idempotencyKey: key("add-over"),
   });
   assert.equal(over.status, "INVALID", "จ่ายเกินยอดค้างต้องไม่ผ่าน");
 });
@@ -196,7 +230,7 @@ test("paying the wrong balance is refused rather than accepted quietly", async (
   const order = await newOrder(2);   // 2,000
   await takeDeposit({
     tenantId, orderId: order.orderId, amount: 500, method: "CASH",
-    deviceId, shiftId, createdBy: cashierId,
+    deviceId, shiftId, createdBy: cashierId, idempotencyKey: key("take-wrong-balance"),
   });
 
   const short = await settleDepositSale({
@@ -220,9 +254,10 @@ test("closing a deposit records the decision without moving money on its own", a
   });
   assert.equal(noReason.status, "INVALID");
 
+  const reservedBefore = (await stock()).reserved;
   const res = await closeDeposit({
     tenantId, orderId: dep!.orderId, outcome: "FORFEITED",
-    reason: "เลยกำหนดรับ 30 วัน ตามที่แจ้งลูกค้าไว้", actorUserId: cashierId,
+    reason: "เลยกำหนดรับ 30 วัน ตามที่แจ้งลูกค้าไว้", actorUserId: cashierId, locationId,
   });
   assert.equal(res.status, "FORFEITED");
   if (res.status === "FORFEITED") assert.equal(res.forfeited, 500);
@@ -230,6 +265,11 @@ test("closing a deposit records the decision without moving money on its own", a
   // ระบบไม่คืนเงินให้เอง — การคืนหรือยึดเป็นข้อตกลงระหว่างร้านกับลูกค้า
   assert.equal((await getDepositByOrder(tenantId, dep!.orderId))!.status, "FORFEITED");
   assert.equal((await listDeposits(tenantId, "OPEN")).some((d) => d.orderId === dep!.orderId), false);
+  const order = await query<{ status: string }>(
+    `SELECT status FROM bms_orders WHERE tenant_id = $1 AND id = $2`, [tenantId, dep!.orderId]
+  );
+  assert.equal(order.rows[0].status, "CANCELLED");
+  assert.equal((await stock()).reserved, reservedBefore - 2, "ปิดมัดจำต้องคืนของจองใน commit เดียวกัน");
 });
 
 test("overdue deposits are visible — reserved goods nobody can sell", async () => {
@@ -237,6 +277,7 @@ test("overdue deposits are visible — reserved goods nobody can sell", async ()
   await takeDeposit({
     tenantId, orderId: order.orderId, amount: 100, method: "CASH",
     deviceId, shiftId, createdBy: cashierId,
+    idempotencyKey: key("take-overdue"),
     dueAt: new Date(Date.now() - 86_400_000).toISOString(),
   });
   const dep = await getDepositByOrder(tenantId, order.orderId);

@@ -598,20 +598,46 @@ export async function verifyCashierPin(
 
   const match = await bcrypt.compare(String(pin ?? ""), u.pos_pin_hash);
   if (!match) {
-    const failures = Number(u.pos_pin_failures ?? 0) + 1;
-    const lock = failures >= PIN_MAX_FAILURES;
-    await query(
+    // เพิ่มจากค่าปัจจุบันในฐานข้อมูลโดยตรง ไม่คำนวณจาก snapshot ที่อ่านก่อน bcrypt
+    // เพราะ bcrypt เปิดหน้าต่างให้คำขอพร้อมกันหลายตัวอ่าน failures=0 เหมือนกัน แล้ว
+    // เขียน 1 ทับกันทั้งหมดจนเดา PIN แบบ parallel ได้โดยไม่เคยถูกล็อก
+    const failed = await query<{ pos_pin_locked_until: Date | null }>(
       `UPDATE users
-          SET pos_pin_failures = $3,
-              pos_pin_locked_until = CASE WHEN $4 THEN now() + ($5 || ' minutes')::interval ELSE pos_pin_locked_until END
-        WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, userId, lock ? 0 : failures, lock, String(PIN_LOCK_MINUTES)]
+          SET pos_pin_failures = CASE
+                WHEN pos_pin_locked_until > now() THEN pos_pin_failures
+                WHEN pos_pin_failures + 1 >= $3 THEN 0
+                ELSE pos_pin_failures + 1
+              END,
+              pos_pin_locked_until = CASE
+                WHEN pos_pin_locked_until > now() THEN pos_pin_locked_until
+                WHEN pos_pin_failures + 1 >= $3 THEN now() + ($4 || ' minutes')::interval
+                ELSE pos_pin_locked_until
+              END
+        WHERE tenant_id = $1 AND id = $2
+        RETURNING pos_pin_locked_until`,
+      [tenantId, userId, PIN_MAX_FAILURES, String(PIN_LOCK_MINUTES)]
     );
-    return { ok: false, reason: lock ? "LOCKED" : "WRONG_PIN" };
+    const lockedUntil = failed.rows[0]?.pos_pin_locked_until ?? null;
+    return lockedUntil && lockedUntil > new Date()
+      ? { ok: false, reason: "LOCKED", lockedUntil: lockedUntil.toISOString() }
+      : { ok: false, reason: "WRONG_PIN" };
   }
 
-  if (Number(u.pos_pin_failures ?? 0) > 0) {
-    await query(`UPDATE users SET pos_pin_failures = 0 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId]);
+  // ระหว่าง bcrypt อาจมีคำขอผิดอีกตัวล็อกบัญชีไปแล้ว ต้องไม่ให้ผลสำเร็จจาก snapshot
+  // เก่าล้าง failure แล้วผ่าน lock ใหม่เงียบ ๆ
+  const cleared = await query(
+    `UPDATE users SET pos_pin_failures = 0
+      WHERE tenant_id = $1 AND id = $2
+        AND (pos_pin_locked_until IS NULL OR pos_pin_locked_until <= now())`,
+    [tenantId, userId]
+  );
+  if (!cleared.rowCount) {
+    const locked = await query<{ pos_pin_locked_until: Date | null }>(
+      `SELECT pos_pin_locked_until FROM users WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, userId]
+    );
+    const lockedUntil = locked.rows[0]?.pos_pin_locked_until;
+    return { ok: false, reason: "LOCKED", lockedUntil: lockedUntil?.toISOString() };
   }
   return { ok: true, userId: u.id, name: u.name ?? null, isPharmacist: Boolean(u.is_licensed_pharmacist) };
 }
@@ -1540,6 +1566,11 @@ async function finalizePosSale(args: {
    * — ยังจับกรณีมีรายการเกินมาได้เหมือนเดิม
    */
   alreadyPaid?: number;
+  /**
+   * ปิดมัดจำใน transaction เดียวกับเงิน/สต็อก/ภาษี พร้อม re-stamp ผู้ส่งมอบจริง
+   * ค่า expected ใช้จับ add/settle ที่ชนกัน ไม่ให้คำขอเก่าปิดยอดใหม่เงียบ ๆ
+   */
+  depositSettlement?: { expectedDepositPaid: number; expectedTotal: number };
 }): Promise<PosSaleResult> {
   const { input, shift, orderId, amountDue, payments, replayed } = args;
   const vatSettings = await getVatSettings(input.tenantId);
@@ -1553,6 +1584,33 @@ async function finalizePosSale(args: {
       [input.tenantId, shift.id, input.deviceId]
     );
     if (!shiftLock.rowCount) throw new Error("กะถูกปิดแล้วก่อนบันทึกการขาย");
+
+    if (args.depositSettlement) {
+      const deposit = await client.query<{ deposit_paid: string; total_amount: string }>(
+        `SELECT deposit_paid, total_amount
+           FROM bms_pos_deposits
+          WHERE tenant_id = $1 AND order_id = $2 AND status = 'OPEN'
+            AND location_id = $3
+          FOR UPDATE`,
+        [input.tenantId, orderId, shift.location_id]
+      );
+      const row = deposit.rows[0];
+      if (!row) throw new Error("ไม่พบมัดจำที่เปิดอยู่ในสาขาของเครื่องนี้");
+      if (
+        Math.abs(Number(row.deposit_paid) - args.depositSettlement.expectedDepositPaid) > 0.01
+        || Math.abs(Number(row.total_amount) - args.depositSettlement.expectedTotal) > 0.01
+      ) {
+        throw new Error("ยอดมัดจำเปลี่ยนระหว่างรับชำระ กรุณาโหลดรายการใหม่");
+      }
+
+      const stamped = await client.query(
+        `UPDATE bms_orders
+            SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+        [input.tenantId, orderId, input.deviceId, shift.id, input.cashierUserId]
+      );
+      if (!stamped.rowCount) throw new Error("บิลมัดจำไม่ได้อยู่สถานะรอชำระ");
+    }
 
     const orderLock = await client.query<{ status: string; total_amount: string; shipping_fee: string | null }>(
       `SELECT status, total_amount, shipping_fee FROM bms_orders
@@ -1668,6 +1726,10 @@ async function finalizePosSale(args: {
     // บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่องของสินค้าที่บังคับเลขเครื่อง
     // ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้จนวันที่มีคนมาเคลม
     await recordSerialsInTx(client, input.tenantId, shift.location_id, orderId, input.lines);
+
+    if (args.depositSettlement) {
+      await markDepositCompletedInTx(client, input.tenantId, orderId);
+    }
 
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
@@ -3424,19 +3486,40 @@ export async function recordNoSale(input: {
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" };
   if (reason.length > 200) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
 
-  const shift = await query(
-    `SELECT id FROM bms_pos_shifts
-      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'`,
-    [input.tenantId, input.shiftId, input.deviceId]
-  );
-  if (!shift.rowCount) return { status: "SHIFT_NOT_OPEN" };
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    const shift = await client.query(
+      `SELECT id FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!shift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
 
-  await query(
-    `INSERT INTO bms_pos_no_sales (tenant_id, shift_id, device_id, actor_user_id, reason)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [input.tenantId, input.shiftId, input.deviceId, input.actorUserId, reason]
-  );
-  return { status: "RECORDED" };
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_pos_no_sales (tenant_id, shift_id, device_id, actor_user_id, reason)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING id`,
+      [input.tenantId, input.shiftId, input.deviceId, input.actorUserId, reason]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'pos.no_sale',$3,$4)`,
+      [input.tenantId, input.actorUserId, inserted.rows[0].id,
+        JSON.stringify({ shiftId: input.shiftId, deviceId: input.deviceId, reason })]
+    );
+    await client.query("COMMIT");
+    return { status: "RECORDED" };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ---------------------------------------------------------------
@@ -3474,6 +3557,9 @@ export async function blindReturnPosSale(input: {
   lines: Array<{ sku: string; size: string; qty: number; unitRefund: number }>;
   idempotencyKey: string;
 }): Promise<BlindReturnResult> {
+  if (input.actorUserId.trim().toLowerCase() === input.approvedByUserId.trim().toLowerCase()) {
+    return { status: "INVALID", reason: "ผู้อนุมัติต้องเป็นคนละคนกับพนักงานที่รับคืน" };
+  }
   const reason = input.reason.trim();
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
   if (reason.length > 300) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
@@ -3799,8 +3885,8 @@ export async function settleDepositSale(input: {
 
   const dep = await query<{ total_amount: string; deposit_paid: string; status: string }>(
     `SELECT total_amount, deposit_paid, status FROM bms_pos_deposits
-      WHERE tenant_id = $1 AND order_id = $2`,
-    [input.tenantId, input.orderId]
+      WHERE tenant_id = $1 AND order_id = $2 AND location_id = $3`,
+    [input.tenantId, input.orderId, shift.location_id]
   );
   const row = dep.rows[0];
   if (!row || row.status !== "OPEN") return { status: "DEPOSIT_NOT_FOUND" };
@@ -3816,18 +3902,6 @@ export async function settleDepositSale(input: {
   if (Math.abs(paid - balance) > 0.01) {
     return { status: "BALANCE_MISMATCH", expected: balance, received: paid };
   }
-
-  // ประทับบิลเป็นของกะ/เครื่อง/คนขายที่ "รับของ" ไม่ใช่ที่รับมัดจำ
-  //
-  // finalizePosSale ล็อกบิลด้วยสามค่านี้ (กันการปิดบิลของเครื่องอื่น) และบิลมัดจำถูก
-  // สร้างไว้ตอนวางมัดจำซึ่งอาจเป็นกะอื่นหรือคนละวัน · การประทับใหม่ไม่ใช่การหลบข้อจำกัด
-  // แต่ตรงกับความจริง: การขายเกิดตอนรับของ ยอดขายและค่าคอมจึงเป็นของกะที่ส่งของจริง
-  await query(
-    `UPDATE bms_orders
-        SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5, updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
-    [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.cashierUserId]
-  );
 
   const settled = await finalizePosSale({
     input: {
@@ -3853,20 +3927,10 @@ export async function settleDepositSale(input: {
     // เงินมัดจำที่ลงไว้แล้วเป็นของถูกต้อง — บอกยอดที่คาดไว้เพื่อให้ด่านตรวจ
     // เปลี่ยนจาก "ห้ามมีรายการเดิม" เป็น "ต้องมีเท่านี้พอดี"
     alreadyPaid: Number(row.deposit_paid),
+    depositSettlement: {
+      expectedDepositPaid: Number(row.deposit_paid),
+      expectedTotal: Number(row.total_amount),
+    },
   });
-
-  if (settled.status === "SOLD") {
-    const client = await getClient();
-    try {
-      await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
-      await markDepositCompletedInTx(client, input.tenantId, input.orderId);
-      await client.query("COMMIT");
-    } catch (err) {
-      try { await client.query("ROLLBACK"); } catch {}
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
   return settled;
 }

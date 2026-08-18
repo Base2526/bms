@@ -40,6 +40,9 @@ content are not copied into the centralized audit entry. Within one provider loo
 tool call repeated with the same tool name and canonicalized arguments replays its prior
 `tool_result` instead of executing the service again; every repeated attempt is still centrally
 audited. Failed calls are not cached, so the model may correct arguments or retry a transient error.
+For customer order writes, the server execution context additionally permits only one successful
+`create_order`/`reorder` per logical turn even when later arguments differ; the verified first order
+is retained for the deterministic checkout reply instead of creating a second order.
 Customer read/write of orders is scoped to the conversation's own `(channel, customer_ref)`.
 Coupon read tools are also scoped to that identity: `list_customer_coupons` reads the customer's
 assigned wallet rows (if any) and reports whether each one is currently usable, near expiry, or no
@@ -54,6 +57,12 @@ discount code a customer mentions in free text with no NLU changes needed, since
 extracts it as a structured argument; validation happens server-side in `createOrder()` (see
 [../business/order.md](../business/order.md#coupons-discount-codes)) and an invalid/exhausted code
 rolls back the whole order with a `COUPON_INVALID` result the AI relays back to the customer.
+It accepts up to 20 `items` in one atomic basket. An item counted in a configured selling unit sends
+only `qty` (the number of packs) plus a `packCode` previously returned by `check_stock`; the model
+never supplies base quantity, pack price, or a second pack-quantity field. `createOrder()` re-reads
+the active pack row and snapshots its base quantity, unit name, and price inside the order
+transaction, so a stale catalog/tool result cannot set price or stock quantity. `check_stock`
+reports `available` in base units and may include the configured non-base `packs` for that SKU/size.
 
 ## Authoritative runtime registry and gates
 

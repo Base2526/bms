@@ -26,6 +26,7 @@ test("POS sale line parser keeps only valid positive integer pack quantities", (
       unitName: null,
       baseQty: null,
       packPrice: null,
+      serials: null,
     },
   ]);
 });
