@@ -24,11 +24,27 @@ export async function audit(
   }
 }
 
+/**
+ * actor ในตารางถูกเขียนมาสองแบบ และแก้ย้อนหลังไม่ได้
+ *
+ * resolver ฝั่ง GraphQL เขียนเป็น "อีเมล" (ดู audit() ข้างบน) ส่วนเส้นทางที่ไม่มี
+ * ctx — POS ที่ยืนยันตัวด้วย device token + PIN, และ REST ของงานคลัง — มีแค่
+ * users.id จึงเขียนเป็น UUID ดิบ ผลคือคนที่ค้นหน้า /admin/audit ด้วยอีเมลจะไม่เจอ
+ * แถวขายหน้าร้าน/โอนสต็อก/ปิดกะเลย ซึ่งคือแถวที่เขาตามหาอยู่พอดี
+ *
+ * แปลงตอนอ่านแทนการไล่แก้ทุก call site: ครอบคลุมแถวเก่าที่เขียนไปแล้วด้วย
+ * · join ด้วย u.id::text = a.actor (ไม่ cast ฝั่ง actor) เพราะ actor เป็น TEXT ที่
+ *   อาจเป็นอีเมลหรือ "system:..." — cast เป็น uuid จะ error ทั้ง query
+ * · ผู้ใช้ที่ถูกลบไปแล้ว join ไม่ติด ก็คืน UUID เดิม ดีกว่าคืนค่าว่าง
+ */
 export async function listAudit(tenantId: string, limit = 100) {
   const res = await query(
-    `SELECT id, actor, action, target, meta, created_at
-       FROM bms_audit_log WHERE tenant_id = $1
-      ORDER BY created_at DESC, id DESC LIMIT $2`,
+    `SELECT a.id, COALESCE(u.email, a.actor) AS actor,
+            a.action, a.target, a.meta, a.created_at
+       FROM bms_audit_log a
+       LEFT JOIN users u ON u.id::text = a.actor
+      WHERE a.tenant_id = $1
+      ORDER BY a.created_at DESC, a.id DESC LIMIT $2`,
     [tenantId, Math.min(Math.max(limit, 1), 500)]
   );
   return res.rows;

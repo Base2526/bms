@@ -702,14 +702,38 @@ export async function openPosShift(input: {
     return { status: "POLICY_NOT_READY", reason: String(e?.message ?? e) };
   }
 
-  const res = await query(
-    `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float, pharmacist_user_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING *`,
-    [tenantId, device.rows[0].location_id, deviceId, input.openedBy,
-      Math.max(0, Number(input.openingFloat ?? 0)), input.pharmacistUserId ?? null]
-  );
-  return { status: "OPENED", shift: mapShift(res.rows[0]) };
+  // การรับเงินทอนตั้งต้นเข้าลิ้นชักเป็นเหตุการณ์เงิน เท่ากับตอนปิดกะ — ต้องมี audit
+  // คู่กับ pos.shift.close ไม่งั้นตอนไล่ยอดจะเห็นแค่ปลายทางว่าปิดกะด้วยเงินเท่าไร
+  // แต่ไม่เห็นว่าใครเป็นคนบอกว่าเริ่มด้วยเท่าไร
+  const openingFloat = Math.max(0, Number(input.openingFloat ?? 0));
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: input.openedBy });
+    const res = await client.query(
+      `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float, pharmacist_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [tenantId, device.rows[0].location_id, deviceId, input.openedBy,
+        openingFloat, input.pharmacistUserId ?? null]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.shift.open', $3, $4)`,
+      [tenantId, input.openedBy, res.rows[0].id, JSON.stringify({
+        deviceId,
+        locationId: device.rows[0].location_id,
+        openingFloat,
+        pharmacistUserId: input.pharmacistUserId ?? null,
+      })]
+    );
+    await client.query("COMMIT");
+    return { status: "OPENED", shift: mapShift(res.rows[0]) };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getOpenPosShift(tenantId: string, deviceId: string): Promise<PosShift | null> {
@@ -837,6 +861,22 @@ export async function closePosShift(input: {
         RETURNING *`,
       [input.tenantId, input.shiftId, input.closedBy, expected,
         Math.max(0, Number(input.countedCash)), input.note ?? null]
+    );
+
+    // ปิดกะคือจังหวะที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ — เงินขาด/เกินต้องมีบรรทัด
+    // ของตัวเองใน audit log ไม่ใช่อยู่แค่ในคอลัมน์ของกะที่ต้องรู้ก่อนว่าจะไปหาที่ไหน
+    const counted = Math.max(0, Number(input.countedCash));
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.shift.close', $3, $4)`,
+      [input.tenantId, input.closedBy, input.shiftId, JSON.stringify({
+        expectedCash: expected,
+        countedCash: counted,
+        variance: Math.round((counted - expected) * 100) / 100,
+        cashIn,
+        cashOut,
+        partialReturnCashOut,
+      })]
     );
 
     await client.query("COMMIT");
@@ -1992,6 +2032,9 @@ async function processPosReturn(input: {
    * — ไม่งั้นการกดผิดจะไปปลุกสัญญาณจับทุจริตใน pos-return-audit
    */
   isVoid?: boolean;
+  /** เหตุผลและกะของการยกเลิก — ใช้ประทับบิล/ยกเลิกใบกำกับใน tx เดียวกัน (ดู § void) */
+  voidReason?: string | null;
+  voidShiftId?: string | null;
 }): Promise<PosPartialReturnResult> {
   const requestedMap = new Map<number, number>();
   for (const line of input.lines) {
@@ -2406,8 +2449,48 @@ async function processPosReturn(input: {
         settlementStatus,
         pointsReversed: loyaltyReversal.earnedReversed,
         pointsReturned: loyaltyReversal.redeemedReturned,
+        // การยกเลิกบิลเดินผ่านเครื่องจักรตัวเดียวกับการคืน — ติดธงไว้ ไม่งั้นรายงาน
+        // ที่นับ "การคืน" จาก audit log จะนับบิลที่กดผิดรวมไปด้วย
+        isVoid: input.isVoid === true,
       })]
     );
+
+    // ---- ยกเลิกบิล: ประทับตราในทรานแซกชันเดียวกับเงินที่คืน (7.97) ----------
+    //
+    // เดิมสองอย่างนี้อยู่คนละทรานแซกชัน (คืนเงินจบ → เปิด tx ใหม่มาประทับ) ซึ่ง
+    // เปิดช่องที่เครื่องดับกลางทางแล้วบิลถูกคืนเงินไปแล้วแต่ voided_at ยังว่าง
+    // ใบกำกับยังไม่ถูกยกเลิก และกดซ้ำจะได้ ALREADY_RETURNED เพราะด่านตรวจของ
+    // voidPosSale เห็นว่ามีการคืนแล้ว → บิลค้างสถานะที่แก้ได้ด้วยมือเท่านั้น
+    //
+    // ใบกำกับถูก "ยกเลิก" ไม่ใช่ "ลบ" — เลขที่ออกไปแล้วต้องคงอยู่ในลำดับเสมอ
+    // ใบที่หายไปจากลำดับเลขคือสิ่งแรกที่ผู้ตรวจสอบจะถาม และตอบไม่ได้
+    if (input.isVoid) {
+      const voidReason = (input.voidReason ?? "").trim();
+      await client.query(
+        `UPDATE bms_orders SET voided_at = now(), voided_by = $3, void_reason = $4, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL`,
+        [input.tenantId, input.orderId, input.actorUserId, voidReason]
+      );
+      await client.query(
+        `UPDATE bms_tax_documents
+            SET cancelled_at = now(), cancelled_reason = $3
+          WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL`,
+        [input.tenantId, input.orderId, `ยกเลิกบิล: ${voidReason}`]
+      );
+      // การลบยอดขายออกจากกะคือช่องทุจริตตรงที่สุดที่ POS มี — ต้องมีบรรทัดของตัวเอง
+      // ใน audit log กลาง พร้อมชื่อผู้อนุมัติ ไม่ใช่แค่ voided_by บนบิล
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1, $2, 'pos.void', $3, $4)`,
+        [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({
+          shiftId: input.voidShiftId ?? null,
+          deviceId: input.deviceId,
+          approvedBy: input.approvedByUserId ?? null,
+          reason: voidReason,
+          refundAmount: roundedRefundAmount,
+        })]
+      );
+    }
 
     await client.query("COMMIT");
 
@@ -2803,6 +2886,22 @@ export async function recordCashMovement(input: {
       [input.tenantId, input.shiftId, input.deviceId, input.direction, amount, reason,
         input.actorUserId, input.approvedByUserId ?? null]
     );
+
+    // เงินที่เข้า-ออกลิ้นชักโดยไม่ผ่านการขายต้องอยู่ใน audit log กลางด้วย ไม่ใช่
+    // เฉพาะในตารางของตัวเอง — คนที่ตรวจว่า "ใครหยิบเงินออกบ้างเดือนนี้" ไล่จาก
+    // audit log ที่เดียว ไม่ได้รู้ว่ามีตาราง bms_pos_cash_movements อยู่
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.cash.movement', $3, $4)`,
+      [input.tenantId, input.actorUserId, res.rows[0].id, JSON.stringify({
+        shiftId: input.shiftId,
+        deviceId: input.deviceId,
+        direction: input.direction,
+        amount,
+        reason,
+        approvedBy: input.approvedByUserId ?? null,
+      })]
+    );
     await client.query("COMMIT");
 
     const r: any = res.rows[0];
@@ -2922,36 +3021,15 @@ export async function voidPosSale(input: {
     lines: [],
     note: `ยกเลิกบิล: ${reason}`,
     idempotencyKey: input.idempotencyKey,
+    // การประทับตรา void (voided_at + ยกเลิกใบกำกับ + audit) เกิดข้างในทรานแซกชัน
+    // เดียวกับการคืนเงิน ไม่ใช่ทรานแซกชันที่สองข้างนอกนี้ — ดูเหตุผลที่ § void ใน
+    // processPosReturn · ผลคือ "คืนเงินแล้วแต่บิลไม่ถูกประทับ" เกิดขึ้นไม่ได้อีก
     isVoid: true,
+    voidReason: reason,
+    voidShiftId: input.shiftId,
   });
   if (result.status !== "PARTIAL_RETURNED") {
     return { status: "NOT_VOIDABLE", reason: `ยกเลิกไม่สำเร็จ (${result.status})` };
-  }
-
-  // ประทับตราว่าเป็น void และยกเลิกใบกำกับที่ออกไปแล้ว
-  //
-  // ใบกำกับถูก "ยกเลิก" ไม่ใช่ "ลบ" — เลขที่ออกไปแล้วต้องคงอยู่ในลำดับเสมอ
-  // ใบที่หายไปจากลำดับเลขคือสิ่งแรกที่ผู้ตรวจสอบจะถาม และตอบไม่ได้
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
-    await client.query(
-      `UPDATE bms_orders SET voided_at = now(), voided_by = $3, void_reason = $4, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL`,
-      [input.tenantId, input.orderId, input.actorUserId, reason]
-    );
-    await client.query(
-      `UPDATE bms_tax_documents
-          SET cancelled_at = now(), cancelled_reason = $3
-        WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL`,
-      [input.tenantId, input.orderId, `ยกเลิกบิล: ${reason}`]
-    );
-    await client.query("COMMIT");
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
   }
 
   return { status: "VOIDED", orderId: input.orderId, refundAmount: result.refundAmount };

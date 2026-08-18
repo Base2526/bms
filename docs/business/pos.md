@@ -7,6 +7,34 @@ tenant, branch, and register; a cashier user plus PIN identifies every sale, shi
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
+### Why the counter talks REST, not GraphQL
+
+Every counter action is a REST route under `/api/pos/*`, unlike the rest of BMS. That is forced by
+the authentication model rather than chosen for style: a register authenticates with
+`x-pos-device-token` and a cashier PIN, not an admin session cookie, so it has no GraphQL context to
+run `requirePermission()` against. The equivalent checks live in the routes —
+`authenticatePosDevice()`, `verifyCashierPin()`, and `cashierHasPermission()` — and the second-person
+PIN requirement for discounts, voids, and cash-out sits there too.
+
+The cost is that counter actions are absent from the GraphQL schema and therefore from the AI tool
+catalogue. Anything that needs to reach them from a resolver needs a GraphQL surface added first.
+
+Auditing does not depend on the transport. `pos.sale`, `pos.return`, `pos.refund.complete`,
+`pos.void`, `pos.cash.movement`, `pos.shift.open`, and `pos.shift.close` are all written to
+`bms_audit_log` inside the same transaction as the money and stock they describe, so a committed
+movement can never lack its audit row. Both ends of a shift are recorded — the float accepted at
+open, and the expected/counted/variance figures at close — because a drawer that is only audited
+when it closes cannot be reconciled against what was put in it.
+
+A void is stamped in that same transaction too. `voidPosSale()` reverses the sale through
+`processPosReturn()`, and the `voided_at` stamp, the tax-document cancellation, and the `pos.void`
+row all happen inside that reversal's transaction under its `isVoid` flag rather than in a second
+one afterwards. An earlier arrangement did use a second transaction, and a crash in the gap left a
+bill fully refunded but not stamped, which the retry path then rejected with `ALREADY_RETURNED` —
+recoverable only by hand. The `pos.return` entry additionally carries an `isVoid` flag, because a
+void travels through the return machinery and reports counting genuine returns must not also count
+bills rung up by mistake.
+
 ## Supported counter workflow
 
 1. An administrator creates an active location and POS device at `/admin/pos-devices`, issues its
@@ -212,8 +240,8 @@ clawed back — but they mean different things, and `7.97` keeps them apart.
 A return is a completed sale the customer changed their mind about; it belongs in the returns report.
 A void is a bill that should never have existed: a double scan, the wrong customer, a change of mind
 before anyone left the counter. Forcing voids down the returns path meant a cashier who fumbles twice
-a day tripped the "unusual return frequency" alert on `/admin/reports/pos-return-audit` every week,
-until nobody believed that alert any more.
+a day tripped the "unusual return frequency" alert on `/admin/reports` (fed by
+`/api/bms/reports/pos-return-audit`) every week, until nobody believed that alert any more.
 
 `voidPosSale()` reuses the return machinery wholesale — stock, lots, points, refund settlement — and
 then flags the row `bms_pos_returns.is_void`. All five return-report queries filter it out. Writing a
@@ -307,7 +335,7 @@ issued with the sale; the browser never derives them from the bill total, becaus
 exempt goods would then print numbers that disagree with the filed document. Return and exchange
 slips omit the VAT block — a credit note is a separate document.
 
-The shop tax id comes from the store profile (`/admin/store`); leaving it blank prints a receipt
+The shop tax id comes from the store profile (`/admin/settings`); leaving it blank prints a receipt
 without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 ## Failure and retry behavior
@@ -325,11 +353,17 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.97__bms_pos_park_cash_void.sql` on the target database
+- Apply migrations through `7.98__bms_stock_transfers_and_counts.sql` on the target database
   (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions,
   `7.96` membership/tiers/points + `bms_order_discounts`, `7.97` parked bills + drawer
-  movements + void). `7.97` seeds `pos.void` and `pos.cash.movement` to Manager only, and
-  `pos.shift.report` to Manager/Sales/Cashier — without it those buttons 403 silently.
+  movements + void, `7.98` branch transfers + stock counts). `7.97` seeds `pos.void` and
+  `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
+  without it those buttons 403 silently. Apply `7.98` with `psql -1`: a mid-file failure
+  leaves half its tables behind, and they have to be dropped by hand before retrying.
+- If the shop runs more than one branch, work through the branch-inventory checklist in
+  [inventory.md](inventory.md#go-live-checklist-multi-branch-798) as well — `7.98` seeds
+  `inventory.transfer`/`inventory.count` to Manager and Warehouse and `inventory.count.apply`
+  to Manager only, and its two admin screens 403 silently without them.
 - Decide who may approve a manual discount (`pos.discount.approve`), a void (`pos.void`), and
   cash out of the drawer (`pos.cash.movement`). All three are "money leaves the count" actions and
   all three demand a second person's PIN at the counter regardless of who is logged in.
