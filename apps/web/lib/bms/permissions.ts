@@ -94,6 +94,10 @@ export const BMS_PERMISSIONS = [
   // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล
   // คือการจ่ายเงินออกโดยเชื่อคำบอกเล่า
   "pos.return.noreceipt",
+  // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
+  // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
+  "commission.view",
+  "commission.manage",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

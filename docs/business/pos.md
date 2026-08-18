@@ -304,6 +304,38 @@ Voided bills leave `salesTotal` and `billCount` and appear on their own line of 
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
 
+## Sales commission (8.5)
+
+The system already knew who sold each bill (`bms_orders.cashier_user_id` since `7.87`); what was
+missing was a rate, so shops paying commission calculated it entirely outside the system.
+
+`bms_commission_rules` stores rates **with an effective date**, and the report picks the rule in force
+on the date of each bill. This is the whole design, and it exists to avoid one specific failure: with a
+single current rate, the day a shop moves 2% to 3% every already-paid month silently restates. Staff
+open the report, see figures that do not match the payslips they were given, and nobody can explain or
+audit it. Changing a rate here means adding a row, not overwriting one, so history stays fixed without
+storing commission amounts on order rows.
+
+Specificity resolves product → category → default, each within the dates in force.
+
+Two correctness rules the report enforces:
+
+**Returned goods take their commission back.** Without that, "sell it, have the customer return it
+tomorrow" farms commission — and it is among the hardest frauds to notice, because every individual
+step looks correct. Voided bills earn nothing at all.
+
+**Bill-level discounts are spread across lines.** Commission is computed per line, since rates depend
+on product and category, so a bill with a large coupon would otherwise pay commission on money the
+shop never received.
+
+`commission.view` and `commission.manage` are separate: a team lead should be able to read their team's
+figures without being able to raise their own rate. Both are seeded to Manager.
+
+One trap worth recording, found by the test suite: `pg` returns a `DATE` as a `Date` at local midnight,
+so `toISOString().slice(0, 10)` shifts every date back a day in UTC+7. The effective date is now cast to
+text in SQL and never passed through a JS `Date`. A rate starting on the 1st would otherwise have been
+applied from the previous month.
+
 ## Serial numbers (8.3)
 
 Lots (`7.85`) answer *which batch did this come from*. Serials answer *who bought **this** unit, and

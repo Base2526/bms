@@ -385,6 +385,7 @@ export default function AdminSidebar() {
       ],
     }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
+    ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <BarChartOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
       key: 'g-saas',
