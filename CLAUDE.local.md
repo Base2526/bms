@@ -216,6 +216,15 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · `price_tiers` ใน `upsertProduct`: ส่ง = แทนที่ทั้งชุด · ไม่ส่ง = ไม่แตะ (กฎเดียวกับ `vat_category`)
   · เทส 2 ชุดใหม่: `scripts/pricing-contract.test.mts` (8 เทส ไม่ต้องมี DB) +
     `scripts/price-tiers-db-contract.test.mts` (8 เทส) — รวม pure 35 · DB 79 ผ่านทั้งหมด
+- **`8.2__bms_pos_blind_returns.sql` (คืนสินค้าไม่มีใบเสร็จ) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 1 ตัว
+  (`pos.return.noreceipt` → **Manager เท่านั้น**)
+  · **เงินที่จ่ายคืนลงตาราง `bms_pos_cash_movements`** ไม่ใช่แหล่งเงินออกที่สอง — ยอดเงินที่ควรมี
+    ตอนปิดกะมีสูตรเดียว ถ้าไม่เข้าสูตรนี้ ปิดกะจะเงินขาดเท่ายอดคืนทุกครั้งโดยอธิบายไม่ได้
+  · เพดานราคาคืน = ราคาป้ายวันนี้ (ไม่มีบิลต้นทางให้ยึด) · เงินในลิ้นชักไม่พอ = ปฏิเสธ
+  · **ไม่ออกใบลดหนี้** เพราะไม่มีใบกำกับต้นทางให้อ้าง — เป็นหลักฐานภายในให้บัญชี
+  · รายงาน `pos-return-audit` นับแยกจากการคืนปกติ และเตือนทันทีที่มีแม้รายการเดียว
+  · เทสชุดใหม่: `scripts/pos-blind-return-db-contract.test.mts` (8 เทส) — รวม DB 87 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

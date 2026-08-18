@@ -304,6 +304,34 @@ Voided bills leave `salesTotal` and `billCount` and appear on their own line of 
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
 
+## Returning goods with no receipt (8.2)
+
+`7.91` handled returns against a bill and required an `orderId`, so a customer who lost the receipt
+could not be served at all and there was no override. `bms_pos_blind_returns` adds the path.
+
+This is the most direct fraud route a shop has — bring in goods that were never bought, walk out with
+cash — so three controls apply at once: an approver with `pos.return.noreceipt` (seeded to Manager
+only) enters their own PIN, a reason is mandatory, and the refund per unit **cannot exceed today's
+shelf price**. Without that cap the amount is whatever someone types.
+
+It is a separate table rather than a nullable `order_id` on `bms_pos_returns`. Every row in that table
+resolves back to real prices, lots and payments; a receiptless return has nothing to resolve to. And
+the five return-report queries in `reports.ts` all join through the order — making the column nullable
+would mean complicating five correct queries to carry rows that mean something else.
+
+**The cash goes out through `bms_pos_cash_movements`,** the same table ordinary drawer movements use.
+Expected cash at close has exactly one formula, and a second source of cash leaving that does not feed
+into it means every shift closes short by exactly the refunds with nobody able to explain the gap. The
+drawer must also actually hold the money: a refund larger than the drawer is refused, because you
+cannot hand over cash that is not there.
+
+The return audit at `/admin/reports/pos-return-audit` counts these **separately** from ordinary
+returns and raises a signal whenever there is even one. Folding them into the same number would bury
+the loudest signal in the report under routine activity.
+
+**No credit note is issued.** There is no source tax invoice to reference, so the row is internal
+evidence for the accountant, not a tax document.
+
 ## Blind close and no-sale (8.0)
 
 Two internal controls the shift work in `7.97` left open.

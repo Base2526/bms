@@ -90,6 +90,10 @@ export const BMS_PERMISSIONS = [
   "pos.cash.movement",
   "pos.shift.report",
   "pos.nosale",
+  // คืนสินค้าโดยไม่มีใบเสร็จ — seed ให้ Manager เท่านั้นที่ 8.2
+  // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล
+  // คือการจ่ายเงินออกโดยเชื่อคำบอกเล่า
+  "pos.return.noreceipt",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

@@ -3291,3 +3291,170 @@ export async function recordNoSale(input: {
   );
   return { status: "RECORDED" };
 }
+
+// ---------------------------------------------------------------
+// คืนสินค้าโดยไม่มีใบเสร็จ — blind return (8.2)
+// ---------------------------------------------------------------
+//
+// ช่องทุจริตที่ตรงที่สุดของร้านค้าปลีก: เอาของที่ไม่ได้ซื้อ (หรือขโมยมา) มาคืนเอาเงิน
+// จึงบังคับสามชั้นพร้อมกัน — หัวหน้ากด PIN, ต้องมีเหตุผล, และราคาที่คืนห้ามเกิน
+// ราคาขายปัจจุบัน (ไม่งั้นจ่ายออกได้ไม่จำกัดด้วยการพิมพ์ตัวเลขเอง)
+//
+// เงินสดที่จ่ายออกถูกบันทึกเป็น "เงินออกจากลิ้นชัก" ในตารางเดียวกับ 7.97 โดยตั้งใจ
+// เพราะยอดเงินที่ควรมีตอนปิดกะมีสูตรเดียวเท่านั้น การเพิ่มแหล่งเงินออกใหม่โดยไม่
+// เข้าสูตรนั้น = ปิดกะแล้วเงินขาดโดยไม่มีใครอธิบายได้
+//
+// ⚠️ ไม่ออกใบลดหนี้: ไม่มีใบกำกับต้นทางให้อ้างอิง แถวนี้เป็นหลักฐานภายในให้บัญชี
+// จัดการต่อ ไม่ใช่เอกสารภาษี
+
+export type BlindReturnResult =
+  | { status: "RETURNED"; blindReturnId: string; refundAmount: number; replayed: boolean }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "EMPTY" }
+  | { status: "INVALID"; reason: string }
+  | { status: "PRICE_TOO_HIGH"; sku: string; maxUnitRefund: number; requested: number }
+  | { status: "NOT_ENOUGH_CASH"; available: number | null };
+
+export async function blindReturnPosSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  actorUserId: string;
+  approvedByUserId: string;
+  reason: string;
+  customerId?: string | null;
+  customerNote?: string | null;
+  lines: Array<{ sku: string; size: string; qty: number; unitRefund: number }>;
+  idempotencyKey: string;
+}): Promise<BlindReturnResult> {
+  const reason = input.reason.trim();
+  if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
+  if (reason.length > 300) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+  if (!input.idempotencyKey.trim()) return { status: "INVALID", reason: "ต้องมี idempotencyKey" };
+
+  const lines = input.lines
+    .map((l) => ({
+      sku: l.sku.trim(),
+      size: l.size.trim(),
+      qty: Math.trunc(Number(l.qty)),
+      unitRefund: Math.round(Number(l.unitRefund) * 100) / 100,
+    }))
+    .filter((l) => l.sku && l.size && Number.isInteger(l.qty) && l.qty > 0
+      && Number.isFinite(l.unitRefund) && l.unitRefund >= 0);
+  if (lines.length === 0) return { status: "EMPTY" };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    // ยิงซ้ำเพราะเน็ตหลุดต้องได้รายการเดิม ไม่ใช่จ่ายเงินออกสองรอบ
+    const replay = await client.query<{ id: string; refund_amount: string }>(
+      `SELECT id, refund_amount FROM bms_pos_blind_returns
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, input.idempotencyKey]
+    );
+    if (replay.rows[0]) {
+      await client.query("ROLLBACK");
+      return {
+        status: "RETURNED",
+        blindReturnId: replay.rows[0].id,
+        refundAmount: Number(replay.rows[0].refund_amount),
+        replayed: true,
+      };
+    }
+
+    const shift = await client.query<{ id: string; location_id: string; opening_float: string }>(
+      `SELECT id, location_id, opening_float FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN' FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!shift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
+    const locationId = shift.rows[0].location_id;
+
+    // ราคาที่คืนห้ามเกินราคาขายปัจจุบัน — ไม่มีบิลต้นทางให้ยึด ราคาป้ายวันนี้จึงเป็น
+    // เพดานเดียวที่ตรวจได้ · ถ้าไม่มีเพดาน พนักงานพิมพ์เลขอะไรก็ได้แล้วเงินออกตามนั้น
+    let refundAmount = 0;
+    for (const line of lines) {
+      const prod = await client.query<{ price: string }>(
+        `SELECT price FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND active`,
+        [input.tenantId, line.sku]
+      );
+      if (!prod.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ที่เปิดขายอยู่` };
+      }
+      const maxUnitRefund = Number(prod.rows[0].price);
+      if (line.unitRefund > maxUnitRefund + 0.001) {
+        await client.query("ROLLBACK");
+        return { status: "PRICE_TOO_HIGH", sku: line.sku, maxUnitRefund, requested: line.unitRefund };
+      }
+      refundAmount += line.unitRefund * line.qty;
+    }
+    refundAmount = Math.round(refundAmount * 100) / 100;
+
+    // เงินสดต้องมีพอจริง — จ่ายเงินที่ลิ้นชักไม่มีให้จ่ายไม่ได้ในโลกจริง
+    const drawer = await drawerExpectedInTx(client, input.tenantId, input.shiftId, Number(shift.rows[0].opening_float));
+    if (refundAmount > drawer + 0.001) {
+      await client.query("ROLLBACK");
+      const blind = (await getVatSettings(input.tenantId)).blindClose;
+      return { status: "NOT_ENOUGH_CASH", available: blind ? null : drawer };
+    }
+
+    const head = await client.query<{ id: string }>(
+      `INSERT INTO bms_pos_blind_returns
+         (tenant_id, location_id, device_id, shift_id, returned_by, approved_by,
+          reason, customer_id, customer_note, refund_amount, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING id`,
+      [input.tenantId, locationId, input.deviceId, input.shiftId, input.actorUserId,
+        input.approvedByUserId, reason, input.customerId ?? null, input.customerNote ?? null,
+        refundAmount, input.idempotencyKey.trim()]
+    );
+    const blindReturnId = head.rows[0].id;
+
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO bms_pos_blind_return_items
+           (tenant_id, blind_return_id, product_sku, size, qty, unit_refund)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [input.tenantId, blindReturnId, line.sku, line.size, line.qty, line.unitRefund]
+      );
+      // ของกลับเข้าสต็อกที่สาขาของเครื่องนี้ · ไม่คืนล็อตเพราะไม่รู้ว่าของมาจากล็อตไหน
+      // (ไม่มีบิลต้นทาง) — ลงเป็นของเข้าใหม่ที่ไม่ผูกล็อต ซึ่งตรงกับความจริง
+      await client.query(
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1,$2,$3,$4,$5,0)
+         ON CONFLICT (tenant_id, location_id, product_sku, size)
+           DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
+        [input.tenantId, locationId, line.sku, line.size, line.qty]
+      );
+      await recordMovement(client, {
+        tenantId: input.tenantId, locationId, sku: line.sku, size: line.size,
+        type: "RETURN", qty: line.qty,
+        note: `คืนไม่มีใบเสร็จ: ${reason}`, actor: input.actorUserId,
+      });
+    }
+
+    // เงินออกลงตารางเดียวกับเงินลิ้นชักปกติ เพื่อให้สูตรเงินที่ควรมีตอนปิดกะมีที่เดียว
+    if (refundAmount > 0) {
+      await client.query(
+        `INSERT INTO bms_pos_cash_movements
+           (tenant_id, shift_id, device_id, direction, amount, reason, actor_user_id, approved_by)
+         VALUES ($1,$2,$3,'OUT',$4,$5,$6,$7)`,
+        [input.tenantId, input.shiftId, input.deviceId, refundAmount,
+          `คืนสินค้าไม่มีใบเสร็จ: ${reason}`, input.actorUserId, input.approvedByUserId]
+      );
+    }
+
+    await client.query("COMMIT");
+    return { status: "RETURNED", blindReturnId, refundAmount, replayed: false };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}

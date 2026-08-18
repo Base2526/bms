@@ -444,6 +444,11 @@ export default function PosPage() {
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   const [noSaleReason, setNoSaleReason] = useState("");
+  // ---- คืนไม่มีใบเสร็จ (8.2) ----
+  const [blindOpen, setBlindOpen] = useState(false);
+  const [blindReason, setBlindReason] = useState("");
+  const [blindApproverId, setBlindApproverId] = useState("");
+  const [blindApproverPin, setBlindApproverPin] = useState("");
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -845,6 +850,57 @@ export default function PosPage() {
       setVoidTarget(null); setVoidReason(""); setVoidApproverPin("");
       void loadRecentReceipts(recentSalesQuery);
       setNotice({ type: "ok", text: `ยกเลิกบิลแล้ว · คืนเงิน ฿${baht(data.refundAmount)}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- คืนไม่มีใบเสร็จ (8.2) -----------------------------------------
+  // ใช้ตะกร้าปัจจุบันเป็นรายการของที่ลูกค้าเอามาคืน — พนักงานยิงของที่ถืออยู่ตามปกติ
+  // ไม่ต้องมีจอกรอกแยก · ราคาที่คืนใช้ราคาป้ายวันนี้ ซึ่ง server บังคับเป็นเพดานอีกชั้น
+  async function doBlindReturn() {
+    if (cart.length === 0) { setNotice({ type: "error", text: "ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!blindReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผล" }); return; }
+    if (!blindApproverId || !blindApproverPin) { setNotice({ type: "error", text: "ต้องมีหัวหน้าอนุมัติ" }); return; }
+    try {
+      const res = await fetch("/api/pos/blind-return", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          cashierUserId: cashierId, pin,
+          approverUserId: blindApproverId, approverPin: blindApproverPin,
+          reason: blindReason.trim(),
+          customerId: member?.customerId ?? null,
+          // คีย์ผูกกับตะกร้าใบนี้ — กดสองครั้งเพราะเน็ตช้าต้องไม่จ่ายเงินสองรอบ
+          idempotencyKey: `blind-${session?.shift?.id?.slice(0, 8)}-${cart.map((l) => `${l.sku}:${l.size}:${l.packQty}`).join("|")}`,
+          lines: cart.map((line) => ({
+            sku: line.sku,
+            size: line.size,
+            qty: line.packQty * line.baseQty,
+            unitRefund: line.basePrice,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text:
+          data.status === "PRICE_TOO_HIGH" ? `${data.sku}: คืนได้ไม่เกินชิ้นละ ฿${baht(data.maxUnitRefund)}`
+          : data.status === "NOT_ENOUGH_CASH" ? (data.available == null
+              ? "เงินในลิ้นชักไม่พอจ่ายคืน"
+              : `เงินในลิ้นชักมี ฿${baht(data.available)} จ่ายคืนไม่พอ`)
+          : data.error ?? data.reason ?? "คืนไม่สำเร็จ" });
+        return;
+      }
+      setCart([]);
+      clearBillCustomerState();
+      setBlindReason(""); setBlindApproverPin(""); setBlindOpen(false);
+      setNotice({
+        type: "ok",
+        text: data.replayed
+          ? "รายการนี้บันทึกไว้แล้ว (ไม่ได้จ่ายเงินซ้ำ)"
+          : `คืนแล้ว · จ่ายเงินสด ฿${baht(data.refundAmount)}`,
+      });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     }
@@ -2199,6 +2255,64 @@ export default function PosPage() {
           </button>
           {approvalUserId && approvalPin && !returnPanelOpen && (
             <span style={{ color: "#237804" }}>ตั้งผู้อนุมัติไว้แล้ว</span>
+          )}
+        </div>
+
+        {/* คืนไม่มีใบเสร็จ (8.2) — ยุบไว้เสมอ เพราะทางปกติคือค้นบิลเดิมให้เจอ
+            ทางนี้คือทางออกสุดท้ายเมื่อใบเสร็จหายจริง และเป็นช่องจ่ายเงินออกที่
+            เสี่ยงที่สุด จึงไม่ควรอยู่ในระยะที่กดพลาดได้ */}
+        <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 10 }}>
+          {!blindOpen ? (
+            <button
+              type="button"
+              className="pos-btn-ghost"
+              style={{ fontSize: 12 }}
+              onClick={() => setBlindOpen(true)}
+            >
+              + คืนโดยไม่มีใบเสร็จ (ต้องมีหัวหน้าอนุมัติ)
+            </button>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "#8a6100" }}>
+                ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าที่แท็บขาย แล้วกลับมากดยืนยันที่นี่ ·
+                คืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก ·
+                ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
+              </div>
+              <input
+                value={blindReason}
+                onChange={(e) => setBlindReason(e.target.value)}
+                maxLength={300}
+                placeholder="เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน"
+                style={{ padding: 9, fontSize: 13 }}
+              />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={blindApproverId}
+                  onChange={(e) => setBlindApproverId(e.target.value)}
+                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}
+                >
+                  <option value="">— ผู้อนุมัติ —</option>
+                  {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                  ))}
+                </select>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={blindApproverPin}
+                  onChange={(e) => setBlindApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="PIN หัวหน้า"
+                  style={{ padding: 9, fontSize: 13, width: 120 }}
+                />
+                <button onClick={() => void doBlindReturn()} disabled={busy || cart.length === 0}
+                        style={{ padding: "9px 16px", fontSize: 13 }}>
+                  ยืนยันคืน + จ่ายเงินสด
+                </button>
+                <button type="button" className="pos-btn-ghost" onClick={() => { setBlindOpen(false); setBlindApproverPin(""); }}>
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
