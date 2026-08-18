@@ -12,9 +12,33 @@
 // ยอดขายระหว่างนับจึงรอด และส่วนต่างที่บันทึกคือ "ของที่หายจริง" เท่านั้น
 // =============================================================
 
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { recordMovement } from "./movements";
+import { insertWithDailyDocNo } from "./dailyDocNo";
+
+/**
+ * บันทึก audit ในทรานแซกชันเดียวกับส่วนต่างที่เพิ่งลงสต็อก
+ *
+ * ตั้งใจไม่ log ทีละรายการที่นับ (recordCountItem) — ใบนับชั้นเดียวมีหลายร้อย
+ * บรรทัด ถ้า log หมดจะกลบทุกอย่างใน audit log จนไม่มีใครอ่าน · สิ่งที่ต้องตรวจ
+ * ได้คือ "ใครเป็นคนยอมรับว่าของหายไปเท่านี้" = ตอนปิดใบนับ ไม่ใช่ตอนเดินนับ
+ */
+async function auditInTx(
+  client: PoolClient,
+  tenantId: string,
+  actor: string,
+  action: string,
+  target: string,
+  meta: Record<string, unknown>
+): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [tenantId, String(actor), action, target, JSON.stringify(meta)]
+  );
+}
 
 export type StockCountStatus = "DRAFT" | "APPLIED" | "CANCELLED";
 
@@ -120,22 +144,23 @@ export async function createStockCount(input: {
       return { status: "INVALID", reason: "ไม่พบสาขานี้ หรือสาขาถูกปิดใช้งาน" };
     }
 
-    const n = await client.query<{ n: string }>(
-      `SELECT COUNT(*)::text AS n FROM bms_stock_counts
-        WHERE tenant_id = $1 AND created_at::date = CURRENT_DATE`,
-      [input.tenantId]
+    const { countId, countNo } = await insertWithDailyDocNo(
+      client,
+      { tenantId: input.tenantId, table: "bms_stock_counts", prefix: "CNT" },
+      async (docNo) => {
+        const ins = await client.query<{ id: string }>(
+          `INSERT INTO bms_stock_counts (tenant_id, count_no, location_id, note, created_by)
+           VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+          [input.tenantId, docNo, input.locationId, input.note ?? null, input.createdBy]
+        );
+        return { countId: ins.rows[0].id, countNo: docNo };
+      }
     );
-    const today = new Date();
-    const stamp = `${String(today.getFullYear()).slice(2)}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-    const countNo = `CNT-${stamp}-${String(Number(n.rows[0].n) + 1).padStart(3, "0")}`;
-
-    const ins = await client.query<{ id: string }>(
-      `INSERT INTO bms_stock_counts (tenant_id, count_no, location_id, note, created_by)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [input.tenantId, countNo, input.locationId, input.note ?? null, input.createdBy]
-    );
+    await auditInTx(client, input.tenantId, input.createdBy, "inventory.count.create", countId, {
+      countNo, locationId: input.locationId,
+    });
     await client.query("COMMIT");
-    return { status: "CREATED", countId: ins.rows[0].id, countNo };
+    return { status: "CREATED", countId, countNo };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -305,6 +330,14 @@ export async function applyStockCount(input: {
         WHERE tenant_id = $1 AND id = $2`,
       [input.tenantId, input.countId, input.actorUserId]
     );
+    // นี่คือการตัดสินใจทางบัญชีว่าของหายไปเท่านี้จริง — บรรทัดนี้คือหลักฐานว่าใคร
+    // เป็นคนตัดสิน ถ้าไม่มี สต็อกที่หายจะดูเหมือนหายเองจาก movement เฉย ๆ
+    await auditInTx(client, input.tenantId, input.actorUserId, "inventory.count.apply", input.countId, {
+      countNo: c.count_no,
+      locationId: c.location_id,
+      adjustedItems: adjusted,
+      varianceUnits,
+    });
     await client.query("COMMIT");
     return { status: "APPLIED", adjustedItems: adjusted, varianceUnits };
   } catch (err) {
@@ -318,17 +351,37 @@ export async function applyStockCount(input: {
 export async function cancelStockCount(input: {
   tenantId: string; countId: string; actorUserId: string;
 }): Promise<{ status: "OK" } | { status: "NOT_FOUND" } | { status: "WRONG_STATE"; current: StockCountStatus }> {
-  const res = await query(
-    `UPDATE bms_stock_counts
-        SET status = 'CANCELLED', cancelled_by = $3, cancelled_at = now(), updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'`,
-    [input.tenantId, input.countId, input.actorUserId]
-  );
-  if (res.rowCount) return { status: "OK" };
-  const cur = await query<{ status: StockCountStatus }>(
-    `SELECT status FROM bms_stock_counts WHERE tenant_id = $1 AND id = $2`,
-    [input.tenantId, input.countId]
-  );
-  if (!cur.rowCount) return { status: "NOT_FOUND" };
-  return { status: "WRONG_STATE", current: cur.rows[0].status };
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    const res = await client.query<{ count_no: string }>(
+      `UPDATE bms_stock_counts
+          SET status = 'CANCELLED', cancelled_by = $3, cancelled_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
+        RETURNING count_no`,
+      [input.tenantId, input.countId, input.actorUserId]
+    );
+
+    if (!res.rowCount) {
+      const cur = await client.query<{ status: StockCountStatus }>(
+        `SELECT status FROM bms_stock_counts WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, input.countId]
+      );
+      await client.query("ROLLBACK");
+      if (!cur.rowCount) return { status: "NOT_FOUND" };
+      return { status: "WRONG_STATE", current: cur.rows[0].status };
+    }
+
+    await auditInTx(client, input.tenantId, input.actorUserId, "inventory.count.cancel", input.countId, {
+      countNo: res.rows[0].count_no,
+    });
+    await client.query("COMMIT");
+    return { status: "OK" };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }

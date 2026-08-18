@@ -228,3 +228,96 @@ have reserved at that branch; that situation needs a person to decide, not a sil
 `inventory.count` and `inventory.count.apply` are deliberately separate permissions, seeded by
 `7.98` to Warehouse and Manager respectively. Walking the shelves and writing numbers down is a
 warehouse job; signing off that the goods really are gone is an accounting decision.
+
+### Document numbers
+
+Transfers and counts are numbered `TRF-YYMMDD-NNN` / `CNT-YYMMDD-NNN`, per shop and per day rather
+than from a global sequence. Both the date and the running number come from a single SQL statement
+(`insertWithDailyDocNo` in `lib/bms/dailyDocNo.ts`), never from the Node clock: taking the date from
+the app and the count from `CURRENT_DATE` means that a shop whose app runs `Asia/Bangkok` against a
+UTC database issues duplicate numbers every morning between midnight and 07:00, when the two
+disagree about what day it is. The insert also retries under a savepoint on a unique violation, so
+two people creating a transfer at the same moment get consecutive numbers instead of a 500.
+
+### Where the screens are
+
+`/admin/stock-transfers` and `/admin/stock-counts`, gated by `inventory.transfer` and
+`inventory.count`. Both appear in the shop group of the sidebar next to Purchase (PO), which is the
+same family of work: goods arriving, goods moving, goods missing.
+
+The receive dialog defaults every line to the quantity that was sent and lets it be lowered — that
+input is the whole point of the screen, so it is a number field per line rather than a single
+"received in full" button. The count screen leads with the variance, not the counted number: a
+counter needs to see *what changed*, and a manager signing the count off needs the short total in
+one place before pressing apply. The apply button is disabled, with the reason spelled out, for
+anyone holding `inventory.count` but not `inventory.count.apply`.
+
+### Why this module is REST, not GraphQL
+
+Every other BMS module exposes its writes through GraphQL. These two do not, on purpose:
+`/api/bms/inventory/transfers` and `/api/bms/inventory/counts` are plain REST routes authorised by
+`authorizeAdminRoute()`, which performs the same session check, drill-down tenant resolution, and
+`requirePermission()` call the resolvers use.
+
+The reason is the counting workflow. A shelf count is one short request per scanned line, hundreds
+of times, from a handheld browser on shop wifi; a single-purpose REST endpoint keeps that loop
+small and lets the route return the snapshot and variance for that one line without a round trip
+through the schema. Nothing about the module needs a client-composed query — both screens want the
+whole list every time.
+
+The cost is real and worth naming: these mutations are invisible to anything that consumes the
+GraphQL schema, including the AI tool catalogue. If a tool ever needs to move stock between
+branches, it needs a GraphQL surface added here first — reaching for the REST route from a resolver
+would skip the audit entry described below.
+
+### What lands in the audit log
+
+Both files write to `bms_audit_log` **inside the same transaction as the stock movement**, matching
+the convention `pos.ts` uses for `pos.sale`/`pos.return`:
+
+| Action | Target | Notable meta |
+| --- | --- | --- |
+| `inventory.transfer.create` | transfer id | `transferNo`, both branches, `lines`, `units` |
+| `inventory.transfer.send` | transfer id | `units` that left the source branch |
+| `inventory.transfer.receive` | transfer id | `unitsSent`, `unitsReceived`, `unitsMissing` |
+| `inventory.transfer.cancel` | transfer id | `transferNo` |
+| `inventory.count.create` | count id | `countNo`, branch |
+| `inventory.count.apply` | count id | `adjustedItems`, `varianceUnits` |
+| `inventory.count.cancel` | count id | `countNo` |
+
+Individual counted lines (`recordCountItem`) are deliberately **not** audited: one shelf produces
+hundreds of them and they would bury everything else in the log. The reviewable fact is who accepted
+the variance, which is the apply entry.
+
+These routes have no GraphQL context, so they store `actor` as a raw `users.id` rather than the
+email a resolver would have written. `listAudit()` resolves it back to an email on read, which also
+repairs the POS rows (`pos.sale`, `pos.return`, `pos.void`, …) that have always been stored that
+way — searching `/admin/audit` by email now reaches them.
+
+Being inside the transaction matters: a transfer that succeeds without its audit row is stock that
+left a branch with nobody named on it, which is exactly the case an auditor asks about. For the same
+reason `cancelStockTransfer`/`cancelStockCount` open a `beginTenantTx` rather than issuing a bare
+`UPDATE` — a write outside a tenant transaction runs without `SET LOCAL ROLE bms_app`, so RLS never
+gets a chance to catch a mistargeted row.
+
+## Go-live checklist (multi-branch, 7.98)
+
+Only needed for shops running more than one branch. Single-branch shops are unaffected by `7.98` —
+every existing caller keeps resolving the default location.
+
+- Apply `7.98__bms_stock_transfers_and_counts.sql` with `psql -1`. Without the single transaction a
+  mid-file failure leaves half the tables behind and they have to be dropped by hand.
+- Confirm the migration seeded `inventory.transfer` and `inventory.count` to Manager and Warehouse,
+  and `inventory.count.apply` to Manager only. Missing seeds mean `/admin/stock-transfers` and
+  `/admin/stock-counts` return 403 with no visible error — the app does not log out on 403.
+- Give every branch its own `branch_code`. It defaults to `'00000'` and is unique per tenant, so a
+  second branch created without one collides with head office immediately.
+- Check that each branch has inventory rows for the SKUs it actually sells; a transfer can only send
+  what the source branch holds unreserved.
+- Rehearse one transfer end to end, including a short receive: send it, receive fewer units than
+  were sent, then confirm the source branch shows a `STOCK_OUT` movement noted as lost in transit
+  and the audit log holds `inventory.transfer.receive` with a non-zero `unitsMissing`.
+- Rehearse one count on a branch while a sale goes through on the same SKU mid-count, then apply it.
+  The sale must survive; the recorded variance must reflect only the goods that were missing.
+- Decide who holds `inventory.count.apply` before handing the count screen to warehouse staff.
+  Accepting a variance writes stock off, and it cannot be undone from the UI.

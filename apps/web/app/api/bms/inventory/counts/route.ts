@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { listLocations } from "@/lib/bms/locations";
 import {
   applyStockCount,
   cancelStockCount,
@@ -31,7 +32,13 @@ export async function GET(req: NextRequest) {
 
   const raw = req.nextUrl.searchParams.get("status");
   const status = STATUSES.includes(raw as StockCountStatus) ? (raw as StockCountStatus) : null;
-  return NextResponse.json({ counts: await listStockCounts(auth.tenantId, status) });
+
+  // สาขามาพร้อมใบนับด้วยเหตุผลเดียวกับฝั่งใบโอน (ดู transfers/route.ts)
+  const [counts, locations] = await Promise.all([
+    listStockCounts(auth.tenantId, status),
+    listLocations(auth.tenantId),
+  ]);
+  return NextResponse.json({ counts, locations });
 }
 
 export async function POST(req: NextRequest) {

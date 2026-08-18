@@ -12,6 +12,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { recordMovement } from "./movements";
+import { insertWithDailyDocNo } from "./dailyDocNo";
 
 export type StockTransferStatus = "DRAFT" | "IN_TRANSIT" | "RECEIVED" | "CANCELLED";
 
@@ -43,17 +44,27 @@ export type StockTransfer = {
 const toISO = (v: unknown): string =>
   v instanceof Date ? v.toISOString() : String(v ?? "");
 
-/** เลขที่ใบโอน — TRF-YYMMDD-NNN ต่อร้าน ไม่ใช่ global sequence */
-async function nextTransferNoInTx(client: PoolClient, tenantId: string): Promise<string> {
-  const res = await client.query<{ n: string }>(
-    `SELECT COUNT(*)::text AS n FROM bms_stock_transfers
-      WHERE tenant_id = $1 AND created_at::date = CURRENT_DATE`,
-    [tenantId]
+/**
+ * บันทึก audit ในทรานแซกชันเดียวกับของที่เพิ่งย้าย
+ *
+ * อยู่ใน tx ไม่ใช่หลัง COMMIT: การย้ายของที่สำเร็จแต่ไม่มีบรรทัดใน audit log
+ * คือของที่หายไปจากสาขาโดยไม่มีใครสั่ง ซึ่งอ่านจากรายงานแล้วอธิบายไม่ได้เลย
+ * (ตาราง bms_stock_transfers เก็บ created_by/sent_by อยู่แล้ว แต่คนที่ตรวจ
+ * ไล่จาก audit log ที่เดียว — ดูรูปแบบเดียวกันที่ pos.ts § pos.sale)
+ */
+async function auditInTx(
+  client: PoolClient,
+  tenantId: string,
+  actor: string,
+  action: string,
+  target: string,
+  meta: Record<string, unknown>
+): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [tenantId, String(actor), action, target, JSON.stringify(meta)]
   );
-  const seq = String(Number(res.rows[0].n) + 1).padStart(3, "0");
-  const today = new Date();
-  const stamp = `${String(today.getFullYear()).slice(2)}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  return `TRF-${stamp}-${seq}`;
 }
 
 export async function listStockTransfers(
@@ -149,13 +160,34 @@ export async function createStockTransfer(input: {
       return { status: "INVALID", reason: "ไม่พบสาขาต้นทางหรือปลายทาง (หรือถูกปิดใช้งาน)" };
     }
 
-    const transferNo = await nextTransferNoInTx(client, input.tenantId);
-    const ins = await client.query<{ id: string }>(
-      `INSERT INTO bms_stock_transfers (tenant_id, transfer_no, from_location, to_location, note, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [input.tenantId, transferNo, input.fromLocationId, input.toLocationId, input.note ?? null, input.createdBy]
+    // SKU ต้องมีจริงก่อน — bms_stock_transfer_items มี FK ไป bms_products ถ้าปล่อยให้
+    // FK เป็นคนจับ คนกรอกจะได้ 500 เปล่า ๆ แทนที่จะได้ประโยคว่าพิมพ์ SKU ไหนผิด
+    // (ฝั่งใบนับตรวจข้อนี้อยู่แล้ว — ดู recordCountItem)
+    const skus = Array.from(new Set(items.map((i) => i.sku)));
+    const known = await client.query<{ sku: string }>(
+      `SELECT sku FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`,
+      [input.tenantId, skus]
     );
-    const transferId = ins.rows[0].id;
+    if (known.rowCount !== skus.length) {
+      const found = new Set(known.rows.map((r) => r.sku));
+      const missing = skus.filter((s) => !found.has(s));
+      await client.query("ROLLBACK");
+      return { status: "INVALID", reason: `ไม่พบสินค้า: ${missing.join(", ")}` };
+    }
+
+    // เลขที่ใบโอน — TRF-YYMMDD-NNN ต่อร้าน ไม่ใช่ global sequence
+    const { transferId, transferNo } = await insertWithDailyDocNo(
+      client,
+      { tenantId: input.tenantId, table: "bms_stock_transfers", prefix: "TRF" },
+      async (docNo) => {
+        const ins = await client.query<{ id: string }>(
+          `INSERT INTO bms_stock_transfers (tenant_id, transfer_no, from_location, to_location, note, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [input.tenantId, docNo, input.fromLocationId, input.toLocationId, input.note ?? null, input.createdBy]
+        );
+        return { transferId: ins.rows[0].id, transferNo: docNo };
+      }
+    );
 
     for (const item of items) {
       await client.query(
@@ -165,6 +197,14 @@ export async function createStockTransfer(input: {
         [input.tenantId, transferId, item.sku, item.size, item.qty]
       );
     }
+
+    await auditInTx(client, input.tenantId, input.createdBy, "inventory.transfer.create", transferId, {
+      transferNo,
+      fromLocationId: input.fromLocationId,
+      toLocationId: input.toLocationId,
+      lines: items.length,
+      units: items.reduce((sum, i) => sum + i.qty, 0),
+    });
 
     await client.query("COMMIT");
     return { status: "CREATED", transferId, transferNo };
@@ -240,6 +280,13 @@ export async function sendStockTransfer(input: {
         WHERE tenant_id = $1 AND id = $2`,
       [input.tenantId, input.transferId, input.actorUserId]
     );
+    await auditInTx(client, input.tenantId, input.actorUserId, "inventory.transfer.send", input.transferId, {
+      transferNo: t.transfer_no,
+      fromLocationId: t.from_location,
+      toLocationId: t.to_location,
+      lines: items.rows.length,
+      units: items.rows.reduce((sum, i) => sum + Number(i.qty), 0),
+    });
     await client.query("COMMIT");
     return { status: "OK" };
   } catch (err) {
@@ -276,16 +323,27 @@ export async function receiveStockTransfer(input: {
     const t = head.rows[0];
     if (t.status !== "IN_TRANSIT") { await client.query("ROLLBACK"); return { status: "WRONG_STATE", current: t.status }; }
 
-    const overrides = new Map((input.received ?? []).map((r) => [Number(r.itemId), Math.max(0, Math.trunc(Number(r.qty)))]));
+    // Number("abc") = NaN แล้ว NaN ลอดทั้ง `> 0` และ `< qty` ไปถึง UPDATE ที่คอลัมน์
+    // เป็น INTEGER CHECK (>= 0) → 500 · route รับ body.received มาดิบ ๆ จึงกันตรงนี้
+    const overrides = new Map(
+      (input.received ?? [])
+        .map((r) => [Number(r.itemId), Math.max(0, Math.trunc(Number(r.qty)))] as const)
+        .filter(([itemId, qty]) => Number.isFinite(itemId) && Number.isFinite(qty))
+    );
     const items = await client.query<{ id: number; product_sku: string; size: string; qty: number }>(
       `SELECT id, product_sku, size, qty FROM bms_stock_transfer_items
         WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
       [input.tenantId, input.transferId]
     );
 
+    let totalSent = 0;
+    let totalReceived = 0;
+
     for (const item of items.rows) {
       const requested = overrides.has(Number(item.id)) ? overrides.get(Number(item.id))! : item.qty;
       const receivedQty = Math.min(requested, item.qty);
+      totalSent += Number(item.qty);
+      totalReceived += receivedQty;
 
       if (receivedQty > 0) {
         await client.query(
@@ -324,6 +382,16 @@ export async function receiveStockTransfer(input: {
         WHERE tenant_id = $1 AND id = $2`,
       [input.tenantId, input.transferId, input.actorUserId]
     );
+    // ของขาดระหว่างทางเป็นตัวเลขที่ต้องมีคนตอบ — ใส่ไว้ใน audit ตรง ๆ ไม่ให้ต้อง
+    // ไปหักลบเอาเองจากสองสาขา
+    await auditInTx(client, input.tenantId, input.actorUserId, "inventory.transfer.receive", input.transferId, {
+      transferNo: t.transfer_no,
+      fromLocationId: t.from_location,
+      toLocationId: t.to_location,
+      unitsSent: totalSent,
+      unitsReceived: totalReceived,
+      unitsMissing: totalSent - totalReceived,
+    });
     await client.query("COMMIT");
     return { status: "OK" };
   } catch (err) {
@@ -338,19 +406,37 @@ export async function receiveStockTransfer(input: {
 export async function cancelStockTransfer(input: {
   tenantId: string; transferId: string; actorUserId: string;
 }): Promise<TransferActionResult> {
-  const res = await query<{ status: StockTransferStatus }>(
-    `UPDATE bms_stock_transfers
-        SET status = 'CANCELLED', cancelled_by = $3, cancelled_at = now(), updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
-      RETURNING status`,
-    [input.tenantId, input.transferId, input.actorUserId]
-  );
-  if (res.rowCount) return { status: "OK" };
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
 
-  const cur = await query<{ status: StockTransferStatus }>(
-    `SELECT status FROM bms_stock_transfers WHERE tenant_id = $1 AND id = $2`,
-    [input.tenantId, input.transferId]
-  );
-  if (!cur.rowCount) return { status: "NOT_FOUND" };
-  return { status: "WRONG_STATE", current: cur.rows[0].status };
+    const res = await client.query<{ transfer_no: string }>(
+      `UPDATE bms_stock_transfers
+          SET status = 'CANCELLED', cancelled_by = $3, cancelled_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
+        RETURNING transfer_no`,
+      [input.tenantId, input.transferId, input.actorUserId]
+    );
+
+    if (!res.rowCount) {
+      const cur = await client.query<{ status: StockTransferStatus }>(
+        `SELECT status FROM bms_stock_transfers WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, input.transferId]
+      );
+      await client.query("ROLLBACK");
+      if (!cur.rowCount) return { status: "NOT_FOUND" };
+      return { status: "WRONG_STATE", current: cur.rows[0].status };
+    }
+
+    await auditInTx(client, input.tenantId, input.actorUserId, "inventory.transfer.cancel", input.transferId, {
+      transferNo: res.rows[0].transfer_no,
+    });
+    await client.query("COMMIT");
+    return { status: "OK" };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }

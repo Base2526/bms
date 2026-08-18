@@ -161,6 +161,13 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส)
   · เทสชุดที่ 4 (10 เทส): `../../scripts/inventory-multilocation-db-contract.test.mts`
     — รวมสี่ชุด 55 เทส ผ่านทั้งหมด
+  · **หน้า UI: `/admin/stock-transfers` + `/admin/stock-counts`** (เมนูอยู่กลุ่มร้านค้า ถัดจาก
+    Purchase (PO)) — ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc` · ทั้งสองหน้าเรียก REST
+    ไม่ใช่ GraphQL (ตั้งใจ — เหตุผลอยู่ใน [docs/business/inventory.md](docs/business/inventory.md)
+    § Why this module is REST) แปลว่า **AI tool catalogue มองไม่เห็นสองโมดูลนี้**
+  · checklist ก่อน go-live ของ 7.98 อยู่ใน
+    [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
+    (ไม่ได้อยู่ใน pos.md — ของ pos.md ครอบคลุมถึง `7.97` แล้วลิงก์ต่อมาที่นี่)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

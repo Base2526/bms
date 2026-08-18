@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { listLocations } from "@/lib/bms/locations";
 import {
   cancelStockTransfer,
   createStockTransfer,
@@ -31,7 +32,14 @@ export async function GET(req: NextRequest) {
 
   const raw = req.nextUrl.searchParams.get("status");
   const status = STATUSES.includes(raw as StockTransferStatus) ? (raw as StockTransferStatus) : null;
-  return NextResponse.json({ transfers: await listStockTransfers(auth.tenantId, status) });
+
+  // สาขาเดินทางมาพร้อมใบโอน — หน้าจอต้องมีตัวเลือกสาขาเสมอ และการให้ไปดึงเอง
+  // ผ่าน GraphQL bmsLocations จะบังคับสิทธิ์ product.view ซึ่งคลังสินค้าอาจไม่มี
+  const [transfers, locations] = await Promise.all([
+    listStockTransfers(auth.tenantId, status),
+    listLocations(auth.tenantId),
+  ]);
+  return NextResponse.json({ transfers, locations });
 }
 
 export async function POST(req: NextRequest) {
