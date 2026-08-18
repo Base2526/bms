@@ -676,6 +676,55 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
     );
+    // Loyalty points follow the customer, not the row (7.96). Without this the
+    // ledger stays attached to the row we are about to soft-delete, so the kept
+    // customer silently loses every point they earned — and bms_loyalty_ledger
+    // cascades on customer delete, so a later hard delete would erase the trail.
+    await client.query(
+      `UPDATE bms_loyalty_ledger SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // Membership identity: keep the surviving record's number when it has one,
+    // otherwise adopt the merged one so the customer keeps the card in their hand.
+    // Either way the merged row releases its number — two rows must never hold
+    // the same member_no, and a soft-deleted row holding one is a dead end.
+    await client.query(
+      `UPDATE bms_customers keep
+          SET member_no = COALESCE(keep.member_no, merged.member_no),
+              member_since = LEAST(
+                COALESCE(keep.member_since, merged.member_since),
+                COALESCE(merged.member_since, keep.member_since)
+              ),
+              tier_id = COALESCE(keep.tier_id, merged.tier_id),
+              updated_at = now()
+         FROM bms_customers merged
+        WHERE keep.tenant_id = $1 AND keep.id = $3
+          AND merged.tenant_id = $1 AND merged.id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // points_balance is a cache of the ledger, so neither write below belongs in
+    // revision history (same reason as syncPointsBalanceInTx).
+    await client.query("SELECT set_config('app.skip_revision', '1', true)");
+    try {
+      await client.query(
+        `UPDATE bms_customers SET member_no = NULL, points_balance = 0
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, mergeId]
+      );
+      await client.query(
+        `UPDATE bms_customers c
+            SET points_balance = COALESCE((
+                  SELECT SUM(l.points) FROM bms_loyalty_ledger l
+                   WHERE l.tenant_id = c.tenant_id AND l.customer_id = c.id
+                ), 0)
+          WHERE c.tenant_id = $1 AND c.id = $2`,
+        [tenantId, keepId]
+      );
+    } finally {
+      await client.query("SELECT set_config('app.skip_revision', '', true)");
+    }
+
     // Any cached insight for either record is stale after histories are combined.
     await client.query(
       `DELETE FROM bms_customer_ai_summary
@@ -825,7 +874,32 @@ export async function deleteCustomerAddress(tenantId: string, addressId: string)
   return (res.rowCount ?? 0) > 0;
 }
 
+/**
+ * ลบลูกค้า (soft delete)
+ *
+ * สมาชิกที่ยังมีแต้มใช้ได้ค้างอยู่ลบไม่ได้ (7.96) — แต้มค้างเป็นภาระผูกพันของร้าน
+ * ที่รายงานทางบัญชีนับอยู่ ถ้าลบเงียบ ๆ ลูกค้ากลับมาแล้วแต้มหาย ร้านตอบไม่ได้ว่า
+ * หายตอนไหน (ledger ยังอยู่แต่หน้าค้นสมาชิกกรอง deleted_at ออกไปแล้ว)
+ * ถ้าจะลบจริงต้องปรับแต้มเป็น 0 ด้วยเหตุผลก่อน ผ่าน /admin/loyalty
+ * ยอดติดลบไม่กัน — นั่นคือหนี้ของลูกค้า ไม่ใช่ของร้าน
+ */
 export async function deleteCustomer(tenantId: string, id: string) {
+  const points = await query<{ usable: string }>(
+    `SELECT COALESCE(SUM(l.points - l.consumed_points), 0) AS usable
+       FROM bms_loyalty_ledger l
+       JOIN bms_customers c ON c.tenant_id = l.tenant_id AND c.id = l.customer_id
+      WHERE l.tenant_id = $1 AND l.customer_id = $2
+        AND c.member_no IS NOT NULL
+        AND l.points > 0 AND (l.expires_at IS NULL OR l.expires_at > now())`,
+    [tenantId, id]
+  );
+  const usable = Number(points.rows[0]?.usable ?? 0);
+  if (usable > 0) {
+    throw new Error(
+      `ลบไม่ได้: สมาชิกคนนี้มีแต้มใช้ได้ค้างอยู่ ${usable} แต้ม — ปรับแต้มเป็น 0 พร้อมระบุเหตุผลที่หน้าสมาชิกก่อน`
+    );
+  }
+
   const res = await query(
     `UPDATE bms_customers SET deleted_at=now(), updated_at=now()
       WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,

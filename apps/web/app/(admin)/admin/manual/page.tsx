@@ -57,6 +57,10 @@ const ROUTES = {
   restock: "/admin/restock-subscriptions",
   realtimeDiagnostics: "/admin/inbox/realtime-diagnostics",
   profile: "/admin/profile",
+  pos: "/pos",
+  loyalty: "/admin/loyalty",
+  stockTransfers: "/admin/stock-transfers",
+  stockCounts: "/admin/stock-counts",
 } as const;
 
 const PERSONA_HREF: Record<PersonaKey, string> = {
@@ -109,6 +113,8 @@ const ARCHETYPE_KEYS = [
 const MENU_META: { key: string; icon: React.ReactNode; href: string }[] = [
   { key: "inbox", icon: <InboxOutlined />, href: ROUTES.inbox },
   { key: "products", icon: <DatabaseOutlined />, href: ROUTES.products },
+  { key: "pos-loyalty", icon: <ShopOutlined />, href: ROUTES.pos },
+  { key: "branch-inventory", icon: <DatabaseOutlined />, href: ROUTES.stockTransfers },
   { key: "restock", icon: <CustomerServiceOutlined />, href: ROUTES.restock },
   { key: "ops", icon: <ShoppingCartOutlined />, href: ROUTES.orders },
   { key: "revisions", icon: <HistoryOutlined />, href: ROUTES.revisions },
@@ -337,6 +343,29 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "Products & Purchase",
     desc: "เพิ่มสินค้า, รูปหลายรูป, stock, reorder point, รับของเข้าคลัง",
     bullets: ["รูปแรกเป็น cover", "รับของผ่าน Purchase", "กรองหมวดหมู่และค้นหา SKU ได้"],
+  },
+  {
+    title: "POS & สมาชิก",
+    desc: "ขายหน้าร้าน, สมาชิก/แต้ม, พักบิล, เงินลิ้นชัก, void และรายงานกะ",
+    bullets: [
+      "เปิดกะและยืนยันตัวพนักงานด้วย PIN ก่อนขาย; device token ระบุเครื่องและสาขา ไม่ใช่ตัวบุคคล",
+      "ค้นหาสมาชิกก่อนชำระเพื่อใช้ส่วนลดตาม tier และแต้ม; ตั้งโปรแกรมและตรวจ ledger ที่ /admin/loyalty",
+      "พักบิลได้ไม่เกิน 20 บิลต่อกะ แต่ไม่จอง stock และไม่ล็อกราคา; ตอนกลับมาขายระบบใช้ราคาและ stock ปัจจุบัน",
+      "เงินเข้า/ออกลิ้นชักต้องมีเหตุผล และเงินออกต้องใช้ PIN ผู้อนุมัติคนที่สองเสมอ",
+      "Void ใช้เมื่อบิลลงผิดและกะยังเปิด ต้องมีเหตุผลกับผู้อนุมัติคนที่สอง; หลังปิดกะให้ทำ Return แทน",
+      "ดู X report ระหว่างกะและ Z report หลังปิดกะ เพื่อตรวจยอดคาดหวัง ยอดนับจริง และผลต่าง",
+    ],
+  },
+  {
+    title: "โอนสาขา & นับสต็อก",
+    desc: "ย้ายของระหว่างสาขาและปรับยอดจากการนับชั้นวางโดยไม่ทับยอดขายระหว่างนับ",
+    bullets: [
+      "ใบโอนทำสองขั้น: ส่งออกจากต้นทาง แล้วรับเข้าปลายทาง; ของระหว่างทางไม่อยู่ใน stock ของสาขาใด",
+      "ส่งได้เฉพาะ stock ที่ไม่ถูกจอง และตอนรับสามารถระบุจำนวนขาดเพื่อบันทึกของหายระหว่างทาง",
+      "ใบนับเก็บ snapshot ตอนกรอกรายการครั้งแรก และตอน Apply จะเพิ่มเฉพาะผลต่าง ไม่เขียนทับยอดปัจจุบัน",
+      "พนักงานคลังที่มี inventory.count กรอกตัวเลขได้ แต่ต้องมี inventory.count.apply จึงยืนยันผลต่างเข้าสต็อกจริงได้",
+      "เริ่มที่ /admin/stock-transfers และเปิด /admin/stock-counts เมื่อต้องตรวจนับสินค้า",
+    ],
   },
   {
     title: "แจ้งลูกค้าเมื่อของเข้า",
@@ -984,6 +1013,29 @@ const MENU_CARDS_EN: MenuCard[] = [
       "The first image is the cover",
       "Receive goods through Purchase",
       "Filter by category and search by SKU",
+    ],
+  },
+  {
+    title: "POS & Loyalty",
+    desc: "Counter sales, members and points, parked bills, drawer cash, voids, and shift reports",
+    bullets: [
+      "Open a shift and identify the cashier with a PIN before selling; the device token identifies the register and branch, not the person",
+      "Find the member before payment to apply tier discounts and points; configure the program and inspect its ledger at /admin/loyalty",
+      "Park up to 20 bills per shift, but parked carts reserve no stock and lock no price; resume uses current stock and pricing",
+      "Every drawer cash movement needs a reason, and cash out always needs a second approver's PIN",
+      "Void a mis-rung bill only while its shift is open, with a reason and a second approver; use Return after the shift closes",
+      "Use the X report mid-shift and Z report after close to reconcile expected cash, counted cash, and variance",
+    ],
+  },
+  {
+    title: "Branch transfers & stock counts",
+    desc: "Move goods between branches and reconcile shelf counts without overwriting sales made during the count",
+    bullets: [
+      "A transfer has two steps: send from the source, then receive at the destination; in-transit goods belong to no branch",
+      "Only unreserved stock can be sent, and receiving can record a shortfall as lost in transit",
+      "A count snapshots each line on first entry and Apply adds only the variance instead of replacing current stock",
+      "Warehouse staff with inventory.count can enter figures, while inventory.count.apply is required to accept the variance",
+      "Start at /admin/stock-transfers and open /admin/stock-counts when running a shelf count",
     ],
   },
   {

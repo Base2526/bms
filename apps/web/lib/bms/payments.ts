@@ -19,6 +19,7 @@ import { readStoredFile } from "@/lib/storage";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { redeemCustomerCouponForOrderInTx } from "./coupons";
+import { earnPointsForOrderInTx, reviewMemberTierForOrder } from "./membership";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { slipAmountMatches, type SlipExtract, type SlipImagePolicy, type SlipReader } from "./slipReader";
 import { resolveSlipReader, runSlipReaderFallback } from "./slipReaders";
@@ -216,12 +217,17 @@ export async function confirmPayment(
     );
     if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, pay.rows[0].order_id);
+      // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึง PAID ไม่ใช่แค่หน้าร้าน
+      await earnPointsForOrderInTx(client, { tenantId, orderId: pay.rows[0].order_id, actorUserId: actor });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId: pay.rows[0].order_id, client });
     }
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
-    if (orderPaid) void notifyOrderStatusEmail(tenantId, pay.rows[0].order_id, "paid");
+    if (orderPaid) {
+      void reviewMemberTierForOrder(tenantId, pay.rows[0].order_id);
+      void notifyOrderStatusEmail(tenantId, pay.rows[0].order_id, "paid");
+    }
     return { status: "CONFIRMED", paymentId, orderPaid };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -379,12 +385,16 @@ export async function confirmPaymentsForOrder(
     );
     if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+      await earnPointsForOrderInTx(client, { tenantId, orderId, actorUserId: actor });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
     }
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
-    if (orderPaid) void notifyOrderStatusEmail(tenantId, orderId, "paid");
+    if (orderPaid) {
+      void reviewMemberTierForOrder(tenantId, orderId);
+      void notifyOrderStatusEmail(tenantId, orderId, "paid");
+    }
     return { status: "CONFIRMED", paymentIds, orderPaid };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}

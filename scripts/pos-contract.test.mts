@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decoratePosSale, normalizePosSearchQuery, parsePosPayments, parsePosSaleLines } from "../apps/web/lib/bms/posRouteHelpers.ts";
+import {
+  decoratePosSale,
+  isDistinctPosApprover,
+  normalizePosSearchQuery,
+  parsePosPayments,
+  parsePosSaleLines,
+} from "../apps/web/lib/bms/posRouteHelpers.ts";
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
@@ -72,6 +78,13 @@ test("POS sale parser treats browser price fields as optional transport data", (
 test("POS search query normalization trims whitespace and null safely", () => {
   assert.equal(normalizePosSearchQuery("  milk tea  "), "milk tea");
   assert.equal(normalizePosSearchQuery(null), "");
+});
+
+test("POS approval requires a different acting user", () => {
+  assert.equal(isDistinctPosApprover("cashier-1", "manager-1"), true);
+  assert.equal(isDistinctPosApprover("cashier-1", "cashier-1"), false);
+  assert.equal(isDistinctPosApprover(" CASHIER-1 ", "cashier-1"), false);
+  assert.equal(isDistinctPosApprover("cashier-1", " "), false);
 });
 
 // จอขายกับ server ต้องได้ตัวเลขเดียวกันเป๊ะ ไม่งั้นบิลโดน PAYMENT_MISMATCH ทิ้งทั้งใบ

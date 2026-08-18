@@ -16,6 +16,7 @@ import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { nanoid } from "nanoid";
 import type { ShopArchetype } from "./shopArchetypes";
+import { adjustPoints, reviewMemberTier } from "./membership";
 
 const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
@@ -1247,4 +1248,92 @@ export async function seedFakeCoupons(tenantId: string, count: number, archetype
     if (rows[0]) created.push(rows[0]);
   }
   return created;
+}
+
+/**
+ * สมาชิก + แต้มปลอม (7.96) — ยกลูกค้าปลอมที่มีอยู่แล้วขึ้นเป็นสมาชิก
+ * ไม่สร้างลูกค้าใหม่ เพราะการทดสอบที่มีประโยชน์คือ "ลูกค้าเดิมมาสมัคร"
+ * ซึ่งเป็น flow จริงที่หน้าร้านใช้ (ลูกค้าเคยคุยทาง LINE แล้วมาสมัครที่เคาน์เตอร์)
+ *
+ * แต้มลงผ่าน adjustPoints() ตัวจริง ไม่ INSERT ledger ตรง ๆ เพื่อให้ค่า
+ * consumed_points / points_balance สอดคล้องเหมือนของจริง — ไม่งั้นการ์ด
+ * "cache ไม่ตรง ledger" ในหน้า /admin/loyalty จะแดงทันทีหลัง seed
+ * cleanup ลบตามลูกค้า (tag 'fake') และ ledger cascade ตามไปเอง
+ */
+export async function seedFakeMembers(tenantId: string, count: number) {
+  const wanted = Math.min(Math.max(Math.floor(count), 1), 200);
+
+  // ต้องเปิดโปรแกรมก่อน ไม่งั้น adjustPoints/ส่วนลดจะไม่ทำงานและ seed ดูเหมือนพัง
+  await query(
+    `INSERT INTO bms_loyalty_settings (tenant_id, enabled) VALUES ($1, TRUE)
+     ON CONFLICT (tenant_id) DO UPDATE SET enabled = TRUE, updated_at = now()`,
+    [tenantId]
+  );
+
+  const lowestTier = await query<{ id: string }>(
+    `SELECT id FROM bms_membership_tiers WHERE tenant_id = $1 AND active
+      ORDER BY sort_order, code LIMIT 1`,
+    [tenantId]
+  );
+
+  // เลขสมาชิกต่อจากเลขสูงสุดที่มี (เหมือน nextMemberNoInTx) — ไม่วนซ้ำเลขเดิม
+  const enrolled = await query<{ id: string; member_no: string }>(
+    `WITH base AS (
+       SELECT COALESCE(MAX(NULLIF(regexp_replace(member_no, '\\D', '', 'g'), '')::bigint), 0) AS n
+         FROM bms_customers
+        WHERE tenant_id = $1 AND member_no ~ '^M[0-9]+$'
+     ), target AS (
+       SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.created_at, c.id) AS seq
+         FROM bms_customers c
+        WHERE c.tenant_id = $1 AND 'fake' = ANY(c.tags)
+          AND c.deleted_at IS NULL AND c.member_no IS NULL
+        LIMIT $2
+     )
+     UPDATE bms_customers c
+        SET member_no = 'M' || lpad((base.n + target.seq)::text, 6, '0'),
+            member_since = now() - (floor(random() * 540) || ' days')::interval,
+            tier_id = $3,
+            tier_reviewed_at = now(),
+            updated_at = now()
+       FROM target, base
+      WHERE c.tenant_id = $1 AND c.id = target.id
+      RETURNING c.id, c.member_no`,
+    [tenantId, wanted, lowestTier.rows[0]?.id ?? null]
+  );
+
+  let pointsGranted = 0;
+  for (const row of enrolled.rows) {
+    // กระจายให้มีทั้งคนแต้มเยอะ/น้อย/ศูนย์ เพื่อเทสทั้งสามสถานะบนจอ POS
+    const points = R(5) === 0 ? 0 : 50 + R(1950);
+    if (points === 0) continue;
+    try {
+      await adjustPoints({
+        tenantId,
+        customerId: row.id,
+        points,
+        note: "FAKE seed — แต้มตั้งต้นสำหรับทดสอบ",
+      });
+      pointsGranted += points;
+    } catch (e) {
+      console.error("[fake] ลงแต้มไม่สำเร็จ", row.id, e);
+    }
+  }
+
+  // ทบทวนชั้นให้กระจายตามยอดซื้อจริงของลูกค้าปลอม ไม่ให้ทุกคนค้างที่ชั้นต่ำสุด
+  let tierChanged = 0;
+  for (const row of enrolled.rows) {
+    try {
+      const res = await reviewMemberTier(tenantId, row.id);
+      if (res.changed) tierChanged += 1;
+    } catch (e) {
+      console.error("[fake] ทบทวนชั้นไม่สำเร็จ", row.id, e);
+    }
+  }
+
+  return {
+    members: enrolled.rows.length,
+    pointsGranted,
+    tierChanged,
+    memberNos: enrolled.rows.map((r) => r.member_no),
+  };
 }

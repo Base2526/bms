@@ -291,6 +291,7 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
          SELECT id, refund_amount
            FROM bms_pos_returns
           WHERE tenant_id = $1
+            AND is_void = FALSE
             AND created_at >= $2::date
             AND created_at < $3::date + interval '1 day'
        )
@@ -320,6 +321,7 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
               COUNT(*)::int AS count
          FROM bms_pos_returns
         WHERE tenant_id = $1
+          AND is_void = FALSE
           AND created_at >= $2::date
           AND created_at < $3::date + interval '1 day'
         GROUP BY 1
@@ -345,6 +347,7 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
          FROM bms_pos_returns pr
          LEFT JOIN users u ON u.id = pr.returned_by
         WHERE pr.tenant_id = $1
+          AND pr.is_void = FALSE
           AND pr.created_at >= $2::date
           AND pr.created_at < $3::date + interval '1 day'
         ORDER BY pr.created_at DESC
@@ -395,6 +398,7 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
          FROM bms_pos_returns pr
          LEFT JOIN users u ON u.id = pr.returned_by
         WHERE pr.tenant_id = $1
+          AND pr.is_void = FALSE
           AND pr.created_at >= $2::date
           AND pr.created_at < $3::date + interval '1 day'
         GROUP BY 1
@@ -410,6 +414,7 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
           COUNT(*) FILTER (WHERE refund_amount >= 500 AND approved_by IS NULL)::int AS missing_approval_count
          FROM bms_pos_returns
         WHERE tenant_id = $1
+          AND is_void = FALSE
           AND created_at >= $2::date
           AND created_at < $3::date + interval '1 day'`,
       [tenantId, r.from, r.to]

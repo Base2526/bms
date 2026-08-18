@@ -23,6 +23,17 @@ import type { PoolClient } from "pg";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
+  composeDiscounts,
+  earnPointsForOrderInTx,
+  getLoyaltySettings,
+  getMemberForOrderInTx,
+  recordOrderDiscountsInTx,
+  redeemPointsInTx,
+  releasePointsForOrdersInTx,
+  reviewMemberTierForOrder,
+  type OrderDiscountLine,
+} from "./membership";
+import {
   markRestockSubscriptionsOrdered,
   markRestockSubscriptionsPurchasedForOrder,
   reopenRestockSubscriptionsForOrders,
@@ -54,6 +65,14 @@ export type CreateOrderInput = {
   tenantId: string;
   channel: Channel;
   customerRef?: string | null;
+  /**
+   * ผูกบิลกับลูกค้าที่รู้ตัวตนแล้วโดยตรง (POS ค้นสมาชิกที่เคาน์เตอร์ — 7.96)
+   * ถ้าส่งมา จะข้าม resolveOrCreateCustomer ที่หาจาก channel+customerRef
+   * id ถูกตรวจว่าเป็นลูกค้าของร้านนี้ในทรานแซกชันก่อนใช้เสมอ
+   */
+  customerId?: string | null;
+  /** แลกแต้มเป็นส่วนลดบิลนี้ — ต้องมี customerId ที่เป็นสมาชิกด้วย (7.96) */
+  pointsToRedeem?: number | null;
   items: OrderItemInput[];
   editorId?: string | number | null;
   couponCode?: string | null;
@@ -72,6 +91,12 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * ส่วนลดมือเป็นบาท (ชั้นที่ 4 ต่อจาก tier → คูปอง → แต้ม)
+   * > 0 ต้องมี discountApprovedBy + discountReason เสมอ — ผู้เรียกเป็นคนตรวจ
+   * ว่าคนอนุมัติมีสิทธิ์จริง ที่นี่แค่ปฏิเสธบิลที่ไม่มีหลักฐานอนุมัติติดมา
+   */
+  manualDiscount?: number | null;
   /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
   discountApprovedBy?: string | null;
   discountReason?: string | null;
@@ -106,10 +131,16 @@ export type CreateOrderResult =
       couponCode: string | null;
       preferredCarrier: Carrier | null;
       items: CreatedLine[];
+      /** ส่วนลดแยกตามที่มา (7.96) — ผลรวม = discount ด้านบนเสมอ */
+      discountLines: OrderDiscountLine[];
+      /** แต้มที่ถูกหักไปกับบิลนี้ (0 = ไม่ได้แลก) */
+      pointsUsed: number;
     }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
   | { status: "COUPON_INVALID"; reason: string }
+  | { status: "POINTS_INVALID"; reason: string }
+  | { status: "DISCOUNT_UNAPPROVED"; reason: string }
   | {
       status: PharmacySaleBlockStatus;
       sku: string;
@@ -355,17 +386,31 @@ export async function createOrder(
       });
     }
 
-    // CRM: หา/สร้างลูกค้าจาก (tenant, channel, customerRef) ในทรานแซกชันเดียวกัน
-    const customerId = await resolveOrCreateCustomer(
-      client,
-      tenantId,
-      input.channel,
-      input.customerRef ?? null
-    );
+    // CRM: ลูกค้าที่รู้ตัวตนแล้ว (POS ค้นสมาชิกที่เคาน์เตอร์) มาก่อน
+    // ถ้าไม่มีจึงหา/สร้างจาก (tenant, channel, customerRef) ตามเดิม
+    let customerId: string | null = null;
+    if (input.customerId) {
+      const owned = await client.query<{ id: string }>(
+        `SELECT id FROM bms_customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [tenantId, input.customerId]
+      );
+      if (!owned.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "POINTS_INVALID", reason: "ไม่พบลูกค้าที่ระบุในร้านนี้" };
+      }
+      customerId = owned.rows[0].id;
+    } else {
+      customerId = await resolveOrCreateCustomer(
+        client,
+        tenantId,
+        input.channel,
+        input.customerRef ?? null
+      );
+    }
 
     // โค้ดส่วนลด (ถ้ามี) — ตรวจ + เพิ่ม redemptions_count แบบ atomic ในทรานแซกชันเดียวกัน
     // ก่อน insert order เสมอ เพื่อให้ ROLLBACK คืนสต็อกที่จองไว้ด้วยถ้าโค้ดใช้ไม่ได้
-    let discount = 0;
+    let couponDiscount = 0;
     let appliedCouponCode: string | null = null;
     let appliedCouponId: string | null = null;
     if (input.couponCode) {
@@ -374,10 +419,70 @@ export async function createOrder(
         await client.query("ROLLBACK");
         return { status: "COUPON_INVALID", reason: couponResult.reason };
       }
-      discount = couponResult.discount;
+      couponDiscount = couponResult.discount;
       appliedCouponCode = couponResult.code;
       appliedCouponId = couponResult.couponId; // ผูกด้วย id ที่นิ่ง — ประวัติการใช้ join ด้วย id ไม่ใช่ code
     }
+
+    // สมาชิก (7.96): ส่วนลดตามชั้น + แลกแต้ม ซ้อนกับคูปองได้ ลำดับตายตัว
+    // tier → คูปอง → แต้ม แล้วบังคับเพดานรวมต่อบิล
+    // ยอดรวมทุกชั้นต้องลงที่ discount_amount ก้อนเดียว เพราะฐาน VAT/ใบกำกับ (7.88)
+    // อ่านจากคอลัมน์นั้น ส่วน bms_order_discounts เก็บแค่รายละเอียดว่ามาจากไหน
+    const loyaltySettings = await getLoyaltySettings(tenantId);
+    const member = customerId ? await getMemberForOrderInTx(client, tenantId, customerId) : null;
+    const requestedPoints = Math.max(0, Math.floor(Number(input.pointsToRedeem ?? 0)));
+    if (requestedPoints > 0 && !member?.memberNo) {
+      await client.query("ROLLBACK");
+      return { status: "POINTS_INVALID", reason: "แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก" };
+    }
+
+    // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
+    // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
+    const manualDiscount = Math.max(0, Math.round(Number(input.manualDiscount ?? 0) * 100) / 100);
+    if (manualDiscount > 0 && !(input.discountApprovedBy && input.discountReason?.trim())) {
+      await client.query("ROLLBACK");
+      return { status: "DISCOUNT_UNAPPROVED", reason: "ส่วนลดมือต้องมีผู้อนุมัติและเหตุผล" };
+    }
+
+    const breakdown = composeDiscounts({
+      settings: loyaltySettings,
+      subtotal: total,
+      // ส่วนลดชั้นสมาชิกให้เฉพาะคนที่สมัครแล้ว ไม่ใช่ทุก record ในระบบ CRM
+      tier: member?.memberNo ? member.tier : null,
+      couponDiscount,
+      pointsRequested: requestedPoints,
+      pointsAvailable: member?.pointsUsable ?? 0,
+      manualDiscount,
+    });
+    // ชนเพดาน max_discount_pct แล้วส่วนลดมือถูกตัด = ต้องบอก ไม่ใช่ลดให้น้อยกว่าที่ตกลง
+    // (composeDiscounts ตัดชั้น manual ก่อนเพื่อน เพราะย้อนคืนง่ายที่สุด)
+    if (manualDiscount > 0 && breakdown.manualDiscount !== manualDiscount) {
+      await client.query("ROLLBACK");
+      return {
+        status: "DISCOUNT_UNAPPROVED",
+        reason: `ส่วนลดรวมเกินเพดาน ${loyaltySettings.maxDiscountPct}% ของบิล — ส่วนลดมือลดได้สูงสุด ฿${breakdown.manualDiscount.toFixed(2)}`,
+      };
+    }
+    // แลกได้ไม่เท่าที่ขอ = ปฏิเสธทั้งบิล ห้ามหักให้บางส่วนเงียบ ๆ
+    //
+    // composeDiscounts จะ clamp จำนวนที่ขอลงมาตามแต้มที่มีและตามที่บิลรับได้อยู่แล้ว
+    // ถ้าปล่อยผ่าน คนขอแลก 500 แต้ม (คาดว่าจะลด 50 บาท) แต่มี 100 จะได้บิลที่ลดแค่
+    // 10 บาทโดยไม่มีสัญญาณอะไรบอก — ยอดเงินที่เตรียมจ่ายมาจากส่วนลดก้อนใหญ่
+    // จอ POS ส่งค่าที่ผ่าน preview (clamp แล้ว) มาเสมอ จึงไม่ชนกฎนี้ ยกเว้นกรณี
+    // แต้มเปลี่ยนไประหว่าง preview กับตอนกดรับเงิน ซึ่งต้องให้พนักงานคิดเงินใหม่
+    // ไม่ใช่เงียบ ๆ ลดให้น้อยกว่าที่บอกลูกค้าไปแล้ว
+    if (requestedPoints > 0 && breakdown.pointsUsed !== requestedPoints) {
+      await client.query("ROLLBACK");
+      const usable = member?.pointsUsable ?? 0;
+      return {
+        status: "POINTS_INVALID",
+        reason: usable < requestedPoints
+          ? `แต้มไม่พอ (ขอแลก ${requestedPoints} แต้ม แต่ใช้ได้ ${usable} แต้ม)`
+          : `แลกแต้มจำนวนนี้กับบิลนี้ไม่ได้ (ขั้นต่ำ ${loyaltySettings.redeemMinPoints} แต้ม, ต้องเป็นจำนวนเท่าของ ${loyaltySettings.redeemPointsPerUnit} แต้ม, และไม่เกินเพดานส่วนลด)`,
+      };
+    }
+
+    const discount = breakdown.totalDiscount;
     const finalTotal = Math.max(0, total - discount);
 
     // ขนส่งที่ลูกค้าอยากได้ — เก็บเฉพาะโค้ดที่รู้จัก ที่เหลือทิ้งเป็น null (ไม่ทำให้ออร์เดอร์ล้ม)
@@ -413,6 +518,52 @@ export async function createOrder(
     const orderId = ord.rows[0].id;
 
     await reserveCustomerCouponInTx(client, tenantId, customerId, appliedCouponId, orderId);
+
+    // แลกแต้ม: หักออกจากยอดลูกค้าทันทีที่บิลถูกสร้าง (ไม่มี state "จองแต้ม" แยก)
+    // บิลที่ถูกยกเลิกทีหลังคืนแต้มผ่าน releasePointsForOrdersInTx ใน cancelOrder
+    if (breakdown.pointsUsed > 0 && customerId) {
+      const redeemed = await redeemPointsInTx(client, {
+        tenantId,
+        customerId,
+        orderId,
+        points: breakdown.pointsUsed,
+        discount: breakdown.pointsDiscount,
+        actorUserId: input.cashierUserId ?? null,
+      });
+      if (!redeemed.ok) {
+        await client.query("ROLLBACK");
+        return { status: "POINTS_INVALID", reason: redeemed.reason };
+      }
+    }
+
+    const manualLabel = `ส่วนลดหน้าร้าน — ${input.discountReason?.trim() ?? ""}`.trim();
+    const discountLines: OrderDiscountLine[] = [];
+    if (breakdown.tierDiscount > 0 && member?.tier) {
+      discountLines.push({ source: "TIER", label: breakdown.tierLabel ?? `สมาชิก ${member.tier.name}`, amount: breakdown.tierDiscount, pointsUsed: 0 });
+    }
+    if (breakdown.couponDiscount > 0) {
+      discountLines.push({ source: "COUPON", label: `คูปอง ${appliedCouponCode ?? ""}`.trim(), amount: breakdown.couponDiscount, pointsUsed: 0 });
+    }
+    if (breakdown.pointsDiscount > 0) {
+      discountLines.push({ source: "POINTS", label: `แลก ${breakdown.pointsUsed} แต้ม`, amount: breakdown.pointsDiscount, pointsUsed: breakdown.pointsUsed });
+    }
+    if (breakdown.manualDiscount > 0) {
+      discountLines.push({ source: "MANUAL", label: manualLabel, amount: breakdown.manualDiscount, pointsUsed: 0 });
+    }
+    await recordOrderDiscountsInTx(client, tenantId, orderId, [
+      ...(breakdown.tierDiscount > 0 && member?.tier
+        ? [{ source: "TIER" as const, refId: member.tier.id, label: breakdown.tierLabel ?? `สมาชิก ${member.tier.name}`, amount: breakdown.tierDiscount }]
+        : []),
+      ...(breakdown.couponDiscount > 0
+        ? [{ source: "COUPON" as const, refId: appliedCouponId, label: `คูปอง ${appliedCouponCode ?? ""}`.trim(), amount: breakdown.couponDiscount }]
+        : []),
+      ...(breakdown.pointsDiscount > 0
+        ? [{ source: "POINTS" as const, label: `แลก ${breakdown.pointsUsed} แต้ม`, amount: breakdown.pointsDiscount, pointsUsed: breakdown.pointsUsed }]
+        : []),
+      ...(breakdown.manualDiscount > 0
+        ? [{ source: "MANUAL" as const, label: manualLabel, amount: breakdown.manualDiscount }]
+        : []),
+    ]);
 
     for (const ln of lines) {
       await client.query(
@@ -454,6 +605,8 @@ export async function createOrder(
       couponCode: appliedCouponCode,
       preferredCarrier,
       items: lines,
+      discountLines,
+      pointsUsed: breakdown.pointsUsed,
     };
   } catch (err) {
     try {
@@ -659,6 +812,9 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
       return false;
     }
     await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
+    // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึงสถานะ PAID ไม่ใช่แค่หน้าร้าน
+    // ลูกค้าสั่งทาง LINE/TikTok แล้วโอนเงิน ต้องได้แต้มเหมือนเดินมาซื้อเอง
+    await earnPointsForOrderInTx(client, { tenantId, orderId });
     await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
     await client.query("COMMIT");
   } catch (err) {
@@ -667,9 +823,9 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
   } finally {
     client.release();
   }
-  const ok = true;
-  if (ok) void notifyOrderStatusEmail(tenantId, orderId, "paid");
-  return ok;
+  void reviewMemberTierForOrder(tenantId, orderId);
+  void notifyOrderStatusEmail(tenantId, orderId, "paid");
+  return true;
 }
 /** แพ็คของ: PAID → PACKING */
 export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
@@ -791,6 +947,11 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     );
 
     await recordOrderMovements(client, [orderId], "RETURN", "system");
+    // คืนทั้งบิล = แต้มต้องกลับไปเป็นเหมือนก่อนบิลนี้ (7.96) — ดึงแต้มที่ได้คืน
+    // และคืนแต้มที่ลูกค้าแลกไป · ไม่ทำ = ซื้อ→ได้แต้ม→คืนของ ได้แต้มฟรี และ
+    // แต้มที่แลกไปหายไปเลยทั้งที่ของถูกคืนแล้ว
+    // (POS ใช้ทาง processPosReturn ซึ่งคิดตามสัดส่วนเพราะคืนบางรายการได้)
+    await releasePointsForOrdersInTx(client, tenantId, [orderId], "คืนสินค้าทั้งบิล");
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");
@@ -844,6 +1005,8 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await recordOrderMovements(client, [orderId], "RELEASE", "system");
     await releaseCouponForOrdersInTx(client, [orderId]);
     await releaseCustomerCouponReservationsInTx(client, [orderId]);
+    // แต้มต้องกลับสู่สถานะก่อนบิลนี้: คืนแต้มที่แลกไป + ดึงแต้มที่ได้กลับ (7.96)
+    await releasePointsForOrdersInTx(client, tenantId, [orderId]);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
     await client.query("COMMIT");

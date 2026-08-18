@@ -15,6 +15,12 @@ export const BMS_PERMISSIONS = [
   "product.edit",
   "product.delete",
   "stock.adjust",
+  // โอนย้ายระหว่างสาขา + นับสต็อก — seed ที่ 7.98
+  // .count = เดินนับและกรอกตัวเลข · .count.apply = ยืนยันว่าของหายจริงเท่านั้น
+  // (คนละการตัดสินใจ จึงคนละสิทธิ์ — Warehouse นับได้ แต่ปิดใบนับไม่ได้)
+  "inventory.transfer",
+  "inventory.count",
+  "inventory.count.apply",
   "order.view",
   "order.create",
   "order.pay",
@@ -49,6 +55,13 @@ export const BMS_PERMISSIONS = [
   "ai_quality.review",
   "coupon.view",
   "coupon.manage",
+  // สมาชิก + แต้มสะสม — seed ที่ 7.96
+  // .adjust แยกจาก .manage เพราะปรับแต้มด้วยมือคือการสร้างมูลค่าให้ลูกค้าโดยตรง
+  // (แต้มค้าง = หนี้สินของร้าน) ไม่ใช่แค่แก้ข้อมูลติดต่อ
+  "member.view",
+  "member.manage",
+  "loyalty.adjust",
+  "loyalty.settings",
   "followup.view",
   "followup.manage",
   "pharmacy.assessment.read",
@@ -73,6 +86,9 @@ export const BMS_PERMISSIONS = [
   "pos.pin.manage",
   // จัดการบัญชีพนักงานหน้าร้าน (role Cashier + ปิดทางเข้าหลังบ้าน) — seed ที่ 7.92
   "pos.staff.manage",
+  "pos.void",
+  "pos.cash.movement",
+  "pos.shift.report",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

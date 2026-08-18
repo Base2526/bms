@@ -1099,7 +1099,15 @@ export async function listLowStock(tenantId: string): Promise<
  */
 export async function adjustStock(
   tenantId: string, sku: string, size: string, delta: number,
-  note?: string | null, actor?: string | null, editorId?: string | number | null
+  note?: string | null, actor?: string | null, editorId?: string | number | null,
+  /**
+   * สาขาที่ปรับ — ไม่ระบุ = สาขาเริ่มต้นของร้าน (พฤติกรรมเดิมก่อน 7.98)
+   *
+   * ก่อนหน้านี้พารามิเตอร์นี้ไม่มี ทั้งฟังก์ชันจึงผูกกับสาขาเริ่มต้นตายตัว แปลว่า
+   * ร้านที่มีหลายสาขาปรับสต็อกสาขาอื่นไม่ได้เลย ทั้งที่ 7.84 แยก location_id ไว้แล้ว
+   * และ POS แต่ละเครื่องตัดสต็อกตามสาขาตัวเอง — ยอดจึงเพี้ยนโดยไม่มีทางแก้
+   */
+  locationIdArg?: string | null
 ): Promise<VariantRow> {
   if (!Number.isInteger(delta) || delta === 0) throw new Error("delta ต้องเป็นจำนวนเต็มที่ไม่ใช่ 0");
   const sizeUp = size.trim().toUpperCase();
@@ -1114,7 +1122,23 @@ export async function adjustStock(
       throw new Error(`ไม่พบสินค้า ${sku}`);
     }
 
-    const locationId = await resolveDefaultLocationIdInTx(client, tenantId);
+    // สาขาที่ส่งมาต้องเป็นของร้านนี้จริง — ห้ามเชื่อ id จากผู้เรียกโดยไม่ตรวจ
+    // ไม่งั้นร้าน A ปรับสต็อกสาขาของร้าน B ได้ด้วยการเดา uuid
+    let locationId: string;
+    if (locationIdArg) {
+      const loc = await client.query(
+        `SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = $2 AND active`,
+        [tenantId, locationIdArg]
+      );
+      if (loc.rowCount === 0) {
+        await client.query("ROLLBACK");
+        throw new Error("ไม่พบสาขานี้ในร้าน หรือสาขาถูกปิดใช้งาน");
+      }
+      locationId = loc.rows[0].id;
+    } else {
+      locationId = await resolveDefaultLocationIdInTx(client, tenantId);
+    }
+
     const cur = await client.query<VariantRow>(
       `SELECT size, current_stock, reserved_stock, reorder_point
          FROM bms_inventory

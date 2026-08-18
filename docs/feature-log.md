@@ -672,7 +672,7 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   the page itself, and the new cross-tenant channel-health/failure-incident queries, have never run
   against a real DB. See § Observability in [AGENTS.md](../AGENTS.md).
 
-- **Point of Sale + Thai tax invoicing (2026-08)** — ✅ implemented, migrations `7.84`–`7.95`, fully
+- **Point of Sale + Thai tax invoicing (2026-08)** — ✅ implemented, migrations `7.84`–`7.98`, fully
   documented in [docs/business/pos.md](business/pos.md): a device-token-paired counter screen
   (`/pos`) sells against a location/lot/pack-aware inventory model. Build order was locations → lots
   → product packs (`7.84`–`7.86`) → POS devices/shifts (`7.87`) → VAT/tax documents (`7.88`, `7.89`)
@@ -691,6 +691,11 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   its cron route also authenticates differently (`x-job-token`) and doesn't yet record into
   `bms_job_runs` like the rest of the cron endpoints do. ESC/POS printing and cash-drawer kick over
   WebUSB (`lib/pos/escpos.ts`) are written but have never been run against real printer hardware.
+  `7.96` adds membership tiers, a loyalty ledger, layered discounts, POS member lookup, and the daily
+  expiry/tier-review job. `7.97` adds parked bills, audited drawer cash movements, two-person voids,
+  and X/Z shift reports. `7.98` adds two-step inter-branch transfers and snapshot-difference stock
+  counts, with separate permission to apply a variance. Operator details and go-live checks are in
+  [docs/business/pos.md](business/pos.md) and [docs/business/inventory.md](business/inventory.md).
   Full invariants: [docs/agent-invariants.md § POS and tax](agent-invariants.md#pos-and-tax).
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
@@ -698,10 +703,10 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
 sync" above; what's missing is the carrier-issued merchant contract and credentials, then following
 [docs/integrations/carriers.md](integrations/carriers.md)) ·
 AI OCR (beyond payment-slip verify) · ML-grade forecasting (current is heuristic) · WhatsApp AI ·
-Shopee/Lazada signature verification against real Open Platform docs · wiring an actual cron schedule for the ready-but-unscheduled
-endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`, `reports/send-digest`,
-`followups/run`, `shipping/sync-carriers`) — each of them now records its own run history (see
-"Cron/batch run history" above), it just isn't triggered automatically yet · adding a password/TLS
+Shopee/Lazada signature verification against real Open Platform docs · configuring
+`BMS_APP_BASE_URL` and `BMS_CRON_SECRET` in GitHub so `.github/workflows/bms-cron.yml` can trigger
+the seven scheduled endpoints (including `loyalty/maintenance`) instead of silently skipping them ·
+adding a password/TLS
 to Redis before a real
 production deploy (see "Redis infrastructure hardening" above) · Follow-up Automation's Workflow Engine,
 decision-driving scoring model, and deeper analytics/dashboarding beyond the current queue summary

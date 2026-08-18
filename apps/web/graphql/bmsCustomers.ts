@@ -19,6 +19,7 @@ import {
   mergeCustomers,
 } from "@/lib/bms/customers";
 import { listCustomerCouponWallet } from "@/lib/bms/coupons";
+import { getMember, listLoyaltyLedger } from "@/lib/bms/membership";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
@@ -118,5 +119,9 @@ export const bmsCustomersResolvers = {
     identities: (p: any) => customerIdentities(p.tenant_id, p.id),
     orders: (p: any) => customerOrders(p.tenant_id, p.id),
     coupons: (p: any) => listCustomerCouponWallet(p.tenant_id, { customerId: p.id }),
+    // สมาชิก/แต้มอยู่ที่นี่ด้วย (7.96) — คนดูข้อมูลลูกค้าไม่ควรต้องเดาว่าต้องไป
+    // อีกหน้า (/admin/loyalty) เพื่อรู้ว่าลูกค้าคนนี้เป็นสมาชิกและมีแต้มเท่าไร
+    membership: (p: any) => getMember(p.tenant_id, p.id),
+    loyaltyLedger: (p: any) => listLoyaltyLedger(p.tenant_id, p.id, 50),
   },
 };

@@ -381,6 +381,40 @@ export async function checkCouponForCustomer(
   return { requestedCode: code || null, requested, alternatives };
 }
 
+export type CouponPreviewResult =
+  | { ok: true; code: string; discount: number }
+  | { ok: false; reason: string };
+
+/**
+ * ตรวจโค้ดแบบอ่านอย่างเดียวโดยรู้ `customerId` อยู่แล้ว — POS ค้นสมาชิกที่เคาน์เตอร์
+ * จึงไม่มี (channel, customerRef) ให้ checkCouponForCustomer() ใช้หาลูกค้า
+ *
+ * ใช้กฎชุดเดียวกับ applyCouponInTx() แต่ไม่เพิ่ม redemptions_count — จอ POS เรียก
+ * ตัวนี้ตอน preview แล้วเลขต้องตรงกับตอน commit
+ */
+export async function previewCouponForCustomer(
+  tenantId: string,
+  rawCode: string,
+  customerId: string | null,
+  subtotal: number
+): Promise<CouponPreviewResult> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return { ok: false, reason: "โค้ดส่วนลดไม่ถูกต้อง" };
+
+  const res = await query(
+    `SELECT ${ROW_COLUMNS} FROM bms_coupons WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+    [tenantId, code]
+  );
+  if (res.rowCount === 0) return { ok: false, reason: "ไม่พบโค้ดส่วนลดนี้" };
+  const coupon = mapRow(res.rows[0]);
+
+  const counts = await customerCouponUseCounts(tenantId, customerId, [coupon.id], [coupon.code]);
+  const eligibility = baseEligibility(coupon, counts.get(coupon.id) ?? 0, subtotal, null);
+  if (!eligibility.available) return { ok: false, reason: eligibility.reason ?? "ใช้โค้ดนี้ไม่ได้" };
+
+  return { ok: true, code: coupon.code, discount: eligibility.discountPreview ?? 0 };
+}
+
 export function couponCodeFromShareText(body: string): string | null {
   const text = String(body || "");
   const codeLine = text

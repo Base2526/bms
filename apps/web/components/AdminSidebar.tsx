@@ -23,6 +23,8 @@ import {
   BookOutlined,
   PartitionOutlined,
   ImportOutlined,
+  SwapOutlined,
+  ContainerOutlined,
   DollarOutlined,
   CarOutlined,
   MessageOutlined,
@@ -35,6 +37,7 @@ import {
   NotificationOutlined,
   BellOutlined,
   TagsOutlined,
+  TrophyOutlined,
   CodeOutlined,
   FundViewOutlined,
   ClockCircleOutlined,
@@ -339,9 +342,14 @@ export default function AdminSidebar() {
         ...(can('shipping.view') ? [link('/admin/shipment', 'Shipping', <CarOutlined />)] : []),
         ...(can('customer.view') ? [link('/admin/customers', 'Customers', <TeamOutlined />)] : []),
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
+        ...(can('member.view') ? [link('/admin/loyalty', 'Members & Points', <TrophyOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
+        // งานคลัง (7.98) วางต่อจาก Purchase เพราะเป็นงานตระกูลเดียวกัน (ของเข้า/ของย้าย/ของขาด)
+        // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
+        ...(can('inventory.transfer') ? [link('/admin/stock-transfers', 'Stock Transfers', <SwapOutlined />)] : []),
+        ...(can('inventory.count') ? [link('/admin/stock-counts', 'Stock Counts', <ContainerOutlined />)] : []),
       ],
     },
     // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience

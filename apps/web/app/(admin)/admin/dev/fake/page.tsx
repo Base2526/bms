@@ -39,12 +39,14 @@ const KINDS = [
   { label: 'BMS Restock Subscriptions', value: 'bms-restock-subscriptions' },
   { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
   { label: 'BMS Coupons', value: 'bms-coupons' },
+  // ต้อง seed Customers (และควร Orders) ก่อน — ปุ่มนี้ยกลูกค้าเดิมขึ้นเป็นสมาชิก
+  { label: 'BMS Members + Points', value: 'bms-members' },
   { label: 'BMS AI Usage', value: 'bms-ai-usage' },
   { label: 'BMS Pharmacy Assessments', value: 'bms-pharmacy-assessments' },
   { label: 'Support Tickets', value: 'support-tickets' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
   const { t } = useI18n();

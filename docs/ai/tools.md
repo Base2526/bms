@@ -16,7 +16,7 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
 
 - **Customer surface** (webhook pipeline + playground): read product/stock + `get_order_status`
   (own orders only), customer coupon wallet / discovery / validation (`list_customer_coupons`,
-  `list_available_coupons`, `check_coupon`),
+  `list_available_coupons`, `check_coupon`), loyalty balance (`get_loyalty_points`),
   `create_order`, `submit_payment`, `reorder`, plus live-catalog discovery (`browse_catalog`,
   `list_new_arrivals`, `find_alternatives`, `recommend_products`) and store/shipping reads
   (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `get_customer_checkout`,
@@ -64,6 +64,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | --- | --- | --- | --- | --- |
 | `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `recommend_products` | A1 | yes | `product.view` | read |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
+| `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
 | `get_customer_checkout` | A1 | own `(channel, customer_ref)` only | — | completeness read; no raw PII |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
@@ -274,6 +275,14 @@ Input
 Output
 
 Transfer Result
+
+Not an AI tool and not a GraphQL mutation today. Inter-branch transfers/counts (`7.98`) live behind
+REST-only admin routes `/api/bms/inventory/transfers` and `/api/bms/inventory/counts`, authorised by
+the signed admin session plus `inventory.transfer` / `inventory.count` / `inventory.count.apply`.
+They are absent from the runtime AI registry because `lib/bms/tools/catalog.ts` does not register a
+validated wrapper. GraphQL is not a prerequisite for a tool: any future stock-transfer tool must call
+the service through that catalogue, derive the tenant from `ExecCtx`, re-check permission, preserve
+the service's in-transaction audit, and remain propose-only until a person confirms the movement.
 
 ---
 
@@ -1213,3 +1222,18 @@ Permission: admin ที่ล็อกอิน
 ## Quota staff ต่อแพ็กเกจ (`enforceUserQuota()`)
 เช็คก่อนสร้าง user ใหม่ (`upsertUser` ตอน INSERT) — เกิน `bms_plans.max_users` ของร้านนั้น → throw พร้อมข้อความแนะนำอัปเกรด
 free=3 · pro=10 · business=ไม่จำกัด (`-1`). **platform admin ไม่ถูกจำกัด**. ดู `lib/bms/plans.ts` (`enforceProductQuota` ทำงานแบบเดียวกันฝั่งสินค้า)
+
+## Loyalty points (`get_loyalty_points`, migration 7.96)
+
+`get_loyalty_points` exists because the model is forbidden to guess balances or entitlements, and
+before it there was no tool to call — a customer asking "how many points do I have?" could not be
+answered at all. Any tier, balance, or discount figure the model states must come from this tool's
+result.
+
+It reads only. Points are deducted when the order is created, in the same transaction that issues the
+bill, so calling this tool never spends or holds anything and the model must not describe it as
+reserving points. A customer who is not enrolled comes back as `enrolled: false` rather than a zero
+balance, because "you have 0 points" and "you are not a member" lead to different next sentences.
+`pointsBalance` may be negative (a return after redemption) while `pointsUsable` is 0; both are
+returned so the model can explain why redemption is unavailable instead of claiming the balance is
+empty.

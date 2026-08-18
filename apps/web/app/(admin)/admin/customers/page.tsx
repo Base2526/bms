@@ -33,6 +33,11 @@ type Customer = {
   id: string; name: string; phone: string | null; note: string | null;
   tags: string[]; total_spent: number; order_count: number; created_at: string;
   addresses: Address[]; identities: Identity[]; orders: Order[]; coupons: CustomerCoupon[];
+  membership: {
+    memberNo: string | null; memberSince: string | null;
+    pointsBalance: number; pointsUsable: number;
+    tier: { name: string; discountType: string; discountValue: number } | null;
+  } | null;
 };
 
 const Q_CUSTOMERS = gql`
@@ -45,6 +50,10 @@ const Q_CUSTOMERS = gql`
       coupons {
         id walletId code type value minOrderAmount expiresAt available reason
         assignedAt state redeemedOrderId reservedOrderId customerUsedCount remainingRedemptions
+      }
+      membership {
+        memberNo memberSince pointsBalance pointsUsable
+        tier { name discountType discountValue }
       }
     }
   }
@@ -222,6 +231,23 @@ function CustomersManagement() {
       render: (v: number) => <Text strong style={{ color: "#389e0d" }}>{Number(v).toLocaleString()} ฿</Text> },
     { title: t("admin_customers.col_orders"), dataIndex: "order_count", key: "oc", width: 90, align: "center" as const,
       render: (n: number) => <Tag color={n > 0 ? "blue" : "default"}>{n}</Tag> },
+    // สมาชิก + แต้ม (7.96) — ตอบคำถามที่ถามบ่อยสุดตรงนี้เลย ไม่ต้องข้ามไปหน้า loyalty
+    { title: t("admin_customers.col_membership"), key: "membership", width: 160,
+      render: (_: any, c: Customer) => {
+        if (!c.membership?.memberNo) return <span style={{ color: "#999" }}>—</span>;
+        const m = c.membership;
+        return (
+          <Space direction="vertical" size={0}>
+            <Space size={4} wrap>
+              {m.tier && <Tag color="gold" style={{ marginInlineEnd: 0 }}>{m.tier.name}</Tag>}
+              <Text style={{ fontSize: 12 }}>{m.memberNo}</Text>
+            </Space>
+            <Text type={m.pointsBalance < 0 ? "danger" : "secondary"} style={{ fontSize: 11 }}>
+              {t("admin_customers.points_usable", { usable: m.pointsUsable, balance: m.pointsBalance })}
+            </Text>
+          </Space>
+        );
+      } },
     { title: t("admin_customers.col_coupons"), dataIndex: "coupons", key: "coupons", width: 100, align: "center" as const,
       render: (coupons: CustomerCoupon[]) => {
         const count = coupons?.length || 0;

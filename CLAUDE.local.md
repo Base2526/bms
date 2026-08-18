@@ -42,7 +42,7 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `app/api/graphql/route.ts` · platform admin = `users.is_platform_admin`
 - **fake data (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` (ปิดใน production, gate ด้วย
   `requirePlatformAdminSeeder()`) · กดตามลำดับ **Products → Customers → Orders → Conversations →
-  Purchase** แล้วดู Dashboard/Reports/Inbox · Cleanup ลบเฉพาะร้านที่ยืนอยู่ (marker `FAKE-`/tag `fake`)
+  Purchase → BMS Members + Points** แล้วดู Dashboard/Reports/Inbox/Loyalty · Cleanup ลบเฉพาะร้านที่ยืนอยู่ (marker `FAKE-`/tag `fake`)
 - **ops automation** — `.github/workflows/daily-log-triage.yml` + `scripts/bms-log-triage/*`
   (secrets: `BMS_LOG_DATABASE_URL` read-only, `ANTHROPIC_API_KEY`, `LINE_OPS_TOKEN`/`LINE_OPS_TO`)
 
@@ -91,8 +91,8 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `email_report` (`7.54`), Cron run history (`7.55`), Manager staff management (`7.78`),
   AI usage accounting (`7.82`)
 - `/live-dashboard` ยังเป็น mock ทั้งหน้า (ต่อ query จริงแล้วต้องทบทวน `?demo=1` ด้วย)
-- ยังไม่มี cron schedule จริงให้ 6 endpoint ที่พร้อมแล้ว (บันทึกลง `bms_job_runs` ได้แล้ว แค่ยังไม่มี
-  ตัวยิงอัตโนมัติ)
+- cron endpoint ทั้ง 7 ตัวมี workflow ยิงแล้ว (`.github/workflows/bms-cron.yml`) — **ค้างที่ต้องตั้ง
+  secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub repo** ยังไม่ตั้ง = ยังไม่มีอะไรถูกยิงจริง
 - `/admin/system-health` (ดู § System Health + request metrics ใน
   [docs/local-notes-archive.md](docs/local-notes-archive.md)) ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ·
   `pg_stat_statements` preload ไว้แล้วแต่ยังไม่ restart Postgres/`CREATE EXTENSION` เลยยังไม่มีการ์ด
@@ -106,7 +106,73 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   `7.56` (`users.language` CHECK), `7.78` (user management perms), `7.81` (default ภาษา = th),
   `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
   (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
-- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.95` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
+- **`7.96__bms_membership_and_loyalty.sql` (สมาชิก + tier + แต้มสะสม + `bms_order_discounts`)
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production ·
+  seed permission ใหม่ 4 ตัว (`member.view`, `member.manage`, `loyalty.adjust`, `loyalty.settings`)
+  ให้ Manager/Sales/Cashier ถ้าไม่ apply หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ
+  · cron: `.github/workflows/bms-cron.yml` ยิงให้แล้ว (frequent ทุก 15 นาที / daily 20:00 UTC)
+    **แต่ต้องตั้ง secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub ก่อน** ไม่ตั้ง = ทุก job
+    ข้ามตัวเองเงียบ ๆ (workflow ไม่แดง) แล้วแต้มไม่หมดอายุเหมือนเดิม · ดูว่ายิงจริงหรือยังที่
+    `/admin/operations-schedule` (อ่านจาก `bms_job_runs`)
+  · **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะ loyalty**
+
+    ```bash
+    # 1) เลขคณิตส่วนลด (13 เทส, ไม่ต้องมี DB — loyaltyMath.ts ตั้งใจไม่ import อะไรเลย)
+    node --experimental-strip-types --test scripts/loyalty-contract.test.mts
+
+    # 2) ledger + POS ครบ flow กับ Postgres จริง (22 + 10 เทส) — รันจาก apps/web เพราะ tsx อยู่ที่นั่น
+    #    POSTGRES_HOST=localhost เพราะ .env.dev ชี้ host `postgres` (ชื่อใน docker network)
+    #    --import shim: lib/mailer.ts มี `import "server-only"` ซึ่งมีแค่ตอน Next build
+    #    --test-concurrency=1 บังคับ: สองชุดใช้ร้านแรกร่วมกัน รันขนานกันแล้วเหยียบกันเอง
+    cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
+      POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
+      REDIS_URL=redis://127.0.0.1:6379 \
+      npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
+        --test --test-concurrency=1 --test-force-exit \
+        ../../scripts/loyalty-db-contract.test.mts \
+        ../../scripts/pos-loyalty-db-contract.test.mts
+    ```
+
+    ชุดที่ 2 สร้าง/ลบข้อมูลของตัวเองครบ (รันซ้ำได้ ยืนยันแล้ว) แต่ **เขียนจริงลงฐาน — ห้ามรันกับ
+    production** · มันตั้ง `bms_loyalty_settings` ของร้านแรกเป็นค่าที่เทสต้องใช้ (เปิดโปรแกรม,
+    100 แต้ม = 10 บาท) แล้วไม่คืนค่าเดิม
+  · **แต้มค้างเป็นหนี้สินทางบัญชี** — ก่อนปิดงบต้องส่งตัวเลขจาก `bmsLoyaltyOutstanding`
+    (การ์ด "มูลค่าแต้มค้าง" ที่ `/admin/loyalty`) ให้บัญชี · `balanceMismatchCount` ต้องเป็น 0 เสมอ
+  · fake data: กด **Customers → Orders → BMS Members + Points** ตามลำดับที่ `/admin/dev/fake`
+    (ปุ่มสมาชิกยกลูกค้าปลอมที่มีอยู่ขึ้นเป็นสมาชิก ไม่สร้างใหม่ — ไม่มีลูกค้าปลอม = ไม่มีอะไรเกิด)
+  · กับดักที่เจอตอน verify: `upsertMembershipTier` แปลง `code` เป็นตัวพิมพ์ใหญ่เสมอ ถ้าสคริปต์ไหน
+    ลบชั้นทดสอบด้วย `LIKE 'ตัวเล็ก-%'` จะลบไม่โดน แล้วชั้นทดสอบที่ค้างอยู่จะไป **เปลี่ยนชั้นของ
+    สมาชิกจริง** ในรอบทบทวนถัดไป (เจอมาแล้ว — สมาชิก 6 คนย้ายไปชั้นทดสอบ)
+- **`7.97__bms_pos_park_cash_void.sql` (พักบิล + เงินเข้า-ออกลิ้นชัก + ยกเลิกบิล) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`pos.void`, `pos.cash.movement` → Manager · `pos.shift.report` → Manager/Sales/Cashier)
+  ไม่ apply = ปุ่มใหม่ที่หน้า POS โดน 403 เงียบ ๆ
+  · เทสชุดที่ 3 (13 เทส) รันแบบเดียวกับสองชุดเดิม เพิ่มไฟล์ท้ายคำสั่ง:
+    `../../scripts/pos-shift-ops-db-contract.test.mts` — รวมสามชุด 45 เทส ผ่านทั้งหมด
+  · **ส่วนลดมือ ยกเลิกบิล และเงินออกจากลิ้นชัก ต้องกด PIN คนที่สองทุกครั้ง** แม้คนขายจะมีสิทธิ์เอง
+    (ตั้งใจ — การมีสิทธิ์กับการใช้สิทธิ์ต้องเป็นคนละการกระทำในหลักฐาน)
+- **`7.98__bms_stock_transfers_and_counts.sql` (โอนย้ายระหว่างสาขา + นับสต็อก) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`inventory.transfer`, `inventory.count` → Manager/Warehouse ·
+  `inventory.count.apply` → Manager เท่านั้น)
+  · **apply ด้วย `psql -1`** — รอบแรกล้มกลางไฟล์เพราะ FK ผิด แล้วตารางค้างครึ่งเดียวใน DB
+    (ต้อง DROP มือ) · `bms_products` มี PK `(tenant_id, sku)` FK จึงต้องเป็น composite
+  · **`bms_locations.branch_code` default `'00000'` + unique `(tenant_id, branch_code)`** — สร้าง
+    สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส) · **คอลัมน์นี้มาจาก
+    `7.84__bms_locations.sql` ไม่ใช่ `7.98`** (เคยจดไว้ผิดที่ — แก้ 2026-08-18) กับดักมาโผล่ตอน
+    ทำ `7.98` เพราะเพิ่งมีคนสร้างสาขาที่สองเป็นครั้งแรก
+  · `7.98` แก้ตารางเดิมด้วย: drop/recreate `bms_stock_movements_type_check` เพื่อเพิ่ม
+    `TRANSFER_IN`/`TRANSFER_OUT`/`COUNT_ADJUST`
+  · เทสชุดที่ 4 (10 เทส): `../../scripts/inventory-multilocation-db-contract.test.mts`
+    — รวมสี่ชุด 55 เทส ผ่านทั้งหมด
+  · **หน้า UI: `/admin/stock-transfers` + `/admin/stock-counts`** (เมนูอยู่กลุ่มร้านค้า ถัดจาก
+    Purchase (PO)) — ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc` · ทั้งสองหน้าเรียก REST
+    ไม่ใช่ GraphQL (ตั้งใจ — เหตุผลอยู่ใน [docs/business/inventory.md](docs/business/inventory.md)
+    § Why this module is REST) แปลว่า **AI tool catalogue มองไม่เห็นสองโมดูลนี้**
+  · checklist ก่อน go-live ของ 7.98 อยู่ใน
+    [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
+    (ไม่ได้อยู่ใน pos.md — ของ pos.md ครอบคลุมถึง `7.97` แล้วลิงก์ต่อมาที่นี่)
+- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
   จริงก่อน go-live ของ POS ทุกครั้ง ดู checklist เต็มใน
