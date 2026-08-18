@@ -328,3 +328,54 @@ every existing caller keeps resolving the default location.
   The sale must survive; the recorded variance must reflect only the goods that were missing.
 - Decide who holds `inventory.count.apply` before handing the count screen to warehouse staff.
   Accepting a variance writes stock off, and it cannot be undone from the UI.
+
+
+## Barcodes (7.99)
+
+Two different jobs share one field, and confusing them is the whole problem.
+
+**A product the manufacturer labelled** already carries an EAN-13 or UPC that GS1 issued to the brand
+owner. That number must be **scanned in**, never typed and never generated. Generating a fresh number
+for such a product leaves the system holding a code that does not match the one printed on the item,
+so staff scan the bottle and nothing is found. The field takes scanner input directly — a
+keyboard-wedge scanner types the digits and presses Enter for you.
+
+**A product with no barcode** — split packs, repacked bulk, own-made goods, imports with no code —
+needs a number the shop invents and prints itself. That is what the generate button is for.
+
+Generated codes are EAN-13 in the **20–29 prefix range GS1 reserves for in-store use**, with a
+correct check digit. Both halves matter: a random number in, say, the 885x Thai prefix would collide
+with a code GS1 issued to a real company, and the day that company's product arrives in the shop it
+would scan as yours instead; a wrong check digit means scanners reject the label outright. Numbers
+walk a sequence rather than being random — random needs retry loops that collide more often the
+larger the catalogue gets — and the generator steps over any number the shop already typed by hand.
+
+The button does not write to the database. It hands the number to the form and the user saves; people
+open a form, click things, and close it again all the time, and a code burned on every click would
+leave gaps in the sequence with no product holding them.
+
+`checkBarcode()` in [barcode.ts](../../apps/web/lib/bms/barcode.ts) validates on entry and **warns
+without blocking**. Real shops carry genuinely odd codes: Code 128 of arbitrary length, a factory's
+internal reference, a number someone wrote on the shelf years ago. Blocking anything that is not a
+clean EAN-13 would stop a shop from recording products it actually sells, and the POS lookup matches
+exactly anyway, so an unusual code still scans. What the warning does is tell you the difference
+between a code you can print a label for and one you cannot.
+
+### Uniqueness is per shop
+
+`3.4` created `uq_bms_products_barcode` as `UNIQUE (barcode)` with no tenant column, written when the
+system served one shop. Under multi-tenancy that meant **two shops selling the same product could not
+both record its real barcode**. The second shop got a duplicate-key error for a value it cannot see,
+held by a shop it does not know exists — an error with no possible explanation from the user's side,
+and a certainty for common goods like soap or a well-known fragrance.
+
+`7.99` scopes it to `(tenant_id, barcode)`, matching what `bms_product_packs` already did in `7.86`.
+Duplicates inside one shop are still rejected: one barcode must not resolve to two products.
+
+Relaxing the index cannot fail on any database, because the old index guaranteed no duplicates exist
+anywhere. The migration still checks for within-shop duplicates first and stops with the offending
+codes named, in case a database was hand-edited and lost the index at some point.
+
+**Not built: label printing.** A generated code is only useful once it is on the product, and there is
+no label/sticker printing screen in this repo. Until there is, generate codes only where the shop has
+another way to produce the label.

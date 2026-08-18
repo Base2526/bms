@@ -10,6 +10,7 @@ import { resolveDefaultLocationIdInTx } from "./locations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
+import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -1261,4 +1262,42 @@ export async function setVatCategoryForUnknown(
   } finally {
     client.release();
   }
+}
+
+
+/**
+ * ออกบาร์โค้ดสำหรับสินค้าที่ไม่มีบาร์โค้ดจากโรงงาน (ของแบ่งขาย/ของทำเอง)
+ *
+ * **ไม่ใช้กับสินค้าที่มีบาร์โค้ดติดมาแล้ว** — เลขบนขวดเป็นของ GS1 ต้องยิงเข้ามา
+ * ถ้าออกเลขใหม่ทับ ระบบจะถือเลขที่ไม่ตรงกับของจริง แล้วพนักงานยิงขวดหาไม่เจอ
+ *
+ * เดินลำดับต่อจากเลขช่วง 20–29 ที่ร้านใช้ไปแล้วสูงสุด ไม่ใช่สุ่ม — สุ่มแล้วต้องวน
+ * ตรวจการชน และยิ่งสินค้ามากยิ่งชนบ่อยขึ้นเงียบ ๆ · ยังตรวจการชนอีกชั้นอยู่ เพราะ
+ * ร้านอาจเคยกรอกเลขช่วงนี้เองมาก่อนแบบไม่เรียงลำดับ
+ *
+ * unique ของ barcode เป็นระดับร้าน (7.99) — สองร้านถือเลขเดียวกันได้ การไล่ลำดับ
+ * จึงดูแค่ในร้านตัวเอง
+ */
+export async function generateInStoreBarcode(tenantId: string): Promise<string> {
+  const used = await query<{ barcode: string }>(
+    `SELECT barcode FROM bms_products
+      WHERE tenant_id = $1 AND barcode ~ '^2[0-9]{12}$'`,
+    [tenantId]
+  );
+  const taken = new Set(used.rows.map((r) => r.barcode));
+
+  // ลำดับถัดไป = สูงสุดที่ใช้แล้ว + 1 (อ่านจาก 10 หลักกลางของเลขที่เป็นรูปแบบเรา)
+  let maxSeq = 0;
+  for (const code of taken) {
+    if (!isInStoreBarcode(code) || !code.startsWith(IN_STORE_PREFIX)) continue;
+    const seq = Number(code.slice(2, 12));
+    if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+  }
+
+  // เผื่อกรณีที่ร้านเคยกรอกเลขช่วงนี้เองแบบไม่เรียง — ขยับต่อจนเจอเลขว่าง
+  for (let seq = maxSeq + 1; seq <= maxSeq + 1000; seq += 1) {
+    const candidate = inStoreBarcode(seq);
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new Error("หาเลขบาร์โค้ดว่างไม่ได้ — ตรวจบาร์โค้ดช่วง 20xxxxxxxxxxx ในร้านนี้");
 }

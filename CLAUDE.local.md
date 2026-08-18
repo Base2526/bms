@@ -181,6 +181,19 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดที่ 5 (7 เทส): `../../scripts/product-vat-category-db-contract.test.mts`
     — รวมห้าชุด 62 เทส ผ่านทั้งหมด · **ชุดนี้แก้สินค้าจริงของร้านแรกตอนทดสอบปุ่ม bulk แล้วคืนค่าให้ตอน
     teardown** (ปุ่มแก้ทั้งร้านตามดีไซน์) — ถ้า teardown ไม่ทำงาน สินค้าจริงจะค้างเป็น `V`
+- **`7.99__bms_product_barcode_per_tenant.sql` (barcode unique ต่อร้าน ไม่ใช่ทั้งแพลตฟอร์ม) apply เข้า
+  dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี
+  permission ใหม่
+  · **ต้นเหตุ**: `3.4` สร้าง `uq_bms_products_barcode` เป็น `UNIQUE (barcode)` เฉย ๆ (ยุคร้านเดียว)
+    → สองร้านที่ขายสินค้าตัวเดียวกันบันทึก EAN-13 จริงได้แค่ร้านเดียว ร้านที่มาทีหลังเจอ duplicate key
+    ของค่าที่มองไม่เห็น · `bms_product_packs` (`7.86`) ทำถูกอยู่แล้วที่ `(tenant_id, barcode)`
+  · migration นี้ล้มไม่ได้ (index เดิมบังคับ unique ทั้งฐาน จึงไม่มีทางมีซ้ำค้าง) แต่ **ล็อกตาราง
+    `bms_products` สั้น ๆ ตอน DROP/CREATE INDEX** — รันตอนไม่มีคนขายถ้าฐาน production ใหญ่
+  · **ปุ่มสร้างบาร์โค้ด** = EAN-13 ช่วง 20–29 (GS1 กันไว้ให้ร้านใช้ภายใน) + check digit ถูก ·
+    เดินลำดับ ไม่สุ่ม · **ปุ่มไม่เขียนฐาน** คืนเลขให้ฟอร์มแล้วผู้ใช้กดบันทึกเอง
+  · **ยังไม่มีหน้าพิมพ์สติกเกอร์บาร์โค้ด** — เลขที่สร้างมาต้องมีทางพิมพ์แปะเองก่อนจะใช้จริง
+  · เทส 2 ชุดใหม่: `scripts/barcode-contract.test.mts` (7 เทส ไม่ต้องมี DB) +
+    `scripts/product-barcode-db-contract.test.mts` (7 เทส) — รวม pure 22 · DB 69 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

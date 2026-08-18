@@ -3419,6 +3419,9 @@ export const typeDefs = /* GraphQL */ `
     # ตั้งประเภท VAT ให้สินค้าที่ยังเป็น UNKNOWN ทั้งหมด — คืนจำนวนแถวที่เปลี่ยน
     # แตะเฉพาะ UNKNOWN: สินค้าที่ตั้งค่าไว้แล้วต้องไม่ถูกเขียนทับด้วยการกดครั้งเดียว
     bmsSetVatCategoryForUnknown(vatCategory: String!, activeOnly: Boolean): Int!
+    # ออกบาร์โค้ด EAN-13 ช่วงร้านใช้ภายใน (20xx) ให้สินค้าที่ไม่มีบาร์โค้ดจากโรงงาน
+    # ไม่ได้บันทึกลงสินค้าให้ — คืนเลขให้จอเอาไปใส่ในฟอร์มแล้วผู้ใช้กดบันทึกเอง
+    bmsGenerateInStoreBarcode: String!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
     bmsDeleteProductPack(id: ID!): Boolean!
