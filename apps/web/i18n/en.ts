@@ -528,6 +528,7 @@ const en = {
     group_pos: "Point of sale",
     menu_pos_devices: "Tills and PINs",
     menu_product_packs: "Units and barcodes",
+    menu_product_labels: "Print barcode labels",
     menu_pos_readiness: "Open-for-business check",
     group_access: "Users & Permissions",
     group_system: "System",

@@ -87,3 +87,67 @@ test("บาร์โค้ดของแบรนด์ต้องไม่�
   // อยู่ในช่วง 20–29 แต่ check digit ผิด = ไม่นับ (เลขที่ยิงไม่ติดอยู่ดี)
   assert.equal(isInStoreBarcode("2000000000010"), false);
 });
+
+// ---- การวาดแท่ง EAN (lib/pos/barcode.ts) ------------------------------
+// สติกเกอร์ที่วาดผิดคือความเสียหายที่รู้ตอนยืนอยู่หน้าลูกค้าแล้ว เพราะร้านแปะไป
+// ทั้งล็อตก่อนจะมีใครลองยิง
+
+import { eanBars } from "../apps/web/lib/pos/barcode.ts";
+
+test("EAN-13 ต้องได้ 95 โมดูลเสมอ และปฏิเสธเลขที่ยิงไม่ติด", () => {
+  const r = eanBars("4006381333931");
+  assert.ok(r, "เลขที่ถูกต้องต้องวาดได้");
+  assert.equal(r!.width, 95, "EAN-13 กว้าง 95 โมดูลตายตัว");
+  assert.deepEqual(r!.humanReadable, { lead: "4", left: "006381", right: "333931" });
+
+  // check digit ผิด = ไม่วาด · ปล่อยให้วาดคือร้านแปะสติกเกอร์ที่สแกนไม่ผ่านทั้งล็อต
+  assert.equal(eanBars("4006381333930"), null);
+  assert.equal(eanBars("123456"), null);
+  assert.equal(eanBars("ABC1234567890"), null);
+});
+
+test("EAN-8 ก็วาดได้ และกว้าง 67 โมดูล", () => {
+  const r = eanBars("96385074");
+  assert.ok(r);
+  assert.equal(r!.width, 67);
+  assert.deepEqual(r!.humanReadable, { lead: "", left: "9638", right: "5074" });
+});
+
+test("แท่ง guard ต้องถูกทำเครื่องหมายไว้ หัว-กลาง-ท้าย", () => {
+  const r = eanBars("4006381333931")!;
+  // guard หัว 2 แท่ง + กลาง 2 แท่ง + ท้าย 2 แท่ง
+  assert.equal(r.guardBarIndexes.length, 6);
+  // แท่งแรกสุดและแท่งสุดท้ายต้องเป็น guard
+  assert.equal(r.guardBarIndexes[0], 0);
+  assert.equal(r.guardBarIndexes[r.guardBarIndexes.length - 1], r.bars.length - 1);
+});
+
+test("เลขที่ปุ่มสร้างให้ ต้องวาดเป็นสติกเกอร์ได้ทุกตัว", () => {
+  // ถ้าข้อนี้พัง แปลว่าปุ่ม generate ออกเลขที่พิมพ์ไม่ได้ ซึ่งทำให้ปุ่มไร้ประโยชน์
+  for (const n of [0, 1, 7, 42, 999, 123456, 9_999_999_999]) {
+    const code = inStoreBarcode(n);
+    const r = eanBars(code);
+    assert.ok(r, `วาดไม่ได้: ${code}`);
+    assert.equal(r!.width, 95);
+  }
+});
+
+test("ลายแท่งของ EAN-13 ต้องตรงกับมาตรฐานทีละบิต", () => {
+  // 4006381333931 · หลักแรก 4 → parity ของ 6 หลักซ้าย = L G L L G G
+  //   0(L) 0(G) 6(L) 3(L) 8(G) 1(G)  แล้ว center  แล้ว 3 3 3 9 3 1 แบบ R ทั้งหมด
+  // ประกอบมือจากตารางในมาตรฐาน ไม่ได้ลอกจากผลลัพธ์ของฟังก์ชัน
+  const expected =
+    "101" +
+    "0001101" + "0100111" + "0101111" + "0111101" + "0001001" + "0110011" +
+    "01010" +
+    "1000010" + "1000010" + "1000010" + "1110100" + "1000010" + "1100110" +
+    "101";
+
+  const r = eanBars("4006381333931")!;
+  const bits = Array(r.width).fill("0");
+  for (const bar of r.bars) {
+    for (let i = 0; i < bar.width; i += 1) bits[bar.x + i] = "1";
+  }
+  assert.equal(bits.join(""), expected);
+  assert.equal(expected.length, 95);
+});

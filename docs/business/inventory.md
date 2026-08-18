@@ -376,6 +376,27 @@ Relaxing the index cannot fail on any database, because the old index guaranteed
 anywhere. The migration still checks for within-shop duplicates first and stops with the offending
 codes named, in case a database was hand-edited and lost the index at some point.
 
-**Not built: label printing.** A generated code is only useful once it is on the product, and there is
-no label/sticker printing screen in this repo. Until there is, generate codes only where the shop has
-another way to produce the label.
+### Printing the labels
+
+`/admin/product-labels` closes the loop: pick products, set how many stickers each needs, print. A
+generated code is worthless until it is on the product.
+
+Labels are 40×30mm, the size Thai label printers most commonly take, laid out so they also work on
+A4 sticker sheets. Sizing is in millimetres rather than pixels because that is the unit label
+printers think in. Printing goes through the browser's own dialog, not the ESC/POS path used for
+receipts — a label printer is a different device from a receipt printer, and letting the OS dialog
+choose keeps both workable.
+
+The barcode is drawn by `eanBars()` in [lib/pos/barcode.ts](../../apps/web/lib/pos/barcode.ts), which
+**refuses to draw a code whose check digit is wrong**. Drawing it anyway would be worse than
+refusing: the shop prints and applies a whole batch of stickers, then discovers they scan as nothing
+while a customer is waiting. Products selected but unprintable are listed with the reason and a link
+back to generate a code.
+
+Guard bars run longer than data bars, and quiet zones are left on both sides — a barcode with correct
+bars but no margin does not scan. The digits are always printed underneath so staff can key the
+number in when a sticker is creased or smudged.
+
+The bar pattern is asserted bit-for-bit against the standard in
+[barcode-contract.test.mts](../../scripts/barcode-contract.test.mts), built by hand from the encoding
+tables rather than recorded from the function's own output.
