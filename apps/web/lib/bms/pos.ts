@@ -24,6 +24,14 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
+import type { PriceTier, Promotion } from "./pricing";
+import { markDepositCompletedInTx } from "./deposits";
+import {
+  findStoreCredit,
+  lockUsableCreditInTx,
+  redeemCreditInTx,
+  reverseCreditForReturnInTx,
+} from "./storeCredit";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import {
   cashRoundingDelta,
@@ -293,6 +301,21 @@ export type PosScanHit = {
   packPrice: number;
   /** ราคาต่อหน่วยฐานตาม bms_products (ไว้เทียบให้เห็นส่วนลดยกกล่อง) */
   basePrice: number;
+  /**
+   * ขั้นราคาส่งของสินค้านี้ (8.1) — ส่งให้จอเพื่อ "พรีวิว" ยอดเท่านั้น
+   *
+   * จอต้องคิดด้วยกฎเดียวกับ createOrder เป๊ะ ๆ (ทั้งคู่เรียก unitPriceForQty ตัวเดียวกัน)
+   * ไม่งั้นยอดที่จอโชว์กับยอดที่ server คิดต่างกัน → PAYMENT_MISMATCH · server ยัง
+   * ตัดสินราคาเองตอน commit เสมอ ค่านี้ไม่ใช่ราคาที่เชื่อจาก client
+   */
+  priceTiers: PriceTier[];
+  /** true = ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) — จอต้องกางช่องกรอกให้ */
+  serialTracked: boolean;
+  /**
+   * โปรที่ใช้งานอยู่ของสินค้านี้ (8.7) — ส่งให้จอพรีวิวยอดด้วยกฎเดียวกับ createOrder
+   * null = ไม่มีโปร หรือหมดช่วงเวลาไปแล้ว
+   */
+  promotion: Promotion | null;
 };
 
 /**
@@ -330,6 +353,7 @@ export async function resolvePosScan(
     `SELECT p.sku,
             p.name,
             p.price                                  AS base_price,
+            p.serial_tracked,
             k.pack_code,
             k.unit_name,
             k.base_qty,
@@ -365,6 +389,30 @@ export async function resolvePosScan(
   const row = res.rows[0];
   if (!row || !row.size) return null;
 
+  const promoRes = await query<any>(
+    `SELECT kind, buy_qty, get_qty, bundle_price FROM bms_product_promotions
+      WHERE tenant_id = $1 AND product_sku = $2 AND active
+        AND (starts_at IS NULL OR starts_at <= now())
+        AND (ends_at   IS NULL OR ends_at   >  now())
+      LIMIT 1`,
+    [tenantId, row.sku]
+  );
+  const promoRow = promoRes.rows[0];
+  const promotion: Promotion | null = !promoRow
+    ? null
+    : promoRow.kind === "BUY_X_GET_Y"
+      ? { kind: "BUY_X_GET_Y", buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
+      : { kind: "N_FOR_PRICE", buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) };
+
+  const tierRes = await query<{ min_qty: number; unit_price: string }>(
+    `SELECT min_qty, unit_price FROM bms_product_price_tiers
+      WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
+    [tenantId, row.sku]
+  );
+  const priceTiers: PriceTier[] = tierRes.rows.map((t) => ({
+    minQty: Number(t.min_qty), unitPrice: Number(t.unit_price),
+  }));
+
   const basePrice = Number(row.base_price);
   const baseQty = row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
@@ -380,6 +428,9 @@ export async function resolvePosScan(
     baseQty,
     packPrice,
     basePrice,
+    priceTiers,
+    serialTracked: (row as any).serial_tracked === true,
+    promotion,
   };
 }
 
@@ -897,6 +948,11 @@ export async function closePosShift(input: {
 // ---------------------------------------------------------------
 
 export type PosSaleLine = {
+  /**
+   * เลขเครื่องของแต่ละชิ้นในบรรทัดนี้ (8.3) — บังคับเมื่อสินค้าเปิด serial_tracked
+   * จำนวนต้องเท่ากับจำนวนหน่วยฐานที่ขายพอดี ไม่ใช่จำนวน pack
+   */
+  serials?: string[] | null;
   sku: string;
   size: string;
   /** จำนวน "หน่วยขาย" ที่ลูกค้าซื้อ เช่น 1 กล่อง (ไม่ใช่หน่วยฐาน) */
@@ -931,6 +987,8 @@ export type PosSaleInput = {
   customerId?: string | null;
   /** แต้มที่ลูกค้าขอแลกเป็นส่วนลดบิลนี้ */
   pointsToRedeem?: number | null;
+  /** ค่าบริการ/ค่าถุง ที่ไม่ใช่สินค้าในคลัง (8.6) */
+  extraLines?: Array<{ label: string; qty?: number; unitAmount: number }> | null;
   /** ส่วนลดมือเป็นบาท — ต้องมาคู่กับ discountApprovedBy/discountReason เสมอ */
   manualDiscount?: number | null;
   discountApprovedBy?: string | null;
@@ -1003,6 +1061,13 @@ export type PosSaleResult =
   | { status: "INVALID_PACK"; sku: string; packCode: string }
   | { status: "PAYMENT_FAILED"; reason: string }
   | { status: "PAYMENT_MISMATCH"; expected: number; received: number }
+  /** สินค้าที่ติดตามเลขเครื่องแต่ยังไม่ได้ระบุเลขให้ครบทุกชิ้น (8.3) */
+  | { status: "SERIAL_REQUIRED"; sku: string; expected: number; received: number }
+  /** เลขเครื่องนี้เคยขายไปแล้ว — เกือบแน่นอนว่ายิงกล่องผิดใบ */
+  | { status: "SERIAL_ALREADY_SOLD"; sku: string; serial: string }
+  /** บัตรของขวัญ/เครดิตร้านใช้ไม่ได้ (8.9) */
+  | { status: "CREDIT_INVALID"; reason: string; code: string }
+  | { status: "CREDIT_INSUFFICIENT"; code: string; balance: number; requested: number }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
 
@@ -1190,8 +1255,11 @@ async function fulfilPosOrderInTx(
             reserved_stock = reserved_stock - oi.qty,
             updated_at = now()
        FROM (
+         -- อ่านจาก view ไม่ใช่ bms_order_items ตรง ๆ (8.8) — บรรทัดที่เป็นสินค้าชุด
+         -- ถูกแทนด้วยส่วนประกอบแล้ว · ถ้าอ่านตารางตรง ๆ จะไปลดสต็อกของเซ็ตซึ่งเป็น 0
+         -- ตลอด แล้วชน CHECK (current_stock >= 0) กลางการปิดบิล
          SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-           FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
+           FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
           GROUP BY tenant_id, location_id, product_sku, size
        ) oi
       WHERE TRUE
@@ -1205,9 +1273,12 @@ async function fulfilPosOrderInTx(
   // FEFO: หมดอายุใกล้สุดก่อน ข้าม lot ที่หมดอายุแล้ว
   // ตัดได้เท่าที่มี lot บันทึกไว้ — SKU ที่ยังไม่ backfill lot จะไม่มีแถวผูก
   // (ตรวจส่วนที่ยังไม่ผูกได้จาก query invariant ท้าย 7.85)
+  // view ไม่ใช่ตารางตรง ๆ (8.8) — ส่วนประกอบของสินค้าชุดที่เป็นสินค้ามีล็อตต้องถูก
+  // ตัดล็อตด้วย · ถ้าอ่านตารางตรง ๆ สต็อกจะลด (view ถูกใช้ข้างบนแล้ว) แต่ล็อตไม่ลด
+  // แล้วยอดล็อตกับยอดสต็อกแยกกันเงียบ ๆ จนกว่าจะมีคนไปกระทบยอด
   const items = await client.query<{ id: string; location_id: string; product_sku: string; size: string; qty: number }>(
-    `SELECT id, location_id, product_sku, size, qty
-       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+    `SELECT order_item_id AS id, location_id, product_sku, size, qty
+       FROM bms_order_stock_lines WHERE tenant_id = $1 AND order_id = $2`,
     [tenantId, orderId]
   );
   for (const it of items.rows) {
@@ -1322,6 +1393,30 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   );
   if (invalidCash) return { status: "PAYMENT_FAILED", reason: "เงินสดที่รับมาต้องไม่น้อยกว่ายอดเงินสด" };
 
+  // ---- เลขเครื่อง (8.3) ----
+  // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
+  // ไม่มีคูปองถูกนับ · ถ้าไปตรวจหลังจากนั้นต้องย้อนคืนทุกอย่างซึ่งพลาดง่ายกว่ามาก
+  const serialCheck = await validatePosSaleSerials(tenantId, input.lines);
+  if (serialCheck) return serialCheck;
+
+  // ---- บัตรของขวัญ / เครดิตร้าน (8.9) ----
+  // ตรวจก่อนสร้างบิลเช่นเดียวกับเลขเครื่อง: บัตรผิด/ยอดไม่พอ ต้องล้มก่อนตัดสต็อก
+  // การหักจริงเกิดในทรานแซกชันที่ปิดการขาย (finalizePosSale) พร้อม FOR UPDATE
+  for (const payment of input.payments) {
+    if (payment.method !== "STORE_CREDIT") continue;
+    const code = (payment.ref ?? "").trim();
+    if (!code) return { status: "PAYMENT_FAILED", reason: "จ่ายด้วยบัตรต้องระบุโค้ดบัตร" };
+    const credit = await findStoreCredit(tenantId, code);
+    if (!credit) return { status: "CREDIT_INVALID", reason: "ไม่พบบัตรนี้", code };
+    if (credit.status !== "ACTIVE") return { status: "CREDIT_INVALID", reason: "บัตรนี้ใช้ไม่ได้แล้ว", code };
+    if (credit.expiresAt && new Date(credit.expiresAt).getTime() <= Date.now()) {
+      return { status: "CREDIT_INVALID", reason: "บัตรนี้หมดอายุแล้ว", code };
+    }
+    if (credit.balance + 0.001 < payment.amount) {
+      return { status: "CREDIT_INSUFFICIENT", code, balance: credit.balance, requested: payment.amount };
+    }
+  }
+
   const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (existing) {
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
@@ -1368,6 +1463,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     couponCode: input.couponCode ?? null,
     customerId: input.customerId ?? null,
     pointsToRedeem: input.pointsToRedeem ?? null,
+    extraLines: input.extraLines ?? null,
     manualDiscount: input.manualDiscount ?? null,
     discountApprovedBy: input.discountApprovedBy ?? null,
     discountReason: input.discountReason ?? null,
@@ -1435,6 +1531,15 @@ async function finalizePosSale(args: {
   amountDue: number;
   payments: PosPaymentInput[];
   replayed: boolean;
+  /**
+   * ยอดที่บิลนี้ "เคยรับไว้แล้ว" อย่างถูกต้อง — ใช้กับบิลมัดจำเท่านั้น (9.0)
+   *
+   * ปกติบิลค้างที่มีรายการชำระเงินอยู่แล้วถือว่าน่าสงสัยและถูกปฏิเสธ (กันการรับเงิน
+   * ซ้ำจากบิลเดิม) · บิลมัดจำมีเงินมัดจำอยู่จริงตามการออกแบบ จึงต้องบอกยอดที่คาดไว้
+   * มาด้วย แล้วด่านนี้เปลี่ยนจาก "ห้ามมีเลย" เป็น "ต้องมีเท่าที่บอกมาพอดี"
+   * — ยังจับกรณีมีรายการเกินมาได้เหมือนเดิม
+   */
+  alreadyPaid?: number;
 }): Promise<PosSaleResult> {
   const { input, shift, orderId, amountDue, payments, replayed } = args;
   const vatSettings = await getVatSettings(input.tenantId);
@@ -1464,13 +1569,26 @@ async function finalizePosSale(args: {
     let cashTendered: number | null = null;
     let cashChange: number | null = null;
     if (current.status === "PENDING") {
-      const active = await client.query(
-        `SELECT 1 FROM bms_payments
+      // ล็อกแถวก่อน แล้วรวมยอดจากแถวที่ล็อกได้ — Postgres ไม่ยอมให้ FOR UPDATE
+      // อยู่กับ aggregate ในคำสั่งเดียว
+      const active = await client.query<{ amount: string }>(
+        `SELECT amount FROM bms_payments
           WHERE tenant_id = $1 AND order_id = $2 AND status IN ('PENDING','CONFIRMED')
-          LIMIT 1 FOR UPDATE`,
+          FOR UPDATE`,
         [input.tenantId, orderId]
       );
-      if (active.rowCount) throw new Error("บิลค้างมีรายการชำระเงินเดิม ต้องตรวจสอบก่อนทำต่อ");
+      const expectedPaid = Math.round((args.alreadyPaid ?? 0) * 100) / 100;
+      const foundPaid = Math.round(
+        active.rows.reduce((sum, r) => sum + Number(r.amount), 0) * 100
+      ) / 100;
+      if (Math.abs(foundPaid - expectedPaid) > 0.01) {
+        // ยอดที่มีอยู่ไม่ตรงกับที่คาด = มีการรับเงินที่ไม่ได้อยู่ในแผน ต้องมีคนดู
+        throw new Error(
+          expectedPaid > 0
+            ? `ยอดที่รับไว้แล้วไม่ตรง (คาด ${expectedPaid} พบ ${foundPaid})`
+            : "บิลค้างมีรายการชำระเงินเดิม ต้องตรวจสอบก่อนทำต่อ"
+        );
+      }
 
       for (const payment of payments) {
         const tendered = payment.method === "CASH"
@@ -1526,6 +1644,31 @@ async function finalizePosSale(args: {
       issuedBy: input.cashierUserId,
       settings: vatSettings,
     });
+    // บัตรของขวัญ / เครดิตร้าน (8.9) — หักในทรานแซกชันเดียวกับการขาย
+    //
+    // ล็อกแถวบัตรด้วย FOR UPDATE เพราะบัตรใบเดียวถูกยิงสองเครื่องพร้อมกันได้
+    // (คนซื้อบัตรให้กันแล้วใช้พร้อมกัน) ถ้าไม่ล็อก ทั้งสองเห็นยอดเดิมแล้วหักเกินยอด
+    for (const payment of payments) {
+      if (payment.method !== "STORE_CREDIT") continue;
+      const code = (payment.ref ?? "").trim();
+      const usable = await lockUsableCreditInTx(client, input.tenantId, code);
+      if (!usable.ok) throw new Error(`บัตร ${code}: ${usable.reason}`);
+      if (usable.balance + 0.001 < payment.amount) {
+        throw new Error(`บัตร ${code} ยอดไม่พอ (เหลือ ${usable.balance})`);
+      }
+      await redeemCreditInTx(client, input.tenantId, {
+        creditId: usable.creditId,
+        orderId,
+        amount: payment.amount,
+        actorUserId: input.cashierUserId,
+      });
+    }
+
+    // เลขเครื่อง (8.3) — ในทรานแซกชันเดียวกับการขาย
+    // บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่องของสินค้าที่บังคับเลขเครื่อง
+    // ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้จนวันที่มีคนมาเคลม
+    await recordSerialsInTx(client, input.tenantId, shift.location_id, orderId, input.lines);
+
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'pos.sale', $3, $4)`,
@@ -2428,16 +2571,39 @@ async function processPosReturn(input: {
           WHERE tenant_id = $1 AND id = $2 AND status = 'COMPLETED'`,
         [input.tenantId, input.orderId]
       );
+      // เลขเครื่อง (8.3) — ปลดเฉพาะตอนคืนครบทั้งบิล
+      //
+      // คืนบางส่วนปลดไม่ได้ เพราะระบบไม่รู้ว่าลูกค้าเอา "เครื่องไหน" มาคืน — เก็บเลข
+      // ตอนขายเป็นชุดต่อบรรทัด ไม่ได้ผูกเลขกับชิ้นที่คืน · เดาว่าเป็นเครื่องแรกในชุด
+      // แล้วบันทึกจะทำให้ประวัติประกันชี้ผิดเครื่อง ซึ่งแย่กว่าไม่ปลดเลย
+      // (ที่ปลดได้คือกรณีคืนทั้งบิล ซึ่งของทุกชิ้นกลับมาแน่นอน)
+      await client.query(
+        `UPDATE bms_product_serials
+            SET status = 'RETURNED', returned_at = now(), updated_at = now()
+          WHERE tenant_id = $1 AND order_id = $2 AND status = 'SOLD'`,
+        [input.tenantId, input.orderId]
+      );
     }
     // แต้มสะสม (7.96) — ต้องอยู่ใน tx เดียวกับสต็อกและเงินที่คืน
     // ไม่ทำข้อนี้: ซื้อ → ได้แต้ม → คืนของ → เก็บแต้มไว้ = ปั๊มแต้มฟรี
     // ratio คิดจากยอดคืนครั้งนี้ ÷ ยอดสุทธิบิลเดิม (ผลรวมทุกครั้งไม่เกิน 1
     // เพราะ remainingRefund ด้านบนบังคับว่าคืนเกินยอดที่จ่ายมาไม่ได้)
+    const refundRatio = orderAmount > 0 ? roundedRefundAmount / orderAmount : 0;
     const loyaltyReversal = await reversePointsForReturnInTx(client, {
       tenantId: input.tenantId,
       orderId: input.orderId,
       posReturnId,
-      ratio: orderAmount > 0 ? roundedRefundAmount / orderAmount : 0,
+      ratio: refundRatio,
+      actorUserId: input.actorUserId,
+    });
+
+    // เครดิตร้าน (8.9) — ส่วนที่จ่ายด้วยบัตรต้องกลับเข้าบัตรเดิมตามสัดส่วนที่คืน
+    // ไม่ทำ = ลูกค้าที่จ่ายด้วยบัตรแล้วคืนของ เสียเงินบนบัตรไปเปล่า ๆ
+    // (ทาง cancelOrder มีของตัวเองแล้ว แต่การคืนของ POS ไม่ผ่านทางนั้น)
+    await reverseCreditForReturnInTx(client, input.tenantId, {
+      orderId: input.orderId,
+      posReturnId,
+      ratio: refundRatio,
       actorUserId: input.actorUserId,
     });
 
@@ -2831,10 +2997,17 @@ export async function listCashMovements(
 }
 
 export type CashMovementResult =
-  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number }
+  /**
+   * drawerAfter = null เมื่อร้านเปิดโหมดนับปิดตา (8.0)
+   *
+   * ตัวเลขนี้คือ "ยอดที่ควรมีในลิ้นชัก" ตรง ๆ — ถ้าคืนให้ตอนกะยังเปิด แคชเชียร์
+   * นำเงินเข้า ฿1 ครั้งเดียวก็อ่านคำตอบของการนับปิดตาได้ทั้งหมด
+   */
+  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number | null }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "INVALID"; reason: string }
-  | { status: "WOULD_OVERDRAW"; available: number };
+  /** available = null ด้วยเหตุผลเดียวกัน — ยังปฏิเสธรายการ แต่ไม่บอกว่าเหลือเท่าไร */
+  | { status: "WOULD_OVERDRAW"; available: number | null };
 
 /**
  * บันทึกเงินเข้า/ออกลิ้นชัก
@@ -2876,9 +3049,12 @@ export async function recordCashMovement(input: {
     }
 
     const drawer = await drawerExpectedInTx(client, input.tenantId, input.shiftId, Number(shift.rows[0].opening_float));
+    // โหมดนับปิดตายังต้องกันการถอนเกิน (รายการที่ทำให้ยอดติดลบคือรายการที่กรอกผิด)
+    // แต่ห้ามบอกว่าเหลือเท่าไร ไม่งั้นข้อความ error กลายเป็นช่องอ่านคำตอบ
+    const blind = (await getVatSettings(input.tenantId)).blindClose;
     if (input.direction === "OUT" && amount > drawer + 0.001) {
       await client.query("ROLLBACK");
-      return { status: "WOULD_OVERDRAW", available: drawer };
+      return { status: "WOULD_OVERDRAW", available: blind ? null : drawer };
     }
 
     const res = await client.query(
@@ -2910,7 +3086,9 @@ export async function recordCashMovement(input: {
     const r: any = res.rows[0];
     return {
       status: "RECORDED",
-      drawerAfter: Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
+      drawerAfter: blind
+        ? null
+        : Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
       movement: {
         id: r.id, direction: r.direction, amount: Number(r.amount), reason: r.reason,
         actorName: null, approvedByName: null, createdAt: toISO(r.created_at),
@@ -3071,8 +3249,18 @@ export type PosShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
-  /** เงินสดที่ควรอยู่ในลิ้นชักตอนนี้ (กะเปิด) หรือตอนปิด (กะปิดแล้ว) */
-  expectedCash: number;
+  /** จำนวนครั้งที่เปิดลิ้นชักโดยไม่ขาย (8.0) — เปิดถี่ผิดปกติคือสัญญาณที่ต้องดู */
+  noSaleCount: number;
+  /**
+   * เงินสดที่ควรอยู่ในลิ้นชัก
+   *
+   * **null เมื่อกะยังเปิดและร้านเปิดโหมดนับปิดตา (8.0)** — คนนับต้องไม่เห็นเลขนี้
+   * ก่อนกรอกยอดที่นับได้ ไม่งั้นกรอกให้ตรงได้เลยแล้ว variance เป็น 0 ตลอด
+   * ระบบจึงจับเงินขาดไม่ได้จริง · หลังปิดกะแล้วแสดงตามปกติ
+   */
+  expectedCash: number | null;
+  /** true = เลขถูกซ่อนเพราะโหมดนับปิดตา ไม่ใช่เพราะคำนวณไม่ได้ */
+  expectedCashHidden: boolean;
   countedCash: number | null;
   cashVariance: number | null;
 };
@@ -3099,7 +3287,7 @@ export async function getPosShiftReport(
 
   // บิลที่ถูก void ต้องออกจากยอดขายทุกตัวเลข ไม่ใช่แค่ไม่นับใบ — ไม่งั้นยอดขาย
   // ของกะจะไม่ตรงกับเงินที่นับได้ แล้วผู้จัดการจะเซ็นรับด้วยตัวเลขที่ผิด
-  const [sales, methods, cashiers, movements, returns] = await Promise.all([
+  const [sales, methods, cashiers, movements, returns, noSales, vat] = await Promise.all([
     query<any>(
       `SELECT COUNT(*)::text AS bills,
               COALESCE(SUM(total_amount), 0) AS sales,
@@ -3144,6 +3332,11 @@ export async function getPosShiftReport(
         WHERE pr.tenant_id = $1 AND o.pos_shift_id = $2 AND pr.is_void = FALSE`,
       [tenantId, shiftId]
     ),
+    query<any>(
+      `SELECT COUNT(*)::text AS n FROM bms_pos_no_sales WHERE tenant_id = $1 AND shift_id = $2`,
+      [tenantId, shiftId]
+    ),
+    getVatSettings(tenantId),
   ]);
 
   const s = sales.rows[0], m = movements.rows[0], r = returns.rows[0];
@@ -3151,6 +3344,7 @@ export async function getPosShiftReport(
   const cashIn = Number(m.cash_in), cashOut = Number(m.cash_out);
   const cashRefunds = Number(r.cash_refunds ?? 0);
   const openingFloat = Number(h.opening_float);
+  const expectedCashHidden = h.status === "OPEN" && vat.blindClose;
 
   return {
     shiftId: h.id,
@@ -3174,12 +3368,505 @@ export async function getPosShiftReport(
     cashIn,
     cashOut,
     cashRefunds,
+    noSaleCount: Number(noSales.rows[0]?.n ?? 0),
     // กะที่ปิดแล้วใช้ตัวเลขที่บันทึกไว้ตอนปิด ไม่คิดใหม่ — คิดใหม่แล้วรายงานที่พิมพ์
     // วันนี้จะไม่ตรงกับกระดาษที่เซ็นไปเมื่อวาน ถ้ามีใครแก้ข้อมูลย้อนหลัง
-    expectedCash: h.expected_cash != null
-      ? Number(h.expected_cash)
-      : Math.round((openingFloat + cashSales - cashRefunds + cashIn - cashOut) * 100) / 100,
+    //
+    // กะที่ยังเปิด + โหมดนับปิดตา = ไม่บอกเลขนี้กับใครทั้งนั้น รวมถึงผู้จัดการ
+    // เพราะเลขที่หลุดออกจากจอไปแล้วห้ามคนบอกต่อไม่ได้ (blind close ที่ยกเว้น
+    // บางคนไม่ใช่ blind close)
+    expectedCash: expectedCashHidden
+      ? null
+      : h.expected_cash != null
+        ? Number(h.expected_cash)
+        : Math.round((openingFloat + cashSales - cashRefunds + cashIn - cashOut) * 100) / 100,
+    expectedCashHidden,
     countedCash: h.counted_cash == null ? null : Number(h.counted_cash),
     cashVariance: h.cash_variance == null ? null : Number(h.cash_variance),
   };
+}
+
+// ---------------------------------------------------------------
+// เปิดลิ้นชักโดยไม่ขาย — no-sale (8.0)
+// ---------------------------------------------------------------
+//
+// ห้ามไม่ได้: แลกแบงก์ย่อยให้ลูกค้าเป็นงานประจำ และถ้าระบบไม่ให้ทำ พนักงานจะ
+// เปิดลิ้นชักด้วยมือ (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) แล้วไม่เหลือร่องรอยเลย
+// การควบคุมจึงอยู่ที่ "ทุกครั้งต้องมีบันทึกว่าใครเปิดและทำไม" ไม่ใช่การกั้น
+//
+// จำนวนครั้งที่เปิดโดยไม่ขายเป็นสัญญาณทุจริตคลาสสิก — จึงโผล่บนสรุปกะ
+
+export type PosNoSale = {
+  id: string;
+  reason: string;
+  actorName: string | null;
+  createdAt: string;
+};
+
+export async function listNoSales(tenantId: string, shiftId: string): Promise<PosNoSale[]> {
+  const res = await query(
+    `SELECT n.id, n.reason, n.created_at, COALESCE(u.name, u.email) AS actor_name
+       FROM bms_pos_no_sales n
+       LEFT JOIN users u ON u.id = n.actor_user_id
+      WHERE n.tenant_id = $1 AND n.shift_id = $2
+      ORDER BY n.created_at`,
+    [tenantId, shiftId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id, reason: r.reason, actorName: r.actor_name ?? null, createdAt: toISO(r.created_at),
+  }));
+}
+
+export async function recordNoSale(input: {
+  tenantId: string; deviceId: string; shiftId: string; actorUserId: string; reason: string;
+}): Promise<{ status: "RECORDED" } | { status: "SHIFT_NOT_OPEN" } | { status: "INVALID"; reason: string }> {
+  const reason = input.reason.trim();
+  if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" };
+  if (reason.length > 200) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+
+  const shift = await query(
+    `SELECT id FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId, input.deviceId]
+  );
+  if (!shift.rowCount) return { status: "SHIFT_NOT_OPEN" };
+
+  await query(
+    `INSERT INTO bms_pos_no_sales (tenant_id, shift_id, device_id, actor_user_id, reason)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [input.tenantId, input.shiftId, input.deviceId, input.actorUserId, reason]
+  );
+  return { status: "RECORDED" };
+}
+
+// ---------------------------------------------------------------
+// คืนสินค้าโดยไม่มีใบเสร็จ — blind return (8.2)
+// ---------------------------------------------------------------
+//
+// ช่องทุจริตที่ตรงที่สุดของร้านค้าปลีก: เอาของที่ไม่ได้ซื้อ (หรือขโมยมา) มาคืนเอาเงิน
+// จึงบังคับสามชั้นพร้อมกัน — หัวหน้ากด PIN, ต้องมีเหตุผล, และราคาที่คืนห้ามเกิน
+// ราคาขายปัจจุบัน (ไม่งั้นจ่ายออกได้ไม่จำกัดด้วยการพิมพ์ตัวเลขเอง)
+//
+// เงินสดที่จ่ายออกถูกบันทึกเป็น "เงินออกจากลิ้นชัก" ในตารางเดียวกับ 7.97 โดยตั้งใจ
+// เพราะยอดเงินที่ควรมีตอนปิดกะมีสูตรเดียวเท่านั้น การเพิ่มแหล่งเงินออกใหม่โดยไม่
+// เข้าสูตรนั้น = ปิดกะแล้วเงินขาดโดยไม่มีใครอธิบายได้
+//
+// ⚠️ ไม่ออกใบลดหนี้: ไม่มีใบกำกับต้นทางให้อ้างอิง แถวนี้เป็นหลักฐานภายในให้บัญชี
+// จัดการต่อ ไม่ใช่เอกสารภาษี
+
+export type BlindReturnResult =
+  | { status: "RETURNED"; blindReturnId: string; refundAmount: number; replayed: boolean }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "EMPTY" }
+  | { status: "INVALID"; reason: string }
+  | { status: "PRICE_TOO_HIGH"; sku: string; maxUnitRefund: number; requested: number }
+  | { status: "NOT_ENOUGH_CASH"; available: number | null };
+
+export async function blindReturnPosSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  actorUserId: string;
+  approvedByUserId: string;
+  reason: string;
+  customerId?: string | null;
+  customerNote?: string | null;
+  lines: Array<{ sku: string; size: string; qty: number; unitRefund: number }>;
+  idempotencyKey: string;
+}): Promise<BlindReturnResult> {
+  const reason = input.reason.trim();
+  if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
+  if (reason.length > 300) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+  if (!input.idempotencyKey.trim()) return { status: "INVALID", reason: "ต้องมี idempotencyKey" };
+
+  const lines = input.lines
+    .map((l) => ({
+      sku: l.sku.trim(),
+      size: l.size.trim(),
+      qty: Math.trunc(Number(l.qty)),
+      unitRefund: Math.round(Number(l.unitRefund) * 100) / 100,
+    }))
+    .filter((l) => l.sku && l.size && Number.isInteger(l.qty) && l.qty > 0
+      && Number.isFinite(l.unitRefund) && l.unitRefund >= 0);
+  if (lines.length === 0) return { status: "EMPTY" };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    // ยิงซ้ำเพราะเน็ตหลุดต้องได้รายการเดิม ไม่ใช่จ่ายเงินออกสองรอบ
+    const replay = await client.query<{ id: string; refund_amount: string }>(
+      `SELECT id, refund_amount FROM bms_pos_blind_returns
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, input.idempotencyKey]
+    );
+    if (replay.rows[0]) {
+      await client.query("ROLLBACK");
+      return {
+        status: "RETURNED",
+        blindReturnId: replay.rows[0].id,
+        refundAmount: Number(replay.rows[0].refund_amount),
+        replayed: true,
+      };
+    }
+
+    const shift = await client.query<{ id: string; location_id: string; opening_float: string }>(
+      `SELECT id, location_id, opening_float FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN' FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!shift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
+    const locationId = shift.rows[0].location_id;
+
+    // ราคาที่คืนห้ามเกินราคาขายปัจจุบัน — ไม่มีบิลต้นทางให้ยึด ราคาป้ายวันนี้จึงเป็น
+    // เพดานเดียวที่ตรวจได้ · ถ้าไม่มีเพดาน พนักงานพิมพ์เลขอะไรก็ได้แล้วเงินออกตามนั้น
+    let refundAmount = 0;
+    for (const line of lines) {
+      const prod = await client.query<{ price: string }>(
+        `SELECT price FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND active`,
+        [input.tenantId, line.sku]
+      );
+      if (!prod.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ที่เปิดขายอยู่` };
+      }
+      const maxUnitRefund = Number(prod.rows[0].price);
+      if (line.unitRefund > maxUnitRefund + 0.001) {
+        await client.query("ROLLBACK");
+        return { status: "PRICE_TOO_HIGH", sku: line.sku, maxUnitRefund, requested: line.unitRefund };
+      }
+      refundAmount += line.unitRefund * line.qty;
+    }
+    refundAmount = Math.round(refundAmount * 100) / 100;
+
+    // เงินสดต้องมีพอจริง — จ่ายเงินที่ลิ้นชักไม่มีให้จ่ายไม่ได้ในโลกจริง
+    const drawer = await drawerExpectedInTx(client, input.tenantId, input.shiftId, Number(shift.rows[0].opening_float));
+    if (refundAmount > drawer + 0.001) {
+      await client.query("ROLLBACK");
+      const blind = (await getVatSettings(input.tenantId)).blindClose;
+      return { status: "NOT_ENOUGH_CASH", available: blind ? null : drawer };
+    }
+
+    const head = await client.query<{ id: string }>(
+      `INSERT INTO bms_pos_blind_returns
+         (tenant_id, location_id, device_id, shift_id, returned_by, approved_by,
+          reason, customer_id, customer_note, refund_amount, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING id`,
+      [input.tenantId, locationId, input.deviceId, input.shiftId, input.actorUserId,
+        input.approvedByUserId, reason, input.customerId ?? null, input.customerNote ?? null,
+        refundAmount, input.idempotencyKey.trim()]
+    );
+    const blindReturnId = head.rows[0].id;
+
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO bms_pos_blind_return_items
+           (tenant_id, blind_return_id, product_sku, size, qty, unit_refund)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [input.tenantId, blindReturnId, line.sku, line.size, line.qty, line.unitRefund]
+      );
+      // ของกลับเข้าสต็อกที่สาขาของเครื่องนี้ · ไม่คืนล็อตเพราะไม่รู้ว่าของมาจากล็อตไหน
+      // (ไม่มีบิลต้นทาง) — ลงเป็นของเข้าใหม่ที่ไม่ผูกล็อต ซึ่งตรงกับความจริง
+      await client.query(
+        `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+         VALUES ($1,$2,$3,$4,$5,0)
+         ON CONFLICT (tenant_id, location_id, product_sku, size)
+           DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
+        [input.tenantId, locationId, line.sku, line.size, line.qty]
+      );
+      await recordMovement(client, {
+        tenantId: input.tenantId, locationId, sku: line.sku, size: line.size,
+        type: "RETURN", qty: line.qty,
+        note: `คืนไม่มีใบเสร็จ: ${reason}`, actor: input.actorUserId,
+      });
+    }
+
+    // เงินออกลงตารางเดียวกับเงินลิ้นชักปกติ เพื่อให้สูตรเงินที่ควรมีตอนปิดกะมีที่เดียว
+    if (refundAmount > 0) {
+      await client.query(
+        `INSERT INTO bms_pos_cash_movements
+           (tenant_id, shift_id, device_id, direction, amount, reason, actor_user_id, approved_by)
+         VALUES ($1,$2,$3,'OUT',$4,$5,$6,$7)`,
+        [input.tenantId, input.shiftId, input.deviceId, refundAmount,
+          `คืนสินค้าไม่มีใบเสร็จ: ${reason}`, input.actorUserId, input.approvedByUserId]
+      );
+    }
+
+    await client.query("COMMIT");
+    return { status: "RETURNED", blindReturnId, refundAmount, replayed: false };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ---------------------------------------------------------------
+// เลขเครื่อง / IMEI (8.3)
+// ---------------------------------------------------------------
+//
+// ล็อต (7.85) ตอบว่า "ของมาจากชุดไหน" · serial ตอบว่า "เครื่องเลขนี้ขายให้ใครวันไหน"
+// ซึ่งเป็นคำถามที่เกิดขึ้นตอนลูกค้าเอาของมาเคลมประกัน
+//
+// เก็บตอนขาย ไม่ใช่ตอนรับเข้า — ร้านเล็กไม่มีใครนั่งยิง 50 เครื่องเข้าระบบตอนของมาถึง
+// แต่ตอนขายต้องหยิบกล่องมาสแกนอยู่แล้ว
+
+/** จำนวนหน่วยฐานของบรรทัด — pack 2 กล่อง × 10 ชิ้น = 20 เครื่อง ต้องมี 20 เลข */
+function baseUnitsOf(line: PosSaleLine): number {
+  const packQty = Math.max(1, Math.trunc(Number(line.packQty ?? 1)));
+  const baseQty = Math.max(1, Math.trunc(Number((line as any).baseQty ?? 1)));
+  return packQty * baseQty;
+}
+
+/**
+ * ตรวจเลขเครื่องก่อนเปิดบิล — คืน null เมื่อผ่าน
+ *
+ * ตรวจสองอย่าง: ครบจำนวนไหม และเลขนั้นเคยขายไปแล้วหรือยัง
+ * อย่างที่สองสำคัญกว่าที่คิด — พนักงานหยิบกล่องผิดใบเป็นเรื่องปกติ และถ้าปล่อยผ่าน
+ * ประวัติประกันจะชี้ไปที่ลูกค้าคนก่อน ซึ่งเป็นความผิดพลาดที่รู้ตอนมีคนมาเคลมแล้ว
+ */
+async function validatePosSaleSerials(
+  tenantId: string,
+  lines: PosSaleLine[]
+): Promise<PosSaleResult | null> {
+  const skus = Array.from(new Set(lines.map((l) => l.sku)));
+  if (skus.length === 0) return null;
+
+  const tracked = await query<{ sku: string }>(
+    `SELECT sku FROM bms_products
+      WHERE tenant_id = $1 AND sku = ANY($2::text[]) AND serial_tracked`,
+    [tenantId, skus]
+  );
+  if (tracked.rowCount === 0) return null;
+  const trackedSkus = new Set(tracked.rows.map((r) => r.sku));
+
+  for (const line of lines) {
+    if (!trackedSkus.has(line.sku)) continue;
+    const need = baseUnitsOf(line);
+    const given = (line.serials ?? [])
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean);
+    if (given.length !== need) {
+      return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: given.length };
+    }
+    // เลขซ้ำกันเองในบรรทัดเดียว = ยิงกล่องเดิมสองครั้ง
+    if (new Set(given).size !== given.length) {
+      return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: new Set(given).size };
+    }
+    const clash = await query<{ serial: string }>(
+      `SELECT serial FROM bms_product_serials
+        WHERE tenant_id = $1 AND serial = ANY($2::text[]) AND status = 'SOLD'
+        LIMIT 1`,
+      [tenantId, given]
+    );
+    if (clash.rowCount) {
+      return { status: "SERIAL_ALREADY_SOLD", sku: line.sku, serial: clash.rows[0].serial };
+    }
+  }
+  return null;
+}
+
+/**
+ * บันทึกเลขเครื่องผูกกับบิล — เรียกในทรานแซกชันที่ปิดการขายเท่านั้น
+ *
+ * ต้องอยู่ในทรานแซกชันเดียวกับการขาย: บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่อง
+ * ของสินค้าที่บังคับเลขเครื่อง ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้
+ *
+ * ON CONFLICT DO UPDATE เพื่อรองรับเครื่องที่ถูกคืนมาแล้วขายใหม่ (status RETURNED
+ * → SOLD) ซึ่งเป็นเรื่องปกติของสินค้ามือสอง/เครื่องเปลี่ยนคืน
+ */
+async function recordSerialsInTx(
+  client: PoolClient,
+  tenantId: string,
+  locationId: string,
+  orderId: string,
+  lines: PosSaleLine[]
+): Promise<void> {
+  for (const line of lines) {
+    const serials = (line.serials ?? []).map((x) => String(x ?? "").trim()).filter(Boolean);
+    if (serials.length === 0) continue;
+    for (const serial of serials) {
+      await client.query(
+        `INSERT INTO bms_product_serials
+           (tenant_id, product_sku, size, serial, status, location_id, order_id, sold_at)
+         VALUES ($1,$2,$3,$4,'SOLD',$5,$6,now())
+         ON CONFLICT (tenant_id, serial) DO UPDATE
+           SET status = 'SOLD', order_id = EXCLUDED.order_id, sold_at = now(),
+               product_sku = EXCLUDED.product_sku, size = EXCLUDED.size,
+               location_id = EXCLUDED.location_id, returned_at = NULL, updated_at = now()`,
+        [tenantId, line.sku, line.size, serial, locationId, orderId]
+      );
+    }
+  }
+}
+
+export type ProductSerial = {
+  serial: string;
+  sku: string;
+  size: string;
+  status: "IN_STOCK" | "SOLD" | "RETURNED";
+  orderId: string | null;
+  soldAt: string | null;
+  returnedAt: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+};
+
+/**
+ * ค้นว่าเครื่องเลขนี้ขายให้ใครวันไหน — คำถามเดียวที่ทำให้ฟีเจอร์นี้คุ้มค่า
+ * ใช้ตอนลูกค้าเอาของมาเคลมประกันโดยไม่มีใบเสร็จ
+ */
+export async function findSerial(tenantId: string, serial: string): Promise<ProductSerial | null> {
+  const code = serial.trim();
+  if (!code) return null;
+  const res = await query<any>(
+    `SELECT s.serial, s.product_sku, s.size, s.status, s.order_id, s.sold_at, s.returned_at,
+            c.name AS customer_name, c.phone AS customer_phone
+       FROM bms_product_serials s
+       LEFT JOIN bms_orders o ON o.id = s.order_id AND o.tenant_id = s.tenant_id
+       LEFT JOIN bms_customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id
+      WHERE s.tenant_id = $1 AND s.serial = $2`,
+    [tenantId, code]
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    serial: r.serial,
+    sku: r.product_sku,
+    size: r.size,
+    status: r.status,
+    orderId: r.order_id ?? null,
+    soldAt: r.sold_at ? toISO(r.sold_at) : null,
+    returnedAt: r.returned_at ? toISO(r.returned_at) : null,
+    customerName: r.customer_name ?? null,
+    customerPhone: r.customer_phone ?? null,
+  };
+}
+
+/** เลขเครื่องทั้งหมดของบิล — พิมพ์บนใบเสร็จ/ใบรับประกันได้ */
+export async function listSerialsForOrder(tenantId: string, orderId: string): Promise<ProductSerial[]> {
+  const res = await query<any>(
+    `SELECT serial, product_sku, size, status, order_id, sold_at, returned_at
+       FROM bms_product_serials
+      WHERE tenant_id = $1 AND order_id = $2 ORDER BY product_sku, serial`,
+    [tenantId, orderId]
+  );
+  return res.rows.map((r: any) => ({
+    serial: r.serial, sku: r.product_sku, size: r.size, status: r.status,
+    orderId: r.order_id ?? null,
+    soldAt: r.sold_at ? toISO(r.sold_at) : null,
+    returnedAt: r.returned_at ? toISO(r.returned_at) : null,
+    customerName: null, customerPhone: null,
+  }));
+}
+
+// ---------------------------------------------------------------
+// ปิดบิลมัดจำ — ลูกค้ามารับของและจ่ายส่วนที่เหลือ (9.0)
+// ---------------------------------------------------------------
+//
+// ใช้ finalizePosSale ตัวเดียวกับการขายปกติโดยตั้งใจ: การรับของคือจุดที่การขาย
+// เกิดขึ้นจริง จึงต้องได้ทุกอย่างที่การขายได้ — ตัดสต็อก ตัดล็อต FEFO ออกใบกำกับ
+// ให้แต้ม บันทึก audit · เขียนเส้นทางที่สองขึ้นมาคือมีสองที่ที่ต้องถูกต้องเท่ากัน
+//
+// ⚠️ ใบกำกับภาษีออกที่นี่ ไม่ใช่ตอนวางมัดจำ — ตรงกับจุดที่กรรมสิทธิ์โอนจริง
+
+export type SettleDepositResult =
+  | PosSaleResult
+  | { status: "DEPOSIT_NOT_FOUND" }
+  | { status: "BALANCE_MISMATCH"; expected: number; received: number };
+
+export async function settleDepositSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  cashierUserId: string;
+  orderId: string;
+  payments: PosPaymentInput[];
+}): Promise<SettleDepositResult> {
+  const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
+    `SELECT id, location_id, device_id FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId]
+  );
+  if (!shiftRes.rowCount) return { status: "SHIFT_NOT_OPEN" };
+  const shift = shiftRes.rows[0];
+  if (shift.device_id !== input.deviceId) return { status: "SHIFT_NOT_OPEN" };
+
+  const dep = await query<{ total_amount: string; deposit_paid: string; status: string }>(
+    `SELECT total_amount, deposit_paid, status FROM bms_pos_deposits
+      WHERE tenant_id = $1 AND order_id = $2`,
+    [input.tenantId, input.orderId]
+  );
+  const row = dep.rows[0];
+  if (!row || row.status !== "OPEN") return { status: "DEPOSIT_NOT_FOUND" };
+
+  const balance = Math.round((Number(row.total_amount) - Number(row.deposit_paid)) * 100) / 100;
+  const requested = input.payments
+    .map((p) => ({ ...p, amount: Math.round(Number(p.amount) * 100) / 100 }))
+    .filter((p) => Number.isFinite(p.amount) && p.amount > 0);
+  const paid = Math.round(requested.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
+
+  // ยอดต้องตรงกับส่วนที่ค้างพอดี — เหตุผลเดียวกับกฎ PAYMENT_MISMATCH ของการขายปกติ
+  // จ่ายเกิน/ขาดแล้วปล่อยผ่านคือเก็บเงินไม่ตรงกับที่ระบบคิด
+  if (Math.abs(paid - balance) > 0.01) {
+    return { status: "BALANCE_MISMATCH", expected: balance, received: paid };
+  }
+
+  // ประทับบิลเป็นของกะ/เครื่อง/คนขายที่ "รับของ" ไม่ใช่ที่รับมัดจำ
+  //
+  // finalizePosSale ล็อกบิลด้วยสามค่านี้ (กันการปิดบิลของเครื่องอื่น) และบิลมัดจำถูก
+  // สร้างไว้ตอนวางมัดจำซึ่งอาจเป็นกะอื่นหรือคนละวัน · การประทับใหม่ไม่ใช่การหลบข้อจำกัด
+  // แต่ตรงกับความจริง: การขายเกิดตอนรับของ ยอดขายและค่าคอมจึงเป็นของกะที่ส่งของจริง
+  await query(
+    `UPDATE bms_orders
+        SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+    [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.cashierUserId]
+  );
+
+  const settled = await finalizePosSale({
+    input: {
+      tenantId: input.tenantId,
+      deviceId: input.deviceId,
+      shiftId: input.shiftId,
+      cashierUserId: input.cashierUserId,
+      idempotencyKey: `deposit-settle-${input.orderId}`,
+      lines: [],
+      payments: requested,
+    },
+    shift,
+    orderId: input.orderId,
+    // ยอดบิลเต็ม ไม่ใช่ยอดคงเหลือ
+    //
+    // finalizePosSale ตรวจว่ายอดบิลไม่เปลี่ยนระหว่างรับชำระโดยเทียบกับ total_amount
+    // ของบิล · ส่งยอดคงเหลือมาจะถูกตีว่า "ยอดบิลเปลี่ยน" ทันที · และใบกำกับต้องแสดง
+    // ยอดเต็มของบิลอยู่แล้ว เพราะนั่นคือมูลค่าที่ขายจริง ส่วนเงินมัดจำเป็นแถว payment
+    // ที่ลงไว้ก่อนหน้าแล้ว การส่งยอดเต็มจึงถูกทั้งการตรวจและตัวเลขบนเอกสาร
+    amountDue: Number(row.total_amount),
+    payments: requested,
+    replayed: false,
+    // เงินมัดจำที่ลงไว้แล้วเป็นของถูกต้อง — บอกยอดที่คาดไว้เพื่อให้ด่านตรวจ
+    // เปลี่ยนจาก "ห้ามมีรายการเดิม" เป็น "ต้องมีเท่านี้พอดี"
+    alreadyPaid: Number(row.deposit_paid),
+  });
+
+  if (settled.status === "SOLD") {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
+      await markDepositCompletedInTx(client, input.tenantId, input.orderId);
+      await client.query("COMMIT");
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  return settled;
 }

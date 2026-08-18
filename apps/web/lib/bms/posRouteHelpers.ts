@@ -1,4 +1,4 @@
-const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET"] as const;
+const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"] as const;
 
 type ParsedPosSaleLine = {
   sku: string;
@@ -8,9 +8,12 @@ type ParsedPosSaleLine = {
   unitName: string | null;
   baseQty: number | null;
   packPrice: number | null;
+  /** เลขเครื่องต่อชิ้น (8.3) — ตัดตัวว่างและตัดช่องว่างหัวท้ายทิ้ง */
+  serials: string[] | null;
 };
 
 type ParsedPosPaymentInput = {
+  /** STORE_CREDIT ใช้ ref เป็นโค้ดบัตร (8.9) — ไม่ต้องเพิ่มฟิลด์ใหม่ในสัญญาเดิม */
   method: (typeof POS_PAYMENT_METHODS)[number];
   amount: number;
   cashTendered: number | null;
@@ -51,6 +54,11 @@ export function parsePosSaleLines(rawLines: unknown): ParsedPosSaleLine[] {
       unitName: line?.unitName ? String(line.unitName) : null,
       baseQty: line?.baseQty == null ? null : Number(line.baseQty),
       packPrice: line?.packPrice == null ? null : Number(line.packPrice),
+      // ตัดตัวว่างที่นี่ทีเดียว — จอส่ง array ที่มีช่องว่างมาได้ตอนพนักงานกรอกไม่ครบ
+      // แล้ว validatePosSaleSerials จะได้ตอบว่า "ขาดกี่เลข" ตรง ๆ
+      serials: Array.isArray(line?.serials)
+        ? (line.serials as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean)
+        : null,
     }))
     .filter((line) => line.sku && line.size && Number.isInteger(line.packQty) && line.packQty > 0);
 }
@@ -81,4 +89,23 @@ export function parsePosPayments(rawPayments: unknown): { ok: true; payments: Pa
   return payments.length > 0
     ? { ok: true, payments }
     : { ok: false, error: "ต้องระบุการชำระเงินอย่างน้อย 1 รายการ" };
+}
+
+
+/**
+ * ค่าบริการ/ค่าถุง จาก body (8.6)
+ *
+ * คัดแถวที่ไม่ครบทิ้งเงียบ ๆ ไม่ทำให้บิลล้ม — จอส่งแถวว่างมาได้ตอนพนักงานกดเพิ่ม
+ * บรรทัดแล้วยังไม่กรอก · จำกัดจำนวนแถวกันคนยิง payload ยาวผิดปกติ
+ */
+export function parsePosExtraLines(raw: unknown): Array<{ label: string; qty: number; unitAmount: number }> {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .slice(0, 20)
+    .map((x: any) => ({
+      label: String(x?.label ?? "").trim().slice(0, 120),
+      qty: Math.max(1, Math.trunc(Number(x?.qty ?? 1))),
+      unitAmount: Math.round(Number(x?.unitAmount) * 100) / 100,
+    }))
+    .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
 }

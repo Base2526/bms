@@ -378,11 +378,14 @@ export default function AdminSidebar() {
           ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
         ...(can('product.view')
           ? [link('/admin/product-packs', t('admin.menu_product_packs'), <BarcodeOutlined />)] : []),
+        ...(can('product.view')
+          ? [link('/admin/product-labels', t('admin.menu_product_labels'), <BarcodeOutlined />)] : []),
         ...(can('pharmacy.policy.read')
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
       ],
     }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
+    ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <BarChartOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
       key: 'g-saas',

@@ -25,6 +25,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
+import { updateVatSettings, getVatSettings } from "../apps/web/lib/bms/taxDocuments.ts";
 import {
   closePosShift,
   deleteParkedSale,
@@ -35,7 +36,9 @@ import {
   listRecentPosSales,
   openPosShift,
   parkSale,
+  listNoSales,
   recordCashMovement,
+  recordNoSale,
   recordPosSale,
   resumeParkedSale,
   setCashierPin,
@@ -70,7 +73,14 @@ test("setup: shop, product, register, cashier PIN", async () => {
   locationId = loc.rows[0].id;
 
   // ปัดเศษเงินสดปิด — ยอดที่คาดไว้ต้องเป็นเลขตรงเพื่อให้ variance ตรวจได้
-  await query(`UPDATE bms_store_profile SET cash_rounding = 'NONE' WHERE tenant_id = $1`, [tenantId]);
+  //
+  // และปิดโหมดนับปิดตาไว้เป็นค่าตั้งต้นของชุดนี้ (8.0 ตั้ง DEFAULT TRUE) เพราะเทส
+  // ส่วนใหญ่ตรวจ "ตัวเลขที่ควรมี" ตรง ๆ ซึ่งโหมดนั้นซ่อนไว้โดยตั้งใจ · เทสที่ตรวจ
+  // ตัวโหมดเองเปิด-ปิดเองในเทสนั้น
+  await query(
+    `UPDATE bms_store_profile SET cash_rounding = 'NONE', pos_blind_close = FALSE WHERE tenant_id = $1`,
+    [tenantId]
+  );
 
   await query(
     `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
@@ -282,6 +292,59 @@ test("the shift report keeps the void out of sales and out of returns", async ()
   assert.equal(report!.cashOut, 300);
 });
 
+// ---- no-sale + นับปิดตา (8.0) ----------------------------------------
+
+test("opening the drawer without a sale is always recorded, and needs a reason", async () => {
+  assert.equal(
+    (await recordNoSale({ tenantId, deviceId, shiftId, actorUserId: cashierId, reason: "  " })).status,
+    "INVALID"
+  );
+
+  const ok = await recordNoSale({
+    tenantId, deviceId, shiftId, actorUserId: cashierId, reason: "แลกแบงก์ย่อยให้ลูกค้า",
+  });
+  assert.equal(ok.status, "RECORDED");
+
+  const list = await listNoSales(tenantId, shiftId);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].reason, "แลกแบงก์ย่อยให้ลูกค้า");
+
+  const report = await getPosShiftReport(tenantId, shiftId);
+  assert.equal(report!.noSaleCount, 1, "จำนวนครั้งต้องขึ้นบนสรุปกะ — เป็นสัญญาณทุจริตที่ต้องเห็น");
+});
+
+test("blind close hides expected cash while the shift is open, everywhere it could leak", async () => {
+  const before = await getVatSettings(tenantId);
+  await updateVatSettings(tenantId, { ...before, blindClose: true });
+
+  const report = await getPosShiftReport(tenantId, shiftId);
+  assert.equal(report!.expectedCash, null, "คนนับต้องไม่เห็นคำตอบก่อนกรอก");
+  assert.equal(report!.expectedCashHidden, true);
+  // ข้อเท็จจริงที่ไม่ใช่คำตอบยังต้องเห็นได้ ไม่งั้นรายงานอธิบายอะไรไม่ได้เลย
+  assert.equal(report!.cashIn, 500);
+  assert.equal(report!.cashOut, 300);
+
+  // ช่องรั่วที่ตั้งใจปิด: นำเงินเข้า ฿1 แล้วอ่าน drawerAfter = อ่านคำตอบได้ทั้งหมด
+  const move = await recordCashMovement({
+    tenantId, deviceId, shiftId, direction: "IN", amount: 1,
+    reason: "ทดสอบว่ายอดไม่รั่ว", actorUserId: cashierId,
+  });
+  assert.equal(move.status, "RECORDED");
+  assert.equal(move.status === "RECORDED" ? move.drawerAfter : "x", null);
+
+  // ถอนเกินยังต้องถูกปฏิเสธ แต่ห้ามบอกว่าเหลือเท่าไร
+  const over = await recordCashMovement({
+    tenantId, deviceId, shiftId, direction: "OUT", amount: 99999,
+    reason: "ทดสอบ", actorUserId: cashierId, approvedByUserId: cashierId,
+  });
+  assert.equal(over.status, "WOULD_OVERDRAW");
+  assert.equal(over.status === "WOULD_OVERDRAW" ? over.available : 0, null);
+
+  await updateVatSettings(tenantId, { ...before, blindClose: false });
+  const open = await getPosShiftReport(tenantId, shiftId);
+  assert.notEqual(open!.expectedCash, null, "ปิดโหมดแล้วต้องกลับมาเห็น");
+});
+
 test("expected cash agrees between the report and closePosShift", async () => {
   const report = await getPosShiftReport(tenantId, shiftId);
   const reportExpected = report!.expectedCash;
@@ -294,8 +357,11 @@ test("expected cash agrees between the report and closePosShift", async () => {
   assert.equal(closed.status, "CLOSED", JSON.stringify(closed));
   if (closed.status !== "CLOSED") return;
 
-  assert.equal(closed.cashIn, 500);
-  assert.equal(closed.cashOut, 300);
+  // เทียบกับตัวเลขของรายงานเอง ไม่ใช่ค่าคงที่ที่เขียนไว้ — เทสก่อนหน้าเพิ่มรายการเงิน
+  // เข้าลิ้นชักได้อีก และสิ่งที่เทสนี้ตรวจจริง ๆ คือ "สองทางต้องได้เลขเดียวกัน"
+  // ไม่ใช่ "เลขต้องเป็น 500"
+  assert.equal(closed.cashIn, report!.cashIn);
+  assert.equal(closed.cashOut, report!.cashOut);
   assert.equal(closed.shift.expectedCash, reportExpected,
     "สองสูตรนี้ต้องได้เลขเดียวกัน ไม่งั้นกระดาษที่ผู้จัดการเซ็นจะไม่ตรงกับลิ้นชัก");
   assert.equal(closed.shift.cashVariance, -50);
@@ -322,6 +388,7 @@ test("teardown: remove every row this suite created", async () => {
     await query(`DELETE FROM bms_tax_documents WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`, [tenantId, orderIds]);
     await query(`DELETE FROM bms_orders WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [tenantId, orderIds]);
   }
+  await query(`DELETE FROM bms_pos_no_sales WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_cash_movements WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_parked_sales WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_shifts WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);

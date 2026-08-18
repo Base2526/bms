@@ -70,10 +70,12 @@ export async function recordOrderMovements(
 ): Promise<void> {
   if (orderIds.length === 0) return;
   await client.query(
+    // อ่านจาก view (8.8) — ledger ต้องบันทึกของที่ขยับจริง ถ้าบันทึกชื่อเซ็ตแต่
+    // สต็อกขยับที่ส่วนประกอบ ledger จะขัดกับ bms_inventory และกระทบยอดไม่ได้
     `INSERT INTO bms_stock_movements
        (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, actor)
      SELECT tenant_id, location_id, product_sku, size, $2, qty, order_id, $3
-       FROM bms_order_items
+       FROM bms_order_stock_lines
       WHERE order_id = ANY($1::uuid[])`,
     [orderIds, type, actor]
   );

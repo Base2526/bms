@@ -390,7 +390,7 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
 
 export async function getPosReturnAuditSummary(tenantId: string, from?: string | null, to?: string | null) {
   const r = range(from, to);
-  const [byCashier, approvals] = await Promise.all([
+  const [byCashier, approvals, blind] = await Promise.all([
     query(
       `SELECT COALESCE(u.name, u.email, pr.returned_by::text, 'unknown') AS cashier,
               COUNT(*)::int AS return_count,
@@ -419,11 +419,29 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
           AND created_at < $3::date + interval '1 day'`,
       [tenantId, r.from, r.to]
     ),
+    // คืนโดยไม่มีใบเสร็จ (8.2) — นับแยกจากการคืนปกติเสมอ
+    // เป็นการจ่ายเงินออกโดยเชื่อคำบอกเล่า ไม่ใช่การคืนที่ตรวจย้อนกับบิลได้
+    // ถ้ารวมเข้ากับตัวเลขเดียวกัน สัญญาณที่ควรดังที่สุดจะถูกกลบด้วยการคืนปกติ
+    query(
+      `SELECT COUNT(*)::int AS count,
+              COALESCE(SUM(refund_amount), 0) AS refund_total,
+              COUNT(DISTINCT returned_by)::int AS staff_count
+         FROM bms_pos_blind_returns
+        WHERE tenant_id = $1
+          AND created_at >= $2::date
+          AND created_at < $3::date + interval '1 day'`,
+      [tenantId, r.from, r.to]
+    ),
   ]);
+
+  const blindCount = Number(blind.rows[0]?.count ?? 0);
+  const blindTotal = Number(blind.rows[0]?.refund_total ?? 0);
 
   return {
     from: r.from,
     to: r.to,
+    noReceiptCount: blindCount,
+    noReceiptTotal: blindTotal,
     byCashier: byCashier.rows.map((row: any) => ({
       cashier: String(row.cashier ?? "unknown"),
       returnCount: Number(row.return_count ?? 0),
@@ -445,6 +463,9 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
         : null,
       byCashier.rows.some((row: any) => Number(row.refund_total ?? 0) >= 5000)
         ? "มี cashier ที่ยอดคืนรวมสูงผิดปกติ (>= ฿5,000 ในช่วงที่เลือก)"
+        : null,
+      blindCount > 0
+        ? `มีการคืนโดยไม่มีใบเสร็จ ${blindCount} รายการ รวม ฿${blindTotal.toLocaleString("th-TH")} — ตรวจทุกรายการ`
         : null,
     ].filter(Boolean),
   };

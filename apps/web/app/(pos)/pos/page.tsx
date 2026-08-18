@@ -11,6 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
+import { applyPromotion, unitPriceForQty } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
@@ -115,12 +116,23 @@ type ScanHit = {
   baseQty: number;
   packPrice: number;
   basePrice: number;
+  /** ขั้นราคาส่ง (8.1) — จอคิดด้วย unitPriceForQty ตัวเดียวกับ createOrder */
+  priceTiers?: Array<{ minQty: number; unitPrice: number }>;
+  /** true = สินค้านี้ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) */
+  serialTracked?: boolean;
+  /** โปรที่ใช้งานอยู่ (8.7) — จอคิดด้วย applyPromotion ตัวเดียวกับ createOrder */
+  promotion?:
+    | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
+    | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
+    | null;
   available: number;
 };
 
 type CartLine = ScanHit & {
   packQty: number;
   key: string;
+  /** เลขเครื่องที่พนักงานยิง/พิมพ์ไว้สำหรับบรรทัดนี้ (8.3) */
+  serials?: string[];
   orderItemId?: number;
   returnedPackQty?: number;
   refundablePackQty?: number;
@@ -180,7 +192,9 @@ type ShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
-  expectedCash: number;
+  noSaleCount: number;
+  expectedCash: number | null;
+  expectedCashHidden: boolean;
   countedCash: number | null;
   cashVariance: number | null;
 };
@@ -438,6 +452,18 @@ export default function PosPage() {
   const [voidApproverId, setVoidApproverId] = useState("");
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
+  const [noSaleReason, setNoSaleReason] = useState("");
+  // ---- ส่งใบเสร็จ (8.6) ----
+  // ---- ค่าบริการ/ค่าถุง (8.6) ----
+  // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
+  const [extraLines, setExtraLines] = useState<Array<{ label: string; unitAmount: string }>>([]);
+  const [receiptTo, setReceiptTo] = useState("");
+  const [sendingReceipt, setSendingReceipt] = useState(false);
+  // ---- คืนไม่มีใบเสร็จ (8.2) ----
+  const [blindOpen, setBlindOpen] = useState(false);
+  const [blindReason, setBlindReason] = useState("");
+  const [blindApproverId, setBlindApproverId] = useState("");
+  const [blindApproverPin, setBlindApproverPin] = useState("");
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -565,10 +591,74 @@ export default function PosPage() {
   // ขายได้ก็ต่อเมื่อครบทั้ง 4: เชื่อมต่อได้ / มีคนตั้ง PIN / เลือกคน+ใส่ PIN / เปิดกะแล้ว
   const canSell = Boolean(session?.shift && cashierId && pin && anyCashierHasPin);
 
-  const total = useMemo(
-    () => cart.reduce((sum, l) => sum + l.packPrice * l.packQty, 0),
-    [cart]
+  /**
+   * ราคาส่งตามจำนวน (8.1)
+   *
+   * ขั้นราคาดูจำนวนรวมของ SKU นั้นทั้งตะกร้า ไม่ใช่ต่อบรรทัด — ต้องตรงกับที่
+   * createOrder คิด ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
+   * แล้วบิลถูกยกเลิกทิ้งทั้งใบ · ทั้งสองฝั่งเรียก unitPriceForQty ตัวเดียวกัน
+   *
+   * บรรทัดที่ขายเป็นหน่วยขาย (pack, baseQty > 1) ไม่ถูกแตะ เหมือนฝั่ง server
+   */
+  const tierPriceByKey = useMemo(() => {
+    const qtyBySku = new Map<string, number>();
+    for (const line of cart) {
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty * line.baseQty);
+    }
+    const out = new Map<string, number>();
+    for (const line of cart) {
+      if (line.baseQty > 1 || !line.priceTiers?.length) continue;
+      const unit = unitPriceForQty(line.basePrice, line.priceTiers, qtyBySku.get(line.sku) ?? 0);
+      if (unit !== line.packPrice) out.set(line.key, unit);
+    }
+    return out;
+  }, [cart]);
+
+  /** ค่าบริการที่กรอกครบแล้วเท่านั้น — แถวที่ยังกรอกไม่เสร็จต้องไม่ขยับยอด */
+  const extraTotal = useMemo(
+    () => extraLines.reduce((sum, x) => {
+      const amount = Number(x.unitAmount);
+      return sum + (x.label.trim() && Number.isFinite(amount) && amount > 0 ? amount : 0);
+    }, 0),
+    [extraLines]
   );
+
+  /**
+   * โปรโมชัน (8.7) — คิดต่อ SKU จากจำนวนรวมทั้งตะกร้า แล้วแทนยอดของทุกบรรทัดของ
+   * SKU นั้น · ต้องตรงกับ createOrder เป๊ะ ทั้งสองฝั่งเรียก applyPromotion ตัวเดียวกัน
+   * บรรทัดที่ขายเป็น pack ไม่เข้าโปร เหมือนฝั่ง server
+   */
+  const promoBySku = useMemo(() => {
+    const qtyBySku = new Map<string, number>();
+    const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
+    const priceOf = new Map<string, number>();
+    for (const line of cart) {
+      if (line.baseQty > 1 || !line.promotion) continue;
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty);
+      promoOf.set(line.sku, line.promotion);
+      priceOf.set(line.sku, line.basePrice);
+    }
+    const out = new Map<string, { amount: number; freeQty: number; saved: number }>();
+    for (const [sku, promo] of promoOf) {
+      out.set(sku, applyPromotion(priceOf.get(sku) ?? 0, qtyBySku.get(sku) ?? 0, promo));
+    }
+    return out;
+  }, [cart]);
+
+  const total = useMemo(() => {
+    const chargedPromo = new Set<string>();
+    let sum = extraTotal;
+    for (const line of cart) {
+      const promo = line.baseQty > 1 ? null : promoBySku.get(line.sku);
+      if (promo) {
+        // โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด
+        if (!chargedPromo.has(line.sku)) { chargedPromo.add(line.sku); sum += promo.amount; }
+        continue;
+      }
+      sum += (tierPriceByKey.get(line.key) ?? line.packPrice) * line.packQty;
+    }
+    return Math.round(sum * 100) / 100;
+  }, [cart, tierPriceByKey, extraTotal, promoBySku]);
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
   // ---- สมาชิก + แต้ม (7.96) ----------------------------------------
@@ -650,6 +740,8 @@ export default function PosPage() {
     clearMember();
     setCouponCode("");
     clearManualDiscount();
+    // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
+    setExtraLines([]);
   }
 
   /** ส่วนลดมืออนุมัติเป็นราย "บิล" ไม่ใช่รายกะ — ขายจบต้องล้างทุกครั้ง ไม่งั้นบิล
@@ -769,13 +861,20 @@ export default function PosPage() {
       const data = await res.json();
       if (!res.ok) {
         setNotice({ type: "error", text: data.status === "WOULD_OVERDRAW"
-          ? `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(data.available)} — ถอนมากกว่านี้ไม่ได้`
+          ? (data.available == null
+              ? "จำนวนเงินมากกว่าที่ควรมีในลิ้นชัก — ตรวจตัวเลขอีกครั้ง"
+              : `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(data.available)} — ถอนมากกว่านี้ไม่ได้`)
           : data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" });
         return;
       }
       setCashMoveAmount(""); setCashMoveReason(""); setCashApproverPin("");
       void refreshCashMoves();
-      setNotice({ type: "ok", text: `บันทึกแล้ว · เงินในลิ้นชักที่ควรมีตอนนี้ ฿${baht(data.drawerAfter)}` });
+      setNotice({
+        type: "ok",
+        text: data.drawerAfter == null
+          ? "บันทึกแล้ว (ร้านนี้เปิดโหมดนับปิดตา — ไม่แสดงยอดที่ควรมีจนกว่าจะปิดกะ)"
+          : `บันทึกแล้ว · เงินในลิ้นชักที่ควรมีตอนนี้ ฿${baht(data.drawerAfter)}`,
+      });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     }
@@ -809,6 +908,110 @@ export default function PosPage() {
       setVoidTarget(null); setVoidReason(""); setVoidApproverPin("");
       void loadRecentReceipts(recentSalesQuery);
       setNotice({ type: "ok", text: `ยกเลิกบิลแล้ว · คืนเงิน ฿${baht(data.refundAmount)}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- ส่งสำเนาใบเสร็จ (8.6) -----------------------------------------
+  // ไม่สร้างเอกสารภาษีใบใหม่ — อ่านตัวเลขจากใบกำกับที่ออกไปแล้ว
+  // ส่งไม่สำเร็จไม่กระทบการขายที่จบไปแล้ว จอแค่บอกว่าส่งไม่ได้
+  async function doSendReceipt(orderId: string, channel: "email" | "line") {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    setSendingReceipt(true);
+    try {
+      const res = await fetch("/api/pos/send-receipt", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          orderId, channel, cashierUserId: cashierId, pin,
+          to: receiptTo.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data.reason ?? data.error ?? "ส่งไม่สำเร็จ" });
+        return;
+      }
+      setReceiptTo("");
+      setNotice({ type: "ok", text: `ส่งใบเสร็จไปที่ ${data.to} แล้ว` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setSendingReceipt(false);
+    }
+  }
+
+  // ---- คืนไม่มีใบเสร็จ (8.2) -----------------------------------------
+  // ใช้ตะกร้าปัจจุบันเป็นรายการของที่ลูกค้าเอามาคืน — พนักงานยิงของที่ถืออยู่ตามปกติ
+  // ไม่ต้องมีจอกรอกแยก · ราคาที่คืนใช้ราคาป้ายวันนี้ ซึ่ง server บังคับเป็นเพดานอีกชั้น
+  async function doBlindReturn() {
+    if (cart.length === 0) { setNotice({ type: "error", text: "ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าก่อน" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!blindReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผล" }); return; }
+    if (!blindApproverId || !blindApproverPin) { setNotice({ type: "error", text: "ต้องมีหัวหน้าอนุมัติ" }); return; }
+    try {
+      const res = await fetch("/api/pos/blind-return", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          cashierUserId: cashierId, pin,
+          approverUserId: blindApproverId, approverPin: blindApproverPin,
+          reason: blindReason.trim(),
+          customerId: member?.customerId ?? null,
+          // คีย์ผูกกับตะกร้าใบนี้ — กดสองครั้งเพราะเน็ตช้าต้องไม่จ่ายเงินสองรอบ
+          idempotencyKey: `blind-${session?.shift?.id?.slice(0, 8)}-${cart.map((l) => `${l.sku}:${l.size}:${l.packQty}`).join("|")}`,
+          lines: cart.map((line) => ({
+            sku: line.sku,
+            size: line.size,
+            qty: line.packQty * line.baseQty,
+            unitRefund: line.basePrice,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text:
+          data.status === "PRICE_TOO_HIGH" ? `${data.sku}: คืนได้ไม่เกินชิ้นละ ฿${baht(data.maxUnitRefund)}`
+          : data.status === "NOT_ENOUGH_CASH" ? (data.available == null
+              ? "เงินในลิ้นชักไม่พอจ่ายคืน"
+              : `เงินในลิ้นชักมี ฿${baht(data.available)} จ่ายคืนไม่พอ`)
+          : data.error ?? data.reason ?? "คืนไม่สำเร็จ" });
+        return;
+      }
+      setCart([]);
+      clearBillCustomerState();
+      setBlindReason(""); setBlindApproverPin(""); setBlindOpen(false);
+      setNotice({
+        type: "ok",
+        text: data.replayed
+          ? "รายการนี้บันทึกไว้แล้ว (ไม่ได้จ่ายเงินซ้ำ)"
+          : `คืนแล้ว · จ่ายเงินสด ฿${baht(data.refundAmount)}`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------------------
+  // ปุ่มนี้ "ไม่ได้" เปิดลิ้นชักด้วยตัวเอง — มันบันทึกว่ามีการเปิด แล้วสั่งเปิดผ่าน
+  // ESC/POS ถ้าต่อเครื่องพิมพ์ไว้ · ต่อให้สั่งไม่ได้ บันทึกก็ต้องเกิด เพราะพนักงาน
+  // จะเปิดด้วยคันโยกใต้ลิ้นชักอยู่ดี และเราต้องการร่องรอยมากกว่าต้องการการควบคุม
+  async function doNoSale() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!noSaleReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" }); return; }
+    try {
+      const res = await fetch("/api/pos/no-sale", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ cashierUserId: cashierId, pin, reason: noSaleReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" }); return; }
+      setNoSaleReason("");
+      // สั่งเปิดลิ้นชักจริงถ้าต่อเครื่องพิมพ์ไว้ · ล้มได้ไม่กระทบบันทึกที่ลงไปแล้ว
+      try { await openCashDrawer(); } catch { /* ไม่มีเครื่องพิมพ์ = เปิดมือเอา */ }
+      setNotice({ type: "ok", text: "บันทึกการเปิดลิ้นชักแล้ว" });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     }
@@ -861,6 +1064,23 @@ export default function PosPage() {
     const next = Math.max(0, Math.min(member.pointsUsable, cur + direction * step));
     setPointsToRedeem(next === 0 ? "" : String(next));
   }
+
+  /**
+   * จอแสดงผลฝั่งลูกค้า (8.6) — ส่งสถานะตะกร้าไปหน้าต่างที่สอง
+   *
+   * BroadcastChannel ไม่ใช่ WebSocket โดยตั้งใจ: จอที่สองคือหน้าต่างของเบราว์เซอร์
+   * ตัวเดียวกันบนเครื่องเดียวกัน (ต่อ HDMI) ข้อความจึงไม่ต้องวิ่งผ่านเซิร์ฟเวอร์เลย
+   * — ยอดบนจอลูกค้าไม่มีทางค้างเพราะเน็ตร้านหลุด ซึ่งเป็นตอนที่ค้างแล้วแย่ที่สุด
+   *
+   * เปิด/ปิดจอลูกค้าไม่ต้องตั้งค่าอะไร: ถ้าไม่มีใครฟัง postMessage ก็ไม่มีผลอะไร
+   */
+  const displayChannel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("bms-pos-display");
+    displayChannel.current = ch;
+    return () => { ch.close(); displayChannel.current = null; };
+  }, []);
 
   // บิลพักโหลดตอนเข้าแท็บขาย · รายการเงินลิ้นชักโหลดตอนเข้าแท็บกะ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
@@ -916,6 +1136,30 @@ export default function PosPage() {
     () => Math.round((netTotal + roundingDelta) * 100) / 100,
     [netTotal, roundingDelta]
   );
+  useEffect(() => {
+    const ch = displayChannel.current;
+    if (!ch) return;
+    ch.postMessage({
+      lines: cart.map((l) => ({
+        name: l.receiptName,
+        size: l.size && l.size !== "-" ? l.size : null,
+        qty: l.packQty,
+        unitName: l.unitName,
+        amount: (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty,
+      })),
+      itemCount,
+      total,
+      discountTotal,
+      amountDue,
+      memberName: member?.name ?? null,
+      pointsEarned: null,
+      // บิลที่ปิดแล้วค้างบนจอให้ลูกค้านับเงินทอนตาม จนกว่าจะเริ่มยิงบิลถัดไป
+      finished: cart.length === 0 && justSold
+        ? { total: justSold.total, tendered: null, change: justSold.change }
+        : null,
+    });
+  }, [cart, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
   const cashChangePreview = (() => {
@@ -1036,6 +1280,9 @@ export default function PosPage() {
           baseQty: Number(line.baseQty ?? 1),
           packPrice: Number(line.packPrice ?? 0),
           basePrice: Number(line.basePrice ?? 0),
+          priceTiers: line.priceTiers ?? [],
+          serialTracked: line.serialTracked === true,
+          promotion: line.promotion ?? null,
           available: 0,
           packQty: Number(line.packQty ?? 1),
           key: `last-${idx}-${String(line.sku ?? "")}`,
@@ -1515,7 +1762,13 @@ export default function PosPage() {
           size: line.size,
           packQty: line.packQty,
           packCode: line.packCode,
+          // เลขเครื่อง (8.3) — ส่งเฉพาะที่กรอกไว้ server บังคับความครบเอง
+          serials: line.serials?.length ? line.serials : undefined,
         })),
+        // ค่าบริการ/ค่าถุง (8.6) — ส่งเฉพาะแถวที่กรอกครบ
+        extraLines: extraLines
+          .map((x) => ({ label: x.label.trim(), unitAmount: Number(x.unitAmount) }))
+          .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount > 0),
         payments: paymentSummary.normalized
           .filter((payment) => payment.numericAmount > 0)
           .map((payment) => ({
@@ -2141,6 +2394,64 @@ export default function PosPage() {
           )}
         </div>
 
+        {/* คืนไม่มีใบเสร็จ (8.2) — ยุบไว้เสมอ เพราะทางปกติคือค้นบิลเดิมให้เจอ
+            ทางนี้คือทางออกสุดท้ายเมื่อใบเสร็จหายจริง และเป็นช่องจ่ายเงินออกที่
+            เสี่ยงที่สุด จึงไม่ควรอยู่ในระยะที่กดพลาดได้ */}
+        <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 10 }}>
+          {!blindOpen ? (
+            <button
+              type="button"
+              className="pos-btn-ghost"
+              style={{ fontSize: 12 }}
+              onClick={() => setBlindOpen(true)}
+            >
+              + คืนโดยไม่มีใบเสร็จ (ต้องมีหัวหน้าอนุมัติ)
+            </button>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "#8a6100" }}>
+                ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าที่แท็บขาย แล้วกลับมากดยืนยันที่นี่ ·
+                คืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก ·
+                ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
+              </div>
+              <input
+                value={blindReason}
+                onChange={(e) => setBlindReason(e.target.value)}
+                maxLength={300}
+                placeholder="เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน"
+                style={{ padding: 9, fontSize: 13 }}
+              />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={blindApproverId}
+                  onChange={(e) => setBlindApproverId(e.target.value)}
+                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}
+                >
+                  <option value="">— ผู้อนุมัติ —</option>
+                  {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                  ))}
+                </select>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={blindApproverPin}
+                  onChange={(e) => setBlindApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="PIN หัวหน้า"
+                  style={{ padding: 9, fontSize: 13, width: 120 }}
+                />
+                <button onClick={() => void doBlindReturn()} disabled={busy || cart.length === 0}
+                        style={{ padding: "9px 16px", fontSize: 13 }}>
+                  ยืนยันคืน + จ่ายเงินสด
+                </button>
+                <button type="button" className="pos-btn-ghost" onClick={() => { setBlindOpen(false); setBlindApproverPin(""); }}>
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {returnPanelOpen && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
             <span style={{ color: "#666" }}>ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):</span>
@@ -2258,6 +2569,28 @@ export default function PosPage() {
                 )}
               </div>
 
+              {/* ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------
+                  ห้ามไม่ได้จริง (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) จึงทำให้ทางที่
+                  ถูกต้องสะดวกกว่าทางลัด: กดปุ่มนี้แล้วลิ้นชักเปิดให้เลยถ้าต่อเครื่องพิมพ์ไว้ */}
+              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>เปิดลิ้นชักโดยไม่ขาย</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={noSaleReason}
+                    onChange={(e) => setNoSaleReason(e.target.value)}
+                    maxLength={200}
+                    placeholder="เหตุผล เช่น แลกแบงก์ย่อยให้ลูกค้า"
+                    style={{ padding: 9, fontSize: 14, minWidth: 240, flex: 1 }}
+                  />
+                  <button onClick={() => void doNoSale()} disabled={busy} style={{ padding: "9px 16px" }}>
+                    บันทึก + เปิดลิ้นชัก
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--pos-muted)", marginTop: 6 }}>
+                  ทุกครั้งที่เปิดจะถูกบันทึกและนับรวมในสรุปกะ
+                </div>
+              </div>
+
               {/* ---- สรุปกะ X-report (7.97) ---------------------------
                   กระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ */}
               <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
@@ -2293,7 +2626,14 @@ export default function PosPage() {
                       <div>เงินตั้งต้น ฿{baht(shiftReport.openingFloat)}</div>
                       <div>เงินเข้าลิ้นชัก ฿{baht(shiftReport.cashIn)} · เงินออก ฿{baht(shiftReport.cashOut)}</div>
                       <div>คืนเงินสด ฿{baht(shiftReport.cashRefunds)}</div>
-                      <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash)}</div>
+                      <div>เปิดลิ้นชักโดยไม่ขาย {shiftReport.noSaleCount} ครั้ง</div>
+                      {shiftReport.expectedCashHidden ? (
+                        <div style={{ color: "var(--pos-muted)" }}>
+                          เงินสดที่ควรมี — ซ่อนไว้จนกว่าจะปิดกะ (โหมดนับปิดตา)
+                        </div>
+                      ) : (
+                        <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash ?? 0)}</div>
+                      )}
                       {shiftReport.countedCash != null && (
                         <div>
                           นับได้ ฿{baht(shiftReport.countedCash)} · ส่วนต่าง{" "}
@@ -2357,11 +2697,23 @@ export default function PosPage() {
                   เบราว์เซอร์นี้ไม่รองรับ WebUSB — จะพิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์แทน
                 </span>
               )}
+              {/* เดิมตรงนี้เป็นปุ่มเปิดลิ้นชักเปล่า ๆ ซึ่งเปิดได้โดยไม่มีบันทึกอะไรเลย —
+                  เป็นรูที่ทำให้การนับปิดตากับบันทึก no-sale ไร้ความหมาย
+                  ย้ายไปแท็บกะ ซึ่งบังคับเหตุผล + PIN ก่อนเปิด (8.0) */}
               {printerReady && (
-                <button onClick={() => void openCashDrawer()} style={{ padding: "8px 14px", fontSize: 13 }}>
-                  เปิดลิ้นชัก
+                <button onClick={() => setTab("shift")} style={{ padding: "8px 14px", fontSize: 13 }}>
+                  เปิดลิ้นชัก → ไปที่แท็บกะ
                 </button>
               )}
+              {/* จอลูกค้า (8.6) — เปิดเป็นหน้าต่างใหม่แล้วลากไปจอที่สอง
+                  ใช้ BroadcastChannel จึงต้องเป็นเบราว์เซอร์เดียวกัน ไม่ใช่เครื่องอื่น */}
+              <button
+                onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
+                style={{ padding: "8px 14px", fontSize: 13 }}
+                title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
+              >
+                เปิดจอลูกค้า
+              </button>
               <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 14px", fontSize: 13 }}>
                 โหลดบิลล่าสุดจากเซิร์ฟเวอร์
               </button>
@@ -2599,15 +2951,61 @@ export default function PosPage() {
                     )}
                   </div>
                   <div className="pos-line-meta">
-                    ฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}
+                    {promoBySku.has(l.sku) && l.baseQty <= 1 ? (
+                    <>
+                      โปรโมชัน · {promoBySku.get(l.sku)!.freeQty > 0
+                        ? `ได้ฟรี ${promoBySku.get(l.sku)!.freeQty} ${l.unitName}`
+                        : `ประหยัด ฿${baht(promoBySku.get(l.sku)!.saved)}`}
+                      {promoBySku.get(l.sku)!.saved === 0 && " (ยังไม่ครบเงื่อนไข)"}
+                    </>
+                  ) : tierPriceByKey.has(l.key) ? (
+                      <>
+                        <span style={{ textDecoration: "line-through", opacity: 0.6 }}>฿{baht(l.packPrice)}</span>{" "}
+                        ฿{baht(tierPriceByKey.get(l.key)!)} × {l.packQty} {l.unitName} · ราคาส่ง
+                      </>
+                    ) : (
+                      <>฿{baht(l.packPrice)} × {l.packQty} {l.unitName} · เหลือ {l.available}</>
+                    )}
                   </div>
+                  {/* เลขเครื่อง (8.3) — กางเฉพาะสินค้าที่เปิดโหมดนี้
+                      หนึ่งช่องต่อหนึ่งชิ้น เพราะพนักงานยิงกล่องทีละใบ ไม่ใช่พิมพ์รวมกัน
+                      ช่องที่ยังว่างเห็นได้ทันทีว่าเหลืออีกกี่กล่องต้องยิง */}
+                  {l.serialTracked && (
+                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {Array.from({ length: l.packQty * l.baseQty }).map((_, i) => (
+                        <input
+                          key={i}
+                          value={l.serials?.[i] ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value.trim();
+                            setCart((cur) => cur.map((row) => {
+                              if (row.key !== l.key) return row;
+                              const next = [...(row.serials ?? [])];
+                              next[i] = value;
+                              return { ...row, serials: next };
+                            }));
+                          }}
+                          placeholder={`เลขเครื่องชิ้นที่ ${i + 1}`}
+                          style={{ padding: "6px 8px", fontSize: 12 }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="pos-qty">
                   <button onClick={() => changeQty(l.key, -1)} aria-label="ลดจำนวน">−</button>
                   <span className="pos-qty-value">{l.packQty}</span>
                   <button onClick={() => changeQty(l.key, 1)} aria-label="เพิ่มจำนวน">+</button>
                 </div>
-                <div className="pos-line-amount">฿{baht(l.packPrice * l.packQty)}</div>
+                <div className="pos-line-amount">
+                  {/* SKU ที่เข้าโปรโชว์ยอดรวมของ SKU ที่บรรทัดแรกเท่านั้น — โปรคิดรวม
+                      ทุกไซซ์ การหารลงแต่ละบรรทัดจะได้เลขที่บวกกันไม่ตรงกับที่เก็บเงิน */}
+                  {promoBySku.has(l.sku) && l.baseQty <= 1
+                    ? (cart.findIndex((x) => x.sku === l.sku) === cart.indexOf(l)
+                        ? `฿${baht(promoBySku.get(l.sku)!.amount)}`
+                        : "—")
+                    : `฿${baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}`}
+                </div>
               </div>
             ))}
           </div>
@@ -2897,6 +3295,16 @@ export default function PosPage() {
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
               <span className="pos-total-value">฿{baht(amountDue)}</span>
             </div>
+            {/* ค่าบริการต้องเห็นแยกบรรทัด ไม่ใช่กลืนไปในยอดรวม — ลูกค้าถามได้ว่าคิดอะไรเพิ่ม */}
+            {extraTotal > 0 && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                {extraLines
+                  .filter((x) => x.label.trim() && Number(x.unitAmount) > 0)
+                  .map((x, i) => (
+                    <div key={i}>{x.label.trim()} +฿{baht(Number(x.unitAmount))}</div>
+                  ))}
+              </div>
+            )}
             {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}
             {discountTotal > 0 && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
@@ -3468,6 +3876,44 @@ export default function PosPage() {
           >
             พักบิล
           </button>
+          {/* ค่าบริการ/ค่าถุง (8.6) — ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า
+              แต่รวมในยอดที่ลูกค้าจ่ายและอยู่ในฐาน VAT เหมือนบรรทัดสินค้า
+              ป้ายที่พิมพ์โผล่บนใบเสร็จ ลูกค้าจึงเห็นทุกบรรทัดที่ถูกคิด */}
+          {extraLines.map((row, idx) => (
+            <div key={idx} style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input
+                value={row.label}
+                onChange={(e) => setExtraLines((cur) =>
+                  cur.map((x, i) => (i === idx ? { ...x, label: e.target.value } : x)))}
+                placeholder="เช่น ค่าถุง"
+                style={{ flex: 1, minWidth: 0, padding: "8px 10px", fontSize: 13 }}
+              />
+              <input
+                value={row.unitAmount}
+                inputMode="decimal"
+                onChange={(e) => setExtraLines((cur) =>
+                  cur.map((x, i) => (i === idx ? { ...x, unitAmount: e.target.value.replace(/[^0-9.]/g, "") } : x)))}
+                placeholder="บาท"
+                style={{ width: 78, padding: "8px 10px", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                aria-label="ลบรายการค่าบริการ"
+                onClick={() => setExtraLines((cur) => cur.filter((_, i) => i !== idx))}
+                className="pos-btn-ghost"
+                style={{ padding: "0 10px" }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            disabled={hasPendingSale}
+            onClick={() => setExtraLines((cur) => [...cur, { label: "", unitAmount: "" }])}
+            style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
+          >
+            + ค่าบริการ / ค่าถุง
+          </button>
           </>)}
         </section>
       </div>
@@ -3916,6 +4362,35 @@ export default function PosPage() {
                 ลิ้นชัก
               </button>
             )}
+            {/* ส่งสำเนาให้ลูกค้า (8.6) — ไม่ใช่เอกสารภาษีใบใหม่ อ่านเลขจากใบที่ออกแล้ว
+                ช่องกรอกชนะข้อมูลในระบบ เพราะพนักงานถามอีเมลปากเปล่าเป็นเรื่องปกติ
+                และบิลอาจไม่ผูกลูกค้าเลย */}
+            {receipt?.orderId && (
+              <>
+                <input
+                  value={receiptTo}
+                  onChange={(e) => setReceiptTo(e.target.value)}
+                  placeholder="อีเมลลูกค้า (เว้นว่าง = ใช้ของในระบบ)"
+                  style={{ flex: 1, minWidth: 150, padding: "10px 12px", fontSize: 13 }}
+                />
+                <button
+                  disabled={sendingReceipt}
+                  onClick={() => void doSendReceipt(receipt.orderId!, "email")}
+                  style={{ padding: "10px 14px" }}
+                  title="ส่งใบเสร็จทางอีเมล"
+                >
+                  ส่งอีเมล
+                </button>
+                <button
+                  disabled={sendingReceipt}
+                  onClick={() => void doSendReceipt(receipt.orderId!, "line")}
+                  style={{ padding: "10px 14px" }}
+                  title="ส่งใบเสร็จทาง LINE (ลูกค้าต้องผูก LINE กับร้านไว้)"
+                >
+                  ส่ง LINE
+                </button>
+              </>
+            )}
             <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 16px" }}>
               ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>
             </button>
@@ -3986,6 +4461,10 @@ function describeFailure(data: any): string {
       return `แลกแต้มไม่ได้: ${data.reason}`;
     case "DISCOUNT_UNAPPROVED":
       return `ส่วนลดหน้าร้านใช้ไม่ได้: ${data.reason} — ให้หัวหน้าอนุมัติใหม่`;
+    case "SERIAL_REQUIRED":
+      return `${data.sku}: ต้องระบุเลขเครื่องให้ครบ ${data.expected} เลข (ใส่แล้ว ${data.received})`;
+    case "SERIAL_ALREADY_SOLD":
+      return `เลขเครื่อง ${data.serial} เคยขายไปแล้ว — หยิบกล่องผิดใบหรือยิงซ้ำ`;
     case "PAYMENT_FAILED":
       return `บันทึกการชำระเงินไม่สำเร็จ: ${data.reason}`;
     default:

@@ -1681,7 +1681,19 @@ export const typeDefs = /* GraphQL */ `
     # ประเภท VAT (7.88) — 'V' คิด VAT · 'N' ยกเว้น VAT · 'UNKNOWN' ยังไม่ระบุ
     # ร้านที่จด VAT ต้องไม่มี UNKNOWN เหลือ ไม่งั้นติด blocker ที่ /admin/pos-readiness
     vatCategory: String
+    # ขั้นราคาส่ง (8.1) — ซื้อครบ minQty ชิ้นในบิลเดียวได้ราคา unitPrice ต่อชิ้น
+    priceTiers: [BmsPriceTier!]!
     variants: [BmsVariant!]!
+  }
+
+  type BmsPriceTier {
+    minQty: Int!
+    unitPrice: Float!
+  }
+
+  input BmsPriceTierInput {
+    minQty: Int!
+    unitPrice: Float!
   }
 
   type BmsAiSynonymCandidate {
@@ -1716,6 +1728,8 @@ export const typeDefs = /* GraphQL */ `
     brand: String
     # ไม่ส่งมา = คงค่าเดิม (ไม่รีเซ็ตเป็น UNKNOWN)
     vat_category: String
+    # ส่งมา = แทนที่ขั้นราคาทั้งชุด · ไม่ส่ง = ไม่แตะของเดิม
+    price_tiers: [BmsPriceTierInput!]
   }
 
   # ===== BMS product bulk import (CSV/XLSX) =====
@@ -3419,6 +3433,9 @@ export const typeDefs = /* GraphQL */ `
     # ตั้งประเภท VAT ให้สินค้าที่ยังเป็น UNKNOWN ทั้งหมด — คืนจำนวนแถวที่เปลี่ยน
     # แตะเฉพาะ UNKNOWN: สินค้าที่ตั้งค่าไว้แล้วต้องไม่ถูกเขียนทับด้วยการกดครั้งเดียว
     bmsSetVatCategoryForUnknown(vatCategory: String!, activeOnly: Boolean): Int!
+    # ออกบาร์โค้ด EAN-13 ช่วงร้านใช้ภายใน (20xx) ให้สินค้าที่ไม่มีบาร์โค้ดจากโรงงาน
+    # ไม่ได้บันทึกลงสินค้าให้ — คืนเลขให้จอเอาไปใส่ในฟอร์มแล้วผู้ใช้กดบันทึกเอง
+    bmsGenerateInStoreBarcode: String!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
     bmsDeleteProductPack(id: ID!): Boolean!

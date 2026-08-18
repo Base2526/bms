@@ -89,6 +89,25 @@ export const BMS_PERMISSIONS = [
   "pos.void",
   "pos.cash.movement",
   "pos.shift.report",
+  "pos.nosale",
+  // คืนสินค้าโดยไม่มีใบเสร็จ — seed ให้ Manager เท่านั้นที่ 8.2
+  // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล
+  // คือการจ่ายเงินออกโดยเชื่อคำบอกเล่า
+  "pos.return.noreceipt",
+  // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
+  // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
+  // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9
+  // .redeem ให้ทุกคนที่ขายหน้าร้าน · .issue/.adjust ให้ Manager เพราะเป็นการสร้าง
+  // และแก้ "เงิน" ของลูกค้าโดยตรง ไม่ใช่การรับชำระ
+  // มัดจำ/ค้างชำระ — seed ที่ 9.0 · .take ให้คนขาย (รับเงิน) · .cancel ให้ Manager
+  // (ยกเลิก/ยึดมัดจำเป็นการตัดสินใจเรื่องเงินของลูกค้า)
+  "pos.deposit.take",
+  "pos.deposit.cancel",
+  "storecredit.issue",
+  "storecredit.redeem",
+  "storecredit.adjust",
+  "commission.view",
+  "commission.manage",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

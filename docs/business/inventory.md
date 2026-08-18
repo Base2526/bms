@@ -328,3 +328,139 @@ every existing caller keeps resolving the default location.
   The sale must survive; the recorded variance must reflect only the goods that were missing.
 - Decide who holds `inventory.count.apply` before handing the count screen to warehouse staff.
   Accepting a variance writes stock off, and it cannot be undone from the UI.
+
+
+## Barcodes (7.99)
+
+Two different jobs share one field, and confusing them is the whole problem.
+
+**A product the manufacturer labelled** already carries an EAN-13 or UPC that GS1 issued to the brand
+owner. That number must be **scanned in**, never typed and never generated. Generating a fresh number
+for such a product leaves the system holding a code that does not match the one printed on the item,
+so staff scan the bottle and nothing is found. The field takes scanner input directly — a
+keyboard-wedge scanner types the digits and presses Enter for you.
+
+**A product with no barcode** — split packs, repacked bulk, own-made goods, imports with no code —
+needs a number the shop invents and prints itself. That is what the generate button is for.
+
+Generated codes are EAN-13 in the **20–29 prefix range GS1 reserves for in-store use**, with a
+correct check digit. Both halves matter: a random number in, say, the 885x Thai prefix would collide
+with a code GS1 issued to a real company, and the day that company's product arrives in the shop it
+would scan as yours instead; a wrong check digit means scanners reject the label outright. Numbers
+walk a sequence rather than being random — random needs retry loops that collide more often the
+larger the catalogue gets — and the generator steps over any number the shop already typed by hand.
+
+The button does not write to the database. It hands the number to the form and the user saves; people
+open a form, click things, and close it again all the time, and a code burned on every click would
+leave gaps in the sequence with no product holding them.
+
+`checkBarcode()` in [barcode.ts](../../apps/web/lib/bms/barcode.ts) validates on entry and **warns
+without blocking**. Real shops carry genuinely odd codes: Code 128 of arbitrary length, a factory's
+internal reference, a number someone wrote on the shelf years ago. Blocking anything that is not a
+clean EAN-13 would stop a shop from recording products it actually sells, and the POS lookup matches
+exactly anyway, so an unusual code still scans. What the warning does is tell you the difference
+between a code you can print a label for and one you cannot.
+
+### Uniqueness is per shop
+
+`3.4` created `uq_bms_products_barcode` as `UNIQUE (barcode)` with no tenant column, written when the
+system served one shop. Under multi-tenancy that meant **two shops selling the same product could not
+both record its real barcode**. The second shop got a duplicate-key error for a value it cannot see,
+held by a shop it does not know exists — an error with no possible explanation from the user's side,
+and a certainty for common goods like soap or a well-known fragrance.
+
+`7.99` scopes it to `(tenant_id, barcode)`, matching what `bms_product_packs` already did in `7.86`.
+Duplicates inside one shop are still rejected: one barcode must not resolve to two products.
+
+Relaxing the index cannot fail on any database, because the old index guaranteed no duplicates exist
+anywhere. The migration still checks for within-shop duplicates first and stops with the offending
+codes named, in case a database was hand-edited and lost the index at some point.
+
+### Printing the labels
+
+`/admin/product-labels` closes the loop: pick products, set how many stickers each needs, print. A
+generated code is worthless until it is on the product.
+
+Labels are 40×30mm, the size Thai label printers most commonly take, laid out so they also work on
+A4 sticker sheets. Sizing is in millimetres rather than pixels because that is the unit label
+printers think in. Printing goes through the browser's own dialog, not the ESC/POS path used for
+receipts — a label printer is a different device from a receipt printer, and letting the OS dialog
+choose keeps both workable.
+
+The barcode is drawn by `eanBars()` in [lib/pos/barcode.ts](../../apps/web/lib/pos/barcode.ts), which
+**refuses to draw a code whose check digit is wrong**. Drawing it anyway would be worse than
+refusing: the shop prints and applies a whole batch of stickers, then discovers they scan as nothing
+while a customer is waiting. Products selected but unprintable are listed with the reason and a link
+back to generate a code.
+
+Guard bars run longer than data bars, and quiet zones are left on both sides — a barcode with correct
+bars but no margin does not scan. The digits are always printed underneath so staff can key the
+number in when a sticker is creased or smudged.
+
+The bar pattern is asserted bit-for-bit against the standard in
+[barcode-contract.test.mts](../../scripts/barcode-contract.test.mts), built by hand from the encoding
+tables rather than recorded from the function's own output.
+
+
+## Bundles / kits (8.8)
+
+A gift set is one thing the customer buys and three things that leave the warehouse. Set `is_bundle`
+on a product and list its components in `bms_product_bundle_items`; the set is priced on its own row
+(that is the point — cheaper than buying loose) and stock comes out of the components.
+
+The structural problem is that `bms_order_items` has an FK to `bms_inventory`, so every line needs a
+stock row, but a set is not stocked. The set therefore gets an inventory row that **stays at zero**
+forever, created automatically on first sale, and reservation skips it and goes to the components. That
+zero is not a fudge: a set's sellable quantity genuinely comes from its components, not from itself.
+The receipt still shows "gift set", which is what the customer bought — recording the three components
+as separate lines would produce a receipt that neither matches the customer's understanding nor
+explains the price.
+
+### One expansion, not four
+
+Four separate places moved stock by reading `bms_order_items` directly: deduct at sale, restore on
+return, release reservations on cancel, and FEFO lot consumption. Each of them joining the recipe
+itself would be four pieces of code that must be equally correct and would drift apart.
+
+`bms_order_stock_lines` is a view that does the expansion once — ordinary lines pass through, set lines
+become their components × set quantity — and all four read from it. **Anything new that moves stock
+must read the view, not the table.**
+
+Two failures that view prevents, both silent:
+
+- deducting from the set's own inventory row would drive it negative and hit
+  `CHECK (current_stock >= 0)` in the middle of closing a bill
+- moving inventory without consuming lots leaves lot totals and stock totals disagreeing until
+  somebody reconciles — the ledger would say the set moved while inventory moved the components
+
+The view carries `order_item_id` so lot provenance still links back to the line that was sold.
+
+A set with no components is refused (`BUNDLE_INCOMPLETE`) rather than sold, because selling it means
+nothing leaves the warehouse. A short component blocks the sale and the error names **the component**,
+not the set — "the set is out of stock" tells staff nothing they can act on.
+
+## Scale barcodes: weight and price embedded (8.8)
+
+Scales with a label printer — vegetables, meat, anything sold loose — print an EAN-13 with the weight
+or the price embedded in the digits, and the counter has to decode it.
+
+`parseScaleBarcode()` reads two forms:
+
+```
+21 + item code (5) + price in satang (5) + check digit
+22 + item code (5) + weight in grams (5) + check digit
+```
+
+Prefix `20` stays reserved for the codes the generate button issues (piece goods). Sharing a prefix
+would mean a piece-goods barcode getting decoded as a weight and priced wrongly.
+
+**The format is whatever the shop's scale is configured to print, not a world standard.** Guessing
+would mean charging the wrong amount every time while everything looks normal, so the convention above
+is stated and the shop must set its scale to match. A code whose check digit fails is not decoded at
+all — reading a corrupted weight and charging from it is worse than refusing.
+
+**Not yet wired into the sale path.** Decoding is only half the feature: a weight-embedded sale needs
+the product's base unit to be grams, and a price-embedded sale means the counter supplies an amount —
+which the server would have to re-derive from the barcode at commit, or the register would be deciding
+prices. That contradicts the invariant the whole POS is built on, so the parser and its tests ship now
+and the sale path stays untouched until the re-derivation is built.

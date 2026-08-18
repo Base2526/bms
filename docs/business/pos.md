@@ -198,6 +198,196 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Deposits / layaway (9.0)
+
+The POS requires payment rows to equal the bill exactly or the bill is voided as `PAYMENT_MISMATCH`.
+That rule is correct for a sale finishing at the counter and **is not relaxed here** — it is what stops
+money collected from diverging from what the system computed.
+
+A deposit is a different kind of bill instead. Goods are reserved but not deducted, the order stays
+`PENDING`, and when the customer returns and pays the balance the bill walks the **ordinary completion
+path**: stock, FEFO lots, tax document, points, audit. That reuse is the design; a second settlement
+path would be a second thing that has to be equally correct and gets tested half as much.
+
+Consequences that fall out of it, all intended:
+
+- **The tax invoice is issued at collection, not when the deposit is taken** — which is where title
+  actually passes.
+- **The sale belongs to the collecting shift.** Settlement re-stamps the order's device, shift and
+  cashier, so takings and commission land with whoever handed the goods over, not whoever took the
+  deposit days earlier.
+- A deposit equal to the bill is refused: that is a completed sale and must go the normal way, or it
+  sits in the deposit list fully paid with nobody closing it.
+- Paying the wrong balance is refused rather than accepted, the same reasoning as `PAYMENT_MISMATCH`.
+
+Two guards inside `finalizePosSale` needed adjusting rather than bypassing. It rejects a pending bill
+that already has payment rows — a sensible defence against collecting twice — and a deposit bill has
+them by design. It now takes an expected already-paid amount, turning "there must be none" into "there
+must be exactly this much", which still catches an unplanned payment. And it compares the bill total
+against the amount being settled, so settlement passes the **full** total (the deposit is already a
+payment row) rather than the balance.
+
+**Closing a deposit does not move money by itself.** Whether an unclaimed deposit is refunded or
+forfeited is an agreement between shop and customer — some forfeit after a deadline, some refund in
+full. The system records the decision with a mandatory reason and leaves the payout to the ordinary
+refund path. Deciding for the shop would be deciding about somebody else's money.
+
+Open deposits carry a due date and are listed with an `overdue` flag, because **reserved goods are
+goods nobody else can buy.** Without that visibility a shop accumulates stock that exists but cannot be
+sold, and nobody notices.
+
+## Gift cards and store credit (8.9)
+
+Closes two gaps at once: gift cards could not be sold at all, and a return could only go back as cash
+or to the original payment method — never as store credit, which is what shops prefer because the money
+stays in the shop.
+
+Same ledger shape as loyalty points: the balance is `SUM` of the ledger and the column is a cache. A
+column updated without a ledger entry drifts silently the moment some write path forgets it, and
+nothing then reveals when the drift started. `balanceMismatchCount` must always be 0.
+
+**One deliberate difference from points: credit cannot go negative.** Points are allowed to, because
+clamping would make return-after-redeem profitable. Credit is money, and a negative balance is the shop
+owing a customer with nobody having approved it — enforced by a `CHECK` on the table, not only in code.
+
+Redemption happens **inside the sale transaction**, with `FOR UPDATE` on the card row: one card can be
+scanned at two registers at once (someone buys a card as a gift and both people use it), and without
+the lock both would read the old balance and overspend. Validation happens *before* `createOrder`, so a
+bad code or a short balance costs no stock, no points, no coupon.
+
+`STORE_CREDIT` is a payment method but **not cash** — the shop took the money when the card was sold,
+so it must never reach the drawer total or the expected-cash formula at close.
+
+Returns put the credit back on the **same card**, proportionally to what was refunded. The POS return
+path does not go through `cancelOrder`, so it needed its own hook; without it a customer who paid by
+card and returned goods simply lost the money.
+
+That proportional reversal forced the uniqueness design apart. A single
+`UNIQUE (tenant_id, credit_id, order_id, kind)` looks right and is wrong: partial returns happen several
+times per bill and each one must reverse its own share, but that constraint allows only the first — the
+second is silently swallowed and the customer loses the balance. It is now three partial unique
+indexes: redemption keyed by order, cancel-reversal keyed by order, return-reversal keyed by
+`pos_return_id`.
+
+Card codes come from `crypto.getRandomValues`, not a sequence. A gift card is money that whoever holds
+it can spend, so sequential codes (`GC-0001`, `GC-0002`) mean anyone who buys one can guess the rest.
+Visually ambiguous characters (`I`, `O`, `0`, `1`) are excluded so a code can be read over the phone.
+
+Outstanding credit is a **liability** (deferred revenue) exactly like outstanding points. Give the
+accountant `getStoreCreditOutstanding()` at period end.
+
+`storecredit.issue` and `storecredit.adjust` are Manager-only because issuing a card creates money in
+the system; `storecredit.redeem` goes to everyone who sells, since taking a gift card is ordinary work.
+
+## Promotions: buy-X-get-Y and N-for-a-price (8.7)
+
+Coupons need a code the customer knows. Wholesale steps change the per-unit price. Neither answers
+*"buy 3 get 1 free"* or *"3 for ฿100"*, which are the offers Thai retail runs most.
+
+**A promotion is not a fifth discount layer.** There are already four (tier → coupon → points →
+manual) under one per-bill cap (`max_discount_pct`), and putting promotions there breaks two things at
+once. A promotion the shop advertised on a shelf could get **trimmed** because that bill happened to
+hit the cap — the shop breaking its word to a customer because of its own internal rule, which is
+unexplainable at the counter. And the receipt would show full prices with a large discount at the
+bottom, when the customer's understanding is that "3 for ฿100" *is* the price of those three.
+
+So it is a line-pricing mechanism like `8.1`: computed from the SKU's total quantity on the bill, and
+never subject to the discount cap.
+
+Both forms leave a remainder at full price rather than averaging across every unit, because the
+customer can count what they got free. Buy 3 get 1 with 7 units means one complete group and 3 at full
+price — 6 units paid.
+
+**Quantity spans sizes and the offer is charged once per SKU per bill.** Two 60ml plus two 150ml is
+four of that product, so it earns the offer; charging per line would either miss it (two lines of two,
+neither complete) or bill it twice. There is a test for both wrong answers.
+
+**A promotion that costs more than buying loose is not applied.** A shop that cuts the normal price
+below its own bundle price — or leaves a stale promotion running — would otherwise have the system
+overcharge customers in the name of an offer, which is damage the shop cannot explain. The lower total
+always wins.
+
+Only one promotion can be active per product (a partial unique index enforces it). Two would require
+answering which one wins, and there is no answer staff can give a customer. Date windows mean an
+expired offer stops applying on its own, without anyone remembering to edit the product — a stale
+promotion is how a shop keeps selling at a loss without noticing.
+
+Packs are excluded, same as wholesale steps: the pack row already states what the box costs.
+
+**Not covered:** cross-product offers ("buy A, get B free"). Those cannot be expressed as one SKU's
+group price and need their own mechanism.
+
+## Charges that are not stock (8.6)
+
+Bag fees, service fees, gift wrapping: collecting money for something that is not in `bms_products`
+previously meant inventing a fake SKU, which puts phantom goods in the warehouse and corrupts stock
+reporting.
+
+`bms_order_extra_lines` is a separate table rather than a relaxation of `bms_order_items`, because that
+table has three constraints that all conflict with this:
+
+```
+UNIQUE (order_id, product_sku, size)                    → two service fees on one bill impossible
+FK (tenant_id, product_sku) → bms_products              → needs a real SKU first
+FK (tenant_id, location_id, product_sku, size)
+                            → bms_inventory             → needs a stock row first
+```
+
+Loosening all three would make the table **every channel shares** — POS, online, LINE, TikTok,
+Lazada/Shopee — weaker in order to carry rows that are not goods. A bag fee genuinely is not an
+inventory line; it is a service charge attached to a bill, so a separate table matches the meaning and
+leaves the working paths untouched.
+
+**Charges are inside the VAT base.** A service fee charged by a VAT-registered business is taxable, so
+the tax document's line loader unions them in. Adding the amount to the total *after* VAT is computed
+would make every invoice report a base smaller than the money taken — under-declaring by the sum of
+every service fee the shop ever charged.
+
+They are added before discounts too, since a percentage discount applies to what the customer actually
+pays.
+
+Rows that are incomplete — no label, no amount — are dropped rather than failing the bill, because the
+counter adds a row before typing in it. `pos.sell` is enough: charging ฿3 for a bag is routine work,
+the money lands in the drawer that gets counted at close, and the label prints on the receipt, so the
+customer sees every line charged. That visibility is a tighter control than a permission gate.
+
+## Wholesale steps (8.1)
+
+The system had two pricing mechanisms and neither answered *"buy ten, get the wholesale price"*.
+`bms_product_packs` (`7.86`) prices a **container** — a box of ten strips at ฿230 — which is about
+packaging, not quantity; a customer buying ten loose strips got nothing. Membership tiers (`7.96`)
+take a percentage off the **whole bill** and are not tied to any product.
+
+`bms_product_price_tiers` fills the gap: a per-unit price that changes with how many are bought.
+The step with the highest `min_qty` not exceeding the quantity wins, and it applies to every unit,
+not only the ones past the threshold.
+
+Two decisions worth stating:
+
+**Quantity is counted per SKU across the whole bill, not per line.** A customer taking five 60ml and
+five 150ml has bought ten of that product, which is what a shop means by "buy ten". Counting per line
+would leave that customer at the three-unit price with no explanation anyone could give at the
+counter.
+
+**A line sold as a pack keeps the pack's price.** The pack row is the shop stating outright what the
+box costs; letting two mechanisms compete for the same line produces a bill nobody can explain. The
+pack's units still count toward the SKU's total, because the customer did buy them.
+
+Steps are not required to get cheaper as they climb, and nothing corrects them if they do not. A shop
+charging more for a full case because it needs special packing means it. The function's job is to do
+what was configured, predictably — not to infer intent and quietly pick the lowest price.
+
+`unitPriceForQty()` in [pricing.ts](../../apps/web/lib/bms/pricing.ts) is a pure function for the same
+reason `composeDiscounts()` is: the counter screen previews the price and `createOrder` commits it,
+and if the two disagree by one satang the register's payment rows no longer match the server total and
+the bill is thrown out as `PAYMENT_MISMATCH` in front of a customer. `resolvePosScan()` therefore
+returns the steps with the scan result, and both sides call the same function. The screen previews;
+the server still decides.
+
+Steps are edited on the product form and saved with the product. Sending the field replaces the whole
+set, omitting it leaves the existing steps alone — the same rule as `vat_category`, and for the same
+reason: a bulk import that does not know about the field must not wipe a shop's wholesale pricing.
+
 ## Parking a bill
 
 A customer forgets something or cannot find their card while a queue builds. `bms_pos_parked_sales`
@@ -266,6 +456,179 @@ the first thing an auditor asks about, and there is no good answer.
 Voided bills leave `salesTotal` and `billCount` and appear on their own line of the shift report.
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
+
+## Customer display and receipt delivery (8.6)
+
+### The customer-facing screen
+
+`/pos/display` is a read-only page for a second monitor turned toward the customer: the lines as they
+are scanned, the running total, the discount, and after payment the change due in the largest type on
+the screen. It has no buttons and talks to no API, because customers reach out and touch it.
+
+It syncs over **`BroadcastChannel`, not a WebSocket**. The second screen is another window of the same
+browser on the same machine, hanging off the HDMI port, so messages never leave the device. That
+matters for one specific failure: if the shop's internet drops, a WebSocket-driven display freezes
+showing a stale total — the worst possible moment for the customer-facing number to be wrong. Nothing
+needs configuring; if no display window is open, the broadcast simply has no listener.
+
+Only the last eight lines are shown. A customer is watching what was just scanned, and auto-scrolling
+a screen nobody can touch reads worse than truncating.
+
+### Sending a receipt
+
+Receipts previously left the shop on paper only, despite the mailer and LINE integration already
+existing. `sendReceipt()` composes a copy and sends it by email or LINE.
+
+**The figures come from the issued tax document, never from a fresh calculation.** The abbreviated
+invoice stores its own base, VAT and exempt amounts (`7.88`); recomputing `total × 7/107` breaks the
+moment a bill mixes VAT-exempt goods, and the customer would then hold evidence contradicting what the
+shop filed. No document, no VAT block.
+
+**A failed send never damages the sale.** The sale completed when the money was taken; a bounced email
+is a failed copy, so the caller gets a result to display rather than an exception.
+
+An address typed at the counter beats whatever is on the customer record — staff ask for an email out
+loud all the time, and the bill may have no customer attached at all. That address is **not** written
+back to the customer profile: typing an email to get one receipt is not consent to be stored.
+
+LINE identities live in `bms_customer_identities` (`7.74`), not on `bms_customers`. Reading the wrong
+table would tell customers who *have* linked LINE that they have not, so there is a test pinning it.
+
+## Sales commission (8.5)
+
+The system already knew who sold each bill (`bms_orders.cashier_user_id` since `7.87`); what was
+missing was a rate, so shops paying commission calculated it entirely outside the system.
+
+`bms_commission_rules` stores rates **with an effective date**, and the report picks the rule in force
+on the date of each bill. This is the whole design, and it exists to avoid one specific failure: with a
+single current rate, the day a shop moves 2% to 3% every already-paid month silently restates. Staff
+open the report, see figures that do not match the payslips they were given, and nobody can explain or
+audit it. Changing a rate here means adding a row, not overwriting one, so history stays fixed without
+storing commission amounts on order rows.
+
+Specificity resolves product → category → default, each within the dates in force.
+
+Two correctness rules the report enforces:
+
+**Returned goods take their commission back.** Without that, "sell it, have the customer return it
+tomorrow" farms commission — and it is among the hardest frauds to notice, because every individual
+step looks correct. Voided bills earn nothing at all.
+
+**Bill-level discounts are spread across lines.** Commission is computed per line, since rates depend
+on product and category, so a bill with a large coupon would otherwise pay commission on money the
+shop never received.
+
+`commission.view` and `commission.manage` are separate: a team lead should be able to read their team's
+figures without being able to raise their own rate. Both are seeded to Manager.
+
+One trap worth recording, found by the test suite: `pg` returns a `DATE` as a `Date` at local midnight,
+so `toISOString().slice(0, 10)` shifts every date back a day in UTC+7. The effective date is now cast to
+text in SQL and never passed through a JS `Date`. A rate starting on the 1st would otherwise have been
+applied from the previous month.
+
+## Serial numbers (8.3)
+
+Lots (`7.85`) answer *which batch did this come from*. Serials answer *who bought **this** unit, and
+when* — the question asked when someone arrives with a warranty claim and no receipt. A lot is a
+group; a serial is a piece.
+
+Set `serial_tracked` on a product and the counter must supply one serial per base unit before the sale
+will go through: two boxes of ten is twenty serials, not two. Validation happens **before**
+`createOrder`, so a short entry costs nothing — no stock reserved, no points deducted, no coupon
+counted. Validating afterwards would mean unwinding all of it, which is the easier thing to get wrong.
+
+Duplicates are refused both ways: the same serial twice on one line (the same box scanned twice), and a
+serial already marked `SOLD`. The second matters more than it looks. Staff pick up the wrong box
+regularly, and letting it through points the warranty history at the previous customer — a mistake
+that only surfaces at the claim, when it is too late to reconstruct.
+
+Serials are written inside the transaction that closes the sale, so a committed bill can never lack
+them.
+
+**Serials are captured at the sale, not at goods-in.** A small shop is not going to scan fifty handsets
+into the system when a delivery arrives, but it does pick up the box at the counter. The trade-off is
+that the serial count and the stock count do not match until stock sells through, which is accurate to
+how the shop actually works.
+
+A full return frees the serials to be sold again (`RETURNED` → `SOLD` on the next sale), which is
+ordinary for exchanges and second-hand goods. **A partial return does not**, because nothing records
+which physical unit came back — serials are captured per line, not bound to individual pieces.
+Guessing the first serial in the set would point the warranty history at the wrong unit, which is worse
+than leaving it alone.
+
+**Only the POS enforces this.** An online order cannot: at checkout nobody knows which unit will be
+picked, and the packer does. Enforcing it there would block online sales of every tracked product.
+
+## Returning goods with no receipt (8.2)
+
+`7.91` handled returns against a bill and required an `orderId`, so a customer who lost the receipt
+could not be served at all and there was no override. `bms_pos_blind_returns` adds the path.
+
+This is the most direct fraud route a shop has — bring in goods that were never bought, walk out with
+cash — so three controls apply at once: an approver with `pos.return.noreceipt` (seeded to Manager
+only) enters their own PIN, a reason is mandatory, and the refund per unit **cannot exceed today's
+shelf price**. Without that cap the amount is whatever someone types.
+
+It is a separate table rather than a nullable `order_id` on `bms_pos_returns`. Every row in that table
+resolves back to real prices, lots and payments; a receiptless return has nothing to resolve to. And
+the five return-report queries in `reports.ts` all join through the order — making the column nullable
+would mean complicating five correct queries to carry rows that mean something else.
+
+**The cash goes out through `bms_pos_cash_movements`,** the same table ordinary drawer movements use.
+Expected cash at close has exactly one formula, and a second source of cash leaving that does not feed
+into it means every shift closes short by exactly the refunds with nobody able to explain the gap. The
+drawer must also actually hold the money: a refund larger than the drawer is refused, because you
+cannot hand over cash that is not there.
+
+The return audit at `/admin/reports/pos-return-audit` counts these **separately** from ordinary
+returns and raises a signal whenever there is even one. Folding them into the same number would bury
+the loudest signal in the report under routine activity.
+
+**No credit note is issued.** There is no source tax invoice to reference, so the row is internal
+evidence for the accountant, not a tax document.
+
+## Blind close and no-sale (8.0)
+
+Two internal controls the shift work in `7.97` left open.
+
+### Blind close
+
+`closePosShift()` always computed expected cash on the server, but the shift report added in `7.97`
+would happily show it *before* the count — so whoever counted the drawer could read the answer and
+type it back, and variance was zero forever. A control that cannot be failed is not a control.
+
+With `bms_store_profile.pos_blind_close` on (**the default**), `getPosShiftReport()` returns
+`expectedCash: null` for a shift that is still open, with `expectedCashHidden: true` so the screen can
+say *why* the number is missing rather than looking broken. After the shift closes, everything shows.
+
+It hides the number from everyone, managers included. A blind close with exceptions is not blind: a
+number on a screen cannot be stopped from being repeated to the person doing the counting.
+
+The obvious leak was closed with it. `recordCashMovement()` returned `drawerAfter` — the expected
+total, exactly — so a cashier could pay ฿1 into the drawer and read the answer off the confirmation.
+Under blind close that field and the `WOULD_OVERDRAW` amount both come back `null`. Over-withdrawal
+is still refused; the refusal just stops naming the figure.
+
+Facts that are not the answer stay visible: opening float, cash in, cash out, refunds. Without those
+the report explains nothing.
+
+**This changes behaviour for existing shops on upgrade** — the column defaults to `TRUE`. A shop that
+wants the old behaviour turns it off at `/admin/pos-readiness`.
+
+### No-sale
+
+Opening the drawer to break a note for a customer is routine, and it cannot be forbidden: every till
+drawer has a manual release underneath, so a system that refuses just moves the action somewhere with
+no record at all. `bms_pos_no_sales` records each one with a mandatory reason, and the count appears
+on the shift report — a spike in no-sales is one of the oldest signals in retail.
+
+`pos.nosale` is seeded to Manager, Sales and Cashier. No approver, deliberately: requiring a
+supervisor for every roll of coins is what pushes staff to the manual release. The control is the
+record, not the gate.
+
+The POS settings tab used to carry a bare "open drawer" button that fired the ESC/POS pulse with
+nothing written down — the exact hole this feature exists to close. It now points at the shift tab,
+where a reason and a PIN are required and the drawer opens as part of recording the event.
 
 ## Shift report (X / Z)
 
