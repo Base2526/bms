@@ -181,3 +181,50 @@ Full and partial returns restore both the inventory total and the exact source-l
 `bms_pos_return_item_lots` records what has already been restored so repeated partial returns cannot
 credit one lot twice. The stock movement ledger records `RETURN` with the POS order reference. See
 [pos.md](pos.md) for the counter workflow and opening checklist.
+
+
+## Multiple branches: transfers and counts (7.98)
+
+`7.84` gave every inventory row a `location_id`, but nothing could act on more than the default
+branch. `adjustStock()` resolved the default location and ignored its caller, so a two-branch shop
+could not correct the second branch's numbers at all — while its POS registers happily sold from it.
+`adjustStock()` now takes an optional `locationId` (omitted still means the default branch, so
+existing callers are unchanged) and verifies the branch belongs to the shop before touching a row.
+
+### Transfers are two steps
+
+`bms_stock_transfers` moves goods branch to branch as **send** then **receive**. Stock leaves the
+source when it is sent and arrives at the destination when it is received; in between it belongs to
+no branch at all. That is not an accounting nicety — it is what makes a stock count at the source
+branch correct while the van is still moving.
+
+A send refuses to move more than the unreserved quantity: goods a customer already has on order at
+that branch must not be shipped elsewhere. A receive may record less than was sent (broken, lost,
+miscounted at packing); the shortfall gets its own `STOCK_OUT` movement at the source, noted as lost
+in transit, rather than evaporating into the difference between two branch totals. Cancelling is
+only possible before sending — once goods are off the shelf, the transfer has to be closed by
+receiving it.
+
+`TRANSFER_IN`/`TRANSFER_OUT` are separate movement types from `STOCK_IN`/`STOCK_OUT` because a
+transfer does not remove goods from the company, and a total-stock-value report must not treat it as
+if it did.
+
+### Counts apply a difference, never an absolute
+
+The trap in stock taking is that the shop keeps selling while someone walks the aisles. If applying
+a count wrote the counted number straight into `current_stock`, every unit sold during the count
+would be conjured back: count 10 at 9am, sell 3 at 10am, apply at noon, and the shelf says 10 when
+it holds 7.
+
+So `bms_stock_count_items` stores `snapshot_qty` — the system quantity at the moment the line was
+added — and applying the count adds `counted − snapshot` to whatever the current quantity is by
+then. Sales during the count survive, and the recorded variance is only the goods that were actually
+missing. The snapshot is captured on first entry and does not move when a counter corrects a typo,
+because a snapshot that chases every edit would swallow the sales that happened in between.
+
+Applying is refused outright (`WOULD_BREAK_RESERVED`) if it would drop stock below what customers
+have reserved at that branch; that situation needs a person to decide, not a silent winner.
+
+`inventory.count` and `inventory.count.apply` are deliberately separate permissions, seeded by
+`7.98` to Warehouse and Manager respectively. Walking the shelves and writing numbers down is a
+warehouse job; signing off that the goods really are gone is an accounting decision.

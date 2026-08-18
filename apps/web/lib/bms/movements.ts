@@ -12,7 +12,12 @@ export type MovementType =
   | "RESERVE"
   | "RELEASE"
   | "SHIP"
-  | "RETURN";
+  | "RETURN"
+  // 7.98 — แยกจาก STOCK_IN/OUT เพราะการโอนย้ายไม่ได้ทำให้ของหายจากบริษัท
+  // และของที่ขาดจากการนับเป็นตัวเลขที่บัญชีต้องเห็นแยกจากการตัดขายตามปกติ
+  | "TRANSFER_IN"
+  | "TRANSFER_OUT"
+  | "COUNT_ADJUST";
 
 export type MovementRow = {
   id: string;

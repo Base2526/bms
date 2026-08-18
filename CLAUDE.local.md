@@ -151,6 +151,16 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     `../../scripts/pos-shift-ops-db-contract.test.mts` — รวมสามชุด 45 เทส ผ่านทั้งหมด
   · **ส่วนลดมือ ยกเลิกบิล และเงินออกจากลิ้นชัก ต้องกด PIN คนที่สองทุกครั้ง** แม้คนขายจะมีสิทธิ์เอง
     (ตั้งใจ — การมีสิทธิ์กับการใช้สิทธิ์ต้องเป็นคนละการกระทำในหลักฐาน)
+- **`7.98__bms_stock_transfers_and_counts.sql` (โอนย้ายระหว่างสาขา + นับสต็อก) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`inventory.transfer`, `inventory.count` → Manager/Warehouse ·
+  `inventory.count.apply` → Manager เท่านั้น)
+  · **apply ด้วย `psql -1`** — รอบแรกล้มกลางไฟล์เพราะ FK ผิด แล้วตารางค้างครึ่งเดียวใน DB
+    (ต้อง DROP มือ) · `bms_products` มี PK `(tenant_id, sku)` FK จึงต้องเป็น composite
+  · **`bms_locations.branch_code` default `'00000'` + unique `(tenant_id, branch_code)`** — สร้าง
+    สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส)
+  · เทสชุดที่ 4 (10 เทส): `../../scripts/inventory-multilocation-db-contract.test.mts`
+    — รวมสี่ชุด 55 เทส ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
