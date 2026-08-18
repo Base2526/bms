@@ -198,6 +198,40 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Charges that are not stock (8.6)
+
+Bag fees, service fees, gift wrapping: collecting money for something that is not in `bms_products`
+previously meant inventing a fake SKU, which puts phantom goods in the warehouse and corrupts stock
+reporting.
+
+`bms_order_extra_lines` is a separate table rather than a relaxation of `bms_order_items`, because that
+table has three constraints that all conflict with this:
+
+```
+UNIQUE (order_id, product_sku, size)                    → two service fees on one bill impossible
+FK (tenant_id, product_sku) → bms_products              → needs a real SKU first
+FK (tenant_id, location_id, product_sku, size)
+                            → bms_inventory             → needs a stock row first
+```
+
+Loosening all three would make the table **every channel shares** — POS, online, LINE, TikTok,
+Lazada/Shopee — weaker in order to carry rows that are not goods. A bag fee genuinely is not an
+inventory line; it is a service charge attached to a bill, so a separate table matches the meaning and
+leaves the working paths untouched.
+
+**Charges are inside the VAT base.** A service fee charged by a VAT-registered business is taxable, so
+the tax document's line loader unions them in. Adding the amount to the total *after* VAT is computed
+would make every invoice report a base smaller than the money taken — under-declaring by the sum of
+every service fee the shop ever charged.
+
+They are added before discounts too, since a percentage discount applies to what the customer actually
+pays.
+
+Rows that are incomplete — no label, no amount — are dropped rather than failing the bill, because the
+counter adds a row before typing in it. `pos.sell` is enough: charging ฿3 for a bag is routine work,
+the money lands in the drawer that gets counted at close, and the label prints on the receipt, so the
+customer sees every line charged. That visibility is a tighter control than a permission gate.
+
 ## Wholesale steps (8.1)
 
 The system had two pricing mechanisms and neither answered *"buy ten, get the wholesale price"*.

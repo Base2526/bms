@@ -34,6 +34,7 @@ import {
   type OrderDiscountLine,
 } from "./membership";
 import { unitPriceForQty, type PriceTier } from "./pricing";
+import type { VatCategory } from "./vat";
 import {
   markRestockSubscriptionsOrdered,
   markRestockSubscriptionsPurchasedForOrder,
@@ -97,6 +98,11 @@ export type CreateOrderInput = {
    * > 0 ต้องมี discountApprovedBy + discountReason เสมอ — ผู้เรียกเป็นคนตรวจ
    * ว่าคนอนุมัติมีสิทธิ์จริง ที่นี่แค่ปฏิเสธบิลที่ไม่มีหลักฐานอนุมัติติดมา
    */
+  /**
+   * รายการเก็บเงินที่ไม่ใช่สินค้าในคลัง (8.6) — ค่าถุง ค่าบริการ ค่าห่อของขวัญ
+   * อยู่ในฐาน VAT เหมือนบรรทัดสินค้า ไม่ใช่ยอดบวกท้ายบิล
+   */
+  extraLines?: Array<{ label: string; qty?: number; unitAmount: number; vatCategory?: VatCategory | null }> | null;
   manualDiscount?: number | null;
   /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
   discountApprovedBy?: string | null;
@@ -463,6 +469,19 @@ export async function createOrder(
       return { status: "POINTS_INVALID", reason: "แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก" };
     }
 
+    // ค่าบริการ/ค่าถุง (8.6) — บวกเข้ายอดสินค้าก่อนคิดส่วนลด
+    // ต้องอยู่ก่อนส่วนลดเพราะส่วนลดชั้นสมาชิกคิดเป็น % ของยอดบิล และค่าบริการ
+    // เป็นส่วนหนึ่งของยอดที่ลูกค้าจ่าย ไม่ใช่ยอดที่ยกเว้นจากการคิดส่วนลด
+    const extraLines = (input.extraLines ?? [])
+      .map((x) => ({
+        label: String(x?.label ?? "").trim(),
+        qty: Math.max(1, Math.trunc(Number(x?.qty ?? 1))),
+        unitAmount: Math.round(Number(x?.unitAmount) * 100) / 100,
+        vatCategory: (x?.vatCategory === "N" || x?.vatCategory === "UNKNOWN" ? x.vatCategory : "V") as VatCategory,
+      }))
+      .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
+    for (const extra of extraLines) total += extra.unitAmount * extra.qty;
+
     // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
     // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
     const manualDiscount = Math.max(0, Math.round(Number(input.manualDiscount ?? 0) * 100) / 100);
@@ -591,6 +610,14 @@ export async function createOrder(
         ? [{ source: "MANUAL" as const, label: manualLabel, amount: breakdown.manualDiscount }]
         : []),
     ]);
+
+    for (const extra of extraLines) {
+      await client.query(
+        `INSERT INTO bms_order_extra_lines (tenant_id, order_id, label, qty, unit_amount, vat_category)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [tenantId, orderId, extra.label, extra.qty, extra.unitAmount, extra.vatCategory]
+      );
+    }
 
     for (const ln of lines) {
       await client.query(

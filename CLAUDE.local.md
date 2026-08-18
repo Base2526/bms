@@ -269,6 +269,17 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดใหม่: `scripts/receipt-delivery-db-contract.test.mts` (7 เทส) — **ไม่ทดสอบการส่งจริง**
     (ไม่มี mail provider/LINE token ในเทส) ตรวจการประกอบใบเสร็จ + การหาผู้รับ + การปฏิเสธที่อ่านรู้เรื่อง
     — รวม DB 116 ผ่านทั้งหมด
+- **`8.6__bms_order_extra_lines.sql` (ค่าถุง/ค่าบริการ ที่ไม่ใช่สินค้าในคลัง) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  (ใช้ `pos.sell`)
+  · **ตารางแยก ไม่ได้แตะ `bms_order_items`** — ตารางนั้นมี `UNIQUE (order_id, product_sku, size)`
+    + FK ไป `bms_products` + FK ไป `bms_inventory` ซึ่งขัดกับรายการแบบนี้ทั้งสามข้อ · การคลายทั้งสาม
+    คือทำให้ตารางที่ทุกช่องทางใช้ร่วมกันหลวมลงเพื่อรองรับของที่ไม่ใช่สินค้า ไม่คุ้มความเสี่ยง
+  · **⚠️ ค่าบริการอยู่ในฐาน VAT** — `loadOrderLinesInTx` ใน `taxDocuments.ts` ต้อง UNION ตารางนี้เข้ามา
+    ถ้าลืม ใบกำกับจะแสดงฐานน้อยกว่าเงินที่รับจริง = ยื่นภาษีต่ำกว่าความจริงเท่าค่าบริการทั้งหมด
+    ที่เคยเก็บ (มีเทสคุม)
+  · บวกเข้ายอด **ก่อน** คิดส่วนลด เพราะส่วนลด % คิดบนยอดที่ลูกค้าจ่ายจริง
+  · เทสชุดใหม่: `scripts/order-extra-lines-db-contract.test.mts` (7 เทส) — รวม DB 123 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

@@ -449,6 +449,9 @@ export default function PosPage() {
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   const [noSaleReason, setNoSaleReason] = useState("");
   // ---- ส่งใบเสร็จ (8.6) ----
+  // ---- ค่าบริการ/ค่าถุง (8.6) ----
+  // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
+  const [extraLines, setExtraLines] = useState<Array<{ label: string; unitAmount: string }>>([]);
   const [receiptTo, setReceiptTo] = useState("");
   const [sendingReceipt, setSendingReceipt] = useState(false);
   // ---- คืนไม่มีใบเสร็จ (8.2) ----
@@ -606,9 +609,18 @@ export default function PosPage() {
     return out;
   }, [cart]);
 
+  /** ค่าบริการที่กรอกครบแล้วเท่านั้น — แถวที่ยังกรอกไม่เสร็จต้องไม่ขยับยอด */
+  const extraTotal = useMemo(
+    () => extraLines.reduce((sum, x) => {
+      const amount = Number(x.unitAmount);
+      return sum + (x.label.trim() && Number.isFinite(amount) && amount > 0 ? amount : 0);
+    }, 0),
+    [extraLines]
+  );
+
   const total = useMemo(
-    () => cart.reduce((sum, l) => sum + (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty, 0),
-    [cart, tierPriceByKey]
+    () => cart.reduce((sum, l) => sum + (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty, 0) + extraTotal,
+    [cart, tierPriceByKey, extraTotal]
   );
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
@@ -691,6 +703,8 @@ export default function PosPage() {
     clearMember();
     setCouponCode("");
     clearManualDiscount();
+    // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
+    setExtraLines([]);
   }
 
   /** ส่วนลดมืออนุมัติเป็นราย "บิล" ไม่ใช่รายกะ — ขายจบต้องล้างทุกครั้ง ไม่งั้นบิล
@@ -1713,6 +1727,10 @@ export default function PosPage() {
           // เลขเครื่อง (8.3) — ส่งเฉพาะที่กรอกไว้ server บังคับความครบเอง
           serials: line.serials?.length ? line.serials : undefined,
         })),
+        // ค่าบริการ/ค่าถุง (8.6) — ส่งเฉพาะแถวที่กรอกครบ
+        extraLines: extraLines
+          .map((x) => ({ label: x.label.trim(), unitAmount: Number(x.unitAmount) }))
+          .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount > 0),
         payments: paymentSummary.normalized
           .filter((payment) => payment.numericAmount > 0)
           .map((payment) => ({
@@ -3224,6 +3242,16 @@ export default function PosPage() {
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
               <span className="pos-total-value">฿{baht(amountDue)}</span>
             </div>
+            {/* ค่าบริการต้องเห็นแยกบรรทัด ไม่ใช่กลืนไปในยอดรวม — ลูกค้าถามได้ว่าคิดอะไรเพิ่ม */}
+            {extraTotal > 0 && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                {extraLines
+                  .filter((x) => x.label.trim() && Number(x.unitAmount) > 0)
+                  .map((x, i) => (
+                    <div key={i}>{x.label.trim()} +฿{baht(Number(x.unitAmount))}</div>
+                  ))}
+              </div>
+            )}
             {/* ส่วนลดต้องเห็นแยกบรรทัดที่จอ ลูกค้าถามได้ว่าลดจากอะไร (7.96) */}
             {discountTotal > 0 && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
@@ -3794,6 +3822,44 @@ export default function PosPage() {
             style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
           >
             พักบิล
+          </button>
+          {/* ค่าบริการ/ค่าถุง (8.6) — ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า
+              แต่รวมในยอดที่ลูกค้าจ่ายและอยู่ในฐาน VAT เหมือนบรรทัดสินค้า
+              ป้ายที่พิมพ์โผล่บนใบเสร็จ ลูกค้าจึงเห็นทุกบรรทัดที่ถูกคิด */}
+          {extraLines.map((row, idx) => (
+            <div key={idx} style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input
+                value={row.label}
+                onChange={(e) => setExtraLines((cur) =>
+                  cur.map((x, i) => (i === idx ? { ...x, label: e.target.value } : x)))}
+                placeholder="เช่น ค่าถุง"
+                style={{ flex: 1, minWidth: 0, padding: "8px 10px", fontSize: 13 }}
+              />
+              <input
+                value={row.unitAmount}
+                inputMode="decimal"
+                onChange={(e) => setExtraLines((cur) =>
+                  cur.map((x, i) => (i === idx ? { ...x, unitAmount: e.target.value.replace(/[^0-9.]/g, "") } : x)))}
+                placeholder="บาท"
+                style={{ width: 78, padding: "8px 10px", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                aria-label="ลบรายการค่าบริการ"
+                onClick={() => setExtraLines((cur) => cur.filter((_, i) => i !== idx))}
+                className="pos-btn-ghost"
+                style={{ padding: "0 10px" }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            disabled={hasPendingSale}
+            onClick={() => setExtraLines((cur) => [...cur, { label: "", unitAmount: "" }])}
+            style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
+          >
+            + ค่าบริการ / ค่าถุง
           </button>
           </>)}
         </section>

@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
-import { isDistinctPosApprover, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { isDistinctPosApprover, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,6 +104,9 @@ export async function POST(req: NextRequest) {
     pointsToRedeem: Number.isFinite(Number(body.pointsToRedeem)) ? Number(body.pointsToRedeem) : null,
     // ส่วนลดมือ: จำนวนเงินเชื่อจาก body ได้ (createOrder บังคับเพดานเองอีกชั้น) แต่
     // "ใครอนุมัติ" ต้องพิสูจน์ด้วย PIN ที่ตรวจกับฐานข้อมูลข้างบน ห้ามเชื่อ id จาก body
+    // ค่าบริการ/ค่าถุง (8.6) — เชื่อจาก body ได้ เพราะเป็น "เก็บเงินเพิ่ม" ไม่ใช่ลดยอด
+    // เงินเข้าลิ้นชักซึ่งถูกนับตอนปิดกะ และป้ายรายการโผล่บนใบเสร็จให้ลูกค้าเห็น
+    extraLines: parsePosExtraLines(body.extraLines),
     manualDiscount: approval?.amount ?? null,
     discountApprovedBy: approval?.userId ?? null,
     discountReason: approval?.reason ?? null,

@@ -261,11 +261,19 @@ async function loadOrderAdjustmentsInTx(
 }
 
 async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId: string): Promise<OrderLineForVat[]> {
+  // ค่าบริการ/ค่าถุง (8.6) ต้องรวมมาด้วย — เป็นค่าบริการของผู้ประกอบการที่จด VAT
+  // จึงอยู่ในฐานภาษี · ถ้าไม่รวม ใบกำกับจะแสดงฐานน้อยกว่าเงินที่รับจริง แล้วยอด
+  // ที่ยื่นสรรพากรต่ำกว่าความจริงตามจำนวนค่าบริการทั้งหมดที่เคยเก็บ
   const res = await client.query<any>(
     `SELECT product_sku,
             vat_category,
             COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount
-       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2
+     UNION ALL
+     SELECT 'EXTRA:' || label AS product_sku,
+            vat_category,
+            unit_amount * qty AS amount
+       FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2`,
     [tenantId, orderId]
   );
   return res.rows.map((r: any) => ({

@@ -959,6 +959,8 @@ export type PosSaleInput = {
   customerId?: string | null;
   /** แต้มที่ลูกค้าขอแลกเป็นส่วนลดบิลนี้ */
   pointsToRedeem?: number | null;
+  /** ค่าบริการ/ค่าถุง ที่ไม่ใช่สินค้าในคลัง (8.6) */
+  extraLines?: Array<{ label: string; qty?: number; unitAmount: number }> | null;
   /** ส่วนลดมือเป็นบาท — ต้องมาคู่กับ discountApprovedBy/discountReason เสมอ */
   manualDiscount?: number | null;
   discountApprovedBy?: string | null;
@@ -1406,6 +1408,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     couponCode: input.couponCode ?? null,
     customerId: input.customerId ?? null,
     pointsToRedeem: input.pointsToRedeem ?? null,
+    extraLines: input.extraLines ?? null,
     manualDiscount: input.manualDiscount ?? null,
     discountApprovedBy: input.discountApprovedBy ?? null,
     discountReason: input.discountReason ?? null,

@@ -89,3 +89,22 @@ export function parsePosPayments(rawPayments: unknown): { ok: true; payments: Pa
     ? { ok: true, payments }
     : { ok: false, error: "ต้องระบุการชำระเงินอย่างน้อย 1 รายการ" };
 }
+
+
+/**
+ * ค่าบริการ/ค่าถุง จาก body (8.6)
+ *
+ * คัดแถวที่ไม่ครบทิ้งเงียบ ๆ ไม่ทำให้บิลล้ม — จอส่งแถวว่างมาได้ตอนพนักงานกดเพิ่ม
+ * บรรทัดแล้วยังไม่กรอก · จำกัดจำนวนแถวกันคนยิง payload ยาวผิดปกติ
+ */
+export function parsePosExtraLines(raw: unknown): Array<{ label: string; qty: number; unitAmount: number }> {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .slice(0, 20)
+    .map((x: any) => ({
+      label: String(x?.label ?? "").trim().slice(0, 120),
+      qty: Math.max(1, Math.trunc(Number(x?.qty ?? 1))),
+      unitAmount: Math.round(Number(x?.unitAmount) * 100) / 100,
+    }))
+    .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
+}
