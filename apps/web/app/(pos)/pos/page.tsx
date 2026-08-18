@@ -139,6 +139,52 @@ type PosMember = {
 };
 
 /** ผลคิดส่วนลดจาก server — จอห้ามคิดเลขนี้เอง (ต้องตรงกับตอน commit) */
+type ParkedSale = {
+  id: string;
+  label: string;
+  itemCount: number;
+  subtotalHint: number;
+  cart: CartLine[];
+  parkedByName: string | null;
+  createdAt: string;
+};
+
+type CashMovement = {
+  id: string;
+  direction: "IN" | "OUT";
+  amount: number;
+  reason: string;
+  actorName: string | null;
+  approvedByName: string | null;
+  createdAt: string;
+};
+
+type ShiftReport = {
+  shiftId: string;
+  deviceCode: string;
+  locationName: string | null;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  openedByName: string | null;
+  closedAt: string | null;
+  openingFloat: number;
+  salesTotal: number;
+  billCount: number;
+  voidCount: number;
+  voidTotal: number;
+  returnCount: number;
+  returnTotal: number;
+  discountTotal: number;
+  byMethod: Array<{ method: string; count: number; amount: number }>;
+  byCashier: Array<{ cashier: string; billCount: number; amount: number }>;
+  cashIn: number;
+  cashOut: number;
+  cashRefunds: number;
+  expectedCash: number;
+  countedCash: number | null;
+  cashVariance: number | null;
+};
+
 type MemberPreview = {
   subtotal: number;
   tierDiscount: number;
@@ -171,6 +217,10 @@ type Receipt = {
   orderId?: string | null;
   docNo: string | null;
   orderStatus?: string | null;
+  /** 7.97 — บิลที่ถูกยกเลิก แสดงป้ายต่างจาก "คืนแล้ว" */
+  voidedAt?: string | null;
+  /** กะที่บิลนี้เกิด — void ได้เฉพาะบิลในกะที่ยังเปิดอยู่ */
+  shiftId?: string | null;
   receiptType?: "sale" | "return" | "exchange";
   returnReason?: string | null;
   refundTotal?: number | null;
@@ -373,6 +423,21 @@ export default function PosPage() {
     { amount: number; reason: string; approverId: string; approverPin: string; approverName: string } | null
   >(null);
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
+  // ---- พักบิล / เงินลิ้นชัก / ยกเลิกบิล / สรุปกะ (7.97) ----
+  const [parked, setParked] = useState<ParkedSale[]>([]);
+  const [parkLabel, setParkLabel] = useState("");
+  const [parkOpen, setParkOpen] = useState(false);
+  const [cashMoves, setCashMoves] = useState<CashMovement[]>([]);
+  const [cashMoveDir, setCashMoveDir] = useState<"IN" | "OUT">("OUT");
+  const [cashMoveAmount, setCashMoveAmount] = useState("");
+  const [cashMoveReason, setCashMoveReason] = useState("");
+  const [cashApproverId, setCashApproverId] = useState("");
+  const [cashApproverPin, setCashApproverPin] = useState("");
+  const [voidTarget, setVoidTarget] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidApproverId, setVoidApproverId] = useState("");
+  const [voidApproverPin, setVoidApproverPin] = useState("");
+  const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -598,6 +663,172 @@ export default function PosPage() {
     setDiscountOpen(false);
   }
 
+  // ---- พักบิล (7.97) ------------------------------------------------
+  // ตะกร้าที่พักไม่จองสต็อก จึงไม่มีอะไรต้องคืนตอนทิ้ง และของอาจหมดตอนเรียกกลับ
+  // ซึ่ง createOrder จะปฏิเสธเองด้วย INSUFFICIENT — จอไม่ต้องเดาแทน
+
+  async function refreshParked() {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/pos/park", { headers: authHeaders });
+      if (res.ok) setParked((await res.json()).parked ?? []);
+    } catch { /* รายการบิลพักหายชั่วคราวไม่ควรทำให้จอขายพัง */ }
+  }
+
+  async function doParkSale() {
+    if (cart.length === 0) { setNotice({ type: "error", text: "ตะกร้าว่าง" }); return; }
+    if (!parkLabel.trim()) { setNotice({ type: "error", text: "ตั้งชื่อบิลก่อน เช่น ชื่อลูกค้า" }); return; }
+    if (!cashierId) { setNotice({ type: "error", text: "เลือกผู้ขายก่อน" }); return; }
+    try {
+      const res = await fetch("/api/pos/park", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "park", cashierUserId: cashierId, label: parkLabel.trim(),
+          cart, itemCount: itemCount, subtotalHint: total,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data.status === "TOO_MANY"
+          ? `พักได้สูงสุด ${data.limit} บิลต่อกะ — เคลียร์บิลเก่าก่อน`
+          : data.error ?? "พักบิลไม่สำเร็จ" });
+        return;
+      }
+      // ล้างตะกร้าและบริบทลูกค้าทั้งหมด — บิลถัดไปต้องเริ่มจากศูนย์จริง ๆ
+      setCart([]);
+      clearBillCustomerState();
+      setParkLabel("");
+      setParkOpen(false);
+      void refreshParked();
+      setNotice({ type: "ok", text: "พักบิลแล้ว" });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  async function doResumeParked(parkedId: string) {
+    if (cart.length > 0) {
+      setNotice({ type: "error", text: "ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน" });
+      return;
+    }
+    try {
+      const res = await fetch("/api/pos/park", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume", parkedId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: "ไม่พบบิลพักใบนี้ (อาจถูกเรียกไปแล้วจากอีกเครื่อง)" }); return; }
+      setCart(data.cart ?? []);
+      void refreshParked();
+      setNotice({ type: "ok", text: `เรียกบิล "${data.label}" กลับมาแล้ว — ราคาคิดใหม่ตอนกดรับเงิน` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  async function doDropParked(parkedId: string) {
+    try {
+      await fetch("/api/pos/park", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ action: "drop", parkedId }),
+      });
+      void refreshParked();
+    } catch { /* ทิ้งไม่สำเร็จก็แค่ยังอยู่ในรายการ ไม่ต้องรบกวนพนักงาน */ }
+  }
+
+  // ---- เงินเข้า-ออกลิ้นชัก (7.97) ------------------------------------
+
+  async function refreshCashMoves() {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/pos/cash-movement", { headers: authHeaders });
+      if (res.ok) setCashMoves((await res.json()).movements ?? []);
+    } catch { /* ไม่สำคัญพอจะขัดจังหวะการขาย */ }
+  }
+
+  async function doCashMovement() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
+    if (!cashMoveAmount || !cashMoveReason.trim()) { setNotice({ type: "error", text: "ใส่จำนวนเงินและเหตุผล" }); return; }
+    if (cashMoveDir === "OUT" && (!cashApproverId || !cashApproverPin)) {
+      setNotice({ type: "error", text: "เงินออกจากลิ้นชักต้องมีหัวหน้าอนุมัติ" }); return;
+    }
+    try {
+      const res = await fetch("/api/pos/cash-movement", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          direction: cashMoveDir, amount: Number(cashMoveAmount), reason: cashMoveReason.trim(),
+          cashierUserId: cashierId, pin,
+          approverUserId: cashMoveDir === "OUT" ? cashApproverId : null,
+          approverPin: cashMoveDir === "OUT" ? cashApproverPin : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data.status === "WOULD_OVERDRAW"
+          ? `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(data.available)} — ถอนมากกว่านี้ไม่ได้`
+          : data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setCashMoveAmount(""); setCashMoveReason(""); setCashApproverPin("");
+      void refreshCashMoves();
+      setNotice({ type: "ok", text: `บันทึกแล้ว · เงินในลิ้นชักที่ควรมีตอนนี้ ฿${baht(data.drawerAfter)}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- ยกเลิกบิล (7.97) ----------------------------------------------
+
+  async function doVoidSale(orderId: string) {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); return; }
+    if (!voidReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่ยกเลิก" }); return; }
+    if (!voidApproverId || !voidApproverPin) { setNotice({ type: "error", text: "ยกเลิกบิลต้องมีหัวหน้าอนุมัติ" }); return; }
+    try {
+      const res = await fetch("/api/pos/void", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          orderId, reason: voidReason.trim(),
+          cashierUserId: cashierId, pin,
+          approverUserId: voidApproverId, approverPin: voidApproverPin,
+          idempotencyKey: `void-${orderId}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text:
+          data.status === "SHIFT_CLOSED" ? "บิลนี้อยู่ในกะที่ปิดไปแล้ว — ต้องทำเป็นการคืนสินค้าแทน"
+          : data.status === "ALREADY_RETURNED" ? "บิลนี้เคยคืนสินค้าไปแล้ว — เดินทางการคืนให้จบแทน"
+          : data.error ?? data.reason ?? "ยกเลิกไม่สำเร็จ" });
+        return;
+      }
+      setVoidTarget(null); setVoidReason(""); setVoidApproverPin("");
+      void loadRecentReceipts(recentSalesQuery);
+      setNotice({ type: "ok", text: `ยกเลิกบิลแล้ว · คืนเงิน ฿${baht(data.refundAmount)}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- สรุปกะ X/Z (7.97) ---------------------------------------------
+
+  async function loadShiftReport() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    try {
+      const qs = new URLSearchParams({ cashierUserId: cashierId, pin });
+      const res = await fetch(`/api/pos/shift-report?${qs}`, { headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: data.error ?? "ดูสรุปกะไม่ได้" }); return; }
+      setShiftReport(data.report);
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
   /**
    * รับส่วนลดมือเข้าบิล — ตรวจแค่รูปแบบที่จอ ส่วนสิทธิ์/PIN/เพดานตรวจจริงที่ server
    * ตอนกดรับเงิน จอไม่ยิง API ตรงนี้เพราะการอนุมัติต้องผูกกับบิลใบที่ขายจริง
@@ -630,6 +861,15 @@ export default function PosPage() {
     const next = Math.max(0, Math.min(member.pointsUsable, cur + direction * step));
     setPointsToRedeem(next === 0 ? "" : String(next));
   }
+
+  // บิลพักโหลดตอนเข้าแท็บขาย · รายการเงินลิ้นชักโหลดตอนเข้าแท็บกะ
+  // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
+  // ตลอดกะคือ request หลายพันครั้งต่อวันต่อเครื่องเพื่อข้อมูลที่เปลี่ยนวันละไม่กี่ครั้ง
+  useEffect(() => {
+    if (!token || !session?.shift) return;
+    if (tab === "sell") void refreshParked();
+    if (tab === "shift") void refreshCashMoves();
+  }, [token, tab, session?.shift?.id]);
 
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
@@ -855,6 +1095,8 @@ export default function PosPage() {
           orderId: sale.orderId ?? null,
           docNo: sale.docNo ?? null,
           orderStatus: sale.orderStatus ?? null,
+          voidedAt: sale.voidedAt ?? null,
+          shiftId: sale.shiftId ?? null,
           lines: (sale.lines ?? []).map((line: any, idx: number) => ({
             orderItemId: Number(line.orderItemId ?? 0) || undefined,
             sku: String(line.sku ?? ""),
@@ -1969,6 +2211,101 @@ export default function PosPage() {
                   </button>
                 </div>
               )}
+
+              {/* ---- เงินเข้า-ออกลิ้นชัก (7.97) ------------------------
+                  ก่อนมีส่วนนี้ การถอนเงินไปฝากกลางกะทำให้ปิดกะขึ้นเงินขาดทุกครั้ง
+                  โดยไม่มีที่ให้อธิบาย · เงินออกต้องมีหัวหน้ากด PIN เงินเข้าไม่ต้อง */}
+              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>เงินเข้า–ออกลิ้นชัก</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <select value={cashMoveDir} onChange={(e) => setCashMoveDir(e.target.value as "IN" | "OUT")}
+                          style={{ padding: 9, fontSize: 14 }}>
+                    <option value="OUT">นำเงินออก</option>
+                    <option value="IN">นำเงินเข้า</option>
+                  </select>
+                  <input value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                         inputMode="decimal" placeholder="จำนวนเงิน" style={{ padding: 9, fontSize: 14, width: 130 }} />
+                  <input value={cashMoveReason} onChange={(e) => setCashMoveReason(e.target.value)} maxLength={200}
+                         placeholder="เหตุผล เช่น นำส่งธนาคาร" style={{ padding: 9, fontSize: 14, minWidth: 200, flex: 1 }} />
+                </div>
+                {cashMoveDir === "OUT" && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <select value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
+                            style={{ padding: 9, fontSize: 14, minWidth: 180 }}>
+                      <option value="">— ผู้อนุมัติ —</option>
+                      {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                      ))}
+                    </select>
+                    <input type="password" inputMode="numeric" value={cashApproverPin}
+                           onChange={(e) => setCashApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                           placeholder="PIN หัวหน้า" style={{ padding: 9, fontSize: 14, width: 120 }} />
+                  </div>
+                )}
+                <button onClick={() => void doCashMovement()} disabled={busy}
+                        style={{ marginTop: 8, padding: "9px 16px" }}>
+                  บันทึกรายการ
+                </button>
+                {cashMoves.length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: "#555", lineHeight: 1.9 }}>
+                    {cashMoves.map((m) => (
+                      <div key={m.id}>
+                        {m.direction === "IN" ? "เข้า" : "ออก"} ฿{baht(m.amount)} · {m.reason}
+                        {m.approvedByName ? ` · อนุมัติ ${m.approvedByName}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ---- สรุปกะ X-report (7.97) ---------------------------
+                  กระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ */}
+              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontWeight: 500 }}>สรุปกะ</div>
+                  <button onClick={() => void loadShiftReport()} style={{ padding: "6px 14px", fontSize: 13 }}>
+                    ดูสรุปกะ
+                  </button>
+                  {shiftReport && (
+                    <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13 }}>
+                      พิมพ์
+                    </button>
+                  )}
+                </div>
+                {shiftReport && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: "#333", lineHeight: 2 }}>
+                    <div>เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}</div>
+                    <div>ยอดขายสุทธิ ฿{baht(shiftReport.salesTotal)} · {shiftReport.billCount} บิล</div>
+                    <div>ส่วนลดรวม ฿{baht(shiftReport.discountTotal)}</div>
+                    <div>ยกเลิกบิล {shiftReport.voidCount} ใบ ฿{baht(shiftReport.voidTotal)}</div>
+                    <div>คืนสินค้า {shiftReport.returnCount} บิล ฿{baht(shiftReport.returnTotal)}</div>
+                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
+                      {shiftReport.byMethod.map((m) => (
+                        <div key={m.method}>{m.method} · {m.count} รายการ · ฿{baht(m.amount)}</div>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
+                      {shiftReport.byCashier.map((c) => (
+                        <div key={c.cashier}>{c.cashier} · {c.billCount} บิล · ฿{baht(c.amount)}</div>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
+                      <div>เงินตั้งต้น ฿{baht(shiftReport.openingFloat)}</div>
+                      <div>เงินเข้าลิ้นชัก ฿{baht(shiftReport.cashIn)} · เงินออก ฿{baht(shiftReport.cashOut)}</div>
+                      <div>คืนเงินสด ฿{baht(shiftReport.cashRefunds)}</div>
+                      <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash)}</div>
+                      {shiftReport.countedCash != null && (
+                        <div>
+                          นับได้ ฿{baht(shiftReport.countedCash)} · ส่วนต่าง{" "}
+                          <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "#c9455a" : "#12805c" }}>
+                            ฿{baht(shiftReport.cashVariance ?? 0)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -2050,6 +2387,38 @@ export default function PosPage() {
       )}
 
       {tab === "sell" && (<>
+          {/* บิลที่พักไว้ (7.97) — โผล่เฉพาะตอนมีจริง ไม่กินที่ตอนไม่มี
+              แถวเดียวต่อบิล กดที่ชื่อ = เรียกกลับ ปุ่ม ✕ = ทิ้ง */}
+          {parked.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>บิลที่พักไว้ ({parked.length})</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {parked.map((row) => (
+                  <div key={row.id} style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    border: "1px solid var(--pos-line)", borderRadius: 8, padding: "4px 6px 4px 10px",
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => void doResumeParked(row.id)}
+                      style={{ background: "none", border: "none", padding: 0, fontSize: 13, cursor: "pointer" }}
+                    >
+                      {row.label} · {row.itemCount} ชิ้น · ฿{baht(row.subtotalHint)}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`ทิ้งบิลพัก ${row.label}`}
+                      onClick={() => void doDropParked(row.id)}
+                      className="pos-btn-ghost"
+                      style={{ padding: "2px 8px" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* ช่องเดียวจบ: เดิมมี "ยิงบาร์โค้ด" กับ "ค้นชื่อสินค้า" แยกกัน ซึ่งทับกัน
               ตั้งแต่ช่องยิงรับ SKU ได้ด้วย — พนักงานใหม่ลังเลว่าพิมพ์ช่องไหน
               ตอนนี้: พิมพ์ไปก็ค้นชื่อให้ไปด้วย · Enter = ตีความเป็นบาร์โค้ด/รหัสตรง ๆ */}
@@ -2271,6 +2640,13 @@ export default function PosPage() {
                     row.orderStatus !== "RETURNED" &&
                     row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
                   const panelOpen = canReturn && returnPanelOrderId === row.orderId;
+                  // void = ยางลบของกะนี้ ไม่ใช่ประตูลบยอดขายย้อนหลัง (server บังคับซ้ำอีกชั้น)
+                  const canVoid =
+                    Boolean(row.orderId) &&
+                    !row.voidedAt &&
+                    row.orderStatus !== "RETURNED" &&
+                    Boolean(session?.shift) &&
+                    row.shiftId === session?.shift?.id;
                   return (
                   <div
                     key={row.orderId ?? `recent-${idx}`}
@@ -2292,11 +2668,12 @@ export default function PosPage() {
                                 fontSize: 11,
                                 padding: "2px 8px",
                                 borderRadius: 999,
-                                background: row.orderStatus === "RETURNED" ? "#fdecea" : "#edf7ed",
-                                color: row.orderStatus === "RETURNED" ? "#611a15" : "#1e4620",
+                                background: row.voidedAt ? "#f0f0f0" : row.orderStatus === "RETURNED" ? "#fdecea" : "#edf7ed",
+                                color: row.voidedAt ? "#555" : row.orderStatus === "RETURNED" ? "#611a15" : "#1e4620",
                               }}
                             >
-                              {row.orderStatus === "RETURNED" ? "คืนแล้ว" : "สำเร็จ"}
+                              {/* ยกเลิก ≠ คืนแล้ว — คนอ่านรายงานต้องแยกออกตั้งแต่ตรงนี้ */}
+                              {row.voidedAt ? "ยกเลิกแล้ว" : row.orderStatus === "RETURNED" ? "คืนแล้ว" : "สำเร็จ"}
                             </span>
                           )}
                         </div>
@@ -2444,10 +2821,57 @@ export default function PosPage() {
                       )}
                       {!canReturn && (
                         <span style={{ fontSize: 12, color: "#999", alignSelf: "center" }}>
-                          {row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล" : "คืนครบทุกรายการแล้ว"}
+                          {row.voidedAt ? "ยกเลิกบิลแล้ว"
+                            : row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล"
+                            : "คืนครบทุกรายการแล้ว"}
                         </span>
                       )}
+                      {/* ยกเลิกบิล (7.97) — เฉพาะบิลในกะที่ยังเปิดและยังไม่เคยคืน/ยกเลิก
+                          บิลของกะที่ปิดไปแล้วต้องเดินทางการคืนสินค้าแทน เพราะเงินถูกนับส่งไปแล้ว */}
+                      {canVoid && (
+                        <button
+                          onClick={() => setVoidTarget((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
+                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38, color: "#c9455a" }}
+                        >
+                          ยกเลิกบิล
+                        </button>
+                      )}
                     </div>
+                    {canVoid && voidTarget === row.orderId && (
+                      <div style={{
+                        marginTop: 8, padding: 10, borderRadius: 8,
+                        background: "#fff4f5", border: "1px solid #f2d0d4",
+                        display: "flex", flexDirection: "column", gap: 8,
+                      }}>
+                        <div style={{ fontSize: 12, color: "#611a15" }}>
+                          ยกเลิกบิลนี้: ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก
+                          (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)
+                        </div>
+                        <input
+                          value={voidReason}
+                          onChange={(e) => setVoidReason(e.target.value)}
+                          maxLength={200}
+                          placeholder="เหตุผล เช่น สแกนซ้ำ / กดผิดคน"
+                          style={{ padding: 9, fontSize: 13 }}
+                        />
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <select value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
+                                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}>
+                            <option value="">— ผู้อนุมัติ —</option>
+                            {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                              <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                            ))}
+                          </select>
+                          <input type="password" inputMode="numeric" value={voidApproverPin}
+                                 onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                                 placeholder="PIN หัวหน้า" style={{ padding: 9, fontSize: 13, width: 120 }} />
+                          <button onClick={() => void doVoidSale(row.orderId!)} disabled={busy}
+                                  style={{ padding: "9px 16px", fontSize: 13 }}>
+                            ยืนยันยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -3034,6 +3458,15 @@ export default function PosPage() {
             style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
           >
             ล้างบิล
+          </button>
+          {/* พักบิล (7.97) — ลูกค้าลืมของ/หาเงินไม่ทัน แล้วคิวข้างหลังรอ
+              วางคู่กับ "ล้างบิล" เพราะเป็นทางเลือกของกันและกันตอนต้องเคลียร์เคาน์เตอร์ */}
+          <button
+            disabled={hasPendingSale || cart.length === 0}
+            onClick={() => setParkOpen(true)}
+            style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
+          >
+            พักบิล
           </button>
           </>)}
         </section>

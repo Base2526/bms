@@ -143,6 +143,14 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · กับดักที่เจอตอน verify: `upsertMembershipTier` แปลง `code` เป็นตัวพิมพ์ใหญ่เสมอ ถ้าสคริปต์ไหน
     ลบชั้นทดสอบด้วย `LIKE 'ตัวเล็ก-%'` จะลบไม่โดน แล้วชั้นทดสอบที่ค้างอยู่จะไป **เปลี่ยนชั้นของ
     สมาชิกจริง** ในรอบทบทวนถัดไป (เจอมาแล้ว — สมาชิก 6 คนย้ายไปชั้นทดสอบ)
+- **`7.97__bms_pos_park_cash_void.sql` (พักบิล + เงินเข้า-ออกลิ้นชัก + ยกเลิกบิล) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`pos.void`, `pos.cash.movement` → Manager · `pos.shift.report` → Manager/Sales/Cashier)
+  ไม่ apply = ปุ่มใหม่ที่หน้า POS โดน 403 เงียบ ๆ
+  · เทสชุดที่ 3 (13 เทส) รันแบบเดียวกับสองชุดเดิม เพิ่มไฟล์ท้ายคำสั่ง:
+    `../../scripts/pos-shift-ops-db-contract.test.mts` — รวมสามชุด 45 เทส ผ่านทั้งหมด
+  · **ส่วนลดมือ ยกเลิกบิล และเงินออกจากลิ้นชัก ต้องกด PIN คนที่สองทุกครั้ง** แม้คนขายจะมีสิทธิ์เอง
+    (ตั้งใจ — การมีสิทธิ์กับการใช้สิทธิ์ต้องเป็นคนละการกระทำในหลักฐาน)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

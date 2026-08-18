@@ -167,6 +167,91 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Parking a bill
+
+A customer forgets something or cannot find their card while a queue builds. `bms_pos_parked_sales`
+(`7.97`) stores that cart against the open shift so the register can serve the next person.
+
+Parked carts **do not reserve stock**, and they do not lock in prices. Both are deliberate: a
+reservation held by a customer who never comes back stays held until somebody clears it by hand,
+which in practice means never; and a cart parked in the morning would otherwise sell at the morning's
+price after an afternoon price change. Resuming re-reads the catalogue, so a sold-out item fails at
+`createOrder` with `INSUFFICIENT` the same as any other bill.
+
+Resume is a single `DELETE ... RETURNING`, not a read followed by a delete, because two registers
+sharing one shift would otherwise both pull the same cart and sell it twice. Parked carts die with
+the shift (`ON DELETE CASCADE`) rather than surviving into the next day. Twenty per shift is the cap.
+
+## Cash in and out of the drawer
+
+Money moves in and out of a till without a sale: a mid-shift bank drop, change borrowed from the
+next register, petty cash for ice. Before `7.97` none of it could be recorded, so every one of those
+shifts closed short with nowhere to explain why — and a real shortage looked exactly like a bank drop.
+
+`bms_pos_cash_movements` records each one with a mandatory reason. Expected cash at close is now
+
+```
+opening float + cash taken in − cash refunds paid out + drawer cash in − drawer cash out
+```
+
+Cash **out** needs a second person: the staff member enters their own PIN, and an approver with
+`pos.cash.movement` enters theirs. Cash **in** does not — adding money to a drawer is not the fraud
+path, and requiring a supervisor to walk over every time someone fetches coins is how you end up with
+nobody recording anything and the close-of-shift numbers broken again.
+
+A movement that would drive expected cash below zero is refused (`WOULD_OVERDRAW`). The system does
+not know how much cash is physically present, but it does know that an amount larger than everything
+the drawer could hold is a typo — ฿99,999 keyed for ฿999 — and letting it through poisons the
+arithmetic for the rest of the shift.
+
+## Voiding a bill
+
+A void and a return end in the same place — goods back in stock, money back to the customer, points
+clawed back — but they mean different things, and `7.97` keeps them apart.
+
+A return is a completed sale the customer changed their mind about; it belongs in the returns report.
+A void is a bill that should never have existed: a double scan, the wrong customer, a change of mind
+before anyone left the counter. Forcing voids down the returns path meant a cashier who fumbles twice
+a day tripped the "unusual return frequency" alert on `/admin/reports/pos-return-audit` every week,
+until nobody believed that alert any more.
+
+`voidPosSale()` reuses the return machinery wholesale — stock, lots, points, refund settlement — and
+then flags the row `bms_pos_returns.is_void`. All five return-report queries filter it out. Writing a
+second reversal path for voids would mean a second path that has to be equally correct and is tested
+half as much.
+
+The scope is deliberately narrow, so that void is this minute's eraser and not a back door for
+deleting old sales:
+
+- only bills in a shift that is still open — once the cash has been counted and handed over, the
+  correction is a return
+- only bills with no prior return against them
+- two people: the cashier's PIN plus an approver holding `pos.void`
+- a mandatory reason, stored on `bms_orders.void_reason`
+
+The tax document is **cancelled, not deleted** (`cancelled_at`). A number missing from the sequence is
+the first thing an auditor asks about, and there is no good answer.
+
+Voided bills leave `salesTotal` and `billCount` and appear on their own line of the shift report.
+They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
+and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
+
+## Shift report (X / Z)
+
+`GET /api/pos/shift-report` returns the sheet a manager signs when taking cash from a cashier: net
+sales, bill count, discounts, voids, returns, a breakdown by payment method and by cashier, drawer
+movements, expected cash, counted cash, and variance. Reading it mid-shift is an X report; reading it
+after close is a Z report — same code, and the only difference is whether the shift is closed.
+
+It is reachable from the counter itself (`pos.shift.report`, seeded to Manager/Sales/Cashier) rather
+than only from the back office, for the same reason opening a shift moved to the counter: needing a
+second computer to close the till means it does not happen.
+
+A closed shift reports the `expected_cash` **stored at close**, not a fresh calculation. Recomputing
+would let a backdated data change make today's printout disagree with the paper signed yesterday.
+The DB contract suite asserts that the report and `closePosShift()` produce the same expected cash;
+two formulas drifting apart is exactly the failure that makes the signed sheet disagree with the till.
+
 ## Counter screen layout
 
 A till is typically 768px tall, so vertical space is the scarce axis. Work that happens a few times
@@ -240,9 +325,14 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.96__bms_membership_and_loyalty.sql` on the target database
+- Apply migrations through `7.97__bms_pos_park_cash_void.sql` on the target database
   (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions,
-  `7.96` membership/tiers/points + `bms_order_discounts`).
+  `7.96` membership/tiers/points + `bms_order_discounts`, `7.97` parked bills + drawer
+  movements + void). `7.97` seeds `pos.void` and `pos.cash.movement` to Manager only, and
+  `pos.shift.report` to Manager/Sales/Cashier — without it those buttons 403 silently.
+- Decide who may approve a manual discount (`pos.discount.approve`), a void (`pos.void`), and
+  cash out of the drawer (`pos.cash.movement`). All three are "money leaves the count" actions and
+  all three demand a second person's PIN at the counter regardless of who is logged in.
 - If the loyalty program will be used: enable it at `/admin/loyalty`, set the earn/redeem rates, point
   lifetime, and per-bill discount cap, and review the three seeded tiers (Silver/Gold/Platinum are
   defaults, not a recommendation). Then schedule `POST /api/bms/loyalty/maintenance` daily —
@@ -271,7 +361,8 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   test it per printer model before go-live. There is no EDC driver.
 - Run a rehearsal on each register: cash sale/change, split payment, card/QR reference, reprint,
   partial return, full return, non-cash refund settlement, rejected unauthorized action, and shift
-  close with a known cash variance.
+  close with a known cash variance. Add to that: a manual discount with supervisor PIN, a parked bill
+  resumed from a second register, a drawer bank-drop, a void, and an X report read before close.
 - Confirm backups, monitoring, stable network/power, and the manual outage/reconciliation procedure.
 
 ## Known operating boundaries

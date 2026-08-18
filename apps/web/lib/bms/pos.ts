@@ -746,7 +746,8 @@ export async function getPosShiftReturnSummary(tenantId: string, deviceId: strin
 }
 
 /**
- * ปิดกะ: เงินที่ควรมี = เงินตั้งต้น + เงินสดที่รับในกะนี้
+ * ปิดกะ: เงินที่ควรมี = เงินตั้งต้น + เงินสดที่รับในกะนี้ − เงินคืนสด
+ *                        + เงินที่นำเข้าลิ้นชัก − เงินที่นำออก (7.97)
  * (amount ของ payment คือยอดบิล ไม่ใช่เงินที่ยื่นมา → เงินทอนหักไปแล้วในตัว)
  * ส่วนต่างคำนวณโดยฐานข้อมูล (generated column) ไม่ให้แอปคิดเอง
  */
@@ -757,7 +758,7 @@ export async function closePosShift(input: {
   countedCash: number;
   note?: string | null;
 }): Promise<
-  | { status: "CLOSED"; shift: PosShift; partialReturnCashOut: number }
+  | { status: "CLOSED"; shift: PosShift; partialReturnCashOut: number; cashIn: number; cashOut: number }
   | { status: "NOT_OPEN" }
   | { status: "PENDING_REFUNDS"; count: number; amount: number }
 > {
@@ -812,7 +813,21 @@ export async function closePosShift(input: {
       [input.tenantId, input.shiftId]
     );
     const partialReturnCashOut = Number(partialReturns.rows[0]?.total ?? 0);
-    const expected = Number(open.rows[0].opening_float) + Number(cash.rows[0].total) - partialReturnCashOut;
+
+    // เงินเข้า-ออกลิ้นชักที่ไม่ใช่การขาย (7.97) — ถอนไปฝากธนาคาร ยืมเงินทอน จ่ายค่าของ
+    // ก่อนมีตารางนี้ รายการพวกนี้ทำให้ปิดกะขึ้นเงินขาดทุกครั้งโดยไม่มีที่ให้อธิบาย
+    const movements = await client.query<{ cash_in: string; cash_out: string }>(
+      `SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'IN'), 0)  AS cash_in,
+              COALESCE(SUM(amount) FILTER (WHERE direction = 'OUT'), 0) AS cash_out
+         FROM bms_pos_cash_movements
+        WHERE tenant_id = $1 AND shift_id = $2`,
+      [input.tenantId, input.shiftId]
+    );
+    const cashIn = Number(movements.rows[0]?.cash_in ?? 0);
+    const cashOut = Number(movements.rows[0]?.cash_out ?? 0);
+
+    const expected = Number(open.rows[0].opening_float) + Number(cash.rows[0].total)
+      - partialReturnCashOut + cashIn - cashOut;
 
     const res = await client.query(
       `UPDATE bms_pos_shifts
@@ -825,7 +840,7 @@ export async function closePosShift(input: {
     );
 
     await client.query("COMMIT");
-    return { status: "CLOSED", shift: mapShift(res.rows[0]), partialReturnCashOut };
+    return { status: "CLOSED", shift: mapShift(res.rows[0]), partialReturnCashOut, cashIn, cashOut };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -958,6 +973,10 @@ export type PosRecentReceipt = {
   vat: PosReceiptVat | null;
   roundingAmount: number;
   orderStatus: string;
+  /** ยกเลิกแล้วเมื่อไร (7.97) — null = ยังไม่ถูกยกเลิก */
+  voidedAt: string | null;
+  /** กะที่บิลนี้เกิด — จอใช้ตัดสินว่ายังกด "ยกเลิกบิล" ได้ไหม (void ได้เฉพาะกะที่ยังเปิด) */
+  shiftId: string | null;
   total: number;
   cashTendered: number | null;
   cashChange: number | null;
@@ -1647,8 +1666,12 @@ export async function listRecentPosSales(
     rounding_amount: string | null;
     member_no: string | null;
     member_name: string | null;
+    voided_at: Date | null;
+    pos_shift_id: string | null;
   }>(
     `SELECT o.id,
+            o.voided_at,
+            o.pos_shift_id,
             o.total_amount,
             o.shipping_fee,
             o.rounding_amount AS order_rounding,
@@ -1823,6 +1846,8 @@ export async function listRecentPosSales(
     vat: mapReceiptVat(row),
     roundingAmount: Number(row.order_rounding ?? 0),
     orderStatus: row.status,
+    voidedAt: row.voided_at ? toISO(row.voided_at) : null,
+    shiftId: row.pos_shift_id ?? null,
     total:
       Math.round(
         (Number(row.total_amount) + Number(row.shipping_fee ?? 0) + Number(row.order_rounding ?? 0)) * 100
@@ -1961,6 +1986,12 @@ async function processPosReturn(input: {
   note?: string | null;
   approvedByUserId?: string | null;
   idempotencyKey: string;
+  /**
+   * true = การยกเลิกบิลที่กดผิด ไม่ใช่ลูกค้าเอาของมาคืน (7.97)
+   * เครื่องจักรคืนของเหมือนกันทุกอย่าง ต่างแค่ธงที่ทำให้รายงานการคืนกรองออกได้
+   * — ไม่งั้นการกดผิดจะไปปลุกสัญญาณจับทุจริตใน pos-return-audit
+   */
+  isVoid?: boolean;
 }): Promise<PosPartialReturnResult> {
   const requestedMap = new Map<number, number>();
   for (const line of input.lines) {
@@ -2197,11 +2228,12 @@ async function processPosReturn(input: {
     const ret = await client.query<{ id: string }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
-          refund_amount, settlement_status, idempotency_key, note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9)
+          refund_amount, settlement_status, idempotency_key, note, is_void)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10)
        RETURNING id`,
       [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
-        input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null]
+        input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
+        input.isVoid === true]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -2544,4 +2576,529 @@ export async function completePosRefundAllocation(input: {
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------
+// พักบิล (7.97)
+// ---------------------------------------------------------------
+//
+// ตะกร้าที่พักไว้ไม่จองสต็อกโดยตั้งใจ (ดูเหตุผลในไฟล์ migration) จึงไม่มีอะไร
+// ต้องคืนตอนลบ — ลบทิ้งได้ตรง ๆ · ราคาไม่ถูกล็อกด้วย: cart ที่เก็บไว้มีแค่
+// sku/size/แพ็ก/จำนวน ตอนเรียกกลับมา createOrder คิดราคาจาก catalog ใหม่เสมอ
+// ถ้าล็อกราคาไว้ ร้านที่ขึ้นราคาตอนบ่ายจะขายราคาเช้าให้บิลที่พักค้างไว้
+
+export type PosParkedSale = {
+  id: string;
+  label: string;
+  itemCount: number;
+  subtotalHint: number;
+  cart: unknown;
+  parkedByName: string | null;
+  createdAt: string;
+};
+
+/** เพดานต่อกะ — พักได้ไม่จำกัดแล้วรายการจะยาวจนเรียกกลับผิดใบ ซึ่งแย่กว่าพักไม่ได้ */
+const MAX_PARKED_PER_SHIFT = 20;
+
+export async function listParkedSales(
+  tenantId: string, shiftId: string
+): Promise<PosParkedSale[]> {
+  const res = await query(
+    `SELECT p.id, p.label, p.item_count, p.subtotal_hint, p.cart, p.created_at,
+            COALESCE(u.name, u.email) AS parked_by_name
+       FROM bms_pos_parked_sales p
+       LEFT JOIN users u ON u.id = p.parked_by
+      WHERE p.tenant_id = $1 AND p.shift_id = $2
+      ORDER BY p.created_at DESC`,
+    [tenantId, shiftId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    label: r.label,
+    itemCount: Number(r.item_count ?? 0),
+    subtotalHint: Number(r.subtotal_hint ?? 0),
+    cart: r.cart,
+    parkedByName: r.parked_by_name ?? null,
+    createdAt: toISO(r.created_at),
+  }));
+}
+
+export type ParkSaleResult =
+  | { status: "PARKED"; parked: PosParkedSale }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "TOO_MANY"; limit: number }
+  | { status: "EMPTY" };
+
+export async function parkSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  parkedBy: string;
+  label: string;
+  cart: unknown;
+  itemCount: number;
+  subtotalHint: number;
+}): Promise<ParkSaleResult> {
+  const label = input.label.trim();
+  if (!label) return { status: "EMPTY" };
+  if (!Array.isArray(input.cart) || input.cart.length === 0) return { status: "EMPTY" };
+
+  const shift = await query<{ id: string; location_id: string }>(
+    `SELECT id, location_id FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId, input.deviceId]
+  );
+  if (!shift.rowCount) return { status: "SHIFT_NOT_OPEN" };
+
+  const count = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_parked_sales WHERE tenant_id = $1 AND shift_id = $2`,
+    [input.tenantId, input.shiftId]
+  );
+  if (Number(count.rows[0]?.n ?? 0) >= MAX_PARKED_PER_SHIFT) {
+    return { status: "TOO_MANY", limit: MAX_PARKED_PER_SHIFT };
+  }
+
+  const res = await query(
+    `INSERT INTO bms_pos_parked_sales
+       (tenant_id, location_id, device_id, shift_id, parked_by, label, cart, item_count, subtotal_hint)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING id, label, item_count, subtotal_hint, cart, created_at`,
+    [input.tenantId, shift.rows[0].location_id, input.deviceId, input.shiftId, input.parkedBy,
+      label, JSON.stringify(input.cart), Math.max(0, Math.trunc(input.itemCount)),
+      Math.max(0, Math.round(Number(input.subtotalHint) * 100) / 100)]
+  );
+  const r: any = res.rows[0];
+  return {
+    status: "PARKED",
+    parked: {
+      id: r.id, label: r.label, itemCount: Number(r.item_count), subtotalHint: Number(r.subtotal_hint),
+      cart: r.cart, parkedByName: null, createdAt: toISO(r.created_at),
+    },
+  };
+}
+
+/**
+ * เรียกบิลพักกลับมา = อ่านตะกร้าแล้วลบแถวทิ้งในคำสั่งเดียว
+ * ทำเป็นสองขั้น (อ่านแล้วค่อยลบ) ไม่ได้ เพราะสองเครื่องที่แชร์กะเดียวกันจะเรียก
+ * ใบเดียวกันกลับมาพร้อมกันแล้วได้ตะกร้าซ้ำสองจอ
+ */
+export async function resumeParkedSale(
+  tenantId: string, shiftId: string, parkedId: string
+): Promise<{ status: "RESUMED"; cart: unknown; label: string } | { status: "NOT_FOUND" }> {
+  const res = await query(
+    `DELETE FROM bms_pos_parked_sales
+      WHERE tenant_id = $1 AND shift_id = $2 AND id = $3
+      RETURNING cart, label`,
+    [tenantId, shiftId, parkedId]
+  );
+  if (!res.rowCount) return { status: "NOT_FOUND" };
+  return { status: "RESUMED", cart: res.rows[0].cart, label: res.rows[0].label };
+}
+
+export async function deleteParkedSale(
+  tenantId: string, shiftId: string, parkedId: string
+): Promise<boolean> {
+  const res = await query(
+    `DELETE FROM bms_pos_parked_sales WHERE tenant_id = $1 AND shift_id = $2 AND id = $3`,
+    [tenantId, shiftId, parkedId]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------
+// เงินเข้า-ออกลิ้นชัก (7.97)
+// ---------------------------------------------------------------
+
+export type PosCashMovement = {
+  id: string;
+  direction: "IN" | "OUT";
+  amount: number;
+  reason: string;
+  actorName: string | null;
+  approvedByName: string | null;
+  createdAt: string;
+};
+
+export async function listCashMovements(
+  tenantId: string, shiftId: string
+): Promise<PosCashMovement[]> {
+  const res = await query(
+    `SELECT m.id, m.direction, m.amount, m.reason, m.created_at,
+            COALESCE(a.name, a.email) AS actor_name,
+            COALESCE(p.name, p.email) AS approved_by_name
+       FROM bms_pos_cash_movements m
+       LEFT JOIN users a ON a.id = m.actor_user_id
+       LEFT JOIN users p ON p.id = m.approved_by
+      WHERE m.tenant_id = $1 AND m.shift_id = $2
+      ORDER BY m.created_at`,
+    [tenantId, shiftId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    direction: r.direction,
+    amount: Number(r.amount),
+    reason: r.reason,
+    actorName: r.actor_name ?? null,
+    approvedByName: r.approved_by_name ?? null,
+    createdAt: toISO(r.created_at),
+  }));
+}
+
+export type CashMovementResult =
+  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "INVALID"; reason: string }
+  | { status: "WOULD_OVERDRAW"; available: number };
+
+/**
+ * บันทึกเงินเข้า/ออกลิ้นชัก
+ *
+ * เงินออกห้ามเกินเงินที่ควรอยู่ในลิ้นชักตอนนั้น — ไม่ใช่เพราะระบบรู้ว่ามีเงินจริง
+ * เท่าไร แต่เพราะรายการที่ทำให้ยอด "ที่ควรมี" ติดลบคือรายการที่กรอกผิดแน่นอน
+ * (เช่น พิมพ์ 5000 แทน 500) ปล่อยผ่านแล้วตัวเลขปิดกะจะอธิบายไม่ได้ทั้งกะ
+ */
+export async function recordCashMovement(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  direction: "IN" | "OUT";
+  amount: number;
+  reason: string;
+  actorUserId: string;
+  approvedByUserId?: string | null;
+}): Promise<CashMovementResult> {
+  const amount = Math.round(Number(input.amount) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) return { status: "INVALID", reason: "จำนวนเงินไม่ถูกต้อง" };
+  const reason = input.reason.trim();
+  if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
+  if (reason.length > 200) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    // ล็อกแถวกะไว้ระหว่างคิดยอด — สองเครื่องที่แชร์กะเดียวกันถอนพร้อมกันได้ไม่งั้น
+    const shift = await client.query<{ id: string; opening_float: string }>(
+      `SELECT id, opening_float FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'
+        FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
+    if (!shift.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "SHIFT_NOT_OPEN" };
+    }
+
+    const drawer = await drawerExpectedInTx(client, input.tenantId, input.shiftId, Number(shift.rows[0].opening_float));
+    if (input.direction === "OUT" && amount > drawer + 0.001) {
+      await client.query("ROLLBACK");
+      return { status: "WOULD_OVERDRAW", available: drawer };
+    }
+
+    const res = await client.query(
+      `INSERT INTO bms_pos_cash_movements
+         (tenant_id, shift_id, device_id, direction, amount, reason, actor_user_id, approved_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id, direction, amount, reason, created_at`,
+      [input.tenantId, input.shiftId, input.deviceId, input.direction, amount, reason,
+        input.actorUserId, input.approvedByUserId ?? null]
+    );
+    await client.query("COMMIT");
+
+    const r: any = res.rows[0];
+    return {
+      status: "RECORDED",
+      drawerAfter: Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
+      movement: {
+        id: r.id, direction: r.direction, amount: Number(r.amount), reason: r.reason,
+        actorName: null, approvedByName: null, createdAt: toISO(r.created_at),
+      },
+    };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * เงินสดที่ "ควรอยู่" ในลิ้นชักตอนนี้ — สูตรเดียวกับตอนปิดกะเป๊ะ ๆ
+ * ถ้าสองที่คิดต่างกัน ตัวเลขที่จอเตือนตอนถอนเงินจะไม่ตรงกับที่ปิดกะฟ้อง
+ */
+async function drawerExpectedInTx(
+  client: PoolClient, tenantId: string, shiftId: string, openingFloat: number
+): Promise<number> {
+  const res = await client.query<{ cash_sales: string; cash_refunds: string; cash_in: string; cash_out: string }>(
+    `SELECT
+       (SELECT COALESCE(SUM(pay.amount), 0)
+          FROM bms_payments pay
+          JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
+         WHERE o.tenant_id = $1 AND o.pos_shift_id = $2
+           AND pay.method = 'CASH' AND pay.status IN ('CONFIRMED','REFUNDED')) AS cash_sales,
+       (SELECT COALESCE(SUM(a.amount), 0)
+          FROM bms_pos_refund_allocations a
+          JOIN bms_pos_returns pr ON pr.id = a.pos_return_id AND pr.tenant_id = a.tenant_id
+          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+         WHERE a.tenant_id = $1 AND o.pos_shift_id = $2
+           AND a.method = 'CASH' AND a.status = 'COMPLETED') AS cash_refunds,
+       (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
+         WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'IN') AS cash_in,
+       (SELECT COALESCE(SUM(amount), 0) FROM bms_pos_cash_movements
+         WHERE tenant_id = $1 AND shift_id = $2 AND direction = 'OUT') AS cash_out`,
+    [tenantId, shiftId]
+  );
+  const r = res.rows[0];
+  return Math.round((openingFloat + Number(r.cash_sales) - Number(r.cash_refunds)
+    + Number(r.cash_in) - Number(r.cash_out)) * 100) / 100;
+}
+
+// ---------------------------------------------------------------
+// ยกเลิกบิล — void (7.97)
+// ---------------------------------------------------------------
+//
+// ทำไมไม่ใช้ "คืนสินค้า" แทนไปเลย: ปลายทางเหมือนกันจริง (ของกลับเข้าสต็อก
+// เงินกลับหาลูกค้า แต้มถูกดึงคืน) แต่ความหมายทางบัญชีและทางการจัดการต่างกัน
+//   - การคืน = ขายสำเร็จแล้วลูกค้าเปลี่ยนใจ → ต้องอยู่ในรายงานการคืน
+//   - void   = บิลนี้ไม่ควรเกิดตั้งแต่แรก (สแกนซ้ำ กดผิดคน ลูกค้าเปลี่ยนใจก่อนออกจากเคาน์เตอร์)
+// ถ้าบังคับให้ void เดินทางเดียวกับการคืน แคชเชียร์ที่กดผิดวันละสองครั้งจะไป
+// ปลุกสัญญาณ "คืนถี่ผิดปกติ" ใน pos-return-audit ทุกสัปดาห์จนไม่มีใครเชื่อสัญญาณนั้นอีก
+//
+// ข้อจำกัดที่ตั้งใจให้แคบ:
+//   - เฉพาะบิลในกะที่ยังเปิดอยู่ ปิดกะแล้ว void ไม่ได้ (เงินถูกนับส่งไปแล้ว)
+//   - บิลที่เคยคืนบางส่วนมาก่อน void ไม่ได้ ต้องเดินทางการคืนให้จบ
+// สองข้อนี้ทำให้ void เป็น "ยางลบของนาทีนี้" ไม่ใช่ประตูหลังสำหรับลบยอดขายย้อนหลัง
+
+export type VoidPosSaleResult =
+  | { status: "VOIDED"; orderId: string; refundAmount: number }
+  | { status: "NOT_FOUND" }
+  | { status: "SHIFT_CLOSED" }
+  | { status: "ALREADY_RETURNED" }
+  | { status: "NOT_VOIDABLE"; reason: string };
+
+export async function voidPosSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  orderId: string;
+  actorUserId: string;
+  approvedByUserId: string;
+  reason: string;
+  idempotencyKey: string;
+}): Promise<VoidPosSaleResult> {
+  const reason = input.reason.trim();
+  if (!reason) return { status: "NOT_VOIDABLE", reason: "ต้องระบุเหตุผล" };
+  if (reason.length > 200) return { status: "NOT_VOIDABLE", reason: "เหตุผลยาวเกินไป" };
+
+  const check = await query<{ status: string; pos_shift_id: string | null; shift_status: string | null; voided_at: Date | null; returns: string }>(
+    `SELECT o.status, o.pos_shift_id, o.voided_at, s.status AS shift_status,
+            (SELECT COUNT(*)::text FROM bms_pos_returns r
+              WHERE r.tenant_id = o.tenant_id AND r.order_id = o.id) AS returns
+       FROM bms_orders o
+       LEFT JOIN bms_pos_shifts s ON s.id = o.pos_shift_id AND s.tenant_id = o.tenant_id
+      WHERE o.tenant_id = $1 AND o.id = $2 AND o.pos_device_id = $3`,
+    [input.tenantId, input.orderId, input.deviceId]
+  );
+  const row = check.rows[0];
+  if (!row) return { status: "NOT_FOUND" };
+  // ยิงซ้ำเพราะเน็ตหลุด: บิลที่ void ไปแล้วตอบว่าสำเร็จ ไม่ใช่ error
+  if (row.voided_at) return { status: "VOIDED", orderId: input.orderId, refundAmount: 0 };
+  if (row.pos_shift_id !== input.shiftId || row.shift_status !== "OPEN") return { status: "SHIFT_CLOSED" };
+  if (Number(row.returns ?? 0) > 0) return { status: "ALREADY_RETURNED" };
+  if (!["COMPLETED", "PAID"].includes(row.status)) {
+    return { status: "NOT_VOIDABLE", reason: `บิลสถานะ ${row.status} ยกเลิกไม่ได้` };
+  }
+
+  // เครื่องจักรคืนของทั้งชุด: สต็อก ล็อต แต้ม เงินคืน — ใช้ตัวเดียวกับการคืนสินค้า
+  // ที่ผ่านการทดสอบมาแล้ว การเขียนทางคืนของขึ้นมาใหม่สำหรับ void คือการสร้าง
+  // ทางที่สองที่ต้องถูกต้องเท่ากันแต่ไม่มีใครทดสอบเท่ากัน
+  const result = await processPosReturn({
+    tenantId: input.tenantId,
+    deviceId: input.deviceId,
+    orderId: input.orderId,
+    actorUserId: input.actorUserId,
+    approvedByUserId: input.approvedByUserId,
+    mode: "FULL",
+    lines: [],
+    note: `ยกเลิกบิล: ${reason}`,
+    idempotencyKey: input.idempotencyKey,
+    isVoid: true,
+  });
+  if (result.status !== "PARTIAL_RETURNED") {
+    return { status: "NOT_VOIDABLE", reason: `ยกเลิกไม่สำเร็จ (${result.status})` };
+  }
+
+  // ประทับตราว่าเป็น void และยกเลิกใบกำกับที่ออกไปแล้ว
+  //
+  // ใบกำกับถูก "ยกเลิก" ไม่ใช่ "ลบ" — เลขที่ออกไปแล้วต้องคงอยู่ในลำดับเสมอ
+  // ใบที่หายไปจากลำดับเลขคือสิ่งแรกที่ผู้ตรวจสอบจะถาม และตอบไม่ได้
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await client.query(
+      `UPDATE bms_orders SET voided_at = now(), voided_by = $3, void_reason = $4, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL`,
+      [input.tenantId, input.orderId, input.actorUserId, reason]
+    );
+    await client.query(
+      `UPDATE bms_tax_documents
+          SET cancelled_at = now(), cancelled_reason = $3
+        WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL`,
+      [input.tenantId, input.orderId, `ยกเลิกบิล: ${reason}`]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return { status: "VOIDED", orderId: input.orderId, refundAmount: result.refundAmount };
+}
+
+// ---------------------------------------------------------------
+// รายงานสรุปกะ — X/Z report (7.97)
+// ---------------------------------------------------------------
+//
+// X = ดูระหว่างกะยังเปิด (ไม่ปิดอะไร) · Z = ดูหลังปิดกะ
+// โค้ดเดียวกัน ต่างแค่กะที่ขอดูปิดไปหรือยัง จึงไม่แยกฟังก์ชัน
+//
+// นี่คือกระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ ตัวเลขทุกตัวต้องมาจาก
+// ฐานข้อมูลตรง ๆ ห้ามให้จอรวมเอง
+
+export type PosShiftReport = {
+  shiftId: string;
+  deviceCode: string;
+  locationName: string | null;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  openedByName: string | null;
+  closedAt: string | null;
+  closedByName: string | null;
+  openingFloat: number;
+  /** ยอดขายสุทธิ (ไม่รวมบิลที่ถูก void) */
+  salesTotal: number;
+  billCount: number;
+  voidCount: number;
+  voidTotal: number;
+  returnCount: number;
+  returnTotal: number;
+  discountTotal: number;
+  byMethod: Array<{ method: string; count: number; amount: number }>;
+  byCashier: Array<{ cashier: string; billCount: number; amount: number }>;
+  cashIn: number;
+  cashOut: number;
+  cashRefunds: number;
+  /** เงินสดที่ควรอยู่ในลิ้นชักตอนนี้ (กะเปิด) หรือตอนปิด (กะปิดแล้ว) */
+  expectedCash: number;
+  countedCash: number | null;
+  cashVariance: number | null;
+};
+
+export async function getPosShiftReport(
+  tenantId: string, shiftId: string
+): Promise<PosShiftReport | null> {
+  const head = await query<any>(
+    `SELECT s.id, s.status, s.opened_at, s.closed_at, s.opening_float,
+            s.expected_cash, s.counted_cash, s.cash_variance,
+            d.code AS device_code, l.name AS location_name,
+            COALESCE(uo.name, uo.email) AS opened_by_name,
+            COALESCE(uc.name, uc.email) AS closed_by_name
+       FROM bms_pos_shifts s
+       JOIN bms_pos_devices d ON d.id = s.device_id AND d.tenant_id = s.tenant_id
+       LEFT JOIN bms_locations l ON l.id = s.location_id AND l.tenant_id = s.tenant_id
+       LEFT JOIN users uo ON uo.id = s.opened_by
+       LEFT JOIN users uc ON uc.id = s.closed_by
+      WHERE s.tenant_id = $1 AND s.id = $2`,
+    [tenantId, shiftId]
+  );
+  if (!head.rowCount) return null;
+  const h = head.rows[0];
+
+  // บิลที่ถูก void ต้องออกจากยอดขายทุกตัวเลข ไม่ใช่แค่ไม่นับใบ — ไม่งั้นยอดขาย
+  // ของกะจะไม่ตรงกับเงินที่นับได้ แล้วผู้จัดการจะเซ็นรับด้วยตัวเลขที่ผิด
+  const [sales, methods, cashiers, movements, returns] = await Promise.all([
+    query<any>(
+      `SELECT COUNT(*)::text AS bills,
+              COALESCE(SUM(total_amount), 0) AS sales,
+              COALESCE(SUM(discount_amount), 0) AS discounts,
+              COUNT(*) FILTER (WHERE voided_at IS NOT NULL)::text AS voids,
+              COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NOT NULL), 0) AS void_total
+         FROM bms_orders
+        WHERE tenant_id = $1 AND pos_shift_id = $2`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT pay.method, COUNT(*)::text AS n, COALESCE(SUM(pay.amount), 0) AS amount
+         FROM bms_payments pay
+         JOIN bms_orders o ON o.id = pay.order_id AND o.tenant_id = pay.tenant_id
+        WHERE o.tenant_id = $1 AND o.pos_shift_id = $2
+          AND o.voided_at IS NULL AND pay.status IN ('CONFIRMED','REFUNDED')
+        GROUP BY pay.method ORDER BY pay.method`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT COALESCE(u.name, u.email, 'ไม่ทราบ') AS cashier,
+              COUNT(*)::text AS bills, COALESCE(SUM(o.total_amount), 0) AS amount
+         FROM bms_orders o
+         LEFT JOIN users u ON u.id = o.cashier_user_id
+        WHERE o.tenant_id = $1 AND o.pos_shift_id = $2 AND o.voided_at IS NULL
+        GROUP BY 1 ORDER BY 3 DESC`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
+      `SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'IN'), 0)  AS cash_in,
+              COALESCE(SUM(amount) FILTER (WHERE direction = 'OUT'), 0) AS cash_out
+         FROM bms_pos_cash_movements WHERE tenant_id = $1 AND shift_id = $2`,
+      [tenantId, shiftId]
+    ),
+    // นับเฉพาะการคืนของจริง — void ถูกกรองออกด้วย is_void
+    query<any>(
+      `SELECT COUNT(*)::text AS n, COALESCE(SUM(pr.refund_amount), 0) AS amount,
+              COALESCE(SUM(a.amount) FILTER (WHERE a.method = 'CASH' AND a.status = 'COMPLETED'), 0) AS cash_refunds
+         FROM bms_pos_returns pr
+         JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
+         LEFT JOIN bms_pos_refund_allocations a ON a.pos_return_id = pr.id AND a.tenant_id = pr.tenant_id
+        WHERE pr.tenant_id = $1 AND o.pos_shift_id = $2 AND pr.is_void = FALSE`,
+      [tenantId, shiftId]
+    ),
+  ]);
+
+  const s = sales.rows[0], m = movements.rows[0], r = returns.rows[0];
+  const cashSales = Number(methods.rows.find((x: any) => x.method === "CASH")?.amount ?? 0);
+  const cashIn = Number(m.cash_in), cashOut = Number(m.cash_out);
+  const cashRefunds = Number(r.cash_refunds ?? 0);
+  const openingFloat = Number(h.opening_float);
+
+  return {
+    shiftId: h.id,
+    deviceCode: h.device_code,
+    locationName: h.location_name ?? null,
+    status: h.status,
+    openedAt: toISO(h.opened_at),
+    openedByName: h.opened_by_name ?? null,
+    closedAt: h.closed_at ? toISO(h.closed_at) : null,
+    closedByName: h.closed_by_name ?? null,
+    openingFloat,
+    salesTotal: Number(s.sales) - Number(s.void_total),
+    billCount: Number(s.bills) - Number(s.voids),
+    voidCount: Number(s.voids),
+    voidTotal: Number(s.void_total),
+    returnCount: Number(r.n ?? 0),
+    returnTotal: Number(r.amount ?? 0),
+    discountTotal: Number(s.discounts),
+    byMethod: methods.rows.map((x: any) => ({ method: x.method, count: Number(x.n), amount: Number(x.amount) })),
+    byCashier: cashiers.rows.map((x: any) => ({ cashier: x.cashier, billCount: Number(x.bills), amount: Number(x.amount) })),
+    cashIn,
+    cashOut,
+    cashRefunds,
+    // กะที่ปิดแล้วใช้ตัวเลขที่บันทึกไว้ตอนปิด ไม่คิดใหม่ — คิดใหม่แล้วรายงานที่พิมพ์
+    // วันนี้จะไม่ตรงกับกระดาษที่เซ็นไปเมื่อวาน ถ้ามีใครแก้ข้อมูลย้อนหลัง
+    expectedCash: h.expected_cash != null
+      ? Number(h.expected_cash)
+      : Math.round((openingFloat + cashSales - cashRefunds + cashIn - cashOut) * 100) / 100,
+    countedCash: h.counted_cash == null ? null : Number(h.counted_cash),
+    cashVariance: h.cash_variance == null ? null : Number(h.cash_variance),
+  };
 }

@@ -80,6 +80,9 @@ export const BMS_PERMISSIONS = [
   "pos.pin.manage",
   // จัดการบัญชีพนักงานหน้าร้าน (role Cashier + ปิดทางเข้าหลังบ้าน) — seed ที่ 7.92
   "pos.staff.manage",
+  "pos.void",
+  "pos.cash.movement",
+  "pos.shift.report",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",
