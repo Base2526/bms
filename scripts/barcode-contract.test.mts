@@ -151,3 +151,43 @@ test("ลายแท่งของ EAN-13 ต้องตรงกับมา
   assert.equal(bits.join(""), expected);
   assert.equal(expected.length, 95);
 });
+
+// ---- บาร์โค้ดจากเครื่องชั่ง (8.8) --------------------------------------
+// รูปแบบนี้คือค่าที่ตั้งไว้ในเครื่องชั่งของร้าน ไม่ใช่มาตรฐานเดียวทั่วโลก
+// แกะผิดหมายถึงคิดเงินผิดทุกครั้งโดยที่ทุกอย่างดูปกติ
+
+import { parseScaleBarcode, scaleBarcode } from "../apps/web/lib/bms/barcode.ts";
+
+test("แกะราคาที่ฝังมา (prefix 21, หน่วยสตางค์)", () => {
+  const code = scaleBarcode("PRICE", "1234", 123.45);
+  assert.ok(code.startsWith("21"));
+  assert.deepEqual(parseScaleBarcode(code), { kind: "PRICE", itemCode: "01234", priceBaht: 123.45 });
+});
+
+test("แกะน้ำหนักที่ฝังมา (prefix 22, หน่วยกรัม)", () => {
+  const code = scaleBarcode("WEIGHT", "77", 1250);
+  assert.ok(code.startsWith("22"));
+  assert.deepEqual(parseScaleBarcode(code), { kind: "WEIGHT", itemCode: "00077", grams: 1250 });
+});
+
+test("เลขที่ check digit ผิดต้องไม่ถูกแกะ", () => {
+  const good = scaleBarcode("WEIGHT", "77", 1250);
+  const bad = good.slice(0, 12) + String((Number(good[12]) + 1) % 10);
+  assert.equal(parseScaleBarcode(bad), null,
+    "ปล่อยผ่านแล้วเอาน้ำหนักที่อ่านเพี้ยนไปคิดเงิน = ผิดโดยไม่มีสัญญาณ");
+});
+
+test("prefix 20 (เลขที่ร้านสร้างเอง) ต้องไม่ถูกแกะเป็นของชั่ง", () => {
+  // ถ้าใช้ prefix เดียวกัน เลขของสินค้าชิ้นจะถูกแกะเป็นน้ำหนักแล้วคิดเงินเพี้ยน
+  assert.equal(parseScaleBarcode(inStoreBarcode(42)), null);
+  // และบาร์โค้ดของแบรนด์ก็ต้องไม่ถูกแกะ
+  assert.equal(parseScaleBarcode("4006381333931"), null);
+  assert.equal(parseScaleBarcode("96385074"), null);
+  assert.equal(parseScaleBarcode("ไม่ใช่เลข"), null);
+});
+
+test("ค่าที่เกินช่วง 5 หลักต้องสร้างไม่ได้", () => {
+  assert.throws(() => scaleBarcode("WEIGHT", "1", 100000), /5 หลัก/);
+  assert.throws(() => scaleBarcode("PRICE", "1", 1000), /5 หลัก/);   // 1000 บาท = 100000 สตางค์
+  assert.throws(() => scaleBarcode("WEIGHT", "123456", 1), /1–5 หลัก/);
+});

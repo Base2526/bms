@@ -148,6 +148,8 @@ export type CreateOrderResult =
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
   | { status: "DISCOUNT_UNAPPROVED"; reason: string }
+  /** สินค้าชุดที่ยังไม่ได้ใส่ส่วนประกอบ — ขายไปคือของไม่ออกจากคลัง (8.8) */
+  | { status: "BUNDLE_INCOMPLETE"; sku: string }
   | {
       status: PharmacySaleBlockStatus;
       sku: string;
@@ -326,6 +328,37 @@ export async function createOrder(
     const lines: CreatedLine[] = [];
     let total = 0;
 
+    // ---- สินค้าชุด (8.8) ----------------------------------------
+    // เซ็ตไม่มีสต็อกของตัวเอง — จำนวนที่ขายได้มาจากส่วนประกอบ · โหลดสูตรของทุกเซ็ต
+    // ในบิลนี้ไว้ก่อน แล้วขั้นจองสต็อกจะไปจองที่ส่วนประกอบแทน
+    const bundleRows = await client.query<{
+      bundle_sku: string; component_sku: string; component_size: string; qty: number;
+    }>(
+      `SELECT b.bundle_sku, b.component_sku, b.component_size, b.qty
+         FROM bms_product_bundle_items b
+         JOIN bms_products p ON p.tenant_id = b.tenant_id AND p.sku = b.bundle_sku AND p.is_bundle
+        WHERE b.tenant_id = $1 AND b.bundle_sku = ANY($2::text[])`,
+      [tenantId, items.map((it) => it.sku)]
+    );
+    const bundleRecipe = new Map<string, Array<{ sku: string; size: string; qty: number }>>();
+    for (const row of bundleRows.rows) {
+      const list = bundleRecipe.get(row.bundle_sku) ?? [];
+      list.push({ sku: row.component_sku, size: row.component_size, qty: Number(row.qty) });
+      bundleRecipe.set(row.bundle_sku, list);
+    }
+    // เซ็ตที่ยังไม่ได้ใส่ส่วนประกอบขายไม่ได้ — ปล่อยผ่านคือขายของที่ไม่มีอะไรออกจากคลัง
+    for (const it of items) {
+      if (bundleRecipe.has(it.sku)) continue;
+      const flagged = await client.query(
+        `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND is_bundle`,
+        [tenantId, it.sku]
+      );
+      if (flagged.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "BUNDLE_INCOMPLETE", sku: it.sku };
+      }
+    }
+
     // ---- ราคาตามจำนวน (8.1) -------------------------------------
     // ขั้นราคาดู "จำนวนรวมของ SKU นั้นทั้งบิล" จึงต้องรู้ยอดรวมก่อนตั้งราคาบรรทัดแรก
     // (ลูกค้าหยิบ 60ml 5 ขวด + 150ml 5 ขวด = ซื้อสินค้านั้น 10 ชิ้น ต้องได้ขั้น 10)
@@ -373,8 +406,55 @@ export async function createOrder(
     const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
 
     for (const it of items) {
+      // สินค้าชุด (8.8) — จองที่ส่วนประกอบ ไม่ใช่ที่ตัวเซ็ต
+      //
+      // ทำก่อนขั้นจองปกติและ return ทันทีเมื่อของไม่พอ เพื่อให้ทั้งบิลล้มโดยไม่มี
+      // ส่วนประกอบตัวไหนถูกจองค้าง (ROLLBACK ครอบอยู่แล้ว แต่การ return ที่นี่ทำให้
+      // ข้อความบอกได้ว่าส่วนประกอบตัวไหนขาด ไม่ใช่บอกว่า "เซ็ตหมด" ซึ่งช่วยพนักงานไม่ได้)
+      const recipe = bundleRecipe.get(it.sku);
+      if (recipe) {
+        // bms_order_items มี FK ไป bms_inventory ทุกบรรทัดจึงต้องมีแถวสต็อกอยู่จริง
+        // เซ็ตได้แถวของตัวเองที่ค้างอยู่ที่ 0 ตลอด (จำนวนที่ขายได้มาจากส่วนประกอบ)
+        // — สร้างให้ที่นี่เพื่อไม่ให้ร้านต้องไปสร้างแถวสต็อกของเซ็ตด้วยมือก่อนขาย
+        await client.query(
+          `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+           VALUES ($1,$2,$3,$4,0,0)
+           ON CONFLICT (tenant_id, location_id, product_sku, size) DO NOTHING`,
+          [tenantId, locationId, it.sku, it.size]
+        );
+        for (const part of recipe) {
+          const need = part.qty * it.qty;
+          const res = await client.query(
+            `UPDATE bms_inventory
+                SET reserved_stock = reserved_stock + $3, updated_at = now()
+              WHERE tenant_id = $4 AND location_id = $5 AND product_sku = $1 AND size = $2
+                AND (current_stock - reserved_stock) >= $3`,
+            [part.sku, part.size, need, tenantId, locationId]
+          );
+          if (res.rowCount === 0) {
+            const cur = await client.query<{ available: number }>(
+              `SELECT (current_stock - reserved_stock) AS available FROM bms_inventory
+                WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
+              [part.sku, part.size, tenantId, locationId]
+            );
+            await client.query("ROLLBACK");
+            if (cur.rowCount === 0) return { status: "NOT_FOUND", sku: part.sku, size: part.size };
+            return {
+              status: "INSUFFICIENT",
+              sku: part.sku,
+              size: part.size,
+              available: Number(cur.rows[0].available),
+              requested: need,
+            };
+          }
+        }
+      }
+
       // reserve แบบ atomic บน client ตัวเดียวกับทรานแซกชัน (ล็อกแถว inventory)
-      const upd = await client.query<{ available_after: number }>(
+      // เซ็ตข้ามขั้นนี้ไป — แถว bms_inventory ของเซ็ตค้างที่ 0 ตลอดตามการออกแบบ
+      const upd = recipe
+        ? { rowCount: 1, rows: [{ available_after: 0 }] }
+        : await client.query<{ available_after: number }>(
         `UPDATE bms_inventory
             SET reserved_stock = reserved_stock + $3, updated_at = now()
           WHERE tenant_id = $4 AND location_id = $5 AND product_sku = $1 AND size = $2
@@ -976,8 +1056,9 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
               reserved_stock = reserved_stock - oi.qty,
               updated_at = now()
          FROM (
+           -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_items WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
          ) oi
         WHERE TRUE
@@ -1021,8 +1102,9 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
       `UPDATE bms_inventory inv
           SET current_stock = current_stock + oi.qty, updated_at = now()
          FROM (
+           -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_items WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
          ) oi
         WHERE TRUE
@@ -1077,8 +1159,9 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
       `UPDATE bms_inventory inv
           SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
          FROM (
+           -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_items WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
          ) oi
         WHERE TRUE

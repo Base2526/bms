@@ -1245,8 +1245,11 @@ async function fulfilPosOrderInTx(
             reserved_stock = reserved_stock - oi.qty,
             updated_at = now()
        FROM (
+         -- อ่านจาก view ไม่ใช่ bms_order_items ตรง ๆ (8.8) — บรรทัดที่เป็นสินค้าชุด
+         -- ถูกแทนด้วยส่วนประกอบแล้ว · ถ้าอ่านตารางตรง ๆ จะไปลดสต็อกของเซ็ตซึ่งเป็น 0
+         -- ตลอด แล้วชน CHECK (current_stock >= 0) กลางการปิดบิล
          SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-           FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
+           FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
           GROUP BY tenant_id, location_id, product_sku, size
        ) oi
       WHERE TRUE
@@ -1260,9 +1263,12 @@ async function fulfilPosOrderInTx(
   // FEFO: หมดอายุใกล้สุดก่อน ข้าม lot ที่หมดอายุแล้ว
   // ตัดได้เท่าที่มี lot บันทึกไว้ — SKU ที่ยังไม่ backfill lot จะไม่มีแถวผูก
   // (ตรวจส่วนที่ยังไม่ผูกได้จาก query invariant ท้าย 7.85)
+  // view ไม่ใช่ตารางตรง ๆ (8.8) — ส่วนประกอบของสินค้าชุดที่เป็นสินค้ามีล็อตต้องถูก
+  // ตัดล็อตด้วย · ถ้าอ่านตารางตรง ๆ สต็อกจะลด (view ถูกใช้ข้างบนแล้ว) แต่ล็อตไม่ลด
+  // แล้วยอดล็อตกับยอดสต็อกแยกกันเงียบ ๆ จนกว่าจะมีคนไปกระทบยอด
   const items = await client.query<{ id: string; location_id: string; product_sku: string; size: string; qty: number }>(
-    `SELECT id, location_id, product_sku, size, qty
-       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
+    `SELECT order_item_id AS id, location_id, product_sku, size, qty
+       FROM bms_order_stock_lines WHERE tenant_id = $1 AND order_id = $2`,
     [tenantId, orderId]
   );
   for (const it of items.rows) {

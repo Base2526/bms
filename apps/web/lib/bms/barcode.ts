@@ -97,3 +97,72 @@ export function isInStoreBarcode(code: string): boolean {
   const c = code.trim();
   return /^2\d{12}$/.test(c) && checkBarcode(c).kind === "VALID";
 }
+
+// =============================================================
+// บาร์โค้ดจากเครื่องชั่ง (8.8) — น้ำหนัก/ราคาฝังอยู่ในตัวเลข
+// -------------------------------------------------------------
+// เครื่องชั่งที่ติดเครื่องพิมพ์สติกเกอร์ (ผัก ผลไม้ เนื้อ ของแบ่งขาย) พิมพ์ EAN-13 ที่
+// มีน้ำหนักหรือราคาฝังอยู่ในตัวเลขเอง แล้วเครื่องสแกนที่เคาน์เตอร์ต้องแกะออกมา
+//
+// ⚠️ รูปแบบไม่ใช่มาตรฐานเดียวทั่วโลก — **มันคือค่าที่ตั้งไว้ในเครื่องชั่งของร้าน**
+// เราจึงกำหนดข้อตกลงที่ชัดเจนแล้วบอกให้ร้านตั้งเครื่องชั่งให้ตรง ไม่ใช่เดารูปแบบ
+// เพราะเดาผิดหมายถึงคิดเงินผิดทุกครั้งโดยที่ทุกอย่างดูปกติ:
+//
+//   21 + รหัสสินค้า 5 หลัก + ราคา 5 หลัก (สตางค์) + check digit
+//   22 + รหัสสินค้า 5 หลัก + น้ำหนัก 5 หลัก (กรัม) + check digit
+//
+// prefix 20 สงวนไว้สำหรับเลขที่ปุ่ม "สร้างเลขของร้าน" ออกให้ (สินค้าชิ้น ไม่ใช่ของชั่ง)
+// — ถ้าใช้ prefix เดียวกัน เลขของสินค้าชิ้นจะถูกแกะเป็นน้ำหนักแล้วคิดเงินเพี้ยน
+// =============================================================
+
+export const SCALE_PRICE_PREFIX = "21";
+export const SCALE_WEIGHT_PREFIX = "22";
+
+export type ScaleBarcode =
+  | { kind: "PRICE"; itemCode: string; priceBaht: number }
+  | { kind: "WEIGHT"; itemCode: string; grams: number };
+
+/**
+ * แกะบาร์โค้ดจากเครื่องชั่ง · คืน null เมื่อไม่ใช่รูปแบบนี้
+ *
+ * ตรวจ check digit ด้วย: เลขที่ check digit ผิดคือเลขที่เครื่องสแกนอ่านมาเพี้ยน
+ * ปล่อยผ่านแล้วแกะน้ำหนักออกมาใช้ = คิดเงินผิดโดยไม่มีสัญญาณอะไรเลย
+ */
+export function parseScaleBarcode(raw: string): ScaleBarcode | null {
+  const code = raw.trim();
+  if (!/^\d{13}$/.test(code)) return null;
+
+  const prefix = code.slice(0, 2);
+  if (prefix !== SCALE_PRICE_PREFIX && prefix !== SCALE_WEIGHT_PREFIX) return null;
+  if (checkBarcode(code).kind !== "VALID") return null;
+
+  const itemCode = code.slice(2, 7);
+  const embedded = Number(code.slice(7, 12));
+  if (!Number.isFinite(embedded)) return null;
+
+  return prefix === SCALE_PRICE_PREFIX
+    // ฝังเป็นสตางค์เพื่อรองรับราคาที่มีเศษ — 012345 = ฿123.45
+    ? { kind: "PRICE", itemCode, priceBaht: Math.round(embedded) / 100 }
+    : { kind: "WEIGHT", itemCode, grams: Math.round(embedded) };
+}
+
+/**
+ * สร้างบาร์โค้ดแบบเครื่องชั่ง — มีไว้ให้เทสและให้ร้านทดลองตั้งเครื่องชั่ง
+ * ไม่ได้ใช้ในเส้นทางขายจริง (ของจริงมาจากเครื่องชั่ง)
+ */
+export function scaleBarcode(
+  kind: "PRICE" | "WEIGHT",
+  itemCode: string,
+  value: number
+): string {
+  const code = itemCode.trim();
+  if (!/^\d{1,5}$/.test(code)) throw new Error("รหัสสินค้าต้องเป็นตัวเลข 1–5 หลัก");
+  const embedded = kind === "PRICE" ? Math.round(value * 100) : Math.round(value);
+  if (!Number.isInteger(embedded) || embedded < 0 || embedded > 99_999) {
+    throw new Error("ค่าที่ฝังเกินช่วง 5 หลัก");
+  }
+  const head = `${kind === "PRICE" ? SCALE_PRICE_PREFIX : SCALE_WEIGHT_PREFIX}`
+    + code.padStart(5, "0")
+    + String(embedded).padStart(5, "0");
+  return `${head}${eanCheckDigit(head)}`;
+}

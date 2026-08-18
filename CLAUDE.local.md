@@ -293,6 +293,22 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · **ยังไม่รองรับ "ซื้อ A แถม B" ข้ามสินค้า**
   · เทสชุดใหม่: `scripts/promotions-db-contract.test.mts` (8 เทส) + เพิ่มใน
     `pricing-contract.test.mts` (5 เทส) — รวม pure 40 · DB 131 ผ่านทั้งหมด
+- **`8.8__bms_product_bundles.sql` (สินค้าชุด + view `bms_order_stock_lines`) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  · **⚠️ ทุกที่ที่ขยับสต็อกต้องอ่านจาก view `bms_order_stock_lines` ไม่ใช่ `bms_order_items`** —
+    มี 4 จุด (ตัดสต็อกตอนจบบิล · คืนของ · ปล่อย reserved · ตัดล็อต FEFO) ถ้าเพิ่มจุดใหม่ต้องใช้ view
+  · เซ็ตมีแถว `bms_inventory` ของตัวเองค้างที่ **0 ตลอด** (FK ของ order_items บังคับ) และ
+    `createOrder` สร้างให้เองตอนขายครั้งแรก · การอ่านตารางตรง ๆ จะลดสต็อกเซ็ตให้ติดลบแล้วชน
+    `CHECK (current_stock >= 0)` กลางการปิดบิล
+  · view มี `order_item_id` เพราะการตัดล็อต FEFO ต้องผูกล็อตกลับไปที่บรรทัดที่ขาย
+  · **`CREATE OR REPLACE VIEW` เปลี่ยน "ชื่อ" คอลัมน์ไม่ได้** ต้อง `DROP VIEW` ก่อน (เจอตอน apply)
+  · เซ็ตที่ไม่มีส่วนประกอบ = `BUNDLE_INCOMPLETE` ขายไม่ได้ · ส่วนประกอบขาด = error บอกชื่อ
+    **ส่วนประกอบ** ไม่ใช่ "เซ็ตหมด"
+  · **บาร์โค้ดเครื่องชั่ง: แกะได้แล้ว (`parseScaleBarcode`) แต่ยังไม่ต่อเข้าเส้นทางขาย** — การขาย
+    ของชั่งต้องให้ server คิดราคาจากบาร์โค้ดใหม่ตอน commit ไม่ใช่เชื่อราคาจากจอ (ขัด invariant
+    ของ POS ทั้งระบบ) · prefix: `20` = เลขที่ร้านสร้าง · `21` = ฝังราคา(สตางค์) · `22` = ฝังน้ำหนัก(กรัม)
+  · เทสชุดใหม่: `scripts/bundles-db-contract.test.mts` (7 เทส · รันซ้ำได้ ยืนยัน 2 รอบ) +
+    เพิ่มใน `barcode-contract.test.mts` (5 เทส) — รวม pure 45 · DB 138 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

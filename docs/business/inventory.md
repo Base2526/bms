@@ -400,3 +400,67 @@ number in when a sticker is creased or smudged.
 The bar pattern is asserted bit-for-bit against the standard in
 [barcode-contract.test.mts](../../scripts/barcode-contract.test.mts), built by hand from the encoding
 tables rather than recorded from the function's own output.
+
+
+## Bundles / kits (8.8)
+
+A gift set is one thing the customer buys and three things that leave the warehouse. Set `is_bundle`
+on a product and list its components in `bms_product_bundle_items`; the set is priced on its own row
+(that is the point — cheaper than buying loose) and stock comes out of the components.
+
+The structural problem is that `bms_order_items` has an FK to `bms_inventory`, so every line needs a
+stock row, but a set is not stocked. The set therefore gets an inventory row that **stays at zero**
+forever, created automatically on first sale, and reservation skips it and goes to the components. That
+zero is not a fudge: a set's sellable quantity genuinely comes from its components, not from itself.
+The receipt still shows "gift set", which is what the customer bought — recording the three components
+as separate lines would produce a receipt that neither matches the customer's understanding nor
+explains the price.
+
+### One expansion, not four
+
+Four separate places moved stock by reading `bms_order_items` directly: deduct at sale, restore on
+return, release reservations on cancel, and FEFO lot consumption. Each of them joining the recipe
+itself would be four pieces of code that must be equally correct and would drift apart.
+
+`bms_order_stock_lines` is a view that does the expansion once — ordinary lines pass through, set lines
+become their components × set quantity — and all four read from it. **Anything new that moves stock
+must read the view, not the table.**
+
+Two failures that view prevents, both silent:
+
+- deducting from the set's own inventory row would drive it negative and hit
+  `CHECK (current_stock >= 0)` in the middle of closing a bill
+- moving inventory without consuming lots leaves lot totals and stock totals disagreeing until
+  somebody reconciles — the ledger would say the set moved while inventory moved the components
+
+The view carries `order_item_id` so lot provenance still links back to the line that was sold.
+
+A set with no components is refused (`BUNDLE_INCOMPLETE`) rather than sold, because selling it means
+nothing leaves the warehouse. A short component blocks the sale and the error names **the component**,
+not the set — "the set is out of stock" tells staff nothing they can act on.
+
+## Scale barcodes: weight and price embedded (8.8)
+
+Scales with a label printer — vegetables, meat, anything sold loose — print an EAN-13 with the weight
+or the price embedded in the digits, and the counter has to decode it.
+
+`parseScaleBarcode()` reads two forms:
+
+```
+21 + item code (5) + price in satang (5) + check digit
+22 + item code (5) + weight in grams (5) + check digit
+```
+
+Prefix `20` stays reserved for the codes the generate button issues (piece goods). Sharing a prefix
+would mean a piece-goods barcode getting decoded as a weight and priced wrongly.
+
+**The format is whatever the shop's scale is configured to print, not a world standard.** Guessing
+would mean charging the wrong amount every time while everything looks normal, so the convention above
+is stated and the shop must set its scale to match. A code whose check digit fails is not decoded at
+all — reading a corrupted weight and charging from it is worse than refusing.
+
+**Not yet wired into the sale path.** Decoding is only half the feature: a weight-embedded sale needs
+the product's base unit to be grams, and a price-embedded sale means the counter supplies an amount —
+which the server would have to re-derive from the barcode at commit, or the register would be deciding
+prices. That contradicts the invariant the whole POS is built on, so the parser and its tests ship now
+and the sale path stays untouched until the re-derivation is built.
