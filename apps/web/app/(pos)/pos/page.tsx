@@ -180,7 +180,9 @@ type ShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
-  expectedCash: number;
+  noSaleCount: number;
+  expectedCash: number | null;
+  expectedCashHidden: boolean;
   countedCash: number | null;
   cashVariance: number | null;
 };
@@ -438,6 +440,7 @@ export default function PosPage() {
   const [voidApproverId, setVoidApproverId] = useState("");
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
+  const [noSaleReason, setNoSaleReason] = useState("");
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -769,13 +772,20 @@ export default function PosPage() {
       const data = await res.json();
       if (!res.ok) {
         setNotice({ type: "error", text: data.status === "WOULD_OVERDRAW"
-          ? `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(data.available)} — ถอนมากกว่านี้ไม่ได้`
+          ? (data.available == null
+              ? "จำนวนเงินมากกว่าที่ควรมีในลิ้นชัก — ตรวจตัวเลขอีกครั้ง"
+              : `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(data.available)} — ถอนมากกว่านี้ไม่ได้`)
           : data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" });
         return;
       }
       setCashMoveAmount(""); setCashMoveReason(""); setCashApproverPin("");
       void refreshCashMoves();
-      setNotice({ type: "ok", text: `บันทึกแล้ว · เงินในลิ้นชักที่ควรมีตอนนี้ ฿${baht(data.drawerAfter)}` });
+      setNotice({
+        type: "ok",
+        text: data.drawerAfter == null
+          ? "บันทึกแล้ว (ร้านนี้เปิดโหมดนับปิดตา — ไม่แสดงยอดที่ควรมีจนกว่าจะปิดกะ)"
+          : `บันทึกแล้ว · เงินในลิ้นชักที่ควรมีตอนนี้ ฿${baht(data.drawerAfter)}`,
+      });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     }
@@ -809,6 +819,30 @@ export default function PosPage() {
       setVoidTarget(null); setVoidReason(""); setVoidApproverPin("");
       void loadRecentReceipts(recentSalesQuery);
       setNotice({ type: "ok", text: `ยกเลิกบิลแล้ว · คืนเงิน ฿${baht(data.refundAmount)}` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------------------
+  // ปุ่มนี้ "ไม่ได้" เปิดลิ้นชักด้วยตัวเอง — มันบันทึกว่ามีการเปิด แล้วสั่งเปิดผ่าน
+  // ESC/POS ถ้าต่อเครื่องพิมพ์ไว้ · ต่อให้สั่งไม่ได้ บันทึกก็ต้องเกิด เพราะพนักงาน
+  // จะเปิดด้วยคันโยกใต้ลิ้นชักอยู่ดี และเราต้องการร่องรอยมากกว่าต้องการการควบคุม
+  async function doNoSale() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!noSaleReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" }); return; }
+    try {
+      const res = await fetch("/api/pos/no-sale", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ cashierUserId: cashierId, pin, reason: noSaleReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" }); return; }
+      setNoSaleReason("");
+      // สั่งเปิดลิ้นชักจริงถ้าต่อเครื่องพิมพ์ไว้ · ล้มได้ไม่กระทบบันทึกที่ลงไปแล้ว
+      try { await openCashDrawer(); } catch { /* ไม่มีเครื่องพิมพ์ = เปิดมือเอา */ }
+      setNotice({ type: "ok", text: "บันทึกการเปิดลิ้นชักแล้ว" });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     }
@@ -2258,6 +2292,28 @@ export default function PosPage() {
                 )}
               </div>
 
+              {/* ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------
+                  ห้ามไม่ได้จริง (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) จึงทำให้ทางที่
+                  ถูกต้องสะดวกกว่าทางลัด: กดปุ่มนี้แล้วลิ้นชักเปิดให้เลยถ้าต่อเครื่องพิมพ์ไว้ */}
+              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>เปิดลิ้นชักโดยไม่ขาย</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={noSaleReason}
+                    onChange={(e) => setNoSaleReason(e.target.value)}
+                    maxLength={200}
+                    placeholder="เหตุผล เช่น แลกแบงก์ย่อยให้ลูกค้า"
+                    style={{ padding: 9, fontSize: 14, minWidth: 240, flex: 1 }}
+                  />
+                  <button onClick={() => void doNoSale()} disabled={busy} style={{ padding: "9px 16px" }}>
+                    บันทึก + เปิดลิ้นชัก
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--pos-muted)", marginTop: 6 }}>
+                  ทุกครั้งที่เปิดจะถูกบันทึกและนับรวมในสรุปกะ
+                </div>
+              </div>
+
               {/* ---- สรุปกะ X-report (7.97) ---------------------------
                   กระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ */}
               <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
@@ -2293,7 +2349,14 @@ export default function PosPage() {
                       <div>เงินตั้งต้น ฿{baht(shiftReport.openingFloat)}</div>
                       <div>เงินเข้าลิ้นชัก ฿{baht(shiftReport.cashIn)} · เงินออก ฿{baht(shiftReport.cashOut)}</div>
                       <div>คืนเงินสด ฿{baht(shiftReport.cashRefunds)}</div>
-                      <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash)}</div>
+                      <div>เปิดลิ้นชักโดยไม่ขาย {shiftReport.noSaleCount} ครั้ง</div>
+                      {shiftReport.expectedCashHidden ? (
+                        <div style={{ color: "var(--pos-muted)" }}>
+                          เงินสดที่ควรมี — ซ่อนไว้จนกว่าจะปิดกะ (โหมดนับปิดตา)
+                        </div>
+                      ) : (
+                        <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash ?? 0)}</div>
+                      )}
                       {shiftReport.countedCash != null && (
                         <div>
                           นับได้ ฿{baht(shiftReport.countedCash)} · ส่วนต่าง{" "}
@@ -2357,9 +2420,12 @@ export default function PosPage() {
                   เบราว์เซอร์นี้ไม่รองรับ WebUSB — จะพิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์แทน
                 </span>
               )}
+              {/* เดิมตรงนี้เป็นปุ่มเปิดลิ้นชักเปล่า ๆ ซึ่งเปิดได้โดยไม่มีบันทึกอะไรเลย —
+                  เป็นรูที่ทำให้การนับปิดตากับบันทึก no-sale ไร้ความหมาย
+                  ย้ายไปแท็บกะ ซึ่งบังคับเหตุผล + PIN ก่อนเปิด (8.0) */}
               {printerReady && (
-                <button onClick={() => void openCashDrawer()} style={{ padding: "8px 14px", fontSize: 13 }}>
-                  เปิดลิ้นชัก
+                <button onClick={() => setTab("shift")} style={{ padding: "8px 14px", fontSize: 13 }}>
+                  เปิดลิ้นชัก → ไปที่แท็บกะ
                 </button>
               )}
               <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 14px", fontSize: 13 }}>

@@ -194,6 +194,19 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · **ยังไม่มีหน้าพิมพ์สติกเกอร์บาร์โค้ด** — เลขที่สร้างมาต้องมีทางพิมพ์แปะเองก่อนจะใช้จริง
   · เทส 2 ชุดใหม่: `scripts/barcode-contract.test.mts` (7 เทส ไม่ต้องมี DB) +
     `scripts/product-barcode-db-contract.test.mts` (7 เทส) — รวม pure 22 · DB 69 ผ่านทั้งหมด
+- **`8.0__bms_pos_blind_close_and_no_sale.sql` (นับเงินปิดตา + เปิดลิ้นชักโดยไม่ขาย) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 1 ตัว (`pos.nosale` → Manager/Sales/Cashier)
+  · **`pos_blind_close` DEFAULT TRUE = เปลี่ยนพฤติกรรมร้านที่มีอยู่ทันทีที่ apply** — ยอดเงินที่ควรมี
+    จะหายไปจากสรุปกะระหว่างกะเปิด ร้านที่ไม่ต้องการปิดเองที่ `/admin/pos-readiness`
+  · **กับดักตอนเขียนเทส**: เทสชุด `pos-shift-ops` ตรวจ "ยอดที่ควรมี" ตรง ๆ หลายตัว พอ default
+    เป็น TRUE เลยพังทันที 5 ตัว — setup ต้องตั้ง `pos_blind_close = FALSE` เอง (แบบเดียวกับที่ตั้ง
+    `cash_rounding = 'NONE'`) และเทสที่ตรวจตัวโหมดเองเปิด-ปิดเองในเทสนั้น
+  · **เทสที่เพิ่มต้องอยู่ก่อนเทสปิดกะ** — ชุดนี้ปิดกะจริงที่เทสท้าย ๆ ถ้าแทรกทีหลังจะได้
+    `SHIFT_NOT_OPEN` ทั้งหมด
+  · ช่องรั่วที่ปิดไปด้วย: `recordCashMovement` เคยคืน `drawerAfter` = ยอดที่ควรมีตรง ๆ (นำเงินเข้า
+    ฿1 แล้วอ่านคำตอบได้) · และปุ่ม "เปิดลิ้นชัก" เปล่า ๆ ที่แท็บตั้งค่าของหน้า POS
+  · เทสชุดที่ 3 เพิ่มเป็น 15 เทส — รวม pure 27 · DB 71 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

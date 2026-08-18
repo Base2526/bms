@@ -144,12 +144,14 @@ export type TenantVatSettings = VatSettings & {
   calendarEra: "BE" | "CE";
   abbreviatedApproved: boolean;
   cashRounding: CashRounding;
+  /** true = ไม่บอกยอดเงินที่ควรมีจนกว่าจะปิดกะ (8.0) — คนนับกรอกให้ตรงไม่ได้ */
+  blindClose: boolean;
 };
 
 export async function getVatSettings(tenantId: string): Promise<TenantVatSettings> {
   const res = await query<any>(
     `SELECT vat_registered, price_includes_vat, vat_rate, vat_rounding, calendar_era,
-            abbreviated_tax_invoice_approved, cash_rounding
+            abbreviated_tax_invoice_approved, cash_rounding, pos_blind_close
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -162,6 +164,8 @@ export async function getVatSettings(tenantId: string): Promise<TenantVatSetting
     calendarEra: (r?.calendar_era ?? "BE") as "BE" | "CE",
     abbreviatedApproved: r?.abbreviated_tax_invoice_approved ?? false,
     cashRounding: (r?.cash_rounding ?? "NONE") as CashRounding,
+    // ร้านที่ยังไม่มีแถวโปรไฟล์ = เปิดไว้ ตรงกับ DEFAULT TRUE ของคอลัมน์
+    blindClose: r?.pos_blind_close ?? true,
   };
 }
 
@@ -173,6 +177,7 @@ export type TenantVatSettingsInput = {
   calendarEra: "BE" | "CE";
   abbreviatedApproved: boolean;
   cashRounding: CashRounding;
+  blindClose: boolean;
 };
 
 const VAT_ROUNDING_MODES: VatRounding[] = ["BASE_FIRST", "VAT_FIRST_TRUNCATE", "VAT_FIRST_ROUND"];
@@ -205,8 +210,8 @@ export async function updateVatSettings(
   await query(
     `INSERT INTO bms_store_profile (
        tenant_id, vat_registered, price_includes_vat, vat_rate, vat_rounding,
-       calendar_era, abbreviated_tax_invoice_approved, cash_rounding
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       calendar_era, abbreviated_tax_invoice_approved, cash_rounding, pos_blind_close
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (tenant_id) DO UPDATE SET
        vat_registered = EXCLUDED.vat_registered,
        price_includes_vat = EXCLUDED.price_includes_vat,
@@ -215,6 +220,7 @@ export async function updateVatSettings(
        calendar_era = EXCLUDED.calendar_era,
        abbreviated_tax_invoice_approved = EXCLUDED.abbreviated_tax_invoice_approved,
        cash_rounding = EXCLUDED.cash_rounding,
+       pos_blind_close = EXCLUDED.pos_blind_close,
        updated_at = now()`,
     [
       tenantId,
@@ -225,6 +231,7 @@ export async function updateVatSettings(
       input.calendarEra,
       Boolean(input.abbreviatedApproved),
       input.cashRounding,
+      Boolean(input.blindClose),
     ]
   );
   // โปรไฟล์ร้านอยู่แถวเดียวกันและถูก cache ไว้ — ไม่ล้างแล้วหน้าอื่นจะเห็นค่าเก่า

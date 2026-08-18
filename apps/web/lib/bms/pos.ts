@@ -2831,10 +2831,17 @@ export async function listCashMovements(
 }
 
 export type CashMovementResult =
-  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number }
+  /**
+   * drawerAfter = null เมื่อร้านเปิดโหมดนับปิดตา (8.0)
+   *
+   * ตัวเลขนี้คือ "ยอดที่ควรมีในลิ้นชัก" ตรง ๆ — ถ้าคืนให้ตอนกะยังเปิด แคชเชียร์
+   * นำเงินเข้า ฿1 ครั้งเดียวก็อ่านคำตอบของการนับปิดตาได้ทั้งหมด
+   */
+  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number | null }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "INVALID"; reason: string }
-  | { status: "WOULD_OVERDRAW"; available: number };
+  /** available = null ด้วยเหตุผลเดียวกัน — ยังปฏิเสธรายการ แต่ไม่บอกว่าเหลือเท่าไร */
+  | { status: "WOULD_OVERDRAW"; available: number | null };
 
 /**
  * บันทึกเงินเข้า/ออกลิ้นชัก
@@ -2876,9 +2883,12 @@ export async function recordCashMovement(input: {
     }
 
     const drawer = await drawerExpectedInTx(client, input.tenantId, input.shiftId, Number(shift.rows[0].opening_float));
+    // โหมดนับปิดตายังต้องกันการถอนเกิน (รายการที่ทำให้ยอดติดลบคือรายการที่กรอกผิด)
+    // แต่ห้ามบอกว่าเหลือเท่าไร ไม่งั้นข้อความ error กลายเป็นช่องอ่านคำตอบ
+    const blind = (await getVatSettings(input.tenantId)).blindClose;
     if (input.direction === "OUT" && amount > drawer + 0.001) {
       await client.query("ROLLBACK");
-      return { status: "WOULD_OVERDRAW", available: drawer };
+      return { status: "WOULD_OVERDRAW", available: blind ? null : drawer };
     }
 
     const res = await client.query(
@@ -2910,7 +2920,9 @@ export async function recordCashMovement(input: {
     const r: any = res.rows[0];
     return {
       status: "RECORDED",
-      drawerAfter: Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
+      drawerAfter: blind
+        ? null
+        : Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
       movement: {
         id: r.id, direction: r.direction, amount: Number(r.amount), reason: r.reason,
         actorName: null, approvedByName: null, createdAt: toISO(r.created_at),
@@ -3071,8 +3083,18 @@ export type PosShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
-  /** เงินสดที่ควรอยู่ในลิ้นชักตอนนี้ (กะเปิด) หรือตอนปิด (กะปิดแล้ว) */
-  expectedCash: number;
+  /** จำนวนครั้งที่เปิดลิ้นชักโดยไม่ขาย (8.0) — เปิดถี่ผิดปกติคือสัญญาณที่ต้องดู */
+  noSaleCount: number;
+  /**
+   * เงินสดที่ควรอยู่ในลิ้นชัก
+   *
+   * **null เมื่อกะยังเปิดและร้านเปิดโหมดนับปิดตา (8.0)** — คนนับต้องไม่เห็นเลขนี้
+   * ก่อนกรอกยอดที่นับได้ ไม่งั้นกรอกให้ตรงได้เลยแล้ว variance เป็น 0 ตลอด
+   * ระบบจึงจับเงินขาดไม่ได้จริง · หลังปิดกะแล้วแสดงตามปกติ
+   */
+  expectedCash: number | null;
+  /** true = เลขถูกซ่อนเพราะโหมดนับปิดตา ไม่ใช่เพราะคำนวณไม่ได้ */
+  expectedCashHidden: boolean;
   countedCash: number | null;
   cashVariance: number | null;
 };
@@ -3099,7 +3121,7 @@ export async function getPosShiftReport(
 
   // บิลที่ถูก void ต้องออกจากยอดขายทุกตัวเลข ไม่ใช่แค่ไม่นับใบ — ไม่งั้นยอดขาย
   // ของกะจะไม่ตรงกับเงินที่นับได้ แล้วผู้จัดการจะเซ็นรับด้วยตัวเลขที่ผิด
-  const [sales, methods, cashiers, movements, returns] = await Promise.all([
+  const [sales, methods, cashiers, movements, returns, noSales, vat] = await Promise.all([
     query<any>(
       `SELECT COUNT(*)::text AS bills,
               COALESCE(SUM(total_amount), 0) AS sales,
@@ -3144,6 +3166,11 @@ export async function getPosShiftReport(
         WHERE pr.tenant_id = $1 AND o.pos_shift_id = $2 AND pr.is_void = FALSE`,
       [tenantId, shiftId]
     ),
+    query<any>(
+      `SELECT COUNT(*)::text AS n FROM bms_pos_no_sales WHERE tenant_id = $1 AND shift_id = $2`,
+      [tenantId, shiftId]
+    ),
+    getVatSettings(tenantId),
   ]);
 
   const s = sales.rows[0], m = movements.rows[0], r = returns.rows[0];
@@ -3151,6 +3178,7 @@ export async function getPosShiftReport(
   const cashIn = Number(m.cash_in), cashOut = Number(m.cash_out);
   const cashRefunds = Number(r.cash_refunds ?? 0);
   const openingFloat = Number(h.opening_float);
+  const expectedCashHidden = h.status === "OPEN" && vat.blindClose;
 
   return {
     shiftId: h.id,
@@ -3174,12 +3202,73 @@ export async function getPosShiftReport(
     cashIn,
     cashOut,
     cashRefunds,
+    noSaleCount: Number(noSales.rows[0]?.n ?? 0),
     // กะที่ปิดแล้วใช้ตัวเลขที่บันทึกไว้ตอนปิด ไม่คิดใหม่ — คิดใหม่แล้วรายงานที่พิมพ์
     // วันนี้จะไม่ตรงกับกระดาษที่เซ็นไปเมื่อวาน ถ้ามีใครแก้ข้อมูลย้อนหลัง
-    expectedCash: h.expected_cash != null
-      ? Number(h.expected_cash)
-      : Math.round((openingFloat + cashSales - cashRefunds + cashIn - cashOut) * 100) / 100,
+    //
+    // กะที่ยังเปิด + โหมดนับปิดตา = ไม่บอกเลขนี้กับใครทั้งนั้น รวมถึงผู้จัดการ
+    // เพราะเลขที่หลุดออกจากจอไปแล้วห้ามคนบอกต่อไม่ได้ (blind close ที่ยกเว้น
+    // บางคนไม่ใช่ blind close)
+    expectedCash: expectedCashHidden
+      ? null
+      : h.expected_cash != null
+        ? Number(h.expected_cash)
+        : Math.round((openingFloat + cashSales - cashRefunds + cashIn - cashOut) * 100) / 100,
+    expectedCashHidden,
     countedCash: h.counted_cash == null ? null : Number(h.counted_cash),
     cashVariance: h.cash_variance == null ? null : Number(h.cash_variance),
   };
+}
+
+// ---------------------------------------------------------------
+// เปิดลิ้นชักโดยไม่ขาย — no-sale (8.0)
+// ---------------------------------------------------------------
+//
+// ห้ามไม่ได้: แลกแบงก์ย่อยให้ลูกค้าเป็นงานประจำ และถ้าระบบไม่ให้ทำ พนักงานจะ
+// เปิดลิ้นชักด้วยมือ (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) แล้วไม่เหลือร่องรอยเลย
+// การควบคุมจึงอยู่ที่ "ทุกครั้งต้องมีบันทึกว่าใครเปิดและทำไม" ไม่ใช่การกั้น
+//
+// จำนวนครั้งที่เปิดโดยไม่ขายเป็นสัญญาณทุจริตคลาสสิก — จึงโผล่บนสรุปกะ
+
+export type PosNoSale = {
+  id: string;
+  reason: string;
+  actorName: string | null;
+  createdAt: string;
+};
+
+export async function listNoSales(tenantId: string, shiftId: string): Promise<PosNoSale[]> {
+  const res = await query(
+    `SELECT n.id, n.reason, n.created_at, COALESCE(u.name, u.email) AS actor_name
+       FROM bms_pos_no_sales n
+       LEFT JOIN users u ON u.id = n.actor_user_id
+      WHERE n.tenant_id = $1 AND n.shift_id = $2
+      ORDER BY n.created_at`,
+    [tenantId, shiftId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id, reason: r.reason, actorName: r.actor_name ?? null, createdAt: toISO(r.created_at),
+  }));
+}
+
+export async function recordNoSale(input: {
+  tenantId: string; deviceId: string; shiftId: string; actorUserId: string; reason: string;
+}): Promise<{ status: "RECORDED" } | { status: "SHIFT_NOT_OPEN" } | { status: "INVALID"; reason: string }> {
+  const reason = input.reason.trim();
+  if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" };
+  if (reason.length > 200) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+
+  const shift = await query(
+    `SELECT id FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId, input.deviceId]
+  );
+  if (!shift.rowCount) return { status: "SHIFT_NOT_OPEN" };
+
+  await query(
+    `INSERT INTO bms_pos_no_sales (tenant_id, shift_id, device_id, actor_user_id, reason)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [input.tenantId, input.shiftId, input.deviceId, input.actorUserId, reason]
+  );
+  return { status: "RECORDED" };
 }

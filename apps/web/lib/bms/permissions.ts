@@ -89,6 +89,7 @@ export const BMS_PERMISSIONS = [
   "pos.void",
   "pos.cash.movement",
   "pos.shift.report",
+  "pos.nosale",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

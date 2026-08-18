@@ -267,6 +267,49 @@ Voided bills leave `salesTotal` and `billCount` and appear on their own line of 
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
 
+## Blind close and no-sale (8.0)
+
+Two internal controls the shift work in `7.97` left open.
+
+### Blind close
+
+`closePosShift()` always computed expected cash on the server, but the shift report added in `7.97`
+would happily show it *before* the count — so whoever counted the drawer could read the answer and
+type it back, and variance was zero forever. A control that cannot be failed is not a control.
+
+With `bms_store_profile.pos_blind_close` on (**the default**), `getPosShiftReport()` returns
+`expectedCash: null` for a shift that is still open, with `expectedCashHidden: true` so the screen can
+say *why* the number is missing rather than looking broken. After the shift closes, everything shows.
+
+It hides the number from everyone, managers included. A blind close with exceptions is not blind: a
+number on a screen cannot be stopped from being repeated to the person doing the counting.
+
+The obvious leak was closed with it. `recordCashMovement()` returned `drawerAfter` — the expected
+total, exactly — so a cashier could pay ฿1 into the drawer and read the answer off the confirmation.
+Under blind close that field and the `WOULD_OVERDRAW` amount both come back `null`. Over-withdrawal
+is still refused; the refusal just stops naming the figure.
+
+Facts that are not the answer stay visible: opening float, cash in, cash out, refunds. Without those
+the report explains nothing.
+
+**This changes behaviour for existing shops on upgrade** — the column defaults to `TRUE`. A shop that
+wants the old behaviour turns it off at `/admin/pos-readiness`.
+
+### No-sale
+
+Opening the drawer to break a note for a customer is routine, and it cannot be forbidden: every till
+drawer has a manual release underneath, so a system that refuses just moves the action somewhere with
+no record at all. `bms_pos_no_sales` records each one with a mandatory reason, and the count appears
+on the shift report — a spike in no-sales is one of the oldest signals in retail.
+
+`pos.nosale` is seeded to Manager, Sales and Cashier. No approver, deliberately: requiring a
+supervisor for every roll of coins is what pushes staff to the manual release. The control is the
+record, not the gate.
+
+The POS settings tab used to carry a bare "open drawer" button that fired the ESC/POS pulse with
+nothing written down — the exact hole this feature exists to close. It now points at the shift tab,
+where a reason and a PIN are required and the drawer opens as part of recording the event.
+
 ## Shift report (X / Z)
 
 `GET /api/pos/shift-report` returns the sheet a manager signs when taking cash from a cashier: net
