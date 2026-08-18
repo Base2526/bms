@@ -330,6 +330,23 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · **ยอดเครดิตค้าง = หนี้สินในงบดุล** ส่งตัวเลขจาก `getStoreCreditOutstanding()` ให้บัญชีก่อนปิดงบ
     · `balanceMismatchCount` ต้องเป็น 0 เสมอ
   · เทสชุดใหม่: `scripts/store-credit-db-contract.test.mts` (11 เทส)
+- **`9.0__bms_pos_deposits.sql` (มัดจำ/ค้างชำระ) apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว
+  2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 2 ตัว
+  (`pos.deposit.take` → Manager/Sales/Cashier · `pos.deposit.cancel` → Manager)
+  · **กฎ "ยอดชำระต้องตรงเป๊ะ" ของ POS ไม่ได้ถูกคลาย** — มัดจำเป็นบิลอีกชนิด: ของถูกจอง
+    (reserved) บิลค้างที่ `PENDING` แล้วตอนลูกค้ามารับของจึงเดินเส้นทางปิดการขายเดิมทั้งเส้น
+  · **ใบกำกับออกตอนรับของ ไม่ใช่ตอนวางมัดจำ** (ตรงกับจุดที่กรรมสิทธิ์โอน)
+  · **การขายเป็นของกะที่รับของ** — `settleDepositSale` ประทับ `pos_device_id/pos_shift_id/
+    cashier_user_id` ใหม่ ยอดขายและค่าคอมจึงไปที่คนส่งของจริง
+  · **กับดัก 3 อย่างที่เจอตอนต่อกับ `finalizePosSale`**:
+    1. ล็อกบิลด้วย เครื่อง/กะ/คนขาย → บิลมัดจำที่สร้างไว้ตอนอื่นไม่ผ่าน (แก้ด้วยการประทับใหม่)
+    2. ตรวจ `total_amount` เทียบกับ `amountDue` → ต้องส่ง **ยอดเต็ม** ไม่ใช่ยอดคงเหลือ
+    3. ปฏิเสธบิลค้างที่มี payment เดิม → เปลี่ยนเป็นรับ `alreadyPaid` แล้วตรวจว่า "ต้องมีเท่านี้พอดี"
+       (ยังจับรายการที่เกินมาได้เหมือนเดิม) · และ `FOR UPDATE` อยู่กับ aggregate ไม่ได้
+  · **ปิดมัดจำไม่คืนเงินให้เอง** — คืนหรือยึดเป็นข้อตกลงร้านกับลูกค้า ระบบบันทึกการตัดสินใจ
+  · ของที่จองค้างมีวันครบกำหนด + ธง `overdue` — ไม่มีสองอย่างนี้ ร้านจะมีสต็อกที่ "มีอยู่แต่ขายไม่ได้"
+    เพิ่มขึ้นเรื่อย ๆ
+  · เทสชุดใหม่: `scripts/deposits-db-contract.test.mts` (9 เทส) — **รวมทั้งหมด pure 45 · DB 158**
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

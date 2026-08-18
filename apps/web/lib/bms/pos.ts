@@ -25,6 +25,7 @@ import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
 import type { PriceTier, Promotion } from "./pricing";
+import { markDepositCompletedInTx } from "./deposits";
 import {
   findStoreCredit,
   lockUsableCreditInTx,
@@ -1530,6 +1531,15 @@ async function finalizePosSale(args: {
   amountDue: number;
   payments: PosPaymentInput[];
   replayed: boolean;
+  /**
+   * ยอดที่บิลนี้ "เคยรับไว้แล้ว" อย่างถูกต้อง — ใช้กับบิลมัดจำเท่านั้น (9.0)
+   *
+   * ปกติบิลค้างที่มีรายการชำระเงินอยู่แล้วถือว่าน่าสงสัยและถูกปฏิเสธ (กันการรับเงิน
+   * ซ้ำจากบิลเดิม) · บิลมัดจำมีเงินมัดจำอยู่จริงตามการออกแบบ จึงต้องบอกยอดที่คาดไว้
+   * มาด้วย แล้วด่านนี้เปลี่ยนจาก "ห้ามมีเลย" เป็น "ต้องมีเท่าที่บอกมาพอดี"
+   * — ยังจับกรณีมีรายการเกินมาได้เหมือนเดิม
+   */
+  alreadyPaid?: number;
 }): Promise<PosSaleResult> {
   const { input, shift, orderId, amountDue, payments, replayed } = args;
   const vatSettings = await getVatSettings(input.tenantId);
@@ -1559,13 +1569,26 @@ async function finalizePosSale(args: {
     let cashTendered: number | null = null;
     let cashChange: number | null = null;
     if (current.status === "PENDING") {
-      const active = await client.query(
-        `SELECT 1 FROM bms_payments
+      // ล็อกแถวก่อน แล้วรวมยอดจากแถวที่ล็อกได้ — Postgres ไม่ยอมให้ FOR UPDATE
+      // อยู่กับ aggregate ในคำสั่งเดียว
+      const active = await client.query<{ amount: string }>(
+        `SELECT amount FROM bms_payments
           WHERE tenant_id = $1 AND order_id = $2 AND status IN ('PENDING','CONFIRMED')
-          LIMIT 1 FOR UPDATE`,
+          FOR UPDATE`,
         [input.tenantId, orderId]
       );
-      if (active.rowCount) throw new Error("บิลค้างมีรายการชำระเงินเดิม ต้องตรวจสอบก่อนทำต่อ");
+      const expectedPaid = Math.round((args.alreadyPaid ?? 0) * 100) / 100;
+      const foundPaid = Math.round(
+        active.rows.reduce((sum, r) => sum + Number(r.amount), 0) * 100
+      ) / 100;
+      if (Math.abs(foundPaid - expectedPaid) > 0.01) {
+        // ยอดที่มีอยู่ไม่ตรงกับที่คาด = มีการรับเงินที่ไม่ได้อยู่ในแผน ต้องมีคนดู
+        throw new Error(
+          expectedPaid > 0
+            ? `ยอดที่รับไว้แล้วไม่ตรง (คาด ${expectedPaid} พบ ${foundPaid})`
+            : "บิลค้างมีรายการชำระเงินเดิม ต้องตรวจสอบก่อนทำต่อ"
+        );
+      }
 
       for (const payment of payments) {
         const tendered = payment.method === "CASH"
@@ -3740,4 +3763,110 @@ export async function listSerialsForOrder(tenantId: string, orderId: string): Pr
     returnedAt: r.returned_at ? toISO(r.returned_at) : null,
     customerName: null, customerPhone: null,
   }));
+}
+
+// ---------------------------------------------------------------
+// ปิดบิลมัดจำ — ลูกค้ามารับของและจ่ายส่วนที่เหลือ (9.0)
+// ---------------------------------------------------------------
+//
+// ใช้ finalizePosSale ตัวเดียวกับการขายปกติโดยตั้งใจ: การรับของคือจุดที่การขาย
+// เกิดขึ้นจริง จึงต้องได้ทุกอย่างที่การขายได้ — ตัดสต็อก ตัดล็อต FEFO ออกใบกำกับ
+// ให้แต้ม บันทึก audit · เขียนเส้นทางที่สองขึ้นมาคือมีสองที่ที่ต้องถูกต้องเท่ากัน
+//
+// ⚠️ ใบกำกับภาษีออกที่นี่ ไม่ใช่ตอนวางมัดจำ — ตรงกับจุดที่กรรมสิทธิ์โอนจริง
+
+export type SettleDepositResult =
+  | PosSaleResult
+  | { status: "DEPOSIT_NOT_FOUND" }
+  | { status: "BALANCE_MISMATCH"; expected: number; received: number };
+
+export async function settleDepositSale(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  cashierUserId: string;
+  orderId: string;
+  payments: PosPaymentInput[];
+}): Promise<SettleDepositResult> {
+  const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
+    `SELECT id, location_id, device_id FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId]
+  );
+  if (!shiftRes.rowCount) return { status: "SHIFT_NOT_OPEN" };
+  const shift = shiftRes.rows[0];
+  if (shift.device_id !== input.deviceId) return { status: "SHIFT_NOT_OPEN" };
+
+  const dep = await query<{ total_amount: string; deposit_paid: string; status: string }>(
+    `SELECT total_amount, deposit_paid, status FROM bms_pos_deposits
+      WHERE tenant_id = $1 AND order_id = $2`,
+    [input.tenantId, input.orderId]
+  );
+  const row = dep.rows[0];
+  if (!row || row.status !== "OPEN") return { status: "DEPOSIT_NOT_FOUND" };
+
+  const balance = Math.round((Number(row.total_amount) - Number(row.deposit_paid)) * 100) / 100;
+  const requested = input.payments
+    .map((p) => ({ ...p, amount: Math.round(Number(p.amount) * 100) / 100 }))
+    .filter((p) => Number.isFinite(p.amount) && p.amount > 0);
+  const paid = Math.round(requested.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
+
+  // ยอดต้องตรงกับส่วนที่ค้างพอดี — เหตุผลเดียวกับกฎ PAYMENT_MISMATCH ของการขายปกติ
+  // จ่ายเกิน/ขาดแล้วปล่อยผ่านคือเก็บเงินไม่ตรงกับที่ระบบคิด
+  if (Math.abs(paid - balance) > 0.01) {
+    return { status: "BALANCE_MISMATCH", expected: balance, received: paid };
+  }
+
+  // ประทับบิลเป็นของกะ/เครื่อง/คนขายที่ "รับของ" ไม่ใช่ที่รับมัดจำ
+  //
+  // finalizePosSale ล็อกบิลด้วยสามค่านี้ (กันการปิดบิลของเครื่องอื่น) และบิลมัดจำถูก
+  // สร้างไว้ตอนวางมัดจำซึ่งอาจเป็นกะอื่นหรือคนละวัน · การประทับใหม่ไม่ใช่การหลบข้อจำกัด
+  // แต่ตรงกับความจริง: การขายเกิดตอนรับของ ยอดขายและค่าคอมจึงเป็นของกะที่ส่งของจริง
+  await query(
+    `UPDATE bms_orders
+        SET pos_device_id = $3, pos_shift_id = $4, cashier_user_id = $5, updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
+    [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.cashierUserId]
+  );
+
+  const settled = await finalizePosSale({
+    input: {
+      tenantId: input.tenantId,
+      deviceId: input.deviceId,
+      shiftId: input.shiftId,
+      cashierUserId: input.cashierUserId,
+      idempotencyKey: `deposit-settle-${input.orderId}`,
+      lines: [],
+      payments: requested,
+    },
+    shift,
+    orderId: input.orderId,
+    // ยอดบิลเต็ม ไม่ใช่ยอดคงเหลือ
+    //
+    // finalizePosSale ตรวจว่ายอดบิลไม่เปลี่ยนระหว่างรับชำระโดยเทียบกับ total_amount
+    // ของบิล · ส่งยอดคงเหลือมาจะถูกตีว่า "ยอดบิลเปลี่ยน" ทันที · และใบกำกับต้องแสดง
+    // ยอดเต็มของบิลอยู่แล้ว เพราะนั่นคือมูลค่าที่ขายจริง ส่วนเงินมัดจำเป็นแถว payment
+    // ที่ลงไว้ก่อนหน้าแล้ว การส่งยอดเต็มจึงถูกทั้งการตรวจและตัวเลขบนเอกสาร
+    amountDue: Number(row.total_amount),
+    payments: requested,
+    replayed: false,
+    // เงินมัดจำที่ลงไว้แล้วเป็นของถูกต้อง — บอกยอดที่คาดไว้เพื่อให้ด่านตรวจ
+    // เปลี่ยนจาก "ห้ามมีรายการเดิม" เป็น "ต้องมีเท่านี้พอดี"
+    alreadyPaid: Number(row.deposit_paid),
+  });
+
+  if (settled.status === "SOLD") {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
+      await markDepositCompletedInTx(client, input.tenantId, input.orderId);
+      await client.query("COMMIT");
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  return settled;
 }

@@ -198,6 +198,44 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Deposits / layaway (9.0)
+
+The POS requires payment rows to equal the bill exactly or the bill is voided as `PAYMENT_MISMATCH`.
+That rule is correct for a sale finishing at the counter and **is not relaxed here** — it is what stops
+money collected from diverging from what the system computed.
+
+A deposit is a different kind of bill instead. Goods are reserved but not deducted, the order stays
+`PENDING`, and when the customer returns and pays the balance the bill walks the **ordinary completion
+path**: stock, FEFO lots, tax document, points, audit. That reuse is the design; a second settlement
+path would be a second thing that has to be equally correct and gets tested half as much.
+
+Consequences that fall out of it, all intended:
+
+- **The tax invoice is issued at collection, not when the deposit is taken** — which is where title
+  actually passes.
+- **The sale belongs to the collecting shift.** Settlement re-stamps the order's device, shift and
+  cashier, so takings and commission land with whoever handed the goods over, not whoever took the
+  deposit days earlier.
+- A deposit equal to the bill is refused: that is a completed sale and must go the normal way, or it
+  sits in the deposit list fully paid with nobody closing it.
+- Paying the wrong balance is refused rather than accepted, the same reasoning as `PAYMENT_MISMATCH`.
+
+Two guards inside `finalizePosSale` needed adjusting rather than bypassing. It rejects a pending bill
+that already has payment rows — a sensible defence against collecting twice — and a deposit bill has
+them by design. It now takes an expected already-paid amount, turning "there must be none" into "there
+must be exactly this much", which still catches an unplanned payment. And it compares the bill total
+against the amount being settled, so settlement passes the **full** total (the deposit is already a
+payment row) rather than the balance.
+
+**Closing a deposit does not move money by itself.** Whether an unclaimed deposit is refunded or
+forfeited is an agreement between shop and customer — some forfeit after a deadline, some refund in
+full. The system records the decision with a mandatory reason and leaves the payout to the ordinary
+refund path. Deciding for the shop would be deciding about somebody else's money.
+
+Open deposits carry a due date and are listed with an `overdue` flag, because **reserved goods are
+goods nobody else can buy.** Without that visibility a shop accumulates stock that exists but cannot be
+sold, and nobody notices.
+
 ## Gift cards and store credit (8.9)
 
 Closes two gaps at once: gift cards could not be sold at all, and a return could only go back as cash

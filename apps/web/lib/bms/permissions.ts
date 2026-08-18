@@ -99,6 +99,10 @@ export const BMS_PERMISSIONS = [
   // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9
   // .redeem ให้ทุกคนที่ขายหน้าร้าน · .issue/.adjust ให้ Manager เพราะเป็นการสร้าง
   // และแก้ "เงิน" ของลูกค้าโดยตรง ไม่ใช่การรับชำระ
+  // มัดจำ/ค้างชำระ — seed ที่ 9.0 · .take ให้คนขาย (รับเงิน) · .cancel ให้ Manager
+  // (ยกเลิก/ยึดมัดจำเป็นการตัดสินใจเรื่องเงินของลูกค้า)
+  "pos.deposit.take",
+  "pos.deposit.cancel",
   "storecredit.issue",
   "storecredit.redeem",
   "storecredit.adjust",
