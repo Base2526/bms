@@ -190,6 +190,18 @@ async function authorizeTool(tool: BmsTool, ec: ExecCtx): Promise<void> {
   }
 }
 
+function assertSingleCustomerOrderWrite(tool: BmsTool, ec: ExecCtx): void {
+  if (
+    ec.surface === "customer" &&
+    ec.createdOrderId &&
+    (tool.name === "create_order" || tool.name === "reorder")
+  ) {
+    throw new ToolArgError(
+      "ออร์เดอร์ถูกสร้างแล้วในคำขอนี้ ห้ามสร้างออร์เดอร์ซ้ำ ให้ตอบจากผลออร์เดอร์เดิม"
+    );
+  }
+}
+
 /** บันทึกทุก tool attempt โดยตั้งใจไม่เก็บ raw args/prompt/PII */
 async function auditToolCall(
   ec: ExecCtx,
@@ -293,6 +305,7 @@ async function runApprovedToolInternal(
     await authorizeTool(tool, execCtx);
     input = inputRecord(opts.input ?? {});
     validateKnownFields(tool, input);
+    assertSingleCustomerOrderWrite(tool, execCtx);
     const executed = await tool.execute(input, execCtx);
     if (executed.ok && executed.proposal) {
       if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
@@ -522,6 +535,7 @@ async function runToolLoopInternal(
                 summary: `duplicate suppressed: ${completed.summary}`,
               });
             } else {
+              assertSingleCustomerOrderWrite(tool, opts.execCtx);
               const r = await tool.execute(traceInput, opts.execCtx);
               if (r.ok && r.proposal) {
                 if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");

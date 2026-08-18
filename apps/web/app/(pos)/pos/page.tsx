@@ -9,7 +9,7 @@
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
 import { applyPromotion, unitPriceForQty } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
@@ -33,6 +33,7 @@ import {
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
   { key: "returns", label: "คืน" },
+  { key: "deposits", label: "มัดจำ" },
   { key: "shift", label: "กะ" },
   { key: "settings", label: "ตั้งค่า" },
 ] as const;
@@ -65,6 +66,16 @@ function PosTabIcon({ tab }: { tab: PosTab }) {
            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M9 14L4 9l5-5" />
         <path d="M4 9h11a5 5 0 010 10h-3" />
+      </svg>
+    );
+  }
+  if (tab === "deposits") {
+    // ใบรับเงิน = มัดจำ/ยอดค้าง
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6 3.5h12v17l-3-2-3 2-3-2-3 2z" />
+        <path d="M9 8h6M9 12h6" />
       </svg>
     );
   }
@@ -169,6 +180,18 @@ type CashMovement = {
   actorName: string | null;
   approvedByName: string | null;
   createdAt: string;
+};
+
+type PosDeposit = {
+  id: string;
+  orderId: string;
+  locationId: string;
+  customerNote: string | null;
+  totalAmount: number;
+  depositPaid: number;
+  balanceDue: number;
+  dueAt: string | null;
+  overdue: boolean;
 };
 
 type ShiftReport = {
@@ -453,6 +476,14 @@ export default function PosPage() {
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   const [noSaleReason, setNoSaleReason] = useState("");
+  // ---- มัดจำ / ค้างชำระ (9.0) ----
+  const [deposits, setDeposits] = useState<PosDeposit[]>([]);
+  const [depositOrderId, setDepositOrderId] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositMethod, setDepositMethod] = useState("CASH");
+  const [depositReason, setDepositReason] = useState("");
+  const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
+  const depositRequestRef = useRef<{ signature: string; key: string } | null>(null);
   // ---- ส่งใบเสร็จ (8.6) ----
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
@@ -880,6 +911,78 @@ export default function PosPage() {
     }
   }
 
+  // ---- มัดจำ / ค้างชำระ (9.0) --------------------------------------
+
+  async function refreshDeposits() {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/pos/deposit", { headers: authHeaders, cache: "no-store" });
+      if (res.ok) setDeposits((await res.json()).deposits ?? []);
+    } catch { /* รายการโหลดใหม่ได้ ไม่ขัดจังหวะงานขาย */ }
+  }
+
+  async function doDepositAction(action: "take" | "add" | "settle" | "close") {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    if (!depositOrderId.trim()) { setNotice({ type: "error", text: "ระบุเลข order ของมัดจำ" }); return; }
+    const amount = Number(depositAmount);
+    if (action !== "close" && (!Number.isFinite(amount) || amount <= 0)) {
+      setNotice({ type: "error", text: "ระบุจำนวนเงินให้ถูกต้อง" }); return;
+    }
+    if (action === "close" && !depositReason.trim()) {
+      setNotice({ type: "error", text: "ระบุเหตุผลที่ปิดมัดจำ" }); return;
+    }
+    setBusy(true);
+    try {
+      const signature = JSON.stringify({ action, orderId: depositOrderId.trim(), amount, method: depositMethod });
+      if (depositRequestRef.current?.signature !== signature) {
+        depositRequestRef.current = {
+          signature,
+          key: `deposit-${action}-${depositOrderId}-${crypto.randomUUID()}`,
+        };
+      }
+      const requestKey = depositRequestRef.current.key;
+      const res = await fetch("/api/pos/deposit", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          orderId: depositOrderId.trim(),
+          cashierUserId: cashierId,
+          pin,
+          amount,
+          method: depositMethod,
+          payments: action === "settle" ? [{
+            method: depositMethod,
+            amount,
+            cashTendered: depositMethod === "CASH" ? amount : null,
+          }] : undefined,
+          outcome: depositOutcome,
+          reason: depositReason.trim(),
+          idempotencyKey: requestKey,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data.error ?? data.reason ?? `ทำรายการมัดจำไม่สำเร็จ (${data.status ?? res.status})` });
+        return;
+      }
+      setNotice({
+        type: "ok",
+        text: action === "settle" ? "รับยอดคงเหลือและปิดการขายแล้ว"
+          : action === "close" ? `ปิดมัดจำเป็น ${depositOutcome === "FORFEITED" ? "ยึดมัดจำ" : "คืนมัดจำ"} แล้ว`
+          : action === "take" ? "รับมัดจำแล้ว" : "รับเงินมัดจำเพิ่มแล้ว",
+      });
+      setDepositAmount("");
+      setDepositReason("");
+      depositRequestRef.current = null;
+      void refreshDeposits();
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ---- ยกเลิกบิล (7.97) ----------------------------------------------
 
   async function doVoidSale(orderId: string) {
@@ -1082,13 +1185,14 @@ export default function PosPage() {
     return () => { ch.close(); displayChannel.current = null; };
   }, []);
 
-  // บิลพักโหลดตอนเข้าแท็บขาย · รายการเงินลิ้นชักโหลดตอนเข้าแท็บกะ
+  // บิลพักโหลดตอนเข้าแท็บขาย · เงินลิ้นชักตอนเข้าแท็บกะ · มัดจำตอนเข้าแท็บมัดจำ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
   // ตลอดกะคือ request หลายพันครั้งต่อวันต่อเครื่องเพื่อข้อมูลที่เปลี่ยนวันละไม่กี่ครั้ง
   useEffect(() => {
     if (!token || !session?.shift) return;
     if (tab === "sell") void refreshParked();
     if (tab === "shift") void refreshCashMoves();
+    if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
 
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
@@ -2484,85 +2588,215 @@ export default function PosPage() {
       </div>
       </>)}
 
+      {tab === "deposits" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="pos-shift-head">
+            <div>
+              <div className="pos-block-title" style={{ marginBottom: 2 }}>มัดจำ / ยอดค้างรับ</div>
+              <div className="pos-block-hint">แสดงเฉพาะบิลที่จองสินค้าของสาขาเครื่องนี้</div>
+            </div>
+            <button onClick={() => void refreshDeposits()} style={{ padding: "7px 12px" }}>โหลดใหม่</button>
+          </div>
+
+          <div className="pos-block">
+            <div className="pos-block-title">ทำรายการ</div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>Order ID</span>
+              <input value={depositOrderId} onChange={(e) => setDepositOrderId(e.target.value.trim())}
+                     placeholder="เลือกจากรายการด้านล่าง หรือวางเลข order" />
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>จำนวนเงิน</span>
+                <input className="pos-num" inputMode="decimal" value={depositAmount}
+                       onChange={(e) => setDepositAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                       placeholder="0.00" style={{ width: 150, textAlign: "right" }} />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วิธีรับเงิน</span>
+                <select value={depositMethod} onChange={(e) => setDepositMethod(e.target.value)}>
+                  <option value="CASH">เงินสด</option>
+                  <option value="QR">QR</option>
+                  <option value="CARD">บัตร</option>
+                  <option value="BANK_TRANSFER">โอนเงิน</option>
+                  <option value="WALLET">Wallet</option>
+                </select>
+              </label>
+              <button disabled={busy} onClick={() => void doDepositAction("take")}>รับมัดจำครั้งแรก</button>
+              <button disabled={busy} onClick={() => void doDepositAction("add")}>รับเพิ่ม (ยังไม่ครบ)</button>
+              <button className="pos-shift-btn-primary" disabled={busy}
+                      onClick={() => void doDepositAction("settle")}>รับยอดคงเหลือ + ส่งของ</button>
+            </div>
+            <div style={{ borderTop: "1px solid var(--pos-line)", marginTop: 12, paddingTop: 10 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <select value={depositOutcome}
+                        onChange={(e) => setDepositOutcome(e.target.value as "CANCELLED" | "FORFEITED")}>
+                  <option value="CANCELLED">ยกเลิกและต้องคืนมัดจำ</option>
+                  <option value="FORFEITED">ยึดมัดจำ</option>
+                </select>
+                <input value={depositReason} onChange={(e) => setDepositReason(e.target.value)}
+                       maxLength={300} placeholder="เหตุผลที่ปิดมัดจำ" style={{ flex: 1, minWidth: 220 }} />
+                <button disabled={busy} onClick={() => void doDepositAction("close")}>ปิดมัดจำ</button>
+              </div>
+              <div className="pos-block-hint">
+                การปิดจะคืนสินค้าที่จองไว้ทันที ส่วนการจ่ายเงินคืนลูกค้าให้ทำผ่าน refund ตามวิธีเดิม
+              </div>
+            </div>
+          </div>
+
+          <div className="pos-block">
+            <div className="pos-block-title">รายการที่ยังเปิดอยู่ ({deposits.length})</div>
+            {deposits.length === 0 ? (
+              <div className="pos-block-hint">ไม่มีมัดจำค้างของสาขานี้</div>
+            ) : deposits.map((deposit) => (
+              <button key={deposit.id} type="button" className="pos-move-row"
+                      onClick={() => {
+                        setDepositOrderId(deposit.orderId);
+                        setDepositAmount(String(deposit.balanceDue));
+                      }}
+                      style={{ width: "100%", textAlign: "left", background: "transparent", border: 0 }}>
+                <span>
+                  <b>{deposit.customerNote || deposit.orderId.slice(0, 8)}</b>
+                  <span style={{ color: deposit.overdue ? "var(--pos-danger)" : "var(--pos-muted)", marginLeft: 8 }}>
+                    {deposit.overdue ? "เลยกำหนด" : deposit.dueAt ? `รับภายใน ${new Date(deposit.dueAt).toLocaleDateString("th-TH")}` : "ไม่กำหนดวันรับ"}
+                  </span>
+                </span>
+                <span className="pos-num">จ่ายแล้ว ฿{baht(deposit.depositPaid)} · ค้าง ฿{baht(deposit.balanceDue)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {tab === "shift" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontWeight: 500 }}>กะขายของเครื่องนี้</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {session?.shift ? (
             <>
-              <div style={{ fontSize: 13, color: "#555", lineHeight: 1.9 }}>
-                <div>เปิดกะ {new Date(session.shift.openedAt).toLocaleString("th-TH")}</div>
-                <div>เงินตั้งต้นในลิ้นชัก ฿{baht(session.shift.openingFloat)}</div>
-                <div>
-                  คืนสินค้าในกะนี้ {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
-                  {shiftReturnSummary.pendingCount > 0
-                    ? ` · รอยืนยันคืนเงินจริง ${shiftReturnSummary.pendingCount} รายการ ฿${baht(shiftReturnSummary.pendingTotal)}`
-                    : ""}
+              <div className="pos-shift-head">
+                <div className="pos-block-title" style={{ marginBottom: 0 }}>กะขายของเครื่องนี้</div>
+                <span className="pos-chip pos-chip--ok">
+                  กะเปิดอยู่{session.device.code ? ` · ${session.device.code}` : ""}
+                </span>
+              </div>
+
+              {/* ข้อมูลหัวกะเป็นการ์ดตัวเลข ไม่ใช่สามบรรทัดเรียงกัน — แคชเชียร์
+                  อ่านจากระยะยืนขาย ไม่ได้ก้มอ่านเหมือนอ่านเอกสาร */}
+              <div className="pos-stats">
+                <div className="pos-stat">
+                  <div className="pos-stat-label">เปิดกะ</div>
+                  <div className="pos-stat-value">
+                    {new Date(session.shift.openedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                  <div className="pos-stat-hint">{new Date(session.shift.openedAt).toLocaleDateString("th-TH")}</div>
+                </div>
+                <div className="pos-stat">
+                  <div className="pos-stat-label">เงินตั้งต้นในลิ้นชัก</div>
+                  <div className="pos-stat-value">฿{baht(session.shift.openingFloat)}</div>
+                  <div className="pos-stat-hint">รับจากผู้จัดการตอนเปิดกะ</div>
+                </div>
+                <div className="pos-stat">
+                  <div className="pos-stat-label">คืนสินค้าในกะนี้</div>
+                  <div className="pos-stat-value">
+                    {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
+                  </div>
+                  {shiftReturnSummary.pendingCount > 0 ? (
+                    <div className="pos-stat-hint pos-stat-hint--warn">
+                      รอยืนยันคืนเงินจริง {shiftReturnSummary.pendingCount} รายการ ฿{baht(shiftReturnSummary.pendingTotal)}
+                    </div>
+                  ) : (
+                    <div className="pos-stat-hint">ไม่มีรายการรอยืนยัน</div>
+                  )}
                 </div>
               </div>
+
               {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
               {cart.length > 0 ? (
-                <div style={{ background: "#fff4e5", color: "#663c00", padding: 10, borderRadius: 8, fontSize: 13 }}>
+                <div className="pos-note pos-note--warn">
                   ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ
                 </div>
               ) : (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <input
-                    value={countedCash}
-                    onChange={(e) => setCountedCash(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="เงินที่นับได้"
-                    style={{ padding: 10, fontSize: 15, width: 180 }}
-                  />
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินที่นับได้ในลิ้นชัก</span>
+                    <input
+                      value={countedCash}
+                      onChange={(e) => setCountedCash(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      className="pos-num"
+                      style={{ fontSize: 15, width: 170, textAlign: "right" }}
+                    />
+                  </label>
                   <button
+                    className="pos-shift-btn-primary"
                     disabled={busy || !cashierId || !pin || !countedCash}
                     onClick={() => void shiftAction("close")}
                     style={{ padding: "10px 18px" }}
                   >
                     ปิดกะ + นับเงิน
                   </button>
+                  {shiftReport?.expectedCashHidden && (
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)", paddingBottom: 12 }}>
+                      โหมดนับปิดตา — ยอดที่ควรมีจะแสดงหลังกดปิดกะ
+                    </span>
+                  )}
                 </div>
               )}
 
               {/* ---- เงินเข้า-ออกลิ้นชัก (7.97) ------------------------
                   ก่อนมีส่วนนี้ การถอนเงินไปฝากกลางกะทำให้ปิดกะขึ้นเงินขาดทุกครั้ง
                   โดยไม่มีที่ให้อธิบาย · เงินออกต้องมีหัวหน้ากด PIN เงินเข้าไม่ต้อง */}
-              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>เงินเข้า–ออกลิ้นชัก</div>
+              <div className="pos-block">
+                <div className="pos-block-title">เงินเข้า–ออกลิ้นชัก</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <select value={cashMoveDir} onChange={(e) => setCashMoveDir(e.target.value as "IN" | "OUT")}
-                          style={{ padding: 9, fontSize: 14 }}>
+                          style={{ fontSize: 14, minWidth: 140 }}>
                     <option value="OUT">นำเงินออก</option>
                     <option value="IN">นำเงินเข้า</option>
                   </select>
                   <input value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                         inputMode="decimal" placeholder="จำนวนเงิน" style={{ padding: 9, fontSize: 14, width: 130 }} />
+                         inputMode="decimal" placeholder="จำนวนเงิน" className="pos-num"
+                         style={{ fontSize: 14, width: 130, textAlign: "right" }} />
                   <input value={cashMoveReason} onChange={(e) => setCashMoveReason(e.target.value)} maxLength={200}
-                         placeholder="เหตุผล เช่น นำส่งธนาคาร" style={{ padding: 9, fontSize: 14, minWidth: 200, flex: 1 }} />
+                         placeholder="เหตุผล เช่น นำส่งธนาคาร" style={{ fontSize: 14, minWidth: 200, flex: 1 }} />
                 </div>
                 {cashMoveDir === "OUT" && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                    <select value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
-                            style={{ padding: 9, fontSize: 14, minWidth: 180 }}>
-                      <option value="">— ผู้อนุมัติ —</option>
-                      {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
-                        <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
-                      ))}
-                    </select>
-                    <input type="password" inputMode="numeric" value={cashApproverPin}
-                           onChange={(e) => setCashApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
-                           placeholder="PIN หัวหน้า" style={{ padding: 9, fontSize: 14, width: 120 }} />
+                  <div className="pos-approve">
+                    <div className="pos-approve-why">เงินออกจากลิ้นชักต้องมีหัวหน้ากด PIN ทุกครั้ง</div>
+                    <div className="pos-approve-row">
+                      <select value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
+                              style={{ fontSize: 14 }}>
+                        <option value="">— ผู้อนุมัติ —</option>
+                        {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
+                          <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                        ))}
+                      </select>
+                      <input type="password" inputMode="numeric" value={cashApproverPin}
+                             onChange={(e) => setCashApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                             placeholder="PIN หัวหน้า" style={{ fontSize: 14, textAlign: "center" }} />
+                    </div>
                   </div>
                 )}
-                <button onClick={() => void doCashMovement()} disabled={busy}
-                        style={{ marginTop: 8, padding: "9px 16px" }}>
-                  บันทึกรายการ
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => void doCashMovement()} disabled={busy} style={{ padding: "9px 16px" }}>
+                    บันทึกรายการ
+                  </button>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                    ทุกรายการเข้าสูตรเงินในลิ้นชักของกะนี้
+                  </span>
+                </div>
                 {cashMoves.length > 0 && (
-                  <div style={{ marginTop: 10, fontSize: 13, color: "#555", lineHeight: 1.9 }}>
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 6 }}>
                     {cashMoves.map((m) => (
-                      <div key={m.id}>
-                        {m.direction === "IN" ? "เข้า" : "ออก"} ฿{baht(m.amount)} · {m.reason}
-                        {m.approvedByName ? ` · อนุมัติ ${m.approvedByName}` : ""}
+                      <div key={m.id} className="pos-move-row">
+                        <span>
+                          <span className={m.direction === "IN" ? "pos-move-dir--in" : "pos-move-dir--out"}>
+                            {m.direction === "IN" ? "เข้า" : "ออก"}
+                          </span>{" "}
+                          · {m.reason}
+                          {m.approvedByName ? ` · อนุมัติ ${m.approvedByName}` : ""}
+                        </span>
+                        <span className="pos-num">฿{baht(m.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -2572,72 +2806,89 @@ export default function PosPage() {
               {/* ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------
                   ห้ามไม่ได้จริง (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) จึงทำให้ทางที่
                   ถูกต้องสะดวกกว่าทางลัด: กดปุ่มนี้แล้วลิ้นชักเปิดให้เลยถ้าต่อเครื่องพิมพ์ไว้ */}
-              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>เปิดลิ้นชักโดยไม่ขาย</div>
+              <div className="pos-block">
+                <div className="pos-shift-head" style={{ marginBottom: 8 }}>
+                  <div className="pos-block-title" style={{ marginBottom: 0 }}>เปิดลิ้นชักโดยไม่ขาย</div>
+                  {shiftReport && (
+                    <span className="pos-chip">กะนี้ {shiftReport.noSaleCount} ครั้ง</span>
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={noSaleReason}
                     onChange={(e) => setNoSaleReason(e.target.value)}
                     maxLength={200}
                     placeholder="เหตุผล เช่น แลกแบงก์ย่อยให้ลูกค้า"
-                    style={{ padding: 9, fontSize: 14, minWidth: 240, flex: 1 }}
+                    style={{ fontSize: 14, minWidth: 240, flex: 1 }}
                   />
                   <button onClick={() => void doNoSale()} disabled={busy} style={{ padding: "9px 16px" }}>
                     บันทึก + เปิดลิ้นชัก
                   </button>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--pos-muted)", marginTop: 6 }}>
-                  ทุกครั้งที่เปิดจะถูกบันทึกและนับรวมในสรุปกะ
-                </div>
+                <div className="pos-block-hint">ทุกครั้งที่เปิดจะถูกบันทึกและนับรวมในสรุปกะ</div>
               </div>
 
               {/* ---- สรุปกะ X-report (7.97) ---------------------------
                   กระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ */}
-              <div style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 12, marginTop: 4 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ fontWeight: 500 }}>สรุปกะ</div>
-                  <button onClick={() => void loadShiftReport()} style={{ padding: "6px 14px", fontSize: 13 }}>
+              <div className="pos-block">
+                <div className="pos-shift-head" style={{ marginBottom: 8 }}>
+                  <div className="pos-block-title" style={{ marginBottom: 0, flex: 1 }}>สรุปกะ</div>
+                  <button onClick={() => void loadShiftReport()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
                     ดูสรุปกะ
                   </button>
                   {shiftReport && (
-                    <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13 }}>
+                    <button onClick={() => window.print()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
                       พิมพ์
                     </button>
                   )}
                 </div>
                 {shiftReport && (
-                  <div style={{ marginTop: 10, fontSize: 13, color: "#333", lineHeight: 2 }}>
-                    <div>เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}</div>
-                    <div>ยอดขายสุทธิ ฿{baht(shiftReport.salesTotal)} · {shiftReport.billCount} บิล</div>
-                    <div>ส่วนลดรวม ฿{baht(shiftReport.discountTotal)}</div>
-                    <div>ยกเลิกบิล {shiftReport.voidCount} ใบ ฿{baht(shiftReport.voidTotal)}</div>
-                    <div>คืนสินค้า {shiftReport.returnCount} บิล ฿{baht(shiftReport.returnTotal)}</div>
-                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
+                  <div className="pos-report">
+                    <div className="pos-report-meta">
+                      เครื่อง {shiftReport.deviceCode}{shiftReport.locationName ? ` · ${shiftReport.locationName}` : ""}
+                    </div>
+                    <div className="pos-report-grid">
+                      <span>ยอดขายสุทธิ · {shiftReport.billCount} บิล</span><span>฿{baht(shiftReport.salesTotal)}</span>
+                      <span>ส่วนลดรวม</span><span>฿{baht(shiftReport.discountTotal)}</span>
+                      <span>ยกเลิกบิล {shiftReport.voidCount} ใบ</span><span>฿{baht(shiftReport.voidTotal)}</span>
+                      <span>คืนสินค้า {shiftReport.returnCount} บิล</span><span>฿{baht(shiftReport.returnTotal)}</span>
+                    </div>
+                    <div className="pos-report-sep pos-report-grid">
                       {shiftReport.byMethod.map((m) => (
-                        <div key={m.method}>{m.method} · {m.count} รายการ · ฿{baht(m.amount)}</div>
+                        <Fragment key={m.method}>
+                          <span>{m.method} · {m.count} รายการ</span><span>฿{baht(m.amount)}</span>
+                        </Fragment>
                       ))}
                     </div>
-                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
+                    <div className="pos-report-sep pos-report-grid">
                       {shiftReport.byCashier.map((c) => (
-                        <div key={c.cashier}>{c.cashier} · {c.billCount} บิล · ฿{baht(c.amount)}</div>
+                        <Fragment key={c.cashier}>
+                          <span>{c.cashier} · {c.billCount} บิล</span><span>฿{baht(c.amount)}</span>
+                        </Fragment>
                       ))}
                     </div>
-                    <div style={{ borderTop: "1px dashed var(--pos-line)", marginTop: 6, paddingTop: 6 }}>
-                      <div>เงินตั้งต้น ฿{baht(shiftReport.openingFloat)}</div>
-                      <div>เงินเข้าลิ้นชัก ฿{baht(shiftReport.cashIn)} · เงินออก ฿{baht(shiftReport.cashOut)}</div>
-                      <div>คืนเงินสด ฿{baht(shiftReport.cashRefunds)}</div>
-                      <div>เปิดลิ้นชักโดยไม่ขาย {shiftReport.noSaleCount} ครั้ง</div>
+                    <div className="pos-report-sep pos-report-grid">
+                      <span>เงินตั้งต้น</span><span>฿{baht(shiftReport.openingFloat)}</span>
+                      <span>เงินเข้าลิ้นชัก</span><span>฿{baht(shiftReport.cashIn)}</span>
+                      <span>เงินออกจากลิ้นชัก</span><span>฿{baht(shiftReport.cashOut)}</span>
+                      <span>คืนเงินสด</span><span>฿{baht(shiftReport.cashRefunds)}</span>
+                      <span>เปิดลิ้นชักโดยไม่ขาย</span><span>{shiftReport.noSaleCount} ครั้ง</span>
+                    </div>
+                    <div className="pos-report-sep">
                       {shiftReport.expectedCashHidden ? (
                         <div style={{ color: "var(--pos-muted)" }}>
                           เงินสดที่ควรมี — ซ่อนไว้จนกว่าจะปิดกะ (โหมดนับปิดตา)
                         </div>
                       ) : (
-                        <div style={{ fontWeight: 600 }}>เงินสดที่ควรมี ฿{baht(shiftReport.expectedCash ?? 0)}</div>
+                        <div className="pos-report-grid pos-report-total">
+                          <span>เงินสดที่ควรมี</span><span>฿{baht(shiftReport.expectedCash ?? 0)}</span>
+                        </div>
                       )}
                       {shiftReport.countedCash != null && (
-                        <div>
-                          นับได้ ฿{baht(shiftReport.countedCash)} · ส่วนต่าง{" "}
-                          <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "#c9455a" : "#12805c" }}>
+                        <div className="pos-report-grid" style={{ marginTop: 3 }}>
+                          <span>นับได้</span><span>฿{baht(shiftReport.countedCash)}</span>
+                          <span>ส่วนต่าง</span>
+                          <span style={{ color: (shiftReport.cashVariance ?? 0) < 0 ? "var(--pos-danger)" : "var(--pos-money)" }}>
                             ฿{baht(shiftReport.cashVariance ?? 0)}
                           </span>
                         </div>
@@ -2648,25 +2899,35 @@ export default function PosPage() {
               </div>
             </>
           ) : (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                value={openingFloat}
-                onChange={(e) => setOpeningFloat(e.target.value)}
-                inputMode="decimal"
-                placeholder="เงินตั้งต้นในลิ้นชัก"
-                style={{ padding: 10, fontSize: 15, width: 200 }}
-              />
-              <button
-                disabled={busy || !cashierId || !pin}
-                onClick={() => void shiftAction("open")}
-                style={{ padding: "10px 18px" }}
-              >
-                เปิดกะ
-              </button>
-              {(!cashierId || !pin) && (
-                <span style={{ fontSize: 13, color: "#8a6100" }}>เลือกผู้ขายและใส่ PIN ก่อน</span>
-              )}
-            </div>
+            <>
+              <div className="pos-block-title">กะขายของเครื่องนี้</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินตั้งต้นในลิ้นชัก</span>
+                  <input
+                    value={openingFloat}
+                    onChange={(e) => setOpeningFloat(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    className="pos-num"
+                    style={{ fontSize: 15, width: 200, textAlign: "right" }}
+                  />
+                </label>
+                <button
+                  className="pos-shift-btn-primary"
+                  disabled={busy || !cashierId || !pin}
+                  onClick={() => void shiftAction("open")}
+                  style={{ padding: "10px 18px" }}
+                >
+                  เปิดกะ
+                </button>
+                {(!cashierId || !pin) && (
+                  <span style={{ fontSize: 13, color: "var(--pos-warn)", paddingBottom: 12 }}>
+                    เลือกผู้ขายและใส่ PIN ก่อน
+                  </span>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

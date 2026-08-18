@@ -16,10 +16,12 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { afterOrderCancellationCommitted, cancelOrderInTx } from "./orders";
 
 export type Deposit = {
   id: string;
   orderId: string;
+  locationId: string;
   customerId: string | null;
   customerNote: string | null;
   totalAmount: number;
@@ -42,6 +44,7 @@ function mapDeposit(r: any): Deposit {
   return {
     id: r.id,
     orderId: r.order_id,
+    locationId: r.location_id,
     customerId: r.customer_id ?? null,
     customerNote: r.customer_note ?? null,
     totalAmount: total,
@@ -55,14 +58,18 @@ function mapDeposit(r: any): Deposit {
 }
 
 export async function listDeposits(
-  tenantId: string, status: Deposit["status"] | null = "OPEN"
+  tenantId: string,
+  status: Deposit["status"] | null = "OPEN",
+  options: { locationId?: string | null } = {}
 ): Promise<Deposit[]> {
   const res = await query<any>(
     `SELECT * FROM bms_pos_deposits
-      WHERE tenant_id = $1 AND ($2::text IS NULL OR status = $2)
+      WHERE tenant_id = $1
+        AND ($2::text IS NULL OR status = $2)
+        AND ($3::uuid IS NULL OR location_id = $3)
       ORDER BY due_at NULLS LAST, created_at DESC
       LIMIT 200`,
-    [tenantId, status]
+    [tenantId, status, options.locationId ?? null]
   );
   return res.rows.map(mapDeposit);
 }
@@ -94,16 +101,32 @@ export async function takeDeposit(input: {
   method: string;
   deviceId?: string | null;
   shiftId?: string | null;
+  expectedLocationId?: string | null;
   customerNote?: string | null;
   dueAt?: string | null;
   createdBy: string;
+  idempotencyKey: string;
 }): Promise<TakeDepositResult> {
   const amount = round2(Number(input.amount));
   if (!Number.isFinite(amount) || amount <= 0) return { status: "INVALID", reason: "ยอดมัดจำต้องมากกว่า 0" };
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 240) return { status: "INVALID", reason: "idempotencyKey ไม่ถูกต้อง" };
 
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.createdBy });
+
+    const replay = await client.query<any>(
+      `SELECT d.*
+         FROM bms_payments p
+         JOIN bms_pos_deposits d ON d.tenant_id = p.tenant_id AND d.order_id = p.order_id
+        WHERE p.tenant_id = $1 AND p.idempotency_key = $2`,
+      [input.tenantId, idempotencyKey]
+    );
+    if (replay.rows[0]) {
+      await client.query("ROLLBACK");
+      return { status: "TAKEN", deposit: mapDeposit(replay.rows[0]) };
+    }
 
     const ord = await client.query<any>(
       `SELECT id, status, total_amount, shipping_fee, location_id, customer_id
@@ -119,6 +142,10 @@ export async function takeDeposit(input: {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_ELIGIBLE", reason: `บิลสถานะ ${order.status} รับมัดจำไม่ได้` };
     }
+    if (input.expectedLocationId && order.location_id !== input.expectedLocationId) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_ELIGIBLE", reason: "บิลนี้จองสินค้าที่สาขาอื่น" };
+    }
 
     const total = round2(Number(order.total_amount) + Number(order.shipping_fee ?? 0));
     if (amount >= total) {
@@ -129,21 +156,32 @@ export async function takeDeposit(input: {
       };
     }
 
-    const existing = await client.query(
-      `SELECT 1 FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2`,
-      [input.tenantId, input.orderId]
+    const existing = await client.query<any>(
+      `SELECT d.*,
+              EXISTS (
+                SELECT 1 FROM bms_payments p
+                 WHERE p.tenant_id = d.tenant_id AND p.order_id = d.order_id
+                   AND p.idempotency_key = $3
+              ) AS replay
+         FROM bms_pos_deposits d
+        WHERE d.tenant_id = $1 AND d.order_id = $2`,
+      [input.tenantId, input.orderId, idempotencyKey]
     );
     if (existing.rowCount) {
       await client.query("ROLLBACK");
+      if (existing.rows[0].replay) {
+        return { status: "TAKEN", deposit: mapDeposit(existing.rows[0]) };
+      }
       return { status: "INVALID", reason: "บิลนี้มีมัดจำอยู่แล้ว" };
     }
 
     // เงินมัดจำเป็นการชำระเงินจริง — ลงตาราง payments ให้เห็นในกะและรายงาน
     // สถานะ CONFIRMED เพราะเงินอยู่ในมือร้านแล้ว ต่างจาก PENDING ที่รอตรวจสลิป
     await client.query(
-      `INSERT INTO bms_payments (tenant_id, order_id, method, amount, status, verified_by, updated_at)
-       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,now())`,
-      [input.tenantId, input.orderId, input.method, amount, input.createdBy]
+      `INSERT INTO bms_payments
+         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, updated_at)
+       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now())`,
+      [input.tenantId, input.orderId, input.method, amount, input.createdBy, idempotencyKey]
     );
 
     const ins = await client.query<any>(
@@ -175,24 +213,39 @@ export async function takeDeposit(input: {
 /** เพิ่มเงินมัดจำงวดถัดไป (ลูกค้ามาจ่ายเพิ่มแต่ยังไม่ครบ) */
 export async function addToDeposit(input: {
   tenantId: string; orderId: string; amount: number; method: string; actorUserId: string;
+  locationId?: string | null;
+  idempotencyKey: string;
 }): Promise<TakeDepositResult> {
   const amount = round2(Number(input.amount));
   if (!Number.isFinite(amount) || amount <= 0) return { status: "INVALID", reason: "ยอดต้องมากกว่า 0" };
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 240) return { status: "INVALID", reason: "idempotencyKey ไม่ถูกต้อง" };
 
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
     const cur = await client.query<any>(
-      `SELECT * FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2 AND status = 'OPEN' FOR UPDATE`,
-      [input.tenantId, input.orderId]
+      `SELECT * FROM bms_pos_deposits
+        WHERE tenant_id = $1 AND order_id = $2 AND status = 'OPEN'
+          AND ($3::uuid IS NULL OR location_id = $3)
+        FOR UPDATE`,
+      [input.tenantId, input.orderId, input.locationId ?? null]
     );
     const dep = cur.rows[0];
     if (!dep) {
       await client.query("ROLLBACK");
       return { status: "INVALID", reason: "ไม่พบมัดจำที่ยังเปิดอยู่ของบิลนี้" };
     }
+    const replay = await client.query(
+      `SELECT 1 FROM bms_payments WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, idempotencyKey]
+    );
+    if (replay.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "TAKEN", deposit: mapDeposit(dep) };
+    }
     const remaining = round2(Number(dep.total_amount) - Number(dep.deposit_paid));
-    if (amount > remaining) {
+    if (amount >= remaining) {
       await client.query("ROLLBACK");
       return {
         status: "INVALID",
@@ -201,14 +254,21 @@ export async function addToDeposit(input: {
     }
 
     await client.query(
-      `INSERT INTO bms_payments (tenant_id, order_id, method, amount, status, verified_by, updated_at)
-       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,now())`,
-      [input.tenantId, input.orderId, input.method, amount, input.actorUserId]
+      `INSERT INTO bms_payments
+         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, updated_at)
+       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now())`,
+      [input.tenantId, input.orderId, input.method, amount, input.actorUserId, idempotencyKey]
     );
     const upd = await client.query<any>(
       `UPDATE bms_pos_deposits SET deposit_paid = deposit_paid + $3, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 RETURNING *`,
       [input.tenantId, dep.id, amount]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'pos.deposit.add',$3,$4)`,
+      [input.tenantId, input.actorUserId, input.orderId,
+        JSON.stringify({ amount, method: input.method, depositPaid: Number(upd.rows[0].deposit_paid) })]
     );
     await client.query("COMMIT");
     return { status: "TAKEN", deposit: mapDeposit(upd.rows[0]) };
@@ -242,6 +302,7 @@ export async function closeDeposit(input: {
   outcome: "CANCELLED" | "FORFEITED";
   reason: string;
   actorUserId: string;
+  locationId?: string | null;
 }): Promise<CancelDepositResult> {
   const reason = input.reason.trim();
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
@@ -250,13 +311,35 @@ export async function closeDeposit(input: {
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
     const cur = await client.query<any>(
-      `SELECT * FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2 AND status = 'OPEN' FOR UPDATE`,
-      [input.tenantId, input.orderId]
+      `SELECT * FROM bms_pos_deposits
+        WHERE tenant_id = $1 AND order_id = $2
+          AND ($3::uuid IS NULL OR location_id = $3)
+        FOR UPDATE`,
+      [input.tenantId, input.orderId, input.locationId ?? null]
     );
     const dep = cur.rows[0];
     if (!dep) {
       await client.query("ROLLBACK");
       return { status: "INVALID", reason: "ไม่พบมัดจำที่ยังเปิดอยู่ของบิลนี้" };
+    }
+    if (dep.status === input.outcome) {
+      await client.query("ROLLBACK");
+      const paid = Number(dep.deposit_paid);
+      return input.outcome === "FORFEITED"
+        ? { status: "FORFEITED", forfeited: paid }
+        : { status: "CANCELLED", refundable: paid };
+    }
+    if (dep.status !== "OPEN") {
+      await client.query("ROLLBACK");
+      return { status: "INVALID", reason: `มัดจำอยู่สถานะ ${dep.status} ปิดซ้ำไม่ได้` };
+    }
+    // ปิดมัดจำ = ลูกค้าไม่มารับของแล้ว ไม่ว่าเงินจะคืนหรือถูกยึด ของที่จองไว้ต้อง
+    // กลับไปขายได้ใน transaction เดียวกัน ห้าม commit สถานะมัดจำก่อนแล้วค่อยคืนของ
+    // เพราะถ้าขั้นหลังล้ม reserved_stock จะค้างโดยไม่มีรายการ OPEN ให้ตามแก้
+    const cancelled = await cancelOrderInTx(client, input.tenantId, input.orderId);
+    if (!cancelled) {
+      await client.query("ROLLBACK");
+      return { status: "INVALID", reason: "บิลนี้ไม่ได้อยู่ในสถานะที่ยกเลิกและคืนของจองได้" };
     }
     await client.query(
       `UPDATE bms_pos_deposits
@@ -271,6 +354,7 @@ export async function closeDeposit(input: {
         JSON.stringify({ outcome: input.outcome, reason, depositPaid: Number(dep.deposit_paid) })]
     );
     await client.query("COMMIT");
+    await afterOrderCancellationCommitted(input.tenantId, input.orderId);
 
     const paid = Number(dep.deposit_paid);
     return input.outcome === "FORFEITED"
@@ -288,10 +372,11 @@ export async function closeDeposit(input: {
 export async function markDepositCompletedInTx(
   client: import("pg").PoolClient, tenantId: string, orderId: string
 ): Promise<void> {
-  await client.query(
+  const updated = await client.query(
     `UPDATE bms_pos_deposits
         SET status = 'COMPLETED', deposit_paid = total_amount, completed_at = now(), updated_at = now()
       WHERE tenant_id = $1 AND order_id = $2 AND status = 'OPEN'`,
     [tenantId, orderId]
   );
+  if (!updated.rowCount) throw new Error("มัดจำไม่ได้อยู่สถานะ OPEN ระหว่างปิดการขาย");
 }

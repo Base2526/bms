@@ -50,6 +50,14 @@ wrong, and update the doc in the same change.
   tools (refund, cancel, adjust stock, merge, confirm/reject payment, email a report) are
   **propose-only** — the UI's Confirm fires the pre-existing permission-gated mutation. Every attempt
   is audited as `ai.tool_call` without raw args. Quota is consumed once per loop, not per round-trip.
+- **Multi-item customer requests** — one chat message can name several products at once.
+  `requestedItems.ts` (`parseRequestedItems`) is the *only* splitter for "how many things did the
+  customer ask for" — it never resolves a SKU, never converts a pack unit into a piece count, and
+  never defaults a missing quantity to 1; do not write a second splitter. A pack's `packCode`
+  reaches `create_order` as a name only — pieces-per-pack and pack price always come from
+  `bms_product_packs`, resolved server-side, never supplied by the model. `evaluatePharmacySale()`
+  reports every blocking SKU in one pass, but a basket with any blocker is still rejected whole —
+  never let some lines through because others failed.
 - **Customer-surface PII** — checkout tools resolve the customer only from the server-established
   `(tenant_id, channel, customer_ref)`, never an id the model supplies, and return *completeness*
   (booleans/counts/`missingFields`), never the raw name, phone, or address.
@@ -267,6 +275,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `ai-eval/checkout-token-contract` | signed checkout link scope/tamper/expiry |
 | `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract` | archetype policy · restock consent · pharmacy intake |
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
+| `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants

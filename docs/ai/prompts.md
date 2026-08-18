@@ -44,8 +44,10 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   every stock/price/order number; needs `sku` + size + qty before `create_order`; asks for only one
   missing field per turn; customer identity comes from the channel (don't ask for it). Recent
   customer messages are summarized into product/size/quantity/confirmation slots as customer claims
-  so the model does not ask for a slot twice. Colloquial quantity forms (`อันนึง`, `ขอ 2 แทน`) and
-  size changes (`เปลี่ยนเป็น XL`) update only their intended slot. An explicit draft cancellation
+  so the model does not ask for a slot twice. A message containing multiple requested products keeps
+  an ordered slot array; later corrections by product name or ordinal (`รายการที่ 3`) update only
+  that line, `อย่างละ` updates every line, and removing one line does not erase the rest. Colloquial
+  quantity forms (`อันนึง`, `ขอ 2 แทน`) and size changes (`เปลี่ยนเป็น XL`) update only their intended slot. An explicit draft cancellation
   (`ไม่เอาแล้ว`, `ไว้ก่อน`, `ยกเลิก`) clears those slots and creates a history boundary so an older
   product cannot be revived by a later ambiguous confirmation; product identity and availability
   still require tools;
@@ -79,6 +81,10 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   be asked for Seller Center data again. After a customer `create_order`/`reorder` succeeds, the
   pipeline replaces model closing prose with a backend-built order summary and signed public
   checkout link, so the model must not tell the customer merely to wait for an admin.
+  Multi-item ordering is all-or-nothing: every named line is searched in the same provider round,
+  missing/ambiguous quantities or variants stay pending, and no partial basket is written. Pack
+  wording such as blister/bottle/box uses only a backend-returned `packCode`; dosage-form text such
+  as `500mg 10 เม็ด` remains part of product identity and is not silently interpreted as order qty.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):
   back-office assistant; sensitive actions are prepared as *proposals* the human must confirm — the
   model is told to say "prepared, awaiting confirmation", never "done". A request whose ambiguity

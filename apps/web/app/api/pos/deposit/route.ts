@@ -26,7 +26,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
-  return NextResponse.json({ deposits: await listDeposits(device.tenantId, "OPEN") });
+  return NextResponse.json({
+    deposits: await listDeposits(device.tenantId, "OPEN", { locationId: device.locationId }),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -40,6 +42,7 @@ export async function POST(req: NextRequest) {
   const cashierUserId = typeof body.cashierUserId === "string" ? body.cashierUserId.trim() : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
   const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
   if (!cashierUserId || !pin) return NextResponse.json({ error: "ต้องระบุพนักงานและ PIN" }, { status: 400 });
   if (!orderId) return NextResponse.json({ error: "ต้องระบุบิล" }, { status: 400 });
 
@@ -53,18 +56,30 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "take" || action === "add") {
+    if (!idempotencyKey) return NextResponse.json({ error: "ต้องมี idempotencyKey" }, { status: 400 });
     const amount = Number(body.amount ?? 0);
     const method = String(body.method ?? "CASH").toUpperCase();
+    const parsedPayment = parsePosPayments([{ method, amount }]);
+    if (!parsedPayment.ok) return NextResponse.json({ error: parsedPayment.error }, { status: 400 });
+    // เครดิตร้านต้องล็อกและหักยอดใน transaction เดียวกับการรับเงิน แต่ deposit
+    // service ยังไม่มีขั้นนั้น จึงห้ามรับไว้เป็น payment เปล่า ๆ จนกว่าจะรองรับจริง
+    if (method === "STORE_CREDIT") {
+      return NextResponse.json({ error: "ยังไม่รองรับเครดิตร้านสำหรับเงินมัดจำ" }, { status: 400 });
+    }
     const result = action === "take"
       ? await takeDeposit({
           tenantId: device.tenantId, orderId, amount, method,
           deviceId: device.id, shiftId: shift.id,
+          expectedLocationId: device.locationId,
           customerNote: typeof body.customerNote === "string" ? body.customerNote : null,
           dueAt: typeof body.dueAt === "string" ? body.dueAt : null,
           createdBy: auth.userId,
+          idempotencyKey,
         })
       : await addToDeposit({
           tenantId: device.tenantId, orderId, amount, method, actorUserId: auth.userId,
+          locationId: device.locationId,
+          idempotencyKey,
         });
     return NextResponse.json(result, { status: result.status === "TAKEN" ? 200 : 400 });
   }
@@ -89,6 +104,7 @@ export async function POST(req: NextRequest) {
       tenantId: device.tenantId, orderId, outcome,
       reason: typeof body.reason === "string" ? body.reason : "",
       actorUserId: auth.userId,
+      locationId: device.locationId,
     });
     return NextResponse.json(result, { status: result.status === "INVALID" ? 400 : 200 });
   }

@@ -42,6 +42,7 @@ let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
+let approverId = "";
 let shiftId = "";
 
 const key = (n: string) => `${TAG}-${n}-${process.pid}`;
@@ -90,6 +91,13 @@ test("setup: a ฿100 product, a register, and ฿1,000 in the drawer", async ()
       WHERE u.tenant_id = $1 AND r.name = 'Administrator' ORDER BY u.created_at LIMIT 1`,
     [tenantId]
   )).rows[0].id;
+  approverId = (await query<{ id: string }>(
+    `INSERT INTO users (name, email, role, password_hash, fake_test, tenant_id, role_id)
+     SELECT $2, $3, u.role, u.password_hash, TRUE, u.tenant_id, u.role_id
+       FROM users u WHERE u.tenant_id = $1 AND u.id = $4
+     RETURNING id`,
+    [tenantId, `${TAG} approver`, `${TAG}-${process.pid}@example.invalid`, cashierId]
+  )).rows[0].id;
   await setCashierPin(tenantId, cashierId, PIN);
 
   const opened = await openPosShift({ tenantId, deviceId, openedBy: cashierId, openingFloat: 1000 });
@@ -100,7 +108,7 @@ test("setup: a ฿100 product, a register, and ฿1,000 in the drawer", async ()
 test("goods come back into stock and the cash leaves the drawer through one path", async () => {
   const before = await stock();
   const res = await blindReturnPosSale({
-    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
     reason: "ลูกค้าทำใบเสร็จหาย ของยังอยู่ในสภาพเดิม",
     lines: [{ sku: SKU, size: SIZE, qty: 2, unitRefund: 100 }],
     idempotencyKey: key("ok"),
@@ -120,7 +128,7 @@ test("goods come back into stock and the cash leaves the drawer through one path
 test("replaying the same key pays out once, not twice", async () => {
   const before = await stock();
   const again = await blindReturnPosSale({
-    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
     reason: "ยิงซ้ำเพราะเน็ตหลุด",
     lines: [{ sku: SKU, size: SIZE, qty: 2, unitRefund: 100 }],
     idempotencyKey: key("ok"),
@@ -135,7 +143,7 @@ test("replaying the same key pays out once, not twice", async () => {
 
 test("the refund per unit cannot exceed today's shelf price", async () => {
   const res = await blindReturnPosSale({
-    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
     reason: "พยายามคืนแพงกว่าราคาขาย",
     lines: [{ sku: SKU, size: SIZE, qty: 1, unitRefund: 5000 }],
     idempotencyKey: key("toohigh"),
@@ -147,7 +155,7 @@ test("the refund per unit cannot exceed today's shelf price", async () => {
 test("a reason is mandatory, and an empty basket is refused", async () => {
   assert.equal(
     (await blindReturnPosSale({
-      tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+      tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
       reason: "   ", lines: [{ sku: SKU, size: SIZE, qty: 1, unitRefund: 10 }],
       idempotencyKey: key("noreason"),
     })).status,
@@ -155,16 +163,26 @@ test("a reason is mandatory, and an empty basket is refused", async () => {
   );
   assert.equal(
     (await blindReturnPosSale({
-      tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+      tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
       reason: "ตะกร้าว่าง", lines: [], idempotencyKey: key("empty"),
     })).status,
     "EMPTY"
   );
 });
 
+test("the cashier cannot approve their own no-receipt return", async () => {
+  const result = await blindReturnPosSale({
+    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+    reason: "ใบเสร็จหาย", lines: [{ sku: SKU, size: SIZE, qty: 1, unitRefund: 50 }],
+    idempotencyKey: key("same-actor"),
+  });
+  assert.equal(result.status, "INVALID");
+  if (result.status === "INVALID") assert.match(result.reason, /คนละคน/);
+});
+
 test("you cannot hand over cash the drawer does not hold", async () => {
   const res = await blindReturnPosSale({
-    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: cashierId,
+    tenantId, deviceId, shiftId, actorUserId: cashierId, approvedByUserId: approverId,
     reason: "คืนเกินเงินในลิ้นชัก",
     lines: [{ sku: SKU, size: SIZE, qty: 40, unitRefund: 100 }],   // 4,000 จากลิ้นชักที่เหลือ 800
     idempotencyKey: key("nocash"),
@@ -207,4 +225,5 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM users WHERE tenant_id = $1 AND id = $2 AND fake_test`, [tenantId, approverId]);
 });

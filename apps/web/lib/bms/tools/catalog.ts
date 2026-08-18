@@ -42,7 +42,9 @@ import {
   listCustomerOrderStatuses,
   findCustomerPayableOrder,
   customerOwnsOrder as serviceCustomerOwnsOrder,
+  type OrderItemInput,
 } from "../orders";
+import { resolveSellablePack } from "../productPacks";
 import { createProductReviewAssessmentOnce } from "../pharmacy/assessments";
 import { submitPayment, submitPaymentOnce, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
 import {
@@ -529,7 +531,9 @@ const checkCouponTool: BmsTool = {
 const checkStockTool: BmsTool = {
   name: "check_stock",
   description:
-    "Check stock and price for a product by name and size. Use when the customer asks whether an item is in stock, how many are left, or what it costs.",
+    "Check stock and price for a product by name and size. Use when the customer asks whether an item is in stock, how many are left, or what it costs. " +
+    "An in-stock result may include `packs` — the selling units this product also comes in (a blister, a bottle, a box) with their code, unit name and pieces per unit. " +
+    "Pass a pack's code as `packCode` to create_order when the customer counted in that unit. `available` is always in base pieces, never in packs.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
@@ -1087,12 +1091,18 @@ const createOrderTool: BmsTool = {
       items: {
         type: "array",
         description: "Line items.",
+        maxItems: 20,
         items: {
           type: "object",
           properties: {
             sku: { type: "string" },
             size: { type: "string" },
             qty: { type: "integer" },
+            packCode: {
+              type: "string",
+              description:
+                'Selling-unit code when the customer counted in packs instead of pieces — "2 แผง" is qty 2 with the blister pack code. Omit for base units. Only use a code that appeared in a tool result; never invent one, and never send a price or a pieces-per-pack number: the shop\'s own pack data decides both.',
+            },
           },
           required: ["sku", "size", "qty"],
         },
@@ -1109,7 +1119,39 @@ const createOrderTool: BmsTool = {
     required: ["items"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const items = reqItems(args);
+    const requested = reqItems(args);
+    if (requested.length > 20) {
+      throw new ToolArgError("หนึ่งออร์เดอร์รับได้ไม่เกิน 20 รายการ กรุณาแบ่งเป็นหลายออร์เดอร์");
+    }
+
+    // หน่วยขาย (pack) ถูก resolve ที่ฝั่ง server เสมอ: โมเดลบอกได้แค่ "ชื่อหน่วย"
+    // จำนวนหน่วยฐานต่อหน่วยขายและราคาต่อหน่วยขายมาจาก bms_product_packs (7.86)
+    // เท่านั้น ราคาที่โมเดลนึกขึ้นเองจึงไม่มีทางไปถึงบิลได้
+    const items: OrderItemInput[] = [];
+    for (const it of requested) {
+      if (!it.packCode) {
+        items.push({ sku: it.sku, size: it.size, qty: it.qty });
+        continue;
+      }
+      const pack = await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode);
+      if (!pack) {
+        throw new ToolArgError(
+          `ไม่พบหน่วยขาย "${it.packCode}" ของสินค้า ${it.sku} (ไซซ์ ${it.size}) — ให้เช็กหน่วยขายที่ร้านมีก่อน หรือสั่งเป็นหน่วยฐานแทน`
+        );
+      }
+      items.push({
+        sku: it.sku,
+        size: it.size,
+        // qty ที่บันทึกลงบิลเป็น "หน่วยฐาน" เสมอ (สต็อกนับหน่วยเดียว) ส่วน packQty
+        // คือจำนวนหน่วยขายที่ลูกค้าขอ — ความหมายเดียวกับที่ POS ส่งมา
+        qty: pack.baseQty * it.qty,
+        packCode: pack.packCode,
+        packUnitName: pack.unitName,
+        packQty: it.qty,
+        packUnitPrice: pack.price,
+      });
+    }
+
     const channel: Channel =
       ec.surface === "customer"
         ? ec.channel ?? "web"
@@ -1140,11 +1182,18 @@ const createOrderTool: BmsTool = {
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
     });
+    const pharmacyBlockers = "blockers" in r && Array.isArray(r.blockers) ? r.blockers : [];
+    const reviewablePharmacyBasket = pharmacyBlockers.length > 0
+      ? pharmacyBlockers.every((blocker) =>
+          blocker.status === "PHARMACY_REVIEW_REQUIRED" ||
+          blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED"
+        )
+      : r.status === "PHARMACY_REVIEW_REQUIRED" || r.status === "PHARMACY_SAFETY_CHECK_REQUIRED";
     if (
       ec.surface === "customer" &&
       ec.conversationId &&
       ec.channel &&
-      (r.status === "PHARMACY_REVIEW_REQUIRED" || r.status === "PHARMACY_SAFETY_CHECK_REQUIRED")
+      reviewablePharmacyBasket
     ) {
       try {
         const review = await createProductReviewAssessmentOnce({
@@ -1152,7 +1201,9 @@ const createOrderTool: BmsTool = {
           channelId: ec.channel,
           conversationId: ec.conversationId,
           items,
-          requiresSafetyCheck: r.status === "PHARMACY_SAFETY_CHECK_REQUIRED",
+          requiresSafetyCheck: pharmacyBlockers.some(
+            (blocker) => blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED"
+          ) || r.status === "PHARMACY_SAFETY_CHECK_REQUIRED",
         });
         ec.pharmacyReviewCaseId = review.assessmentId.slice(0, 8);
         return {

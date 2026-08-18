@@ -17,14 +17,36 @@ import {
   resolveSellableProduct,
   type SellableProduct,
 } from "./products";
+import { listSellablePacksForSize } from "./productPacks";
 
 export type StockAlternative = Pick<
   SellableProduct,
   "sku" | "name" | "price" | "category" | "brand" | "availableTotal" | "availableSizes"
 >;
 
+/**
+ * หน่วยขายที่ขายได้นอกจากหน่วยฐาน (7.86) — บอกโมเดลว่าสินค้านี้ยกแผง/ยกกล่องได้
+ * `price: null` = ร้านไม่ได้ตั้งราคายกหน่วยไว้ ระบบคิดจากราคาต่อหน่วยฐาน × baseQty
+ * โมเดลใช้ได้แค่ `packCode` ห้ามคิดราคาหรือ baseQty เอง
+ */
+export type StockPackOption = {
+  packCode: string;
+  unitName: string;
+  baseQty: number;
+  price: number | null;
+};
+
 export type StockResult =
-  | { status: "IN_STOCK"; sku: string; name: string; price: number; size: string; available: number }
+  | {
+      status: "IN_STOCK";
+      sku: string;
+      name: string;
+      price: number;
+      size: string;
+      available: number;
+      /** เว้นไว้เมื่อสินค้านี้ขายเป็นหน่วยฐานอย่างเดียว */
+      packs?: StockPackOption[];
+    }
   | {
       status: "OUT_OF_STOCK";
       sku: string;
@@ -134,7 +156,27 @@ export async function checkStock(
     };
   }
 
-  return { status: "IN_STOCK", sku: product.sku, name: product.name, price, size, available };
+  // หน่วยขายอื่นนอกจากหน่วยฐาน — ถ้าไม่บอกตรงนี้ โมเดลไม่มีทางรู้รหัสหน่วยขายเลย
+  // แล้ว packCode ของ create_order จะใช้ไม่ได้ (schema สั่งห้ามเดารหัสเอง)
+  const packs = await listSellablePacksForSize(tenantId, product.sku, size);
+  return {
+    status: "IN_STOCK",
+    sku: product.sku,
+    name: product.name,
+    price,
+    size,
+    available,
+    ...(packs.length > 0
+      ? {
+          packs: packs.map((pack) => ({
+            packCode: pack.packCode,
+            unitName: pack.unitName,
+            baseQty: pack.baseQty,
+            price: pack.price,
+          })),
+        }
+      : {}),
+  };
 }
 
 // =============================================================

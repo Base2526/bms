@@ -8,7 +8,12 @@
 // คืน trace ของทุกขั้นออกมาด้วย เพื่อ debug / แสดงใน dev
 // =============================================================
 
-import { understand, type Understanding } from "./nlu";
+import { parseOrderItems, understand, type Understanding } from "./nlu";
+import {
+  requestedItemTargetIndex,
+  stripRequestNoise,
+  updateRequestedItems,
+} from "./requestedItems";
 import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
 import { generateResponse } from "./ai";
@@ -264,6 +269,12 @@ function buildBusinessArchetypeExamples(businessArchetype: string | null | undef
         'ตัวอย่างร้าน gifts & seasonal — ลูกค้า: "หาของขวัญงบ 500" → ใช้ recommend_products และเสนอเป็นตัวเลือกตามงบ 3-5 ชิ้น',
         'ตัวอย่างร้าน gifts & seasonal — ลูกค้า: "มีชุดของขวัญไหม" → browse catalog ตามธีมหรือเซ็ตก่อนถามต่อ 1 คำถาม',
       ];
+    case "pharmacy":
+      return [
+        'ตัวอย่างร้านขายยา — ลูกค้า: "อยากได้ พารา 1 แผง, ยาแดง 1 ขวด, ยาแก้ปวด" → ค้นทั้ง 3 รายการพร้อมกันในรอบเดียว: 2 ตัวแรกระบุชัดให้ยืนยันจาก catalog ส่วน "ยาแก้ปวด" ตรงกับหลายตัวจึงต้องให้ลูกค้าเลือกจากรายการจริง ห้ามหยิบตัวใดตัวหนึ่งให้เอง และห้ามตัดรายการที่ 3 ออกเงียบ ๆ',
+        'ตัวอย่างร้านขายยา — ลูกค้า: "พารา 2 แผง" แต่ catalog มีทั้ง 500mg และ 325mg → ถามให้เลือกความแรงก่อน ห้ามเดาว่าลูกค้าหมายถึงตัวที่ขายดีกว่าหรือถูกกว่า',
+        'ตัวอย่างร้านขายยา — ลูกค้าถามของที่ create_order ตอบว่าต้องให้เภสัชกรตรวจ → แจ้งตามผลนั้นพร้อมเลขเคส 8 ตัว ห้ามยืนยันการขายและห้ามแนะนำวิธีใช้ยา',
+      ];
     default:
       return [];
   }
@@ -334,9 +345,16 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     `ก่อนสร้างออร์เดอร์ (create_order) ต้องมี sku จาก search_products/check_stock และข้อมูลที่ร้านกำหนดครบ (${required}) ถ้าไม่ครบให้ถามกลับ`,
     "เวลาบอกเลขออร์เดอร์ให้ลูกค้า ให้ใช้แค่ 8 ตัวอักษรแรกของ orderId เท่านั้น ห้ามพิมพ์ UUID เต็ม และห้ามสร้างเลขตัวอย่างขึ้นมาเอง",
     "create_order ต้องได้รับ sku+size+qty เสมอตามสัญญา backend: ถ้า tenant ไม่กำหนด size เป็นข้อมูลที่ต้องถาม ให้ใช้ size จากผลทูลได้เฉพาะเมื่อสินค้ามีตัวเลือกเดียว; ถ้ามีหลายตัวเลือกต้องถามลูกค้า ห้ามเดา",
+    "หน่วยขาย (แผง/ขวด/กล่อง/ซอง): ถ้า check_stock คืน packs มา และลูกค้านับเป็นหน่วยนั้น ให้ส่ง packCode ของหน่วยนั้นใน create_order พร้อม qty = จำนวนหน่วยที่ลูกค้าขอ (เช่น '2 แผง' = qty 2 + packCode ของแผง) " +
+      "ห้ามคำนวณจำนวนเม็ดเอง ห้ามคิดราคาต่อหน่วยเอง และห้ามเดารหัสหน่วยที่ไม่ได้อยู่ในผลทูล — ระบบอ่านจำนวนต่อหน่วยและราคาจากข้อมูลหน่วยขายของร้านเอง " +
+      "ถ้าลูกค้าบอกหน่วยที่ร้านไม่มี (เช่นขอเป็นโหล) ให้ถามกลับ ห้ามแปลงหน่วยเอง",
     "ตัวตนลูกค้าถูกระบุจากช่องทางแล้ว ไม่ต้องถามชื่อ/อ้างอิง/ที่อยู่ก่อนสร้างออร์เดอร์ — เมื่อข้อมูลตาม policy ครบ, resolve size ตามกฎข้างต้นได้ และลูกค้ายืนยัน ให้เรียก create_order ทันที",
     "อย่าถามย้ำหลายรอบ: ถ้าลูกค้าบอกชื่อสินค้า+ไซซ์+จำนวนและสั่งยืนยันแล้ว ให้ search_products/check_stock เอง ถ้าเจอสินค้าที่ตรงที่สุดเพียงพอก็เรียก create_order ด้วย sku นั้นเลย ไม่ต้องขอรุ่น/สีเพิ่มถ้าลูกค้าไม่ได้ระบุ",
-    "ถ้าข้อมูลยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
+    "ถ้าข้อมูลของสินค้าตัวเดียวกันยังขาดหลาย field ให้ถามเพียง 1 field ต่อข้อความเท่านั้น เช่น ถามไซซ์อย่างเดียวก่อน แล้วค่อยถามจำนวนใน turn ถัดไป ห้ามใช้ bullet/list รวมหลายคำถาม",
+    "ข้อยกเว้นของกฎ 1 field: ถ้าลูกค้าขอมาหลายรายการในข้อความเดียว ให้ถามรายการที่ยังไม่ชัดพร้อมกันได้ในข้อความเดียว แต่ถามไม่เกิน 1 ประเด็นต่อรายการ และต้องอ้างชื่อรายการที่ลูกค้าพิมพ์มาให้ตรงกันทุกตัว " +
+      "ห้ามตัดรายการที่ยังไม่ชัดออกเงียบ ๆ และห้ามเติมจำนวนที่ลูกค้าไม่ได้บอก — ลูกค้าที่ขอของ 3 อย่างต้องไม่ต้องพิมพ์ซ้ำ 3 turn เพียงเพราะกฎภายในของร้าน",
+    "ถ้าลูกค้าขอหลายรายการในข้อความเดียว ให้เรียก search_products/check_stock ของทุกรายการพร้อมกันใน turn เดียว (ส่งหลาย tool call ในรอบเดียว) ห้ามค้นทีละรายการสลับกับการตอบ " +
+      "เพราะจำนวนรอบทูลต่อข้อความมีจำกัด ถ้าค้นทีละรอบจะไม่เหลือรอบให้เรียก create_order แล้วบิลจะค้างกลางทาง",
     "หลัง create_order สำเร็จ ให้อ่าน checkout ที่ทูลคืนมา หรือเรียก get_customer_checkout ก่อนถามข้อมูลจัดส่ง: ถ้า missingFields ว่าง ให้ใช้ข้อมูลผู้รับ/เบอร์/ที่อยู่เดิมและห้ามขอให้กรอกซ้ำ; ถ้ายังขาดให้ถามเฉพาะ missingFields ตัวแรก",
     "ถ้าลูกค้าส่งชื่อผู้รับ เบอร์โทร หรือที่อยู่ใหม่มาอย่างชัดเจน ให้เรียก save_customer_checkout_details โดยส่งเฉพาะ field ที่ลูกค้าให้มา ห้ามเดาหรือเขียนทับ field อื่น และห้ามเรียกทูลนี้เพียงเพื่อยืนยันใช้ข้อมูลเดิม",
     "ถ้ายังมี missingFields ให้เก็บข้อมูลจัดส่งให้ครบก่อนแจ้งช่องทางชำระเงิน; เมื่อครบแล้วจึงเรียก get_payment_info และแสดงเฉพาะช่องทางที่ตั้งค่าไว้",
@@ -508,11 +526,30 @@ async function executeCustomerTool(
   return runApprovedTool({ tool, input, execCtx });
 }
 
+/** หนึ่งรายการที่ลูกค้าขอ เมื่อขอมาหลายอย่างในข้อความเดียว */
+type OrderMemoryItem = {
+  product: string;
+  size: string | null;
+  qty: number | null;
+  unit: string | null;
+};
+
 type OrderMemory = {
   product: string | null;
   size: string | null;
   qty: number | null;
   confirmed: boolean;
+  /**
+   * รายการทั้งหมดที่ลูกค้าขอ เมื่อขอมาหลายอย่าง
+   *
+   * `product/size/qty` ด้านบนยังเป็นรายการ**แรก**เสมอ เพื่อให้ทุกจุดที่อ่าน 3 field
+   * นี้อยู่แล้ว (สรุปประวัติ, hint ที่ส่งเข้าโมเดล, state ที่เก็บใน DB) ทำงานเหมือนเดิม
+   * โดยไม่ต้องแก้ — บทสนทนาที่มีสินค้าเดียวได้ผลลัพธ์เท่าเดิมทุกตัวอักษร
+   *
+   * เว้นว่างเมื่อลูกค้าขอสินค้าเดียว (ไม่ใช่ array ยาว 1) เพื่อให้แยกได้ชัดว่า
+   * "ยังไม่เคยมีข้อความหลายรายการ" กับ "มีรายการเดียวจริง ๆ"
+   */
+  items?: OrderMemoryItem[];
 };
 
 function shouldClearDraftOrderMemory(text: string): boolean {
@@ -644,7 +681,14 @@ function compressConversationHistory(
   const lastOlderUser = [...olderTurns].reverse().find((turn) => turn.role === "user")?.content ?? "";
   const lastOlderAssistant = [...olderTurns].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
 
-  if (olderMemory?.product) summaryBits.push(`สินค้าที่คุยค้างล่าสุด: ${olderMemory.product}`);
+  if (olderMemory?.items && olderMemory.items.length > 1) {
+    // บทสนทนาที่ยาวพอจะถูกย่อ ต้องไม่ทำให้รายการที่ลูกค้าขอไว้หลายอย่างหายไปกับการย่อ
+    summaryBits.push(
+      `ลูกค้าเคยขอหลายรายการในข้อความเดียว: ${olderMemory.items
+        .map((item) => `${item.product}${item.qty ? ` ${item.qty}${item.unit ?? ""}` : ""}`)
+        .join(" · ")}`
+    );
+  } else if (olderMemory?.product) summaryBits.push(`สินค้าที่คุยค้างล่าสุด: ${olderMemory.product}`);
   if (olderMemory?.size) summaryBits.push(`ไซซ์ล่าสุดที่ลูกค้าเคยระบุ: ${olderMemory.size}`);
   if (olderMemory?.qty) summaryBits.push(`จำนวนล่าสุดที่ลูกค้าเคยระบุ: ${olderMemory.qty}`);
   if (olderTurns.some((turn) => turn.role === "user" && isPaymentSubmission(turn.content))) {
@@ -720,6 +764,7 @@ function buildOrderMemory(
   let product: string | null = null;
   let size: string | null = null;
   let qty: number | null = null;
+  let items: OrderMemoryItem[] | null = null;
   let previousAssistant = "";
   for (const turn of turns) {
     if (turn.role === "assistant") {
@@ -730,7 +775,68 @@ function buildOrderMemory(
     const parsed = understand(text);
     const hint = productHintFromCustomerText(text);
     if (hint) product = hint;
+
+    // ข้อความที่ขอมาหลายรายการ: เก็บทั้งรายการไว้ ไม่ยุบเป็นชื่อเดียว
+    // (productHintFromCustomerText ตัด `,`/`+` ออกแล้วยุบข้อความรวมกัน จึงคืนชื่อ
+    // มั่ว ๆ แบบ "พารา 1 แผง ยาแดง 1 ขวด ยาแก้ปวด" สำหรับข้อความแบบนี้)
+    // ข้อความหลายรายการที่มาใหม่แทนที่ของเก่าทั้งชุด ส่วนข้อความรายการเดียว
+    // (เช่นตอบคำถามว่า "XL") ไม่ล้างรายการที่จำไว้
+    const lineItems = parseOrderItems(text);
+    if (lineItems.length > 1) {
+      const parsedItems = lineItems
+        .map((line) => ({
+          product: stripRequestNoise(line.productText),
+          size: line.size,
+          qty: line.qty,
+          unit: line.unit,
+        }))
+        .filter((item) => item.product.length >= 2);
+      if (parsedItems.length > 1) {
+        items = parsedItems;
+        // field เดี่ยวยังชี้รายการแรกเสมอ เพื่อไม่ให้ทุกจุดที่อ่าน 3 field นี้เปลี่ยนพฤติกรรม
+        product = parsedItems[0].product;
+        if (parsedItems[0].size) size = parsedItems[0].size;
+        if (parsedItems[0].qty) qty = parsedItems[0].qty;
+      }
+    }
+
     const sizeClaim = sizeClaimFromCustomerText(text, previousAssistant);
+    if (items && lineItems.length === 1) {
+      const before: OrderMemoryItem[] = items;
+      const updated = updateRequestedItems(
+        before.map((item) => ({
+          rawText: item.product,
+          nameHint: item.product,
+          qty: item.qty,
+          unit: item.unit,
+        })),
+        text
+      );
+      items = updated.map((item): OrderMemoryItem => {
+        const previous: OrderMemoryItem | undefined = before.find(
+          (candidate: OrderMemoryItem) => candidate.product === item.nameHint
+        );
+        return {
+          product: item.nameHint,
+          size: previous?.size ?? null,
+          qty: item.qty,
+          unit: item.unit,
+        };
+      });
+
+      const target = requestedItemTargetIndex(
+        items.map((item) => ({
+          rawText: item.product,
+          nameHint: item.product,
+          qty: item.qty,
+          unit: item.unit,
+        })),
+        text
+      );
+      if (sizeClaim && target !== null) {
+        items[target] = { ...items[target], size: sizeClaim };
+      }
+    }
     if (sizeClaim) size = sizeClaim;
     const qtyClaim = qtyClaimFromCustomerText(text, parsed.entities.qty);
     if (qtyClaim) qty = qtyClaim;
@@ -752,7 +858,7 @@ function buildOrderMemory(
     !explicitlyDeclined &&
     (/(?:ยืนยัน(?:สั่ง)?|สั่งเลย|เอาเลย|ตกลง|จัดมา|เอาค่ะ|เอาครับ)/i.test(message) ||
       /^(?:ขอ)?สั่ง(?:\s|$)/i.test(message.trim()));
-  return { product, size, qty, confirmed };
+  return { product, size, qty, confirmed, ...(items ? { items } : {}) };
 }
 
 function orderMemoryHint(memory: OrderMemory | null): string | null {
@@ -762,17 +868,22 @@ function orderMemoryHint(memory: OrderMemory | null): string | null {
     size: memory.size,
     qty: memory.qty,
     confirmed: memory.confirmed,
+    // ส่งรายการทั้งชุดให้โมเดลเห็นด้วย ไม่งั้นสิ่งเดียวที่มันเห็นคือรายการแรก
+    // แล้วของที่เหลือจะหายไปจากบทสนทนาโดยไม่มีใครบอกลูกค้า
+    ...(memory.items && memory.items.length > 1 ? { items: memory.items } : {}),
   });
 }
 
 function mergeStoredOrderMemory(state: AiConversationState, derived: OrderMemory | null): OrderMemory | null {
-  const hasStored = state.product || state.size || state.qty;
+  const hasStored = state.product || state.size || state.qty || (state.items?.length ?? 0) > 0;
   if (!derived && !hasStored) return null;
+  const items = derived?.items ?? state.items ?? null;
   return {
     product: derived?.product ?? state.product ?? null,
     size: derived?.size ?? state.size ?? null,
     qty: derived?.qty ?? state.qty ?? null,
     confirmed: derived?.confirmed ?? state.confirmed ?? false,
+    ...(items && items.length > 1 ? { items } : {}),
   };
 }
 
@@ -1240,6 +1351,9 @@ async function couponQuestionReply(
 // names: map sku → ชื่อสินค้า (สำหรับแสดงผลหลายรายการ)
 function orderReply(names: Record<string, string>, order: CreateOrderResult, english = false): string {
   const nameOf = (sku: string) => names[sku] ?? sku;
+  const blockedSuffix = "blockers" in order && (order.blockers?.length ?? 0) > 1
+    ? `\nรายการที่ต้องตรวจทั้งหมด: ${order.blockers!.map((item) => nameOf(item.sku)).join(", ")}`
+    : "";
   switch (order.status) {
     case "CREATED": {
       const shortId = order.orderId.slice(0, 8);
@@ -1260,18 +1374,22 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult, eng
       return english
         ? `Sorry, ${nameOf(order.sku)} size ${order.size} was not found.`
         : `ขออภัยค่ะ ไม่พบสินค้า ${nameOf(order.sku)} ไซซ์ ${order.size} ในระบบค่ะ`;
+    case "PACK_NOT_FOUND":
+      return english
+        ? `Sorry, ${nameOf(order.sku)} is not currently sold in unit ${order.packCode}. Please choose an available selling unit.`
+        : `ขออภัยค่ะ ${nameOf(order.sku)} ไม่มีหน่วยขาย ${order.packCode} ที่ใช้งานได้ กรุณาเลือกหน่วยที่ร้านมีค่ะ`;
     case "PHARMACY_POLICY_UNKNOWN":
-      return "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติค่ะ จึงยังสร้างออร์เดอร์ให้อัตโนมัติไม่ได้ ทางร้านจะส่งให้เภสัชกรตรวจสอบก่อนนะคะ";
+      return `สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติค่ะ จึงยังสร้างออร์เดอร์ให้อัตโนมัติไม่ได้ ทางร้านจะส่งให้เภสัชกรตรวจสอบก่อนนะคะ${blockedSuffix}`;
     case "PHARMACY_SAFETY_CHECK_REQUIRED":
-      return "สินค้านี้ต้องตรวจข้อมูลความปลอดภัยสั้น ๆ ก่อนสั่งซื้อค่ะ ขอส่งให้เภสัชกรช่วยตรวจสอบก่อนนะคะ";
+      return `สินค้านี้ต้องตรวจข้อมูลความปลอดภัยสั้น ๆ ก่อนสั่งซื้อค่ะ ขอส่งให้เภสัชกรช่วยตรวจสอบก่อนนะคะ${blockedSuffix}`;
     case "PHARMACY_REVIEW_REQUIRED":
-      return "สินค้านี้ต้องให้เภสัชกรตรวจสอบก่อนสร้างออร์เดอร์ค่ะ";
+      return `สินค้านี้ต้องให้เภสัชกรตรวจสอบก่อนสร้างออร์เดอร์ค่ะ${blockedSuffix}`;
     case "PHARMACY_PRESCRIPTION_REQUIRED":
-      return "สินค้านี้ต้องมีใบสั่งและให้เภสัชกรตรวจสอบก่อนค่ะ จึงยังสร้างออร์เดอร์อัตโนมัติไม่ได้";
+      return `สินค้านี้ต้องมีใบสั่งและให้เภสัชกรตรวจสอบก่อนค่ะ จึงยังสร้างออร์เดอร์อัตโนมัติไม่ได้${blockedSuffix}`;
     case "PHARMACY_ONLINE_SALE_PROHIBITED":
-      return "สินค้านี้ไม่สามารถสร้างออร์เดอร์ผ่านช่องทางออนไลน์ได้ค่ะ กรุณาติดต่อเภสัชกรของร้านโดยตรง";
+      return `สินค้านี้ไม่สามารถสร้างออร์เดอร์ผ่านช่องทางออนไลน์ได้ค่ะ กรุณาติดต่อเภสัชกรของร้านโดยตรง${blockedSuffix}`;
     case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
-      return `สินค้านี้สั่งได้ไม่เกิน ${order.maxQuantity} ชิ้นต่อครั้งค่ะ กรุณาปรับจำนวนก่อนยืนยันนะคะ`;
+      return `สินค้านี้สั่งได้ไม่เกิน ${order.maxQuantity} ชิ้นต่อครั้งค่ะ กรุณาปรับจำนวนก่อนยืนยันนะคะ${blockedSuffix}`;
     case "EMPTY":
     default:
       return english
@@ -1457,6 +1575,21 @@ export async function runPipeline(
         !isExplicitPharmacyProduct &&
         (pharmacyTrigger?.intent === "ambiguous" || pharmacyTrigger?.intent === "medicine_product")
       ) {
+        // Preserve every basket line while the customer clarifies whether the
+        // ambiguous medicine wording is a named-product purchase or a symptom
+        // assessment. Otherwise the early return below makes the clear items
+        // in the same message disappear from the next commerce turn.
+        const pendingOrder = buildOrderMemory(history, aiInputMessage, understanding);
+        if (pendingOrder) {
+          await setAiConversationState(tenantId, pharmacyConvId, {
+            ...pendingOrder,
+            lastIntent: classifiedIntent,
+            lastAskedField: "pharmacyIntent",
+          }).catch(async (err) => {
+            console.error("[BMS] pipeline mixed pharmacy basket state update failed:", err);
+            await reportStateFailure(err, "mixed_pharmacy_basket");
+          });
+        }
         return customerSafe({
           channel,
           incoming: message,
@@ -1983,20 +2116,42 @@ export async function runPipeline(
       await reportStateFailure(err, "state_update");
     });
   }
+  // รายการที่พร้อมสั่งจากความจำ — ต้อง "ครบทุกรายการ" จึงจะเดินทางลัดนี้
+  //
+  // ถ้าลูกค้าขอมาหลายอย่างแล้วมีแม้ตัวเดียวที่ยังขาดไซซ์/จำนวน หรือหาสินค้าไม่เจอ
+  // แบบชัดเจน ต้องตกไปให้โมเดลถามต่อ **ห้ามสร้างบิลบางส่วน** — ลูกค้าที่ขอของ 3 อย่าง
+  // แล้วได้บิลที่มีของอย่างเดียวโดยไม่มีใครบอก คือความเสียหายที่แก้ทีหลังยากกว่าถามเพิ่ม
+  const memoryLines: Array<{ product: string; size: string; qty: number }> | null = (() => {
+    if (!orderMemory?.confirmed) return null;
+    if (orderMemory.items && orderMemory.items.length > 1) {
+      const complete = orderMemory.items.filter((item) => item.product && item.size && item.qty);
+      if (complete.length !== orderMemory.items.length) return null;
+      return complete.map((item) => ({
+        product: item.product,
+        size: item.size as string,
+        qty: item.qty as number,
+      }));
+    }
+    return orderMemory.product && orderMemory.size && orderMemory.qty
+      ? [{ product: orderMemory.product, size: orderMemory.size, qty: orderMemory.qty }]
+      : null;
+  })();
+
   if (
     classifiedIntent === "ordering" &&
-    orderMemory?.confirmed &&
-    orderMemory.product &&
-    orderMemory.size &&
-    orderMemory.qty &&
+    memoryLines &&
     !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(aiInputMessage)
   ) {
-    const searched = await executeCustomerTool(
-      "search_products",
-      { keyword: orderMemory.product },
-      execCtx
-    );
-    if (searched.result.ok) {
+    const routeTrace: Array<Awaited<ReturnType<typeof executeCustomerTool>>["trace"]> = [];
+    const resolved: Array<{ sku: string; name: string; size: string; qty: number }> = [];
+    let unresolved = false;
+    for (const line of memoryLines) {
+      const searched = await executeCustomerTool("search_products", { keyword: line.product }, execCtx);
+      routeTrace.push(searched.trace);
+      if (!searched.result.ok) {
+        unresolved = true;
+        break;
+      }
       const products = Array.isArray((searched.result.data as any)?.products)
         ? ((searched.result.data as any).products as Array<{
             sku: string;
@@ -2004,65 +2159,71 @@ export async function runPipeline(
             active?: boolean;
           }>)
         : [];
-      const normalizedHint = orderMemory.product.trim().toLowerCase();
+      const normalizedHint = line.product.trim().toLowerCase();
       const exact = products.filter(
         (product) =>
           product.sku.toLowerCase() === normalizedHint ||
           product.name.trim().toLowerCase() === normalizedHint
       );
       const selected = exact.length === 1 ? exact[0] : products.length === 1 ? products[0] : null;
-      if (selected) {
-        const created = await executeCustomerTool(
-          "create_order",
-          {
-            items: [{ sku: selected.sku, size: orderMemory.size, qty: orderMemory.qty }],
-          },
-          execCtx
+      if (!selected) {
+        unresolved = true;
+        break;
+      }
+      resolved.push({ sku: selected.sku, name: selected.name, size: line.size, qty: line.qty });
+    }
+
+    if (!unresolved && resolved.length === memoryLines.length) {
+      const created = await executeCustomerTool(
+        "create_order",
+        { items: resolved.map((line) => ({ sku: line.sku, size: line.size, qty: line.qty })) },
+        execCtx
+      );
+      routeTrace.push(created.trace);
+      let reply: string;
+      let order: CreateOrderResult | undefined;
+      if (!created.result.ok) {
+        reply = englishReply
+          ? `Sorry, I could not create the order (${created.result.error}). Please try again.`
+          : `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
+      } else {
+        order = created.result.data as CreateOrderResult;
+        reply = await orderReplyWithCheckout(
+          Object.fromEntries(resolved.map((line) => [line.sku, line.name])),
+          order,
+          tenantId,
+          channel,
+          customerRef,
+          profile.paymentAccounts,
+          englishReply
         );
-        let reply: string;
-        let order: CreateOrderResult | undefined;
-        const routeTrace = [searched.trace, created.trace];
-        if (!created.result.ok) {
-          reply = englishReply
-            ? `Sorry, I could not create the order (${created.result.error}). Please try again.`
-            : `ขออภัยค่ะ สร้างออร์เดอร์ไม่สำเร็จ (${created.result.error}) ลองใหม่อีกครั้งนะคะ`;
-        } else {
-          order = created.result.data as CreateOrderResult;
-          reply = await orderReplyWithCheckout(
-            { [selected.sku]: selected.name },
-            order,
-            tenantId,
-            channel,
-            customerRef,
-            profile.paymentAccounts,
-            englishReply
+        // ข้อความกู้สถานการณ์เรื่องสต็อกอ้างสินค้าตัวเดียวได้ จึงใช้เฉพาะบิลรายการเดียว
+        // บิลหลายรายการปล่อยให้ข้อความจาก createOrder อธิบายเอง (ไม่ทับด้วยตัวใดตัวหนึ่ง)
+        if (order.status !== "CREATED" && resolved.length === 1) {
+          const checked = await executeCustomerTool(
+            "check_stock",
+            { product: resolved[0].sku, size: resolved[0].size },
+            execCtx
           );
-          if (order.status !== "CREATED") {
-            const checked = await executeCustomerTool(
-              "check_stock",
-              { product: selected.sku, size: orderMemory.size },
-              execCtx
-            );
-            routeTrace.push(checked.trace);
-            if (checked.result.ok) {
-              reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype, englishReply) ?? reply;
-            }
-          }
-          if (convId && order.status === "CREATED") {
-            await setAiConversationState(tenantId, convId, {}).catch(() => {});
+          routeTrace.push(checked.trace);
+          if (checked.result.ok) {
+            reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype, englishReply) ?? reply;
           }
         }
-        return customerSafe({
-          channel,
-          incoming: message,
-          understanding,
-          tool: "deterministic:create_order",
-          data: { status: "NOT_FOUND", query: aiInputMessage },
-          order,
-          reply,
-          trace: routeTrace,
-        });
+        if (convId && order.status === "CREATED") {
+          await setAiConversationState(tenantId, convId, {}).catch(() => {});
+        }
       }
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:create_order",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        order,
+        reply,
+        trace: routeTrace,
+      });
     }
   }
 
@@ -2185,7 +2346,14 @@ export async function runPipeline(
   if (intent === "CONFIRM_ORDER") {
     const parsed = entities.items.length
       ? entities.items
-      : [{ productText: entities.productText ?? message, size: entities.size, qty: entities.qty }];
+      : [
+          {
+            productText: entities.productText ?? message,
+            size: entities.size,
+            qty: entities.qty,
+            unit: null,
+          },
+        ];
 
     const names: Record<string, string> = {};
     const orderItems: { sku: string; size: string; qty: number }[] = [];

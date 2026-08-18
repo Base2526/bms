@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns) | `7.84`–`7.95` |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns; deposit payment idempotency on `bms_payments`) | `7.84`–`9.2` |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |

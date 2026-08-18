@@ -592,6 +592,19 @@ export type AiConversationState = {
   size?: string | null;
   qty?: number | null;
   confirmed?: boolean;
+  /**
+   * รายการทั้งหมดที่ลูกค้าขอ เมื่อขอมาหลายอย่างในข้อความเดียว
+   *
+   * `product/size/qty` ยังเป็นรายการแรกเสมอ (backward compatible) — คอลัมน์
+   * `ai_state` เป็น JSONB จึงไม่ต้องมี migration และแถวเก่าที่ไม่มี field นี้
+   * ทำงานเหมือนเดิมทุกอย่าง
+   */
+  items?: Array<{
+    product: string;
+    size: string | null;
+    qty: number | null;
+    unit: string | null;
+  }>;
   lastIntent?: string | null;
   lastAskedField?: string | null;
   updatedAt?: string;

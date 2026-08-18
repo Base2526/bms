@@ -42,7 +42,12 @@ import {
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
-import { checkPharmacySaleInTx, type PharmacySaleBlockStatus, type PharmacySalePolicy } from "./pharmacy/productPolicy";
+import {
+  checkPharmacySaleInTx,
+  type PharmacySaleBlockStatus,
+  type PharmacySalePolicy,
+} from "./pharmacy/productPolicy";
+import type { PharmacySaleBlocker } from "./pharmacy/productPolicyDecision";
 import {
   normalizeCustomerIdentity,
   reorderTargetIdentity,
@@ -146,6 +151,7 @@ export type CreateOrderResult =
     }
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string }
+  | { status: "PACK_NOT_FOUND"; sku: string; size: string; packCode: string }
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
   | { status: "DISCOUNT_UNAPPROVED"; reason: string }
@@ -157,6 +163,8 @@ export type CreateOrderResult =
       salePolicy: PharmacySalePolicy | "UNKNOWN";
       maxQuantity?: number;
       requested?: number;
+      /** Every blocked SKU in basket order; top-level fields remain the first blocker. */
+      blockers?: PharmacySaleBlocker[];
     }
   | { status: "EMPTY" };
 
@@ -191,6 +199,58 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   return [...map.values()].sort((a, b) =>
     a.sku === b.sku ? a.size.localeCompare(b.size) : a.sku.localeCompare(b.sku)
   );
+}
+
+async function revalidateOrderPacksInTx(
+  client: PoolClient,
+  tenantId: string,
+  items: OrderItemInput[]
+): Promise<{ ok: true; items: OrderItemInput[] } | { ok: false; sku: string; size: string; packCode: string }> {
+  const canonical: OrderItemInput[] = [];
+  for (const item of items) {
+    const packCode = String(item.packCode ?? "").trim();
+    if (!packCode || packCode.toUpperCase() === "BASE") {
+      canonical.push(item);
+      continue;
+    }
+    const result = await client.query<{
+      pack_code: string;
+      unit_name: string;
+      base_qty: number;
+      price: string | null;
+      base_price: string;
+    }>(
+      `SELECT k.pack_code, k.unit_name, k.base_qty, k.price, p.price AS base_price
+         FROM bms_product_packs k
+         JOIN bms_products p ON p.tenant_id = k.tenant_id AND p.sku = k.product_sku AND p.active
+        WHERE k.tenant_id = $1
+          AND k.product_sku = $2
+          AND upper(k.pack_code) = upper($3)
+          AND k.active
+          AND (k.size IS NULL OR k.size = $4)
+        ORDER BY k.size NULLS LAST
+        LIMIT 1`,
+      [tenantId, item.sku, packCode, item.size]
+    );
+    const pack = result.rows[0];
+    if (!pack) return { ok: false, sku: item.sku, size: item.size, packCode };
+    const baseQty = Number(pack.base_qty);
+    const packQty = item.packQty ?? (item.qty % baseQty === 0 ? item.qty / baseQty : null);
+    if (!Number.isInteger(packQty) || Number(packQty) < 1) {
+      return { ok: false, sku: item.sku, size: item.size, packCode };
+    }
+    canonical.push({
+      ...item,
+      qty: Number(packQty) * baseQty,
+      packCode: pack.pack_code,
+      packUnitName: pack.unit_name,
+      packQty: Number(packQty),
+      packUnitPrice: pack.price == null
+        ? Number(pack.base_price) * baseQty
+        : Number(pack.price),
+    });
+  }
+  return { ok: true, items: canonical };
 }
 
 /**
@@ -298,7 +358,7 @@ export async function createOrder(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
-  const items = mergeItems(input.items).filter(
+  let items = mergeItems(input.items).filter(
     (it) => it.sku && it.size && Number.isInteger(it.qty) && it.qty > 0
   );
   if (items.length === 0) return { status: "EMPTY" };
@@ -306,6 +366,21 @@ export async function createOrder(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: input.editorId });
+
+    // Pack metadata may change after catalog lookup. Re-read it inside the
+    // order transaction so active/baseQty/unit/price snapshots never come from
+    // stale tool or POS payload data.
+    const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items);
+    if (!canonicalPacks.ok) {
+      await client.query("ROLLBACK");
+      return {
+        status: "PACK_NOT_FOUND",
+        sku: canonicalPacks.sku,
+        size: canonicalPacks.size,
+        packCode: canonicalPacks.packCode,
+      };
+    }
+    items = canonicalPacks.items;
 
     // Enforce pharmacy sale policy before reserving any inventory. The model,
     // UI and channel adapters are not regulatory authority.
@@ -323,6 +398,7 @@ export async function createOrder(
         salePolicy: pharmacySale.salePolicy,
         ...(pharmacySale.maxQuantity == null ? {} : { maxQuantity: pharmacySale.maxQuantity }),
         ...(pharmacySale.requested == null ? {} : { requested: pharmacySale.requested }),
+        ...(pharmacySale.blockers.length === 0 ? {} : { blockers: pharmacySale.blockers }),
       };
     }
 
@@ -1143,20 +1219,17 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
  * ยกเลิก order → คืน reserved_stock (atomic, tenant-scoped)
  * ทำได้เฉพาะก่อนจัดส่ง (PENDING/PAID/PACKING)
  */
-export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-
+export async function cancelOrderInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string
+): Promise<boolean> {
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('PENDING','PAID','PACKING')`,
       [orderId, tenantId]
     );
-    if (ord.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return false;
-    }
+    if (ord.rowCount === 0) return false;
 
     // คืน reserved ตามรายการใน order
     await client.query(
@@ -1185,9 +1258,28 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
     await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
 
+    return true;
+}
+
+/** งานหลัง commit แยกไว้ให้ workflow ที่ยกเลิก order ใน transaction ใหญ่กว่าเรียกซ้ำได้ */
+export async function afterOrderCancellationCommitted(tenantId: string, orderId: string): Promise<void> {
+  await markRestockSubscriptionsReadyForOrders([orderId]);
+  void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
+}
+
+export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+
+    const cancelled = await cancelOrderInTx(client, tenantId, orderId);
+    if (!cancelled) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
     await client.query("COMMIT");
-    await markRestockSubscriptionsReadyForOrders([orderId]);
-    void notifyOrderStatusEmail(tenantId, orderId, "cancelled");
+    await afterOrderCancellationCommitted(tenantId, orderId);
     return true;
   } catch (err) {
     try {

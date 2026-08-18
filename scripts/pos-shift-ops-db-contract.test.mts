@@ -43,6 +43,7 @@ import {
   resumeParkedSale,
   setCashierPin,
   upsertPosDevice,
+  verifyCashierPin,
   voidPosSale,
 } from "../apps/web/lib/bms/pos.ts";
 
@@ -311,6 +312,12 @@ test("opening the drawer without a sale is always recorded, and needs a reason",
 
   const report = await getPosShiftReport(tenantId, shiftId);
   assert.equal(report!.noSaleCount, 1, "จำนวนครั้งต้องขึ้นบนสรุปกะ — เป็นสัญญาณทุจริตที่ต้องเห็น");
+  const audit = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'pos.no_sale' AND meta->>'shiftId' = $2`,
+    [tenantId, shiftId]
+  );
+  assert.equal(Number(audit.rows[0].n), 1, "การเปิดลิ้นชักต้องอยู่ใน audit log กลางด้วย");
 });
 
 test("blind close hides expected cash while the shift is open, everywhere it could leak", async () => {
@@ -365,6 +372,20 @@ test("expected cash agrees between the report and closePosShift", async () => {
   assert.equal(closed.shift.expectedCash, reportExpected,
     "สองสูตรนี้ต้องได้เลขเดียวกัน ไม่งั้นกระดาษที่ผู้จัดการเซ็นจะไม่ตรงกับลิ้นชัก");
   assert.equal(closed.shift.cashVariance, -50);
+});
+
+test("parallel wrong PIN attempts still reach the lock threshold", async () => {
+  await setCashierPin(tenantId, cashierId, PIN);
+  const attempts = await Promise.all(
+    Array.from({ length: 5 }, (_, i) => verifyCashierPin(tenantId, cashierId, `90${i}0`))
+  );
+  assert.ok(attempts.some((r) => !r.ok && r.reason === "LOCKED"),
+    "atomic failure count ต้องล็อกได้แม้คำขอทั้งห้ามาพร้อมกัน");
+  const correctWhileLocked = await verifyCashierPin(tenantId, cashierId, PIN);
+  assert.equal(correctWhileLocked.ok, false);
+  if (!correctWhileLocked.ok) assert.equal(correctWhileLocked.reason, "LOCKED");
+  // ไม่ทิ้ง Administrator ของ dev tenant ไว้ในสถานะล็อกหลังชุดทดสอบ
+  await setCashierPin(tenantId, cashierId, PIN);
 });
 
 test("teardown: remove every row this suite created", async () => {

@@ -125,6 +125,13 @@ includes `status` in a `SET` clause.
    If backend Product Policy requires a short safety check or pharmacist approval after the customer
    confirms an exact SKU/size/quantity, the customer tool creates an idempotent product-review case
    in the same Pharmacy Queue and returns an eight-character tracking id.
+   Production customer chat also preserves a structured multi-item draft across turns. Corrections
+   by product name or line number update only that line; an incomplete or ambiguous line prevents a
+   partial order. Named-product lines mixed with generic symptom-medicine wording are retained while
+   the customer clarifies purchase-vs-assessment intent, and one named item never makes the generic
+   clinical line bypass that clarification. Configured selling units are resolved from
+   `bms_product_packs` again inside the order transaction; tablet/capsule counts used as strength or
+   package descriptors are not assumed to be the requested quantity.
 2. Disclaimer ("AI ≠ pharmacist") + consent prompt, both fixed backend copy.
 3. Consent granted → AI (or a deterministic fallback if AI is off) asks one question at a
    time, chosen from the protocol's own field list — it can never invent a new question.

@@ -215,10 +215,17 @@ Consequences that fall out of it, all intended:
   actually passes.
 - **The sale belongs to the collecting shift.** Settlement re-stamps the order's device, shift and
   cashier, so takings and commission land with whoever handed the goods over, not whoever took the
-  deposit days earlier.
+  deposit days earlier. The re-stamp, balance payment, stock/lot deduction, tax document, loyalty
+  ledger and deposit `COMPLETED` transition commit in one transaction.
+- **Collection stays at the branch that reserved the goods.** The counter list is location-scoped
+  and settlement re-checks the location while holding the deposit lock. Moving collection to a
+  different branch requires the stock-transfer workflow first.
 - A deposit equal to the bill is refused: that is a completed sale and must go the normal way, or it
-  sits in the deposit list fully paid with nobody closing it.
+  sits in the deposit list fully paid with nobody closing it. The same rule applies when a later
+  instalment equals the remaining balance: use `settle`, not `add`.
 - Paying the wrong balance is refused rather than accepted, the same reasoning as `PAYMENT_MISMATCH`.
+- Taking and adding deposit payments require a stable client idempotency key. Retrying after a lost
+  response returns the existing result and never inserts the same payment twice.
 
 Two guards inside `finalizePosSale` needed adjusting rather than bypassing. It rejects a pending bill
 that already has payment rows — a sensible defence against collecting twice — and a deposit bill has
@@ -231,6 +238,8 @@ payment row) rather than the balance.
 forfeited is an agreement between shop and customer — some forfeit after a deadline, some refund in
 full. The system records the decision with a mandatory reason and leaves the payout to the ordinary
 refund path. Deciding for the shop would be deciding about somebody else's money.
+Closing does cancel the pending order and release its reserved stock in the same transaction as the
+deposit status change; otherwise goods can remain unavailable after the `OPEN` row disappears.
 
 Open deposits carry a due date and are listed with an `overdue` flag, because **reserved goods are
 goods nobody else can buy.** Without that visibility a shop accumulates stock that exists but cannot be
@@ -798,4 +807,3 @@ The implemented scope is a general-retail POS. It does not include restaurant ta
 kitchen display/printer routing, modifiers/toppings, queue numbers, reservations, or offline-first
 sync. Hardware integrations are browser/OS driven. These are separate product modules, not hidden
 configuration switches in the current POS.
-

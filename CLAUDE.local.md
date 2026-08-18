@@ -347,6 +347,27 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · ของที่จองค้างมีวันครบกำหนด + ธง `overdue` — ไม่มีสองอย่างนี้ ร้านจะมีสต็อกที่ "มีอยู่แต่ขายไม่ได้"
     เพิ่มขึ้นเรื่อย ๆ
   · เทสชุดใหม่: `scripts/deposits-db-contract.test.mts` (9 เทส) — **รวมทั้งหมด pure 45 · DB 158**
+- **`9.1__bms_location_manage_permission.sql` (สิทธิ์ `location.manage` — สร้าง/แก้สาขาจากแอปได้แล้ว)
+  apply เข้า dev DB แล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี schema เปลี่ยน
+  (ตาราง `bms_locations` มีมาตั้งแต่ `7.84`) แค่เพิ่ม permission ใหม่ 1 ตัวให้ Manager
+  · **ก่อนหน้านี้ตาราง `bms_locations` มีมาตั้งแต่ 7.84 แต่ไม่มีทาง "สร้างสาขาใหม่" จากแอปเลยสักจุด**
+    มีแต่ query อ่าน (`bmsLocations`) ไปประกอบ dropdown ที่อื่น หน้า `/admin/locations` (เมนูใหม่ในกลุ่ม
+    ร้านค้า ก่อน Stock Transfers) + mutation `bmsUpsertLocation` คือทางแรกที่ทำได้จริง
+  · **สาขาที่สร้างผ่านหน้านี้ตั้งเป็น `is_head_office = FALSE` เสมอ ห้ามแก้** — คอลัมน์นี้ default
+    เป็น `TRUE` ในตาราง (ออกแบบไว้ตอนร้านมีสาขาเดียว) ถ้าไม่บังคับ FALSE ในโค้ด สาขาที่สองจะกลายเป็น
+    สำนักงานใหญ่คู่ขนานไปด้วยเงียบ ๆ — สำนักงานใหญ่จริงมีอยู่แล้วจาก seed ตอน 7.84 หน้านี้ไม่มีทาง
+    เปลี่ยนธงนั้นได้เลย (ต้องแก้ตรง DB เท่านั้น)
+  · **`branch_code = '00000'` สงวนไว้ให้สำนักงานใหญ่** — `upsertLocation` ปฏิเสธค่านี้ตอนสร้างใหม่
+    ก่อนถึงชั้น DB (กับดักเดิมที่จดไว้ใน `7.98` ข้างบน ตอนนี้กันไว้ที่ชั้นแอปแล้วไม่ต้องพึ่ง unique
+    index อย่างเดียว)
+  · รหัสสาขา (`code`) แก้ไม่ได้หลังสร้าง เหมือน `bmsUpsertPosDevice` — ฟอร์ม disable ช่องนี้ตอนแก้ไข
+    เพราะ mutation ใช้ `ON CONFLICT (tenant_id, code)` จับคู่แถวเดิม เปลี่ยน code กลางทาง = สร้างแถวใหม่
+  · **สาขาใหม่เริ่มด้วยสต็อกว่าง** — ต้องโอนย้ายเข้าไปเองผ่าน `/admin/stock-transfers` (7.98) การตัดสต็อก
+    ข้ามสาขาต่อเข้ากับของจริงแล้วตั้งแต่ 7.98 ไม่ต้องแก้อะไรเพิ่มฝั่งนั้น — ดู checklist ที่
+    [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
+    ก่อนเปิดสาขาที่สองของร้านไหนก็ตาม
+  · verify แล้ว: สร้าง/แก้/reject รหัสซ้ำ/reject `00000`/permission gate (Manager ผ่าน, Sales ไม่ผ่าน)/
+    audit log เขียนถูกต้อง — ยังไม่ได้เขียนเป็นเทสอัตโนมัติ (verify มือผ่าน service function ตรง ๆ)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

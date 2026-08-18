@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge } from 'antd';
+import { Layout, Menu, Avatar, Button, message, Tooltip, Drawer, Badge, Skeleton } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   UserOutlined,
@@ -49,16 +49,24 @@ import {
   BarcodeOutlined,
   SafetyCertificateOutlined,
   HeartOutlined,
+  ClusterOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
 import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
 import { useIsMobile } from '@/app/hooks/useMediaQuery';
-import { useSession } from '@/lib/useSession';
+import { useSessionCtx } from '@/lib/session-context';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/lib/i18nContext';
 
-const Q_PLATFORM_ADMIN = gql`query { bmsIsPlatformAdmin }`;
+const Q_SIDEBAR_BOOTSTRAP = gql`
+  query {
+    bmsIsPlatformAdmin
+    bmsStoreProfile {
+      businessArchetype
+    }
+  }
+`;
 const Q_INBOX_UNREAD = gql`query { bmsInboxUnreadCount }`;
 const Q_MENTIONS_UNREAD = gql`query { bmsMyMentionsUnreadCount }`;
 const Q_RESTOCK_READY = gql`query { bmsRestockReadyCount }`;
@@ -67,13 +75,6 @@ const Q_PHARMACY_EMERGENCY_COUNT = gql`query { bmsPharmacyAssessments(riskLevel:
 const Q_PHARMACY_PENDING_CONFIRMATION_COUNT = gql`
   query {
     bmsPharmacyAssessments(status: "PENDING_CONFIRMATION", limit: 50) { id }
-  }
-`;
-const Q_STORE_PROFILE = gql`
-  query {
-    bmsStoreProfile {
-      businessArchetype
-    }
   }
 `;
 const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
@@ -183,21 +184,43 @@ export default function AdminSidebar() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // กดเมนูแล้วต้องปิดเอง — Drawer ไม่รู้เรื่อง client-side navigation ของ Next
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
-  const { data: paData } = useQuery(Q_PLATFORM_ADMIN, { fetchPolicy: 'cache-first' });
-  const isPlatformAdmin = paData?.bmsIsPlatformAdmin === true;
-  const { admin, refreshSession } = useSession();
+  // เดิมเป็น Q_PLATFORM_ADMIN แยกก้อน + Q_STORE_PROFILE แยกก้อนด้านล่าง — รวมเป็น query
+  // เดียวเพื่อลดจำนวน round-trip ที่ยิงพร้อมกันตอน mount ครั้งแรก (ตอนแคชยังว่าง คือจุดที่
+  // เมนูทั้งหมดด้านล่างนี้ยังไม่โผล่เพราะรอ can()/isPlatformAdmin — ยิ่งน้อย request ยิ่งเร็ว)
+  //
+  // เช็คแล้วว่าปลอดภัยที่จะรวมสองตัวนี้: bmsStoreProfile ใช้ requireTenantAdmin ซึ่ง throw
+  // FORBIDDEN ถ้า scope !== "admin" เป๊ะ ๆ ส่วน bmsIsPlatformAdmin (isPlatformAdmin() ที่
+  // lib/bms/platform.ts) เองก็ return false ทันทีถ้า scope !== "admin" เหมือนกัน — เงื่อนไข
+  // ที่ทำให้ bmsStoreProfile พัง คือเงื่อนไขเดียวกันที่ทำให้ isPlatformAdmin เป็น false อยู่แล้ว
+  // ไม่มีทางที่การรวม query จะทำให้ค่า isPlatformAdmin เพี้ยนไปจากที่ยิงแยกกัน (ทั้งสอง field
+  // เป็น non-null ในสคีมา ถ้า bmsStoreProfile throw จริง GraphQL null-bubbling จะทำให้ทั้ง
+  // response เป็น data:null — แต่ isPlatformAdmin ที่อ่านได้จาก null ก็คือ false เหมือนที่
+  // resolver ของมันเองจะตอบอยู่แล้ว ไม่ใช่ข้อมูลที่หายไปจริง)
+  // *** ด้วยเหตุผลเดียวกันนี้ ห้ามเอา myBmsPermissions มารวมด้วย *** — loadPermissions()
+  // (permissions.ts) ยอมรับ scope "web" + admin identity ด้วย ซึ่งกว้างกว่า requireTenantAdmin
+  // ถ้ารวมเข้ามา เคส scope="web"+adminIdentity จะได้สิทธิ์จริงจาก resolver เอง แต่ถูก
+  // bmsStoreProfile ที่ throw ทับให้เป็น data:null ไปด้วย — นี่คือข้อมูลที่หายไปจริง ไม่เหมือน
+  // isPlatformAdmin ข้างบน
+  // errorPolicy: 'all' ไว้เป็นค่า defensive ทั่วไป (ไม่ให้ error link/console โวยวายเปล่า ๆ
+  // เวลาเจอ FORBIDDEN ที่คาดไว้แล้ว) ไม่ใช่ตัวกู้ partial data — ตอน root field non-null พังจน
+  // null-bubble ถึง data ทั้งก้อน ฝั่ง client กู้อะไรกลับมาไม่ได้อยู่ดี
+  const { data: bootstrapData, loading: bootstrapLoading } = useQuery(Q_SIDEBAR_BOOTSTRAP, {
+    fetchPolicy: 'cache-and-network',
+    errorPolicy: 'all',
+  });
+  const isPlatformAdmin = bootstrapData?.bmsIsPlatformAdmin === true;
+  const { admin, refreshSession } = useSessionCtx();
   const isAdministrator = admin?.role === 'Administrator';
   const canManageAccess = isAdministrator || isPlatformAdmin; // เห็น Permissions/Audit/Revisions
-  const { can } = useBmsPermissions();
+  const { can, loading: permsLoading } = useBmsPermissions();
+  // เกือบทุกรายการเมนูด้านล่างนี้ถูกกำหนดด้วย can(...)/isPlatformAdmin ซึ่งทั้งคู่เป็น false
+  // เสมอก่อน query จะตอบกลับรอบแรก (แคชว่าง) — ใช้ธงนี้โชว์ skeleton แทนเมนูที่ดูเหมือนหายไป
+  const menuGateLoading = permsLoading || bootstrapLoading;
   // Users แยกออกจาก canManageAccess แล้ว — role ที่มี user.view (seed ให้ Manager ที่ 7.78)
   // เห็นเมนู Users ได้ แต่ต้อง **ไม่** เห็น Permissions (ยกระดับสิทธิ์ตัวเองได้)/Audit/Revisions
   // ซึ่ง resolver ฝั่งนั้น gate ด้วย requireSuper อยู่แล้ว กดเข้าไปก็ 403 เปล่า ๆ
   const canViewUsers = canManageAccess || can('user.view');
   const canViewReports = can('report.view');
-  const { data: storeProfileData } = useQuery(Q_STORE_PROFILE, {
-    fetchPolicy: 'cache-and-network',
-    skip: !admin,
-  });
   // Fake data (dev): platform admin เท่านั้น — ต้องตรงกับ requirePlatformAdminPage() ใน
   // app/(admin)/admin/dev/fake/layout.tsx และ requirePlatformAdminSeeder() ที่ API
   // (เดิมผูกกับ can('product.edit') ทำให้ staff เห็นเมนูแล้วกดเข้าไปโดน redirect)
@@ -244,7 +267,7 @@ export default function AdminSidebar() {
     skip: !canViewPharmacy, fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
   const pharmacyPendingConfirmationCount: number = pharmacyPendingConfirmationData?.bmsPharmacyAssessments?.length ?? 0;
-  const isPharmacyShop = storeProfileData?.bmsStoreProfile?.businessArchetype === "pharmacy";
+  const isPharmacyShop = bootstrapData?.bmsStoreProfile?.businessArchetype === "pharmacy";
 
   // shared AI provider (Anthropic/DeepSeek/Qwen) configured แต่เชื่อมต่อไม่ได้จริง —
   // platform-wide ไม่ผูก tenant จึงเช็คเฉพาะ platform admin (คนอื่น query นี้ก็ FORBIDDEN อยู่แล้ว)
@@ -346,6 +369,10 @@ export default function AdminSidebar() {
         ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
+        // สาขา (9.1) วางก่อน Stock Transfers เพราะต้องมีสาขาที่สองก่อนถึงจะมี
+        // อะไรให้โอนย้าย — สิทธิ์ location.manage ให้ Manager เท่านั้น (โครงสร้างร้าน
+        // ไม่ใช่งานประจำวัน)
+        ...(can('location.manage') ? [link('/admin/locations', 'Locations', <ClusterOutlined />)] : []),
         // งานคลัง (7.98) วางต่อจาก Purchase เพราะเป็นงานตระกูลเดียวกัน (ของเข้า/ของย้าย/ของขาด)
         // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
         ...(can('inventory.transfer') ? [link('/admin/stock-transfers', 'Stock Transfers', <SwapOutlined />)] : []),
@@ -493,14 +520,22 @@ export default function AdminSidebar() {
 
       {/* เมนู — เลื่อนได้เฉพาะส่วนนี้ (overflowX ต้อง visible ไม่งั้น badge ที่ล้นขอบไอคอนโดนตัด) */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'visible' }}>
-        <Menu
-          className="bms-admin-sidebar-menu"
-          mode="inline"
-          items={items}
-          selectedKeys={selectedKeys}
-          defaultOpenKeys={openGroupKey ? [openGroupKey] : []}
-          style={{ background: 'transparent', borderRight: 'none' }}
-        />
+        {menuGateLoading ? (
+          // แทบทุกรายการข้างบนถูกกำหนดด้วย can()/isPlatformAdmin ที่ยัง false อยู่ตอนนี้
+          // (แคชว่าง รอ query รอบแรก) — ไม่โชว์ <Menu> เปล่า ๆ ที่ดูเหมือนเมนูหายไปเงียบ ๆ
+          <div style={{ padding: mini ? '8px 6px' : '8px 16px' }}>
+            <Skeleton active title={false} paragraph={{ rows: mini ? 4 : 8 }} />
+          </div>
+        ) : (
+          <Menu
+            className="bms-admin-sidebar-menu"
+            mode="inline"
+            items={items}
+            selectedKeys={selectedKeys}
+            defaultOpenKeys={openGroupKey ? [openGroupKey] : []}
+            style={{ background: 'transparent', borderRight: 'none' }}
+          />
+        )}
       </div>
 
       {/* โควตา AI shared key ฟรี — โชว์ตลอดเมื่อใช้ Shared Key และยกระดับสีเมื่อใกล้/เกินโควตา

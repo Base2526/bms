@@ -591,6 +591,16 @@ export const typeDefs = /* GraphQL */ `
     active: Boolean!
   }
 
+  input BmsLocationInput {
+    id: ID
+    code: String!
+    name: String!
+    branchCode: String!
+    address: String
+    phone: String
+    active: Boolean
+  }
+
   type BmsPosDevice {
     id: ID!
     tenantId: ID!
@@ -3424,6 +3434,9 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+
+    # ---- สาขา (9.1) ----
+    bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
 
     # ---- POS (7.87) ----
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
