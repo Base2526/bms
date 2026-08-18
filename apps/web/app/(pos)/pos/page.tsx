@@ -11,7 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
-import { unitPriceForQty } from "@/lib/bms/pricing";
+import { applyPromotion, unitPriceForQty } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
@@ -120,6 +120,11 @@ type ScanHit = {
   priceTiers?: Array<{ minQty: number; unitPrice: number }>;
   /** true = สินค้านี้ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) */
   serialTracked?: boolean;
+  /** โปรที่ใช้งานอยู่ (8.7) — จอคิดด้วย applyPromotion ตัวเดียวกับ createOrder */
+  promotion?:
+    | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
+    | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
+    | null;
   available: number;
 };
 
@@ -618,10 +623,42 @@ export default function PosPage() {
     [extraLines]
   );
 
-  const total = useMemo(
-    () => cart.reduce((sum, l) => sum + (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty, 0) + extraTotal,
-    [cart, tierPriceByKey, extraTotal]
-  );
+  /**
+   * โปรโมชัน (8.7) — คิดต่อ SKU จากจำนวนรวมทั้งตะกร้า แล้วแทนยอดของทุกบรรทัดของ
+   * SKU นั้น · ต้องตรงกับ createOrder เป๊ะ ทั้งสองฝั่งเรียก applyPromotion ตัวเดียวกัน
+   * บรรทัดที่ขายเป็น pack ไม่เข้าโปร เหมือนฝั่ง server
+   */
+  const promoBySku = useMemo(() => {
+    const qtyBySku = new Map<string, number>();
+    const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
+    const priceOf = new Map<string, number>();
+    for (const line of cart) {
+      if (line.baseQty > 1 || !line.promotion) continue;
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty);
+      promoOf.set(line.sku, line.promotion);
+      priceOf.set(line.sku, line.basePrice);
+    }
+    const out = new Map<string, { amount: number; freeQty: number; saved: number }>();
+    for (const [sku, promo] of promoOf) {
+      out.set(sku, applyPromotion(priceOf.get(sku) ?? 0, qtyBySku.get(sku) ?? 0, promo));
+    }
+    return out;
+  }, [cart]);
+
+  const total = useMemo(() => {
+    const chargedPromo = new Set<string>();
+    let sum = extraTotal;
+    for (const line of cart) {
+      const promo = line.baseQty > 1 ? null : promoBySku.get(line.sku);
+      if (promo) {
+        // โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด
+        if (!chargedPromo.has(line.sku)) { chargedPromo.add(line.sku); sum += promo.amount; }
+        continue;
+      }
+      sum += (tierPriceByKey.get(line.key) ?? line.packPrice) * line.packQty;
+    }
+    return Math.round(sum * 100) / 100;
+  }, [cart, tierPriceByKey, extraTotal, promoBySku]);
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
   // ---- สมาชิก + แต้ม (7.96) ----------------------------------------
@@ -1245,6 +1282,7 @@ export default function PosPage() {
           basePrice: Number(line.basePrice ?? 0),
           priceTiers: line.priceTiers ?? [],
           serialTracked: line.serialTracked === true,
+          promotion: line.promotion ?? null,
           available: 0,
           packQty: Number(line.packQty ?? 1),
           key: `last-${idx}-${String(line.sku ?? "")}`,
@@ -2913,7 +2951,14 @@ export default function PosPage() {
                     )}
                   </div>
                   <div className="pos-line-meta">
-                    {tierPriceByKey.has(l.key) ? (
+                    {promoBySku.has(l.sku) && l.baseQty <= 1 ? (
+                    <>
+                      โปรโมชัน · {promoBySku.get(l.sku)!.freeQty > 0
+                        ? `ได้ฟรี ${promoBySku.get(l.sku)!.freeQty} ${l.unitName}`
+                        : `ประหยัด ฿${baht(promoBySku.get(l.sku)!.saved)}`}
+                      {promoBySku.get(l.sku)!.saved === 0 && " (ยังไม่ครบเงื่อนไข)"}
+                    </>
+                  ) : tierPriceByKey.has(l.key) ? (
                       <>
                         <span style={{ textDecoration: "line-through", opacity: 0.6 }}>฿{baht(l.packPrice)}</span>{" "}
                         ฿{baht(tierPriceByKey.get(l.key)!)} × {l.packQty} {l.unitName} · ราคาส่ง
@@ -2952,7 +2997,15 @@ export default function PosPage() {
                   <span className="pos-qty-value">{l.packQty}</span>
                   <button onClick={() => changeQty(l.key, 1)} aria-label="เพิ่มจำนวน">+</button>
                 </div>
-                <div className="pos-line-amount">฿{baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}</div>
+                <div className="pos-line-amount">
+                  {/* SKU ที่เข้าโปรโชว์ยอดรวมของ SKU ที่บรรทัดแรกเท่านั้น — โปรคิดรวม
+                      ทุกไซซ์ การหารลงแต่ละบรรทัดจะได้เลขที่บวกกันไม่ตรงกับที่เก็บเงิน */}
+                  {promoBySku.has(l.sku) && l.baseQty <= 1
+                    ? (cart.findIndex((x) => x.sku === l.sku) === cart.indexOf(l)
+                        ? `฿${baht(promoBySku.get(l.sku)!.amount)}`
+                        : "—")
+                    : `฿${baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}`}
+                </div>
               </div>
             ))}
           </div>

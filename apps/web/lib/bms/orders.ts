@@ -33,7 +33,7 @@ import {
   reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
-import { unitPriceForQty, type PriceTier } from "./pricing";
+import { applyPromotion, unitPriceForQty, type PriceTier, type Promotion } from "./pricing";
 import type { VatCategory } from "./vat";
 import {
   markRestockSubscriptionsOrdered,
@@ -346,6 +346,29 @@ export async function createOrder(
       tiersBySku.set(row.product_sku, list);
     }
 
+    // ---- โปรโมชัน ซื้อ X แถม Y / N ชิ้นราคาเดียว (8.7) -----------
+    // เป็นกลไก "ราคาของกลุ่มชิ้น" ไม่ใช่ส่วนลดชั้นที่ 5 — โปรที่ร้านประกาศไว้จึงไม่ถูก
+    // ตัดด้วยเพดาน max_discount_pct ของบิลนั้น (ดูเหตุผลเต็มใน migration 8.7)
+    const promoRows = await client.query<any>(
+      `SELECT product_sku, kind, buy_qty, get_qty, bundle_price
+         FROM bms_product_promotions
+        WHERE tenant_id = $1 AND product_sku = ANY($2::text[]) AND active
+          AND (starts_at IS NULL OR starts_at <= now())
+          AND (ends_at   IS NULL OR ends_at   >  now())`,
+      [tenantId, Array.from(qtyBySku.keys())]
+    );
+    const promoBySku = new Map<string, Promotion>();
+    for (const row of promoRows.rows) {
+      promoBySku.set(
+        row.product_sku,
+        row.kind === "BUY_X_GET_Y"
+          ? { kind: "BUY_X_GET_Y", buyQty: Number(row.buy_qty), getQty: Number(row.get_qty) }
+          : { kind: "N_FOR_PRICE", buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price) }
+      );
+    }
+    /** SKU ที่คิดยอดโปรไปแล้ว — โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด */
+    const promoCharged = new Set<string>();
+
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
     const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
 
@@ -403,7 +426,17 @@ export async function createOrder(
       // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)
       const packQty = it.packQty ?? null;
       const packUnitPrice = it.packUnitPrice ?? null;
-      total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
+
+      // โปรของ SKU นี้ (ถ้ามี) คิดจากจำนวนรวมทั้งบิล จึงคิดครั้งเดียวที่บรรทัดแรก
+      // ที่เจอ SKU นั้น แล้วบรรทัดถัด ๆ ไปของ SKU เดียวกันไม่บวกยอดซ้ำ
+      // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
+      const promo = packUnitPrice != null ? null : promoBySku.get(it.sku) ?? null;
+      if (promo && !promoCharged.has(it.sku)) {
+        promoCharged.add(it.sku);
+        total += applyPromotion(listPrice, qtyBySku.get(it.sku) ?? it.qty, promo).amount;
+      } else if (!promo) {
+        total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
+      }
       lines.push({
         sku: it.sku,
         name: prod.rows[0].name,

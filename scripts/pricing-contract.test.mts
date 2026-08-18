@@ -94,3 +94,59 @@ test("บรรทัดที่ขายเป็นหน่วยขาย (
   // รวมทั้งบิล 12 ชิ้น → บรรทัดที่ขายแยกได้ขั้น 10
   assert.equal(priced[1].unitPrice, 80);
 });
+
+// ---- โปรโมชัน ซื้อ X แถม Y / N ชิ้นราคาเดียว (8.7) --------------------
+// โปรเป็นกลไก "ราคาของกลุ่มชิ้น" ไม่ใช่ส่วนลดชั้นที่ 5 — จึงไม่ถูกตัดด้วยเพดาน
+// max_discount_pct ของบิล · เทสชุดนี้ล็อกเลขคณิตที่จอกับ createOrder ใช้ร่วมกัน
+
+import { applyPromotion, type Promotion } from "../apps/web/lib/bms/pricing.ts";
+
+const bogo: Promotion = { kind: "BUY_X_GET_Y", buyQty: 3, getQty: 1 };
+const threeFor100: Promotion = { kind: "N_FOR_PRICE", buyQty: 3, bundlePrice: 100 };
+
+test("ซื้อ 3 แถม 1 — จ่ายเฉพาะชิ้นที่ไม่ฟรี และเศษจ่ายเต็ม", () => {
+  // ยังไม่ครบชุด
+  assert.deepEqual(applyPromotion(40, 3, bogo), { amount: 120, freeQty: 0, saved: 0 });
+  // ครบชุดแรก (4 ชิ้น = จ่าย 3)
+  assert.deepEqual(applyPromotion(40, 4, bogo), { amount: 120, freeQty: 1, saved: 40 });
+  // 7 ชิ้น = ครบชุดเดียว เหลือเศษ 3 จ่ายเต็ม → จ่าย 6 ชิ้น
+  assert.deepEqual(applyPromotion(40, 7, bogo), { amount: 240, freeQty: 1, saved: 40 });
+  // 8 ชิ้น = ครบสองชุด → จ่าย 6 ชิ้น
+  assert.deepEqual(applyPromotion(40, 8, bogo), { amount: 240, freeQty: 2, saved: 80 });
+});
+
+test("3 ชิ้น 100 — เศษที่ไม่ครบชุดจ่ายราคาเต็มต่อชิ้น", () => {
+  assert.deepEqual(applyPromotion(40, 2, threeFor100), { amount: 80, freeQty: 0, saved: 0 });
+  assert.deepEqual(applyPromotion(40, 3, threeFor100), { amount: 100, freeQty: 0, saved: 20 });
+  assert.deepEqual(applyPromotion(40, 4, threeFor100), { amount: 140, freeQty: 0, saved: 20 });
+  assert.deepEqual(applyPromotion(40, 6, threeFor100), { amount: 200, freeQty: 0, saved: 40 });
+});
+
+test("โปรที่แพงกว่าซื้อแยกต้องไม่ถูกบังคับใช้", () => {
+  // ร้านลดราคาปกติลงมาเหลือ 30 แต่ยังตั้งโปร 3 ชิ้น 100 ค้างอยู่
+  // ซื้อแยก 3 ชิ้น = 90 ซึ่งถูกกว่าราคาชุด · เก็บลูกค้า 100 เพราะ "โปร" คือความ
+  // เสียหายที่ร้านอธิบายไม่ได้ · ต้องเลือกยอดที่ต่ำกว่าเสมอ
+  assert.deepEqual(applyPromotion(30, 3, threeFor100), { amount: 90, freeQty: 0, saved: 0 });
+});
+
+test("ไม่มีโปร หรือค่าที่ไม่สมเหตุสมผล = ราคาเต็ม", () => {
+  assert.deepEqual(applyPromotion(40, 5, null), { amount: 200, freeQty: 0, saved: 0 });
+  assert.deepEqual(applyPromotion(40, 0, bogo), { amount: 0, freeQty: 0, saved: 0 });
+  assert.deepEqual(
+    applyPromotion(40, 5, { kind: "N_FOR_PRICE", buyQty: 0, bundlePrice: 10 }),
+    { amount: 200, freeQty: 0, saved: 0 }
+  );
+});
+
+test("แถมฟรีทั้งหมดได้ ถ้าร้านตั้งอย่างนั้นจริง", () => {
+  // ซื้อ 1 แถม 1 · หยิบ 2 → จ่าย 1
+  assert.deepEqual(
+    applyPromotion(50, 2, { kind: "BUY_X_GET_Y", buyQty: 1, getQty: 1 }),
+    { amount: 50, freeQty: 1, saved: 50 }
+  );
+  // และ 3 ชิ้น 0 บาท (แจกฟรี) ต้องได้ 0 ไม่ใช่ถูกปฏิเสธเพราะ "ถูกกว่าไม่ได้"
+  assert.deepEqual(
+    applyPromotion(50, 3, { kind: "N_FOR_PRICE", buyQty: 3, bundlePrice: 0 }),
+    { amount: 0, freeQty: 0, saved: 150 }
+  );
+});

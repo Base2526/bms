@@ -24,7 +24,7 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
-import type { PriceTier } from "./pricing";
+import type { PriceTier, Promotion } from "./pricing";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import {
   cashRoundingDelta,
@@ -304,6 +304,11 @@ export type PosScanHit = {
   priceTiers: PriceTier[];
   /** true = ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) — จอต้องกางช่องกรอกให้ */
   serialTracked: boolean;
+  /**
+   * โปรที่ใช้งานอยู่ของสินค้านี้ (8.7) — ส่งให้จอพรีวิวยอดด้วยกฎเดียวกับ createOrder
+   * null = ไม่มีโปร หรือหมดช่วงเวลาไปแล้ว
+   */
+  promotion: Promotion | null;
 };
 
 /**
@@ -377,6 +382,21 @@ export async function resolvePosScan(
   const row = res.rows[0];
   if (!row || !row.size) return null;
 
+  const promoRes = await query<any>(
+    `SELECT kind, buy_qty, get_qty, bundle_price FROM bms_product_promotions
+      WHERE tenant_id = $1 AND product_sku = $2 AND active
+        AND (starts_at IS NULL OR starts_at <= now())
+        AND (ends_at   IS NULL OR ends_at   >  now())
+      LIMIT 1`,
+    [tenantId, row.sku]
+  );
+  const promoRow = promoRes.rows[0];
+  const promotion: Promotion | null = !promoRow
+    ? null
+    : promoRow.kind === "BUY_X_GET_Y"
+      ? { kind: "BUY_X_GET_Y", buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
+      : { kind: "N_FOR_PRICE", buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) };
+
   const tierRes = await query<{ min_qty: number; unit_price: string }>(
     `SELECT min_qty, unit_price FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
@@ -403,6 +423,7 @@ export async function resolvePosScan(
     basePrice,
     priceTiers,
     serialTracked: (row as any).serial_tracked === true,
+    promotion,
   };
 }
 

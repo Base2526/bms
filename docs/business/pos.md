@@ -198,6 +198,44 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Promotions: buy-X-get-Y and N-for-a-price (8.7)
+
+Coupons need a code the customer knows. Wholesale steps change the per-unit price. Neither answers
+*"buy 3 get 1 free"* or *"3 for ฿100"*, which are the offers Thai retail runs most.
+
+**A promotion is not a fifth discount layer.** There are already four (tier → coupon → points →
+manual) under one per-bill cap (`max_discount_pct`), and putting promotions there breaks two things at
+once. A promotion the shop advertised on a shelf could get **trimmed** because that bill happened to
+hit the cap — the shop breaking its word to a customer because of its own internal rule, which is
+unexplainable at the counter. And the receipt would show full prices with a large discount at the
+bottom, when the customer's understanding is that "3 for ฿100" *is* the price of those three.
+
+So it is a line-pricing mechanism like `8.1`: computed from the SKU's total quantity on the bill, and
+never subject to the discount cap.
+
+Both forms leave a remainder at full price rather than averaging across every unit, because the
+customer can count what they got free. Buy 3 get 1 with 7 units means one complete group and 3 at full
+price — 6 units paid.
+
+**Quantity spans sizes and the offer is charged once per SKU per bill.** Two 60ml plus two 150ml is
+four of that product, so it earns the offer; charging per line would either miss it (two lines of two,
+neither complete) or bill it twice. There is a test for both wrong answers.
+
+**A promotion that costs more than buying loose is not applied.** A shop that cuts the normal price
+below its own bundle price — or leaves a stale promotion running — would otherwise have the system
+overcharge customers in the name of an offer, which is damage the shop cannot explain. The lower total
+always wins.
+
+Only one promotion can be active per product (a partial unique index enforces it). Two would require
+answering which one wins, and there is no answer staff can give a customer. Date windows mean an
+expired offer stops applying on its own, without anyone remembering to edit the product — a stale
+promotion is how a shop keeps selling at a loss without noticing.
+
+Packs are excluded, same as wholesale steps: the pack row already states what the box costs.
+
+**Not covered:** cross-product offers ("buy A, get B free"). Those cannot be expressed as one SKU's
+group price and need their own mechanism.
+
 ## Charges that are not stock (8.6)
 
 Bag fees, service fees, gift wrapping: collecting money for something that is not in `bms_products`

@@ -69,3 +69,68 @@ export function priceLinesByQty<T extends { sku: string; qty: number; packUnitPr
     return { ...line, unitPrice, tierApplied: unitPrice !== basePrice };
   });
 }
+
+
+// =============================================================
+// โปรโมชัน: ซื้อ X แถม Y / N ชิ้นราคาเดียว (8.7)
+// -------------------------------------------------------------
+// ทำเป็นกลไก "ราคาของกลุ่มชิ้น" ไม่ใช่ส่วนลดอีกชั้น เพราะโปรที่ร้านประกาศไว้ต้องไม่
+// ถูกตัดด้วยเพดาน max_discount_pct ของบิลนั้น (ร้านจะผิดคำพูดกับลูกค้าเพราะกฎภายใน
+// ของตัวเอง) และเพราะลูกค้าเข้าใจว่า "3 ชิ้น 100" คือราคาของสามชิ้นนั้น ไม่ใช่
+// ส่วนลดก้อนท้ายบิล
+// =============================================================
+
+export type Promotion =
+  | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
+  | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number };
+
+export type PromotionOutcome = {
+  /** ยอดที่ต้องจ่ายสำหรับสินค้านั้นทั้งหมดในบิล */
+  amount: number;
+  /** จำนวนชิ้นที่ได้ฟรี (BUY_X_GET_Y) — พิมพ์บนใบเสร็จให้ลูกค้าเห็นว่าได้อะไร */
+  freeQty: number;
+  /** ส่วนต่างจากราคาเต็ม — ใช้โชว์ว่า "ประหยัด ฿x" ไม่ได้เข้า discount_amount */
+  saved: number;
+};
+
+/**
+ * ยอดที่ต้องจ่ายของสินค้าหนึ่งตัวเมื่อมีโปร
+ *
+ * ทั้งสองแบบคิดจาก "จำนวนรวมของ SKU นั้นในบิล" เหมือนขั้นราคาส่ง (8.1) เพราะเหตุผล
+ * เดียวกัน: ลูกค้าที่หยิบสองไซซ์รวมกันครบเงื่อนไขถือว่าซื้อครบ
+ *
+ * BUY_X_GET_Y: ทุก (buy + get) ชิ้น จ่ายแค่ buy ชิ้น
+ *   ซื้อ 3 แถม 1 · หยิบ 4 → จ่าย 3 · หยิบ 7 → จ่าย 6 (ครบชุดเดียว เหลือเศษ 3 จ่ายเต็ม)
+ *   หยิบ 8 → จ่าย 6 (ครบสองชุด)
+ *   เศษที่ไม่ครบชุดจ่ายราคาเต็ม — ไม่ใช่เฉลี่ยลงทุกชิ้น เพราะลูกค้านับเองได้ว่าได้ฟรีกี่ชิ้น
+ *
+ * N_FOR_PRICE: ทุก buy ชิ้นคิด bundlePrice · เศษจ่ายราคาเต็มต่อชิ้น
+ *   3 ชิ้น 100 (ราคาปกติ 40) · หยิบ 4 → 100 + 40 = 140
+ *   ถ้าราคาชุดแพงกว่าซื้อแยก จะไม่ใช้โปรให้ (ดูด้านล่าง)
+ */
+export function applyPromotion(basePrice: number, qty: number, promo: Promotion | null): PromotionOutcome {
+  const full = round2(Math.max(0, basePrice) * Math.max(0, qty));
+  if (!promo || qty <= 0 || basePrice < 0) return { amount: full, freeQty: 0, saved: 0 };
+
+  if (promo.kind === "BUY_X_GET_Y") {
+    const groupSize = promo.buyQty + promo.getQty;
+    if (groupSize <= 0) return { amount: full, freeQty: 0, saved: 0 };
+    const groups = Math.floor(qty / groupSize);
+    const freeQty = groups * promo.getQty;
+    const amount = round2(basePrice * (qty - freeQty));
+    return { amount, freeQty, saved: round2(full - amount) };
+  }
+
+  if (promo.buyQty <= 0) return { amount: full, freeQty: 0, saved: 0 };
+  const bundles = Math.floor(qty / promo.buyQty);
+  const remainder = qty - bundles * promo.buyQty;
+  const amount = round2(bundles * promo.bundlePrice + remainder * basePrice);
+
+  // โปรที่แพงกว่าซื้อแยกต้องไม่ถูกบังคับใช้ — ร้านตั้งราคาชุดผิด (หรือลดราคาปกติ
+  // ลงมาต่ำกว่าราคาชุดทีหลัง) เป็นเรื่องที่เกิดจริง และการเก็บเงินลูกค้าแพงขึ้น
+  // เพราะ "โปร" คือความเสียหายที่ร้านอธิบายไม่ได้ · เลือกยอดที่ต่ำกว่าเสมอ
+  if (amount >= full) return { amount: full, freeQty: 0, saved: 0 };
+  return { amount, freeQty: 0, saved: round2(full - amount) };
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
