@@ -448,6 +448,9 @@ export default function PosPage() {
   const [voidApproverPin, setVoidApproverPin] = useState("");
   const [shiftReport, setShiftReport] = useState<ShiftReport | null>(null);
   const [noSaleReason, setNoSaleReason] = useState("");
+  // ---- ส่งใบเสร็จ (8.6) ----
+  const [receiptTo, setReceiptTo] = useState("");
+  const [sendingReceipt, setSendingReceipt] = useState(false);
   // ---- คืนไม่มีใบเสร็จ (8.2) ----
   const [blindOpen, setBlindOpen] = useState(false);
   const [blindReason, setBlindReason] = useState("");
@@ -859,6 +862,35 @@ export default function PosPage() {
     }
   }
 
+  // ---- ส่งสำเนาใบเสร็จ (8.6) -----------------------------------------
+  // ไม่สร้างเอกสารภาษีใบใหม่ — อ่านตัวเลขจากใบกำกับที่ออกไปแล้ว
+  // ส่งไม่สำเร็จไม่กระทบการขายที่จบไปแล้ว จอแค่บอกว่าส่งไม่ได้
+  async function doSendReceipt(orderId: string, channel: "email" | "line") {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
+    setSendingReceipt(true);
+    try {
+      const res = await fetch("/api/pos/send-receipt", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          orderId, channel, cashierUserId: cashierId, pin,
+          to: receiptTo.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice({ type: "error", text: data.reason ?? data.error ?? "ส่งไม่สำเร็จ" });
+        return;
+      }
+      setReceiptTo("");
+      setNotice({ type: "ok", text: `ส่งใบเสร็จไปที่ ${data.to} แล้ว` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setSendingReceipt(false);
+    }
+  }
+
   // ---- คืนไม่มีใบเสร็จ (8.2) -----------------------------------------
   // ใช้ตะกร้าปัจจุบันเป็นรายการของที่ลูกค้าเอามาคืน — พนักงานยิงของที่ถืออยู่ตามปกติ
   // ไม่ต้องมีจอกรอกแยก · ราคาที่คืนใช้ราคาป้ายวันนี้ ซึ่ง server บังคับเป็นเพดานอีกชั้น
@@ -982,6 +1014,23 @@ export default function PosPage() {
     setPointsToRedeem(next === 0 ? "" : String(next));
   }
 
+  /**
+   * จอแสดงผลฝั่งลูกค้า (8.6) — ส่งสถานะตะกร้าไปหน้าต่างที่สอง
+   *
+   * BroadcastChannel ไม่ใช่ WebSocket โดยตั้งใจ: จอที่สองคือหน้าต่างของเบราว์เซอร์
+   * ตัวเดียวกันบนเครื่องเดียวกัน (ต่อ HDMI) ข้อความจึงไม่ต้องวิ่งผ่านเซิร์ฟเวอร์เลย
+   * — ยอดบนจอลูกค้าไม่มีทางค้างเพราะเน็ตร้านหลุด ซึ่งเป็นตอนที่ค้างแล้วแย่ที่สุด
+   *
+   * เปิด/ปิดจอลูกค้าไม่ต้องตั้งค่าอะไร: ถ้าไม่มีใครฟัง postMessage ก็ไม่มีผลอะไร
+   */
+  const displayChannel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("bms-pos-display");
+    displayChannel.current = ch;
+    return () => { ch.close(); displayChannel.current = null; };
+  }, []);
+
   // บิลพักโหลดตอนเข้าแท็บขาย · รายการเงินลิ้นชักโหลดตอนเข้าแท็บกะ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
   // ตลอดกะคือ request หลายพันครั้งต่อวันต่อเครื่องเพื่อข้อมูลที่เปลี่ยนวันละไม่กี่ครั้ง
@@ -1036,6 +1085,30 @@ export default function PosPage() {
     () => Math.round((netTotal + roundingDelta) * 100) / 100,
     [netTotal, roundingDelta]
   );
+  useEffect(() => {
+    const ch = displayChannel.current;
+    if (!ch) return;
+    ch.postMessage({
+      lines: cart.map((l) => ({
+        name: l.receiptName,
+        size: l.size && l.size !== "-" ? l.size : null,
+        qty: l.packQty,
+        unitName: l.unitName,
+        amount: (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty,
+      })),
+      itemCount,
+      total,
+      discountTotal,
+      amountDue,
+      memberName: member?.name ?? null,
+      pointsEarned: null,
+      // บิลที่ปิดแล้วค้างบนจอให้ลูกค้านับเงินทอนตาม จนกว่าจะเริ่มยิงบิลถัดไป
+      finished: cart.length === 0 && justSold
+        ? { total: justSold.total, tendered: null, change: justSold.change }
+        : null,
+    });
+  }, [cart, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
   const cashChangePreview = (() => {
@@ -2576,6 +2649,15 @@ export default function PosPage() {
                   เปิดลิ้นชัก → ไปที่แท็บกะ
                 </button>
               )}
+              {/* จอลูกค้า (8.6) — เปิดเป็นหน้าต่างใหม่แล้วลากไปจอที่สอง
+                  ใช้ BroadcastChannel จึงต้องเป็นเบราว์เซอร์เดียวกัน ไม่ใช่เครื่องอื่น */}
+              <button
+                onClick={() => window.open("/pos/display", "bms-pos-display", "width=1024,height=768")}
+                style={{ padding: "8px 14px", fontSize: 13 }}
+                title="เปิดหน้าต่างสำหรับจอที่หันไปทางลูกค้า"
+              >
+                เปิดจอลูกค้า
+              </button>
               <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 14px", fontSize: 13 }}>
                 โหลดบิลล่าสุดจากเซิร์ฟเวอร์
               </button>
@@ -4160,6 +4242,35 @@ export default function PosPage() {
               <button onClick={() => void openCashDrawer()} style={{ padding: "10px 14px" }} title="เปิดลิ้นชักเงินสด">
                 ลิ้นชัก
               </button>
+            )}
+            {/* ส่งสำเนาให้ลูกค้า (8.6) — ไม่ใช่เอกสารภาษีใบใหม่ อ่านเลขจากใบที่ออกแล้ว
+                ช่องกรอกชนะข้อมูลในระบบ เพราะพนักงานถามอีเมลปากเปล่าเป็นเรื่องปกติ
+                และบิลอาจไม่ผูกลูกค้าเลย */}
+            {receipt?.orderId && (
+              <>
+                <input
+                  value={receiptTo}
+                  onChange={(e) => setReceiptTo(e.target.value)}
+                  placeholder="อีเมลลูกค้า (เว้นว่าง = ใช้ของในระบบ)"
+                  style={{ flex: 1, minWidth: 150, padding: "10px 12px", fontSize: 13 }}
+                />
+                <button
+                  disabled={sendingReceipt}
+                  onClick={() => void doSendReceipt(receipt.orderId!, "email")}
+                  style={{ padding: "10px 14px" }}
+                  title="ส่งใบเสร็จทางอีเมล"
+                >
+                  ส่งอีเมล
+                </button>
+                <button
+                  disabled={sendingReceipt}
+                  onClick={() => void doSendReceipt(receipt.orderId!, "line")}
+                  style={{ padding: "10px 14px" }}
+                  title="ส่งใบเสร็จทาง LINE (ลูกค้าต้องผูก LINE กับร้านไว้)"
+                >
+                  ส่ง LINE
+                </button>
+              </>
             )}
             <button onClick={() => setReceiptModalOpen(false)} style={{ padding: "10px 16px" }}>
               ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>

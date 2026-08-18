@@ -304,6 +304,43 @@ Voided bills leave `salesTotal` and `billCount` and appear on their own line of 
 They already leave revenue reporting for free, because a full return moves the order to `RETURNED`
 and revenue counts only `PAID`/`PACKING`/`SHIPPED`/`COMPLETED`.
 
+## Customer display and receipt delivery (8.6)
+
+### The customer-facing screen
+
+`/pos/display` is a read-only page for a second monitor turned toward the customer: the lines as they
+are scanned, the running total, the discount, and after payment the change due in the largest type on
+the screen. It has no buttons and talks to no API, because customers reach out and touch it.
+
+It syncs over **`BroadcastChannel`, not a WebSocket**. The second screen is another window of the same
+browser on the same machine, hanging off the HDMI port, so messages never leave the device. That
+matters for one specific failure: if the shop's internet drops, a WebSocket-driven display freezes
+showing a stale total — the worst possible moment for the customer-facing number to be wrong. Nothing
+needs configuring; if no display window is open, the broadcast simply has no listener.
+
+Only the last eight lines are shown. A customer is watching what was just scanned, and auto-scrolling
+a screen nobody can touch reads worse than truncating.
+
+### Sending a receipt
+
+Receipts previously left the shop on paper only, despite the mailer and LINE integration already
+existing. `sendReceipt()` composes a copy and sends it by email or LINE.
+
+**The figures come from the issued tax document, never from a fresh calculation.** The abbreviated
+invoice stores its own base, VAT and exempt amounts (`7.88`); recomputing `total × 7/107` breaks the
+moment a bill mixes VAT-exempt goods, and the customer would then hold evidence contradicting what the
+shop filed. No document, no VAT block.
+
+**A failed send never damages the sale.** The sale completed when the money was taken; a bounced email
+is a failed copy, so the caller gets a result to display rather than an exception.
+
+An address typed at the counter beats whatever is on the customer record — staff ask for an email out
+loud all the time, and the bill may have no customer attached at all. That address is **not** written
+back to the customer profile: typing an email to get one receipt is not consent to be stored.
+
+LINE identities live in `bms_customer_identities` (`7.74`), not on `bms_customers`. Reading the wrong
+table would tell customers who *have* linked LINE that they have not, so there is a test pinning it.
+
 ## Sales commission (8.5)
 
 The system already knew who sold each bill (`bms_orders.cashier_user_id` since `7.87`); what was
