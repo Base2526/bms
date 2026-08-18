@@ -7,17 +7,18 @@
 //
 // การแก้ policy รายตัวยังอยู่ที่ /admin/pharmacy-protocols (มี editor ครบอยู่แล้ว)
 // หน้านี้ตั้งใจไม่ทำซ้ำ — ทำหน้าที่เป็นตัวนับถอยหลังกับรายการงานที่เหลือ
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Empty, Form, InputNumber, Progress, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Empty, Form, InputNumber, Popconfirm, Progress, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const Q_READINESS = gql`
   query PosReadiness {
     bmsPosOperationalReadiness {
       ready blockers warnings activeLocations activeDevices pairedDevices cashiersWithPin cashiersReady
-      sellableProducts stockedVariants openShifts pendingRefundCount pendingRefundAmount
+      sellableProducts unknownVatProducts stockedVariants openShifts pendingRefundCount pendingRefundAmount
     }
     bmsPharmacyPolicyReadiness {
       pharmacyArchetype
@@ -66,12 +67,78 @@ const M_TAX_SETTINGS = gql`
   }
 `;
 
+const M_SET_VAT_UNKNOWN = gql`
+  mutation SetVatCategoryForUnknown($vatCategory: String!) {
+    bmsSetVatCategoryForUnknown(vatCategory: $vatCategory)
+  }
+`;
+
 const POLICY_LABEL: Record<string, { text: string; color: string }> = {
   MISSING: { text: "ยังไม่เริ่ม", color: "red" },
   DRAFT: { text: "ร่าง", color: "orange" },
   PENDING_REVIEW: { text: "รอเภสัชกรตรวจ", color: "blue" },
   RETIRED: { text: "เลิกใช้", color: "default" },
 };
+
+/**
+ * ตั้งประเภท VAT ให้สินค้าที่ยังไม่ระบุ
+ *
+ * โผล่เฉพาะตอนมีของค้างจริง และเฉพาะร้านที่จด VAT (readiness นับ blocker นี้ให้
+ * เฉพาะร้านที่จด) · ปุ่มนี้แตะเฉพาะสินค้าที่ยังเป็น "ยังไม่ระบุ" — ร้านที่แยก V/N
+ * ไว้ถูกต้องแล้วต้องไม่พังทั้งร้านเพราะมีคนกดปุ่มนี้ครั้งเดียว
+ */
+function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => void }) {
+  const { t } = useI18n();
+  const [category, setCategory] = useState<"V" | "N">("V");
+  const [apply, { loading }] = useMutation(M_SET_VAT_UNKNOWN);
+
+  return (
+    <Card title={t("admin_products.vat_bulk_title")}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Alert
+          type="warning"
+          showIcon
+          message={`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${count} รายการ`}
+          description={t("admin_products.vat_bulk_hint")}
+        />
+        <Space wrap>
+          <Select
+            value={category}
+            onChange={(v) => setCategory(v)}
+            style={{ width: 200 }}
+            options={[
+              { value: "V", label: t("admin_products.vat_v") },
+              { value: "N", label: t("admin_products.vat_n") },
+            ]}
+          />
+          <Popconfirm
+            title={t("admin_products.vat_bulk_title")}
+            description={`ตั้งให้สินค้า ${count} รายการเป็น ${category === "V" ? t("admin_products.vat_v") : t("admin_products.vat_n")}`}
+            onConfirm={async () => {
+              try {
+                const res = await apply({ variables: { vatCategory: category } });
+                message.success(
+                  t("admin_products.vat_bulk_done").replace(
+                    "{count}",
+                    String(res.data?.bmsSetVatCategoryForUnknown ?? 0)
+                  )
+                );
+                onDone();
+              } catch (e: any) {
+                message.error(e?.message || "ตั้งค่าไม่สำเร็จ");
+              }
+            }}
+          >
+            <Button type="primary" loading={loading}>{t("admin_products.vat_bulk_apply")}</Button>
+          </Popconfirm>
+          <Typography.Text type="secondary">
+            แก้รายตัวได้ที่ <a href="/admin/products">สินค้า</a>
+          </Typography.Text>
+        </Space>
+      </Space>
+    </Card>
+  );
+}
 
 /**
  * ค่าตั้งภาษี — เดิมอยู่ในตาราง bms_store_profile แต่ไม่มีที่แก้ในแอปเลย
@@ -238,6 +305,16 @@ export default function PosReadinessPage() {
 
       {can("tax.setting.manage") && <TaxSettingsCard onSaved={() => void refetch()} />}
 
+      {/* blocker "ยังไม่ระบุประเภท VAT" เดิมแก้ไม่ได้เลย — คอลัมน์ vat_category มีมา
+          ตั้งแต่ 7.88 แต่ไม่มีที่ไหนเขียน · ตอนนี้แก้รายตัวได้ที่หน้าสินค้า และตั้ง
+          ทีเดียวทั้งร้านได้จากที่นี่ เพราะร้านที่มีสินค้าหลายร้อยตัวไล่กดไม่ไหว */}
+      {can("tax.setting.manage") && (operational?.unknownVatProducts ?? 0) > 0 && (
+        <VatCategoryFixCard
+          count={operational!.unknownVatProducts}
+          onDone={() => void refetch()}
+        />
+      )}
+
       {readiness && !readiness.pharmacyArchetype && (
         <Alert
           type="info"
@@ -272,6 +349,7 @@ export default function PosReadinessPage() {
         </Card>
       )}
 
+      {readiness?.pharmacyArchetype && (
       <Card title="สินค้าที่ยังรอเภสัชกร" loading={loading}>
         {pending.length === 0 ? (
           <Empty description="ไม่มีรายการค้าง" />
@@ -300,6 +378,7 @@ export default function PosReadinessPage() {
           แก้ไขและอนุมัติได้ที่ <a href="/admin/pharmacy-protocols">นโยบายการขายรายสินค้า</a>
         </Typography.Paragraph>
       </Card>
+      )}
 
       <Card title="lot ที่หมดอายุแล้ว / จะหมดใน 90 วัน" loading={loading}>
         {expiring.length === 0 ? (

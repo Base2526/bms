@@ -627,6 +627,7 @@ export const typeDefs = /* GraphQL */ `
     cashiersWithPin: Int!
     cashiersReady: Int!
     sellableProducts: Int!
+    unknownVatProducts: Int!
     stockedVariants: Int!
     openShifts: Int!
     pendingRefundCount: Int!
@@ -1677,6 +1678,9 @@ export const typeDefs = /* GraphQL */ `
     weightGrams: Int   # น้ำหนักต่อชิ้น (กรัม) — ใช้คิดค่าส่งตามน้ำหนัก (7.47)
     category: String
     brand: String
+    # ประเภท VAT (7.88) — 'V' คิด VAT · 'N' ยกเว้น VAT · 'UNKNOWN' ยังไม่ระบุ
+    # ร้านที่จด VAT ต้องไม่มี UNKNOWN เหลือ ไม่งั้นติด blocker ที่ /admin/pos-readiness
+    vatCategory: String
     variants: [BmsVariant!]!
   }
 
@@ -1710,6 +1714,8 @@ export const typeDefs = /* GraphQL */ `
     weight_grams: Int
     category: String
     brand: String
+    # ไม่ส่งมา = คงค่าเดิม (ไม่รีเซ็ตเป็น UNKNOWN)
+    vat_category: String
   }
 
   # ===== BMS product bulk import (CSV/XLSX) =====
@@ -3410,6 +3416,9 @@ export const typeDefs = /* GraphQL */ `
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
     bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
+    # ตั้งประเภท VAT ให้สินค้าที่ยังเป็น UNKNOWN ทั้งหมด — คืนจำนวนแถวที่เปลี่ยน
+    # แตะเฉพาะ UNKNOWN: สินค้าที่ตั้งค่าไว้แล้วต้องไม่ถูกเขียนทับด้วยการกดครั้งเดียว
+    bmsSetVatCategoryForUnknown(vatCategory: String!, activeOnly: Boolean): Int!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
     bmsDeleteProductPack(id: ID!): Boolean!

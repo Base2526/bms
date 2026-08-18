@@ -9,6 +9,7 @@ import { beginTenantTx } from "./tenant";
 import { resolveDefaultLocationIdInTx } from "./locations";
 import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
+import type { VatCategory } from "./vat";
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -24,6 +25,8 @@ export type ProductRowFull = {
   weight_grams: number | null;
   category: string | null;
   brand: string | null;
+  /** 7.88 · เขียนได้ตั้งแต่มีช่องในฟอร์มสินค้า */
+  vat_category?: VatCategory;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -167,7 +170,7 @@ export async function listProducts(
     : `0 AS search_rank`;
   const itemsRes = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
-            image_url, description, cost_price, weight_grams, category, brand, created_at, updated_at,
+            image_url, description, cost_price, weight_grams, category, brand, vat_category, created_at, updated_at,
             ${rankSql}
        FROM bms_products WHERE ${where}
       ORDER BY ${
@@ -541,6 +544,17 @@ export type UpsertProductInput = {
   category?: string | null;
   brand?: string | null;
   image_urls?: string[] | null;
+  /**
+   * ประเภท VAT (7.88) — 'V' = คิด VAT · 'N' = ยกเว้น VAT · 'UNKNOWN' = ยังไม่ระบุ
+   *
+   * คอลัมน์นี้มีมาตั้งแต่ 7.88 และถูกอ่านตอนออกใบกำกับ/ยื่น e-Tax แต่ไม่มีที่ไหน
+   * เขียนได้เลย ร้านที่จด VAT จึงติด blocker "ยังไม่ระบุประเภท VAT" ที่
+   * /admin/pos-readiness ตลอดไปโดยไม่มีปุ่มให้กดแก้
+   *
+   * ไม่ส่งมา = ไม่แตะค่าเดิม (สำคัญ: bulk import ที่ไม่มีคอลัมน์นี้ต้องไม่รีเซ็ต
+   * สินค้าที่ตั้งค่าไว้แล้วกลับเป็น UNKNOWN)
+   */
+  vat_category?: VatCategory | null;
 };
 
 function normalizeImageUrls(input: UpsertProductInput): string[] {
@@ -916,6 +930,8 @@ export type NormalizedProductFields = {
   brand: string | null;
   costPrice: number | null;
   weightGrams: number | null;
+  /** null = ผู้เรียกไม่ได้ส่งมา → คงค่าเดิมในฐาน (ไม่ใช่ตั้งเป็น UNKNOWN) */
+  vatCategory: VatCategory | null;
 };
 
 /**
@@ -951,7 +967,13 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
     if (weightGrams > 2_000_000) throw new Error("น้ำหนักเกินความเป็นจริง (สูงสุด 2,000 กก.)");
   }
 
-  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams };
+  // ค่าที่ไม่รู้จักถือว่า "ไม่ได้ส่งมา" ไม่ใช่ throw — bulk import ที่มีคอลัมน์ว่าง
+  // หรือพิมพ์ผิดหนึ่งแถวต้องไม่ทำให้ทั้งไฟล์ล้ม แต่ก็ต้องไม่เขียนค่าเพี้ยนลงฐาน
+  const rawVat = typeof input.vat_category === "string" ? input.vat_category.trim().toUpperCase() : "";
+  const vatCategory: VatCategory | null =
+    rawVat === "V" || rawVat === "N" || rawVat === "UNKNOWN" ? (rawVat as VatCategory) : null;
+
+  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory };
 }
 
 export async function upsertProduct(
@@ -960,7 +982,7 @@ export async function upsertProduct(
   editorId?: string | number | null,
   revisionId?: string | null
 ): Promise<ProductRowFull> {
-  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams } =
+  const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory } =
     validateProductFields(input);
   const imageUrls = normalizeImageUrls(input);
   const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
@@ -979,16 +1001,21 @@ export async function upsertProduct(
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products
-         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand, weight_grams)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'UNKNOWN'))
        ON CONFLICT (tenant_id, sku) DO UPDATE
          SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
              active = EXCLUDED.active, barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
              description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
              category = EXCLUDED.category, brand = EXCLUDED.brand,
-             weight_grams = EXCLUDED.weight_grams, updated_at = now()
-       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand, weight_grams`,
-      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand, weightGrams]
+             weight_grams = EXCLUDED.weight_grams,
+             -- $14 IS NULL = ผู้เรียกไม่ได้ส่งมา → คงค่าเดิม · ไม่ใช้ EXCLUDED เพราะ
+             -- INSERT ข้างบน COALESCE เป็น 'UNKNOWN' ไปแล้ว การอ้าง EXCLUDED จะทับ
+             -- ค่าที่ตั้งไว้ของสินค้าเดิมทุกครั้งที่มีใครกดบันทึกจากฟอร์มที่ไม่มีช่องนี้
+             vat_category = COALESCE($14, bms_products.vat_category),
+             updated_at = now()
+       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category`,
+      [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand, weightGrams, vatCategory]
     );
 
     await client.query(
@@ -1189,6 +1216,45 @@ export async function adjustStock(
       }
     }
     return row;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+
+/**
+ * ตั้งประเภท VAT ให้สินค้าที่ยังเป็น 'UNKNOWN' ทั้งหมดในคราวเดียว (7.88 + blocker ที่ pos-readiness)
+ *
+ * ร้านที่มีสินค้าหลายร้อยตัวไล่กดทีละตัวไม่ได้ในทางปฏิบัติ — และ blocker ที่แก้ไม่ได้
+ * ก็เท่ากับเปิดร้านไม่ได้ · จงใจแตะเฉพาะแถวที่ยัง UNKNOWN: สินค้าที่มีคนตั้งค่าไว้แล้ว
+ * ต้องไม่ถูกปุ่มนี้เขียนทับ ไม่งั้นร้านที่แยก V/N ไว้ถูกต้องแล้วจะพังทั้งร้านด้วยการกดครั้งเดียว
+ *
+ * ไม่แตะ bms_order_items — บิลที่ออกไปแล้วเก็บ snapshot ของตัวเองไว้ และใบกำกับที่ยื่นแล้ว
+ * ต้องไม่เปลี่ยนย้อนหลัง
+ */
+export async function setVatCategoryForUnknown(
+  tenantId: string,
+  vatCategory: Exclude<VatCategory, "UNKNOWN">,
+  opts?: { activeOnly?: boolean; editorId?: string | number | null }
+): Promise<number> {
+  if (vatCategory !== "V" && vatCategory !== "N") throw new Error("ประเภท VAT ต้องเป็น V หรือ N");
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: opts?.editorId });
+    const res = await client.query(
+      `UPDATE bms_products
+          SET vat_category = $2, updated_at = now()
+        WHERE tenant_id = $1
+          AND vat_category = 'UNKNOWN'
+          AND ($3::boolean IS NOT TRUE OR active)`,
+      [tenantId, vatCategory, opts?.activeOnly ?? true]
+    );
+    await client.query("COMMIT");
+    return res.rowCount ?? 0;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
