@@ -33,6 +33,7 @@ import {
   reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
+import { unitPriceForQty, type PriceTier } from "./pricing";
 import {
   markRestockSubscriptionsOrdered,
   markRestockSubscriptionsPurchasedForOrder,
@@ -319,6 +320,26 @@ export async function createOrder(
     const lines: CreatedLine[] = [];
     let total = 0;
 
+    // ---- ราคาตามจำนวน (8.1) -------------------------------------
+    // ขั้นราคาดู "จำนวนรวมของ SKU นั้นทั้งบิล" จึงต้องรู้ยอดรวมก่อนตั้งราคาบรรทัดแรก
+    // (ลูกค้าหยิบ 60ml 5 ขวด + 150ml 5 ขวด = ซื้อสินค้านั้น 10 ชิ้น ต้องได้ขั้น 10)
+    const qtyBySku = new Map<string, number>();
+    for (const it of items) qtyBySku.set(it.sku, (qtyBySku.get(it.sku) ?? 0) + Math.max(0, it.qty));
+
+    const tierRows = await client.query<{ product_sku: string; min_qty: number; unit_price: string }>(
+      `SELECT product_sku, min_qty, unit_price
+         FROM bms_product_price_tiers
+        WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
+        ORDER BY product_sku, min_qty`,
+      [tenantId, Array.from(qtyBySku.keys())]
+    );
+    const tiersBySku = new Map<string, PriceTier[]>();
+    for (const row of tierRows.rows) {
+      const list = tiersBySku.get(row.product_sku) ?? [];
+      list.push({ minQty: Number(row.min_qty), unitPrice: Number(row.unit_price) });
+      tiersBySku.set(row.product_sku, list);
+    }
+
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
     const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
 
@@ -364,7 +385,13 @@ export async function createOrder(
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
 
-      const unitPrice = Number(prod.rows[0].price);
+      const listPrice = Number(prod.rows[0].price);
+      // ราคาส่ง (8.1) — ไม่มีขั้นไหนเข้าเงื่อนไข = ได้ราคาป้ายตามเดิม
+      // บรรทัดที่ขายเป็นหน่วยขาย (pack) ไม่ถูกแตะ: ราคา pack บอกตรง ๆ ว่ากล่องนี้
+      // ราคาเท่านี้ ให้สองกลไกแย่งกันตัดสินราคาจะอธิบายบิลไม่ได้
+      const unitPrice = it.packUnitPrice != null
+        ? listPrice
+        : unitPriceForQty(listPrice, tiersBySku.get(it.sku) ?? [], qtyBySku.get(it.sku) ?? it.qty);
       // ราคาต่อหน่วยขาย (กล่อง) ถูกกว่าราคาต่อหน่วยฐาน × จำนวน เสมอ → ยอดบิลต้องคิดจาก
       // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม
       // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)

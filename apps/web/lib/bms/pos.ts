@@ -24,6 +24,7 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
+import type { PriceTier } from "./pricing";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import {
   cashRoundingDelta,
@@ -293,6 +294,14 @@ export type PosScanHit = {
   packPrice: number;
   /** ราคาต่อหน่วยฐานตาม bms_products (ไว้เทียบให้เห็นส่วนลดยกกล่อง) */
   basePrice: number;
+  /**
+   * ขั้นราคาส่งของสินค้านี้ (8.1) — ส่งให้จอเพื่อ "พรีวิว" ยอดเท่านั้น
+   *
+   * จอต้องคิดด้วยกฎเดียวกับ createOrder เป๊ะ ๆ (ทั้งคู่เรียก unitPriceForQty ตัวเดียวกัน)
+   * ไม่งั้นยอดที่จอโชว์กับยอดที่ server คิดต่างกัน → PAYMENT_MISMATCH · server ยัง
+   * ตัดสินราคาเองตอน commit เสมอ ค่านี้ไม่ใช่ราคาที่เชื่อจาก client
+   */
+  priceTiers: PriceTier[];
 };
 
 /**
@@ -365,6 +374,15 @@ export async function resolvePosScan(
   const row = res.rows[0];
   if (!row || !row.size) return null;
 
+  const tierRes = await query<{ min_qty: number; unit_price: string }>(
+    `SELECT min_qty, unit_price FROM bms_product_price_tiers
+      WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
+    [tenantId, row.sku]
+  );
+  const priceTiers: PriceTier[] = tierRes.rows.map((t) => ({
+    minQty: Number(t.min_qty), unitPrice: Number(t.unit_price),
+  }));
+
   const basePrice = Number(row.base_price);
   const baseQty = row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
@@ -380,6 +398,7 @@ export async function resolvePosScan(
     baseQty,
     packPrice,
     basePrice,
+    priceTiers,
   };
 }
 

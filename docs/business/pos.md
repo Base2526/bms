@@ -198,6 +198,43 @@ Manager/Sales/Cashier by `7.96` (Administrator is super). `loyalty.adjust` is de
 a manual adjustment creates value for the customer directly, so it demands a mandatory reason and
 writes to `bms_audit_log`.
 
+## Wholesale steps (8.1)
+
+The system had two pricing mechanisms and neither answered *"buy ten, get the wholesale price"*.
+`bms_product_packs` (`7.86`) prices a **container** — a box of ten strips at ฿230 — which is about
+packaging, not quantity; a customer buying ten loose strips got nothing. Membership tiers (`7.96`)
+take a percentage off the **whole bill** and are not tied to any product.
+
+`bms_product_price_tiers` fills the gap: a per-unit price that changes with how many are bought.
+The step with the highest `min_qty` not exceeding the quantity wins, and it applies to every unit,
+not only the ones past the threshold.
+
+Two decisions worth stating:
+
+**Quantity is counted per SKU across the whole bill, not per line.** A customer taking five 60ml and
+five 150ml has bought ten of that product, which is what a shop means by "buy ten". Counting per line
+would leave that customer at the three-unit price with no explanation anyone could give at the
+counter.
+
+**A line sold as a pack keeps the pack's price.** The pack row is the shop stating outright what the
+box costs; letting two mechanisms compete for the same line produces a bill nobody can explain. The
+pack's units still count toward the SKU's total, because the customer did buy them.
+
+Steps are not required to get cheaper as they climb, and nothing corrects them if they do not. A shop
+charging more for a full case because it needs special packing means it. The function's job is to do
+what was configured, predictably — not to infer intent and quietly pick the lowest price.
+
+`unitPriceForQty()` in [pricing.ts](../../apps/web/lib/bms/pricing.ts) is a pure function for the same
+reason `composeDiscounts()` is: the counter screen previews the price and `createOrder` commits it,
+and if the two disagree by one satang the register's payment rows no longer match the server total and
+the bill is thrown out as `PAYMENT_MISMATCH` in front of a customer. `resolvePosScan()` therefore
+returns the steps with the scan result, and both sides call the same function. The screen previews;
+the server still decides.
+
+Steps are edited on the product form and saved with the product. Sending the field replaces the whole
+set, omitting it leaves the existing steps alone — the same rule as `vat_category`, and for the same
+reason: a bulk import that does not know about the field must not wipe a shop's wholesale pricing.
+
 ## Parking a bill
 
 A customer forgets something or cannot find their card while a queue builds. `bms_pos_parked_sales`

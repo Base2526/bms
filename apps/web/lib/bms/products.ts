@@ -11,6 +11,7 @@ import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
 import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
+import type { PriceTier } from "./pricing";
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -556,6 +557,13 @@ export type UpsertProductInput = {
    * สินค้าที่ตั้งค่าไว้แล้วกลับเป็น UNKNOWN)
    */
   vat_category?: VatCategory | null;
+  /**
+   * ขั้นราคาส่ง (8.1) — ส่งมา = แทนที่ทั้งชุด · ไม่ส่ง = ไม่แตะของเดิม
+   *
+   * เหตุผลเดียวกับ vat_category: ตัวนำเข้าและฟอร์มเก่าที่ไม่รู้จักฟิลด์นี้ต้องไม่
+   * ล้างขั้นราคาที่ร้านตั้งไว้ทิ้งตอนกดบันทึก
+   */
+  price_tiers?: Array<{ minQty: number; unitPrice: number }> | null;
 };
 
 function normalizeImageUrls(input: UpsertProductInput): string[] {
@@ -1019,6 +1027,30 @@ export async function upsertProduct(
       [tenantId, sku, name, price, keywords, active, barcode, imageUrl, description, costPrice, category, brand, weightGrams, vatCategory]
     );
 
+    // ขั้นราคาส่ง (8.1) — แทนที่ทั้งชุดในทรานแซกชันเดียวกับสินค้า
+    // ลบแล้วใส่ใหม่ ไม่ใช่ diff ทีละแถว: ชุดเล็ก (ไม่กี่ขั้น) และการ diff เปิดช่องให้
+    // ขั้นที่ถูกลบบนจอยังค้างอยู่ในฐานโดยไม่มีใครเห็น
+    if (Array.isArray(input.price_tiers)) {
+      await client.query(
+        `DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`,
+        [tenantId, sku]
+      );
+      const seen = new Set<number>();
+      for (const tier of input.price_tiers) {
+        const minQty = Math.trunc(Number(tier?.minQty));
+        const unitPrice = Math.round(Number(tier?.unitPrice) * 100) / 100;
+        if (!Number.isInteger(minQty) || minQty < 2) continue;
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) continue;
+        if (seen.has(minQty)) continue;   // ขั้นซ้ำ = แถวหลังชนะไม่ได้ ต้องเลือกอันแรกให้นิ่ง
+        seen.add(minQty);
+        await client.query(
+          `INSERT INTO bms_product_price_tiers (tenant_id, product_sku, min_qty, unit_price)
+           VALUES ($1,$2,$3,$4)`,
+          [tenantId, sku, minQty, unitPrice]
+        );
+      }
+    }
+
     await client.query(
       `DELETE FROM bms_product_images WHERE tenant_id = $1 AND product_sku = $2`,
       [tenantId, sku]
@@ -1300,4 +1332,25 @@ export async function generateInStoreBarcode(tenantId: string): Promise<string> 
     if (!taken.has(candidate)) return candidate;
   }
   throw new Error("หาเลขบาร์โค้ดว่างไม่ได้ — ตรวจบาร์โค้ดช่วง 20xxxxxxxxxxx ในร้านนี้");
+}
+
+
+/** ขั้นราคาส่งของสินค้าหลายตัวพร้อมกัน — หน้าสินค้าโหลดทีเดียวทั้งหน้า */
+export async function listPriceTiersForSkus(
+  tenantId: string, skus: string[]
+): Promise<Map<string, PriceTier[]>> {
+  const out = new Map<string, PriceTier[]>();
+  if (skus.length === 0) return out;
+  const res = await query<{ product_sku: string; min_qty: number; unit_price: string }>(
+    `SELECT product_sku, min_qty, unit_price FROM bms_product_price_tiers
+      WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
+      ORDER BY product_sku, min_qty`,
+    [tenantId, skus]
+  );
+  for (const row of res.rows) {
+    const list = out.get(row.product_sku) ?? [];
+    list.push({ minQty: Number(row.min_qty), unitPrice: Number(row.unit_price) });
+    out.set(row.product_sku, list);
+  }
+  return out;
 }

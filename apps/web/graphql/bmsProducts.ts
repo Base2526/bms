@@ -16,6 +16,7 @@ import {
   setReorderPoint,
   listLowStock,
   generateInStoreBarcode,
+  listPriceTiersForSkus,
 } from "@/lib/bms/products";
 import { runImport } from "@/lib/bms/productImport";
 import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
@@ -261,6 +262,18 @@ export const bmsProductsResolvers = {
 
   BmsProduct: {
     price: (p: any) => Number(p.price),
+    /**
+     * ขั้นราคาส่ง (8.1)
+     *
+     * โหลดต่อสินค้าโดยตั้งใจ ไม่ทำ dataloader: หน้าสินค้าโหลดทีละ 20-50 แถว และ
+     * ตารางนี้เล็กมาก (ไม่กี่ขั้นต่อสินค้า) · ถ้าวันหนึ่งหน้ารายการโหลดเป็นพัน
+     * ค่อยเปลี่ยนมาใช้ listPriceTiersForSkus ที่ทำไว้แล้ว
+     */
+    async priceTiers(parent: { tenant_id?: string; sku: string }) {
+      if (!parent.tenant_id) return [];
+      const map = await listPriceTiersForSkus(parent.tenant_id, [parent.sku]);
+      return map.get(parent.sku) ?? [];
+    },
     keywords: (p: any) => p.keywords ?? [],
     imageUrl: (p: any) => p.image_url ?? null,
     async images(parent: { tenant_id?: string; sku: string; image_url?: string | null }) {

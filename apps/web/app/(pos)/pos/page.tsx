@@ -11,6 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
+import { unitPriceForQty } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
@@ -115,6 +116,8 @@ type ScanHit = {
   baseQty: number;
   packPrice: number;
   basePrice: number;
+  /** ขั้นราคาส่ง (8.1) — จอคิดด้วย unitPriceForQty ตัวเดียวกับ createOrder */
+  priceTiers?: Array<{ minQty: number; unitPrice: number }>;
   available: number;
 };
 
@@ -568,9 +571,32 @@ export default function PosPage() {
   // ขายได้ก็ต่อเมื่อครบทั้ง 4: เชื่อมต่อได้ / มีคนตั้ง PIN / เลือกคน+ใส่ PIN / เปิดกะแล้ว
   const canSell = Boolean(session?.shift && cashierId && pin && anyCashierHasPin);
 
+  /**
+   * ราคาส่งตามจำนวน (8.1)
+   *
+   * ขั้นราคาดูจำนวนรวมของ SKU นั้นทั้งตะกร้า ไม่ใช่ต่อบรรทัด — ต้องตรงกับที่
+   * createOrder คิด ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
+   * แล้วบิลถูกยกเลิกทิ้งทั้งใบ · ทั้งสองฝั่งเรียก unitPriceForQty ตัวเดียวกัน
+   *
+   * บรรทัดที่ขายเป็นหน่วยขาย (pack, baseQty > 1) ไม่ถูกแตะ เหมือนฝั่ง server
+   */
+  const tierPriceByKey = useMemo(() => {
+    const qtyBySku = new Map<string, number>();
+    for (const line of cart) {
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty * line.baseQty);
+    }
+    const out = new Map<string, number>();
+    for (const line of cart) {
+      if (line.baseQty > 1 || !line.priceTiers?.length) continue;
+      const unit = unitPriceForQty(line.basePrice, line.priceTiers, qtyBySku.get(line.sku) ?? 0);
+      if (unit !== line.packPrice) out.set(line.key, unit);
+    }
+    return out;
+  }, [cart]);
+
   const total = useMemo(
-    () => cart.reduce((sum, l) => sum + l.packPrice * l.packQty, 0),
-    [cart]
+    () => cart.reduce((sum, l) => sum + (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty, 0),
+    [cart, tierPriceByKey]
   );
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
@@ -1070,6 +1096,7 @@ export default function PosPage() {
           baseQty: Number(line.baseQty ?? 1),
           packPrice: Number(line.packPrice ?? 0),
           basePrice: Number(line.basePrice ?? 0),
+          priceTiers: line.priceTiers ?? [],
           available: 0,
           packQty: Number(line.packQty ?? 1),
           key: `last-${idx}-${String(line.sku ?? "")}`,

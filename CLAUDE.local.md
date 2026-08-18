@@ -207,6 +207,15 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · ช่องรั่วที่ปิดไปด้วย: `recordCashMovement` เคยคืน `drawerAfter` = ยอดที่ควรมีตรง ๆ (นำเงินเข้า
     ฿1 แล้วอ่านคำตอบได้) · และปุ่ม "เปิดลิ้นชัก" เปล่า ๆ ที่แท็บตั้งค่าของหน้า POS
   · เทสชุดที่ 3 เพิ่มเป็น 15 เทส — รวม pure 27 · DB 71 ผ่านทั้งหมด
+- **`8.1__bms_product_price_tiers.sql` (ราคาส่งตามจำนวน) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่ (ใช้ `product.edit`)
+  · **จำนวนนับรวมทั้งบิลต่อ SKU ไม่ใช่ต่อบรรทัด** — 60ml 5 ขวด + 150ml 5 ขวด = 10 ชิ้น
+  · **บรรทัดที่ขายเป็น pack ไม่ถูกแตะ** ราคา pack ชนะเสมอ (แต่จำนวนยังนับรวม)
+  · **`unitPriceForQty` ต้องเป็นตัวเดียวกันทั้งจอและ server** — `resolvePosScan` ส่งขั้นราคาไปให้จอ
+    ถ้าสองฝั่งคิดต่างกันแม้สตางค์เดียว = `PAYMENT_MISMATCH` บิลถูกทิ้งหน้าลูกค้า
+  · `price_tiers` ใน `upsertProduct`: ส่ง = แทนที่ทั้งชุด · ไม่ส่ง = ไม่แตะ (กฎเดียวกับ `vat_category`)
+  · เทส 2 ชุดใหม่: `scripts/pricing-contract.test.mts` (8 เทส ไม่ต้องมี DB) +
+    `scripts/price-tiers-db-contract.test.mts` (8 เทส) — รวม pure 35 · DB 79 ผ่านทั้งหมด
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

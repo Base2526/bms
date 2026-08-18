@@ -66,6 +66,7 @@ type Product = {
   category: string | null;
   brand: string | null;
   vatCategory: string | null;
+  priceTiers: Array<{ minQty: number; unitPrice: number }>;
   variants: Variant[];
 };
 type Movement = {
@@ -99,6 +100,7 @@ const Q_PRODUCTS = gql`
         category
         brand
         vatCategory
+        priceTiers { minQty unitPrice }
         variants {
           size
           current_stock
@@ -271,6 +273,8 @@ function ProductsManagement() {
   // เก็บค่าที่พิมพ์แยกไว้ใน state เพื่อคำนวณคำเตือนสด ๆ · อ่านจาก form ตรง ๆ ไม่ได้
   // เพราะ Form.Item ไม่ re-render ตัว label/help ให้เมื่อค่าเปลี่ยน
   const [barcodeDraft, setBarcodeDraft] = useState("");
+  // ขั้นราคาส่ง (8.1) — เก็บนอก Form เพราะเป็นรายการที่เพิ่ม/ลบแถวได้
+  const [priceTiers, setPriceTiers] = useState<Array<{ minQty: string; unitPrice: string }>>([]);
   const [genBarcode, { loading: generatingBarcode }] = useMutation(M_GENERATE_BARCODE);
 
   const generateBarcode = async () => {
@@ -315,6 +319,7 @@ function ProductsManagement() {
     form.resetFields();
     form.setFieldsValue({ active: true, keywords: [], vatCategory: "UNKNOWN" });
     setBarcodeDraft("");
+    setPriceTiers([]);
     setModalOpen(true);
   };
   const openEdit = (p: Product) => {
@@ -335,6 +340,7 @@ function ProductsManagement() {
       vatCategory: p.vatCategory || "UNKNOWN",
     });
     setBarcodeDraft(p.barcode || "");
+    setPriceTiers((p.priceTiers ?? []).map((t) => ({ minQty: String(t.minQty), unitPrice: String(t.unitPrice) })));
     setModalOpen(true);
   };
 
@@ -372,6 +378,10 @@ function ProductsManagement() {
           category: v.category?.trim() || null,
           brand: v.brand?.trim() || null,
           vat_category: v.vatCategory || null,
+          // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
+          price_tiers: priceTiers
+            .map((t) => ({ minQty: Math.trunc(Number(t.minQty)), unitPrice: Number(t.unitPrice) }))
+            .filter((t) => Number.isInteger(t.minQty) && t.minQty >= 2 && Number.isFinite(t.unitPrice) && t.unitPrice >= 0),
         },
       },
     });
@@ -752,6 +762,47 @@ function ProductsManagement() {
               />
             </Form.Item>
           </Space.Compact>
+
+          {/* ขั้นราคาส่ง (8.1) — ซื้อครบกี่ชิ้นได้ราคาเท่าไร
+              จำนวนนับรวมทั้งบิลต่อสินค้า ไม่ใช่ต่อบรรทัด (60ml 5 + 150ml 5 = 10 ชิ้น)
+              ยุบไว้ตอนไม่มีขั้น เพราะสินค้าส่วนใหญ่ขายราคาเดียว */}
+          <Form.Item label={t("admin_products.label_price_tiers")} tooltip={t("admin_products.price_tiers_tooltip")}>
+            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+              {priceTiers.map((tier, idx) => (
+                <Space key={idx} align="baseline">
+                  <span style={{ fontSize: 12 }}>{t("admin_products.tier_from")}</span>
+                  <InputNumber
+                    min={2}
+                    value={tier.minQty === "" ? null : Number(tier.minQty)}
+                    onChange={(v) => setPriceTiers((cur) =>
+                      cur.map((row, i) => (i === idx ? { ...row, minQty: v == null ? "" : String(v) } : row)))}
+                    style={{ width: 90 }}
+                  />
+                  <span style={{ fontSize: 12 }}>{t("admin_products.tier_price_each")}</span>
+                  <InputNumber
+                    min={0}
+                    value={tier.unitPrice === "" ? null : Number(tier.unitPrice)}
+                    onChange={(v) => setPriceTiers((cur) =>
+                      cur.map((row, i) => (i === idx ? { ...row, unitPrice: v == null ? "" : String(v) } : row)))}
+                    style={{ width: 110 }}
+                  />
+                  <Button
+                    type="text"
+                    danger
+                    onClick={() => setPriceTiers((cur) => cur.filter((_, i) => i !== idx))}
+                  >
+                    ✕
+                  </Button>
+                </Space>
+              ))}
+              <Button
+                type="dashed"
+                onClick={() => setPriceTiers((cur) => [...cur, { minQty: "", unitPrice: "" }])}
+              >
+                + {t("admin_products.tier_add")}
+              </Button>
+            </Space>
+          </Form.Item>
 
           <Form.Item label={t("admin_products.label_keywords")} name="keywords">
             <Select mode="tags" tokenSeparators={[",", " "]} placeholder={t("admin_products.placeholder_keywords")} />

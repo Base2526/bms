@@ -1681,7 +1681,19 @@ export const typeDefs = /* GraphQL */ `
     # ประเภท VAT (7.88) — 'V' คิด VAT · 'N' ยกเว้น VAT · 'UNKNOWN' ยังไม่ระบุ
     # ร้านที่จด VAT ต้องไม่มี UNKNOWN เหลือ ไม่งั้นติด blocker ที่ /admin/pos-readiness
     vatCategory: String
+    # ขั้นราคาส่ง (8.1) — ซื้อครบ minQty ชิ้นในบิลเดียวได้ราคา unitPrice ต่อชิ้น
+    priceTiers: [BmsPriceTier!]!
     variants: [BmsVariant!]!
+  }
+
+  type BmsPriceTier {
+    minQty: Int!
+    unitPrice: Float!
+  }
+
+  input BmsPriceTierInput {
+    minQty: Int!
+    unitPrice: Float!
   }
 
   type BmsAiSynonymCandidate {
@@ -1716,6 +1728,8 @@ export const typeDefs = /* GraphQL */ `
     brand: String
     # ไม่ส่งมา = คงค่าเดิม (ไม่รีเซ็ตเป็น UNKNOWN)
     vat_category: String
+    # ส่งมา = แทนที่ขั้นราคาทั้งชุด · ไม่ส่ง = ไม่แตะของเดิม
+    price_tiers: [BmsPriceTierInput!]
   }
 
   # ===== BMS product bulk import (CSV/XLSX) =====
