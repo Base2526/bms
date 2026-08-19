@@ -3,9 +3,10 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE, verifyTokenString } from "@/lib/auth/token";
 import { revokeAdminSession } from "@/lib/redisSession";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 const isProd = process.env.NODE_ENV === "production";
-export async function POST() {
+async function handlePOST() {
 
   console.log("[ADMIN_COOKIE] POST");
 
@@ -30,3 +31,5 @@ export async function POST() {
   });
   return res;
 }
+
+export const POST = withRouteErrorLog("POST /api/auth/logout-admin", handlePOST);

@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ async function protocolId(tenantId: string, protocolKey: string): Promise<string
   return res.rows[0]?.id ?? null;
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function handleDELETE(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -148,3 +149,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "delete failed" }, { status: 500 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/bms-pharmacy-assessments", handlePOST);
+export const DELETE = withRouteErrorLog("DELETE /api/dev/fake/bms-pharmacy-assessments", handleDELETE);

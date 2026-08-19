@@ -3,8 +3,9 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
-export async function DELETE(req: NextRequest) {
+async function handleDELETE(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -87,3 +88,5 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "cleanup failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
   }
 }
+
+export const DELETE = withRouteErrorLog("DELETE /api/dev/fake/cleanup", handleDELETE);

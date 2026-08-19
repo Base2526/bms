@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 let structuredColsReady: boolean | null = null;
 async function ensureStructuredColsReady() {
@@ -21,7 +22,7 @@ async function ensureStructuredColsReady() {
   return structuredColsReady;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 
@@ -56,3 +57,5 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!row) return NextResponse.json({ error: "Log not found" }, { status: 404 });
   return NextResponse.json(row);
 }
+
+export const GET = withRouteErrorLog("GET /api/logs/[id]", handleGET);

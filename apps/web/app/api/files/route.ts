@@ -2,10 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { persistWebFile } from "@/lib/storage";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
 }
 
 // POST multipart upload
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file");
   const renameTo = (form.get("name") as string) || undefined;
@@ -47,3 +48,6 @@ export async function POST(req: NextRequest) {
   const row = await persistWebFile(file, renameTo);
   return NextResponse.json(row, { status: 201 });
 }
+
+export const GET = withRouteErrorLog("GET /api/files", handleGET);
+export const POST = withRouteErrorLog("POST /api/files", handlePOST);

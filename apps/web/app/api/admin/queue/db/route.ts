@@ -1,6 +1,7 @@
 // apps/web/app/api/admin/queue/db/route.ts
 import { NextResponse } from "next/server";
 import pg from "pg";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD ?? "app",
 });
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     requireAdmin(req);
 
@@ -52,3 +53,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: msg }, { status });
   }
 }
+
+export const GET = withRouteErrorLog("GET /api/admin/queue/db", handleGET);

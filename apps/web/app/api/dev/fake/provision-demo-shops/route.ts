@@ -14,6 +14,7 @@ import {
 } from "@/lib/bms/devSeed";
 import { type ShopArchetype } from "@/lib/bms/shopArchetypes";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,7 +107,7 @@ async function cleanupDemoBusinessData(tenantId: string) {
   );
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) {
     return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   }
@@ -173,3 +174,5 @@ export async function POST(req: NextRequest) {
     created,
   });
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/provision-demo-shops", handlePOST);

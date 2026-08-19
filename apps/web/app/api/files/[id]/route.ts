@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import path from "path";
 import { Readable } from "stream";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
@@ -159,7 +160,7 @@ function shouldInline(mime: string): boolean {
   );
 }
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -281,3 +282,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withRouteErrorLog("GET /api/files/[id]", handleGET);
