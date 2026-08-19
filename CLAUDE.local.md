@@ -73,6 +73,33 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
 9. **403 ไม่ทำให้ logout** — `apollo.ts` errorLink เตะออกเฉพาะ 401 · เพิ่ม permission ใหม่แล้วลืม seed
    ให้ role → หน้าโดน 403 เงียบ ๆ แต่ไม่เด้งออก
 
+## ยืนยันรายการก่อนสร้างบิล (customer surface) — 2026-08-19
+
+ไม่มี migration (ใช้ `ai_state` JSONB ที่มีอยู่) · verify กับ DB จริงแล้ว 5 เทส
+
+- **`create_order` ครั้งแรกของตะกร้าไม่เขียนอะไรเลย** คืน `CONFIRMATION_REQUIRED` + รายการที่
+  resolve แล้ว → pipeline ประกอบสรุป **ฝั่ง server** (`composeOrderQuoteSummary`) ไม่ใช่ให้โมเดลเขียน
+  · เหตุผลที่ไม่ให้โมเดลเขียน: โมเดลตัดรายการทิ้งไม่ได้ **และ** output สั้นลง ถ้าให้โมเดลเขียนลิสต์เอง
+  บิลยิ่งใหญ่ยิ่งชนเพดาน `max_tokens` = กลับหัวกับที่ควรเป็น
+- **ธงยืนยันเป็น server-only ใน `ExecCtx`** (`customerConfirmedQuote`) ตั้งจาก pipeline เท่านั้น
+  โดยดู `orderMemory.confirmed` (คำว่า ยืนยัน/สั่งเลย/ตกลง ในข้อความลูกค้า) คู่กับ
+  `pendingQuoteFingerprint` ใน `ai_state` — โมเดลส่งค่านี้เองไม่ได้
+- **ลายนิ้วมือครอบจำนวน + หน่วยขาย** (`orderQuoteFingerprint`, ไม่ขึ้นกับลำดับบรรทัด) เปลี่ยนจำนวน
+  หรือแอบเพิ่มรายการหลังลูกค้ายืนยัน = ไม่ตรง → วนกลับไปถามใหม่ (มีเทสคุม)
+- **ไม่มีออร์เดอร์ไหนหายจากกฎนี้** ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สองเดินเส้นทางเขียนเดิม
+  · **staff surface ไม่ถูกแตะ** (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่แล้ว)
+- **สรุปไม่คิดยอดสุทธิ** แสดงราคาป้าย × จำนวน + กำกับว่า "ยังไม่รวมค่าส่ง/ส่วนลด/แต้ม" ยอดจริงยังมาจาก
+  `orderCheckoutChatReply` หลังบิลถูกสร้าง — ห้ามคิดส่วนลด/โปร/แต้มซ้ำที่นี่ เพราะจะเป็นสูตรที่สองของเงิน
+  แล้ว drift (กฎเดียวกับ `unitPriceForQty` ของ `8.1`)
+- **ตัวอย่างที่บอทสอนลูกค้าเป็นสตริงคงที่** (`multiItemOrderExample`) ห้ามให้โมเดลแต่งสด — เคสจริง
+  2026-08-19: โมเดลแต่งตัวอย่างที่ตัวเองรับไม่ได้ (ครอบ `**`, ไม่มีคำกริยา) ลูกค้าก็อปตามแล้วถูกปฏิเสธ
+  · มีเทสป้อนตัวอย่างกลับเข้า `looksLikeRequestedItemList` เพื่อกันสองฝั่ง drift กันอีก
+- **`stripMarkdownEmphasis` ตั้งใจไม่แตะ `*` ที่อยู่ระหว่างอักขระไม่ใช่ช่องว่าง** — "ผ้าก๊อซ 3*3 นิ้ว"
+  คือขนาดสินค้า ตัดทิ้ง = เปลี่ยนสินค้าที่ลูกค้าขอ (มีเทสคุม ห้ามมาแก้ให้ strip ทั้งหมด)
+- เทส: `scripts/order-confirmation-db-contract.test.mts` (5 เทส · เขียนจริงลงฐาน **ห้ามรันกับ
+  production** · ลบข้อมูลตัวเองครบ) + `scripts/ai-eval/order-confirmation-contract.test.mts` (11 เทส
+  ไม่ต้องมี DB) · ต้องลบ `bms_stock_movements` ก่อน `bms_products` ตอน teardown (FK composite)
+
 ## การเพิ่มโมดูลใหม่ (checklist)
 
 1. migration `db/migrations/N.N__bms_<mod>.sql` — `tenant_id` + RLS policy (copy `4.2`) + GRANT
@@ -88,8 +115,16 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
 ## ค้างอยู่จริงในเครื่องนี้
 
 - ฟีเจอร์ที่ผ่านแค่ `tsc` ยังไม่เคย verify กับ DB จริง: Follow-up Automation (`7.52`),
-  `email_report` (`7.54`), Cron run history (`7.55`), Manager staff management (`7.78`),
-  AI usage accounting (`7.82`)
+  `email_report` (`7.54`), Cron run history (`7.55`), Manager staff management (`7.78`)
+- **⚠️ AI usage accounting (`7.82`) ไม่ทำงานจริงบน BMS-LIVE — ยืนยันด้วยข้อมูลจริง 2026-08-19**
+  `bms_ai_usage_events` ทุกแถวค้างที่ `status='started'` และ `input_tokens`/`output_tokens` เป็น NULL
+  แถวเก่าที่เห็นเป็น `failed` มาจากตัวกวาด stale (`idx_bms_ai_usage_events_stale_started`) ไม่ใช่จากลูป
+  · ต้นเหตุ: `finalizeAiUsageEvent` ห่อ try/catch แล้ว `return` เงียบ ๆ เหลือแค่ `console.error`
+  · แก้แล้วให้แจ้ง `ai.usage_finalize_failed` (tier B) แต่ **ยังไม่รู้ว่า transaction ล้มเพราะอะไร**
+    — ต้องดู log บนเซิร์ฟเวอร์จริง: `docker compose logs web | grep "failed to finalize AI usage event"`
+  · **ผลข้างเคียงที่สำคัญ: quota/cost/รายงาน AI ทั้งชุดตาบอด และไล่ปัญหา AI ไม่มีข้อมูลตั้งต้น**
+    (เสียเวลาสืบไป 1 รอบเต็มเพราะเชื่อ `output_tokens` ที่ไม่มีอยู่)
+  · หลัง deploy ให้เช็กว่า `output_tokens` เริ่มไม่เป็น NULL ถ้ายังเป็น NULL = ต้นเหตุยังอยู่
 - `/live-dashboard` ยังเป็น mock ทั้งหน้า (ต่อ query จริงแล้วต้องทบทวน `?demo=1` ด้วย)
 - cron endpoint ทั้ง 7 ตัวมี workflow ยิงแล้ว (`.github/workflows/bms-cron.yml`) — **ค้างที่ต้องตั้ง
   secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub repo** ยังไม่ตั้ง = ยังไม่มีอะไรถูกยิงจริง

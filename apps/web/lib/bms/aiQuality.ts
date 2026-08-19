@@ -45,6 +45,12 @@ const GENERIC_RETRY =
   /(?:ช่วยพิมพ์ใหม่|ลองใหม่อีกครั้ง|ถามอีกครั้ง|ระบบยังไม่ได้บันทึกให้จริง|ขอเช็คข้อมูลให้แน่ใจ)/i;
 const CLARIFICATION =
   /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่|รุ่นไหน|ชื่อสินค้า|ช่องทาง.*(?:โอน|ชำระ)|วิธี.*(?:โอน|ชำระ)).*(?:คะ|ค่ะ|\?)/is;
+/**
+ * ความล้มเหลวของ "ระบบ" ไม่ใช่ของบทสนทนา — ลูกค้าไม่ได้พิมพ์ผิดและไม่ได้ถูกถามกลับ
+ * ต้องแยกจาก GENERIC_RETRY เพราะเดิมเคสพวกนี้ถูกตีเป็น UNRESOLVED ซึ่งอ่านเหมือน
+ * "โมเดลเลือกระวังตัว" คนไล่ปัญหาจึงไม่เห็นว่าระบบพัง (พบตอนสืบเคส production 2026-08-19)
+ */
+const SYSTEM_ERROR = /(?:ระบบขัดข้องชั่วคราว|ระบบประมวลผลนานเกินไป|ยังไม่ได้ดำเนินการให้)/i;
 
 /** Derive bounded, non-PII labels from a completed pipeline turn. */
 export function deriveAiTurnQuality(input: QualityInput): AiTurnQuality {
@@ -59,6 +65,12 @@ export function deriveAiTurnQuality(input: QualityInput): AiTurnQuality {
   }
 
   if (failedToolCalls > 0) reasons.push("TOOL_ERROR");
+  // ตรวจก่อน GENERIC_RETRY: ข้อความระบบพังหลายตัวมีคำว่า "ลองใหม่อีกครั้ง" อยู่ด้วย
+  // ถ้าปล่อยให้ GENERIC_RETRY จับก่อน จะถูกติดป้าย UNRESOLVED ทั้งที่เป็น FAILURE
+  if (SYSTEM_ERROR.test(input.reply)) {
+    reasons.push("SYSTEM_ERROR");
+    return { outcome: "FAILURE", reasonCodes: reasons, successfulToolCalls, failedToolCalls };
+  }
   if (GENERIC_RETRY.test(input.reply)) reasons.push("SAFE_GUARD_OR_RETRY");
 
   if (failedToolCalls > 0 && successfulToolCalls === 0) {

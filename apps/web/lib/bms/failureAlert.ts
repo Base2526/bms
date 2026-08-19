@@ -35,6 +35,12 @@ export type BmsFailureCode =
   | "ai.loop_failed"
   /** วนเกิน MAX_ROUNDS → ลูกค้าได้ข้อความ "ประมวลผลนานเกินไป" */
   | "ai.loop_timeout"
+  /**
+   * โมเดลคืนเทิร์นที่ไม่มี text block เลย (เช่นถูกตัดที่ max_tokens กลาง tool_use)
+   * เดิมเคสนี้เงียบสนิท: usage ถูกปิดเป็น "completed" และลูกค้าได้ข้อความ
+   * "ช่วยพิมพ์ใหม่" ทั้งที่พิมพ์ถูก — ตะกร้าทั้งใบหายโดยไม่มีใครรู้
+   */
+  | "ai.empty_reply"
   /** webhook handler พังทั้งก้อน → ลูกค้าได้ข้อความขอโทษ */
   | "channel.reply_failed"
   /** ส่งข้อความออกช่องทางไม่สำเร็จ → ลูกค้าไม่ได้รับอะไรเลย */
@@ -46,6 +52,14 @@ export type BmsFailureCode =
   | "ai.context_load_failed"
   /** บันทึก state ของบทสนทนาไม่สำเร็จ → ความจำหาย ถามซ้ำ */
   | "ai.state_persist_failed"
+  /**
+   * ปิด usage event ไม่สำเร็จ → แถวค้างที่ status 'started' และ token เป็น NULL
+   *
+   * เดิมเคสนี้มีแต่ console.error ผลคือ **ทุกแถวใน BMS-LIVE ค้างที่ 'started'**
+   * โดยไม่มีใครรู้ (ตัวกวาด stale ไปติดป้าย 'failed' ทีหลัง ภาพจึงดูสมเหตุสมผล)
+   * แปลว่า quota/cost/รายงานทั้งชุดตาบอด และการไล่ปัญหา AI ไม่มีข้อมูลตั้งต้นเลย
+   */
+  | "ai.usage_finalize_failed"
   /** AI Pharmacy Intake: ไม่มี credentials/เกิน quota/validation retry หมด → ส่งเคสให้เภสัชกรตรวจเอง */
   | "pharmacy_ai.unavailable"
   /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
@@ -79,6 +93,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     shopMessage:
       "ระบบประมวลผลคำถามลูกค้านานเกินกำหนดจึงตอบไม่สำเร็จ รบกวนเปิดแชทตอบลูกค้าด้วยตนเอง",
   },
+  "ai.empty_reply": {
+    tier: "A",
+    shopTitle: "⚠️ ผู้ช่วย AI ไม่ได้ตอบอะไรเลย ลูกค้าได้ข้อความขอโทษ",
+    shopMessage:
+      "ระบบ AI ประมวลผลแล้วแต่ไม่ได้ข้อความตอบกลับ (มักเกิดกับรายการสั่งซื้อหลายรายการที่คำตอบยาว) ลูกค้าพิมพ์ถูกแล้วแต่ยังไม่ได้รับคำตอบ รบกวนเปิดแชทตอบลูกค้าด้วยตนเอง",
+  },
   "channel.reply_failed": {
     tier: "A",
     shopTitle: "⚠️ ตอบข้อความลูกค้าไม่สำเร็จ",
@@ -106,6 +126,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     tier: "B",
     shopTitle: "ผู้ช่วย AI บันทึกความจำบทสนทนาไม่สำเร็จ",
     shopMessage: "ระบบบันทึกสถานะบทสนทนาไม่สำเร็จ AI อาจถามข้อมูลเดิมซ้ำ",
+  },
+  "ai.usage_finalize_failed": {
+    tier: "B",
+    shopTitle: "ระบบบันทึกการใช้งาน AI ไม่สำเร็จ",
+    shopMessage:
+      "คำตอบถูกส่งให้ลูกค้าเรียบร้อยแล้ว แต่ระบบปิดรายการบันทึกการใช้งาน AI ไม่สำเร็จ ทำให้ยอดโทเคน/ค่าใช้จ่ายของรายการนี้หายไปจากรายงาน",
   },
   "pharmacy_ai.unavailable": {
     tier: "A",

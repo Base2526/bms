@@ -67,6 +67,27 @@ export const ALL_UNIT_PATTERN = [...COUNT_UNIT_WORDS, ...PACK_UNIT_WORDS].join("
 /** Regex alternation for generic piece units only (no pack shapes). */
 export const COUNT_UNIT_PATTERN = COUNT_UNIT_WORDS.join("|");
 
+/**
+ * Remove markdown emphasis asterisks a customer pasted back from a chat reply.
+ *
+ * Real case (production, 2026-08-19): the bot wrote its own example wrapped in
+ * `**…**`, the customer copied it verbatim, and `**พาราเซตามอล …` went on to be
+ * used as a `search_products` keyword — which matches nothing.
+ *
+ * **A bare `*` between two non-space characters is left alone on purpose.**
+ * Thai retail writes sizes as "ผ้าก๊อซ 3*3 นิ้ว"; stripping that would silently
+ * change which product the customer asked for. Only runs of 2+ asterisks and
+ * asterisks touching whitespace or a string edge are emphasis markers.
+ */
+export function stripMarkdownEmphasis(text: string): string {
+  return String(text || "")
+    .replace(/\*{2,}/g, "")
+    .replace(/(^|\s)\*+(?=\S)/g, "$1")
+    .replace(/(?<=\S)\*+(?=\s|$)/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export type RequestedItem = {
   /** The customer's own wording for this item, untouched. Shown to a pharmacist. */
   rawText: string;
@@ -249,7 +270,7 @@ export function parseRequestedItems(
   text: string,
   opts: ParseRequestedItemsOptions = {}
 ): RequestedItem[] {
-  const source = String(text || "").trim();
+  const source = stripMarkdownEmphasis(String(text || "")).trim();
   if (!source) return [];
   const splitSource = normalizePlusSeparators(source, opts.isSalientSegment);
 
@@ -284,6 +305,29 @@ export function parseRequestedItems(
     qty: qtys[index],
     unit: extractUnit(seg),
   }));
+}
+
+/**
+ * Does this message read as a bare list of things to buy, with no request verb?
+ *
+ * Thai customers routinely write a basket as "ชื่อ + จำนวน + หน่วย" separated by
+ * commas and nothing else — and it is exactly the shape our own bot teaches when
+ * a customer asks how to order several items at once. Without a verb, both
+ * `understand()` (which needs an ORDER_HINT word) and
+ * `isExplicitPharmacyProductRequest()` (which needs a PRODUCT_REQUEST verb)
+ * classify it as a passive enquiry, so no deterministic route claims it.
+ *
+ * Deliberately strict: **every** segment must carry both a quantity and a unit,
+ * and there must be more than one of them. One item with a quantity is already
+ * handled by the existing single-product paths, and requiring all segments to
+ * qualify keeps prose containing one incidental "2 ขวด" from being read as a
+ * basket. This never says WHICH products these are — that is still a catalog
+ * lookup, and for medicine a clinical decision.
+ */
+export function looksLikeRequestedItemList(text: string): boolean {
+  const items = parseRequestedItems(text);
+  if (items.length < 2) return false;
+  return items.every((item) => item.qty !== null && item.unit !== null);
 }
 
 /** Locate the existing line a one-line correction refers to. */

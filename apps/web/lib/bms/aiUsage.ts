@@ -10,6 +10,7 @@
 import crypto from "crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
+import { reportBmsFailure } from "./failureAlert";
 import { getTenantPlan, type Plan } from "./plans";
 import {
   recordProviderError,
@@ -930,8 +931,33 @@ export async function finalizeAiUsageEvent(
   } catch (err) {
     // Accounting is observability after the provider call. Keep the provisional
     // unpriced attempt visible and never discard a valid user response because
-    // the accounting database had a transient failure.
+    // the accounting database had a transient failure. **Still must not throw.**
     console.error("[BMS] failed to finalize AI usage event:", err);
+    // ...but it must not be invisible either. Swallowing this silently is how
+    // every usage row in BMS-LIVE ended up stuck at 'started' with NULL tokens
+    // while dashboards looked fine (found 2026-08-19 while diagnosing an
+    // unrelated customer-facing bug — the missing token data cost a whole
+    // round of investigation). Reporting is best-effort on purpose: if the
+    // database itself is down, the report cannot land either, and this path
+    // must never turn an accounting problem into a failed customer reply.
+    try {
+      const owner = await query<{ tenant_id: string }>(
+        `SELECT tenant_id FROM bms_ai_usage_events WHERE id = $1`,
+        [eventId]
+      );
+      const tenantId = owner.rows[0]?.tenant_id;
+      if (tenantId) {
+        await reportBmsFailure({
+          tenantId,
+          code: "ai.usage_finalize_failed",
+          error: err,
+          surface: "system",
+          meta: { eventId, status: result.status, providerCalls },
+        });
+      }
+    } catch (reportErr) {
+      console.error("[BMS] failed to report AI usage finalize failure:", reportErr);
+    }
     return;
   }
 

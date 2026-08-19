@@ -45,6 +45,7 @@ import {
   type OrderItemInput,
 } from "../orders";
 import { resolveSellablePack } from "../productPacks";
+import { orderQuoteFingerprint, type OrderQuoteLine } from "../orderQuote";
 import { createProductReviewAssessmentOnce } from "../pharmacy/assessments";
 import { submitPayment, submitPaymentOnce, verifyPaymentSlip, listPayments, PAYMENT_METHODS } from "../payments";
 import {
@@ -1070,13 +1071,15 @@ const listSuppliersTool: BmsTool = {
 const createOrderTool: BmsTool = {
   name: "create_order",
   description:
-    "Create an order and reserve stock atomically from a list of sku, size and quantity. Use once the customer has confirmed the purchase. The sku must come from search_products or check_stock first.",
+    "Create an order and reserve stock atomically from a list of sku, size and quantity. The sku must come from search_products or check_stock first. On the customer surface the first call for a basket NEVER writes: it returns status CONFIRMATION_REQUIRED with the itemised basket, the system shows that list to the customer, and only a call made after the customer has affirmed that exact basket creates the order.",
   surfaces: ["customer", "staff"],
   permission: "order.create",
-  whenToUse: "Only after the customer has confirmed the purchase (product + size + qty are all known and the customer said yes) — this writes to the DB and reserves real stock.",
-  whenNotToUse: "The customer hasn't confirmed yet, or the exact sku isn't known → always call search_products/check_stock first to fill those in.",
+  whenToUse: "Once product + size + qty are known for every line. On the customer surface, call it to obtain the confirmation summary, then call it again unchanged after the customer says yes.",
+  whenNotToUse: "The exact sku isn't known → call search_products/check_stock first.",
   commonMistakes: [
     "Never guess a sku — it must come from a prior search_products/check_stock result only.",
+    "status CONFIRMATION_REQUIRED means NOTHING was created and no stock was reserved. Never tell the customer the order is placed, and do not call this tool again until they have answered.",
+    "After the customer confirms, send the SAME lines back. Changing any quantity, size or packCode invalidates their confirmation and the system will ask them again.",
     "For pharmacy shops, backend Product Policy may block, require a safety check, pharmacist review, or prescription. Explain that result and never retry to bypass it.",
     "Do not call this repeatedly if the customer hasn't changed their order — the tool loop already suppresses duplicate calls, but avoid calling it needlessly regardless.",
     "preferredCarrier must be a code listed in get_store_info's enabledCarriers only — never guess one.",
@@ -1150,6 +1153,50 @@ const createOrderTool: BmsTool = {
         packQty: it.qty,
         packUnitPrice: pack.price,
       });
+    }
+
+    // ================= ยืนยันรายการก่อนเขียน (customer surface เท่านั้น) =================
+    // เดิม "ให้ลูกค้ายืนยันก่อน" เป็นแค่ประโยคใน description/whenToUse ของทูลนี้ ไม่มีอะไร
+    // บังคับ โมเดลจึงสร้างบิลและจองสต็อกได้ทันทีที่มันคิดว่าข้อมูลครบ โดยลูกค้าอาจไม่เคยเห็น
+    // รายการทั้งชุดเลย · ตอนนี้เป็นกฎของ server: ถ้าตะกร้าชุดนี้ยังไม่ถูกลูกค้ายืนยัน
+    // ทูลนี้ **ไม่เขียนอะไรเลย** แล้วคืนรายการที่ resolve แล้วให้ pipeline เอาไปถามยืนยัน
+    //
+    // ไม่มีออร์เดอร์ไหนหายจากกฎนี้ — ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สอง (หลังลูกค้าตอบ)
+    // เดินเส้นทางเขียนเดิมทั้งเส้น · staff surface ไม่ถูกแตะ (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่)
+    if (ec.surface === "customer") {
+      const fingerprint = orderQuoteFingerprint(requested);
+      if (ec.customerConfirmedQuote?.fingerprint !== fingerprint) {
+        const quoteLines: OrderQuoteLine[] = [];
+        for (const it of requested) {
+          const stock = await checkStock(ec.tenantId, it.sku, it.size);
+          const name = "name" in stock ? stock.name : it.sku;
+          const basePrice = "price" in stock ? Number(stock.price) : null;
+          const pack = it.packCode
+            ? await resolveSellablePack(ec.tenantId, it.sku, it.size, it.packCode)
+            : null;
+          quoteLines.push({
+            sku: it.sku,
+            name,
+            size: it.size,
+            displayQty: it.qty,
+            packUnitName: pack?.unitName ?? null,
+            // ราคายกหน่วยที่ร้านตั้งไว้ชนะเสมอ ถ้าไม่ได้ตั้งไว้จึงคิดจากราคาต่อหน่วยฐาน ×
+            // baseQty — สูตรเดียวกับที่ stock.ts บอกไว้ที่ StockPackOption.price
+            unitPrice: pack
+              ? pack.price ?? (basePrice != null ? basePrice * pack.baseQty : null)
+              : basePrice,
+          });
+        }
+        ec.pendingOrderQuote = { fingerprint, lines: quoteLines };
+        return {
+          ok: true,
+          data: {
+            status: "CONFIRMATION_REQUIRED",
+            note: "ยังไม่ได้สร้างออร์เดอร์และยังไม่ได้จองสต็อก — ระบบสรุปรายการให้ลูกค้ายืนยันแล้ว ห้ามบอกลูกค้าว่าสั่งสำเร็จ และห้ามเรียกทูลนี้ซ้ำจนกว่าลูกค้าจะตอบยืนยัน",
+            items: quoteLines,
+          },
+        };
+      }
     }
 
     const channel: Channel =

@@ -5,7 +5,11 @@
 import type { PharmacyTriggerDefinition } from "./protocols";
 // requestedItems imports nothing, so importing it keeps this module's
 // side-effect-free contract intact while removing a second copy of the unit list.
-import { ALL_UNIT_PATTERN, parseRequestedItems } from "../requestedItems";
+import {
+  ALL_UNIT_PATTERN,
+  looksLikeRequestedItemList,
+  parseRequestedItems,
+} from "../requestedItems";
 
 const LEGACY_TRIGGER_DEFINITIONS: PharmacyTriggerDefinition[] = [
   { protocolKey: "headache", displayLabel: "ปวดหัว", triggerTerms: ["ปวดหัว", "ปวดศีรษะ", "migraine", "headache"] },
@@ -44,7 +48,15 @@ export type PharmacyIntakeTriggerIntent = "ambiguous" | "clinical_advice" | "med
  */
 export function isExplicitPharmacyProductRequest(message: string): boolean {
   const text = String(message || "").trim();
-  if (!text || !PRODUCT_REQUEST_PATTERN.test(text)) return false;
+  if (!text) return false;
+  // ตะกร้าที่พิมพ์เป็นรายการล้วน ๆ ไม่มีคำกริยา ("พารา 5 แผง, ยาแดง 2 ขวด") ต้องผ่านด่านนี้ด้วย
+  // ไม่ใช่เพราะสะดวก แต่เพราะข้อความแบบนี้เคยตกทั้งหมด: วันที่ร้านไหนเพิ่มอาการที่ตรงกับ
+  // MEDICINE_PRODUCT_PATTERN เป็น triggerTerm (เช่น "ท้องอืด") ตะกร้าทั้งใบจะถูกแทนด้วยคำถาม
+  // คัดกรองในบรรทัดที่ 1574 ของ pipeline.ts โดยที่ลูกค้าไม่รู้ว่ารายการหายไปไหน
+  //
+  // ด่านต่อ ๆ ไปข้างล่างไม่ถูกผ่อนแม้ข้อเดียว — รายการที่เป็นยาตามอาการแบบกว้าง หรือรายการที่มี
+  // ถ้อยคำทางคลินิกปน ยังถูกส่งเข้าการคัดกรองของเภสัชกรเหมือนเดิมทั้งตะกร้า
+  if (!PRODUCT_REQUEST_PATTERN.test(text) && !looksLikeRequestedItemList(text)) return false;
   // Classify each requested line independently. A named product in one line
   // must not make a generic symptom-medicine request in another line bypass
   // clinical clarification (e.g. "พารา 1 แผง, ยาแก้ไอให้ลูก 1 ขวด").

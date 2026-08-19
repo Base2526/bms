@@ -20,6 +20,7 @@ import {
   type ExecCtx,
   type ToolProposal,
   type ToolResult,
+  type ToolSurface,
 } from "./types";
 
 export type ToolTraceEntry = {
@@ -35,6 +36,12 @@ export type ToolLoopResult = {
   trace: ToolTraceEntry[];
   /** false = ไม่มี AI credentials → caller ต้อง fallback (rule-based/template) */
   usedAi: boolean;
+  /**
+   * ตั้งเมื่อลูปทำงานจนจบแต่ **ไม่ได้คำตอบที่ใช้ได้** — caller ต้องบอกลูกค้าว่าระบบขัดข้อง
+   * ห้ามบอกให้ลูกค้าพิมพ์ใหม่ (ลูกค้าพิมพ์ถูกแล้ว ความผิดอยู่ที่ระบบ) และห้ามเดินเส้นทาง
+   * rule-based ที่อาจ write ซ้ำ — `usedAi` ยังเป็น true อยู่เหมือนเดิม
+   */
+  systemFailure?: "empty_reply";
 };
 
 type AnthMessage = { role: "user" | "assistant"; content: any };
@@ -53,7 +60,25 @@ type AnthToolSchema = {
 
 const MAX_ROUNDS = 5;
 const TIMEOUT_MS = 20_000;
-const MAX_TOKENS = 1024;
+/**
+ * เพดาน output ต่อรอบ **ต่อ surface** — ไม่ใช่เป้า จ่ายตามที่ generate จริงเท่านั้น
+ *
+ * customer เคยใช้ 1024 ร่วมกับ staff แล้วพังจริงบน production (2026-08-19): prompt
+ * ของฝั่งลูกค้าสั่งให้ยิงทูล "ทุกรายการในรอบเดียว" แล้วสรุปยืนยันทุกบรรทัดเป็นภาษาไทย
+ * ซึ่งกินโทเคนแพงกว่าอังกฤษหลายเท่า ตะกร้า 3 รายการจึงชนเพดานกลาง tool_use → เทิร์นนั้น
+ * ไม่มี text block เลย → ลูกค้าได้ "ช่วยพิมพ์ใหม่" ทั้งที่พิมพ์ถูก
+ *
+ * ห้ามลดค่าฝั่ง customer กลับไปต่ำกว่านี้โดยไม่แก้ prompt ที่ pipeline.ts ก่อน
+ * (ถ้าชนอีก จะไม่เงียบแล้ว — ดู ai.empty_reply)
+ */
+const MAX_TOKENS_BY_SURFACE: Readonly<Record<ToolSurface, number>> = {
+  customer: 4096,
+  staff: 1024,
+};
+
+function maxTokensForSurface(surface: ToolSurface): number {
+  return MAX_TOKENS_BY_SURFACE[surface] ?? 1024;
+}
 const EPHEMERAL_CACHE_CONTROL: AnthCacheControl = { type: "ephemeral" };
 
 class ToolAccessError extends Error {}
@@ -170,6 +195,39 @@ export function hasSensitiveStaffIntent(
 }
 
 /**
+ * ลูปนี้เคยถูกเรียกว่า "bounded" แต่คุมแค่ฝั่ง AI (MAX_ROUNDS + timeout ต่อ provider call)
+ * ส่วน `tool.execute` ซึ่งไปแตะ Postgres จริงไม่มีเพดานเวลาเลย — lock contention หรือ query
+ * ที่ช้าผิดปกติจึงค้าง request ได้ไม่จำกัด แล้วลูกค้าไม่ได้คำตอบและไม่มีใครรู้ว่าค้างที่ไหน
+ *
+ * ตั้งไว้สูงกว่า provider timeout เพราะทูลเขียน (create_order) ทำงานในทรานแซกชันที่ยาวกว่า
+ * การอ่านหนึ่งครั้ง · timeout ที่นี่ **ไม่ยกเลิกงานที่ DB กำลังทำอยู่** (pg ไม่มี cancel ผ่าน
+ * AbortSignal ที่ระดับนี้) — มันแค่ทำให้ลูปเดินต่อไปได้และรายงานว่าทูลไหนค้าง ทรานแซกชันที่
+ * ค้างยังต้องพึ่ง statement_timeout ฝั่ง Postgres ตามปกติ
+ */
+const TOOL_TIMEOUT_MS = 30_000;
+
+async function executeToolBounded(
+  tool: BmsTool,
+  input: Record<string, unknown>,
+  ec: ExecCtx
+): Promise<ToolResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      tool.execute(input, ec),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`ทูล ${tool.name} ใช้เวลาเกิน ${TOOL_TIMEOUT_MS} ms`)),
+          TOOL_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Gate ตอน execute (defense in depth): การกรอง tool schema ก่อนส่งให้ Claude อย่างเดียวไม่พอ
  * เพราะ model/provider output ถือเป็น untrusted input เสมอ
  */
@@ -224,14 +282,15 @@ async function callProviderMessages(
   creds: AiCredentials,
   system: string | AnthSystemBlock[],
   messages: AnthMessage[],
-  tools: AnthToolSchema[]
+  tools: AnthToolSchema[],
+  maxTokens: number = MAX_TOKENS_BY_SURFACE.staff
 ): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const resp = await callAnthropicCompatibleMessages(
       creds,
-      { model: creds.model, max_tokens: MAX_TOKENS, system, tools, messages },
+      { model: creds.model, max_tokens: maxTokens, system, tools, messages },
       controller.signal
     );
     if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
@@ -306,7 +365,7 @@ async function runApprovedToolInternal(
     input = inputRecord(opts.input ?? {});
     validateKnownFields(tool, input);
     assertSingleCustomerOrderWrite(tool, execCtx);
-    const executed = await tool.execute(input, execCtx);
+    const executed = await executeToolBounded(tool, input, execCtx);
     if (executed.ok && executed.proposal) {
       if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
       outcome = "proposal";
@@ -466,7 +525,13 @@ async function runToolLoopInternal(
     for (let round = 0; round < MAX_ROUNDS; round++) {
       providerCalls += 1;
       if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
-      const resp = await callProvider(creds, cachedSystem, messages, toolSchemas);
+      const resp = await callProvider(
+        creds,
+        cachedSystem,
+        messages,
+        toolSchemas,
+        maxTokensForSurface(opts.execCtx.surface)
+      );
       if (
         Number.isFinite(resp?.usage?.input_tokens) &&
         Number.isFinite(resp?.usage?.output_tokens)
@@ -495,6 +560,33 @@ async function runToolLoopInternal(
           .map((b) => b.text)
           .join("\n")
           .trim();
+        // เทิร์นที่ไม่มี text block เลย **ไม่ใช่คำตอบ** — เกิดจริงเมื่อ output ถูกตัดที่
+        // max_tokens กลาง tool_use (content เหลือแต่ tool_use ที่ JSON ยังไม่จบ ส่วน
+        // stop_reason เป็น "max_tokens" ไม่ใช่ "tool_use" จึงตกมาถึงบรรทัดนี้)
+        //
+        // เดิมเคสนี้ถูกปิดเป็น status "completed" แล้วคืน reply ว่าง ทำให้ caller ไปใช้
+        // ข้อความ "ช่วยพิมพ์ใหม่" — ลูกค้าพิมพ์ถูกแต่ถูกโทษ และ ops ไม่เห็นอะไรเลย
+        // (เจอบน production 2026-08-19 ตะกร้า 3 รายการของร้านยา)
+        if (!reply) {
+          const stopReason = typeof resp?.stop_reason === "string" ? resp.stop_reason : "unknown";
+          const detail = `empty_model_reply (stop_reason=${stopReason}, tool_use_blocks=${toolUses.length}, round=${round + 1})`;
+          if (creds.usageEventId) {
+            await finalizeUsage(creds.usageEventId, {
+              status: "fallback",
+              ...usagePayload(),
+              errorMessage: detail,
+            });
+          }
+          await reportToolFailure(reportFailure, "ai.empty_reply", opts.execCtx, detail, {
+            stopReason,
+            toolUseBlocks: toolUses.length,
+            round: round + 1,
+            maxTokens: maxTokensForSurface(opts.execCtx.surface),
+            toolsCalled: trace.map((t) => t.tool),
+          });
+          // reply ว่างไว้เหมือนเดิม แต่ติดธงให้ caller เลือกข้อความตามภาษาของบทสนทนา
+          return { reply: "", proposals, trace, usedAi: true, systemFailure: "empty_reply" };
+        }
         if (creds.usageEventId) {
           await finalizeUsage(creds.usageEventId, {
             status: "completed",
@@ -536,7 +628,7 @@ async function runToolLoopInternal(
               });
             } else {
               assertSingleCustomerOrderWrite(tool, opts.execCtx);
-              const r = await tool.execute(traceInput, opts.execCtx);
+              const r = await executeToolBounded(tool, traceInput, opts.execCtx);
               if (r.ok && r.proposal) {
                 if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
                 proposals.push(r.proposal);
