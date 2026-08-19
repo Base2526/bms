@@ -11,6 +11,7 @@
 import { parseOrderItems, understand, type Understanding } from "./nlu";
 import {
   requestedItemTargetIndex,
+  stripMarkdownEmphasis,
   stripRequestNoise,
   updateRequestedItems,
 } from "./requestedItems";
@@ -1471,10 +1472,16 @@ export async function runPipeline(
 
   const isPharmacyTenant = profile.businessArchetype === "pharmacy";
   const triggerDefinitions = isPharmacyTenant ? pharmacyTriggerDefinitions : undefined;
-  const aiInputMessage = normalizePharmacyClarificationReply(message, history, triggerDefinitions) ?? (
-    profile.aiInterpretShortReplies
-      ? normalizeShortReplyMessage(message, history)
-      : message
+  // ตัด markdown ออกก่อนตีความทุกอย่าง — `message` ดิบยังถูกใช้ตอน log/customerSafe เพื่อ
+  // ให้หลักฐานตรงกับที่ลูกค้าพิมพ์จริง แต่ทุกตัวที่ "อ่านความหมาย" (understand, classify,
+  // pharmacy trigger, orderMemory และตัวโมเดล) ต้องได้ข้อความที่ไม่มี `**` ติดมา
+  // ไม่งั้น "**พาราเซตามอล …" กลายเป็น keyword ของ search_products ที่ไม่ match อะไรเลย
+  const aiInputMessage = stripMarkdownEmphasis(
+    normalizePharmacyClarificationReply(message, history, triggerDefinitions) ?? (
+      profile.aiInterpretShortReplies
+        ? normalizeShortReplyMessage(message, history)
+        : message
+    )
   );
   const englishReply = !isPharmacyTenant && isEnglishCustomerReply(profile.aiLanguage, aiInputMessage);
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
@@ -2265,6 +2272,15 @@ export async function runPipeline(
       );
     } else if (execCtx.pharmacyReviewCaseId) {
       reply = `รายการนี้ต้องให้เภสัชกรตรวจสอบก่อนค่ะ ระบบส่งเข้าคิวแล้ว ยังไม่ได้สร้างออร์เดอร์ เลขเคสสำหรับติดตาม: ${execCtx.pharmacyReviewCaseId}`;
+    } else if (loop.systemFailure === "empty_reply") {
+      // ระบบไม่ได้คำตอบจากโมเดล — **ห้ามบอกลูกค้าให้พิมพ์ใหม่** ลูกค้าพิมพ์ถูกแล้ว
+      // (เคสจริง 2026-08-19: ลูกค้าก็อปตัวอย่างที่บอทสอนมาเป๊ะ แล้วถูกไล่ให้พิมพ์ใหม่)
+      // ข้อความเข้าถูก logConversation บันทึกไว้แล้วจริง และ ai.empty_reply แจ้งร้านแล้ว
+      // จึงสัญญาได้ว่ามีคนตามต่อ · เลี่ยงคำว่า ไซซ์/จำนวน/ขนาด เพื่อให้ยังนับเป็นเทิร์นที่
+      // ไม่คืบหน้า (isBusinessClarification) แล้วเดินเข้า handoff counter ตามปกติ
+      reply = englishReply
+        ? "Sorry — a temporary system error meant your message was not processed. Your message has been saved and our team will follow up shortly. 🙏"
+        : "ขออภัยค่ะ ระบบขัดข้องชั่วคราวจึงยังไม่ได้ดำเนินการให้ ข้อความของคุณถูกบันทึกไว้แล้ว ทางร้านจะติดต่อกลับโดยเร็วที่สุดนะคะ 🙏";
     } else if (hasUnverifiedFacts(loop.reply, loop.trace)) {
       reply = englishReply
         ? "Sorry, I need to verify that information first. Please ask again or specify the product and size."
