@@ -1894,7 +1894,20 @@ export default function PosPage() {
         headers: { ...authHeaders, "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      // body ว่าง/ไม่ใช่ JSON = เซิร์ฟเวอร์ไม่ได้ตอบให้จบ (route โยน error, proxy ตัด
+      // กลางทาง, container ตาย) · res.json() ตรง ๆ จะโยน "Unexpected end of JSON
+      // input" ซึ่งอ่านแล้วเข้าใจผิดว่าเป็นเน็ตของร้านเอง
+      const rawBody = await res.text();
+      let data: any = null;
+      try {
+        data = rawBody ? JSON.parse(rawBody) : null;
+      } catch {
+        data = null;
+      }
+      if (data == null) {
+        // โยนต่อให้ catch ข้างล่างจัดการ: ไม่รู้ว่าบิลถูกสร้างหรือยัง → ต้องคงคีย์เดิมไว้
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ครบ (HTTP ${res.status})`);
+      }
       if (res.ok && data.status === "SOLD") {
         const receiptPayments = paymentSummary.normalized
           .filter((payment) => payment.numericAmount > 0)
@@ -1968,7 +1981,9 @@ export default function PosPage() {
         setRecentSalesQuery("");
         void loadRecentReceipts("");
       } else {
-        if (data?.status !== "PAYMENT_FAILED") {
+        // PAYMENT_FAILED = จ่ายไม่ผ่านแต่บิลอาจค้างอยู่ · SERVER_ERROR = ไม่รู้ผลเลย
+        // สองอันนี้ห้ามล้างคีย์ ไม่งั้นกดขายใหม่แล้วได้บิลซ้ำแทนที่จะกู้บิลเดิม
+        if (data?.status !== "PAYMENT_FAILED" && data?.status !== "SERVER_ERROR") {
           window.localStorage.removeItem(PENDING_SALE_KEY);
           setHasPendingSale(false);
         }
@@ -4728,6 +4743,9 @@ function describeFailure(data: any): string {
       return `เลขเครื่อง ${data.serial} เคยขายไปแล้ว — หยิบกล่องผิดใบหรือยิงซ้ำ`;
     case "PAYMENT_FAILED":
       return `บันทึกการชำระเงินไม่สำเร็จ: ${data.reason}`;
+    // เซิร์ฟเวอร์พังกลางคำขอ — บิลอาจถูกสร้างไปแล้ว ห้ามบอกให้ "ยิงใหม่" ลอย ๆ
+    case "SERVER_ERROR":
+      return `เซิร์ฟเวอร์ผิดพลาด (${data.error ?? "ไม่ทราบสาเหตุ"}) — กดชำระเงินอีกครั้ง ระบบจะใช้คีย์เดิมและไม่สร้างบิลซ้ำ`;
     default:
       return data?.error ?? `ขายไม่สำเร็จ (${data?.status ?? "ไม่ทราบสาเหตุ"})`;
   }

@@ -22,6 +22,32 @@ function badRequest(error: string) {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handleSale(req);
+  } catch (error: any) {
+    // ห้ามปล่อย exception ลอยขึ้นไปถึง Next: route handler ที่โยน error ตอบเป็น
+    // 500 ที่ "ไม่มี body" → จอ POS ทำ res.json() แล้วได้ "Unexpected end of JSON
+    // input" ซึ่งแยกไม่ออกเลยว่าเน็ตหลุดหรือเซิร์ฟเวอร์พัง และไม่มีอะไรให้ไล่ต่อ
+    console.error("[pos/sale] unhandled", {
+      code: error?.code ?? null,        // SQLSTATE ถ้ามาจาก pg
+      detail: error?.detail ?? null,
+      constraint: error?.constraint ?? null,
+      message: error?.message ?? null,
+      stack: error?.stack ?? null,
+    });
+    // status นี้แปลว่า "ไม่รู้ผล" ไม่ใช่ "ขายไม่สำเร็จ" — บิลอาจ commit ไปแล้วก่อน
+    // พัง จอต้องคงคีย์ idempotency ไว้ให้กดซ้ำ ไม่ใช่ล้างตะกร้า
+    return NextResponse.json(
+      {
+        status: "SERVER_ERROR",
+        error: error?.message ? String(error.message) : "เซิร์ฟเวอร์ผิดพลาด",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleSale(req: NextRequest) {
   const token = req.headers.get("x-pos-device-token") ?? "";
   const device = await authenticatePosDevice(token);
   if (!device) {
