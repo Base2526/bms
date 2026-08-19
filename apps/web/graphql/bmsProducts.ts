@@ -29,6 +29,16 @@ import { requireAuth } from "@/lib/auth";
 import { listSynonymCandidates, reviewSynonymCandidate } from "@/lib/bms/aiSynonyms";
 
 function toGqlError(err: any): never {
+  // ทุก error จาก service ถูกห่อเป็น 400 เหมือนกันหมด ทั้งที่บางอันไม่ใช่ความผิด
+  // ของผู้ใช้ (เช่น migration ยังไม่ได้ apply → 42P01 undefined_table) — อย่างน้อย
+  // ต้องเหลือร่องรอยจริงไว้ใน log ของ server ไม่งั้นเหลือแค่ 400 เปล่า ๆ ให้ไล่
+  if (err?.code || err?.detail || err?.stack) {
+    console.error("[bmsProducts] resolver error", {
+      code: err?.code ?? null,          // SQLSTATE ถ้ามาจาก pg
+      detail: err?.detail ?? null,
+      message: err?.message ?? null,
+    });
+  }
   throw new GraphQLError(err?.message || "operation failed", {
     extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
   });
