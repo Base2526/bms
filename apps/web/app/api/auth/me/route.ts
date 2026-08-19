@@ -7,6 +7,7 @@ import type { ThemeMode } from "@/lib/theme";
 import type { Lang } from "@/i18n";
 import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 import { isAdminSessionActive } from "@/lib/redisSession";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,7 +33,7 @@ async function withUserPreferences<T extends JWTPayload | null>(session: T): Pro
   } as T;
 }
 
-export async function GET() {
+async function handleGET() {
   const user  = verifyUserSession();
   const adminToken = verifyAdminSession();
   const admin = adminToken && await isAdminSessionActive(adminToken.jti)
@@ -49,3 +50,5 @@ export async function GET() {
     admin: adminWithPreferences
   }, { headers: { 'Cache-Control': 'no-store' }});
 }
+
+export const GET = withRouteErrorLog("GET /api/auth/me", handleGET);

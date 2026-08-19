@@ -25,6 +25,7 @@ import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
 import { metricsPlugin } from "@/graphql/metricsPlugin";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
@@ -160,4 +161,9 @@ const requestHandler = async (request: NextRequest) => {
   return handler(request);
 };
 
-export { requestHandler as POST, requestHandler as GET, requestHandler as OPTIONS };
+// error ที่เกิด "ใน" resolver ถูก metricsPlugin log ให้แล้ว — ตัวครอบนี้รับของที่
+// พังก่อนถึง Apollo (createContext: Redis/JWT/DB ล่ม) กับ multipart upload ซึ่ง
+// เดิมหลุดออกไปเป็น 500 body ว่างโดยไม่มี log
+const loggedHandler = withRouteErrorLog("/api/graphql", requestHandler);
+
+export { loggedHandler as POST, loggedHandler as GET, loggedHandler as OPTIONS };

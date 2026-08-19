@@ -12,11 +12,12 @@ import type { NextRequest } from "next/server";
 import { authenticatePosDevice } from "@/lib/bms/pos";
 import { getLoyaltySettings, previewMemberDiscount } from "@/lib/bms/membership";
 import { previewCouponForCustomer } from "@/lib/bms/coupons";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -67,3 +68,5 @@ export async function POST(req: NextRequest) {
     redeemMinPoints: settings.redeemMinPoints,
   }, { status: 200 });
 }
+
+export const POST = withRouteErrorLog("POST /api/pos/member/preview", handlePOST);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { verifyUserFromRequest } from "@/lib/auth/server";
 import { writeLogServer } from "@/lib/log/writeLog.server";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ function whereEq(hasStructured: boolean, column: string, metaKey: string, paramI
 // GET /api/logs
 // Filters:
 //  q, level, category, user_id, action, status, correlation_id, session_id, platform, app_version, date_start, date_end, page, pageSize
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const hasStructured = await ensureStructuredColsReady();
 
   const { searchParams } = new URL(req.url);
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/logs
 // Accepts either {logs:[...]} or a single log object.
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const actor = verifyUserFromRequest(req);
   const createdBy = actor?.id ?? null;
 
@@ -210,7 +211,7 @@ export async function POST(req: NextRequest) {
 // DELETE /api/logs
 // - ids=1,2,3 (bulk delete)
 // - OR purge by filter (refuses if no conditions)
-export async function DELETE(req: NextRequest) {
+async function handleDELETE(req: NextRequest) {
   const hasStructured = await ensureStructuredColsReady();
   const { searchParams } = new URL(req.url);
 
@@ -319,3 +320,7 @@ export async function DELETE(req: NextRequest) {
   const result = await query(sql, args);
   return NextResponse.json({ deleted: result.rowCount || 0 });
 }
+
+export const GET = withRouteErrorLog("GET /api/logs", handleGET);
+export const POST = withRouteErrorLog("POST /api/logs", handlePOST);
+export const DELETE = withRouteErrorLog("DELETE /api/logs", handleDELETE);

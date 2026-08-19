@@ -16,11 +16,12 @@ import {
   getPosShiftReport,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
 
@@ -43,3 +44,5 @@ export async function GET(req: NextRequest) {
   if (!report) return NextResponse.json({ error: "ไม่พบกะ" }, { status: 404 });
   return NextResponse.json({ report });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/shift-report", handleGET);

@@ -4,11 +4,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { listConversations } from "@/lib/bms/inbox";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
   const rows = await listConversations(DEFAULT_TENANT_ID, {
     status: url.searchParams.get("status"),
@@ -20,3 +21,5 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json({ conversations: rows });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/inbox", handleGET);

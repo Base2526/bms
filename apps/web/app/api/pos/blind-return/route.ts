@@ -17,11 +17,12 @@ import {
   verifyCashierPin,
 } from "@/lib/bms/pos";
 import { isDistinctPosApprover } from "@/lib/bms/posRouteHelpers";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   const shift = await getOpenPosShift(device.tenantId, device.id);
@@ -72,3 +73,5 @@ export async function POST(req: NextRequest) {
     : 400;
   return NextResponse.json(result, { status });
 }
+
+export const POST = withRouteErrorLog("POST /api/pos/blind-return", handlePOST);

@@ -12,11 +12,12 @@ import type { NextRequest } from "next/server";
 import { query } from "@/lib/db";
 import { processEtaxQueue } from "@/lib/bms/etax/queue";
 import { etaxEnabledGlobally } from "@/lib/bms/etax/providers";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const expected = process.env.BMS_JOB_TOKEN;
   if (!expected || req.headers.get("x-job-token") !== expected) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -40,3 +41,5 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ tenants: tenants.rowCount, results });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/jobs/etax", handlePOST);

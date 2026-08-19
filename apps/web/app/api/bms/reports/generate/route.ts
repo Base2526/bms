@@ -17,11 +17,12 @@ import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { requirePermission } from "@/lib/bms/permissions";
 import { generateReport } from "@/lib/bms/reportEngine";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const admin = verifyAdminSession();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -60,3 +61,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message ?? "generate failed" }, { status: 400 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/reports/generate", handlePOST);

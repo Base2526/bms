@@ -19,11 +19,12 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
 import { query } from "@/lib/db";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(req: NextRequest, { params }: { params: { id: string } }) {
   const admin = verifyAdminSession();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -75,3 +76,5 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     },
   });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/reports/download/[id]", handleGET);

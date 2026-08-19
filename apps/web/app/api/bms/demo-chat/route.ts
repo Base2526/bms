@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { logConversation } from "@/lib/bms/inbox";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getDemoShopDefinition, getDemoTenantContext } from "@/lib/bms/demoShops";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ function normalizeSessionId(value: unknown): string | null {
   return normalized || null;
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     demoShopKey?: unknown;
     message?: unknown;
@@ -70,3 +71,5 @@ export async function POST(req: NextRequest) {
     },
   });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/demo-chat", handlePOST);

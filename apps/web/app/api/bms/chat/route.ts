@@ -21,13 +21,14 @@ import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { verifyAdminSession } from "@/lib/auth/server";
 import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
 import { cookies } from "next/headers";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   // Playground ทำ write จริงได้ จึงต้อง derive tenant จาก signed admin session เท่านั้น
   const admin = verifyAdminSession();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -56,3 +57,5 @@ export async function POST(req: NextRequest) {
   await logConversation(tenantId, channel, customerRef, message, result.reply, result.quality);
   return NextResponse.json(result);
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/chat", handlePOST);

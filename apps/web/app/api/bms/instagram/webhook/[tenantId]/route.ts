@@ -17,20 +17,21 @@ import { logConversation, deliverToChannel } from "@/lib/bms/inbox";
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHANNEL = "instagram";
 
-export async function GET(req: NextRequest, { params }: { params: { tenantId: string } }) {
+async function handleGET(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const cfg = await getChannel(params.tenantId?.trim(), CHANNEL);
   const challenge = metaChallenge(new URL(req.url), cfg);
   if (challenge) return new NextResponse(challenge, { status: 200 });
   return NextResponse.json({ error: "verification failed" }, { status: 403 });
 }
 
-export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
@@ -66,3 +67,6 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
   return NextResponse.json({ ok: true, tenantId, handled: events.length });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/instagram/webhook/[tenantId]", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/instagram/webhook/[tenantId]", handlePOST);

@@ -19,6 +19,7 @@ import {
   upsertCommissionRule,
   type CommissionScope,
 } from "@/lib/bms/commission";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export const dynamic = "force-dynamic";
 const SCOPES: CommissionScope[] = ["DEFAULT", "PRODUCT", "CATEGORY"];
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("commission.view");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ report: await getCommissionReport(auth.tenantId, from, to) });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("commission.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -72,3 +73,6 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json(result, { status: result.status === "SAVED" ? 200 : 400 });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/commission", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/commission", handlePOST);

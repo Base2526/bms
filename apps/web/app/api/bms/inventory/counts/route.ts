@@ -20,13 +20,14 @@ import {
   recordCountItem,
   type StockCountStatus,
 } from "@/lib/bms/stockCounts";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const STATUSES: StockCountStatus[] = ["DRAFT", "APPLIED", "CANCELLED"];
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("inventory.count");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ counts, locations });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = String(body.action ?? "");
 
@@ -90,3 +91,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/inventory/counts", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/inventory/counts", handlePOST);

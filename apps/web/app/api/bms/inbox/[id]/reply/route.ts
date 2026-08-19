@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sendStaffMessage } from "@/lib/bms/inbox";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "conversation id required" }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as { body?: unknown };
@@ -18,3 +19,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const httpStatus = result.status === "SENT" ? 200 : result.status === "NOT_FOUND" ? 404 : 400;
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/inbox/[id]/reply", handlePOST);

@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
 import { isDistinctPosApprover, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,10 @@ function badRequest(error: string) {
   return NextResponse.json({ error }, { status: 400 });
 }
 
-export async function POST(req: NextRequest) {
+// exception ที่หลุดออกจากตรงนี้ถูก withRouteErrorLog จับ → log ลง system_logs
+// แล้วตอบ { status: "SERVER_ERROR" } · จอ POS ถือว่า "ไม่รู้ผล" ไม่ใช่ "ขายไม่สำเร็จ"
+// จึงคงคีย์ idempotency ไว้ให้กดซ้ำ เพราะบิลอาจ commit ไปแล้วก่อนพัง
+async function handlePOST(req: NextRequest) {
   const token = req.headers.get("x-pos-device-token") ?? "";
   const device = await authenticatePosDevice(token);
   if (!device) {
@@ -131,3 +135,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const POST = withRouteErrorLog("POST /api/pos/sale", handlePOST);

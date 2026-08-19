@@ -5,6 +5,7 @@ import { query } from "@/lib/db";
 import { nanoid } from "nanoid";
 import { persistWebFile } from "@/lib/storage";
 import dayjs from "dayjs";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,7 @@ function makeWebFileFromBuffer(buf: Buffer, filename: string, mime: string) {
   } as unknown as File;
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   console.log("[POST] - dev fake posts with images + new fields");
 
   if (process.env.NODE_ENV === "production") {
@@ -203,3 +204,5 @@ export async function POST(req: NextRequest) {
     created,
   });
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/posts", handlePOST);

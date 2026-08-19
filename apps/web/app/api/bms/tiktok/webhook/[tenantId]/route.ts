@@ -14,13 +14,14 @@ import { logConversation } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type TikTokMessage = { id?: string; message_id?: string; user_id?: string; content?: { text?: string } };
 
-export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
@@ -72,3 +73,5 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/tiktok/webhook/[tenantId]", handlePOST);

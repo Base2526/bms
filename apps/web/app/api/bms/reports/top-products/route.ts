@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getTopSellingProducts } from "@/lib/bms/reports";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
   const rows = await getTopSellingProducts(
     DEFAULT_TENANT_ID,
@@ -17,3 +18,5 @@ export async function GET(req: NextRequest) {
   );
   return NextResponse.json({ products: rows });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/reports/top-products", handleGET);

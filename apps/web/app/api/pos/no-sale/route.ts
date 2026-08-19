@@ -19,27 +19,28 @@ import {
   recordNoSale,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function ctx(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
-  if (!device) return { error: NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 }) };
+  if (!device) return { error: NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 }), device: null, shift: null };
   const shift = await getOpenPosShift(device.tenantId, device.id);
-  if (!shift) return { error: NextResponse.json({ error: "ยังไม่ได้เปิดกะ" }, { status: 409 }) };
-  return { device, shift };
+  if (!shift) return { error: NextResponse.json({ error: "ยังไม่ได้เปิดกะ" }, { status: 409 }), device: null, shift: null };
+  return { error: null, device, shift };
 }
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const c = await ctx(req);
-  if ("error" in c) return c.error;
+  if (c.error) return c.error;
   return NextResponse.json({ noSales: await listNoSales(c.device.tenantId, c.shift.id) });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const c = await ctx(req);
-  if ("error" in c) return c.error;
+  if (c.error) return c.error;
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const cashierUserId = typeof body.cashierUserId === "string" ? body.cashierUserId.trim() : "";
@@ -62,3 +63,6 @@ export async function POST(req: NextRequest) {
   const status = result.status === "RECORDED" ? 200 : result.status === "SHIFT_NOT_OPEN" ? 409 : 400;
   return NextResponse.json(result, { status });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/no-sale", handleGET);
+export const POST = withRouteErrorLog("POST /api/pos/no-sale", handlePOST);

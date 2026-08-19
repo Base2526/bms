@@ -20,13 +20,14 @@ import {
   sendStockTransfer,
   type StockTransferStatus,
 } from "@/lib/bms/stockTransfers";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const STATUSES: StockTransferStatus[] = ["DRAFT", "IN_TRANSIT", "RECEIVED", "CANCELLED"];
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("inventory.transfer");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ transfers, locations });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("inventory.transfer");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -78,3 +79,6 @@ export async function POST(req: NextRequest) {
   const status = result.status === "OK" ? 200 : result.status === "NOT_FOUND" ? 404 : 409;
   return NextResponse.json(result, { status });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/inventory/transfers", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/inventory/transfers", handlePOST);

@@ -4,6 +4,7 @@ import {
   saveCheckoutDeliveryByToken,
 } from "@/lib/bms/checkout";
 import { audit } from "@/lib/bms/audit";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ function response(body: unknown, status = 200) {
   });
 }
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const token = new URL(req.url).searchParams.get("t") || "";
   const result = await getCheckoutByToken(token);
   return result.ok
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     : response({ error: result.reason }, 404);
 }
 
-export async function PATCH(req: NextRequest) {
+async function handlePATCH(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const token = typeof body.token === "string" ? body.token : "";
   if (!token) return response({ error: "ไม่พบ checkout token" }, 400);
@@ -57,3 +58,5 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+export const GET = withRouteErrorLog("GET /api/bms/checkout", handleGET);
+export const PATCH = withRouteErrorLog("PATCH /api/bms/checkout", handlePATCH);

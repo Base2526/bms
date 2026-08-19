@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { confirmPayment } from "@/lib/bms/payments";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(_req: NextRequest, { params }: { params: { id: string } }) {
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "payment id required" }, { status: 400 });
   const result = await confirmPayment(DEFAULT_TENANT_ID, id);
@@ -18,3 +19,5 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       : 409; // INVALID_STATE
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/payment/[id]/confirm", handlePOST);

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ function pick<T>(items: T[], index: number) {
   return items[index % items.length];
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) {
     return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   }
@@ -153,3 +154,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "insert failed" }, { status: 500 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/support-tickets", handlePOST);

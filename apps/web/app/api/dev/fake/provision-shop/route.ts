@@ -21,6 +21,7 @@ import {
   seedFakeRestockSubscriptions,
 } from "@/lib/bms/devSeed";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ const clamp = (v: unknown, def: number, min = 0, max = 500) => {
   return Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), min), max) : def;
 };
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -93,3 +94,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/provision-shop", handlePOST);

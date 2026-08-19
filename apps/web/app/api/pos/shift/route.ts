@@ -18,11 +18,12 @@ import {
   openPosShift,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -87,3 +88,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ error: "action ต้องเป็น open หรือ close" }, { status: 400 });
 }
+
+export const POST = withRouteErrorLog("POST /api/pos/shift", handlePOST);
