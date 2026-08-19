@@ -439,6 +439,11 @@ A set with no components is refused (`BUNDLE_INCOMPLETE`) rather than sold, beca
 nothing leaves the warehouse. A short component blocks the sale and the error names **the component**,
 not the set — "the set is out of stock" tells staff nothing they can act on.
 
+Migration `9.3` idempotently repairs the bundle table, RLS/grants, and expansion view for long-lived
+deployments that received bundle-aware application code without migration `8.8`. Do not add a runtime
+fallback to ordinary order lines: a register that appears to recover while deducting the set row
+instead of its components would turn a visible schema error into silent inventory corruption.
+
 ## Scale barcodes: weight and price embedded (8.8)
 
 Scales with a label printer — vegetables, meat, anything sold loose — print an EAN-13 with the weight
