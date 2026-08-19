@@ -7,6 +7,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
 import { audit } from "@/lib/bms/audit";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import sharp, { type Metadata } from "sharp";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ function response(body: unknown, status = 200) {
   });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const contentLength = Number(req.headers.get("content-length") || 0);
   if (contentLength > MAX_REQUEST_BYTES) {
     return response({ error: "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" }, 413);
@@ -143,3 +144,5 @@ export async function POST(req: NextRequest) {
     return response({ error: "แจ้งชำระไม่สำเร็จ กรุณาลองอีกครั้ง" }, 500);
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/checkout/payment", handlePOST);

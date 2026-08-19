@@ -22,13 +22,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { testPlatformAiKey } from "@/lib/bms/aiConfig";
 import { recordJobRun } from "@/lib/bms/jobRuns";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHECKED_PROVIDERS = ["anthropic", "anthropic-ocr", "deepseek", "qwen"] as const;
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const secret = process.env.BMS_CRON_SECRET;
   if (secret && req.headers.get("x-cron-secret") !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -48,3 +49,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/ai/check-health", handlePOST);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, partiallyReturnPosSale, returnPosSale, verifyCashierPin } from "@/lib/bms/pos";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ function badRequest(error: string) {
   return NextResponse.json({ error }, { status: 400 });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -112,3 +113,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(result, { status });
 }
+
+export const POST = withRouteErrorLog("POST /api/pos/return", handlePOST);

@@ -6,11 +6,12 @@ import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
 import { getPosReturnSummary } from "@/lib/bms/reports";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { requirePermission } from "@/lib/bms/permissions";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const admin = verifyAdminSession();
   if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
@@ -31,3 +32,5 @@ export async function GET(req: NextRequest) {
   );
   return NextResponse.json(summary);
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/reports/pos-returns", handleGET);

@@ -12,11 +12,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { reserveStock } from "@/lib/bms/stock";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     sku?: unknown;
     size?: unknown;
@@ -45,3 +46,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/reserve", handlePOST);

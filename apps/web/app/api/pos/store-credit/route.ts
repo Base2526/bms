@@ -9,11 +9,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
 
@@ -39,3 +40,5 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/store-credit", handleGET);

@@ -20,27 +20,28 @@ import {
   parkSale,
   resumeParkedSale,
 } from "@/lib/bms/pos";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function requireShift(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
-  if (!device) return { error: NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 }) };
+  if (!device) return { error: NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 }), device: null, shift: null };
   const shift = await getOpenPosShift(device.tenantId, device.id);
-  if (!shift) return { error: NextResponse.json({ error: "ยังไม่ได้เปิดกะ" }, { status: 409 }) };
-  return { device, shift };
+  if (!shift) return { error: NextResponse.json({ error: "ยังไม่ได้เปิดกะ" }, { status: 409 }), device: null, shift: null };
+  return { error: null, device, shift };
 }
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const ctx = await requireShift(req);
-  if ("error" in ctx) return ctx.error;
+  if (ctx.error) return ctx.error;
   return NextResponse.json({ parked: await listParkedSales(ctx.device.tenantId, ctx.shift.id) });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const ctx = await requireShift(req);
-  if ("error" in ctx) return ctx.error;
+  if (ctx.error) return ctx.error;
   const { device, shift } = ctx;
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -79,3 +80,6 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/park", handleGET);
+export const POST = withRouteErrorLog("POST /api/pos/park", handlePOST);

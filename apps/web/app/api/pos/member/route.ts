@@ -13,11 +13,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { enrollMember, searchMembers } from "@/lib/bms/membership";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ members: await searchMembers(device.tenantId, q, 10) }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -56,3 +57,6 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json(result, { status: result.status === "INVALID" ? 400 : 200 });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/member", handleGET);
+export const POST = withRouteErrorLog("POST /api/pos/member", handlePOST);

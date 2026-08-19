@@ -12,6 +12,20 @@
 
 import type { ApolloServerPlugin, BaseContext, GraphQLRequestListener } from "@apollo/server";
 import { recordRequestMetric } from "@/lib/bms/requestMetrics";
+import { writeLogServer } from "@/lib/log/writeLog.server";
+
+// error ที่ "ตั้งใจให้เกิด" — ผู้ใช้กรอกผิด/ไม่มีสิทธิ์/หมดอายุ ไม่ใช่ระบบพัง
+// เก็บไว้อ่านย้อนหลังได้เหมือนกัน แต่เป็น warn เพื่อไม่ให้ไปปลุก Slack alert
+// (alertSlackServer ยิงเมื่อ level=error ครบ threshold) และไม่กลบของจริง
+const EXPECTED_CODES = new Set([
+  "BAD_USER_INPUT",
+  "FORBIDDEN",
+  "UNAUTHENTICATED",
+  "GRAPHQL_VALIDATION_FAILED",
+  "GRAPHQL_PARSE_FAILED",
+  "BAD_REQUEST",
+  "PERSISTED_QUERY_NOT_FOUND",
+]);
 
 export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugin<TContext> {
   return {
@@ -28,6 +42,23 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
           const first = requestContext.errors?.[0];
           const code = first?.extensions?.code;
           errorCode = typeof code === "string" ? code : "INTERNAL_SERVER_ERROR";
+
+          // เขียนรายเคสลง system_logs ด้วย: metric ข้างล่างเป็นแค่ตัวนับ ไม่บอกว่า
+          // "พังว่าอะไร" · เดิม error ฝั่ง GraphQL ถูกบันทึกก็ต่อเมื่อมีเบราว์เซอร์
+          // แอดมินเปิดอยู่แล้ว errorLink ยิง /api/logs ให้ — งาน cron/AI/mobile
+          // ที่พังจึงไม่เหลือร่องรอยเลย
+          const operationName =
+            requestContext.operationName || requestContext.operation?.name?.value || "anonymous";
+          const level = EXPECTED_CODES.has(String(errorCode)) ? "warn" : "error";
+          // ไม่ใส่ variables: มีทั้งรหัสผ่าน token และข้อมูลลูกค้าปนอยู่
+          void writeLogServer(level, "graphql", `${operationName}: ${first?.message ?? "unknown error"}`, {
+            action: "graphql.error",
+            status: String(errorCode),
+            routeName: `gql:${operationName}`,
+            errorMessage: first?.message ?? null,
+            stack: first?.stack ?? null,
+            path: first?.path ? first.path.join(".") : null,
+          });
         },
         async willSendResponse(requestContext) {
           const operationName =

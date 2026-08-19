@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/auth/server";
 import { query } from "@/lib/db";
 import { createOnboardingSampleData, OnboardingSampleDataError } from "@/lib/bms/onboardingSampleData";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+async function handlePOST() {
   const admin = verifyAdminSession();
   if (!admin?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -35,3 +36,5 @@ export async function POST() {
     return NextResponse.json({ error: "สร้าง sample data ไม่สำเร็จ กรุณาลองอีกครั้งเพื่อทำต่อจากจุดเดิม" }, { status: 500 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/onboarding/sample-data", handlePOST);

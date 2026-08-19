@@ -5,13 +5,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireAdminOrInternal } from "@/lib/dev-guards";
 import { persistWebFile, buildFileUrlById } from "@/lib/storage";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const guard = requireAdminOrInternal(req);
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -32,3 +33,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "upload failed" }, { status: 500 });
   }
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/products/upload", handlePOST);

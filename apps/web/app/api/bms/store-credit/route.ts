@@ -12,11 +12,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { findStoreCredit, getStoreCreditOutstanding, issueStoreCredit } from "@/lib/bms/storeCredit";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("storecredit.redeem");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ outstanding: await getStoreCreditOutstanding(auth.tenantId) });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("storecredit.issue");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
@@ -44,3 +45,6 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json(result, { status: result.status === "ISSUED" ? 200 : 400 });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/store-credit", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/store-credit", handlePOST);

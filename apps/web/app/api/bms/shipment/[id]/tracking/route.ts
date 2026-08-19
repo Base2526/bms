@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { updateTracking, type Carrier } from "@/lib/bms/shipping";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "shipment id required" }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as { trackingNo?: unknown; carrier?: unknown };
@@ -18,3 +19,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!ok) return NextResponse.json({ status: "INVALID", id }, { status: 409 });
   return NextResponse.json({ ok: true, id });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/shipment/[id]/tracking", handlePOST);

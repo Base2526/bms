@@ -10,11 +10,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createShipment, listShipments, CARRIERS, type Carrier } from "@/lib/bms/shipping";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
   const rows = await listShipments(DEFAULT_TENANT_ID, {
     orderId: url.searchParams.get("orderId"),
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ shipments: rows });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
   const carrier = body.carrier as Carrier;
@@ -50,3 +51,6 @@ export async function POST(req: NextRequest) {
       : 400; // BAD_CARRIER
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/shipment", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/shipment", handlePOST);

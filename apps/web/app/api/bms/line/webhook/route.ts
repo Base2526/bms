@@ -13,6 +13,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 import { logConversation } from "@/lib/bms/inbox";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ type LineEvent = {
   message?: { id?: string; type: string; text?: string };
 };
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as { events?: LineEvent[] };
   const events = Array.isArray(body.events) ? body.events : [];
 
@@ -60,3 +61,5 @@ export async function POST(req: NextRequest) {
 //     body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
 //   });
 // }
+
+export const POST = withRouteErrorLog("POST /api/bms/line/webhook", handlePOST);

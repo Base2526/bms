@@ -10,11 +10,12 @@ import { authenticatePosDevice, getLatestPosSale } from "@/lib/bms/pos";
 import { getLocation } from "@/lib/bms/locations";
 import { decoratePosSale } from "@/lib/bms/posRouteHelpers";
 import { getVatSettings } from "@/lib/bms/taxDocuments";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
@@ -36,3 +37,5 @@ export async function GET(req: NextRequest) {
     }),
   });
 }
+
+export const GET = withRouteErrorLog("GET /api/pos/last-sale", handleGET);
