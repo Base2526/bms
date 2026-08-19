@@ -358,8 +358,10 @@ the tax document's line loader unions them in. Adding the amount to the total *a
 would make every invoice report a base smaller than the money taken — under-declaring by the sum of
 every service fee the shop ever charged.
 
-They are added before discounts too, since a percentage discount applies to what the customer actually
-pays.
+They are **not discountable**. Tier discounts, coupons, redeemed points, and manual discounts use the
+product subtotal; charges are added afterwards. They remain inside the VAT base at their full amount,
+so the tax calculation marks extra lines as non-discountable instead of proportionally spreading the
+order discount onto them.
 
 Rows that are incomplete — no label, no amount — are dropped rather than failing the bill, because the
 counter adds a row before typing in it. `pos.sell` is enough: charging ฿3 for a bag is routine work,

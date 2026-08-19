@@ -659,9 +659,10 @@ export async function createOrder(
       return { status: "POINTS_INVALID", reason: "แลกแต้มได้เฉพาะลูกค้าที่เป็นสมาชิก" };
     }
 
-    // ค่าบริการ/ค่าถุง (8.6) — บวกเข้ายอดสินค้าก่อนคิดส่วนลด
-    // ต้องอยู่ก่อนส่วนลดเพราะส่วนลดชั้นสมาชิกคิดเป็น % ของยอดบิล และค่าบริการ
-    // เป็นส่วนหนึ่งของยอดที่ลูกค้าจ่าย ไม่ใช่ยอดที่ยกเว้นจากการคิดส่วนลด
+    // ค่าบริการ/ค่าถุง (8.6) เป็นยอดที่ต้องจ่ายและอยู่ในฐาน VAT แต่ไม่ใช่สินค้า
+    // จึงไม่เข้า tier/coupon/แต้ม/ส่วนลดมือ: คิดส่วนลดจาก productSubtotal ก่อน
+    // แล้วค่อยบวก extraTotal กลับเข้า finalTotal
+    const productSubtotal = total;
     const extraLines = (input.extraLines ?? [])
       .map((x) => ({
         label: String(x?.label ?? "").trim(),
@@ -670,7 +671,11 @@ export async function createOrder(
         vatCategory: (x?.vatCategory === "N" || x?.vatCategory === "UNKNOWN" ? x.vatCategory : "V") as VatCategory,
       }))
       .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
-    for (const extra of extraLines) total += extra.unitAmount * extra.qty;
+    const extraTotal = Math.round(extraLines.reduce(
+      (sum, extra) => sum + extra.unitAmount * extra.qty,
+      0
+    ) * 100) / 100;
+    const grossSubtotal = Math.round((productSubtotal + extraTotal) * 100) / 100;
 
     // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
     // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
@@ -682,7 +687,7 @@ export async function createOrder(
 
     const breakdown = composeDiscounts({
       settings: loyaltySettings,
-      subtotal: total,
+      subtotal: productSubtotal,
       // ส่วนลดชั้นสมาชิกให้เฉพาะคนที่สมัครแล้ว ไม่ใช่ทุก record ในระบบ CRM
       tier: member?.memberNo ? member.tier : null,
       couponDiscount,
@@ -719,7 +724,8 @@ export async function createOrder(
     }
 
     const discount = breakdown.totalDiscount;
-    const finalTotal = Math.max(0, total - discount);
+    const discountedProductTotal = Math.max(0, productSubtotal - discount);
+    const finalTotal = Math.round((discountedProductTotal + extraTotal) * 100) / 100;
 
     // ขนส่งที่ลูกค้าอยากได้ — เก็บเฉพาะโค้ดที่รู้จัก ที่เหลือทิ้งเป็น null (ไม่ทำให้ออร์เดอร์ล้ม)
     const preferredCarrier: Carrier | null = isCarrier(input.preferredCarrier) ? input.preferredCarrier : null;
@@ -741,7 +747,7 @@ export async function createOrder(
         });
 
     // สร้าง order (เริ่มที่ PENDING = รอชำระเงิน, จองสต็อกไว้แล้ว)
-    // total_amount = ค่าสินค้า − ส่วนลด (ไม่รวมค่าส่ง — ดู migration 7.47)
+    // total_amount = ค่าสินค้า − ส่วนลด + ค่าบริการ (ไม่รวมค่าส่ง — 7.47)
     const ord = await client.query<{ id: string }>(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
                                pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason)
@@ -842,7 +848,7 @@ export async function createOrder(
       status: "CREATED",
       orderId,
       total: finalTotal,
-      subtotal: total,
+      subtotal: grossSubtotal,
       discount,
       shippingFee: shippingFee.fee,
       amountDue: finalTotal + shippingFee.fee,

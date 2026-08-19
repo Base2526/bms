@@ -22,6 +22,8 @@ export type VatLine = {
   /** ยอดรวมของบรรทัดนี้ (ราคา × จำนวน) หลังส่วนลดระดับบรรทัดแล้ว */
   amount: number;
   vatCategory: VatCategory;
+  /** false สำหรับค่าถุง/ค่าบริการที่บวกหลังส่วนลดสินค้า; ค่าเดิม default เป็น true */
+  discountEligible?: boolean;
 };
 
 export type VatBreakdown = {
@@ -103,25 +105,34 @@ export function computeVat(
   // (POS ไม่มีค่าส่ง ค่านี้จึงเป็น 0 เสมอ — มีไว้ให้ใบกำกับของออเดอร์ออนไลน์)
   const shipping = Math.max(0, round2(opts.shippingAmount ?? 0));
 
-  let taxableGross = 0;
-  let exempt = 0;
+  let discountableTaxable = 0;
+  let discountableExempt = 0;
+  let nonDiscountableTaxable = 0;
+  let nonDiscountableExempt = 0;
   for (const ln of lines) {
     const amount = Number(ln.amount) || 0;
-    if (!settings.vatRegistered || ln.vatCategory === "N") exempt += amount;
-    else taxableGross += amount;
+    const eligible = ln.discountEligible !== false;
+    if (!settings.vatRegistered || ln.vatCategory === "N") {
+      if (eligible) discountableExempt += amount;
+      else nonDiscountableExempt += amount;
+    } else if (eligible) discountableTaxable += amount;
+    else nonDiscountableTaxable += amount;
   }
 
   // ราคายังไม่รวม VAT → บวกเข้าไปก่อน แล้วจากนั้นคิดแบบเดียวกันทั้งสองแบบ
   if (settings.vatRegistered && !settings.priceIncludesVat) {
-    taxableGross = round2(taxableGross * (1 + rate / 100));
+    discountableTaxable = round2(discountableTaxable * (1 + rate / 100));
+    nonDiscountableTaxable = round2(nonDiscountableTaxable * (1 + rate / 100));
   }
   // ค่าส่งบวกเข้าฝั่งเสียภาษี ก่อนกระจายส่วนลด — ส่วนลดทั้งบิลลดค่าส่งด้วย
   if (shipping > 0) {
-    if (settings.vatRegistered) taxableGross += shipping;
-    else exempt += shipping;
+    if (settings.vatRegistered) discountableTaxable += shipping;
+    else discountableExempt += shipping;
   }
-  taxableGross = round2(taxableGross);
-  exempt = round2(exempt);
+  discountableTaxable = round2(discountableTaxable);
+  discountableExempt = round2(discountableExempt);
+  nonDiscountableTaxable = round2(nonDiscountableTaxable);
+  nonDiscountableExempt = round2(nonDiscountableExempt);
 
   // ส่วนลดทั้งบิลต้องลดฐานภาษีตามสัดส่วน ไม่ใช่ปล่อยให้ VAT คิดจากราคาเต็ม
   // ไม่งั้นใบกำกับจะระบุยอดมากกว่าเงินที่รับจริง = เก็บ VAT เกินและเอกสารไม่ตรงเงิน
@@ -129,17 +140,21 @@ export function computeVat(
   // หาฝั่งเสียภาษีก่อนแล้วลบเพื่อได้ฝั่งยกเว้น — ปัดสองครั้งแยกกันจะทำให้
   // ผลรวมไม่ตรงกับยอดที่ลูกค้าจ่ายพอดี
   if (discount > 0) {
-    const gross = round2(taxableGross + exempt);
+    const gross = round2(discountableTaxable + discountableExempt);
     const applied = Math.min(discount, gross);
     if (gross > 0) {
-      taxableGross = round2(taxableGross - (applied * taxableGross) / gross);
-      exempt = round2(gross - applied - taxableGross);
-      if (exempt < 0) {
-        taxableGross = round2(taxableGross + exempt);
-        exempt = 0;
+      discountableTaxable = round2(discountableTaxable - (applied * discountableTaxable) / gross);
+      discountableExempt = round2(gross - applied - discountableTaxable);
+      if (discountableExempt < 0) {
+        discountableTaxable = round2(discountableTaxable + discountableExempt);
+        discountableExempt = 0;
       }
     }
   }
+
+  // ค่าบริการยังอยู่ในฐาน VAT เต็มจำนวน แต่ถูกบวกกลับหลังส่วนลดสินค้า
+  const taxableGross = round2(discountableTaxable + nonDiscountableTaxable);
+  const exempt = round2(discountableExempt + nonDiscountableExempt);
 
   const split = splitGross(taxableGross, rate, settings.vatRounding ?? "BASE_FIRST");
   const vatAmount = split.vat;
