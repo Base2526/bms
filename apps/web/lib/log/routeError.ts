@@ -23,6 +23,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { writeLogServer } from "./writeLog.server";
+import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
@@ -43,7 +44,15 @@ export function withRouteErrorLog<Args extends any[]>(
         detail: error?.detail ?? null,
         message: error?.message ?? null,
       };
+      // console เขียนทุกครั้งเสมอ ไม่ throttle — เป็นทางถอยเดียวตอนฐานล่มจนเขียน
+      // system_logs ไม่ได้ และไม่มีต้นทุนอะไรนอกจากบรรทัดใน stdout
       console.error(`[route] unhandled ${routeName}`, { ...detail, stack: error?.stack ?? null });
+
+      // error เดียวกันรัว ๆ (ฐานล่ม → ทุก request พังเหมือนกัน) ไม่ต้องเขียนทุกครั้ง
+      // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
+      if (!shouldLog(`api|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
+        return errorResponse(detail.message);
+      }
 
       // ไม่ await — ถ้าต้นเหตุคือฐานล่ม การรอเขียน log จะหน่วง response เปล่า ๆ
       // (writeLogServer กลืน error ของตัวเองอยู่แล้ว ไม่มีทาง throw กลับมา)
@@ -58,13 +67,14 @@ export function withRouteErrorLog<Args extends any[]>(
         detail: detail.detail,
       });
 
-      return NextResponse.json(
-        {
-          status: "SERVER_ERROR",
-          error: detail.message ? String(detail.message) : "เซิร์ฟเวอร์ผิดพลาด",
-        },
-        { status: 500 }
-      );
+      return errorResponse(detail.message);
     }
   };
+}
+
+function errorResponse(message: string | null) {
+  return NextResponse.json(
+    { status: "SERVER_ERROR", error: message ? String(message) : "เซิร์ฟเวอร์ผิดพลาด" },
+    { status: 500 }
+  );
 }
