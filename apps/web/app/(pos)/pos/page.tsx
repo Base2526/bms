@@ -1578,7 +1578,7 @@ export default function PosPage() {
     // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
     setSplitMode(true);
     setPayments((cur) =>
-      cur.length === 1 && !cur[0].amount ? [{ ...cur[0], amount: String(total) }] : cur
+      cur.length === 1 && !cur[0].amount ? [{ ...cur[0], amount: String(amountDue) }] : cur
     );
     setPayments((cur) => [
       ...cur,
@@ -4125,7 +4125,7 @@ export default function PosPage() {
             onClick={() => void pay()}
             style={{ marginTop: 12 }}
           >
-            {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(total)}`}
+            {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(amountDue)}`}
           </button>
           <button
             disabled={hasPendingSale}

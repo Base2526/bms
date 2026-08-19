@@ -247,6 +247,12 @@ sold, and nobody notices.
 
 ## Gift cards and store credit (8.9)
 
+Migration `9.4` is the idempotent repair path for long-lived deployments that skipped `8.9`–`9.2`.
+It restores both store-credit tables, the deposit table, payment idempotency, RLS/grants, indexes and
+role permissions in one transaction, then checks every application-facing column before committing.
+This is intentionally a schema repair rather than a runtime fallback: checkout must never continue
+with only part of its payment ledger available.
+
 Closes two gaps at once: gift cards could not be sold at all, and a return could only go back as cash
 or to the original payment method — never as store credit, which is what shops prefer because the money
 stays in the shop.
