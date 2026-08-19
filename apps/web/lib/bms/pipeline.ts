@@ -11,6 +11,7 @@
 import { parseOrderItems, understand, type Understanding } from "./nlu";
 import {
   looksLikeRequestedItemList,
+  parseRequestedItems,
   requestedItemTargetIndex,
   stripMarkdownEmphasis,
   stripRequestNoise,
@@ -59,6 +60,11 @@ import {
 } from "./customerReplyPolicy";
 import { ensureCustomerForIdentity, findCustomerIdByIdentity, getCustomerCheckoutStatus } from "./customers";
 import { orderCheckoutChatReply } from "./checkout";
+import {
+  composeMissingQuantityQuestion,
+  composeOrderQuoteSummary,
+  multiItemOrderExample,
+} from "./orderQuote";
 import {
   createCouponWalletToken,
   listAvailableCouponsForCustomer,
@@ -1101,6 +1107,26 @@ function nonPharmacyHealthClarificationReply(): string {
   return "ขอเช็กนิดนึงค่ะ ร้านนี้ไม่ได้ตั้งค่าเป็นร้านขายยา หมายถึงถามหาสินค้าในร้าน หรือพิมพ์เรื่องอาการป่วยมาผิดแชทคะ?";
 }
 
+/**
+ * ลูกค้าถามว่า "สั่งหลายอย่างทีเดียวได้ไหม" หรือ "ขอตัวอย่างการสั่ง"
+ *
+ * ต้องมีทั้งสองส่วน (ถามวิธี/ขอตัวอย่าง + สื่อถึงหลายรายการ) ไม่งั้นจะไปกินคำถามอื่น
+ * ที่มีคำว่า "เยอะ" ปนอยู่ เช่น "มีสินค้าเยอะไหม"
+ */
+function isMultiItemOrderHowToQuestion(message: string): boolean {
+  const text = String(message || "").trim();
+  if (!text) return false;
+  const asksHowOrExample =
+    /(?:ขอตัวอย่าง|ตัวอย่าง|ยังไง|อย่างไร|ต้องพิมพ์|พิมพ์แบบไหน|พิมพ์ยังไง|สั่งได้ไหม|สั่งได้มั้ย|ได้ไหม|ได้มั้ย|how\s+(?:do|to)|example)/i.test(
+      text
+    );
+  const mentionsManyItems =
+    /(?:ทีละเยอะ|หลายรายการ|หลายอย่าง|หลายชนิด|หลายๆ|หลาย ๆ|เยอะ ๆ|เยอะๆ|multiple items|several items|many items)/i.test(
+      text
+    );
+  return asksHowOrExample && mentionsManyItems;
+}
+
 function isBusinessClarification(reply: string): boolean {
   return /(?:ไซซ์|size|ขนาด|จำนวน|กี่ชิ้น|กี่คู่|ช่องทาง.*(?:โอน|ชำระ)|วิธี.*(?:โอน|ชำระ)).*(?:คะ|ค่ะ|\?)/is.test(
     reply
@@ -1796,6 +1822,22 @@ export async function runPipeline(
     });
   }
 
+  // "สั่งหลายรายการทีเดียวได้ไหม / ขอตัวอย่าง" → ตอบด้วยรูปแบบคงที่ฝั่ง server
+  //
+  // เคสจริง 2026-08-19: โมเดลแต่งตัวอย่างขึ้นมาเอง (ครอบ `**` แบบ markdown และไม่มีคำกริยา
+  // สั่งซื้อ) ลูกค้าก็อปตามเป๊ะ แล้วระบบรับไม่ได้ทั้งข้อความ → บอทสอนรูปแบบที่ตัวเองรับไม่ได้
+  // ตัวอย่างจึงต้องมาจากที่เดียวกับที่นิยามว่ารูปแบบไหนรับได้ ไม่ใช่จากความจำของโมเดล
+  if (isMultiItemOrderHowToQuestion(aiInputMessage)) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:multi_item_example",
+      data: { status: "NOT_FOUND", query: message },
+      reply: multiItemOrderExample(englishReply ? "en" : "th"),
+    });
+  }
+
   if (isAlternativeCatalogRequest(aiInputMessage)) {
     const executed = await executeCustomerTool("browse_catalog", { limit: 8 }, execCtx);
     const products =
@@ -2126,11 +2168,46 @@ export async function runPipeline(
       ...orderMemory,
       lastIntent: classifiedIntent,
       lastAskedField: storedState.lastAskedField ?? null,
+      // ต้องยกมาด้วย ไม่งั้นตะกร้าที่รอลูกค้ายืนยันจะถูกลืมในเทิร์นถัดไป
+      // แล้วลูกค้าตอบ "ยืนยัน" ไปก็ถูกถามใหม่วนไม่จบ
+      pendingQuoteFingerprint: storedState.pendingQuoteFingerprint ?? null,
     }).catch(async (err) => {
       console.error("[BMS] pipeline AI state update failed:", err);
       await reportStateFailure(err, "state_update");
     });
   }
+
+  // ลูกค้าตอบยืนยันตะกร้าที่ระบบสรุปให้ดูในเทิร์นก่อน → ปลดล็อกให้ create_order เขียนได้
+  //
+  // ธงนี้เป็น server-only เสมอ: มาจาก "ข้อความของลูกค้าเอง" (orderMemory.confirmed ซึ่ง
+  // อ่านคำว่า ยืนยัน/สั่งเลย/ตกลง) คู่กับลายนิ้วมือที่ระบบเก็บไว้ตอนสรุป — โมเดลส่งค่านี้เองไม่ได้
+  // ถ้าโมเดลเปลี่ยนจำนวนหรือแอบเพิ่มรายการหลังลูกค้ายืนยัน ลายนิ้วมือจะไม่ตรงและวนกลับไปถามใหม่
+  if (storedState.pendingQuoteFingerprint && orderMemory?.confirmed) {
+    execCtx.customerConfirmedQuote = { fingerprint: storedState.pendingQuoteFingerprint };
+  }
+  // ลูกค้าพิมพ์รายการมาหลายอย่างแต่บางรายการไม่ได้บอกจำนวน → ถามกลับ **ฝั่ง server**
+  //
+  // requestedItems.ts ตั้งใจให้ `qty === null` หมายถึง "ลูกค้าไม่ได้บอก" และห้ามเติมให้เอง
+  // แต่เดิมไม่มีใครบังคับให้ถาม — ปล่อยให้โมเดลสังเกตเอง ซึ่งมันมักถามรายการเดียวแล้วลืมที่เหลือ
+  // ข้อความที่ประกอบเองยกทุกรายการกลับไปให้ลูกค้าเห็น ลูกค้าจึงตรวจได้ว่าไม่มีรายการไหนหายไป
+  //
+  // วางไว้หลังด่านร้านยาทั้งชุด (emergency/intake/clinical) จึงไม่แย่งเส้นทางคัดกรองไปจากเภสัชกร
+  if (!orderMemory?.confirmed) {
+    const requested = parseRequestedItems(aiInputMessage);
+    const missingQty = requested.filter((item) => item.qty === null);
+    const hasConcreteItem = requested.some((item) => item.qty !== null && item.unit !== null);
+    if (requested.length >= 2 && missingQty.length > 0 && hasConcreteItem) {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:missing_quantity",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: composeMissingQuantityQuestion(requested, englishReply ? "en" : "th"),
+      });
+    }
+  }
+
   // รายการที่พร้อมสั่งจากความจำ — ต้อง "ครบทุกรายการ" จึงจะเดินทางลัดนี้
   //
   // ถ้าลูกค้าขอมาหลายอย่างแล้วมีแม้ตัวเดียวที่ยังขาดไซซ์/จำนวน หรือหาสินค้าไม่เจอ
@@ -2195,6 +2272,36 @@ export async function runPipeline(
         execCtx
       );
       routeTrace.push(created.trace);
+      // ตะกร้าชุดนี้ยังไม่ถูกลูกค้ายืนยัน → ทูลไม่ได้เขียนอะไร คืนสรุปรายการมาให้ถามยืนยัน
+      // ต้องดักก่อนโค้ดข้างล่าง เพราะ data ที่ได้ไม่ใช่ CreateOrderResult
+      if (execCtx.pendingOrderQuote) {
+        const quoteReply = composeOrderQuoteSummary(
+          execCtx.pendingOrderQuote.lines,
+          englishReply ? "en" : "th"
+        );
+        if (convId) {
+          await setAiConversationState(tenantId, convId, {
+            ...(orderMemory ?? storedState),
+            lastIntent: classifiedIntent,
+            // ล้างคำยืนยันเดิมทิ้ง: ลูกค้าต้องยืนยัน "ชุดที่เพิ่งเห็น" ไม่ใช่คำยืนยันเก่า
+            // ที่พูดไว้ก่อนจะมีรายการให้ดู
+            confirmed: false,
+            pendingQuoteFingerprint: execCtx.pendingOrderQuote.fingerprint,
+          }).catch(async (err) => {
+            console.error("[BMS] pipeline pending-quote state persist failed:", err);
+            await reportStateFailure(err, "state_persist");
+          });
+        }
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: "deterministic:create_order",
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: quoteReply,
+          trace: routeTrace,
+        });
+      }
       let reply: string;
       let order: CreateOrderResult | undefined;
       if (!created.result.ok) {
@@ -2280,6 +2387,16 @@ export async function runPipeline(
       );
     } else if (execCtx.pharmacyReviewCaseId) {
       reply = `รายการนี้ต้องให้เภสัชกรตรวจสอบก่อนค่ะ ระบบส่งเข้าคิวแล้ว ยังไม่ได้สร้างออร์เดอร์ เลขเคสสำหรับติดตาม: ${execCtx.pharmacyReviewCaseId}`;
+    } else if (execCtx.pendingOrderQuote) {
+      // ยังไม่ได้สร้างบิลและยังไม่ได้จองสต็อก — ลูกค้าต้องเห็นรายการทั้งชุดก่อนทุกครั้ง
+      //
+      // ข้อความนี้ **ประกอบฝั่ง server ไม่ใช่ของโมเดล** โดยตั้งใจ: โมเดลจึงตัดรายการทิ้ง
+      // หรือเขียนจำนวนผิดไม่ได้ และ output ของโมเดลไม่ต้องยาวตามจำนวนรายการ (ถ้าให้โมเดล
+      // เขียนลิสต์เอง บิลยิ่งใหญ่ยิ่งเสี่ยงชนเพดาน max_tokens — กลับหัวกับที่ควรเป็น)
+      reply = composeOrderQuoteSummary(
+        execCtx.pendingOrderQuote.lines,
+        englishReply ? "en" : "th"
+      );
     } else if (loop.systemFailure === "empty_reply") {
       // ระบบไม่ได้คำตอบจากโมเดล — **ห้ามบอกลูกค้าให้พิมพ์ใหม่** ลูกค้าพิมพ์ถูกแล้ว
       // (เคสจริง 2026-08-19: ลูกค้าก็อปตัวอย่างที่บอทสอนมาเป๊ะ แล้วถูกไล่ให้พิมพ์ใหม่)
@@ -2316,6 +2433,12 @@ export async function runPipeline(
             ...(orderMemory ?? storedState),
             lastIntent: classifiedIntent,
             lastAskedField: askedFieldFromReply(reply),
+            // จำตะกร้าที่เพิ่งสรุปให้ลูกค้าดู เพื่อให้คำว่า "ยืนยัน" ในเทิร์นถัดไปผูกกับชุดนี้
+            // ถ้าเทิร์นนี้ไม่มีการสรุปใหม่ ให้คงค่าเดิมไว้ (ลูกค้าอาจถามอย่างอื่นคั่นก่อนยืนยัน)
+            pendingQuoteFingerprint:
+              execCtx.pendingOrderQuote?.fingerprint ??
+              storedState.pendingQuoteFingerprint ??
+              null,
           };
       await setAiConversationState(tenantId, convId, nextState).catch(async (err) => {
         console.error("[BMS] pipeline AI state persist failed:", err);

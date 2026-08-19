@@ -607,6 +607,14 @@ export type AiConversationState = {
   }>;
   lastIntent?: string | null;
   lastAskedField?: string | null;
+  /**
+   * ลายนิ้วมือของตะกร้าที่ระบบสรุปให้ลูกค้าดูในเทิร์นก่อน และกำลังรอคำว่า "ยืนยัน"
+   *
+   * เก็บแค่ลายนิ้วมือ ไม่เก็บตัวรายการ เพราะรายการจริงต้องถูก resolve ใหม่จาก catalog
+   * ตอนสร้างบิลอยู่แล้ว (ราคา/สต็อก/หน่วยขายเปลี่ยนได้ระหว่างสองเทิร์น) ค่านี้ทำหน้าที่
+   * เดียวคือผูกคำว่า "ยืนยัน" ไว้กับตะกร้าชุดที่ลูกค้าเห็นจริง · JSONB ไม่ต้อง migration
+   */
+  pendingQuoteFingerprint?: string | null;
   updatedAt?: string;
 };
 

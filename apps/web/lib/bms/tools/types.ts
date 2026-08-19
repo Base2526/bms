@@ -6,6 +6,7 @@
 // ยึดตาม docs/AI_GUIDELINES.md (§ Tool design and execution)
 // =============================================================
 
+import type { OrderQuoteLine } from "../orderQuote";
 import type { BmsPermission } from "../permissions";
 import type { Channel } from "../pipeline";
 
@@ -33,6 +34,20 @@ export type ExecCtx = {
   createdOrderId?: string;
   /** Server-only tracking id for a product purchase routed to pharmacist review. */
   pharmacyReviewCaseId?: string;
+  /**
+   * Server-only. Set by the pipeline (never by the model) when the customer's own
+   * message affirms a basket that was itemised back to them on a previous turn.
+   * The fingerprint pins the affirmation to that exact basket, so a model cannot
+   * change a quantity or slip an item in after the customer has said yes.
+   */
+  customerConfirmedQuote?: { fingerprint: string } | null;
+  /**
+   * Server-only signal set by create_order when it declines to write because the
+   * customer has not confirmed this basket yet. Carries structured lines rather
+   * than finished prose so the pipeline — which is the only layer that knows the
+   * conversation language — composes the wording.
+   */
+  pendingOrderQuote?: { fingerprint: string; lines: OrderQuoteLine[] };
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
 };

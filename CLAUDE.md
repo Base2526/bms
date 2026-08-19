@@ -55,6 +55,15 @@ look done in code but need their migration first.
   read from `bms_product_packs` server-side, never supplied by the model.
 - Sensitive actions (delete, refund, cancel, change price, adjust inventory) require **human
   confirmation + RBAC permission**.
+- **A customer order is never created until the customer has seen every line and said yes.** The
+  first `create_order` call for a basket on the customer surface writes nothing — it returns
+  `CONFIRMATION_REQUIRED` plus the resolved lines, the pipeline shows a **server-composed** itemised
+  summary (never the model's prose), and only a call whose lines still match the fingerprint the
+  customer affirmed creates the order. The confirmation signal is server-only (`ExecCtx`), so the
+  model cannot grant it to itself, change a quantity, or add a line after the customer agreed.
+- **AI never answers with an empty turn.** A model turn carrying no text block is a system failure
+  (`ai.empty_reply`), not an answer — the customer is told the system failed and a human is alerted.
+  Never tell a customer to retype what they typed correctly.
 - Every AI tool attempt is audited without raw arguments/PII; successful writes and confirmed
   proposals keep their normal domain audit entries too.
 - High-impact records use revision history for before/after snapshots; the audit log remains the
