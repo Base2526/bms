@@ -52,6 +52,14 @@ export type BmsFailureCode =
   | "ai.context_load_failed"
   /** บันทึก state ของบทสนทนาไม่สำเร็จ → ความจำหาย ถามซ้ำ */
   | "ai.state_persist_failed"
+  /**
+   * ปิด usage event ไม่สำเร็จ → แถวค้างที่ status 'started' และ token เป็น NULL
+   *
+   * เดิมเคสนี้มีแต่ console.error ผลคือ **ทุกแถวใน BMS-LIVE ค้างที่ 'started'**
+   * โดยไม่มีใครรู้ (ตัวกวาด stale ไปติดป้าย 'failed' ทีหลัง ภาพจึงดูสมเหตุสมผล)
+   * แปลว่า quota/cost/รายงานทั้งชุดตาบอด และการไล่ปัญหา AI ไม่มีข้อมูลตั้งต้นเลย
+   */
+  | "ai.usage_finalize_failed"
   /** AI Pharmacy Intake: ไม่มี credentials/เกิน quota/validation retry หมด → ส่งเคสให้เภสัชกรตรวจเอง */
   | "pharmacy_ai.unavailable"
   /** AI Pharmacy Intake: ผลลัพธ์จาก AI validate ไม่ผ่านซ้ำจนครบจำนวน retry */
@@ -118,6 +126,12 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     tier: "B",
     shopTitle: "ผู้ช่วย AI บันทึกความจำบทสนทนาไม่สำเร็จ",
     shopMessage: "ระบบบันทึกสถานะบทสนทนาไม่สำเร็จ AI อาจถามข้อมูลเดิมซ้ำ",
+  },
+  "ai.usage_finalize_failed": {
+    tier: "B",
+    shopTitle: "ระบบบันทึกการใช้งาน AI ไม่สำเร็จ",
+    shopMessage:
+      "คำตอบถูกส่งให้ลูกค้าเรียบร้อยแล้ว แต่ระบบปิดรายการบันทึกการใช้งาน AI ไม่สำเร็จ ทำให้ยอดโทเคน/ค่าใช้จ่ายของรายการนี้หายไปจากรายงาน",
   },
   "pharmacy_ai.unavailable": {
     tier: "A",

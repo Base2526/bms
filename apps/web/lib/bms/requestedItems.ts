@@ -307,6 +307,29 @@ export function parseRequestedItems(
   }));
 }
 
+/**
+ * Does this message read as a bare list of things to buy, with no request verb?
+ *
+ * Thai customers routinely write a basket as "ชื่อ + จำนวน + หน่วย" separated by
+ * commas and nothing else — and it is exactly the shape our own bot teaches when
+ * a customer asks how to order several items at once. Without a verb, both
+ * `understand()` (which needs an ORDER_HINT word) and
+ * `isExplicitPharmacyProductRequest()` (which needs a PRODUCT_REQUEST verb)
+ * classify it as a passive enquiry, so no deterministic route claims it.
+ *
+ * Deliberately strict: **every** segment must carry both a quantity and a unit,
+ * and there must be more than one of them. One item with a quantity is already
+ * handled by the existing single-product paths, and requiring all segments to
+ * qualify keeps prose containing one incidental "2 ขวด" from being read as a
+ * basket. This never says WHICH products these are — that is still a catalog
+ * lookup, and for medicine a clinical decision.
+ */
+export function looksLikeRequestedItemList(text: string): boolean {
+  const items = parseRequestedItems(text);
+  if (items.length < 2) return false;
+  return items.every((item) => item.qty !== null && item.unit !== null);
+}
+
 /** Locate the existing line a one-line correction refers to. */
 export function requestedItemTargetIndex(items: RequestedItem[], text: string): number | null {
   const ordinal = String(text || "").match(/(?:ตัว|รายการ|อัน|ข้อ)\s*ที่\s*(\d+)/i)?.[1];

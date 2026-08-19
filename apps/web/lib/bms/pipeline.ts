@@ -10,6 +10,7 @@
 
 import { parseOrderItems, understand, type Understanding } from "./nlu";
 import {
+  looksLikeRequestedItemList,
   requestedItemTargetIndex,
   stripMarkdownEmphasis,
   stripRequestNoise,
@@ -452,6 +453,13 @@ function classifyCustomerIntent(message: string, understanding: Understanding): 
   if (isReorderRequest(message)) return "reorder";
   if (isCouponQuestion(message)) return "coupon";
   if (understanding.intent === "CONFIRM_ORDER") return "ordering";
+  // ตะกร้าที่พิมพ์เป็นรายการล้วน ๆ ไม่มีคำกริยาสั่งซื้อ ("พารา 5 แผง, ยาแดง 2 ขวด")
+  // คนอ่านรู้ทันทีว่าเป็นออร์เดอร์ แต่ understand() ต้องเห็น ORDER_HINT ก่อนจึงจะให้
+  // CONFIRM_ORDER — ข้อความแบบนี้จึงเคยตกเป็น "inquiry" ทั้งที่ร้านเราสอนลูกค้าพิมพ์แบบนี้เอง
+  //
+  // เปลี่ยนแค่ "โหมด" ที่บอกโมเดล + gate ของทางลัด deterministic ซึ่งยังต้องมีคำยืนยัน
+  // ชัดเจน (orderMemory.confirmed) อยู่ดี จึงไม่มีทางสร้างบิลเพิ่มจากการจัดประเภทนี้
+  if (looksLikeRequestedItemList(message)) return "ordering";
   return "inquiry";
 }
 

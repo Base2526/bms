@@ -195,6 +195,39 @@ export function hasSensitiveStaffIntent(
 }
 
 /**
+ * ลูปนี้เคยถูกเรียกว่า "bounded" แต่คุมแค่ฝั่ง AI (MAX_ROUNDS + timeout ต่อ provider call)
+ * ส่วน `tool.execute` ซึ่งไปแตะ Postgres จริงไม่มีเพดานเวลาเลย — lock contention หรือ query
+ * ที่ช้าผิดปกติจึงค้าง request ได้ไม่จำกัด แล้วลูกค้าไม่ได้คำตอบและไม่มีใครรู้ว่าค้างที่ไหน
+ *
+ * ตั้งไว้สูงกว่า provider timeout เพราะทูลเขียน (create_order) ทำงานในทรานแซกชันที่ยาวกว่า
+ * การอ่านหนึ่งครั้ง · timeout ที่นี่ **ไม่ยกเลิกงานที่ DB กำลังทำอยู่** (pg ไม่มี cancel ผ่าน
+ * AbortSignal ที่ระดับนี้) — มันแค่ทำให้ลูปเดินต่อไปได้และรายงานว่าทูลไหนค้าง ทรานแซกชันที่
+ * ค้างยังต้องพึ่ง statement_timeout ฝั่ง Postgres ตามปกติ
+ */
+const TOOL_TIMEOUT_MS = 30_000;
+
+async function executeToolBounded(
+  tool: BmsTool,
+  input: Record<string, unknown>,
+  ec: ExecCtx
+): Promise<ToolResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      tool.execute(input, ec),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`ทูล ${tool.name} ใช้เวลาเกิน ${TOOL_TIMEOUT_MS} ms`)),
+          TOOL_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Gate ตอน execute (defense in depth): การกรอง tool schema ก่อนส่งให้ Claude อย่างเดียวไม่พอ
  * เพราะ model/provider output ถือเป็น untrusted input เสมอ
  */
@@ -332,7 +365,7 @@ async function runApprovedToolInternal(
     input = inputRecord(opts.input ?? {});
     validateKnownFields(tool, input);
     assertSingleCustomerOrderWrite(tool, execCtx);
-    const executed = await tool.execute(input, execCtx);
+    const executed = await executeToolBounded(tool, input, execCtx);
     if (executed.ok && executed.proposal) {
       if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
       outcome = "proposal";
@@ -595,7 +628,7 @@ async function runToolLoopInternal(
               });
             } else {
               assertSingleCustomerOrderWrite(tool, opts.execCtx);
-              const r = await tool.execute(traceInput, opts.execCtx);
+              const r = await executeToolBounded(tool, traceInput, opts.execCtx);
               if (r.ok && r.proposal) {
                 if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
                 proposals.push(r.proposal);
