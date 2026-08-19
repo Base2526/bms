@@ -239,7 +239,12 @@ export async function updateVatSettings(
   return getVatSettings(tenantId);
 }
 
-type OrderLineForVat = { sku: string; amount: number; vatCategory: VatCategory };
+type OrderLineForVat = {
+  sku: string;
+  amount: number;
+  vatCategory: VatCategory;
+  discountEligible: boolean;
+};
 
 /** ส่วนลดทั้งบิล — ต้องนำไปลดฐานภาษีตามสัดส่วน ไม่งั้นใบกำกับยอดเกินเงินที่รับ */
 async function loadOrderAdjustmentsInTx(
@@ -267,12 +272,14 @@ async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId:
   const res = await client.query<any>(
     `SELECT product_sku,
             vat_category,
-            COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount
+            COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount,
+            TRUE AS discount_eligible
        FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2
      UNION ALL
      SELECT 'EXTRA:' || label AS product_sku,
             vat_category,
-            unit_amount * qty AS amount
+            unit_amount * qty AS amount,
+            FALSE AS discount_eligible
        FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2`,
     [tenantId, orderId]
   );
@@ -280,6 +287,7 @@ async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId:
     sku: r.product_sku,
     amount: Number(r.amount),
     vatCategory: (r.vat_category ?? "UNKNOWN") as VatCategory,
+    discountEligible: Boolean(r.discount_eligible),
   }));
 }
 

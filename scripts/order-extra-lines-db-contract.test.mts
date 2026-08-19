@@ -33,6 +33,7 @@ import { computeVat } from "../apps/web/lib/bms/vat.ts";
 
 const TAG = "extraline-test";
 const SKU = `FAKE-${TAG}-SKU`;
+const COUPON = `EXTRA10-${TAG}`.toUpperCase();
 const SIZE = "M";
 
 let tenantId = "";
@@ -70,6 +71,13 @@ test("setup: one ฿100 product", async () => {
      ON CONFLICT (tenant_id, location_id, product_sku, size)
        DO UPDATE SET current_stock = 500, reserved_stock = 0`,
     [tenantId, locationId, SKU, SIZE]
+  );
+  await query(
+    `INSERT INTO bms_coupons (tenant_id, code, type, value, active, redemptions_count)
+     VALUES ($1,$2,'PERCENT',10,TRUE,0)
+     ON CONFLICT (tenant_id, code) DO UPDATE
+       SET type = 'PERCENT', value = 10, active = TRUE, redemptions_count = 0`,
+    [tenantId, COUPON]
   );
 });
 
@@ -149,8 +157,8 @@ test("charges are inside the VAT base, not bolted on after it", async () => {
   assert.ok(lines.rows.some((r) => r.product_sku === "EXTRA:ค่าบริการ" && Number(r.amount) === 50));
 });
 
-test("a percentage discount applies to the charge too, because the customer pays it", async () => {
-  // ยอด 100 + 50 = 150 · ลดมือ 15 → 135 · ถ้าค่าบริการอยู่นอกยอดก่อนลด ตัวเลขจะเพี้ยน
+test("a fixed manual discount applies to products before the charge is added", async () => {
+  // ยอดสินค้า 100 − ลดมือ 15 + ค่าบริการ 50 = 135
   const res = await createOrder({
     tenantId, channel: "pos", locationId,
     items: [{ sku: SKU, size: SIZE, qty: 1 }],
@@ -169,6 +177,37 @@ test("a percentage discount applies to the charge too, because the customer pays
   assert.equal(res.total, 135);
 });
 
+test("a percentage coupon does not discount bag or service charges", async () => {
+  // คูปอง 10% คิดจากสินค้า 100 เท่านั้น = 10 แล้วค่อยบวกค่าบริการ 50
+  // ถ้าเอาค่าบริการเข้า base จะลด 15 และได้ยอดผิดเป็น 135
+  const res = await createOrder({
+    tenantId, channel: "pos", locationId,
+    items: [{ sku: SKU, size: SIZE, qty: 1 }],
+    extraLines: [{ label: "ค่าบริการ", unitAmount: 50 }],
+    couponCode: COUPON,
+  } as any);
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  created.push(res.orderId);
+  assert.equal(res.subtotal, 150);
+  assert.equal(res.discount, 10);
+  assert.equal(res.total, 140);
+});
+
+test("VAT allocation leaves a non-discountable charge at full value", () => {
+  const vat = computeVat(
+    [
+      { sku: SKU, amount: 100, vatCategory: "N" },
+      { sku: "EXTRA:ค่าบริการ", amount: 50, vatCategory: "V", discountEligible: false },
+    ],
+    { vatRegistered: true, priceIncludesVat: true, vatRate: 7 },
+    { discountAmount: 10 }
+  );
+  assert.equal(vat.exemptAmount, 90, "ส่วนลด 10 ลดเฉพาะสินค้า N");
+  assert.equal(vat.taxableAmount, 50, "ค่าบริการ V ต้องอยู่ในฐาน VAT เต็ม 50");
+  assert.equal(vat.grandTotal, 140);
+});
+
 test("teardown: remove every row this suite created", async () => {
   if (created.length) {
     await query(`DELETE FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`,
@@ -181,4 +220,5 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM bms_coupons WHERE tenant_id = $1 AND code = $2`, [tenantId, COUPON]);
 });

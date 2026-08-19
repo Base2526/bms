@@ -678,7 +678,7 @@ export default function PosPage() {
 
   const total = useMemo(() => {
     const chargedPromo = new Set<string>();
-    let sum = extraTotal;
+    let sum = 0;
     for (const line of cart) {
       const promo = line.baseQty > 1 ? null : promoBySku.get(line.sku);
       if (promo) {
@@ -689,7 +689,7 @@ export default function PosPage() {
       sum += (tierPriceByKey.get(line.key) ?? line.packPrice) * line.packQty;
     }
     return Math.round(sum * 100) / 100;
-  }, [cart, tierPriceByKey, extraTotal, promoBySku]);
+  }, [cart, tierPriceByKey, promoBySku]);
   const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
 
   // ---- สมาชิก + แต้ม (7.96) ----------------------------------------
@@ -697,7 +697,9 @@ export default function PosPage() {
   // ถ้าจอคิดเองแล้วต่างจาก server แม้สตางค์เดียว บิลจะโดน PAYMENT_MISMATCH
   // แล้วถูกยกเลิกทิ้งทั้งใบ
   const discountTotal = memberPreview?.totalDiscount ?? 0;
+  /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
+  const payableBeforeRounding = Math.round((netTotal + extraTotal) * 100) / 100;
 
   async function searchMember(term: string) {
     const q = term.trim();
@@ -1227,30 +1229,38 @@ export default function PosPage() {
   // และบิลถูกยกเลิกทิ้ง · ก่อนกรอกจำนวนเงิน ใช้ "วิธีจ่ายที่เลือกไว้" ตัดสินแทน
   const roundingDelta = useMemo(() => {
     const mode = session?.vat.cashRounding ?? "NONE";
-    if (mode === "NONE" || netTotal <= 0) return 0;
+    if (mode === "NONE" || payableBeforeRounding <= 0) return 0;
     const withAmount = payments.filter((p) => (Number(p.amount) || 0) > 0);
     const considered = withAmount.length > 0 ? withAmount : payments;
     if (considered.length === 0 || !considered.every((p) => p.method === "CASH")) return 0;
-    // server ปัดเศษจากยอด "หลังหักส่วนลด" (createOrder คืน amountDue = finalTotal)
+    // server ปัดเศษจากยอด "สินค้าหลังหักส่วนลด + ค่าบริการ" (createOrder คืน
+    // amountDue = finalTotal) ไม่ใช่จากฐานส่วนลดอย่างเดียว
     // ปัดจากยอดก่อนส่วนลดจะได้เลขคนละตัวแล้วบิลถูกยกเลิกทิ้ง
-    return cashRoundingDelta(netTotal, mode);
-  }, [session?.vat.cashRounding, netTotal, payments]);
-  /** ยอดที่ต้องเก็บจริง = ยอดสินค้า − ส่วนลด + ปัดเศษ — "ยอดที่ต้องจ่าย" ใช้ตัวนี้ */
+    return cashRoundingDelta(payableBeforeRounding, mode);
+  }, [session?.vat.cashRounding, payableBeforeRounding, payments]);
+  /** ยอดที่ต้องเก็บจริง = ยอดสินค้า − ส่วนลด + ค่าบริการ + ปัดเศษ */
   const amountDue = useMemo(
-    () => Math.round((netTotal + roundingDelta) * 100) / 100,
-    [netTotal, roundingDelta]
+    () => Math.round((payableBeforeRounding + roundingDelta) * 100) / 100,
+    [payableBeforeRounding, roundingDelta]
   );
   useEffect(() => {
     const ch = displayChannel.current;
     if (!ch) return;
     ch.postMessage({
-      lines: cart.map((l) => ({
-        name: l.receiptName,
-        size: l.size && l.size !== "-" ? l.size : null,
-        qty: l.packQty,
-        unitName: l.unitName,
-        amount: (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty,
-      })),
+      lines: [
+        ...cart.map((l) => ({
+          name: l.receiptName,
+          size: l.size && l.size !== "-" ? l.size : null,
+          qty: l.packQty,
+          unitName: l.unitName,
+          amount: (tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty,
+        })),
+        ...extraLines
+          .filter((x) => x.label.trim() && Number(x.unitAmount) > 0)
+          .map((x) => ({
+            name: x.label.trim(), size: null, qty: 1, unitName: "", amount: Number(x.unitAmount),
+          })),
+      ],
       itemCount,
       total,
       discountTotal,
@@ -1262,7 +1272,7 @@ export default function PosPage() {
         ? { total: justSold.total, tendered: null, change: justSold.change }
         : null,
     });
-  }, [cart, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
+  }, [cart, extraLines, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
 
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
@@ -3606,7 +3616,7 @@ export default function PosPage() {
             {/* ปัดเศษต้องเห็นบนจอ ไม่ใช่โผล่มาเฉพาะบนใบเสร็จ — ลูกค้าถามว่าทำไมไม่ตรงป้าย */}
             {roundingDelta !== 0 && (
               <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
-                <span>{discountTotal > 0 ? `ยอดหลังส่วนลด ฿${baht(netTotal)}` : `ยอดสินค้า ฿${baht(total)}`} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
+                <span>ยอดก่อนปัดเศษ ฿{baht(payableBeforeRounding)} · ปัดเศษเงินสด {roundingDelta > 0 ? "+" : "−"}฿{baht(Math.abs(roundingDelta))}</span>
               </div>
             )}
             {/* คูปอง — แยกจากแถบสมาชิกเพราะใช้ได้ทั้งลูกค้าทั่วไปและสมาชิก

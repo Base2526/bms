@@ -63,6 +63,19 @@ test("ส่วนลดสามชั้นซ้อนกันได้ แ�
   );
 });
 
+test("ค่าถุงบวกหลังส่วนลดสินค้า ไม่เพิ่มฐานส่วนลดสมาชิก", () => {
+  const r = composeDiscounts({
+    settings: settings(),
+    subtotal: 600,
+    tier: tier({ discountValue: 3 }),
+    manualDiscount: 2,
+  });
+  assert.equal(r.tierDiscount, 18);
+  assert.equal(r.manualDiscount, 2);
+  assert.equal(r.netTotal, 580);
+  assert.equal(r.netTotal + 20, 600, "ค่าถุง ฿20 ต้องบวกเต็มจำนวนหลังส่วนลด");
+});
+
 test("แลกแต้มได้ไม่เกินที่มี และเศษแต้มไม่ถูกหักไปเปล่า ๆ", () => {
   const r = composeDiscounts({
     settings: settings(),
