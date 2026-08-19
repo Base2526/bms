@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
 import { isDistinctPosApprover, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { writeLogServer } from "@/lib/log/writeLog.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,21 @@ export async function POST(req: NextRequest) {
       constraint: error?.constraint ?? null,
       message: error?.message ?? null,
       stack: error?.stack ?? null,
+    });
+    // เขียนลง system_logs ด้วย ไม่ใช่แค่ stdout: หน้าร้านไม่มีใครเปิด docker logs ดู
+    // และ /api/pos/* ไม่ผ่าน metricsPlugin ของ GraphQL จึงไม่มีที่ไหนเก็บเลย
+    // ไม่ await — ถ้าต้นเหตุคือฐานล่ม การรอเขียน log จะหน่วงจอแคชเชียร์เปล่า ๆ
+    // (writeLogServer กลืน error ของตัวเองอยู่แล้ว ไม่มีทาง throw กลับมา)
+    // ห้ามใส่ body ลงไป: มี PIN ของพนักงานและผู้อนุมัติอยู่ในนั้น
+    void writeLogServer("error", "pos", "pos/sale unhandled error", {
+      action: "pos.sale.unhandled",
+      status: "500",
+      routeName: "/api/pos/sale",
+      errorMessage: error?.message ?? null,
+      stack: error?.stack ?? null,
+      sqlstate: error?.code ?? null,
+      constraint: error?.constraint ?? null,
+      detail: error?.detail ?? null,
     });
     // status นี้แปลว่า "ไม่รู้ผล" ไม่ใช่ "ขายไม่สำเร็จ" — บิลอาจ commit ไปแล้วก่อน
     // พัง จอต้องคงคีย์ idempotency ไว้ให้กดซ้ำ ไม่ใช่ล้างตะกร้า
