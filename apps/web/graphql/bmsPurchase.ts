@@ -90,11 +90,17 @@ export const bmsPurchaseResolvers = {
         args.id,
         Array.isArray(args.items) ? args.items : [],
         `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
-        auth.author_id
+        auth.author_id,
+        {
+          audit: {
+            actor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
+            action: "purchase.receive",
+            meta: { surface: "admin" },
+          },
+        }
       );
 
       if (result.status === "RECEIVED" || result.status === "PARTIAL") {
-        await audit(ctx, "purchase.receive", args.id, { status: result.status });
         return {
           status: result.status,
           poId: result.poId,
@@ -103,9 +109,12 @@ export const bmsPurchaseResolvers = {
       }
       const msg: Record<string, string> = {
         PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ",
+        LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
+        INVALID_INPUT: "รายการรับสินค้าไม่ถูกต้อง",
         INVALID_STATE: "สถานะไม่อนุญาตให้รับของ",
         LINE_NOT_FOUND: "ไม่พบรายการสินค้าในใบสั่งซื้อ",
         OVER_RECEIVE: "รับเกินจำนวนที่สั่ง",
+        IDEMPOTENCY_CONFLICT: "คีย์รายการซ้ำถูกใช้กับข้อมูลอื่น",
         EMPTY: "ไม่มีรายการรับของ",
       };
       return { status: result.status, poId: args.id, message: msg[result.status] ?? "ทำรายการไม่ได้" };

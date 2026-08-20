@@ -38,8 +38,9 @@ flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock) ·
 printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
 and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
 bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
-drawer cash movements, whole-bill serial checks, and shift-report correctness fixes), and
-inter-branch stock transfers + stock counts (`7.98`) are otherwise fully built — see
+drawer cash movements, whole-bill serial checks, and shift-report correctness fixes), inter-branch
+stock transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO
+receiving at the register (`9.6`) are otherwise fully built — see
 [business/pos.md](docs/business/pos.md) and [business/inventory.md](docs/business/inventory.md).
 Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price tiers, blind returns,
 serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch

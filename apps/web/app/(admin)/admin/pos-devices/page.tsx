@@ -18,7 +18,10 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 const Q = gql`
   query PosSetup {
     bmsLocations { id name branchCode isHeadOffice }
-    bmsPosDevices { id locationId code name registeredPosNo receiptPrefix active }
+    bmsPosDevices {
+      id locationId code name registeredPosNo receiptPrefix
+      scannerMode scannerPrefixKey scannerSuffixKey scannerMaxGapMs active
+    }
     bmsPosStaff { id name email role isPharmacist hasPin posOnly }
   }
 `;
@@ -40,7 +43,12 @@ const M_MODE = gql`
 type Device = {
   id: string; locationId: string; code: string; name: string | null;
   registeredPosNo: string | null; receiptPrefix: string | null; active: boolean;
+  scannerMode: "FOCUS" | "PREFIX"; scannerPrefixKey: string;
+  scannerSuffixKey: string; scannerMaxGapMs: number;
 };
+
+const SCANNER_PREFIX_OPTIONS = ["F9", ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`)
+  .filter((key) => key !== "F9")].map((value) => ({ value, label: value }));
 
 export default function PosDevicesPage() {
   const { can, loading: permsLoading } = useBmsPermissions();
@@ -137,7 +145,14 @@ export default function PosDevicesPage() {
               onClick={() => {
                 setEditing(null);
                 deviceForm.resetFields();
-                deviceForm.setFieldsValue({ active: true, locationId: locations[0]?.id });
+                deviceForm.setFieldsValue({
+                  active: true,
+                  locationId: locations[0]?.id,
+                  scannerMode: "FOCUS",
+                  scannerPrefixKey: "F9",
+                  scannerSuffixKey: "Enter",
+                  scannerMaxGapMs: 80,
+                });
                 setDeviceOpen(true);
               }}
             >
@@ -168,6 +183,13 @@ export default function PosDevicesPage() {
                   dataIndex: "receiptPrefix",
                   width: 110,
                   render: (v: string | null) => v || <span style={{ color: "#999" }}>—</span>,
+                },
+                {
+                  title: "Scanner HID",
+                  dataIndex: "scannerMode",
+                  width: 130,
+                  render: (v: Device["scannerMode"], row: Device) =>
+                    v === "PREFIX" ? <Tag color="blue">Prefix {row.scannerPrefixKey}</Tag> : <Tag>ตาม Focus</Tag>,
                 },
                 {
                   title: "สถานะ",
@@ -336,6 +358,42 @@ export default function PosDevicesPage() {
           >
             <Input placeholder="T" maxLength={8} />
           </Form.Item>
+          <Form.Item
+            name="scannerMode"
+            label="โหมด Bluetooth HID Scanner"
+            extra="Prefix ปลอดภัยกว่า: ตั้งเครื่อง Scanner ให้ส่งปุ่ม prefix ก่อนข้อมูล จึงสแกนได้แม้กำลังพิมพ์ในช่องอื่น"
+          >
+            <Select
+              options={[
+                { value: "FOCUS", label: "ตาม Focus (รองรับเครื่องเดิม แต่ข้อมูลอาจเข้าช่องที่เลือกอยู่)" },
+                { value: "PREFIX", label: "Prefix Mode (แนะนำ)" },
+              ]}
+            />
+          </Form.Item>
+          <Space align="start" wrap>
+            <Form.Item name="scannerPrefixKey" label="Prefix key" rules={[{ required: true }]}>
+              <Select options={SCANNER_PREFIX_OPTIONS} style={{ width: 130 }} />
+            </Form.Item>
+            <Form.Item name="scannerSuffixKey" label="Suffix key" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: "Enter", label: "Enter" },
+                  { value: "Tab", label: "Tab" },
+                ]}
+                style={{ width: 130 }}
+              />
+            </Form.Item>
+            <Form.Item name="scannerMaxGapMs" label="Timeout ระหว่างปุ่ม (ms)" rules={[{ required: true }]}>
+              <InputNumber min={20} max={1000} step={10} style={{ width: 170 }} />
+            </Form.Item>
+          </Space>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="ต้องตั้งค่า prefix ที่ตัว Scanner ให้ตรงกัน"
+            description="ระบบไม่เดาจากความเร็ว เพราะ Bluetooth HID และ Keyboard ส่งข้อมูลชนิดเดียวกัน การมี prefix เช่น F9 คือสัญญาณยืนยันก่อนระบบดักข้อมูลทั้งชุด"
+          />
           <Form.Item name="active" label="เปิดใช้งาน" valuePropName="checked">
             <Switch />
           </Form.Item>

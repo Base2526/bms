@@ -435,6 +435,33 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสที่แก้/เพิ่มคู่กัน: `scripts/pos-contract.test.mts`, `scripts/pos-serial-db-contract.test.mts`,
     `scripts/pos-shift-ops-db-contract.test.mts`, `scripts/pos-blind-return-db-contract.test.mts` —
     **ยังไม่ได้รันจริงในรอบนี้ ต้องรันตามคำสั่งชุดเดียวกับ loyalty/pos ข้างบนก่อน merge**
+- **`9.6__bms_pos_scan_manager_and_purchase_receipts.sql` (คีย์ครุภัณฑ์สแกนเนอร์ไร้สาย +
+  รับของ PO จากหน้าเคาน์เตอร์แบบ retry-safe) เขียนแล้วบน branch `codex/pos-scan-manager`
+  (2026-08-20) — เทส pure (`scripts/pos-scan-manager-contract.test.mts`, 6 เทส) รันผ่านแล้ว
+  แต่ **⚠️ เทส DB (`scripts/pos-scan-manager-db-contract.test.mts`, 7 เทส) ยังไม่ได้รันจริงในรอบนี้**
+  (เครื่องที่แก้ไม่มี Postgres/`.env.dev` ต่ออยู่) ต้อง apply migration เข้า dev DB + รันเทสชุดนี้ให้ผ่าน
+  ก่อนเชื่อว่าใช้ได้จริง ก่อน apply เข้า production ตามปกติ
+  · **ต้นเหตุ**: เครื่องสแกน Bluetooth HID เป็นคีย์บอร์ดสำหรับเบราว์เซอร์ หน้า POS เดิมเดา
+    "นี่คือการสแกน" จาก field ที่ focus อยู่/ความเร็วในการพิมพ์ ซึ่งไม่ใช่หลักฐานจริง (โฟกัสหลุดหรือ
+    scanner พิมพ์ช้าเท่าคนพิมพ์ก็เดาผิดได้) — เพิ่มโหมด `PREFIX` ที่ต้องโปรแกรมสแกนเนอร์จริงให้ส่งคีย์
+    ฟังก์ชัน (`F1`–`F24`, ปกติ `F9`) นำหน้าก่อน payload แล้วเบราว์เซอร์ถึงจะ capture คีย์ทั้งหมดแบบ
+    global ไปจนถึง suffix (`Enter`/`Tab`) ปฏิเสธ prefix ที่เป็นตัวอักษรพิมพ์ได้เพื่อกันการพิมพ์ปกติ
+    มาติดอาวุธโหมด global โดยไม่ตั้งใจ · โหมด `FOCUS` (default) คงพฤติกรรมเดิมไว้ให้ร้านที่ยังไม่ตั้งค่า
+    สแกนเนอร์
+  · **scan context เป็นตัวกำหนดเส้นทาง ไม่ใช่ DOM focus** — คิว payload เดียวกันจากกล้อง/สแกนเนอร์/พิมพ์มือ
+    ถูก route ตามสถานะหน้าจอที่ระบุชัดเจน (Sell เติมตะกร้า, ค้นสินค้าอ่านอย่างเดียวไม่เติม, Returns ค้นบิล/
+    เติมรายการคืนแบบไม่มีใบเสร็จเฉพาะตอนเปิดโหมดนั้น, Receive เติม draft ของ PO ที่เลือกอยู่) · Shift/
+    Settings/overlay ที่มีความอ่อนไหว/กำลังเขียนอยู่/บิลที่ยังไม่จบ ปิดการสแกนทั้งหมด
+  · **รับของ PO จากเคาน์เตอร์เป็นชั้นบาง ๆ ทับ service เดิม ไม่ใช่เส้นทางใหม่** — สแกนสร้างแค่ draft
+    ไม่ขยับสต็อกจนกว่าจะกดยืนยันชัดเจนหนึ่งครั้ง ตอนยืนยัน route ตรวจ PIN + `purchase.receive` ซ้ำ
+    (device token ไม่ใช่ user) ดึง tenant/location จากอุปกรณ์ที่ authenticate ไว้เท่านั้น (**ห้ามรับค่า
+    location จาก client**) แล้วเรียก `receivePurchaseOrder()` ตัวเดียวกับที่ admin ใช้ — inventory, lot,
+    movement, สถานะ PO, audit, และแถว `bms_pos_purchase_receipts.result` (retry ledger) อยู่ใน
+    ทรานแซกชันเดียวกันทั้งหมด · คีย์เดิมกับ input ที่ normalize แล้วตรงกัน = replay ผลเดิม, คีย์เดิมกับ
+    input ต่างกัน = `409` (กันเอา key เก่ามาสวมรับของอย่างอื่น)
+  · เทส: `scripts/pos-scan-manager-contract.test.mts` (6 เทส, pure) + จุด DB ที่ยังไม่ verify:
+    device-scoped listing, PIN/permission re-check, idempotency replay vs conflict, และ
+    tenant/location isolation ของ `bms_pos_purchase_receipts`
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

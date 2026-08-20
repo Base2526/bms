@@ -184,8 +184,11 @@ export const bmsPosResolvers = {
     async bmsUpsertPosDevice(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "pos.device.manage");
       try {
-        const device = await upsertPosDevice(getTenantId(ctx), args.input);
-        await audit(ctx, "pos.device.upsert", device.id, { code: device.code });
+        const auth = requireAuth(ctx);
+        const device = await upsertPosDevice(getTenantId(ctx), args.input, {
+          editorId: auth.author_id,
+          auditActor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
+        });
         return device;
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกเครื่องขายไม่สำเร็จ", {

@@ -64,6 +64,10 @@ export type PosDevice = {
   name: string | null;
   registeredPosNo: string | null;
   receiptPrefix: string | null;
+  scannerMode: "FOCUS" | "PREFIX";
+  scannerPrefixKey: string;
+  scannerSuffixKey: string;
+  scannerMaxGapMs: number;
   active: boolean;
 };
 
@@ -98,7 +102,8 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
   const raw = token.trim();
   if (!raw) return null;
   const res = await query<any>(
-    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active
+    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
+            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active
        FROM bms_pos_devices
       WHERE token_hash = $1 AND active`,
     [hashToken(raw)]
@@ -117,13 +122,18 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
     name: r.name ?? null,
     registeredPosNo: r.registered_pos_no ?? null,
     receiptPrefix: r.receipt_prefix ?? null,
+    scannerMode: r.scanner_mode === "PREFIX" ? "PREFIX" : "FOCUS",
+    scannerPrefixKey: r.scanner_prefix_key ?? "F9",
+    scannerSuffixKey: r.scanner_suffix_key ?? "Enter",
+    scannerMaxGapMs: Number(r.scanner_max_gap_ms ?? 80),
     active: r.active,
   };
 }
 
 export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
   const res = await query<any>(
-    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active
+    `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
+            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active
        FROM bms_pos_devices WHERE tenant_id = $1 ORDER BY code`,
     [tenantId]
   );
@@ -135,6 +145,10 @@ export async function listPosDevices(tenantId: string): Promise<PosDevice[]> {
     name: r.name ?? null,
     registeredPosNo: r.registered_pos_no ?? null,
     receiptPrefix: r.receipt_prefix ?? null,
+    scannerMode: r.scanner_mode === "PREFIX" ? "PREFIX" : "FOCUS",
+    scannerPrefixKey: r.scanner_prefix_key ?? "F9",
+    scannerSuffixKey: r.scanner_suffix_key ?? "Enter",
+    scannerMaxGapMs: Number(r.scanner_max_gap_ms ?? 80),
     active: r.active,
   }));
 }
@@ -258,29 +272,101 @@ export async function upsertPosDevice(
     name?: string | null;
     registeredPosNo?: string | null;
     receiptPrefix?: string | null;
+    scannerMode?: "FOCUS" | "PREFIX" | null;
+    scannerPrefixKey?: string | null;
+    scannerSuffixKey?: string | null;
+    scannerMaxGapMs?: number | null;
     active?: boolean;
-  }
+  },
+  writeContext?: { editorId?: string | number | null; auditActor?: string | null }
 ): Promise<PosDevice> {
-  const res = await query<any>(
-    `INSERT INTO bms_pos_devices (id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active)
-     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE))
-     ON CONFLICT (tenant_id, code)
-     DO UPDATE SET location_id = EXCLUDED.location_id,
-                   name = EXCLUDED.name,
-                   registered_pos_no = EXCLUDED.registered_pos_no,
-                   receipt_prefix = EXCLUDED.receipt_prefix,
-                   active = EXCLUDED.active,
-                   updated_at = now()
-     RETURNING id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix, active`,
-    [input.id ?? null, tenantId, input.locationId, input.code.trim(), input.name ?? null,
-      input.registeredPosNo ?? null, input.receiptPrefix ?? null, input.active ?? null]
-  );
-  const r = res.rows[0];
-  return {
-    id: r.id, tenantId: r.tenant_id, locationId: r.location_id, code: r.code,
-    name: r.name ?? null, registeredPosNo: r.registered_pos_no ?? null,
-    receiptPrefix: r.receipt_prefix ?? null, active: r.active,
-  };
+  if (input.scannerMode != null && input.scannerMode !== "FOCUS" && input.scannerMode !== "PREFIX") {
+    throw new Error("โหมด Scanner ต้องเป็น FOCUS หรือ PREFIX");
+  }
+  // Keep these nullable through the upsert. Older callers know nothing about
+  // scanner settings and must not silently reset an existing PREFIX device.
+  const scannerMode = input.scannerMode ?? null;
+  const scannerPrefixKey = input.scannerPrefixKey == null
+    ? null
+    : String(input.scannerPrefixKey).trim().toUpperCase();
+  const rawScannerSuffixKey = input.scannerSuffixKey == null
+    ? null
+    : String(input.scannerSuffixKey).trim().toLowerCase();
+  const scannerSuffixKey = rawScannerSuffixKey == null
+    ? null
+    : rawScannerSuffixKey === "enter"
+      ? "Enter"
+      : rawScannerSuffixKey === "tab"
+        ? "Tab"
+        : rawScannerSuffixKey;
+  const scannerMaxGapMs = input.scannerMaxGapMs == null ? null : Number(input.scannerMaxGapMs);
+  if (scannerPrefixKey != null && !/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(scannerPrefixKey)) {
+    throw new Error("prefix ของ Scanner ต้องเป็นปุ่ม F1–F24");
+  }
+  if (scannerSuffixKey != null && scannerSuffixKey !== "Enter" && scannerSuffixKey !== "Tab") {
+    throw new Error("suffix ของ Scanner ต้องเป็น Enter หรือ Tab");
+  }
+  if (scannerMaxGapMs != null && (!Number.isInteger(scannerMaxGapMs) || scannerMaxGapMs < 20 || scannerMaxGapMs > 1000)) {
+    throw new Error("ช่วงห่างปุ่มของ Scanner ต้องอยู่ระหว่าง 20–1000 ms");
+  }
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: writeContext?.editorId });
+    const res = await client.query<any>(
+      `INSERT INTO bms_pos_devices
+         (id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
+          scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7,
+               COALESCE($8, 'FOCUS'), COALESCE($9, 'F9'), COALESCE($10, 'Enter'),
+               COALESCE($11, 80), COALESCE($12, TRUE))
+       ON CONFLICT (tenant_id, code)
+       DO UPDATE SET location_id = EXCLUDED.location_id,
+                     name = EXCLUDED.name,
+                     registered_pos_no = EXCLUDED.registered_pos_no,
+                     receipt_prefix = EXCLUDED.receipt_prefix,
+                     scanner_mode = COALESCE($8, bms_pos_devices.scanner_mode),
+                     scanner_prefix_key = COALESCE($9, bms_pos_devices.scanner_prefix_key),
+                     scanner_suffix_key = COALESCE($10, bms_pos_devices.scanner_suffix_key),
+                     scanner_max_gap_ms = COALESCE($11, bms_pos_devices.scanner_max_gap_ms),
+                     active = EXCLUDED.active,
+                     updated_at = now()
+       RETURNING id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
+                 scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active`,
+      [input.id ?? null, tenantId, input.locationId, input.code.trim(), input.name ?? null,
+        input.registeredPosNo ?? null, input.receiptPrefix ?? null, scannerMode, scannerPrefixKey,
+        scannerSuffixKey, scannerMaxGapMs, input.active ?? null]
+    );
+    const r = res.rows[0];
+    if (writeContext?.auditActor) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1, $2, 'pos.device.upsert', $3, $4)`,
+        [tenantId, writeContext.auditActor, r.id, JSON.stringify({
+          code: r.code,
+          scannerMode: r.scanner_mode,
+          scannerPrefixKey: r.scanner_prefix_key,
+          scannerSuffixKey: r.scanner_suffix_key,
+          scannerMaxGapMs: Number(r.scanner_max_gap_ms),
+        })]
+      );
+    }
+    await client.query("COMMIT");
+    return {
+      id: r.id, tenantId: r.tenant_id, locationId: r.location_id, code: r.code,
+      name: r.name ?? null, registeredPosNo: r.registered_pos_no ?? null,
+      receiptPrefix: r.receipt_prefix ?? null,
+      scannerMode: r.scanner_mode === "PREFIX" ? "PREFIX" : "FOCUS",
+      scannerPrefixKey: r.scanner_prefix_key,
+      scannerSuffixKey: r.scanner_suffix_key,
+      scannerMaxGapMs: Number(r.scanner_max_gap_ms),
+      active: r.active,
+    };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---------------------------------------------------------------
@@ -467,6 +553,36 @@ export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
           OR EXISTS (
             SELECT 1 FROM bms_role_permissions rp
              WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = 'pos.sell'
+          )
+        )
+      ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,
+    [tenantId]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    name: r.name ?? null,
+    email: r.email ?? null,
+    role: r.role_name ?? null,
+    isPharmacist: Boolean(r.is_licensed_pharmacist),
+    hasPin: Boolean(r.has_pin),
+    posOnly: Boolean(r.pos_only),
+  }));
+}
+
+/** Staff selectable in the POS Receive tab; deliberately separate from sellers. */
+export async function listPosPurchaseReceivers(tenantId: string): Promise<PosCashier[]> {
+  const res = await query<any>(
+    `SELECT u.id, u.name, u.email, u.is_licensed_pharmacist, u.pos_only,
+            r.name AS role_name,
+            (u.pos_pin_hash IS NOT NULL) AS has_pin
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1
+        AND (
+          r.name = 'Administrator'
+          OR EXISTS (
+            SELECT 1 FROM bms_role_permissions rp
+             WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = 'purchase.receive'
           )
         )
       ORDER BY (u.pos_pin_hash IS NULL), u.name NULLS LAST, u.email`,

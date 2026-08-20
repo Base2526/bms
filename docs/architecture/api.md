@@ -120,6 +120,13 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   using the actor as approver is `400`). Results: `RECORDED` (200, with `drawerAfter` and
   `replayed`), `SHIFT_NOT_OPEN`/`WOULD_OVERDRAW` (409), `INVALID` (400). Cash **in** needs no
   approver on purpose — see [../business/pos.md](../business/pos.md).
+- `POST /api/pos/purchase` (`9.6`) — one PIN-bearing adapter for the Receive tab. `action: "list"`
+  returns at most 50 `OPEN`/`PARTIAL` POs; `detail` returns one receivable PO; `receive` takes
+  `poId`, validated positive-integer lines, and a required stable `idempotencyKey`. Every action
+  resolves tenant/location from the active device, re-verifies cashier PIN and `purchase.receive`,
+  and never accepts a client location. Receive calls the shared purchase service, whose inventory,
+  movement, PO status, audit, and retry-ledger writes are one transaction. A reused key with the
+  same normalized request replays; a key reused for different input returns `409`.
 - `POST /api/pos/void` (`7.97`) — cancel a mis-rung bill; deliberately not the return path. Requires
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:

@@ -1652,10 +1652,14 @@ const receivePurchaseOrderTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const poId = reqString(args, "poId");
     const items = reqItems(args);
-    const r = await receivePurchaseOrder(ec.tenantId, poId, items, ec.actor);
-    if (r.status === "RECEIVED" || r.status === "PARTIAL") {
-      await auditWrite(ec, "purchase.receive", poId, { status: r.status });
-    }
+    const r = await receivePurchaseOrder(
+      ec.tenantId,
+      poId,
+      items,
+      ec.actor,
+      ec.ctx?.admin?.id ?? null,
+      { audit: { actor: ec.actor, meta: { surface: `ai:${ec.surface}` } } }
+    );
     return { ok: true, data: r };
   },
 };

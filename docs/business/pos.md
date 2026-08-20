@@ -706,6 +706,38 @@ every reload), and the name of whoever is currently selling. Leaving the sell ta
 returns focus to the scan box — a scanner typing into the wrong field is the worst failure this
 screen has.
 
+### Keyboard-wedge Scan Manager (`9.6`)
+
+A Bluetooth HID scanner is still a keyboard to the browser. The POS therefore does not infer a
+scanner merely from the focused field or from fast typing. Every register has one of two device
+settings:
+
+- `FOCUS` preserves the original scan box for unconfigured hardware. It is compatible, but the
+  operator must keep the correct field focused.
+- `PREFIX` is the production-safe mode. Program the physical scanner to send the configured prefix
+  function key (`F1`–`F24`, normally `F9`) before its payload and the configured suffix (`Enter` or
+  `Tab`, normally `Enter`) afterward. Printable prefix characters are rejected because ordinary
+  typing could otherwise arm global capture.
+  Once the prefix arrives, the page captures the whole payload before any member, PIN, payment,
+  coupon, or free-text input can receive it. A malformed/timed-out frame is discarded through its
+  suffix rather than allowing the tail to leak into the focused field.
+
+Keyboard wedge, camera, and manual code entry enter one serial queue and are routed from explicit
+screen state: Sell adds to the cart, product lookup reads without adding, Returns searches a receipt
+(or adds a blind-return item when that workflow is explicitly open), and Receive adds to the
+selected PO draft. Shift, Settings, sensitive overlays, busy writes, and an unresolved sale disable
+scanning. The scan context shown in the header is the routing authority; DOM focus is not.
+
+### Receiving a purchase order at the register (`9.6`)
+
+The Receive tab is a thin POS workflow over the existing purchase service. A cashier selects an
+`OPEN`/`PARTIAL` PO, scans items into a draft, reviews quantities plus optional lot/expiry fields,
+and explicitly confirms once. Nothing moves during scanning. Confirmation re-verifies the cashier
+PIN and `purchase.receive`, derives tenant and branch from the POS device, and calls
+`receivePurchaseOrder()`; inventory, lot, movement, PO status, audit, and the POS retry receipt
+commit together. The stable device idempotency key replays a committed result if the HTTP response
+was lost instead of receiving the same goods twice.
+
 ## Tax settings
 
 VAT registration, rate, VAT rounding method, document calendar era, abbreviated-invoice approval,
