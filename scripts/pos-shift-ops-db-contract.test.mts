@@ -40,6 +40,7 @@ import {
   recordCashMovement,
   recordNoSale,
   recordPosSale,
+  returnPosSale,
   resumeParkedSale,
   setCashierPin,
   upsertPosDevice,
@@ -164,15 +165,22 @@ test("parking rejects an empty cart and an unnamed bill", async () => {
 test("drawer movements land in the drawer and refuse to overdraw it", async () => {
   const put = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "IN", amount: 500,
-    reason: "แลกเหรียญมาเพิ่ม", actorUserId: cashierId,
+    reason: "แลกเหรียญมาเพิ่ม", actorUserId: cashierId, idempotencyKey: key("cash-in"),
   });
   assert.equal(put.status, "RECORDED");
   // 1000 float + 500 = 1500
   assert.equal(put.status === "RECORDED" ? put.drawerAfter : null, 1500);
+  const putReplay = await recordCashMovement({
+    tenantId, deviceId, shiftId, direction: "IN", amount: 500,
+    reason: "แลกเหรียญมาเพิ่ม", actorUserId: cashierId, idempotencyKey: key("cash-in"),
+  });
+  assert.equal(putReplay.status, "RECORDED");
+  assert.equal(putReplay.status === "RECORDED" ? putReplay.replayed : false, true);
 
   const take = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 300,
     reason: "นำส่งธนาคาร", actorUserId: cashierId, approvedByUserId: cashierId,
+    idempotencyKey: key("cash-out"),
   });
   assert.equal(take.status, "RECORDED");
   assert.equal(take.status === "RECORDED" ? take.drawerAfter : null, 1200);
@@ -181,6 +189,7 @@ test("drawer movements land in the drawer and refuse to overdraw it", async () =
   const tooMuch = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 99999,
     reason: "พิมพ์ผิด", actorUserId: cashierId, approvedByUserId: cashierId,
+    idempotencyKey: key("cash-overdraw"),
   });
   assert.equal(tooMuch.status, "WOULD_OVERDRAW");
 
@@ -191,7 +200,7 @@ test("drawer movements land in the drawer and refuse to overdraw it", async () =
 test("a movement with no reason is refused", async () => {
   const res = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "IN", amount: 100,
-    reason: "  ", actorUserId: cashierId,
+    reason: "  ", actorUserId: cashierId, idempotencyKey: key("cash-no-reason"),
   });
   assert.equal(res.status, "INVALID");
 });
@@ -291,6 +300,41 @@ test("the shift report keeps the void out of sales and out of returns", async ()
   assert.equal(report!.returnCount, 0, "void ต้องไม่ถูกนับเป็นการคืนสินค้า");
   assert.equal(report!.cashIn, 500);
   assert.equal(report!.cashOut, 300);
+  assert.equal(await getPosShiftReport(tenantId, shiftId, crypto.randomUUID()), null,
+    "เครื่องอื่นที่รู้ shift UUID ต้องอ่านรายงานนี้ไม่ได้");
+});
+
+test("split-payment return is counted once, while pending/cancelled bills are not sales", async () => {
+  await query(
+    `INSERT INTO bms_orders
+       (tenant_id, location_id, channel, status, total_amount, pos_device_id, pos_shift_id, cashier_user_id)
+     VALUES
+       ($1,$2,'pos','PENDING',999,$3,$4,$5),
+       ($1,$2,'pos','CANCELLED',888,$3,$4,$5)`,
+    [tenantId, locationId, deviceId, shiftId, cashierId]
+  );
+  const sale = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId, idempotencyKey: key("split-sale"),
+    lines: [{ sku: SKU, size: SIZE, packQty: 1 }],
+    payments: [
+      { method: "CASH", amount: 50, cashTendered: 50 },
+      { method: "CASH", amount: 50, cashTendered: 50 },
+    ],
+  });
+  assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+  if (sale.status !== "SOLD") return;
+  const returned = await returnPosSale({
+    tenantId, deviceId, orderId: sale.orderId, actorUserId: cashierId,
+    note: "ทดสอบ split refund", idempotencyKey: key("split-return"),
+  });
+  assert.equal(returned.status, "RETURNED", JSON.stringify(returned));
+
+  const report = await getPosShiftReport(tenantId, shiftId);
+  assert.equal(report!.salesTotal, 100, "บิล PENDING/CANCELLED ต้องไม่เพิ่มยอดขาย");
+  assert.equal(report!.billCount, 1);
+  assert.equal(report!.returnCount, 1, "หนึ่ง return ที่มีสอง allocation ต้องนับครั้งเดียว");
+  assert.equal(report!.returnTotal, 100, "refund amount ต้องไม่ถูกคูณตามจำนวน allocation");
+  assert.equal(report!.cashRefunds, 100);
 });
 
 // ---- no-sale + นับปิดตา (8.0) ----------------------------------------
@@ -334,7 +378,7 @@ test("blind close hides expected cash while the shift is open, everywhere it cou
   // ช่องรั่วที่ตั้งใจปิด: นำเงินเข้า ฿1 แล้วอ่าน drawerAfter = อ่านคำตอบได้ทั้งหมด
   const move = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "IN", amount: 1,
-    reason: "ทดสอบว่ายอดไม่รั่ว", actorUserId: cashierId,
+    reason: "ทดสอบว่ายอดไม่รั่ว", actorUserId: cashierId, idempotencyKey: key("cash-blind-in"),
   });
   assert.equal(move.status, "RECORDED");
   assert.equal(move.status === "RECORDED" ? move.drawerAfter : "x", null);
@@ -343,6 +387,7 @@ test("blind close hides expected cash while the shift is open, everywhere it cou
   const over = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 99999,
     reason: "ทดสอบ", actorUserId: cashierId, approvedByUserId: cashierId,
+    idempotencyKey: key("cash-blind-overdraw"),
   });
   assert.equal(over.status, "WOULD_OVERDRAW");
   assert.equal(over.status === "WOULD_OVERDRAW" ? over.available : 0, null);

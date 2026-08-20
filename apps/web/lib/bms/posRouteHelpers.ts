@@ -104,8 +104,10 @@ export function parsePosExtraLines(raw: unknown): Array<{ label: string; qty: nu
     .slice(0, 20)
     .map((x: any) => ({
       label: String(x?.label ?? "").trim().slice(0, 120),
-      qty: Math.max(1, Math.trunc(Number(x?.qty ?? 1))),
+      qty: Number(x?.qty ?? 1),
       unitAmount: Math.round(Number(x?.unitAmount) * 100) / 100,
     }))
-    .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
+    .filter((x) => x.label
+      && Number.isInteger(x.qty) && x.qty > 0
+      && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
 }

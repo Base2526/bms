@@ -37,9 +37,14 @@ flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock) ·
 (🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
 printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
 and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
-bills + drawer movements + void + shift report (`7.97`), and inter-branch stock transfers + stock
-counts (`7.98`) are otherwise fully built — see [business/pos.md](docs/business/pos.md) and
-[business/inventory.md](docs/business/inventory.md).
+bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
+drawer cash movements, whole-bill serial checks, and shift-report correctness fixes), and
+inter-branch stock transfers + stock counts (`7.98`) are otherwise fully built — see
+[business/pos.md](docs/business/pos.md) and [business/inventory.md](docs/business/inventory.md).
+Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price tiers, blind returns,
+serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch
+creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.local.md) for the
+per-migration build/verify/production status of each.
 
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in

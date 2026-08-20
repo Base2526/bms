@@ -77,6 +77,14 @@ test("setup: one serial-tracked product and one ordinary one", async () => {
       [tenantId, locationId, sku, SIZE]
     );
   }
+  await query(
+    `INSERT INTO bms_product_packs
+       (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, active)
+     VALUES ($1,$2,$3,'BOX10','กล่อง',10,10000,TRUE)
+     ON CONFLICT (tenant_id, product_sku, size, pack_code) DO UPDATE
+       SET base_qty = 10, price = 10000, active = TRUE`,
+    [tenantId, SKU, SIZE]
+  );
 
   const device = await upsertPosDevice(tenantId, {
     locationId, code: `${TAG}-REG`, name: `FAKE ${TAG} register`, active: true,
@@ -138,6 +146,40 @@ test("the same serial twice on one line is refused", async () => {
   assert.equal(res.status, "SERIAL_REQUIRED", "ยิงกล่องเดิมสองครั้งต้องไม่ผ่าน");
 });
 
+test("the same serial across two lines is refused", async () => {
+  const res = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId,
+    idempotencyKey: key("dup-across-lines"),
+    lines: [
+      { sku: SKU, size: SIZE, packQty: 1, serials: ["IMEI-CROSS"] },
+      { sku: SKU, size: SIZE, packQty: 1, serials: ["IMEI-CROSS"] },
+    ],
+    payments: [{ method: "CASH", amount: 2000, cashTendered: 2000 }],
+  } as any);
+  assert.equal(res.status, "SERIAL_REQUIRED");
+});
+
+test("pack serial quantity comes from the database, not browser baseQty", async () => {
+  const short = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId,
+    idempotencyKey: key("pack-short"),
+    lines: [{ sku: SKU, size: SIZE, packCode: "BOX10", packQty: 1, baseQty: 1, serials: ["PACK-01"] }],
+    payments: [{ method: "CASH", amount: 10000, cashTendered: 10000 }],
+  } as any);
+  assert.equal(short.status, "SERIAL_REQUIRED");
+  if (short.status === "SERIAL_REQUIRED") assert.equal(short.expected, 10);
+
+  const serials = Array.from({ length: 10 }, (_, index) => `PACK-${String(index + 1).padStart(2, "0")}`);
+  const sold = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId,
+    idempotencyKey: key("pack-ok"),
+    lines: [{ sku: SKU, size: SIZE, packCode: "BOX10", packQty: 1, serials }],
+    payments: [{ method: "CASH", amount: 10000, cashTendered: 10000 }],
+  } as any);
+  assert.equal(sold.status, "SOLD", JSON.stringify(sold));
+  if (sold.status === "SOLD") assert.equal((await listSerialsForOrder(tenantId, sold.orderId)).length, 10);
+});
+
 test("a completed sale records every serial against the bill", async () => {
   const res = await recordPosSale({
     tenantId, deviceId, shiftId, cashierUserId: cashierId,
@@ -175,6 +217,25 @@ test("selling a serial that is already sold is refused", async () => {
   } as any);
   assert.equal(res.status, "SERIAL_ALREADY_SOLD");
   if (res.status === "SERIAL_ALREADY_SOLD") assert.equal(res.serial, "IMEI-001");
+});
+
+test("two simultaneous bills cannot both claim the same serial", async () => {
+  const results = await Promise.all([
+    recordPosSale({
+      tenantId, deviceId, shiftId, cashierUserId: cashierId,
+      idempotencyKey: key("race-a"),
+      lines: [{ sku: SKU, size: SIZE, packQty: 1, serials: ["IMEI-RACE"] }],
+      payments: [{ method: "CASH", amount: 1000, cashTendered: 1000 }],
+    } as any),
+    recordPosSale({
+      tenantId, deviceId, shiftId, cashierUserId: cashierId,
+      idempotencyKey: key("race-b"),
+      lines: [{ sku: SKU, size: SIZE, packQty: 1, serials: ["IMEI-RACE"] }],
+      payments: [{ method: "CASH", amount: 1000, cashTendered: 1000 }],
+    } as any),
+  ]);
+  assert.equal(results.filter((result) => result.status === "SOLD").length, 1);
+  assert.equal(results.filter((result) => result.status === "SERIAL_ALREADY_SOLD").length, 1);
 });
 
 test("returning the whole bill frees its serials to be sold again", async () => {
@@ -228,6 +289,8 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
     [tenantId, [SKU, PLAIN]]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
+    [tenantId, [SKU, PLAIN]]);
+  await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
     [tenantId, [SKU, PLAIN]]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, [SKU, PLAIN]]);
 });

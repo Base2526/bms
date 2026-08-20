@@ -501,16 +501,32 @@ export async function setCashierAccountMode(
   if (posOnly && userId === actingUserId) {
     throw new Error("ตั้งบัญชีตัวเองเป็นเฉพาะหน้าร้านไม่ได้ — จะเข้าหลังบ้านไม่ได้อีก");
   }
-  const target = await query<{ role_name: string | null }>(
-    `SELECT r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1 AND u.id = $2`,
-    [tenantId, userId]
-  );
-  if (!target.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
-  if (posOnly && target.rows[0].role_name === "Administrator") {
-    throw new Error("ตั้ง Administrator เป็นบัญชีเฉพาะหน้าร้านไม่ได้");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actingUserId });
+    const target = await client.query<{ role_name: string | null }>(
+      `SELECT r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.tenant_id = $1 AND u.id = $2 FOR UPDATE OF u`,
+      [tenantId, userId]
+    );
+    if (!target.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+    if (posOnly && target.rows[0].role_name === "Administrator") {
+      throw new Error("ตั้ง Administrator เป็นบัญชีเฉพาะหน้าร้านไม่ได้");
+    }
+    await client.query(`UPDATE users SET pos_only = $3 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId, posOnly]);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [tenantId, actingUserId, posOnly ? "pos.staff.pos_only_on" : "pos.staff.pos_only_off", userId,
+        JSON.stringify({ posOnly })]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
   }
-  await query(`UPDATE users SET pos_only = $3 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId, posOnly]);
 }
 
 /** พนักงานทุกคนในร้าน (ไม่กรองสิทธิ์) — สำหรับหน้าจัดการฝั่งแอดมิน */
@@ -551,27 +567,66 @@ export type PinVerifyResult =
  * ตั้ง/เปลี่ยน PIN — เรียกจากหลังบ้านเท่านั้น (permission pos.pin.manage)
  * PIN สั้นโดยธรรมชาติ จึงจำกัดจำนวนครั้งที่กดผิดแทนการบังคับความยาว
  */
-export async function setCashierPin(tenantId: string, userId: string, pin: string): Promise<void> {
+export async function setCashierPin(
+  tenantId: string, userId: string, pin: string, actingUserId?: string | null
+): Promise<void> {
   const clean = String(pin ?? "").trim();
   if (!/^[0-9]{4,8}$/.test(clean)) throw new Error("PIN ต้องเป็นตัวเลข 4–8 หลัก");
   const hash = await bcrypt.hash(clean, 10);
-  const res = await query(
-    `UPDATE users
-        SET pos_pin_hash = $3, pos_pin_set_at = now(),
-            pos_pin_failures = 0, pos_pin_locked_until = NULL
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, userId, hash]
-  );
-  if (!res.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actingUserId ?? userId });
+    const res = await client.query(
+      `UPDATE users
+          SET pos_pin_hash = $3, pos_pin_set_at = now(),
+              pos_pin_failures = 0, pos_pin_locked_until = NULL
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, userId, hash]
+    );
+    if (!res.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+    if (actingUserId) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'pos.pin.set',$3,'{}'::jsonb)`,
+        [tenantId, actingUserId, userId]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
-export async function clearCashierPin(tenantId: string, userId: string): Promise<void> {
-  await query(
-    `UPDATE users SET pos_pin_hash = NULL, pos_pin_set_at = NULL,
-                      pos_pin_failures = 0, pos_pin_locked_until = NULL
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, userId]
-  );
+export async function clearCashierPin(
+  tenantId: string, userId: string, actingUserId?: string | null
+): Promise<void> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actingUserId ?? userId });
+    const res = await client.query(
+      `UPDATE users SET pos_pin_hash = NULL, pos_pin_set_at = NULL,
+                        pos_pin_failures = 0, pos_pin_locked_until = NULL
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, userId]
+    );
+    if (!res.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
+    if (actingUserId) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'pos.pin.clear',$3,'{}'::jsonb)`,
+        [tenantId, actingUserId, userId]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -1022,6 +1077,14 @@ export type PosSaleInput = {
   pharmacyApprovedAssessmentId?: string | null;
 };
 
+/** จำนวนและไซซ์ที่ resolve จาก catalog แล้ว; client มีหน้าที่ส่งเฉพาะเลข serial */
+type CanonicalPosSerialLine = {
+  sku: string;
+  size: string;
+  quantity: number;
+  serials: string[];
+};
+
 /**
  * ตัวเลขภาษีที่ "ออกไปกับใบกำกับจริง" ไม่ใช่ค่าที่คำนวณใหม่ทีหลัง
  * จอขายเอาไปพิมพ์บนใบเสร็จได้ตรง ๆ — ห้ามให้ client คิด total × 7/107 เอง
@@ -1158,10 +1221,11 @@ async function canonicalizePosSaleLines(
   locationId: string,
   lines: PosSaleLine[]
 ): Promise<
-  | { ok: true; items: OrderItemInput[] }
+  | { ok: true; items: OrderItemInput[]; serialLines: CanonicalPosSerialLine[] }
   | { ok: false; sku: string; packCode: string }
 > {
   const items: OrderItemInput[] = [];
+  const serialLines: CanonicalPosSerialLine[] = [];
   for (const line of lines) {
     const sku = String(line.sku ?? "").trim();
     // ดูเหตุผลที่ห้าม toUpperCase() ที่ resolvePosScan — ไซซ์ที่มีหน่วยตัวพิมพ์เล็ก
@@ -1177,8 +1241,10 @@ async function canonicalizePosSaleLines(
       base_qty: number | null;
       pack_price: string | null;
       stored_size: string | null;
+      serial_tracked: boolean;
     }>(
       `SELECT p.price AS base_price,
+              p.serial_tracked,
               k.pack_code,
               k.unit_name,
               k.base_qty,
@@ -1227,8 +1293,16 @@ async function canonicalizePosSaleLines(
       packQty,
       packUnitPrice: packPrice,
     });
+    if (row.serial_tracked) {
+      serialLines.push({
+        sku,
+        size: row.stored_size ?? size,
+        quantity: packQty * baseQty,
+        serials: (line.serials ?? []).map((value) => String(value ?? "").trim()).filter(Boolean),
+      });
+    }
   }
-  return { ok: true, items };
+  return { ok: true, items, serialLines };
 }
 
 /**
@@ -1418,11 +1492,29 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       && (!Number.isFinite(payment.cashTendered) || payment.cashTendered < payment.amount)
   );
   if (invalidCash) return { status: "PAYMENT_FAILED", reason: "เงินสดที่รับมาต้องไม่น้อยกว่ายอดเงินสด" };
+  const roundingSettings = await getVatSettings(tenantId);
+  const cashOnly = requestedPayments.every((payment) => payment.method === "CASH");
+  const applyCashRounding = (baseDue: number) => {
+    const roundingAmount = cashOnly && roundingSettings.cashRounding !== "NONE"
+      ? cashRoundingDelta(baseDue, roundingSettings.cashRounding)
+      : 0;
+    return {
+      roundingAmount,
+      amountDue: Math.round((baseDue + roundingAmount) * 100) / 100,
+    };
+  };
+
+  // ราคา จำนวนชิ้นต่อ pack และไซซ์จริงมาจากฐานข้อมูลก่อนตรวจ serial เสมอ
+  // ห้ามใช้ baseQty ที่ browser ส่งมาเป็น authority เพราะปลอมเป็น 1 เพื่อข้ามกฎได้
+  const canonical = await canonicalizePosSaleLines(tenantId, shift.location_id, input.lines);
+  if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
+  const items = canonical.items;
+  if (items.length === 0) return { status: "EMPTY" };
 
   // ---- เลขเครื่อง (8.3) ----
   // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
-  // ไม่มีคูปองถูกนับ · ถ้าไปตรวจหลังจากนั้นต้องย้อนคืนทุกอย่างซึ่งพลาดง่ายกว่ามาก
-  const serialCheck = await validatePosSaleSerials(tenantId, input.lines);
+  // ไม่มีคูปองถูกนับ · จำนวนที่ต้องมีใช้ canonical pack conversion ด้านบน
+  const serialCheck = await validatePosSaleSerials(tenantId, canonical.serialLines);
   if (serialCheck) return serialCheck;
 
   // ---- บัตรของขวัญ / เครดิตร้าน (8.9) ----
@@ -1448,17 +1540,17 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
       return { status: "PAYMENT_FAILED", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${existing.status} แล้ว` };
     }
+    const rounded = applyCashRounding(existing.amountDue);
     const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
-    if (Math.abs(paid - existing.amountDue) > 0.01) {
-      return { status: "PAYMENT_MISMATCH", expected: existing.amountDue, received: paid };
+    if (Math.abs(paid - rounded.amountDue) > 0.01) {
+      return { status: "PAYMENT_MISMATCH", expected: rounded.amountDue, received: paid };
     }
-    return finalizePosSale({ input, shift, orderId: existing.orderId, amountDue: existing.amountDue, payments: requestedPayments, replayed: true });
+    return finalizePosSale({
+      input, shift, orderId: existing.orderId, amountDue: rounded.amountDue,
+      payments: requestedPayments, replayed: true, serialLines: canonical.serialLines,
+      roundingAmount: rounded.roundingAmount,
+    });
   }
-
-  const canonical = await canonicalizePosSaleLines(tenantId, shift.location_id, input.lines);
-  if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
-  const items = canonical.items;
-  if (items.length === 0) return { status: "EMPTY" };
 
   const lotCheck = await checkSellableLots(
     tenantId,
@@ -1505,30 +1597,28 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     if (again) return again;
     const pending = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
     if (pending && ["PENDING", "PAID"].includes(pending.status)) {
-      return finalizePosSale({ input, shift, orderId: pending.orderId, amountDue: pending.amountDue, payments: requestedPayments, replayed: true });
+      const rounded = applyCashRounding(pending.amountDue);
+      const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+      if (Math.abs(paid - rounded.amountDue) > 0.01) {
+        return { status: "PAYMENT_MISMATCH", expected: rounded.amountDue, received: paid };
+      }
+      return finalizePosSale({
+        input, shift, orderId: pending.orderId, amountDue: rounded.amountDue,
+        payments: requestedPayments, replayed: true, serialLines: canonical.serialLines,
+        roundingAmount: rounded.roundingAmount,
+      });
     }
     return { status: "PAYMENT_FAILED", reason: "คีย์บิลซ้ำแต่สถานะเดิมไม่สามารถทำต่อได้" };
   }
   if (created.status !== "CREATED") return created as PosSaleResult;
 
   const orderId = created.orderId;
-  let amountDue = created.amountDue;
+  const rounded = applyCashRounding(created.amountDue);
+  const amountDue = rounded.amountDue;
 
   // ปัดเศษเงินสด (7.95) — เฉพาะบิลที่จ่ายสดล้วน เพราะบัตร/QR รับเต็มจำนวนได้อยู่แล้ว
   // ยอดปัดเก็บแยกบนบิล ไม่ใช่ส่วนลด จึงไม่แตะฐาน VAT (ตรงกับบรรทัด
   // "ยอดเงินปัดเศษ" บนใบกำกับจริงที่ใช้อ้างอิง)
-  const roundingSettings = await getVatSettings(tenantId);
-  const cashOnly = input.payments.length > 0 && input.payments.every((p) => p.method === "CASH");
-  let roundingApplied = 0;
-  if (cashOnly && roundingSettings.cashRounding !== "NONE") {
-    const delta = cashRoundingDelta(amountDue, roundingSettings.cashRounding);
-    if (delta !== 0) {
-      roundingApplied = delta;
-      await query(`UPDATE bms_orders SET rounding_amount = $2, updated_at = now() WHERE tenant_id = $1 AND id = $3`,
-        [tenantId, delta, orderId]);
-      amountDue = Math.round((amountDue + delta) * 100) / 100;
-    }
-  }
   const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
   if (Math.abs(paid - amountDue) > 0.01) {
     await cancelOrder(tenantId, orderId);
@@ -1536,7 +1626,14 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   }
   const sold = await finalizePosSale({
     input, shift, orderId, amountDue, payments: requestedPayments, replayed: false,
+    serialLines: canonical.serialLines,
+    roundingAmount: rounded.roundingAmount,
   });
+  if (sold.status === "SERIAL_ALREADY_SOLD") {
+    // createOrder จองสต็อกใน transaction ก่อนหน้าไว้แล้ว คู่แข่งอาจขาย serial
+    // เดียวกันระหว่าง precheck กับ commit; ยกเลิกบิลใหม่เพื่อไม่ทิ้ง reserved_stock ค้าง
+    await cancelOrder(tenantId, orderId);
+  }
 
   // ทบทวนชั้นสมาชิกหลังบิลปิด (7.96) — นอกทรานแซกชันโดยตั้งใจ ล้มได้ไม่กระทบ
   // การขายที่เกิดขึ้นแล้ว · ถ้ารอ cron รายเดือน ลูกค้าที่ซื้อครบเกณฑ์วันนี้จะยัง
@@ -1547,7 +1644,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     );
   }
 
-  return sold.status === "SOLD" ? { ...sold, roundingAmount: roundingApplied } : sold;
+  return sold;
 }
 
 async function finalizePosSale(args: {
@@ -1557,6 +1654,10 @@ async function finalizePosSale(args: {
   amountDue: number;
   payments: PosPaymentInput[];
   replayed: boolean;
+  /** SKU/size/จำนวนที่ resolve จากฐานข้อมูลแล้ว ใช้บังคับ serial ใน transaction */
+  serialLines?: CanonicalPosSerialLine[];
+  /** เก็บพร้อม payment/stock/tax ใน transaction เดียวกัน */
+  roundingAmount?: number;
   /**
    * ยอดที่บิลนี้ "เคยรับไว้แล้ว" อย่างถูกต้อง — ใช้กับบิลมัดจำเท่านั้น (9.0)
    *
@@ -1612,8 +1713,8 @@ async function finalizePosSale(args: {
       if (!stamped.rowCount) throw new Error("บิลมัดจำไม่ได้อยู่สถานะรอชำระ");
     }
 
-    const orderLock = await client.query<{ status: string; total_amount: string; shipping_fee: string | null }>(
-      `SELECT status, total_amount, shipping_fee FROM bms_orders
+    const orderLock = await client.query<{ status: string; total_amount: string; shipping_fee: string | null; rounding_amount: string | null }>(
+      `SELECT status, total_amount, shipping_fee, rounding_amount FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 AND pos_shift_id = $3
           AND pos_device_id = $4 AND cashier_user_id = $5
         FOR UPDATE`,
@@ -1621,7 +1722,15 @@ async function finalizePosSale(args: {
     );
     if (!orderLock.rowCount) throw new Error("บิลไม่ตรงกับเครื่อง กะ หรือพนักงานผู้ขาย");
     const current = orderLock.rows[0];
-    const lockedDue = Number(current.total_amount) + Number(current.shipping_fee ?? 0);
+    const roundingAmount = args.roundingAmount ?? Number(current.rounding_amount ?? 0);
+    if (Math.abs(Number(current.rounding_amount ?? 0) - roundingAmount) > 0.001) {
+      await client.query(
+        `UPDATE bms_orders SET rounding_amount = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, orderId, roundingAmount]
+      );
+    }
+    const lockedDue = Number(current.total_amount) + Number(current.shipping_fee ?? 0) + roundingAmount;
     if (Math.abs(lockedDue - amountDue) > 0.01) throw new Error("ยอดบิลเปลี่ยนระหว่างรับชำระ");
 
     let cashTendered: number | null = null;
@@ -1725,7 +1834,7 @@ async function finalizePosSale(args: {
     // เลขเครื่อง (8.3) — ในทรานแซกชันเดียวกับการขาย
     // บิลที่ commit แล้วต้องไม่มีทางขาดเลขเครื่องของสินค้าที่บังคับเลขเครื่อง
     // ไม่งั้นประวัติประกันมีรูโดยไม่มีใครรู้จนวันที่มีคนมาเคลม
-    await recordSerialsInTx(client, input.tenantId, shift.location_id, orderId, input.lines);
+    await recordSerialsInTx(client, input.tenantId, shift.location_id, orderId, args.serialLines ?? []);
 
     if (args.depositSettlement) {
       await markDepositCompletedInTx(client, input.tenantId, orderId);
@@ -1777,11 +1886,14 @@ async function finalizePosSale(args: {
       pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
       // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
       // โดยไม่ผ่านการปัด (เช่น replay บิลที่ค้างสถานะ) ไม่มีการปัดเพิ่มอยู่แล้ว
-      roundingAmount: 0,
+      roundingAmount,
       replayed,
     };
   } catch (err: any) {
     try { await client.query("ROLLBACK"); } catch {}
+    if (err instanceof PosSerialAlreadySoldError) {
+      return { status: "SERIAL_ALREADY_SOLD", sku: err.sku, serial: err.serial };
+    }
     return { status: "PAYMENT_FAILED", reason: String(err?.message ?? err) };
   } finally {
     client.release();
@@ -3065,7 +3177,7 @@ export type CashMovementResult =
    * ตัวเลขนี้คือ "ยอดที่ควรมีในลิ้นชัก" ตรง ๆ — ถ้าคืนให้ตอนกะยังเปิด แคชเชียร์
    * นำเงินเข้า ฿1 ครั้งเดียวก็อ่านคำตอบของการนับปิดตาได้ทั้งหมด
    */
-  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number | null }
+  | { status: "RECORDED"; movement: PosCashMovement; drawerAfter: number | null; replayed: boolean }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "INVALID"; reason: string }
   /** available = null ด้วยเหตุผลเดียวกัน — ยังปฏิเสธรายการ แต่ไม่บอกว่าเหลือเท่าไร */
@@ -3087,12 +3199,17 @@ export async function recordCashMovement(input: {
   reason: string;
   actorUserId: string;
   approvedByUserId?: string | null;
+  idempotencyKey: string;
 }): Promise<CashMovementResult> {
   const amount = Math.round(Number(input.amount) * 100) / 100;
   if (!Number.isFinite(amount) || amount <= 0) return { status: "INVALID", reason: "จำนวนเงินไม่ถูกต้อง" };
   const reason = input.reason.trim();
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
   if (reason.length > 200) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 240) {
+    return { status: "INVALID", reason: "idempotencyKey ไม่ถูกต้อง" };
+  }
 
   const client = await getClient();
   try {
@@ -3114,6 +3231,25 @@ export async function recordCashMovement(input: {
     // โหมดนับปิดตายังต้องกันการถอนเกิน (รายการที่ทำให้ยอดติดลบคือรายการที่กรอกผิด)
     // แต่ห้ามบอกว่าเหลือเท่าไร ไม่งั้นข้อความ error กลายเป็นช่องอ่านคำตอบ
     const blind = (await getVatSettings(input.tenantId)).blindClose;
+    const replay = await client.query<any>(
+      `SELECT id, direction, amount, reason, created_at
+         FROM bms_pos_cash_movements
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [input.tenantId, idempotencyKey]
+    );
+    if (replay.rows[0]) {
+      const r = replay.rows[0];
+      await client.query("ROLLBACK");
+      return {
+        status: "RECORDED",
+        replayed: true,
+        drawerAfter: blind ? null : drawer,
+        movement: {
+          id: r.id, direction: r.direction, amount: Number(r.amount), reason: r.reason,
+          actorName: null, approvedByName: null, createdAt: toISO(r.created_at),
+        },
+      };
+    }
     if (input.direction === "OUT" && amount > drawer + 0.001) {
       await client.query("ROLLBACK");
       return { status: "WOULD_OVERDRAW", available: blind ? null : drawer };
@@ -3121,11 +3257,11 @@ export async function recordCashMovement(input: {
 
     const res = await client.query(
       `INSERT INTO bms_pos_cash_movements
-         (tenant_id, shift_id, device_id, direction, amount, reason, actor_user_id, approved_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         (tenant_id, shift_id, device_id, direction, amount, reason, actor_user_id, approved_by, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING id, direction, amount, reason, created_at`,
       [input.tenantId, input.shiftId, input.deviceId, input.direction, amount, reason,
-        input.actorUserId, input.approvedByUserId ?? null]
+        input.actorUserId, input.approvedByUserId ?? null, idempotencyKey]
     );
 
     // เงินที่เข้า-ออกลิ้นชักโดยไม่ผ่านการขายต้องอยู่ใน audit log กลางด้วย ไม่ใช่
@@ -3148,6 +3284,7 @@ export async function recordCashMovement(input: {
     const r: any = res.rows[0];
     return {
       status: "RECORDED",
+      replayed: false,
       drawerAfter: blind
         ? null
         : Math.round((drawer + (input.direction === "IN" ? amount : -amount)) * 100) / 100,
@@ -3328,7 +3465,7 @@ export type PosShiftReport = {
 };
 
 export async function getPosShiftReport(
-  tenantId: string, shiftId: string
+  tenantId: string, shiftId: string, deviceId?: string | null
 ): Promise<PosShiftReport | null> {
   const head = await query<any>(
     `SELECT s.id, s.status, s.opened_at, s.closed_at, s.opening_float,
@@ -3341,8 +3478,9 @@ export async function getPosShiftReport(
        LEFT JOIN bms_locations l ON l.id = s.location_id AND l.tenant_id = s.tenant_id
        LEFT JOIN users uo ON uo.id = s.opened_by
        LEFT JOIN users uc ON uc.id = s.closed_by
-      WHERE s.tenant_id = $1 AND s.id = $2`,
-    [tenantId, shiftId]
+      WHERE s.tenant_id = $1 AND s.id = $2
+        AND ($3::uuid IS NULL OR s.device_id = $3)`,
+    [tenantId, shiftId, deviceId ?? null]
   );
   if (!head.rowCount) return null;
   const h = head.rows[0];
@@ -3351,13 +3489,14 @@ export async function getPosShiftReport(
   // ของกะจะไม่ตรงกับเงินที่นับได้ แล้วผู้จัดการจะเซ็นรับด้วยตัวเลขที่ผิด
   const [sales, methods, cashiers, movements, returns, noSales, vat] = await Promise.all([
     query<any>(
-      `SELECT COUNT(*)::text AS bills,
-              COALESCE(SUM(total_amount), 0) AS sales,
-              COALESCE(SUM(discount_amount), 0) AS discounts,
+      `SELECT COUNT(*) FILTER (WHERE voided_at IS NULL)::text AS bills,
+              COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NULL), 0) AS sales,
+              COALESCE(SUM(discount_amount) FILTER (WHERE voided_at IS NULL), 0) AS discounts,
               COUNT(*) FILTER (WHERE voided_at IS NOT NULL)::text AS voids,
               COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NOT NULL), 0) AS void_total
          FROM bms_orders
-        WHERE tenant_id = $1 AND pos_shift_id = $2`,
+        WHERE tenant_id = $1 AND pos_shift_id = $2
+          AND status IN ('COMPLETED','RETURNED')`,
       [tenantId, shiftId]
     ),
     query<any>(
@@ -3375,6 +3514,7 @@ export async function getPosShiftReport(
          FROM bms_orders o
          LEFT JOIN users u ON u.id = o.cashier_user_id
         WHERE o.tenant_id = $1 AND o.pos_shift_id = $2 AND o.voided_at IS NULL
+          AND o.status IN ('COMPLETED','RETURNED')
         GROUP BY 1 ORDER BY 3 DESC`,
       [tenantId, shiftId]
     ),
@@ -3387,10 +3527,16 @@ export async function getPosShiftReport(
     // นับเฉพาะการคืนของจริง — void ถูกกรองออกด้วย is_void
     query<any>(
       `SELECT COUNT(*)::text AS n, COALESCE(SUM(pr.refund_amount), 0) AS amount,
-              COALESCE(SUM(a.amount) FILTER (WHERE a.method = 'CASH' AND a.status = 'COMPLETED'), 0) AS cash_refunds
+              COALESCE((
+                SELECT SUM(a.amount)
+                  FROM bms_pos_refund_allocations a
+                  JOIN bms_pos_returns pr2 ON pr2.id = a.pos_return_id AND pr2.tenant_id = a.tenant_id
+                  JOIN bms_orders o2 ON o2.id = pr2.order_id AND o2.tenant_id = pr2.tenant_id
+                 WHERE a.tenant_id = $1 AND o2.pos_shift_id = $2 AND pr2.is_void = FALSE
+                   AND a.method = 'CASH' AND a.status = 'COMPLETED'
+              ), 0) AS cash_refunds
          FROM bms_pos_returns pr
          JOIN bms_orders o ON o.id = pr.order_id AND o.tenant_id = pr.tenant_id
-         LEFT JOIN bms_pos_refund_allocations a ON a.pos_return_id = pr.id AND a.tenant_id = pr.tenant_id
         WHERE pr.tenant_id = $1 AND o.pos_shift_id = $2 AND pr.is_void = FALSE`,
       [tenantId, shiftId]
     ),
@@ -3418,8 +3564,8 @@ export async function getPosShiftReport(
     closedAt: h.closed_at ? toISO(h.closed_at) : null,
     closedByName: h.closed_by_name ?? null,
     openingFloat,
-    salesTotal: Number(s.sales) - Number(s.void_total),
-    billCount: Number(s.bills) - Number(s.voids),
+    salesTotal: Number(s.sales),
+    billCount: Number(s.bills),
     voidCount: Number(s.voids),
     voidTotal: Number(s.void_total),
     returnCount: Number(r.n ?? 0),
@@ -3563,7 +3709,10 @@ export async function blindReturnPosSale(input: {
   const reason = input.reason.trim();
   if (!reason) return { status: "INVALID", reason: "ต้องระบุเหตุผล" };
   if (reason.length > 300) return { status: "INVALID", reason: "เหตุผลยาวเกินไป" };
-  if (!input.idempotencyKey.trim()) return { status: "INVALID", reason: "ต้องมี idempotencyKey" };
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 240) {
+    return { status: "INVALID", reason: "idempotencyKey ไม่ถูกต้อง" };
+  }
 
   const lines = input.lines
     .map((l) => ({
@@ -3580,11 +3729,18 @@ export async function blindReturnPosSale(input: {
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
 
-    // ยิงซ้ำเพราะเน็ตหลุดต้องได้รายการเดิม ไม่ใช่จ่ายเงินออกสองรอบ
+    // ล็อกกะก่อนเช็ก replay: สองคำขอที่ใช้ key เดียวกันพร้อมกันจะเข้าแถวกัน
+    // คำขอหลังจึงเห็น head ที่คำขอแรก commit แล้ว แทนที่จะชน unique index เป็น 500
+    // เลือกกะปิดแล้วด้วยเพื่อให้ response ที่หายก่อนปิดกะยัง replay ได้
+    const shift = await client.query<{ id: string; location_id: string; opening_float: string; status: string }>(
+      `SELECT id, location_id, opening_float, status FROM bms_pos_shifts
+        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 FOR UPDATE`,
+      [input.tenantId, input.shiftId, input.deviceId]
+    );
     const replay = await client.query<{ id: string; refund_amount: string }>(
       `SELECT id, refund_amount FROM bms_pos_blind_returns
         WHERE tenant_id = $1 AND idempotency_key = $2`,
-      [input.tenantId, input.idempotencyKey]
+      [input.tenantId, idempotencyKey]
     );
     if (replay.rows[0]) {
       await client.query("ROLLBACK");
@@ -3595,17 +3751,22 @@ export async function blindReturnPosSale(input: {
         replayed: true,
       };
     }
-
-    const shift = await client.query<{ id: string; location_id: string; opening_float: string }>(
-      `SELECT id, location_id, opening_float FROM bms_pos_shifts
-        WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND status = 'OPEN' FOR UPDATE`,
-      [input.tenantId, input.shiftId, input.deviceId]
-    );
-    if (!shift.rowCount) {
+    if (!shift.rowCount || shift.rows[0].status !== "OPEN") {
       await client.query("ROLLBACK");
       return { status: "SHIFT_NOT_OPEN" };
     }
     const locationId = shift.rows[0].location_id;
+
+    if (input.customerId) {
+      const customer = await client.query(
+        `SELECT 1 FROM bms_customers WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, input.customerId]
+      );
+      if (!customer.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: "ลูกค้าที่ระบุไม่ได้อยู่ในร้านนี้" };
+      }
+    }
 
     // ราคาที่คืนห้ามเกินราคาขายปัจจุบัน — ไม่มีบิลต้นทางให้ยึด ราคาป้ายวันนี้จึงเป็น
     // เพดานเดียวที่ตรวจได้ · ถ้าไม่มีเพดาน พนักงานพิมพ์เลขอะไรก็ได้แล้วเงินออกตามนั้น
@@ -3644,7 +3805,7 @@ export async function blindReturnPosSale(input: {
        RETURNING id`,
       [input.tenantId, locationId, input.deviceId, input.shiftId, input.actorUserId,
         input.approvedByUserId, reason, input.customerId ?? null, input.customerNote ?? null,
-        refundAmount, input.idempotencyKey.trim()]
+        refundAmount, idempotencyKey]
     );
     const blindReturnId = head.rows[0].id;
 
@@ -3682,6 +3843,22 @@ export async function blindReturnPosSale(input: {
       );
     }
 
+    // นี่คือเส้นทางรับของและจ่ายเงินออกโดยไม่มีใบเสร็จต้นทาง จึงต้องมีหลักฐาน
+    // กลางใน transaction เดียวกับ stock/cash ไม่ใช่อาศัยเฉพาะตารางเฉพาะทาง
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'pos.blind_return',$3,$4)`,
+      [input.tenantId, input.actorUserId, blindReturnId, JSON.stringify({
+        shiftId: input.shiftId,
+        deviceId: input.deviceId,
+        approvedBy: input.approvedByUserId,
+        customerId: input.customerId ?? null,
+        refundAmount,
+        lineCount: lines.length,
+        reason,
+      })]
+    );
+
     await client.query("COMMIT");
     return { status: "RETURNED", blindReturnId, refundAmount, replayed: false };
   } catch (err) {
@@ -3702,13 +3879,6 @@ export async function blindReturnPosSale(input: {
 // เก็บตอนขาย ไม่ใช่ตอนรับเข้า — ร้านเล็กไม่มีใครนั่งยิง 50 เครื่องเข้าระบบตอนของมาถึง
 // แต่ตอนขายต้องหยิบกล่องมาสแกนอยู่แล้ว
 
-/** จำนวนหน่วยฐานของบรรทัด — pack 2 กล่อง × 10 ชิ้น = 20 เครื่อง ต้องมี 20 เลข */
-function baseUnitsOf(line: PosSaleLine): number {
-  const packQty = Math.max(1, Math.trunc(Number(line.packQty ?? 1)));
-  const baseQty = Math.max(1, Math.trunc(Number((line as any).baseQty ?? 1)));
-  return packQty * baseQty;
-}
-
 /**
  * ตรวจเลขเครื่องก่อนเปิดบิล — คืน null เมื่อผ่าน
  *
@@ -3718,7 +3888,7 @@ function baseUnitsOf(line: PosSaleLine): number {
  */
 async function validatePosSaleSerials(
   tenantId: string,
-  lines: PosSaleLine[]
+  lines: CanonicalPosSerialLine[]
 ): Promise<PosSaleResult | null> {
   const skus = Array.from(new Set(lines.map((l) => l.sku)));
   if (skus.length === 0) return null;
@@ -3731,30 +3901,50 @@ async function validatePosSaleSerials(
   if (tracked.rowCount === 0) return null;
   const trackedSkus = new Set(tracked.rows.map((r) => r.sku));
 
+  const allGiven: string[] = [];
   for (const line of lines) {
     if (!trackedSkus.has(line.sku)) continue;
-    const need = baseUnitsOf(line);
-    const given = (line.serials ?? [])
+    const need = line.quantity;
+    const given = line.serials
       .map((x) => String(x ?? "").trim())
       .filter(Boolean);
     if (given.length !== need) {
       return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: given.length };
     }
-    // เลขซ้ำกันเองในบรรทัดเดียว = ยิงกล่องเดิมสองครั้ง
-    if (new Set(given).size !== given.length) {
-      return { status: "SERIAL_REQUIRED", sku: line.sku, expected: need, received: new Set(given).size };
+    allGiven.push(...given);
+  }
+  // ต้องตรวจทั้งบิล ไม่ใช่ทีละบรรทัด: serial เดียวกันอาจถูกยิงในสองบรรทัด
+  if (new Set(allGiven).size !== allGiven.length) {
+    const seen = new Set<string>();
+    let duplicate = "";
+    for (const serial of allGiven) {
+      if (seen.has(serial)) {
+        duplicate = serial;
+        break;
+      }
+      seen.add(serial);
     }
-    const clash = await query<{ serial: string }>(
-      `SELECT serial FROM bms_product_serials
+    const owner = lines.find((line) => line.serials.includes(duplicate));
+    return { status: "SERIAL_REQUIRED", sku: owner?.sku ?? "", expected: allGiven.length, received: new Set(allGiven).size };
+  }
+  if (allGiven.length > 0) {
+    const clash = await query<{ product_sku: string; serial: string }>(
+      `SELECT product_sku, serial FROM bms_product_serials
         WHERE tenant_id = $1 AND serial = ANY($2::text[]) AND status = 'SOLD'
         LIMIT 1`,
-      [tenantId, given]
+      [tenantId, allGiven]
     );
     if (clash.rowCount) {
-      return { status: "SERIAL_ALREADY_SOLD", sku: line.sku, serial: clash.rows[0].serial };
+      return { status: "SERIAL_ALREADY_SOLD", sku: clash.rows[0].product_sku, serial: clash.rows[0].serial };
     }
   }
   return null;
+}
+
+class PosSerialAlreadySoldError extends Error {
+  constructor(readonly sku: string, readonly serial: string) {
+    super(`serial ${serial} ถูกขายไปแล้ว`);
+  }
 }
 
 /**
@@ -3771,22 +3961,27 @@ async function recordSerialsInTx(
   tenantId: string,
   locationId: string,
   orderId: string,
-  lines: PosSaleLine[]
+  lines: CanonicalPosSerialLine[]
 ): Promise<void> {
   for (const line of lines) {
-    const serials = (line.serials ?? []).map((x) => String(x ?? "").trim()).filter(Boolean);
+    const serials = line.serials.map((x) => String(x ?? "").trim()).filter(Boolean);
     if (serials.length === 0) continue;
     for (const serial of serials) {
-      await client.query(
+      const written = await client.query(
         `INSERT INTO bms_product_serials
            (tenant_id, product_sku, size, serial, status, location_id, order_id, sold_at)
          VALUES ($1,$2,$3,$4,'SOLD',$5,$6,now())
          ON CONFLICT (tenant_id, serial) DO UPDATE
            SET status = 'SOLD', order_id = EXCLUDED.order_id, sold_at = now(),
                product_sku = EXCLUDED.product_sku, size = EXCLUDED.size,
-               location_id = EXCLUDED.location_id, returned_at = NULL, updated_at = now()`,
+               location_id = EXCLUDED.location_id, returned_at = NULL, updated_at = now()
+          WHERE bms_product_serials.status = 'RETURNED'
+          RETURNING id`,
         [tenantId, line.sku, line.size, serial, locationId, orderId]
       );
+      // ON CONFLICT รอ transaction คู่แข่งก่อนประเมิน WHERE จึงปิด race ที่ precheck
+      // ทั้งสองคำขอเห็นว่า serial ยังว่างพร้อมกัน แล้วคำขอหลังขโมยแถว SOLD ไปไม่ได้
+      if (!written.rowCount) throw new PosSerialAlreadySoldError(line.sku, serial);
     }
   }
 }
@@ -3873,6 +4068,7 @@ export async function settleDepositSale(input: {
   cashierUserId: string;
   orderId: string;
   payments: PosPaymentInput[];
+  serialLines?: Array<{ sku: string; size: string; serials: string[] }>;
 }): Promise<SettleDepositResult> {
   const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
     `SELECT id, location_id, device_id FROM bms_pos_shifts
@@ -3903,6 +4099,29 @@ export async function settleDepositSale(input: {
     return { status: "BALANCE_MISMATCH", expected: balance, received: paid };
   }
 
+  // บิลมัดจำไม่ได้ผ่าน recordPosSale ตอนสร้าง จึงต้องอ่านจำนวน serial จาก order
+  // ที่จองไว้จริงก่อนส่งมอบ ห้ามปิดด้วย lines=[] แล้วทำให้บิลขายสำเร็จแต่ประกันมีรู
+  const requiredSerials = await query<{ product_sku: string; size: string; quantity: string }>(
+    `SELECT oi.product_sku, oi.size, SUM(oi.qty)::text AS quantity
+       FROM bms_order_items oi
+       JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+      WHERE oi.tenant_id = $1 AND oi.order_id = $2 AND p.serial_tracked
+      GROUP BY oi.product_sku, oi.size
+      ORDER BY oi.product_sku, oi.size`,
+    [input.tenantId, input.orderId]
+  );
+  const supplied = input.serialLines ?? [];
+  const serialLines: CanonicalPosSerialLine[] = requiredSerials.rows.map((required) => ({
+    sku: required.product_sku,
+    size: required.size,
+    quantity: Number(required.quantity),
+    serials: supplied
+      .filter((line) => line.sku === required.product_sku && line.size.toUpperCase() === required.size.toUpperCase())
+      .flatMap((line) => line.serials.map((serial) => serial.trim()).filter(Boolean)),
+  }));
+  const serialCheck = await validatePosSaleSerials(input.tenantId, serialLines);
+  if (serialCheck) return serialCheck;
+
   const settled = await finalizePosSale({
     input: {
       tenantId: input.tenantId,
@@ -3924,6 +4143,7 @@ export async function settleDepositSale(input: {
     amountDue: Number(row.total_amount),
     payments: requested,
     replayed: false,
+    serialLines,
     // เงินมัดจำที่ลงไว้แล้วเป็นของถูกต้อง — บอกยอดที่คาดไว้เพื่อให้ด่านตรวจ
     // เปลี่ยนจาก "ห้ามมีรายการเดิม" เป็น "ต้องมีเท่านี้พอดี"
     alreadyPaid: Number(row.deposit_paid),

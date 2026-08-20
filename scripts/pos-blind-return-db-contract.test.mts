@@ -117,6 +117,14 @@ test("goods come back into stock and the cash leaves the drawer through one path
   if (res.status !== "RETURNED") return;
   assert.equal(res.refundAmount, 200);
   assert.equal(await stock(), before + 2);
+  const audit = await query<{ actor: string; meta: { approvedBy?: string } }>(
+    `SELECT actor, meta FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'pos.blind_return' AND target = $2`,
+    [tenantId, res.blindReturnId]
+  );
+  assert.equal(audit.rowCount, 1, "blind return ต้องมี audit กลางใน transaction เดียวกัน");
+  assert.equal(audit.rows[0].actor, cashierId);
+  assert.equal(audit.rows[0].meta.approvedBy, approverId);
 
   // เงินออกต้องอยู่ในตารางเดียวกับเงินลิ้นชักปกติ ไม่ใช่แหล่งที่สองที่ไม่เข้าสูตรปิดกะ
   const report = await getPosShiftReport(tenantId, shiftId);
@@ -215,6 +223,8 @@ test("teardown: remove every row this suite created", async () => {
     `SELECT id FROM bms_pos_blind_returns WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]
   );
   if (brs.rowCount) {
+    await query(`DELETE FROM bms_audit_log WHERE tenant_id = $1 AND action = 'pos.blind_return' AND target = ANY($2::text[])`,
+      [tenantId, brs.rows.map((r) => r.id)]);
     await query(`DELETE FROM bms_pos_blind_return_items WHERE tenant_id = $1 AND blind_return_id = ANY($2::uuid[])`,
       [tenantId, brs.rows.map((r) => r.id)]);
   }

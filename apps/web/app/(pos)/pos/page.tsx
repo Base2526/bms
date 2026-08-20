@@ -484,6 +484,7 @@ export default function PosPage() {
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
   const depositRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const cashMovementRequestRef = useRef<{ signature: string; key: string } | null>(null);
   // ---- ส่งใบเสร็จ (8.6) ----
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
@@ -495,6 +496,7 @@ export default function PosPage() {
   const [blindReason, setBlindReason] = useState("");
   const [blindApproverId, setBlindApproverId] = useState("");
   const [blindApproverPin, setBlindApproverPin] = useState("");
+  const blindReturnRequestRef = useRef<{ signature: string; key: string } | null>(null);
   // สมัครสมาชิกเป็นงานนาน ๆ ครั้ง จึงยอมให้เป็นกล่องเต็มจอ + numpad ได้
   // (ต่างจากการค้นที่เกิดทุกบิล ซึ่งอยู่ในแผงชำระเงินเลย)
   const [enrollOpen, setEnrollOpen] = useState(false);
@@ -881,6 +883,17 @@ export default function PosPage() {
       setNotice({ type: "error", text: "เงินออกจากลิ้นชักต้องมีหัวหน้าอนุมัติ" }); return;
     }
     try {
+      const signature = JSON.stringify({
+        shiftId: session?.shift?.id ?? null,
+        direction: cashMoveDir,
+        amount: Number(cashMoveAmount),
+        reason: cashMoveReason.trim(),
+        cashierUserId: cashierId,
+        approverUserId: cashMoveDir === "OUT" ? cashApproverId : null,
+      });
+      if (cashMovementRequestRef.current?.signature !== signature) {
+        cashMovementRequestRef.current = { signature, key: `cash-move-${crypto.randomUUID()}` };
+      }
       const res = await fetch("/api/pos/cash-movement", {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -889,6 +902,7 @@ export default function PosPage() {
           cashierUserId: cashierId, pin,
           approverUserId: cashMoveDir === "OUT" ? cashApproverId : null,
           approverPin: cashMoveDir === "OUT" ? cashApproverPin : null,
+          idempotencyKey: cashMovementRequestRef.current.key,
         }),
       });
       const data = await res.json();
@@ -900,6 +914,7 @@ export default function PosPage() {
           : data.error ?? data.reason ?? "บันทึกไม่สำเร็จ" });
         return;
       }
+      cashMovementRequestRef.current = null;
       setCashMoveAmount(""); setCashMoveReason(""); setCashApproverPin("");
       void refreshCashMoves();
       setNotice({
@@ -958,6 +973,13 @@ export default function PosPage() {
             amount,
             cashTendered: depositMethod === "CASH" ? amount : null,
           }] : undefined,
+          // ถ้าบิลมัดจำมีสินค้าที่ติดตาม serial พนักงานยิงของจริงใส่ตะกร้า
+          // ก่อน settle แล้ว server เทียบจำนวนกับ order item จากฐานข้อมูลอีกชั้น
+          lines: action === "settle" ? cart.map((line) => ({
+            sku: line.sku,
+            size: line.size,
+            serials: line.serials?.length ? line.serials : undefined,
+          })) : undefined,
           outcome: depositOutcome,
           reason: depositReason.trim(),
           idempotencyKey: requestKey,
@@ -976,6 +998,12 @@ export default function PosPage() {
       });
       setDepositAmount("");
       setDepositReason("");
+      if (action === "settle") {
+        // ตะกร้านี้ใช้ยืนยันของจริง/serial ที่ส่งมอบให้บิลมัดจำแล้ว
+        // เก็บไว้ต่อจะเสี่ยงกดขายซ้ำเป็นบิลใหม่โดยไม่ตั้งใจ
+        setCart([]);
+        clearBillCustomerState();
+      }
       depositRequestRef.current = null;
       void refreshDeposits();
     } catch (e: any) {
@@ -1056,6 +1084,20 @@ export default function PosPage() {
     if (!blindReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผล" }); return; }
     if (!blindApproverId || !blindApproverPin) { setNotice({ type: "error", text: "ต้องมีหัวหน้าอนุมัติ" }); return; }
     try {
+      const signature = JSON.stringify({
+        shiftId: session?.shift?.id ?? null,
+        cashierUserId: cashierId,
+        approverUserId: blindApproverId,
+        reason: blindReason.trim(),
+        customerId: member?.customerId ?? null,
+        lines: cart.map((line) => ({
+          sku: line.sku, size: line.size,
+          qty: line.packQty * line.baseQty, unitRefund: line.basePrice,
+        })),
+      });
+      if (blindReturnRequestRef.current?.signature !== signature) {
+        blindReturnRequestRef.current = { signature, key: `blind-${crypto.randomUUID()}` };
+      }
       const res = await fetch("/api/pos/blind-return", {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -1064,8 +1106,9 @@ export default function PosPage() {
           approverUserId: blindApproverId, approverPin: blindApproverPin,
           reason: blindReason.trim(),
           customerId: member?.customerId ?? null,
-          // คีย์ผูกกับตะกร้าใบนี้ — กดสองครั้งเพราะเน็ตช้าต้องไม่จ่ายเงินสองรอบ
-          idempotencyKey: `blind-${session?.shift?.id?.slice(0, 8)}-${cart.map((l) => `${l.sku}:${l.size}:${l.packQty}`).join("|")}`,
+          // UUID นี้คงเดิมเฉพาะ retry ของ attempt เดียวกัน รายการใหม่ที่ตะกร้าเหมือนกัน
+          // ต้องได้ UUID ใหม่ ไม่งั้นลูกค้าคนถัดไปจะ replay รายการของคนก่อน
+          idempotencyKey: blindReturnRequestRef.current.key,
           lines: cart.map((line) => ({
             sku: line.sku,
             size: line.size,
@@ -1084,6 +1127,7 @@ export default function PosPage() {
           : data.error ?? data.reason ?? "คืนไม่สำเร็จ" });
         return;
       }
+      blindReturnRequestRef.current = null;
       setCart([]);
       clearBillCustomerState();
       setBlindReason(""); setBlindApproverPin(""); setBlindOpen(false);

@@ -45,7 +45,11 @@ async function handlePOST(req: NextRequest) {
 
   const cashierUserId = typeof body.cashierUserId === "string" ? body.cashierUserId.trim() : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
   if (!cashierUserId || !pin) return NextResponse.json({ error: "ต้องระบุพนักงานและ PIN" }, { status: 400 });
+  if (!idempotencyKey || idempotencyKey.length > 240) {
+    return NextResponse.json({ error: "ต้องมี idempotencyKey ที่ยาวไม่เกิน 240 ตัวอักษร" }, { status: 400 });
+  }
 
   const actor = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!actor.ok) {
@@ -82,6 +86,7 @@ async function handlePOST(req: NextRequest) {
     reason: typeof body.reason === "string" ? body.reason : "",
     actorUserId: actor.userId,
     approvedByUserId: approvedBy,
+    idempotencyKey,
   });
   const status = result.status === "RECORDED" ? 200
     : result.status === "SHIFT_NOT_OPEN" ? 409

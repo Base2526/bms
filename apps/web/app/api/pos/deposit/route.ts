@@ -91,6 +91,13 @@ async function handlePOST(req: NextRequest) {
     const result = await settleDepositSale({
       tenantId: device.tenantId, deviceId: device.id, shiftId: shift.id,
       cashierUserId: auth.userId, orderId, payments: parsed.payments,
+      serialLines: Array.isArray(body.lines) ? (body.lines as any[]).map((line) => ({
+        sku: String(line?.sku ?? "").trim(),
+        size: String(line?.size ?? "").trim(),
+        serials: Array.isArray(line?.serials)
+          ? line.serials.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
+          : [],
+      })) : [],
     });
     const status = result.status === "SOLD" ? 200
       : result.status === "DEPOSIT_NOT_FOUND" ? 404

@@ -111,13 +111,15 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `parkedId` and answer 200 or 404. **The one mutating POS route with no PIN and no permission
   check** — parking touches no money, no stock, and no document, so gating it would only push
   cashiers back to writing on paper.
-- `GET|POST /api/pos/cash-movement` (`7.97`) — non-sale drawer movements for the open shift. `GET`
-  returns `{ movements }`. `POST` takes `direction: "IN" | "OUT"`, `amount`, `reason`,
-  `cashierUserId`, `pin`; `OUT` additionally requires `approverUserId` + `approverPin` from a
-  **second** user holding `pos.cash.movement` (`400` when either is missing, `403` when the PIN or
-  the permission fails; using the actor as approver is `400`). Results: `RECORDED` (200, with `drawerAfter`), `SHIFT_NOT_OPEN`/
-  `WOULD_OVERDRAW` (409), `INVALID` (400). Cash **in** needs no approver on purpose — see
-  [../business/pos.md](../business/pos.md).
+- `GET|POST /api/pos/cash-movement` (`7.97`, idempotency key `9.5`) — non-sale drawer movements for
+  the open shift. `GET` returns `{ movements }`. `POST` takes `direction: "IN" | "OUT"`, `amount`,
+  `reason`, `cashierUserId`, `pin`, and a required `idempotencyKey` (`≤240` chars, `400` if missing —
+  a retried request with the same key replays the original movement instead of moving cash again);
+  `OUT` additionally requires `approverUserId` + `approverPin` from a **second** user holding
+  `pos.cash.movement` (`400` when either is missing, `403` when the PIN or the permission fails;
+  using the actor as approver is `400`). Results: `RECORDED` (200, with `drawerAfter` and
+  `replayed`), `SHIFT_NOT_OPEN`/`WOULD_OVERDRAW` (409), `INVALID` (400). Cash **in** needs no
+  approver on purpose — see [../business/pos.md](../business/pos.md).
 - `POST /api/pos/void` (`7.97`) — cancel a mis-rung bill; deliberately not the return path. Requires
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
@@ -125,9 +127,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
-  shift at all is `404`. Requires `pos.shift.report` even though it writes nothing: the report breaks
-  sales down per cashier, and a till left open on the counter must not hand that to whoever walks
-  past. Both credentials are read from the query string, so treat the URL as secret-bearing.
+  shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
+  belonging to a different register in the same store answers `404`, not that register's numbers.
+  Requires `pos.shift.report` even though it writes nothing: the report breaks sales down per
+  cashier, and a till left open on the counter must not hand that to whoever walks past. Both
+  credentials are read from the query string, so treat the URL as secret-bearing.
 
 Second-person PIN approval is a route-level rule, not a permission-table one: manual discounts
 (`pos.discount.approve`), voids (`pos.void`), and cash-out (`pos.cash.movement`) all re-verify a

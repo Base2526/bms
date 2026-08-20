@@ -666,11 +666,13 @@ export async function createOrder(
     const extraLines = (input.extraLines ?? [])
       .map((x) => ({
         label: String(x?.label ?? "").trim(),
-        qty: Math.max(1, Math.trunc(Number(x?.qty ?? 1))),
+        qty: Number(x?.qty ?? 1),
         unitAmount: Math.round(Number(x?.unitAmount) * 100) / 100,
         vatCategory: (x?.vatCategory === "N" || x?.vatCategory === "UNKNOWN" ? x.vatCategory : "V") as VatCategory,
       }))
-      .filter((x) => x.label && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
+      .filter((x) => x.label
+        && Number.isInteger(x.qty) && x.qty > 0
+        && Number.isFinite(x.unitAmount) && x.unitAmount >= 0);
     const extraTotal = Math.round(extraLines.reduce(
       (sum, extra) => sum + extra.unitAmount * extra.qty,
       0

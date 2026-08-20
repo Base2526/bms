@@ -81,16 +81,22 @@ wrong, and update the doc in the same change.
   degrading silently into "manual".
 - **POS/tax** — a device token is not a user; every mutating `/api/pos/*` route re-checks the
   cashier PIN and an action permission server-side. Settlement (stock, FEFO lots, tax document) is
-  one atomic transaction. Refund allocations split cash (immediate) from non-cash (pending until
-  `payment.refund`); a shift can't close with a pending allocation. Tax documents are immutable once
-  issued; e-Tax submission (`7.94`) is a separate gated queue, not automatic, and its cron route
-  doesn't yet call `recordJobRun()` like the others — don't copy that. `pos_only` accounts are
-  hard-blocked from `/admin` login, not just hidden from the menu. **A manual discount, a void, and
-  cash out of the drawer each demand a second person's PIN even when the operator holds the
-  permission themselves** — holding a right and exercising it must be two separate acts in the
-  evidence. A void is not a return: it reuses the return machinery but carries `isVoid`, and its
-  `voided_at` stamp, tax-document cancellation, and audit row happen **inside that reversal's
-  transaction**, never a second one afterwards. Full detail:
+  one atomic transaction, and every mutating action — sale, return, refund settlement, and (since
+  `9.5`) a standalone drawer cash in/out — takes a stable client idempotency key so a lost response
+  replays the original write instead of double-charging or moving cash twice. Refund allocations
+  split cash (immediate) from non-cash (pending until `payment.refund`); a shift can't close with a
+  pending allocation, and a return refunded across cash + card must still count once, not once per
+  allocation row. Tax documents are immutable once issued; e-Tax submission (`7.94`) is a separate
+  gated queue, not automatic, and its cron route doesn't yet call `recordJobRun()` like the others —
+  don't copy that. `pos_only` accounts are hard-blocked from `/admin` login, not just hidden from the
+  menu. **A manual discount, a void, and cash out of the drawer each demand a second person's PIN
+  even when the operator holds the permission themselves** — holding a right and exercising it must
+  be two separate acts in the evidence. A void is not a return: it reuses the return machinery but
+  carries `isVoid`, and its `voided_at` stamp, tax-document cancellation, and audit row happen
+  **inside that reversal's transaction**, never a second one afterwards. Serial-number checks (`8.3`)
+  span the whole bill, not one line at a time, and the DB write that marks a serial `SOLD` is
+  race-safe against two bills claiming it at once. A shift report only answers to the device that
+  owns the shift. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.

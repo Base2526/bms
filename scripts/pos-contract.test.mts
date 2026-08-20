@@ -5,6 +5,7 @@ import {
   decoratePosSale,
   isDistinctPosApprover,
   normalizePosSearchQuery,
+  parsePosExtraLines,
   parsePosPayments,
   parsePosSaleLines,
 } from "../apps/web/lib/bms/posRouteHelpers.ts";
@@ -74,6 +75,16 @@ test("POS sale parser treats browser price fields as optional transport data", (
   // from the tenant catalog before creating the order.
   assert.equal(line.baseQty, 999);
   assert.equal(line.packPrice, 0.01);
+});
+
+test("POS extra lines drop non-finite quantities before they reach Postgres", () => {
+  assert.deepEqual(parsePosExtraLines([
+    { label: "ค่าถุง", qty: "not-a-number", unitAmount: 5 },
+    { label: "จำนวนเศษ", qty: 1.5, unitAmount: 10 },
+    { label: "ค่าห่อ", qty: 2, unitAmount: 10 },
+  ]), [
+    { label: "ค่าห่อ", qty: 2, unitAmount: 10 },
+  ]);
 });
 
 test("POS search query normalization trims whitespace and null safely", () => {

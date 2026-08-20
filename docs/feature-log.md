@@ -697,6 +697,14 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   counts, with separate permission to apply a variance. Operator details and go-live checks are in
   [docs/business/pos.md](business/pos.md) and [docs/business/inventory.md](business/inventory.md).
   Full invariants: [docs/agent-invariants.md § POS and tax](agent-invariants.md#pos-and-tax).
+  `9.5` (2026-08-20) closed a retry gap the other write paths already had: standalone drawer cash
+  in/out had no idempotency key, so a lost response could move the same cash twice. The same pass
+  fixed four correctness bugs found on recheck: serial-number dedup now spans the whole bill instead
+  of one line at a time, and the in-transaction write that marks a serial `SOLD` is race-safe against
+  two bills claiming it at once; deposit settlement now requires the reserved order's own serials
+  instead of accepting an empty list; the shift report is scoped to the requesting device and counts
+  sales directly off `COMPLETED`/`RETURNED` orders instead of subtracting voids after summing every
+  status; and a split cash+card refund on one return no longer doubles its count and total.
 
 **Roadmap remaining:** TikTok send API · email/voice outbound · live Flash/Kerry carrier adapters
 (booking/label/tracking plumbing is built and hardened — see "Carrier shipment booking + tracking
