@@ -120,6 +120,14 @@ accounting: what's received stays received).
 
 Permissions: `purchase.view` / `purchase.edit` / `purchase.receive` / `purchase.cancel`.
 
+Since `9.6`, an authorised cashier can receive an existing `OPEN`/`PARTIAL` PO from the POS Receive
+tab. Scans only build a draft; confirmation is the stock mutation. Unlike the legacy admin workflow
+(which defaults to the shop's main location), this path takes the active location from the
+authenticated POS device and passes it into the shared purchase service. The inventory row, lot,
+`STOCK_IN` movement, PO progress, `purchase.receive` audit row, and retry receipt all use that same
+location and transaction. A stable per-device idempotency key prevents a lost response from adding
+the same delivery twice.
+
 ## Customer restock follow-up
 
 When a customer explicitly opts in after an exact SKU/size is unavailable, the customer AI may

@@ -82,7 +82,7 @@ wrong, and update the doc in the same change.
 - **POS/tax** — a device token is not a user; every mutating `/api/pos/*` route re-checks the
   cashier PIN and an action permission server-side. Settlement (stock, FEFO lots, tax document) is
   one atomic transaction, and every mutating action — sale, return, refund settlement, and (since
-  `9.5`) a standalone drawer cash in/out — takes a stable client idempotency key so a lost response
+  `9.5`) a standalone drawer cash in/out, and (since `9.6`) a POS PO receipt — takes a stable client idempotency key so a lost response
   replays the original write instead of double-charging or moving cash twice. Refund allocations
   split cash (immediate) from non-cash (pending until `payment.refund`); a shift can't close with a
   pending allocation, and a return refunded across cash + card must still count once, not once per
@@ -96,7 +96,9 @@ wrong, and update the doc in the same change.
   **inside that reversal's transaction**, never a second one afterwards. Serial-number checks (`8.3`)
   span the whole bill, not one line at a time, and the DB write that marks a serial `SOLD` is
   race-safe against two bills claiming it at once. A shift report only answers to the device that
-  owns the shift. Full detail:
+  owns the shift. POS PO receiving derives the branch from the device, re-checks `purchase.receive`,
+  and commits stock/movement/audit/retry result together. Bluetooth HID is globally captured only
+  after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.

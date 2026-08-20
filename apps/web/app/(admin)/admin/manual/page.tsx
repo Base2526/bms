@@ -349,6 +349,8 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ขายหน้าร้าน, สมาชิก/แต้ม, พักบิล, เงินลิ้นชัก, void และรายงานกะ",
     bullets: [
       "เปิดกะและยืนยันตัวพนักงานด้วย PIN ก่อนขาย; device token ระบุเครื่องและสาขา ไม่ใช่ตัวบุคคล",
+      "Bluetooth HID เป็น Keyboard: ตั้ง Scanner ของเครื่องเป็น Prefix Mode (เช่น F9 + ข้อมูล + Enter) ที่หน้าเครื่องขาย เพื่อให้สแกนได้แม้กำลังพิมพ์ค้นสมาชิก/PIN โดยข้อมูลไม่หลุดเข้าช่องนั้น",
+      "แท็บรับของให้เลือก PO ก่อน สแกนเป็นรายการร่าง ตรวจจำนวน/lot/วันหมดอายุ แล้วกดยืนยันครั้งเดียว; ต้องมีสิทธิ์ purchase.receive และของเข้าที่สาขาของเครื่องนี้",
       "ค้นหาสมาชิกก่อนชำระเพื่อใช้ส่วนลดตาม tier และแต้ม; ตั้งโปรแกรมและตรวจ ledger ที่ /admin/loyalty",
       "พักบิลได้ไม่เกิน 20 บิลต่อกะ แต่ไม่จอง stock และไม่ล็อกราคา; ตอนกลับมาขายระบบใช้ราคาและ stock ปัจจุบัน",
       "แท็บมัดจำใช้รับเงินครั้งแรก/รับเพิ่ม/รับยอดคงเหลือ/ปิดมัดจำของสาขานี้; รับครบต้องใช้ปุ่มรับยอดคงเหลือเพื่อส่งของ ตัด stock และออกเอกสารในขั้นเดียว — ถ้ามีสินค้าบังคับเลขเครื่อง ให้ยิงสินค้ากับ serial จริงใส่ตะกร้าก่อนกดรับยอดคงเหลือ",
@@ -485,7 +487,7 @@ const LINK_STEPS_TH: LinkStep[] = [
   },
   {
     title: "รับของเข้าคลัง",
-    description: <>เปิด {L.purchase} เพื่อสร้าง PO และรับของ</>,
+    description: <>เปิด {L.purchase} เพื่อสร้าง PO และรับของ หรือเลือก PO เดิมในแท็บ รับของ ของหน้า POS เพื่อสแกนเป็นร่างและยืนยันเข้าสต็อกสาขาของเครื่อง</>,
   },
   {
     title: "ตาม order / payment / shipment",
@@ -1021,6 +1023,8 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Counter sales, members and points, parked bills, drawer cash, voids, and shift reports",
     bullets: [
       "Open a shift and identify the cashier with a PIN before selling; the device token identifies the register and branch, not the person",
+      "A Bluetooth HID scanner is a keyboard: configure the register for Prefix Mode (for example F9 + payload + Enter) so a scan is captured even while member/PIN input is focused without mutating that field",
+      "In Receive, select an existing PO, scan into a draft, review quantities/lot/expiry, then confirm once; purchase.receive is checked and stock enters this register's branch",
       "Find the member before payment to apply tier discounts and points; configure the program and inspect its ledger at /admin/loyalty",
       "Park up to 20 bills per shift, but parked carts reserve no stock and lock no price; resume uses current stock and pricing",
       "Use the Deposits tab to take, add, settle, or close layaway for this branch; a full balance must use Settle so stock and documents complete atomically. For serial-tracked goods, scan the delivered items and their serials into the cart before settling",
@@ -1187,7 +1191,7 @@ const LINK_STEPS_EN: LinkStep[] = [
   },
   {
     title: "Receive goods into the warehouse",
-    description: <>Open {L.purchase} to create a PO and receive goods</>,
+    description: <>Open {L.purchase} to create a PO and receive goods, or select that PO in the POS Receive tab to scan a draft and confirm it into the register's branch</>,
   },
   {
     title: "Follow an order / payment / shipment",

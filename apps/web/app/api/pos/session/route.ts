@@ -7,7 +7,13 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, getOpenPosShift, getPosShiftReturnSummary, listPosCashiers } from "@/lib/bms/pos";
+import {
+  authenticatePosDevice,
+  getOpenPosShift,
+  getPosShiftReturnSummary,
+  listPosCashiers,
+  listPosPurchaseReceivers,
+} from "@/lib/bms/pos";
 import { getLocation } from "@/lib/bms/locations";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
 import { getVatSettings } from "@/lib/bms/taxDocuments";
@@ -22,10 +28,11 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   }
 
-  const [shift, location, cashiers, vat, store] = await Promise.all([
+  const [shift, location, cashiers, purchaseReceivers, vat, store] = await Promise.all([
     getOpenPosShift(device.tenantId, device.id),
     getLocation(device.tenantId, device.locationId),
     listPosCashiers(device.tenantId),
+    listPosPurchaseReceivers(device.tenantId),
     getVatSettings(device.tenantId),
     // เลขผู้เสียภาษีของร้าน — ใบกำกับภาษีอย่างย่อต้องมี ไม่ใช่ข้อมูลรายบิล
     // จึงส่งมากับ session แล้วจอขายใช้ซ้ำได้ทุกใบ (มี cache อยู่แล้วใน storeProfile)
@@ -41,6 +48,12 @@ async function handleGET(req: NextRequest) {
       code: device.code,
       name: device.name,
       registeredPosNo: device.registeredPosNo,
+      scanner: {
+        mode: device.scannerMode,
+        prefixKey: device.scannerPrefixKey,
+        suffixKey: device.scannerSuffixKey,
+        maxGapMs: device.scannerMaxGapMs,
+      },
     },
     location: location
       ? {
@@ -54,6 +67,7 @@ async function handleGET(req: NextRequest) {
     shift,
     shiftReturnSummary,
     cashiers,
+    purchaseReceivers,
     store: { taxId: store.taxId },
     vat: {
       registered: vat.vatRegistered,

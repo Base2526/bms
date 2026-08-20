@@ -609,6 +609,10 @@ export const typeDefs = /* GraphQL */ `
     name: String
     registeredPosNo: String
     receiptPrefix: String
+    scannerMode: String!
+    scannerPrefixKey: String!
+    scannerSuffixKey: String!
+    scannerMaxGapMs: Int!
     active: Boolean!
   }
 
@@ -619,6 +623,10 @@ export const typeDefs = /* GraphQL */ `
     name: String
     registeredPosNo: String
     receiptPrefix: String
+    scannerMode: String
+    scannerPrefixKey: String
+    scannerSuffixKey: String
+    scannerMaxGapMs: Int
     active: Boolean
   }
 

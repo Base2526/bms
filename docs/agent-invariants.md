@@ -265,6 +265,13 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   replays its stored result rather than re-running the write. `recordCashMovement()` checks the
   replay row before the overdraw check so a lost response never gets re-evaluated against a drawer
   balance that has since moved.
+- **A POS PO receipt (`9.6`) is device-branch scoped and retry-safe.** The route re-checks cashier
+  PIN plus `purchase.receive`; tenant/location come from the authenticated device. Inventory, lot,
+  movement, PO status, audit, and `bms_pos_purchase_receipts.result` commit together. Reusing one
+  device key with different normalized input is a conflict, never a second receipt.
+- **A keyboard-wedge scan is globally captured only after a positive configured prefix.** Timing
+  and focus are not proof that input came from a Bluetooth HID scanner. Camera/manual/HID sources
+  share the same explicit context router and serial queue; scan context never grants permission.
 - **Serial-number checks run once, across the whole bill, not per line.** The same serial split
   across two lines is caught by dedup'ing all serials on the bill together, not line-by-line; the
   required count always comes from the server-side pack/base-qty conversion, never a client-supplied

@@ -14,6 +14,16 @@ import { code39Bars } from "@/lib/pos/barcode";
 import { applyPromotion, unitPriceForQty } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
+import {
+  consumeKeyboardWedgeKey,
+  DEFAULT_KEYBOARD_WEDGE_CONFIG,
+  IDLE_KEYBOARD_WEDGE_STATE,
+  resolveScanContext,
+  SCAN_CONTEXT_LABEL_TH,
+  type KeyboardWedgeState,
+  type ScanContext,
+  type ScanSource,
+} from "@/lib/pos/scanManager";
 import { buildDrawerKick, buildReceipt, type ReceiptLine } from "@/lib/pos/escpos";
 import {
   findRememberedPrinter,
@@ -33,6 +43,7 @@ import {
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
   { key: "returns", label: "คืน" },
+  { key: "stock", label: "รับของ" },
   { key: "deposits", label: "มัดจำ" },
   { key: "shift", label: "กะ" },
   { key: "settings", label: "ตั้งค่า" },
@@ -66,6 +77,16 @@ function PosTabIcon({ tab }: { tab: PosTab }) {
            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M9 14L4 9l5-5" />
         <path d="M4 9h11a5 5 0 010 10h-3" />
+      </svg>
+    );
+  }
+  if (tab === "stock") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 8l8-4 8 4-8 4z" />
+        <path d="M4 8v8l8 4 8-4V8M12 12v8" />
+        <path d="M8 6l8 4" />
       </svg>
     );
   }
@@ -324,12 +345,41 @@ type SearchItem = {
   availableSizes: Array<{ size: string; available: number }>;
 };
 
+type PosPurchaseHeader = {
+  id: string;
+  status: "OPEN" | "PARTIAL";
+  note: string | null;
+  supplier: { id: string; name: string } | null;
+  qtyOrdered: number;
+  qtyReceived: number;
+  createdAt: string;
+};
+
+type PosPurchaseDetail = Omit<PosPurchaseHeader, "qtyOrdered" | "qtyReceived"> & {
+  items: Array<{
+    sku: string;
+    size: string;
+    qtyOrdered: number;
+    qtyReceived: number;
+    unitCost: number;
+  }>;
+};
+
+type StockReceiveDraft = Record<string, { qty: number; lotNo: string; expiryDate: string }>;
+
 type Session = {
-  device: { id: string; code: string; name: string | null; registeredPosNo: string | null };
+  device: {
+    id: string;
+    code: string;
+    name: string | null;
+    registeredPosNo: string | null;
+    scanner: { mode: "FOCUS" | "PREFIX"; prefixKey: string; suffixKey: string; maxGapMs: number };
+  };
   location: { id: string; name: string; branchCode: string; pharmacistName: string | null } | null;
   shift: { id: string; openedAt: string; openingFloat: number } | null;
   shiftReturnSummary: { returnCount: number; returnTotal: number; settledTotal: number; pendingTotal: number; pendingCount: number };
   cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean; hasPin: boolean }>;
+  purchaseReceivers: Array<{ id: string; name: string | null; email: string | null; role: string | null; hasPin: boolean }>;
   store?: { taxId: string | null };
   vat: {
     registered: boolean;
@@ -360,6 +410,10 @@ function baht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function stockLineKey(sku: string, size: string) {
+  return JSON.stringify([sku, size]);
+}
+
 /** ตัวเลข VAT ที่ server ส่งมาจากใบกำกับจริง — ไม่มีก็คือไม่มี ห้ามคิดเองจากยอดรวม */
 function parseReceiptVat(raw: any): ReceiptVat | null {
   if (!raw || typeof raw !== "object") return null;
@@ -384,6 +438,18 @@ export default function PosPage() {
   const [cashierId, setCashierId] = useState<string>("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [scanCode, setScanCode] = useState("");
+  const [hidCapturing, setHidCapturing] = useState(false);
+  const keyboardWedgeStateRef = useRef<KeyboardWedgeState>(IDLE_KEYBOARD_WEDGE_STATE);
+  const scanTaskQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const scanHandlerRef = useRef<(code: string, source: ScanSource, size?: string | null) => Promise<void>>(async () => {});
+  const enqueueScan = useCallback((code: string, source: ScanSource, size?: string | null) => {
+    // Bind the context-aware handler at arrival time. A slow preceding lookup
+    // must not reroute this scan into another tab if the operator switches tabs
+    // while the queue is draining.
+    const handlerAtArrival = scanHandlerRef.current;
+    const run = () => handlerAtArrival(code, source, size);
+    scanTaskQueueRef.current = scanTaskQueueRef.current.then(run, run);
+  }, []);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [payments, setPayments] = useState<PaymentDraft[]>([
@@ -507,6 +573,17 @@ export default function PosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [searching, setSearching] = useState(false);
+  // ---- รับสินค้าเข้าโดย Scanner (9.6) ----
+  const [receivableOrders, setReceivableOrders] = useState<PosPurchaseHeader[]>([]);
+  const [stockOrder, setStockOrder] = useState<PosPurchaseDetail | null>(null);
+  const [stockDraft, setStockDraft] = useState<StockReceiveDraft>({});
+  const stockDraftRef = useRef<StockReceiveDraft>({});
+  const [stockScanCode, setStockScanCode] = useState("");
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockReceiving, setStockReceiving] = useState(false);
+  const [stockReceiverId, setStockReceiverId] = useState("");
+  const [stockReceiverPin, setStockReceiverPin] = useState("");
+  const stockReceiveRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const [recentSalesQuery, setRecentSalesQuery] = useState("");
   const [recentReceipts, setRecentReceipts] = useState<Receipt[]>([]);
   // เปิดฟอร์มคืนได้ทีละบิล — หน้าร้านทำทีละใบอยู่แล้ว และการกางทุกใบพร้อมกัน
@@ -524,6 +601,20 @@ export default function PosPage() {
     count: number; total: number; pendingCount: number; pendingTotal: number;
   }>({ count: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
   const scanRef = useRef<HTMLInputElement>(null);
+  const stockScanRef = useRef<HTMLInputElement>(null);
+  const currentScanContext = resolveScanContext({
+    tab,
+    lookupMode,
+    blindReturnOpen: blindOpen,
+    hasPendingSale,
+    busy: busy || stockReceiving,
+    blockingOverlayOpen: receiptModalOpen || enrollOpen,
+  });
+
+  function replaceStockDraft(next: StockReceiveDraft) {
+    stockDraftRef.current = next;
+    setStockDraft(next);
+  }
 
   useEffect(() => {
     // จับคู่ผ่านลิงก์ได้: /pos?t=<token>
@@ -560,6 +651,67 @@ export default function PosPage() {
   }, [session?.shift?.id]);
 
   const authHeaders = useMemo(() => ({ "x-pos-device-token": token }), [token]);
+
+  async function postPosPurchase(payload: Record<string, unknown>) {
+    const res = await fetch("/api/pos/purchase", {
+      method: "POST",
+      headers: { ...authHeaders, "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ ...payload, cashierUserId: stockReceiverId, pin: stockReceiverPin }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error ?? data?.status ?? `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function loadReceivableOrders(preferPoId?: string | null) {
+    if (!token || !stockReceiverId || !stockReceiverPin) {
+      setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อนโหลดใบสั่งซื้อ" });
+      return;
+    }
+    setStockLoading(true);
+    try {
+      const data = await postPosPurchase({ action: "list" });
+      const rows = Array.isArray(data?.orders) ? data.orders as PosPurchaseHeader[] : [];
+      setReceivableOrders(rows);
+      const target = preferPoId && rows.some((row) => row.id === preferPoId)
+        ? preferPoId
+        : stockOrder && rows.some((row) => row.id === stockOrder.id)
+          ? stockOrder.id
+          : null;
+      if (target) await loadStockOrder(target, false);
+      else if (stockOrder && !rows.some((row) => row.id === stockOrder.id)) {
+        setStockOrder(null);
+        replaceStockDraft({});
+      }
+    } catch (e: any) {
+      setNotice({ type: "error", text: `โหลดใบสั่งซื้อไม่สำเร็จ: ${String(e?.message ?? e)}` });
+    } finally {
+      setStockLoading(false);
+    }
+  }
+
+  async function loadStockOrder(poId: string, clearDraft = true) {
+    if (!poId) {
+      setStockOrder(null);
+      replaceStockDraft({});
+      return;
+    }
+    setStockLoading(true);
+    try {
+      const data = await postPosPurchase({ action: "detail", poId });
+      setStockOrder(data.order as PosPurchaseDetail);
+      if (clearDraft) {
+        replaceStockDraft({});
+        stockReceiveRequestRef.current = null;
+      }
+      setNotice(null);
+    } catch (e: any) {
+      setNotice({ type: "error", text: `เปิดใบสั่งซื้อไม่สำเร็จ: ${String(e?.message ?? e)}` });
+    } finally {
+      setStockLoading(false);
+    }
+  }
 
   const loadSession = useCallback(async () => {
     if (!token) {
@@ -1364,7 +1516,12 @@ export default function PosPage() {
     return null;
   })();
 
-  async function handleScan(code: string, size?: string | null) {
+  async function handleScan(
+    code: string,
+    size?: string | null,
+    mode: "sale" | "lookup" = lookupMode ? "lookup" : "sale",
+    restoreFocus = true
+  ) {
     if (hasPendingSale) {
       setNotice({ type: "error", text: "มีบิลรอตรวจสอบอยู่ กรุณากดชำระเงินซ้ำให้จบก่อนแก้รายการ" });
       return;
@@ -1389,7 +1546,7 @@ export default function PosPage() {
       // รวมถึงใบเสร็จที่เปิดค้างไว้ ไม่งั้นบิลของลูกค้าคนก่อนบังจอคนถัดไป
       if (justSold) setJustSold(null);
       if (receiptModalOpen) setReceiptModalOpen(false);
-      if (lookupMode) {
+      if (mode === "lookup") {
         setLookup(hit);
         setNotice(null);
         return;
@@ -1406,7 +1563,125 @@ export default function PosPage() {
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
     } finally {
-      scanRef.current?.focus();
+      if (restoreFocus) scanRef.current?.focus();
+    }
+  }
+
+  async function handleStockScan(code: string) {
+    const order = stockOrder;
+    if (!order) {
+      setNotice({ type: "error", text: "เลือกใบสั่งซื้อก่อนยิงสินค้าเข้าสต็อก" });
+      return;
+    }
+    const trimmed = code.trim();
+    if (!trimmed || !token) return;
+    try {
+      const res = await fetch(`/api/pos/scan?${new URLSearchParams({ code: trimmed })}`, {
+        headers: authHeaders,
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "ไม่พบสินค้าจากรหัสนี้");
+      const hit = data as ScanHit;
+      const pending = order.items.filter((line) => line.qtyReceived < line.qtyOrdered);
+      const exact = pending.find((line) =>
+        line.sku === hit.sku && line.size.localeCompare(hit.size, undefined, { sensitivity: "accent" }) === 0
+      );
+      const sameSku = pending.filter((line) => line.sku === hit.sku);
+      const line = exact ?? (sameSku.length === 1 ? sameSku[0] : null);
+      if (!line) {
+        setNotice({
+          type: "error",
+          text: sameSku.length > 1
+            ? `${hit.sku} มีหลายขนาดใน PO — เลือกเพิ่มจำนวนที่บรรทัดให้ตรงก่อน`
+            : `${hit.sku} · ${hit.size} ไม่อยู่ในรายการค้างรับของ PO นี้`,
+        });
+        return;
+      }
+      const key = stockLineKey(line.sku, line.size);
+      const increment = Math.max(1, Number(hit.baseQty) || 1);
+      const remaining = line.qtyOrdered - line.qtyReceived;
+      const currentDraft = stockDraftRef.current;
+      const current = currentDraft[key]?.qty ?? 0;
+      if (current + increment > remaining) {
+        setNotice({ type: "error", text: `${line.sku} · ${line.size} รับเกิน PO — เหลือรับได้ ${remaining - current}` });
+        return;
+      }
+      replaceStockDraft({
+        ...currentDraft,
+        [key]: {
+          qty: current + increment,
+          lotNo: currentDraft[key]?.lotNo ?? "",
+          expiryDate: currentDraft[key]?.expiryDate ?? "",
+        },
+      });
+      stockReceiveRequestRef.current = null;
+      setNotice({ type: "ok", text: `สแกน ${line.sku} · ${line.size} +${increment} หน่วย` });
+    } catch (e: any) {
+      setNotice({ type: "error", text: `ยิงรับสินค้าไม่สำเร็จ: ${String(e?.message ?? e)}` });
+    }
+  }
+
+  function updateStockDraft(
+    line: PosPurchaseDetail["items"][number],
+    patch: Partial<{ qty: number; lotNo: string; expiryDate: string }>
+  ) {
+    const key = stockLineKey(line.sku, line.size);
+    const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
+    const currentDraft = stockDraftRef.current;
+    const current = currentDraft[key] ?? { qty: 0, lotNo: "", expiryDate: "" };
+    const qty = patch.qty == null ? current.qty : Math.min(remaining, Math.max(0, Math.trunc(patch.qty)));
+    const next = { ...currentDraft };
+    if (qty === 0 && patch.lotNo == null && patch.expiryDate == null) delete next[key];
+    else next[key] = { ...current, ...patch, qty };
+    replaceStockDraft(next);
+    stockReceiveRequestRef.current = null;
+  }
+
+  async function submitStockReceive() {
+    if (!stockOrder) return;
+    const items = stockOrder.items.flatMap((line) => {
+      const draft = stockDraft[stockLineKey(line.sku, line.size)];
+      return draft?.qty > 0 ? [{
+        sku: line.sku,
+        size: line.size,
+        qty: draft.qty,
+        lotNo: draft.lotNo.trim() || null,
+        expiryDate: draft.expiryDate || null,
+      }] : [];
+    });
+    if (!items.length) {
+      setNotice({ type: "error", text: "ยังไม่มีสินค้าที่สแกนหรือระบุจำนวนรับ" });
+      return;
+    }
+    const signature = JSON.stringify({ poId: stockOrder.id, items });
+    if (!stockReceiveRequestRef.current || stockReceiveRequestRef.current.signature !== signature) {
+      stockReceiveRequestRef.current = {
+        signature,
+        key: `${session?.device.code ?? "POS"}-receive-${crypto.randomUUID()}`,
+      };
+    }
+    setStockReceiving(true);
+    try {
+      const data = await postPosPurchase({
+        action: "receive",
+        poId: stockOrder.id,
+        items,
+        idempotencyKey: stockReceiveRequestRef.current.key,
+      });
+      const receivedUnits = items.reduce((sum, line) => sum + line.qty, 0);
+      setNotice({
+        type: "ok",
+        text: `${data.replayed ? "ตรวจพบรายการเดิม — " : ""}รับสินค้า ${receivedUnits} หน่วยแล้ว (${data.status})`,
+      });
+      replaceStockDraft({});
+      stockReceiveRequestRef.current = null;
+      await loadReceivableOrders(data.status === "PARTIAL" ? stockOrder.id : null);
+      if (data.status === "RECEIVED") setStockOrder(null);
+    } catch (e: any) {
+      setNotice({ type: "error", text: `รับสินค้าไม่สำเร็จ: ${String(e?.message ?? e)}` });
+    } finally {
+      setStockReceiving(false);
     }
   }
 
@@ -1552,6 +1827,74 @@ export default function PosPage() {
       );
     } catch {}
   }
+
+  async function dispatchScan(code: string, source: ScanSource, size?: string | null) {
+    const context = resolveScanContext({
+      tab,
+      lookupMode,
+      blindReturnOpen: blindOpen,
+      hasPendingSale,
+      busy: busy || stockReceiving,
+      blockingOverlayOpen: receiptModalOpen || enrollOpen || (source === "hid" && cameraModalOpen),
+    });
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    if (context === "DISABLED") {
+      setNotice({ type: "error", text: "พักการสแกนระหว่างทำรายการสำคัญ/เปิดหน้าต่างซ้อน กรุณาปิดให้เรียบร้อยก่อน" });
+      return;
+    }
+    if (context === "RETURN_RECEIPT") {
+      setRecentSalesQuery(trimmed);
+      setRecentOpen(true);
+      await loadRecentReceipts(trimmed);
+      return;
+    }
+    if (context === "STOCK_RECEIVE") {
+      await handleStockScan(trimmed);
+      return;
+    }
+    const mode = context === "PRODUCT_LOOKUP" ? "lookup" : "sale";
+    await handleScan(trimmed, size, mode, source === "manual");
+  }
+  scanHandlerRef.current = dispatchScan;
+
+  useEffect(() => {
+    const scanner = session?.device.scanner;
+    const config = {
+      ...DEFAULT_KEYBOARD_WEDGE_CONFIG,
+      mode: scanner?.mode ?? "FOCUS",
+      prefixKey: scanner?.prefixKey ?? "F9",
+      suffixKey: scanner?.suffixKey ?? "Enter",
+      maxGapMs: scanner?.maxGapMs ?? 80,
+    };
+    keyboardWedgeStateRef.current = IDLE_KEYBOARD_WEDGE_STATE;
+    setHidCapturing(false);
+    if (config.mode !== "PREFIX") return;
+
+    function onScannerKey(event: KeyboardEvent) {
+      const result = consumeKeyboardWedgeKey(
+        keyboardWedgeStateRef.current,
+        event,
+        config,
+        performance.now()
+      );
+      keyboardWedgeStateRef.current = result.state;
+      setHidCapturing(result.state.phase !== "IDLE");
+      if (result.capture) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      if (result.completedCode) enqueueScan(result.completedCode, "hid");
+    }
+    window.addEventListener("keydown", onScannerKey, true);
+    return () => window.removeEventListener("keydown", onScannerKey, true);
+  }, [
+    enqueueScan,
+    session?.device.scanner?.mode,
+    session?.device.scanner?.prefixKey,
+    session?.device.scanner?.suffixKey,
+    session?.device.scanner?.maxGapMs,
+  ]);
 
   useEffect(() => {
     if (!token) return;
@@ -1751,10 +2094,11 @@ export default function PosPage() {
     }
   }
 
-  // กลับมาแท็บขายเมื่อไหร่ ช่องยิงบาร์โค้ดต้องรับโฟกัสทันที — ไม่งั้นแคชเชียร์
-  // ยิงของแล้วตัวอักษรหายเข้าไปในช่องอื่น เป็นบั๊กที่เจ็บที่สุดของจอขาย
+  // FOCUS mode ยังต้องมีช่องรับโดยตรง; PREFIX mode ไม่พึ่ง focus แต่คงพฤติกรรม
+  // นี้ไว้ให้เครื่องเดิมและการพิมพ์รหัสด้วยมือ
   useEffect(() => {
     if (tab === "sell" && !receiptModalOpen) scanRef.current?.focus();
+    if (tab === "stock" && !receiptModalOpen) stockScanRef.current?.focus();
   }, [tab, receiptModalOpen]);
 
   // แคชเชียร์คุมจอด้วยคีย์บอร์ดมือเดียว — Enter พิมพ์ / Esc ปิด
@@ -1804,7 +2148,7 @@ export default function PosPage() {
           if (cancelled) return;
           cancelled = true; // กันเฟรมถัดไปยิงซ้ำก่อน modal จะปิดจริง
           setCameraModalOpen(false);
-          void handleScan(code);
+          enqueueScan(code, "camera");
         },
         onError: (message) => {
           if (!cancelled) setCameraError(message);
@@ -2452,6 +2796,12 @@ export default function PosPage() {
             <div className="pos-chips">
               {session?.location && <span className="pos-chip">สาขา {session.location.branchCode}</span>}
               {session && <span className="pos-chip">{session.device.code}</span>}
+              {session && (
+                <span className={`pos-chip${currentScanContext === "DISABLED" ? "" : " pos-chip--ok"}`}>
+                  Scanner: {hidCapturing ? "กำลังรับข้อมูล…" : SCAN_CONTEXT_LABEL_TH[currentScanContext]}
+                  {session.device.scanner.mode === "PREFIX" ? ` · ${session.device.scanner.prefixKey}` : " · ตาม Focus"}
+                </span>
+              )}
               {session?.device.registeredPosNo && (
                 <span className="pos-chip">POS#{session.device.registeredPosNo}</span>
               )}
@@ -2583,7 +2933,7 @@ export default function PosPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ fontSize: 12, color: "#8a6100" }}>
-                ยิงของที่ลูกค้าเอามาคืนใส่ตะกร้าที่แท็บขาย แล้วกลับมากดยืนยันที่นี่ ·
+                ยิงของที่ลูกค้าเอามาคืนได้จากหน้านี้ หรือใส่ตะกร้าที่แท็บขายแล้วกลับมายืนยัน ·
                 คืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก ·
                 ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
               </div>
@@ -2656,6 +3006,179 @@ export default function PosPage() {
         )}
       </div>
       </>)}
+
+      {tab === "stock" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="pos-shift-head">
+            <div>
+              <div className="pos-block-title" style={{ marginBottom: 2 }}>รับสินค้าจากใบสั่งซื้อ</div>
+              <div className="pos-block-hint">
+                รับเข้าที่สาขา {session?.location?.name ?? "ของเครื่องนี้"} · สแกนเป็นรายการร่างก่อน ยืนยันครั้งเดียวจึงขยับสต็อก
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadReceivableOrders(stockOrder?.id)}
+              disabled={stockLoading || !stockReceiverId || !stockReceiverPin}
+              style={{ padding: "8px 12px", fontSize: 13 }}
+            >
+              {stockLoading ? "กำลังโหลด…" : "โหลด PO ค้างรับ"}
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select
+              value={stockReceiverId}
+              onChange={(event) => {
+                setStockReceiverId(event.target.value);
+                setStockReceiverPin("");
+                setReceivableOrders([]);
+                setStockOrder(null);
+                replaceStockDraft({});
+                stockReceiveRequestRef.current = null;
+              }}
+              style={{ flex: "1 1 220px", minWidth: 0, padding: 10, fontSize: 13 }}
+            >
+              <option value="">— ผู้รับสินค้า —</option>
+              {(session?.purchaseReceivers ?? []).map((receiver) => (
+                <option key={receiver.id} value={receiver.id} disabled={!receiver.hasPin}>
+                  {receiver.name || receiver.email} · {receiver.role ?? "ไม่ระบุ role"}
+                  {receiver.hasPin ? "" : " — ยังไม่ตั้ง PIN"}
+                </option>
+              ))}
+            </select>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={stockReceiverPin}
+              onChange={(event) => setStockReceiverPin(event.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="PIN ผู้รับสินค้า"
+              style={{ flex: "0 1 170px", minWidth: 130, padding: 10, fontSize: 13 }}
+            />
+          </div>
+          {(!stockReceiverId || !stockReceiverPin) && (
+            <div className="pos-note pos-note--err">เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์ purchase.receive ทุกครั้ง</div>
+          )}
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+            ใบสั่งซื้อที่รับของ
+            <select
+              value={stockOrder?.id ?? ""}
+              onChange={(event) => void loadStockOrder(event.target.value)}
+              disabled={stockLoading || receivableOrders.length === 0}
+              style={{ padding: 10, fontSize: 14 }}
+            >
+              <option value="">— เลือก PO —</option>
+              {receivableOrders.map((order) => (
+                <option key={order.id} value={order.id}>
+                  {order.id.slice(0, 8)} · {order.supplier?.name ?? "ไม่ระบุ supplier"} · ค้าง {order.qtyOrdered - order.qtyReceived}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!stockLoading && receivableOrders.length === 0 && stockReceiverId && stockReceiverPin && (
+            <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+              กด “โหลด PO ค้างรับ” — ถ้าไม่พบ แปลว่าไม่มี PO สถานะ OPEN/PARTIAL ที่รับต่อได้
+            </div>
+          )}
+
+          <div className="pos-scan">
+            <ScanBarcodeIcon />
+            <input
+              ref={stockScanRef}
+              value={stockScanCode}
+              disabled={!stockOrder || stockReceiving}
+              onChange={(event) => setStockScanCode(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  enqueueScan(stockScanCode, "manual");
+                  setStockScanCode("");
+                }
+              }}
+              placeholder={stockOrder ? "ยิงบาร์โค้ดสินค้าใน PO แล้วกด Enter" : "เลือก PO ก่อนยิงสินค้า"}
+            />
+          </div>
+
+          {stockOrder && (() => {
+            const draftUnits = stockOrder.items.reduce(
+              (sum, line) => sum + (stockDraft[stockLineKey(line.sku, line.size)]?.qty ?? 0),
+              0
+            );
+            return (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                  <strong>PO {stockOrder.id.slice(0, 8)} · {stockOrder.supplier?.name ?? "ไม่ระบุ supplier"}</strong>
+                  <span style={{ color: "var(--pos-muted)" }}>สถานะ {stockOrder.status}</span>
+                </div>
+                {stockOrder.note && <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>หมายเหตุ: {stockOrder.note}</div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {stockOrder.items.map((line) => {
+                    const key = stockLineKey(line.sku, line.size);
+                    const draft = stockDraft[key] ?? { qty: 0, lotNo: "", expiryDate: "" };
+                    const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
+                    return (
+                      <div key={key} style={{ border: "1px solid var(--pos-line)", borderRadius: 8, padding: 10 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ fontSize: 13 }}>{line.sku} · {line.size}</strong>
+                            <div style={{ fontSize: 11, color: "var(--pos-muted)" }}>
+                              สั่ง {line.qtyOrdered} · รับแล้ว {line.qtyReceived} · เหลือ {remaining}
+                            </div>
+                          </div>
+                          <div className="pos-qty">
+                            <button type="button" onClick={() => updateStockDraft(line, { qty: draft.qty - 1 })} disabled={draft.qty <= 0}>−</button>
+                            <input
+                              type="number"
+                              min={0}
+                              max={remaining}
+                              value={draft.qty}
+                              onChange={(event) => updateStockDraft(line, { qty: Number(event.target.value) || 0 })}
+                              aria-label={`จำนวนรับ ${line.sku} ${line.size}`}
+                              style={{ width: 62, textAlign: "center", padding: 7 }}
+                            />
+                            <button type="button" onClick={() => updateStockDraft(line, { qty: draft.qty + 1 })} disabled={draft.qty >= remaining}>+</button>
+                          </div>
+                        </div>
+                        {draft.qty > 0 && (
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(140px,1fr)", gap: 8, marginTop: 8 }}>
+                            <input
+                              value={draft.lotNo}
+                              maxLength={100}
+                              onChange={(event) => updateStockDraft(line, { lotNo: event.target.value })}
+                              placeholder="Lot ผู้ผลิต (ถ้ามี)"
+                              style={{ padding: 8, fontSize: 12 }}
+                            />
+                            <input
+                              type="date"
+                              value={draft.expiryDate}
+                              onChange={(event) => updateStockDraft(line, { expiryDate: event.target.value })}
+                              aria-label={`วันหมดอายุ ${line.sku} ${line.size}`}
+                              style={{ padding: 8, fontSize: 12 }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  disabled={draftUnits === 0 || stockReceiving || !stockReceiverId || !stockReceiverPin}
+                  onClick={() => {
+                    if (window.confirm(`ยืนยันรับสินค้า ${draftUnits} หน่วยเข้าสต็อกสาขานี้? รายการนี้ขยับสต็อกจริงและย้อนกลับจากหน้านี้ไม่ได้`)) {
+                      void submitStockReceive();
+                    }
+                  }}
+                  style={{ padding: "11px 14px", fontSize: 14, fontWeight: 600 }}
+                >
+                  {stockReceiving ? "กำลังบันทึก…" : `ยืนยันรับเข้า ${draftUnits} หน่วย`}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {tab === "deposits" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -3117,7 +3640,7 @@ export default function PosPage() {
             onKeyDown={(e) => {
               // เครื่องสแกนเป็นคีย์บอร์ด: ยิงเสร็จมันเคาะ Enter ให้เอง
               if (e.key === "Enter") {
-                void handleScan(scanCode);
+                enqueueScan(scanCode, "manual");
                 setSearchTerm("");
               }
             }}
@@ -3162,7 +3685,7 @@ export default function PosPage() {
                   onClick={() => {
                     const sizes = item.availableSizes.filter((v) => v.available > 0);
                     if (sizes.length === 1) {
-                      void handleScan(item.sku, sizes[0].size);
+                      enqueueScan(item.sku, "manual", sizes[0].size);
                       setScanCode("");
                       setSearchTerm("");
                       setSearchResults([]);
@@ -3190,7 +3713,7 @@ export default function PosPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          void handleScan(item.sku, variant.size);
+                          enqueueScan(item.sku, "manual", variant.size);
                           setScanCode("");
                           setSearchTerm("");
                           setSearchResults([]);
