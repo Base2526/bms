@@ -18,7 +18,6 @@ import {
   CreditCardOutlined,
   ShopOutlined,
   MailOutlined,
-  SettingOutlined,
   AppstoreOutlined,
   BookOutlined,
   PartitionOutlined,
@@ -46,10 +45,25 @@ import {
   FileProtectOutlined,
   IdcardOutlined,
   DesktopOutlined,
-  BarcodeOutlined,
   SafetyCertificateOutlined,
   HeartOutlined,
   ClusterOutlined,
+  ShoppingOutlined,
+  ScanOutlined,
+  PrinterOutlined,
+  PercentageOutlined,
+  OrderedListOutlined,
+  BranchesOutlined,
+  CloudOutlined,
+  KeyOutlined,
+  BankOutlined,
+  CustomerServiceOutlined,
+  ScheduleOutlined,
+  ThunderboltOutlined,
+  BugOutlined,
+  AlertOutlined,
+  ProfileOutlined,
+  ControlOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -156,8 +170,8 @@ const pharmacyQueueLink = (
   return {
     key: '/admin/pharmacy-queue',
     icon: collapsed && totalBadge > 0
-      ? iconWithBadge(<MedicineBoxOutlined />, totalBadge)
-      : <MedicineBoxOutlined />,
+      ? iconWithBadge(<AlertOutlined />, totalBadge)
+      : <AlertOutlined />,
     label: !collapsed ? (
       // whiteSpace: 'normal' (ไม่ nowrap/ellipsis) — เดิมตัดข้อความยาวเป็น "..." อ่านไม่ออกว่าเมนูอะไร
       <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
@@ -360,13 +374,13 @@ export default function AdminSidebar() {
       // audience/permission set ไม่ใช่งานร้านค้าทั่วไป — ก่อนหน้านี้ยัดรวมกัน 11-15 รายการในลิสต์เดียว
       children: [
         ...(can('product.view') ? [link('/admin/products', 'Products', <ShoppingCartOutlined />)] : []),
-        ...(can('order.view') ? [link('/admin/orders', 'Orders', <ShoppingCartOutlined />)] : []),
+        ...(can('order.view') ? [link('/admin/orders', 'Orders', <OrderedListOutlined />)] : []),
         ...(can('payment.view') ? [link('/admin/payment', 'Payment', <DollarOutlined />)] : []),
         ...(can('shipping.view') ? [link('/admin/shipment', 'Shipping', <CarOutlined />)] : []),
         ...(can('customer.view') ? [link('/admin/customers', 'Customers', <TeamOutlined />)] : []),
         ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
         ...(can('member.view') ? [link('/admin/loyalty', 'Members & Points', <TrophyOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <ClockCircleOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <BranchesOutlined />)] : []),
         ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
         ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
         // สาขา (9.1) วางก่อน Stock Transfers เพราะต้องมีสาขาที่สองก่อนถึงจะมี
@@ -398,32 +412,32 @@ export default function AdminSidebar() {
     // และงานคือ "เตรียมจุดขาย" (เครื่อง/PIN/ความพร้อมก่อนเปิด) ไม่ใช่จัดการออร์เดอร์
     ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') ? [{
       key: 'g-pos',
-      icon: <ShopOutlined />,
+      icon: <ShoppingOutlined />,
       label: t('admin.group_pos'),
       children: [
         ...(can('pos.device.manage') || can('pos.pin.manage')
           ? [link('/admin/pos-devices', t('admin.menu_pos_devices'), <DesktopOutlined />)] : []),
         ...(can('product.view')
-          ? [link('/admin/product-packs', t('admin.menu_product_packs'), <BarcodeOutlined />)] : []),
+          ? [link('/admin/product-packs', t('admin.menu_product_packs'), <ScanOutlined />)] : []),
         ...(can('product.view')
-          ? [link('/admin/product-labels', t('admin.menu_product_labels'), <BarcodeOutlined />)] : []),
+          ? [link('/admin/product-labels', t('admin.menu_product_labels'), <PrinterOutlined />)] : []),
         ...(can('pharmacy.policy.read')
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
       ],
     }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),
-    ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <BarChartOutlined />)] : []),
+    ...(can('commission.view') ? [link('/admin/commission', t('admin.menu_commission'), <PercentageOutlined />)] : []),
     ...(can('ai_quality.view') ? [link('/admin/ai-quality', 'AI Quality', <FundViewOutlined />)] : []),
     {
       key: 'g-saas',
-      icon: <ApiOutlined />,
+      icon: <CloudOutlined />,
       label: 'SaaS',
       children: [
         link('/admin/settings', t('admin.menu_settings_channels'), <ApiOutlined />, channelHealthCount, effectiveCollapsed),
-        ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <ExperimentOutlined />)] : []),
+        ...(canManageAccess ? [link('/admin/inbox/realtime-diagnostics', 'Realtime Diagnostics', <BugOutlined />)] : []),
         link('/admin/billing', 'Billing & Plan', <CreditCardOutlined />),
-        ...(isPlatformAdmin ? [link('/admin/tenants', t('admin.menu_all_shops'), <ShopOutlined />)] : []),
-        ...(isPlatformAdmin ? [link('/admin/report-schedule', t('admin.menu_report_schedule'), <MailOutlined />)] : []),
+        ...(isPlatformAdmin ? [link('/admin/tenants', t('admin.menu_all_shops'), <BankOutlined />)] : []),
+        ...(isPlatformAdmin ? [link('/admin/report-schedule', t('admin.menu_report_schedule'), <ScheduleOutlined />)] : []),
       ],
     },
     ...(canViewUsers ? [{
@@ -437,8 +451,8 @@ export default function AdminSidebar() {
         // Permissions/Audit/Revisions = Administrator/platform admin เท่านั้น (resolver ก็ requireSuper)
         // Manager ที่มีแค่ user.view จะเห็นกลุ่มนี้โดยมีแต่ Users
         ...(canManageAccess ? [
-          link('/admin/permissions', 'Permissions', <SafetyOutlined />),
-          link('/admin/audit', 'Audit log', <BookOutlined />),
+          link('/admin/permissions', 'Permissions', <KeyOutlined />),
+          link('/admin/audit', 'Audit log', <ProfileOutlined />),
           // ย้ายมาจาก "ร้านค้า" — ทั้ง Audit log และ Revision History เป็นธีมเดียวกัน
           // ("ใครแก้อะไรเมื่อไหร่") คนที่เปิดกลุ่มนี้อยู่แล้วคือคนที่สนใจเรื่องนี้จริง
           link('/admin/revisions', 'Revision History', <HistoryOutlined />),
@@ -460,14 +474,14 @@ export default function AdminSidebar() {
           link('/admin/files', 'Files', <FileImageOutlined />, 5, effectiveCollapsed),
           link('/admin/logs', 'Logs', <DatabaseOutlined />, 1, effectiveCollapsed),
           link('/admin/mail-log', 'Mail log', <MailOutlined />),
-          link('/admin/support-tickets', 'Support Tickets', <MessageOutlined />),
-          link('/admin/operations-schedule', 'Batch & Cron', <ClockCircleOutlined />),
+          link('/admin/support-tickets', 'Support Tickets', <CustomerServiceOutlined />),
+          link('/admin/operations-schedule', 'Batch & Cron', <ControlOutlined />),
           link('/admin/system-health', 'System Health', <HeartOutlined />),
           link('/admin/env', 'ENV', <EnvironmentOutlined />, aiProviderHealthCount, effectiveCollapsed),
           link('/admin/dev/sql-console', 'Dev Console', <CodeOutlined />),
         ] : []),
         // Fake data (dev) → ร้านค้าเทสในมุมตัวเองได้
-        ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <SnippetsOutlined />)] : []),
+        ...(canSeedFake ? [link('/admin/dev/fake', 'Fake data', <ThunderboltOutlined />)] : []),
         // ย้ายมาจาก "ร้านค้า" — ไม่ใช่งานธุรกิจ เป็นเครื่องมือ dev สำหรับจำลองแชตทดสอบ AI pipeline
         // เดิมไม่มี permission gate เลย (Sales/Warehouse เห็น+ใช้ได้) ตอนนี้ gate ด้วย
         // ai_quality.view เหมือนหน้าเพจเอง (ไม่ใช่แค่ซ่อนเมนู — ดู page.tsx)
