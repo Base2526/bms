@@ -76,6 +76,17 @@
   border-color: var(--pos-accent);
   box-shadow: 0 0 0 3px var(--pos-accent-bg);
 }
+.pos-root input[aria-invalid="true"],
+.pos-root select[aria-invalid="true"] {
+  border-color: var(--pos-danger);
+  background: var(--pos-danger-bg);
+}
+.pos-root input[aria-invalid="true"]:focus,
+.pos-root select[aria-invalid="true"]:focus {
+  outline: none;
+  border-color: var(--pos-danger);
+  box-shadow: 0 0 0 3px #f7b7b2;
+}
 .pos-root input::placeholder { color: #9aa1ab; }
 
 .pos-card {
@@ -108,6 +119,8 @@
 }
 .pos-chip--ok { background: var(--pos-money-bg); color: var(--pos-money); }
 .pos-chip--warn { background: var(--pos-warn-bg); color: var(--pos-warn); }
+.pos-chip--personal { background: var(--pos-accent-bg); color: var(--pos-accent); }
+.pos-chip--petty { background: var(--pos-money-bg); color: var(--pos-money); }
 
 /* ---- ตะกร้า ---- */
 .pos-scan {
@@ -271,6 +284,9 @@
 .pos-block { border-top: 1px solid var(--pos-line); padding-top: 12px; }
 .pos-block-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 .pos-block-hint { font-size: 12px; color: var(--pos-muted); margin-top: 6px; }
+.pos-expense-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
 
 /* ปุ่มหลักของแท็บนี้มีปุ่มเดียว (ปิดกะ+นับเงิน) — ปุ่มที่เหลือเป็นขอบเปล่า
    ให้คนกดผิดยาก เพราะปิดกะแล้วย้อนไม่ได้
@@ -290,6 +306,34 @@
 }
 .pos-approve-why { font-size: 12px; color: var(--pos-warn); margin-bottom: 8px; }
 .pos-approve-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; }
+.pos-approve--personal {
+  background: var(--pos-accent-bg); border-color: #bfd8ff;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.pos-approve--personal .pos-approve-why { color: var(--pos-accent); margin-bottom: 0; }
+.pos-approve--petty {
+  background: var(--pos-money-bg); border-color: #b7e3c5;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.pos-approve--petty .pos-approve-why { color: var(--pos-money); margin-bottom: 0; }
+
+.pos-petty-wallet {
+  margin-top: 10px; padding: 10px 12px; border: 1px solid var(--pos-line);
+  border-radius: var(--pos-radius); background: var(--pos-sunken);
+}
+.pos-petty-wallet-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.pos-petty-wallet-head > span { display: flex; flex-direction: column; gap: 2px; }
+.pos-petty-wallet-head small { color: var(--pos-muted); font-size: 11px; }
+.pos-petty-wallet-head strong {
+  color: var(--pos-money); font-size: 19px; font-variant-numeric: tabular-nums;
+}
+.pos-petty-fund-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px; margin-top: 9px;
+}
+.pos-petty-history { border-top: 1px solid var(--pos-line); margin-top: 9px; padding-top: 6px; }
 
 .pos-move-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
@@ -319,6 +363,8 @@
 @media (max-width: 860px) {
   .pos-main-grid { grid-template-columns: minmax(0, 1fr) !important; }
   .pos-approve-row { grid-template-columns: minmax(0, 1fr); }
+  .pos-expense-grid { grid-template-columns: minmax(0, 1fr); }
+  .pos-petty-fund-grid { grid-template-columns: minmax(0, 1fr); }
   .pos-total-value { font-size: 30px; }
   .pos-success-value { font-size: 38px; }
 }

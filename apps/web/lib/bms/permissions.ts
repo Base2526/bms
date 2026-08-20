@@ -91,6 +91,14 @@ export const BMS_PERMISSIONS = [
   "pos.staff.manage",
   "pos.void",
   "pos.cash.movement",
+  // เริ่ม/ปิดยอดค่าใช้จ่ายเงินสดย่อยได้ แต่เงินจริงที่ออกยังต้องมีคนที่สอง
+  // ซึ่งถือ pos.cash.movement กด PIN อนุมัติทุกครั้ง
+  "pos.expense.create",
+  // เจ้าของร้านบันทึกค่าใช้จ่ายที่สำรองด้วยเงินส่วนตัวได้โดยไม่แตะลิ้นชัก
+  // ค่าเริ่มต้น seed ให้ Administrator เท่านั้น (9.8)
+  "pos.expense.personal",
+  // เติม/ดูแลกระเป๋าเงินสดย่อยนอกลิ้นชักของแต่ละสาขา (9.9)
+  "pos.petty_cash.manage",
   "pos.shift.report",
   "pos.nosale",
   // คืนสินค้าโดยไม่มีใบเสร็จ — seed ให้ Manager เท่านั้นที่ 8.2

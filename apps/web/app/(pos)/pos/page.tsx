@@ -203,6 +203,55 @@ type CashMovement = {
   createdAt: string;
 };
 
+type PosExpenseKind = "DIRECT" | "ADVANCE";
+type PosExpenseEntryMode = PosExpenseKind | "PERSONAL" | "PETTY_CASH";
+type PosExpenseCategory = "INGREDIENTS" | "PACKAGING" | "DELIVERY" | "TRANSPORT"
+  | "CLEANING" | "REPAIRS" | "UTILITIES" | "OTHER";
+type PosExpense = {
+  id: string;
+  kind: PosExpenseKind;
+  fundingSource: "DRAWER" | "PERSONAL" | "PETTY_CASH";
+  category: PosExpenseCategory;
+  description: string;
+  payee: string | null;
+  status: "OPEN" | "SETTLED";
+  advancedAmount: number;
+  actualAmount: number | null;
+  returnedAmount: number;
+  extraCashOut: number;
+  receiptRef: string | null;
+  actorName: string | null;
+  approvedByName: string | null;
+  settledByName: string | null;
+  settlementApprovedByName: string | null;
+  pettyCashBalanceAfter: number | null;
+  createdAt: string;
+  settledAt: string | null;
+};
+
+type PosPettyCashLedgerEntry = {
+  id: string;
+  direction: "IN" | "OUT";
+  source: "OWNER_PERSONAL" | "BUSINESS_ACCOUNT" | "EXPENSE";
+  amount: number;
+  balanceAfter: number;
+  reason: string;
+  evidenceRef: string;
+  actorName: string | null;
+  createdAt: string;
+};
+
+const POS_EXPENSE_CATEGORY_LABELS: Record<PosExpenseCategory, string> = {
+  INGREDIENTS: "วัตถุดิบ/ของใช้ในการขาย",
+  PACKAGING: "ถุง/บรรจุภัณฑ์",
+  DELIVERY: "ค่าส่ง/ค่าขนส่งสินค้า",
+  TRANSPORT: "ค่าเดินทาง",
+  CLEANING: "ทำความสะอาด",
+  REPAIRS: "ซ่อมแซม",
+  UTILITIES: "ค่าน้ำ/ไฟ/สาธารณูปโภค",
+  OTHER: "อื่น ๆ",
+};
+
 type PosDeposit = {
   id: string;
   orderId: string;
@@ -236,6 +285,14 @@ type ShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
+  expenseCount: number;
+  expenseTotal: number;
+  personalExpenseCount: number;
+  personalExpenseTotal: number;
+  pettyCashExpenseCount: number;
+  pettyCashExpenseTotal: number;
+  openExpenseCount: number;
+  openExpenseAmount: number;
   noSaleCount: number;
   expectedCash: number | null;
   expectedCashHidden: boolean;
@@ -536,6 +593,30 @@ export default function PosPage() {
   const [cashMoveReason, setCashMoveReason] = useState("");
   const [cashApproverId, setCashApproverId] = useState("");
   const [cashApproverPin, setCashApproverPin] = useState("");
+  // ค่าใช้จ่ายเงินสดย่อยแยกจาก movement ทั่วไป เพื่อไม่เอาการนำฝากธนาคาร
+  // หรือย้ายเงินทอนมานับเป็นต้นทุนของร้าน
+  const [expenses, setExpenses] = useState<PosExpense[]>([]);
+  const [expenseMode, setExpenseMode] = useState<PosExpenseEntryMode>("DIRECT");
+  const [canUsePersonalFunds, setCanUsePersonalFunds] = useState(false);
+  const [canManagePettyCash, setCanManagePettyCash] = useState(false);
+  const [pettyCashBalance, setPettyCashBalance] = useState(0);
+  const [pettyCashEntries, setPettyCashEntries] = useState<PosPettyCashLedgerEntry[]>([]);
+  const [pettyFundSource, setPettyFundSource] = useState<"OWNER_PERSONAL" | "BUSINESS_ACCOUNT">("OWNER_PERSONAL");
+  const [pettyFundAmount, setPettyFundAmount] = useState("");
+  const [pettyFundReason, setPettyFundReason] = useState("");
+  const [pettyFundEvidence, setPettyFundEvidence] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState<PosExpenseCategory>("INGREDIENTS");
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expensePayee, setExpensePayee] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseReceiptRef, setExpenseReceiptRef] = useState("");
+  const [expenseApproverId, setExpenseApproverId] = useState("");
+  const [expenseApproverPin, setExpenseApproverPin] = useState("");
+  const [settleExpenseId, setSettleExpenseId] = useState<string | null>(null);
+  const [settleActualAmount, setSettleActualAmount] = useState("");
+  const [settleReceiptRef, setSettleReceiptRef] = useState("");
+  const [settleApproverId, setSettleApproverId] = useState("");
+  const [settleApproverPin, setSettleApproverPin] = useState("");
   const [voidTarget, setVoidTarget] = useState<string | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voidApproverId, setVoidApproverId] = useState("");
@@ -551,6 +632,30 @@ export default function PosPage() {
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
   const depositRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const cashMovementRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const expenseCreateRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const expenseSettleRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const pettyFundRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  // กัน response ของพนักงานคนก่อนกลับมาทับสิทธิ์/ยอดหลังเปลี่ยนผู้ขาย
+  const expenseRefreshSeqRef = useRef(0);
+  const openingFloatRef = useRef<HTMLInputElement>(null);
+  const countedCashRef = useRef<HTMLInputElement>(null);
+  const cashMoveAmountRef = useRef<HTMLInputElement>(null);
+  const cashMoveReasonRef = useRef<HTMLInputElement>(null);
+  const cashApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const cashApproverPinRef = useRef<HTMLInputElement>(null);
+  const expenseDescriptionRef = useRef<HTMLInputElement>(null);
+  const expenseAmountRef = useRef<HTMLInputElement>(null);
+  const expenseReceiptRefRef = useRef<HTMLInputElement>(null);
+  const expenseApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const expenseApproverPinRef = useRef<HTMLInputElement>(null);
+  const pettyFundAmountRef = useRef<HTMLInputElement>(null);
+  const pettyFundReasonRef = useRef<HTMLInputElement>(null);
+  const pettyFundEvidenceRef = useRef<HTMLInputElement>(null);
+  const settleActualAmountRef = useRef<HTMLInputElement>(null);
+  const settleReceiptRefRef = useRef<HTMLInputElement>(null);
+  const settleApproverSelectRef = useRef<HTMLSelectElement>(null);
+  const settleApproverPinRef = useRef<HTMLInputElement>(null);
+  const noSaleReasonRef = useRef<HTMLInputElement>(null);
   // ---- ส่งใบเสร็จ (8.6) ----
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
@@ -956,7 +1061,10 @@ export default function PosPage() {
 
   async function doParkSale() {
     if (cart.length === 0) { setNotice({ type: "error", text: "ตะกร้าว่าง" }); return; }
-    if (!parkLabel.trim()) { setNotice({ type: "error", text: "ตั้งชื่อบิลก่อน เช่น ชื่อลูกค้า" }); return; }
+    if (!parkLabel.trim()) {
+      setNotice({ type: "error", text: "ตั้งชื่อบิลก่อน เช่น ชื่อลูกค้า" });
+      return;
+    }
     if (!cashierId) { setNotice({ type: "error", text: "เลือกผู้ขายก่อน" }); return; }
     try {
       const res = await fetch("/api/pos/park", {
@@ -1030,9 +1138,13 @@ export default function PosPage() {
 
   async function doCashMovement() {
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
-    if (!cashMoveAmount || !cashMoveReason.trim()) { setNotice({ type: "error", text: "ใส่จำนวนเงินและเหตุผล" }); return; }
+    if (!cashMoveAmount) { setNotice({ type: "error", text: "ใส่จำนวนเงิน" }); focusLater(cashMoveAmountRef); return; }
+    if (!cashMoveReason.trim()) { setNotice({ type: "error", text: "ใส่เหตุผล" }); focusLater(cashMoveReasonRef); return; }
     if (cashMoveDir === "OUT" && (!cashApproverId || !cashApproverPin)) {
-      setNotice({ type: "error", text: "เงินออกจากลิ้นชักต้องมีหัวหน้าอนุมัติ" }); return;
+      setNotice({ type: "error", text: "เงินออกจากลิ้นชักต้องมีหัวหน้าอนุมัติ" });
+      if (!cashApproverId) focusLater(cashApproverSelectRef);
+      else focusLater(cashApproverPinRef);
+      return;
     }
     try {
       const signature = JSON.stringify({
@@ -1077,6 +1189,247 @@ export default function PosPage() {
       });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  // ---- ค่าใช้จ่ายเงินสดย่อย (9.7) ----------------------------------
+
+  async function refreshExpenses() {
+    if (!token || !cashierId || !pin) return;
+    const requestSeq = ++expenseRefreshSeqRef.current;
+    try {
+      const res = await fetch("/api/pos/expense", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ action: "list", cashierUserId: cashierId, pin }),
+        cache: "no-store",
+      });
+      if (requestSeq !== expenseRefreshSeqRef.current) return;
+      if (res.ok) {
+        const data = await res.json();
+        if (requestSeq !== expenseRefreshSeqRef.current) return;
+        setExpenses(data.expenses ?? []);
+        setCanUsePersonalFunds(Boolean(data.canUsePersonalFunds));
+        setCanManagePettyCash(Boolean(data.canManagePettyCash));
+        setPettyCashBalance(Number(data.pettyCashWallet?.balance ?? 0));
+        setPettyCashEntries(data.pettyCashWallet?.entries ?? []);
+      } else {
+        setExpenses([]);
+        setCanUsePersonalFunds(false);
+        setCanManagePettyCash(false);
+        setPettyCashBalance(0);
+        setPettyCashEntries([]);
+      }
+    } catch { /* โหลดใหม่ได้ ไม่ขัดจังหวะงานขาย */ }
+  }
+
+  function expenseRequestError(data: any): string {
+    if (data?.status === "WOULD_OVERDRAW") {
+      return data.available == null
+        ? "จำนวนเงินมากกว่าที่ควรมีในลิ้นชัก — ตรวจตัวเลขอีกครั้ง"
+        : `เงินในลิ้นชักที่ควรมีอยู่ ฿${baht(Number(data.available))} — จ่ายมากกว่านี้ไม่ได้`;
+    }
+    if (data?.status === "IDEMPOTENCY_CONFLICT") return "คำขอซ้ำแต่รายละเอียดเปลี่ยน — กรุณากดใหม่อีกครั้ง";
+    if (data?.status === "PETTY_CASH_INSUFFICIENT") {
+      return `เงินสดย่อยคงเหลือ ฿${baht(Number(data.available ?? 0))} — จ่ายมากกว่านี้ไม่ได้`;
+    }
+    return data?.error ?? data?.reason ?? "บันทึกค่าใช้จ่ายไม่สำเร็จ";
+  }
+
+  async function createExpense() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
+    if (!expenseDescription.trim()) {
+      setNotice({ type: "error", text: "ใส่รายละเอียด" }); focusLater(expenseDescriptionRef); return;
+    }
+    if (!expenseAmount) {
+      setNotice({ type: "error", text: "ใส่จำนวนเงิน" }); focusLater(expenseAmountRef); return;
+    }
+    const personalFunds = expenseMode === "PERSONAL";
+    const pettyCash = expenseMode === "PETTY_CASH";
+    const outsideDrawer = personalFunds || pettyCash;
+    if (outsideDrawer && !expenseReceiptRef.trim()) {
+      setNotice({ type: "error", text: "รายการนอกลิ้นชักต้องระบุเลขที่ใบเสร็จหรือหลักฐาน" });
+      focusLater(expenseReceiptRefRef);
+      return;
+    }
+    if (!outsideDrawer && (!expenseApproverId || !expenseApproverPin)) {
+      setNotice({ type: "error", text: "ค่าใช้จ่ายต้องมีหัวหน้าอนุมัติ" });
+      if (!expenseApproverId) focusLater(expenseApproverSelectRef);
+      else focusLater(expenseApproverPinRef);
+      return;
+    }
+    const signature = JSON.stringify({
+      shiftId: session?.shift?.id ?? null,
+      kind: outsideDrawer ? "DIRECT" : expenseMode,
+      fundingSource: personalFunds ? "PERSONAL" : pettyCash ? "PETTY_CASH" : "DRAWER",
+      category: expenseCategory,
+      description: expenseDescription.trim(),
+      payee: expensePayee.trim() || null,
+      amount: Number(expenseAmount),
+      receiptRef: expenseReceiptRef.trim() || null,
+      cashierUserId: cashierId,
+      approverUserId: outsideDrawer ? null : expenseApproverId,
+    });
+    if (expenseCreateRequestRef.current?.signature !== signature) {
+      expenseCreateRequestRef.current = { signature, key: `expense-${crypto.randomUUID()}` };
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pos/expense", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          shiftId: session?.shift?.id,
+          kind: outsideDrawer ? "DIRECT" : expenseMode,
+          fundingSource: personalFunds ? "PERSONAL" : pettyCash ? "PETTY_CASH" : "DRAWER",
+          category: expenseCategory,
+          description: expenseDescription.trim(),
+          payee: expensePayee.trim() || null,
+          amount: Number(expenseAmount),
+          receiptRef: expenseReceiptRef.trim() || null,
+          cashierUserId: cashierId,
+          pin,
+          approverUserId: outsideDrawer ? null : expenseApproverId,
+          approverPin: outsideDrawer ? null : expenseApproverPin,
+          idempotencyKey: expenseCreateRequestRef.current.key,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: expenseRequestError(data) }); return; }
+      expenseCreateRequestRef.current = null;
+      setExpenseDescription(""); setExpensePayee(""); setExpenseAmount(""); setExpenseReceiptRef("");
+      setExpenseApproverPin("");
+      await Promise.all([refreshExpenses(), refreshCashMoves()]);
+      setNotice({
+        type: "ok",
+        text: personalFunds
+          ? `บันทึกเงินส่วนตัวแล้ว ฿${baht(data.expense.actualAmount)} — ยอดลิ้นชักไม่เปลี่ยน`
+          : pettyCash
+            ? `จ่ายจากเงินสดย่อยแล้ว ฿${baht(data.expense.actualAmount)} · คงเหลือ ฿${baht(data.pettyCashAfter)} — ยอดลิ้นชักไม่เปลี่ยน`
+          : expenseMode === "DIRECT"
+            ? `บันทึกค่าใช้จ่ายแล้ว ฿${baht(data.expense.actualAmount)}`
+            : `เบิกเงินแล้ว ฿${baht(data.expense.advancedAmount)} — ต้องกลับมาปิดยอดก่อนปิดกะ`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fundPettyCash() {
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกเจ้าของร้านและใส่ PIN ก่อน" }); return; }
+    if (!pettyFundAmount) { setNotice({ type: "error", text: "เติมจำนวนเงิน" }); focusLater(pettyFundAmountRef); return; }
+    if (!pettyFundReason.trim()) { setNotice({ type: "error", text: "ระบุเหตุผล" }); focusLater(pettyFundReasonRef); return; }
+    if (!pettyFundEvidence.trim()) { setNotice({ type: "error", text: "ระบุหลักฐาน" }); focusLater(pettyFundEvidenceRef); return; }
+    const signature = JSON.stringify({
+      shiftId: session?.shift?.id ?? null,
+      source: pettyFundSource,
+      amount: Number(pettyFundAmount),
+      reason: pettyFundReason.trim(),
+      evidenceRef: pettyFundEvidence.trim(),
+      cashierUserId: cashierId,
+    });
+    if (pettyFundRequestRef.current?.signature !== signature) {
+      pettyFundRequestRef.current = { signature, key: `petty-fund-${crypto.randomUUID()}` };
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pos/expense", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "fund",
+          source: pettyFundSource,
+          amount: Number(pettyFundAmount),
+          reason: pettyFundReason.trim(),
+          evidenceRef: pettyFundEvidence.trim(),
+          cashierUserId: cashierId,
+          pin,
+          idempotencyKey: pettyFundRequestRef.current.key,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: expenseRequestError(data) }); return; }
+      pettyFundRequestRef.current = null;
+      setPettyFundAmount(""); setPettyFundReason(""); setPettyFundEvidence("");
+      await refreshExpenses();
+      setNotice({
+        type: "ok",
+        text: `เติมเงินสดย่อยแล้ว ฿${baht(data.entry.amount)} · คงเหลือ ฿${baht(data.balanceAfter)} — ยอดลิ้นชักไม่เปลี่ยน`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openExpenseSettlement(expense: PosExpense) {
+    setSettleExpenseId(expense.id);
+    setSettleActualAmount(String(expense.advancedAmount));
+    setSettleReceiptRef(expense.receiptRef ?? "");
+    setSettleApproverPin("");
+    expenseSettleRequestRef.current = null;
+  }
+
+  async function settleExpense() {
+    if (!settleExpenseId || !cashierId || !pin) return;
+    if (settleActualAmount === "") { setNotice({ type: "error", text: "ใส่ยอดซื้อจริง" }); focusLater(settleActualAmountRef); return; }
+    if (!settleApproverId || !settleApproverPin) {
+      setNotice({ type: "error", text: "การปิดยอดต้องมีหัวหน้าอนุมัติ" });
+      if (!settleApproverId) focusLater(settleApproverSelectRef);
+      else focusLater(settleApproverPinRef);
+      return;
+    }
+    const signature = JSON.stringify({
+      shiftId: session?.shift?.id ?? null,
+      expenseId: settleExpenseId,
+      actualAmount: Number(settleActualAmount),
+      receiptRef: settleReceiptRef.trim() || null,
+      cashierUserId: cashierId,
+      approverUserId: settleApproverId,
+    });
+    if (expenseSettleRequestRef.current?.signature !== signature) {
+      expenseSettleRequestRef.current = { signature, key: `expense-settle-${crypto.randomUUID()}` };
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pos/expense", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "settle",
+          shiftId: session?.shift?.id,
+          expenseId: settleExpenseId,
+          actualAmount: Number(settleActualAmount),
+          receiptRef: settleReceiptRef.trim() || null,
+          cashierUserId: cashierId,
+          pin,
+          approverUserId: settleApproverId,
+          approverPin: settleApproverPin,
+          idempotencyKey: expenseSettleRequestRef.current.key,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNotice({ type: "error", text: expenseRequestError(data) }); return; }
+      expenseSettleRequestRef.current = null;
+      setSettleExpenseId(null); setSettleActualAmount(""); setSettleReceiptRef(""); setSettleApproverPin("");
+      await Promise.all([refreshExpenses(), refreshCashMoves()]);
+      const expense = data.expense as PosExpense;
+      setNotice({
+        type: "ok",
+        text: expense.returnedAmount > 0
+          ? `ปิดยอดแล้ว · ค่าใช้จ่าย ฿${baht(expense.actualAmount ?? 0)} · คืนลิ้นชัก ฿${baht(expense.returnedAmount)}`
+          : expense.extraCashOut > 0
+            ? `ปิดยอดแล้ว · ค่าใช้จ่าย ฿${baht(expense.actualAmount ?? 0)} · จ่ายเพิ่ม ฿${baht(expense.extraCashOut)}`
+            : `ปิดยอดแล้ว · ค่าใช้จ่าย ฿${baht(expense.actualAmount ?? 0)}`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1300,7 +1653,11 @@ export default function PosPage() {
   // จะเปิดด้วยคันโยกใต้ลิ้นชักอยู่ดี และเราต้องการร่องรอยมากกว่าต้องการการควบคุม
   async function doNoSale() {
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
-    if (!noSaleReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" }); return; }
+    if (!noSaleReason.trim()) {
+      setNotice({ type: "error", text: "ต้องระบุเหตุผลที่เปิดลิ้นชัก" });
+      focusLater(noSaleReasonRef);
+      return;
+    }
     try {
       const res = await fetch("/api/pos/no-sale", {
         method: "POST",
@@ -1383,15 +1740,35 @@ export default function PosPage() {
     return () => { ch.close(); displayChannel.current = null; };
   }, []);
 
-  // บิลพักโหลดตอนเข้าแท็บขาย · เงินลิ้นชักตอนเข้าแท็บกะ · มัดจำตอนเข้าแท็บมัดจำ
+  // บิลพักโหลดตอนเข้าแท็บขาย · เงินลิ้นชัก/ค่าใช้จ่ายตอนเข้าแท็บกะ · มัดจำตอนเข้าแท็บมัดจำ
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
   // ตลอดกะคือ request หลายพันครั้งต่อวันต่อเครื่องเพื่อข้อมูลที่เปลี่ยนวันละไม่กี่ครั้ง
   useEffect(() => {
     if (!token || !session?.shift) return;
     if (tab === "sell") void refreshParked();
-    if (tab === "shift") void refreshCashMoves();
+    if (tab === "shift") {
+      void refreshCashMoves();
+      void refreshExpenses();
+    }
     if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
+
+  // สิทธิ์ใช้เงินส่วนตัวผูกกับคนที่กด PIN ไม่ใช่เครื่องขาย เปลี่ยนคนแล้วต้อง
+  // โหลดสิทธิ์ใหม่ก่อนแสดงโหมดเจ้าของคนเดียว
+  useEffect(() => {
+    expenseRefreshSeqRef.current += 1;
+    setCanUsePersonalFunds(false);
+    setCanManagePettyCash(false);
+    setExpenses([]);
+    setPettyCashBalance(0);
+    setPettyCashEntries([]);
+    setExpenseApproverId("");
+    setExpenseApproverPin("");
+    setSettleApproverId("");
+    setSettleApproverPin("");
+    setSettleExpenseId(null);
+    setExpenseMode((current) => current === "PERSONAL" || current === "PETTY_CASH" ? "DIRECT" : current);
+  }, [cashierId]);
 
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
@@ -1945,6 +2322,21 @@ export default function PosPage() {
     setSplitMode(false);
   }
 
+  function focusLater<T extends HTMLElement>(ref: { current: T | null }) {
+    window.requestAnimationFrame(() => {
+      const field = ref.current;
+      if (!field) return;
+      field.setAttribute("aria-invalid", "true");
+      field.focus();
+    });
+  }
+
+  function clearInvalidField(event: { target: EventTarget }) {
+    if (event.target instanceof HTMLElement) {
+      event.target.removeAttribute("aria-invalid");
+    }
+  }
+
   function changeQty(key: string, delta: number) {
     if (hasPendingSale) return;
     setCart((cur) =>
@@ -2186,6 +2578,16 @@ export default function PosPage() {
 
   async function shiftAction(action: "open" | "close") {
     if (!cashierId || !pin || busy) return;
+    if (action === "open" && !openingFloat.trim()) {
+      setNotice({ type: "error", text: "ใส่เงินตั้งต้นในลิ้นชัก" });
+      focusLater(openingFloatRef);
+      return;
+    }
+    if (action === "close" && !countedCash.trim()) {
+      setNotice({ type: "error", text: "ใส่จำนวนเงินที่นับได้" });
+      focusLater(countedCashRef);
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/pos/shift", {
@@ -2205,6 +2607,8 @@ export default function PosPage() {
           type: "error",
           text: data?.status === "PENDING_REFUNDS"
             ? `ยังปิดกะไม่ได้: มีรายการคืนเงินจริงค้าง ${data.count} รายการ รวม ฿${baht(Number(data.amount ?? 0))}`
+            : data?.status === "PENDING_EXPENSES"
+              ? `ยังปิดกะไม่ได้: มีเงินเบิกซื้อที่ยังไม่ปิดยอด ${data.count} รายการ รวม ฿${baht(Number(data.amount ?? 0))}`
             : data?.error ?? data?.reason ?? `HTTP ${res.status}`,
         });
       } else if (action === "close" && data.status === "CLOSED") {
@@ -2714,7 +3118,12 @@ export default function PosPage() {
   // height/overflow อยู่ใน CSS ด้านล่าง ไม่ใช่ inline — inline ชนะ media query เสมอ
   // และต้องประกาศ 100vh ก่อน 100dvh เพื่อให้เบราว์เซอร์เก่าที่ไม่รู้จัก dvh ตกมาใช้ vh
   return (
-    <div className="pos-page" style={{ display: "flex" }}>
+    <div
+      className="pos-page"
+      style={{ display: "flex" }}
+      onInputCapture={clearInvalidField}
+      onChangeCapture={clearInvalidField}
+    >
       <style>{`
         .pos-page, .pos-page * { box-sizing: border-box; }
         /* 100vh บนมือถือ = ความสูงตอนแถบ URL ยุบ ไม่หดตามตอนแถบโผล่ → ท้ายหน้า
@@ -2841,7 +3250,9 @@ export default function PosPage() {
             type="password"
             inputMode="numeric"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
+            onBlur={() => { if (tab === "shift") void refreshExpenses(); }}
+            maxLength={8}
             placeholder="PIN"
             aria-label="PIN ของผู้ขาย"
             /* 78px พอสำหรับ 4 หลัก · fontSize 16 บังคับด้วยเหตุผลเดียวกับ select ด้านบน */
@@ -3311,6 +3722,7 @@ export default function PosPage() {
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินที่นับได้ในลิ้นชัก</span>
                     <input
+                      ref={countedCashRef}
                       value={countedCash}
                       onChange={(e) => setCountedCash(e.target.value)}
                       inputMode="decimal"
@@ -3335,6 +3747,235 @@ export default function PosPage() {
                 </div>
               )}
 
+              {/* ---- ค่าใช้จ่ายเงินสดย่อย (9.7) -----------------------
+                  แยกออกจาก drawer movement เพราะนำฝากธนาคาร/ย้ายเงินทอน
+                  ไม่ใช่ต้นทุน ส่วนเงินที่เข้าออกจริงยังลง movement ให้สูตรปิดกะ */}
+              <div className="pos-block">
+                <div className="pos-shift-head" style={{ marginBottom: 8 }}>
+                  <div className="pos-block-title" style={{ marginBottom: 0, flex: 1 }}>ค่าใช้จ่ายหน้าร้าน</div>
+                  <button type="button" onClick={() => void refreshExpenses()}
+                          style={{ padding: "6px 12px", fontSize: 12, minHeight: 34 }}>
+                    โหลดรายการ
+                  </button>
+                </div>
+                <div className="pos-block-hint" style={{ marginBottom: 8 }}>
+                  ใช้สำหรับค่าน้ำแข็ง วัตถุดิบ ถุง หรือเบิกเงินไปซื้อของ · นำฝากธนาคารให้ใช้ “เงินเข้า–ออกลิ้นชัก” ด้านล่าง
+                </div>
+                <div className="pos-expense-grid">
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>วิธีจ่าย</span>
+                    <select value={expenseMode} onChange={(e) => setExpenseMode(e.target.value as PosExpenseEntryMode)}>
+                      <option value="DIRECT">จ่ายให้ผู้ขายทันที</option>
+                      <option value="ADVANCE">เบิกเงินไปซื้อก่อน</option>
+                      <option value="PETTY_CASH" disabled={pettyCashBalance <= 0}>
+                        เงินสดย่อยร้าน · คงเหลือ ฿{baht(pettyCashBalance)}
+                      </option>
+                      {canUsePersonalFunds && (
+                        <option value="PERSONAL">เจ้าของคนเดียว · สำรองจ่ายส่วนตัว</option>
+                      )}
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>หมวด</span>
+                    <select value={expenseCategory}
+                            onChange={(e) => setExpenseCategory(e.target.value as PosExpenseCategory)}>
+                      {(Object.entries(POS_EXPENSE_CATEGORY_LABELS) as Array<[PosExpenseCategory, string]>).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+                      {expenseMode === "ADVANCE" ? "ยอดที่เบิก"
+                        : expenseMode === "PETTY_CASH" ? "ยอดที่จ่ายจากเงินสดย่อย"
+                        : expenseMode === "PERSONAL" ? "ยอดที่สำรองจ่าย" : "ยอดที่จ่าย"}
+                    </span>
+                    <input ref={expenseAmountRef} className="pos-num" inputMode="decimal" value={expenseAmount}
+                           onChange={(e) => setExpenseAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                           placeholder="0.00" style={{ textAlign: "right" }} />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  <input ref={expenseDescriptionRef} value={expenseDescription} onChange={(e) => setExpenseDescription(e.target.value)}
+                         maxLength={200} placeholder="รายละเอียด เช่น ค่าน้ำแข็ง 5 กระสอบ"
+                         style={{ minWidth: 240, flex: 2 }} />
+                  <input value={expensePayee} onChange={(e) => setExpensePayee(e.target.value)}
+                         maxLength={160} placeholder="ผู้รับเงิน/ร้านค้า (ถ้ามี)"
+                         style={{ minWidth: 180, flex: 1 }} />
+                  <input ref={expenseReceiptRefRef} value={expenseReceiptRef} onChange={(e) => setExpenseReceiptRef(e.target.value)}
+                         maxLength={300} placeholder={expenseMode === "PERSONAL" || expenseMode === "PETTY_CASH"
+                           ? "เลขที่ใบเสร็จ/หลักฐาน (จำเป็น)"
+                           : "เลขที่ใบเสร็จ/หลักฐาน (ถ้ามี)"}
+                         style={{ minWidth: 190, flex: 1 }} />
+                </div>
+                {expenseMode === "PERSONAL" ? (
+                  <div className="pos-approve pos-approve--personal">
+                    <div className="pos-approve-why">
+                      โหมดเจ้าของคนเดียว · บันทึกค่าใช้จ่ายจากเงินส่วนตัวโดยไม่หักเงินในลิ้นชัก
+                      และต้องระบุเลขที่ใบเสร็จหรือหลักฐาน
+                    </div>
+                    <button type="button" disabled={busy} onClick={() => void createExpense()}>
+                      บันทึกเงินส่วนตัว
+                    </button>
+                  </div>
+                ) : expenseMode === "PETTY_CASH" ? (
+                  <div className="pos-approve pos-approve--petty">
+                    <div className="pos-approve-why">
+                      จ่ายจากกระเป๋าเงินสดย่อยของสาขา · คงเหลือ ฿{baht(pettyCashBalance)}
+                      · ไม่หักเงินในลิ้นชัก และต้องมีหลักฐาน
+                    </div>
+                    <button type="button" disabled={busy || pettyCashBalance <= 0} onClick={() => void createExpense()}>
+                      จ่ายจากเงินสดย่อย
+                    </button>
+                  </div>
+                ) : (
+                  <div className="pos-approve">
+                    <div className="pos-approve-why">
+                      {expenseMode === "DIRECT"
+                        ? "จ่ายเงินออกต้องมีหัวหน้ากด PIN ทุกครั้ง"
+                        : "เบิกเงินออกต้องมีหัวหน้ากด PIN และต้องกลับมาปิดยอดก่อนปิดกะ"}
+                    </div>
+                    <div className="pos-approve-row">
+                      <select ref={expenseApproverSelectRef} value={expenseApproverId} onChange={(e) => setExpenseApproverId(e.target.value)}>
+                        <option value="">— ผู้อนุมัติ —</option>
+                        {(session?.cashiers ?? []).filter((c) => c.hasPin && c.id !== cashierId).map((c) => (
+                          <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                        ))}
+                      </select>
+                      <input ref={expenseApproverPinRef} type="password" inputMode="numeric" value={expenseApproverPin}
+                             onChange={(e) => setExpenseApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                             placeholder="PIN หัวหน้า" style={{ textAlign: "center" }} />
+                      <button type="button" disabled={busy} onClick={() => void createExpense()}>
+                        {expenseMode === "DIRECT" ? "บันทึกค่าใช้จ่าย" : "เบิกเงิน"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pos-petty-wallet">
+                  <div className="pos-petty-wallet-head">
+                    <span>
+                      <b>กระเป๋าเงินสดย่อยสาขา</b>
+                      <small>อยู่นอกลิ้นชัก POS</small>
+                    </span>
+                    <strong>฿{baht(pettyCashBalance)}</strong>
+                  </div>
+                  {canManagePettyCash && (
+                    <div className="pos-petty-fund-grid">
+                      <select value={pettyFundSource}
+                              onChange={(e) => setPettyFundSource(e.target.value as "OWNER_PERSONAL" | "BUSINESS_ACCOUNT")}>
+                        <option value="OWNER_PERSONAL">เติมจากเงินเจ้าของ</option>
+                        <option value="BUSINESS_ACCOUNT">เติมจากบัญชีร้าน</option>
+                      </select>
+                      <input ref={pettyFundAmountRef} className="pos-num" inputMode="decimal" value={pettyFundAmount}
+                             onChange={(e) => setPettyFundAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                             placeholder="จำนวนเงิน" style={{ textAlign: "right" }} />
+                      <input ref={pettyFundReasonRef} value={pettyFundReason} onChange={(e) => setPettyFundReason(e.target.value)}
+                             maxLength={200} placeholder="เหตุผล เช่น เงินสดย่อยประจำสัปดาห์" />
+                      <input ref={pettyFundEvidenceRef} value={pettyFundEvidence} onChange={(e) => setPettyFundEvidence(e.target.value)}
+                             maxLength={300} placeholder="หลักฐาน/เลขอ้างอิง (จำเป็น)" />
+                      <button type="button" disabled={busy} onClick={() => void fundPettyCash()}>เติมเงินสดย่อย</button>
+                    </div>
+                  )}
+                  {pettyCashEntries.length > 0 && (
+                    <div className="pos-petty-history">
+                      {pettyCashEntries.slice(0, 5).map((entry) => (
+                        <div key={entry.id} className="pos-move-row">
+                          <span>
+                            <span className={entry.direction === "IN" ? "pos-move-dir--in" : "pos-move-dir--out"}>
+                              {entry.direction === "IN" ? "เติม" : "จ่าย"}
+                            </span>
+                            {" · "}{entry.reason} · หลักฐาน {entry.evidenceRef}
+                          </span>
+                          <span className="pos-num">{entry.direction === "IN" ? "+" : "−"}฿{baht(entry.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {expenses.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 6 }}>
+                    {expenses.map((expense) => (
+                      <div key={expense.id} className="pos-move-row" style={{ alignItems: "center" }}>
+                        <span style={{ minWidth: 0 }}>
+                          <span className={expense.status === "OPEN" ? "pos-chip pos-chip--warn" : "pos-chip pos-chip--ok"}>
+                            {expense.status === "OPEN" ? "รอปิดยอด" : "ปิดยอดแล้ว"}
+                          </span>{" "}
+                          {expense.fundingSource === "PERSONAL" && (
+                            <><span className="pos-chip pos-chip--personal">เงินส่วนตัว</span>{" "}</>
+                          )}
+                          {expense.fundingSource === "PETTY_CASH" && (
+                            <><span className="pos-chip pos-chip--petty">เงินสดย่อย</span>{" "}</>
+                          )}
+                          <b>{POS_EXPENSE_CATEGORY_LABELS[expense.category]}</b> · {expense.description}
+                          {expense.payee ? ` · ${expense.payee}` : ""}
+                          <span style={{ display: "block", color: "var(--pos-muted)", fontSize: 12, marginTop: 3 }}>
+                            {expense.kind === "ADVANCE"
+                              ? `เบิก ฿${baht(expense.advancedAmount)}${expense.actualAmount == null ? "" : ` · ใช้จริง ฿${baht(expense.actualAmount)}`}`
+                              : `จ่าย ฿${baht(expense.actualAmount ?? expense.advancedAmount)}`}
+                            {expense.returnedAmount > 0 ? ` · คืน ฿${baht(expense.returnedAmount)}` : ""}
+                            {expense.extraCashOut > 0 ? ` · จ่ายเพิ่ม ฿${baht(expense.extraCashOut)}` : ""}
+                            {expense.receiptRef ? ` · หลักฐาน ${expense.receiptRef}` : ""}
+                            {expense.fundingSource === "PERSONAL" || expense.fundingSource === "PETTY_CASH"
+                              ? " · ไม่กระทบยอดลิ้นชัก" : ""}
+                            {expense.approvedByName ? ` · อนุมัติ ${expense.approvedByName}` : ""}
+                          </span>
+                        </span>
+                        {expense.status === "OPEN" ? (
+                          <button type="button" disabled={busy} onClick={() => openExpenseSettlement(expense)}
+                                  style={{ padding: "6px 12px", fontSize: 12, flex: "none" }}>
+                            ปิดยอด
+                          </button>
+                        ) : (
+                          <span className="pos-num" style={{ flex: "none" }}>฿{baht(expense.actualAmount ?? 0)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {settleExpenseId && (() => {
+                  const target = expenses.find((expense) => expense.id === settleExpenseId);
+                  if (!target) return null;
+                  const actual = Number(settleActualAmount || 0);
+                  const difference = Math.round((target.advancedAmount - actual) * 100) / 100;
+                  return (
+                    <div className="pos-approve" style={{ marginTop: 10 }}>
+                      <div className="pos-approve-why">
+                        ปิดยอดเบิก “{target.description}” · เบิกไว้ ฿{baht(target.advancedAmount)}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                        <input ref={settleActualAmountRef} className="pos-num" inputMode="decimal" value={settleActualAmount}
+                               onChange={(e) => setSettleActualAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                               placeholder="ยอดซื้อจริง" style={{ width: 150, textAlign: "right" }} />
+                        <input ref={settleReceiptRefRef} value={settleReceiptRef} onChange={(e) => setSettleReceiptRef(e.target.value)}
+                               maxLength={300} placeholder="เลขที่ใบเสร็จ/หลักฐาน"
+                               style={{ minWidth: 200, flex: 1 }} />
+                        <span style={{ alignSelf: "center", fontSize: 12, color: difference >= 0 ? "var(--pos-money)" : "var(--pos-warn)" }}>
+                          {difference > 0 ? `ต้องคืนลิ้นชัก ฿${baht(difference)}`
+                            : difference < 0 ? `ต้องจ่ายเพิ่ม ฿${baht(Math.abs(difference))}` : "ยอดพอดีกับที่เบิก"}
+                        </span>
+                      </div>
+                      <div className="pos-approve-row">
+                        <select ref={settleApproverSelectRef} value={settleApproverId} onChange={(e) => setSettleApproverId(e.target.value)}>
+                          <option value="">— ผู้อนุมัติปิดยอด —</option>
+                          {(session?.cashiers ?? []).filter((c) => c.hasPin && c.id !== cashierId).map((c) => (
+                            <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
+                          ))}
+                        </select>
+                        <input ref={settleApproverPinRef} type="password" inputMode="numeric" value={settleApproverPin}
+                               onChange={(e) => setSettleApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                               placeholder="PIN หัวหน้า" style={{ textAlign: "center" }} />
+                        <button type="button" disabled={busy} onClick={() => void settleExpense()}>ยืนยันปิดยอด</button>
+                        <button type="button" disabled={busy} className="pos-btn-ghost"
+                                onClick={() => setSettleExpenseId(null)}>ยกเลิก</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* ---- เงินเข้า-ออกลิ้นชัก (7.97) ------------------------
                   ก่อนมีส่วนนี้ การถอนเงินไปฝากกลางกะทำให้ปิดกะขึ้นเงินขาดทุกครั้ง
                   โดยไม่มีที่ให้อธิบาย · เงินออกต้องมีหัวหน้ากด PIN เงินเข้าไม่ต้อง */}
@@ -3346,24 +3987,24 @@ export default function PosPage() {
                     <option value="OUT">นำเงินออก</option>
                     <option value="IN">นำเงินเข้า</option>
                   </select>
-                  <input value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                  <input ref={cashMoveAmountRef} value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                          inputMode="decimal" placeholder="จำนวนเงิน" className="pos-num"
                          style={{ fontSize: 14, width: 130, textAlign: "right" }} />
-                  <input value={cashMoveReason} onChange={(e) => setCashMoveReason(e.target.value)} maxLength={200}
+                  <input ref={cashMoveReasonRef} value={cashMoveReason} onChange={(e) => setCashMoveReason(e.target.value)} maxLength={200}
                          placeholder="เหตุผล เช่น นำส่งธนาคาร" style={{ fontSize: 14, minWidth: 200, flex: 1 }} />
                 </div>
                 {cashMoveDir === "OUT" && (
                   <div className="pos-approve">
                     <div className="pos-approve-why">เงินออกจากลิ้นชักต้องมีหัวหน้ากด PIN ทุกครั้ง</div>
                     <div className="pos-approve-row">
-                      <select value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
+                      <select ref={cashApproverSelectRef} value={cashApproverId} onChange={(e) => setCashApproverId(e.target.value)}
                               style={{ fontSize: 14 }}>
                         <option value="">— ผู้อนุมัติ —</option>
                         {(session?.cashiers ?? []).filter((c) => c.hasPin).map((c) => (
                           <option key={c.id} value={c.id}>{c.name ?? c.email ?? c.id}</option>
                         ))}
                       </select>
-                      <input type="password" inputMode="numeric" value={cashApproverPin}
+                      <input ref={cashApproverPinRef} type="password" inputMode="numeric" value={cashApproverPin}
                              onChange={(e) => setCashApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
                              placeholder="PIN หัวหน้า" style={{ fontSize: 14, textAlign: "center" }} />
                     </div>
@@ -3407,6 +4048,7 @@ export default function PosPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
+                    ref={noSaleReasonRef}
                     value={noSaleReason}
                     onChange={(e) => setNoSaleReason(e.target.value)}
                     maxLength={200}
@@ -3464,6 +4106,30 @@ export default function PosPage() {
                       <span>เงินเข้าลิ้นชัก</span><span>฿{baht(shiftReport.cashIn)}</span>
                       <span>เงินออกจากลิ้นชัก</span><span>฿{baht(shiftReport.cashOut)}</span>
                       <span>คืนเงินสด</span><span>฿{baht(shiftReport.cashRefunds)}</span>
+                      <span>ค่าใช้จ่ายหน้าร้าน · {shiftReport.expenseCount} รายการ</span>
+                      <span>฿{baht(shiftReport.expenseTotal)}</span>
+                      {shiftReport.personalExpenseCount > 0 && (
+                        <>
+                          <span style={{ color: "var(--pos-accent)" }}>
+                            ในจำนวนนี้เจ้าของสำรองจ่าย · {shiftReport.personalExpenseCount} รายการ
+                          </span>
+                          <span style={{ color: "var(--pos-accent)" }}>฿{baht(shiftReport.personalExpenseTotal)}</span>
+                        </>
+                      )}
+                      {shiftReport.pettyCashExpenseCount > 0 && (
+                        <>
+                          <span style={{ color: "var(--pos-money)" }}>
+                            ในจำนวนนี้จ่ายจากเงินสดย่อย · {shiftReport.pettyCashExpenseCount} รายการ
+                          </span>
+                          <span style={{ color: "var(--pos-money)" }}>฿{baht(shiftReport.pettyCashExpenseTotal)}</span>
+                        </>
+                      )}
+                      {shiftReport.openExpenseCount > 0 && (
+                        <>
+                          <span style={{ color: "var(--pos-warn)" }}>เงินเบิกยังไม่ปิดยอด · {shiftReport.openExpenseCount} รายการ</span>
+                          <span style={{ color: "var(--pos-warn)" }}>฿{baht(shiftReport.openExpenseAmount)}</span>
+                        </>
+                      )}
                       <span>เปิดลิ้นชักโดยไม่ขาย</span><span>{shiftReport.noSaleCount} ครั้ง</span>
                     </div>
                     <div className="pos-report-sep">
@@ -3497,6 +4163,7 @@ export default function PosPage() {
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>เงินตั้งต้นในลิ้นชัก</span>
                   <input
+                    ref={openingFloatRef}
                     value={openingFloat}
                     onChange={(e) => setOpeningFloat(e.target.value)}
                     inputMode="decimal"

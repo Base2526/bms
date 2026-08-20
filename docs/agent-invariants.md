@@ -241,7 +241,9 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 ## POS and tax
 
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
-shift report, and `9.5` for retry-safe drawer movements) owns the counter sale/return/refund model;
+shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for
+sole-owner personal-funded expenses, and `9.9`–`9.10` for the branch petty-cash wallet) owns the counter
+sale/return/refund model;
 `lib/bms/{taxDocuments,vat}.ts` (`7.88`, `7.89`, `7.95`) own Thai tax-invoice issuance and credit
 notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/business detail:
 [../docs/business/pos.md](business/pos.md).
@@ -269,6 +271,29 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   PIN plus `purchase.receive`; tenant/location come from the authenticated device. Inventory, lot,
   movement, PO status, audit, and `bms_pos_purchase_receipts.result` commit together. Reusing one
   device key with different normalized input is a conflict, never a second receipt.
+- **A petty-cash expense (`9.7`) is not a generic drawer `OUT`.** Direct supplier payments and
+  advances create `bms_pos_expenses` while bank drops and register transfers remain movements only.
+  Create/settle writes the expense, physical drawer delta, and audits atomically and retry-safely.
+  The actor holds `pos.expense.create`; a distinct approver with `pos.cash.movement` enters a second
+  PIN. An advance settles to actual cost, returning change as `IN` or paying the shortfall as `OUT`,
+  and an open advance blocks closing the shift.
+- **Sole-owner mode (`9.8`) never self-approves drawer cash.** An Administrator holding
+  `pos.expense.personal` may record a `DIRECT` expense funded personally, with mandatory evidence.
+  It creates no `bms_pos_cash_movements` row and leaves expected cash unchanged. Any later
+  reimbursement from the drawer is a new cash-out and still requires a distinct second PIN.
+- **The branch petty-cash wallet (`9.9`) is outside the register drawer.** An Administrator holding
+  `pos.petty_cash.manage` can fund it from owner cash or a business account with mandatory evidence;
+  any cashier with `pos.expense.create` can spend its available balance on a direct expense with
+  evidence. Funding/debit, wallet balance, expense and audits are atomic and retry-safe. It may never
+  go negative and neither direction creates `bms_pos_cash_movements` or changes expected drawer cash.
+  Migration `9.10` also rejects inverted ledger rows (`IN/EXPENSE` or funding recorded as `OUT`) at
+  the database boundary rather than relying only on the service.
+- **Expense idempotency is checked before mutable shop state.** Funding/create/settle take a
+  tenant-scoped PostgreSQL advisory lock for the request key, then look for a committed result before
+  checking whether a location or shift is still open. A response lost just before shift close must
+  replay the original result, and the same tenant-wide key racing across branches must become an
+  idempotency conflict rather than a unique-constraint 500. Authentication, current permission and
+  both PIN checks still happen at the route boundary on every retry.
 - **A keyboard-wedge scan is globally captured only after a positive configured prefix.** Timing
   and focus are not proof that input came from a Bluetooth HID scanner. Camera/manual/HID sources
   share the same explicit context router and serial queue; scan context never grants permission.

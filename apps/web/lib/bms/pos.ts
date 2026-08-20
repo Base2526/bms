@@ -1036,6 +1036,7 @@ export async function closePosShift(input: {
   | { status: "CLOSED"; shift: PosShift; partialReturnCashOut: number; cashIn: number; cashOut: number }
   | { status: "NOT_OPEN" }
   | { status: "PENDING_REFUNDS"; count: number; amount: number }
+  | { status: "PENDING_EXPENSES"; count: number; amount: number }
 > {
   const client = await getClient();
   try {
@@ -1065,6 +1066,23 @@ export async function closePosShift(input: {
         status: "PENDING_REFUNDS",
         count: Number(pendingRefunds.rows[0].count),
         amount: Number(pendingRefunds.rows[0].amount),
+      };
+    }
+
+    // เบิกเงินไปซื้อของแล้วต้องกลับมาลงยอดจริง/เงินทอนก่อนปิดกะ ไม่เช่นนั้น
+    // cash drawer จะปิดได้ แต่รายงานค่าใช้จ่ายของวันนั้นยังไม่มีคำตอบว่าใช้จริงเท่าไร
+    const pendingExpenses = await client.query<{ count: string; amount: string }>(
+      `SELECT COUNT(*)::text AS count, COALESCE(SUM(advanced_amount), 0)::text AS amount
+         FROM bms_pos_expenses
+        WHERE tenant_id = $1 AND shift_id = $2 AND status = 'OPEN'`,
+      [input.tenantId, input.shiftId]
+    );
+    if (Number(pendingExpenses.rows[0]?.count ?? 0) > 0) {
+      await client.query("ROLLBACK");
+      return {
+        status: "PENDING_EXPENSES",
+        count: Number(pendingExpenses.rows[0].count),
+        amount: Number(pendingExpenses.rows[0].amount),
       };
     }
 
@@ -3421,7 +3439,7 @@ export async function recordCashMovement(input: {
  * เงินสดที่ "ควรอยู่" ในลิ้นชักตอนนี้ — สูตรเดียวกับตอนปิดกะเป๊ะ ๆ
  * ถ้าสองที่คิดต่างกัน ตัวเลขที่จอเตือนตอนถอนเงินจะไม่ตรงกับที่ปิดกะฟ้อง
  */
-async function drawerExpectedInTx(
+export async function drawerExpectedInTx(
   client: PoolClient, tenantId: string, shiftId: string, openingFloat: number
 ): Promise<number> {
   const res = await client.query<{ cash_sales: string; cash_refunds: string; cash_in: string; cash_out: string }>(
@@ -3564,6 +3582,17 @@ export type PosShiftReport = {
   cashIn: number;
   cashOut: number;
   cashRefunds: number;
+  /** ค่าใช้จ่ายที่ปิดยอดแล้วเท่านั้น; ไม่เอาการนำฝากธนาคาร/ย้ายเงินมาปน */
+  expenseCount: number;
+  expenseTotal: number;
+  /** ค่าใช้จ่ายที่เจ้าของสำรองจ่ายเอง ไม่ได้ออกจากลิ้นชัก */
+  personalExpenseCount: number;
+  personalExpenseTotal: number;
+  /** ค่าใช้จ่ายที่หักจากกระเป๋าเงินสดย่อยของสาขา ไม่ได้ออกจากลิ้นชัก */
+  pettyCashExpenseCount: number;
+  pettyCashExpenseTotal: number;
+  openExpenseCount: number;
+  openExpenseAmount: number;
   /** จำนวนครั้งที่เปิดลิ้นชักโดยไม่ขาย (8.0) — เปิดถี่ผิดปกติคือสัญญาณที่ต้องดู */
   noSaleCount: number;
   /**
@@ -3603,7 +3632,7 @@ export async function getPosShiftReport(
 
   // บิลที่ถูก void ต้องออกจากยอดขายทุกตัวเลข ไม่ใช่แค่ไม่นับใบ — ไม่งั้นยอดขาย
   // ของกะจะไม่ตรงกับเงินที่นับได้ แล้วผู้จัดการจะเซ็นรับด้วยตัวเลขที่ผิด
-  const [sales, methods, cashiers, movements, returns, noSales, vat] = await Promise.all([
+  const [sales, methods, cashiers, movements, returns, expenses, noSales, vat] = await Promise.all([
     query<any>(
       `SELECT COUNT(*) FILTER (WHERE voided_at IS NULL)::text AS bills,
               COALESCE(SUM(total_amount) FILTER (WHERE voided_at IS NULL), 0) AS sales,
@@ -3657,13 +3686,30 @@ export async function getPosShiftReport(
       [tenantId, shiftId]
     ),
     query<any>(
+      `SELECT COUNT(*) FILTER (WHERE status = 'SETTLED')::text AS settled_count,
+              COALESCE(SUM(actual_amount) FILTER (WHERE status = 'SETTLED'), 0) AS settled_total,
+              COUNT(*) FILTER (WHERE status = 'SETTLED' AND funding_source = 'PERSONAL')::text AS personal_count,
+              COALESCE(SUM(actual_amount) FILTER (
+                WHERE status = 'SETTLED' AND funding_source = 'PERSONAL'
+              ), 0) AS personal_total,
+              COUNT(*) FILTER (WHERE status = 'SETTLED' AND funding_source = 'PETTY_CASH')::text AS petty_cash_count,
+              COALESCE(SUM(actual_amount) FILTER (
+                WHERE status = 'SETTLED' AND funding_source = 'PETTY_CASH'
+              ), 0) AS petty_cash_total,
+              COUNT(*) FILTER (WHERE status = 'OPEN')::text AS open_count,
+              COALESCE(SUM(advanced_amount) FILTER (WHERE status = 'OPEN'), 0) AS open_amount
+         FROM bms_pos_expenses
+        WHERE tenant_id = $1 AND shift_id = $2`,
+      [tenantId, shiftId]
+    ),
+    query<any>(
       `SELECT COUNT(*)::text AS n FROM bms_pos_no_sales WHERE tenant_id = $1 AND shift_id = $2`,
       [tenantId, shiftId]
     ),
     getVatSettings(tenantId),
   ]);
 
-  const s = sales.rows[0], m = movements.rows[0], r = returns.rows[0];
+  const s = sales.rows[0], m = movements.rows[0], r = returns.rows[0], e = expenses.rows[0];
   const cashSales = Number(methods.rows.find((x: any) => x.method === "CASH")?.amount ?? 0);
   const cashIn = Number(m.cash_in), cashOut = Number(m.cash_out);
   const cashRefunds = Number(r.cash_refunds ?? 0);
@@ -3692,6 +3738,14 @@ export async function getPosShiftReport(
     cashIn,
     cashOut,
     cashRefunds,
+    expenseCount: Number(e.settled_count ?? 0),
+    expenseTotal: Number(e.settled_total ?? 0),
+    personalExpenseCount: Number(e.personal_count ?? 0),
+    personalExpenseTotal: Number(e.personal_total ?? 0),
+    pettyCashExpenseCount: Number(e.petty_cash_count ?? 0),
+    pettyCashExpenseTotal: Number(e.petty_cash_total ?? 0),
+    openExpenseCount: Number(e.open_count ?? 0),
+    openExpenseAmount: Number(e.open_amount ?? 0),
     noSaleCount: Number(noSales.rows[0]?.n ?? 0),
     // กะที่ปิดแล้วใช้ตัวเลขที่บันทึกไว้ตอนปิด ไม่คิดใหม่ — คิดใหม่แล้วรายงานที่พิมพ์
     // วันนี้จะไม่ตรงกับกระดาษที่เซ็นไปเมื่อวาน ถ้ามีใครแก้ข้อมูลย้อนหลัง

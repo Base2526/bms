@@ -47,6 +47,13 @@ import {
   verifyCashierPin,
   voidPosSale,
 } from "../apps/web/lib/bms/pos.ts";
+import {
+  createPosExpense,
+  fundPosPettyCash,
+  getPosPettyCashWallet,
+  listPosExpenses,
+  settlePosExpense,
+} from "../apps/web/lib/bms/posExpenses.ts";
 
 const TAG = "pos-shiftops-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -57,9 +64,15 @@ let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
+let approverId = "";
 let shiftId = "";
 let soldOrderId = "";
 let parkedId = "";
+let initialPettyCashBalance = 0;
+let initialPettyCashWalletExisted = false;
+let directExpenseId = "";
+let advanceExpenseId = "";
+const transientBranchIds: string[] = [];
 
 const key = (n: string) => `${TAG}-${n}-${process.pid}`;
 
@@ -112,6 +125,13 @@ test("setup: shop, product, register, cashier PIN", async () => {
   );
   assert.ok(admin.rows[0], "ต้องมี Administrator อย่างน้อย 1 คน");
   cashierId = admin.rows[0].id;
+  approverId = (await query<{ id: string }>(
+    `INSERT INTO users (name, email, role, password_hash, fake_test, tenant_id, role_id)
+     SELECT $2, $3, u.role, u.password_hash, TRUE, u.tenant_id, u.role_id
+       FROM users u WHERE u.tenant_id = $1 AND u.id = $4
+     RETURNING id`,
+    [tenantId, `${TAG} approver`, `${TAG}-${process.pid}@example.invalid`, cashierId]
+  )).rows[0].id;
   await setCashierPin(tenantId, cashierId, PIN);
 });
 
@@ -203,6 +223,238 @@ test("a movement with no reason is refused", async () => {
     reason: "  ", actorUserId: cashierId, idempotencyKey: key("cash-no-reason"),
   });
   assert.equal(res.status, "INVALID");
+});
+
+// ---- ค่าใช้จ่ายเงินสดย่อย --------------------------------------------
+
+test("direct expense and advance settlement share the drawer ledger atomically", async () => {
+  const direct = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", category: "INGREDIENTS",
+    description: "ค่าน้ำแข็ง", payee: "ร้านน้ำแข็ง", amount: 100,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-direct"),
+  });
+  assert.equal(direct.status, "RECORDED", JSON.stringify(direct));
+  if (direct.status === "RECORDED") directExpenseId = direct.expense.id;
+
+  const advance = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "ADVANCE", category: "INGREDIENTS",
+    description: "เบิกซื้อน้ำตาล", amount: 200,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-advance"),
+  });
+  assert.equal(advance.status, "RECORDED", JSON.stringify(advance));
+  if (advance.status !== "RECORDED") return;
+  advanceExpenseId = advance.expense.id;
+
+  const pendingClose = await closePosShift({
+    tenantId, shiftId, closedBy: cashierId, countedCash: 0,
+  });
+  assert.equal(pendingClose.status, "PENDING_EXPENSES");
+
+  const settled = await settlePosExpense({
+    tenantId, deviceId, shiftId, expenseId: advance.expense.id, actualAmount: 150,
+    receiptRef: "RCPT-TEST", actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-settle"),
+  });
+  assert.equal(settled.status, "SETTLED", JSON.stringify(settled));
+  if (settled.status === "SETTLED") {
+    assert.equal(settled.expense.returnedAmount, 50);
+    assert.equal(settled.expense.extraCashOut, 0);
+  }
+  const replay = await settlePosExpense({
+    tenantId, deviceId, shiftId, expenseId: advance.expense.id, actualAmount: 150,
+    receiptRef: "RCPT-TEST", actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-settle"),
+  });
+  assert.equal(replay.status, "SETTLED");
+  assert.equal(replay.status === "SETTLED" ? replay.replayed : false, true);
+
+  const extraAdvance = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "ADVANCE", category: "TRANSPORT",
+    description: "เบิกค่าน้ำมัน", amount: 50,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-advance-extra"),
+  });
+  assert.equal(extraAdvance.status, "RECORDED", JSON.stringify(extraAdvance));
+  if (extraAdvance.status !== "RECORDED") return;
+  const movesBeforeRejectedSettle = await listCashMovements(tenantId, shiftId);
+  const rejectedSettle = await settlePosExpense({
+    tenantId, deviceId, shiftId, expenseId: extraAdvance.expense.id, actualAmount: 99999,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-settle-overdraw"),
+  });
+  assert.equal(rejectedSettle.status, "WOULD_OVERDRAW");
+  assert.equal((await listCashMovements(tenantId, shiftId)).length, movesBeforeRejectedSettle.length,
+    "settlement ที่ถอนเกินต้อง rollback โดยไม่ทิ้ง movement");
+
+  const extraSettled = await settlePosExpense({
+    tenantId, deviceId, shiftId, expenseId: extraAdvance.expense.id, actualAmount: 80,
+    receiptRef: "RCPT-EXTRA-TEST", actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-settle-extra"),
+  });
+  assert.equal(extraSettled.status, "SETTLED", JSON.stringify(extraSettled));
+  if (extraSettled.status === "SETTLED") {
+    assert.equal(extraSettled.expense.returnedAmount, 0);
+    assert.equal(extraSettled.expense.extraCashOut, 30);
+  }
+
+  const expenses = await listPosExpenses(tenantId, shiftId, deviceId);
+  assert.equal(expenses.length, 3);
+  assert.equal(expenses.reduce((sum, expense) => sum + (expense.actualAmount ?? 0), 0), 330);
+});
+
+test("sole owner can record personal funds without changing the drawer", async () => {
+  const drawerBefore = (await getPosShiftReport(tenantId, shiftId))!.expectedCash;
+  const before = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_cash_movements
+      WHERE tenant_id = $1 AND shift_id = $2`,
+    [tenantId, shiftId]
+  );
+  const personal = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", fundingSource: "PERSONAL",
+    category: "PACKAGING", description: "เจ้าของซื้อถุงด้วยเงินส่วนตัว",
+    amount: 75, receiptRef: "PERSONAL-RCPT-TEST", actorUserId: cashierId,
+    idempotencyKey: key("expense-personal"),
+  });
+  assert.equal(personal.status, "RECORDED", JSON.stringify(personal));
+  if (personal.status !== "RECORDED") return;
+  assert.equal(personal.expense.fundingSource, "PERSONAL");
+  assert.equal(personal.expense.approvedByName, null);
+  assert.equal(personal.drawerAfter, drawerBefore, "เงินส่วนตัวต้องไม่ลดเงินในลิ้นชัก");
+
+  const after = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_cash_movements
+      WHERE tenant_id = $1 AND shift_id = $2`,
+    [tenantId, shiftId]
+  );
+  assert.equal(after.rows[0].n, before.rows[0].n, "เงินส่วนตัวต้องไม่สร้าง drawer movement");
+
+  const replay = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", fundingSource: "PERSONAL",
+    category: "PACKAGING", description: "เจ้าของซื้อถุงด้วยเงินส่วนตัว",
+    amount: 75, receiptRef: "PERSONAL-RCPT-TEST", actorUserId: cashierId,
+    idempotencyKey: key("expense-personal"),
+  });
+  assert.equal(replay.status, "RECORDED");
+  assert.equal(replay.status === "RECORDED" ? replay.replayed : false, true);
+
+  const noEvidence = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", fundingSource: "PERSONAL",
+    category: "OTHER", description: "ไม่มีหลักฐาน", amount: 10,
+    actorUserId: cashierId, idempotencyKey: key("expense-personal-no-evidence"),
+  });
+  assert.equal(noEvidence.status, "INVALID");
+});
+
+test("branch petty cash funds and spends outside the drawer with an append-only balance", async () => {
+  const initialWallet = await query<{ balance: string }>(
+    `SELECT balance FROM bms_pos_petty_cash_wallets WHERE tenant_id = $1 AND location_id = $2`,
+    [tenantId, locationId]
+  );
+  initialPettyCashWalletExisted = Boolean(initialWallet.rowCount);
+  initialPettyCashBalance = Number(initialWallet.rows[0]?.balance ?? 0);
+  const tooLarge = await fundPosPettyCash({
+    tenantId, locationId, source: "OWNER_PERSONAL", amount: 10_000_000_000,
+    reason: "ยอดเกินขนาดคอลัมน์", evidenceRef: "PETTY-TOO-LARGE",
+    actorUserId: cashierId, idempotencyKey: key("petty-fund-too-large"),
+  });
+  assert.equal(tooLarge.status, "INVALID", "ยอดเกิน NUMERIC(12,2) ต้องไม่หลุดไปเป็น database 500");
+  const before = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_cash_movements
+      WHERE tenant_id = $1 AND shift_id = $2`,
+    [tenantId, shiftId]
+  );
+  const funded = await fundPosPettyCash({
+    tenantId, locationId, source: "OWNER_PERSONAL", amount: 300,
+    reason: "ตั้งเงินสดย่อยประจำวัน", evidenceRef: "PETTY-FUND-TEST",
+    actorUserId: cashierId, idempotencyKey: key("petty-fund"),
+  });
+  assert.equal(funded.status, "FUNDED", JSON.stringify(funded));
+  assert.equal(funded.status === "FUNDED" ? funded.balanceAfter : null, initialPettyCashBalance + 300);
+
+  const replay = await fundPosPettyCash({
+    tenantId, locationId, source: "OWNER_PERSONAL", amount: 300,
+    reason: "ตั้งเงินสดย่อยประจำวัน", evidenceRef: "PETTY-FUND-TEST",
+    actorUserId: cashierId, idempotencyKey: key("petty-fund"),
+  });
+  assert.equal(replay.status, "FUNDED");
+  assert.equal(replay.status === "FUNDED" ? replay.replayed : false, true);
+
+  const expense = await createPosExpense({
+    tenantId, locationId, deviceId, shiftId, kind: "DIRECT", fundingSource: "PETTY_CASH",
+    category: "INGREDIENTS", description: "ซื้อน้ำตาลจากเงินสดย่อย",
+    amount: 80, receiptRef: "PETTY-RCPT-TEST", actorUserId: cashierId,
+    idempotencyKey: key("expense-petty"),
+  });
+  assert.equal(expense.status, "RECORDED", JSON.stringify(expense));
+  assert.equal(expense.status === "RECORDED" ? expense.pettyCashAfter : null, initialPettyCashBalance + 220);
+
+  const wallet = await getPosPettyCashWallet(tenantId, locationId);
+  assert.equal(wallet.balance, initialPettyCashBalance + 220);
+  assert.ok(wallet.entries.some((entry) => entry.direction === "IN" && entry.evidenceRef === "PETTY-FUND-TEST"));
+  assert.ok(wallet.entries.some((entry) => entry.direction === "OUT" && entry.evidenceRef === "PETTY-RCPT-TEST"));
+
+  const overdraw = await createPosExpense({
+    tenantId, locationId, deviceId, shiftId, kind: "DIRECT", fundingSource: "PETTY_CASH",
+    category: "OTHER", description: "จ่ายเกินวงเงิน", amount: initialPettyCashBalance + 999,
+    receiptRef: "PETTY-OVERDRAW-TEST", actorUserId: cashierId,
+    idempotencyKey: key("expense-petty-overdraw"),
+  });
+  assert.equal(overdraw.status, "PETTY_CASH_INSUFFICIENT");
+  assert.equal(overdraw.status === "PETTY_CASH_INSUFFICIENT" ? overdraw.available : null, initialPettyCashBalance + 220);
+
+  const after = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_cash_movements
+      WHERE tenant_id = $1 AND shift_id = $2`,
+    [tenantId, shiftId]
+  );
+  assert.equal(after.rows[0].n, before.rows[0].n, "เงินสดย่อยต้องไม่สร้าง drawer movement");
+
+  await assert.rejects(
+    query(
+      `INSERT INTO bms_pos_petty_cash_ledger
+         (tenant_id, location_id, direction, source, amount, balance_after, reason,
+          evidence_ref, actor_user_id, idempotency_key, request_hash)
+       VALUES ($1,$2,'IN','EXPENSE',1,$3,'invalid shape','TEST',$4,$5,$6)`,
+      [tenantId, locationId, initialPettyCashBalance, cashierId,
+        key("petty-invalid-shape"), "a".repeat(64)]
+    ),
+    /bms_pos_petty_cash_ledger_shape_check/,
+    "database ต้องปฏิเสธ IN ที่อ้างว่าเป็น EXPENSE แม้ caller ไม่ผ่าน service"
+  );
+});
+
+test("tenant-wide idempotency serializes the same funding key across branches", async () => {
+  const suffix = crypto.randomUUID().slice(0, 8);
+  for (const n of [1, 2]) {
+    const branch = await query<{ id: string }>(
+      `INSERT INTO bms_locations (tenant_id, code, name, branch_code, active, is_head_office)
+       VALUES ($1,$2,$3,$4,TRUE,FALSE) RETURNING id`,
+      [tenantId, `${TAG}-${suffix}-${n}`, `FAKE ${TAG} idempotency ${n}`, `${suffix}-${n}`]
+    );
+    transientBranchIds.push(branch.rows[0].id);
+  }
+  const sharedKey = key("petty-cross-branch");
+  const inputs = transientBranchIds.map((branchId, index) => ({
+    tenantId, locationId: branchId, source: "OWNER_PERSONAL" as const, amount: 40,
+    reason: `เติมพร้อมกันสาขา ${index + 1}`, evidenceRef: `CROSS-BRANCH-${index + 1}`,
+    actorUserId: cashierId, idempotencyKey: sharedKey,
+  }));
+  const results = await Promise.all(inputs.map((input) => fundPosPettyCash(input)));
+  assert.deepEqual(
+    results.map((result) => result.status).sort(),
+    ["FUNDED", "IDEMPOTENCY_CONFLICT"],
+    "key เดียวกันข้ามสาขาต้องมีผู้ชนะคนเดียวและอีกคำขอเป็น conflict ไม่ใช่ database 500"
+  );
+
+  const winner = results.findIndex((result) => result.status === "FUNDED");
+  await query(`UPDATE bms_locations SET active = FALSE WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, inputs[winner].locationId]);
+  const replayAfterDeactivate = await fundPosPettyCash(inputs[winner]);
+  assert.equal(replayAfterDeactivate.status, "FUNDED",
+    "retry ที่ commit แล้วต้องคืนผลเดิม แม้สาขาถูกปิดภายหลัง");
+  assert.equal(replayAfterDeactivate.status === "FUNDED" ? replayAfterDeactivate.replayed : false, true);
 });
 
 // ---- ขาย แล้ว void ----------------------------------------------------
@@ -298,8 +550,15 @@ test("the shift report keeps the void out of sales and out of returns", async ()
   assert.equal(report!.salesTotal, 0, "บิลเดียวของกะนี้ถูกยกเลิก ยอดขายต้องเป็น 0");
   assert.equal(report!.billCount, 0);
   assert.equal(report!.returnCount, 0, "void ต้องไม่ถูกนับเป็นการคืนสินค้า");
-  assert.equal(report!.cashIn, 500);
-  assert.equal(report!.cashOut, 300);
+  assert.equal(report!.cashIn, 550);
+  assert.equal(report!.cashOut, 680);
+  assert.equal(report!.expenseCount, 5);
+  assert.equal(report!.expenseTotal, 485);
+  assert.equal(report!.personalExpenseCount, 1);
+  assert.equal(report!.personalExpenseTotal, 75);
+  assert.equal(report!.pettyCashExpenseCount, 1);
+  assert.equal(report!.pettyCashExpenseTotal, 80);
+  assert.equal(report!.openExpenseCount, 0);
   assert.equal(await getPosShiftReport(tenantId, shiftId, crypto.randomUUID()), null,
     "เครื่องอื่นที่รู้ shift UUID ต้องอ่านรายงานนี้ไม่ได้");
 });
@@ -372,8 +631,8 @@ test("blind close hides expected cash while the shift is open, everywhere it cou
   assert.equal(report!.expectedCash, null, "คนนับต้องไม่เห็นคำตอบก่อนกรอก");
   assert.equal(report!.expectedCashHidden, true);
   // ข้อเท็จจริงที่ไม่ใช่คำตอบยังต้องเห็นได้ ไม่งั้นรายงานอธิบายอะไรไม่ได้เลย
-  assert.equal(report!.cashIn, 500);
-  assert.equal(report!.cashOut, 300);
+  assert.equal(report!.cashIn, 550);
+  assert.equal(report!.cashOut, 680);
 
   // ช่องรั่วที่ตั้งใจปิด: นำเงินเข้า ฿1 แล้วอ่าน drawerAfter = อ่านคำตอบได้ทั้งหมด
   const move = await recordCashMovement({
@@ -419,6 +678,35 @@ test("expected cash agrees between the report and closePosShift", async () => {
   assert.equal(closed.shift.cashVariance, -50);
 });
 
+test("expense retries return their committed result after the shift has closed", async () => {
+  const directReplay = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", category: "INGREDIENTS",
+    description: "ค่าน้ำแข็ง", payee: "ร้านน้ำแข็ง", amount: 100,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-direct"),
+  });
+  assert.equal(directReplay.status, "RECORDED", JSON.stringify(directReplay));
+  assert.equal(directReplay.status === "RECORDED" ? directReplay.replayed : false, true);
+  assert.equal(directReplay.status === "RECORDED" ? directReplay.expense.id : "", directExpenseId);
+
+  const settleReplay = await settlePosExpense({
+    tenantId, deviceId, shiftId, expenseId: advanceExpenseId, actualAmount: 150,
+    receiptRef: "RCPT-TEST", actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-settle"),
+  });
+  assert.equal(settleReplay.status, "SETTLED", JSON.stringify(settleReplay));
+  assert.equal(settleReplay.status === "SETTLED" ? settleReplay.replayed : false, true);
+
+  const conflict = await createPosExpense({
+    tenantId, deviceId, shiftId, kind: "DIRECT", category: "INGREDIENTS",
+    description: "ค่าน้ำแข็ง", payee: "ร้านน้ำแข็ง", amount: 101,
+    actorUserId: cashierId, approvedByUserId: approverId,
+    idempotencyKey: key("expense-direct"),
+  });
+  assert.equal(conflict.status, "IDEMPOTENCY_CONFLICT",
+    "key เดิมแต่ payload ต่างต้องเป็น conflict แม้กะปิดแล้ว");
+});
+
 test("parallel wrong PIN attempts still reach the lock threshold", async () => {
   await setCashierPin(tenantId, cashierId, PIN);
   const attempts = await Promise.all(
@@ -455,6 +743,29 @@ test("teardown: remove every row this suite created", async () => {
     await query(`DELETE FROM bms_orders WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [tenantId, orderIds]);
   }
   await query(`DELETE FROM bms_pos_no_sales WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
+  await query(`DELETE FROM bms_pos_expenses WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
+  await query(
+    `DELETE FROM bms_pos_petty_cash_ledger
+      WHERE tenant_id = $1 AND location_id = $2 AND idempotency_key LIKE $3`,
+    [tenantId, locationId, `%${TAG}%`]
+  );
+  if (transientBranchIds.length) {
+    await query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = $1 AND location_id = ANY($2::uuid[])`,
+      [tenantId, transientBranchIds]);
+    await query(`DELETE FROM bms_pos_petty_cash_wallets WHERE tenant_id = $1 AND location_id = ANY($2::uuid[])`,
+      [tenantId, transientBranchIds]);
+    await query(`DELETE FROM bms_locations WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [tenantId, transientBranchIds]);
+  }
+  if (initialPettyCashWalletExisted) {
+    await query(
+      `UPDATE bms_pos_petty_cash_wallets SET balance = $3, updated_at = now()
+        WHERE tenant_id = $1 AND location_id = $2`,
+      [tenantId, locationId, initialPettyCashBalance]
+    );
+  } else {
+    await query(`DELETE FROM bms_pos_petty_cash_wallets WHERE tenant_id = $1 AND location_id = $2`, [tenantId, locationId]);
+  }
   await query(`DELETE FROM bms_pos_cash_movements WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_parked_sales WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_shifts WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
@@ -462,4 +773,5 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM users WHERE tenant_id = $1 AND id = $2 AND fake_test = TRUE`, [tenantId, approverId]);
 });
