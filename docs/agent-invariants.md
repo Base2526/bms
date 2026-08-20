@@ -241,7 +241,7 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 ## POS and tax
 
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
-shift report) owns the counter sale/return/refund model;
+shift report, and `9.5` for retry-safe drawer movements) owns the counter sale/return/refund model;
 `lib/bms/{taxDocuments,vat}.ts` (`7.88`, `7.89`, `7.95`) own Thai tax-invoice issuance and credit
 notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/business detail:
 [../docs/business/pos.md](business/pos.md).
@@ -259,17 +259,39 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **Settlement is one atomic transaction.** Order → `COMPLETED`, stock consumption, FEFO lot
   assignment (`bms_order_item_lots`), movement rows, and tax document issuance commit together or
   not at all.
-- **Idempotency keys gate every write path** (sale, return, refund settlement). A key tied to a
-  cancelled/returned terminal state cannot be reused as a new sale; a `PENDING`/`PAID` sale can
-  resume its own settlement transaction; a completed key replays its stored result rather than
-  re-running the write.
+- **Idempotency keys gate every write path** (sale, return, refund settlement, and — since `9.5` —
+  standalone drawer cash in/out). A key tied to a cancelled/returned terminal state cannot be reused
+  as a new sale; a `PENDING`/`PAID` sale can resume its own settlement transaction; a completed key
+  replays its stored result rather than re-running the write. `recordCashMovement()` checks the
+  replay row before the overdraw check so a lost response never gets re-evaluated against a drawer
+  balance that has since moved.
+- **Serial-number checks run once, across the whole bill, not per line.** The same serial split
+  across two lines is caught by dedup'ing all serials on the bill together, not line-by-line; the
+  required count always comes from the server-side pack/base-qty conversion, never a client-supplied
+  `baseQty`. The write that flips a serial to `SOLD` inside the sale transaction is a conditional
+  `ON CONFLICT ... WHERE status = 'RETURNED'`, so a concurrent sale that already claimed the serial
+  cannot be silently overwritten — the loser gets `SERIAL_ALREADY_SOLD` and its reserved order is
+  cancelled rather than left holding stock nobody can sell. `settleDepositSale()` derives the
+  required serial lines from the reserved order's own items, never from a caller-supplied list, so a
+  short/empty submission cannot complete a sale of serial-tracked goods with no serial recorded.
 - **Refunds split receiving goods from returning money.** `bms_pos_refund_allocations`: cash
   finishes immediately, non-cash stays `PENDING` until a user with `payment.refund` records the
-  external reference. A shift cannot close while any refund allocation from it is pending.
+  external reference. A shift cannot close while any refund allocation from it is pending. A single
+  return with a split-payment refund (cash + card) must be counted once, not once per allocation row
+  — the shift report reads allocation totals from a subquery rather than joining them onto the
+  per-return aggregate, which used to multiply both the return count and refund amount by the number
+  of allocations.
 - **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
   changes the VAT base.
+- **The shift report is scoped to the requesting device, and to revenue-bearing order statuses.**
+  `getPosShiftReport()` takes an optional `deviceId` and returns `null` if the shift belongs to a
+  different device — a register cannot read another device's shift by guessing its UUID even though
+  both share a tenant. Its sales/bill-count query filters directly to
+  `status IN ('COMPLETED','RETURNED') AND voided_at IS NULL` instead of summing every order on the
+  shift and subtracting voids afterward, so a `PENDING` deposit or a `CANCELLED` order sharing the
+  shift can no longer leak into `salesTotal`/`billCount`.
 - **e-Tax submission (`7.94`) is a separate, gated background queue** — issuing a tax document does
   not submit it to the Revenue Department by itself. `processEtaxQueue()` drives
   `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded retry/backoff, gated by

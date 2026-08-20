@@ -287,13 +287,13 @@ export const bmsPosResolvers = {
     async bmsSetCashierPin(_p: unknown, args: { userId: ID_; pin?: string | null }, ctx: any) {
       await requirePermission(ctx, "pos.pin.manage");
       const tenantId = getTenantId(ctx);
+      const actorUserId = String(requireAuth(ctx).author_id);
       try {
-        if (args.pin) await setCashierPin(tenantId, args.userId, args.pin);
-        else await clearCashierPin(tenantId, args.userId);
+        if (args.pin) await setCashierPin(tenantId, args.userId, args.pin, actorUserId);
+        else await clearCashierPin(tenantId, args.userId, actorUserId);
       } catch (e: any) {
         throw new GraphQLError(e?.message || "ตั้ง PIN ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      await audit(ctx, args.pin ? "pos.pin.set" : "pos.pin.clear", args.userId);
       return true;
     },
 
@@ -307,7 +307,6 @@ export const bmsPosResolvers = {
       } catch (e: any) {
         throw new GraphQLError(e?.message || "ตั้งค่าบัญชีไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      await audit(ctx, args.posOnly ? "pos.staff.pos_only_on" : "pos.staff.pos_only_off", args.userId);
       return true;
     },
 

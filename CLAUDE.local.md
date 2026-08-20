@@ -403,6 +403,38 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     ก่อนเปิดสาขาที่สองของร้านไหนก็ตาม
   · verify แล้ว: สร้าง/แก้/reject รหัสซ้ำ/reject `00000`/permission gate (Manager ผ่าน, Sales ไม่ผ่าน)/
     audit log เขียนถูกต้อง — ยังไม่ได้เขียนเป็นเทสอัตโนมัติ (verify มือผ่าน service function ตรง ๆ)
+- **`9.5__bms_pos_cash_movement_idempotency.sql` (idempotency key ให้เงินเข้า/ออกลิ้นชักแบบเดี่ยว)
+  เขียนแล้วบน branch `codex/fix-pos-recheck-findings` (2026-08-20) — ⚠️ **ยังไม่ได้ apply เข้า dev DB
+  หรือรันเทสจริงในรอบนี้** (เครื่องที่แก้ไม่มี Postgres/`.env.dev` ต่ออยู่) ต้อง apply +
+  รัน `scripts/pos-shift-ops-db-contract.test.mts` ให้ผ่านก่อนเชื่อว่าใช้ได้จริง ก่อน apply เข้า
+  production ตามปกติ
+  · **ต้นเหตุ**: `recordCashMovement()` ไม่มี idempotency key เลย ต่างจากการขาย/คืน/มัดจำที่มีมาตั้งแต่
+    ต้น — กดปุ่มซ้ำเพราะเน็ตช้าบันทึกเงินเข้า/ออกซ้ำสองรอบ สูตร "ยอดที่ควรมีในลิ้นชัก" จึงผิดโดยไม่มีใคร
+    รู้จนนับปิดกะไม่ตรง · แก้ด้วยคอลัมน์ `idempotency_key` + unique index ต่อร้าน (คู่กับ path เดิมที่มี
+    `bms_pos_deposits`/`bms_pos_blind_returns` ทำไว้แล้ว) แคชเชียร์ฝั่ง POS UI (`app/(pos)/pos/page.tsx`)
+    สร้าง UUID ใหม่ต่อการกดหนึ่งครั้ง ไม่ใช่ต่อ signature ของคำขอ
+  · **แก้ร่วมในคอมมิตเดียวกัน (recheck findings อื่นที่ไม่ต้อง migration ใหม่)**:
+    1. เลขเครื่อง (`8.3`) เดิมตรวจซ้ำแค่ในบรรทัดเดียว ตอนนี้ตรวจซ้ำทั้งบิล (สอง SKU/บรรทัดยิง serial
+       เดียวกันจับได้) และจำนวนที่ต้องมีอ่านจาก pack/base_qty ในฐานข้อมูลเสมอ ไม่เชื่อ `baseQty` ที่
+       browser ส่งมา (ปลอมเป็น 1 เพื่อข้าม `SERIAL_REQUIRED` ได้เดิม)
+    2. เขียน serial `SOLD` ในทรานแซกชันขายเปลี่ยนจาก `ON CONFLICT DO UPDATE` เฉย ๆ เป็นมีเงื่อนไข
+       `WHERE status = 'RETURNED'` — สอง request ที่แข่งกันขาย serial เดียวกันพร้อมกันเคยผ่านทั้งคู่
+       ได้ (precheck เห็นว่าง) ตอนนี้ผู้แพ้ได้ `SERIAL_ALREADY_SOLD` แล้ว `recordPosSale` ยกเลิกบิลที่จอง
+       สต็อกไว้แทนทิ้งค้าง
+    3. `settleDepositSale` (บิลมัดจำ) ไม่เคยตรวจ serial เลย — ปิดมัดจำสินค้าบังคับเลขเครื่องได้โดยไม่มี
+       serial บันทึก ตอนนี้อ่านจำนวนที่ต้องมีจาก order item ของบิลจองเองก่อนอนุญาตให้ settle
+    4. รายงานกะ (`getPosShiftReport`) 3 บั๊ก: (ก) ไม่ scope ตาม device — เครื่องอื่นที่รู้ shift UUID
+       อ่านรายงานเครื่องอื่นในร้านเดียวกันได้ (ข) ยอดขาย/จำนวนบิลรวมทุก status แล้วหักลบ void ทีหลัง
+       ทำให้บิล `PENDING`/`CANCELLED` ที่ผูก shift เดียวกันหลุดเข้ายอดขาย (ค) การคืนที่ refund แบบ
+       split (เงินสด+บัตร) ถูกนับซ้ำตามจำนวนแถว allocation เพราะ JOIN ตรงเข้ากับ aggregate
+    5. `parsePosExtraLines`/`createOrder` extra line (`8.6`) เดิม clamp qty เพี้ยน (`0`, ลบ, ทศนิยม)
+       ขึ้นเป็น 1 เงียบ ๆ ตอนนี้ทิ้งแถวนั้นแทนเหมือนแถวไม่มี label/amount
+    6. `setCashierPin`/`clearCashierPin`/`setCashierAccountMode` ย้าย audit log จาก GraphQL resolver
+       (หลัง commit) เข้าไปเขียนในทรานแซกชันเดียวกับการเขียน `users` ตรงกับกฎ "audit ต้องอยู่ใน
+       transaction เดียวกับการเขียนที่สำคัญ" ใน [CLAUDE.md](CLAUDE.md)
+  · เทสที่แก้/เพิ่มคู่กัน: `scripts/pos-contract.test.mts`, `scripts/pos-serial-db-contract.test.mts`,
+    `scripts/pos-shift-ops-db-contract.test.mts`, `scripts/pos-blind-return-db-contract.test.mts` —
+    **ยังไม่ได้รันจริงในรอบนี้ ต้องรันตามคำสั่งชุดเดียวกับ loyalty/pos ข้างบนก่อน merge**
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

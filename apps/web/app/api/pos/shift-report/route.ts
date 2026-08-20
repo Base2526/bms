@@ -40,7 +40,8 @@ async function handleGET(req: NextRequest) {
   const shiftId = requested ?? (await getOpenPosShift(device.tenantId, device.id))?.id ?? null;
   if (!shiftId) return NextResponse.json({ error: "ไม่พบกะ" }, { status: 404 });
 
-  const report = await getPosShiftReport(device.tenantId, shiftId);
+  // เครื่องอ่านได้เฉพาะกะของตัวเอง แม้ผู้ใช้จะรู้ UUID ของกะเครื่องอื่นในร้าน
+  const report = await getPosShiftReport(device.tenantId, shiftId, device.id);
   if (!report) return NextResponse.json({ error: "ไม่พบกะ" }, { status: 404 });
   return NextResponse.json({ report });
 }

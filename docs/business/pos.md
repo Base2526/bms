@@ -226,6 +226,9 @@ Consequences that fall out of it, all intended:
 - Paying the wrong balance is refused rather than accepted, the same reasoning as `PAYMENT_MISMATCH`.
 - Taking and adding deposit payments require a stable client idempotency key. Retrying after a lost
   response returns the existing result and never inserts the same payment twice.
+- If the reserved order contains serial-tracked goods, the collecting cashier scans the physical
+  items and their serials into the cart before settlement. The server derives the required count
+  from the reserved order, and serial writes commit with payment, stock, tax and deposit completion.
 
 Two guards inside `finalizePosSale` needed adjusting rather than bypassing. It rejects a pending bill
 that already has payment rows — a sensible defence against collecting twice — and a deposit bill has
@@ -368,6 +371,11 @@ counter adds a row before typing in it. `pos.sell` is enough: charging ฿3 for 
 the money lands in the drawer that gets counted at close, and the label prints on the receipt, so the
 customer sees every line charged. That visibility is a tighter control than a permission gate.
 
+The same drop-not-fail rule now covers quantity: a row must have a positive whole-number quantity or
+it is dropped. It used to clamp anything else (`0`, a negative number, `1.5`) up to `1`, which silently
+undercharged a "3 bags" row typed as a decimal, or overcharged a `0`-quantity row a customer changed
+their mind about, rather than telling the cashier the row didn't make it onto the bill.
+
 ## Wholesale steps (8.1)
 
 The system had two pricing mechanisms and neither answered *"buy ten, get the wholesale price"*.
@@ -431,6 +439,10 @@ shifts closed short with nowhere to explain why — and a real shortage looked e
 ```
 opening float + cash taken in − cash refunds paid out + drawer cash in − drawer cash out
 ```
+
+Each standalone drawer cash-in/cash-out request also carries a stable client idempotency key (`9.5`).
+If the database commits but the response is lost, retrying returns the original movement instead of
+subtracting or adding the same cash twice.
 
 Cash **out** needs a second person: the staff member enters their own PIN, and an approver with
 `pos.cash.movement` enters theirs. Cash **in** does not — adding money to a drawer is not the fraud
@@ -554,13 +566,14 @@ will go through: two boxes of ten is twenty serials, not two. Validation happens
 `createOrder`, so a short entry costs nothing — no stock reserved, no points deducted, no coupon
 counted. Validating afterwards would mean unwinding all of it, which is the easier thing to get wrong.
 
-Duplicates are refused both ways: the same serial twice on one line (the same box scanned twice), and a
-serial already marked `SOLD`. The second matters more than it looks. Staff pick up the wrong box
+Duplicates are refused across the whole bill (including two separate lines), and a serial already
+marked `SOLD` is refused. The second matters more than it looks. Staff pick up the wrong box
 regularly, and letting it through points the warranty history at the previous customer — a mistake
 that only surfaces at the claim, when it is too late to reconstruct.
 
 Serials are written inside the transaction that closes the sale, so a committed bill can never lack
-them.
+them. The conflict write only transitions `RETURNED` back to `SOLD`; it cannot overwrite another
+concurrent sale that won the same serial first.
 
 **Serials are captured at the sale, not at goods-in.** A small shop is not going to scan fifty handsets
 into the system when a delivery arrives, but it does pick up the box at the counter. The trade-off is
@@ -662,6 +675,21 @@ A closed shift reports the `expected_cash` **stored at close**, not a fresh calc
 would let a backdated data change make today's printout disagree with the paper signed yesterday.
 The DB contract suite asserts that the report and `closePosShift()` produce the same expected cash;
 two formulas drifting apart is exactly the failure that makes the signed sheet disagree with the till.
+
+**A device can only read its own shift's report.** `GET /api/pos/shift-report` passes the requesting
+device's id into `getPosShiftReport()`, which returns nothing if the shift belongs to a different
+device — knowing another register's shift UUID is not enough to read its numbers, even inside the
+same store.
+
+**Sales and bill count come straight from the order statuses that count as revenue.** The query
+filters to `COMPLETED`/`RETURNED` orders with `voided_at IS NULL` directly, rather than summing every
+order sharing the shift and subtracting voids afterward — a still-open deposit (`PENDING`) or a
+cancelled bill sharing the shift id can no longer add itself into `salesTotal`/`billCount`.
+
+**A split-payment refund counts once.** A return refunded partly in cash and partly to a card writes
+two rows to `bms_pos_refund_allocations`. The return-count and refund-total queries read that table
+through a subquery instead of joining it onto the per-return aggregate — joining multiplied both
+numbers by the allocation count on any split refund.
 
 ## Counter screen layout
 
