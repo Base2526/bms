@@ -454,6 +454,58 @@ not know how much cash is physically present, but it does know that an amount la
 the drawer could hold is a typo — ฿99,999 keyed for ฿999 — and letting it through poisons the
 arithmetic for the rest of the shift.
 
+## Petty-cash expenses
+
+Migration `9.7` separates a real shop expense from a generic drawer movement. Paying an ice supplier
+or buying sugar is an expense; dropping cash at the bank or moving change to another register is not.
+Drawer-funded expenses move physical cash through `bms_pos_cash_movements`, while a personal-funded
+expense does not; both create a `bms_pos_expenses` business document and reach the expense total in
+the shift report.
+
+The counter supports four flows:
+
+- **Direct** — pay the supplier now. The expense is settled immediately for the amount removed from
+  the drawer.
+- **Advance** — take cash to buy something, then return and enter the actual cost. If the actual cost
+  is lower, the difference creates a drawer `IN`; if it is higher, the difference creates another
+  drawer `OUT`. The expense total is the actual cost, never the amount originally advanced.
+- **Sole owner / personal funds (`9.8`)** — an Administrator with `pos.expense.personal` can record a
+  direct expense paid from their own money. A receipt or evidence reference is mandatory. This flow
+  creates the expense and audit row but deliberately creates no drawer movement, so it needs no
+  second PIN and does not change expected cash. It is not a way to self-approve cash taken from the
+  drawer; direct/advance drawer spending still follows dual control.
+- **Branch petty-cash wallet (`9.9`)** — an Administrator with `pos.petty_cash.manage` funds a
+  per-branch wallet from owner cash or a business account and records a mandatory evidence reference.
+  A cashier with `pos.expense.create` can then pay a direct expense from the available wallet balance
+  with evidence, without a second PIN. Funding and spending are an append-only ledger outside the
+  register drawer: neither changes expected cash, and a spend that would make the wallet negative is
+  refused. This gives a one-person shop a reusable shop-funded float without pretending the same
+  person approved cash out of the till.
+
+Create and settle requests are retry-safe and write the expense row, any drawer movement(s), and
+audit rows in one tenant transaction. The acting cashier needs `pos.expense.create`; drawer-funded
+create/settle actions additionally need a distinct second person with `pos.cash.movement`. A
+personal-funded expense instead needs the actor's `pos.expense.personal`. An open advance blocks
+shift close, because closing a drawer while the actual cost and change are still unknown would make
+the expense report permanently ambiguous.
+
+The original shift id travels with create/settle retries; after current authentication, permission,
+and PIN checks, the service resolves an already-committed idempotency key before requiring the shift
+or branch to remain open. This handles the narrow but important case where the commit succeeds, the
+response is lost, and the shift closes before the register retries. Reusing the key with changed input
+is still a conflict, and tenant-wide advisory locking prevents two branches racing the same key into a
+database error.
+
+The shift report includes personal- and petty-cash-funded expenses in the shop expense total and also
+shows their count/amount separately so a manager knows which costs did not leave that shift's drawer.
+The feature records the expense, not a reimbursement payable; returning the owner's money remains a
+separate drawer-out action with a distinct approver.
+
+Categories are intentionally operational rather than an accounting chart of accounts:
+ingredients, packaging, delivery, transport, cleaning, repairs, utilities, and other. `receipt_ref`
+is optional for drawer-funded expenses and mandatory for personal- or petty-cash-funded expenses; it stores a
+receipt/invoice or evidence reference, and file upload is not implied by that field.
+
 ## Voiding a bill
 
 A void and a return end in the same place — goods back in stock, money back to the customer, points
@@ -823,12 +875,17 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 Treat every line below as a blocker unless explicitly marked as a warning:
 
-- Apply migrations through `7.98__bms_stock_transfers_and_counts.sql` on the target database
+- Apply migrations through `9.10__bms_pos_petty_cash_wallet_hardening.sql` on the target database
   (includes `7.92` cashier-only accounts, `7.93` per-size packs, `7.94` e-Tax submissions,
   `7.96` membership/tiers/points + `bms_order_discounts`, `7.97` parked bills + drawer
-  movements + void, `7.98` branch transfers + stock counts). `7.97` seeds `pos.void` and
+  movements + void, `7.98` branch transfers + stock counts, `9.0` deposits, `9.5` retry-safe
+  drawer movements, `9.6` Scan Manager/PO receipts, `9.7` petty-cash expenses, `9.8`
+  personal-funded sole-owner expenses, `9.9` the branch petty-cash wallet, and `9.10` its ledger
+  integrity constraints). `7.97` seeds `pos.void` and
   `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
-  without it those buttons 403 silently. Apply `7.98` with `psql -1`: a mid-file failure
+  without it those buttons 403 silently. `9.7` seeds `pos.expense.create` to
+  Manager/Sales/Cashier and adds the expense ledger; `9.8` seeds `pos.expense.personal` only to
+  Administrator; `9.9` seeds `pos.petty_cash.manage` only to Administrator. Apply `7.98` with `psql -1`: a mid-file failure
   leaves half its tables behind, and they have to be dropped by hand before retrying.
 - If the shop runs more than one branch, work through the branch-inventory checklist in
   [inventory.md](inventory.md#go-live-checklist-multi-branch-798) as well — `7.98` seeds
@@ -836,7 +893,8 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   to Manager only, and its two admin screens 403 silently without them.
 - Decide who may approve a manual discount (`pos.discount.approve`), a void (`pos.void`), and
   cash out of the drawer (`pos.cash.movement`). All three are "money leaves the count" actions and
-  all three demand a second person's PIN at the counter regardless of who is logged in.
+  all three demand a second person's PIN at the counter regardless of who is logged in. Petty-cash
+  expenses also use `pos.cash.movement` for their second-person approval.
 - If the loyalty program will be used: enable it at `/admin/loyalty`, set the earn/redeem rates, point
   lifetime, and per-bill discount cap, and review the three seeded tiers (Silver/Gold/Platinum are
   defaults, not a recommendation). Then schedule `POST /api/bms/loyalty/maintenance` daily —
@@ -846,7 +904,7 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 - Create at least one active location, one active paired device per register, and confirm the device
   is attached to the intended branch.
 - Set cashier PINs and verify role permissions: `pos.sell`, `pos.shift.open`, `pos.shift.close`,
-  `order.return`; supervisors settling non-cash refunds need `payment.refund`.
+  `order.return`, `pos.expense.create`; supervisors settling non-cash refunds need `payment.refund`.
 - Confirm every active product has a SKU, sale price, inventory row at the device location, barcode
   where scanning is used, and correct pack conversion/pack price where packs are sold.
 - If inventory lots are used, reconcile lot totals to inventory before opening; expired lots are

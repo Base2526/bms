@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, and PO-receipt idempotency) | `7.84`–`9.6` (`9.4` repair) |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.10` (`9.4` repair) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -54,6 +54,7 @@ operators must resolve those records before retrying the migration.
 | Membership & loyalty | `bms_loyalty_settings`, `bms_membership_tiers`, `bms_loyalty_ledger`, `bms_order_discounts` (+ `bms_customers.member_no/member_since/tier_id/tier_reviewed_at/points_balance`) | `7.96` |
 | POS park / drawer cash / void | `bms_pos_parked_sales`, `bms_pos_cash_movements` (+ `bms_pos_returns.is_void`, `bms_orders.voided_at/voided_by/void_reason`; cash-movement idempotency) | `7.97`, `9.5` |
 | POS Scan Manager / PO receipt retry | `bms_pos_purchase_receipts` (+ `bms_pos_devices.scanner_mode/scanner_prefix_key/scanner_suffix_key/scanner_max_gap_ms`) | `9.6` |
+| POS petty-cash expenses | `bms_pos_expenses` (drawer-funded rows link atomically to `bms_pos_cash_movements`; personal-funded rows intentionally do not), `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger` | `9.7`–`9.10` |
 | Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items` (+ widened `bms_stock_movements.type` CHECK) | `7.98` |
 
 ## Notable schema details
@@ -130,6 +131,26 @@ drive that expected balance negative is refused (`WOULD_OVERDRAW`) — not becau
 is physically in the drawer, but because such a line is a typo for certain and would make the whole
 shift unexplainable. Every movement also writes a `pos.cash.movement` row to `bms_audit_log` in the same
 transaction, since whoever asks "who took money out this month" reads the audit log, not this table.
+
+**POS petty-cash expenses (`9.7__bms_pos_petty_cash_expenses.sql`)** — `bms_pos_expenses` gives a
+drawer `OUT` its business meaning without treating every cash transfer as an expense. `DIRECT` rows
+are immediately `SETTLED`; `ADVANCE` rows begin `OPEN` and settle against an actual amount. A lower
+actual amount links an `IN` change-return movement, while a higher amount links an extra `OUT`.
+`create_cash_movement_id` is mandatory for `funding_source = 'DRAWER'`; `9.8` permits it to be null
+for a `DIRECT` personal-funded row with mandatory evidence and no approver. `9.9` adds a third
+`PETTY_CASH` funding source: it has no drawer movement or approver, but must link exactly one debit in
+`bms_pos_petty_cash_ledger`. The per-branch row in `bms_pos_petty_cash_wallets` is locked before each
+credit/debit, may never be negative, and is updated in the same tenant transaction as the append-only
+ledger, expense and audit rows. Funding can identify owner cash or a business account, always requires
+evidence, and never enters a shift's expected-cash formula. `9.10` additionally constrains ledger
+shape: outside funding is `IN` without a shift/device, while an expense debit is `OUT` with both, and
+bounded text/hash fields must match the service contract. `settlement_movement_id` is optional when an
+advance matches exactly, and request key/hash pairs make create and settle replay-safe while rejecting
+a reused key with changed input. The service serializes each tenant/scope/key with a transaction-level
+PostgreSQL advisory lock and resolves a committed replay before checking mutable shift/location state,
+so concurrent cross-branch reuse cannot leak a unique-constraint error and retry still works after a
+shift or location closes. Open advances block shift close. The table is tenant-owned, RLS-protected,
+and granted only `SELECT`/`INSERT`/`UPDATE` to `bms_app`; rows are never deleted by the service.
 
 Void adds `bms_pos_returns.is_void BOOLEAN NOT NULL DEFAULT FALSE`, `bms_orders.voided_at`/`voided_by`/
 `void_reason`, and a partial index `idx_bms_orders_voided ... WHERE voided_at IS NOT NULL`. A void

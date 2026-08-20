@@ -10,6 +10,7 @@ import {
   parsePosSaleLines,
 } from "../apps/web/lib/bms/posRouteHelpers.ts";
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
+import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -119,6 +120,32 @@ test("cash rounding rejects modes that are not in the settings enum", () => {
   assert.equal(isCashRounding("0.25"), true);
   assert.equal(isCashRounding("0.10"), false);
   assert.equal(isCashRounding(null), false);
+});
+
+test("petty-cash advances return change or request only the real extra cash", () => {
+  assert.deepEqual(calculatePettyCashSettlement(500, 430), {
+    advancedAmount: 500,
+    actualAmount: 430,
+    returnedAmount: 70,
+    extraCashOut: 0,
+    drawerDelta: -70,
+  });
+  assert.deepEqual(calculatePettyCashSettlement(500, 540.125), {
+    advancedAmount: 500,
+    actualAmount: 540.13,
+    returnedAmount: 0,
+    extraCashOut: 40.13,
+    drawerDelta: 40.13,
+  });
+  assert.deepEqual(calculatePettyCashSettlement(500, 500), {
+    advancedAmount: 500,
+    actualAmount: 500,
+    returnedAmount: 0,
+    extraCashOut: 0,
+    drawerDelta: 0,
+  });
+  assert.throws(() => calculatePettyCashSettlement(0, 0), RangeError);
+  assert.throws(() => calculatePettyCashSettlement(100, -1), RangeError);
 });
 
 test("POS last-sale decorator adds storefront metadata without changing sale fields", () => {
