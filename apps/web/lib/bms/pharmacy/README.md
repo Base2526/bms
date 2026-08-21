@@ -132,6 +132,12 @@ includes `status` in a `SET` clause.
    clinical line bypass that clarification. Configured selling units are resolved from
    `bms_product_packs` again inside the order transaction; tablet/capsule counts used as strength or
    package descriptors are not assumed to be the requested quantity.
+   If one named line matches several live catalog SKUs, production chat persists server-owned,
+   line-scoped choice codes (`A1/B2`, not repeated bare `1/2/3/4`) and requires exactly one choice
+   for every ambiguous line. The selected SKU, size, stock, and configured selling unit are checked
+   again before the backend composes a fresh whole-basket confirmation. A word such as `ยืนยัน`
+   attached to the choice reply confirms only the selection step; it cannot skip the subsequent
+   itemised basket confirmation or create a partial order.
 2. Disclaimer ("AI ≠ pharmacist") + consent prompt, both fixed backend copy.
 3. Consent granted → AI (or a deterministic fallback if AI is off) asks one question at a
    time, chosen from the protocol's own field list — it can never invent a new question.

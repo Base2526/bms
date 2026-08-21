@@ -16,6 +16,7 @@ import { finalizeAiUsageEvent, recordAiFallback, recordAiProviderAttempt, record
 import {
   callAnthropicCompatibleMessages,
   isSensitiveAiRoutingContext,
+  resolveSharedAiProvider,
   resolveSharedAiProviderDecision,
   resolveTenantByokProvider,
   type AiProvider,
@@ -150,6 +151,26 @@ export type AiCredentials = {
   source: "byok" | "shared";
   usageEventId?: string;
 };
+
+/**
+ * Runtime failover for a shared DeepSeek request that failed before any tool ran.
+ *
+ * This deliberately reuses the original usage event: resolving another normal credential set
+ * would consume a second monthly credit for one customer message. BYOK is never silently routed
+ * through a platform key, and no reverse Anthropic -> DeepSeek retry is attempted here.
+ */
+export async function resolveAiRuntimeFallbackCredentials(
+  primary: AiCredentials
+): Promise<AiCredentials | null> {
+  if (primary.source !== "shared" || primary.provider !== "deepseek") return null;
+  const fallback = resolveSharedAiProvider("anthropic", false);
+  if (!fallback) return null;
+  return {
+    ...fallback,
+    source: "shared",
+    usageEventId: primary.usageEventId,
+  };
+}
 
 /**
  * เลือก credentials สำหรับเรียก AI: BYOK ของร้าน → shared routing policy → null

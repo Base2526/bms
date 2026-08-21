@@ -233,6 +233,11 @@ function priceForModel(
   return null;
 }
 
+/** True only when token usage for this provider/model can be attributed to a configured rate. */
+export function hasAiCostRate(model?: string | null, provider?: string | null): boolean {
+  return priceForModel(model, provider) !== null;
+}
+
 export function estimateAiCostUsd(
   inputTokens?: number | null,
   outputTokens?: number | null,
@@ -753,6 +758,16 @@ export async function finalizeAiUsageEvent(
     unpricedProviderCalls?: number;
     /** Overrides token-presence inference when usage is only partially available. */
     costMeasured?: boolean;
+    /** False when any metered provider response used a model absent from the rate card. */
+    costRateKnown?: boolean;
+    /** Bounded operational metadata only; never prompts, tool args, or customer data. */
+    meta?: Record<string, string | number | boolean | null>;
+    /** Per-attempt health result when one logical event crossed providers. */
+    providerOutcomes?: Array<{
+      provider: string;
+      status: "completed" | "failed";
+      errorMessage?: string | null;
+    }>;
   }
 ): Promise<void> {
   const tokenCount = (value: number | null | undefined): number | null => {
@@ -833,7 +848,9 @@ export async function finalizeAiUsageEvent(
     const row = event.rows[0];
     if (!row || row.completed_at) return null;
 
-    const rateKnown = providerCalls === 0 || priceForModel(row.model, row.provider) !== null;
+    const rateKnown =
+      providerCalls === 0 ||
+      (result.costRateKnown ?? priceForModel(row.model, row.provider) !== null);
     const unpricedProviderCalls = rateKnown
       ? reportedUnpricedProviderCalls
       : providerCalls;
@@ -863,6 +880,7 @@ export async function finalizeAiUsageEvent(
       rate_status: rateKnown ? "known" : "unknown_model",
       unpriced_provider_calls: unpricedProviderCalls,
       ...cacheUsageMeta,
+      ...(result.meta ?? {}),
       ...(refundCredits > 0 ? { credit_refund_reason: "provider_not_called" } : {}),
     });
 
@@ -964,22 +982,28 @@ export async function finalizeAiUsageEvent(
   if (!current) return;
 
   // AI Provider Health: เฉพาะ shared key ของแพลตฟอร์ม (ไม่ track BYOK ของแต่ละร้าน)
-  // และเฉพาะ completed/failed จริง — ข้าม 'fallback' เพราะเหตุผลอื่น (quota_exhausted/
-  // no_credentials/max_rounds_exceeded/slip image unavailable) ไม่ใช่สัญญาณว่า provider ล่ม
-  if (
-    providerCalls > 0 &&
-    current.source === "shared" &&
-    isTrackedAiProvider(current.provider)
-  ) {
+  // Runtime ที่ข้าม provider ส่งผลต่อ attempt มาแยกกัน เพื่อไม่ให้ Anthropic ที่กู้ request สำเร็จ
+  // กลบ DeepSeek timeout เป็น success ผิดตัว ส่วน caller เก่าที่ยังไม่ส่ง outcomes จะใช้สถานะรวม
+  // completed/failed เหมือนเดิม และข้าม fallback เชิงธุรกิจที่ไม่ใช่สัญญาณว่า provider ล่ม
+  if (providerCalls > 0 && current.source === "shared") {
     const purpose = aiProviderPurposeFromFeature(current.feature);
-    try {
-      if (result.status === "completed") {
-        await recordProviderSuccess(current.provider, purpose);
-      } else if (result.status === "failed") {
-        await recordProviderError(current.provider, purpose, result.errorMessage);
+    const outcomes = result.providerOutcomes?.length
+      ? result.providerOutcomes
+      : isTrackedAiProvider(current.provider) &&
+          (result.status === "completed" || result.status === "failed")
+        ? [{ provider: current.provider, status: result.status, errorMessage: result.errorMessage }]
+        : [];
+    for (const outcome of outcomes) {
+      if (!isTrackedAiProvider(outcome.provider)) continue;
+      try {
+        if (outcome.status === "completed") {
+          await recordProviderSuccess(outcome.provider, purpose);
+        } else {
+          await recordProviderError(outcome.provider, purpose, outcome.errorMessage);
+        }
+      } catch (err) {
+        console.error("[BMS] failed to update AI provider health:", err);
       }
-    } catch (err) {
-      console.error("[BMS] failed to update AI provider health:", err);
     }
   }
 }

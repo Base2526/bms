@@ -398,7 +398,10 @@ their provider independently:
   shared one), then the deterministic template fallback. Every branch tags its usage event's `meta`
   with `routingReason`/`configuredProvider`/`effectiveProvider`/`fallbackFrom` so `bmsAiUsageEvents`
   (tenant-scoped, `ai_quality.view` permission) and the platform `/admin/env` page can show *why* a
-  call used the provider it did.
+  call used the provider it did. Customer DeepSeek tool-loop payloads disable its default thinking
+  mode. A retryable failure on the first shared DeepSeek attempt may use shared Anthropic once, but
+  only before any tool has run; it reuses the same usage event/credit. BYOK and any post-tool failure
+  never cross providers, because replaying a newly generated tool call after a write is unsafe.
 - **Slip OCR** is a completely separate registry: `lib/bms/slipReaders/{index,anthropic,qwen}.ts`
   behind the provider-neutral `SlipReader` contract in `lib/bms/slipReader.ts`. `resolveSlipReader()`
   picks `BMS_SLIP_READER_PROVIDER` (default Qwen) with a lazy one-shot fallback to

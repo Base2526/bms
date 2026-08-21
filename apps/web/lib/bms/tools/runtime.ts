@@ -8,9 +8,18 @@
 // - provider call ล้มเหลวหลังเริ่ม loop → usedAi:true + safe error (ไม่ fallback ไป write ซ้ำ)
 // =============================================================
 
-import { resolveAiCredentials, type AiCredentials } from "../ai";
+import {
+  resolveAiCredentials,
+  resolveAiRuntimeFallbackCredentials,
+  type AiCredentials,
+} from "../ai";
 import { callAnthropicCompatibleMessages } from "../aiProvider";
-import { estimateCachedAiCostUsd, finalizeAiUsageEvent, recordAiProviderAttempt } from "../aiUsage";
+import {
+  estimateCachedAiCostUsd,
+  finalizeAiUsageEvent,
+  hasAiCostRate,
+  recordAiProviderAttempt,
+} from "../aiUsage";
 import { audit } from "../audit";
 import { reportBmsFailure, type BmsFailureCode } from "../failureAlert";
 import { requirePermission } from "../permissions";
@@ -283,14 +292,15 @@ async function callProviderMessages(
   system: string | AnthSystemBlock[],
   messages: AnthMessage[],
   tools: AnthToolSchema[],
-  maxTokens: number = MAX_TOKENS_BY_SURFACE.staff
+  maxTokens: number = MAX_TOKENS_BY_SURFACE.staff,
+  surface: ToolSurface = "staff"
 ): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const resp = await callAnthropicCompatibleMessages(
       creds,
-      { model: creds.model, max_tokens: maxTokens, system, tools, messages },
+      providerRequestBody(creds, system, messages, tools, maxTokens, surface),
       controller.signal
     );
     if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
@@ -298,6 +308,37 @@ async function callProviderMessages(
   } finally {
     clearTimeout(timer);
   }
+}
+
+function providerRequestBody(
+  creds: AiCredentials,
+  system: string | AnthSystemBlock[],
+  messages: AnthMessage[],
+  tools: AnthToolSchema[],
+  maxTokens: number,
+  surface: ToolSurface
+): Record<string, unknown> {
+  return {
+    model: creds.model,
+    max_tokens: maxTokens,
+    system,
+    tools,
+    messages,
+    // DeepSeek's Anthropic-compatible endpoint enables thinking by default. Customer commerce
+    // turns need deterministic tool selection, not a long reasoning budget that can consume the
+    // whole 20-second provider deadline before returning the first tool_use.
+    ...(creds.provider === "deepseek" && surface === "customer"
+      ? { thinking: { type: "disabled" } }
+      : {}),
+  };
+}
+
+function isRetryableProviderError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  if (err instanceof TypeError) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /\bAPI\s+(?:429|5\d\d)\b|timed?\s*out|timeout|aborted|network|fetch failed/i.test(message);
 }
 
 export type ToolLoopOptions = {
@@ -326,6 +367,7 @@ export type ToolLoopOptions = {
  */
 export type ToolLoopTestDeps = {
   resolveCredentials?: typeof resolveAiCredentials;
+  resolveFallbackCredentials?: typeof resolveAiRuntimeFallbackCredentials;
   callProvider?: typeof callProviderMessages;
   finalizeUsage?: typeof finalizeAiUsageEvent;
   recordProviderAttempt?: typeof recordAiProviderAttempt;
@@ -411,6 +453,8 @@ async function runToolLoopInternal(
   deps: ToolLoopTestDeps = {}
 ): Promise<ToolLoopResult> {
   const resolveCredentials = deps.resolveCredentials ?? resolveAiCredentials;
+  const resolveFallbackCredentials =
+    deps.resolveFallbackCredentials ?? resolveAiRuntimeFallbackCredentials;
   const callProvider = deps.callProvider ?? callProviderMessages;
   const finalizeUsage = deps.finalizeUsage ?? finalizeAiUsageEvent;
   const persistProviderAttempt = deps.recordProviderAttempt ?? recordAiProviderAttempt;
@@ -437,8 +481,9 @@ async function runToolLoopInternal(
     },
   });
   if (!creds) return { reply: "", proposals: [], trace: [], usedAi: false };
-  const model = creds.model;
-  const provider = creds.provider;
+  let activeCreds = creds;
+  const attemptedProviders: string[] = [];
+  let runtimeFallbackUsed = false;
 
   const byName = new Map(opts.tools.map((t) => [t.name, t]));
   const toolSchemas: AnthToolSchema[] = opts.tools.map((t) => ({
@@ -493,6 +538,13 @@ async function runToolLoopInternal(
   let providerCalls = 0;
   let pricedProviderCalls = 0;
   let hasAnyMeteredUsage = false;
+  let allMeteredRatesKnown = true;
+  let estimatedCost = 0;
+  const providerOutcomes: Array<{
+    provider: string;
+    status: "completed" | "failed";
+    errorMessage?: string | null;
+  }> = [];
 
   function usagePayload() {
     return {
@@ -505,16 +557,13 @@ async function runToolLoopInternal(
       providerCalls,
       unpricedProviderCalls: providerCalls - pricedProviderCalls,
       costMeasured: hasAnyMeteredUsage,
-      estimatedCost: estimateCachedAiCostUsd(
-        {
-          inputTokens,
-          cacheCreationInputTokens,
-          cacheReadInputTokens,
-          outputTokens,
-        },
-        model,
-        provider
-      ),
+      costRateKnown: hasAnyMeteredUsage ? allMeteredRatesKnown : undefined,
+      estimatedCost,
+      meta: {
+        providers_attempted: attemptedProviders.join(","),
+        runtime_fallback_used: runtimeFallbackUsed,
+      },
+      providerOutcomes,
     };
   }
 
@@ -523,15 +572,44 @@ async function runToolLoopInternal(
   // หลังจากทูล create_order ทำงานไปแล้วในรอบก่อนหน้า
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      providerCalls += 1;
-      if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
-      const resp = await callProvider(
-        creds,
-        cachedSystem,
-        messages,
-        toolSchemas,
-        maxTokensForSurface(opts.execCtx.surface)
-      );
+      let resp: any;
+      while (true) {
+        providerCalls += 1;
+        attemptedProviders.push(activeCreds.provider);
+        if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
+        try {
+          resp = await callProvider(
+            activeCreds,
+            cachedSystem,
+            messages,
+            toolSchemas,
+            maxTokensForSurface(opts.execCtx.surface),
+            opts.execCtx.surface
+          );
+          providerOutcomes.push({ provider: activeCreds.provider, status: "completed" });
+          break;
+        } catch (err) {
+          providerOutcomes.push({
+            provider: activeCreds.provider,
+            status: "failed",
+            errorMessage: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+          });
+          // Fail over only on the first provider attempt, before the model has selected or run any
+          // tool. Once a tool result exists, changing providers could replay a write with a newly
+          // generated tool_use, so the normal safe-error path must win instead.
+          const canFailOver =
+            providerCalls === 1 &&
+            round === 0 &&
+            trace.length === 0 &&
+            isRetryableProviderError(err);
+          const fallback = canFailOver
+            ? await resolveFallbackCredentials(creds)
+            : null;
+          if (!fallback || fallback.provider === activeCreds.provider) throw err;
+          activeCreds = fallback;
+          runtimeFallbackUsed = true;
+        }
+      }
       if (
         Number.isFinite(resp?.usage?.input_tokens) &&
         Number.isFinite(resp?.usage?.output_tokens)
@@ -543,6 +621,9 @@ async function runToolLoopInternal(
         Number.isFinite(resp?.usage?.output_tokens)
       ) {
         hasAnyMeteredUsage = true;
+        if (!hasAiCostRate(activeCreds.model, activeCreds.provider)) {
+          allMeteredRatesKnown = false;
+        }
       }
       inputTokens += tokenCount(resp?.usage?.input_tokens);
       cacheCreationInputTokens += tokenCount(
@@ -550,6 +631,16 @@ async function runToolLoopInternal(
       );
       cacheReadInputTokens += tokenCount(resp?.usage?.cache_read_input_tokens);
       outputTokens += tokenCount(resp?.usage?.output_tokens);
+      estimatedCost += estimateCachedAiCostUsd(
+        {
+          inputTokens: tokenCount(resp?.usage?.input_tokens),
+          cacheCreationInputTokens: tokenCount(resp?.usage?.cache_creation_input_tokens),
+          cacheReadInputTokens: tokenCount(resp?.usage?.cache_read_input_tokens),
+          outputTokens: tokenCount(resp?.usage?.output_tokens),
+        },
+        activeCreds.model,
+        activeCreds.provider
+      );
       const content: any[] = Array.isArray(resp?.content) ? resp.content : [];
       const toolUses = content.filter((b) => b?.type === "tool_use");
 
@@ -732,4 +823,5 @@ export async function runApprovedTool(
 export const __toolLoopTest = {
   run: runToolLoopInternal,
   runApproved: runApprovedToolInternal,
+  providerRequestBody,
 };
