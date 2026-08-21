@@ -604,7 +604,11 @@ export type AiConversationState = {
     size: string | null;
     qty: number | null;
     unit: string | null;
+    /** Server-resolved selling-unit code; never supplied or invented by the model. */
+    packCode?: string | null;
   }>;
+  /** Bounded server-owned mapping from reply codes (A1/B2) to verified catalog SKUs. */
+  pendingCatalogChoices?: import("./catalogChoices").PendingCatalogChoices | null;
   lastIntent?: string | null;
   lastAskedField?: string | null;
   /**

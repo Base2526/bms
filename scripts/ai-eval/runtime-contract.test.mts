@@ -21,6 +21,15 @@ const CREDS = {
   usageEventId: "eval-usage",
 };
 
+const DEEPSEEK_SHARED_CREDS = {
+  apiKey: "eval-deepseek-key-never-sent",
+  model: "deepseek-chat",
+  provider: "deepseek" as const,
+  baseUrl: "https://api.deepseek.com/anthropic",
+  source: "shared" as const,
+  usageEventId: "eval-usage",
+};
+
 test("small provider costs retain sub-micro-dollar precision", () => {
   assert.equal(estimateAiCostUsd(1, 0, "qwen-vl-ocr", "qwen"), 0.00000004);
 });
@@ -273,6 +282,73 @@ test("provider request marks stable tools and system for prompt caching", async 
       assert.deepEqual(tools.at(-1)?.cache_control, { type: "ephemeral" });
       return textResponse("เรียบร้อยค่ะ");
     })
+  );
+});
+
+test("runtime marks metered usage from an unknown fallback model as unpriced", async () => {
+  const usage: Array<{ id: string; payload: any }> = [];
+  await __toolLoopTest.run(baseOptions(), {
+    ...depsFor(async () => textResponse("เรียบร้อยค่ะ"), { usage }),
+    resolveCredentials: async () => ({ ...CREDS, model: "future-model" }),
+  });
+  assert.equal(usage[0]?.payload.costRateKnown, false);
+  assert.equal(usage[0]?.payload.estimatedCost, 0);
+});
+
+test("customer DeepSeek requests disable default thinking without changing staff requests", () => {
+  const customer = __toolLoopTest.providerRequestBody(
+    DEEPSEEK_SHARED_CREDS,
+    "system",
+    [{ role: "user", content: "hello" }],
+    [],
+    512,
+    "customer"
+  );
+  const staff = __toolLoopTest.providerRequestBody(
+    DEEPSEEK_SHARED_CREDS,
+    "system",
+    [{ role: "user", content: "hello" }],
+    [],
+    512,
+    "staff"
+  );
+  assert.deepEqual(customer.thinking, { type: "disabled" });
+  assert.equal(staff.thinking, undefined);
+});
+
+test("shared DeepSeek timeout falls back once before tools under the same usage event", async () => {
+  const attempts: string[] = [];
+  const usage: Array<{ id: string; payload: any }> = [];
+  const providers: string[] = [];
+  const result = await __toolLoopTest.run(baseOptions(), {
+    ...depsFor(async (creds) => {
+      providers.push(creds.provider);
+      if (creds.provider === "deepseek") {
+        const error = new Error("This operation was aborted");
+        error.name = "AbortError";
+        throw error;
+      }
+      return textResponse("สำเร็จผ่านระบบสำรองค่ะ");
+    }, { attempts, usage }),
+    resolveCredentials: async () => DEEPSEEK_SHARED_CREDS,
+    resolveFallbackCredentials: async (primary) => ({
+      ...CREDS,
+      source: "shared",
+      usageEventId: primary.usageEventId,
+    }),
+  });
+
+  assert.equal(result.reply, "สำเร็จผ่านระบบสำรองค่ะ");
+  assert.deepEqual(providers, ["deepseek", "anthropic"]);
+  assert.deepEqual(attempts, ["eval-usage", "eval-usage"]);
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0]?.payload.providerCalls, 2);
+  assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
+  assert.equal(usage[0]?.payload.meta.runtime_fallback_used, true);
+  assert.equal(usage[0]?.payload.meta.providers_attempted, "deepseek,anthropic");
+  assert.deepEqual(
+    usage[0]?.payload.providerOutcomes.map((item: any) => [item.provider, item.status]),
+    [["deepseek", "failed"], ["anthropic", "completed"]]
   );
 });
 
@@ -712,6 +788,7 @@ test("non-sensitive tools returning proposals are rejected", async () => {
 test("provider outage after a write never invokes the write twice or signals fallback", async () => {
   let writes = 0;
   let round = 0;
+  let fallbackResolutions = 0;
   const tool = makeTool({
     name: "create_order",
     inputSchema: { type: "object", properties: { sku: { type: "string" } } },
@@ -725,13 +802,23 @@ test("provider outage after a write never invokes the write twice or signals fal
   try {
     const result = await __toolLoopTest.run(
       baseOptions([tool]),
-      depsFor(async () => {
-        round += 1;
-        if (round === 1) return toolResponse("create_order", { sku: "SKU-1" });
-        throw new Error("simulated timeout");
-      })
+      {
+        ...depsFor(async () => {
+          round += 1;
+          if (round === 1) return toolResponse("create_order", { sku: "SKU-1" });
+          const error = new Error("simulated timeout");
+          error.name = "AbortError";
+          throw error;
+        }),
+        resolveCredentials: async () => DEEPSEEK_SHARED_CREDS,
+        resolveFallbackCredentials: async () => {
+          fallbackResolutions += 1;
+          return { ...CREDS, source: "shared" };
+        },
+      }
     );
     assert.equal(writes, 1);
+    assert.equal(fallbackResolutions, 0);
     assert.equal(result.usedAi, true);
     assert.match(result.reply, /ระบบขัดข้องชั่วคราว/);
   } finally {

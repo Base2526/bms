@@ -91,6 +91,13 @@ import {
   isEnglishCustomerReply,
   shippingProvinceFromMessage,
 } from "./customerMessageRouting";
+import {
+  catalogLineCode,
+  composeCatalogChoiceReply,
+  normalizeCatalogRequestedLine,
+  parseCatalogChoiceSelection,
+  type PendingCatalogChoices,
+} from "./catalogChoices";
 
 const PHARMACY_CHECKOUT_CONFIRM_PATTERN =
   /(ยืนยันสั่งซื้อ|ยืนยันซื้อ|สั่งซื้อเลย|เอาตามนี้|ตกลงเอาตามนี้|โอเคเอาตามนี้|confirm order)/i;
@@ -547,6 +554,7 @@ type OrderMemoryItem = {
   size: string | null;
   qty: number | null;
   unit: string | null;
+  packCode?: string | null;
 };
 
 type OrderMemory = {
@@ -566,6 +574,93 @@ type OrderMemory = {
    */
   items?: OrderMemoryItem[];
 };
+
+type CatalogSearchProduct = {
+  sku: string;
+  name: string;
+  availableSizes: Array<{ size: string; available: number }>;
+};
+
+type ResolvedBasketLine = {
+  sku: string;
+  name: string;
+  size: string;
+  qty: number;
+  unit: string | null;
+  packCode: string | null;
+};
+
+function normalizedCatalogValue(value: string): string {
+  return value.trim().toLocaleLowerCase("th-TH").replace(/\s+/g, " ");
+}
+
+function availableForSize(product: CatalogSearchProduct, size: string): number {
+  const wanted = normalizedCatalogValue(size);
+  return Number(
+    product.availableSizes.find(
+      (variant) => normalizedCatalogValue(String(variant.size)) === wanted
+    )?.available ?? 0
+  );
+}
+
+async function prepareResolvedBasketLines(
+  pending: PendingCatalogChoices,
+  selected: Array<{ sku: string; name: string }>,
+  execCtx: ExecCtx
+): Promise<{
+  lines: ResolvedBasketLine[] | null;
+  error: string | null;
+  trace: ToolTraceEntry[];
+}> {
+  const trace: ToolTraceEntry[] = [];
+  const lines: ResolvedBasketLine[] = [];
+  for (let index = 0; index < pending.lines.length; index += 1) {
+    const requested = pending.lines[index];
+    const candidate = selected[index];
+    if (!candidate || !requested.candidates.some((item) => item.sku === candidate.sku)) {
+      return { lines: null, error: "รหัสสินค้าที่เลือกไม่ตรงกับรายการที่รอเลือกค่ะ", trace };
+    }
+    const checked = await executeCustomerTool(
+      "check_stock",
+      { product: candidate.sku, size: requested.size },
+      execCtx
+    );
+    trace.push(checked.trace);
+    if (!checked.result.ok || (checked.result.data as any)?.status !== "IN_STOCK") {
+      return {
+        lines: null,
+        error: `${candidate.name} ไซซ์ ${requested.size} ไม่มีสต็อกพร้อมขายแล้ว กรุณาเริ่มเลือกรายการใหม่ค่ะ`,
+        trace,
+      };
+    }
+    const stock = checked.result.data as StockResult;
+    let packCode: string | null = null;
+    if (requested.unit) {
+      const packs = stock.status === "IN_STOCK" && Array.isArray(stock.packs) ? stock.packs : [];
+      const wantedUnit = normalizedCatalogValue(requested.unit);
+      const pack = packs.find(
+        (item) => normalizedCatalogValue(item.unitName) === wantedUnit
+      );
+      if (!pack) {
+        return {
+          lines: null,
+          error: `${candidate.name} ไซซ์ ${requested.size} ไม่ได้ตั้งหน่วยขาย “${requested.unit}” ไว้ในระบบ จึงยังสั่งรายการนี้ไม่ได้ค่ะ`,
+          trace,
+        };
+      }
+      packCode = pack.packCode;
+    }
+    lines.push({
+      sku: candidate.sku,
+      name: candidate.name,
+      size: requested.size,
+      qty: requested.qty,
+      unit: requested.unit,
+      packCode,
+    });
+  }
+  return { lines, error: null, trace };
+}
 
 function shouldClearDraftOrderMemory(text: string): boolean {
   const trimmed = text.trim();
@@ -664,7 +759,9 @@ function productHintFromCustomerText(text: string): string | null {
 function sizeClaimFromCustomerText(text: string, previousAssistant: string): string | null {
   const parsed = understand(text).entities.size;
   if (parsed) return parsed;
-  const explicit = text.match(/(?:ไซซ์|size|ขนาด)\s*[:=-]?\s*([A-Za-z0-9.-]{1,24})/i)?.[1];
+  const explicit = text.match(
+    /(?:ไซซ์|size|ขนาด)\s*[:=-]?\s*([A-Za-z0-9.-]{1,24}(?:\s*(?:เม็ด|แคปซูล|ชิ้น))?)/i
+  )?.[1];
   if (explicit) return explicit.toUpperCase();
   if (/(?:ไซซ์|size|ขนาด).*(?:อะไร|ไหน|เท่าไหร่|ดี|คะ|ค่ะ|\?)/i.test(previousAssistant)) {
     const shortAnswer = text
@@ -800,8 +897,7 @@ function buildOrderMemory(
     if (lineItems.length > 1) {
       const parsedItems = lineItems
         .map((line) => ({
-          product: stripRequestNoise(line.productText),
-          size: line.size,
+          ...normalizeCatalogRequestedLine(line.productText, line.size, stripRequestNoise),
           qty: line.qty,
           unit: line.unit,
         }))
@@ -836,6 +932,7 @@ function buildOrderMemory(
           size: previous?.size ?? null,
           qty: item.qty,
           unit: item.unit,
+          packCode: previous?.packCode ?? null,
         };
       });
 
@@ -900,6 +997,12 @@ function mergeStoredOrderMemory(state: AiConversationState, derived: OrderMemory
     confirmed: derived?.confirmed ?? state.confirmed ?? false,
     ...(items && items.length > 1 ? { items } : {}),
   };
+}
+
+function isConfirmationOnly(text: string): boolean {
+  return /^(?:ยืนยัน(?:สั่ง|สั่งซื้อ|ซื้อ)?|สั่งเลย|เอาตามนี้|ตกลง(?:เอาตามนี้)?|confirm(?: order)?)(?:\s*(?:ค่ะ|คะ|ครับ|นะ|เลย))*[.!🙏]*$/i.test(
+    text.trim()
+  );
 }
 
 function askedFieldFromReply(reply: string): string | null {
@@ -2151,12 +2254,34 @@ export async function runPipeline(
 
   const { recentTurns, summary } = compressConversationHistory(history);
   const draftOrderCancelled = shouldClearDraftOrderMemory(aiInputMessage);
-  const orderMemory = draftOrderCancelled
+  const derivedOrderMemory = draftOrderCancelled
+    ? null
+    : buildOrderMemory(recentTurns, aiInputMessage, understanding);
+  let orderMemory = draftOrderCancelled
     ? null
     : mergeStoredOrderMemory(
         storedState,
-        buildOrderMemory(recentTurns, aiInputMessage, understanding)
+        derivedOrderMemory
       );
+  // buildOrderMemory intentionally replays recent history, so the original ambiguous product names
+  // are still present there. Once the server has resolved those names to SKUs and shown a quote,
+  // a confirmation-only turn must use the stored resolved lines (including packCode), not regress
+  // to the old names and lose the verified selling units.
+  if (
+    orderMemory &&
+    storedState.pendingQuoteFingerprint &&
+    storedState.items &&
+    storedState.items.length > 1 &&
+    isConfirmationOnly(aiInputMessage)
+  ) {
+    orderMemory = {
+      product: storedState.product ?? storedState.items[0]?.product ?? null,
+      size: storedState.size ?? storedState.items[0]?.size ?? null,
+      qty: storedState.qty ?? storedState.items[0]?.qty ?? null,
+      confirmed: true,
+      items: storedState.items,
+    };
+  }
   if (convId && draftOrderCancelled) {
     await setAiConversationState(tenantId, convId, {}).catch(async (err) => {
       console.error("[BMS] pipeline AI draft state clear failed:", err);
@@ -2171,6 +2296,7 @@ export async function runPipeline(
       // ต้องยกมาด้วย ไม่งั้นตะกร้าที่รอลูกค้ายืนยันจะถูกลืมในเทิร์นถัดไป
       // แล้วลูกค้าตอบ "ยืนยัน" ไปก็ถูกถามใหม่วนไม่จบ
       pendingQuoteFingerprint: storedState.pendingQuoteFingerprint ?? null,
+      pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
     }).catch(async (err) => {
       console.error("[BMS] pipeline AI state update failed:", err);
       await reportStateFailure(err, "state_update");
@@ -2208,12 +2334,306 @@ export async function runPipeline(
     }
   }
 
+  // Pharmacy multi-item catalog choices are server-owned. A reply such as "1 2 3 4" has no
+  // stable meaning when two product lines each displayed choices 1-4, so never ask the model to
+  // reconstruct that mapping from chat prose. Codes are namespaced by basket line (A1/B2), stored
+  // in ai_state, revalidated against fresh stock, then followed by a fresh whole-basket summary.
+  let choiceBasket:
+    | {
+        pending: PendingCatalogChoices;
+        selected: Array<{ sku: string; name: string }>;
+        trace: ToolTraceEntry[];
+      }
+    | null = null;
+  if (
+    !draftOrderCancelled &&
+    isPharmacyTenant &&
+    convId &&
+    storedState.pendingCatalogChoices
+  ) {
+    const parsedChoice = parseCatalogChoiceSelection(
+      storedState.pendingCatalogChoices,
+      aiInputMessage
+    );
+    if (parsedChoice.kind === "invalid") {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice_invalid",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: composeCatalogChoiceReply(
+          storedState.pendingCatalogChoices,
+          englishReply ? "en" : "th",
+          true
+        ),
+      });
+    }
+    if (parsedChoice.kind === "complete") {
+      choiceBasket = {
+        pending: storedState.pendingCatalogChoices,
+        selected: parsedChoice.selected,
+        trace: [],
+      };
+    } else if (
+      parsedChoice.kind === "not_selection" &&
+      looksLikeRequestedItemList(aiInputMessage)
+    ) {
+      // A complete new basket replaces the pending choice set. Without clearing the in-memory
+      // copy as well as JSONB, the block below would see the old state and send the new request
+      // back through the model while silently keeping stale A1/B2 codes alive.
+      let replacementCleared = true;
+      try {
+        await setAiConversationState(tenantId, convId, {
+          ...(orderMemory ?? {}),
+          confirmed: false,
+          pendingCatalogChoices: null,
+          pendingQuoteFingerprint: null,
+          lastIntent: classifiedIntent,
+        });
+      } catch (err) {
+        replacementCleared = false;
+        console.error("[BMS] pipeline catalog-choice replacement clear failed:", err);
+        await reportStateFailure(err, "catalog_choice_replace");
+      }
+      if (!replacementCleared) {
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: "deterministic:catalog_choice_replace_failed",
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: "ขออภัยค่ะ ระบบยังเปลี่ยนตะกร้าไม่ได้ กรุณาลองส่งรายการใหม่อีกครั้งนะคะ 🙏",
+        });
+      }
+      storedState.pendingCatalogChoices = null;
+      storedState.pendingQuoteFingerprint = null;
+    }
+  }
+
+  if (
+    !choiceBasket &&
+    isPharmacyTenant &&
+    convId &&
+    !storedState.pendingCatalogChoices &&
+    !storedState.pendingQuoteFingerprint &&
+    classifiedIntent === "ordering" &&
+    orderMemory?.items &&
+    orderMemory.items.length > 1 &&
+    orderMemory.items.every((item) => item.product && item.size && item.qty)
+  ) {
+    const routeTrace: ToolTraceEntry[] = [];
+    const pending: PendingCatalogChoices = { version: 1, lines: [] };
+    let catalogError: string | null = null;
+    for (let index = 0; index < orderMemory.items.length; index += 1) {
+      const item = orderMemory.items[index];
+      const searched = await executeCustomerTool(
+        "search_products",
+        { keyword: item.product },
+        execCtx
+      );
+      routeTrace.push(searched.trace);
+      const products = searched.result.ok && Array.isArray((searched.result.data as any)?.products)
+        ? ((searched.result.data as any).products as CatalogSearchProduct[])
+        : [];
+      const matchingSize = products.filter(
+        (product) => availableForSize(product, item.size as string) > 0
+      );
+      const normalizedHint = normalizedCatalogValue(item.product);
+      const exact = matchingSize.filter(
+        (product) =>
+          normalizedCatalogValue(product.sku) === normalizedHint ||
+          normalizedCatalogValue(product.name) === normalizedHint
+      );
+      const candidates = (exact.length === 1 ? exact : matchingSize)
+        .slice(0, 4)
+        .map((product, candidateIndex) => ({
+          choiceCode: `${catalogLineCode(index)}${candidateIndex + 1}`,
+          sku: product.sku,
+          name: product.name,
+        }));
+      if (candidates.length === 0) {
+        catalogError = englishReply
+          ? `No in-stock catalog product matched ${item.product}, size ${item.size}. No part of the basket was ordered.`
+          : `ไม่พบ ${item.product} ไซซ์ ${item.size} ที่มีสต็อกพร้อมขาย จึงยังไม่ดำเนินการทั้งตะกร้าค่ะ`;
+        break;
+      }
+      pending.lines.push({
+        lineCode: catalogLineCode(index),
+        product: item.product,
+        size: item.size as string,
+        qty: item.qty as number,
+        unit: item.unit,
+        candidates,
+      });
+    }
+    if (catalogError) {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice_unavailable",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: catalogError,
+        trace: routeTrace,
+      });
+    }
+    if (pending.lines.some((line) => line.candidates.length > 1)) {
+      let choiceStatePersisted = true;
+      try {
+        await setAiConversationState(tenantId, convId, {
+          ...orderMemory,
+          confirmed: false,
+          pendingQuoteFingerprint: null,
+          pendingCatalogChoices: pending,
+          lastIntent: classifiedIntent,
+        });
+      } catch (err) {
+        choiceStatePersisted = false;
+        console.error("[BMS] pipeline catalog-choice state persist failed:", err);
+        await reportStateFailure(err, "catalog_choice_state");
+      }
+      if (!choiceStatePersisted) {
+        return customerSafe({
+          channel,
+          incoming: message,
+          understanding,
+          tool: "deterministic:catalog_choice_state_failed",
+          data: { status: "NOT_FOUND", query: aiInputMessage },
+          reply: "ขออภัยค่ะ ระบบยังบันทึกตัวเลือกสินค้าไม่ได้ กรุณาลองส่งรายการใหม่อีกครั้งนะคะ 🙏",
+          trace: routeTrace,
+        });
+      }
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: composeCatalogChoiceReply(pending, englishReply ? "en" : "th"),
+        trace: routeTrace,
+      });
+    }
+    choiceBasket = {
+      pending,
+      selected: pending.lines.map((line) => line.candidates[0]),
+      trace: routeTrace,
+    };
+  }
+
+  if (choiceBasket && convId) {
+    // A confirmation word attached to the selection belongs to the selection turn, not to a quote
+    // the customer has not seen yet. Force create_order through its read-only quote phase first.
+    execCtx.customerConfirmedQuote = undefined;
+    const prepared = await prepareResolvedBasketLines(
+      choiceBasket.pending,
+      choiceBasket.selected,
+      execCtx
+    );
+    const routeTrace = [...choiceBasket.trace, ...prepared.trace];
+    if (!prepared.lines || prepared.error) {
+      await setAiConversationState(tenantId, convId, {
+        ...storedState,
+        confirmed: false,
+        pendingCatalogChoices: null,
+        pendingQuoteFingerprint: null,
+      }).catch(() => {});
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice_recheck",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: prepared.error ?? "รายการที่เลือกไม่พร้อมขายแล้ว กรุณาเริ่มใหม่ค่ะ",
+        trace: routeTrace,
+      });
+    }
+    const quoted = await executeCustomerTool(
+      "create_order",
+      {
+        items: prepared.lines.map((line) => ({
+          sku: line.sku,
+          size: line.size,
+          qty: line.qty,
+          ...(line.packCode ? { packCode: line.packCode } : {}),
+        })),
+      },
+      execCtx
+    );
+    routeTrace.push(quoted.trace);
+    if (!execCtx.pendingOrderQuote) {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice_quote",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: quoted.result.ok
+          ? "ระบบยังสรุปตะกร้าไม่ได้ กรุณาลองใหม่อีกครั้งค่ะ"
+          : `สรุปตะกร้าไม่สำเร็จ (${quoted.result.error}) กรุณาลองใหม่อีกครั้งค่ะ`,
+        trace: routeTrace,
+      });
+    }
+    let quoteStatePersisted = true;
+    try {
+      await setAiConversationState(tenantId, convId, {
+        product: prepared.lines[0]?.sku ?? null,
+        size: prepared.lines[0]?.size ?? null,
+        qty: prepared.lines[0]?.qty ?? null,
+        items: prepared.lines.map((line) => ({
+          product: line.sku,
+          size: line.size,
+          qty: line.qty,
+          unit: line.unit,
+          packCode: line.packCode,
+        })),
+        confirmed: false,
+        pendingCatalogChoices: null,
+        pendingQuoteFingerprint: execCtx.pendingOrderQuote.fingerprint,
+        lastIntent: classifiedIntent,
+      });
+    } catch (err) {
+      quoteStatePersisted = false;
+      console.error("[BMS] pipeline catalog-choice quote state persist failed:", err);
+      await reportStateFailure(err, "catalog_choice_quote_state");
+    }
+    if (!quoteStatePersisted) {
+      return customerSafe({
+        channel,
+        incoming: message,
+        understanding,
+        tool: "deterministic:catalog_choice_quote_state_failed",
+        data: { status: "NOT_FOUND", query: aiInputMessage },
+        reply: "ขออภัยค่ะ ระบบยังบันทึกตะกร้าที่เลือกไม่ได้ กรุณาส่งรหัสตัวเลือกอีกครั้งนะคะ 🙏",
+        trace: routeTrace,
+      });
+    }
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: "deterministic:catalog_choice_quote",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: composeOrderQuoteSummary(
+        execCtx.pendingOrderQuote.lines,
+        englishReply ? "en" : "th"
+      ),
+      trace: routeTrace,
+    });
+  }
+
   // รายการที่พร้อมสั่งจากความจำ — ต้อง "ครบทุกรายการ" จึงจะเดินทางลัดนี้
   //
   // ถ้าลูกค้าขอมาหลายอย่างแล้วมีแม้ตัวเดียวที่ยังขาดไซซ์/จำนวน หรือหาสินค้าไม่เจอ
   // แบบชัดเจน ต้องตกไปให้โมเดลถามต่อ **ห้ามสร้างบิลบางส่วน** — ลูกค้าที่ขอของ 3 อย่าง
   // แล้วได้บิลที่มีของอย่างเดียวโดยไม่มีใครบอก คือความเสียหายที่แก้ทีหลังยากกว่าถามเพิ่ม
-  const memoryLines: Array<{ product: string; size: string; qty: number }> | null = (() => {
+  const memoryLines: Array<{
+    product: string;
+    size: string;
+    qty: number;
+    unit: string | null;
+    packCode: string | null;
+  }> | null = (() => {
     if (!orderMemory?.confirmed) return null;
     if (orderMemory.items && orderMemory.items.length > 1) {
       const complete = orderMemory.items.filter((item) => item.product && item.size && item.qty);
@@ -2222,10 +2642,18 @@ export async function runPipeline(
         product: item.product,
         size: item.size as string,
         qty: item.qty as number,
+        unit: item.unit,
+        packCode: item.packCode ?? null,
       }));
     }
     return orderMemory.product && orderMemory.size && orderMemory.qty
-      ? [{ product: orderMemory.product, size: orderMemory.size, qty: orderMemory.qty }]
+      ? [{
+          product: orderMemory.product,
+          size: orderMemory.size,
+          qty: orderMemory.qty,
+          unit: null,
+          packCode: null,
+        }]
       : null;
   })();
 
@@ -2235,7 +2663,13 @@ export async function runPipeline(
     !/(?:คูปอง|coupon|โค้ดส่วนลด)/i.test(aiInputMessage)
   ) {
     const routeTrace: Array<Awaited<ReturnType<typeof executeCustomerTool>>["trace"]> = [];
-    const resolved: Array<{ sku: string; name: string; size: string; qty: number }> = [];
+    const resolved: Array<{
+      sku: string;
+      name: string;
+      size: string;
+      qty: number;
+      packCode: string | null;
+    }> = [];
     let unresolved = false;
     for (const line of memoryLines) {
       const searched = await executeCustomerTool("search_products", { keyword: line.product }, execCtx);
@@ -2262,13 +2696,26 @@ export async function runPipeline(
         unresolved = true;
         break;
       }
-      resolved.push({ sku: selected.sku, name: selected.name, size: line.size, qty: line.qty });
+      resolved.push({
+        sku: selected.sku,
+        name: selected.name,
+        size: line.size,
+        qty: line.qty,
+        packCode: line.packCode,
+      });
     }
 
     if (!unresolved && resolved.length === memoryLines.length) {
       const created = await executeCustomerTool(
         "create_order",
-        { items: resolved.map((line) => ({ sku: line.sku, size: line.size, qty: line.qty })) },
+        {
+          items: resolved.map((line) => ({
+            sku: line.sku,
+            size: line.size,
+            qty: line.qty,
+            ...(line.packCode ? { packCode: line.packCode } : {}),
+          })),
+        },
         execCtx
       );
       routeTrace.push(created.trace);
@@ -2287,6 +2734,7 @@ export async function runPipeline(
             // ที่พูดไว้ก่อนจะมีรายการให้ดู
             confirmed: false,
             pendingQuoteFingerprint: execCtx.pendingOrderQuote.fingerprint,
+            pendingCatalogChoices: null,
           }).catch(async (err) => {
             console.error("[BMS] pipeline pending-quote state persist failed:", err);
             await reportStateFailure(err, "state_persist");
@@ -2439,6 +2887,7 @@ export async function runPipeline(
               execCtx.pendingOrderQuote?.fingerprint ??
               storedState.pendingQuoteFingerprint ??
               null,
+            pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
           };
       await setAiConversationState(tenantId, convId, nextState).catch(async (err) => {
         console.error("[BMS] pipeline AI state persist failed:", err);

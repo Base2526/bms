@@ -67,6 +67,9 @@ look done in code but need their migration first.
   summary (never the model's prose), and only a call whose lines still match the fingerprint the
   customer affirmed creates the order. The confirmation signal is server-only (`ExecCtx`), so the
   model cannot grant it to itself, change a quantity, or add a line after the customer agreed.
+- Ambiguous pharmacy catalog matches use server-owned line codes (`A1/B2`) persisted in conversation
+  state. A choice turn always produces a new server-composed basket summary; confirmation text sent
+  with the choice cannot skip that second, fingerprint-bound confirmation.
 - **AI never answers with an empty turn.** A model turn carrying no text block is a system failure
   (`ai.empty_reply`), not an answer — the customer is told the system failed and a human is alerted.
   Never tell a customer to retype what they typed correctly.

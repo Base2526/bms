@@ -66,9 +66,16 @@ BYOK (Anthropic or DeepSeek) → shared provider selected by routing policy → 
 work uses `BMS_AI_PROVIDER` (default DeepSeek), while sensitive/baseline staff-assistant turns use
 `BMS_AI_SENSITIVE_PROVIDER` (default Anthropic). A staff turn is sensitive for provider routing only
 when the latest request matches a sensitive action exposed to that user; merely having sensitive
-tools in the catalog no longer routes every read-only staff question to Anthropic. The resolver only falls back to the alternate
-shared provider when the preferred provider is not configured; once a provider call starts, mid-loop
-errors do not retry a different provider, which prevents duplicate writes. Shared calls consume one
+tools in the catalog no longer routes every read-only staff question to Anthropic. The resolver falls back to the alternate
+shared provider when the preferred provider is not configured. In addition, a shared DeepSeek customer
+tool-loop request that times out, is rate-limited, or returns a 5xx **before any tool runs** retries
+shared Anthropic once under the same usage event. It never fails over after a tool result exists, and
+BYOK is never silently moved onto a platform key; those boundaries prevent duplicate writes and
+unexpected provider routing. Customer DeepSeek requests explicitly disable the compatible endpoint's
+default thinking mode so commerce tool selection does not spend the whole request deadline reasoning.
+Provider Health records the failed DeepSeek attempt and successful Anthropic recovery separately;
+the fallback cannot make the primary provider appear healthy.
+Shared calls consume one
 `tryConsumeAiQuota()` unit per incoming customer message or staff-assistant turn. It is called once
 before the loop, so 1–5 provider round-trips still count as one quota unit. BYOK calls do not consume
 the platform quota. Usage events separately record `provider_calls`, input/output tokens, cache-token
@@ -95,6 +102,14 @@ corresponding slot without overwriting the product, while an explicit draft canc
 stored slots and prevents turns before that cancellation from rebuilding them. A successful customer tool call or a relevant
 single-field clarification resets the turn budget, so legitimate browsing/slot filling is not
 mistaken for a stalled conversation.
+
+For pharmacy baskets with several catalog matches, the deterministic route stores a bounded mapping
+of line-scoped codes (`A1`, `A2`, `B1`, …) to verified SKUs in conversation state. Bare repeated
+numbers such as `1 2 3 4` are rejected because they cannot identify one candidate per basket line.
+After valid codes are supplied, every selected SKU/size and configured selling unit is rechecked,
+then `create_order` runs only its read-only quote phase. A confirmation word attached to the choice
+turn does not create an order: the customer must first see and affirm the newly composed whole-basket
+summary, whose fingerprint includes the server-resolved `packCode`.
 
 Every customer reply — AI, deterministic-route, or rule-based fallback — leaves the pipeline through
 one sanitizer (`customerSafe()`): full UUIDs are shortened to their first eight characters, and the
