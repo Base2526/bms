@@ -255,7 +255,8 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
-| `bmsReports.ts` / `bmsDashboard.ts` | read-only analytics |
+| `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
+| `bmsFollowups.ts` | follow-up automation plus the separately permissioned Phase 2 retention queue/analytics (`bmsRetentionCases`, `bmsRetentionAnalytics`) and explicit refresh/transition mutations |
 | `bmsReportEngine.ts` | generated report export history + on-demand XLSX/CSV/PDF generation (`bmsGeneratedReports`, `bmsGenerateReport`) |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
@@ -389,6 +390,17 @@ React. The analytics query summarizes 30-day history by goal/intent/day using th
 tenant-scoped tables (`bms_followup_jobs`, `bms_followup_history`, `bms_messages`, `bms_orders`).
 See the § "Follow-up automation scheduler" note in [AGENTS.md](../../AGENTS.md) for the durable
 invariants.
+
+### Decision intelligence (Q1-Q3)
+
+Phase 1 dashboard reads require `report.view`. Action refresh/transitions require `report.manage`;
+inventory demand feedback and policy writes use `inventory.adjust`. Recommendations are advisory and
+do not create POs or move stock. Phase 2 retention is intentionally independent from follow-up
+permissions: `bmsRetentionCases`/`bmsRetentionAnalytics` require `retention.view`, while refresh and
+explicit lifecycle transitions require `retention.manage`. The shared `/admin/followup-queue` page
+must remain usable when the caller has retention permission but not `followup.view`. Holdout contact
+is rejected in `lib/bms/retention.ts`, not merely hidden in React. See
+[../ui/dashboard.md](../ui/dashboard.md) and [../ui/retention-engine.md](../ui/retention-engine.md).
 
 ### Bulk product import (preview + commit over one mutation)
 

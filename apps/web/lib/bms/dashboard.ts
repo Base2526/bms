@@ -5,6 +5,8 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import { predictStockOut } from "@/lib/bms/forecast";
+import { listLowStock } from "@/lib/bms/products";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
@@ -205,5 +207,108 @@ export async function getOperationalAlerts(tenantId: string) {
     slipPendingCount: slips.rows[0].c,
     reservationExpiringCount: reservations.rows[0].c,
     chatWaitingCount: chats.rows[0].c,
+  };
+}
+
+export async function getInventoryActionCenter(
+  tenantId: string,
+  windowDays = 30,
+  coverageDays = 30,
+  limit = 5
+) {
+  const safeLimit = Math.min(Math.max(limit, 1), 20);
+  const safeWindowDays = Math.min(Math.max(windowDays, 7), 180);
+  const safeCoverageDays = Math.min(Math.max(coverageDays, 1), 180);
+  const [lowStockRows, stockoutMeta, intelligence, expiring] = await Promise.all([
+    listLowStock(tenantId),
+    predictStockOut(tenantId, safeWindowDays, 1),
+    query<any>(
+      `WITH sales AS (
+         SELECT oi.product_sku sku, oi.size,
+           COALESCE(SUM(oi.qty) FILTER (WHERE o.created_at >= now()-make_interval(days=>$2)),0)::int sold_recent,
+           COALESCE(SUM(oi.qty) FILTER (WHERE o.created_at < now()-make_interval(days=>$2) AND o.created_at >= now()-make_interval(days=>$2*2)),0)::int sold_previous
+         FROM bms_order_items oi JOIN bms_orders o ON o.id=oi.order_id AND o.tenant_id=$1
+         WHERE o.status=ANY($3) AND o.created_at >= now()-make_interval(days=>$2*2)
+         GROUP BY oi.product_sku,oi.size
+       ), demand AS (
+         SELECT sku,size,SUM(qty)::int qty FROM (
+           SELECT product_sku sku,size,qty FROM bms_inventory_demand_events
+           WHERE tenant_id=$1 AND occurred_at >= now()-make_interval(days=>$2)
+           UNION ALL
+           SELECT product_sku sku,size,requested_qty qty FROM bms_restock_subscriptions
+           WHERE tenant_id=$1 AND status IN ('ACTIVE','READY_TO_NOTIFY','NOTIFIED')
+         ) unmet GROUP BY sku,size
+       ), incoming AS (
+         SELECT poi.product_sku sku,poi.size,COALESCE(SUM(poi.qty_ordered-poi.qty_received),0)::int qty
+         FROM bms_purchase_order_items poi JOIN bms_purchase_orders po ON po.id=poi.po_id AND po.tenant_id=$1
+         WHERE poi.tenant_id=$1 AND po.status IN ('OPEN','PARTIAL') GROUP BY poi.product_sku,poi.size
+       )
+       SELECT i.product_sku sku,p.name,i.size,(i.current_stock-i.reserved_stock)::int available,
+         COALESCE(s.sold_recent,0)::int sold_recent,COALESCE(s.sold_previous,0)::int sold_previous,
+         COALESCE(d.qty,0)::int demand_feedback,COALESCE(inc.qty,0)::int incoming,
+         COALESCE(pol.safety_stock_days,7)::int safety_stock_days,COALESCE(pol.lead_time_days,7)::int lead_time_days
+       FROM bms_inventory i JOIN bms_products p ON p.tenant_id=i.tenant_id AND p.sku=i.product_sku
+       LEFT JOIN sales s ON s.sku=i.product_sku AND s.size=i.size
+       LEFT JOIN demand d ON d.sku=i.product_sku AND d.size=i.size
+       LEFT JOIN incoming inc ON inc.sku=i.product_sku AND inc.size=i.size
+       LEFT JOIN bms_inventory_policies pol ON pol.tenant_id=i.tenant_id AND pol.product_sku=i.product_sku AND pol.size=i.size
+       WHERE i.tenant_id=$1 AND p.active`, [tenantId, safeWindowDays, PAID]
+    ),
+    query<any>(
+      `SELECT l.product_sku sku,p.name,l.size,l.lot_no,l.expiry_date,l.qty::int,
+              (l.expiry_date-CURRENT_DATE)::int days_to_expiry
+       FROM bms_inventory_lots l JOIN bms_products p ON p.tenant_id=l.tenant_id AND p.sku=l.product_sku
+       WHERE l.tenant_id=$1 AND l.qty>0 AND l.expiry_date IS NOT NULL AND l.expiry_date <= CURRENT_DATE+60
+       ORDER BY l.expiry_date,l.qty DESC`, [tenantId]
+    ),
+  ]);
+
+  const outOfStockNow = lowStockRows.filter((row) => Number(row.available) <= 0);
+  const advanced = intelligence.rows.map((r: any) => {
+    const observed = Number(r.sold_recent) + Number(r.demand_feedback);
+    const avgPerDay = observed / safeWindowDays;
+    const trendPct = Number(r.sold_previous) > 0 ? ((Number(r.sold_recent)-Number(r.sold_previous))/Number(r.sold_previous))*100 : (Number(r.sold_recent)>0 ? 100 : 0);
+    const safetyStock = Math.ceil(avgPerDay * Number(r.safety_stock_days));
+    const target = Math.ceil(avgPerDay * (Number(r.lead_time_days)+Number(r.safety_stock_days)+safeCoverageDays));
+    const suggestedQty = Math.max(0, target-Number(r.available)-Number(r.incoming));
+    const classification = Number(r.available) <= 0 ? "OUT_OF_STOCK" : observed === 0 && Number(r.available)>0 ? "DEAD" : Number(r.available) > observed*3 ? "SLOW" : "HEALTHY";
+    const daysToStockout = avgPerDay > 0 ? +(Math.max(Number(r.available),0)/avgPerDay).toFixed(1) : null;
+    const projectedStockoutDate = daysToStockout === null ? null : new Date(Date.now()+Math.ceil(daysToStockout)*86_400_000).toISOString().slice(0,10);
+    return { sku:r.sku,name:r.name,size:r.size,available:Number(r.available),soldInWindow:Number(r.sold_recent),demandFeedback:Number(r.demand_feedback),incomingQty:Number(r.incoming),avgPerDay:+avgPerDay.toFixed(3),daysToStockout,projectedStockoutDate,trendPct:+trendPct.toFixed(1),safetyStock,leadTimeDays:Number(r.lead_time_days),suggestedQty,classification,
+      recommendedAction: classification === "DEAD" ? "DISCONTINUE_OR_BUNDLE" : classification === "SLOW" ? "MARKDOWN_TRANSFER_OR_BUNDLE" : suggestedQty>0 ? "REORDER" : "MONITOR" };
+  });
+  const slowMoving = advanced.filter((x: any) => x.classification === "SLOW" || x.classification === "DEAD")
+    .sort((a: any,b: any) => b.available-a.available);
+  const enhancedPurchases = advanced.filter((x: any) => x.suggestedQty>0).sort((a: any,b: any) => b.suggestedQty-a.suggestedQty);
+  const enhancedStockoutRisk = advanced.filter((x: any) => x.daysToStockout !== null).sort((a: any,b: any) => a.daysToStockout-b.daysToStockout);
+  const stockoutWithin7Days = enhancedStockoutRisk.filter((item: any) => item.daysToStockout <= 7);
+  const expiringItems = expiring.rows.map((r: any) => ({ sku:r.sku,name:r.name,size:r.size,lotNo:r.lot_no,expiryDate:r.expiry_date instanceof Date ? r.expiry_date.toISOString().slice(0,10) : String(r.expiry_date),qty:Number(r.qty),daysToExpiry:Number(r.days_to_expiry),recommendedAction:Number(r.days_to_expiry)<=0 ? "BLOCK_AND_DISPOSE" : Number(r.days_to_expiry)<=30 ? "FEFO_MARKDOWN_OR_TRANSFER" : "FEFO_PRIORITY" }));
+
+  return {
+    summary: {
+      lowStockCount: lowStockRows.length,
+      outOfStockCount: outOfStockNow.length,
+      stockoutWithin7DaysCount: stockoutWithin7Days.length,
+      purchaseSuggestionCount: enhancedPurchases.length,
+      totalSuggestedQty: enhancedPurchases.reduce((sum: number,item: any)=>sum+item.suggestedQty,0),
+      slowMovingCount: slowMoving.length,
+      deadStockCount: slowMoving.filter((x: any)=>x.classification === "DEAD").length,
+      expiringLotCount: expiringItems.length,
+      expiringUnits: expiringItems.reduce((sum: number,item: any)=>sum+item.qty,0),
+      windowDays: safeWindowDays,
+      coverageDays: safeCoverageDays,
+      disclaimer: stockoutMeta.disclaimer,
+    },
+    lowStock: lowStockRows.slice(0, safeLimit).map((row) => ({
+      sku: row.sku,
+      name: row.name,
+      size: row.size,
+      available: Number(row.available),
+      reorderPoint: Number(row.reorder_point),
+    })),
+    stockoutRisk: enhancedStockoutRisk.slice(0, safeLimit),
+    purchaseSuggestions: enhancedPurchases.slice(0, safeLimit),
+    slowMoving: slowMoving.slice(0, safeLimit),
+    expiringLots: expiringItems.slice(0, safeLimit),
   };
 }

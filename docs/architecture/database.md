@@ -56,8 +56,26 @@ operators must resolve those records before retrying the migration.
 | POS Scan Manager / PO receipt retry | `bms_pos_purchase_receipts` (+ `bms_pos_devices.scanner_mode/scanner_prefix_key/scanner_suffix_key/scanner_max_gap_ms`) | `9.6` |
 | POS petty-cash expenses | `bms_pos_expenses` (drawer-funded rows link atomically to `bms_pos_cash_movements`; personal-funded rows intentionally do not), `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger` | `9.7`–`9.10` |
 | Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items` (+ widened `bms_stock_movements.type` CHECK) | `7.98` |
+| Phase 1 action + inventory intelligence | `bms_actions`, `bms_action_events`, `bms_inventory_policies`, `bms_inventory_demand_events` | `9.12`–`9.13` |
+| Phase 2 retention engine | `bms_retention_cases` | `9.14` |
 
 ## Notable schema details
+
+**Phase 1 action center (`9.12`)** — `bms_actions` materializes one tenant-scoped action per Bangkok
+business day and signal. It stores priority, evidence, expected impact, confidence, owner, due date,
+deep link and the terminal lifecycle `NEW -> ACCEPTED -> COMPLETED` or `DISMISSED`/`EXPIRED`.
+`bms_action_events` is the append-only transition history; the service writes its domain audit row in
+the same tenant transaction. `bms_inventory_policies` supplies per-variant safety-stock and supplier
+lead-time assumptions. `bms_inventory_demand_events` records lost sales and restock requests so unmet
+demand contributes to later purchase recommendations. All four tables use forced tenant RLS and
+`bms_app` grants. Recommendations remain advisory and never create a PO automatically.
+
+**Phase 2 retention engine (`9.14`)** — `bms_retention_cases` stores one monthly case per tenant and
+identified customer. It snapshots RFM inputs, expected return date, risk, bilingual recommendation,
+verified channel/product evidence, treatment/holdout cohort, operator lifecycle and attributed order
+revenue. Treatment contact is explicit and audited; holdout contact is refused by the service.
+Conversions are attributed for at most 30 days from treatment contact or holdout assignment, after
+which open cases become `EXPIRED`. The table has forced tenant RLS and no delete grant.
 
 **Loyalty ledger (`7.96`)** — `bms_loyalty_ledger` is append-only and is the only source of truth for
 points. `bms_customers.points_balance` is a cache of `SUM(points)` and may go negative when a customer

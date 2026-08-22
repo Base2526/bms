@@ -1058,6 +1058,11 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
     bmsOperationalAlerts: BmsOperationalAlerts!
+    bmsInventoryActionCenter(windowDays: Int = 30, coverageDays: Int = 30, limit: Int = 5): BmsInventoryActionCenter!
+    bmsActions(limit: Int = 50): [BmsAction!]!
+    bmsActionMetrics(days: Int = 30): BmsActionMetrics!
+    bmsRetentionCases(limit: Int = 100): [BmsRetentionCase!]!
+    bmsRetentionAnalytics: BmsRetentionAnalytics!
 
     # ===== BMS settings / channels (admin) =====
     bmsMyTenant: BmsTenantInfo!
@@ -2104,6 +2109,78 @@ export const typeDefs = /* GraphQL */ `
     reservationExpiringCount: Int!
     chatWaitingCount: Int!
   }
+
+  type BmsInventoryActionSummary {
+    lowStockCount: Int!
+    outOfStockCount: Int!
+    stockoutWithin7DaysCount: Int!
+    purchaseSuggestionCount: Int!
+    totalSuggestedQty: Int!
+    slowMovingCount: Int!
+    deadStockCount: Int!
+    expiringLotCount: Int!
+    expiringUnits: Int!
+    windowDays: Int!
+    coverageDays: Int!
+    disclaimer: String!
+  }
+
+  type BmsInventoryActionLowStockItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    reorderPoint: Int!
+  }
+
+  type BmsStockoutRiskItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    avgPerDay: Float!
+    daysToStockout: Float
+    projectedStockoutDate: String
+  }
+
+  type BmsPurchaseSuggestionItem {
+    sku: String!
+    name: String!
+    size: String!
+    available: Int!
+    avgPerDay: Float!
+    suggestedQty: Int!
+    soldInWindow: Int!
+    demandFeedback: Int!
+    incomingQty: Int!
+    trendPct: Float!
+    safetyStock: Int!
+    leadTimeDays: Int!
+    classification: String!
+    recommendedAction: String!
+  }
+
+  type BmsSlowMovingItem { sku: String! name: String! size: String! available: Int! soldInWindow: Int! trendPct: Float! classification: String! recommendedAction: String! }
+  type BmsExpiringLotItem { sku: String! name: String! size: String! lotNo: String! expiryDate: String! qty: Int! daysToExpiry: Int! recommendedAction: String! }
+
+  type BmsInventoryActionCenter {
+    summary: BmsInventoryActionSummary!
+    lowStock: [BmsInventoryActionLowStockItem!]!
+    stockoutRisk: [BmsStockoutRiskItem!]!
+    purchaseSuggestions: [BmsPurchaseSuggestionItem!]!
+    slowMoving: [BmsSlowMovingItem!]!
+    expiringLots: [BmsExpiringLotItem!]!
+  }
+
+  type BmsAction { id: ID! actionKey: String! category: String! priority: String! title: String! titleEn: String! evidence: JSON! expectedImpact: String! expectedImpactEn: String! confidence: Float! ownerId: ID ownerName: String dueAt: String deepLink: String! status: BmsActionStatus! statusReason: String measuredOutcome: JSON firstSeenAt: String! lastSeenAt: String! }
+  type BmsActionMetrics { days: Int! total: Int! accepted: Int! completed: Int! acceptanceRate: Float! completionRate: Float! avgTimeToActionMinutes: Float! measuredOutcomeCount: Int! }
+  enum BmsRetentionStatus { NEW ACCEPTED CONTACTED CONVERTED DISMISSED EXPIRED }
+  type BmsRetentionCase { id: ID! customerId: ID! customerName: String! cohort: String! status: BmsRetentionStatus! rfmSegment: String! recencyDays: Int! frequency: Int! monetary: Float! expectedReturnAt: String riskScore: Int! recommendedChannel: String recommendedMessageTh: String! recommendedMessageEn: String! recommendedOffer: String! recommendedProductSku: String reasonTh: String! reasonEn: String! contactedAt: String convertedAt: String convertedRevenue: Float }
+  type BmsRetentionAnalytics { treatmentTotal: Int! holdoutTotal: Int! treatmentConverted: Int! holdoutConverted: Int! treatmentRate: Float! holdoutRate: Float! incrementalLift: Float! retentionRevenue: Float! }
+  enum BmsActionStatus { NEW ACCEPTED COMPLETED DISMISSED EXPIRED }
+  enum BmsInventoryDemandKind { LOST_SALE RESTOCK_REQUEST }
+  input BmsInventoryDemandInput { sku: String! size: String! kind: BmsInventoryDemandKind! qty: Int! note: String }
+  input BmsInventoryPolicyInput { sku: String! size: String! safetyStockDays: Int! leadTimeDays: Int! }
 
   type BmsAiToolFailureRow {
     tool: String!
@@ -3442,6 +3519,13 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+
+    bmsRefreshActions: Int!
+    bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!
+    bmsRecordInventoryDemand(input: BmsInventoryDemandInput!): ID!
+    bmsUpsertInventoryPolicy(input: BmsInventoryPolicyInput!): Boolean!
+    bmsRefreshRetention: Int!
+    bmsTransitionRetentionCase(id: ID!, status: BmsRetentionStatus!, reason: String): BmsRetentionCase!
 
     # ---- สาขา (9.1) ----
     bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!

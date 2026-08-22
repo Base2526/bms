@@ -10,6 +10,18 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+**Commercial intelligence Q1-Q3 (2026-08-22)** — ✅ implemented. Phase 1 combines a Bangkok-day
+Action Center with advisory inventory intelligence (`9.12`–`9.13`): evidence, priority, expected
+impact, confidence, owner/due date, audited lifecycle and measured outcomes sit beside stock-out
+horizon, reorder quantity, incoming PO supply, lost-sale/restock feedback, slow/dead stock and FEFO
+expiry actions. Phase 2 adds the tenant-scoped retention engine (`9.14`): monthly RFM/value/return
+rhythm and risk, verified basket-derived next product, safe bilingual comeback proposals, explicit
+treatment acceptance/contact, deterministic holdout, attributed revenue and estimated incremental
+lift. Attribution is capped at 30 days and stale cases expire. UI lives on `/admin/dashboard` and the
+permission-independent Retention tab in `/admin/followup-queue`; Q4 profit/growth remains planned.
+Contract suites: `scripts/phase1-action-center-contract.test.mts` and
+`scripts/retention-engine-contract.test.mts`.
+
 **Customer 360 (Inbox right panel)** — ✅ implemented and documented in
 [docs/ui/customer360.md](ui/customer360.md): `lib/bms/customer360.ts` · migration
 `6.2__bms_customer_360.sql` · GraphQL `bmsCustomer360`/`bmsCustomerTimeline`/
@@ -718,8 +730,7 @@ adding a password/TLS
 to Redis before a real
 production deploy (see "Redis infrastructure hardening" above) · Follow-up Automation's Workflow Engine,
 decision-driving scoring model, and deeper analytics/dashboarding beyond the current queue summary
-(see above) · wiring `/live-dashboard` to real queries and re-reviewing its `?demo=1` bypass at that
-point · finishing admin i18n (48 of 78 admin `.tsx` files are bilingual; the remaining 30 are
+(see above) · finishing admin i18n (48 of 78 admin `.tsx` files are bilingual; the remaining 30 are
 layout/loading guards and English-only legacy platform pages — see [AGENTS.md](../AGENTS.md) § i18n
 coverage before assuming any of them is a leak) · restarting Postgres to make the already-preloaded
 `pg_stat_statements` take effect (plus `CREATE EXTENSION` per database) so `/admin/system-health` can

@@ -14,6 +14,8 @@ import {
   type FollowupRuleInput,
 } from "@/lib/bms/followups";
 import { query } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
+import { getRetentionAnalytics, listRetentionCases, refreshRetentionCases, transitionRetentionCase } from "@/lib/bms/retention";
 
 export const bmsFollowupsResolvers = {
   Query: {
@@ -21,6 +23,8 @@ export const bmsFollowupsResolvers = {
       await requirePermission(ctx, "followup.view");
       return listFollowupRules(getTenantId(ctx));
     },
+    async bmsRetentionCases(_p:unknown,args:{limit?:number},ctx:any){await requirePermission(ctx,"retention.view");return listRetentionCases(getTenantId(ctx),args.limit??100);},
+    async bmsRetentionAnalytics(_p:unknown,_a:unknown,ctx:any){await requirePermission(ctx,"retention.view");return getRetentionAnalytics(getTenantId(ctx));},
     async bmsFollowupQueue(_p: unknown, args: { limit?: number }, ctx: any) {
       await requirePermission(ctx, "followup.view");
       return listFollowupQueue(getTenantId(ctx), args.limit ?? 50);
@@ -53,6 +57,8 @@ export const bmsFollowupsResolvers = {
     },
   },
   Mutation: {
+    async bmsRefreshRetention(_p:unknown,_a:unknown,ctx:any){await requirePermission(ctx,"retention.manage");return refreshRetentionCases(getTenantId(ctx));},
+    async bmsTransitionRetentionCase(_p:unknown,args:any,ctx:any){await requirePermission(ctx,"retention.manage");try{return await transitionRetentionCase(getTenantId(ctx),args.id,String(requireAuth(ctx).author_id),args.status,args.reason);}catch(e:any){throw new GraphQLError(e?.message||"failed",{extensions:{code:"BAD_USER_INPUT"}});}},
     async bmsUpsertFollowupRule(_p: unknown, args: { input: FollowupRuleInput }, ctx: any) {
       await requirePermission(ctx, "followup.manage");
       try {

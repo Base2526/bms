@@ -31,6 +31,14 @@ type CapabilityGroup = {
   features: string[];
 };
 
+type MarketPackage = {
+  id: string;
+  title: string;
+  summary: string;
+  bullets: string[];
+  tag?: string;
+};
+
 type RoadmapItem = {
   id: string;
   quarter: string;
@@ -63,12 +71,16 @@ type RoadmapPageContent = {
     limited: string;
     intelligenceLayers: string;
     layers: Array<{ color: string; text: string }>;
+    packages: string;
+    packagesNote: string;
+    packageIncludes: string;
     roadmap: string;
     status: string;
     goals: string;
     deliverables: string;
   };
   capabilities: CapabilityGroup[];
+  packages: MarketPackage[];
   items: Array<Omit<RoadmapItem, "icon">>;
 };
 
@@ -113,6 +125,10 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         { color: "geekblue", text: "Basket and cross-sell opportunities" },
         { color: "magenta", text: "Promotion, pricing, and scenario simulation" },
       ],
+      packages: "Go-to-market packaging",
+      packagesNote:
+        "Sell the roadmap as outcome-based phases. Phase 1 bundles Q1 and Q2 into one clear promise: know what to do today and buy the right stock with confidence.",
+      packageIncludes: "Includes",
       roadmap: "Delivery roadmap (Q1-Q4)",
       status: "Status",
       goals: "Goals",
@@ -198,13 +214,44 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         ],
       },
     ],
+    packages: [
+      {
+        id: "phase1",
+        title: "Phase 1 - Daily Action + Inventory Cashflow",
+        summary: "Know what to do today and buy the right stock with confidence.",
+        tag: "Primary sales package",
+        bullets: [
+          "Bundle Q1 Today's Action Center with Q2 Inventory Intelligence as the first commercial package",
+          "Lead with owner-facing daily priorities, then prove ROI through stock-out reduction and trapped-cash release",
+          "Best fit for new deals, pilots, and first expansion inside existing shops",
+        ],
+      },
+      {
+        id: "phase2",
+        title: "Phase 2 - Customer Retention Engine",
+        summary: "Bring valuable customers back with targeted next-best actions.",
+        bullets: [
+          "Use Q3 once customer identity coverage and purchase history are reliable enough",
+          "Position as growth on top of a stable operations and inventory base",
+        ],
+      },
+      {
+        id: "phase3",
+        title: "Phase 3 - Profit Diagnosis and Growth Simulation",
+        summary: "Explain margin shifts and test pricing or promotion decisions before committing.",
+        bullets: [
+          "Use Q4 as the premium owner/manager intelligence layer",
+          "Sell after the business trusts daily actions, stock recommendations, and retention workflows",
+        ],
+      },
+    ],
     items: [
       {
         id: "q1",
         quarter: "Q1 - First release",
         title: "Today's Action Center",
-        status: "in_progress",
-        tags: ["killer-feature", "action-center", "measurement"],
+        status: "done",
+        tags: ["killer-feature", "phase-1", "action-center", "measurement"],
         goals: [
           "Give the owner one prioritized list of what the store should do today",
           "Turn existing alerts and operational signals into traceable, measurable actions",
@@ -220,8 +267,8 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         id: "q2",
         quarter: "Q2 - Inventory intelligence",
         title: "Buy the right stock and release trapped cash",
-        status: "planned",
-        tags: ["inventory", "cash-flow", "reorder"],
+        status: "done",
+        tags: ["phase-1", "inventory", "cash-flow", "reorder"],
         goals: [
           "Reduce stock-outs without creating excess stock",
           "Identify slow-moving, dead, and expiring inventory early enough to act",
@@ -237,7 +284,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         id: "q3",
         quarter: "Q3 - Customer retention",
         title: "Bring valuable customers back",
-        status: "planned",
+        status: "done",
         tags: ["crm", "rfm", "retention"],
         goals: [
           "Detect customers whose buying rhythm has changed before they are lost",
@@ -309,6 +356,10 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         { color: "geekblue", text: "Basket analysis และโอกาส Cross-sell" },
         { color: "magenta", text: "Promotion, Pricing และ Scenario simulation" },
       ],
+      packages: "แพ็กเกจสำหรับการขาย",
+      packagesNote:
+        "สื่อสาร roadmap เป็น Phase ตามผลลัพธ์ธุรกิจ โดยให้ Phase 1 รวม Q1 และ Q2 เป็นคำสัญญาที่เข้าใจง่าย: รู้ว่าวันนี้ต้องทำอะไร และซื้อของได้แม่นขึ้นอย่างมั่นใจ",
+      packageIncludes: "ประกอบด้วย",
       roadmap: "แผนส่งมอบ Q1-Q4",
       status: "สถานะ",
       goals: "เป้าหมาย",
@@ -394,13 +445,44 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         ],
       },
     ],
+    packages: [
+      {
+        id: "phase1",
+        title: "Phase 1 - วันนี้ต้องทำอะไร + ซื้อของแม่นขึ้น",
+        summary: "รู้ว่าวันนี้ต้องทำอะไร และซื้อของให้พอดีอย่างมั่นใจ",
+        tag: "แพ็กขายหลัก",
+        bullets: [
+          "รวม Q1 ศูนย์รวม Action รายวัน กับ Q2 Inventory Intelligence เป็นแพ็กเชิงพาณิชย์ชุดแรก",
+          "เปิดการขายด้วยรายการที่เจ้าของร้านเห็นแล้วลงมือทำได้ทันที แล้วพิสูจน์ ROI ด้วยการลดของขาดและปลดเงินจมสต็อก",
+          "เหมาะที่สุดสำหรับดีลใหม่ การทดลองใช้งาน และการขยายในร้านที่ใช้อยู่แล้ว",
+        ],
+      },
+      {
+        id: "phase2",
+        title: "Phase 2 - เครื่องยนต์ดึงลูกค้ากลับมา",
+        summary: "พาลูกค้าที่มีคุณค่ากลับมาซื้อด้วย next-best action ที่เฉพาะเจาะจง",
+        bullets: [
+          "ใช้ Q3 เมื่อความครอบคลุมข้อมูลตัวตนลูกค้าและประวัติซื้อมีความน่าเชื่อถือพอ",
+          "วางตำแหน่งเป็นชั้นการเติบโตบนฐานงานปฏิบัติการและสต็อกที่นิ่งแล้ว",
+        ],
+      },
+      {
+        id: "phase3",
+        title: "Phase 3 - วินิจฉัยกำไรและจำลองการเติบโต",
+        summary: "อธิบายการเปลี่ยนแปลงของ Margin และลองแผนราคา/โปรโมชั่นก่อนตัดสินใจจริง",
+        bullets: [
+          "ใช้ Q4 เป็นชั้น intelligence ระดับ owner/manager แบบพรีเมียม",
+          "ขายต่อเมื่อธุรกิจเชื่อใจ action รายวัน คำแนะนำสต็อก และ workflow retention แล้ว",
+        ],
+      },
+    ],
     items: [
       {
         id: "q1",
         quarter: "Q1 - รุ่นแรก",
         title: "ศูนย์รวม วันนี้ร้านควรทำอะไร",
-        status: "in_progress",
-        tags: ["killer-feature", "action-center", "measurement"],
+        status: "done",
+        tags: ["killer-feature", "phase-1", "action-center", "measurement"],
         goals: [
           "เปิดระบบมาแล้วเห็นรายการสำคัญที่ร้านควรจัดการวันนี้ เรียงตามผลกระทบ",
           "เปลี่ยน Alert และสัญญาณที่ระบบมีอยู่ให้เป็น Action ที่ติดตามและวัดผลได้",
@@ -416,8 +498,8 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         id: "q2",
         quarter: "Q2 - Inventory Intelligence",
         title: "ซื้อของให้พอดีและปลดเงินที่จมในสต็อก",
-        status: "planned",
-        tags: ["inventory", "cash-flow", "reorder"],
+        status: "done",
+        tags: ["phase-1", "inventory", "cash-flow", "reorder"],
         goals: [
           "ลดโอกาสของหมดโดยไม่ทำให้ร้านแบกสต็อกเกินจำเป็น",
           "พบสินค้าขายช้า ค้างสต็อก และใกล้หมดอายุก่อนที่จะสายเกินแก้",
@@ -433,7 +515,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         id: "q3",
         quarter: "Q3 - Customer Retention",
         title: "พาลูกค้าที่มีคุณค่ากลับมาซื้อ",
-        status: "planned",
+        status: "done",
         tags: ["crm", "rfm", "retention"],
         goals: [
           "ตรวจจับว่าจังหวะการซื้อของลูกค้าเปลี่ยนไปก่อนที่จะเสียลูกค้า",
@@ -731,6 +813,37 @@ export default function RoadmapPage() {
                 ))}
               </Space>
             </Col>
+          </Row>
+        </Card>
+
+        <Card size="small" title={content.labels.packages} variant="outlined" style={{ marginBottom: 12 }}>
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {content.labels.packagesNote}
+          </Paragraph>
+          <Row gutter={[12, 12]}>
+            {content.packages.map((pkg) => (
+              <Col key={pkg.id} xs={24} md={8}>
+                <Card
+                  size="small"
+                  variant="outlined"
+                  style={{ height: "100%" }}
+                  extra={pkg.tag ? <Tag color={pkg.id === "phase1" ? "blue" : "default"}>{pkg.tag}</Tag> : null}
+                >
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    <Text strong>{pkg.title}</Text>
+                    <Text type="secondary">{pkg.summary}</Text>
+                    <Text strong>{content.labels.packageIncludes}</Text>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {pkg.bullets.map((bullet) => (
+                        <li key={bullet}>
+                          <Text>{bullet}</Text>
+                        </li>
+                      ))}
+                    </ul>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
           </Row>
         </Card>
 
