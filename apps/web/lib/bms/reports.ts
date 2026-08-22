@@ -13,6 +13,24 @@ import { query } from "@/lib/db";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const RETURN_REASON_PREFIX_RE = /^\[([A-Z_]+)\]\s*/;
+const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Bangkok",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function bangkokDateKey(value: Date): string {
+  const parts = BANGKOK_DATE_FORMATTER.formatToParts(value);
+  const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function addDateKeyDays(value: string, offset: number): string {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
 
 function parseReturnReason(note: string | null | undefined) {
   const text = String(note ?? "").trim();
@@ -23,11 +41,10 @@ function parseReturnReason(note: string | null | undefined) {
   };
 }
 
-/** normalize ช่วงวันที่: default = 30 วันล่าสุด (YYYY-MM-DD) */
+/** normalize ช่วงวันที่ธุรกิจ Asia/Bangkok: default = 30 วันล่าสุด (YYYY-MM-DD) */
 function range(from?: string | null, to?: string | null): { from: string; to: string } {
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const toD = from && to ? to : to || iso(new Date());
-  const fromD = from || iso(new Date(Date.now() - 29 * 864e5));
+  const toD = from && to ? to : to || bangkokDateKey(new Date());
+  const fromD = from || addDateKeyDays(toD, -29);
   return { from: fromD, to: toD };
 }
 
@@ -40,8 +57,8 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
               COUNT(*)::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1 AND status = ANY($2)
-          AND created_at >= $3::date
-          AND created_at < $4::date + interval '1 day'`,
+          AND created_at >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
       [tenantId, PAID, r.from, r.to]
     ),
     query(
@@ -51,8 +68,8 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
          FROM generate_series($3::date, $4::date, interval '1 day') d
          LEFT JOIN bms_orders o
            ON o.tenant_id = $1
-          AND o.created_at >= d
-          AND o.created_at < d + interval '1 day'
+          AND o.created_at >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND o.created_at < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY day ORDER BY day`,
       [tenantId, PAID, r.from, r.to]
     ),
@@ -60,8 +77,8 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
       `SELECT status, COUNT(*)::int AS count
          FROM bms_orders
         WHERE tenant_id = $1
-          AND created_at >= $2::date
-          AND created_at < $3::date + interval '1 day'
+          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY status ORDER BY count DESC`,
       [tenantId, r.from, r.to]
     ),
@@ -71,8 +88,8 @@ export async function getSalesSummary(tenantId: string, from?: string | null, to
               COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1
-          AND created_at >= $3::date
-          AND created_at < $4::date + interval '1 day'
+          AND created_at >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY channel ORDER BY revenue DESC`,
       [tenantId, PAID, r.from, r.to]
     ),
@@ -194,8 +211,8 @@ export async function getTopSellingProducts(
        JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND o.status = ANY($2)
-        AND o.created_at >= $3::date
-        AND o.created_at < $4::date + interval '1 day'
+        AND o.created_at >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+        AND o.created_at < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
       LIMIT $5`,
@@ -240,20 +257,20 @@ export async function getProfitSummary(tenantId: string, from?: string | null, t
          JOIN bms_orders o ON o.id = oi.order_id
          JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
         WHERE oi.tenant_id = $1 AND o.status = ANY($2)
-          AND o.created_at >= $3::date
-          AND o.created_at < $4::date + interval '1 day'`,
+          AND o.created_at >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND o.created_at < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
       [tenantId, PAID, r.from, r.to]
     ),
     query(
-      `SELECT o.created_at::date AS day,
+      `SELECT (o.created_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
               COALESCE(SUM(oi.qty * oi.unit_price), 0) AS revenue,
               COALESCE(SUM(oi.qty * COALESCE(p.cost_price, 0)), 0) AS cost
          FROM bms_order_items oi
          JOIN bms_orders o ON o.id = oi.order_id
          JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
         WHERE oi.tenant_id = $1 AND o.status = ANY($2)
-          AND o.created_at >= $3::date
-          AND o.created_at < $4::date + interval '1 day'
+          AND o.created_at >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND o.created_at < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY day ORDER BY day`,
       [tenantId, PAID, r.from, r.to]
     ),
@@ -292,8 +309,8 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
            FROM bms_pos_returns
           WHERE tenant_id = $1
             AND is_void = FALSE
-            AND created_at >= $2::date
-            AND created_at < $3::date + interval '1 day'
+            AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
        )
        SELECT COUNT(*)::int AS return_count,
               COALESCE(SUM(refund_amount), 0) AS refund_total,
@@ -322,8 +339,8 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
          FROM bms_pos_returns
         WHERE tenant_id = $1
           AND is_void = FALSE
-          AND created_at >= $2::date
-          AND created_at < $3::date + interval '1 day'
+          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY 1
         ORDER BY count DESC, note
         LIMIT 5`,
@@ -348,8 +365,8 @@ export async function getPosReturnSummary(tenantId: string, from?: string | null
          LEFT JOIN users u ON u.id = pr.returned_by
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
-          AND pr.created_at >= $2::date
-          AND pr.created_at < $3::date + interval '1 day'
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         ORDER BY pr.created_at DESC
         LIMIT 10`,
       [tenantId, r.from, r.to]
@@ -399,8 +416,8 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
          LEFT JOIN users u ON u.id = pr.returned_by
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
-          AND pr.created_at >= $2::date
-          AND pr.created_at < $3::date + interval '1 day'
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY 1
         ORDER BY refund_total DESC, return_count DESC
         LIMIT 10`,
@@ -415,8 +432,8 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
          FROM bms_pos_returns
         WHERE tenant_id = $1
           AND is_void = FALSE
-          AND created_at >= $2::date
-          AND created_at < $3::date + interval '1 day'`,
+          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
       [tenantId, r.from, r.to]
     ),
     // คืนโดยไม่มีใบเสร็จ (8.2) — นับแยกจากการคืนปกติเสมอ
@@ -428,8 +445,8 @@ export async function getPosReturnAuditSummary(tenantId: string, from?: string |
               COUNT(DISTINCT returned_by)::int AS staff_count
          FROM bms_pos_blind_returns
         WHERE tenant_id = $1
-          AND created_at >= $2::date
-          AND created_at < $3::date + interval '1 day'`,
+          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
       [tenantId, r.from, r.to]
     ),
   ]);

@@ -31,7 +31,7 @@ automatic failure cases, a roughly 5% normal-conversation QA sample, redacted co
 `PASS`/`FAIL`/`UNCLEAR` review. Access uses `ai_quality.view` and `ai_quality.review`; definitions
 and privacy constraints are documented in [AI quality control](../ai/quality.md).
 
-## Live Dashboard (`/live-dashboard`) — 🚧 layout only, not wired to real data
+## Live Dashboard (`/live-dashboard`) — phase 1 wired to real business data
 
 A **public-route** monitoring screen for watching sales during a live-selling session without going
 through the admin shell. It lives at `apps/web/app/(main)/live-dashboard/page.tsx` (next to
@@ -39,33 +39,51 @@ through the admin shell. It lives at `apps/web/app/(main)/live-dashboard/page.ts
 instead of `AdminSidebar`/`AdminLayoutClient`. The intended use case is putting it on a TV or second
 monitor in the shop while a live stream runs.
 
-**Current status is deliberate and important: every number on this page is mock data.** The page
-holds `MOCK_*` constants, renders a persistent warning banner, tags each figure with a
-"ตัวอย่าง" chip (hover for the reason), and carries `// TODO(real):` comments naming the query each
-block will eventually read. Nothing may present a mock figure as a real one — see
-[../AI_GUIDELINES.md](../AI_GUIDELINES.md) and the AI rules in [CLAUDE.md](../../CLAUDE.md#ai-rules-non-negotiable).
+**Current status after the phase-1 pass:** this page now reads real business data for the parts BMS
+already owns, and keeps the truly missing pieces clearly pending instead of faking them. The route
+still reuses the public shell, but it now queries the same tenant-scoped GraphQL reads that power
+the admin dashboard/reports instead of rendering a full mock screen.
+
+All day-based figures use `Asia/Bangkok` boundaries in the reporting services, independent of the
+PostgreSQL server timezone. An open dashboard also rolls its query range forward automatically when
+the Bangkok calendar day changes, so a TV does not remain pinned to yesterday until reload.
 
 - **Access**: reuses the existing session cookie. A signed-in admin with `report.view` sees the
   dashboard; signed-in without the permission sees a 403 result; signed out sees a login prompt
   linking to `/admin/login?next=/live-dashboard`. No new permission was added.
-- **`?demo=1`**: renders the layout with no session at all, for design review. It is safe only
-  because the page has no real data to leak yet — **this must be re-evaluated the moment real
-  queries are wired in.**
+- **`?demo=1`**: no longer renders a fake dashboard preview. Once real queries were wired in, the
+  unlocked demo route was no longer acceptable because an empty/non-querying preview would look too
+  close to a real store screen. It now shows an explicit informational result directing the user to
+  log in for live data.
 - **Fullscreen**: `element.requestFullscreen()` on the page shell, with layout/typography scaled up
   through the CSS `:fullscreen` pseudo-class (not a React state class) so the styling can never
   disagree with the browser's actual state. A `fullscreenchange` listener is the single source of
   truth for the button label, because the user can leave fullscreen with Esc without touching it.
-- **Planned data sources** (all already exist; none are connected yet):
+- **Display mode selector**: the URL-backed `mode` switch lets the viewer choose `Auto`, `TV`,
+  `Desk`, or `Compact`. `Auto` follows responsive breakpoints, `TV` enlarges high-priority figures
+  and hides the operations/pending row, `Desk` keeps all sections with denser spacing, and `Compact`
+  keeps KPI, urgent work, recent orders, and channel mix. The selected non-auto mode is shareable as
+  `?mode=tv|desk|compact`; choosing Auto removes the parameter.
+- **Connected in phase 1**:
 
   | Block | Will read from |
   | --- | --- |
-  | KPI + "เทียบเมื่อวาน" deltas | `bmsDashboard.salesDaily[]`, `avgOrderValue` |
+  | KPI + "เทียบเมื่อวาน" deltas | today's `bmsSalesSummary` + current/previous `byDay` ranges; `bmsDashboard` is a partial fallback |
   | งานค้าง tiles | `bmsOperationalAlerts` |
-  | ออเดอร์ที่เพิ่งเข้า feed | `bmsOrders(limit)` ordered by `created_at DESC` |
-  | สัดส่วนตามช่องทาง donut | `bmsSalesSummary().byChannel` |
-  | ยอดขาย trend chart | `bmsDashboard.salesDaily[]` |
-  | สินค้าขายดี · ออเดอร์ตามสถานะ · สินค้าใกล้หมด | `bmsDashboard.topProducts` / `ordersByStatus` / `lowStockCount` |
-  | Sidebar channel rows | `bmsSalesSummary().byChannel` + `bmsChannelHealth` |
+  | ออเดอร์ที่เพิ่งเข้า feed | `bmsOrders(limit)` ordered by `created_at DESC`; requires `order.view`, otherwise the panel explains why detail is hidden |
+  | สัดส่วนตามช่องทาง donut | `bmsSalesSummary(from: today, to: today).byChannel` |
+  | Sidebar channel rows | `bmsSalesSummary(...).byChannel` + `bmsChannelHealth` |
+  | ยอดขาย trend chart | two `bmsSalesSummary(...).byDay` aliases for the latest 7 days and the preceding 7 days |
+  | สินค้าขายดีวันนี้ | `bmsTopSellingProducts(from: today, to: today)` |
+  | ออเดอร์วันนี้ตามสถานะ | `bmsSalesSummary(from: today, to: today).byStatus` |
+  | สินค้าใกล้หมด (detail) | `bmsLowStock` when the viewer also has `product.view`; otherwise fallback to `bmsDashboard.lowStockCount` |
+
+- **Still intentionally pending**:
+
+  | Block | Why it is still pending |
+  | --- | --- |
+  | Intraday/hourly live sales curve | `salesDaily[]` is only daily; a true during-stream chart needs a new finer-grained query |
+  | Viewers / comments / conversion | BMS has no owned source for these; requires per-platform Live API integration |
 
 - **Live-stream metrics are a different category.** ผู้ชมสด / Conversion / คอมเมนต์ are not
   "unwired" — BMS has no data for them at all, and getting it requires per-platform Live API
@@ -75,7 +93,10 @@ block will eventually read. Nothing may present a mock figure as a real one — 
 
 ## Sales Summary (`getSalesSummary(from, to)`)
 
-Defaults to the last 30 days. Revenue only counts orders `PAID` or later (not `PENDING`).
+Defaults to the last 30 Bangkok calendar days. Every explicit `from`/`to` range is converted to
+`Asia/Bangkok` timestamp boundaries before filtering, regardless of the PostgreSQL server timezone.
+Revenue only counts orders `PAID` or later (not `PENDING`). Profit and POS-return report ranges use
+the same boundary convention.
 
 ```
 {
