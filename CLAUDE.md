@@ -24,7 +24,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
 | [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
-| [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard |
+| [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
 | [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
 | [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |
@@ -33,7 +33,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 
 Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
 (🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
-flag-gated off) · **`/live-dashboard`** (🚧 layout only, all numbers mock) · **e-Tax submission**
+flag-gated off) · **e-Tax submission**
 (🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
 printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
 and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
@@ -42,6 +42,12 @@ drawer cash movements, whole-bill serial checks, and shift-report correctness fi
 stock transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO
 receiving at the register (`9.6`) are otherwise fully built — see
 [business/pos.md](docs/business/pos.md) and [business/inventory.md](docs/business/inventory.md).
+The commercial intelligence roadmap is built through **Q3**: Phase 1 bundles the daily Action Center
+and inventory purchasing intelligence (`9.12`–`9.13`), while Phase 2 adds the monthly customer
+retention engine (`9.14`) with RFM/risk scoring, verified next-product evidence, a propose-only
+comeback queue, deterministic holdout, and bounded 30-day conversion attribution. See
+[ui/dashboard.md](docs/ui/dashboard.md), [ui/retention-engine.md](docs/ui/retention-engine.md), and
+[business/crm.md](docs/business/crm.md). Q4 profit/growth simulation remains planned.
 Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price tiers, blind returns,
 serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch
 creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.local.md) for the

@@ -26,6 +26,33 @@ The dashboard also includes an **AI health** card for the last 7 days, backed by
 that fail most often. This reuses `bms_audit_log` (`ai.tool_call`) and `bms_conversation_notes`
 instead of introducing a separate AI-failure table.
 
+As of 2026-08-22, `/admin/dashboard` carries the complete **Q1 + Q2 Phase 1** operator workflow:
+
+- **Q1 / action center** materializes daily POS, stock, margin, retention, sales and operational
+  signals with priority, evidence, expected impact, confidence, owner, due date and deep link.
+  Staff can accept, complete or dismiss with a reason; transitions and audit evidence persist in
+  `bms_actions`/`bms_action_events`. The dashboard reports acceptance, completion, time-to-action and
+  measured-outcome coverage. Users with `action.manage` automatically refresh today's signals when
+  the dashboard opens; manual refresh remains available. Signal-cleared actions expire with both an
+  append-only event and an `action.expired` audit row. Migration `9.13` keeps Thai and English action
+  copy together so the per-user language preference does not leak the other language.
+- **Q2 / inventory cashflow** is now wired as a read-only block on the same page:
+  `bmsInventoryActionCenter(windowDays, coverageDays, limit)` aggregates `listLowStock()`,
+  `predictStockOut()`, and `suggestPurchaseOrder()` into one summary with:
+  low-stock count, out-of-stock count, variants predicted to stock out within 7 days, suggested
+  purchase lines, and total suggested units. Recommendations account for demand trend, configured
+  safety-stock days, supplier lead time, open PO quantities, manually recorded lost sales and active
+  customer restock subscriptions.
+- The inventory block also classifies slow/dead stock with markdown/bundle/transfer/discontinue
+  actions and reads FEFO lots for expiry-aware actions. Low-stock rows can record a lost sale, which
+  feeds the next recommendation through `bms_inventory_demand_events`.
+- Two inventory signals are promoted into the top triage list as actionable rows:
+  variants likely to stock out within 7 days and purchase suggestions ready for review.
+
+This stays within the repo's reporting contract: **read-only**, live transactional reads, no
+separate analytics store, and no automatic purchasing action. The heuristic output remains advisory;
+staff review is still required before any purchasing decision.
+
 The card links to `/admin/ai-quality`, which adds turn-level success/handoff/unresolved trends,
 automatic failure cases, a roughly 5% normal-conversation QA sample, redacted context, and human
 `PASS`/`FAIL`/`UNCLEAR` review. Access uses `ai_quality.view` and `ai_quality.review`; definitions

@@ -99,6 +99,8 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Generated Reports & Document Export | ✅ | `lib/bms/{reportEngine,documentGenerator}.ts` · `7.53__bms_generated_reports.sql` · `/admin/reports` AI Report Generator + GraphQL/REST/AI tool entry points — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Sales Digest Reports (email/Slack/LINE) | ✅ | `lib/bms/reportDigest.ts` · `7.37__bms_report_subscriptions.sql` · `/admin/settings` card + platform-admin `/admin/report-schedule` + `POST /api/bms/reports/send-digest` cron (not yet scheduled) — see [../ui/dashboard.md](../ui/dashboard.md) |
 | Follow-up Automation | ✅ | `lib/bms/followups.ts` · `7.52__bms_followups.sql` · `/admin/followup-rules` + `/admin/followup-queue` + `POST /api/bms/followups/run` — queue includes heuristic score + 30-day analytics summary |
+| Phase 1 — Action Center + Inventory Intelligence | ✅ | `lib/bms/{actionCenter,dashboard}.ts` · `9.12`–`9.13` · `/admin/dashboard` — daily evidence-backed actions, lifecycle metrics, stock-out/reorder/slow/dead/FEFO recommendations, observed-demand feedback; advisory only |
+| Phase 2 — Customer Retention Engine | ✅ | `lib/bms/retention.ts` · `9.14` · `/admin/followup-queue` Retention tab — RFM/risk/return window, verified basket next-product, propose-only treatment, holdout and 30-day conversion attribution |
 | Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` / `5.8` |
 | SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` |
 | Public Landing / Interactive Infographic | ✅ | `app/(main)/page.tsx` · bilingual/session-aware CTA flow |
@@ -109,7 +111,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | System Health (`/admin/system-health`) | ✅ | `lib/bms/systemHealth.ts` · no migration, no new permission — reuses AI Provider Health/job-run/operations-schedule services, adds Postgres/Redis vitals, cross-tenant Channel Health, and a `bms_failure_incidents` list; GraphQL latency/error-rate via `lib/bms/requestMetrics.ts` (Redis histograms, `graphql/metricsPlugin.ts`) — not yet verified against a live browser/DB |
 | Staff Management by Shop Owner (Manager) | ✅ | `lib/bms/{userAdmin,staffRoles}.ts` · `7.78__bms_user_management_perms.sql` · `/admin/users` — `user.view`/`user.manage` opens the module, a code-level role rank decides which rows may be touched; see [api.md](./api.md) § RBAC |
 | Per-user Language & Theme Preference | ✅ | `users.language` / `users.theme_preference` · `7.50` / `7.56` / `7.81` (new accounts default to Thai) · `/admin/profile` + public `/settings` |
-| Live Dashboard (`/live-dashboard`) | 🚧 layout only — every number is mock | `app/(main)/live-dashboard/page.tsx` — public route reusing the session cookie + `report.view`; no query is wired yet, see [../ui/dashboard.md](../ui/dashboard.md) |
+| Live Dashboard (`/live-dashboard`) | ✅ phase 1 real data | `app/(main)/live-dashboard/page.tsx` · `bmsLiveDashboard` — public route reusing the session cookie + `report.view`, with real KPIs, trend, channel, order and stock signals; see [../ui/dashboard.md](../ui/dashboard.md) |
 | Platform Admin (cross-tenant) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` |
 | Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · signed cookie `BMS_ACT_TENANT` |
 | Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
@@ -131,7 +133,6 @@ owner) — needs an admin-to-LINE-user-id binding that doesn't exist yet, separa
 LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
-wiring `/live-dashboard` to real queries (and re-reviewing its `?demo=1` bypass at that point) ·
 finishing admin i18n (48 of 78 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·

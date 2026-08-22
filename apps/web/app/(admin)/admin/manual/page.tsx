@@ -1641,6 +1641,22 @@ export default function Page() {
             </Space>
           </Space>
         </Card>
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginTop: 12, borderRadius: 12 }}
+          message={lang === "en" ? "Phase 1: daily actions + smarter purchasing" : "Phase 1: งานวันนี้ + ซื้อของแม่นขึ้น"}
+          description={lang === "en"
+            ? "On Dashboard, refresh signals, accept an action, then complete or dismiss it with a reason. Inventory recommendations include demand trend, safety stock, lead time, open PO quantities, slow/dead stock and FEFO expiry. Record a lost sale on a low-stock line so unmet demand improves the next recommendation. Recommendations remain advisory and require staff review."
+            : "ที่ Dashboard ให้กดอัปเดตสัญญาณ รับทำ Action แล้วปิดงานหรือเลือกไม่ทำพร้อมเหตุผล คำแนะนำสต็อกจะรวมแนวโน้ม Demand, Safety stock, Lead time, ของที่กำลังมากับ PO, Slow/Dead stock และวันหมดอายุแบบ FEFO หากขายไม่ได้เพราะของขาด ให้บันทึก Lost sale ในรายการ Low stock เพื่อให้คำแนะนำรอบถัดไปนับ Demand ที่พลาดด้วย ทุกคำแนะนำยังต้องให้พนักงานทบทวนก่อนสั่งซื้อจริง"}
+        />
+        <Alert
+          type="info" showIcon style={{ marginTop: 12, borderRadius: 12 }}
+          message={lang === "en" ? "Phase 2: retention engine" : "Phase 2: Retention engine"}
+          description={lang === "en"
+            ? "Open Follow-up queue > Retention engine, refresh intelligence, review RFM/risk/evidence and the proposed channel, message, offer and product. Accept before contacting. Never contact HOLDOUT rows; they provide the baseline used to measure incremental conversion."
+            : "เปิด Follow-up queue > Retention engine แล้วอัปเดตข้อมูล ตรวจ RFM/ความเสี่ยง/หลักฐาน รวมถึง Channel, Message, Offer และสินค้าที่ระบบเสนอ กดรับทำก่อนติดต่อ และห้ามติดต่อแถว HOLDOUT เพราะเป็น Baseline สำหรับวัด Incremental conversion"}
+        />
       </div>
 
       <Row gutter={[20, 20]} align="top">

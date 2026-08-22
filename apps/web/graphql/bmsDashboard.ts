@@ -1,7 +1,7 @@
 // GraphQL resolver — BMS dashboard + RBAC management (admin)
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { getDashboard, getOperationalAlerts } from "@/lib/bms/dashboard";
+import { getDashboard, getInventoryActionCenter, getOperationalAlerts } from "@/lib/bms/dashboard";
 import { getAiFailureSummary } from "@/lib/bms/aiUsage";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
@@ -13,6 +13,7 @@ import {
   setRolePermissions,
 } from "@/lib/bms/permissions";
 import { audit, listAudit } from "@/lib/bms/audit";
+import { getActionMetrics, listActions, recordDemandEvent, refreshActions, transitionAction, upsertInventoryPolicy } from "@/lib/bms/actionCenter";
 
 // จัดการ RBAC ได้เฉพาะ Administrator (super)
 function requireSuper(ctx: any) {
@@ -34,9 +35,30 @@ export const bmsDashboardResolvers = {
       await requirePermission(ctx, "report.view");
       return getOperationalAlerts(getTenantId(ctx));
     },
+    async bmsInventoryActionCenter(
+      _p: unknown,
+      args: { windowDays?: number; coverageDays?: number; limit?: number },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "report.view");
+      return getInventoryActionCenter(
+        getTenantId(ctx),
+        args.windowDays ?? 30,
+        args.coverageDays ?? 30,
+        args.limit ?? 5
+      );
+    },
     async bmsAiFailureSummary(_p: unknown, args: { days?: number }, ctx: any) {
       await requirePermission(ctx, "report.view");
       return getAiFailureSummary(getTenantId(ctx), args.days ?? 7);
+    },
+    async bmsActions(_p: unknown, args: { limit?: number }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return listActions(getTenantId(ctx), args.limit ?? 50);
+    },
+    async bmsActionMetrics(_p: unknown, args: { days?: number }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return getActionMetrics(getTenantId(ctx), args.days ?? 30);
     },
     // สิทธิ์ของ admin ปัจจุบัน (สำหรับ UI ซ่อน/แสดงปุ่ม)
     async myBmsPermissions(_p: unknown, _a: unknown, ctx: any) {
@@ -55,6 +77,31 @@ export const bmsDashboardResolvers = {
     },
   },
   Mutation: {
+    async bmsRefreshActions(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "action.manage");
+      return refreshActions(getTenantId(ctx));
+    },
+    async bmsTransitionAction(_p: unknown, args: any, ctx: any) {
+      await requirePermission(ctx, "action.manage");
+      const actor = String(requireAuth(ctx).author_id);
+      try {
+        return await transitionAction(getTenantId(ctx), args.id, actor, args.status, args.reason, args.ownerId, args.measuredOutcome);
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    async bmsRecordInventoryDemand(_p: unknown, args: any, ctx: any) {
+      await requirePermission(ctx, "action.manage");
+      const actor = String(requireAuth(ctx).author_id);
+      try { return await recordDemandEvent(getTenantId(ctx), actor, args.input); }
+      catch (err: any) { throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } }); }
+    },
+    async bmsUpsertInventoryPolicy(_p: unknown, args: any, ctx: any) {
+      await requirePermission(ctx, "action.manage");
+      const actor = String(requireAuth(ctx).author_id);
+      try { return await upsertInventoryPolicy(getTenantId(ctx), actor, args.input); }
+      catch (err: any) { throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } }); }
+    },
     async bmsSetRolePermissions(
       _p: unknown,
       args: { roleId: string; permissions: string[] },

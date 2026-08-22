@@ -452,6 +452,26 @@ deployments that received bundle-aware application code without migration `8.8`.
 fallback to ordinary order lines: a register that appears to recover while deducting the set row
 instead of its components would turn a visible schema error into silent inventory corruption.
 
+## Phase 1 inventory intelligence (9.12)
+
+`getInventoryActionCenter()` combines paid-order velocity, current available stock, recorded lost
+sales/restock requests (including active `bms_restock_subscriptions`), quantities still incoming on
+open POs, and per-variant safety-stock/lead-time
+policy. It returns demand trend, stock-out horizon and a review-only reorder quantity. A recommendation
+never creates or changes a PO.
+
+Variants with no observed demand and positive stock are `DEAD`; variants holding more than roughly
+three recent demand windows are `SLOW`. Those labels lead to discontinue/bundle or
+markdown/transfer/bundle actions. They are operational heuristics, not accounting valuation. Lots
+expiring within 60 days are sorted FEFO and receive block/dispose, markdown/transfer, or FEFO-priority
+actions according to days remaining. Staff must reconcile lot totals to inventory before relying on
+expiry quantities.
+
+`bms_inventory_demand_events` is append-only feedback for demand the order ledger cannot see. Record
+only a customer-observed lost sale or restock request; guesses inflate purchasing recommendations.
+`bms_inventory_policies` defaults to seven safety-stock days and seven lead-time days until a manager
+sets a variant-specific policy.
+
 ## Scale barcodes: weight and price embedded (8.8)
 
 Scales with a label printer — vegetables, meat, anything sold loose — print an EAN-13 with the weight

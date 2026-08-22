@@ -158,3 +158,17 @@ remaining admin files are layout/loading guards and English-only legacy platform
 untranslated Thai. See [AGENTS.md](../../AGENTS.md) § i18n coverage for the current breakdown, and
 re-run the audit there instead of trusting a percentage written in prose. New accounts default to
 Thai (migration `7.81`).
+## Retention engine (9.14)
+
+`lib/bms/retention.ts` builds a monthly, tenant-scoped case for each identified customer with paid
+POS or online orders. It derives recency, frequency, monetary value, an expected return date from the
+customer's observed purchase gap, an at-risk score and an RFM segment. A basket-pattern query may
+recommend a product only when verified orders support it; otherwise the product remains empty.
+
+Each case snapshots the recommended channel, bilingual message, offer, product and evidence. It is
+propose-only: treatment cases move `NEW -> ACCEPTED -> CONTACTED`, while holdout cases are hard-blocked
+from contact. A later paid order converts the case and attributes revenue. The dashboard compares
+treatment and holdout conversion rates; `treatment rate - holdout rate` is reported as incremental
+lift. Conversion attribution is bounded to 30 days from contact for treatment and case creation for
+holdout; open cases older than that window expire so later organic orders are not misattributed.
+This is an experiment estimate, not proof of causality when cohorts are small.

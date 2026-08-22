@@ -108,6 +108,13 @@ wrong, and update the doc in the same change.
   during the count survive; applying is refused if it would drop stock below what customers reserved.
   `inventory.count` and `inventory.count.apply` are separate on purpose — walking the shelves and
   signing off the shrinkage are different jobs.
+- **Decision intelligence (`9.12`–`9.14`)** — Q1/Q2 recommendations are advisory: refreshing an
+  action never creates a PO or mutates stock, and lost-sale/restock feedback must represent observed
+  demand rather than a guess. Q3 retention uses identified customers and paid orders only. A
+  next-product suggestion must come from verified basket history; no evidence means no product.
+  Treatment is propose-only (`NEW -> ACCEPTED -> CONTACTED`), holdout rows can never be contacted,
+  and conversion attribution is bounded to 30 days before open cases expire. Keep `retention.view`
+  independent from `followup.view`; sharing a page must not silently widen either permission.
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
 - **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job

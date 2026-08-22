@@ -1,5 +1,6 @@
 'use client';
-import { gql, useQuery } from "@apollo/client";
+import { useEffect, useRef } from "react";
+import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, Row, Space, Table, Tag, Typography } from "antd";
 import {
   ApiOutlined,
@@ -59,6 +60,33 @@ const Q_AI = gql`query { bmsAiConfig { has_key } bmsAiUsage { count limit remain
 const Q_ALERTS = gql`
   query { bmsOperationalAlerts { packingOverdueCount slipPendingCount reservationExpiringCount chatWaitingCount } }
 `;
+const Q_INVENTORY_ACTION = gql`
+  query {
+    bmsInventoryActionCenter {
+      summary {
+        lowStockCount
+        outOfStockCount
+        stockoutWithin7DaysCount
+        purchaseSuggestionCount
+        totalSuggestedQty
+        slowMovingCount deadStockCount expiringLotCount expiringUnits
+        windowDays
+        coverageDays
+        disclaimer
+      }
+      lowStock { sku name size available reorderPoint }
+      stockoutRisk { sku name size available avgPerDay daysToStockout projectedStockoutDate }
+      purchaseSuggestions { sku name size available avgPerDay suggestedQty soldInWindow demandFeedback incomingQty trendPct safetyStock leadTimeDays classification recommendedAction }
+      slowMoving { sku name size available soldInWindow trendPct classification recommendedAction }
+      expiringLots { sku name size lotNo expiryDate qty daysToExpiry recommendedAction }
+    }
+  }
+`;
+const Q_ACTIONS = gql`query { bmsActions { id category priority title titleEn evidence expectedImpact expectedImpactEn confidence ownerName dueAt deepLink status statusReason measuredOutcome } bmsActionMetrics { days total accepted completed acceptanceRate completionRate avgTimeToActionMinutes measuredOutcomeCount } }`;
+const M_REFRESH_ACTIONS = gql`mutation { bmsRefreshActions }`;
+const M_TRANSITION_ACTION = gql`mutation($id: ID!, $status: String!, $reason: String, $measuredOutcome: JSON) { bmsTransitionAction(id:$id,status:$status,reason:$reason,measuredOutcome:$measuredOutcome) { id status } }`;
+const M_RECORD_DEMAND = gql`mutation($input: BmsInventoryDemandInput!) { bmsRecordInventoryDemand(input:$input) }`;
+const M_POLICY = gql`mutation($input: BmsInventoryPolicyInput!) { bmsUpsertInventoryPolicy(input:$input) }`;
 const Q_AI_FAILURES = gql`
   query {
     bmsAiFailureSummary(days: 7) {
@@ -171,9 +199,10 @@ function TriageRow({
 }
 
 export default function Page() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canViewReports = can("report.view");
+  const canManageActions = can("action.manage");
   const shouldSkipReportQueries = permsLoading || !canViewReports;
   const { data, loading, error, refetch } = useQuery(Q_DASH, {
     fetchPolicy: "cache-first",
@@ -201,6 +230,33 @@ export default function Page() {
     skip: shouldSkipReportQueries,
   });
   const alerts = alertsData?.bmsOperationalAlerts;
+  const { data: inventoryActionData, refetch: refetchInventoryAction } = useQuery(Q_INVENTORY_ACTION, {
+    fetchPolicy: "cache-first",
+    pollInterval: 120000,
+    skip: shouldSkipReportQueries,
+  });
+  const inventoryAction = inventoryActionData?.bmsInventoryActionCenter;
+  const { data: actionData, loading: actionsLoading, refetch: refetchActions } = useQuery(Q_ACTIONS, { skip: shouldSkipReportQueries });
+  const [refreshActions, { loading: refreshingActions }] = useMutation(M_REFRESH_ACTIONS, { onCompleted: () => refetchActions() });
+  const [transitionAction, { loading: transitioningAction }] = useMutation(M_TRANSITION_ACTION, { onCompleted: () => refetchActions() });
+  const [recordDemand, { loading: recordingDemand }] = useMutation(M_RECORD_DEMAND, { onCompleted: () => refetchInventoryAction() });
+  const [savePolicy, { loading: savingPolicy }] = useMutation(M_POLICY, { onCompleted: () => refetchInventoryAction() });
+  const actions = actionData?.bmsActions || [];
+  const actionMetrics = actionData?.bmsActionMetrics;
+  const recommendationText = (code: string) => t(`admin_dashboard.recommendation_${String(code || "monitor").toLowerCase()}`);
+  const initialActionRefresh = useRef(false);
+  useEffect(() => {
+    if (permsLoading || !canManageActions || initialActionRefresh.current) return;
+    initialActionRefresh.current = true;
+    void refreshActions();
+  }, [canManageActions, permsLoading, refreshActions]);
+  const changeAction = async (id: string, status: string) => {
+    const needsReason = status === "DISMISSED";
+    const reason = needsReason ? window.prompt(t("admin_dashboard.action_reason_prompt")) : null;
+    if (needsReason && !reason?.trim()) return;
+    const outcomeText = status === "COMPLETED" ? window.prompt(t("admin_dashboard.action_outcome_prompt")) : null;
+    await transitionAction({ variables: { id, status, reason, measuredOutcome: outcomeText?.trim() ? { note: outcomeText.trim() } : null } });
+  };
   const { data: aiFailureData } = useQuery(Q_AI_FAILURES, {
     fetchPolicy: "cache-first",
     pollInterval: 120000,
@@ -300,6 +356,26 @@ export default function Page() {
       count: d.lowStockCount, href: "/admin/products", cta: t("admin_dashboard.triage_cta_view_products"),
     });
   }
+  if ((inventoryAction?.summary?.stockoutWithin7DaysCount ?? 0) > 0) {
+    triage.push({
+      id: "stockout-risk", tier: "warn", icon: <WarningOutlined />,
+      title: t("admin_dashboard.triage_stockout_title"),
+      sub: t("admin_dashboard.triage_stockout_sub"),
+      count: inventoryAction.summary.stockoutWithin7DaysCount,
+      href: "/admin/products",
+      cta: t("admin_dashboard.triage_cta_view_products"),
+    });
+  }
+  if ((inventoryAction?.summary?.purchaseSuggestionCount ?? 0) > 0) {
+    triage.push({
+      id: "purchase-suggestion", tier: "info", icon: <ShoppingCartOutlined />,
+      title: t("admin_dashboard.triage_purchase_title"),
+      sub: t("admin_dashboard.triage_purchase_sub", { qty: inventoryAction.summary.totalSuggestedQty }),
+      count: inventoryAction.summary.purchaseSuggestionCount,
+      href: "/admin/purchase",
+      cta: t("admin_dashboard.triage_cta_open_purchase"),
+    });
+  }
 
   const systemOk = brokenChannels.length === 0;
 
@@ -359,19 +435,34 @@ export default function Page() {
         })}
       </div>
 
-      <Text strong style={{ display: "block", marginBottom: 4 }}>{t("admin_dashboard.triage_heading")}</Text>
-      <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 10 }}>
-        {t("admin_dashboard.triage_subtitle")}
-      </Text>
-      <div style={{ background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
-        {triage.length === 0 ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px", fontSize: 13, color: "#0f7a4d", background: "#e7f7ef" }}>
-            <CheckCircleOutlined /> {t("admin_dashboard.triage_empty")}
-          </div>
-        ) : (
-          triage.map((t) => <TriageRow key={t.id} {...t} />)
-        )}
-      </div>
+      <Card
+        title={t("admin_dashboard.action_feed_title")}
+        extra={canManageActions ? <Button size="small" icon={<ReloadOutlined />} loading={refreshingActions} onClick={() => refreshActions()}>{t("admin_dashboard.action_refresh")}</Button> : null}
+        style={{ marginBottom: 12, borderRadius: 12 }}
+      >
+        <Row gutter={[8,8]} style={{ marginBottom: 12 }}>
+          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_acceptance")} value={`${Math.round((actionMetrics?.acceptanceRate || 0)*100)}%`} hint={t("admin_dashboard.metric_acceptance_hint")} icon={<CheckCircleOutlined />} /></Col>
+          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_completion")} value={`${Math.round((actionMetrics?.completionRate || 0)*100)}%`} hint={t("admin_dashboard.metric_completion_hint")} icon={<CheckCircleOutlined />} /></Col>
+          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_time")} value={`${Math.round(actionMetrics?.avgTimeToActionMinutes || 0)} min`} hint={t("admin_dashboard.metric_time_hint")} icon={<ClockCircleOutlined />} /></Col>
+          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_outcomes")} value={actionMetrics?.measuredOutcomeCount || 0} hint={t("admin_dashboard.metric_outcomes_hint")} icon={<DollarOutlined />} /></Col>
+        </Row>
+        <Table
+          rowKey="id" size="small" pagination={{ pageSize: 10 }} loading={actionsLoading}
+          dataSource={actions}
+          locale={{ emptyText: t("admin_dashboard.action_empty") }}
+          columns={[
+            { title: t("admin_dashboard.col_priority"), dataIndex:"priority", width:100, render:(v:string)=><Tag color={v === "CRITICAL" ? "red" : v === "HIGH" ? "orange" : v === "MEDIUM" ? "blue" : "default"}>{v}</Tag> },
+            { title: t("admin_dashboard.col_action"), key:"action", render:(_:any,a:any)=><Space direction="vertical" size={0}><Link href={a.deepLink}><Text strong>{lang === "en" ? a.titleEn : a.title}</Text></Link><Text type="secondary" style={{fontSize:12}}>{lang === "en" ? a.expectedImpactEn : a.expectedImpact} · {Math.round(a.confidence*100)}%</Text><Text type="secondary" style={{fontSize:11}}>{t("admin_dashboard.action_evidence")}: {JSON.stringify(a.evidence)}</Text></Space> },
+            { title: t("admin_dashboard.col_owner_due"), key:"owner", width:180, render:(_:any,a:any)=><Space direction="vertical" size={0}><Text>{a.ownerName || t("admin_dashboard.action_unassigned")}</Text><Text type="secondary" style={{fontSize:12}}>{a.dueAt ? new Date(a.dueAt).toLocaleString() : "—"}</Text></Space> },
+            { title: t("admin_dashboard.col_status"), dataIndex:"status", width:110, render:(v:string)=><Tag>{v}</Tag> },
+            { title: t("admin_dashboard.col_manage"), key:"manage", width:220, render:(_:any,a:any)=>canManageActions ? <Space wrap>
+              {a.status === "NEW" && <Button size="small" type="primary" loading={transitioningAction} onClick={()=>changeAction(a.id,"ACCEPTED")}>{t("admin_dashboard.action_accept")}</Button>}
+              {a.status === "ACCEPTED" && <Button size="small" type="primary" loading={transitioningAction} onClick={()=>changeAction(a.id,"COMPLETED")}>{t("admin_dashboard.action_complete")}</Button>}
+              {["NEW","ACCEPTED"].includes(a.status) && <Button size="small" danger loading={transitioningAction} onClick={()=>changeAction(a.id,"DISMISSED")}>{t("admin_dashboard.action_dismiss")}</Button>}
+            </Space> : null },
+          ]}
+        />
+      </Card>
 
       <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
         <Col xs={12} xl={6}>
@@ -387,6 +478,188 @@ export default function Page() {
           <KpiCard title={t("admin_dashboard.kpi_low_stock")} value={t("admin_dashboard.kpi_items_unit", { n: d?.lowStockCount ?? 0 })} hint={t("admin_dashboard.kpi_low_stock_hint")} icon={<InboxOutlined />} />
         </Col>
       </Row>
+
+      <div style={{ background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 12 }}>
+        <Text strong style={{ display: "block", marginBottom: 4, fontSize: 12.5 }}>{t("admin_dashboard.phase1_heading")}</Text>
+        <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 12 }}>
+          {t("admin_dashboard.phase1_subtitle")}
+        </Text>
+
+        <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
+          <Col xs={12} xl={6}>
+            <KpiCard
+              title={t("admin_dashboard.q2_kpi_stockout")}
+              value={t("admin_dashboard.kpi_items_unit", { n: inventoryAction?.summary?.stockoutWithin7DaysCount ?? 0 })}
+              hint={t("admin_dashboard.q2_kpi_stockout_hint")}
+              icon={<WarningOutlined />}
+            />
+          </Col>
+          <Col xs={12} xl={6}>
+            <KpiCard
+              title={t("admin_dashboard.q2_kpi_purchase")}
+              value={t("admin_dashboard.kpi_items_unit", { n: inventoryAction?.summary?.purchaseSuggestionCount ?? 0 })}
+              hint={t("admin_dashboard.q2_kpi_purchase_hint", { qty: inventoryAction?.summary?.totalSuggestedQty ?? 0 })}
+              icon={<ShoppingCartOutlined />}
+            />
+          </Col>
+          <Col xs={12} xl={6}>
+            <KpiCard
+              title={t("admin_dashboard.q2_kpi_out_of_stock")}
+              value={t("admin_dashboard.kpi_items_unit", { n: inventoryAction?.summary?.outOfStockCount ?? 0 })}
+              hint={t("admin_dashboard.q2_kpi_out_of_stock_hint")}
+              icon={<InboxOutlined />}
+            />
+          </Col>
+          <Col xs={12} xl={6}>
+            <KpiCard
+              title={t("admin_dashboard.q2_kpi_window")}
+              value={t("admin_dashboard.q2_kpi_window_value", {
+                days: inventoryAction?.summary?.windowDays ?? 30,
+                coverage: inventoryAction?.summary?.coverageDays ?? 30,
+              })}
+              hint={t("admin_dashboard.q2_kpi_window_hint")}
+              icon={<ClockCircleOutlined />}
+            />
+          </Col>
+        </Row>
+
+        <Row gutter={[8, 8]}>
+          <Col xs={24} lg={8}>
+            <Card
+              title={t("admin_dashboard.stockout_risk_title")}
+              loading={loading}
+              style={{ borderRadius: 10, height: "100%" }}
+              className={styles.compactCard}
+              extra={<Link href="/admin/products">{t("admin_dashboard.triage_cta_view_products")}</Link>}
+            >
+              <Table
+                rowKey={(row: any) => `${row.sku}-${row.size}`}
+                size="small"
+                pagination={false}
+                dataSource={inventoryAction?.stockoutRisk || []}
+                locale={{ emptyText: t("admin_dashboard.empty_no_stockout_risk") }}
+                columns={[
+                  {
+                    title: t("admin_dashboard.col_product"),
+                    key: "product",
+                    render: (_: any, row: any) => (
+                      <Space direction="vertical" size={0}>
+                        <Text>{row.name}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                      </Space>
+                    ),
+                  },
+                  { title: t("admin_dashboard.col_available"), dataIndex: "available", key: "available", width: 90, align: "right" },
+                  {
+                    title: t("admin_dashboard.col_days_to_stockout"),
+                    dataIndex: "daysToStockout",
+                    key: "daysToStockout",
+                    width: 110,
+                    align: "right",
+                    render: (v: number | null) => (v == null ? "—" : t("admin_dashboard.days_unit", { n: v })),
+                  },
+                  { title: t("admin_dashboard.col_stockout_date"), dataIndex: "projectedStockoutDate", key: "projectedStockoutDate", width: 110, render:(v:string|null)=>v || "—" },
+                ]}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card
+              title={t("admin_dashboard.purchase_suggestions_title")}
+              loading={loading}
+              style={{ borderRadius: 10, height: "100%" }}
+              className={styles.compactCard}
+              extra={<Link href="/admin/purchase">{t("admin_dashboard.triage_cta_open_purchase")}</Link>}
+            >
+              <Table
+                rowKey={(row: any) => `${row.sku}-${row.size}`}
+                size="small"
+                pagination={false}
+                dataSource={inventoryAction?.purchaseSuggestions || []}
+                locale={{ emptyText: t("admin_dashboard.empty_no_purchase_suggestions") }}
+                columns={[
+                  {
+                    title: t("admin_dashboard.col_product"),
+                    key: "product",
+                    render: (_: any, row: any) => (
+                      <Space direction="vertical" size={0}>
+                        <Text>{row.name}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                      </Space>
+                    ),
+                  },
+                  { title: t("admin_dashboard.col_available"), dataIndex: "available", key: "available", width: 90, align: "right" },
+                  { title: t("admin_dashboard.col_suggested_qty"), dataIndex: "suggestedQty", key: "suggestedQty", width: 110, align: "right" },
+                  { title: t("admin_dashboard.col_trend"), dataIndex: "trendPct", width: 80, align: "right", render:(v:number)=>`${v > 0 ? "+" : ""}${v}%` },
+                  { title: t("admin_dashboard.col_safety_lead"), key:"safetyLead", width:110, align:"right", render:(_:any,row:any)=>`${row.safetyStock} / ${row.leadTimeDays}d` },
+                  { title: t("admin_dashboard.col_policy"), key:"policy", width:150, render:(_:any,row:any)=><Button size="small" loading={savingPolicy} onClick={async()=>{
+                    const safety=Number(window.prompt(t("admin_dashboard.safety_days_prompt"),String(Math.round(row.safetyStock/(row.avgPerDay || 1))))); if(!Number.isInteger(safety)||safety<0||safety>90)return;
+                    const lead=Number(window.prompt(t("admin_dashboard.lead_days_prompt"),String(row.leadTimeDays))); if(!Number.isInteger(lead)||lead<0||lead>180)return;
+                    await savePolicy({variables:{input:{sku:row.sku,size:row.size,safetyStockDays:safety,leadTimeDays:lead}}});
+                  }}>{t("admin_dashboard.set_policy")}</Button> },
+                ]}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card
+              title={t("admin_dashboard.low_stock_focus_title")}
+              loading={loading}
+              style={{ borderRadius: 10, height: "100%" }}
+              className={styles.compactCard}
+            >
+              <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                <Alert
+                  type="info"
+                  showIcon
+                  message={t("admin_dashboard.phase1_note")}
+                  description={inventoryAction?.summary?.disclaimer || t("admin_dashboard.phase1_note_fallback")}
+                />
+                <Table
+                  rowKey={(row: any) => `${row.sku}-${row.size}`}
+                  size="small"
+                  pagination={false}
+                  dataSource={inventoryAction?.lowStock || []}
+                  locale={{ emptyText: t("admin_dashboard.empty_no_low_stock_focus") }}
+                  columns={[
+                    {
+                      title: t("admin_dashboard.col_product"),
+                      key: "product",
+                      render: (_: any, row: any) => (
+                        <Space direction="vertical" size={0}>
+                          <Text>{row.name}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                        </Space>
+                      ),
+                    },
+                    { title: t("admin_dashboard.col_available"), dataIndex: "available", key: "available", width: 90, align: "right" },
+                    { title: t("admin_dashboard.col_reorder_point"), dataIndex: "reorderPoint", key: "reorderPoint", width: 100, align: "right" },
+                    { title: t("admin_dashboard.col_feedback"), key: "feedback", width: 130, render: (_:any,row:any) => <Button size="small" loading={recordingDemand} onClick={async()=>{
+                      const raw=window.prompt(t("admin_dashboard.demand_qty_prompt"),"1"); const qty=Number(raw); if(!Number.isInteger(qty)||qty<1)return;
+                      await recordDemand({variables:{input:{sku:row.sku,size:row.size,kind:"LOST_SALE",qty}}});
+                    }}>{t("admin_dashboard.record_lost_sale")}</Button> },
+                  ]}
+                />
+              </Space>
+            </Card>
+          </Col>
+        </Row>
+        <Row gutter={[8,8]} style={{ marginTop: 8 }}>
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}`} size="small" pagination={false} dataSource={inventoryAction?.slowMoving || []} columns={[
+            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
+            { title:t("admin_dashboard.col_available"), dataIndex:"available", align:"right" },
+            { title:t("admin_dashboard.col_classification"), dataIndex:"classification", render:(v:string)=><Tag color={v === "DEAD" ? "red" : "orange"}>{v}</Tag> },
+            { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
+          ]} /></Card></Col>
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.expiring_lots_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}-${r.lotNo}`} size="small" pagination={false} dataSource={inventoryAction?.expiringLots || []} columns={[
+            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
+            { title:t("admin_dashboard.col_lot"), dataIndex:"lotNo" },
+            { title:t("admin_dashboard.col_expiry"), dataIndex:"expiryDate" },
+            { title:t("admin_dashboard.col_qty"), dataIndex:"qty", align:"right" },
+            { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
+          ]} /></Card></Col>
+        </Row>
+      </div>
 
       {/* ===== ภาพรวมธุรกิจ — ดูเมื่อมีเวลา ไม่ใช่งานเร่งด่วน จึงลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า ===== */}
       <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 12 }}>
