@@ -22,8 +22,8 @@ export async function getDashboard(tenantId: string) {
            COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($1)), 0) AS revenue_total,
            COALESCE(SUM(total_amount) FILTER (
              WHERE status = ANY($1)
-               AND created_at >= current_date
-               AND created_at < current_date + interval '1 day'
+               AND created_at >= (((now() AT TIME ZONE 'Asia/Bangkok')::date)::timestamp AT TIME ZONE 'Asia/Bangkok')
+               AND created_at < ((((now() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok')
            ), 0) AS revenue_today,
            COUNT(*) AS order_count
          FROM bms_orders WHERE tenant_id = $2`,
@@ -63,11 +63,15 @@ export async function getDashboard(tenantId: string) {
         `SELECT d::date AS day,
                 COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($1)), 0) AS revenue,
                 COUNT(o.id) FILTER (WHERE o.status = ANY($1))::int AS orders
-           FROM generate_series(current_date - 6, current_date, interval '1 day') d
+           FROM generate_series(
+             (now() AT TIME ZONE 'Asia/Bangkok')::date - 6,
+             (now() AT TIME ZONE 'Asia/Bangkok')::date,
+             interval '1 day'
+           ) d
            LEFT JOIN bms_orders o
              ON o.tenant_id = $2
-            AND o.created_at >= d
-            AND o.created_at < d + interval '1 day'
+            AND o.created_at >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND o.created_at < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
           GROUP BY day ORDER BY day`,
         [PAID, tenantId]
       ),
@@ -77,14 +81,14 @@ export async function getDashboard(tenantId: string) {
         `SELECT COALESCE(SUM(discount_amount), 0) AS discount_total, COUNT(*)::int AS redemption_count
            FROM bms_orders
           WHERE tenant_id = $1 AND coupon_code IS NOT NULL
-            AND created_at >= date_trunc('month', current_date)`,
+            AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok')`,
         [tenantId]
       ),
       query(
         `SELECT coupon_code AS code, COUNT(*)::int AS redemptions, COALESCE(SUM(discount_amount), 0) AS discount
            FROM bms_orders
           WHERE tenant_id = $1 AND coupon_code IS NOT NULL
-            AND created_at >= date_trunc('month', current_date)
+            AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok')
           GROUP BY coupon_code
           ORDER BY redemptions DESC LIMIT 5`,
         [tenantId]
@@ -94,7 +98,7 @@ export async function getDashboard(tenantId: string) {
             SELECT coupon_code AS code
               FROM bms_orders
              WHERE tenant_id = $1 AND coupon_code IS NOT NULL
-               AND created_at >= date_trunc('month', current_date)
+               AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok')
              GROUP BY coupon_code
              ORDER BY COUNT(*) DESC
              LIMIT 5
@@ -110,7 +114,7 @@ export async function getDashboard(tenantId: string) {
               LEFT JOIN bms_customer_identities ci
                 ON ci.tenant_id = o.tenant_id AND ci.channel = o.channel AND ci.external_ref = o.customer_ref
              WHERE o.tenant_id = $1
-               AND o.created_at >= date_trunc('month', current_date)
+               AND o.created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok')
           )
           SELECT code, order_id, customer_id, channel, status, total_amount, discount_amount, created_at, customer_name
             FROM ranked
