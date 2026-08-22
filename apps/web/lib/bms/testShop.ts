@@ -9,9 +9,10 @@
 
 import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import { DEFAULT_TENANT_ID } from "./tenant";
 import { archetypeToBusinessType, normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import { DEFAULT_LOCATION_CODE } from "./locations";
 
 export type ProvisionTestShopResult = {
   tenantId: string;
@@ -29,8 +30,10 @@ type ProvisionShopOpts = {
   adminPassword?: string;
 };
 
+const safeSlugSuffix = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
+
 async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<ProvisionTestShopResult> {
-  const suffix = nanoid(8).toLowerCase();
+  const suffix = safeSlugSuffix();
   const slug = opts.slug?.trim().toLowerCase() || `test-${suffix}`;
   const name = opts.name?.trim() || `ร้านทดสอบ ${suffix}`;
   const businessArchetype = normalizeShopArchetype(opts.businessArchetype);
@@ -72,6 +75,11 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
        VALUES ($1, $2, $3)`,
       [tenantId, businessType, businessArchetype]
     );
+    await client.query(
+      `INSERT INTO bms_locations (tenant_id, code, name, branch_code, is_head_office)
+       VALUES ($1, $2, $3, '00000', TRUE)`,
+      [tenantId, DEFAULT_LOCATION_CODE, `${name} สาขาหลัก`]
+    );
 
     await client.query(
       `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
@@ -102,7 +110,7 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
 }
 
 export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null } = {}): Promise<ProvisionTestShopResult> {
-  const suffix = nanoid(8).toLowerCase();
+  const suffix = safeSlugSuffix();
   return provisionShopWithIdentity({
     ...opts,
     slug: `test-${suffix}`,

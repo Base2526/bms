@@ -64,11 +64,11 @@ type DemoShopInfo = {
 type DemoSessionMap = Partial<Record<ArchetypeKey, string>>;
 
 const DEMO_TENANT_META: Record<ArchetypeKey, { tenantSlug: string; fallbackShopName: string }> = {
-  fashion: { tenantSlug: 'demo-fashion', fallbackShopName: 'Nami Fashion Demo' },
-  food: { tenantSlug: 'demo-food', fallbackShopName: 'QuickBite Delivery Demo' },
-  beauty: { tenantSlug: 'demo-beauty', fallbackShopName: 'Lumi Beauty Demo' },
-  grocery: { tenantSlug: 'demo-minimart', fallbackShopName: 'Daily Mart Demo' },
-  gadgets: { tenantSlug: 'demo-gadget', fallbackShopName: 'Spark Gadget Demo' },
+  fashion: { tenantSlug: 'demo-fashion', fallbackShopName: 'Nami Studio' },
+  food: { tenantSlug: 'demo-food', fallbackShopName: 'QuickBite Kitchen' },
+  beauty: { tenantSlug: 'demo-beauty', fallbackShopName: 'Lumi Skin' },
+  grocery: { tenantSlug: 'demo-minimart', fallbackShopName: 'Daily Mart' },
+  gadgets: { tenantSlug: 'demo-gadget', fallbackShopName: 'Spark Mobile' },
 };
 
 type DemoConfig = {

@@ -25,22 +25,22 @@ async function handleDELETE(req: NextRequest) {
         RETURNING p.id`,
       [tenantId]
     );
-    const resUsers = await query('DELETE FROM users WHERE fake_test = true AND tenant_id = $1 RETURNING id', [tenantId]);
-
   // BMS fake data — marker: restock/customer_ref/order = 'FAKE-%', PO note 'FAKE%',
-  //   supplier name 'FAKE %', products = SKU 'FAKE-%', customers = tag 'fake'
+  //   supplier note 'FAKE%', products = SKU 'FAKE-%', customers = tag 'fake'
   // ลบตามลำดับ FK: restock + orders + conversations + PO ก่อน (cascade items/payments/shipments/messages/notes/deliveries)
   //   → suppliers → products (cascade inventory) → customers · ข้ามตัวที่ยังมีของอ้างถึง (กัน FK error)
   //   ทุก DELETE scope ด้วย tenant_id = ร้านของผู้ล็อกอิน
     const resRestock = await query(`DELETE FROM bms_restock_subscriptions WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resOrders = await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
+    const resPosShifts = await query(`DELETE FROM bms_pos_shifts WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
+    const resUsers = await query('DELETE FROM users WHERE fake_test = true AND tenant_id = $1 RETURNING id', [tenantId]);
     const resPO = await query(`DELETE FROM bms_purchase_orders WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     // coupons ไม่มี FK ผูกกับ order แบบ RESTRICT (bms_orders.coupon_id → ON DELETE SET NULL) ลบตรงได้เลย
     const resCoupons = await query(`DELETE FROM bms_coupons WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resSuppliers = await query(
       `DELETE FROM bms_suppliers s
-        WHERE s.name LIKE 'FAKE %' AND s.tenant_id = $1
+        WHERE (s.name LIKE 'FAKE %' OR s.note LIKE 'FAKE%') AND s.tenant_id = $1
           AND NOT EXISTS (SELECT 1 FROM bms_purchase_orders po WHERE po.supplier_id = s.id)
         RETURNING s.id`,
       [tenantId]
@@ -66,7 +66,7 @@ async function handleDELETE(req: NextRequest) {
 
     const deleted =
       resPosts.rows.length + resUsers.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
-      resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
+      resPosShifts.rows.length + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
       resSupportTickets.rows.length;
 
     return NextResponse.json({
@@ -77,6 +77,7 @@ async function handleDELETE(req: NextRequest) {
       bmsRestockSubscriptions: resRestock.rows.length,
       bmsOrders: resOrders.rows.length,
       bmsConversations: resConversations.rows.length,
+      bmsPosShifts: resPosShifts.rows.length,
       bmsPurchaseOrders: resPO.rows.length,
       bmsCoupons: resCoupons.rows.length,
       bmsSuppliers: resSuppliers.rows.length,

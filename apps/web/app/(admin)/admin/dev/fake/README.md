@@ -32,10 +32,17 @@
 
 **ลำดับแนะนำ:** Products → Customers → Orders → Conversations → Purchase (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่)
 
+ปุ่มสร้างร้านครบชุดและร้านสถานการณ์ใช้ preset ปัจจุบันที่ **สินค้า 100 รายการ + Inbox 36 ห้อง + ออเดอร์ 1,000 บิล** ต่อร้าน โดยกระจายเท่ากัน 8 ช่องทาง (`pos`, `line`, `instagram`, `facebook`, `web`, `tiktok`, `shopee`, `lazada`) ช่องทางละ 125 บิล บิล POS เป็น `COMPLETED`, payment เป็น `CONFIRMED`, ไม่มี shipment และมีทั้งสมาชิกกับลูกค้าขาจร ส่วนออเดอร์ออนไลน์กระจายหลายสถานะ พร้อม payment/shipment ตามสถานะ
+
+ทีมงานของร้านสถานการณ์มีรวม 3–10 คนตามขนาดกิจการ (รวม Administrator) ใช้ role จริงของระบบ (`Manager`, `Sales`, `Warehouse`, `Cashier`, `Pharmacist`) ผู้ที่ขายหน้าร้านมี PIN และ Cashier เป็น `pos_only` ร้านยามีเภสัชกรที่ตั้ง `is_licensed_pharmacist` พร้อมเลขใบอนุญาตจำลอง 2 คน นอกจากนี้มีเครื่อง POS ที่จับคู่ token แล้ว 1–3 เครื่อง และ POS orders ทุกบิลผูกเครื่อง พนักงาน และกะย้อนหลัง โดยกะร้านยาผูกเภสัชกรเวรที่ผ่าน license gate จริง
+
+บัญชี staff ที่ seed ใช้รหัสผ่าน `password123` เฉพาะเครื่อง dev/test เท่านั้น ส่วน PIN ถูกสร้างแยกต่อคนและไม่เก็บค่า plaintext ในฐานข้อมูล สามารถตั้งใหม่ได้จาก `/admin/pos-devices` ก่อนทดสอบหน้าขายจริง
+
 - ลงที่ **tenant default** (ส่ง `{ tenantId }` ใน body เพื่อระบุร้านอื่นได้) · สูงสุด 2000/ครั้ง
 - **Orders ไม่ขยับสต็อก** (ใช้เติม analytics) — ถ้าจะเทสต์ flow จ่าย/ส่งจริง ให้สั่งผ่าน Playground · สถานะเน้น revenue (COMPLETED/PAID/SHIPPED + CANCELLED/RETURNED)
 - **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามตัวที่ยังมี order อ้างถึง
 - BMS tables ไม่มีคอลัมน์ `fake_test` จึงใช้ marker `FAKE-` / tag `fake` แทน (ไม่ต้องแก้ schema)
+- ข้อความ outbound ของ conversation ที่มี `customer_ref` ขึ้นต้น `FAKE-` จะบันทึกใน Inbox เป็น simulated delivery (`meta.simulated = true`) โดยไม่เรียก LINE/Meta API และไม่แก้ Channel Health
 
 ---
 

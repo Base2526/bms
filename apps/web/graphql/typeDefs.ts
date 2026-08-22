@@ -1622,6 +1622,7 @@ export const typeDefs = /* GraphQL */ `
     active: Int!
     readyToNotify: Int!
     notified: Int!
+    ordered: Int!
     purchased: Int!
     cancelled: Int!
     expired: Int!
