@@ -44,6 +44,11 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import Link from 'next/link';
 import BookmarkButton from '@/components/BookmarkButton';
 import { useSessionCtx } from '@/lib/session-context';
+import { useTheme } from '@/lib/useTheme';
+import type { ThemeMode } from '@/lib/theme';
+import { useRouter } from 'next/navigation';
+import { getLangCookie, setLangCookie, isLang } from '@/lib/lang';
+import { useI18n } from '@/lib/i18nContext';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -112,6 +117,7 @@ const Q_ME = gql`
       phone
       username
       language
+      themePreference
       notifications_enabled
       role
       avatar
@@ -129,6 +135,7 @@ const M_UPDATE_ME = gql`
       phone
       username
       language
+      themePreference
       notifications_enabled
       avatar
     }
@@ -489,7 +496,7 @@ function UserFormEdit({ id, onBack }: { id: string; onBack: () => void }) {
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="password" label="New Password" tooltip="ใส่เมื่ออยากเปลี่ยน">
+            <Form.Item name="password" label="New Password" tooltip="Fill in only if you want to change it">
               <Input.Password />
             </Form.Item>
           </Col>
@@ -531,6 +538,7 @@ const Q_MY_POSTS = gql`query($q:String){ myPosts(search:$q){ id title detail sta
 const MUT_DEL_POST = gql`mutation($id:ID!){ deletePost(id:$id) }`;
 
 function PostsPanel() {
+  const { t } = useI18n();
   const { isMobile, cardMaxWidth } = useResponsiveShell();
   const [q, setQ] = useState('');
   const { data, refetch, loading } = useQuery(Q_MY_POSTS, { variables: { q: '' } });
@@ -542,13 +550,13 @@ function PostsPanel() {
     try {
       const { data: res } = await deletePost({ variables: { id } });
       if (res?.deletePost) {
-        message.success('Deleted successfully');
+        message.success(t('settingsPage.deleted'));
         refetch();
       } else {
-        message.warning('Delete failed');
+        message.warning(t('settingsPage.delete_failed'));
       }
     } catch (err: any) {
-      message.error(err?.message || 'Delete error');
+      message.error(err?.message || t('settingsPage.delete_error'));
     }
   };
 
@@ -556,50 +564,50 @@ function PostsPanel() {
   const cols = useMemo(
     () => [
       {
-        title: 'Title',
+        title: t('settingsPage.col_title'),
         dataIndex: 'title',
         width: 260,
         ellipsis: true,
         render: (_: any, r: any) => <Link href={`/post/${r.id}`}>{r.title}</Link>,
       },
       {
-        title: 'Detail',
+        title: t('settingsPage.col_detail'),
         dataIndex: 'detail',
         width: 420,
         ellipsis: true,
         responsive: ['md', 'lg'] as any,
       },
       {
-        title: 'Status',
+        title: t('settingsPage.col_status'),
         dataIndex: 'status',
         width: 120,
         render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag>,
       },
       {
-        title: 'Created',
+        title: t('settingsPage.col_created'),
         dataIndex: 'created_at',
         width: 180,
         responsive: ['lg'] as any,
         render: (v: string) => new Date(v).toLocaleString(),
       },
       {
-        title: 'Action',
+        title: t('settingsPage.col_action'),
         width: 120,
         fixed: 'right' as const,
         render: (_: any, r: any) => (
           <Space>
-            <Tooltip title="Edit">
+            <Tooltip title={t('settingsPage.edit')}>
               <Link href={`/post/${r.id}/edit`} prefetch={false}>
                 <Button type="text" size="small" icon={<EditOutlined />} />
               </Link>
             </Tooltip>
             <Popconfirm
-              title="Confirm delete?"
-              okText="Yes"
-              cancelText="No"
+              title={t('settingsPage.confirm_delete')}
+              okText={t('settingsPage.yes')}
+              cancelText={t('settingsPage.no')}
               onConfirm={() => handleDelete(r.id)}
             >
-              <Tooltip title="Delete">
+              <Tooltip title={t('settingsPage.delete')}>
                 <Button type="text" size="small" danger loading={deleting} icon={<DeleteOutlined />} />
               </Tooltip>
             </Popconfirm>
@@ -607,25 +615,25 @@ function PostsPanel() {
         ),
       },
     ],
-    [deleting]
+    [deleting, t]
   );
 
   return (
     <PanelWrap
-      title="My Posts"
+      title={t('settingsPage.posts_title')}
       maxWidth={cardMaxWidth}
       extra={
         <Space wrap>
           <Input
-            placeholder="Search title/detail"
+            placeholder={t('settingsPage.posts_search_placeholder')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             style={{ width: isMobile ? 200 : 260 }}
           />
-          <Button onClick={() => refetch({ q })}>Search</Button>
+          <Button onClick={() => refetch({ q })}>{t('settingsPage.posts_search')}</Button>
           <Button type="primary">
             <a href="/post/new" style={{ color: 'inherit' }}>
-              + New Post
+              {t('settingsPage.posts_new')}
             </a>
           </Button>
         </Space>
@@ -642,11 +650,11 @@ function PostsPanel() {
             <List.Item
               actions={[
                 <Link key="edit" href={`/post/${r.id}/edit`} prefetch={false}>
-                  <Button size="small" icon={<EditOutlined />}>Edit</Button>
+                  <Button size="small" icon={<EditOutlined />}>{t('settingsPage.edit')}</Button>
                 </Link>,
-                <Popconfirm key="del" title="Confirm delete?" onConfirm={() => handleDelete(r.id)}>
+                <Popconfirm key="del" title={t('settingsPage.confirm_delete')} onConfirm={() => handleDelete(r.id)}>
                   <Button size="small" danger loading={deleting} icon={<DeleteOutlined />}>
-                    Delete
+                    {t('settingsPage.delete')}
                   </Button>
                 </Popconfirm>,
               ]}
@@ -921,13 +929,14 @@ function LogsPanel() {
 /* ================= MyBookmarks ================= */
 
 function MyBookmarksPanel() {
+  const { t } = useI18n();
   const { cardMaxWidth, isMobile } = useResponsiveShell();
   const { data, loading, refetch } = useQuery(Q_MY_BOOKMARKS);
 
   const cols = useMemo(
     () => [
       {
-        title: 'Title',
+        title: t('settingsPage.col_title'),
         dataIndex: 'title',
         render: (_: any, r: any) => (
           <Space>
@@ -935,22 +944,22 @@ function MyBookmarksPanel() {
           </Space>
         ),
       },
-      { title: 'Status', dataIndex: 'status', render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag>, responsive: ['sm', 'md', 'lg'] as any },
-      { title: 'Author', dataIndex: ['author', 'name'], responsive: ['md', 'lg'] as any },
+      { title: t('settingsPage.col_status'), dataIndex: 'status', render: (s: string) => <Tag color={s === 'public' ? 'green' : 'red'}>{s}</Tag>, responsive: ['sm', 'md', 'lg'] as any },
+      { title: t('settingsPage.col_author'), dataIndex: ['author', 'name'], responsive: ['md', 'lg'] as any },
       {
-        title: 'Action',
+        title: t('settingsPage.col_action'),
         fixed: isMobile ? undefined : ('right' as const),
         render: (_: any, r: any) => <BookmarkButton postId={r.id} defaultBookmarked={r?.is_bookmarked ?? false} />,
       },
     ],
-    [isMobile]
+    [isMobile, t]
   );
 
   return (
     <PanelWrap
-      title="My Bookmarks"
+      title={t('settingsPage.bookmarks_title')}
       maxWidth={cardMaxWidth}
-      extra={<Button onClick={() => refetch()}>Refresh</Button>}
+      extra={<Button onClick={() => refetch()}>{t('settingsPage.refresh')}</Button>}
     >
       <Table
         rowKey="id"
@@ -966,6 +975,7 @@ function MyBookmarksPanel() {
 /* ================= Main Settings Page (Responsive Shell) ================= */
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const { isMobile, contentPadding, cardMaxWidth } = useResponsiveShell();
 
   const [active, setActive] = useState<MenuKey>('profile');
@@ -977,6 +987,8 @@ export default function SettingsPage() {
   const [savingNotifications, setSavingNotifications] = useState(false);
 
   const { user } = useSessionCtx();
+  const { setTheme } = useTheme();
+  const router = useRouter();
   const { data: meData, loading: meLoading, refetch: refetchMe } = useQuery(Q_ME);
   const me = meData?.me;
 
@@ -988,6 +1000,7 @@ export default function SettingsPage() {
       name: me.name ?? '',
       phone: me.phone ?? '',
       language: me.language ?? 'en',
+      themePreference: me.themePreference ?? 'system',
       notifications_enabled: me.notifications_enabled !== false,
       email: me.email ?? '',
       username: me.username ?? '',
@@ -996,15 +1009,15 @@ export default function SettingsPage() {
 
   const items = useMemo(
     () => [
-      { key: 'profile', icon: <UserOutlined />, label: 'Profile & Account' },
-      { key: 'posts', icon: <FileTextOutlined />, label: 'My Posts' },
-      { key: 'bookmarks', icon: <BookOutlined />, label: 'My Bookmarks' },
-      { key: 'security', icon: <LockOutlined />, label: 'Security' },
+      { key: 'profile', icon: <UserOutlined />, label: t('settingsPage.menu_profile') },
+      { key: 'posts', icon: <FileTextOutlined />, label: t('settingsPage.menu_posts') },
+      { key: 'bookmarks', icon: <BookOutlined />, label: t('settingsPage.menu_bookmarks') },
+      { key: 'security', icon: <LockOutlined />, label: t('settingsPage.menu_security') },
       // { key: 'users', icon: <TeamOutlined />, label: 'Users' },
       // { key: 'files', icon: <FileOutlined />, label: 'Files' },
       // { key: 'logs', icon: <DatabaseOutlined />, label: 'Logs' },
     ],
-    []
+    [t]
   );
 
   const menuNode = (
@@ -1025,12 +1038,12 @@ export default function SettingsPage() {
       const url = data?.uploadAvatar;
       if (url) {
         setAvatarUrl(url);
-        message.success('Avatar updated');
+        message.success(t('settingsPage.avatar_updated'));
         refetchMe();
       }
     } catch (e) {
       console.error(e);
-      message.error('Upload failed');
+      message.error(t('settingsPage.upload_failed'));
     }
   }
 
@@ -1040,19 +1053,29 @@ export default function SettingsPage() {
         name: values.name?.trim() || '',
         phone: values.phone?.trim() || '',
         language: values.language || 'en',
+        themePreference: values.themePreference || 'system',
         notifications_enabled: values.notifications_enabled !== false,
         username: values.username?.trim() || '',
       };
 
       const res = await updateMe({ variables: { data: payload } });
       if (res?.data?.updateMe?.id) {
-        message.success('Profile & Account saved');
+        const nextTheme = res.data.updateMe.themePreference as ThemeMode | undefined;
+        if (nextTheme === 'light' || nextTheme === 'dark' || nextTheme === 'system') {
+          setTheme(nextTheme);
+        }
+        const nextLang = res.data.updateMe.language;
+        if (isLang(nextLang) && getLangCookie() !== nextLang) {
+          setLangCookie(nextLang);
+          router.refresh();
+        }
+        message.success(t('settingsPage.saved'));
         refetchMe();
       } else {
-        message.error('Save failed');
+        message.error(t('settingsPage.save_failed'));
       }
     } catch (err: any) {
-      message.error(err?.message || 'Save error');
+      message.error(err?.message || t('settingsPage.save_error'));
     }
   }
 
@@ -1063,14 +1086,14 @@ export default function SettingsPage() {
     try {
       const res = await updateMe({ variables: { data: { notifications_enabled: checked } } });
       if (res?.data?.updateMe?.id) {
-        message.success('Notification preference updated');
+        message.success(t('settingsPage.notif_updated'));
         refetchMe();
       } else {
         throw new Error('Update failed');
       }
     } catch (err: any) {
       formProfile.setFieldValue('notifications_enabled', previous);
-      message.error(err?.message || 'Failed to update notification preference');
+      message.error(err?.message || t('settingsPage.notif_update_failed'));
     } finally {
       setSavingNotifications(false);
     }
@@ -1091,13 +1114,13 @@ export default function SettingsPage() {
           }}
         >
           <Button icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
-          <div style={{ fontWeight: 600 }}>Settings</div>
+          <div style={{ fontWeight: 600 }}>{t('settingsPage.title')}</div>
         </Header>
       )}
 
       {/* Drawer (mobile menu) */}
       <Drawer
-        title="Settings"
+        title={t('settingsPage.title')}
         placement="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -1122,7 +1145,7 @@ export default function SettingsPage() {
         <Content style={{ padding: contentPadding, background: 'var(--app-bg)' }}>
           {/* PROFILE */}
           {active === 'profile' && (
-            <PanelWrap title="Profile & Account" maxWidth={cardMaxWidth} loading={meLoading}>
+            <PanelWrap title={t('settingsPage.profile_title')} maxWidth={cardMaxWidth} loading={meLoading}>
               <Row gutter={[12, 12]} align="middle">
                 <Col xs={24} sm={8} style={{ display: 'flex', justifyContent: isMobile ? 'flex-start' : 'center' }}>
                   <Avatar size={96} src={avatarUrl || me?.avatar} icon={<UserOutlined />} />
@@ -1130,7 +1153,7 @@ export default function SettingsPage() {
                 <Col xs={24} sm={16}>
                   <Space wrap>
                     <Upload accept="image/*" showUploadList={false} beforeUpload={handleUpload}>
-                      <Button icon={<CloudUploadOutlined />}>Upload Avatar</Button>
+                      <Button icon={<CloudUploadOutlined />}>{t('settingsPage.upload_avatar')}</Button>
                     </Upload>
                   </Space>
                 </Col>
@@ -1141,26 +1164,26 @@ export default function SettingsPage() {
               <Form form={formProfile} layout="vertical" onFinish={onSaveProfile}>
                 <Row gutter={12}>
                   <Col xs={24} md={12}>
-                    <Form.Item name="name" label="Display name" rules={[{ required: true }]}>
-                      <Input placeholder="Your name" />
+                    <Form.Item name="name" label={t('settingsPage.display_name')} rules={[{ required: true }]}>
+                      <Input placeholder={t('settingsPage.display_name_placeholder')} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
-                    <Form.Item name="phone" label="Phone">
-                      <Input placeholder="Your phone" />
+                    <Form.Item name="phone" label={t('settingsPage.phone')}>
+                      <Input placeholder={t('settingsPage.phone_placeholder')} />
                     </Form.Item>
                   </Col>
 
                   <Col xs={24} md={12}>
-                    <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
+                    <Form.Item name="email" label={t('settingsPage.email')} rules={[{ required: true, type: 'email' }]}>
                       <Input placeholder="name@example.com" disabled />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item
                       name="username"
-                      label="Username"
-                      tooltip="Unique login/handle (if your system supports)"
+                      label={t('settingsPage.username')}
+                      tooltip={t('settingsPage.username_tooltip')}
                       rules={[{ required: true }]}
                     >
                       <Input placeholder="username" disabled />
@@ -1168,11 +1191,23 @@ export default function SettingsPage() {
                   </Col>
 
                   <Col xs={24} md={12}>
-                    <Form.Item name="language" label="Language">
+                    <Form.Item name="language" label={t('settingsPage.language')}>
                       <Select
                         options={[
-                          { value: 'en', label: 'English' },
-                          { value: 'th', label: 'ไทย' },
+                          { value: 'en', label: t('settingsPage.language_en') },
+                          { value: 'th', label: t('settingsPage.language_th') },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} md={12}>
+                    <Form.Item name="themePreference" label={t('settingsPage.theme')}>
+                      <Select
+                        options={[
+                          { value: 'system', label: t('settingsPage.theme_system') },
+                          { value: 'light', label: t('settingsPage.theme_light') },
+                          { value: 'dark', label: t('settingsPage.theme_dark') },
                         ]}
                       />
                     </Form.Item>
@@ -1181,9 +1216,9 @@ export default function SettingsPage() {
                   <Col xs={24} md={12}>
                     <Form.Item
                       name="notifications_enabled"
-                      label="Notifications"
+                      label={t('settingsPage.notifications')}
                       valuePropName="checked"
-                      extra="Receive push notifications for your account"
+                      extra={t('settingsPage.notifications_extra')}
                     >
                       <Switch
                         onChange={onToggleNotifications}
@@ -1195,7 +1230,7 @@ export default function SettingsPage() {
                 </Row>
 
                 <Button type="primary" htmlType="submit" loading={updatingMe} block={isMobile}>
-                  Save changes
+                  {t('settingsPage.save_changes')}
                 </Button>
               </Form>
             </PanelWrap>
@@ -1203,30 +1238,30 @@ export default function SettingsPage() {
 
           {/* SECURITY */}
           {active === 'security' && (
-            <PanelWrap title="Security" maxWidth={cardMaxWidth}>
-              <Form layout="vertical" onFinish={() => message.success('Password changed')}>
+            <PanelWrap title={t('settingsPage.security_title')} maxWidth={cardMaxWidth}>
+              <Form layout="vertical" onFinish={() => message.success(t('settingsPage.password_changed'))}>
                 <Row gutter={12}>
                   <Col xs={24} md={12}>
-                    <Form.Item name="current" label="Current password" rules={[{ required: true }]}>
+                    <Form.Item name="current" label={t('settingsPage.current_password')} rules={[{ required: true }]}>
                       <Input.Password />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
-                    <Form.Item name="new" label="New password" rules={[{ required: true, min: 8 }]}>
+                    <Form.Item name="new" label={t('settingsPage.new_password')} rules={[{ required: true, min: 8 }]}>
                       <Input.Password />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item
                       name="confirm"
-                      label="Confirm new password"
+                      label={t('settingsPage.confirm_new_password')}
                       dependencies={['new']}
                       rules={[
                         { required: true },
                         ({ getFieldValue }) => ({
                           validator(_, v) {
                             if (!v || getFieldValue('new') === v) return Promise.resolve();
-                            return Promise.reject(new Error('Passwords do not match'));
+                            return Promise.reject(new Error(t('settingsPage.password_mismatch')));
                           },
                         }),
                       ]}
@@ -1237,7 +1272,7 @@ export default function SettingsPage() {
                 </Row>
 
                 <Button type="primary" htmlType="submit" block={isMobile}>
-                  Change Password
+                  {t('settingsPage.change_password')}
                 </Button>
               </Form>
             </PanelWrap>

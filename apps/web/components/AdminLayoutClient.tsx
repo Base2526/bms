@@ -1,31 +1,38 @@
 'use client';
 import { usePathname } from "next/navigation";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Button } from "antd";
+import { Button, Layout } from "antd";
 import { LogoutOutlined, EyeOutlined } from "@ant-design/icons";
-import AdminHeader from "@/components/AdminHeader";
+import AdminSidebar from "@/components/AdminSidebar";
+import { useI18n } from "@/lib/i18nContext";
+
+const { Content } = Layout;
 
 const Q_ACTING = gql`query { bmsActingTenant { id name slug } }`;
 const M_EXIT = gql`mutation { bmsExitTenant }`;
 
 function ImpersonationBanner() {
-  const { data } = useQuery(Q_ACTING, { fetchPolicy: "cache-and-network" });
+  const { t: tr } = useI18n();
+  const { data } = useQuery(Q_ACTING, { fetchPolicy: "cache-first" });
   const [exit, { loading }] = useMutation(M_EXIT, {
     onCompleted: () => { window.location.href = "/admin/tenants"; },
   });
-  const t = data?.bmsActingTenant;
-  if (!t) return null;
+  const actingTenant = data?.bmsActingTenant;
+  if (!actingTenant) return null;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
       background: "#faad14", color: "#1f1f1f",
-      padding: "8px 16px", margin: "0 24px", borderRadius: 8, fontWeight: 500,
+      padding: "8px 16px", margin: "0 0 16px", borderRadius: 8, fontWeight: 500,
     }}>
       <EyeOutlined />
-      <span>กำลังดูในมุมของร้าน: <b>{t.name}</b> <span style={{ opacity: 0.75 }}>/{t.slug}</span> — ข้อมูลทั้งหมดในหน้าจอเป็นของร้านนี้</span>
+      <span>
+        {tr("admin.impersonation_banner_prefix")} <b>{actingTenant.name}</b>{" "}
+        <span style={{ opacity: 0.75 }}>/{actingTenant.slug}</span> — {tr("admin.impersonation_banner_suffix")}
+      </span>
       <Button size="small" icon={<LogoutOutlined />} loading={loading}
         onClick={() => exit()} style={{ marginLeft: "auto" }}>
-        ออกจากมุมร้าน
+        {tr("admin.exit_impersonation")}
       </Button>
     </div>
   );
@@ -35,15 +42,17 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const pathname = usePathname();
   const hideHeader = pathname === "/admin/login";
 
+  if (hideHeader) return <main>{children}</main>;
+
   return (
-    <>
-      {!hideHeader && (
-        <header style={{ padding: 24, paddingBottom: 0 }}>
-          <AdminHeader />
-        </header>
-      )}
-      {!hideHeader && <ImpersonationBanner />}
-      <main style={{ padding: 24 }}>{children}</main>
-    </>
+    <Layout style={{ minHeight: '100vh' }}>
+      <AdminSidebar />
+      <Layout style={{ minWidth: 0 }}>
+        <Content style={{ padding: "clamp(12px, 4vw, 24px)", minWidth: 0, overflowX: "auto" }}>
+          <ImpersonationBanner />
+          {children}
+        </Content>
+      </Layout>
+    </Layout>
   );
 }

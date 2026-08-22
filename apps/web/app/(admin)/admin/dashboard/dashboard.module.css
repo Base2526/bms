@@ -1,0 +1,42 @@
+/* Compact card treatment for the "business overview" section — this page is
+   checked constantly, so density beats spacing. Targets antd's internal
+   classes globally within .compactCard so every Card here (chart, summary,
+   top products/customers, AI health, coupons) shrinks uniformly without
+   touching each Card's own props. */
+
+.compactCard :global(.ant-card-head) {
+  min-height: unset;
+  padding: 8px 12px;
+}
+
+.compactCard :global(.ant-card-head-title) {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compactCard :global(.ant-card-extra) {
+  padding: 0;
+  font-size: 11px;
+}
+
+.compactCard :global(.ant-card-body) {
+  padding: 10px 12px !important;
+}
+
+.compactCard :global(.ant-table) {
+  font-size: 12px;
+}
+
+.compactCard :global(.ant-table-thead > tr > th) {
+  padding: 4px 6px !important;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--app-muted, #64748b);
+  background: transparent;
+}
+
+.compactCard :global(.ant-table-tbody > tr > td) {
+  padding: 5px 6px !important;
+}

@@ -11,13 +11,16 @@ services:
       WS_PORT: "8080"
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
-      DATABASE_URL: postgres://app:app@postgres:5432/appdb
       JWT_SECRET: ${JWT_SECRET}
     # ports:
     #   - "8081:8080"
     depends_on:
-      - postgres
       - redis
+    networks:
+      default: {}
+      bms_shared:
+        aliases:
+          - ws_b
 
   web:
     build:
@@ -30,7 +33,6 @@ services:
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
 
         NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID}
-        NEXT_PUBLIC_FACEBOOK_APP_SECRET: ${NEXT_PUBLIC_FACEBOOK_APP_SECRET}
         NEXT_PUBLIC_SENDGRID_API_KEY: ${NEXT_PUBLIC_SENDGRID_API_KEY}
         NEXT_PUBLIC_SENDGRID_FROM_EMAIL: ${NEXT_PUBLIC_SENDGRID_FROM_EMAIL}
         NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL}
@@ -38,11 +40,6 @@ services:
         COOKIE_SECURE: ${COOKIE_SECURE} 
         WEB_NAME: ${WEB_NAME}
 
-        FB_PAGE_ID: ${FB_PAGE_ID}
-        FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-        SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-        SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-        SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
         ADMIN_TOKEN: ${ADMIN_TOKEN}
         JWT_SECRET: ${JWT_SECRET}
         DEBUG_LOG: ${DEBUG_LOG}
@@ -69,19 +66,22 @@ services:
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
 
       NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID}
-      NEXT_PUBLIC_FACEBOOK_APP_SECRET: ${NEXT_PUBLIC_FACEBOOK_APP_SECRET}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-${NEXT_PUBLIC_FACEBOOK_APP_SECRET}}
       NEXT_PUBLIC_SENDGRID_API_KEY: ${NEXT_PUBLIC_SENDGRID_API_KEY}
       NEXT_PUBLIC_SENDGRID_FROM_EMAIL: ${NEXT_PUBLIC_SENDGRID_FROM_EMAIL}
       NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL}
       NEXT_PUBLIC_SUPPORT_TO_EMAIL: ${NEXT_PUBLIC_SUPPORT_TO_EMAIL}
+      # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
+      MAIL_PROVIDER: ${MAIL_PROVIDER}
+      GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
+      GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
+      GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
+      PHARMACY_INTAKE_ENABLED: ${PHARMACY_INTAKE_ENABLED}
+      PHARMACY_AI_ENABLED: ${PHARMACY_AI_ENABLED}
+      PHARMACY_PROTOCOLS_ENABLED: ${PHARMACY_PROTOCOLS_ENABLED}
 
       COOKIE_SECURE: ${COOKIE_SECURE}
 
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
       ADMIN_TOKEN: ${ADMIN_TOKEN}
 
       JWT_SECRET: ${JWT_SECRET}
@@ -94,7 +94,13 @@ services:
       FCM_PROJECT_ID: ${FCM_PROJECT_ID}
       FCM_CLIENT_EMAIL: ${FCM_CLIENT_EMAIL}
       FCM_PRIVATE_KEY: ${FCM_PRIVATE_KEY}
-      
+
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      BMS_AI_MODEL: ${BMS_AI_MODEL}
+      BMS_CRON_SECRET: ${BMS_CRON_SECRET}
+      BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
+      BMS_ALLOW_FAKE_SEED: ${BMS_ALLOW_FAKE_SEED:-0}
+
     # ports:
     #   - "80:3000"   # 👈 prod ใช้ port 80 ด้านนอก
     depends_on:
@@ -102,44 +108,14 @@ services:
       - redis
       - ws
     volumes:
-      - ./storage:/app/storage
-      # - /mnt/volume_sgp1_01/storage:/app/storage
+      - ${STORAGE_HOST_DIR:-./storage}:/app/storage
+    networks:
+      default: {}
+      bms_shared:
+        aliases:
+          - web_b
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./apps/web/certs:/certs:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
-  social-worker:
-    image: myapp-web:latest
-    working_dir: /app/apps/web
-    command: ["node", "scripts/social-worker.mjs"]
-    environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL}
-
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
-    volumes:
-      # - ./:/app
-      - ./storage:/app/storage
-    depends_on:
-      - web
-      - postgres
-      - redis
-    restart: unless-stopped
+networks:
+  bms_shared:
+    external: true
+    name: bms_shared

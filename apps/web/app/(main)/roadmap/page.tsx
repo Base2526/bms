@@ -4,16 +4,17 @@ import React, { useMemo } from "react";
 import { Badge, Card, Col, Divider, Progress, Row, Space, Tag, Timeline, Typography } from "antd";
 import type { TimelineProps } from "antd";
 import {
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  RocketOutlined,
-  SafetyCertificateOutlined,
-  FileTextOutlined,
-  ShareAltOutlined,
-  TeamOutlined,
-  SearchOutlined,
   AlertOutlined,
   BarChartOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  FileTextOutlined,
+  RocketOutlined,
+  SafetyCertificateOutlined,
+  SearchOutlined,
+  ShareAltOutlined,
+  ShopOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual } from "@/lib/static-page-i18n";
@@ -21,6 +22,22 @@ import { resolveBilingual } from "@/lib/static-page-i18n";
 const { Title, Text, Paragraph } = Typography;
 
 type Status = "done" | "in_progress" | "planned";
+type CapabilityStatus = "available" | "limited";
+
+type CapabilityGroup = {
+  id: string;
+  title: string;
+  status: CapabilityStatus;
+  features: string[];
+};
+
+type MarketPackage = {
+  id: string;
+  title: string;
+  summary: string;
+  bullets: string[];
+  tag?: string;
+};
 
 type RoadmapItem = {
   id: string;
@@ -48,270 +65,484 @@ type RoadmapPageContent = {
     notesText: string;
     tip1: string;
     tip2: string;
-    suggestedAdd: string;
-    suggest: Array<{ color: string; text: string }>;
+    availableNow: string;
+    availableNowNote: string;
+    available: string;
+    limited: string;
+    intelligenceLayers: string;
+    layers: Array<{ color: string; text: string }>;
+    packages: string;
+    packagesNote: string;
+    packageIncludes: string;
     roadmap: string;
     status: string;
     goals: string;
     deliverables: string;
   };
+  capabilities: CapabilityGroup[];
+  packages: MarketPackage[];
   items: Array<Omit<RoadmapItem, "icon">>;
 };
 
 const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
   en: {
     labels: {
-      pageTitle: "Jachoei.com Product Roadmap",
+      pageTitle: "BMS Product Roadmap",
       subtitle:
-        "A development plan to make scam reports trustworthy, easy to use, and exportable as evidence packages.",
+        "A delivery roadmap connecting POS, online commerce, inventory, and CRM into a digital business advisor that tells each store what to do next.",
       done: "Done",
       inProgress: "In progress",
       planned: "Planned",
-      progressLabel: "Estimated progress",
-      keyObjectives: "Key objectives",
+      progressLabel: "Q1-Q4 estimated progress",
+      keyObjectives: "Product principles",
       objectives: [
-        "Evidence-ready reporting (complete & credible)",
-        "Reduce duplicates/spam and improve data quality",
-        "Make sharing/exporting to authorities effortless",
-        "Scale with moderation, analytics, and APIs",
+        "Data -> Insight -> Recommended action -> Verified business outcome",
+        "Prioritize the few actions that protect cash, stock, customers, and margin",
+        "Explain every recommendation with evidence, expected impact, and confidence",
+        "Keep sensitive actions human-confirmed and measure whether each action worked",
       ],
-      notes: "Notes",
-      recommendTag: "Recommendation",
+      notes: "Delivery model",
+      recommendTag: "Important",
       notesText:
-        "This roadmap prioritizes evidence credibility first, then expands into social automation and analytics for sustainable growth.",
-      tip1: "Start with PDF/ZIP evidence export first, then social auto-posting.",
-      tip2: "Investing in search + duplicate detection reduces workload and improves quality.",
-      suggestedAdd: "Suggested additions (recommended)",
-      suggest: [
-        { color: "purple", text: "Evidence Vault (attachments + timestamps)" },
-        { color: "purple", text: "Case Timeline & Status" },
-        { color: "purple", text: "Duplicate / Similarity Detection" },
-        { color: "purple", text: "Moderation Queue + PII Redaction" },
-        { color: "gold", text: "Watchlist & Alerts" },
-        { color: "gold", text: "Public Safe Share Page" },
-        { color: "gold", text: "Analytics Dashboard" },
-        { color: "gold", text: "API / Webhook for partners" },
+        "Q1-Q4 are delivery phases rather than fixed calendar promises. Each phase builds on existing BMS services and must produce measurable actions before the next intelligence layer is added.",
+      tip1:
+        "Start with deterministic rules and verified data; add model-generated explanations only after the recommendation can be reproduced.",
+      tip2:
+        "Measure action acceptance, completion, and business impact so recommendations improve instead of becoming another alert feed.",
+      availableNow: "Available in BMS today",
+      availableNowNote:
+        "These capabilities are already built. Items marked limited have a feature flag, beta integration, hardware dependency, or production verification still outstanding.",
+      available: "Available",
+      limited: "Limited / verification pending",
+      intelligenceLayers: "Core intelligence layers",
+      layers: [
+        { color: "red", text: "Today's Action Center" },
+        { color: "orange", text: "Smart reorder and stock-out risk" },
+        { color: "gold", text: "Slow-moving, dead-stock, and expiry actions" },
+        { color: "cyan", text: "At-risk customer and comeback actions" },
+        { color: "blue", text: "RFM and next-best-offer" },
+        { color: "green", text: "Profit and margin diagnosis" },
+        { color: "geekblue", text: "Basket and cross-sell opportunities" },
+        { color: "magenta", text: "Promotion, pricing, and scenario simulation" },
       ],
-      roadmap: "Quarterly roadmap",
+      packages: "Go-to-market packaging",
+      packagesNote:
+        "Sell the roadmap as outcome-based phases. Phase 1 bundles Q1 and Q2 into one clear promise: know what to do today and buy the right stock with confidence.",
+      packageIncludes: "Includes",
+      roadmap: "Delivery roadmap (Q1-Q4)",
       status: "Status",
       goals: "Goals",
-      deliverables: "Deliverables",
+      deliverables: "Definition of done",
     },
-    items: [
+    capabilities: [
       {
-        id: "built",
-        quarter: "Built (current)",
-        title: "Already built",
-        status: "done",
-        tags: ["done", "foundation"],
-        goals: ["Solid foundation: membership/intake/chat/email"],
-        deliverables: [
-          "Membership system",
-          "Complaint intake",
-          "Chat",
-          "Email notifications",
+        id: "channels-ai",
+        title: "Omnichannel inbox and AI",
+        status: "available",
+        features: [
+          "LINE, Facebook, Instagram, TikTok, and Web inbound channels with a unified inbox",
+          "Customer 360, identities across channels, assignments, notes, tags, attachments, and search",
+          "Customer AI workflow and staff assistant using permission-aware approved tools",
+          "AI quality review, usage/cost accounting, provider health, channel health, and failure alerts",
         ],
       },
       {
+        id: "commerce-crm",
+        title: "Commerce, CRM, and repeat sales",
+        status: "available",
+        features: [
+          "Products, variants, categories, brands, galleries, and CSV/XLSX bulk import",
+          "CRM merge, orders, staff reorder, coupons, and consent-based restock notifications",
+          "Signed customer checkout, payment workflow, and advisory AI slip verification",
+          "Shipping records, packing, labels, tracking events, follow-up automation, membership, and loyalty",
+        ],
+      },
+      {
+        id: "inventory-purchase",
+        title: "Inventory and purchasing",
+        status: "available",
+        features: [
+          "Current, reserved, and available stock with an append-only movement history",
+          "Supplier purchase orders and retry-safe receiving at admin and POS surfaces",
+          "Two-step branch transfers and snapshot-difference stock counts",
+          "Locations, FEFO lots, product packs, barcode scanning, and serial-number controls",
+        ],
+      },
+      {
+        id: "pos-tax",
+        title: "POS and Thai tax",
+        status: "available",
+        features: [
+          "Counter sales, returns, refunds, voids, parked bills, discounts, and split payments",
+          "Cashier PIN permissions, shifts, drawer movements, and X/Z reports",
+          "Member lookup, loyalty, PO receiving, barcode scanning, product packs, FEFO lots, and serial controls",
+          "VAT invoices, credit notes, cash rounding, whole-bill serial checks, and idempotent settlement",
+        ],
+      },
+      {
+        id: "reports-automation",
+        title: "Reports and automation",
+        status: "available",
+        features: [
+          "Sales, inventory, customer, and profit-estimate dashboards",
+          "Generated XLSX, CSV, and PDF reports plus an AI report generator",
+          "Email, Slack, and LINE sales-digest workflow and a heuristic follow-up queue",
+          "Heuristic demand forecast, stock-out prediction, and purchase-order suggestions",
+        ],
+      },
+      {
+        id: "platform-control",
+        title: "SaaS administration and control",
+        status: "available",
+        features: [
+          "Self-serve signup, shop archetypes, sample data, plans, and tenant isolation",
+          "Staff management, RBAC, RLS, audit log, revision history, and tenant drill-down",
+          "User language/theme profiles, support tickets, and platform administration",
+          "Operations schedule, job-run history, system health, and daily AI log triage",
+        ],
+      },
+      {
+        id: "limited",
+        title: "Built foundation with external verification pending",
+        status: "limited",
+        features: [
+          "Shopee/Lazada inbound webhooks are beta; real Open Platform signature verification is pending",
+          "Flash/Kerry booking, tracking, and label safety layer is built; live merchant adapters are pending",
+          "Pharmacy intake and e-Tax submission queue are flag-gated; licensed/provider verification is required",
+          "ESC/POS WebUSB printing needs real hardware testing; the public live dashboard still uses mock numbers",
+          "Advanced POS features including blind close, price tiers, blind returns, commission, promotions, bundles, store credit, and deposits passed development verification but await production migrations",
+        ],
+      },
+    ],
+    packages: [
+      {
+        id: "phase1",
+        title: "Phase 1 - Daily Action + Inventory Cashflow",
+        summary: "Know what to do today and buy the right stock with confidence.",
+        tag: "Primary sales package",
+        bullets: [
+          "Bundle Q1 Today's Action Center with Q2 Inventory Intelligence as the first commercial package",
+          "Lead with owner-facing daily priorities, then prove ROI through stock-out reduction and trapped-cash release",
+          "Best fit for new deals, pilots, and first expansion inside existing shops",
+        ],
+      },
+      {
+        id: "phase2",
+        title: "Phase 2 - Customer Retention Engine",
+        summary: "Bring valuable customers back with targeted next-best actions.",
+        bullets: [
+          "Use Q3 once customer identity coverage and purchase history are reliable enough",
+          "Position as growth on top of a stable operations and inventory base",
+        ],
+      },
+      {
+        id: "phase3",
+        title: "Phase 3 - Profit Diagnosis and Growth Simulation",
+        summary: "Explain margin shifts and test pricing or promotion decisions before committing.",
+        bullets: [
+          "Use Q4 as the premium owner/manager intelligence layer",
+          "Sell after the business trusts daily actions, stock recommendations, and retention workflows",
+        ],
+      },
+    ],
+    items: [
+      {
         id: "q1",
-        quarter: "Q1 2026",
-        title: "Evidence Pack v1 + Case workflow",
-        status: "in_progress",
-        tags: ["core", "evidence", "workflow"],
+        quarter: "Q1 - First release",
+        title: "Today's Action Center",
+        status: "done",
+        tags: ["killer-feature", "phase-1", "action-center", "measurement"],
         goals: [
-          "Give each case a clear structure suitable for evidence",
-          "Add case status and an event timeline",
+          "Give the owner one prioritized list of what the store should do today",
+          "Turn existing alerts and operational signals into traceable, measurable actions",
         ],
         deliverables: [
-          "Case status (Draft/Submitted/Verified/Escalated/Closed)",
-          "Evidence attachments (images/files/links) + timestamps",
-          "Basic PDF export (case summary + key evidence)",
+          "Unified action feed for POS exceptions, stock, margin, retention, sales opportunity, and operational risk",
+          "Priority, evidence, expected impact, confidence, owner, due date, and deep link on every action",
+          "Action lifecycle: new, accepted, completed, dismissed, and expired, with reason and audit trail",
+          "Baseline metrics: acceptance, completion, time-to-action, and measured outcome",
         ],
       },
       {
         id: "q2",
-        quarter: "Q2 2026",
-        title: "Moderation + Anti-spam + Duplicate detection",
-        status: "planned",
-        tags: ["moderation", "quality"],
-        goals: ["Reduce duplicates/spam", "Increase report and case credibility"],
+        quarter: "Q2 - Inventory intelligence",
+        title: "Buy the right stock and release trapped cash",
+        status: "done",
+        tags: ["phase-1", "inventory", "cash-flow", "reorder"],
+        goals: [
+          "Reduce stock-outs without creating excess stock",
+          "Identify slow-moving, dead, and expiring inventory early enough to act",
+        ],
         deliverables: [
-          "Admin review queue + PII redaction rules",
-          "Duplicate checks (phone/bank/URL/similar text)",
-          "Trust scoring (reporter trust / case confidence)",
+          "Stock-out date, reorder quantity, safety stock, lead-time, and demand-trend recommendations using POS and online sales",
+          "Slow-moving and dead-stock classification with markdown, bundle, transfer, or discontinue actions",
+          "Expiry-aware actions using FEFO lots where lot data is available",
+          "Lost-sales and restock-demand feedback loop to improve purchase suggestions",
         ],
       },
       {
         id: "q3",
-        quarter: "Q3 2026",
-        title: "Public share page + Watchlist & alerts",
-        status: "planned",
-        tags: ["public", "alerts"],
+        quarter: "Q3 - Customer retention",
+        title: "Bring valuable customers back",
+        status: "done",
+        tags: ["crm", "rfm", "retention"],
         goals: [
-          "Share cases safely without exposing personal information",
-          "Let users monitor keywords/phones/accounts",
+          "Detect customers whose buying rhythm has changed before they are lost",
+          "Give staff a specific next-best action instead of a generic customer list",
         ],
         deliverables: [
-          "Public case summary (redacted) + share link",
-          "Watchlist + email alerts",
-          "Improved Search UX (filter/sort)",
+          "RFM segments, customer value, expected return window, and at-risk scoring across identified POS and online purchases",
+          "Comeback queue with recommended channel, message, offer, and reason",
+          "Next-best-product suggestions based on verified purchase history and basket patterns",
+          "Campaign holdout and conversion tracking to measure incremental retention impact",
         ],
       },
       {
         id: "q4",
-        quarter: "Q4 2026",
-        title: "Social automation (Facebook, X) + Templates (completed)",
-        status: "done",
-        tags: ["social", "automation", "done"],
-        goals: [
-          "Help distribute verified cases",
-          "Template-based posting with reduced PII risk",
-        ],
-        deliverables: [
-          "Auto-post only Verified/Approved cases",
-          "Multiple templates (short/long/with links)",
-          "Posting logs + retry + rate limit",
-          "Store permalink_url + published_at for linking back to origin",
-        ],
-      },
-      {
-        id: "q1_2027",
-        quarter: "Q1 2027",
-        title: "Analytics dashboard + API/Webhook",
+        quarter: "Q4 - Profit and growth",
+        title: "Diagnose profit and simulate growth decisions",
         status: "planned",
-        tags: ["analytics", "api"],
+        tags: ["profit", "growth", "simulation"],
         goals: [
-          "See high-level scam trends",
-          "Enable partners to access read-only data",
+          "Explain why sales or profit changed and which controllable factor matters most",
+          "Help owners test pricing and promotion decisions before committing",
         ],
         deliverables: [
-          "Dashboard: channels/regions/value/keywords",
-          "Anonymized dataset export",
-          "Read-only API + webhook events",
+          "Revenue and margin variance diagnosis by product, category, branch, sales channel, and time window",
+          "Frequently-bought-together, cross-sell, and missed-opportunity insights",
+          "Promotion ROI and contribution-margin measurement",
+          "Human-confirmed price recommendations and what-if scenarios with assumptions shown",
         ],
       },
     ],
   },
   th: {
     labels: {
-      pageTitle: "Roadmap การพัฒนาระบบ jachoei.com",
+      pageTitle: "Roadmap การพัฒนาระบบ BMS",
       subtitle:
-        "แผนพัฒนาระบบเพื่อให้การรับเรื่องร้องเรียนมีความน่าเชื่อถือ ใช้งานง่าย และพร้อมใช้เป็นหลักฐาน",
+        "แผนส่งมอบที่เชื่อม POS, Online commerce, Inventory และ CRM ให้เป็น Digital Business Advisor ที่บอกเจ้าของร้านได้ว่าวันนี้ควรทำอะไร",
       done: "เสร็จแล้ว",
       inProgress: "กำลังทำ",
       planned: "วางแผน",
-      progressLabel: "ความคืบหน้าโดยประมาณ",
-      keyObjectives: "เป้าหมายหลัก",
+      progressLabel: "ความคืบหน้า Q1-Q4 โดยประมาณ",
+      keyObjectives: "หลักการของ Product",
       objectives: [
-        "รวบรวมหลักฐานได้ครบถ้วน + เชื่อถือได้ (Evidence-ready)",
-        "ลดเรื่องซ้ำ/สแปม และยกระดับคุณภาพข้อมูล",
-        "ทำให้การแชร์/รายงาน/ส่งต่อหน่วยงานทำได้ง่าย",
-        "รองรับการเติบโต: moderation, analytics, API",
+        "Data -> Insight -> Action ที่แนะนำ -> ผลลัพธ์ธุรกิจที่ตรวจสอบได้",
+        "จัดลำดับเฉพาะเรื่องสำคัญที่ช่วยรักษาเงิน สต็อก ลูกค้า และกำไร",
+        "ทุกคำแนะนำต้องมีหลักฐาน ผลกระทบที่คาด และระดับความมั่นใจ",
+        "Action สำคัญยังต้องให้คนยืนยัน และต้องวัดได้ว่าทำแล้วเกิดผลจริงหรือไม่",
       ],
-      notes: "หมายเหตุ",
-      recommendTag: "คำแนะนำ",
+      notes: "รูปแบบการส่งมอบ",
+      recommendTag: "สำคัญ",
       notesText:
-        "Roadmap นี้ออกแบบให้เริ่มจากการทำ “เคสมีหลักฐานและตรวจสอบได้” ก่อน แล้วค่อยขยายไป social automation และ analytics เพื่อโตแบบมีคุณภาพ",
-      tip1: "เริ่มจาก Export PDF + Zip หลักฐานก่อน แล้วค่อยต่อ Social Auto-post",
-      tip2: "ลงทุนกับ Search + Duplicate detection จะลดภาระทีมและเพิ่มคุณภาพข้อมูล",
-      suggestedAdd: "ข้อเสนอแนะเพิ่มเติม (แนะนำ)",
-      suggest: [
-        { color: "purple", text: "Evidence Vault (ไฟล์หลักฐาน + เวลา)" },
-        { color: "purple", text: "Case Timeline & Status" },
-        { color: "purple", text: "Duplicate / Similarity Detection" },
-        { color: "purple", text: "Moderation Queue + PII Redaction" },
-        { color: "gold", text: "Watchlist & Alerts" },
-        { color: "gold", text: "Public Safe Share Page" },
-        { color: "gold", text: "Analytics Dashboard" },
-        { color: "gold", text: "API / Webhook for partners" },
+        "Q1-Q4 ในหน้านี้คือลำดับการส่งมอบ ไม่ใช่คำสัญญาตามเดือนตายตัว แต่ละช่วงจะต่อยอดจาก service ที่ BMS มีอยู่ และต้องสร้าง Action ที่วัดผลได้ก่อนเพิ่ม intelligence ชั้นถัดไป",
+      tip1:
+        "เริ่มจากกฎที่ตรวจสอบซ้ำได้และข้อมูลจริงก่อน แล้วค่อยใช้ AI ช่วยอธิบายเมื่อระบบพิสูจน์ที่มาของคำแนะนำได้",
+      tip2:
+        "วัดการยอมรับ การทำสำเร็จ และผลลัพธ์ของ Action เพื่อให้ระบบเรียนรู้ ไม่กลายเป็นแค่กล่องแจ้งเตือนอีกใบ",
+      availableNow: "ความสามารถที่ BMS มีแล้ววันนี้",
+      availableNowNote:
+        "รายการเหล่านี้สร้างในระบบแล้ว ส่วนรายการที่ระบุว่าจำกัดยังมี Feature flag, การเชื่อมต่อแบบ beta, ข้อจำกัดด้าน Hardware หรือรอการตรวจสอบก่อนใช้งาน Production",
+      available: "พร้อมใช้งาน",
+      limited: "มีข้อจำกัด / รอตรวจสอบ",
+      intelligenceLayers: "ชั้น Intelligence หลัก",
+      layers: [
+        { color: "red", text: "ศูนย์รวม วันนี้ร้านควรทำอะไร" },
+        { color: "orange", text: "Smart reorder และความเสี่ยงของหมด" },
+        { color: "gold", text: "Slow-moving, Dead stock และสินค้าใกล้หมดอายุ" },
+        { color: "cyan", text: "ลูกค้าเสี่ยงหายและ Action เรียกกลับ" },
+        { color: "blue", text: "RFM และ Next-best-offer" },
+        { color: "green", text: "วิเคราะห์ต้นเหตุด้านกำไรและ Margin" },
+        { color: "geekblue", text: "Basket analysis และโอกาส Cross-sell" },
+        { color: "magenta", text: "Promotion, Pricing และ Scenario simulation" },
       ],
-      roadmap: "แผนงานตามไตรมาส",
+      packages: "แพ็กเกจสำหรับการขาย",
+      packagesNote:
+        "สื่อสาร roadmap เป็น Phase ตามผลลัพธ์ธุรกิจ โดยให้ Phase 1 รวม Q1 และ Q2 เป็นคำสัญญาที่เข้าใจง่าย: รู้ว่าวันนี้ต้องทำอะไร และซื้อของได้แม่นขึ้นอย่างมั่นใจ",
+      packageIncludes: "ประกอบด้วย",
+      roadmap: "แผนส่งมอบ Q1-Q4",
       status: "สถานะ",
       goals: "เป้าหมาย",
-      deliverables: "สิ่งที่จะส่งมอบ",
+      deliverables: "เกณฑ์ส่งมอบ",
     },
-    items: [
+    capabilities: [
       {
-        id: "built",
-        quarter: "Built (ปัจจุบัน)",
-        title: "สิ่งที่พัฒนาไปแล้ว",
-        status: "done",
-        tags: ["done", "foundation"],
-        goals: ["มีระบบพื้นฐานครบ: สมาชิก/รับเรื่อง/แชท/อีเมล"],
-        deliverables: [
-          "ระบบสมาชิก",
-          "ระบบรับเรื่องร้องทุกข์",
-          "ระบบสนทนาแชท",
-          "ระบบอีเมลแจ้งเตือน",
+        id: "channels-ai",
+        title: "Omnichannel Inbox และ AI",
+        status: "available",
+        features: [
+          "รับข้อความจาก LINE, Facebook, Instagram, TikTok และ Web เข้าสู่ Inbox กลาง",
+          "Customer 360, ตัวตนข้ามช่องทาง, มอบหมายงาน, Note, Tag, Attachment และ Search",
+          "AI workflow ฝั่งลูกค้าและ Staff assistant ผ่าน Approved tools ที่ตรวจสิทธิ์",
+          "AI quality, Usage/Cost, Provider health, Channel health และ Failure alert",
         ],
       },
       {
+        id: "commerce-crm",
+        title: "Commerce, CRM และการขายซ้ำ",
+        status: "available",
+        features: [
+          "สินค้า Variant หมวด Brand รูปภาพ และ Bulk import CSV/XLSX",
+          "CRM merge, Order, Reorder, Coupon และแจ้งของเข้าเมื่อได้รับ Consent",
+          "Signed checkout, Payment workflow และ AI ตรวจสลิปแบบช่วยตัดสินใจ",
+          "Shipment, Packing, Label, Tracking event, Follow-up, Membership และ Loyalty",
+        ],
+      },
+      {
+        id: "inventory-purchase",
+        title: "Inventory และ Purchase",
+        status: "available",
+        features: [
+          "Current, Reserved และ Available stock พร้อมประวัติ Movement แบบ Append-only",
+          "Purchase order และการรับสินค้าแบบ Retry-safe ทั้งหน้า Admin และ POS",
+          "โอนสินค้าข้ามสาขา 2 ขั้นตอน และ Stock count แบบเทียบ Snapshot",
+          "Location, FEFO lot, Product pack, Barcode scan และควบคุม Serial number",
+        ],
+      },
+      {
+        id: "pos-tax",
+        title: "POS และภาษีไทย",
+        status: "available",
+        features: [
+          "ขาย คืน Refund Void พักบิล ส่วนลด และรับชำระหลายช่องทางในบิลเดียว",
+          "Cashier PIN, กะ, เงินเข้าออกลิ้นชัก และรายงาน X/Z",
+          "ค้นสมาชิก, Loyalty, รับ PO, Scan barcode, Product pack, FEFO lot และ Serial number",
+          "ใบกำกับภาษี VAT, Credit note, Cash rounding และ Settlement แบบ Atomic/Idempotent",
+        ],
+      },
+      {
+        id: "reports-automation",
+        title: "Reports และ Automation",
+        status: "available",
+        features: [
+          "Dashboard ยอดขาย สต็อก ลูกค้า และประมาณการกำไร",
+          "รายงาน XLSX, CSV และ PDF พร้อม AI Report Generator",
+          "Sales digest ทาง Email, Slack และ LINE พร้อม Follow-up queue แบบ heuristic",
+          "Forecast demand, คาดวันของหมด และแนะนำ Purchase order แบบ heuristic",
+        ],
+      },
+      {
+        id: "platform-control",
+        title: "SaaS Administration และ Control",
+        status: "available",
+        features: [
+          "Self-serve signup, Shop archetype, Sample data, Plan และ Tenant isolation",
+          "Staff management, RBAC, RLS, Audit log, Revision history และ Tenant drill-down",
+          "ภาษา/Theme รายบุคคล, Support ticket และ Platform administration",
+          "Operations schedule, Job-run history, System health และ Daily AI log triage",
+        ],
+      },
+      {
+        id: "limited",
+        title: "มีโครงระบบแล้ว แต่ยังรอ External/Production Verification",
+        status: "limited",
+        features: [
+          "Shopee/Lazada inbound เป็น beta และยังรอยืนยัน Signature กับ Open Platform จริง",
+          "Safety layer ของ Flash/Kerry booking, tracking และ label พร้อม แต่ยังรอ Live merchant adapter",
+          "Pharmacy intake และ e-Tax queue ปิดด้วย Feature flag และยังต้องมีผู้เชี่ยวชาญ/Provider ยืนยัน",
+          "ESC/POS WebUSB ยังต้องทดสอบ Hardware จริง และหน้า Public live dashboard ยังเป็นข้อมูล Mock",
+          "Advanced POS ชุด Blind close, Price tier, Blind return, Commission, Promotion, Bundle, Store credit และ Deposit ผ่าน Dev verification แต่ยังรอ Migration Production",
+        ],
+      },
+    ],
+    packages: [
+      {
+        id: "phase1",
+        title: "Phase 1 - วันนี้ต้องทำอะไร + ซื้อของแม่นขึ้น",
+        summary: "รู้ว่าวันนี้ต้องทำอะไร และซื้อของให้พอดีอย่างมั่นใจ",
+        tag: "แพ็กขายหลัก",
+        bullets: [
+          "รวม Q1 ศูนย์รวม Action รายวัน กับ Q2 Inventory Intelligence เป็นแพ็กเชิงพาณิชย์ชุดแรก",
+          "เปิดการขายด้วยรายการที่เจ้าของร้านเห็นแล้วลงมือทำได้ทันที แล้วพิสูจน์ ROI ด้วยการลดของขาดและปลดเงินจมสต็อก",
+          "เหมาะที่สุดสำหรับดีลใหม่ การทดลองใช้งาน และการขยายในร้านที่ใช้อยู่แล้ว",
+        ],
+      },
+      {
+        id: "phase2",
+        title: "Phase 2 - เครื่องยนต์ดึงลูกค้ากลับมา",
+        summary: "พาลูกค้าที่มีคุณค่ากลับมาซื้อด้วย next-best action ที่เฉพาะเจาะจง",
+        bullets: [
+          "ใช้ Q3 เมื่อความครอบคลุมข้อมูลตัวตนลูกค้าและประวัติซื้อมีความน่าเชื่อถือพอ",
+          "วางตำแหน่งเป็นชั้นการเติบโตบนฐานงานปฏิบัติการและสต็อกที่นิ่งแล้ว",
+        ],
+      },
+      {
+        id: "phase3",
+        title: "Phase 3 - วินิจฉัยกำไรและจำลองการเติบโต",
+        summary: "อธิบายการเปลี่ยนแปลงของ Margin และลองแผนราคา/โปรโมชั่นก่อนตัดสินใจจริง",
+        bullets: [
+          "ใช้ Q4 เป็นชั้น intelligence ระดับ owner/manager แบบพรีเมียม",
+          "ขายต่อเมื่อธุรกิจเชื่อใจ action รายวัน คำแนะนำสต็อก และ workflow retention แล้ว",
+        ],
+      },
+    ],
+    items: [
+      {
         id: "q1",
-        quarter: "Q1 2026",
-        title: "Evidence Pack v1 + Workflow เคส",
-        status: "in_progress",
-        tags: ["core", "evidence", "workflow"],
+        quarter: "Q1 - รุ่นแรก",
+        title: "ศูนย์รวม วันนี้ร้านควรทำอะไร",
+        status: "done",
+        tags: ["killer-feature", "phase-1", "action-center", "measurement"],
         goals: [
-          "ทำให้แต่ละเคสมีโครงสร้างชัดเจน พร้อมใช้เป็นหลักฐาน",
-          "เพิ่มสถานะเคสและไทม์ไลน์เหตุการณ์",
+          "เปิดระบบมาแล้วเห็นรายการสำคัญที่ร้านควรจัดการวันนี้ เรียงตามผลกระทบ",
+          "เปลี่ยน Alert และสัญญาณที่ระบบมีอยู่ให้เป็น Action ที่ติดตามและวัดผลได้",
         ],
         deliverables: [
-          "สถานะเคส (Draft/Submitted/Verified/Escalated/Closed)",
-          "แนบหลักฐาน (รูป/ไฟล์/ลิงก์) + บันทึกเวลา",
-          "Export PDF เบื้องต้น (สรุปเหตุการณ์ + ข้อมูลสำคัญ)",
+          "Action feed รวมข้อผิดปกติจาก POS, สต็อก, Margin, ลูกค้า, โอกาสขาย และความเสี่ยงงานปฏิบัติการ",
+          "ทุก Action มี Priority, หลักฐาน, ผลกระทบ, Confidence, ผู้รับผิดชอบ, กำหนดเวลา และ Deep link",
+          "วงจร Action: ใหม่, รับทำ, เสร็จ, ไม่ทำ, หมดอายุ พร้อมเหตุผลและ Audit trail",
+          "ตัวชี้วัดเริ่มต้น: Acceptance, Completion, Time-to-action และผลลัพธ์หลังทำ",
         ],
       },
       {
         id: "q2",
-        quarter: "Q2 2026",
-        title: "Moderation + Anti-spam + Duplicate Detection",
-        status: "planned",
-        tags: ["moderation", "quality"],
-        goals: ["ลดเรื่องซ้ำ/สแปม", "เพิ่มความน่าเชื่อถือข้อมูลและผู้รายงาน"],
+        quarter: "Q2 - Inventory Intelligence",
+        title: "ซื้อของให้พอดีและปลดเงินที่จมในสต็อก",
+        status: "done",
+        tags: ["phase-1", "inventory", "cash-flow", "reorder"],
+        goals: [
+          "ลดโอกาสของหมดโดยไม่ทำให้ร้านแบกสต็อกเกินจำเป็น",
+          "พบสินค้าขายช้า ค้างสต็อก และใกล้หมดอายุก่อนที่จะสายเกินแก้",
+        ],
         deliverables: [
-          "Admin queue ตรวจเคส + กฎ redact ข้อมูลส่วนบุคคล (PII)",
-          "ตรวจความซ้ำ (เบอร์/บัญชี/URL/ข้อความคล้ายกัน)",
-          "คะแนนความน่าเชื่อถือ (reporter trust / case confidence)",
+          "คาดวันของหมด จำนวนสั่งซื้อ Safety stock Lead time และแนวโน้ม Demand จากยอด POS และ Online",
+          "แยก Slow-moving/Dead stock พร้อม Action ลดราคา จัดชุด โอนสาขา หรือเลิกขาย",
+          "Action ตามวันหมดอายุจาก FEFO lot เมื่อร้านมีข้อมูล lot",
+          "นำ Lost sales และ Restock demand กลับมาปรับคำแนะนำการซื้อ",
         ],
       },
       {
         id: "q3",
-        quarter: "Q3 2026",
-        title: "Public Share Page + Watchlist & Alerts",
-        status: "planned",
-        tags: ["public", "alerts"],
-        goals: ["แชร์เคสได้แบบปลอดภัย ไม่เปิดข้อมูลส่วนบุคคล", "ให้ผู้ใช้ติดตาม keyword/เบอร์ได้"],
+        quarter: "Q3 - Customer Retention",
+        title: "พาลูกค้าที่มีคุณค่ากลับมาซื้อ",
+        status: "done",
+        tags: ["crm", "rfm", "retention"],
+        goals: [
+          "ตรวจจับว่าจังหวะการซื้อของลูกค้าเปลี่ยนไปก่อนที่จะเสียลูกค้า",
+          "ให้ทีมงานเห็น Next-best-action ที่เฉพาะเจาะจงแทนรายชื่อลูกค้าทั่วไป",
+        ],
         deliverables: [
-          "หน้า Public summary (redacted) + share link",
-          "Watchlist + แจ้งเตือนอีเมล",
-          "Search UX ดีขึ้น (filter/sort)",
+          "RFM Segment, มูลค่าลูกค้า, ช่วงที่คาดว่าจะกลับมา และคะแนนเสี่ยงหายจากรายการซื้อ POS และ Online ที่ระบุตัวลูกค้าได้",
+          "Comeback queue พร้อม Channel, ข้อความ, Offer และเหตุผลที่แนะนำ",
+          "Next-best-product จากประวัติซื้อจริงและ Basket pattern ที่ตรวจสอบได้",
+          "Holdout และ Conversion tracking เพื่อวัดผล Retention ที่เพิ่มขึ้นจริง",
         ],
       },
       {
         id: "q4",
-        quarter: "Q4 2026",
-        title: "Social Automation (Facebook, X) + Templates (พัฒนาเสร็จแล้ว)",
-        status: "done",
-        tags: ["social", "automation", "done"],
-        goals: ["ช่วยกระจายเคสที่ผ่านการตรวจแล้ว", "โพสต์แบบมี template และไม่เสี่ยงละเมิด PII"],
-        deliverables: [
-          "Auto post เฉพาะเคส Verified/Approved",
-          "Template post หลายแบบ (สั้น/ยาว/แนบลิงก์)",
-          "Log การโพสต์ + retry + rate limit",
-          "เก็บ permalink_url + published_at เพื่อให้เว็บกดไปดูโพสต์ต้นทางได้",
-        ],
-      },
-      {
-        id: "q1_2027",
-        quarter: "Q1 2027",
-        title: "Analytics Dashboard + API/Webhook",
+        quarter: "Q4 - Profit & Growth",
+        title: "วิเคราะห์ต้นเหตุกำไรและจำลองการเติบโต",
         status: "planned",
-        tags: ["analytics", "api"],
-        goals: ["เห็นภาพรวมแนวโน้มการหลอกลวง", "เปิดให้ partner ใช้งานข้อมูลแบบ read-only"],
+        tags: ["profit", "growth", "simulation"],
+        goals: [
+          "อธิบายว่ายอดขายหรือกำไรเปลี่ยนเพราะอะไร และปัจจัยใดแก้ได้ก่อน",
+          "ช่วยเจ้าของร้านทดสอบการตั้งราคาและ Promotion ก่อนตัดสินใจจริง",
+        ],
         deliverables: [
-          "Dashboard: ช่องทาง/พื้นที่/มูลค่า/keyword",
-          "Export dataset แบบ anonymized",
-          "API read-only + webhook events",
+          "วิเคราะห์ Revenue และ Margin variance ตามสินค้า หมวด สาขา ช่องทางขาย และช่วงเวลา",
+          "Frequently-bought-together, Cross-sell และโอกาสขายที่พลาด",
+          "วัด Promotion ROI และ Contribution margin",
+          "คำแนะนำราคาแบบให้คนยืนยัน และ What-if scenario ที่แสดงสมมติฐานชัดเจน",
         ],
       },
     ],
@@ -330,59 +561,65 @@ function statusIcon(status: Status) {
   return <RocketOutlined />;
 }
 
-export default function RoadmapRedBoxContent() {
+export default function RoadmapPage() {
   const { lang } = useI18n();
   const content = resolveBilingual(ROADMAP_CONTENT, lang);
 
   const iconsById: Record<string, React.ReactNode> = {
-    built: <CheckCircleOutlined />,
     q1: <SafetyCertificateOutlined />,
     q2: <TeamOutlined />,
     q3: <ShareAltOutlined />,
-    q4: <RocketOutlined />,
-    q1_2027: <BarChartOutlined />,
+    q4: <BarChartOutlined />,
+  };
+  const capabilityIconsById: Record<string, React.ReactNode> = {
+    "channels-ai": <ShareAltOutlined />,
+    "commerce-crm": <TeamOutlined />,
+    "inventory-purchase": <SearchOutlined />,
+    "pos-tax": <ShopOutlined />,
+    "reports-automation": <BarChartOutlined />,
+    "platform-control": <SafetyCertificateOutlined />,
+    limited: <AlertOutlined />,
   };
 
   const items: RoadmapItem[] = useMemo(
     () =>
-      content.items.map((it) => ({
-        ...it,
-        icon: iconsById[it.id] ?? undefined,
+      content.items.map((item) => ({
+        ...item,
+        icon: iconsById[item.id],
       })),
     [content]
   );
 
-  const doneCount = items.filter((i) => i.status === "done").length;
-  const inProgressCount = items.filter((i) => i.status === "in_progress").length;
-  const plannedCount = items.filter((i) => i.status === "planned").length;
+  const doneCount = items.filter((item) => item.status === "done").length;
+  const inProgressCount = items.filter((item) => item.status === "in_progress").length;
+  const plannedCount = items.filter((item) => item.status === "planned").length;
+  const progress = Math.round(
+    items.reduce(
+      (sum, item) => sum + (item.status === "done" ? 100 : item.status === "in_progress" ? 50 : 0),
+      0
+    ) / items.length
+  );
 
-  const progress =
-    Math.round(
-      (items.reduce((sum, i) => sum + (i.status === "done" ? 100 : i.status === "in_progress" ? 50 : 0), 0) /
-        (items.length * 100)) *
-        100
-    ) || 0;
-
-  const timelineItems: TimelineProps["items"] = items.map((it) => ({
-    dot: it.icon || statusIcon(it.status),
-    color: statusColor(it.status) as any,
+  const timelineItems: TimelineProps["items"] = items.map((item) => ({
+    dot: item.icon ?? statusIcon(item.status),
+    color: statusColor(item.status),
     children: (
       <div style={{ paddingBottom: 6 }}>
         <Row gutter={[12, 6]} align="middle" justify="space-between">
           <Col>
             <Space direction="vertical" size={0}>
-              <Text type="secondary">{it.quarter}</Text>
+              <Text type="secondary">{item.quarter}</Text>
               <Text strong style={{ fontSize: 15 }}>
-                {it.title}
+                {item.title}
               </Text>
             </Space>
           </Col>
           <Col>
-            <Tag color={statusColor(it.status)} icon={statusIcon(it.status)}>
+            <Tag color={statusColor(item.status)} icon={statusIcon(item.status)}>
               {content.labels.status}:{" "}
-              {it.status === "done"
+              {item.status === "done"
                 ? content.labels.done
-                : it.status === "in_progress"
+                : item.status === "in_progress"
                   ? content.labels.inProgress
                   : content.labels.planned}
             </Tag>
@@ -393,9 +630,9 @@ export default function RoadmapRedBoxContent() {
           <Col xs={24} md={12}>
             <Text strong>{content.labels.goals}</Text>
             <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-              {it.goals.map((g) => (
-                <li key={g}>
-                  <Text>{g}</Text>
+              {item.goals.map((goal) => (
+                <li key={goal}>
+                  <Text>{goal}</Text>
                 </li>
               ))}
             </ul>
@@ -403,23 +640,21 @@ export default function RoadmapRedBoxContent() {
           <Col xs={24} md={12}>
             <Text strong>{content.labels.deliverables}</Text>
             <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-              {it.deliverables.map((d) => (
-                <li key={d}>
-                  <Text>{d}</Text>
+              {item.deliverables.map((deliverable) => (
+                <li key={deliverable}>
+                  <Text>{deliverable}</Text>
                 </li>
               ))}
             </ul>
           </Col>
         </Row>
 
-        {it.tags?.length ? (
-          <div style={{ marginTop: 6 }}>
-            <Space wrap>
-              {it.tags.map((tag) => (
-                <Tag key={tag}>{tag}</Tag>
-              ))}
-            </Space>
-          </div>
+        {item.tags?.length ? (
+          <Space wrap style={{ marginTop: 6 }}>
+            {item.tags.map((tag) => (
+              <Tag key={tag}>{tag}</Tag>
+            ))}
+          </Space>
         ) : null}
 
         <Divider style={{ margin: "12px 0 0" }} />
@@ -430,17 +665,17 @@ export default function RoadmapRedBoxContent() {
   return (
     <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
       <Card
-        bordered={false}
+        variant="borderless"
         style={{
           borderRadius: 14,
           boxShadow: "0 1px 10px rgba(var(--app-shadow-rgb),0.12)",
           overflow: "hidden",
           height: "100%",
         }}
-        bodyStyle={{ padding: 16 }}
+        styles={{ body: { padding: 16 } }}
       >
-        <Row align="middle" justify="space-between" style={{ marginBottom: 8 }}>
-          <Col>
+        <Row align="middle" justify="space-between" gutter={[12, 8]} style={{ marginBottom: 8 }}>
+          <Col flex="auto">
             <Space direction="vertical" size={0}>
               <Title level={4} style={{ margin: 0 }}>
                 {content.labels.pageTitle}
@@ -450,9 +685,11 @@ export default function RoadmapRedBoxContent() {
           </Col>
           <Col>
             <Space wrap>
-              <Tag color="green">
-                {content.labels.done}: {doneCount}
-              </Tag>
+              {doneCount > 0 ? (
+                <Tag color="green">
+                  {content.labels.done}: {doneCount}
+                </Tag>
+              ) : null}
               <Tag color="blue">
                 {content.labels.inProgress}: {inProgressCount}
               </Tag>
@@ -467,15 +704,14 @@ export default function RoadmapRedBoxContent() {
 
         <Row gutter={[12, 12]}>
           <Col xs={24} md={12}>
-            <Card size="small" title={content.labels.progressLabel} bordered>
+            <Card size="small" title={content.labels.progressLabel} variant="outlined">
               <Progress percent={progress} />
             </Card>
-
-            <Card size="small" title={content.labels.keyObjectives} bordered style={{ marginTop: 12 }}>
+            <Card size="small" title={content.labels.keyObjectives} variant="outlined" style={{ marginTop: 12 }}>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {content.labels.objectives.map((p) => (
-                  <li key={p}>
-                    <Text>{p}</Text>
+                {content.labels.objectives.map((objective) => (
+                  <li key={objective}>
+                    <Text>{objective}</Text>
                   </li>
                 ))}
               </ul>
@@ -486,17 +722,17 @@ export default function RoadmapRedBoxContent() {
             <Card
               size="small"
               title={content.labels.notes}
-              bordered
+              variant="outlined"
               extra={<Tag icon={<AlertOutlined />}>{content.labels.recommendTag}</Tag>}
             >
               <Paragraph style={{ marginBottom: 0 }}>{content.labels.notesText}</Paragraph>
               <Divider style={{ margin: "12px 0" }} />
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                <Space>
+                <Space align="start">
                   <FileTextOutlined />
                   <Text>{content.labels.tip1}</Text>
                 </Space>
-                <Space>
+                <Space align="start">
                   <SearchOutlined />
                   <Text>{content.labels.tip2}</Text>
                 </Space>
@@ -507,26 +743,111 @@ export default function RoadmapRedBoxContent() {
 
         <Divider style={{ margin: "12px 0" }} />
 
-        <Card size="small" title={content.labels.suggestedAdd} bordered style={{ marginBottom: 12 }}>
+        <Card
+          size="small"
+          title={content.labels.availableNow}
+          variant="outlined"
+          style={{ marginBottom: 12 }}
+          extra={
+            <Space wrap>
+              <Tag color="green" icon={<CheckCircleOutlined />}>
+                {content.labels.available}
+              </Tag>
+              <Tag color="gold" icon={<AlertOutlined />}>
+                {content.labels.limited}
+              </Tag>
+            </Space>
+          }
+        >
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {content.labels.availableNowNote}
+          </Paragraph>
+          <Row gutter={[12, 12]}>
+            {content.capabilities.map((capability) => (
+              <Col key={capability.id} xs={24} md={12} xl={8}>
+                <Card
+                  size="small"
+                  variant="outlined"
+                  style={{ height: "100%" }}
+                  title={
+                    <Space>
+                      {capabilityIconsById[capability.id]}
+                      <Text strong>{capability.title}</Text>
+                    </Space>
+                  }
+                  extra={
+                    <Tag
+                      color={capability.status === "available" ? "green" : "gold"}
+                      icon={capability.status === "available" ? <CheckCircleOutlined /> : <AlertOutlined />}
+                    >
+                      {capability.status === "available" ? content.labels.available : content.labels.limited}
+                    </Tag>
+                  }
+                >
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {capability.features.map((feature) => (
+                      <li key={feature}>
+                        <Text>{feature}</Text>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Card>
+
+        <Card size="small" title={content.labels.intelligenceLayers} variant="outlined" style={{ marginBottom: 12 }}>
           <Row gutter={[12, 12]}>
             <Col xs={24} md={12}>
               <Space direction="vertical" size={6}>
-                {content.labels.suggest.slice(0, 4).map((s) => (
-                  <Badge key={s.text} color={s.color as any} text={s.text} />
+                {content.labels.layers.slice(0, 4).map((layer) => (
+                  <Badge key={layer.text} color={layer.color} text={layer.text} />
                 ))}
               </Space>
             </Col>
             <Col xs={24} md={12}>
               <Space direction="vertical" size={6}>
-                {content.labels.suggest.slice(4).map((s) => (
-                  <Badge key={s.text} color={s.color as any} text={s.text} />
+                {content.labels.layers.slice(4).map((layer) => (
+                  <Badge key={layer.text} color={layer.color} text={layer.text} />
                 ))}
               </Space>
             </Col>
           </Row>
         </Card>
 
-        <Card size="small" title={content.labels.roadmap} bordered>
+        <Card size="small" title={content.labels.packages} variant="outlined" style={{ marginBottom: 12 }}>
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {content.labels.packagesNote}
+          </Paragraph>
+          <Row gutter={[12, 12]}>
+            {content.packages.map((pkg) => (
+              <Col key={pkg.id} xs={24} md={8}>
+                <Card
+                  size="small"
+                  variant="outlined"
+                  style={{ height: "100%" }}
+                  extra={pkg.tag ? <Tag color={pkg.id === "phase1" ? "blue" : "default"}>{pkg.tag}</Tag> : null}
+                >
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    <Text strong>{pkg.title}</Text>
+                    <Text type="secondary">{pkg.summary}</Text>
+                    <Text strong>{content.labels.packageIncludes}</Text>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {pkg.bullets.map((bullet) => (
+                        <li key={bullet}>
+                          <Text>{bullet}</Text>
+                        </li>
+                      ))}
+                    </ul>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Card>
+
+        <Card size="small" title={content.labels.roadmap} variant="outlined">
           <Timeline items={timelineItems} />
         </Card>
       </Card>

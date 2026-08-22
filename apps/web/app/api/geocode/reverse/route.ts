@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const lat = Number(url.searchParams.get("lat"));
@@ -38,3 +39,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ placeName: null }, { status: 200 });
   }
 }
+
+export const GET = withRouteErrorLog("GET /api/geocode/reverse", handleGET);

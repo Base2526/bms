@@ -20,3 +20,17 @@ apps/web/Caddyfile
 !/storage/.gitkeep
 
 RN/MyApp/node_modules
+
+# DB dumps/backups — ไฟล์ข้อมูลจริง อาจมี PII ห้าม commit (schema เก็บที่ db/migrations/ แทน)
+db/*.sql
+db/*.dump
+!db/init.sql
+*.dump
+
+# local tool cache / build artifacts
+.tokensave/*.db
+.tokensave/*.db-shm
+.tokensave/*.db-wal
+*.tsbuildinfo
+
+.pnpm-store/

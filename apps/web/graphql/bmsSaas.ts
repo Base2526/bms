@@ -5,9 +5,9 @@ import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { myPermissions } from "@/lib/bms/permissions";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
-import { signupShop } from "@/lib/bms/signup";
+import { signupShop, verifyPendingShopSignup } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
-import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive } from "@/lib/bms/platform";
+import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
 import { cookies } from "next/headers";
 import { signActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 
@@ -20,6 +20,10 @@ function requireTenantAdmin(ctx: any) {
 
 export const bmsSaasResolvers = {
   Query: {
+    // public — ไม่ต้อง auth (โชว์ราคาแพ็กเกจที่หน้าแรก/landing page)
+    async bmsPublicPlans() {
+      return listPlans();
+    },
     async bmsBilling(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
       const tid = getTenantId(ctx);
@@ -34,8 +38,8 @@ export const bmsSaasResolvers = {
         throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
       }
       const u = await query<any>(
-        `SELECT id, name, username, email, phone, avatar, role, language,
-                tenant_id, is_platform_admin, created_at
+        `SELECT id, name, username, email, phone, avatar, role, language, gender,
+                theme_preference, tenant_id, is_platform_admin, is_available, created_at
            FROM users WHERE id = $1`,
         [auth.author_id]
       );
@@ -61,8 +65,12 @@ export const bmsSaasResolvers = {
         avatar: user.avatar,
         role: user.role,
         language: user.language,
+        gender: user.gender ?? null,
+        themePreference: user.theme_preference || "system",
         is_platform_admin: user.is_platform_admin === true,
-        created_at: user.created_at,
+        is_available: user.is_available !== false,
+        // pg คืน Date object — ต้องแปลงเป็น ISO string เอง (ไม่งั้น GraphQLString.serialize จะได้ epoch number ผิดรูปแบบ)
+        created_at: user.created_at instanceof Date ? user.created_at.toISOString() : (user.created_at ?? null),
         tenant,
         permissions,
       };
@@ -88,9 +96,18 @@ export const bmsSaasResolvers = {
     // public — ไม่ต้อง auth (สมัครใช้งานเอง)
     async bmsSignup(
       _p: unknown,
-      args: { shopName: string; name?: string; email: string; password: string }
+      args: { shopName: string; name?: string; email: string; password: string; businessArchetype?: string | null }
     ) {
-      return signupShop({ shopName: args.shopName, name: args.name, email: args.email, password: args.password });
+      return signupShop({
+        shopName: args.shopName,
+        name: args.name,
+        email: args.email,
+        password: args.password,
+        businessArchetype: args.businessArchetype,
+      });
+    },
+    async bmsVerifyShopSignup(_p: unknown, args: { token: string }) {
+      return verifyPendingShopSignup(args.token);
     },
     async bmsChangePlan(_p: unknown, args: { planCode: string }, ctx: any) {
       requireTenantAdmin(ctx);
@@ -116,6 +133,22 @@ export const bmsSaasResolvers = {
         const ok = await changePlan(args.tenantId, args.planCode);
         if (ok) await audit(ctx, "tenant.plan.change", args.tenantId, { planCode: args.planCode });
         return ok;
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+    },
+    // ลบร้านถาวร (ใช้กับร้านทดสอบเท่านั้น — deleteTenant() ปฏิเสธ slug ที่ไม่ขึ้นต้นด้วย "test-")
+    // audit ก่อนลบเสมอ (เขียนลง audit log ของร้านผู้กระทำเอง ไม่ใช่ร้านเป้าหมายที่กำลังจะหายไป)
+    async bmsDeleteTenant(_p: unknown, args: { tenantId: string }, ctx: any) {
+      await requirePlatformAdmin(ctx);
+      try {
+        const before = await query<{ slug: string; name: string }>(
+          `SELECT slug, name FROM bms_tenants WHERE id = $1`,
+          [args.tenantId]
+        );
+        await audit(ctx, "tenant.delete", args.tenantId, { slug: before.rows[0]?.slug, name: before.rows[0]?.name });
+        await deleteTenant(args.tenantId);
+        return true;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }

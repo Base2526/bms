@@ -1,679 +1,93 @@
-# AI Business Management System (AI-BMS)
-
-## Overview
-
-AI-BMS is an AI-first Business Management System designed to automate business operations from customer conversations to order fulfillment.
-
-Unlike traditional ERP or CRM systems, AI-BMS treats customer conversations as the starting point of every business workflow.
-
-Supported channels:
-
-- LINE Official Account ✅ (webhook + reply/push)
-- TikTok Shop / TikTok Chat ✅ (webhook; send API = roadmap)
-- Facebook Messenger ✅ (webhook + Graph Send)
-- Instagram ✅ (DM via Messenger Platform)
-- Website Live Chat ✅ (public widget endpoint)
-- Future:
-  - WhatsApp
-  - Email
-  - Voice AI
-
----
-
-# Build Status (2026-07)
-
-โมดูลเชิงปฏิบัติการตามสเปกนี้ **สร้างครบแล้ว** — order lifecycle ปิดครบวงจร
-(order → payment → shipping → delivered/completed) + omnichannel capture ทุกช่องทางหลัก
-
-| Module | สถานะ | ที่อยู่ (service · migration) |
-| --- | --- | --- |
-| Channel Integration | ✅ | `app/api/bms/{line,tiktok,facebook,instagram,web}/webhook` · `lib/bms/meta.ts` |
-| Omnichannel Inbox | ✅ | `lib/bms/inbox.ts` · `5.5__bms_inbox.sql` |
-| AI Orchestrator | ✅ | `lib/bms/{nlu,pipeline,ai}.ts` (rule-based NLU + Claude) |
-| CRM | ✅ | `lib/bms/customers.ts` · `3.6__bms_crm.sql` |
-| Product Management | ✅ | `lib/bms/products.ts` · `3.2` |
-| Inventory (IMS) | ✅ | `lib/bms/{stock,movements}.ts` · `3.2` / `3.4` |
-| Orders (OMS) | ✅ | `lib/bms/orders.ts` · `3.3` / `3.5` |
-| Purchase | ✅ | `lib/bms/purchase.ts` · `5.2__bms_purchase.sql` |
-| Payment | ✅ | `lib/bms/payments.ts` · `5.3__bms_payments.sql` (+ AI slip verify) |
-| Shipping | ✅ | `lib/bms/shipping.ts` · `5.4__bms_shipments.sql` |
-| Reports | ✅ | `lib/bms/{dashboard,reports}.ts` |
-| Multi-tenant · RLS · RBAC · Plans · Audit | ✅ | `lib/bms/{tenant,permissions,plans,audit}.ts` · `4.0–5.1` / `5.7` (operational perms) |
-| SaaS: Self-serve Signup | ✅ | `lib/bms/signup.ts` · `/shop-signup` (สร้าง tenant + owner role Manager) |
-| Platform Admin (ข้ามร้าน) | ✅ | `lib/bms/platform.ts` · `/admin/tenants` · `5.6__bms_platform_admin.sql` (`users.is_platform_admin`) — list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan |
-| Tenant Drill-down (impersonate) | ✅ | `bmsEnterTenant`/`bmsExitTenant` · cookie `BMS_ACT_TENANT` (signed) → override tenant ใน context · banner ใน `AdminLayoutClient` |
-| Current-user Profile | ✅ | `bmsMe` · `/admin/profile` + chip ผู้ล็อกอินบน `AdminHeader` |
-| Ops: Daily AI Log Triage | ✅ | `.github/workflows/daily-log-triage.yml` · `scripts/bms-log-triage/*` |
-| Dev: Fake Data Seeder | ✅ | `/admin/dev/fake` · `app/api/dev/fake/*` — seed ลง **tenant ของผู้ล็อกอิน** · cleanup scope ตามร้าน |
-
-**Ops automation:** ทุกวัน GitHub Actions อ่าน error จาก `system_logs` → Claude วิเคราะห์+เสนอแพตช์
-→ เปิด **draft PR** (คนรีวิว) → แจ้ง **LINE** (Messaging API push) · log ถูก redact ก่อนส่งออก
-
-**RBAC model (2 ชั้น):** *platform admin* (`is_platform_admin`) ดูแลทั้งแพลตฟอร์ม (ทุกร้าน/plan/role) · *tenant Administrator/Manager/staff* จัดการเฉพาะร้านตัวเอง (ทุก resolver scope ด้วย `getTenantId(ctx)` + `requirePermission()`). platform admin ดูข้อมูลร้านผ่าน **drill-down** เท่านั้น (ไม่ยำข้ามร้าน). Users list/CRUD + role CRUD ถูก gate: Users = Administrator/platform (scope ตามร้าน) · Role CRUD = platform เท่านั้น.
-
-**Roadmap ที่เหลือ:** TikTok send API · carrier API จริง (label PDF/auto-tracking) ·
-AI tool-calling / OCR / forecasting (Phase 3–4) · WhatsApp / Email / Voice AI ·
-ให้ owner (role Manager) จัดการ staff ร้านตัวเองได้ (ตอนนี้เฉพาะ Administrator/platform)
-
-> รายละเอียด tool + permission ต่อโมดูล: ดู [TOOLS.md](TOOLS.md) ·
-> flow AI: [AI_WORKFLOW.md](AI_WORKFLOW.md) · กฎธุรกิจ + enum จริง: [BUSINESS_RULES.md](BUSINESS_RULES.md)
-
----
-
-# Vision
-
-Every customer conversation should become an executable business workflow.
-
-Instead of:
-
-Customer
-→ Human
-→ Excel
-→ ERP
-
-AI-BMS should automate:
-
-Customer
-→ AI
-→ CRM
-→ Order
-→ Inventory
-→ Payment
-→ Shipping
-→ Dashboard
-
----
-
-# Core Philosophy
-
-AI should NEVER access the database directly.
-
-AI is only responsible for:
-
-- Understanding user intent
-- Selecting the correct business tool
-- Summarizing data
-- Explaining results
-
-Business logic always belongs to backend services.
-
-Database access is ONLY allowed through approved service functions.
-
----
-
-# High Level Architecture
-
-Customer
-
-↓
-
-Channel Integration
-
-↓
-
-Omnichannel Inbox
-
-↓
-
-AI Orchestrator
-
-↓
-
-Business Functions
-
-↓
-
-Database
-
-↓
-
-Response Generator
-
-↓
-
-Customer
-
----
-
-# System Modules
-
-## 1. Channel Integration
-
-Responsible for receiving messages/events from:
-
-- LINE Messaging API
-- TikTok APIs
-- Facebook Graph API
-- Instagram API
-- Website Chat
-
-Convert every platform into one internal message format.
-
-Example:
-
-{
-  channel
-  customerId
-  conversationId
-  message
-  timestamp
-}
-
----
-
-## 2. Omnichannel Inbox
-
-Unified inbox for all channels.
-
-Features:
-
-- Chat history
-- Assign staff
-- Internal notes
-- Tags
-- Customer timeline
-- Attachments
-- Search
-
----
-
-## 3. AI Orchestrator
-
-The AI layer.
-
-Responsibilities:
-
-- Intent detection
-- Entity extraction
-- Tool selection
-- Context understanding
-- Response generation
-
-AI must NOT contain business logic.
-
-Example:
-
-Customer:
-
-Nike XL available?
-
-↓
-
-Intent
-
-check_stock
-
-↓
-
-Entity
-
-{
-    product: Nike
-    size: XL
-}
-
-↓
-
-Tool
-
-checkStock()
-
----
-
-## 4. CRM
-
-Stores customer information.
-
-Customer profile includes:
-
-- Name
-- Phone
-- Email
-- LINE User ID
-- TikTok User ID
-- Facebook ID
-- Shipping addresses
-- Purchase history
-- Lifetime value
-- Tags
-- Notes
-
-Multiple channels may belong to one customer.
-
----
-
-## 5. Product Management
-
-Responsible for:
-
-- Products
-- Variants
-- SKU
-- Barcode
-- Images
-- Pricing
-- Categories
-- Brands
-
----
-
-## 6. Inventory Management System (IMS)
-
-Handles stock.
-
-Features:
-
-- Current Stock
-- Reserved Stock
-- Available Stock
-- Stock In
-- Stock Out
-- Transfer
-- Adjustment
-- Stock Movement
-
-Every stock change MUST create a Stock Movement record.
-
-Never update stock without logging movement.
-
----
-
-## 7. Order Management System (OMS)
-
-Responsible for customer orders.
-
-Statuses:
-
-Draft
-
-Pending Payment
-
-Paid
-
-Packing
-
-Shipped
-
-Completed
-
-Cancelled
-
-Refunded
-
----
-
-## 8. Purchase Management
-
-Supplier purchase orders.
-
-Features:
-
-- Create PO
-- Receive Items
-- Partial Receive
-- Cancel PO
-- Supplier History
-
----
-
-## 9. Payment
-
-Supports:
-
-- Bank Transfer
-- QR Payment
-- Credit Card
-- TikTok Payment
-- Cash
-
-Future:
-
-AI Slip Verification
-
-OCR
-
----
-
-## 10. Shipping
-
-Supports:
-
-- Flash
-- Kerry
-- DHL
-- Australia Post
-- NZ Post
-
-Features:
-
-Tracking Number
-
-Packing
-
-Label Printing
-
-Shipping Status
-
----
-
-## 11. Reports
-
-Dashboard
-
-Sales
-
-Inventory
-
-Customer
-
-Supplier
-
-Financial
-
-AI Usage
-
-Staff Performance
-
----
-
-# AI Rules
-
-AI must NEVER write SQL.
-
-Incorrect:
-
-AI
-
-↓
-
-SELECT * FROM products
-
-Correct:
-
-AI
-
-↓
-
-checkStock()
-
-↓
-
-Backend
-
-↓
-
-SQL
-
----
-
-# Tool Calling
-
-AI interacts ONLY through approved tools.
-
-Examples:
-
-checkStock()
-
-searchProduct()
-
-getProduct()
-
-createDraftOrder()
-
-confirmOrder()
-
-cancelOrder()
-
-reserveStock()
-
-releaseStock()
-
-getOrderStatus()
-
-getCustomer()
-
-searchCustomer()
-
-createCustomer()
-
-getSalesSummary()
-
-getLowStockProducts()
-
-getDashboard()
-
----
-
-# AI Flow
-
-Customer
-
-↓
-
-Message
-
-↓
-
-Intent Detection
-
-↓
-
-Entity Extraction
-
-↓
-
-Select Tool
-
-↓
-
-Backend Service
-
-↓
-
-Database
-
-↓
-
-Return Result
-
-↓
-
-Generate Human Response
-
----
-
-# Example
-
-Customer:
-
-Do you have Nike XL?
-
-AI
-
-↓
-
-Intent
-
-check_stock
-
-↓
-
-Tool
-
-checkStock()
-
-↓
-
-Backend
-
-↓
-
-Stock = 5
-
-↓
-
-AI
-
-↓
-
-We currently have 5 pairs available.
-
----
-
-# Business Rules
-
-AI must never:
-
-Delete database records
-
-Update prices
-
-Adjust inventory
-
-Refund orders
-
-Delete customers
-
-Without explicit approval.
-
-Sensitive actions require:
-
-Human Confirmation
-
-or
-
-Role Permission
-
----
-
-# Folder Structure
-
-/apps
-
-/api
-
-/services
-
-/ai
-
-/channels
-
-/modules
-
-inventory
-
-orders
-
-crm
-
-payment
-
-shipping
-
-reports
-
-/shared
-
-/database
-
----
-
-# Coding Rules
-
-Business Logic
-
-↓
-
-Services
-
-Database
-
-↓
-
-Repositories
-
-AI
-
-↓
-
-Never contains SQL
-
-Frontend
-
-↓
-
-Never contains business logic
-
----
-
-# Future Roadmap
-
-Phase 1
-
-Inventory
-
-Products
-
-Orders
-
-CRM
-
-Phase 2
-
-LINE Integration
-
-TikTok Integration
-
-Payments
-
-Shipping
-
-Phase 3
-
-AI Tool Calling
-
-AI Agent
-
-OCR
-
-Phase 4
-
-Voice AI
-
-Forecasting
-
-Demand Prediction
-
-Business Intelligence
-
----
-
-# Design Principle
-
-Everything starts from a conversation.
-
-Conversation
-
-↓
-
-Intent
-
-↓
-
-Business Function
-
-↓
-
-Business Data
-
-↓
-
-Business Action
-
-↓
-
-Customer Response
-
-AI-BMS is NOT an AI Chatbot.
-
-AI-BMS is an AI Business Operating System.
+# AI Business Management System (BMS)
+
+BMS turns every customer conversation into a business workflow:
+
+```
+Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard
+```
+
+It is **not** a chatbot. AI never touches the database — it only calls approved backend tools.
+Business logic always lives in `apps/web/lib/bms/*.ts`, shared by REST and GraphQL.
+
+This file is the **navigation index + AI rules**. Working rules for agents are in
+[AGENTS.md](AGENTS.md); machine-local notes in [CLAUDE.local.md](CLAUDE.local.md).
+
+## Documentation map
+
+| Doc | Covers |
+| --- | --- |
+| [architecture/system.md](docs/architecture/system.md) | Module build status, RBAC model, folder structure, roadmap |
+| [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
+| [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
+| [architecture/multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) | Running >1 instance · measured admin load |
+| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter POS/runbook + membership/loyalty · customer identity/inbox |
+| [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
+| [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
+| [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
+| [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
+| [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
+| [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
+| [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |
+
+## Current status (2026-08)
+
+Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
+(🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
+flag-gated off) · **e-Tax submission**
+(🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
+printing/cash-drawer** (🧪 written, never run against real hardware). POS counter sale/return/refund
+and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
+bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
+drawer cash movements, whole-bill serial checks, and shift-report correctness fixes), inter-branch
+stock transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO
+receiving at the register (`9.6`) are otherwise fully built — see
+[business/pos.md](docs/business/pos.md) and [business/inventory.md](docs/business/inventory.md).
+The commercial intelligence roadmap is built through **Q3**: Phase 1 bundles the daily Action Center
+and inventory purchasing intelligence (`9.12`–`9.13`), while Phase 2 adds the monthly customer
+retention engine (`9.14`) with RFM/risk scoring, verified next-product evidence, a propose-only
+comeback queue, deterministic holdout, and bounded 30-day conversion attribution. See
+[ui/dashboard.md](docs/ui/dashboard.md), [ui/retention-engine.md](docs/ui/retention-engine.md), and
+[business/crm.md](docs/business/crm.md). Q4 profit/growth simulation remains planned.
+Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price tiers, blind returns,
+serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch
+creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.local.md) for the
+per-migration build/verify/production status of each.
+
+Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
+Migrations written but not yet applied to production are listed in
+[CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
+look done in code but need their migration first.
+
+## AI rules (non-negotiable)
+
+- AI **never** writes SQL or touches the database — only approved tools in [ai/tools.md](docs/ai/tools.md).
+- AI **never** fabricates stock/price/order numbers — facts come from a successful backend result.
+- AI **never** sets a price, a pack size, or a pieces-per-unit count — a pack code returned by
+  `check_stock` reaches `create_order` as a name only; pieces-per-pack and pack price are always
+  read from `bms_product_packs` server-side, never supplied by the model.
+- Sensitive actions (delete, refund, cancel, change price, adjust inventory) require **human
+  confirmation + RBAC permission**.
+- **A customer order is never created until the customer has seen every line and said yes.** The
+  first `create_order` call for a basket on the customer surface writes nothing — it returns
+  `CONFIRMATION_REQUIRED` plus the resolved lines, the pipeline shows a **server-composed** itemised
+  summary (never the model's prose), and only a call whose lines still match the fingerprint the
+  customer affirmed creates the order. The confirmation signal is server-only (`ExecCtx`), so the
+  model cannot grant it to itself, change a quantity, or add a line after the customer agreed.
+- Ambiguous pharmacy catalog matches use server-owned line codes (`A1/B2`) persisted in conversation
+  state. A choice turn always produces a new server-composed basket summary; confirmation text sent
+  with the choice cannot skip that second, fingerprint-bound confirmation.
+- **AI never answers with an empty turn.** A model turn carrying no text block is a system failure
+  (`ai.empty_reply`), not an answer — the customer is told the system failed and a human is alerted.
+  Never tell a customer to retype what they typed correctly.
+- Every AI tool attempt is audited without raw arguments/PII; successful writes and confirmed
+  proposals keep their normal domain audit entries too.
+- High-impact records use revision history for before/after snapshots; the audit log remains the
+  source for who/when/action. Sensitive writes record their audit row **inside the same transaction**
+  as the money or stock they move, so a committed movement can never lack one.
+- **Counter POS (`/api/pos/*`) and branch inventory ops (`/api/bms/inventory/*`) are REST-only** —
+  a register authenticates with a device token + cashier PIN, not a GraphQL session. They are
+  absent from the tool catalogue today because no wrapper registers them. A future staff tool does
+  not require GraphQL: wrap the underlying service in `lib/bms/tools/catalog.ts`, derive the tenant
+  server-side, re-check permission, preserve the service's in-transaction domain audit, and keep a
+  stock-moving action propose-only for explicit human confirmation. Never call the REST route from a
+  tool or resolver as a shortcut around those boundaries.

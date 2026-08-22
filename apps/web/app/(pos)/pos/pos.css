@@ -1,0 +1,370 @@
+/* =============================================================
+   จอขายหน้าร้าน — สไตล์เฉพาะ /pos
+   -------------------------------------------------------------
+   เขียน CSS เองแทนใช้ antd เพราะจอขายมี component ไม่กี่ตัวแต่ต้องการ
+   ปุ่มใหญ่กว่าปกติมาก (antd ออกแบบมาสำหรับเมาส์ ต้อง override แทบทุกจุด)
+   และแท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า — ไม่ควรโหลด component library
+   ทั้งก้อนเพื่อใช้ปุ่มกับ input
+
+   กฎที่ยึด:
+   • เป้ากดขั้นต่ำ 44px — นิ้วโป้ง ไม่ใช่เคอร์เซอร์
+   • ตัวเลขที่ต้องอ่านข้ามโต๊ะ (ยอดชำระ/เงินทอน) ใหญ่และหนา
+   • สีสื่อความหมายเท่านั้น: เขียว=เงิน, ฟ้า/ม่วง=แยกไซซ์, ส้ม=ต้องดู
+   ============================================================= */
+
+.pos-root {
+  --pos-bg: #f2f3f5;
+  --pos-surface: #ffffff;
+  --pos-sunken: #f7f8fa;
+  --pos-line: #e4e6ea;
+  --pos-line-strong: #cfd3d9;
+  --pos-text: #1b1d21;
+  --pos-muted: #6b7280;
+  --pos-accent: #1f6feb;
+  --pos-accent-bg: #e8f1ff;
+  --pos-money: #1a7f37;
+  --pos-money-bg: #e9f7ee;
+  --pos-warn: #9a6700;
+  --pos-warn-bg: #fff5d6;
+  --pos-danger: #b42318;
+  --pos-danger-bg: #fdeceb;
+  --pos-alt: #6f42c1;
+  --pos-alt-bg: #f1ebfd;
+  --pos-radius: 10px;
+
+  min-height: 100vh;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  font-size: 14px;
+  /* จอสัมผัส: กันเลือกข้อความค้างตอนกดรัว ๆ */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- พื้นฐาน ---- */
+.pos-root button {
+  font: inherit;
+  border: 1px solid var(--pos-line-strong);
+  background: var(--pos-surface);
+  color: var(--pos-text);
+  border-radius: var(--pos-radius);
+  padding: 10px 14px;
+  min-height: 44px;
+  cursor: pointer;
+  transition: background 120ms ease, transform 60ms ease;
+}
+.pos-root button:hover:not(:disabled) { background: var(--pos-sunken); }
+.pos-root button:active:not(:disabled) { transform: scale(0.97); }
+.pos-root button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.pos-root input,
+.pos-root select {
+  font: inherit;
+  border: 1px solid var(--pos-line-strong);
+  background: var(--pos-surface);
+  color: var(--pos-text);
+  border-radius: var(--pos-radius);
+  padding: 10px 12px;
+  min-height: 44px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.pos-root input:focus,
+.pos-root select:focus {
+  outline: none;
+  border-color: var(--pos-accent);
+  box-shadow: 0 0 0 3px var(--pos-accent-bg);
+}
+.pos-root input[aria-invalid="true"],
+.pos-root select[aria-invalid="true"] {
+  border-color: var(--pos-danger);
+  background: var(--pos-danger-bg);
+}
+.pos-root input[aria-invalid="true"]:focus,
+.pos-root select[aria-invalid="true"]:focus {
+  outline: none;
+  border-color: var(--pos-danger);
+  box-shadow: 0 0 0 3px #f7b7b2;
+}
+.pos-root input::placeholder { color: #9aa1ab; }
+
+.pos-card {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+/* ---- แถบบน ---- */
+.pos-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.pos-shop { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pos-shop-mark {
+  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  background: var(--pos-accent-bg); color: var(--pos-accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 600;
+}
+.pos-shop-name {
+  font-size: 15px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pos-chips { display: flex; gap: 5px; margin-top: 3px; flex-wrap: wrap; }
+.pos-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--pos-sunken); color: var(--pos-muted); white-space: nowrap;
+}
+.pos-chip--ok { background: var(--pos-money-bg); color: var(--pos-money); }
+.pos-chip--warn { background: var(--pos-warn-bg); color: var(--pos-warn); }
+.pos-chip--personal { background: var(--pos-accent-bg); color: var(--pos-accent); }
+.pos-chip--petty { background: var(--pos-money-bg); color: var(--pos-money); }
+
+/* ---- ตะกร้า ---- */
+.pos-scan {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--pos-line-strong); border-radius: var(--pos-radius);
+  background: var(--pos-sunken); padding: 0 12px;
+}
+.pos-scan input {
+  flex: 1; border: none; background: transparent; box-shadow: none;
+  font-size: 16px; padding: 13px 0; min-height: 48px;
+}
+.pos-scan input:focus { box-shadow: none; }
+
+/* ปุ่มกล้อง (โหมดเทส) — ทรงกลมล้วน ๆ ให้ต่างจากกรอบสี่เหลี่ยมของช่องยิง
+   ต้องเขียนคู่กับ .pos-root ให้ specificity ชนะ `.pos-root button` ด้านบน
+   ไม่งั้นโดน border-radius/padding/min-height ของปุ่มมาตรฐานทับจนเป็นสี่เหลี่ยม */
+.pos-root .pos-cam-btn {
+  position: relative;
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  /* 44px ตามกฎเป้ากดของจอนี้ (หัวไฟล์) — เคยตั้ง 36px ซึ่งเล็กกว่าที่นิ้วโป้งกดได้จริง */
+  width: 44px; height: 44px; padding: 0;
+  border: 1px solid var(--pos-line-strong); border-radius: 999px;
+  background: var(--pos-surface); color: var(--pos-muted);
+}
+.pos-root .pos-cam-btn svg { width: 19px; height: 19px; }
+.pos-root .pos-cam-btn:hover:not(:disabled) {
+  color: var(--pos-accent); border-color: var(--pos-accent); background: var(--pos-surface);
+}
+/* จุดบอกโหมดเทสอยู่ "ใน" วงกลม ไม่คร่อมขอบ — เคยวางที่ top/right ติดลบพร้อม ring
+   สีพื้นแถว ผลคือ ring ไปลบเส้นขอบปุ่มตรงมุม วงกลมเลยดูแหว่งเหมือนเรนเดอร์เพี้ยน
+   ตำแหน่งนี้คำนวณให้ขอบจุดห่างจากเส้นขอบวงกลมราว 1px ตามแนวทแยง */
+.pos-root .pos-cam-dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pos-warn);
+}
+
+.pos-line-item {
+  border: 1px solid var(--pos-line); border-radius: var(--pos-radius);
+  padding: 9px 10px; display: flex; align-items: center; gap: 10px;
+}
+.pos-line-item + .pos-line-item { margin-top: 6px; }
+.pos-line-name { font-size: 14px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.pos-line-meta { font-size: 12px; color: var(--pos-muted); margin-top: 2px; }
+.pos-line-amount { min-width: 78px; text-align: right; font-size: 15px; font-weight: 600; }
+
+/* ไซซ์ต้องแยกออกจากกันตั้งแต่ชายตามอง — เคยเป็นตัวหนังสือสีเดียวกันจนหยิบผิดขวด */
+.pos-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  background: var(--pos-accent-bg); color: var(--pos-accent); white-space: nowrap;
+}
+.pos-badge--alt { background: var(--pos-alt-bg); color: var(--pos-alt); }
+.pos-badge--warn { background: var(--pos-warn-bg); color: var(--pos-warn); }
+
+.pos-qty { display: flex; align-items: center; gap: 4px; }
+.pos-root .pos-qty button { width: 40px; min-width: 40px; padding: 0; font-size: 20px; line-height: 1; }
+.pos-qty-value { min-width: 26px; text-align: center; font-weight: 600; }
+
+/* ---- ยอดเงิน ---- */
+.pos-total {
+  background: var(--pos-sunken); border-radius: 12px; padding: 14px;
+}
+.pos-total-row { display: flex; align-items: baseline; justify-content: space-between; }
+.pos-total-value { font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; }
+.pos-total-break {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--pos-muted); margin-top: 3px;
+}
+
+.pos-methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.pos-root .pos-method { padding: 11px 0; font-size: 13px; }
+.pos-root .pos-method--on {
+  background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; font-weight: 600;
+}
+.pos-root .pos-method--on:hover:not(:disabled) { background: var(--pos-accent); }
+
+.pos-cash-field {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--pos-line-strong); border-radius: 12px;
+  background: var(--pos-sunken); padding: 4px 14px;
+}
+.pos-cash-field label { font-size: 13px; color: var(--pos-muted); }
+.pos-cash-field input {
+  border: none; background: transparent; box-shadow: none; text-align: right;
+  font-size: 26px; font-weight: 600; width: 60%; padding: 8px 0;
+}
+.pos-cash-field input:focus { box-shadow: none; }
+
+.pos-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pos-root .pos-quick button { padding: 13px 0; font-size: 14px; font-weight: 500; }
+.pos-quick .pos-exact {
+  background: var(--pos-money-bg); border-color: var(--pos-money-bg);
+  color: var(--pos-money); font-weight: 700;
+}
+.pos-quick .pos-clear { color: var(--pos-danger); }
+
+.pos-change {
+  display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px;
+}
+.pos-change-value { font-size: 26px; font-weight: 700; }
+
+.pos-root .pos-pay {
+  width: 100%; padding: 17px 0; font-size: 17px; font-weight: 700;
+  border-radius: 12px; border-color: transparent;
+  background: var(--pos-money); color: #fff; min-height: 58px;
+}
+.pos-root .pos-pay:hover:not(:disabled) { background: #15682c; }
+.pos-root .pos-pay:disabled {
+  background: var(--pos-sunken); color: var(--pos-muted);
+  border: 1px dashed var(--pos-line-strong); opacity: 1; font-weight: 600;
+}
+
+/* ---- หลังขายจบ ---- */
+.pos-success {
+  background: var(--pos-money-bg); border: 1px solid #b7e3c5;
+  border-radius: 14px; padding: 16px;
+}
+.pos-success-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: var(--pos-money);
+}
+.pos-success-label { font-size: 13px; color: var(--pos-money); margin-top: 12px; }
+.pos-success-value {
+  font-size: 46px; font-weight: 700; line-height: 1.05;
+  color: var(--pos-money); letter-spacing: -1px;
+}
+.pos-success-hint { font-size: 12px; color: var(--pos-money); opacity: 0.85; margin-top: 12px; }
+
+/* ---- แถบแจ้งเตือน ---- */
+.pos-note { border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.pos-note--ok { background: var(--pos-money-bg); color: #12602b; }
+.pos-note--err { background: var(--pos-danger-bg); color: var(--pos-danger); }
+.pos-note--warn { background: var(--pos-warn-bg); color: var(--pos-warn); }
+
+/* ---- แท็บกะ ---------------------------------------------------
+   บล็อกนี้เคยเขียน inline style ล้วน จึงไม่ได้ใช้ระบบสีของจอนี้เลย:
+   ปุ่มปิดกะหน้าตาเหมือนปุ่มอื่นทุกปุ่ม และตัวเลขเงินเรียงไม่ตรงหลัก
+   ---------------------------------------------------------------- */
+.pos-shift-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* ตัวเลขเงินต้องเรียงหลักตรงกันเมื่ออ่านซ้อนกันหลายบรรทัด */
+.pos-num { font-variant-numeric: tabular-nums; }
+
+.pos-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+}
+.pos-stat {
+  background: var(--pos-sunken); border-radius: var(--pos-radius); padding: 10px 12px;
+}
+.pos-stat-label { font-size: 12px; color: var(--pos-muted); }
+.pos-stat-value {
+  font-size: 17px; font-weight: 600; margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.pos-stat-hint { font-size: 12px; color: var(--pos-muted); margin-top: 2px; }
+.pos-stat-hint--warn { color: var(--pos-warn); }
+
+.pos-block { border-top: 1px solid var(--pos-line); padding-top: 12px; }
+.pos-block-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.pos-block-hint { font-size: 12px; color: var(--pos-muted); margin-top: 6px; }
+.pos-expense-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
+
+/* ปุ่มหลักของแท็บนี้มีปุ่มเดียว (ปิดกะ+นับเงิน) — ปุ่มที่เหลือเป็นขอบเปล่า
+   ให้คนกดผิดยาก เพราะปิดกะแล้วย้อนไม่ได้
+   ตั้งชื่อ .pos-shift- นำหน้าตั้งใจ ไม่ใช้ .pos-btn-primary เฉย ๆ — ชื่อนั้นมีอยู่แล้วใน
+   className ของปุ่ม "ใช้ส่วนลด" ที่แท็บขาย (ไม่เคยมี CSS จับ เลยว่างมาตลอด) ถ้าใช้ชื่อซ้ำ
+   ปุ่มนั้นจะได้สีตามไปด้วยทั้งที่ไม่ได้ตั้งใจแก้ */
+.pos-root .pos-shift-btn-primary {
+  background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; font-weight: 500;
+}
+.pos-root .pos-shift-btn-primary:hover:not(:disabled) { background: #1a5fd0; }
+
+/* กล่องผู้อนุมัติ: เดิมช่อง PIN โผล่มาเฉย ๆ ตอนเลือก "นำเงินออก"
+   โดยไม่บอกว่าทำไมต้องมีคนที่สอง */
+.pos-approve {
+  background: var(--pos-warn-bg); border: 1px solid #f2dfa8;
+  border-radius: var(--pos-radius); padding: 10px 12px; margin-top: 8px;
+}
+.pos-approve-why { font-size: 12px; color: var(--pos-warn); margin-bottom: 8px; }
+.pos-approve-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; }
+.pos-approve--personal {
+  background: var(--pos-accent-bg); border-color: #bfd8ff;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.pos-approve--personal .pos-approve-why { color: var(--pos-accent); margin-bottom: 0; }
+.pos-approve--petty {
+  background: var(--pos-money-bg); border-color: #b7e3c5;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.pos-approve--petty .pos-approve-why { color: var(--pos-money); margin-bottom: 0; }
+
+.pos-petty-wallet {
+  margin-top: 10px; padding: 10px 12px; border: 1px solid var(--pos-line);
+  border-radius: var(--pos-radius); background: var(--pos-sunken);
+}
+.pos-petty-wallet-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.pos-petty-wallet-head > span { display: flex; flex-direction: column; gap: 2px; }
+.pos-petty-wallet-head small { color: var(--pos-muted); font-size: 11px; }
+.pos-petty-wallet-head strong {
+  color: var(--pos-money); font-size: 19px; font-variant-numeric: tabular-nums;
+}
+.pos-petty-fund-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px; margin-top: 9px;
+}
+.pos-petty-history { border-top: 1px solid var(--pos-line); margin-top: 9px; padding-top: 6px; }
+
+.pos-move-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-size: 13px; color: var(--pos-muted); padding: 3px 0;
+}
+.pos-move-row .pos-num { color: var(--pos-text); }
+.pos-move-dir--in { color: var(--pos-money); }
+.pos-move-dir--out { color: var(--pos-danger); }
+
+/* สรุปกะ = กระดาษที่ผู้จัดการเซ็นรับเงิน จึงจัดให้อ่านเหมือนใบเสร็จ:
+   ป้ายซ้าย ตัวเลขขวา เส้นประคั่นแต่ละหมวด */
+.pos-report {
+  background: var(--pos-sunken); border-radius: var(--pos-radius);
+  padding: 12px 14px; font-size: 13px;
+}
+.pos-report-meta { color: var(--pos-muted); margin-bottom: 8px; }
+.pos-report-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px;
+}
+.pos-report-grid > :nth-child(even) { text-align: right; font-variant-numeric: tabular-nums; }
+.pos-report-sep {
+  border-top: 1px dashed var(--pos-line-strong); margin-top: 9px; padding-top: 8px;
+}
+.pos-report-total { font-weight: 600; }
+
+/* ---- จอแคบ: เรียงบนล่างแทนสองคอลัมน์ ---- */
+@media (max-width: 860px) {
+  .pos-main-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .pos-approve-row { grid-template-columns: minmax(0, 1fr); }
+  .pos-expense-grid { grid-template-columns: minmax(0, 1fr); }
+  .pos-petty-fund-grid { grid-template-columns: minmax(0, 1fr); }
+  .pos-total-value { font-size: 30px; }
+  .pos-success-value { font-size: 38px; }
+}

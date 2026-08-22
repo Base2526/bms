@@ -10,6 +10,8 @@ type VerifyStrings = {
   invalidLink: string;
   success: string;
   failed: string;
+  shopVerified: string;
+  shopEmailTaken: string;
 };
 
 const VERIFY_EMAIL = gql`
@@ -17,6 +19,15 @@ const VERIFY_EMAIL = gql`
     verifyEmail(token: $token) {
       ok
       message
+    }
+  }
+`;
+
+const VERIFY_SHOP_SIGNUP = gql`
+  mutation VerifyShopSignup($token: String!) {
+    bmsVerifyShopSignup(token: $token) {
+      status
+      slug
     }
   }
 `;
@@ -33,10 +44,13 @@ function VerifyEmailClientInner({ token }: Props) {
       invalidLink: t("verify.invalid_link"),
       success: t("verify.success"),
       failed: t("verify.failed"),
+      shopVerified: t("verify.shop_verified"),
+      shopEmailTaken: t("verify.shop_email_taken"),
     }),
     [t]
   );
   const [verifyEmail] = useMutation(VERIFY_EMAIL);
+  const [verifyShopSignup] = useMutation(VERIFY_SHOP_SIGNUP);
 
   const [status, setStatus] = useState(() => strings.verifying);
 
@@ -48,14 +62,22 @@ function VerifyEmailClientInner({ token }: Props) {
 
     let cancelled = false;
 
-    verifyEmail({ variables: { token } })
-      .then(({ data }) => {
+    verifyShopSignup({ variables: { token } })
+      .then(async ({ data }) => {
         if (cancelled) return;
-        if (data?.verifyEmail?.ok) {
-          setStatus(strings.success);
-        } else {
-          setStatus(data?.verifyEmail?.message || strings.failed);
+        const shopStatus = data?.bmsVerifyShopSignup?.status;
+        if (shopStatus === "VERIFIED") {
+          setStatus(strings.shopVerified);
+          window.setTimeout(() => window.location.assign("/admin/login?next=/admin/getting-started"), 1200);
+          return;
         }
+        if (shopStatus === "EMAIL_TAKEN") {
+          setStatus(strings.shopEmailTaken);
+          return;
+        }
+        const fallback = await verifyEmail({ variables: { token } });
+        if (cancelled) return;
+        setStatus(fallback.data?.verifyEmail?.ok ? strings.success : (fallback.data?.verifyEmail?.message || strings.failed));
       })
       .catch(() => {
         if (cancelled) return;
@@ -65,7 +87,17 @@ function VerifyEmailClientInner({ token }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [token, verifyEmail, strings.failed, strings.invalidLink, strings.success, strings.verifying]);
+  }, [
+    token,
+    verifyEmail,
+    verifyShopSignup,
+    strings.failed,
+    strings.invalidLink,
+    strings.success,
+    strings.verifying,
+    strings.shopVerified,
+    strings.shopEmailTaken,
+  ]);
 
   const style = useMemo(() => ({ padding: 40, textAlign: "center" as const }), []);
 

@@ -257,6 +257,111 @@ html.dark .ant-drawer-mask {
   vertical-align: bottom; /* กัน baseline gap */
 }
 
+/* Inbox: ให้ Tabs ยืดเต็มพื้นที่ที่เหลือแทน scroll ทั้งก้อน (antd ครอบ content ด้วย div ที่ไม่ใช่ flex เอง) */
+.bms-inbox-tabs-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.bms-inbox-tabs-fill > .ant-tabs-nav {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.bms-inbox-tabs-fill > .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+}
+.bms-inbox-tabs-fill > .ant-tabs-content-holder > .ant-tabs-content {
+  height: 100%;
+}
+.bms-inbox-tabs-fill .ant-tabs-tabpane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* antd ซ่อน pane ที่ไม่ active ด้วย `.ant-tabs-tabpane-hidden { display: none }` (specificity 0,1,0)
+   แต่ rule ด้านบน `.bms-inbox-tabs-fill .ant-tabs-tabpane` (0,2,0) ชนะ → pane ที่ควรถูกซ่อนกลับได้
+   display:flex ทำให้ทุกแท็บ (แชท/ลูกค้า/โน้ต/Timeline) render ซ้อนกันพร้อมกันทั้งหมด
+   อาการที่เจอ: สลับไปแท็บโน้ตแล้วช่องโน้ต+ปุ่ม @ ถูกดันตกขอบล่างจนกดใช้งานไม่ได้ และ dropdown
+   ของ @mention (position:absolute; top:100%) ไป render ใต้ขอบจอจนมองไม่เห็น
+   ต้องประกาศซ้ำด้วย 3 class (0,3,0) ให้ชนะแน่ ๆ ไม่ขึ้นกับลำดับ source */
+.bms-inbox-tabs-fill .ant-tabs-tabpane.ant-tabs-tabpane-hidden {
+  display: none;
+}
+
+/* Inbox conversation list: Ant List/Meta มี min-width ภายใน ทำให้บาง tag ดันเกิด scrollbar แนวนอน */
+.bms-inbox-conversation-scroll .ant-list,
+.bms-inbox-conversation-scroll .ant-spin-nested-loading,
+.bms-inbox-conversation-scroll .ant-spin-container,
+.bms-inbox-conversation-scroll .ant-list-items,
+.bms-inbox-conversation-scroll .ant-list-item,
+.bms-inbox-conversation-scroll .ant-list-item-meta,
+.bms-inbox-conversation-scroll .ant-list-item-meta-content,
+.bms-inbox-conversation-scroll .ant-list-item-meta-title,
+.bms-inbox-conversation-scroll .ant-list-item-meta-description {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bms-inbox-conversation-scroll .ant-list-item-meta {
+  overflow: hidden;
+}
+
+/* Inbox quick-filter strip: เลื่อนแนวนอนได้เมื่อ chip ล้นแทนการตกบรรทัด — ซ่อน scrollbar
+   เพราะ chip เตี้ยเกินจะมี scrollbar แถบหนาแบบปกติแสดงสวย ๆ (ยังเลื่อนด้วย wheel/touch ได้ตามปกติ) */
+.bms-inbox-filter-strip {
+  scrollbar-width: none;
+}
+.bms-inbox-filter-strip::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .bms-inbox-tabs-fill > .ant-tabs-nav {
+    margin-bottom: 6px;
+  }
+
+  .bms-inbox-tabs-fill .ant-tabs-tab {
+    padding: 8px 0;
+  }
+
+  .bms-inbox-conversation-scroll .ant-list-item {
+    min-height: 88px;
+  }
+}
+
+/* Sidebar: antd บังคับ opacity:0 กับ child ตัวที่ 2+ ในสล็อตไอคอนเมนูตอน sidebar ย่อ
+   (คิดว่าเป็น title ที่ต้องซ่อน) — badge unread ของเราดันโดนเหมารวมไปด้วย ต้อง !important ทับ */
+.ant-menu-item-icon .bms-sider-badge {
+  opacity: 1 !important;
+}
+
+/* Sidebar: label เมนูยาว (เช่น "Pharmacy Intake Lab"/"Pharmacy Protocols") เดิมโดน antd ตัดเป็น
+   "..." ด้วย ellipsis + height คงที่ของ .ant-menu-item อ่านไม่ออกว่าเมนูอะไร — scope เฉพาะ sidebar
+   (ไม่แตะ Menu อื่นในแอป เช่น dropdown) เปลี่ยนเป็นขึ้นบรรทัดใหม่แทนตัดคำ
+
+   ⚠️ ต้อง :not(.ant-menu-inline-collapsed) เสมอ — ตอน Sider ย่อ (จอ 768–992px หรือกดย่อเอง) antd
+   ซ่อน label ด้วย opacity:0 ซึ่ง "ยังกินพื้นที่ layout อยู่" แล้วพึ่ง height คงที่ + overflow:hidden
+   ของ .ant-menu-item เป็นตัวกันไม่ให้ข้อความที่มองไม่เห็นดันความสูง. ถ้าปล่อย height:auto +
+   overflow:visible + word-break:break-word ให้มีผลตอนย่อด้วย ข้อความจะตัดคำทีละตัวอักษรในกล่องกว้าง
+   ~40px → item สูงหลายร้อย px (เจอจริง: Dashboard สูง ~380px) ไอคอนลอยอยู่บนสุดของบล็อกยักษ์
+   ส่วน badge (absolute) กับ tooltip ของ antd ไปโผล่ผิดที่ = เมนูดูเพี้ยนทั้งแถบ
+   popup flyout ของ submenu ตอนย่อถูก portal ออกไปนอก .bms-admin-sidebar-menu จึงไม่โดนกฎนี้อยู่แล้ว */
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-item,
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-submenu-title {
+  height: auto;
+  line-height: 1.4;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-title-content {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+}
+
 /* overlay เวลา +more รูป */
 .chat-image-overlay {
   position: absolute;

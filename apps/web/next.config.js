@@ -14,6 +14,17 @@ const nextConfig = {
     // appDir: true,
     optimizePackageImports: ['antd'],
     externalDir: true,
+    // เปิด instrumentation.ts — ใช้ดัก unhandledRejection/uncaughtException ของ
+    // background task ที่ไม่มี request ให้ตอบกลับ (Next 14 ยังต้องเปิด flag นี้เอง)
+    instrumentationHook: true,
+    // Next spawns up to (CPUs - 1) parallel build workers, each its own V8
+    // isolate that can grow independently. On a 10-CPU host that's ~9 workers
+    // competing for the Docker Desktop VM's memory at once — the aggregate
+    // demand can exceed the VM's total RAM even though any single worker's
+    // heap looks fine, causing an OOM inside `next build`. Cap concurrency so
+    // total memory pressure stays predictable (override via NEXT_BUILD_CPUS
+    // for machines with more RAM to spare).
+    cpus: Number(process.env.NEXT_BUILD_CPUS) || 2,
   },
   // ✅ Cache header สำหรับ SVG
   async headers() {
@@ -44,16 +55,9 @@ const nextConfig = {
     // alias ไปที่แพ็กเกจ core (src) เพื่อ dev-hot-reload
     config.resolve.alias['@core'] = path.resolve(__dirname, '../../packages/graphql-core/src');
 
-    // ✅ กันไฟล์ server-only เผลอถูก bundle ฝั่ง client
-    // (ถ้า client ไป import เข้า จะให้มัน fail เร็ว ๆ หรือ ignore)
-    if (!isServer) {
-      config.resolve.alias["@social/queue.server"] = false;
-      config.resolve.alias["@social/pubsub.server"] = false;
-    }
-
     return config;
   },
-  transpilePackages: [ "antd", "events", "social-queue" ],
+  transpilePackages: [ "antd", "events" ],
 
   productionBrowserSourceMaps: false,
   swcMinify: true,

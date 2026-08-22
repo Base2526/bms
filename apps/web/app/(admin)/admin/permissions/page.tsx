@@ -3,11 +3,14 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Checkbox, Button, Space, Tag, message, Alert, Typography, Divider } from "antd";
 import { useState, useEffect } from "react";
 import { ReloadOutlined, SaveOutlined, CrownOutlined } from "@ant-design/icons";
+import { Q_MY_PERMS } from "@/app/hooks/useBmsPermissions";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 
 const Q = gql`
   query {
+    bmsMyTenant { id name slug }
     bmsPermissionCatalog
     bmsRolePermissions { id name is_super permissions }
   }
@@ -22,21 +25,43 @@ const M_SET = gql`
 function groupByResource(perms: string[]) {
   const g: Record<string, string[]> = {};
   perms.forEach((p) => {
-    const res = p.split(".")[0];
+    const parts = p.split(".");
+    const res = parts[0] === "pharmacy" && parts.length >= 2
+      ? `${parts[0]}.${parts[1]}`
+      : parts[0];
     (g[res] ||= []).push(p);
   });
   return g;
 }
 
-const RES_LABEL: Record<string, string> = {
-  product: "สินค้า", stock: "สต็อก", order: "ออเดอร์", customer: "ลูกค้า", report: "รายงาน",
-};
+function resourceLabels(t: (key: string) => string): Record<string, string> {
+  return {
+    product: t("admin_permissions.res_product"), stock: t("admin_permissions.res_stock"),
+    order: t("admin_permissions.res_order"), customer: t("admin_permissions.res_customer"),
+    report: t("admin_permissions.res_report"), purchase: t("admin_permissions.res_purchase"),
+    payment: t("admin_permissions.res_payment"), shipping: t("admin_permissions.res_shipping"),
+    inbox: t("admin_permissions.res_inbox"), ai_quality: t("admin_permissions.res_ai_quality"),
+    coupon: t("admin_permissions.res_coupon"), followup: t("admin_permissions.res_followup"),
+    "pharmacy.assessment": t("admin_permissions.res_pharmacy_assessment"),
+    "pharmacy.protocol": t("admin_permissions.res_pharmacy_protocol"),
+    "pharmacy.audit": t("admin_permissions.res_pharmacy_audit"),
+  };
+}
+
+function permissionActionLabel(permission: string) {
+  const parts = permission.split(".");
+  if (parts[0] === "pharmacy") return parts.slice(2).join(".") || parts[1];
+  return parts.slice(1).join(".") || permission;
+}
 
 export default function Page() {
+  const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [setPerms] = useMutation(M_SET, {
-    onCompleted: () => { message.success("บันทึกสิทธิ์แล้ว"); refetch(); },
-    onError: (e) => message.error(e?.message || "บันทึกไม่สำเร็จ"),
+    refetchQueries: [Q_MY_PERMS],
+    awaitRefetchQueries: true,
+    onCompleted: () => { message.success(t("admin_permissions.save_success")); refetch(); },
+    onError: (e) => message.error(e?.message || t("admin_permissions.save_error")),
   });
 
   // draft state ต่อ role (แก้ก่อนกด save)
@@ -49,7 +74,9 @@ export default function Page() {
     }
   }, [data]);
 
-  if (error) return <Alert type="error" message="โหลดสิทธิ์ไม่ได้" description={error.message} showIcon />;
+  const resLabel = resourceLabels(t);
+
+  if (error) return <Alert type="error" message={t("admin_permissions.load_error")} description={error.message} showIcon />;
 
   const catalog: string[] = data?.bmsPermissionCatalog || [];
   const groups = groupByResource(catalog);
@@ -59,13 +86,14 @@ export default function Page() {
     <div>
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Permissions (RBAC)</h2>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+          <h2 style={{ margin: 0 }}>{t("admin_permissions.title")}</h2>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_permissions.refresh")}</Button>
         </Space>
       </div>
 
       <Alert type="info" showIcon closable style={{ marginBottom: 16 }}
-        message="กำหนดว่าแต่ละ role ทำอะไรได้ (เฉพาะ Administrator แก้ได้) — Administrator ได้ทุกสิทธิ์เสมอ · การเปลี่ยนมีผลกับผู้ใช้ที่อยู่ใน role นั้นทันที" />
+        message={<>{t("admin_permissions.editing_tenant_prefix")} <b>{data?.bmsMyTenant?.name || "-"}</b> <Text code>{data?.bmsMyTenant?.slug || data?.bmsMyTenant?.id || "-"}</Text></>}
+        description={t("admin_permissions.scope_notice")} />
 
       <Space direction="vertical" style={{ width: "100%" }} size={16}>
         {roles.map((role: any) => {
@@ -77,12 +105,12 @@ export default function Page() {
 
           return (
             <Card key={role.id} size="small"
-              title={<Space>{role.name}{role.is_super && <Tag color="gold" icon={<CrownOutlined />}>super — ได้ทุกสิทธิ์</Tag>}</Space>}
+              title={<Space>{role.name}{role.is_super && <Tag color="gold" icon={<CrownOutlined />}>{t("admin_permissions.super_role_tag")}</Tag>}</Space>}
               extra={
                 !role.is_super && (
                   <Button type="primary" size="small" icon={<SaveOutlined />} disabled={!dirty}
                     onClick={() => setPerms({ variables: { roleId: role.id, permissions: current } })}>
-                    บันทึก
+                    {t("admin_permissions.save")}
                   </Button>
                 )
               }
@@ -90,7 +118,7 @@ export default function Page() {
               <Space wrap size={[24, 8]} align="start">
                 {Object.entries(groups).map(([res, perms]) => (
                   <div key={res} style={{ minWidth: 160 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{RES_LABEL[res] || res}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{resLabel[res] || res}</Text>
                     <div style={{ marginTop: 4 }}>
                       <Space direction="vertical" size={2}>
                         {perms.map((p) => (
@@ -98,7 +126,7 @@ export default function Page() {
                             disabled={role.is_super}
                             checked={role.is_super || current.includes(p)}
                             onChange={(e) => toggle(p, e.target.checked)}>
-                            {p.split(".")[1]}
+                            {permissionActionLabel(p)}
                           </Checkbox>
                         ))}
                       </Space>
@@ -113,7 +141,7 @@ export default function Page() {
 
       <Divider />
       <Text type="secondary" style={{ fontSize: 12 }}>
-        * สิทธิ์เหล่านี้ถูกบังคับใช้จริงในทุก BMS API (Products/Orders/Customers/Dashboard) — role ที่ไม่มีสิทธิ์จะโดนปฏิเสธ (403) และปุ่มในหน้าที่เกี่ยวข้องจะถูกซ่อน
+        {t("admin_permissions.footnote")}
       </Text>
     </div>
   );

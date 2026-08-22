@@ -30,11 +30,6 @@ ARG NEXT_PUBLIC_SUPPORT_TO_EMAIL
 ARG COOKIE_SECURE
 ARG WEB_NAME
 
-ARG FB_PAGE_ID
-ARG FB_PAGE_ACCESS_TOKEN
-ARG SOCIAL_QUEUE_KEY
-ARG SOCIAL_DLQ_KEY
-ARG SOCIAL_DELAYED_KEY
 ARG ADMIN_TOKEN
 ARG JWT_SECRET
 
@@ -61,11 +56,6 @@ ENV NEXT_PUBLIC_SUPPORT_TO_EMAIL=$NEXT_PUBLIC_SUPPORT_TO_EMAIL
 ENV COOKIE_SECURE=$COOKIE_SECURE
 ENV WEB_NAME=$WEB_NAME
 
-ENV FB_PAGE_ID=$FB_PAGE_ID
-ENV FB_PAGE_ACCESS_TOKEN=$FB_PAGE_ACCESS_TOKEN
-ENV SOCIAL_QUEUE_KEY=$SOCIAL_QUEUE_KEY
-ENV SOCIAL_DLQ_KEY=$SOCIAL_DLQ_KEY
-ENV SOCIAL_DELAYED_KEY=$SOCIAL_DELAYED_KEY
 ENV ADMIN_TOKEN=$ADMIN_TOKEN
 ENV JWT_SECRET=$JWT_SECRET
 ENV DEBUG_LOG=$DEBUG_LOG
@@ -78,13 +68,17 @@ ENV FCM_PRIVATE_KEY=$FCM_PRIVATE_KEY
 
 RUN npm ci --include=optional
 
-# install dependencies for imported monorepo package
-RUN cd /app/packages/social-queue && npm install --omit=dev
+RUN cd /app/packages/realtime && npm ci --omit=dev
 
 RUN npm install --os=linux --cpu=arm64 sharp --force --ignore-scripts=false || true
 RUN npm rebuild sharp --force || true
 
 COPY apps/web ./
+
+# Next.js/webpack build can OOM inside a memory-constrained container (V8's
+# default heap sizing doesn't always respect the cgroup limit). Cap it explicitly
+# so it fails predictably below the container ceiling instead of hard OOM-killing.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN npm run build
 

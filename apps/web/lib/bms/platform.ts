@@ -10,8 +10,10 @@
 // =============================================================
 
 import { GraphQLError } from "graphql/error";
+import type { PoolClient } from "pg";
 import { requireAuth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, getClient } from "@/lib/db";
+import { DEFAULT_TENANT_ID } from "./tenant";
 
 /** platform admin หรือไม่ — อ่านสด ๆ จาก DB ด้วย id ใน session */
 export async function isPlatformAdmin(ctx: any): Promise<boolean> {
@@ -72,7 +74,9 @@ export async function listTenants(): Promise<TenantRow[]> {
     slug: r.slug,
     plan: r.plan,
     active: r.active,
-    created_at: r.created_at,
+    // pg คืน created_at เป็น Date object — ต้องแปลงเป็น ISO string เอง
+    // (GraphQLString.serialize บน Date จะเรียก .valueOf() ได้ epoch number แล้วแปลงเป็น string ตัวเลข ไม่ใช่วันที่)
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     users: r.users ?? 0,
     products: r.products ?? 0,
     orders: r.orders ?? 0,
@@ -84,4 +88,164 @@ export async function listTenants(): Promise<TenantRow[]> {
 export async function setTenantActive(tenantId: string, active: boolean): Promise<boolean> {
   const res = await query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
   return (res.rowCount ?? 0) > 0;
+}
+
+/** ชื่อร้าน (bms_tenants.name) จาก tenantId — ใช้เป็นชื่อร้านชื่อเดียวทั้งระบบ (AI/เอกสาร) */
+export async function getTenantName(tenantId: string): Promise<string | null> {
+  const r = await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [tenantId]);
+  return r.rows[0]?.name ?? null;
+}
+
+/** Stable public-shop handle used when customer-safe tools return a product link. */
+export async function getTenantSlug(tenantId: string): Promise<string | null> {
+  const r = await query<{ slug: string }>(
+    `SELECT slug FROM bms_tenants WHERE id = $1 AND active = TRUE`,
+    [tenantId]
+  );
+  return r.rows[0]?.slug ?? null;
+}
+
+/** normalize slug: ตัวเล็ก, อนุญาต a-z 0-9 และ '-' (อื่น ๆ → '-'), ตัด '-' ซ้ำ/หัวท้าย */
+function normalizeSlug(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * แก้ชื่อร้าน (bms_tenants.name) + slug — ให้ Administrator ของร้านแก้เองได้
+ * slug: validate รูปแบบ + unique (ยกเว้นตัวเอง) · bms_tenants ไม่มี revision trigger จึงแก้ได้ตรง ๆ
+ */
+export async function updateTenantIdentity(
+  tenantId: string,
+  patch: { name?: string | null; slug?: string | null }
+): Promise<{ id: string; name: string; slug: string }> {
+  const name = typeof patch.name === "string" && patch.name.trim() ? patch.name.trim() : null;
+
+  let slug: string | null = null;
+  if (typeof patch.slug === "string" && patch.slug.trim()) {
+    slug = normalizeSlug(patch.slug);
+    if (!slug) throw new Error("slug ไม่ถูกต้อง (ใช้ได้เฉพาะ a-z, 0-9, -)");
+    const dup = await query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
+    if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
+  }
+
+  const res = await query<{ id: string; name: string; slug: string }>(
+    `UPDATE bms_tenants
+        SET name = COALESCE($2, name),
+            slug = COALESCE($3, slug)
+      WHERE id = $1
+      RETURNING id, name, slug`,
+    [tenantId, name, slug]
+  );
+  if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
+  return res.rows[0];
+}
+
+/**
+ * ลบร้านถาวร — **เฉพาะร้านทดสอบ** (slug ต้องขึ้นต้นด้วย "test-") กันมือลั่นลบร้านลูกค้าจริง
+ * ห้ามลบ DEFAULT_TENANT_ID เด็ดขาด (ร้านระบบที่ fixture/seed เก่าอ้างถึง)
+ *
+ * ลำดับ DELETE อ้างจาก FK graph จริงใน db/migrations (verify แล้ว ไม่ใช่เดา):
+ * เกือบทุกตาราง BMS ผูก tenant_id ... ON DELETE CASCADE เข้า bms_tenants อยู่แล้ว (ตั้งแต่ 5.1
+ * เป็นต้นไป) ยกเว้น 8 ตารางเดิมจาก migration 4.0 ที่ตอนนั้นสร้าง FK แบบ RESTRICT (ไม่ cascade):
+ * bms_products/bms_inventory/bms_orders/bms_order_items/bms_stock_movements/bms_customers/
+ * bms_customer_identities/bms_customer_addresses — 6 ใน 8 ตัวนี้ cascade กันเองอยู่แล้วผ่าน FK
+ * อื่นที่ระบุ ON DELETE CASCADE ทีหลัง (inventory/order_items ← products/orders, identities/
+ * addresses ← customers) เหลือแค่ 2 จุดที่ต้องลบเอง: bms_stock_movements และ bms_purchase_order_items
+ * (ทั้งคู่มี FK ไป bms_products แบบ RESTRICT) — purchase_order_items ลบไปพร้อม bms_purchase_orders
+ * (cascade). users.tenant_id ก็เป็น RESTRICT (4.1) และ POS รุ่นหลังมีหลักฐานที่อ้างทั้ง users,
+ * shifts, devices และ PO แบบ RESTRICT จึงต้องลบ POS ledgers/shifts ก่อน users และ tenant เสมอ
+ * ไม่งั้น FK error. ใช้ query() ธรรมดา (ไม่ใช้ beginTenantTx) เพราะ bms_app role ไม่มีสิทธิ์บนตาราง
+ * users เลย (ดู 4.3__bms_rls_role.sql — grant เฉพาะตาราง bms_*)
+ */
+async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promise<void> {
+  if (!tenantIds.length) return;
+  // POS operations retain user/device/purchase evidence with RESTRICT FKs.
+  await client.query(`DELETE FROM bms_pos_expenses WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_pos_purchase_receipts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_stock_movements WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_customers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])`, [tenantIds]);
+}
+
+export async function deleteTenant(tenantId: string): Promise<{ slug: string; name: string }> {
+  if (tenantId === DEFAULT_TENANT_ID) {
+    throw new Error("ห้ามลบร้าน default");
+  }
+  const t = await query<{ slug: string; name: string }>(
+    `SELECT slug, name FROM bms_tenants WHERE id = $1`,
+    [tenantId]
+  );
+  if (!t.rowCount) throw new Error("ไม่พบร้าน");
+  const { slug, name } = t.rows[0];
+  if (!slug.startsWith("test-")) {
+    throw new Error(`ลบได้เฉพาะร้านทดสอบ (slug ต้องขึ้นต้นด้วย "test-", ร้านนี้คือ "${slug}")`);
+  }
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    await deleteTenantRows(client, [tenantId]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { slug, name };
+}
+
+export async function deleteScenarioTenants(
+  slugs: readonly string[],
+  actorId: string
+): Promise<Array<{ id: string; slug: string; name: string }>> {
+  const safeSlugs = Array.from(new Set(slugs));
+  if (!safeSlugs.length || safeSlugs.some((slug) => !/^demo-[a-z0-9-]+$/.test(slug))) {
+    throw new Error("scenario slug allowlist ไม่ถูกต้อง");
+  }
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const tenants = await client.query<{ id: string; slug: string; name: string }>(
+      `SELECT id, slug, name
+         FROM bms_tenants
+        WHERE slug = ANY($1::text[])
+        FOR UPDATE`,
+      [safeSlugs]
+    );
+    if (!tenants.rowCount) {
+      await client.query("COMMIT");
+      return [];
+    }
+
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'tenant.scenario_delete_all', 'scenario-tenants', $3::jsonb)`,
+      [
+        DEFAULT_TENANT_ID,
+        actorId,
+        JSON.stringify({ tenants: tenants.rows.map(({ id, slug, name }) => ({ id, slug, name })) }),
+      ]
+    );
+    await deleteTenantRows(client, tenants.rows.map((tenant) => tenant.id));
+    await client.query("COMMIT");
+    return tenants.rows;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }

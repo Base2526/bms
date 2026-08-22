@@ -1,9 +1,9 @@
 services:
   ws:
     command: >
-      sh -c "npm ci &&
-             npm --prefix ../../packages/realtime ci &&
-             npm --prefix ../../packages/graphql-core ci &&
+      sh -c "test -f node_modules/.package-lock.json || npm ci &&
+             test -f ../../packages/realtime/node_modules/.package-lock.json || npm --prefix ../../packages/realtime ci &&
+             test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci &&
              npm run dev"
     environment:
       NODE_ENV: development
@@ -15,11 +15,11 @@ services:
 
   web:
     command: >
-      sh -c "npm ci && 
-             npm --prefix ../../packages/social-queue ci &&
+      sh -c "test -f node_modules/.package-lock.json || npm ci &&
              npm run dev"
     environment:
       NODE_ENV: development
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-${NEXT_PUBLIC_FACEBOOK_APP_SECRET}}
       COOKIE_SECURE: ${COOKIE_SECURE}
       DEBUG_LOG: ${DEBUG_LOG}
       DB_LOG: ${DB_LOG}
@@ -31,10 +31,24 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       BMS_AI_MODEL: ${BMS_AI_MODEL}
       BMS_CRON_SECRET: ${BMS_CRON_SECRET}
+      BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
+      # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
+      MAIL_PROVIDER: ${MAIL_PROVIDER}
+      GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
+      GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
+      GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
+      PHARMACY_INTAKE_ENABLED: ${PHARMACY_INTAKE_ENABLED}
+      PHARMACY_AI_ENABLED: ${PHARMACY_AI_ENABLED}
+      PHARMACY_PROTOCOLS_ENABLED: ${PHARMACY_PROTOCOLS_ENABLED}
     ports:
       - "3000:3000"
     volumes:
       - ./apps/web:/app/apps/web
+      # Keep Linux dependencies and Next.js manifests out of the macOS bind mount.
+      # Sharing either directory with a host-side dev server corrupts native packages
+      # and can produce App Router `clientModules` errors across every route.
+      - web_node_modules:/app/apps/web/node_modules
+      - web_next_cache:/app/apps/web/.next
       - ./packages:/app/packages
       - ./storage:/app/storage
 
@@ -42,14 +56,6 @@ services:
     ports:
       - "443:443"
 
-  social-worker:
-    # command: >
-    #   sh -c "npm ci &&
-    #          npm --prefix ../../packages/social-queue ci &&
-    #          npm run worker:social"
-    # command: npm run worker:social
-    working_dir: /app/apps/web
-    command: sh -c "npm ci && npm run worker:social"
-    volumes:
-      - .:/app
-      - /app/apps/web/node_modules
+volumes:
+  web_node_modules:
+  web_next_cache:

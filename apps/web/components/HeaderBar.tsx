@@ -32,6 +32,10 @@ import {
   SafetyOutlined,
   GlobalOutlined,
   MoreOutlined,
+  ApiOutlined,
+  RocketOutlined,
+  ShopOutlined,
+  VideoCameraOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -42,9 +46,14 @@ import { useGlobalChatStore } from "@/store/globalChatStore";
 import { useI18n } from "@/lib/i18nContext";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { Lang } from "@/i18n";
+import { getLangCookie, setLangCookie } from "@/lib/lang";
 
 const { Header } = Layout;
 const { Text } = Typography;
+
+// ปิดไว้ก่อน — ค้นหา/ศูนย์ช่วยเหลือยังเป็นของ project เดิม (ไม่เกี่ยว BMS) เปิดใหม่เมื่อมีของจริงให้ผูก
+const SHOW_HEADER_SEARCH = false;
+const SHOW_HEADER_HELP = false;
 
 const labelOf: Record<Lang, string> = { th: "ไทย", en: "English" };
 const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
@@ -71,6 +80,18 @@ const Q_UNREAD_NOTIFICATION_COUNT = gql`
   }
 `;
 
+const Q_MY_BMS_PERMISSIONS = gql`
+  query HeaderMyBmsPermissions {
+    myBmsPermissions
+  }
+`;
+
+const Q_INBOX_UNREAD_COUNT = gql`
+  query HeaderInboxUnreadCount {
+    bmsInboxUnreadCount
+  }
+`;
+
 type HeaderBarProps = {
   initialLang?: Lang;
   isMobile?: boolean;
@@ -89,8 +110,10 @@ export default function HeaderBar({
   isMobile = false,
 }: HeaderBarProps) {
   const router = useRouter();
-  const { user: userSession, refreshSession } = useSession();
+  const { user: userSession, admin: adminSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
+  const isAdminSession = Boolean(adminSession);
+  const hasSession = Boolean(userSession || adminSession);
 
   const [viewMode, setViewMode] = useState<ViewMode>(isMobile ? "mobile" : "desktop");
   const isMobileView = viewMode === "mobile";
@@ -112,6 +135,19 @@ export default function HeaderBar({
     fetchPolicy: "cache-and-network",
   });
   const notifUnreadCount = notifData?.myUnreadNotificationCount ?? 0;
+
+  const { data: bmsPermsData } = useQuery(Q_MY_BMS_PERMISSIONS, {
+    skip: !isAdminSession,
+    fetchPolicy: "cache-and-network",
+  });
+  const canViewInbox = isAdminSession && (bmsPermsData?.myBmsPermissions ?? []).includes("inbox.view");
+
+  const { data: inboxUnreadData } = useQuery(Q_INBOX_UNREAD_COUNT, {
+    skip: !canViewInbox,
+    fetchPolicy: "cache-and-network",
+    pollInterval: 15000,
+  });
+  const inboxUnreadCount = inboxUnreadData?.bmsInboxUnreadCount ?? 0;
 
   const [currentLang, setCurrentLang] = useState<Lang>(lang ?? initialLang);
   const [searchValue, setSearchValue] = useState("");
@@ -137,8 +173,7 @@ export default function HeaderBar({
   }, [lang]);
 
   useEffect(() => {
-    const m = document.cookie.match(/(?:^|; )lang=([^;]+)/);
-    const c = (m ? decodeURIComponent(m[1]) : null) as Lang | null;
+    const c = getLangCookie();
     if (c && c !== currentLang) setCurrentLang(c);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -184,14 +219,14 @@ export default function HeaderBar({
 
   const changeLang = (nextLang: Lang) => {
     if (nextLang === currentLang) return;
-    document.cookie = `lang=${nextLang}; path=/; samesite=lax`;
+    setLangCookie(nextLang);
     setCurrentLang(nextLang);
     setLang?.(nextLang);
     router.refresh();
   };
 
   async function onLogout() {
-    const res = await fetch("/api/auth/logout", { method: "POST" });
+    const res = await fetch(isAdminSession ? "/api/auth/logout-admin" : "/api/auth/logout", { method: "POST" });
     if (res.ok) {
       message.success(t("common.logged_out"));
       try {
@@ -323,19 +358,44 @@ export default function HeaderBar({
     onClick: () => changeLang(lng),
   }));
 
-  const profileMenu: MenuProps["items"] = [
-    {
-      key: "settings",
-      label: <Link href="/settings">{t("common.settings")}</Link>,
-      icon: <SettingOutlined />,
-    },
-    { type: "divider" },
-    {
-      key: "logout",
-      label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
-      icon: <ReloadOutlined />,
-    },
-  ];
+  const profileMenu: MenuProps["items"] = isAdminSession
+    ? [
+        // ปุ่ม Dashboard แยกออกมาโชว์บน header เองแล้วตอน isDesktopView (jachoei-signup-btn ด้านล่าง)
+        // เก็บไว้ในนี้เฉพาะ tablet/mobile ที่ไม่มีปุ่มแยกให้กด
+        ...(!isDesktopView
+          ? [
+              {
+                key: "dashboard",
+                label: <Link href="/admin/dashboard">{t("header.dashboard")}</Link>,
+                icon: <ShopOutlined />,
+              },
+            ]
+          : []),
+        {
+          key: "settings",
+          label: <Link href="/admin/settings">{t("common.settings")}</Link>,
+          icon: <SettingOutlined />,
+        },
+        { type: "divider" },
+        {
+          key: "logout",
+          label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
+          icon: <ReloadOutlined />,
+        },
+      ]
+    : [
+        {
+          key: "settings",
+          label: <Link href="/settings">{t("common.settings")}</Link>,
+          icon: <SettingOutlined />,
+        },
+        { type: "divider" },
+        {
+          key: "logout",
+          label: <span onClick={showConfirmLogout}>{t("common.logout")}</span>,
+          icon: <ReloadOutlined />,
+        },
+      ];
 
   const iconButtonStyle: React.CSSProperties = {
     borderRadius: 14,
@@ -350,7 +410,42 @@ export default function HeaderBar({
   const mobileOverflowMenu: MenuProps["items"] = useMemo(() => {
     const items: MenuProps["items"] = [];
 
-    if (userSession) {
+    if (isAdminSession) {
+      items.push(
+        {
+          key: "dashboard",
+          label: t("header.dashboard"),
+          icon: <ShopOutlined />,
+          onClick: () => router.push("/admin/dashboard"),
+        },
+        {
+          key: "live-dashboard",
+          label: t("header.liveDashboard"),
+          icon: <VideoCameraOutlined />,
+          onClick: () => router.push("/live-dashboard"),
+        },
+        ...(canViewInbox
+          ? [
+              {
+                key: "inbox",
+                label:
+                  inboxUnreadCount > 0
+                    ? `${t("header.inbox")} (${inboxUnreadCount > 99 ? "99+" : inboxUnreadCount})`
+                    : t("header.inbox"),
+                icon: <MessageOutlined />,
+                onClick: () => router.push("/admin/inbox"),
+              } as NonNullable<MenuProps["items"]>[number],
+            ]
+          : []),
+        {
+          key: "settings",
+          label: t("common.settings"),
+          icon: <SettingOutlined />,
+          onClick: () => router.push("/admin/settings"),
+        },
+        { type: "divider" }
+      );
+    } else if (userSession) {
       items.push(
         // {
         //   key: "new-post",
@@ -360,21 +455,59 @@ export default function HeaderBar({
         // },
         {
           key: "blocked",
-          label: "Blocked",
+          label: t("header.blocked"),
           icon: <SafetyOutlined />,
           onClick: () => router.push("/blocked?tab=blocked"),
         },
-        { type: "divider" },
+        { type: "divider" }
+      );
+      if (SHOW_HEADER_HELP) {
+        items.push(
+          {
+            key: "help",
+            label: t("header.help") || "Help",
+            icon: <QuestionCircleOutlined />,
+            onClick: () => router.push("/help"),
+          },
+          { type: "divider" }
+        );
+      }
+    } else {
+      items.push(
         {
-          key: "help",
-          label: t("header.help") || "Help",
-          icon: <QuestionCircleOutlined />,
-          onClick: () => router.push("/help"),
+          key: "demo",
+          label: t("header.demo"),
+          icon: <MessageOutlined />,
+          onClick: () => router.push("/demo"),
+        },
+        {
+          key: "workflow",
+          label: t("header.workflow"),
+          icon: <ApiOutlined />,
+          onClick: () => router.push("/#workflow"),
+        },
+        {
+          key: "security",
+          label: t("header.security"),
+          icon: <SafetyOutlined />,
+          onClick: () => router.push("/#security"),
+        },
+        {
+          key: "pricing",
+          label: t("header.pricing"),
+          icon: <ShopOutlined />,
+          onClick: () => router.push("/#pricing"),
+        },
+        {
+          key: "signup",
+          label: t("header.startFree"),
+          icon: <RocketOutlined />,
+          onClick: () => router.push("/shop-signup"),
         },
         { type: "divider" }
       );
-    } else {
-      items.push(
+
+      if (SHOW_HEADER_HELP) items.push(
         {
           key: "help",
           label: t("header.help") || "Help",
@@ -413,7 +546,7 @@ export default function HeaderBar({
     );
 
     return items;
-  }, [changeLang, currentLang, router, t, userSession]);
+  }, [canViewInbox, changeLang, currentLang, inboxUnreadCount, isAdminSession, router, t, userSession]);
 
   return (
     <>
@@ -440,7 +573,7 @@ export default function HeaderBar({
                   src="/icons/icon.svg"
                   width={46}
                   height={46}
-                  alt="จ่าเฉย (JACHOEI)"
+                  alt="BMS"
                   style={{
                     display: "block",
                     width: "100%",
@@ -465,7 +598,7 @@ export default function HeaderBar({
             </Link>
           </div>
 
-          {!isMobileView && (
+          {!isMobileView && SHOW_HEADER_SEARCH && (
             <div className="jachoei-header-center">
               <div className="jachoei-search-wrap">
                 <AutoComplete
@@ -564,9 +697,18 @@ export default function HeaderBar({
             </div>
           )}
 
+          {!isMobileView && !hasSession && !SHOW_HEADER_SEARCH && (
+            <nav className="jachoei-product-nav" aria-label={t("header.productNavigation")}>
+              <Link href="/#workflow">{t("header.workflow")}</Link>
+              <Link href="/demo">{t("header.demo")}</Link>
+              <Link href="/#security">{t("header.security")}</Link>
+              <Link href="/#pricing">{t("header.pricing")}</Link>
+            </nav>
+          )}
+
           <div className="jachoei-header-right">
             <Space size={isMobileView ? 4 : 6} align="center">
-              {isMobileView && (
+              {isMobileView && SHOW_HEADER_SEARCH && (
                 <Tooltip title={t("header.searchPlaceholder")}>
                   <Button
                     type="text"
@@ -585,11 +727,11 @@ export default function HeaderBar({
                       style={iconButtonStyle}
                       onClick={() => router.push("/post/new")}
                       icon={<PlusOutlined style={{ fontSize: 18, color: "var(--app-text)" }} />}
-                      aria-label="New post"
+                      aria-label={t("header.newPost")}
                     />
                   </Tooltip>
 
-                  <Tooltip title={t("header.chat") || "ข้อความ"}>
+                  <Tooltip title={t("header.chat")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}
@@ -602,7 +744,7 @@ export default function HeaderBar({
                     />
                   </Tooltip>
 
-                  <Tooltip title={t("header.notifications") || "แจ้งเตือน"}>
+                  <Tooltip title={t("header.notifications")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}
@@ -662,8 +804,8 @@ export default function HeaderBar({
                 </Dropdown>
               )}
 
-              {isDesktopView && (
-                <Tooltip title={t("header.help") || "ศูนย์ช่วยเหลือ"}>
+              {isDesktopView && SHOW_HEADER_HELP && (
+                <Tooltip title={t("header.help")}>
                   <Button
                     type="text"
                     style={iconButtonStyle}
@@ -673,41 +815,99 @@ export default function HeaderBar({
                 </Tooltip>
               )}
 
-              {userSession ? (
-                <Dropdown
-                  menu={{ items: profileMenu }}
-                  trigger={["click"]}
-                  placement="bottomRight"
-                  arrow
-                >
-                  <Avatar
-                    size={isMobileView ? 34 : 38}
-                    src={me?.avatar}
-                    style={{
-                      background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
-                      cursor: "pointer",
-                      boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
-                      border: "2px solid rgba(var(--app-surface-rgb),0.9)",
-                    }}
-                    icon={<UserOutlined />}
-                  />
-                </Dropdown>
+              {hasSession ? (
+                <>
+                  {isAdminSession && isDesktopView && (
+                    <div className="jachoei-admin-quick-actions">
+                      <Tooltip title={t("header.liveDashboard")}>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/live-dashboard")}
+                          className="jachoei-admin-icon-btn jachoei-admin-live-icon"
+                          aria-label={t("header.liveDashboard")}
+                        >
+                          <VideoCameraOutlined />
+                        </button>
+                      </Tooltip>
+
+                      {canViewInbox && (
+                        <Tooltip title={t("header.inbox")}>
+                          <button
+                            type="button"
+                            onClick={() => router.push("/admin/inbox")}
+                            className="jachoei-admin-icon-btn"
+                            aria-label={t("header.inbox")}
+                          >
+                            <MessageOutlined />
+                            {inboxUnreadCount > 0 && (
+                              <span className="jachoei-admin-inbox-badge">
+                                {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
+                              </span>
+                            )}
+                          </button>
+                        </Tooltip>
+                      )}
+
+                      <Tooltip title={t("header.dashboard")}>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/admin/dashboard")}
+                          className="jachoei-admin-icon-btn jachoei-admin-icon-btn-primary"
+                          aria-label={t("header.dashboard")}
+                        >
+                          <ShopOutlined />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  )}
+                  <Dropdown
+                    menu={{ items: profileMenu }}
+                    trigger={["click"]}
+                    placement="bottomRight"
+                    arrow
+                  >
+                    <Avatar
+                      size={isMobileView ? 34 : 38}
+                      src={isAdminSession ? undefined : me?.avatar}
+                      style={{
+                        background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
+                        cursor: "pointer",
+                        boxShadow: "0 8px 18px rgba(15,23,42,0.14)",
+                        border: "2px solid rgba(var(--app-surface-rgb),0.9)",
+                      }}
+                      icon={<UserOutlined />}
+                    />
+                  </Dropdown>
+                </>
               ) : (
-                <Button
-                  icon={<LoginOutlined />}
-                  size={isMobileView ? "middle" : "large"}
-                  onClick={() => router.push("/login")}
-                  className="jachoei-login-btn"
-                >
-                  {!isMobileView && t("common.login")}
-                </Button>
+                <>
+                  {isDesktopView && (
+                    <Button
+                      type="primary"
+                      icon={<RocketOutlined />}
+                      size="large"
+                      onClick={() => router.push("/shop-signup")}
+                      className="jachoei-signup-btn"
+                    >
+                      {t("header.startFree")}
+                    </Button>
+                  )}
+                  <Button
+                    icon={<LoginOutlined />}
+                    size={isMobileView ? "middle" : "large"}
+                    onClick={() => router.push("/admin/login")}
+                    className="jachoei-login-btn"
+                  >
+                    {!isMobileView && t("common.login")}
+                  </Button>
+                </>
               )}
             </Space>
           </div>
         </div>
       </Header>
 
-      {isMobileView && mobileSearchOpen && (
+      {isMobileView && SHOW_HEADER_SEARCH && mobileSearchOpen && (
         <div className="jachoei-mobile-search-backdrop" onClick={() => setMobileSearchOpen(false)}>
           <div
             className="jachoei-mobile-search-card"
@@ -774,7 +974,11 @@ export default function HeaderBar({
           margin: 0 auto;
           height: 100%;
           display: grid;
-          grid-template-columns: minmax(240px, 360px) minmax(500px, 1fr) auto;
+          /* คอลัมน์กลางต้อง min เป็น 0 เสมอ — ตอน login แล้วมันว่างเปล่า (search ปิดด้วย
+             SHOW_HEADER_SEARCH, product nav โชว์เฉพาะตอนยังไม่ login) ถ้าตั้ง min เป็น 500px
+             ค้างไว้ พื้นที่นั้นจะถูกจองทั้งที่ไม่มีอะไรอยู่ แล้วดันคอลัมน์ขวา (ปุ่ม Live
+             Dashboard/Inbox/Dashboard) ล้นออกนอกจอ ทำให้ทั้งหน้าเลื่อนแนวนอน */
+          grid-template-columns: minmax(240px, 360px) minmax(0, 1fr) auto;
           align-items: center;
           gap: 18px;
           padding: 0 18px;
@@ -804,7 +1008,7 @@ export default function HeaderBar({
           align-items: center;
           justify-content: center;
           overflow: hidden;
-          background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+          // background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
           // box-shadow: 0 10px 24px rgba(15,23,42,0.14);
           flex-shrink: 0;
         }
@@ -844,6 +1048,27 @@ export default function HeaderBar({
           justify-content: center;
         }
 
+        .jachoei-product-nav {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 26px;
+        }
+
+        .jachoei-product-nav a {
+          color: rgba(var(--app-text-rgb),0.66);
+          font-size: 14px;
+          font-weight: 600;
+          text-decoration: none;
+          transition: color .18s ease;
+          white-space: nowrap;
+        }
+
+        .jachoei-product-nav a:hover {
+          color: var(--app-primary);
+        }
+
         .jachoei-search-wrap {
           width: 100%;
           max-width: 100%;
@@ -859,10 +1084,12 @@ export default function HeaderBar({
         }
 
         .jachoei-header-right {
+          grid-column: 3;
           flex-shrink: 0;
           display: flex;
           align-items: center;
           justify-content: flex-end;
+          min-width: 0;
         }
 
         .jachoei-lang-btn {
@@ -916,6 +1143,138 @@ export default function HeaderBar({
           box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
         }
 
+        .jachoei-admin-quick-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          margin-right: 2px;
+          padding: 4px;
+          border-radius: 999px;
+          background: rgba(var(--app-text-rgb),0.04);
+          border: 1px solid var(--app-border);
+        }
+
+        .jachoei-admin-icon-btn {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: none;
+          background: transparent;
+          color: var(--app-text-secondary, var(--app-text));
+          font-size: 18px;
+          cursor: pointer;
+          transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+        }
+
+        .jachoei-admin-icon-btn:hover {
+          background: rgba(var(--app-text-rgb),0.08);
+          color: var(--app-text);
+          transform: translateY(-1px);
+        }
+
+        .jachoei-admin-icon-btn:focus-visible {
+          outline: 2px solid var(--app-primary);
+          outline-offset: 2px;
+        }
+
+        .jachoei-admin-icon-btn-primary {
+          background: var(--app-primary);
+          color: #fff;
+        }
+
+        .jachoei-admin-icon-btn-primary:hover {
+          background: var(--app-primary);
+          color: #fff;
+          filter: brightness(1.06);
+        }
+
+        /* Live Dashboard: ring เต้น + จุดแดงกระพริบ สื่อว่า "กำลังถ่ายทอดสด" */
+        .jachoei-admin-live-icon::before {
+          content: "";
+          position: absolute;
+          inset: -3px;
+          border-radius: 999px;
+          border: 1.5px solid #e5484d;
+          opacity: 0.55;
+          animation: jachoei-live-ring 2.2s ease-out infinite;
+        }
+
+        .jachoei-admin-live-icon::after {
+          content: "";
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #e5484d;
+          box-shadow: 0 0 0 2px var(--app-surface);
+          animation: jachoei-live-dot 1.6s ease-in-out infinite;
+        }
+
+        @keyframes jachoei-live-ring {
+          0% {
+            transform: scale(0.9);
+            opacity: 0.55;
+          }
+          70%,
+          100% {
+            transform: scale(1.35);
+            opacity: 0;
+          }
+        }
+
+        @keyframes jachoei-live-dot {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.35;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .jachoei-admin-live-icon::before {
+            animation: none;
+            opacity: 0.55;
+          }
+          .jachoei-admin-live-icon::after {
+            animation: none;
+          }
+        }
+
+        .jachoei-signup-btn {
+          border-radius: 999px !important;
+          padding-inline: 16px !important;
+          height: 40px !important;
+          box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),0.18) !important;
+        }
+
+        .jachoei-admin-inbox-badge {
+          position: absolute;
+          top: -3px;
+          right: -3px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 4px;
+          border-radius: 999px;
+          background: #e5484d;
+          color: #fff;
+          font-size: 9.5px;
+          font-weight: 800;
+          line-height: 1;
+          box-shadow: 0 0 0 2px var(--app-surface);
+          font-variant-numeric: tabular-nums;
+        }
+
         .jachoei-mobile-search-backdrop {
           position: fixed;
           inset: 0;
@@ -958,7 +1317,7 @@ export default function HeaderBar({
 
         @media (max-width: 1399px) {
           .jachoei-header-shell {
-            grid-template-columns: minmax(220px, 320px) minmax(420px, 1fr) auto;
+            grid-template-columns: minmax(220px, 320px) minmax(0, 1fr) auto;
             gap: 16px;
             padding: 0 16px;
           }
@@ -970,7 +1329,7 @@ export default function HeaderBar({
 
         @media (max-width: 1179px) {
           .jachoei-header-shell {
-            grid-template-columns: minmax(180px, 260px) minmax(260px, 1fr) auto;
+            grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto;
             gap: 12px;
             padding: 0 12px;
           }
@@ -986,6 +1345,20 @@ export default function HeaderBar({
           .jachoei-lang-btn {
             padding-inline: 10px !important;
           }
+
+          .jachoei-product-nav {
+            gap: 16px;
+          }
+
+          .jachoei-admin-quick-actions {
+            gap: 8px;
+          }
+        }
+
+        @media (max-width: 939px) {
+          .jachoei-product-nav {
+            display: none;
+          }
         }
 
         @media (max-width: 767px) {
@@ -997,6 +1370,10 @@ export default function HeaderBar({
 
           .jachoei-header-left {
             min-width: 0;
+          }
+
+          .jachoei-header-right {
+            grid-column: 2;
           }
 
           .jachoei-brand-link {

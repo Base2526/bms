@@ -15,7 +15,14 @@ export const BMS_PERMISSIONS = [
   "product.edit",
   "product.delete",
   "stock.adjust",
+  // โอนย้ายระหว่างสาขา + นับสต็อก — seed ที่ 7.98
+  // .count = เดินนับและกรอกตัวเลข · .count.apply = ยืนยันว่าของหายจริงเท่านั้น
+  // (คนละการตัดสินใจ จึงคนละสิทธิ์ — Warehouse นับได้ แต่ปิดใบนับไม่ได้)
+  "inventory.transfer",
+  "inventory.count",
+  "inventory.count.apply",
   "order.view",
+  "order.create",
   "order.pay",
   "order.ship",
   "order.cancel",
@@ -34,9 +41,94 @@ export const BMS_PERMISSIONS = [
   "inbox.view",
   "inbox.reply",
   "inbox.manage",
+  "inbox.assign",
   "customer.view",
   "customer.edit",
   "report.view",
+  "report.email",
+  "action.manage",
+  // จัดการทีมงานในร้านตัวเอง — seed ให้ Manager ที่ 7.78 (Administrator เป็น super อยู่แล้ว)
+  // ยังมี rank guard อีกชั้นที่ `staffRoles.ts` + `userAdmin.ts`: มีสิทธิ์นี้ก็ยังแตะ
+  // Administrator / Manager คนอื่น / platform admin ไม่ได้
+  "user.view",
+  "user.manage",
+  "ai_quality.view",
+  "ai_quality.review",
+  "coupon.view",
+  "coupon.manage",
+  // สมาชิก + แต้มสะสม — seed ที่ 7.96
+  // .adjust แยกจาก .manage เพราะปรับแต้มด้วยมือคือการสร้างมูลค่าให้ลูกค้าโดยตรง
+  // (แต้มค้าง = หนี้สินของร้าน) ไม่ใช่แค่แก้ข้อมูลติดต่อ
+  "member.view",
+  "member.manage",
+  "loyalty.adjust",
+  "loyalty.settings",
+  "followup.view",
+  "followup.manage",
+  "retention.view",
+  "retention.manage",
+  "pharmacy.assessment.read",
+  "pharmacy.assessment.assign",
+  "pharmacy.assessment.request_more_information",
+  "pharmacy.assessment.review",
+  "pharmacy.assessment.approve",
+  "pharmacy.assessment.reject",
+  "pharmacy.protocol.manage",
+  "pharmacy.audit.read",
+  // จัดประเภทยา/นโยบายการขายรายสินค้า — seed ที่ 7.87
+  // .review ให้เฉพาะ Pharmacist และโค้ดยังเช็ค is_licensed_pharmacist ซ้ำ
+  // เหมือน approveAssessment() เพราะ Administrator ได้ทุก permission อัตโนมัติ
+  "pharmacy.policy.read",
+  "pharmacy.policy.review",
+  // สาขา (bms_locations มีมาตั้งแต่ 7.84 แต่ไม่เคยมีทางสร้างจากแอป จนมาเปิดที่ 9.1)
+  // — Manager เท่านั้น เพราะผูกกับใบกำกับภาษี/ใบอนุญาตขายยา/การตัดสต็อกข้ามสาขา
+  "location.manage",
+  // POS — seed ที่ 7.87
+  "pos.sell",
+  "pos.shift.open",
+  "pos.shift.close",
+  "pos.discount.approve",
+  "pos.device.manage",
+  "pos.pin.manage",
+  // จัดการบัญชีพนักงานหน้าร้าน (role Cashier + ปิดทางเข้าหลังบ้าน) — seed ที่ 7.92
+  "pos.staff.manage",
+  "pos.void",
+  "pos.cash.movement",
+  // เริ่ม/ปิดยอดค่าใช้จ่ายเงินสดย่อยได้ แต่เงินจริงที่ออกยังต้องมีคนที่สอง
+  // ซึ่งถือ pos.cash.movement กด PIN อนุมัติทุกครั้ง
+  "pos.expense.create",
+  // เจ้าของร้านบันทึกค่าใช้จ่ายที่สำรองด้วยเงินส่วนตัวได้โดยไม่แตะลิ้นชัก
+  // ค่าเริ่มต้น seed ให้ Administrator เท่านั้น (9.8)
+  "pos.expense.personal",
+  // เติม/ดูแลกระเป๋าเงินสดย่อยนอกลิ้นชักของแต่ละสาขา (9.9)
+  "pos.petty_cash.manage",
+  "pos.shift.report",
+  "pos.nosale",
+  // คืนสินค้าโดยไม่มีใบเสร็จ — seed ให้ Manager เท่านั้นที่ 8.2
+  // แยกจาก order.return: การคืนที่อ้างบิลได้เป็นงานประจำ ส่วนการคืนที่ไม่มีบิล
+  // คือการจ่ายเงินออกโดยเชื่อคำบอกเล่า
+  "pos.return.noreceipt",
+  // ค่าคอมพนักงาน — seed ที่ 8.5 · .view แยกจาก .manage เพราะหัวหน้าทีมควรดูยอดของ
+  // ทีมได้โดยไม่ต้องมีสิทธิ์แก้อัตรา (อัตราคือเงินเดือน ไม่ใช่รายงาน)
+  // บัตรของขวัญ / เครดิตร้าน — seed ที่ 8.9
+  // .redeem ให้ทุกคนที่ขายหน้าร้าน · .issue/.adjust ให้ Manager เพราะเป็นการสร้าง
+  // และแก้ "เงิน" ของลูกค้าโดยตรง ไม่ใช่การรับชำระ
+  // มัดจำ/ค้างชำระ — seed ที่ 9.0 · .take ให้คนขาย (รับเงิน) · .cancel ให้ Manager
+  // (ยกเลิก/ยึดมัดจำเป็นการตัดสินใจเรื่องเงินของลูกค้า)
+  "pos.deposit.take",
+  "pos.deposit.cancel",
+  "storecredit.issue",
+  "storecredit.redeem",
+  "storecredit.adjust",
+  "commission.view",
+  "commission.manage",
+  // ใบกำกับภาษี — seed ที่ 7.88
+  "tax.document.view",
+  "tax.document.issue",
+  "tax.setting.manage",
+  // e-Tax นำส่งกรมสรรพากร — seed ที่ 7.94
+  "etax.view",
+  "etax.manage",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 
@@ -47,7 +139,10 @@ export async function loadPermissions(ctx: any): Promise<Set<string>> {
   if (ctx.__bmsPerms) return ctx.__bmsPerms;
 
   const auth = requireAuth(ctx);
-  if (auth.scope !== "admin") {
+  const hasAdminIdentity = Boolean(ctx?.admin?.id);
+  const canUseAdminPermissions = auth.scope === "admin" || (auth.scope === "web" && hasAdminIdentity);
+
+  if (!canUseAdminPermissions) {
     throw new GraphQLError("Admin only", {
       extensions: { code: "FORBIDDEN", http: { status: 403 } },
     });

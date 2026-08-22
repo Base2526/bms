@@ -6,7 +6,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?missing}
       POSTGRES_DB: ${POSTGRES_DB?missing}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    # pg_stat_statements: เก็บสถิติ query (total/mean exec time, calls) ไว้หา query ที่กินเวลา DB
+    # รวมมากที่สุด — shared_preload_libraries ต้อง restart container ถึงมีผล (โหลดตอน process
+    # เริ่มเท่านั้น) แค่ preload ยังไม่พอ ต้องรัน `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
+    # ในแต่ละ database เองอีกขั้นหลัง restart (ดู docs/architecture/admin-scale-readiness.md § Phase 2)
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -17,12 +27,28 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
-      - "5050:80"
+      - "${PGADMIN_HOST_PORT:-5050}:80"
     depends_on:
       - postgres
 
   redis:
     image: redis:7-alpine
+    # AOF ต่อคีย์ pub/sub เองไม่กระทบ (ephemeral by nature) แต่ session/cache ที่เพิ่มเข้ามา
+    # (lib/redisSession.ts, lib/cache.ts) ควรรอด container restart — เปิด AOF ไว้กันข้อมูลหาย
+    #
+    # REDIS_PASSWORD: ไม่ตั้ง = เหมือนเดิมทุกอย่าง (ไม่มีรหัสผ่าน, ใช้ได้กับ REDIS_URL เดิม)
+    # ตั้งเมื่อไหร่ = เปิด requirepass และ REDIS_URL ต้องเป็น redis://:<password>@redis:6379 ด้วย
+    # **ต้องตั้งก่อนย้าย redis ออกไปคนละเครื่อง** เพราะตอนนั้น session id + แคชข้อมูลบัญชีร้าน
+    # จะวิ่งข้าม network จริง ไม่ใช่ใน docker bridge เดิมอีกต่อไป
+    # ($$ = ปล่อยให้ shell ใน container ขยายเอง ไม่ให้ compose แปลตอน parse)
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --appendfsync everysec $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
     # ports:
     #   - "6379:6379"
 
@@ -34,9 +60,9 @@ services:
       WS_PORT: "8080"
       WS_PATH: "/graphql"
       REDIS_URL: ${REDIS_URL}
-      DATABASE_URL: postgres://app:app@postgres:5432/appdb
+      # ws ไม่ต่อ Postgres เลย (subscription ทั้งหมดมาจาก Redis pub/sub) — `DATABASE_URL` ที่เคย
+      # ส่งเข้ามาตรงนี้ผูกกับ apps/ws/src/db ที่เป็น dead code และถูกลบไปแล้ว
     depends_on:
-      - postgres
       - redis
 
   web:
@@ -52,21 +78,70 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_URL: ${REDIS_URL}
+      # ---- multi-instance knobs (ไม่ตั้ง = พฤติกรรมเดิมทุกข้อ) ----
+      # จำนวน connection ต่อ 1 instance — connection รวมที่ postgres เห็น = ค่านี้ x จำนวน replica
+      # ต้องลดค่านี้ลงก่อนเพิ่ม replica ไม่งั้นชน max_connections แล้วล้มพร้อมกันทุก instance
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-}
+      POSTGRES_POOL_IDLE_TIMEOUT_MS: ${POSTGRES_POOL_IDLE_TIMEOUT_MS:-}
+      POSTGRES_POOL_CONNECT_TIMEOUT_MS: ${POSTGRES_POOL_CONNECT_TIMEOUT_MS:-}
+      # local (default) = ไฟล์อยู่บนดิสก์ของ instance นั้น — ใช้ได้เฉพาะตอนรัน instance เดียว
+      # หรือหลาย instance บน host เดียวที่แชร์ volume เดียวกัน
+      # s3 = ต้องใช้เมื่อ web กระจายข้ามเครื่อง (ดู lib/storageDrivers/s3.ts)
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_DIR: /app/storage
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
       NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID}
-      NEXT_PUBLIC_FACEBOOK_APP_SECRET: ${NEXT_PUBLIC_FACEBOOK_APP_SECRET}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-${NEXT_PUBLIC_FACEBOOK_APP_SECRET}}
       NEXT_PUBLIC_SENDGRID_API_KEY: ${NEXT_PUBLIC_SENDGRID_API_KEY}
       NEXT_PUBLIC_SENDGRID_FROM_EMAIL: ${NEXT_PUBLIC_SENDGRID_FROM_EMAIL}
       NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL}
       NEXT_PUBLIC_WEB_NAME: ${WEB_NAME}
+      # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
+      MAIL_PROVIDER: ${MAIL_PROVIDER}
+      GMAIL_SMTP_USER: ${GMAIL_SMTP_USER}
+      GMAIL_SMTP_APP_PASSWORD: ${GMAIL_SMTP_APP_PASSWORD}
+      GMAIL_SMTP_FROM_NAME: ${GMAIL_SMTP_FROM_NAME}
+      PHARMACY_INTAKE_ENABLED: ${PHARMACY_INTAKE_ENABLED}
+      PHARMACY_AI_ENABLED: ${PHARMACY_AI_ENABLED}
+      PHARMACY_PROTOCOLS_ENABLED: ${PHARMACY_PROTOCOLS_ENABLED}
+      # BMS AI (shared key + model override + cron auth) — ต้องมาจากไฟล์ env ที่ compose ใช้จริง
+      # (--env-file .env.prod ทำให้ค่า ${...} นี้ resolve ได้เท่านั้น ไม่ inject เข้า container โดยอัตโนมัติ)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
+      BMS_AI_MODEL: ${BMS_AI_MODEL}
+      BMS_AI_PROVIDER: ${BMS_AI_PROVIDER}
+      BMS_AI_SENSITIVE_PROVIDER: ${BMS_AI_SENSITIVE_PROVIDER}
+      BMS_AI_HEALTH_STALE_MINUTES: ${BMS_AI_HEALTH_STALE_MINUTES}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL}
+      QWEN_OCR_API_KEY: ${QWEN_OCR_API_KEY}
+      QWEN_OCR_MODEL: ${QWEN_OCR_MODEL}
+      QWEN_OCR_BASE_URL: ${QWEN_OCR_BASE_URL}
+      QWEN_OCR_INPUT_USD_PER_MILLION: ${QWEN_OCR_INPUT_USD_PER_MILLION}
+      QWEN_OCR_OUTPUT_USD_PER_MILLION: ${QWEN_OCR_OUTPUT_USD_PER_MILLION}
+      BMS_SLIP_READER_PROVIDER: ${BMS_SLIP_READER_PROVIDER}
+      BMS_SLIP_READER_FALLBACK_PROVIDER: ${BMS_SLIP_READER_FALLBACK_PROVIDER}
+      BMS_CRON_SECRET: ${BMS_CRON_SECRET}
+      BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
     depends_on:
       - postgres
       - redis
       - ws
 
+  # เปิดเฉพาะตอนต้องการจริง (dev เต็ม stack): เพิ่ม --profile with-caddy ตอนรัน `docker compose up`
+  # ปิด default ไว้ เพราะบน production VM ตัวนี้ (bms.jachoei.com) มี Caddy ของ next-apollo-pg-ws
+  # ถือ 80/443 อยู่แล้ว รัน caddy ซ้ำจะชน port (ดู docker-compose.prod.yml/CLAUDE.local.md)
   caddy:
     image: caddy:2-alpine
+    # profiles: ["with-caddy"]
     depends_on:
       - web
       - ws
@@ -77,34 +152,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
-  social-worker:
-    image: node:20-alpine
-    # image: myapp-web:latest
-    working_dir: /app/apps/web
-    environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL}
-
-      # DB (แนะนำใส่ให้ worker ใช้ตรง ๆ)
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      # Social
-      FB_PAGE_ID: ${FB_PAGE_ID}
-      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
-
-      SOCIAL_QUEUE_KEY: ${SOCIAL_QUEUE_KEY}
-      SOCIAL_DLQ_KEY: ${SOCIAL_DLQ_KEY}
-      SOCIAL_DELAYED_KEY: ${SOCIAL_DELAYED_KEY}
-
-    depends_on:
-      - postgres
-      - redis
-
 volumes:
   pgdata:
+  redis_data:
   caddy_data:
   caddy_config:

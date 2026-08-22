@@ -1,3 +1,16 @@
+> ⚠️ **เอกสารนี้เป็นโน้ตออกแบบตอนเริ่มทำ (historical) ไม่ใช่สเปกของโค้ดปัจจุบัน**
+> โค้ดตัวอย่างข้างล่างล้าสมัยแล้วหลายจุด — อย่า copy ไปใช้ตรง ๆ โดยเฉพาะ:
+>
+> - guard ในตัวอย่างคือ `requireAdminOrInternal(req)` ซึ่ง **ผ่านทุก role ที่ล็อกอิน** · ของจริงตอนนี้
+>   ทุก route ใช้ `await requirePlatformAdminSeeder()` (platform admin เท่านั้น) และหน้าเว็บถูกกันด้วย
+>   `layout.tsx` → `requirePlatformAdminPage()`
+> - `DELETE FROM posts WHERE fake_test = true` ในตัวอย่างไม่มี tenant scope · ของจริง scope ผ่าน
+>   `author_id` → `users.tenant_id` แล้ว
+> - schema/คอลัมน์ในตัวอย่าง (เช่น `posts.phone`, `posts.content`) ไม่ตรงกับตารางจริง
+>
+> พฤติกรรมจริง + กติกาที่ต้องรักษา ดู § "เติมข้อมูลทดสอบเร็ว ๆ" ใน
+> [CLAUDE.local.md](../../../../../../../CLAUDE.local.md) และอ่านโค้ดใน `app/api/dev/fake/*` เป็นหลัก
+
 **Fake Data** ที่ปลอดภัย (สำหรับใช้ทดสอบ) และให้โค้ดตัวอย่างทั้ง **หน้า UI (Next.js + Antd)** กับ **API routes (Next.js App Router)** ที่สร้างข้อมูลเทียม (users / posts) ให้เลย — คุณสามารถเอาไปวาง ปรับให้เข้ากับโครงโปรเจกต์ได้ทันที
 
 ผมแบ่งเป็น 3 ส่วนสั้น ๆ: แนวคิดความปลอดภัย, API (server) ตัวอย่าง, หน้า UI (client) ตัวอย่าง — ทั้งหมดเป็น TypeScript + Next.js App Router + fetch แบบ `credentials: 'include'` (ถ้าจำเป็น)
@@ -15,13 +28,21 @@
 | `bms-orders` | `POST /api/dev/fake/bms-orders` | orders (backdate 30 วัน, หลายสถานะ/ช่องทาง) + items + payment + shipment | Dashboard, Reports, CRM, Payment, Shipping | customer_ref `FAKE-` |
 | `bms-conversations` | `POST /api/dev/fake/bms-conversations` | conversations + messages (บทสนทนาสำเร็จรูป) | Inbox | customer_ref `FAKE-` + tag `fake` |
 | `bms-purchase` | `POST /api/dev/fake/bms-purchase` | suppliers + PO + items (หลายสถานะ OPEN/PARTIAL/RECEIVED/CANCELLED) | Purchase | PO note `FAKE%` + supplier `FAKE %` |
+| `bms-ai-usage` | `POST /api/dev/fake/bms-ai-usage` | เพิ่มตัวนับ AI shared-key quota ของเดือนนี้ | Settings | แก้ `bms_ai_usage_monthly` โดยตรง |
 
 **ลำดับแนะนำ:** Products → Customers → Orders → Conversations → Purchase (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่)
+
+ปุ่มสร้างร้านครบชุดและร้านสถานการณ์ใช้ preset ปัจจุบันที่ **สินค้า 100 รายการ + Inbox 36 ห้อง + ออเดอร์ 1,000 บิล** ต่อร้าน โดยกระจายเท่ากัน 8 ช่องทาง (`pos`, `line`, `instagram`, `facebook`, `web`, `tiktok`, `shopee`, `lazada`) ช่องทางละ 125 บิล บิล POS เป็น `COMPLETED`, payment เป็น `CONFIRMED`, ไม่มี shipment และมีทั้งสมาชิกกับลูกค้าขาจร ส่วนออเดอร์ออนไลน์กระจายหลายสถานะ พร้อม payment/shipment ตามสถานะ
+
+ทีมงานของร้านสถานการณ์มีรวม 3–10 คนตามขนาดกิจการ (รวม Administrator) ใช้ role จริงของระบบ (`Manager`, `Sales`, `Warehouse`, `Cashier`, `Pharmacist`) ผู้ที่ขายหน้าร้านมี PIN และ Cashier เป็น `pos_only` ร้านยามีเภสัชกรที่ตั้ง `is_licensed_pharmacist` พร้อมเลขใบอนุญาตจำลอง 2 คน นอกจากนี้มีเครื่อง POS ที่จับคู่ token แล้ว 1–3 เครื่อง และ POS orders ทุกบิลผูกเครื่อง พนักงาน และกะย้อนหลัง โดยกะร้านยาผูกเภสัชกรเวรที่ผ่าน license gate จริง
+
+บัญชี staff ที่ seed ใช้รหัสผ่าน `password123` เฉพาะเครื่อง dev/test เท่านั้น ส่วน PIN ถูกสร้างแยกต่อคนและไม่เก็บค่า plaintext ในฐานข้อมูล สามารถตั้งใหม่ได้จาก `/admin/pos-devices` ก่อนทดสอบหน้าขายจริง
 
 - ลงที่ **tenant default** (ส่ง `{ tenantId }` ใน body เพื่อระบุร้านอื่นได้) · สูงสุด 2000/ครั้ง
 - **Orders ไม่ขยับสต็อก** (ใช้เติม analytics) — ถ้าจะเทสต์ flow จ่าย/ส่งจริง ให้สั่งผ่าน Playground · สถานะเน้น revenue (COMPLETED/PAID/SHIPPED + CANCELLED/RETURNED)
 - **Cleanup** (`DELETE /api/dev/fake/cleanup`) ลบ fake ทั้งหมดตามลำดับ FK: orders + conversations (cascade items/payments/shipments/messages/notes) → products (cascade inventory) → customers · ข้ามตัวที่ยังมี order อ้างถึง
 - BMS tables ไม่มีคอลัมน์ `fake_test` จึงใช้ marker `FAKE-` / tag `fake` แทน (ไม่ต้องแก้ schema)
+- ข้อความ outbound ของ conversation ที่มี `customer_ref` ขึ้นต้น `FAKE-` จะบันทึกใน Inbox เป็น simulated delivery (`meta.simulated = true`) โดยไม่เรียก LINE/Meta API และไม่แก้ Channel Health
 
 ---
 

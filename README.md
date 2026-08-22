@@ -1,7 +1,7 @@
-# 🤖 AI-BMS — AI Business Management System
+# 🤖 BMS — AI Business Management System
 
 > Every customer conversation should become an executable business workflow.
-> **AI-BMS is not an AI chatbot — it is an AI Business Operating System.**
+> **BMS is not an AI chatbot — it is an AI Business Operating System.**
 
 ---
 
@@ -16,10 +16,10 @@
 
 ### 📌 Overview
 
-**AI-BMS** is an AI-first Business Management System that automates business
+**BMS** is an AI-first Business Management System that automates business
 operations from the very first customer message all the way to fulfillment.
 
-Unlike traditional ERP/CRM, AI-BMS treats **the conversation** as the starting
+Unlike traditional ERP/CRM, BMS treats **the conversation** as the starting
 point of every workflow:
 
 ```
@@ -31,8 +31,7 @@ Facebook Messenger, Instagram, Website Live Chat.
 _Roadmap:_ WhatsApp, Email, Voice AI.
 
 > 📖 The product vision, modules, and rules live in
-> [`CLAUDE.md`](./CLAUDE.md), [`AI_WORKFLOW.md`](./AI_WORKFLOW.md),
-> [`BUSINESS_RULES.md`](./BUSINESS_RULES.md), and [`TOOLS.md`](./TOOLS.md).
+> [`CLAUDE.md`](./CLAUDE.md) (entry point) → [`docs/`](./docs/) (architecture / business / ai / integrations / ui).
 
 ---
 
@@ -92,10 +91,10 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | Module | Responsibility |
 | --- | --- |
 | **Channel Integration** ✅ | Per-tenant webhooks for LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — all normalized into one pipeline (signature-verified) |
-| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) |
+| **Omnichannel Inbox** ✅ | Unified inbox: chat history, assign staff, internal notes, tags, customer timeline, search — every webhook message (+ AI reply) is logged; staff can reply (LINE push) with image/file attachments; message status (sent/failed + retry, capability-gated per channel) |
 | **AI Orchestrator** | Intent detection, entity extraction, tool selection |
 | **CRM** | Customer profiles across channels, purchase history, LTV |
-| **Product Management** | Products, variants, SKU, barcode, pricing, categories |
+| **Product Management** | Products, variants, SKU, barcode, pricing (+cost price), image, description, category, brand — plus **bulk CSV/XLSX import** with preview/validation on `/admin/products` |
 | **Inventory (IMS)** | Current / reserved / available stock — every change logs a movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
@@ -116,11 +115,10 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | API | **GraphQL Yoga** + Apollo Client (GraphQL over HTTP + WS) |
 | Realtime | **WebSocket gateway** (`apps/ws`) + `graphql-ws` + Redis pub/sub |
 | Database | **PostgreSQL 16** (`pg`) |
-| Cache / Queue | **Redis 7** (cache, pub/sub, social publishing queue) |
-| Background jobs | **social-worker** (`npm run worker:social`) |
+| Cache / Sessions | **Redis 7** (pub/sub, read-through cache, admin session revocation) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
-| AI | Anthropic Claude (`ANTHROPIC_API_KEY`) — optional; falls back to deterministic templates |
+| AI | Multi-provider: Anthropic Claude and DeepSeek for chat/tool-calling (`BMS_AI_PROVIDER`, per-tenant BYOK), Qwen for payment-slip OCR (`BMS_SLIP_READER_PROVIDER`) — all optional; without credentials the AI layer falls back to deterministic templates |
 | Orchestration | **Docker Compose** |
 
 The BMS business logic lives in [`apps/web/lib/bms/`](./apps/web/lib/bms/)
@@ -159,7 +157,7 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 │   │   │           └── orders/release-expired/  # release expired reservations
 │   │   └── lib/bms/             # Services / tools (single source of truth)
 │   └── ws/                      # WebSocket gateway (GraphQL subscriptions)
-├── packages/                    # Shared libs: graphql-core, realtime, social-queue
+├── packages/                    # Shared libs: graphql-core, realtime
 ├── db/                          # SQL: init, migrations/, triggers, helpers
 ├── storage/                     # Uploaded files / assets
 ├── scripts/bms-log-triage/      # Daily AI log triage (collector + LINE notify)
@@ -167,17 +165,15 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 ├── docker-compose.yml           # Base stack
 ├── docker-compose.dev.yml       # Development override
 ├── docker-compose.prod.yml      # Production override
-├── CLAUDE.md                    # Product vision & architecture
-├── AI_WORKFLOW.md               # AI pipeline spec
-├── BUSINESS_RULES.md            # Business rules & guardrails
-└── TOOLS.md                     # Approved AI tool catalog
+├── CLAUDE.md                    # Entry point — product vision & doc map
+└── docs/                        # architecture / business / ai / integrations / ui
 ```
 
 ---
 
 ### 🏢 Multi-Tenancy
 
-AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
+BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
 
 - Self-serve signup that auto-creates a tenant + plan/billing
 - Per-tenant webhooks for LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -190,6 +186,8 @@ AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
   (list all shops, toggle active, change plan). To inspect a shop's data it **drills in**
   (`bmsEnterTenant` → signed context switch + banner) rather than viewing all tenants at once
 - Auth vs authorization: **401** (not logged in) forces logout; **403** (no permission) just shows an error
+- Staff seats are capped per plan (`bms_plans.max_users`): free = 3, pro = 10, business = unlimited — enforced
+  on user creation; platform admin is exempt
 
 ---
 
@@ -207,14 +205,13 @@ AI-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
    ```
 
    This brings up **postgres**, **redis**, **web** (Next.js), **ws** (WebSocket
-   gateway), **social-worker**, **caddy**, and **pgAdmin** (http://localhost:5050).
+   gateway), **caddy**, and **pgAdmin** (http://localhost:5050).
 
 3. **Or run apps locally** (against Docker Postgres/Redis):
 
    ```bash
    cd apps/web && npm install && npm run dev        # http://localhost:3000
    cd apps/ws  && npm install && npm run dev        # WS gateway :8080
-   npm run worker:social --prefix apps/web          # social publishing worker
    ```
 
 > 🧪 Without `ANTHROPIC_API_KEY`, the AI layer returns deterministic Thai
@@ -262,10 +259,13 @@ cron (daily) → collect + redact logs → Claude analyze/patch → draft PR →
 ### 🧪 Testing — Fake Data Seeder (dev only)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) bulk-generates test data so every screen
-has content — up to 2000 rows/run, disabled in production, admin-only.
+has content — up to 2000 rows/run. Seeds into the **logged-in user's tenant**
+(a shop can self-test; cleanup is scoped to that shop too). Disabled in production
+by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 | Generator | Fills |
 | --- | --- |
+| BMS Staff (users) | Users — role Sales/Warehouse, bound to your tenant |
 | Products / Customers | Products, Customers |
 | Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
 | Conversations (+ messages) | Inbox |
@@ -281,10 +281,10 @@ has content — up to 2000 rows/run, disabled in production, admin-only.
 
 ### 📌 ภาพรวม
 
-**AI-BMS** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
+**BMS** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
 "ข้อความแรกของลูกค้า" ไปจนถึงการจัดส่ง เป็นอัตโนมัติ
 
-ต่างจาก ERP/CRM ทั่วไป ตรงที่ AI-BMS ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
+ต่างจาก ERP/CRM ทั่วไป ตรงที่ BMS ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
 ทุก workflow:
 
 ```
@@ -294,13 +294,13 @@ has content — up to 2000 rows/run, disabled in production, admin-only.
 **ช่องทางที่รองรับ:** LINE OA, TikTok Shop / TikTok Chat, Facebook Messenger,
 Instagram, Live Chat หน้าเว็บ — _อนาคต:_ WhatsApp, Email, Voice AI
 
-> 📖 วิสัยทัศน์ โมดูล และกฎต่าง ๆ อยู่ใน [`CLAUDE.md`](./CLAUDE.md),
-> [`AI_WORKFLOW.md`](./AI_WORKFLOW.md), [`BUSINESS_RULES.md`](./BUSINESS_RULES.md)
-> และ [`TOOLS.md`](./TOOLS.md)
+> 📖 วิสัยทัศน์ โมดูล และกฎต่าง ๆ อยู่ใน [`CLAUDE.md`](./CLAUDE.md) (entry point) →
+> [`docs/`](./docs/) (architecture / business / ai / integrations / ui)
 
 ---
 
 ### 🧠 ปรัชญาหลัก
+
 
 **AI ห้ามแตะฐานข้อมูลโดยตรง** — หน้าที่ของ AI มีแค่:
 
@@ -350,10 +350,10 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | โมดูล | หน้าที่ |
 | --- | --- |
 | **Channel Integration** ✅ | Webhook แยกต่อร้าน: LINE, TikTok, Facebook Messenger, Instagram DM + Website Live Chat — รวมเข้า pipeline เดียว (ตรวจ signature) |
-| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) |
+| **Omnichannel Inbox** ✅ | อินบ็อกซ์รวม: ประวัติแชท, มอบหมายงาน, โน้ตภายใน, แท็ก, timeline, ค้นหา — ทุกข้อความจาก webhook (+คำตอบ AI) ถูกบันทึก, staff ตอบเองได้ (LINE push) แนบรูป/ไฟล์ได้, มีสถานะข้อความ (ส่งแล้ว/ล้มเหลว+ส่งใหม่ ตามความสามารถของแต่ละช่องทาง) |
 | **AI Orchestrator** | ตรวจ intent, ดึง entity, เลือก tool |
 | **CRM** | โปรไฟล์ลูกค้าข้ามช่องทาง, ประวัติซื้อ, มูลค่าตลอดชีพ |
-| **Product Management** | สินค้า, variant, SKU, barcode, ราคา, หมวดหมู่ |
+| **Product Management** | สินค้า, variant, SKU, barcode, ราคา (+ต้นทุน), รูปภาพ, รายละเอียด, หมวดหมู่, ยี่ห้อ — พร้อม **นำเข้าจาก CSV/XLSX** แบบ preview/ตรวจสอบก่อนบันทึกที่ `/admin/products` |
 | **Inventory (IMS)** | สต็อก คงเหลือ / จอง / พร้อมขาย — ทุกการเปลี่ยนแปลงต้องบันทึก movement |
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |
@@ -373,11 +373,10 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | API | **GraphQL Yoga** + Apollo Client |
 | Realtime | **WebSocket gateway** (`apps/ws`) + `graphql-ws` + Redis pub/sub |
 | ฐานข้อมูล | **PostgreSQL 16** |
-| Cache / Queue | **Redis 7** (cache, pub/sub, คิวโพสต์โซเชียล) |
-| งานเบื้องหลัง | **social-worker** |
+| Cache / Session | **Redis 7** (pub/sub, cache แบบ read-through, revoke admin session) |
 | Auth | NextAuth, JWT, Google / Facebook OAuth, bcrypt |
 | Reverse proxy / TLS | **Caddy** |
-| AI | Anthropic Claude (ตั้ง `ANTHROPIC_API_KEY`) — ถ้าไม่ตั้งจะใช้ template ภาษาไทยแทน |
+| AI | รองรับหลาย provider: Anthropic Claude + DeepSeek สำหรับแชท/tool-calling (`BMS_AI_PROVIDER`, ร้านใส่ key ตัวเองได้ผ่าน BYOK) และ Qwen สำหรับอ่านสลิป (`BMS_SLIP_READER_PROVIDER`) — ถ้าไม่ตั้ง key เลยจะใช้ template ภาษาไทยแทน |
 | Orchestration | **Docker Compose** |
 
 Business logic อยู่ใน [`apps/web/lib/bms/`](./apps/web/lib/bms/) และเปิดใช้ผ่าน
@@ -387,7 +386,7 @@ API routes ใน [`apps/web/app/api/bms/`](./apps/web/app/api/bms/)
 
 ### 🏢 Multi-Tenancy
 
-AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
+BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
 
 - สมัครเองแล้วสร้าง tenant + แพ็กเกจ/บิลลิ่งอัตโนมัติ
 - Webhook แยกต่อร้าน: LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -400,6 +399,7 @@ AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** —
   (list ทุกร้าน · เปิด/ปิด · เปลี่ยน plan) · อยากดูข้อมูลในร้านให้ **drill-down**
   (`bmsEnterTenant` → สลับ context แบบ signed + banner) แทนการดูข้ามร้านปนกัน
 - 401 (ไม่ได้ล็อกอิน) = บังคับ logout · 403 (ไม่มีสิทธิ์) = แสดง error เฉย ๆ ไม่เตะออก
+- จำกัดจำนวน staff ต่อแพ็กเกจ (`bms_plans.max_users`): free=3, pro=10, business=ไม่จำกัด — บังคับตอนสร้าง user ใหม่ (platform admin ไม่ถูกจำกัด)
 
 ---
 
@@ -416,7 +416,7 @@ AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** —
    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
    ```
 
-   จะได้ **postgres**, **redis**, **web**, **ws**, **social-worker**,
+   จะได้ **postgres**, **redis**, **web**, **ws**,
    **caddy** และ **pgAdmin** (http://localhost:5050)
 
 3. **หรือรันแอปในเครื่อง** (ต่อ Postgres/Redis ใน Docker):
@@ -424,7 +424,6 @@ AI-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** —
    ```bash
    cd apps/web && npm install && npm run dev        # http://localhost:3000
    cd apps/ws  && npm install && npm run dev        # WS gateway :8080
-   npm run worker:social --prefix apps/web          # worker โพสต์โซเชียล
    ```
 
 > 🧪 ถ้าไม่ตั้ง `ANTHROPIC_API_KEY` AI จะตอบด้วย template ภาษาไทยแบบ
@@ -471,10 +470,12 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 ### 🧪 การทดสอบ — Fake Data Seeder (dev เท่านั้น)
 
 `/admin/dev/fake` (+ `/api/dev/fake/*`) สร้างข้อมูลทดสอบทีละมากๆ ให้ทุกหน้ามีข้อมูล —
-สูงสุด 2000 แถว/ครั้ง, ปิดใน production, เฉพาะ admin
+สูงสุด 2000 แถว/ครั้ง · seed ลง **tenant ของผู้ล็อกอิน** (ร้านค้าเทสเอง · cleanup scope ตามร้าน) ·
+ปิดใน production default — ตั้ง `BMS_ALLOW_FAKE_SEED=1` เพื่อเปิดบนเครื่อง demo
 
 | Generator | เติมหน้า |
 | --- | --- |
+| BMS Staff (users) | Users — role Sales/Warehouse ผูกร้านตัวเอง |
 | Products / Customers | Products, Customers |
 | Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
 | Conversations (+ messages) | Inbox |
@@ -491,4 +492,4 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 > ทุกอย่างเริ่มจากบทสนทนา
 > **Conversation → Intent → Business Function → Business Data → Business Action → Customer Response**
 >
-> AI-BMS ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**
+> BMS ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**

@@ -1,0 +1,104 @@
+import type { PaymentAccount } from "./storeProfile";
+
+export type CustomerPaymentMethod =
+  | "BANK_TRANSFER"
+  | "QR"
+  | "CARD"
+  | "TIKTOK"
+  | "CASH";
+
+/**
+ * วิธีชำระเงินที่ "ถามลูกค้าทางไกลได้" — ไม่รวม WALLET (7.87) เพราะ e-wallet
+ * ที่หน้าร้านต้องยื่นเครื่อง/สแกนต่อหน้า ส่งลิงก์ให้ลูกค้ากดเองไม่ได้
+ */
+export const CUSTOMER_PAYMENT_METHODS: readonly CustomerPaymentMethod[] = [
+  "BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH",
+] as const;
+
+export function isCustomerPaymentMethod(method: string): method is CustomerPaymentMethod {
+  return (CUSTOMER_PAYMENT_METHODS as readonly string[]).includes(method);
+}
+
+function value(value: string | null | undefined): string {
+  return String(value ?? "").trim();
+}
+
+function normalizedType(account: PaymentAccount): string {
+  return value(account.type).toUpperCase();
+}
+
+export function configuredPaymentAccounts(accounts: PaymentAccount[]): PaymentAccount[] {
+  return accounts.filter((account) => {
+    const type = normalizedType(account);
+    if (type === "BANK") return Boolean(value(account.accountNo));
+    if (type === "PROMPTPAY" || type === "QR") return Boolean(value(account.promptpayId));
+    return Boolean(value(account.accountNo) || value(account.promptpayId) || value(account.note));
+  });
+}
+
+export function hasConfiguredPaymentAccounts(accounts: PaymentAccount[]): boolean {
+  return configuredPaymentAccounts(accounts).length > 0;
+}
+
+export function supportsCustomerPaymentMethod(
+  accounts: PaymentAccount[],
+  method: CustomerPaymentMethod
+): boolean {
+  const configured = configuredPaymentAccounts(accounts);
+  if (method === "BANK_TRANSFER") {
+    return configured.some((account) => normalizedType(account) === "BANK");
+  }
+  if (method === "QR") {
+    return configured.some((account) => {
+      const type = normalizedType(account);
+      return type === "PROMPTPAY" || type === "QR";
+    });
+  }
+  return configured.some((account) => normalizedType(account) === method);
+}
+
+export function configuredPaymentMethodLabels(accounts: PaymentAccount[], english = false): string[] {
+  const labels: string[] = [];
+  for (const account of configuredPaymentAccounts(accounts)) {
+    const type = normalizedType(account);
+    const bankLabel = english ? "bank transfer" : "โอนเข้าบัญชีธนาคาร";
+    const promptPayLabel = english ? "PromptPay" : "พร้อมเพย์";
+    if (type === "BANK" && !labels.includes(bankLabel)) {
+      labels.push(bankLabel);
+    } else if ((type === "PROMPTPAY" || type === "QR") && !labels.includes(promptPayLabel)) {
+      labels.push(promptPayLabel);
+    } else if (type !== "BANK" && type !== "PROMPTPAY" && type !== "QR") {
+      const label = value(account.note);
+      if (label && !labels.includes(label)) labels.push(label);
+    }
+  }
+  return labels;
+}
+
+export function customerPaymentAccountLines(accounts: PaymentAccount[], english = false): string[] {
+  return configuredPaymentAccounts(accounts)
+    .map((account) => {
+      const type = normalizedType(account);
+      const accountName = value(account.accountName);
+      if (type === "BANK") {
+        const accountNo = value(account.accountNo);
+        if (!accountNo) return null;
+        const bankName = value(account.bankName) || (english ? "Bank account" : "บัญชีธนาคาร");
+        return english
+          ? `• ${bankName}, account number ${accountNo}${accountName ? `, account name ${accountName}` : ""}`
+          : `• ${bankName} เลขบัญชี ${accountNo}${
+          accountName ? ` ชื่อบัญชี ${accountName}` : ""
+        }`;
+      }
+      if (type === "PROMPTPAY" || type === "QR") {
+        const promptpayId = value(account.promptpayId);
+        if (!promptpayId) return null;
+        return english
+          ? `• PromptPay ${promptpayId}${accountName ? `, account name ${accountName}` : ""}`
+          : `• พร้อมเพย์ ${promptpayId}${accountName ? ` ชื่อบัญชี ${accountName}` : ""}`;
+      }
+      const note = value(account.note);
+      return note ? `• ${note}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+}

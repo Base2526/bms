@@ -465,7 +465,7 @@ export function CommentsSection({
           </>
         ) : (
           <Text type="secondary">
-            กรุณา <Link href="/login">เข้าสู่ระบบ</Link> เพื่อแสดงความคิดเห็น
+            กรุณา <Link href="/admin/login">เข้าสู่ระบบ</Link> เพื่อแสดงความคิดเห็น
           </Text>
         )}
       </div>

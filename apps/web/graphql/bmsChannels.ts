@@ -2,9 +2,19 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { pubsub } from "@/lib/pubsub";
 import { getTenantId } from "@/lib/bms/tenant";
 import { listChannelsMasked, upsertChannel } from "@/lib/bms/channels";
+import { listChannelHealth, countUnhealthyChannels, testChannelConnection } from "@/lib/bms/channelHealth";
 import { audit } from "@/lib/bms/audit";
+import { isPlatformAdmin } from "@/lib/bms/platform";
+import { topicBmsInboxChanged, type BmsInboxChangedPayload } from "../../../packages/graphql-core/src/bmsInboxSync";
+
+/** pg คืน timestamp เป็น Date object — ต้อง toISOString() ก่อนคืนใน field ที่เป็น String (ดู CLAUDE.local.md) */
+function toISO(v: unknown): string | null {
+  if (!v) return null;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -13,7 +23,18 @@ function requireTenantAdmin(ctx: any) {
   }
 }
 
-const ALLOWED = ["line", "tiktok", "facebook", "instagram", "web"];
+async function requireRealtimeDiagnosticsAdmin(ctx: any) {
+  const auth = requireAuth(ctx);
+  if (auth.scope !== "admin") {
+    throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
+  }
+  if (ctx?.admin?.role === "Administrator" || await isPlatformAdmin(ctx)) return;
+  throw new GraphQLError("เฉพาะ Administrator เท่านั้น", {
+    extensions: { code: "FORBIDDEN", http: { status: 403 } },
+  });
+}
+
+const ALLOWED = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"];
 
 export const bmsChannelsResolvers = {
   Query: {
@@ -26,6 +47,21 @@ export const bmsChannelsResolvers = {
       requireTenantAdmin(ctx);
       return listChannelsMasked(getTenantId(ctx));
     },
+    async bmsChannelHealth(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      const rows = await listChannelHealth(getTenantId(ctx));
+      return rows.map((r) => ({
+        ...r,
+        last_error_at: toISO(r.last_error_at),
+        last_inbound_event_at: toISO(r.last_inbound_event_at),
+        last_outbound_success_at: toISO(r.last_outbound_success_at),
+        last_checked_at: toISO(r.last_checked_at),
+      }));
+    },
+    async bmsChannelHealthCount(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return countUnhealthyChannels(getTenantId(ctx));
+    },
   },
   Mutation: {
     async bmsUpsertChannel(
@@ -37,13 +73,61 @@ export const bmsChannelsResolvers = {
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      const ok = await upsertChannel(getTenantId(ctx), args.channel, {
-        accessToken: args.accessToken,
-        channelSecret: args.channelSecret,
-        active: args.active,
-      });
+      let ok: boolean;
+      try {
+        ok = await upsertChannel(getTenantId(ctx), args.channel, {
+          accessToken: args.accessToken,
+          channelSecret: args.channelSecret,
+          active: args.active,
+        });
+      } catch (err: any) {
+        throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       await audit(ctx, "channel.upsert", args.channel, { active: args.active });
       return ok;
+    },
+    async bmsTestChannel(_p: unknown, args: { channel: string }, ctx: any) {
+      requireTenantAdmin(ctx);
+      if (!ALLOWED.includes(args.channel)) {
+        throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const result = await testChannelConnection(getTenantId(ctx), args.channel);
+      await audit(ctx, "channel.test", args.channel, { ok: result.ok });
+      return result;
+    },
+    async bmsEmitInboxDiagnosticEvent(_p: unknown, args: { channel: string; probeId: string }, ctx: any) {
+      await requireRealtimeDiagnosticsAdmin(ctx);
+      if (!ALLOWED.includes(args.channel)) {
+        throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      const probeId = String(args.probeId || "").trim();
+      if (!/^[A-Za-z0-9:_-]{8,160}$/.test(probeId)) {
+        throw new GraphQLError("probeId ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+
+      const tenantId = getTenantId(ctx);
+      const occurredAt = new Date().toISOString();
+      const event: BmsInboxChangedPayload = {
+        tenantId,
+        conversationId: `diag:${args.channel}:${probeId}`,
+        kind: "CONVERSATION_CHANGED",
+        occurredAt,
+      };
+
+      await pubsub.publish(topicBmsInboxChanged(tenantId), { bmsInboxChanged: event });
+      await audit(ctx, "inbox.diagnostic_event", args.channel, {
+        conversationId: event.conversationId,
+        occurredAt,
+      });
+
+      return {
+        ok: true,
+        message: "ส่ง diagnostic realtime event แล้ว",
+        channel: args.channel,
+        conversationId: event.conversationId,
+        kind: event.kind,
+        occurredAt,
+      };
     },
   },
 };

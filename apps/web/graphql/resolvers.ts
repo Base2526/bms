@@ -9,9 +9,24 @@ import path from "path";
 import GraphQLJSON from "graphql-type-json";
 
 import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
-import { createResetToken, sendPasswordResetEmail } from "@/lib/passwordReset";
+import {
+  normalizeEmail,
+  normalizeUsername,
+  validateEmail,
+  validateNewPassword,
+  validateUsername,
+} from "@/lib/auth/identity";
+import { createAdminSession } from "@/lib/redisSession";
+import {
+  buildPasswordResetUrl,
+  createResetToken,
+  invalidateResetToken,
+  RESET_TOKEN_TTL_MIN,
+  sendPasswordResetEmail,
+} from "@/lib/passwordReset";
 import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
+import { getTenantName } from "@/lib/bms/platform";
 import { addLog } from "@/lib/log/log.server";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -25,7 +40,6 @@ import { createNotification } from '@/lib/notifications/service';
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
 
-import { emitPostEvent } from "@events/emit.server";
 import {
   deactivateDevicePushToken,
   listActiveFcmTokens,
@@ -40,34 +54,77 @@ import { bmsProductsResolvers } from "@/graphql/bmsProducts";
 import { bmsCustomersResolvers } from "@/graphql/bmsCustomers";
 import { bmsDashboardResolvers } from "@/graphql/bmsDashboard";
 import { bmsChannelsResolvers } from "@/graphql/bmsChannels";
+import { bmsAiConfigResolvers } from "@/graphql/bmsAiConfig";
+import { bmsSqlConsoleResolvers } from "@/graphql/bmsSqlConsole";
 import { bmsSaasResolvers } from "@/graphql/bmsSaas";
 import { bmsPurchaseResolvers } from "@/graphql/bmsPurchase";
 import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
 import { bmsShippingResolvers } from "@/graphql/bmsShipping";
 import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
+import { bmsReportEngineResolvers } from "@/graphql/bmsReportEngine";
+import { bmsCustomer360Resolvers } from "@/graphql/bmsCustomer360";
+import { bmsAssistantResolvers } from "@/graphql/bmsAssistant";
+import { bmsStoreProfileResolvers } from "@/graphql/bmsStoreProfile";
+import { bmsRevisionsResolvers } from "@/graphql/bmsRevisions";
+import { bmsCouponsResolvers } from "@/graphql/bmsCoupons";
+import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
+import { bmsPosResolvers } from "@/graphql/bmsPos";
+import { bmsAiQualityResolvers } from "@/graphql/bmsAiQuality";
+import { bmsReportScheduleResolvers } from "@/graphql/bmsReportSchedule";
+import { bmsFollowupsResolvers } from "@/graphql/bmsFollowups";
+import { bmsPharmacyResolvers } from "@/graphql/bmsPharmacy";
+import { bmsMailLogResolvers } from "@/graphql/bmsMailLog";
+import { bmsRestockSubscriptionsResolvers } from "@/graphql/bmsRestockSubscriptions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
+import { enforceUserQuota } from "@/lib/bms/plans";
+import { reassignStaffConversations } from "@/lib/bms/inbox";
+import { rateLimit } from "@/lib/bms/rateLimit";
+import { requirePermission } from "@/lib/bms/permissions";
+import { audit } from "@/lib/bms/audit";
+import {
+  requireManageableTarget,
+  requireManageableTargets,
+  resolveAssignableRole,
+  type UserAdminGate,
+} from "@/lib/bms/userAdmin";
 
 import { logAsync } from "@/lib/logger";
 
 // =============================================================
 // Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
-// platform admin เห็น/แก้ได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง · role อื่นถูกปฏิเสธ
+// platform admin เห็น/แก้ได้ทุกร้านเมื่ออยู่มุมแพลตฟอร์ม
+// แต่ถ้ากำลัง drill-down/acting tenant ต้องทำตัวเป็น tenant-scoped เพื่อไม่หลุดร้านที่กำลังดู
 // =============================================================
-async function requireUserAdmin(ctx: any): Promise<{ platform: boolean; tenantId: string }> {
+async function requireUserAdmin(
+  ctx: any,
+  perm: "user.view" | "user.manage" = "user.manage"
+): Promise<UserAdminGate> {
   const auth = requireAuth(ctx);
   if (auth.scope !== "admin") {
     throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
   }
-  const platform = await isPlatformAdmin(ctx);
-  const isSuper = ctx?.admin?.role === "Administrator";
+  const actingTenant = !!ctx?.admin?.__actingTenantId;
+  const platform = (await isPlatformAdmin(ctx)) && !actingTenant;
+  const actorRole = String(ctx?.admin?.role ?? "");
+  const isSuper = actorRole === "Administrator";
+  // ทางที่สาม (ใหม่): role ที่ได้รับสิทธิ์ `user.*` ในร้านนี้ — seed ให้ Manager ที่ 7.78
+  // ยัง short-circuit platform/super ไว้ก่อน เพื่อไม่ต้อง query สิทธิ์ในเคสปกติ และให้
+  // Administrator ยังทำงานได้แม้ bms_role_permissions ว่าง/ยังไม่ได้ apply migration
+  //
+  // ⚠️ ผ่านด่านนี้แล้ว **ยังไม่พอ** — การแตะแถวใครและ assign role อะไรได้ ถูกคุมอีกชั้น
+  // ด้วย rank guard ใน `lib/bms/userAdmin.ts` (requireManageableTarget/resolveAssignableRole)
   if (!platform && !isSuper) {
-    throw new GraphQLError("เฉพาะผู้ดูแลร้าน (Administrator) หรือแอดมินแพลตฟอร์มเท่านั้น", {
-      extensions: { code: "FORBIDDEN", http: { status: 403 } },
-    });
+    await requirePermission(ctx, perm);
   }
-  return { platform, tenantId: getTenantId(ctx) };
+  return {
+    platform,
+    tenantId: getTenantId(ctx),
+    actorId: String(auth.author_id),
+    actorRole,
+    isSuper,
+  };
 }
 
 /** gate เฉพาะ platform admin (เช่น จัดการ role กลางทั้งระบบ) */
@@ -129,6 +186,7 @@ type GraphQLUploadFile = {
 // }, 50000);
 
 const TOKEN_TTL_DAYS = 7;
+const DUMMY_PASSWORD_HASH = "$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.";
 const topicChat = (chat_id: string) => `MSG_CHAT_${chat_id}`;
 const topicUser = (user_id: string) => `MSG_USER_${user_id}`;
 type Iso = string;
@@ -141,6 +199,47 @@ function normalizeStr(input: string): string {
     .replace(/[^a-z0-9]+/g, "_") // อะไรที่ไม่ใช่ a-z 0-9 → _
     .replace(/_+/g, "_")         // แทน _ ซ้อนหลายตัวด้วย _
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
+}
+
+function authRequestIp(ctx: any): string {
+  const headers = ctx?.req?.headers;
+  const getHeader = (name: string) =>
+    typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
+  return String(
+    getHeader("cf-connecting-ip") ||
+    getHeader("x-real-ip") ||
+    String(getHeader("x-forwarded-for") || "").split(",")[0].trim() ||
+    "unknown"
+  ).slice(0, 80);
+}
+
+async function enforceAuthRateLimit(
+  ctx: any,
+  action: string,
+  identity: string,
+  identityLimit: number,
+  ipLimit: number,
+  windowMs: number
+): Promise<void> {
+  const ip = authRequestIp(ctx);
+  const identityHash = crypto.createHash("sha256").update(identity).digest("hex").slice(0, 24);
+  // Both counters must be incremented on every attempt, so run them together
+  // rather than short-circuiting on the first failure — otherwise an attacker
+  // rotating one dimension never accumulates against the other.
+  const [byIp, byIdentity] = await Promise.all([
+    rateLimit(`auth:${action}:ip:${ip}`, ipLimit, windowMs),
+    rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs),
+  ]);
+  if (!byIp.ok || !byIdentity.ok) {
+    throw new GraphQLError("Too many attempts. Please try again later.", {
+      extensions: { code: "RATE_LIMITED" },
+    });
+  }
+}
+
+async function passwordMatches(password: string, user: any): Promise<boolean> {
+  const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+  return !!user?.password_hash && valid;
 }
 
 async function getUserById(id: string) {
@@ -178,11 +277,12 @@ function calcRisk(reportCount: number): number {
   return 10;
 }
 
+// ค่า default ต้องตรงกับ `lib/bms/orderNotify.ts` และ `lib/passwordReset.ts` (แบรนด์เดียวกันทั้งระบบ)
 function baseData(locale: string) {
   return {
-    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "Jachoei",
+    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS",
     year: new Date().getFullYear(),
-    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://jachoei.com/support",
+    support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://bms.jachoei.com/support",
     locale,
   };
 }
@@ -194,6 +294,40 @@ function escapeHtml(s: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function mapSupportComment(row: any) {
+  return {
+    id: String(row.id),
+    authorId: row.author_id ? String(row.author_id) : null,
+    authorEmail: row.author_email,
+    fromStatus: row.from_status,
+    toStatus: row.to_status,
+    body: row.body,
+    createdAt: toIsoOrNull(row.created_at) || new Date(0).toISOString(),
+  };
+}
+
+function mapSupportTicket(row: any, comments: any[] = []) {
+  return {
+    id: String(row.id),
+    ticketId: row.ticket_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    topic: row.topic,
+    subject: row.subject,
+    message: row.message,
+    ref: row.ref,
+    pageUrl: row.page_url,
+    userAgent: row.user_agent,
+    ip: row.ip,
+    status: row.status,
+    createdAt: toIsoOrNull(row.created_at) || new Date(0).toISOString(),
+    updatedAt: toIsoOrNull(row.updated_at),
+    closedAt: toIsoOrNull(row.closed_at),
+    comments: comments.map(mapSupportComment),
+  };
 }
 
 function normalizeTel(raw: string) {
@@ -662,10 +796,11 @@ const rawResolvers = {
     },
   },
   User: {
+    themePreference: (parent: any) => parent?.themePreference ?? parent?.theme_preference ?? null,
     roleDetails: async (parent: any) => {
       const roleId = parent?.role_id;
       if (!roleId) return null;
-      
+
       try {
         const { rows } = await query(
           `SELECT id, name, description, is_active, created_at, updated_at FROM roles WHERE id = $1 LIMIT 1`,
@@ -676,6 +811,25 @@ const rawResolvers = {
         console.error('[User.roleDetails] Error fetching role:', err);
         return null;
       }
+    },
+    // ให้ platform admin เห็นว่า user นี้เป็นของร้านไหน (หน้า /admin/users แสดง user ข้ามร้านได้
+    // แต่ไม่เคยบอกว่า user เป็นของร้านไหนเลย) — user ที่ไม่มี tenant_id (เช่นบัญชีระบบเก่า) คืน null
+    tenantName: async (parent: any) => {
+      if (!parent?.tenant_id) return null;
+      try {
+        return await getTenantName(parent.tenant_id);
+      } catch (err) {
+        console.error('[User.tenantName] Error fetching tenant name:', err);
+        return null;
+      }
+    },
+    // pg คืน timestamp เป็น Date object — ต้อง .toISOString() เองก่อนคืนใน field ที่เป็น String
+    // (ไม่งั้น GraphQLString.serialize เรียก .valueOf() ได้ epoch number แทน — เจอบั๊กแบบนี้มาแล้วหลายที่
+    // ในโปรเจกต์นี้ เช่น created_at ของ User เอง ที่หน้า list ต้อง workaround ด้วย new Date(Number(d)))
+    lastLoginAt: (parent: any) => {
+      const v = parent?.last_login_at;
+      if (!v) return null;
+      return v instanceof Date ? v.toISOString() : String(v);
     },
   },
   Message: {
@@ -700,17 +854,6 @@ const rawResolvers = {
   },
   Query: {
     _health: async() =>{
-      await emitPostEvent("post.created", {
-        postId: "result.id",
-        actorId: "author_id",
-        title: "result.title",
-        summary: undefined,
-        url: undefined,
-        revisionId: "revisionId",
-        eventId: randomUUID(),
-        occurredAt: new Date().toISOString()
-      });
-
       console.error("[health] called");
 
       return `ok`;
@@ -723,6 +866,62 @@ const rawResolvers = {
       return rows[0];
     },
     meRole: async (_:any, __:any, ctx:any) => ctx.role || "Subscriber",
+    bmsSupportTickets: async (_: any, args: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
+      const page = Math.max(1, Number(args.page || 1));
+      const pageSize = Math.min(100, Math.max(1, Number(args.pageSize || 20)));
+      const where: string[] = [];
+      const params: any[] = [];
+
+      if (args.status) {
+        params.push(String(args.status));
+        where.push(`status = $${params.length}`);
+      }
+      if (args.topic) {
+        params.push(String(args.topic));
+        where.push(`topic = $${params.length}`);
+      }
+      if (args.q) {
+        params.push(`%${String(args.q).trim()}%`);
+        where.push(`(ticket_id ILIKE $${params.length} OR email ILIKE $${params.length} OR name ILIKE $${params.length} OR subject ILIKE $${params.length})`);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const totalRes = await query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM support_tickets ${whereSql}`,
+        params
+      );
+      params.push(pageSize, (page - 1) * pageSize);
+      const rows = await query<any>(
+        `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                user_agent, ip, status, created_at, updated_at, closed_at
+           FROM support_tickets
+          ${whereSql}
+          ORDER BY created_at DESC
+          LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      );
+      const ticketIds = rows.rows.map((row: any) => row.id);
+      const commentsByTicket = new Map<string, any[]>();
+      if (ticketIds.length > 0) {
+        const commentRows = await query<any>(
+          `SELECT id, ticket_id, author_id, author_email, from_status, to_status, body, created_at
+             FROM support_ticket_comments
+            WHERE ticket_id = ANY($1::uuid[])
+            ORDER BY created_at DESC`,
+          [ticketIds]
+        );
+        for (const comment of commentRows.rows) {
+          const key = String(comment.ticket_id);
+          commentsByTicket.set(key, [...(commentsByTicket.get(key) || []), comment]);
+        }
+      }
+
+      return {
+        total: Number(totalRes.rows[0]?.count || 0),
+        items: rows.rows.map((row: any) => mapSupportTicket(row, commentsByTicket.get(String(row.id)) || [])),
+      };
+    },
     // resolver: posts
     posts: async (_: any, { search }: { search?: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -1501,10 +1700,11 @@ const rawResolvers = {
       // scope=admin → หน้าจัดการผู้ใช้ BMS: บังคับสิทธิ์ + กรองตามร้าน
       //   (scope=web/android = ค้นหาคนในแอป social → คงเดิม ไม่กรอง)
       if (auth.scope === "admin") {
-        const { platform, tenantId } = await requireUserAdmin(ctx);
+        const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
         if (!platform) {
           params.push(tenantId);
           conds.push(`tenant_id = $${params.length}`);
+          conds.push(`is_platform_admin = FALSE`);
         }
       }
 
@@ -1535,8 +1735,21 @@ const rawResolvers = {
       return { items: itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
+      const { author_id, scope } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
       console.log("[Query] user", id, author_id);
+
+      if (scope === "admin") {
+        const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
+        if (!platform) {
+          const { rows } = await query(
+            `SELECT * FROM users
+              WHERE id = $1 AND tenant_id = $2 AND is_platform_admin = FALSE
+              LIMIT 1`,
+            [id, tenantId]
+          );
+          return rows[0] ?? null;
+        }
+      }
 
       return await getUserById(id);
     },
@@ -2640,13 +2853,28 @@ const rawResolvers = {
     ...bmsProductsResolvers.Query,
     ...bmsCustomersResolvers.Query,
     ...bmsDashboardResolvers.Query,
+    ...bmsAiQualityResolvers.Query,
     ...bmsChannelsResolvers.Query,
+    ...bmsAiConfigResolvers.Query,
+    ...bmsSqlConsoleResolvers.Query,
+    ...bmsStoreProfileResolvers.Query,
+    ...bmsRevisionsResolvers.Query,
+    ...bmsCouponsResolvers.Query,
+    ...bmsMembershipResolvers.Query,
+    ...bmsPosResolvers.Query,
+    ...bmsReportScheduleResolvers.Query,
+    ...bmsFollowupsResolvers.Query,
+    ...bmsPharmacyResolvers.Query,
+    ...bmsMailLogResolvers.Query,
     ...bmsSaasResolvers.Query,
     ...bmsPurchaseResolvers.Query,
     ...bmsPaymentsResolvers.Query,
     ...bmsShippingResolvers.Query,
     ...bmsInboxResolvers.Query,
-    ...bmsReportsResolvers.Query
+    ...bmsReportsResolvers.Query,
+    ...bmsReportEngineResolvers.Query,
+    ...bmsCustomer360Resolvers.Query,
+    ...bmsRestockSubscriptionsResolvers.Query,
   },
   Mutation: {
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -2657,25 +2885,21 @@ const rawResolvers = {
         throw new Error("Email/Username and password are required");
       }
 
-      // เลือกฟิลด์ที่ใช้ล็อกอิน: email (แนะนำ) หรือ username (ถ้ามีคอลัมน์นี้ใน users)
-      // ตัวอย่างนี้ใช้ email เป็นหลัก
-      const identifier = email?.trim().toLowerCase() || username?.trim();
-      const idField = email ? "email" : "name"; // ถ้าอยากใช้ username จริง ๆ ให้มีคอลัมน์ username แยก
-
-      // ตรวจสอบรหัสผ่านด้วย pgcrypto (bcrypt)
+      const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
+      if (!identifier) return { ok: false, message: "Invalid credentials" };
+      await enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
-        SELECT id, name, email, role, avatar, phone
+        SELECT id, name, username, email, role, avatar, phone, password_hash
         FROM users
-        WHERE ${idField} = $1
-          AND password_hash = crypt($2, password_hash)
+        WHERE ${email ? "lower(btrim(email))" : "lower(btrim(username))"} = $1
         LIMIT 1
         `,
-        [identifier, password]
+        [identifier]
       );
 
       const user = rows[0];
-      if (!user) {
+      if (!(await passwordMatches(password, user))) {
         // ป้องกันการเดารหัส/บัญชี โดยไม่บอกว่า email หรือ password ผิด
         return { ok: false, message: "Invalid credentials" };
       }
@@ -2728,17 +2952,19 @@ const rawResolvers = {
         throw new Error("Email/Username and password are required");
       }
 
-      const emailNorm = email ? String(email).trim().toLowerCase() : null;
-      const usernameNorm = username ? String(username).trim().toLowerCase() : null;
+      const emailNorm = email ? normalizeEmail(email) : null;
+      const usernameNorm = username ? normalizeUsername(username) : null;
+      if (!(emailNorm || usernameNorm)) throw new Error("Invalid credentials");
+      await enforceAuthRateLimit(ctx, "login", emailNorm || usernameNorm || "", 10, 60, 15 * 60_000);
 
       const { rows } = emailNorm
-        ? await query("SELECT * FROM users WHERE email=$1", [emailNorm])
-        : await query("SELECT * FROM users WHERE username=$1", [usernameNorm]);
+        ? await query("SELECT * FROM users WHERE lower(btrim(email))=$1 LIMIT 1", [emailNorm])
+        : await query("SELECT * FROM users WHERE lower(btrim(username))=$1 LIMIT 1", [usernameNorm]);
       const user = rows[0];
 
-      if (!user) throw new Error("Invalid credentials");
-      const valid = await bcrypt.compare(password, user.password_hash);
+      const valid = await passwordMatches(password, user);
       if (!valid) throw new Error("Invalid credentials");
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -2756,6 +2982,14 @@ const rawResolvers = {
     },
     loginWithSocial: async (_: any, { input }: any, ctx: any) => {
       const { provider, accessToken } = input;
+      await enforceAuthRateLimit(
+        ctx,
+        "social",
+        `${String(provider || "unknown")}:${String(accessToken || "")}`,
+        10,
+        60,
+        15 * 60_000
+      );
 
       let socialData = null;
 
@@ -2770,15 +3004,21 @@ const rawResolvers = {
       if (!socialData) {
         throw new GraphQLError("Social token invalid");
       }
+      if (socialData.email_verified !== true) {
+        throw new GraphQLError("Social account email is not verified");
+      }
 
       const { email, name, picture, provider_id } = socialData;
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) throw new GraphQLError("Social account did not provide a valid email");
+      const emailNorm = emailResult.value;
 
       /* ======================================================
             1) หา user ถ้ามี email อยู่แล้ว → login เลย
          ====================================================== */
       const { rows: existing } = await query(
-        `SELECT * FROM users WHERE email = $1 LIMIT 1`,
-        [email]
+        `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
       );
 
       let user = existing[0];
@@ -2791,14 +3031,22 @@ const rawResolvers = {
 
         const { rows: newUser } = await query(
           `
-          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta)
-          VALUES ($1,$2,$3,$4,'Subscriber', crypt($5, gen_salt('bf')),$6,$7,$8)
+          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta, is_email_verified)
+          VALUES ($1,NULL,$2,$3,'Subscriber', crypt($4, gen_salt('bf')),$5,$6,$7,TRUE)
+          ON CONFLICT (email) DO NOTHING
           RETURNING *
         `,
-          [name, normalizeStr(email), email, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
+          [name, emailNorm, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
         );
 
         user = newUser[0];
+        if (!user) {
+          const raced = await query(
+            `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+            [emailNorm]
+          );
+          user = raced.rows[0];
+        }
       }
 
       /*
@@ -2849,8 +3097,7 @@ const rawResolvers = {
 
       //  id: user.id, email: user.email, role: user.role
 
-      console.log("[loginWithSocial] @1 = ", socialData);
-      console.log("[loginWithSocial] @2 = ", user);
+      if (!user) throw new GraphQLError("Unable to create social account");
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -2876,26 +3123,78 @@ const rawResolvers = {
       };
     },
     loginAdmin: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
-      console.log("[loginAdmin] @1 ", input)
       const { email, username, password } = input || {};
       if (!password || (!email && !username)) {
         throw new Error("Email/Username and password are required");
       }
 
-      const { rows } = await query("SELECT * FROM users WHERE email=$1", [email]);
+      const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
+      if (!identifier) throw new Error("Invalid credentials");
+      await enforceAuthRateLimit(ctx, "admin-login", identifier, 10, 60, 15 * 60_000);
+      const { rows } = await query(
+        `SELECT u.*, t.active AS tenant_active
+           FROM users u
+           LEFT JOIN bms_tenants t ON t.id = u.tenant_id
+          WHERE lower(btrim(u.email)) = $1 OR lower(btrim(u.username)) = $1
+          LIMIT 1`,
+        [identifier]
+      );
       const user = rows[0];
 
-      console.log("[loginAdmin] @2 ", user)
-      if (!user) throw new Error("Invalid credentials");
-      // if (user.password_hash !== hash(password)) throw new Error("Invalid credentials");
+      if (!(await passwordMatches(password, user))) {
+        throw new Error("Invalid credentials");
+      }
+      // บัญชีเฉพาะหน้าร้าน (7.92): ยืนยันตัวตนด้วย PIN ที่เครื่องขายเท่านั้น
+      // ปฏิเสธที่นี่ ไม่ใช่แค่ไม่ให้สิทธิ์ — แคชเชียร์ที่รู้รหัสผ่านตัวเองต้องเข้า
+      // หลังบ้านไม่ได้เลย ไม่ใช่เข้าได้แต่เห็นหน้าว่าง
+      if (user.pos_only === true) {
+        throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
+      }
+      if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+
+      // Administrator = full RBAC permissions → short-lived session; other staff roles get a longer one.
+      // Keep this in sync with the cookie maxAge below — a JWT that outlives its cookie (or vice versa)
+      // makes the two clocks disagree about when the session actually ends.
+      const sessionMaxAgeSec = user.role === "Administrator" ? 60 * 60 * 24 : 60 * 60 * 24 * 7;
+
+      // jti = this session's id in Redis (lib/redisSession.ts) — the JWT itself is still
+      // stateless/self-verifying, this is only what makes logout/revocation possible before `exp`.
+      const jti = randomUUID();
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
+        {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          tenant_id: user.tenant_id,
+          is_platform_admin: user.is_platform_admin === true,
+          session_version: Number(user.admin_session_version ?? 0),
+          jti,
+        },
         JWT_SECRET,
-        { expiresIn: "1d" }
+        { expiresIn: sessionMaxAgeSec }
       );
 
-      cookies().set(ADMIN_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      cookies().set(ADMIN_COOKIE, token, {
+        httpOnly: true,
+        secure: useSecureCookie && !isDev,
+        sameSite: "lax",
+        path: "/",
+        maxAge: sessionMaxAgeSec,
+      });
+
+      // best-effort — Redis ล่มไม่ควรทำให้ login ล้มเหลว (แค่ revoke ก่อนหมดอายุจะทำไม่ได้ชั่วคราว)
+      await createAdminSession(jti, user.id, sessionMaxAgeSec);
+
+      // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
+      query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
+        console.error("[loginAdmin] update last_login_at failed:", err);
+      });
+
       return {
         ok: true,
         message: "Login success",
@@ -2903,20 +3202,73 @@ const rawResolvers = {
         user,
       };
     },
-    registerUser: async(_: any, { input }: any) => {
+    loginMobile: async (_: any, { email, password }: { email: string; password: string }, ctx: any) => {
+      const emailNorm = normalizeEmail(email);
+      if (!emailNorm || !password) throw new Error("Invalid credentials");
+      await enforceAuthRateLimit(ctx, "mobile-login", emailNorm, 10, 60, 15 * 60_000);
+      const { rows } = await query(
+        `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
+      );
+      const user = rows[0];
+      if (!(await passwordMatches(password, user))) throw new Error("Invalid credentials");
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+      return { ok: true, message: "Login success", token, user };
+    },
+    registerUser: async(_: any, { input }: any, ctx: any) => {
       const { username, email, phone, password, agree } = input;
       if (!agree) throw new Error('Please accept terms');
-      const { rows: exists } = await query('SELECT 1 FROM users WHERE email=$1', [email]);
-      if (exists.length) throw new Error('Email already registered');
+      const usernameResult = validateUsername(username);
+      if (!usernameResult.ok) throw new Error(`Invalid username (${usernameResult.code.toLowerCase()})`);
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) throw new Error("Invalid email");
+      const passwordResult = validateNewPassword(password);
+      if (!passwordResult.ok) throw new Error(`Invalid password (${passwordResult.code.toLowerCase()})`);
 
-      const password_hash = await bcrypt.hash(password, 10);
-      const usernameNorm = String(username || "").trim().toLowerCase();
-      const emailNorm = String(email || "").trim().toLowerCase();
-      const { rows: [u] } = await query(
-        `INSERT INTO users(name, username, email, phone, role, password_hash)
-        VALUES($1,$2,$3,$4,'Subscriber',$5) RETURNING id, name, username, email, role`,
-        [usernameNorm, usernameNorm, emailNorm, phone, password_hash]
+      const usernameNorm = usernameResult.value;
+      const emailNorm = emailResult.value;
+      await enforceAuthRateLimit(ctx, "register", emailNorm, 3, 10, 60 * 60_000);
+      const phoneNorm = phone == null || String(phone).trim() === "" ? null : String(phone).trim();
+      if (phoneNorm && (phoneNorm.length > 30 || !/^[0-9+\-\s()]+$/.test(phoneNorm))) {
+        throw new Error("Invalid phone");
+      }
+      const duplicate = await query<{ email_taken: boolean; username_taken: boolean }>(
+        `SELECT
+           EXISTS(SELECT 1 FROM users WHERE lower(btrim(email)) = $1) AS email_taken,
+           EXISTS(SELECT 1 FROM users WHERE lower(btrim(username)) = $2) AS username_taken`,
+        [emailNorm, usernameNorm]
       );
+      if (duplicate.rows[0]?.email_taken) throw new Error('Email already registered');
+      if (duplicate.rows[0]?.username_taken) throw new Error('Username already registered');
+
+      const password_hash = await bcrypt.hash(passwordResult.value, 10);
+      let u: any;
+      try {
+        const inserted = await query(
+          `INSERT INTO users(name, username, email, phone, role, password_hash, is_email_verified)
+          VALUES($1,$2,$3,$4,'Subscriber',$5,FALSE) RETURNING id, name, username, email, role`,
+          [usernameNorm, usernameNorm, emailNorm, phoneNorm, password_hash]
+        );
+        u = inserted.rows[0];
+      } catch (error: any) {
+        if (error?.code !== "23505") throw error;
+        const constraint = String(error?.constraint ?? "");
+        if (constraint.includes("username")) throw new Error('Username already registered');
+        throw new Error('Email already registered');
+      }
+
+      const cleanupUnverifiedRegistration = async () => {
+        await query(
+          `DELETE FROM users
+            WHERE id = $1 AND email = $2 AND username = $3 AND is_email_verified = FALSE`,
+          [u.id, emailNorm, usernameNorm]
+        );
+      };
 
       /* =========================
         CREATE VERIFY TOKEN
@@ -2925,11 +3277,18 @@ const rawResolvers = {
       const tokenHash = sha256Hex(rawToken);         // เก็บใน DB
       const expiryMinutes = 30;
 
-      await query(
-        `INSERT INTO email_verify_tokens(user_id, token_hash, expires_at)
-        VALUES ($1, $2, now() + interval '${expiryMinutes} minutes')`,
-        [u.id, tokenHash]
-      );
+      try {
+        await query(
+          `INSERT INTO email_verify_tokens(user_id, token_hash, expires_at)
+          VALUES ($1, $2, now() + interval '${expiryMinutes} minutes')`,
+          [u.id, tokenHash]
+        );
+      } catch (tokenError) {
+        await cleanupUnverifiedRegistration().catch((cleanupError) => {
+          console.error("[registerUser] cleanup after verification-token failure failed:", cleanupError);
+        });
+        throw tokenError;
+      }
 
       const verify_url =`${process.env.NEXT_PUBLIC_BASE_URL}/verify-email?token=${rawToken}`;
 
@@ -2946,17 +3305,25 @@ const rawResolvers = {
         expiry_minutes: expiryMinutes,
       });
 
-      await sendEmail({
-        to: email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-      });
+      try {
+        await sendEmail(
+          {
+            to: emailNorm,
+            subject: rendered.subject,
+            html: rendered.html,
+            text: rendered.text,
+          },
+          { category: "auth", triggeredBy: "resolvers:registerUser" }
+        );
+      } catch (mailError) {
+        // Do not leave a newly-created, unusable account that makes the retry look like a duplicate.
+        await cleanupUnverifiedRegistration().catch((cleanupError) => {
+          console.error("[registerUser] cleanup after verification-email failure failed:", cleanupError);
+        });
+        throw mailError;
+      }
 
       // sendMail
-
-      const token = jwt.sign({ id: u.id, email: u.email, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: useSecureCookie && !isDev, path: '/' });
 
       /* =========================
         CREATE ADMIN CHAT
@@ -2995,10 +3362,14 @@ const rawResolvers = {
       return true;
     },
     requestPasswordReset: async (_: any, { email }: { email: string }, ctx: any) => {
+      const emailResult = validateEmail(email);
+      if (!emailResult.ok) return true;
+      const emailNorm = emailResult.value;
+      await enforceAuthRateLimit(ctx, "password-reset", emailNorm, 3, 20, 60 * 60_000);
       // 1) หา user จากอีเมล (อย่า leak ว่ามี/ไม่มี)
       const { rows } = await query(
-        `SELECT id, email, name, language FROM users WHERE email = $1 LIMIT 1`,
-        [email]
+        `SELECT id, email, name, language FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
+        [emailNorm]
       );
 
       if (rows.length === 0) {
@@ -3008,12 +3379,7 @@ const rawResolvers = {
       const user = rows[0];
 
       // 2) สร้าง token + insert (ของคุณมีอยู่แล้ว)
-      const { token, expiresAt } = await createResetToken(user.id);
-      // ถ้า createResetToken ของคุณยังไม่ return expiresAt -> ไม่เป็นไร (ใช้ default 30 นาทีใน email ได้)
-
-      // 3) สร้างลิงก์ไปหน้า /reset
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://yourapp.com";
-      const resetUrl = `${baseUrl}/reset?token=${encodeURIComponent(token)}`;
+      const { token } = await createResetToken(String(user.id));
 
       // 4) meta สำหรับ email (optional)
       const requestIp =
@@ -3025,39 +3391,50 @@ const rawResolvers = {
       const requestDevice = ctx?.req?.headers?.["user-agent"] || "-";
 
       // 5) ส่งเมลผ่าน template ใน PG + SendGrid
-      await sendPasswordResetEmail({
-        to: user.email,
-        locale: user.language ?? "en",
-        userName: user.name ?? user.email,
-        resetUrl,
-        expiryMinutes: 30, // หรือคำนวณจาก expiresAt ถ้ามี
-        requestIp: String(requestIp),
-        requestDevice: String(requestDevice),
-        requestTime: new Date().toISOString(),
-      });
+      try {
+        // 3) สร้างลิงก์ไปหน้า /reset; production ไม่มี URL จริงถือว่า
+        // configuration error และ token ที่เพิ่งสร้างจะถูกยกเลิกด้านล่าง
+        const resetUrl = buildPasswordResetUrl(token);
+        await sendPasswordResetEmail({
+          to: user.email,
+          locale: user.language ?? "en",
+          userName: user.name ?? user.email,
+          resetUrl,
+          expiryMinutes: RESET_TOKEN_TTL_MIN,
+          requestIp: String(requestIp),
+          requestDevice: String(requestDevice),
+          requestTime: new Date().toISOString(),
+        });
+      } catch (err) {
+        // Preserve the non-enumerating response and make the unsent token
+        // unusable. The mailer already records the provider failure.
+        await invalidateResetToken(token).catch(() => void 0);
+        console.error("[requestPasswordReset] email delivery failed", err);
+      }
 
       return true;
     },
     resetPassword: async(_: any, { token, newPassword }: { token: string; newPassword: string }, ctx: any)=>{
-      // 1) หา token
-      const { rows } = await query(
-        `SELECT prt.id, prt.user_id, prt.expires_at, prt.used
-           FROM password_reset_tokens prt
-           WHERE prt.token = $1`,
-        [token]
+      if (!token || token.length > 256) throw new Error("Invalid or expired token");
+      const passwordResult = validateNewPassword(newPassword);
+      if (!passwordResult.ok) throw new Error("Invalid new password");
+      const password_hash = await bcrypt.hash(passwordResult.value, 10);
+      const claimed = await query(
+        `WITH claimed AS (
+           UPDATE password_reset_tokens
+              SET used = true
+            WHERE token_hash = $1 AND used = false AND expires_at > now()
+            RETURNING user_id
+         )
+         UPDATE users u
+            SET password_hash = $2,
+                admin_session_version = admin_session_version + 1
+           FROM claimed c
+          WHERE u.id = c.user_id
+         RETURNING u.id`,
+        [sha256Hex(token), password_hash]
       );
-      if (rows.length === 0) throw new Error("Invalid token");
-
-      const t = rows[0];
-      if (t.used) throw new Error("Token already used");
-      if (new Date(t.expires_at).getTime() < Date.now()) throw new Error("Token expired");
-
-      // 2) อัปเดตรหัสผ่าน (แนะนำใช้ bcrypt/argon2; ที่นี่ตัวอย่าง sha256 เพื่อความง่าย)
-      const password_hash = sha256Hex(newPassword);
-      await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, t.user_id]);
-
-      // 3) มาร์ค token เป็นใช้แล้ว
-      await query(`UPDATE password_reset_tokens SET used = true WHERE id = $1`, [t.id]);
+      if (!claimed.rowCount) throw new Error("Invalid or expired token");
 
       // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
 
@@ -3066,51 +3443,59 @@ const rawResolvers = {
     verifyEmail: async (_: any, { token }: { token: string }) => {
       const tokenHash = sha256Hex(token);
 
-      const { rows } = await query(
-        `
-        SELECT evt.id, evt.user_id
-        FROM email_verify_tokens evt
-        WHERE evt.token_hash = $1
-          AND evt.used_at IS NULL
-          AND evt.expires_at > now()
-        LIMIT 1
-        `,
+      const verified = await query(
+        `WITH claimed AS (
+           UPDATE email_verify_tokens
+              SET used_at = now()
+            WHERE id = (
+              SELECT id FROM email_verify_tokens
+               WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+               LIMIT 1
+               FOR UPDATE SKIP LOCKED
+            )
+            RETURNING user_id
+         )
+         UPDATE users u
+            SET is_email_verified = true
+           FROM claimed c
+          WHERE u.id = c.user_id
+         RETURNING u.id`,
         [tokenHash]
       );
-
-      if (!rows[0]) {
+      if (!verified.rowCount) {
         return { ok: false, message: "Invalid or expired token" };
       }
-
-      const { id: tokenId, user_id } = rows[0];
-
-      await query(`UPDATE users SET is_email_verified = true WHERE id = $1`, [
-        user_id,
-      ]);
-
-      await query(
-        `UPDATE email_verify_tokens SET used_at = now() WHERE id = $1`,
-        [tokenId]
-      );
 
       return { ok: true, message: "Email verified successfully" };
     },
     // resolver ตัวอย่าง
     updateMe: async (_:any, { data }: { data: any }, ctx:any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      const { name, phone, username, language, notifications_enabled } = data;
+      const { name, phone, username, language, gender, themePreference, notifications_enabled } = data;
+      // gender รับเฉพาะ 'male'/'female'/null (ไม่งั้นไม่แตะค่าเดิม)
+      const genderVal = gender === "male" || gender === "female" ? gender : null;
+      const themePreferenceVal =
+        themePreference === "light" || themePreference === "dark" || themePreference === "system"
+          ? themePreference
+          : null;
+      // เดิม `language` ไม่ validate เลย (รับ string อะไรก็ได้ตรงเข้า DB) ต่างจาก themePreference
+      // ที่ whitelist ก่อนเข้า COALESCE — แก้ให้เข้มเท่ากัน กัน column กลายเป็นค่าที่ i18n dictionary
+      // (apps/web/i18n) ไม่รู้จัก ซึ่งจะ getMessage() แล้วได้ key เปล่ากลับมาแทนข้อความจริง
+      const languageVal = language === "th" || language === "en" ? language : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, language, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, name, phone, username, languageVal, gender, themePreferenceVal, notifications_enabled );
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
           phone = COALESCE($2, phone),
           language = COALESCE($3, language),
-          notifications_enabled = COALESCE($4, notifications_enabled),
+          gender = COALESCE($4, gender),
+          theme_preference = COALESCE($5, theme_preference),
+          notifications_enabled = COALESCE($6, notifications_enabled),
           updated_at = NOW()
-        WHERE id = $5
-        RETURNING id, name, email, phone, username, language, avatar, notifications_enabled`,
-        [name, phone, language, notifications_enabled, author_id]
+        WHERE id = $7
+        RETURNING id, name, email, phone, username, language, gender, theme_preference AS "themePreference", avatar, notifications_enabled`,
+        [name, phone, languageVal, genderVal, themePreferenceVal, notifications_enabled, author_id]
       );
       return rows[0];
     },
@@ -3592,44 +3977,6 @@ const rawResolvers = {
       // ============================================================
       // ✅ EMIT EVENT (หลัง commit เท่านั้น)
       // ============================================================
-      try {
-        const eventName = id ? "post.updated" : "post.created";
-
-        if (finalPostId) {
-          const payload: any = {
-            eventId: randomUUID(),
-            occurredAt: new Date().toISOString(),
-
-            postId: finalPostId,
-            actorId: String(author_id),
-            revisionId,
-
-            title: finalTitle ?? null,
-            summary: finalSummary ?? null,
-            url: finalUrl ?? null,
-
-            // ✅ สำคัญ: ส่ง auto_publish ให้ worker
-            auto_publish: finalAutoPublish ?? null,
-
-            images: (result?.images ?? []).map((img: any) => ({
-              id: img.id,
-              url: img.url,
-            })),
-          };
-
-          // ✅ NEW: ถ้า request มี data.tel_numbers ให้ emit tel_numbers ไปด้วย
-          if (Array.isArray(data?.tel_numbers)) {
-            payload.tel_numbers = Array.isArray(finalTelNumbers) ? finalTelNumbers : [];
-          }
-
-          console.log("[upsertPost][payload] = ", payload);
-
-          await emitPostEvent(eventName, payload);
-        }
-      } catch (e: any) {
-        console.error("[events] emit failed (ignored)", e?.message ?? e);
-      }
-
       return result;
     },
     deletePost: async (_: any, { id }: { id: string }, ctx: any) => {
@@ -3703,29 +4050,6 @@ const rawResolvers = {
           return { ok, snap: ok ? snap : null };
         }
       );
-
-      // ✅ 3) emit หลัง commit เท่านั้น
-      try {
-        if (result.ok && result.snap) {
-          const snap = result.snap;
-          await emitPostEvent("post.deleted", {
-            eventId: randomUUID(),
-            occurredAt: new Date().toISOString(),
-
-            postId: snap.postId,
-            actorId: String(author_id),
-            revisionId,
-
-            title: snap.title ?? null,
-            summary: snap.summary ?? null,
-            url: snap.url ?? null,
-            auto_publish: snap.auto_publish ?? null,
-            images: snap.images ?? [],
-          });
-        }
-      } catch (e: any) {
-        console.error("[events] emit post.deleted failed (ignored)", e?.message ?? e);
-      }
 
       return result.ok;
     },
@@ -3809,30 +4133,6 @@ const rawResolvers = {
 
         return deletedCount > 0;
       });
-
-      // ✅ 3) emit หลัง commit: ยิงทีละโพสต์
-      try {
-        if (result && snaps.length) {
-          for (const s of snaps) {
-            await emitPostEvent("post.deleted", {
-              eventId: randomUUID(),
-              occurredAt: new Date().toISOString(),
-
-              postId: s.postId,
-              actorId: String(author_id),
-              revisionId,
-
-              title: s.title ?? null,
-              summary: s.summary ?? null,
-              url: s.url ?? null,
-              auto_publish: s.auto_publish ?? null,
-              images: s.images ?? [],
-            });
-          }
-        }
-      } catch (e: any) {
-        console.error("[events] emit post.deleted (bulk) failed (ignored)", e?.message ?? e);
-      }
 
       return result;
     },
@@ -4991,43 +5291,54 @@ const rawResolvers = {
       return deactivateDevicePushToken(String(author_id), String(fcmToken || ""));
     },
     upsertUser: async (_: any, { id, data }: { id?: string, data: any }, ctx:any) => {
-      // gate: platform admin จัดการได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage (Manager)
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
 
-      console.log("[Mutation] upsertUser :", ctx, author_id);
+      // ไม่ log `ctx` ทั้งก้อน — ข้างในมี admin session object
+      console.log("[Mutation] upsertUser :", author_id, { id, platform });
 
       // 2️⃣ ทำความสะอาดข้อมูล
       const name = (data.name ?? '').trim();
       const avatar = data.avatar ?? null;
       const phone = data.phone ?? null;
-      const email = data.email ? String(data.email).trim().toLowerCase() : null;
-      const passwordHash = data.passwordHash ?? null;
-
-      // ✅ NEW: Handle role_id (preferred) or fallback to role text
-      let roleId = data.role_id || null;
-      const roleText = data.role ? String(data.role).trim() : null;
-
-      // If role_id not provided but role text is, try to find role_id by name
-      if (!roleId && roleText) {
-        try {
-          const { rows } = await query(
-            `SELECT id FROM roles WHERE name = $1 LIMIT 1`,
-            [roleText]
-          );
-          if (rows[0]) {
-            roleId = rows[0].id;
-          }
-        } catch (err) {
-          console.error('[upsertUser] Error looking up role by name:', err);
-        }
+      if (!name) throw new GraphQLError("name is required");
+      const emailResult = data.email ? validateEmail(String(data.email)) : null;
+      if (!id && (!emailResult || !emailResult.ok)) throw new GraphQLError("valid email is required");
+      const email = emailResult?.ok ? emailResult.value : null;
+      const rawPassword = data.password === undefined || data.password === null
+        ? null
+        : String(data.password);
+      if (!id && !rawPassword) throw new GraphQLError("password is required");
+      const passwordResult = rawPassword ? validateNewPassword(rawPassword) : null;
+      if (passwordResult && !passwordResult.ok) {
+        throw new GraphQLError("Invalid password", { extensions: { code: "BAD_USER_INPUT" } });
       }
+      // Hash only on the trusted server. A client-supplied bcrypt hash is a
+      // replayable credential and bypasses password validation.
+      const passwordHash = passwordResult?.ok ? await bcrypt.hash(passwordResult.value, 10) : null;
 
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         let resultUser = null;
+        const resolvedRole = await resolveAssignableRole(
+          ctx,
+          gate,
+          { role_id: data.role_id, role: data.role },
+          id ? {} : { fallbackName: "Subscriber" },
+          client
+        );
+        const roleId = resolvedRole?.roleId ?? null;
 
         if (id) {
+          const target = await requireManageableTarget(ctx, gate, String(id), client, true);
+          if (String(id) === gate.actorId && !platform && !gate.isSuper &&
+              resolvedRole && resolvedRole.roleName !== gate.actorRole) {
+            throw new GraphQLError("เปลี่ยนบทบาทของตัวเองไม่ได้", {
+              extensions: { code: "FORBIDDEN", http: { status: 403 } },
+            });
+          }
           // 🧩 UPDATE: อัปเดต password_hash เฉพาะเมื่อส่งมา
           // Prefer role_id, but keep role for backward compatibility (triggers will sync)
           const updateFields: string[] = [];
@@ -5046,15 +5357,11 @@ const rawResolvers = {
           updateValues.push(phone);
           paramIndex++;
 
-          // ✅ Use role_id if available
+          // เขียนเฉพาะ `role_id` — เลิกเขียน `role` เป็น text (trigger sync ชื่อให้เองอยู่แล้ว)
+          // path text เป็นทางเดียวที่ทำให้เกิด role ใหม่ในตารางกลางโดยไม่ตั้งใจ
           if (roleId) {
             updateFields.push(`role_id = $${paramIndex}`);
             updateValues.push(roleId);
-            paramIndex++;
-          } else if (roleText) {
-            // Fallback to role text (triggers will sync role_id)
-            updateFields.push(`role = $${paramIndex}`);
-            updateValues.push(roleText);
             paramIndex++;
           }
 
@@ -5062,6 +5369,11 @@ const rawResolvers = {
             updateFields.push(`password_hash = $${paramIndex}`);
             updateValues.push(passwordHash);
             paramIndex++;
+          }
+
+          const roleChanged = Boolean(resolvedRole && target.role !== resolvedRole.roleName);
+          if (roleChanged || passwordHash) {
+            updateFields.push(`admin_session_version = admin_session_version + 1`);
           }
 
           updateValues.push(id); // WHERE id = $n
@@ -5089,29 +5401,22 @@ const rawResolvers = {
           }
         } else {
           // 🧩 INSERT: ต้องมี email
-          if (!email) throw new GraphQLError("email is required");
+          if (!email || !passwordHash) throw new GraphQLError("email and password are required");
 
           // user ใหม่สังกัดร้านของผู้สร้าง (platform admin ระบุ tenant อื่นได้)
           const newTenantId = platform && data.tenant_id ? String(data.tenant_id) : tenantId;
+          // เกิน quota staff ของแพ็กเกจร้าน → ปฏิเสธ (platform admin ไม่ถูกจำกัด)
+          if (!platform) await enforceUserQuota(newTenantId, client);
 
-          // Use role_id if available, otherwise use role text
-          if (roleId) {
-            const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-              [name, avatar, phone, email, roleId, passwordHash, newTenantId]
-            );
-            resultUser = rows[0] || null;
-          } else {
-            // Fallback to role text (triggers will sync role_id)
-            const role = roleText || 'Subscriber';
-            const { rows } = await client.query(
-              `INSERT INTO users (name, avatar, phone, email, role, password_hash, tenant_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-              [name, avatar, phone, email, role, passwordHash, newTenantId]
-            );
-            resultUser = rows[0] || null;
-          }
+          // `roleId` มีค่าเสมอตรงนี้ — `resolveAssignableRole()` fallback เป็น 'Subscriber'
+          // ให้แล้วถ้าไม่ได้ระบุมา (และ throw ถ้าชื่อ role ไม่มีจริง) จึงไม่มี path ที่เขียน
+          // `role` เป็น text อีก
+          const { rows } = await client.query(
+            `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [name, avatar, phone, email, roleId, passwordHash, newTenantId]
+          );
+          resultUser = rows[0] || null;
 
           if (resultUser) {
             await addLog(
@@ -5123,10 +5428,23 @@ const rawResolvers = {
           }
         }
 
-        return resultUser;
+        return { user: resultUser, roleName: resolvedRole?.roleName ?? null };
       });
 
-      return result;
+      const resultUser = result.user;
+
+      // audit ลง bms_audit_log (คนละที่กับ addLog/system_logs ด้านบน) — Administrator ของร้าน
+      // อ่านได้ที่ /admin/audit จึงตามได้ว่า Manager แก้ใครไปบ้าง
+      // ⚠️ เรียกหลัง transaction เสมอ (audit() ใช้ pool ธรรมดา ถ้าอยู่ในนั้นจะติด rollback ไปด้วย)
+      // ⚠️ ห้ามใส่ password hash ลง meta
+      if (resultUser?.id) {
+        await audit(ctx, id ? "user.update" : "user.create", String(resultUser.id), {
+          role: result.roleName,
+          passwordChanged: Boolean(passwordHash),
+        });
+      }
+
+      return resultUser;
     },
     uploadAvatar: async (_: any, { user_id, file }: { user_id: string, file: Promise<GraphQLUploadFile> }, ctx: any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -5134,11 +5452,23 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(auth.author_id);
 
       console.log("[Mutation] uploadAvatar :", author_id);
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      // เปลี่ยนรูปคนอื่นต้องมี rank สูงกว่า (รูปตัวเองแก้ได้เสมอ)
+      if (String(user_id) !== gate.actorId) {
+        await requireManageableTarget(ctx, gate, String(user_id));
+      }
+
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        // Repeat the row guard under lock. The target may have been promoted
+        // after the early UX check but before this transaction started.
+        if (String(user_id) !== gate.actorId) {
+          await requireManageableTarget(ctx, gate, String(user_id), client);
+        }
         const f = await file; // { filename, mimetype, encoding, createReadStream }
 
         // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
@@ -5149,10 +5479,14 @@ const rawResolvers = {
 
         const avatarUrl = buildFileUrlById(row.id);
 
-        await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [
-          avatarUrl,
-          user_id,
-        ]);
+        const updateRes = platform
+          ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
+          : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
+        if (updateRes.rowCount !== 1) {
+          throw new GraphQLError("user not found in current tenant", {
+            extensions: { code: "NOT_FOUND" },
+          });
+        }
 
         await addLog("info", "upload-avatar", "Upload avatar", {
           userId: user_id,
@@ -5165,13 +5499,28 @@ const rawResolvers = {
       return result;
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
-      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
+
+      // ห้ามลบบัญชีตัวเอง — ไม่งั้น Administrator คนสุดท้ายของร้าน (หรือ platform admin เอง)
+      // ลบตัวเองแล้วล็อกทุกคนออกจากร้าน/แพลตฟอร์มไปเลย ไม่มีใครกู้คืนได้ผ่าน UI
+      if (String(id) === author_id) {
+        throw new GraphQLError("ลบบัญชีของตัวเองไม่ได้", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
 
       console.log("[Mutation] deleteUser:", id, author_id, { platform });
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        const target = await requireManageableTarget(ctx, gate, String(id), client);
+        // Reassignment and deletion are atomic: a failed delete must not leave
+        // conversations moved as a partial side effect.
+        if (target.tenant_id) {
+          await reassignStaffConversations(target.tenant_id, id, client);
+        }
         const res = platform
           ? await client.query(`DELETE FROM users WHERE id=$1`, [id])
           : await client.query(`DELETE FROM users WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
@@ -5184,14 +5533,19 @@ const rawResolvers = {
           });
         }
 
-        return ok;
+        return { ok, role: target.role };
       });
 
-      return result;
+      if (result.ok) {
+        await audit(ctx, "user.delete", String(id), { role: result.role });
+      }
+
+      return result.ok;
     },
     deleteUsers: async (_: any, { ids }: { ids: string[] }, ctx: any) => {
-      // gate: platform admin ลบได้ทุกร้าน · Administrator เฉพาะร้านตัวเอง
-      const { platform, tenantId } = await requireUserAdmin(ctx);
+      // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
+      const gate = await requireUserAdmin(ctx, "user.manage");
+      const { platform, tenantId } = gate;
       const author_id = String(requireAuth(ctx).author_id);
 
       console.log("[Mutation] deleteUsers :", author_id, { platform });
@@ -5200,14 +5554,25 @@ const rawResolvers = {
 
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const uuidIds = ids.filter((i) => uuidPattern.test(i));
+      // กรองบัญชีตัวเองออกเสมอ (เหมือน deleteUser) แทนที่จะปฏิเสธทั้ง batch — เลือกหลายคนรวมตัวเอง
+      // มาด้วยได้ แค่ตัวเองไม่โดนลบ ที่เหลือยังลบตามปกติ
+      const uuidIds = [...new Set(ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id))].sort();
 
       if (uuidIds.length === 0) return false;
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
+        const targets = await requireManageableTargets(ctx, gate, uuidIds, client);
+        if (targets.length === 0) return { ok: false, ids: [] as string[] };
+        const deletableIds = targets.map((t) => t.id);
+
+        for (const t of targets) {
+          if (t.tenant_id) {
+            await reassignStaffConversations(t.tenant_id, t.id, client, deletableIds);
+          }
+        }
         const res = platform
-          ? await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [uuidIds])
-          : await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND tenant_id=$2`, [uuidIds, tenantId]);
+          ? await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [deletableIds])
+          : await client.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND tenant_id=$2`, [deletableIds, tenantId]);
 
         const affected = res.rowCount ?? 0; // กัน null ที่นี่
 
@@ -5216,14 +5581,18 @@ const rawResolvers = {
             "info",
             "user-delete",
             `Deleted ${affected} user(s)`,
-            { userId: author_id, deletedIds: uuidIds }
+            { userId: author_id, deletedIds: deletableIds }
           );
         }
 
-        return affected > 0;
+        return { ok: affected > 0, ids: deletableIds };
       });
 
-      return result;
+      if (result.ok) {
+        await audit(ctx, "user.delete_bulk", null, { ids: result.ids, count: result.ids.length });
+      }
+
+      return result.ok;
     },
     updateMyProfile: async (_:any, { data }:{ data: { name?: string, avatar?: string, phone?: string }}, ctx:any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -6156,33 +6525,146 @@ const rawResolvers = {
       return result;
     },
     createSupportTicket: async (_: any, { input }: any, ctx: any) => {
-      // ticketId แบบง่าย
-      const ticketId = `SUP-${Date.now()}`;
+      const ticketId = `SUP-${Date.now()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+      const ip =
+        ctx?.req?.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+        ctx?.req?.headers?.get?.("x-real-ip") ||
+        ctx?.req?.headers?.get?.("cf-connecting-ip") ||
+        null;
+
+      await query(
+        `INSERT INTO support_tickets
+           (ticket_id, name, email, phone, topic, subject, message, ref, page_url, user_agent, ip)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          ticketId,
+          String(input.name || "").trim() || null,
+          String(input.email || "").trim(),
+          input.phone ? String(input.phone).trim() : null,
+          String(input.topic || "").trim(),
+          String(input.subject || "").trim(),
+          String(input.message || "").trim(),
+          input.ref ? String(input.ref).trim() : null,
+          input.pageUrl ? String(input.pageUrl).slice(0, 1000) : null,
+          input.userAgent ? String(input.userAgent).slice(0, 1000) : null,
+          ip,
+        ]
+      );
 
       const subject = `[${ticketId}] ${input.topic.toUpperCase()}: ${input.subject}`;
 
       const html = `
         <h2>New Support Ticket</h2>
         <p><b>Ticket:</b> ${ticketId}</p>
-        <p><b>Name:</b> ${input.name}</p>
-        <p><b>Email:</b> ${input.email}</p>
-        <p><b>Phone:</b> ${input.phone ?? "-"}</p>
-        <p><b>Topic:</b> ${input.topic}</p>
-        <p><b>Ref:</b> ${input.ref ?? "-"}</p>
-        <p><b>Page:</b> ${input.pageUrl ?? "-"}</p>
-        <p><b>User-Agent:</b> ${input.userAgent ?? "-"}</p>
+        <p><b>Name:</b> ${escapeHtml(String(input.name || "-"))}</p>
+        <p><b>Email:</b> ${escapeHtml(String(input.email || "-"))}</p>
+        <p><b>Phone:</b> ${escapeHtml(String(input.phone ?? "-"))}</p>
+        <p><b>Topic:</b> ${escapeHtml(String(input.topic || "-"))}</p>
+        <p><b>Ref:</b> ${escapeHtml(String(input.ref ?? "-"))}</p>
+        <p><b>Page:</b> ${escapeHtml(String(input.pageUrl ?? "-"))}</p>
+        <p><b>User-Agent:</b> ${escapeHtml(String(input.userAgent ?? "-"))}</p>
         <hr />
-        <pre style="white-space:pre-wrap">${escapeHtml(input.message)}</pre>
+        <pre style="white-space:pre-wrap">${escapeHtml(String(input.message || ""))}</pre>
       `;
 
-      await sendEmail({
-        to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
-        subject,
-        html,
-        text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
-      });
+      try {
+        await sendEmail(
+          {
+            to: process.env.SUPPORT_TO_EMAIL ?? "support@yourdomain.com",
+            subject,
+            html,
+            text: `${input.message}\n\nFrom: ${input.name} <${input.email}>`,
+          },
+          { category: "support", triggeredBy: "resolvers:createSupportTicket" }
+        );
+      } catch (e: any) {
+        console.error("[support] email notification failed", e?.message || e);
+      }
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
+    },
+    bmsUpdateSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
+      const ticketId = String(input.id || "").trim();
+      const nextStatus = input.status ? String(input.status).trim() : null;
+      const comment = input.comment ? String(input.comment).trim() : "";
+      const allowedStatuses = new Set(["open", "pending", "closed"]);
+      const actorId = ctx?.admin?.id ? String(ctx.admin.id) : null;
+      const actorEmail = ctx?.admin?.email ? String(ctx.admin.email) : null;
+
+      if (!ticketId) {
+        throw new GraphQLError("ticket id is required", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      if (nextStatus && !allowedStatuses.has(nextStatus)) {
+        throw new GraphQLError("invalid support ticket status", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      if (!nextStatus && !comment) {
+        throw new GraphQLError("status or comment is required", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+
+      const { result } = await runInTransaction(actorId || "00000000-0000-0000-0000-000000000000", async (client) => {
+        const current = await client.query<any>(
+          `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                  user_agent, ip, status, created_at, updated_at, closed_at
+             FROM support_tickets
+            WHERE id = $1
+            FOR UPDATE`,
+          [ticketId]
+        );
+        const row = current.rows[0];
+        if (!row) {
+          throw new GraphQLError("support ticket not found", { extensions: { code: "NOT_FOUND" } });
+        }
+
+        const fromStatus = row.status;
+        const toStatus = nextStatus || fromStatus;
+
+        if (nextStatus && nextStatus !== fromStatus) {
+          const closedAtSql = nextStatus === "closed"
+            ? "now()"
+            : fromStatus === "closed"
+            ? "NULL"
+            : "closed_at";
+          await client.query(
+            `UPDATE support_tickets
+                SET status = $2,
+                    updated_at = now(),
+                    closed_at = ${closedAtSql}
+              WHERE id = $1`,
+            [ticketId, nextStatus]
+          );
+        } else if (comment) {
+          await client.query(`UPDATE support_tickets SET updated_at = now() WHERE id = $1`, [ticketId]);
+        }
+
+        if (comment || nextStatus) {
+          const body = comment || `Status changed: ${fromStatus} -> ${toStatus}`;
+          await client.query(
+            `INSERT INTO support_ticket_comments
+               (ticket_id, author_id, author_email, from_status, to_status, body)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [ticketId, actorId, actorEmail, fromStatus, toStatus, body]
+          );
+        }
+
+        const updated = await client.query<any>(
+          `SELECT id, ticket_id, name, email, phone, topic, subject, message, ref, page_url,
+                  user_agent, ip, status, created_at, updated_at, closed_at
+             FROM support_tickets
+            WHERE id = $1`,
+          [ticketId]
+        );
+        const comments = await client.query<any>(
+          `SELECT id, ticket_id, author_id, author_email, from_status, to_status, body, created_at
+             FROM support_ticket_comments
+            WHERE ticket_id = $1
+            ORDER BY created_at DESC`,
+          [ticketId]
+        );
+        return mapSupportTicket(updated.rows[0], comments.rows);
+      });
+
+      return result;
     },
 
     uploadDiagnostics: async (_: any, { input }: any, ctx: any) => {
@@ -7081,12 +7563,25 @@ const rawResolvers = {
     ...bmsProductsResolvers.Mutation,
     ...bmsCustomersResolvers.Mutation,
     ...bmsDashboardResolvers.Mutation,
+    ...bmsAiQualityResolvers.Mutation,
     ...bmsChannelsResolvers.Mutation,
+    ...bmsAiConfigResolvers.Mutation,
+    ...bmsSqlConsoleResolvers.Mutation,
     ...bmsSaasResolvers.Mutation,
     ...bmsPurchaseResolvers.Mutation,
     ...bmsPaymentsResolvers.Mutation,
     ...bmsShippingResolvers.Mutation,
-    ...bmsInboxResolvers.Mutation
+    ...bmsInboxResolvers.Mutation,
+    ...bmsAssistantResolvers.Mutation,
+    ...bmsStoreProfileResolvers.Mutation,
+    ...bmsCouponsResolvers.Mutation,
+    ...bmsMembershipResolvers.Mutation,
+    ...bmsPosResolvers.Mutation,
+    ...bmsReportEngineResolvers.Mutation,
+    ...bmsReportScheduleResolvers.Mutation,
+    ...bmsFollowupsResolvers.Mutation,
+    ...bmsPharmacyResolvers.Mutation,
+    ...bmsRestockSubscriptionsResolvers.Mutation,
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
@@ -7097,6 +7592,7 @@ const rawResolvers = {
   BmsShipment: bmsShippingResolvers.BmsShipment,
   BmsConversation: bmsInboxResolvers.BmsConversation,
   BmsConversationNote: bmsInboxResolvers.BmsConversationNote,
+  BmsAuditEntry: bmsDashboardResolvers.BmsAuditEntry,
 };
 
 export const resolvers = {

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/admin/log-categories
-export async function GET() {
+async function handleGET() {
   const { rows } = await query<{ category: string | null }>(
     `
     SELECT DISTINCT category
@@ -16,3 +17,5 @@ export async function GET() {
 
   return NextResponse.json(rows.map((r) => String(r.category)));
 }
+
+export const GET = withRouteErrorLog("GET /api/admin/log-categories", handleGET);

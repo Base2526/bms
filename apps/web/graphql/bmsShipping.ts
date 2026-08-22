@@ -15,7 +15,11 @@ import {
   cancelShipment,
   getShipment,
   listShipments,
+  listShipmentTrackingEvents,
+  normalizeCarrierLabelUrl,
   getShipmentLabel,
+  bookShipmentLive,
+  syncShipmentLive,
   type Carrier,
   type ShipmentStatus,
 } from "@/lib/bms/shipping";
@@ -30,11 +34,12 @@ export const bmsShippingResolvers = {
   Query: {
     async bmsShipments(
       _p: unknown,
-      args: { orderId?: string; status?: string; limit?: number; offset?: number },
+      args: { search?: string; orderId?: string; status?: string; limit?: number; offset?: number },
       ctx: any
     ) {
       await requirePermission(ctx, "shipping.view");
       return listShipments(getTenantId(ctx), {
+        search: args.search ?? null,
         orderId: args.orderId ?? null,
         status: args.status ?? null,
         limit: args.limit ?? 50,
@@ -50,6 +55,11 @@ export const bmsShippingResolvers = {
     async bmsShipmentLabel(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "shipping.view");
       return getShipmentLabel(getTenantId(ctx), args.id);
+    },
+
+    async bmsShipmentTrackingEvents(_p: unknown, args: { shipmentId: string; limit?: number }, ctx: any) {
+      await requirePermission(ctx, "shipping.view");
+      return listShipmentTrackingEvents(getTenantId(ctx), args.shipmentId, args.limit ?? 100);
     },
   },
 
@@ -70,15 +80,29 @@ export const bmsShippingResolvers = {
       });
       if (res.status === "CREATED") {
         await audit(ctx, "shipping.create", res.shipmentId, { orderId: args.orderId, orderShipped: res.orderShipped });
+        const bookingMessages: Record<string, string> = {
+          UNCONFIGURED: "ยังไม่ได้ตั้งค่า carrier credentials; สร้าง shipment ใน BMS แล้วและกด Book carrier เพื่อลองใหม่ได้",
+          NOT_IMPLEMENTED: "carrier live adapter ยังไม่พร้อม; สร้าง shipment ใน BMS แล้วโดยยังไม่ได้จองกับขนส่ง",
+          CARRIER_ERROR: "carrier booking ล้มเหลว; สร้าง shipment ใน BMS แล้วและกด Book carrier เพื่อลองใหม่ได้",
+          IN_PROGRESS: "carrier booking กำลังดำเนินการ",
+        };
+        const bookingWarning = bookingMessages[res.carrierBookingStatus]
+          ?? (res.carrierWarning ? `carrier booking: ${res.carrierWarning}` : "");
         return {
           status: "CREATED",
           shipmentId: res.shipmentId,
-          message: res.orderShipped ? "สร้างการจัดส่ง · ออร์เดอร์เป็น SHIPPED (ตัดสต็อกแล้ว)" : "แนบการจัดส่งกับออร์เดอร์แล้ว",
+          carrierIntegration: res.carrierIntegration,
+          carrierBookingStatus: res.carrierBookingStatus,
+          message:
+            (res.orderShipped ? "สร้างการจัดส่ง · ออร์เดอร์เป็น SHIPPED (ตัดสต็อกแล้ว)" : "แนบการจัดส่งกับออร์เดอร์แล้ว") +
+            (res.carrierIntegration === "manual" ? "" : ` · carrier ${res.carrierIntegration}`) +
+            (bookingWarning ? ` · ${bookingWarning}` : ""),
         };
       }
       const msg: Record<string, string> = {
         ORDER_NOT_FOUND: "ไม่พบออร์เดอร์",
         BAD_CARRIER: "ขนส่งไม่ถูกต้อง",
+        MISSING_SHIPPING_ADDRESS: "ลูกค้ายังไม่มีที่อยู่จัดส่งในระบบ",
         INVALID_STATE: "สถานะออร์เดอร์ไม่อนุญาตให้จัดส่ง (ต้องเป็น PACKING/SHIPPED)",
       };
       return { status: res.status, shipmentId: null, message: msg[res.status] ?? "ทำรายการไม่ได้" };
@@ -113,14 +137,48 @@ export const bmsShippingResolvers = {
       if (ok) await audit(ctx, "shipping.cancel", args.id);
       return ok;
     },
+
+    async bmsSyncShipmentLive(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "shipping.update");
+      const result = await syncShipmentLive(getTenantId(ctx), args.id);
+      if (result.status === "SYNCED") {
+        await audit(ctx, "shipping.sync_live", args.id, {
+          shipmentStatus: result.shipmentStatus,
+          source: result.source,
+          eventCount: result.eventCount,
+        });
+      }
+      return result;
+    },
+
+    async bmsBookShipmentLive(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "shipping.update");
+      const result = await bookShipmentLive(getTenantId(ctx), args.id);
+      await audit(ctx, "shipping.book_live", args.id, {
+        status: result.status,
+        source: "source" in result ? result.source : null,
+      });
+      return result;
+    },
   },
 
   // field resolvers — normalize snake_case
   BmsShipment: {
     orderId: (p: any) => p.order_id,
     trackingNo: (p: any) => p.tracking_no ?? null,
-    labelUrl: (p: any) => p.label_url ?? null,
+    labelUrl: (p: any) => normalizeCarrierLabelUrl(p.label_url),
+    externalShipmentId: (p: any) => p.external_shipment_id ?? null,
+    carrierLastSyncedAt: (p: any) => toISO(p.carrier_last_synced_at),
+    carrierTrackingSource: (p: any) => p.carrier_tracking_source ?? null,
+    carrierBookingStatus: (p: any) => p.carrier_booking_status ?? "manual",
+    carrierBookingError: (p: any) => p.carrier_booking_error ?? null,
+    carrierBookingAttemptedAt: (p: any) => toISO(p.carrier_booking_attempted_at),
+    marketplaceManaged: (p: any) => Boolean(p.marketplace_managed),
     createdAt: (p: any) => toISO(p.created_at),
     updatedAt: (p: any) => toISO(p.updated_at),
+  },
+  BmsShipmentTrackingEvent: {
+    carrierStatus: (p: any) => p.carrier_status,
+    occurredAt: (p: any) => toISO(p.occurred_at),
   },
 };

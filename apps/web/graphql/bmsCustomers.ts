@@ -12,10 +12,17 @@ import {
   upsertCustomer,
   setCustomerTags,
   addCustomerAddress,
+  updateCustomerAddress,
+  setDefaultCustomerAddress,
+  deleteCustomerAddress,
   deleteCustomer,
+  mergeCustomers,
 } from "@/lib/bms/customers";
+import { listCustomerCouponWallet } from "@/lib/bms/coupons";
+import { getMember, listLoyaltyLedger } from "@/lib/bms/membership";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
+import { audit } from "@/lib/bms/audit";
 
 function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
@@ -64,9 +71,43 @@ export const bmsCustomersResolvers = {
         toGqlError(err);
       }
     },
+    async bmsUpdateCustomerAddress(
+      _p: unknown,
+      args: { addressId: string; label?: string; address: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address);
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsSetDefaultCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        return await setDefaultCustomerAddress(getTenantId(ctx), args.addressId);
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsDeleteCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      return deleteCustomerAddress(getTenantId(ctx), args.addressId);
+    },
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       return deleteCustomer(getTenantId(ctx), args.id);
+    },
+    async bmsMergeCustomers(_p: unknown, args: { keepId: string; mergeId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        const ok = await mergeCustomers(getTenantId(ctx), args.keepId, args.mergeId);
+        await audit(ctx, "customer.merge", args.keepId, { mergedId: args.mergeId });
+        return ok;
+      } catch (err) {
+        toGqlError(err);
+      }
     },
   },
 
@@ -77,5 +118,10 @@ export const bmsCustomersResolvers = {
     addresses: (p: any) => customerAddresses(p.tenant_id, p.id),
     identities: (p: any) => customerIdentities(p.tenant_id, p.id),
     orders: (p: any) => customerOrders(p.tenant_id, p.id),
+    coupons: (p: any) => listCustomerCouponWallet(p.tenant_id, { customerId: p.id }),
+    // สมาชิก/แต้มอยู่ที่นี่ด้วย (7.96) — คนดูข้อมูลลูกค้าไม่ควรต้องเดาว่าต้องไป
+    // อีกหน้า (/admin/loyalty) เพื่อรู้ว่าลูกค้าคนนี้เป็นสมาชิกและมีแต้มเท่าไร
+    membership: (p: any) => getMember(p.tenant_id, p.id),
+    loyaltyLedger: (p: any) => listLoyaltyLedger(p.tenant_id, p.id, 50),
   },
 };

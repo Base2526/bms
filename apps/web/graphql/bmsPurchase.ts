@@ -20,6 +20,7 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { requireAuth } from "@/lib/auth";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : String(d));
 
@@ -27,13 +28,13 @@ export const bmsPurchaseResolvers = {
   Query: {
     async bmsPurchaseOrders(
       _p: unknown,
-      args: { limit?: number; offset?: number },
+      args: { search?: string; limit?: number; offset?: number },
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.view");
       const limit = Math.min(Math.max(Number(args.limit ?? 50), 1), 200);
       const offset = Math.max(Number(args.offset ?? 0), 0);
-      return listPurchaseOrders(getTenantId(ctx), limit, offset);
+      return listPurchaseOrders(getTenantId(ctx), args.search ?? "", limit, offset);
     },
 
     async bmsPurchaseOrder(_p: unknown, args: { id: string }, ctx: any) {
@@ -83,14 +84,23 @@ export const bmsPurchaseResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.receive");
+      const auth = requireAuth(ctx);
       const result = await receivePurchaseOrder(
         getTenantId(ctx),
         args.id,
-        Array.isArray(args.items) ? args.items : []
+        Array.isArray(args.items) ? args.items : [],
+        `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
+        auth.author_id,
+        {
+          audit: {
+            actor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
+            action: "purchase.receive",
+            meta: { surface: "admin" },
+          },
+        }
       );
 
       if (result.status === "RECEIVED" || result.status === "PARTIAL") {
-        await audit(ctx, "purchase.receive", args.id, { status: result.status });
         return {
           status: result.status,
           poId: result.poId,
@@ -99,9 +109,12 @@ export const bmsPurchaseResolvers = {
       }
       const msg: Record<string, string> = {
         PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ",
+        LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
+        INVALID_INPUT: "รายการรับสินค้าไม่ถูกต้อง",
         INVALID_STATE: "สถานะไม่อนุญาตให้รับของ",
         LINE_NOT_FOUND: "ไม่พบรายการสินค้าในใบสั่งซื้อ",
         OVER_RECEIVE: "รับเกินจำนวนที่สั่ง",
+        IDEMPOTENCY_CONFLICT: "คีย์รายการซ้ำถูกใช้กับข้อมูลอื่น",
         EMPTY: "ไม่มีรายการรับของ",
       };
       return { status: result.status, poId: args.id, message: msg[result.status] ?? "ทำรายการไม่ได้" };
@@ -109,7 +122,8 @@ export const bmsPurchaseResolvers = {
 
     async bmsCancelPurchaseOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "purchase.cancel");
-      const ok = await cancelPurchaseOrder(getTenantId(ctx), args.id);
+      const auth = requireAuth(ctx);
+      const ok = await cancelPurchaseOrder(getTenantId(ctx), args.id, auth.author_id);
       if (ok) await audit(ctx, "purchase.cancel", args.id);
       return ok;
     },

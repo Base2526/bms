@@ -19,9 +19,13 @@ import {
 } from "@/lib/auth/server";
 import { cookies } from "next/headers";
 import { verifyActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
+import { isAdminSessionActive } from "@/lib/redisSession";
+import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 
 // 👇 จาก graphql-upload-nextjs
 import { uploadProcess } from "graphql-upload-nextjs";
+import { metricsPlugin } from "@/graphql/metricsPlugin";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
@@ -29,6 +33,8 @@ const server = new ApolloServer({
   schema,
   introspection: process.env.NODE_ENV !== "production",
   csrfPrevention: false,
+  // latency/error rate ต่อ operation → /admin/system-health (fail-open, ไม่ throw)
+  plugins: [metricsPlugin()],
 });
 
 function getClientIp(req: NextRequest) {
@@ -93,6 +99,20 @@ async function createContext(request: NextRequest) {
     // (optional) ถ้าอนาคต admin app ใช้ Bearer ก็เปิดบรรทัดนี้:
     // if (!admin) admin = verifyAdminFromRequest(request);
 
+    // Redis session revocation (lib/redisSession.ts) — the JWT can still be
+    // cryptographically valid (not yet `exp`) but the admin logged out, so this
+    // is the actual enforcement point for "logout means logged out now".
+    // Fail-open: Redis error or a pre-existing token with no `jti` → still trusted.
+    if (admin && !(await isAdminSessionActive(admin.jti))) {
+      admin = null;
+    }
+
+    // Role/tenant/account existence are read fresh. This also rejects a JWT
+    // issued before a password/role change via admin_session_version.
+    if (admin) {
+      admin = await refreshAdminIdentity(admin);
+    }
+
     // drill-down: platform admin กำลัง "เข้าดูมุมร้าน" → override tenant_id
     // เชื่อ token ได้เพราะเซ็นแล้ว + ผูกกับ admin.id (มินต์โดย bmsEnterTenant ที่ตรวจ platform admin แล้ว)
     if (admin) {
@@ -106,7 +126,17 @@ async function createContext(request: NextRequest) {
   } else {
     // ✅ web ใช้ cookie
     user = verifyUserSession();
-    admin = null;
+    admin = verifyAdminSession();
+
+    // Some shared/public GraphQL calls intentionally accept an admin cookie
+    // under web scope. They must receive the same fresh/revocable identity as
+    // explicit admin-scope requests, otherwise x-scope:web bypasses demotion.
+    if (admin && !(await isAdminSessionActive(admin.jti))) {
+      admin = null;
+    }
+    if (admin) {
+      admin = await refreshAdminIdentity(admin);
+    }
 
     // (optional) ถ้าอยากให้ web รองรับ Bearer ด้วย:
     // if (!user) user = verifyUserFromRequest(request);
@@ -131,4 +161,9 @@ const requestHandler = async (request: NextRequest) => {
   return handler(request);
 };
 
-export { requestHandler as POST, requestHandler as GET, requestHandler as OPTIONS };
+// error ที่เกิด "ใน" resolver ถูก metricsPlugin log ให้แล้ว — ตัวครอบนี้รับของที่
+// พังก่อนถึง Apollo (createContext: Redis/JWT/DB ล่ม) กับ multipart upload ซึ่ง
+// เดิมหลุดออกไปเป็น 500 body ว่างโดยไม่มี log
+const loggedHandler = withRouteErrorLog("/api/graphql", requestHandler);
+
+export { loggedHandler as POST, loggedHandler as GET, loggedHandler as OPTIONS };

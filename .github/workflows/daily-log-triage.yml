@@ -4,6 +4,9 @@ name: Daily Log Triage (AI → draft PR)
 # ตั้งค่าที่ต้องมี (Settings → Secrets and variables → Actions):
 #   secrets.BMS_LOG_DATABASE_URL  — connection string (แนะนำ user READ-ONLY, เปิด network ให้ runner เข้าถึง)
 #   secrets.ANTHROPIC_API_KEY     — API key ของ Claude
+# ตั้งค่าเสริม (optional — ถ้าอยากให้รอบรันนี้โผล่ใน /admin/operations-schedule ด้วย):
+#   secrets.BMS_APP_BASE_URL      — URL ของ deployment จริง (ไม่มี = ข้าม step รายงานผลเงียบๆ)
+#   secrets.BMS_CRON_SECRET       — ต้องตรงกับ env BMS_CRON_SECRET ของแอป
 # หมายเหตุ production-safety: เปิดเป็น "draft PR" เสมอ — ห้าม auto-merge/deploy
 
 on:
@@ -90,3 +93,24 @@ jobs:
             พบ error ${{ steps.collect.outputs.groups }} กลุ่ม (24 ชม.)
             เปิด draft PR ให้รีวิวแล้ว 👉 ${{ steps.pr.outputs.url }}
         run: node scripts/bms-log-triage/notify-line.mjs
+
+      - name: Report run outcome to BMS (optional)
+        if: always()
+        env:
+          BMS_APP_BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          BMS_CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+          JOB_STATUS: ${{ job.status }}
+          ERROR_GROUPS: ${{ steps.collect.outputs.groups }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          if [ -z "$BMS_APP_BASE_URL" ]; then
+            echo "BMS_APP_BASE_URL not set — skipping run-history report (feature still works without it)"
+            exit 0
+          fi
+          status="success"
+          if [ "$JOB_STATUS" != "success" ]; then status="error"; fi
+          curl -sf -X POST "$BMS_APP_BASE_URL/api/bms/jobs/report-run" \
+            -H "x-cron-secret: $BMS_CRON_SECRET" \
+            -H "content-type: application/json" \
+            -d "{\"jobName\":\"daily-log-triage\",\"status\":\"$status\",\"output\":{\"errorGroups\":\"${ERROR_GROUPS:-0}\",\"prUrl\":\"${PR_URL:-}\"}}" \
+            || echo "report-run call failed (ignored — doesn't fail the workflow)"

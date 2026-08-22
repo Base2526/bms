@@ -33,7 +33,7 @@ function frontendLogout(reason?: string) {
   addLog( "warn", "frontend-logout", msg, {} );
   window.dispatchEvent(new CustomEvent("frontend-logout", { detail: { reason } }));
   document.cookie = "token=; Max-Age=0; path=/";
-  window.location.href = "/login";
+  window.location.href = "/admin/login";
 }
 
 
@@ -67,6 +67,25 @@ const authLink = setContext((_, { headers }) => {
   };
 });
 
+/**
+ * ดึงข้อความจริงจาก body ของ error ที่มากับ HTTP 4xx
+ *
+ * resolver ฝั่งเรา throw `GraphQLError` พร้อม `http: { status: 400 }` (toGqlError)
+ * แต่ Apollo Client ถือว่า status >= 300 คือ ServerError แล้วตั้ง message เป็น
+ * "Response not successful: Received status code 400" ทับทุกกรณี — ข้อความที่
+ * resolver ตั้งใจบอกผู้ใช้ (เช่น "เกินโควตาแพ็กเกจ...", "บาร์โค้ดซ้ำ") จึงไม่เคย
+ * ขึ้นบนจอ ทั้งที่ server ส่งมาให้แล้วใน body
+ */
+function serverErrorMessage(networkError: any): string | null {
+  const errors = networkError?.result?.errors;
+  if (!Array.isArray(errors)) return null;
+  const msg = errors
+    .map((e: any) => (typeof e?.message === "string" ? e.message.trim() : ""))
+    .filter(Boolean)
+    .join(" · ");
+  return msg || null;
+}
+
 // -------- Error link (จับหมดอายุ/ไม่มีสิทธิ์)
 const errorLink = onError(({ graphQLErrors, networkError }) => {
   // GraphQL error พร้อม code
@@ -91,6 +110,19 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   // HTTP network error
   // @ts-ignore
   const status = networkError?.statusCode || networkError?.response?.status;
+
+  // เขียน message ทับด้วยของจริงจาก server ก่อนส่งต่อให้หน้าจอ (onError ของ
+  // useMutation/useQuery ได้ error ตัวเดียวกันนี้) — ไม่มี body ก็ปล่อยข้อความเดิมไว้
+  const serverMsg = serverErrorMessage(networkError);
+  if (serverMsg) {
+    addLog("error", "graphql", serverMsg, { status: status ?? null });
+    try {
+      (networkError as any).message = serverMsg;
+    } catch {
+      // message เป็น read-only ในบาง environment → ปล่อยข้อความเดิม
+    }
+  }
+
   // 401 = ไม่ได้ล็อกอิน/token เสีย → บังคับออก
   // 403 = ล็อกอินอยู่แต่ไม่มีสิทธิ์ (เช่น requirePermission) → อย่า logout แค่แสดง error
   if (status === 401) {
@@ -105,14 +137,15 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Lazy WebSocket link (สำหรับ Subscription)
 // - keeps auth/first paint lighter by loading ws deps only when needed
 // ----------------------------
-let wsLink: ApolloLink | null = null;
-let wsLinkLoading: Promise<ApolloLink> | null = null;
+type WsScope = "web" | "admin";
+const wsLinks: Partial<Record<WsScope, ApolloLink>> = {};
+const wsLinkLoading: Partial<Record<WsScope, Promise<ApolloLink>>> = {};
 
-async function loadWsLink(): Promise<ApolloLink> {
-  if (wsLink) return wsLink;
-  if (wsLinkLoading) return wsLinkLoading;
+async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
+  if (wsLinks[scope]) return wsLinks[scope]!;
+  if (wsLinkLoading[scope]) return wsLinkLoading[scope]!;
 
-  wsLinkLoading = (async () => {
+  wsLinkLoading[scope] = (async () => {
     const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
       import("@apollo/client/link/subscriptions"),
       import("graphql-ws"),
@@ -123,20 +156,20 @@ async function loadWsLink(): Promise<ApolloLink> {
         url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
         lazy: true,
         retryAttempts: Infinity,
-        connectionParams: () => ({ "x-scope": "web" }),
+        connectionParams: () => ({ "x-scope": scope }),
         on: {
-          connected: () => addLog("info", "ws", "[ws] connected", {}),
-          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { code: ev?.code, reason: ev?.reason }),
-          error: (err: any) => addLog("error", "ws", "[ws] error", { message: err?.message || String(err) }),
+          connected: () => addLog("info", "ws", "[ws] connected", { scope }),
+          closed: (ev: any) => addLog("warn", "ws", "[ws] closed", { scope, code: ev?.code, reason: ev?.reason }),
+          error: (err: any) => addLog("error", "ws", "[ws] error", { scope, message: err?.message || String(err) }),
         },
       })
     );
 
-    wsLink = link;
+    wsLinks[scope] = link;
     return link;
   })();
 
-  return wsLinkLoading;
+  return wsLinkLoading[scope]!;
 }
 
 const lazyWsLink = new ApolloLink((operation) => {
@@ -144,7 +177,8 @@ const lazyWsLink = new ApolloLink((operation) => {
 
   return new Observable((observer) => {
     let sub: any;
-    loadWsLink()
+    const scope: WsScope = window.location.pathname.startsWith("/admin") ? "admin" : "web";
+    loadWsLink(scope)
       .then((link) => {
         const obs = link.request(operation);
         if (!obs) {

@@ -10,11 +10,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { submitPayment, listPayments, PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
   const rows = await listPayments(DEFAULT_TENANT_ID, {
     orderId: url.searchParams.get("orderId"),
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ payments: rows });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
   const method = body.method as PaymentMethod;
@@ -49,3 +50,6 @@ export async function POST(req: NextRequest) {
     result.status === "SUBMITTED" ? 201 : result.status === "ORDER_NOT_FOUND" ? 404 : 400;
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/payment", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/payment", handlePOST);

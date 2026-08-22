@@ -11,10 +11,51 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import {
+  findAlternativeProducts,
+  listSellableProducts,
+  resolveSellableProduct,
+  type SellableProduct,
+} from "./products";
+import { listSellablePacksForSize } from "./productPacks";
+
+export type StockAlternative = Pick<
+  SellableProduct,
+  "sku" | "name" | "price" | "category" | "brand" | "availableTotal" | "availableSizes"
+>;
+
+/**
+ * หน่วยขายที่ขายได้นอกจากหน่วยฐาน (7.86) — บอกโมเดลว่าสินค้านี้ยกแผง/ยกกล่องได้
+ * `price: null` = ร้านไม่ได้ตั้งราคายกหน่วยไว้ ระบบคิดจากราคาต่อหน่วยฐาน × baseQty
+ * โมเดลใช้ได้แค่ `packCode` ห้ามคิดราคาหรือ baseQty เอง
+ */
+export type StockPackOption = {
+  packCode: string;
+  unitName: string;
+  baseQty: number;
+  price: number | null;
+};
 
 export type StockResult =
-  | { status: "IN_STOCK"; sku: string; name: string; price: number; size: string; available: number }
-  | { status: "OUT_OF_STOCK"; sku: string; name: string; price: number; size: string }
+  | {
+      status: "IN_STOCK";
+      sku: string;
+      name: string;
+      price: number;
+      size: string;
+      available: number;
+      /** เว้นไว้เมื่อสินค้านี้ขายเป็นหน่วยฐานอย่างเดียว */
+      packs?: StockPackOption[];
+    }
+  | {
+      status: "OUT_OF_STOCK";
+      sku: string;
+      name: string;
+      price: number;
+      size: string;
+      availableSizes?: Array<{ size: string; available: number }>;
+      alternatives?: StockAlternative[];
+    }
   | {
       status: "SIZE_UNKNOWN";
       sku: string;
@@ -22,7 +63,7 @@ export type StockResult =
       price: number;
       sizes: Array<{ size: string; available: number }>;
     }
-  | { status: "NOT_FOUND"; query: string };
+  | { status: "NOT_FOUND"; query: string; alternatives?: StockAlternative[] };
 
 const SIZE_TOKENS = ["XXL", "XL", "L", "M", "S"];
 
@@ -38,22 +79,12 @@ export function findSize(text: string): string | null {
 
 export type ProductRow = { sku: string; name: string; price: string };
 
-/** หาสินค้าจาก keyword: message มี keyword ตัวใดตัวหนึ่งเป็น substring (ในร้านนั้น) */
+/** Resolve against the shared active catalog search (name/SKU/barcode/category/brand/aliases). */
 export async function resolveProduct(tenantId: string, text: string): Promise<ProductRow | null> {
-  const res = await query<ProductRow>(
-    `SELECT sku, name, price
-       FROM bms_products
-      WHERE tenant_id = $2
-        AND active
-        AND EXISTS (
-          SELECT 1 FROM unnest(keywords) AS k
-           WHERE $1 ILIKE '%' || k || '%'
-        )
-      ORDER BY char_length(name) DESC
-      LIMIT 1`,
-    [text, tenantId]
-  );
-  return res.rows[0] ?? null;
+  const product = await resolveSellableProduct(tenantId, text);
+  return product
+    ? { sku: product.sku, name: product.name, price: String(product.price) }
+    : null;
 }
 
 /**
@@ -66,7 +97,14 @@ export async function checkStock(
   size: string | null
 ): Promise<StockResult> {
   const product = await resolveProduct(tenantId, productText);
-  if (!product) return { status: "NOT_FOUND", query: productText };
+  if (!product) {
+    const { items } = await listSellableProducts(tenantId, {
+      inStockOnly: true,
+      sort: "availability",
+      limit: 3,
+    });
+    return { status: "NOT_FOUND", query: productText, alternatives: items };
+  }
 
   const price = Number(product.price);
 
@@ -95,10 +133,50 @@ export async function checkStock(
   );
   const available = Number(res.rows[0]?.available ?? 0);
   if (available <= 0) {
-    return { status: "OUT_OF_STOCK", sku: product.sku, name: product.name, price, size };
+    const [variants, alternativeResult] = await Promise.all([
+      query<{ size: string; available: number }>(
+        `SELECT size, GREATEST(current_stock - reserved_stock, 0) AS available
+           FROM bms_inventory
+          WHERE tenant_id = $2 AND product_sku = $1
+          ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size), size`,
+        [product.sku, tenantId]
+      ),
+      findAlternativeProducts(tenantId, { sku: product.sku, size, limit: 3 }),
+    ]);
+    return {
+      status: "OUT_OF_STOCK",
+      sku: product.sku,
+      name: product.name,
+      price,
+      size,
+      availableSizes: variants.rows
+        .map((variant) => ({ size: variant.size, available: Number(variant.available) }))
+        .filter((variant) => variant.available > 0),
+      alternatives: alternativeResult.alternatives,
+    };
   }
 
-  return { status: "IN_STOCK", sku: product.sku, name: product.name, price, size, available };
+  // หน่วยขายอื่นนอกจากหน่วยฐาน — ถ้าไม่บอกตรงนี้ โมเดลไม่มีทางรู้รหัสหน่วยขายเลย
+  // แล้ว packCode ของ create_order จะใช้ไม่ได้ (schema สั่งห้ามเดารหัสเอง)
+  const packs = await listSellablePacksForSize(tenantId, product.sku, size);
+  return {
+    status: "IN_STOCK",
+    sku: product.sku,
+    name: product.name,
+    price,
+    size,
+    available,
+    ...(packs.length > 0
+      ? {
+          packs: packs.map((pack) => ({
+            packCode: pack.packCode,
+            unitName: pack.unitName,
+            baseQty: pack.baseQty,
+            price: pack.price,
+          })),
+        }
+      : {}),
+  };
 }
 
 // =============================================================

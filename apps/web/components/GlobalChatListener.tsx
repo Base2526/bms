@@ -148,12 +148,6 @@ const SUB_USER_MESSAGE = gql`
   }
 `;
 
-const SUB_TIME = gql`
-  subscription {
-    time
-  }
-`;
-
 // ===== JACHOEI REALTIME (BLOCK / UNBLOCK) =====
 const Q_MY_BLOCKED_PHONE_KEYS = gql`
   query MyBlockedPhoneKeys {
@@ -485,16 +479,6 @@ export function GlobalChatListener() {
       scheduleRefetchMyBookmarks(client);
     },
     onError: (err) => console.error("[SUB_MY_BOOKMARK_STATUS_CHANGED ERROR]", err),
-  });
-
-  // ===========================================================
-  // C) SUB_TIME → debug WebSocket ทำงานปกติ
-  // ===========================================================
-  useSubscription(SUB_TIME, {
-    onData: ({ data }) => {
-      console.log("[TIME SUB] =", data.data?.time);
-    },
-    onError: (err) => console.error("[TIME SUB ERROR]", err),
   });
 
   return null;

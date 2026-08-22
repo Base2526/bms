@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import { BreadcrumbsProvider } from "@/components/breadcrumbs-context";
 
 const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
   ssr: false,
@@ -18,7 +19,7 @@ const AppFooter = dynamic(() => import("@/components/footer/AppFooter"), {
   loading: () => <div style={{ height: 220 }} />,
 });
 
-const SITE_NAME = "จ่าเฉย (JACHOEI)";
+const SITE_NAME = "BMS";
 const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -27,12 +28,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const seo = {
     th: {
-      title: "จ่าเฉย (Jachoei) — ตรวจสอบการโกงออนไลน์",
-      desc: "ฐานข้อมูลการโกงออนไลน์ ตรวจสอบเบอร์โทร บัญชีธนาคาร ลิงก์ และชื่อเพจ จากรายงานผู้ใช้งานจริง",
+      title: "BMS — AI ช่วยขายของออนไลน์ ตอบแชทและเปิดออเดอร์อัตโนมัติ",
+      desc: "รวมแชทจาก LINE, TikTok, Facebook, Instagram และ Website ไว้ที่เดียว ให้ AI ตอบลูกค้า เช็คสต็อก สร้างออเดอร์ ครบวงจรตั้งแต่แชทแรกจนของถึงมือ",
     },
     en: {
-      title: "จ่าเฉย (Jachoei) — Online Scam Database",
-      desc: "Search and report online scams. Check phone numbers, bank accounts, links, and pages from community reports.",
+      title: "BMS — AI sales assistant for online sellers",
+      desc: "Unify chats from LINE, TikTok, Facebook, Instagram and your website — let AI handle stock checks, orders, and fulfillment end to end.",
     },
   }[lang];
 
@@ -80,13 +81,15 @@ export default async function MainLayout({
           background: "var(--app-bg)",
         }}
       >
-        <div className="jachoei-main-shell">
-          <div className="jachoei-breadcrumb-wrap">
-            <Breadcrumbs />
-          </div>
+        <BreadcrumbsProvider>
+          <div className="jachoei-main-shell">
+            <div className="jachoei-breadcrumb-wrap">
+              <Breadcrumbs />
+            </div>
 
-          <div className="jachoei-main-content">{children}</div>
-        </div>
+            <div className="jachoei-main-content">{children}</div>
+          </div>
+        </BreadcrumbsProvider>
       </main>
 
       <AppFooter lang={lang} />

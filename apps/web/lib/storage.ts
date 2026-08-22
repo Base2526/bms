@@ -1,30 +1,46 @@
 // apps/web/lib/storage.ts
-import path from "path";
-import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
-import { createWriteStream } from "fs";     // 👈 เพิ่ม
+// -------------------------------------------------------------
+// Public API for stored files. Physical placement is decided by the driver in
+// lib/storageDrivers (`local` by default, `s3` for multi-instance deploys) —
+// nothing outside this module should build a filesystem path from `relpath`.
+//
+// `relpath` in the `files` table is the driver-independent key and keeps the
+// same YYYY/MM/DD/<timestamp>-<name> shape it always had, so switching drivers
+// is a copy of the existing tree into a bucket, not a data migration.
+// -------------------------------------------------------------
 import crypto from "crypto";
+import type { Readable } from "stream";
 import { query } from "@/lib/db";
+import { getStorageDriver, toStorageKey } from "@/lib/storageDrivers";
+import type { ByteRange, StoredStat } from "@/lib/storageDrivers";
+import { STORAGE_DIR as LOCAL_STORAGE_DIR } from "@/lib/storageDrivers/local";
 
-export const STORAGE_DIR = process.env.STORAGE_DIR || "/app/storage";
+/**
+ * @deprecated Only meaningful for the `local` driver. Use readStoredFile /
+ * openStoredFileStream / statStoredFile instead of joining paths yourself.
+ */
+export const STORAGE_DIR = LOCAL_STORAGE_DIR;
 
-/** แน่ใจว่ามีโฟลเดอร์เก็บไฟล์ */
-export function ensureStorage() {
-  if (!existsSync(STORAGE_DIR)) {
-    // mkdir sync ไม่ได้บน edge/runtime, ใช้ promises ดีกว่า
-  }
-}
+export type StoredFileRow = {
+  id: number;
+  filename: string;
+  original_name: string | null;
+  mimetype: string | null;
+  size: number;
+  checksum: string;
+  relpath: string;
+  created_at: string;
+  updated_at: string;
+};
 
-/** โฟลเดอร์ย่อยตามวันที่: STORAGE_DIR/YYYY/MM/DD */
-export function dateDir() {
+/** คีย์โฟลเดอร์ย่อยตามวันที่: YYYY/MM/DD */
+export function dateKeyPrefix(): string {
   const now = new Date();
-  const p = path.join(
-    STORAGE_DIR,
+  return [
     String(now.getFullYear()),
     String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0")
-  );
-  return p;
+    String(now.getDate()).padStart(2, "0"),
+  ].join("/");
 }
 
 /** ทำชื่อไฟล์ให้ปลอดภัย */
@@ -32,48 +48,56 @@ export function makeSafeName(name: string) {
   return name.normalize("NFKD").replace(/[^\w.\-]+/g, "_").slice(0, 180);
 }
 
-/** รับ Web File → เซฟลง STORAGE_DIR → คืนข้อมูล row ในตาราง files */
-export async function persistWebFile(file: File, renameTo?: string) {
-  const ab = await file.arrayBuffer();
-  const buf = Buffer.from(ab);
-  const checksum = crypto.createHash("sha256").update(buf).digest("hex");
+function buildKey(rawName: string): { key: string; storedName: string } {
+  const storedName = `${Date.now()}-${makeSafeName(rawName || "file.bin")}`;
+  return { key: `${dateKeyPrefix()}/${storedName}`, storedName };
+}
 
-  const dir = dateDir();
-  await mkdir(dir, { recursive: true });
-
-  const safeName = makeSafeName(renameTo || file.name || "file.bin");
-  const ts = Date.now();
-  const filename = `${ts}-${safeName}`;
-  const full = path.join(dir, filename);
-
-  await writeFile(full, buf);
-
-  // เก็บ path แบบ relative เพื่อย้าย STORAGE_DIR ได้ในอนาคต
-  const rel = full.replace(STORAGE_DIR + path.sep, "");
-
+async function insertFileRow(params: {
+  storedName: string;
+  originalName: string | null;
+  mimetype: string | null;
+  size: number;
+  checksum: string;
+  key: string;
+}): Promise<StoredFileRow> {
   const { rows } = await query(
     `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath)
      VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
-    [filename, file.name || null, file.type || null, buf.length, checksum, rel]
+    [
+      params.storedName,
+      params.originalName,
+      params.mimetype,
+      params.size,
+      params.checksum,
+      params.key,
+    ]
   );
+  return rows[0] as StoredFileRow;
+}
 
-  return rows[0] as {
-    id: number;
-    filename: string;
-    original_name: string | null;
-    mimetype: string | null;
-    size: number;
-    checksum: string;
-    relpath: string;
-    created_at: string;
-    updated_at: string;
-  };
+/** รับ Web File → เซฟผ่าน storage driver → คืนข้อมูล row ในตาราง files */
+export async function persistWebFile(file: File, renameTo?: string): Promise<StoredFileRow> {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const checksum = crypto.createHash("sha256").update(buf).digest("hex");
+  const { key, storedName } = buildKey(renameTo || file.name || "file.bin");
+
+  await getStorageDriver().write(key, buf);
+
+  return insertFileRow({
+    storedName,
+    originalName: file.name || null,
+    mimetype: file.type || null,
+    size: buf.length,
+    checksum,
+    key,
+  });
 }
 
 /**
  * รับ upload object จาก graphql-upload (มี createReadStream)
- * → เซฟลง STORAGE_DIR แบบ stream
+ * → เซฟผ่าน storage driver
  */
 export async function persistUploadStream(
   upload: {
@@ -83,68 +107,64 @@ export async function persistUploadStream(
     createReadStream: () => NodeJS.ReadableStream;
   },
   renameTo?: string
-) {
-  const dir = dateDir();
-  await mkdir(dir, { recursive: true });
+): Promise<StoredFileRow> {
+  const { key, storedName } = buildKey(renameTo || upload.filename || "file.bin");
 
-  const safeName = makeSafeName(renameTo || upload.filename || "file.bin");
-  const ts = Date.now();
-  const filename = `${ts}-${safeName}`;
-  const full = path.join(dir, filename);
-
-  const hash = crypto.createHash("sha256");
-  let size = 0;
-
-  await new Promise<void>((resolve, reject) => {
-    const stream = upload.createReadStream();
-    const out = createWriteStream(full);
-
-    stream.on("error", (err) => {
-      out.destroy();
-      reject(err);
-    });
-
-    out.on("error", reject);
-    out.on("finish", () => resolve());
-
-    stream.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      hash.update(chunk);
-    });
-
-    stream.pipe(out);
-  });
-
-  const checksum = hash.digest("hex");
-
-  // เก็บ path แบบ relative
-  const rel = full.replace(STORAGE_DIR + path.sep, "");
-
-  const { rows } = await query(
-    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
-    [
-      filename,
-      upload.filename || null,
-      upload.mimetype || null,
-      size,
-      checksum,
-      rel,
-    ]
+  const { size, checksum } = await getStorageDriver().writeStream(
+    key,
+    upload.createReadStream()
   );
 
-  return rows[0] as {
-    id: number;
-    filename: string;
-    original_name: string | null;
-    mimetype: string | null;
-    size: number;
-    checksum: string;
-    relpath: string;
-    created_at: string;
-    updated_at: string;
-  };
+  return insertFileRow({
+    storedName,
+    originalName: upload.filename || null,
+    mimetype: upload.mimetype || null,
+    size,
+    checksum,
+    key,
+  });
+}
+
+/**
+ * รับ Buffer ที่สร้างขึ้นในเมมโมรี (เช่นไฟล์ report ที่ generate เอง ไม่มี File/stream object
+ * ให้ใช้แบบ persistWebFile/persistUploadStream) → เซฟผ่าน driver เดียวกัน → คืน row เดียวกัน
+ */
+export async function persistBuffer(
+  buf: Buffer,
+  filename: string,
+  mimetype: string | null
+): Promise<StoredFileRow> {
+  const checksum = crypto.createHash("sha256").update(buf).digest("hex");
+  const { key, storedName } = buildKey(filename);
+
+  await getStorageDriver().write(key, buf);
+
+  return insertFileRow({
+    storedName,
+    originalName: filename || null,
+    mimetype,
+    size: buf.length,
+    checksum,
+    key,
+  });
+}
+
+/** อ่านไฟล์ทั้งก้อน (ใช้กับไฟล์ที่รู้ว่าเล็ก เช่น สลิป/รายงานที่จะแนบอีเมล) */
+export async function readStoredFile(relpath: string): Promise<Buffer> {
+  return getStorageDriver().read(toStorageKey(relpath));
+}
+
+/** คืน null เมื่อไฟล์ไม่มีอยู่ (แปลงเป็น 404 ที่ route ได้ตรง ๆ) */
+export async function statStoredFile(relpath: string): Promise<StoredStat | null> {
+  return getStorageDriver().stat(toStorageKey(relpath));
+}
+
+/** เปิด stream สำหรับส่งออก HTTP (รองรับ Range request) */
+export async function openStoredFileStream(
+  relpath: string,
+  range?: ByteRange
+): Promise<Readable> {
+  return getStorageDriver().openStream(toStorageKey(relpath), range);
 }
 
 /** สร้าง URL เสิร์ฟไฟล์ (แบบ REST ผ่าน id) */

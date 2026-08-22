@@ -11,17 +11,19 @@ import type { NextRequest } from "next/server";
 import { createOrder, type OrderItemInput } from "@/lib/bms/orders";
 import type { Channel } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "test"];
+const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     channel?: unknown;
     customerRef?: unknown;
     items?: unknown;
+    couponCode?: unknown;
   };
 
   const channel = CHANNELS.includes(body.channel as Channel)
@@ -41,7 +43,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "items is required" }, { status: 400 });
   }
 
-  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items });
+  const couponCode = typeof body.couponCode === "string" ? body.couponCode : null;
+  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items, couponCode });
 
   const httpStatus =
     result.status === "CREATED"
@@ -50,7 +53,9 @@ export async function POST(req: NextRequest) {
       ? 404
       : result.status === "EMPTY"
       ? 400
-      : 409; // INSUFFICIENT
+      : 409; // INSUFFICIENT / COUPON_INVALID
 
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const POST = withRouteErrorLog("POST /api/bms/order", handlePOST);

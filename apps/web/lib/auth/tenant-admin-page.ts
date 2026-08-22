@@ -1,0 +1,25 @@
+import "server-only";
+import { redirect } from "next/navigation";
+import { verifyAdminSession } from "@/lib/auth/server";
+import { query } from "@/lib/db";
+
+// Gate หน้าเครื่องมือระดับผู้ดูแลร้าน:
+// Administrator ของร้านเข้าได้ และ platform admin เข้าได้ตอน drill-down/ดูแลระบบ.
+export async function requireTenantAdministratorPage() {
+  const admin = verifyAdminSession();
+  if (!admin) redirect("/admin/login");
+
+  let ok = false;
+  try {
+    const r = await query<{ role: string; is_platform_admin: boolean }>(
+      `SELECT role, is_platform_admin FROM users WHERE id = $1`,
+      [admin.id]
+    );
+    const user = r.rows[0];
+    ok = user?.role === "Administrator" || user?.is_platform_admin === true;
+  } catch {
+    ok = false;
+  }
+
+  if (!ok) redirect("/admin/dashboard");
+}

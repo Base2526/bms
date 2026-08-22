@@ -1,36 +1,30 @@
 // apps/web/app/api/dev/fake/users/route.ts
+// สร้าง BMS staff ปลอม (role Sales/Warehouse สุ่ม) ให้ร้านของผู้ล็อกอิน — สำหรับเทสหน้า Users/สิทธิ์
+// logic การ insert จริงอยู่ที่ lib/bms/devSeed.ts (ใช้ร่วมกับ provisionTestShop())
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminOrInternal } from "@/lib/dev-guards";
-import { query } from "@/lib/db";
-import { nanoid } from "nanoid";
-import crypto from "crypto";
+import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
+import { seedFakeStaff } from "@/lib/bms/devSeed";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
-export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV === "production") return NextResponse.json({ error: "Disabled in production" }, { status: 403 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const body = await req.json();
-  const { count = 3 } = body;
+async function handlePOST(req: NextRequest) {
+  if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
 
-  const guard = requireAdminOrInternal(req);
+  const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const created: any[] = [];
-  for (let i = 0; i < count; i++) {
-    const name = `Test User ${nanoid(5)}`;
-    const email = `test+${nanoid(5)}@example.test`;
-    const phone = `08${Math.floor(10000000 + Math.random() * 90000000)}`;
-    const role = "Subscriber";
-    // Create password_hash same as backend expectation (SHA-256 example)
-    const pwd = "password123";
-    const password_hash = crypto.createHash('sha256').update(pwd).digest('hex');
-
-    const sql = `INSERT INTO users (name, email, phone, role, password_hash, meta, fake_test, created_at)
-                 VALUES ($1,$2,$3,$4,$5,$6, true, NOW()) RETURNING *`;
-    const meta = JSON.stringify({ generated_by: guard.actor?.id ?? "internal", env: process.env.NODE_ENV });
-    const { rows } = await query(sql, [name, email, phone, role, password_hash, meta]);
-    created.push(rows[0]);
+  try {
+    const body = await req.json().catch(() => ({}));
+    const count = Math.min(Math.max(Number(body?.count) || 3, 1), 200);
+    const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
+    const created = await seedFakeStaff(tenantId, count, guard.actor?.id);
+    return NextResponse.json({ ok: true, created });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "insert failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });
   }
-
-  return NextResponse.json({ ok: true, created });
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/users", handlePOST);

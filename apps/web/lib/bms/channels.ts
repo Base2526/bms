@@ -6,7 +6,7 @@
 import { query } from "@/lib/db";
 import { encryptSecret, decryptSecret, maskSecret } from "./crypto";
 
-export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web";
+export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada";
 
 export type ChannelConfig = {
   channel: string;
@@ -65,15 +65,26 @@ export async function upsertChannel(
   );
   const prev = cur.rows[0];
 
-  const hasNew = (v: unknown) => typeof v === "string" && v.trim() !== "";
-  const accessToken = hasNew(input.accessToken)
-    ? encryptSecret(input.accessToken as string)
+  // Credentials are commonly pasted from provider consoles. Strip only surrounding
+  // whitespace so an invisible newline is not persisted as part of the Bearer token
+  // or webhook secret.
+  const normalizedAccessToken = typeof input.accessToken === "string" ? input.accessToken.trim() : "";
+  const normalizedChannelSecret = typeof input.channelSecret === "string" ? input.channelSecret.trim() : "";
+  const accessToken = normalizedAccessToken
+    ? encryptSecret(normalizedAccessToken)
     : prev?.access_token ?? null;
-  const channelSecret = hasNew(input.channelSecret)
-    ? encryptSecret(input.channelSecret as string)
+  const channelSecret = normalizedChannelSecret
+    ? encryptSecret(normalizedChannelSecret)
     : prev?.channel_secret ?? null;
   const active = input.active ?? prev?.active ?? true;
   const extra = input.extra ?? prev?.extra ?? {};
+
+  // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
+  // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ
+  // โดน 401 เงียบ ๆ ทุก request จนกว่าจะมีคนสังเกตเห็นใน Channel Health
+  if (channel !== "web" && active && !channelSecret) {
+    throw new Error("ต้องกรอก channel secret ก่อนเปิดใช้งานช่องทางนี้ (ป้องกันการปลอม webhook)");
+  }
 
   await query(
     `INSERT INTO bms_tenant_channels (tenant_id, channel, access_token, channel_secret, active, extra)

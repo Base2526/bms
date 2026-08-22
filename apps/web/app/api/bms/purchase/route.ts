@@ -15,19 +15,21 @@ import {
   type PoItemInput,
 } from "@/lib/bms/purchase";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
+  const search = url.searchParams.get("search") ?? "";
   const limit = Number(url.searchParams.get("limit")) || 50;
   const offset = Number(url.searchParams.get("offset")) || 0;
-  const rows = await listPurchaseOrders(DEFAULT_TENANT_ID, limit, offset);
+  const rows = await listPurchaseOrders(DEFAULT_TENANT_ID, search, limit, offset);
   return NextResponse.json({ purchaseOrders: rows });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     supplierId?: unknown;
     supplierName?: unknown;
@@ -60,3 +62,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(result, { status: httpStatus });
 }
+
+export const GET = withRouteErrorLog("GET /api/bms/purchase", handleGET);
+export const POST = withRouteErrorLog("POST /api/bms/purchase", handlePOST);

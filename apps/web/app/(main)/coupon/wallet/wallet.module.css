@@ -1,0 +1,657 @@
+.page {
+  min-height: 100vh;
+  padding: 20px;
+  color: #0f172a;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 34rem),
+    linear-gradient(180deg, #f8fbff 0%, #edf4ff 100%);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.page *,
+.page *::before,
+.page *::after {
+  box-sizing: border-box;
+}
+
+.shell {
+  width: min(100%, 820px);
+  margin: 0 auto;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 26px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 30px 30px 0 0;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 52%, #7c3aed 100%);
+  box-shadow: 0 26px 70px rgba(37, 99, 235, 0.22);
+  color: white;
+}
+
+.hero::after {
+  position: absolute;
+  top: -80px;
+  right: -70px;
+  width: 210px;
+  height: 210px;
+  border: 34px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  content: "";
+}
+
+.brandRow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logoMark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 24px;
+  backdrop-filter: blur(10px);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.brandSub {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  margin: 24px 0 10px;
+  font-size: clamp(34px, 7vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.lead {
+  position: relative;
+  z-index: 1;
+  max-width: 690px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.75;
+}
+
+.card {
+  padding: 22px 26px 28px;
+  border: 1px solid #dbeafe;
+  border-top: 0;
+  border-radius: 0 0 30px 30px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.summaryCard {
+  display: grid;
+  gap: 2px;
+  min-height: 86px;
+  align-content: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #f8fafc;
+  text-align: center;
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.summaryCard:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+.summaryCard strong {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.summaryCard span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.green strong { color: #15803d; }
+.orange strong { color: #c2410c; }
+.blue strong { color: #1d4ed8; }
+.gray strong { color: #64748b; }
+
+.infoStrip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin: 4px 0 24px;
+  padding: 13px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 18px;
+  background: #eff6ff;
+}
+
+.infoStrip span {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.infoStrip p {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.section {
+  scroll-margin-top: 24px;
+}
+
+.section + .section {
+  margin-top: 26px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -0.03em;
+}
+
+.sectionHeader span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.couponList {
+  display: grid;
+  gap: 14px;
+}
+
+.couponCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dbeafe;
+  border-radius: 24px;
+  background: white;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+}
+
+.couponCard::before,
+.couponCard::after {
+  position: absolute;
+  left: 92px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #f8fbff;
+  content: "";
+}
+
+.couponCard::before { top: -12px; }
+.couponCard::after { bottom: -12px; }
+
+.ticketStub {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-right: 1px dashed #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff, #dbeafe);
+}
+
+.ticketIcon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 18px;
+  background: white;
+  color: #2563eb;
+  font-size: 28px;
+  font-weight: 950;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.14);
+}
+
+.ticketText {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  writing-mode: vertical-rl;
+}
+
+.couponMain {
+  min-width: 0;
+  padding: 20px;
+}
+
+.couponTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.label {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.code {
+  margin: 3px 0 0;
+  color: #0f172a;
+  font-size: clamp(30px, 7vw, 42px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+
+.statusBadge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.badgeReady {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badgeUpcoming {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.badgeUsed {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badgeUnavailable {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.discount {
+  margin-top: 8px;
+  color: #c2410c;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.conditions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 0;
+}
+
+.conditions div {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.conditions dt {
+  margin: 0 0 2px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.conditions dd {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.noteBox {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.55;
+}
+
+.noteBox p {
+  margin: 0;
+}
+
+.noteBox p + p {
+  margin-top: 4px;
+}
+
+.emptyState,
+.emptyWallet {
+  border: 1px dashed #cbd5e1;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.emptyState {
+  padding: 20px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.emptyWallet {
+  padding: 34px 20px;
+  line-height: 1.7;
+}
+
+.emptyIcon {
+  margin-bottom: 10px;
+  font-size: 40px;
+}
+
+.emptyWallet h2 {
+  margin: 0 0 6px;
+  color: #0f172a;
+}
+
+.emptyWallet p {
+  margin: 0;
+}
+
+.errorState {
+  padding: 36px 20px 28px;
+  text-align: center;
+}
+
+.errorIcon {
+  display: grid;
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 16px;
+  place-items: center;
+  border-radius: 22px;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 34px;
+  font-weight: 950;
+}
+
+.errorState h1 {
+  margin: 6px 0 12px;
+  font-size: clamp(30px, 7vw, 46px);
+  line-height: 1.05;
+}
+
+.errorState p {
+  margin: 8px 0 0;
+  color: #475569;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.footer {
+  margin-top: 28px;
+  text-align: center;
+}
+
+.footer a {
+  display: inline-flex;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+@media (max-width: 860px) {
+  .page {
+    padding: 16px;
+  }
+
+  .shell {
+    width: 100%;
+  }
+
+  .hero {
+    padding: 24px;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .couponCard {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .couponCard::before,
+  .couponCard::after {
+    left: 80px;
+  }
+
+  .ticketIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    font-size: 25px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px;
+  }
+
+  .hero {
+    border-radius: 24px 24px 0 0;
+  }
+
+  .card {
+    border-radius: 0 0 24px 24px;
+  }
+
+  .hero,
+  .card {
+    padding-inline: 18px;
+  }
+
+  .hero h1 {
+    margin-top: 20px;
+    letter-spacing: -0.045em;
+  }
+
+  .lead {
+    font-size: 15px;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summaryCard {
+    min-height: 76px;
+    border-radius: 17px;
+  }
+
+  .summaryCard strong {
+    font-size: 26px;
+  }
+
+  .infoStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .couponCard {
+    grid-template-columns: 1fr;
+  }
+
+  .couponCard::before,
+  .couponCard::after {
+    display: none;
+  }
+
+  .ticketStub {
+    grid-template-columns: auto 1fr;
+    justify-content: start;
+    place-items: center start;
+    border-right: 0;
+    border-bottom: 1px dashed #bfdbfe;
+  }
+
+  .ticketText {
+    writing-mode: horizontal-tb;
+  }
+
+  .couponTop {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .statusBadge {
+    align-self: flex-start;
+  }
+
+  .conditions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .page {
+    padding: 0;
+    background: #f8fbff;
+  }
+
+  .hero,
+  .card {
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .brandRow {
+    align-items: flex-start;
+  }
+
+  .logoMark {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    font-size: 22px;
+  }
+
+  .hero h1 {
+    font-size: 34px;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .summaryCard {
+    min-height: 68px;
+    padding: 10px 8px;
+  }
+
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .couponMain {
+    padding: 16px;
+  }
+
+  .code {
+    font-size: 32px;
+  }
+
+  .discount {
+    font-size: 22px;
+  }
+
+  .conditions div,
+  .noteBox {
+    border-radius: 14px;
+  }
+}
+
+@media (hover: none) {
+  .summaryCard:hover {
+    border-color: #e2e8f0;
+    box-shadow: none;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summaryCard {
+    transition: none;
+  }
+}

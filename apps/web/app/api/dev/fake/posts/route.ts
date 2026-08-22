@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { requireAdminOrInternal } from "@/lib/dev-guards";
+import { requirePlatformAdminSeeder } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { nanoid } from "nanoid";
 import { persistWebFile } from "@/lib/storage";
 import dayjs from "dayjs";
+import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,7 @@ function makeWebFileFromBuffer(buf: Buffer, filename: string, mime: string) {
   } as unknown as File;
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   console.log("[POST] - dev fake posts with images + new fields");
 
   if (process.env.NODE_ENV === "production") {
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
   const { count = 5 } = body;
 
   // Admin only
-  const guard = requireAdminOrInternal(req);
+  const guard = await requirePlatformAdminSeeder();
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // =============================
@@ -203,3 +204,5 @@ export async function POST(req: NextRequest) {
     created,
   });
 }
+
+export const POST = withRouteErrorLog("POST /api/dev/fake/posts", handlePOST);

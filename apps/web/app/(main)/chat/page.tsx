@@ -36,6 +36,7 @@ import Link from "next/link";
 import SendMessageSection from "@/components/chat/SendMessageSection";
 import { formatTimeAgo } from "@/components/comments/Helper";
 import { useGlobalChatStore } from "@/store/globalChatStore";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -684,6 +685,7 @@ function renderDeliveryTicks(receipt: any) {
 const PAGE_SIZE = 30;
 
 function ChatUI() {
+  const { t: tr } = useI18n();
   const router = useRouter();
   const client = useApolloClient();
   const screens = useBreakpoint();
@@ -1152,8 +1154,8 @@ function ChatUI() {
       title: `Delete chat`,
       content: (
         <>
-          คุณต้องการลบห้อง <b>{c.name || (c.is_group ? "(Group)" : "(1:1)")}</b>{" "}
-          ใช่ไหม?
+          {tr("chatPage.delete_confirm_prefix")} <b>{c.name || (c.is_group ? "(Group)" : "(1:1)")}</b>{" "}
+          {tr("chatPage.delete_confirm_suffix")}
         </>
       ),
       okType: "danger",
@@ -2769,7 +2771,7 @@ function ChatUI() {
                             color: "var(--app-muted)",
                           }}
                         >
-                          <span>กำลังพิมพ์…</span>
+                          <span>{tr("chatPage.typing_indicator")}</span>
                           <span
                             style={{ display: "inline-flex", gap: 2 }}
                           >
