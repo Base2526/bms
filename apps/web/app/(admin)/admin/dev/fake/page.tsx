@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import { SHOP_ARCHETYPE_OPTIONS } from '@/lib/bms/shopArchetypes';
+import { DEMO_SCENARIO_SHOPS } from '@/lib/bms/demoScenarioSelection';
 import { useI18n } from '@/lib/i18nContext';
 
 const Q_ME = gql`
@@ -35,6 +36,7 @@ type ProvisionResult = {
   tenant: { id: string; slug: string; name: string };
   admin: { email: string; password: string };
   summary: ProvisionSummary;
+  groundTruth?: { id: string; cases: number; generatorVersion: string };
 };
 
 type DemoProvisionResult = {
@@ -43,6 +45,29 @@ type DemoProvisionResult = {
   admin: { email: string; password: string };
   businessArchetype: string;
   summary: ProvisionSummary;
+  groundTruth?: { id: string; cases: number; generatorVersion: string };
+};
+
+type GroundTruthCase = {
+  id?: string;
+  caseKey: string;
+  category: string;
+  questionTh: string;
+  answerType: string;
+  expected: { value?: unknown };
+  tolerance: number;
+  tags: string[];
+};
+
+type GroundTruthRun = {
+  id: string;
+  label: string;
+  generatorVersion: string;
+  dataFingerprint: string;
+  generatedAt: string;
+  stale: boolean;
+  sourceSnapshot: Record<string, any>;
+  cases: GroundTruthCase[];
 };
 
 function channelOrderSummary(summary: ProvisionSummary): string {
@@ -50,15 +75,10 @@ function channelOrderSummary(summary: ProvisionSummary): string {
   return `POS ${counts.pos ?? 0} · LINE ${counts.line ?? 0} · IG ${counts.instagram ?? 0} · Facebook ${counts.facebook ?? 0} · Web ${counts.web ?? 0} · TikTok ${counts.tiktok ?? 0} · Shopee ${counts.shopee ?? 0} · Lazada ${counts.lazada ?? 0}`;
 }
 
-const DEMO_BUTTONS = [
-  { key: "fashion", label: "Fashion" },
-  { key: "food", label: "Food" },
-  { key: "beauty", label: "Beauty" },
-  { key: "grocery", label: "Minimart" },
-  { key: "gadgets", label: "Gadget" },
-  { key: "pharmacy", label: "Pharmacy" },
-  { key: "general", label: "General Retail" },
-] as const;
+const DEMO_SHOP_OPTIONS = DEMO_SCENARIO_SHOPS.map((shop) => ({
+  value: shop.key,
+  label: `${shop.name} /${shop.slug}`,
+}));
 
 type CreatedRow = any;
 
@@ -104,8 +124,11 @@ export default function DevFakePage() {
   const [provisioning, setProvisioning] = useState(false);
   const [provisioned, setProvisioned] = useState<ProvisionResult | null>(null);
   const [provisioningDemo, setProvisioningDemo] = useState(false);
+  const [selectedDemoKey, setSelectedDemoKey] = useState<string | undefined>(undefined);
   const [deletingScenarios, setDeletingScenarios] = useState(false);
   const [demoProvisioned, setDemoProvisioned] = useState<DemoProvisionResult[]>([]);
+  const [groundTruth, setGroundTruth] = useState<GroundTruthRun | null>(null);
+  const [groundTruthLoading, setGroundTruthLoading] = useState(false);
   const [enterTenant, { loading: entering }] = useMutation(M_ENTER_TENANT, {
     // reload ทั้งหน้าเพื่อให้ context (tenant) ใหม่มีผลกับทุกหน้า — pattern เดียวกับ /admin/tenants
     onCompleted: () => { window.location.href = '/admin/dashboard'; },
@@ -147,19 +170,27 @@ export default function DevFakePage() {
     } finally { setProvisioning(false); }
   }
 
-  async function provisionDemoShops(shopKey?: string) {
+  async function provisionDemoShop() {
+    if (!selectedDemoKey) {
+      message.warning(t('admin_dev_fake.scenario_select_required'));
+      return;
+    }
     setProvisioningDemo(true);
     try {
       const res = await fetch('/api/dev/fake/provision-demo-shops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(shopKey ? { shopKey } : {}),
+        body: JSON.stringify({ shopKey: selectedDemoKey }),
         credentials: 'include',
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || 'Failed');
       message.success(t('admin_dev_fake.demo_created', { count: j.created?.length || 0 }));
-      setDemoProvisioned(j.created || []);
+      setDemoProvisioned((current) => {
+        const createdRows: DemoProvisionResult[] = j.created || [];
+        const createdKeys = new Set(createdRows.map((row) => row.key));
+        return [...createdRows, ...current.filter((row) => !createdKeys.has(row.key))];
+      });
     } catch (e: any) {
       message.error(e.message || 'Error');
     } finally {
@@ -213,9 +244,65 @@ export default function DevFakePage() {
       if (!res.ok) throw new Error(j?.error || 'Failed');
       message.success(`Created ${j.created?.length || 0} ${kind}`);
       setCreated(prev => [...(j.created || []), ...prev].slice(0, 300));
+      setGroundTruth((current) => current ? { ...current, stale: true } : current);
     } catch (e: any) {
       message.error(e.message || 'Error');
     } finally { setLoading(false); }
+  }
+
+  async function loadGroundTruth() {
+    if (!selectedTenantId) {
+      message.warning(t('admin_dev_fake.select_shop_first'));
+      return;
+    }
+    setGroundTruthLoading(true);
+    try {
+      const params = new URLSearchParams({ tenantId: selectedTenantId });
+      const res = await fetch(`/api/dev/fake/ground-truth?${params}`, { credentials: 'include' });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || 'Load ground truth failed');
+      setGroundTruth(j.run || null);
+      if (!j.run) message.info(t('admin_dev_fake.ground_truth_not_found'));
+    } catch (e: any) {
+      message.error(e.message || 'Error');
+    } finally {
+      setGroundTruthLoading(false);
+    }
+  }
+
+  async function generateGroundTruth() {
+    if (!selectedTenantId) {
+      message.warning(t('admin_dev_fake.select_shop_first'));
+      return;
+    }
+    setGroundTruthLoading(true);
+    try {
+      const res = await fetch('/api/dev/fake/ground-truth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: selectedTenantId }),
+        credentials: 'include',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || 'Generate ground truth failed');
+      setGroundTruth(j.run);
+      message.success(t('admin_dev_fake.ground_truth_created', { count: j.run?.cases?.length ?? 0 }));
+    } catch (e: any) {
+      message.error(e.message || 'Error');
+    } finally {
+      setGroundTruthLoading(false);
+    }
+  }
+
+  function downloadGroundTruth() {
+    if (!groundTruth) return;
+    const blob = new Blob([JSON.stringify(groundTruth, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bms-ground-truth-${groundTruth.id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function cleanup() {
@@ -237,6 +324,7 @@ export default function DevFakePage() {
         `Deleted ${j.deleted} — restock:${j.bmsRestockSubscriptions ?? 0} orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0} support:${j.supportTickets ?? 0}`
       );
       setCreated([]);
+      setGroundTruth(null);
     } catch (e: any) {
       message.error(e.message || 'Error');
     } finally { setLoading(false); }
@@ -292,14 +380,24 @@ export default function DevFakePage() {
         description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code>, <code>demo-pharmacy</code>, <code>demo-general</code> {t('admin_dev_fake.demo_desc_2')}</>}
       />
       <Space wrap>
-        <Button type="primary" onClick={() => provisionDemoShops()} loading={provisioningDemo}>
-          {t('admin_dev_fake.btn_demo_all')}
+        <Select
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('admin_dev_fake.scenario_select_placeholder')}
+          value={selectedDemoKey}
+          onChange={setSelectedDemoKey}
+          options={DEMO_SHOP_OPTIONS as any}
+          style={{ width: 390, maxWidth: '100%' }}
+          disabled={provisioningDemo || deletingScenarios}
+        />
+        <Button
+          type="primary"
+          onClick={provisionDemoShop}
+          loading={provisioningDemo}
+          disabled={!selectedDemoKey || deletingScenarios}
+        >
+          {t('admin_dev_fake.btn_demo_selected')}
         </Button>
-        {DEMO_BUTTONS.map((demo) => (
-          <Button key={demo.key} onClick={() => provisionDemoShops(demo.key)} loading={provisioningDemo}>
-            {demo.label}
-          </Button>
-        ))}
         <Popconfirm
           title={t('admin_dev_fake.scenario_delete_confirm_title')}
           description={t('admin_dev_fake.scenario_delete_confirm_desc')}
@@ -322,7 +420,7 @@ export default function DevFakePage() {
               showIcon
               style={{ marginTop: 8 }}
               message={`${row.tenant.name} /${row.tenant.slug}`}
-              description={`archetype: ${row.businessArchetype} · staff ${row.summary.staff ?? 0} · POS devices ${row.summary.posDevices ?? 0} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} (${channelOrderSummary(row.summary)}) · inbox chats ${row.summary.conversations ?? 0} · customers ${row.summary.customers ?? 0}`}
+              description={`archetype: ${row.businessArchetype} · staff ${row.summary.staff ?? 0} · POS devices ${row.summary.posDevices ?? 0} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} (${channelOrderSummary(row.summary)}) · inbox chats ${row.summary.conversations ?? 0} · customers ${row.summary.customers ?? 0} · ground truth ${row.groundTruth?.cases ?? 0} cases`}
             />
           ))}
         </div>
@@ -368,9 +466,80 @@ export default function DevFakePage() {
             })}
           </div>
           <div style={{ marginTop: 8 }}>{channelOrderSummary(provisioned.summary)}</div>
+          {provisioned.groundTruth && (
+            <Alert
+              style={{ marginTop: 12 }}
+              type="success"
+              showIcon
+              message={t('admin_dev_fake.ground_truth_auto_created', { count: provisioned.groundTruth.cases })}
+            />
+          )}
         </>
       )}
     </Modal>
+
+    <Card
+      title={t('admin_dev_fake.ground_truth_title')}
+      style={{ marginBottom: 16 }}
+      extra={(
+        <Space wrap>
+          <Button onClick={loadGroundTruth} loading={groundTruthLoading} disabled={!selectedTenantId}>
+            {t('admin_dev_fake.ground_truth_load')}
+          </Button>
+          <Button type="primary" onClick={generateGroundTruth} loading={groundTruthLoading} disabled={!selectedTenantId}>
+            {t('admin_dev_fake.ground_truth_generate')}
+          </Button>
+          <Button onClick={downloadGroundTruth} disabled={!groundTruth}>
+            {t('admin_dev_fake.ground_truth_download')}
+          </Button>
+        </Space>
+      )}
+    >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={t('admin_dev_fake.ground_truth_alert')}
+        description={t('admin_dev_fake.ground_truth_desc')}
+      />
+      {groundTruth && (
+        <>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 4 }} style={{ marginBottom: 12 }}>
+            <Descriptions.Item label="Run ID"><Typography.Text code copyable>{groundTruth.id}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label={t('admin_dev_fake.ground_truth_version')}>{groundTruth.generatorVersion}</Descriptions.Item>
+            <Descriptions.Item label={t('admin_dev_fake.ground_truth_cases')}>{groundTruth.cases.length}</Descriptions.Item>
+            <Descriptions.Item label={t('admin_dev_fake.ground_truth_status')}>
+              <Tag color={groundTruth.stale ? 'orange' : 'green'}>
+                {groundTruth.stale ? t('admin_dev_fake.ground_truth_stale') : t('admin_dev_fake.ground_truth_ready')}
+              </Tag>
+            </Descriptions.Item>
+          </Descriptions>
+          {groundTruth.stale && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('admin_dev_fake.ground_truth_stale_desc')} />
+          )}
+          <Table
+            rowKey="caseKey"
+            size="small"
+            scroll={{ x: 1050 }}
+            pagination={{ pageSize: 10 }}
+            dataSource={groundTruth.cases}
+            columns={[
+              { title: t('admin_dev_fake.ground_truth_category'), dataIndex: 'category', width: 120, render: (value: string) => <Tag>{value}</Tag> },
+              { title: t('admin_dev_fake.ground_truth_question'), dataIndex: 'questionTh', width: 360 },
+              { title: t('admin_dev_fake.ground_truth_type'), dataIndex: 'answerType', width: 110 },
+              {
+                title: t('admin_dev_fake.ground_truth_answer'),
+                key: 'expected',
+                width: 360,
+                render: (_: unknown, row: GroundTruthCase) => (
+                  <Typography.Text code>{JSON.stringify(row.expected?.value)}</Typography.Text>
+                ),
+              },
+            ]}
+          />
+        </>
+      )}
+    </Card>
 
     <Card
       title="Dev: Fake Data Generator"
@@ -379,7 +548,7 @@ export default function DevFakePage() {
           showSearch
           placeholder={t('admin_dev_fake.select_shop_placeholder')}
           value={selectedTenantId}
-          onChange={setSelectedTenantId}
+          onChange={(value) => { setSelectedTenantId(value); setGroundTruth(null); }}
           options={tenantOptions}
           optionFilterProp="label"
           loading={pageLoading || tenantsLoading}
@@ -398,7 +567,7 @@ export default function DevFakePage() {
         options={KINDS}
         style={{ width: 180 }}
       />
-        <InputNumber min={1} max={2000} value={count} onChange={(v) => setCount(v || 1)} />
+        <InputNumber min={1} max={10000} value={count} onChange={(v) => setCount(v || 1)} />
         <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
         <Popconfirm
           title={t('admin_dev_fake.cleanup_confirm_title')}

@@ -22,7 +22,7 @@ async function handlePOST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const count = Math.min(Math.max(Number(body?.count) || 20, 1), 2000);
+  const count = Math.min(Math.max(Number(body?.count) || 20, 1), 10000);
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
     const archetype = normalizeShopArchetype(body?.businessArchetype);
     const { created, summary } = await seedFakeOrders(tenantId, count, archetype);

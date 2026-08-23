@@ -640,3 +640,20 @@ when the dataset is larger than the currently loaded page.
   concurrent runs and resumes failed runs stage by stage; unlike `/api/dev/fake/*`, it does not use
   the development fake-seed feature flag.
 - `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.
+
+## Fake-store ground truth
+
+`POST /api/dev/fake/provision-demo-shops` requires one recognized `shopKey` and provisions exactly
+one fixed scenario tenant per request. An empty body is rejected with `400`; it never means
+"provision all shops" because each scenario contains 10,000 orders and bulk creation can overload a
+development database or exceed an HTTP timeout. `DELETE` on the same route intentionally remains a
+single platform-admin action that removes every fixed scenario tenant. Deletion is one transaction,
+uses the current FK-safe POS/order/product/user ordering, and refuses to commit unless the number of
+deleted tenant rows matches the locked scenario tenants.
+
+`GET|POST|PUT /api/dev/fake/ground-truth` is guarded by the fake-seed environment gate and platform
+administrator check. `GET` returns the latest answer-key run for an existing selected tenant,
+`POST` derives a new run from current database facts, and `PUT` scores bounded structured answers.
+The tenant must resolve through `resolveExistingTenantId`; a client-provided tenant id is never used
+without that server-side existence/authorization check. This API is for QA only and is not an AI
+tool.

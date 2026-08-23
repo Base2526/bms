@@ -22,6 +22,7 @@ import {
 } from "@/lib/bms/devSeed";
 import { seedFakePosDevices } from "@/lib/bms/devPosSeed";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
+import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -42,15 +43,16 @@ async function handlePOST(req: NextRequest) {
   const businessArchetype = normalizeShopArchetype(body?.businessArchetype);
   const c = body?.counts ?? {};
   const counts = {
-    staff: clamp(c.staff, 2, 0, 20),
-    posDevices: clamp(c.posDevices, 1, 1, 5),
-    products: clamp(c.products, 100, 1, 500),
-    customers: clamp(c.customers, 80, 1, 500),
-    orders: clamp(c.orders, 1000, 800, 2000),
-    conversations: clamp(c.conversations, 36, 1, 100),
-    purchase: clamp(c.purchase, 10, 1, 500),
-    coupons: clamp(c.coupons, 5, 0, 200),
-    restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 12 : 0, 0, 200),
+    // One Administrator is provisioned separately, so 44 seeded staff = 45 total.
+    staff: clamp(c.staff, 44, 0, 59),
+    posDevices: clamp(c.posDevices, 6, 1, 12),
+    products: clamp(c.products, 1000, 1, 2000),
+    customers: clamp(c.customers, 2000, 1, 5000),
+    orders: clamp(c.orders, 10000, 800, 20000),
+    conversations: clamp(c.conversations, 500, 1, 2000),
+    purchase: clamp(c.purchase, 200, 1, 2000),
+    coupons: clamp(c.coupons, 36, 0, 200),
+    restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 200 : 0, 0, 1000),
   };
 
   let shop;
@@ -72,12 +74,21 @@ async function handlePOST(req: NextRequest) {
     const restockResult = counts.restockSubscriptions > 0
       ? await seedFakeRestockSubscriptions(shop.tenantId, counts.restockSubscriptions)
       : { summary: { restockSubscriptions: 0, restockDeliveries: 0, restockConversations: 0 } };
+    const groundTruth = await generateFakeGroundTruth(shop.tenantId, {
+      label: `${shop.name} full-store seed`,
+      generatedBy: guard.actor?.id,
+    });
 
     return NextResponse.json({
       ok: true,
       tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name },
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       businessArchetype,
+      groundTruth: {
+        id: groundTruth.id,
+        cases: groundTruth.cases.length,
+        generatorVersion: groundTruth.generatorVersion,
+      },
       summary: {
         staff: staff.length + 1,
         products: products.length,

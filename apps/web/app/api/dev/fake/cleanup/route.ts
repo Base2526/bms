@@ -35,6 +35,7 @@ async function handleDELETE(req: NextRequest) {
     const resConversations = await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resPosShifts = await query(`DELETE FROM bms_pos_shifts WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     const resUsers = await query('DELETE FROM users WHERE fake_test = true AND tenant_id = $1 RETURNING id', [tenantId]);
+    const resEvalRuns = await query('DELETE FROM bms_fake_eval_runs WHERE tenant_id = $1 RETURNING id', [tenantId]);
     const resPO = await query(`DELETE FROM bms_purchase_orders WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
     // coupons ไม่มี FK ผูกกับ order แบบ RESTRICT (bms_orders.coupon_id → ON DELETE SET NULL) ลบตรงได้เลย
     const resCoupons = await query(`DELETE FROM bms_coupons WHERE note LIKE 'FAKE%' AND tenant_id = $1 RETURNING id`, [tenantId]);
@@ -67,7 +68,7 @@ async function handleDELETE(req: NextRequest) {
     const deleted =
       resPosts.rows.length + resUsers.rows.length + resRestock.rows.length + resOrders.rows.length + resConversations.rows.length +
       resPosShifts.rows.length + resPO.rows.length + resCoupons.rows.length + resSuppliers.rows.length + resProducts.rows.length + resCustomers.rows.length +
-      resSupportTickets.rows.length;
+      resSupportTickets.rows.length + resEvalRuns.rows.length;
 
     return NextResponse.json({
       ok: true,
@@ -84,6 +85,7 @@ async function handleDELETE(req: NextRequest) {
       bmsProducts: resProducts.rows.length,
       bmsCustomers: resCustomers.rows.length,
       supportTickets: resSupportTickets.rows.length,
+      fakeEvaluationRuns: resEvalRuns.rows.length,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "cleanup failed" }, { status: e?.message === "ไม่พบร้านที่เลือก" ? 400 : 500 });

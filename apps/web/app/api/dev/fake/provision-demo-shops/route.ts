@@ -13,81 +13,14 @@ import {
   seedFakeStaff,
 } from "@/lib/bms/devSeed";
 import { seedFakePosDevices } from "@/lib/bms/devPosSeed";
-import { type ShopArchetype } from "@/lib/bms/shopArchetypes";
 import { deleteScenarioTenants } from "@/lib/bms/platform";
 import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
+import { DEMO_SCENARIO_SHOPS, parseDemoScenarioKey } from "@/lib/bms/demoScenarioSelection";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEMO_SHOPS: Array<{
-  key: string;
-  name: string;
-  slug: string;
-  businessArchetype: ShopArchetype;
-  counts: {
-    staff: number;
-    posDevices: number;
-    products: number;
-    customers: number;
-    orders: number;
-    conversations: number;
-    purchase: number;
-    coupons: number;
-    restockSubscriptions: number;
-  };
-}> = [
-  {
-    key: "fashion",
-    name: "Nami Studio",
-    slug: "demo-fashion",
-    businessArchetype: "fashion",
-    counts: { staff: 3, posDevices: 1, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 20 },
-  },
-  {
-    key: "food",
-    name: "QuickBite Kitchen",
-    slug: "demo-food",
-    businessArchetype: "food_beverage",
-    counts: { staff: 9, posDevices: 2, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 12 },
-  },
-  {
-    key: "beauty",
-    name: "Lumi Skin",
-    slug: "demo-beauty",
-    businessArchetype: "beauty_personal_care",
-    counts: { staff: 3, posDevices: 1, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 20 },
-  },
-  {
-    key: "grocery",
-    name: "Daily Mart",
-    slug: "demo-minimart",
-    businessArchetype: "mini_mart",
-    counts: { staff: 9, posDevices: 3, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 20 },
-  },
-  {
-    key: "gadgets",
-    name: "Spark Mobile",
-    slug: "demo-gadget",
-    businessArchetype: "gadgets_accessories",
-    counts: { staff: 2, posDevices: 1, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 20 },
-  },
-  {
-    key: "pharmacy",
-    name: "บ้านยาใส่ใจ",
-    slug: "demo-pharmacy",
-    businessArchetype: "pharmacy",
-    counts: { staff: 3, posDevices: 2, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 6, restockSubscriptions: 16 },
-  },
-  {
-    key: "general",
-    name: "Everyday Market",
-    slug: "demo-general",
-    businessArchetype: "other",
-    counts: { staff: 9, posDevices: 2, products: 100, customers: 80, orders: 1000, conversations: 36, purchase: 20, coupons: 8, restockSubscriptions: 16 },
-  },
-];
 
 async function findExistingDemoTenant(slug: string): Promise<{ id: string; slug: string; name: string } | null> {
   const result = await query<{ id: string; slug: string; name: string }>(
@@ -98,6 +31,7 @@ async function findExistingDemoTenant(slug: string): Promise<{ id: string; slug:
 }
 
 async function cleanupDemoBusinessData(tenantId: string) {
+  await query(`DELETE FROM bms_fake_eval_runs WHERE tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_restock_subscriptions WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_orders WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
   await query(`DELETE FROM bms_conversations WHERE customer_ref LIKE 'FAKE-%' AND tenant_id = $1`, [tenantId]);
@@ -136,10 +70,14 @@ async function handlePOST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const rawOnly = typeof body?.shopKey === "string" ? body.shopKey.trim().toLowerCase() : "";
-  const selected = rawOnly ? DEMO_SHOPS.filter((shop) => shop.key === rawOnly) : DEMO_SHOPS;
-  if (!selected.length) {
-    return NextResponse.json({ error: `unknown demo shop "${rawOnly}"` }, { status: 400 });
+  const selectedKey = parseDemoScenarioKey(body?.shopKey);
+  if (!selectedKey) {
+    return NextResponse.json(
+      { error: rawOnly ? `unknown demo shop "${rawOnly}"` : "shopKey is required; create one scenario shop at a time" },
+      { status: 400 }
+    );
   }
+  const selected = DEMO_SCENARIO_SHOPS.filter((shop) => shop.key === selectedKey);
 
   const created = [];
   for (const demo of selected) {
@@ -186,6 +124,10 @@ async function handlePOST(req: NextRequest) {
     const poResult = await seedFakePurchase(shop.tenantId, demo.counts.purchase, demo.businessArchetype);
     const coupons = await seedFakeCoupons(shop.tenantId, demo.counts.coupons, demo.businessArchetype);
     const restock = await seedFakeRestockSubscriptions(shop.tenantId, demo.counts.restockSubscriptions);
+    const groundTruth = await generateFakeGroundTruth(shop.tenantId, {
+      label: `${shop.name} scenario seed`,
+      generatedBy: guard.actor.id,
+    });
 
     created.push({
       key: demo.key,
@@ -193,6 +135,11 @@ async function handlePOST(req: NextRequest) {
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       reusedExistingTenant: !!existing,
       businessArchetype: demo.businessArchetype,
+      groundTruth: {
+        id: groundTruth.id,
+        cases: groundTruth.cases.length,
+        generatorVersion: groundTruth.generatorVersion,
+      },
       summary: {
         staff: staff.length + 1,
         products: products.length,
@@ -223,7 +170,7 @@ async function handleDELETE(_req: NextRequest) {
   if (!guard.ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const deleted = await deleteScenarioTenants(
-    DEMO_SHOPS.map((shop) => shop.slug),
+    DEMO_SCENARIO_SHOPS.map((shop) => shop.slug),
     String(guard.actor.id)
   );
   return NextResponse.json({

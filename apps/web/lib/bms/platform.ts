@@ -175,7 +175,13 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_customers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
-  await client.query(`DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])`, [tenantIds]);
+  const deletedTenants = await client.query<{ id: string }>(
+    `DELETE FROM bms_tenants WHERE id = ANY($1::uuid[]) RETURNING id`,
+    [tenantIds]
+  );
+  if (deletedTenants.rowCount !== tenantIds.length) {
+    throw new Error(`ลบร้านไม่ครบ: ต้องลบ ${tenantIds.length} ร้าน แต่ลบได้ ${deletedTenants.rowCount ?? 0} ร้าน`);
+  }
 }
 
 export async function deleteTenant(tenantId: string): Promise<{ slug: string; name: string }> {
