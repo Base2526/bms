@@ -1612,6 +1612,9 @@ const createPurchaseOrderTool: BmsTool = {
             size: { type: "string" },
             qty: { type: "integer" },
             unitCost: { type: "number" },
+            supplierSku: { type: "string" },
+            supplierProductName: { type: "string" },
+            supplierBarcode: { type: "string" },
           },
           required: ["sku", "size", "qty"],
         },
@@ -1623,6 +1626,9 @@ const createPurchaseOrderTool: BmsTool = {
     const items = reqItems(args).map((it, i) => ({
       ...it,
       unitCost: typeof (args.items?.[i]?.unitCost) === "number" ? args.items[i].unitCost : undefined,
+      supplierSku: typeof (args.items?.[i]?.supplierSku) === "string" ? args.items[i].supplierSku : undefined,
+      supplierProductName: typeof (args.items?.[i]?.supplierProductName) === "string" ? args.items[i].supplierProductName : undefined,
+      supplierBarcode: typeof (args.items?.[i]?.supplierBarcode) === "string" ? args.items[i].supplierBarcode : undefined,
     }));
     const r = await createPurchaseOrder({
       tenantId: ec.tenantId,

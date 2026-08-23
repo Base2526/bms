@@ -342,7 +342,7 @@ const MENU_CARDS_TH: MenuCard[] = [
   {
     title: "Products & Purchase",
     desc: "เพิ่มสินค้า, รูปหลายรูป, stock, reorder point, รับของเข้าคลัง",
-    bullets: ["รูปแรกเป็น cover", "รับของผ่าน Purchase", "กรองหมวดหมู่และค้นหา SKU ได้"],
+    bullets: ["รูปแรกเป็น cover", "รับของผ่าน Purchase", "เลือก Supplier ก่อนสร้าง PO เพื่อค้นหาได้ทั้ง SKU ร้านและ SKU ผู้ขาย", "กรองหมวดหมู่และค้นหา SKU ได้"],
   },
   {
     title: "POS & สมาชิก",
@@ -493,7 +493,7 @@ const LINK_STEPS_TH: LinkStep[] = [
   },
   {
     title: "รับของเข้าคลัง",
-    description: <>เปิด {L.purchase} เพื่อสร้าง PO และรับของ หรือเลือก PO เดิมในแท็บ รับของ ของหน้า POS เพื่อสแกนเป็นร่างและยืนยันเข้าสต็อกสาขาของเครื่อง</>,
+    description: <>เปิด {L.purchase} เลือกผู้ขาย แล้วจับคู่ SKU ผู้ขายกับ SKU ร้าน + ไซซ์ในรายการ PO ครั้งแรก ระบบจะจำ mapping และทุนล่าสุดไว้ใช้ครั้งถัดไป โดยตอนรับของและตัดสต็อกยังยึด SKU ร้านเสมอ จากนั้นรับของในหน้า Purchase หรือเลือก PO เดิมในแท็บ รับของ ของหน้า POS เพื่อสแกนเป็นร่างและยืนยันเข้าสต็อกสาขาของเครื่อง</>,
   },
   {
     title: "ตาม order / payment / shipment",
@@ -1023,6 +1023,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     bullets: [
       "The first image is the cover",
       "Receive goods through Purchase",
+      "Choose a supplier before creating a PO to search by either the shop SKU or supplier SKU",
       "Filter by category and search by SKU",
     ],
   },
@@ -1204,7 +1205,7 @@ const LINK_STEPS_EN: LinkStep[] = [
   },
   {
     title: "Receive goods into the warehouse",
-    description: <>Open {L.purchase} to create a PO and receive goods, or select that PO in the POS Receive tab to scan a draft and confirm it into the register's branch</>,
+    description: <>Open {L.purchase}, choose a supplier, and map its SKU to the shop SKU + size on the first PO. The system reuses that mapping and latest unit cost next time, while receiving and inventory always remain authoritative on the shop SKU. Receive goods there, or select that PO in the POS Receive tab to scan a draft and confirm it into the register's branch</>,
   },
   {
     title: "Follow an order / payment / shipment",

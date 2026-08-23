@@ -14,6 +14,7 @@ import {
   listPurchaseOrders,
   getPurchaseOrder,
   listSuppliers,
+  listSupplierProducts,
   type PoItemInput,
   type ReceiveInput,
 } from "@/lib/bms/purchase";
@@ -46,6 +47,18 @@ export const bmsPurchaseResolvers = {
       await requirePermission(ctx, "purchase.view");
       return listSuppliers(getTenantId(ctx));
     },
+
+    async bmsSupplierProducts(
+      _p: unknown,
+      args: { supplierId: string; search?: string | null; limit?: number | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "purchase.view");
+      return listSupplierProducts(
+        getTenantId(ctx), args.supplierId, args.search ?? "",
+        Math.min(Math.max(Number(args.limit ?? 200), 1), 500)
+      );
+    },
   },
 
   Mutation: {
@@ -74,6 +87,22 @@ export const bmsPurchaseResolvers = {
       }
       if (result.status === "NOT_FOUND") {
         return { status: "NOT_FOUND", poId: null, message: `ไม่พบสินค้า ${result.sku}` };
+      }
+      if (result.status === "SUPPLIER_NOT_FOUND") {
+        return { status: result.status, poId: null, message: "ไม่พบผู้ขายที่เลือก" };
+      }
+      if (result.status === "SUPPLIER_REQUIRED") {
+        return { status: result.status, poId: null, message: "ต้องระบุผู้ขายก่อนบันทึก SKU ผู้ขาย" };
+      }
+      if (result.status === "SUPPLIER_SKU_CONFLICT") {
+        return {
+          status: result.status,
+          poId: null,
+          message: `SKU ผู้ขาย ${result.supplierSku} ถูกผูกกับ ${result.sku} / ${result.size} แล้ว`,
+        };
+      }
+      if (result.status === "INVALID_INPUT") {
+        return { status: result.status, poId: null, message: "ข้อมูลสินค้าในใบสั่งซื้อไม่ถูกต้อง" };
       }
       return { status: "EMPTY", poId: null, message: "ไม่มีรายการสินค้า" };
     },
@@ -141,13 +170,16 @@ export const bmsPurchaseResolvers = {
     async items(p: any, _a: unknown, ctx: any) {
       if (p.items) return p.items;
       const res = await query(
-        `SELECT product_sku, size, qty_ordered, qty_received, unit_cost
+        `SELECT product_sku, size, supplier_sku, supplier_product_name,
+                qty_ordered, qty_received, unit_cost
            FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
           ORDER BY product_sku, size`,
         [getTenantId(ctx), p.id]
       );
       return res.rows.map((r: any) => ({
         sku: r.product_sku, size: r.size,
+        supplierSku: r.supplier_sku,
+        supplierProductName: r.supplier_product_name,
         qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
         unitCost: Number(r.unit_cost),
       }));
