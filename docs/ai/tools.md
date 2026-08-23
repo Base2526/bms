@@ -435,7 +435,8 @@ Input
 
 # Purchase Orders
 
-✅ Implemented — service `lib/bms/purchase.ts`, migration `5.2__bms_purchase.sql`,
+✅ Implemented — service `lib/bms/purchase.ts`, migrations `5.2__bms_purchase.sql` and
+`9.18__bms_supplier_product_mapping.sql`,
 REST `/api/bms/purchase*`, GraphQL `bmsPurchase*`, admin UI `/admin/purchase`.
 
 flow:  OPEN → PARTIAL → RECEIVED  (└→ CANCELLED)
@@ -453,7 +454,10 @@ Input
         sku,
         size,
         qty,            // > 0
-        unitCost?       // ทุน/หน่วย (snapshot)
+        unitCost?,      // ทุน/หน่วย (snapshot)
+        supplierSku?,   // ผูกกับ sku + size ของร้านสำหรับ supplier นี้
+        supplierProductName?,
+        supplierBarcode?
     }
 }
 
@@ -507,9 +511,10 @@ Permission: purchase.cancel
 
 ---
 
-## getPurchaseOrder() / listPurchaseOrders() / listSuppliers()
+## getPurchaseOrder() / listPurchaseOrders() / listSuppliers() / listSupplierProducts()
 
-อ่านใบสั่งซื้อ + ประวัติ supplier (Supplier History)
+อ่านใบสั่งซื้อ + ประวัติ supplier (Supplier History) + catalog mapping ระหว่าง SKU ผู้ขายกับ
+SKU ร้าน/ไซซ์ สต็อกและการรับของยังยึด SKU ร้านเสมอ ส่วน PO เก็บ supplier identity เป็น snapshot
 
 Permission: purchase.view
 

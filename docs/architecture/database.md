@@ -31,7 +31,7 @@ operators must resolve those records before retrying the migration.
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
-| Purchase | `bms_suppliers`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2` |
+| Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
 | Payment | `bms_payments` | `5.3` |
 | POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.17` (`9.4` repair) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
@@ -61,6 +61,12 @@ operators must resolve those records before retrying the migration.
 | Data-integrity lifecycle | event timestamps on `bms_orders` / `bms_payments`; non-negative product-cost constraint | `9.15` |
 
 ## Notable schema details
+
+**Supplier product mapping (`9.18`)** — `bms_supplier_products` is tenant-owned and maps one
+supplier-facing SKU to one authoritative shop `product_sku + size`. Supplier SKU uniqueness is
+case-insensitive within a supplier. The mapping can retain supplier name/barcode, latest unit cost,
+pack/minimum quantities, and lead time, while PO items snapshot the supplier SKU and product name
+used at creation. Inventory foreign keys and all receiving mutations continue to use the shop SKU.
 
 **Data-integrity lifecycle (`9.15`)** — orders retain `paid_at`, `cancelled_at`, and `returned_at`;
 payments retain `confirmed_at`, `rejected_at`, and `refunded_at`. These are event timestamps, not

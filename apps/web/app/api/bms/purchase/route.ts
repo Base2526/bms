@@ -43,6 +43,12 @@ async function handlePOST(req: NextRequest) {
     size: String(r?.size ?? "").trim(),
     qty: Number(r?.qty),
     unitCost: Number(r?.unitCost ?? 0),
+    supplierSku: typeof r?.supplierSku === "string" ? r.supplierSku : null,
+    supplierProductName: typeof r?.supplierProductName === "string" ? r.supplierProductName : null,
+    supplierBarcode: typeof r?.supplierBarcode === "string" ? r.supplierBarcode : null,
+    packQty: r?.packQty == null ? null : Number(r.packQty),
+    minOrderQty: r?.minOrderQty == null ? null : Number(r.minOrderQty),
+    leadTimeDays: r?.leadTimeDays == null ? null : Number(r.leadTimeDays),
   }));
 
   if (items.length === 0) {
@@ -58,7 +64,10 @@ async function handlePOST(req: NextRequest) {
   });
 
   const httpStatus =
-    result.status === "CREATED" ? 201 : result.status === "NOT_FOUND" ? 404 : 400; // EMPTY
+    result.status === "CREATED" ? 201
+      : result.status === "NOT_FOUND" || result.status === "SUPPLIER_NOT_FOUND" ? 404
+        : result.status === "SUPPLIER_SKU_CONFLICT" ? 409
+          : 400;
 
   return NextResponse.json(result, { status: httpStatus });
 }

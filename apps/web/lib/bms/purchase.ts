@@ -19,7 +19,18 @@ import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 
 // ---- types ---------------------------------------------------
-export type PoItemInput = { sku: string; size: string; qty: number; unitCost?: number };
+export type PoItemInput = {
+  sku: string;
+  size: string;
+  qty: number;
+  unitCost?: number;
+  supplierSku?: string | null;
+  supplierProductName?: string | null;
+  supplierBarcode?: string | null;
+  packQty?: number | null;
+  minOrderQty?: number | null;
+  leadTimeDays?: number | null;
+};
 
 export type CreatePOInput = {
   tenantId: string;
@@ -33,6 +44,8 @@ export type CreatePOInput = {
 export type PoLine = {
   sku: string;
   size: string;
+  supplierSku: string | null;
+  supplierProductName: string | null;
   qtyOrdered: number;
   qtyReceived: number;
   unitCost: number;
@@ -41,7 +54,28 @@ export type PoLine = {
 export type CreatePOResult =
   | { status: "CREATED"; poId: string; total: number; supplierId: string | null; items: PoLine[] }
   | { status: "NOT_FOUND"; sku: string }
+  | { status: "SUPPLIER_NOT_FOUND" }
+  | { status: "SUPPLIER_REQUIRED"; supplierSku: string }
+  | { status: "SUPPLIER_SKU_CONFLICT"; supplierSku: string; sku: string; size: string }
+  | { status: "INVALID_INPUT" }
   | { status: "EMPTY" };
+
+export type SupplierProductMapping = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  sku: string;
+  size: string;
+  productName: string;
+  supplierSku: string;
+  supplierProductName: string | null;
+  supplierBarcode: string | null;
+  lastUnitCost: number | null;
+  packQty: number;
+  minOrderQty: number;
+  leadTimeDays: number | null;
+  active: boolean;
+};
 
 export type ReceiveInput = {
   sku: string;
@@ -102,6 +136,78 @@ function isIsoDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function optionalText(value: unknown, maxLength: number): string | null {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  return normalized.slice(0, maxLength);
+}
+
+type SupplierMappingSnapshot = { supplierSku: string | null; supplierProductName: string | null };
+
+async function resolveSupplierMappingInTx(
+  client: PoolClient,
+  tenantId: string,
+  supplierId: string,
+  item: PoItemInput & { unitCost: number }
+): Promise<SupplierMappingSnapshot | { conflict: true; sku: string; size: string }> {
+  const supplierSku = optionalText(item.supplierSku, 200);
+  const supplierProductName = optionalText(item.supplierProductName, 500);
+  const supplierBarcode = optionalText(item.supplierBarcode, 200);
+  const packQty = item.packQty == null ? 1 : Number(item.packQty);
+  const minOrderQty = item.minOrderQty == null ? 1 : Number(item.minOrderQty);
+  const leadTimeDays = item.leadTimeDays == null ? null : Number(item.leadTimeDays);
+
+  if (!supplierSku) {
+    const existing = await client.query<{ supplier_sku: string; supplier_product_name: string | null }>(
+      `UPDATE bms_supplier_products
+          SET last_unit_cost = $5, updated_at = now()
+        WHERE tenant_id = $1 AND supplier_id = $2 AND product_sku = $3 AND size = $4 AND active
+        RETURNING supplier_sku, supplier_product_name`,
+      [tenantId, supplierId, item.sku, item.size, item.unitCost]
+    );
+    return existing.rowCount
+      ? { supplierSku: existing.rows[0].supplier_sku, supplierProductName: existing.rows[0].supplier_product_name }
+      : { supplierSku: null, supplierProductName: null };
+  }
+
+  const conflict = await client.query<{ product_sku: string; size: string }>(
+    `SELECT product_sku, size
+       FROM bms_supplier_products
+      WHERE tenant_id = $1 AND supplier_id = $2 AND lower(supplier_sku) = lower($3)
+        AND (product_sku <> $4 OR size <> $5)
+      LIMIT 1`,
+    [tenantId, supplierId, supplierSku, item.sku, item.size]
+  );
+  if (conflict.rowCount) {
+    return { conflict: true, sku: conflict.rows[0].product_sku, size: conflict.rows[0].size };
+  }
+
+  const mapped = await client.query<{ supplier_sku: string; supplier_product_name: string | null }>(
+    `INSERT INTO bms_supplier_products
+       (tenant_id, supplier_id, product_sku, size, supplier_sku, supplier_product_name,
+        supplier_barcode, last_unit_cost, pack_qty, min_order_qty, lead_time_days, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+     ON CONFLICT (tenant_id, supplier_id, product_sku, size) DO UPDATE SET
+       supplier_sku = EXCLUDED.supplier_sku,
+       supplier_product_name = COALESCE(EXCLUDED.supplier_product_name, bms_supplier_products.supplier_product_name),
+       supplier_barcode = COALESCE(EXCLUDED.supplier_barcode, bms_supplier_products.supplier_barcode),
+       last_unit_cost = EXCLUDED.last_unit_cost,
+       pack_qty = EXCLUDED.pack_qty,
+       min_order_qty = EXCLUDED.min_order_qty,
+       lead_time_days = COALESCE(EXCLUDED.lead_time_days, bms_supplier_products.lead_time_days),
+       active = true,
+       updated_at = now()
+     RETURNING supplier_sku, supplier_product_name`,
+    [tenantId, supplierId, item.sku, item.size, supplierSku, supplierProductName,
+      supplierBarcode, item.unitCost, packQty, minOrderQty, leadTimeDays]
+  );
+  return {
+    supplierSku: mapped.rows[0].supplier_sku,
+    supplierProductName: mapped.rows[0].supplier_product_name,
+  };
+}
+
 /** หา/สร้าง supplier จากชื่อ (ในทรานแซกชันเดียวกัน) — คืน id */
 async function resolveSupplier(
   client: PoolClient,
@@ -127,16 +233,34 @@ async function resolveSupplier(
 // ---- create --------------------------------------------------
 export async function createPurchaseOrder(input: CreatePOInput): Promise<CreatePOResult> {
   const tenantId = input.tenantId;
-  const items = mergeItems(
-    input.items
-      .map((it) => ({
-        sku: String(it.sku ?? "").trim(),
-        size: String(it.size ?? "").trim(),
-        qty: Number(it.qty),
-        unitCost: Number(it.unitCost ?? 0),
-      }))
-      .filter((it) => it.sku && it.size && Number.isInteger(it.qty) && it.qty > 0)
-  );
+  const normalized = input.items.map((it) => ({
+    ...it,
+    sku: String(it.sku ?? "").trim(),
+    size: String(it.size ?? "").trim(),
+    qty: Number(it.qty),
+    unitCost: Number(it.unitCost ?? 0),
+    supplierSku: optionalText(it.supplierSku, 200),
+    supplierProductName: optionalText(it.supplierProductName, 500),
+    supplierBarcode: optionalText(it.supplierBarcode, 200),
+  }));
+  if (normalized.some((it) =>
+    !it.sku || it.sku.length > 200 || !it.size || it.size.length > 100
+    || !Number.isInteger(it.qty) || it.qty <= 0
+    || !Number.isFinite(it.unitCost) || it.unitCost < 0
+    || (it.packQty != null && (!Number.isInteger(Number(it.packQty)) || Number(it.packQty) <= 0))
+    || (it.minOrderQty != null && (!Number.isInteger(Number(it.minOrderQty)) || Number(it.minOrderQty) <= 0))
+    || (it.leadTimeDays != null && (!Number.isInteger(Number(it.leadTimeDays)) || Number(it.leadTimeDays) < 0))
+  )) return { status: "INVALID_INPUT" };
+
+  const identity = new Map<string, string>();
+  for (const item of normalized) {
+    const key = `${item.sku}\u0000${item.size}`;
+    const supplierSku = item.supplierSku?.toLocaleLowerCase() ?? "";
+    const prior = identity.get(key);
+    if (prior != null && prior !== supplierSku) return { status: "INVALID_INPUT" };
+    identity.set(key, supplierSku);
+  }
+  const items = mergeItems(normalized);
   if (items.length === 0) return { status: "EMPTY" };
 
   const client = await getClient();
@@ -156,6 +280,15 @@ export async function createPurchaseOrder(input: CreatePOInput): Promise<CreateP
     }
 
     const supplierId = await resolveSupplier(client, tenantId, input.supplierId, input.supplierName);
+    if (input.supplierId && !supplierId) {
+      await client.query("ROLLBACK");
+      return { status: "SUPPLIER_NOT_FOUND" };
+    }
+    const firstSupplierSku = items.find((item) => item.supplierSku)?.supplierSku;
+    if (firstSupplierSku && !supplierId) {
+      await client.query("ROLLBACK");
+      return { status: "SUPPLIER_REQUIRED", supplierSku: firstSupplierSku };
+    }
 
     const total = items.reduce((sum, it) => sum + it.unitCost * it.qty, 0);
 
@@ -169,13 +302,37 @@ export async function createPurchaseOrder(input: CreatePOInput): Promise<CreateP
 
     const lines: PoLine[] = [];
     for (const it of items) {
+      let mapping: SupplierMappingSnapshot = { supplierSku: null, supplierProductName: null };
+      if (supplierId) {
+        const resolved = await resolveSupplierMappingInTx(client, tenantId, supplierId, it);
+        if ("conflict" in resolved) {
+          await client.query("ROLLBACK");
+          return {
+            status: "SUPPLIER_SKU_CONFLICT",
+            supplierSku: String(it.supplierSku),
+            sku: resolved.sku,
+            size: resolved.size,
+          };
+        }
+        mapping = resolved;
+      }
       await client.query(
         `INSERT INTO bms_purchase_order_items
-           (tenant_id, po_id, product_sku, size, qty_ordered, unit_cost)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [tenantId, poId, it.sku, it.size, it.qty, it.unitCost]
+           (tenant_id, po_id, product_sku, size, supplier_sku, supplier_product_name,
+            qty_ordered, unit_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [tenantId, poId, it.sku, it.size, mapping.supplierSku,
+          mapping.supplierProductName, it.qty, it.unitCost]
       );
-      lines.push({ sku: it.sku, size: it.size, qtyOrdered: it.qty, qtyReceived: 0, unitCost: it.unitCost });
+      lines.push({
+        sku: it.sku,
+        size: it.size,
+        supplierSku: mapping.supplierSku,
+        supplierProductName: mapping.supplierProductName,
+        qtyOrdered: it.qty,
+        qtyReceived: 0,
+        unitCost: it.unitCost,
+      });
     }
 
     await client.query("COMMIT");
@@ -384,8 +541,12 @@ export async function receivePurchaseOrder(
     );
 
     // อ่านรายการล่าสุดกลับไป
-    const items = await client.query<{ product_sku: string; size: string; qty_ordered: number; qty_received: number; unit_cost: string }>(
-      `SELECT product_sku, size, qty_ordered, qty_received, unit_cost
+    const items = await client.query<{
+      product_sku: string; size: string; supplier_sku: string | null;
+      supplier_product_name: string | null; qty_ordered: number; qty_received: number; unit_cost: string;
+    }>(
+      `SELECT product_sku, size, supplier_sku, supplier_product_name,
+              qty_ordered, qty_received, unit_cost
          FROM bms_purchase_order_items WHERE po_id = $1 ORDER BY product_sku, size`,
       [poId]
     );
@@ -395,6 +556,8 @@ export async function receivePurchaseOrder(
       poId,
       items: items.rows.map((r) => ({
         sku: r.product_sku, size: r.size,
+        supplierSku: r.supplier_sku,
+        supplierProductName: r.supplier_product_name,
         qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
         unitCost: Number(r.unit_cost),
       })),
@@ -491,6 +654,7 @@ export async function listPurchaseOrders(tenantId: string, search = "", limit = 
                AND ii.po_id = po.id
                AND (
                  ii.product_sku ILIKE '%' || $4 || '%'
+                 OR COALESCE(ii.supplier_sku, '') ILIKE '%' || $4 || '%'
                  OR ii.size ILIKE '%' || $4 || '%'
                )
           )
@@ -554,7 +718,8 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
   );
   if (head.rowCount === 0) return null;
   const items = await query(
-    `SELECT product_sku, size, qty_ordered, qty_received, unit_cost
+    `SELECT product_sku, size, supplier_sku, supplier_product_name,
+            qty_ordered, qty_received, unit_cost
        FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
       ORDER BY product_sku, size`,
     [tenantId, poId]
@@ -570,6 +735,8 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
     updatedAt: h.updated_at,
     items: items.rows.map((r: any) => ({
       sku: r.product_sku, size: r.size,
+      supplierSku: r.supplier_sku,
+      supplierProductName: r.supplier_product_name,
       qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
       unitCost: Number(r.unit_cost),
     })),
@@ -584,4 +751,53 @@ export async function listSuppliers(tenantId: string) {
     [tenantId]
   );
   return res.rows;
+}
+
+export async function listSupplierProducts(
+  tenantId: string,
+  supplierId: string,
+  search = "",
+  limit = 200
+): Promise<SupplierProductMapping[]> {
+  const q = search.trim();
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const res = await query(
+    `SELECT sp.id, sp.supplier_id, s.name AS supplier_name,
+            sp.product_sku, sp.size, p.name AS product_name,
+            sp.supplier_sku, sp.supplier_product_name, sp.supplier_barcode,
+            sp.last_unit_cost, sp.pack_qty, sp.min_order_qty, sp.lead_time_days, sp.active
+       FROM bms_supplier_products sp
+       JOIN bms_suppliers s
+         ON s.tenant_id = sp.tenant_id AND s.id = sp.supplier_id
+       JOIN bms_products p
+         ON p.tenant_id = sp.tenant_id AND p.sku = sp.product_sku
+      WHERE sp.tenant_id = $1 AND sp.supplier_id = $2
+        AND (
+          $3 = ''
+          OR sp.supplier_sku ILIKE '%' || $3 || '%'
+          OR COALESCE(sp.supplier_product_name, '') ILIKE '%' || $3 || '%'
+          OR COALESCE(sp.supplier_barcode, '') ILIKE '%' || $3 || '%'
+          OR sp.product_sku ILIKE '%' || $3 || '%'
+          OR p.name ILIKE '%' || $3 || '%'
+        )
+      ORDER BY sp.active DESC, p.name, sp.size
+      LIMIT $4`,
+    [tenantId, supplierId, q, lim]
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    sku: r.product_sku,
+    size: r.size,
+    productName: r.product_name,
+    supplierSku: r.supplier_sku,
+    supplierProductName: r.supplier_product_name,
+    supplierBarcode: r.supplier_barcode,
+    lastUnitCost: r.last_unit_cost == null ? null : Number(r.last_unit_cost),
+    packQty: Number(r.pack_qty),
+    minOrderQty: Number(r.min_order_qty),
+    leadTimeDays: r.lead_time_days == null ? null : Number(r.lead_time_days),
+    active: Boolean(r.active),
+  }));
 }

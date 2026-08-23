@@ -14,8 +14,9 @@ import {
   Input,
   InputNumber,
   Select,
+  AutoComplete,
 } from "antd";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useDeferredValue } from "react";
 import {
   ReloadOutlined,
   PlusOutlined,
@@ -28,8 +29,31 @@ import { useI18n } from "@/lib/i18nContext";
 
 // ---- Types --------------------------------------------------
 type POStatus = "OPEN" | "PARTIAL" | "RECEIVED" | "CANCELLED";
-type POItem = { sku: string; size: string; qtyOrdered: number; qtyReceived: number; unitCost: number };
+type POItem = {
+  sku: string;
+  size: string;
+  supplierSku: string | null;
+  supplierProductName: string | null;
+  qtyOrdered: number;
+  qtyReceived: number;
+  unitCost: number;
+};
 type Supplier = { id: string; name: string };
+type SupplierProduct = {
+  id: string;
+  supplierId: string;
+  sku: string;
+  size: string;
+  productName: string;
+  supplierSku: string;
+  supplierProductName: string | null;
+  supplierBarcode: string | null;
+  lastUnitCost: number | null;
+  packQty: number;
+  minOrderQty: number;
+  leadTimeDays: number | null;
+  active: boolean;
+};
 type PO = {
   id: string;
   status: POStatus;
@@ -49,14 +73,27 @@ const Q_POS = gql`
     bmsPurchaseOrders(search: $search, limit: $limit, offset: $offset) {
       id status total note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
-      items { sku size qtyOrdered qtyReceived unitCost }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost }
     }
   }
 `;
-const Q_PRODUCTS = gql`query { bmsProducts { sku name variants { size } } }`;
+const Q_PRODUCTS = gql`
+  query BmsPurchaseProducts($search: String) {
+    bmsProducts(search: $search, limit: 100) { items { sku name variants { size } } }
+  }
+`;
+const Q_SUPPLIERS = gql`query { bmsSuppliers { id name } }`;
+const Q_SUPPLIER_PRODUCTS = gql`
+  query BmsSupplierProducts($supplierId: ID!) {
+    bmsSupplierProducts(supplierId: $supplierId, limit: 500) {
+      id supplierId sku size productName supplierSku supplierProductName supplierBarcode
+      lastUnitCost packQty minOrderQty leadTimeDays active
+    }
+  }
+`;
 const M_CREATE = gql`
-  mutation ($supplierName: String, $note: String, $items: [BmsPurchaseItemInput!]!) {
-    bmsCreatePurchaseOrder(supplierName: $supplierName, note: $note, items: $items) { status poId message }
+  mutation ($supplierId: ID, $supplierName: String, $note: String, $items: [BmsPurchaseItemInput!]!) {
+    bmsCreatePurchaseOrder(supplierId: $supplierId, supplierName: $supplierName, note: $note, items: $items) { status poId message }
   }
 `;
 const M_RECEIVE = gql`
@@ -99,8 +136,8 @@ function PurchaseManagement() {
     variables: { search: search || null, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
   });
-  const { data: prodData } = useQuery(Q_PRODUCTS, { fetchPolicy: "cache-and-network" });
-  const products: ProductOpt[] = prodData?.bmsProducts || [];
+  const { data: supplierData } = useQuery(Q_SUPPLIERS, { fetchPolicy: "cache-and-network" });
+  const suppliers: Supplier[] = supplierData?.bmsSuppliers || [];
 
   const onErr = (e: any) => message.error(e?.message || t("admin_purchase.action_failed"));
   const pos: PO[] = data?.bmsPurchaseOrders || [];
@@ -156,6 +193,8 @@ function PurchaseManagement() {
 
   const itemColumns = [
     { title: "SKU", dataIndex: "sku", key: "sku" },
+    { title: t("admin_purchase.item_col_supplier_sku"), dataIndex: "supplierSku", key: "supplierSku",
+      render: (value: string | null) => value || <Typography.Text type="secondary">—</Typography.Text> },
     { title: "Size", dataIndex: "size", key: "size", width: 80 },
     { title: t("admin_purchase.item_col_received"), dataIndex: "qtyReceived", key: "qr", width: 90, align: "right" as const },
     { title: t("admin_purchase.item_col_remaining"), key: "rem", width: 90, align: "right" as const,
@@ -204,7 +243,7 @@ function PurchaseManagement() {
       />
 
       <CreatePOModal
-        open={createOpen} products={products}
+        open={createOpen} suppliers={suppliers}
         onClose={() => setCreateOpen(false)}
         onDone={() => { setCreateOpen(false); refetch(); }}
       />
@@ -219,10 +258,33 @@ function PurchaseManagement() {
 
 // ---- Create PO modal ----------------------------------------
 function CreatePOModal({
-  open, products, onClose, onDone,
-}: { open: boolean; products: ProductOpt[]; onClose: () => void; onDone: () => void }) {
+  open, suppliers, onClose, onDone,
+}: {
+  open: boolean;
+  suppliers: Supplier[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const { t } = useI18n();
   const [form] = Form.useForm();
+  const [productSearch, setProductSearch] = useState("");
+  const deferredProductSearch = useDeferredValue(productSearch.trim());
+  const { data: prodData, loading: productsLoading } = useQuery(Q_PRODUCTS, {
+    variables: { search: deferredProductSearch || null },
+    skip: !open,
+    fetchPolicy: "cache-and-network",
+  });
+  const queriedProducts: ProductOpt[] = prodData?.bmsProducts?.items || [];
+  const supplierName = Form.useWatch("supplierName", form);
+  const selectedSupplier = suppliers.find(
+    (supplier) => supplier.name.toLocaleLowerCase() === String(supplierName ?? "").trim().toLocaleLowerCase()
+  );
+  const { data: mappingData, loading: mappingsLoading } = useQuery(Q_SUPPLIER_PRODUCTS, {
+    variables: { supplierId: selectedSupplier?.id ?? "" },
+    skip: !open || !selectedSupplier?.id,
+    fetchPolicy: "cache-and-network",
+  });
+  const mappings: SupplierProduct[] = mappingData?.bmsSupplierProducts || [];
   const [create, { loading }] = useMutation(M_CREATE, {
     onCompleted: (d: any) => {
       const res = d?.bmsCreatePurchaseOrder;
@@ -235,20 +297,82 @@ function CreatePOModal({
   const submit = async () => {
     const v = await form.validateFields();
     const items = (v.items || []).map((it: any) => ({
-      sku: it.sku, size: it.size, qty: Number(it.qty), unitCost: Number(it.unitCost ?? 0),
+      sku: it.sku,
+      size: it.size,
+      qty: Number(it.qty),
+      unitCost: Number(it.unitCost ?? 0),
+      supplierSku: it.supplierSku || null,
+      supplierProductName: it.supplierProductName || null,
+      supplierBarcode: it.supplierBarcode || null,
     }));
-    create({ variables: { supplierName: v.supplierName || null, note: v.note || null, items } });
+    create({
+      variables: {
+        supplierId: selectedSupplier?.id ?? null,
+        supplierName: selectedSupplier ? null : v.supplierName || null,
+        note: v.note || null,
+        items,
+      },
+    });
   };
+
+  const fillMapping = (index: number, sku: string, size?: string) => {
+    const candidates = mappings.filter((mapping) =>
+      mapping.active && mapping.sku === sku && (!size || mapping.size === size)
+    );
+    if (candidates.length !== 1) return;
+    const mapping = candidates[0];
+    form.setFieldValue(["items", index, "size"], mapping.size);
+    form.setFieldValue(["items", index, "supplierSku"], mapping.supplierSku);
+    form.setFieldValue(["items", index, "supplierProductName"], mapping.supplierProductName);
+    form.setFieldValue(["items", index, "supplierBarcode"], mapping.supplierBarcode);
+    if (mapping.lastUnitCost != null) form.setFieldValue(["items", index, "unitCost"], mapping.lastUnitCost);
+  };
+
+  const productMap = new Map<string, ProductOpt>(queriedProducts.map((product) => [
+    product.sku,
+    { ...product, variants: [...(product.variants || [])] },
+  ]));
+  for (const mapping of mappings) {
+    const product = productMap.get(mapping.sku);
+    if (!product) {
+      productMap.set(mapping.sku, { sku: mapping.sku, name: mapping.productName, variants: [{ size: mapping.size }] });
+    } else if (!product.variants.some((variant) => variant.size === mapping.size)) {
+      product.variants.push({ size: mapping.size });
+    }
+  }
+  const products = [...productMap.values()];
+  const productOptions = products.map((product) => {
+    const supplierCodes = mappings
+      .filter((mapping) => mapping.sku === product.sku && mapping.active)
+      .map((mapping) => mapping.supplierSku);
+    const suffix = supplierCodes.length ? ` · ${t("admin_purchase.supplier_sku_short")}: ${supplierCodes.join(", ")}` : "";
+    return { value: product.sku, label: `${product.sku} · ${product.name}${suffix}` };
+  });
 
   return (
     <Modal
       title={t("admin_purchase.create_modal_title")} open={open} onCancel={onClose} onOk={submit}
-      confirmLoading={loading} okText={t("admin_purchase.create_ok_text")} cancelText={t("admin_purchase.btn_cancel")} width={720} destroyOnClose
+      confirmLoading={loading} okText={t("admin_purchase.create_ok_text")} cancelText={t("admin_purchase.btn_cancel")} width={1100} destroyOnClose
     >
       <Form form={form} layout="vertical" initialValues={{ items: [{}] }}>
         <Form.Item name="supplierName" label={t("admin_purchase.supplier_label")}>
-          <Input placeholder={t("admin_purchase.supplier_placeholder")} />
+          <AutoComplete
+            allowClear
+            options={suppliers.map((supplier) => ({ value: supplier.name, label: supplier.name }))}
+            placeholder={t("admin_purchase.supplier_placeholder")}
+            filterOption={(input, option) => String(option?.label ?? "").toLocaleLowerCase().includes(input.toLocaleLowerCase())}
+            onSelect={() => form.setFieldValue("items", [{}])}
+            onClear={() => form.setFieldValue("items", [{}])}
+          />
         </Form.Item>
+        <Alert
+          type={selectedSupplier ? "success" : "info"}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={selectedSupplier
+            ? t("admin_purchase.mapping_loaded", { count: mappings.length })
+            : t("admin_purchase.mapping_new_supplier_hint")}
+        />
         <Form.Item name="note" label={t("admin_purchase.note_label")}>
           <Input placeholder={t("admin_purchase.note_placeholder")} />
         </Form.Item>
@@ -260,13 +384,36 @@ function CreatePOModal({
                 <Space key={key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
                   <Form.Item {...rest} name={[name, "sku"]} rules={[{ required: true, message: t("admin_purchase.select_product_required") }]}>
                     <Select
-                      showSearch style={{ width: 200 }} placeholder="SKU"
-                      options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
+                      showSearch loading={mappingsLoading || productsLoading} style={{ width: 260 }} placeholder={t("admin_purchase.shop_sku_placeholder")}
+                      options={productOptions}
                       filterOption={(i, o) => String(o?.label ?? "").toLowerCase().includes(i.toLowerCase())}
+                      onSearch={setProductSearch}
+                      onChange={(sku) => {
+                        const product = products.find((candidate) => candidate.sku === sku);
+                        const onlySize = product?.variants?.length === 1 ? product.variants[0].size : undefined;
+                        if (onlySize) form.setFieldValue(["items", name, "size"], onlySize);
+                        fillMapping(name, sku, onlySize);
+                      }}
                     />
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: t("admin_purchase.size_required") }]}>
-                    <Input placeholder={t("admin_purchase.size_placeholder")} style={{ width: 110 }} />
+                    <Input
+                      placeholder={t("admin_purchase.size_placeholder")}
+                      style={{ width: 100 }}
+                      onBlur={(event) => {
+                        const sku = form.getFieldValue(["items", name, "sku"]);
+                        if (sku) fillMapping(name, sku, event.currentTarget.value.trim());
+                      }}
+                    />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "supplierSku"]}>
+                    <Input placeholder={t("admin_purchase.supplier_sku_placeholder")} style={{ width: 150 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "supplierProductName"]}>
+                    <Input placeholder={t("admin_purchase.supplier_product_name_placeholder")} style={{ width: 190 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "supplierBarcode"]}>
+                    <Input placeholder={t("admin_purchase.supplier_barcode_placeholder")} style={{ width: 150 }} />
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: t("admin_purchase.qty_required") }]}>
                     <InputNumber placeholder={t("admin_purchase.qty_placeholder")} min={1} style={{ width: 100 }} />

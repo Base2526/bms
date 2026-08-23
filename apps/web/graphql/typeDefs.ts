@@ -1007,6 +1007,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPurchaseOrders(search: String, limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
     bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
     bmsSuppliers: [BmsSupplier!]!
+    bmsSupplierProducts(supplierId: ID!, search: String, limit: Int = 200): [BmsSupplierProduct!]!
 
     # ===== BMS Payment (admin) =====
     bmsPayments(search: String, orderId: ID, status: BmsPaymentStatus, limit: Int = 50, offset: Int = 0): [BmsPayment!]!
@@ -1289,6 +1290,8 @@ export const typeDefs = /* GraphQL */ `
   type BmsPurchaseItem {
     sku: String!
     size: String!
+    supplierSku: String
+    supplierProductName: String
     qtyOrdered: Int!
     qtyReceived: Int!
     unitCost: Float!
@@ -1312,6 +1315,29 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     qty: Int!
     unitCost: Float
+    supplierSku: String
+    supplierProductName: String
+    supplierBarcode: String
+    packQty: Int
+    minOrderQty: Int
+    leadTimeDays: Int
+  }
+
+  type BmsSupplierProduct {
+    id: ID!
+    supplierId: ID!
+    supplierName: String!
+    sku: String!
+    size: String!
+    productName: String!
+    supplierSku: String!
+    supplierProductName: String
+    supplierBarcode: String
+    lastUnitCost: Float
+    packQty: Int!
+    minOrderQty: Int!
+    leadTimeDays: Int
+    active: Boolean!
   }
 
   input BmsReceiveItemInput {

@@ -120,6 +120,18 @@ accounting: what's received stays received).
 
 Permissions: `purchase.view` / `purchase.edit` / `purchase.receive` / `purchase.cancel`.
 
+Since `9.18`, `bms_supplier_products` maps the supplier's SKU, product name, and barcode to the
+shop-owned `product_sku + size`. The shop identity remains authoritative for inventory and POS
+receiving. Selecting an existing supplier in the PO form loads these mappings, so staff can search
+by either identity and reuse the last unit cost. Entering a supplier SKU for a new pairing creates
+or updates the mapping in the same transaction as the PO. A supplier SKU cannot point to two shop
+variants for the same supplier.
+
+Each PO line snapshots `supplier_sku` and `supplier_product_name`. Editing a supplier catalog later
+therefore does not rewrite an old PO or make a delivery note impossible to reconcile. Catalog-only
+fields such as pack quantity, minimum order quantity, and lead time remain advisory; receiving
+still validates and moves stock only against the PO's shop SKU and size.
+
 Since `9.6`, an authorised cashier can receive an existing `OPEN`/`PARTIAL` PO from the POS Receive
 tab. Scans only build a draft; confirmation is the stock mutation. Unlike the legacy admin workflow
 (which defaults to the shop's main location), this path takes the active location from the
