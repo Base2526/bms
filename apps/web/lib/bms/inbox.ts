@@ -851,13 +851,22 @@ export async function setConversationTags(tenantId: string, id: string, tags: st
 }
 
 export async function markRead(tenantId: string, id: string): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_conversations SET unread = 0, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+  const res = await query<{ found: boolean; changed: boolean }>(
+    `WITH target AS (
+       SELECT id FROM bms_conversations WHERE tenant_id = $1 AND id = $2
+     ), updated AS (
+       UPDATE bms_conversations c
+          SET unread = 0, updated_at = now()
+         FROM target
+        WHERE c.tenant_id = $1 AND c.id = target.id AND c.unread > 0
+       RETURNING c.id
+     )
+     SELECT EXISTS (SELECT 1 FROM target) AS found,
+            EXISTS (SELECT 1 FROM updated) AS changed`,
     [tenantId, id]
   );
-  const ok = (res.rowCount ?? 0) > 0;
-  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
-  return ok;
+  if (res.rows[0]?.changed) publishInboxChanged(tenantId, id, "READ_CHANGED");
+  return res.rows[0]?.found === true;
 }
 
 // ---- notes (internal) ----------------------------------------

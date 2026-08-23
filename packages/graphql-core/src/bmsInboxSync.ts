@@ -1,7 +1,7 @@
 export type BmsInboxChangedPayload = {
   tenantId: string;
   conversationId: string;
-  kind: "MESSAGES_CHANGED" | "CONVERSATION_CHANGED";
+  kind: "MESSAGES_CHANGED" | "CONVERSATION_CHANGED" | "READ_CHANGED";
   occurredAt: string;
 };
 

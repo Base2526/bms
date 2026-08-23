@@ -510,12 +510,14 @@ coalesced to at most two list queries per second with a guaranteed trailing refr
 20-second conversation-list poll remains a recovery path for a missed socket event.
 
 When `MESSAGES_CHANGED` targets the conversation currently open in Inbox, the browser clears that
-conversation's unread state optimistically and persists `bmsMarkConversationRead` before it
-refetches the authoritative list. This ordering prevents an older `unread` value from restoring the
-card badge. A rendered-message guard and the 20-second list poll cover delayed or missed socket
-events. Because Apollo normalizes list/detail conversation objects, the active list item's
-`unread > 0` state is also observed directly rather than relying only on timestamp differences.
-An operator therefore does not need to click the already-open conversation again.
+conversation's unread state optimistically and persists `bmsMarkConversationRead`. A successful
+transition publishes the narrower `READ_CHANGED` event; clients apply that authoritative zero to
+their list/detail caches without refetching either query. This avoids the old self-triggered
+list/detail request loop while other operators still see the read state in realtime. A
+rendered-message guard and the 20-second list poll cover delayed or missed socket events. Because
+Apollo normalizes list/detail conversation objects, the active list item's `unread > 0` state is
+also observed directly rather than relying only on timestamp differences. An operator therefore
+does not need to click the already-open conversation again.
 
 The active chat pane treats a position within 120 pixels of the bottom as pinned. New messages keep
 a pinned pane at the bottom, while a pane scrolled into older history preserves its position and
