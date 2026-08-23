@@ -271,6 +271,26 @@ test("redeem: refuses when short, and the unique index blocks a second redeem pe
   );
 });
 
+test("redeem: 3,045 points redeems 3,000 and preserves the 45-point remainder", async () => {
+  const phone = `021${String(Date.now()).slice(-7)}`;
+  const r = await enrollMember(tenantId, { phone, name: `FAKE ${TAG} redeem remainder` });
+  if (r.status === "INVALID") return assert.fail(r.reason);
+  const id = r.member.customerId;
+  await adjustPoints({ tenantId, customerId: id, points: 3045, note: "remainder regression" });
+
+  const order = await makeOrder(id, 5000);
+  const redeemed = await inTx((c) =>
+    redeemPointsInTx(c, { tenantId, customerId: id, orderId: order, points: 3000, discount: 300 })
+  );
+  assert.deepEqual(redeemed, { ok: true, pointsUsed: 3000, discount: 300 });
+
+  const member = await getMember(tenantId, id);
+  assert.equal(member?.pointsUsable, 45, "เศษแต้มที่ไม่ครบหน่วยต้องยังอยู่ใช้ในอนาคต");
+  assert.equal(member?.pointsBalance, 45, "cache ยอดแต้มต้องตรงกับ ledger");
+  assert.equal(await usableFromLedger(id), 45);
+  assert.equal(await balanceFromLedger(id), 45);
+});
+
 test("cancel: releasing an order returns redeemed points and claws back earned ones", async () => {
   const phone = `01${String(Date.now()).slice(-8)}`;
   const r = await enrollMember(tenantId, { phone, name: `FAKE ${TAG} cancel` });

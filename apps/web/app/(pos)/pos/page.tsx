@@ -169,6 +169,20 @@ type CartLine = ScanHit & {
   returnedPackQty?: number;
   refundablePackQty?: number;
 };
+
+function cartPricingSignature(line: ScanHit): string {
+  return JSON.stringify({
+    sku: line.sku,
+    size: line.size,
+    packCode: line.packCode,
+    baseQty: line.baseQty,
+    packPrice: line.packPrice,
+    basePrice: line.basePrice,
+    priceTiers: [...(line.priceTiers ?? [])].sort((a, b) => a.minQty - b.minQty),
+    promotion: line.promotion ?? null,
+    serialTracked: line.serialTracked === true,
+  });
+}
 type ReturnDraft = Record<number, number>;
 
 /** สมาชิกที่ค้นเจอจาก /api/pos/member (7.96) */
@@ -467,6 +481,13 @@ function baht(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** ปุ่ม "ทั้งหมด" หมายถึงแต้มที่แลกได้จริง เศษที่ไม่ครบหน่วยต้องคงอยู่ในบัญชี */
+function maxWholeRedeemPoints(pointsUsable: number, pointsPerUnit: number): number {
+  const usable = Math.max(0, Math.floor(pointsUsable));
+  const unit = Math.max(1, Math.floor(pointsPerUnit));
+  return Math.floor(usable / unit) * unit;
+}
+
 function stockLineKey(sku: string, size: string) {
   return JSON.stringify([sku, size]);
 }
@@ -583,6 +604,7 @@ export default function PosPage() {
     { amount: number; reason: string; approverId: string; approverPin: string; approverName: string } | null
   >(null);
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
+  const [memberPreviewAppliedKey, setMemberPreviewAppliedKey] = useState<string | null>(null);
   // ---- พักบิล / เงินลิ้นชัก / ยกเลิกบิล / สรุปกะ (7.97) ----
   const [parked, setParked] = useState<ParkedSale[]>([]);
   const [parkLabel, setParkLabel] = useState("");
@@ -591,6 +613,7 @@ export default function PosPage() {
   const [cashMoveDir, setCashMoveDir] = useState<"IN" | "OUT">("OUT");
   const [cashMoveAmount, setCashMoveAmount] = useState("");
   const [cashMoveReason, setCashMoveReason] = useState("");
+  const [cashMoveExternalConfirmed, setCashMoveExternalConfirmed] = useState(false);
   const [cashApproverId, setCashApproverId] = useState("");
   const [cashApproverPin, setCashApproverPin] = useState("");
   // ค่าใช้จ่ายเงินสดย่อยแยกจาก movement ทั่วไป เพื่อไม่เอาการนำฝากธนาคาร
@@ -599,6 +622,7 @@ export default function PosPage() {
   const [expenseMode, setExpenseMode] = useState<PosExpenseEntryMode>("DIRECT");
   const [canUsePersonalFunds, setCanUsePersonalFunds] = useState(false);
   const [canManagePettyCash, setCanManagePettyCash] = useState(false);
+  const [expenseAccessError, setExpenseAccessError] = useState<string | null>(null);
   const [pettyCashBalance, setPettyCashBalance] = useState(0);
   const [pettyCashEntries, setPettyCashEntries] = useState<PosPettyCashLedgerEntry[]>([]);
   const [pettyFundSource, setPettyFundSource] = useState<"OWNER_PERSONAL" | "BUSINESS_ACCOUNT">("OWNER_PERSONAL");
@@ -956,9 +980,20 @@ export default function PosPage() {
   // ถ้าจอคิดเองแล้วต่างจาก server แม้สตางค์เดียว บิลจะโดน PAYMENT_MISMATCH
   // แล้วถูกยกเลิกทิ้งทั้งใบ
   const discountTotal = memberPreview?.totalDiscount ?? 0;
+  const redeemPointsPerUnit = memberPreview?.redeemPointsPerUnit ?? 100;
+  const maxRedeemPoints = member
+    ? maxWholeRedeemPoints(member.pointsUsable, redeemPointsPerUnit)
+    : 0;
   /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
   const payableBeforeRounding = Math.round((netTotal + extraTotal) * 100) / 100;
+  const memberPreviewRequestKey = JSON.stringify({
+    customerId: member?.customerId ?? null,
+    subtotal: total,
+    pointsToRedeem: Number(pointsToRedeem) || 0,
+    couponCode: couponCode.trim().toUpperCase() || null,
+    manualDiscount: approvedDiscount?.amount ?? 0,
+  });
 
   async function searchMember(term: string) {
     const q = term.trim();
@@ -1023,6 +1058,7 @@ export default function PosPage() {
     setPointsToRedeem("");
     setRedeemOpen(false);
     setMemberPreview(null);
+    setMemberPreviewAppliedKey(null);
     setMemberResults([]);
     setMemberQuery("");
   }
@@ -1140,6 +1176,13 @@ export default function PosPage() {
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ทำรายการและใส่ PIN ก่อน" }); return; }
     if (!cashMoveAmount) { setNotice({ type: "error", text: "ใส่จำนวนเงิน" }); focusLater(cashMoveAmountRef); return; }
     if (!cashMoveReason.trim()) { setNotice({ type: "error", text: "ใส่เหตุผล" }); focusLater(cashMoveReasonRef); return; }
+    if (cashMoveDir === "IN" && !cashMoveExternalConfirmed) {
+      setNotice({
+        type: "error",
+        text: "ยอดขายเงินสดถูกนับเข้าลิ้นชักอัตโนมัติแล้ว · ยืนยันก่อนว่าเงินก้อนนี้มาจากนอกยอดขาย",
+      });
+      return;
+    }
     if (cashMoveDir === "OUT" && (!cashApproverId || !cashApproverPin)) {
       setNotice({ type: "error", text: "เงินออกจากลิ้นชักต้องมีหัวหน้าอนุมัติ" });
       if (!cashApproverId) focusLater(cashApproverSelectRef);
@@ -1179,7 +1222,7 @@ export default function PosPage() {
         return;
       }
       cashMovementRequestRef.current = null;
-      setCashMoveAmount(""); setCashMoveReason(""); setCashApproverPin("");
+      setCashMoveAmount(""); setCashMoveReason(""); setCashMoveExternalConfirmed(false); setCashApproverPin("");
       void refreshCashMoves();
       setNotice({
         type: "ok",
@@ -1208,19 +1251,25 @@ export default function PosPage() {
       if (res.ok) {
         const data = await res.json();
         if (requestSeq !== expenseRefreshSeqRef.current) return;
+        setExpenseAccessError(null);
         setExpenses(data.expenses ?? []);
         setCanUsePersonalFunds(Boolean(data.canUsePersonalFunds));
         setCanManagePettyCash(Boolean(data.canManagePettyCash));
         setPettyCashBalance(Number(data.pettyCashWallet?.balance ?? 0));
         setPettyCashEntries(data.pettyCashWallet?.entries ?? []);
       } else {
+        const data = await res.json().catch(() => ({}));
+        setExpenseAccessError(data?.error ?? "โหลดสิทธิ์และยอดเงินสดย่อยไม่สำเร็จ");
         setExpenses([]);
         setCanUsePersonalFunds(false);
         setCanManagePettyCash(false);
         setPettyCashBalance(0);
         setPettyCashEntries([]);
       }
-    } catch { /* โหลดใหม่ได้ ไม่ขัดจังหวะงานขาย */ }
+    } catch {
+      if (requestSeq !== expenseRefreshSeqRef.current) return;
+      setExpenseAccessError("เชื่อมต่อเพื่อโหลดสิทธิ์และยอดเงินสดย่อยไม่ได้");
+    }
   }
 
   function expenseRequestError(data: any): string {
@@ -1717,10 +1766,17 @@ export default function PosPage() {
   /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
   function stepPoints(direction: 1 | -1) {
     if (!member) return;
-    const step = memberPreview?.redeemPointsPerUnit ?? 100;
-    const cur = Number(pointsToRedeem) || 0;
-    const next = Math.max(0, Math.min(member.pointsUsable, cur + direction * step));
+    const step = redeemPointsPerUnit;
+    // normalize ค่าค้างจากเวอร์ชันเดิมก่อนขยับ เพื่อไม่พาเศษแต้มไปกับปุ่ม +/-
+    const cur = maxWholeRedeemPoints(Number(pointsToRedeem) || 0, step);
+    const next = Math.max(0, Math.min(maxRedeemPoints, cur + direction * step));
     setPointsToRedeem(next === 0 ? "" : String(next));
+  }
+
+  function normalizeTypedPoints() {
+    const typed = Math.max(0, Math.floor(Number(pointsToRedeem) || 0));
+    const normalized = Math.min(maxRedeemPoints, maxWholeRedeemPoints(typed, redeemPointsPerUnit));
+    setPointsToRedeem(normalized > 0 ? String(normalized) : "");
   }
 
   /**
@@ -1759,6 +1815,7 @@ export default function PosPage() {
     expenseRefreshSeqRef.current += 1;
     setCanUsePersonalFunds(false);
     setCanManagePettyCash(false);
+    setExpenseAccessError(null);
     setExpenses([]);
     setPettyCashBalance(0);
     setPettyCashEntries([]);
@@ -1773,13 +1830,23 @@ export default function PosPage() {
   // ส่วนลดสมาชิก/แต้ม คิดใหม่ทุกครั้งที่ตะกร้าหรือแต้มที่ขอแลกเปลี่ยน
   // debounce สั้น ๆ กันยิงถี่ตอนพนักงานพิมพ์จำนวนแต้ม
   useEffect(() => {
-    if (!token || total <= 0) { setMemberPreview(null); return; }
-    if (!member && !pointsToRedeem && !couponCode.trim() && !approvedDiscount) { setMemberPreview(null); return; }
+    if (!token || total <= 0) {
+      setMemberPreview(null);
+      setMemberPreviewAppliedKey(null);
+      return;
+    }
+    if (!member && !pointsToRedeem && !couponCode.trim() && !approvedDiscount) {
+      setMemberPreview(null);
+      setMemberPreviewAppliedKey(null);
+      return;
+    }
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const res = await fetch("/api/pos/member/preview", {
           method: "POST",
           headers: { ...authHeaders, "content-type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             customerId: member?.customerId ?? null,
             subtotal: total,
@@ -1788,14 +1855,37 @@ export default function PosPage() {
             manualDiscount: approvedDiscount?.amount ?? 0,
           }),
         });
-        if (!res.ok) { setMemberPreview(null); return; }
-        setMemberPreview(await res.json());
+        if (!res.ok) {
+          setMemberPreview(null);
+          setMemberPreviewAppliedKey(null);
+          return;
+        }
+        const preview = await res.json();
+        if (!controller.signal.aborted) {
+          setMemberPreview(preview);
+          setMemberPreviewAppliedKey(memberPreviewRequestKey);
+          // Server อาจตัดเศษหน่วยหรือชนเพดานส่วนลด ให้ตัวเลขที่พนักงานเห็นตรงกับ
+          // pointsUsed ที่จะส่งไปตัดจริง ไม่แสดง 3,045 ขณะที่กำลังใช้เพียง 3,000
+          const requested = Math.max(0, Math.floor(Number(pointsToRedeem) || 0));
+          const used = Math.max(0, Math.floor(Number(preview.pointsUsed) || 0));
+          // ระหว่างกำลังพิมพ์อาจมีค่า 3 หรือ 30 ชั่วคราว อย่ารีบล้างช่องก่อนครบ
+          // หน่วยแรก; เมื่อออกจากช่อง normalizeTypedPoints จะจัดการค่าที่ไม่ครบเอง
+          if (requested >= redeemPointsPerUnit && used !== requested) {
+            setPointsToRedeem(used > 0 ? String(used) : "");
+          }
+        }
       } catch {
-        setMemberPreview(null);
+        if (!controller.signal.aborted) {
+          setMemberPreview(null);
+          setMemberPreviewAppliedKey(null);
+        }
       }
     }, 250);
-    return () => clearTimeout(timer);
-  }, [token, authHeaders, member, total, pointsToRedeem, couponCode, approvedDiscount]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [token, authHeaders, member, total, pointsToRedeem, couponCode, approvedDiscount, memberPreviewRequestKey]);
 
   // ปัดเศษเงินสด: ต้องคิดให้ตรงกับ server เป๊ะ ๆ (pos.ts: ปัดเฉพาะบิลที่ทุกวิธี
   // จ่ายเป็นเงินสด) ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
@@ -1887,6 +1977,12 @@ export default function PosPage() {
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
     if (!pin) return "ใส่ PIN ของผู้ขาย";
+    const needsDiscountPreview = Boolean(member || pointsToRedeem || couponCode.trim() || approvedDiscount);
+    if (needsDiscountPreview && (
+      !memberPreview
+      || memberPreviewAppliedKey !== memberPreviewRequestKey
+      || Math.abs(Number(memberPreview.subtotal) - total) > 0.001
+    )) return "กำลังตรวจราคาสมาชิก คูปอง และแต้มล่าสุด";
     if (paymentSummary.remaining > 0.01) return `ยังรับเงินไม่ครบ — ขาด ฿${baht(paymentSummary.remaining)}`;
     if (paymentSummary.remaining < -0.01) return `ยอดรับเกินไป ฿${baht(Math.abs(paymentSummary.remaining))}`;
     if (!canSell) return "ยังขายไม่ได้";
@@ -1932,7 +2028,9 @@ export default function PosPage() {
       setCart((cur) => {
         const found = cur.find((l) => l.key === key);
         if (found) {
-          return cur.map((l) => (l.key === key ? { ...l, packQty: l.packQty + 1 } : l));
+          return cur.map((l) => (l.key === key
+            ? { ...l, ...hit, packQty: l.packQty + 1, key: l.key, serials: l.serials }
+            : l));
         }
         return [...cur, { ...hit, packQty: 1, key }];
       });
@@ -2632,6 +2730,48 @@ export default function PosPage() {
     }
   }
 
+  async function refreshCartPricingBeforePay(): Promise<boolean> {
+    const refreshed = await Promise.all(cart.map(async (line): Promise<CartLine> => {
+      const params = new URLSearchParams({
+        code: line.sku,
+        size: line.size,
+        packCode: line.packCode,
+      });
+      const res = await fetch(`/api/pos/scan?${params.toString()}`, {
+        headers: authHeaders,
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `ตรวจราคาล่าสุดของ ${line.receiptName} ไม่สำเร็จ`);
+      }
+      const latest = data as ScanHit;
+      return {
+        ...line,
+        ...latest,
+        packQty: line.packQty,
+        key: line.key,
+        serials: line.serials,
+      };
+    }));
+
+    const pricingChanged = refreshed.some(
+      (line, index) => cartPricingSignature(line) !== cartPricingSignature(cart[index])
+    );
+    if (!pricingChanged) return false;
+
+    setCart(refreshed);
+    setMemberPreview(null);
+    setMemberPreviewAppliedKey(null);
+    setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+    resetToSimpleCash();
+    setNotice({
+      type: "error",
+      text: "ราคา ขั้นราคาส่ง หรือโปรโมชันมีการเปลี่ยนแปลง · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่",
+    });
+    return true;
+  }
+
   async function pay() {
     if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy) return;
     setBusy(true);
@@ -2640,6 +2780,9 @@ export default function PosPage() {
       const savedAttempt = (() => {
         try { return JSON.parse(window.localStorage.getItem(PENDING_SALE_KEY) ?? "null"); } catch { return null; }
       })();
+      // บิลใหม่ต้องอ่านราคา/ขั้นราคา/โปรล่าสุดก่อนรับเงิน ส่วนบิล recovery ต้องยิง
+      // body+idempotency key เดิมเท่านั้นเพื่อถามผลของรายการเดิม ห้ามเปลี่ยนตะกร้ากลางทาง
+      if (!savedAttempt?.body && await refreshCartPricingBeforePay()) return;
       // บิลค้างที่มีส่วนลดมือ: PIN ผู้อนุมัติไม่ได้ถูกเก็บไว้ (โดยตั้งใจ) ถ้ารีโหลดจอไป
       // แล้วต้องให้หัวหน้ากดอนุมัติใหม่ ไม่ใช่ปล่อยให้ยิงไปโดน 400 ที่อ่านไม่รู้เรื่อง
       if (savedAttempt?.body?.manualDiscount > 0 && !approvedDiscount) {
@@ -3877,6 +4020,23 @@ export default function PosPage() {
                       <button type="button" disabled={busy} onClick={() => void fundPettyCash()}>เติมเงินสดย่อย</button>
                     </div>
                   )}
+                  {!canManagePettyCash && (
+                    <div className="pos-approve pos-approve--petty" style={{ marginTop: 8 }}>
+                      <div className="pos-approve-why">
+                        {expenseAccessError
+                          ? `ยังใช้งานไม่ได้: ${expenseAccessError}`
+                          : pettyCashBalance <= 0
+                            ? "ยอดเป็น ฿0.00 และบัญชีนี้ไม่มีสิทธิ์เติมเงินสดย่อย"
+                            : "บัญชีนี้ใช้ยอดที่มีจ่ายค่าใช้จ่ายได้ แต่ไม่มีสิทธิ์เติมเงินเพิ่ม"}
+                        <br />
+                        วิธีเติม: เลือกบัญชี Administrator ด้านบน ใส่ PIN แล้วกด “ตรวจสิทธิ์/ยอดใหม่”
+                        จากนั้นระบุแหล่งเงิน จำนวน เหตุผล และหลักฐาน
+                      </div>
+                      <button type="button" disabled={busy || !cashierId || !pin} onClick={() => void refreshExpenses()}>
+                        ตรวจสิทธิ์/ยอดใหม่
+                      </button>
+                    </div>
+                  )}
                   {pettyCashEntries.length > 0 && (
                     <div className="pos-petty-history">
                       {pettyCashEntries.slice(0, 5).map((entry) => (
@@ -3982,17 +4142,37 @@ export default function PosPage() {
               <div className="pos-block">
                 <div className="pos-block-title">เงินเข้า–ออกลิ้นชัก</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <select value={cashMoveDir} onChange={(e) => setCashMoveDir(e.target.value as "IN" | "OUT")}
+                  <select value={cashMoveDir} onChange={(e) => {
+                    setCashMoveDir(e.target.value as "IN" | "OUT");
+                    setCashMoveExternalConfirmed(false);
+                  }}
                           style={{ fontSize: 14, minWidth: 140 }}>
                     <option value="OUT">นำเงินออก</option>
-                    <option value="IN">นำเงินเข้า</option>
+                    <option value="IN">เติมเงินจากภายนอก (ไม่ใช่ยอดขาย)</option>
                   </select>
                   <input ref={cashMoveAmountRef} value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                          inputMode="decimal" placeholder="จำนวนเงิน" className="pos-num"
                          style={{ fontSize: 14, width: 130, textAlign: "right" }} />
                   <input ref={cashMoveReasonRef} value={cashMoveReason} onChange={(e) => setCashMoveReason(e.target.value)} maxLength={200}
-                         placeholder="เหตุผล เช่น นำส่งธนาคาร" style={{ fontSize: 14, minWidth: 200, flex: 1 }} />
+                         placeholder={cashMoveDir === "IN" ? "ที่มา เช่น เติมเงินทอนจากเงินเจ้าของ" : "เหตุผล เช่น นำส่งธนาคาร"}
+                         style={{ fontSize: 14, minWidth: 200, flex: 1 }} />
                 </div>
+                {cashMoveDir === "IN" && (
+                  <div className="pos-approve">
+                    <div className="pos-approve-why">
+                      ยอดขายเงินสดเข้ายอดลิ้นชักอัตโนมัติทันทีเมื่อขายสำเร็จ ห้ามนำยอดขายมาบันทึกซ้ำที่นี่
+                    </div>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={cashMoveExternalConfirmed}
+                        onChange={(e) => setCashMoveExternalConfirmed(e.target.checked)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span>ยืนยันว่าเงินนี้มาจากนอกยอดขาย เช่น เงินทอนเพิ่มจากเจ้าของหรือรับโอนจากลิ้นชักอื่น</span>
+                    </label>
+                  </div>
+                )}
                 {cashMoveDir === "OUT" && (
                   <div className="pos-approve">
                     <div className="pos-approve-why">เงินออกจากลิ้นชักต้องมีหัวหน้ากด PIN ทุกครั้ง</div>
@@ -4015,7 +4195,7 @@ export default function PosPage() {
                     บันทึกรายการ
                   </button>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
-                    ทุกรายการเข้าสูตรเงินในลิ้นชักของกะนี้
+                    ใช้เฉพาะเงินที่เข้า/ออกนอกการขาย · ทุกรายการเข้าสูตรเงินในลิ้นชักของกะนี้
                   </span>
                 </div>
                 {cashMoves.length > 0 && (
@@ -4024,7 +4204,7 @@ export default function PosPage() {
                       <div key={m.id} className="pos-move-row">
                         <span>
                           <span className={m.direction === "IN" ? "pos-move-dir--in" : "pos-move-dir--out"}>
-                            {m.direction === "IN" ? "เข้า" : "ออก"}
+                            {m.direction === "IN" ? "เงินนอกยอดขายเข้า" : "ออก"}
                           </span>{" "}
                           · {m.reason}
                           {m.approvedByName ? ` · อนุมัติ ${m.approvedByName}` : ""}
@@ -4103,7 +4283,7 @@ export default function PosPage() {
                     </div>
                     <div className="pos-report-sep pos-report-grid">
                       <span>เงินตั้งต้น</span><span>฿{baht(shiftReport.openingFloat)}</span>
-                      <span>เงินเข้าลิ้นชัก</span><span>฿{baht(shiftReport.cashIn)}</span>
+                      <span>เงินนอกยอดขายเข้าลิ้นชัก</span><span>฿{baht(shiftReport.cashIn)}</span>
                       <span>เงินออกจากลิ้นชัก</span><span>฿{baht(shiftReport.cashOut)}</span>
                       <span>คืนเงินสด</span><span>฿{baht(shiftReport.cashRefunds)}</span>
                       <span>ค่าใช้จ่ายหน้าร้าน · {shiftReport.expenseCount} รายการ</span>
@@ -4439,7 +4619,9 @@ export default function PosPage() {
                       const key = `${lookup.sku}__${lookup.size}__${lookup.packCode}`;
                       setCart((cur) => {
                         const found = cur.find((l) => l.key === key);
-                        if (found) return cur.map((l) => (l.key === key ? { ...l, packQty: l.packQty + 1 } : l));
+                        if (found) return cur.map((l) => (l.key === key
+                          ? { ...l, ...lookup, packQty: l.packQty + 1, key: l.key, serials: l.serials }
+                          : l));
                         return [...cur, { ...lookup, packQty: 1, key }];
                       });
                       setLookup(null);
@@ -5022,7 +5204,7 @@ export default function PosPage() {
                         style={{ flex: "none", padding: "9px 16px" }}
                         onClick={() => {
                           setRedeemOpen(true);
-                          setPointsToRedeem(String(member.pointsUsable));
+                          setPointsToRedeem(maxRedeemPoints > 0 ? String(maxRedeemPoints) : "");
                         }}
                       >
                         ใช้แต้ม
@@ -5044,16 +5226,34 @@ export default function PosPage() {
                       >
                         −
                       </button>
-                      <span
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        aria-label="จำนวนแต้มที่ต้องการแลก"
+                        value={pointsToRedeem}
+                        placeholder="0"
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => {
+                          const digits = e.currentTarget.value.replace(/\D/g, "");
+                          if (!digits) {
+                            setPointsToRedeem("");
+                            return;
+                          }
+                          const typed = Math.min(maxRedeemPoints, Number(digits));
+                          setPointsToRedeem(String(typed));
+                        }}
+                        onBlur={normalizeTypedPoints}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.currentTarget.blur();
+                        }}
                         aria-live="polite"
                         style={{
                           flex: "none", minWidth: 96, textAlign: "center", padding: "9px 0",
                           borderRadius: 8, border: "1px solid var(--pos-accent)",
+                          background: "var(--pos-surface)", color: "inherit",
                           fontSize: 17, fontVariantNumeric: "tabular-nums",
                         }}
-                      >
-                        {Number(pointsToRedeem) || 0}
-                      </span>
+                      />
                       <button
                         type="button"
                         aria-label="เพิ่มจำนวนแต้ม"
@@ -5069,12 +5269,15 @@ export default function PosPage() {
                       <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--pos-muted)" }}>
                         จาก {member.pointsUsable} แต้ม
                         {memberPreview?.pointsDiscount ? ` · ลด ฿${baht(memberPreview.pointsDiscount)}` : ""}
+                        {(memberPreview?.pointsUsed ?? 0) > 0
+                          ? ` · คงเหลือ ${Math.max(0, member.pointsUsable - memberPreview!.pointsUsed)} แต้ม`
+                          : ""}
                       </span>
                       <button
                         type="button"
                         className="pos-btn-ghost"
                         style={{ flex: "none", padding: "9px 13px", fontSize: 13 }}
-                        onClick={() => setPointsToRedeem(String(member.pointsUsable))}
+                        onClick={() => setPointsToRedeem(maxRedeemPoints > 0 ? String(maxRedeemPoints) : "")}
                       >
                         ทั้งหมด
                       </button>
