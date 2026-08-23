@@ -40,6 +40,28 @@ node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/customer-message-routing-contract.test.mts
 ```
 
+### Fake-store ground truth
+
+`/admin/dev/fake` creates a server-side answer key after each full-shop/scenario seed. Migration
+`9.16` stores one immutable run plus its cases and score history in tenant-scoped tables. The answer
+key is deliberately not registered as an AI tool and must not be included in prompts. It covers
+exact figures, channel distributions, rankings, inventory/purchase/restock, POS/staff integrity,
+prompt injection, corrected/duplicate messages, pharmacy human approval, and correct abstention
+when the requested forecast is unsupported.
+
+The key has a SHA-256 fingerprint of the observed fake dataset. Adding or changing fake data makes
+the UI mark the run stale; generate a new key before comparing another AI run. The deterministic
+scorer needs no provider or database:
+
+```bash
+cd apps/web
+npx tsx --test ../../scripts/ai-eval/fake-ground-truth-contract.test.mts
+```
+
+Programmatic evaluation uses `PUT /api/dev/fake/ground-truth` with `tenantId`, `runId`, and
+structured `answers[]` (`caseKey`, `value`, optional `evidenceIds`, or `abstained`). Only platform
+admins can read the answer key or submit scores.
+
 ครอบคลุม:
 
 - ไม่มี AI credentials → `usedAi:false` สำหรับ deterministic fallback

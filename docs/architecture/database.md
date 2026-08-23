@@ -714,3 +714,18 @@ instead of duplicating trigger DDL.
 
 Copy the RLS policy from `4.2` and the `bms_app` grant from `4.3` for any new `bms_*` table — see
 the "adding a new module" checklist referenced from [CLAUDE.local.md](../../CLAUDE.local.md).
+
+## Fake evaluation ground truth (`9.16`)
+
+`bms_fake_eval_runs` stores an immutable, tenant-scoped snapshot and SHA-256 fingerprint of a fake
+store dataset. `bms_fake_eval_cases` stores the corresponding questions, typed expected values,
+tolerances, and bounded evidence references; `bms_fake_eval_results` preserves submitted structured
+answers and deterministic scores. All three tables use tenant RLS, `bms_app` grants, and cascade with
+the tenant/run. The migration grants `bms_app` only the additional non-PII `users` flags needed for
+staff/POS/pharmacist counts; it does not widen access to password, PIN hash, email, or phone. These
+tables are QA answer-key storage only: no customer or staff AI tool exposes them.
+
+Full-shop fake seeding writes the run only after all business fixtures succeed. A later data change
+does not rewrite history; per-domain row signatures make even a non-aggregate product/message edit
+change the fingerprint. The service reports that run as stale and refuses to score against it. Fake
+cleanup deletes the run, which cascades its cases and score history.
