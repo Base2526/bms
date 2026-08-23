@@ -32,6 +32,11 @@ stock deduction; that was never built this way — every order reserves stock im
 Every transition is **atomic** (single DB transaction) to prevent oversell or double-deduction —
 see `lib/bms/orders.ts`.
 
+Migration `9.15` keeps `paid_at`, `cancelled_at`, and `returned_at` separately from row creation and
+generic updates. Report periods therefore follow the actual business event in `Asia/Bangkok`,
+including cancellation or return after midnight. Legacy rows are backfilled from the best evidence
+available; new writes set the event timestamp in the state-change transaction.
+
 **Order status emails (2026-07):** every status transition — `payOrder`/`packOrder`/`shipOrder`/
 `completeOrder`/`cancelOrder`/`returnOrder` in `lib/bms/orders.ts`, plus the two other places an
 order can reach `PAID`/`SHIPPED`/`COMPLETED` outside those functions (`confirmPayment()` in
@@ -61,6 +66,9 @@ Inbox Customer 360 exposes a **สร้างออเดอร์** Quick Acti
 calls the same `createOrder()` service used by the customer/AI pipeline. It resolves the CRM identity,
 uses current active-product prices, reserves every requested variant atomically, and creates the order
 directly as `PENDING`; any missing product or insufficient-stock result rolls back the whole order.
+Malformed baskets also fail as a whole with `INVALID_ITEM`: an empty SKU/size, zero, negative,
+fractional, non-finite, or database-overflow quantity is never filtered out while the remaining
+lines are quietly ordered.
 
 Staff with `order.view` can call `bmsGenerateInvoice(orderId)` from the same panel. The invoice is a
 read-only projection of the real order: line prices are the snapshots captured at order creation and

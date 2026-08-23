@@ -540,7 +540,9 @@ const LINK_STEPS_TH: LinkStep[] = [
         เปิด {L.dashboard} หรือ {L.reports}
         เพื่อดูยอดขาย สต็อก งานค้าง และการ์ด <b>AI health</b> · ถ้าต้องการไฟล์จริงให้ใช้การ์ด
         <b> AI Report Generator</b> ในหน้า Reports เพื่อสร้าง Excel / CSV / PDF ของยอดขาย สต็อก
-        หรือกำไรขั้นต้น (ค่าประมาณ) แล้วดาวน์โหลดภายหลังจากประวัติรายงานเดิมได้ · ถ้าต้องการตรวจคำตอบรายเคสให้เปิด{" "}
+        หรือกำไรขั้นต้น (ค่าประมาณ) แล้วดาวน์โหลดภายหลังจากประวัติรายงานเดิมได้ · ยอดขายสุทธิแยก
+        refund ตามวันที่คืนเงินจริง และถ้าสินค้าบางตัวไม่มีต้นทุน รายงานกำไรจะแสดงว่า “ข้อมูลไม่ครบ”
+        แทนการเดาต้นทุนเป็นศูนย์ · ร้านใหม่ที่ประวัติยังน้อยจะยังไม่แนะนำยอดสั่งซื้อแบบฟันธง · ถ้าต้องการตรวจคำตอบรายเคสให้เปิด{" "}
         {L.aiQuality} เพื่อดู success/handoff/unresolved rate,
         failure cases และบทสนทนาที่สุ่มตรวจ โดยระบบปิดบังข้อมูลส่วนบุคคลในหน้าตรวจให้อัตโนมัติ
       </>
@@ -1251,7 +1253,9 @@ const LINK_STEPS_EN: LinkStep[] = [
         Open {L.dashboard} or {L.reports}
         to see sales, stock, outstanding work, and the <b>AI health</b> card · if you need an actual file, use the
         <b> AI Report Generator</b> card on the Reports page to produce Excel / CSV / PDF exports of sales, inventory,
-        or gross profit (estimated), and re-download them later from the report history · to review individual answers,
+        or gross profit (estimated), and re-download them later from the report history. Net sales attribute refunds to
+        the date money was actually returned; a profit report with missing product costs says the data is incomplete
+        instead of assuming zero cost, and a new shop with too little history receives no confident purchase forecast · to review individual answers,
         open {L.aiQuality} for success/handoff/unresolved rates, failure cases, and sampled conversations, with personal
         data masked automatically on the review screen
       </>

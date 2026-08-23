@@ -630,6 +630,43 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
         WHERE tenant_id = $1 AND customer_id = $2`,
       [tenantId, mergeId, keepId]
     );
+    // Customer-owned modules added after the original merge flow must follow
+    // the canonical CRM row too. Otherwise a successful merge makes deposits,
+    // no-receipt returns, and store-credit balances disappear from the kept
+    // customer's history even though the source row is only soft-deleted.
+    await client.query(
+      `UPDATE bms_pos_deposits SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_pos_blind_returns SET customer_id = $3
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    await client.query(
+      `UPDATE bms_store_credits SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // Retention has one row per customer+period. Move every non-conflicting
+    // case. When both identities already have a case for the same period, keep
+    // both immutable histories attached to their original rows: deleting one
+    // would erase holdout/treatment evidence, while combining cohorts could
+    // make a holdout contactable.
+    await client.query(
+      `UPDATE bms_retention_cases source
+          SET customer_id = $3, updated_at = now()
+        WHERE source.tenant_id = $1
+          AND source.customer_id = $2
+          AND NOT EXISTS (
+            SELECT 1 FROM bms_retention_cases destination
+             WHERE destination.tenant_id = $1
+               AND destination.customer_id = $3
+               AND destination.period_key = source.period_key
+          )`,
+      [tenantId, mergeId, keepId]
+    );
     await client.query(
       `UPDATE bms_customer_coupon_wallet destination
           SET state = source.state,

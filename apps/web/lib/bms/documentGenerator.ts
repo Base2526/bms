@@ -39,6 +39,8 @@ export function buildSalesReportDoc(data: {
     subtitle: `${summary.from} – ${summary.to}`,
     meta: [
       { label: "Revenue", value: summary.revenue.toLocaleString() },
+      { label: "Refunds recorded in period", value: summary.refundTotal.toLocaleString() },
+      { label: "Net revenue", value: summary.netRevenue.toLocaleString() },
       { label: "Orders", value: String(summary.orderCount) },
       { label: "Avg order value", value: summary.avgOrderValue.toFixed(2) },
     ],
@@ -126,9 +128,16 @@ export function buildProfitReportDoc(data: {
     subtitle: `${summary.from} – ${summary.to} — ${summary.disclaimer}`,
     meta: [
       { label: "Revenue", value: summary.revenue.toLocaleString() },
-      { label: "Cost (current cost price)", value: summary.cost.toLocaleString() },
-      { label: "Gross profit", value: summary.profit.toLocaleString() },
-      { label: "Margin", value: `${summary.marginPct.toFixed(1)}%` },
+      {
+        label: "Cost (current cost price)",
+        value: summary.cost === null
+          ? `Unavailable — ${summary.missingCostSkuCount} SKU(s) missing cost`
+          : summary.cost.toLocaleString(),
+      },
+      { label: "Known cost only", value: summary.knownCost.toLocaleString() },
+      { label: "Gross profit", value: summary.profit === null ? "Unavailable" : summary.profit.toLocaleString() },
+      { label: "Margin", value: summary.marginPct === null ? "Unavailable" : `${summary.marginPct.toFixed(1)}%` },
+      { label: "Cost completeness", value: summary.complete ? "Complete" : "Incomplete" },
     ],
     sheets: [
       {
@@ -138,6 +147,7 @@ export function buildProfitReportDoc(data: {
           { key: "revenue", label: "Revenue" },
           { key: "cost", label: "Cost" },
           { key: "profit", label: "Profit" },
+          { key: "missingCostLineCount", label: "Lines missing cost" },
         ],
         rows: summary.byDay,
       },

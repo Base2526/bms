@@ -119,7 +119,7 @@ export async function listExpiringLots(tenantId: string, withinDays = 90): Promi
     `SELECT * FROM bms_inventory_lots
       WHERE tenant_id = $1 AND qty > 0
         AND expiry_date IS NOT NULL
-        AND expiry_date <= CURRENT_DATE + ($2::int * INTERVAL '1 day')
+        AND expiry_date <= (now() AT TIME ZONE 'Asia/Bangkok')::date + ($2::int * INTERVAL '1 day')
       ORDER BY expiry_date`,
     [tenantId, days]
   );

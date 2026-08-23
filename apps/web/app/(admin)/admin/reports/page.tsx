@@ -111,7 +111,7 @@ function ReportGeneratorCard({ from, to }: { from: string; to: string }) {
 const Q_REPORTS = gql`
   query ($from: String, $to: String) {
     bmsSalesSummary(from: $from, to: $to) {
-      from to revenue orderCount avgOrderValue
+      from to revenue refundTotal netRevenue orderCount avgOrderValue
       byDay { day revenue orders }
       byStatus { status count }
       byChannel { channel revenue orders }
@@ -199,7 +199,7 @@ export default function Page() {
       {/* ---- Sales KPIs ---- */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={8}>
-          <Card><Statistic title={t("admin_reports.kpi_sales_range", { from, to })} value={s?.revenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
+          <Card><Statistic title={t("admin_reports.kpi_sales_range", { from, to })} value={s?.netRevenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
         </Col>
         <Col xs={12} sm={12} md={8}>
           <Card><Statistic title={t("admin_reports.kpi_order_count")} value={s?.orderCount ?? 0} prefix={<ShoppingCartOutlined />} /></Card>
@@ -208,6 +208,18 @@ export default function Page() {
           <Card><Statistic title={t("admin_reports.kpi_avg_order")} value={s?.avgOrderValue ?? 0} precision={0} suffix="฿" /></Card>
         </Col>
       </Row>
+      {Number(s?.refundTotal ?? 0) > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={t("admin_reports.refund_event_summary", {
+            gross: baht(s?.revenue ?? 0),
+            refunds: baht(s?.refundTotal ?? 0),
+            net: baht(s?.netRevenue ?? 0),
+          })}
+        />
+      )}
 
       {/* ---- Sales by day (mini bars) ---- */}
       <Card title={t("admin_reports.daily_sales")} style={{ marginTop: 16 }}>

@@ -7,14 +7,28 @@ payment** — AI may assist by reading a payment slip, but it never decides the 
 
 ## Methods & lifecycle (`bms_payments`)
 
-Methods: `BANK_TRANSFER` / `QR` / `CARD` / `TIKTOK` / `CASH`.
+Methods: `BANK_TRANSFER` / `QR` / `CARD` / `TIKTOK` / `CASH` / `WALLET` / `STORE_CREDIT`.
 
 ```
 PENDING → CONFIRMED → REFUNDED
         ↘ REJECTED
 ```
 
-`CONFIRMED` is atomic with the order transition `PENDING → PAID`.
+`CONFIRMED` is atomic with the order transition `PENDING → PAID`. Both rows are locked and the
+operation is refused if the order is no longer `PENDING`; a confirmed payment can no longer be
+committed while silently leaving its order pending. Full-payment submission derives product total,
+shipping, and cash rounding from the locked order and never trusts a client amount.
+
+GraphQL and the legacy REST confirm/reject/refund adapters all require a signed admin session,
+derive the tenant from that session (including the established drill-down cookie), and re-check
+`payment.confirm` or `payment.refund` immediately before execution. The service writes the sensitive
+transition's audit row in the same tenant transaction as the payment/order state change.
+
+Migration `9.15` retains `confirmed_at`, `rejected_at`, and `refunded_at`. Reports use the event
+timestamp in `Asia/Bangkok`, so a refund completed tomorrow appears tomorrow even when the original
+sale happened today. POS partial/split refunds use the completed allocation amount/time; a whole
+non-POS refund uses the payment row. This avoids both missing partial refunds and double counting a
+fully refunded split payment.
 
 ## Public checkout
 

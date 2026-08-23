@@ -44,15 +44,72 @@ const row = (r: any) => ({
 });
 
 async function collectSignals(tenantId: string): Promise<Signal[]> {
-  const [ops, inventory, margin, retention, sales, pos, channelHealth, channelConfig] = await Promise.all([
+  const [ops, inventory, margin, retention, sales, pos, customerQuality, duplicateCustomers, paymentConflicts, orderOutliers, channelHealth, channelConfig] = await Promise.all([
     getOperationalAlerts(tenantId),
     getInventoryActionCenter(tenantId, 30, 30, 20),
-    query<any>(`SELECT COUNT(*)::int AS count FROM bms_products WHERE tenant_id=$1 AND active AND cost_price IS NOT NULL AND price <= cost_price`, [tenantId]),
+    query<any>(`SELECT
+      COUNT(*) FILTER (WHERE cost_price IS NOT NULL AND price <= cost_price)::int AS non_positive_count,
+      COUNT(*) FILTER (WHERE cost_price IS NULL)::int AS missing_cost_count,
+      COUNT(*) FILTER (WHERE price = 0)::int AS zero_price_count
+      FROM bms_products WHERE tenant_id=$1 AND active`, [tenantId]),
     query<any>(`SELECT COUNT(*)::int AS count FROM bms_customers c WHERE c.tenant_id=$1
       AND EXISTS (SELECT 1 FROM bms_orders o WHERE o.tenant_id=$1 AND o.customer_id=c.id AND o.status=ANY($2) AND o.created_at < now()-interval '60 days')
       AND NOT EXISTS (SELECT 1 FROM bms_orders o WHERE o.tenant_id=$1 AND o.customer_id=c.id AND o.status=ANY($2) AND o.created_at >= now()-interval '60 days')`, [tenantId, ["PAID","PACKING","SHIPPED","COMPLETED"]]),
     query<any>(`SELECT COUNT(*)::int AS count FROM bms_orders WHERE tenant_id=$1 AND status='PENDING' AND created_at < now() - interval '2 hours'`, [tenantId]),
     query<any>(`SELECT COUNT(*)::int AS count FROM bms_pos_shifts WHERE tenant_id=$1 AND status='OPEN' AND opened_at < now() - interval '16 hours'`, [tenantId]),
+    query<any>(`SELECT COUNT(DISTINCT c.id)::int AS count
+      FROM bms_customers c
+      WHERE c.tenant_id=$1 AND c.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM bms_orders o
+           WHERE o.tenant_id=$1 AND o.customer_id=c.id
+             AND o.status NOT IN ('CANCELLED','RETURNED')
+             AND o.channel NOT IN ('lazada','shopee')
+        )
+        AND (
+          NULLIF(btrim(c.phone),'') IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM bms_customer_addresses a
+             WHERE a.tenant_id=$1 AND a.customer_id=c.id AND a.address_type='shipping'
+          )
+        )`, [tenantId]),
+    query<any>(`WITH normalized AS (
+        SELECT regexp_replace(phone, '[^0-9]+', '', 'g') AS phone_key
+          FROM bms_customers
+         WHERE tenant_id=$1 AND deleted_at IS NULL AND NULLIF(btrim(phone),'') IS NOT NULL
+      ), duplicates AS (
+        SELECT phone_key, COUNT(*)::int AS customers
+          FROM normalized WHERE length(phone_key) >= 8
+         GROUP BY phone_key HAVING COUNT(*) > 1
+      )
+      SELECT COUNT(*)::int AS group_count, COALESCE(SUM(customers),0)::int AS customer_count
+        FROM duplicates`, [tenantId]),
+    query<any>(`SELECT COUNT(DISTINCT p.id)::int AS count
+      FROM bms_payments p
+      JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
+      WHERE p.tenant_id=$1 AND p.status='CONFIRMED' AND o.status='PENDING'`, [tenantId]),
+    query<any>(`WITH paid AS (
+        SELECT (total_amount+COALESCE(shipping_fee,0))::numeric AS amount
+          FROM bms_orders
+         WHERE tenant_id=$1 AND status=ANY($2)
+           AND COALESCE(paid_at,created_at) >= now()-interval '90 days'
+      ), stats AS (
+        SELECT COUNT(*)::int AS sample_size, AVG(amount) AS avg_amount,
+               COALESCE(STDDEV_SAMP(amount),0) AS stddev_amount FROM paid
+      ), candidates AS (
+        SELECT (total_amount+COALESCE(shipping_fee,0))::numeric AS amount
+          FROM bms_orders
+         WHERE tenant_id=$1 AND status NOT IN ('CANCELLED','RETURNED')
+           AND created_at >= now()-interval '90 days'
+      )
+      SELECT stats.sample_size,
+             COUNT(*) FILTER (
+               WHERE candidates.amount > 50000
+                  OR (stats.sample_size >= 20
+                      AND candidates.amount > stats.avg_amount + 4*stats.stddev_amount)
+             )::int AS outlier_count
+        FROM stats LEFT JOIN candidates ON TRUE
+       GROUP BY stats.sample_size, stats.avg_amount, stats.stddev_amount`, [tenantId, ["PAID","PACKING","SHIPPED","COMPLETED"]]),
     listChannelHealth(tenantId),
     listChannelsMasked(tenantId),
   ]);
@@ -64,7 +121,13 @@ async function collectSignals(tenantId: string): Promise<Signal[]> {
   add(inventory.summary.stockoutWithin7DaysCount > 0, { key:"stock:stockout-7d",category:"STOCK",priority:"HIGH",title:"ทบทวนสินค้าที่เสี่ยงหมดใน 7 วัน",titleEn:"Review variants at risk of stocking out within 7 days",evidence:{count:inventory.summary.stockoutWithin7DaysCount,suggestedUnits:inventory.summary.totalSuggestedQty},expectedImpact:"ลด Lost sales จากของหมด",expectedImpactEn:"Reduce lost sales caused by stock-outs",confidence:.75,dueHours:24,deepLink:"/admin/purchase" });
   add(inventory.summary.slowMovingCount > 0, { key:"stock:slow-moving",category:"STOCK",priority:"MEDIUM",title:"จัดการสินค้าขายช้าและเงินจม",titleEn:"Act on slow-moving and dead stock",evidence:{count:inventory.summary.slowMovingCount},expectedImpact:"คืนเงินสดจากสต็อกที่หมุนช้า",expectedImpactEn:"Release cash trapped in slow inventory",confidence:.7,dueHours:72,deepLink:"/admin/products" });
   add(inventory.summary.expiringLotCount > 0, { key:"stock:expiring",category:"STOCK",priority:"HIGH",title:"จัดการล็อตใกล้หมดอายุ",titleEn:"Act on expiring inventory lots",evidence:{count:inventory.summary.expiringLotCount,units:inventory.summary.expiringUnits},expectedImpact:"ลดของเสียจากหมดอายุด้วย FEFO, ลดราคา หรือโอนสาขา",expectedImpactEn:"Reduce expiry waste with FEFO, markdowns, or transfers",confidence:.95,dueHours:24,deepLink:"/admin/products" });
-  add(Number(margin.rows[0]?.count)>0, { key:"margin:non-positive",category:"MARGIN",priority:"HIGH",title:"ตรวจสินค้าที่ราคาขายไม่สูงกว่าทุน",titleEn:"Review products priced at or below cost",evidence:{count:Number(margin.rows[0]?.count)},expectedImpact:"หยุดการขายที่ไม่สร้างกำไรขั้นต้น",expectedImpactEn:"Stop sales that produce no gross margin",confidence:.9,dueHours:24,deepLink:"/admin/products" });
+  add(Number(margin.rows[0]?.non_positive_count)>0, { key:"margin:non-positive",category:"MARGIN",priority:"HIGH",title:"ตรวจสินค้าที่ราคาขายไม่สูงกว่าทุน",titleEn:"Review products priced at or below cost",evidence:{count:Number(margin.rows[0]?.non_positive_count)},expectedImpact:"หยุดการขายที่ไม่สร้างกำไรขั้นต้น",expectedImpactEn:"Stop sales that produce no gross margin",confidence:.9,dueHours:24,deepLink:"/admin/products" });
+  add(Number(margin.rows[0]?.missing_cost_count)>0, { key:"margin:missing-cost",category:"MARGIN",priority:"HIGH",title:"เติมต้นทุนสินค้าที่หาย",titleEn:"Complete missing product costs",evidence:{count:Number(margin.rows[0]?.missing_cost_count)},expectedImpact:"ทำให้รายงานกำไรไม่ตีต้นทุนที่หายเป็นศูนย์",expectedImpactEn:"Prevent profit reports from treating missing costs as zero",confidence:1,dueHours:24,deepLink:"/admin/products" });
+  add(Number(margin.rows[0]?.zero_price_count)>0, { key:"margin:zero-price",category:"MARGIN",priority:"HIGH",title:"ตรวจสินค้าที่ราคาขายเป็นศูนย์",titleEn:"Review zero-priced products",evidence:{count:Number(margin.rows[0]?.zero_price_count)},expectedImpact:"ยืนยันว่าราคาศูนย์เป็นของแจกโดยตั้งใจ ไม่ใช่ข้อมูลผิด",expectedImpactEn:"Confirm zero prices are intentional giveaways rather than bad data",confidence:1,dueHours:24,deepLink:"/admin/products" });
+  add(Number(customerQuality.rows[0]?.count)>0, { key:"customer:missing-checkout",category:"SALES",priority:"HIGH",title:"เติมข้อมูลจัดส่งลูกค้าที่ไม่ครบ",titleEn:"Complete missing customer delivery data",evidence:{count:Number(customerQuality.rows[0]?.count)},expectedImpact:"ลดออเดอร์ที่ค้างเพราะไม่มีเบอร์หรือที่อยู่จัดส่ง",expectedImpactEn:"Reduce orders blocked by missing phone or shipping address",confidence:1,dueHours:24,deepLink:"/admin/customers" });
+  add(Number(duplicateCustomers.rows[0]?.group_count)>0, { key:"customer:possible-duplicates",category:"SALES",priority:"MEDIUM",title:"ตรวจลูกค้าที่อาจซ้ำข้ามช่องทาง",titleEn:"Review possible cross-channel duplicate customers",evidence:{groups:Number(duplicateCustomers.rows[0]?.group_count),customers:Number(duplicateCustomers.rows[0]?.customer_count)},expectedImpact:"รวมประวัติของคนเดียวกันหลังพนักงานยืนยันตัวตน",expectedImpactEn:"Unify one person's history after staff verifies identity",confidence:.7,dueHours:72,deepLink:"/admin/customers" });
+  add(Number(paymentConflicts.rows[0]?.count)>0, { key:"payment:order-conflict",category:"OPERATIONS",priority:"CRITICAL",title:"แก้ payment ยืนยันแล้วแต่ออเดอร์ยัง PENDING",titleEn:"Resolve confirmed payments with pending orders",evidence:{count:Number(paymentConflicts.rows[0]?.count)},expectedImpact:"คืนความสอดคล้องของสถานะเงินและออเดอร์ก่อนทำงานต่อ",expectedImpactEn:"Restore payment/order consistency before fulfillment continues",confidence:1,dueHours:1,deepLink:"/admin/payment?status=CONFIRMED" });
+  add(Number(orderOutliers.rows[0]?.outlier_count)>0, { key:"sales:high-value-outlier",category:"SALES",priority:"HIGH",title:"ตรวจออเดอร์มูลค่าสูงผิดปกติ",titleEn:"Review unusually high-value orders",evidence:{count:Number(orderOutliers.rows[0]?.outlier_count),sampleSize:Number(orderOutliers.rows[0]?.sample_size),rule:"over 50000 absolute, or mean + 4sd with at least 20 paid orders"},expectedImpact:"แยกยอดขายจริงออกจากการกรอกผิดหรือทุจริต",expectedImpactEn:"Distinguish genuine sales from input errors or fraud",confidence:.85,dueHours:4,deepLink:"/admin/orders" });
   add(Number(retention.rows[0]?.count)>0, { key:"retention:dormant-60d",category:"RETENTION",priority:"MEDIUM",title:"ทบทวนลูกค้าที่เงียบเกิน 60 วัน",titleEn:"Review customers inactive for over 60 days",evidence:{count:Number(retention.rows[0]?.count)},expectedImpact:"สร้างโอกาสซื้อซ้ำจากฐานลูกค้าเดิม",expectedImpactEn:"Create repeat-purchase opportunities from existing customers",confidence:.6,dueHours:72,deepLink:"/admin/followup-queue" });
   add(Number(sales.rows[0]?.count)>0, { key:"sales:pending-2h",category:"SALES",priority:"HIGH",title:"ตามออเดอร์ที่ยังไม่ชำระเกิน 2 ชั่วโมง",titleEn:"Follow up orders unpaid for over 2 hours",evidence:{count:Number(sales.rows[0]?.count)},expectedImpact:"เพิ่ม Conversion จากออเดอร์ที่ค้าง",expectedImpactEn:"Improve conversion from pending orders",confidence:.85,dueHours:4,deepLink:"/admin/orders?status=PENDING" });
   add(Number(pos.rows[0]?.count)>0, { key:"pos:shift-open-16h",category:"POS",priority:"HIGH",title:"ตรวจสอบกะ POS ที่เปิดนานผิดปกติ",titleEn:"Review POS shifts open for over 16 hours",evidence:{count:Number(pos.rows[0]?.count),thresholdHours:16},expectedImpact:"ลดความเสี่ยงยอดเงินสดและกะค้างข้ามวัน",expectedImpactEn:"Reduce cash discrepancy and overnight-shift risk",confidence:.95,dueHours:2,deepLink:"/pos" });

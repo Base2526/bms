@@ -142,6 +142,7 @@ export const bmsAssistantResolvers = {
       }
       const messages: Record<string, string> = {
         EMPTY: "ไม่มีรายการสินค้าในตะกร้า",
+        INVALID_ITEM: result.status === "INVALID_ITEM" ? `รายการที่ ${result.index + 1}: ${result.reason}` : "รายการสินค้าไม่ถูกต้อง",
         NOT_FOUND: `ไม่พบสินค้า ${"sku" in result ? result.sku : ""} หรือไม่มีสต็อกแล้ว`,
         INSUFFICIENT: result.status === "INSUFFICIENT"
           ? `${result.sku} (${result.size}) เหลือ ${result.available} ไม่พอสั่ง ${result.requested}`

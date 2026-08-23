@@ -39,9 +39,11 @@ export async function insertWithDailyDocNo<T>(
 ): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     const res = await client.query<{ doc_no: string }>(
-      `SELECT $2 || '-' || to_char(CURRENT_DATE, 'YYMMDD') || '-'
+      `SELECT $2 || '-' || to_char((now() AT TIME ZONE 'Asia/Bangkok')::date, 'YYMMDD') || '-'
               || lpad(((SELECT COUNT(*) FROM ${args.table}
-                         WHERE tenant_id = $1 AND created_at::date = CURRENT_DATE) + 1)::text, 3, '0')
+                         WHERE tenant_id = $1
+                           AND (created_at AT TIME ZONE 'Asia/Bangkok')::date =
+                               (now() AT TIME ZONE 'Asia/Bangkok')::date) + 1)::text, 3, '0')
               AS doc_no`,
       [args.tenantId, args.prefix]
     );

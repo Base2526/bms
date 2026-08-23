@@ -10,6 +10,17 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+**Data-integrity edge cases (2026-08-23)** — ✅ implemented in migration `9.15` and shared services.
+Order/payment lifecycle events now retain their own timestamps and report on Bangkok business days;
+payment confirmation cannot commit without the locked order moving `PENDING -> PAID`; POS partial
+refunds report by settled allocation, and legacy payment REST mutations now enforce signed
+tenant-scoped RBAC with in-transaction audit. Malformed order quantities fail the whole basket, missing cost
+no longer becomes zero profit cost, Action Center exposes missing/duplicate/conflict/outlier evidence,
+customer merge carries newer customer-owned modules, live catalog/stock results expose verification
+time, and cold-start forecasts return insufficient-data evidence instead of confident advice.
+Contracts: `scripts/data-integrity-contract.test.mts` and
+`scripts/data-integrity-db-contract.test.mts`.
+
 **Commercial intelligence Q1-Q3 (2026-08-22)** — ✅ implemented. Phase 1 combines a Bangkok-day
 Action Center with advisory inventory intelligence (`9.12`–`9.13`): evidence, priority, expected
 impact, confidence, owner/due date, audited lifecycle and measured outcomes sit beside stock-out
@@ -138,8 +149,8 @@ an ephemeral invoice from an existing order (snapshot prices; no document row is
   see the two bullets below for what changed since.
 - **Admin app i18n — batches 1–17 done, ~62% of the admin app (2026-08)**: a series of follow-up passes
   converted `/admin/**` from 0% (no file called `useI18n()`) to **48 of 78** admin `.tsx` files carrying
-  a bilingual mechanism, with the shared dictionary now at **68 namespaces / 3,552 keys per language at
-  exact th↔en parity** (verified 2026-08-15). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
+  a bilingual mechanism, with the shared dictionary now at **69 namespaces / 3,802 keys per language at
+  exact th↔en parity** (verified 2026-08-23). The nav shell (`AdminSidebar.tsx`/`AdminLayoutClient.tsx`)
   and `admin/login/page.tsx` — both previously flagged here as priority gaps — are converted. The
   remaining 30 files are **not Thai leaks**: they are trivial `layout.tsx`/`loading.tsx` guards with no
   user-visible copy, plus the English-only legacy platform-admin pages (`admin/roles`, `admin/logs`,

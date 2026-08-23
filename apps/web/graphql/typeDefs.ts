@@ -1334,6 +1334,8 @@ export const typeDefs = /* GraphQL */ `
     CARD
     TIKTOK
     CASH
+    WALLET
+    STORE_CREDIT
   }
 
   enum BmsPaymentStatus {
@@ -1354,6 +1356,9 @@ export const typeDefs = /* GraphQL */ `
     verifyResult: String    # JSON string ของผลตรวจสลิป (OCR/AI)
     note: String
     verifiedBy: String
+    confirmedAt: String
+    rejectedAt: String
+    refundedAt: String
     createdAt: String!
     updatedAt: String!
   }
@@ -2023,6 +2028,8 @@ export const typeDefs = /* GraphQL */ `
     from: String!
     to: String!
     revenue: Float!
+    refundTotal: Float!
+    netRevenue: Float!
     orderCount: Int!
     avgOrderValue: Float!
     byDay: [BmsDailySales!]!

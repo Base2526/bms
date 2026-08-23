@@ -1452,7 +1452,7 @@ async function checkSellableLots(
   for (const ln of lines) {
     const res = await query<{ lots: string; sellable: string }>(
       `SELECT count(*) AS lots,
-              COALESCE(SUM(qty) FILTER (WHERE expiry_date IS NULL OR expiry_date >= CURRENT_DATE), 0) AS sellable
+              COALESCE(SUM(qty) FILTER (WHERE expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date), 0) AS sellable
          FROM bms_inventory_lots
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
       [tenantId, locationId, ln.sku, ln.size]
@@ -1526,7 +1526,7 @@ async function fulfilPosOrderInTx(
     const lots = await client.query<{ id: string; qty: number }>(
       `SELECT id, qty FROM bms_inventory_lots
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
-          AND qty > 0 AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+          AND qty > 0 AND (expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)
         ORDER BY expiry_date NULLS LAST, received_at
         FOR UPDATE`,
       [tenantId, it.location_id, it.product_sku, it.size]
@@ -1899,8 +1899,8 @@ async function finalizePosSale(args: {
         await client.query(
           `INSERT INTO bms_payments
              (tenant_id, order_id, method, amount, status, slip_ref, verified_by,
-              cash_tendered, cash_change, updated_at)
-           VALUES ($1, $2, $3, $4, 'CONFIRMED', $5, $6, $7, $8, now())`,
+              cash_tendered, cash_change, confirmed_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'CONFIRMED', $5, $6, $7, $8, now(), now())`,
           [input.tenantId, orderId, payment.method, payment.amount, payment.ref ?? null,
             input.cashierUserId, tendered, change]
         );
@@ -1911,7 +1911,7 @@ async function finalizePosSale(args: {
       }
 
       const paidOrder = await client.query(
-        `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+        `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
         [input.tenantId, orderId]
       );
@@ -2852,7 +2852,8 @@ async function processPosReturn(input: {
 
       if (completed && Number(payment.allocated) + amount >= Number(payment.amount) - 0.01) {
         await client.query(
-          `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3, updated_at = now()
+          `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3,
+              refunded_at = COALESCE(refunded_at, now()), updated_at = now()
             WHERE tenant_id = $1 AND id = $2 AND status = 'CONFIRMED'`,
           [input.tenantId, payment.id, input.actorUserId]
         );
@@ -2875,7 +2876,7 @@ async function processPosReturn(input: {
     });
     if (allReturned) {
       await client.query(
-        `UPDATE bms_orders SET status = 'RETURNED', updated_at = now()
+        `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status = 'COMPLETED'`,
         [input.tenantId, input.orderId]
       );
@@ -3101,7 +3102,8 @@ export async function completePosRefundAllocation(input: {
     );
     if (Number(paid.rows[0]?.completed ?? 0) >= Number(paid.rows[0]?.amount ?? 0) - 0.01) {
       await client.query(
-        `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3, updated_at = now()
+        `UPDATE bms_payments SET status = 'REFUNDED', verified_by = $3,
+            refunded_at = COALESCE(refunded_at, now()), updated_at = now()
           WHERE tenant_id = $1 AND id = $2 AND status = 'CONFIRMED'`,
         [input.tenantId, row.payment_id, input.actorUserId]
       );

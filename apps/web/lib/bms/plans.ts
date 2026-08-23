@@ -50,7 +50,7 @@ export async function getUsage(tenantId: string) {
        (SELECT COUNT(*) FROM bms_products WHERE tenant_id = $1)::int AS products,
        (SELECT COUNT(*) FROM bms_tenant_channels WHERE tenant_id = $1 AND active)::int AS channels,
        (SELECT COUNT(*) FROM bms_orders WHERE tenant_id = $1
-          AND created_at >= date_trunc('month', now()))::int AS orders_month,
+          AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok'))::int AS orders_month,
        (SELECT COUNT(*) FROM users WHERE tenant_id = $1)::int AS users`,
     [tenantId]
   );
