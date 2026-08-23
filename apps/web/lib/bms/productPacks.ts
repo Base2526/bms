@@ -10,6 +10,11 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import type { QueryResult, QueryResultRow } from "pg";
+
+type VariantPriceClient = {
+  query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>>;
+};
 
 export type ProductPack = {
   id: string;
@@ -38,6 +43,41 @@ function mapPack(r: any): ProductPack {
     isBase: Boolean(r.is_base),
     active: Boolean(r.active),
   };
+}
+
+/** Source of truth: sized BASE price -> shared BASE price -> product price. */
+export async function getVariantBasePriceInTx(
+  client: VariantPriceClient,
+  tenantId: string,
+  productSku: string,
+  size: string
+): Promise<number | null> {
+  const res = await client.query<{ price: string }>(
+    `SELECT COALESCE(sized.price, shared.price, p.price)::text AS price
+       FROM bms_products p
+       LEFT JOIN bms_product_packs sized
+         ON sized.tenant_id = p.tenant_id
+        AND sized.product_sku = p.sku
+        AND sized.size = $3
+        AND sized.is_base AND sized.active
+       LEFT JOIN bms_product_packs shared
+         ON shared.tenant_id = p.tenant_id
+        AND shared.product_sku = p.sku
+        AND shared.size IS NULL
+        AND shared.is_base AND shared.active
+      WHERE p.tenant_id = $1 AND p.sku = $2 AND p.active
+      LIMIT 1`,
+    [tenantId, productSku, size]
+  );
+  return res.rows[0] ? Number(res.rows[0].price) : null;
+}
+
+export async function getVariantBasePrice(
+  tenantId: string,
+  productSku: string,
+  size: string
+): Promise<number | null> {
+  return getVariantBasePriceInTx({ query }, tenantId, productSku, size);
 }
 
 export async function listProductPacks(tenantId: string, productSku: string): Promise<ProductPack[]> {

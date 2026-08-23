@@ -211,11 +211,17 @@ export async function getInventorySummary(tenantId: string) {
         COALESCE(SUM(i.current_stock), 0)::int AS total_units,
         COALESCE(SUM(i.reserved_stock), 0)::int AS reserved_units,
         COALESCE(SUM(i.current_stock - i.reserved_stock), 0)::int AS available_units,
-        COALESCE(SUM(i.current_stock * p.price), 0) AS stock_value,
+        COALESCE(SUM(i.current_stock * COALESCE(sized.price, shared.price, p.price)), 0) AS stock_value,
         COUNT(*) FILTER (WHERE p.active AND (i.current_stock - i.reserved_stock) <= i.reorder_point)::int AS low_stock_count,
         COUNT(*) FILTER (WHERE p.active AND i.current_stock = 0)::int AS out_of_stock_count
        FROM bms_inventory i
        JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       LEFT JOIN bms_product_packs sized
+         ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
+        AND sized.size = i.size AND sized.is_base AND sized.active
+       LEFT JOIN bms_product_packs shared
+         ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
+        AND shared.size IS NULL AND shared.is_base AND shared.active
       WHERE i.tenant_id = $1`,
     [tenantId]
   );

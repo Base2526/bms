@@ -5,8 +5,8 @@
 // what only a real order can:
 //
 //   - createOrder charges the promotion price
-//   - the promotion is counted ONCE per SKU per bill, not once per line — the
-//     quantity spans sizes, so charging per line would bill the offer twice
+//   - the promotion is counted once per SKU+size, combining repeated lines of the
+//     same variant without mixing variants that have different base prices
 //   - the counter's preview and the committed total agree, or the register's
 //     payment rows miss the server total and the bill dies as PAYMENT_MISMATCH
 //   - an expired promotion stops applying without anyone editing the product
@@ -27,6 +27,7 @@ import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
 import { resolvePosScan } from "../apps/web/lib/bms/pos.ts";
 import { applyPromotion } from "../apps/web/lib/bms/pricing.ts";
+import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/productPacks.ts";
 
 const TAG = "promo-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -53,7 +54,7 @@ const setPromo = async (sql: string, params: any[]) => {
   if (sql) await query(sql, params);
 };
 
-test("setup: one ฿40 product in two sizes", async () => {
+test("setup: one product with ฿40 and ฿60 size prices", async () => {
   tenantId = (await query<{ id: string }>(`SELECT id FROM bms_tenants ORDER BY created_at LIMIT 1`)).rows[0].id;
   locationId = (await query<{ id: string }>(
     `SELECT id FROM bms_locations WHERE tenant_id = $1 AND active
@@ -75,6 +76,20 @@ test("setup: one ฿40 product in two sizes", async () => {
       [tenantId, locationId, SKU, size]
     );
   }
+  for (const [size, price] of [[SIZE_S, 40], [SIZE_L, 60]] as const) {
+    const existing = (await listProductPacks(tenantId, SKU)).find((pack) => pack.size === size && pack.isBase);
+    await upsertProductPack(tenantId, {
+      id: existing?.id,
+      productSku: SKU,
+      size,
+      packCode: "BASE",
+      unitName: "ชิ้น",
+      baseQty: 1,
+      price,
+      isBase: true,
+      active: true,
+    });
+  }
   await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
 });
 
@@ -88,14 +103,13 @@ test("buy 3 get 1: four units cost three", async () => {
   assert.equal(order.subtotal, 120, "จ่าย 3 ชิ้น ได้ 4");
 });
 
-test("the promotion is charged once per SKU even when the bill has several lines", async () => {
-  // 2 ขวดเล็ก + 2 ขวดใหญ่ = ซื้อสินค้านั้น 4 ชิ้น → ต้องจ่าย 3 ชิ้น = 120
-  // ถ้าคิดต่อบรรทัด แต่ละบรรทัดมี 2 ชิ้น (ยังไม่ครบชุด) → จ่ายเต็ม 160
-  // ถ้าคิดโปรซ้ำทุกบรรทัด → เก็บเงินเป็นสองเท่าของยอดโปร
+test("the promotion combines repeated lines but never mixes different size prices", async () => {
+  // 2 ขวดเล็ก (฿40) + 2 ขวดใหญ่ (฿60) ยังไม่ครบโปรในแต่ละไซซ์ → ฿200
   const order = await sell([{ size: SIZE_S, qty: 2 }, { size: SIZE_L, qty: 2 }]);
-  assert.equal(order.subtotal, 120, "จำนวนรวมทั้งบิลต่อ SKU และคิดโปรครั้งเดียว");
-  assert.notEqual(order.subtotal, 160);
-  assert.notEqual(order.subtotal, 240);
+  assert.equal(order.subtotal, 200, "คนละไซซ์ต้องไม่รวมจำนวนหรือใช้ราคาฐานปนกัน");
+
+  const repeated = await sell([{ size: SIZE_S, qty: 2 }, { size: SIZE_S, qty: 2 }]);
+  assert.equal(repeated.subtotal, 120, "บรรทัดซ้ำของ SKU+ไซซ์เดียวกันต้องรวมเป็นโปรหนึ่งชุด");
 });
 
 test("3 for 100: the remainder pays full price", async () => {
@@ -169,6 +183,7 @@ test("teardown: remove every row this suite created", async () => {
     await query(`DELETE FROM bms_orders WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [tenantId, created]);
   }
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  await query(`DELETE FROM bms_product_packs WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
 });

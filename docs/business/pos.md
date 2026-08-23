@@ -68,6 +68,16 @@ bills rung up by mistake.
 9. Closing a shift calculates expected cash from opening float + cash collected - completed cash
    refunds, then records counted cash and variance.
 
+## Per-size sale prices
+
+The product price is the fallback price. A sized BASE pack may override it for one inventory size;
+leaving that override empty restores the fallback without deleting inventory or pack history. POS,
+order creation, stock/AI results, and the public shop all resolve price in the same order: sized BASE
+price, shared BASE price, then product price. Quantity tiers and active promotions remain configured
+per SKU. Fixed-price tiers qualify separately per SKU + size. Cross-size percentage tiers qualify
+from the SKU's quantity across every size, then discount each size from its own base price so two
+sizes with different prices never collapse to one unit price. Promotions remain per SKU + size.
+
 ## Membership, tier discounts, and loyalty points
 
 Added by migration `7.96`. Before it, POS sales were always anonymous — `createOrder` received
@@ -394,14 +404,17 @@ not only the ones past the threshold.
 
 Two decisions worth stating:
 
-**Quantity is counted per SKU across the whole bill, not per line.** A customer taking five 60ml and
-five 150ml has bought ten of that product, which is what a shop means by "buy ten". Counting per line
-would leave that customer at the three-unit price with no explanation anyone could give at the
-counter.
+Each step chooses one explicit scope. **Separate sizes: fixed price** combines repeated lines of the
+same SKU + size and applies the configured unit price. **Combine sizes: percentage** sums every size
+of the SKU to qualify, then applies the configured percentage to each variant's own base price. For
+example S ฿10 × 4, M ฿12 × 3, and L ฿15 × 3 qualify together at ten units; 20% off produces ฿8,
+฿9.60, and ฿12 respectively, for ฿96.80 total. A single fixed ฿8 across different regular prices is
+intentionally not supported because it silently gives the expensive size a much deeper discount.
 
 **A line sold as a pack keeps the pack's price.** The pack row is the shop stating outright what the
 box costs; letting two mechanisms compete for the same line produces a bill nobody can explain. The
-pack's units still count toward the SKU's total, because the customer did buy them.
+pack's units still count toward the same SKU + size threshold, but the pack line itself keeps its
+configured pack price.
 
 Steps are not required to get cheaper as they climb, and nothing corrects them if they do not. A shop
 charging more for a full case because it needs special packing means it. The function's job is to do

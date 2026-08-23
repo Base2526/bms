@@ -25,6 +25,7 @@ import type { PoolClient } from "pg";
 import { checkPharmacistDraftPolicyInTx } from "./productPolicy";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
+import { getVariantBasePriceInTx } from "../productPacks";
 import { sendStaffMessage } from "../inbox";
 import { getConversation, listMessages } from "../inbox";
 import { recordPharmacyEvent } from "./events";
@@ -543,8 +544,8 @@ export async function createProductReviewAssessmentOnce(input: {
     }
 
     const skus = [...new Set(items.map((item) => item.sku))];
-    const products = await client.query<{ sku: string; name: string; price: string }>(
-      `SELECT sku, name, price FROM bms_products
+    const products = await client.query<{ sku: string; name: string }>(
+      `SELECT sku, name FROM bms_products
         WHERE tenant_id = $1 AND sku = ANY($2::text[]) AND active = TRUE`,
       [input.tenantId, skus]
     );
@@ -561,20 +562,23 @@ export async function createProductReviewAssessmentOnce(input: {
         throw new Error(`สินค้า ${item.sku} ขนาด ${item.size} มีจำนวนไม่พอสำหรับส่งตรวจ`);
       }
     }
-    const draftItems = items.map((item) => {
+    const draftItems: PharmacyCheckoutOrderDraft["items"] = [];
+    for (const item of items) {
       const product = bySku.get(item.sku);
       if (!product) throw new Error(`ไม่พบสินค้า ${item.sku} หรือสินค้าไม่พร้อมขาย`);
-      return {
+      const unitPrice = await getVariantBasePriceInTx(client, input.tenantId, item.sku, item.size);
+      if (unitPrice == null) throw new Error(`ไม่พบราคาสินค้า ${item.sku} ขนาด ${item.size}`);
+      draftItems.push({
         sku: item.sku,
         size: item.size,
         qty: item.qty,
-        unitPrice: Number(product.price),
+        unitPrice,
         productName: product.name,
         drugName: null,
         dosageInstruction: null,
         pharmacistNote: null,
-      };
-    });
+      });
+    }
     const estimatedTotal = draftItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
     const checkoutDraft: PharmacyCheckoutOrderDraft = {
       status: "AWAITING_CUSTOMER_CONFIRMATION",

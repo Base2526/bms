@@ -397,13 +397,15 @@ const getProduct: BmsTool = {
     const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
     const variants = await listVariants(ec.tenantId, p.sku);
+    const variantPrices = variants.map((variant) => Number(variant.price));
     return {
       ok: true,
       data: {
         verifiedAt: new Date().toISOString(),
         sku: p.sku,
         name: p.name,
-        price: Number(p.price),
+        price: variantPrices.length ? Math.min(...variantPrices) : Number(p.price),
+        maxPrice: variantPrices.length ? Math.max(...variantPrices) : Number(p.price),
         description: p.description?.slice(0, 800) ?? null,
         category: p.category,
         brand: p.brand,
@@ -426,6 +428,7 @@ const getProduct: BmsTool = {
         variants: variants.map((v) => ({
           size: v.size,
           available: Math.max(0, v.current_stock - v.reserved_stock),
+          price: Number(v.price),
         })),
       },
     };

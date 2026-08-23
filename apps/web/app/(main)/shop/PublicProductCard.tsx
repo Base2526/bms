@@ -17,6 +17,12 @@ function formatPrice(price: number, currency: string, lang: "th" | "en") {
   }
 }
 
+function formatPriceRange(min: number, max: number, currency: string, lang: "th" | "en") {
+  return max > min
+    ? `${formatPrice(min, currency, lang)} - ${formatPrice(max, currency, lang)}`
+    : formatPrice(min, currency, lang);
+}
+
 export default function PublicProductCard({
   ctaLabel,
   currency,
@@ -78,7 +84,7 @@ export default function PublicProductCard({
       <div className={styles.productInfo}>
         {eyebrow && <div className={styles.eyebrow}>{eyebrow}</div>}
         <h3 className={styles.productName}>{product.name}</h3>
-        <div className={styles.price}>{formatPrice(product.price, currency, lang)}</div>
+        <div className={styles.price}>{formatPriceRange(product.price, product.maxPrice, currency, lang)}</div>
         <div className={styles.metaText}>SKU: {product.sku}</div>
       </div>
 

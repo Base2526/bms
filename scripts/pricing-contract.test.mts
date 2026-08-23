@@ -52,19 +52,44 @@ test("ขั้นสูงที่แพงกว่าขั้นต่ำ�
   assert.equal(unitPriceForQty(100, odd, 12), 120);
 });
 
-test("จำนวนนับรวมทั้งบิลต่อ SKU ไม่ใช่ต่อบรรทัด", () => {
-  // 60ml 5 ขวด + 150ml 5 ขวด = ซื้อสินค้านั้น 10 ชิ้น → ได้ราคาขั้น 10
+test("ราคาและจำนวนนับแยกต่อ SKU+ไซซ์", () => {
   const priced = priceLinesByQty(
     [
       { sku: "A", size: "60ML", qty: 5 },
       { sku: "A", size: "150ML", qty: 5 },
     ],
-    new Map([["A", 100]]),
+    new Map([["A\u000060ML", 100], ["A\u0000150ML", 200]]),
     new Map([["A", tiers]])
   );
-  assert.equal(priced[0].unitPrice, 80);
-  assert.equal(priced[1].unitPrice, 80);
+  assert.equal(priced[0].unitPrice, 90, "60ML จำนวน 5 ได้ขั้น 3");
+  assert.equal(priced[1].unitPrice, 90, "150ML จำนวน 5 ได้ขั้น 3 โดยไม่เอาราคา 60ML มาปน");
   assert.equal(priced[0].tierApplied, true);
+});
+
+test("รวมข้ามไซซ์เพื่อผ่านขั้นต่ำ แต่ลดเปอร์เซ็นต์จากราคาของแต่ละไซซ์", () => {
+  const crossSizeTiers: PriceTier[] = [{
+    minQty: 10,
+    scope: "CROSS_VARIANT_PERCENT",
+    discountPct: 20,
+    unitPrice: null,
+  }];
+  const priced = priceLinesByQty(
+    [
+      { sku: "A", size: "S", qty: 4 },
+      { sku: "A", size: "M", qty: 3 },
+      { sku: "A", size: "L", qty: 3 },
+    ],
+    new Map([["A\u0000S", 10], ["A\u0000M", 12], ["A\u0000L", 15]]),
+    new Map([["A", crossSizeTiers]])
+  );
+  assert.deepEqual(priced.map((line) => line.unitPrice), [8, 9.6, 12]);
+  assert.equal(priced.reduce((sum, line) => sum + line.unitPrice * line.qty, 0), 96.8);
+});
+
+test("รวมข้ามไซซ์ไม่ถึงขั้นต่ำยังใช้ราคาปกติ และเปอร์เซ็นต์ผิดรูปไม่ถูกใช้", () => {
+  assert.equal(unitPriceForQty(12, [{ minQty: 10, scope: "CROSS_VARIANT_PERCENT", discountPct: 20 }], 3, 9), 12);
+  assert.equal(unitPriceForQty(12, [{ minQty: 10, scope: "CROSS_VARIANT_PERCENT", discountPct: 0 }], 3, 10), 12);
+  assert.equal(unitPriceForQty(12, [{ minQty: 10, scope: "CROSS_VARIANT_PERCENT", discountPct: 101 }], 3, 10), 12);
 });
 
 test("สินค้าคนละ SKU ไม่รวมจำนวนกัน", () => {

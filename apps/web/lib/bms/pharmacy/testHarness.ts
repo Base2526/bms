@@ -8,6 +8,7 @@ import {
   pharmacyEmergencyReply,
 } from "./trigger";
 import { listSellableProducts } from "../products";
+import type { SellableProduct } from "../products";
 import { listPharmacyProductPolicies } from "./productPolicy";
 import {
   pharmacyRouterReply,
@@ -71,6 +72,10 @@ type ProductSizeOption = {
   size: string;
   available: number;
 };
+
+function selectedVariantPrice(product: SellableProduct, size?: string): number {
+  return product.availableSizes.find((variant) => variant.size === size)?.price ?? product.price;
+}
 
 function normalizeCartMatchText(text: string): string {
   return text.trim().toLowerCase();
@@ -766,7 +771,7 @@ async function handleProductPurchase(
         return { reply: `สินค้า ${product.name} จำกัดสูงสุด ${policy.maxQuantity} ชิ้นต่อออเดอร์ค่ะ`, session: productSession };
       }
       const nextCart = existingCart.map((item) => item.sku === selectedSku
-        ? { ...item, qty: revisedQty, name: product.name, unitPrice: product.price }
+        ? { ...item, qty: revisedQty, name: product.name, unitPrice: selectedVariantPrice(product, item.size) }
         : item);
       return {
         reply: `อัปเดตจำนวน ${product.name} เป็น ${revisedQty} ชิ้นแล้วค่ะ\n${formatProductCart(nextCart)}`,
@@ -805,7 +810,7 @@ async function handleProductPurchase(
       if (policy.maxQuantity != null && item.qty > policy.maxQuantity) {
         return { reply: `สินค้า ${item.name} จำกัดสูงสุด ${policy.maxQuantity} ชิ้นต่อออเดอร์ กรุณาลดจำนวนค่ะ`, session: productSession };
       }
-      refreshedCart.push({ ...item, name: product.name, unitPrice: product.price, salePolicy: policy.salePolicy });
+      refreshedCart.push({ ...item, name: product.name, unitPrice: selectedVariantPrice(product, item.size), salePolicy: policy.salePolicy });
     }
     return {
       reply: `ยืนยันตะกร้าแล้วค่ะ\n${formatProductCart(refreshedCart)}\nสถานะ: พร้อมส่งไปสร้าง Order จริงต่อได้`,
@@ -896,12 +901,13 @@ async function handleProductPurchase(
   const resolvedSize = canAddToCart
     ? (selectedSize?.size ?? (availableSizeOptions.length === 1 ? availableSizeOptions[0]?.size ?? "" : ""))
     : "";
+  const unitPrice = selectedVariantPrice(product, resolvedSize);
   const nextCart = canAddToCart
     ? [...existingCart.filter((item) => item.sku !== product.sku), {
         sku: product.sku,
         name: product.name,
         qty: requestedQty,
-        unitPrice: product.price,
+        unitPrice,
         salePolicy: policy.salePolicy,
         ...(resolvedSize ? { size: resolvedSize } : {}),
       }]
@@ -909,7 +915,7 @@ async function handleProductPurchase(
   const cartReply = canAddToCart
     ? `\n\nเพิ่มลงตะกร้าแล้ว\n${formatProductCart(nextCart)}\n\nเลือก “เพิ่มสินค้า” หรือ “ยืนยันตะกร้า” ได้เลยค่ะ`
     : "";
-  const productSummary = `ยืนยันสินค้าแล้ว: ${product.name} (${product.sku})\nราคา ${formatBaht(product.price)} / ชิ้น\nจำนวน ${requestedQty}`;
+  const productSummary = `ยืนยันสินค้าแล้ว: ${product.name} (${product.sku})\nราคา ${formatBaht(unitPrice)} / ชิ้น\nจำนวน ${requestedQty}`;
   return {
     reply: canAddToCart
       ? `${productSummary}\nสถานะ: ${policyText}${cartReply}`
@@ -921,7 +927,7 @@ async function handleProductPurchase(
         [PRODUCT_SESSION_KEYS.sku]: product.sku,
         [PRODUCT_SESSION_KEYS.name]: product.name,
         [PRODUCT_SESSION_KEYS.qty]: requestedQty,
-        [PRODUCT_SESSION_KEYS.price]: product.price,
+        [PRODUCT_SESSION_KEYS.price]: unitPrice,
         [PRODUCT_SESSION_KEYS.salePolicy]: policy?.salePolicy ?? "UNKNOWN",
         [PRODUCT_SESSION_KEYS.size]: resolvedSize,
       }, nextCart), []), []),
