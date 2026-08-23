@@ -50,6 +50,9 @@ type Variant = {
   available: number;
   reorder_point: number;
   low: boolean;
+  price: number;
+  priceOverride: number | null;
+  basePackId: string | null;
 };
 type Product = {
   sku: string;
@@ -66,7 +69,12 @@ type Product = {
   category: string | null;
   brand: string | null;
   vatCategory: string | null;
-  priceTiers: Array<{ minQty: number; unitPrice: number }>;
+  priceTiers: Array<{
+    minQty: number;
+    scope: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    unitPrice: number | null;
+    discountPct: number | null;
+  }>;
   variants: Variant[];
 };
 type Movement = {
@@ -100,7 +108,7 @@ const Q_PRODUCTS = gql`
         category
         brand
         vatCategory
-        priceTiers { minQty unitPrice }
+        priceTiers { minQty scope unitPrice discountPct }
         variants {
           size
           current_stock
@@ -108,6 +116,9 @@ const Q_PRODUCTS = gql`
           available
           reorder_point
           low
+          price
+          priceOverride
+          basePackId
         }
       }
     }
@@ -146,6 +157,11 @@ const M_ADJUST = gql`
 const M_REORDER = gql`
   mutation ($sku: String!, $size: String!, $rp: Int!) {
     bmsSetReorderPoint(sku: $sku, size: $size, reorderPoint: $rp) { size low }
+  }
+`;
+const M_VARIANT_PRICE = gql`
+  mutation ($input: BmsProductPackInput!) {
+    bmsUpsertProductPack(input: $input) { id price size }
   }
 `;
 const M_CREATE_CATEGORY = gql`mutation ($name: String!) { bmsCreateProductCategory(name: $name) { id name } }`;
@@ -274,7 +290,12 @@ function ProductsManagement() {
   // เพราะ Form.Item ไม่ re-render ตัว label/help ให้เมื่อค่าเปลี่ยน
   const [barcodeDraft, setBarcodeDraft] = useState("");
   // ขั้นราคาส่ง (8.1) — เก็บนอก Form เพราะเป็นรายการที่เพิ่ม/ลบแถวได้
-  const [priceTiers, setPriceTiers] = useState<Array<{ minQty: string; unitPrice: string }>>([]);
+  const [priceTiers, setPriceTiers] = useState<Array<{
+    minQty: string;
+    scope: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    unitPrice: string;
+    discountPct: string;
+  }>>([]);
   const [genBarcode, { loading: generatingBarcode }] = useMutation(M_GENERATE_BARCODE);
 
   const generateBarcode = async () => {
@@ -340,7 +361,12 @@ function ProductsManagement() {
       vatCategory: p.vatCategory || "UNKNOWN",
     });
     setBarcodeDraft(p.barcode || "");
-    setPriceTiers((p.priceTiers ?? []).map((t) => ({ minQty: String(t.minQty), unitPrice: String(t.unitPrice) })));
+    setPriceTiers((p.priceTiers ?? []).map((t) => ({
+      minQty: String(t.minQty),
+      scope: t.scope ?? "PER_VARIANT_FIXED",
+      unitPrice: t.unitPrice == null ? "" : String(t.unitPrice),
+      discountPct: t.discountPct == null ? "" : String(t.discountPct),
+    })));
     setModalOpen(true);
   };
 
@@ -380,8 +406,19 @@ function ProductsManagement() {
           vat_category: v.vatCategory || null,
           // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
           price_tiers: priceTiers
-            .map((t) => ({ minQty: Math.trunc(Number(t.minQty)), unitPrice: Number(t.unitPrice) }))
-            .filter((t) => Number.isInteger(t.minQty) && t.minQty >= 2 && Number.isFinite(t.unitPrice) && t.unitPrice >= 0),
+            .map((t) => ({
+              minQty: Math.trunc(Number(t.minQty)),
+              scope: t.scope,
+              unitPrice: t.scope === "PER_VARIANT_FIXED" && t.unitPrice !== "" ? Number(t.unitPrice) : null,
+              discountPct: t.scope === "CROSS_VARIANT_PERCENT" && t.discountPct !== ""
+                ? Number(t.discountPct)
+                : null,
+            }))
+            .filter((t) => Number.isInteger(t.minQty) && t.minQty >= 2 && (
+              (t.scope === "PER_VARIANT_FIXED" && Number.isFinite(t.unitPrice) && Number(t.unitPrice) >= 0)
+              || (t.scope === "CROSS_VARIANT_PERCENT" && Number.isFinite(t.discountPct)
+                && Number(t.discountPct) > 0 && Number(t.discountPct) <= 100)
+            )),
         },
       },
     });
@@ -763,13 +800,13 @@ function ProductsManagement() {
             </Form.Item>
           </Space.Compact>
 
-          {/* ขั้นราคาส่ง (8.1) — ซื้อครบกี่ชิ้นได้ราคาเท่าไร
-              จำนวนนับรวมทั้งบิลต่อสินค้า ไม่ใช่ต่อบรรทัด (60ml 5 + 150ml 5 = 10 ชิ้น)
+          {/* ขั้นราคาส่ง — แบบราคาคงที่นับแยกไซซ์; แบบเปอร์เซ็นต์นับรวมข้ามไซซ์
+              แต่ยังลดจากราคาฐานของแต่ละไซซ์ ไม่บีบทุกไซซ์ให้เป็นราคาเดียว
               ยุบไว้ตอนไม่มีขั้น เพราะสินค้าส่วนใหญ่ขายราคาเดียว */}
           <Form.Item label={t("admin_products.label_price_tiers")} tooltip={t("admin_products.price_tiers_tooltip")}>
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
               {priceTiers.map((tier, idx) => (
-                <Space key={idx} align="baseline">
+                <Space key={idx} align="baseline" wrap>
                   <span style={{ fontSize: 12 }}>{t("admin_products.tier_from")}</span>
                   <InputNumber
                     min={2}
@@ -778,14 +815,43 @@ function ProductsManagement() {
                       cur.map((row, i) => (i === idx ? { ...row, minQty: v == null ? "" : String(v) } : row)))}
                     style={{ width: 90 }}
                   />
-                  <span style={{ fontSize: 12 }}>{t("admin_products.tier_price_each")}</span>
-                  <InputNumber
-                    min={0}
-                    value={tier.unitPrice === "" ? null : Number(tier.unitPrice)}
-                    onChange={(v) => setPriceTiers((cur) =>
-                      cur.map((row, i) => (i === idx ? { ...row, unitPrice: v == null ? "" : String(v) } : row)))}
-                    style={{ width: 110 }}
+                  <Select
+                    value={tier.scope}
+                    onChange={(scope) => setPriceTiers((cur) => cur.map((row, i) => (
+                      i === idx ? { ...row, scope } : row
+                    )))}
+                    style={{ width: 190 }}
+                    options={[
+                      { value: "PER_VARIANT_FIXED", label: t("admin_products.tier_scope_variant") },
+                      { value: "CROSS_VARIANT_PERCENT", label: t("admin_products.tier_scope_cross") },
+                    ]}
                   />
+                  {tier.scope === "PER_VARIANT_FIXED" ? (
+                    <>
+                      <span style={{ fontSize: 12 }}>{t("admin_products.tier_price_each")}</span>
+                      <InputNumber
+                        min={0}
+                        value={tier.unitPrice === "" ? null : Number(tier.unitPrice)}
+                        onChange={(v) => setPriceTiers((cur) =>
+                          cur.map((row, i) => (i === idx ? { ...row, unitPrice: v == null ? "" : String(v) } : row)))}
+                        style={{ width: 110 }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 12 }}>{t("admin_products.tier_discount_pct")}</span>
+                      <InputNumber
+                        min={0.01}
+                        max={100}
+                        value={tier.discountPct === "" ? null : Number(tier.discountPct)}
+                        onChange={(v) => setPriceTiers((cur) => cur.map((row, i) => (
+                          i === idx ? { ...row, discountPct: v == null ? "" : String(v) } : row
+                        )))}
+                        addonAfter="%"
+                        style={{ width: 130 }}
+                      />
+                    </>
+                  )}
                   <Button
                     type="text"
                     danger
@@ -797,7 +863,12 @@ function ProductsManagement() {
               ))}
               <Button
                 type="dashed"
-                onClick={() => setPriceTiers((cur) => [...cur, { minQty: "", unitPrice: "" }])}
+                onClick={() => setPriceTiers((cur) => [...cur, {
+                  minQty: "",
+                  scope: "PER_VARIANT_FIXED",
+                  unitPrice: "",
+                  discountPct: "",
+                }])}
               >
                 + {t("admin_products.tier_add")}
               </Button>
@@ -1005,6 +1076,10 @@ function ProductDetail({
     onCompleted: () => { message.success(t("admin_products.reorder_saved")); onChanged(); },
     onError: onErr,
   });
+  const [setVariantPrice, { loading: savingVariantPrice }] = useMutation(M_VARIANT_PRICE, {
+    onCompleted: () => { message.success(t("admin_products.variant_price_saved")); onChanged(); },
+    onError: onErr,
+  });
   const [loadMoves, { data: movesData, loading: movesLoading, called: movesCalled, refetch: refetchMoves }] = useLazyQuery(Q_MOVEMENTS, {
     fetchPolicy: "cache-first",
   });
@@ -1061,6 +1136,51 @@ function ProductDetail({
         <Typography.Text strong style={{ fontSize: 16 }}>
           {size}
         </Typography.Text>
+      ),
+    },
+    {
+      title: t("admin_products.col_variant_price"),
+      key: "price",
+      width: 190,
+      render: (_: any, variant: Variant) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <InputNumber
+            key={`${variant.size}:${variant.priceOverride ?? "default"}`}
+            min={0}
+            precision={2}
+            defaultValue={variant.priceOverride ?? undefined}
+            placeholder={Number(product.price).toLocaleString()}
+            addonAfter="฿"
+            disabled={!canEdit || savingVariantPrice}
+            style={{ width: 150 }}
+            onBlur={async (event) => {
+              const raw = event.target.value.trim().replace(/,/g, "");
+              const value = raw === "" ? null : Number(raw);
+              if (value != null && (!Number.isFinite(value) || value < 0)) return;
+              if (value === variant.priceOverride) return;
+              await setVariantPrice({
+                variables: {
+                  input: {
+                    id: variant.basePackId,
+                    productSku: product.sku,
+                    size: variant.size,
+                    packCode: "BASE",
+                    unitName: "ชิ้น",
+                    baseQty: 1,
+                    price: value,
+                    isBase: true,
+                    active: true,
+                  },
+                },
+              });
+            }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {variant.priceOverride == null
+              ? t("admin_products.variant_price_fallback", { amount: Number(variant.price).toLocaleString() })
+              : t("admin_products.variant_price_override")}
+          </Typography.Text>
+        </div>
       ),
     },
     {

@@ -19,6 +19,7 @@ import {
   type LoyaltySettings,
   type MembershipTier,
 } from "../apps/web/lib/bms/loyaltyMath.ts";
+import { priceLinesByQty, type PriceTier } from "../apps/web/lib/bms/pricing.ts";
 
 const settings = (over: Partial<LoyaltySettings> = {}): LoyaltySettings => ({
   ...DEFAULT_LOYALTY_SETTINGS,
@@ -37,6 +38,36 @@ const tier = (over: Partial<MembershipTier> = {}): MembershipTier => ({
   sortOrder: 1,
   active: true,
   ...over,
+});
+
+test("หลายไซซ์ + สมาชิก + คะแนน + ส่วนลดมือ ใช้ฐานเดียวกับ server", () => {
+  const wholesale: PriceTier[] = [{ minQty: 5, unitPrice: 1300 }];
+  const priced = priceLinesByQty(
+    [
+      { sku: "LANVIN", size: "XL", qty: 2 },
+      { sku: "LANVIN", size: "M", qty: 3 },
+    ],
+    new Map([
+      ["LANVIN\u0000XL", 1500],
+      ["LANVIN\u0000M", 1500],
+    ]),
+    new Map([["LANVIN", wholesale]])
+  );
+  const subtotal = priced.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+  assert.equal(subtotal, 7500, "2 XL กับ 3 M ห้ามรวมเป็น 5 เพื่อรับราคาส่ง");
+
+  const discount = composeDiscounts({
+    settings: settings(),
+    subtotal,
+    tier: tier(),
+    pointsRequested: 2700,
+    pointsAvailable: 2745,
+    manualDiscount: 5,
+  });
+  assert.equal(discount.tierDiscount, 375);
+  assert.equal(discount.pointsDiscount, 270);
+  assert.equal(discount.manualDiscount, 5);
+  assert.equal(discount.netTotal, 6850);
 });
 
 test("ส่วนลดสามชั้นซ้อนกันได้ และผลรวมต่อชั้นต้องเท่ากับ totalDiscount", () => {

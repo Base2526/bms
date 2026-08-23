@@ -3,8 +3,8 @@
 // -------------------------------------------------------------
 // pricing-contract.test.mts proves the arithmetic with no database. This proves
 // the part that only a real order can answer: that createOrder actually charges
-// the tier price, that the quantity is counted across the whole bill rather than
-// per line, and — the one that matters most — that the number the counter screen
+// the tier price, that repeated SKU+size lines are counted together without mixing
+// different size prices, and — the one that matters most — that the number the counter screen
 // previews and the number createOrder commits are the same.
 //
 // A disagreement there is not a rounding nuisance. The register sends payment
@@ -26,7 +26,11 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder, cancelOrder } from "../apps/web/lib/bms/orders.ts";
 import { resolvePosScan } from "../apps/web/lib/bms/pos.ts";
+import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/productPacks.ts";
 import { unitPriceForQty } from "../apps/web/lib/bms/pricing.ts";
+import { listSellableProducts } from "../apps/web/lib/bms/products.ts";
+import { generateQuotation } from "../apps/web/lib/bms/documents.ts";
+import { getInventorySummary } from "../apps/web/lib/bms/reports.ts";
 
 const TAG = "pricetier-test";
 const SKU = `FAKE-${TAG}-SKU`;
@@ -89,22 +93,117 @@ test("below the first step the shelf price still applies", async () => {
   assert.equal(order.items[0].unitPrice, 100);
 });
 
+test("per-size BASE price is identical in POS and committed order", async () => {
+  for (const [size, price] of [[SIZE_S, 120], [SIZE_L, 200]] as const) {
+    const existing = (await listProductPacks(tenantId, SKU)).find((pack) => pack.size === size && pack.isBase);
+    await upsertProductPack(tenantId, {
+      id: existing?.id,
+      productSku: SKU,
+      size,
+      packCode: "BASE",
+      unitName: "ชิ้น",
+      baseQty: 1,
+      price,
+      isBase: true,
+      active: true,
+    });
+  }
+
+  const smallHit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
+  const largeHit = await resolvePosScan(tenantId, SKU, { size: SIZE_L, locationId });
+  assert.equal(smallHit?.basePrice, 120);
+  assert.equal(largeHit?.basePrice, 200);
+  assert.equal(smallHit?.packPrice, 120, "BASE pack ต้องไม่หยิบราคาของไซซ์อื่น");
+  assert.equal(largeHit?.packPrice, 200, "BASE pack ต้องตรงกับ basePrice ของไซซ์ที่เลือก");
+
+  const order = await sell([{ size: SIZE_S, qty: 2 }, { size: SIZE_L, qty: 2 }]);
+  assert.equal(order.subtotal, 640);
+  assert.equal(order.items.find((item) => item.size === SIZE_S)?.unitPrice, 120);
+  assert.equal(order.items.find((item) => item.size === SIZE_L)?.unitPrice, 200);
+
+  const smallBudget = await listSellableProducts(tenantId, {
+    search: SKU, size: SIZE_S, maxPrice: 150, inStockOnly: true, locationId,
+  });
+  const largeBudget = await listSellableProducts(tenantId, {
+    search: SKU, size: SIZE_L, maxPrice: 150, inStockOnly: true, locationId,
+  });
+  assert.equal(smallBudget.items[0]?.sku, SKU, "ไซซ์ ฿120 ต้องผ่านงบไม่เกิน ฿150");
+  assert.equal(largeBudget.items.length, 0, "ไซซ์ ฿200 ต้องไม่ผ่านงบไม่เกิน ฿150");
+
+  const quotation = await generateQuotation(tenantId, [{ sku: SKU, size: SIZE_L, qty: 2 }]);
+  assert.equal(quotation.lines[0]?.unitPrice, 200);
+  assert.equal(quotation.subtotal, 400, "ใบเสนอราคาต้องใช้ราคาไซซ์ ไม่ใช่ราคาหลัก ฿100");
+
+  const stockValueBefore = (await getInventorySummary(tenantId)).stockValue;
+  const largeBase = (await listProductPacks(tenantId, SKU)).find((pack) => pack.size === SIZE_L && pack.isBase);
+  await upsertProductPack(tenantId, {
+    id: largeBase?.id,
+    productSku: SKU,
+    size: SIZE_L,
+    packCode: "BASE",
+    unitName: "ชิ้น",
+    baseQty: 1,
+    price: 210,
+    isBase: true,
+    active: true,
+  });
+  const stockValueAfter = (await getInventorySummary(tenantId)).stockValue;
+  assert.equal(stockValueAfter - stockValueBefore, 100_000,
+    "สต็อกไซซ์ L 10,000 ชิ้นเพิ่มราคาชิ้นละ ฿10 มูลค่ารวมต้องเพิ่ม ฿100,000");
+
+  await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  await query(
+    `INSERT INTO bms_product_price_tiers
+       (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct)
+     VALUES ($1,$2,10,NULL,'CROSS_VARIANT_PERCENT',20)`,
+    [tenantId, SKU]
+  );
+  const smallCrossHit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
+  const largeCrossHit = await resolvePosScan(tenantId, SKU, { size: SIZE_L, locationId });
+  assert.equal(unitPriceForQty(smallCrossHit!.basePrice, smallCrossHit!.priceTiers, 4, 10), 96);
+  assert.equal(unitPriceForQty(largeCrossHit!.basePrice, largeCrossHit!.priceTiers, 6, 10), 168);
+  const crossSizeOrder = await sell([{ size: SIZE_S, qty: 4 }, { size: SIZE_L, qty: 6 }]);
+  assert.equal(crossSizeOrder.subtotal, 1_392,
+    "รวมครบ 10 ชิ้นต้องลด 20% จากราคาไซซ์ S ฿120 และ L ฿210 แยกกัน");
+
+  await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  for (const [minQty, price] of [[3, 90], [10, 80], [50, 70]]) {
+    await query(
+      `INSERT INTO bms_product_price_tiers (tenant_id, product_sku, min_qty, unit_price)
+       VALUES ($1,$2,$3,$4)`,
+      [tenantId, SKU, minQty, price]
+    );
+  }
+
+  for (const size of [SIZE_S, SIZE_L]) {
+    const existing = (await listProductPacks(tenantId, SKU)).find((pack) => pack.size === size && pack.isBase);
+    await upsertProductPack(tenantId, {
+      id: existing?.id,
+      productSku: SKU,
+      size,
+      packCode: "BASE",
+      unitName: "ชิ้น",
+      baseQty: 1,
+      price: null,
+      isBase: true,
+      active: true,
+    });
+  }
+});
+
 test("reaching a step charges that step's price for the whole quantity", async () => {
   const order = await sell([{ size: SIZE_S, qty: 3 }]);
   assert.equal(order.items[0].unitPrice, 90);
   assert.equal(order.subtotal, 270, "ขั้นราคาใช้กับทุกชิ้น ไม่ใช่เฉพาะชิ้นที่เกินขั้น");
 });
 
-test("the quantity is the whole bill's, not one line's", async () => {
-  // 5 + 5 = ซื้อสินค้านั้น 10 ชิ้น → ต้องได้ขั้น 10 ทั้งสองบรรทัด
+test("quantity tiers do not combine different sizes", async () => {
+  // แต่ละไซซ์มี 5 ชิ้น จึงได้ขั้น 3 แยกกัน ไม่รวมเป็น 10
   const order = await sell([{ size: SIZE_S, qty: 5 }, { size: SIZE_L, qty: 5 }]);
   for (const item of order.items) {
-    assert.equal(item.unitPrice, 80, `${item.size} ต้องได้ราคาขั้น 10`);
+    assert.equal(item.unitPrice, 90, `${item.size} ต้องได้ราคาขั้น 3`);
   }
-  assert.equal(order.subtotal, 800);
-
-  // ถ้าคิดต่อบรรทัด ทั้งคู่จะได้ขั้น 3 (฿90) แล้วรวมเป็น 900 — ลูกค้าอธิบายไม่ได้
-  assert.notEqual(order.subtotal, 900);
+  assert.equal(order.subtotal, 900);
 });
 
 test("what the counter previews is what createOrder charges", async () => {
@@ -192,6 +291,26 @@ test("saving a product replaces its steps, and omitting the field leaves them al
     [tenantId, SKU]
   );
   assert.equal(Number(kept.rows[0].n), 1, "ไม่ส่ง = ไม่แตะ");
+
+  await upsertProduct(tenantId, {
+    ...base,
+    price_tiers: [{
+      minQty: 10,
+      scope: "CROSS_VARIANT_PERCENT",
+      unitPrice: null,
+      discountPct: 20,
+    }],
+  });
+  const cross = await query<{ scope: string; unit_price: string | null; discount_pct: string | null }>(
+    `SELECT scope, unit_price, discount_pct FROM bms_product_price_tiers
+      WHERE tenant_id = $1 AND product_sku = $2`,
+    [tenantId, SKU]
+  );
+  assert.deepEqual(cross.rows[0], {
+    scope: "CROSS_VARIANT_PERCENT",
+    unit_price: null,
+    discount_pct: "20.00",
+  }, "ฟอร์มรวมข้ามไซซ์ต้องเก็บเปอร์เซ็นต์โดยไม่สร้างราคาคงที่ปลอม");
 
   // ส่งอาเรย์ว่าง = ตั้งใจลบทุกขั้น (ลบขั้นสุดท้ายบนจอแล้วกดบันทึก)
   await upsertProduct(tenantId, { ...base, price_tiers: [] });

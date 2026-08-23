@@ -1691,6 +1691,12 @@ export const typeDefs = /* GraphQL */ `
     available: Int!
     reorder_point: Int!
     low: Boolean!
+    "ราคาขายจริงของไซซ์นี้ (fallback เป็นราคาหลักของสินค้า)"
+    price: Float
+    "null = ไซซ์นี้ใช้ราคาหลักของสินค้า"
+    priceOverride: Float
+    "BASE pack ของไซซ์นี้ ใช้แก้ราคาโดยไม่สร้างแถวซ้ำ"
+    basePackId: ID
   }
 
   type BmsProduct {
@@ -1710,19 +1716,23 @@ export const typeDefs = /* GraphQL */ `
     # ประเภท VAT (7.88) — 'V' คิด VAT · 'N' ยกเว้น VAT · 'UNKNOWN' ยังไม่ระบุ
     # ร้านที่จด VAT ต้องไม่มี UNKNOWN เหลือ ไม่งั้นติด blocker ที่ /admin/pos-readiness
     vatCategory: String
-    # ขั้นราคาส่ง (8.1) — ซื้อครบ minQty ชิ้นในบิลเดียวได้ราคา unitPrice ต่อชิ้น
+    # ขั้นราคาส่ง: ราคาคงที่แยกไซซ์ หรือรวมข้ามไซซ์แล้วลด % จากราคาของแต่ละไซซ์
     priceTiers: [BmsPriceTier!]!
     variants: [BmsVariant!]!
   }
 
   type BmsPriceTier {
     minQty: Int!
-    unitPrice: Float!
+    scope: String!
+    unitPrice: Float
+    discountPct: Float
   }
 
   input BmsPriceTierInput {
     minQty: Int!
-    unitPrice: Float!
+    scope: String
+    unitPrice: Float
+    discountPct: Float
   }
 
   type BmsAiSynonymCandidate {

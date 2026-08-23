@@ -51,11 +51,12 @@ export type PublicProduct = {
     sku: string;
     name: string;
     price: number;
+    maxPrice: number;
     description: string | null;
     category: string | null;
     brand: string | null;
     images: string[];
-    variants: Array<{ size: string; available: number }>;
+    variants: Array<{ size: string; available: number; price: number }>;
     updatedAt: string | null;
   };
 };
@@ -64,6 +65,7 @@ export type PublicProductCard = {
   sku: string;
   name: string;
   price: number;
+  maxPrice: number;
   imageUrl: string | null;
   images: string[];
   category: string | null;
@@ -98,6 +100,11 @@ export type VariantRow = {
   current_stock: number;
   reserved_stock: number;
   reorder_point: number;
+  /** ราคาที่ขายจริงของไซซ์นี้: override ของ BASE pack แล้ว fallback เป็นราคาสินค้า */
+  price: number;
+  /** null = ใช้ราคาหลักของสินค้า */
+  price_override: number | null;
+  base_pack_id: string | null;
 };
 
 export type ListProductsOpts = {
@@ -195,13 +202,14 @@ export type SellableProduct = {
   sku: string;
   name: string;
   price: number;
+  maxPrice?: number;
   description: string | null;
   category: string | null;
   brand: string | null;
   createdAt: string;
   updatedAt: string;
   availableTotal: number;
-  availableSizes: Array<{ size: string; available: number }>;
+  availableSizes: Array<{ size: string; available: number; price?: number }>;
 };
 
 export type ListSellableProductsOpts = {
@@ -251,13 +259,10 @@ export async function listSellableProducts(
   ];
   params.push(opts.locationId?.trim() || null);
   const locationParam = params.length;
-  // Build optional placeholders in the same order as params. Keeping a fixed $6 for size while
-  // omitting its SQL clause leaves a gap before price/limit parameters, which PostgreSQL cannot
-  // type-infer when that unused value is null.
+  params.push(size);
+  const sizeParam = params.length;
   let inStockClause = "";
   if (opts.inStockOnly) {
-    params.push(size);
-    const sizeParam = params.length;
     inStockClause = `AND EXISTS (
          SELECT 1
            FROM bms_inventory sellable_i
@@ -274,6 +279,23 @@ export async function listSellableProducts(
   const maxPriceParam = params.length;
   params.push(limit);
   const limitParam = params.length;
+  const variantPriceRangeSql = `
+    SELECT MIN(COALESCE(sized.price, shared.price, p.price)) AS min_price,
+           MAX(COALESCE(sized.price, shared.price, p.price)) AS max_price
+      FROM (
+        SELECT DISTINCT price_i.size
+          FROM bms_inventory price_i
+         WHERE price_i.tenant_id = p.tenant_id
+           AND price_i.product_sku = p.sku
+           AND ($${locationParam}::uuid IS NULL OR price_i.location_id = $${locationParam})
+           AND ($${sizeParam}::text IS NULL OR price_i.size = $${sizeParam})
+      ) variants
+      LEFT JOIN bms_product_packs sized
+        ON sized.tenant_id = p.tenant_id AND sized.product_sku = p.sku
+       AND sized.size = variants.size AND sized.is_base AND sized.active
+      LEFT JOIN bms_product_packs shared
+        ON shared.tenant_id = p.tenant_id AND shared.product_sku = p.sku
+       AND shared.size IS NULL AND shared.is_base AND shared.active`;
   const orderBy =
     opts.sort === "newest"
       ? "created_at DESC, name"
@@ -322,6 +344,7 @@ export async function listSellableProducts(
                 ELSE 100
               END AS search_rank
          FROM bms_products p
+         LEFT JOIN LATERAL (${variantPriceRangeSql}) price_range ON TRUE
         WHERE p.tenant_id = $1
           AND p.active = TRUE
           AND ($2::text IS NULL OR
@@ -336,8 +359,8 @@ export async function listSellableProducts(
           AND ($3::text IS NULL OR p.category = $3)
           AND ($4::text IS NULL OR p.brand = $4)
           AND ($5::text IS NULL OR p.sku <> $5)
-          AND ($${minPriceParam}::numeric IS NULL OR p.price >= $${minPriceParam})
-          AND ($${maxPriceParam}::numeric IS NULL OR p.price <= $${maxPriceParam})
+          AND ($${minPriceParam}::numeric IS NULL OR COALESCE(price_range.max_price, p.price) >= $${minPriceParam})
+          AND ($${maxPriceParam}::numeric IS NULL OR COALESCE(price_range.min_price, p.price) <= $${maxPriceParam})
           ${inStockClause}
      )
      SELECT m.sku,
@@ -373,25 +396,49 @@ export async function listSellableProducts(
     params
   );
 
+  const variantPriceRes = res.rows.length === 0
+    ? { rows: [] as Array<{ product_sku: string; size: string; price: string }> }
+    : await query<{ product_sku: string; size: string; price: string }>(
+        `SELECT i.product_sku, i.size,
+                COALESCE(sized.price, shared.price, p.price)::text AS price
+           FROM bms_inventory i
+           JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+           LEFT JOIN bms_product_packs sized
+             ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
+            AND sized.size = i.size AND sized.is_base AND sized.active
+           LEFT JOIN bms_product_packs shared
+             ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
+            AND shared.size IS NULL AND shared.is_base AND shared.active
+          WHERE i.tenant_id = $1 AND i.product_sku = ANY($2::text[])`,
+        [tenantId, res.rows.map((row) => row.sku)]
+      );
+  const pricesByVariant = new Map(
+    variantPriceRes.rows.map((row) => [`${row.product_sku}\u0000${row.size}`, Number(row.price)])
+  );
+
   const items = res.rows.map((row) => {
     const parsedSizes =
       typeof row.available_sizes === "string"
         ? (JSON.parse(row.available_sizes) as Array<{ size: string; available: number }>)
         : (row.available_sizes ?? []);
+    const availableSizes = parsedSizes.map((variant) => ({
+      size: String(variant.size),
+      available: Math.max(0, Number(variant.available) || 0),
+      price: pricesByVariant.get(`${row.sku}\u0000${variant.size}`) ?? Number(row.price),
+    }));
+    const variantPrices = availableSizes.map((variant) => variant.price);
     return {
       sku: row.sku,
       name: row.name,
-      price: Number(row.price),
+      price: variantPrices.length ? Math.min(...variantPrices) : Number(row.price),
+      maxPrice: variantPrices.length ? Math.max(...variantPrices) : Number(row.price),
       description: row.description,
       category: row.category,
       brand: row.brand,
       createdAt: isoDate(row.created_at),
       updatedAt: isoDate(row.updated_at),
       availableTotal: Math.max(0, Number(row.available_total) || 0),
-      availableSizes: parsedSizes.map((variant) => ({
-        size: String(variant.size),
-        available: Math.max(0, Number(variant.available) || 0),
-      })),
+      availableSizes,
     };
   });
   return { items, total: Number(res.rows[0]?.total ?? 0) };
@@ -415,7 +462,19 @@ export async function resolveSellableProduct(
     category: string | null;
     brand: string | null;
   }>(
-    `SELECT p.sku, p.name, p.price, p.category, p.brand
+    `SELECT p.sku, p.name,
+            COALESCE((
+              SELECT MIN(COALESCE(sized.price, shared.price, p.price))
+                FROM (SELECT DISTINCT size FROM bms_inventory
+                       WHERE tenant_id = p.tenant_id AND product_sku = p.sku) variants
+                LEFT JOIN bms_product_packs sized
+                  ON sized.tenant_id = p.tenant_id AND sized.product_sku = p.sku
+                 AND sized.size = variants.size AND sized.is_base AND sized.active
+                LEFT JOIN bms_product_packs shared
+                  ON shared.tenant_id = p.tenant_id AND shared.product_sku = p.sku
+                 AND shared.size IS NULL AND shared.is_base AND shared.active
+            ), p.price)::text AS price,
+            p.category, p.brand
        FROM bms_products p
       WHERE p.tenant_id = $1
         AND p.active = TRUE
@@ -523,10 +582,27 @@ export async function findAlternativeProducts(
 
 export async function listVariants(tenantId: string, sku: string): Promise<VariantRow[]> {
   const res = await query<VariantRow>(
-    `SELECT size, current_stock, reserved_stock, reorder_point
-       FROM bms_inventory
-      WHERE tenant_id = $1 AND product_sku = $2
-      ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size), size`,
+    `SELECT i.size, i.current_stock, i.reserved_stock, i.reorder_point,
+            COALESCE(sized.price, shared.price, p.price)::float8 AS price,
+            sized.price::float8 AS price_override,
+            sized.id::text AS base_pack_id
+       FROM bms_inventory i
+       JOIN bms_products p
+         ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       LEFT JOIN bms_product_packs sized
+         ON sized.tenant_id = i.tenant_id
+        AND sized.product_sku = i.product_sku
+        AND sized.size = i.size
+        AND sized.is_base
+        AND sized.active
+       LEFT JOIN bms_product_packs shared
+         ON shared.tenant_id = i.tenant_id
+        AND shared.product_sku = i.product_sku
+        AND shared.size IS NULL
+        AND shared.is_base
+        AND shared.active
+      WHERE i.tenant_id = $1 AND i.product_sku = $2
+      ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], i.size), i.size`,
     [tenantId, sku]
   );
   return res.rows;
@@ -563,7 +639,7 @@ export type UpsertProductInput = {
    * เหตุผลเดียวกับ vat_category: ตัวนำเข้าและฟอร์มเก่าที่ไม่รู้จักฟิลด์นี้ต้องไม่
    * ล้างขั้นราคาที่ร้านตั้งไว้ทิ้งตอนกดบันทึก
    */
-  price_tiers?: Array<{ minQty: number; unitPrice: number }> | null;
+  price_tiers?: PriceTier[] | null;
 };
 
 function normalizeImageUrls(input: UpsertProductInput): string[] {
@@ -640,6 +716,9 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
     listProductImages(row.tenant_id, row.sku),
     listVariants(row.tenant_id, row.sku),
   ]);
+  const variantPrices = variants.map((variant) => Number(variant.price));
+  const minPrice = variantPrices.length ? Math.min(...variantPrices) : Number(row.price);
+  const maxPrice = variantPrices.length ? Math.max(...variantPrices) : Number(row.price);
   const images = Array.from(new Set([
     row.image_url,
     ...gallery.map((image) => image.url),
@@ -658,7 +737,8 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
     product: {
       sku: row.sku,
       name: row.name,
-      price: Number(row.price),
+      price: minPrice,
+      maxPrice,
       description: row.description ?? null,
       category: row.category ?? null,
       brand: row.brand ?? null,
@@ -666,6 +746,7 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
       variants: variants.map((variant) => ({
         size: variant.size,
         available: Math.max(0, variant.current_stock - variant.reserved_stock),
+        price: Number(variant.price),
       })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
     },
@@ -900,6 +981,26 @@ async function mapPublicProductCards(rows: Array<{
       ORDER BY product_sku, sort_order, id`,
     [tenantId, skus]
   );
+  const priceRes = await query<{ product_sku: string; min_price: string; max_price: string }>(
+    `SELECT i.product_sku,
+            MIN(COALESCE(sized.price, shared.price, p.price))::text AS min_price,
+            MAX(COALESCE(sized.price, shared.price, p.price))::text AS max_price
+       FROM bms_inventory i
+       JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       LEFT JOIN bms_product_packs sized
+         ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
+        AND sized.size = i.size AND sized.is_base AND sized.active
+       LEFT JOIN bms_product_packs shared
+         ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
+        AND shared.size IS NULL AND shared.is_base AND shared.active
+      WHERE i.tenant_id = $1 AND i.product_sku = ANY($2::text[])
+      GROUP BY i.product_sku`,
+    [tenantId, skus]
+  );
+  const pricesBySku = new Map(priceRes.rows.map((row) => [
+    row.product_sku,
+    { min: Number(row.min_price), max: Number(row.max_price) },
+  ]));
 
   const galleryMap = new Map<string, string[]>();
   for (const row of galleryRes.rows) {
@@ -914,10 +1015,12 @@ async function mapPublicProductCards(rows: Array<{
       ...(galleryMap.get(row.sku) || []),
     ].filter((url): url is string => typeof url === "string" && url.trim().length > 0)));
 
+    const range = pricesBySku.get(row.sku) ?? { min: Number(row.price), max: Number(row.price) };
     return {
       sku: row.sku,
       name: row.name,
-      price: Number(row.price),
+      price: range.min,
+      maxPrice: range.max,
       imageUrl: images[0] ?? null,
       images,
       category: row.category ?? null,
@@ -1038,15 +1141,27 @@ export async function upsertProduct(
       const seen = new Set<number>();
       for (const tier of input.price_tiers) {
         const minQty = Math.trunc(Number(tier?.minQty));
-        const unitPrice = Math.round(Number(tier?.unitPrice) * 100) / 100;
+        const scope = tier?.scope === "CROSS_VARIANT_PERCENT"
+          ? "CROSS_VARIANT_PERCENT"
+          : "PER_VARIANT_FIXED";
+        const unitPrice = scope === "PER_VARIANT_FIXED"
+          ? Math.round(Number(tier?.unitPrice) * 100) / 100
+          : null;
+        const discountPct = scope === "CROSS_VARIANT_PERCENT"
+          ? Math.round(Number(tier?.discountPct) * 100) / 100
+          : null;
         if (!Number.isInteger(minQty) || minQty < 2) continue;
-        if (!Number.isFinite(unitPrice) || unitPrice < 0) continue;
+        if (scope === "PER_VARIANT_FIXED" && (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice < 0)) continue;
+        if (scope === "CROSS_VARIANT_PERCENT" && (
+          discountPct == null || !Number.isFinite(discountPct) || discountPct <= 0 || discountPct > 100
+        )) continue;
         if (seen.has(minQty)) continue;   // ขั้นซ้ำ = แถวหลังชนะไม่ได้ ต้องเลือกอันแรกให้นิ่ง
         seen.add(minQty);
         await client.query(
-          `INSERT INTO bms_product_price_tiers (tenant_id, product_sku, min_qty, unit_price)
-           VALUES ($1,$2,$3,$4)`,
-          [tenantId, sku, minQty, unitPrice]
+          `INSERT INTO bms_product_price_tiers
+             (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [tenantId, sku, minQty, unitPrice, scope, discountPct]
         );
       }
     }
@@ -1341,15 +1456,23 @@ export async function listPriceTiersForSkus(
 ): Promise<Map<string, PriceTier[]>> {
   const out = new Map<string, PriceTier[]>();
   if (skus.length === 0) return out;
-  const res = await query<{ product_sku: string; min_qty: number; unit_price: string }>(
-    `SELECT product_sku, min_qty, unit_price FROM bms_product_price_tiers
+  const res = await query<{
+    product_sku: string; min_qty: number; unit_price: string | null;
+    scope: PriceTier["scope"]; discount_pct: string | null;
+  }>(
+    `SELECT product_sku, min_qty, unit_price, scope, discount_pct FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
       ORDER BY product_sku, min_qty`,
     [tenantId, skus]
   );
   for (const row of res.rows) {
     const list = out.get(row.product_sku) ?? [];
-    list.push({ minQty: Number(row.min_qty), unitPrice: Number(row.unit_price) });
+    list.push({
+      minQty: Number(row.min_qty),
+      scope: row.scope,
+      unitPrice: row.unit_price == null ? null : Number(row.unit_price),
+      discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
+    });
     out.set(row.product_sku, list);
   }
   return out;

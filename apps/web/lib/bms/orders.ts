@@ -34,6 +34,7 @@ import {
   type OrderDiscountLine,
 } from "./membership";
 import { applyPromotion, unitPriceForQty, type PriceTier, type Promotion } from "./pricing";
+import { getVariantBasePriceInTx } from "./productPacks";
 import type { VatCategory } from "./vat";
 import { reverseCreditForOrderInTx } from "./storeCredit";
 import {
@@ -249,7 +250,7 @@ async function revalidateOrderPacksInTx(
       packUnitName: pack.unit_name,
       packQty: Number(packQty),
       packUnitPrice: pack.price == null
-        ? Number(pack.base_price) * baseQty
+        ? (await getVariantBasePriceInTx(client, tenantId, item.sku, item.size) ?? Number(pack.base_price)) * baseQty
         : Number(pack.price),
     });
   }
@@ -449,23 +450,36 @@ export async function createOrder(
       }
     }
 
-    // ---- ราคาตามจำนวน (8.1) -------------------------------------
-    // ขั้นราคาดู "จำนวนรวมของ SKU นั้นทั้งบิล" จึงต้องรู้ยอดรวมก่อนตั้งราคาบรรทัดแรก
-    // (ลูกค้าหยิบ 60ml 5 ขวด + 150ml 5 ขวด = ซื้อสินค้านั้น 10 ชิ้น ต้องได้ขั้น 10)
+    // เก็บทั้งยอดต่อ SKU+ไซซ์และยอดรวม SKU: แต่ละ price tier เลือก scope ของตัวเอง
+    const variantKey = (sku: string, size: string) => `${sku}\u0000${size}`;
+    const qtyByVariant = new Map<string, number>();
     const qtyBySku = new Map<string, number>();
-    for (const it of items) qtyBySku.set(it.sku, (qtyBySku.get(it.sku) ?? 0) + Math.max(0, it.qty));
+    for (const it of items) {
+      const key = variantKey(it.sku, it.size);
+      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + Math.max(0, it.qty));
+      qtyBySku.set(it.sku, (qtyBySku.get(it.sku) ?? 0) + Math.max(0, it.qty));
+    }
+    const productSkus = Array.from(new Set(items.map((item) => item.sku)));
 
-    const tierRows = await client.query<{ product_sku: string; min_qty: number; unit_price: string }>(
-      `SELECT product_sku, min_qty, unit_price
+    const tierRows = await client.query<{
+      product_sku: string; min_qty: number; unit_price: string | null;
+      scope: PriceTier["scope"]; discount_pct: string | null;
+    }>(
+      `SELECT product_sku, min_qty, unit_price, scope, discount_pct
          FROM bms_product_price_tiers
         WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
         ORDER BY product_sku, min_qty`,
-      [tenantId, Array.from(qtyBySku.keys())]
+      [tenantId, productSkus]
     );
     const tiersBySku = new Map<string, PriceTier[]>();
     for (const row of tierRows.rows) {
       const list = tiersBySku.get(row.product_sku) ?? [];
-      list.push({ minQty: Number(row.min_qty), unitPrice: Number(row.unit_price) });
+      list.push({
+        minQty: Number(row.min_qty),
+        scope: row.scope,
+        unitPrice: row.unit_price == null ? null : Number(row.unit_price),
+        discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
+      });
       tiersBySku.set(row.product_sku, list);
     }
 
@@ -478,7 +492,7 @@ export async function createOrder(
         WHERE tenant_id = $1 AND product_sku = ANY($2::text[]) AND active
           AND (starts_at IS NULL OR starts_at <= now())
           AND (ends_at   IS NULL OR ends_at   >  now())`,
-      [tenantId, Array.from(qtyBySku.keys())]
+      [tenantId, productSkus]
     );
     const promoBySku = new Map<string, Promotion>();
     for (const row of promoRows.rows) {
@@ -584,26 +598,35 @@ export async function createOrder(
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
 
-      const listPrice = Number(prod.rows[0].price);
+      const listPrice = await getVariantBasePriceInTx(client, tenantId, it.sku, it.size);
+      if (listPrice == null) {
+        await client.query("ROLLBACK");
+        return { status: "NOT_FOUND", sku: it.sku, size: it.size };
+      }
+      const key = variantKey(it.sku, it.size);
       // ราคาส่ง (8.1) — ไม่มีขั้นไหนเข้าเงื่อนไข = ได้ราคาป้ายตามเดิม
       // บรรทัดที่ขายเป็นหน่วยขาย (pack) ไม่ถูกแตะ: ราคา pack บอกตรง ๆ ว่ากล่องนี้
       // ราคาเท่านี้ ให้สองกลไกแย่งกันตัดสินราคาจะอธิบายบิลไม่ได้
       const unitPrice = it.packUnitPrice != null
         ? listPrice
-        : unitPriceForQty(listPrice, tiersBySku.get(it.sku) ?? [], qtyBySku.get(it.sku) ?? it.qty);
+        : unitPriceForQty(
+            listPrice,
+            tiersBySku.get(it.sku) ?? [],
+            qtyByVariant.get(key) ?? it.qty,
+            qtyBySku.get(it.sku) ?? it.qty
+          );
       // ราคาต่อหน่วยขาย (กล่อง) ถูกกว่าราคาต่อหน่วยฐาน × จำนวน เสมอ → ยอดบิลต้องคิดจาก
       // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม
       // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)
       const packQty = it.packQty ?? null;
       const packUnitPrice = it.packUnitPrice ?? null;
 
-      // โปรของ SKU นี้ (ถ้ามี) คิดจากจำนวนรวมทั้งบิล จึงคิดครั้งเดียวที่บรรทัดแรก
-      // ที่เจอ SKU นั้น แล้วบรรทัดถัด ๆ ไปของ SKU เดียวกันไม่บวกยอดซ้ำ
+      // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
       const promo = packUnitPrice != null ? null : promoBySku.get(it.sku) ?? null;
-      if (promo && !promoCharged.has(it.sku)) {
-        promoCharged.add(it.sku);
-        total += applyPromotion(listPrice, qtyBySku.get(it.sku) ?? it.qty, promo).amount;
+      if (promo && !promoCharged.has(key)) {
+        promoCharged.add(key);
+        total += applyPromotion(listPrice, qtyByVariant.get(key) ?? it.qty, promo).amount;
       } else if (!promo) {
         total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
       }

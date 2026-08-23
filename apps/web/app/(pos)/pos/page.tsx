@@ -149,7 +149,12 @@ type ScanHit = {
   packPrice: number;
   basePrice: number;
   /** ขั้นราคาส่ง (8.1) — จอคิดด้วย unitPriceForQty ตัวเดียวกับ createOrder */
-  priceTiers?: Array<{ minQty: number; unitPrice: number }>;
+  priceTiers?: Array<{
+    minQty: number;
+    scope?: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    unitPrice?: number | null;
+    discountPct?: number | null;
+  }>;
   /** true = สินค้านี้ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) */
   serialTracked?: boolean;
   /** โปรที่ใช้งานอยู่ (8.7) — จอคิดด้วย applyPromotion ตัวเดียวกับ createOrder */
@@ -183,6 +188,7 @@ function cartPricingSignature(line: ScanHit): string {
     serialTracked: line.serialTracked === true,
   });
 }
+const variantPricingKey = (sku: string, size: string) => `${sku}\u0000${size}`;
 type ReturnDraft = Record<number, number>;
 
 /** สมาชิกที่ค้นเจอจาก /api/pos/member (7.96) */
@@ -908,21 +914,30 @@ export default function PosPage() {
   /**
    * ราคาส่งตามจำนวน (8.1)
    *
-   * ขั้นราคาดูจำนวนรวมของ SKU นั้นทั้งตะกร้า ไม่ใช่ต่อบรรทัด — ต้องตรงกับที่
+   * ขั้นราคาคงที่ดูจำนวน SKU+ไซซ์ ส่วนขั้นเปอร์เซ็นต์ดูจำนวนรวม SKU — ต้องตรงกับที่
    * createOrder คิด ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
    * แล้วบิลถูกยกเลิกทิ้งทั้งใบ · ทั้งสองฝั่งเรียก unitPriceForQty ตัวเดียวกัน
    *
    * บรรทัดที่ขายเป็นหน่วยขาย (pack, baseQty > 1) ไม่ถูกแตะ เหมือนฝั่ง server
    */
   const tierPriceByKey = useMemo(() => {
+    const qtyByVariant = new Map<string, number>();
     const qtyBySku = new Map<string, number>();
     for (const line of cart) {
-      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty * line.baseQty);
+      const key = variantPricingKey(line.sku, line.size);
+      const qty = line.packQty * line.baseQty;
+      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + qty);
+      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + qty);
     }
     const out = new Map<string, number>();
     for (const line of cart) {
       if (line.baseQty > 1 || !line.priceTiers?.length) continue;
-      const unit = unitPriceForQty(line.basePrice, line.priceTiers, qtyBySku.get(line.sku) ?? 0);
+      const unit = unitPriceForQty(
+        line.basePrice,
+        line.priceTiers,
+        qtyByVariant.get(variantPricingKey(line.sku, line.size)) ?? 0,
+        qtyBySku.get(line.sku) ?? 0
+      );
       if (unit !== line.packPrice) out.set(line.key, unit);
     }
     return out;
@@ -938,23 +953,23 @@ export default function PosPage() {
   );
 
   /**
-   * โปรโมชัน (8.7) — คิดต่อ SKU จากจำนวนรวมทั้งตะกร้า แล้วแทนยอดของทุกบรรทัดของ
-   * SKU นั้น · ต้องตรงกับ createOrder เป๊ะ ทั้งสองฝั่งเรียก applyPromotion ตัวเดียวกัน
+   * โปรโมชัน (8.7) — คิดต่อ SKU+ไซซ์จากจำนวนรวมทั้งตะกร้า
    * บรรทัดที่ขายเป็น pack ไม่เข้าโปร เหมือนฝั่ง server
    */
   const promoBySku = useMemo(() => {
-    const qtyBySku = new Map<string, number>();
+    const qtyByVariant = new Map<string, number>();
     const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
     const priceOf = new Map<string, number>();
     for (const line of cart) {
       if (line.baseQty > 1 || !line.promotion) continue;
-      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.packQty);
-      promoOf.set(line.sku, line.promotion);
-      priceOf.set(line.sku, line.basePrice);
+      const key = variantPricingKey(line.sku, line.size);
+      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + line.packQty);
+      promoOf.set(key, line.promotion);
+      priceOf.set(key, line.basePrice);
     }
     const out = new Map<string, { amount: number; freeQty: number; saved: number }>();
-    for (const [sku, promo] of promoOf) {
-      out.set(sku, applyPromotion(priceOf.get(sku) ?? 0, qtyBySku.get(sku) ?? 0, promo));
+    for (const [key, promo] of promoOf) {
+      out.set(key, applyPromotion(priceOf.get(key) ?? 0, qtyByVariant.get(key) ?? 0, promo));
     }
     return out;
   }, [cart]);
@@ -963,10 +978,10 @@ export default function PosPage() {
     const chargedPromo = new Set<string>();
     let sum = 0;
     for (const line of cart) {
-      const promo = line.baseQty > 1 ? null : promoBySku.get(line.sku);
+      const key = variantPricingKey(line.sku, line.size);
+      const promo = line.baseQty > 1 ? null : promoBySku.get(key);
       if (promo) {
-        // โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด
-        if (!chargedPromo.has(line.sku)) { chargedPromo.add(line.sku); sum += promo.amount; }
+        if (!chargedPromo.has(key)) { chargedPromo.add(key); sum += promo.amount; }
         continue;
       }
       sum += (tierPriceByKey.get(line.key) ?? line.packPrice) * line.packQty;
@@ -2932,6 +2947,14 @@ export default function PosPage() {
           window.localStorage.removeItem(PENDING_SALE_KEY);
           setHasPendingSale(false);
         }
+        if (data?.status === "PAYMENT_MISMATCH") {
+          // บิลถูกยกเลิกแล้ว ต้องทิ้งยอดรับเงินเดิมและ preview ส่วนลดเดิมทั้งหมด
+          // ไม่เช่นนั้นกดซ้ำก็ส่งยอดเก่าแล้วชน mismatch วนซ้ำ
+          setMemberPreview(null);
+          setMemberPreviewAppliedKey(null);
+          setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+          resetToSimpleCash();
+        }
         setNotice({ type: "error", text: describeFailure(data) });
       }
     } catch (e: any) {
@@ -4653,12 +4676,12 @@ export default function PosPage() {
                     )}
                   </div>
                   <div className="pos-line-meta">
-                    {promoBySku.has(l.sku) && l.baseQty <= 1 ? (
+                    {promoBySku.has(variantPricingKey(l.sku, l.size)) && l.baseQty <= 1 ? (
                     <>
-                      โปรโมชัน · {promoBySku.get(l.sku)!.freeQty > 0
-                        ? `ได้ฟรี ${promoBySku.get(l.sku)!.freeQty} ${l.unitName}`
-                        : `ประหยัด ฿${baht(promoBySku.get(l.sku)!.saved)}`}
-                      {promoBySku.get(l.sku)!.saved === 0 && " (ยังไม่ครบเงื่อนไข)"}
+                      โปรโมชัน · {promoBySku.get(variantPricingKey(l.sku, l.size))!.freeQty > 0
+                        ? `ได้ฟรี ${promoBySku.get(variantPricingKey(l.sku, l.size))!.freeQty} ${l.unitName}`
+                        : `ประหยัด ฿${baht(promoBySku.get(variantPricingKey(l.sku, l.size))!.saved)}`}
+                      {promoBySku.get(variantPricingKey(l.sku, l.size))!.saved === 0 && " (ยังไม่ครบเงื่อนไข)"}
                     </>
                   ) : tierPriceByKey.has(l.key) ? (
                       <>
@@ -4700,11 +4723,10 @@ export default function PosPage() {
                   <button onClick={() => changeQty(l.key, 1)} aria-label="เพิ่มจำนวน">+</button>
                 </div>
                 <div className="pos-line-amount">
-                  {/* SKU ที่เข้าโปรโชว์ยอดรวมของ SKU ที่บรรทัดแรกเท่านั้น — โปรคิดรวม
-                      ทุกไซซ์ การหารลงแต่ละบรรทัดจะได้เลขที่บวกกันไม่ตรงกับที่เก็บเงิน */}
-                  {promoBySku.has(l.sku) && l.baseQty <= 1
-                    ? (cart.findIndex((x) => x.sku === l.sku) === cart.indexOf(l)
-                        ? `฿${baht(promoBySku.get(l.sku)!.amount)}`
+                  {/* โปรแสดงยอดรวมครั้งเดียวต่อ SKU+ไซซ์ */}
+                  {promoBySku.has(variantPricingKey(l.sku, l.size)) && l.baseQty <= 1
+                    ? (cart.findIndex((x) => x.sku === l.sku && x.size === l.size) === cart.indexOf(l)
+                        ? `฿${baht(promoBySku.get(variantPricingKey(l.sku, l.size))!.amount)}`
                         : "—")
                     : `฿${baht((tierPriceByKey.get(l.key) ?? l.packPrice) * l.packQty)}`}
                 </div>
@@ -6156,7 +6178,9 @@ function describeFailure(data: any): string {
     case "SHIFT_NOT_OPEN":
       return "กะปิดไปแล้ว — เปิดกะใหม่ก่อน";
     case "PAYMENT_MISMATCH":
-      return `ยอดไม่ตรง: ระบบคิด ฿${baht(data.expected)} แต่รับมา ฿${baht(data.received)} — ยิงรายการใหม่`;
+      return data.subtotal != null && data.discount != null
+        ? `ยอดไม่ตรง: ระบบคิดสินค้า ฿${baht(data.subtotal)} − ส่วนลดรวม ฿${baht(data.discount)} = ต้องรับ ฿${baht(data.expected)} แต่จอส่ง ฿${baht(data.received)}${Number(data.pointsUsed) > 0 ? ` (ใช้ ${Number(data.pointsUsed).toLocaleString()} แต้มแล้ว)` : ""} — ระบบล้างยอดรับเงินให้แล้ว กรุณาตรวจราคาและรับเงินใหม่`
+        : `ยอดไม่ตรง: ระบบคิด ฿${baht(data.expected)} แต่จอส่ง ฿${baht(data.received)} — ระบบล้างยอดรับเงินให้แล้ว กรุณารีเฟรชราคาและรับเงินใหม่`;
     case "LOT_EXPIRED_OR_SHORT":
       return `${data.sku}: ของที่ยังไม่หมดอายุเหลือ ${data.sellable} ต้องการ ${data.requested} — หยิบกล่องใหม่`;
     case "INSUFFICIENT":

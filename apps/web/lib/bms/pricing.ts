@@ -14,7 +14,10 @@
 export type PriceTier = {
   /** ซื้อครบกี่หน่วยฐานถึงได้ราคานี้ */
   minQty: number;
-  unitPrice: number;
+  /** ไม่ระบุ = พฤติกรรมเดิม แยกจำนวนต่อ SKU+ไซซ์ */
+  scope?: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+  unitPrice?: number | null;
+  discountPct?: number | null;
 };
 
 /**
@@ -26,46 +29,67 @@ export type PriceTier = {
  * ขั้นต่ำอาจตั้งใจจริง (เช่นชาร์จเพิ่มเมื่อซื้อยกลัง เพราะต้องแพ็กพิเศษ) หน้าที่ของ
  * ฟังก์ชันนี้คือทำตามที่ตั้งไว้อย่างคาดเดาได้ ไม่ใช่เดาเจตนา
  */
-export function unitPriceForQty(basePrice: number, tiers: PriceTier[], qty: number): number {
-  if (!Number.isFinite(qty) || qty <= 0) return basePrice;
+export function unitPriceForQty(
+  basePrice: number,
+  tiers: PriceTier[],
+  variantQty: number,
+  skuQty: number = variantQty
+): number {
+  if (!Number.isFinite(variantQty) || variantQty <= 0) return basePrice;
 
   let best: PriceTier | null = null;
   for (const tier of tiers) {
     if (!Number.isFinite(tier.minQty) || tier.minQty < 2) continue;
-    if (tier.minQty > qty) continue;
+    const qualifyingQty = tier.scope === "CROSS_VARIANT_PERCENT" ? skuQty : variantQty;
+    if (!Number.isFinite(qualifyingQty) || tier.minQty > qualifyingQty) continue;
     if (!best || tier.minQty > best.minQty) best = tier;
   }
-  return best ? best.unitPrice : basePrice;
+  if (!best) return basePrice;
+  if (best.scope === "CROSS_VARIANT_PERCENT") {
+    const discountPct = Number(best.discountPct);
+    if (!Number.isFinite(discountPct) || discountPct <= 0 || discountPct > 100) return basePrice;
+    return round2(basePrice * (1 - discountPct / 100));
+  }
+  const unitPrice = Number(best.unitPrice);
+  return Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : basePrice;
 }
 
 /**
- * ราคาของทั้งบิล แยกตาม SKU
+ * ราคาของทั้งบิล: ราคาคงที่แยก SKU+ไซซ์ หรือเปอร์เซ็นต์รวมจำนวนทั้ง SKU
  *
- * จำนวนที่ใช้ตัดสินขั้นราคาคือ "ยอดรวมของ SKU นั้นทั้งบิล" ไม่ใช่ต่อบรรทัด —
- * ลูกค้าที่หยิบ 60ml 5 ขวด กับ 150ml 5 ขวด ถือว่าซื้อสินค้านั้น 10 ชิ้น ซึ่งตรงกับ
- * สิ่งที่ร้านหมายถึงเวลาพูดว่า "ซื้อครบ 10 ได้ราคาส่ง" · ถ้าคิดต่อบรรทัด ลูกค้าคนนั้น
- * จะไม่ได้ราคาส่งแล้วอธิบายให้เข้าใจไม่ได้
+ * โหมดรวมข้ามไซซ์ใช้ได้เฉพาะเปอร์เซ็นต์ เพื่อให้แต่ละไซซ์ยังลดจากราคาฐานของตัวเอง
+ * และไม่เกิดราคาเดียวที่ลดไซซ์แพงลึกกว่าไซซ์ถูกโดยไม่ตั้งใจ
  *
  * บรรทัดที่ขายเป็นหน่วยขาย (pack) ไม่ถูกแตะ — ราคา pack คือการบอกตรง ๆ ว่ากล่องนี้
  * ราคาเท่านี้ ให้สองกลไกแย่งกันตัดสินราคาจะอธิบายบิลไม่ได้ · แต่จำนวนของ pack
- * ยังถูกนับรวมเป็นยอดของ SKU นั้น เพราะลูกค้าก็ซื้อของไปจริงเท่านั้นชิ้น
+ * ยังนับรวมใน threshold ของ SKU+ไซซ์เดียวกัน แต่บรรทัด pack เองคงราคา pack ไว้
  */
-export function priceLinesByQty<T extends { sku: string; qty: number; packUnitPrice?: number | null }>(
+export function priceLinesByQty<T extends { sku: string; size?: string; qty: number; packUnitPrice?: number | null }>(
   lines: T[],
   basePriceBySku: Map<string, number>,
   tiersBySku: Map<string, PriceTier[]>
 ): Array<T & { unitPrice: number; tierApplied: boolean }> {
+  const keyOf = (line: T) => line.size == null ? line.sku : `${line.sku}\u0000${line.size}`;
+  const totalByVariant = new Map<string, number>();
   const totalBySku = new Map<string, number>();
   for (const line of lines) {
+    const key = keyOf(line);
+    totalByVariant.set(key, (totalByVariant.get(key) ?? 0) + Math.max(0, line.qty));
     totalBySku.set(line.sku, (totalBySku.get(line.sku) ?? 0) + Math.max(0, line.qty));
   }
 
   return lines.map((line) => {
-    const basePrice = basePriceBySku.get(line.sku) ?? 0;
+    const key = keyOf(line);
+    const basePrice = basePriceBySku.get(key) ?? basePriceBySku.get(line.sku) ?? 0;
     if (line.packUnitPrice != null) {
       return { ...line, unitPrice: basePrice, tierApplied: false };
     }
-    const unitPrice = unitPriceForQty(basePrice, tiersBySku.get(line.sku) ?? [], totalBySku.get(line.sku) ?? 0);
+    const unitPrice = unitPriceForQty(
+      basePrice,
+      tiersBySku.get(line.sku) ?? [],
+      totalByVariant.get(key) ?? 0,
+      totalBySku.get(line.sku) ?? 0
+    );
     return { ...line, unitPrice, tierApplied: unitPrice !== basePrice };
   });
 }
@@ -96,8 +120,8 @@ export type PromotionOutcome = {
 /**
  * ยอดที่ต้องจ่ายของสินค้าหนึ่งตัวเมื่อมีโปร
  *
- * ทั้งสองแบบคิดจาก "จำนวนรวมของ SKU นั้นในบิล" เหมือนขั้นราคาส่ง (8.1) เพราะเหตุผล
- * เดียวกัน: ลูกค้าที่หยิบสองไซซ์รวมกันครบเงื่อนไขถือว่าซื้อครบ
+ * ทั้งสองแบบคิดจากจำนวนรวมของ SKU+ไซซ์นั้นในบิล เหมือนขั้นราคาส่ง (8.1)
+ * เพื่อให้ราคาฐานของคนละไซซ์ไม่ถูกนำมาคิดรวมกัน
  *
  * BUY_X_GET_Y: ทุก (buy + get) ชิ้น จ่ายแค่ buy ชิ้น
  *   ซื้อ 3 แถม 1 · หยิบ 4 → จ่าย 3 · หยิบ 7 → จ่าย 6 (ครบชุดเดียว เหลือเศษ 3 จ่ายเต็ม)

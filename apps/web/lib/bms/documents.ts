@@ -10,6 +10,7 @@ import { query } from "@/lib/db";
 import { getStoreProfile } from "./storeProfile";
 import { quoteShipping } from "./shippingRates";
 import { getTenantName } from "./platform";
+import { getVariantBasePrice } from "./productPacks";
 
 export type DocLine = { sku: string; name: string; size: string; qty: number; unitPrice: number; amount: number };
 export type StoreSummary = { name: string | null; address: string | null; phone: string | null; taxId: string | null };
@@ -92,12 +93,18 @@ export async function generateQuotation(
 ): Promise<BusinessDoc> {
   const lines: DocLine[] = [];
   for (const it of items) {
-    const p = await query<{ name: string; price: string }>(
-      `SELECT name, price FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND active`,
-      [tenantId, it.sku]
+    const p = await query<{ name: string }>(
+      `SELECT p.name FROM bms_products p
+        WHERE p.tenant_id = $1 AND p.sku = $2 AND p.active
+          AND EXISTS (
+            SELECT 1 FROM bms_inventory i
+             WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku AND i.size = $3
+          )`,
+      [tenantId, it.sku, it.size]
     );
     if (p.rowCount === 0) continue; // ข้ามสินค้าที่ไม่พบ/ปิดขาย
-    const unitPrice = Number(p.rows[0].price);
+    const unitPrice = await getVariantBasePrice(tenantId, it.sku, it.size);
+    if (unitPrice == null) continue;
     lines.push({ sku: it.sku, name: p.rows[0].name, size: it.size, qty: it.qty, unitPrice, amount: unitPrice * it.qty });
   }
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);

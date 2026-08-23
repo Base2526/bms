@@ -29,6 +29,12 @@ function formatPrice(price: number, currency: string, lang: "th" | "en") {
   }
 }
 
+function formatPriceRange(min: number, max: number, currency: string, lang: "th" | "en") {
+  return max > min
+    ? `${formatPrice(min, currency, lang)} - ${formatPrice(max, currency, lang)}`
+    : formatPrice(min, currency, lang);
+}
+
 function formatUpdatedAt(value: string | null, lang: "th" | "en") {
   if (!value) return null;
   const date = new Date(value);
@@ -245,7 +251,7 @@ export default function PublicProductView({
             <span className={styles.sku}>{copy.sku}: {product.sku}</span>
           </div>
 
-          <div className={styles.price}>{formatPrice(product.price, shop.currency, lang)}</div>
+          <div className={styles.price}>{formatPriceRange(product.price, product.maxPrice, shop.currency, lang)}</div>
 
           <div className={styles.actionRow}>
             <button type="button" className={styles.secondaryAction} onClick={copyCurrentLink}>
@@ -294,7 +300,7 @@ export default function PublicProductView({
                     <span className={styles.variantStatus}>{variant.available > 0 ? copy.availableNow : copy.out}</span>
                   </div>
                   <span className={styles.variantCount}>
-                    {variant.available > 0 ? `${variant.available} ${copy.units}` : copy.out}
+                    {formatPrice(variant.price, shop.currency, lang)} · {variant.available > 0 ? `${variant.available} ${copy.units}` : copy.out}
                   </span>
                 </div>
               ))}
@@ -351,7 +357,7 @@ export default function PublicProductView({
                   {item.imageUrl ? <img className={styles.relatedImage} src={item.imageUrl} alt={item.name} /> : <div className={styles.relatedPlaceholder}>▧</div>}
                 </div>
                 <div className={styles.relatedCardName}>{item.name}</div>
-                <div className={styles.relatedCardPrice}>{formatPrice(item.price, shop.currency, lang)}</div>
+                <div className={styles.relatedCardPrice}>{formatPriceRange(item.price, item.maxPrice, shop.currency, lang)}</div>
                 <div className={styles.relatedCardStock}>
                   {item.available > 0 ? `${copy.availableNow}` : copy.out}
                 </div>

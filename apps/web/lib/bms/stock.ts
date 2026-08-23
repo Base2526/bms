@@ -17,7 +17,7 @@ import {
   resolveSellableProduct,
   type SellableProduct,
 } from "./products";
-import { listSellablePacksForSize } from "./productPacks";
+import { getVariantBasePrice, listSellablePacksForSize } from "./productPacks";
 
 export type StockAlternative = Pick<
   SellableProduct,
@@ -61,7 +61,7 @@ export type StockResult =
       sku: string;
       name: string;
       price: number;
-      sizes: Array<{ size: string; available: number }>;
+      sizes: Array<{ size: string; available: number; price: number }>;
     }
   | { status: "NOT_FOUND"; query: string; alternatives?: StockAlternative[] };
 
@@ -106,24 +106,33 @@ export async function checkStock(
     return { status: "NOT_FOUND", query: productText, alternatives: items };
   }
 
-  const price = Number(product.price);
-
   if (!size) {
-    const res = await query<{ size: string; available: number }>(
-      `SELECT size, (current_stock - reserved_stock) AS available
-         FROM bms_inventory
-        WHERE tenant_id = $2 AND product_sku = $1
+    const res = await query<{ size: string; available: number; price: string }>(
+      `SELECT i.size, (i.current_stock - i.reserved_stock) AS available,
+              COALESCE(sized.price, shared.price, p.price)::text AS price
+         FROM bms_inventory i
+         JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+         LEFT JOIN bms_product_packs sized
+           ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
+          AND sized.size = i.size AND sized.is_base AND sized.active
+         LEFT JOIN bms_product_packs shared
+           ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
+          AND shared.size IS NULL AND shared.is_base AND shared.active
+        WHERE i.tenant_id = $2 AND i.product_sku = $1
         ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size)`,
       [product.sku, tenantId]
     );
+    const prices = res.rows.map((row) => Number(row.price));
     return {
       status: "SIZE_UNKNOWN",
       sku: product.sku,
       name: product.name,
-      price,
-      sizes: res.rows.map((r) => ({ size: r.size, available: Number(r.available) })),
+      price: prices.length ? Math.min(...prices) : Number(product.price),
+      sizes: res.rows.map((r) => ({ size: r.size, available: Number(r.available), price: Number(r.price) })),
     };
   }
+
+  const price = await getVariantBasePrice(tenantId, product.sku, size) ?? Number(product.price);
 
   const res = await query<{ available: number }>(
     `SELECT (current_stock - reserved_stock) AS available

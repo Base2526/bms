@@ -49,6 +49,9 @@ const shapeVariant = (r: {
   current_stock: number;
   reserved_stock: number;
   reorder_point: number;
+  price?: number;
+  price_override?: number | null;
+  base_pack_id?: string | null;
 }) => {
   const available = Math.max(0, r.current_stock - r.reserved_stock);
   return {
@@ -58,6 +61,9 @@ const shapeVariant = (r: {
     reorder_point: r.reorder_point,
     available,
     low: available <= r.reorder_point,
+    price: r.price == null ? null : Number(r.price),
+    priceOverride: r.price_override == null ? null : Number(r.price_override),
+    basePackId: r.base_pack_id ?? null,
   };
 };
 

@@ -25,6 +25,7 @@ import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
 import type { PriceTier, Promotion } from "./pricing";
+import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
 import { markDepositCompletedInTx } from "./deposits";
 import {
   findStoreCredit,
@@ -390,7 +391,7 @@ export type PosScanHit = {
   /**
    * ขั้นราคาส่งของสินค้านี้ (8.1) — ส่งให้จอเพื่อ "พรีวิว" ยอดเท่านั้น
    *
-   * จอต้องคิดด้วยกฎเดียวกับ createOrder เป๊ะ ๆ (ทั้งคู่เรียก unitPriceForQty ตัวเดียวกัน)
+   * จอต้องคิดด้วยกฎเดียวกับ createOrder เป๊ะ ๆ รวมถึง scope แยก/รวมไซซ์
    * ไม่งั้นยอดที่จอโชว์กับยอดที่ server คิดต่างกัน → PAYMENT_MISMATCH · server ยัง
    * ตัดสินราคาเองตอน commit เสมอ ค่านี้ไม่ใช่ราคาที่เชื่อจาก client
    */
@@ -463,16 +464,18 @@ export async function resolvePosScan(
             )                                        AS size
        FROM bms_products p
        LEFT JOIN bms_product_packs k
-         ON k.tenant_id = p.tenant_id AND k.product_sku = p.sku
+        ON k.tenant_id = p.tenant_id AND k.product_sku = p.sku
         AND (k.barcode = $2 OR (
           $5::text IS NOT NULL AND upper(p.sku) = upper($2) AND k.pack_code = $5
         ))
+        AND ($3::text IS NULL OR k.size IS NULL OR upper(k.size) = upper($3))
         AND k.active
       WHERE p.tenant_id = $1
         AND p.active
         AND (
           ($5::text IS NULL AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2)))
-          OR ($5 = 'BASE' AND upper(p.sku) = upper($2) AND k.pack_code IS NULL)
+          OR ($5 = 'BASE' AND upper(p.sku) = upper($2)
+              AND (k.pack_code = 'BASE' OR k.pack_code IS NULL))
           OR ($5 IS NOT NULL AND $5 <> 'BASE' AND upper(p.sku) = upper($2) AND k.pack_code = $5)
         )
       ORDER BY (k.pack_code = $5) DESC NULLS LAST,
@@ -500,26 +503,35 @@ export async function resolvePosScan(
       ? { kind: "BUY_X_GET_Y", buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
       : { kind: "N_FOR_PRICE", buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) };
 
-  const tierRes = await query<{ min_qty: number; unit_price: string }>(
-    `SELECT min_qty, unit_price FROM bms_product_price_tiers
+  const tierRes = await query<{
+    min_qty: number; unit_price: string | null; scope: PriceTier["scope"]; discount_pct: string | null;
+  }>(
+    `SELECT min_qty, unit_price, scope, discount_pct FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
     [tenantId, row.sku]
   );
   const priceTiers: PriceTier[] = tierRes.rows.map((t) => ({
-    minQty: Number(t.min_qty), unitPrice: Number(t.unit_price),
+    minQty: Number(t.min_qty),
+    scope: t.scope,
+    unitPrice: t.unit_price == null ? null : Number(t.unit_price),
+    discountPct: t.discount_pct == null ? null : Number(t.discount_pct),
   }));
 
-  const basePrice = Number(row.base_price);
+  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
+  if (basePrice == null) return null;
   const baseQty = row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
-  const packPrice = row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty;
+  const resolvedPackCode = row.pack_code ?? "BASE";
+  const packPrice = resolvedPackCode === "BASE"
+    ? basePrice
+    : row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty;
 
   return {
     sku: row.sku,
     productName: row.name,
     receiptName: row.name,
     size: row.size,
-    packCode: row.pack_code ?? "BASE",
+    packCode: resolvedPackCode,
     unitName: row.unit_name ?? "ชิ้น",
     baseQty,
     packPrice,
@@ -1293,7 +1305,14 @@ export type PosSaleResult =
   | { status: "LOT_EXPIRED_OR_SHORT"; sku: string; size: string; sellable: number; requested: number }
   | { status: "INVALID_PACK"; sku: string; packCode: string }
   | { status: "PAYMENT_FAILED"; reason: string }
-  | { status: "PAYMENT_MISMATCH"; expected: number; received: number }
+  | {
+      status: "PAYMENT_MISMATCH";
+      expected: number;
+      received: number;
+      subtotal?: number;
+      discount?: number;
+      pointsUsed?: number;
+    }
   /** สินค้าที่ติดตามเลขเครื่องแต่ยังไม่ได้ระบุเลขให้ครบทุกชิ้น (8.3) */
   | { status: "SERIAL_REQUIRED"; sku: string; expected: number; received: number }
   /** เลขเครื่องนี้เคยขายไปแล้ว — เกือบแน่นอนว่ายิงกล่องผิดใบ */
@@ -1387,7 +1406,7 @@ async function canonicalizePosSaleLines(
       stored_size: string | null;
       serial_tracked: boolean;
     }>(
-      `SELECT p.price AS base_price,
+      `SELECT COALESCE(sized_base.price, shared_base.price, p.price) AS base_price,
               p.serial_tracked,
               k.pack_code,
               k.unit_name,
@@ -1398,14 +1417,27 @@ async function canonicalizePosSaleLines(
                   AND i.product_sku = p.sku AND upper(i.size) = upper($5)
                 LIMIT 1) AS stored_size
          FROM bms_products p
-         LEFT JOIN bms_product_packs k
-           ON k.tenant_id = p.tenant_id
-          AND k.product_sku = p.sku
-          AND upper(k.pack_code) = $4
-          AND k.active
-          -- ผูกไซซ์ด้วย (7.93): pack ของ "10 เม็ด" กับ "100 เม็ด" คนละราคา
-          -- pack เก่าที่ size เป็น NULL ยังใช้ได้กับทุกไซซ์
-          AND (k.size IS NULL OR upper(k.size) = upper($5))
+         LEFT JOIN LATERAL (
+           SELECT pack_code, unit_name, base_qty, price
+             FROM bms_product_packs
+            WHERE tenant_id = p.tenant_id
+              AND product_sku = p.sku
+              AND upper(pack_code) = $4
+              AND active
+              AND (size IS NULL OR upper(size) = upper($5))
+            ORDER BY (size IS NOT NULL) DESC
+            LIMIT 1
+         ) k ON TRUE
+         LEFT JOIN bms_product_packs sized_base
+           ON sized_base.tenant_id = p.tenant_id
+          AND sized_base.product_sku = p.sku
+          AND upper(sized_base.size) = upper($5)
+          AND sized_base.is_base AND sized_base.active
+         LEFT JOIN bms_product_packs shared_base
+           ON shared_base.tenant_id = p.tenant_id
+          AND shared_base.product_sku = p.sku
+          AND shared_base.size IS NULL
+          AND shared_base.is_base AND shared_base.active
         WHERE p.tenant_id = $1
           AND p.sku = $2
           AND p.active
@@ -1766,7 +1798,14 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
   if (Math.abs(paid - amountDue) > 0.01) {
     await cancelOrder(tenantId, orderId);
-    return { status: "PAYMENT_MISMATCH", expected: amountDue, received: paid };
+    return {
+      status: "PAYMENT_MISMATCH",
+      expected: amountDue,
+      received: paid,
+      subtotal: created.subtotal,
+      discount: created.discount,
+      pointsUsed: created.pointsUsed,
+    };
   }
   const sold = await finalizePosSale({
     input, shift, orderId, amountDue, payments: requestedPayments, replayed: false,
@@ -3954,15 +3993,16 @@ export async function blindReturnPosSale(input: {
     // เพดานเดียวที่ตรวจได้ · ถ้าไม่มีเพดาน พนักงานพิมพ์เลขอะไรก็ได้แล้วเงินออกตามนั้น
     let refundAmount = 0;
     for (const line of lines) {
-      const prod = await client.query<{ price: string }>(
-        `SELECT price FROM bms_products WHERE tenant_id = $1 AND sku = $2 AND active`,
-        [input.tenantId, line.sku]
+      const variant = await client.query(
+        `SELECT 1 FROM bms_inventory
+          WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+        [input.tenantId, locationId, line.sku, line.size]
       );
-      if (!prod.rowCount) {
+      const maxUnitRefund = await getVariantBasePriceInTx(client, input.tenantId, line.sku, line.size);
+      if (!variant.rowCount || maxUnitRefund == null) {
         await client.query("ROLLBACK");
-        return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ที่เปิดขายอยู่` };
+        return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ขนาด ${line.size} ที่เปิดขายอยู่ในสาขานี้` };
       }
-      const maxUnitRefund = Number(prod.rows[0].price);
       if (line.unitRefund > maxUnitRefund + 0.001) {
         await client.query("ROLLBACK");
         return { status: "PRICE_TOO_HIGH", sku: line.sku, maxUnitRefund, requested: line.unitRefund };
