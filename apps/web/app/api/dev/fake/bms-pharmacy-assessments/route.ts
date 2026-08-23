@@ -21,6 +21,22 @@ async function protocolId(tenantId: string, protocolKey: string): Promise<string
   return res.rows[0]?.id ?? null;
 }
 
+async function licensedPharmacistId(tenantId: string): Promise<string | null> {
+  const result = await query<{ id: string }>(
+    `SELECT u.id
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+      WHERE u.tenant_id = $1
+        AND r.name = 'Pharmacist'
+        AND u.is_licensed_pharmacist
+        AND NULLIF(btrim(u.pharmacist_license_no), '') IS NOT NULL
+      ORDER BY u.created_at, u.id
+      LIMIT 1`,
+    [tenantId]
+  );
+  return result.rows[0]?.id ?? null;
+}
+
 async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });
   const guard = await requirePlatformAdminSeeder();
@@ -29,6 +45,13 @@ async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const tenantId = await resolveExistingTenantId(body?.tenantId, guard.actor?.tenant_id);
+    const pharmacistId = await licensedPharmacistId(tenantId);
+    if (!pharmacistId) {
+      return NextResponse.json(
+        { error: "ร้านนี้ยังไม่มีผู้ใช้ role Pharmacist ที่ตั้งสถานะเภสัชกรและเลขใบอนุญาต" },
+        { status: 400 }
+      );
+    }
 
     const headacheId = await protocolId(tenantId, "headache");
     const coughId = await protocolId(tenantId, "cough");
@@ -103,12 +126,12 @@ async function handlePOST(req: NextRequest) {
       const res = await query<{ id: string }>(
         `INSERT INTO bms_pharmacy_assessments
            (tenant_id, protocol_id, channel_id, patient_relationship, consent_status, consent_at, consent_version,
-            status, risk_level, biological_sex, pregnancy_status, structured_answers, missing_fields,
+            status, risk_level, assigned_pharmacist_id, biological_sex, pregnancy_status, structured_answers, missing_fields,
             detected_red_flags, escalation_reason, ai_summary, ai_summary_version)
          VALUES
            ($1, $2, $3, 'SELF', 'GRANTED', now(), 'pharmacy-intake-v1',
-            $4, $5, $6, $7, $8::jsonb, $9,
-            $10::jsonb, $11, $12, $13)
+            $4, $5, $6, $7, $8, $9::jsonb, $10,
+            $11::jsonb, $12, $13, $14)
          RETURNING id`,
         [
           tenantId,
@@ -116,6 +139,7 @@ async function handlePOST(req: NextRequest) {
           FAKE_MARKER,
           s.status,
           s.riskLevel,
+          s.status === "COLLECTING_INFORMATION" ? null : pharmacistId,
           (s as any).biologicalSex ?? "UNKNOWN",
           (s as any).pregnancyStatus ?? "UNKNOWN",
           JSON.stringify(s.structuredAnswers),

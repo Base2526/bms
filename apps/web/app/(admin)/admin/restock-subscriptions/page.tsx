@@ -281,7 +281,11 @@ export default function RestockSubscriptionsPage() {
       const { data: resultData } = await sendAllReady();
       const result = resultData?.bmsSendAllReadyRestockNotifications;
       if (result) {
-        message.success(t("admin_restock.notify_success", { sent: result.sent, attempted: result.attempted }) + (result.failed ? t("admin_restock.notify_failed_suffix", { failed: result.failed }) : ""));
+        const summary = t("admin_restock.notify_success", { sent: result.sent, attempted: result.attempted })
+          + (result.failed ? t("admin_restock.notify_failed_suffix", { failed: result.failed }) : "");
+        if (result.failed === 0) message.success(summary);
+        else if (result.sent > 0) message.warning(summary);
+        else message.error(summary);
       }
       await Promise.all([refetch(), refetchCounts(), refreshMetrics()]);
     } catch (error: any) {

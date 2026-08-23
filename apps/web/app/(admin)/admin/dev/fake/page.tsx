@@ -13,11 +13,28 @@ const Q_ME = gql`
 `;
 const Q_TENANTS = gql`query { bmsTenants { id name slug active } }`;
 const M_ENTER_TENANT = gql`mutation ($tenantId: ID!) { bmsEnterTenant(tenantId: $tenantId) }`;
+const M_EXIT_TENANT = gql`mutation { bmsExitTenant }`;
+
+type ProvisionSummary = {
+  staff?: number;
+  products?: number;
+  customers?: number;
+  coupons?: number;
+  orders?: number;
+  conversations?: number;
+  restockSubscriptions?: number;
+  purchaseOrders?: number;
+  posDevices?: number;
+  pairedPosDevices?: number;
+  posShifts?: number;
+  posOrdersWithOperations?: number;
+  ordersByChannel?: Record<string, number>;
+};
 
 type ProvisionResult = {
   tenant: { id: string; slug: string; name: string };
   admin: { email: string; password: string };
-  summary: Record<string, number>;
+  summary: ProvisionSummary;
 };
 
 type DemoProvisionResult = {
@@ -25,8 +42,23 @@ type DemoProvisionResult = {
   tenant: { id: string; slug: string; name: string };
   admin: { email: string; password: string };
   businessArchetype: string;
-  summary: Record<string, number>;
+  summary: ProvisionSummary;
 };
+
+function channelOrderSummary(summary: ProvisionSummary): string {
+  const counts = summary.ordersByChannel ?? {};
+  return `POS ${counts.pos ?? 0} · LINE ${counts.line ?? 0} · IG ${counts.instagram ?? 0} · Facebook ${counts.facebook ?? 0} · Web ${counts.web ?? 0} · TikTok ${counts.tiktok ?? 0} · Shopee ${counts.shopee ?? 0} · Lazada ${counts.lazada ?? 0}`;
+}
+
+const DEMO_BUTTONS = [
+  { key: "fashion", label: "Fashion" },
+  { key: "food", label: "Food" },
+  { key: "beauty", label: "Beauty" },
+  { key: "grocery", label: "Minimart" },
+  { key: "gadgets", label: "Gadget" },
+  { key: "pharmacy", label: "Pharmacy" },
+  { key: "general", label: "General Retail" },
+] as const;
 
 type CreatedRow = any;
 
@@ -57,7 +89,7 @@ export default function DevFakePage() {
   const { data, loading: pageLoading } = useQuery(Q_ME, { fetchPolicy: 'cache-and-network' });
   const isPlatformAdmin = data?.bmsIsPlatformAdmin === true;
   const tenant = data?.bmsMe?.tenant;
-  const { data: tenantsData, loading: tenantsLoading } = useQuery(Q_TENANTS, {
+  const { data: tenantsData, loading: tenantsLoading, refetch: refetchTenants } = useQuery(Q_TENANTS, {
     fetchPolicy: 'cache-and-network',
     skip: !isPlatformAdmin,
   });
@@ -72,12 +104,14 @@ export default function DevFakePage() {
   const [provisioning, setProvisioning] = useState(false);
   const [provisioned, setProvisioned] = useState<ProvisionResult | null>(null);
   const [provisioningDemo, setProvisioningDemo] = useState(false);
+  const [deletingScenarios, setDeletingScenarios] = useState(false);
   const [demoProvisioned, setDemoProvisioned] = useState<DemoProvisionResult[]>([]);
   const [enterTenant, { loading: entering }] = useMutation(M_ENTER_TENANT, {
     // reload ทั้งหน้าเพื่อให้ context (tenant) ใหม่มีผลกับทุกหน้า — pattern เดียวกับ /admin/tenants
     onCompleted: () => { window.location.href = '/admin/dashboard'; },
     onError: (e) => message.error(e?.message || t('admin_dev_fake.impersonate_failed')),
   });
+  const [exitTenant] = useMutation(M_EXIT_TENANT);
 
   useEffect(() => {
     if (selectedTenantId) return;
@@ -130,6 +164,35 @@ export default function DevFakePage() {
       message.error(e.message || 'Error');
     } finally {
       setProvisioningDemo(false);
+    }
+  }
+
+  async function deleteAllScenarioShops() {
+    setDeletingScenarios(true);
+    try {
+      const res = await fetch('/api/dev/fake/provision-demo-shops', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || 'Delete failed');
+      message.success(t('admin_dev_fake.scenario_delete_success', { count: j.deletedCount ?? 0 }));
+      setDemoProvisioned([]);
+      setCreated([]);
+      const deletedCurrentTenant = (j.deleted || []).some((row: any) => row.id === tenant?.id);
+      if (deletedCurrentTenant) {
+        await exitTenant();
+        window.location.href = '/admin/dev/fake';
+        return;
+      }
+      if ((j.deleted || []).some((row: any) => row.id === selectedTenantId)) {
+        setSelectedTenantId(undefined);
+      }
+      await refetchTenants();
+    } catch (e: any) {
+      message.error(e.message || 'Error');
+    } finally {
+      setDeletingScenarios(false);
     }
   }
 
@@ -222,21 +285,33 @@ export default function DevFakePage() {
       </Space>
     </Card>
 
-    <Card title="Provision Demo Shops" style={{ marginBottom: 16 }}>
+    <Card title={t('admin_dev_fake.scenario_card_title')} style={{ marginBottom: 16 }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message={t('admin_dev_fake.demo_alert')}
-        description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code> {t('admin_dev_fake.demo_desc_2')}</>}
+        description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code>, <code>demo-pharmacy</code>, <code>demo-general</code> {t('admin_dev_fake.demo_desc_2')}</>}
       />
       <Space wrap>
         <Button type="primary" onClick={() => provisionDemoShops()} loading={provisioningDemo}>
           {t('admin_dev_fake.btn_demo_all')}
         </Button>
-        <Button onClick={() => provisionDemoShops('fashion')} loading={provisioningDemo}>{t('admin_dev_fake.btn_demo_fashion')}</Button>
-        <Button onClick={() => provisionDemoShops('food')} loading={provisioningDemo}>Food</Button>
-        <Button onClick={() => provisionDemoShops('beauty')} loading={provisioningDemo}>Beauty</Button>
-        <Button onClick={() => provisionDemoShops('grocery')} loading={provisioningDemo}>Minimart</Button>
-        <Button onClick={() => provisionDemoShops('gadgets')} loading={provisioningDemo}>Gadget</Button>
+        {DEMO_BUTTONS.map((demo) => (
+          <Button key={demo.key} onClick={() => provisionDemoShops(demo.key)} loading={provisioningDemo}>
+            {demo.label}
+          </Button>
+        ))}
+        <Popconfirm
+          title={t('admin_dev_fake.scenario_delete_confirm_title')}
+          description={t('admin_dev_fake.scenario_delete_confirm_desc')}
+          okText={t('admin_dev_fake.scenario_delete_confirm_ok')}
+          okButtonProps={{ danger: true }}
+          cancelText={t('admin_dev_fake.cleanup_cancel')}
+          onConfirm={deleteAllScenarioShops}
+        >
+          <Button danger loading={deletingScenarios} disabled={provisioningDemo}>
+            {t('admin_dev_fake.btn_delete_scenarios')}
+          </Button>
+        </Popconfirm>
       </Space>
       {demoProvisioned.length > 0 && (
         <div style={{ marginTop: 12 }}>
@@ -247,7 +322,7 @@ export default function DevFakePage() {
               showIcon
               style={{ marginTop: 8 }}
               message={`${row.tenant.name} /${row.tenant.slug}`}
-              description={`archetype: ${row.businessArchetype} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} · conversations ${row.summary.conversations ?? 0}`}
+              description={`archetype: ${row.businessArchetype} · staff ${row.summary.staff ?? 0} · POS devices ${row.summary.posDevices ?? 0} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} (${channelOrderSummary(row.summary)}) · inbox chats ${row.summary.conversations ?? 0} · customers ${row.summary.customers ?? 0}`}
             />
           ))}
         </div>
@@ -288,8 +363,11 @@ export default function DevFakePage() {
               conversations: provisioned.summary.conversations ?? 0,
               restock: provisioned.summary.restockSubscriptions ?? 0,
               po: provisioned.summary.purchaseOrders ?? 0,
+              devices: provisioned.summary.posDevices ?? 0,
+              shifts: provisioned.summary.posShifts ?? 0,
             })}
           </div>
+          <div style={{ marginTop: 8 }}>{channelOrderSummary(provisioned.summary)}</div>
         </>
       )}
     </Modal>
