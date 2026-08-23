@@ -53,6 +53,8 @@ async function handlePOST(req: NextRequest) {
       ? 404
       : result.status === "EMPTY"
       ? 400
+      : result.status === "INVALID_ITEM"
+      ? 400
       : 409; // INSUFFICIENT / COUPON_INVALID
 
   return NextResponse.json(result, { status: httpStatus });

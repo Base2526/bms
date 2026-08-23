@@ -136,6 +136,7 @@ export const bmsOrdersResolvers = {
       const messages: Record<string, string> = {
         SOURCE_NOT_FOUND: "ไม่พบออร์เดอร์ต้นทาง",
         EMPTY: "ออร์เดอร์ต้นทางไม่มีรายการสินค้า",
+        INVALID_ITEM: r.status === "INVALID_ITEM" ? r.reason : "รายการสินค้าไม่ถูกต้อง",
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
         PHARMACY_POLICY_UNKNOWN: "สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติ",
@@ -172,6 +173,7 @@ export const bmsOrdersResolvers = {
       }
       const messages: Record<string, string> = {
         EMPTY: "ไม่มีรายการสินค้า",
+        INVALID_ITEM: r.status === "INVALID_ITEM" ? `รายการที่ ${r.index + 1}: ${r.reason}` : "รายการสินค้าไม่ถูกต้อง",
         NOT_FOUND: `ไม่พบสินค้า ${("sku" in r) ? r.sku : ""} ในระบบ (อาจถูกลบไปแล้ว)`,
         INSUFFICIENT: (r.status === "INSUFFICIENT") ? `${r.sku} (${r.size}) เหลือ ${r.available} ไม่พอสั่ง ${r.requested}` : "สต็อกไม่พอ",
         COUPON_INVALID: r.status === "COUPON_INVALID" ? r.reason : "โค้ดส่วนลดใช้ไม่ได้",

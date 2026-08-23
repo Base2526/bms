@@ -46,6 +46,7 @@ export type SubmitPaymentInput = {
 export type SubmitResult =
   | { status: "SUBMITTED"; paymentId: string; amount: number }
   | { status: "ORDER_NOT_FOUND" }
+  | { status: "INVALID_ORDER_STATE"; current: string }
   | { status: "BAD_METHOD" };
 
 export type SubmitPaymentOnceResult =
@@ -61,7 +62,23 @@ export type ConfirmResult =
   | { status: "CONFIRMED"; paymentId: string; orderPaid: boolean }
   | { status: "NOT_FOUND" }
   | { status: "INVALID_STATE"; current: string }
+  | { status: "INVALID_ORDER_STATE"; current: string }
   | { status: "INVALID_AMOUNT"; expected: number; actual: number };
+
+async function auditPaymentTransitionInTx(
+  client: Awaited<ReturnType<typeof getClient>>,
+  tenantId: string,
+  actor: string | null,
+  action: "payment.confirm" | "payment.reject" | "payment.refund",
+  paymentId: string,
+  meta: Record<string, unknown> = {}
+) {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [tenantId, actor || "admin", action, paymentId, JSON.stringify(meta)]
+  );
+}
 
 // ---- submit --------------------------------------------------
 export async function submitPayment(input: SubmitPaymentInput): Promise<SubmitResult> {
@@ -97,8 +114,8 @@ async function submitPaymentInternal(
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
-      `SELECT total_amount, shipping_fee, rounding_amount
+    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount, status
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -107,6 +124,11 @@ async function submitPaymentInternal(
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
+    }
+    if (ord.rows[0].status !== "PENDING") {
+      const current = ord.rows[0].status;
+      await client.query("ROLLBACK");
+      return { status: "INVALID_ORDER_STATE", current };
     }
 
     if (reuseActive) {
@@ -135,9 +157,11 @@ async function submitPaymentInternal(
       }
     }
 
-    // ยอดที่ต้องเก็บ = ค่าสินค้า(หลังส่วนลด) + ค่าส่ง (7.47)
+    // ยอดที่ต้องเก็บ = ค่าสินค้า(หลังส่วนลด) + ค่าส่ง + ยอดปัดเศษเงินสด
     // full payment only: ห้าม override amount เพื่อไม่ให้ยอดรับเงินจริงเพี้ยน
-    const amountDue = Number(ord.rows[0].total_amount) + Number(ord.rows[0].shipping_fee ?? 0);
+    const amountDue = Number(ord.rows[0].total_amount)
+      + Number(ord.rows[0].shipping_fee ?? 0)
+      + Number(ord.rows[0].rounding_amount ?? 0);
     const amount = amountDue;
 
     const ins = await client.query<{ id: string }>(
@@ -183,8 +207,8 @@ export async function confirmPayment(
       return { status: "INVALID_STATE", current };
     }
 
-    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
-      `SELECT total_amount, shipping_fee, rounding_amount
+    const orderRes = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount, status
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -193,6 +217,11 @@ export async function confirmPayment(
     if (orderRes.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" };
+    }
+    if (orderRes.rows[0].status !== "PENDING") {
+      const current = orderRes.rows[0].status;
+      await client.query("ROLLBACK");
+      return { status: "INVALID_ORDER_STATE", current };
     }
     // + ยอดปัดเศษเงินสด (7.95) — ลูกค้าจ่ายยอดที่ปัดแล้ว ไม่ใช่ยอดดิบ
     const expected = Number(orderRes.rows[0].total_amount)
@@ -206,23 +235,33 @@ export async function confirmPayment(
 
     await client.query(
       `UPDATE bms_payments
-          SET status = 'CONFIRMED', verified_by = $3, updated_at = now()
+          SET status = 'CONFIRMED', verified_by = $3,
+              confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = $2`,
       [tenantId, paymentId, actor]
     );
 
-    // transition order PENDING → PAID (best-effort; ถ้า order ไม่ใช่ PENDING แล้ว ก็ปล่อย)
+    // The locked order was verified PENDING above, so payment + order move as
+    // one invariant. Never confirm money while silently leaving a conflicting
+    // order state behind.
     const ord = await client.query(
-      `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+      `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
       [tenantId, pay.rows[0].order_id]
     );
+    if ((ord.rowCount ?? 0) !== 1) {
+      throw new Error("payment/order state changed while confirming");
+    }
     if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, pay.rows[0].order_id);
       // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึง PAID ไม่ใช่แค่หน้าร้าน
       await earnPointsForOrderInTx(client, { tenantId, orderId: pay.rows[0].order_id, actorUserId: actor });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId: pay.rows[0].order_id, client });
     }
+    await auditPaymentTransitionInTx(client, tenantId, actor, "payment.confirm", paymentId, {
+      orderId: pay.rows[0].order_id,
+      orderPaid: true,
+    });
 
     await client.query("COMMIT");
     const orderPaid = (ord.rowCount ?? 0) > 0;
@@ -242,6 +281,7 @@ export async function confirmPayment(
 export type SubmitPartResult =
   | { status: "SUBMITTED"; paymentId: string; amount: number }
   | { status: "ORDER_NOT_FOUND" }
+  | { status: "INVALID_ORDER_STATE"; current: string }
   | { status: "BAD_METHOD" }
   | { status: "BAD_AMOUNT"; remaining: number; requested: number };
 
@@ -272,14 +312,19 @@ export async function submitPartialPayment(input: {
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string }>(
-      `SELECT total_amount, shipping_fee, rounding_amount FROM bms_orders
+    const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
+      `SELECT total_amount, shipping_fee, rounding_amount, status FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, orderId]
     );
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
+    }
+    if (ord.rows[0].status !== "PENDING") {
+      const current = ord.rows[0].status;
+      await client.query("ROLLBACK");
+      return { status: "INVALID_ORDER_STATE", current };
     }
     const due = Number(ord.rows[0].total_amount)
       + Number(ord.rows[0].shipping_fee ?? 0)
@@ -316,6 +361,7 @@ export type ConfirmSplitResult =
   | { status: "CONFIRMED"; paymentIds: string[]; orderPaid: boolean }
   | { status: "NOT_FOUND" }
   | { status: "INVALID_STATE"; current: string }
+  | { status: "INVALID_ORDER_STATE"; current: string }
   | { status: "INVALID_AMOUNT"; expected: number; actual: number };
 
 /**
@@ -346,6 +392,11 @@ export async function confirmPaymentsForOrder(
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" };
     }
+    if (orderRes.rows[0].status !== "PENDING") {
+      const current = orderRes.rows[0].status;
+      await client.query("ROLLBACK");
+      return { status: "INVALID_ORDER_STATE", current };
+    }
 
     const pays = await client.query<{ id: string; status: string; amount: string }>(
       `SELECT id, status, amount FROM bms_payments
@@ -375,20 +426,31 @@ export async function confirmPaymentsForOrder(
 
     await client.query(
       `UPDATE bms_payments
-          SET status = 'CONFIRMED', verified_by = $3, updated_at = now()
+          SET status = 'CONFIRMED', verified_by = $3,
+              confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
       [tenantId, paymentIds, actor]
     );
 
     const ord = await client.query(
-      `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+      `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
       [tenantId, orderId]
     );
+    if ((ord.rowCount ?? 0) !== 1) {
+      throw new Error("payment/order state changed while confirming");
+    }
     if ((ord.rowCount ?? 0) > 0) {
       await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
       await earnPointsForOrderInTx(client, { tenantId, orderId, actorUserId: actor });
       await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
+    }
+    for (const paymentId of paymentIds) {
+      await auditPaymentTransitionInTx(client, tenantId, actor, "payment.confirm", paymentId, {
+        orderId,
+        split: true,
+        orderPaid: true,
+      });
     }
 
     await client.query("COMMIT");
@@ -415,16 +477,44 @@ async function setStatus(
   note?: string | null,
   actor?: string | null
 ): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_payments
-        SET status = $4,
-            note = COALESCE($5, note),
-            verified_by = COALESCE($6, verified_by),
-            updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = ANY($3)`,
-    [tenantId, paymentId, from, to, note ?? null, actor ?? null]
-  );
-  return (res.rowCount ?? 0) > 0;
+  const lifecycleColumn = to === "REJECTED"
+    ? "rejected_at"
+    : to === "REFUNDED"
+      ? "refunded_at"
+      : null;
+  if (!lifecycleColumn) throw new Error(`unsupported payment transition: ${to}`);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const res = await client.query(
+      `UPDATE bms_payments
+          SET status = $4,
+              note = COALESCE($5, note),
+              verified_by = COALESCE($6, verified_by),
+              ${lifecycleColumn} = COALESCE(${lifecycleColumn}, now()),
+              updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = ANY($3)`,
+      [tenantId, paymentId, from, to, note ?? null, actor ?? null]
+    );
+    if ((res.rowCount ?? 0) === 0) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await auditPaymentTransitionInTx(
+      client,
+      tenantId,
+      actor ?? null,
+      to === "REJECTED" ? "payment.reject" : "payment.refund",
+      paymentId
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -444,7 +534,8 @@ export function refundPayment(tenantId: string, paymentId: string, actor?: strin
 // ---- read ----------------------------------------------------
 export async function getPayment(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by, created_at, updated_at
+    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
+            confirmed_at, rejected_at, refunded_at, created_at, updated_at
        FROM bms_payments WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
@@ -459,7 +550,8 @@ export async function listPayments(
   const offset = Math.max(Number(opts.offset ?? 0), 0);
   const search = opts.search?.trim() || null;
   const res = await query(
-    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by, created_at, updated_at
+    `SELECT id, order_id, method, amount, status, slip_url, slip_ref, verify_result, note, verified_by,
+            confirmed_at, rejected_at, refunded_at, created_at, updated_at
        FROM bms_payments
       WHERE tenant_id = $1
         AND ($2::uuid IS NULL OR order_id = $2)

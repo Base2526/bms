@@ -179,8 +179,8 @@ export async function takeDeposit(input: {
     // สถานะ CONFIRMED เพราะเงินอยู่ในมือร้านแล้ว ต่างจาก PENDING ที่รอตรวจสลิป
     await client.query(
       `INSERT INTO bms_payments
-         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, updated_at)
-       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now())`,
+         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, confirmed_at, updated_at)
+       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now(),now())`,
       [input.tenantId, input.orderId, input.method, amount, input.createdBy, idempotencyKey]
     );
 
@@ -255,8 +255,8 @@ export async function addToDeposit(input: {
 
     await client.query(
       `INSERT INTO bms_payments
-         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, updated_at)
-       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now())`,
+         (tenant_id, order_id, method, amount, status, verified_by, idempotency_key, confirmed_at, updated_at)
+       VALUES ($1,$2,$3,$4,'CONFIRMED',$5,$6,now(),now())`,
       [input.tenantId, input.orderId, input.method, amount, input.actorUserId, idempotencyKey]
     );
     const upd = await client.query<any>(

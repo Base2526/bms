@@ -221,6 +221,7 @@ const searchProducts: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         total,
         products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
       },
@@ -278,6 +279,7 @@ const browseCatalogTool: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         total,
         products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
       },
@@ -316,6 +318,7 @@ const listNewArrivalsTool: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         basis: "created_at",
         total,
         products: items.map((product) => safeCatalogProduct(product, tenantSlug)),
@@ -360,6 +363,7 @@ const findAlternativesTool: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         source: result.source,
         alternatives: result.alternatives.map((product) =>
           safeCatalogProduct(product, tenantSlug)
@@ -396,6 +400,7 @@ const getProduct: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         sku: p.sku,
         name: p.name,
         price: Number(p.price),
@@ -549,7 +554,7 @@ const checkStockTool: BmsTool = {
     const product = reqString(args, "product");
     const size = optString(args, "size") ?? null;
     const res = await checkStock(ec.tenantId, product, size);
-    return { ok: true, data: res };
+    return { ok: true, data: { ...res, verifiedAt: new Date().toISOString() } };
   },
 };
 
@@ -2271,6 +2276,7 @@ const recommendProductsTool: BmsTool = {
       return {
         ok: true,
         data: {
+          verifiedAt: new Date().toISOString(),
           basis,
           candidates: items.map((product) => safeCatalogProduct(product, tenantSlug)),
         },
@@ -2300,6 +2306,7 @@ const recommendProductsTool: BmsTool = {
     return {
       ok: true,
       data: {
+        verifiedAt: new Date().toISOString(),
         basis: top.length > 0 ? "top_sellers_then_available" : "available",
         candidates: ranked.map((product) => safeCatalogProduct(product, tenantSlug)),
       },

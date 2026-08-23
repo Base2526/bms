@@ -63,6 +63,8 @@ never supplies base quantity, pack price, or a second pack-quantity field. `crea
 the active pack row and snapshots its base quantity, unit name, and price inside the order
 transaction, so a stale catalog/tool result cannot set price or stock quantity. `check_stock`
 reports `available` in base units and may include the configured non-base `packs` for that SKU/size.
+Both catalog search and stock-check responses include `verifiedAt`; they are live database reads,
+and `createOrder()` still re-reads price, pack, and stock inside its transaction before writing.
 
 ## Authoritative runtime registry and gates
 
@@ -1137,6 +1139,11 @@ Confidence
 - `forecast_demand(windowDays?, horizonDays?)` — คาดการณ์ยอดต่อ sku จากค่าเฉลี่ยยอดขายย้อนหลัง
 - `predict_stockout(windowDays?)` — ประเมินวันที่จะหมดสต็อกต่อไซซ์ จาก velocity
 - `suggest_purchase_order(windowDays?, coverageDays?)` — เสนอจำนวนสั่งซื้อให้พอขาย N วัน
+
+Every forecast response includes `generatedAt` and `dataQuality` (paid-order count, distinct Bangkok
+sales days, and the required floor). Fewer than seven paid orders or three distinct sales days
+returns `INSUFFICIENT`, no items, and an explicit reason. The model must relay that limitation and
+must not turn absence of history into a demand prediction.
 
 ## AI-native (data providers — deterministic)
 

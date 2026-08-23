@@ -122,13 +122,14 @@ the Bangkok calendar day changes, so a TV does not remain pinned to yesterday un
 
 Defaults to the last 30 Bangkok calendar days. Every explicit `from`/`to` range is converted to
 `Asia/Bangkok` timestamp boundaries before filtering, regardless of the PostgreSQL server timezone.
-Revenue only counts orders `PAID` or later (not `PENDING`). Profit and POS-return report ranges use
-the same boundary convention.
+Revenue only counts orders `PAID` or later (not `PENDING`) by `paid_at`. Refunds are attributed to
+their completion event, while status counts attribute late cancellation/return to their respective
+event timestamps. Profit and POS-return report ranges use the same boundary convention.
 
 ```
 {
   from, to,
-  revenue, orderCount, avgOrderValue,
+  revenue, refundTotal, netRevenue, orderCount, avgOrderValue,
   byDay[]     { day, revenue, orders },
   byStatus[]  { status, count },
   byChannel[] { channel, revenue, orders }
@@ -180,7 +181,9 @@ Current per-report behavior:
   list); ignores the date-range picker.
 - **Profit**: estimated gross profit only. Revenue comes from historical order-item snapshots, but
   cost comes from the product's **current** `cost_price`, so this export must continue to present
-  itself as an estimate rather than an accounting-perfect historical profit statement.
+  itself as an estimate rather than an accounting-perfect historical profit statement. If any sold
+  SKU has no current cost, total cost/profit/margin are unavailable rather than treating that cost as
+  zero; the file includes known cost and missing-cost counts so the operator can repair the catalog.
 
 Every report type is defined once as a `ReportDoc` (title/subtitle/meta + one or more named sheets)
 in `lib/bms/documentGenerator.ts`'s `build*ReportDoc()` functions, then rendered by format-specific

@@ -74,6 +74,7 @@ export const bmsPaymentsResolvers = {
       }
       const msg: Record<string, string> = {
         ORDER_NOT_FOUND: "ไม่พบออร์เดอร์",
+        INVALID_ORDER_STATE: "รับชำระได้เฉพาะออร์เดอร์ PENDING",
         BAD_METHOD: "วิธีชำระเงินไม่ถูกต้อง",
       };
       return { status: res.status, paymentId: null, message: msg[res.status] ?? "ทำรายการไม่ได้" };
@@ -83,12 +84,12 @@ export const bmsPaymentsResolvers = {
       await requirePermission(ctx, "payment.confirm");
       const res = await confirmPayment(getTenantId(ctx), args.id, actorOf(ctx));
       if (res.status === "CONFIRMED") {
-        await audit(ctx, "payment.confirm", args.id, { orderPaid: res.orderPaid });
         return { status: "CONFIRMED", paymentId: args.id, message: res.orderPaid ? "ยืนยันแล้ว · ออร์เดอร์เป็น PAID" : "ยืนยันการชำระแล้ว" };
       }
       const msg: Record<string, string> = {
         NOT_FOUND: "ไม่พบรายการชำระ",
         INVALID_STATE: "สถานะไม่อนุญาตให้ยืนยัน",
+        INVALID_ORDER_STATE: "สถานะออร์เดอร์ขัดแย้งกับการยืนยันชำระ กรุณาตรวจออร์เดอร์ก่อน",
         INVALID_AMOUNT: "ยอดชำระไม่ตรงกับยอดที่ต้องเก็บ",
       };
       return { status: res.status, paymentId: args.id, message: msg[res.status] ?? "ยืนยันไม่ได้" };
@@ -97,14 +98,12 @@ export const bmsPaymentsResolvers = {
     async bmsRejectPayment(_p: unknown, args: { id: string; note?: string }, ctx: any) {
       await requirePermission(ctx, "payment.confirm");
       const ok = await rejectPayment(getTenantId(ctx), args.id, args.note ?? null, actorOf(ctx));
-      if (ok) await audit(ctx, "payment.reject", args.id);
       return ok;
     },
 
     async bmsRefundPayment(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "payment.refund");
       const ok = await refundPayment(getTenantId(ctx), args.id, actorOf(ctx));
-      if (ok) await audit(ctx, "payment.refund", args.id);
       return ok;
     },
 
@@ -123,6 +122,9 @@ export const bmsPaymentsResolvers = {
     slipUrl: (p: any) => p.slip_url ?? null,
     slipRef: (p: any) => p.slip_ref ?? null,
     verifiedBy: (p: any) => p.verified_by ?? null,
+    confirmedAt: (p: any) => toISO(p.confirmed_at),
+    rejectedAt: (p: any) => toISO(p.rejected_at),
+    refundedAt: (p: any) => toISO(p.refunded_at),
     amount: (p: any) => Number(p.amount),
     verifyResult: (p: any) =>
       p.verify_result == null ? null : typeof p.verify_result === "string" ? p.verify_result : JSON.stringify(p.verify_result),

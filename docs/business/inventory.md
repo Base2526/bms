@@ -460,6 +460,12 @@ open POs, and per-variant safety-stock/lead-time
 policy. It returns demand trend, stock-out horizon and a review-only reorder quantity. A recommendation
 never creates or changes a PO.
 
+Forecast-driven labels and purchase quantities require at least seven paid orders across three
+distinct Bangkok sales days in the selected window. A new shop below that floor receives
+`INSUFFICIENT_DATA` / `COLLECT_MORE_DATA`, an empty forecast recommendation, and the observed sample
+counts—not a confident stock-out date. Current low/out-of-stock and expiry facts remain visible
+because they do not depend on historical demand.
+
 Variants with no observed demand and positive stock are `DEAD`; variants holding more than roughly
 three recent demand windows are `SLOW`. Those labels lead to discontinue/bundle or
 markdown/transfer/bundle actions. They are operational heuristics, not accounting valuation. Lots
@@ -471,6 +477,11 @@ expiry quantities.
 only a customer-observed lost sale or restock request; guesses inflate purchasing recommendations.
 `bms_inventory_policies` defaults to seven safety-stock days and seven lead-time days until a manager
 sets a variant-specific policy.
+
+Missing product cost is not zero cost. Profit output is incomplete (`cost`, `profit`, and margin are
+`null`) whenever any sold SKU lacks `cost_price`, while known-cost and missing-line/SKU counts remain
+visible for repair. Action Center separately flags missing costs and zero prices. Zero price remains
+allowed for an intentional giveaway; the signal requires human review instead of guessing intent.
 
 ## Scale barcodes: weight and price embedded (8.8)
 

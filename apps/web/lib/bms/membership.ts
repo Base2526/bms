@@ -1274,7 +1274,7 @@ export async function loyaltyActivityReport(tenantId: string, months = 6): Promi
   const res = await query<{
     month: Date; earned: string; redeemed: string; expired: string; reversed: string; adjusted: string;
   }>(
-    `SELECT date_trunc('month', created_at) AS month,
+    `SELECT date_trunc('month', created_at AT TIME ZONE 'Asia/Bangkok')::date AS month,
             COALESCE(SUM(points) FILTER (WHERE kind = 'EARN'), 0) AS earned,
             COALESCE(-SUM(points) FILTER (WHERE kind = 'REDEEM'), 0) AS redeemed,
             COALESCE(-SUM(points) FILTER (WHERE kind = 'EXPIRE'), 0) AS expired,
@@ -1282,7 +1282,10 @@ export async function loyaltyActivityReport(tenantId: string, months = 6): Promi
             COALESCE(SUM(points) FILTER (WHERE kind = 'ADJUST'), 0) AS adjusted
        FROM bms_loyalty_ledger
       WHERE tenant_id = $1
-        AND created_at >= date_trunc('month', now()) - ($2::int - 1) * interval '1 month'
+        AND created_at >= (
+          (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') - ($2::int - 1) * interval '1 month')
+          AT TIME ZONE 'Asia/Bangkok'
+        )
       GROUP BY 1
       ORDER BY 1 DESC`,
     [tenantId, span]

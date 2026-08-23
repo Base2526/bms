@@ -24,8 +24,8 @@ export async function getDashboard(tenantId: string) {
            COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($1)), 0) AS revenue_total,
            COALESCE(SUM(total_amount) FILTER (
              WHERE status = ANY($1)
-               AND created_at >= (((now() AT TIME ZONE 'Asia/Bangkok')::date)::timestamp AT TIME ZONE 'Asia/Bangkok')
-               AND created_at < ((((now() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok')
+               AND COALESCE(paid_at,created_at) >= (((now() AT TIME ZONE 'Asia/Bangkok')::date)::timestamp AT TIME ZONE 'Asia/Bangkok')
+               AND COALESCE(paid_at,created_at) < ((((now() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok')
            ), 0) AS revenue_today,
            COUNT(*) AS order_count
          FROM bms_orders WHERE tenant_id = $2`,
@@ -72,8 +72,8 @@ export async function getDashboard(tenantId: string) {
            ) d
            LEFT JOIN bms_orders o
              ON o.tenant_id = $2
-            AND o.created_at >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND o.created_at < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(o.paid_at,o.created_at) >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(o.paid_at,o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
           GROUP BY day ORDER BY day`,
         [PAID, tenantId]
       ),
@@ -225,10 +225,10 @@ export async function getInventoryActionCenter(
     query<any>(
       `WITH sales AS (
          SELECT oi.product_sku sku, oi.size,
-           COALESCE(SUM(oi.qty) FILTER (WHERE o.created_at >= now()-make_interval(days=>$2)),0)::int sold_recent,
-           COALESCE(SUM(oi.qty) FILTER (WHERE o.created_at < now()-make_interval(days=>$2) AND o.created_at >= now()-make_interval(days=>$2*2)),0)::int sold_previous
+           COALESCE(SUM(oi.qty) FILTER (WHERE COALESCE(o.paid_at,o.created_at) >= now()-make_interval(days=>$2)),0)::int sold_recent,
+           COALESCE(SUM(oi.qty) FILTER (WHERE COALESCE(o.paid_at,o.created_at) < now()-make_interval(days=>$2) AND COALESCE(o.paid_at,o.created_at) >= now()-make_interval(days=>$2*2)),0)::int sold_previous
          FROM bms_order_items oi JOIN bms_orders o ON o.id=oi.order_id AND o.tenant_id=$1
-         WHERE o.status=ANY($3) AND o.created_at >= now()-make_interval(days=>$2*2)
+         WHERE o.status=ANY($3) AND COALESCE(o.paid_at,o.created_at) >= now()-make_interval(days=>$2*2)
          GROUP BY oi.product_sku,oi.size
        ), demand AS (
          SELECT sku,size,SUM(qty)::int qty FROM (
@@ -256,14 +256,16 @@ export async function getInventoryActionCenter(
     ),
     query<any>(
       `SELECT l.product_sku sku,p.name,l.size,l.lot_no,l.expiry_date,l.qty::int,
-              (l.expiry_date-CURRENT_DATE)::int days_to_expiry
+              (l.expiry_date-(now() AT TIME ZONE 'Asia/Bangkok')::date)::int days_to_expiry
        FROM bms_inventory_lots l JOIN bms_products p ON p.tenant_id=l.tenant_id AND p.sku=l.product_sku
-       WHERE l.tenant_id=$1 AND l.qty>0 AND l.expiry_date IS NOT NULL AND l.expiry_date <= CURRENT_DATE+60
+       WHERE l.tenant_id=$1 AND l.qty>0 AND l.expiry_date IS NOT NULL
+         AND l.expiry_date <= (now() AT TIME ZONE 'Asia/Bangkok')::date+60
        ORDER BY l.expiry_date,l.qty DESC`, [tenantId]
     ),
   ]);
 
   const outOfStockNow = lowStockRows.filter((row) => Number(row.available) <= 0);
+  const forecastSufficient = stockoutMeta.dataQuality.status === "SUFFICIENT";
   const advanced = intelligence.rows.map((r: any) => {
     const observed = Number(r.sold_recent) + Number(r.demand_feedback);
     const avgPerDay = observed / safeWindowDays;
@@ -271,11 +273,17 @@ export async function getInventoryActionCenter(
     const safetyStock = Math.ceil(avgPerDay * Number(r.safety_stock_days));
     const target = Math.ceil(avgPerDay * (Number(r.lead_time_days)+Number(r.safety_stock_days)+safeCoverageDays));
     const suggestedQty = Math.max(0, target-Number(r.available)-Number(r.incoming));
-    const classification = Number(r.available) <= 0 ? "OUT_OF_STOCK" : observed === 0 && Number(r.available)>0 ? "DEAD" : Number(r.available) > observed*3 ? "SLOW" : "HEALTHY";
+    const classification = !forecastSufficient
+      ? "INSUFFICIENT_DATA"
+      : Number(r.available) <= 0
+        ? "OUT_OF_STOCK"
+        : observed === 0 && Number(r.available)>0
+          ? "DEAD"
+          : Number(r.available) > observed*3 ? "SLOW" : "HEALTHY";
     const daysToStockout = avgPerDay > 0 ? +(Math.max(Number(r.available),0)/avgPerDay).toFixed(1) : null;
     const projectedStockoutDate = daysToStockout === null ? null : new Date(Date.now()+Math.ceil(daysToStockout)*86_400_000).toISOString().slice(0,10);
-    return { sku:r.sku,name:r.name,size:r.size,available:Number(r.available),soldInWindow:Number(r.sold_recent),demandFeedback:Number(r.demand_feedback),incomingQty:Number(r.incoming),avgPerDay:+avgPerDay.toFixed(3),daysToStockout,projectedStockoutDate,trendPct:+trendPct.toFixed(1),safetyStock,leadTimeDays:Number(r.lead_time_days),suggestedQty,classification,
-      recommendedAction: classification === "DEAD" ? "DISCONTINUE_OR_BUNDLE" : classification === "SLOW" ? "MARKDOWN_TRANSFER_OR_BUNDLE" : suggestedQty>0 ? "REORDER" : "MONITOR" };
+    return { sku:r.sku,name:r.name,size:r.size,available:Number(r.available),soldInWindow:Number(r.sold_recent),demandFeedback:Number(r.demand_feedback),incomingQty:Number(r.incoming),avgPerDay:+avgPerDay.toFixed(3),daysToStockout:forecastSufficient?daysToStockout:null,projectedStockoutDate:forecastSufficient?projectedStockoutDate:null,trendPct:+trendPct.toFixed(1),safetyStock,leadTimeDays:Number(r.lead_time_days),suggestedQty:forecastSufficient?suggestedQty:0,classification,
+      recommendedAction: classification === "INSUFFICIENT_DATA" ? "COLLECT_MORE_DATA" : classification === "DEAD" ? "DISCONTINUE_OR_BUNDLE" : classification === "SLOW" ? "MARKDOWN_TRANSFER_OR_BUNDLE" : suggestedQty>0 ? "REORDER" : "MONITOR" };
   });
   const slowMoving = advanced.filter((x: any) => x.classification === "SLOW" || x.classification === "DEAD")
     .sort((a: any,b: any) => b.available-a.available);
@@ -298,6 +306,7 @@ export async function getInventoryActionCenter(
       windowDays: safeWindowDays,
       coverageDays: safeCoverageDays,
       disclaimer: stockoutMeta.disclaimer,
+      dataQuality: stockoutMeta.dataQuality,
     },
     lowStock: lowStockRows.slice(0, safeLimit).map((row) => ({
       sku: row.sku,

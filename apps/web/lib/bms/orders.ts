@@ -53,6 +53,8 @@ import {
   reorderTargetIdentity,
   type CustomerChannelIdentity,
 } from "./customerIdentity";
+import { validateOrderItems } from "./orderValidation";
+export { validateOrderItems } from "./orderValidation";
 
 /**
  * qty คือ "หน่วยฐาน" เสมอ (สต็อกนับเป็นหน่วยฐาน) — ถ้าลูกค้าซื้อเป็นกล่อง
@@ -155,6 +157,7 @@ export type CreateOrderResult =
   | { status: "COUPON_INVALID"; reason: string }
   | { status: "POINTS_INVALID"; reason: string }
   | { status: "DISCOUNT_UNAPPROVED"; reason: string }
+  | { status: "INVALID_ITEM"; index: number; reason: string }
   /** สินค้าชุดที่ยังไม่ได้ใส่ส่วนประกอบ — ขายไปคือของไม่ออกจากคลัง (8.8) */
   | { status: "BUNDLE_INCOMPLETE"; sku: string }
   | {
@@ -358,10 +361,20 @@ export async function createOrder(
   input: CreateOrderInput
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
-  let items = mergeItems(input.items).filter(
-    (it) => it.sku && it.size && Number.isInteger(it.qty) && it.qty > 0
-  );
-  if (items.length === 0) return { status: "EMPTY" };
+  const validation = validateOrderItems(input.items);
+  if (!validation.ok) {
+    if (validation.index === -1) return { status: "EMPTY" };
+    return { status: "INVALID_ITEM", index: validation.index, reason: validation.reason };
+  }
+  let items = mergeItems(input.items);
+  const mergedValidation = validateOrderItems(items);
+  if (!mergedValidation.ok) {
+    return {
+      status: "INVALID_ITEM",
+      index: mergedValidation.index,
+      reason: "จำนวนรวมของรายการซ้ำมากเกินกว่าที่ระบบบันทึกได้",
+    };
+  }
 
   const client = await getClient();
   try {
@@ -1055,7 +1068,7 @@ export async function payOrder(tenantId: string, orderId: string): Promise<boole
   try {
     await beginTenantTx(client, tenantId);
     const ord = await client.query(
-      `UPDATE bms_orders SET status = 'PAID', updated_at = now()
+      `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
       [tenantId, orderId]
     );
@@ -1174,7 +1187,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     await beginTenantTx(client, tenantId);
 
     const ord = await client.query(
-      `UPDATE bms_orders SET status = 'RETURNED', updated_at = now()
+      `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')`,
       [orderId, tenantId]
     );
@@ -1233,7 +1246,7 @@ export async function cancelOrderInTx(
   orderId: string
 ): Promise<boolean> {
     const ord = await client.query(
-      `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()
+      `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('PENDING','PAID','PACKING')`,
       [orderId, tenantId]
     );
@@ -1349,7 +1362,7 @@ export async function releaseExpiredOrders(
     await reopenRestockSubscriptionsForOrders({ orderIds: ids, client });
 
     await client.query(
-      `UPDATE bms_orders SET status = 'CANCELLED', updated_at = now()
+      `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
         WHERE id = ANY($1::uuid[])`,
       [ids]
     );

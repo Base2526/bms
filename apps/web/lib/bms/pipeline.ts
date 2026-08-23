@@ -1516,6 +1516,10 @@ function orderReply(names: Record<string, string>, order: CreateOrderResult, eng
       return english
         ? `Sorry, ${nameOf(order.sku)} is not currently sold in unit ${order.packCode}. Please choose an available selling unit.`
         : `ขออภัยค่ะ ${nameOf(order.sku)} ไม่มีหน่วยขาย ${order.packCode} ที่ใช้งานได้ กรุณาเลือกหน่วยที่ร้านมีค่ะ`;
+    case "INVALID_ITEM":
+      return english
+        ? `The order contains an invalid item at line ${order.index + 1}. Please check its product, size, and quantity.`
+        : `รายการที่ ${order.index + 1} มีข้อมูลไม่ถูกต้อง กรุณาตรวจสินค้า ตัวเลือก และจำนวนอีกครั้งค่ะ`;
     case "PHARMACY_POLICY_UNKNOWN":
       return `สินค้านี้ยังไม่มี Product Policy ที่เภสัชกรอนุมัติค่ะ จึงยังสร้างออร์เดอร์ให้อัตโนมัติไม่ได้ ทางร้านจะส่งให้เภสัชกรตรวจสอบก่อนนะคะ${blockedSuffix}`;
     case "PHARMACY_SAFETY_CHECK_REQUIRED":

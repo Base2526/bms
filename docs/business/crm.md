@@ -70,7 +70,17 @@ payment row.
 Manual merge preserves customer-level profile fields as well as linked rows: tags are unioned;
 missing phone/email/note/language/timezone values are filled from the merged record; and follow-up
 opt-out is combined conservatively with boolean OR so merging can never silently re-enable messages
-for a customer who opted out on either identity.
+for a customer who opted out on either identity. It also moves orders, channel identities,
+addresses, conversations, pharmacy/restock/coupon/loyalty history, POS deposits, identified
+no-receipt returns, and store-credit ownership to the kept customer. Non-conflicting retention cases
+move too; a same-period collision stays attached to the soft-deleted source row so treatment/holdout
+evidence is not destroyed or combined unsafely.
+
+Action Center detects possible duplicates by a sufficiently long normalized phone and shows counts
+only, never the phone itself. This is review evidence, not proof: LINE and Instagram records are
+merged only after staff verifies they are the same person. It also flags identified non-marketplace
+customers with an active order but no phone or shipping address; checkout/shipping continue to block
+at the normal completeness boundary rather than letting AI invent the missing PII.
 
 ## Omnichannel Inbox
 

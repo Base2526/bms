@@ -155,7 +155,7 @@ export async function getCommissionReport(
     `WITH sold AS (
        SELECT o.id                AS order_id,
               o.cashier_user_id   AS staff_id,
-              o.created_at::date  AS sold_on,
+              (COALESCE(o.paid_at,o.created_at) AT TIME ZONE 'Asia/Bangkok')::date AS sold_on,
               oi.id               AS item_id,
               oi.product_sku,
               oi.qty,
@@ -181,8 +181,8 @@ export async function getCommissionReport(
           AND o.cashier_user_id IS NOT NULL
           AND o.voided_at IS NULL
           AND o.status IN ('COMPLETED','RETURNED')
-          AND o.created_at >= $2::date
-          AND o.created_at < $3::date + interval '1 day'
+          AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
      ),
      priced AS (
        SELECT s.*,

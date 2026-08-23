@@ -58,8 +58,18 @@ operators must resolve those records before retrying the migration.
 | Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items` (+ widened `bms_stock_movements.type` CHECK) | `7.98` |
 | Phase 1 action + inventory intelligence | `bms_actions`, `bms_action_events`, `bms_inventory_policies`, `bms_inventory_demand_events` | `9.12`–`9.13` |
 | Phase 2 retention engine | `bms_retention_cases` | `9.14` |
+| Data-integrity lifecycle | event timestamps on `bms_orders` / `bms_payments`; non-negative product-cost constraint | `9.15` |
 
 ## Notable schema details
+
+**Data-integrity lifecycle (`9.15`)** — orders retain `paid_at`, `cancelled_at`, and `returned_at`;
+payments retain `confirmed_at`, `rejected_at`, and `refunded_at`. These are event timestamps, not
+aliases for `created_at`/`updated_at`, so a refund or cancellation performed on a later Bangkok
+business day remains attributable to the day it happened. Existing terminal rows are backfilled
+with the best available legacy evidence. New transitions set the timestamp inside the same tenant
+transaction as the state change. The migration also adds a `NOT VALID` non-negative `cost_price`
+check: it protects every new/updated row without making deployment fail on a legacy bad row that
+operators still need to repair.
 
 **Phase 1 action center (`9.12`)** — `bms_actions` materializes one tenant-scoped action per Bangkok
 business day and signal. It stores priority, evidence, expected impact, confidence, owner, due date,

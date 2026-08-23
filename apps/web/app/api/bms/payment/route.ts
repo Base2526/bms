@@ -47,7 +47,10 @@ async function handlePOST(req: NextRequest) {
   });
 
   const httpStatus =
-    result.status === "SUBMITTED" ? 201 : result.status === "ORDER_NOT_FOUND" ? 404 : 400;
+    result.status === "SUBMITTED" ? 201
+      : result.status === "ORDER_NOT_FOUND" ? 404
+      : result.status === "INVALID_ORDER_STATE" ? 409
+      : 400;
   return NextResponse.json(result, { status: httpStatus });
 }
 
