@@ -525,7 +525,6 @@ function Inbox() {
     if (typeof window === "undefined") return "list";
     return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";
   });
-  const [customer360Ready, setCustomer360Ready] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilterKey | null>(null);
 
@@ -581,20 +580,13 @@ function Inbox() {
   const showListPane = !isMobile || mobilePane === "list";
   const showConversationPane = !isMobile || mobilePane === "chat";
 
-  const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-and-network" });
+  const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-first" });
   const conv = convData?.bmsConversation;
   const showCustomer360Pane = Boolean(conv && !isMobile && !isTablet);
   const selectedCouponCode = useMemo(
     () => latestCouponCodeFromMessages(conv?.messages || []),
     [conv?.messages]
   );
-
-  useEffect(() => {
-    setCustomer360Ready(false);
-    if (!showCustomer360Pane) return;
-    const timer = window.setTimeout(() => setCustomer360Ready(true), 350);
-    return () => window.clearTimeout(timer);
-  }, [showCustomer360Pane, conv?.id]);
 
   const [markRead] = useMutation(M_READ);
   const { data: inboxChangedData } = useSubscription(S_INBOX_CHANGED, {
@@ -661,12 +653,15 @@ function Inbox() {
     run();
   }, [refetch]);
 
-  const markActiveConversationRead = useCallback(async (conversationId: string) => {
+  const markActiveConversationRead = useCallback(async (
+    conversationId: string,
+    options?: { queueIfRunning?: boolean }
+  ) => {
     clearUnreadInCache(conversationId);
 
     const current = readStateRef.current.get(conversationId);
     if (current?.running) {
-      current.pending = true;
+      if (options?.queueIfRunning) current.pending = true;
       return;
     }
 
@@ -681,12 +676,12 @@ function Inbox() {
           update: () => clearUnreadInCache(conversationId),
         });
         clearUnreadInCache(conversationId);
-        // Refresh only after the DB is marked read. Refreshing before this point
-        // can restore the stale unread value and leave the badge visible.
-        await refetch();
       } while (state.pending);
     } catch (error) {
       console.warn("[BMS Inbox] mark active conversation read failed", error);
+      // Restore authoritative unread state only on failure. Successful writes
+      // are already reflected in both caches and via READ_CHANGED realtime.
+      void refetch();
     } finally {
       readStateRef.current.delete(conversationId);
     }
@@ -699,16 +694,21 @@ function Inbox() {
     if (!event?.conversationId) return;
 
     const isActiveEvent = event.conversationId === activeIdRef.current;
+    const isReadEvent = event.kind === "READ_CHANGED";
     const isActiveMessageEvent = isActiveEvent && event.kind === "MESSAGES_CHANGED";
-    if (isActiveMessageEvent) {
+    if (isReadEvent) {
+      // READ_CHANGED carries the complete state transition; no list/detail
+      // query is needed, including for events from another operator.
+      clearUnreadInCache(event.conversationId);
+    } else if (isActiveMessageEvent) {
       // The operator is already looking at this thread: clear its badge now,
-      // then persist read state before the authoritative list refresh.
-      void markActiveConversationRead(event.conversationId);
+      // then persist read state without starting another list/detail fetch.
+      void markActiveConversationRead(event.conversationId, { queueIfRunning: true });
     } else {
       triggerListRefresh();
     }
 
-    if (isActiveEvent && !convRefreshTimer.current) {
+    if (isActiveEvent && !isReadEvent && !convRefreshTimer.current) {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === event.conversationId) {
@@ -716,7 +716,7 @@ function Inbox() {
         }
       }, 150);
     }
-  }, [inboxChangedData, refetchConv, triggerListRefresh, markActiveConversationRead, convVariables]);
+  }, [inboxChangedData, clearUnreadInCache, refetchConv, triggerListRefresh, markActiveConversationRead, convVariables]);
 
   useEffect(() => () => {
     if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
@@ -728,7 +728,6 @@ function Inbox() {
   useEffect(() => {
     if (activeId) {
       loadConv({ variables: convVariables(activeId) });
-      void markActiveConversationRead(activeId);
     }
   }, [activeId]); // eslint-disable-line
 
@@ -778,6 +777,13 @@ function Inbox() {
     setActiveId(conversationId);
     if (isMobile) setMobilePane("chat");
   }, [isMobile]);
+  const showConversationList = useCallback(() => setMobilePane("list"), []);
+  const handleConversationChanged = useCallback(() => {
+    const conversationId = activeIdRef.current;
+    if (!conversationId) return;
+    void refetchConv(convVariables(conversationId));
+    void refetch();
+  }, [convVariables, refetch, refetchConv]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100dvh - 48px)" : "calc(100vh - 48px)", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
@@ -966,14 +972,14 @@ function Inbox() {
           {!conv ? (
             <Empty description={t("admin_inbox.empty_select_conversation")} style={{ marginTop: 120 }} />
           ) : (
-            <ConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? () => setMobilePane("list") : undefined}
-              gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={() => { refetchConv(convVariables(conv.id)); refetch(); }} />
+            <MemoConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? showConversationList : undefined}
+              gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={handleConversationChanged} />
           )}
         </div>
         )}
 
         {/* ---- right: Customer 360 panel ---- */}
-        {showCustomer360Pane && customer360Ready && <Customer360Panel conv={conv} can={can} selectedCouponCode={selectedCouponCode} />}
+        {showCustomer360Pane && <Customer360Panel conv={conv} can={can} selectedCouponCode={selectedCouponCode} />}
       </div>
     </div>
   );
@@ -1074,7 +1080,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   });
   const [loadTimeline, { data: tlData, loading: tlLoading }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   const [tlThisChatOnly, setTlThisChatOnly] = useState(false);
-  const { data: staffData } = useQuery(Q_STAFF, { fetchPolicy: "cache-and-network" });
+  const { data: staffData } = useQuery(Q_STAFF, { fetchPolicy: "cache-first" });
   const staffList: StaffRef[] = useMemo(() => staffData?.bmsAssignableStaff || [], [staffData?.bmsAssignableStaff]);
   const { data: productPickerData, loading: productPickerLoading } = useQuery(Q_PRODUCTS_PICKER, {
     variables: { search: productSearch || null },
@@ -1085,7 +1091,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     skip: !couponPickerOpen || !can("coupon.view"),
     fetchPolicy: "cache-and-network",
   });
-  const [loadCustomer, { data: custData, loading: custLoading, refetch: refetchCustomer }] = useLazyQuery(Q_CUSTOMER, { fetchPolicy: "cache-and-network" });
+  const [loadCustomer, { data: custData, refetch: refetchCustomer }] = useLazyQuery(Q_CUSTOMER, { fetchPolicy: "cache-first" });
   const canViewCustomer = can("customer.view");
   const canReorder = can("order.create");
   const [reorderingId, setReorderingId] = useState<string | null>(null);
@@ -1100,8 +1106,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   });
 
   useEffect(() => {
-    if (canViewCustomer && conv.customerId) loadCustomer({ variables: { id: conv.customerId } });
-  }, [conv.customerId, canViewCustomer]); // eslint-disable-line
+    if (activeTabKey === "customer" && canViewCustomer && conv.customerId) {
+      loadCustomer({ variables: { id: conv.customerId } });
+    }
+  }, [activeTabKey, conv.customerId, canViewCustomer]); // eslint-disable-line
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2025,7 +2033,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     <div>
       {!canViewCustomer && <Empty description={t("admin_inbox.no_view_customer_permission")} />}
       {canViewCustomer && !conv.customerId && <Empty description={t("admin_inbox.customer_not_linked")} />}
-      {canViewCustomer && conv.customerId && custLoading && !custData && <Typography.Text type="secondary">{t("admin_inbox.loading_label")}</Typography.Text>}
+      {canViewCustomer && conv.customerId && !custData && <Typography.Text type="secondary">{t("admin_inbox.loading_label")}</Typography.Text>}
       {canViewCustomer && custData?.bmsCustomer && (
         <div>
           <Space size="large" wrap style={{ marginBottom: 12 }}>
@@ -2267,6 +2275,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     </div>
   );
 }
+
+const MemoConversationPane = memo(ConversationPane);
 
 export default function Page() {
   return <Inbox />;

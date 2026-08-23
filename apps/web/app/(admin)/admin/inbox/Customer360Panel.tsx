@@ -11,7 +11,7 @@ import {
   Collapse, Skeleton, Empty, Tag, Typography, Avatar, Space, Table,
   Descriptions, Button, Tooltip, List, Divider, Modal, Form, Select, InputNumber, Alert, message, Drawer, Input,
 } from "antd";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import {
   UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ShoppingOutlined,
   PlusOutlined, MinusCircleOutlined, ContainerOutlined, RollbackOutlined,
@@ -958,7 +958,7 @@ function QuickActionsSection({ can, conv, orders, onCreateOrder, onInvoice }: { 
 }
 
 // ---- Main panel ------------------------------------------------
-export default function Customer360Panel({ conv, can, selectedCouponCode }: { conv: any; can: (p: string) => boolean; selectedCouponCode?: string | null }) {
+function Customer360Panel({ conv, can, selectedCouponCode }: { conv: any; can: (p: string) => boolean; selectedCouponCode?: string | null }) {
   const { t } = useI18n();
   const customerId: string | null = conv?.customerId ?? null;
   const [collapsed, setCollapsed] = useState(false);
@@ -966,9 +966,16 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
   const toggle = () => setCollapsed((v) => { const n = !v; window.localStorage.setItem(PANEL_COLLAPSE_KEY, n ? "1" : "0"); return n; });
 
   const { data, loading, error, refetch } = useQuery(Q_CUSTOMER_360, {
-    variables: { customerId, channel: conv?.channel ?? null, customerRef: conv?.customerRef ?? null, conversationId: conv?.id ?? null },
+    variables: {
+      customerId,
+      channel: conv?.channel ?? null,
+      customerRef: conv?.customerRef ?? null,
+      // The resolver only needs to look the conversation up when no CRM
+      // customer has been linked yet. Avoid that extra DB round trip normally.
+      conversationId: customerId ? null : conv?.id ?? null,
+    },
     skip: !conv?.id,
-    fetchPolicy: "cache-and-network",
+    fetchPolicy: "cache-first",
   });
   const c360 = data?.bmsCustomer360;
   const resolvedCustomerId: string | null = c360?.customer?.id ?? null;
@@ -1104,3 +1111,5 @@ export default function Customer360Panel({ conv, can, selectedCouponCode }: { co
     </div>
   );
 }
+
+export default memo(Customer360Panel);

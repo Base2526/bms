@@ -523,8 +523,7 @@ export default function Page() {
           </Col>
         </Row>
 
-        <Row gutter={[8, 8]}>
-          <Col xs={24} lg={8}>
+        <div className={styles.inventoryGrid}>
             <Card
               title={t("admin_dashboard.stockout_risk_title")}
               loading={loading}
@@ -536,12 +535,14 @@ export default function Page() {
                 rowKey={(row: any) => `${row.sku}-${row.size}`}
                 size="small"
                 pagination={false}
+                scroll={{ x: 560 }}
                 dataSource={inventoryAction?.stockoutRisk || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_stockout_risk") }}
                 columns={[
                   {
                     title: t("admin_dashboard.col_product"),
                     key: "product",
+                    width: 190,
                     render: (_: any, row: any) => (
                       <Space direction="vertical" size={0}>
                         <Text>{row.name}</Text>
@@ -562,8 +563,6 @@ export default function Page() {
                 ]}
               />
             </Card>
-          </Col>
-          <Col xs={24} lg={8}>
             <Card
               title={t("admin_dashboard.purchase_suggestions_title")}
               loading={loading}
@@ -575,12 +574,14 @@ export default function Page() {
                 rowKey={(row: any) => `${row.sku}-${row.size}`}
                 size="small"
                 pagination={false}
+                scroll={{ x: 740 }}
                 dataSource={inventoryAction?.purchaseSuggestions || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_purchase_suggestions") }}
                 columns={[
                   {
                     title: t("admin_dashboard.col_product"),
                     key: "product",
+                    width: 190,
                     render: (_: any, row: any) => (
                       <Space direction="vertical" size={0}>
                         <Text>{row.name}</Text>
@@ -600,13 +601,11 @@ export default function Page() {
                 ]}
               />
             </Card>
-          </Col>
-          <Col xs={24} lg={8}>
             <Card
               title={t("admin_dashboard.low_stock_focus_title")}
               loading={loading}
               style={{ borderRadius: 10, height: "100%" }}
-              className={styles.compactCard}
+              className={`${styles.compactCard} ${styles.inventoryWide}`}
             >
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Alert
@@ -619,12 +618,14 @@ export default function Page() {
                   rowKey={(row: any) => `${row.sku}-${row.size}`}
                   size="small"
                   pagination={false}
+                  scroll={{ x: 600 }}
                   dataSource={inventoryAction?.lowStock || []}
                   locale={{ emptyText: t("admin_dashboard.empty_no_low_stock_focus") }}
                   columns={[
                     {
                       title: t("admin_dashboard.col_product"),
                       key: "product",
+                      width: 220,
                       render: (_: any, row: any) => (
                         <Space direction="vertical" size={0}>
                           <Text>{row.name}</Text>
@@ -642,8 +643,7 @@ export default function Page() {
                 />
               </Space>
             </Card>
-          </Col>
-        </Row>
+        </div>
         <Row gutter={[8,8]} style={{ marginTop: 8 }}>
           <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}`} size="small" pagination={false} dataSource={inventoryAction?.slowMoving || []} columns={[
             { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },

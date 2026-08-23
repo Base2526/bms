@@ -20,13 +20,14 @@ import {
   seedFakeCoupons,
   seedFakeRestockSubscriptions,
 } from "@/lib/bms/devSeed";
+import { seedFakePosDevices } from "@/lib/bms/devPosSeed";
 import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const clamp = (v: unknown, def: number, min = 0, max = 500) => {
+const clamp = (v: unknown, def: number, min = 0, max = 2000) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), min), max) : def;
 };
@@ -42,10 +43,11 @@ async function handlePOST(req: NextRequest) {
   const c = body?.counts ?? {};
   const counts = {
     staff: clamp(c.staff, 2, 0, 20),
-    products: clamp(c.products, 20, 1, 500),
-    customers: clamp(c.customers, 15, 1, 500),
-    orders: clamp(c.orders, 30, 1, 500),
-    conversations: clamp(c.conversations, 15, 1, 500),
+    posDevices: clamp(c.posDevices, 1, 1, 5),
+    products: clamp(c.products, 100, 1, 500),
+    customers: clamp(c.customers, 80, 1, 500),
+    orders: clamp(c.orders, 1000, 800, 2000),
+    conversations: clamp(c.conversations, 36, 1, 100),
     purchase: clamp(c.purchase, 10, 1, 500),
     coupons: clamp(c.coupons, 5, 0, 200),
     restockSubscriptions: clamp(c.restockSubscriptions, businessArchetype ? 12 : 0, 0, 200),
@@ -59,10 +61,11 @@ async function handlePOST(req: NextRequest) {
   }
 
   try {
-    await seedFakeStaff(shop.tenantId, counts.staff, guard.actor?.id);
+    const staff = await seedFakeStaff(shop.tenantId, counts.staff, guard.actor?.id, businessArchetype);
+    const deviceResult = await seedFakePosDevices(shop.tenantId, counts.posDevices, guard.actor?.id);
     const products = await seedFakeProducts(shop.tenantId, counts.products, businessArchetype);
     const customers = await seedFakeCustomers(shop.tenantId, counts.customers);
-    const orderResult = await seedFakeOrders(shop.tenantId, counts.orders, businessArchetype);
+    const orderResult = await seedFakeOrders(shop.tenantId, counts.orders, businessArchetype, "omnichannel");
     const convResult = await seedFakeConversations(shop.tenantId, counts.conversations, businessArchetype);
     const poResult = await seedFakePurchase(shop.tenantId, counts.purchase, businessArchetype);
     const coupons = counts.coupons > 0 ? await seedFakeCoupons(shop.tenantId, counts.coupons, businessArchetype) : [];
@@ -76,10 +79,11 @@ async function handlePOST(req: NextRequest) {
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       businessArchetype,
       summary: {
-        staff: counts.staff,
+        staff: staff.length + 1,
         products: products.length,
         customers: customers.length,
         coupons: coupons.length,
+        ...deviceResult.summary,
         ...orderResult.summary,
         ...convResult.summary,
         ...poResult.summary,

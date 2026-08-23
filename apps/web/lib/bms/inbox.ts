@@ -851,13 +851,22 @@ export async function setConversationTags(tenantId: string, id: string, tags: st
 }
 
 export async function markRead(tenantId: string, id: string): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_conversations SET unread = 0, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+  const res = await query<{ found: boolean; changed: boolean }>(
+    `WITH target AS (
+       SELECT id FROM bms_conversations WHERE tenant_id = $1 AND id = $2
+     ), updated AS (
+       UPDATE bms_conversations c
+          SET unread = 0, updated_at = now()
+         FROM target
+        WHERE c.tenant_id = $1 AND c.id = target.id AND c.unread > 0
+       RETURNING c.id
+     )
+     SELECT EXISTS (SELECT 1 FROM target) AS found,
+            EXISTS (SELECT 1 FROM updated) AS changed`,
     [tenantId, id]
   );
-  const ok = (res.rowCount ?? 0) > 0;
-  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
-  return ok;
+  if (res.rows[0]?.changed) publishInboxChanged(tenantId, id, "READ_CHANGED");
+  return res.rows[0]?.found === true;
 }
 
 // ---- notes (internal) ----------------------------------------
@@ -1005,6 +1014,10 @@ export type SendResult = { status: "SENT"; delivered: boolean; messageId?: strin
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
 
+export function isFakeCustomerRef(customerRef: string | null | undefined): boolean {
+  return /^FAKE-/i.test(customerRef?.trim() ?? "");
+}
+
 /**
  * ยิงข้อความออกช่องทางจริง (คืน true ถ้าส่งสำเร็จ)
  *   • line              → LINE push API
@@ -1016,6 +1029,8 @@ export async function deliverToChannel(
   tenantId: string, channel: string, to: string | null, text: string, attachment?: Attachment | null
 ): Promise<boolean> {
   if (!to) return false;
+  // Fake-data conversations must exercise the Inbox flow without contacting real channel APIs.
+  if (isFakeCustomerRef(to)) return true;
   const img = attachment && isImageMime(attachment.mimeType) ? absoluteUrl(attachment.url) : null;
   // ไฟล์ที่ไม่ใช่รูป → แนบเป็นลิงก์ท้ายข้อความ (channel ส่วนใหญ่ไม่มี generic file message)
   const fileLink = attachment && !img ? absoluteUrl(attachment.url) : null;
@@ -1103,6 +1118,7 @@ export async function sendStaffMessage(
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
 
   const channel = conv.rows[0].channel;
+  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
   const customerId = conv.rows[0].customer_id ?? null;
   const couponCode = couponCodeFromShareText(text);
   let outgoingText = text;
@@ -1133,7 +1149,7 @@ export async function sendStaffMessage(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, $4, $5)
      RETURNING id`,
-    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, attachment: att, couponWalletLink })]
+    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, simulated, attachment: att, couponWalletLink })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
   const preview = messagePreview(outgoingText, att);
@@ -1169,6 +1185,7 @@ export async function sendFollowupMessage(
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
 
   const channel = conv.rows[0].channel;
+  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
   const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
   const status = outboundStatus(channel, delivered);
 
@@ -1176,7 +1193,7 @@ export async function sendFollowupMessage(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, 'ai', $4)
      RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, followup: true, ...followupMeta })]
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, followup: true, ...followupMeta })]
   );
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
@@ -1211,6 +1228,7 @@ export async function sendPharmacyIntakeMessage(
   if (conv.rowCount === 0) return { status: "NOT_FOUND" };
 
   const channel = conv.rows[0].channel;
+  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
   const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
   const status = outboundStatus(channel, delivered);
 
@@ -1218,7 +1236,7 @@ export async function sendPharmacyIntakeMessage(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, 'ai', $4)
      RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, pharmacyIntake: meta })]
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, pharmacyIntake: meta })]
   );
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
@@ -1248,13 +1266,14 @@ export async function retryMessage(tenantId: string, messageId: string): Promise
 
   const att: Attachment | null = row.meta?.attachment ?? null;
   const channel = conv.rows[0].channel;
+  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
   const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, row.body || "", att);
   const status = outboundStatus(channel, delivered);
 
   // merge เข้า meta เดิม (คง attachment ไว้)
   await query(
     `UPDATE bms_messages SET meta = meta || $3::jsonb WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, messageId, JSON.stringify({ delivered, status })]
+    [tenantId, messageId, JSON.stringify({ delivered, status, simulated })]
   );
   publishInboxChanged(tenantId, row.conversation_id, "CONVERSATION_CHANGED");
   return { status: "SENT", delivered };

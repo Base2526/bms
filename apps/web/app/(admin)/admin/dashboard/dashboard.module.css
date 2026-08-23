@@ -40,3 +40,23 @@
 .compactCard :global(.ant-table-tbody > tr > td) {
   padding: 5px 6px !important;
 }
+
+.inventoryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 680px), 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+.inventoryGrid > * {
+  min-width: 0;
+}
+
+.inventoryWide {
+  grid-column: 1 / -1;
+}
+
+.inventoryGrid :global(.ant-table-cell) {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
