@@ -113,7 +113,12 @@ layers from the most-reversible end when the cap binds. It is a pure function so
 (`POST /api/pos/member/preview`) and the committing path (`createOrder`) cannot disagree — if they
 did, the payment rows would not match the server total and the bill would be voided as
 `PAYMENT_MISMATCH`. That module imports nothing so it can be exercised directly by
-`scripts/loyalty-contract.test.mts` (13 tests, no database):
+Point redemption always rounds down to a whole configured redemption unit. For example, at
+100 points per unit a 3,045-point balance can redeem 3,000 points and leaves 45 in both the grant
+ledger and the cached balance. The POS "all" action displays and submits the 3,000 points actually
+used rather than presenting the full 3,045 as if the remainder would be lost.
+
+`scripts/loyalty-contract.test.mts` (17 tests, no database):
 
 ```bash
 node --experimental-strip-types --test scripts/loyalty-contract.test.mts
@@ -121,7 +126,7 @@ node --experimental-strip-types --test scripts/loyalty-contract.test.mts
 
 The transaction behaviour — FIFO consume, the unique indexes behind POS replay, the revision-trigger
 skip, and what points do on cancel/return/merge/delete — needs a real database, and is covered by
-`scripts/loyalty-db-contract.test.mts` (22 tests). It writes to whatever database it is pointed at,
+`scripts/loyalty-db-contract.test.mts` (23 tests). It writes to whatever database it is pointed at,
 so run it against dev only; see CLAUDE.local.md for the exact command.
 
 **The total of all layers still lands in `bms_orders.discount_amount`.** VAT base and the
@@ -409,6 +414,14 @@ the bill is thrown out as `PAYMENT_MISMATCH` in front of a customer. `resolvePos
 returns the steps with the scan result, and both sides call the same function. The screen previews;
 the server still decides.
 
+The cart refreshes each existing line's server-owned price, wholesale steps, pack metadata, and
+promotion immediately before a new payment attempt. If an administrator changed any of them after
+the product entered the cart, payment stops before writing an order, the latest total replaces the
+stale preview, and the cashier must review and receive payment again. Re-scanning an existing line
+also replaces its cached pricing metadata instead of only incrementing its quantity. Member, coupon,
+and points previews are tied to the exact subtotal that produced them, so an older asynchronous
+preview cannot authorize payment after the cart total changes.
+
 Steps are edited on the product form and saved with the product. Sending the field replaces the whole
 set, omitting it leaves the existing steps alone — the same rule as `vat_category`, and for the same
 reason: a bulk import that does not know about the field must not wipe a shop's wholesale pricing.
@@ -433,6 +446,12 @@ the shift (`ON DELETE CASCADE`) rather than surviving into the next day. Twenty 
 Money moves in and out of a till without a sale: a mid-shift bank drop, change borrowed from the
 next register, petty cash for ice. Before `7.97` none of it could be recorded, so every one of those
 shifts closed short with nowhere to explain why — and a real shortage looked exactly like a bank drop.
+
+A completed cash sale is already included in expected drawer cash from its confirmed payment. Staff
+must not enter that money again as drawer cash-in: doing so describes a second, external inflow and
+therefore doubles the expected cash. Standalone cash-in is only for money entering from outside the
+sale flow, such as owner-funded change or a transfer from another register. The counter requires an
+explicit acknowledgement of that distinction before recording a standalone cash-in.
 
 `bms_pos_cash_movements` records each one with a mandatory reason. Expected cash at close is now
 

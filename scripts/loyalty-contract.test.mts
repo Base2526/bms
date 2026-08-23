@@ -89,6 +89,19 @@ test("แลกแต้มได้ไม่เกินที่มี แล�
   assert.equal(r.pointsDiscount, 20);
 });
 
+test("กดแลกทั้งหมด 3,045 แต้ม ใช้เฉพาะ 3,000 และต้องเหลือเศษ 45", () => {
+  const r = composeDiscounts({
+    settings: settings(),
+    subtotal: 5000,
+    tier: null,
+    pointsRequested: 3045,
+    pointsAvailable: 3045,
+  });
+  assert.equal(r.pointsUsed, 3000);
+  assert.equal(r.pointsDiscount, 300);
+  assert.equal(3045 - r.pointsUsed, 45);
+});
+
 test("แต้มต่ำกว่าขั้นต่ำของร้านแลกไม่ได้เลย", () => {
   const r = composeDiscounts({
     settings: settings({ redeemMinPoints: 100 }),

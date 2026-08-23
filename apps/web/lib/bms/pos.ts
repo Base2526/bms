@@ -417,7 +417,7 @@ export type PosScanHit = {
 export async function resolvePosScan(
   tenantId: string,
   code: string,
-  opts: { size?: string | null; locationId?: string | null } = {}
+  opts: { size?: string | null; locationId?: string | null; packCode?: string | null } = {}
 ): Promise<PosScanHit | null> {
   const barcode = code.trim();
   if (!barcode) return null;
@@ -425,6 +425,7 @@ export async function resolvePosScan(
   // "150 ML" ทำให้เทียบกับ bms_inventory ไม่ตรงแล้วขายสินค้านั้นไม่ได้เลย
   // (เทียบแบบไม่สนตัวพิมพ์แทน แล้วคืนค่าไซซ์ตามที่เก็บไว้จริง)
   const size = opts.size?.trim() || null;
+  const packCode = opts.packCode?.trim() || null;
 
   const res = await query<{
     sku: string;
@@ -463,13 +464,22 @@ export async function resolvePosScan(
        FROM bms_products p
        LEFT JOIN bms_product_packs k
          ON k.tenant_id = p.tenant_id AND k.product_sku = p.sku
-        AND k.barcode = $2 AND k.active
+        AND (k.barcode = $2 OR (
+          $5::text IS NOT NULL AND upper(p.sku) = upper($2) AND k.pack_code = $5
+        ))
+        AND k.active
       WHERE p.tenant_id = $1
         AND p.active
-        AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2))
-      ORDER BY (k.barcode IS NOT NULL) DESC, (p.barcode = $2) DESC
+        AND (
+          ($5::text IS NULL AND (k.barcode = $2 OR p.barcode = $2 OR upper(p.sku) = upper($2)))
+          OR ($5 = 'BASE' AND upper(p.sku) = upper($2) AND k.pack_code IS NULL)
+          OR ($5 IS NOT NULL AND $5 <> 'BASE' AND upper(p.sku) = upper($2) AND k.pack_code = $5)
+        )
+      ORDER BY (k.pack_code = $5) DESC NULLS LAST,
+               (k.barcode = $2) DESC NULLS LAST,
+               (p.barcode = $2) DESC
       LIMIT 1`,
-    [tenantId, barcode, size, opts.locationId ?? null]
+    [tenantId, barcode, size, opts.locationId ?? null, packCode]
   );
 
   const row = res.rows[0];

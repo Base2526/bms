@@ -122,6 +122,49 @@ test("what the counter previews is what createOrder charges", async () => {
     "จอกับ server ต่างกันแม้บาทเดียว = บิลถูกตีตก PAYMENT_MISMATCH หน้าลูกค้า");
 });
 
+test("re-scanning before payment sees price-tier changes made after the item entered the cart", async () => {
+  const stale = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
+  assert.ok(stale);
+  assert.equal(unitPriceForQty(stale!.basePrice, stale!.priceTiers, 5), 90);
+
+  // จำลอง Administrator เปลี่ยนขั้นต่ำราคาส่งจาก 3 เป็น 10 ขณะที่ POS มีสินค้าอยู่ในตะกร้า
+  await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  await query(
+    `INSERT INTO bms_product_price_tiers (tenant_id, product_sku, min_qty, unit_price)
+     VALUES ($1,$2,10,80)`,
+    [tenantId, SKU]
+  );
+
+  const fresh = await resolvePosScan(tenantId, SKU, {
+    size: SIZE_S,
+    locationId,
+    packCode: "BASE",
+  });
+  assert.ok(fresh);
+  assert.equal(fresh!.priceTiers.length, 1);
+  assert.equal(fresh!.priceTiers[0].minQty, 10);
+  assert.equal(unitPriceForQty(fresh!.basePrice, fresh!.priceTiers, 5), 100,
+    "ซื้อ 5 หลังเปลี่ยนขั้นต่ำเป็น 10 ต้องกลับไปใช้ราคาปกติ ไม่ค้างราคาส่งเก่าในตะกร้า");
+
+  const removedPack = await resolvePosScan(tenantId, SKU, {
+    size: SIZE_S,
+    locationId,
+    packCode: "PACK-THAT-NO-LONGER-EXISTS",
+  });
+  assert.equal(removedPack, null,
+    "pack ที่ถูกลบหรือปิดต้องไม่ fallback เป็น BASE แล้วเปลี่ยนสิ่งที่ลูกค้าซื้อเงียบ ๆ");
+
+  // คืน fixture ให้เคสถัดไปเป็นอิสระจาก test นี้
+  await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
+  for (const [minQty, price] of [[3, 90], [10, 80], [50, 70]]) {
+    await query(
+      `INSERT INTO bms_product_price_tiers (tenant_id, product_sku, min_qty, unit_price)
+       VALUES ($1,$2,$3,$4)`,
+      [tenantId, SKU, minQty, price]
+    );
+  }
+});
+
 test("removing the steps returns the product to its shelf price", async () => {
   await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   const order = await sell([{ size: SIZE_S, qty: 100 }]);
