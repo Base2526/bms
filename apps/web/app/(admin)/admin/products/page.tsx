@@ -35,6 +35,8 @@ import {
   DeleteOutlined,
   TagsOutlined,
   ImportOutlined,
+  TeamOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
@@ -1388,18 +1390,34 @@ function ProductDetail({
           return <Typography.Text style={{ color: "#8c8c8c", fontWeight: 500 }}>{v}</Typography.Text>;
         }
         if (!canViewOrders) {
+          // ไม่มีสิทธิ์: ต้องดูออกว่า "กดไม่ได้เพราะสิทธิ์" ตั้งแต่แรกเห็น ไม่ใช่กดแล้วเงียบ
+          // แล้วเดาเองว่าพัง — ตัวเลขเปล่า + กุญแจ ไม่มีเส้นใต้ ไม่มีกรอบ
           return (
             <Tooltip title={t("admin_products.reserved_needs_order_view")}>
-              <Typography.Text style={{ color: "#ad6800", fontWeight: 500 }}>{v}</Typography.Text>
+              <span style={{ color: "#ad6800", fontWeight: 500, whiteSpace: "nowrap" }}>
+                {v} <LockOutlined style={{ fontSize: 10, color: "#bfbfbf" }} />
+              </span>
             </Tooltip>
           );
         }
+        // ตัวเลขสีเดียวกันแต่กดได้/กดไม่ได้ = คนอ่านไม่รู้ว่ากดได้ (ผู้ใช้รายงานว่า "กดไม่ได้"
+        // ทั้งที่ปุ่มทำงาน) — ใส่เส้นใต้ + ไอคอน + พื้นอ่อน ให้เห็นว่าเป็นของกดได้จากการมองครั้งเดียว
         return (
           <Tooltip title={t("admin_products.reserved_who_hint")}>
             <Button
               type="link"
               size="small"
-              style={{ padding: 0, height: "auto", color: "#ad6800", fontWeight: 600 }}
+              icon={<TeamOutlined style={{ fontSize: 12 }} />}
+              style={{
+                padding: "0 6px",
+                height: "auto",
+                color: "#ad6800",
+                fontWeight: 700,
+                textDecoration: "underline",
+                background: "#fff7e6",
+                border: "1px solid #ffd591",
+                borderRadius: 6,
+              }}
               onClick={() => {
                 setReservedSize(r.size);
                 void loadReservations({ variables: { sku: product.sku, size: r.size } });
@@ -1530,9 +1548,11 @@ function ProductDetail({
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, color: totalAvailable > 0 ? "#389e0d" : "#8c8c8c" }}>
                 {totalAvailable}
               </div>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("admin_products.stat_reserved", { n: totalReserved })}
-              </Typography.Text>
+              <Tooltip title={totalReserved > 0 ? t("admin_products.stat_reserved_hint") : undefined}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {t("admin_products.stat_reserved", { n: totalReserved })}
+                </Typography.Text>
+              </Tooltip>
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>
