@@ -501,13 +501,38 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
       ยืนยันแล้วว่า **แดงจริง** เมื่อใส่ statement ที่ลืม tenant กลับเข้าไป
     - `scripts/reserve-stock-db-contract.test.mts` (9 เทส · สร้างสาขาที่สองของตัวเองแล้วลบทิ้ง
       **ห้ามรันกับ production**) — ครอบข้ามร้าน/ข้ามสาขา/ยืม location ของร้านอื่น/ledger/ROLLBACK
-  · **ยังเหลืออีกกลุ่มใหญ่ที่ยังไม่แก้ (งานถัดไป)** — REST route ยุคร้านเดียวที่ **ไม่ยืนยันตัวตนเลย**
-    และ hardcode `DEFAULT_TENANT_ID` ~24 ตัว: `order/route.ts` + `order/[id]/{pay,pack,ship,cancel,
-    complete,return}`, `payment/route.ts` + `payment/[id]/verify`, `purchase/*`, `shipment/*`,
-    `reports/{sales,inventory,top-products}`, `inbox/*` · ต่างจาก `/api/bms/reserve` ตรงที่จำกัดอยู่
-    ที่ร้าน default ร้านเดียว แต่ยังหมายถึง "ใครก็จ่ายเงิน/ส่งของ/รับของเข้าคลังของร้าน default ได้"
-    · ทางเลือก: ใส่ `authorizeAdminRoute()` ทุกตัว หรือลบทิ้งถ้าไม่มีใครเรียกแล้ว
-    (สำรวจด้วย: `grep -L authorizeAdminRoute $(find apps/web/app/api/bms -name route.ts)`)
+  · **แก้ต่อจนจบแล้ว 2026-08-24** — ดูหัวข้อถัดไป
+- **⚠️ REST route ยุคร้านเดียว 22 ตัวไม่ยืนยันตัวตนเลย — แก้แล้ว 2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุร่วม**: `middleware.ts` กันแค่ `/admin/**` (ดูเงื่อนไข `!pathname.startsWith("/admin")`
+    → `NextResponse.next()`) ทุกอย่างใต้ `/api/**` ที่ไม่ใช่หน้า admin **ผ่านฟรี** · route ชุดนี้เขียน
+    ตอนระบบมีร้านเดียว จึงไม่เช็คอะไรและอ่าน tenant จาก `DEFAULT_TENANT_ID` ตายตัว
+  · **ผลจริงก่อนแก้**: ใครก็ยิงได้ว่า `order/[id]/pay` (ปิดบิลว่าจ่ายแล้ว), `purchase/[id]/receive`
+    (รับของเข้าคลัง = สต็อกเพิ่มลอย ๆ), `payment/[id]/verify`, `shipment/[id]/status`,
+    `inbox/[id]/reply` (ส่งข้อความออกในนามร้าน), `reports/{sales,inventory,top-products}`
+    (อ่านยอดขายทั้งร้าน) — ทั้งหมดบนร้าน default
+  · **แก้เป็น** `authorizeAdminRoute(<permission>)` ทุกตัว โดยใช้ permission **ตัวเดียวกับ resolver
+    GraphQL ที่ทำงานเดียวกัน** (`order.pay`, `order.ship`, `order.cancel`, `order.return`,
+    `order.create`, `payment.view/submit/confirm`, `purchase.view/edit/receive/cancel`,
+    `shipping.view/create/update`, `report.view`, `inbox.view/reply`) และ tenant มาจาก session/คุกกี้
+    drill-down · ยืนยันจริงด้วย curl: ทั้ง 22 endpoint คืน `401` ตอนไม่ล็อกอิน
+  · **webhook mock ยุคร้านเดียว 2 ตัว** (`line/webhook`, `tiktok/webhook` — ตัวที่ไม่มี `[tenantId]`)
+    แก้ด้วย session ไม่ได้ (webhook ไม่มี cookie) และมันเรียก `runPipeline` = **จ่ายค่า AI ให้คนที่ยิง
+    ฟรี** + เขียนแชทปลอมเข้ากล่องข้อความร้าน default → ตอนนี้คืน `404` เมื่อ `NODE_ENV=production`
+    (dev ยังใช้ curl ได้เหมือนเดิม) ทางจริงคือ webhook ต่อร้านที่ verify ลายเซ็นแบบ fail-closed
+  · **`/api/bms/demo-chat` เปิดสาธารณะโดยตั้งใจ (เดโมหน้าขายของ) แต่ไม่มีเพดานเลย** — เติม
+    `rateLimit(demo-chat:<ip>, 20, 60_000)` แบบเดียวกับ web widget webhook (ซึ่งมี 120/นาที อยู่แล้ว)
+    ยืนยันแล้ว: ยิง 22 ครั้ง → 20 ผ่าน 2 ตัวท้ายได้ 429
+  · **ที่ไม่แตะ (มีการ์ดอยู่แล้ว)**: `payment/[id]/{confirm,refund,reject}`, `chat`, `reports/{generate,
+    download,pos-returns,pos-return-audit}`, `onboarding/sample-data` ใช้ `verifyAdminSession` +
+    `requirePermission` เขียนมือ (pattern เดียวกับที่ `adminRouteAuth` ถูกแยกออกมา — ยัง refactor ให้ใช้
+    helper ได้ถ้าจะลดโค้ดซ้ำ) · `products/upload`, `inbox/upload` ใช้ `requireAdminOrInternal`
+    (ล็อกอินแล้วแต่ **ยังไม่เช็ค permission** — ความเสี่ยงต่ำเพราะแค่เก็บไฟล์) · webhook ต่อร้าน
+    ทุกช่องทาง verify ลายเซ็น fail-closed · job/cron ใช้ `CRON_SECRET`/`BMS_JOB_TOKEN` ·
+    `checkout/*` ใช้ token ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  · **กันย้อนกลับ**: `scripts/inventory-tenant-scope-contract.test.mts` เพิ่มเทสที่ 2 — สแกน route ทุกตัว
+    ใต้ `app/api/bms` ว่ามีการ์ดอย่างน้อยหนึ่งอย่างจาก allowlist และ route ที่ "เปิดสาธารณะโดยตั้งใจ"
+    ต้องมี `rateLimit()` · route ใหม่ที่ลืมการ์ดจะทำให้เทสแดงทันที (ก่อนหน้านี้ 26 ไฟล์หลุดพร้อมกัน
+    โดยไม่มีอะไรฟ้อง)
 - **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`
   คืน key ตัวเองเมื่อหาไม่เจอ จึงไม่พังตอน build และ `tsc` ไม่จับ · `9.20` วางคีย์ราคาแยกไซซ์ 4 ตัวไว้ใน
   `admin_restock` (th) และ `admin_dashboard` (en) — ย้ายเข้า `admin_products` แล้ว

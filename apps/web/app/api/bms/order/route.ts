@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createOrder, type OrderItemInput } from "@/lib/bms/orders";
 import type { Channel } from "@/lib/bms/pipeline";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
 async function handlePOST(req: NextRequest) {
+  const auth = await authorizeAdminRoute("order.create");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const body = (await req.json().catch(() => ({}))) as {
     channel?: unknown;
     customerRef?: unknown;
@@ -44,7 +46,7 @@ async function handlePOST(req: NextRequest) {
   }
 
   const couponCode = typeof body.couponCode === "string" ? body.couponCode : null;
-  const result = await createOrder({ tenantId: DEFAULT_TENANT_ID, channel, customerRef, items, couponCode });
+  const result = await createOrder({ tenantId: auth.tenantId, channel, customerRef, items, couponCode });
 
   const httpStatus =
     result.status === "CREATED"

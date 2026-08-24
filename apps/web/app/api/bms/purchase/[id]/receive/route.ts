@@ -9,13 +9,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { receivePurchaseOrder, type ReceiveInput } from "@/lib/bms/purchase";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await authorizeAdminRoute("purchase.receive");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const poId = params.id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
 
@@ -31,7 +33,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: "items is required" }, { status: 400 });
   }
 
-  const result = await receivePurchaseOrder(DEFAULT_TENANT_ID, poId, items);
+  const result = await receivePurchaseOrder(auth.tenantId, poId, items);
 
   const httpStatus =
     result.status === "RECEIVED" || result.status === "PARTIAL"

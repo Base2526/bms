@@ -18,6 +18,19 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * mock ยุคร้านเดียว — ไม่มี signature ให้ verify และเขียนเข้าร้าน default ตายตัว
+ *
+ * ปล่อยไว้ใน production คือให้ใครก็ยิงข้อความปลอมเข้ากล่องข้อความของร้าน default
+ * **และเรียก AI ให้ตอบทุกครั้ง** (ค่า token เป็นของเจ้าของระบบ ไม่ใช่ของผู้ยิง)
+ * ทางจริงคือ webhook ต่อร้านที่ verify ลายเซ็นแบบ fail-closed:
+ * `/api/bms/{channel}/webhook/[tenantId]` — ตัวนี้เหลือไว้ให้ curl ตอน dev เท่านั้น
+ */
+function mockWebhookDisabled() {
+  return process.env.NODE_ENV === "production";
+}
+
+
 type TikTokMessage = {
   id?: string;
   message_id?: string;
@@ -26,6 +39,9 @@ type TikTokMessage = {
 };
 
 async function handlePOST(req: NextRequest) {
+  if (mockWebhookDisabled()) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const body = (await req.json().catch(() => ({}))) as {
     messages?: TikTokMessage[];
   };

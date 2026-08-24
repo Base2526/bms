@@ -106,6 +106,60 @@ test("every SQL statement touching a tenant-scoped stock table filters by tenant
   );
 });
 
+/**
+ * ทุก route ใต้ /api/bms ต้องมีการ์ดอย่างใดอย่างหนึ่ง — `middleware.ts` กันแค่ `/admin/**`
+ * ทุกอย่างใต้ `/api/**` ที่ไม่ใช่หน้า admin ผ่านฟรี · route ใหม่ที่ลืมการ์ดจึงเปิดโล่ง
+ * ทันทีที่ merge โดยไม่มีอะไรฟ้อง (เจอมาแล้ว 26 ไฟล์พร้อมกัน)
+ */
+const ROUTE_GUARDS = [
+  "authorizeAdminRoute",        // แอดมินที่ล็อกอิน + RBAC + tenant จาก session
+  "verifyAdminSession",         // แบบเดียวกันแต่เขียนมือ (ก่อนจะแยก helper)
+  "requireAdminOrInternal",     // อัปโหลดไฟล์ — ล็อกอินแล้วแต่ยังไม่เช็ค permission
+  "requirePlatformAdminSeeder", // seeder ระดับแพลตฟอร์ม
+  "CRON_SECRET",                // job ที่ cron ยิง
+  "BMS_JOB_TOKEN",
+  "verifyMetaSignature",        // webhook ที่ verify ลายเซ็น (fail-closed)
+  "verifyLineSignature",
+  "channel_secret",
+  "getCheckoutByToken",         // ลิงก์ checkout ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  "mockWebhookDisabled",        // mock ยุคร้านเดียว — 404 ใน production ยิงได้แค่ dev
+];
+
+/**
+ * เปิดสาธารณะโดยตั้งใจ — ต้องมีเหตุผลเขียนไว้ และต้องมีเพดานการใช้ เพราะทั้งสองตัว
+ * เรียกโมเดลจริง (ค่า token เป็นของเจ้าของระบบ ไม่ใช่ของผู้ยิง)
+ */
+const PUBLIC_BY_DESIGN = new Map([
+  ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
+  ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
+]);
+
+test("every /api/bms route is guarded, or public by design with a rate limit", () => {
+  const routes = walk(path.join(WEB, "app/api/bms")).filter((f) => f.endsWith("route.ts"));
+  assert.ok(routes.length > 40, `เจอ route แค่ ${routes.length} — การเดิน tree คงพลาด`);
+
+  const unguarded: string[] = [];
+  const unlimited: string[] = [];
+  for (const file of routes) {
+    const rel = path.relative(WEB, file);
+    const src = readFileSync(file, "utf8");
+    const reason = PUBLIC_BY_DESIGN.get(rel);
+    if (reason) {
+      // เปิดสาธารณะได้ แต่ต้องมีเพดาน ไม่งั้นเป็นช่องเผาเงินค่าโมเดล
+      if (!/rateLimit\(/.test(src)) unlimited.push(rel);
+      continue;
+    }
+    if (!ROUTE_GUARDS.some((guard) => src.includes(guard))) unguarded.push(rel);
+  }
+
+  assert.deepEqual(unlimited.sort(), [], "route สาธารณะที่ไม่มีเพดานการใช้");
+  assert.deepEqual(
+    unguarded.sort(),
+    [],
+    "route เหล่านี้ยิงได้โดยไม่ต้องล็อกอิน — middleware ไม่ได้กัน /api/** ให้"
+  );
+});
+
 test("the reserve route never takes its tenant from the request body", () => {
   const route = readFileSync(path.join(WEB, "app/api/bms/reserve/route.ts"), "utf8");
   assert.match(route, /authorizeAdminRoute\(/, "route ที่เขียนสต็อกต้องยืนยันตัวตนก่อน");

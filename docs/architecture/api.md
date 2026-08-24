@@ -169,6 +169,24 @@ See [../business/pos.md](../business/pos.md) for the operator flow and go-live c
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
   arrays being duplicated in several places).
+
+**Every one of these single-tenant-era routes now requires a signed admin session.** They were written
+when there was one shop, so they authenticated nothing and read the tenant from `DEFAULT_TENANT_ID` —
+and `middleware.ts` only guards `/admin/**`, so anything under `/api/**` that is not an admin page is
+reachable by anyone. Twenty-two routes across orders, payment, purchase, shipments, reports, and inbox
+therefore let an anonymous caller mark bills paid, receive stock, or read the default shop's sales.
+They now call `authorizeAdminRoute(<permission>)` with the same permission as the equivalent GraphQL
+resolver (`order.pay`, `purchase.receive`, `report.view`, …) and take the tenant from the session or
+the drill-down cookie, so an admin of one shop can no longer act on another's data through them.
+`scripts/inventory-tenant-scope-contract.test.mts` fails if any route under `/api/bms` has no guard.
+
+Two single-tenant webhook mocks (`/api/bms/line/webhook` and `/api/bms/tiktok/webhook`, the versions
+without a `[tenantId]`) cannot be fixed this way — a webhook has no session to check. They ran the AI
+pipeline and wrote into the default shop's inbox for anyone who posted, so they now return 404 when
+`NODE_ENV=production`; the real path is the per-tenant webhook that verifies the channel signature
+fail-closed. `/api/bms/demo-chat` stays public on purpose (it is the marketing demo) but was calling
+the model with no ceiling at all, and now carries a 20-per-minute-per-IP limit like the web-widget
+webhook already did.
 - `POST /api/bms/reserve` — hold stock without a bill. Requires a signed admin session with
   `stock.adjust`; the tenant is derived server-side from the session or the drill-down cookie and is
   never read from the body. Reserves in one branch only and writes a `RESERVE` movement in the same

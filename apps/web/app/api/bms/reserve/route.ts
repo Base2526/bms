@@ -34,7 +34,7 @@ async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("stock.adjust");
   if (!auth.ok) {
     return NextResponse.json(
-      { error: auth.status === 401 ? "unauthenticated" : "forbidden" },
+      { error: auth.status === 401 ? "unauthorized" : "forbidden" },
       { status: auth.status }
     );
   }
