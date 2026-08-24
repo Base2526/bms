@@ -52,8 +52,9 @@ Two details are structural rather than cosmetic:
   on its own lines. Reading the raw table would leave those units looking unowned; the row instead
   carries the parent sets' SKUs — plural, because one bill can hold the same component through two
   different sets, and naming only the first tells staff to look for half of what they are holding.
-- **The part no bill explains is shown, never rounded away.** `/api/bms/reserve` can reserve without
-  an order, and a reservation can be stranded by a bill that failed midway. The modal reports
+- **The part no bill explains is shown, never rounded away.** A reservation can be stranded by a bill
+  that failed midway, by a hold taken through `/api/bms/reserve`, or by a hand-edit to the table. The
+  modal reports
   `reservedTotal`, what the bills account for, and the difference — because presenting only the
   explainable part tells the reader the list is complete when stock is still locked with no owner to
   chase. The list itself is capped at 200 bills, but the totals count every bill and the screen says
@@ -71,6 +72,32 @@ the heading for S. The query reads the `bms_order_stock_lines` view (`8.8`, repa
 `bms_locations` (`7.84`), and `bms_pos_deposits` (`9.0`); like every other feature here it assumes
 its migrations are applied, and on a database missing them the drill-down surfaces the SQLSTATE
 rather than pretending nothing is reserved.
+
+## Holding stock without a bill (`/api/bms/reserve`)
+
+`createOrder()` is the ordinary way stock gets reserved, inside the same transaction as the bill.
+`POST /api/bms/reserve` is the exception — a hold with no order behind it — and it was the most
+dangerous endpoint in the app until this was fixed:
+
+- **It had no tenant at all.** `reserveStock()` filtered on `product_sku` and `size` only, so the
+  `UPDATE` matched that product in every shop and every branch that stocked it. Two shops listing the
+  same mainstream product is not a corner case, and the dev database already had `NIKE-AIR/XL` in two
+  tenants. The caller got `200 RESERVED`; the other shop's shelf simply changed. This was the only
+  statement in the codebase touching `bms_inventory` without `tenant_id` — the other fifteen were
+  already correct, which is exactly why `scripts/inventory-tenant-scope-contract.test.mts` now checks
+  all of them.
+- **It required no authentication.** `middleware.ts` only guards `/admin/**`; anything under `/api/**`
+  that is not an admin page passes straight through. The route now calls
+  `authorizeAdminRoute("stock.adjust")`, and **the tenant comes from the signed session or drill-down
+  cookie, never from the request body** — accepting it from the body would restore the same hole
+  behind a login.
+- **It recorded no stock movement,** against this document's own rule that every stock change writes
+  one. Goods could stop being sellable with nothing saying who held them or when. It now writes a
+  `RESERVE` movement in the same transaction as the reservation, so a hold taken this way is
+  traceable in the product's movement history instead of appearing only as an unexplained number.
+
+A branch may be named in the body, because one shop legitimately has several. An id belonging to
+another shop simply fails to match a row and returns `NOT_FOUND`, and nothing is written.
 
 ## Product rules
 

@@ -482,6 +482,32 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (12 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
     เขียนจริงลงฐาน **ห้ามรันกับ production**) — teardown ต้องลบที่อยู่ปลอม (`label = 'FAKE resv-test'`)
     ด้วย เพราะเทส `shipOrder` ต้องมีที่อยู่จัดส่งไม่งั้น shipOrder คืน false เงียบ ๆ
+- **⚠️ `/api/bms/reserve` + `reserveStock()` เคยจองสต็อกข้ามร้านได้โดยไม่ต้องล็อกอิน — แก้แล้ว
+  2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุ 3 ชั้นซ้อนกัน**: (ก) `reserveStock()` กรองแค่ `product_sku` + `size` **ไม่มี `tenant_id`
+    และไม่มี `location_id`** → `UPDATE` โดนทุกแถวที่ตรง = ทุกร้าน/ทุกสาขาที่ขาย SKU นั้น
+    (ยืนยันกับ dev DB: `NIKE-AIR/XL` มีอยู่ 2 ร้าน) (ข) `middleware.ts` กันแค่ `/admin/**` — `/api/**`
+    ที่ไม่ใช่ /admin ผ่านฟรี route นี้จึงเปิดโล่ง (ค) ไม่เคยเขียน `bms_stock_movements` เลย ผิดกฎ
+    ของโมดูลเองที่ว่า "ทุกการขยับสต็อกต้องมี movement" → ของที่ขายไม่ได้ไม่มีร่องรอยว่าใครกันไว้
+  · **แก้เป็น**: `reserveStock({tenantId, sku, size, qty, locationId?, note?, actor?})` ทำใน
+    `beginTenantTx` + เขียน movement `RESERVE` ในทรานแซกชันเดียวกัน · route เรียก
+    `authorizeAdminRoute("stock.adjust")` และ **tenant มาจาก session/คุกกี้ drill-down เท่านั้น
+    ห้ามรับจาก body** (สาขารับจาก body ได้ ถ้าเป็นสาขาคนละร้านจะได้ `NOT_FOUND` เพราะไม่มีแถว)
+  · ยืนยันจริง: ยิงแบบไม่ล็อกอินได้ `401` และ `reserved_stock` ของทั้งสองร้านยังเป็น 0
+  · เทส 2 ชุดใหม่:
+    - `scripts/inventory-tenant-scope-contract.test.mts` (2 เทส ไม่ต้องมี DB) — สแกนทุก statement ที่
+      แตะ `bms_inventory`/`bms_product_price_tiers`/`bms_product_packs` ว่ามี `tenant_id` ครบ
+      (ก่อนแก้: 16 statement มี 1 ตัวที่ไม่มี = ตัวนี้) + เช็คว่า route ไม่รับ tenant จาก body ·
+      ยืนยันแล้วว่า **แดงจริง** เมื่อใส่ statement ที่ลืม tenant กลับเข้าไป
+    - `scripts/reserve-stock-db-contract.test.mts` (9 เทส · สร้างสาขาที่สองของตัวเองแล้วลบทิ้ง
+      **ห้ามรันกับ production**) — ครอบข้ามร้าน/ข้ามสาขา/ยืม location ของร้านอื่น/ledger/ROLLBACK
+  · **ยังเหลืออีกกลุ่มใหญ่ที่ยังไม่แก้ (งานถัดไป)** — REST route ยุคร้านเดียวที่ **ไม่ยืนยันตัวตนเลย**
+    และ hardcode `DEFAULT_TENANT_ID` ~24 ตัว: `order/route.ts` + `order/[id]/{pay,pack,ship,cancel,
+    complete,return}`, `payment/route.ts` + `payment/[id]/verify`, `purchase/*`, `shipment/*`,
+    `reports/{sales,inventory,top-products}`, `inbox/*` · ต่างจาก `/api/bms/reserve` ตรงที่จำกัดอยู่
+    ที่ร้าน default ร้านเดียว แต่ยังหมายถึง "ใครก็จ่ายเงิน/ส่งของ/รับของเข้าคลังของร้าน default ได้"
+    · ทางเลือก: ใส่ `authorizeAdminRoute()` ทุกตัว หรือลบทิ้งถ้าไม่มีใครเรียกแล้ว
+    (สำรวจด้วย: `grep -L authorizeAdminRoute $(find apps/web/app/api/bms -name route.ts)`)
 - **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`
   คืน key ตัวเองเมื่อหาไม่เจอ จึงไม่พังตอน build และ `tsc` ไม่จับ · `9.20` วางคีย์ราคาแยกไซซ์ 4 ตัวไว้ใน
   `admin_restock` (th) และ `admin_dashboard` (en) — ย้ายเข้า `admin_products` แล้ว

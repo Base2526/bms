@@ -16,9 +16,9 @@
 //   2. Including bills that already released their stock (SHIPPED/CANCELLED),
 //      which invents holders for units that are free to sell.
 //   3. Hiding the difference between the table total and what the bills explain.
-//      /api/bms/reserve can reserve without any order, so stock can be locked
-//      with no owner — reporting only the explainable part tells the reader the
-//      list is complete when it is not.
+//      A hold taken through /api/bms/reserve, a bill that failed midway, or a
+//      hand-edit can lock stock with no order behind it — reporting only the
+//      explainable part tells the reader the list is complete when it is not.
 //
 // Run from apps/web:
 //   POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app POSTGRES_PASSWORD=... \
@@ -268,7 +268,7 @@ test("one bill holding a component through two sets names both", async () => {
 });
 
 test("stock reserved with no bill behind it is reported, not silently dropped", async () => {
-  // แบบเดียวกับที่ /api/bms/reserve ทำ — จองโดยไม่มีบิล
+  // การจองที่ไม่มีบิลผูกอยู่ (hold ผ่าน /api/bms/reserve, บิลที่ล้มกลางทาง, แก้ฐานด้วยมือ)
   await query(
     `UPDATE bms_inventory SET reserved_stock = reserved_stock + 2
       WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,

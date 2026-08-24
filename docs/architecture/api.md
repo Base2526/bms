@@ -169,6 +169,12 @@ See [../business/pos.md](../business/pos.md) for the operator flow and go-live c
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
   arrays being duplicated in several places).
+- `POST /api/bms/reserve` — hold stock without a bill. Requires a signed admin session with
+  `stock.adjust`; the tenant is derived server-side from the session or the drill-down cookie and is
+  never read from the body. Reserves in one branch only and writes a `RESERVE` movement in the same
+  transaction. It shipped without authentication and without any tenant filter, so it wrote to every
+  shop stocking the SKU — see
+  [../business/inventory.md](../business/inventory.md#holding-stock-without-a-bill-apibmsreserve).
 - `POST /api/bms/products/upload` — product image upload endpoint used by `/admin/products`
   before saving the product form. It stores files first, then the product save mutation decides
   which uploaded image becomes `image_url` (cover) and which remain in the gallery.

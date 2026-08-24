@@ -10,7 +10,10 @@
 // (findSize ยังเป็น pure function ใช้ใน nlu.ts)
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
+import { resolveDefaultLocationIdInTx } from "./locations";
+import { recordMovement } from "./movements";
 import {
   findAlternativeProducts,
   listSellableProducts,
@@ -189,10 +192,24 @@ export async function checkStock(
 }
 
 // =============================================================
-// Reserve stock — เวลาลูกค้ายืนยันสั่งซื้อ
+// Reserve stock — กันของไว้ให้ลูกค้าโดยยังไม่ตัดสต็อก
 // -------------------------------------------------------------
-// เพิ่ม reserved_stock แบบ atomic (กัน oversell): UPDATE จะสำเร็จ
-// ก็ต่อเมื่อ available (current - reserved) ยังพอ ถ้าไม่พอ rowCount=0
+// เดิมฟังก์ชันนี้รับแค่ (sku, size, qty) แล้ว `UPDATE bms_inventory` โดย **ไม่มี
+// tenant_id และไม่มี location_id เลย** — สินค้ารหัสเดียวกันที่มีอยู่หลายร้าน/หลายสาขา
+// จึงถูกจองพร้อมกันทุกแถวที่เข้าเงื่อนไข ยืนยันกับ dev DB แล้วว่า `NIKE-AIR/XL`
+// มีอยู่ใน 2 ร้าน = ยิงครั้งเดียวกินสองร้าน · นี่เป็นจุดเดียวในโค้ดเบสที่แตะ
+// `bms_inventory` โดยไม่ผูก tenant (ตรวจแล้วทั้ง 16 statement) — มีเทสกันไว้ที่
+// `scripts/inventory-tenant-scope-contract.test.mts`
+//
+// สองอย่างที่ต้องมาคู่กันเสมอ ไม่ใช่ของแถม:
+//   1. **สาขา** — การจองเป็นของสาขา ไม่ใช่ของร้านทั้งร้าน (7.84) ไม่ระบุ = สาขาเริ่มต้น
+//   2. **movement `RESERVE`** — กฎของโมดูลนี้คือ "ทุกการขยับสต็อกต้องมี movement"
+//      (ดู docs/business/inventory.md) เดิมฟังก์ชันนี้ไม่เคยเขียน ledger เลย ของที่
+//      หายไปจากยอดขายได้จึงไม่มีร่องรอยว่าใครกันไว้ตอนไหน — เป็นที่มาของยอด
+//      "จองอยู่แต่อธิบายไม่ได้" ที่หน้า Products ฟ้อง
+//
+// เส้นทางปกติของการจองยังเป็น `createOrder()` ซึ่งจองในทรานแซกชันเดียวกับการสร้างบิล
+// ฟังก์ชันนี้มีไว้สำหรับการกันของที่ไม่มีบิล และผู้เรียกต้องยืนยันตัวตน + สิทธิ์มาก่อน
 // =============================================================
 
 export type ReserveResult =
@@ -200,53 +217,85 @@ export type ReserveResult =
   | { status: "INSUFFICIENT"; sku: string; size: string; available: number; requested: number }
   | { status: "NOT_FOUND"; sku: string; size: string };
 
-export async function reserveStock(
-  sku: string,
-  size: string,
-  qty: number
-): Promise<ReserveResult> {
+export async function reserveStock(input: {
+  tenantId: string;
+  sku: string;
+  size: string;
+  qty: number;
+  /** ไม่ระบุ = สาขาเริ่มต้นของร้าน */
+  locationId?: string | null;
+  note?: string | null;
+  actor?: string | null;
+}): Promise<ReserveResult> {
+  const { tenantId, sku, size, qty } = input;
+  if (!tenantId) throw new Error("tenantId is required");
   if (!Number.isInteger(qty) || qty <= 0) {
     throw new Error("qty must be a positive integer");
   }
 
-  // atomic reserve: สำเร็จเฉพาะเมื่อ available >= qty
-  const upd = await query<{ available_after: number }>(
-    `UPDATE bms_inventory
-        SET reserved_stock = reserved_stock + $3,
-            updated_at = now()
-      WHERE product_sku = $1
-        AND size = $2
-        AND (current_stock - reserved_stock) >= $3
-      RETURNING (current_stock - reserved_stock) AS available_after`,
-    [sku, size, qty]
-  );
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const locationId = input.locationId ?? (await resolveDefaultLocationIdInTx(client, tenantId));
 
-  if (upd.rowCount && upd.rows[0]) {
+    // atomic reserve: สำเร็จเฉพาะเมื่อ available ของ "สาขานั้นของร้านนั้น" ยังพอ
+    const upd = await client.query<{ available_after: number }>(
+      `UPDATE bms_inventory
+          SET reserved_stock = reserved_stock + $5,
+              updated_at = now()
+        WHERE tenant_id = $1
+          AND location_id = $2
+          AND product_sku = $3
+          AND size = $4
+          AND (current_stock - reserved_stock) >= $5
+        RETURNING (current_stock - reserved_stock) AS available_after`,
+      [tenantId, locationId, sku, size, qty]
+    );
+
+    if (upd.rowCount && upd.rows[0]) {
+      // ledger อยู่ในทรานแซกชันเดียวกับการจอง — ของที่ถูกกันไว้ต้องมีร่องรอยเสมอ
+      await recordMovement(client, {
+        tenantId,
+        locationId,
+        sku,
+        size,
+        type: "RESERVE",
+        qty,
+        note: input.note ?? null,
+        actor: input.actor ?? null,
+      });
+      await client.query("COMMIT");
+      return {
+        status: "RESERVED",
+        sku,
+        size,
+        qty,
+        availableAfter: Number(upd.rows[0].available_after),
+      };
+    }
+
+    // ไม่สำเร็จ: แยกว่า "ไม่พบ SKU/size ในสาขานี้" หรือ "ของไม่พอ"
+    const cur = await client.query<{ available: number }>(
+      `SELECT (current_stock - reserved_stock) AS available
+         FROM bms_inventory
+        WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+      [tenantId, locationId, sku, size]
+    );
+    await client.query("ROLLBACK");
+    if (cur.rowCount === 0) return { status: "NOT_FOUND", sku, size };
     return {
-      status: "RESERVED",
+      status: "INSUFFICIENT",
       sku,
       size,
-      qty,
-      availableAfter: Number(upd.rows[0].available_after),
+      available: Number(cur.rows[0].available),
+      requested: qty,
     };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
   }
-
-  // ไม่สำเร็จ: แยกว่า "ไม่พบ SKU/size" หรือ "ของไม่พอ"
-  const cur = await query<{ available: number }>(
-    `SELECT (current_stock - reserved_stock) AS available
-       FROM bms_inventory
-      WHERE product_sku = $1 AND size = $2`,
-    [sku, size]
-  );
-  if (cur.rowCount === 0) return { status: "NOT_FOUND", sku, size };
-
-  return {
-    status: "INSUFFICIENT",
-    sku,
-    size,
-    available: Number(cur.rows[0].available),
-    requested: qty,
-  };
 }
 
 // =============================================================
