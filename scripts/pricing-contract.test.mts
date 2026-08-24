@@ -92,6 +92,14 @@ test("รวมข้ามไซซ์ไม่ถึงขั้นต่ำ�
   assert.equal(unitPriceForQty(12, [{ minQty: 10, scope: "CROSS_VARIANT_PERCENT", discountPct: 101 }], 3, 10), 12);
 });
 
+test("เปอร์เซ็นต์ 4 ตำแหน่งแปลงราคา 1,500 เป็น 1,300 ได้ตรงสตางค์", () => {
+  assert.equal(unitPriceForQty(1_500, [{
+    minQty: 5,
+    scope: "CROSS_VARIANT_PERCENT",
+    discountPct: 13.3333,
+  }], 2, 5), 1_300);
+});
+
 test("สินค้าคนละ SKU ไม่รวมจำนวนกัน", () => {
   const priced = priceLinesByQty(
     [

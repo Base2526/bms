@@ -427,6 +427,10 @@ the bill is thrown out as `PAYMENT_MISMATCH` in front of a customer. `resolvePos
 returns the steps with the scan result, and both sides call the same function. The screen previews;
 the server still decides.
 
+Staff quotations use this same quantity calculation. A wholesale inquiry that qualifies across
+sizes therefore shows the same per-size unit prices that a later order will use; the quotation is
+still ephemeral, reserves no stock, and can change if the catalogue is edited before ordering.
+
 The cart refreshes each existing line's server-owned price, wholesale steps, pack metadata, and
 promotion immediately before a new payment attempt. If an administrator changed any of them after
 the product entered the cart, payment stops before writing an order, the latest total replaces the

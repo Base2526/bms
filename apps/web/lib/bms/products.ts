@@ -642,6 +642,45 @@ export type UpsertProductInput = {
   price_tiers?: PriceTier[] | null;
 };
 
+function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
+  const normalized: PriceTier[] = [];
+  const seen = new Set<number>();
+
+  for (const tier of input) {
+    const rawMinQty = Number(tier?.minQty);
+    if (!Number.isInteger(rawMinQty) || rawMinQty < 2) {
+      throw new Error("ขั้นต่ำราคาส่งต้องเป็นจำนวนเต็มตั้งแต่ 2 ขึ้นไป");
+    }
+    if (seen.has(rawMinQty)) throw new Error(`ขั้นต่ำราคาส่ง ${rawMinQty} ซ้ำกัน`);
+    seen.add(rawMinQty);
+
+    const scope = tier?.scope ?? "PER_VARIANT_FIXED";
+    if (scope !== "PER_VARIANT_FIXED" && scope !== "CROSS_VARIANT_PERCENT") {
+      throw new Error("รูปแบบราคาส่งไม่ถูกต้อง");
+    }
+
+    if (scope === "PER_VARIANT_FIXED") {
+      if (tier?.unitPrice == null) {
+        throw new Error(`ราคาส่งที่ขั้นต่ำ ${rawMinQty} ห้ามว่าง`);
+      }
+      const unitPrice = Math.round(Number(tier?.unitPrice) * 100) / 100;
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error(`ราคาส่งที่ขั้นต่ำ ${rawMinQty} ไม่ถูกต้อง`);
+      }
+      normalized.push({ minQty: rawMinQty, scope, unitPrice, discountPct: null });
+      continue;
+    }
+
+    const discountPct = Math.round(Number(tier?.discountPct) * 10_000) / 10_000;
+    if (!Number.isFinite(discountPct) || discountPct <= 0 || discountPct > 100) {
+      throw new Error(`เปอร์เซ็นต์ส่วนลดที่ขั้นต่ำ ${rawMinQty} ต้องมากกว่า 0 และไม่เกิน 100`);
+    }
+    normalized.push({ minQty: rawMinQty, scope, unitPrice: null, discountPct });
+  }
+
+  return normalized;
+}
+
 function normalizeImageUrls(input: UpsertProductInput): string[] {
   const raw = Array.isArray(input.image_urls)
     ? input.image_urls
@@ -1096,6 +1135,9 @@ export async function upsertProduct(
 ): Promise<ProductRowFull> {
   const { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory } =
     validateProductFields(input);
+  const normalizedPriceTiers = Array.isArray(input.price_tiers)
+    ? normalizePriceTiers(input.price_tiers)
+    : null;
   const imageUrls = normalizeImageUrls(input);
   const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
 
@@ -1133,35 +1175,17 @@ export async function upsertProduct(
     // ขั้นราคาส่ง (8.1) — แทนที่ทั้งชุดในทรานแซกชันเดียวกับสินค้า
     // ลบแล้วใส่ใหม่ ไม่ใช่ diff ทีละแถว: ชุดเล็ก (ไม่กี่ขั้น) และการ diff เปิดช่องให้
     // ขั้นที่ถูกลบบนจอยังค้างอยู่ในฐานโดยไม่มีใครเห็น
-    if (Array.isArray(input.price_tiers)) {
+    if (normalizedPriceTiers) {
       await client.query(
         `DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`,
         [tenantId, sku]
       );
-      const seen = new Set<number>();
-      for (const tier of input.price_tiers) {
-        const minQty = Math.trunc(Number(tier?.minQty));
-        const scope = tier?.scope === "CROSS_VARIANT_PERCENT"
-          ? "CROSS_VARIANT_PERCENT"
-          : "PER_VARIANT_FIXED";
-        const unitPrice = scope === "PER_VARIANT_FIXED"
-          ? Math.round(Number(tier?.unitPrice) * 100) / 100
-          : null;
-        const discountPct = scope === "CROSS_VARIANT_PERCENT"
-          ? Math.round(Number(tier?.discountPct) * 100) / 100
-          : null;
-        if (!Number.isInteger(minQty) || minQty < 2) continue;
-        if (scope === "PER_VARIANT_FIXED" && (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice < 0)) continue;
-        if (scope === "CROSS_VARIANT_PERCENT" && (
-          discountPct == null || !Number.isFinite(discountPct) || discountPct <= 0 || discountPct > 100
-        )) continue;
-        if (seen.has(minQty)) continue;   // ขั้นซ้ำ = แถวหลังชนะไม่ได้ ต้องเลือกอันแรกให้นิ่ง
-        seen.add(minQty);
+      for (const tier of normalizedPriceTiers) {
         await client.query(
           `INSERT INTO bms_product_price_tiers
              (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [tenantId, sku, minQty, unitPrice, scope, discountPct]
+          [tenantId, sku, tier.minQty, tier.unitPrice, tier.scope, tier.discountPct]
         );
       }
     }

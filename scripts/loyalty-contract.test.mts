@@ -70,6 +70,41 @@ test("หลายไซซ์ + สมาชิก + คะแนน + ส่�
   assert.equal(discount.netTotal, 6850);
 });
 
+test("POS รวมราคาส่งข้ามไซซ์แล้วใช้สมาชิก แต้ม และส่วนลดมือได้ยอดตรง server", () => {
+  const crossVariant: PriceTier[] = [{
+    minQty: 5,
+    scope: "CROSS_VARIANT_PERCENT",
+    discountPct: 13.3333333333,
+    unitPrice: null,
+  }];
+  const priced = priceLinesByQty(
+    [
+      { sku: "LANVIN", size: "XL", qty: 2 },
+      { sku: "LANVIN", size: "M", qty: 3 },
+    ],
+    new Map([
+      ["LANVIN\u0000XL", 1500],
+      ["LANVIN\u0000M", 1500],
+    ]),
+    new Map([["LANVIN", crossVariant]])
+  );
+  const subtotal = priced.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+  assert.equal(subtotal, 6500, "XL 2 + M 3 ต้องรวมเป็น 5 แล้วลดราคาของแต่ละไซซ์");
+
+  const discount = composeDiscounts({
+    settings: settings(),
+    subtotal,
+    tier: tier(),
+    pointsRequested: 2700,
+    pointsAvailable: 2745,
+    manualDiscount: 5,
+  });
+  assert.equal(discount.tierDiscount, 325);
+  assert.equal(discount.pointsDiscount, 270);
+  assert.equal(discount.manualDiscount, 5);
+  assert.equal(discount.netTotal, 5900);
+});
+
 test("ส่วนลดสามชั้นซ้อนกันได้ และผลรวมต่อชั้นต้องเท่ากับ totalDiscount", () => {
   const r = composeDiscounts({
     settings: settings(),

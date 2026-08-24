@@ -390,6 +390,26 @@ function ProductsManagement() {
 
   const submit = async () => {
     const v = await form.validateFields();
+    const normalizedPriceTiers = priceTiers.map((tier) => ({
+      minQty: Number(tier.minQty),
+      scope: tier.scope,
+      unitPrice: tier.scope === "PER_VARIANT_FIXED" && tier.unitPrice !== "" ? Number(tier.unitPrice) : null,
+      discountPct: tier.scope === "CROSS_VARIANT_PERCENT" && tier.discountPct !== ""
+        ? Number(tier.discountPct)
+        : null,
+    }));
+    const validTiers = normalizedPriceTiers.every((tier) => (
+      Number.isInteger(tier.minQty) && tier.minQty >= 2 && (
+        (tier.scope === "PER_VARIANT_FIXED" && Number.isFinite(tier.unitPrice) && Number(tier.unitPrice) >= 0)
+        || (tier.scope === "CROSS_VARIANT_PERCENT" && Number.isFinite(tier.discountPct)
+          && Number(tier.discountPct) > 0 && Number(tier.discountPct) <= 100)
+      )
+    ));
+    const uniqueMinimums = new Set(normalizedPriceTiers.map((tier) => tier.minQty)).size === normalizedPriceTiers.length;
+    if (!validTiers || !uniqueMinimums) {
+      message.error(t("admin_products.price_tiers_invalid"));
+      return;
+    }
     await upsertProduct({
       variables: {
         input: {
@@ -405,20 +425,7 @@ function ProductsManagement() {
           brand: v.brand?.trim() || null,
           vat_category: v.vatCategory || null,
           // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
-          price_tiers: priceTiers
-            .map((t) => ({
-              minQty: Math.trunc(Number(t.minQty)),
-              scope: t.scope,
-              unitPrice: t.scope === "PER_VARIANT_FIXED" && t.unitPrice !== "" ? Number(t.unitPrice) : null,
-              discountPct: t.scope === "CROSS_VARIANT_PERCENT" && t.discountPct !== ""
-                ? Number(t.discountPct)
-                : null,
-            }))
-            .filter((t) => Number.isInteger(t.minQty) && t.minQty >= 2 && (
-              (t.scope === "PER_VARIANT_FIXED" && Number.isFinite(t.unitPrice) && Number(t.unitPrice) >= 0)
-              || (t.scope === "CROSS_VARIANT_PERCENT" && Number.isFinite(t.discountPct)
-                && Number(t.discountPct) > 0 && Number(t.discountPct) <= 100)
-            )),
+          price_tiers: normalizedPriceTiers,
         },
       },
     });
@@ -841,8 +848,10 @@ function ProductsManagement() {
                     <>
                       <span style={{ fontSize: 12 }}>{t("admin_products.tier_discount_pct")}</span>
                       <InputNumber
-                        min={0.01}
+                        min={0.0001}
                         max={100}
+                        precision={4}
+                        step={0.0001}
                         value={tier.discountPct === "" ? null : Number(tier.discountPct)}
                         onChange={(v) => setPriceTiers((cur) => cur.map((row, i) => (
                           i === idx ? { ...row, discountPct: v == null ? "" : String(v) } : row

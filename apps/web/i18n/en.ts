@@ -1741,6 +1741,7 @@ const en = {
     placeholder_brand: "e.g. Nike",
     label_price_tiers: "Wholesale steps",
     price_tiers_tooltip: "Per-size fixed price counts each size separately. Cross-size percentage counts every size together, then discounts each size from its own regular price. Pack prices remain unchanged.",
+    price_tiers_invalid: "Complete every wholesale minimum and price/percentage, and do not repeat a minimum quantity.",
     tier_from: "From",
     tier_price_each: "units, each at",
     tier_scope_variant: "Separate sizes: fixed price",
