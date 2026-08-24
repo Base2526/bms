@@ -465,7 +465,11 @@ response may have been lost after a successful commit. If that replay returns `P
 the server has cancelled the rejected order, so the POS then refreshes the whole cart automatically,
 clears the stale payment and discount preview, and asks the cashier to verify the new amount once.
 
-Steps are edited on the product form and saved with the product. A fixed-price row explicitly selects
+Steps are edited on the product form and saved with the product. Neither the price nor the percentage
+box forces a decimal shape on what the shop types: a 3% step reads as `3`, not `3.0000`. The stored
+scale is still fixed — `unit_price` at two decimals, `discount_pct` at four — and `upsertProduct()`
+rounds to those before writing, so the display change cannot widen what a shop can actually store.
+A fixed-price row explicitly selects
 one existing size or "all sizes (same price)"; cross-size percentage rows intentionally have no size.
 Sending the field replaces the whole
 set, omitting it leaves the existing steps alone — the same rule as `vat_category`, and for the same

@@ -884,7 +884,7 @@ function ProductsManagement() {
                       <Typography.Text strong>{variant.size}</Typography.Text>
                       <InputNumber
                         min={0}
-                        precision={2}
+                        step={1}
                         value={override ?? fallback}
                         addonAfter="฿"
                         onChange={(value) => setVariantPriceDrafts((current) => ({
@@ -1000,8 +1000,7 @@ function ProductsManagement() {
                       <InputNumber
                         min={0.0001}
                         max={100}
-                        precision={4}
-                        step={0.0001}
+                        step={0.5}
                         value={tier.discountPct === "" ? null : Number(tier.discountPct)}
                         onChange={(v) => setPriceTiers((cur) => cur.map((row, i) => (
                           i === idx ? { ...row, discountPct: v == null ? "" : String(v) } : row
@@ -1315,7 +1314,7 @@ function ProductDetail({
           <InputNumber
             key={`${variant.size}:${variant.priceOverride ?? "default"}`}
             min={0}
-            precision={2}
+            step={1}
             defaultValue={variant.priceOverride ?? undefined}
             placeholder={Number(product.price).toLocaleString()}
             addonAfter="฿"

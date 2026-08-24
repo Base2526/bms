@@ -462,6 +462,28 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทส: `scripts/pos-scan-manager-contract.test.mts` (6 เทส, pure) + จุด DB ที่ยังไม่ verify:
     device-scoped listing, PIN/permission re-check, idempotency replay vs conflict, และ
     tenant/location isolation ของ `bms_pos_purchase_receipts`
+- **ใครจองของอยู่ (drill-down ที่คอลัมน์ จอง ของ `/admin/products`) — ไม่มี migration verify กับ DB จริงแล้ว
+  2026-08-24** · query ใหม่ `bmsVariantReservations` gate ด้วย **`order.view` ไม่ใช่ `product.view`**
+  (คำตอบมีเลขบิล ชื่อ+เบอร์ลูกค้า) — role ที่ดูแลแค่แคตาล็อกจะไม่เห็นปุ่ม ไม่ต้อง seed permission ใหม่
+  · **ต้องอ่านจาก view `bms_order_stock_lines` เท่านั้น** เพราะเซ็ตจองที่ส่วนประกอบ (8.8) ถ้าเผลอไปอ่าน
+    `bms_order_items` บิลที่ซื้อเซ็ตจะหายไปจากรายการของส่วนประกอบทั้งที่ยังถือของอยู่ (มีเทสคุม)
+  · **ยอด "อธิบายไม่ได้" (`unattributed`) ต้องแสดงเสมอ ห้ามปัดทิ้ง** — `/api/bms/reserve` จองได้โดยไม่ผูกบิล
+    และ **route นั้นไม่กรอง `tenant_id` เลย** (`reserveStock()` ใน `lib/bms/stock.ts` ยิงข้ามร้านได้ถ้ารู้
+    SKU+size) ยังไม่ได้แก้ — ตัวเลขนี้คือทางเดียวที่ร้านจะเห็นว่ามีของถูกล็อกโดยไม่มีเจ้าของ
+  · ยอดรวมคิดจากทุกบิล แต่รายการตัดที่ 200 บิล (`RESERVATION_LIST_LIMIT`) และหน้าจอบอกเมื่อตัด
+  · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (11 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
+    เขียนจริงลงฐาน **ห้ามรันกับ production**) — teardown ต้องลบที่อยู่ปลอม (`label = 'FAKE resv-test'`)
+    ด้วย เพราะเทส `shipOrder` ต้องมีที่อยู่จัดส่งไม่งั้น shipOrder คืน false เงียบ ๆ
+- **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`
+  คืน key ตัวเองเมื่อหาไม่เจอ จึงไม่พังตอน build และ `tsc` ไม่จับ · `9.20` วางคีย์ราคาแยกไซซ์ 4 ตัวไว้ใน
+  `admin_restock` (th) และ `admin_dashboard` (en) — ย้ายเข้า `admin_products` แล้ว
+  · กันย้อนกลับ: `scripts/i18n-keys-contract.test.mts` (2 เทส ไม่ต้องมี DB — ตรวจ literal `t("...")`
+    ทุกตัวในแอปว่า resolve ได้ทั้ง th/en + คีย์ทุก section ต้องมีครบทั้งสองภาษา) · ยืนยันแล้วว่าเทสนี้
+    **แดงจริง** เมื่อจงใจย้ายคีย์ออก · คีย์ที่ประกอบตอนรัน (template string) ตรวจไม่ได้ ต้องระวังเอง
+
+    ```bash
+    cd apps/web && npx tsx --test ../../scripts/i18n-keys-contract.test.mts
+    ```
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
