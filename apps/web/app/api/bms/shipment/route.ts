@@ -1,5 +1,5 @@
 // =============================================================
-// /api/bms/shipment — สร้างการจัดส่ง (POST) + list (GET)   [Phase 1: default tenant]
+// /api/bms/shipment — สร้างการจัดส่ง (POST) + list (GET)   [signed admin + RBAC · tenant จาก session]
 // -------------------------------------------------------------
 //   curl -X POST http://localhost:3000/api/bms/shipment \
 //     -H "content-type: application/json" \
@@ -9,15 +9,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createShipment, listShipments, CARRIERS, type Carrier } from "@/lib/bms/shipping";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest) {
+  const auth = await authorizeAdminRoute("shipping.view");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const url = new URL(req.url);
-  const rows = await listShipments(DEFAULT_TENANT_ID, {
+  const rows = await listShipments(auth.tenantId, {
     orderId: url.searchParams.get("orderId"),
     status: url.searchParams.get("status"),
     limit: Number(url.searchParams.get("limit")) || 50,
@@ -27,6 +29,8 @@ async function handleGET(req: NextRequest) {
 }
 
 async function handlePOST(req: NextRequest) {
+  const auth = await authorizeAdminRoute("shipping.create");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
   const carrier = body.carrier as Carrier;
@@ -37,7 +41,7 @@ async function handlePOST(req: NextRequest) {
   }
 
   const result = await createShipment({
-    tenantId: DEFAULT_TENANT_ID,
+    tenantId: auth.tenantId,
     orderId,
     carrier,
     trackingNo: typeof body.trackingNo === "string" ? body.trackingNo : null,

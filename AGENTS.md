@@ -115,6 +115,26 @@ wrong, and update the doc in the same change.
   Treatment is propose-only (`NEW -> ACCEPTED -> CONTACTED`), holdout rows can never be contacted,
   and conversion attribution is bounded to 30 days before open cases expire. Keep `retention.view`
   independent from `followup.view`; sharing a page must not silently widen either permission.
+- **Every `/api/**` route carries its own guard** — `middleware.ts` only protects `/admin/**`; the
+  other branch returns `NextResponse.next()`, so a REST route with no check of its own is world-
+  reachable. Use `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`): it verifies the
+  signed session, honours the drill-down cookie, checks RBAC, and returns `tenantId`/`adminId`/`ctx`.
+  **Never read the tenant from the request body** — that rebuilds the same hole behind a login. Pass
+  `null` as the permission only for a route that genuinely has none in the catalog. A route that is
+  public on purpose (customer widget, marketing demo) needs a `rateLimit()` ceiling, because a public
+  endpoint that calls a model spends the operator's money, not the caller's. Legacy single-tenant
+  mocks that cannot check a session (`/api/bms/{line,tiktok}/webhook` without a `[tenantId]`) are
+  404 in production. Guard: `scripts/inventory-tenant-scope-contract.test.mts`.
+- **Nothing touches `bms_inventory` without naming the shop** — the table is keyed by
+  `(tenant_id, location_id, product_sku, size)`, so a statement filtered by sku + size alone hits that
+  product in *every* shop and branch that stocks it, returns success, and leaves no error behind.
+  A reservation is also a branch fact, not a shop-wide one, and it writes a `RESERVE` movement in the
+  same transaction — the module's rule that every stock change records a movement has no exceptions.
+- **Reserved stock has no ledger of ownership** — `reserved_stock` is a running total; nothing records
+  which bill owns which unit. Rebuilding "who is holding this" (`listVariantReservations()`) reads the
+  `bms_order_stock_lines` view, because a bundle reserves its *components*; counts only bills in
+  `PENDING`/`PAID`/`PACKING`, because `SHIP`/cancel release; and reports the part no bill explains
+  instead of hiding it, because stock can be locked with no owner to chase.
 - **Cross-tenant jobs** — a manual "run now" over a cron/service function that scans all tenants must
   pass the caller's own `tenantId`. A tenant-scoped grant firing a fleet-wide job is a tenancy leak.
 - **Redis** backs five separate things (pub/sub, read-through cache, admin session revocation, job
@@ -133,15 +153,21 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**69 namespaces / 3,802 keys per language,
-   exact th↔en parity** as of 2026-08-23). This is what the per-user language preference switches.
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**69 namespaces / 3,872 keys per language,
+   exact th↔en parity** as of 2026-08-25). This is what the per-user language preference switches.
+   **A key must live in the namespace its `t()` prefix names.** `getMessage()` returns the key itself
+   on a miss, so a key filed under the wrong section renders `admin_products.col_variant_price` on a
+   shop's screen while `tsc`, the build, and every test stay green — it has happened twice in two
+   commits. `scripts/i18n-keys-contract.test.mts` resolves every literal `t()` key in both languages
+   and checks section-by-section parity; a key built at runtime is invisible to it and still needs
+   care.
 2. `resolveBilingual()` (`lib/static-page-i18n.ts`) — page-local content objects. Use for new
    prose-heavy public pages.
 3. Inline `lang === "en" ? … : …` — used by `/shop/**` and `/checkout` metadata. Fine as-is.
 4. `lib/i18n.ts` + `useTranslation()` + `locales/` — **dead**; delete rather than extend.
 
-Coverage: all public/auth/legal pages, storefront, checkout, nav chrome, and **48 of 78** admin
-`.tsx` files. The remaining 30 are layout/loading guards and English-only legacy platform pages
+Coverage: all public/auth/legal pages, storefront, checkout, nav chrome, and **50 of 90** admin
+`.tsx` files. The remainder are layout/loading guards and English-only legacy platform pages
 (`admin/roles`, `admin/logs`, `admin/files`, `admin/posts`/`post/**`, `admin/operations-schedule`,
 `admin/dev/sql-console`) — not Thai leaks.
 
@@ -220,6 +246,10 @@ per-user-preference pattern:
 - `401` for missing/invalid auth, `403` for authenticated-without-permission. A permission failure is
   never a logout.
 - Hiding a menu item is not authorization. Enforce on the server.
+- A REST route mirrors the permission of the GraphQL resolver doing the same job (`order.pay`,
+  `purchase.receive`, `report.view`, `inbox.reply`, …) — do not invent a second, looser rule for the
+  same action. "Logged in" is not a permission: an upload endpoint gates on the permission the step
+  that consumes the file needs.
 - Public login/registration normalizes identity through `lib/auth/identity.ts` (trim + NFKC +
   lowercase); never add an auth path that queries raw `email = $1`. Google ID tokens must be verified
   with `google-auth-library` (decoding claims is an account takeover); Facebook debug-token
@@ -292,6 +322,15 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
+| `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
+| `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |
+
+  Suites that need a real Postgres **write to it** — dev only, never production. They create and
+  remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation
+  attribution incl. bundles and unexplained holds; `scripts/reserve-stock-db-contract.test.mts`
+  covers cross-shop/cross-branch reservation, the ledger row, and rollback). Run them from
+  `apps/web` with the `next-runtime-shim` import and `--test-concurrency=1`; the exact command lives
+  in [CLAUDE.local.md](CLAUDE.local.md).
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).

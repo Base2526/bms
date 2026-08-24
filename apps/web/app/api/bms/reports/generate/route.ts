@@ -11,34 +11,16 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { cookies } from "next/headers";
-import { verifyAdminSession } from "@/lib/auth/server";
-import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
-import { requirePermission } from "@/lib/bms/permissions";
 import { generateReport } from "@/lib/bms/reportEngine";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest) {
-  const admin = verifyAdminSession();
-  if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
-  const tenantId =
-    acting?.actTenantId && String(acting.by) === String(admin.id)
-      ? acting.actTenantId
-      : admin.tenant_id || DEFAULT_TENANT_ID;
-
-  const ctx = { scope: "admin", admin: { id: admin.id, role: admin.role, tenant_id: tenantId, email: (admin as any).email } };
-
-  try {
-    await requirePermission(ctx, "report.view");
-  } catch {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const auth = await authorizeAdminRoute("report.view");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
   const body = (await req.json().catch(() => ({}))) as {
     reportType?: unknown;
@@ -49,7 +31,7 @@ async function handlePOST(req: NextRequest) {
   };
 
   try {
-    const result = await generateReport(tenantId, ctx, {
+    const result = await generateReport(auth.tenantId, auth.ctx, {
       reportType: String(body.reportType ?? ""),
       dateFrom: typeof body.dateFrom === "string" ? body.dateFrom : null,
       dateTo: typeof body.dateTo === "string" ? body.dateTo : null,

@@ -9,15 +9,37 @@
 
 import { cookies } from "next/headers";
 import { verifyAdminSession } from "@/lib/auth/server";
-import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
+import { ACT_TENANT_COOKIE, verifyActTenant, type JWTPayload } from "@/lib/auth/token";
 import { DEFAULT_TENANT_ID } from "./tenant";
 import { requirePermission, type BmsPermission } from "./permissions";
 
+/**
+ * ctx รูปเดียวกับที่ resolver GraphQL ส่งให้ `requirePermission()`/`audit()` — route ที่ต้อง
+ * บันทึก audit หรือส่งต่อให้ service ที่รับ ctx (เช่น `generateReport()`) ใช้ตัวนี้ได้เลย
+ * ไม่ต้องประกอบเอง ซึ่งเป็นจุดที่เคยลอกกันผิดได้ง่าย (ลืมใส่ tenant_id ที่ override แล้ว)
+ */
+export type AdminRouteCtx = {
+  scope: "admin";
+  admin: JWTPayload & { tenant_id: string };
+};
+
 export type AdminRouteAuth =
-  | { ok: true; tenantId: string; adminId: string | number }
+  | {
+      ok: true;
+      tenantId: string;
+      adminId: string | number;
+      /** session payload ดิบ — ใช้เมื่อต้องการ role/email */
+      admin: JWTPayload;
+      ctx: AdminRouteCtx;
+    }
   | { ok: false; status: 401 | 403 };
 
-export async function authorizeAdminRoute(permission: BmsPermission): Promise<AdminRouteAuth> {
+/**
+ * `permission = null` = "ต้องล็อกอินแต่ไม่ผูกกับสิทธิ์ใดเป็นพิเศษ" ใช้กับ route ที่ยังไม่มี
+ * permission ตรงตัวใน catalog (เช่น AI playground) — เขียนให้ชัดดีกว่าปล่อยให้แต่ละ route
+ * ไปเรียก `verifyAdminSession()` เองแล้วลืมส่วน acting-tenant
+ */
+export async function authorizeAdminRoute(permission: BmsPermission | null): Promise<AdminRouteAuth> {
   const admin = verifyAdminSession();
   if (!admin) return { ok: false, status: 401 };
 
@@ -26,10 +48,20 @@ export async function authorizeAdminRoute(permission: BmsPermission): Promise<Ad
     ? acting.actTenantId
     : admin.tenant_id || DEFAULT_TENANT_ID;
 
-  try {
-    await requirePermission({ scope: "admin", admin: { ...admin, tenant_id: tenantId } }, permission);
-  } catch {
-    return { ok: false, status: 403 };
+  const ctx: AdminRouteCtx = { scope: "admin", admin: { ...admin, tenant_id: tenantId } };
+
+  if (permission) {
+    try {
+      await requirePermission(ctx, permission);
+    } catch {
+      return { ok: false, status: 403 };
+    }
   }
-  return { ok: true, tenantId, adminId: admin.id };
+  return {
+    ok: true,
+    tenantId,
+    adminId: admin.id,
+    admin,
+    ctx,
+  };
 }

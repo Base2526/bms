@@ -169,6 +169,42 @@ See [../business/pos.md](../business/pos.md) for the operator flow and go-live c
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
   arrays being duplicated in several places).
+
+**Every one of these single-tenant-era routes now requires a signed admin session.** They were written
+when there was one shop, so they authenticated nothing and read the tenant from `DEFAULT_TENANT_ID` —
+and `middleware.ts` only guards `/admin/**`, so anything under `/api/**` that is not an admin page is
+reachable by anyone. Twenty-two routes across orders, payment, purchase, shipments, reports, and inbox
+therefore let an anonymous caller mark bills paid, receive stock, or read the default shop's sales.
+They now call `authorizeAdminRoute(<permission>)` with the same permission as the equivalent GraphQL
+resolver (`order.pay`, `purchase.receive`, `report.view`, …) and take the tenant from the session or
+the drill-down cookie, so an admin of one shop can no longer act on another's data through them.
+`scripts/inventory-tenant-scope-contract.test.mts` fails if any route under `/api/bms` has no guard.
+
+The eight routes that already authenticated by hand — payment confirm/refund/reject, report
+generate/download/pos-returns/pos-return-audit, and the AI playground `chat` — now call the same
+helper instead of repeating the session + acting-tenant + permission dance locally. That repetition
+was the reason `authorizeAdminRoute()` exists, and each copy was a place to forget the drill-down
+check that keeps one shop's admin out of another's data. The helper also returns the `ctx` object that
+services like `generateReport()` expect, and accepts `null` for a route that needs a session but has
+no matching permission in the catalog. `onboarding/sample-data` is deliberately left alone: it gates
+on *role* read from the database rather than on a permission, so moving it would change who is
+allowed in. The two upload endpoints (`products/upload`, `inbox/upload`) previously accepted any
+logged-in user — they now require `product.edit` and `inbox.reply`, the permissions the steps that
+consume the file already need.
+
+Two single-tenant webhook mocks (`/api/bms/line/webhook` and `/api/bms/tiktok/webhook`, the versions
+without a `[tenantId]`) cannot be fixed this way — a webhook has no session to check. They ran the AI
+pipeline and wrote into the default shop's inbox for anyone who posted, so they now return 404 when
+`NODE_ENV=production`; the real path is the per-tenant webhook that verifies the channel signature
+fail-closed. `/api/bms/demo-chat` stays public on purpose (it is the marketing demo) but was calling
+the model with no ceiling at all, and now carries a 20-per-minute-per-IP limit like the web-widget
+webhook already did.
+- `POST /api/bms/reserve` — hold stock without a bill. Requires a signed admin session with
+  `stock.adjust`; the tenant is derived server-side from the session or the drill-down cookie and is
+  never read from the body. Reserves in one branch only and writes a `RESERVE` movement in the same
+  transaction. It shipped without authentication and without any tenant filter, so it wrote to every
+  shop stocking the SKU — see
+  [../business/inventory.md](../business/inventory.md#holding-stock-without-a-bill-apibmsreserve).
 - `POST /api/bms/products/upload` — product image upload endpoint used by `/admin/products`
   before saving the product form. It stores files first, then the product save mutation decides
   which uploaded image becomes `image_url` (cover) and which remain in the gallery.
@@ -245,7 +281,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 
 | File | Covers |
 | --- | --- |
-| `bmsProducts.ts` | products, categories, stock adjustments, bulk CSV/XLSX product import (`bmsImportProducts`) |
+| `bmsProducts.ts` | products, categories, stock adjustments, bulk CSV/XLSX product import (`bmsImportProducts`), reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |

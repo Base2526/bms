@@ -17,10 +17,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runPipeline, type Channel } from "@/lib/bms/pipeline";
 import { logConversation } from "@/lib/bms/inbox";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
-import { verifyAdminSession } from "@/lib/auth/server";
-import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
-import { cookies } from "next/headers";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -30,8 +27,10 @@ const CHANNELS: Channel[] = ["line", "tiktok", "facebook", "instagram", "web", "
 
 async function handlePOST(req: NextRequest) {
   // Playground ทำ write จริงได้ จึงต้อง derive tenant จาก signed admin session เท่านั้น
-  const admin = verifyAdminSession();
-  if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // permission = null: ยังไม่มีสิทธิ์ตรงตัวใน catalog สำหรับ playground — ที่ต้องมีคือ
+  // "ล็อกอินแล้ว + tenant มาจาก session" ซึ่ง helper จัดการรวมกับคุกกี้ drill-down ให้
+  const auth = await authorizeAdminRoute(null);
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
   const body = (await req.json().catch(() => ({}))) as {
     message?: unknown;
@@ -47,14 +46,8 @@ async function handlePOST(req: NextRequest) {
     : "test";
   const customerRef =
     typeof body.customerRef === "string" ? body.customerRef.trim() || null : null;
-  const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
-  const tenantId =
-    acting?.actTenantId && String(acting.by) === String(admin.id)
-      ? acting.actTenantId
-      : admin.tenant_id || DEFAULT_TENANT_ID;
-
-  const result = await runPipeline(message, channel, tenantId, customerRef);
-  await logConversation(tenantId, channel, customerRef, message, result.reply, result.quality);
+  const result = await runPipeline(message, channel, auth.tenantId, customerRef);
+  await logConversation(auth.tenantId, channel, customerRef, message, result.reply, result.quality);
   return NextResponse.json(result);
 }
 

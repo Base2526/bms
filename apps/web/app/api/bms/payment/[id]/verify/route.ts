@@ -6,16 +6,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyPaymentSlip } from "@/lib/bms/payments";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(_req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await authorizeAdminRoute("payment.confirm");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "payment id required" }, { status: 400 });
-  const result = await verifyPaymentSlip(DEFAULT_TENANT_ID, id);
+  const result = await verifyPaymentSlip(auth.tenantId, id);
   if (!result) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(result);
 }

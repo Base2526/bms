@@ -19,6 +19,11 @@ There is **no separate Draft status** in the implementation — an order is crea
 `PENDING` with stock already reserved. (Earlier planning docs described a Draft stage with no
 stock deduction; that was never built this way — every order reserves stock immediately.)
 
+A reservation is held by `PENDING`, `PAID`, and `PACKING`, and released at `SHIP` (which deducts
+current and reserved together), at cancel, and by auto-release. Nothing records which bill owns which
+reserved unit, so "who is holding this piece" is rebuilt from those three statuses on demand — see
+[inventory.md](inventory.md#who-is-holding-reserved-stock).
+
 | Status | Stock effect |
 | --- | --- |
 | PENDING | Stock reserved at creation |

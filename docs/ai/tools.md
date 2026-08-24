@@ -246,6 +246,18 @@ StockMovement
 
 ## reserveStock()
 
+**Not an AI tool, and the shape below is the plan, not the code.** The implementation is
+`reserveStock({ tenantId, sku, size, qty, locationId?, note?, actor? })` in `lib/bms/stock.ts`: it
+holds stock for one shop, in one branch, and writes a `RESERVE` movement in the same transaction.
+`tenantId` and `locationId` are not optional decoration — the function shipped filtering on
+`product_sku` + `size` alone, which reserved that product in every shop and branch stocking it (see
+[../agent-invariants.md § REST route authentication](../agent-invariants.md#rest-route-authentication-and-tenancy)).
+
+The ordinary way stock gets reserved is `createOrder()`, inside the same transaction as the bill, so a
+reservation always has an order behind it. Any future order-bound tool should follow the plan below —
+`orderId` + `items[]` — rather than exposing the bare primitive, precisely so a model cannot create a
+hold nobody can trace.
+
 Input
 
 {

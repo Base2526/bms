@@ -22,6 +22,7 @@ import { runImport } from "@/lib/bms/productImport";
 import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
 import { listCategories, createCategory, renameCategory, deleteCategory } from "@/lib/bms/productCategories";
 import { listMovements } from "@/lib/bms/movements";
+import { listVariantReservations } from "@/lib/bms/stock";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
@@ -113,6 +114,27 @@ export const bmsProductsResolvers = {
     ) {
       await requirePermission(ctx, "product.view");
       return listMovements(getTenantId(ctx), args.sku, args.size ?? null, args.limit ?? 50);
+    },
+    async bmsVariantReservations(
+      _p: unknown,
+      args: { sku: string; size: string },
+      ctx: any
+    ) {
+      // order.view ไม่ใช่ product.view — คำตอบมีเลขบิล ชื่อและเบอร์ลูกค้าอยู่ในนั้น
+      // คนที่ดูแลแค่แคตาล็อกสินค้าไม่ควรอ่านรายชื่อลูกค้าผ่านหน้าสินค้า
+      await requirePermission(ctx, "order.view");
+      const sku = String(args.sku || "").trim();
+      const size = String(args.size || "").trim();
+      if (!sku || !size) {
+        throw new GraphQLError("sku และ size ต้องไม่ว่าง", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      try {
+        return await listVariantReservations(getTenantId(ctx), sku, size);
+      } catch (err) {
+        toGqlError(err);
+      }
     },
   },
 

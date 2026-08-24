@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { logConversation } from "@/lib/bms/inbox";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getDemoShopDefinition, getDemoTenantContext } from "@/lib/bms/demoShops";
+import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -16,6 +17,17 @@ function normalizeSessionId(value: unknown): string | null {
 }
 
 async function handlePOST(req: NextRequest) {
+  // เดโมเปิดให้ทุกคนใช้โดยตั้งใจ (หน้าขายของ) แต่ทุกข้อความเรียกโมเดลจริง =
+  // ค่า token เป็นของเจ้าของระบบ ไม่ใช่ของผู้ยิง · เพดานต่อ IP ต่อนาทีคือส่วนที่หายไป
+  // (webhook เว็บวิดเจ็ตซึ่งเปิดสาธารณะเหมือนกันมีเพดานนี้อยู่แล้ว)
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const rl = await rateLimit(`demo-chat:${ip}`, 20, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate limit exceeded", reply: "ขอโทษค่ะ ตอนนี้มีคำถามเข้ามาเร็วเกินไป รอสักครู่แล้วลองอีกครั้งนะคะ" },
+      { status: 429, headers: { "retry-after": String(rl.retryAfter) } }
+    );
+  }
   const body = (await req.json().catch(() => ({}))) as {
     demoShopKey?: unknown;
     message?: unknown;

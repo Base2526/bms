@@ -462,6 +462,101 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทส: `scripts/pos-scan-manager-contract.test.mts` (6 เทส, pure) + จุด DB ที่ยังไม่ verify:
     device-scoped listing, PIN/permission re-check, idempotency replay vs conflict, และ
     tenant/location isolation ของ `bms_pos_purchase_receipts`
+- **ใครจองของอยู่ (drill-down ที่คอลัมน์ จอง ของ `/admin/products`) — ไม่มี migration verify กับ DB จริงแล้ว
+  2026-08-24** · query ใหม่ `bmsVariantReservations` gate ด้วย **`order.view` ไม่ใช่ `product.view`**
+  (คำตอบมีเลขบิล ชื่อ+เบอร์ลูกค้า) — role ที่ดูแลแค่แคตาล็อกจะไม่เห็นปุ่ม ไม่ต้อง seed permission ใหม่
+  · **ต้องอ่านจาก view `bms_order_stock_lines` เท่านั้น** เพราะเซ็ตจองที่ส่วนประกอบ (8.8) ถ้าเผลอไปอ่าน
+    `bms_order_items` บิลที่ซื้อเซ็ตจะหายไปจากรายการของส่วนประกอบทั้งที่ยังถือของอยู่ (มีเทสคุม)
+  · **ยอด "อธิบายไม่ได้" (`unattributed`) ต้องแสดงเสมอ ห้ามปัดทิ้ง** — `/api/bms/reserve` จองได้โดยไม่ผูกบิล
+    และ **route นั้นไม่กรอง `tenant_id` เลย** (`reserveStock()` ใน `lib/bms/stock.ts` ยิงข้ามร้านได้ถ้ารู้
+    SKU+size) ยังไม่ได้แก้ — ตัวเลขนี้คือทางเดียวที่ร้านจะเห็นว่ามีของถูกล็อกโดยไม่มีเจ้าของ
+  · ยอดรวมคิดจากทุกบิล แต่รายการตัดที่ 200 บิล (`RESERVATION_LIST_LIMIT`) และหน้าจอบอกเมื่อตัด
+  · **`viaBundleSkus` เป็นลิสต์ไม่ใช่ค่าเดียว** — บิลเดียวถือส่วนประกอบตัวเดียวกันผ่านสองเซ็ตได้
+    (ร้านจัดกระเช้าหลายแบบจากของชิ้นเดิม) บอกเซ็ตแรกเซ็ตเดียว = พนักงานหาของไม่เจออีกครึ่ง
+  · **query นี้พึ่ง migration `8.8`/`9.3` (view), `7.84` (`bms_locations`) และ `9.0` (`bms_pos_deposits`)**
+    — ฐานที่ยังไม่ apply จะได้ error ที่หน้าจอ (ตั้งใจ ไม่กลืน) ตามสไตล์ repo นี้ที่ไม่มี schema probe
+    ที่ไหนเลย · ถ้าลูกค้ารายไหนยังไม่มี POS ให้ apply ชุดนั้นก่อนเปิดใช้ปุ่มนี้
+  · **index ที่ query ใช้มีอยู่แล้ว ไม่ต้องเพิ่ม** — ยืนยันด้วย `EXPLAIN`:
+    `idx_bms_order_items_tenant_sku_order` ใช้ทั้งสองสาขาของ view (สาขาเซ็ตวิ่งจาก
+    `idx_bms_bundle_items_component` เข้า order_items ด้วย bundle_sku)
+  · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (12 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
+    เขียนจริงลงฐาน **ห้ามรันกับ production**) — teardown ต้องลบที่อยู่ปลอม (`label = 'FAKE resv-test'`)
+    ด้วย เพราะเทส `shipOrder` ต้องมีที่อยู่จัดส่งไม่งั้น shipOrder คืน false เงียบ ๆ
+- **⚠️ `/api/bms/reserve` + `reserveStock()` เคยจองสต็อกข้ามร้านได้โดยไม่ต้องล็อกอิน — แก้แล้ว
+  2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุ 3 ชั้นซ้อนกัน**: (ก) `reserveStock()` กรองแค่ `product_sku` + `size` **ไม่มี `tenant_id`
+    และไม่มี `location_id`** → `UPDATE` โดนทุกแถวที่ตรง = ทุกร้าน/ทุกสาขาที่ขาย SKU นั้น
+    (ยืนยันกับ dev DB: `NIKE-AIR/XL` มีอยู่ 2 ร้าน) (ข) `middleware.ts` กันแค่ `/admin/**` — `/api/**`
+    ที่ไม่ใช่ /admin ผ่านฟรี route นี้จึงเปิดโล่ง (ค) ไม่เคยเขียน `bms_stock_movements` เลย ผิดกฎ
+    ของโมดูลเองที่ว่า "ทุกการขยับสต็อกต้องมี movement" → ของที่ขายไม่ได้ไม่มีร่องรอยว่าใครกันไว้
+  · **แก้เป็น**: `reserveStock({tenantId, sku, size, qty, locationId?, note?, actor?})` ทำใน
+    `beginTenantTx` + เขียน movement `RESERVE` ในทรานแซกชันเดียวกัน · route เรียก
+    `authorizeAdminRoute("stock.adjust")` และ **tenant มาจาก session/คุกกี้ drill-down เท่านั้น
+    ห้ามรับจาก body** (สาขารับจาก body ได้ ถ้าเป็นสาขาคนละร้านจะได้ `NOT_FOUND` เพราะไม่มีแถว)
+  · ยืนยันจริง: ยิงแบบไม่ล็อกอินได้ `401` และ `reserved_stock` ของทั้งสองร้านยังเป็น 0
+  · เทส 2 ชุดใหม่:
+    - `scripts/inventory-tenant-scope-contract.test.mts` (2 เทส ไม่ต้องมี DB) — สแกนทุก statement ที่
+      แตะ `bms_inventory`/`bms_product_price_tiers`/`bms_product_packs` ว่ามี `tenant_id` ครบ
+      (ก่อนแก้: 16 statement มี 1 ตัวที่ไม่มี = ตัวนี้) + เช็คว่า route ไม่รับ tenant จาก body ·
+      ยืนยันแล้วว่า **แดงจริง** เมื่อใส่ statement ที่ลืม tenant กลับเข้าไป
+    - `scripts/reserve-stock-db-contract.test.mts` (9 เทส · สร้างสาขาที่สองของตัวเองแล้วลบทิ้ง
+      **ห้ามรันกับ production**) — ครอบข้ามร้าน/ข้ามสาขา/ยืม location ของร้านอื่น/ledger/ROLLBACK
+  · **แก้ต่อจนจบแล้ว 2026-08-24** — ดูหัวข้อถัดไป
+- **⚠️ REST route ยุคร้านเดียว 22 ตัวไม่ยืนยันตัวตนเลย — แก้แล้ว 2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุร่วม**: `middleware.ts` กันแค่ `/admin/**` (ดูเงื่อนไข `!pathname.startsWith("/admin")`
+    → `NextResponse.next()`) ทุกอย่างใต้ `/api/**` ที่ไม่ใช่หน้า admin **ผ่านฟรี** · route ชุดนี้เขียน
+    ตอนระบบมีร้านเดียว จึงไม่เช็คอะไรและอ่าน tenant จาก `DEFAULT_TENANT_ID` ตายตัว
+  · **ผลจริงก่อนแก้**: ใครก็ยิงได้ว่า `order/[id]/pay` (ปิดบิลว่าจ่ายแล้ว), `purchase/[id]/receive`
+    (รับของเข้าคลัง = สต็อกเพิ่มลอย ๆ), `payment/[id]/verify`, `shipment/[id]/status`,
+    `inbox/[id]/reply` (ส่งข้อความออกในนามร้าน), `reports/{sales,inventory,top-products}`
+    (อ่านยอดขายทั้งร้าน) — ทั้งหมดบนร้าน default
+  · **แก้เป็น** `authorizeAdminRoute(<permission>)` ทุกตัว โดยใช้ permission **ตัวเดียวกับ resolver
+    GraphQL ที่ทำงานเดียวกัน** (`order.pay`, `order.ship`, `order.cancel`, `order.return`,
+    `order.create`, `payment.view/submit/confirm`, `purchase.view/edit/receive/cancel`,
+    `shipping.view/create/update`, `report.view`, `inbox.view/reply`) และ tenant มาจาก session/คุกกี้
+    drill-down · ยืนยันจริงด้วย curl: ทั้ง 22 endpoint คืน `401` ตอนไม่ล็อกอิน
+  · **webhook mock ยุคร้านเดียว 2 ตัว** (`line/webhook`, `tiktok/webhook` — ตัวที่ไม่มี `[tenantId]`)
+    แก้ด้วย session ไม่ได้ (webhook ไม่มี cookie) และมันเรียก `runPipeline` = **จ่ายค่า AI ให้คนที่ยิง
+    ฟรี** + เขียนแชทปลอมเข้ากล่องข้อความร้าน default → ตอนนี้คืน `404` เมื่อ `NODE_ENV=production`
+    (dev ยังใช้ curl ได้เหมือนเดิม) ทางจริงคือ webhook ต่อร้านที่ verify ลายเซ็นแบบ fail-closed
+  · **`/api/bms/demo-chat` เปิดสาธารณะโดยตั้งใจ (เดโมหน้าขายของ) แต่ไม่มีเพดานเลย** — เติม
+    `rateLimit(demo-chat:<ip>, 20, 60_000)` แบบเดียวกับ web widget webhook (ซึ่งมี 120/นาที อยู่แล้ว)
+    ยืนยันแล้ว: ยิง 22 ครั้ง → 20 ผ่าน 2 ตัวท้ายได้ 429
+  · **ที่ไม่แตะ (มีการ์ดอยู่แล้ว)**: `payment/[id]/{confirm,refund,reject}`, `chat`, `reports/{generate,
+    download,pos-returns,pos-return-audit}`, `onboarding/sample-data` ใช้ `verifyAdminSession` +
+    `requirePermission` เขียนมือ (pattern เดียวกับที่ `adminRouteAuth` ถูกแยกออกมา — ยัง refactor ให้ใช้
+    helper ได้ถ้าจะลดโค้ดซ้ำ) · `products/upload`, `inbox/upload` ใช้ `requireAdminOrInternal`
+    (ล็อกอินแล้วแต่ **ยังไม่เช็ค permission** — ความเสี่ยงต่ำเพราะแค่เก็บไฟล์) · webhook ต่อร้าน
+    ทุกช่องทาง verify ลายเซ็น fail-closed · job/cron ใช้ `CRON_SECRET`/`BMS_JOB_TOKEN` ·
+    `checkout/*` ใช้ token ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  · **ตามเก็บต่อจนหมด 2026-08-24 (รอบเดียวกัน)**:
+    - `products/upload`, `inbox/upload` เดิม gate ด้วย `requireAdminOrInternal()` = "ล็อกอินแล้วผ่าน"
+      ไม่ดูสิทธิ์เลย → เปลี่ยนเป็น `product.edit` / `inbox.reply` ให้ตรงกับขั้นที่เอาไฟล์ไปใช้จริง
+      · **`requireAdminOrInternal` ไม่มี route ไหนใช้แล้ว** และถูกถอดออกจาก allowlist ของเทสด้วย
+      (ยังเหลืออยู่ใน `lib/dev-guards.ts` + README ของ fake seeder เท่านั้น)
+    - route ที่เขียน `verifyAdminSession` + acting-tenant + `requirePermission` ด้วยมือ 8 ตัว
+      (`payment/[id]/{confirm,refund,reject}`, `reports/{generate,download,pos-returns,
+      pos-return-audit}`, `chat`) ย้ายมาใช้ `authorizeAdminRoute()` แล้ว — ลดโค้ดซ้ำ ~79 บรรทัด
+      และตัดโอกาสที่บางตัวจะลืมส่วน acting-tenant ตอนแก้ครั้งถัดไป
+    - **`authorizeAdminRoute()` คืน `admin` + `ctx` เพิ่ม** (`ctx` = รูปเดียวกับที่ resolver ส่งให้
+      `requirePermission()`/`audit()`) เพราะ `generateReport()` รับ ctx · และรับ `permission = null`
+      ได้สำหรับ route ที่ต้องการแค่ "ล็อกอินแล้ว" (playground `chat` — ไม่มีสิทธิ์ตรงตัวใน catalog)
+    - **`onboarding/sample-data` จงใจไม่แตะ** — มัน gate ด้วย *role* (`Administrator`/`Manager`
+      อ่านจาก DB) ไม่ใช่ permission ย้ายมาใช้ helper = เปลี่ยนความหมายการอนุญาต
+  · **กันย้อนกลับ**: `scripts/inventory-tenant-scope-contract.test.mts` เพิ่มเทสที่ 2 — สแกน route ทุกตัว
+    ใต้ `app/api/bms` ว่ามีการ์ดอย่างน้อยหนึ่งอย่างจาก allowlist และ route ที่ "เปิดสาธารณะโดยตั้งใจ"
+    ต้องมี `rateLimit()` · route ใหม่ที่ลืมการ์ดจะทำให้เทสแดงทันที (ก่อนหน้านี้ 26 ไฟล์หลุดพร้อมกัน
+    โดยไม่มีอะไรฟ้อง)
+- **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`
+  คืน key ตัวเองเมื่อหาไม่เจอ จึงไม่พังตอน build และ `tsc` ไม่จับ · `9.20` วางคีย์ราคาแยกไซซ์ 4 ตัวไว้ใน
+  `admin_restock` (th) และ `admin_dashboard` (en) — ย้ายเข้า `admin_products` แล้ว
+  · กันย้อนกลับ: `scripts/i18n-keys-contract.test.mts` (2 เทส ไม่ต้องมี DB — ตรวจ literal `t("...")`
+    ทุกตัวในแอปว่า resolve ได้ทั้ง th/en + คีย์ทุก section ต้องมีครบทั้งสองภาษา) · ยืนยันแล้วว่าเทสนี้
+    **แดงจริง** เมื่อจงใจย้ายคีย์ออก · คีย์ที่ประกอบตอนรัน (template string) ตรวจไม่ได้ ต้องระวังเอง
+
+    ```bash
+    cd apps/web && npx tsx --test ../../scripts/i18n-keys-contract.test.mts
+    ```
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

@@ -78,6 +78,20 @@ type Product = {
   }>;
   variants: Variant[];
 };
+type ReservationOrder = {
+  orderId: string;
+  status: string;
+  channel: string;
+  customerRef: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  qty: number;
+  viaBundleSkus: string[];
+  locationName: string | null;
+  branchCode: string | null;
+  depositStatus: string | null;
+  createdAt: string;
+};
 type Movement = {
   id: string;
   size: string;
@@ -138,6 +152,33 @@ const Q_MOVEMENTS = gql`
       note
       actor
       created_at
+    }
+  }
+`;
+
+const Q_RESERVATIONS = gql`
+  query BmsVariantReservations($sku: String!, $size: String!) {
+    bmsVariantReservations(sku: $sku, size: $size) {
+      sku
+      size
+      reservedTotal
+      attributedTotal
+      unattributed
+      orderCount
+      orders {
+        orderId
+        status
+        channel
+        customerRef
+        customerName
+        customerPhone
+        qty
+        viaBundleSkus
+        locationName
+        branchCode
+        depositStatus
+        createdAt
+      }
     }
   }
 `;
@@ -695,6 +736,7 @@ function ProductsManagement() {
               canAdjust={can("stock.adjust")}
               canEdit={can("product.edit")}
               canToggleActive={can("product.delete")}
+              canViewOrders={can("order.view")}
               onEdit={() => openEdit(p)}
               onToggleActive={(active) => setActive({ variables: { sku: p.sku, active } })}
             />
@@ -842,7 +884,7 @@ function ProductsManagement() {
                       <Typography.Text strong>{variant.size}</Typography.Text>
                       <InputNumber
                         min={0}
-                        precision={2}
+                        step={1}
                         value={override ?? fallback}
                         addonAfter="฿"
                         onChange={(value) => setVariantPriceDrafts((current) => ({
@@ -958,8 +1000,7 @@ function ProductsManagement() {
                       <InputNumber
                         min={0.0001}
                         max={100}
-                        precision={4}
-                        step={0.0001}
+                        step={0.5}
                         value={tier.discountPct === "" ? null : Number(tier.discountPct)}
                         onChange={(v) => setPriceTiers((cur) => cur.map((row, i) => (
                           i === idx ? { ...row, discountPct: v == null ? "" : String(v) } : row
@@ -1176,6 +1217,7 @@ function ProductDetail({
   canAdjust,
   canEdit,
   canToggleActive,
+  canViewOrders,
   onEdit,
   onToggleActive,
 }: {
@@ -1184,6 +1226,7 @@ function ProductDetail({
   canAdjust: boolean;
   canEdit: boolean;
   canToggleActive: boolean;
+  canViewOrders: boolean;
   onEdit: () => void;
   onToggleActive: (next: boolean) => void;
 }) {
@@ -1201,6 +1244,11 @@ function ProductDetail({
   const [loadMoves, { data: movesData, loading: movesLoading, called: movesCalled, refetch: refetchMoves }] = useLazyQuery(Q_MOVEMENTS, {
     fetchPolicy: "cache-first",
   });
+  // การจองเปลี่ยนได้ทุกวินาที (บิลใหม่/ยกเลิก) — network-only เพื่อไม่ให้พนักงาน
+  // เห็นรายชื่อบิลเก่าที่ปิดไปแล้วเวลากดดูซ้ำ
+  const [loadReservations, { data: resvData, loading: resvLoading, error: resvError }] = useLazyQuery(Q_RESERVATIONS, {
+    fetchPolicy: "network-only",
+  });
 
   const [newSize, setNewSize] = useState<string | undefined>();
   const [newQty, setNewQty] = useState<number>(1);
@@ -1209,6 +1257,7 @@ function ProductDetail({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkApplying, setBulkApplying] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [reservedSize, setReservedSize] = useState<string | null>(null);
   const [bulkDraft, setBulkDraft] = useState<Record<string, number>>({});
 
   const totalAvailable = useMemo(
@@ -1223,6 +1272,7 @@ function ProductDetail({
     () => product.variants.filter((variant) => variant.low).length,
     [product.variants]
   );
+  const resvSnapshot = resvData?.bmsVariantReservations ?? null;
   const moves: Movement[] = movesData?.bmsStockMovements || [];
   const visibleMoves = historyExpanded ? moves : moves.slice(0, 4);
   const ensureMovesLoaded = useCallback(() => {
@@ -1265,7 +1315,7 @@ function ProductDetail({
           <InputNumber
             key={`${variant.size}:${variant.priceOverride ?? "default"}`}
             min={0}
-            precision={2}
+            step={1}
             defaultValue={variant.priceOverride ?? undefined}
             placeholder={Number(product.price).toLocaleString()}
             addonAfter="฿"
@@ -1331,11 +1381,35 @@ function ProductDetail({
       key: "res",
       width: 120,
       align: "right" as const,
-      render: (v: number) => (
-        <Typography.Text style={{ color: v > 0 ? "#ad6800" : "#8c8c8c", fontWeight: 500 }}>
-          {v}
-        </Typography.Text>
-      ),
+      render: (v: number, r: Variant) => {
+        // ตัวเลขจองอธิบายตัวเองไม่ได้ — กดแล้วต้องบอกได้ว่าบิลไหนถือของอยู่
+        // ซ่อนปุ่มเมื่อไม่มีสิทธิ์ order.view เพราะคำตอบมีชื่อ/เบอร์ลูกค้า
+        if (v <= 0) {
+          return <Typography.Text style={{ color: "#8c8c8c", fontWeight: 500 }}>{v}</Typography.Text>;
+        }
+        if (!canViewOrders) {
+          return (
+            <Tooltip title={t("admin_products.reserved_needs_order_view")}>
+              <Typography.Text style={{ color: "#ad6800", fontWeight: 500 }}>{v}</Typography.Text>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip title={t("admin_products.reserved_who_hint")}>
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, height: "auto", color: "#ad6800", fontWeight: 600 }}
+              onClick={() => {
+                setReservedSize(r.size);
+                void loadReservations({ variables: { sku: product.sku, size: r.size } });
+              }}
+            >
+              {v}
+            </Button>
+          </Tooltip>
+        );
+      },
     },
     {
       title: t("admin_products.col_reorder"), key: "reorder", width: 130,
@@ -1674,7 +1748,186 @@ function ProductDetail({
           ))}
         </Space>
       </Modal>
+
+      <ReservedOrdersModal
+        open={reservedSize != null}
+        sku={product.sku}
+        size={reservedSize}
+        // คำตอบของไซซ์ก่อนหน้าต้องไม่ถูกแสดงใต้หัวข้อของไซซ์ใหม่ — รายชื่อบิลผิดไซซ์
+        // ที่หน้าเคาน์เตอร์คือคำตอบผิด ไม่ใช่แค่ภาพกระพริบ
+        loading={resvLoading}
+        data={
+          resvSnapshot && resvSnapshot.sku === product.sku && resvSnapshot.size === reservedSize
+            ? resvSnapshot
+            : null
+        }
+        error={resvError ? resvError.message : null}
+        onClose={() => setReservedSize(null)}
+      />
     </div>
+  );
+}
+
+// ---- Modal: ใครจองไซซ์นี้อยู่ -------------------------------
+// ระบบไม่ได้เก็บว่าแต่ละหน่วยที่จองเป็นของบิลไหน (ไม่มี ledger ของการจอง) — หน้านี้
+// ประกอบคำอธิบายกลับจากบิลที่ยังถือของอยู่ ส่วนที่อธิบายไม่ได้จึงต้องโชว์ตรง ๆ
+function ReservedOrdersModal({
+  open,
+  sku,
+  size,
+  loading,
+  data,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  sku: string;
+  size: string | null;
+  loading: boolean;
+  data: {
+    sku: string;
+    size: string;
+    reservedTotal: number;
+    attributedTotal: number;
+    unattributed: number;
+    orderCount: number;
+    orders: ReservationOrder[];
+  } | null;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const orders = data?.orders ?? [];
+  const truncated = (data?.orderCount ?? 0) > orders.length;
+
+  const cols = [
+    {
+      title: t("admin_products.resv_col_order"),
+      key: "order",
+      render: (_: any, r: ReservationOrder) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text strong copyable={{ text: r.orderId }} style={{ fontSize: 12 }}>
+            {r.orderId.slice(0, 8)}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {new Date(r.createdAt).toLocaleString()}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: t("admin_products.resv_col_customer"),
+      key: "customer",
+      render: (_: any, r: ReservationOrder) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text style={{ fontSize: 13 }}>
+            {r.customerName || r.customerRef || t("admin_products.resv_walkin")}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {[r.customerPhone, r.channel].filter(Boolean).join(" · ")}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: t("admin_products.resv_col_qty"),
+      dataIndex: "qty",
+      key: "qty",
+      align: "right" as const,
+      width: 80,
+      render: (v: number) => <Typography.Text strong style={{ color: "#ad6800" }}>{v}</Typography.Text>,
+    },
+    {
+      title: t("admin_products.resv_col_status"),
+      key: "status",
+      render: (_: any, r: ReservationOrder) => (
+        <Space size={4} wrap>
+          <Tag color={r.status === "PENDING" ? "orange" : r.status === "PAID" ? "green" : "blue"} style={{ margin: 0 }}>
+            {r.status}
+          </Tag>
+          {r.depositStatus && (
+            <Tag color="gold" style={{ margin: 0 }}>{t("admin_products.resv_tag_deposit")}</Tag>
+          )}
+          {r.viaBundleSkus.length > 0 && (
+            <Tooltip title={t("admin_products.resv_tag_bundle_hint", { sku: r.viaBundleSkus.join(", ") })}>
+              <Tag color="purple" style={{ margin: 0 }}>{t("admin_products.resv_tag_bundle")}</Tag>
+            </Tooltip>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: t("admin_products.resv_col_branch"),
+      key: "branch",
+      render: (_: any, r: ReservationOrder) => (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {r.locationName || r.branchCode || "—"}
+        </Typography.Text>
+      ),
+    },
+  ];
+
+  return (
+    <Modal
+      title={t("admin_products.resv_title", { sku, size: size ?? "" })}
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={760}
+    >
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t("admin_products.resv_subtitle")}
+        </Typography.Text>
+
+        {data && (
+          <Space size={8} wrap>
+            <Tag color="orange" style={{ margin: 0 }}>
+              {t("admin_products.resv_stat_reserved", { n: data.reservedTotal })}
+            </Tag>
+            <Tag style={{ margin: 0 }}>
+              {t("admin_products.resv_stat_attributed", { n: data.attributedTotal, orders: data.orderCount })}
+            </Tag>
+            {data.unattributed > 0 && (
+              <Tag color="red" style={{ margin: 0 }}>
+                {t("admin_products.resv_stat_unattributed", { n: data.unattributed })}
+              </Tag>
+            )}
+          </Space>
+        )}
+
+        {error && (
+          // ล้มเหลวแล้วโชว์ตารางว่างคือการตอบว่า "ไม่มีใครจอง" ซึ่งผิดคนละเรื่องกับ "ยังไม่รู้"
+          <Alert type="error" showIcon message={t("admin_products.resv_error")} description={error} />
+        )}
+
+        {data && data.unattributed > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t("admin_products.resv_unattributed_title", { n: data.unattributed })}
+            description={t("admin_products.resv_unattributed_desc")}
+          />
+        )}
+
+        <Table<ReservationOrder>
+          rowKey="orderId"
+          size="small"
+          loading={loading}
+          dataSource={orders}
+          columns={cols}
+          pagination={false}
+          scroll={{ x: "max-content", y: 360 }}
+          locale={{ emptyText: loading || error || !data ? " " : t("admin_products.resv_empty") }}
+        />
+
+        {truncated && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t("admin_products.resv_truncated", { shown: orders.length, total: data?.orderCount ?? 0 })}
+          </Typography.Text>
+        )}
+      </Space>
+    </Modal>
   );
 }
 
