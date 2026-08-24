@@ -7,7 +7,6 @@ import {
   Button,
   Card,
   Col,
-  Divider,
   Input,
   List,
   Row,
@@ -35,6 +34,7 @@ import {
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
+import styles from "./manual.module.css";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -2645,21 +2645,16 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} style={{ scrollMarginTop: 88 }}>
-      <Card style={{ borderRadius: 18 }}>
-        <Space direction="vertical" size={6} style={{ width: "100%" }}>
-          <Title level={3} style={{ margin: 0 }}>
-            {title}
-          </Title>
-          {subtitle ? (
-            <Paragraph type="secondary" style={{ margin: 0 }}>
-              {subtitle}
-            </Paragraph>
-          ) : null}
-          <Divider style={{ margin: "8px 0 0" }} />
-          <div style={{ paddingTop: 8 }}>{children}</div>
-        </Space>
-      </Card>
+    <section id={id} className={styles.section} style={{ scrollMarginTop: 88 }}>
+      <Title level={3} className={styles.sectionTitle}>
+        {title}
+      </Title>
+      {subtitle ? (
+        <Paragraph type="secondary" className={styles.sectionSubtitle}>
+          {subtitle}
+        </Paragraph>
+      ) : null}
+      <div className={styles.sectionBody}>{children}</div>
     </section>
   );
 }
@@ -2851,33 +2846,28 @@ export default function Page() {
   }, [deferredSearch, searchSections]);
 
   return (
-    <div>
-      <div id="hero" style={{ marginBottom: 20 }}>
-        <Card
-          style={{
-            borderRadius: 24,
-            background:
-              "linear-gradient(135deg, rgba(24,144,255,0.08) 0%, rgba(82,196,26,0.08) 100%)",
-          }}
-        >
+    <div className={styles.page}>
+      <div id="hero" className={styles.heroWrap}>
+        <Card className={styles.hero}>
           <Space direction="vertical" size={14} style={{ width: "100%" }}>
             <Tag color="blue" style={{ width: "fit-content", paddingInline: 12, borderRadius: 999 }}>
               {c.heroTag}
             </Tag>
-            <Title style={{ margin: 0 }}>{c.heroTitle}</Title>
-            <Paragraph type="secondary" style={{ margin: 0, fontSize: 18 }}>
+            <Title className={styles.heroTitle}>{c.heroTitle}</Title>
+            <Paragraph type="secondary" className={styles.heroLead}>
               {c.heroLead}
             </Paragraph>
 
             <Alert
               type="info"
               showIcon
+              closable
               message={c.heroAlertMessage}
               description={c.heroAlertDesc}
               style={{ borderRadius: 16 }}
             />
 
-            <Space wrap>
+            <Space wrap className={styles.heroCtas}>
               <Button type="primary" size="large" href="#quickstart">
                 {c.heroCtaQuickstart}
               </Button>
@@ -2898,7 +2888,7 @@ export default function Page() {
               ))}
             </Space>
 
-            <Card style={{ borderRadius: 18, background: "rgba(255,255,255,0.72)" }}>
+            <Card className={styles.heroSearch}>
               <Space direction="vertical" size={12} style={{ width: "100%" }}>
                 <Input.Search
                   allowClear
@@ -2941,7 +2931,7 @@ export default function Page() {
                       )}
                     />
                   ) : (
-                    <Alert type="warning" showIcon message={c.searchNoResults} style={{ borderRadius: 14 }} />
+                    <Alert key={deferredSearch} type="warning" showIcon closable message={c.searchNoResults} style={{ borderRadius: 14 }} />
                   )
                 ) : null}
               </Space>
@@ -2951,6 +2941,7 @@ export default function Page() {
         <Alert
           type="success"
           showIcon
+          closable
           style={{ marginTop: 12, borderRadius: 12 }}
           message={lang === "en" ? "Phase 1: daily actions + smarter purchasing" : "Phase 1: งานวันนี้ + ซื้อของแม่นขึ้น"}
           description={lang === "en"
@@ -2958,7 +2949,7 @@ export default function Page() {
             : "ที่ Dashboard ให้กดอัปเดตสัญญาณ รับทำ Action แล้วปิดงานหรือเลือกไม่ทำพร้อมเหตุผล คำแนะนำสต็อกจะรวมแนวโน้ม Demand, Safety stock, Lead time, ของที่กำลังมากับ PO, Slow/Dead stock และวันหมดอายุแบบ FEFO หากขายไม่ได้เพราะของขาด ให้บันทึก Lost sale ในรายการ Low stock เพื่อให้คำแนะนำรอบถัดไปนับ Demand ที่พลาดด้วย ทุกคำแนะนำยังต้องให้พนักงานทบทวนก่อนสั่งซื้อจริง"}
         />
         <Alert
-          type="info" showIcon style={{ marginTop: 12, borderRadius: 12 }}
+          type="info" showIcon closable style={{ marginTop: 12, borderRadius: 12 }}
           message={lang === "en" ? "Phase 2: retention engine" : "Phase 2: Retention engine"}
           description={lang === "en"
             ? "Open Follow-up queue > Retention engine, refresh intelligence, review RFM/risk/evidence and the proposed channel, message, offer and product. Accept before contacting. Never contact HOLDOUT rows; they provide the baseline used to measure incremental conversion."
@@ -2966,9 +2957,8 @@ export default function Page() {
         />
       </div>
 
-      <Row gutter={[20, 20]} align="top">
-        <Col xs={24} lg={17}>
-          <Space direction="vertical" size={18} style={{ width: "100%" }}>
+      <div className={styles.layout}>
+        <div className={styles.main}>
             <Section
               id="onboarding"
               title={c.onboardingTitle}
@@ -3115,7 +3105,7 @@ export default function Page() {
                         </Paragraph>
                       </div>
 
-                      <Alert type="success" showIcon message={activeFlow.summary} style={{ borderRadius: 14 }} />
+                      <Alert key={flow} type="success" showIcon closable message={activeFlow.summary} style={{ borderRadius: 14 }} />
 
                       <Space wrap>
                         {activeFlow.tags.map((tag) => (
@@ -3147,6 +3137,7 @@ export default function Page() {
                 <Alert
                   type="info"
                   showIcon
+                  closable
                   style={{ borderRadius: 14 }}
                   message={c.archetypeAlertMessage}
                   description={c.archetypeAlertDesc}
@@ -3197,6 +3188,7 @@ export default function Page() {
                 <Alert
                   type="info"
                   showIcon
+                  closable
                   style={{ borderRadius: 14 }}
                   message={c.couponAlertMessage}
                   description={c.couponAlertDesc}
@@ -3301,6 +3293,7 @@ export default function Page() {
                 <Alert
                   type="warning"
                   showIcon
+                  closable
                   style={{ borderRadius: 14 }}
                   message={c.posAlertMessage}
                   description={c.posAlertDesc}
@@ -3332,7 +3325,7 @@ export default function Page() {
                               )}
                             />
                             {item.warning ? (
-                              <Alert type="warning" showIcon message={item.warning} style={{ borderRadius: 12 }} />
+                              <Alert type="warning" showIcon closable message={item.warning} style={{ borderRadius: 12 }} />
                             ) : null}
                           </Space>
                         </Card>
@@ -3425,6 +3418,7 @@ export default function Page() {
               <Alert
                 type="warning"
                 showIcon
+                closable
                 style={{ marginTop: 16, borderRadius: 14 }}
                 message={c.menuGroupingAlertMessage}
                 description={c.menuGroupingAlertDesc}
@@ -3496,21 +3490,25 @@ export default function Page() {
               <Alert
                 type="info"
                 showIcon
+                closable
                 style={{ marginTop: 12, borderRadius: 14 }}
                 message={c.linksAlertMessage}
                 description={c.linksAlertDesc}
               />
             </Section>
-          </Space>
-        </Col>
+        </div>
 
-        <Col xs={24} lg={7}>
-          <div style={{ position: "sticky", top: 16 }}>
-            <Card title={c.sidebarTocTitle} style={{ borderRadius: 18, marginBottom: 16 }}>
-              <Anchor affix={false} items={anchorItems} />
+        <div className={styles.side}>
+          <div className={styles.toc}>
+            <Card title={c.sidebarTocTitle} style={{ borderRadius: 18 }}>
+              <div className={styles.tocScroll}>
+                <Anchor affix={false} items={anchorItems} />
+              </div>
             </Card>
+          </div>
 
-            <Card title={c.sidebarShortcutsTitle} style={{ borderRadius: 18, marginBottom: 16 }}>
+          <div className={styles.rail}>
+            <Card title={c.sidebarShortcutsTitle} style={{ borderRadius: 18 }}>
               <Space direction="vertical" size={10} style={{ width: "100%" }}>
                 {c.sidebarShortcuts.map((shortcut) => (
                   <Link href={shortcut.href} key={shortcut.href}>
@@ -3534,12 +3532,10 @@ export default function Page() {
               />
             </Card>
           </div>
-        </Col>
-      </Row>
+        </div>
+      </div>
 
-      <Divider />
-
-      <Card style={{ borderRadius: 18 }}>
+      <div className={styles.footNote}>
         <Space direction="vertical" size={8} style={{ width: "100%" }}>
           <Title level={4} style={{ margin: 0 }}>
             {c.noteTitle}
@@ -3554,7 +3550,7 @@ export default function Page() {
             <Tag icon={<ApiOutlined />}>{c.noteTags[3]}</Tag>
           </Space>
         </Space>
-      </Card>
+      </div>
     </div>
   );
 }

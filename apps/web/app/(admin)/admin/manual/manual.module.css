@@ -1,0 +1,298 @@
+/* ===== /admin/manual — flat reading surface =====
+   This page is documentation, not a dashboard. It used to nest antd Cards
+   three deep (section card → content card → list item), so on a 375px screen
+   the page padding plus 3×24px of card padding left roughly 200px of usable
+   text width, and every level added another border. Sections are now plain
+   <section> elements with a heading; only the innermost content blocks keep a
+   surface tint, and no level draws a border. */
+
+.page {
+  min-width: 0;
+}
+
+/* ---------- layout ----------
+   Desktop keeps the two-column reading layout with a sticky rail. On tablet
+   and phone the rail wrapper becomes `display: contents`, so the table of
+   contents and the shortcut cards become grid items in their own right and
+   can be ordered independently: TOC first (a TOC that lands after every
+   section it links to is useless), then the sections, then the shortcuts.
+   Same trick as inbox/mentions/mentions.module.css. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 290px);
+  gap: 28px;
+  align-items: start;
+}
+
+.main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.side {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.toc,
+.rail {
+  min-width: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ---------- flat: no card chrome anywhere ---------- */
+
+.page :global(.ant-card) {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent;
+}
+
+.page :global(.ant-card-head) {
+  border-bottom: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin-bottom: 8px;
+}
+
+.page :global(.ant-card-head-title) {
+  padding: 0 !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--app-muted, #64748b);
+  white-space: normal;
+}
+
+.page :global(.ant-card-body) {
+  padding: 0 !important;
+  min-width: 0;
+}
+
+/* The one surviving surface: cards that sit in a grid cell (or a FAQ list row)
+   are a *set* of peers, so they still need to read as separate blocks. A tint
+   does that without adding another border. Everything else stays flat. */
+.page :global(.ant-col > .ant-card),
+.page :global(.ant-list-item > .ant-card) {
+  background: var(--app-surface-2, #f5f7fa) !important;
+  border-radius: 10px !important;
+}
+
+.page :global(.ant-col > .ant-card > .ant-card-body),
+.page :global(.ant-list-item > .ant-card > .ant-card-body) {
+  padding: 13px 14px !important;
+}
+
+.page :global(.ant-col > .ant-card > .ant-card-head),
+.page :global(.ant-list-item > .ant-card > .ant-card-head) {
+  padding: 13px 14px 0 !important;
+  margin-bottom: 0;
+}
+
+/* ---------- sections ---------- */
+
+.section {
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 0 0 2px !important;
+  font-size: clamp(17px, 2.6vw, 21px) !important;
+  line-height: 1.3 !important;
+}
+
+.sectionSubtitle {
+  margin: 0 !important;
+  font-size: 13.5px !important;
+  line-height: 1.55 !important;
+}
+
+/* one hairline per section is hierarchy, not clutter */
+.sectionBody {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-border, rgba(15, 23, 42, 0.1));
+  min-width: 0;
+}
+
+/* ---------- lists: no separators, tight rhythm ---------- */
+
+.page :global(.ant-list-bordered) {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* The flow checklist was the one list relying on antd's row borders to
+   separate items. Replaced with a bullet marker — a marker scans as well as a
+   rule without putting another line on the page. */
+.page :global(.ant-list-bordered .ant-list-item) {
+  position: relative;
+  padding-left: 14px !important;
+}
+
+.page :global(.ant-list-bordered .ant-list-item::before) {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 11px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--app-muted, #94a3b8);
+  opacity: 0.6;
+}
+
+.page :global(.ant-list-item) {
+  border-block-end: 0 !important;
+  padding-inline: 0 !important;
+  padding-block: 3px !important;
+  word-break: break-word;
+}
+
+.page :global(.ant-list-item-meta) {
+  align-items: flex-start;
+}
+
+/* ---------- hero ---------- */
+
+.heroWrap {
+  margin-bottom: 24px;
+}
+
+.hero {
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.heroTitle {
+  margin: 0 !important;
+  font-size: clamp(23px, 4.6vw, 34px) !important;
+  line-height: 1.22 !important;
+}
+
+.heroLead {
+  margin: 0 !important;
+  font-size: clamp(14px, 2.2vw, 16.5px) !important;
+  line-height: 1.6 !important;
+}
+
+.heroSearch {
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* ---------- table of contents ---------- */
+
+/* antd truncates anchor titles with nowrap + ellipsis, which eats most of a
+   Thai section name in a narrow rail. Let them wrap instead. */
+.toc :global(.ant-anchor-link-title) {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+
+.toc :global(.ant-anchor-link) {
+  padding-block: 3px;
+}
+
+/* ---------- alerts keep their border: they are the one thing that should
+     stand out from body copy, and they are dismissable ---------- */
+
+.page :global(.ant-alert) {
+  align-items: flex-start;
+}
+
+.page :global(.ant-alert-message),
+.page :global(.ant-alert-description) {
+  word-break: break-word;
+}
+
+.page :global(.ant-alert-close-icon) {
+  margin-inline-start: 10px;
+  padding: 2px;
+}
+
+/* ---------- steps ---------- */
+
+.page :global(.ant-steps-vertical .ant-steps-item-content) {
+  min-height: 0 !important;
+  padding-bottom: 10px;
+}
+
+/* ---------- footer note ---------- */
+
+.footNote {
+  margin-top: 30px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-border, rgba(15, 23, 42, 0.1));
+}
+
+/* ---------- tablet / phone ---------- */
+
+@media (max-width: 991px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  /* promote .toc and .rail to grid items so they can be ordered separately */
+  .side {
+    display: contents;
+    position: static;
+  }
+
+  .toc {
+    order: -1;
+  }
+
+  .main {
+    order: 0;
+  }
+
+  .rail {
+    order: 1;
+  }
+
+  /* a full 12-item TOC would push the first section off the screen */
+  .tocScroll {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .main {
+    gap: 24px;
+  }
+
+  .sectionSubtitle {
+    font-size: 13px !important;
+  }
+
+  .sectionBody {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .page :global(.ant-steps-vertical .ant-steps-item-title) {
+    font-size: 14px;
+  }
+
+  .page :global(.ant-steps-vertical .ant-steps-item-description) {
+    font-size: 12.5px;
+  }
+}

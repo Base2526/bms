@@ -60,3 +60,169 @@
   word-break: normal;
   overflow-wrap: break-word;
 }
+
+/* ===== Responsive shell =====
+   The page is a wall of tables and KPI tiles, so the phone/tablet work is
+   mostly (a) never let a table push the whole page sideways — every table
+   carries its own scroll.x, and (b) stop antd's Space/flex items from
+   refusing to shrink (an .ant-space-item defaults to min-width:auto, so a
+   long Thai label overflows the card instead of ellipsising). */
+
+.pageHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.pageHeadMain {
+  min-width: 0;
+}
+
+.pageHeadActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  margin: 0 !important;
+}
+
+.channelGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.channelCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.channelBody {
+  min-width: 0;
+}
+
+.channelName {
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.channelText {
+  font-size: 11.5px;
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+/* KPI tile — label must be allowed to shrink/clamp, never push the icon out */
+.kpiHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.kpiLabel {
+  min-width: 0;
+  font-size: 11px !important;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.kpiValue {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.kpiHint {
+  font-size: 10.5px !important;
+  line-height: 1.35;
+}
+
+/* label ↔ value rows (business summary, AI health) */
+.statRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font-size: 12px;
+}
+
+.statRow > :first-child {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.statRow > :last-child {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Cards that keep antd's default 24px body padding — too much on a phone */
+.sectionCard :global(.ant-card-body) {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .pageHead {
+    margin-bottom: 14px;
+  }
+
+  .pageTitle {
+    font-size: 22px !important;
+  }
+
+  .pageHeadActions :global(.ant-btn) {
+    font-size: 12.5px;
+  }
+
+  .channelGrid {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .sectionCard :global(.ant-card-body) {
+    padding: 12px !important;
+  }
+
+  .sectionCard :global(.ant-card-head) {
+    padding-inline: 12px;
+  }
+
+  .kpiValue {
+    font-size: 15.5px;
+  }
+
+  .compactCard :global(.ant-card-body) {
+    padding: 10px !important;
+  }
+
+  .salesChart {
+    height: 76px !important;
+  }
+}

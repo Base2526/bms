@@ -146,12 +146,12 @@ function KpiCard({ title, value, hint, icon }: { title: string; value: string | 
   return (
     <Card style={{ height: "100%", borderRadius: 10 }} styles={{ body: { padding: "10px 12px" } }}>
       <Space direction="vertical" size={2} style={{ width: "100%" }}>
-        <Space style={{ justifyContent: "space-between", width: "100%" }} align="center">
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</Text>
+        <div className={styles.kpiHead}>
+          <Text type="secondary" className={styles.kpiLabel}>{title}</Text>
           <span style={{ color: "#1677ff", fontSize: 13, flexShrink: 0 }}>{icon}</span>
-        </Space>
-        <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-0.01em" }}>{value}</div>
-        <Text type="secondary" style={{ fontSize: 10.5 }}>{hint}</Text>
+        </div>
+        <div className={styles.kpiValue}>{value}</div>
+        <Text type="secondary" className={styles.kpiHint}>{hint}</Text>
       </Space>
     </Card>
   );
@@ -381,12 +381,12 @@ export default function Page() {
 
   return (
     <div>
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap>
-        <div>
-          <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
+      <div className={styles.pageHead}>
+        <div className={styles.pageHeadMain}>
+          <Title level={2} className={styles.pageTitle}>Dashboard</Title>
           <Text type="secondary">{t("admin_dashboard.subtitle")}</Text>
         </div>
-        <Space size={10}>
+        <div className={styles.pageHeadActions}>
           <span
             title={systemOk ? "" : t("admin_dashboard.broken_channels_tooltip", { list: brokenChannels.map((c) => CHANNEL_LABEL[c.key]).join(", ") })}
             style={{
@@ -401,14 +401,14 @@ export default function Page() {
             {systemOk ? t("admin_dashboard.system_ok") : t("admin_dashboard.system_bad")}
           </span>
           <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_dashboard.refresh")}</Button>
-        </Space>
-      </Space>
+        </div>
+      </div>
 
       <Text strong style={{ display: "block", marginBottom: 4 }}>{t("admin_dashboard.channel_status_heading")}</Text>
       <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 10 }}>
         {t("admin_dashboard.channel_status_subtitle")}
       </Text>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
+      <div className={styles.channelGrid}>
         {channelStates.map((c) => {
           const clickable = c.tone !== "ok";
           const dotColor = c.tone === "ok" ? "#0f7a4d" : c.tone === "bad" ? "#b3261e" : "var(--app-muted)";
@@ -416,28 +416,24 @@ export default function Page() {
           const content = (
             <>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flex: "none" }} />
-              <span>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{CHANNEL_LABEL[c.key]}</div>
-                <div style={{ fontSize: 11.5, color: textColor, marginTop: 1 }}>{c.text}</div>
+              <span className={styles.channelBody}>
+                <div className={styles.channelName}>{CHANNEL_LABEL[c.key]}</div>
+                <div className={styles.channelText} style={{ color: textColor }}>{c.text}</div>
               </span>
-              {clickable && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--app-muted)" }}>{t("admin_dashboard.go_to_settings")}</span>}
+              {clickable && <span style={{ marginLeft: "auto", flex: "none", fontSize: 12, color: "var(--app-muted)" }}>{t("admin_dashboard.go_to_settings")}</span>}
             </>
           );
-          const style: React.CSSProperties = {
-            display: "flex", alignItems: "center", gap: 10, minWidth: 176, flex: "1 1 176px",
-            background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 10,
-            padding: "10px 14px", textDecoration: "none", color: "inherit",
-            borderStyle: clickable ? "dashed" : "solid",
-          };
+          const style: React.CSSProperties = { borderStyle: clickable ? "dashed" : "solid" };
           return clickable
-            ? <Link key={c.key} href={`/admin/settings?focus=channel&channel=${c.key}`} style={style}>{content}</Link>
-            : <div key={c.key} style={style}>{content}</div>;
+            ? <Link key={c.key} href={`/admin/settings?focus=channel&channel=${c.key}`} className={styles.channelCard} style={style}>{content}</Link>
+            : <div key={c.key} className={styles.channelCard} style={style}>{content}</div>;
         })}
       </div>
 
       <Card
         title={t("admin_dashboard.action_feed_title")}
         extra={canManageActions ? <Button size="small" icon={<ReloadOutlined />} loading={refreshingActions} onClick={() => refreshActions()}>{t("admin_dashboard.action_refresh")}</Button> : null}
+        className={styles.sectionCard}
         style={{ marginBottom: 12, borderRadius: 12 }}
       >
         <Row gutter={[8,8]} style={{ marginBottom: 12 }}>
@@ -448,6 +444,7 @@ export default function Page() {
         </Row>
         <Table
           rowKey="id" size="small" pagination={{ pageSize: 10 }} loading={actionsLoading}
+          scroll={{ x: 830 }}
           dataSource={actions}
           locale={{ emptyText: t("admin_dashboard.action_empty") }}
           columns={[
@@ -645,13 +642,13 @@ export default function Page() {
             </Card>
         </div>
         <Row gutter={[8,8]} style={{ marginTop: 8 }}>
-          <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}`} size="small" pagination={false} dataSource={inventoryAction?.slowMoving || []} columns={[
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}`} size="small" pagination={false} scroll={{ x: 560 }} dataSource={inventoryAction?.slowMoving || []} columns={[
             { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
             { title:t("admin_dashboard.col_available"), dataIndex:"available", align:"right" },
             { title:t("admin_dashboard.col_classification"), dataIndex:"classification", render:(v:string)=><Tag color={v === "DEAD" ? "red" : "orange"}>{v}</Tag> },
             { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
           ]} /></Card></Col>
-          <Col xs={24} lg={12}><Card title={t("admin_dashboard.expiring_lots_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}-${r.lotNo}`} size="small" pagination={false} dataSource={inventoryAction?.expiringLots || []} columns={[
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.expiring_lots_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}-${r.lotNo}`} size="small" pagination={false} scroll={{ x: 640 }} dataSource={inventoryAction?.expiringLots || []} columns={[
             { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
             { title:t("admin_dashboard.col_lot"), dataIndex:"lotNo" },
             { title:t("admin_dashboard.col_expiry"), dataIndex:"expiryDate" },
@@ -668,7 +665,7 @@ export default function Page() {
         <Row gutter={[8, 8]}>
           <Col xs={24} lg={16}>
             <Card title={t("admin_dashboard.sales_7d")} loading={loading} style={{ borderRadius: 10 }} className={styles.compactCard}>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, paddingTop: 4 }}>
+              <div className={styles.salesChart} style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, paddingTop: 4 }}>
                 {(d?.salesDaily || []).map((x: any) => (
                   <div key={x.day} style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
                     <div style={{ fontSize: 9.5, color: "var(--app-muted)", marginBottom: 3, minHeight: 12 }}>
@@ -693,18 +690,18 @@ export default function Page() {
           <Col xs={24} lg={8}>
             <Card title={t("admin_dashboard.business_summary")} loading={loading} style={{ borderRadius: 10, height: "100%" }} className={styles.compactCard}>
               <Space direction="vertical" size={4} style={{ width: "100%", fontSize: 12 }}>
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.total_revenue")}</Text>
-                  <Text strong style={{ fontSize: 12 }}>{baht(d?.revenueTotal)}</Text>
-                </Space>
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.customers_label")}</Text>
-                  <Text strong style={{ fontSize: 12 }}><TeamOutlined /> {Number(d?.customerCount ?? 0).toLocaleString()}</Text>
-                </Space>
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.kpi_low_stock")}</Text>
-                  <Text strong style={{ fontSize: 12 }}>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
-                </Space>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.total_revenue")}</Text>
+                  <Text strong>{baht(d?.revenueTotal)}</Text>
+                </div>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.customers_label")}</Text>
+                  <Text strong><TeamOutlined /> {Number(d?.customerCount ?? 0).toLocaleString()}</Text>
+                </div>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.kpi_low_stock")}</Text>
+                  <Text strong>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
+                </div>
                 <Space wrap size={6} style={{ marginTop: 2 }}>
                   <Link href="/admin/reports"><Button size="small">Reports</Button></Link>
                   <Link href="/admin/products"><Button size="small">Products</Button></Link>
@@ -722,6 +719,7 @@ export default function Page() {
                 rowKey="sku"
                 size="small"
                 pagination={false}
+                scroll={{ x: 440 }}
                 dataSource={d?.topProducts || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_sales") }}
                 columns={[
@@ -738,6 +736,7 @@ export default function Page() {
                 rowKey="id"
                 size="small"
                 pagination={false}
+                scroll={{ x: 460 }}
                 dataSource={d?.topCustomers || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_customers") }}
                 columns={[
@@ -779,18 +778,18 @@ export default function Page() {
                     description={<Link href="/admin/settings" style={{ fontSize: 11 }}>{t("admin_dashboard.ai_add_key_hint")}</Link>}
                   />
                 )}
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.total_tool_calls")}</Text>
-                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
-                </Space>
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.error_denied")}</Text>
-                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
-                </Space>
-                <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_dashboard.force_handoff")}</Text>
-                  <Text strong style={{ fontSize: 12 }}>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
-                </Space>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.total_tool_calls")}</Text>
+                  <Text strong>{Number(aiFailure?.totalToolCalls ?? 0).toLocaleString()}</Text>
+                </div>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.error_denied")}</Text>
+                  <Text strong>{Number(aiFailure?.errorCalls ?? 0).toLocaleString()} ({aiFailureRate}%)</Text>
+                </div>
+                <div className={styles.statRow}>
+                  <Text type="secondary">{t("admin_dashboard.force_handoff")}</Text>
+                  <Text strong>{Number(aiFailure?.handoffCount ?? 0).toLocaleString()}</Text>
+                </div>
               </Space>
             </Card>
           </Col>
@@ -800,6 +799,7 @@ export default function Page() {
                 rowKey="tool"
                 size="small"
                 pagination={false}
+                scroll={{ x: 440 }}
                 dataSource={aiFailure?.topFailingTools || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_ai_failures") }}
                 columns={[
@@ -836,6 +836,7 @@ export default function Page() {
                   rowKey="code"
                   size="small"
                   pagination={false}
+                  scroll={{ x: 600 }}
                   dataSource={d.couponSummary.topCoupons || []}
                   locale={{ emptyText: t("admin_dashboard.empty_no_coupon_usage") }}
                   expandable={{
@@ -845,6 +846,7 @@ export default function Page() {
                         rowKey="orderId"
                         size="small"
                         pagination={false}
+                        scroll={{ x: 1010 }}
                         dataSource={r.usages || []}
                         locale={{ emptyText: t("admin_dashboard.empty_no_code_usage") }}
                         columns={[
