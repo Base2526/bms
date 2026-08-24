@@ -1851,8 +1851,8 @@ export const typeDefs = /* GraphQL */ `
     customerName: String
     customerPhone: String
     qty: Int!
-    "ไม่ null = บิลนี้ซื้อเป็นเซ็ต ของถูกจองผ่านส่วนประกอบ (8.8)"
-    viaBundleSku: String
+    "ไม่ว่าง = บิลนี้ถือของผ่านเซ็ต ของถูกจองที่ส่วนประกอบ (8.8) · เป็นลิสต์เพราะบิลเดียวมีได้หลายเซ็ต"
+    viaBundleSkus: [String!]!
     locationName: String
     branchCode: String
     "ไม่ null = ของถูกจองไว้เพราะมัดจำที่ยังไม่ปิด (9.0)"

@@ -39,9 +39,10 @@ import { listVariantReservations } from "../apps/web/lib/bms/stock.ts";
 const TAG = "resv-test";
 const PLAIN = `FAKE-${TAG}-CREAM`;
 const SET = `FAKE-${TAG}-SET`;
+const SET2 = `FAKE-${TAG}-SET2`;
 const PART = `FAKE-${TAG}-PART`;
 const SIZE = "M";
-const SKUS = [PLAIN, SET, PART];
+const SKUS = [PLAIN, SET, SET2, PART];
 
 let tenantId = "";
 let locationId = "";
@@ -80,7 +81,7 @@ test("setup: one ordinary product and one set built from a component", async () 
   )).rows[0].id;
 
   for (const [sku, price, isBundle] of [
-    [PLAIN, 100, false], [PART, 60, false], [SET, 150, true],
+    [PLAIN, 100, false], [PART, 60, false], [SET, 150, true], [SET2, 90, true],
   ] as Array<[string, number, boolean]>) {
     await query(
       `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category, is_bundle)
@@ -100,13 +101,22 @@ test("setup: one ordinary product and one set built from a component", async () 
       [tenantId, locationId, sku, SIZE]
     );
   }
-  await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SET]);
-  await query(`DELETE FROM bms_product_bundle_items WHERE tenant_id = $1 AND bundle_sku = $2`, [tenantId, SET]);
   await query(
-    `INSERT INTO bms_product_bundle_items (tenant_id, bundle_sku, component_sku, component_size, qty)
-     VALUES ($1,$2,$3,$4,2)`,
-    [tenantId, SET, PART, SIZE]
+    `DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`,
+    [tenantId, [SET, SET2]]
   );
+  await query(
+    `DELETE FROM bms_product_bundle_items WHERE tenant_id = $1 AND bundle_sku = ANY($2::text[])`,
+    [tenantId, [SET, SET2]]
+  );
+  // สองเซ็ตที่ใช้ส่วนประกอบตัวเดียวกัน — เกิดจริงเวลาร้านจัดกระเช้าหลายแบบจากของชิ้นเดิม
+  for (const [bundle, qty] of [[SET, 2], [SET2, 1]] as Array<[string, number]>) {
+    await query(
+      `INSERT INTO bms_product_bundle_items (tenant_id, bundle_sku, component_sku, component_size, qty)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [tenantId, bundle, PART, SIZE, qty]
+    );
+  }
 });
 
 test("nothing reserved reads as nothing reserved, not as an unexplained hold", async () => {
@@ -139,7 +149,7 @@ test("a pending bill is named, with its quantity and channel", async () => {
   assert.equal(row.qty, 3);
   assert.equal(row.status, "PENDING");
   assert.equal(row.channel, "line");
-  assert.equal(row.viaBundleSku, null, "บิลนี้ซื้อสินค้าตัวนี้ตรง ๆ ไม่ได้ผ่านเซ็ต");
+  assert.deepEqual(row.viaBundleSkus, [], "บิลนี้ซื้อสินค้าตัวนี้ตรง ๆ ไม่ได้ผ่านเซ็ต");
   assert.ok(row.locationName || row.branchCode, "ต้องบอกสาขาได้ — การจองเป็นของสาขา ไม่ใช่ของร้านทั้งร้าน");
   assert.ok(
     !Number.isNaN(Date.parse(row.createdAt)),
@@ -227,7 +237,7 @@ test("a bill that bought a set shows up under the component it actually holds", 
   assert.equal(part.orders.length, 1);
   assert.equal(part.orders[0].orderId, res.orderId);
   assert.equal(part.orders[0].qty, 4, "จำนวนที่บิลถือคือจำนวนส่วนประกอบ ไม่ใช่จำนวนเซ็ต");
-  assert.equal(part.orders[0].viaBundleSku, SET,
+  assert.deepEqual(part.orders[0].viaBundleSkus, [SET],
     "ต้องบอกว่ามาจากเซ็ตไหน ไม่งั้นพนักงานเปิดบิลแล้วไม่เห็นสินค้าตัวนี้ในบิลเลย"
   );
 
@@ -235,6 +245,26 @@ test("a bill that bought a set shows up under the component it actually holds", 
   const set = await listVariantReservations(tenantId, SET, SIZE);
   assert.equal(set.reservedTotal, 0);
   assert.equal(set.orderCount, 0);
+});
+
+test("one bill holding a component through two sets names both", async () => {
+  const res = await createOrder({
+    tenantId, channel: "pos", customerRef: `${TAG}-two-sets`, locationId,
+    items: [{ sku: SET, size: SIZE, qty: 1 }, { sku: SET2, size: SIZE, qty: 1 }],
+  } as any);
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  created.push(res.orderId);
+
+  const part = await listVariantReservations(tenantId, PART, SIZE);
+  const row = part.orders.find((o) => o.orderId === res.orderId);
+  assert.ok(row, "บิลที่ซื้อสองเซ็ตต้องอยู่ในรายการของส่วนประกอบ");
+  assert.equal(row!.qty, 3, "เซ็ตแรกใช้ 2 + เซ็ตที่สองใช้ 1");
+  assert.deepEqual([...row!.viaBundleSkus].sort(), [SET, SET2].sort(),
+    "บอกเซ็ตเดียวคือบอกเหตุผลไม่ครบ พนักงานจะหาสินค้าตัวนี้ในบิลไม่เจออีกครึ่ง"
+  );
+
+  await cancelOrder(tenantId, created.pop()!);
 });
 
 test("stock reserved with no bill behind it is reported, not silently dropped", async () => {
@@ -299,7 +329,10 @@ test("teardown: remove every row this suite created", async () => {
   for (const id of created) await cancelOrder(tenantId, id).catch(() => {});
   await query(`DELETE FROM bms_customer_addresses WHERE tenant_id = $1 AND label = $2`, [tenantId, `FAKE ${TAG}`]);
   await dropOrdersTouching(SKUS);
-  await query(`DELETE FROM bms_product_bundle_items WHERE tenant_id = $1 AND bundle_sku = $2`, [tenantId, SET]);
+  await query(
+    `DELETE FROM bms_product_bundle_items WHERE tenant_id = $1 AND bundle_sku = ANY($2::text[])`,
+    [tenantId, [SET, SET2]]
+  );
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, SKUS]);
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, SKUS]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, SKUS]);

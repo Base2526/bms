@@ -50,7 +50,8 @@ Two details are structural rather than cosmetic:
 - **It reads the `bms_order_stock_lines` view, not `bms_order_items`.** A bundle reserves its
   components (`8.8`), so a bill that bought a gift set holds stock of a product that does not appear
   on its own lines. Reading the raw table would leave those units looking unowned; the row instead
-  carries the parent set's SKU so staff opening the bill can tell why this product is in it.
+  carries the parent sets' SKUs — plural, because one bill can hold the same component through two
+  different sets, and naming only the first tells staff to look for half of what they are holding.
 - **The part no bill explains is shown, never rounded away.** `/api/bms/reserve` can reserve without
   an order, and a reservation can be stranded by a bill that failed midway. The modal reports
   `reservedTotal`, what the bills account for, and the difference — because presenting only the
@@ -60,7 +61,16 @@ Two details are structural rather than cosmetic:
 
 The query needs `order.view`, not `product.view`: the answer contains bill ids, customer names, and
 phone numbers, so someone who only maintains the catalogue does not read the customer list through
-the products page. Verified by `scripts/variant-reservations-db-contract.test.mts` (11 tests).
+the products page. Verified by `scripts/variant-reservations-db-contract.test.mts` (12 tests).
+
+Two failure modes are deliberately visible rather than smoothed over. A failed query shows the error
+instead of an empty table, because "no bill is holding this" and "we could not find out" are
+different answers and only one of them lets a cashier sell the last piece. And the modal renders a
+result only when it belongs to the size that was clicked, so the answer for M can never appear under
+the heading for S. The query reads the `bms_order_stock_lines` view (`8.8`, repaired in `9.3`),
+`bms_locations` (`7.84`), and `bms_pos_deposits` (`9.0`); like every other feature here it assumes
+its migrations are applied, and on a database missing them the drill-down surfaces the SQLSTATE
+rather than pretending nothing is reserved.
 
 ## Product rules
 

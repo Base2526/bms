@@ -275,8 +275,12 @@ export type VariantReservationOrder = {
   customerName: string | null;
   customerPhone: string | null;
   qty: number;
-  /** ไม่ null = บิลนี้ซื้อเป็นเซ็ต แล้วของถูกจองผ่านส่วนประกอบ */
-  viaBundleSku: string | null;
+  /**
+   * ไม่ว่าง = บิลนี้ถือของผ่านเซ็ต ไม่ได้ซื้อสินค้าตัวนี้ตรง ๆ
+   * เป็นลิสต์เพราะบิลเดียวซื้อสองเซ็ตที่มีส่วนประกอบตัวเดียวกันได้ — บอกแค่เซ็ตแรก
+   * คือบอกเหตุผลไม่ครบให้คนที่กำลังเปิดบิลตามหาสินค้าตัวนี้
+   */
+  viaBundleSkus: string[];
   locationName: string | null;
   branchCode: string | null;
   /** ไม่ null = ของถูกจองไว้เพราะมัดจำที่ยังไม่ปิด (9.0) */
@@ -322,7 +326,7 @@ export async function listVariantReservations(
     customer_name: string | null;
     customer_phone: string | null;
     qty: number;
-    via_bundle_sku: string | null;
+    via_bundle_skus: string[] | null;
     location_name: string | null;
     branch_code: string | null;
     deposit_status: string | null;
@@ -337,8 +341,10 @@ export async function listVariantReservations(
             SUM(v.qty)::int AS qty,
             -- บรรทัดที่ขายเป็นเซ็ต: view แตกเป็นส่วนประกอบแล้ว จึงย้อนกลับไปหาชื่อเซ็ต
             -- ที่ bms_order_items เพื่อไม่ให้พนักงานเห็นบิลที่ "ไม่มีสินค้านี้อยู่ในบิล"
-            (array_agg(DISTINCT oi.product_sku) FILTER (WHERE oi.product_sku <> $2))[1]
-              AS via_bundle_sku,
+            COALESCE(
+              array_agg(DISTINCT oi.product_sku) FILTER (WHERE oi.product_sku <> $2),
+              '{}'
+            ) AS via_bundle_skus,
             l.name AS location_name,
             l.branch_code,
             d.status AS deposit_status,
@@ -373,7 +379,7 @@ export async function listVariantReservations(
     customerName: r.customer_name,
     customerPhone: r.customer_phone,
     qty: Number(r.qty),
-    viaBundleSku: r.via_bundle_sku,
+    viaBundleSkus: r.via_bundle_skus ?? [],
     locationName: r.location_name,
     branchCode: r.branch_code,
     depositStatus: r.deposit_status,

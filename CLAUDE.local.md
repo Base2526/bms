@@ -471,7 +471,15 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     และ **route นั้นไม่กรอง `tenant_id` เลย** (`reserveStock()` ใน `lib/bms/stock.ts` ยิงข้ามร้านได้ถ้ารู้
     SKU+size) ยังไม่ได้แก้ — ตัวเลขนี้คือทางเดียวที่ร้านจะเห็นว่ามีของถูกล็อกโดยไม่มีเจ้าของ
   · ยอดรวมคิดจากทุกบิล แต่รายการตัดที่ 200 บิล (`RESERVATION_LIST_LIMIT`) และหน้าจอบอกเมื่อตัด
-  · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (11 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
+  · **`viaBundleSkus` เป็นลิสต์ไม่ใช่ค่าเดียว** — บิลเดียวถือส่วนประกอบตัวเดียวกันผ่านสองเซ็ตได้
+    (ร้านจัดกระเช้าหลายแบบจากของชิ้นเดิม) บอกเซ็ตแรกเซ็ตเดียว = พนักงานหาของไม่เจออีกครึ่ง
+  · **query นี้พึ่ง migration `8.8`/`9.3` (view), `7.84` (`bms_locations`) และ `9.0` (`bms_pos_deposits`)**
+    — ฐานที่ยังไม่ apply จะได้ error ที่หน้าจอ (ตั้งใจ ไม่กลืน) ตามสไตล์ repo นี้ที่ไม่มี schema probe
+    ที่ไหนเลย · ถ้าลูกค้ารายไหนยังไม่มี POS ให้ apply ชุดนั้นก่อนเปิดใช้ปุ่มนี้
+  · **index ที่ query ใช้มีอยู่แล้ว ไม่ต้องเพิ่ม** — ยืนยันด้วย `EXPLAIN`:
+    `idx_bms_order_items_tenant_sku_order` ใช้ทั้งสองสาขาของ view (สาขาเซ็ตวิ่งจาก
+    `idx_bms_bundle_items_component` เข้า order_items ด้วย bundle_sku)
+  · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (12 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
     เขียนจริงลงฐาน **ห้ามรันกับ production**) — teardown ต้องลบที่อยู่ปลอม (`label = 'FAKE resv-test'`)
     ด้วย เพราะเทส `shipOrder` ต้องมีที่อยู่จัดส่งไม่งั้น shipOrder คืน false เงียบ ๆ
 - **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`

@@ -86,7 +86,7 @@ type ReservationOrder = {
   customerName: string | null;
   customerPhone: string | null;
   qty: number;
-  viaBundleSku: string | null;
+  viaBundleSkus: string[];
   locationName: string | null;
   branchCode: string | null;
   depositStatus: string | null;
@@ -173,7 +173,7 @@ const Q_RESERVATIONS = gql`
         customerName
         customerPhone
         qty
-        viaBundleSku
+        viaBundleSkus
         locationName
         branchCode
         depositStatus
@@ -1246,7 +1246,7 @@ function ProductDetail({
   });
   // การจองเปลี่ยนได้ทุกวินาที (บิลใหม่/ยกเลิก) — network-only เพื่อไม่ให้พนักงาน
   // เห็นรายชื่อบิลเก่าที่ปิดไปแล้วเวลากดดูซ้ำ
-  const [loadReservations, { data: resvData, loading: resvLoading }] = useLazyQuery(Q_RESERVATIONS, {
+  const [loadReservations, { data: resvData, loading: resvLoading, error: resvError }] = useLazyQuery(Q_RESERVATIONS, {
     fetchPolicy: "network-only",
   });
 
@@ -1272,6 +1272,7 @@ function ProductDetail({
     () => product.variants.filter((variant) => variant.low).length,
     [product.variants]
   );
+  const resvSnapshot = resvData?.bmsVariantReservations ?? null;
   const moves: Movement[] = movesData?.bmsStockMovements || [];
   const visibleMoves = historyExpanded ? moves : moves.slice(0, 4);
   const ensureMovesLoaded = useCallback(() => {
@@ -1752,8 +1753,15 @@ function ProductDetail({
         open={reservedSize != null}
         sku={product.sku}
         size={reservedSize}
+        // คำตอบของไซซ์ก่อนหน้าต้องไม่ถูกแสดงใต้หัวข้อของไซซ์ใหม่ — รายชื่อบิลผิดไซซ์
+        // ที่หน้าเคาน์เตอร์คือคำตอบผิด ไม่ใช่แค่ภาพกระพริบ
         loading={resvLoading}
-        data={resvData?.bmsVariantReservations ?? null}
+        data={
+          resvSnapshot && resvSnapshot.sku === product.sku && resvSnapshot.size === reservedSize
+            ? resvSnapshot
+            : null
+        }
+        error={resvError ? resvError.message : null}
         onClose={() => setReservedSize(null)}
       />
     </div>
@@ -1769,6 +1777,7 @@ function ReservedOrdersModal({
   size,
   loading,
   data,
+  error,
   onClose,
 }: {
   open: boolean;
@@ -1776,12 +1785,15 @@ function ReservedOrdersModal({
   size: string | null;
   loading: boolean;
   data: {
+    sku: string;
+    size: string;
     reservedTotal: number;
     attributedTotal: number;
     unattributed: number;
     orderCount: number;
     orders: ReservationOrder[];
   } | null;
+  error: string | null;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -1836,8 +1848,8 @@ function ReservedOrdersModal({
           {r.depositStatus && (
             <Tag color="gold" style={{ margin: 0 }}>{t("admin_products.resv_tag_deposit")}</Tag>
           )}
-          {r.viaBundleSku && (
-            <Tooltip title={t("admin_products.resv_tag_bundle_hint", { sku: r.viaBundleSku })}>
+          {r.viaBundleSkus.length > 0 && (
+            <Tooltip title={t("admin_products.resv_tag_bundle_hint", { sku: r.viaBundleSkus.join(", ") })}>
               <Tag color="purple" style={{ margin: 0 }}>{t("admin_products.resv_tag_bundle")}</Tag>
             </Tooltip>
           )}
@@ -1884,6 +1896,11 @@ function ReservedOrdersModal({
           </Space>
         )}
 
+        {error && (
+          // ล้มเหลวแล้วโชว์ตารางว่างคือการตอบว่า "ไม่มีใครจอง" ซึ่งผิดคนละเรื่องกับ "ยังไม่รู้"
+          <Alert type="error" showIcon message={t("admin_products.resv_error")} description={error} />
+        )}
+
         {data && data.unattributed > 0 && (
           <Alert
             type="warning"
@@ -1901,7 +1918,7 @@ function ReservedOrdersModal({
           columns={cols}
           pagination={false}
           scroll={{ x: "max-content", y: 360 }}
-          locale={{ emptyText: t("admin_products.resv_empty") }}
+          locale={{ emptyText: loading || error || !data ? " " : t("admin_products.resv_empty") }}
         />
 
         {truncated && (
