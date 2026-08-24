@@ -318,6 +318,8 @@ export const RESERVATION_HOLDING_STATUSES = ["PENDING", "PAID", "PACKING"] as co
 
 export type VariantReservationOrder = {
   orderId: string;
+  /** ไซซ์ที่บิลนี้ถืออยู่ — บิลเดียวถือหลายไซซ์ได้ จึงเป็นหนึ่งแถวต่อ (บิล × ไซซ์) */
+  size: string;
   status: string;
   channel: string;
   customerRef: string | null;
@@ -339,15 +341,24 @@ export type VariantReservationOrder = {
 
 export type VariantReservations = {
   sku: string;
-  size: string;
+  /** null = ถามรวมทุกไซซ์ของ SKU นี้ (การ์ดสรุปด้านบนของหน้า Products) */
+  size: string | null;
   /** ยอดจองจริงในตาราง (รวมทุกสาขา) — ตัวเลขเดียวกับที่หน้า Products แสดง */
   reservedTotal: number;
   /** ผลรวมที่อธิบายได้จากบิลที่ยังถือของอยู่ */
   attributedTotal: number;
-  /** reservedTotal - attributedTotal (ไม่ติดลบ) — ดู comment ด้านบน */
+  /** reservedTotal - attributedTotal (ไม่ติดลบ) — ของที่ถูกกันไว้แต่ไม่มีบิลเป็นเจ้าของ */
   unattributed: number;
-  /** จำนวนบิลที่ถือของอยู่ทั้งหมด — มากกว่า orders.length เมื่อรายการถูกตัดที่ LIST_LIMIT */
+  /**
+   * attributedTotal - reservedTotal (ไม่ติดลบ) — บิลถือรวมกัน **มากกว่า** ยอดจองในตาราง
+   * เกิดเมื่อมีคนแก้/รีเซ็ต `reserved_stock` โดยไม่ยกเลิกบิล หรือมีเส้นทางปล่อยของที่รันซ้ำ
+   * ต้องรายงานเหมือน `unattributed`: บิลเหล่านั้นจะไปล้มหรือทำให้ขายเกินตอนตัดสต็อกจริง
+   */
+  overAttributed: number;
+  /** จำนวนบิลที่ถือของอยู่ทั้งหมด (นับหัวบิล ไม่ใช่แถว) */
   orderCount: number;
+  /** จำนวนแถว (บิล × ไซซ์) ทั้งหมด — มากกว่า orders.length เมื่อรายการถูกตัดที่ LIST_LIMIT */
+  lineCount: number;
   orders: VariantReservationOrder[];
 };
 
@@ -357,18 +368,24 @@ const RESERVATION_LIST_LIMIT = 200;
 export async function listVariantReservations(
   tenantId: string,
   sku: string,
-  size: string
+  /**
+   * `null` = ทุกไซซ์ของ SKU นี้ — การ์ด "จองอยู่ N" ด้านบนเป็นยอดรวมทุกไซซ์ และเป็นตัวเลข
+   * ที่คนกดก่อนเสมอ ถ้าตอบได้แค่รายไซซ์ คนที่กดตัวรวมจะไม่ได้คำตอบ
+   */
+  size: string | null
 ): Promise<VariantReservations> {
   const inv = await query<{ reserved_total: number }>(
     `SELECT COALESCE(SUM(reserved_stock), 0)::int AS reserved_total
        FROM bms_inventory
-      WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
+      WHERE tenant_id = $1 AND product_sku = $2
+        AND ($3::text IS NULL OR size = $3)`,
     [tenantId, sku, size]
   );
   const reservedTotal = Number(inv.rows[0]?.reserved_total ?? 0);
 
   const res = await query<{
     order_id: string;
+    size: string;
     status: string;
     channel: string;
     customer_ref: string | null;
@@ -382,6 +399,7 @@ export async function listVariantReservations(
     created_at: Date | string;
   }>(
     `SELECT o.id::text AS order_id,
+            v.size,
             o.status,
             o.channel,
             o.customer_ref,
@@ -411,17 +429,18 @@ export async function listVariantReservations(
          ON d.tenant_id = o.tenant_id AND d.order_id = o.id AND d.status = 'OPEN'
       WHERE v.tenant_id = $1
         AND v.product_sku = $2
-        AND v.size = $3
+        AND ($3::text IS NULL OR v.size = $3)
         AND o.status = ANY($4::text[])
-      GROUP BY o.id, o.status, o.channel, o.customer_ref, c.name, c.phone,
+      GROUP BY o.id, v.size, o.status, o.channel, o.customer_ref, c.name, c.phone,
                l.name, l.branch_code, d.status
-      ORDER BY MIN(o.created_at) DESC
+      ORDER BY MIN(o.created_at) DESC, v.size
       LIMIT $5`,
     [tenantId, sku, size, [...RESERVATION_HOLDING_STATUSES], RESERVATION_LIST_LIMIT]
   );
 
   const orders: VariantReservationOrder[] = res.rows.map((r) => ({
     orderId: r.order_id,
+    size: r.size,
     status: r.status,
     channel: r.channel,
     customerRef: r.customer_ref,
@@ -439,16 +458,22 @@ export async function listVariantReservations(
 
   // คิดยอดรวมจากทุกบิล ไม่ใช่จากรายการที่ถูกตัดด้วย LIMIT — ไม่งั้น "อธิบายไม่ได้"
   // จะพุ่งขึ้นเองเมื่อสินค้าตัวนั้นมีบิลค้างเกินเพดาน แล้วชี้ไปที่ปัญหาที่ไม่มีอยู่
-  const agg = await query<{ attributed_total: number; order_count: number }>(
-    `SELECT COALESCE(SUM(v.qty), 0)::int      AS attributed_total,
-            COUNT(DISTINCT v.order_id)::int   AS order_count
-       FROM bms_order_stock_lines v
-       JOIN bms_orders o
-         ON o.tenant_id = v.tenant_id AND o.id = v.order_id
-      WHERE v.tenant_id = $1
-        AND v.product_sku = $2
-        AND v.size = $3
-        AND o.status = ANY($4::text[])`,
+  const agg = await query<{ attributed_total: number; order_count: number; line_count: number }>(
+    `SELECT COALESCE(SUM(g.qty), 0)::int    AS attributed_total,
+            COUNT(DISTINCT g.order_id)::int AS order_count,
+            COUNT(*)::int                   AS line_count
+       FROM (
+         -- จัดกลุ่มแบบเดียวกับรายการด้านบน: หนึ่งแถวต่อ (บิล x ไซซ์)
+         SELECT v.order_id, v.size, SUM(v.qty) AS qty
+           FROM bms_order_stock_lines v
+           JOIN bms_orders o
+             ON o.tenant_id = v.tenant_id AND o.id = v.order_id
+          WHERE v.tenant_id = $1
+            AND v.product_sku = $2
+            AND ($3::text IS NULL OR v.size = $3)
+            AND o.status = ANY($4::text[])
+          GROUP BY v.order_id, v.size
+       ) g`,
     [tenantId, sku, size, [...RESERVATION_HOLDING_STATUSES]]
   );
   const attributedTotal = Number(agg.rows[0]?.attributed_total ?? 0);
@@ -459,7 +484,9 @@ export async function listVariantReservations(
     reservedTotal,
     attributedTotal,
     unattributed: Math.max(0, reservedTotal - attributedTotal),
+    overAttributed: Math.max(0, attributedTotal - reservedTotal),
     orderCount: Number(agg.rows[0]?.order_count ?? 0),
+    lineCount: Number(agg.rows[0]?.line_count ?? 0),
     orders,
   };
 }
