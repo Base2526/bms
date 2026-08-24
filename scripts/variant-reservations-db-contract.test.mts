@@ -320,6 +320,7 @@ test("stock reserved with no bill behind it is reported, not silently dropped", 
   assert.equal(view.unattributed, 2,
     "ส่วนที่อธิบายไม่ได้ต้องโชว์ — ของ 2 ชิ้นนี้ขายไม่ได้และไม่มีบิลให้ตามแก้"
   );
+  assert.equal(view.overAttributed, 0, "ทิศทางตรงข้ามต้องเป็น 0 ไม่ใช่ค่าลบที่ปัดมา");
 
   await query(
     `UPDATE bms_inventory SET reserved_stock = reserved_stock - 2
@@ -340,6 +341,9 @@ test("unattributed never goes negative when the table lags behind the bills", as
   assert.equal(view.reservedTotal, 1);
   assert.equal(view.attributedTotal, 4);
   assert.equal(view.unattributed, 0);
+  assert.equal(view.overAttributed, 3,
+    "ทิศทางนี้ต้องรายงานด้วย — ของที่บิลถืออยู่แต่ตารางไม่รู้จักจะโชว์ว่าพร้อมขาย"
+  );
 
   await query(
     `UPDATE bms_inventory SET reserved_stock = 4

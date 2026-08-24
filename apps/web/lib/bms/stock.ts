@@ -347,8 +347,14 @@ export type VariantReservations = {
   reservedTotal: number;
   /** ผลรวมที่อธิบายได้จากบิลที่ยังถือของอยู่ */
   attributedTotal: number;
-  /** reservedTotal - attributedTotal (ไม่ติดลบ) — ดู comment ด้านบน */
+  /** reservedTotal - attributedTotal (ไม่ติดลบ) — ของที่ถูกกันไว้แต่ไม่มีบิลเป็นเจ้าของ */
   unattributed: number;
+  /**
+   * attributedTotal - reservedTotal (ไม่ติดลบ) — บิลถือรวมกัน **มากกว่า** ยอดจองในตาราง
+   * เกิดเมื่อมีคนแก้/รีเซ็ต `reserved_stock` โดยไม่ยกเลิกบิล หรือมีเส้นทางปล่อยของที่รันซ้ำ
+   * ต้องรายงานเหมือน `unattributed`: บิลเหล่านั้นจะไปล้มหรือทำให้ขายเกินตอนตัดสต็อกจริง
+   */
+  overAttributed: number;
   /** จำนวนบิลที่ถือของอยู่ทั้งหมด (นับหัวบิล ไม่ใช่แถว) */
   orderCount: number;
   /** จำนวนแถว (บิล × ไซซ์) ทั้งหมด — มากกว่า orders.length เมื่อรายการถูกตัดที่ LIST_LIMIT */
@@ -478,6 +484,7 @@ export async function listVariantReservations(
     reservedTotal,
     attributedTotal,
     unattributed: Math.max(0, reservedTotal - attributedTotal),
+    overAttributed: Math.max(0, attributedTotal - reservedTotal),
     orderCount: Number(agg.rows[0]?.order_count ?? 0),
     lineCount: Number(agg.rows[0]?.line_count ?? 0),
     orders,

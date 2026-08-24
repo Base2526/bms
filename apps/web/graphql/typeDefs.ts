@@ -1872,6 +1872,8 @@ export const typeDefs = /* GraphQL */ `
     attributedTotal: Int!
     "reservedTotal - attributedTotal — จองค้างที่ไม่มีบิลเป็นเจ้าของ"
     unattributed: Int!
+    "attributedTotal - reservedTotal — บิลถือรวมกันมากกว่ายอดจองในตาราง (ข้อมูลไม่ตรงกัน)"
+    overAttributed: Int!
     "จำนวนบิลทั้งหมด (นับหัวบิล)"
     orderCount: Int!
     "จำนวนแถว (บิล × ไซซ์) ทั้งหมด — มากกว่าความยาว orders เมื่อรายการถูกตัดที่เพดาน"

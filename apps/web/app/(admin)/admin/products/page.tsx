@@ -167,6 +167,7 @@ const Q_RESERVATIONS = gql`
       reservedTotal
       attributedTotal
       unattributed
+      overAttributed
       orderCount
       lineCount
       orders {
@@ -1836,6 +1837,7 @@ function ReservedOrdersModal({
     reservedTotal: number;
     attributedTotal: number;
     unattributed: number;
+    overAttributed: number;
     orderCount: number;
     lineCount: number;
     orders: ReservationOrder[];
@@ -1943,11 +1945,16 @@ function ReservedOrdersModal({
               {t("admin_products.resv_stat_reserved", { n: data.reservedTotal })}
             </Tag>
             <Tag style={{ margin: 0 }}>
-              {t("admin_products.resv_stat_attributed", { n: data.attributedTotal, orders: data.orderCount })}
+              {t("admin_products.resv_stat_held", { n: data.attributedTotal, orders: data.orderCount })}
             </Tag>
             {data.unattributed > 0 && (
               <Tag color="red" style={{ margin: 0 }}>
                 {t("admin_products.resv_stat_unattributed", { n: data.unattributed })}
+              </Tag>
+            )}
+            {data.overAttributed > 0 && (
+              <Tag color="red" style={{ margin: 0 }}>
+                {t("admin_products.resv_stat_over", { n: data.overAttributed })}
               </Tag>
             )}
           </Space>
@@ -1964,6 +1971,17 @@ function ReservedOrdersModal({
             showIcon
             message={t("admin_products.resv_unattributed_title", { n: data.unattributed })}
             description={t("admin_products.resv_unattributed_desc")}
+          />
+        )}
+
+        {data && data.overAttributed > 0 && (
+          // ทิศทางตรงข้ามของ unattributed และอันตรายกว่า: ยอดจองในตารางต่ำกว่าที่บิลถือ
+          // = ของที่ขายไปแล้วบนกระดาษยังโชว์ว่าพร้อมขาย ต้องเตือน ไม่ใช่ปัดให้เป็น 0 เงียบ ๆ
+          <Alert
+            type="error"
+            showIcon
+            message={t("admin_products.resv_over_title", { n: data.overAttributed })}
+            description={t("admin_products.resv_over_desc")}
           />
         )}
 

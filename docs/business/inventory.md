@@ -52,9 +52,14 @@ Two details are structural rather than cosmetic:
   on its own lines. Reading the raw table would leave those units looking unowned; the row instead
   carries the parent sets' SKUs — plural, because one bill can hold the same component through two
   different sets, and naming only the first tells staff to look for half of what they are holding.
-- **The part no bill explains is shown, never rounded away.** A reservation can be stranded by a bill
-  that failed midway, by a hold taken through `/api/bms/reserve`, or by a hand-edit to the table. The
-  modal reports
+- **Both directions of disagreement are shown, never rounded away.** A reservation can be stranded by
+  a bill that failed midway, by a hold taken through `/api/bms/reserve`, or by a hand-edit — that is
+  stock locked with nobody to chase. The opposite happens too and is worse: bills holding **more**
+  than the table has reserved, which means reserved goods still read as available and those bills
+  will fail or oversell at fulfilment. The dev database shows exactly this for `NIKE-AIR` — one unit
+  reserved against twelve claimed by ten bills, nine of them left behind by AI-eval runs that created
+  orders without reserving. Both figures are reported with their own warning; neither is clamped away
+  silently. The modal reports
   `reservedTotal`, what the bills account for, and the difference — because presenting only the
   explainable part tells the reader the list is complete when stock is still locked with no owner to
   chase. The list itself is capped at 200 bills, but the totals count every bill and the screen says
