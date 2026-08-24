@@ -32,6 +32,36 @@ logging movement.
 Generic manual adjustments still record as plain `STOCK_IN`/`STOCK_OUT`; `DAMAGED` remains a future
 reporting-specific type rather than a live schema value today.
 
+## Who is holding reserved stock
+
+`bms_inventory.reserved_stock` is a running total. Nothing in the schema records which bill owns
+which reserved unit, so the number alone cannot answer the question staff actually ask at the
+counter: a customer wants the last piece, who is holding it, and can we sell it?
+
+The reserved figure on `/admin/products` is therefore clickable. `listVariantReservations()`
+(`lib/bms/stock.ts`, exposed as the `bmsVariantReservations` query) rebuilds the answer from the
+bills that still hold stock — `PENDING`, `PAID`, and `PACKING`, since a reservation is released only
+when the order ships (`SHIP`), is cancelled, or auto-releases. Each row names the bill, its
+quantity, channel, customer, branch, and whether an open deposit (`9.0`) is the reason the goods are
+held.
+
+Two details are structural rather than cosmetic:
+
+- **It reads the `bms_order_stock_lines` view, not `bms_order_items`.** A bundle reserves its
+  components (`8.8`), so a bill that bought a gift set holds stock of a product that does not appear
+  on its own lines. Reading the raw table would leave those units looking unowned; the row instead
+  carries the parent set's SKU so staff opening the bill can tell why this product is in it.
+- **The part no bill explains is shown, never rounded away.** `/api/bms/reserve` can reserve without
+  an order, and a reservation can be stranded by a bill that failed midway. The modal reports
+  `reservedTotal`, what the bills account for, and the difference — because presenting only the
+  explainable part tells the reader the list is complete when stock is still locked with no owner to
+  chase. The list itself is capped at 200 bills, but the totals count every bill and the screen says
+  when it truncated.
+
+The query needs `order.view`, not `product.view`: the answer contains bill ids, customer names, and
+phone numbers, so someone who only maintains the catalogue does not read the customer list through
+the products page. Verified by `scripts/variant-reservations-db-contract.test.mts` (11 tests).
+
 ## Product rules
 
 - SKU must be unique; barcode should be unique.

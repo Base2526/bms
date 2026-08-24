@@ -245,7 +245,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 
 | File | Covers |
 | --- | --- |
-| `bmsProducts.ts` | products, categories, stock adjustments, bulk CSV/XLSX product import (`bmsImportProducts`) |
+| `bmsProducts.ts` | products, categories, stock adjustments, bulk CSV/XLSX product import (`bmsImportProducts`), reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
