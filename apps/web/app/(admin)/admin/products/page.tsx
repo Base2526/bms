@@ -82,6 +82,7 @@ type Product = {
 };
 type ReservationOrder = {
   orderId: string;
+  size: string;
   status: string;
   channel: string;
   customerRef: string | null;
@@ -159,7 +160,7 @@ const Q_MOVEMENTS = gql`
 `;
 
 const Q_RESERVATIONS = gql`
-  query BmsVariantReservations($sku: String!, $size: String!) {
+  query BmsVariantReservations($sku: String!, $size: String) {
     bmsVariantReservations(sku: $sku, size: $size) {
       sku
       size
@@ -167,8 +168,10 @@ const Q_RESERVATIONS = gql`
       attributedTotal
       unattributed
       orderCount
+      lineCount
       orders {
         orderId
+        size
         status
         channel
         customerRef
@@ -1259,7 +1262,8 @@ function ProductDetail({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkApplying, setBulkApplying] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  const [reservedSize, setReservedSize] = useState<string | null>(null);
+  // undefined = ปิด · null = เปิดแบบรวมทุกไซซ์ · string = เปิดไซซ์นั้น
+  const [reservedSize, setReservedSize] = useState<string | null | undefined>(undefined);
   const [bulkDraft, setBulkDraft] = useState<Record<string, number>>({});
 
   const totalAvailable = useMemo(
@@ -1280,6 +1284,11 @@ function ProductDetail({
   const ensureMovesLoaded = useCallback(() => {
     if (!movesCalled) void loadMoves({ variables: { sku: product.sku } });
   }, [loadMoves, movesCalled, product.sku]);
+
+  const openReservations = useCallback((size: string | null) => {
+    setReservedSize(size);
+    void loadReservations({ variables: { sku: product.sku, size } });
+  }, [loadReservations, product.sku]);
 
   const runAdjust = useCallback(async (size: string, delta: number, successText?: string) => {
     if (!delta) return;
@@ -1418,10 +1427,7 @@ function ProductDetail({
                 border: "1px solid #ffd591",
                 borderRadius: 6,
               }}
-              onClick={() => {
-                setReservedSize(r.size);
-                void loadReservations({ variables: { sku: product.sku, size: r.size } });
-              }}
+              onClick={() => openReservations(r.size)}
             >
               {v}
             </Button>
@@ -1548,11 +1554,28 @@ function ProductDetail({
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1, color: totalAvailable > 0 ? "#389e0d" : "#8c8c8c" }}>
                 {totalAvailable}
               </div>
-              <Tooltip title={totalReserved > 0 ? t("admin_products.stat_reserved_hint") : undefined}>
+              {totalReserved > 0 && canViewOrders ? (
+                // การ์ดนี้เป็นตัวเลขที่คนกดก่อนเสมอ (ผู้ใช้เล็งมาที่นี่สองครั้ง) — ต้องกดได้
+                // และเปิดแบบรวมทุกไซซ์ ไม่ใช่บังคับให้ไปหาไซซ์ที่ถูกจองในตารางเอง
+                <Tooltip title={t("admin_products.stat_reserved_hint_all")}>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<TeamOutlined style={{ fontSize: 12 }} />}
+                    style={{
+                      padding: 0, height: "auto", fontSize: 12, fontWeight: 600,
+                      color: "#ad6800", textDecoration: "underline",
+                    }}
+                    onClick={() => openReservations(null)}
+                  >
+                    {t("admin_products.stat_reserved", { n: totalReserved })}
+                  </Button>
+                </Tooltip>
+              ) : (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {t("admin_products.stat_reserved", { n: totalReserved })}
                 </Typography.Text>
-              </Tooltip>
+              )}
             </div>
 
             <div style={{ minWidth: 128, padding: "10px 14px", border: "1px solid #f0f0f0", borderRadius: 12, background: "#fff" }}>
@@ -1770,19 +1793,21 @@ function ProductDetail({
       </Modal>
 
       <ReservedOrdersModal
-        open={reservedSize != null}
+        open={reservedSize !== undefined}
         sku={product.sku}
         size={reservedSize}
         // คำตอบของไซซ์ก่อนหน้าต้องไม่ถูกแสดงใต้หัวข้อของไซซ์ใหม่ — รายชื่อบิลผิดไซซ์
         // ที่หน้าเคาน์เตอร์คือคำตอบผิด ไม่ใช่แค่ภาพกระพริบ
         loading={resvLoading}
         data={
-          resvSnapshot && resvSnapshot.sku === product.sku && resvSnapshot.size === reservedSize
+          resvSnapshot
+          && resvSnapshot.sku === product.sku
+          && (resvSnapshot.size ?? null) === (reservedSize ?? null)
             ? resvSnapshot
             : null
         }
         error={resvError ? resvError.message : null}
-        onClose={() => setReservedSize(null)}
+        onClose={() => setReservedSize(undefined)}
       />
     </div>
   );
@@ -1802,15 +1827,17 @@ function ReservedOrdersModal({
 }: {
   open: boolean;
   sku: string;
-  size: string | null;
+  /** null = รวมทุกไซซ์ */
+  size: string | null | undefined;
   loading: boolean;
   data: {
     sku: string;
-    size: string;
+    size: string | null;
     reservedTotal: number;
     attributedTotal: number;
     unattributed: number;
     orderCount: number;
+    lineCount: number;
     orders: ReservationOrder[];
   } | null;
   error: string | null;
@@ -1818,9 +1845,17 @@ function ReservedOrdersModal({
 }) {
   const { t } = useI18n();
   const orders = data?.orders ?? [];
-  const truncated = (data?.orderCount ?? 0) > orders.length;
+  const truncated = (data?.lineCount ?? 0) > orders.length;
 
   const cols = [
+    // ถามรวมทุกไซซ์แล้วไม่บอกไซซ์ = พนักงานไม่รู้ว่าของที่ถูกจองคือไซซ์ไหน
+    ...(size ? [] : [{
+      title: "Size",
+      dataIndex: "size",
+      key: "size",
+      width: 80,
+      render: (v: string) => <Typography.Text strong>{v}</Typography.Text>,
+    }]),
     {
       title: t("admin_products.resv_col_order"),
       key: "order",
@@ -1889,7 +1924,9 @@ function ReservedOrdersModal({
 
   return (
     <Modal
-      title={t("admin_products.resv_title", { sku, size: size ?? "" })}
+      title={size
+        ? t("admin_products.resv_title", { sku, size })
+        : t("admin_products.resv_title_all", { sku })}
       open={open}
       onCancel={onClose}
       footer={null}

@@ -148,6 +148,7 @@ test("a pending bill is named, with its quantity and channel", async () => {
   assert.equal(row.orderId, res.orderId);
   assert.equal(row.qty, 3);
   assert.equal(row.status, "PENDING");
+  assert.equal(row.size, SIZE, "แถวต้องบอกไซซ์ของตัวเอง — บิลเดียวถือหลายไซซ์ได้");
   assert.equal(row.channel, "line");
   assert.deepEqual(row.viaBundleSkus, [], "บิลนี้ซื้อสินค้าตัวนี้ตรง ๆ ไม่ได้ผ่านเซ็ต");
   assert.ok(row.locationName || row.branchCode, "ต้องบอกสาขาได้ — การจองเป็นของสาขา ไม่ใช่ของร้านทั้งร้าน");
@@ -175,6 +176,44 @@ test("the amount a bill holds follows the bill, not the size's whole reservation
   assert.equal(qtyById.get(second.orderId), 2,
     "แต่ละบิลต้องแสดงจำนวนของตัวเอง ไม่ใช่ยอดจองรวมของไซซ์"
   );
+});
+
+test("asking without a size answers for every size of the SKU", async () => {
+  // การ์ด "จองอยู่ N" ด้านบนของหน้า Products เป็นยอดรวมทุกไซซ์ และเป็นตัวเลขที่คนกดก่อน
+  // ถ้าตอบได้แค่รายไซซ์ คนที่กดตัวรวมจะไม่ได้คำตอบเลย
+  const other = "L";
+  await query(
+    `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+     VALUES ($1,$2,$3,$4,20,0)
+     ON CONFLICT (tenant_id, location_id, product_sku, size)
+       DO UPDATE SET current_stock = 20, reserved_stock = 0`,
+    [tenantId, locationId, PLAIN, other]
+  );
+  const res = await createOrder({
+    tenantId, channel: "web", customerRef: `${TAG}-other-size`, locationId,
+    items: [{ sku: PLAIN, size: other, qty: 4 }],
+  } as any);
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  created.push(res.orderId);
+
+  const perSize = await listVariantReservations(tenantId, PLAIN, SIZE);
+  assert.equal(perSize.reservedTotal, 5, "ถามไซซ์เดียวต้องไม่นับไซซ์อื่นเข้ามา");
+
+  const allSizes = await listVariantReservations(tenantId, PLAIN, null);
+  assert.equal(allSizes.size, null);
+  assert.equal(allSizes.reservedTotal, 9, "M 5 + L 4");
+  assert.equal(allSizes.attributedTotal, 9);
+  assert.equal(allSizes.unattributed, 0);
+  assert.equal(allSizes.orderCount, 3, "สองบิลของ M + หนึ่งบิลของ L");
+  assert.equal(allSizes.lineCount, 3, "หนึ่งแถวต่อ (บิล × ไซซ์)");
+  assert.deepEqual(
+    [...new Set(allSizes.orders.map((o) => o.size))].sort(),
+    [SIZE, other].sort(),
+    "ทุกแถวต้องกำกับไซซ์ ไม่งั้นดูรวมแล้วไม่รู้ว่าของที่ถูกจองคือไซซ์ไหน"
+  );
+
+  await cancelOrder(tenantId, created.pop()!);
 });
 
 test("a cancelled bill disappears instead of lingering as a fake holder", async () => {
@@ -334,6 +373,7 @@ test("teardown: remove every row this suite created", async () => {
     [tenantId, [SET, SET2]]
   );
   await query(`DELETE FROM bms_stock_movements WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, SKUS]);
+  // แถวไซซ์ L ที่เทส "รวมทุกไซซ์" สร้างขึ้น ลบพร้อมกันด้วย ANY(SKUS) ด้านล่างแล้ว
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = ANY($2::text[])`, [tenantId, SKUS]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`, [tenantId, SKUS]);
 });

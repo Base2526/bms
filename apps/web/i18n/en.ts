@@ -1693,6 +1693,8 @@ const en = {
     resv_unattributed_title: "{n} reserved units have no bill behind them",
     resv_unattributed_desc: "This can come from reservations made through the API without an order, or left behind by a bill that failed midway. Those units cannot be sold until released — ask an administrator to check bms_inventory.reserved_stock for this size.",
     stat_reserved_hint: "Total across sizes — click the Reserved number on a size to see which bills hold it",
+    resv_title_all: "Who reserved this · {sku} (all sizes)",
+    stat_reserved_hint_all: "See which bills reserved this product (all sizes)",
     resv_error: "Could not load the reservation list",
     resv_empty: "No bill is holding this size",
     resv_truncated: "Showing the first {shown} of {total} bills (the totals above count every bill)",

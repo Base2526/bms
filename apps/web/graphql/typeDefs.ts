@@ -1003,7 +1003,7 @@ export const typeDefs = /* GraphQL */ `
     bmsLowStock: [BmsLowStockItem!]!
     bmsStockMovements(sku: String!, size: String, limit: Int = 50): [BmsStockMovement!]!
     "ใครจองสินค้าไซซ์นี้อยู่ — อธิบายเลข reserved_stock ให้เป็นรายบิล (ต้องมีสิทธิ์ order.view)"
-    bmsVariantReservations(sku: String!, size: String!): BmsVariantReservations!
+    bmsVariantReservations(sku: String!, size: String): BmsVariantReservations!
 
     # ===== BMS Purchase (admin) =====
     bmsPurchaseOrders(search: String, limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
@@ -1845,6 +1845,8 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsVariantReservationOrder {
     orderId: ID!
+    "ไซซ์ที่บิลนี้ถืออยู่ — หนึ่งแถวต่อ (บิล × ไซซ์)"
+    size: String!
     status: String!
     channel: String!
     customerRef: String
@@ -1862,15 +1864,18 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsVariantReservations {
     sku: String!
-    size: String!
+    "null = ถามรวมทุกไซซ์ของ SKU นี้"
+    size: String
     "ยอดจองจริงในตาราง รวมทุกสาขา"
     reservedTotal: Int!
     "ยอดที่อธิบายได้จากบิลที่ยังถือของอยู่ (PENDING/PAID/PACKING)"
     attributedTotal: Int!
     "reservedTotal - attributedTotal — จองค้างที่ไม่มีบิลเป็นเจ้าของ"
     unattributed: Int!
-    "จำนวนบิลทั้งหมด มากกว่าความยาว orders เมื่อรายการถูกตัดที่เพดาน"
+    "จำนวนบิลทั้งหมด (นับหัวบิล)"
     orderCount: Int!
+    "จำนวนแถว (บิล × ไซซ์) ทั้งหมด — มากกว่าความยาว orders เมื่อรายการถูกตัดที่เพดาน"
+    lineCount: Int!
     orders: [BmsVariantReservationOrder!]!
   }
 

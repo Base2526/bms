@@ -117,16 +117,17 @@ export const bmsProductsResolvers = {
     },
     async bmsVariantReservations(
       _p: unknown,
-      args: { sku: string; size: string },
+      args: { sku: string; size?: string | null },
       ctx: any
     ) {
       // order.view ไม่ใช่ product.view — คำตอบมีเลขบิล ชื่อและเบอร์ลูกค้าอยู่ในนั้น
       // คนที่ดูแลแค่แคตาล็อกสินค้าไม่ควรอ่านรายชื่อลูกค้าผ่านหน้าสินค้า
       await requirePermission(ctx, "order.view");
       const sku = String(args.sku || "").trim();
-      const size = String(args.size || "").trim();
-      if (!sku || !size) {
-        throw new GraphQLError("sku และ size ต้องไม่ว่าง", {
+      // ไม่ส่ง size = ถามรวมทุกไซซ์ (การ์ดสรุปด้านบนของหน้า Products)
+      const size = args.size == null ? null : String(args.size).trim() || null;
+      if (!sku) {
+        throw new GraphQLError("sku ต้องไม่ว่าง", {
           extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
         });
       }
