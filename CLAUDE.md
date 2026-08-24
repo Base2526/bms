@@ -53,6 +53,17 @@ serials, commission, non-stock charge lines, promotions, bundles, store credit, 
 creation) not yet reflected in this summary — see [CLAUDE.local.md](CLAUDE.local.md) for the
 per-migration build/verify/production status of each.
 
+**REST surface hardening (2026-08-24, no migration)** — `middleware.ts` only guards `/admin/**`, so
+every route under `/api/**` needs its own check. Twenty-three single-tenant-era routes had none:
+`/api/bms/reserve` could reserve stock in *every* shop selling a SKU without logging in, and the
+order/payment/purchase/shipment/report/inbox routes let an anonymous caller act on the default shop.
+All now use `authorizeAdminRoute(<permission>)` with the tenant taken from the signed session; two
+webhook mocks that cannot check a session are 404 in production, the public demo endpoint gained a
+rate limit, and the two upload routes — authenticated but permission-less — now require the
+permission the step that consumes the file needs. `/admin/products` also gained a drill-down that answers "who is holding this reserved
+stock". Details: [business/inventory.md](docs/business/inventory.md) and
+[architecture/api.md](docs/architecture/api.md).
+
 Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-08).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
@@ -84,6 +95,11 @@ look done in code but need their migration first.
 - High-impact records use revision history for before/after snapshots; the audit log remains the
   source for who/when/action. Sensitive writes record their audit row **inside the same transaction**
   as the money or stock they move, so a committed movement can never lack one.
+- **A REST route is not protected by being under `/api`.** `middleware.ts` guards `/admin/**` only.
+  Every `/api/bms/*` route authenticates itself — `authorizeAdminRoute(permission)` for staff routes,
+  a verified signature for webhooks, a job token for cron — and **derives the tenant server-side**.
+  A route that is public by design needs a rate limit, because a public endpoint that calls a model
+  spends the operator's money. Enforced by `scripts/inventory-tenant-scope-contract.test.mts`.
 - **Counter POS (`/api/pos/*`) and branch inventory ops (`/api/bms/inventory/*`) are REST-only** —
   a register authenticates with a device token + cashier PIN, not a GraphQL session. They are
   absent from the tool catalogue today because no wrapper registers them. A future staff tool does

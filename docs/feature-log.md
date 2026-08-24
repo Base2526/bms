@@ -10,6 +10,33 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+**REST surface hardening + reserved-stock attribution (2026-08-24)** — ✅ implemented, no migration.
+`middleware.ts` matches `/api/:path*` but only guards paths under `/admin`, so every REST route needs
+its own check; twenty-four written for a single-tenant BMS had none. `/api/bms/reserve` was the worst:
+`reserveStock()` filtered on `product_sku` + `size` with no `tenant_id` and no `location_id`, so one
+unauthenticated call reserved stock in every shop and branch stocking that SKU (`NIKE-AIR/XL` exists
+in two dev tenants) and wrote no stock movement, against this module's own rule. It now runs in
+`beginTenantTx`, reserves one branch, writes a `RESERVE` movement in the same transaction, and takes
+its tenant from the session. The order/payment/purchase/shipment/report/inbox routes moved to
+`authorizeAdminRoute(<permission>)` using the same permission as the equivalent resolver; eight routes
+that had hand-inlined the session + acting-tenant + permission sequence now share that helper (which
+grew a `ctx` return and a `null` permission for the playground); the two upload endpoints stopped
+accepting "any logged-in user" and require `product.edit`/`inbox.reply`. The single-tenant webhook
+mocks return 404 in production — they ran the AI pipeline for anyone who posted — and the public demo
+endpoint gained a 20/min/IP ceiling.
+
+The same change answers a question the products page could not: `reserved_stock` is a running total
+and nothing records which bill owns which unit, so clicking the reserved figure now lists the bills
+holding it (`listVariantReservations()`, `bmsVariantReservations`, gated on `order.view` because the
+answer carries customer contact). It counts `PENDING`/`PAID`/`PACKING` only, reads the
+`bms_order_stock_lines` view so a bundle's components are attributed to the bill that bought the set,
+and reports the part no bill explains rather than rounding it away. Also fixed in passing: four i18n
+keys filed under the wrong namespace rendered as raw key strings on screen, and the wholesale form
+forced `3.0000`/`600.00` into boxes where the shop had typed `3` and `600`. Contracts:
+`scripts/variant-reservations-db-contract.test.mts`, `scripts/reserve-stock-db-contract.test.mts`,
+`scripts/inventory-tenant-scope-contract.test.mts`, `scripts/i18n-keys-contract.test.mts` — the last
+two are static scans that fail on the *class* of mistake, since both classes had already recurred.
+
 **Data-integrity edge cases (2026-08-23)** — ✅ implemented in migration `9.15` and shared services.
 Order/payment lifecycle events now retain their own timestamps and report on Bangkok business days;
 payment confirmation cannot commit without the locked order moving `PENDING -> PAID`; POS partial

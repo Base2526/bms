@@ -62,6 +62,16 @@ operators must resolve those records before retrying the migration.
 
 ## Notable schema details
 
+**`bms_inventory.reserved_stock` has no ownership ledger** — the table is keyed by
+`(tenant_id, location_id, product_sku, size)` and `reserved_stock` is a running total that
+`createOrder()` increments and `SHIP`/cancel decrement. No column or table says which bill owns which
+reserved unit, which is why "who is holding this piece" has to be rebuilt from the bills still in
+`PENDING`/`PAID`/`PACKING` (via the `bms_order_stock_lines` view, so a bundle's components are
+attributed to the bill that bought the set) and why the part no bill explains must be reported rather
+than hidden. Any statement against this table that omits `tenant_id` silently affects every shop
+stocking the same SKU — `scripts/inventory-tenant-scope-contract.test.mts` fails on one. Detail:
+[../business/inventory.md](../business/inventory.md#who-is-holding-reserved-stock).
+
 **Size-specific wholesale tiers (`9.20`)** — `bms_product_price_tiers.size` targets a
 `PER_VARIANT_FIXED` rule to one inventory size. `NULL` preserves legacy rows as a shared fixed price
 for all sizes, while `CROSS_VARIANT_PERCENT` requires `NULL` because it qualifies from the SKU-wide

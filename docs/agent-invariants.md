@@ -17,6 +17,8 @@ whichever is wrong, in the same change.
 - [POS and tax](#pos-and-tax)
 - [Membership and loyalty points](#membership-and-loyalty-points)
 - [Branch inventory operations](#branch-inventory-operations)
+- [REST route authentication and tenancy](#rest-route-authentication-and-tenancy)
+- [Reserved stock: who is holding it](#reserved-stock-who-is-holding-it)
 - [AI provider selection, BYOK, and health](#ai-provider-selection-byok-and-health)
 - [Follow-up automation scheduler](#follow-up-automation-scheduler)
 - [Redis usage (pub/sub, cache, sessions, job runs, request metrics)](#redis-usage-pubsub-cache-sessions-job-runs-request-metrics)
@@ -382,6 +384,95 @@ audit, and rollout detail: [business/inventory.md](business/inventory.md#multipl
 - **Daily numbers use one database clock.** `TRF-`/`CNT-YYMMDD-NNN` creation goes through
   `insertWithDailyDocNo()` inside an open transaction; do not combine an app-clock date with a
   database-clock counter. Apply `7.98` atomically (`psql -1`) because the migration is not self-wrapped.
+
+## REST route authentication and tenancy
+
+`apps/web/middleware.ts` matches `/api/:path*`, but its body only guards paths starting with
+`/admin`; every other request falls into a branch that returns `NextResponse.next()`. **A REST route
+under `/api/**` is therefore reachable by anyone unless it checks for itself.** Nothing in the build,
+the type checker, or a code review makes that visible — a handler simply works, and works for
+strangers too.
+
+Twenty-three routes written when BMS served one shop had no check at all and read the tenant from the
+`DEFAULT_TENANT_ID` constant, plus two webhook mocks that cannot have one. What that allowed, before
+2026-08-24:
+
+| Route | What an anonymous caller could do |
+| --- | --- |
+| `POST /api/bms/reserve` | Reserve stock. `reserveStock()` filtered on `product_sku` + `size` only, so the `UPDATE` hit that product in **every tenant and branch** that stocked it — verified in the dev database, where `NIKE-AIR/XL` exists in two tenants |
+| `POST /api/bms/order/[id]/pay` · `/complete` | Mark a bill paid or complete |
+| `POST /api/bms/purchase/[id]/receive` | Book goods into the warehouse — stock out of nowhere |
+| `POST /api/bms/payment/[id]/verify` | Pass a payment slip |
+| `POST /api/bms/shipment/[id]/status` | Move a shipment's state |
+| `POST /api/bms/inbox/[id]/reply` | Send a message to a customer as the shop |
+| `GET /api/bms/reports/{sales,inventory,top-products}` | Read the shop's sales and stock |
+| `POST /api/bms/{line,tiktok}/webhook` (no `[tenantId]`) | Run the AI pipeline and write fake customer chat into the default shop's inbox — the model spend lands on the operator |
+
+The rules that follow from it:
+
+- **Use `authorizeAdminRoute(permission)`** (`lib/bms/adminRouteAuth.ts`). It verifies the signed
+  admin session, applies the drill-down cookie *only* when that cookie was signed for this admin,
+  checks RBAC, and returns `{ tenantId, adminId, admin, ctx }`. `ctx` is the same shape resolvers pass
+  to `requirePermission()`/`audit()`, so a service like `generateReport()` that takes a ctx needs no
+  hand-built object. The helper exists because this sequence was copy-pasted into eight routes, and
+  each copy was a chance to drop the acting-tenant check that keeps one shop's admin out of another's
+  data.
+- **The tenant never comes from the request body.** Accepting it rebuilds the original hole behind a
+  login. A *branch* may come from the body — one shop legitimately has several — because an id
+  belonging to another shop matches no row and returns `NOT_FOUND`.
+- **Mirror the permission of the GraphQL resolver that performs the same action** (`order.pay`,
+  `order.ship`, `purchase.receive`, `payment.confirm`, `shipping.update`, `report.view`,
+  `inbox.reply`). Two different rules for one action is a bug waiting for whichever path is looser.
+- **"Logged in" is not a permission.** The two upload routes used a guard that only proved a session
+  existed; they now require the permission the step that consumes the file needs (`product.edit`,
+  `inbox.reply`).
+- **A webhook cannot check a session** — it verifies a signature fail-closed against the tenant's
+  `channel_secret`. The single-tenant mocks that predate per-tenant webhooks return 404 when
+  `NODE_ENV=production`.
+- **Public by design still means bounded.** `/api/bms/demo-chat` and the web-widget webhook are open
+  on purpose, and both carry a `rateLimit()` ceiling. An open endpoint that calls a model is an open
+  invoice.
+- `onboarding/sample-data` deliberately gates on the user's **role** read from the database rather
+  than a permission. Moving it to the helper would change who is allowed in, so it stays as it is.
+
+`scripts/inventory-tenant-scope-contract.test.mts` walks every `route.ts` under `app/api/bms` and
+fails when one carries no guard from an explicit allowlist, and requires a `rateLimit()` call on the
+two files marked public by design. The allowlist deliberately excludes `requireAdminOrInternal` —
+it proves a session and checks no permission.
+
+## Reserved stock: who is holding it
+
+`bms_inventory.reserved_stock` is a running total. **No table records which bill owns which reserved
+unit**, so the number cannot, by itself, answer the question staff actually ask at the counter: a
+customer wants the last piece, who is holding it, and can we sell it? `/admin/orders` cannot even
+search by SKU, so before `listVariantReservations()` (`lib/bms/stock.ts`, GraphQL
+`bmsVariantReservations`) the only answer was a hand-written query.
+
+The answer is rebuilt from the bills that still hold stock, and three details are load-bearing:
+
+- **Statuses are `PENDING`, `PAID`, `PACKING`.** A reservation is released at `SHIP` (which deducts
+  both current and reserved), at cancel, and by auto-release. Including a shipped or cancelled bill
+  invents a holder for units that are free to sell, and the cashier refuses a sale they could have
+  made.
+- **Read the `bms_order_stock_lines` view, never `bms_order_items`.** A bundle reserves its
+  components (`8.8`), so a bill that bought a gift set holds stock of a product that does not appear
+  on its own lines. The raw table leaves those units looking unowned. The row carries the parent
+  sets' SKUs — plural, because one bill can hold the same component through two different sets, and
+  naming only the first sends staff looking for half of what the bill holds.
+- **Report the part no bill explains.** `/api/bms/reserve` can take a hold with no order behind it, a
+  bill that failed midway can strand one, and a hand-edit can too. Showing only the explainable part
+  tells the reader the list is complete while stock stays locked with no owner to chase. The
+  difference is clamped at zero: a negative reads as "spare stock available", which is worse than
+  reporting nothing.
+
+Two presentation rules come from the same principle. A failed query shows the error rather than an
+empty table, because "nobody is holding it" and "we could not find out" lead to opposite decisions.
+And a result renders only when its `sku`/`size` match what was clicked, so the answer for one size
+never appears under another's heading. The query needs `order.view`, not `product.view` — it returns
+bill ids, customer names, and phone numbers.
+
+Covered by `scripts/variant-reservations-db-contract.test.mts` (12) and
+`scripts/reserve-stock-db-contract.test.mts` (9).
 
 ## AI provider selection, BYOK, and health
 
