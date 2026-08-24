@@ -529,6 +529,20 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
     (ล็อกอินแล้วแต่ **ยังไม่เช็ค permission** — ความเสี่ยงต่ำเพราะแค่เก็บไฟล์) · webhook ต่อร้าน
     ทุกช่องทาง verify ลายเซ็น fail-closed · job/cron ใช้ `CRON_SECRET`/`BMS_JOB_TOKEN` ·
     `checkout/*` ใช้ token ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  · **ตามเก็บต่อจนหมด 2026-08-24 (รอบเดียวกัน)**:
+    - `products/upload`, `inbox/upload` เดิม gate ด้วย `requireAdminOrInternal()` = "ล็อกอินแล้วผ่าน"
+      ไม่ดูสิทธิ์เลย → เปลี่ยนเป็น `product.edit` / `inbox.reply` ให้ตรงกับขั้นที่เอาไฟล์ไปใช้จริง
+      · **`requireAdminOrInternal` ไม่มี route ไหนใช้แล้ว** และถูกถอดออกจาก allowlist ของเทสด้วย
+      (ยังเหลืออยู่ใน `lib/dev-guards.ts` + README ของ fake seeder เท่านั้น)
+    - route ที่เขียน `verifyAdminSession` + acting-tenant + `requirePermission` ด้วยมือ 8 ตัว
+      (`payment/[id]/{confirm,refund,reject}`, `reports/{generate,download,pos-returns,
+      pos-return-audit}`, `chat`) ย้ายมาใช้ `authorizeAdminRoute()` แล้ว — ลดโค้ดซ้ำ ~79 บรรทัด
+      และตัดโอกาสที่บางตัวจะลืมส่วน acting-tenant ตอนแก้ครั้งถัดไป
+    - **`authorizeAdminRoute()` คืน `admin` + `ctx` เพิ่ม** (`ctx` = รูปเดียวกับที่ resolver ส่งให้
+      `requirePermission()`/`audit()`) เพราะ `generateReport()` รับ ctx · และรับ `permission = null`
+      ได้สำหรับ route ที่ต้องการแค่ "ล็อกอินแล้ว" (playground `chat` — ไม่มีสิทธิ์ตรงตัวใน catalog)
+    - **`onboarding/sample-data` จงใจไม่แตะ** — มัน gate ด้วย *role* (`Administrator`/`Manager`
+      อ่านจาก DB) ไม่ใช่ permission ย้ายมาใช้ helper = เปลี่ยนความหมายการอนุญาต
   · **กันย้อนกลับ**: `scripts/inventory-tenant-scope-contract.test.mts` เพิ่มเทสที่ 2 — สแกน route ทุกตัว
     ใต้ `app/api/bms` ว่ามีการ์ดอย่างน้อยหนึ่งอย่างจาก allowlist และ route ที่ "เปิดสาธารณะโดยตั้งใจ"
     ต้องมี `rateLimit()` · route ใหม่ที่ลืมการ์ดจะทำให้เทสแดงทันที (ก่อนหน้านี้ 26 ไฟล์หลุดพร้อมกัน

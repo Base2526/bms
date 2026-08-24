@@ -10,36 +10,19 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { cookies } from "next/headers";
 import { Readable } from "stream";
-import { verifyAdminSession } from "@/lib/auth/server";
-import { ACT_TENANT_COOKIE, verifyActTenant } from "@/lib/auth/token";
-import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
-import { requirePermission } from "@/lib/bms/permissions";
 import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
 import { query } from "@/lib/db";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest, { params }: { params: { id: string } }) {
-  const admin = verifyAdminSession();
-  if (!admin) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
-  const tenantId =
-    acting?.actTenantId && String(acting.by) === String(admin.id)
-      ? acting.actTenantId
-      : admin.tenant_id || DEFAULT_TENANT_ID;
-
-  const ctx = { scope: "admin", admin: { id: admin.id, role: admin.role, tenant_id: tenantId } };
-  try {
-    await requirePermission(ctx, "report.view");
-  } catch {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const auth = await authorizeAdminRoute("report.view");
+  if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
   const fileId = Number(params.id);
   if (!fileId || Number.isNaN(fileId)) {
@@ -48,7 +31,7 @@ async function handleGET(req: NextRequest, { params }: { params: { id: string } 
 
   // ต้องมีแถวใน bms_generated_reports ที่ tenant นี้เป็นเจ้าของ file_id นี้จริง — กัน enumerate
   // sequential file id ข้าม tenant (ต่างจาก /api/files/[id] ที่ไม่เช็คเลย)
-  const owned = await findGeneratedReportByFileId(tenantId, fileId);
+  const owned = await findGeneratedReportByFileId(auth.tenantId, fileId);
   if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { rows } = await query<{ filename: string; original_name: string | null; mimetype: string | null; relpath: string; deleted_at: string | null }>(

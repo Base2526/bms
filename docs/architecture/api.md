@@ -180,6 +180,18 @@ resolver (`order.pay`, `purchase.receive`, `report.view`, …) and take the tena
 the drill-down cookie, so an admin of one shop can no longer act on another's data through them.
 `scripts/inventory-tenant-scope-contract.test.mts` fails if any route under `/api/bms` has no guard.
 
+The eight routes that already authenticated by hand — payment confirm/refund/reject, report
+generate/download/pos-returns/pos-return-audit, and the AI playground `chat` — now call the same
+helper instead of repeating the session + acting-tenant + permission dance locally. That repetition
+was the reason `authorizeAdminRoute()` exists, and each copy was a place to forget the drill-down
+check that keeps one shop's admin out of another's data. The helper also returns the `ctx` object that
+services like `generateReport()` expect, and accepts `null` for a route that needs a session but has
+no matching permission in the catalog. `onboarding/sample-data` is deliberately left alone: it gates
+on *role* read from the database rather than on a permission, so moving it would change who is
+allowed in. The two upload endpoints (`products/upload`, `inbox/upload`) previously accepted any
+logged-in user — they now require `product.edit` and `inbox.reply`, the permissions the steps that
+consume the file already need.
+
 Two single-tenant webhook mocks (`/api/bms/line/webhook` and `/api/bms/tiktok/webhook`, the versions
 without a `[tenantId]`) cannot be fixed this way — a webhook has no session to check. They ran the AI
 pipeline and wrote into the default shop's inbox for anyone who posted, so they now return 404 when
