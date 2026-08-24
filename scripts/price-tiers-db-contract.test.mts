@@ -165,6 +165,12 @@ test("per-size BASE price is identical in POS and committed order", async () => 
   const crossSizeOrder = await sell([{ size: SIZE_S, qty: 4 }, { size: SIZE_L, qty: 6 }]);
   assert.equal(crossSizeOrder.subtotal, 1_392,
     "รวมครบ 10 ชิ้นต้องลด 20% จากราคาไซซ์ S ฿120 และ L ฿210 แยกกัน");
+  const crossSizeQuote = await generateQuotation(tenantId, [
+    { sku: SKU, size: SIZE_S, qty: 4 },
+    { sku: SKU, size: SIZE_L, qty: 6 },
+  ]);
+  assert.equal(crossSizeQuote.subtotal, crossSizeOrder.subtotal,
+    "ใบเสนอราคาจำนวนเดียวกันต้องใช้ราคาส่งตรงกับออร์เดอร์");
 
   await query(`DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   for (const [minQty, price] of [[3, 90], [10, 80], [50, 70]]) {
@@ -298,7 +304,7 @@ test("saving a product replaces its steps, and omitting the field leaves them al
       minQty: 10,
       scope: "CROSS_VARIANT_PERCENT",
       unitPrice: null,
-      discountPct: 20,
+      discountPct: 13.3333,
     }],
   });
   const cross = await query<{ scope: string; unit_price: string | null; discount_pct: string | null }>(
@@ -309,8 +315,19 @@ test("saving a product replaces its steps, and omitting the field leaves them al
   assert.deepEqual(cross.rows[0], {
     scope: "CROSS_VARIANT_PERCENT",
     unit_price: null,
-    discount_pct: "20.00",
-  }, "ฟอร์มรวมข้ามไซซ์ต้องเก็บเปอร์เซ็นต์โดยไม่สร้างราคาคงที่ปลอม");
+    discount_pct: "13.3333",
+  }, "ฟอร์มรวมข้ามไซซ์ต้องเก็บเปอร์เซ็นต์ละเอียดพอสำหรับคำนวณราคาต่อไซซ์");
+
+  await assert.rejects(
+    () => query(
+      `INSERT INTO bms_product_price_tiers
+         (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct)
+       VALUES ($1,$2,999,NULL,'CROSS_VARIANT_PERCENT',NULL)`,
+      [tenantId, SKU]
+    ),
+    /bms_product_price_tiers_value_check/,
+    "DB ต้องไม่รับ cross-size tier ที่ไม่มีเปอร์เซ็นต์"
+  );
 
   // ส่งอาเรย์ว่าง = ตั้งใจลบทุกขั้น (ลบขั้นสุดท้ายบนจอแล้วกดบันทึก)
   await upsertProduct(tenantId, { ...base, price_tiers: [] });
@@ -320,19 +337,24 @@ test("saving a product replaces its steps, and omitting the field leaves them al
   );
   assert.equal(Number(cleared.rows[0].n), 0);
 
-  // ขั้นที่ไม่ถูกต้องถูกคัดทิ้ง ไม่ใช่ทำให้การบันทึกทั้งใบล้ม
-  await upsertProduct(tenantId, {
+  await upsertProduct(tenantId, { ...base, price_tiers: [{ minQty: 4, unitPrice: 88 }] });
+  await assert.rejects(() => upsertProduct(tenantId, {
     ...base,
-    price_tiers: [{ minQty: 1, unitPrice: 10 }, { minQty: 4, unitPrice: 88 }, { minQty: 4, unitPrice: 77 }],
-  });
-  const filtered = await query<{ min_qty: number; unit_price: string }>(
+    price_tiers: [{ minQty: 4, scope: "PER_VARIANT_FIXED", unitPrice: null }],
+  }), /ห้ามว่าง/, "ราคาคงที่ที่ส่ง null ต้องไม่ถูกแปลงเป็นราคาฟรี");
+  await assert.rejects(() => upsertProduct(tenantId, {
+    ...base,
+    price_tiers: [{ minQty: 1, unitPrice: 10 }, { minQty: 4, unitPrice: 77 }],
+  }), /ขั้นต่ำราคาส่ง/, "ข้อมูลผิดรูปต้องแจ้ง error ไม่ใช่ลบหรือข้ามแถวเงียบ ๆ");
+  const preserved = await query<{ min_qty: number; unit_price: string }>(
     `SELECT min_qty, unit_price FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
     [tenantId, SKU]
   );
-  assert.equal(filtered.rowCount, 1, "ขั้น 1 ถูกคัดทิ้ง และขั้นซ้ำเก็บอันแรก");
-  assert.equal(Number(filtered.rows[0].min_qty), 4);
-  assert.equal(Number(filtered.rows[0].unit_price), 88);
+  assert.equal(preserved.rowCount, 1);
+  assert.equal(Number(preserved.rows[0].min_qty), 4);
+  assert.equal(Number(preserved.rows[0].unit_price), 88,
+    "บันทึกที่ validation ไม่ผ่านต้องคงชุดราคาส่งเดิมทั้งหมด");
 });
 
 test("teardown: remove every row this suite created", async () => {

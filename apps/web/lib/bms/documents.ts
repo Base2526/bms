@@ -11,6 +11,8 @@ import { getStoreProfile } from "./storeProfile";
 import { quoteShipping } from "./shippingRates";
 import { getTenantName } from "./platform";
 import { getVariantBasePrice } from "./productPacks";
+import { priceLinesByQty } from "./pricing";
+import { listPriceTiersForSkus } from "./products";
 
 export type DocLine = { sku: string; name: string; size: string; qty: number; unitPrice: number; amount: number };
 export type StoreSummary = { name: string | null; address: string | null; phone: string | null; taxId: string | null };
@@ -91,7 +93,13 @@ export async function generateQuotation(
   items: Array<{ sku: string; size: string; qty: number }>,
   customerRef?: string | null
 ): Promise<BusinessDoc> {
-  const lines: DocLine[] = [];
+  const candidates: Array<{
+    sku: string;
+    name: string;
+    size: string;
+    qty: number;
+    basePrice: number;
+  }> = [];
   for (const it of items) {
     const p = await query<{ name: string }>(
       `SELECT p.name FROM bms_products p
@@ -105,9 +113,28 @@ export async function generateQuotation(
     if (p.rowCount === 0) continue; // ข้ามสินค้าที่ไม่พบ/ปิดขาย
     const unitPrice = await getVariantBasePrice(tenantId, it.sku, it.size);
     if (unitPrice == null) continue;
-    lines.push({ sku: it.sku, name: p.rows[0].name, size: it.size, qty: it.qty, unitPrice, amount: unitPrice * it.qty });
+    candidates.push({
+      sku: it.sku,
+      name: p.rows[0].name,
+      size: it.size,
+      qty: it.qty,
+      basePrice: unitPrice,
+    });
   }
-  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
+  const skus = Array.from(new Set(candidates.map((line) => line.sku)));
+  const basePriceByVariant = new Map(
+    candidates.map((line) => [`${line.sku}\u0000${line.size}`, line.basePrice])
+  );
+  const tiersBySku = await listPriceTiersForSkus(tenantId, skus);
+  const lines: DocLine[] = priceLinesByQty(candidates, basePriceByVariant, tiersBySku).map((line) => ({
+    sku: line.sku,
+    name: line.name,
+    size: line.size,
+    qty: line.qty,
+    unitPrice: line.unitPrice,
+    amount: Math.round(line.unitPrice * line.qty * 100) / 100,
+  }));
+  const subtotal = Math.round(lines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100;
   // ใบเสนอราคายังไม่รู้ปลายทาง → ได้เรตเหมา/เรตที่คิดได้จากน้ำหนักเท่านั้น
   const est = await quoteShipping({
     tenantId,
@@ -115,7 +142,7 @@ export async function generateQuotation(
     items: lines.map((l) => ({ sku: l.sku, qty: l.qty })),
   });
   const shippingFee = est.fee;
-  const total = subtotal + (shippingFee ?? 0);
+  const total = Math.round((subtotal + (shippingFee ?? 0)) * 100) / 100;
 
   return {
     type: "QUOTATION",
@@ -130,6 +157,6 @@ export async function generateQuotation(
     couponCode: null,
     shippingFee,
     total,
-    note: "ใบเสนอราคา (ยังไม่ผูกออร์เดอร์/ยังไม่จองสต็อก) ราคาปัจจุบัน อาจเปลี่ยนได้",
+    note: "ใบเสนอราคา (ยังไม่ผูกออร์เดอร์/ยังไม่จองสต็อก) ใช้ราคาปัจจุบันและราคาส่งตามจำนวน อาจเปลี่ยนได้",
   };
 }
