@@ -29,10 +29,18 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
-import { addToDeposit, closeDeposit, getDepositByOrder, listDeposits, takeDeposit } from "../apps/web/lib/bms/deposits.ts";
+import {
+  addToDeposit,
+  closeDeposit,
+  getDepositByOrder,
+  listDepositCandidateOrders,
+  listDeposits,
+  takeDeposit,
+} from "../apps/web/lib/bms/deposits.ts";
 import {
   issuePosDeviceToken,
   openPosShift,
+  recordPosSale,
   setCashierPin,
   settleDepositSale,
   upsertPosDevice,
@@ -111,9 +119,49 @@ test("setup: a ฿1,000 product, a register, an open shift", async () => {
   if (opened.status === "OPENED" || opened.status === "ALREADY_OPEN") shiftId = opened.shift.id;
 });
 
+test("a walk-in POS cart creates its own order and first deposit idempotently", async () => {
+  const before = await stock();
+  const idempotencyKey = key("cart-take");
+  const input = {
+    tenantId,
+    deviceId,
+    shiftId,
+    cashierUserId: cashierId,
+    idempotencyKey,
+    mode: "DEPOSIT" as const,
+    lines: [{ sku: SKU, size: SIZE, packQty: 2 }],
+    payments: [{ method: "CASH" as const, amount: 500, cashTendered: 500 }],
+  };
+
+  const first = await recordPosSale(input);
+  assert.equal(first.status, "DEPOSIT_TAKEN", JSON.stringify(first));
+  if (first.status !== "DEPOSIT_TAKEN") return;
+  orders.push(first.orderId);
+  assert.equal(first.total, 2000);
+  assert.equal(first.deposit.depositPaid, 500);
+  assert.equal(first.deposit.balanceDue, 1500);
+  assert.equal(first.replayed, false);
+
+  const replay = await recordPosSale(input);
+  assert.equal(replay.status, "DEPOSIT_TAKEN", JSON.stringify(replay));
+  if (replay.status === "DEPOSIT_TAKEN") {
+    assert.equal(replay.orderId, first.orderId);
+    assert.equal(replay.deposit.depositPaid, 500, "retry must not collect the first deposit twice");
+    assert.equal(replay.replayed, true);
+  }
+
+  const after = await stock();
+  assert.equal(after.current, before.current, "taking a deposit does not deduct stock");
+  assert.equal(after.reserved, before.reserved + 2, "the POS-created order reserves its cart");
+});
+
 test("taking a deposit reserves the goods without deducting them", async () => {
   const before = await stock();
   const order = await newOrder(5);   // 5,000
+  assert.ok(
+    (await listDepositCandidateOrders(tenantId, locationId)).some((candidate) => candidate.orderId === order.orderId),
+    "บิล PENDING ของสาขาที่ยังไม่รับเงินต้องอยู่ในรายการให้ POS เลือก"
+  );
 
   const res = await takeDeposit({
     tenantId, orderId: order.orderId, amount: 1000, method: "CASH",
@@ -123,6 +171,11 @@ test("taking a deposit reserves the goods without deducting them", async () => {
   assert.equal(res.status, "TAKEN", JSON.stringify(res));
   if (res.status !== "TAKEN") return;
   mainDepositOrderId = order.orderId;
+  assert.equal(
+    (await listDepositCandidateOrders(tenantId, locationId)).some((candidate) => candidate.orderId === order.orderId),
+    false,
+    "รับมัดจำแล้วต้องย้ายออกจากรายการรับครั้งแรก"
+  );
   assert.equal(res.deposit.totalAmount, 5000);
   assert.equal(res.deposit.depositPaid, 1000);
   assert.equal(res.deposit.balanceDue, 4000);

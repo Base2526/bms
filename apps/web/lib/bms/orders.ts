@@ -463,9 +463,9 @@ export async function createOrder(
 
     const tierRows = await client.query<{
       product_sku: string; min_qty: number; unit_price: string | null;
-      scope: PriceTier["scope"]; discount_pct: string | null;
+      scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
     }>(
-      `SELECT product_sku, min_qty, unit_price, scope, discount_pct
+      `SELECT product_sku, min_qty, unit_price, scope, discount_pct, size
          FROM bms_product_price_tiers
         WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
         ORDER BY product_sku, min_qty`,
@@ -477,6 +477,7 @@ export async function createOrder(
       list.push({
         minQty: Number(row.min_qty),
         scope: row.scope,
+        size: row.size,
         unitPrice: row.unit_price == null ? null : Number(row.unit_price),
         discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
       });
@@ -613,7 +614,8 @@ export async function createOrder(
             listPrice,
             tiersBySku.get(it.sku) ?? [],
             qtyByVariant.get(key) ?? it.qty,
-            qtyBySku.get(it.sku) ?? it.qty
+            qtyBySku.get(it.sku) ?? it.qty,
+            it.size
           );
       // ราคาต่อหน่วยขาย (กล่อง) ถูกกว่าราคาต่อหน่วยฐาน × จำนวน เสมอ → ยอดบิลต้องคิดจาก
       // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม

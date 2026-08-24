@@ -72,6 +72,7 @@ type Product = {
   priceTiers: Array<{
     minQty: number;
     scope: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    size: string | null;
     unitPrice: number | null;
     discountPct: number | null;
   }>;
@@ -108,7 +109,7 @@ const Q_PRODUCTS = gql`
         category
         brand
         vatCategory
-        priceTiers { minQty scope unitPrice discountPct }
+        priceTiers { minQty scope size unitPrice discountPct }
         variants {
           size
           current_stock
@@ -212,8 +213,11 @@ function ProductsManagement() {
   const { t } = useI18n();
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [form] = Form.useForm();
+  const basePriceDraft = Form.useWatch("price", form);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, number | null>>({});
+  const [savingVariantPrices, setSavingVariantPrices] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [lowExpanded, setLowExpanded] = useState<boolean>(() => {
@@ -254,16 +258,8 @@ function ProductsManagement() {
     refetchLow();
   };
 
-  const [upsertProduct, { loading: saving }] = useMutation(M_UPSERT, {
-    onCompleted: () => {
-      message.success(t("admin_products.product_saved"));
-      setModalOpen(false);
-      setEditing(null);
-      form.resetFields();
-      refreshAll();
-    },
-    onError: onErr,
-  });
+  const [upsertProduct, { loading: saving }] = useMutation(M_UPSERT, { onError: onErr });
+  const [saveModalVariantPrice] = useMutation(M_VARIANT_PRICE, { onError: onErr });
   const [setActive] = useMutation(M_SET_ACTIVE, {
     onCompleted: () => { message.success(t("admin_products.status_updated")); refreshAll(); },
     onError: onErr,
@@ -293,6 +289,7 @@ function ProductsManagement() {
   const [priceTiers, setPriceTiers] = useState<Array<{
     minQty: string;
     scope: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    size: string | null;
     unitPrice: string;
     discountPct: string;
   }>>([]);
@@ -336,6 +333,7 @@ function ProductsManagement() {
 
   const openCreate = () => {
     setEditing(null);
+    setVariantPriceDrafts({});
     setImageUrls([]);
     form.resetFields();
     form.setFieldsValue({ active: true, keywords: [], vatCategory: "UNKNOWN" });
@@ -345,6 +343,9 @@ function ProductsManagement() {
   };
   const openEdit = (p: Product) => {
     setEditing(p);
+    setVariantPriceDrafts(Object.fromEntries(
+      p.variants.map((variant) => [variant.size, variant.priceOverride])
+    ));
     setImageUrls(
       Array.isArray(p.images) && p.images.length > 0
         ? p.images.map((img) => img.url)
@@ -364,6 +365,7 @@ function ProductsManagement() {
     setPriceTiers((p.priceTiers ?? []).map((t) => ({
       minQty: String(t.minQty),
       scope: t.scope ?? "PER_VARIANT_FIXED",
+      size: t.size ?? null,
       unitPrice: t.unitPrice == null ? "" : String(t.unitPrice),
       discountPct: t.discountPct == null ? "" : String(t.discountPct),
     })));
@@ -393,6 +395,7 @@ function ProductsManagement() {
     const normalizedPriceTiers = priceTiers.map((tier) => ({
       minQty: Number(tier.minQty),
       scope: tier.scope,
+      size: tier.scope === "PER_VARIANT_FIXED" ? tier.size : null,
       unitPrice: tier.scope === "PER_VARIANT_FIXED" && tier.unitPrice !== "" ? Number(tier.unitPrice) : null,
       discountPct: tier.scope === "CROSS_VARIANT_PERCENT" && tier.discountPct !== ""
         ? Number(tier.discountPct)
@@ -405,30 +408,70 @@ function ProductsManagement() {
           && Number(tier.discountPct) > 0 && Number(tier.discountPct) <= 100)
       )
     ));
-    const uniqueMinimums = new Set(normalizedPriceTiers.map((tier) => tier.minQty)).size === normalizedPriceTiers.length;
-    if (!validTiers || !uniqueMinimums) {
+    const uniqueRules = new Set(normalizedPriceTiers.map((tier) => (
+      `${tier.scope}\u0000${tier.size ?? ""}\u0000${tier.minQty}`
+    ))).size === normalizedPriceTiers.length;
+    if (!validTiers || !uniqueRules) {
       message.error(t("admin_products.price_tiers_invalid"));
       return;
     }
-    await upsertProduct({
-      variables: {
-        input: {
-          sku: v.sku.trim(), name: v.name.trim(), price: Number(v.price),
-          keywords: v.keywords || [], active: v.active,
-          barcode: v.barcode?.trim() || null,
-          image_url: imageUrls[0] || null,
-          image_urls: imageUrls,
-          description: v.description?.trim() || null,
-          cost_price: v.costPrice != null && v.costPrice !== "" ? Number(v.costPrice) : null,
-          weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
-          category: v.category?.trim() || null,
-          brand: v.brand?.trim() || null,
-          vat_category: v.vatCategory || null,
-          // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
-          price_tiers: normalizedPriceTiers,
+    try {
+      await upsertProduct({
+        variables: {
+          input: {
+            sku: v.sku.trim(), name: v.name.trim(), price: Number(v.price),
+            keywords: v.keywords || [], active: v.active,
+            barcode: v.barcode?.trim() || null,
+            image_url: imageUrls[0] || null,
+            image_urls: imageUrls,
+            description: v.description?.trim() || null,
+            cost_price: v.costPrice != null && v.costPrice !== "" ? Number(v.costPrice) : null,
+            weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
+            category: v.category?.trim() || null,
+            brand: v.brand?.trim() || null,
+            vat_category: v.vatCategory || null,
+            // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
+            price_tiers: normalizedPriceTiers,
+          },
         },
-      },
-    });
+      });
+
+      if (editing?.variants.length) {
+        const changedVariants = editing.variants.filter((variant) => {
+          const next = variantPriceDrafts[variant.size] ?? null;
+          return next !== variant.priceOverride;
+        });
+        if (changedVariants.length) {
+          setSavingVariantPrices(true);
+          await Promise.all(changedVariants.map((variant) => saveModalVariantPrice({
+            variables: {
+              input: {
+                id: variant.basePackId,
+                productSku: editing.sku,
+                size: variant.size,
+                packCode: "BASE",
+                unitName: "ชิ้น",
+                baseQty: 1,
+                price: variantPriceDrafts[variant.size] ?? null,
+                isBase: true,
+                active: true,
+              },
+            },
+          })));
+        }
+      }
+
+      message.success(t("admin_products.product_saved"));
+      setModalOpen(false);
+      setEditing(null);
+      setVariantPriceDrafts({});
+      form.resetFields();
+      refreshAll();
+    } catch {
+      // useMutation แสดงข้อความจาก onError แล้ว; คง modal ไว้ให้แก้/ลองใหม่
+    } finally {
+      setSavingVariantPrices(false);
+    }
   };
 
   const columns = useMemo(
@@ -667,9 +710,9 @@ function ProductsManagement() {
       <Modal
         title={editing ? t("admin_products.modal_edit_title", { sku: editing.sku }) : t("admin_products.btn_add_product")}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); setImageUrls([]); form.resetFields(); }}
-        onOk={submit} confirmLoading={saving}
-        okText={editing ? t("admin_products.btn_save") : t("admin_products.btn_create")} width={560}
+        onCancel={() => { setModalOpen(false); setEditing(null); setVariantPriceDrafts({}); setImageUrls([]); form.resetFields(); }}
+        onOk={submit} confirmLoading={saving || savingVariantPrices}
+        okText={editing ? t("admin_products.btn_save") : t("admin_products.btn_create")} width={680}
       >
         <Form form={form} layout="vertical" autoComplete="off">
           <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
@@ -758,7 +801,7 @@ function ProductsManagement() {
           </Form.Item>
 
           <Space.Compact block>
-            <Form.Item label={t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }}>
+            <Form.Item label={editing?.variants.length ? t("admin_products.label_base_price") : t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }}>
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
@@ -773,6 +816,57 @@ function ProductsManagement() {
               <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_weight")} />
             </Form.Item>
           </Space.Compact>
+
+          {editing && editing.variants.length > 0 && (
+            <Form.Item
+              label={t("admin_products.label_variant_prices")}
+              extra={t("admin_products.variant_prices_extra")}
+            >
+              <div style={{ display: "grid", gap: 8 }}>
+                {editing.variants.map((variant) => {
+                  const override = variantPriceDrafts[variant.size] ?? null;
+                  const fallback = Number(basePriceDraft ?? editing.price);
+                  return (
+                    <div
+                      key={variant.size}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(56px, auto) minmax(130px, 1fr) auto",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: 8,
+                        border: "1px solid #f0f0f0",
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Typography.Text strong>{variant.size}</Typography.Text>
+                      <InputNumber
+                        min={0}
+                        precision={2}
+                        value={override ?? fallback}
+                        addonAfter="฿"
+                        onChange={(value) => setVariantPriceDrafts((current) => ({
+                          ...current,
+                          [variant.size]: value == null ? null : Number(value),
+                        }))}
+                        style={{ width: "100%" }}
+                      />
+                      <Button
+                        size="small"
+                        type={override == null ? "default" : "link"}
+                        disabled={override == null}
+                        onClick={() => setVariantPriceDrafts((current) => ({ ...current, [variant.size]: null }))}
+                      >
+                        {override == null
+                          ? t("admin_products.variant_uses_base")
+                          : t("admin_products.variant_use_base")}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </Form.Item>
+          )}
 
           <Space.Compact block>
             <Form.Item
@@ -825,7 +919,7 @@ function ProductsManagement() {
                   <Select
                     value={tier.scope}
                     onChange={(scope) => setPriceTiers((cur) => cur.map((row, i) => (
-                      i === idx ? { ...row, scope } : row
+                      i === idx ? { ...row, scope, size: scope === "PER_VARIANT_FIXED" ? row.size : null } : row
                     )))}
                     style={{ width: 190 }}
                     options={[
@@ -835,6 +929,20 @@ function ProductsManagement() {
                   />
                   {tier.scope === "PER_VARIANT_FIXED" ? (
                     <>
+                      <Select
+                        value={tier.size ?? "__ALL__"}
+                        onChange={(value) => setPriceTiers((cur) => cur.map((row, i) => (
+                          i === idx ? { ...row, size: value === "__ALL__" ? null : value } : row
+                        )))}
+                        style={{ minWidth: 150 }}
+                        options={[
+                          { value: "__ALL__", label: t("admin_products.tier_all_sizes") },
+                          ...(editing?.variants ?? []).map((variant) => ({
+                            value: variant.size,
+                            label: t("admin_products.tier_size").replace("{size}", variant.size),
+                          })),
+                        ]}
+                      />
                       <span style={{ fontSize: 12 }}>{t("admin_products.tier_price_each")}</span>
                       <InputNumber
                         min={0}
@@ -875,6 +983,7 @@ function ProductsManagement() {
                 onClick={() => setPriceTiers((cur) => [...cur, {
                   minQty: "",
                   scope: "PER_VARIANT_FIXED",
+                  size: null,
                   unitPrice: "",
                   discountPct: "",
                 }])}

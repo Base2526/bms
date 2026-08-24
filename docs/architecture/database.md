@@ -33,7 +33,7 @@ operators must resolve those records before retrying the migration.
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.19` (`9.4` repair) |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.20` (`9.4` repair) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -61,6 +61,12 @@ operators must resolve those records before retrying the migration.
 | Data-integrity lifecycle | event timestamps on `bms_orders` / `bms_payments`; non-negative product-cost constraint | `9.15` |
 
 ## Notable schema details
+
+**Size-specific wholesale tiers (`9.20`)** — `bms_product_price_tiers.size` targets a
+`PER_VARIANT_FIXED` rule to one inventory size. `NULL` preserves legacy rows as a shared fixed price
+for all sizes, while `CROSS_VARIANT_PERCENT` requires `NULL` because it qualifies from the SKU-wide
+quantity. The unique rule key is tenant + SKU + scope + normalized size + minimum quantity, allowing
+M and XL to carry different prices at the same minimum without duplicate rules for either size.
 
 **Supplier product mapping (`9.18`)** — `bms_supplier_products` is tenant-owned and maps one
 supplier-facing SKU to one authoritative shop `product_sku + size`. Supplier SKU uniqueness is

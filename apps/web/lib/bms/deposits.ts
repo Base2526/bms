@@ -34,6 +34,14 @@ export type Deposit = {
   overdue: boolean;
 };
 
+export type DepositCandidateOrder = {
+  orderId: string;
+  channel: string;
+  totalAmount: number;
+  itemCount: number;
+  createdAt: string;
+};
+
 const toISO = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v ?? ""));
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -74,6 +82,46 @@ export async function listDeposits(
   return res.rows.map(mapDeposit);
 }
 
+export async function listDepositCandidateOrders(
+  tenantId: string,
+  locationId: string,
+  limit = 100
+): Promise<DepositCandidateOrder[]> {
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+  const res = await query<any>(
+    `SELECT o.id, o.channel,
+            (o.total_amount + COALESCE(o.shipping_fee, 0)) AS total_amount,
+            COALESCE(SUM(oi.qty), 0)::int AS item_count,
+            o.created_at
+       FROM bms_orders o
+       LEFT JOIN bms_order_items oi
+         ON oi.tenant_id = o.tenant_id AND oi.order_id = o.id
+      WHERE o.tenant_id = $1
+        AND o.location_id = $2
+        AND o.status = 'PENDING'
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_pos_deposits d
+           WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_payments p
+           WHERE p.tenant_id = o.tenant_id AND p.order_id = o.id
+             AND p.status IN ('PENDING', 'CONFIRMED')
+        )
+      GROUP BY o.id, o.channel, o.total_amount, o.shipping_fee, o.created_at
+      ORDER BY o.created_at DESC
+      LIMIT $3`,
+    [tenantId, locationId, safeLimit]
+  );
+  return res.rows.map((row) => ({
+    orderId: row.id,
+    channel: row.channel,
+    totalAmount: Number(row.total_amount),
+    itemCount: Number(row.item_count),
+    createdAt: toISO(row.created_at),
+  }));
+}
+
 export async function getDepositByOrder(tenantId: string, orderId: string): Promise<Deposit | null> {
   const res = await query<any>(
     `SELECT * FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2`,
@@ -83,7 +131,7 @@ export async function getDepositByOrder(tenantId: string, orderId: string): Prom
 }
 
 export type TakeDepositResult =
-  | { status: "TAKEN"; deposit: Deposit }
+  | { status: "TAKEN"; deposit: Deposit; replayed?: boolean }
   | { status: "INVALID"; reason: string }
   | { status: "ORDER_NOT_ELIGIBLE"; reason: string };
 
@@ -125,7 +173,7 @@ export async function takeDeposit(input: {
     );
     if (replay.rows[0]) {
       await client.query("ROLLBACK");
-      return { status: "TAKEN", deposit: mapDeposit(replay.rows[0]) };
+      return { status: "TAKEN", deposit: mapDeposit(replay.rows[0]), replayed: true };
     }
 
     const ord = await client.query<any>(
@@ -145,6 +193,17 @@ export async function takeDeposit(input: {
     if (input.expectedLocationId && order.location_id !== input.expectedLocationId) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_ELIGIBLE", reason: "บิลนี้จองสินค้าที่สาขาอื่น" };
+    }
+    const activePayment = await client.query(
+      `SELECT 1 FROM bms_payments
+        WHERE tenant_id = $1 AND order_id = $2
+          AND status IN ('PENDING', 'CONFIRMED')
+        LIMIT 1`,
+      [input.tenantId, input.orderId]
+    );
+    if (activePayment.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "ORDER_NOT_ELIGIBLE", reason: "บิลนี้มีรายการชำระเงินอยู่แล้ว จึงรับมัดจำซ้ำไม่ได้" };
     }
 
     const total = round2(Number(order.total_amount) + Number(order.shipping_fee ?? 0));
@@ -170,7 +229,7 @@ export async function takeDeposit(input: {
     if (existing.rowCount) {
       await client.query("ROLLBACK");
       if (existing.rows[0].replay) {
-        return { status: "TAKEN", deposit: mapDeposit(existing.rows[0]) };
+        return { status: "TAKEN", deposit: mapDeposit(existing.rows[0]), replayed: true };
       }
       return { status: "INVALID", reason: "บิลนี้มีมัดจำอยู่แล้ว" };
     }
@@ -201,7 +260,7 @@ export async function takeDeposit(input: {
         JSON.stringify({ amount, total, method: input.method })]
     );
     await client.query("COMMIT");
-    return { status: "TAKEN", deposit: mapDeposit(ins.rows[0]) };
+    return { status: "TAKEN", deposit: mapDeposit(ins.rows[0]), replayed: false };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;
@@ -242,7 +301,7 @@ export async function addToDeposit(input: {
     );
     if (replay.rowCount) {
       await client.query("ROLLBACK");
-      return { status: "TAKEN", deposit: mapDeposit(dep) };
+      return { status: "TAKEN", deposit: mapDeposit(dep), replayed: true };
     }
     const remaining = round2(Number(dep.total_amount) - Number(dep.deposit_paid));
     if (amount >= remaining) {

@@ -328,6 +328,12 @@ function CreatePOModal({
     if (mapping.lastUnitCost != null) form.setFieldValue(["items", index, "unitCost"], mapping.lastUnitCost);
   };
 
+  const clearMappedItemFields = (index: number) => {
+    for (const field of ["supplierSku", "supplierProductName", "supplierBarcode", "unitCost"]) {
+      form.setFieldValue(["items", index, field], undefined);
+    }
+  };
+
   const productMap = new Map<string, ProductOpt>(queriedProducts.map((product) => [
     product.sku,
     { ...product, variants: [...(product.variants || [])] },
@@ -390,21 +396,54 @@ function CreatePOModal({
                       onSearch={setProductSearch}
                       onChange={(sku) => {
                         const product = products.find((candidate) => candidate.sku === sku);
-                        const onlySize = product?.variants?.length === 1 ? product.variants[0].size : undefined;
+                        const sizes = [...new Set((product?.variants || []).map((variant) => variant.size.trim()).filter(Boolean))];
+                        const onlySize = sizes.length === 1 ? sizes[0] : undefined;
+                        form.setFieldValue(["items", name, "size"], undefined);
+                        clearMappedItemFields(name);
                         if (onlySize) form.setFieldValue(["items", name, "size"], onlySize);
                         fillMapping(name, sku, onlySize);
                       }}
                     />
                   </Form.Item>
-                  <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: t("admin_purchase.size_required") }]}>
-                    <Input
-                      placeholder={t("admin_purchase.size_placeholder")}
-                      style={{ width: 100 }}
-                      onBlur={(event) => {
-                        const sku = form.getFieldValue(["items", name, "sku"]);
-                        if (sku) fillMapping(name, sku, event.currentTarget.value.trim());
-                      }}
-                    />
+                  <Form.Item noStyle shouldUpdate={(previous, current) =>
+                    previous.items?.[name]?.sku !== current.items?.[name]?.sku
+                  }>
+                    {({ getFieldValue }) => {
+                      const sku = getFieldValue(["items", name, "sku"]);
+                      const product = products.find((candidate) => candidate.sku === sku);
+                      const sizeOptions = [...new Set(
+                        (product?.variants || []).map((variant) => variant.size.trim()).filter(Boolean)
+                      )]
+                        .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+                        .map((size) => ({ value: size, label: size }));
+                      const applySizeMapping = (size: string) => {
+                        if (!sku || !size) return;
+                        const currentSupplierSku = form.getFieldValue(["items", name, "supplierSku"]);
+                        const hasStaleMapping = mappings.some((mapping) =>
+                          mapping.active && mapping.sku === sku && mapping.size !== size
+                          && mapping.supplierSku === currentSupplierSku
+                        );
+                        if (hasStaleMapping) clearMappedItemFields(name);
+                        fillMapping(name, sku, size);
+                      };
+
+                      return (
+                        <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true, message: t("admin_purchase.size_required") }]}>
+                          <AutoComplete
+                            allowClear
+                            disabled={!sku}
+                            options={sizeOptions}
+                            placeholder={t("admin_purchase.size_placeholder")}
+                            style={{ width: 120 }}
+                            filterOption={(input, option) => String(option?.value ?? "").toLocaleLowerCase().includes(input.toLocaleLowerCase())}
+                            onSelect={(size) => applySizeMapping(String(size).trim())}
+                            onBlur={() => applySizeMapping(String(
+                              form.getFieldValue(["items", name, "size"]) ?? ""
+                            ).trim())}
+                          />
+                        </Form.Item>
+                      );
+                    }}
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "supplierSku"]}>
                     <Input placeholder={t("admin_purchase.supplier_sku_placeholder")} style={{ width: 150 }} />

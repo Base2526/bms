@@ -26,7 +26,7 @@ import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
 import type { PriceTier, Promotion } from "./pricing";
 import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
-import { markDepositCompletedInTx } from "./deposits";
+import { markDepositCompletedInTx, takeDeposit, type Deposit } from "./deposits";
 import {
   findStoreCredit,
   lockUsableCreditInTx,
@@ -504,15 +504,17 @@ export async function resolvePosScan(
       : { kind: "N_FOR_PRICE", buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) };
 
   const tierRes = await query<{
-    min_qty: number; unit_price: string | null; scope: PriceTier["scope"]; discount_pct: string | null;
+    min_qty: number; unit_price: string | null; scope: PriceTier["scope"];
+    discount_pct: string | null; size: string | null;
   }>(
-    `SELECT min_qty, unit_price, scope, discount_pct FROM bms_product_price_tiers
+    `SELECT min_qty, unit_price, scope, discount_pct, size FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = $2 ORDER BY min_qty`,
     [tenantId, row.sku]
   );
   const priceTiers: PriceTier[] = tierRes.rows.map((t) => ({
     minQty: Number(t.min_qty),
     scope: t.scope,
+    size: t.size,
     unitPrice: t.unit_price == null ? null : Number(t.unit_price),
     discountPct: t.discount_pct == null ? null : Number(t.discount_pct),
   }));
@@ -1216,8 +1218,10 @@ export type PosSaleInput = {
   cashierUserId: string;
   /** สร้างที่เครื่อง: {device}-{shift}-{seq} — ยิงซ้ำต้องได้บิลเดิม ไม่ใช่บิลใหม่ */
   idempotencyKey: string;
+  /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
+  mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
-  /** จ่ายผสมได้ เช่น สด 500 + บัตร 300 — ผลรวมต้องเท่ายอดบิลพอดี */
+  /** SALE จ่ายผสมได้และต้องครบยอด; DEPOSIT รับงวดแรกด้วย 1 วิธีและต้องต่ำกว่ายอดบิล */
   payments: PosPaymentInput[];
   couponCode?: string | null;
   /** สมาชิกที่พนักงานค้นเจอที่เคาน์เตอร์ — ได้ส่วนลดตามชั้นและสะสมแต้ม (7.96) */
@@ -1300,6 +1304,15 @@ export type PosSaleResult =
       /** true = คีย์นี้เคยขายไปแล้ว คืนบิลเดิม ไม่ได้ขายซ้ำ */
       replayed: boolean;
     }
+  | {
+      status: "DEPOSIT_TAKEN";
+      orderId: string;
+      total: number;
+      deposit: Deposit;
+      /** true = คีย์นี้เคยรับมัดจำแล้ว คืนรายการเดิมโดยไม่รับเงินซ้ำ */
+      replayed: boolean;
+    }
+  | { status: "DEPOSIT_INVALID"; reason: string }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "EMPTY" }
   | { status: "LOT_EXPIRED_OR_SHORT"; sku: string; size: string; sellable: number; requested: number }
@@ -1636,6 +1649,7 @@ async function fulfilPosOrderInTx(
 
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
+  const isDeposit = input.mode === "DEPOSIT";
 
   const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
     `SELECT id, location_id, device_id FROM bms_pos_shifts
@@ -1651,8 +1665,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
   // ยิงซ้ำเพราะ response หายกลางทาง: COMPLETED คืนบิลเดิม ส่วน PENDING
   // เดิน settlement เดิมต่อได้โดยไม่สร้าง order/payment ซ้ำ
-  const replay = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
-  if (replay) return replay;
+  if (!isDeposit) {
+    const replay = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
+    if (replay) return replay;
+  }
 
   const requestedPayments = input.payments
     .map((payment) => ({
@@ -1663,6 +1679,12 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     }))
     .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
   if (requestedPayments.length === 0) return { status: "PAYMENT_FAILED", reason: "ต้องระบุการชำระเงิน" };
+  if (isDeposit && requestedPayments.length !== 1) {
+    return { status: "DEPOSIT_INVALID", reason: "มัดจำครั้งแรกรับได้ครั้งละ 1 วิธีชำระเงิน" };
+  }
+  if (isDeposit && requestedPayments[0]?.method === "STORE_CREDIT") {
+    return { status: "DEPOSIT_INVALID", reason: "ยังไม่รองรับเครดิตร้านเป็นเงินมัดจำ" };
+  }
   const invalidCash = requestedPayments.find(
     (payment) => payment.method === "CASH" && payment.cashTendered != null
       && (!Number.isFinite(payment.cashTendered) || payment.cashTendered < payment.amount)
@@ -1690,8 +1712,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   // ---- เลขเครื่อง (8.3) ----
   // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
   // ไม่มีคูปองถูกนับ · จำนวนที่ต้องมีใช้ canonical pack conversion ด้านบน
-  const serialCheck = await validatePosSaleSerials(tenantId, canonical.serialLines);
-  if (serialCheck) return serialCheck;
+  if (!isDeposit) {
+    const serialCheck = await validatePosSaleSerials(tenantId, canonical.serialLines);
+    if (serialCheck) return serialCheck;
+  }
 
   // ---- บัตรของขวัญ / เครดิตร้าน (8.9) ----
   // ตรวจก่อนสร้างบิลเช่นเดียวกับเลขเครื่อง: บัตรผิด/ยอดไม่พอ ต้องล้มก่อนตัดสต็อก
@@ -1713,6 +1737,12 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
   const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (existing) {
+    if (isDeposit) {
+      if (existing.status !== "PENDING") {
+        return { status: "DEPOSIT_INVALID", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${existing.status} แล้ว` };
+      }
+      return takeInitialPosDeposit({ input, shift, orderId: existing.orderId, payments: requestedPayments });
+    }
     if (existing.status !== "PENDING" && existing.status !== "PAID") {
       return { status: "PAYMENT_FAILED", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${existing.status} แล้ว` };
     }
@@ -1769,10 +1799,18 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   });
 
   if (created === null) {
-    const again = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
-    if (again) return again;
+    if (!isDeposit) {
+      const again = await findSaleByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
+      if (again) return again;
+    }
     const pending = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
     if (pending && ["PENDING", "PAID"].includes(pending.status)) {
+      if (isDeposit) {
+        if (pending.status !== "PENDING") {
+          return { status: "DEPOSIT_INVALID", reason: `คีย์บิลนี้ถูกใช้กับสถานะ ${pending.status} แล้ว` };
+        }
+        return takeInitialPosDeposit({ input, shift, orderId: pending.orderId, payments: requestedPayments });
+      }
       const rounded = applyCashRounding(pending.amountDue);
       const paid = Math.round(requestedPayments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
       if (Math.abs(paid - rounded.amountDue) > 0.01) {
@@ -1789,6 +1827,19 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   if (created.status !== "CREATED") return created as PosSaleResult;
 
   const orderId = created.orderId;
+  if (isDeposit) {
+    const taken = await takeInitialPosDeposit({
+      input,
+      shift,
+      orderId,
+      payments: requestedPayments,
+    });
+    if (taken.status !== "DEPOSIT_TAKEN") {
+      // createOrder จองสต็อกและอาจใช้คูปอง/แต้มไว้แล้ว ต้องคืนทุกอย่างถ้ารับมัดจำไม่ได้
+      await cancelOrder(tenantId, orderId);
+    }
+    return taken;
+  }
   const rounded = applyCashRounding(created.amountDue);
   const amountDue = rounded.amountDue;
 
@@ -1828,6 +1879,38 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   }
 
   return sold;
+}
+
+async function takeInitialPosDeposit(args: {
+  input: PosSaleInput;
+  shift: { id: string; location_id: string; device_id: string };
+  orderId: string;
+  payments: PosPaymentInput[];
+}): Promise<PosSaleResult> {
+  const payment = args.payments[0];
+  if (!payment) return { status: "DEPOSIT_INVALID", reason: "ต้องระบุยอดมัดจำ" };
+
+  const result = await takeDeposit({
+    tenantId: args.input.tenantId,
+    orderId: args.orderId,
+    amount: payment.amount,
+    method: payment.method,
+    deviceId: args.input.deviceId,
+    shiftId: args.shift.id,
+    expectedLocationId: args.shift.location_id,
+    createdBy: args.input.cashierUserId,
+    idempotencyKey: args.input.idempotencyKey,
+  });
+  if (result.status !== "TAKEN") {
+    return { status: "DEPOSIT_INVALID", reason: result.reason };
+  }
+  return {
+    status: "DEPOSIT_TAKEN",
+    orderId: args.orderId,
+    total: result.deposit.totalAmount,
+    deposit: result.deposit,
+    replayed: Boolean(result.replayed),
+  };
 }
 
 async function finalizePosSale(args: {

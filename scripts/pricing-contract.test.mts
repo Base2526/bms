@@ -8,7 +8,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { priceLinesByQty, unitPriceForQty, type PriceTier } from "../apps/web/lib/bms/pricing.ts";
+import {
+  canonicalPriceTiers,
+  priceLinesByQty,
+  syncSkuPricingSnapshot,
+  unitPriceForQty,
+  type PriceTier,
+} from "../apps/web/lib/bms/pricing.ts";
 
 const tiers: PriceTier[] = [
   { minQty: 3, unitPrice: 90 },
@@ -66,6 +72,45 @@ test("ราคาและจำนวนนับแยกต่อ SKU+ไซ
   assert.equal(priced[0].tierApplied, true);
 });
 
+test("ราคาส่งคงที่กำหนดคนละราคาต่อไซซ์ที่ขั้นต่ำเดียวกันได้", () => {
+  const sizedTiers: PriceTier[] = [
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "M", unitPrice: 80 },
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "XL", unitPrice: 120 },
+  ];
+  const priced = priceLinesByQty(
+    [
+      { sku: "SHIRT", size: "M", qty: 5 },
+      { sku: "SHIRT", size: "XL", qty: 5 },
+    ],
+    new Map([
+      ["SHIRT\u0000M", 100],
+      ["SHIRT\u0000XL", 150],
+    ]),
+    new Map([["SHIRT", sizedTiers]])
+  );
+
+  assert.equal(priced[0].unitPrice, 80);
+  assert.equal(priced[1].unitPrice, 120);
+});
+
+test("กฎเฉพาะไซซ์ชนะกฎทุกไซซ์เมื่อขั้นต่ำเท่ากันโดยไม่ขึ้นกับลำดับแถว", () => {
+  const rules: PriceTier[] = [
+    { minQty: 5, scope: "PER_VARIANT_FIXED", unitPrice: 90 },
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "XL", unitPrice: 125 },
+  ];
+
+  assert.equal(unitPriceForQty(150, rules, 5, 5, "XL"), 125);
+  assert.equal(unitPriceForQty(100, [...rules].reverse(), 5, 5, "M"), 90);
+});
+
+test("signature ของกฎหลายไซซ์คงที่แม้ DB คืนแถวขั้นต่ำเดียวกันคนละลำดับ", () => {
+  const rules: PriceTier[] = [
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "XL", unitPrice: 120 },
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "M", unitPrice: 80 },
+  ];
+  assert.deepEqual(canonicalPriceTiers(rules), canonicalPriceTiers([...rules].reverse()));
+});
+
 test("รวมข้ามไซซ์เพื่อผ่านขั้นต่ำ แต่ลดเปอร์เซ็นต์จากราคาของแต่ละไซซ์", () => {
   const crossSizeTiers: PriceTier[] = [{
     minQty: 10,
@@ -98,6 +143,33 @@ test("เปอร์เซ็นต์ 4 ตำแหน่งแปลงร�
     scope: "CROSS_VARIANT_PERCENT",
     discountPct: 13.3333,
   }], 2, 5), 1_300);
+});
+
+test("scan ไซซ์ล่าสุดเปลี่ยน pricing snapshot ของ SKU เดียวกันทุกไซซ์", () => {
+  const oldTier: PriceTier[] = [{ minQty: 5, unitPrice: 1_300 }];
+  const latestTier: PriceTier[] = [{
+    minQty: 10,
+    scope: "CROSS_VARIANT_PERCENT",
+    discountPct: 16.6667,
+  }];
+  const lines = [
+    { sku: "LANVIN", size: "M", priceTiers: oldTier, promotion: null },
+    { sku: "LANVIN", size: "XL", priceTiers: oldTier, promotion: null },
+    { sku: "OTHER", size: "S", priceTiers: oldTier, promotion: null },
+  ];
+
+  const synced = syncSkuPricingSnapshot(lines, {
+    sku: "LANVIN",
+    priceTiers: latestTier,
+    promotion: { kind: "BUY_X_GET_Y", buyQty: 3, getQty: 1 },
+    serialTracked: true,
+  });
+
+  assert.equal(synced[0].priceTiers, latestTier);
+  assert.equal(synced[1].priceTiers, latestTier);
+  assert.deepEqual(synced[0].promotion, { kind: "BUY_X_GET_Y", buyQty: 3, getQty: 1 });
+  assert.equal(synced[0].serialTracked, true);
+  assert.equal(synced[2], lines[2], "SKU อื่นต้องไม่ถูกแก้ snapshot");
 });
 
 test("สินค้าคนละ SKU ไม่รวมจำนวนกัน", () => {

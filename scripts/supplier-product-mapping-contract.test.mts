@@ -39,4 +39,9 @@ test("GraphQL and admin PO surface expose both shop and supplier identities", as
   assert.match(page, /Q_SUPPLIER_PRODUCTS/);
   assert.match(page, /shop_sku_placeholder/);
   assert.match(page, /supplier_sku_placeholder/);
+  assert.match(page, /variants \{ size \}/, "PO query must load the product's available sizes");
+  assert.match(page, /const sizeOptions = \[\.\.\.new Set/, "PO form must derive unique size choices per SKU");
+  assert.match(page, /<AutoComplete[\s\S]*options=\{sizeOptions\}/, "size must be selectable while still allowing a new value");
+  assert.match(page, /setFieldValue\(\["items", name, "size"\], undefined\)/,
+    "changing SKU must clear a stale size from the previous product");
 });

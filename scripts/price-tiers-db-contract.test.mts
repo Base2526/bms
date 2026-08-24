@@ -212,6 +212,37 @@ test("quantity tiers do not combine different sizes", async () => {
   assert.equal(order.subtotal, 900);
 });
 
+test("same minimum can persist different fixed wholesale prices per size", async () => {
+  const { upsertProduct } = await import("../apps/web/lib/bms/products.ts");
+  const base = { sku: SKU, name: `FAKE ${TAG} product`, price: 100, active: true };
+  await upsertProduct(tenantId, {
+    ...base,
+    price_tiers: [
+      { minQty: 5, scope: "PER_VARIANT_FIXED", size: SIZE_S, unitPrice: 82 },
+      { minQty: 5, scope: "PER_VARIANT_FIXED", size: SIZE_L, unitPrice: 76 },
+    ],
+  });
+
+  const smallHit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
+  const largeHit = await resolvePosScan(tenantId, SKU, { size: SIZE_L, locationId });
+  assert.equal(unitPriceForQty(smallHit!.basePrice, smallHit!.priceTiers, 5, 5, SIZE_S), 82);
+  assert.equal(unitPriceForQty(largeHit!.basePrice, largeHit!.priceTiers, 5, 5, SIZE_L), 76);
+
+  const order = await sell([{ size: SIZE_S, qty: 5 }, { size: SIZE_L, qty: 5 }]);
+  assert.equal(order.items.find((item) => item.size === SIZE_S)?.unitPrice, 82);
+  assert.equal(order.items.find((item) => item.size === SIZE_L)?.unitPrice, 76);
+  assert.equal(order.subtotal, 790, "POS preview and committed order must use the same size rule");
+
+  await upsertProduct(tenantId, {
+    ...base,
+    price_tiers: [
+      { minQty: 3, unitPrice: 90 },
+      { minQty: 10, unitPrice: 80 },
+      { minQty: 50, unitPrice: 70 },
+    ],
+  });
+});
+
 test("what the counter previews is what createOrder charges", async () => {
   // จอได้ขั้นราคามาจาก resolvePosScan แล้วคิดเองด้วย unitPriceForQty ตัวเดียวกัน
   const hit = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });

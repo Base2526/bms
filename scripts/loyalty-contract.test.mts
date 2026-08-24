@@ -70,6 +70,37 @@ test("หลายไซซ์ + สมาชิก + คะแนน + ส่�
   assert.equal(discount.netTotal, 6850);
 });
 
+test("ราคาส่งเฉพาะไซซ์ถึงขั้นต่ำไม่ลากอีกไซซ์มาลด ก่อนคำนวณสมาชิกและแต้ม", () => {
+  const wholesale: PriceTier[] = [
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "M", unitPrice: 80 },
+    { minQty: 5, scope: "PER_VARIANT_FIXED", size: "XL", unitPrice: 120 },
+  ];
+  const priced = priceLinesByQty(
+    [
+      { sku: "SHIRT", size: "M", qty: 5 },
+      { sku: "SHIRT", size: "XL", qty: 4 },
+    ],
+    new Map([
+      ["SHIRT\u0000M", 100],
+      ["SHIRT\u0000XL", 150],
+    ]),
+    new Map([["SHIRT", wholesale]])
+  );
+  assert.deepEqual(priced.map((line) => line.unitPrice), [80, 150]);
+
+  const discount = composeDiscounts({
+    settings: settings(),
+    subtotal: 1_000,
+    tier: tier(),
+    pointsRequested: 200,
+    pointsAvailable: 200,
+    manualDiscount: 5,
+  });
+  assert.equal(discount.tierDiscount, 50);
+  assert.equal(discount.pointsDiscount, 20);
+  assert.equal(discount.netTotal, 925);
+});
+
 test("POS รวมราคาส่งข้ามไซซ์แล้วใช้สมาชิก แต้ม และส่วนลดมือได้ยอดตรง server", () => {
   const crossVariant: PriceTier[] = [{
     minQty: 5,
@@ -103,6 +134,47 @@ test("POS รวมราคาส่งข้ามไซซ์แล้วใ�
   assert.equal(discount.pointsDiscount, 270);
   assert.equal(discount.manualDiscount, 5);
   assert.equal(discount.netTotal, 5900);
+});
+
+test("regression: ตะกร้า 22 ชิ้นในภาพต้องใช้ขั้นรวมไซซ์ก่อนคิดสมาชิกและแต้ม", () => {
+  const lanvinTiers: PriceTier[] = [
+    { minQty: 5, scope: "PER_VARIANT_FIXED", unitPrice: 1_300 },
+    { minQty: 10, scope: "CROSS_VARIANT_PERCENT", discountPct: 16.6667 },
+  ];
+  const priced = priceLinesByQty(
+    [
+      { sku: "BABYMILD", size: "S", qty: 4 },
+      { sku: "BURBERRY", size: "M", qty: 2 },
+      { sku: "JUICY", size: "S", qty: 2 },
+      { sku: "JUICY", size: "M", qty: 2 },
+      { sku: "JUICY", size: "XL", qty: 2 },
+      { sku: "LANVIN", size: "M", qty: 5 },
+      { sku: "LANVIN", size: "XL", qty: 5 },
+    ],
+    new Map([
+      ["BABYMILD\u0000S", 300],
+      ["BURBERRY\u0000M", 999],
+      ["JUICY\u0000S", 600],
+      ["JUICY\u0000M", 800],
+      ["JUICY\u0000XL", 1_000],
+      ["LANVIN\u0000M", 1_500],
+      ["LANVIN\u0000XL", 1_500],
+    ]),
+    new Map([["LANVIN", lanvinTiers]])
+  );
+  const subtotal = priced.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+  assert.equal(subtotal, 20_498, "Lanvin รวม 10 ชิ้นต้องเป็น 1,250 บาทต่อชิ้น ไม่ค้างที่ 1,300");
+
+  const discount = composeDiscounts({
+    settings: settings(),
+    subtotal,
+    tier: tier(),
+    pointsRequested: 2_700,
+    pointsAvailable: 2_760,
+    manualDiscount: 78.1,
+  });
+  assert.equal(discount.totalDiscount, 1_373);
+  assert.equal(discount.netTotal, 19_125);
 });
 
 test("ส่วนลดสามชั้นซ้อนกันได้ และผลรวมต่อชั้นต้องเท่ากับ totalDiscount", () => {

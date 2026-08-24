@@ -16,9 +16,23 @@ export type PriceTier = {
   minQty: number;
   /** ไม่ระบุ = พฤติกรรมเดิม แยกจำนวนต่อ SKU+ไซซ์ */
   scope?: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+  /** เฉพาะราคาคงที่: null = ใช้ราคาเดียวทุกไซซ์, ค่าอื่น = ใช้เฉพาะไซซ์นั้น */
+  size?: string | null;
   unitPrice?: number | null;
   discountPct?: number | null;
 };
+
+/** เรียงกฎให้ signature/cache คงที่ แม้ DB คืนแถวขั้นต่ำเดียวกันคนละลำดับ */
+export function canonicalPriceTiers(tiers: PriceTier[]): PriceTier[] {
+  const text = (value: unknown) => value == null ? "" : String(value);
+  return [...tiers].sort((a, b) => (
+    a.minQty - b.minQty
+    || text(a.scope ?? "PER_VARIANT_FIXED").localeCompare(text(b.scope ?? "PER_VARIANT_FIXED"))
+    || text(a.size).localeCompare(text(b.size))
+    || text(a.unitPrice).localeCompare(text(b.unitPrice))
+    || text(a.discountPct).localeCompare(text(b.discountPct))
+  ));
+}
 
 /**
  * ราคาต่อหน่วยฐานสำหรับจำนวนที่ซื้อ
@@ -33,16 +47,32 @@ export function unitPriceForQty(
   basePrice: number,
   tiers: PriceTier[],
   variantQty: number,
-  skuQty: number = variantQty
+  skuQty: number = variantQty,
+  size: string | null = null
 ): number {
   if (!Number.isFinite(variantQty) || variantQty <= 0) return basePrice;
 
   let best: PriceTier | null = null;
+  let bestPriority = -1;
   for (const tier of tiers) {
     if (!Number.isFinite(tier.minQty) || tier.minQty < 2) continue;
+    const scope = tier.scope ?? "PER_VARIANT_FIXED";
+    const targetSize = tier.size == null ? null : String(tier.size);
+    if (scope === "PER_VARIANT_FIXED" && targetSize != null && targetSize !== size) continue;
+    if (scope === "CROSS_VARIANT_PERCENT" && targetSize != null) continue;
     const qualifyingQty = tier.scope === "CROSS_VARIANT_PERCENT" ? skuQty : variantQty;
     if (!Number.isFinite(qualifyingQty) || tier.minQty > qualifyingQty) continue;
-    if (!best || tier.minQty > best.minQty) best = tier;
+    // เมื่อขั้นต่ำเท่ากัน กฎเฉพาะไซซ์ชนะ cross-size และกฎเก่าที่ใช้ร่วมทุกไซซ์
+    // เพื่อให้ผลไม่ขึ้นกับลำดับแถวจากฐานข้อมูล
+    const priority = scope === "PER_VARIANT_FIXED" && targetSize != null
+      ? 2
+      : scope === "CROSS_VARIANT_PERCENT"
+        ? 1
+        : 0;
+    if (!best || tier.minQty > best.minQty || (tier.minQty === best.minQty && priority > bestPriority)) {
+      best = tier;
+      bestPriority = priority;
+    }
   }
   if (!best) return basePrice;
   if (best.scope === "CROSS_VARIANT_PERCENT") {
@@ -88,7 +118,8 @@ export function priceLinesByQty<T extends { sku: string; size?: string; qty: num
       basePrice,
       tiersBySku.get(line.sku) ?? [],
       totalByVariant.get(key) ?? 0,
-      totalBySku.get(line.sku) ?? 0
+      totalBySku.get(line.sku) ?? 0,
+      line.size ?? null
     );
     return { ...line, unitPrice, tierApplied: unitPrice !== basePrice };
   });
@@ -107,6 +138,30 @@ export function priceLinesByQty<T extends { sku: string; size?: string; qty: num
 export type Promotion =
   | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
   | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number };
+
+export type SkuPricingSnapshot = {
+  sku: string;
+  priceTiers?: PriceTier[];
+  promotion?: Promotion | null;
+  serialTracked?: boolean;
+};
+
+/**
+ * ขั้นราคาส่งและโปรโมชันมีขอบเขตระดับ SKU ไม่ใช่ระดับ SKU+ไซซ์ จึงต้องเปลี่ยน
+ * snapshot ของทุกไซซ์พร้อมกันเมื่อ scan ล่าสุดได้กฎชุดใหม่ มิฉะนั้นตะกร้าเดียวกัน
+ * อาจเอาไซซ์ M คิดด้วยกฎเก่า แต่ XL คิดด้วยกฎใหม่ก่อนถึงขั้น server ตรวจยอด
+ */
+export function syncSkuPricingSnapshot<T extends SkuPricingSnapshot>(
+  lines: T[],
+  latest: SkuPricingSnapshot
+): T[] {
+  return lines.map((line) => line.sku !== latest.sku ? line : ({
+    ...line,
+    priceTiers: latest.priceTiers,
+    promotion: latest.promotion,
+    serialTracked: latest.serialTracked,
+  } as T));
+}
 
 export type PromotionOutcome = {
   /** ยอดที่ต้องจ่ายสำหรับสินค้านั้นทั้งหมดในบิล */

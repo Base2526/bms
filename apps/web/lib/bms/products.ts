@@ -644,22 +644,25 @@ export type UpsertProductInput = {
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
   const normalized: PriceTier[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
 
   for (const tier of input) {
     const rawMinQty = Number(tier?.minQty);
     if (!Number.isInteger(rawMinQty) || rawMinQty < 2) {
       throw new Error("ขั้นต่ำราคาส่งต้องเป็นจำนวนเต็มตั้งแต่ 2 ขึ้นไป");
     }
-    if (seen.has(rawMinQty)) throw new Error(`ขั้นต่ำราคาส่ง ${rawMinQty} ซ้ำกัน`);
-    seen.add(rawMinQty);
-
     const scope = tier?.scope ?? "PER_VARIANT_FIXED";
     if (scope !== "PER_VARIANT_FIXED" && scope !== "CROSS_VARIANT_PERCENT") {
       throw new Error("รูปแบบราคาส่งไม่ถูกต้อง");
     }
 
     if (scope === "PER_VARIANT_FIXED") {
+      const size = typeof tier?.size === "string" && tier.size.trim() ? tier.size.trim() : null;
+      const ruleKey = `${scope}\u0000${size ?? ""}\u0000${rawMinQty}`;
+      if (seen.has(ruleKey)) {
+        throw new Error(`ราคาส่งขั้นต่ำ ${rawMinQty} ของไซซ์ ${size ?? "ทุกไซซ์"} ซ้ำกัน`);
+      }
+      seen.add(ruleKey);
       if (tier?.unitPrice == null) {
         throw new Error(`ราคาส่งที่ขั้นต่ำ ${rawMinQty} ห้ามว่าง`);
       }
@@ -667,15 +670,21 @@ function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
       if (!Number.isFinite(unitPrice) || unitPrice < 0) {
         throw new Error(`ราคาส่งที่ขั้นต่ำ ${rawMinQty} ไม่ถูกต้อง`);
       }
-      normalized.push({ minQty: rawMinQty, scope, unitPrice, discountPct: null });
+      normalized.push({ minQty: rawMinQty, scope, size, unitPrice, discountPct: null });
       continue;
     }
 
+    if (typeof tier?.size === "string" && tier.size.trim()) {
+      throw new Error("ราคาส่งแบบรวมทุกไซซ์ห้ามระบุไซซ์เฉพาะ");
+    }
+    const ruleKey = `${scope}\u0000\u0000${rawMinQty}`;
+    if (seen.has(ruleKey)) throw new Error(`ขั้นต่ำราคาส่งรวมทุกไซซ์ ${rawMinQty} ซ้ำกัน`);
+    seen.add(ruleKey);
     const discountPct = Math.round(Number(tier?.discountPct) * 10_000) / 10_000;
     if (!Number.isFinite(discountPct) || discountPct <= 0 || discountPct > 100) {
       throw new Error(`เปอร์เซ็นต์ส่วนลดที่ขั้นต่ำ ${rawMinQty} ต้องมากกว่า 0 และไม่เกิน 100`);
     }
-    normalized.push({ minQty: rawMinQty, scope, unitPrice: null, discountPct });
+    normalized.push({ minQty: rawMinQty, scope, size: null, unitPrice: null, discountPct });
   }
 
   return normalized;
@@ -1176,6 +1185,26 @@ export async function upsertProduct(
     // ลบแล้วใส่ใหม่ ไม่ใช่ diff ทีละแถว: ชุดเล็ก (ไม่กี่ขั้น) และการ diff เปิดช่องให้
     // ขั้นที่ถูกลบบนจอยังค้างอยู่ในฐานโดยไม่มีใครเห็น
     if (normalizedPriceTiers) {
+      const requestedSizes = Array.from(new Set(
+        normalizedPriceTiers
+          .filter((tier) => tier.scope === "PER_VARIANT_FIXED" && tier.size != null)
+          .map((tier) => tier.size as string)
+      ));
+      if (requestedSizes.length > 0) {
+        const knownSizes = await client.query<{ size: string }>(
+          `SELECT DISTINCT size FROM bms_inventory
+            WHERE tenant_id = $1 AND product_sku = $2 AND size = ANY($3::text[])
+           UNION
+           SELECT DISTINCT size FROM bms_product_packs
+            WHERE tenant_id = $1 AND product_sku = $2 AND size = ANY($3::text[])`,
+          [tenantId, sku, requestedSizes]
+        );
+        const found = new Set(knownSizes.rows.map((row) => row.size));
+        const unknown = requestedSizes.filter((size) => !found.has(size));
+        if (unknown.length > 0) {
+          throw new Error(`ไม่พบไซซ์ของสินค้า: ${unknown.join(", ")}`);
+        }
+      }
       await client.query(
         `DELETE FROM bms_product_price_tiers WHERE tenant_id = $1 AND product_sku = $2`,
         [tenantId, sku]
@@ -1183,9 +1212,9 @@ export async function upsertProduct(
       for (const tier of normalizedPriceTiers) {
         await client.query(
           `INSERT INTO bms_product_price_tiers
-             (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [tenantId, sku, tier.minQty, tier.unitPrice, tier.scope, tier.discountPct]
+             (tenant_id, product_sku, min_qty, unit_price, scope, discount_pct, size)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [tenantId, sku, tier.minQty, tier.unitPrice, tier.scope, tier.discountPct, tier.size ?? null]
         );
       }
     }
@@ -1482,9 +1511,9 @@ export async function listPriceTiersForSkus(
   if (skus.length === 0) return out;
   const res = await query<{
     product_sku: string; min_qty: number; unit_price: string | null;
-    scope: PriceTier["scope"]; discount_pct: string | null;
+    scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
   }>(
-    `SELECT product_sku, min_qty, unit_price, scope, discount_pct FROM bms_product_price_tiers
+    `SELECT product_sku, min_qty, unit_price, scope, discount_pct, size FROM bms_product_price_tiers
       WHERE tenant_id = $1 AND product_sku = ANY($2::text[])
       ORDER BY product_sku, min_qty`,
     [tenantId, skus]
@@ -1494,6 +1523,7 @@ export async function listPriceTiersForSkus(
     list.push({
       minQty: Number(row.min_qty),
       scope: row.scope,
+      size: row.size,
       unitPrice: row.unit_price == null ? null : Number(row.unit_price),
       discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
     });

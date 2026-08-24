@@ -1750,6 +1750,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsPriceTier {
     minQty: Int!
     scope: String!
+    size: String
     unitPrice: Float
     discountPct: Float
   }
@@ -1757,6 +1758,7 @@ export const typeDefs = /* GraphQL */ `
   input BmsPriceTierInput {
     minQty: Int!
     scope: String
+    size: String
     unitPrice: Float
     discountPct: Float
   }

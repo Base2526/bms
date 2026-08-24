@@ -11,7 +11,7 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
-import { applyPromotion, unitPriceForQty } from "@/lib/bms/pricing";
+import { applyPromotion, canonicalPriceTiers, priceLinesByQty, syncSkuPricingSnapshot } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import {
@@ -137,6 +137,7 @@ function ScanBarcodeIcon() {
 const TOKEN_KEY = "bms.pos.deviceToken";
 const LAST_RECEIPT_KEY = "bms.pos.lastReceipt";
 const PENDING_SALE_KEY = "bms.pos.pendingSale";
+const PENDING_DEPOSIT_SALE_KEY = "bms.pos.pendingDepositSale";
 
 type ScanHit = {
   sku: string;
@@ -152,6 +153,7 @@ type ScanHit = {
   priceTiers?: Array<{
     minQty: number;
     scope?: "PER_VARIANT_FIXED" | "CROSS_VARIANT_PERCENT";
+    size?: string | null;
     unitPrice?: number | null;
     discountPct?: number | null;
   }>;
@@ -183,12 +185,25 @@ function cartPricingSignature(line: ScanHit): string {
     baseQty: line.baseQty,
     packPrice: line.packPrice,
     basePrice: line.basePrice,
-    priceTiers: [...(line.priceTiers ?? [])].sort((a, b) => a.minQty - b.minQty),
+    priceTiers: canonicalPriceTiers(line.priceTiers ?? []),
     promotion: line.promotion ?? null,
     serialTracked: line.serialTracked === true,
   });
 }
 const variantPricingKey = (sku: string, size: string) => `${sku}\u0000${size}`;
+
+function addScanHitToCart(cart: CartLine[], hit: ScanHit, key: string): CartLine[] {
+  // price tiers / promotion are SKU-wide. A scan of another size is the newest
+  // snapshot for every size already in the cart, not only for the scanned line.
+  const synced = syncSkuPricingSnapshot(cart, hit);
+  const found = synced.find((line) => line.key === key);
+  if (found) {
+    return synced.map((line) => line.key === key
+      ? { ...line, ...hit, packQty: line.packQty + 1, key: line.key, serials: line.serials }
+      : line);
+  }
+  return [...synced, { ...hit, packQty: 1, key }];
+}
 type ReturnDraft = Record<number, number>;
 
 /** สมาชิกที่ค้นเจอจาก /api/pos/member (7.96) */
@@ -282,6 +297,14 @@ type PosDeposit = {
   balanceDue: number;
   dueAt: string | null;
   overdue: boolean;
+};
+
+type PosDepositCandidateOrder = {
+  orderId: string;
+  channel: string;
+  totalAmount: number;
+  itemCount: number;
+  createdAt: string;
 };
 
 type ShiftReport = {
@@ -655,6 +678,7 @@ export default function PosPage() {
   const [noSaleReason, setNoSaleReason] = useState("");
   // ---- มัดจำ / ค้างชำระ (9.0) ----
   const [deposits, setDeposits] = useState<PosDeposit[]>([]);
+  const [depositCandidateOrders, setDepositCandidateOrders] = useState<PosDepositCandidateOrder[]>([]);
   const [depositOrderId, setDepositOrderId] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("CASH");
@@ -731,17 +755,19 @@ export default function PosPage() {
   const [approvalPin, setApprovalPin] = useState("");
   const [settlementRefs, setSettlementRefs] = useState<Record<string, string>>({});
   const [hasPendingSale, setHasPendingSale] = useState(false);
+  const [hasPendingDepositSale, setHasPendingDepositSale] = useState(false);
   // pending = คืนเงินจริงที่ยังไม่ยืนยัน ซึ่งบล็อกการปิดกะ — แท็บกะต้องบอกให้เห็น
   const [shiftReturnSummary, setShiftReturnSummary] = useState<{
     count: number; total: number; pendingCount: number; pendingTotal: number;
   }>({ count: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
   const scanRef = useRef<HTMLInputElement>(null);
   const stockScanRef = useRef<HTMLInputElement>(null);
+  const hasPendingOrderWrite = hasPendingSale || hasPendingDepositSale;
   const currentScanContext = resolveScanContext({
     tab,
     lookupMode,
     blindReturnOpen: blindOpen,
-    hasPendingSale,
+    hasPendingSale: hasPendingOrderWrite,
     busy: busy || stockReceiving,
     blockingOverlayOpen: receiptModalOpen || enrollOpen,
   });
@@ -782,6 +808,23 @@ export default function PosPage() {
       setPayments(saved.payments);
       setHasPendingSale(true);
       setNotice({ type: "error", text: "พบบิลที่ผลลัพธ์ยังไม่แน่ชัดจากครั้งก่อน — กดชำระเงินอีกครั้งเพื่อเช็ค/ทำรายการต่อด้วยคีย์เดิม" });
+    } catch {}
+  }, [session?.shift?.id]);
+
+  useEffect(() => {
+    if (!session?.shift) return;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(PENDING_DEPOSIT_SALE_KEY) ?? "null");
+      if (!saved?.body || saved.body.shiftId !== session.shift.id || !Array.isArray(saved.cart)) return;
+      setCart(saved.cart);
+      setDepositAmount(String(saved.body.payments?.[0]?.amount ?? ""));
+      setDepositMethod(String(saved.body.payments?.[0]?.method ?? "CASH"));
+      setHasPendingDepositSale(true);
+      setTab("deposits");
+      setNotice({
+        type: "error",
+        text: "พบรายการสร้างบิลมัดจำที่ผลลัพธ์ยังไม่แน่ชัด — กด “สร้างบิล + รับมัดจำ” ซ้ำ ระบบจะใช้คีย์เดิมและไม่รับเงินซ้ำ",
+      });
     } catch {}
   }, [session?.shift?.id]);
 
@@ -921,23 +964,29 @@ export default function PosPage() {
    * บรรทัดที่ขายเป็นหน่วยขาย (pack, baseQty > 1) ไม่ถูกแตะ เหมือนฝั่ง server
    */
   const tierPriceByKey = useMemo(() => {
-    const qtyByVariant = new Map<string, number>();
-    const qtyBySku = new Map<string, number>();
+    const basePriceByVariant = new Map<string, number>();
+    const tiersBySku = new Map<string, NonNullable<ScanHit["priceTiers"]>>();
     for (const line of cart) {
-      const key = variantPricingKey(line.sku, line.size);
-      const qty = line.packQty * line.baseQty;
-      qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + qty);
-      qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + qty);
+      basePriceByVariant.set(variantPricingKey(line.sku, line.size), line.basePrice);
+      tiersBySku.set(line.sku, line.priceTiers ?? []);
     }
+
+    const priced = priceLinesByQty(
+      cart.map((line) => ({
+        key: line.key,
+        sku: line.sku,
+        size: line.size,
+        qty: line.packQty * line.baseQty,
+        packUnitPrice: line.baseQty > 1 ? line.packPrice : null,
+      })),
+      basePriceByVariant,
+      tiersBySku
+    );
     const out = new Map<string, number>();
-    for (const line of cart) {
+    for (let index = 0; index < cart.length; index += 1) {
+      const line = cart[index];
       if (line.baseQty > 1 || !line.priceTiers?.length) continue;
-      const unit = unitPriceForQty(
-        line.basePrice,
-        line.priceTiers,
-        qtyByVariant.get(variantPricingKey(line.sku, line.size)) ?? 0,
-        qtyBySku.get(line.sku) ?? 0
-      );
+      const unit = priced[index].unitPrice;
       if (unit !== line.packPrice) out.set(line.key, unit);
     }
     return out;
@@ -1503,13 +1552,136 @@ export default function PosPage() {
     if (!token) return;
     try {
       const res = await fetch("/api/pos/deposit", { headers: authHeaders, cache: "no-store" });
-      if (res.ok) setDeposits((await res.json()).deposits ?? []);
+      if (res.ok) {
+        const data = await res.json();
+        setDeposits(data.deposits ?? []);
+        setDepositCandidateOrders(data.candidateOrders ?? []);
+      }
     } catch { /* รายการโหลดใหม่ได้ ไม่ขัดจังหวะงานขาย */ }
+  }
+
+  async function createDepositFromCart() {
+    if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy || hasPendingSale) return;
+    const amount = Math.round(Number(depositAmount) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotice({ type: "error", text: "ระบุยอดมัดจำให้ถูกต้อง" });
+      return;
+    }
+    if (!hasPendingDepositSale && amount >= amountDue) {
+      setNotice({ type: "error", text: "ยอดมัดจำต้องน้อยกว่ายอดบิล ถ้ารับเต็มยอดให้ใช้ปุ่มชำระเงินในหน้าขาย" });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const savedAttempt = (() => {
+        try { return JSON.parse(window.localStorage.getItem(PENDING_DEPOSIT_SALE_KEY) ?? "null"); } catch { return null; }
+      })();
+      if (!savedAttempt?.body && await refreshCartPricingBeforePay()) return;
+
+      const needsDiscountPreview = Boolean(member || pointsToRedeem || couponCode.trim() || approvedDiscount);
+      if (!savedAttempt?.body && needsDiscountPreview && (
+        !memberPreview
+        || memberPreviewAppliedKey !== memberPreviewRequestKey
+        || Math.abs(Number(memberPreview.subtotal) - total) > 0.001
+      )) {
+        setNotice({ type: "error", text: "รอระบบตรวจราคาสมาชิก คูปอง และแต้มล่าสุดก่อนรับมัดจำ" });
+        return;
+      }
+      if (savedAttempt?.body?.manualDiscount > 0 && !approvedDiscount) {
+        setNotice({ type: "error", text: "รายการมัดจำค้างมีส่วนลดหน้าร้าน — ให้หัวหน้ากดอนุมัติใหม่ก่อน" });
+        setDiscountOpen(true);
+        return;
+      }
+
+      const body = savedAttempt?.body
+        ? {
+            ...savedAttempt.body,
+            cashierUserId: cashierId,
+            pin,
+            discountApproverPin: approvedDiscount?.approverPin ?? null,
+          }
+        : {
+            mode: "DEPOSIT",
+            shiftId: session.shift.id,
+            cashierUserId: cashierId,
+            pin,
+            idempotencyKey: `deposit-cart-${session.device.code}-${session.shift.id.slice(0, 8)}-${crypto.randomUUID()}`,
+            customerId: member?.customerId ?? null,
+            pointsToRedeem: memberPreview?.pointsUsed ?? 0,
+            couponCode: couponCode.trim() || null,
+            manualDiscount: approvedDiscount?.amount ?? 0,
+            discountReason: approvedDiscount?.reason ?? null,
+            discountApproverUserId: approvedDiscount?.approverId ?? null,
+            discountApproverPin: approvedDiscount?.approverPin ?? null,
+            lines: cart.map((line) => ({
+              sku: line.sku,
+              size: line.size,
+              packQty: line.packQty,
+              packCode: line.packCode,
+            })),
+            extraLines: extraLines
+              .map((line) => ({ label: line.label.trim(), unitAmount: Number(line.unitAmount) }))
+              .filter((line) => line.label && Number.isFinite(line.unitAmount) && line.unitAmount > 0),
+            payments: [{
+              method: depositMethod,
+              amount,
+              cashTendered: depositMethod === "CASH" ? amount : null,
+            }],
+          };
+
+      window.localStorage.setItem(
+        PENDING_DEPOSIT_SALE_KEY,
+        JSON.stringify({ body: { ...body, pin: undefined, discountApproverPin: undefined }, cart })
+      );
+      setHasPendingDepositSale(true);
+
+      const res = await fetch("/api/pos/sale", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const rawBody = await res.text();
+      let data: any = null;
+      try { data = rawBody ? JSON.parse(rawBody) : null; } catch {}
+      if (data == null) throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ครบ (HTTP ${res.status})`);
+
+      if (res.ok && data.status === "DEPOSIT_TAKEN") {
+        const orderRef = String(data.orderId ?? "").slice(0, 8).toUpperCase();
+        setDepositOrderId(data.orderId ?? "");
+        setDepositAmount("");
+        setCart([]);
+        clearBillCustomerState();
+        window.localStorage.removeItem(PENDING_DEPOSIT_SALE_KEY);
+        setHasPendingDepositSale(false);
+        setNotice({
+          type: "ok",
+          text: `สร้างบิล #${orderRef} และรับมัดจำ ฿${baht(Number(data.deposit?.depositPaid ?? amount))} แล้ว${
+            data.replayed ? " (รายการเดิม ไม่ได้รับเงินซ้ำ)" : ""
+          }`,
+        });
+        void refreshDeposits();
+        return;
+      }
+
+      if (data?.status !== "SERVER_ERROR") {
+        window.localStorage.removeItem(PENDING_DEPOSIT_SALE_KEY);
+        setHasPendingDepositSale(false);
+      }
+      setNotice({ type: "error", text: data?.reason ?? describeFailure(data) });
+    } catch (error: any) {
+      setNotice({
+        type: "error",
+        text: `ส่งไม่สำเร็จ (${String(error?.message ?? error)}) — กด “สร้างบิล + รับมัดจำ” ซ้ำ ระบบจะใช้คีย์เดิมและไม่รับเงินซ้ำ`,
+      });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function doDepositAction(action: "take" | "add" | "settle" | "close") {
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อน" }); return; }
-    if (!depositOrderId.trim()) { setNotice({ type: "error", text: "ระบุเลข order ของมัดจำ" }); return; }
+    if (!depositOrderId.trim()) { setNotice({ type: "error", text: "เลือกบิลที่ต้องการทำรายการมัดจำ" }); return; }
     const amount = Number(depositAmount);
     if (action !== "close" && (!Number.isFinite(amount) || amount <= 0)) {
       setNotice({ type: "error", text: "ระบุจำนวนเงินให้ถูกต้อง" }); return;
@@ -1988,6 +2160,7 @@ export default function PosPage() {
    * null = กดได้
    */
   const payBlockedReason: string | null = (() => {
+    if (hasPendingDepositSale) return "มีรายการมัดจำรอตรวจสอบ — ไปแท็บมัดจำและกดตรวจรายการเดิม";
     if (cart.length === 0) return "ยังไม่มีสินค้าในบิล";
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
@@ -2010,7 +2183,7 @@ export default function PosPage() {
     mode: "sale" | "lookup" = lookupMode ? "lookup" : "sale",
     restoreFocus = true
   ) {
-    if (hasPendingSale) {
+    if (hasPendingOrderWrite) {
       setNotice({ type: "error", text: "มีบิลรอตรวจสอบอยู่ กรุณากดชำระเงินซ้ำให้จบก่อนแก้รายการ" });
       return;
     }
@@ -2040,15 +2213,7 @@ export default function PosPage() {
         return;
       }
       const key = `${hit.sku}__${hit.size}__${hit.packCode}`;
-      setCart((cur) => {
-        const found = cur.find((l) => l.key === key);
-        if (found) {
-          return cur.map((l) => (l.key === key
-            ? { ...l, ...hit, packQty: l.packQty + 1, key: l.key, serials: l.serials }
-            : l));
-        }
-        return [...cur, { ...hit, packQty: 1, key }];
-      });
+      setCart((cur) => addScanHitToCart(cur, hit, key));
       setNotice(null);
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
@@ -2323,7 +2488,7 @@ export default function PosPage() {
       tab,
       lookupMode,
       blindReturnOpen: blindOpen,
-      hasPendingSale,
+      hasPendingSale: hasPendingOrderWrite,
       busy: busy || stockReceiving,
       blockingOverlayOpen: receiptModalOpen || enrollOpen || (source === "hid" && cameraModalOpen),
     });
@@ -2451,7 +2616,7 @@ export default function PosPage() {
   }
 
   function changeQty(key: string, delta: number) {
-    if (hasPendingSale) return;
+    if (hasPendingOrderWrite) return;
     setCart((cur) =>
       cur
         .map((l) => (l.key === key ? { ...l, packQty: l.packQty + delta } : l))
@@ -2460,7 +2625,7 @@ export default function PosPage() {
   }
 
   function updatePayment(id: string, patch: Partial<PaymentDraft>) {
-    if (hasPendingSale) return;
+    if (hasPendingOrderWrite) return;
     setPayments((cur) => cur.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)));
   }
 
@@ -2476,7 +2641,7 @@ export default function PosPage() {
   }, [amountDue, payments]);
 
   function addPaymentRow() {
-    if (hasPendingSale) return;
+    if (hasPendingOrderWrite) return;
     // ออกจากฟอร์มย่อทันทีที่จะจ่ายผสม — ต้องเห็นยอดของแต่ละวิธี
     setSplitMode(true);
     setPayments((cur) =>
@@ -2489,7 +2654,7 @@ export default function PosPage() {
   }
 
   function removePaymentRow(id: string) {
-    if (hasPendingSale) return;
+    if (hasPendingOrderWrite) return;
     setPayments((cur) => {
       if (cur.length <= 1) return cur;
       const next = cur.filter((payment) => payment.id !== id);
@@ -2745,7 +2910,7 @@ export default function PosPage() {
     }
   }
 
-  async function refreshCartPricingBeforePay(): Promise<boolean> {
+  async function refreshCartPricingBeforePay(options: { announce?: boolean } = {}): Promise<boolean> {
     const refreshed = await Promise.all(cart.map(async (line): Promise<CartLine> => {
       const params = new URLSearchParams({
         code: line.sku,
@@ -2780,10 +2945,12 @@ export default function PosPage() {
     setMemberPreviewAppliedKey(null);
     setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
     resetToSimpleCash();
-    setNotice({
-      type: "error",
-      text: "ราคา ขั้นราคาส่ง หรือโปรโมชันมีการเปลี่ยนแปลง · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่",
-    });
+    if (options.announce !== false) {
+      setNotice({
+        type: "error",
+        text: "ราคา ขั้นราคาส่ง หรือโปรโมชันมีการเปลี่ยนแปลง · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่",
+      });
+    }
     return true;
   }
 
@@ -2947,6 +3114,7 @@ export default function PosPage() {
           window.localStorage.removeItem(PENDING_SALE_KEY);
           setHasPendingSale(false);
         }
+        let failureText = describeFailure(data);
         if (data?.status === "PAYMENT_MISMATCH") {
           // บิลถูกยกเลิกแล้ว ต้องทิ้งยอดรับเงินเดิมและ preview ส่วนลดเดิมทั้งหมด
           // ไม่เช่นนั้นกดซ้ำก็ส่งยอดเก่าแล้วชน mismatch วนซ้ำ
@@ -2954,8 +3122,19 @@ export default function PosPage() {
           setMemberPreviewAppliedKey(null);
           setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
           resetToSimpleCash();
+          // recovery ต้องส่ง body เดิมก่อนเพื่อกันบิลซ้ำ จึง refresh ล่วงหน้าไม่ได้
+          // เมื่อ server ยืนยันแล้วว่าบิลถูกยกเลิก ค่อยดึงกฎราคาล่าสุดให้ทันที
+          // แคชเชียร์ไม่ควรต้องกดชำระอีกครั้งเพียงเพื่อให้ระบบรู้ว่าราคาค้าง
+          try {
+            const pricingUpdated = await refreshCartPricingBeforePay({ announce: false });
+            if (pricingUpdated) {
+              failureText += " · อัปเดตราคาในตะกร้าเป็นยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่";
+            }
+          } catch (refreshError: any) {
+            failureText += ` · ตรวจราคาล่าสุดอัตโนมัติไม่สำเร็จ (${String(refreshError?.message ?? refreshError)})`;
+          }
         }
-        setNotice({ type: "error", text: describeFailure(data) });
+        setNotice({ type: "error", text: failureText });
       }
     } catch (e: any) {
       // เน็ตหลุดกลางคำขอ: บิลอาจสร้างไปแล้ว → ห้ามให้พนักงานกดขายใหม่ทันที
@@ -3467,9 +3646,10 @@ export default function PosPage() {
           {notice.text}
         </div>
       )}
-      {hasPendingSale && (
+      {hasPendingOrderWrite && (
         <div style={{ background: "#fff7e6", color: "#874d00", padding: 12, borderRadius: 8, border: "1px solid #ffd591" }}>
-          ล็อกรายการไว้เพื่อกู้บิลเดิม กรุณากด “ชำระเงิน” ซ้ำ ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลซ้ำ
+          ล็อกรายการไว้เพื่อกู้รายการเดิม กรุณากด {hasPendingDepositSale ? "“สร้างบิล + รับมัดจำ”" : "“ชำระเงิน”"} ซ้ำ
+          ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลหรือรับเงินซ้ำ
         </div>
       )}
       <div className="pos-main-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 10, flex: 1, minHeight: 0 }}>
@@ -3769,10 +3949,51 @@ export default function PosPage() {
 
           <div className="pos-block">
             <div className="pos-block-title">ทำรายการ</div>
+            <div style={{ background: "#f0f7ff", border: "1px solid #91caff", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+              <b>ลูกค้าหน้าร้าน:</b> ใส่สินค้าในตะกร้าตามปกติ ระบุยอดมัดจำด้านล่าง แล้วกดสร้างบิล
+              ระบบจะสร้าง Order ID, คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ
+              <div style={{ marginTop: 8 }}>
+                <button
+                  className="pos-shift-btn-primary"
+                  disabled={busy || hasPendingSale || cart.length === 0}
+                  onClick={() => void createDepositFromCart()}
+                >
+                  {busy ? "กำลังบันทึก…" : hasPendingDepositSale ? "ตรวจรายการมัดจำเดิม" : `สร้างบิล + รับมัดจำ (${cart.length} รายการ)`}
+                </button>
+              </div>
+            </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>Order ID</span>
-              <input value={depositOrderId} onChange={(e) => setDepositOrderId(e.target.value.trim())}
-                     placeholder="เลือกจากรายการด้านล่าง หรือวางเลข order" />
+              <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>บิลที่ต้องการทำรายการ</span>
+              <select value={depositOrderId} onChange={(event) => {
+                const orderId = event.target.value;
+                const openDeposit = deposits.find((deposit) => deposit.orderId === orderId);
+                setDepositOrderId(orderId);
+                setDepositAmount(openDeposit ? String(openDeposit.balanceDue) : "");
+              }}>
+                <option value="">— เลือกบิลในระบบ —</option>
+                {depositCandidateOrders.length > 0 && (
+                  <optgroup label="บิล PENDING ที่รับมัดจำครั้งแรกได้">
+                    {depositCandidateOrders.map((order) => (
+                      <option key={order.orderId} value={order.orderId}>
+                        #{order.orderId.slice(0, 8).toUpperCase()} · {order.channel.toUpperCase()} · {order.itemCount} ชิ้น · ฿{baht(order.totalAmount)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {deposits.length > 0 && (
+                  <optgroup label="รายการมัดจำที่เปิดอยู่">
+                    {deposits.map((deposit) => (
+                      <option key={deposit.orderId} value={deposit.orderId}>
+                        {deposit.customerNote || `#${deposit.orderId.slice(0, 8).toUpperCase()}`} · ค้าง ฿{baht(deposit.balanceDue)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <span className="pos-block-hint">
+                กรณีมีออเดอร์จาก Inbox / Customer 360 อยู่แล้ว ให้เลือกบิลจากรายการนี้เพื่อรับมัดจำ
+                ไม่ต้องพิมพ์ UUID หรือบาร์โค้ดสินค้าเอง
+              </span>
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -3791,9 +4012,12 @@ export default function PosPage() {
                   <option value="WALLET">Wallet</option>
                 </select>
               </label>
-              <button disabled={busy} onClick={() => void doDepositAction("take")}>รับมัดจำครั้งแรก</button>
-              <button disabled={busy} onClick={() => void doDepositAction("add")}>รับเพิ่ม (ยังไม่ครบ)</button>
-              <button className="pos-shift-btn-primary" disabled={busy}
+              <button disabled={busy || !depositCandidateOrders.some((order) => order.orderId === depositOrderId)}
+                      onClick={() => void doDepositAction("take")}>รับมัดจำครั้งแรก</button>
+              <button disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
+                      onClick={() => void doDepositAction("add")}>รับเพิ่ม (ยังไม่ครบ)</button>
+              <button className="pos-shift-btn-primary"
+                      disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
                       onClick={() => void doDepositAction("settle")}>รับยอดคงเหลือ + ส่งของ</button>
             </div>
             <div style={{ borderTop: "1px solid var(--pos-line)", marginTop: 12, paddingTop: 10 }}>
@@ -3805,7 +4029,8 @@ export default function PosPage() {
                 </select>
                 <input value={depositReason} onChange={(e) => setDepositReason(e.target.value)}
                        maxLength={300} placeholder="เหตุผลที่ปิดมัดจำ" style={{ flex: 1, minWidth: 220 }} />
-                <button disabled={busy} onClick={() => void doDepositAction("close")}>ปิดมัดจำ</button>
+                <button disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
+                        onClick={() => void doDepositAction("close")}>ปิดมัดจำ</button>
               </div>
               <div className="pos-block-hint">
                 การปิดจะคืนสินค้าที่จองไว้ทันที ส่วนการจ่ายเงินคืนลูกค้าให้ทำผ่าน refund ตามวิธีเดิม
@@ -4640,13 +4865,7 @@ export default function PosPage() {
                   <button
                     onClick={() => {
                       const key = `${lookup.sku}__${lookup.size}__${lookup.packCode}`;
-                      setCart((cur) => {
-                        const found = cur.find((l) => l.key === key);
-                        if (found) return cur.map((l) => (l.key === key
-                          ? { ...l, ...lookup, packQty: l.packQty + 1, key: l.key, serials: l.serials }
-                          : l));
-                        return [...cur, { ...lookup, packQty: 1, key }];
-                      });
+                      setCart((cur) => addScanHitToCart(cur, lookup, key));
                       setLookup(null);
                       setLookupMode(false);
                       scanRef.current?.focus();
@@ -5597,7 +5816,7 @@ export default function PosPage() {
             {busy ? "กำลังบันทึก…" : payBlockedReason ?? `ชำระเงิน ฿${baht(amountDue)}`}
           </button>
           <button
-            disabled={hasPendingSale}
+            disabled={hasPendingOrderWrite}
             onClick={() => {
               setCart([]);
               setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
@@ -5615,7 +5834,7 @@ export default function PosPage() {
           {/* พักบิล (7.97) — ลูกค้าลืมของ/หาเงินไม่ทัน แล้วคิวข้างหลังรอ
               วางคู่กับ "ล้างบิล" เพราะเป็นทางเลือกของกันและกันตอนต้องเคลียร์เคาน์เตอร์ */}
           <button
-            disabled={hasPendingSale || cart.length === 0}
+            disabled={hasPendingOrderWrite || cart.length === 0}
             onClick={() => setParkOpen(true)}
             style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
           >
@@ -5653,7 +5872,7 @@ export default function PosPage() {
             </div>
           ))}
           <button
-            disabled={hasPendingSale}
+            disabled={hasPendingOrderWrite}
             onClick={() => setExtraLines((cur) => [...cur, { label: "", unitAmount: "" }])}
             style={{ marginTop: 6, padding: "10px 0", fontSize: 14 }}
           >

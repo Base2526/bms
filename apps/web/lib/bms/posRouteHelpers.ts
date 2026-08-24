@@ -24,6 +24,12 @@ export function normalizePosSearchQuery(raw: string | null | undefined): string 
   return String(raw ?? "").trim();
 }
 
+export function isPosUuid(raw: string | null | undefined): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(raw ?? "").trim()
+  );
+}
+
 export function isDistinctPosApprover(actorUserId: string, approverUserId: string): boolean {
   const actor = actorUserId.trim().toLowerCase();
   const approver = approverUserId.trim().toLowerCase();

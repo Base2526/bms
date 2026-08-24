@@ -56,6 +56,10 @@ async function handlePOST(req: NextRequest) {
   if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.sell"))) {
     return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์ขายหน้าร้าน" }, { status: 403 });
   }
+  const mode = body.mode === "DEPOSIT" ? "DEPOSIT" : "SALE";
+  if (mode === "DEPOSIT" && !(await cashierHasPermission(device.tenantId, auth.userId, "pos.deposit.take"))) {
+    return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์รับมัดจำ" }, { status: 403 });
+  }
 
   const lines = parsePosSaleLines(body.lines);
   if (lines.length === 0) return badRequest("ต้องมีรายการสินค้าอย่างน้อย 1 รายการ");
@@ -99,6 +103,7 @@ async function handlePOST(req: NextRequest) {
     shiftId,
     cashierUserId: auth.userId,
     idempotencyKey,
+    mode,
     lines,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
@@ -119,12 +124,15 @@ async function handlePOST(req: NextRequest) {
   });
 
   // ขายซ้ำด้วยคีย์เดิม → 200 พร้อม replayed: true (ไม่ใช่ error — เครื่องแค่ยิงซ้ำ)
-  if (result.status === "SOLD") return NextResponse.json(result, { status: 200 });
+  if (result.status === "SOLD" || result.status === "DEPOSIT_TAKEN") {
+    return NextResponse.json(result, { status: 200 });
+  }
 
   const httpStatus =
     result.status === "SHIFT_NOT_OPEN" ? 409
     : result.status === "EMPTY" ? 400
     : result.status === "PAYMENT_MISMATCH" ? 400
+    : result.status === "DEPOSIT_INVALID" ? 400
     : result.status === "LOT_EXPIRED_OR_SHORT" ? 409
     : result.status === "INVALID_PACK" ? 409
     : result.status === "INSUFFICIENT" ? 409

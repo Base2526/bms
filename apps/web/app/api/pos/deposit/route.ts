@@ -17,8 +17,14 @@ import {
   settleDepositSale,
   verifyCashierPin,
 } from "@/lib/bms/pos";
-import { addToDeposit, closeDeposit, listDeposits, takeDeposit } from "@/lib/bms/deposits";
-import { parsePosPayments } from "@/lib/bms/posRouteHelpers";
+import {
+  addToDeposit,
+  closeDeposit,
+  listDepositCandidateOrders,
+  listDeposits,
+  takeDeposit,
+} from "@/lib/bms/deposits";
+import { isPosUuid, parsePosPayments } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -27,8 +33,13 @@ export const dynamic = "force-dynamic";
 async function handleGET(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
+  const [deposits, candidateOrders] = await Promise.all([
+    listDeposits(device.tenantId, "OPEN", { locationId: device.locationId }),
+    listDepositCandidateOrders(device.tenantId, device.locationId),
+  ]);
   return NextResponse.json({
-    deposits: await listDeposits(device.tenantId, "OPEN", { locationId: device.locationId }),
+    deposits,
+    candidateOrders,
   });
 }
 
@@ -46,6 +57,9 @@ async function handlePOST(req: NextRequest) {
   const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
   if (!cashierUserId || !pin) return NextResponse.json({ error: "ต้องระบุพนักงานและ PIN" }, { status: 400 });
   if (!orderId) return NextResponse.json({ error: "ต้องระบุบิล" }, { status: 400 });
+  if (!isPosUuid(orderId)) {
+    return NextResponse.json({ error: "เลขนี้ไม่ใช่บิลในระบบ กรุณาเลือกบิลจากรายการ ไม่ใช่เลขบาร์โค้ดสินค้า" }, { status: 400 });
+  }
 
   const auth = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });

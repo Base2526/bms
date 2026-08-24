@@ -507,7 +507,7 @@ const MENU_CARDS_TH: MenuCard[] = [
       "Bluetooth HID เป็น Keyboard: ตั้ง Scanner ของเครื่องเป็น Prefix Mode (เช่น F9 + ข้อมูล + Enter) ที่หน้าเครื่องขาย เพื่อให้สแกนได้แม้กำลังพิมพ์ค้นสมาชิก/PIN โดยข้อมูลไม่หลุดเข้าช่องนั้น",
       "แท็บรับของให้เลือก PO ก่อน สแกนเป็นรายการร่าง ตรวจจำนวน/lot/วันหมดอายุ แล้วกดยืนยันครั้งเดียว; ต้องมีสิทธิ์ purchase.receive และของเข้าที่สาขาของเครื่องนี้",
       "ค้นหาสมาชิกก่อนชำระเพื่อใช้ส่วนลดตาม tier และแต้ม; ตั้งโปรแกรมและตรวจ ledger ที่ /admin/loyalty",
-      "ราคาส่งเลือกได้ 2 แบบที่หน้า Products: แยกไซซ์ใช้ราคาคงที่ของไซซ์นั้น หรือรวมจำนวนทุกไซซ์แล้วลดเปอร์เซ็นต์จากราคาปกติของแต่ละไซซ์ เช่น S/M/L รวมครบ 10 ชิ้น ลด 20% แต่ละไซซ์จึงยังมีราคาต่างกัน",
+      "ราคาส่งเลือกได้ 2 แบบที่หน้า Products: ราคาคงที่เลือกไซซ์ M/XL ฯลฯ แยกกันได้ (หรือเลือกทุกไซซ์ให้ราคาเดียวกัน) และตั้งขั้นต่ำเท่ากันแต่ราคาคนละค่าได้; แบบรวมทุกไซซ์จะรวมจำนวนแล้วลดเปอร์เซ็นต์จากราคาปกติของแต่ละไซซ์ เช่น S/M/L รวมครบ 10 ชิ้น ลด 20% แต่ละไซซ์จึงยังมีราคาต่างกัน",
       "การแลกแต้มพิมพ์จำนวนในช่องกลางได้ หรือใช้ปุ่ม +/- ซึ่งขยับครั้งละ 1 หน่วยตามอัตราร้าน; ระบบใช้เฉพาะหน่วยเต็มและเก็บเศษไว้ เช่น มี 3,045 แต้ม อัตรา 100 แต้มต่อหน่วย ระบบใช้ 3,000 และคงเหลือ 45 แต้ม",
       "ก่อนรับเงิน ระบบจะตรวจราคาปกติ ราคาส่ง pack และโปรโมชันล่าสุดอีกครั้ง หากมีการแก้สินค้าหลังยิงเข้าตะกร้า ระบบจะอัปเดตยอดและให้ตรวจรับเงินใหม่แทนการขายด้วยราคาเก่า",
       "พักบิลได้ไม่เกิน 20 บิลต่อกะ แต่ไม่จอง stock และไม่ล็อกราคา; ตอนกลับมาขายระบบใช้ราคาและ stock ปัจจุบัน",
@@ -1295,7 +1295,8 @@ const TH: ManualContent = {
       steps: [
         "พักบิลเมื่อคิวยังไม่พร้อมชำระ ตั้งชื่อให้หาเจอ แล้วเรียกกลับหรือทิ้งได้; จำกัด 20 บิลต่อกะ",
         "บิลพักไม่จองสต็อกและไม่ล็อกราคา เมื่อเรียกกลับต้องขายด้วยราคา/สต็อกปัจจุบัน และจะหายเมื่อกะจบ",
-        "งานมัดจำเลือก order ของสาขานี้ แล้วใช้ รับครั้งแรก หรือ รับเพิ่ม โดยยอดต้องน้อยกว่ายอดคงเหลือ",
+        "ลูกค้าหน้าร้าน: ใส่สินค้าในตะกร้า ไปแท็บมัดจำ ระบุยอด/วิธีรับเงิน แล้วกด สร้างบิล + รับมัดจำ ระบบสร้าง Order ID คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ",
+        "ออเดอร์จาก Inbox / Customer 360: เลือกบิล PENDING ของสาขาจากรายการ ไม่ต้องพิมพ์ UUID หรือใช้บาร์โค้ดสินค้า แล้วใช้ รับครั้งแรก หรือ รับเพิ่ม โดยยอดต้องน้อยกว่ายอดคงเหลือ",
         "เมื่อลูกค้าจ่ายครบ ใช้ รับยอดคงเหลือ + ส่งของ เท่านั้น เพื่อให้ตัดสต็อก lot เอกสาร แต้ม และ audit พร้อมกัน",
         "สินค้ามี serial ต้องสแกนสินค้าที่ส่งจริงและกรอก serial ในตะกร้าก่อน settle",
         "ปิดมัดจำเป็น ยกเลิก หรือ ยึด พร้อมเหตุผล ระบบคืน stock ที่จอง แต่การคืนเงินจริงต้องทำใน refund flow แยกต่างหาก",
@@ -2507,7 +2508,8 @@ const EN: ManualContent = {
       steps: [
         "Park an unpaid cart with a useful label, then resume or discard it later. The cap is twenty per shift.",
         "Parked bills reserve no stock and lock no price; resume uses current stock/pricing and parked bills end with the shift.",
-        "For a deposit, select a branch-local order and use Take first deposit or Add. Each amount must be below the remaining balance.",
+        "For a walk-in deposit, add goods to the POS cart, open Deposits, enter the amount/method, then use Create order + take deposit. The server creates the Order ID, recalculates pricing, and reserves stock.",
+        "For an Inbox / Customer 360 order, select its branch-local PENDING bill from the list; do not type a UUID or product barcode. Use Take first deposit or Add, with each amount below the remaining balance.",
         "When fully paid, use Take balance + hand over goods so stock, lots, documents, points, and audit complete together.",
         "For serial-tracked goods, scan the delivered items and enter their serials before settlement.",
         "Close a deposit as cancelled or forfeited with a reason. Reserved stock is released, but any payout uses the separate refund flow.",

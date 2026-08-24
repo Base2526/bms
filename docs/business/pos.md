@@ -73,10 +73,13 @@ bills rung up by mistake.
 The product price is the fallback price. A sized BASE pack may override it for one inventory size;
 leaving that override empty restores the fallback without deleting inventory or pack history. POS,
 order creation, stock/AI results, and the public shop all resolve price in the same order: sized BASE
-price, shared BASE price, then product price. Quantity tiers and active promotions remain configured
-per SKU. Fixed-price tiers qualify separately per SKU + size. Cross-size percentage tiers qualify
-from the SKU's quantity across every size, then discount each size from its own base price so two
-sizes with different prices never collapse to one unit price. Promotions remain per SKU + size.
+price, shared BASE price, then product price. A fixed wholesale tier can target one size, so M and XL
+may have the same minimum quantity but different unit prices; a legacy/shared fixed tier with no size
+continues to apply one price to every size. Both qualify from the quantity of that SKU + size only.
+If a size-specific and shared rule have the same minimum, the size-specific rule wins. Cross-size
+percentage tiers qualify from the SKU's quantity across every size, then discount each size from its
+own base price so two sizes with different prices never collapse to one unit price. Promotions remain
+per SKU + size.
 
 ## Membership, tier discounts, and loyalty points
 
@@ -263,6 +266,18 @@ Open deposits carry a due date and are listed with an `overdue` flag, because **
 goods nobody else can buy.** Without that visibility a shop accumulates stock that exists but cannot be
 sold, and nobody notices.
 
+For a walk-in customer, the deposit screen can create the order directly from the current POS cart.
+The request goes through the same server-side catalog, cross-variant wholesale, promotion, member,
+coupon, points and approved-manual-discount rules as a full POS sale. It creates a `PENDING` order,
+reserves stock, and records the first deposit; serial numbers are intentionally deferred until the
+goods are collected. The cart-deposit request has its own persisted idempotency key, so a browser or
+network retry recovers the same order and payment.
+
+For an order already created by Inbox / Customer 360, the screen lists eligible branch-local
+`PENDING` orders (no existing deposit and no active payment) and sends the selected internal
+`bms_orders.id` UUID. The cashier never types that UUID. A barcode or product code is rejected at the
+route boundary before it reaches a UUID column in PostgreSQL.
+
 ## Gift cards and store credit (8.9)
 
 Migration `9.4` is the idempotent repair path for long-lived deployments that skipped `8.9`–`9.2`.
@@ -404,12 +419,15 @@ not only the ones past the threshold.
 
 Two decisions worth stating:
 
-Each step chooses one explicit scope. **Separate sizes: fixed price** combines repeated lines of the
-same SKU + size and applies the configured unit price. **Combine sizes: percentage** sums every size
-of the SKU to qualify, then applies the configured percentage to each variant's own base price. For
+Each step chooses one explicit scope. **Fixed price by size** combines repeated lines of the same
+SKU + size and applies either that size's configured unit price or the shared all-size fallback. This
+supports, for example, five M units at ฿80 each and five XL units at ฿120 each under separate rules
+with the same minimum. **Combine sizes: percentage** sums every size of the SKU to qualify, then
+applies the configured percentage to each variant's own base price. For
 example S ฿10 × 4, M ฿12 × 3, and L ฿15 × 3 qualify together at ten units; 20% off produces ฿8,
-฿9.60, and ฿12 respectively, for ฿96.80 total. A single fixed ฿8 across different regular prices is
-intentionally not supported because it silently gives the expensive size a much deeper discount.
+฿9.60, and ฿12 respectively, for ฿96.80 total. The form also permits an explicit "all sizes" fixed
+price for shops that intentionally want one wholesale price across variants; it is never inferred
+from a size-specific row.
 
 **A line sold as a pack keeps the pack's price.** The pack row is the shop stating outright what the
 box costs; letting two mechanisms compete for the same line produces a bill nobody can explain. The
@@ -434,12 +452,21 @@ still ephemeral, reserves no stock, and can change if the catalogue is edited be
 The cart refreshes each existing line's server-owned price, wholesale steps, pack metadata, and
 promotion immediately before a new payment attempt. If an administrator changed any of them after
 the product entered the cart, payment stops before writing an order, the latest total replaces the
-stale preview, and the cashier must review and receive payment again. Re-scanning an existing line
-also replaces its cached pricing metadata instead of only incrementing its quantity. Member, coupon,
-and points previews are tied to the exact subtotal that produced them, so an older asynchronous
-preview cannot authorize payment after the cart total changes.
+stale preview, and the cashier must review and receive payment again. Wholesale steps and promotions
+are SKU-wide, so scanning any size replaces that pricing snapshot for every size of the same SKU
+already in the cart; this prevents one size using an older policy than another. Re-scanning an
+existing line also replaces its cached pricing metadata instead of only incrementing its quantity.
+Member, coupon, and points previews are tied to the exact subtotal that produced them, so an older
+asynchronous preview cannot authorize payment after the cart total changes.
 
-Steps are edited on the product form and saved with the product. Sending the field replaces the whole
+A recovered attempt must first replay its original body and idempotency key because the previous
+response may have been lost after a successful commit. If that replay returns `PAYMENT_MISMATCH`,
+the server has cancelled the rejected order, so the POS then refreshes the whole cart automatically,
+clears the stale payment and discount preview, and asks the cashier to verify the new amount once.
+
+Steps are edited on the product form and saved with the product. A fixed-price row explicitly selects
+one existing size or "all sizes (same price)"; cross-size percentage rows intentionally have no size.
+Sending the field replaces the whole
 set, omitting it leaves the existing steps alone — the same rule as `vat_category`, and for the same
 reason: a bulk import that does not know about the field must not wipe a shop's wholesale pricing.
 

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   decoratePosSale,
   isDistinctPosApprover,
+  isPosUuid,
   normalizePosSearchQuery,
   parsePosExtraLines,
   parsePosPayments,
@@ -91,6 +92,12 @@ test("POS extra lines drop non-finite quantities before they reach Postgres", ()
 test("POS search query normalization trims whitespace and null safely", () => {
   assert.equal(normalizePosSearchQuery("  milk tea  "), "milk tea");
   assert.equal(normalizePosSearchQuery(null), "");
+});
+
+test("POS order references reject barcodes before reaching UUID database columns", () => {
+  assert.equal(isPosUuid("2000000000015"), false);
+  assert.equal(isPosUuid("c4f9052a-9484-46e9-a47d-e7b57c08e867"), true);
+  assert.equal(isPosUuid(" C4F9052A-9484-46E9-A47D-E7B57C08E867 "), true);
 });
 
 test("POS approval requires a different acting user", () => {
