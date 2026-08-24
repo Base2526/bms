@@ -134,6 +134,50 @@ test("what the counter previews is what createOrder charges", async () => {
     "ต่างกันแม้บาทเดียว = บิลถูกตีตก PAYMENT_MISMATCH หน้าลูกค้า");
 });
 
+test("a fixed-price pack and loose units do not double-count the pack in a promotion", async () => {
+  await setPromo(
+    `INSERT INTO bms_product_promotions (tenant_id, product_sku, kind, buy_qty, bundle_price)
+     VALUES ($1,$2,'N_FOR_PRICE',3,100)`,
+    [tenantId, SKU]
+  );
+  const existing = (await listProductPacks(tenantId, SKU))
+    .find((pack) => pack.size === SIZE_S && pack.packCode === "BOX-3");
+  await upsertProductPack(tenantId, {
+    id: existing?.id,
+    productSku: SKU,
+    size: SIZE_S,
+    packCode: "BOX-3",
+    unitName: "กล่อง",
+    baseQty: 3,
+    price: 90,
+    isBase: false,
+    active: true,
+  });
+
+  const order = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [
+      {
+        sku: SKU,
+        size: SIZE_S,
+        qty: 3,
+        packCode: "BOX-3",
+        packUnitName: "กล่อง",
+        packQty: 1,
+        packUnitPrice: 999, // must be replaced by the current catalog price
+      },
+      { sku: SKU, size: SIZE_S, qty: 3 },
+    ],
+  } as any);
+  assert.equal(order.status, "CREATED", JSON.stringify(order));
+  if (order.status !== "CREATED") return;
+  created.push(order.orderId);
+  assert.equal(order.subtotal, 190,
+    "fixed BOX ฿90 + loose 3-for-฿100; pack pieces must not enter or be charged again by the promo");
+});
+
 test("an expired promotion stops applying by itself", async () => {
   await setPromo(
     `INSERT INTO bms_product_promotions (tenant_id, product_sku, kind, buy_qty, get_qty, starts_at, ends_at)

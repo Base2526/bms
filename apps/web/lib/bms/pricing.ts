@@ -22,6 +22,19 @@ export type PriceTier = {
   discountPct?: number | null;
 };
 
+/**
+ * BASE คือหน่วยฐานของสินค้า ไม่ใช่แพ็กที่มีราคาคงที่ของตัวเอง จึงยังเข้า
+ * ราคาส่งและโปรโมชันได้ตามปกติ ส่วน packCode อื่นต้องคงราคาแพ็กและไม่ให้
+ * กลไกราคาต่อชิ้นเข้ามาทับ แม้แพ็กนั้นจะมี baseQty = 1 ก็ตาม
+ */
+export function normalizePackCode(packCode: string | null | undefined): string {
+  return String(packCode ?? "BASE").trim().toUpperCase() || "BASE";
+}
+
+export function isFixedPricePack(packCode: string | null | undefined): boolean {
+  return normalizePackCode(packCode) !== "BASE";
+}
+
 /** เรียงกฎให้ signature/cache คงที่ แม้ DB คืนแถวขั้นต่ำเดียวกันคนละลำดับ */
 export function canonicalPriceTiers(tiers: PriceTier[]): PriceTier[] {
   const text = (value: unknown) => value == null ? "" : String(value);

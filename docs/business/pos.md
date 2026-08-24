@@ -360,7 +360,8 @@ answering which one wins, and there is no answer staff can give a customer. Date
 expired offer stops applying on its own, without anyone remembering to edit the product — a stale
 promotion is how a shop keeps selling at a loss without noticing.
 
-Packs are excluded, same as wholesale steps: the pack row already states what the box costs.
+Named packs are excluded, same as wholesale steps: the pack row already states what the box costs.
+Their underlying pieces do not enter the promotion quantity and are not charged again as loose units.
 
 **Not covered:** cross-product offers ("buy A, get B free"). Those cannot be expressed as one SKU's
 group price and need their own mechanism.
@@ -371,17 +372,17 @@ Bag fees, service fees, gift wrapping: collecting money for something that is no
 previously meant inventing a fake SKU, which puts phantom goods in the warehouse and corrupts stock
 reporting.
 
-`bms_order_extra_lines` is a separate table rather than a relaxation of `bms_order_items`, because that
-table has three constraints that all conflict with this:
+`bms_order_extra_lines` is a separate table rather than a relaxation of `bms_order_items`, because
+product rows still require a real product, stock row, and one row per selling unit:
 
 ```
-UNIQUE (order_id, product_sku, size)                    → two service fees on one bill impossible
+UNIQUE (order_id, product_sku, size, normalized pack)  → one row per real selling unit
 FK (tenant_id, product_sku) → bms_products              → needs a real SKU first
 FK (tenant_id, location_id, product_sku, size)
                             → bms_inventory             → needs a stock row first
 ```
 
-Loosening all three would make the table **every channel shares** — POS, online, LINE, TikTok,
+Loosening that product-line model would make the table **every channel shares** — POS, online, LINE, TikTok,
 Lazada/Shopee — weaker in order to carry rows that are not goods. A bag fee genuinely is not an
 inventory line; it is a service charge attached to a bill, so a separate table matches the meaning and
 leaves the working paths untouched.

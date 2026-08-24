@@ -33,7 +33,14 @@ import {
   reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
-import { applyPromotion, unitPriceForQty, type PriceTier, type Promotion } from "./pricing";
+import {
+  applyPromotion,
+  isFixedPricePack,
+  normalizePackCode,
+  unitPriceForQty,
+  type PriceTier,
+  type Promotion,
+} from "./pricing";
 import { getVariantBasePriceInTx } from "./productPacks";
 import type { VatCategory } from "./vat";
 import { reverseCreditForOrderInTx } from "./storeCredit";
@@ -180,7 +187,9 @@ export type CreateOrderResult =
 function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
   const map = new Map<string, OrderItemInput>();
   for (const it of items) {
-    const key = `${it.sku}__${it.size}__${it.packCode ?? "BASE"}`;
+    // DB ใช้ selling unit ที่ normalize แล้วเป็นส่วนหนึ่งของ unique key ด้วย
+    // จึงต้องรวม BASE/null และ pack code ต่าง case ตั้งแต่ก่อน reserve/insert
+    const key = `${it.sku}__${it.size}__${normalizePackCode(it.packCode)}`;
     const cur = map.get(key);
     if (cur) {
       cur.qty += it.qty;
@@ -213,8 +222,11 @@ async function revalidateOrderPacksInTx(
   const canonical: OrderItemInput[] = [];
   for (const item of items) {
     const packCode = String(item.packCode ?? "").trim();
-    if (!packCode || packCode.toUpperCase() === "BASE") {
-      canonical.push(item);
+    if (!isFixedPricePack(packCode)) {
+      // BASE คือหน่วยฐาน ไม่ใช่ pack ราคาคงที่ แม้ caller รุ่นเก่าหรือ adapter
+      // ที่ผิดพลาดจะแนบ packUnitPrice มา ห้ามปล่อยให้ค่านั้นข้ามราคาส่ง/โปรโมชัน
+      // ของ service กลางได้ ส่วน packQty ยังเก็บไว้เพื่อรูปแบบใบเสร็จ POS เดิม
+      canonical.push({ ...item, packUnitPrice: null });
       continue;
     }
     const result = await client.query<{
@@ -454,10 +466,17 @@ export async function createOrder(
     const variantKey = (sku: string, size: string) => `${sku}\u0000${size}`;
     const qtyByVariant = new Map<string, number>();
     const qtyBySku = new Map<string, number>();
+    const promoQtyByVariant = new Map<string, number>();
     for (const it of items) {
       const key = variantKey(it.sku, it.size);
       qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + Math.max(0, it.qty));
       qtyBySku.set(it.sku, (qtyBySku.get(it.sku) ?? 0) + Math.max(0, it.qty));
+      // Pack units count toward wholesale thresholds, but the pack row already
+      // states its own price and is wholly outside promotions. Counting it here
+      // would both unlock a loose-unit promo and charge those pack pieces again.
+      if (it.packUnitPrice == null) {
+        promoQtyByVariant.set(key, (promoQtyByVariant.get(key) ?? 0) + Math.max(0, it.qty));
+      }
     }
     const productSkus = Array.from(new Set(items.map((item) => item.sku)));
 
@@ -628,7 +647,7 @@ export async function createOrder(
       const promo = packUnitPrice != null ? null : promoBySku.get(it.sku) ?? null;
       if (promo && !promoCharged.has(key)) {
         promoCharged.add(key);
-        total += applyPromotion(listPrice, qtyByVariant.get(key) ?? it.qty, promo).amount;
+        total += applyPromotion(listPrice, promoQtyByVariant.get(key) ?? it.qty, promo).amount;
       } else if (!promo) {
         total += packUnitPrice != null && packQty != null ? packUnitPrice * packQty : unitPrice * it.qty;
       }

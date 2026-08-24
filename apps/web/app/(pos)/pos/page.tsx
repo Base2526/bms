@@ -11,7 +11,13 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { code39Bars } from "@/lib/pos/barcode";
-import { applyPromotion, canonicalPriceTiers, priceLinesByQty, syncSkuPricingSnapshot } from "@/lib/bms/pricing";
+import {
+  applyPromotion,
+  canonicalPriceTiers,
+  isFixedPricePack,
+  priceLinesByQty,
+  syncSkuPricingSnapshot,
+} from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
 import {
@@ -961,7 +967,7 @@ export default function PosPage() {
    * createOrder คิด ไม่งั้นยอดที่ส่งไปไม่ตรงกับที่ server คิด → PAYMENT_MISMATCH
    * แล้วบิลถูกยกเลิกทิ้งทั้งใบ · ทั้งสองฝั่งเรียก unitPriceForQty ตัวเดียวกัน
    *
-   * บรรทัดที่ขายเป็นหน่วยขาย (pack, baseQty > 1) ไม่ถูกแตะ เหมือนฝั่ง server
+   * บรรทัด pack ที่มี packCode แยกจาก BASE ไม่ถูกแตะ เหมือนฝั่ง server
    */
   const tierPriceByKey = useMemo(() => {
     const basePriceByVariant = new Map<string, number>();
@@ -977,7 +983,7 @@ export default function PosPage() {
         sku: line.sku,
         size: line.size,
         qty: line.packQty * line.baseQty,
-        packUnitPrice: line.baseQty > 1 ? line.packPrice : null,
+        packUnitPrice: isFixedPricePack(line.packCode) ? line.packPrice : null,
       })),
       basePriceByVariant,
       tiersBySku
@@ -985,7 +991,7 @@ export default function PosPage() {
     const out = new Map<string, number>();
     for (let index = 0; index < cart.length; index += 1) {
       const line = cart[index];
-      if (line.baseQty > 1 || !line.priceTiers?.length) continue;
+      if (isFixedPricePack(line.packCode) || !line.priceTiers?.length) continue;
       const unit = priced[index].unitPrice;
       if (unit !== line.packPrice) out.set(line.key, unit);
     }
@@ -1010,7 +1016,7 @@ export default function PosPage() {
     const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
     const priceOf = new Map<string, number>();
     for (const line of cart) {
-      if (line.baseQty > 1 || !line.promotion) continue;
+      if (isFixedPricePack(line.packCode) || !line.promotion) continue;
       const key = variantPricingKey(line.sku, line.size);
       qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + line.packQty);
       promoOf.set(key, line.promotion);
@@ -1028,7 +1034,7 @@ export default function PosPage() {
     let sum = 0;
     for (const line of cart) {
       const key = variantPricingKey(line.sku, line.size);
-      const promo = line.baseQty > 1 ? null : promoBySku.get(key);
+      const promo = isFixedPricePack(line.packCode) ? null : promoBySku.get(key);
       if (promo) {
         if (!chargedPromo.has(key)) { chargedPromo.add(key); sum += promo.amount; }
         continue;

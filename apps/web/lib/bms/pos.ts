@@ -24,7 +24,7 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
-import type { PriceTier, Promotion } from "./pricing";
+import { isFixedPricePack, type PriceTier, type Promotion } from "./pricing";
 import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
 import { markDepositCompletedInTx, takeDeposit, type Deposit } from "./deposits";
 import {
@@ -1480,7 +1480,9 @@ async function canonicalizePosSaleLines(
       packCode,
       packUnitName: row.unit_name ?? "ชิ้น",
       packQty,
-      packUnitPrice: packPrice,
+      // BASE คือหน่วยฐานและต้องให้ createOrder ใช้ราคาส่ง/โปรโมชันได้
+      // มีเพียง packCode ที่ตั้งชื่อแยกเท่านั้นที่ยึดราคาแพ็กคงที่
+      packUnitPrice: isFixedPricePack(packCode) ? packPrice : null,
     });
     if (row.serial_tracked) {
       serialLines.push({

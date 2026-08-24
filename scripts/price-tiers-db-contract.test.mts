@@ -258,6 +258,34 @@ test("what the counter previews is what createOrder charges", async () => {
     "จอกับ server ต่างกันแม้บาทเดียว = บิลถูกตีตก PAYMENT_MISMATCH หน้าลูกค้า");
 });
 
+test("BASE payload cannot disguise a loose unit as a fixed-price pack", async () => {
+  // Regression: POS canonicalization used to attach the shelf price as packUnitPrice
+  // even for BASE. createOrder then skipped wholesale pricing and produced a
+  // PAYMENT_MISMATCH against the correct counter preview.
+  const res = await createOrder({
+    tenantId,
+    channel: "pos",
+    locationId,
+    items: [{
+      sku: SKU,
+      size: SIZE_S,
+      qty: 3,
+      packCode: "BASE",
+      packUnitName: "ชิ้น",
+      packQty: 3,
+      packUnitPrice: 100,
+    }],
+  } as any);
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  createdOrders.push(res.orderId);
+  assert.equal(res.items[0].unitPrice, 90);
+  assert.equal(res.items[0].packUnitPrice, null,
+    "BASE must not retain a fixed pack-price snapshot");
+  assert.equal(res.subtotal, 270,
+    "server must charge the same wholesale total the POS preview shows");
+});
+
 test("re-scanning before payment sees price-tier changes made after the item entered the cart", async () => {
   const stale = await resolvePosScan(tenantId, SKU, { size: SIZE_S, locationId });
   assert.ok(stale);

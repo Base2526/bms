@@ -10,11 +10,25 @@ import test from "node:test";
 
 import {
   canonicalPriceTiers,
+  isFixedPricePack,
+  normalizePackCode,
   priceLinesByQty,
   syncSkuPricingSnapshot,
   unitPriceForQty,
   type PriceTier,
 } from "../apps/web/lib/bms/pricing.ts";
+
+test("BASE remains eligible for wholesale and promotions; named packs keep their fixed price", () => {
+  assert.equal(normalizePackCode(undefined), "BASE");
+  assert.equal(normalizePackCode(" base "), "BASE");
+  assert.equal(normalizePackCode(" box-3 "), "BOX-3");
+  assert.equal(isFixedPricePack("BASE"), false);
+  assert.equal(isFixedPricePack(" base "), false);
+  assert.equal(isFixedPricePack(null), false);
+  assert.equal(isFixedPricePack("BOX"), true);
+  assert.equal(isFixedPricePack("SINGLE-GIFT"), true,
+    "a named pack stays fixed-price even when its base quantity is one");
+});
 
 const tiers: PriceTier[] = [
   { minQty: 3, unitPrice: 90 },
