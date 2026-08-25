@@ -4668,6 +4668,13 @@ export default function PosPage() {
               >
                 เปิดจอลูกค้า
               </button>
+              <button
+                onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}
+                style={{ padding: "8px 14px", fontSize: 13 }}
+                title="เปิดคู่มือแคชเชียร์ในแท็บใหม่"
+              >
+                เปิดคู่มือแคชเชียร์
+              </button>
               <button onClick={() => void loadLastReceiptFromServer()} style={{ padding: "8px 14px", fontSize: 13 }}>
                 โหลดบิลล่าสุดจากเซิร์ฟเวอร์
               </button>
