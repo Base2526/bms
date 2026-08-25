@@ -46,27 +46,50 @@ bills rung up by mistake.
    confirming a non-cash refund each have independent server-side permission checks.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
-4. One bill can be split across cash, QR, card, bank transfer, or wallet. The method is picked from
+4. If the basket contains a pharmacy-controlled SKU that requires a pharmacist check, the cashier can
+   send the case straight from POS into the pharmacy queue. That creates or reuses a product-review
+   assessment, links it to a parked-bill snapshot, and clears the counter so the next customer is
+   not blocked. The parked bill can be resumed only after the assessment becomes `APPROVED`.
+5. One bill can be split across cash, QR, card, bank transfer, or wallet. The method is picked from
    a row of buttons under the amount; cash opens the quick-tender pad, the other methods take a
    reference number and keep their amount locked to the bill total. "Split payment" switches to the
    multi-row form. The payment rows must add up to the server-computed order amount; cash
    tender/change is recorded per cash row.
-5. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
+6. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
    lots FEFO where lots are tracked, records movements, and issues an abbreviated tax document when
    the tenant is VAT-registered. These steps commit atomically.
-6. Recent sales can be searched by order UUID or receipt/tax document number, previewed by line,
+7. Recent sales can be searched by order UUID or receipt/tax document number, previewed by line,
    and reprinted. Each bill in that list is one compact row; return, refund, and exchange controls
    open on demand for one bill at a time, and the reason code plus detail are shared by the partial
    and full return actions. An exchange loads the remaining original items into a new cart; it is a
    new sale, not a mutation of the old receipt.
-7. Returns may be full or partial. A reason code plus detail is mandatory, returned quantities are
+8. Returns may be full or partial. A reason code plus detail is mandatory, returned quantities are
    cumulative and cannot exceed the sold quantity, net refund uses the original order-level discount,
    and stock/lot provenance is restored atomically.
-8. Cash refunds complete immediately. Card/QR/bank/wallet refunds remain `PENDING` until a user with
+9. Cash refunds complete immediately. Card/QR/bank/wallet refunds remain `PENDING` until a user with
    `payment.refund` records the external refund reference. A shift cannot close while any refund
    allocation from that shift is pending.
-9. Closing a shift calculates expected cash from opening float + cash collected - completed cash
+10. Closing a shift calculates expected cash from opening float + cash collected - completed cash
    refunds, then records counted cash and variance.
+
+### Pharmacy review from POS
+
+Counter pharmacy review deliberately reuses the same gate as every other channel: `checkPharmacySaleInTx()`
+still decides whether a basket is sellable, needs a pharmacist review, needs a short safety check,
+or is forbidden outright. POS does not gain a bypass.
+
+What POS adds is the operational handoff:
+
+- The cashier can turn a `PHARMACY_REVIEW_REQUIRED` or `PHARMACY_SAFETY_CHECK_REQUIRED` failure into a
+  pharmacy assessment without leaving the counter screen.
+- The parked-bill snapshot now carries customer/coupon/points/extra-line context plus the linked
+  assessment id/case code in `bms_pos_parked_sales.cart`, so resuming the bill restores the same
+  commercial context without trusting the browser as authority for the eventual sale.
+- Resume is blocked until the linked assessment is approved. An unapproved case stays visible in the
+  parked list instead of being deleted and lost.
+- The eventual sale still goes through `createOrder()` with
+  `pharmacyApprovedAssessmentId`, so approval is re-checked inside the server transaction that takes
+  money and stock.
 
 ## Per-size sale prices
 
