@@ -987,6 +987,7 @@ const th = {
   admin_pharmacy_queue: {
     title: "AI Pharmacy Intake — คิวเภสัชกร",
     refresh: "รีเฟรช",
+    manual_link: "คู่มือเภสัชกร",
     no_permission: "ไม่มีสิทธิ์ดูหน้านี้",
     load_error: "โหลดคิว Pharmacy Intake ไม่ได้",
     ai_disclaimer: "AI เป็นผู้ช่วยเก็บข้อมูลเท่านั้น ไม่วินิจฉัยหรือแนะนำยา — เภสัชกรที่มีใบประกอบวิชาชีพเท่านั้นที่อนุมัติได้จริง (ตรวจซ้ำที่ฝั่ง server เสมอ)",
@@ -2002,6 +2003,7 @@ const th = {
     summary_copied: "คัดลอก summary แล้ว",
     summary_copy_failed: "คัดลอก summary ไม่สำเร็จ",
     subtitle: "ทดสอบบทสนทนาซักอาการ, quick reply และการส่งเคสเข้าคิว — แยกจากผู้ช่วย AI หลังบ้านปกติ ({path})",
+    btn_manual: "คู่มือเภสัชกร",
     btn_queue_page: "ไปหน้า Queue",
     clear_title: "ล้างบทสนทนาทดสอบนี้?",
     clear_ok: "ล้าง",

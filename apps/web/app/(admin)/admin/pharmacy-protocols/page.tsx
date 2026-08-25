@@ -1,6 +1,8 @@
 'use client';
 import { gql, useLazyQuery, useQuery, useMutation } from "@apollo/client";
 import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Switch, message } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -378,7 +380,9 @@ export default function PharmacyProtocolsPage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>AI Pharmacy Intake — Protocols</Typography.Title>} />
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>AI Pharmacy Intake — Protocols</Typography.Title>}>
+        <Link href="/admin/pharmacy-manual"><Button icon={<ReadOutlined />}>Pharmacist manual</Button></Link>
+      </AdminPageHeader>
       <Alert closable
         type="warning"
         showIcon

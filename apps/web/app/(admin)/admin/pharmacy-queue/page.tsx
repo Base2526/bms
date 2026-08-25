@@ -1,7 +1,7 @@
 'use client';
 import { gql, useQuery } from "@apollo/client";
-import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input, Button } from "antd";
+import { ReadOutlined, ReloadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -222,6 +222,7 @@ export default function PharmacyQueuePage() {
     <div>
       <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_pharmacy_queue.title")}</Typography.Title>}>
         <Space>
+          <Link href="/admin/pharmacy-manual"><Button icon={<ReadOutlined />}>{t("admin_pharmacy_queue.manual_link")}</Button></Link>
           <a onClick={() => refetch()}><ReloadOutlined /> {t("admin_pharmacy_queue.refresh")}</a>
         </Space>
       </AdminPageHeader>

@@ -1,0 +1,269 @@
+/* ===== /admin/pharmacy-manual — a flat reading surface, print-friendly =====
+   Same "no nested card chrome" idea as /admin/manual/manual.module.css, plus a
+   print stylesheet: a pharmacist who wants a paper copy hits the Print button,
+   which is just window.print() — this file is what makes the printed page
+   readable (no sidebar, no toolbar, tables that don't split awkwardly). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid #d6e6df;
+  border-radius: 16px;
+  background: linear-gradient(125deg, #effaf5 0%, #fffdf5 70%);
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: clamp(22px, 3.4vw, 30px);
+  letter-spacing: -0.02em;
+  color: #16302b;
+}
+
+.heroLead {
+  margin: 0;
+  max-width: 74ch;
+  color: #4a5a55;
+}
+
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionEyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a8a85;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.sectionLead {
+  margin: 0;
+  color: #55635e;
+  max-width: 80ch;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #e3e9e6;
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid #edf1ef;
+  vertical-align: top;
+}
+
+.table thead th {
+  background: #f5f8f6;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7975;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.slate { background: #eef1f4; color: #4a5a68; }
+.badge.amber { background: #fdf1da; color: #9a6a12; }
+.badge.blue { background: #e2edfb; color: #23548c; }
+.badge.purple { background: #ece2fb; color: #5a3b9c; }
+.badge.red { background: #fbe4e2; color: #a13a2f; }
+.badge.green { background: #e2f4ea; color: #1c7a4c; }
+.badge.cyan { background: #dcf3f3; color: #1a6e6e; }
+
+.flowSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  counter-reset: step;
+}
+
+.flowStep {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed #e3e9e6;
+}
+.flowStep:last-child { border-bottom: 0; }
+
+.flowNum {
+  counter-increment: step;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #dff5ec;
+  color: #0f7a5c;
+  font-weight: 700;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flowNum::before { content: counter(step); }
+
+.flowTitle {
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+
+.flowDetail {
+  margin: 0;
+  color: #55635e;
+  font-size: 13.5px;
+}
+
+.flowChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.callout {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  border: 1px solid transparent;
+}
+.callout.danger { background: #fdf0ee; border-color: #f3d3ce; color: #7a2a20; }
+.callout.info { background: #eaf2fb; border-color: #cfe1f7; color: #274a71; }
+.callout.warn { background: #fdf4e3; border-color: #f2e0b0; color: #7a5a0f; }
+
+.calloutTitle {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lifecycleStep {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+}
+
+.lifecycleRail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lifecycleDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-top: 4px;
+}
+.lifecycleLine {
+  flex: 1;
+  width: 2px;
+  background: #e3e9e6;
+  min-height: 24px;
+}
+
+.lifecycleBody {
+  padding-bottom: 16px;
+}
+
+.lifecycleDesc {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: #55635e;
+}
+
+.lifecycleCond {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #7a8a85;
+  font-style: italic;
+}
+
+/* ---------- print ----------
+   window.print() uses this whenever the button is pressed. Antd's own
+   surrounding chrome (sidebar, header, filter bar) is hidden by targeting
+   everything outside [data-print-root], not by hiding individual antd
+   classes one at a time. */
+@media print {
+  :global(body *) {
+    visibility: hidden;
+  }
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
+  }
+  [data-print-root] {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+  }
+  .heroActions {
+    display: none;
+  }
+  .hero {
+    border: 0;
+    background: none;
+    padding: 0 0 12px;
+  }
+  .section {
+    break-inside: avoid;
+  }
+  .tableWrap {
+    border: 1px solid #ccc;
+  }
+}

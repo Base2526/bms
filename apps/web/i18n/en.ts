@@ -985,6 +985,7 @@ const en = {
   admin_pharmacy_queue: {
     title: "AI Pharmacy Intake — Pharmacist Queue",
     refresh: "Refresh",
+    manual_link: "Pharmacist manual",
     no_permission: "You don't have permission to view this page",
     load_error: "Couldn't load the Pharmacy Intake queue",
     ai_disclaimer: "AI only assists with collecting information — it never diagnoses or recommends medication. Only a licensed pharmacist can actually approve a case (always re-checked server-side).",
@@ -2000,6 +2001,7 @@ const en = {
     summary_copied: "Summary copied",
     summary_copy_failed: "Could not copy the summary",
     subtitle: "Test the symptom intake conversation, quick replies and sending a case to the queue — separate from the regular back-office AI assistant ({path})",
+    btn_manual: "Pharmacist manual",
     btn_queue_page: "Go to Queue",
     clear_title: "Clear this test conversation?",
     clear_ok: "Clear",

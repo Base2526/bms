@@ -20,6 +20,7 @@ import {
   MailOutlined,
   AppstoreOutlined,
   BookOutlined,
+  ReadOutlined,
   PartitionOutlined,
   ImportOutlined,
   SwapOutlined,
@@ -406,6 +407,8 @@ export default function AdminSidebar() {
         ...(canViewPharmacy ? [pharmacyQueueLink(t, effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
         ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <FileProtectOutlined />)] : []),
         ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <IdcardOutlined />)] : []),
+        // gate เท่ากับสิทธิ์ต่ำสุดที่เปิดคิวได้ — คู่มือนี้แค่ "อ่าน" ไม่มีอะไรให้ทำ จึงไม่ต้องขอ permission ใหม่
+        ...(canViewPharmacy ? [link('/admin/pharmacy-manual', 'Pharmacist Manual', <ReadOutlined />)] : []),
       ],
     }] : []),
     // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
