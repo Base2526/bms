@@ -148,11 +148,11 @@ export default function OperationsScheduleClient({
         </div>
       </Space>
 
-      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Evidence-first view"
+      <Alert closable type="info" showIcon style={{ marginBottom: 16 }} message="Evidence-first view"
         description="The page inspects workflow and route source files when they are deployed, then safely falls back to the verified operations registry when source files are unavailable." />
 
       {(stuckCount > 0 || errorCount > 0) && (
-        <Alert
+        <Alert closable
           type="error" showIcon style={{ marginBottom: 16 }}
           message="A job's most recent run needs attention"
           description={
@@ -265,7 +265,7 @@ export default function OperationsScheduleClient({
         /></Card></Col>
       </Row>
 
-      <Alert type="info" showIcon style={{ marginTop: 16 }} icon={<InfoCircleOutlined />}
+      <Alert closable type="info" showIcon style={{ marginTop: 16 }} icon={<InfoCircleOutlined />}
         message="Requires migration 7.55" description="Run history is read from bms_job_runs (db/migrations/7.55__bms_job_runs.sql). Until that migration is applied, every job on this page will show 'Never run yet' even if its cron endpoint is being called." />
     </div>
   );

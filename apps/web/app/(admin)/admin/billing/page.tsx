@@ -159,7 +159,7 @@ export default function Page() {
     onError: (e) => message.error(e?.message || t("admin_billing.credits_adjust_failed")),
   });
 
-  if (error) return <Alert type="error" message={t("admin_billing.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_billing.load_error")} description={error.message} showIcon />;
 
   const b = data?.bmsBilling;
   const cur = b?.plan;
@@ -256,7 +256,7 @@ export default function Page() {
         </div>
 
         <div style={{ padding: 24 }}>
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 16, borderRadius: 14 }}
@@ -292,7 +292,7 @@ export default function Page() {
               </div>
             ))}
           </div>
-          <Alert
+          <Alert closable
             type="success"
             showIcon
             style={{ marginTop: 14, borderRadius: 12 }}
@@ -317,7 +317,7 @@ export default function Page() {
           <Col xs={24} lg={15}>
             <Card size="small" title="AI Credit usage" style={{ borderRadius: 16 }}>
               {hasByok ? (
-                <Alert type="success" showIcon style={{ borderRadius: 14 }} message={t("admin_billing.byok_alert_title")} description={t("admin_billing.byok_alert_desc")} />
+                <Alert closable type="success" showIcon style={{ borderRadius: 14 }} message={t("admin_billing.byok_alert_title")} description={t("admin_billing.byok_alert_desc")} />
               ) : (
                 <>
                   <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }} wrap>
@@ -531,13 +531,13 @@ export default function Page() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} md={8}>
-            <Alert type="success" showIcon icon={<KeyOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_credits_title")} description={t("admin_billing.advice_credits_desc")} />
+            <Alert closable type="success" showIcon icon={<KeyOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_credits_title")} description={t("admin_billing.advice_credits_desc")} />
           </Col>
           <Col xs={24} md={8}>
-            <Alert type="warning" showIcon icon={<WarningOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_ledger_title")} description={t("admin_billing.advice_ledger_desc")} />
+            <Alert closable type="warning" showIcon icon={<WarningOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_ledger_title")} description={t("admin_billing.advice_ledger_desc")} />
           </Col>
           <Col xs={24} md={8}>
-            <Alert type="info" showIcon icon={<RobotOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_byok_title")} description={t("admin_billing.advice_byok_desc")} />
+            <Alert closable type="info" showIcon icon={<RobotOutlined />} style={{ borderRadius: 14 }} message={t("admin_billing.advice_byok_title")} description={t("admin_billing.advice_byok_desc")} />
           </Col>
         </Row>
         </div>

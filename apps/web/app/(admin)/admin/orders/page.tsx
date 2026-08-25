@@ -239,7 +239,7 @@ function OrdersManagement() {
     [busy, can, t, STATUS_LABEL]
   );
 
-  if (error) return <Alert type="error" message={t("admin_orders.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_orders.load_error")} description={error.message} showIcon />;
 
   return (
     <div>

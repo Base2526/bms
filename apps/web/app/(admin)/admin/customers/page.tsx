@@ -268,7 +268,7 @@ function CustomersManagement() {
       ) },
   ], []);
 
-  if (error) return <Alert type="error" message={t("admin_customers.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_customers.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -353,7 +353,7 @@ function CustomersManagement() {
         okText={t("admin_customers.btn_merge_ok")} okButtonProps={{ disabled: !mergeTargetId }}
         width={520}
       >
-        <Alert
+        <Alert closable
           type="warning" showIcon style={{ marginBottom: 12 }}
           message={t("admin_customers.merge_info")}
           description={t("admin_customers.merge_desc", { name: mergeFor?.name || "" })}

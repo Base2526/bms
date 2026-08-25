@@ -30,14 +30,14 @@ export default function PharmacistLicensesPage() {
 
   if (!isAdministrator) {
     return (
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         message={t("admin_pharmacist_licenses.administrator_only")}
       />
     );
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_pharmacist_licenses.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_pharmacist_licenses.load_error")} description={error.message} />;
 
   const rows = data?.bmsPharmacyLicenseCandidates || [];
   const columns = [
@@ -80,7 +80,7 @@ export default function PharmacistLicensesPage() {
   return (
     <div>
       <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_pharmacist_licenses.title")}</Typography.Title>} />
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}

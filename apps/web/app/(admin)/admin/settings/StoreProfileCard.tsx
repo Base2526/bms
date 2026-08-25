@@ -249,7 +249,7 @@ export default function StoreProfileCard() {
                         </Form.Item>
                       </Col>
                     </Row>
-                    <Alert
+                    <Alert closable
                       style={{ marginBottom: 4 }}
                       type={highlightRestock ? "success" : "info"}
                       showIcon

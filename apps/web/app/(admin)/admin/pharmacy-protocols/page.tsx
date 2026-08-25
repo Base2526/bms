@@ -284,7 +284,7 @@ export default function PharmacyProtocolsPage() {
   };
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message={t("admin_pharmacy_protocols.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_pharmacy_protocols.no_permission")} />;
   }
 
   const rows = protocolData?.bmsPharmacyProtocols || [];
@@ -379,7 +379,7 @@ export default function PharmacyProtocolsPage() {
   return (
     <div>
       <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>AI Pharmacy Intake — Protocols</Typography.Title>} />
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
@@ -387,7 +387,7 @@ export default function PharmacyProtocolsPage() {
       />
       <Button type="primary" disabled={!canManage} onClick={() => void openEditor()} style={{ marginBottom: 12 }}>{t("admin_pharmacy_protocols.btn_create_protocol_draft")}</Button>
       {protocolsError && (
-        <Alert
+        <Alert closable
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
@@ -399,7 +399,7 @@ export default function PharmacyProtocolsPage() {
       <Table rowKey="id" loading={protocolsLoading} dataSource={rows} columns={columns} pagination={false} scroll={{ x: "max-content" }} />
       <Divider />
       <Typography.Title level={4}>Pharmacy Product Policy</Typography.Title>
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
@@ -430,7 +430,7 @@ export default function PharmacyProtocolsPage() {
         </Typography.Text>
       </Space>
       {productPoliciesError && (
-        <Alert
+        <Alert closable
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
@@ -473,7 +473,7 @@ export default function PharmacyProtocolsPage() {
         }}
       />
       <Modal title={editing ? t("admin_pharmacy_protocols.modal_edit_protocol") : t("admin_pharmacy_protocols.modal_create_protocol")} open={editorOpen} onCancel={() => setEditorOpen(false)} onOk={saveProtocol} confirmLoading={saving} width={920}>
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           message={t("admin_pharmacy_protocols.modal_protocol_notice")}
@@ -497,8 +497,8 @@ export default function PharmacyProtocolsPage() {
         </Form>
       </Modal>
       <Modal title={policyEditing && policyEditing.status !== "MISSING" ? t("admin_pharmacy_protocols.modal_edit_policy") : t("admin_pharmacy_protocols.modal_create_policy")} open={policyEditorOpen} onCancel={() => setPolicyEditorOpen(false)} onOk={saveProductPolicy} confirmLoading={savingPolicy} width={720}>
-        {policyEditing?.status === "APPROVED" && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.approved_edit_warning2")} />}
-        {(!policyEditing || policyEditing.status === "MISSING") && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.pick_from_catalog2")} />}
+        {policyEditing?.status === "APPROVED" && <Alert closable type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.approved_edit_warning2")} />}
+        {(!policyEditing || policyEditing.status === "MISSING") && <Alert closable type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.pick_from_catalog2")} />}
         <Form form={policyForm} layout="vertical">
           <Form.Item
             name="productSku"

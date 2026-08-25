@@ -483,7 +483,7 @@ export default function HomePage() {
           <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
 
-        {error && <Alert type="error" showIcon message={t("landing.pricingLoadError")} description={error.message} />}
+        {error && <Alert closable type="error" showIcon message={t("landing.pricingLoadError")} description={error.message} />}
 
         {loading && !plans.length ? (
           <Row gutter={[20, 20]}>

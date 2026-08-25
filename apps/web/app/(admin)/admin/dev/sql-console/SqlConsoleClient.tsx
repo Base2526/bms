@@ -135,7 +135,7 @@ add(2, 3)`);
   return (
     <div style={{ padding: 24 }}>
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           icon={<WarningOutlined />}
@@ -196,7 +196,7 @@ add(2, 3)`);
               )
             }
           >
-            {!result.ok && <Alert type="error" showIcon message={result.error || t("admin_sql_console.failed")} />}
+            {!result.ok && <Alert closable type="error" showIcon message={result.error || t("admin_sql_console.failed")} />}
             {result.ok && result.columns.length > 0 && (
               <Table
                 rowKey="__key"
@@ -221,7 +221,7 @@ add(2, 3)`);
           bordered
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            <Alert
+            <Alert closable
               type="info"
               showIcon
               message={t("admin_sql_console.js_alert_title")}
@@ -252,7 +252,7 @@ add(2, 3)`);
 
         <Card title="Test Email" bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            <Alert
+            <Alert closable
               type="info"
               showIcon
               message={t("admin_sql_console.email_alert_title")}
@@ -291,7 +291,7 @@ add(2, 3)`);
             extra={testEmailResult.ok ? <Tag color="green">OK</Tag> : <Tag color="red">ERROR</Tag>}
           >
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              <Alert
+              <Alert closable
                 type={testEmailResult.ok ? "success" : "error"}
                 showIcon
                 message={testEmailResult.message}
@@ -329,7 +329,7 @@ add(2, 3)`);
             }
           >
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              {!jsResult.ok && <Alert type="error" showIcon message={jsResult.error || t("admin_sql_console.failed")} />}
+              {!jsResult.ok && <Alert closable type="error" showIcon message={jsResult.error || t("admin_sql_console.failed")} />}
               {jsResult.logs.length > 0 && (
                 <div
                   style={{

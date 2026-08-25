@@ -214,10 +214,10 @@ export default function AiQualityPage() {
 
   if (permissionsLoading) return <Card loading />;
   if (!canView) {
-    return <Alert type="error" showIcon message={t("admin_ai_quality.no_permission")} description={t("admin_ai_quality.no_permission_desc")} />;
+    return <Alert closable type="error" showIcon message={t("admin_ai_quality.no_permission")} description={t("admin_ai_quality.no_permission_desc")} />;
   }
   if (error) {
-    return <Alert type="error" showIcon message={t("admin_ai_quality.load_error")} description={error.message} />;
+    return <Alert closable type="error" showIcon message={t("admin_ai_quality.load_error")} description={error.message} />;
   }
 
   const metrics = data?.bmsAiQualityMetrics;
@@ -447,7 +447,7 @@ export default function AiQualityPage() {
           <Card loading />
         ) : (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Alert
+            <Alert closable
               type="info"
               showIcon
               message={t("admin_ai_quality.redact_notice")}
@@ -539,7 +539,7 @@ export default function AiQualityPage() {
                 </Form>
               </Card>
             ) : (
-              <Alert type="warning" showIcon message={t("admin_ai_quality.no_review_permission")} />
+              <Alert closable type="warning" showIcon message={t("admin_ai_quality.no_review_permission")} />
             )}
 
             {detail.reviewerNote && (

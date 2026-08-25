@@ -73,7 +73,7 @@ export default function PosDevicesPage() {
   const [setMode] = useMutation(M_MODE);
 
   if (!permsLoading && !canDevices && !canPins && !canStaff) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage, pos.pin.manage หรือ pos.staff.manage)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage, pos.pin.manage หรือ pos.staff.manage)" />;
   }
 
   const locations = data?.bmsLocations ?? [];
@@ -235,7 +235,7 @@ export default function PosDevicesPage() {
 
       {canPins && (
         <Card title="PIN พนักงานหน้าร้าน" loading={loading}>
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
@@ -387,7 +387,7 @@ export default function PosDevicesPage() {
               <InputNumber min={20} max={1000} step={10} style={{ width: 170 }} />
             </Form.Item>
           </Space>
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
@@ -406,7 +406,7 @@ export default function PosDevicesPage() {
         onCancel={() => setIssuedToken(null)}
         footer={<Button onClick={() => setIssuedToken(null)}>ปิด</Button>}
       >
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}

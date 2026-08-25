@@ -392,12 +392,12 @@ export default function Page() {
   const betaCount = CHANNELS.filter((ch) => ch.inbound === "beta").length;
 
   if (meError) {
-    return <Alert type="error" showIcon message={t("admin_inbox_diagnostics.load_permission_error")} description={meError.message} />;
+    return <Alert closable type="error" showIcon message={t("admin_inbox_diagnostics.load_permission_error")} description={meError.message} />;
   }
 
   if (!loadingMe && me && !isAllowed) {
     return (
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         message={t("admin_inbox_diagnostics.admin_only_title")}
@@ -520,10 +520,10 @@ export default function Page() {
       </Space>
 
       {error && (
-        <Alert type="error" showIcon style={{ marginBottom: 16 }} message={t("admin_inbox_diagnostics.load_diagnostics_error")} description={error.message} />
+        <Alert closable type="error" showIcon style={{ marginBottom: 16 }} message={t("admin_inbox_diagnostics.load_diagnostics_error")} description={error.message} />
       )}
 
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -571,7 +571,7 @@ export default function Page() {
         </Col>
         <Col xs={24} lg={9}>
           <Card title={t("admin_inbox_diagnostics.realtime_probe_card_title")} extra={<EventAge occurredAt={events[0]?.occurredAt} />}>
-            <Alert
+            <Alert closable
               type="success"
               showIcon
               style={{ marginBottom: 12 }}
@@ -579,7 +579,7 @@ export default function Page() {
               description={t("admin_inbox_diagnostics.safe_simulation_desc")}
             />
             {lastCreatedMessage && (
-              <Alert
+              <Alert closable
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
@@ -618,7 +618,7 @@ export default function Page() {
               </Descriptions>
             )}
             {eventError && (
-              <Alert
+              <Alert closable
                 type="error"
                 showIcon
                 style={{ marginBottom: 12 }}

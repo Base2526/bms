@@ -219,7 +219,7 @@ function RolesManagement() {
             Are you sure you want to {action} the role <strong>"{role.name}"</strong>?
           </p>
           {!newStatus && role.user_count > 0 && (
-            <Alert
+            <Alert closable
               type="warning"
               message={`This role is currently assigned to ${role.user_count} user(s). Deactivating it will not affect existing users.`}
               showIcon
@@ -263,7 +263,7 @@ function RolesManagement() {
           <p>
             Are you sure you want to permanently delete the role <strong>"{role.name}"</strong>?
           </p>
-          <Alert
+          <Alert closable
             type="warning"
             message="This action cannot be undone."
             showIcon
@@ -397,7 +397,7 @@ function RolesManagement() {
   // Error state
   if (error) {
     return (
-      <Alert
+      <Alert closable
         type="error"
         message="Error Loading Roles"
         description={error.message}
@@ -530,7 +530,7 @@ function RolesManagement() {
           </Form.Item>
 
           {editingRole && editingRole.user_count > 0 && (
-            <Alert
+            <Alert closable
               type="info"
               message={`This role is currently assigned to ${editingRole.user_count} user(s)`}
               showIcon

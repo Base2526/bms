@@ -618,7 +618,7 @@ function ProductsManagement() {
   );
 
   if (error) {
-    return <Alert type="error" message={t("admin_products.load_error")} description={error.message} showIcon />;
+    return <Alert closable type="error" message={t("admin_products.load_error")} description={error.message} showIcon />;
   }
 
   return (
@@ -1962,11 +1962,11 @@ function ReservedOrdersModal({
 
         {error && (
           // ล้มเหลวแล้วโชว์ตารางว่างคือการตอบว่า "ไม่มีใครจอง" ซึ่งผิดคนละเรื่องกับ "ยังไม่รู้"
-          <Alert type="error" showIcon message={t("admin_products.resv_error")} description={error} />
+          <Alert closable type="error" showIcon message={t("admin_products.resv_error")} description={error} />
         )}
 
         {data && data.unattributed > 0 && (
-          <Alert
+          <Alert closable
             type="warning"
             showIcon
             message={t("admin_products.resv_unattributed_title", { n: data.unattributed })}
@@ -1977,7 +1977,7 @@ function ReservedOrdersModal({
         {data && data.overAttributed > 0 && (
           // ทิศทางตรงข้ามของ unattributed และอันตรายกว่า: ยอดจองในตารางต่ำกว่าที่บิลถือ
           // = ของที่ขายไปแล้วบนกระดาษยังโชว์ว่าพร้อมขาย ต้องเตือน ไม่ใช่ปัดให้เป็น 0 เงียบ ๆ
-          <Alert
+          <Alert closable
             type="error"
             showIcon
             message={t("admin_products.resv_over_title", { n: data.overAttributed })}

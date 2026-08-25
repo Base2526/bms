@@ -192,9 +192,9 @@ export default function PharmacyQueuePage() {
   });
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message={t("admin_pharmacy_queue.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_pharmacy_queue.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_pharmacy_queue.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_pharmacy_queue.load_error")} description={error.message} />;
 
   const baseRows = data?.bmsPharmacyAssessments || [];
   const confirmationCounts = baseRows.reduce(
@@ -225,7 +225,7 @@ export default function PharmacyQueuePage() {
           <a onClick={() => refetch()}><ReloadOutlined /> {t("admin_pharmacy_queue.refresh")}</a>
         </Space>
       </AdminPageHeader>
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}

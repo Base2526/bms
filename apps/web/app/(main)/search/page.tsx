@@ -181,7 +181,7 @@ export default function SearchPage() {
 
       {/* Error */}
       {error && (
-        <Alert
+        <Alert closable
           type="error"
           message={t("searchPage.errorTitle")}
           description={error.message}

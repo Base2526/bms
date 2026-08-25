@@ -269,7 +269,7 @@ export default function Page() {
 
   if (!permsLoading && !canViewReports) {
     return (
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         message={t("admin_dashboard.no_permission_title")}
@@ -278,7 +278,7 @@ export default function Page() {
     );
   }
 
-  if (error) return <Alert type="error" message={t("admin_dashboard.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_dashboard.load_error")} description={error.message} showIcon />;
 
   const ordersByStatus = d?.ordersByStatus || [];
   const pending = countOf(ordersByStatus, "PENDING");
@@ -605,7 +605,7 @@ export default function Page() {
               className={`${styles.compactCard} ${styles.inventoryWide}`}
             >
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                <Alert
+                <Alert closable
                   type="info"
                   showIcon
                   message={t("admin_dashboard.phase1_note")}
@@ -766,7 +766,7 @@ export default function Page() {
             >
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
                 {(aiOverLimit || aiNearLimit) && (
-                  <Alert
+                  <Alert closable
                     type={aiOverLimit ? "error" : "warning"}
                     showIcon
                     style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11.5, marginBottom: 4 }}

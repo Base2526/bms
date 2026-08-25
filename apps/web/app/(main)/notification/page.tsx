@@ -347,7 +347,7 @@ export default function NotificationPage() {
       )}
 
       {error && (
-        <Alert
+        <Alert closable
           type="error"
           message={t('notificationPage.loadFailedTitle')}
           description={error.message}

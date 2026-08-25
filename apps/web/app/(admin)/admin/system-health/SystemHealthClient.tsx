@@ -148,12 +148,12 @@ export default function SystemHealthClient({
       {overallAlerts.length > 0 && (
         <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
           {overallAlerts.map((a, i) => (
-            <Alert key={i} type={a.type} message={a.text} showIcon />
+            <Alert closable key={i} type={a.type} message={a.text} showIcon />
           ))}
         </Space>
       )}
       {overallAlerts.length === 0 && (
-        <Alert type="success" message="ทุกจุดที่เช็คได้ตอนนี้ปกติ" showIcon style={{ marginBottom: 16 }} />
+        <Alert closable type="success" message="ทุกจุดที่เช็คได้ตอนนี้ปกติ" showIcon style={{ marginBottom: 16 }} />
       )}
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -178,7 +178,7 @@ export default function SystemHealthClient({
                 </Col>
               </Row>
             ) : (
-              <Alert type="error" message="อ่านสถานะ DB ไม่ได้" description={db.error} showIcon />
+              <Alert closable type="error" message="อ่านสถานะ DB ไม่ได้" description={db.error} showIcon />
             )}
           </Card>
         </Col>
@@ -197,7 +197,7 @@ export default function SystemHealthClient({
                 </Col>
               </Row>
             ) : (
-              <Alert type="error" message="ต่อ Redis ไม่ได้" description={redis.error} showIcon />
+              <Alert closable type="error" message="ต่อ Redis ไม่ได้" description={redis.error} showIcon />
             )}
           </Card>
         </Col>
@@ -219,7 +219,7 @@ export default function SystemHealthClient({
           </Space>
         }
       >
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
@@ -227,7 +227,7 @@ export default function SystemHealthClient({
           description="ตัว recorder รองรับ namespace แล้ว (`gql:` / `rest:`) แต่ฝั่ง REST ของ Next App Router ยังต้องครอบ handler ทีละ route ใน `/api/bms/**` จึงจะเริ่มมี `rest:` เพิ่มเข้ามา"
         />
         {!requestMetrics.ok ? (
-          <Alert type="error" message="อ่าน metric ไม่ได้ (Redis)" description={requestMetrics.error} showIcon />
+          <Alert closable type="error" message="อ่าน metric ไม่ได้ (Redis)" description={requestMetrics.error} showIcon />
         ) : requestMetrics.totalRequests === 0 ? (
           <Empty description="ยังไม่มี request ในช่วงเวลานี้ — metric เริ่มเก็บหลัง deploy เท่านั้น ไม่มีข้อมูลย้อนหลัง และข้อมูลจะหายเมื่อ Redis restart" />
         ) : (
@@ -336,7 +336,7 @@ export default function SystemHealthClient({
         extra={<Link href="/admin/env">ดูรายละเอียด / ทดสอบ →</Link>}
       >
         {aiProvidersError ? (
-          <Alert type="error" message="อ่านไม่ได้" description={aiProvidersError} showIcon />
+          <Alert closable type="error" message="อ่านไม่ได้" description={aiProvidersError} showIcon />
         ) : (
           <Table
             size="small"
@@ -370,7 +370,7 @@ export default function SystemHealthClient({
         extra={<Link href="/admin/operations-schedule">ดูรายละเอียด / ประวัติ →</Link>}
       >
         {jobRunsError ? (
-          <Alert
+          <Alert closable
             type="warning"
             message="อ่านไม่ได้ (อาจยังไม่ apply migration 7.55)"
             description={jobRunsError}
@@ -416,7 +416,7 @@ export default function SystemHealthClient({
         style={{ marginBottom: 16 }}
       >
         {!channelHealth.ok ? (
-          <Alert type="error" message="อ่านไม่ได้" description={channelHealth.error} showIcon />
+          <Alert closable type="error" message="อ่านไม่ได้" description={channelHealth.error} showIcon />
         ) : (
           <Table
             size="small"
@@ -452,7 +452,7 @@ export default function SystemHealthClient({
         size="small"
       >
         {!failureIncidents.ok ? (
-          <Alert
+          <Alert closable
             type="warning"
             message="อ่านไม่ได้ (อาจยังไม่ apply migration 7.36)"
             description={failureIncidents.error}

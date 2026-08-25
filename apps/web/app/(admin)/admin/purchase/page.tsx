@@ -203,7 +203,7 @@ function PurchaseManagement() {
       render: (v: number) => `${Number(v).toLocaleString()} ฿` },
   ];
 
-  if (error) return <Alert type="error" message={t("admin_purchase.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_purchase.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -371,7 +371,7 @@ function CreatePOModal({
             onClear={() => form.setFieldValue("items", [{}])}
           />
         </Form.Item>
-        <Alert
+        <Alert closable
           type={selectedSupplier ? "success" : "info"}
           showIcon
           style={{ marginBottom: 16 }}
@@ -505,7 +505,7 @@ function ReceivePOModal({
       open={!!po} onCancel={onClose} onOk={submit}
       confirmLoading={loading} okText={t("admin_purchase.receive_ok_text")} cancelText={t("admin_purchase.close_text")} destroyOnClose
     >
-      <Alert type="info" showIcon style={{ marginBottom: 16 }}
+      <Alert closable type="info" showIcon style={{ marginBottom: 16 }}
         message={t("admin_purchase.receive_alert")} />
       <Form form={form} layout="vertical">
         {pending.length === 0 && <Typography.Text type="secondary">{t("admin_purchase.no_pending_items")}</Typography.Text>}

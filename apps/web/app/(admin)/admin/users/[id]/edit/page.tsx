@@ -154,7 +154,7 @@ function FormEdit({ id }: { id: string }) {
   if (rolesLoading) return <div>{t("admin_users_edit.loading_roles")}</div>;
   if (rolesError) {
     return (
-      <Alert
+      <Alert closable
         type="error"
         message={t("admin_users_edit.roles_load_error_title")}
         description={rolesError.message}
@@ -164,7 +164,7 @@ function FormEdit({ id }: { id: string }) {
   }
   if (roles.length === 0) {
     return (
-      <Alert
+      <Alert closable
         type="warning"
         message={t("admin_users_edit.no_roles_title")}
         description={t("admin_users_edit.no_roles_desc")}
@@ -175,7 +175,7 @@ function FormEdit({ id }: { id: string }) {
   // บทบาทสูงกว่า/เท่ากับเรา → ไม่แสดงฟอร์มเลย (กันกดบันทึกแล้วโดน 403 ทีหลัง)
   if (blockedByRank) {
     return (
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         message={t("admin_users_edit.cannot_manage_title")}
@@ -205,7 +205,7 @@ function FormEdit({ id }: { id: string }) {
   return (
     <Card title={`${t("admin_users_edit.title_prefix")} ${u.name}`} style={{ maxWidth: 640 }}>
       {readOnly && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           message={t("admin_users_edit.read_only_title")}

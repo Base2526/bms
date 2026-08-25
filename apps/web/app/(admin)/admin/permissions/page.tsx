@@ -76,7 +76,7 @@ export default function Page() {
 
   const resLabel = resourceLabels(t);
 
-  if (error) return <Alert type="error" message={t("admin_permissions.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_permissions.load_error")} description={error.message} showIcon />;
 
   const catalog: string[] = data?.bmsPermissionCatalog || [];
   const groups = groupByResource(catalog);

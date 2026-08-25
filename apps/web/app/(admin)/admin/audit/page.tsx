@@ -99,7 +99,7 @@ export default function Page() {
     });
   }, [rows, q, actionLabel]);
 
-  if (error) return <Alert type="error" message={t("admin_audit.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_audit.load_error")} description={error.message} showIcon />;
 
   return (
     <div>

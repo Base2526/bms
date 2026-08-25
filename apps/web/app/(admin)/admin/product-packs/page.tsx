@@ -58,7 +58,7 @@ export default function ProductPacksPage() {
   const [remove] = useMutation(M_DELETE);
 
   if (!permsLoading && !canView) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี product.view)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี product.view)" />;
   }
 
   const packs: Pack[] = packsQuery.data?.bmsProductPacks?.packs ?? [];
@@ -114,7 +114,7 @@ export default function ProductPacksPage() {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <AdminPageHeader title="หน่วยขาย + บาร์โค้ด" />
 
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         message="บาร์โค้ด 1 อัน = หน่วยขาย 1 อย่าง"

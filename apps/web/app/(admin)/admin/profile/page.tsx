@@ -70,7 +70,7 @@ export default function Page() {
     setAvatarUrl(me.avatar || "");
   }, [form, me]);
 
-  if (error) return <Alert type="error" showIcon message={t("admin_profile.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_profile.load_error")} description={error.message} />;
 
   async function handleUpload(file: File) {
     if (!me?.id) return false;

@@ -124,7 +124,7 @@ function PaymentManagement() {
             <p>{t("admin_payment.verify_amount_due")} <b>{Number(v.expectedAmount).toLocaleString()} ฿</b></p>
             <p>{t("admin_payment.verify_amount_match")} <Tag color={v.amountMatch ? "green" : "red"}>{v.amountMatch ? t("admin_payment.verify_match_yes") : t("admin_payment.verify_match_no")}</Tag></p>
             <p>{v.reason}</p>
-            <Alert type="warning" showIcon message={t("admin_payment.verify_ai_disclaimer")} />
+            <Alert closable type="warning" showIcon message={t("admin_payment.verify_ai_disclaimer")} />
           </div>
         ),
       });
@@ -187,7 +187,7 @@ function PaymentManagement() {
     [busy, can, STATUS_LABEL, METHOD_LABEL, t]
   );
 
-  if (error) return <Alert type="error" message={t("admin_payment.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_payment.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -293,7 +293,7 @@ function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose:
   return (
     <Modal title={t("admin_payment.submit_modal_title")} open={open} onCancel={onClose} onOk={submitForm} width={panelWidth(isMobile, 520)}
       confirmLoading={loading} okText={t("admin_payment.submit_ok_text")} cancelText={t("admin_payment.submit_cancel_text")} destroyOnClose>
-      <Alert type="info" showIcon style={{ marginBottom: 16 }}
+      <Alert closable type="info" showIcon style={{ marginBottom: 16 }}
         message={t("admin_payment.submit_alert")} />
       <Form form={form} layout="vertical">
         <Form.Item name="orderId" label={t("admin_payment.order_label")} rules={[{ required: true, message: t("admin_payment.order_required") }]}>

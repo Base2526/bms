@@ -84,9 +84,9 @@ export default function FollowupRulesPage() {
   });
 
   if (!permsLoading && !can("followup.view")) {
-    return <Alert type="warning" showIcon message={t("admin_followup_rules.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_followup_rules.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_followup_rules.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_followup_rules.load_error")} description={error.message} />;
 
   const rows = data?.bmsFollowupRules || [];
 
@@ -153,7 +153,7 @@ export default function FollowupRulesPage() {
       <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_followup_rules.title")}</Typography.Title>}>
         {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_followup_rules.create")}</Button>}
       </AdminPageHeader>
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 12 }}

@@ -420,7 +420,7 @@ export default function EnvTableClient({
               {t("admin_env_table.env_restart_note_2")}
             </Typography.Paragraph>
             {configDiagnostics.map((item) => (
-              <Alert
+              <Alert closable
                 key={item.code}
                 showIcon
                 type={
@@ -629,7 +629,7 @@ export default function EnvTableClient({
                       {t("admin_env_table.btn_test_provider", { provider: provider.title })}
                     </Button>
                     {result && (
-                      <Alert
+                      <Alert closable
                         type={result.ok ? "success" : "error"}
                         showIcon
                         message={result.message}

@@ -177,7 +177,7 @@ export default function PharmacyReviewMockupPage() {
         <Tag color="blue">Mockup</Tag>
       </AdminPageHeader>
 
-      <Alert
+      <Alert closable
         showIcon
         type="info"
         style={{ marginBottom: 16 }}
@@ -247,7 +247,7 @@ export default function PharmacyReviewMockupPage() {
             style={{ marginBottom: 16 }}
           >
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Alert
+              <Alert closable
                 type="success"
                 showIcon
                 message="AI assessment"
@@ -380,7 +380,7 @@ export default function PharmacyReviewMockupPage() {
 
             <Divider />
 
-            <Alert
+            <Alert closable
               type="warning"
               showIcon
               message={t("admin_pharmacy_review_mockup.concept_title")}
@@ -404,7 +404,7 @@ export default function PharmacyReviewMockupPage() {
                 value={pharmacistSummary}
                 onChange={(event) => setPharmacistSummary(event.target.value)}
               />
-              <Alert
+              <Alert closable
                 type="info"
                 showIcon
                 message={t("admin_pharmacy_review_mockup.block_goal_title")}

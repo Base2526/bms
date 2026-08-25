@@ -61,9 +61,9 @@ export default function ReportSchedulePage() {
   const weekdayLabel = weekdayLabels(t);
   const channelLabel = channelLabels(t);
 
-  if (error) return <Alert type="error" showIcon message={t("admin_report_schedule.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_report_schedule.load_error")} description={error.message} />;
   if (data && data.bmsIsPlatformAdmin === false) {
-    return <Alert type="warning" showIcon message={t("admin_report_schedule.platform_admin_only_title")} description={t("admin_report_schedule.platform_admin_only_desc")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_report_schedule.platform_admin_only_title")} description={t("admin_report_schedule.platform_admin_only_desc")} />;
   }
 
   const rows = data?.bmsReportSubscriptions || [];

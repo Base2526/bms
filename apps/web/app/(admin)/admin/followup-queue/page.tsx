@@ -68,9 +68,9 @@ export default function FollowupQueuePage() {
 
   const canViewFollowups = can("followup.view");
   if (!permsLoading && !canViewFollowups && !canViewRetention) {
-    return <Alert type="warning" showIcon message={t("admin_followup_queue.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_followup_queue.no_permission")} />;
   }
-  if (canViewFollowups && error) return <Alert type="error" showIcon message={t("admin_followup_queue.load_error")} description={error.message} />;
+  if (canViewFollowups && error) return <Alert closable type="error" showIcon message={t("admin_followup_queue.load_error")} description={error.message} />;
 
   const jobs = data?.bmsFollowupQueue || [];
   const history = data?.bmsFollowupHistory || [];
@@ -165,7 +165,7 @@ export default function FollowupQueuePage() {
           )}
         </Space>
       </AdminPageHeader>
-      {canViewFollowups && <Alert
+      {canViewFollowups && <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 12 }}

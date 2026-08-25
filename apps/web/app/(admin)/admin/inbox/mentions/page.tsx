@@ -157,7 +157,7 @@ export default function MyMentionsPage() {
   };
 
   if (!permsLoading && !can("inbox.view")) {
-    return <Alert type="warning" message={t("admin_inbox_mentions.no_permission")} showIcon />;
+    return <Alert closable type="warning" message={t("admin_inbox_mentions.no_permission")} showIcon />;
   }
 
   return (

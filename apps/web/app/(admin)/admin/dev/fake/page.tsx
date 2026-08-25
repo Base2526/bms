@@ -348,7 +348,7 @@ export default function DevFakePage() {
   return (
     <>
     <Card title={t('admin_dev_fake.provision_card_title')} style={{ marginBottom: 16 }}>
-      <Alert
+      <Alert closable
         type="info" showIcon style={{ marginBottom: 12 }}
         message={t('admin_dev_fake.provision_alert')}
         description={<>{t('admin_dev_fake.provision_desc_1')} <code>/admin/tenants</code> {t('admin_dev_fake.provision_desc_2')} <code>test-</code>)</>}
@@ -374,7 +374,7 @@ export default function DevFakePage() {
     </Card>
 
     <Card title={t('admin_dev_fake.scenario_card_title')} style={{ marginBottom: 16 }}>
-      <Alert
+      <Alert closable
         type="info" showIcon style={{ marginBottom: 12 }}
         message={t('admin_dev_fake.demo_alert')}
         description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code>, <code>demo-pharmacy</code>, <code>demo-general</code> {t('admin_dev_fake.demo_desc_2')}</>}
@@ -414,7 +414,7 @@ export default function DevFakePage() {
       {demoProvisioned.length > 0 && (
         <div style={{ marginTop: 12 }}>
           {demoProvisioned.map((row) => (
-            <Alert
+            <Alert closable
               key={row.tenant.id}
               type="success"
               showIcon
@@ -449,7 +449,7 @@ export default function DevFakePage() {
               <Typography.Text code copyable>{provisioned.admin.password}</Typography.Text>
             </Descriptions.Item>
           </Descriptions>
-          <Alert style={{ marginTop: 12 }} type="warning" showIcon
+          <Alert closable style={{ marginTop: 12 }} type="warning" showIcon
             message={t('admin_dev_fake.password_once_notice')} />
           <div style={{ marginTop: 12 }}>
             {t('admin_dev_fake.summary_line', {
@@ -467,7 +467,7 @@ export default function DevFakePage() {
           </div>
           <div style={{ marginTop: 8 }}>{channelOrderSummary(provisioned.summary)}</div>
           {provisioned.groundTruth && (
-            <Alert
+            <Alert closable
               style={{ marginTop: 12 }}
               type="success"
               showIcon
@@ -495,7 +495,7 @@ export default function DevFakePage() {
         </Space>
       )}
     >
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
@@ -515,7 +515,7 @@ export default function DevFakePage() {
             </Descriptions.Item>
           </Descriptions>
           {groundTruth.stale && (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('admin_dev_fake.ground_truth_stale_desc')} />
+            <Alert closable type="warning" showIcon style={{ marginBottom: 12 }} message={t('admin_dev_fake.ground_truth_stale_desc')} />
           )}
           <Table
             rowKey="caseKey"
@@ -579,7 +579,7 @@ export default function DevFakePage() {
         </Popconfirm>
       </Space>}
     >
-      <Alert
+      <Alert closable
         type="info" showIcon style={{ marginBottom: 12 }}
         message={<Space wrap>{t('admin_dev_fake.target_shop_label')}
           {selectedTenantId
@@ -588,7 +588,7 @@ export default function DevFakePage() {
         </Space>}
         description={t('admin_dev_fake.target_shop_desc')}
       />
-      <Alert
+      <Alert closable
         type="warning" showIcon style={{ marginBottom: 12 }}
         message={t('admin_dev_fake.dev_only_title')}
         description={<>{t('admin_dev_fake.seed_desc_p1')}<b>Staff → Products → Customers → Coupons → Orders → Conversations → Purchase</b>{t('admin_dev_fake.seed_desc_p2')}
@@ -600,7 +600,7 @@ export default function DevFakePage() {
           <b>Cleanup</b>{t('admin_dev_fake.seed_desc_p10')}</>}
       />
       {data && isPlatformAdmin === false && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
