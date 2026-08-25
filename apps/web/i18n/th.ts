@@ -2479,6 +2479,12 @@ const th = {
     cancel: "ยกเลิก",
     no_review_permission: "ดูเคสได้ แต่ไม่มีสิทธิ์ ai_quality.review",
     previous_note: "หมายเหตุเดิม: {note}",
+    queue_title: "คิวตรวจ",
+    queue_empty: "ไม่มีเคสในคิวนี้",
+    case_empty: "เลือกเคสจากคิวทางซ้ายเพื่อเริ่มตรวจ",
+    shortcut_move: "เลื่อนเคส",
+    flagged_turn: "▲ กรอบแดงคือ AI turn ที่ระบบตีธงไว้",
+    save_and_next: "บันทึกแล้วไปเคสถัดไปอัตโนมัติ · เหลืออีก {count} เคส",
   },
   admin_env_table: {
     provider_note_anthropic: "ทดสอบด้วย GET /v1/models ไม่เสียเงิน",

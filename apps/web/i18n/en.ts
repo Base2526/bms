@@ -2477,6 +2477,12 @@ const en = {
     cancel: "Cancel",
     no_review_permission: "You can view cases but don't have the ai_quality.review permission",
     previous_note: "Previous note: {note}",
+    queue_title: "Review queue",
+    queue_empty: "No cases in this queue",
+    case_empty: "Pick a case from the queue to start reviewing",
+    shortcut_move: "move",
+    flagged_turn: "▲ The outlined turn is the one the signal fired on",
+    save_and_next: "Saving opens the next case · {count} left",
   },
   admin_env_table: {
     provider_note_anthropic: "Tested with GET /v1/models — no cost",
