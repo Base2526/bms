@@ -177,7 +177,7 @@ const pharmacyQueueLink = (
       // whiteSpace: 'normal' (ไม่ nowrap/ellipsis) — เดิมตัดข้อความยาวเป็น "..." อ่านไม่ออกว่าเมนูอะไร
       <Link href="/admin/pharmacy-queue" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>
-          Pharmacy Intake Queue
+          {t('admin.menu_pharmacy_intake_queue')}
         </span>
         {/* เดิม hardcode ไทยตรง ๆ ไม่มี fallback ภาษาอังกฤษเลย — ต่างกับ label อื่นในไฟล์นี้ที่เป็น
             English เสมอหรือผ่าน t() ทั้งคู่ ตอนนี้ผ่าน t() ให้ตรงตาม lang cookie จริง */}
@@ -185,7 +185,7 @@ const pharmacyQueueLink = (
         {emergencyCount > 0 ? <span style={{ ...PILL_STYLE, flexShrink: 0 }}>{t('admin.pharmacy_queue_emergency')} {badgeText(emergencyCount)}</span> : null}
       </Link>
     ) : (
-      <Link href="/admin/pharmacy-queue">Pharmacy Intake Queue</Link>
+      <Link href="/admin/pharmacy-queue">{t('admin.menu_pharmacy_intake_queue')}</Link>
     ),
   };
 };
@@ -374,24 +374,24 @@ export default function AdminSidebar() {
       // เภสัชกรรมย้ายออกไปกลุ่มอื่นแล้ว (ดู g-pharmacy, g-access, g-system ด้านล่าง) เพราะคนละ
       // audience/permission set ไม่ใช่งานร้านค้าทั่วไป — ก่อนหน้านี้ยัดรวมกัน 11-15 รายการในลิสต์เดียว
       children: [
-        ...(can('product.view') ? [link('/admin/products', 'Products', <ShoppingCartOutlined />)] : []),
-        ...(can('order.view') ? [link('/admin/orders', 'Orders', <OrderedListOutlined />)] : []),
-        ...(can('payment.view') ? [link('/admin/payment', 'Payment', <DollarOutlined />)] : []),
-        ...(can('shipping.view') ? [link('/admin/shipment', 'Shipping', <CarOutlined />)] : []),
-        ...(can('customer.view') ? [link('/admin/customers', 'Customers', <TeamOutlined />)] : []),
-        ...(can('coupon.view') ? [link('/admin/coupons', 'Coupons', <TagsOutlined />)] : []),
-        ...(can('member.view') ? [link('/admin/loyalty', 'Members & Points', <TrophyOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-rules', 'Follow-up Rules', <BranchesOutlined />)] : []),
-        ...(can('followup.view') ? [link('/admin/followup-queue', 'Follow-up Queue', <ClockCircleOutlined />)] : []),
-        ...(can('purchase.view') ? [link('/admin/purchase', 'Purchase (PO)', <ImportOutlined />)] : []),
+        ...(can('product.view') ? [link('/admin/products', t('admin.menu_products'), <ShoppingCartOutlined />)] : []),
+        ...(can('order.view') ? [link('/admin/orders', t('admin.menu_orders'), <OrderedListOutlined />)] : []),
+        ...(can('payment.view') ? [link('/admin/payment', t('admin.menu_payment'), <DollarOutlined />)] : []),
+        ...(can('shipping.view') ? [link('/admin/shipment', t('admin.menu_shipping'), <CarOutlined />)] : []),
+        ...(can('customer.view') ? [link('/admin/customers', t('admin.menu_customers'), <TeamOutlined />)] : []),
+        ...(can('coupon.view') ? [link('/admin/coupons', t('admin.menu_coupons'), <TagsOutlined />)] : []),
+        ...(can('member.view') ? [link('/admin/loyalty', t('admin.menu_members'), <TrophyOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-rules', t('admin.menu_followup_rules'), <BranchesOutlined />)] : []),
+        ...(can('followup.view') ? [link('/admin/followup-queue', t('admin.menu_followup_queue'), <ClockCircleOutlined />)] : []),
+        ...(can('purchase.view') ? [link('/admin/purchase', t('admin.menu_purchase'), <ImportOutlined />)] : []),
         // สาขา (9.1) วางก่อน Stock Transfers เพราะต้องมีสาขาที่สองก่อนถึงจะมี
         // อะไรให้โอนย้าย — สิทธิ์ location.manage ให้ Manager เท่านั้น (โครงสร้างร้าน
         // ไม่ใช่งานประจำวัน)
-        ...(can('location.manage') ? [link('/admin/locations', 'Locations', <ClusterOutlined />)] : []),
+        ...(can('location.manage') ? [link('/admin/locations', t('admin.menu_locations'), <ClusterOutlined />)] : []),
         // งานคลัง (7.98) วางต่อจาก Purchase เพราะเป็นงานตระกูลเดียวกัน (ของเข้า/ของย้าย/ของขาด)
         // สิทธิ์คนละตัวกัน: คลังสินค้าเห็นสองเมนูนี้ได้โดยไม่ต้องมีสิทธิ์ดูออร์เดอร์
-        ...(can('inventory.transfer') ? [link('/admin/stock-transfers', 'Stock Transfers', <SwapOutlined />)] : []),
-        ...(can('inventory.count') ? [link('/admin/stock-counts', 'Stock Counts', <ContainerOutlined />)] : []),
+        ...(can('inventory.transfer') ? [link('/admin/stock-transfers', t('admin.menu_stock_transfers'), <SwapOutlined />)] : []),
+        ...(can('inventory.count') ? [link('/admin/stock-counts', t('admin.menu_stock_counts'), <ContainerOutlined />)] : []),
       ],
     },
     // เภสัชกรรม — เฉพาะร้านยา (isPharmacyShop) แยกจาก "ร้านค้า" เพราะ permission set/audience
@@ -403,12 +403,12 @@ export default function AdminSidebar() {
       icon: <MedicineBoxOutlined />,
       label: t('admin.group_pharmacy'),
       children: [
-        ...(canViewPharmacy ? [link('/admin/pharmacy-intake-lab', 'Pharmacy Intake Lab', <FileSearchOutlined />)] : []),
+        ...(canViewPharmacy ? [link('/admin/pharmacy-intake-lab', t('admin.menu_pharmacy_intake_lab'), <FileSearchOutlined />)] : []),
         ...(canViewPharmacy ? [pharmacyQueueLink(t, effectiveCollapsed, pharmacyEmergencyCount, pharmacyPendingConfirmationCount)] : []),
-        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', 'Pharmacy Protocols', <FileProtectOutlined />)] : []),
-        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', 'Pharmacist Licenses', <IdcardOutlined />)] : []),
+        ...(can('pharmacy.protocol.manage') ? [link('/admin/pharmacy-protocols', t('admin.menu_pharmacy_protocols'), <FileProtectOutlined />)] : []),
+        ...(isAdministrator ? [link('/admin/pharmacy-protocols/licenses', t('admin.menu_pharmacist_licenses'), <IdcardOutlined />)] : []),
         // gate เท่ากับสิทธิ์ต่ำสุดที่เปิดคิวได้ — คู่มือนี้แค่ "อ่าน" ไม่มีอะไรให้ทำ จึงไม่ต้องขอ permission ใหม่
-        ...(canViewPharmacy ? [link('/admin/pharmacy-manual', 'Pharmacist Manual', <ReadOutlined />)] : []),
+        ...(canViewPharmacy ? [link('/admin/pharmacy-manual', t('admin.menu_pharmacist_manual'), <ReadOutlined />)] : []),
       ],
     }] : []),
     // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
