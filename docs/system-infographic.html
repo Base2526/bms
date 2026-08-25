@@ -79,7 +79,7 @@
   --shadow-lg:0 2px 6px rgba(0,0,0,.45), 0 24px 50px -28px rgba(0,0,0,.9);
 }
 
-*{box-sizing:border-box;}
+*{box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact;}
 body{
   margin:0;
   background:var(--paper);
@@ -386,6 +386,56 @@ footer p{margin:0 0 6px; max-width:70ch;}
   .fronts,.chans{grid-template-columns:1fr;}
   .cgrid{grid-template-columns:repeat(2,1fr);}
   .rxband{grid-template-columns:1fr;}
+}
+
+/* ================= print ================= */
+/* หน้านี้ไม่เคยมี print stylesheet มาก่อนเลย — สิ่งที่ทำให้ผลลัพธ์ "PDF ไม่เหมือนที่เห็นในเบราว์เซอร์"
+   คือ 2 อย่าง: (1) เบราว์เซอร์ตัดพื้นหลัง/gradient ทิ้งเป็นค่าเริ่มต้นเวลาพิมพ์ ทำให้กล่องสี/ตัวอักษร
+   ไล่สี/pill ทั้งหมดกลายเป็นขาวเปล่า และ (2) .railwrap ใช้ overflow-x:auto ซึ่งบนจอเลื่อนดูได้ครบ
+   แต่ตอนพิมพ์ เนื้อหาที่อยู่นอกกรอบที่มองเห็นจะ**หายไปเลย** ไม่ถูกพิมพ์ต่อ (การ์ดตัวหลัง ๆ ในแถว
+   ขั้นตอนหายไปกลางคัน) — สองข้อนี้แก้ด้วย print-color-adjust (ด้านบน) และ flex-wrap ด้านล่าง */
+@media print{
+  @page{ size:A4; margin:14mm 12mm; }
+
+  /* บังคับธีมสว่างเสมอตอนพิมพ์ ไม่ว่าเครื่องคนพิมพ์จะตั้ง dark mode ไว้หรือไม่ — กันกระดาษ/หมึก
+     เปลืองจากพื้นหลังเข้มเต็มหน้า และให้สีตรงกับที่ตั้งใจออกแบบไว้เสมอ */
+  :root, :root[data-theme="dark"]{
+    --paper:#F4F6FB; --surface:#FFFFFF; --surface-2:#EDF0F7; --line:#DBE1EE; --line-soft:#E8ECF5;
+    --ink:#131725; --ink-2:#4A5268; --ink-3:#7C8499;
+    --chat:#1D4ED8; --chat-bg:#E7EDFD; --pos:#C2410C; --pos-bg:#FBECE3; --rx:#047857; --rx-bg:#E2F3EC;
+    --gate:#BE123C; --gate-bg:#FCE8EC; --core:#3F3D56; --core-bg:#ECEBF3; --warn:#A16207; --warn-bg:#FBF2DC;
+    --mono-bg:#EEF1F8; --shadow:none; --shadow-lg:none;
+  }
+
+  body{background:#fff;}
+  .wrap{max-width:none; padding:0;}
+
+  /* เงาใช้แยกกล่องออกจากพื้นหลังบนจอ แต่บนกระดาษเส้นขอบทำหน้าที่เดียวกันได้คมกว่าและไม่เปลืองหมึก */
+  .door,.front,.card,.stop,.rung,.gap,.note,.authcol,.smap,.corebar,.corebox,.statstrip{
+    box-shadow:none !important;
+  }
+
+  /* จุดสำคัญ: แถวขั้นตอน (.rail) เดิมเลื่อนดูทางขวาบนจอ — พิมพ์แล้วส่วนที่ต้องเลื่อนถึงจะเห็นจะถูก
+     ตัดทิ้ง ไม่ใช่แค่ล้นหน้า ให้เปลี่ยนเป็น wrap ขึ้นบรรทัดใหม่แทนเพื่อให้ครบทุกขั้นตอนบนกระดาษ */
+  .railwrap{overflow:visible;}
+  .rail{flex-wrap:wrap; gap:14px 0;}
+  .stop{width:auto; flex:1 1 200px;}
+  .stop + .stop{margin-left:0;}
+  .stop + .stop::before,.stop + .stop::after{display:none;}
+
+  .tablewrap{overflow:visible;}
+  table{font-size:12px;}
+
+  /* กันหัวข้อลอยเดี่ยวท้ายหน้าแล้วเนื้อหาไปเริ่มหน้าถัดไป และกันกล่อง/แถวตารางถูกตัดครึ่งคาบสองหน้า */
+  h1,h2,h3,h4,.sechead{ break-after:avoid; page-break-after:avoid; }
+  .door,.front,.card,.stop,.rung,.gap,.note,.authcol,.cmod,tr,.stat,.meter{
+    break-inside:avoid; page-break-inside:avoid;
+  }
+  section{ break-inside:auto; }
+
+  /* ลิงก์ในเอกสารนี้เป็น anchor ภายในหน้าเดียวกันทั้งหมด (id="chat" ฯลฯ) ไม่ใช่ URL ภายนอก —
+     ไม่ต้องพิมพ์ที่อยู่ลิงก์ต่อท้ายข้อความแบบที่เบราว์เซอร์บางตัวทำเป็นค่าเริ่มต้น */
+  a[href^="#"]::after{content:none !important;}
 }
 </style>
 
