@@ -41,17 +41,111 @@
   font-size: 12px;
 }
 
-.heroActions {
+/* ---------- quick nav ----------
+   Sticky under the app header so the jump chips and Print/Download stay in
+   reach while scrolled deep into a section — this page is meant to be
+   consulted mid-task, not just read top to bottom once. */
+.quickNav {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #d9e3df;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(22, 48, 43, 0.06);
+}
+
+.quickNavChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quickNavChip {
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #d9e3df;
+  color: #3f524d;
+  background: #f4f8f6;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.quickNavChip:hover {
+  border-color: #0f7a5c;
+  color: #0f7a5c;
+}
+
+.quickNavActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .section {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* ---------- disclosure ----------
+   Every section is collapsible on screen so the page reads as a scannable
+   list of headings first — but content that starts collapsed must still be
+   fully visible when printed/saved as PDF (see @media print below), because
+   collapsing something for a quick screen read and losing it from a copy a
+   pharmacist prints to read later are two different things. */
+.disclosureHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.disclosureHead:focus-visible {
+  outline: 2px solid #0f7a5c;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.disclosureHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.disclosureChevron {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #eef4f1;
+  color: #3f524d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.disclosureBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.disclosureBodyClosed {
+  display: none;
 }
 
 .sectionEyebrow {
@@ -242,7 +336,7 @@
    Only rules that already reference this module's own local classes stay
    here. */
 @media print {
-  .heroActions {
+  .quickNav {
     display: none;
   }
   .hero {
@@ -255,5 +349,13 @@
   }
   .tableWrap {
     border: 1px solid #ccc;
+  }
+  /* a section collapsed on screen still prints in full — see the comment
+     above .disclosureHead */
+  .disclosureBodyClosed {
+    display: flex;
+  }
+  .disclosureChevron {
+    display: none;
   }
 }

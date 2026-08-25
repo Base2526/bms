@@ -3,7 +3,7 @@
 import { Alert, Button, Card, Space, Tag, Typography } from "antd";
 import { DownloadOutlined, ExperimentOutlined, FileProtectOutlined, PrinterOutlined } from "@ant-design/icons";
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
@@ -470,6 +470,59 @@ function ToneBadge({ tone, children }: { tone: Tone; children: React.ReactNode }
   return <span className={`${styles.badge} ${styles[tone]}`}>{children}</span>;
 }
 
+/**
+ * A collapsible section: collapsed by default for background reading
+ * (roles, the intake flow, the protocol lifecycle) so the page reads as a
+ * scannable list of headings, expanded by default for what a pharmacist
+ * actually checks mid-case (case states, the review steps, escalation).
+ * Content stays in the DOM either way — the print stylesheet forces every
+ * closed body open, so nothing is missing from a printed/saved copy.
+ */
+function Disclosure({
+  id,
+  eyebrow,
+  title,
+  lead,
+  defaultOpen,
+  children,
+}: {
+  id: string;
+  eyebrow?: string;
+  title: string;
+  lead?: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section id={id} className={styles.section} style={{ scrollMarginTop: 88 }}>
+      <div
+        className={styles.disclosureHead}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+      >
+        <div className={styles.disclosureHeadText}>
+          {eyebrow ? <div className={styles.sectionEyebrow}>{eyebrow}</div> : null}
+          <Title level={3} className={styles.sectionTitle}>{title}</Title>
+        </div>
+        <span className={styles.disclosureChevron} aria-hidden>{open ? "–" : "+"}</span>
+      </div>
+      <div className={open ? styles.disclosureBody : `${styles.disclosureBody} ${styles.disclosureBodyClosed}`}>
+        {lead ? <Paragraph className={styles.sectionLead}>{lead}</Paragraph> : null}
+        {children}
+      </div>
+    </section>
+  );
+}
+
 function FlowList({ steps }: { steps: FlowStep[] }) {
   return (
     <div className={styles.flowSteps}>
@@ -613,6 +666,16 @@ export default function PharmacyManualPage() {
     );
   }
 
+  const navItems = [
+    { id: "queue", label: c.queueTitle },
+    { id: "review", label: c.reviewTitle },
+    { id: "interrupt", label: c.interruptTitle },
+    { id: "escalation", label: c.escalationTitle },
+    { id: "roles", label: c.rolesTitle },
+    { id: "intake", label: c.intakeTitle },
+    { id: "lifecycle", label: c.lifecycleTitle },
+  ];
+
   return (
     <div className={styles.page} data-print-root>
       <div className={styles.hero}>
@@ -626,51 +689,24 @@ export default function PharmacyManualPage() {
             </Link>
           ))}
         </div>
-        <div className={styles.heroActions}>
-          <Button icon={<PrinterOutlined />} onClick={handlePrint}>{c.printLabel}</Button>
-          <Button icon={<DownloadOutlined />} onClick={handleDownload}>{c.downloadLabel}</Button>
-        </div>
       </div>
 
-      <section className={styles.section}>
-        <div className={styles.sectionEyebrow}>{c.rolesEyebrow}</div>
-        <Title level={3} className={styles.sectionTitle}>{c.rolesTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.rolesLead}</Paragraph>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>{c.roleColPermission}</th>
-                <th>{c.roleColDesc}</th>
-                <th style={{ textAlign: "center" }}>{c.roleColPharmacist}</th>
-                <th style={{ textAlign: "center" }}>{c.roleColManager}</th>
-                <th style={{ textAlign: "center" }}>{c.roleColAdmin}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {c.roleRows.map((row) => (
-                <tr key={row.permission}>
-                  <td><Text code>{row.permission}</Text></td>
-                  <td>{row.desc}</td>
-                  <td style={{ textAlign: "center" }}>{row.pharmacist === "yes" ? "✓" : row.pharmacist === "star" ? "★" : "✗"}</td>
-                  <td style={{ textAlign: "center" }}>{row.manager === "yes" ? "✓" : "✗"}</td>
-                  <td style={{ textAlign: "center" }}>{row.admin === "yes" ? "✓" : "✗"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <nav className={styles.quickNav} aria-label={c.heroTag}>
+        <div className={styles.quickNavChips}>
+          {navItems.map((item) => (
+            <a key={item.id} href={`#${item.id}`} className={styles.quickNavChip}>{item.label}</a>
+          ))}
         </div>
-        <Text type="secondary" style={{ fontSize: 12.5 }}>{c.roleStarNote}</Text>
-        <div className={`${styles.callout} ${styles.danger}`}>
-          <p className={styles.calloutTitle}>{c.roleDangerTitle}</p>
-          <p style={{ margin: 0 }}>{c.roleDangerBody}</p>
+        <div className={styles.quickNavActions}>
+          <Button size="small" icon={<PrinterOutlined />} onClick={handlePrint}>{c.printLabel}</Button>
+          <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>{c.downloadLabel}</Button>
         </div>
-      </section>
+      </nav>
 
-      <section className={styles.section}>
-        <div className={styles.sectionEyebrow}>{c.queueEyebrow}</div>
-        <Title level={3} className={styles.sectionTitle}>{c.queueTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.queueLead}</Paragraph>
+      {/* Case states and Escalation are what you check mid-case — open by
+          default. Roles, the intake flow, and the protocol lifecycle are
+          background reading — collapsed by default. */}
+      <Disclosure id="queue" eyebrow={c.queueEyebrow} title={c.queueTitle} lead={c.queueLead} defaultOpen>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -691,28 +727,17 @@ export default function PharmacyManualPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Disclosure>
 
-      <section className={styles.section}>
-        <Title level={3} className={styles.sectionTitle}>{c.reviewTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.reviewLead}</Paragraph>
+      <Disclosure id="review" title={c.reviewTitle} lead={c.reviewLead} defaultOpen>
         <FlowList steps={c.reviewSteps} />
         <div className={`${styles.callout} ${styles.info}`}>
           <p className={styles.calloutTitle}>{c.reviewInfoTitle}</p>
           <p style={{ margin: 0 }}>{c.reviewInfoBody}</p>
         </div>
-      </section>
+      </Disclosure>
 
-      <section className={styles.section}>
-        <div className={styles.sectionEyebrow}>{c.intakeEyebrow}</div>
-        <Title level={3} className={styles.sectionTitle}>{c.intakeTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.intakeLead}</Paragraph>
-        <FlowList steps={c.intakeSteps} />
-      </section>
-
-      <section className={styles.section}>
-        <Title level={3} className={styles.sectionTitle}>{c.interruptTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.interruptLead}</Paragraph>
+      <Disclosure id="interrupt" title={c.interruptTitle} lead={c.interruptLead} defaultOpen>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -731,12 +756,9 @@ export default function PharmacyManualPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Disclosure>
 
-      <section className={styles.section}>
-        <div className={styles.sectionEyebrow}>{c.escalationEyebrow}</div>
-        <Title level={3} className={styles.sectionTitle}>{c.escalationTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.escalationLead}</Paragraph>
+      <Disclosure id="escalation" eyebrow={c.escalationEyebrow} title={c.escalationTitle} lead={c.escalationLead} defaultOpen>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -785,12 +807,45 @@ export default function PharmacyManualPage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Disclosure>
 
-      <section className={styles.section}>
-        <div className={styles.sectionEyebrow}>{c.lifecycleEyebrow}</div>
-        <Title level={3} className={styles.sectionTitle}>{c.lifecycleTitle}</Title>
-        <Paragraph className={styles.sectionLead}>{c.lifecycleLead}</Paragraph>
+      <Disclosure id="roles" eyebrow={c.rolesEyebrow} title={c.rolesTitle} lead={c.rolesLead} defaultOpen={false}>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>{c.roleColPermission}</th>
+                <th>{c.roleColDesc}</th>
+                <th style={{ textAlign: "center" }}>{c.roleColPharmacist}</th>
+                <th style={{ textAlign: "center" }}>{c.roleColManager}</th>
+                <th style={{ textAlign: "center" }}>{c.roleColAdmin}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.roleRows.map((row) => (
+                <tr key={row.permission}>
+                  <td><Text code>{row.permission}</Text></td>
+                  <td>{row.desc}</td>
+                  <td style={{ textAlign: "center" }}>{row.pharmacist === "yes" ? "✓" : row.pharmacist === "star" ? "★" : "✗"}</td>
+                  <td style={{ textAlign: "center" }}>{row.manager === "yes" ? "✓" : "✗"}</td>
+                  <td style={{ textAlign: "center" }}>{row.admin === "yes" ? "✓" : "✗"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Text type="secondary" style={{ fontSize: 12.5 }}>{c.roleStarNote}</Text>
+        <div className={`${styles.callout} ${styles.danger}`}>
+          <p className={styles.calloutTitle}>{c.roleDangerTitle}</p>
+          <p style={{ margin: 0 }}>{c.roleDangerBody}</p>
+        </div>
+      </Disclosure>
+
+      <Disclosure id="intake" eyebrow={c.intakeEyebrow} title={c.intakeTitle} lead={c.intakeLead} defaultOpen={false}>
+        <FlowList steps={c.intakeSteps} />
+      </Disclosure>
+
+      <Disclosure id="lifecycle" eyebrow={c.lifecycleEyebrow} title={c.lifecycleTitle} lead={c.lifecycleLead} defaultOpen={false}>
         <div className={styles.lifecycle}>
           {c.lifecycleStages.map((stage, i) => (
             <div className={styles.lifecycleStep} key={stage.status}>
@@ -811,7 +866,7 @@ export default function PharmacyManualPage() {
           <p className={styles.calloutTitle}>{c.lifecycleWarnTitle}</p>
           <p style={{ margin: 0 }}>{c.lifecycleWarnBody}</p>
         </div>
-      </section>
+      </Disclosure>
 
       <section className={styles.section}>
         <Title level={4} style={{ margin: 0 }}>{c.footNoteTitle}</Title>
