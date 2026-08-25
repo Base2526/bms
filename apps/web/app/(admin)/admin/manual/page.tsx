@@ -180,6 +180,7 @@ type ArchetypeExample = {
 type MenuCard = { title: string; desc: string; bullets: string[] };
 type PosGuideCard = { title: string; desc: string; steps: string[]; warning?: string };
 type HelpRow = { title: string; answer: string };
+type LimitGroup = { title: string; items: string[] };
 type StepItem = { title: string; description: string };
 type LinkStep = { title: string; description: React.ReactNode };
 type ShortcutLink = { label: string; href: string; icon: React.ReactNode };
@@ -214,6 +215,7 @@ type ManualContent = {
     menus: string;
     sidebarMap: string;
     faq: string;
+    limits: string;
     links: string;
   };
   onboardingTitle: string;
@@ -276,6 +278,9 @@ type ManualContent = {
   faqTitle: string;
   faqSubtitle: string;
   helpRows: HelpRow[];
+  limitsTitle: string;
+  limitsSubtitle: string;
+  limitsGroups: LimitGroup[];
   linksTitle: string;
   linksSubtitle: string;
   linkSteps: LinkStep[];
@@ -842,6 +847,91 @@ const HELP_ROWS_TH: HelpRow[] = [
   },
 ];
 
+const LIMIT_GROUPS_TH: LimitGroup[] = [
+  {
+    title: "สมการสต็อกและกฎการเคลื่อนไหว (Stock Invariant)",
+    items: [
+      "สต็อกปัจจุบัน = สต็อกที่ขายได้ + สต็อกที่จองไว้ — สต็อกที่ขายได้ = สต็อกปัจจุบัน − สต็อกที่จองไว้",
+      "กฎเหล็ก: การเปลี่ยนแปลงสต็อกทุกครั้งต้องมีรายการเคลื่อนไหว (Stock Movement) กำกับ ห้ามแก้ตัวเลขสต็อกตรง ๆ ไม่ว่าเหตุผลใด",
+      "STOCK_IN / STOCK_OUT: เพิ่ม-ลดด้วยมือ หรือรับของจากใบสั่งซื้อ",
+      "RESERVE / RELEASE: จองตอนสร้างออเดอร์ / ปล่อยตอนยกเลิกหรือปล่อยอัตโนมัติ",
+      "SHIP: ตัดถาวร ลดทั้งสต็อกปัจจุบันและสต็อกที่จองไว้ · RETURN: คืนสินค้า เพิ่มสต็อกปัจจุบัน",
+      "TRANSFER_OUT / TRANSFER_IN: โอนระหว่างสาขา ไม่กระทบมูลค่าสต็อกเหมือนของหาย",
+      "COUNT_ADJUST: ปรับตามผลต่างจากการนับสต็อก · DAMAGED สงวนไว้สำหรับรายงานในอนาคต ยังใช้จริงไม่ได้",
+      "SKU ต้องไม่ซ้ำ · บาร์โค้ดไม่ควรซ้ำในร้านเดียวกัน · ราคา/สต็อกติดลบไม่ได้ (ยกเว้นเปิด AllowNegativeStock) · POS ค้นสินค้ากรองตามสาขาของเครื่องเท่านั้น",
+    ],
+  },
+  {
+    title: "กฎเรื่องบาร์โค้ด — ข้อที่ผิดกันบ่อยที่สุด",
+    items: [
+      "สินค้ามีบาร์โค้ดโรงงานอยู่แล้ว: สแกนเข้ามาเท่านั้น ห้ามพิมพ์เองหรือกดสร้างรหัสใหม่ — ไม่งั้นสแกนขวดจริงแล้วระบบหาไม่เจอ",
+      "สินค้าไม่มีบาร์โค้ด (แบ่งแพ็ก/ทำเอง/นำเข้า): ใช้ปุ่มสร้างรหัสได้",
+      "รหัสที่สร้างเป็น EAN-13 ช่วง 20–29 ที่ GS1 สงวนไว้ พร้อมเลขตรวจสอบถูกต้อง เรียงลำดับ ไม่สุ่ม และข้ามเลขที่มีอยู่แล้ว",
+      "ปุ่มสร้างไม่เขียนฐานข้อมูล — แค่เติมฟอร์ม ต้องกดบันทึกเอง",
+      "รหัสรูปแบบอื่น (Code 128 ฯลฯ) ไม่ถูกบล็อก ระบบเตือนแต่ไม่ห้าม เพราะ POS ค้นแบบตรงตัวอักษร",
+      "ความไม่ซ้ำเป็นระดับร้าน — ซ้ำข้ามร้านได้ แต่ซ้ำในร้านเดียวกันถูกปฏิเสธ",
+    ],
+  },
+  {
+    title: "บล็อกกระแสเงินสดจากสต็อก (Action Center)",
+    items: [
+      "รวม 5 สัญญาณ: สินค้าใกล้หมด · หมดแล้ว · คาดว่าจะหมดใน 7 วัน · รายการที่ควรสั่งซื้อ · จำนวนที่แนะนำรวม",
+      "คำนวณจาก: แนวโน้มความต้องการ · วันสต็อกสำรองที่ตั้งไว้ · ระยะเวลาสั่งของจากผู้ขาย · จำนวนที่ค้างในใบสั่งซื้อ · ยอดขายที่เสียไปที่บันทึกมือ · ลูกค้าที่รอของเข้า",
+      "คำแนะนำไม่เคยสั่งซื้อเอง — ไม่มีการสร้าง/แก้ใบสั่งซื้ออัตโนมัติ พนักงานต้องตัดสินใจสั่งของทุกครั้ง",
+    ],
+  },
+  {
+    title: "ตัวเลขที่อ่านผิดได้ — ต้องติดป้ายว่าเป็นค่าประมาณเสมอ",
+    items: [
+      "ยอดออเดอร์ไม่รวมค่าส่ง — อ่านเป็นยอดที่ลูกค้าจ่ายจะต่ำกว่าจริงทุกครั้งที่มีค่าส่ง",
+      "มูลค่าสต็อกคิดที่ราคาขาย ไม่ใช่ต้นทุน — ใช้เป็นมูลค่าทรัพย์สินหรือต้นทุนคงเหลือไม่ได้",
+      "เวลาบนไทม์ไลน์คือเวลาที่สร้าง ไม่ใช่เวลาที่ถึงสถานะนั้น — ดูลำดับจริงจาก Audit Log",
+      "ไทม์ไลน์แสดงได้ 200 แถวต่อแหล่ง — ลูกค้าที่มีกิจกรรมมากจะเห็นประวัติไม่ครบโดยไม่มีคำเตือน",
+      "ปุ่มสลับ “แชทนี้เท่านั้น” กรองเฉพาะข้อมูลที่โหลดมาแล้ว ไม่ได้ดึงใหม่จากเซิร์ฟเวอร์",
+      "เวลาตอบเฉลี่ยสูงเกินจริง — ไม่หักช่วงที่แชทค้างข้ามคืนก่อนลูกค้ากลับมา",
+      "รายงานกำไรใช้ต้นทุนปัจจุบันกับรายได้ในอดีต — เป็นค่าประมาณ ไม่ใช่งบกำไรขาดทุนย้อนหลังที่แม่นยำ",
+      "ต้องติดป้าย “ค่าประมาณ” เสมอ: คำแนะนำสั่งซื้อ · วันที่คาดว่าของจะหมด · ป้าย SLOW/DEAD · รายงานกำไร · มูลค่าสต็อก · คะแนนรักษาลูกค้า HOT/WARM/COOL · ข้อมูลเชิงลึกจาก AI · ใบแจ้งหนี้ที่ออกจากหน้าจอ",
+    ],
+  },
+  {
+    title: "ข้อมูลลูกค้า — สิ่งที่ต้องระวังก่อนกด",
+    items: [
+      "ไม่มีการรวมลูกค้าข้ามช่องทางอัตโนมัติ — ลูกค้าคนเดียวจากสองช่องทางเห็นเป็นสองรายการ ยอดซื้อสะสมผิดจนกว่าจะผสานด้วยมือ",
+      "การผสานลูกค้าย้อนกลับไม่ได้ — รายการที่ถูกผสานถูกลบแบบซ่อนถาวร ตรวจให้แน่ใจก่อนกด",
+      "แท็บ “ลูกค้า” ว่างเปล่าอาจแปลว่าไม่มีสิทธิ์ ไม่ใช่ลูกค้าใหม่ที่ยังไม่มีข้อมูล",
+      "ข้อมูลทดสอบ (fake data) ไม่มีตัวตนช่องทางให้ผสาน",
+      "ออเดอร์ Lazada/Shopee ยังไม่โผล่ใน Customer 360 — การอ่าน webhook ยังเป็นโครงร่างที่ยังไม่ได้ตรวจสอบ",
+    ],
+  },
+  {
+    title: "สต็อกและสิทธิ์ — กับดักที่เจอบ่อย",
+    items: [
+      "หน้า 403 ไม่ขึ้นข้อความและไม่เตะออกจากระบบ — อาการคือหน้าว่างหรือดูเหมือนพัง มักเกิดเมื่อยังไม่ apply migration ที่ตั้งสิทธิ์นั้น",
+      "สาขาที่สองที่ไม่ตั้งรหัสสาขาจะชนกับสำนักงานใหญ่ทันที — ต้องตั้งรหัสเองทุกสาขา",
+      "กดยืนยันการนับสต็อกแล้วย้อนกลับจากหน้าจอไม่ได้ — เป็นการตัดสต็อกออกจริง ตัดสินใจเรื่องผู้ถือสิทธิ์ก่อนส่งหน้าจอให้พนักงาน",
+      "ของเข้าคนละสาขาระหว่างรับผ่าน POS กับผ่าน Admin — POS ใช้สาขาของเครื่อง, Admin ใช้สาขาหลักของร้าน",
+      "แถวสต็อกของชุดสินค้า (Bundle) เป็น 0 ตลอด — ถูกต้องแล้ว ไม่ใช่บั๊ก จำนวนที่ขายได้มาจากส่วนประกอบ",
+      "ยอดล็อตกับยอดสต็อกอาจไม่ตรงกัน — กระทบยอดก่อนใช้ตัวเลขวันหมดอายุตัดสินใจ",
+      "คำแนะนำสั่งซื้อพุ่งเกินจริงถ้าบันทึกความต้องการแบบเดา — บันทึกเฉพาะที่เห็นจากลูกค้าจริง (ลบไม่ได้)",
+      "สร้างบาร์โค้ดให้สินค้าที่มีบาร์โค้ดโรงงานอยู่แล้ว — พนักงานจะสแกนของจริงแล้วหาไม่เจอ",
+    ],
+  },
+  {
+    title: "ขอบเขตที่ยังไม่รองรับ — อย่าสัญญากับลูกค้าหรือทีมงาน",
+    items: [
+      "ตารางเวลาส่งสรุปยอดขายอัตโนมัติ ต้องตั้งก่อนไม่งั้นไม่มีอะไรถูกส่ง",
+      "Webhook/ซิงก์อัตโนมัติจากขนส่ง — ต้องกดซิงก์เองจากหน้าจัดส่ง · ยกเลิกพัสดุกับขนส่งต้องติดต่อขนส่งโดยตรง",
+      "ส่งข้อความออกจริงบน Web/TikTok/Shopee/Lazada — ตอบผ่านแพลตฟอร์มนั้นโดยตรง; LINE ใช้ OA Manager, ขายผ่าน Seller Center",
+      "แจ้งเตือนแต้มใกล้หมดอายุ/เลื่อนระดับอัตโนมัติ — ใช้รายชื่อในหน้าแต้มสะสมแล้วติดต่อเอง",
+      "ระบบตั๋วสนับสนุนลูกค้า/สร้างลิงก์ชำระเงิน — ใช้ Inbox และหน้าชำระเงินที่มีลายเซ็นแทน",
+      "PDF ภาษาไทย — ใช้ XLSX/CSV แทน; รายงานแต้มสะสมดูบนหน้าจอเท่านั้น",
+      "แม่แบบอีเมลรายร้าน ปรับได้เฉพาะสีธีมและข้อความท้ายอีเมล · กราฟยอดขายรายชั่วโมงบนจอสดมีแค่ข้อมูลรายวัน",
+      "ผู้ชมสด/Conversion/คอมเมนต์บนจอสดยังไม่มีแหล่งข้อมูล ต้องคงป้าย “ตัวอย่าง” ไว้",
+      "อัตราค่าส่งแยกรายขนส่ง · น้ำหนักตามปริมาตร · เขต/แขวงในที่อยู่ · API อัตราค่าส่งสด — ยังไม่รองรับ",
+      "DAMAGED movement · บาร์โค้ดเครื่องชั่งเข้าเส้นทางขาย · โปรข้ามสินค้า (ซื้อ A แถม B) · AI ย้ายสต็อกข้ามสาขา · ชุดทดสอบอัตโนมัติที่ทำงานอยู่ — ทั้งหมดยังไม่พร้อมใช้งานจริง",
+    ],
+  },
+];
 
 const LINK_STEPS_TH: LinkStep[] = [
   {
@@ -1005,6 +1095,7 @@ const TH: ManualContent = {
     menus: "คู่มือตามเมนู",
     sidebarMap: "แผนที่เมนูตาม Sidebar",
     faq: "คำถามที่เจอบ่อย",
+    limits: "ข้อจำกัดที่ควรรู้",
     links: "ลิงก์ไปหน้าที่ใช้บ่อย",
   },
   onboardingTitle: "🪜 Onboarding วันแรก",
@@ -1383,6 +1474,10 @@ const TH: ManualContent = {
   faqTitle: "❓ คำถามที่เจอบ่อย",
   faqSubtitle: "วางแบบถาม-ตอบสั้น ๆ เพื่อช่วยลดเวลาที่ต้องไล่อ่านเอกสารยาว",
   helpRows: HELP_ROWS_TH,
+  limitsTitle: "⚠️ ข้อจำกัดที่ควรรู้ก่อนใช้งานจริง",
+  limitsSubtitle:
+    "สมการที่ระบบยึดถือ, กับดักที่เจอบ่อย, ตัวเลขที่ต้องอ่านเป็นค่าประมาณ และของที่ยังไม่รองรับ — อ่านก่อนสัญญาอะไรกับลูกค้าหรือทีมงาน",
+  limitsGroups: LIMIT_GROUPS_TH,
   linksTitle: "🔗 ลิงก์ไปหน้าที่ใช้บ่อย",
   linksSubtitle: "ให้ผู้ใช้ข้ามไปทำงานจริงได้ทันที ไม่ต้องอ่านจบทั้งหน้า",
   linkSteps: LINK_STEPS_TH,
@@ -2047,6 +2142,92 @@ const HELP_ROWS_EN: HelpRow[] = [
   },
 ];
 
+const LIMIT_GROUPS_EN: LimitGroup[] = [
+  {
+    title: "The stock invariant and its movement types",
+    items: [
+      "Current stock = sellable stock + reserved stock — sellable stock = current stock − reserved stock",
+      "Iron rule: every stock change must carry a Stock Movement record. Never edit the stock number directly, for any reason.",
+      "STOCK_IN / STOCK_OUT: manual adjustment, or receiving a purchase order",
+      "RESERVE / RELEASE: reserved when an order is created, released on cancel or an automatic release",
+      "SHIP: a permanent cut — reduces both current and reserved stock · RETURN: a return, adds back to current stock",
+      "TRANSFER_OUT / TRANSFER_IN: branch-to-branch transfer, kept separate so it never hits stock-value reports like shrinkage",
+      "COUNT_ADJUST: applies the difference from a stock count · DAMAGED is reserved for a future report — not usable yet",
+      "SKU must be unique · barcode should be unique within a shop · price/stock can never go negative (unless AllowNegativeStock is on) · POS search is scoped to the device's own branch",
+    ],
+  },
+  {
+    title: "Barcode rules — the most common mistake",
+    items: [
+      "A product with a factory barcode: scan it in only. Never type one in or press generate — otherwise staff scan the real bottle and the system can't find it.",
+      "A product with no barcode (split packs, house-made, imported): the generate button is fine here.",
+      "Generated codes are EAN-13 in the 20–29 range GS1 reserves for in-store use, with a correct check digit, sequential (not random), skipping codes already printed.",
+      "The generate button does not write to the database — it only fills the form. You still have to save.",
+      "Other formats (Code 128, a factory-internal code) are not blocked — the system warns but doesn't stop you, because POS matches barcodes literally.",
+      "Uniqueness is per shop — the same code can exist in two different shops, but not twice within one shop.",
+    ],
+  },
+  {
+    title: "The stock cash-flow block (Action Center)",
+    items: [
+      "Rolls up 5 signals: low stock · out of stock · projected to run out in 7 days · suggested reorders · total suggested units",
+      "Computed from: demand trend · the reserve-days setting · supplier lead time · quantity still on open purchase orders · manually logged lost sales · customers waiting on restock",
+      "The suggestion never places an order by itself — no purchase order is created or edited automatically. A person decides every reorder.",
+    ],
+  },
+  {
+    title: "Numbers that are easy to misread — always label these as estimates",
+    items: [
+      "Order totals exclude shipping — reading them as \"what the customer paid\" undercounts every order that had a delivery fee.",
+      "Stock value is priced at sale price, not cost — don't use it as an asset value or a cost of remaining inventory.",
+      "A timeline entry's time is when the record was created, not when that status was reached — check the real order from the Audit Log.",
+      "A timeline shows up to 200 rows per source — a very active customer can have missing history with no visible warning.",
+      "The \"this chat only\" toggle filters what's already loaded — it does not fetch fresh data from the server.",
+      "Average response time reads high because it doesn't subtract time a chat sat idle overnight.",
+      "The profit report applies today's cost to past revenue — it's an estimate, not an accurate historical P&L.",
+      "Always label as an estimate: reorder suggestions · projected stockout date · SLOW/DEAD tags · profit reports · stock value · retention HOT/WARM/COOL scores · AI-generated insights · invoices issued from the screen.",
+    ],
+  },
+  {
+    title: "Customer data — think before you click",
+    items: [
+      "Customers are never auto-merged across channels — the same person on two channels shows as two records, with lifetime spend wrong on both until merged by hand.",
+      "Merging customers cannot be undone — the merged-away record is soft-deleted permanently. Double-check before confirming.",
+      "An empty \"Customers\" tab can mean you lack the permission, not that there's genuinely no data yet.",
+      "Fake seed data has no channel identity to merge — there's nothing for the merge tool to find.",
+      "Lazada/Shopee orders don't show in Customer 360 yet — that webhook ingestion is still an unverified skeleton.",
+    ],
+  },
+  {
+    title: "Stock and permissions — traps that keep coming up",
+    items: [
+      "A 403 shows no message and doesn't log you out — it just looks like a blank or broken page, usually because a migration that grants that permission hasn't been applied yet.",
+      "A second branch with no branch code collides with head office immediately — set a code for every branch yourself.",
+      "Confirming a stock count can't be undone from the screen — it's a real stock cut. Decide who holds that permission before handing the screen to staff.",
+      "Receiving goods lands in a different branch depending on the path — POS uses the device's own branch, Admin uses the shop's main branch.",
+      "A bundle's own stock row stays at 0 forever — that's correct, not a bug. Sellable quantity comes from its components.",
+      "Lot totals and stock totals can drift apart — reconcile before using expiry-date numbers to decide anything.",
+      "Reorder suggestions spike unrealistically if guessed demand gets logged — only log demand actually seen from a real customer (these rows can't be deleted).",
+      "Generating a barcode for a product that already has a factory one means staff scan the real item and get nothing back.",
+    ],
+  },
+  {
+    title: "Not supported yet — don't promise this to a customer or teammate",
+    items: [
+      "The automatic sales-summary digest needs a schedule set first, or nothing gets sent.",
+      "Webhook/auto-sync from carriers — sync manually from the Shipping page · cancelling a shipment with a carrier means contacting them directly.",
+      "Sending messages out live on Web/TikTok/Shopee/Lazada — reply on that platform directly; LINE uses OA Manager, marketplaces use their Seller Center.",
+      "Automatic loyalty-expiry or tier-upgrade notifications — use the customer list on the Loyalty page and reach out yourself.",
+      "A customer support ticket system, or generating payment links outside the app — use Inbox and the signed checkout page instead.",
+      "Thai-language PDF export — use XLSX/CSV instead; the loyalty report is view-only on screen.",
+      "Per-shop email template editing is limited to theme color and the footer note · the live dashboard's sales chart is daily-only, not hourly.",
+      "Live viewer count / conversion / comments on the live dashboard have no real data source yet — keep the \"sample\" label on them.",
+      "Carrier-specific rate tables, volumetric weight, Thai sub-district address fields, live carrier-rate APIs — none of these are supported yet.",
+      "DAMAGED movement type, scale-barcode decoding wired into the sale path, cross-product promotions (buy A get B), AI-driven cross-branch stock moves, a running automated test suite — none of these are production-ready yet.",
+    ],
+  },
+];
+
 const LINK_STEPS_EN: LinkStep[] = [
   {
     title: "Set up a new shop with a checklist",
@@ -2217,6 +2398,7 @@ const EN: ManualContent = {
     menus: "Guide by menu",
     sidebarMap: "Sidebar menu map",
     faq: "Frequently asked questions",
+    limits: "Known limits",
     links: "Links to frequently used pages",
   },
   onboardingTitle: "🪜 First-day onboarding",
@@ -2598,6 +2780,10 @@ const EN: ManualContent = {
   faqTitle: "❓ Frequently asked questions",
   faqSubtitle: "Short questions and answers, so you spend less time hunting through long documents.",
   helpRows: HELP_ROWS_EN,
+  limitsTitle: "⚠️ Known limits before you rely on this",
+  limitsSubtitle:
+    "The equations the system holds to, common traps, numbers to always read as estimates, and what isn't supported yet — read this before promising anything to a customer or teammate.",
+  limitsGroups: LIMIT_GROUPS_EN,
   linksTitle: "🔗 Links to frequently used pages",
   linksSubtitle: "Jump straight into the real work without reading the whole page.",
   linkSteps: LINK_STEPS_EN,
@@ -2705,6 +2891,7 @@ export default function Page() {
       { key: "menus", href: "#menus", title: c.anchors.menus },
       { key: "sidebarMap", href: "#sidebarMap", title: c.anchors.sidebarMap },
       { key: "faq", href: "#faq", title: c.anchors.faq },
+      { key: "limits", href: "#limits", title: c.anchors.limits },
       { key: "links", href: "#links", title: c.anchors.links },
     ],
     [c.anchors]
@@ -2812,6 +2999,11 @@ export default function Page() {
         id: "faq",
         title: c.faqTitle,
         lines: [c.faqSubtitle, ...c.helpRows.flatMap((row) => [row.title, row.answer])],
+      },
+      {
+        id: "limits",
+        title: c.limitsTitle,
+        lines: [c.limitsSubtitle, ...c.limitsGroups.flatMap((group) => [group.title, ...group.items])],
       },
       {
         id: "links",
@@ -3484,6 +3676,30 @@ export default function Page() {
                   </List.Item>
                 )}
               />
+            </Section>
+
+            <Section
+              id="limits"
+              title={c.limitsTitle}
+              subtitle={c.limitsSubtitle}
+            >
+              <Row gutter={[14, 14]}>
+                {c.limitsGroups.map((group) => (
+                  <Col xs={24} lg={12} key={group.title}>
+                    <Card title={group.title} style={{ borderRadius: 16, height: "100%" }}>
+                      <List
+                        size="small"
+                        dataSource={group.items}
+                        renderItem={(item) => (
+                          <List.Item style={{ paddingInline: 0 }}>
+                            <Text type="secondary">• {item}</Text>
+                          </List.Item>
+                        )}
+                      />
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
             </Section>
 
             <Section
