@@ -58,11 +58,14 @@ bills rung up by mistake.
 6. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
    lots FEFO where lots are tracked, records movements, and issues an abbreviated tax document when
    the tenant is VAT-registered. These steps commit atomically.
-7. Recent sales can be searched by order UUID or receipt/tax document number, previewed by line,
-   and reprinted. Each bill in that list is one compact row; return, refund, and exchange controls
-   open on demand for one bill at a time, and the reason code plus detail are shared by the partial
-   and full return actions. An exchange loads the remaining original items into a new cart; it is a
-   new sale, not a mutation of the old receipt.
+7. Recent sales can be searched by order UUID, receipt/tax document number, product barcode, SKU,
+   member details, or phone number, previewed by line, and reprinted. When a query is present the
+   list can widen across the tenant's POS history, but bills sold on another device stay view/print
+   only on this screen; receipt-based return and exchange controls open only for bills from the
+   current register. Each bill in that list is one compact row; return, refund, and exchange
+   controls open on demand for one bill at a time, and the reason code plus detail are shared by
+   the partial and full return actions. An exchange loads the remaining original items into a new
+   cart; it is a new sale, not a mutation of the old receipt.
 8. Returns may be full or partial. A reason code plus detail is mandatory, returned quantities are
    cumulative and cannot exceed the sold quantity, net refund uses the original order-level discount,
    and stock/lot provenance is restored atomically.
@@ -759,6 +762,23 @@ the loudest signal in the report under routine activity.
 
 **No credit note is issued.** There is no source tax invoice to reference, so the row is internal
 evidence for the accountant, not a tax document.
+
+The counter still tries to recover the original bill first. In the Returns tab, a cashier can now
+search by receipt number, order id, member number, customer phone, SKU/product text, or even by
+scanning the product barcode itself. When a search query is present, POS widens the lookup across
+the tenant's POS bills instead of only the current device's last few receipts, so "which register
+sold this?" stops blocking the review. Opening the no-receipt flow also makes the scanner add the
+returned item to the blind-return cart **and** search for matching historical bills at the same time;
+only if none of those candidates is usable does the manager-approved blind return remain the final
+path.
+
+That wider lookup created two extra counter rules. First, a bill found from another POS device is
+still useful evidence — the row now shows its real branch/register origin and can be reprinted —
+but the return/exchange actions stay closed because `processPosReturn()` still binds receipt-based
+returns to the original device. Second, the no-receipt flow must not share an active sale cart: if
+the cashier leaves blind-return mode or decides to continue with a real receipt instead, POS now
+forces an explicit discard of the blind-return draft before any sale/exchange/receipt-return action
+can continue, so returned goods cannot be accidentally sold or parked as a normal bill.
 
 ## Blind close and no-sale (8.0)
 

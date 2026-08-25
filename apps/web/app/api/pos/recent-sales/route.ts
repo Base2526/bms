@@ -1,7 +1,9 @@
 // =============================================================
 // GET /api/pos/recent-sales — บิลล่าสุดหลายใบของเครื่องนี้
 // -------------------------------------------------------------
-// ใช้สำหรับ reprint ย้อนหลังจากหน้า POS
+// ใช้สำหรับ reprint/return lookup จากหน้า POS
+// ถ้าไม่มีคำค้น จะคืนเฉพาะบิลล่าสุดของเครื่องนี้
+// ถ้ามีคำค้น route จะส่งต่อให้ service ขยายไปค้นย้อนหลังข้ามเครื่อง POS ทั้ง tenant ได้
 // =============================================================
 
 import { NextResponse } from "next/server";
@@ -25,7 +27,7 @@ async function handleGET(req: NextRequest) {
     device.tenantId,
     device.id,
     Number.isFinite(limit) ? limit : 5,
-    { query: q || null }
+    { query: q || null, locationId: device.locationId }
   );
   return NextResponse.json({ sales });
 }

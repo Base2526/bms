@@ -487,6 +487,7 @@ type ReceiptVat = {
 type Receipt = {
   orderId?: string | null;
   docNo: string | null;
+  posDeviceId?: string | null;
   orderStatus?: string | null;
   /** 7.97 — บิลที่ถูกยกเลิก แสดงป้ายต่างจาก "คืนแล้ว" */
   voidedAt?: string | null;
@@ -514,6 +515,7 @@ type Receipt = {
   /** สมาชิก + แต้ม (7.96) — null ทั้งชุดเมื่อบิลนี้ไม่ผูกสมาชิก */
   memberName?: string | null;
   memberNo?: string | null;
+  memberPhone?: string | null;
   pointsEarned?: number | null;
   pointsBalance?: number | null;
   /** ส่วนลดแยกบรรทัดตามที่มา (tier / คูปอง / แต้ม) — ยอดรวมมาจาก server */
@@ -1292,6 +1294,78 @@ export default function PosPage() {
     clearPharmacyReviewState();
     // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
     setExtraLines([]);
+  }
+
+  function resetBlindReturnState(options: { keepOpen?: boolean } = {}) {
+    setBlindReason("");
+    setBlindApproverId("");
+    setBlindApproverPin("");
+    blindReturnRequestRef.current = null;
+    if (!options.keepOpen) setBlindOpen(false);
+  }
+
+  function discardBlindReturnDraft(options: { nextTab?: PosTab; announce?: string | null } = {}) {
+    setCart([]);
+    clearBillCustomerState();
+    setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+    resetToSimpleCash();
+    resetBlindReturnState();
+    if (options.nextTab) setTab(options.nextTab);
+    if (options.announce) setNotice({ type: "ok", text: options.announce });
+  }
+
+  function confirmDiscardBlindReturnDraft(nextStep: string, options: { nextTab?: PosTab } = {}) {
+    if (!blindOpen) return true;
+    if (cart.length === 0) {
+      resetBlindReturnState();
+      if (options.nextTab) setTab(options.nextTab);
+      return true;
+    }
+    if (!window.confirm(`จะล้างรายการคืนไม่มีใบเสร็จ ${cart.length} รายการเพื่อ${nextStep} ใช่หรือไม่?`)) {
+      return false;
+    }
+    discardBlindReturnDraft({
+      nextTab: options.nextTab,
+      announce: `ล้างรายการคืนไม่มีใบเสร็จแล้ว — ${nextStep}ต่อได้`,
+    });
+    return true;
+  }
+
+  function openBlindReturn() {
+    if (blindOpen) return;
+    if (
+      cart.length > 0
+      && !window.confirm("การเปิดโหมดคืนไม่มีใบเสร็จจะล้างตะกร้าปัจจุบันและข้อมูลลูกค้าของบิลนี้ ต้องการเริ่มใหม่หรือไม่?")
+    ) {
+      return;
+    }
+    setCart([]);
+    clearBillCustomerState();
+    setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+    resetToSimpleCash();
+    resetBlindReturnState({ keepOpen: true });
+    setBlindOpen(true);
+    setReturnPanelOrderId(null);
+    setNotice({ type: "ok", text: "เปิดโหมดคืนไม่มีใบเสร็จแล้ว — ยิงสินค้าที่ลูกค้านำมาคืนได้เลย" });
+  }
+
+  function closeBlindReturn() {
+    if (cart.length > 0) {
+      if (!window.confirm(`จะยกเลิกรายการคืนไม่มีใบเสร็จ ${cart.length} รายการและล้างตะกร้านี้ ใช่หรือไม่?`)) return;
+      discardBlindReturnDraft({ announce: "ยกเลิกรายการคืนไม่มีใบเสร็จแล้ว" });
+      return;
+    }
+    resetBlindReturnState();
+  }
+
+  function switchTab(nextTab: PosTab) {
+    if (nextTab === tab) return;
+    if (blindOpen && nextTab !== "returns") {
+      const tabLabel = POS_TABS.find((item) => item.key === nextTab)?.label ?? nextTab;
+      confirmDiscardBlindReturnDraft(`ไปแท็บ${tabLabel}`, { nextTab });
+      return;
+    }
+    setTab(nextTab);
   }
 
   function buildParkedCartSnapshot(): ParkedCartSnapshot {
@@ -2094,6 +2168,7 @@ export default function PosPage() {
   // ---- ยกเลิกบิล (7.97) ----------------------------------------------
 
   async function doVoidSale(orderId: string) {
+    if (!confirmDiscardBlindReturnDraft("ยกเลิกบิลนี้")) return;
     if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); return; }
     if (!voidReason.trim()) { setNotice({ type: "error", text: "ต้องระบุเหตุผลที่ยกเลิก" }); return; }
     if (!voidApproverId || !voidApproverPin) { setNotice({ type: "error", text: "ยกเลิกบิลต้องมีหัวหน้าอนุมัติ" }); return; }
@@ -2208,7 +2283,7 @@ export default function PosPage() {
       blindReturnRequestRef.current = null;
       setCart([]);
       clearBillCustomerState();
-      setBlindReason(""); setBlindApproverPin(""); setBlindOpen(false);
+      resetBlindReturnState();
       setNotice({
         type: "ok",
         text: data.replayed
@@ -2516,6 +2591,7 @@ export default function PosPage() {
    */
   const payBlockedReason: string | null = (() => {
     if (hasPendingDepositSale) return "มีรายการมัดจำรอตรวจสอบ — ไปแท็บมัดจำและกดตรวจรายการเดิม";
+    if (blindOpen) return "กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ยืนยันคืนหรือยกเลิกรายการนี้ก่อน";
     if (cart.length === 0) return "ยังไม่มีสินค้าในบิล";
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
@@ -2572,6 +2648,11 @@ export default function PosPage() {
       }
       const key = `${hit.sku}__${hit.size}__${hit.packCode}`;
       setCart((cur) => addScanHitToCart(cur, hit, key));
+      if (tab === "returns" && blindOpen) {
+        setRecentSalesQuery(trimmed);
+        setRecentOpen(true);
+        await loadRecentReceipts(trimmed);
+      }
       setNotice(null);
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
@@ -2787,6 +2868,7 @@ export default function PosPage() {
         sales.map((sale: any, saleIndex: number) => ({
           orderId: sale.orderId ?? null,
           docNo: sale.docNo ?? null,
+          posDeviceId: sale.posDeviceId ?? null,
           orderStatus: sale.orderStatus ?? null,
           voidedAt: sale.voidedAt ?? null,
           shiftId: sale.shiftId ?? null,
@@ -2812,13 +2894,16 @@ export default function PosPage() {
           change: sale.cashChange == null ? null : Number(sale.cashChange),
           at: new Date(String(sale.soldAt ?? "")).toLocaleString("th-TH"),
           cashier: String(sale.cashierName ?? ""),
-          storeName: session?.location?.name ?? null,
-          branchCode: session?.location?.branchCode ?? null,
-          posLabel: session?.device.registeredPosNo ?? session?.device.code ?? null,
+          storeName: sale.locationName ?? session?.location?.name ?? null,
+          branchCode: sale.branchCode ?? session?.location?.branchCode ?? null,
+          posLabel: sale.posLabel ?? session?.device.registeredPosNo ?? session?.device.code ?? null,
           vatRegistered: Boolean(session?.vat.registered),
           taxId: session?.store?.taxId ?? null,
           vat: parseReceiptVat(sale.vat),
           roundingAmount: Number(sale.roundingAmount ?? 0),
+          memberName: sale.memberName ?? null,
+          memberNo: sale.memberNo ?? null,
+          memberPhone: sale.memberPhone ?? null,
           paymentLabel:
             Array.isArray(sale.payments) && sale.payments.length > 1 ? "จ่ายหลายวิธี" : sale.paymentMethod ?? "ไม่ระบุ",
           paymentRef: sale.paymentRef ?? null,
@@ -3314,6 +3399,10 @@ export default function PosPage() {
 
   async function pay() {
     if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy) return;
+    if (blindOpen) {
+      setNotice({ type: "error", text: "กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ต้องยืนยันคืนหรือยกเลิกรายการนี้ก่อนขาย" });
+      return;
+    }
     setBusy(true);
     setNotice(null);
     try {
@@ -3519,6 +3608,7 @@ export default function PosPage() {
 
   async function returnReceipt(orderId: string) {
     if (!cashierId || !pin || busy) return;
+    if (!confirmDiscardBlindReturnDraft("คืนจากใบเสร็จใบนี้")) return;
     const note = buildReturnNote(orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนบิล" });
@@ -3586,6 +3676,7 @@ export default function PosPage() {
 
   async function partialReturnReceipt(row: Receipt) {
     if (!cashierId || !pin || busy || !row.orderId) return;
+    if (!confirmDiscardBlindReturnDraft("คืนรายการจากใบเสร็จใบนี้")) return;
     const note = buildReturnNote(row.orderId);
     if (!note) {
       setNotice({ type: "error", text: "กรุณาเลือกประเภทเหตุผลและระบุรายละเอียดก่อนคืนรายการ" });
@@ -3712,6 +3803,7 @@ export default function PosPage() {
   }
 
   function startExchangeFromReceipt(row: Receipt) {
+    if (!confirmDiscardBlindReturnDraft("ทำบิลเปลี่ยนสินค้าจากใบเสร็จใบนี้")) return;
     const nextCart = row.lines
       .filter((line) => (line.refundablePackQty ?? line.packQty) > 0)
       .map((line, idx) => ({
@@ -3893,7 +3985,7 @@ export default function PosPage() {
         {POS_TABS.map((item) => (
           <button
             key={item.key}
-            onClick={() => setTab(item.key)}
+            onClick={() => switchTab(item.key)}
             aria-current={tab === item.key}
             title={item.label}
           >
@@ -4004,7 +4096,7 @@ export default function PosPage() {
             {!session.shift && (
               <li>
                 เปิดกะ พร้อมระบุเงินตั้งต้นในลิ้นชัก —{" "}
-                <button onClick={() => setTab("shift")} style={{ padding: "2px 10px", fontSize: 13 }}>ไปที่แท็บกะ</button>
+                <button onClick={() => switchTab("shift")} style={{ padding: "2px 10px", fontSize: 13 }}>ไปที่แท็บกะ</button>
               </li>
             )}
           </ol>
@@ -4052,16 +4144,21 @@ export default function PosPage() {
               type="button"
               className="pos-btn-ghost"
               style={{ fontSize: 12 }}
-              onClick={() => setBlindOpen(true)}
+              onClick={openBlindReturn}
             >
               + คืนโดยไม่มีใบเสร็จ (ต้องมีหัวหน้าอนุมัติ)
             </button>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ fontSize: 12, color: "#8a6100" }}>
-                ยิงของที่ลูกค้าเอามาคืนได้จากหน้านี้ หรือใส่ตะกร้าที่แท็บขายแล้วกลับมายืนยัน ·
-                คืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก ·
-                ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
+                โหมดนี้ใช้เมื่อหาใบเสร็จไม่เจอจริง ๆ เท่านั้น · ยิงบาร์โค้ดสินค้าได้จากหน้านี้เลย
+                ระบบจะใส่ของลงตะกร้าและพยายามค้นบิลที่เคยขายสินค้านี้ให้ด้านล่างพร้อมกัน ·
+                ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) ·
+                จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
+              </div>
+              <div style={{ fontSize: 12, color: "#555", background: "#fafafa", border: "1px dashed #d9d9d9", borderRadius: 8, padding: "8px 10px" }}>
+                Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ,
+                order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร
               </div>
               <input
                 value={blindReason}
@@ -4093,7 +4190,7 @@ export default function PosPage() {
                         style={{ padding: "9px 16px", fontSize: 13 }}>
                   ยืนยันคืน + จ่ายเงินสด
                 </button>
-                <button type="button" className="pos-btn-ghost" onClick={() => { setBlindOpen(false); setBlindApproverPin(""); }}>
+                <button type="button" className="pos-btn-ghost" onClick={closeBlindReturn}>
                   ยกเลิก
                 </button>
               </div>
@@ -5018,7 +5115,7 @@ export default function PosPage() {
                   เป็นรูที่ทำให้การนับปิดตากับบันทึก no-sale ไร้ความหมาย
                   ย้ายไปแท็บกะ ซึ่งบังคับเหตุผล + PIN ก่อนเปิด (8.0) */}
               {printerReady && (
-                <button onClick={() => setTab("shift")} style={{ padding: "8px 14px", fontSize: 13 }}>
+                <button onClick={() => switchTab("shift")} style={{ padding: "8px 14px", fontSize: 13 }}>
                   เปิดลิ้นชัก → ไปที่แท็บกะ
                 </button>
               )}
@@ -5360,20 +5457,27 @@ export default function PosPage() {
                 <input
                   value={recentSalesQuery}
                   onChange={(e) => setRecentSalesQuery(e.target.value)}
-                  placeholder="ค้นเลขบิล / order id"
-                  style={{ padding: "8px 10px", fontSize: 13, width: 200 }}
+                  placeholder="ค้นเลขบิล / barcode สินค้า / SKU / สมาชิก / เบอร์โทร"
+                  style={{ padding: "8px 10px", fontSize: 13, width: 320, maxWidth: "100%" }}
                 />
+              </div>
+              <div style={{ fontSize: 12, color: "#777", marginBottom: 8 }}>
+                ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
+                · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
               </div>
               <div style={{ display: recentOpen ? "flex" : "none", flexDirection: "column", gap: 6 }}>
                 {recentReceipts.map((row, idx) => {
+                  const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
                   // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
                   const canReturn =
+                    soldOnThisDevice &&
                     Boolean(row.orderId) &&
                     row.orderStatus !== "RETURNED" &&
                     row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
                   const panelOpen = canReturn && returnPanelOrderId === row.orderId;
                   // void = ยางลบของกะนี้ ไม่ใช่ประตูลบยอดขายย้อนหลัง (server บังคับซ้ำอีกชั้น)
                   const canVoid =
+                    soldOnThisDevice &&
                     Boolean(row.orderId) &&
                     !row.voidedAt &&
                     row.orderStatus !== "RETURNED" &&
@@ -5414,6 +5518,15 @@ export default function PosPage() {
                         <div style={{ fontSize: 12, color: "#666", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {row.at} · {row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${line.receiptName}`).join(" · ")}
                           {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
+                        </div>
+                        {(row.memberNo || row.memberName || row.memberPhone) && (
+                          <div style={{ fontSize: 12, color: "#555", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            สมาชิก {row.memberNo ?? "—"} · {row.memberName ?? "ไม่ระบุชื่อ"}{row.memberPhone ? ` · ${row.memberPhone}` : ""}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: soldOnThisDevice ? "#777" : "#8a6100", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          ขายที่ {row.storeName ?? "ไม่ทราบสาขา"}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
+                          {!soldOnThisDevice ? " · เครื่องนี้ดู/พิมพ์ซ้ำได้ แต่คืนหรือเปลี่ยนจากใบเสร็จนี้ไม่ได้" : ""}
                         </div>
                       </div>
                       <strong>฿{baht(row.total)}</strong>
@@ -5553,7 +5666,8 @@ export default function PosPage() {
                       )}
                       {!canReturn && (
                         <span style={{ fontSize: 12, color: "#999", alignSelf: "center" }}>
-                          {row.voidedAt ? "ยกเลิกบิลแล้ว"
+                          {!soldOnThisDevice ? "ขายจาก POS เครื่องอื่น — ดู/พิมพ์ซ้ำได้เท่านั้น"
+                            : row.voidedAt ? "ยกเลิกบิลแล้ว"
                             : row.orderStatus === "RETURNED" ? "คืนแล้วทั้งบิล"
                             : "คืนครบทุกรายการแล้ว"}
                         </span>
@@ -5612,7 +5726,7 @@ export default function PosPage() {
           )}
           {recentReceipts.length === 0 && recentSalesQuery.trim().length > 0 && (
             <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
-              ไม่พบบิลที่ตรงกับคำค้นนี้
+              ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
             </div>
           )}
           {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (

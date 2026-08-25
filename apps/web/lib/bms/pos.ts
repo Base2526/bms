@@ -1344,10 +1344,16 @@ export type PosSaleResult =
 export type PosRecentReceipt = {
   orderId: string;
   docNo: string | null;
+  /** เครื่อง/สาขาต้นทางของบิลนี้ — ใช้แยก "ค้นเจอเพื่อดู/พิมพ์" ออกจาก "คืนได้ที่เครื่องนี้" */
+  posDeviceId: string | null;
+  locationName: string | null;
+  branchCode: string | null;
+  posLabel: string | null;
   /** สมาชิกที่ผูกกับบิลนี้ (7.96) — null = บิลไม่ผูกสมาชิก · ใช้ตอนกด "เปลี่ยนสินค้า"
       เพื่อยกสมาชิกเดิมมาที่บิลใหม่ ไม่ให้พนักงานต้องค้นซ้ำแล้วลืม */
   memberNo: string | null;
   memberName: string | null;
+  memberPhone: string | null;
   vat: PosReceiptVat | null;
   roundingAmount: number;
   orderStatus: string;
@@ -2285,11 +2291,21 @@ export async function listRecentPosSales(
   tenantId: string,
   deviceId: string,
   limit = 5,
-  opts: { query?: string | null } = {}
+  opts: { query?: string | null; locationId?: string | null } = {}
 ): Promise<PosRecentReceipt[]> {
   const q = String(opts.query ?? "").trim();
+  const matchedProduct = q
+    ? await resolvePosScan(tenantId, q, { locationId: opts.locationId ?? null })
+    : null;
+  const matchedSku = matchedProduct?.sku ?? null;
+  const matchedSize = matchedProduct?.size ?? null;
   const orderRes = await query<{
     id: string;
+    pos_device_id: string | null;
+    pos_device_code: string | null;
+    pos_registered_pos_no: string | null;
+    location_name: string | null;
+    branch_code: string | null;
     total_amount: string;
     shipping_fee: string | null;
     status: string;
@@ -2308,10 +2324,12 @@ export async function listRecentPosSales(
     rounding_amount: string | null;
     member_no: string | null;
     member_name: string | null;
+    member_phone: string | null;
     voided_at: Date | null;
     pos_shift_id: string | null;
   }>(
     `SELECT o.id,
+            o.pos_device_id,
             o.voided_at,
             o.pos_shift_id,
             o.total_amount,
@@ -2319,6 +2337,10 @@ export async function listRecentPosSales(
             o.rounding_amount AS order_rounding,
             o.status,
             o.created_at,
+            dev.code AS pos_device_code,
+            dev.registered_pos_no AS pos_registered_pos_no,
+            loc.name AS location_name,
+            loc.branch_code,
             u.name AS cashier_name,
             pay.method AS payment_method,
             pay.slip_ref AS payment_ref,
@@ -2331,8 +2353,11 @@ export async function listRecentPosSales(
             doc.vat_amount,
             doc.rounding_amount,
             cust.member_no,
-            cust.name AS member_name
+            cust.name AS member_name,
+            cust.phone AS member_phone
        FROM bms_orders o
+       LEFT JOIN bms_pos_devices dev ON dev.tenant_id = o.tenant_id AND dev.id = o.pos_device_id
+       LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = dev.location_id
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
        LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
        LEFT JOIN LATERAL (
@@ -2349,17 +2374,44 @@ export async function listRecentPosSales(
         AND doc.doc_type = 'ABBREVIATED'
         AND doc.cancelled_at IS NULL
       WHERE o.tenant_id = $1
-        AND o.pos_device_id = $2
+        AND ($5::boolean OR o.pos_device_id = $2)
         AND o.channel = 'pos'
         AND o.status IN ('COMPLETED', 'RETURNED')
         AND (
           $4::text IS NULL
           OR o.id::text ILIKE '%' || $4 || '%'
           OR COALESCE(doc.doc_no, '') ILIKE '%' || $4 || '%'
+          OR COALESCE(cust.member_no, '') ILIKE '%' || $4 || '%'
+          OR COALESCE(cust.name, '') ILIKE '%' || $4 || '%'
+          OR regexp_replace(COALESCE(cust.phone, ''), '[^0-9+]', '', 'g')
+             ILIKE '%' || regexp_replace($4, '[^0-9+]', '', 'g') || '%'
+          OR EXISTS (
+            SELECT 1
+              FROM bms_order_items oi
+             WHERE oi.tenant_id = o.tenant_id
+               AND oi.order_id = o.id
+               AND (
+                 upper(oi.product_sku) = upper($4)
+                 OR COALESCE(oi.product_name, '') ILIKE '%' || $4 || '%'
+                 OR (
+                   $6::text IS NOT NULL
+                   AND upper(oi.product_sku) = upper($6)
+                   AND ($7::text IS NULL OR upper(oi.size) = upper($7))
+                 )
+               )
+          )
         )
-      ORDER BY o.created_at DESC, o.id DESC
+      ORDER BY (o.pos_device_id = $2) DESC, o.created_at DESC, o.id DESC
       LIMIT $3`,
-    [tenantId, deviceId, Math.min(Math.max(limit, 1), 20), q || null]
+    [
+      tenantId,
+      deviceId,
+      Math.min(Math.max(limit, 1), 20),
+      q || null,
+      Boolean(q),
+      matchedSku,
+      matchedSize,
+    ]
   );
   if (!orderRes.rows.length) return [];
   const orderIds = orderRes.rows.map((row) => row.id);
@@ -2485,6 +2537,10 @@ export async function listRecentPosSales(
   return orderRes.rows.map((row) => ({
     orderId: row.id,
     docNo: row.doc_no ?? null,
+    posDeviceId: row.pos_device_id ?? null,
+    locationName: row.location_name ?? null,
+    branchCode: row.branch_code ?? null,
+    posLabel: row.pos_registered_pos_no ?? row.pos_device_code ?? null,
     vat: mapReceiptVat(row),
     roundingAmount: Number(row.order_rounding ?? 0),
     orderStatus: row.status,
@@ -2502,6 +2558,7 @@ export async function listRecentPosSales(
     cashierName: row.cashier_name ?? null,
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,
+    memberPhone: row.member_phone ?? null,
     payments: paymentsByOrder.get(row.id) ?? [],
     refunds: refundsByOrder.get(row.id) ?? [],
     lines: linesByOrder.get(row.id) ?? [],
