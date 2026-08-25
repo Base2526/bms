@@ -1487,7 +1487,7 @@ const TH: ManualContent = {
       desc: "ตรวจผลหลังขายและส่งสำเนาโดยไม่ออกเอกสารใหม่",
       steps: [
         "หลังขาย ตรวจเลขเอกสาร ยอดรับ และเงินทอน แล้วกดพิมพ์หรือดูใบเสร็จ; Enter พิมพ์และ Esc ปิดหน้าต่าง",
-        "ใบเสร็จแสดงสินค้า/ค่าบริการ ส่วนลด VAT/ยกเว้น VAT ปัดเศษ วิธีจ่าย แคชเชียร์ สมาชิก และบาร์โค้ดเลขบิลตามข้อมูลเอกสารจริง",
+        "ใบเสร็จแสดงราคาป้ายตามไซซ์และแยกส่วนลดราคาส่ง/โปรโมชันออกมาให้ยอดตรวจสอบได้ พร้อมค่าบริการ ส่วนลดระดับบิล VAT/ยกเว้น VAT ปัดเศษ วิธีจ่าย แคชเชียร์ สมาชิก และบาร์โค้ดเลขบิล; การพิมพ์ซ้ำใช้ snapshot ตอนขาย ไม่อ่านราคาสินค้าปัจจุบัน",
         "ตั้งเครื่องพิมพ์ WebUSB ในแท็บ ตั้งค่า; ถ้าเบราว์เซอร์ไม่รองรับ ระบบใช้ print dialog และเปิดลิ้นชักจาก dialog ไม่ได้",
         "กด เปิดจอลูกค้า แล้วลากหน้าต่างไปจอที่สองของเครื่องเดียวกัน จอแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
         "ส่งสำเนาทางอีเมลได้โดยพิมพ์อีเมลเฉพาะครั้ง หรือเว้นว่างให้ใช้ข้อมูลสมาชิก; ส่ง LINE ได้เมื่อลูกค้าผูก LINE กับร้านแล้ว",
@@ -1513,6 +1513,7 @@ const TH: ManualContent = {
       desc: "เริ่มที่แท็บ คืน และเลือกเส้นทางให้ตรงกับเหตุการณ์",
       steps: [
         "ค้นด้วยเลขใบเสร็จ/order id หรือเปิดบิลล่าสุด เลือกเหตุผลและรายละเอียด แล้วคืนทั้งบิลหรือเลือกจำนวนสะสมรายรายการ",
+        "กด ดูประวัติบิล ที่บิลแต่ละใบเพื่อดู Timeline ตั้งแต่ยอดขายเดิม การคืนแต่ละครั้ง รายการที่คืน ผู้ทำรายการ/ผู้อนุมัติ สถานะคืนเงินจริง ใบลดหนี้ และยอดคงเหลือหลังคืน โดยใบขายเดิมจะไม่ถูกแก้ย้อนหลัง",
         "เงินสดคืนเสร็จทันที; QR/บัตร/Wallet อยู่สถานะรอยืนยันจนผู้มี payment.refund บันทึกเลขอ้างอิงการคืนเงินจริง กะจะปิดไม่ได้ถ้ายังค้าง",
         "เปลี่ยนสินค้า จะคืนของเดิมก่อน แล้วดึงรายการที่เหลือมาเป็นตะกร้าบิลใหม่ ให้ปรับสินค้าและรับเงินใหม่ตามปกติ",
         "Void ใช้เฉพาะบิลลงผิดในกะที่ยังเปิด ไม่มีรายการคืนมาก่อน ต้องมีเหตุผลและ PIN ผู้อนุมัติคนที่สอง; หลังปิดกะใช้ Return",
@@ -2904,7 +2905,7 @@ const EN: ManualContent = {
       desc: "Verify the result and send a copy without issuing a new document.",
       steps: [
         "After payment, verify document number, tender, and change, then print or preview. Enter prints and Esc closes the dialog.",
-        "The receipt uses issued-document figures for items/charges, discounts, VAT/exempt VAT, rounding, payments, cashier, member, and the receipt barcode.",
+        "The receipt shows the snapshotted size/list price and a separate wholesale/promotion adjustment so the arithmetic is auditable, together with charges, order-level discounts, VAT/exempt VAT, rounding, payments, cashier, member, and the receipt barcode. Reprints never read today's product price.",
         "Pair a WebUSB printer in Settings. Unsupported browsers fall back to the print dialog, which cannot kick the drawer.",
         "Open Customer display and move it to a second monitor on the same computer. It is read-only and shows the latest eight lines, total, discounts, and change.",
         "Email a copy to a one-off address or leave it blank to use the member profile. LINE delivery requires the customer to have linked LINE to the shop.",
@@ -2930,6 +2931,7 @@ const EN: ManualContent = {
       desc: "Start in Returns and choose the path that matches what happened.",
       steps: [
         "Search by receipt/order id or use recent sales. Select a reason and mandatory detail, then return the full bill or cumulative quantities per line.",
+        "Use Bill history on each receipt to see the original sale, every return, returned lines, operator/approver, refund settlement, credit note, and remaining net amount. The original sale document is never rewritten.",
         "Cash refunds complete immediately. QR/card/wallet allocations remain pending until someone with payment.refund records the external reference; the shift cannot close while they remain pending.",
         "Exchange first returns the old goods, then loads the remaining lines into a new cart for an ordinary new sale.",
         "Void only a mis-rung bill from the still-open shift, with no prior return, a reason, and a second approver PIN. After close, use Return.",

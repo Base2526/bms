@@ -971,6 +971,39 @@ slips omit the VAT block — a credit note is a separate document.
 The shop tax id comes from the store profile (`/admin/settings`); leaving it blank prints a receipt
 without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
+### Line prices on a reprint (9.22)
+
+A line prints at its **shelf price**, and any wholesale step or promotion appears as its own
+`ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer
+paid. That price is snapshotted onto the order line at sale time (`bms_order_items.receipt_unit_price`),
+separately from `unit_price`, which is the effective price the order arithmetic uses.
+
+The two columns exist because they answer different questions, and collapsing them breaks one of the
+answers. Reprinting from `unit_price` alone makes a 1,000 size sold under a 10% step reprint as 900 —
+indistinguishable from someone having edited the product price after the sale. Storing only the
+charged price instead removes the discount from the paper entirely, so the customer can no longer see
+what they saved. Keeping both means a reprint months later reproduces the original paper exactly,
+without reading any current product record.
+
+Rows created before `9.22` were backfilled once from the best evidence available at migration time
+(pack price → per-size base pack → shared base pack → product price → the historical `unit_price`).
+Those legacy values are a reconstruction, not a snapshot; the shelf price at the moment of an old
+sale was never recorded anywhere.
+
+### A sale receipt is never rewritten by a later return
+
+Returning goods does not reduce the quantities or the total on the original sale receipt. That
+document is the abbreviated tax invoice that was issued and filed; the return produces its own credit
+note. What the counter gets instead is disclosure, so a full-value reprint is never mistaken for a
+return that failed to record:
+
+- the recent-sales row shows `ยอดขายเดิม` with the returned and remaining amounts beside it, and its
+  button reads **ดูใบขายเดิม** rather than `ดู/พิมพ์`
+- the preview dialog puts a notice above the paper: this is the original sale, the printed total is
+  still the amount charged at the time, followed by the returned and remaining totals (and any refund
+  still awaiting cash settlement)
+- `BillHistoryPanel` lists the sale and every return against it in the order they actually happened
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
@@ -992,7 +1025,10 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   movements + void, `7.98` branch transfers + stock counts, `9.0` deposits, `9.5` retry-safe
   drawer movements, `9.6` Scan Manager/PO receipts, `9.7` petty-cash expenses, `9.8`
   personal-funded sole-owner expenses, `9.9` the branch petty-cash wallet, and `9.10` its ledger
-  integrity constraints). `7.97` seeds `pos.void` and
+  integrity constraints). Also apply `9.21` (pack-aware line uniqueness) and `9.22`
+  (`receipt_unit_price` snapshot) — without `9.22` a receipt reprint shows the discounted price as if
+  the product price had been edited after the sale, and its one-time backfill of existing rows only
+  runs when the migration does. `7.97` seeds `pos.void` and
   `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
   without it those buttons 403 silently. `9.7` seeds `pos.expense.create` to
   Manager/Sales/Cashier and adds the expense ledger; `9.8` seeds `pos.expense.personal` only to

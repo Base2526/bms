@@ -18,7 +18,7 @@
 
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import type { PoolClient } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
@@ -50,7 +50,6 @@ import { redeemCustomerCouponForOrderInTx } from "./coupons";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import {
   earnPointsForOrderInTx,
-  listOrderDiscounts,
   reversePointsForReturnInTx,
   reviewMemberTier,
   type OrderDiscountLine,
@@ -1265,6 +1264,85 @@ export type PosReceiptVat = {
   roundingAmount: number;
 };
 
+export type PosReceiptDiscountLine = {
+  source: OrderDiscountLine["source"] | "PRICING";
+  label: string;
+  amount: number;
+  pointsUsed: number;
+};
+
+/**
+ * ส่วนลดที่ต้องพิมพ์ให้ผลรวมรายการบนกระดาษตรงกับยอดสุทธิจริง
+ *
+ * bms_order_discounts เก็บเฉพาะส่วนลดระดับบิล ส่วนราคาส่ง/โปรโมชันถูกฝังใน
+ * unit_price/ยอดออร์เดอร์อยู่แล้ว จึงต้องเทียบกับ receipt_unit_price snapshot
+ * แยกต่างหาก ห้ามอ่านราคาสินค้าปัจจุบันตอนพิมพ์ซ้ำ
+ */
+async function loadPosReceiptDiscountLines(
+  db: {
+    query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>>;
+  },
+  tenantId: string,
+  orderId: string
+): Promise<PosReceiptDiscountLine[]> {
+  const [head, stored] = await Promise.all([
+    db.query<{
+      total_amount: string;
+      discount_amount: string;
+      receipt_gross: string;
+      extra_total: string;
+    }>(
+      `SELECT o.total_amount,
+              o.discount_amount,
+              COALESCE((
+                SELECT SUM(COALESCE(oi.pack_qty, oi.qty) * oi.receipt_unit_price)
+                  FROM bms_order_items oi
+                 WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id
+              ), 0) AS receipt_gross,
+              COALESCE((
+                SELECT SUM(extra.qty * extra.unit_amount)
+                  FROM bms_order_extra_lines extra
+                 WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id
+              ), 0) AS extra_total
+         FROM bms_orders o
+        WHERE o.tenant_id = $1 AND o.id = $2`,
+      [tenantId, orderId]
+    ),
+    db.query<{ source: OrderDiscountLine["source"]; label: string; amount: string; points_used: number }>(
+      `SELECT source, label, amount, points_used
+         FROM bms_order_discounts
+        WHERE tenant_id = $1 AND order_id = $2
+        ORDER BY id`,
+      [tenantId, orderId]
+    ),
+  ]);
+  const row = head.rows[0];
+  const result: PosReceiptDiscountLine[] = [];
+  if (row) {
+    const productTotalBeforeOrderDiscount = Number(row.total_amount)
+      + Number(row.discount_amount)
+      - Number(row.extra_total);
+    const pricingDiscount = Math.round(
+      Math.max(0, Number(row.receipt_gross) - productTotalBeforeOrderDiscount) * 100
+    ) / 100;
+    if (pricingDiscount > 0) {
+      result.push({
+        source: "PRICING",
+        label: "ส่วนลดราคาส่ง/โปรโมชั่น",
+        amount: pricingDiscount,
+        pointsUsed: 0,
+      });
+    }
+  }
+  result.push(...stored.rows.map((row) => ({
+    source: row.source,
+    label: row.label,
+    amount: Number(row.amount),
+    pointsUsed: Number(row.points_used ?? 0),
+  })));
+  return result;
+}
+
 /** แถวจาก bms_tax_documents → ตัวเลขที่ใบเสร็จใช้ · null = บิลนี้ไม่มีใบกำกับ */
 function mapReceiptVat(row: {
   vat_rate?: string | number | null;
@@ -1301,7 +1379,7 @@ export type PosSaleResult =
       /** ยอดปัดเศษเงินสดที่บวกเข้าไปแล้วใน total (0 = ไม่ได้ปัด) */
       roundingAmount: number;
       /** ส่วนลดแยกตามที่มา สำหรับพิมพ์บนใบเสร็จ (7.96) */
-      discountLines: OrderDiscountLine[];
+      discountLines: PosReceiptDiscountLine[];
       /** แต้มที่ได้จากบิลนี้ · null = บิลนี้ไม่ผูกสมาชิก/ร้านปิดโปรแกรม */
       pointsEarned: number | null;
       /** แต้มคงเหลือของสมาชิกหลังบิลนี้ (พิมพ์บนใบเสร็จ) */
@@ -1368,6 +1446,8 @@ export type PosRecentReceipt = {
   paymentRef: string | null;
   soldAt: string;
   cashierName: string | null;
+  /** ราคาส่ง/โปรโมชัน + ส่วนลดระดับบิล ตาม snapshot ตอนขาย */
+  discountLines: PosReceiptDiscountLine[];
   payments: Array<{
     id: string;
     method: PaymentMethod;
@@ -1381,6 +1461,31 @@ export type PosRecentReceipt = {
     returnMode: "FULL" | "PARTIAL";
     returnNote: string | null;
     returnedAt: string;
+  }>;
+  /** ลำดับเหตุการณ์คืนของบิลนี้ ใช้หน้า POS อธิบายบิลขายเดิม -> รับคืน -> คืนเงินจริง */
+  returnEvents: Array<{
+    id: string;
+    returnMode: "FULL" | "PARTIAL";
+    isVoid: boolean;
+    refundAmount: number;
+    settlementStatus: "PENDING" | "COMPLETED";
+    note: string | null;
+    returnedAt: string;
+    returnedByName: string | null;
+    approvedByName: string | null;
+    creditNoteNo: string | null;
+    items: Array<{
+      orderItemId: number;
+      sku: string;
+      receiptName: string;
+      size: string;
+      packQty: number;
+      refundAmount: number;
+    }>;
+    refunds: Array<PosRefundAllocation & {
+      completedAt: string | null;
+      completedByName: string | null;
+    }>;
   }>;
   lines: Array<{
     orderItemId: number;
@@ -2147,11 +2252,7 @@ async function finalizePosSale(args: {
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [input.tenantId, orderId]
     );
-    const discountRows = await client.query<{ source: string; label: string; amount: string; points_used: number }>(
-      `SELECT source, label, amount, points_used FROM bms_order_discounts
-        WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
-      [input.tenantId, orderId]
-    );
+    const receiptDiscountLines = await loadPosReceiptDiscountLines(client, input.tenantId, orderId);
 
     await client.query("COMMIT");
     const loyaltyRow = loyalty.rows[0];
@@ -2164,12 +2265,7 @@ async function finalizePosSale(args: {
       cashChange,
       docNo: fulfilled.docNo,
       vat: fulfilled.vat,
-      discountLines: discountRows.rows.map((row) => ({
-        source: row.source as OrderDiscountLine["source"],
-        label: row.label,
-        amount: Number(row.amount),
-        pointsUsed: Number(row.points_used ?? 0),
-      })),
+      discountLines: receiptDiscountLines,
       pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
       pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
       // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
@@ -2272,7 +2368,7 @@ async function findSaleByIdempotencyKey(
     docNo: row.doc_no ?? null,
     vat: mapReceiptVat(row),
     roundingAmount: rounding,
-    discountLines: await listOrderDiscounts(tenantId, row.id),
+    discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
     pointsEarned: row.points_balance == null ? null : Number(row.points_earned ?? 0),
     pointsBalance: row.points_balance == null ? null : Number(row.points_balance),
     replayed: true,
@@ -2307,6 +2403,8 @@ export async function listRecentPosSales(
     location_name: string | null;
     branch_code: string | null;
     total_amount: string;
+    discount_amount: string;
+    extra_total: string;
     shipping_fee: string | null;
     status: string;
     created_at: string | Date;
@@ -2333,6 +2431,7 @@ export async function listRecentPosSales(
             o.voided_at,
             o.pos_shift_id,
             o.total_amount,
+            o.discount_amount,
             o.shipping_fee,
             o.rounding_amount AS order_rounding,
             o.status,
@@ -2352,6 +2451,7 @@ export async function listRecentPosSales(
             doc.exempt_amount,
             doc.vat_amount,
             doc.rounding_amount,
+            extras.extra_total,
             cust.member_no,
             cust.name AS member_name,
             cust.phone AS member_phone
@@ -2360,6 +2460,11 @@ export async function listRecentPosSales(
        LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = dev.location_id
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
        LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(extra.qty * extra.unit_amount), 0) AS extra_total
+           FROM bms_order_extra_lines extra
+          WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id
+       ) extras ON TRUE
        LEFT JOIN LATERAL (
          SELECT method, slip_ref, cash_tendered, cash_change
            FROM bms_payments
@@ -2428,6 +2533,7 @@ export async function listRecentPosSales(
     pack_unit_name: string | null;
     pack_unit_price: string | null;
     unit_price: string;
+    receipt_unit_price: string;
     returned_pack_qty: string | null;
   }>(
     `SELECT oi.id,
@@ -2441,6 +2547,7 @@ export async function listRecentPosSales(
             oi.pack_unit_name,
             oi.pack_unit_price,
             oi.unit_price,
+            oi.receipt_unit_price,
             COALESCE((
               SELECT SUM(pri.pack_qty)
                 FROM bms_pos_return_items pri
@@ -2458,7 +2565,7 @@ export async function listRecentPosSales(
   const linesByOrder = new Map<string, PosRecentReceipt["lines"]>();
   for (const line of linesRes.rows) {
     const packQty = line.pack_qty ?? line.qty;
-    const unitPrice = line.pack_unit_price == null ? Number(line.unit_price) : Number(line.pack_unit_price);
+    const receiptUnitPrice = Number(line.receipt_unit_price);
     const mapped = {
       orderItemId: line.id,
       sku: line.product_sku,
@@ -2466,17 +2573,60 @@ export async function listRecentPosSales(
       size: line.size,
       packCode: line.pack_code ?? "BASE",
       baseQty: Math.max(1, Math.round(line.qty / Math.max(1, packQty))),
-      packPrice: unitPrice,
+      packPrice: receiptUnitPrice,
       basePrice: Number(line.unit_price),
       packQty,
       returnedPackQty: Number(line.returned_pack_qty ?? 0),
       refundablePackQty: Math.max(0, packQty - Number(line.returned_pack_qty ?? 0)),
       unitName: line.pack_unit_name ?? "ชิ้น",
-      lineTotal: packQty * unitPrice,
+      lineTotal: packQty * receiptUnitPrice,
     };
     const existing = linesByOrder.get(line.order_id) ?? [];
     existing.push(mapped);
     linesByOrder.set(line.order_id, existing);
+  }
+
+  const storedDiscounts = await query<{
+    order_id: string;
+    source: OrderDiscountLine["source"];
+    label: string;
+    amount: string;
+    points_used: number;
+  }>(
+    `SELECT order_id, source, label, amount, points_used
+       FROM bms_order_discounts
+      WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])
+      ORDER BY order_id, id`,
+    [tenantId, orderIds]
+  );
+  const discountLinesByOrder = new Map<string, PosReceiptDiscountLine[]>();
+  for (const row of orderRes.rows) {
+    const receiptGross = (linesByOrder.get(row.id) ?? [])
+      .reduce((sum, line) => sum + line.lineTotal, 0);
+    const productTotalBeforeOrderDiscount = Number(row.total_amount)
+      + Number(row.discount_amount)
+      - Number(row.extra_total);
+    const pricingDiscount = Math.round(
+      Math.max(0, receiptGross - productTotalBeforeOrderDiscount) * 100
+    ) / 100;
+    if (pricingDiscount > 0) {
+      discountLinesByOrder.set(row.id, [{
+        source: "PRICING",
+        label: "ส่วนลดราคาส่ง/โปรโมชั่น",
+        amount: pricingDiscount,
+        pointsUsed: 0,
+      }]);
+    }
+  }
+  for (const row of storedDiscounts.rows) {
+    const existing = discountLinesByOrder.get(row.order_id) ?? [];
+    existing.push({
+      source: row.source,
+      label: row.label,
+      amount: Number(row.amount),
+      pointsUsed: Number(row.points_used ?? 0),
+    });
+    discountLinesByOrder.set(row.order_id, existing);
   }
 
   const paymentsRes = await query<{
@@ -2513,10 +2663,13 @@ export async function listRecentPosSales(
 
   const refundsRes = await query<any>(
     `SELECT pr.order_id, pr.id AS pos_return_id, pr.return_mode, pr.note, pr.created_at,
-            a.id, a.payment_id, a.method, a.amount, a.status, a.external_ref
+            a.id, a.payment_id, a.method, a.amount, a.status, a.external_ref,
+            a.completed_at, COALESCE(completed_user.name, completed_user.email) AS completed_by_name
        FROM bms_pos_returns pr
        JOIN bms_pos_refund_allocations a
          ON a.tenant_id = pr.tenant_id AND a.pos_return_id = pr.id
+       LEFT JOIN users completed_user
+         ON completed_user.tenant_id = a.tenant_id AND completed_user.id = a.completed_by
       WHERE pr.tenant_id = $1 AND pr.order_id = ANY($2::uuid[])
       ORDER BY pr.created_at, a.created_at, a.id`,
     [tenantId, orderIds]
@@ -2532,6 +2685,87 @@ export async function listRecentPosSales(
       returnedAt: toISO(row.created_at),
     });
     refundsByOrder.set(row.order_id, existing);
+  }
+
+  const returnRows = await query<any>(
+    `SELECT pr.order_id, pr.id, pr.return_mode, pr.is_void, pr.refund_amount,
+            pr.settlement_status, pr.note, pr.created_at,
+            COALESCE(returned_user.name, returned_user.email) AS returned_by_name,
+            COALESCE(approved_user.name, approved_user.email) AS approved_by_name,
+            credit.doc_no AS credit_note_no
+       FROM bms_pos_returns pr
+       LEFT JOIN users returned_user
+         ON returned_user.tenant_id = pr.tenant_id AND returned_user.id = pr.returned_by
+       LEFT JOIN users approved_user
+         ON approved_user.tenant_id = pr.tenant_id AND approved_user.id = pr.approved_by
+       LEFT JOIN LATERAL (
+         SELECT doc_no
+           FROM bms_tax_documents
+          WHERE tenant_id = pr.tenant_id
+            AND order_id = pr.order_id
+            AND doc_type = 'CREDIT_NOTE'
+            AND cancelled_at IS NULL
+            AND credit_reason LIKE '%[' || pr.id::text || ']%'
+          ORDER BY issued_at DESC, id DESC
+          LIMIT 1
+       ) credit ON TRUE
+      WHERE pr.tenant_id = $1 AND pr.order_id = ANY($2::uuid[])
+      ORDER BY pr.created_at, pr.id`,
+    [tenantId, orderIds]
+  );
+  const returnItemRows = await query<any>(
+    `SELECT pr.order_id, pri.pos_return_id, pri.order_item_id, pri.pack_qty,
+            pri.refund_amount, oi.product_sku, oi.product_name, oi.size
+       FROM bms_pos_return_items pri
+       JOIN bms_pos_returns pr
+         ON pr.tenant_id = pri.tenant_id AND pr.id = pri.pos_return_id
+       JOIN bms_order_items oi
+         ON oi.tenant_id = pri.tenant_id AND oi.id = pri.order_item_id
+      WHERE pri.tenant_id = $1 AND pr.order_id = ANY($2::uuid[])
+      ORDER BY pr.created_at, pri.id`,
+    [tenantId, orderIds]
+  );
+  const returnItemsByReturn = new Map<string, PosRecentReceipt["returnEvents"][number]["items"]>();
+  for (const row of returnItemRows.rows) {
+    const existing = returnItemsByReturn.get(row.pos_return_id) ?? [];
+    existing.push({
+      orderItemId: Number(row.order_item_id),
+      sku: String(row.product_sku),
+      receiptName: String(row.product_name),
+      size: String(row.size),
+      packQty: Number(row.pack_qty),
+      refundAmount: Number(row.refund_amount),
+    });
+    returnItemsByReturn.set(row.pos_return_id, existing);
+  }
+  const returnRefundsByReturn = new Map<string, PosRecentReceipt["returnEvents"][number]["refunds"]>();
+  for (const row of refundsRes.rows) {
+    const existing = returnRefundsByReturn.get(row.pos_return_id) ?? [];
+    existing.push({
+      ...mapRefundAllocation(row),
+      completedAt: row.completed_at ? toISO(row.completed_at) : null,
+      completedByName: row.completed_by_name ?? null,
+    });
+    returnRefundsByReturn.set(row.pos_return_id, existing);
+  }
+  const returnEventsByOrder = new Map<string, PosRecentReceipt["returnEvents"]>();
+  for (const row of returnRows.rows) {
+    const existing = returnEventsByOrder.get(row.order_id) ?? [];
+    existing.push({
+      id: row.id,
+      returnMode: row.return_mode,
+      isVoid: Boolean(row.is_void),
+      refundAmount: Number(row.refund_amount),
+      settlementStatus: row.settlement_status,
+      note: row.note ?? null,
+      returnedAt: toISO(row.created_at),
+      returnedByName: row.returned_by_name ?? null,
+      approvedByName: row.approved_by_name ?? null,
+      creditNoteNo: row.credit_note_no ?? null,
+      items: returnItemsByReturn.get(row.id) ?? [],
+      refunds: returnRefundsByReturn.get(row.id) ?? [],
+    });
+    returnEventsByOrder.set(row.order_id, existing);
   }
 
   return orderRes.rows.map((row) => ({
@@ -2559,8 +2793,10 @@ export async function listRecentPosSales(
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,
     memberPhone: row.member_phone ?? null,
+    discountLines: discountLinesByOrder.get(row.id) ?? [],
     payments: paymentsByOrder.get(row.id) ?? [],
     refunds: refundsByOrder.get(row.id) ?? [],
+    returnEvents: returnEventsByOrder.get(row.id) ?? [],
     lines: linesByOrder.get(row.id) ?? [],
   }));
 }
@@ -2568,9 +2804,12 @@ export async function listRecentPosSales(
 export type PosReturnResult =
   | {
       status: "RETURNED";
+      /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
+      creditNoteNo?: string | null;
       posReturnId: string;
       orderId: string;
       refundAmount: number;
+      returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
       replayed: boolean;
@@ -2653,9 +2892,11 @@ export async function returnPosSale(input: {
   if (result.status !== "PARTIAL_RETURNED") return result;
   return {
     status: "RETURNED",
+    creditNoteNo: result.creditNoteNo,
     posReturnId: result.posReturnId,
     orderId: result.orderId,
     refundAmount: result.refundAmount,
+    returnedItems: result.returnedItems,
     settlementStatus: result.settlementStatus,
     refunds: result.refunds,
     replayed: result.replayed,
@@ -2673,6 +2914,39 @@ export async function partiallyReturnPosSale(input: {
   idempotencyKey: string;
 }): Promise<PosPartialReturnResult> {
   return processPosReturn({ ...input, mode: "PARTIAL" });
+}
+
+/**
+ * ใบลดหนี้อยู่นอก tx การคืนโดยตั้งใจ แต่ retry ของ POS ต้องกลับมาทำส่วนนี้ซ้ำได้ด้วย:
+ * ถ้าคำตอบหายหลัง COMMIT แต่ก่อน/หลังออกเอกสาร การยิง idempotency key เดิมต้อง
+ * ได้เลขเดิมหรือเติมเอกสารที่ยังขาด ไม่ใช่ replay เฉพาะ stock/refund แล้วข้ามภาษี
+ */
+async function ensurePosReturnCreditNote(input: {
+  tenantId: string;
+  orderId: string;
+  posReturnId: string;
+  mode: "FULL" | "PARTIAL";
+  refundAmount: number;
+  actorUserId: string;
+  returnedItems: Array<{ orderItemId: number; refundAmount: number }>;
+}): Promise<string | null> {
+  try {
+    const note = await issueCreditNote({
+      tenantId: input.tenantId,
+      orderId: input.orderId,
+      amount: input.refundAmount,
+      reason: input.mode === "FULL" ? "รับคืนสินค้าทั้งบิล" : "รับคืนสินค้าบางรายการ",
+      issuedBy: input.actorUserId,
+      returnRef: input.posReturnId,
+      returnedItems: input.returnedItems,
+    });
+    return note.status === "ISSUED" || note.status === "ALREADY_ISSUED"
+      ? note.document.docNo
+      : null;
+  } catch (e) {
+    console.error("[POS] ออกใบลดหนี้ไม่สำเร็จ", input.orderId, e);
+    return null;
+  }
 }
 
 async function processPosReturn(input: {
@@ -2703,6 +2977,7 @@ async function processPosReturn(input: {
   if (input.mode === "PARTIAL" && requestedMap.size === 0) return { status: "EMPTY" };
 
   const client = await getClient();
+  let clientReleased = false;
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
 
@@ -2742,18 +3017,38 @@ async function processPosReturn(input: {
         ),
       ]);
       await client.query("ROLLBACK");
+      // issueCreditNote เปิด tenant transaction ของตัวเอง จึงคืน connection นี้ก่อน
+      // ป้องกัน deadlock เมื่อ instance ตั้ง POSTGRES_POOL_MAX=1
+      client.release();
+      clientReleased = true;
+      const returnedItems = items.rows.map((row) => ({
+        orderItemId: Number(row.order_item_id),
+        packQty: Number(row.pack_qty),
+        refundAmount: Number(row.refund_amount),
+      }));
+      const creditNoteNo = input.isVoid
+        ? null
+        : await ensurePosReturnCreditNote({
+            tenantId: input.tenantId,
+            orderId: input.orderId,
+            posReturnId: existing.id,
+            mode: existing.return_mode,
+            refundAmount: Number(existing.refund_amount),
+            actorUserId: input.actorUserId,
+            returnedItems: returnedItems.map((item) => ({
+              orderItemId: item.orderItemId,
+              refundAmount: item.refundAmount,
+            })),
+          });
       return {
         status: "PARTIAL_RETURNED",
         posReturnId: existing.id,
         orderId: input.orderId,
         refundAmount: Number(existing.refund_amount),
-        returnedItems: items.rows.map((row) => ({
-          orderItemId: Number(row.order_item_id),
-          packQty: Number(row.pack_qty),
-          refundAmount: Number(row.refund_amount),
-        })),
+        returnedItems,
         settlementStatus: existing.settlement_status,
         refunds: refunds.rows.map(mapRefundAllocation),
+        creditNoteNo,
         replayed: true,
       };
     }
@@ -3176,32 +3471,30 @@ async function processPosReturn(input: {
     }
 
     await client.query("COMMIT");
+    // ใบลดหนี้ใช้ transaction แยกตาม invariant ของ tax document อย่าถือ connection
+    // การคืนค้างไว้ระหว่างเปิด transaction ใบลดหนี้ (pool ขนาด 1 จะรอกันตลอดไป)
+    client.release();
+    clientReleased = true;
 
     // ใบลดหนี้ (7.95) — รับคืนสินค้าแล้วต้องออกเอกสารลดยอด ไม่ใช่ลบบิลทิ้ง
     // ออกนอกทรานแซกชันการคืนโดยตั้งใจ: ของคืนเข้าคลังและเงินคืนไปแล้ว
     // การออกเอกสารล้มต้องไม่ย้อนสิ่งที่เกิดขึ้นจริงหน้าเคาน์เตอร์
     // ร้านที่ไม่ได้จด VAT จะได้ NOT_VAT_REGISTERED แล้วข้ามไปเอง
-    let creditNoteNo: string | null = null;
-    try {
-      const note = await issueCreditNote({
-        tenantId: input.tenantId,
-        orderId: input.orderId,
-        amount: roundedRefundAmount,
-        reason: input.mode === "FULL" ? "รับคืนสินค้าทั้งบิล" : "รับคืนสินค้าบางรายการ",
-        issuedBy: input.actorUserId,
-        returnRef: posReturnId,
-        // ส่งรายการที่คืนจริงไปด้วย — คืนเฉพาะของยกเว้น VAT ต้องไม่ลด VAT
-        returnedItems: returnedItems.map((i) => ({
-          orderItemId: i.orderItemId,
-          refundAmount: i.refundAmount,
-        })),
-      });
-      if (note.status === "ISSUED" || note.status === "ALREADY_ISSUED") {
-        creditNoteNo = note.document.docNo;
-      }
-    } catch (e) {
-      console.error("[POS] ออกใบลดหนี้ไม่สำเร็จ", input.orderId, e);
-    }
+    const creditNoteNo = input.isVoid
+      ? null
+      : await ensurePosReturnCreditNote({
+          tenantId: input.tenantId,
+          orderId: input.orderId,
+          posReturnId,
+          mode: input.mode,
+          refundAmount: roundedRefundAmount,
+          actorUserId: input.actorUserId,
+          // ส่งรายการที่คืนจริงไปด้วย — คืนเฉพาะของยกเว้น VAT ต้องไม่ลด VAT
+          returnedItems: returnedItems.map((item) => ({
+            orderItemId: item.orderItemId,
+            refundAmount: item.refundAmount,
+          })),
+        });
 
     return {
       status: "PARTIAL_RETURNED",
@@ -3217,10 +3510,12 @@ async function processPosReturn(input: {
       replayed: false,
     };
   } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
+    if (!clientReleased) {
+      try { await client.query("ROLLBACK"); } catch {}
+    }
     throw err;
   } finally {
-    client.release();
+    if (!clientReleased) client.release();
   }
 }
 

@@ -28,6 +28,7 @@ import { query } from "../apps/web/lib/db.ts";
 import { updateVatSettings, getVatSettings } from "../apps/web/lib/bms/taxDocuments.ts";
 import {
   closePosShift,
+  completePosRefundAllocation,
   deleteParkedSale,
   getPosShiftReport,
   issuePosDeviceToken,
@@ -522,6 +523,11 @@ test("a voided bill is flagged as a void, not as a customer return", async () =>
   const recent = await listRecentPosSales(tenantId, deviceId, 20);
   const row = recent.find((r) => r.orderId === soldOrderId);
   assert.ok(row?.voidedAt, "จอต้องแยกป้าย 'ยกเลิกแล้ว' ออกจาก 'คืนแล้ว' ได้");
+  assert.equal(row?.returnEvents.length, 1);
+  assert.equal(row?.returnEvents[0].isVoid, true, "Timeline ต้องเรียกเหตุการณ์นี้ว่ายกเลิกบิล");
+  assert.equal(row?.returnEvents[0].refundAmount, 300);
+  assert.ok(row?.returnEvents[0].returnedByName);
+  assert.ok(row?.returnEvents[0].approvedByName);
 });
 
 test("voiding twice is safe, and a void with no reason is refused", async () => {
@@ -594,6 +600,55 @@ test("split-payment return is counted once, while pending/cancelled bills are no
   assert.equal(report!.returnCount, 1, "หนึ่ง return ที่มีสอง allocation ต้องนับครั้งเดียว");
   assert.equal(report!.returnTotal, 100, "refund amount ต้องไม่ถูกคูณตามจำนวน allocation");
   assert.equal(report!.cashRefunds, 100);
+
+  const recent = await listRecentPosSales(tenantId, deviceId, 20);
+  const row = recent.find((item) => item.orderId === sale.orderId);
+  assert.equal(row?.returnEvents.length, 1, "split refund ต้องเป็นเหตุการณ์คืนเดียวใน Timeline");
+  assert.equal(row?.returnEvents[0].refunds.length, 2, "แต่ยังต้องเห็นเงินคืนทั้งสอง allocation");
+  assert.equal(
+    row?.returnEvents[0].refunds.reduce((sum, allocation) => sum + allocation.amount, 0),
+    100,
+    "ยอดใน Timeline ต้องไม่ถูกคูณหรือหายเมื่อมีหลาย allocation"
+  );
+});
+
+test("bill history follows a non-cash refund from pending to completed", async () => {
+  const sale = await recordPosSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId, idempotencyKey: key("card-sale"),
+    lines: [{ sku: SKU, size: SIZE, packQty: 1 }],
+    payments: [{ method: "CARD", amount: 100, ref: "CARD-SALE-REF" }],
+  });
+  assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+  if (sale.status !== "SOLD") return;
+
+  const returned = await returnPosSale({
+    tenantId, deviceId, orderId: sale.orderId, actorUserId: cashierId,
+    note: "ทดสอบ pending card refund", idempotencyKey: key("card-return"),
+  });
+  assert.equal(returned.status, "RETURNED", JSON.stringify(returned));
+  if (returned.status !== "RETURNED") return;
+  assert.equal(returned.settlementStatus, "PENDING");
+  assert.equal(returned.refunds.length, 1);
+
+  let recent = await listRecentPosSales(tenantId, deviceId, 20);
+  let event = recent.find((item) => item.orderId === sale.orderId)?.returnEvents[0];
+  assert.equal(event?.settlementStatus, "PENDING");
+  assert.equal(event?.refunds[0].status, "PENDING");
+  assert.equal(event?.refunds[0].completedAt, null);
+
+  const settled = await completePosRefundAllocation({
+    tenantId, deviceId, allocationId: returned.refunds[0].id,
+    actorUserId: approverId, externalRef: "CARD-REFUND-REF",
+  });
+  assert.equal(settled.status, "COMPLETED", JSON.stringify(settled));
+
+  recent = await listRecentPosSales(tenantId, deviceId, 20);
+  event = recent.find((item) => item.orderId === sale.orderId)?.returnEvents[0];
+  assert.equal(event?.settlementStatus, "COMPLETED");
+  assert.equal(event?.refunds[0].status, "COMPLETED");
+  assert.equal(event?.refunds[0].externalRef, "CARD-REFUND-REF");
+  assert.ok(event?.refunds[0].completedAt);
+  assert.ok(event?.refunds[0].completedByName);
 });
 
 // ---- no-sale + นับปิดตา (8.0) ----------------------------------------

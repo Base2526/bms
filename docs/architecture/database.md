@@ -28,7 +28,7 @@ operators must resolve those records before retrying the migration.
 | Module | Tables | Key migration |
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair) |
-| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness) |
+| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
@@ -345,6 +345,14 @@ Since `7.86`, an item can snapshot a selling unit in `pack_code`, `pack_qty`, an
 same SKU and size once per normalized selling unit (for example, one `BOX` line plus one loose
 `BASE` line). `NULL`, blank, and any case/spacing variation of `BASE` all identify the same loose-unit
 line, so they cannot bypass uniqueness or produce duplicate base rows.
+
+Since `9.22`, `receipt_unit_price` separately snapshots the selling-unit price shown before
+wholesale/promotion and order-level discounts. `unit_price` remains the effective price used by
+order arithmetic. Receipt reprints use `receipt_unit_price` plus the snapshotted discount breakdown,
+so a size priced at 1,000 with a 10% cross-size wholesale rule still reprints as 1,000 and an
+explicit −100 adjustment instead of silently relabelling the product price as 900. Legacy rows are
+backfilled once from the best available variant/base-pack evidence at migration time; new rows are
+exact snapshots created with the order.
 
 **Shipping carrier integration (`7.76`/`7.77`)** — both migrations are additive on `bms_shipments`;
 a manual shipment stays valid and simply keeps `carrier_booking_status = 'manual'` with the sync

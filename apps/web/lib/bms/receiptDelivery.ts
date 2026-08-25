@@ -47,6 +47,9 @@ type ReceiptData = {
 async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptData | null> {
   const head = await query<any>(
     `SELECT o.id, o.total_amount, o.shipping_fee, o.discount_amount, o.created_at,
+            COALESCE((SELECT SUM(extra.qty * extra.unit_amount)
+                        FROM bms_order_extra_lines extra
+                       WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id), 0) AS extra_total,
             d.doc_no, d.vat_rate, d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount,
             sp.store_name, sp.tax_id,
             c.email AS customer_email, c.name AS customer_name,
@@ -71,10 +74,19 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
   if (!r) return null;
 
   const items = await query<any>(
-    `SELECT product_name, size, qty, unit_price, pack_qty, pack_unit_price
+    `SELECT product_name, size, qty, unit_price, receipt_unit_price, pack_qty, pack_unit_price
        FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
     [tenantId, orderId]
   );
+
+  const receiptGross = items.rows.reduce((sum: number, item: any) =>
+    sum + Number(item.receipt_unit_price) * Number(item.pack_qty ?? item.qty), 0);
+  const productTotalBeforeOrderDiscount = Number(r.total_amount)
+    + Number(r.discount_amount ?? 0)
+    - Number(r.extra_total ?? 0);
+  const pricingDiscount = Math.round(
+    Math.max(0, receiptGross - productTotalBeforeOrderDiscount) * 100
+  ) / 100;
 
   return {
     orderId: r.id,
@@ -93,14 +105,12 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
           rounding: Number(r.rounding_amount ?? 0),
         }
       : null,
-    discountTotal: Number(r.discount_amount ?? 0),
+    discountTotal: Math.round((Number(r.discount_amount ?? 0) + pricingDiscount) * 100) / 100,
     lines: items.rows.map((i: any) => ({
       name: i.product_name,
       size: i.size && i.size !== "-" ? i.size : null,
       qty: Number(i.pack_qty ?? i.qty),
-      amount: i.pack_unit_price != null && i.pack_qty != null
-        ? Number(i.pack_unit_price) * Number(i.pack_qty)
-        : Number(i.unit_price) * Number(i.qty),
+      amount: Number(i.receipt_unit_price) * Number(i.pack_qty ?? i.qty),
     })),
     customerEmail: r.customer_email ?? null,
     customerLineId: r.customer_line_id ?? null,

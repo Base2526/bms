@@ -299,7 +299,11 @@ test("partial return: half the bill reverses half the points both ways", async (
     idempotencyKey: key("ret-1"),
   });
   assert.equal(replay.status, "PARTIAL_RETURNED");
-  if (replay.status === "PARTIAL_RETURNED") assert.equal(replay.replayed, true);
+  if (replay.status === "PARTIAL_RETURNED") {
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.creditNoteNo ?? null, ret.creditNoteNo ?? null,
+      "retry ต้องได้เลขใบลดหนี้เดิม ไม่ข้ามงานเอกสารหลัง replay");
+  }
   assert.equal((await getMember(tenantId, memberId))?.pointsUsable, 635);
 });
 
@@ -308,13 +312,85 @@ test("recent sales carry the member so an exchange can re-attach them", async ()
   const mine = recent.find((r) => r.orderId === soldOrderId);
   assert.ok(mine, "บิลที่ขายไปต้องอยู่ในรายการบิลล่าสุด");
   assert.ok(mine!.memberNo, "ต้องมีเลขสมาชิกติดมาด้วย ไม่งั้น exchange ยกสมาชิกมาไม่ได้");
+  assert.equal(mine!.returnEvents.length, 1, "ประวัติบิลต้องรวมการคืนบางส่วนครั้งนี้");
+  assert.equal(mine!.returnEvents[0].returnMode, "PARTIAL");
+  assert.equal(mine!.returnEvents[0].refundAmount, 415);
+  assert.equal(mine!.returnEvents[0].items.length, 1);
+  assert.equal(mine!.returnEvents[0].items[0].packQty, 5);
+  assert.equal(mine!.returnEvents[0].refunds.length, 1);
+  assert.equal(mine!.returnEvents[0].refunds[0].status, "COMPLETED", "คืนเงินสดต้องสำเร็จทันที");
+  assert.ok(mine!.returnEvents[0].returnedByName, "Timeline ต้องบอกผู้ทำรายการ");
   const lines = await listOrderDiscounts(tenantId, soldOrderId);
   assert.equal(lines.length, 3);
 });
 
+test("wholesale receipt reprint keeps the list price before and after a partial return", async () => {
+  await query(
+    `INSERT INTO bms_product_price_tiers
+       (tenant_id, product_sku, min_qty, scope, discount_pct, unit_price, size)
+     VALUES ($1,$2,5,'CROSS_VARIANT_PERCENT',10,NULL,NULL)`,
+    [tenantId, SKU]
+  );
+
+  const sale = await recordPosSale({
+    tenantId,
+    deviceId,
+    shiftId,
+    cashierUserId: cashierId,
+    idempotencyKey: key("wholesale-sale"),
+    lines: [{ sku: SKU, size: SIZE, packQty: 5 }],
+    payments: [{ method: "CASH", amount: 450, cashTendered: 500 }],
+  });
+  assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+  if (sale.status !== "SOLD") return;
+  assert.deepEqual(
+    sale.discountLines.map((line) => [line.source, line.amount]),
+    [["PRICING", 50]],
+    "ใบแรกต้องแยกราคาป้าย 500 − ส่วนลดราคาส่ง 50"
+  );
+
+  const stored = await query<{ id: string; unit_price: string; receipt_unit_price: string }>(
+    `SELECT id, unit_price, receipt_unit_price
+       FROM bms_order_items
+      WHERE tenant_id = $1 AND order_id = $2`,
+    [tenantId, sale.orderId]
+  );
+  assert.equal(Number(stored.rows[0].unit_price), 90, "ราคาที่ใช้คิดเงินจริงต้องเป็นราคาส่ง");
+  assert.equal(Number(stored.rows[0].receipt_unit_price), 100, "ราคาป้ายบนใบเสร็จต้อง snapshot แยก");
+
+  let recent = await listRecentPosSales(tenantId, deviceId, 20);
+  let reprint = recent.find((row) => row.orderId === sale.orderId);
+  assert.ok(reprint);
+  assert.equal(reprint!.lines[0].packPrice, 100, "พิมพ์ซ้ำก่อนคืนต้องไม่เปลี่ยน 100 เป็น 90");
+  assert.equal(reprint!.total, 450);
+  assert.deepEqual(reprint!.discountLines.map((line) => [line.source, line.amount]), [["PRICING", 50]]);
+
+  const returned = await partiallyReturnPosSale({
+    tenantId,
+    deviceId,
+    orderId: sale.orderId,
+    actorUserId: cashierId,
+    lines: [{ orderItemId: Number(stored.rows[0].id), packQty: 1 }],
+    note: `${TAG} wholesale partial`,
+    idempotencyKey: key("wholesale-return"),
+  });
+  assert.equal(returned.status, "PARTIAL_RETURNED", JSON.stringify(returned));
+  if (returned.status !== "PARTIAL_RETURNED") return;
+  assert.equal(returned.refundAmount, 90, "คืนหนึ่งชิ้นต้องคืนตามราคาสุทธิจริง");
+  assert.equal(returned.returnedItems[0].refundAmount, 90);
+
+  recent = await listRecentPosSales(tenantId, deviceId, 20);
+  reprint = recent.find((row) => row.orderId === sale.orderId);
+  assert.ok(reprint);
+  assert.equal(reprint!.lines[0].packPrice, 100, "คืนแล้วใบขายเดิมยังต้องแสดงราคาป้ายเดิม");
+  assert.equal(reprint!.lines[0].returnedPackQty, 1);
+  assert.equal(reprint!.total, 450, "ใบขายเดิมเป็นเอกสารเดิม ยอดสุทธิตอนขายห้ามถูกเขียนทับ");
+  assert.deepEqual(reprint!.discountLines.map((line) => [line.source, line.amount]), [["PRICING", 50]]);
+});
+
 test("close shift", async () => {
   const res = await closePosShift({
-    tenantId, shiftId, closedBy: cashierId, countedCash: 1000 + 830 - 415,
+    tenantId, shiftId, closedBy: cashierId, countedCash: 1000 + 830 - 415 + 450 - 90,
   });
   // PENDING_REFUNDS ก็ถือว่าถูก: เงินคืนที่ไม่ใช่เงินสดต้องมีคนยืนยันก่อนปิดกะ
   assert.ok(["CLOSED", "PENDING_REFUNDS"].includes(res.status), JSON.stringify(res));
