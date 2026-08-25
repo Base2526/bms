@@ -1,0 +1,454 @@
+<title>POS ร้านขายยา vs ร้านขายของทั่วไป</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+#pos-pharmacy-infographic{
+  --bg:#f4f6fb;
+  --surface:#ffffff;
+  --surface-2:#eef2fb;
+  --line:#d8dfef;
+  --ink:#131725;
+  --muted:#59627a;
+  --subtle:#7c859b;
+  --core:#3047c8;
+  --core-bg:#e7edff;
+  --pharm:#0f8a68;
+  --pharm-bg:#e3f5ee;
+  --shop:#b45309;
+  --shop-bg:#fbecd9;
+  --need:#be123c;
+  --need-bg:#fde8ef;
+  --ok:#166534;
+  --ok-bg:#e8f7eb;
+  --maybe:#8a5a00;
+  --maybe-bg:#fff3d8;
+  --shadow:0 1px 2px rgba(19,23,37,.06),0 14px 28px -20px rgba(19,23,37,.28);
+  color:var(--ink);
+  font-family:"IBM Plex Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:radial-gradient(circle at top left, rgba(48,71,200,.10), transparent 28%), linear-gradient(180deg, var(--bg), #eef2f8 100%);
+  border:1px solid var(--line);
+  border-radius:24px;
+  overflow:hidden;
+}
+@media (prefers-color-scheme:dark){
+  #pos-pharmacy-infographic{
+    --bg:#0d1017;
+    --surface:#161a24;
+    --surface-2:#1d2330;
+    --line:#2c3447;
+    --ink:#edf0f7;
+    --muted:#a5aec4;
+    --subtle:#7e879f;
+    --core:#89a3ff;
+    --core-bg:#1a2647;
+    --pharm:#57d6ac;
+    --pharm-bg:#123126;
+    --shop:#f0ab68;
+    --shop-bg:#38230f;
+    --need:#fb7b96;
+    --need-bg:#381521;
+    --ok:#7bd88f;
+    --ok-bg:#163120;
+    --maybe:#f0cc68;
+    --maybe-bg:#392d0f;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 14px 28px -20px rgba(0,0,0,.8);
+    background:radial-gradient(circle at top left, rgba(137,163,255,.12), transparent 28%), linear-gradient(180deg, var(--bg), #101521 100%);
+  }
+}
+#pos-pharmacy-infographic *{box-sizing:border-box}
+#pos-pharmacy-infographic .wrap{padding:28px}
+#pos-pharmacy-infographic .hero{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:18px;
+  align-items:end;
+}
+#pos-pharmacy-infographic .eyebrow{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--subtle);
+  margin-bottom:10px;
+}
+#pos-pharmacy-infographic h1,
+#pos-pharmacy-infographic h2,
+#pos-pharmacy-infographic h3{
+  font-family:"Bai Jamjuree","IBM Plex Sans Thai",sans-serif;
+  margin:0;
+  text-wrap:balance;
+}
+#pos-pharmacy-infographic h1{
+  font-size:clamp(30px,4.5vw,46px);
+  line-height:1.08;
+  font-weight:700;
+  letter-spacing:-.02em;
+}
+#pos-pharmacy-infographic .lede{
+  margin:14px 0 0;
+  color:var(--muted);
+  font-size:15.5px;
+  line-height:1.7;
+  max-width:62ch;
+}
+#pos-pharmacy-infographic .decision{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:18px 18px 16px;
+  box-shadow:var(--shadow);
+}
+#pos-pharmacy-infographic .decision .label{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--subtle);
+  margin-bottom:8px;
+}
+#pos-pharmacy-infographic .decision .answer{
+  font-family:"Bai Jamjuree","IBM Plex Sans Thai",sans-serif;
+  font-size:24px;
+  font-weight:700;
+  line-height:1.15;
+}
+#pos-pharmacy-infographic .decision .note{
+  margin-top:8px;
+  color:var(--muted);
+  font-size:13.5px;
+  line-height:1.6;
+}
+#pos-pharmacy-infographic .grid{
+  display:grid;
+  grid-template-columns:1fr 1.1fr 1fr;
+  gap:16px;
+  margin-top:24px;
+}
+#pos-pharmacy-infographic .panel{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:18px;
+  box-shadow:var(--shadow);
+  min-height:100%;
+}
+#pos-pharmacy-infographic .panel.shop{background:linear-gradient(180deg, var(--shop-bg), var(--surface))}
+#pos-pharmacy-infographic .panel.core{background:linear-gradient(180deg, var(--core-bg), var(--surface))}
+#pos-pharmacy-infographic .panel.pharm{background:linear-gradient(180deg, var(--pharm-bg), var(--surface))}
+#pos-pharmacy-infographic .tag{
+  display:inline-block;
+  padding:5px 10px;
+  border-radius:999px;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.05em;
+  margin-bottom:12px;
+}
+#pos-pharmacy-infographic .shop .tag{background:var(--shop);color:#fff}
+#pos-pharmacy-infographic .core .tag{background:var(--core);color:#fff}
+#pos-pharmacy-infographic .pharm .tag{background:var(--pharm);color:#fff}
+#pos-pharmacy-infographic .panel h2{font-size:24px;line-height:1.1;font-weight:700}
+#pos-pharmacy-infographic .panel p{
+  margin:8px 0 0;
+  color:var(--muted);
+  font-size:14px;
+  line-height:1.65;
+}
+#pos-pharmacy-infographic .stack{display:grid;gap:10px;margin-top:14px}
+#pos-pharmacy-infographic .chip{
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.62);
+  border-radius:14px;
+  padding:11px 12px;
+}
+#pos-pharmacy-infographic .chip b{
+  display:block;
+  font-size:13.5px;
+  line-height:1.4;
+}
+#pos-pharmacy-infographic .chip span{
+  display:block;
+  margin-top:2px;
+  font-size:12.4px;
+  color:var(--muted);
+  line-height:1.5;
+}
+#pos-pharmacy-infographic .dot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  flex:none;
+  margin-top:5px;
+}
+#pos-pharmacy-infographic .coremap{
+  margin-top:14px;
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:10px;
+}
+#pos-pharmacy-infographic .coreitem{
+  border:1px solid color-mix(in srgb, var(--core) 22%, var(--line));
+  background:rgba(255,255,255,.72);
+  border-radius:14px;
+  padding:11px 12px;
+}
+#pos-pharmacy-infographic .coreitem b{
+  display:block;
+  font-size:13.2px;
+  line-height:1.35;
+}
+#pos-pharmacy-infographic .coreitem span{
+  display:block;
+  margin-top:3px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.5;
+}
+#pos-pharmacy-infographic .spine{
+  margin:14px 0 12px;
+  padding:12px 14px;
+  border-radius:16px;
+  border:1px dashed color-mix(in srgb, var(--core) 44%, var(--line));
+  background:rgba(255,255,255,.56);
+}
+#pos-pharmacy-infographic .spine .mono{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:12px;
+  color:var(--core);
+  font-weight:600;
+}
+#pos-pharmacy-infographic .spine .line{
+  margin-top:5px;
+  font-size:13px;
+  color:var(--muted);
+}
+#pos-pharmacy-infographic .compare{
+  margin-top:20px;
+  background:var(--surface);
+  border-top:1px solid var(--line);
+  padding:22px 28px 28px;
+}
+#pos-pharmacy-infographic .compare h3{
+  font-size:24px;
+  line-height:1.15;
+  margin-bottom:12px;
+}
+#pos-pharmacy-infographic .rows{
+  display:grid;
+  gap:10px;
+}
+#pos-pharmacy-infographic .row{
+  display:grid;
+  grid-template-columns:1.1fr .9fr .9fr;
+  gap:10px;
+  align-items:stretch;
+}
+#pos-pharmacy-infographic .cell{
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--surface);
+  padding:12px 13px;
+  min-height:100%;
+}
+#pos-pharmacy-infographic .cell.head{
+  background:var(--surface-2);
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  color:var(--subtle);
+  font-weight:600;
+}
+#pos-pharmacy-infographic .feature{
+  font-weight:600;
+  font-size:13.8px;
+  line-height:1.45;
+}
+#pos-pharmacy-infographic .state{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:999px;
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.04em;
+  margin-bottom:6px;
+}
+#pos-pharmacy-infographic .ok .state{background:var(--ok-bg);color:var(--ok)}
+#pos-pharmacy-infographic .maybe .state{background:var(--maybe-bg);color:var(--maybe)}
+#pos-pharmacy-infographic .need .state{background:var(--need-bg);color:var(--need)}
+#pos-pharmacy-infographic .desc{
+  color:var(--muted);
+  font-size:12.6px;
+  line-height:1.55;
+}
+#pos-pharmacy-infographic .footer{
+  margin-top:18px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+#pos-pharmacy-infographic .box{
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:14px 15px;
+  background:var(--surface);
+}
+#pos-pharmacy-infographic .box .k{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--subtle);
+  margin-bottom:6px;
+}
+#pos-pharmacy-infographic .box .v{
+  font-family:"Bai Jamjuree","IBM Plex Sans Thai",sans-serif;
+  font-size:19px;
+  line-height:1.2;
+  font-weight:700;
+}
+#pos-pharmacy-infographic .box .d{
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12.8px;
+  line-height:1.55;
+}
+@media (max-width:980px){
+  #pos-pharmacy-infographic .hero,
+  #pos-pharmacy-infographic .grid,
+  #pos-pharmacy-infographic .footer,
+  #pos-pharmacy-infographic .row{grid-template-columns:1fr}
+  #pos-pharmacy-infographic .coremap{grid-template-columns:1fr 1fr}
+}
+@media (max-width:640px){
+  #pos-pharmacy-infographic .wrap{padding:18px}
+  #pos-pharmacy-infographic .compare{padding:18px}
+  #pos-pharmacy-infographic .coremap{grid-template-columns:1fr}
+}
+</style>
+<div id="pos-pharmacy-infographic">
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">POS architecture · general shop vs pharmacy</div>
+        <h1>POS ร้านขายยา ไม่ใช่ POS คนละตัว<br>แต่เป็น <span style="color:var(--core)">core เดิม</span> + <span style="color:var(--pharm)">pharmacy layer</span></h1>
+        <div class="lede">ถ้าแยกทั้งระบบตอนนี้ เราจะซ้ำโค้ดส่วน pricing, stock, payment, shift, return และ tax โดยที่สิ่งที่ต่างจริงคือกฎกำกับการขายยาและ workflow ของเภสัชกร</div>
+      </div>
+      <div class="decision">
+        <div class="label">recommended shape</div>
+        <div class="answer">Shared POS Core</div>
+        <div class="answer" style="color:var(--pharm)">+ Pharmacy Extension</div>
+        <div class="note">เหมาะกว่าการแยกเป็น product ใหม่ เพราะแกนขายหน้าร้านยังเหมือนกันเกือบทั้งหมด</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel shop">
+        <div class="tag">ทั่วไป</div>
+        <h2>General Shop POS</h2>
+        <p>ใช้ POS core ตรง ๆ ไม่มีด่านคลินิกก่อนสร้าง order</p>
+        <div class="stack">
+          <div class="chip"><i class="dot" style="background:var(--shop)"></i><div><b>ขายได้ทันที</b><span>สแกนสินค้า คิดราคา รับเงิน ปิดบิล</span></div></div>
+          <div class="chip"><i class="dot" style="background:var(--shop)"></i><div><b>กฎการขายปกติ</b><span>tier price, promo, coupon, points, return, tax</span></div></div>
+          <div class="chip"><i class="dot" style="background:var(--shop)"></i><div><b>ไม่มี pharmacist workflow</b><span>ไม่ต้องมี assessment, approval, prescription</span></div></div>
+        </div>
+      </div>
+
+      <div class="panel core">
+        <div class="tag">core ร่วมกัน</div>
+        <h2>POS Engine เดียวกัน</h2>
+        <div class="spine">
+          <div class="mono">POS route → recordPosSale() → createOrder()</div>
+          <div class="line">จุดนี้คือเหตุผลว่าบั๊ก pricing, pack, size, promo, payment mismatch มักกระทบทั้งสอง archetype พร้อมกัน</div>
+        </div>
+        <div class="coremap">
+          <div class="coreitem"><b>Pricing engine</b><span>ราคา, ไซส์, pack/base, wholesale, promotion</span></div>
+          <div class="coreitem"><b>Settlement</b><span>payment rows, split payment, payment mismatch</span></div>
+          <div class="coreitem"><b>Inventory</b><span>reserve stock, lot/FEFO, return/refund, movements</span></div>
+          <div class="coreitem"><b>Cashier controls</b><span>shift, PIN, supervisor discount, void, tax doc</span></div>
+        </div>
+      </div>
+
+      <div class="panel pharm">
+        <div class="tag">ร้านยา</div>
+        <h2>Pharmacy POS</h2>
+        <p>ใช้ core เดิม แต่มีด่านเพิ่มก่อน reserve stock และก่อนเปิดกะบางกรณี</p>
+        <div class="stack">
+          <div class="chip"><i class="dot" style="background:var(--pharm)"></i><div><b>Pharmacy policy gate</b><span>เช็กว่าขายได้ตรง ๆ, ต้อง safety check, ต้องเภสัชอนุมัติ หรือห้ามขาย</span></div></div>
+          <div class="chip"><i class="dot" style="background:var(--pharm)"></i><div><b>Policy readiness</b><span>บางร้านเปิดกะไม่ได้ถ้า policy สินค้ายังไม่พร้อม</span></div></div>
+          <div class="chip"><i class="dot" style="background:var(--pharm)"></i><div><b>ต่างที่ regulatory workflow</b><span>ไม่ใช่ต่างที่การคิดราคา การรับเงิน หรือการตัด stock</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <h3>ฟีเจอร์ร้านยา: อะไรมีแล้ว และอะไรยังต้องเพิ่ม</h3>
+    <div class="rows">
+      <div class="row">
+        <div class="cell head">feature</div>
+        <div class="cell head">สถานะใน POS ร้านยา</div>
+        <div class="cell head">ความหมายเชิงระบบ</div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">ขายสินค้าปกติ, ราคาแยกไซส์, ราคาส่ง, pack/base, promo, points, split payment</div></div>
+        <div class="cell ok"><div class="state">มีแล้ว</div><div class="desc">ใช้ core เดียวกับ POS ทั่วไป</div></div>
+        <div class="cell"><div class="desc">ส่วนนี้ไม่ใช่เหตุผลให้แยก product ออกไปอีกตัว</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">ขายสินค้าที่ policy = DIRECT_SALE</div></div>
+        <div class="cell ok"><div class="state">มีแล้ว</div><div class="desc">ผ่าน pharmacy gate แล้วขายได้เหมือนบิลปกติ</div></div>
+        <div class="cell"><div class="desc">เหมาะกับ OTC/general items ที่ร้านยาอยากขายหน้าร้านทันที</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">บล็อกสินค้าที่ policy ไม่พร้อม, เกินจำนวน, ต้อง review, ต้อง prescription</div></div>
+        <div class="cell ok"><div class="state">มีแล้ว</div><div class="desc">ระบบกันบิลก่อน create order</div></div>
+        <div class="cell"><div class="desc">ปลอดภัยกว่า retail ปกติ แต่ตอนนี้ยังเป็น “block only” มากกว่า “handoff workflow”</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">สร้าง pharmacist review case จากหน้า POS</div></div>
+        <div class="cell need"><div class="state">ต้องเพิ่ม</div><div class="desc">ตอนนี้ POS ยังไม่ส่งบิลเข้าคิวเภสัชเอง</div></div>
+        <div class="cell"><div class="desc">ถ้าจะขายสินค้าที่ต้อง safety check/approval ใน flow เดียว จุดนี้คือขั้นต่ำที่ควรมี</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">กลับมาปิดการขายบิลเดิมหลังเภสัช approve</div></div>
+        <div class="cell need"><div class="state">ต้องเพิ่ม</div><div class="desc">ยังไม่มี cart/parked bill ที่ผูกกับ assessment</div></div>
+        <div class="cell"><div class="desc">นี่คือหัวใจของ Pharmacy POS ที่ต่างจาก retail จริง ๆ</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">แนบ prescription / หลักฐานทางคลินิก / counseling note ใน POS</div></div>
+        <div class="cell need"><div class="state">ต้องเพิ่ม</div><div class="desc">ยังไม่มี POS clinical evidence workflow</div></div>
+        <div class="cell"><div class="desc">จำเป็นเมื่อร้านอยากให้ POS เป็นจุด dispensing ไม่ใช่แค่จุดรับเงิน</div></div>
+      </div>
+
+      <div class="row">
+        <div class="cell"><div class="feature">ONLINE_SALE_PROHIBITED ควรบล็อกเฉพาะ online หรือรวม POS</div></div>
+        <div class="cell maybe"><div class="state">ต้องตัดสินใจ</div><div class="desc">ตอนนี้จากกฎกลางมีแนวโน้มบล็อกทุก channel</div></div>
+        <div class="cell"><div class="desc">เป็น policy decision ของ product/regulatory มากกว่าปัญหาเทคนิค</div></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="box">
+        <div class="k">แยกทั้งระบบ เมื่อไร</div>
+        <div class="v">เมื่อ pharmacy flow กลายเป็นคนละงาน</div>
+        <div class="d">เช่น ทุกบิลต้องมี patient context, prescription handling, pharmacist console, clinical audit และ dispensing workflow เต็มรูปแบบ</div>
+      </div>
+      <div class="box">
+        <div class="k">ตอนนี้ควรทำอะไร</div>
+        <div class="v">ต่อยอดแบบ extension 3 ก้าว</div>
+        <div class="d">1) block แล้วสร้าง review case ได้  2) ผูก case กับ parked bill  3) ให้ resume sale หลัง approve</div>
+      </div>
+    </div>
+  </div>
+</div>
