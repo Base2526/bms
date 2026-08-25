@@ -4156,10 +4156,15 @@ export default function PosPage() {
                 ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) ·
                 จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
               </div>
+              <div style={{ background: "#fff7e6", border: "1px solid #ffd591", color: "#874d00", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>ขั้นที่ 2 — ถ้ายังหาใบเสร็จไม่เจอจริง ค่อยกรอกส่วนนี้เพื่อคืนไม่มีใบเสร็จ</div>
+                <div>ส่วนนี้ไม่ใช่ช่องค้นบิล ใช้กรอกเหตุผลและผู้อนุมัติก่อนกด “ยืนยันคืน + จ่ายเงินสด” เท่านั้น</div>
+              </div>
               <div style={{ fontSize: 12, color: "#555", background: "#fafafa", border: "1px dashed #d9d9d9", borderRadius: 8, padding: "8px 10px" }}>
                 Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ,
                 order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร
               </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>เหตุผลคืนไม่มีใบเสร็จ</div>
               <input
                 value={blindReason}
                 onChange={(e) => setBlindReason(e.target.value)}
@@ -4167,6 +4172,7 @@ export default function PosPage() {
                 placeholder="เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน"
                 style={{ padding: 9, fontSize: 13 }}
               />
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>ผู้อนุมัติคืนไม่มีใบเสร็จ</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select
                   value={blindApproverId}
@@ -5445,26 +5451,35 @@ export default function PosPage() {
       {/* บิลเก่าอยู่แท็บ "คืน" — ตะกร้าที่กำลังขายไม่ถูกดันหาย และคอลัมน์ขวา
           (ยอด + ปุ่มชำระ) ยังอยู่ที่เดิม กดจ่ายให้ลูกค้าคนแรกได้ระหว่างค้นบิลคืนของ */}
       {tab === "returns" && (<>
-          {recentReceipts.length > 0 && (
-            <div style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <button
-                  onClick={() => setRecentOpen((v) => !v)}
-                  style={{ padding: "6px 12px", fontSize: 12, minHeight: 36 }}
-                >
-                  {recentOpen ? "▾" : "▸"} บิลล่าสุด ({recentReceipts.length})
-                </button>
+          <div style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
+            <div style={{ background: "#f6ffed", border: "1px solid #b7eb8f", color: "#237804", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน</div>
+              <div>พิมพ์หรือยิงข้อมูลในช่องค้นด้านล่างนี้ก่อนทุกครั้ง ถ้าเจอบิลแล้ว ให้คืนจากใบเสร็จแทนการคืนไม่มีใบเสร็จ</div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => setRecentOpen((v) => !v)}
+                style={{ padding: "6px 12px", fontSize: 12, minHeight: 36 }}
+              >
+                {recentOpen ? "▾" : "▸"} บิลล่าสุด ({recentReceipts.length})
+              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", minWidth: 0 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#237804" }}>
+                  ค้นบิลย้อนหลัง
+                </label>
                 <input
                   value={recentSalesQuery}
                   onChange={(e) => setRecentSalesQuery(e.target.value)}
                   placeholder="ค้นเลขบิล / barcode สินค้า / SKU / สมาชิก / เบอร์โทร"
-                  style={{ padding: "8px 10px", fontSize: 13, width: 320, maxWidth: "100%" }}
+                  style={{ padding: "8px 10px", fontSize: 13, width: "100%", maxWidth: "100%" }}
                 />
               </div>
-              <div style={{ fontSize: 12, color: "#777", marginBottom: 8 }}>
-                ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
-                · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
-              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "#777", marginBottom: 8 }}>
+              ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
+              · เมื่อมีคำค้น ระบบจะค้นย้อนหลังข้ามเครื่อง POS ทั้งร้านให้
+            </div>
+            {recentReceipts.length > 0 && (
               <div style={{ display: recentOpen ? "flex" : "none", flexDirection: "column", gap: 6 }}>
                 {recentReceipts.map((row, idx) => {
                   const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
@@ -5722,8 +5737,8 @@ export default function PosPage() {
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
           {recentReceipts.length === 0 && recentSalesQuery.trim().length > 0 && (
             <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
               ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร
