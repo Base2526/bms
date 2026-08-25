@@ -374,3 +374,24 @@ html.dark .ant-drawer-mask {
   font-size: 22px;
   font-weight: 600;
 }
+
+/* [data-print-root] — a page opts into "print just this, not the sidebar/
+   header/filters around it" by wrapping its content in an element with this
+   attribute (see /admin/pharmacy-manual's Print button). Lives in global
+   CSS, not a CSS module, because a pure `:global(body *)` selector is
+   rejected by Next.js's CSS-module loader (modules require a local class in
+   every selector). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
+  }
+  [data-print-root] {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+  }
+}

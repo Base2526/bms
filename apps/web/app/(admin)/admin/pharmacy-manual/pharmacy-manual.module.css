@@ -235,23 +235,13 @@
 }
 
 /* ---------- print ----------
-   window.print() uses this whenever the button is pressed. Antd's own
-   surrounding chrome (sidebar, header, filter bar) is hidden by targeting
-   everything outside [data-print-root], not by hiding individual antd
-   classes one at a time. */
+   window.print() uses this whenever the button is pressed. The universal
+   "hide everything except [data-print-root]" rule can't live in a CSS
+   module (Next.js rejects a pure `:global(body *)` selector — modules
+   require at least one local class), so that part lives in globals.css.
+   Only rules that already reference this module's own local classes stay
+   here. */
 @media print {
-  :global(body *) {
-    visibility: hidden;
-  }
-  [data-print-root],
-  [data-print-root] * {
-    visibility: visible;
-  }
-  [data-print-root] {
-    position: absolute;
-    inset: 0;
-    padding: 0;
-  }
   .heroActions {
     display: none;
   }
