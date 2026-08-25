@@ -7,7 +7,8 @@ import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
   Select, Switch, Popconfirm, Typography, Card, Row, Col, Statistic, Divider, Empty, Drawer,
 } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined, UserAddOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined, ReadOutlined, UserAddOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
@@ -131,7 +132,7 @@ function LedgerDrawer({ member, onClose, canAdjust, onAdjusted }: {
             <Col xs={12}><Statistic title={t("admin_loyalty.stat_usable")} value={member.pointsUsable} /></Col>
           </Row>
           {member.pointsBalance < 0 && (
-            <Alert
+            <Alert closable
               type="warning" showIcon style={{ marginTop: 12 }}
               message={t("admin_loyalty.negative_balance")}
             />
@@ -178,7 +179,7 @@ function LedgerDrawer({ member, onClose, canAdjust, onAdjusted }: {
         confirmLoading={adjusting}
         destroyOnClose
       >
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.adjust_hint")} />
+        <Alert closable type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.adjust_hint")} />
         <Form
           form={form}
           layout="vertical"
@@ -282,9 +283,9 @@ export default function LoyaltyPage() {
   const watchedEarnMode = Form.useWatch("earnMode", settingsForm);
 
   if (!permsLoading && !can("member.view")) {
-    return <Alert type="warning" showIcon message={t("admin_loyalty.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_loyalty.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_loyalty.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_loyalty.load_error")} description={error.message} />;
 
   const settings = data?.bmsLoyaltySettings;
   const tiers = data?.bmsMembershipTiers || [];
@@ -295,6 +296,7 @@ export default function LoyaltyPage() {
     <div>
       <AdminPageHeader title={<Title level={4} style={{ margin: 0 }}>{t("admin_loyalty.title")}</Title>}>
         <Space wrap>
+          <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
           {canManage && (
             <Button icon={<UserAddOutlined />} onClick={() => setEnrollOpen(true)}>
               {t("admin_loyalty.btn_enroll")}
@@ -312,10 +314,10 @@ export default function LoyaltyPage() {
       </AdminPageHeader>
 
       {!settings?.enabled && (
-        <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t("admin_loyalty.program_off")} />
+        <Alert closable type="info" showIcon style={{ marginBottom: 16 }} message={t("admin_loyalty.program_off")} />
       )}
       {outstanding && outstanding.balanceMismatchCount > 0 && (
-        <Alert
+        <Alert closable
           type="error" showIcon style={{ marginBottom: 16 }}
           message={t("admin_loyalty.mismatch_alert", { n: outstanding.balanceMismatchCount })}
         />
@@ -579,7 +581,7 @@ export default function LoyaltyPage() {
           ที่ร้านจะติดต่อทันก่อนแต้มหาย (แต้มหายเงียบ ๆ = ลูกค้าโทรมาต่อว่าทีหลัง) */}
       {(data?.bmsMembersExpiringPoints?.length ?? 0) > 0 && (
         <Card size="small" title={t("admin_loyalty.card_expiring")} style={{ marginTop: 16 }} loading={loading}>
-          <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.expiring_hint")} />
+          <Alert closable type="warning" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.expiring_hint")} />
           <Table
             rowKey="customerId"
             size="small"
@@ -763,7 +765,7 @@ export default function LoyaltyPage() {
         confirmLoading={enrolling}
         destroyOnClose
       >
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.enroll_hint")} />
+        <Alert closable type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_loyalty.enroll_hint")} />
         <Form form={enrollForm} layout="vertical" onFinish={(v) => enroll({ variables: { phone: v.phone, name: v.name ?? null } })}>
           <Form.Item name="phone" label={t("admin_loyalty.form_phone")} rules={[{ required: true }]}>
             <Input placeholder="0812345678" />

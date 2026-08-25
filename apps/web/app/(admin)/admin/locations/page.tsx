@@ -58,7 +58,7 @@ export default function LocationsPage() {
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
 
   if (!permsLoading && !canManage) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี location.manage)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี location.manage)" />;
   }
 
   const locations: Location[] = data?.bmsLocations ?? [];
@@ -99,7 +99,7 @@ export default function LocationsPage() {
         }
         loading={loading}
       >
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 16 }}

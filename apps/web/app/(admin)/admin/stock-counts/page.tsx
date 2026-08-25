@@ -212,7 +212,7 @@ export default function StockCountsPage() {
   }
 
   if (!permsLoading && !canUse) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี inventory.count)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี inventory.count)" />;
   }
 
   const activeLocations = locations.filter((l) => l.active);
@@ -245,7 +245,7 @@ export default function StockCountsPage() {
         </Button>
       </AdminPageHeader>
 
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         message="ระบบเทียบกับยอด ณ ตอนที่กรอกรายการ ไม่ใช่ตอนปิดใบ"
@@ -253,7 +253,7 @@ export default function StockCountsPage() {
       />
 
       {!canApply && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           message="คุณกรอกผลนับได้ แต่ปิดใบนับไม่ได้"

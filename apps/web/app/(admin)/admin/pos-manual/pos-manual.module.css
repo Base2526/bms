@@ -1,0 +1,338 @@
+/* ===== /admin/pos-manual — same flat, print-friendly disclosure pattern as
+   /admin/pharmacy-manual (see that module's header comment for the reasoning
+   behind the sticky nav + collapsible sections + print override). ===== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid #dbe0ea;
+  border-radius: 16px;
+  background: linear-gradient(125deg, #eef2fb 0%, #fdfdff 70%);
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: clamp(22px, 3.4vw, 30px);
+  letter-spacing: -0.02em;
+  color: #1c2540;
+}
+
+.heroLead {
+  margin: 0;
+  max-width: 74ch;
+  color: #4a5266;
+}
+
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.quickNav {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #dde2ea;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(20, 25, 48, 0.06);
+}
+
+.quickNavChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quickNavChip {
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #dde2ea;
+  color: #3d4560;
+  background: #f5f7fb;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.quickNavChip:hover {
+  border-color: #3c5fc4;
+  color: #3c5fc4;
+}
+
+.quickNavActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.disclosureHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.disclosureHead:focus-visible {
+  outline: 2px solid #3c5fc4;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.disclosureHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.disclosureChevron {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #eef1f9;
+  color: #3d4560;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.disclosureBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.disclosureBodyClosed {
+  display: none;
+}
+
+.sectionEyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7290;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.subhead {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lead {
+  margin: 0;
+  color: #545b74;
+  max-width: 82ch;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #e4e7f0;
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid #edeff5;
+  vertical-align: top;
+}
+
+.table thead th {
+  background: #f6f7fb;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #676e8c;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  color: #3d4358;
+}
+.list li::marker {
+  color: #94a0c8;
+}
+
+.callout {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  border: 1px solid transparent;
+}
+.callout.danger { background: #fdeeee; border-color: #f3d0d0; color: #7a2222; }
+.callout.info { background: #eaf1fb; border-color: #cfdff7; color: #274271; }
+.callout.warn { background: #fdf5e3; border-color: #f2e3b0; color: #7a5c0f; }
+
+.calloutTitle {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.statCard {
+  border: 1px solid #e4e7f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: #6b7290;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statValue {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.flowSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  counter-reset: step;
+}
+
+.flowStep {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed #e4e7f0;
+}
+.flowStep:last-child { border-bottom: 0; }
+
+.flowNum {
+  counter-increment: step;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #e9eefb;
+  color: #3c5fc4;
+  font-weight: 700;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flowNum::before { content: counter(step); }
+
+.flowTitle {
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+
+.flowDetail {
+  margin: 0;
+  color: #545b74;
+  font-size: 13.5px;
+}
+
+.flowChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.slate { background: #eef1f4; color: #4a5068; }
+.badge.amber { background: #fdf1da; color: #9a6a12; }
+.badge.blue { background: #e2edfb; color: #23548c; }
+.badge.purple { background: #ece2fb; color: #5a3b9c; }
+.badge.red { background: #fbe4e2; color: #a13a2f; }
+.badge.green { background: #e2f4ea; color: #1c7a4c; }
+.badge.dual { background: #ffe9d6; color: #9a4b0f; }
+
+@media print {
+  .quickNav {
+    display: none;
+  }
+  .hero {
+    border: 0;
+    background: none;
+    padding: 0 0 12px;
+  }
+  .section {
+    break-inside: avoid;
+  }
+  .tableWrap {
+    border: 1px solid #ccc;
+  }
+  .disclosureBodyClosed {
+    display: flex;
+  }
+  .disclosureChevron {
+    display: none;
+  }
+}

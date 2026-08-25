@@ -417,7 +417,7 @@ export default function RestockSubscriptionsPage() {
         </Card>
       </div>
 
-      <Alert
+      <Alert closable
         type="success"
         showIcon
         className={styles.metricsAlert}
@@ -567,7 +567,7 @@ export default function RestockSubscriptionsPage() {
             </div>
 
             {selected.status === "READY_TO_NOTIFY" && (
-              <Alert type="warning" showIcon message={t("admin_restock.in_stock_alert")} />
+              <Alert closable type="warning" showIcon message={t("admin_restock.in_stock_alert")} />
             )}
 
             <Card size="small" title={t("admin_restock.card_customer_consent")}>
@@ -600,7 +600,7 @@ export default function RestockSubscriptionsPage() {
                       <Space><Text strong>{t("admin_restock.attempt_no", { n: delivery.attemptNo })}</Text><Tag color={delivery.status === "SENT" ? "green" : "red"}>{delivery.status}</Tag></Space>
                       <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: t("admin_restock.expand_symbol") }}>{delivery.body}</Paragraph>
                       <Text type="secondary" className={styles.smallText}>{formatDate(delivery.completedAt || delivery.createdAt)} · {delivery.triggeredBy || t("admin_restock.triggered_by_system")}</Text>
-                      {delivery.error && <Alert className={styles.deliveryError} type="error" showIcon message={delivery.error} />}
+                      {delivery.error && <Alert closable className={styles.deliveryError} type="error" showIcon message={delivery.error} />}
                     </div>
                   ),
                 }))} />
@@ -635,7 +635,7 @@ export default function RestockSubscriptionsPage() {
         style={isMobile ? { top: 12 } : undefined}
         okButtonProps={{ disabled: !draft.trim() || draft.length > 2000 }}
       >
-        <Alert
+        <Alert closable
           className={styles.reviewAlert}
           type="info"
           showIcon

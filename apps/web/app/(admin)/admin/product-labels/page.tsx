@@ -93,7 +93,7 @@ export default function ProductLabelsPage() {
   );
 
   if (!permLoading && !can("product.view")) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูสินค้า" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูสินค้า" />;
   }
 
   return (
@@ -101,7 +101,7 @@ export default function ProductLabelsPage() {
       <div className="labels-screen-only">
         <AdminPageHeader title="พิมพ์สติกเกอร์บาร์โค้ด" />
 
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -129,7 +129,7 @@ export default function ProductLabelsPage() {
           />
 
           {unprintable.length > 0 && (
-            <Alert
+            <Alert closable
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}

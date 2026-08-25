@@ -154,7 +154,7 @@ export default function ReportSubscriptionCard() {
 
   return (
     <Card title={<Space><MailOutlined /> {t("admin_report_subscription.card_title")}</Space>} loading={loading} style={{ marginTop: 16 }}>
-      <Alert
+      <Alert closable
         type="info" showIcon style={{ marginBottom: 16 }}
         message={t("admin_report_subscription.intro_alert")}
         description={t("admin_report_subscription.intro_alert_desc")}

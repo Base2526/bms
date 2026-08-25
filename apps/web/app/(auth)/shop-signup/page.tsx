@@ -94,7 +94,7 @@ export default function Page() {
             </Form.Item>
             <Button type="primary" size="large" block loading={loading} onClick={submit}>{t("shopSignup.submit")}</Button>
           </Form>
-          <Alert className={styles.loginAlert} type="info" showIcon
+          <Alert closable className={styles.loginAlert} type="info" showIcon
             message={t("shopSignup.has_account")} description={<Link href="/admin/login">{t("shopSignup.login_link")}</Link>} />
         </Card>
       </div>

@@ -166,9 +166,9 @@ export default function CouponsPage() {
   });
 
   if (!permsLoading && !can("coupon.view")) {
-    return <Alert type="warning" showIcon message={t("admin_coupons.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_coupons.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_coupons.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_coupons.load_error")} description={error.message} />;
 
   const rows = data?.bmsCoupons || [];
 

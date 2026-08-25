@@ -145,7 +145,7 @@ export default function Page() {
     return () => window.clearTimeout(timer);
   }, [highlightedChannel]);
 
-  if (error) return <Alert type="error" message={t("admin_settings.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_settings.load_error")} description={error.message} showIcon />;
 
   const tenant = data?.bmsMyTenant;
   const channels: any[] = data?.bmsChannels || [];
@@ -168,7 +168,7 @@ export default function Page() {
       </Space>
 
       {tenant && (
-        <Alert type="info" showIcon style={{ marginBottom: 16 }}
+        <Alert closable type="info" showIcon style={{ marginBottom: 16 }}
           message={<>{t("admin_settings.tenant_info_prefix")} <b>{tenant.name}</b> <Text code>{tenant.slug}</Text> · {t("admin_settings.tenant_id_prefix")} <Text code>{tenant.id}</Text></>}
           description={t("admin_settings.tenant_info_desc")}
         />
@@ -268,11 +268,11 @@ export default function Page() {
                 />
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 12 }}>
-                  <Alert type="info" showIcon message={t("admin_settings.security_title")}
+                  <Alert closable type="info" showIcon message={t("admin_settings.security_title")}
                     description={t("admin_settings.security_desc")} />
-                  <Alert type="warning" showIcon message={t("admin_settings.caution_title")}
+                  <Alert closable type="warning" showIcon message={t("admin_settings.caution_title")}
                     description={t("admin_settings.caution_desc")} />
-                  <Alert type="success" showIcon message={t("admin_settings.edit_later_title")}
+                  <Alert closable type="success" showIcon message={t("admin_settings.edit_later_title")}
                     description={t("admin_settings.edit_later_desc")} />
                 </div>
               </div>
@@ -349,7 +349,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
   return (
     <div>
       {focused && (
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -361,7 +361,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
       <Paragraph type="secondary" style={{ marginTop: -4 }}>{ch.hint}</Paragraph>
 
       {badge.action && (
-        <Alert
+        <Alert closable
           type={badge.color === "red" ? "error" : "warning"}
           showIcon
           icon={badge.color === "gold" ? <ClockCircleOutlined /> : <WarningOutlined />}
@@ -481,7 +481,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
       </Paragraph>
 
       {!hasKey && usage && (
-        <Alert
+        <Alert closable
           type={overLimit ? "error" : nearLimit ? "warning" : "info"}
           showIcon
           style={{ marginBottom: 16 }}

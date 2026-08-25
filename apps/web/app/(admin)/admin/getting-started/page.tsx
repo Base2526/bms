@@ -163,7 +163,7 @@ export default function Page() {
   }, [completedKeys.join("|"), data, loading, saveProgress, skippedKeys.join("|"), storedProgress?.dismissedAt]);
 
   if (error) {
-    return <Alert type="error" showIcon message={t("admin_getting_started.load_error")} description={error.message} />;
+    return <Alert closable type="error" showIcon message={t("admin_getting_started.load_error")} description={error.message} />;
   }
 
   const completed = steps.filter((s) => s.done).length;
@@ -239,7 +239,7 @@ export default function Page() {
         </Row>
       </Card>
 
-      <Alert
+      <Alert closable
         style={{ marginBottom: 16 }}
         type={restockFirstClass ? "success" : "info"}
         showIcon

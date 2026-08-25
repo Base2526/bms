@@ -337,7 +337,7 @@ export default function Page() {
               <li>{c.s1Layer3}</li>
               <li>{c.s1Layer4}</li>
             </ul>
-            <Alert type="info" showIcon style={{ marginTop: 8 }} message={c.s1Alert} />
+            <Alert closable type="info" showIcon style={{ marginTop: 8 }} message={c.s1Alert} />
           </Sec>
 
           <Sec id="a-data">
@@ -387,7 +387,7 @@ export default function Page() {
           <Sec id="a-webhook">
             <Title level={4}>{c.s3Title}</Title>
             <Steps direction="vertical" size="small" current={-1} items={c.webhookSteps} />
-            <Alert style={{ marginTop: 8 }} type="warning" showIcon message={c.s3Warning} />
+            <Alert closable style={{ marginTop: 8 }} type="warning" showIcon message={c.s3Warning} />
             <Paragraph style={{ marginTop: 8 }} type="secondary">{c.s3Other}</Paragraph>
             <Paragraph type="secondary">{c.s3Diag}</Paragraph>
           </Sec>
@@ -402,7 +402,7 @@ export default function Page() {
           <Sec id="a-rbac">
             <Title level={4}>{c.s5Title}</Title>
             <Paragraph>{c.s5Body}</Paragraph>
-            <Alert type="success" showIcon message={c.s5Alert} />
+            <Alert closable type="success" showIcon message={c.s5Alert} />
           </Sec>
 
           <Sec id="a-billing">
@@ -422,13 +422,13 @@ export default function Page() {
             <Title level={4}>{c.s8Title}</Title>
             <Paragraph>{c.s8Body}</Paragraph>
             <Steps direction="vertical" size="small" current={-1} items={c.s8Steps} />
-            <Alert type="warning" showIcon style={{ marginTop: 8 }} message={c.s8Warning} />
+            <Alert closable type="warning" showIcon style={{ marginTop: 8 }} message={c.s8Warning} />
             <Paragraph style={{ marginTop: 8 }} type="secondary">{c.s8Note}</Paragraph>
           </Sec>
 
           <Sec id="a-prod">
             <Title level={4}>{c.s9Title}</Title>
-            <Alert type="error" showIcon message={c.s9AlertMsg} description={
+            <Alert closable type="error" showIcon message={c.s9AlertMsg} description={
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {c.s9Items.map((item, i) => <li key={i}>{item}</li>)}
               </ul>
@@ -441,7 +441,7 @@ export default function Page() {
             <ul>
               {c.s10Items.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
-            <Alert type="info" showIcon style={{ marginTop: 8 }} message={c.s10AlertMsg} description={c.s10AlertDesc} />
+            <Alert closable type="info" showIcon style={{ marginTop: 8 }} message={c.s10AlertMsg} description={c.s10AlertDesc} />
           </Sec>
         </Col>
 

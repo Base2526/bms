@@ -877,7 +877,7 @@ export default function DemoPage() {
                 <Paragraph style={{ margin: 0, color: 'var(--app-muted)', fontSize: 14.5 }}>
                   {ui.heroBody}
                 </Paragraph>
-                <Alert
+                <Alert closable
                   type="info"
                   showIcon
                   message={ui.heroAlertMessage}
@@ -1111,7 +1111,7 @@ export default function DemoPage() {
                     </Card>
                   ) : null}
                   {orderState.orderId ? (
-                    <Alert
+                    <Alert closable
                       type="success"
                       showIcon
                       message={`Order #${orderState.orderId}`}
@@ -1146,7 +1146,7 @@ export default function DemoPage() {
                     <ShoppingCartOutlined />
                     <Text>{ui.whyPoint3}</Text>
                   </Space>
-                  <Alert
+                  <Alert closable
                     type="success"
                     showIcon
                     message={ui.demoMeaningLabel}

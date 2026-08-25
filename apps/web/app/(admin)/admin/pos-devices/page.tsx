@@ -11,6 +11,8 @@ import {
   Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -73,7 +75,7 @@ export default function PosDevicesPage() {
   const [setMode] = useMutation(M_MODE);
 
   if (!permsLoading && !canDevices && !canPins && !canStaff) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage, pos.pin.manage หรือ pos.staff.manage)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี pos.device.manage, pos.pin.manage หรือ pos.staff.manage)" />;
   }
 
   const locations = data?.bmsLocations ?? [];
@@ -134,7 +136,9 @@ export default function PosDevicesPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="เครื่องขายหน้าร้าน" />
+      <AdminPageHeader title="เครื่องขายหน้าร้าน">
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      </AdminPageHeader>
 
       {canDevices && (
         <Card
@@ -235,7 +239,7 @@ export default function PosDevicesPage() {
 
       {canPins && (
         <Card title="PIN พนักงานหน้าร้าน" loading={loading}>
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
@@ -387,7 +391,7 @@ export default function PosDevicesPage() {
               <InputNumber min={20} max={1000} step={10} style={{ width: 170 }} />
             </Form.Item>
           </Space>
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
@@ -406,7 +410,7 @@ export default function PosDevicesPage() {
         onCancel={() => setIssuedToken(null)}
         footer={<Button onClick={() => setIssuedToken(null)}>ปิด</Button>}
       >
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}

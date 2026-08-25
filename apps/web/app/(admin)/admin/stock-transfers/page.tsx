@@ -200,7 +200,7 @@ export default function StockTransfersPage() {
   }
 
   if (!permsLoading && !canUse) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี inventory.transfer)" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี inventory.transfer)" />;
   }
 
   const activeLocations = locations.filter((l) => l.active);
@@ -235,7 +235,7 @@ export default function StockTransfersPage() {
       </AdminPageHeader>
 
       {activeLocations.length < 2 && !loading && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           message="ยังมีสาขาที่เปิดใช้งานไม่ถึง 2 สาขา"
@@ -243,7 +243,7 @@ export default function StockTransfersPage() {
         />
       )}
 
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         message="ของที่ส่งแล้วแต่ยังไม่ถึง ไม่ได้อยู่ในสต็อกของสาขาไหน"
@@ -465,7 +465,7 @@ export default function StockTransfersPage() {
               <Descriptions.Item label="ส่งเมื่อ">{fmtTime(receiving.sentAt)}</Descriptions.Item>
             </Descriptions>
 
-            <Alert
+            <Alert closable
               type={missingOnReceive > 0 ? "warning" : "info"}
               showIcon
               message={

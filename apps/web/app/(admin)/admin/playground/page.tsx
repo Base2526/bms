@@ -93,7 +93,7 @@ export default function Page() {
   // โดยไม่มีใครเห็น) — ใช้ ai_quality.view (Manager/Administrator) เพราะเป็นคนกลุ่มเดียวกันที่
   // ควรมีสิทธิ์เข้าไปจิ้ม AI pipeline โดยตรงและรับผิดชอบโควตาที่ใช้ไป
   if (!can("ai_quality.view")) {
-    return <Alert type="error" message={t("admin_playground.no_permission")} showIcon />;
+    return <Alert closable type="error" message={t("admin_playground.no_permission")} showIcon />;
   }
 
   return (
@@ -172,7 +172,7 @@ export default function Page() {
           </div>
 
           {lastOrderId && (
-            <Alert
+            <Alert closable
               style={{ marginTop: 12 }} type="success" showIcon
               message={<>{t("admin_playground.last_order_prefix")} <Text code>{lastOrderId.slice(0, 8)}</Text> — <Link href="/admin/orders">{t("admin_playground.manage_at_orders")}</Link></>}
             />

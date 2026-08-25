@@ -20,6 +20,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   ExperimentOutlined,
+  ReadOutlined,
   ReloadOutlined,
   SendOutlined,
 } from "@ant-design/icons";
@@ -643,6 +644,7 @@ export default function PharmacyIntakeLabPage() {
           </Text>
         </div>
         <Space size={10} wrap>
+          <Button icon={<ReadOutlined />} onClick={() => router.push("/admin/pharmacy-manual")}>{t("admin_pharmacy_intake_lab.btn_manual")}</Button>
           <Button onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_intake_lab.btn_queue_page")}</Button>
           <Popconfirm
             title={t("admin_pharmacy_intake_lab.clear_title")}

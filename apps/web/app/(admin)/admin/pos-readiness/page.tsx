@@ -10,6 +10,8 @@
 import { useEffect, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Empty, Form, InputNumber, Popconfirm, Progress, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -95,7 +97,7 @@ function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => vo
   return (
     <Card title={t("admin_products.vat_bulk_title")}>
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           message={`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${count} รายการ`}
@@ -157,7 +159,7 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
 
   return (
     <Card title="ค่าตั้งภาษีของร้าน" loading={loading && !settings}>
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -258,7 +260,7 @@ export default function PosReadinessPage() {
     return (
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
-        <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />
+        <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />
         {can("tax.setting.manage") && <TaxSettingsCard onSaved={() => {}} />}
       </Space>
     );
@@ -277,19 +279,21 @@ export default function PosReadinessPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
+      <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน">
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      </AdminPageHeader>
 
       <Card title="ความพร้อม POS หลัก" loading={loading}>
         {operational && (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-            <Alert
+            <Alert closable
               type={operational.ready ? "success" : "error"}
               showIcon
               message={operational.ready ? "ข้อมูลหลักพร้อมสำหรับเปิดกะ" : `ยังมี blocker ${operational.blockers.length} รายการ`}
               description={operational.ready ? "ยังต้องทดสอบเครื่องสแกน เครื่องพิมพ์ ช่องทางรับเงิน และแผนเมื่อระบบออฟไลน์บนเครื่องจริง" : operational.blockers.join(" · ")}
             />
             {operational.warnings.length > 0 && (
-              <Alert type="warning" showIcon message="รายการที่ควรตรวจ" description={operational.warnings.join(" · ")} />
+              <Alert closable type="warning" showIcon message="รายการที่ควรตรวจ" description={operational.warnings.join(" · ")} />
             )}
             <Space size="large" wrap>
               <Statistic title="สาขาที่เปิด" value={operational.activeLocations} />
@@ -316,7 +320,7 @@ export default function PosReadinessPage() {
       )}
 
       {readiness && !readiness.pharmacyArchetype && (
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           message="ร้านนี้ไม่ได้ตั้งเป็นร้านยา"
@@ -328,9 +332,9 @@ export default function PosReadinessPage() {
         <Card>
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             {readiness.ready ? (
-              <Alert type="success" showIcon message="รีวิวครบแล้ว เปิดกะขายได้" />
+              <Alert closable type="success" showIcon message="รีวิวครบแล้ว เปิดกะขายได้" />
             ) : (
-              <Alert
+              <Alert closable
                 type="warning"
                 showIcon
                 message={`ยังเปิดกะไม่ได้ — เหลืออีก ${total - approved} รายการ`}
@@ -414,7 +418,7 @@ export default function PosReadinessPage() {
           <Empty description="ตรงกันทุกแถว" />
         ) : (
           <>
-            <Alert
+            <Alert closable
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}

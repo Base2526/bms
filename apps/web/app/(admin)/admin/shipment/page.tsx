@@ -278,7 +278,7 @@ function ShipmentManagement() {
     [busy, can]
   );
 
-  if (error) return <Alert type="error" message={t("admin_shipment.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_shipment.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
@@ -404,7 +404,7 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
   return (
     <Modal title={t("admin_shipment.modal_create_title")} open={open} onCancel={onClose} onOk={submit} width={panelWidth(isMobile, 520)}
       confirmLoading={loading} okText={t("admin_shipment.btn_create_ok")} cancelText={t("admin_shipment.btn_cancel")} destroyOnClose>
-      <Alert type="warning" showIcon style={{ marginBottom: 16 }}
+      <Alert closable type="warning" showIcon style={{ marginBottom: 16 }}
         message={t("admin_shipment.create_alert")} />
       <Form form={form} layout="vertical">
         <Form.Item name="orderId" label={t("admin_shipment.form_order")} rules={[{ required: true, message: t("admin_shipment.form_order_required") }]}>
@@ -525,7 +525,7 @@ function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClos
           </Descriptions>
         </>
       )}
-      <Alert type="info" showIcon style={{ marginTop: 16 }}
+      <Alert closable type="info" showIcon style={{ marginTop: 16 }}
         message={t("admin_shipment.label_footer")} />
     </Modal>
   );

@@ -1753,7 +1753,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
             style={isMobile ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
           >
             {!can("coupon.view") ? (
-              <Alert type="warning" showIcon message={t("admin_inbox.no_coupon_permission")} />
+              <Alert closable type="warning" showIcon message={t("admin_inbox.no_coupon_permission")} />
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 <Input.Search

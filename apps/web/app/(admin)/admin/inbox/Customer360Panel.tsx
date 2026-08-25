@@ -421,7 +421,7 @@ function OrderPreviewDrawer({
             />
           </div>
 
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             message={t("admin_inbox_customer360.drawer_alert_title")}
@@ -629,7 +629,7 @@ function AssignCouponModal({
       confirmLoading={saving}
       destroyOnClose
     >
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -739,12 +739,12 @@ function CreateOrderModal({
       title={t("admin_inbox_customer360.create_order_modal_title")} open={open} onCancel={onClose} onOk={submit}
       confirmLoading={loading} okText={t("admin_inbox_customer360.create_order_ok_text")} cancelText={t("admin_inbox_customer360.cancel_text")} width={640} destroyOnClose
     >
-      <Alert
+      <Alert closable
         type="info" showIcon style={{ marginBottom: 16 }}
         message={t("admin_inbox_customer360.create_order_alert", { channel: conv?.channel || "web" })}
       />
       {selectedCouponCode && (
-        <Alert
+        <Alert closable
           type="success"
           showIcon
           style={{ marginBottom: 16 }}
@@ -1050,7 +1050,7 @@ function Customer360Panel({ conv, can, selectedCouponCode }: { conv: any; can: (
       ) : loading && !c360 ? (
         <SectionLoading />
       ) : error ? (
-        <Alert
+        <Alert closable
           type="error"
           showIcon
           message={t("admin_inbox_customer360.panel_load_error_title")}

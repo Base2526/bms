@@ -174,7 +174,7 @@ export default function Page() {
     };
   }, [from, to]);
 
-  if (error) return <Alert type="error" message={t("admin_reports.load_error")} description={error.message} showIcon />;
+  if (error) return <Alert closable type="error" message={t("admin_reports.load_error")} description={error.message} showIcon />;
 
   const s = data?.bmsSalesSummary;
   const inv = data?.bmsInventorySummary;
@@ -209,7 +209,7 @@ export default function Page() {
         </Col>
       </Row>
       {Number(s?.refundTotal ?? 0) > 0 && (
-        <Alert
+        <Alert closable
           type="info"
           showIcon
           style={{ marginTop: 12 }}
@@ -330,7 +330,7 @@ export default function Page() {
               ตั้งแต่ 16 สิงหาคม 2026 รายการคืนตั้งแต่ ฿500 ต้องผ่านผู้มีสิทธิ์คืนเงิน และบันทึกผู้อนุมัติไว้ตรวจสอบ
             </Typography.Paragraph>
             {(posReturnAudit?.anomalySignals || []).length > 0 && (
-              <Alert
+              <Alert closable
                 style={{ marginTop: 12 }}
                 type="warning"
                 showIcon

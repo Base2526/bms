@@ -675,7 +675,7 @@ export default function HelpPage() {
                   <Paragraph style={{ margin: 0, color: 'rgba(255,255,255,0.88)', fontSize: 17 }}>
                     {c.heroLead}
                   </Paragraph>
-                  <Alert
+                  <Alert closable
                     type="info"
                     showIcon
                     message="Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard"
@@ -751,7 +751,7 @@ export default function HelpPage() {
             <section id="restock" style={{ scrollMarginTop: 88 }}>
               <Card title={c.restockTitle} style={{ borderRadius: 22 }}>
                 <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                  <Alert
+                  <Alert closable
                     type="success"
                     showIcon
                     message={c.restockAlertMessage}
@@ -812,7 +812,7 @@ export default function HelpPage() {
                               <Text strong>{c.assistantLabel}</Text>
                               <Paragraph style={{ margin: '4px 0 0' }}>{item.assistant}</Paragraph>
                             </div>
-                            <Alert
+                            <Alert closable
                               type="info"
                               showIcon
                               message={c.whyLabel}
@@ -864,7 +864,7 @@ export default function HelpPage() {
             <section id="guardrails" style={{ scrollMarginTop: 88 }}>
               <Card title={c.guardrailsTitle} style={{ borderRadius: 22 }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Alert
+                  <Alert closable
                     type="warning"
                     showIcon
                     icon={<SafetyOutlined />}

@@ -527,11 +527,11 @@ export default function PharmacyCaseDetailPage() {
   };
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message={t("admin_pharmacy_case.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_pharmacy_case.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_pharmacy_case.load_error")} description={error.message} />;
-  if (loading && !c) return <Alert type="info" showIcon message={t("admin_pharmacy_case.loading")} />;
-  if (!c) return <Alert type="warning" showIcon message={t("admin_pharmacy_case.not_found")} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_pharmacy_case.load_error")} description={error.message} />;
+  if (loading && !c) return <Alert closable type="info" showIcon message={t("admin_pharmacy_case.loading")} />;
+  if (!c) return <Alert closable type="warning" showIcon message={t("admin_pharmacy_case.not_found")} />;
 
   const riskTone = c.riskLevel === "EMERGENCY" ? "bad" : c.riskLevel === "URGENT" ? "warn" : "ok";
   const riskColor = riskTone === "bad" ? "#b3261e" : riskTone === "warn" ? "#92620a" : "#0f7a4d";
@@ -558,7 +558,7 @@ export default function PharmacyCaseDetailPage() {
         <Button onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_case.btn_back_queue")}</Button>
       </Space>
 
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
@@ -566,7 +566,7 @@ export default function PharmacyCaseDetailPage() {
       />
 
       {redFlags.length > 0 && (
-        <Alert
+        <Alert closable
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
@@ -578,7 +578,7 @@ export default function PharmacyCaseDetailPage() {
       )}
 
       {(missing.length > 0 || conflicting.length > 0 || anomalies.length > 0) && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
@@ -610,7 +610,7 @@ export default function PharmacyCaseDetailPage() {
       </Card>
 
       {!c.conversationId ? (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
@@ -665,7 +665,7 @@ export default function PharmacyCaseDetailPage() {
               </div>
 
               {(missing.length > 0 || conflicting.length > 0 || anomalies.length > 0) ? (
-                <Alert
+                <Alert closable
                   type={conflicting.length > 0 || anomalies.length > 0 ? "error" : "warning"}
                   showIcon
                   message={t("admin_pharmacy_case.not_ready_approve")}
@@ -705,7 +705,7 @@ export default function PharmacyCaseDetailPage() {
                     ))}
                   </Row>
                 ) : (
-                  <Alert style={{ marginTop: 8 }} type="info" showIcon message={t("admin_pharmacy_case.no_verified_symptoms")} />
+                  <Alert closable style={{ marginTop: 8 }} type="info" showIcon message={t("admin_pharmacy_case.no_verified_symptoms")} />
                 )}
               </div>
             </Space>
@@ -838,7 +838,7 @@ export default function PharmacyCaseDetailPage() {
               ) : undefined
             }
           >
-            <Alert
+            <Alert closable
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
@@ -847,7 +847,7 @@ export default function PharmacyCaseDetailPage() {
             />
 
             {unmatchedAiCount > 0 ? (
-              <Alert
+              <Alert closable
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
@@ -1097,7 +1097,7 @@ export default function PharmacyCaseDetailPage() {
                 </div>
               </Space>
             ) : (
-              <Alert
+              <Alert closable
                 type="info"
                 showIcon
                 message={t("admin_pharmacy_case.no_real_conversation")}
@@ -1143,7 +1143,7 @@ export default function PharmacyCaseDetailPage() {
               </Descriptions>
 
               {checkoutOrderDraft?.status ? (
-                <Alert
+                <Alert closable
                   type="info"
                   showIcon
                   message={t("admin_pharmacy_case.checkout_draft_status", { status: checkoutOrderDraft.status })}
@@ -1165,7 +1165,7 @@ export default function PharmacyCaseDetailPage() {
               ) : null}
 
               {hasIncompleteMedicationSelection ? (
-                <Alert
+                <Alert closable
                   type="warning"
                   showIcon
                   message={t("admin_pharmacy_case.meds_need_selection")}
@@ -1277,7 +1277,7 @@ export default function PharmacyCaseDetailPage() {
         width={760}
       >
         <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Alert
+          <Alert closable
             type="info"
             showIcon
             message={t("admin_pharmacy_case.search_this_shop_only")}
@@ -1289,7 +1289,7 @@ export default function PharmacyCaseDetailPage() {
             onChange={(e) => setProductSearch(e.target.value)}
           />
           {productSearchError ? (
-            <Alert type="error" showIcon message={t("admin_pharmacy_case.catalog_load_error")} description={productSearchError.message} />
+            <Alert closable type="error" showIcon message={t("admin_pharmacy_case.catalog_load_error")} description={productSearchError.message} />
           ) : null}
           <div style={{ maxHeight: 420, overflowY: "auto" }}>
             <List

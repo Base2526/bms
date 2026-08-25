@@ -77,7 +77,7 @@ function FormNew(){
   return (
     <Card title={t("admin_users_new.title")} style={{maxWidth:640}}>
       {readOnly && (
-        <Alert
+        <Alert closable
           type="warning"
           showIcon
           message={t("admin_users_new.read_only_title")}
@@ -106,8 +106,8 @@ function FormNew(){
         <Form.Item name="phone" label={t("admin_users_new.phone_label")}><Input /></Form.Item>
         <Form.Item name="avatar" label={t("admin_users_new.avatar_label")}><Input /></Form.Item>
 
-        {rolesError && <Alert type="error" showIcon message={t("admin_users_new.roles_load_error")} description={rolesError.message} style={{ marginBottom: 16 }} />}
-        {noAssignableRoles && <Alert type="warning" showIcon message={t("admin_users_new.no_assignable_roles")} style={{ marginBottom: 16 }} />}
+        {rolesError && <Alert closable type="error" showIcon message={t("admin_users_new.roles_load_error")} description={rolesError.message} style={{ marginBottom: 16 }} />}
+        {noAssignableRoles && <Alert closable type="warning" showIcon message={t("admin_users_new.no_assignable_roles")} style={{ marginBottom: 16 }} />}
         <Form.Item name="role_id" label={t("admin_users_new.role_label")} rules={[{ required: true, message: t("admin_users_new.role_required") }]}>
           <Select
             loading={rolesLoading}

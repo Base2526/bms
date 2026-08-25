@@ -42,9 +42,9 @@ export default function Page() {
     onError: (e) => message.error(e?.message || t("admin_tenants.delete_error")),
   });
 
-  if (error) return <Alert type="error" showIcon message={t("admin_tenants.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_tenants.load_error")} description={error.message} />;
   if (data && data.bmsIsPlatformAdmin === false) {
-    return <Alert type="warning" showIcon message={t("admin_tenants.platform_admin_only_title")} description={t("admin_tenants.platform_admin_only_desc")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_tenants.platform_admin_only_title")} description={t("admin_tenants.platform_admin_only_desc")} />;
   }
 
   const rows = data?.bmsTenants || [];

@@ -272,7 +272,7 @@ export default function ImportModal({ open, onClose, onImported }: {
     >
       {stage === "upload" && (
         <div>
-          <Alert
+          <Alert closable
             type="info" showIcon style={{ marginBottom: 16 }}
             message={t("admin_product_import.no_images_title")}
             description={t("admin_product_import.no_images_desc", { max: PRODUCT_IMPORT_MAX_ROWS })}
@@ -304,10 +304,10 @@ export default function ImportModal({ open, onClose, onImported }: {
               <Tag color="red">{t("admin_product_import.summary_error", { count: current.errorCount })}</Tag>
             </Space>
             {current.quotaExceeded && (
-              <Alert type="error" showIcon message={t("admin_product_import.quota_exceeded")} description={current.quotaMessage} />
+              <Alert closable type="error" showIcon message={t("admin_product_import.quota_exceeded")} description={current.quotaMessage} />
             )}
             {stage === "result" && (
-              <Alert
+              <Alert closable
                 type={current.errorCount > 0 ? "warning" : "success"}
                 showIcon
                 message={stage === "result" ? t("admin_product_import.result_done") : t("admin_product_import.result_preview")}

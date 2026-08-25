@@ -3,73 +3,132 @@
   --quality-teal: #087f6b;
   --quality-mint: #dff5ec;
   --quality-amber: #d97706;
-  --quality-paper: #fffdf7;
-}
+  --quality-red: #cf3f3f;
+  --quality-line: #e6eaef;
+  --quality-soft: #f4f6f8;
+  --quality-accent: #315c9b;
+  --quality-accent-soft: #e9f0fa;
 
-.hero {
-  position: relative;
-  overflow: hidden;
-  padding: clamp(18px, 3vw, 30px);
-  margin-bottom: 16px;
-  border: 1px solid #d6e6df;
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at 90% 18%, rgba(245, 158, 11, 0.2), transparent 26%),
-    linear-gradient(125deg, #effaf5 0%, #fffdf5 62%, #fff7df 100%);
-}
-
-.hero::after {
-  content: "";
-  position: absolute;
-  width: 160px;
-  height: 160px;
-  right: -54px;
-  bottom: -88px;
-  border: 20px solid rgba(8, 127, 107, 0.09);
-  border-radius: 50%;
-}
-
-.heroTitle {
-  position: relative;
-  z-index: 1;
-  margin: 0 0 5px;
-  color: var(--quality-ink);
-  font-size: clamp(24px, 4vw, 38px);
-  line-height: 1.15;
-  letter-spacing: -0.025em;
-}
-
-.heroCopy {
-  position: relative;
-  z-index: 1;
-  max-width: 760px;
-  margin: 0;
-  color: #526660;
-}
-
-.metricCard {
-  height: 100%;
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(22, 48, 43, 0.05);
-}
-
-.trend {
   display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---------------------------------------------------------------
+   Toolbar — the old hero banner took ~390px before any work showed.
+   Title, one line of copy, range and refresh now share one strip.
+---------------------------------------------------------------- */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--quality-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.barTitle {
+  margin: 0;
+  color: var(--quality-ink);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.barCopy {
+  max-width: 720px;
+  margin: 2px 0 0;
+  color: #6b7684;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.barSpacer {
+  flex: 1 1 auto;
+}
+
+/* ---------------------------------------------------------------
+   KPI rail — one strip instead of four cards; "รอตรวจ" leads because
+   it is the only number that says what has to be done today.
+---------------------------------------------------------------- */
+.rail {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 1fr 1.4fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--quality-line);
+  border-radius: 12px;
+  background: var(--quality-line);
+}
+
+.cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px;
+  background: #fff;
+}
+
+.cellLead {
+  background: var(--quality-accent-soft);
+}
+
+.cellKey {
+  color: #6b7684;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cellValue {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.cellNote {
+  color: #6b7684;
+  font-size: 12px;
+}
+
+.valuePass {
+  color: var(--quality-teal);
+}
+
+.valueHandoff {
+  color: var(--quality-amber);
+}
+
+.valueFail {
+  color: var(--quality-red);
+}
+
+.valueLead {
+  color: var(--quality-accent);
+}
+
+/* sparkline replaces the 330px-tall trend card; same data, one strip */
+.spark {
+  display: flex;
+  height: 46px;
   align-items: flex-end;
-  gap: 5px;
-  height: 150px;
-  padding-top: 12px;
+  gap: 3px;
   overflow-x: auto;
 }
 
-.trendDay {
+.sparkDay {
   display: flex;
-  flex: 1 0 14px;
-  min-width: 14px;
-  height: 100%;
+  min-width: 4px;
+  flex: 1 0 4px;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 2px;
+  gap: 1px;
 }
 
 .trendSuccess,
@@ -77,7 +136,7 @@
 .trendUnresolved {
   width: 100%;
   min-height: 0;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .trendSuccess {
@@ -92,13 +151,174 @@
   background: #d84a4a;
 }
 
-.preview {
+.legend {
+  display: flex;
+  gap: 10px;
+  color: #6b7684;
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------
+   Workbench — queue on the left, case on the right. The old flow was
+   table → drawer → close → find the next row by eye.
+---------------------------------------------------------------- */
+.work {
+  display: grid;
+  align-items: start;
+  gap: 14px;
+  grid-template-columns: 400px minmax(0, 1fr);
+}
+
+.panel {
+  overflow: hidden;
+  border: 1px solid var(--quality-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.panelHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--quality-line);
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--quality-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--quality-line);
+  background: var(--quality-soft);
+}
+
+.queue {
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.row {
+  display: grid;
+  width: 100%;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--quality-line);
+  background: #fff;
+  cursor: pointer;
+  gap: 10px;
+  grid-template-columns: 4px 1fr;
+  text-align: left;
+  font: inherit;
+}
+
+.row:hover {
+  background: var(--quality-soft);
+}
+
+.rowActive {
+  background: var(--quality-accent-soft);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--quality-accent);
+  outline-offset: -2px;
+}
+
+.rowBody {
+  padding: 10px 12px 10px 0;
+  min-width: 0;
+}
+
+.rowTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.rowText {
   display: -webkit-box;
-  max-width: 420px;
+  margin: 4px 0 0;
   overflow: hidden;
   color: #40534e;
+  font-size: 13px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: #8a94a3;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stripe {
+  align-self: stretch;
+  border-radius: 0 3px 3px 0;
+}
+
+.stripeSuccess {
+  background: #30a46c;
+}
+
+.stripeHandoff {
+  background: #f0a020;
+}
+
+.stripeFail {
+  background: #d84a4a;
+}
+
+.stripeNeutral {
+  background: #c8d0da;
+}
+
+/* ---------------------------------------------------------------
+   Case pane
+---------------------------------------------------------------- */
+.caseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--quality-line);
+}
+
+.caseId {
+  color: #8a94a3;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.caseFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.thread {
+  display: flex;
+  max-height: 320px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  overflow-y: auto;
 }
 
 .messageCustomer,
@@ -123,11 +343,81 @@
   color: var(--quality-ink);
 }
 
-@media (max-width: 600px) {
-  .hero {
-    border-radius: 14px;
+/* the AI turn the signal actually fired on — so the reviewer does not
+   have to read the whole thread to find what was flagged */
+.messageFlagged {
+  box-shadow: 0 0 0 2px rgba(207, 63, 63, 0.35);
+}
+
+.flagNote {
+  align-self: flex-end;
+  color: var(--quality-red);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--quality-line);
+  background: var(--quality-soft);
+}
+
+.verdictLabel {
+  color: #6b7684;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hint {
+  color: #8a94a3;
+  font-size: 11.5px;
+}
+
+.empty {
+  display: flex;
+  min-height: 320px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+kbd.key,
+.key {
+  padding: 2px 5px;
+  border: 1px solid #d4dae2;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #fff;
+  color: #6b7684;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 1080px) {
+  .rail {
+    grid-template-columns: 1fr 1fr;
   }
 
+  .rail .cell:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .work {
+    grid-template-columns: 1fr;
+  }
+
+  .queue {
+    max-height: none;
+  }
+}
+
+@media (max-width: 600px) {
   .messageCustomer,
   .messageAi {
     max-width: 96%;

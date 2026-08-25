@@ -8,7 +8,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Card, DatePicker, Empty, InputNumber, Select, Space, Statistic, Table, Tag, Typography, message } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
+import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
@@ -73,7 +75,7 @@ export default function CommissionPage() {
   useEffect(() => { if (can("commission.view")) void loadReport(); }, [can, loadReport]);
 
   if (!permLoading && !can("commission.view")) {
-    return <Alert type="error" showIcon message="ไม่มีสิทธิ์ดูค่าคอม" />;
+    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูค่าคอม" />;
   }
 
   const saveRule = async () => {
@@ -114,9 +116,11 @@ export default function CommissionPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="ค่าคอมพนักงานขาย" />
+      <AdminPageHeader title="ค่าคอมพนักงานขาย">
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      </AdminPageHeader>
 
-      <Alert
+      <Alert closable
         type="info"
         showIcon
         message="อัตราคอมผูกกับวันที่ขาย ไม่ใช่วันที่เปิดดู"
@@ -202,7 +206,7 @@ export default function CommissionPage() {
         }
       >
         {report?.noRulesConfigured && (
-          <Alert
+          <Alert closable
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}

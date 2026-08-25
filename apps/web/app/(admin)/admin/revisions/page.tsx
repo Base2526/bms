@@ -181,7 +181,7 @@ export default function Page() {
   ], [kind, t]);
 
   if (!can("product.view") && !can("order.view") && !can("payment.view") && !can("shipping.view") && !can("purchase.view") && !can("coupon.view")) {
-    return <Alert type="error" message={t("admin_revisions.no_permission")} showIcon />;
+    return <Alert closable type="error" message={t("admin_revisions.no_permission")} showIcon />;
   }
 
   // detail state เป็น source of truth เดียว — ปุ่มปิด setDetail(null) แล้วต้องปิดได้จริง
@@ -351,7 +351,7 @@ export default function Page() {
           <div>{t("admin_revisions.loading")}</div>
         ) : compare ? (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Alert type="success" showIcon message={t("admin_revisions.compare_result_title", { kind: compare.kindLabel })} />
+            <Alert closable type="success" showIcon message={t("admin_revisions.compare_result_title", { kind: compare.kindLabel })} />
             <Table
               size="small"
               pagination={false}
@@ -380,7 +380,7 @@ export default function Page() {
             />
           </Space>
         ) : (
-          <Alert type="warning" showIcon message={t("admin_revisions.compare_pick_two")} />
+          <Alert closable type="warning" showIcon message={t("admin_revisions.compare_pick_two")} />
         )}
       </Modal>
     </div>

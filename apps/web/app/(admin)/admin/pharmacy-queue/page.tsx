@@ -1,7 +1,7 @@
 'use client';
 import { gql, useQuery } from "@apollo/client";
-import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input, Button } from "antd";
+import { ReadOutlined, ReloadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -192,9 +192,9 @@ export default function PharmacyQueuePage() {
   });
 
   if (!permsLoading && !can("pharmacy.assessment.read")) {
-    return <Alert type="warning" showIcon message={t("admin_pharmacy_queue.no_permission")} />;
+    return <Alert closable type="warning" showIcon message={t("admin_pharmacy_queue.no_permission")} />;
   }
-  if (error) return <Alert type="error" showIcon message={t("admin_pharmacy_queue.load_error")} description={error.message} />;
+  if (error) return <Alert closable type="error" showIcon message={t("admin_pharmacy_queue.load_error")} description={error.message} />;
 
   const baseRows = data?.bmsPharmacyAssessments || [];
   const confirmationCounts = baseRows.reduce(
@@ -222,10 +222,11 @@ export default function PharmacyQueuePage() {
     <div>
       <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{t("admin_pharmacy_queue.title")}</Typography.Title>}>
         <Space>
+          <Link href="/admin/pharmacy-manual"><Button icon={<ReadOutlined />}>{t("admin_pharmacy_queue.manual_link")}</Button></Link>
           <a onClick={() => refetch()}><ReloadOutlined /> {t("admin_pharmacy_queue.refresh")}</a>
         </Space>
       </AdminPageHeader>
-      <Alert
+      <Alert closable
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
