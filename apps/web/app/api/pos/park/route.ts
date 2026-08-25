@@ -72,7 +72,12 @@ async function handlePOST(req: NextRequest) {
 
   if (action === "resume") {
     const result = await resumeParkedSale(device.tenantId, shift.id, parkedId);
-    return NextResponse.json(result, { status: result.status === "RESUMED" ? 200 : 404 });
+    return NextResponse.json(result, {
+      status:
+        result.status === "RESUMED" ? 200
+        : result.status === "PHARMACY_REVIEW_PENDING" ? 409
+        : 404,
+    });
   }
   if (action === "drop") {
     const ok = await deleteParkedSale(device.tenantId, shift.id, parkedId);

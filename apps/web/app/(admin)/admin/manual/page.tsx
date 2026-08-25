@@ -1500,6 +1500,7 @@ const TH: ManualContent = {
       steps: [
         "พักบิลเมื่อคิวยังไม่พร้อมชำระ ตั้งชื่อให้หาเจอ แล้วเรียกกลับหรือทิ้งได้; จำกัด 20 บิลต่อกะ",
         "บิลพักไม่จองสต็อกและไม่ล็อกราคา เมื่อเรียกกลับต้องขายด้วยราคา/สต็อกปัจจุบัน และจะหายเมื่อกะจบ",
+        "ถ้าสินค้าติดกฎร้านยาและต้องให้เภสัชกรตรวจ ระบบจะมีปุ่มส่งเคสจากหน้า POS เพื่อสร้างเคส, ผูกกับบิลพัก, และเคลียร์หน้าเคาน์เตอร์ทันที; บิลจะเรียกกลับได้ก็ต่อเมื่อเคสอนุมัติแล้ว",
         "ลูกค้าหน้าร้าน: ใส่สินค้าในตะกร้า ไปแท็บมัดจำ ระบุยอด/วิธีรับเงิน แล้วกด สร้างบิล + รับมัดจำ ระบบสร้าง Order ID คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ",
         "ออเดอร์จาก Inbox / Customer 360: เลือกบิล PENDING ของสาขาจากรายการ ไม่ต้องพิมพ์ UUID หรือใช้บาร์โค้ดสินค้า แล้วใช้ รับครั้งแรก หรือ รับเพิ่ม โดยยอดต้องน้อยกว่ายอดคงเหลือ",
         "เมื่อลูกค้าจ่ายครบ ใช้ รับยอดคงเหลือ + ส่งของ เท่านั้น เพื่อให้ตัดสต็อก lot เอกสาร แต้ม และ audit พร้อมกัน",
@@ -2916,6 +2917,7 @@ const EN: ManualContent = {
       steps: [
         "Park an unpaid cart with a useful label, then resume or discard it later. The cap is twenty per shift.",
         "Parked bills reserve no stock and lock no price; resume uses current stock/pricing and parked bills end with the shift.",
+        "If a pharmacy-controlled item needs pharmacist review, POS can create the pharmacy case from the counter, link it to the parked bill, and clear the register immediately. The bill stays blocked until that case is approved.",
         "For a walk-in deposit, add goods to the POS cart, open Deposits, enter the amount/method, then use Create order + take deposit. The server creates the Order ID, recalculates pricing, and reserves stock.",
         "For an Inbox / Customer 360 order, select its branch-local PENDING bill from the list; do not type a UUID or product barcode. Use Take first deposit or Add, with each amount below the remaining balance.",
         "When fully paid, use Take balance + hand over goods so stock, lots, documents, points, and audit complete together.",

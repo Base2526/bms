@@ -229,10 +229,117 @@ type ParkedSale = {
   label: string;
   itemCount: number;
   subtotalHint: number;
-  cart: CartLine[];
+  cart: unknown;
   parkedByName: string | null;
   createdAt: string;
+  pharmacyReview: {
+    assessmentId: string;
+    caseCode: string;
+    status: string | null;
+    canResume: boolean;
+    requiresSafetyCheck: boolean;
+  } | null;
 };
+
+type PharmacyReviewLink = {
+  assessmentId: string;
+  caseCode: string;
+  status: string | null;
+  requiresSafetyCheck: boolean;
+};
+
+type ParkedCartSnapshot = {
+  version: 2;
+  lines: CartLine[];
+  member?: PosMember | null;
+  pointsToRedeem?: string;
+  couponCode?: string;
+  extraLines?: Array<{ label: string; unitAmount: string }>;
+  pharmacyReview?: {
+    assessmentId: string;
+    caseCode: string;
+    requiresSafetyCheck: boolean;
+  } | null;
+};
+
+function parseParkedCartSnapshot(raw: unknown): ParkedCartSnapshot {
+  if (Array.isArray(raw)) {
+    return { version: 2, lines: raw as CartLine[] };
+  }
+  if (!raw || typeof raw !== "object") {
+    return { version: 2, lines: [] };
+  }
+  const value = raw as Record<string, unknown>;
+  return {
+    version: 2,
+    lines: Array.isArray(value.lines) ? value.lines as CartLine[] : [],
+    member: value.member && typeof value.member === "object" ? value.member as PosMember : null,
+    pointsToRedeem: typeof value.pointsToRedeem === "string" ? value.pointsToRedeem : "",
+    couponCode: typeof value.couponCode === "string" ? value.couponCode : "",
+    extraLines: Array.isArray(value.extraLines)
+      ? (value.extraLines as Array<any>).map((line) => ({
+          label: typeof line?.label === "string" ? line.label : "",
+          unitAmount: typeof line?.unitAmount === "string" ? line.unitAmount : "",
+        }))
+      : [],
+    pharmacyReview:
+      value.pharmacyReview && typeof value.pharmacyReview === "object"
+        ? {
+            assessmentId: String((value.pharmacyReview as any).assessmentId || "").trim(),
+            caseCode: String((value.pharmacyReview as any).caseCode || "").trim(),
+            requiresSafetyCheck: (value.pharmacyReview as any).requiresSafetyCheck === true,
+          }
+        : null,
+  };
+}
+
+function pharmacyReviewStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "APPROVED":
+      return "อนุมัติแล้ว";
+    case "WAITING_FOR_PHARMACIST":
+      return "รอเภสัชกรรับเคส";
+    case "PHARMACIST_REVIEWING":
+    case "IN_REVIEW":
+      return "กำลังตรวจ";
+    case "NEED_MORE_INFORMATION":
+      return "รอข้อมูลเพิ่ม";
+    case "REJECTED":
+      return "ไม่อนุมัติ";
+    case "REFER_TO_DOCTOR":
+      return "ส่งต่อพบแพทย์";
+    case "EMERGENCY_REFERRAL":
+      return "ส่งฉุกเฉิน";
+    case "EXPIRED":
+      return "หมดอายุ";
+    case "PENDING":
+    default:
+      return "รอเภสัช";
+  }
+}
+
+function pharmacyReviewBlockedResumeMessage(caseCode: string, status: string | null | undefined): string {
+  const label = caseCode.trim() ? `เคส ${caseCode.trim()}` : "บิลนี้";
+  switch (status) {
+    case "REJECTED":
+      return `${label} ไม่อนุมัติ — ตรวจคำแนะนำเภสัชกรหรือส่งเคสใหม่ก่อนขายต่อ`;
+    case "EXPIRED":
+      return `${label} หมดอายุ — ต้องส่งเคสใหม่ก่อนขายต่อ`;
+    case "REFER_TO_DOCTOR":
+      return `${label} ถูกส่งต่อพบแพทย์ — ขายต่อจากบิลนี้ไม่ได้`;
+    case "EMERGENCY_REFERRAL":
+      return `${label} ถูกส่งต่อฉุกเฉิน — ขายต่อจากบิลนี้ไม่ได้`;
+    case "NEED_MORE_INFORMATION":
+      return `${label} ยังรอข้อมูลเพิ่มจากเภสัชกร — เรียกกลับมาขายต่อไม่ได้`;
+    case "PHARMACIST_REVIEWING":
+      return `${label} กำลังอยู่ระหว่างเภสัชกรตรวจ — เรียกกลับมาขายต่อไม่ได้`;
+    case "WAITING_FOR_PHARMACIST":
+    case "IN_REVIEW":
+    case "PENDING":
+    default:
+      return `${label} ยังรอเภสัชกรอนุมัติ — เรียกกลับมาขายต่อไม่ได้`;
+  }
+}
 
 type CashMovement = {
   id: string;
@@ -644,6 +751,9 @@ export default function PosPage() {
   const [parked, setParked] = useState<ParkedSale[]>([]);
   const [parkLabel, setParkLabel] = useState("");
   const [parkOpen, setParkOpen] = useState(false);
+  const [pharmacyReviewLink, setPharmacyReviewLink] = useState<PharmacyReviewLink | null>(null);
+  const [pharmacyReviewOffer, setPharmacyReviewOffer] = useState<{ requiresSafetyCheck: boolean } | null>(null);
+  const [pharmacyReviewBusy, setPharmacyReviewBusy] = useState(false);
   const [cashMoves, setCashMoves] = useState<CashMovement[]>([]);
   const [cashMoveDir, setCashMoveDir] = useState<"IN" | "OUT">("OUT");
   const [cashMoveAmount, setCashMoveAmount] = useState("");
@@ -691,6 +801,7 @@ export default function PosPage() {
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
   const depositRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const pharmacyReviewRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const cashMovementRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const expenseCreateRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const expenseSettleRequestRef = useRef<{ signature: string; key: string } | null>(null);
@@ -809,9 +920,26 @@ export default function PosPage() {
     if (!session?.shift) return;
     try {
       const saved = JSON.parse(window.localStorage.getItem(PENDING_SALE_KEY) ?? "null");
-      if (!saved?.body || saved.body.shiftId !== session.shift.id || !Array.isArray(saved.cart) || !Array.isArray(saved.payments)) return;
-      setCart(saved.cart);
+      if (!saved?.body || saved.body.shiftId !== session.shift.id || !Array.isArray(saved.payments)) return;
+      const snapshot = parseParkedCartSnapshot(saved.cart);
+      setCart(snapshot.lines);
       setPayments(saved.payments);
+      setMember(snapshot.member ?? null);
+      setPointsToRedeem(snapshot.pointsToRedeem ?? "");
+      setCouponCode(snapshot.couponCode ?? "");
+      setExtraLines(snapshot.extraLines ?? []);
+      setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
+        snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
+          ? {
+              assessmentId: snapshot.pharmacyReview.assessmentId,
+              caseCode: snapshot.pharmacyReview.caseCode,
+              status: saved.body.pharmacyApprovedAssessmentId ? "APPROVED" : null,
+              requiresSafetyCheck: snapshot.pharmacyReview.requiresSafetyCheck,
+            }
+          : null
+      ));
+      setMemberPreview(null);
+      setMemberPreviewAppliedKey(null);
       setHasPendingSale(true);
       setNotice({ type: "error", text: "พบบิลที่ผลลัพธ์ยังไม่แน่ชัดจากครั้งก่อน — กดชำระเงินอีกครั้งเพื่อเช็ค/ทำรายการต่อด้วยคีย์เดิม" });
     } catch {}
@@ -821,8 +949,25 @@ export default function PosPage() {
     if (!session?.shift) return;
     try {
       const saved = JSON.parse(window.localStorage.getItem(PENDING_DEPOSIT_SALE_KEY) ?? "null");
-      if (!saved?.body || saved.body.shiftId !== session.shift.id || !Array.isArray(saved.cart)) return;
-      setCart(saved.cart);
+      if (!saved?.body || saved.body.shiftId !== session.shift.id) return;
+      const snapshot = parseParkedCartSnapshot(saved.cart);
+      setCart(snapshot.lines);
+      setMember(snapshot.member ?? null);
+      setPointsToRedeem(snapshot.pointsToRedeem ?? "");
+      setCouponCode(snapshot.couponCode ?? "");
+      setExtraLines(snapshot.extraLines ?? []);
+      setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
+        snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
+          ? {
+              assessmentId: snapshot.pharmacyReview.assessmentId,
+              caseCode: snapshot.pharmacyReview.caseCode,
+              status: saved.body.pharmacyApprovedAssessmentId ? "APPROVED" : null,
+              requiresSafetyCheck: snapshot.pharmacyReview.requiresSafetyCheck,
+            }
+          : null
+      ));
+      setMemberPreview(null);
+      setMemberPreviewAppliedKey(null);
       setDepositAmount(String(saved.body.payments?.[0]?.amount ?? ""));
       setDepositMethod(String(saved.body.payments?.[0]?.method ?? "CASH"));
       setHasPendingDepositSale(true);
@@ -1133,13 +1278,70 @@ export default function PosPage() {
     setMemberQuery("");
   }
 
+  function clearPharmacyReviewState() {
+    setPharmacyReviewLink(null);
+    setPharmacyReviewOffer(null);
+    pharmacyReviewRequestRef.current = null;
+  }
+
   /** ล้างทุกอย่างที่ผูกกับ "ลูกค้าคนนี้บิลนี้" — เรียกหลังขายจบทุกครั้ง */
   function clearBillCustomerState() {
     clearMember();
     setCouponCode("");
     clearManualDiscount();
+    clearPharmacyReviewState();
     // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
     setExtraLines([]);
+  }
+
+  function buildParkedCartSnapshot(): ParkedCartSnapshot {
+    return {
+      version: 2,
+      lines: cart,
+      member,
+      pointsToRedeem,
+      couponCode,
+      extraLines,
+      pharmacyReview: pharmacyReviewLink
+        ? {
+            assessmentId: pharmacyReviewLink.assessmentId,
+            caseCode: pharmacyReviewLink.caseCode,
+            requiresSafetyCheck: pharmacyReviewLink.requiresSafetyCheck,
+          }
+        : null,
+    };
+  }
+
+  function restoreBillFromSnapshot(
+    snapshot: ParkedCartSnapshot,
+    reviewStatus: string | null = null,
+  ) {
+    setCart(snapshot.lines);
+    setMember(snapshot.member ?? null);
+    setPointsToRedeem(snapshot.pointsToRedeem ?? "");
+    setCouponCode(snapshot.couponCode ?? "");
+    setExtraLines(snapshot.extraLines ?? []);
+    setPharmacyReviewLink(
+      snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
+        ? {
+            assessmentId: snapshot.pharmacyReview.assessmentId,
+            caseCode: snapshot.pharmacyReview.caseCode,
+            status: reviewStatus,
+            requiresSafetyCheck: snapshot.pharmacyReview.requiresSafetyCheck,
+          }
+        : null,
+    );
+    setPharmacyReviewOffer(null);
+    setMemberPreview(null);
+    setMemberPreviewAppliedKey(null);
+    clearManualDiscount();
+  }
+
+  function suggestedPharmacyParkLabel() {
+    const memberName = member?.name?.trim();
+    if (memberName) return memberName;
+    const hhmm = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    return `เคสเภสัช ${hhmm}`;
   }
 
   /** ส่วนลดมืออนุมัติเป็นราย "บิล" ไม่ใช่รายกะ — ขายจบต้องล้างทุกครั้ง ไม่งั้นบิล
@@ -1178,7 +1380,7 @@ export default function PosPage() {
         headers: { ...authHeaders, "content-type": "application/json" },
         body: JSON.stringify({
           action: "park", cashierUserId: cashierId, label: parkLabel.trim(),
-          cart, itemCount: itemCount, subtotalHint: total,
+          cart: buildParkedCartSnapshot(), itemCount: itemCount, subtotalHint: total,
         }),
       });
       const data = await res.json();
@@ -1191,6 +1393,8 @@ export default function PosPage() {
       // ล้างตะกร้าและบริบทลูกค้าทั้งหมด — บิลถัดไปต้องเริ่มจากศูนย์จริง ๆ
       setCart([]);
       clearBillCustomerState();
+      setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+      resetToSimpleCash();
       setParkLabel("");
       setParkOpen(false);
       void refreshParked();
@@ -1205,6 +1409,7 @@ export default function PosPage() {
       setNotice({ type: "error", text: "ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน" });
       return;
     }
+    const row = parked.find((candidate) => candidate.id === parkedId) ?? null;
     try {
       const res = await fetch("/api/pos/park", {
         method: "POST",
@@ -1212,12 +1417,124 @@ export default function PosPage() {
         body: JSON.stringify({ action: "resume", parkedId }),
       });
       const data = await res.json();
-      if (!res.ok) { setNotice({ type: "error", text: "ไม่พบบิลพักใบนี้ (อาจถูกเรียกไปแล้วจากอีกเครื่อง)" }); return; }
-      setCart(data.cart ?? []);
+      if (!res.ok) {
+        if (res.status === 409 && data?.status === "PHARMACY_REVIEW_PENDING") {
+          const caseCode = String(data.caseCode ?? row?.pharmacyReview?.caseCode ?? "").trim();
+          setNotice({
+            type: "error",
+            text: pharmacyReviewBlockedResumeMessage(caseCode, data?.reviewStatus ?? row?.pharmacyReview?.status ?? null),
+          });
+          return;
+        }
+        setNotice({ type: "error", text: "ไม่พบบิลพักใบนี้ (อาจถูกเรียกไปแล้วจากอีกเครื่อง)" });
+        return;
+      }
+      const snapshot = parseParkedCartSnapshot(data.cart);
+      restoreBillFromSnapshot(snapshot, row?.pharmacyReview?.status ?? (row?.pharmacyReview ? "APPROVED" : null));
+      setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+      resetToSimpleCash();
       void refreshParked();
       setNotice({ type: "ok", text: `เรียกบิล "${data.label}" กลับมาแล้ว — ราคาคิดใหม่ตอนกดรับเงิน` });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  async function requestPharmacyReviewFromPos() {
+    if (!session?.shift) { setNotice({ type: "error", text: "ยังไม่ได้เปิดกะ" }); return; }
+    if (!cashierId || !pin) { setNotice({ type: "error", text: "เลือกผู้ขายและใส่ PIN ก่อน" }); return; }
+    if (cart.length === 0) { setNotice({ type: "error", text: "ตะกร้าว่าง" }); return; }
+    setPharmacyReviewBusy(true);
+    setNotice(null);
+    try {
+      const label = parkLabel.trim() || suggestedPharmacyParkLabel();
+      const signature = JSON.stringify({
+        shiftId: session.shift.id,
+        cashierUserId: cashierId,
+        customerId: member?.customerId ?? null,
+        requiresSafetyCheck: pharmacyReviewOffer?.requiresSafetyCheck === true,
+        lines: cart.map((line) => ({
+          sku: line.sku,
+          size: line.size,
+          packQty: line.packQty,
+          packCode: line.packCode,
+          serials: line.serials?.length ? [...line.serials] : [],
+        })),
+      });
+      if (pharmacyReviewRequestRef.current?.signature !== signature) {
+        pharmacyReviewRequestRef.current = {
+          signature,
+          key: `pharmacy-review-${session.device.code}-${session.shift.id.slice(0, 8)}-${crypto.randomUUID()}`,
+        };
+      }
+      const res = await fetch("/api/pos/pharmacy-review", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          shiftId: session.shift.id,
+          cashierUserId: cashierId,
+          idempotencyKey: pharmacyReviewRequestRef.current.key,
+          pin,
+          customerId: member?.customerId ?? null,
+          label,
+          lines: cart.map((line) => ({
+            sku: line.sku,
+            size: line.size,
+            packQty: line.packQty,
+            packCode: line.packCode,
+            serials: line.serials?.length ? line.serials : undefined,
+          })),
+          parkedCart: buildParkedCartSnapshot(),
+          itemCount,
+          subtotalHint: total,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data?.status === "REVIEW_REQUESTED_UNPARKED") {
+          const assessmentId = String(data.assessmentId ?? "").trim();
+          const caseCode = String(data.caseCode ?? "").trim();
+          if (assessmentId && caseCode) {
+            setPharmacyReviewLink({
+              assessmentId,
+              caseCode,
+              status: "PENDING",
+              requiresSafetyCheck: data?.requiresSafetyCheck === true || pharmacyReviewOffer?.requiresSafetyCheck === true,
+            });
+            setPharmacyReviewOffer(null);
+          }
+          setNotice({
+            type: "error",
+            text: `สร้างเคส ${data.caseCode ?? ""} ได้แล้ว แต่พักบิลไม่สำเร็จ${
+              Number.isFinite(Number(data.limit)) ? ` (เต็ม ${Number(data.limit)} บิล)` : ""
+            } — โปรดตั้งชื่อแล้วพักบิลเองหรือเคลียร์บิลพักเก่า`,
+          });
+          setParkLabel(label);
+          setParkOpen(true);
+          return;
+        }
+        if (res.status < 500) {
+          pharmacyReviewRequestRef.current = null;
+        }
+        setNotice({ type: "error", text: data?.reason ?? data?.error ?? describeFailure(data) });
+        return;
+      }
+      pharmacyReviewRequestRef.current = null;
+      setCart([]);
+      clearBillCustomerState();
+      setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
+      resetToSimpleCash();
+      setParkLabel("");
+      setParkOpen(false);
+      void refreshParked();
+      setNotice({
+        type: "ok",
+        text: `ส่งเคส ${data.caseCode ?? ""} ให้เภสัชกรแล้ว และพักบิลไว้เรียบร้อย`,
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setPharmacyReviewBusy(false);
     }
   }
 
@@ -1568,6 +1885,10 @@ export default function PosPage() {
 
   async function createDepositFromCart() {
     if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy || hasPendingSale) return;
+    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED") {
+      setNotice({ type: "error", text: `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode} ก่อนสร้างบิลมัดจำ` });
+      return;
+    }
     const amount = Math.round(Number(depositAmount) * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0) {
       setNotice({ type: "error", text: "ระบุยอดมัดจำให้ถูกต้อง" });
@@ -1620,6 +1941,9 @@ export default function PosPage() {
             discountReason: approvedDiscount?.reason ?? null,
             discountApproverUserId: approvedDiscount?.approverId ?? null,
             discountApproverPin: approvedDiscount?.approverPin ?? null,
+            pharmacyApprovedAssessmentId: pharmacyReviewLink?.status === "APPROVED"
+              ? pharmacyReviewLink.assessmentId
+              : null,
             lines: cart.map((line) => ({
               sku: line.sku,
               size: line.size,
@@ -1638,7 +1962,11 @@ export default function PosPage() {
 
       window.localStorage.setItem(
         PENDING_DEPOSIT_SALE_KEY,
-        JSON.stringify({ body: { ...body, pin: undefined, discountApproverPin: undefined }, cart })
+        JSON.stringify({
+          body: { ...body, pin: undefined, discountApproverPin: undefined },
+          cart: buildParkedCartSnapshot(),
+          pharmacyReviewLink,
+        })
       );
       setHasPendingDepositSale(true);
 
@@ -1673,6 +2001,9 @@ export default function PosPage() {
       if (data?.status !== "SERVER_ERROR") {
         window.localStorage.removeItem(PENDING_DEPOSIT_SALE_KEY);
         setHasPendingDepositSale(false);
+      }
+      if (data?.status === "PHARMACY_REVIEW_REQUIRED" || data?.status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
+        setPharmacyReviewOffer({ requiresSafetyCheck: data.status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
       }
       setNotice({ type: "error", text: data?.reason ?? describeFailure(data) });
     } catch (error: any) {
@@ -2002,6 +2333,15 @@ export default function PosPage() {
     if (tab === "deposits") void refreshDeposits();
   }, [token, tab, session?.shift?.id]);
 
+  useEffect(() => {
+    if (tab !== "sell" || !token || !session?.shift) return;
+    if (!parked.some((row) => row.pharmacyReview && !row.pharmacyReview.canResume)) return;
+    // ปกติ POS ไม่ poll แต่สถานะอนุมัติเภสัชถูกเปลี่ยนจากอีกหน้าจอได้จริง
+    // จึงตามดูเฉพาะตอนมีบิลพักที่ยังรอ approval เท่านั้น
+    const timer = window.setInterval(() => { void refreshParked(); }, 20000);
+    return () => window.clearInterval(timer);
+  }, [token, tab, session?.shift?.id, parked]);
+
   // สิทธิ์ใช้เงินส่วนตัวผูกกับคนที่กด PIN ไม่ใช่เครื่องขาย เปลี่ยนคนแล้วต้อง
   // โหลดสิทธิ์ใหม่ก่อนแสดงโหมดเจ้าของคนเดียว
   useEffect(() => {
@@ -2130,6 +2470,15 @@ export default function PosPage() {
     });
   }, [cart, extraLines, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey]);
 
+  const pharmacyReviewOfferCartKey = useMemo(
+    () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
+    [cart],
+  );
+
+  useEffect(() => {
+    if (pharmacyReviewOffer) setPharmacyReviewOffer(null);
+  }, [pharmacyReviewOfferCartKey]);
+
   // ฟอร์มย่อใช้ได้เมื่อ: ยังไม่กดจ่ายผสม + มีรายการเดียว + เป็นเงินสด
   const simpleCash = !splitMode && payments.length === 1 && payments[0]?.method === "CASH";
   const cashChangePreview = (() => {
@@ -2171,6 +2520,9 @@ export default function PosPage() {
     if (!session?.shift) return "ยังไม่ได้เปิดกะ";
     if (!cashierId) return "เลือกผู้ขายก่อน";
     if (!pin) return "ใส่ PIN ของผู้ขาย";
+    if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED") {
+      return `รอเภสัชกรอนุมัติเคส ${pharmacyReviewLink.caseCode}`;
+    }
     const needsDiscountPreview = Boolean(member || pointsToRedeem || couponCode.trim() || approvedDiscount);
     if (needsDiscountPreview && (
       !memberPreview
@@ -2994,6 +3346,9 @@ export default function PosPage() {
         discountReason: approvedDiscount?.reason ?? null,
         discountApproverUserId: approvedDiscount?.approverId ?? null,
         discountApproverPin: approvedDiscount?.approverPin ?? null,
+        pharmacyApprovedAssessmentId: pharmacyReviewLink?.status === "APPROVED"
+          ? pharmacyReviewLink.assessmentId
+          : null,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -3019,7 +3374,12 @@ export default function PosPage() {
       // และ recovery record นี้อยู่ข้ามการรีโหลด
       window.localStorage.setItem(
         PENDING_SALE_KEY,
-        JSON.stringify({ body: { ...body, pin: undefined, discountApproverPin: undefined }, cart, payments })
+        JSON.stringify({
+          body: { ...body, pin: undefined, discountApproverPin: undefined },
+          cart: buildParkedCartSnapshot(),
+          payments,
+          pharmacyReviewLink,
+        })
       );
       setHasPendingSale(true);
       const res = await fetch("/api/pos/sale", {
@@ -3139,6 +3499,9 @@ export default function PosPage() {
           } catch (refreshError: any) {
             failureText += ` · ตรวจราคาล่าสุดอัตโนมัติไม่สำเร็จ (${String(refreshError?.message ?? refreshError)})`;
           }
+        }
+        if (data?.status === "PHARMACY_REVIEW_REQUIRED" || data?.status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
+          setPharmacyReviewOffer({ requiresSafetyCheck: data.status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
         }
         setNotice({ type: "error", text: failureText });
       }
@@ -4710,13 +5073,28 @@ export default function PosPage() {
                   <div key={row.id} style={{
                     display: "flex", alignItems: "center", gap: 6,
                     border: "1px solid var(--pos-line)", borderRadius: 8, padding: "4px 6px 4px 10px",
+                    opacity: row.pharmacyReview && !row.pharmacyReview.canResume ? 0.8 : 1,
                   }}>
                     <button
                       type="button"
                       onClick={() => void doResumeParked(row.id)}
-                      style={{ background: "none", border: "none", padding: 0, fontSize: 13, cursor: "pointer" }}
+                      disabled={Boolean(row.pharmacyReview && !row.pharmacyReview.canResume)}
+                      title={
+                        row.pharmacyReview && !row.pharmacyReview.canResume
+                          ? pharmacyReviewBlockedResumeMessage(row.pharmacyReview.caseCode, row.pharmacyReview.status)
+                          : undefined
+                      }
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        fontSize: 13,
+                        cursor: row.pharmacyReview && !row.pharmacyReview.canResume ? "not-allowed" : "pointer",
+                        color: "inherit",
+                      }}
                     >
                       {row.label} · {row.itemCount} ชิ้น · ฿{baht(row.subtotalHint)}
+                      {row.pharmacyReview ? ` · เคส ${row.pharmacyReview.caseCode} · ${pharmacyReviewStatusLabel(row.pharmacyReview.status)}` : ""}
                     </button>
                     <button
                       type="button"
@@ -5816,6 +6194,47 @@ export default function PosPage() {
             </div>
           </div>
 
+          {pharmacyReviewLink && (
+            <div style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #cfe6ff",
+              background: pharmacyReviewLink.status === "APPROVED" ? "#eef8ee" : "#f5f9ff",
+              fontSize: 13,
+              color: "#234",
+              lineHeight: 1.5,
+            }}>
+              เคสเภสัช {pharmacyReviewLink.caseCode} · {pharmacyReviewStatusLabel(pharmacyReviewLink.status)}
+              {pharmacyReviewLink.requiresSafetyCheck ? " · ต้องซักประวัติก่อนขาย" : ""}
+            </div>
+          )}
+
+          {pharmacyReviewOffer && !pharmacyReviewLink && (
+            <div style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid #ffd591",
+              background: "#fff7e6",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}>
+              <div style={{ fontSize: 13, color: "#7a4b00", lineHeight: 1.5 }}>
+                บิลนี้ต้องส่งให้เภสัชกรตรวจ{pharmacyReviewOffer.requiresSafetyCheck ? "และซักประวัติก่อน" : ""}ก่อนรับเงิน
+              </div>
+              <button
+                type="button"
+                onClick={() => void requestPharmacyReviewFromPos()}
+                disabled={pharmacyReviewBusy || busy || hasPendingOrderWrite}
+                style={{ padding: "10px 12px", fontSize: 14, fontWeight: 600 }}
+              >
+                {pharmacyReviewBusy ? "กำลังส่งเคส…" : "ส่งเคสให้เภสัชกร + พักบิล"}
+              </button>
+            </div>
+          )}
+
           <div style={{ flex: 1 }} />
           {!justSold && (<>
           {/* ปุ่มเทาที่ยังโชว์ยอดเงินอ่านไม่ออกว่าติดอะไร — ให้มันบอกเหตุผลบนตัวเอง
@@ -5834,6 +6253,8 @@ export default function PosPage() {
               setCart([]);
               setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
               resetToSimpleCash();
+              clearBillCustomerState();
+              setParkLabel("");
               setScanCode("");
               setSearchTerm("");
               setSearchResults([]);
@@ -6429,7 +6850,7 @@ function describeFailure(data: any): string {
       return `${data.sku}: สินค้านี้ถูกตั้งเป็นห้ามขายผ่านช่องทางนี้`;
     case "PHARMACY_REVIEW_REQUIRED":
     case "PHARMACY_SAFETY_CHECK_REQUIRED":
-      return `${data.sku}: ต้องให้เภสัชกรซักประวัติและอนุมัติก่อน`;
+      return `${data.sku}: ต้องให้เภสัชกรซักประวัติและอนุมัติก่อน — ใช้ปุ่มส่งเคสให้เภสัชกรจากหน้า POS ได้`;
     case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
       return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity})`;
     case "COUPON_INVALID":

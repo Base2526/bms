@@ -119,8 +119,12 @@ async function handlePOST(req: NextRequest) {
     manualDiscount: approval?.amount ?? null,
     discountApprovedBy: approval?.userId ?? null,
     discountReason: approval?.reason ?? null,
-    // clinical assessment ยังไม่มี flow ที่ผูกกับ server state — ห้ามเชื่อจาก body
-    pharmacyApprovedAssessmentId: null,
+    // อนุญาตเฉพาะ assessment id ที่ผูกมากับ flow POS ร้านยาแล้ว — createOrder
+    // ตรวจซ้ำจากฐานข้อมูลอีกชั้นว่าเคสนี้ APPROVED จริงและครอบคลุม SKU/qty ชุดนี้
+    pharmacyApprovedAssessmentId:
+      typeof body.pharmacyApprovedAssessmentId === "string" && body.pharmacyApprovedAssessmentId.trim()
+        ? body.pharmacyApprovedAssessmentId.trim()
+        : null,
   });
 
   // ขายซ้ำด้วยคีย์เดิม → 200 พร้อม replayed: true (ไม่ใช่ error — เครื่องแค่ยิงซ้ำ)

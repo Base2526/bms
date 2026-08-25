@@ -34,6 +34,11 @@ import {
   reverseCreditForReturnInTx,
 } from "./storeCredit";
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
+import { checkPharmacySaleInTx } from "./pharmacy/productPolicy";
+import {
+  createProductReviewAssessmentOnce,
+  markAssessmentOrderCreated,
+} from "./pharmacy/assessments";
 import {
   cashRoundingDelta,
   getVatSettings,
@@ -1839,6 +1844,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     if (taken.status !== "DEPOSIT_TAKEN") {
       // createOrder จองสต็อกและอาจใช้คูปอง/แต้มไว้แล้ว ต้องคืนทุกอย่างถ้ารับมัดจำไม่ได้
       await cancelOrder(tenantId, orderId);
+    } else if (input.pharmacyApprovedAssessmentId) {
+      void markAssessmentOrderCreated(tenantId, input.pharmacyApprovedAssessmentId, orderId, "system:pos-order").catch((error) =>
+        console.error("[POS] mark pharmacy assessment deposit order created failed", input.pharmacyApprovedAssessmentId, orderId, error)
+      );
     }
     return taken;
   }
@@ -1877,6 +1886,11 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   if (sold.status === "SOLD" && input.customerId) {
     void reviewMemberTier(input.tenantId, input.customerId).catch((e) =>
       console.error("[POS] ทบทวนชั้นสมาชิกหลังขายไม่สำเร็จ", input.customerId, e)
+    );
+  }
+  if (sold.status === "SOLD" && input.pharmacyApprovedAssessmentId) {
+    void markAssessmentOrderCreated(tenantId, input.pharmacyApprovedAssessmentId, orderId, "system:pos-order").catch((error) =>
+      console.error("[POS] mark pharmacy assessment order created failed", input.pharmacyApprovedAssessmentId, orderId, error)
     );
   }
 
@@ -3291,7 +3305,60 @@ export type PosParkedSale = {
   cart: unknown;
   parkedByName: string | null;
   createdAt: string;
+  pharmacyReview: {
+    assessmentId: string;
+    caseCode: string;
+    status: string | null;
+    canResume: boolean;
+    requiresSafetyCheck: boolean;
+  } | null;
 };
+
+type PosParkedCartPayload = {
+  version: 2;
+  lines: unknown[];
+  member?: unknown;
+  pointsToRedeem?: string;
+  couponCode?: string;
+  extraLines?: unknown;
+  pharmacyReview?: {
+    assessmentId?: string | null;
+    caseCode?: string | null;
+    requiresSafetyCheck?: boolean;
+  } | null;
+};
+
+function parkedCartLines(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object" && Array.isArray((raw as any).lines)) {
+    return (raw as any).lines;
+  }
+  return [];
+}
+
+function parkedPharmacyReview(raw: unknown): {
+  assessmentId: string;
+  caseCode: string;
+  requiresSafetyCheck: boolean;
+} | null {
+  const review = raw && typeof raw === "object"
+    ? ((raw as any).pharmacyReview ?? (raw as any).meta?.pharmacyReview ?? null)
+    : null;
+  const assessmentId = typeof review?.assessmentId === "string" ? review.assessmentId.trim() : "";
+  if (!assessmentId) return null;
+  const caseCode = typeof review?.caseCode === "string" && review.caseCode.trim()
+    ? review.caseCode.trim()
+    : assessmentId.slice(0, 8);
+  return {
+    assessmentId,
+    caseCode,
+    requiresSafetyCheck: review?.requiresSafetyCheck === true,
+  };
+}
+
+function parkedReviewCanResume(status: string | null | undefined): boolean {
+  return status === "APPROVED";
+}
 
 /** เพดานต่อกะ — พักได้ไม่จำกัดแล้วรายการจะยาวจนเรียกกลับผิดใบ ซึ่งแย่กว่าพักไม่ได้ */
 const MAX_PARKED_PER_SHIFT = 20;
@@ -3308,6 +3375,21 @@ export async function listParkedSales(
       ORDER BY p.created_at DESC`,
     [tenantId, shiftId]
   );
+  const reviewIds = Array.from(new Set(
+    res.rows
+      .map((row: any) => parkedPharmacyReview(row.cart)?.assessmentId ?? null)
+      .filter((value): value is string => Boolean(value))
+  ));
+  const reviewStatusById = new Map<string, string>();
+  if (reviewIds.length > 0) {
+    const reviews = await query<{ id: string; status: string }>(
+      `SELECT id, status
+         FROM bms_pharmacy_assessments
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+      [tenantId, reviewIds]
+    );
+    for (const row of reviews.rows) reviewStatusById.set(row.id, row.status);
+  }
   return res.rows.map((r: any) => ({
     id: r.id,
     label: r.label,
@@ -3316,6 +3398,18 @@ export async function listParkedSales(
     cart: r.cart,
     parkedByName: r.parked_by_name ?? null,
     createdAt: toISO(r.created_at),
+    pharmacyReview: (() => {
+      const review = parkedPharmacyReview(r.cart);
+      if (!review) return null;
+      const status = reviewStatusById.get(review.assessmentId) ?? null;
+      return {
+        assessmentId: review.assessmentId,
+        caseCode: review.caseCode,
+        status,
+        canResume: parkedReviewCanResume(status),
+        requiresSafetyCheck: review.requiresSafetyCheck,
+      };
+    })(),
   }));
 }
 
@@ -3337,7 +3431,7 @@ export async function parkSale(input: {
 }): Promise<ParkSaleResult> {
   const label = input.label.trim();
   if (!label) return { status: "EMPTY" };
-  if (!Array.isArray(input.cart) || input.cart.length === 0) return { status: "EMPTY" };
+  if (parkedCartLines(input.cart).length === 0) return { status: "EMPTY" };
 
   const shift = await query<{ id: string; location_id: string }>(
     `SELECT id, location_id FROM bms_pos_shifts
@@ -3369,6 +3463,17 @@ export async function parkSale(input: {
     parked: {
       id: r.id, label: r.label, itemCount: Number(r.item_count), subtotalHint: Number(r.subtotal_hint),
       cart: r.cart, parkedByName: null, createdAt: toISO(r.created_at),
+      pharmacyReview: (() => {
+        const review = parkedPharmacyReview(r.cart);
+        if (!review) return null;
+        return {
+          assessmentId: review.assessmentId,
+          caseCode: review.caseCode,
+          status: null,
+          canResume: false,
+          requiresSafetyCheck: review.requiresSafetyCheck,
+        };
+      })(),
     },
   };
 }
@@ -3380,15 +3485,57 @@ export async function parkSale(input: {
  */
 export async function resumeParkedSale(
   tenantId: string, shiftId: string, parkedId: string
-): Promise<{ status: "RESUMED"; cart: unknown; label: string } | { status: "NOT_FOUND" }> {
-  const res = await query(
-    `DELETE FROM bms_pos_parked_sales
-      WHERE tenant_id = $1 AND shift_id = $2 AND id = $3
-      RETURNING cart, label`,
-    [tenantId, shiftId, parkedId]
-  );
-  if (!res.rowCount) return { status: "NOT_FOUND" };
-  return { status: "RESUMED", cart: res.rows[0].cart, label: res.rows[0].label };
+): Promise<
+  | { status: "RESUMED"; cart: unknown; label: string }
+  | { status: "NOT_FOUND" }
+  | { status: "PHARMACY_REVIEW_PENDING"; assessmentId: string; caseCode: string; reviewStatus: string | null }
+> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const parked = await client.query<{ cart: unknown; label: string }>(
+      `SELECT cart, label
+         FROM bms_pos_parked_sales
+        WHERE tenant_id = $1 AND shift_id = $2 AND id = $3
+        FOR UPDATE`,
+      [tenantId, shiftId, parkedId]
+    );
+    if (!parked.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND" };
+    }
+    const review = parkedPharmacyReview(parked.rows[0].cart);
+    if (review) {
+      const assessment = await client.query<{ status: string }>(
+        `SELECT status
+           FROM bms_pharmacy_assessments
+          WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [tenantId, review.assessmentId]
+      );
+      const reviewStatus = assessment.rows[0]?.status ?? null;
+      if (!parkedReviewCanResume(reviewStatus)) {
+        await client.query("ROLLBACK");
+        return {
+          status: "PHARMACY_REVIEW_PENDING",
+          assessmentId: review.assessmentId,
+          caseCode: review.caseCode,
+          reviewStatus,
+        };
+      }
+    }
+    await client.query(
+      `DELETE FROM bms_pos_parked_sales
+        WHERE tenant_id = $1 AND shift_id = $2 AND id = $3`,
+      [tenantId, shiftId, parkedId]
+    );
+    await client.query("COMMIT");
+    return { status: "RESUMED", cart: parked.rows[0].cart, label: parked.rows[0].label };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteParkedSale(
@@ -3399,6 +3546,226 @@ export async function deleteParkedSale(
     [tenantId, shiftId, parkedId]
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+export type PosPharmacyReviewRequestResult =
+  | { status: "REVIEW_REQUESTED"; assessmentId: string; caseCode: string; parked: PosParkedSale }
+  | {
+      status: "REVIEW_REQUESTED_UNPARKED";
+      assessmentId: string;
+      caseCode: string;
+      reason: string;
+      limit?: number;
+      requiresSafetyCheck?: boolean;
+    }
+  | { status: "SHIFT_NOT_OPEN" }
+  | { status: "EMPTY" }
+  | { status: "TOO_MANY"; limit: number }
+  | { status: "INVALID_PACK"; sku: string; packCode: string }
+  | { status: "NOT_REQUIRED" }
+  | {
+      status:
+        | "PHARMACY_POLICY_UNKNOWN"
+        | "PHARMACY_PRESCRIPTION_REQUIRED"
+        | "PHARMACY_ONLINE_SALE_PROHIBITED"
+        | "PHARMACY_QUANTITY_LIMIT_EXCEEDED";
+      sku: string;
+      salePolicy: string;
+      maxQuantity?: number;
+      requested?: number;
+      blockers?: Array<{ status: string; sku: string; salePolicy: string; maxQuantity?: number; requested?: number }>;
+    };
+
+async function findParkedSaleByAssessmentId(
+  tenantId: string,
+  shiftId: string,
+  assessmentId: string,
+): Promise<PosParkedSale | null> {
+  const parked = await query<any>(
+    `SELECT p.id, p.label, p.item_count, p.subtotal_hint, p.cart, p.created_at,
+            COALESCE(u.name, u.email) AS parked_by_name
+       FROM bms_pos_parked_sales p
+       LEFT JOIN users u ON u.id = p.parked_by
+      WHERE p.tenant_id = $1
+        AND p.shift_id = $2
+        AND p.cart->'pharmacyReview'->>'assessmentId' = $3
+      ORDER BY p.created_at DESC
+      LIMIT 1`,
+    [tenantId, shiftId, assessmentId]
+  );
+  if (!parked.rowCount) return null;
+  const reviewStatus = await query<{ status: string }>(
+    `SELECT status
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [tenantId, assessmentId]
+  );
+  const row = parked.rows[0];
+  const review = parkedPharmacyReview(row.cart);
+  const status = reviewStatus.rows[0]?.status ?? null;
+  return {
+    id: row.id,
+    label: row.label,
+    itemCount: Number(row.item_count ?? 0),
+    subtotalHint: Number(row.subtotal_hint ?? 0),
+    cart: row.cart,
+    parkedByName: row.parked_by_name ?? null,
+    createdAt: toISO(row.created_at),
+    pharmacyReview: review
+      ? {
+          assessmentId: review.assessmentId,
+          caseCode: review.caseCode,
+          status,
+          canResume: parkedReviewCanResume(status),
+          requiresSafetyCheck: review.requiresSafetyCheck,
+        }
+      : null,
+  };
+}
+
+export async function requestPosPharmacyReview(input: {
+  tenantId: string;
+  deviceId: string;
+  shiftId: string;
+  cashierUserId: string;
+  idempotencyKey: string;
+  customerId?: string | null;
+  label: string;
+  lines: PosSaleLine[];
+  parkedCart: PosParkedCartPayload | unknown;
+  itemCount: number;
+  subtotalHint: number;
+}): Promise<PosPharmacyReviewRequestResult> {
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 240) {
+    throw new Error("idempotencyKey ไม่ถูกต้อง");
+  }
+  const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
+    `SELECT id, location_id, device_id
+       FROM bms_pos_shifts
+      WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
+    [input.tenantId, input.shiftId]
+  );
+  if (!shiftRes.rowCount) return { status: "SHIFT_NOT_OPEN" };
+  const shift = shiftRes.rows[0];
+  if (shift.device_id !== input.deviceId) return { status: "SHIFT_NOT_OPEN" };
+  const parkedCount = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pos_parked_sales WHERE tenant_id = $1 AND shift_id = $2`,
+    [input.tenantId, input.shiftId]
+  );
+  if (Number(parkedCount.rows[0]?.n ?? 0) >= MAX_PARKED_PER_SHIFT) {
+    return { status: "TOO_MANY", limit: MAX_PARKED_PER_SHIFT };
+  }
+
+  const canonical = await canonicalizePosSaleLines(input.tenantId, shift.location_id, input.lines);
+  if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
+  const items = canonical.items;
+  if (items.length === 0) return { status: "EMPTY" };
+
+  const client = await getClient();
+  let reviewableSkus = new Set<string>();
+  let requiresSafetyCheck = false;
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
+    const pharmacySale = await checkPharmacySaleInTx(client, input.tenantId, items);
+    await client.query("ROLLBACK");
+    if (pharmacySale.allowed) return { status: "NOT_REQUIRED" };
+    const blockers = pharmacySale.blockers ?? [];
+    const reviewable = blockers.filter((blocker) =>
+      blocker.status === "PHARMACY_REVIEW_REQUIRED" || blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED"
+    );
+    if (reviewable.length === 0 || reviewable.length !== blockers.length) {
+      const blocker = blockers.find((candidate): candidate is typeof candidate & {
+        status:
+          | "PHARMACY_POLICY_UNKNOWN"
+          | "PHARMACY_PRESCRIPTION_REQUIRED"
+          | "PHARMACY_ONLINE_SALE_PROHIBITED"
+          | "PHARMACY_QUANTITY_LIMIT_EXCEEDED";
+      } => candidate.status !== "PHARMACY_REVIEW_REQUIRED" && candidate.status !== "PHARMACY_SAFETY_CHECK_REQUIRED");
+      if (!blocker) return { status: "NOT_REQUIRED" };
+      return {
+        status: blocker.status,
+        sku: blocker.sku,
+        salePolicy: blocker.salePolicy,
+        ...(blocker.maxQuantity == null ? {} : { maxQuantity: blocker.maxQuantity }),
+        ...(blocker.requested == null ? {} : { requested: blocker.requested }),
+        ...(blockers.length === 0 ? {} : { blockers }),
+      };
+    }
+    reviewableSkus = new Set(reviewable.map((blocker) => blocker.sku));
+    requiresSafetyCheck = reviewable.some((blocker) => blocker.status === "PHARMACY_SAFETY_CHECK_REQUIRED");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const reviewItems = items
+    .filter((item) => reviewableSkus.has(item.sku))
+    .map((item) => ({ sku: item.sku, size: item.size, qty: item.qty }));
+  if (reviewItems.length === 0) return { status: "NOT_REQUIRED" };
+
+  const created = await createProductReviewAssessmentOnce({
+    tenantId: input.tenantId,
+    channelId: POS_CHANNEL,
+    customerId: input.customerId ?? null,
+    locationId: shift.location_id,
+    items: reviewItems,
+    requiresSafetyCheck,
+    sourceMeta: {
+      source: "pos",
+      shiftId: input.shiftId,
+      deviceId: input.deviceId,
+      cashierUserId: input.cashierUserId,
+      idempotencyKey,
+      label: input.label.trim(),
+    },
+  });
+  const assessmentId = created.assessmentId;
+  const caseCode = assessmentId.slice(0, 8);
+  const existingParked = await findParkedSaleByAssessmentId(input.tenantId, input.shiftId, assessmentId);
+  if (existingParked) {
+    return { status: "REVIEW_REQUESTED", assessmentId, caseCode, parked: existingParked };
+  }
+  const parkedPayload = Array.isArray(input.parkedCart)
+    ? {
+        version: 2 as const,
+        lines: input.parkedCart,
+        pharmacyReview: { assessmentId, caseCode, requiresSafetyCheck },
+      }
+    : {
+        ...(input.parkedCart as Record<string, unknown>),
+        version: 2 as const,
+        lines: parkedCartLines(input.parkedCart),
+        pharmacyReview: { assessmentId, caseCode, requiresSafetyCheck },
+      };
+  const parked = await parkSale({
+    tenantId: input.tenantId,
+    deviceId: input.deviceId,
+    shiftId: input.shiftId,
+    parkedBy: input.cashierUserId,
+    label: input.label,
+    cart: parkedPayload,
+    itemCount: input.itemCount,
+    subtotalHint: input.subtotalHint,
+  });
+  if (parked.status !== "PARKED") {
+    return {
+      status: "REVIEW_REQUESTED_UNPARKED",
+      assessmentId,
+      caseCode,
+      ...(parked.status === "TOO_MANY" ? { limit: parked.limit } : {}),
+      requiresSafetyCheck,
+      reason:
+        parked.status === "TOO_MANY"
+          ? `พักบิลได้สูงสุด ${parked.limit} บิลต่อกะ`
+          : parked.status === "SHIFT_NOT_OPEN"
+            ? "กะปิดไปแล้ว"
+            : "พักบิลไม่สำเร็จ",
+    };
+  }
+  return { status: "REVIEW_REQUESTED", assessmentId, caseCode, parked: parked.parked };
 }
 
 // ---------------------------------------------------------------

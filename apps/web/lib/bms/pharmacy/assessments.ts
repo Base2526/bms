@@ -505,9 +505,12 @@ export type CreateAssessmentResult =
 export async function createProductReviewAssessmentOnce(input: {
   tenantId: string;
   channelId: string;
-  conversationId: string;
+  conversationId?: string | null;
+  customerId?: string | null;
+  locationId?: string | null;
   items: Array<{ sku: string; size: string; qty: number }>;
   requiresSafetyCheck?: boolean;
+  sourceMeta?: Record<string, unknown> | null;
 }): Promise<CreateAssessmentResult> {
   const merged = new Map<string, { sku: string; size: string; qty: number }>();
   for (const item of input.items) {
@@ -522,25 +525,74 @@ export async function createProductReviewAssessmentOnce(input: {
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId);
-    const conversation = await client.query<{ customer_id: string | null }>(
-      `SELECT customer_id FROM bms_conversations
-        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-      [input.tenantId, input.conversationId]
-    );
-    if (!conversation.rowCount) throw new Error("ไม่พบบทสนทนาสำหรับสร้างเคส Product Review");
-    const active = await client.query<{ id: string; status: AssessmentStatus }>(
-      `SELECT id, status FROM bms_pharmacy_assessments
-        WHERE tenant_id = $1 AND conversation_id = $2
-          AND status IN (
-            'DRAFT','COLLECTING_INFORMATION','PENDING_CONFIRMATION',
-            'WAITING_FOR_PHARMACIST','PHARMACIST_REVIEWING','NEED_MORE_INFORMATION'
-          ) AND deleted_at IS NULL
-        ORDER BY created_at DESC LIMIT 1`,
-      [input.tenantId, input.conversationId]
-    );
-    if (active.rows[0]) {
-      await client.query("COMMIT");
-      return { status: "ALREADY_EXISTS", assessmentId: active.rows[0].id, assessmentStatus: active.rows[0].status };
+    const conversationId = input.conversationId?.trim() || null;
+    let customerId = input.customerId?.trim() || null;
+    const sourceMeta =
+      input.sourceMeta && typeof input.sourceMeta === "object" ? input.sourceMeta : null;
+    const posShiftId =
+      sourceMeta && typeof sourceMeta.shiftId === "string" && sourceMeta.shiftId.trim()
+        ? sourceMeta.shiftId.trim()
+        : null;
+    const posIdempotencyKey =
+      sourceMeta && typeof sourceMeta.idempotencyKey === "string" && sourceMeta.idempotencyKey.trim()
+        ? sourceMeta.idempotencyKey.trim()
+        : null;
+    const posSource =
+      sourceMeta && typeof sourceMeta.source === "string" ? sourceMeta.source.trim() : "";
+    if (conversationId) {
+      const conversation = await client.query<{ customer_id: string | null }>(
+        `SELECT customer_id FROM bms_conversations
+          WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [input.tenantId, conversationId]
+      );
+      if (!conversation.rowCount) throw new Error("ไม่พบบทสนทนาสำหรับสร้างเคส Product Review");
+      customerId = conversation.rows[0].customer_id ?? customerId;
+      const active = await client.query<{ id: string; status: AssessmentStatus }>(
+        `SELECT id, status FROM bms_pharmacy_assessments
+          WHERE tenant_id = $1 AND conversation_id = $2
+            AND status IN (
+              'DRAFT','COLLECTING_INFORMATION','PENDING_CONFIRMATION',
+              'WAITING_FOR_PHARMACIST','PHARMACIST_REVIEWING','NEED_MORE_INFORMATION'
+            ) AND deleted_at IS NULL
+          ORDER BY created_at DESC LIMIT 1`,
+        [input.tenantId, conversationId]
+      );
+      if (active.rows[0]) {
+        await client.query("COMMIT");
+        return { status: "ALREADY_EXISTS", assessmentId: active.rows[0].id, assessmentStatus: active.rows[0].status };
+      }
+    } else if (posSource === "pos" && posShiftId && posIdempotencyKey) {
+      await client.query(
+        `SELECT id
+           FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2
+          FOR UPDATE`,
+        [input.tenantId, posShiftId]
+      );
+      const existing = await client.query<{ id: string; status: AssessmentStatus }>(
+        `SELECT id, status
+           FROM bms_pharmacy_assessments
+          WHERE tenant_id = $1
+            AND channel_id = $2
+            AND complaint->>'requestType' = 'PRODUCT_PURCHASE'
+            AND complaint->'sourceMeta'->>'source' = 'pos'
+            AND complaint->'sourceMeta'->>'shiftId' = $3
+            AND complaint->'sourceMeta'->>'idempotencyKey' = $4
+            AND status IN (
+              'WAITING_FOR_PHARMACIST',
+              'PHARMACIST_REVIEWING',
+              'NEED_MORE_INFORMATION',
+              'APPROVED'
+            )
+            AND deleted_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [input.tenantId, input.channelId, posShiftId, posIdempotencyKey]
+      );
+      if (existing.rows[0]) {
+        await client.query("COMMIT");
+        return { status: "ALREADY_EXISTS", assessmentId: existing.rows[0].id, assessmentStatus: existing.rows[0].status };
+      }
     }
 
     const skus = [...new Set(items.map((item) => item.sku))];
@@ -552,12 +604,14 @@ export async function createProductReviewAssessmentOnce(input: {
     const bySku = new Map(products.rows.map((product) => [product.sku, product]));
     for (const item of items) {
       const inventory = await client.query<{ available: number }>(
-        `SELECT (current_stock - reserved_stock) AS available
+        `SELECT COALESCE(SUM(current_stock - reserved_stock), 0) AS available
            FROM bms_inventory
-          WHERE tenant_id = $1 AND product_sku = $2 AND size = $3`,
-        [input.tenantId, item.sku, item.size]
+          WHERE tenant_id = $1
+            AND product_sku = $2
+            AND size = $3
+            AND ($4::uuid IS NULL OR location_id = $4)`,
+        [input.tenantId, item.sku, item.size, input.locationId ?? null]
       );
-      if (!inventory.rowCount) throw new Error(`ไม่พบสินค้า ${item.sku} ขนาด ${item.size}`);
       if (Number(inventory.rows[0].available) < item.qty) {
         throw new Error(`สินค้า ${item.sku} ขนาด ${item.size} มีจำนวนไม่พอสำหรับส่งตรวจ`);
       }
@@ -599,6 +653,11 @@ export async function createProductReviewAssessmentOnce(input: {
       generatedAt: new Date().toISOString(),
     };
     const ttlMinutes = pharmacyAssessmentTtlMinutes();
+    const complaintMeta = {
+      requestType: "PRODUCT_PURCHASE",
+      requiresSafetyCheck: input.requiresSafetyCheck === true,
+      ...(input.sourceMeta && Object.keys(input.sourceMeta).length > 0 ? { sourceMeta: input.sourceMeta } : {}),
+    };
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO bms_pharmacy_assessments
          (tenant_id, customer_id, channel_id, conversation_id, protocol_id,
@@ -613,10 +672,10 @@ export async function createProductReviewAssessmentOnce(input: {
        RETURNING id`,
       [
         input.tenantId,
-        conversation.rows[0].customer_id,
+        customerId,
         input.channelId,
-        input.conversationId,
-        JSON.stringify({ requestType: "PRODUCT_PURCHASE", requiresSafetyCheck: input.requiresSafetyCheck === true }),
+        conversationId,
+        JSON.stringify(complaintMeta),
         input.requiresSafetyCheck ? ["patient_relationship", "patient_age_years", "allergies", "current_medications"] : [],
         input.requiresSafetyCheck ? "INCOMPLETE" : "COMPLETE",
         JSON.stringify(summary),
@@ -625,11 +684,13 @@ export async function createProductReviewAssessmentOnce(input: {
       ]
     );
     const assessmentId = inserted.rows[0].id;
-    await client.query(
-      `UPDATE bms_conversations SET pharmacy_intake_case_id = $3, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2`,
-      [input.tenantId, input.conversationId, assessmentId]
-    );
+    if (conversationId) {
+      await client.query(
+        `UPDATE bms_conversations SET pharmacy_intake_case_id = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, conversationId, assessmentId]
+      );
+    }
     await client.query("COMMIT");
     await recordPharmacyEvent({
       tenantId: input.tenantId,
