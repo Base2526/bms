@@ -413,7 +413,7 @@ export default function AdminSidebar() {
     }] : []),
     // ขายหน้าร้าน — แยกกลุ่มเพราะ audience คือแคชเชียร์/หัวหน้ากะ ไม่ใช่คนทำงานออนไลน์
     // และงานคือ "เตรียมจุดขาย" (เครื่อง/PIN/ความพร้อมก่อนเปิด) ไม่ใช่จัดการออร์เดอร์
-    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') ? [{
+    ...(can('pos.device.manage') || can('pos.pin.manage') || can('pharmacy.policy.read') || can('pos.sell') ? [{
       key: 'g-pos',
       icon: <ShoppingOutlined />,
       label: t('admin.group_pos'),
@@ -426,6 +426,11 @@ export default function AdminSidebar() {
           ? [link('/admin/product-labels', t('admin.menu_product_labels'), <PrinterOutlined />)] : []),
         ...(can('pharmacy.policy.read')
           ? [link('/admin/pos-readiness', t('admin.menu_pos_readiness'), <SafetyCertificateOutlined />)] : []),
+        // gate เท่ากับสิทธิ์ต่ำสุดที่ขายได้ — เผื่อ Cashier ธรรมดา (ไม่มีสิทธิ์ตั้งค่าใดๆ ข้างบน)
+        // ยังเห็นกลุ่มนี้เพื่อเปิดคู่มือได้ · หมายเหตุ: บัญชี pos_only เข้า /admin ไม่ได้เลยที่ระดับ
+        // login ระบบ จึงยังไม่มีทางเปิดลิงก์นี้ได้จากอุปกรณ์ที่ล็อกเป็น pos_only
+        ...(can('pos.sell')
+          ? [link('/admin/pos-manual', 'Cashier Manual', <ReadOutlined />)] : []),
       ],
     }] : []),
     ...(canViewReports ? [link('/admin/reports', 'Reports', <BarChartOutlined />)] : []),

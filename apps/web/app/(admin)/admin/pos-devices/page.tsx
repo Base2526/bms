@@ -11,6 +11,8 @@ import {
   Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -134,7 +136,9 @@ export default function PosDevicesPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="เครื่องขายหน้าร้าน" />
+      <AdminPageHeader title="เครื่องขายหน้าร้าน">
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      </AdminPageHeader>
 
       {canDevices && (
         <Card

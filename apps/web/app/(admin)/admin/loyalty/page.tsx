@@ -7,7 +7,8 @@ import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
   Select, Switch, Popconfirm, Typography, Card, Row, Col, Statistic, Divider, Empty, Drawer,
 } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined, UserAddOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, HistoryOutlined, ReadOutlined, UserAddOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
@@ -295,6 +296,7 @@ export default function LoyaltyPage() {
     <div>
       <AdminPageHeader title={<Title level={4} style={{ margin: 0 }}>{t("admin_loyalty.title")}</Title>}>
         <Space wrap>
+          <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
           {canManage && (
             <Button icon={<UserAddOutlined />} onClick={() => setEnrollOpen(true)}>
               {t("admin_loyalty.btn_enroll")}

@@ -10,6 +10,8 @@
 import { useEffect, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Empty, Form, InputNumber, Popconfirm, Progress, Select, Space, Statistic, Switch, Table, Tag, Typography, message } from "antd";
+import { ReadOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -277,7 +279,9 @@ export default function PosReadinessPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
+      <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน">
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      </AdminPageHeader>
 
       <Card title="ความพร้อม POS หลัก" loading={loading}>
         {operational && (
