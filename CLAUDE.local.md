@@ -654,6 +654,20 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
     **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
   · ช่อง cross-tenant ที่เคยจดว่า "ยังเหลือ" **แก้แล้วที่ `9.27`** (ดูหัวข้อถัดไป)
+- **⚠️ ถ้า production เคยรันโดยไม่ตั้ง `BMS_SECRET_KEY` — ต้องหมุนคีย์ก่อน ไม่ใช่ตั้งแล้วจบ**
+  · ค่าที่ขึ้นต้น `enc:` ที่ถูกเข้ารหัสตอนยังไม่มี env ใช้คีย์ `sha256("bms-dev-secret-key")`
+    พอตั้งคีย์จริงแล้ว **ถอดไม่ออก** → `decryptSecret()` คืน `null` → ช่องทางของร้านดูเหมือน
+    "ไม่มี token" แล้วตายเงียบ ๆ (webhook verify ไม่ผ่าน / ส่งข้อความไม่ได้)
+  · **ข้อมูลไม่หาย** เพราะคีย์ dev เดิมคำนวณได้ · ใช้ `scripts/rotate-bms-secret-key.mts`
+    (ค่าปริยายเป็น dry-run ไม่เขียนอะไร · เติม `--apply` เพื่อเขียนจริง · รันซ้ำได้)
+    ครอบ `bms_tenant_channels.{access_token,channel_secret}` และ
+    `bms_tenant_ai_config.api_key_encrypted` — **มีที่เก็บ `enc:` ใหม่ต้องเพิ่มใน TARGETS**
+  · **แก้ที่ทำให้ปัญหานี้เงียบด้วย**: `getKey()` เคยถูกเรียก *ใน* try ของ `decryptSecret`
+    ตั้งค่าผิดจึงกลายเป็น `null` เงียบ ๆ แทนที่จะ throw · ย้ายออกมานอก try แล้ว → ตั้งค่าผิด =
+    throw ดัง ๆ · ถอดค่าที่คีย์ไม่ตรงไม่ได้ = `null` ตามเดิม (แยกสองกรณีออกจากกัน)
+  · ทดสอบสคริปต์กับข้อมูลจริงใน dev แล้ว: dry-run → apply → รันซ้ำ (บอกว่าย้ายแล้ว) → ยืนยันว่า
+    `decryptSecret()` อ่านได้ด้วยคีย์ใหม่ → **คืนค่า dev กลับเป็นคีย์ dev เดิม** เพราะ container dev
+    ไม่ตั้ง env (ถ้าลืมคืน dev จะใช้ช่องทางนั้นไม่ได้)
 - **การ์ดของ cron/job ที่ "ข้ามได้เมื่อไม่ตั้ง env" — แก้แล้ว 2026-08-27 (ไม่มี migration)**
   · **ต้นเหตุ**: ทุก route เขียน `if (secret && req.headers.get("x-cron-secret") !== secret)` ซึ่ง
     `secret &&` = **ไม่ตั้ง env ก็ไม่ตรวจอะไรเลย** และโน้ตในไฟล์นี้เองบันทึกว่า `BMS_CRON_SECRET`

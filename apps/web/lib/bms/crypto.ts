@@ -37,9 +37,13 @@ export function encryptSecret(plain: string | null | undefined): string | null {
 export function decryptSecret(stored: string | null | undefined): string | null {
   if (!stored) return null;
   if (!stored.startsWith("enc:")) return stored; // plaintext (เก่า)
+  // getKey() ต้องอยู่ **นอก** try — ไม่งั้น production ที่ไม่ได้ตั้ง BMS_SECRET_KEY
+  // จะได้ null เงียบ ๆ (token ของร้านดูเหมือน "ไม่มี" แล้วช่องทางตายไปเฉย ๆ)
+  // แยกให้ชัด: ตั้งค่าผิด = throw ดัง ๆ · ถอดค่าที่คีย์ไม่ตรงไม่ได้ = null ตามเดิม
+  const key = getKey();
   try {
     const [, ivB, tagB, dataB] = stored.split(":");
-    const decipher = crypto.createDecipheriv("aes-256-gcm", getKey(), Buffer.from(ivB, "base64"));
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivB, "base64"));
     decipher.setAuthTag(Buffer.from(tagB, "base64"));
     return Buffer.concat([decipher.update(Buffer.from(dataB, "base64")), decipher.final()]).toString("utf8");
   } catch {
