@@ -12,11 +12,61 @@ import {
   canonicalPriceTiers,
   isFixedPricePack,
   normalizePackCode,
+  normalizePricingSnapshot,
   priceLinesByQty,
+  priceRemainingLines,
   syncSkuPricingSnapshot,
   unitPriceForQty,
   type PriceTier,
 } from "../apps/web/lib/bms/pricing.ts";
+
+test("คืนแล้วต่ำกว่าขั้นราคาส่ง ต้องตีราคาของที่เหลือกลับเป็นราคาป้าย", () => {
+  const result = priceRemainingLines([{
+    id: 1, sku: "A", size: "XL", qty: 5, packQty: 5, returnedPackQty: 0,
+    receiptUnitPrice: 100, packUnitPrice: null,
+    pricingSnapshot: {
+      priceTiers: [{ minQty: 5, scope: "CROSS_VARIANT_PERCENT", discountPct: 10 }],
+      promotion: null,
+    },
+  }], new Map([[1, 1]]));
+
+  assert.equal(result.pricingSubtotal, 400,
+    "เหลือ 4 ไม่ครบขั้นต่ำ 5 ต้องเป็น 4 × 100 ไม่ใช่ 4 × 90");
+  assert.equal(result.pricingDiscount, 0);
+});
+
+test("คืนแล้วยังครบขั้นที่ต่ำกว่า ต้องลดระดับราคาส่งตาม snapshot ตอนขาย", () => {
+  const result = priceRemainingLines([{
+    id: 1, sku: "A", size: "M", qty: 10, packQty: 10, returnedPackQty: 0,
+    receiptUnitPrice: 100, packUnitPrice: null,
+    pricingSnapshot: {
+      priceTiers: [{ minQty: 5, unitPrice: 90 }, { minQty: 10, unitPrice: 80 }],
+      promotion: null,
+    },
+  }], new Map([[1, 3]]));
+
+  assert.equal(result.pricingSubtotal, 630, "เหลือ 7 ต้องใช้ขั้น 5 ที่ 90");
+  assert.equal(result.pricingDiscount, 70);
+});
+
+test("pricing snapshot ผิดรูปถูกลดเหลือกติกาที่ปลอดภัย", () => {
+  assert.deepEqual(normalizePricingSnapshot({
+    priceTiers: [
+      { minQty: 1, unitPrice: -1 },
+      { minQty: 5, scope: "CROSS_VARIANT_PERCENT", discountPct: 10 },
+    ],
+    promotion: { kind: "N_FOR_PRICE", buyQty: 0, bundlePrice: -10 },
+  }), {
+    priceTiers: [{
+      minQty: 5,
+      scope: "CROSS_VARIANT_PERCENT",
+      size: null,
+      unitPrice: null,
+      discountPct: 10,
+    }],
+    promotion: null,
+  });
+});
 
 test("BASE remains eligible for wholesale and promotions; named packs keep their fixed price", () => {
   assert.equal(normalizePackCode(undefined), "BASE");

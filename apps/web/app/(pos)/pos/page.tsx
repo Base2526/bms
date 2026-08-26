@@ -549,6 +549,8 @@ type Receipt = {
     returnMode: "FULL" | "PARTIAL";
     isVoid: boolean;
     refundAmount: number;
+    pricingAdjustmentAmount: number;
+    remainingAmount: number | null;
     settlementStatus: "PENDING" | "COMPLETED";
     note: string | null;
     returnedAt: string;
@@ -776,7 +778,9 @@ function BillHistoryPanel({
 
         {returnEvents.map((event) => {
           cumulativeRefund = Math.round((cumulativeRefund + event.refundAmount) * 100) / 100;
-          const remaining = Math.max(0, Math.round((receipt.total - cumulativeRefund) * 100) / 100);
+          const remaining = event.remainingAmount == null
+            ? Math.max(0, Math.round((receipt.total - cumulativeRefund) * 100) / 100)
+            : Number(event.remainingAmount);
           const eventTitle = event.isVoid
             ? "ยกเลิกบิล"
             : event.returnMode === "FULL" ? "คืนสินค้าทั้งบิล" : "คืนสินค้าบางรายการ";
@@ -796,6 +800,11 @@ function BillHistoryPanel({
                 <div style={{ color: "#555", marginTop: 3, overflowWrap: "anywhere" }}>ใบลดหนี้ {event.creditNoteNo}</div>
               )}
               {event.note && <div style={{ color: "#555", marginTop: 3, overflowWrap: "anywhere" }}>เหตุผล: {event.note}</div>}
+              {event.pricingAdjustmentAmount > 0 && (
+                <div style={{ color: "#8a6100", marginTop: 3 }}>
+                  ปรับสิทธิ์ราคาตามจำนวน ฿{baht(event.pricingAdjustmentAmount)} · ยอดคงเหลือหลังประเมินราคาใหม่ ฿{baht(remaining)}
+                </div>
+              )}
               {event.items.length > 0 && (
                 <div style={{ marginTop: 6, padding: "7px 9px", borderRadius: 7, background: "#faf7ef" }}>
                   {event.items.map((item) => (
@@ -3982,7 +3991,7 @@ export default function PosPage() {
       setNotice({ type: "error", text: "ยังไม่ได้เลือกรายการที่จะคืน" });
       return;
     }
-    if (!window.confirm(`ยืนยันคืนบางรายการ? ระบบจะคืนสต็อกตามจำนวนที่เลือก และบันทึกยอดคืนเงินตามบิลเดิม`)) return;
+    if (!window.confirm(`ยืนยันคืนบางรายการ? ระบบจะตรวจราคาส่ง/โปรจากจำนวนที่เหลือใหม่ แล้วคืนเฉพาะส่วนต่างจากยอดที่จ่ายเดิม`)) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -4003,11 +4012,14 @@ export default function PosPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.status === "PARTIAL_RETURNED") {
+        const pricingNote = Number(data.pricingAdjustmentAmount ?? 0) > 0
+          ? ` · ปรับสิทธิ์ราคาตามจำนวน ฿${baht(Number(data.pricingAdjustmentAmount))}`
+          : "";
         setNotice({
           type: "ok",
           text: data.settlementStatus === "COMPLETED"
-            ? `คืนบางรายการและคืนเงินจริงครบแล้ว · ฿${baht(Number(data.refundAmount ?? 0))}`
-            : `รับคืนบางรายการแล้ว · ฿${baht(Number(data.refundAmount ?? 0))} · ยังมีช่องทางที่ต้องยืนยันคืนเงินจริง`,
+            ? `คืนบางรายการและคืนเงินจริงครบแล้ว · ฿${baht(Number(data.refundAmount ?? 0))}${pricingNote} · คงเหลือสุทธิ ฿${baht(Number(data.remainingAmount ?? 0))}`
+            : `รับคืนบางรายการแล้ว · ฿${baht(Number(data.refundAmount ?? 0))}${pricingNote} · ยังมีช่องทางที่ต้องยืนยันคืนเงินจริง`,
         });
         const returnReceipt: Receipt = {
           ...row,
@@ -4043,6 +4055,8 @@ export default function PosPage() {
         data?.status === "APPROVAL_REQUIRED" ? `${data.reason} — ระบุผู้อนุมัติและ PIN ผู้อนุมัติด้านบน`
         :
         data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่คืนเกินกว่าที่ยังคืนได้"
+        : data?.status === "REPRICE_PAYMENT_REQUIRED"
+          ? `คืนรายการนี้ไม่ได้ในขั้นตอนคืนเงิน: เมื่อประเมินราคาตามจำนวนใหม่ ยอดสินค้าที่เหลือสูงกว่ายอดหลังคืน ฿${baht(Number(data.additionalAmount ?? 0))}`
         : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการคืน"
         : data?.status === "INVALID_ORDER_STATUS" ? `คืนบางรายการไม่ได้: สถานะปัจจุบันคือ ${data.current}`
         : data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
@@ -5930,7 +5944,7 @@ export default function PosPage() {
                             );
                           })}
                         <div style={{ fontSize: 12, color: "#8a6100" }}>
-                          ยอดคืนประมาณ ฿{baht(getPartialRefundPreview(row))}
+                          ยอดคืนจริงจะคำนวณจากจำนวนที่เหลือใหม่ หากไม่ครบขั้นต่ำราคาส่ง/โปร ยอดคืนจะลดลงตามเงื่อนไขเดิมตอนขาย
                         </div>
                         {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
                             (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}

@@ -1514,6 +1514,8 @@ const TH: ManualContent = {
       steps: [
         "ค้นด้วยเลขใบเสร็จ/order id หรือเปิดบิลล่าสุด เลือกเหตุผลและรายละเอียด แล้วคืนทั้งบิลหรือเลือกจำนวนสะสมรายรายการ",
         "หลังคืน กด ดูใบรับคืนล่าสุด หรือเปิด ดูประวัติบิล แล้วเลือก ดูใบรับคืนรายการนี้ เพื่อพิมพ์เอกสารของการคืนครั้งนั้น; มูลค่าต่อรายการคือยอดคืนจริงหลังเฉลี่ยส่วนลดจากบิลเดิม ส่วน ดูใบขายเดิม ยังคงจำนวน ราคาป้าย ส่วนลด และยอดเดิม เพราะเอกสารขายจะไม่ถูกแก้ย้อนหลัง",
+        "คืนบางรายการจะตรวจจำนวนสินค้าที่เหลือด้วยกติกาตอนขายอีกครั้ง ถ้าเหลือไม่ครบขั้นต่ำราคาส่ง/โปร ระบบจะปรับมูลค่าของที่เหลือและลดยอดคืนเงิน พร้อมแสดงส่วนต่างในประวัติบิล",
+        "กด ดูประวัติบิล ที่บิลแต่ละใบเพื่อดู Timeline ตั้งแต่ยอดขายเดิม การคืนแต่ละครั้ง รายการที่คืน ผู้ทำรายการ/ผู้อนุมัติ สถานะคืนเงินจริง ใบลดหนี้ และยอดคงเหลือหลังคืน โดยใบขายเดิมจะไม่ถูกแก้ย้อนหลัง",
         "เงินสดคืนเสร็จทันที; QR/บัตร/Wallet อยู่สถานะรอยืนยันจนผู้มี payment.refund บันทึกเลขอ้างอิงการคืนเงินจริง กะจะปิดไม่ได้ถ้ายังค้าง",
         "เปลี่ยนสินค้า จะคืนของเดิมก่อน แล้วดึงรายการที่เหลือมาเป็นตะกร้าบิลใหม่ ให้ปรับสินค้าและรับเงินใหม่ตามปกติ",
         "Void ใช้เฉพาะบิลลงผิดในกะที่ยังเปิด ไม่มีรายการคืนมาก่อน ต้องมีเหตุผลและ PIN ผู้อนุมัติคนที่สอง; หลังปิดกะใช้ Return",
@@ -2932,6 +2934,8 @@ const EN: ManualContent = {
       steps: [
         "Search by receipt/order id or use recent sales. Select a reason and mandatory detail, then return the full bill or cumulative quantities per line.",
         "After a return, use View latest return slip, or open Bill history and choose the specific return slip to reprint that event. Line amounts are the actual refund after allocating the original discounts. View original sale keeps the original quantities, shelf prices, discounts, and total because the sale document is never rewritten.",
+        "A partial return rechecks the retained quantity against the sale-time wholesale/promotion rules. Falling below a threshold reprices the retained goods and reduces the refund; Bill history shows that adjustment.",
+        "Use Bill history on each receipt to see the original sale, every return, returned lines, operator/approver, refund settlement, credit note, and remaining net amount. The original sale document is never rewritten.",
         "Cash refunds complete immediately. QR/card/wallet allocations remain pending until someone with payment.refund records the external reference; the shift cannot close while they remain pending.",
         "Exchange first returns the old goods, then loads the remaining lines into a new cart for an ordinary new sale.",
         "Void only a mis-rung bill from the still-open shift, with no prior return, a reason, and a second approver PIN. After close, use Return.",

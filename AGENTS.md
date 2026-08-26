@@ -86,7 +86,9 @@ wrong, and update the doc in the same change.
   replays the original write instead of double-charging or moving cash twice. Refund allocations
   split cash (immediate) from non-cash (pending until `payment.refund`); a shift can't close with a
   pending allocation, and a return refunded across cash + card must still count once, not once per
-  allocation row. Tax documents are immutable once issued; e-Tax submission (`7.94`) is a separate
+  allocation row. A partial return rechecks the retained quantity against the sale-time
+  wholesale/promotion snapshot; falling below a threshold reduces the refund rather than preserving
+  an unqualified wholesale price. Tax documents are immutable once issued; e-Tax submission (`7.94`) is a separate
   gated queue, not automatic, and its cron route doesn't yet call `recordJobRun()` like the others —
   don't copy that. `pos_only` accounts are hard-blocked from `/admin` login, not just hidden from the
   menu. **A manual discount, a void, and cash out of the drawer each demand a second person's PIN

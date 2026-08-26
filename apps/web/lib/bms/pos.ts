@@ -24,7 +24,7 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
-import { isFixedPricePack, type PriceTier, type Promotion } from "./pricing";
+import { isFixedPricePack, priceRemainingLines, type PriceTier, type Promotion } from "./pricing";
 import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
 import { markDepositCompletedInTx, takeDeposit, type Deposit } from "./deposits";
 import {
@@ -1468,6 +1468,8 @@ export type PosRecentReceipt = {
     returnMode: "FULL" | "PARTIAL";
     isVoid: boolean;
     refundAmount: number;
+    pricingAdjustmentAmount: number;
+    remainingAmount: number | null;
     settlementStatus: "PENDING" | "COMPLETED";
     note: string | null;
     returnedAt: string;
@@ -2689,6 +2691,7 @@ export async function listRecentPosSales(
 
   const returnRows = await query<any>(
     `SELECT pr.order_id, pr.id, pr.return_mode, pr.is_void, pr.refund_amount,
+            pr.pricing_adjustment_amount, pr.remaining_amount_after_return,
             pr.settlement_status, pr.note, pr.created_at,
             COALESCE(returned_user.name, returned_user.email) AS returned_by_name,
             COALESCE(approved_user.name, approved_user.email) AS approved_by_name,
@@ -2756,6 +2759,10 @@ export async function listRecentPosSales(
       returnMode: row.return_mode,
       isVoid: Boolean(row.is_void),
       refundAmount: Number(row.refund_amount),
+      pricingAdjustmentAmount: Number(row.pricing_adjustment_amount ?? 0),
+      remainingAmount: row.remaining_amount_after_return == null
+        ? null
+        : Number(row.remaining_amount_after_return),
       settlementStatus: row.settlement_status,
       note: row.note ?? null,
       returnedAt: toISO(row.created_at),
@@ -2814,6 +2821,8 @@ export type PosReturnResult =
       returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
+      pricingAdjustmentAmount: number;
+      remainingAmount: number;
       replayed: boolean;
     }
   | { status: "ORDER_NOT_FOUND" }
@@ -2824,6 +2833,7 @@ export type PosReturnResult =
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
   | { status: "APPROVAL_REQUIRED"; reason: string };
 
 export type PosRefundAllocation = {
@@ -2848,6 +2858,10 @@ export type PosPartialReturnResult =
       returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
+      /** ยอดคืนที่ลดลงเพราะจำนวนคงเหลือไม่ผ่านราคาตามจำนวนเดิม */
+      pricingAdjustmentAmount: number;
+      /** มูลค่าสุทธิที่ยังคงอยู่บนการขายเดิมหลังการคืนครั้งนี้ */
+      remainingAmount: number;
       /** แต้มที่ดึงคืนเพราะการคืนครั้งนี้ (7.96) */
       pointsReversed?: number;
       /** แต้มที่คืนให้ลูกค้าเพราะบิลเดิมใช้แต้มไป */
@@ -2862,6 +2876,7 @@ export type PosPartialReturnResult =
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
   | { status: "APPROVAL_REQUIRED"; reason: string; refundAmount: number };
 
 function approvalRuleForRefundAmount(refundAmount: number): {
@@ -2904,6 +2919,8 @@ export async function returnPosSale(input: {
     returnedItems: result.returnedItems,
     settlementStatus: result.settlementStatus,
     refunds: result.refunds,
+    pricingAdjustmentAmount: result.pricingAdjustmentAmount,
+    remainingAmount: result.remainingAmount,
     replayed: result.replayed,
   };
 }
@@ -2935,6 +2952,9 @@ async function ensurePosReturnCreditNote(input: {
   actorUserId: string;
   returnedItems: Array<{ orderItemId: number; refundAmount: number }>;
 }): Promise<string | null> {
+  // คืนของได้ 0 บาทเมื่อของที่เก็บไว้เสียสิทธิ์โปรพอดีกับมูลค่าของที่คืน
+  // ไม่มีมูลค่าให้ลดหนี้ จึงไม่ควรสร้างเอกสาร 0 บาทหรือรายงาน error หลอก
+  if (input.refundAmount <= 0) return null;
   try {
     const note = await issueCreditNote({
       tenantId: input.tenantId,
@@ -2994,8 +3014,11 @@ async function processPosReturn(input: {
       refund_amount: string;
       settlement_status: "PENDING" | "COMPLETED";
       created_at: unknown;
+      pricing_adjustment_amount: string;
+      remaining_amount_after_return: string | null;
     }>(
-      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status, created_at
+      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status,
+              created_at, pricing_adjustment_amount, remaining_amount_after_return
          FROM bms_pos_returns
         WHERE tenant_id = $1 AND idempotency_key = $2
         LIMIT 1`,
@@ -3055,6 +3078,8 @@ async function processPosReturn(input: {
         returnedItems,
         settlementStatus: existing.settlement_status,
         refunds: refunds.rows.map(mapRefundAllocation),
+        pricingAdjustmentAmount: Number(existing.pricing_adjustment_amount ?? 0),
+        remainingAmount: Number(existing.remaining_amount_after_return ?? 0),
         creditNoteNo,
         replayed: true,
       };
@@ -3067,8 +3092,17 @@ async function processPosReturn(input: {
       pos_device_id: string | null;
       total_amount: string;
       shipping_fee: string | null;
+      discount_amount: string;
+      extra_total: string;
     }>(
-      `SELECT id, status, channel, pos_device_id, total_amount, shipping_fee
+      `SELECT id, status, channel, pos_device_id, total_amount, shipping_fee,
+              discount_amount,
+              COALESCE((
+                SELECT SUM(extra.qty * extra.unit_amount)
+                  FROM bms_order_extra_lines extra
+                 WHERE extra.tenant_id = bms_orders.tenant_id
+                   AND extra.order_id = bms_orders.id
+              ), 0) AS extra_total
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -3103,6 +3137,8 @@ async function processPosReturn(input: {
       pack_qty: number | null;
       pack_unit_price: string | null;
       unit_price: string;
+      receipt_unit_price: string;
+      pricing_snapshot: unknown;
       returned_pack_qty: string | null;
       returned_refund_amount: string | null;
     }>(
@@ -3116,6 +3152,8 @@ async function processPosReturn(input: {
               oi.pack_qty,
               oi.pack_unit_price,
               oi.unit_price,
+              oi.receipt_unit_price,
+              oi.pricing_snapshot,
               COALESCE((
                 SELECT SUM(pri.pack_qty)
                   FROM bms_pos_return_items pri
@@ -3194,7 +3232,7 @@ async function processPosReturn(input: {
       allocatedNet += lineNet;
     });
 
-    const calculated = [...requestedMap.entries()].map(([orderItemId, packQty]) => {
+    const rawCalculated = [...requestedMap.entries()].map(([orderItemId, packQty]) => {
       const item = byId.get(orderItemId)!;
       const originalPackQty = item.pack_qty ?? item.qty;
       const remainingPackQty = originalPackQty - Number(item.returned_pack_qty ?? 0);
@@ -3205,7 +3243,82 @@ async function processPosReturn(input: {
         : Math.min(remainingLineRefund, Math.round(((lineNetTotals.get(item.id) ?? 0) * packQty / originalPackQty) * 100) / 100);
       return { item, packQty, refundAmount };
     });
-    const roundedRefundAmount = Math.round(calculated.reduce((sum, line) => sum + line.refundAmount, 0) * 100) / 100;
+    const rawRefundAmount = Math.round(rawCalculated.reduce(
+      (sum, line) => sum + line.refundAmount, 0
+    ) * 100) / 100;
+
+    // ประเมิน "สินค้าที่ลูกค้าเก็บไว้" ใหม่ด้วยกติกาที่ snapshot ตอนขาย
+    // ตัวอย่าง: 5 × 100 ได้ราคาส่ง 90 = 450; คืน 1 แล้วเหลือ 4 ไม่ถึงขั้นต่ำ
+    // มูลค่าคงเหลือจึงเป็น 400 และคืนได้ 50 ไม่ใช่รักษาราคาส่งแล้วคืน 90
+    const remainingPricing = priceRemainingLines(
+      orderItems.map((item) => ({
+        id: item.id,
+        sku: item.product_sku,
+        size: item.size,
+        qty: Number(item.qty),
+        packQty: Number(item.pack_qty ?? item.qty),
+        returnedPackQty: Number(item.returned_pack_qty ?? 0),
+        receiptUnitPrice: Number(item.receipt_unit_price),
+        packUnitPrice: item.pack_unit_price == null ? null : Number(item.pack_unit_price),
+        pricingSnapshot: item.pricing_snapshot,
+      })),
+      requestedMap
+    );
+    const allReturned = remainingPricing.lines.every((line) => line.remainingPackQty === 0);
+    const extraTotal = Number(order.extra_total ?? 0);
+    const originalPricingSubtotal = Math.max(0,
+      Number(order.total_amount) + Number(order.discount_amount ?? 0) - extraTotal);
+    const originalProductNet = Math.max(0, Number(order.total_amount) - extraTotal);
+    // ส่วนลดระดับบิลเดิม (สมาชิก/คูปอง/แต้ม/มือ) ยังคงตามสัดส่วนเดิม
+    // เปลี่ยนเฉพาะกลไกราคาตามจำนวนและโปร ซึ่งต้องตรวจจำนวนใหม่
+    const orderDiscountRatio = originalPricingSubtotal > 0
+      ? Math.min(1, originalProductNet / originalPricingSubtotal)
+      : 1;
+    const desiredRemainingAmount = allReturned
+      ? 0
+      : Math.round((
+          Number(order.shipping_fee ?? 0)
+          + extraTotal
+          + remainingPricing.pricingSubtotal * orderDiscountRatio
+        ) * 100) / 100;
+    const previousRefundAmount = Math.round(orderItems.reduce(
+      (sum, item) => sum + Number(item.returned_refund_amount ?? 0), 0
+    ) * 100) / 100;
+    const targetCumulativeRefund = Math.max(0,
+      Math.round((orderAmount - desiredRemainingAmount) * 100) / 100);
+    const roundedRefundAmount = Math.round(
+      (targetCumulativeRefund - previousRefundAmount) * 100
+    ) / 100;
+    if (roundedRefundAmount < 0) {
+      await client.query("ROLLBACK");
+      return {
+        status: "REPRICE_PAYMENT_REQUIRED",
+        additionalAmount: Math.max(0, Math.round(Math.abs(roundedRefundAmount) * 100) / 100),
+        remainingAmount: desiredRemainingAmount,
+      };
+    }
+    const pricingAdjustmentAmount = Math.max(0,
+      Math.round((rawRefundAmount - roundedRefundAmount) * 100) / 100);
+    const remainingAmount = Math.max(0,
+      Math.round((orderAmount - previousRefundAmount - roundedRefundAmount) * 100) / 100);
+
+    // ใบลดหนี้ต้องแจกยอดคืนลงแต่ละบรรทัด และผลรวมต้องตรงยอดเงินจริง
+    const weightTotal = rawCalculated.reduce((sum, line) => (
+      sum + (line.refundAmount > 0
+        ? line.refundAmount
+        : line.packQty * Number(line.item.receipt_unit_price))
+    ), 0);
+    let allocatedRefund = 0;
+    const calculated = rawCalculated.map((line, index) => {
+      const weight = line.refundAmount > 0
+        ? line.refundAmount
+        : line.packQty * Number(line.item.receipt_unit_price);
+      const refundAmount = index === rawCalculated.length - 1
+        ? Math.round((roundedRefundAmount - allocatedRefund) * 100) / 100
+        : Math.round((roundedRefundAmount * (weightTotal > 0 ? weight / weightTotal : 0)) * 100) / 100;
+      allocatedRefund += refundAmount;
+      return { ...line, refundAmount };
+    });
 
     const approvalRule = approvalRuleForRefundAmount(roundedRefundAmount);
     let approvedBy = input.approvedByUserId?.trim() || null;
@@ -3232,12 +3345,13 @@ async function processPosReturn(input: {
     const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
-          refund_amount, settlement_status, idempotency_key, note, is_void)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10)
+          refund_amount, settlement_status, idempotency_key, note, is_void,
+          pricing_adjustment_amount, remaining_amount_after_return)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10, $11, $12)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
-        input.isVoid === true]
+        input.isVoid === true, pricingAdjustmentAmount, remainingAmount]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -3377,10 +3491,6 @@ async function processPosReturn(input: {
       [input.tenantId, posReturnId, settlementStatus]
     );
 
-    const allReturned = orderItems.every((item) => {
-      const original = item.pack_qty ?? item.qty;
-      return Number(item.returned_pack_qty ?? 0) + Number(requestedMap.get(item.id) ?? 0) >= original;
-    });
     if (allReturned) {
       await client.query(
         `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
@@ -3432,6 +3542,8 @@ async function processPosReturn(input: {
         refundAmount: roundedRefundAmount,
         approvedBy,
         settlementStatus,
+        pricingAdjustmentAmount,
+        remainingAmount,
         pointsReversed: loyaltyReversal.earnedReversed,
         pointsReturned: loyaltyReversal.redeemedReturned,
         // การยกเลิกบิลเดินผ่านเครื่องจักรตัวเดียวกับการคืน — ติดธงไว้ ไม่งั้นรายงาน
@@ -3512,6 +3624,8 @@ async function processPosReturn(input: {
       returnedItems,
       settlementStatus,
       refunds,
+      pricingAdjustmentAmount,
+      remainingAmount,
       creditNoteNo,
       pointsReversed: loyaltyReversal.earnedReversed,
       pointsReturned: loyaltyReversal.redeemedReturned,

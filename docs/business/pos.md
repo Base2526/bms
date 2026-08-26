@@ -1011,6 +1011,21 @@ return that failed to record:
   sale document number so scanning it returns to the searchable bill rather than a CN number that the
   receipt search does not treat as sale authority
 
+### Partial returns recheck quantity pricing (9.23)
+
+The immutable original receipt does not mean the customer keeps a wholesale price after returning
+below its minimum. Every partial return rebuilds the retained basket with the wholesale tiers and
+promotion snapshotted at sale time. For example, five units at a 90 wholesale price cost 450; returning
+one leaves four units at the 100 shelf price, so the refund is 50 and the retained balance is 400 — not
+a 90 refund that leaves the four retained units at wholesale price.
+
+Sale-time rules are used deliberately. Reading today's product rules would let a later admin edit
+change the refund on an old receipt. Order-level member/coupon/points/manual discounts keep their
+original proportional treatment; only quantity pricing is re-evaluated. The return row stores both
+the pricing adjustment and the net balance afterward, and Bill history discloses them. If repricing
+would make the requested return require collecting additional money instead of paying a refund, the
+refund-only flow is refused rather than silently accepting goods with an unexplained zero payout.
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
@@ -1032,10 +1047,12 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   movements + void, `7.98` branch transfers + stock counts, `9.0` deposits, `9.5` retry-safe
   drawer movements, `9.6` Scan Manager/PO receipts, `9.7` petty-cash expenses, `9.8`
   personal-funded sole-owner expenses, `9.9` the branch petty-cash wallet, and `9.10` its ledger
-  integrity constraints). Also apply `9.21` (pack-aware line uniqueness) and `9.22`
+  integrity constraints). Also apply `9.21` (pack-aware line uniqueness), `9.22`
   (`receipt_unit_price` snapshot) — without `9.22` a receipt reprint shows the discounted price as if
   the product price had been edited after the sale, and its one-time backfill of existing rows only
-  runs when the migration does. `7.97` seeds `pos.void` and
+  runs when the migration does. Apply `9.23` as well so partial returns recheck retained quantities
+  against the sale-time wholesale/promotion snapshot instead of preserving a now-unqualified price.
+  `7.97` seeds `pos.void` and
   `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
   without it those buttons 403 silently. `9.7` seeds `pos.expense.create` to
   Manager/Sales/Cashier and adds the expense ledger; `9.8` seeds `pos.expense.personal` only to

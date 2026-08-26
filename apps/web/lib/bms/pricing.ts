@@ -22,6 +22,140 @@ export type PriceTier = {
   discountPct?: number | null;
 };
 
+export type PricingSnapshot = {
+  priceTiers: PriceTier[];
+  promotion: Promotion | null;
+};
+
+/**
+ * กติกาที่ติดมากับบิลเป็นข้อมูลถาวร แต่แถว legacy/backfill อาจมีรูปไม่สมบูรณ์ได้
+ * จึง normalize ก่อนนำไปคิดเงินจริงทุกครั้ง แทนการ cast JSON จากฐานแล้วเชื่อทันที
+ */
+export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
+  let value = raw;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { value = null; }
+  }
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const priceTiers = Array.isArray(record.priceTiers)
+    ? record.priceTiers.flatMap((candidate): PriceTier[] => {
+        if (!candidate || typeof candidate !== "object") return [];
+        const tier = candidate as Record<string, unknown>;
+        const minQty = Number(tier.minQty);
+        const scope = tier.scope === "CROSS_VARIANT_PERCENT"
+          ? "CROSS_VARIANT_PERCENT" as const
+          : "PER_VARIANT_FIXED" as const;
+        const unitPrice = tier.unitPrice == null ? null : Number(tier.unitPrice);
+        const discountPct = tier.discountPct == null ? null : Number(tier.discountPct);
+        if (!Number.isInteger(minQty) || minQty < 2) return [];
+        if (scope === "CROSS_VARIANT_PERCENT"
+            && (!Number.isFinite(discountPct) || discountPct! <= 0 || discountPct! > 100)) return [];
+        if (scope === "PER_VARIANT_FIXED"
+            && (!Number.isFinite(unitPrice) || unitPrice! < 0)) return [];
+        return [{
+          minQty,
+          scope,
+          size: tier.size == null ? null : String(tier.size),
+          unitPrice,
+          discountPct,
+        }];
+      })
+    : [];
+  const promo = record.promotion && typeof record.promotion === "object"
+    ? record.promotion as Record<string, unknown>
+    : null;
+  const promotion: Promotion | null = promo?.kind === "BUY_X_GET_Y"
+    && Number.isInteger(Number(promo.buyQty)) && Number(promo.buyQty) >= 1
+    && Number.isInteger(Number(promo.getQty)) && Number(promo.getQty) >= 1
+      ? { kind: "BUY_X_GET_Y", buyQty: Number(promo.buyQty), getQty: Number(promo.getQty) }
+      : promo?.kind === "N_FOR_PRICE"
+        && Number.isInteger(Number(promo.buyQty)) && Number(promo.buyQty) >= 1
+        && Number.isFinite(Number(promo.bundlePrice)) && Number(promo.bundlePrice) >= 0
+          ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice) }
+          : null;
+  return { priceTiers: canonicalPriceTiers(priceTiers), promotion };
+}
+
+export type RemainingPricingLine = {
+  id: number;
+  sku: string;
+  size: string;
+  /** จำนวนหน่วยฐานในบรรทัดเดิม */
+  qty: number;
+  /** จำนวนหน่วยขายในบรรทัดเดิม */
+  packQty: number;
+  returnedPackQty: number;
+  receiptUnitPrice: number;
+  packUnitPrice: number | null;
+  pricingSnapshot: unknown;
+};
+
+/**
+ * ประเมินตะกร้าที่ลูกค้า "เก็บไว้" หลังคืน ด้วยกติกา ณ ตอนขาย
+ *
+ * Named pack คงราคาแพ็กตามเดิม แต่จำนวนหน่วยฐานในแพ็กยังนับเข้า threshold ราคา
+ * ส่งของ SKU เหมือนตอนสร้างออร์เดอร์ ส่วน BASE ต้องทดสอบราคาส่ง/โปรใหม่จากจำนวน
+ * คงเหลือทั้งหมด ไม่ใช่รักษาราคาที่เคยผ่านขั้นต่ำไว้ตลอดอายุบิล
+ */
+export function priceRemainingLines(
+  lines: RemainingPricingLine[],
+  additionalReturns: ReadonlyMap<number, number> = new Map()
+): {
+  pricingSubtotal: number;
+  shelfSubtotal: number;
+  pricingDiscount: number;
+  lines: Array<{ id: number; remainingPackQty: number; amount: number; shelfAmount: number }>;
+} {
+  const remaining = lines.map((line) => {
+    const originalPackQty = Math.max(1, Math.trunc(Number(line.packQty)));
+    const returned = Math.max(0, Math.trunc(Number(line.returnedPackQty) || 0));
+    const extra = Math.max(0, Math.trunc(Number(additionalReturns.get(line.id) ?? 0)));
+    const remainingPackQty = Math.max(0, originalPackQty - returned - extra);
+    const baseQtyPerPack = Math.max(1, Math.round(Number(line.qty) / originalPackQty));
+    return { ...line, remainingPackQty, remainingBaseQty: remainingPackQty * baseQtyPerPack };
+  });
+  const variantKey = (sku: string, size: string) => `${sku}\u0000${size}`;
+  const qtyByVariant = new Map<string, number>();
+  const qtyBySku = new Map<string, number>();
+  for (const line of remaining) {
+    const key = variantKey(line.sku, line.size);
+    qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + line.remainingBaseQty);
+    qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.remainingBaseQty);
+  }
+
+  const priced = remaining.map((line) => {
+    const shelfAmount = round2(line.receiptUnitPrice * line.remainingPackQty);
+    if (line.packUnitPrice != null) {
+      return {
+        id: line.id,
+        remainingPackQty: line.remainingPackQty,
+        amount: round2(line.packUnitPrice * line.remainingPackQty),
+        shelfAmount,
+      };
+    }
+    const snapshot = normalizePricingSnapshot(line.pricingSnapshot);
+    const promo = snapshot.promotion;
+    const amount = promo
+      ? applyPromotion(line.receiptUnitPrice, line.remainingBaseQty, promo).amount
+      : round2(unitPriceForQty(
+          line.receiptUnitPrice,
+          snapshot.priceTiers,
+          qtyByVariant.get(variantKey(line.sku, line.size)) ?? line.remainingBaseQty,
+          qtyBySku.get(line.sku) ?? line.remainingBaseQty,
+          line.size
+        ) * line.remainingBaseQty);
+    return { id: line.id, remainingPackQty: line.remainingPackQty, amount, shelfAmount };
+  });
+  const pricingSubtotal = round2(priced.reduce((sum, line) => sum + line.amount, 0));
+  const shelfSubtotal = round2(priced.reduce((sum, line) => sum + line.shelfAmount, 0));
+  return {
+    pricingSubtotal,
+    shelfSubtotal,
+    pricingDiscount: round2(Math.max(0, shelfSubtotal - pricingSubtotal)),
+    lines: priced,
+  };
+}
+
 /**
  * BASE คือหน่วยฐานของสินค้า ไม่ใช่แพ็กที่มีราคาคงที่ของตัวเอง จึงยังเข้า
  * ราคาส่งและโปรโมชันได้ตามปกติ ส่วน packCode อื่นต้องคงราคาแพ็กและไม่ให้

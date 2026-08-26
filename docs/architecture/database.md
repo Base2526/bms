@@ -28,12 +28,12 @@ operators must resolve those records before retrying the migration.
 | Module | Tables | Key migration |
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair) |
-| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot) |
+| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.21` (`9.4` repair) |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_tax_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency) | `7.84`–`9.23` (`9.4` repair) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
@@ -353,6 +353,14 @@ so a size priced at 1,000 with a 10% cross-size wholesale rule still reprints as
 explicit −100 adjustment instead of silently relabelling the product price as 900. Legacy rows are
 backfilled once from the best available variant/base-pack evidence at migration time; new rows are
 exact snapshots created with the order.
+
+Since `9.23`, `pricing_snapshot` preserves the wholesale tiers and product promotion used when the
+order was created. A POS partial return prices the retained quantities against this snapshot, not the
+shop's current rules: dropping below a wholesale threshold therefore removes that price from the
+retained basket. `bms_pos_returns.pricing_adjustment_amount` records how much this reduced the current
+refund, while `remaining_amount_after_return` records the resulting net balance. The original order
+and tax document remain immutable. Legacy rule snapshots are reconstructed once from the rules present
+when `9.23` is applied, because the exact historical rule set was not previously stored.
 
 **Shipping carrier integration (`7.76`/`7.77`)** — both migrations are additive on `bms_shipments`;
 a manual shipment stays valid and simply keeps `carrier_booking_status = 'manual'` with the sync

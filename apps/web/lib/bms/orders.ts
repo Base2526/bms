@@ -35,6 +35,7 @@ import {
 } from "./membership";
 import {
   applyPromotion,
+  canonicalPriceTiers,
   isFixedPricePack,
   normalizePackCode,
   unitPriceForQty,
@@ -133,6 +134,8 @@ export type CreatedLine = {
   unitPrice: number;
   /** ราคาที่พิมพ์บนใบเสร็จก่อนราคาส่ง/โปรโมชัน (snapshot ไม่อ่านราคาสินค้าปัจจุบัน) */
   receiptUnitPrice: number;
+  /** กติกาคิดราคาตามจำนวน/โปร ณ ตอนขาย สำหรับประเมินยอดคงเหลือหลังคืน */
+  pricingSnapshot: { priceTiers: PriceTier[]; promotion: Promotion | null };
   availableAfter: number;
   packCode?: string | null;
   packUnitName?: string | null;
@@ -660,6 +663,10 @@ export async function createOrder(
         qty: it.qty,
         unitPrice,
         receiptUnitPrice: packUnitPrice ?? listPrice,
+        pricingSnapshot: {
+          priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
+          promotion: promo,
+        },
         availableAfter: Number(upd.rows[0].available_after),
         packCode: it.packCode ?? null,
         packUnitName: it.packUnitName ?? null,
@@ -880,11 +887,11 @@ export async function createOrder(
     for (const ln of lines) {
       await client.query(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
-                                      receipt_unit_price, pack_code, pack_unit_name, pack_qty, pack_unit_price, vat_category)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $9, $10, $11, $12, $13)`,
+                                      receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price, vat_category)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13)`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
-          ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice]
+          ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot)]
       );
     }
 

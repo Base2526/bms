@@ -324,7 +324,7 @@ test("recent sales carry the member so an exchange can re-attach them", async ()
   assert.equal(lines.length, 3);
 });
 
-test("wholesale receipt reprint keeps the list price before and after a partial return", async () => {
+test("partial return loses wholesale eligibility while the original receipt stays immutable", async () => {
   await query(
     `INSERT INTO bms_product_price_tiers
        (tenant_id, product_sku, min_qty, scope, discount_pct, unit_price, size)
@@ -376,8 +376,12 @@ test("wholesale receipt reprint keeps the list price before and after a partial 
   });
   assert.equal(returned.status, "PARTIAL_RETURNED", JSON.stringify(returned));
   if (returned.status !== "PARTIAL_RETURNED") return;
-  assert.equal(returned.refundAmount, 90, "คืนหนึ่งชิ้นต้องคืนตามราคาสุทธิจริง");
-  assert.equal(returned.returnedItems[0].refundAmount, 90);
+  assert.equal(returned.refundAmount, 50,
+    "คืนหนึ่งแล้วเหลือ 4 ต่ำกว่าขั้น 5: จ่ายเดิม 450 − มูลค่าคงเหลือ 400 = คืน 50");
+  assert.equal(returned.returnedItems[0].refundAmount, 50);
+  assert.equal(returned.pricingAdjustmentAmount, 40,
+    "ราคาส่งเดิม 90 ถูกหักสิทธิ์คืน 40 เพราะของคงเหลือกลับไปเป็นราคาป้าย");
+  assert.equal(returned.remainingAmount, 400);
 
   recent = await listRecentPosSales(tenantId, deviceId, 20);
   reprint = recent.find((row) => row.orderId === sale.orderId);
@@ -390,7 +394,7 @@ test("wholesale receipt reprint keeps the list price before and after a partial 
 
 test("close shift", async () => {
   const res = await closePosShift({
-    tenantId, shiftId, closedBy: cashierId, countedCash: 1000 + 830 - 415 + 450 - 90,
+    tenantId, shiftId, closedBy: cashierId, countedCash: 1000 + 830 - 415 + 450 - 50,
   });
   // PENDING_REFUNDS ก็ถือว่าถูก: เงินคืนที่ไม่ใช่เงินสดต้องมีคนยืนยันก่อนปิดกะ
   assert.ok(["CLOSED", "PENDING_REFUNDS"].includes(res.status), JSON.stringify(res));
