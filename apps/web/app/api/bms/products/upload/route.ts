@@ -25,7 +25,8 @@ async function handlePOST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 10MB" }, { status: 413 });
 
   try {
-    const row = await persistWebFile(file);
+    // รูปสินค้าโหลดจากหน้าร้านสาธารณะ ไม่มี session — ต้องเป็น public
+    const row = await persistWebFile(file, undefined, "public");
     return NextResponse.json({
       url: buildFileUrlById(row.id),
       name: row.original_name ?? file.name ?? null,

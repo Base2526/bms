@@ -65,6 +65,14 @@ wrong, and update the doc in the same change.
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
   dispense" a supported move.
+- **`files.visibility` decides who may read an upload (9.26).** `/api/files/[id]` serves a `public`
+  row with no session (storefront product images, the legacy community uploads) and demands one for
+  `private`; a missing or unknown value is treated as private, so the route fails closed. Listing and
+  uploading (`GET`/`POST /api/files`) always require a session — the listing returned every file's
+  `relpath` to anyone. `persistWebFile`/`persistBuffer` default to `private` and only
+  `persistUploadStream` stays `public`; a new upload path that forgets to choose gets the safe one.
+  Slips, Inbox attachments, generated reports and prescription images are `private`. Enforced by
+  `scripts/file-visibility-contract.test.mts`.
 - **Clinical evidence is health data.** Prescription images never go through
   `/api/files/[id]` (no auth, sequential ids); they stream from
   `/api/bms/pharmacy/evidence/[id]/file` behind a session, `pharmacy.evidence.read`, and a tenant
@@ -348,6 +356,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
 | `pharmacy-clinical-evidence-db-contract` | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client |
+| `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, and every upload site's public/private choice |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |

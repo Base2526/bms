@@ -53,6 +53,16 @@ function buildKey(rawName: string): { key: string; storedName: string } {
   return { key: `${dateKeyPrefix()}/${storedName}`, storedName };
 }
 
+/**
+ * public  = /api/files/[id] เสิร์ฟให้ทุกคนโดยไม่ต้องล็อกอิน (รูปสินค้าหน้าร้าน,
+ *           ไฟล์ของฟีเจอร์ชุมชนเดิม)
+ * private = route นั้นต้องมี session (สลิปโอนเงิน, ไฟล์แนบ Inbox, รายงาน)
+ *
+ * ค่าปริยายของคอลัมน์ในฐาน (9.26) คือ private — โค้ดใหม่ที่ลืมระบุจะได้ของที่
+ * ปลอดภัยกว่า ไม่ใช่หลุดออกไป
+ */
+export type FileVisibility = "public" | "private";
+
 async function insertFileRow(params: {
   storedName: string;
   originalName: string | null;
@@ -60,10 +70,11 @@ async function insertFileRow(params: {
   size: number;
   checksum: string;
   key: string;
+  visibility: FileVisibility;
 }): Promise<StoredFileRow> {
   const { rows } = await query(
-    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
     [
       params.storedName,
@@ -72,13 +83,18 @@ async function insertFileRow(params: {
       params.size,
       params.checksum,
       params.key,
+      params.visibility,
     ]
   );
   return rows[0] as StoredFileRow;
 }
 
 /** รับ Web File → เซฟผ่าน storage driver → คืนข้อมูล row ในตาราง files */
-export async function persistWebFile(file: File, renameTo?: string): Promise<StoredFileRow> {
+export async function persistWebFile(
+  file: File,
+  renameTo?: string,
+  visibility: FileVisibility = "private"
+): Promise<StoredFileRow> {
   const buf = Buffer.from(await file.arrayBuffer());
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
   const { key, storedName } = buildKey(renameTo || file.name || "file.bin");
@@ -92,6 +108,7 @@ export async function persistWebFile(file: File, renameTo?: string): Promise<Sto
     size: buf.length,
     checksum,
     key,
+    visibility,
   });
 }
 
@@ -106,7 +123,11 @@ export async function persistUploadStream(
     encoding?: string | null;
     createReadStream: () => NodeJS.ReadableStream;
   },
-  renameTo?: string
+  renameTo?: string,
+  // เส้นทางนี้คือ GraphQL upload ของฟีเจอร์เดิม (avatar, รูปโพสต์, ไฟล์แชทชุมชน)
+  // ซึ่งหน้าเว็บโหลดตรงจาก /api/files โดยไม่มี session — คงเป็น public ไว้
+  // ผู้เรียกที่รับไฟล์อ่อนไหวต้องส่ง "private" มาเอง
+  visibility: FileVisibility = "public"
 ): Promise<StoredFileRow> {
   const { key, storedName } = buildKey(renameTo || upload.filename || "file.bin");
 
@@ -122,6 +143,7 @@ export async function persistUploadStream(
     size,
     checksum,
     key,
+    visibility,
   });
 }
 
@@ -132,7 +154,10 @@ export async function persistUploadStream(
 export async function persistBuffer(
   buf: Buffer,
   filename: string,
-  mimetype: string | null
+  mimetype: string | null,
+  // ผู้ใช้จริงของฟังก์ชันนี้คือไฟล์รายงานที่ generate เอง ซึ่งมี route ดาวน์โหลด
+  // ที่ตรวจ tenant อยู่แล้ว — private เป็นค่าปริยายที่ถูกต้อง
+  visibility: FileVisibility = "private"
 ): Promise<StoredFileRow> {
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
   const { key, storedName } = buildKey(filename);
@@ -146,6 +171,7 @@ export async function persistBuffer(
     size: buf.length,
     checksum,
     key,
+    visibility,
   });
 }
 

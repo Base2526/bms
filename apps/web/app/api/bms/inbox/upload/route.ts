@@ -24,7 +24,8 @@ async function handlePOST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 10MB" }, { status: 413 });
 
   try {
-    const row = await persistWebFile(file);
+    // ไฟล์แนบในบทสนทนาลูกค้า — ต้องมี session จึงเปิดดูได้ (9.26)
+    const row = await persistWebFile(file, undefined, "private");
     return NextResponse.json({
       url: buildFileUrlById(row.id),
       name: row.original_name ?? file.name ?? null,

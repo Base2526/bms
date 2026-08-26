@@ -85,7 +85,8 @@ async function handlePOST(req: NextRequest) {
     if (file.size > MAX_BYTES) return bad("ไฟล์ใหญ่เกิน 10MB", 413);
     const mime = (file.type || "").split(";")[0].trim().toLowerCase();
     if (!ALLOWED_MIME.has(mime)) return bad("รับเฉพาะรูปภาพ (PNG/JPEG/WebP/GIF) หรือ PDF");
-    const row = await persistWebFile(file);
+    // รูปใบสั่งยาเป็นข้อมูลสุขภาพ — private เสมอ (9.26)
+    const row = await persistWebFile(file, undefined, "private");
     stored = {
       id: row.id,
       name: row.original_name ?? file.name ?? null,

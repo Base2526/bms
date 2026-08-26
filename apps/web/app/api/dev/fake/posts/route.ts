@@ -185,7 +185,8 @@ async function handlePOST(req: NextRequest) {
       );
       const filename = `fake_${nanoid(8)}.${ext}`;
       const webFile = makeWebFileFromBuffer(buf, filename, mime);
-      const fileRow = await persistWebFile(webFile);
+      // โพสต์ปลอมของ seeder แสดงบนหน้าเว็บสาธารณะ — public เหมือนของจริง
+      const fileRow = await persistWebFile(webFile, undefined, "public");
       fileRows.push(fileRow);
     }
 

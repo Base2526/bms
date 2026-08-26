@@ -105,9 +105,12 @@ async function handlePOST(req: NextRequest) {
     ) {
       return response({ error: "ไฟล์สลิปไม่ใช่รูปภาพที่รองรับ" }, 400);
     }
+    // สลิปมีชื่อและเลขบัญชีผู้โอน — เปิดดูได้เฉพาะคนที่ล็อกอิน (9.26)
+    // ลูกค้าไม่เคยเห็นสลิปย้อนหลังที่หน้า checkout อยู่แล้ว จึงไม่กระทบ
     const stored = await persistWebFile(
       file,
-      `checkout-${current.checkout.order.displayId}-${file.name}`
+      `checkout-${current.checkout.order.displayId}-${file.name}`,
+      "private"
     );
     const result = await submitCheckoutPaymentByToken(token, {
       method,

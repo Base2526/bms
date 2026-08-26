@@ -594,8 +594,30 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
   นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
   `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
-- **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB แล้วและ
-  verify กับ DB จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 2 ตัว
+- **`9.26__bms_files_visibility.sql` (ไฟล์อ่อนไหวไม่ถูกเสิร์ฟให้คนที่ไม่ได้ล็อกอิน) apply เข้า dev DB แล้วและ
+  verify กับ HTTP จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  · **ต้นเหตุ**: `/api/files/[id]` ไม่ตรวจอะไรเลย และ `files.id` เป็น integer เรียงลำดับ = ไล่นับขึ้นไป
+    โหลดไฟล์ของใครก็ได้ · ที่หนักคือ **สลิปโอนเงิน** (มีชื่อ+เลขบัญชีผู้โอน) และ **ไฟล์แนบ Inbox**
+    · ซ้ำร้าย `GET /api/files` คืนรายชื่อไฟล์ทั้งระบบพร้อม `relpath` และ `POST /api/files` อัปโหลดได้
+      **โดยไม่ต้องล็อกอินทั้งคู่** (สองตัวนี้เสิร์ฟ Files panel ที่ `/settings` ซึ่งเมนูถูกคอมเมนต์ปิดไปแล้ว
+      = UI ตาย แต่ route ยังเปิด)
+  · **แถวเก่าทั้ง 7,532 ถูก backfill เป็น `public` โดยตั้งใจ** — ไม่มีคอลัมน์ไหนบอกได้ว่าอันไหนอ่อนไหว
+    ถ้าเหมาเป็น private ทีเดียว รูปสินค้า/avatar/รูปโพสต์เดิมพังหมดโดยกู้ไม่ถูก · แล้วค่อยดึงกลับเป็น
+    private เฉพาะกลุ่มที่ระบุตัวได้: สลิป (`bms_payments.slip_url`), รายงาน (`bms_generated_reports`),
+    รูปใบสั่งยา (`bms_pharmacy_clinical_evidence`)
+  · **ค่าปริยายของคอลัมน์คือ `private`** — โค้ดใหม่ที่ลืมระบุจะได้ของที่ปลอดภัยกว่า ไม่ใช่หลุด ·
+    `persistWebFile`/`persistBuffer` ปริยาย private · **`persistUploadStream` ปริยาย public โดยตั้งใจ**
+    (GraphQL upload ของฟีเจอร์ชุมชนเดิม: avatar/รูปโพสต์/ไฟล์แชท ซึ่งหน้าเว็บโหลดตรงโดยไม่มี session)
+  · verify ด้วย curl จริงบน dev: public ที่มีอยู่ → `200` · private → `401` · `GET/POST /api/files` → `401`
+  · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
+    **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
+  · **ยังเหลือ**: `/api/files/[id]` ไม่ตรวจ *tenant* — ผู้ใช้ที่ล็อกอินร้าน A เปิดไฟล์ private ของร้าน B
+    ได้ถ้ารู้ id เพราะตาราง `files` ไม่มี `tenant_id` เลย · การเติม tenant_id ต้อง backfill จากตารางที่
+    อ้างถึงไฟล์ (7 ตาราง) ซึ่งใหญ่กว่ารอบนี้ · ของที่อ่อนไหวสุดมี route เฉพาะที่ตรวจ tenant อยู่แล้ว
+    (`/api/bms/reports/download/[id]`, `/api/bms/pharmacy/evidence/[id]/file`) — **ของใหม่ที่อ่อนไหว
+    ให้ทำ route เฉพาะแบบนั้น ไม่ใช่พึ่ง `/api/files`**
+- **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · seed permission ใหม่ 2 ตัว
   (`pharmacy.evidence.read`, `pharmacy.evidence.manage` → **Pharmacist เท่านั้น**)
   · เก็บ 3 อย่างต่อเคส: รูปใบสั่งยา / เลขอ้างอิงใบสั่งยา / บันทึกคำแนะนำ · **เก็บจนกว่าจะลบเอง ไม่มีตัวหมดอายุ**
     (ตกลงกับผู้ใช้) · ลบเป็น soft delete เพื่อให้ยังตรวจได้ว่าใครลบหลักฐานอะไรออกไป

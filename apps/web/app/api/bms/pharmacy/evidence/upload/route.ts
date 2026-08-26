@@ -42,7 +42,8 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "รับเฉพาะรูปภาพ (PNG/JPEG/WebP/GIF) หรือ PDF" }, { status: 400 });
   }
 
-  const row = await persistWebFile(file);
+  // รูปใบสั่งยาเป็นข้อมูลสุขภาพ — private เสมอ (9.26)
+  const row = await persistWebFile(file, undefined, "private");
   const result = await addClinicalEvidence({
     tenantId: auth.tenantId,
     assessmentId,

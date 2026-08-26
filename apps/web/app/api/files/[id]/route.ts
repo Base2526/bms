@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import path from "path";
 import { Readable } from "stream";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
+import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ type FileRow = {
   relpath: string;
   size?: number | null;
   deleted_at?: string | null;
+  visibility?: string | null;
 };
 
 function guessMimeFromName(name: string): string {
@@ -173,7 +175,7 @@ async function handleGET(
 
     const { rows } = await query(
       `
-      SELECT id, filename, original_name, mimetype, relpath, size, deleted_at
+      SELECT id, filename, original_name, mimetype, relpath, size, deleted_at, visibility
       FROM files
       WHERE id = $1
         AND deleted_at IS NULL
@@ -190,6 +192,20 @@ async function handleGET(
 
     if (!row.relpath) {
       return NextResponse.json({ error: "file path missing" }, { status: 404 });
+    }
+
+    // ---- visibility (9.26) ----
+    // route นี้ไม่เคยตรวจอะไรเลย และ files.id เป็นเลข integer เรียงลำดับ ใครก็ไล่
+    // นับขึ้นไปโหลดไฟล์ของคนอื่นได้ · รูปสินค้าหน้าร้านต้องเปิดได้จริงจึงคง public
+    // ส่วนสลิปโอนเงิน/ไฟล์แนบ Inbox/รายงาน ถูกตั้งเป็น private และต้องมี session
+    //
+    // แถวเก่าทั้งหมดถูก backfill เป็น public ตอน migrate เพื่อไม่ให้ของที่ใช้งานอยู่พัง
+    // ค่าที่หายไป/ค่าแปลกปลอมถือเป็น private (fail closed) ไม่ใช่ปล่อยผ่าน
+    if (String(row.visibility ?? "private") !== "public") {
+      const session = verifyAdminSession() ?? verifyUserSession();
+      if (!session) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      }
     }
 
     const stored = await statStoredFile(row.relpath);
@@ -228,7 +244,9 @@ async function handleGET(
 
     const baseHeaders: Record<string, string> = {
       "Content-Type": mime,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": String(row.visibility ?? "private") === "public"
+        ? "public, max-age=31536000, immutable"
+        : "private, no-store, max-age=0",
       "Content-Disposition":
         `${dispositionType}; filename="${downloadName}"; ` +
         `filename*=UTF-8''${encodeURIComponent(downloadName)}`,

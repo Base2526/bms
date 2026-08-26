@@ -3,10 +3,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
+
+/** ทั้งสองเมธอดในไฟล์นี้เสิร์ฟ Files panel ที่ /settings ซึ่งเมนูถูกคอมเมนต์ปิดไปแล้ว
+ *  แต่ route ยังเปิดโล่งอยู่: GET ไล่รายชื่อไฟล์ทั้งระบบพร้อม relpath ได้โดยไม่ต้องล็อกอิน
+ *  และ POST อัปโหลดไฟล์เข้าเซิร์ฟเวอร์ได้โดยไม่ต้องล็อกอิน (9.26) */
+function requireSession() {
+  return verifyAdminSession() ?? verifyUserSession();
+}
+const UNAUTHORIZED = NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
 export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest) {
+  // รายชื่อไฟล์ทั้งระบบรวม relpath = แผนที่ให้ไล่เดา ต้องล็อกอินก่อน
+  if (!requireSession()) return UNAUTHORIZED;
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -37,6 +48,7 @@ async function handleGET(req: NextRequest) {
 
 // POST multipart upload
 async function handlePOST(req: NextRequest) {
+  if (!requireSession()) return UNAUTHORIZED;
   const form = await req.formData();
   const file = form.get("file");
   const renameTo = (form.get("name") as string) || undefined;
