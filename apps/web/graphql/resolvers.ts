@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 import path from "path";
 import GraphQLJSON from "graphql-type-json";
 
-import { USER_COOKIE, ADMIN_COOKIE, JWT_SECRET } from "@/lib/auth/token";
+import { USER_COOKIE, ADMIN_COOKIE, jwtSecret } from "@/lib/auth/token";
 import {
   normalizeEmail,
   normalizeUsername,
@@ -2968,7 +2968,7 @@ const rawResolvers = {
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
+        jwtSecret(),
         { expiresIn: "7d" }
       );
 
@@ -3090,7 +3090,7 @@ const rawResolvers = {
           name: user.name,
           role: user.role,
         },
-        JWT_SECRET,
+        jwtSecret(),
         { expiresIn: "30d" }
       );
       */
@@ -3101,7 +3101,7 @@ const rawResolvers = {
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
+        jwtSecret(),
         { expiresIn: "7d" }
       );
 
@@ -3175,7 +3175,7 @@ const rawResolvers = {
           session_version: Number(user.admin_session_version ?? 0),
           jti,
         },
-        JWT_SECRET,
+        jwtSecret(),
         { expiresIn: sessionMaxAgeSec }
       );
 
@@ -3215,7 +3215,7 @@ const rawResolvers = {
       if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
+        jwtSecret(),
         { expiresIn: "7d" }
       );
       return { ok: true, message: "Login success", token, user };

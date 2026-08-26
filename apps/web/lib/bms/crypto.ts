@@ -2,7 +2,8 @@
 // BMS secret encryption (AES-256-GCM)
 // -------------------------------------------------------------
 // เข้ารหัส token/secret ของแต่ละร้านก่อนเก็บ DB
-// key จาก env BMS_SECRET_KEY (hex 64 ตัว = 32 bytes); ถ้าไม่ตั้ง → dev fallback
+// key จาก env BMS_SECRET_KEY (hex 64 ตัว = 32 bytes)
+// ไม่ตั้ง/ตั้งผิดรูป → dev fallback ใน dev, แต่ production จะ throw (ไม่เข้ารหัสด้วยคีย์ที่อยู่ในซอร์ส)
 // ค่าที่ไม่ได้ขึ้นต้นด้วย "enc:" ถือเป็น plaintext (backward compat)
 // =============================================================
 
@@ -11,7 +12,16 @@ import crypto from "crypto";
 function getKey(): Buffer {
   const hex = process.env.BMS_SECRET_KEY;
   if (hex && /^[0-9a-fA-F]{64}$/.test(hex)) return Buffer.from(hex, "hex");
-  // dev fallback (ไม่ปลอดภัยสำหรับ prod — ตั้ง BMS_SECRET_KEY ด้วย)
+  // เดิม fallback เงียบ ๆ ไปคีย์ที่ derive จากสตริงคงที่ในซอร์ส — token ของทุกร้าน
+  // ที่ "enc:" ไว้จึงถอดได้ด้วยคีย์ที่ใครอ่านโค้ดก็คำนวณเอง · ค่าที่ตั้งมาผิดรูป
+  // (ไม่ใช่ hex 64) ก็เข้าทางนี้ด้วย ซึ่งอันตรายกว่าไม่ตั้งเลยเพราะดูเหมือนตั้งแล้ว
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      hex
+        ? "BMS_SECRET_KEY must be 64 hex characters — refusing to fall back to the built-in dev key"
+        : "BMS_SECRET_KEY is not configured — refusing to encrypt shop secrets with the built-in dev key"
+    );
+  }
   return crypto.createHash("sha256").update("bms-dev-secret-key").digest();
 }
 

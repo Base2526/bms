@@ -20,7 +20,20 @@ const USER_COOKIE = process.env.USER_COOKIE || "USER_COOKIE";
 const ADMIN_COOKIE = process.env.ADMIN_COOKIE || "ADMIN_COOKIE";
 const ACT_TENANT_COOKIE = process.env.ACT_TENANT_COOKIE || "BMS_ACT_TENANT";
 
-const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret";
+// ws ตรวจ token ใบเดียวกับ web — ถ้า fallback ไปคีย์ในซอร์ส ใครก็ subscribe
+// สตรีมของร้านไหนก็ได้ · ล้มตอนบูตที่นี่ได้ เพราะเป็น service ไม่ใช่ build step
+function jwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "JWT_SECRET is not configured — refusing to verify sockets with the built-in dev key"
+      );
+    }
+    return "changeme_secret";
+  }
+  return secret;
+}
 
 function toLowerKeys(obj: any) {
   const out: Record<string, any> = {};
@@ -76,7 +89,7 @@ function applyActingTenant(ctx: any, user: any) {
   const token = getTokenFromCookies(ctx, ACT_TENANT_COOKIE);
   if (!token) return user;
   try {
-    const act = jwt.verify(token, JWT_SECRET) as { actTenantId?: string; by?: string | number };
+    const act = jwt.verify(token, jwtSecret()) as { actTenantId?: string; by?: string | number };
     if (act?.actTenantId && String(act.by) === String(user.id ?? user.sub)) {
       return { ...user, tenant_id: act.actTenantId, __actingTenantId: act.actTenantId };
     }
@@ -149,7 +162,7 @@ useServer(
       // ===== 2) verify jwt =====
       let user: any = null;
       try {
-        user = jwt.verify(token, JWT_SECRET);
+        user = jwt.verify(token, jwtSecret());
         user = applyActingTenant(ctx, user);
       } catch (err) {
         console.error("[WS] invalid token", err);

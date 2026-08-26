@@ -65,6 +65,13 @@ wrong, and update the doc in the same change.
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
   dispense" a supported move.
+- **A secret never falls back to a literal in production.** `jwtSecret()`, `crypto.ts`'s `getKey()`,
+  `checkoutToken.ts`'s `tokenSecret()` and the ws gateway all throw when their env var is missing
+  under `NODE_ENV=production`, and only use a dev constant otherwise. Resolve a secret in a
+  **function, not a module-level `const`** — a const is evaluated on import, so `next build` would
+  crash on a machine without runtime env, and any importer could read the unchecked value. Never
+  write `process.env.X || "literal"` for a key, and never export the resolved secret. Enforced by
+  `scripts/secret-fallback-contract.test.mts`.
 - **A private file belongs to one shop (9.27).** `files.tenant_id` is derived from whichever BMS
   table references the file; `/api/files/[id]` compares it against the acting tenant from
   `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**, on a
@@ -364,6 +371,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
 | `pharmacy-clinical-evidence-db-contract` | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client |
 | `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice |
+| `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |

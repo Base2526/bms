@@ -1,5 +1,8 @@
 import jwt from "jsonwebtoken";
-export const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret";
+// ความลับตัวเดียวกับ token.ts — เคยประกาศซ้ำที่นี่พร้อม fallback ของตัวเอง
+// ทำให้แก้ที่เดียวไม่ครบ · re-export ไว้เพื่อไม่ให้ผู้เรียกเดิมพัง
+export { jwtSecret } from "./token";
+import { jwtSecret } from "./token";
 
 export function signUserToken(user: any) {
   return jwt.sign(
@@ -9,7 +12,7 @@ export function signUserToken(user: any) {
       name: user.name,
       role: user.role,
     },
-    JWT_SECRET,
+    jwtSecret(),
     { expiresIn: "30d" }
   );
 }

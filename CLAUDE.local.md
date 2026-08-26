@@ -594,8 +594,29 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
   นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
   `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
-- **`9.27__bms_files_tenant_ownership.sql` (ไฟล์ private เป็นของร้านเดียว) apply เข้า dev DB แล้วและ
-  verify กับ HTTP จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+- **ความลับห้าม fallback ไปค่าในซอร์สเมื่อรัน production — แก้แล้ว 2026-08-27 (ไม่มี migration)**
+  · **ต้นเหตุ**: `export const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret"` อยู่ 2 ที่
+    (`lib/auth/token.ts`, `lib/auth/jwt.ts`) + `apps/ws/src/ws.ts` อีกตัว และ `lib/bms/crypto.ts`
+    fallback ไปคีย์ที่ derive จากสตริง `"bms-dev-secret-key"` · instance ที่ลืมตั้ง env จึงเซ็น session
+    (และเข้ารหัส token ของร้านใน DB) ด้วยค่าที่ใครอ่าน repo ก็คำนวณได้
+  · **ยืนยันว่าเกิดจริง ไม่ใช่ทฤษฎี**: container dev รันโดยไม่มี `JWT_SECRET` — ผมปั้น token แอดมิน
+    ของร้าน `11111111...` เองแล้วยิงผ่าน (ใช้ทดสอบ cross-tenant ของ `9.27`)
+  · **แก้เป็นฟังก์ชัน ไม่ใช่ const โดยตั้งใจ** — `const` ถูก evaluate ตอน import ถ้า throw ที่นั่น
+    `next build` จะล้มบนเครื่องที่ยังไม่มี runtime env · ต้องล้มตอน "มีคนใช้จริง" ไม่ใช่ตอนคอมไพล์
+    · และ **เลิก export ค่าความลับตรง ๆ** (เดิม `JWT_SECRET` export ออกไป ผู้เรียกได้ค่า fallback
+    โดยไม่ผ่านการตรวจ) → ผู้เรียกใน `graphql/resolvers.ts` 5 จุดเปลี่ยนเป็น `jwtSecret()`
+  · **`BMS_SECRET_KEY` ที่ตั้งมาผิดรูป (ไม่ใช่ hex 64) ก็ throw** — อันตรายกว่าไม่ตั้งเลย เพราะดู
+    เหมือนตั้งแล้วแต่จริง ๆ ใช้คีย์ dev
+  · verify พฤติกรรมจริง 4 กรณี: dev+ไม่มี env → ผ่าน · prod+ไม่มี env → throw · prod+คีย์ผิดรูป →
+    throw · prod+env ครบ → ผ่าน · และ container dev ยังใช้งานได้ปกติ (หน้าแรก/ไฟล์/session → 200)
+  · เทสชุดใหม่: `scripts/secret-fallback-contract.test.mts` (7 เทส ไม่ต้องมี DB) — สแกนทั้ง `apps/`
+    ห้ามมี `const X = process.env.SECRET || "literal"` ที่ระดับโมดูลอีก
+  · **⚠️ ยังเหลือให้คนทำ: ตั้ง `JWT_SECRET` + `BMS_SECRET_KEY` บน production ให้ครบ**
+    ก่อนหน้านี้ไม่ตั้งก็รันได้ (เงียบ ๆ ไม่ปลอดภัย) ตอนนี้ไม่ตั้ง = แอปล้ม ซึ่งคือเจตนา
+    · `POSTGRES_PASSWORD` ใน `lib/db.ts` ยังมี fallback `"app"` — ยังไม่แตะ เพราะการล้มตอนต่อ DB
+      ทำให้ dev ที่ใช้ค่า default พังทันที ต้องดูให้แน่ก่อนว่าไม่มีใครพึ่งค่านั้น
+- **`9.27__bms_files_tenant_ownership.sql` (ไฟล์ private เป็นของร้านเดียว) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · verify กับ HTTP จริงแล้ว · ไม่มี permission ใหม่
   · **ต้นเหตุที่ `9.26` ยังไม่ปิด**: ตาราง `files` ไม่มี `tenant_id` เลย → ล็อกอินร้าน A แล้วเดา id
     เปิดไฟล์ private ของร้าน B ได้
   · **เจ้าของเป็นค่าที่ derive ไม่ใช่ประกาศ** — 4 ตาราง BMS ที่อ้างถึงไฟล์มี `tenant_id` อยู่แล้ว
@@ -611,10 +632,10 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · verify ด้วย curl จริง: ไม่มี session → `401` · ไฟล์ร้านตัวเอง → `200` · ไฟล์ร้านอื่น → `404`
   · เทสเดิม `scripts/file-visibility-contract.test.mts` ขยายเป็น 7 เทส (เพิ่มการตรวจ tenant + การผูกเจ้าของ)
   · **⚠️ เจอตอน verify: container `bms-web-1` รันโดยไม่มี `JWT_SECRET` ตั้งไว้** →
-    `lib/auth/token.ts` fallback ไปใช้ `"changeme_secret"` ที่ hardcode · ใครเข้าถึง instance นั้นได้
-    ปั้น session แอดมินเองได้ทันที (ผมใช้ช่องนี้ทดสอบ cross-tenant ในรอบนี้เอง) · dev ไม่เป็นไร
-    แต่ **ต้องเช็คบนเซิร์ฟเวอร์จริงว่าตั้งแล้ว** (agent แก้ `.env*` ไม่ได้):
-    `docker compose ... exec web printenv JWT_SECRET`
+    fallback ไปใช้ `"changeme_secret"` ที่ hardcode · **แก้แล้ว 2026-08-27 ให้ production throw**
+    (ดูหัวข้อ "ความลับห้าม fallback" ด้านล่าง) แต่ **ยังต้องไปตั้ง env บนเซิร์ฟเวอร์จริงเอง**
+    เพราะตอนนี้ถ้าไม่ตั้ง production จะล้มดัง ๆ แทนที่จะเงียบ (agent แก้ `.env*` ไม่ได้):
+    `docker compose ... exec web printenv JWT_SECRET BMS_SECRET_KEY`
 - **`9.26__bms_files_visibility.sql` (ไฟล์อ่อนไหวไม่ถูกเสิร์ฟให้คนที่ไม่ได้ล็อกอิน) apply เข้า dev DB และ
   **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · verify กับ HTTP จริงแล้ว · ไม่มี permission ใหม่
   · **ต้นเหตุ**: `/api/files/[id]` ไม่ตรวจอะไรเลย และ `files.id` เป็น integer เรียงลำดับ = ไล่นับขึ้นไป
