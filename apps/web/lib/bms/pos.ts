@@ -43,7 +43,6 @@ import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness
 import { checkPharmacySaleInTx } from "./pharmacy/productPolicy";
 import {
   createProductReviewAssessmentOnce,
-  markAssessmentOrderCreated,
 } from "./pharmacy/assessments";
 import {
   cashRoundingDelta,
@@ -1963,11 +1962,11 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     if (taken.status !== "DEPOSIT_TAKEN") {
       // createOrder จองสต็อกและอาจใช้คูปอง/แต้มไว้แล้ว ต้องคืนทุกอย่างถ้ารับมัดจำไม่ได้
       await cancelOrder(tenantId, orderId);
-    } else if (input.pharmacyApprovedAssessmentId) {
-      void markAssessmentOrderCreated(tenantId, input.pharmacyApprovedAssessmentId, orderId, "system:pos-order").catch((error) =>
-        console.error("[POS] mark pharmacy assessment deposit order created failed", input.pharmacyApprovedAssessmentId, orderId, error)
-      );
     }
+    // ไม่ต้องประทับใบอนุมัติที่นี่ — createOrder ทำในทรานแซกชันของตัวเองแล้ว
+    // หมายเหตุที่ตั้งใจ: มัดจำที่รับไม่สำเร็จถูก cancelOrder แต่ใบอนุมัติยังนับว่าใช้แล้ว
+    // ลูกค้าต้องให้เภสัชกรตรวจใหม่ — เลือกทางที่เข้มกว่าไว้ก่อน เพราะทางกลับกัน
+    // (คืนใบอนุมัติเมื่อยกเลิกบิล) เปิดช่องให้ยกเลิกเพื่อเอาใบอนุมัติกลับมาใช้ซ้ำ
     return taken;
   }
   const rounded = applyCashRounding(created.amountDue);
@@ -2007,11 +2006,9 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       console.error("[POS] ทบทวนชั้นสมาชิกหลังขายไม่สำเร็จ", input.customerId, e)
     );
   }
-  if (sold.status === "SOLD" && input.pharmacyApprovedAssessmentId) {
-    void markAssessmentOrderCreated(tenantId, input.pharmacyApprovedAssessmentId, orderId, "system:pos-order").catch((error) =>
-      console.error("[POS] mark pharmacy assessment order created failed", input.pharmacyApprovedAssessmentId, orderId, error)
-    );
-  }
+  // การประทับว่าใบอนุมัติถูกใช้แล้ว ย้ายไปอยู่ในทรานแซกชันของ createOrder แล้ว
+  // (markAssessmentOrderCreatedInTx) — ที่นี่เคยยิงแบบ fire-and-forget หลัง commit
+  // ซึ่งถ้าล้ม ใบอนุมัติจะยังใช้ซ้ำได้ทั้งที่ของออกจากคลังไปแล้ว
 
   return sold;
 }
@@ -4155,7 +4152,7 @@ export async function requestPosPharmacyReview(input: {
   let requiresSafetyCheck = false;
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.cashierUserId });
-    const pharmacySale = await checkPharmacySaleInTx(client, input.tenantId, items);
+    const pharmacySale = await checkPharmacySaleInTx(client, input.tenantId, items, null, "counter");
     await client.query("ROLLBACK");
     if (pharmacySale.allowed) return { status: "NOT_REQUIRED" };
     const blockers = pharmacySale.blockers ?? [];

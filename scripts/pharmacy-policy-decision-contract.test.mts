@@ -145,3 +145,86 @@ test("เคสที่เภสัชกร approve แล้วผ่าน�
 test("ตะกร้าว่างไม่ถือว่าติดอะไร", () => {
   assert.equal(evaluatePharmacySale([], []).allowed, true);
 });
+
+// ---------------------------------------------------------------
+// ONLINE_SALE_PROHIBITED กับ channel
+// ---------------------------------------------------------------
+// ชื่อ policy บอกว่าห้ามขาย "ออนไลน์" แต่เดิมตัวประเมินไม่รู้จัก channel เลย
+// จึงบล็อกหน้าร้านไปด้วย ทำให้ยาที่กฎหมายกำหนดให้ต้องจ่ายแบบเจอตัว
+// ขายที่เคาน์เตอร์ไม่ได้เลยแม้เภสัชกรยืนอยู่ตรงนั้น
+
+test("ออนไลน์: ONLINE_SALE_PROHIBITED บล็อกแข็งเหมือนเดิม", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")]
+  );
+  assert.equal(decision.allowed, false);
+  if (decision.allowed) return;
+  assert.equal(decision.status, "PHARMACY_ONLINE_SALE_PROHIBITED");
+});
+
+test("ค่าปริยายต้องเป็นออนไลน์ — ผู้เรียกที่ยังไม่รู้เรื่อง channel ต้องไม่ได้สิทธิ์ยกเว้นเงียบ ๆ", () => {
+  const withoutChannel = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")]
+  );
+  const explicitOnline = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")],
+    new Set(),
+    "online"
+  );
+  assert.deepEqual(withoutChannel, explicitOnline);
+});
+
+test("เคาน์เตอร์: ไม่บล็อกแข็ง แต่ต้องให้เภสัชกรตรวจ — ห้ามกลายเป็นขายฟรี", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")],
+    new Set(),
+    "counter"
+  );
+  assert.equal(decision.allowed, false, "ห้ามปล่อยผ่านโดยไม่มีเภสัชกร");
+  if (decision.allowed) return;
+  assert.equal(decision.status, "PHARMACY_REVIEW_REQUIRED");
+});
+
+test("เคาน์เตอร์: เภสัชกร approve แล้วต้องขายได้ ไม่ใช่ติดวนอยู่ที่เดิม", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")],
+    new Set(["OFFLINE_ONLY"]),
+    "counter"
+  );
+  assert.equal(decision.allowed, true);
+});
+
+test("ออนไลน์: ใบอนุมัติปลด ONLINE_SALE_PROHIBITED ไม่ได้", () => {
+  const decision = evaluatePharmacySale(
+    [{ sku: "OFFLINE_ONLY", qty: 1 }],
+    [policy("OFFLINE_ONLY", "ONLINE_SALE_PROHIBITED")],
+    new Set(["OFFLINE_ONLY"]),
+    "online"
+  );
+  assert.equal(decision.allowed, false, "ช่องทางออนไลน์ห้ามขายตัวนี้ ไม่ว่าจะมีใบอนุมัติหรือไม่");
+  if (decision.allowed) return;
+  assert.equal(decision.status, "PHARMACY_ONLINE_SALE_PROHIBITED");
+});
+
+test("เคาน์เตอร์ไม่ทำให้ policy ตัวอื่นหลวมลง", () => {
+  for (const [salePolicy, expected] of [
+    ["PRESCRIPTION_REQUIRED", "PHARMACY_PRESCRIPTION_REQUIRED"],
+    ["SHORT_SAFETY_CHECK", "PHARMACY_SAFETY_CHECK_REQUIRED"],
+    ["PHARMACIST_APPROVAL", "PHARMACY_REVIEW_REQUIRED"],
+  ] as const) {
+    const decision = evaluatePharmacySale(
+      [{ sku: "X", qty: 1 }],
+      [policy("X", salePolicy)],
+      new Set(),
+      "counter"
+    );
+    assert.equal(decision.allowed, false, salePolicy);
+    if (decision.allowed) return;
+    assert.equal(decision.status, expected, salePolicy);
+  }
+});

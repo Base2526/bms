@@ -58,6 +58,18 @@ wrong, and update the doc in the same change.
   `bms_product_packs`, resolved server-side, never supplied by the model. `evaluatePharmacySale()`
   reports every blocking SKU in one pass, but a basket with any blocker is still rejected whole —
   never let some lines through because others failed.
+- **A pharmacist's approval is spent once.** `checkPharmacySaleInTx()` takes the case row `FOR UPDATE`
+  and refuses one whose `checkout_order_draft.status` is already `ORDER_CREATED`;
+  `markAssessmentOrderCreatedInTx()` spends it in the *same* transaction that reserves the stock it
+  authorises. Never mark it after commit — the fire-and-forget version this replaced let one approved
+  case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
+  approval back (a fresh review is required), because releasing it would make "cancel to get another
+  dispense" a supported move.
+- **`ONLINE_SALE_PROHIBITED` is a channel rule, not a blanket ban.** `evaluatePharmacySale()` takes a
+  `channel`; online is a hard refusal, the counter falls through to `PHARMACY_REVIEW_REQUIRED` so a
+  pharmacist still gates every hand-over. The parameter defaults to `"online"` on purpose — a caller
+  that has not been taught about channels must keep the strict behaviour rather than silently gain a
+  counter exemption.
 - **Customer-surface PII** — checkout tools resolve the customer only from the server-established
   `(tenant_id, channel, customer_ref)`, never an id the model supplies, and return *completeness*
   (booleans/counts/`missingFields`), never the raw name, phone, or address.
@@ -327,6 +339,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `ai-eval/archetype-policy-contract` · `restock-lifecycle-contract` · `pharmacy-intake-contract` | archetype policy · restock consent · pharmacy intake |
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
+| `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |

@@ -324,6 +324,55 @@ export async function getApprovedAssessmentCheckoutDraftByConversation(
   return { assessmentId: res.rows[0].id, draft };
 }
 
+/**
+ * Consume an approval inside the caller's own transaction.
+ *
+ * The fire-and-forget variant below runs after the sale has already committed,
+ * so a failure there left the case still spendable while the goods were gone —
+ * the same approval could dispense a pharmacist-approval item again. Callers
+ * that move stock or take money must use this one, so the approval is spent in
+ * the same transaction that spends the inventory. checkPharmacySaleInTx() takes
+ * FOR UPDATE on the same row, which is what serialises two registers racing on
+ * one case code.
+ */
+export async function markAssessmentOrderCreatedInTx(
+  client: PoolClient,
+  tenantId: string,
+  assessmentId: string,
+  orderId: string,
+  actor = "system:pharmacy-order"
+): Promise<void> {
+  const current = await client.query<{ checkout_order_draft: any }>(
+    `SELECT checkout_order_draft
+       FROM bms_pharmacy_assessments
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [tenantId, assessmentId]
+  );
+  const draft = normalizeCheckoutOrderDraft(current.rows[0]?.checkout_order_draft);
+  if (!draft) return;
+  const nextDraft: PharmacyCheckoutOrderDraft = {
+    ...draft,
+    status: "ORDER_CREATED",
+    createdOrderId: orderId,
+  };
+  await client.query(
+    `UPDATE bms_pharmacy_assessments
+        SET checkout_order_draft = $3::jsonb,
+            updated_at = now()
+      WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+    [tenantId, assessmentId, JSON.stringify(nextDraft)]
+  );
+  // Inlined rather than calling recordPharmacyEvent(): that helper opens its own
+  // connection and swallows its own errors, so the trail could commit apart from
+  // the sale it describes.
+  await client.query(
+    `INSERT INTO bms_pharmacy_assessment_events
+       (tenant_id, assessment_id, actor, action, previous_state, next_state, meta)
+     VALUES ($1, $2, $3, 'assessment.checkout_order_created', NULL, NULL, $4::jsonb)`,
+    [tenantId, assessmentId, actor, JSON.stringify({ orderId })]
+  );
+}
+
 export async function markAssessmentOrderCreated(
   tenantId: string,
   assessmentId: string,

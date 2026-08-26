@@ -50,10 +50,22 @@ export type PharmacyPolicyForDecision = {
   maxQuantity: number | null;
 };
 
+/**
+ * Which surface the basket is being sold on.
+ *
+ * Only ONLINE_SALE_PROHIBITED reads it, and only to stop over-blocking: the
+ * classification says a product may not be sold *online*, and it never said a
+ * pharmacist may not hand it over at the counter. The default stays "online"
+ * so any caller that has not been taught about channels keeps the strict
+ * behaviour rather than silently gaining a counter exemption.
+ */
+export type PharmacySaleChannel = "online" | "counter";
+
 export function evaluatePharmacySale(
   items: Array<{ sku: string; qty: number }>,
   policies: PharmacyPolicyForDecision[],
-  approvedAssessmentSkus: ReadonlySet<string> = new Set()
+  approvedAssessmentSkus: ReadonlySet<string> = new Set(),
+  channel: PharmacySaleChannel = "online"
 ): PharmacySaleDecision {
   const bySku = new Map(policies.map((policy) => [policy.productSku, policy]));
   const quantityBySku = new Map<string, number>();
@@ -83,7 +95,12 @@ export function evaluatePharmacySale(
     }
     if (policy.salePolicy === "DIRECT_SALE") continue;
     if (
-      (policy.salePolicy === "PHARMACIST_APPROVAL" || policy.salePolicy === "SHORT_SAFETY_CHECK") &&
+      (policy.salePolicy === "PHARMACIST_APPROVAL" ||
+        policy.salePolicy === "SHORT_SAFETY_CHECK" ||
+        // Counter-only: the fall-through below turns this policy into
+        // "needs a pharmacist", so its approval has to clear it here too or the
+        // case would be approved and the sale still refused, forever.
+        (policy.salePolicy === "ONLINE_SALE_PROHIBITED" && channel === "counter")) &&
       approvedAssessmentSkus.has(sku)
     ) continue;
     if (policy.salePolicy === "SHORT_SAFETY_CHECK") {
@@ -95,8 +112,13 @@ export function evaluatePharmacySale(
       continue;
     }
     if (policy.salePolicy === "ONLINE_SALE_PROHIBITED") {
-      blockers.push({ status: "PHARMACY_ONLINE_SALE_PROHIBITED", sku, salePolicy: policy.salePolicy });
-      continue;
+      // At the counter this is not a dead end: it falls through to
+      // PHARMACY_REVIEW_REQUIRED below, so a pharmacist still gates every
+      // hand-over. What it must never become is a free sale.
+      if (channel === "online") {
+        blockers.push({ status: "PHARMACY_ONLINE_SALE_PROHIBITED", sku, salePolicy: policy.salePolicy });
+        continue;
+      }
     }
     blockers.push({ status: "PHARMACY_REVIEW_REQUIRED", sku, salePolicy: policy.salePolicy });
   }

@@ -308,6 +308,33 @@ emergency-red-flag. Marked with `channel_id = 'FAKE-DEMO'`; `DELETE` on the same
 removes them. **Not yet wired into the `/admin/dev/fake` page's buttons or the global
 Cleanup action** — call it directly for now.
 
+## An approval is spent once
+
+`checkPharmacySaleInTx()` clears a sku only while the approving case is still unspent. It selects the
+assessment `FOR UPDATE` (two registers scanning the same case code serialise on that lock) and treats
+a `checkout_order_draft.status` of `ORDER_CREATED` as spent, contributing no approved skus — so the
+basket falls back to needing a fresh review rather than passing silently.
+`markAssessmentOrderCreatedInTx()` writes that marker, and the reversal trail with it, inside the same
+transaction that reserves the stock the approval authorises.
+
+Before this, the marker was written fire-and-forget *after* the sale had committed and nothing ever
+read it back, so a single approved case could dispense an approval-gated drug an unlimited number of
+times. Two deliberate consequences of the fix:
+
+- **A cancelled bill does not return the approval.** The customer needs a new review. Releasing it
+  would turn "cancel the bill" into a way to earn another dispense, which is worse than the
+  inconvenience.
+- **`ONLINE_SALE_PROHIBITED` is channel-scoped.** `evaluatePharmacySale()` takes a `channel`; online
+  stays a hard refusal, while the counter falls through to `PHARMACY_REVIEW_REQUIRED` — the
+  classification says a product may not be sold *online*, never that a pharmacist may not hand it
+  over in person. The parameter defaults to `"online"`, so a caller that does not pass one keeps the
+  strict behaviour. Counter approvals therefore also clear this policy, or an approved case would sit
+  approved and refused forever.
+
+Covered by `scripts/pharmacy-approval-reuse-db-contract.test.mts`, which builds and drops its own
+tenant rather than borrowing the first one — flipping a shared shop's `business_archetype` to
+`pharmacy` changes gating for every product it sells.
+
 ## Known limitations (MVP scope, decided with the user)
 
 - The queue detail's manual medication picker reads through the pharmacy-scoped

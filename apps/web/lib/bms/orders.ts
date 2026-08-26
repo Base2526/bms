@@ -51,6 +51,7 @@ import {
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
+import { markAssessmentOrderCreatedInTx } from "./pharmacy/assessments";
 import {
   checkPharmacySaleInTx,
   type PharmacySaleBlockStatus,
@@ -415,11 +416,16 @@ export async function createOrder(
 
     // Enforce pharmacy sale policy before reserving any inventory. The model,
     // UI and channel adapters are not regulatory authority.
+    // channel "pos" is the physical counter; everything else reaches the shop
+    // over the internet. ONLINE_SALE_PROHIBITED is the only policy that reads
+    // this, and at the counter it demands a pharmacist instead of refusing
+    // outright — see evaluatePharmacySale().
     const pharmacySale = await checkPharmacySaleInTx(
       client,
       tenantId,
       items,
-      input.pharmacyApprovedAssessmentId
+      input.pharmacyApprovedAssessmentId,
+      input.channel === "pos" ? "counter" : "online"
     );
     if (!pharmacySale.allowed) {
       await client.query("ROLLBACK");
@@ -828,6 +834,21 @@ export async function createOrder(
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null]
     );
     const orderId = ord.rows[0].id;
+
+    // Spend the pharmacist's approval in the same transaction that reserves the
+    // stock it authorises. checkPharmacySaleInTx() above already took FOR UPDATE
+    // on this row and refuses a case that is already ORDER_CREATED, so one
+    // approval can only ever back one order — previously this was marked
+    // fire-and-forget after commit, leaving the case spendable again.
+    if (input.pharmacyApprovedAssessmentId) {
+      await markAssessmentOrderCreatedInTx(
+        client,
+        tenantId,
+        input.pharmacyApprovedAssessmentId,
+        orderId,
+        "system:pharmacy-order"
+      );
+    }
 
     await reserveCustomerCouponInTx(client, tenantId, customerId, appliedCouponId, orderId);
 

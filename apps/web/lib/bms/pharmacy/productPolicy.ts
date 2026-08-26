@@ -4,6 +4,7 @@ import {
   PHARMACY_PRODUCT_TYPES,
   PHARMACY_SALE_POLICIES,
   evaluatePharmacySale,
+  type PharmacySaleChannel,
   type PharmacyProductPolicyStatus,
   type PharmacyProductType,
   type PharmacySaleDecision,
@@ -378,7 +379,8 @@ export async function checkPharmacySaleInTx(
   client: PoolClient,
   tenantId: string,
   items: Array<{ sku: string; size?: string; qty: number }>,
-  approvedAssessmentId?: string | null
+  approvedAssessmentId?: string | null,
+  channel: PharmacySaleChannel = "online"
 ): Promise<PharmacySaleDecision> {
   const profile = await client.query<{ business_archetype: string | null }>(
     `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
@@ -401,14 +403,26 @@ export async function checkPharmacySaleInTx(
 
   const approvedSkus = new Set<string>();
   if (approvedAssessmentId) {
+    // FOR UPDATE: the caller is about to sell against this approval inside the
+    // same transaction. Two registers scanning the same case code at once would
+    // otherwise both read it as unused and both be allowed through.
     const assessment = await client.query<{ checkout_order_draft: any }>(
       `SELECT checkout_order_draft
          FROM bms_pharmacy_assessments
-        WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED' AND deleted_at IS NULL`,
+        WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED' AND deleted_at IS NULL
+        FOR UPDATE`,
       [tenantId, approvedAssessmentId]
     );
-    const draftItems = Array.isArray(assessment.rows[0]?.checkout_order_draft?.items)
-      ? assessment.rows[0].checkout_order_draft.items
+    // One approval authorises one sale. Without this an APPROVED case stayed
+    // valid forever: the same case code could dispense a pharmacist-approval
+    // item again and again, because nothing read back the ORDER_CREATED marker
+    // that markAssessmentOrderCreated() writes. Anything already consumed
+    // contributes no approved skus, so the basket falls back to needing a fresh
+    // review rather than silently passing.
+    const draft = assessment.rows[0]?.checkout_order_draft;
+    const alreadyConsumed = String(draft?.status ?? "") === "ORDER_CREATED";
+    const draftItems = !alreadyConsumed && Array.isArray(draft?.items)
+      ? draft.items
       : [];
     for (const sku of skus) {
       const requestedForSku = items.filter((item) => item.sku === sku);
@@ -431,6 +445,7 @@ export async function checkPharmacySaleInTx(
       status: row.status,
       maxQuantity: row.max_quantity == null ? null : Number(row.max_quantity),
     })),
-    approvedSkus
+    approvedSkus,
+    channel
   );
 }
