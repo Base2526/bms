@@ -97,6 +97,9 @@ services:
 
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       BMS_AI_MODEL: ${BMS_AI_MODEL}
+      # เข้ารหัส token/secret ของแต่ละร้านก่อนเก็บ DB (lib/bms/crypto.ts)
+      # ไม่ตั้ง = production throw · ตั้งผิดรูป (ไม่ใช่ hex 64) ก็ throw
+      BMS_SECRET_KEY: ${BMS_SECRET_KEY}
       BMS_CRON_SECRET: ${BMS_CRON_SECRET}
       BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
       BMS_ALLOW_FAKE_SEED: ${BMS_ALLOW_FAKE_SEED:-0}
