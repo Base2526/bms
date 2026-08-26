@@ -594,8 +594,29 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
   นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
   `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
-- **`9.26__bms_files_visibility.sql` (ไฟล์อ่อนไหวไม่ถูกเสิร์ฟให้คนที่ไม่ได้ล็อกอิน) apply เข้า dev DB แล้วและ
+- **`9.27__bms_files_tenant_ownership.sql` (ไฟล์ private เป็นของร้านเดียว) apply เข้า dev DB แล้วและ
   verify กับ HTTP จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  · **ต้นเหตุที่ `9.26` ยังไม่ปิด**: ตาราง `files` ไม่มี `tenant_id` เลย → ล็อกอินร้าน A แล้วเดา id
+    เปิดไฟล์ private ของร้าน B ได้
+  · **เจ้าของเป็นค่าที่ derive ไม่ใช่ประกาศ** — 4 ตาราง BMS ที่อ้างถึงไฟล์มี `tenant_id` อยู่แล้ว
+    (`bms_product_images`, `bms_generated_reports`, `bms_pharmacy_clinical_evidence`,
+    `bms_payments.slip_url`) จึงยกมาใช้ · **3 ตารางของฟีเจอร์ชุมชนเดิมไม่มี tenant เลย**
+    (`message_images`, `messages.audio_file_id`, `post_images`) ไฟล์พวกนี้เป็น `NULL` = "ไม่มีร้านเป็นเจ้าของ"
+    แล้ว route ขอแค่ "ล็อกอินแล้ว" เท่าเดิม · บังคับ NOT NULL = ต้องกุเจ้าของให้ข้อมูลยุคก่อน BMS
+  · **ร้านไม่ตรงตอบ `404` ไม่ใช่ `403`** — 403 เท่ากับยืนยันให้คนนอกร้านรู้ว่า id นั้นมีไฟล์อยู่จริง
+  · acting tenant มาจาก `authorizeAdminRoute(null)` ไม่ใช่ `admin.tenant_id` ตรง ๆ เพื่อให้คุกกี้
+    drill-down ที่เซ็นแล้วใช้งานได้ (platform admin เข้าไปดูร้านลูกค้า)
+  · ทุกจุดที่อัปโหลดผูกเจ้าของจากแหล่งที่เชื่อได้: session / เครื่องที่ authenticate แล้ว /
+    token checkout ที่เซ็นไว้ — **ไม่เคยรับ tenant จาก body**
+  · verify ด้วย curl จริง: ไม่มี session → `401` · ไฟล์ร้านตัวเอง → `200` · ไฟล์ร้านอื่น → `404`
+  · เทสเดิม `scripts/file-visibility-contract.test.mts` ขยายเป็น 7 เทส (เพิ่มการตรวจ tenant + การผูกเจ้าของ)
+  · **⚠️ เจอตอน verify: container `bms-web-1` รันโดยไม่มี `JWT_SECRET` ตั้งไว้** →
+    `lib/auth/token.ts` fallback ไปใช้ `"changeme_secret"` ที่ hardcode · ใครเข้าถึง instance นั้นได้
+    ปั้น session แอดมินเองได้ทันที (ผมใช้ช่องนี้ทดสอบ cross-tenant ในรอบนี้เอง) · dev ไม่เป็นไร
+    แต่ **ต้องเช็คบนเซิร์ฟเวอร์จริงว่าตั้งแล้ว** (agent แก้ `.env*` ไม่ได้):
+    `docker compose ... exec web printenv JWT_SECRET`
+- **`9.26__bms_files_visibility.sql` (ไฟล์อ่อนไหวไม่ถูกเสิร์ฟให้คนที่ไม่ได้ล็อกอิน) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · verify กับ HTTP จริงแล้ว · ไม่มี permission ใหม่
   · **ต้นเหตุ**: `/api/files/[id]` ไม่ตรวจอะไรเลย และ `files.id` เป็น integer เรียงลำดับ = ไล่นับขึ้นไป
     โหลดไฟล์ของใครก็ได้ · ที่หนักคือ **สลิปโอนเงิน** (มีชื่อ+เลขบัญชีผู้โอน) และ **ไฟล์แนบ Inbox**
     · ซ้ำร้าย `GET /api/files` คืนรายชื่อไฟล์ทั้งระบบพร้อม `relpath` และ `POST /api/files` อัปโหลดได้
@@ -611,11 +632,7 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · verify ด้วย curl จริงบน dev: public ที่มีอยู่ → `200` · private → `401` · `GET/POST /api/files` → `401`
   · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
     **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
-  · **ยังเหลือ**: `/api/files/[id]` ไม่ตรวจ *tenant* — ผู้ใช้ที่ล็อกอินร้าน A เปิดไฟล์ private ของร้าน B
-    ได้ถ้ารู้ id เพราะตาราง `files` ไม่มี `tenant_id` เลย · การเติม tenant_id ต้อง backfill จากตารางที่
-    อ้างถึงไฟล์ (7 ตาราง) ซึ่งใหญ่กว่ารอบนี้ · ของที่อ่อนไหวสุดมี route เฉพาะที่ตรวจ tenant อยู่แล้ว
-    (`/api/bms/reports/download/[id]`, `/api/bms/pharmacy/evidence/[id]/file`) — **ของใหม่ที่อ่อนไหว
-    ให้ทำ route เฉพาะแบบนั้น ไม่ใช่พึ่ง `/api/files`**
+  · ช่อง cross-tenant ที่เคยจดว่า "ยังเหลือ" **แก้แล้วที่ `9.27`** (ดูหัวข้อถัดไป)
 - **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB และ
   **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · seed permission ใหม่ 2 ตัว
   (`pharmacy.evidence.read`, `pharmacy.evidence.manage` → **Pharmacist เท่านั้น**)

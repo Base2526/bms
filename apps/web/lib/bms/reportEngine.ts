@@ -154,7 +154,8 @@ export async function generateReport(
   else buf = await buildPdf(doc, summary);
 
   const filename = `${reportType.toLowerCase()}-report-${Date.now()}.${FORMAT_EXT[format]}`;
-  const file = await persistBuffer(buf, filename, FORMAT_MIME[format]);
+  // รายงานเป็นของร้านที่สั่งสร้าง — ผูก tenant ไว้เพื่อให้ /api/files ปฏิเสธร้านอื่น (9.27)
+  const file = await persistBuffer(buf, filename, FORMAT_MIME[format], "private", tenantId);
 
   await query(
     `INSERT INTO bms_generated_reports (tenant_id, report_type, format, params, file_id, summary, generated_by)

@@ -25,7 +25,7 @@ async function handlePOST(req: NextRequest) {
 
   try {
     // ไฟล์แนบในบทสนทนาลูกค้า — ต้องมี session จึงเปิดดูได้ (9.26)
-    const row = await persistWebFile(file, undefined, "private");
+    const row = await persistWebFile(file, undefined, "private", auth.tenantId);
     return NextResponse.json({
       url: buildFileUrlById(row.id),
       name: row.original_name ?? file.name ?? null,

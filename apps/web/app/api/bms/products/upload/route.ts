@@ -26,7 +26,7 @@ async function handlePOST(req: NextRequest) {
 
   try {
     // รูปสินค้าโหลดจากหน้าร้านสาธารณะ ไม่มี session — ต้องเป็น public
-    const row = await persistWebFile(file, undefined, "public");
+    const row = await persistWebFile(file, undefined, "public", auth.tenantId);
     return NextResponse.json({
       url: buildFileUrlById(row.id),
       name: row.original_name ?? file.name ?? null,

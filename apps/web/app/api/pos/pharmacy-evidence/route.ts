@@ -86,7 +86,7 @@ async function handlePOST(req: NextRequest) {
     const mime = (file.type || "").split(";")[0].trim().toLowerCase();
     if (!ALLOWED_MIME.has(mime)) return bad("รับเฉพาะรูปภาพ (PNG/JPEG/WebP/GIF) หรือ PDF");
     // รูปใบสั่งยาเป็นข้อมูลสุขภาพ — private เสมอ (9.26)
-    const row = await persistWebFile(file, undefined, "private");
+    const row = await persistWebFile(file, undefined, "private", device.tenantId);
     stored = {
       id: row.id,
       name: row.original_name ?? file.name ?? null,

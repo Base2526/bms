@@ -65,6 +65,13 @@ wrong, and update the doc in the same change.
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
   dispense" a supported move.
+- **A private file belongs to one shop (9.27).** `files.tenant_id` is derived from whichever BMS
+  table references the file; `/api/files/[id]` compares it against the acting tenant from
+  `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**, on a
+  mismatch — 403 would confirm to an outsider that the id exists. `NULL` means "not owned by a shop"
+  (legacy community uploads) and still needs only a session. Every BMS upload path binds the owner
+  from a trusted source: the session, the authenticated device, or the signed checkout token — never
+  the request body.
 - **`files.visibility` decides who may read an upload (9.26).** `/api/files/[id]` serves a `public`
   row with no session (storefront product images, the legacy community uploads) and demands one for
   `private`; a missing or unknown value is treated as private, so the route fails closed. Listing and
@@ -356,7 +363,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
 | `pharmacy-clinical-evidence-db-contract` | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client |
-| `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, and every upload site's public/private choice |
+| `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |

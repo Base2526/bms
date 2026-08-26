@@ -71,10 +71,12 @@ async function insertFileRow(params: {
   checksum: string;
   key: string;
   visibility: FileVisibility;
+  /** ร้านเจ้าของไฟล์ (9.27) — null = ไม่ผูกร้าน (ไฟล์ของฟีเจอร์ชุมชนเดิม) */
+  tenantId?: string | null;
 }): Promise<StoredFileRow> {
   const { rows } = await query(
-    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility, tenant_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
     [
       params.storedName,
@@ -84,6 +86,7 @@ async function insertFileRow(params: {
       params.checksum,
       params.key,
       params.visibility,
+      params.tenantId ?? null,
     ]
   );
   return rows[0] as StoredFileRow;
@@ -93,7 +96,8 @@ async function insertFileRow(params: {
 export async function persistWebFile(
   file: File,
   renameTo?: string,
-  visibility: FileVisibility = "private"
+  visibility: FileVisibility = "private",
+  tenantId?: string | null
 ): Promise<StoredFileRow> {
   const buf = Buffer.from(await file.arrayBuffer());
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
@@ -109,6 +113,7 @@ export async function persistWebFile(
     checksum,
     key,
     visibility,
+    tenantId,
   });
 }
 
@@ -157,7 +162,8 @@ export async function persistBuffer(
   mimetype: string | null,
   // ผู้ใช้จริงของฟังก์ชันนี้คือไฟล์รายงานที่ generate เอง ซึ่งมี route ดาวน์โหลด
   // ที่ตรวจ tenant อยู่แล้ว — private เป็นค่าปริยายที่ถูกต้อง
-  visibility: FileVisibility = "private"
+  visibility: FileVisibility = "private",
+  tenantId?: string | null
 ): Promise<StoredFileRow> {
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
   const { key, storedName } = buildKey(filename);
@@ -172,6 +178,7 @@ export async function persistBuffer(
     checksum,
     key,
     visibility,
+    tenantId,
   });
 }
 

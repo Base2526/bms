@@ -35,7 +35,10 @@ test("route ที่เสิร์ฟไฟล์ต้องเช็ค visi
     /String\(row\.visibility \?\? "private"\) !== "public"/,
     "ค่าที่หายไปต้องถือเป็น private (fail closed) ไม่ใช่ปล่อยผ่าน"
   );
-  assert.match(src, /verifyAdminSession\(\) \?\? verifyUserSession\(\)/, "private ต้องขอ session");
+  // private ต้องขอ session ทุกเส้นทาง: ไฟล์ที่มีเจ้าของผ่าน authorizeAdminRoute
+  // ไฟล์ที่ไม่มีเจ้าของยอมรับ session ของผู้ใช้เว็บได้
+  assert.match(src, /authorizeAdminRoute\(null\)/, "private ต้องขอ session");
+  assert.match(src, /verifyUserSession\(\)/, "ไฟล์ที่ไม่มีเจ้าของยังรับ session ผู้ใช้เว็บ");
   assert.match(src, /status: 401/, "ไม่มี session ต้องได้ 401");
   assert.match(src, /private, no-store/, "ไฟล์ private ห้ามถูก cache แบบ public");
 });
@@ -98,11 +101,66 @@ test("ค่าปริยายของ persistWebFile/persistBuffer คื�
   );
 });
 
-test("INSERT ลง files ต้องเขียนคอลัมน์ visibility ทุกครั้ง", () => {
+test("INSERT ลง files ต้องเขียน visibility และ tenant_id ทุกครั้ง", () => {
   const src = read("lib/storage.ts");
   const inserts = [...src.matchAll(/INSERT INTO files \(([^)]*)\)/g)];
   assert.ok(inserts.length > 0, "ต้องเจอ INSERT INTO files");
   for (const m of inserts) {
     assert.match(m[1], /visibility/, `INSERT ที่ไม่ระบุ visibility จะได้ค่าปริยายเงียบ ๆ: ${m[1]}`);
+    assert.match(m[1], /tenant_id/, `INSERT ที่ไม่เขียน tenant_id ทำให้ไฟล์ใหม่ไม่มีเจ้าของ: ${m[1]}`);
   }
+});
+
+// ---------------------------------------------------------------
+// เจ้าของไฟล์ (9.27)
+// ---------------------------------------------------------------
+// 9.26 กันคนที่ไม่ล็อกอินได้ แต่ยังไม่ได้บอกว่าไฟล์เป็นของร้านไหน — ล็อกอินร้าน A
+// แล้วเดา id เปิดไฟล์ private ของร้าน B ได้
+
+test("ไฟล์ private ที่มีเจ้าของต้องเทียบ tenant ก่อนปล่อยผ่าน", () => {
+  const src = read("app/api/files/[id]/route.ts");
+  assert.match(src, /SELECT[^`]*tenant_id[^`]*FROM files/s, "query ต้องดึง tenant_id มาด้วย");
+  assert.match(src, /if \(row\.tenant_id\)/, "ต้องแยกเคสไฟล์ที่มีเจ้าของออกจากไฟล์ที่ไม่มี");
+  assert.match(
+    src,
+    /String\(auth\.tenantId\) !== String\(row\.tenant_id\)/,
+    "ต้องเทียบ acting tenant กับเจ้าของไฟล์"
+  );
+  // ตอบ 404 ไม่ใช่ 403 — 403 ยืนยันให้คนนอกร้านรู้ว่า id นี้มีไฟล์อยู่จริง
+  const mismatch = src.slice(src.indexOf("String(auth.tenantId) !== String(row.tenant_id)"));
+  assert.match(
+    mismatch.slice(0, 400),
+    /status: 404/,
+    "ร้านไม่ตรงต้องได้ 404 ไม่ใช่ 403 (ไม่ยืนยันว่ามีไฟล์อยู่)"
+  );
+  assert.match(
+    src,
+    /authorizeAdminRoute\(null\)/,
+    "acting tenant ต้องมาจาก authorizeAdminRoute เพื่อรองรับคุกกี้ drill-down ที่เซ็นแล้ว"
+  );
+});
+
+test("ทุกจุดที่อัปโหลดไฟล์ของร้านต้องผูกเจ้าของ", () => {
+  const expected: Record<string, string> = {
+    "app/api/bms/products/upload/route.ts": "auth.tenantId",
+    "app/api/bms/inbox/upload/route.ts": "auth.tenantId",
+    "app/api/bms/pharmacy/evidence/upload/route.ts": "auth.tenantId",
+    // POS ใช้ tenant ของเครื่องที่ authenticate แล้ว ไม่ใช่ค่าจาก client
+    "app/api/pos/pharmacy-evidence/route.ts": "device.tenantId",
+    // สลิปใช้ tenant จาก token ที่เซ็นไว้ ลูกค้าไม่มี session
+    "app/api/bms/checkout/payment/route.ts": "current.payload.tenantId",
+  };
+  for (const [file, source] of Object.entries(expected)) {
+    const src = read(file);
+    assert.ok(
+      src.includes(source),
+      `${file} ต้องผูกเจ้าของไฟล์จาก ${source} ไม่ใช่ปล่อยเป็น null`
+    );
+  }
+  // รายงานสร้างจากฝั่ง service ไม่ใช่ route
+  assert.match(
+    read("lib/bms/reportEngine.ts"),
+    /persistBuffer\([^)]*tenantId\)/s,
+    "ไฟล์รายงานต้องผูก tenant ของร้านที่สั่งสร้าง"
+  );
 });

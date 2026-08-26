@@ -110,7 +110,9 @@ async function handlePOST(req: NextRequest) {
     const stored = await persistWebFile(
       file,
       `checkout-${current.checkout.order.displayId}-${file.name}`,
-      "private"
+      "private",
+      // ร้านมาจาก token ที่เซ็นไว้เท่านั้น ไม่ใช่จาก body (9.27)
+      current.payload.tenantId
     );
     const result = await submitCheckoutPaymentByToken(token, {
       method,

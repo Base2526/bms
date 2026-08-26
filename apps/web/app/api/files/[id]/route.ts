@@ -3,7 +3,8 @@ import { query } from "@/lib/db";
 import path from "path";
 import { Readable } from "stream";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
-import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
+import { verifyUserSession } from "@/lib/auth/server";
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ type FileRow = {
   size?: number | null;
   deleted_at?: string | null;
   visibility?: string | null;
+  tenant_id?: string | null;
 };
 
 function guessMimeFromName(name: string): string {
@@ -175,7 +177,7 @@ async function handleGET(
 
     const { rows } = await query(
       `
-      SELECT id, filename, original_name, mimetype, relpath, size, deleted_at, visibility
+      SELECT id, filename, original_name, mimetype, relpath, size, deleted_at, visibility, tenant_id
       FROM files
       WHERE id = $1
         AND deleted_at IS NULL
@@ -202,9 +204,32 @@ async function handleGET(
     // แถวเก่าทั้งหมดถูก backfill เป็น public ตอน migrate เพื่อไม่ให้ของที่ใช้งานอยู่พัง
     // ค่าที่หายไป/ค่าแปลกปลอมถือเป็น private (fail closed) ไม่ใช่ปล่อยผ่าน
     if (String(row.visibility ?? "private") !== "public") {
-      const session = verifyAdminSession() ?? verifyUserSession();
-      if (!session) {
-        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      // ไฟล์ที่มีเจ้าของ (9.27) ต้องเป็นร้านเดียวกับที่ล็อกอินอยู่ — เดิมแค่ล็อกอิน
+      // ร้านไหนก็เปิดไฟล์ private ของร้านอื่นได้ถ้าเดา id ถูก · acting tenant มาจาก
+      // authorizeAdminRoute เพื่อให้ผ่านคุกกี้ drill-down ที่เซ็นแล้วด้วย ไม่ใช่
+      // อ่าน tenant_id จาก session ตรง ๆ ซึ่งจะพลาดเคส platform admin
+      if (row.tenant_id) {
+        const auth = await authorizeAdminRoute(null);
+        if (!auth.ok) {
+          return NextResponse.json(
+            { error: auth.status === 401 ? "unauthorized" : "forbidden" },
+            { status: auth.status }
+          );
+        }
+        if (String(auth.tenantId) !== String(row.tenant_id)) {
+          // 404 ไม่ใช่ 403 — ไม่บอกคนนอกร้านว่า id นี้มีไฟล์อยู่จริง
+          return NextResponse.json({ error: "file not found" }, { status: 404 });
+        }
+      } else {
+        // ไฟล์ที่ไม่มีเจ้าของ = ของฟีเจอร์ชุมชนเดิม/ไฟล์ส่วนตัวของผู้ใช้เว็บ
+        // ยังไม่มีข้อมูลพอจะผูกร้าน จึงขอแค่ "ล็อกอินแล้ว" เท่าเดิม
+        const session = verifyUserSession();
+        if (!session) {
+          const auth = await authorizeAdminRoute(null);
+          if (!auth.ok) {
+            return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+          }
+        }
       }
     }
 

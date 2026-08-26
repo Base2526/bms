@@ -43,7 +43,7 @@ async function handlePOST(req: NextRequest) {
   }
 
   // รูปใบสั่งยาเป็นข้อมูลสุขภาพ — private เสมอ (9.26)
-  const row = await persistWebFile(file, undefined, "private");
+  const row = await persistWebFile(file, undefined, "private", auth.tenantId);
   const result = await addClinicalEvidence({
     tenantId: auth.tenantId,
     assessmentId,
