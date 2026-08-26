@@ -152,6 +152,12 @@ export type ReceiptPayload = {
   vatIncluded: boolean;
   docTitle: string;
   docNo: string | null;
+  /** เอกสารภาษีที่ออกคู่กับสลิปนี้ เช่น ใบลดหนี้; ไม่ใช้เป็นเลขของสลิปเอง */
+  relatedDocNo?: string | null;
+  /** เลขบิลขายต้นทางของใบรับคืน/ใบเตรียมเปลี่ยน */
+  referenceDocNo?: string | null;
+  /** ค่าที่เข้ารหัสเป็น barcode; แยกจาก docNo เพื่อให้สลิปคืนสแกนกลับไปหาบิลเดิม */
+  barcodeValue?: string | null;
   at: string;
   cashier: string | null;
   lines: ReceiptLine[];
@@ -195,6 +201,8 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   if (payload.taxId) b.line(`TAX#${payload.taxId}${payload.vatIncluded ? " (VAT Included)" : ""}`);
   if (payload.posNo) b.line(`POS#${payload.posNo}`);
   b.line(payload.docTitle);
+  if (payload.referenceDocNo) b.line(`อ้างอิงบิลเดิม ${payload.referenceDocNo}`);
+  if (payload.relatedDocNo) b.line(`ใบลดหนี้ ${payload.relatedDocNo}`);
 
   b.align(0).divider();
   for (const l of payload.lines) {
@@ -239,8 +247,9 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
     }
   }
 
-  // บาร์โค้ดเลขบิลไว้สแกนตอนรับคืนของ
-  if (payload.docNo) b.feed(1).align(1).barcode39(payload.docNo).align(0);
+  // บาร์โค้ดเลขบิลไว้สแกนตอนรับคืนของ — สลิปคืนต้องใช้บิลขายต้นทาง ไม่ใช่เลข CN
+  const barcodeValue = payload.barcodeValue ?? payload.docNo;
+  if (barcodeValue) b.feed(1).align(1).barcode39(barcodeValue).align(0);
 
   b.cut();
   return b.build();

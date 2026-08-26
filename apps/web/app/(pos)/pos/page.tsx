@@ -576,6 +576,8 @@ type Receipt = {
   }>;
 };
 
+type ReceiptReturnEvent = NonNullable<Receipt["returnEvents"]>[number];
+
 type PaymentDraft = {
   id: string;
   method: string;
@@ -713,7 +715,13 @@ function posPaymentMethodLabel(method: string) {
   return METHODS.find((item) => item.key === method)?.label ?? method;
 }
 
-function BillHistoryPanel({ receipt }: { receipt: Receipt }) {
+function BillHistoryPanel({
+  receipt,
+  onOpenReturnReceipt,
+}: {
+  receipt: Receipt;
+  onOpenReturnReceipt: (event: ReceiptReturnEvent) => void;
+}) {
   const returnEvents = [...(receipt.returnEvents ?? [])].sort(
     (a, b) => new Date(a.returnedAt).getTime() - new Date(b.returnedAt).getTime()
   );
@@ -799,6 +807,15 @@ function BillHistoryPanel({ receipt }: { receipt: Receipt }) {
                     </div>
                   ))}
                 </div>
+              )}
+              {!event.isVoid && (
+                <button
+                  type="button"
+                  onClick={() => onOpenReturnReceipt(event)}
+                  style={{ marginTop: 8, padding: "6px 10px", fontSize: 12, minHeight: 34 }}
+                >
+                  ดูใบรับคืนรายการนี้
+                </button>
               )}
               <div style={{ marginTop: 6 }}>
                 {event.refunds.map((refund) => (
@@ -3356,6 +3373,41 @@ export default function PosPage() {
     });
   }
 
+  function openReturnEventReceipt(row: Receipt, event: ReceiptReturnEvent) {
+    const refunds: NonNullable<Receipt["refunds"]> = event.refunds.map((refund) => ({
+      id: refund.id,
+      paymentId: refund.paymentId,
+      method: refund.method,
+      amount: refund.amount,
+      status: refund.status,
+      externalRef: refund.externalRef,
+      posReturnId: event.id,
+      returnMode: event.returnMode,
+      returnNote: event.note,
+      returnedAt: event.returnedAt,
+    }));
+    const returnReceipt: Receipt = {
+      ...row,
+      docNo: event.creditNoteNo ?? null,
+      referenceDocNo: row.docNo ?? row.orderId ?? null,
+      receiptType: "return",
+      returnReason: event.note,
+      refundTotal: event.refundAmount,
+      lines: buildReturnReceiptLines(row, event.items),
+      tendered: null,
+      change: null,
+      roundingAmount: null,
+      at: new Date(event.returnedAt).toLocaleString("th-TH"),
+      cashier: event.returnedByName ?? row.cashier,
+      paymentRef: null,
+      payments: [],
+      refunds,
+    };
+    setReceipt(returnReceipt);
+    setReceiptModalOpen(true);
+    window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(returnReceipt));
+  }
+
   /** ประกอบใบเสร็จเป็นไบต์ ESC/POS จาก receipt ที่ค้างอยู่บนจอ */
   function receiptToEscPos(r: Receipt) {
     const nonSaleReceipt = Boolean(r.receiptType && r.receiptType !== "sale");
@@ -3368,7 +3420,7 @@ export default function PosPage() {
       storeName: r.storeName ?? session?.location?.name ?? "",
       branchCode: r.branchCode ?? session?.location?.branchCode ?? null,
       taxId: r.taxId ?? session?.store?.taxId ?? null,
-      posNo: session?.device.registeredPosNo ?? session?.device.code ?? null,
+      posNo: r.posLabel ?? session?.device.registeredPosNo ?? session?.device.code ?? null,
       vatIncluded: Boolean(session?.vat.registered),
       docTitle:
         r.receiptType === "return"
@@ -3376,7 +3428,18 @@ export default function PosPage() {
           : r.receiptType === "exchange"
             ? "ใบเตรียมเปลี่ยนสินค้า"
             : session?.vat.registered ? "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน",
-      docNo: r.docNo,
+      // ใบรับคืนไม่ใช่ใบลดหนี้ แม้จะรู้เลข CN ที่ออกคู่กันแล้วก็ตาม
+      // แยกเลขเอกสารและใช้เลขบิลขายเดิมเป็น barcode เพื่อให้สแกนกลับมาค้นบิลได้จริง
+      docNo: r.receiptType === "return" || r.receiptType === "exchange" ? null : r.docNo,
+      relatedDocNo: r.receiptType === "return" ? r.docNo : null,
+      referenceDocNo:
+        r.receiptType === "return" || r.receiptType === "exchange"
+          ? (r.referenceDocNo ?? r.docNo)
+          : null,
+      barcodeValue:
+        r.receiptType === "return" || r.receiptType === "exchange"
+          ? (r.referenceDocNo ?? r.docNo)
+          : r.docNo,
       at: r.at,
       cashier: r.cashier,
       lines,
@@ -3870,13 +3933,19 @@ export default function PosPage() {
               matched,
               Array.isArray(data.returnedItems) ? data.returnedItems : []
             ),
-            refunds: Array.isArray(data.refunds) ? data.refunds : matched.refunds,
+            tendered: null,
+            change: null,
+            roundingAmount: null,
+            at: new Date(data.returnedAt ?? Date.now()).toLocaleString("th-TH"),
+            cashier: currentCashierName || matched.cashier,
+            paymentRef: null,
+            payments: [],
+            refunds: Array.isArray(data.refunds) ? data.refunds : [],
           };
           setReceipt(returnReceipt);
           setReceiptModalOpen(true);
           window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(returnReceipt));
         }
-        if (receipt?.orderId === orderId) setReceipt(null);
         setReturnNotes((cur) => ({ ...cur, [orderId]: "" }));
         setReturnReasonCodes((cur) => ({ ...cur, [orderId]: "" }));
         setReturnPanelOrderId(null);
@@ -3951,7 +4020,14 @@ export default function PosPage() {
             row,
             Array.isArray(data.returnedItems) ? data.returnedItems : []
           ),
-          refunds: Array.isArray(data.refunds) ? data.refunds : row.refunds,
+          tendered: null,
+          change: null,
+          roundingAmount: null,
+          at: new Date(data.returnedAt ?? Date.now()).toLocaleString("th-TH"),
+          cashier: currentCashierName || row.cashier,
+          paymentRef: null,
+          payments: [],
+          refunds: Array.isArray(data.refunds) ? data.refunds : [],
         };
         setReceipt(returnReceipt);
         setReceiptModalOpen(true);
@@ -4066,6 +4142,7 @@ export default function PosPage() {
     setReturnPanelOrderId(null);
     setReceipt({
       ...row,
+      referenceDocNo: row.docNo ?? row.orderId ?? null,
       receiptType: "exchange",
       returnReason: null,
       refundTotal: null,
@@ -4075,6 +4152,11 @@ export default function PosPage() {
   }
 
   const activeReceiptRefundSummary = receipt ? getReceiptRefundSummary(receipt) : null;
+  const activeReceiptBarcodeValue = receipt
+    ? receipt.receiptType === "return" || receipt.receiptType === "exchange"
+      ? (receipt.referenceDocNo ?? receipt.docNo)
+      : receipt.docNo
+    : null;
 
   if (!token || tokenRejected) {
     return (
@@ -5709,6 +5791,9 @@ export default function PosPage() {
                 {recentReceipts.map((row, idx) => {
                   const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
                   const refundSummary = getReceiptRefundSummary(row);
+                  const latestReturnEvent = [...(row.returnEvents ?? [])]
+                    .filter((event) => !event.isVoid)
+                    .sort((a, b) => new Date(b.returnedAt).getTime() - new Date(a.returnedAt).getTime())[0];
                   // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
                   const canReturn =
                     soldOnThisDevice &&
@@ -5911,6 +5996,15 @@ export default function PosPage() {
                       >
                         {refundSummary.hasReturnActivity ? "ดูใบขายเดิม" : "ดู/พิมพ์"}
                       </button>
+                      {latestReturnEvent && (
+                        <button
+                          type="button"
+                          onClick={() => openReturnEventReceipt(row, latestReturnEvent)}
+                          style={{ padding: "8px 12px", fontSize: 12, minHeight: 38, color: "#8a6100" }}
+                        >
+                          ดูใบรับคืนล่าสุด
+                        </button>
+                      )}
                       <button
                         onClick={() => setHistoryOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
                         style={{
@@ -5950,7 +6044,12 @@ export default function PosPage() {
                         </button>
                       )}
                     </div>
-                    {historyOrderId === row.orderId && <BillHistoryPanel receipt={row} />}
+                    {historyOrderId === row.orderId && (
+                      <BillHistoryPanel
+                        receipt={row}
+                        onOpenReturnReceipt={(event) => openReturnEventReceipt(row, event)}
+                      />
+                    )}
                     {canVoid && voidTarget === row.orderId && (
                       <div style={{
                         marginTop: 8, padding: 10, borderRadius: 8,
@@ -6969,12 +7068,17 @@ export default function PosPage() {
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {receipt.docNo
-                  ?? (receipt.receiptType === "return" ? "ใบรับคืนสินค้า" : "(ไม่มีเลขใบกำกับ)")}
+                {receipt.receiptType === "return"
+                  ? receipt.docNo ? `ใบลดหนี้ ${receipt.docNo}` : "ใบรับคืนสินค้า"
+                  : receipt.docNo ?? (receipt.receiptType === "exchange" ? "ใบเตรียมเปลี่ยนสินค้า" : "(ไม่มีเลขใบกำกับ)")}
               </div>
               <div style={{ fontSize: 12, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                ฿{baht(receipt.refundTotal ?? receipt.total)} · {receipt.paymentLabel}
-                {receipt.change != null ? ` · เงินทอน ฿${baht(receipt.change)}` : ""}
+                ฿{baht(receipt.refundTotal ?? receipt.total)} · {receipt.receiptType === "return"
+                  ? (getReturnPaymentLabel(receipt) ?? "คืนเงินตามบิลเดิม")
+                  : receipt.paymentLabel}
+                {(!receipt.receiptType || receipt.receiptType === "sale") && receipt.change != null
+                  ? ` · เงินทอน ฿${baht(receipt.change)}`
+                  : ""}
               </div>
               {receipt.receiptType === "return" && (
                 <div style={{ fontSize: 12, color: "#8a6100", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -7043,12 +7147,27 @@ export default function PosPage() {
                   ? "ใบเตรียมเปลี่ยนสินค้า"
                   : receipt.vatRegistered ? "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน"}
             </div>
-            {receipt.receiptType === "return" && receipt.referenceDocNo && (
+            {(receipt.receiptType === "return" || receipt.receiptType === "exchange") && receipt.referenceDocNo && (
               <div style={{ textAlign: "center" }}>
                 อ้างอิงบิลเดิม {receipt.referenceDocNo}
               </div>
             )}
+            {receipt.receiptType === "return" && receipt.docNo && (
+              <div style={{ textAlign: "center" }}>
+                ใบลดหนี้ {receipt.docNo}
+              </div>
+            )}
             <div style={{ borderTop: "1px dashed #999", margin: "6px 0" }} />
+            {receipt.receiptType === "return" && (
+              <div style={{ marginBottom: 6, color: "#8a6100" }}>
+                มูลค่ารายการ = ยอดคืนจริงหลังเฉลี่ยส่วนลดจากบิลเดิม
+              </div>
+            )}
+            {(!receipt.receiptType || receipt.receiptType === "sale") && (receipt.discountLines ?? []).length > 0 && (
+              <div style={{ marginBottom: 6, color: "#555" }}>
+                ราคาสินค้าเป็นราคาป้าย ณ ตอนขาย · ส่วนลดแสดงแยกด้านล่าง
+              </div>
+            )}
             {receipt.lines.map((l) => (
               <div key={l.key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -7089,7 +7208,8 @@ export default function PosPage() {
             )}
             {/* ปัดเศษเงินสดแยกจากบล็อก VAT — ร้านที่ไม่ได้จด VAT ก็ตั้งปัดเศษได้
                 ถ้าไม่พิมพ์บรรทัดนี้ ผลรวมรายการจะไม่เท่ายอดสุทธิโดยไม่มีคำอธิบาย */}
-            {Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0) !== 0 && (
+            {(!receipt.receiptType || receipt.receiptType === "sale")
+              && Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0) !== 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
                 <span>ปัดเศษเงินสด</span>
                 <span>{baht(Number(receipt.roundingAmount ?? receipt.vat?.roundingAmount ?? 0))}</span>
@@ -7172,13 +7292,17 @@ export default function PosPage() {
                     )}
                   </div>
                 ))}
-            <div style={{ marginTop: 6 }}>{receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"} · {receipt.at}</div>
+            <div style={{ marginTop: 6 }}>
+              {receipt.receiptType === "return" || receipt.receiptType === "exchange"
+                ? receipt.at
+                : `${receipt.docNo ?? "(ไม่มีเลขใบกำกับ)"} · ${receipt.at}`}
+            </div>
             <div>แคชเชียร์ {receipt.cashier}</div>
             {/* สแกนเลขบิลตอนลูกค้าเอาบิลมาคืนของ แทนการพิมพ์เลขด้วยมือ */}
-            {receipt.docNo && (
+            {activeReceiptBarcodeValue && (
               <div style={{ marginTop: 8, textAlign: "center" }}>
-                <ReceiptBarcode value={receipt.docNo} />
-                <div>{receipt.docNo}</div>
+                <ReceiptBarcode value={activeReceiptBarcodeValue} />
+                <div>{receipt.receiptType === "return" || receipt.receiptType === "exchange" ? "บิลเดิม " : ""}{activeReceiptBarcodeValue}</div>
               </div>
             )}
           </div>
@@ -7190,7 +7314,9 @@ export default function PosPage() {
             padding: "12px 14px", borderTop: "1px solid #e5e5e5",
           }}>
             <button onClick={() => void printReceipt(false)} style={{ flex: 1, padding: "10px 16px" }}>
-              พิมพ์ใบเสร็จ <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
+              {receipt.receiptType === "return"
+                ? "พิมพ์ใบรับคืน"
+                : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
             </button>
             {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
             {printerReady && (
@@ -7201,7 +7327,7 @@ export default function PosPage() {
             {/* ส่งสำเนาให้ลูกค้า (8.6) — ไม่ใช่เอกสารภาษีใบใหม่ อ่านเลขจากใบที่ออกแล้ว
                 ช่องกรอกชนะข้อมูลในระบบ เพราะพนักงานถามอีเมลปากเปล่าเป็นเรื่องปกติ
                 และบิลอาจไม่ผูกลูกค้าเลย */}
-            {receipt?.orderId && (
+            {receipt?.orderId && (!receipt.receiptType || receipt.receiptType === "sale") && (
               <>
                 <input
                   value={receiptTo}

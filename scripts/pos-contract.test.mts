@@ -12,6 +12,7 @@ import {
 } from "../apps/web/lib/bms/posRouteHelpers.ts";
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
 import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
+import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 
 test("POS sale line parser keeps only valid positive integer pack quantities", () => {
   const lines = parsePosSaleLines([
@@ -169,4 +170,37 @@ test("POS last-sale decorator adds storefront metadata without changing sale fie
     posLabel: "POS01",
     vatRegistered: true,
   });
+});
+
+test("return slip prints its credit-note reference but barcodes the searchable original sale", () => {
+  const bytes = buildReceipt({
+    storeName: "Test Store",
+    branchCode: "00001",
+    taxId: null,
+    posNo: "POS01",
+    vatIncluded: false,
+    docTitle: "ใบรับคืนสินค้า",
+    docNo: null,
+    relatedDocNo: "CN-260826-001",
+    referenceDocNo: "SALE-260826-001",
+    barcodeValue: "SALE-260826-001",
+    at: "26/8/2569 12:00:00",
+    cashier: "Cashier",
+    lines: [{ name: "Item", qty: 1, amount: 90 }],
+    itemCount: 1,
+    total: 90,
+    paymentLabel: "คืนเงินสด",
+  });
+  const binary = Buffer.from(bytes);
+  assert.equal(binary.includes(Buffer.from("CN-260826-001", "ascii")), true);
+  assert.equal(binary.includes(Buffer.from("SALE-260826-001", "ascii")), true);
+  // GS k 69 <len> must encode the original sale, never the CN number.
+  const barcodePrefix = Buffer.from([0x1d, 0x6b, 69, "SALE-260826-001".length]);
+  const barcodeOffset = binary.indexOf(barcodePrefix);
+  assert.notEqual(barcodeOffset, -1);
+  assert.equal(
+    binary.subarray(barcodeOffset + barcodePrefix.length, barcodeOffset + barcodePrefix.length + "SALE-260826-001".length)
+      .equals(Buffer.from("SALE-260826-001", "ascii")),
+    true
+  );
 });

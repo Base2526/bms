@@ -1002,7 +1002,14 @@ return that failed to record:
 - the preview dialog puts a notice above the paper: this is the original sale, the printed total is
   still the amount charged at the time, followed by the returned and remaining totals (and any refund
   still awaiting cash settlement)
-- `BillHistoryPanel` lists the sale and every return against it in the order they actually happened
+- the returned-sales row offers **ดูใบรับคืนล่าสุด**, while `BillHistoryPanel` lists the sale and
+  every return in the order they happened and can reopen the slip for each individual return
+- a return slip labels its item amounts as the actual refunded value after allocating the original
+  bill's discounts; it does not present that amount as a new shelf price, and it never carries the
+  original sale's tendered cash, change, or cash-rounding line
+- the slip labels the separately issued credit-note number, but its barcode contains the original
+  sale document number so scanning it returns to the searchable bill rather than a CN number that the
+  receipt search does not treat as sale authority
 
 ## Failure and retry behavior
 
