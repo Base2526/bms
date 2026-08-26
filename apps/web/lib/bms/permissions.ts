@@ -75,6 +75,11 @@ export const BMS_PERMISSIONS = [
   "pharmacy.assessment.reject",
   "pharmacy.protocol.manage",
   "pharmacy.audit.read",
+  // หลักฐานทางคลินิก (9.25) — seed ให้ Pharmacist เท่านั้น ไม่ให้ Manager
+  // (Administrator ได้อัตโนมัติเพราะเป็น super) รูปใบสั่งยาเป็นข้อมูลสุขภาพ
+  // ผู้ชมต้องแคบกว่าตัวเคสเอง
+  "pharmacy.evidence.read",
+  "pharmacy.evidence.manage",
   // จัดประเภทยา/นโยบายการขายรายสินค้า — seed ที่ 7.87
   // .review ให้เฉพาะ Pharmacist และโค้ดยังเช็ค is_licensed_pharmacist ซ้ำ
   // เหมือน approveAssessment() เพราะ Administrator ได้ทุก permission อัตโนมัติ

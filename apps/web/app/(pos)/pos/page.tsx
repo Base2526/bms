@@ -958,6 +958,12 @@ export default function PosPage() {
   const [parkLabel, setParkLabel] = useState("");
   const [parkOpen, setParkOpen] = useState(false);
   const [pharmacyReviewLink, setPharmacyReviewLink] = useState<PharmacyReviewLink | null>(null);
+  // หลักฐานทางคลินิก (9.25) — เคาน์เตอร์ "เขียนได้ อ่านไม่ได้" โดยตั้งใจ:
+  // แคชเชียร์ถ่ายใบสั่งยาที่ลูกค้ายื่นให้เข้าระบบได้ แต่การเปิดดูย้อนหลังต้องมี
+  // pharmacy.evidence.read (เภสัชกร/แอดมิน) ไม่ใช่ใครก็เปิดดูใบสั่งยาคนอื่นจากเครื่องขาย
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [evidenceNote, setEvidenceNote] = useState("");
+  const [evidenceAdded, setEvidenceAdded] = useState(0);
   const [pharmacyReviewOffer, setPharmacyReviewOffer] = useState<{ requiresSafetyCheck: boolean } | null>(null);
   const [pharmacyReviewBusy, setPharmacyReviewBusy] = useState(false);
   const [cashMoves, setCashMoves] = useState<CashMovement[]>([]);
@@ -1715,6 +1721,38 @@ export default function PosPage() {
       setNotice({ type: "ok", text: `เรียกบิล "${data.label}" กลับมาแล้ว — ราคาคิดใหม่ตอนกดรับเงิน` });
     } catch (e: any) {
       setNotice({ type: "error", text: String(e?.message ?? e) });
+    }
+  }
+
+  /**
+   * แนบหลักฐานทางคลินิกเข้าเคสที่พักไว้ — ทำได้เฉพาะเมื่อมีเคสจริงแล้ว
+   * ไม่คืนตัวหลักฐานกลับมาแสดงที่เครื่องขาย (เขียนได้ อ่านไม่ได้)
+   */
+  async function attachPharmacyEvidence(kind: "PRESCRIPTION_IMAGE" | "PRESCRIPTION_REF" | "COUNSELING_NOTE", payload: File | string) {
+    if (!pharmacyReviewLink || !cashierId || !pin) return;
+    setEvidenceBusy(true);
+    try {
+      const form = new FormData();
+      form.append("cashierUserId", cashierId);
+      form.append("pin", pin);
+      form.append("assessmentId", pharmacyReviewLink.assessmentId);
+      form.append("kind", kind);
+      if (payload instanceof File) form.append("file", payload);
+      else form.append("textValue", payload);
+      const res = await fetch("/api/pos/pharmacy-evidence", {
+        method: "POST",
+        headers: authHeaders,
+        body: form,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      setEvidenceAdded((n) => n + 1);
+      setEvidenceNote("");
+      setNotice({ type: "ok", text: "แนบหลักฐานเข้าเคสเภสัชแล้ว" });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setEvidenceBusy(false);
     }
   }
 
@@ -6702,6 +6740,59 @@ export default function PosPage() {
             }}>
               เคสเภสัช {pharmacyReviewLink.caseCode} · {pharmacyReviewStatusLabel(pharmacyReviewLink.status)}
               {pharmacyReviewLink.requiresSafetyCheck ? " · ต้องซักประวัติก่อนขาย" : ""}
+
+              {/* แนบหลักฐาน — ไม่บังคับ ตามที่ตกลงว่าให้เภสัชกรเป็นคนตัดสิน
+                  แนบแล้วไม่แสดงย้อนหลังที่เครื่องขายโดยตั้งใจ (ไม่มีสิทธิ์อ่าน) */}
+              <div style={{ marginTop: 8, borderTop: "1px dashed #cfe6ff", paddingTop: 8 }}>
+                <div style={{ fontSize: 12, color: "#567", marginBottom: 6 }}>
+                  แนบหลักฐานให้เภสัชกร (ไม่บังคับ)
+                  {evidenceAdded > 0 ? ` · แนบแล้ว ${evidenceAdded} รายการ` : ""}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    id="pos-rx-evidence-file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                    capture="environment"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void attachPharmacyEvidence("PRESCRIPTION_IMAGE", file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={evidenceBusy || !pin}
+                    onClick={() => document.getElementById("pos-rx-evidence-file")?.click()}
+                    style={{ padding: "6px 10px", fontSize: 12 }}
+                  >
+                    {evidenceBusy ? "กำลังแนบ…" : "ถ่าย/แนบใบสั่งยา"}
+                  </button>
+                  <input
+                    value={evidenceNote}
+                    onChange={(e) => setEvidenceNote(e.target.value)}
+                    placeholder="เลขอ้างอิงใบสั่งยา หรือบันทึกคำแนะนำ"
+                    style={{ flex: 1, minWidth: 180, padding: "6px 8px", fontSize: 12 }}
+                  />
+                  <button
+                    type="button"
+                    disabled={evidenceBusy || !evidenceNote.trim() || !pin}
+                    onClick={() => void attachPharmacyEvidence(
+                      /^[A-Za-z0-9\-\/]+$/.test(evidenceNote.trim()) ? "PRESCRIPTION_REF" : "COUNSELING_NOTE",
+                      evidenceNote.trim()
+                    )}
+                    style={{ padding: "6px 10px", fontSize: 12 }}
+                  >
+                    บันทึก
+                  </button>
+                </div>
+                {!pin && (
+                  <div style={{ fontSize: 11, color: "#a15", marginTop: 4 }}>
+                    ใส่ PIN ของคนขายก่อนจึงแนบได้
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

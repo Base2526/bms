@@ -335,6 +335,54 @@ Covered by `scripts/pharmacy-approval-reuse-db-contract.test.mts`, which builds 
 tenant rather than borrowing the first one — flipping a shared shop's `business_archetype` to
 `pharmacy` changes gating for every product it sells.
 
+## Clinical evidence at the counter (9.25)
+
+`bms_pharmacy_clinical_evidence` holds three kinds of record against one case, and
+`lib/bms/pharmacy/clinicalEvidence.ts` is the only thing that writes it:
+
+| kind | holds |
+| --- | --- |
+| `PRESCRIPTION_IMAGE` | a photo or PDF of the prescription (`file_id`, no text) |
+| `PRESCRIPTION_REF` | the prescriber's reference number |
+| `COUNSELING_NOTE` | what the pharmacist actually advised |
+
+A table CHECK makes the wrong combination unrepresentable, so an image row can never
+carry text and a text row can never carry a file.
+
+**Decided with the user, not defaults to change casually:**
+
+- **Nothing expires.** Retention is manual; rows live until somebody deletes them.
+  Deletion is a soft delete (`deleted_at`/`deleted_by`) — a prescription that
+  vanished without trace is worse than one marked deleted.
+- **Attaching is never forced.** The pharmacist decides whether a case needs
+  evidence; no policy blocks a sale for lacking it.
+- **Audience is narrower than the case.** `pharmacy.evidence.read` and
+  `pharmacy.evidence.manage` are seeded to `Pharmacist` only. Administrator is a
+  super-role in `lib/bms/permissions.ts` and gets them automatically, so the
+  audience is exactly admin + pharmacist. Manager can read the case but not the
+  prescription image, because that image is health data about an identifiable
+  patient.
+
+**Never serve an image through `/api/files/[id]`.** That route authenticates
+nothing and its ids are sequential integers, so anything reachable there is
+effectively public. `file_id` is deliberately absent from every shape the service
+returns; images stream from `/api/bms/pharmacy/evidence/[id]/file`, which requires
+a session, `pharmacy.evidence.read`, and a tenant match on the evidence row, sends
+`Cache-Control: private, no-store`, and refuses to serve anything but PNG/JPEG/
+WebP/GIF/PDF inline (an SVG would execute script on our own origin).
+
+The counter **writes but cannot read**: `/api/pos/pharmacy-evidence` authenticates
+a device token plus cashier PIN and needs `pos.sell`, and it returns only an id —
+so a cashier can capture the prescription a customer hands over without being able
+to browse other patients' prescriptions from the register.
+
+Both write paths record `assessment.clinical_evidence_added` /
+`assessment.clinical_evidence_deleted` in the same transaction as the row, and the
+trail carries only metadata (kind, source, id) — never the note text or the
+reference number, which are health data.
+
+Covered by `scripts/pharmacy-clinical-evidence-db-contract.test.mts`.
+
 ## Known limitations (MVP scope, decided with the user)
 
 - The queue detail's manual medication picker reads through the pharmacy-scoped

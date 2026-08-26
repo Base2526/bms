@@ -1031,6 +1031,21 @@ old proportional-refund behavior: a migration-time reconstruction is useful evid
 but is never trusted to alter a legacy customer's real refund. New rows carry `source: "SALE"` in
 their pricing snapshot and are the only rows eligible for retained-basket repricing.
 
+### Clinical evidence for a pharmacy case (9.25)
+
+Once a bill has been sent to the pharmacist queue, the counter can attach what makes the hand-over
+defensible: a photo or PDF of the prescription, the prescriber's reference number, or a note of what
+was advised. Attaching is never required — the pharmacist decides whether a case needs it, and no
+policy blocks a sale for lacking it.
+
+The register writes but cannot read. `/api/pos/pharmacy-evidence` takes the device token plus the
+cashier's PIN and `pos.sell`, and answers with an id only, so a cashier can capture the prescription
+a customer hands over without being able to browse anyone else's. Reading and deleting need
+`pharmacy.evidence.read` / `pharmacy.evidence.manage`, seeded to Pharmacist alone (Administrator
+holds every permission as a super-role) — a manager who can read the case still cannot open the
+prescription image. Details, including why images never travel through `/api/files/[id]`, are in
+[the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md).
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery

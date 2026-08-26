@@ -7,6 +7,13 @@
 // only gate for those three.
 import { GraphQLError } from "graphql/error";
 import { requirePermission } from "@/lib/bms/permissions";
+import {
+  PHARMACY_EVIDENCE_KINDS,
+  addClinicalEvidence,
+  deleteClinicalEvidence,
+  listClinicalEvidence,
+  type PharmacyEvidenceKind,
+} from "@/lib/bms/pharmacy/clinicalEvidence";
 import { requireAuth } from "@/lib/auth";
 import { getTenantId } from "@/lib/bms/tenant";
 import { query } from "@/lib/db";
@@ -174,6 +181,12 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.read");
       return getAssessment(getTenantId(ctx), args.id);
     },
+    // สิทธิ์แคบกว่าตัวเคส (pharmacy.evidence.read seed ให้ Pharmacist เท่านั้น
+    // + Administrator ที่เป็น super) — Manager อ่านเคสได้แต่ดูใบสั่งยาไม่ได้
+    async bmsPharmacyClinicalEvidence(_p: unknown, args: { assessmentId: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.evidence.read");
+      return listClinicalEvidence(getTenantId(ctx), args.assessmentId);
+    },
     async bmsPharmacyAssessmentConversationHistory(
       _p: unknown,
       args: { assessmentId: string; limit?: number },
@@ -264,6 +277,47 @@ export const bmsPharmacyResolvers = {
     },
   },
   Mutation: {
+    // เภสัชกรบันทึกเลขอ้างอิงใบสั่งยา / คำแนะนำที่ให้ลูกค้า จากหน้าคิว
+    // รูปภาพไม่ผ่าน GraphQL — อัปโหลดทาง REST (multipart) เท่านั้น
+    async bmsPharmacyAddClinicalEvidence(
+      _p: unknown,
+      args: { assessmentId: string; kind: string; textValue: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.evidence.manage");
+      const kind = String(args.kind ?? "").trim() as PharmacyEvidenceKind;
+      if (!PHARMACY_EVIDENCE_KINDS.includes(kind)) {
+        throw new GraphQLError("kind ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      if (kind === "PRESCRIPTION_IMAGE") {
+        throw new GraphQLError("รูปใบสั่งยาต้องอัปโหลดผ่าน REST ไม่ใช่ GraphQL", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+      const result = await addClinicalEvidence({
+        tenantId: getTenantId(ctx),
+        assessmentId: args.assessmentId,
+        kind,
+        textValue: args.textValue,
+        actorUserId: ctx?.admin?.id ?? null,
+        source: "queue",
+      });
+      if (result.status === "CASE_NOT_FOUND") {
+        throw new GraphQLError("ไม่พบเคสนี้ในร้านนี้", { extensions: { code: "NOT_FOUND" } });
+      }
+      if (result.status === "INVALID") {
+        throw new GraphQLError(result.reason, { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      // audit เก็บแต่ metadata — เนื้อความเป็นข้อมูลสุขภาพ ไม่ลง audit log
+      await audit(ctx, "pharmacy.clinical_evidence.added", result.evidence.id, { kind });
+      return result.evidence;
+    },
+    async bmsPharmacyDeleteClinicalEvidence(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.evidence.manage");
+      const ok = await deleteClinicalEvidence(getTenantId(ctx), args.id, ctx?.admin?.id ?? null);
+      if (ok) await audit(ctx, "pharmacy.clinical_evidence.deleted", args.id, {});
+      return ok;
+    },
     async bmsUpsertPharmacyProductPolicy(
       _p: unknown,
       args: { input: UpsertPharmacyProductPolicyInput },

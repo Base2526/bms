@@ -117,6 +117,22 @@ const M_SUGGEST_MEDICATION = gql`
     bmsGenerateMedicationSuggestions(assessmentId: $id) { id medicationSuggestions }
   }
 `;
+const Q_EVIDENCE = gql`
+  query($assessmentId: ID!) {
+    bmsPharmacyClinicalEvidence(assessmentId: $assessmentId) {
+      id kind textValue fileName fileMimetype fileSize fileUrl source createdByName createdAt
+    }
+  }
+`;
+const M_ADD_EVIDENCE = gql`
+  mutation($assessmentId: ID!, $kind: String!, $textValue: String!) {
+    bmsPharmacyAddClinicalEvidence(assessmentId: $assessmentId, kind: $kind, textValue: $textValue) { id }
+  }
+`;
+const M_DELETE_EVIDENCE = gql`
+  mutation($id: ID!) { bmsPharmacyDeleteClinicalEvidence(id: $id) }
+`;
+
 const Q_PRODUCTS = gql`
   query PharmacyCaseProducts($search: String, $limit: Int) {
     bmsPharmacyCatalog(search: $search, limit: $limit) {
@@ -184,6 +200,12 @@ export default function PharmacyCaseDetailPage() {
   const [removedMedicationRowKeys, setRemovedMedicationRowKeys] = useState<string[]>([]);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  // หลักฐานทางคลินิก (9.25) — สิทธิ์แคบกว่าตัวเคส: เภสัชกร/แอดมินเท่านั้น
+  const canReadEvidence = can("pharmacy.evidence.read");
+  const canManageEvidence = can("pharmacy.evidence.manage");
+  const [evidenceKind, setEvidenceKind] = useState("COUNSELING_NOTE");
+  const [evidenceText, setEvidenceText] = useState("");
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
 
   const { data, loading, error, refetch } = useQuery(Q, {
     variables: { id: params.caseId },
@@ -195,6 +217,42 @@ export default function PharmacyCaseDetailPage() {
     skip: !productPickerOpen,
     fetchPolicy: "cache-and-network",
   });
+  const { data: evidenceData, refetch: refetchEvidence } = useQuery(Q_EVIDENCE, {
+    variables: { assessmentId: params.caseId },
+    skip: permsLoading || !canReadEvidence,
+    fetchPolicy: "cache-and-network",
+  });
+  const evidence = evidenceData?.bmsPharmacyClinicalEvidence ?? [];
+  const [addEvidence, { loading: addingEvidence }] = useMutation(M_ADD_EVIDENCE, {
+    onCompleted: () => {
+      message.success("บันทึกหลักฐานแล้ว");
+      setEvidenceText("");
+      refetchEvidence();
+    },
+    onError: (e) => message.error(e.message),
+  });
+  const [removeEvidence] = useMutation(M_DELETE_EVIDENCE, {
+    onCompleted: () => { message.success("ลบแล้ว"); refetchEvidence(); },
+    onError: (e) => message.error(e.message),
+  });
+
+  async function uploadEvidenceImage(file: File) {
+    setUploadingEvidence(true);
+    try {
+      const form = new FormData();
+      form.append("assessmentId", params.caseId);
+      form.append("file", file);
+      const res = await fetch("/api/bms/pharmacy/evidence/upload", { method: "POST", body: form });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      message.success("แนบรูปแล้ว");
+      refetchEvidence();
+    } catch (e: any) {
+      message.error(String(e?.message ?? e));
+    } finally {
+      setUploadingEvidence(false);
+    }
+  }
 
   const onDone = (label: string) => () => {
     message.success(label);
@@ -1248,6 +1306,139 @@ export default function PharmacyCaseDetailPage() {
               )}
             </Space>
           </Card>
+
+          {/* หลักฐานทางคลินิก (9.25) — เภสัชกรเลือกเองว่าจะแนบหรือไม่ ระบบไม่บังคับ
+              รูปใบสั่งยาโหลดผ่าน route ที่ตรวจสิทธิ์ ไม่ใช่ /api/files/:id */}
+          {canReadEvidence && (
+            <Card
+              size="small"
+              title="หลักฐานทางคลินิก"
+              extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>เก็บไว้จนกว่าจะลบเอง</Typography.Text>}
+              style={{ marginBottom: 12, borderRadius: 10 }}
+            >
+              {evidence.length === 0 ? (
+                <Typography.Text type="secondary">ยังไม่มีหลักฐานแนบในเคสนี้</Typography.Text>
+              ) : (
+                <List
+                  size="small"
+                  dataSource={evidence}
+                  renderItem={(item: any) => (
+                    <List.Item
+                      actions={canManageEvidence ? [
+                        <Button
+                          key="del"
+                          size="small"
+                          danger
+                          type="text"
+                          onClick={() => Modal.confirm({
+                            title: "ลบหลักฐานนี้?",
+                            content: "ระบบยังเก็บร่องรอยว่าใครลบเมื่อไร แต่จะไม่แสดงในรายการอีก",
+                            okText: "ลบ",
+                            cancelText: "ยกเลิก",
+                            onOk: () => removeEvidence({ variables: { id: item.id } }),
+                          })}
+                        >
+                          ลบ
+                        </Button>,
+                      ] : []}
+                    >
+                      <List.Item.Meta
+                        title={
+                          <Space size={6} wrap>
+                            <Tag color={
+                              item.kind === "PRESCRIPTION_IMAGE" ? "purple"
+                              : item.kind === "PRESCRIPTION_REF" ? "blue" : "green"
+                            }>
+                              {item.kind === "PRESCRIPTION_IMAGE" ? "รูปใบสั่งยา"
+                                : item.kind === "PRESCRIPTION_REF" ? "เลขอ้างอิงใบสั่งยา" : "บันทึกคำแนะนำ"}
+                            </Tag>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {item.source === "pos" ? "จากเคาน์เตอร์" : "จากหน้าคิว"}
+                              {item.createdByName ? ` · ${item.createdByName}` : ""}
+                              {" · "}{new Date(item.createdAt).toLocaleString("th-TH")}
+                            </Typography.Text>
+                          </Space>
+                        }
+                        description={
+                          item.fileUrl ? (
+                            <a href={item.fileUrl} target="_blank" rel="noreferrer">
+                              เปิดดู {item.fileName || "ไฟล์"}
+                            </a>
+                          ) : (
+                            <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{item.textValue}</Typography.Text>
+                          )
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+
+              {canManageEvidence && (
+                <>
+                  <Divider style={{ margin: "12px 0" }} />
+                  <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                    <Space wrap>
+                      <Select
+                        value={evidenceKind}
+                        onChange={setEvidenceKind}
+                        style={{ width: 200 }}
+                        options={[
+                          { value: "COUNSELING_NOTE", label: "บันทึกคำแนะนำ" },
+                          { value: "PRESCRIPTION_REF", label: "เลขอ้างอิงใบสั่งยา" },
+                        ]}
+                      />
+                      <Button
+                        type="primary"
+                        loading={addingEvidence}
+                        disabled={!evidenceText.trim()}
+                        onClick={() => addEvidence({
+                          variables: {
+                            assessmentId: params.caseId,
+                            kind: evidenceKind,
+                            textValue: evidenceText,
+                          },
+                        })}
+                      >
+                        บันทึก
+                      </Button>
+                    </Space>
+                    <Input.TextArea
+                      rows={2}
+                      value={evidenceText}
+                      onChange={(e) => setEvidenceText(e.target.value)}
+                      placeholder={evidenceKind === "PRESCRIPTION_REF"
+                        ? "เช่น RX-2569-0001"
+                        : "คำแนะนำที่ให้ลูกค้า"}
+                      maxLength={4000}
+                    />
+                    <Space wrap>
+                      <input
+                        id="rx-evidence-file"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadEvidenceImage(file);
+                          e.target.value = "";
+                        }}
+                      />
+                      <Button
+                        loading={uploadingEvidence}
+                        onClick={() => document.getElementById("rx-evidence-file")?.click()}
+                      >
+                        แนบรูปใบสั่งยา
+                      </Button>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        PNG/JPEG/WebP/GIF หรือ PDF ไม่เกิน 10MB
+                      </Typography.Text>
+                    </Space>
+                  </Space>
+                </>
+              )}
+            </Card>
+          )}
 
           <Card size="small" title="Audit Timeline" style={{ borderRadius: 10 }}>
             <div style={{ maxHeight: 420, overflowY: "auto", padding: "4px 8px 0 4px" }}>

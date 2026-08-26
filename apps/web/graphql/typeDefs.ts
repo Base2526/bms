@@ -1083,6 +1083,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== AI Pharmacy Intake Assistant =====
     bmsPharmacyAssessments(status: String, riskLevel: String, assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int): [BmsPharmacyAssessment!]!
+    bmsPharmacyClinicalEvidence(assessmentId: ID!): [BmsPharmacyClinicalEvidence!]!
     bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
     bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
@@ -2655,6 +2656,26 @@ export const typeDefs = /* GraphQL */ `
   # AI never writes status — see lib/bms/pharmacy/assessments.ts. Approve/
   # reject/refer additionally require users.is_licensed_pharmacist, checked
   # server-side regardless of role/permission.
+
+  """
+  หลักฐานทางคลินิกของเคส (9.25) — ไม่มี fileId โดยตั้งใจ
+  รูปใบสั่งยาดูได้ทาง fileUrl เท่านั้น ซึ่งเป็น route ที่ตรวจสิทธิ์
+  """
+  type BmsPharmacyClinicalEvidence {
+    id: ID!
+    assessmentId: ID!
+    kind: String!
+    textValue: String
+    fileName: String
+    fileMimetype: String
+    fileSize: Int
+    fileUrl: String
+    source: String!
+    createdBy: ID
+    createdByName: String
+    createdAt: String!
+  }
+
   type BmsPharmacyAssessment {
     id: ID!
     tenantId: ID!
@@ -3861,6 +3882,10 @@ export const typeDefs = /* GraphQL */ `
     bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
     bmsRequestMoreInformation(assessmentId: ID!, expectedVersion: Int!, fields: [String!]!, note: String): BmsPharmacyAssessment!
     bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, pharmacistResponse: String!, orderDraft: JSON): BmsPharmacyAssessment!
+    """แนบหลักฐานทางคลินิกจากหน้าคิว (เภสัชกร) — รูปอัปโหลดผ่าน REST ไม่ผ่าน GraphQL"""
+    bmsPharmacyAddClinicalEvidence(assessmentId: ID!, kind: String!, textValue: String!): BmsPharmacyClinicalEvidence!
+    """ลบหลักฐาน (soft delete — ยังตรวจย้อนได้ว่าใครลบ)"""
+    bmsPharmacyDeleteClinicalEvidence(id: ID!): Boolean!
     bmsRejectAssessment(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
     bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
     bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!

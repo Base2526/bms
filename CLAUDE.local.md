@@ -594,6 +594,35 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
   นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
   `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
+- **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 2 ตัว
+  (`pharmacy.evidence.read`, `pharmacy.evidence.manage` → **Pharmacist เท่านั้น**)
+  · เก็บ 3 อย่างต่อเคส: รูปใบสั่งยา / เลขอ้างอิงใบสั่งยา / บันทึกคำแนะนำ · **เก็บจนกว่าจะลบเอง ไม่มีตัวหมดอายุ**
+    (ตกลงกับผู้ใช้) · ลบเป็น soft delete เพื่อให้ยังตรวจได้ว่าใครลบหลักฐานอะไรออกไป
+  · **ไม่บังคับแนบ** — เภสัชกรเป็นคนตัดสิน ไม่มี policy ไหนบล็อกบิลเพราะไม่มีหลักฐาน
+  · **ไม่ seed ให้ Manager โดยตั้งใจ** — Administrator ได้อัตโนมัติเพราะเป็น super role ผลคือผู้ชม =
+    admin + เภสัชกร ตรงตามที่ตกลง · Manager อ่านเคสได้แต่เปิดรูปใบสั่งยาไม่ได้
+  · **⚠️ กับดักที่เจอตอนทำ: `/api/files/[id]` ไม่มี auth เลย และ id เป็น integer เรียงลำดับ**
+    ใครก็ไล่เดาโหลดไฟล์ของคนอื่นได้ · รูปใบสั่งยาจึงต้องออกทาง
+    `/api/bms/pharmacy/evidence/[id]/file` ที่ตรวจ session + `pharmacy.evidence.read` + tenant ของแถว
+    และตั้ง `Cache-Control: private, no-store` · **`file_id` ไม่เคยถูกส่งออกไปฝั่ง client เลย** (มีเทสคุม)
+    · ถ้าจะเก็บไฟล์อ่อนไหวอย่างอื่นในอนาคต ห้ามใช้ `/api/files/:id` ซ้ำ
+  · เคาน์เตอร์ **เขียนได้ อ่านไม่ได้** — `/api/pos/pharmacy-evidence` ใช้ device token + PIN + `pos.sell`
+    คืนแค่ id ไม่คืนตัวหลักฐาน (แคชเชียร์ถ่ายใบสั่งยาเข้าระบบได้ แต่เปิดดูของคนอื่นไม่ได้)
+  · รับไฟล์เฉพาะ PNG/JPEG/WebP/GIF/PDF ไม่เกิน 10MB — **ไม่รับ SVG** เพราะแสดง inline แล้วรัน script
+    ในโดเมนเราได้
+  · ร่องรอย (`assessment.clinical_evidence_added/_deleted`) เขียนในทรานแซกชันเดียวกับแถว และ
+    **เก็บแต่ metadata ไม่เก็บเนื้อความ/เลขใบสั่งยา** (มีเทสคุมว่าไม่มีเนื้อความหลุดลง event)
+  · UI: การ์ด "หลักฐานทางคลินิก" ที่ `/admin/pharmacy-queue/[caseId]` (ก่อน Audit Timeline) +
+    แถบแนบหลักฐานใต้กล่องเคสเภสัชที่หน้า POS — **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc`**
+  · เทสชุดใหม่: `scripts/pharmacy-clinical-evidence-db-contract.test.mts` (8 เทส · สร้าง tenant
+    ของตัวเอง 2 ร้านแล้วลบทิ้ง ไม่ยืมร้านจริง)
+- **⚠️ บทเรียนตอนเขียนเทสที่ต้องตั้ง `business_archetype = 'pharmacy'`** — เทสที่ยืมร้านแรกแล้ว
+  "จำค่าเดิมไว้คืนตอน teardown" **อันตราย**: รอบที่ teardown ล้ม ร้านจริงค้างเป็นร้านยา แล้วรอบถัดไป
+  จับ `pharmacy` เป็น "ค่าเดิม" จนติดถาวร → ชุดเทส POS แดง 10 ตัวด้วย `POLICY_NOT_READY`
+  (เกิดจริง 2026-08-26 แก้ด้วยการ `UPDATE bms_store_profile SET business_archetype = NULL`)
+  · **เทสที่ต้องสลับ archetype ให้สร้าง tenant ของตัวเองเสมอ** — คอลัมน์นี้เปลี่ยนการกันบิลของ
+    **ทุกสินค้า** ในร้านนั้น ไม่ใช่แค่ของที่เทสสร้าง
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

@@ -65,6 +65,13 @@ wrong, and update the doc in the same change.
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
   dispense" a supported move.
+- **Clinical evidence is health data.** Prescription images never go through
+  `/api/files/[id]` (no auth, sequential ids); they stream from
+  `/api/bms/pharmacy/evidence/[id]/file` behind a session, `pharmacy.evidence.read`, and a tenant
+  match, and `file_id` never appears in any client-facing shape. `pharmacy.evidence.*` is seeded to
+  Pharmacist only — deliberately narrower than the case itself, so a Manager who can read the case
+  still cannot open the prescription. The counter writes evidence but cannot read it back. Audit
+  trails carry the kind and id, never the note text or reference number.
 - **`ONLINE_SALE_PROHIBITED` is a channel rule, not a blanket ban.** `evaluatePharmacySale()` takes a
   `channel`; online is a hard refusal, the counter falls through to `PHARMACY_REVIEW_REQUIRED` so a
   pharmacist still gates every hand-over. The parameter defaults to `"online"` on purpose — a caller
@@ -340,6 +347,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `auth-identity-contract` · `user-admin-contract` | auth identity · staff management |
 | `multi-item-request-contract` · `pharmacy-trigger-contract` · `pharmacy-policy-decision-contract` | multi-item message splitting/pack units · pharmacy product-vs-symptom classification · basket-wide policy blockers |
 | `pharmacy-approval-reuse-db-contract` | one pharmacist approval backs exactly one order; consumed in the sale's own transaction (creates and drops its own tenant) |
+| `pharmacy-clinical-evidence-db-contract` | three evidence kinds, shape CHECK, cross-tenant refusal, soft delete, and `file_id` never reaching a client |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
 | `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |
