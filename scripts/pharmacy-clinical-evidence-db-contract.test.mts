@@ -214,6 +214,69 @@ test("ทุกการเพิ่ม/ลบมีร่องรอย แล
   }
 });
 
+// ลบไฟล์ทิ้งได้ แต่แถวหลักฐานต้องอยู่เป็นหลักฐานว่าเคยมี (9.28)
+//
+// 9.25 เขียน constraint สองตัวขัดกันเอง: FK เป็น ON DELETE SET NULL แต่ CHECK
+// บังคับว่าแถว PRESCRIPTION_IMAGE ต้องมี file_id → ลบแถวใน files ไม่ได้เลย
+// (error เป็น shape_check ที่อ่านไม่รู้เรื่องเพราะพูดถึง UPDATE ที่ไม่มีใครสั่ง)
+// สำคัญกับข้อมูลสุขภาพ: คำขอลบตาม PDPA ต้องลบตัวไฟล์ได้ โดยยังเหลือร่องรอยว่า
+// เคยมีหลักฐานและใครแนบ
+test("ลบไฟล์ได้ และเหลือแถวหลักฐานเป็น tombstone", async () => {
+  const f = await query<{ id: number }>(
+    `INSERT INTO files (filename, original_name, mimetype, size, relpath, visibility)
+     VALUES ($1,$2,'image/png',10,$3,'private') RETURNING id`,
+    [`fake-${TAG}-erase.png`, "erase.png", `fake/${TAG}-erase.png`]
+  );
+  const added = await addClinicalEvidence({
+    tenantId, assessmentId, kind: "PRESCRIPTION_IMAGE",
+    file: { id: f.rows[0].id, name: "erase.png", mimetype: "image/png", size: 10 },
+    actorUserId: null, source: "queue",
+  });
+  assert.equal(added.status, "ADDED");
+  if (added.status !== "ADDED") return;
+
+  // เดิมบรรทัดนี้ throw shape_check
+  await query(`DELETE FROM files WHERE id = $1`, [f.rows[0].id]);
+
+  const row = await query<{ kind: string; file_id: number | null }>(
+    `SELECT kind, file_id FROM bms_pharmacy_clinical_evidence WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, added.evidence.id]
+  );
+  assert.equal(row.rowCount, 1, "แถวหลักฐานต้องไม่หายไปพร้อมไฟล์");
+  assert.equal(row.rows[0].kind, "PRESCRIPTION_IMAGE");
+  assert.equal(row.rows[0].file_id, null, "file_id ต้องเป็น NULL = ไฟล์ถูกลบไปแล้ว");
+
+  // ไม่มีไฟล์แล้วก็สตรีมไม่ได้
+  assert.equal(await getEvidenceFileForStreaming(tenantId, added.evidence.id), null);
+});
+
+// CHECK ที่คลายแล้วต้องยังกันรูปแบบที่ผิดอยู่ครบ
+test("คลาย CHECK แล้วยังกันรูปแบบผิดทั้งสามแบบ", async () => {
+  const cases: Array<[string, string, any[]]> = [
+    [
+      "แถวข้อความที่มีไฟล์",
+      `INSERT INTO bms_pharmacy_clinical_evidence (tenant_id, assessment_id, kind, file_id, text_value)
+       VALUES ($1,$2,'COUNSELING_NOTE',$3,'x')`,
+      [tenantId, assessmentId, fileId],
+    ],
+    [
+      "แถวรูปที่มีข้อความ",
+      `INSERT INTO bms_pharmacy_clinical_evidence (tenant_id, assessment_id, kind, text_value)
+       VALUES ($1,$2,'PRESCRIPTION_IMAGE','x')`,
+      [tenantId, assessmentId],
+    ],
+    [
+      "ข้อความว่างเปล่า",
+      `INSERT INTO bms_pharmacy_clinical_evidence (tenant_id, assessment_id, kind, text_value)
+       VALUES ($1,$2,'COUNSELING_NOTE','   ')`,
+      [tenantId, assessmentId],
+    ],
+  ];
+  for (const [label, sql, params] of cases) {
+    await assert.rejects(query(sql, params), /shape_check/, label + " ต้องถูกปฏิเสธที่ชั้น DB");
+  }
+});
+
 test("teardown: drop both throwaway tenants and the stored file row", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`,
@@ -231,6 +294,7 @@ test("teardown: drop both throwaway tenants and the stored file row", async () =
     }
     await query(`DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])`, [ids]);
   }
+  // ลบ evidence ก่อน files เสมอ (ลำดับ FK) — ลิสต์ตารางด้านบนทำไปแล้ว
   await query(`DELETE FROM files WHERE relpath LIKE $1`, [`fake/${TAG}%`]);
   const left = await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM bms_tenants WHERE slug LIKE $1`,

@@ -654,6 +654,20 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
     **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
   · ช่อง cross-tenant ที่เคยจดว่า "ยังเหลือ" **แก้แล้วที่ `9.27`** (ดูหัวข้อถัดไป)
+- **`9.28__bms_pharmacy_evidence_erased_file.sql` (แก้ constraint ของ `9.25` ที่ขัดกันเอง + ถอน GRANT
+  ที่ไม่จำเป็น) apply เข้า dev DB และ verify แล้ว 2026-08-27** — ยังไม่ได้ apply เข้า production
+  · **บั๊กที่ `9.25` ทิ้งไว้ (ผมเขียนเอง เจอตอน recheck)**: FK เป็น `ON DELETE SET NULL` แต่ CHECK
+    บังคับว่าแถว `PRESCRIPTION_IMAGE` ต้องมี `file_id` → **ลบแถวใน `files` ไม่ได้เลย** error ออกมาเป็น
+    `shape_check` ที่อ่านไม่รู้เรื่องเพราะพูดถึง `UPDATE` ที่ไม่มีใครสั่ง · ผลจริง: storage sweep,
+    `deleteFile` เดิม และ **คำขอลบข้อมูลตาม PDPA** ทำไม่ได้ทั้งหมด
+  · **แก้ CHECK ไม่ใช่แก้ FK** เพราะ SET NULL คือพฤติกรรมที่ต้องการ — ลบตัวไฟล์ได้ แต่ไม่ลบร่องรอยว่า
+    เคยมีหลักฐานและใครแนบ · `kind='PRESCRIPTION_IMAGE' AND file_id IS NULL` = tombstone "ไฟล์ถูกลบแล้ว"
+    · สตรีมจะได้ 404 เองเพราะ `getEvidenceFileForStreaming` join กับ `file_id`
+  · **ถอน `GRANT SELECT ON files TO bms_app` ที่ `9.25` ใส่ไว้เกินจำเป็น** — โค้ดในโมดูลนี้อ่าน `files`
+    ผ่าน `query()` (role `app`) ไม่ใช่ใน `beginTenantTx` (ที่ `SET LOCAL ROLE bms_app`) จึงไม่เคยต้องใช้
+    · `files` ปิด RLS อยู่ ดังนั้น GRANT นั้นทำให้ role ที่ตั้งใจให้ถูก RLS คุมอ่านไฟล์ได้ทุกร้าน
+  · เทสเพิ่ม 2 ตัวใน `scripts/pharmacy-clinical-evidence-db-contract.test.mts` (เป็น 10 เทส):
+    ลบไฟล์แล้วเหลือ tombstone · CHECK ที่คลายแล้วยังกันรูปแบบผิดครบ 3 แบบ
 - **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB และ
   **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · seed permission ใหม่ 2 ตัว
   (`pharmacy.evidence.read`, `pharmacy.evidence.manage` → **Pharmacist เท่านั้น**)
