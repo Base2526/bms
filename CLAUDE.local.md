@@ -654,6 +654,27 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
     **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
   · ช่อง cross-tenant ที่เคยจดว่า "ยังเหลือ" **แก้แล้วที่ `9.27`** (ดูหัวข้อถัดไป)
+- **การ์ดของ cron/job ที่ "ข้ามได้เมื่อไม่ตั้ง env" — แก้แล้ว 2026-08-27 (ไม่มี migration)**
+  · **ต้นเหตุ**: ทุก route เขียน `if (secret && req.headers.get("x-cron-secret") !== secret)` ซึ่ง
+    `secret &&` = **ไม่ตั้ง env ก็ไม่ตรวจอะไรเลย** และโน้ตในไฟล์นี้เองบันทึกว่า `BMS_CRON_SECRET`
+    ยังไม่ได้ตั้ง → endpoint 9 ตัวเปิดให้ใครก็ยิงได้: `reports/send-digest` (**ส่งอีเมลออกจริง**),
+    `followups/run` (**ส่งข้อความถึงลูกค้า**), `ai/check-health` + `channels/check-health`
+    (**จ่ายค่า AI / ยิง provider**), `orders/release-expired` (ปล่อยสต็อกที่จองไว้),
+    `loyalty/maintenance` (ทำแต้มหมดอายุ), `pharmacy/assessments/expire-stale`,
+    `shipping/sync-carriers`, `jobs/report-run` · `admin/queue/db` ก็รูปแบบเดียวกัน (`ADMIN_TOKEN`)
+  · **`jobs/etax` ไม่ได้เป็นแบบนี้** — มันเขียน `if (!expected || ...)` fail-closed อยู่แล้ว
+    (ผมเข้าใจผิดตอนสแกนรอบแรกเพราะเห็นแค่บรรทัดประกาศตัวแปร)
+  · **helper กลางใหม่ `lib/bms/cronRouteAuth.ts`** (แบบเดียวกับที่ repo แยก `adminRouteAuth.ts`):
+    ไม่ตั้ง env → **503** (เป็นการตั้งค่าที่ยังไม่เสร็จ ไม่ใช่ผู้เรียกผิด) · header ผิด → **401**
+    · เทียบด้วย `timingSafeEqual`
+  · **ผลข้างเคียงที่ตั้งใจ**: ถ้ายังไม่ตั้ง `BMS_CRON_SECRET` งานตั้งเวลาจะ **ไม่ทำงานและเห็นชัดว่าไม่ทำงาน**
+    ดีกว่าเปิดให้ใครก็ยิงได้เงียบ ๆ · ต้องตั้ง secret พร้อม deploy ไม่งั้น job ทั้งชุดหยุด
+  · verify จริง: ยิงตอนไม่มี env → `503` พร้อมข้อความบอกสาเหตุ · ทดสอบ helper 6 กรณี
+    (ไม่ตั้ง/ตั้งแล้วไม่มี header/ผิด/ถูก/ยาวกว่า) ถูกครบ
+  · **อุดช่องโหว่ในเทสตัวเองด้วย** — `inventory-tenant-scope-contract` เดิมนับว่า "มีคำว่า
+    CRON_SECRET ในไฟล์" = มีการ์ด จึงมองไม่เห็น fail-open · เพิ่มเทสที่สแกน `if (<secretVar> &&`
+    ทั่ว `app/api` (ตัดคอมเมนต์ออกก่อน ไม่งั้นเอกสารที่อธิบายรูปแบบเก่าถูกจับเป็นของจริง — เจอมาแล้ว)
+    · ยืนยันว่าแดงจริงเมื่อเอา fail-open กลับมาที่ `reports/send-digest`
 - **`9.28__bms_pharmacy_evidence_erased_file.sql` (แก้ constraint ของ `9.25` ที่ขัดกันเอง + ถอน GRANT
   ที่ไม่จำเป็น) apply เข้า dev DB และ verify แล้ว 2026-08-27** — ยังไม่ได้ apply เข้า production
   · **บั๊กที่ `9.25` ทิ้งไว้ (ผมเขียนเอง เจอตอน recheck)**: FK เป็น `ON DELETE SET NULL` แต่ CHECK

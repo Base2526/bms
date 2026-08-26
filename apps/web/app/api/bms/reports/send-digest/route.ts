@@ -4,7 +4,7 @@
 //   curl -X POST "http://localhost:3000/api/bms/reports/send-digest" \
 //     -H "x-cron-secret: $BMS_CRON_SECRET"
 //
-// ป้องกันด้วย header x-cron-secret = env BMS_CRON_SECRET (ถ้าตั้งไว้) — pattern
+// ป้องกันด้วย header x-cron-secret = env BMS_CRON_SECRET (บังคับ — ไม่ตั้ง env = ปฏิเสธทุกคำขอ) — pattern
 // เดียวกับ /api/bms/channels/check-health และ /api/bms/ai/check-health
 // ตั้ง cron ให้ยิง endpoint นี้ทุกชั่วโมงพอ (idempotency มาจาก last_period_key
 // ใน bms_report_subscriptions ไม่ใช่ความถี่ cron — ยิงถี่กว่านี้ก็ไม่ส่งซ้ำ)
@@ -16,16 +16,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { runScheduledDigests } from "@/lib/bms/reportDigest";
 import { recordJobRun } from "@/lib/bms/jobRuns";
+import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest) {
-  const secret = process.env.BMS_CRON_SECRET;
-  if (secret && req.headers.get("x-cron-secret") !== secret) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const cron = authorizeCronRequest(req);
+  if (!cron.ok) return cron.response;
 
   try {
     const result = await recordJobRun("report-digest", "cron", () => runScheduledDigests());

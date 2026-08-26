@@ -117,6 +117,7 @@ const ROUTE_GUARDS = [
   // จงใจไม่รับ `requireAdminOrInternal` เป็นการ์ดที่ยอมรับได้: มันแค่ยืนยันว่าล็อกอินแล้ว
   // ไม่ดูสิทธิ์เลย — สองที่ที่เคยใช้ (อัปโหลดรูปสินค้า/ไฟล์แนบแชท) ย้ายไปใช้ permission แล้ว
   "requirePlatformAdminSeeder", // seeder ระดับแพลตฟอร์ม
+  "authorizeCronRequest",       // helper ที่ fail closed (lib/bms/cronRouteAuth.ts)
   "CRON_SECRET",                // job ที่ cron ยิง
   "BMS_JOB_TOKEN",
   "verifyMetaSignature",        // webhook ที่ verify ลายเซ็น (fail-closed)
@@ -158,6 +159,40 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
     unguarded.sort(),
     [],
     "route เหล่านี้ยิงได้โดยไม่ต้องล็อกอิน — middleware ไม่ได้กัน /api/** ให้"
+  );
+});
+
+// การ์ดที่ "ข้ามได้เมื่อไม่ตั้ง env" ไม่ใช่การ์ด
+//
+// รูปแบบ `if (secret && header !== secret)` อ่านผ่าน ๆ เหมือนตรวจ แต่แปลว่า
+// ไม่ตั้ง env = ไม่ตรวจอะไรเลย · เกิดจริงกับ cron 9 ตัวที่ส่งอีเมลออก จ่ายค่า AI
+// ปล่อยสต็อกที่จองไว้ และทำแต้มลูกค้าหมดอายุ ขณะที่ BMS_CRON_SECRET ยังไม่ได้ตั้ง
+//
+// เทสก่อนหน้านี้มองไม่เห็นเพราะมันดูแค่ว่า "มีคำว่า CRON_SECRET อยู่ในไฟล์ไหม"
+test("no route treats a missing secret as permission to run", () => {
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (entry.name !== "route.ts") continue;
+      // ตัดคอมเมนต์ออกก่อน ไม่งั้นเอกสารที่อธิบายรูปแบบเก่า ("เดิมเขียน if (expected && …)")
+      // จะถูกจับเป็นของจริง — เจอมาแล้วตอนเขียนเทสนี้
+      const src = readFileSync(full, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      // `if (<secretVar> && ...)` — ตัวแปรความลับเป็นเงื่อนไขนำ = ข้ามได้เมื่อว่าง
+      for (const m of src.matchAll(/if \(\s*(secret|expected|token|adminToken)\s*&&/g)) {
+        offenders.push(`${path.relative(WEB, full)}  →  ${m[0]}`);
+      }
+    }
+  };
+  // ทั้ง /api ไม่ใช่แค่ /api/bms — admin/queue/db ก็เคยเป็นแบบนี้
+  walk(path.join(WEB, "app", "api"));
+  assert.deepEqual(
+    [...new Set(offenders)].sort(),
+    [],
+    "การ์ดต้องปฏิเสธเมื่อไม่ได้ตั้งความลับ ไม่ใช่ปล่อยผ่าน:\n" + offenders.join("\n")
   );
 });
 

@@ -17,16 +17,15 @@ import type { NextRequest } from "next/server";
 import { expireStaleAssessments } from "@/lib/bms/pharmacy/assessments";
 import { recordJobRun } from "@/lib/bms/jobRuns";
 import { isPharmacyIntakeEnabled } from "@/lib/bms/pharmacy/config";
+import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest) {
-  const secret = process.env.BMS_CRON_SECRET;
-  if (secret && req.headers.get("x-cron-secret") !== secret) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const cron = authorizeCronRequest(req);
+  if (!cron.ok) return cron.response;
   if (!isPharmacyIntakeEnabled()) {
     return NextResponse.json({ ok: true, closed: 0, skipped: "PHARMACY_INTAKE_ENABLED is false" });
   }

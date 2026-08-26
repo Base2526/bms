@@ -17,16 +17,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { recordJobRun } from "@/lib/bms/jobRuns";
 import { expireLoyaltyPointsAllTenants, reviewMemberTiersAllTenants } from "@/lib/bms/membership";
+import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: NextRequest) {
-  const secret = process.env.BMS_CRON_SECRET;
-  if (secret && req.headers.get("x-cron-secret") !== secret) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const cron = authorizeCronRequest(req);
+  if (!cron.ok) return cron.response;
 
   const task = new URL(req.url).searchParams.get("task");
   try {

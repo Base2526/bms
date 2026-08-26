@@ -65,6 +65,14 @@ wrong, and update the doc in the same change.
   case dispense an approval-gated drug again and again. A cancelled bill does **not** hand the
   approval back (a fresh review is required), because releasing it would make "cancel to get another
   dispense" a supported move.
+- **A guard that can be skipped is not a guard.** Scheduled endpoints go through
+  `authorizeCronRequest()` (`lib/bms/cronRouteAuth.ts`), which refuses with **503 when the env var is
+  unset** and 401 on a wrong header — never `if (secret && header !== secret)`, which reads like a
+  check but means "no env, no check". Nine cron routes and `admin/queue/db` were open that way while
+  `BMS_CRON_SECRET` sat unconfigured, on endpoints that send email, spend AI credit, release reserved
+  stock and expire loyalty points. Consequence to accept, not work around: with no secret set the
+  jobs refuse to run, visibly, instead of running for anyone. Enforced by
+  `inventory-tenant-scope-contract`'s "no route treats a missing secret as permission to run".
 - **A secret never falls back to a literal in production.** `jwtSecret()`, `crypto.ts`'s `getKey()`,
   `checkoutToken.ts`'s `tokenSecret()` and the ws gateway all throw when their env var is missing
   under `NODE_ENV=production`, and only use a dev constant otherwise. Resolve a secret in a
@@ -374,7 +382,7 @@ cd apps/web && npx tsc --noEmit && npm run build
 | `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
 | `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
-| `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body |
+| `inventory-tenant-scope-contract` | every `bms_inventory` statement is tenant-scoped; every `/api/bms` route has a guard; the reserve route never takes a tenant from the body; no guard is skippable when its secret is unset |
 
   Suites that need a real Postgres **write to it** — dev only, never production. They create and
   remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation

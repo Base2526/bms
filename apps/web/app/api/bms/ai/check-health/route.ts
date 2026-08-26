@@ -4,7 +4,7 @@
 //   curl -X POST "http://localhost:3000/api/bms/ai/check-health" \
 //     -H "x-cron-secret: $BMS_CRON_SECRET"
 //
-// ป้องกันด้วย header x-cron-secret = env BMS_CRON_SECRET (ถ้าตั้งไว้) — ตาม pattern
+// ป้องกันด้วย header x-cron-secret = env BMS_CRON_SECRET (บังคับ — ไม่ตั้ง env = ปฏิเสธทุกคำขอ) — ตาม pattern
 // เดียวกับ /api/bms/channels/check-health
 //
 // ต่างจาก channel health (ซึ่งพึ่ง event จริงเท่านั้น ไม่มี active probe) — AI provider
@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { testPlatformAiKey } from "@/lib/bms/aiConfig";
 import { recordJobRun } from "@/lib/bms/jobRuns";
+import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -30,10 +31,8 @@ export const dynamic = "force-dynamic";
 const CHECKED_PROVIDERS = ["anthropic", "anthropic-ocr", "deepseek", "qwen"] as const;
 
 async function handlePOST(req: NextRequest) {
-  const secret = process.env.BMS_CRON_SECRET;
-  if (secret && req.headers.get("x-cron-secret") !== secret) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const cron = authorizeCronRequest(req);
+  if (!cron.ok) return cron.response;
 
   try {
     const results = await recordJobRun("ai-health", "cron", () =>

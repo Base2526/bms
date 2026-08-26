@@ -1,6 +1,7 @@
 // apps/web/app/api/admin/queue/db/route.ts
 import { NextResponse } from "next/server";
 import pg from "pg";
+import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -8,10 +9,11 @@ export const dynamic = "force-dynamic";
 
 const { Pool } = pg;
 
-function requireAdmin(req: Request) {
-  const token = req.headers.get("x-admin-token");
-  const expected = process.env.ADMIN_TOKEN;
-  if (expected && token !== expected) throw new Error("unauthorized");
+// เดิม `if (expected && ...)` = ไม่ตั้ง ADMIN_TOKEN ก็ผ่านทุกคำขอ · route นี้เปิด
+// connection pool ของตัวเองไปอ่านคิวในฐานข้อมูล จึงต้อง fail closed เหมือน cron
+function requireAdmin(req: Request): NextResponse | null {
+  const cron = authorizeCronRequest(req, "x-admin-token", "ADMIN_TOKEN");
+  return cron.ok ? null : cron.response;
 }
 
 const pool = new Pool({
@@ -24,7 +26,8 @@ const pool = new Pool({
 
 async function handleGET(req: Request) {
   try {
-    requireAdmin(req);
+    const denied = requireAdmin(req);
+    if (denied) return denied;
 
     const url = new URL(req.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 80), 1), 200);
