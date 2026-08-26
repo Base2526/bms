@@ -2809,6 +2809,8 @@ export type PosReturnResult =
       posReturnId: string;
       orderId: string;
       refundAmount: number;
+      /** เวลาที่สร้างรายการคืนจริงจากฐานข้อมูล (คงเดิมเมื่อ replay idempotency key) */
+      returnedAt: string;
       returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
@@ -2841,6 +2843,8 @@ export type PosPartialReturnResult =
       posReturnId: string;
       orderId: string;
       refundAmount: number;
+      /** เวลาที่สร้างรายการคืนจริงจากฐานข้อมูล (คงเดิมเมื่อ replay idempotency key) */
+      returnedAt: string;
       returnedItems: Array<{ orderItemId: number; packQty: number; refundAmount: number }>;
       settlementStatus: "PENDING" | "COMPLETED";
       refunds: PosRefundAllocation[];
@@ -2896,6 +2900,7 @@ export async function returnPosSale(input: {
     posReturnId: result.posReturnId,
     orderId: result.orderId,
     refundAmount: result.refundAmount,
+    returnedAt: result.returnedAt,
     returnedItems: result.returnedItems,
     settlementStatus: result.settlementStatus,
     refunds: result.refunds,
@@ -2988,8 +2993,9 @@ async function processPosReturn(input: {
       return_mode: "FULL" | "PARTIAL";
       refund_amount: string;
       settlement_status: "PENDING" | "COMPLETED";
+      created_at: unknown;
     }>(
-      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status
+      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status, created_at
          FROM bms_pos_returns
         WHERE tenant_id = $1 AND idempotency_key = $2
         LIMIT 1`,
@@ -3045,6 +3051,7 @@ async function processPosReturn(input: {
         posReturnId: existing.id,
         orderId: input.orderId,
         refundAmount: Number(existing.refund_amount),
+        returnedAt: toISO(existing.created_at),
         returnedItems,
         settlementStatus: existing.settlement_status,
         refunds: refunds.rows.map(mapRefundAllocation),
@@ -3222,12 +3229,12 @@ async function processPosReturn(input: {
       if (!approvedBy && actorCanApprove) approvedBy = input.actorUserId;
     }
 
-    const ret = await client.query<{ id: string }>(
+    const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10)
-       RETURNING id`,
+       RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
         input.isVoid === true]
@@ -3501,6 +3508,7 @@ async function processPosReturn(input: {
       posReturnId,
       orderId: input.orderId,
       refundAmount: roundedRefundAmount,
+      returnedAt: toISO(ret.rows[0].created_at),
       returnedItems,
       settlementStatus,
       refunds,
