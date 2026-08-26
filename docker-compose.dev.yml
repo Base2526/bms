@@ -36,6 +36,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       BMS_SECRET_KEY: ${BMS_SECRET_KEY}
       BMS_CRON_SECRET: ${BMS_CRON_SECRET}
+      BMS_JOB_TOKEN: ${BMS_JOB_TOKEN}
       BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:-${JWT_SECRET}}
       # Mail provider switch (sendgrid ค่า default / gmail = ส่งผ่าน Gmail SMTP แทน) — ดู lib/mailer.ts
       MAIL_PROVIDER: ${MAIL_PROVIDER}

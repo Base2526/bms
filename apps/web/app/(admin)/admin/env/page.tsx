@@ -46,7 +46,17 @@ function maskValue(v: string) {
 }
 
 function isSensitiveKey(key: string) {
-  return /(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|COOKIE|SESSION|AUTH|JWT)/i.test(key);
+  return /(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|COOKIE|SESSION|AUTH|JWT|CREDENTIAL|SALT|SIGNATURE|WEBHOOK)/i.test(key);
+}
+
+/**
+ * ค่าที่พาความลับมาเองแม้ชื่อจะไม่บอก — DSN/URL แบบ `scheme://user:pass@host`
+ *
+ * `REDIS_URL` เป็นตัวอย่างจริง: วันนี้ไม่มีรหัส แต่โน้ตของโปรเจกต์ระบุว่าต้องใส่
+ * password ให้ Redis ก่อนขึ้น production · ถ้าดูแต่ชื่อ วันนั้นรหัสจะโผล่บนหน้านี้
+ */
+function valueLooksSensitive(value: string) {
+  return /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]+@/i.test(value);
 }
 
 /**
@@ -84,28 +94,9 @@ function describePresence(t: Translate, key: string, value: string): string {
 
 function pickEnv(t: Translate, obj: NodeJS.ProcessEnv): EnvRow[] {
   // ปรับ prefix ที่อยากแสดงได้ตามโปรเจค
-  const allowPrefixes = [
-    "NODE_",
-    "NEXT_",
-    "DATABASE_",
-    "POSTGRES_",
-    "REDIS_",
-    "S3_",
-    "AWS_",
-    "SMTP_",
-    "MAIL_",
-    "X_",
-    "GOOGLE_",
-    "LINE_",
-    "ANTHROPIC_",
-    "DEEPSEEK_",
-    "QWEN_OCR_",
-    "BMS_AI_",
-    "BMS_SLIP_",
-    "BMS_AI_MODEL",
-  ];
-
-  // เดิมหน้านี้กรองด้วย prefix เท่านั้น ผลคือ env ที่สำคัญที่สุดต่อการตรวจสอบ
+  // ไม่มี allowlist แล้ว — แสดง env ทุกตัวที่โปรเซสเห็น
+  //
+  // เดิมกรองด้วย prefix ผลคือ env ที่สำคัญที่สุดต่อการตรวจสอบ
   // (JWT_SECRET, BMS_SECRET_KEY, BMS_CRON_SECRET, BMS_JOB_TOKEN, ADMIN_TOKEN,
   // POSTGRES_*, ธงเปิด/ปิดฟีเจอร์) ไม่โผล่เลยแม้แต่ตัวเดียว — คนเปิดหน้านี้เพื่อ
   // เช็คว่า "ตั้ง BMS_SECRET_KEY แล้วยัง" จึงได้คำตอบว่า "ไม่มี" ทั้งที่ตั้งแล้ว
@@ -146,14 +137,14 @@ function pickEnv(t: Translate, obj: NodeJS.ProcessEnv): EnvRow[] {
 
   for (const [k, raw] of Object.entries(obj)) {
     if (seen.has(k)) continue;
-    if (!allowPrefixes.some((p) => k.startsWith(p))) continue;
 
     const value = String(raw ?? "");
     if (PRESENCE_ONLY.has(k)) {
       out.push({ key: k, value: describePresence(t, k, value), masked: true });
       continue;
     }
-    const sensitive = isSensitiveKey(k);
+    // ปิดบังจากทั้งชื่อและค่า — ชื่อที่ไม่บอกว่าเป็นความลับอาจถือ DSN ที่มีรหัสอยู่ข้างใน
+    const sensitive = isSensitiveKey(k) || valueLooksSensitive(value);
 
     out.push({
       key: k,
