@@ -28,6 +28,21 @@ export type PricingSnapshot = {
 };
 
 /**
+ * Only snapshots written while the sale is being created are authoritative.
+ * Migration 9.23 can preserve the best currently available rules for legacy
+ * rows, but those rules may have changed since the old sale happened and must
+ * never be used to change a real refund retroactively.
+ */
+export function isSaleTimePricingSnapshot(raw: unknown): boolean {
+  let value = raw;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return false; }
+  }
+  return Boolean(value && typeof value === "object"
+    && (value as Record<string, unknown>).source === "SALE");
+}
+
+/**
  * กติกาที่ติดมากับบิลเป็นข้อมูลถาวร แต่แถว legacy/backfill อาจมีรูปไม่สมบูรณ์ได้
  * จึง normalize ก่อนนำไปคิดเงินจริงทุกครั้ง แทนการ cast JSON จากฐานแล้วเชื่อทันที
  */

@@ -10,6 +10,7 @@ import test from "node:test";
 
 import {
   canonicalPriceTiers,
+  isSaleTimePricingSnapshot,
   isFixedPricePack,
   normalizePackCode,
   normalizePricingSnapshot,
@@ -19,6 +20,13 @@ import {
   unitPriceForQty,
   type PriceTier,
 } from "../apps/web/lib/bms/pricing.ts";
+
+test("ประเมินคืนย้อนหลังได้เฉพาะ snapshot ที่เขียนพร้อมการขายจริง", () => {
+  assert.equal(isSaleTimePricingSnapshot({ source: "SALE", priceTiers: [], promotion: null }), true);
+  assert.equal(isSaleTimePricingSnapshot({ priceTiers: [], promotion: null }), false,
+    "แถว legacy ที่ migration เดากฎปัจจุบันให้ ห้ามนำไปเปลี่ยนยอดคืนของบิลเก่า");
+  assert.equal(isSaleTimePricingSnapshot("not-json"), false);
+});
 
 test("คืนแล้วต่ำกว่าขั้นราคาส่ง ต้องตีราคาของที่เหลือกลับเป็นราคาป้าย", () => {
   const result = priceRemainingLines([{

@@ -590,8 +590,10 @@ cd apps/web && npx tsc --noEmit && npm run build     # ✅ รันก่อน
   apply เข้า dev DB และ verify แล้ว 2026-08-26** — ยังไม่ได้ apply production · บิลเดิม/ใบกำกับเดิม
   ไม่ถูกแก้ แต่ `pricing_snapshot` บน order item เก็บราคาส่ง+โปรตอนขายไว้ เมื่อของคงเหลือต่ำกว่า
   threshold ยอดคืนจะเป็นยอดที่จ่ายเดิมลบมูลค่าของคงเหลือที่ประเมินใหม่ เช่น 5×90=450 คืน 1 แล้ว
-  เหลือ 4×100=400 จึงคืน 50 ไม่ใช่ 90 · DB contracts loyalty+POS 34 และ pure pricing+loyalty 45 ผ่าน
-  (Redis local ที่ `127.0.0.1:6379` ไม่ได้เปิด แต่ cache fail-open และทุกเทสผ่านจาก source)
+  เหลือ 4×100=400 จึงคืน 50 ไม่ใช่ 90 · ทำเฉพาะ snapshot ที่สร้างพร้อมบิลใหม่ (`source: SALE`)
+  ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
+  นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
+  `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
 - **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
   POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
   e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB

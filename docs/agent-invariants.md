@@ -314,10 +314,11 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   return with a split-payment refund (cash + card) must be counted once, not once per allocation row
   — the shift report reads allocation totals from a subquery rather than joining them onto the
   per-return aggregate, which used to multiply both the return count and refund amount by the number
-  of allocations. A partial return rebuilds the retained basket from the sale-time pricing snapshot;
+  of allocations. A partial return rebuilds the retained basket from an exact sale-time pricing snapshot;
   if the remaining quantity no longer qualifies for a wholesale/promotion threshold, the retained
   goods are repriced and the refundable difference falls accordingly. Never read today's product
-  rules for this calculation, and never rewrite the original sale/tax document.
+  rules for this calculation, never reprice a legacy row without an authoritative snapshot, and
+  never rewrite the original sale/tax document.
 - **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never

@@ -135,7 +135,7 @@ export type CreatedLine = {
   /** ราคาที่พิมพ์บนใบเสร็จก่อนราคาส่ง/โปรโมชัน (snapshot ไม่อ่านราคาสินค้าปัจจุบัน) */
   receiptUnitPrice: number;
   /** กติกาคิดราคาตามจำนวน/โปร ณ ตอนขาย สำหรับประเมินยอดคงเหลือหลังคืน */
-  pricingSnapshot: { priceTiers: PriceTier[]; promotion: Promotion | null };
+  pricingSnapshot: { source: "SALE"; priceTiers: PriceTier[]; promotion: Promotion | null };
   availableAfter: number;
   packCode?: string | null;
   packUnitName?: string | null;
@@ -664,6 +664,7 @@ export async function createOrder(
         unitPrice,
         receiptUnitPrice: packUnitPrice ?? listPrice,
         pricingSnapshot: {
+          source: "SALE",
           priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
           promotion: promo,
         },

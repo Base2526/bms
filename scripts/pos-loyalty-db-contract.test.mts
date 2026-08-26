@@ -392,9 +392,49 @@ test("partial return loses wholesale eligibility while the original receipt stay
   assert.deepEqual(reprint!.discountLines.map((line) => [line.source, line.amount]), [["PRICING", 50]]);
 });
 
+test("legacy bill without an exact sale-time snapshot keeps proportional refund", async () => {
+  const sale = await recordPosSale({
+    tenantId,
+    deviceId,
+    shiftId,
+    cashierUserId: cashierId,
+    idempotencyKey: key("legacy-wholesale-sale"),
+    lines: [{ sku: SKU, size: SIZE, packQty: 5 }],
+    payments: [{ method: "CASH", amount: 450, cashTendered: 500 }],
+  });
+  assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+  if (sale.status !== "SOLD") return;
+
+  const stored = await query<{ id: string }>(
+    `UPDATE bms_order_items
+        SET pricing_snapshot = pricing_snapshot - 'source'
+      WHERE tenant_id = $1 AND order_id = $2
+      RETURNING id`,
+    [tenantId, sale.orderId]
+  );
+  assert.equal(stored.rowCount, 1);
+
+  const returned = await partiallyReturnPosSale({
+    tenantId,
+    deviceId,
+    orderId: sale.orderId,
+    actorUserId: cashierId,
+    lines: [{ orderItemId: Number(stored.rows[0].id), packQty: 1 }],
+    note: `${TAG} legacy proportional refund`,
+    idempotencyKey: key("legacy-wholesale-return"),
+  });
+  assert.equal(returned.status, "PARTIAL_RETURNED", JSON.stringify(returned));
+  if (returned.status !== "PARTIAL_RETURNED") return;
+  assert.equal(returned.refundAmount, 90,
+    "ไม่มี snapshot ตอนขายจริงต้องคืนราคาสุทธิเดิม ห้ามเดากฎปัจจุบันย้อนหลัง");
+  assert.equal(returned.pricingAdjustmentAmount, 0);
+  assert.equal(returned.remainingAmount, 360);
+});
+
 test("close shift", async () => {
   const res = await closePosShift({
-    tenantId, shiftId, closedBy: cashierId, countedCash: 1000 + 830 - 415 + 450 - 50,
+    tenantId, shiftId, closedBy: cashierId,
+    countedCash: 1000 + 830 - 415 + 450 - 50 + 450 - 90,
   });
   // PENDING_REFUNDS ก็ถือว่าถูก: เงินคืนที่ไม่ใช่เงินสดต้องมีคนยืนยันก่อนปิดกะ
   assert.ok(["CLOSED", "PENDING_REFUNDS"].includes(res.status), JSON.stringify(res));

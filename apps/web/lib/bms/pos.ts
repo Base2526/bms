@@ -24,7 +24,13 @@ import { beginTenantTx } from "./tenant";
 import { createOrder, cancelOrder, type OrderItemInput } from "./orders";
 import { type PaymentMethod } from "./payments";
 import { recordMovement, recordOrderMovements } from "./movements";
-import { isFixedPricePack, priceRemainingLines, type PriceTier, type Promotion } from "./pricing";
+import {
+  isFixedPricePack,
+  isSaleTimePricingSnapshot,
+  priceRemainingLines,
+  type PriceTier,
+  type Promotion,
+} from "./pricing";
 import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
 import { markDepositCompletedInTx, takeDeposit, type Deposit } from "./deposits";
 import {
@@ -3265,6 +3271,9 @@ async function processPosReturn(input: {
       requestedMap
     );
     const allReturned = remainingPricing.lines.every((line) => line.remainingPackQty === 0);
+    const hasExactSaleTimeRules = orderItems.every((item) =>
+      isSaleTimePricingSnapshot(item.pricing_snapshot)
+    );
     const extraTotal = Number(order.extra_total ?? 0);
     const originalPricingSubtotal = Math.max(0,
       Number(order.total_amount) + Number(order.discount_amount ?? 0) - extraTotal);
@@ -3274,16 +3283,20 @@ async function processPosReturn(input: {
     const orderDiscountRatio = originalPricingSubtotal > 0
       ? Math.min(1, originalProductNet / originalPricingSubtotal)
       : 1;
-    const desiredRemainingAmount = allReturned
-      ? 0
-      : Math.round((
-          Number(order.shipping_fee ?? 0)
-          + extraTotal
-          + remainingPricing.pricingSubtotal * orderDiscountRatio
-        ) * 100) / 100;
     const previousRefundAmount = Math.round(orderItems.reduce(
       (sum, item) => sum + Number(item.returned_refund_amount ?? 0), 0
     ) * 100) / 100;
+    const desiredRemainingAmount = allReturned
+      ? 0
+      : hasExactSaleTimeRules
+        ? Math.round((
+            Number(order.shipping_fee ?? 0)
+            + extraTotal
+            + remainingPricing.pricingSubtotal * orderDiscountRatio
+          ) * 100) / 100
+        : Math.max(0, Math.round((
+            orderAmount - previousRefundAmount - rawRefundAmount
+          ) * 100) / 100);
     const targetCumulativeRefund = Math.max(0,
       Math.round((orderAmount - desiredRemainingAmount) * 100) / 100);
     const roundedRefundAmount = Math.round(
@@ -3297,8 +3310,9 @@ async function processPosReturn(input: {
         remainingAmount: desiredRemainingAmount,
       };
     }
-    const pricingAdjustmentAmount = Math.max(0,
-      Math.round((rawRefundAmount - roundedRefundAmount) * 100) / 100);
+    const pricingAdjustmentAmount = hasExactSaleTimeRules
+      ? Math.max(0, Math.round((rawRefundAmount - roundedRefundAmount) * 100) / 100)
+      : 0;
     const remainingAmount = Math.max(0,
       Math.round((orderAmount - previousRefundAmount - roundedRefundAmount) * 100) / 100);
 

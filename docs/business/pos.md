@@ -1026,6 +1026,11 @@ the pricing adjustment and the net balance afterward, and Bill history discloses
 would make the requested return require collecting additional money instead of paying a refund, the
 refund-only flow is refused rather than silently accepting goods with an unexplained zero payout.
 
+Rows created before `9.23` do not contain a provable sale-time rule set. They deliberately keep the
+old proportional-refund behavior: a migration-time reconstruction is useful evidence for support,
+but is never trusted to alter a legacy customer's real refund. New rows carry `source: "SALE"` in
+their pricing snapshot and are the only rows eligible for retained-basket repricing.
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
@@ -1050,8 +1055,9 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   integrity constraints). Also apply `9.21` (pack-aware line uniqueness), `9.22`
   (`receipt_unit_price` snapshot) — without `9.22` a receipt reprint shows the discounted price as if
   the product price had been edited after the sale, and its one-time backfill of existing rows only
-  runs when the migration does. Apply `9.23` as well so partial returns recheck retained quantities
-  against the sale-time wholesale/promotion snapshot instead of preserving a now-unqualified price.
+  runs when the migration does. Apply `9.23` and its `9.24` provenance guard as well so partial
+  returns recheck retained quantities against an exact sale-time wholesale/promotion snapshot
+  instead of preserving a now-unqualified price or guessing from a legacy bill.
   `7.97` seeds `pos.void` and
   `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
   without it those buttons 403 silently. `9.7` seeds `pos.expense.create` to
