@@ -2778,6 +2778,10 @@ const en = {
     col_when: "When",
   },
   admin_env: {
+    env_not_set: "— not set",
+    env_set_len: "set · {n} chars",
+    env_set_hex64_ok: "set · 64 hex chars (valid)",
+    env_set_hex64_bad: "set · {n} chars — ⚠️ must be 64 hex chars",
     note_chat_missing: "No shared chat provider is ready yet",
     note_chat_active: "Customer sales and general text/tool-calling use this provider primarily",
     note_chat_fallback: "The primary provider has no ready key, so it falls back to the backup provider",

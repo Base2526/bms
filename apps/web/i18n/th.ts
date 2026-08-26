@@ -2780,6 +2780,10 @@ const th = {
     col_when: "เมื่อ",
   },
   admin_env: {
+    env_not_set: "— ไม่ได้ตั้ง",
+    env_set_len: "ตั้งไว้ · {n} ตัว",
+    env_set_hex64_ok: "ตั้งไว้ · hex 64 ตัว (ถูกรูป)",
+    env_set_hex64_bad: "ตั้งไว้ · {n} ตัว — ⚠️ ต้องเป็น hex 64 ตัว",
     note_chat_missing: "ยังไม่มี shared chat provider ที่พร้อมใช้งาน",
     note_chat_active: "customer sales และ text/tool-calling ทั่วไปจะใช้ provider นี้เป็นหลัก",
     note_chat_fallback: "provider หลักไม่มี key พร้อมใช้ จึง fallback ไป provider สำรอง",

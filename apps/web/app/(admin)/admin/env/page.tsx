@@ -49,12 +49,46 @@ function isSensitiveKey(key: string) {
   return /(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|COOKIE|SESSION|AUTH|JWT)/i.test(key);
 }
 
-function pickEnv(obj: NodeJS.ProcessEnv): EnvRow[] {
+/**
+ * ตัวที่ต้องรายงาน **แค่ว่าตั้งไว้หรือไม่และรูปแบบถูกไหม** ไม่แสดงเสี้ยวไหนของค่าเลย
+ *
+ * maskValue() โชว์ 3 ตัวแรก + 3 ตัวท้าย ซึ่งพอรับได้กับ API key ทั่วไป แต่กับคีย์ที่
+ * ใช้เซ็น session หรือเข้ารหัสความลับของทุกร้าน การรั่วแม้เสี้ยวเดียวไม่มีเหตุผลให้ทำ
+ * — คำถามที่คนเปิดหน้านี้อยากรู้คือ "ตั้งแล้วยัง" ไม่ใช่ "ค่าคืออะไร"
+ */
+const PRESENCE_ONLY = new Set([
+  "JWT_SECRET",
+  "BMS_SECRET_KEY",
+  "BMS_CHECKOUT_SECRET",
+  "BMS_CRON_SECRET",
+  "BMS_JOB_TOKEN",
+  "ADMIN_TOKEN",
+  "POSTGRES_PASSWORD",
+  "REDIS_PASSWORD",
+]);
+
+/** คีย์ที่ต้องเป็น hex 64 ตัว — ตั้งผิดรูปอันตรายกว่าไม่ตั้ง เพราะดูเหมือนตั้งแล้ว */
+const HEX64_KEYS = new Set(["BMS_SECRET_KEY"]);
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function describePresence(t: Translate, key: string, value: string): string {
+  if (!value) return t("admin_env.env_not_set");
+  if (HEX64_KEYS.has(key)) {
+    return /^[0-9a-fA-F]{64}$/.test(value)
+      ? t("admin_env.env_set_hex64_ok")
+      : t("admin_env.env_set_hex64_bad", { n: value.length });
+  }
+  return t("admin_env.env_set_len", { n: value.length });
+}
+
+function pickEnv(t: Translate, obj: NodeJS.ProcessEnv): EnvRow[] {
   // ปรับ prefix ที่อยากแสดงได้ตามโปรเจค
   const allowPrefixes = [
     "NODE_",
     "NEXT_",
     "DATABASE_",
+    "POSTGRES_",
     "REDIS_",
     "S3_",
     "AWS_",
@@ -71,11 +105,54 @@ function pickEnv(obj: NodeJS.ProcessEnv): EnvRow[] {
     "BMS_AI_MODEL",
   ];
 
+  // เดิมหน้านี้กรองด้วย prefix เท่านั้น ผลคือ env ที่สำคัญที่สุดต่อการตรวจสอบ
+  // (JWT_SECRET, BMS_SECRET_KEY, BMS_CRON_SECRET, BMS_JOB_TOKEN, ADMIN_TOKEN,
+  // POSTGRES_*, ธงเปิด/ปิดฟีเจอร์) ไม่โผล่เลยแม้แต่ตัวเดียว — คนเปิดหน้านี้เพื่อ
+  // เช็คว่า "ตั้ง BMS_SECRET_KEY แล้วยัง" จึงได้คำตอบว่า "ไม่มี" ทั้งที่ตั้งแล้ว
+  // (เจอจริง 2026-08-27) · หน้าที่บอกไม่ครบแต่ดูเหมือนครบ แย่กว่าไม่มีหน้านี้
+  const allowExact = [
+    "JWT_SECRET",
+    "BMS_SECRET_KEY",
+    "BMS_CHECKOUT_SECRET",
+    "BMS_CRON_SECRET",
+    "BMS_JOB_TOKEN",
+    "ADMIN_TOKEN",
+    "BMS_ALLOW_FAKE_SEED",
+    "BMS_APP_BASE_URL",
+    "ETAX_ENABLED",
+    "PHARMACY_INTAKE_ENABLED",
+    "PHARMACY_AI_ENABLED",
+    "PHARMACY_PROTOCOLS_ENABLED",
+    "COOKIE_SECURE",
+    "STORAGE_DRIVER",
+    "META_GRAPH_VERSION",
+  ];
+
   const out: EnvRow[] = [];
+  const seen = new Set<string>();
+
+  // ตัวที่ประกาศชื่อไว้ตรง ๆ ต้องขึ้นแม้ค่าจะว่าง — "ไม่ได้ตั้ง" คือคำตอบที่คนมาหา
+  for (const key of allowExact) {
+    seen.add(key);
+    const value = String(obj[key] ?? "");
+    out.push({
+      key,
+      value: PRESENCE_ONLY.has(key)
+        ? describePresence(t, key, value)
+        : value || t("admin_env.env_not_set"),
+      masked: PRESENCE_ONLY.has(key),
+    });
+  }
+
   for (const [k, raw] of Object.entries(obj)) {
+    if (seen.has(k)) continue;
     if (!allowPrefixes.some((p) => k.startsWith(p))) continue;
 
     const value = String(raw ?? "");
+    if (PRESENCE_ONLY.has(k)) {
+      out.push({ key: k, value: describePresence(t, k, value), masked: true });
+      continue;
+    }
     const sensitive = isSensitiveKey(k);
 
     out.push({
@@ -292,7 +369,7 @@ export default async function EnvPage() {
   const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
   const t = (key: string, vars?: Record<string, string | number>) => getMessage(lang, key, vars);
 
-  const env = pickEnv(process.env);
+  const env = pickEnv(t, process.env);
   const activeProviders = buildActiveProviderSummary(t);
   const recentUsage = await listRecentAiUsageEventsGlobal(10);
   const providerHealth = await listAiProviderHealth();
