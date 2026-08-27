@@ -25,6 +25,7 @@ import {
   ImportOutlined,
   SwapOutlined,
   ContainerOutlined,
+  AuditOutlined,
   DollarOutlined,
   CarOutlined,
   MessageOutlined,
@@ -377,6 +378,9 @@ export default function AdminSidebar() {
         ...(can('product.view') ? [link('/admin/products', t('admin.menu_products'), <ShoppingCartOutlined />)] : []),
         ...(can('order.view') ? [link('/admin/orders', t('admin.menu_orders'), <OrderedListOutlined />)] : []),
         ...(can('payment.view') ? [link('/admin/payment', t('admin.menu_payment'), <DollarOutlined />)] : []),
+        // ลูกหนี้การค้า (9.30) วางติดกับการชำระเงินเพราะเป็นคำถามเดียวกันคนละด้าน:
+        // "ใครจ่ายมาแล้ว" กับ "ใครยังไม่จ่าย"
+        ...(can('ar.view') ? [link('/admin/receivables', t('admin.menu_receivables'), <AuditOutlined />)] : []),
         ...(can('shipping.view') ? [link('/admin/shipment', t('admin.menu_shipping'), <CarOutlined />)] : []),
         ...(can('customer.view') ? [link('/admin/customers', t('admin.menu_customers'), <TeamOutlined />)] : []),
         ...(can('coupon.view') ? [link('/admin/coupons', t('admin.menu_coupons'), <TagsOutlined />)] : []),

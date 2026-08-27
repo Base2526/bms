@@ -16,6 +16,7 @@ import {
   getPosShiftReport,
   verifyCashierPin,
 } from "@/lib/bms/pos";
+import { getArShiftSummary } from "@/lib/bms/ar";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -43,7 +44,17 @@ async function handleGET(req: NextRequest) {
   // เครื่องอ่านได้เฉพาะกะของตัวเอง แม้ผู้ใช้จะรู้ UUID ของกะเครื่องอื่นในร้าน
   const report = await getPosShiftReport(device.tenantId, shiftId, device.id);
   if (!report) return NextResponse.json({ error: "ไม่พบกะ" }, { status: 404 });
-  return NextResponse.json({ report });
+
+  // ขายเชื่อ/รับชำระหนี้ของกะนี้ (9.30) — แยกก้อนจาก report โดยตั้งใจ
+  //
+  // ไม่รวมเข้า salesTotal เพราะมันรวมอยู่แล้ว (บิลเชื่อเป็นบิลที่ขายสำเร็จ) และ
+  // ไม่รวมเข้าเงินสดเพราะเงินยังไม่เข้า · ที่กระดาษเซ็นรับเงินต้องบอกคือ "ยอดขายวันนี้
+  // มีส่วนที่ยังไม่ได้เงินเท่าไร" ไม่งั้นผู้จัดการจะนับเงินแล้วสงสัยว่าหายไปไหน
+  //
+  // ยอดรับชำระที่เป็นเงินสด **อยู่ในลิ้นชักแล้ว** ผ่าน bms_pos_cash_movements
+  // (นับใน cashIn ของสูตรเดิม) — ที่นี่แสดงเพื่ออธิบายที่มาของเงินก้อนนั้น ไม่ใช่บวกซ้ำ
+  const receivables = await getArShiftSummary(device.tenantId, shiftId);
+  return NextResponse.json({ report, receivables });
 }
 
 export const GET = withRouteErrorLog("GET /api/pos/shift-report", handleGET);

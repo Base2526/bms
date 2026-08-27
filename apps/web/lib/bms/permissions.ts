@@ -125,6 +125,15 @@ export const BMS_PERMISSIONS = [
   "storecredit.issue",
   "storecredit.redeem",
   "storecredit.adjust",
+  // ขายเชื่อ / ลูกหนี้การค้า — seed ที่ 9.30
+  // .sell แยกจาก .collect เพราะ "ปล่อยของออกไปโดยยังไม่ได้เงิน" กับ "รับเงิน" เป็น
+  // ความเสี่ยงคนละระดับ · .writeoff แยกจาก .manage เพราะการตัดหนี้สูญคือการลบ
+  // สินทรัพย์ของร้านทิ้ง ไม่ใช่การตั้งค่า
+  "ar.view",
+  "ar.sell",
+  "ar.collect",
+  "ar.manage",
+  "ar.writeoff",
   "commission.view",
   "commission.manage",
   // ใบกำกับภาษี — seed ที่ 7.88

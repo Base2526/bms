@@ -1,4 +1,6 @@
-const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"] as const;
+// CREDIT = ขายเชื่อ (9.30) · route ตรวจสิทธิ์/PIN ผู้อนุมัติก่อนส่งต่อ และ
+// recordPosSale ตรวจวงเงินอีกชั้นก่อนตัดสต็อก — ที่นี่แค่รับรูปแบบ
+const POS_PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT", "CREDIT"] as const;
 
 type ParsedPosSaleLine = {
   sku: string;

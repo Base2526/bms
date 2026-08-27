@@ -97,6 +97,44 @@ async function handlePOST(req: NextRequest) {
     approval = { amount: requestedDiscount, userId: approver.userId, reason };
   }
 
+  // ---- ขายเชื่อ: ต้องมีคนที่ถือ ar.sell รับผิดชอบเสมอ (9.30) ------------
+  //
+  // ต่างจากผู้อนุมัติส่วนลดโดยตั้งใจ: **เป็นคนขายเองได้** ถ้าคนขายมีสิทธิ์อยู่แล้ว
+  // ร้านค้าส่งที่เปิดบิลเชื่อเป็นสิบใบต่อวัน ถ้าต้องตามคนที่สองมากดทุกใบจะเลิกใช้ระบบ
+  // แล้วกลับไปจดสมุด — ซึ่งแย่กว่าการบันทึกว่าใครเป็นคนตัดสินใจ (กฎเดียวกับ 9.29)
+  //
+  // แคชเชียร์ที่ไม่มีสิทธิ์ยังขายเชื่อได้ ถ้าหัวหน้าที่มีสิทธิ์เดินมากด PIN
+  let creditApprovedBy: string | null = null;
+  const wantsCredit = payments.some((payment) => payment.method === "CREDIT");
+  if (wantsCredit) {
+    if (mode === "DEPOSIT") return badRequest("มัดจำเป็นการรับเงิน ไม่ใช่การขายเชื่อ");
+    const sellerMaySell = await cashierHasPermission(device.tenantId, auth.userId, "ar.sell");
+    if (sellerMaySell) {
+      creditApprovedBy = auth.userId;
+    } else {
+      const approverId = typeof body.creditApproverUserId === "string" ? body.creditApproverUserId.trim() : "";
+      const approverPin = typeof body.creditApproverPin === "string" ? body.creditApproverPin : "";
+      if (!approverId || !approverPin) {
+        return NextResponse.json(
+          { error: "พนักงานคนนี้ไม่มีสิทธิ์ขายเชื่อ — ให้ผู้มีสิทธิ์กด PIN อนุมัติ", code: "AR_APPROVAL_REQUIRED" },
+          { status: 403 }
+        );
+      }
+      const approver = await verifyCashierPin(device.tenantId, approverId, approverPin);
+      if (!approver.ok) {
+        const message =
+          approver.reason === "NO_PIN" ? "ผู้อนุมัติยังไม่ได้ตั้ง PIN"
+          : approver.reason === "LOCKED" ? "ผู้อนุมัติใส่ PIN ผิดหลายครั้ง ถูกล็อกชั่วคราว"
+          : "PIN ผู้อนุมัติไม่ถูกต้อง";
+        return NextResponse.json({ error: message, reason: approver.reason }, { status: 403 });
+      }
+      if (!(await cashierHasPermission(device.tenantId, approver.userId, "ar.sell"))) {
+        return NextResponse.json({ error: "พนักงานคนนี้ไม่มีสิทธิ์อนุมัติการขายเชื่อ" }, { status: 403 });
+      }
+      creditApprovedBy = approver.userId;
+    }
+  }
+
   // ---- เภสัชกรอนุมัติจ่ายยาที่เครื่อง (9.29) --------------------------
   // ต่างจากผู้อนุมัติส่วนลดตรงที่ **ไม่บังคับว่าต้องเป็นคนละคนกับคนขาย** — ร้านยา
   // เล็กมีเภสัชกรคนเดียวที่ยืนขายเองด้วย บังคับสองคนคือบังคับให้ร้านโกงระบบตัวเอง
@@ -155,6 +193,8 @@ async function handlePOST(req: NextRequest) {
     manualDiscount: approval?.amount ?? null,
     discountApprovedBy: approval?.userId ?? null,
     discountReason: approval?.reason ?? null,
+    // ผ่านการตรวจสิทธิ์/PIN ข้างบนแล้วเท่านั้น — ห้ามส่ง id ดิบจาก body ลงไป
+    creditApprovedBy,
     // อนุญาตเฉพาะ assessment id ที่ผูกมากับ flow POS ร้านยาแล้ว — createOrder
     // ตรวจซ้ำจากฐานข้อมูลอีกชั้นว่าเคสนี้ APPROVED จริงและครอบคลุม SKU/qty ชุดนี้
     pharmacyApprovedAssessmentId:
@@ -186,6 +226,8 @@ async function handlePOST(req: NextRequest) {
     : result.status === "INSUFFICIENT" ? 409
     : result.status === "POINTS_INVALID" ? 400
     : result.status === "NOT_FOUND" ? 404
+    // ขายเชื่อไม่ผ่านคือ "ทำไม่ได้ตามกติกา" ไม่ใช่ผู้เรียกส่งข้อมูลผิด → 409
+    : result.status === "AR_NOT_ALLOWED" ? 409
     : String(result.status).startsWith("PHARMACY_") ? 403
     : 409;
 

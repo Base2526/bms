@@ -540,6 +540,7 @@ const en = {
     menu_products: "Products",
     menu_orders: "Orders",
     menu_payment: "Payment",
+    menu_receivables: "Receivables",
     menu_shipping: "Shipping",
     menu_customers: "Customers",
     menu_coupons: "Coupons",

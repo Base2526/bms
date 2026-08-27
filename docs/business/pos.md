@@ -1085,6 +1085,117 @@ allowed at all (on by default), and whether an incomplete policy review blocks o
 by default now — an unreviewed product asks for a PIN instead of stopping the queue). Details are
 in [the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md).
 
+## Selling on credit / accounts receivable (9.30)
+
+Before this, no payment method meant *"no money yet"*. A shop whose regulars open a tab and settle at
+month end — wholesalers, builders' merchants, anyone supplying the restaurants on their street — could
+not use this POS at all. Not inconveniently: at all.
+
+**Credit is the mirror image of a deposit, not a variant of it.**
+
+| | Deposit (9.0) | Credit sale (9.30) |
+| --- | --- | --- |
+| Goods | reserved, still in the shop | **delivered, deducted from stock** |
+| Order | stays `PENDING` | completes in full — lots, tax invoice, points |
+| Money | partly collected up front | **not collected at all yet** |
+| What it creates | a reservation to chase | a **receivable** — an asset on the balance sheet |
+
+### Why credit is a payment method and not an unpaid bill
+
+The rule that payment rows must equal the bill exactly is what stops money collected from diverging
+from what the system computed, and it **is not relaxed**. Making the unpaid remainder a payment row
+(`bms_payments.method = 'CREDIT'`) means the entire completion path is reused untouched — including
+the return path, which already allocates refunds back against *the payment rows that paid*. Returning
+a credit sale therefore reduces the debt on its own, with no new code deciding what a refund means.
+
+Modelling it as an unpaid order instead would have required a second return path, a second void path
+and a second tax-document rule, each tested half as much as the one that already works.
+
+It also makes **part cash, part on account** fall out for free, which is how these shops actually
+trade.
+
+### The two numbers that must never mix
+
+- **`CREDIT` is not cash.** `drawerExpectedInTx()` filters `method = 'CASH'`, so credit is excluded
+  structurally rather than by remembering to exclude it — the same guarantee `STORE_CREDIT` gets.
+  A pure contract test reads that function and fails if any non-cash method appears in it, because
+  the failure it prevents is silent: bills stay correct, money stays correct, and every till that
+  sells on credit simply counts short by the day's credit total.
+- **Cash collected later belongs to the shift that collected it**, not the shift that sold. It is
+  written to `bms_pos_cash_movements` (direction `IN`) inside the receipt transaction, so it enters
+  the one drawer formula that already exists. Writing it to the original order's `bms_payments`
+  would post the money into a shift that closed days ago.
+
+### Credit limit
+
+`bms_ar_accounts` holds a limit, terms in days, and a status (`ACTIVE` / `ON_HOLD` / `CLOSED`). A
+new account starts at limit 0 — opening an account is not the same as granting credit.
+
+The limit is checked twice by **one function** (`evaluateArCharge`, in a dependency-free module so it
+is tested without a database): once before the order is created, so a refusal costs no reserved
+stock, and again inside the transaction that deducts stock, under `SELECT … FOR UPDATE` on the
+account row, because two registers can sell to the same customer at the same time. Two formulas
+deciding the same thing drift, and the screen would start promising sales the server refuses.
+
+`ON_HOLD` blocks new credit but still accepts payment — suspending an account means *stop lending*,
+not *stop collecting*. `CLOSED` requires a zero balance; closing an account that still owes money is
+how a debt disappears from the report while the money is still outstanding.
+
+### Who may sell on credit
+
+`ar.sell` is seeded to Manager and Sales, **not Cashier**. A cashier without it can still ring a
+credit sale if someone holding `ar.sell` enters their PIN — the 9.29 shape, not the manual-discount
+shape: **the approver may be the seller.** A wholesaler writing ten tabs a day cannot fetch a second
+person for each one; forcing it means the shop routes around its own system. What is recorded is who
+decided, which survives either way.
+
+### Collecting
+
+One receipt (`bms_ar_receipts`) settles oldest-due-first across as many invoices as it covers. Aging
+is the only tool that says *which* debt is stale, and it cannot answer that if payments just decrement
+a single running balance.
+
+- **Overpayment is refused, not absorbed.** Money handed over above the outstanding total at a
+  counter is almost always a typo. A customer genuinely paying ahead has a deposit (9.0) or store
+  credit (8.9), both of which already have a path.
+- **Cash requires an open shift** on the authenticating register; the shift and branch come from the
+  device, never from the request body.
+- Receipts carry a client idempotency key. A retry after a lost response replays the original
+  allocation instead of taking the money twice. The key is serialized tenant-wide before any
+  account/shift state is touched and is bound to a hash of the normalized request; reusing it with
+  a different account, amount, method or context is a conflict, never a replay of unrelated money.
+
+### Returns, voids and write-offs
+
+A return of a credit sale allocates against the `CREDIT` payment row and is marked `COMPLETED`
+immediately: reducing a debt has no external leg to confirm, and leaving it `PENDING` would block the
+shift from closing on a refund with no money to refund. The debt reduction is keyed by
+`pos_return_id`, not `order_id`, so partial returns each reduce their own share — the 8.9 lesson.
+If the invoice had already been paid, that reduction becomes a customer credit. Under the same
+account lock the ledger moves that credit to the oldest open invoice, or leaves the unused remainder
+negative until a later credit sale can consume it. The transfer nets to zero at account level; it
+exists so aging cannot show an open debt while the same account says the shop owes the customer.
+
+Voiding a credit sale runs the same machinery and closes the invoice as `VOID`.
+
+`ar.writeoff` is separate from `ar.manage` because writing off is destroying an asset, not
+configuring one. The invoice stays in the system as `WRITTEN_OFF` with the ledger row naming who
+wrote it off and why. A debt that simply vanishes from the report is where embezzlement hides.
+
+### Numbers for the accountant
+
+`getArOutstanding()` returns the outstanding total, the overdue total, and the aging buckets. This is
+an **asset**, the opposite side of the balance sheet from loyalty points and store credit, both of
+which are liabilities. `balanceMismatchCount` must always be 0; anything else means a write path
+stopped recomputing the cached balance from the ledger, and the figures must not be filed until it is
+fixed. The counter's shift report also carries the shift's credit sales and collections separately,
+so the manager counting the till can see how much of the day's takings has not arrived yet.
+
+### Not built here
+
+No statements or dunning letters, no interest or late fees, no per-customer payment schedules beyond
+a single due date per invoice, and no credit-limit approval workflow — a manager sets the number.
+
 ## Failure and retry behavior
 
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
@@ -1112,6 +1223,8 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   runs when the migration does. Apply `9.23` and its `9.24` provenance guard as well so partial
   returns recheck retained quantities against an exact sale-time wholesale/promotion snapshot
   instead of preserving a now-unqualified price or guessing from a legacy bill.
+  Apply `9.30` before enabling credit sales; without it `CREDIT`, the AR tables and all five
+  `ar.*` permissions do not exist, so the receivables menu and POS credit controls stay hidden.
   `7.97` seeds `pos.void` and
   `pos.cash.movement` to Manager only, and `pos.shift.report` to Manager/Sales/Cashier —
   without it those buttons 403 silently. `9.7` seeds `pos.expense.create` to

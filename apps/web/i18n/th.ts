@@ -542,6 +542,7 @@ const th = {
     menu_products: "สินค้า",
     menu_orders: "ออร์เดอร์",
     menu_payment: "การชำระเงิน",
+    menu_receivables: "ลูกหนี้การค้า",
     menu_shipping: "การจัดส่ง",
     menu_customers: "ลูกค้า",
     menu_coupons: "คูปอง",
