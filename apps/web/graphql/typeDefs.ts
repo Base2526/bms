@@ -854,6 +854,94 @@ export const typeDefs = /* GraphQL */ `
     cashRounding: String!
   }
 
+  # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
+  type BmsArAccount {
+    id: ID!
+    customerId: ID!
+    customerName: String
+    customerPhone: String
+    creditLimit: Float!
+    termsDays: Int!
+    status: String!
+    "ยอดหนี้คงค้าง · ติดลบ = ร้านค้างลูกค้า (คืนของหลังจ่ายครบ)"
+    balance: Float!
+    availableCredit: Float!
+    overdueAmount: Float!
+    openInvoiceCount: Int!
+    note: String
+    createdAt: String!
+  }
+
+  type BmsArInvoice {
+    id: ID!
+    accountId: ID!
+    orderId: ID!
+    customerId: ID!
+    customerName: String
+    amount: Float!
+    creditedAmount: Float!
+    settledAmount: Float!
+    outstanding: Float!
+    status: String!
+    issuedAt: String!
+    dueAt: String!
+    "เลขใบกำกับของบิลต้นทาง — ลูกค้าอ้างเลขนี้เวลามาจ่าย"
+    docNo: String
+    overdue: Boolean!
+    daysPastDue: Int!
+  }
+
+  type BmsArLedgerEntry {
+    id: ID!
+    invoiceId: ID!
+    kind: String!
+    amount: Float!
+    receiptId: ID
+    orderId: ID
+    note: String
+    actorName: String
+    createdAt: String!
+  }
+
+  type BmsArAging {
+    current: Float!
+    d1to30: Float!
+    d31to60: Float!
+    d61to90: Float!
+    d90plus: Float!
+    total: Float!
+  }
+
+  type BmsArOutstanding {
+    outstandingAmount: Float!
+    overdueAmount: Float!
+    accountsWithBalance: Int!
+    openInvoiceCount: Int!
+    aging: BmsArAging!
+    "ต้องเป็น 0 เสมอ — ไม่ 0 คือมีทางเขียนที่ลืมคำนวณยอดใหม่จาก ledger"
+    balanceMismatchCount: Int!
+  }
+
+  type BmsArReceiptAllocation {
+    invoiceId: ID!
+    orderId: ID!
+    amount: Float!
+  }
+
+  type BmsArReceiptResult {
+    status: String!
+    receiptId: ID!
+    allocations: [BmsArReceiptAllocation!]!
+    balanceAfter: Float!
+    replayed: Boolean!
+  }
+
+  type BmsArWriteOffResult {
+    status: String!
+    amount: Float!
+    balanceAfter: Float!
+  }
+
   type BmsIssueFullTaxInvoiceResult {
     status: String!
     document: BmsTaxDocument
@@ -916,6 +1004,13 @@ export const typeDefs = /* GraphQL */ `
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
     bmsPosDevices: [BmsPosDevice!]!
+    # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
+    bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
+    bmsArAccount(id: ID, customerId: ID): BmsArAccount
+    bmsArInvoices(accountId: ID, openOnly: Boolean, overdueOnly: Boolean, limit: Int = 200): [BmsArInvoice!]!
+    bmsArLedger(invoiceId: ID, accountId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
+    bmsArOutstanding: BmsArOutstanding!
+
     bmsProductPacks(productSku: String!): BmsProductPackList!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
@@ -3676,6 +3771,25 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertPosDevice(input: BmsPosDeviceInput!): BmsPosDevice!
     bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
     bmsIssueFullTaxInvoice(orderId: ID!, buyer: BmsTaxInvoiceBuyerInput!): BmsIssueFullTaxInvoiceResult!
+
+    # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
+    bmsUpsertArAccount(
+      customerId: ID!
+      creditLimit: Float!
+      termsDays: Int!
+      status: String
+      note: String
+    ): BmsArAccount!
+    "รับชำระที่ไม่ใช่เงินสด · เงินสดต้องทำที่เครื่องขายเพื่อให้เข้าลิ้นชักของกะ"
+    bmsRecordArReceipt(
+      accountId: ID!
+      amount: Float!
+      method: String!
+      reference: String
+      note: String
+      idempotencyKey: String!
+    ): BmsArReceiptResult!
+    bmsWriteOffArInvoice(invoiceId: ID!, reason: String!): BmsArWriteOffResult!
     bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
     # ตั้งประเภท VAT ให้สินค้าที่ยังเป็น UNKNOWN ทั้งหมด — คืนจำนวนแถวที่เปลี่ยน
     # แตะเฉพาะ UNKNOWN: สินค้าที่ตั้งค่าไว้แล้วต้องไม่ถูกเขียนทับด้วยการกดครั้งเดียว

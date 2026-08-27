@@ -269,6 +269,17 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   replays its stored result rather than re-running the write. `recordCashMovement()` checks the
   replay row before the overdraw check so a lost response never gets re-evaluated against a drawer
   balance that has since moved.
+- **Credit sales and accounts receivable (`9.30`) keep goods, debt and drawer cash separate.** A
+  `CREDIT` payment completes the order and deducts stock but creates an AR invoice in that same
+  settlement transaction; it never enters `drawerExpectedInTx()`. Cash collected later is a
+  `bms_pos_cash_movements` `IN` on the collecting shift, not a payment added to the old order.
+  Credit limits are checked before order creation and again under the account-row lock after stock
+  settlement. Receipt keys are locked tenant-wide and carry a normalized request hash: an exact
+  retry replays, while the same key with a different account/amount/method is a conflict. Returns
+  against `CREDIT` reduce the debt immediately. If that makes an old invoice negative because it
+  was already paid, the credit is ledger-transferred to the oldest open invoice (and later credit
+  sales) under the same account lock so aging never reports debt the customer no longer owes.
+  `ar.writeoff` remains separate from `ar.manage`.
 - **A POS PO receipt (`9.6`) is device-branch scoped and retry-safe.** The route re-checks cashier
   PIN plus `purchase.receive`; tenant/location come from the authenticated device. Inventory, lot,
   movement, PO status, audit, and `bms_pos_purchase_receipts.result` commit together. Reusing one

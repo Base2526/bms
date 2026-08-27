@@ -29,7 +29,10 @@ export type { SlipExtract } from "./slipReader";
 // WALLET = e-wallet ที่หน้าร้านรับจริง (ทรูมันนี่ / ShopeePay / Rabbit LINE Pay) — เพิ่มที่ 7.87
 // STORE_CREDIT = บัตรของขวัญ/เครดิตร้าน — เพิ่มที่ 8.9 · ไม่ใช่เงินที่เข้าร้านรอบนี้
 // (ร้านรับเงินไปแล้วตอนขายบัตร) จึงต้องไม่ถูกนับเป็นเงินสดในลิ้นชักหรือยอดรับใหม่
-export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT"] as const;
+// CREDIT = ขายเชื่อ — เพิ่มที่ 9.30 · แปลว่า "ยังไม่ได้เงิน" ของออกจากร้านแล้วและเกิด
+// ลูกหนี้แทน · เงินจริงเข้ามาทีหลังผ่าน bms_ar_receipts ไม่ใช่แถวนี้ จึงต้องไม่ถูกนับ
+// เป็นเงินสดในลิ้นชักเช่นกัน (drawerExpectedInTx กรอง method = 'CASH' อยู่แล้ว)
+export const PAYMENT_METHODS = ["BANK_TRANSFER", "QR", "CARD", "TIKTOK", "CASH", "WALLET", "STORE_CREDIT", "CREDIT"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export type SubmitPaymentInput = {

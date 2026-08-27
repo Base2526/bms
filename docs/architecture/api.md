@@ -102,6 +102,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
 
 - `POST /api/pos/shift` — open/close the device drawer; close is blocked by pending refund settlement.
 - `POST /api/pos/sale` — server-resolved product/pack prices, multi-payment, idempotent atomic close.
+  A payment row with `method: "CREDIT"` (`9.30`) sells on account: the bill completes in full and a
+  receivable is raised instead of money arriving. It requires a customer, and the seller must hold
+  `ar.sell` or supply `creditApproverUserId` + `creditApproverPin` from someone who does — unlike a
+  manual discount, that approver may be the seller. Over-limit answers `409 AR_NOT_ALLOWED` before
+  any stock is reserved.
 - `POST /api/pos/return` — explicit `FULL`/`PARTIAL`, mandatory structured reason and idempotency key.
 - `POST /api/pos/refund-settlement` — authorized confirmation of a pending non-cash refund reference.
 - `GET|POST /api/pos/park` (`7.97`) — parked carts for the device's open shift. `GET` returns
@@ -131,6 +136,20 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
   `VOIDED` (200), `NOT_FOUND` (404), `SHIFT_CLOSED`/`ALREADY_RETURNED` (409), `NOT_VOIDABLE` (400).
+- `GET /api/pos/ar?customerId=&cashierUserId=&pin=` (`9.30`) — the credit account of the customer
+  attached to the bill, plus its open invoices. Requires `ar.view`. A customer with no account
+  answers `200` with `account: null`, not `404`: "this customer has no credit account" is the
+  correct answer to the question, not an error. The counter needs this *before* deciding to extend
+  credit, not after the sale is refused.
+- `POST /api/pos/ar/collect` (`9.30`) — take a payment against outstanding invoices, oldest due
+  first. Requires `ar.collect`, `accountId`, `amount`, `method`, and a client `idempotencyKey`.
+  **Shift, device and branch come from the authenticated device, never from the body** — a register
+  that could name its own shift could post cash into another register's drawer. Cash requires an
+  open shift (`409` otherwise) and writes a `bms_pos_cash_movements` `IN` row inside the same
+  transaction, so it lands in the one drawer formula that exists. Paying more than the outstanding
+  total is `409 OVER_PAYMENT` rather than being held as an unexplained credit. The receipt key is
+  locked tenant-wide and bound to a normalized request hash; exact retries replay, while reusing the
+  key with a different payload returns `409 IDEMPOTENCY_CONFLICT`.
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
 - `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
@@ -290,6 +309,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
+| `bmsAr.ts` | credit accounts, invoice aging, receivable ledger, non-cash collection and write-off (`9.30`). Selling on credit and collecting **cash** are absent by design — those live on `/api/pos/*`, because cash has to reach the drawer of the shift that is actually open |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
 | `bmsFollowups.ts` | follow-up automation plus the separately permissioned Phase 2 retention queue/analytics (`bmsRetentionCases`, `bmsRetentionAnalytics`) and explicit refresh/transition mutations |

@@ -33,6 +33,7 @@ import {
 } from "./pricing";
 import { getVariantBasePrice, getVariantBasePriceInTx } from "./productPacks";
 import { markDepositCompletedInTx, takeDeposit, type Deposit } from "./deposits";
+import { chargeArInTx, precheckArCharge, reduceArForReturnInTx } from "./ar";
 import {
   findStoreCredit,
   lockUsableCreditInTx,
@@ -1242,6 +1243,14 @@ export type PosSaleInput = {
   manualDiscount?: number | null;
   discountApprovedBy?: string | null;
   discountReason?: string | null;
+  /**
+   * คนที่อนุมัติให้ปล่อยเชื่อ (9.30) — route ตรวจ PIN + สิทธิ์ `ar.sell` มาแล้ว
+   *
+   * ต่างจาก discountApprovedBy ข้อเดียว: **เป็นคนขายเองได้** ถ้าคนขายมีสิทธิ์
+   * ร้านค้าส่งที่ขายเชื่อทุกบิลถ้าต้องตามคนที่สองมากดทุกครั้งจะเลิกใช้ระบบ —
+   * กฎเดียวกับที่เภสัชกรอนุมัติตัวเองได้ที่ 9.29
+   */
+  creditApprovedBy?: string | null;
   pharmacyApprovedAssessmentId?: string | null;
   /**
    * เภสัชกรที่กด PIN อนุมัติจ่ายยาที่เครื่อง (9.29) — route ตรวจ PIN + ใบอนุญาตมาแล้ว
@@ -1438,6 +1447,12 @@ export type PosSaleResult =
   /** บัตรของขวัญ/เครดิตร้านใช้ไม่ได้ (8.9) */
   | { status: "CREDIT_INVALID"; reason: string; code: string }
   | { status: "CREDIT_INSUFFICIENT"; code: string; balance: number; requested: number }
+  /** ขายเชื่อไม่ได้ — ไม่มีบัญชี / ถูกระงับ / เกินวงเงิน (9.30) */
+  | {
+      status: "AR_NOT_ALLOWED";
+      reason: string;
+      code: "NO_CUSTOMER" | "NO_ACCOUNT" | "ON_HOLD" | "CLOSED" | "LIMIT_EXCEEDED";
+    }
   /** ทุกสถานะปฏิเสธจาก createOrder ส่งต่อตามเดิม รวมกฎการขายยา */
   | { status: string; [k: string]: unknown };
 
@@ -1877,6 +1892,33 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     }
   }
 
+  // ---- ขายเชื่อ (9.30) ----
+  // ด่านแรกก่อนสร้างบิลด้วยเหตุผลเดียวกับบัตรของขวัญ: เกินวงเงินต้องล้มก่อนตัดสต็อก
+  // ไม่ใช่หลังจากที่ของถูกจองไปแล้ว · การตัดสินใจจริงเกิดซ้ำใน chargeArInTx พร้อม
+  // FOR UPDATE เพราะสองเครื่องขายเชื่อให้ลูกค้าคนเดียวกันพร้อมกันได้
+  const arAmount = Math.round(
+    requestedPayments
+      .filter((payment) => payment.method === "CREDIT")
+      .reduce((sum, payment) => sum + payment.amount, 0) * 100
+  ) / 100;
+  if (arAmount > 0) {
+    if (isDeposit) {
+      return { status: "DEPOSIT_INVALID", reason: "มัดจำเป็นการรับเงิน ไม่ใช่การขายเชื่อ" };
+    }
+    // หนี้ที่ไม่รู้ว่าใครเป็นหนี้ไม่ใช่ลูกหนี้ — walk-in ขายเชื่อไม่ได้
+    if (!input.customerId) {
+      return {
+        status: "AR_NOT_ALLOWED",
+        code: "NO_CUSTOMER",
+        reason: "ขายเชื่อต้องระบุลูกค้าก่อน",
+      };
+    }
+    const verdict = await precheckArCharge(tenantId, input.customerId, arAmount);
+    if (!verdict.ok) {
+      return { status: "AR_NOT_ALLOWED", code: verdict.code, reason: verdict.reason };
+    }
+  }
+
   const existing = await findPosOrderByIdempotencyKey(tenantId, input.deviceId, input.shiftId, key);
   if (existing) {
     if (isDeposit) {
@@ -2251,6 +2293,30 @@ async function finalizePosSale(args: {
         orderId,
         amount: payment.amount,
         actorUserId: input.cashierUserId,
+      });
+    }
+
+    // ขายเชื่อ (9.30) — ตั้งหนี้ในทรานแซกชันเดียวกับสต็อกและใบกำกับ
+    //
+    // ต้องอยู่ **หลัง** fulfilPosOrderInTx เพื่อให้ลำดับล็อกเป็น สต็อก → บัญชีลูกหนี้
+    // ตรงกับเส้นทางคืนของ (ซึ่งล็อกสต็อกก่อนแล้วค่อยลดหนี้) · สลับที่ = deadlock 40P01
+    // เมื่อบิลหนึ่งกำลังขายเชื่อพร้อมกับอีกบิลกำลังคืนของของลูกค้าคนเดียวกัน
+    //
+    // ล้มที่นี่ = ทั้งบิลถูก ROLLBACK ซึ่งเป็นสิ่งที่ต้องการ: ของออกจากร้านโดยไม่มี
+    // ใครเป็นหนี้ กู้คืนด้วยมือไม่ได้เพราะไม่เหลือร่องรอยว่าตั้งใจให้ใครเป็นหนี้
+    const arTotal = Math.round(
+      payments.filter((p) => p.method === "CREDIT").reduce((sum, p) => sum + p.amount, 0) * 100
+    ) / 100;
+    if (arTotal > 0) {
+      if (!input.customerId) throw new Error("ขายเชื่อต้องระบุลูกค้าก่อน");
+      await chargeArInTx(client, input.tenantId, {
+        customerId: input.customerId,
+        orderId,
+        amount: arTotal,
+        locationId: shift.location_id,
+        shiftId: shift.id,
+        actorUserId: input.cashierUserId,
+        approvedBy: input.creditApprovedBy ?? input.cashierUserId,
       });
     }
 
@@ -3487,13 +3553,19 @@ async function processPosReturn(input: {
     }
 
     let remainingRefund = roundedRefundAmount;
+    /** ส่วนที่หักออกจากหนี้แทนการจ่ายเงินคืน (9.30) */
+    let arRefundAmount = 0;
     const refunds: PosRefundAllocation[] = [];
     for (const payment of payments.rows) {
       if (remainingRefund <= 0.001) break;
       const available = Math.max(0, Number(payment.amount) - Number(payment.allocated));
       const amount = Math.round(Math.min(available, remainingRefund) * 100) / 100;
       if (amount <= 0) continue;
-      const completed = payment.method === "CASH";
+      // ขายเชื่อ (9.30) จบทันทีเหมือนเงินสด: การลดหนี้ไม่มีขาที่ต้องไปทำกับธนาคาร
+      // หรือเครื่องรูดบัตร · ถ้าปล่อยเป็น PENDING กะจะปิดไม่ได้จนกว่าจะมีคนไปกด
+      // ยืนยันการคืนเงินที่ไม่มีเงินให้คืน
+      const completed = payment.method === "CASH" || payment.method === "CREDIT";
+      if (payment.method === "CREDIT") arRefundAmount = Math.round((arRefundAmount + amount) * 100) / 100;
       const allocation = await client.query<any>(
         `INSERT INTO bms_pos_refund_allocations
            (tenant_id, pos_return_id, payment_id, method, amount, status,
@@ -3568,6 +3640,21 @@ async function processPosReturn(input: {
       ratio: refundRatio,
       actorUserId: input.actorUserId,
     });
+
+    // ลูกหนี้การค้า (9.30) — ส่วนที่ยังไม่ได้จ่ายต้องหายไปจากหนี้ ไม่ใช่จ่ายเงินคืน
+    //
+    // ยอดมาจากตัว allocation ที่เพิ่งสร้าง ไม่ใช่จาก ratio: allocation ถูกจำกัดด้วย
+    // "ยอดที่จ่ายมาด้วยวิธีนี้ลบที่คืนไปแล้ว" อยู่แล้ว จึงตรงเป๊ะและไม่มีเศษสะสม
+    // ต่างจากการคูณสัดส่วนซึ่งคืนบางส่วนหลายครั้งแล้วปัดเศษเพี้ยนได้
+    if (arRefundAmount > 0) {
+      await reduceArForReturnInTx(client, input.tenantId, {
+        orderId: input.orderId,
+        posReturnId,
+        amount: arRefundAmount,
+        actorUserId: input.actorUserId,
+        isVoid: input.isVoid === true,
+      });
+    }
 
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)

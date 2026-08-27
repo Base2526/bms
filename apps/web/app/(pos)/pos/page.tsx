@@ -225,6 +225,24 @@ type PosMember = {
   tier: { code: string; name: string; discountType: string; discountValue: number } | null;
 };
 
+/**
+ * บัญชีเครดิตของลูกค้าที่ผูกกับบิลนี้ (9.30)
+ *
+ * ตัวเลขทุกตัวมาจาก server · จอห้ามคำนวณ availableCredit เอง เพราะกฎวงเงินถูก
+ * ตัดสินซ้ำในทรานแซกชันที่ตัดสต็อกอยู่แล้ว สองสูตรจะ drift แล้วจอบอกว่าขายได้
+ * ทั้งที่ server จะปฏิเสธ
+ */
+type ArAccountView = {
+  id: string;
+  status: "ACTIVE" | "ON_HOLD" | "CLOSED";
+  creditLimit: number;
+  balance: number;
+  availableCredit: number;
+  overdueAmount: number;
+  openInvoiceCount: number;
+  termsDays: number;
+};
+
 /** ผลคิดส่วนลดจาก server — จอห้ามคิดเลขนี้เอง (ต้องตรงกับตอน commit) */
 type ParkedSale = {
   id: string;
@@ -716,6 +734,10 @@ function getReceiptRefundSummary(row: Pick<Receipt, "refunds" | "returnEvents" |
 
 function posPaymentMethodLabel(method: string) {
   if (method === "BANK_TRANSFER") return "โอนเงิน";
+  // ขายเชื่อ (9.30) ไม่ได้อยู่ใน METHODS เพราะปุ่มของมันโผล่ตามลูกค้า ไม่ใช่ตลอดเวลา
+  // แต่ป้ายต้องอ่านออกทุกที่ที่แสดงวิธีชำระ (ใบเสร็จ/ประวัติบิล/แถวคืนเงิน)
+  if (method === "CREDIT") return "ขายเชื่อ";
+  if (method === "STORE_CREDIT") return "เครดิตร้าน";
   return METHODS.find((item) => item.key === method)?.label ?? method;
 }
 
@@ -955,6 +977,20 @@ export default function PosPage() {
   >(null);
   const [memberPreview, setMemberPreview] = useState<MemberPreview | null>(null);
   const [memberPreviewAppliedKey, setMemberPreviewAppliedKey] = useState<string | null>(null);
+  // ---- ขายเชื่อ / ลูกหนี้ (9.30) ----
+  // โหลดเมื่อผูกลูกค้ากับบิล · null = ยังไม่รู้/ไม่มีบัญชี → ปุ่ม "ขายเชื่อ" ไม่โผล่เลย
+  // (ปุ่มที่กดแล้วโดนปฏิเสธทุกครั้งแย่กว่าปุ่มที่ไม่มี — แคชเชียร์เรียนรู้ว่าจอโกหก)
+  const [arAccount, setArAccount] = useState<ArAccountView | null>(null);
+  // ผู้อนุมัติปล่อยเชื่อ — โผล่เฉพาะเมื่อ server ตอบว่าคนขายไม่มีสิทธิ์ (ar.sell)
+  // PIN อยู่ในหน่วยความจำอย่างเดียวเหมือน PIN อื่นทั้งหมด ห้ามลง localStorage
+  const [creditApproverOpen, setCreditApproverOpen] = useState(false);
+  const [creditApproverId, setCreditApproverId] = useState("");
+  const [creditApproverPin, setCreditApproverPin] = useState("");
+  // ฟอร์มรับชำระหนี้ที่เคาน์เตอร์
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectMethod, setCollectMethod] = useState("CASH");
+  const [collectRef, setCollectRef] = useState("");
   // ---- พักบิล / เงินลิ้นชัก / ยกเลิกบิล / สรุปกะ (7.97) ----
   const [parked, setParked] = useState<ParkedSale[]>([]);
   const [parkLabel, setParkLabel] = useState("");
@@ -1506,6 +1542,74 @@ export default function PosPage() {
     setMemberQuery("");
   }
 
+  /**
+   * โหลดบัญชีเครดิตของลูกค้าที่เพิ่งผูกกับบิล (9.30)
+   *
+   * ล้มเงียบโดยตั้งใจ: ฐานที่ยังไม่ apply 9.30 หรือพนักงานที่ไม่มีสิทธิ์ `ar.view`
+   * ต้องขายเงินสดต่อได้ตามปกติ — ผลคือปุ่ม "ขายเชื่อ" ไม่โผล่ ซึ่งถูกต้องแล้ว
+   */
+  async function loadArAccount(customerId: string) {
+    if (!cashierId || !pin) return;
+    try {
+      const params = new URLSearchParams({ customerId, cashierUserId: cashierId, pin });
+      const res = await fetch(`/api/pos/ar?${params.toString()}`, { headers: authHeaders });
+      if (!res.ok) { setArAccount(null); return; }
+      const data = await res.json();
+      setArAccount(data?.account ?? null);
+    } catch {
+      setArAccount(null);
+    }
+  }
+
+  /** รับชำระหนี้ที่เคาน์เตอร์ — เงินสดเข้าลิ้นชักของกะที่เปิดอยู่ (server เป็นคนผูก) */
+  async function collectReceivable() {
+    if (!arAccount || !cashierId || !pin || busy) return;
+    const amount = Number(collectAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotice({ type: "error", text: "ระบุยอดรับชำระก่อน" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pos/ar/collect", {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          cashierUserId: cashierId,
+          pin,
+          accountId: arAccount.id,
+          amount,
+          method: collectMethod,
+          reference: collectRef.trim() || null,
+          // คีย์ต่อการกดหนึ่งครั้ง ไม่ใช่ต่อ signature ของคำขอ (บทเรียนจาก 9.5)
+          idempotencyKey: `ar-${session?.device.code ?? "pos"}-${crypto.randomUUID()}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.status === "RECEIVED") {
+        setNotice({
+          type: "ok",
+          text: `รับชำระหนี้ ฿${baht(amount)} · ตัด ${data.allocations?.length ?? 0} ใบ · เหลือค้าง ฿${baht(Number(data.balanceAfter ?? 0))}`,
+        });
+        setCollectOpen(false);
+        setCollectAmount("");
+        setCollectRef("");
+        if (member?.customerId) void loadArAccount(member.customerId);
+        return;
+      }
+      setNotice({
+        type: "error",
+        text: data?.status === "OVER_PAYMENT"
+          ? `รับเกินยอดค้าง — ค้างอยู่ ฿${baht(Number(data.outstanding ?? 0))}`
+          : data?.reason || data?.error || "รับชำระไม่สำเร็จ",
+      });
+    } catch (e: any) {
+      setNotice({ type: "error", text: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function clearPharmacyReviewState() {
     setPharmacyReviewLink(null);
     setPharmacyReviewOffer(null);
@@ -1551,6 +1655,18 @@ export default function PosPage() {
     clearPharmacyReviewState();
     // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
     setExtraLines([]);
+    // บัญชีเครดิตผูกกับลูกค้าของบิลนี้ (9.30) — ค้างไว้ = บิลถัดไปเห็นวงเงินของคนก่อน
+    clearArState();
+  }
+
+  function clearArState() {
+    setArAccount(null);
+    setCreditApproverOpen(false);
+    setCreditApproverId("");
+    setCreditApproverPin("");
+    setCollectOpen(false);
+    setCollectAmount("");
+    setCollectRef("");
   }
 
   function resetBlindReturnState(options: { keepOpen?: boolean } = {}) {
@@ -2696,6 +2812,15 @@ export default function PosPage() {
     setPharmacistAuthError(null);
   }
 
+  // บัญชีเครดิตตามลูกค้าที่ผูกกับบิล (9.30) — ปลดลูกค้าออกแล้วต้องล้างทันที
+  // ไม่ใช่ค้างไว้ให้บิลถัดไปเห็นวงเงินของคนก่อน
+  useEffect(() => {
+    const customerId = member?.customerId;
+    if (!customerId) { setArAccount(null); return; }
+    void loadArAccount(customerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [member?.customerId, cashierId, pin]);
+
   /** ปรับจำนวนแต้มเป็นก้าวละ 1 หน่วยแลก — เศษแต้มไม่แปลงเป็นส่วนลดอยู่แล้ว */
   function stepPoints(direction: 1 | -1) {
     if (!member) return;
@@ -3192,7 +3317,7 @@ export default function PosPage() {
               const method = String(payment.method ?? "");
               return {
                 method,
-                label: METHODS.find((item) => item.key === method)?.label ?? method,
+                label: posPaymentMethodLabel(method),
                 amount: Number(payment.amount ?? 0),
                 ref: payment.ref ?? null,
                 tendered: payment.cashTendered == null ? null : Number(payment.cashTendered),
@@ -3269,7 +3394,7 @@ export default function PosPage() {
                 const method = String(payment.method ?? "");
                 return {
                   method,
-                  label: METHODS.find((item) => item.key === method)?.label ?? method,
+                  label: posPaymentMethodLabel(method),
                   amount: Number(payment.amount ?? 0),
                   ref: payment.ref ?? null,
                   tendered: payment.cashTendered == null ? null : Number(payment.cashTendered),
@@ -3498,7 +3623,7 @@ export default function PosPage() {
     const refunds = Array.isArray(receipt.refunds) ? receipt.refunds : [];
     if (!refunds.length) return null;
     const labels = [...new Set(refunds.map((refund) =>
-      METHODS.find((method) => method.key === refund.method)?.label ?? refund.method
+      posPaymentMethodLabel(refund.method)
     ))];
     return labels.length === 1 ? `คืน${labels[0]}` : "คืนหลายช่องทาง";
   }
@@ -3876,6 +4001,10 @@ export default function PosPage() {
             pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
             pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
             pharmacistAuthorizationNote: pharmacistAuth?.note || null,
+            // ผู้อนุมัติปล่อยเชื่อรอบล่าสุดชนะ (9.30) — เหตุผลเดียวกับเภสัชกร:
+            // คนที่มาอนุมัติซ้ำอาจเป็นคนละคน ส่ง id เดิมคู่ PIN ใหม่จะได้ 403 ที่อ่านไม่รู้เรื่อง
+            creditApproverUserId: creditApproverId || null,
+            creditApproverPin: creditApproverPin || null,
           }
         : {
         shiftId: session.shift.id,
@@ -3898,6 +4027,10 @@ export default function PosPage() {
         pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
         pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
         pharmacistAuthorizationNote: pharmacistAuth?.note || null,
+        // ขายเชื่อ (9.30) — server ตรวจสิทธิ์ ar.sell ของคนขายก่อน ถ้ามีเองก็ไม่ต้องใช้
+        // สองช่องนี้เลย · ถ้าไม่มี ต้องมีผู้อนุมัติกด PIN (ตรวจกับฐานข้อมูลทุกครั้ง)
+        creditApproverUserId: creditApproverId || null,
+        creditApproverPin: creditApproverPin || null,
         // เคสในคิวที่ยังไม่อนุมัติ ถ้าเภสัชกรมาอนุมัติที่เครื่องแทน server ปิดเคสให้หลังขายจบ
         // ไม่ปิด = เคสค้างรอคิว แล้วถ้ามีคนไปกดอนุมัติทีหลังจะได้ใบอนุมัติที่ขายได้อีกใบ
         pharmacyReviewAssessmentId: pharmacyReviewLink?.status !== "APPROVED"
@@ -3960,7 +4093,7 @@ export default function PosPage() {
           .filter((payment) => payment.numericAmount > 0)
           .map((payment) => ({
             method: payment.method,
-            label: METHODS.find((m) => m.key === payment.method)?.label ?? payment.method,
+            label: posPaymentMethodLabel(payment.method),
             amount: payment.numericAmount,
             ref: payment.method !== "CASH" && payment.ref.trim() ? payment.ref.trim() : null,
             tendered: payment.method === "CASH" && payment.numericTendered > 0 ? payment.numericTendered : null,
@@ -4035,6 +4168,16 @@ export default function PosPage() {
           setHasPendingSale(false);
         }
         let failureText = describeFailure(data);
+        // ขายเชื่อแต่คนขายไม่มีสิทธิ์ (9.30) — 403 ที่ไม่มี `status` จะตกไปที่ข้อความ
+        // ปลายทางที่บอกไม่ได้ว่าต้องทำอะไรต่อ · ยื่นแผงผู้อนุมัติให้เลย
+        if (data?.code === "AR_APPROVAL_REQUIRED") {
+          setCreditApproverOpen(true);
+          failureText = data.error ?? "ให้ผู้มีสิทธิ์ขายเชื่อกด PIN อนุมัติ";
+        }
+        if (data?.status === "AR_NOT_ALLOWED" && member?.customerId) {
+          // วงเงินอาจเพิ่งถูกใช้ไปโดยอีกเครื่อง — ดึงยอดล่าสุดมาให้เห็นทันที
+          void loadArAccount(member.customerId);
+        }
         if (data?.status === "PAYMENT_MISMATCH") {
           // บิลถูกยกเลิกแล้ว ต้องทิ้งยอดรับเงินเดิมและ preview ส่วนลดเดิมทั้งหมด
           // ไม่เช่นนั้นกดซ้ำก็ส่งยอดเก่าแล้วชน mismatch วนซ้ำ
@@ -6155,7 +6298,7 @@ export default function PosPage() {
                         {(row.refunds ?? []).filter((refund) => refund.status === "PENDING").map((refund) => (
                           <div className="pos-refund-row" key={refund.id} style={{ display: "grid", gridTemplateColumns: "auto minmax(120px,1fr) auto", gap: 8, alignItems: "center" }}>
                             <div style={{ fontSize: 12 }}>
-                              {METHODS.find((method) => method.key === refund.method)?.label ?? refund.method} · ฿{baht(refund.amount)}
+                              {posPaymentMethodLabel(refund.method)} · ฿{baht(refund.amount)}
                             </div>
                             <input
                               value={settlementRefs[refund.id] ?? ""}
@@ -6719,9 +6862,138 @@ export default function PosPage() {
                   </button>
                 );
               })}
+              {/* ขายเชื่อ (9.30) — โผล่เฉพาะเมื่อลูกค้ามีบัญชีเครดิตที่ยังใช้ได้จริง
+                  ปุ่มที่กดแล้วโดนปฏิเสธทุกครั้งแย่กว่าปุ่มที่ไม่มี */}
+              {arAccount?.status === "ACTIVE" && (
+                <button
+                  aria-pressed={payments[0]?.method === "CREDIT"}
+                  onClick={() => {
+                    setSplitMode(false);
+                    updatePayment(payments[0].id, {
+                      method: "CREDIT",
+                      tendered: "",
+                      ref: "",
+                      amount: amountDue > 0 ? String(amountDue) : "",
+                    });
+                  }}
+                  style={{
+                    flex: "1 1 0", minWidth: 92, minHeight: 44, padding: "8px 10px", fontSize: 14,
+                    background: payments[0]?.method === "CREDIT" ? "#fff4e6" : undefined,
+                    borderColor: payments[0]?.method === "CREDIT" ? "#ffbb70" : undefined,
+                    fontWeight: payments[0]?.method === "CREDIT" ? 500 : 400,
+                  }}
+                >
+                  ขายเชื่อ
+                </button>
+              )}
               <button onClick={addPaymentRow} style={{ flex: "1 1 0", minWidth: 90, minHeight: 44, fontSize: 13 }}>
                 + จ่ายผสม
               </button>
+            </div>
+          )}
+
+          {/* ---- แผงลูกหนี้ของลูกค้าที่ผูกกับบิล (9.30) ------------------
+              ต้องเห็น "ค้างอยู่เท่าไร / ใช้ได้อีกเท่าไร" **ก่อน** ตัดสินใจปล่อยเชื่อ
+              ไม่ใช่หลังจาก server ปฏิเสธไปแล้ว — และยอดเลยกำหนดต้องเด่นกว่ายอดรวม
+              เพราะนั่นคือสัญญาณเดียวที่บอกว่าไม่ควรปล่อยเพิ่ม */}
+          {!justSold && arAccount && (
+            <div
+              style={{
+                marginTop: 12, padding: "8px 10px", borderRadius: 8, fontSize: 13,
+                background: arAccount.overdueAmount > 0 ? "#fff1f0" : "#f6f8fa",
+                border: `1px solid ${arAccount.overdueAmount > 0 ? "#ffccc7" : "#e3e8ee"}`,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <span>
+                  <strong>เครดิตลูกค้า</strong>
+                  {arAccount.status !== "ACTIVE" && (
+                    <span style={{ color: "#cf1322", marginInlineStart: 6 }}>
+                      {arAccount.status === "ON_HOLD" ? "· ถูกระงับการขายเชื่อ" : "· ปิดบัญชีแล้ว"}
+                    </span>
+                  )}
+                </span>
+                <span>เทอม {arAccount.termsDays} วัน</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                <span>
+                  ค้างอยู่ <strong>฿{baht(arAccount.balance)}</strong>
+                  {arAccount.openInvoiceCount > 0 ? ` (${arAccount.openInvoiceCount} ใบ)` : ""}
+                </span>
+                <span>ใช้ได้อีก <strong>฿{baht(arAccount.availableCredit)}</strong></span>
+              </div>
+              {arAccount.overdueAmount > 0 && (
+                <div style={{ marginTop: 4, color: "#cf1322", fontWeight: 500 }}>
+                  เลยกำหนดชำระ ฿{baht(arAccount.overdueAmount)}
+                </div>
+              )}
+              {arAccount.balance > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  {!collectOpen ? (
+                    <button onClick={() => { setCollectOpen(true); setCollectAmount(String(arAccount.balance)); }}>
+                      รับชำระหนี้
+                    </button>
+                  ) : (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <input
+                        value={collectAmount}
+                        onChange={(e) => setCollectAmount(e.target.value)}
+                        inputMode="decimal"
+                        placeholder="ยอดรับ"
+                        style={{ width: 110 }}
+                      />
+                      <select value={collectMethod} onChange={(e) => setCollectMethod(e.target.value)}>
+                        <option value="CASH">เงินสด</option>
+                        <option value="QR">QR</option>
+                        <option value="CARD">บัตร</option>
+                        <option value="BANK_TRANSFER">โอนเงิน</option>
+                        <option value="WALLET">วอลเล็ท</option>
+                      </select>
+                      {collectMethod !== "CASH" && (
+                        <input
+                          value={collectRef}
+                          onChange={(e) => setCollectRef(e.target.value)}
+                          placeholder="เลขอ้างอิง"
+                          style={{ width: 120 }}
+                        />
+                      )}
+                      <button onClick={() => void collectReceivable()} disabled={busy}>ยืนยันรับเงิน</button>
+                      <button onClick={() => setCollectOpen(false)}>ยกเลิก</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ผู้อนุมัติปล่อยเชื่อ — โผล่เมื่อ server บอกว่าคนขายไม่มีสิทธิ์ ar.sell
+              PIN ไม่ถูกเก็บลง localStorage เหมือน PIN อื่นทุกตัว */}
+          {!justSold && creditApproverOpen && (
+            <div
+              style={{
+                marginTop: 8, padding: "8px 10px", borderRadius: 8, fontSize: 13,
+                background: "#fffbe6", border: "1px solid #ffe58f",
+              }}
+            >
+              <div style={{ marginBottom: 6 }}>
+                พนักงานคนนี้ไม่มีสิทธิ์ขายเชื่อ — ให้ผู้มีสิทธิ์กด PIN อนุมัติ
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <select value={creditApproverId} onChange={(e) => setCreditApproverId(e.target.value)}>
+                  <option value="">เลือกผู้อนุมัติ</option>
+                  {(session?.cashiers ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name ?? c.email}</option>
+                  ))}
+                </select>
+                <input
+                  type="password"
+                  value={creditApproverPin}
+                  onChange={(e) => setCreditApproverPin(e.target.value)}
+                  placeholder="PIN ผู้อนุมัติ"
+                  style={{ width: 120 }}
+                />
+                <button onClick={() => setCreditApproverOpen(false)}>ปิด</button>
+              </div>
             </div>
           )}
 
@@ -6790,7 +7062,7 @@ export default function PosPage() {
                       เสมอ (server ปฏิเสธถ้าไม่ตรง) — ไม่ต้องมีช่องให้พิมพ์ผิด */}
                   {payments.length === 1 ? (
                     <div style={{ fontSize: 14 }}>
-                      รับด้วย <strong>{METHODS.find((m) => m.key === payment.method)?.label ?? payment.method}</strong>
+                      รับด้วย <strong>{posPaymentMethodLabel(payment.method)}</strong>
                       {" · "}ยอด <strong>฿{baht(amountDue)}</strong>
                     </div>
                   ) : (
@@ -6803,6 +7075,9 @@ export default function PosPage() {
                       {METHODS.map((m) => (
                         <option key={m.key} value={m.key}>{m.label}</option>
                       ))}
+                      {/* จ่ายบางส่วน ค้างบางส่วน (9.30) — เป็นเรื่องปกติของร้านค้าส่ง
+                          และเป็นเหตุผลหนึ่งที่ขายเชื่อทำเป็น "วิธีชำระเงิน" ไม่ใช่บิลค้าง */}
+                      {arAccount?.status === "ACTIVE" && <option value="CREDIT">ขายเชื่อ</option>}
                     </select>
                     <input
                       value={payment.amount}
@@ -7577,7 +7852,7 @@ export default function PosPage() {
                     <div key={`${refund.id ?? refund.method}-${idx}`}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>
-                          คืนโดย {METHODS.find((method) => method.key === refund.method)?.label ?? refund.method}
+                          คืนโดย {posPaymentMethodLabel(refund.method)}
                           {refund.status === "PENDING" ? " (รอยืนยัน)" : ""}
                         </span>
                         <span>{baht(refund.amount)}</span>
@@ -7749,6 +8024,13 @@ function describeFailure(data: any): string {
     // เพดานจำนวนต่อครั้งเป็นค่าที่ร้านตั้งเอง PIN เภสัชกรปลดไม่ได้ (9.29) — ต้องไปแก้ policy
     case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
       return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity}) — ลดจำนวน หรือแก้นโยบายที่หน้าแอดมิน`;
+    // ขายเชื่อ (9.30) — reason จาก server บอกวงเงิน/ยอดค้างมาแล้ว ไม่ต้องแต่งซ้ำ
+    case "AR_NOT_ALLOWED":
+      return data.code === "NO_CUSTOMER"
+        ? "ขายเชื่อต้องเลือกลูกค้าก่อน — ค้นสมาชิกที่ช่องลูกค้าด้านบน"
+        : data.code === "NO_ACCOUNT"
+          ? "ลูกค้ารายนี้ยังไม่มีบัญชีเครดิต — เปิดบัญชีและตั้งวงเงินที่หน้าลูกหนี้การค้าก่อน"
+          : `ขายเชื่อไม่ได้: ${data.reason}`;
     case "COUPON_INVALID":
       return `คูปองใช้ไม่ได้: ${data.reason}`;
     // สองตัวนี้เดิมตกไปที่ default แล้วโชว์ "ขายไม่สำเร็จ (POINTS_INVALID)" ซึ่งบอก
