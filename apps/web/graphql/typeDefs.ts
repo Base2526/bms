@@ -876,6 +876,35 @@ export const typeDefs = /* GraphQL */ `
     blockShiftOnUnreviewed: Boolean!
   }
 
+  "9.29 — หนึ่งแถวต่อ (บิล, สินค้า, ไซซ์) ที่เภสัชกรกด PIN อนุมัติจ่ายที่เคาน์เตอร์"
+  type BmsPharmacistCounterAuthorization {
+    id: ID!
+    orderId: ID!
+    "รหัสสั้นที่พนักงานใช้เรียกบิล (ตรงกับที่หน้า POS โชว์ตอนขายจบ)"
+    orderCode: String!
+    "เลขใบกำกับ/ใบเสร็จถ้าออกแล้ว — บิลมัดจำที่ยังไม่ส่งของยังไม่มี"
+    taxDocNo: String
+    productSku: String!
+    productName: String
+    size: String!
+    qty: Int!
+    "policy ที่ถูกปลด ณ เวลานั้น (snapshot ไม่ใช่ค่าปัจจุบันของสินค้า)"
+    salePolicy: String!
+    policyStatus: String!
+    pharmacistUserId: ID!
+    pharmacistName: String
+    cashierName: String
+    note: String
+    createdAt: String!
+  }
+
+  type BmsPharmacistCounterAuthorizationPage {
+    items: [BmsPharmacistCounterAuthorization!]!
+    total: Int!
+    limit: Int!
+    offset: Int!
+  }
+
   type BmsUnreviewedProduct {
     sku: String!
     name: String!
@@ -1091,6 +1120,8 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssessment(id: ID!): BmsPharmacyAssessment
     bmsPharmacyAssessmentConversationHistory(assessmentId: ID!, limit: Int): BmsPharmacyConversationHistory
     bmsPharmacyAssessmentEvents(assessmentId: ID!, limit: Int): [BmsPharmacyAssessmentEvent!]!
+    "บันทึกการจ่ายยาที่เภสัชกรอนุมัติที่เคาน์เตอร์ (9.29) — สิทธิ์ pharmacy.audit.read"
+    bmsPharmacistCounterAuthorizations(from: String, to: String, limit: Int, offset: Int): BmsPharmacistCounterAuthorizationPage!
     bmsPharmacyCatalog(search: String, limit: Int): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!

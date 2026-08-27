@@ -20,6 +20,8 @@ import {
 } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingDelta, type CashRounding } from "@/lib/pos/cashRounding";
+// เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" ต้องเป็นชุดเดียวกับ server (ไฟล์นี้ pure ไม่มี import อื่น)
+import { isPharmacistReviewableBlock } from "@/lib/bms/pharmacy/productPolicyDecision";
 import {
   consumeKeyboardWedgeKey,
   DEFAULT_KEYBOARD_WEDGE_CONFIG,
@@ -1519,7 +1521,10 @@ export default function PosPage() {
   function notePharmacyBlock(data: any) {
     const status = String(data?.status ?? "");
     if (!status.startsWith("PHARMACY_")) return;
-    if (status === "PHARMACY_REVIEW_REQUIRED" || status === "PHARMACY_SAFETY_CHECK_REQUIRED") {
+    // ใช้ชุดของ "เคาน์เตอร์" — ยาที่ต้องมีใบสั่งแพทย์ส่งเข้าคิวได้ด้วย (server รับแล้ว)
+    // เดิมยื่นแค่ 2 สถานะ ทั้งที่ข้อความบอกให้ส่งเข้าคิวได้ → เภสัชกรไม่อยู่หน้าร้าน
+    // = ทางตันสำหรับยากลุ่มนี้ทั้งที่มีทางไปต่ออยู่
+    if (isPharmacistReviewableBlock(status, "counter")) {
       setPharmacyReviewOffer({ requiresSafetyCheck: status === "PHARMACY_SAFETY_CHECK_REQUIRED" });
     }
     if (status === "PHARMACY_QUANTITY_LIMIT_EXCEEDED") return;
@@ -2279,6 +2284,14 @@ export default function PosPage() {
         setDiscountOpen(true);
         return;
       }
+      // รายการมัดจำค้างที่เคยมีเภสัชกรอนุมัติ: PIN ไม่ได้ถูกเซฟไว้คู่กัน (ตั้งใจ) ต้องให้กดใหม่
+      // ถ้าปล่อยให้ยิงต่อ จะได้ 400 "ต้องกด PIN" แล้วโค้ดด้านล่างลบคีย์กันบิลซ้ำทิ้ง
+      // → กดครั้งถัดไปใช้คีย์ใหม่ = รับมัดจำซ้ำได้ถ้ารอบแรก commit ไปแล้ว
+      if (savedAttempt?.body?.pharmacistAuthorizerUserId && !pharmacistAuth) {
+        setNotice({ type: "error", text: "รายการมัดจำค้างใบนี้มีการอนุมัติของเภสัชกร — ให้เภสัชกรกด PIN อนุมัติใหม่ก่อนรับมัดจำ" });
+        setPharmacistAuthOffer({ status: "PHARMACY_REVIEW_REQUIRED", sku: null });
+        return;
+      }
 
       const body = savedAttempt?.body
         ? {
@@ -2286,6 +2299,11 @@ export default function PosPage() {
             cashierUserId: cashierId,
             pin,
             discountApproverPin: approvedDiscount?.approverPin ?? null,
+            // ผู้อนุมัติที่กด PIN รอบนี้ชนะของที่ค้างอยู่ใน body เดิม — คนที่มาอนุมัติซ้ำอาจ
+            // เป็นเภสัชกรคนละคนกับรอบแรก ถ้าส่ง id เดิมคู่ PIN ใหม่จะได้ 403 ที่อ่านไม่รู้เรื่อง
+            pharmacistAuthorizerUserId: pharmacistAuth?.userId ?? null,
+            pharmacistAuthorizerPin: pharmacistAuth?.pin ?? null,
+            pharmacistAuthorizationNote: pharmacistAuth?.note || null,
           }
         : {
             mode: "DEPOSIT",
@@ -2878,6 +2896,8 @@ export default function PosPage() {
    * บิลที่ยิงมา) แล้วหลักฐานจะบันทึกชื่อเภสัชกรกับยาที่เขาไม่เคยเห็น
    */
   useEffect(() => {
+    // การ์ดที่ค้างอยู่พูดถึงรายการของตะกร้าใบก่อน — ปล่อยไว้แล้วพนักงานอ่านผิดตัว
+    setPharmacistAuthOffer(null);
     if (pharmacistAuth) {
       setPharmacistAuth(null);
       setNotice({

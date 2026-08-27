@@ -21,7 +21,8 @@
 // remains the single gate for that, unchanged.
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "../tenant";
 
 export type PharmacyPolicyReadiness = {
   /** false → this shop is not a pharmacy; every count is 0 and ready is true. */
@@ -172,20 +173,57 @@ export async function assertPharmacyPolicyReadyToOpenShift(tenantId: string): Pr
  *
  * ส่งเฉพาะค่าที่ต้องการเปลี่ยน — ไม่ส่ง = ไม่แตะ (กฎเดียวกับ `vat_category` ใน
  * `upsertProduct`) เพื่อไม่ให้ฟอร์มที่รู้จักฟิลด์เดียวไปล้างอีกฟิลด์เป็นค่าปริยาย
+ *
+ * สองค่านี้ตอบว่า "ใครปล่อยยาออกจากร้านได้บ้าง" จึงเขียน audit **ในทรานแซกชันเดียวกับ
+ * การเขียน** ไม่ใช่ยิงต่อท้ายจาก resolver (กฎเดียวกับ setCashierPin หลัง 9.5) — ค่าที่
+ * เปลี่ยนแล้วไม่มีร่องรอยว่าใครเปลี่ยนคือช่องที่อธิบายย้อนหลังไม่ได้
+ *
+ * และปฏิเสธถ้าร้านไม่ได้ตั้งประเภทเป็นร้านขายยา: คอลัมน์ของ 9.29 ไม่มีความหมายกับร้าน
+ * อื่นเลย การยอมให้ตั้งได้เท่ากับเก็บค่าที่ไม่มีใครอ่านแล้วดูเหมือนมีผล
  */
 export async function setPharmacyCounterSettings(
   tenantId: string,
-  input: { counterAuthorization?: boolean | null; blockShiftOnUnreviewed?: boolean | null }
+  input: { counterAuthorization?: boolean | null; blockShiftOnUnreviewed?: boolean | null },
+  actor?: string | null
 ): Promise<PharmacyPolicyReadiness> {
-  await query(
-    `INSERT INTO bms_store_profile (tenant_id, pharmacy_counter_authorization, pharmacy_block_shift_on_unreviewed_policy)
-     VALUES ($1, COALESCE($2, TRUE), COALESCE($3, FALSE))
-     ON CONFLICT (tenant_id) DO UPDATE
-        SET pharmacy_counter_authorization =
-              COALESCE($2, bms_store_profile.pharmacy_counter_authorization),
-            pharmacy_block_shift_on_unreviewed_policy =
-              COALESCE($3, bms_store_profile.pharmacy_block_shift_on_unreviewed_policy)`,
-    [tenantId, input.counterAuthorization ?? null, input.blockShiftOnUnreviewed ?? null]
-  );
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const profile = await client.query<{ business_archetype: string | null }>(
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1 FOR UPDATE`,
+      [tenantId]
+    );
+    if (profile.rows[0]?.business_archetype !== "pharmacy") {
+      await client.query("ROLLBACK");
+      throw new Error("ตั้งค่านี้ได้เฉพาะร้านที่ตั้งประเภทธุรกิจเป็นร้านขายยา");
+    }
+    // ร้านยาต้องมีแถวโปรไฟล์อยู่แล้ว (archetype อยู่ในแถวนั้น) จึงเป็น UPDATE ล้วน
+    const updated = await client.query<{ counter: boolean; blocks: boolean }>(
+      `UPDATE bms_store_profile
+          SET pharmacy_counter_authorization =
+                COALESCE($2, pharmacy_counter_authorization),
+              pharmacy_block_shift_on_unreviewed_policy =
+                COALESCE($3, pharmacy_block_shift_on_unreviewed_policy),
+              updated_at = now()
+        WHERE tenant_id = $1
+        RETURNING pharmacy_counter_authorization AS counter,
+                  pharmacy_block_shift_on_unreviewed_policy AS blocks`,
+      [tenantId, input.counterAuthorization ?? null, input.blockShiftOnUnreviewed ?? null]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pharmacy.counter_settings_set', $1::text, $3::jsonb)`,
+      [tenantId, actor || "system", JSON.stringify({
+        counterAuthorization: updated.rows[0]?.counter ?? null,
+        blockShiftOnUnreviewed: updated.rows[0]?.blocks ?? null,
+      })]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
   return getPharmacyPolicyReadiness(tenantId);
 }

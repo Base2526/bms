@@ -57,7 +57,7 @@ const Q = gql`
       customerConfirmationStatus customerConfirmationSummary customerConfirmedAt
       structuredAnswers rawMessages aiSummary aiSummaryVersion
       pharmacistDecisionNotes needsManualIntake protocolId medicationSuggestions checkoutOrderDraft
-      complaint
+      channelId
       createdAt updatedAt expiresAt
     }
     bmsPharmacyAssessmentConversationHistory(assessmentId: $id, limit: 100) {
@@ -334,21 +334,26 @@ export default function PharmacyCaseDetailPage() {
   }, [c?.id, c?.pharmacistDecisionNotes]);
 
   // เคสที่เกิดจากเครื่องขายหน้าร้าน — ของถูกส่งมือต่อมือ ไม่ได้ส่งออกไปทางอินเทอร์เน็ต
-  const caseFromCounter = String((c?.complaint as any)?.sourceMeta?.source ?? "") === "pos";
+  // อ่านจาก channelId (คอลัมน์ที่ประทับตอนสร้างเคส) ไม่ใช่ complaint.sourceMeta ซึ่งเป็น
+  // JSONB ที่ intake เขียนทับได้ทั้งก้อน · service ตัดสินด้วยค่าเดียวกันตอน approve
+  const caseFromCounter = String(c?.channelId ?? "") === "pos";
 
   /**
    * สินค้าที่เภสัชกรหยิบเข้า draft ได้
    *
-   * - **ยาที่ต้องมีใบสั่งแพทย์เลือกได้** — ใบสั่งเป็นเอกสารที่เภสัชกรอ่านและรับผิดชอบ
-   *   การอนุมัติเคสนี้คือการตัดสินนั้นเอง (แนบรูป/เลขใบสั่งไว้ในการ์ดหลักฐานของเคส)
-   * - **`ONLINE_SALE_PROHIBITED` เลือกได้เฉพาะเคสจากหน้าร้าน** — ป้ายนี้บอกว่าห้ามส่ง
-   *   ออกไปทางออนไลน์ ไม่ใช่ห้ามเภสัชกรจ่ายเมื่อเจอตัว · service ตรวจซ้ำด้วย channel
-   *   ของเคสตอน approve อยู่แล้ว ที่นี่แค่ไม่ยื่นตัวเลือกที่ยังไงก็ถูกปฏิเสธ
+   * - **สองกลุ่มนี้เลือกได้เฉพาะเคสที่มาจากหน้าร้าน**:
+   *   · `PRESCRIPTION_REQUIRED` — ใบสั่งแพทย์เป็นกระดาษที่เภสัชกรอ่าน เก็บสำเนาไว้กับเคส
+   *     แล้วส่งยาข้ามเคาน์เตอร์ · ร้านขายยาไม่ได้อนุมัติจากห้องแชทแล้วส่งของออกไป
+   *   · `ONLINE_SALE_PROHIBITED` — ป้ายนี้บอกว่าห้ามส่งออกไปทางออนไลน์ ไม่ใช่ห้ามเภสัชกร
+   *     จ่ายเมื่อเจอตัว
+   *   service ตรวจซ้ำด้วย channel ของเคสตอน approve อยู่แล้ว (`evaluatePharmacySale`)
+   *   ที่นี่แค่ไม่ยื่นตัวเลือกที่ยังไงก็ถูกปฏิเสธ
    * - **สินค้าที่ policy ยังไม่ APPROVED เลือกไม่ได้** — แก้ที่การรีวิว policy ไม่ใช่ที่นี่
    */
+  const COUNTER_ONLY_SALE_POLICIES = ["PRESCRIPTION_REQUIRED", "ONLINE_SALE_PROHIBITED"];
   const isPolicyEligibleForPharmacistDraft = (item: any) =>
     item?.policyStatus === "APPROVED" &&
-    (caseFromCounter || String(item?.salePolicy || "") !== "ONLINE_SALE_PROHIBITED");
+    (caseFromCounter || !COUNTER_ONLY_SALE_POLICIES.includes(String(item?.salePolicy || "")));
 
   const isPrescriptionItem = (item: any) =>
     String(item?.salePolicy || "") === "PRESCRIPTION_REQUIRED";

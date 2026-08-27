@@ -42,10 +42,7 @@ import {
 import { assertPharmacyPolicyReadyToOpenShift } from "./pharmacy/policyReadiness";
 import { checkPharmacySaleInTx } from "./pharmacy/productPolicy";
 import { isPharmacistReviewableBlock } from "./pharmacy/productPolicyDecision";
-import {
-  closeAssessment,
-  createProductReviewAssessmentOnce,
-} from "./pharmacy/assessments";
+import { createProductReviewAssessmentOnce } from "./pharmacy/assessments";
 import {
   cashRoundingDelta,
   getVatSettings,
@@ -1257,6 +1254,11 @@ export type PosSaleInput = {
    * ถ้าเภสัชกรเดินมาอนุมัติที่เครื่องแทนที่จะอนุมัติในคิว เคสนั้นต้องถูกปิด ไม่ใช่ค้างไว้ —
    * เคสที่ค้างแล้วมีคนไปกดอนุมัติทีหลังจะกลายเป็นใบอนุมัติที่ใช้ขายได้อีกใบ ทั้งที่ของ
    * ออกจากร้านไปแล้ว
+   *
+   * รับ id จากหน้าจอได้ แต่ **ไม่ใช่เชื่อ**: การปิดเกิดในทรานแซกชันของบิล และ
+   * `closeAssessmentSupersededByCounterInTx()` ตรวจก่อนว่าเป็นเคสของเครื่องขาย
+   * (`channel_id`), ของกะที่กำลังขายอยู่ และเป็นเรื่องของตะกร้าใบนี้จริง — ไม่งั้นเครื่อง
+   * หนึ่งเครื่องจะปิดเคสของลูกค้าคนอื่นในร้านเดียวกันได้ด้วย id ที่เดามา
    */
   pharmacyReviewAssessmentId?: string | null;
 };
@@ -1933,6 +1935,8 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     discountReason: input.discountReason ?? null,
     pharmacyApprovedAssessmentId: input.pharmacyApprovedAssessmentId ?? null,
     pharmacistCounterAuthorization: input.pharmacistCounterAuthorization ?? null,
+    // ปิดเฉพาะเมื่อการอนุมัติที่เคาน์เตอร์ถูกใช้จริง (createOrder เช็คซ้ำเอง)
+    pharmacySupersededAssessmentId: input.pharmacyReviewAssessmentId ?? null,
   }).catch(async (err: any) => {
     // ชนคีย์กันบิลซ้ำ = อีกคำขอสร้างบิลเดียวกันไปแล้ว (23505 = unique_violation)
     if (err?.code === "23505") return null;
@@ -2022,23 +2026,10 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       console.error("[POS] ทบทวนชั้นสมาชิกหลังขายไม่สำเร็จ", input.customerId, e)
     );
   }
-  // ปิดเคสในคิวที่ถูกแทนที่ด้วยการอนุมัติที่เคาน์เตอร์ (9.29)
-  // best-effort เหมือนการทบทวนชั้นสมาชิก: การขายจบแล้ว ห้ามย้อน · ล้มแล้วเคสยังหมดอายุ
-  // เองตาม TTL อยู่ดี แต่ต้องมี log เพราะระหว่างนั้นมีโอกาสที่ใครไปอนุมัติเคสนั้น
-  if (
-    (sold.status === "SOLD" || sold.status === "DEPOSIT_TAKEN") &&
-    input.pharmacistCounterAuthorization &&
-    input.pharmacyReviewAssessmentId
-  ) {
-    void closeAssessment(
-      input.tenantId,
-      input.pharmacyReviewAssessmentId,
-      "dispensed_at_counter_with_pharmacist_authorization"
-    ).catch((e) =>
-      console.error("[POS] ปิดเคสเภสัชที่ถูกแทนด้วยการอนุมัติหน้าเคาน์เตอร์ไม่สำเร็จ",
-        input.pharmacyReviewAssessmentId, e)
-    );
-  }
+  // ปิดเคสในคิวที่ถูกแทนที่ด้วยการอนุมัติที่เคาน์เตอร์ (9.29) เกิดในทรานแซกชันของ
+  // createOrder แล้ว (closeAssessmentSupersededByCounterInTx) — ที่นี่เคยยิงแบบ
+  // best-effort หลัง commit ซึ่งปิดเคสที่คิวเพิ่งอนุมัติไม่ได้ (ไม่รับสถานะ APPROVED)
+  // แล้วทิ้งใบอนุมัติที่ยังใช้ขายตะกร้าเดิมได้อีกใบไว้เงียบ ๆ
 
   // การประทับว่าใบอนุมัติถูกใช้แล้ว ย้ายไปอยู่ในทรานแซกชันของ createOrder แล้ว
   // (markAssessmentOrderCreatedInTx) — ที่นี่เคยยิงแบบ fire-and-forget หลัง commit
@@ -4190,10 +4181,11 @@ export async function requestPosPharmacyReview(input: {
     await client.query("ROLLBACK");
     if (pharmacySale.allowed) return { status: "NOT_REQUIRED" };
     const blockers = pharmacySale.blockers ?? [];
-    // เกณฑ์เดียวกับฝั่งออนไลน์ (productPolicyDecision.ts) — รวมยาที่ต้องมีใบสั่งแพทย์
-    // ด้วย เพราะเภสัชกรตัดสินเรื่องนั้นได้ · หน้าร้านมีสองทางเลือกได้พร้อมกัน:
+    // เกณฑ์อยู่ที่ productPolicyDecision.ts ที่เดียว และใช้ชุดของ **เคาน์เตอร์** ซึ่งกว้าง
+    // กว่าออนไลน์หนึ่งตัว: ยาที่ต้องมีใบสั่งแพทย์ · เคสจากเครื่องขายส่งเข้าคิวได้เพราะของ
+    // ถูกส่งมือต่อมือที่ร้าน ไม่ได้ส่งออกไปทางอินเทอร์เน็ต · หน้าร้านจึงมีสองทางเลือกพร้อมกัน:
     // กด PIN ที่เครื่อง (9.29) หรือส่งเข้าคิวถ้าต้องซักประวัติยาว/เภสัชกรไม่อยู่
-    const reviewable = blockers.filter((blocker) => isPharmacistReviewableBlock(blocker.status));
+    const reviewable = blockers.filter((blocker) => isPharmacistReviewableBlock(blocker.status, "counter"));
     if (reviewable.length === 0 || reviewable.length !== blockers.length) {
       const blocker = blockers.find((candidate): candidate is typeof candidate & {
         status:
@@ -4201,7 +4193,7 @@ export async function requestPosPharmacyReview(input: {
           | "PHARMACY_PRESCRIPTION_REQUIRED"
           | "PHARMACY_ONLINE_SALE_PROHIBITED"
           | "PHARMACY_QUANTITY_LIMIT_EXCEEDED";
-      } => !isPharmacistReviewableBlock(candidate.status));
+      } => !isPharmacistReviewableBlock(candidate.status, "counter"));
       if (!blocker) return { status: "NOT_REQUIRED" };
       return {
         status: blocker.status,

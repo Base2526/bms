@@ -382,15 +382,15 @@ export const bmsPosResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "pharmacy.policy.review");
-      const readiness = await setPharmacyCounterSettings(getTenantId(ctx), {
-        counterAuthorization: args.counterAuthorization ?? null,
-        blockShiftOnUnreviewed: args.blockShiftOnUnreviewed ?? null,
-      });
-      await audit(ctx, "pharmacy.counter_settings_set", getTenantId(ctx), {
-        counterAuthorization: readiness.counterAuthorization,
-        blockShiftOnUnreviewed: readiness.blockShiftOnUnreviewed,
-      });
-      return readiness;
+      // audit เขียนในทรานแซกชันเดียวกับค่าที่เปลี่ยน (ในตัว service) ไม่ใช่ยิงต่อท้ายที่นี่
+      return setPharmacyCounterSettings(
+        getTenantId(ctx),
+        {
+          counterAuthorization: args.counterAuthorization ?? null,
+          blockShiftOnUnreviewed: args.blockShiftOnUnreviewed ?? null,
+        },
+        ctx?.admin?.email || ctx?.admin?.id || null
+      );
     },
 
     async bmsClosePosShift(

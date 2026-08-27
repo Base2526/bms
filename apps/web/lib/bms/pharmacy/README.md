@@ -358,10 +358,12 @@ Three further boundaries of the same approval, all found in a later recheck of t
   back, because an APPROVED case cannot be approved twice. A draft the caller *does* supply still
   wins: reducing the basket stays a pharmacist's decision.
 - **A counter case is judged as "counter" when its draft is re-checked at approval time.**
-  `checkPharmacistDraftPolicyInTx()` now takes the channel, derived from
-  `complaint.sourceMeta.source === "pos"`. Judged as "online", an `ONLINE_SALE_PROHIBITED` product
-  raised from a register was unapprovable: the pharmacist standing next to the customer still could
-  not say yes.
+  `checkPharmacistDraftPolicyInTx()` takes the channel, derived from `channel_id === "pos"` — a
+  plain column stamped once when the case was created, **not** `complaint.sourceMeta`, which is a
+  JSONB blob `updateAnswers()` replaces wholesale (a future intake write would otherwise turn a
+  counter case into an "online" one and make its items unapprovable). Judged as "online", an
+  `ONLINE_SALE_PROHIBITED` product raised from a register was unapprovable: the pharmacist standing
+  next to the customer still could not say yes.
 
 ## Prescription items
 
@@ -370,32 +372,38 @@ to miss: `evaluatePharmacySale()` would have cleared it for an approved case, bu
 would ever open the case — each of `pipeline.ts`, `tools/catalog.ts` and `pos.ts` kept its own
 hardcoded pair of "reviewable" statuses. So the block was reachable and the resolution was not.
 
-Now a pharmacist's decision resolves it on both surfaces:
+A pharmacist's decision now resolves it **at the counter**, which is where an ordinary pharmacy
+dispenses one:
 
-- **A prescription is a document a pharmacist reads and takes responsibility for.** Their
-  approval of that exact basket *is* the decision, so `approvedAssessmentSkus` clears the block
-  online and at the counter alike. The prescription itself lives on the case as
-  `PRESCRIPTION_IMAGE` / `PRESCRIPTION_REF` clinical evidence (`9.25`).
-- **`PHARMACIST_REVIEWABLE_BLOCK_STATUSES`** in `productPolicyDecision.ts` is now the single
-  list every "should I open a case for this?" caller reads, and it includes
-  `PHARMACY_PRESCRIPTION_REQUIRED`. `isPharmacistReviewableBasket()` is all-or-nothing: a
-  basket that also holds an unreviewable item does not get a case, because the resulting
-  approval could never be spent.
-- **The queue detail lets a pharmacist pick a prescription item into the checkout draft**, tags
-  it `ต้องมีใบสั่งแพทย์` in the picker, and warns — without blocking — when the case carries no
-  prescription evidence yet. Whether the evidence is sufficient is the pharmacist's judgement,
-  which is exactly the kind of thing code should not decide.
+- **A prescription is a piece of paper the pharmacist takes in their own hand.** They read it,
+  a copy stays with the case as `PRESCRIPTION_IMAGE` / `PRESCRIPTION_REF` clinical evidence
+  (`9.25`), and the drug goes across the counter. Approving that from a chat thread and shipping
+  the box is not the same act, so `approvedAssessmentSkus` clears this block only when
+  `channel === "counter"`.
+- **Online, a prescription item is refused outright and no case is opened for it.**
+  `PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL` in `productPolicyDecision.ts` is the single
+  list every "should I open a case for this?" caller reads, and `PHARMACY_PRESCRIPTION_REQUIRED`
+  is in the `counter` set only — otherwise the queue would produce approvals that can never be
+  spent. `isPharmacistReviewableBasket()` stays all-or-nothing: a basket that also holds an
+  unreviewable item gets no case at all.
+- **The queue detail lets a pharmacist pick a prescription item into the checkout draft for a
+  case that came from a register**, tags it `ต้องมีใบสั่งแพทย์` in the picker, and warns —
+  without blocking — when the case carries no prescription evidence yet. Whether the evidence is
+  sufficient is the pharmacist's judgement, which is exactly the kind of thing code should not
+  decide. Prescription and online-prohibited items are both hidden from the picker for an online
+  case (`channelId !== "pos"`), because `approveAssessment()` would refuse that draft anyway.
 - **At the counter there are two routes**, and a shop can use either: the pharmacist's PIN at
   the register (`9.29`, below) or the same queue case.
 
 What is still impossible: dispensing a prescription item with no pharmacist involved at all,
-and `PHARMACY_ONLINE_SALE_PROHIBITED` over the internet — that classification is about the
-channel itself, not about who is willing to vouch for the sale, so no approval clears it
-online. `PHARMACY_POLICY_UNKNOWN` also stays outside the reviewable set: nobody has classified
-the product yet, so there is nothing for a case to be about.
+anything of the sort over the internet, and `PHARMACY_ONLINE_SALE_PROHIBITED` online — that
+classification is about the channel itself, not about who is willing to vouch for the sale.
+`PHARMACY_POLICY_UNKNOWN` also stays outside both reviewable sets: nobody has classified the
+product yet, so there is nothing for a case to be about.
 
-Covered by `scripts/pharmacy-policy-decision-contract.test.mts` and the online prescription
-case in `scripts/pharmacy-approval-reuse-db-contract.test.mts`.
+Covered by `scripts/pharmacy-policy-decision-contract.test.mts` and the prescription case in
+`scripts/pharmacy-approval-reuse-db-contract.test.mts` (online blocked even with an approval in
+hand, counter cleared by the same approval).
 
 ## The pharmacist at the register (9.29)
 
@@ -464,10 +472,38 @@ rechecking this feature:
   after a reload asks for it again (and the pharmacist who re-authorises may be a different
   person — the fresh authoriser wins over the one recorded in the pending body).
 - **It supersedes the queue case instead of racing it.** A bill already sent to the pharmacist
-  queue can still be paid once a pharmacist authorises at the register, and `recordPosSale()`
-  then closes that case (`dispensed_at_counter_with_pharmacist_authorization`). Leaving it open
-  would let someone approve it afterwards and hold a spendable approval for goods that already
-  left the shop.
+  queue can still be paid once a pharmacist authorises at the register, and the case is closed
+  (`dispensed_at_counter_with_pharmacist_authorization`) **inside the same transaction as the
+  bill** — `closeAssessmentSupersededByCounterInTx()`. Leaving it open would let someone approve
+  it afterwards and hold a spendable approval for goods that already left the shop, and the
+  earlier best-effort-after-commit version could not close a case the queue had just approved
+  (`closeAssessment()` does not accept `APPROVED`), which is exactly the race that left one
+  behind. The register supplies the case id, so the closer verifies three things before touching
+  the row: the case came from a register (`channel_id`), it belongs to the shift being sold on,
+  and every line of its draft is present in this basket. Otherwise one register could close
+  another customer's case with a guessed id. A refusal is logged, never fatal — the drug is
+  already dispensed on the pharmacist's decision.
+
+### Reading the log back
+
+`bmsPharmacistCounterAuthorizations` (`pharmacy.audit.read` — Pharmacist + Manager, no new
+permission) pages the evidence newest-first with the pharmacist's and cashier's names, the short
+bill code, the receipt/tax document number once one exists, and the policy snapshot. It renders
+as **บันทึกการจ่ายยาที่เคาน์เตอร์** at the bottom of `/admin/pharmacy-queue`, sharing that page's
+time filter. `lib/bms/pharmacy/counterAuthorizations.ts` is read-only on purpose and the table is
+granted `SELECT, INSERT` only: evidence that can be edited is not evidence. Without this the rows
+existed but answered nobody's question without a `psql` session.
+
+### Ordering inside the transaction
+
+The shift stamp and the superseded-case close both happen **before** the first `bms_inventory` row
+is locked. `finalizePosSale()` locks the shift row first and cuts stock after, so stamping the shift
+at the end of `createOrder()` (inventory → shift) inverted the lock order against it and two
+concurrent requests on one shift could deadlock (40P01) mid-bill; `checkPharmacySaleInTx()` likewise
+locks the assessment row before any stock. Same rule for anything added here later: **shift and case
+rows first, stock after** — and that is why the case's `assessment.closed` event carries no
+`orderId` (there is no bill row yet). The link back lives on the bill's
+`pharmacy.counter_authorization` audit entry as `supersededAssessmentId`.
 
 ### Two shop-level switches
 
@@ -481,8 +517,15 @@ Both live on `bms_store_profile` and are edited at `/admin/pos-readiness`
   an approved policy. It is opt-in now precisely because an unreviewed SKU is no longer a
   dead end; the readiness counters still report the backlog either way.
 
+Both switches are written by `setPharmacyCounterSettings()`, which refuses a shop whose
+`business_archetype` is not `pharmacy` and writes its `pharmacy.counter_settings_set` audit row in
+the same transaction as the change — these two flags decide who may release a drug, so a change
+with no trace of who made it is not acceptable.
+
 Covered by `scripts/pharmacy-policy-decision-contract.test.mts` (pure) and
-`scripts/pharmacy-counter-authorization-db-contract.test.mts` (its own throwaway tenant).
+`scripts/pharmacy-counter-authorization-db-contract.test.mts` (its own throwaway tenant: evidence,
+the licence boundary, the quantity cap, the two switches, the superseded case in all four of its
+outcomes, the shift stamp, and the read path).
 
 ### What this deliberately does not do
 
@@ -546,9 +589,9 @@ Covered by `scripts/pharmacy-clinical-evidence-db-contract.test.mts`.
   active, in-stock products, so a pharmacist reviewing a case does not also need the broader
   `product.view` permission. It also returns Product Policy status. Products whose policy is
   missing or not yet approved cannot be selected into an approval draft — that is fixed by
-  reviewing the policy, not by approving one basket. Prescription-required products **can** be
-  selected (see § Prescription items below), and online-prohibited ones only for a case that came
-  from the counter. The service checks the policy again during approval and order creation.
+  reviewing the policy, not by approving one basket. Prescription-required and online-prohibited
+  products can be selected **only for a case that came from the counter** (see § Prescription
+  items below). The service checks the policy again during approval and order creation.
 
 - **Plain-text delivery only, no custom chat widget.** LINE/Facebook/Instagram render their
   own native chat UI (this repo cannot ship custom interactive widgets into them), and there

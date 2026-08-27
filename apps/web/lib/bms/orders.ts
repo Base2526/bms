@@ -51,7 +51,10 @@ import {
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
-import { markAssessmentOrderCreatedInTx } from "./pharmacy/assessments";
+import {
+  closeAssessmentSupersededByCounterInTx,
+  markAssessmentOrderCreatedInTx,
+} from "./pharmacy/assessments";
 import {
   checkPharmacySaleInTx,
   type PharmacySaleBlockStatus,
@@ -113,6 +116,15 @@ export type CreateOrderInput = {
    * · ห้ามรับ id นี้จาก client โดยไม่ตรวจ PIN
    */
   pharmacistCounterAuthorization?: { pharmacistUserId: string; note?: string | null } | null;
+  /**
+   * เคสในคิวเภสัชกรที่ถูก **แทนที่** ด้วยการอนุมัติที่เคาน์เตอร์ของบิลใบนี้ (9.29)
+   *
+   * ปิดในทรานแซกชันเดียวกับบิล ไม่ใช่ยิงทีหลัง — เคสที่ค้างแล้วมีคนไปกดอนุมัติภายหลัง
+   * จะกลายเป็นใบอนุมัติที่ยังใช้ขายตะกร้าเดิมได้อีกใบ ทั้งที่ของออกจากร้านไปแล้ว
+   * · id มาจากหน้าจอได้ แต่ `closeAssessmentSupersededByCounterInTx()` ตรวจว่าเป็นเคส
+   *   ของเครื่อง/กะนี้และเป็นเรื่องของตะกร้าใบนี้จริงก่อนแตะแถว
+   */
+  pharmacySupersededAssessmentId?: string | null;
   /** สาขาที่ตัดสต็อก — ไม่ระบุ = สาขาเริ่มต้นของร้าน (7.84) */
   locationId?: string | null;
   /** POS เท่านั้น — เครื่อง/กะ/คนขาย และคีย์กันบิลซ้ำ (7.87) */
@@ -455,6 +467,51 @@ export async function createOrder(
         ...(pharmacySale.requested == null ? {} : { requested: pharmacySale.requested }),
         ...(pharmacySale.blockers.length === 0 ? {} : { blockers: pharmacySale.blockers }),
       };
+    }
+
+    // ---- เภสัชกรที่รับผิดชอบกะนี้ (9.29) -------------------------------
+    // เขียนก่อนไปแตะ bms_inventory **โดยตั้งใจ**: finalizePosSale() ล็อกแถวกะก่อน
+    // แล้วค่อยตัดสต็อก ถ้าที่นี่ทำสลับกัน (ล็อกสต็อกไว้แล้วค่อยล็อกกะ) สองคำขอที่วิ่ง
+    // พร้อมกันบนกะเดียวกันจะไขว้กันเป็น deadlock (40P01) กลางบิล
+    // · เขียนเฉพาะเมื่อยังว่าง — ไม่ทับคนที่ลงเวรไว้ตอนเปิดกะ (7.97 บันทึกเฉพาะกรณี
+    //   คนเปิดกะเป็นเภสัชกรเอง จึงมีกะที่ไม่มีใครบันทึกไว้เลยเป็นปกติ)
+    const counterAuthorizedSkus = pharmacySale.counterAuthorizedSkus ?? [];
+    const counterAuthorizer =
+      counterAuthorizedSkus.length > 0 ? input.pharmacistCounterAuthorization ?? null : null;
+    if (counterAuthorizer && input.posShiftId) {
+      await client.query(
+        `UPDATE bms_pos_shifts SET pharmacist_user_id = $3
+          WHERE tenant_id = $1 AND id = $2 AND pharmacist_user_id IS NULL`,
+        [tenantId, input.posShiftId, counterAuthorizer.pharmacistUserId]
+      );
+    }
+
+    // ---- เคสในคิวที่ถูกแทนที่ด้วยการอนุมัติที่เครื่อง (9.29) --------------
+    // ปิดในทรานแซกชันนี้ ไม่ใช่ยิงหลัง commit: ถ้าคิวอนุมัติเคสคาบเกี่ยวกับการขาย เส้นทาง
+    // เดิม (best-effort หลัง commit) ปิดไม่ได้เพราะไม่รับสถานะ APPROVED แล้วทิ้งใบอนุมัติ
+    // ที่ยังใช้ขายตะกร้าเดิมได้อีกใบไว้เงียบ ๆ
+    // · อยู่ตรงนี้ (ก่อนสต็อก) เพราะมันล็อกแถวเคส และ checkPharmacySaleInTx ก็ล็อกแถวเคส
+    //   ก่อนสต็อกเหมือนกัน — ล็อกลำดับเดียวกันทุกเส้นทางคือสิ่งที่กัน deadlock
+    if (counterAuthorizer && input.pharmacySupersededAssessmentId) {
+      const outcome = await closeAssessmentSupersededByCounterInTx(
+        client,
+        tenantId,
+        input.pharmacySupersededAssessmentId,
+        {
+          posShiftId: input.posShiftId ?? null,
+          basket: items.map((it) => ({ sku: it.sku, size: it.size, qty: it.qty })),
+          pharmacistUserId: counterAuthorizer.pharmacistUserId,
+        }
+      );
+      // ไม่ล้มบิลเพราะเรื่องนี้ — ของถูกจ่ายไปแล้วตามการตัดสินของเภสัชกร · แต่ต้องเห็นใน
+      // log เพราะทุกผลที่ไม่ใช่ CLOSED หมายความว่ามีเคสค้างในคิวที่ต้องมีคนไปดู
+      if (outcome !== "CLOSED") {
+        console.error(
+          "[PHARMACY] ปิดเคสที่ถูกแทนด้วยการอนุมัติหน้าเคาน์เตอร์ไม่ได้",
+          input.pharmacySupersededAssessmentId,
+          outcome
+        );
+      }
     }
 
     const lines: CreatedLine[] = [];
@@ -871,10 +928,9 @@ export async function createOrder(
     // ---- หลักฐานการอนุมัติที่เคาน์เตอร์ (9.29) --------------------------
     // อยู่ในทรานแซกชันเดียวกับบิลที่มันอนุมัติ: บิลที่ commit แล้วจะไม่มีทางไม่มี
     // หลักฐานว่าเภสัชกรคนไหนปล่อยยาออกไป (กฎเดียวกับ audit ของการเขียนที่สำคัญ)
-    const counterAuthorizedSkus = pharmacySale.allowed ? pharmacySale.counterAuthorizedSkus ?? [] : [];
-    if (counterAuthorizedSkus.length > 0 && input.pharmacistCounterAuthorization) {
-      const pharmacistUserId = input.pharmacistCounterAuthorization.pharmacistUserId;
-      const note = (input.pharmacistCounterAuthorization.note ?? "").trim() || null;
+    if (counterAuthorizer) {
+      const pharmacistUserId = counterAuthorizer.pharmacistUserId;
+      const note = (counterAuthorizer.note ?? "").trim() || null;
       const authorizedSet = new Set(counterAuthorizedSkus);
       // นโยบายที่ถูกปลด ณ เวลานั้น — อ่านสด ไม่ใช่ค่าที่ client ส่งมา และเก็บเป็น
       // snapshot เพราะร้านแก้ policy ทีหลังต้องไม่เปลี่ยนความหมายของหลักฐานเดิม
@@ -916,18 +972,11 @@ export async function createOrder(
           })),
           cashierUserId: input.cashierUserId ?? null,
           hasNote: Boolean(note),
+          // ทางไล่กลับไปหาเคสในคิวที่บิลนี้แทนที่ (แถว event ของเคสไม่มี orderId เพราะ
+          // ตอนปิดเคส บิลยังไม่ถูกสร้าง)
+          supersededAssessmentId: input.pharmacySupersededAssessmentId ?? null,
         })]
       );
-      // เภสัชกรที่อนุมัติคือเภสัชกรที่อยู่หน้าร้านจริงในกะนั้น · กะที่เปิดโดยแคชเชียร์
-      // เดิมไม่มีใครบันทึกไว้เลย (7.97 บันทึกเฉพาะกรณีคนเปิดกะเป็นเภสัชกรเอง)
-      // เขียนเฉพาะเมื่อยังว่าง — ไม่เขียนทับคนที่ลงเวรไว้ตอนเปิดกะ
-      if (input.posShiftId) {
-        await client.query(
-          `UPDATE bms_pos_shifts SET pharmacist_user_id = $3
-            WHERE tenant_id = $1 AND id = $2 AND pharmacist_user_id IS NULL`,
-          [tenantId, input.posShiftId, pharmacistUserId]
-        );
-      }
     }
 
     await reserveCustomerCouponInTx(client, tenantId, customerId, appliedCouponId, orderId);

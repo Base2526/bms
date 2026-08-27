@@ -23,7 +23,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
-import { closeAssessment } from "../apps/web/lib/bms/pharmacy/assessments.ts";
+import { listPharmacistCounterAuthorizations } from "../apps/web/lib/bms/pharmacy/counterAuthorizations.ts";
 
 const TAG = "rxcounter-test";
 const RX_SKU = `FAKE-${TAG}-RX`;      // PRESCRIPTION_REQUIRED, policy APPROVED
@@ -34,14 +34,18 @@ const SIZE = "10MG";
 let tenantId = "";
 let locationId = "";
 let pharmacistId = "";
+let pharmacist2Id = "";
 let clerkId = "";
+let deviceId = "";
+let shiftId = "";
 const orders: string[] = [];
 
 const sell = async (
   sku: string,
   qty: number,
   authorizer: string | null,
-  note?: string
+  note?: string,
+  extra: Record<string, unknown> = {}
 ) =>
   createOrder({
     tenantId,
@@ -51,7 +55,59 @@ const sell = async (
     pharmacistCounterAuthorization: authorizer
       ? { pharmacistUserId: authorizer, note: note ?? null }
       : null,
+    ...extra,
   } as any);
+
+/** เคสในคิวที่เกิดจากเครื่องขาย — draft คือสิ่งที่บอกว่าเคสนี้เป็นเรื่องของตะกร้าใบไหน */
+async function mkCounterCase(opts: {
+  status: string;
+  shiftId: string | null;
+  draftItems: Array<{ sku: string; size: string; qty: number }>;
+}): Promise<string> {
+  const res = await query<{ id: string }>(
+    `INSERT INTO bms_pharmacy_assessments
+       (tenant_id, channel_id, patient_relationship, consent_status, status,
+        needs_manual_intake, risk_level, complaint, structured_answers,
+        missing_fields, conflicting_fields, completeness_status,
+        customer_confirmation_status, checkout_order_draft, expires_at)
+     VALUES ($1,'pos','SELF','GRANTED',$2,TRUE,'LOW',
+             $3::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+             'CONFIRMED',$4::jsonb, now() + interval '1 day')
+     RETURNING id`,
+    [
+      tenantId,
+      opts.status,
+      JSON.stringify({
+        requestType: "PRODUCT_PURCHASE",
+        sourceMeta: { source: "pos", shiftId: opts.shiftId },
+      }),
+      JSON.stringify({
+        status: "AWAITING_CUSTOMER_CONFIRMATION",
+        items: opts.draftItems.map((item) => ({
+          ...item,
+          unitPrice: 100,
+          productName: item.sku,
+          drugName: null,
+          dosageInstruction: null,
+          pharmacistNote: null,
+        })),
+        estimatedTotal: 100,
+        createdOrderId: null,
+        approvedAt: null,
+      }),
+    ]
+  );
+  return res.rows[0].id;
+}
+
+const caseStatusOf = async (caseId: string) =>
+  (
+    await query<{ status: string; reason: string | null }>(
+      `SELECT status, decision_reason AS reason
+         FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, caseId]
+    )
+  ).rows[0];
 
 async function mkUser(name: string, licensed: boolean): Promise<string> {
   const email = `fake-${TAG}-${name}-${process.pid}@example.invalid`;
@@ -108,7 +164,25 @@ test("setup: throwaway pharmacy tenant + ยา 3 แบบ + เภสัชก
   );
 
   pharmacistId = await mkUser("rx", true);
+  pharmacist2Id = await mkUser("rx2", true);
   clerkId = await mkUser("clerk", false);
+
+  // เครื่องขาย + กะที่เปิดค้าง (เปิดโดยคนที่ไม่ใช่เภสัชกร — กรณีปกติของร้านที่แคชเชียร์
+  // เปิดร้านเอง จึงไม่มีใครถูกบันทึกว่าเป็นเภสัชกรประจำกะ)
+  deviceId = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pos_devices (tenant_id, location_id, code, name)
+       VALUES ($1,$2,'POS-1',$3) RETURNING id`,
+      [tenantId, locationId, `FAKE ${TAG} device`]
+    )
+  ).rows[0].id;
+  shiftId = (
+    await query<{ id: string }>(
+      `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float)
+       VALUES ($1,$2,$3,$4,0) RETURNING id`,
+      [tenantId, locationId, deviceId, clerkId]
+    )
+  ).rows[0].id;
 });
 
 test("ไม่มีใครอนุมัติ = ยาที่ต้องมีใบสั่งแพทย์ยังขายไม่ได้", async () => {
@@ -220,42 +294,155 @@ test("ช่องทางออนไลน์ไม่ได้รับอ�
 });
 
 // ---------------------------------------------------------------
-// เคสในคิวที่ถูกแทนด้วยการอนุมัติที่เคาน์เตอร์ ต้องถูกปิด
+// เคสในคิวที่ถูกแทนด้วยการอนุมัติที่เคาน์เตอร์ ต้องถูกปิด — ในทรานแซกชันของบิล
 // ---------------------------------------------------------------
 // ถ้าปล่อยค้าง แล้วมีเภสัชกรไปกดอนุมัติในคิวทีหลัง จะได้ "ใบอนุมัติที่ใช้ขายได้อีกใบ"
-// ของตะกร้าที่ของออกจากร้านไปแล้ว (recordPosSale ปิดให้แบบ best-effort หลังบิลจบ)
-test("ปิดเคสในคิวเมื่อขายด้วยการอนุมัติที่เคาน์เตอร์แทน", async () => {
-  const caseId = (
-    await query<{ id: string }>(
-      `INSERT INTO bms_pharmacy_assessments
-         (tenant_id, channel_id, patient_relationship, consent_status, status,
-          needs_manual_intake, risk_level, complaint, structured_answers,
-          missing_fields, conflicting_fields, completeness_status,
-          customer_confirmation_status, expires_at)
-       VALUES ($1,'pos','SELF','GRANTED','WAITING_FOR_PHARMACIST',TRUE,'LOW',
-               $2::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
-               'CONFIRMED', now() + interval '1 day')
-       RETURNING id`,
-      [tenantId, JSON.stringify({ requestType: "PRODUCT_PURCHASE", sourceMeta: { source: "pos" } })]
-    )
-  ).rows[0].id;
+// ของตะกร้าที่ของออกจากร้านไปแล้ว
+test("ปิดเคสในคิวเมื่อขายด้วยการอนุมัติที่เคาน์เตอร์แทน (ทรานแซกชันเดียวกับบิล)", async () => {
+  const caseId = await mkCounterCase({
+    status: "WAITING_FOR_PHARMACIST",
+    shiftId,
+    draftItems: [{ sku: RX_SKU, size: SIZE, qty: 1 }],
+  });
 
-  const closed = await closeAssessment(
-    tenantId,
-    caseId,
-    "dispensed_at_counter_with_pharmacist_authorization"
-  );
-  assert.equal(closed, true, "เคสที่ยังเปิดต้องปิดได้");
+  const res = await sell(RX_SKU, 1, pharmacistId, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+    pharmacySupersededAssessmentId: caseId,
+  });
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  orders.push(res.orderId);
 
-  const row = await query<{ status: string; reason: string | null }>(
-    `SELECT status, decision_reason AS reason
-       FROM bms_pharmacy_assessments WHERE tenant_id = $1 AND id = $2`,
+  const row = await caseStatusOf(caseId);
+  assert.equal(row.status, "CLOSED");
+  assert.equal(row.reason, "dispensed_at_counter_with_pharmacist_authorization",
+    "ต้องอ่านย้อนได้ว่าปิดเพราะขายหน้าเคาน์เตอร์ ไม่ใช่หมดอายุ");
+
+  const events = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_pharmacy_assessment_events
+      WHERE tenant_id = $1 AND assessment_id = $2 AND action = 'assessment.closed'`,
     [tenantId, caseId]
   );
-  assert.equal(row.rows[0].status, "CLOSED");
-  assert.equal(row.rows[0].reason, "dispensed_at_counter_with_pharmacist_authorization",
-    "ต้องอ่านย้อนได้ว่าปิดเพราะขายหน้าเคาน์เตอร์ ไม่ใช่หมดอายุ");
+  assert.equal(Number(events.rows[0].n), 1, "ร่องรอยการปิดต้อง commit มาพร้อมบิล");
 });
+
+// ช่องแข่งที่เส้นทางเดิม (best-effort หลัง commit) ปิดไม่ได้: closeAssessment() ไม่รับ
+// สถานะ APPROVED จึงเงียบ ๆ ทิ้งใบอนุมัติที่ยังใช้ขายตะกร้าเดิมได้อีกใบไว้
+test("เคสที่คิวเพิ่งกดอนุมัติไปพร้อมกัน ก็ต้องถูกปิด", async () => {
+  const caseId = await mkCounterCase({
+    status: "APPROVED",
+    shiftId,
+    draftItems: [{ sku: RX_SKU, size: SIZE, qty: 1 }],
+  });
+  const res = await sell(RX_SKU, 1, pharmacistId, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+    pharmacySupersededAssessmentId: caseId,
+  });
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  orders.push(res.orderId);
+  assert.equal((await caseStatusOf(caseId)).status, "CLOSED");
+});
+
+test("id เคสของกะอื่น ปิดไม่ได้ — เครื่องหนึ่งเครื่องต้องไม่ปิดเคสของลูกค้าคนอื่น", async () => {
+  const otherShiftCase = await mkCounterCase({
+    status: "WAITING_FOR_PHARMACIST",
+    shiftId: "00000000-0000-0000-0000-000000000000",
+    draftItems: [{ sku: RX_SKU, size: SIZE, qty: 1 }],
+  });
+  const res = await sell(RX_SKU, 1, pharmacistId, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+    pharmacySupersededAssessmentId: otherShiftCase,
+  });
+  // บิลยังต้องจบ — ของถูกจ่ายตามการตัดสินของเภสัชกรแล้ว การปิดเคสผิดใบไม่ใช่เหตุให้ล้มบิล
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  orders.push(res.orderId);
+  assert.equal((await caseStatusOf(otherShiftCase)).status, "WAITING_FOR_PHARMACIST");
+});
+
+test("เคสของตะกร้าอื่น (draft ไม่อยู่ในบิลนี้) ปิดไม่ได้", async () => {
+  const otherBasketCase = await mkCounterCase({
+    status: "WAITING_FOR_PHARMACIST",
+    shiftId,
+    // draft ขอ 3 ชิ้น แต่บิลนี้ขาย 1 → ไม่ใช่ตะกร้าเดียวกัน
+    draftItems: [{ sku: RX_SKU, size: SIZE, qty: 3 }],
+  });
+  const res = await sell(RX_SKU, 1, pharmacistId, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+    pharmacySupersededAssessmentId: otherBasketCase,
+  });
+  assert.equal(res.status, "CREATED", JSON.stringify(res));
+  if (res.status !== "CREATED") return;
+  orders.push(res.orderId);
+  assert.equal((await caseStatusOf(otherBasketCase)).status, "WAITING_FOR_PHARMACIST");
+});
+
+// ---------------------------------------------------------------
+// เภสัชกรผู้รับผิดชอบกะ
+// ---------------------------------------------------------------
+// 7.97 บันทึกไว้เฉพาะกรณีคนเปิดกะเป็นเภสัชกรเอง กะที่แคชเชียร์เปิดจึงไม่มีใครบันทึก
+// · การอนุมัติที่เครื่องคือหลักฐานว่ามีเภสัชกรอยู่จริง จึงประทับให้ **เมื่อยังว่างเท่านั้น**
+test("การอนุมัติที่เครื่องประทับเภสัชกรประจำกะ และไม่ทับคนแรก", async () => {
+  await query(
+    `UPDATE bms_pos_shifts SET pharmacist_user_id = NULL WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, shiftId]
+  );
+
+  const first = await sell(NEW_SKU, 1, pharmacistId, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+  });
+  assert.equal(first.status, "CREATED", JSON.stringify(first));
+  if (first.status === "CREATED") orders.push(first.orderId);
+  const stamped = await query<{ pharmacist_user_id: string | null }>(
+    `SELECT pharmacist_user_id FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, shiftId]
+  );
+  assert.equal(stamped.rows[0].pharmacist_user_id, pharmacistId);
+
+  const second = await sell(NEW_SKU, 1, pharmacist2Id, null, {
+    posShiftId: shiftId,
+    posDeviceId: deviceId,
+  });
+  assert.equal(second.status, "CREATED", JSON.stringify(second));
+  if (second.status === "CREATED") orders.push(second.orderId);
+  const after = await query<{ pharmacist_user_id: string | null }>(
+    `SELECT pharmacist_user_id FROM bms_pos_shifts WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, shiftId]
+  );
+  assert.equal(after.rows[0].pharmacist_user_id, pharmacistId,
+    "คนที่ลงเวรไว้ก่อนต้องไม่ถูกเขียนทับด้วยผู้อนุมัติรายถัดไป");
+});
+
+// ---------------------------------------------------------------
+// เส้นทางอ่าน: หลักฐานที่อ่านไม่ได้ = ตอบคำถามของคนไม่ได้
+// ---------------------------------------------------------------
+test("บันทึกการจ่ายยาที่เคาน์เตอร์อ่านกลับได้ พร้อมชื่อเภสัชกรและนโยบายที่ปลด", async () => {
+  const page = await listPharmacistCounterAuthorizations(tenantId, { limit: 100 });
+  assert.ok(page.total > 0, "ต้องมีรายการที่เทสข้างบนสร้างไว้");
+  const rx = page.items.find((item) => item.productSku === RX_SKU);
+  assert.ok(rx, "ยาที่ต้องมีใบสั่งซึ่งถูกอนุมัติต้องอยู่ในบันทึก");
+  assert.equal(rx!.salePolicy, "PRESCRIPTION_REQUIRED");
+  assert.equal(rx!.pharmacistUserId, pharmacistId);
+  assert.ok(rx!.pharmacistName, "ต้องอ่านชื่อเภสัชกรได้ ไม่ใช่แค่ id");
+  assert.equal(rx!.orderCode.length, 8, "ต้องมีรหัสบิลสั้นให้พนักงานเรียก");
+  assert.ok(rx!.createdAt.endsWith("Z"), "เวลาต้องเป็น ISO string ไม่ใช่ Date/epoch");
+
+  const unknown = page.items.find((item) => item.productSku === NEW_SKU);
+  assert.ok(unknown, "สินค้าที่ยังไม่มีนโยบายก็ต้องอยู่ในบันทึก");
+  assert.equal(unknown!.policyStatus, "MISSING");
+
+  const none = await listPharmacistCounterAuthorizations(tenantId, {
+    from: new Date(Date.now() + 60_000).toISOString(),
+  });
+  assert.equal(none.items.length, 0, "ตัวกรองช่วงเวลาต้องมีผลจริง");
+});
+
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
@@ -266,6 +453,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
   if (ids.length === 0) return;
   for (const table of [
     "bms_pos_pharmacist_authorizations",
+    "bms_pos_shifts",
+    "bms_pos_devices",
     "bms_pharmacy_assessment_events",
     "bms_pharmacy_assessments",
     "bms_order_items",

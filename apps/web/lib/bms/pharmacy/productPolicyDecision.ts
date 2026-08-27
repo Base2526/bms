@@ -61,7 +61,13 @@ export type PharmacySaleDecision =
  * unsellable everywhere: `evaluatePharmacySale()` would have cleared it for an
  * approved case, but nothing would open the case in the first place.
  *
- * Deliberately NOT in the set:
+ * **ชุดนี้ขึ้นกับช่องทาง** เพราะใบสั่งแพทย์เป็นกระดาษที่ร้านยารับไว้ในมือ: เภสัชกรอ่านใบสั่ง
+ * เก็บสำเนาไว้กับเคส แล้วส่งยาข้ามเคาน์เตอร์ให้คนไข้ · การอนุมัติจากห้องแชทแล้วส่งของออกไป
+ * ไม่ใช่วิธีที่ร้านขายยาจ่ายยาที่ต้องมีใบสั่ง จึงให้ `PRESCRIPTION_REQUIRED` เป็นเรื่องที่เภสัชกร
+ * ตัดสินได้ **ที่เคาน์เตอร์เท่านั้น** · ตะกร้าออนไลน์ที่มียากลุ่มนี้ถูกปฏิเสธไปเลยและไม่เปิดเคส
+ * (ไม่เปิดเคส = ไม่มีใบอนุมัติที่อนุมัติแล้วใช้ไม่ได้ค้างอยู่ในระบบ)
+ *
+ * Deliberately NOT in either set:
  *   - PHARMACY_POLICY_UNKNOWN — an unreviewed product policy is fixed by
  *     reviewing the policy (or a pharmacist's PIN at the register), not by
  *     approving one basket. Its whole point is that nobody has classified the
@@ -72,30 +78,46 @@ export type PharmacySaleDecision =
  *     approval makes an online order of it legitimate.
  *   - PHARMACY_QUANTITY_LIMIT_EXCEEDED — a cap the shop set for itself.
  */
-export const PHARMACIST_REVIEWABLE_BLOCK_STATUSES: readonly PharmacySaleBlockStatus[] = [
-  "PHARMACY_REVIEW_REQUIRED",
-  "PHARMACY_SAFETY_CHECK_REQUIRED",
-  "PHARMACY_PRESCRIPTION_REQUIRED",
-];
+export const PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL: Record<
+  PharmacySaleChannel,
+  readonly PharmacySaleBlockStatus[]
+> = {
+  online: ["PHARMACY_REVIEW_REQUIRED", "PHARMACY_SAFETY_CHECK_REQUIRED"],
+  counter: [
+    "PHARMACY_REVIEW_REQUIRED",
+    "PHARMACY_SAFETY_CHECK_REQUIRED",
+    "PHARMACY_PRESCRIPTION_REQUIRED",
+  ],
+};
 
-export function isPharmacistReviewableBlock(status: string): boolean {
-  return (PHARMACIST_REVIEWABLE_BLOCK_STATUSES as readonly string[]).includes(status);
+export function isPharmacistReviewableBlock(
+  status: string,
+  channel: PharmacySaleChannel = "online"
+): boolean {
+  // ช่องทางที่ไม่รู้จัก = ใช้ชุดที่เข้มกว่า (ออนไลน์) ไม่ใช่ crash และไม่ใช่ปล่อยผ่าน
+  const statuses =
+    PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL[channel] ??
+    PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL.online;
+  return (statuses as readonly string[]).includes(status);
 }
 
 /**
  * True when EVERY reason this basket was refused is something a pharmacist's
- * review can resolve. All-or-nothing on purpose: the basket is reserved and paid
- * for as one order, so opening a case for a basket that also contains an
- * unreviewable item would produce an approval that can never be spent.
+ * review can resolve **on this channel**. All-or-nothing on purpose: the basket
+ * is reserved and paid for as one order, so opening a case for a basket that also
+ * contains an unreviewable item would produce an approval that can never be
+ * spent. The channel defaults to "online" so a caller that has not been taught
+ * about channels keeps the stricter set.
  */
 export function isPharmacistReviewableBasket(
   status: string,
-  blockers?: ReadonlyArray<{ status: string }> | null
+  blockers?: ReadonlyArray<{ status: string }> | null,
+  channel: PharmacySaleChannel = "online"
 ): boolean {
   if (blockers && blockers.length > 0) {
-    return blockers.every((blocker) => isPharmacistReviewableBlock(blocker.status));
+    return blockers.every((blocker) => isPharmacistReviewableBlock(blocker.status, channel));
   }
-  return isPharmacistReviewableBlock(status);
+  return isPharmacistReviewableBlock(status, channel);
 }
 
 export type PharmacyPolicyForDecision = {
@@ -179,12 +201,15 @@ export function evaluatePharmacySale(
     if (
       (policy.salePolicy === "PHARMACIST_APPROVAL" ||
         policy.salePolicy === "SHORT_SAFETY_CHECK" ||
-        // A prescription is a document a pharmacist reads and takes
-        // responsibility for. Their approval of this exact basket IS that
-        // decision, so it clears the block on both surfaces — the case carries
-        // the prescription image/reference in bms_pharmacy_clinical_evidence.
-        // What stays impossible is dispensing one with no case at all.
-        policy.salePolicy === "PRESCRIPTION_REQUIRED" ||
+        // A prescription is a document the pharmacist reads and takes
+        // responsibility for, **at the counter**. Their approval of this exact
+        // basket IS that decision (the case carries the prescription image or
+        // reference in bms_pharmacy_clinical_evidence), so it clears the block
+        // when the hand-over happens in person. Online it clears nothing: an
+        // ordinary pharmacy does not ship a prescription drug on the strength of
+        // a chat thread, and the reviewable-block set above refuses to open a
+        // case for one, so no unspendable approval is created either.
+        (policy.salePolicy === "PRESCRIPTION_REQUIRED" && channel === "counter") ||
         // Counter-only: the fall-through below turns this policy into
         // "needs a pharmacist", so its approval has to clear it here too or the
         // case would be approved and the sale still refused, forever.

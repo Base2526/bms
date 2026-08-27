@@ -306,11 +306,12 @@ test("approve โดยไม่ส่ง draft ต้องคง draft เด�
 });
 
 // ---------------------------------------------------------------
-// ยาที่ต้องมีใบสั่งแพทย์: ขายออนไลน์ได้เมื่อเภสัชกรอนุมัติเคสนั้น
+// ยาที่ต้องมีใบสั่งแพทย์: จ่ายได้ที่เคาน์เตอร์ ไม่ใช่ทางออนไลน์
 // ---------------------------------------------------------------
-// ก่อนหน้านี้กลุ่มนี้เป็นทางตัน: ตัวประเมินไม่ยอมให้ใบอนุมัติปลด และไม่มีใครเปิดเคสให้
-// (`isPharmacistReviewableBasket` ไม่รับสถานะนี้) — จ่ายไม่ได้เลยทั้งออนไลน์และหน้าร้าน
-test("ยาที่ต้องมีใบสั่ง: ไม่มีใบอนุมัติ = บล็อก · เภสัชกรอนุมัติเคสแล้ว = ขายออนไลน์ได้", async () => {
+// ใบสั่งยาเป็นกระดาษที่เภสัชกรอ่าน เก็บสำเนาไว้กับเคส แล้วส่งยาข้ามเคาน์เตอร์ — ร้านขายยา
+// ไม่ได้อนุมัติจากห้องแชทแล้วส่งของออกไป · ฝั่งออนไลน์จึงต้องบล็อกแม้จะมีใบอนุมัติของเคส
+// อยู่ในมือ (และไม่มีใครเปิดเคสให้ตะกร้าออนไลน์ของยากลุ่มนี้ตั้งแต่แรก)
+test("ยาที่ต้องมีใบสั่ง: ออนไลน์บล็อกแม้มีใบอนุมัติ · เคาน์เตอร์ที่เภสัชกรอนุมัติเคสแล้วจ่ายได้", async () => {
   const RX_SKU = `FAKE-${TAG}-RX`;
   await query(
     `INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
@@ -328,46 +329,55 @@ test("ยาที่ต้องมีใบสั่ง: ไม่มีใบ
     [tenantId, RX_SKU]
   );
 
-  const online = (approvedAssessmentId: string | null) =>
+  const sellOn = (channel: string, approvedAssessmentId: string | null) =>
     createOrder({
       tenantId,
-      channel: "line",
+      channel,
       locationId,
       items: [{ sku: RX_SKU, size: SIZE, qty: 1 }],
       pharmacyApprovedAssessmentId: approvedAssessmentId,
     } as any);
 
-  const blocked = await online(null);
+  const blocked = await sellOn("line", null);
   assert.equal(blocked.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(blocked));
 
-  const draft = {
-    status: "AWAITING_CUSTOMER_CONFIRMATION",
-    items: [{ sku: RX_SKU, size: SIZE, qty: 1, unitPrice: 120, productName: `FAKE ${TAG} prescription drug` }],
-    estimatedTotal: 120,
-    createdOrderId: null,
-    approvedAt: new Date().toISOString(),
+  const mkApprovedCase = async (channelId: string) => {
+    const draft = {
+      status: "AWAITING_CUSTOMER_CONFIRMATION",
+      items: [{ sku: RX_SKU, size: SIZE, qty: 1, unitPrice: 120, productName: `FAKE ${TAG} prescription drug` }],
+      estimatedTotal: 120,
+      createdOrderId: null,
+      approvedAt: new Date().toISOString(),
+    };
+    return (
+      await query<{ id: string }>(
+        `INSERT INTO bms_pharmacy_assessments
+           (tenant_id, channel_id, patient_relationship, consent_status, status,
+            needs_manual_intake, risk_level, complaint, structured_answers,
+            missing_fields, conflicting_fields, completeness_status,
+            customer_confirmation_status, checkout_order_draft, expires_at)
+         VALUES ($1,$2,'SELF','GRANTED','APPROVED',FALSE,'LOW',
+                 '{}'::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
+                 'CONFIRMED',$3::jsonb, now() + interval '1 day')
+         RETURNING id`,
+        [tenantId, channelId, JSON.stringify(draft)]
+      )
+    ).rows[0].id;
   };
-  const caseId = (
-    await query<{ id: string }>(
-      `INSERT INTO bms_pharmacy_assessments
-         (tenant_id, channel_id, patient_relationship, consent_status, status,
-          needs_manual_intake, risk_level, complaint, structured_answers,
-          missing_fields, conflicting_fields, completeness_status,
-          customer_confirmation_status, checkout_order_draft, expires_at)
-       VALUES ($1,'line','SELF','GRANTED','APPROVED',FALSE,'LOW',
-               '{}'::jsonb,'{}'::jsonb,'{}'::text[],'{}'::text[],'COMPLETE',
-               'CONFIRMED',$2::jsonb, now() + interval '1 day')
-       RETURNING id`,
-      [tenantId, JSON.stringify(draft)]
-    )
-  ).rows[0].id;
 
-  const sold = await online(caseId);
-  assert.equal(sold.status, "CREATED", `เคสที่เภสัชกรอนุมัติต้องขายได้ แต่ได้ ${JSON.stringify(sold)}`);
+  // ใบอนุมัติของเคสไม่ทำให้บิลออนไลน์ผ่าน — นี่คือกฎ ไม่ใช่ผลข้างเคียง
+  const onlineCase = await mkApprovedCase("line");
+  const stillBlocked = await sellOn("line", onlineCase);
+  assert.equal(stillBlocked.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(stillBlocked));
+
+  // เคาน์เตอร์: ใบอนุมัติของเคสเดียวกันปลดได้
+  const counterCase = await mkApprovedCase("pos");
+  const sold = await sellOn("pos", counterCase);
+  assert.equal(sold.status, "CREATED", `เคสที่เภสัชกรอนุมัติต้องจ่ายได้ที่เคาน์เตอร์ แต่ได้ ${JSON.stringify(sold)}`);
   if (sold.status === "CREATED") createdOrders.push(sold.orderId);
 
   // ใบเดียวใช้ครั้งเดียวยังเป็นกฎเดิม แม้จะเป็นยาที่ต้องมีใบสั่ง
-  const again = await online(caseId);
+  const again = await sellOn("pos", counterCase);
   assert.equal(again.status, "PHARMACY_PRESCRIPTION_REQUIRED", JSON.stringify(again));
 });
 
